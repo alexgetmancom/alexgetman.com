@@ -76,7 +76,7 @@ const publicBaseUrl = "https://ialexey.ru";
 
     {schema && <script type="application/ld+json" set:html={schema}></script>}
 
-    <!-- Blocking Theme Script to prevent flash -->
+    <!-- Blocking Theme & Language Script to prevent flash -->
     <script is:inline>
         (() => {
             const savedTheme = localStorage.getItem('theme');
@@ -85,6 +85,17 @@ const publicBaseUrl = "https://ialexey.ru";
                 document.documentElement.setAttribute('data-theme', 'light');
             } else {
                 document.documentElement.setAttribute('data-theme', 'dark');
+            }
+
+            // Detect language from cookie googtrans
+            const hasEn = document.cookie.split(';').some(c => {
+                const trimmed = c.trim();
+                return trimmed.startsWith('googtrans=/ru/en') || trimmed.startsWith('googtrans=%2Fru%2Fen');
+            });
+            if (hasEn) {
+                document.documentElement.setAttribute('data-lang', 'en');
+            } else {
+                document.documentElement.setAttribute('data-lang', 'ru');
             }
         })();
     </script>
@@ -876,6 +887,50 @@ const publicBaseUrl = "https://ialexey.ru";
             font-family: var(--font-mono);
             margin-top: 1.5rem;
         }
+
+        /* Language Toggle & Google Translate Styles */
+        .btn-social.lang-toggle {
+            cursor: pointer;
+            font-family: var(--font-mono);
+            font-size: 0.72rem;
+            font-weight: 700;
+            line-height: 1;
+            padding: 0;
+            text-transform: uppercase;
+        }
+        .btn-social.lang-toggle:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+            background: var(--accent-glow);
+        }
+        .lang-ru-text, .lang-en-text {
+            display: none;
+        }
+        html[data-lang="ru"] .lang-ru-text {
+            display: inline;
+        }
+        html[data-lang="en"] .lang-en-text {
+            display: inline;
+        }
+        /* Hide Google Translate elements completely */
+        .skiptranslate, 
+        #google_translate_element, 
+        .goog-te-banner-frame, 
+        .goog-te-banner,
+        .goog-te-menu-value,
+        .goog-tooltip,
+        .goog-tooltip:hover {
+            display: none !important;
+        }
+        body {
+            top: 0 !important;
+            position: static !important;
+        }
+        .goog-text-highlight {
+            background-color: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+        }
     </style>
     <!-- WebMCP tools registration for AI agents -->
     <script is:inline>
@@ -1029,6 +1084,10 @@ const publicBaseUrl = "https://ialexey.ru";
                     </svg>
                     <input type="text" id="header-search-input" placeholder="Поиск..." aria-label="Поиск по сайту" />
                 </div>
+                <button class="btn-social lang-toggle notranslate" id="lang-toggle-btn" aria-label="Смена языка" data-tooltip="Смена языка / Change Language">
+                    <span class="lang-ru-text">RU</span>
+                    <span class="lang-en-text">EN</span>
+                </button>
                 <button class="btn-social theme-toggle" id="theme-toggle-btn" aria-label="Переключить тему" data-tooltip="Тема">
                     <!-- Sun Icon (visible in light mode) -->
                     <svg class="sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1199,7 +1258,72 @@ const publicBaseUrl = "https://ialexey.ru";
                 }
             });
         }
+
+        // Language Toggle Logic
+        const langToggleBtn = document.getElementById('lang-toggle-btn');
+        if (langToggleBtn) {
+            langToggleBtn.addEventListener('click', () => {
+                const currentLang = document.documentElement.getAttribute('data-lang') || 'ru';
+                const newLang = currentLang === 'ru' ? 'en' : 'ru';
+                
+                const domain = window.location.hostname;
+                const expires = "expires=Thu, 01 Jan 1970 00:00:00 UTC";
+                
+                if (newLang === 'en') {
+                    const value = '/ru/en';
+                    // Set for current host and root domains
+                    document.cookie = `googtrans=${value}; path=/;`;
+                    document.cookie = `googtrans=${value}; path=/; domain=${domain};`;
+                    document.cookie = `googtrans=${value}; path=/; domain=.${domain};`;
+                    
+                    const hostParts = domain.split('.');
+                    if (hostParts.length >= 2) {
+                        const rootDomain = hostParts.slice(-2).join('.');
+                        document.cookie = `googtrans=${value}; path=/; domain=${rootDomain};`;
+                        document.cookie = `googtrans=${value}; path=/; domain=.${rootDomain};`;
+                    }
+                } else {
+                    // Clear for all possible domains
+                    document.cookie = `googtrans=; path=/; ${expires};`;
+                    document.cookie = `googtrans=; path=/; domain=${domain}; ${expires};`;
+                    document.cookie = `googtrans=; path=/; domain=.${domain}; ${expires};`;
+                    
+                    const hostParts = domain.split('.');
+                    if (hostParts.length >= 2) {
+                        const rootDomain = hostParts.slice(-2).join('.');
+                        document.cookie = `googtrans=; path=/; domain=${rootDomain}; ${expires};`;
+                        document.cookie = `googtrans=; path=/; domain=.${rootDomain}; ${expires};`;
+                    }
+                }
+                
+                window.location.reload();
+            });
+        }
     });
+    </script>
+
+    <!-- Google Translate Programmatic Integration (loads conditionally to prevent page load delays) -->
+    <div id="google_translate_element" style="display:none;"></div>
+    <script is:inline>
+        (() => {
+            const hasEn = document.cookie.split(';').some(c => {
+                const trimmed = c.trim();
+                return trimmed.startsWith('googtrans=/ru/en') || trimmed.startsWith('googtrans=%2Fru%2Fen');
+            });
+            if (hasEn) {
+                window.googleTranslateElementInit = function() {
+                    new google.translate.TranslateElement({
+                        pageLanguage: 'ru',
+                        includedLanguages: 'en,ru',
+                        layout: google.translate.TranslateElement.InlineLayout.SIMPLE,
+                        autoDisplay: false
+                    }, 'google_translate_element');
+                };
+                const script = document.createElement('script');
+                script.src = "https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit";
+                document.body.appendChild(script);
+            }
+        })();
     </script>
 </body>
 </html>
