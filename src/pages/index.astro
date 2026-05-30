@@ -395,10 +395,30 @@ if (articleItems.length === 0) {
   articleItems = habrFallback;
 }
 
-// Fetch views for Habr articles in parallel with a 3s timeout
+// Fetch views for Habr articles in parallel with a 3s timeout and local cache
+const habrViewsCachePath = path.resolve('src/data/habr_views_cache.json');
+let habrViewsCache = {};
+let cacheChanged = false;
+
+if (fs.existsSync(habrViewsCachePath)) {
+  try {
+    habrViewsCache = JSON.parse(fs.readFileSync(habrViewsCachePath, 'utf-8'));
+  } catch (e) {
+    console.error('Error reading habr_views_cache.json:', e);
+  }
+}
+
 try {
   articleItems = await Promise.all(articleItems.map(async (item) => {
     if (item.url && item.url.includes('habr.com')) {
+      const now = Date.now();
+      const CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
+      const cached = habrViewsCache[item.url];
+
+      if (cached && (now - cached.fetchedAt) < CACHE_TTL_MS) {
+        return { ...item, views: cached.views };
+      }
+
       try {
         const pageRes = await fetch(item.url, {
           headers: {
@@ -425,15 +445,30 @@ try {
                 views = parseInt(upper.replace(/\s/g, '').replace(/,/g, '')) || 0;
               }
             }
+            habrViewsCache[item.url] = { views, fetchedAt: now };
+            cacheChanged = true;
             return { ...item, views };
           }
         }
       } catch (e: any) {
         console.error(`Failed to fetch views for Habr article ${item.url}:`, e.message || e);
       }
+
+      // Fallback to expired cached views on request failure to avoid resetting views to 0
+      if (cached) {
+        return { ...item, views: cached.views };
+      }
     }
     return item;
   }));
+
+  if (cacheChanged) {
+    try {
+      fs.writeFileSync(habrViewsCachePath, JSON.stringify(habrViewsCache, null, 2), 'utf-8');
+    } catch (e) {
+      console.error('Error writing habr_views_cache.json:', e);
+    }
+  }
 } catch (e) {
   console.error('Failed fetching Habr views in parallel:', e);
 }
@@ -443,6 +478,8 @@ const sidebarItems = sortedItems;
 ---
 <Layout title={siteTitle} description={siteDescription} schema={schema}>
 
+
+
     <div class="page-layout-grid">
       
       <!-- ROW 1 LEFT: ГЛАВНЫЕ НОВОСТИ -->
@@ -450,14 +487,14 @@ const sidebarItems = sortedItems;
           <!-- BLOCK 1: ГЛАВНЫЕ НОВОСТИ (Premium article row layout without images) -->
           {mainFeaturedItems.length > 0 && (
               <div class="today-featured-card" id="featured-news">
-                  <h2 class="featured-card-title">Главные новости</h2>
+                  <h2 class="featured-card-title">Главное</h2>
                   <div class="featured-list">
                       {mainFeaturedItems.map((item) => {
                           const timeStr = formatTimeOnly(item.date);
                           const title = truncateText(removeLeadingEmoji(item.text || ""), 105) || `Новость из Telegram ${item.message_id}`;
                           const postUrl = getPostPath(item);
                           return (
-                              <a href={postUrl} class="featured-item-link">
+                              <a href={postUrl} class="featured-item-link" data-category={getSmartBadge(item.text || "").class} data-search-text={(title + " " + (item.text || "")).toLowerCase()}>
                                   <span class="featured-item-time">{timeStr}</span>
                                   <span class="featured-item-text">{title}</span>
                                   {item.views > 0 && (
@@ -493,6 +530,9 @@ const sidebarItems = sortedItems;
                       <!-- Responsive Video Embed Container -->
                       <div class="stream-embed-container" id="stream-embed-container">
                           <!-- Embed will be dynamically injected by JS below -->
+                          <div class="stream-skeleton" id="stream-skeleton">
+                              <div class="stream-skeleton-glow"></div>
+                          </div>
                       </div>
                   </div>
               </div>
@@ -539,6 +579,8 @@ const sidebarItems = sortedItems;
                               class={`article-row ${isHidden ? 'article-row--hidden' : ''}`}
                               target={isHabr ? "_blank" : undefined}
                               rel={isHabr ? "noopener noreferrer" : undefined}
+                              data-category={badge.class}
+                              data-search-text={(title + " " + desc).toLowerCase()}
                           >
                               <div class="article-row__img-container">
                                   {item.image ? (
@@ -597,7 +639,7 @@ const sidebarItems = sortedItems;
       {sidebarItems.length > 0 && (
           <aside class="sidebar-col" id="news">
               <div class="sidebar-header" style="margin-top: 0;">
-                  <h2 class="sidebar-main-title">Все новости</h2>
+                  <h2 class="sidebar-main-title">Лента</h2>
               </div>
               
               <div class="sidebar-list">
@@ -607,7 +649,12 @@ const sidebarItems = sortedItems;
                       const postUrl = getPostPath(item);
                       const isHidden = index >= 10;
                       return (
-                          <a href={postUrl} class={`sidebar-item ${isHidden ? 'sidebar-item--hidden' : ''}`}>
+                          <a 
+                              href={postUrl} 
+                              class={`sidebar-item ${isHidden ? 'sidebar-item--hidden' : ''}`}
+                              data-category={getSmartBadge(item.text).class}
+                              data-search-text={(title + " " + item.text).toLowerCase()}
+                          >
                               <span class="sidebar-item-time">{timeStr}</span>
                               <span class="sidebar-item-text">{title}</span>
                           </a>
@@ -630,6 +677,47 @@ const sidebarItems = sortedItems;
 </Layout>
 
 <style>
+  /* Filtering helper classes */
+  .hidden-by-search {
+      display: none !important;
+  }
+
+  /* When search/filter is active, show all matching items & hide expander buttons */
+  .controls-active .article-row--hidden,
+  .controls-active .sidebar-item--hidden {
+      display: flex !important;
+  }
+  .controls-active .articles-show-more-wrap,
+  .controls-active .sidebar-show-more-wrap {
+      display: none !important;
+  }
+
+  /* STREAM BANNER SKELETON LOADER */
+  .stream-skeleton {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(25, 20, 36, 0.3);
+      overflow: hidden;
+  }
+
+  .stream-skeleton-glow {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.04), transparent);
+      transform: translateX(-100%);
+      animation: skeleton-shimmer 1.6s infinite;
+  }
+
+  @keyframes skeleton-shimmer {
+      100% {
+          transform: translateX(100%);
+      }
+  }
+
   /* MAIN PAGE GRID SYSTEM */
   .page-layout-grid {
       display: grid;
@@ -979,14 +1067,22 @@ const sidebarItems = sortedItems;
   .article-row {
       display: flex;
       gap: 1.5rem;
-      padding-bottom: 1.75rem;
+      padding: 1rem;
+      margin: 0 -1rem;
       border-bottom: 1px solid var(--border-soft);
-      transition: all 0.25s ease;
+      border-radius: 12px;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   .article-row:last-child {
-      border-bottom: none;
-      padding-bottom: 0;
+      border-bottom: 1px solid transparent;
+  }
+
+  .article-row:hover {
+      background-color: var(--card-bg);
+      border-color: var(--border-hover);
+      box-shadow: 0 8px 24px var(--accent-glow);
+      transform: translateY(-2px);
   }
 
   .article-row__img-container {
@@ -1150,13 +1246,15 @@ const sidebarItems = sortedItems;
       display: flex;
       align-items: flex-start;
       gap: 0.75rem;
-      padding: 12px 0;
+      padding: 10px 12px;
+      margin: 0 -12px;
       border-bottom: 1px dashed var(--border-dashed);
-      transition: all 0.2s ease;
+      border-radius: 8px;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   .sidebar-item:last-child {
-      border-bottom: none;
+      border-bottom: 1px dashed transparent;
   }
 
   .sidebar-item-time {
@@ -1185,6 +1283,9 @@ const sidebarItems = sortedItems;
   }
 
   .sidebar-item:hover {
+      background-color: var(--card-bg);
+      border-bottom-color: transparent;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
       transform: translateX(4px);
   }
 
@@ -1305,6 +1406,62 @@ const sidebarItems = sortedItems;
 </style>
 
 <script>
+  // Search Logic
+  document.addEventListener('DOMContentLoaded', () => {
+      const filterableItems = document.querySelectorAll('.article-row, .sidebar-item, .featured-item-link');
+      const gridContainer = document.querySelector('.page-layout-grid');
+
+      let searchQuery = '';
+
+      function applyFilters() {
+          const controlsActive = searchQuery !== '';
+          if (gridContainer) {
+              if (controlsActive) {
+                  gridContainer.classList.add('controls-active');
+              } else {
+                  gridContainer.classList.remove('controls-active');
+              }
+          }
+
+          filterableItems.forEach(item => {
+              const searchText = item.getAttribute('data-search-text') || '';
+              const matchesSearch = searchText.includes(searchQuery);
+
+              if (matchesSearch) {
+                  item.classList.remove('hidden-by-search');
+              } else {
+                  item.classList.add('hidden-by-search');
+              }
+          });
+      }
+
+      const headerSearchInput = document.getElementById('header-search-input');
+
+      function syncSearch(value) {
+          if (headerSearchInput && headerSearchInput.value !== value) {
+              headerSearchInput.value = value;
+          }
+          searchQuery = value.toLowerCase().trim();
+          applyFilters();
+      }
+
+      if (headerSearchInput) {
+          headerSearchInput.addEventListener('input', (e) => {
+              syncSearch(e.target.value);
+          });
+      }
+
+      // Check URL query parameters on load
+      const params = new URLSearchParams(window.location.search);
+      const searchParam = params.get('search');
+      if (searchParam) {
+          syncSearch(searchParam);
+          // Clean the URL query param without reload
+          const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+          window.history.replaceState({ path: newUrl }, '', newUrl);
+      }
+  });
+
   // Articles Expander
   const showMoreBtn = document.getElementById('show-more-btn');
   const articlesList = document.querySelector('.articles-list');
@@ -1353,7 +1510,7 @@ const sidebarItems = sortedItems;
                   `;
               } else {
                   statusDot?.classList.add('offline');
-                  if (statusText) statusText.textContent = 'Последнее видео с YouTube';
+                  if (statusText) statusText.textContent = 'Видео';
                   streamBlock.classList.add('offline-border');
                   embedContainer.innerHTML = `
                       <iframe
@@ -1368,7 +1525,7 @@ const sidebarItems = sortedItems;
           .catch(() => {
               // Fallback to YouTube on error
               statusDot?.classList.add('offline');
-              if (statusText) statusText.textContent = 'Последнее видео с YouTube';
+              if (statusText) statusText.textContent = 'Видео';
               streamBlock.classList.add('offline-border');
               embedContainer.innerHTML = `
                   <iframe
