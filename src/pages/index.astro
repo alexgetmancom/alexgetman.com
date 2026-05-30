@@ -1469,38 +1469,41 @@ const sidebarItems = sortedItems;
 
   /* FAQ SECTION (AEO/SEO optimized) */
   .faq-section {
-      margin-top: 4rem;
-      border-top: 1px solid var(--border);
-      padding-top: 3rem;
+      margin-top: 2.5rem;
+      border-top: none;
+      padding-top: 0;
   }
 
   .faq-list {
       display: grid;
-      gap: 1.5rem;
+      gap: 1.75rem;
       margin-top: 1.5rem;
   }
 
   .faq-item {
-      background-color: var(--card-bg);
-      border: 1px solid var(--border);
-      padding: 0;
-      border-radius: 12px;
-      transition: border-color 0.25s ease, box-shadow 0.25s ease;
+      background-color: transparent;
+      border: none;
+      border-left: 3px solid var(--border);
+      padding: 0 0 0 1.25rem;
+      border-radius: 0;
+      transition: border-color 0.25s ease;
       overflow: hidden;
   }
 
   .faq-item:hover {
-      border-color: var(--border-hover);
-      box-shadow: 0 4px 15px var(--accent-glow);
+      border-left-color: var(--accent);
+      box-shadow: none;
   }
 
   /* FAQ main collapse styles */
   .faq-header-row {
-      display: flex;
+      display: inline-flex;
       align-items: center;
-      justify-content: space-between;
+      gap: 1.25rem;
       margin-bottom: 1.5rem;
       transition: margin 0.3s ease;
+      cursor: pointer;
+      user-select: none;
   }
 
   .faq-section--collapsed .faq-header-row {
@@ -1510,21 +1513,24 @@ const sidebarItems = sortedItems;
   .toggle-faq-btn {
       display: inline-flex;
       align-items: center;
-      gap: 0.4rem;
-      background: transparent;
-      border: none;
-      color: #6c7482;
-      font-family: var(--font-mono);
-      font-size: 0.72rem;
+      gap: 0.5rem;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      color: var(--text-header);
+      font-family: var(--font-heading);
+      font-size: 0.88rem;
+      font-weight: 600;
       cursor: pointer;
-      padding: 4px 8px;
-      border-radius: 4px;
+      padding: 6px 14px;
+      border-radius: 8px;
       transition: all 0.2s ease;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
   }
 
   .toggle-faq-btn:hover {
-      color: var(--text-header);
-      background-color: var(--border-soft);
+      border-color: var(--accent);
+      color: var(--accent);
+      background-color: var(--accent-glow);
   }
 
   .faq-toggle-icon {
@@ -1550,7 +1556,7 @@ const sidebarItems = sortedItems;
 
   .faq-question {
       margin: 0;
-      padding: 1.5rem 1.5rem 0.5rem;
+      padding: 0.2rem 0 0.5rem 0;
       font-size: 1.1rem;
       font-weight: 700;
       color: var(--text-header);
@@ -1558,7 +1564,7 @@ const sidebarItems = sortedItems;
 
   .faq-answer {
       margin: 0;
-      padding: 0 1.5rem 1.5rem;
+      padding: 0 0 0.2rem 0;
       font-size: 0.95rem;
       line-height: 1.6;
       color: var(--text-main);

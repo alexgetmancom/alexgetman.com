@@ -30,3 +30,6 @@ yarn-error.log*
 pnpm-debug.log*
 .env
 .env.production
+
+# Cache and dynamically modified files
+/src/data/habr_views_cache.json
