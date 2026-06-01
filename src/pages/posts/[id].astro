@@ -233,6 +233,14 @@ const schema = JSON.stringify(schemaObject);
           </div>
       </article>
 
+      <!-- Comments Section (Giscus) -->
+      <div class="comments-section">
+          <h2 class="comments-title">Комментарии</h2>
+          <div id="giscus-container" class="giscus-container">
+              <!-- Dynamic Giscus iframe will load here -->
+          </div>
+      </div>
+
       <!-- Related Posts Section -->
       {latestPosts && latestPosts.length > 0 && (
           <div class="related-posts">
