@@ -4,7 +4,7 @@ interface Props {
 }
 
 const { youtubeId } = Astro.props;
-const youtubeThumbnailUrl = `https://img.youtube.com/vi/${youtubeId}/maxresdefault.jpg`;
+const youtubeThumbnailUrl = `/stream-cover-${youtubeId}.webp`;
 ---
 
 <div class="stream-banner" id="stream-block" data-youtube-id={youtubeId}>
@@ -54,7 +54,7 @@ const youtubeThumbnailUrl = `https://img.youtube.com/vi/${youtubeId}/maxresdefau
     return `
       <div class="stream-lazy-cover youtube-cover" id="stream-play-trigger">
           <img
-              src="https://img.youtube.com/vi/${videoId}/maxresdefault.jpg"
+              src="/stream-cover-${videoId}.webp"
               alt="Запустить видео"
               class="stream-cover-img"
               width="640"

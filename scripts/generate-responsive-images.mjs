@@ -4,7 +4,10 @@ import sharp from 'sharp';
 
 const root = process.cwd();
 const habrDir = path.join(root, 'public', 'habr-images');
+const publicDir = path.join(root, 'public');
 const widths = [360, 640, 960];
+const youtubeChannelFeed = 'https://www.youtube.com/feeds/videos.xml?channel_id=UCMFl8-kqE8n9cyErKFSbPuQ';
+const fallbackYoutubeId = 'e-RHZvID8q8';
 
 async function exists(filePath) {
   try {
@@ -61,12 +64,12 @@ async function generateHabrImages() {
 }
 
 async function generateAvatar() {
-  const inputPath = path.join(root, 'public', 'avatar-small.png');
+  const inputPath = path.join(publicDir, 'avatar-small.png');
   if (!(await exists(inputPath))) {
     return;
   }
 
-  const outputPath = path.join(root, 'public', 'avatar-small.webp');
+  const outputPath = path.join(publicDir, 'avatar-small.webp');
   if (!(await needsUpdate(inputPath, outputPath))) {
     return;
   }
@@ -77,5 +80,63 @@ async function generateAvatar() {
     .toFile(outputPath);
 }
 
+async function getLatestCompletedYoutubeId() {
+  try {
+    const response = await fetch(youtubeChannelFeed);
+    if (!response.ok) {
+      return fallbackYoutubeId;
+    }
+
+    const xmlText = await response.text();
+    const entryRegex = /<entry>([\s\S]*?)<\/entry>/g;
+    let match;
+
+    while ((match = entryRegex.exec(xmlText)) !== null) {
+      const entryContent = match[1];
+      const idMatch = entryContent.match(/<yt:videoId>([^<]+)<\/yt:videoId>/);
+      const titleMatch = entryContent.match(/<title>([^<]+)<\/title>/);
+      if (!idMatch || !titleMatch) {
+        continue;
+      }
+
+      const title = titleMatch[1].trim().toLowerCase();
+      if (
+        title.includes('ожидаем') ||
+        title.includes('ожидани') ||
+        title.includes('waiting') ||
+        title.includes('upcoming')
+      ) {
+        continue;
+      }
+
+      return idMatch[1].trim();
+    }
+  } catch {
+    return fallbackYoutubeId;
+  }
+
+  return fallbackYoutubeId;
+}
+
+async function generateStreamCover() {
+  const videoId = await getLatestCompletedYoutubeId();
+  const outputPath = path.join(publicDir, `stream-cover-${videoId}.webp`);
+  if (await exists(outputPath)) {
+    return;
+  }
+
+  const response = await fetch(`https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`);
+  if (!response.ok) {
+    return;
+  }
+
+  const source = Buffer.from(await response.arrayBuffer());
+  await sharp(source)
+    .resize({ width: 640, withoutEnlargement: true })
+    .webp({ quality: 76, effort: 6 })
+    .toFile(outputPath);
+}
+
 await generateHabrImages();
 await generateAvatar();
+await generateStreamCover();
