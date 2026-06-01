@@ -15,7 +15,8 @@ import {
   removeLeadingEmoji,
   getPostPath,
   getSmartBadge,
-  formatViewsCount
+  formatViewsCount,
+  getFirstSentence
 } from '../utils/helpers';
 
 // Configuration
@@ -158,12 +159,16 @@ const schemaObject = {
       "@type": "ItemList",
       "@id": "https://ialexey.ru/#telegram-feed",
       "name": "Последние посты Telegram",
-      "itemListElement": sortedItems.map((item, idx) => ({
-        "@type": "ListItem",
-        "position": idx + 1,
-        "url": `https://ialexey.ru${getPostPath(item)}`,
-        "name": truncateText(item.text || "", 60)
-      }))
+      "itemListElement": sortedItems.map((item, idx) => {
+        const textContent = (item.text || "").trim();
+        const titleRaw = item.title ? item.title : getFirstSentence(textContent);
+        return {
+          "@type": "ListItem",
+          "position": idx + 1,
+          "url": `https://ialexey.ru${getPostPath(item)}`,
+          "name": truncateText(titleRaw, 60)
+        };
+      })
     }] : [])
   ]
 };
@@ -453,7 +458,9 @@ const sidebarItems = sortedItems.map(item => {
                   <div class="featured-list">
                       {mainFeaturedItems.map((item) => {
                           const timeStr = formatTimeOnly(item.date);
-                          const title = truncateText(removeLeadingEmoji(item.text || ""), 105) || `Новость из Telegram ${item.message_id}`;
+                          const textContent = (item.text || "").trim();
+                          const titleRaw = item.title ? item.title : getFirstSentence(textContent);
+                          const title = truncateText(removeLeadingEmoji(titleRaw), 105) || `Новость из Telegram ${item.message_id}`;
                           const postUrl = getPostPath(item);
                           return (
                               <a href={postUrl} class="featured-item-link" data-category={getSmartBadge(item.text || "").class} data-search-text={(title + " " + (item.text || "")).toLowerCase()}>

@@ -5,7 +5,8 @@ import {
   removeLeadingEmoji,
   getSmartBadge,
   getPostPath,
-  formatViewsCount
+  formatViewsCount,
+  getFirstSentence
 } from '../utils/helpers';
 
 interface Props {
@@ -16,7 +17,9 @@ interface Props {
 const { item, index } = Astro.props;
 
 const timeStr = formatTimeOnly(item.date);
-const title = truncateText(removeLeadingEmoji(item.text || ""), 120) || `Обновление ленты ${item.message_id}`;
+const textContent = (item.text || "").trim();
+const titleRaw = item.title ? item.title : getFirstSentence(textContent);
+const title = truncateText(removeLeadingEmoji(titleRaw), 120) || `Обновление ленты ${item.message_id}`;
 const postUrl = getPostPath(item);
 const isHidden = index >= 10;
 const badge = getSmartBadge(item.text);

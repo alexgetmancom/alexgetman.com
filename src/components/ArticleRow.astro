@@ -6,7 +6,8 @@ import {
   truncateText,
   getPostPath,
   getSmartBadge,
-  formatViewsCount
+  formatViewsCount,
+  getFirstSentence
 } from '../utils/helpers';
 
 interface Props {
@@ -22,8 +23,18 @@ function cleanArticleTitle(title: string) {
 }
 
 const dateStr = formatDateRussian(item.date);
-const title = truncateText(cleanArticleTitle(item.title || item.text || ""), 86);
-const desc = truncateText(item.desc || item.text || "", 180);
+const textContent = (item.text || "").trim();
+const hasTitle = !!item.title;
+
+const titleRaw = hasTitle ? cleanArticleTitle(item.title) : getFirstSentence(textContent);
+const title = truncateText(titleRaw, 86);
+
+const descRaw = hasTitle ? (item.desc || "") : (() => {
+  const idx = textContent.indexOf(titleRaw);
+  return idx !== -1 ? textContent.slice(idx + titleRaw.length).trim() : textContent;
+})();
+const desc = truncateText(descRaw, 180);
+
 const isHabr = !!item.url;
 const postUrl = isHabr ? item.url : getPostPath(item);
 const isHidden = index >= 5;
@@ -102,7 +113,7 @@ if (item.categories && item.categories.length > 0) {
     </div>
     <div class="article-row__content">
         <h3 class="article-row__title">{title}</h3>
-        <p class="article-row__desc">{desc}</p>
+        {desc && <p class="article-row__desc">{desc}</p>}
         <div class="article-row__meta-row">
             <span class="article-row__date">{dateStr}</span>
             {isHabr && (
