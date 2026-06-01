@@ -7,9 +7,16 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
+# Local editor and backup files
+*.bak
+*.tmp
+*.swp
+*.swo
+
 # Feed Application dynamic files and secrets
 /feed/ialexey-feed.env
 /feed/data/
+/feed/*.log
 
 # Local static files that are generated dynamically on server (root only)
 /feed.json
@@ -30,6 +37,9 @@ yarn-error.log*
 pnpm-debug.log*
 .env
 .env.production
+.env.*
+!.env.example
+!.env.*.example
 
 # Cache and dynamically modified files
 /src/data/habr_views_cache.json

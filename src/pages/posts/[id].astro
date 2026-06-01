@@ -6,11 +6,15 @@ import Layout from '../../layouts/Layout.astro';
 // Helper to extract the first sentence as plain text
 function getFirstSentence(text: string) {
   if (!text) return "";
+  const newlineIdx = text.indexOf('\n');
   const match = text.match(/^.*?[.!?](?:\s|\n|$)/s);
   if (match) {
-    return match[0].trim();
+    const sentence = match[0].trim();
+    if (newlineIdx !== -1 && newlineIdx < match[0].length) {
+      return text.slice(0, newlineIdx).trim();
+    }
+    return sentence;
   }
-  const newlineIdx = text.indexOf('\n');
   if (newlineIdx !== -1) {
     return text.slice(0, newlineIdx).trim();
   }
@@ -24,11 +28,15 @@ export async function getStaticPaths() {
   
   function getFirstSentence(text: string) {
     if (!text) return "";
+    const newlineIdx = text.indexOf('\n');
     const match = text.match(/^.*?[.!?](?:\s|\n|$)/s);
     if (match) {
-      return match[0].trim();
+      const sentence = match[0].trim();
+      if (newlineIdx !== -1 && newlineIdx < match[0].length) {
+        return text.slice(0, newlineIdx).trim();
+      }
+      return sentence;
     }
-    const newlineIdx = text.indexOf('\n');
     if (newlineIdx !== -1) {
       return text.slice(0, newlineIdx).trim();
     }
