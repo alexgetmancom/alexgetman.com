@@ -60,7 +60,10 @@ if (item.categories && item.categories.length > 0) {
                 src={item.image.startsWith('http') ? item.image : `/${item.image}`} 
                 class="article-row__img" 
                 alt={title} 
-                loading="lazy"
+                loading={index < 2 ? "eager" : "lazy"}
+                fetchpriority={index === 0 ? "high" : undefined}
+                width="240"
+                height="135"
             />
         ) : (
             <div class="article-row__placeholder-img">

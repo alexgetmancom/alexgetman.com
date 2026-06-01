@@ -47,25 +47,51 @@ const { youtubeId } = Astro.props;
                   statusDot?.classList.add('live');
                   if (statusText) statusText.textContent = 'LIVE: Трансляция на Twitch';
                   streamBlock.classList.add('live-border');
+                  
                   embedContainer.innerHTML = `
-                      <iframe
-                          src="https://player.twitch.tv/?channel=ialexeyru&parent=ialexey.ru&parent=localhost&parent=127.0.0.1&autoplay=false"
-                          style="border: 0; width: 100%; height: 100%;"
-                          allowfullscreen="true">
-                      </iframe>
+                      <div class="stream-lazy-cover twitch-cover" id="stream-play-trigger">
+                          <div class="play-btn-circle">
+                              <svg viewBox="0 0 24 24" fill="currentColor" class="play-icon-svg"><path d="M8 5v14l11-7z"/></svg>
+                          </div>
+                          <span class="cover-label">Смотреть на Twitch</span>
+                      </div>
                   `;
+                  
+                  document.getElementById('stream-play-trigger')?.addEventListener('click', () => {
+                      embedContainer.innerHTML = `
+                          <iframe
+                              src="https://player.twitch.tv/?channel=ialexeyru&parent=ialexey.ru&parent=localhost&parent=127.0.0.1&autoplay=true"
+                              style="border: 0; width: 100%; height: 100%;"
+                              allowfullscreen="true">
+                          </iframe>
+                      `;
+                  });
               } else {
                   statusDot?.classList.add('offline');
                   if (statusText) statusText.textContent = 'Видео';
                   streamBlock.classList.add('offline-border');
+                  
+                  const thumbnailUrl = `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg`;
                   embedContainer.innerHTML = `
-                      <iframe
-                          src="https://www.youtube.com/embed/${youtubeId}"
-                          style="border: 0; width: 100%; height: 100%;"
-                          allowfullscreen="true"
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture">
-                      </iframe>
+                      <div class="stream-lazy-cover youtube-cover" id="stream-play-trigger" style="background-image: url('${thumbnailUrl}');">
+                          <div class="cover-overlay"></div>
+                          <div class="play-btn-circle yt-red-btn">
+                              <svg viewBox="0 0 24 24" fill="currentColor" class="play-icon-svg"><path d="M8 5v14l11-7z"/></svg>
+                          </div>
+                          <span class="cover-label">Запустить видео</span>
+                      </div>
                   `;
+                  
+                  document.getElementById('stream-play-trigger')?.addEventListener('click', () => {
+                      embedContainer.innerHTML = `
+                          <iframe
+                              src="https://www.youtube.com/embed/${youtubeId}?autoplay=1"
+                              style="border: 0; width: 100%; height: 100%;"
+                              allowfullscreen="true"
+                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture">
+                          </iframe>
+                      `;
+                  });
               }
           })
           .catch(() => {
@@ -73,14 +99,28 @@ const { youtubeId } = Astro.props;
               statusDot?.classList.add('offline');
               if (statusText) statusText.textContent = 'Видео';
               streamBlock.classList.add('offline-border');
+              
+              const thumbnailUrl = `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg`;
               embedContainer.innerHTML = `
-                  <iframe
-                      src="https://www.youtube.com/embed/${youtubeId}"
-                      style="border: 0; width: 100%; height: 100%;"
-                      allowfullscreen="true"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture">
-                  </iframe>
+                  <div class="stream-lazy-cover youtube-cover" id="stream-play-trigger" style="background-image: url('${thumbnailUrl}');">
+                      <div class="cover-overlay"></div>
+                      <div class="play-btn-circle yt-red-btn">
+                          <svg viewBox="0 0 24 24" fill="currentColor" class="play-icon-svg"><path d="M8 5v14l11-7z"/></svg>
+                      </div>
+                      <span class="cover-label">Запустить видео</span>
+                  </div>
               `;
+              
+              document.getElementById('stream-play-trigger')?.addEventListener('click', () => {
+                  embedContainer.innerHTML = `
+                      <iframe
+                          src="https://www.youtube.com/embed/${youtubeId}?autoplay=1"
+                          style="border: 0; width: 100%; height: 100%;"
+                          allowfullscreen="true"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture">
+                      </iframe>
+                  `;
+              });
           });
 
       // 2. Collapse Toggle
@@ -248,5 +288,82 @@ const { youtubeId } = Astro.props;
   @keyframes skeletonLoading {
       0% { transform: translateX(-100%); }
       100% { transform: translateX(100%); }
+  }
+
+  /* Lazy Lite Embed Covers */
+  .stream-lazy-cover {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      cursor: pointer;
+      user-select: none;
+  }
+
+  .twitch-cover {
+      background: linear-gradient(135deg, #6441a5 0%, #2b1b54 100%);
+  }
+
+  .youtube-cover {
+      background-position: center;
+      background-size: cover;
+      background-repeat: no-repeat;
+  }
+
+  .cover-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.4);
+      z-index: 1;
+  }
+
+  .play-btn-circle {
+      width: 68px;
+      height: 68px;
+      background: rgba(145, 70, 255, 0.85); /* Twitch purple */
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 2px solid #ffffff;
+      z-index: 2;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+  }
+
+  .yt-red-btn {
+      background: rgba(229, 9, 20, 0.9) !important; /* YouTube Red */
+  }
+
+  .play-icon-svg {
+      width: 28px;
+      height: 28px;
+      margin-left: 4px;
+      color: #ffffff;
+  }
+
+  .cover-label {
+      position: absolute;
+      bottom: 12px;
+      font-family: var(--font-heading);
+      font-size: 0.72rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: #ffffff;
+      opacity: 0.85;
+      z-index: 2;
+      transition: opacity 0.25s ease;
+  }
+
+  .stream-lazy-cover:hover .play-btn-circle {
+      transform: scale(1.1);
+      box-shadow: 0 0 25px rgba(255, 255, 255, 0.3);
+  }
+
+  .stream-lazy-cover:hover .cover-label {
+      opacity: 1;
   }
 </style>

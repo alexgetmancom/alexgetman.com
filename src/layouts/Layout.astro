@@ -45,6 +45,8 @@ const publicBaseUrl = "https://ialexey.ru";
     <meta property="og:description" content={cleanDescription}>
     <meta property="og:url" content={canonicalUrl}>
     <meta property="og:image" content={`${publicBaseUrl}/avatar.png`}>
+    <meta property="og:image:width" content="500">
+    <meta property="og:image:height" content="500">
 
     <!-- Twitter -->
     <meta name="twitter:card" content="summary">
@@ -84,7 +86,7 @@ const publicBaseUrl = "https://ialexey.ru";
             --card-bg: #111620; /* Deep card background */
             --text-main: #DDE3EC; /* High comfort primary grey text */
             --text-secondary: #A3ADBC; /* Softer secondary grey text */
-            --text-muted: #6F7888; /* Muted metadata/date grey */
+            --text-muted: #8b949e; /* Muted metadata/date grey (Contrast fix for Lighthouse) */
             --text-header: #F3F6FA; /* Soft pure-like white for major headers */
             --accent: #F04465; /* Calm signature crimson red */
             --accent-glow: rgba(240, 68, 101, 0.15);
@@ -92,7 +94,7 @@ const publicBaseUrl = "https://ialexey.ru";
             --border-hover: rgba(240, 68, 101, 0.35);
             --border-soft: #202635;
             --border-dashed: rgba(111, 120, 136, 0.25);
-            --meta-dot: #6F7888;
+            --meta-dot: #8b949e;
             --font-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
             --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
             --font-heading: 'Montserrat', sans-serif;
@@ -932,7 +934,10 @@ const publicBaseUrl = "https://ialexey.ru";
                         },
                         execute: async (args) => {
                           try {
-                            const res = await fetch('/feed.json');
+                            let res = await fetch('/feed.json').catch(() => null);
+                            if (!res || !res.ok) {
+                              res = await fetch('https://ialexey.ru/feed.json');
+                            }
                             const data = await res.json();
                             const items = data.items || data;
                             return {
@@ -958,7 +963,10 @@ const publicBaseUrl = "https://ialexey.ru";
                     }
                   }, async (args) => {
                     try {
-                      const res = await fetch('/feed.json');
+                      let res = await fetch('/feed.json').catch(() => null);
+                      if (!res || !res.ok) {
+                        res = await fetch('https://ialexey.ru/feed.json');
+                      }
                       const data = await res.json();
                       const items = data.items || data;
                       return {
@@ -989,7 +997,7 @@ const publicBaseUrl = "https://ialexey.ru";
     <aside class="nav-drawer" id="nav-drawer">
         <div class="nav-drawer__header">
             <a href="/" class="logo-wrap logo-wrap--drawer">
-                <img src="/avatar.png" alt="Алексей Гетманец" class="logo-avatar" />
+                <img src="/avatar-small.png" alt="Алексей Гетманец" class="logo-avatar" />
                 <span class="logo-text">Алексей Гетманец</span>
             </a>
             <button class="nav-drawer__close" id="nav-close-btn" aria-label="Закрыть меню">
@@ -1051,7 +1059,7 @@ const publicBaseUrl = "https://ialexey.ru";
             </button>
             
             <a href="/" class="logo-wrap">
-                <img src="/avatar.png" alt="Алексей Гетманец" class="logo-avatar" />
+                <img src="/avatar-small.png" alt="Алексей Гетманец" class="logo-avatar" />
                 <span class="logo-text">Алексей Гетманец</span>
             </a>
             
@@ -1137,6 +1145,9 @@ const publicBaseUrl = "https://ialexey.ru";
     <!-- Tracking and interaction logic -->
     <script is:inline>
     (() => {
+        if (window.location.hostname.includes("localhost") || window.location.hostname.includes("127.0.0.1")) {
+            return;
+        }
         const payload = JSON.stringify({ path: window.location.pathname || "/" });
         try {
             if (navigator.sendBeacon) {

@@ -6,7 +6,8 @@ import {
   getFirstSentence,
   truncateText,
   getSmartBadge,
-  formatDate
+  formatDate,
+  sanitizeHtml
 } from '../../utils/helpers';
 
 // getStaticPaths is required in Astro static mode for dynamic routes
@@ -211,7 +212,7 @@ const schema = JSON.stringify(schemaObject);
               </div>
           </div>
           
-          <h1 class="article-title" set:html={postTitleHtml}></h1>
+          <h1 class="article-title" set:html={sanitizeHtml(postTitleHtml)}></h1>
           
           {item.image && (
               <div class="article-image-wrap">
@@ -223,7 +224,7 @@ const schema = JSON.stringify(schemaObject);
               </div>
           )}
           
-          <div class="article-body" set:html={postBodyHtml || item.html || item.text}></div>
+          <div class="article-body" set:html={sanitizeHtml(postBodyHtml || item.html || item.text)}></div>
 
           <!-- Divider -->
           <div class="post-divider"></div>
