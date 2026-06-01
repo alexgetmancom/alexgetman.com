@@ -37,6 +37,10 @@ mkdir -p "$PUBLIC"
 # 1. Sync compiled static site, excluding dynamic media files and tracking stats
 /usr/bin/rsync -a --delete --exclude "media" --exclude "stats" "$REPO"/dist/ "$PUBLIC"/
 
+# 1a. Sync cached habr images (not in dist/ since they're downloaded during build, after Astro copies public/)
+mkdir -p "$PUBLIC"/habr-images
+/usr/bin/rsync -a "$REPO"/public/habr-images/ "$PUBLIC"/habr-images/
+
 # 2. Sync Python feed scripts to public directory
 mkdir -p "$PUBLIC"/feed
 /usr/bin/rsync -a --delete "$REPO"/feed/ "$PUBLIC"/feed/

@@ -71,7 +71,7 @@ const { youtubeId } = Astro.props;
                   if (statusText) statusText.textContent = 'Видео';
                   streamBlock.classList.add('offline-border');
                   
-                  const thumbnailUrl = `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg`;
+                  const thumbnailUrl = `https://img.youtube.com/vi/${youtubeId}/maxresdefault.jpg`;
                   embedContainer.innerHTML = `
                       <div class="stream-lazy-cover youtube-cover" id="stream-play-trigger" style="background-image: url('${thumbnailUrl}');">
                           <div class="cover-overlay"></div>
@@ -100,7 +100,7 @@ const { youtubeId } = Astro.props;
               if (statusText) statusText.textContent = 'Видео';
               streamBlock.classList.add('offline-border');
               
-              const thumbnailUrl = `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg`;
+              const thumbnailUrl = `https://img.youtube.com/vi/${youtubeId}/maxresdefault.jpg`;
               embedContainer.innerHTML = `
                   <div class="stream-lazy-cover youtube-cover" id="stream-play-trigger" style="background-image: url('${thumbnailUrl}');">
                       <div class="cover-overlay"></div>
