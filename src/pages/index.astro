@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import sharp from 'sharp';
 import Layout from '../layouts/Layout.astro';
 import habrFallback from '../data/habr.json';
 import ArticleRow from '../components/ArticleRow.astro';
@@ -332,7 +333,7 @@ async function downloadHabrImage(url: string): Promise<string> {
   }
   try {
     const hash = crypto.createHash('md5').update(url).digest('hex');
-    // Always store as JPEG — PNG from Habr can be 5-10× larger than JPEG
+    // Always store as JPEG — PNG from Habr can be 5-10× larger than JPEG at 85% quality
     const filename = `${hash}.jpg`;
     const filepath = path.join(habrImagesDir, filename);
     const publicPath = `habr-images/${filename}`;
@@ -348,9 +349,11 @@ async function downloadHabrImage(url: string): Promise<string> {
       signal: AbortSignal.timeout(10000)
     });
     if (res.ok) {
-      const buffer = Buffer.from(await res.arrayBuffer());
-      fs.writeFileSync(filepath, buffer);
-      console.log(`Downloaded image: ${url} -> ${filepath}`);
+      const rawBuffer = Buffer.from(await res.arrayBuffer());
+      // Convert to JPEG via sharp (handles PNG, WebP, GIF → JPEG, ~80% size reduction for PNG)
+      const jpegBuffer = await sharp(rawBuffer).jpeg({ quality: 85, mozjpeg: true }).toBuffer();
+      fs.writeFileSync(filepath, jpegBuffer);
+      console.log(`Downloaded+converted image: ${url} -> ${filepath} (${Math.round(jpegBuffer.length/1024)}KB)`);
       return publicPath;
     }
   } catch (e: any) {
