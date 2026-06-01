@@ -332,15 +332,8 @@ async function downloadHabrImage(url: string): Promise<string> {
   }
   try {
     const hash = crypto.createHash('md5').update(url).digest('hex');
-    let ext = '.jpg';
-    const extMatch = url.match(/\.(png|jpg|jpeg|gif|webp|svg)(?:\?|$)/i);
-    if (extMatch) {
-      ext = extMatch[0].toLowerCase();
-      if (ext.includes('?')) {
-        ext = ext.split('?')[0];
-      }
-    }
-    const filename = `${hash}${ext}`;
+    // Always store as JPEG — PNG from Habr can be 5-10× larger than JPEG
+    const filename = `${hash}.jpg`;
     const filepath = path.join(habrImagesDir, filename);
     const publicPath = `habr-images/${filename}`;
 
