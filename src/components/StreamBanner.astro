@@ -37,6 +37,62 @@ const { youtubeId } = Astro.props;
   const toggleText = toggleBtn?.querySelector('.toggle-text');
   const youtubeId = streamBlock?.getAttribute('data-youtube-id') || 'e-RHZvID8q8';
 
+  // Pick the best available YouTube thumbnail (maxres → sd → hq)
+  // YouTube returns a tiny 120×90 placeholder when maxresdefault doesn't exist
+  function getBestThumbnail(videoId) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        // If width ≤ 120 — YouTube served the «no thumbnail» placeholder → fallback
+        if (img.naturalWidth <= 120) {
+          resolve(`https://img.youtube.com/vi/${videoId}/sddefault.jpg`);
+        } else {
+          resolve(`https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`);
+        }
+      };
+      img.onerror = () => resolve(`https://img.youtube.com/vi/${videoId}/hqdefault.jpg`);
+      img.src = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
+    });
+  }
+
+  function buildYoutubeCover(videoId, thumbnailUrl) {
+    return `
+      <div class="stream-lazy-cover youtube-cover" id="stream-play-trigger" style="background-image: url('${thumbnailUrl}');">
+          <div class="cover-overlay"></div>
+          <div class="play-btn-circle yt-red-btn">
+              <svg viewBox="0 0 24 24" fill="currentColor" class="play-icon-svg"><path d="M8 5v14l11-7z"/></svg>
+          </div>
+          <span class="cover-label">Запустить видео</span>
+      </div>
+    `;
+  }
+
+  function attachYoutubeClick(videoId) {
+    document.getElementById('stream-play-trigger')?.addEventListener('click', () => {
+      if (!embedContainer) return;
+      embedContainer.innerHTML = `
+        <iframe
+            src="https://www.youtube.com/embed/${videoId}?autoplay=1"
+            style="border: 0; width: 100%; height: 100%;"
+            allowfullscreen="true"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture">
+        </iframe>
+      `;
+    });
+  }
+
+  function showYoutubeOffline(videoId) {
+    if (!embedContainer) return;
+    statusDot?.classList.add('offline');
+    if (statusText) statusText.textContent = 'Видео';
+    streamBlock?.classList.add('offline-border');
+    getBestThumbnail(videoId).then(url => {
+      if (!embedContainer) return;
+      embedContainer.innerHTML = buildYoutubeCover(videoId, url);
+      attachYoutubeClick(videoId);
+    });
+  }
+
   if (streamBlock && embedContainer) {
       // 1. Fetch live status from Decapi.me
       fetch('https://decapi.me/twitch/uptime/ialexeyru')
@@ -58,6 +114,7 @@ const { youtubeId } = Astro.props;
                   `;
                   
                   document.getElementById('stream-play-trigger')?.addEventListener('click', () => {
+                      if (!embedContainer) return;
                       embedContainer.innerHTML = `
                           <iframe
                               src="https://player.twitch.tv/?channel=ialexeyru&parent=ialexey.ru&parent=localhost&parent=127.0.0.1&autoplay=true"
@@ -67,61 +124,10 @@ const { youtubeId } = Astro.props;
                       `;
                   });
               } else {
-                  statusDot?.classList.add('offline');
-                  if (statusText) statusText.textContent = 'Видео';
-                  streamBlock.classList.add('offline-border');
-                  
-                  const thumbnailUrl = `https://img.youtube.com/vi/${youtubeId}/maxresdefault.jpg`;
-                  embedContainer.innerHTML = `
-                      <div class="stream-lazy-cover youtube-cover" id="stream-play-trigger" style="background-image: url('${thumbnailUrl}');">
-                          <div class="cover-overlay"></div>
-                          <div class="play-btn-circle yt-red-btn">
-                              <svg viewBox="0 0 24 24" fill="currentColor" class="play-icon-svg"><path d="M8 5v14l11-7z"/></svg>
-                          </div>
-                          <span class="cover-label">Запустить видео</span>
-                      </div>
-                  `;
-                  
-                  document.getElementById('stream-play-trigger')?.addEventListener('click', () => {
-                      embedContainer.innerHTML = `
-                          <iframe
-                              src="https://www.youtube.com/embed/${youtubeId}?autoplay=1"
-                              style="border: 0; width: 100%; height: 100%;"
-                              allowfullscreen="true"
-                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture">
-                          </iframe>
-                      `;
-                  });
+                  showYoutubeOffline(youtubeId);
               }
           })
-          .catch(() => {
-              // Fallback to YouTube on error
-              statusDot?.classList.add('offline');
-              if (statusText) statusText.textContent = 'Видео';
-              streamBlock.classList.add('offline-border');
-              
-              const thumbnailUrl = `https://img.youtube.com/vi/${youtubeId}/maxresdefault.jpg`;
-              embedContainer.innerHTML = `
-                  <div class="stream-lazy-cover youtube-cover" id="stream-play-trigger" style="background-image: url('${thumbnailUrl}');">
-                      <div class="cover-overlay"></div>
-                      <div class="play-btn-circle yt-red-btn">
-                          <svg viewBox="0 0 24 24" fill="currentColor" class="play-icon-svg"><path d="M8 5v14l11-7z"/></svg>
-                      </div>
-                      <span class="cover-label">Запустить видео</span>
-                  </div>
-              `;
-              
-              document.getElementById('stream-play-trigger')?.addEventListener('click', () => {
-                  embedContainer.innerHTML = `
-                      <iframe
-                          src="https://www.youtube.com/embed/${youtubeId}?autoplay=1"
-                          style="border: 0; width: 100%; height: 100%;"
-                          allowfullscreen="true"
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture">
-                      </iframe>
-                  `;
-              });
-          });
+          .catch(() => showYoutubeOffline(youtubeId));
 
       // 2. Collapse Toggle
       if (toggleBtn && toggleText) {
