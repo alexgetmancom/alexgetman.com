@@ -454,7 +454,6 @@ const sidebarItems = sortedItems.map(item => {
           <!-- BLOCK 1: ГЛАВНЫЕ НОВОСТИ (Premium article row layout without images) -->
           {mainFeaturedItems.length > 0 && (
               <div class="today-featured-card" id="featured-news">
-                  <h2 class="featured-card-title">Главное</h2>
                   <div class="featured-list">
                       {mainFeaturedItems.map((item) => {
                           const timeStr = formatTimeOnly(item.date);
@@ -481,7 +480,6 @@ const sidebarItems = sortedItems.map(item => {
 
           <!-- BLOCK 2: СТАТЬИ -->
           <section class="articles-section" id="articles">
-              <h2 class="section-title">Статьи</h2>
               {articleItems.length === 0 ? (
                   <div class="telegram-feed__empty" style="padding: 3rem; text-align: center;">Постов пока нет. Новые посты появятся здесь автоматически!</div>
               ) : (
@@ -509,10 +507,6 @@ const sidebarItems = sortedItems.map(item => {
               <StreamBanner youtubeId={latestCompletedVideoId} />
 
               <div class="sidebar-news-section" id="news">
-                  <div class="sidebar-header">
-                      <h2 class="sidebar-main-title">Лента</h2>
-                  </div>
-                  
                   <div class="sidebar-list">
                       {sidebarItems.map((item, index) => (
                           <SidebarItem item={item} index={index} />
@@ -659,7 +653,7 @@ const sidebarItems = sortedItems.map(item => {
   .articles-list {
       display: flex;
       flex-direction: column;
-      gap: 1.75rem;
+      gap: 0.5rem;
   }
 
   /* 4. CHAMPIONAT SIDEBAR - ALIGNED TO TOP GRID */
