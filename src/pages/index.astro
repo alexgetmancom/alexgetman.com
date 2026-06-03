@@ -449,36 +449,13 @@ function cleanArticleTitle(title: string) {
   return title.replace(/^\[Перевод\]\s*/i, "").trim();
 }
 
-const latestUpdateText = sortedItems[0] ? `${formatDateRussian(sortedItems[0].date)} MSK` : "ожидает первую новость";
 const featuredCriterionText = mainFeaturedItems.some(item => item.views > 0)
   ? "по просмотрам Telegram за последние 7 дней"
   : "последние новости";
 ---
 <Layout title={siteTitle} description={siteDescription} schema={schema}>
 
-    <section class="editorial-intro" aria-labelledby="home-title">
-        <div class="editorial-copy">
-            <p class="editorial-kicker">ИИ-лента</p>
-            <h1 id="home-title">Сливы и новости ИИ</h1>
-            <p class="editorial-subtitle">Короткая лента, статьи и видео от Алексея Гетманца</p>
-            <p class="editorial-updated">Обновлено: {latestUpdateText}</p>
-        </div>
-        <nav class="quick-links" aria-label="Быстрые ссылки">
-            <a href="https://t.me/iAlexeyRu" target="_blank" rel="noopener noreferrer">Telegram</a>
-            <a href="/feed.xml">RSS</a>
-            <a href="#articles">Статьи</a>
-            <a href="#news">Лента</a>
-        </nav>
-    </section>
-
-    <div class="category-filter-bar" aria-label="Фильтр материалов">
-        <button type="button" class="category-chip is-active" data-filter-kind="all" data-filter-value="all">Все</button>
-        <button type="button" class="category-chip" data-filter-kind="category" data-filter-value="badge--ai">ИИ-Модели</button>
-        <button type="button" class="category-chip" data-filter-kind="category" data-filter-value="badge--leaks">Сливы</button>
-        <button type="button" class="category-chip" data-filter-kind="category" data-filter-value="badge--neural">Нейросети</button>
-        <button type="button" class="category-chip" data-filter-kind="category" data-filter-value="badge--news">Новости</button>
-        <button type="button" class="category-chip" data-filter-kind="kind" data-filter-value="article">Статьи</button>
-    </div>
+    <h1 class="sr-only">Сливы и новости ИИ</h1>
 
     <div class="page-layout-grid">
       
@@ -613,119 +590,36 @@ const featuredCriterionText = mainFeaturedItems.some(item => item.views > 0)
       )}
   </div>
 
-  <div class="filter-empty-state" id="filter-empty-state">Ничего не найдено. Попробуйте другой запрос или сбросьте фильтр.</div>
+  <div class="filter-empty-state" id="filter-empty-state">Ничего не найдено. Попробуйте другой запрос.</div>
 
 </Layout>
 
 <style>
+  .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+  }
+
   /* Filtering helper classes */
   :global(.hidden-by-search) {
       display: none !important;
   }
 
-  :global(.hidden-by-category) {
-      display: none !important;
-  }
-
-  /* When search/filter is active, show all matching items & hide expander buttons */
-  .controls-active :global(.article-row--hidden:not(.hidden-by-search):not(.hidden-by-category)),
-  .controls-active :global(.sidebar-item--hidden:not(.hidden-by-search):not(.hidden-by-category)) {
+  /* When search is active, show all matching items and hide expander buttons. */
+  .controls-active :global(.article-row--hidden:not(.hidden-by-search)),
+  .controls-active :global(.sidebar-item--hidden:not(.hidden-by-search)) {
       display: flex !important;
   }
   .controls-active .articles-show-more-wrap,
   .controls-active .sidebar-show-more-wrap {
       display: none !important;
-  }
-
-  .editorial-intro {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 1.25rem;
-      align-items: end;
-      margin: 0 0 1.45rem;
-      padding-bottom: 1.1rem;
-      border-bottom: 1px solid var(--border-soft);
-  }
-
-  .editorial-copy {
-      min-width: 0;
-  }
-
-  .editorial-kicker {
-      margin: 0 0 0.35rem;
-      font-family: var(--font-mono);
-      font-size: 0.72rem;
-      font-weight: 800;
-      letter-spacing: 1.2px;
-      text-transform: uppercase;
-      color: var(--accent);
-  }
-
-  .editorial-intro h1 {
-      margin: 0;
-      font-size: clamp(1.85rem, 4vw, 3.15rem);
-      line-height: 1.05;
-      letter-spacing: -0.5px;
-      overflow-wrap: anywhere;
-  }
-
-  .editorial-subtitle {
-      margin: 0.6rem 0 0;
-      font-size: 1rem;
-      line-height: 1.5;
-      color: var(--text-secondary);
-  }
-
-  .editorial-updated {
-      margin: 0.45rem 0 0;
-      font-family: var(--font-mono);
-      font-size: 0.78rem;
-      color: var(--text-muted);
-  }
-
-  .quick-links {
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 0.55rem;
-      flex-wrap: wrap;
-  }
-
-  .quick-links a,
-  .category-chip {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 34px;
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      padding: 0.35rem 0.8rem;
-      color: var(--text-main);
-      background: rgba(255, 255, 255, 0.02);
-      font-family: var(--font-mono);
-      font-size: 0.72rem;
-      font-weight: 700;
-      cursor: pointer;
-      transition: all 0.2s ease;
-  }
-
-  .quick-links a:hover,
-  .category-chip:hover,
-  .category-chip.is-active {
-      color: var(--accent);
-      border-color: var(--accent);
-      background-color: var(--accent-glow);
-  }
-
-  .category-filter-bar {
-      display: flex;
-      gap: 0.55rem;
-      flex-wrap: wrap;
-      margin-bottom: 1.45rem;
-  }
-
-  .category-chip {
-      appearance: none;
   }
 
   /* MAIN PAGE GRID SYSTEM */
@@ -1080,20 +974,6 @@ const featuredCriterionText = mainFeaturedItems.some(item => item.views > 0)
     }
 
     @media (max-width: 700px) {
-        .editorial-intro {
-            grid-template-columns: 1fr;
-            gap: 1rem;
-            align-items: start;
-        }
-        .quick-links {
-            justify-content: flex-start;
-        }
-        .category-filter-bar {
-            flex-wrap: wrap;
-        }
-        .category-chip {
-            flex: 0 1 auto;
-        }
         .featured-item-link {
             align-items: flex-start;
             flex-wrap: wrap;
@@ -1146,33 +1026,17 @@ const featuredCriterionText = mainFeaturedItems.some(item => item.views > 0)
 </style>
 
 <script>
-  // Homepage filtering: combines global search input with local category chips.
+  // Homepage filtering: mirrors the global search input into visible sections.
   document.addEventListener('DOMContentLoaded', () => {
       const filterableItems = Array.from(document.querySelectorAll('.sidebar-item, .featured-item-link, .article-card-uniform'));
       const gridContainer = document.querySelector('.page-layout-grid');
       const emptyState = document.getElementById('filter-empty-state');
-      const categoryChips = Array.from(document.querySelectorAll('.category-chip'));
       const headerSearchInput = document.getElementById('header-search-input');
 
       let searchQuery = '';
-      let filterKind = 'all';
-      let filterValue = 'all';
-
-      function matchesCategory(item) {
-          if (filterKind === 'all') {
-              return true;
-          }
-          if (filterKind === 'kind') {
-              return item.getAttribute('data-kind') === filterValue;
-          }
-          if (filterKind === 'category') {
-              return item.getAttribute('data-category') === filterValue;
-          }
-          return true;
-      }
 
       function applyFilters() {
-          const controlsActive = searchQuery !== '' || filterKind !== 'all';
+          const controlsActive = searchQuery !== '';
           let visibleCount = 0;
 
           if (gridContainer) {
@@ -1186,7 +1050,6 @@ const featuredCriterionText = mainFeaturedItems.some(item => item.views > 0)
           filterableItems.forEach(item => {
               const searchText = item.getAttribute('data-search-text') || '';
               const matchesSearch = searchText.includes(searchQuery);
-              const categoryMatch = matchesCategory(item);
 
               if (matchesSearch) {
                   item.classList.remove('hidden-by-search');
@@ -1194,13 +1057,7 @@ const featuredCriterionText = mainFeaturedItems.some(item => item.views > 0)
                   item.classList.add('hidden-by-search');
               }
 
-              if (categoryMatch) {
-                  item.classList.remove('hidden-by-category');
-              } else {
-                  item.classList.add('hidden-by-category');
-              }
-
-              if (matchesSearch && categoryMatch) {
+              if (matchesSearch) {
                   visibleCount += 1;
               }
           });
@@ -1226,15 +1083,6 @@ const featuredCriterionText = mainFeaturedItems.some(item => item.views > 0)
 
       window.addEventListener('site-search-query', (e) => {
           syncSearch(e.detail?.query || '');
-      });
-
-      categoryChips.forEach((chip) => {
-          chip.addEventListener('click', () => {
-              filterKind = chip.getAttribute('data-filter-kind') || 'all';
-              filterValue = chip.getAttribute('data-filter-value') || 'all';
-              categoryChips.forEach((item) => item.classList.toggle('is-active', item === chip));
-              applyFilters();
-          });
       });
 
       const params = new URLSearchParams(window.location.search);
