@@ -592,20 +592,12 @@ const sidebarItems = sortedItems.map(item => {
       display: flex;
       align-items: center;
       gap: 0.75rem;
-      padding: 8px 0;
-      border-bottom: 1px solid var(--border-soft);
+      padding: 6px 8px;
+      margin: 2px -8px;
+      border-radius: 6px;
       transition: all 0.2s ease;
       text-decoration: none;
       color: inherit;
-  }
-
-  .featured-item-link:last-child {
-      border-bottom: none;
-      padding-bottom: 0;
-  }
-
-  .featured-item-link:first-child {
-      padding-top: 0;
   }
 
   .featured-item-time {
@@ -624,7 +616,7 @@ const sidebarItems = sortedItems.map(item => {
       white-space: nowrap; /* Strictly single line */
       text-overflow: ellipsis; /* Appends ... */
       overflow: hidden; /* Hides overflow */
-      flex-grow: 1;
+      flex-shrink: 1;
   }
 
   .featured-item-link:hover .featured-item-text {
@@ -632,7 +624,8 @@ const sidebarItems = sortedItems.map(item => {
   }
 
   .featured-item-link:hover {
-      transform: translateX(4px);
+      background-color: var(--card-bg);
+      transform: translateX(2px);
   }
 
   .featured-item-views {
@@ -642,9 +635,8 @@ const sidebarItems = sortedItems.map(item => {
       display: inline-flex;
       align-items: center;
       gap: 0.25rem;
-      margin-left: auto;
+      margin-left: 0.5rem;
       flex-shrink: 0;
-      padding-left: 0.5rem;
   }
 
   .views-icon {

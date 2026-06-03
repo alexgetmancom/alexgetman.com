@@ -101,8 +101,8 @@ if (item.categories && item.categories.length > 0) {
                 loading={index < 2 ? "eager" : "lazy"}
                 fetchpriority={index === 0 ? "high" : undefined}
                 decoding="async"
-                width="240"
-                height="135"
+                width="180"
+                height="101"
             />
         ) : (
             <div class="article-row__placeholder-img">
@@ -138,8 +138,8 @@ if (item.categories && item.categories.length > 0) {
 <style>
   .article-row {
       display: flex;
-      gap: 1.5rem;
-      padding: 1rem;
+      gap: 1.25rem;
+      padding: 0.75rem 1rem;
       margin: 0 -1rem;
       border-bottom: 1px solid var(--border-soft);
       border-radius: 12px;
@@ -161,7 +161,7 @@ if (item.categories && item.categories.length > 0) {
 
   .article-row__img-container {
       position: relative;
-      flex: 0 0 240px;
+      flex: 0 0 180px;
       aspect-ratio: 16 / 9;
       border-radius: 8px;
       overflow: hidden;

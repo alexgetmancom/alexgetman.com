@@ -32,13 +32,15 @@ const badge = getSmartBadge(item.text);
     data-search-text={(title + " " + item.text).toLowerCase()}
 >
     <span class="sidebar-item-time">{timeStr}</span>
-    <span class="sidebar-item-text">{title}</span>
-    {item.views > 0 && (
-        <span class="sidebar-item-views" title="Просмотры в Telegram">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="views-icon"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-            {formatViewsCount(item.views)}
-        </span>
-    )}
+    <span class="sidebar-item-text">
+        {title}
+        {item.views > 0 && (
+            <span class="sidebar-item-views" title="Просмотры в Telegram">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="views-icon"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                {formatViewsCount(item.views)}
+            </span>
+        )}
+    </span>
 </a>
 
 <style>
@@ -46,23 +48,16 @@ const badge = getSmartBadge(item.text);
       display: flex;
       align-items: flex-start;
       gap: 0.75rem;
-      padding: 8px 10px;
-      margin: 0 -10px;
-      border-bottom: 1px dashed var(--border-dashed);
-      border-radius: 8px;
+      padding: 6px 8px;
+      margin: 2px -8px;
+      border-radius: 6px;
       transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       text-decoration: none;
       color: inherit;
   }
 
-  .sidebar-item:last-child {
-      border-bottom: 1px dashed transparent;
-  }
-
   .sidebar-item:hover {
       background-color: var(--card-bg);
-      border-color: var(--border-hover);
-      box-shadow: 0 4px 15px var(--accent-glow);
   }
 
   .sidebar-item-time {
@@ -98,8 +93,8 @@ const badge = getSmartBadge(item.text);
       align-items: center;
       gap: 0.2rem;
       flex-shrink: 0;
-      align-self: center;
-      margin-left: auto;
+      margin-left: 0.5rem;
+      vertical-align: middle;
   }
 
   .views-icon {
