@@ -3,7 +3,6 @@ import path from 'node:path';
 import sharp from 'sharp';
 
 const root = process.cwd();
-const habrDir = path.join(root, 'public', 'habr-images');
 const publicDir = path.join(root, 'public');
 const cacheFile = path.join(root, '.image-cache.json');
 const widths = [360, 640, 960];
@@ -45,44 +44,6 @@ async function needsUpdate(inputPath, key) {
   }
 }
 
-async function generateHabrImages() {
-  if (!(await exists(habrDir))) {
-    return;
-  }
-
-  const files = await fs.readdir(habrDir);
-  for (const file of files) {
-    if (!/\.(jpe?g|png)$/i.test(file)) {
-      continue;
-    }
-
-    const inputPath = path.join(habrDir, file);
-    const key = `habr-images/${file}`;
-    
-    // Check cache manifest
-    const updated = await needsUpdate(inputPath, key);
-    if (!updated) {
-      continue; // Skip fs.stat check for generated responsive outputs entirely
-    }
-
-    const parsed = path.parse(file);
-    const image = sharp(inputPath);
-    const metadata = await image.metadata();
-    const sourceWidth = metadata.width || 0;
-
-    for (const width of widths) {
-      if (sourceWidth && width > sourceWidth) {
-        continue;
-      }
-      const outputPath = path.join(habrDir, `${parsed.name}-${width}.webp`);
-      await sharp(inputPath)
-        .resize({ width, withoutEnlargement: true })
-        .webp({ quality: 74, effort: 6 })
-        .toFile(outputPath);
-    }
-  }
-}
-
 async function generateAvatar() {
   const inputPath = path.join(publicDir, 'avatar-small.png');
   if (!(await exists(inputPath))) {
@@ -121,7 +82,6 @@ async function generateSocialImage() {
     .toFile(outputPath);
 }
 
-await generateHabrImages();
 await generateAvatar();
 await generateSocialImage();
 await saveCache();

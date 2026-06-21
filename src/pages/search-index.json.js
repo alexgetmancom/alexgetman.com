@@ -4,8 +4,6 @@ import path from 'node:path';
 const dataDir = process.env.DATA_DIR || '/home/deploy/ialexey-feed/data';
 const prodFeedJsonPath = path.join(dataDir, 'feed.json');
 const localFeedJsonPath = path.resolve('src/data/feed.json');
-const habrFallbackPath = path.resolve('src/data/habr.json');
-const habrRssUrl = 'https://habr.com/ru/rss/users/ialexeyru/publications/articles/?fl=ru';
 
 function compactText(value) {
   return String(value || '')
@@ -70,59 +68,6 @@ function loadFeedItems() {
   return [];
 }
 
-function loadHabrFallback() {
-  try {
-    return JSON.parse(fs.readFileSync(habrFallbackPath, 'utf-8'));
-  } catch (e) {
-    console.error('Error reading habr fallback:', e);
-    return [];
-  }
-}
-
-async function fetchHabrArticles() {
-  try {
-    const res = await fetch(habrRssUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      },
-      signal: AbortSignal.timeout(3000)
-    });
-    if (!res.ok) return loadHabrFallback();
-
-    const xml = await res.text();
-    const itemRegex = /<item>([\s\S]*?)<\/item>/g;
-    const articles = [];
-    let match;
-
-    while ((match = itemRegex.exec(xml)) !== null) {
-      const itemXml = match[1];
-      const titleMatch = itemXml.match(/<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>/) || itemXml.match(/<title>([\s\S]*?)<\/title>/);
-      const linkMatch = itemXml.match(/<guid[^>]*>([\s\S]*?)<\/guid>/) || itemXml.match(/<link>([\s\S]*?)<\/link>/);
-      const dateMatch = itemXml.match(/<pubDate>([\s\S]*?)<\/pubDate>/);
-      const descMatch = itemXml.match(/<description><!\[CDATA\[([\s\S]*?)\]\]><\/description>/) || itemXml.match(/<description>([\s\S]*?)<\/description>/);
-      if (!titleMatch || !linkMatch) continue;
-
-      const categories = [];
-      const catRegex = /<category>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/category>/g;
-      let catMatch;
-      while ((catMatch = catRegex.exec(itemXml)) !== null) {
-        categories.push(compactText(catMatch[1]));
-      }
-
-      articles.push({
-        title: compactText(titleMatch[1]).replace(/^\[Перевод\]\s*/i, ''),
-        url: compactText(linkMatch[1]).split('?')[0],
-        date: dateMatch ? new Date(compactText(dateMatch[1])).toISOString() : new Date().toISOString(),
-        desc: compactText(descMatch ? descMatch[1] : ''),
-        categories: categories.slice(0, 2)
-      });
-    }
-
-    return articles.length > 0 ? articles : loadHabrFallback();
-  } catch {
-    return loadHabrFallback();
-  }
-}
 
 function telegramToSearchItem(item) {
   const messageId = item.message_id || String(item.id || '').split(':').pop();
@@ -141,33 +86,15 @@ function telegramToSearchItem(item) {
   };
 }
 
-function habrToSearchItem(item, index) {
-  const title = compactText(item.title).replace(/^\[Перевод\]\s*/i, '');
-  const desc = compactText(item.desc || item.text || '');
-  return {
-    id: `habr:${index}`,
-    type: 'article',
-    title: truncateText(title, 120),
-    excerpt: truncateText(desc, 180),
-    url: item.url,
-    date: item.date,
-    source: 'Habr',
-    category: item.categories?.[0] || getSmartBadge(`${title} ${desc}`),
-    image: item.image || null
-  };
-}
 
 export async function GET() {
   const telegramItems = loadFeedItems()
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     .map(telegramToSearchItem);
-  const habrItems = (await fetchHabrArticles())
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    .map(habrToSearchItem);
 
   return new Response(JSON.stringify({
     generatedAt: new Date().toISOString(),
-    items: [...telegramItems, ...habrItems]
+    items: telegramItems
   }, null, 2), {
     headers: {
       'Content-Type': 'application/json; charset=utf-8',

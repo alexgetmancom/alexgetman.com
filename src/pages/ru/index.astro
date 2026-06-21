@@ -4,7 +4,6 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import sharp from 'sharp';
 import Layout from '../../layouts/Layout.astro';
-import habrFallback from '../../data/habr.json';
 import projects from '../../data/projects.json';
 import SidebarItem from '../../components/SidebarItem.astro';
 import {
@@ -154,20 +153,7 @@ const mainFeaturedItems = candidatesWithViews
   .sort((a, b) => b.views - a.views)
   .slice(0, 5);
 
-// 2. "Статьи"
-let articleItems = [];
-  }));
-
-  if (cacheChanged) {
-    try {
-      fs.writeFileSync(habrViewsCachePath, JSON.stringify(habrViewsCache, null, 2), 'utf-8');
-    } catch (e) {
-      console.error('Error writing habr_views_cache.json:', e);
-    }
-  }
-} catch (e) {
-  console.error('Failed fetching Habr views in parallel:', e);
-}
+// 2. "Статьи" (упразднены)
 
 // 3. "Лента всех новостей" (Full list for the sidebar, aligned with mainFeaturedItems height)
 const sidebarItems = sortedItems.map(item => {
