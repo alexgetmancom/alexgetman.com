@@ -34,6 +34,8 @@ export async function GET() {
       ...item,
       text: item.text_en,
       html: item.html_en || item.text_en,
+      media: Array.isArray(item.media_en) && item.media_en.length > 0 ? item.media_en : item.media,
+      image: item.image_en || item.image,
       canonical_url: `https://alexgetman.com/en/posts/${item.message_id || item.id?.split(':').pop()}/`,
       ru_url: `https://alexgetman.com/ru/posts/${item.message_id || item.id?.split(':').pop()}/`
     }))

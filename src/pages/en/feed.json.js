@@ -34,7 +34,9 @@ export async function GET() {
     .map(item => ({
       ...item,
       text: item.text_en,
-      html: item.html_en || item.text_en
+      html: item.html_en || item.text_en,
+      media: Array.isArray(item.media_en) && item.media_en.length > 0 ? item.media_en : item.media,
+      image: item.image_en || item.image
     }))
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     .slice(0, 50);

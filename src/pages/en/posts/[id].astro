@@ -203,9 +203,11 @@ const telegramUrl = item.url || `https://t.me/${channelUsername}/${id}`;
 
 const formattedDate = formatDate(item.date);
 const badge = getSmartBadge(item.text);
-const postMedia = Array.isArray(item.media) && item.media.length > 0
-  ? item.media
-  : (item.image ? [{ type: "image", path: item.image }] : []);
+const postMedia = Array.isArray(item.media_en) && item.media_en.length > 0
+  ? item.media_en
+  : (Array.isArray(item.media) && item.media.length > 0
+    ? item.media
+    : (item.image_en ? [{ type: "image", path: item.image_en }] : (item.image ? [{ type: "image", path: item.image }] : [])));
 
 // Schema.org Article dynamic markup
 const schemaObject = {
