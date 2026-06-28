@@ -1117,16 +1117,17 @@ const schema = JSON.stringify(schemaObject);
   if (giscusContainer) {
       // Configuration object
       const giscusConfig = {
-          repo: "iAlexeyRu/ialexey.ru",
+          repo: "alexgetmancom/alexgetman.com",
           repoId: "R_kgDOSJwPnQ",
           category: "Announcements",
           categoryId: "DIC_kwDOSJwPnc4C-S2f",
           mapping: "pathname",
           strict: "0",
-          reactionsEnabled: "0",
+          reactionsEnabled: "1",
           emitMetadata: "0",
           inputPosition: "bottom",
           lang: "en",
+          loading: "lazy",
       };
 
       const savedTheme = localStorage.getItem('theme') || 'dark';
@@ -1145,6 +1146,7 @@ const schema = JSON.stringify(schemaObject);
       script.setAttribute('data-input-position', giscusConfig.inputPosition);
       script.setAttribute('data-theme', initialGiscusTheme);
       script.setAttribute('data-lang', giscusConfig.lang);
+      script.setAttribute('data-loading', giscusConfig.loading);
       script.crossOrigin = 'anonymous';
       script.async = true;
       giscusContainer.appendChild(script);
