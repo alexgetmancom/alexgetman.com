@@ -1,7 +1,7 @@
 {
   "name": "Alex Getman",
   "short_name": "Alex Getman",
-  "description": "AI news, automation notes, developer tools and self-hosted systems by Alex Getman.",
+  "description": "AI news, developer tools, automation updates and product changes by Alex Getman.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -9,12 +9,12 @@
   "theme_color": "#080B10",
   "icons": [
     {
-      "src": "/avatar-small.png?v=20260629-new-avatar",
+      "src": "/brand-favicon-20260629.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "/avatar.png?v=20260629-new-avatar",
+      "src": "/brand-avatar-20260629.png",
       "sizes": "512x512",
       "type": "image/png"
     }

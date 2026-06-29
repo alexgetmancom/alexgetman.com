@@ -6,11 +6,11 @@ import {
   categoryLabel,
   categorySlugFromBadge,
   excerptAfterTitle,
-  formatDate,
   formatRelativeTime,
   getFirstSentence,
   getSmartBadge,
   postImagePath,
+  postOgImagePath,
   responsiveImageSrcSet,
   truncateText
 } from '../utils/helpers';
@@ -31,6 +31,7 @@ function toEnglishPost(item) {
     date: item.date,
     relativeDate: formatRelativeTime(item.date, 'en'),
     image: postImagePath(item, 'en'),
+    ogImage: postOgImagePath(item, 'en'),
     views: Number(item.views || 0),
     categorySlug,
     category: categoryLabel(categorySlug, 'en'),
@@ -57,8 +58,8 @@ const topicStats = Array.from(
   }, new Map()).values()
 ).sort((a, b) => b.count - a.count);
 
-const title = "Alex Getman | AI, automation and self-hosted systems";
-const description = "English hub for Alex Getman: AI news, automation, developer tools, self-hosted systems and public projects.";
+const title = "Alex Getman | AI news and developer tools";
+const description = "Latest AI news, developer tools, automation updates and product changes from Alex Getman.";
 
 const schema = JSON.stringify({
   "@context": "https://schema.org",
@@ -67,7 +68,6 @@ const schema = JSON.stringify({
       "@type": "Person",
       "@id": "https://alexgetman.com/#person",
       "name": "Alex Getman",
-      "alternateName": "Алексей Гетманец",
       "url": "https://alexgetman.com/",
       "image": "https://alexgetman.com/avatar.png",
       "sameAs": [
@@ -103,7 +103,7 @@ const schema = JSON.stringify({
   ]
 });
 
-function formatDate(value) {
+function formatMskDate(value) {
   if (!value) return "";
   try {
     return new Intl.DateTimeFormat("en-GB", {
@@ -136,36 +136,35 @@ function formatDate(value) {
   ]}
 >
   <main class="home-page">
-    <section class="hero" aria-labelledby="home-title">
-      <p class="hero__eyebrow">alexgetmancom</p>
-      <h1 class="hero__title" id="home-title">AI, automation and self-hosted systems</h1>
-      <p class="hero__text">
-        I track practical AI product changes, build automation around publishing workflows, and document public projects across developer tools, infrastructure and media systems.
-      </p>
-      <div class="hero__actions">
-        <a href="/ru/" class="home-link">Russian feed</a>
-        <a href="/search/" class="home-link">Search</a>
-        <a href="/archive/" class="home-link">Archive</a>
-        <a href="/projects/" class="home-link">Projects</a>
-        <a href="/contacts/" class="home-link">Contacts</a>
-      </div>
-    </section>
-
     {leadPost ? (
-      <section class="lead-section" aria-labelledby="lead-title">
+      <section class="news-hero" aria-labelledby="lead-title">
+        <div class="news-hero__header">
+          <p class="news-hero__eyebrow">Latest story</p>
+          <nav class="news-hero__links" aria-label="Primary links">
+            <a href="/archive/">Archive</a>
+            <a href="/search/">Search</a>
+            <a href="/category/ai-models/">AI Models</a>
+            <a href="/ru/">RU</a>
+          </nav>
+        </div>
         <a href={leadPost.url} class="lead-card">
-          <div class="lead-card__media">
-            {leadPost.image ? (
-              <img src={`/${leadPost.image}`} srcset={responsiveImageSrcSet(leadPost.image)} alt="" loading="eager" decoding="async" sizes="(max-width: 760px) 100vw, 680px" />
-            ) : (
-              <span>{leadPost.category}</span>
-            )}
-          </div>
           <div class="lead-card__body">
-            <span class="pill">{leadPost.category}</span>
-            <h2 id="lead-title">{leadPost.title}</h2>
-            <p>{leadPost.excerpt}</p>
-            <small>{leadPost.relativeDate || `${formatDate(leadPost.date)} MSK`}</small>
+            <div class="lead-card__meta">
+              <span class="pill">{leadPost.category}</span>
+              <time datetime={leadPost.date}>{leadPost.relativeDate || `${formatMskDate(leadPost.date)} MSK`}</time>
+            </div>
+            <h1 id="lead-title">{leadPost.title}</h1>
+            {leadPost.excerpt && <p>{leadPost.excerpt}</p>}
+          </div>
+          <div class="lead-card__media">
+            <img
+              src={leadPost.image ? `/${leadPost.image}` : leadPost.ogImage}
+              srcset={leadPost.image ? responsiveImageSrcSet(leadPost.image) : undefined}
+              alt=""
+              loading="eager"
+              decoding="async"
+              sizes="(max-width: 920px) 100vw, 52vw"
+            />
           </div>
         </a>
       </section>
@@ -190,7 +189,7 @@ function formatDate(value) {
                 )}
               </div>
               <div class="post-row__content">
-                <span class="post-row__date">{post.relativeDate || `${formatDate(post.date)} MSK`}</span>
+                <span class="post-row__date">{post.relativeDate || `${formatMskDate(post.date)} MSK`}</span>
                 <strong>{post.title}</strong>
                 <span>{post.excerpt}</span>
               </div>
@@ -250,40 +249,32 @@ function formatDate(value) {
   .home-page {
     max-width: 1120px;
     margin: 0 auto;
-    padding: 1rem 0 3rem;
+    padding: 1.25rem 0 3rem;
     min-width: 0;
   }
 
-  .hero {
-    padding: 2rem 0 2.5rem;
+  .news-hero {
     min-width: 0;
   }
 
-  .hero__eyebrow {
-    margin: 0 0 0.6rem;
+  .news-hero__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 0.9rem;
+  }
+
+  .news-hero__eyebrow {
+    margin: 0;
     color: var(--accent);
     font-family: var(--font-mono);
     font-size: 0.82rem;
     font-weight: 800;
   }
 
-  .hero__title {
-    margin: 0;
-    max-width: 900px;
-    font-size: clamp(2.5rem, 5vw, 5rem);
-    line-height: 1.02;
-    letter-spacing: 0;
-    overflow-wrap: anywhere;
-  }
-
-  .hero__text {
-    max-width: 760px;
-    margin: 1rem 0 0;
-    color: var(--text-secondary);
-    font-size: 1.05rem;
-  }
-
-  .hero__actions,
+  .news-hero__links,
   .section__header {
     display: flex;
     align-items: center;
@@ -291,11 +282,7 @@ function formatDate(value) {
     gap: 0.75rem;
   }
 
-  .hero__actions {
-    margin-top: 1.25rem;
-  }
-
-  .home-link,
+  .news-hero__links a,
   .section__link {
     display: inline-flex;
     align-items: center;
@@ -309,7 +296,7 @@ function formatDate(value) {
     font-weight: 700;
   }
 
-  .home-link:hover,
+  .news-hero__links a:hover,
   .section__link:hover {
     color: var(--text-header);
     border-color: var(--border-hover);
@@ -320,15 +307,12 @@ function formatDate(value) {
     margin-top: 1.4rem;
   }
 
-  .lead-section {
-    margin-top: 0.5rem;
-  }
-
   .lead-card {
     display: grid;
-    grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
-    gap: 1.2rem;
-    padding: 1rem;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    gap: 0;
+    min-height: min(58vh, 560px);
+    padding: 0;
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--card-bg);
@@ -336,18 +320,10 @@ function formatDate(value) {
   }
 
   .lead-card__media {
-    min-height: 260px;
-    aspect-ratio: 16 / 9;
-    border: 1px solid var(--border);
-    border-radius: 6px;
+    min-height: 100%;
+    border-left: 1px solid var(--border);
     overflow: hidden;
     background: linear-gradient(135deg, rgba(240, 68, 101, 0.12), rgba(255, 255, 255, 0.03));
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-    font-weight: 800;
   }
 
   .lead-card__media img {
@@ -362,13 +338,27 @@ function formatDate(value) {
     display: flex;
     flex-direction: column;
     justify-content: center;
-    gap: 0.8rem;
+    gap: 1rem;
+    padding: clamp(1.2rem, 3.4vw, 3rem);
   }
 
-  .lead-card h2 {
+  .lead-card__meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .lead-card__meta time {
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+  }
+
+  .lead-card h1 {
     margin: 0;
-    font-size: clamp(1.7rem, 3.4vw, 3rem);
-    line-height: 1.08;
+    font-size: clamp(2.2rem, 5.4vw, 5.4rem);
+    line-height: 0.98;
     letter-spacing: 0;
     overflow-wrap: anywhere;
   }
@@ -376,11 +366,6 @@ function formatDate(value) {
   .lead-card p {
     margin: 0;
     color: var(--text-secondary);
-  }
-
-  .lead-card small {
-    color: var(--text-muted);
-    font-family: var(--font-mono);
   }
 
   .pill {
@@ -545,8 +530,9 @@ function formatDate(value) {
   }
 
   @media (max-width: 720px) {
-    .hero {
-      padding-top: 1rem;
+    .news-hero__header {
+      align-items: flex-start;
+      flex-direction: column;
     }
 
     .lead-card,
@@ -554,7 +540,10 @@ function formatDate(value) {
       grid-template-columns: 1fr;
     }
     .lead-card__media {
-      min-height: 180px;
+      min-height: 220px;
+      border-left: 0;
+      border-top: 1px solid var(--border);
+      order: -1;
     }
   }
 </style>

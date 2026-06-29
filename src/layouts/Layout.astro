@@ -39,9 +39,28 @@ const publicBaseUrl = "https://alexgetman.com";
 const brandAssetVersion = "20260629-new-avatar";
 const socialImage = socialImageProp
   ? (socialImageProp.startsWith('http') ? socialImageProp : `${publicBaseUrl}${socialImageProp.startsWith('/') ? socialImageProp : `/${socialImageProp}`}`)
-  : `${publicBaseUrl}/social-image.jpg?v=${brandAssetVersion}`;
+  : `${publicBaseUrl}/brand-social-20260629.jpg`;
 const twitterCard = socialImageWidth >= 1000 ? "summary_large_image" : "summary";
 const isRu = lang === "ru";
+const brandDisplayName = isRu ? "Алексей Гетманец" : "alex getman";
+const navLabels = {
+  drawerTitle: isRu ? "Навигация" : "Navigation",
+  closeMenu: isRu ? "Закрыть меню" : "Close menu",
+  openMenu: isRu ? "Открыть меню" : "Open menu",
+  menuTooltip: isRu ? "Меню" : "Menu",
+  home: isRu ? "Главная" : "Home",
+  search: isRu ? "Поиск" : "Search",
+  archive: isRu ? "Архив" : "Archive",
+  contacts: isRu ? "Контакты" : "Contacts",
+  searchPlaceholder: isRu ? "Поиск..." : "Search...",
+  searchAria: isRu ? "Поиск по сайту" : "Search site",
+  clearSearch: isRu ? "Очистить поиск" : "Clear search",
+  searchResults: isRu ? "Результаты поиска" : "Search results",
+  language: isRu ? "Смена языка" : "Change language",
+  theme: isRu ? "Переключить тему" : "Toggle theme",
+  themeTooltip: isRu ? "Тема" : "Theme",
+  rights: isRu ? "Все права защищены." : "All rights reserved."
+};
 const navHomeHref = isRu ? "/ru/#top" : "/#top";
 const navSearchHref = isRu ? "/ru/search/" : "/search/";
 const navArchiveHref = isRu ? "/ru/archive/" : "/archive/";
@@ -56,8 +75,9 @@ const navRssHref = isRu ? "/ru/feed.xml" : "/feed.xml";
     <meta name="description" content={cleanDescription}>
     <meta name="robots" content={robots}>
     <meta name="theme-color" content="#080B10">
+    <link rel="icon" type="image/png" href="/brand-favicon-20260629.png">
+    <link rel="apple-touch-icon" href="/brand-favicon-20260629.png">
     <link rel="icon" type="image/svg+xml" href={`/favicon.svg?v=${brandAssetVersion}`}>
-    <link rel="icon" type="image/png" href={`/favicon.png?v=${brandAssetVersion}`}>
     <link rel="alternate icon" type="image/x-icon" href={`/favicon.ico?v=${brandAssetVersion}`}>
     <link rel="manifest" href="/manifest.json">
     <link rel="canonical" href={canonicalUrl}>
@@ -86,7 +106,7 @@ const navRssHref = isRu ? "/ru/feed.xml" : "/feed.xml";
 
     {schema && <script type="application/ld+json" set:html={schema}></script>}
 
-    <!-- Blocking Theme & Language Script to prevent flash -->
+    <!-- Blocking Theme Script to prevent flash -->
     <script is:inline>
         (() => {
             const savedTheme = localStorage.getItem('theme');
@@ -97,16 +117,6 @@ const navRssHref = isRu ? "/ru/feed.xml" : "/feed.xml";
                 document.documentElement.setAttribute('data-theme', 'dark');
             }
 
-            // Detect language from cookie googtrans
-            const hasEn = document.cookie.split(';').some(c => {
-                const trimmed = c.trim();
-                return trimmed.startsWith('googtrans=/ru/en') || trimmed.startsWith('googtrans=%2Fru%2Fen');
-            });
-            if (hasEn) {
-                document.documentElement.setAttribute('data-lang', 'en');
-            } else {
-                document.documentElement.setAttribute('data-lang', 'ru');
-            }
         })();
     </script>
     
@@ -1053,7 +1063,7 @@ const navRssHref = isRu ? "/ru/feed.xml" : "/feed.xml";
             margin-top: 1rem;
         }
 
-        /* Language Toggle & Google Translate Styles */
+        /* Language Toggle */
         .btn-social.lang-toggle {
             cursor: pointer;
             font-family: var(--font-mono);
@@ -1071,30 +1081,11 @@ const navRssHref = isRu ? "/ru/feed.xml" : "/feed.xml";
         .lang-ru-text, .lang-en-text {
             display: none;
         }
-        html[data-lang="ru"] .lang-ru-text {
+        html[lang="ru"] .lang-ru-text {
             display: inline;
         }
-        html[data-lang="en"] .lang-en-text {
+        html[lang="en"] .lang-en-text {
             display: inline;
-        }
-        /* Hide Google Translate elements completely */
-        .skiptranslate, 
-        #google_translate_element, 
-        .goog-te-banner-frame, 
-        .goog-te-banner,
-        .goog-te-menu-value,
-        .goog-tooltip,
-        .goog-tooltip:hover {
-            display: none !important;
-        }
-        body {
-            top: 0 !important;
-            position: static !important;
-        }
-        .goog-text-highlight {
-            background-color: transparent !important;
-            border: none !important;
-            box-shadow: none !important;
         }
     </style>
     <!-- WebMCP tools registration for AI agents -->
@@ -1182,10 +1173,10 @@ const navRssHref = isRu ? "/ru/feed.xml" : "/feed.xml";
     <aside class="nav-drawer" id="nav-drawer">
         <div class="nav-drawer__header">
             <div class="drawer-header-left">
-                <img src={`/avatar-small.webp?v=${brandAssetVersion}`} alt="Алексей Гетманец" class="logo-avatar" width="32" height="32" />
-                <span class="drawer-title">Навигация</span>
+                <img src="/brand-avatar-small-20260629.webp" alt={brandDisplayName} class="logo-avatar" width="32" height="32" />
+                <span class="drawer-title">{navLabels.drawerTitle}</span>
             </div>
-            <button class="nav-drawer__close" id="nav-close-btn" aria-label="Закрыть меню">
+            <button class="nav-drawer__close" id="nav-close-btn" aria-label={navLabels.closeMenu}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="18" x2="6" y1="6" y2="18"/>
                     <line x1="6" x2="18" y1="6" y2="18"/>
@@ -1198,19 +1189,19 @@ const navRssHref = isRu ? "/ru/feed.xml" : "/feed.xml";
                 <li>
                     <a href={navHomeHref} class="nav-drawer__link">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-                        {isRu ? "Главная" : "Home"}
+                        {navLabels.home}
                     </a>
                 </li>
                 <li>
                     <a href={navSearchHref} class="nav-drawer__link">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-                        {isRu ? "Поиск" : "Search"}
+                        {navLabels.search}
                     </a>
                 </li>
                 <li>
                     <a href={navArchiveHref} class="nav-drawer__link">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h18"/><path d="M5 4v16h14V4"/><path d="M8 9h8"/><path d="M8 13h8"/></svg>
-                        {isRu ? "Архив" : "Archive"}
+                        {navLabels.archive}
                     </a>
                 </li>
                 <li>
@@ -1222,7 +1213,7 @@ const navRssHref = isRu ? "/ru/feed.xml" : "/feed.xml";
                 <li>
                     <a href="/contacts/" class="nav-drawer__link">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 18a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2"/><rect width="18" height="18" x="3" y="4" rx="2"/><circle cx="12" cy="10" r="3"/><line x1="6" x2="6" y1="2" y2="4"/><line x1="18" x2="18" y1="2" y2="4"/></svg>
-                        Контакты
+                        {navLabels.contacts}
                     </a>
                 </li>
                 <li>
@@ -1238,7 +1229,7 @@ const navRssHref = isRu ? "/ru/feed.xml" : "/feed.xml";
     <!-- Compact Media Header -->
     <header class="media-header">
         <div class="container header-container">
-            <button class="burger-toggle btn-social" id="burger-toggle-btn" aria-label="Открыть меню" data-tooltip="Меню">
+            <button class="burger-toggle btn-social" id="burger-toggle-btn" aria-label={navLabels.openMenu} data-tooltip={navLabels.menuTooltip}>
                 <!-- Hamburger Icon -->
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="4" x2="20" y1="12" y2="12" />
@@ -1247,9 +1238,9 @@ const navRssHref = isRu ? "/ru/feed.xml" : "/feed.xml";
                 </svg>
             </button>
             
-            <a href="/" class="logo-wrap">
-                <img src={`/avatar-small.webp?v=${brandAssetVersion}`} alt="Алексей Гетманец" class="logo-avatar" width="36" height="36" />
-                <span class="logo-text">Алексей Гетманец</span>
+            <a href={isRu ? "/ru/" : "/"} class="logo-wrap">
+                <img src="/brand-avatar-small-20260629.webp" alt={brandDisplayName} class="logo-avatar" width="36" height="36" />
+                <span class="logo-text">{brandDisplayName}</span>
             </a>
             
             <div class="social-row">
@@ -1257,17 +1248,17 @@ const navRssHref = isRu ? "/ru/feed.xml" : "/feed.xml";
                     <svg class="header-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
                     </svg>
-                    <input type="text" id="header-search-input" placeholder="Поиск..." aria-label="Поиск по сайту" />
-                    <button class="header-search-clear" id="header-search-clear" type="button" aria-label="Очистить поиск">
+                    <input type="text" id="header-search-input" placeholder={navLabels.searchPlaceholder} aria-label={navLabels.searchAria} />
+                    <button class="header-search-clear" id="header-search-clear" type="button" aria-label={navLabels.clearSearch}>
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
                     </button>
-                    <div class="search-results-panel" id="search-results-panel" role="listbox" aria-label="Результаты поиска"></div>
+                    <div class="search-results-panel" id="search-results-panel" role="listbox" aria-label={navLabels.searchResults}></div>
                 </div>
-                <button class="btn-social lang-toggle notranslate" id="lang-toggle-btn" aria-label="Смена языка" data-tooltip="Смена языка / Change Language">
+                <button class="btn-social lang-toggle notranslate" id="lang-toggle-btn" aria-label={navLabels.language} data-tooltip={navLabels.language}>
                     <span class="lang-ru-text">RU</span>
                     <span class="lang-en-text">EN</span>
                 </button>
-                <button class="btn-social theme-toggle" id="theme-toggle-btn" aria-label="Переключить тему" data-tooltip="Тема">
+                <button class="btn-social theme-toggle" id="theme-toggle-btn" aria-label={navLabels.theme} data-tooltip={navLabels.themeTooltip}>
                     <!-- Sun Icon (visible in light mode) -->
                     <svg class="sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="12" cy="12" r="4"/>
@@ -1314,7 +1305,7 @@ const navRssHref = isRu ? "/ru/feed.xml" : "/feed.xml";
                 </a>
             </div>
             <div class="footer-copy">
-                &copy; {new Date().getFullYear()} {siteAuthor}. Все права защищены.
+                &copy; {new Date().getFullYear()} {siteAuthor}. {navLabels.rights}
             </div>
         </footer>
     </div>
@@ -1409,6 +1400,10 @@ const navRssHref = isRu ? "/ru/feed.xml" : "/feed.xml";
             .replace(/'/g, '&#39;');
 
         const normalizeSearchText = (value) => String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
+        const pageLang = document.documentElement.getAttribute('lang') || 'ru';
+        const isEnglishPage = pageLang.toLowerCase().startsWith('en');
+        const searchDateLocale = isEnglishPage ? 'en-GB' : 'ru-RU';
+        const searchEmptyText = isEnglishPage ? 'No results found' : 'Ничего не найдено';
 
         function loadSearchIndex() {
             if (!searchIndexPromise) {
@@ -1453,12 +1448,12 @@ const navRssHref = isRu ? "/ru/feed.xml" : "/feed.xml";
 
             searchResultsPanel.classList.add('is-open');
             if (results.length === 0) {
-                searchResultsPanel.innerHTML = '<div class="search-result-empty">Ничего не найдено</div>';
+                searchResultsPanel.innerHTML = `<div class="search-result-empty">${searchEmptyText}</div>`;
                 return;
             }
 
             searchResultsPanel.innerHTML = results.map((item, index) => {
-                const date = item.date ? new Date(item.date).toLocaleDateString('ru-RU', {
+                const date = item.date ? new Date(item.date).toLocaleDateString(searchDateLocale, {
                     day: 'numeric',
                     month: 'short',
                     timeZone: 'Europe/Moscow'
@@ -1489,6 +1484,7 @@ const navRssHref = isRu ? "/ru/feed.xml" : "/feed.xml";
 
             const items = await loadSearchIndex();
             const results = items
+                .filter((item) => isEnglishPage ? !String(item.url || '').startsWith('/ru/') : String(item.url || '').startsWith('/ru/'))
                 .map((item) => ({ item, score: scoreSearchItem(item, query) }))
                 .filter((entry) => entry.score > 0)
                 .sort((a, b) => b.score - a.score || new Date(b.item.date || 0).getTime() - new Date(a.item.date || 0).getTime())
@@ -1599,67 +1595,11 @@ const navRssHref = isRu ? "/ru/feed.xml" : "/feed.xml";
         const langToggleBtn = document.getElementById('lang-toggle-btn');
         if (langToggleBtn) {
             langToggleBtn.addEventListener('click', () => {
-                const currentLang = document.documentElement.getAttribute('data-lang') || 'ru';
-                const newLang = currentLang === 'ru' ? 'en' : 'ru';
-                
-                const domain = window.location.hostname;
-                const expires = "expires=Thu, 01 Jan 1970 00:00:00 UTC";
-                
-                if (newLang === 'en') {
-                    const value = '/ru/en';
-                    // Set for current host and root domains
-                    document.cookie = `googtrans=${value}; path=/;`;
-                    document.cookie = `googtrans=${value}; path=/; domain=${domain};`;
-                    document.cookie = `googtrans=${value}; path=/; domain=.${domain};`;
-                    
-                    const hostParts = domain.split('.');
-                    if (hostParts.length >= 2) {
-                        const rootDomain = hostParts.slice(-2).join('.');
-                        document.cookie = `googtrans=${value}; path=/; domain=${rootDomain};`;
-                        document.cookie = `googtrans=${value}; path=/; domain=.${rootDomain};`;
-                    }
-                } else {
-                    // Clear for all possible domains
-                    document.cookie = `googtrans=; path=/; ${expires};`;
-                    document.cookie = `googtrans=; path=/; domain=${domain}; ${expires};`;
-                    document.cookie = `googtrans=; path=/; domain=.${domain}; ${expires};`;
-                    
-                    const hostParts = domain.split('.');
-                    if (hostParts.length >= 2) {
-                        const rootDomain = hostParts.slice(-2).join('.');
-                        document.cookie = `googtrans=; path=/; domain=${rootDomain}; ${expires};`;
-                        document.cookie = `googtrans=; path=/; domain=.${rootDomain}; ${expires};`;
-                    }
-                }
-                
-                window.location.reload();
+                const currentLang = (document.documentElement.getAttribute('lang') || 'ru').toLowerCase();
+                window.location.href = currentLang.startsWith('ru') ? '/' : '/ru/';
             });
         }
     });
-    </script>
-
-    <!-- Google Translate Programmatic Integration (loads conditionally to prevent page load delays) -->
-    <div id="google_translate_element" style="display:none;"></div>
-    <script is:inline>
-        (() => {
-            const hasEn = document.cookie.split(';').some(c => {
-                const trimmed = c.trim();
-                return trimmed.startsWith('googtrans=/ru/en') || trimmed.startsWith('googtrans=%2Fru%2Fen');
-            });
-            if (hasEn) {
-                window.googleTranslateElementInit = function() {
-                    new google.translate.TranslateElement({
-                        pageLanguage: 'ru',
-                        includedLanguages: 'en,ru',
-                        layout: google.translate.TranslateElement.InlineLayout.SIMPLE,
-                        autoDisplay: false
-                    }, 'google_translate_element');
-                };
-                const script = document.createElement('script');
-                script.src = "https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit";
-                document.body.appendChild(script);
-            }
-        })();
     </script>
 </body>
 </html>
