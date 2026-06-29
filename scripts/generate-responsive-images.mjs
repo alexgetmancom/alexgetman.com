@@ -4,6 +4,7 @@ import sharp from 'sharp';
 
 const root = process.cwd();
 const publicDir = path.join(root, 'public');
+const publishedDir = process.env.PUBLISHED_DIR || '/home/deploy/ialexey-web';
 const dataDir = process.env.DATA_DIR || '/home/deploy/ialexey-feed/data';
 const feedJsonPaths = [
   path.join(dataDir, 'feed.json'),
@@ -134,6 +135,36 @@ function categoryLabel(text, locale) {
   return locale === 'ru' ? 'Новости' : 'News';
 }
 
+function normalizePublicPath(value) {
+  return String(value || '').replace(/^\/+/, '');
+}
+
+function postImagePath(item, locale) {
+  const localizedMedia = locale === 'ru' ? item.media : item.media_en;
+  const fallbackMedia = locale === 'ru' ? item.media_en : item.media;
+  const media = Array.isArray(localizedMedia) && localizedMedia.length > 0
+    ? localizedMedia
+    : (Array.isArray(fallbackMedia) ? fallbackMedia : []);
+  const imageMedia = media.find((mediaItem) => mediaItem?.type !== 'video' && mediaItem?.path);
+  const directImage = locale === 'ru'
+    ? (item.image || item.image_en)
+    : (item.image_en || item.image);
+  return normalizePublicPath(directImage || imageMedia?.path);
+}
+
+async function resolvePublicImage(publicPath) {
+  const normalized = normalizePublicPath(publicPath);
+  if (!normalized) return null;
+  const candidates = [
+    path.join(publicDir, normalized),
+    path.join(publishedDir, normalized),
+  ];
+  for (const candidate of candidates) {
+    if (await exists(candidate)) return candidate;
+  }
+  return null;
+}
+
 async function generateAvatar() {
   const inputPath = path.join(publicDir, 'avatar-small.png');
   if (!(await exists(inputPath))) return;
@@ -169,37 +200,44 @@ async function generatePostOgImages(feedItems) {
     if (!postId) continue;
 
     const variants = [
-      { locale: 'en', enabled: item.has_en && item.text_en, text: item.text_en, name: 'Alex Getman' },
-      { locale: 'ru', enabled: item.has_ru && item.text, text: item.text, name: 'Алексей Гетманец' },
+      { locale: 'en', enabled: item.has_en && item.text_en, text: item.text_en, name: 'Alex Getman', image: postImagePath(item, 'en') },
+      { locale: 'ru', enabled: item.has_ru && item.text, text: item.text, name: 'Алексей Гетманец', image: postImagePath(item, 'ru') },
     ];
 
     for (const variant of variants) {
       if (!variant.enabled) continue;
       const title = truncateText(getFirstSentence(variant.text) || `Post ${postId}`, 132);
-      const lines = splitLines(title, variant.locale === 'ru' ? 27 : 30, 4);
+      const lines = splitLines(title, variant.locale === 'ru' ? 27 : 30, 3);
       const badge = categoryLabel(variant.text, variant.locale);
-      const key = `og:${postId}:${variant.locale}:${compactText(title)}:${badge}`;
+      const sourceImage = await resolvePublicImage(variant.image);
+      const sourceImageStamp = sourceImage ? (await fs.stat(sourceImage)).mtimeMs : 'none';
+      const key = `og:v2:${postId}:${variant.locale}:${compactText(title)}:${badge}:${sourceImageStamp}`;
       const outputPath = path.join(outputDir, `post-${postId}-${variant.locale}.jpg`);
 
       if (cache[key] && await exists(outputPath)) continue;
       cache[key] = Date.now();
 
       const lineSvg = lines.map((line, index) =>
-        `<text x="76" y="${205 + index * 82}" class="title">${escapeXml(line)}</text>`
+        `<text x="90" y="${275 + index * 76}" class="title">${escapeXml(line)}</text>`
       ).join('');
 
       const svg = `
         <svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
-          <rect width="1200" height="630" fill="#080B10"/>
-          <rect x="0" y="0" width="1200" height="630" fill="url(#grid)" opacity="0.28"/>
-          <rect x="76" y="74" width="1048" height="482" rx="28" fill="#111620" stroke="#202635" stroke-width="2"/>
-          <text x="76" y="46" class="site">alexgetman.com</text>
-          <text x="106" y="135" class="badge">${escapeXml(badge)}</text>
+          <rect width="1200" height="630" fill="${sourceImage ? 'rgba(8,11,16,0.55)' : '#080B10'}"/>
+          ${sourceImage ? '<rect width="1200" height="630" fill="url(#shade)"/>' : '<rect x="0" y="0" width="1200" height="630" fill="url(#grid)" opacity="0.28"/>'}
+          <rect x="70" y="74" width="1060" height="482" rx="28" fill="rgba(8,11,16,0.72)" stroke="rgba(243,246,250,0.18)" stroke-width="2"/>
+          <text x="90" y="132" class="site">alexgetman.com</text>
+          <text x="90" y="195" class="badge">${escapeXml(badge)}</text>
           ${lineSvg}
-          <text x="76" y="596" class="meta">${escapeXml(variant.name)} / post ${escapeXml(postId)}</text>
-          <circle cx="1060" cy="126" r="38" fill="#F04465" opacity="0.9"/>
-          <text x="1044" y="139" class="mark">A</text>
+          <text x="90" y="510" class="meta">${escapeXml(variant.name)} / post ${escapeXml(postId)}</text>
+          <circle cx="1058" cy="132" r="42" fill="#F04465" opacity="0.95"/>
+          <text x="1041" y="146" class="mark">A</text>
           <defs>
+            <linearGradient id="shade" x1="0" x2="1" y1="0" y2="1">
+              <stop offset="0%" stop-color="rgba(8,11,16,0.18)"/>
+              <stop offset="45%" stop-color="rgba(8,11,16,0.58)"/>
+              <stop offset="100%" stop-color="rgba(8,11,16,0.9)"/>
+            </linearGradient>
             <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
               <path d="M 48 0 L 0 0 0 48" fill="none" stroke="#202635" stroke-width="1"/>
             </pattern>
@@ -208,14 +246,26 @@ async function generatePostOgImages(feedItems) {
             .site,.meta,.badge{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;font-weight:800;letter-spacing:0}
             .site{fill:#A3ADBC;font-size:28px}
             .badge{fill:#F04465;font-size:30px}
-            .title{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;font-size:62px;font-weight:850;fill:#F3F6FA;letter-spacing:0}
+            .title{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;font-size:58px;font-weight:850;fill:#F3F6FA;letter-spacing:0}
             .meta{fill:#A3ADBC;font-size:26px}
             .mark{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;font-size:38px;font-weight:900;fill:white}
           </style>
         </svg>
       `;
 
-      await sharp(Buffer.from(svg))
+      const base = sourceImage
+        ? await sharp(sourceImage)
+            .resize({ width: 1200, height: 630, fit: 'cover' })
+            .blur(1.2)
+            .modulate({ brightness: 0.62, saturation: 0.72 })
+            .jpeg({ quality: 88, mozjpeg: true })
+            .toBuffer()
+        : await sharp({
+            create: { width: 1200, height: 630, channels: 3, background: '#080B10' }
+          }).jpeg().toBuffer();
+
+      await sharp(base)
+        .composite([{ input: Buffer.from(svg), top: 0, left: 0 }])
         .jpeg({ quality: 84, mozjpeg: true })
         .toFile(outputPath);
     }
@@ -248,10 +298,17 @@ async function collectImages(dir, prefix = '') {
 async function generateResponsiveImages() {
   const outputDir = path.join(publicDir, 'generated/responsive');
   await fs.mkdir(outputDir, { recursive: true });
-  const images = await collectImages(publicDir);
+  const images = new Set(await collectImages(publicDir));
+  for (const item of await loadFeedItems()) {
+    for (const locale of ['en', 'ru']) {
+      const image = postImagePath(item, locale);
+      if (image && /\.(png|jpe?g)$/i.test(image)) images.add(image);
+    }
+  }
 
   for (const publicPath of images) {
-    const inputPath = path.join(publicDir, publicPath);
+    const inputPath = await resolvePublicImage(publicPath);
+    if (!inputPath) continue;
     const updated = await needsUpdate(inputPath, `responsive:${publicPath}`);
     const metadata = await sharp(inputPath).metadata();
     if (!metadata.width) continue;
