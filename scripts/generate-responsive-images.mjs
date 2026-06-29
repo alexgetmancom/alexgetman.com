@@ -222,7 +222,7 @@ async function generatePostOgImages(feedItems) {
       const lines = splitLines(title, variant.locale === 'ru' ? 25 : 28, sourceImage ? 3 : 4);
       const badge = categoryLabel(variant.text, variant.locale);
       const sourceImageStamp = sourceImage ? (await fs.stat(sourceImage)).mtimeMs : 'none';
-      const key = `og:v4:${postId}:${variant.locale}:${compactText(title)}:${badge}:${sourceImageStamp}:${Boolean(avatarDataUri)}`;
+      const key = `og:v5:${postId}:${variant.locale}:${compactText(title)}:${badge}:${sourceImageStamp}:${Boolean(avatarDataUri)}`;
       const outputPath = path.join(outputDir, `post-${postId}-${variant.locale}.jpg`);
 
       if (cache[key] && await exists(outputPath)) continue;
