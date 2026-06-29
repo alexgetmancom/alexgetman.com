@@ -194,6 +194,10 @@ async function generateSocialImage() {
 async function generatePostOgImages(feedItems) {
   const outputDir = path.join(publicDir, 'og/posts');
   await fs.mkdir(outputDir, { recursive: true });
+  const avatarPath = await resolvePublicImage('avatar-small.png') || await resolvePublicImage('avatar.png');
+  const avatarDataUri = avatarPath
+    ? `data:image/png;base64,${(await fs.readFile(avatarPath)).toString('base64')}`
+    : '';
 
   for (const item of feedItems) {
     const postId = item?.post_id;
@@ -207,48 +211,78 @@ async function generatePostOgImages(feedItems) {
     for (const variant of variants) {
       if (!variant.enabled) continue;
       const title = truncateText(getFirstSentence(variant.text) || `Post ${postId}`, 132);
-      const lines = splitLines(title, variant.locale === 'ru' ? 27 : 30, 3);
-      const badge = categoryLabel(variant.text, variant.locale);
       const sourceImage = await resolvePublicImage(variant.image);
+      const lines = splitLines(title, variant.locale === 'ru' ? 25 : 28, sourceImage ? 3 : 4);
+      const badge = categoryLabel(variant.text, variant.locale);
       const sourceImageStamp = sourceImage ? (await fs.stat(sourceImage)).mtimeMs : 'none';
-      const key = `og:v2:${postId}:${variant.locale}:${compactText(title)}:${badge}:${sourceImageStamp}`;
+      const key = `og:v3:${postId}:${variant.locale}:${compactText(title)}:${badge}:${sourceImageStamp}:${Boolean(avatarDataUri)}`;
       const outputPath = path.join(outputDir, `post-${postId}-${variant.locale}.jpg`);
 
       if (cache[key] && await exists(outputPath)) continue;
       cache[key] = Date.now();
 
       const lineSvg = lines.map((line, index) =>
-        `<text x="90" y="${275 + index * 76}" class="title">${escapeXml(line)}</text>`
+        `<text x="74" y="${sourceImage ? 340 + index * 72 : 255 + index * 76}" class="title">${escapeXml(line)}</text>`
       ).join('');
 
-      const svg = `
+      const svg = sourceImage ? `
         <svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
-          <rect width="1200" height="630" fill="${sourceImage ? 'rgba(8,11,16,0.55)' : '#080B10'}"/>
-          ${sourceImage ? '<rect width="1200" height="630" fill="url(#shade)"/>' : '<rect x="0" y="0" width="1200" height="630" fill="url(#grid)" opacity="0.28"/>'}
-          <rect x="70" y="74" width="1060" height="482" rx="28" fill="rgba(8,11,16,0.72)" stroke="rgba(243,246,250,0.18)" stroke-width="2"/>
-          <text x="90" y="132" class="site">alexgetman.com</text>
-          <text x="90" y="195" class="badge">${escapeXml(badge)}</text>
+          <rect width="1200" height="630" fill="url(#shade)"/>
+          <rect y="410" width="1200" height="220" fill="url(#bottom)"/>
+          <text x="74" y="86" class="site">alexgetman.com</text>
+          <text x="74" y="280" class="badge">${escapeXml(badge)}</text>
           ${lineSvg}
-          <text x="90" y="510" class="meta">${escapeXml(variant.name)} / post ${escapeXml(postId)}</text>
-          <circle cx="1058" cy="132" r="42" fill="#F04465" opacity="0.95"/>
-          <text x="1041" y="146" class="mark">A</text>
+          <g transform="translate(858 520)">
+            ${avatarDataUri ? `<image href="${avatarDataUri}" x="0" y="-34" width="68" height="68" clip-path="url(#avatarClip)"/>` : '<circle cx="34" cy="0" r="34" fill="#F04465"/>'}
+            <text x="86" y="-8" class="author">${escapeXml(variant.name)}</text>
+            <text x="86" y="26" class="post">post ${escapeXml(postId)}</text>
+          </g>
           <defs>
-            <linearGradient id="shade" x1="0" x2="1" y1="0" y2="1">
-              <stop offset="0%" stop-color="rgba(8,11,16,0.18)"/>
-              <stop offset="45%" stop-color="rgba(8,11,16,0.58)"/>
-              <stop offset="100%" stop-color="rgba(8,11,16,0.9)"/>
+            <linearGradient id="shade" x1="0" x2="1" y1="0" y2="0">
+              <stop offset="0%" stop-color="rgba(0,0,0,0.72)"/>
+              <stop offset="42%" stop-color="rgba(0,0,0,0.36)"/>
+              <stop offset="100%" stop-color="rgba(0,0,0,0.12)"/>
             </linearGradient>
+            <linearGradient id="bottom" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stop-color="rgba(0,0,0,0)"/>
+              <stop offset="100%" stop-color="rgba(0,0,0,0.58)"/>
+            </linearGradient>
+            <clipPath id="avatarClip"><circle cx="34" cy="0" r="34"/></clipPath>
+          </defs>
+          <style>
+            .site,.badge,.title,.author,.post{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;letter-spacing:0}
+            .site{fill:rgba(255,255,255,0.82);font-size:30px;font-weight:850}
+            .badge{fill:#ff4d70;font-size:30px;font-weight:850}
+            .title{fill:#fff;font-size:60px;font-weight:900;filter:drop-shadow(0 4px 18px rgba(0,0,0,0.7))}
+            .author{fill:#fff;font-size:30px;font-weight:850}
+            .post{fill:rgba(255,255,255,0.72);font-size:23px;font-weight:750}
+          </style>
+        </svg>
+      ` : `
+        <svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
+          <rect width="1200" height="630" fill="#080B10"/>
+          <rect x="0" y="0" width="1200" height="630" fill="url(#grid)" opacity="0.28"/>
+          <text x="74" y="90" class="site">alexgetman.com</text>
+          <text x="74" y="174" class="badge">${escapeXml(badge)}</text>
+          ${lineSvg}
+          <g transform="translate(74 520)">
+            ${avatarDataUri ? `<image href="${avatarDataUri}" x="0" y="-34" width="68" height="68" clip-path="url(#avatarClip)"/>` : '<circle cx="34" cy="0" r="34" fill="#F04465"/>'}
+            <text x="86" y="-8" class="author">${escapeXml(variant.name)}</text>
+            <text x="86" y="26" class="post">post ${escapeXml(postId)}</text>
+          </g>
+          <defs>
             <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
               <path d="M 48 0 L 0 0 0 48" fill="none" stroke="#202635" stroke-width="1"/>
             </pattern>
+            <clipPath id="avatarClip"><circle cx="34" cy="0" r="34"/></clipPath>
           </defs>
           <style>
-            .site,.meta,.badge{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;font-weight:800;letter-spacing:0}
+            .site,.badge,.title,.author,.post{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;letter-spacing:0}
             .site{fill:#A3ADBC;font-size:28px}
             .badge{fill:#F04465;font-size:30px}
             .title{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;font-size:58px;font-weight:850;fill:#F3F6FA;letter-spacing:0}
-            .meta{fill:#A3ADBC;font-size:26px}
-            .mark{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;font-size:38px;font-weight:900;fill:white}
+            .author{fill:#F3F6FA;font-size:30px;font-weight:850}
+            .post{fill:#A3ADBC;font-size:23px;font-weight:750}
           </style>
         </svg>
       `;
@@ -256,8 +290,7 @@ async function generatePostOgImages(feedItems) {
       const base = sourceImage
         ? await sharp(sourceImage)
             .resize({ width: 1200, height: 630, fit: 'cover' })
-            .blur(1.2)
-            .modulate({ brightness: 0.62, saturation: 0.72 })
+            .modulate({ brightness: 0.9, saturation: 0.96 })
             .jpeg({ quality: 88, mozjpeg: true })
             .toBuffer()
         : await sharp({
