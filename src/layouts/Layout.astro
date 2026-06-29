@@ -36,9 +36,10 @@ const {
 const cleanDescription = removeLeadingEmoji(description);
 const siteAuthor = siteName;
 const publicBaseUrl = "https://alexgetman.com";
+const brandAssetVersion = "20260629-new-avatar";
 const socialImage = socialImageProp
   ? (socialImageProp.startsWith('http') ? socialImageProp : `${publicBaseUrl}${socialImageProp.startsWith('/') ? socialImageProp : `/${socialImageProp}`}`)
-  : `${publicBaseUrl}/social-image.jpg`;
+  : `${publicBaseUrl}/social-image.jpg?v=${brandAssetVersion}`;
 const twitterCard = socialImageWidth >= 1000 ? "summary_large_image" : "summary";
 const isRu = lang === "ru";
 const navHomeHref = isRu ? "/ru/#top" : "/#top";
@@ -55,9 +56,9 @@ const navRssHref = isRu ? "/ru/feed.xml" : "/feed.xml";
     <meta name="description" content={cleanDescription}>
     <meta name="robots" content={robots}>
     <meta name="theme-color" content="#080B10">
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-    <link rel="icon" type="image/png" href="/favicon.png">
-    <link rel="alternate icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="icon" type="image/svg+xml" href={`/favicon.svg?v=${brandAssetVersion}`}>
+    <link rel="icon" type="image/png" href={`/favicon.png?v=${brandAssetVersion}`}>
+    <link rel="alternate icon" type="image/x-icon" href={`/favicon.ico?v=${brandAssetVersion}`}>
     <link rel="manifest" href="/manifest.json">
     <link rel="canonical" href={canonicalUrl}>
     <link rel="alternate" type="application/rss+xml" title={title} href={rssHref}>
@@ -1181,7 +1182,7 @@ const navRssHref = isRu ? "/ru/feed.xml" : "/feed.xml";
     <aside class="nav-drawer" id="nav-drawer">
         <div class="nav-drawer__header">
             <div class="drawer-header-left">
-                <img src="/avatar-small.webp" alt="Алексей Гетманец" class="logo-avatar" width="32" height="32" />
+                <img src={`/avatar-small.webp?v=${brandAssetVersion}`} alt="Алексей Гетманец" class="logo-avatar" width="32" height="32" />
                 <span class="drawer-title">Навигация</span>
             </div>
             <button class="nav-drawer__close" id="nav-close-btn" aria-label="Закрыть меню">
@@ -1247,7 +1248,7 @@ const navRssHref = isRu ? "/ru/feed.xml" : "/feed.xml";
             </button>
             
             <a href="/" class="logo-wrap">
-                <img src="/avatar-small.webp" alt="Алексей Гетманец" class="logo-avatar" width="36" height="36" />
+                <img src={`/avatar-small.webp?v=${brandAssetVersion}`} alt="Алексей Гетманец" class="logo-avatar" width="36" height="36" />
                 <span class="logo-text">Алексей Гетманец</span>
             </a>
             
