@@ -196,7 +196,14 @@ async function generatePostOgImages(feedItems) {
   await fs.mkdir(outputDir, { recursive: true });
   const avatarPath = await resolvePublicImage('avatar-small.png') || await resolvePublicImage('avatar.png');
   const avatarDataUri = avatarPath
-    ? `data:image/png;base64,${(await fs.readFile(avatarPath)).toString('base64')}`
+    ? `data:image/png;base64,${(await sharp(avatarPath)
+        .resize({ width: 160, height: 160, fit: 'cover' })
+        .composite([{
+          input: Buffer.from('<svg width="160" height="160"><circle cx="80" cy="80" r="80" fill="white"/></svg>'),
+          blend: 'dest-in'
+        }])
+        .png()
+        .toBuffer()).toString('base64')}`
     : '';
 
   for (const item of feedItems) {
@@ -231,7 +238,7 @@ async function generatePostOgImages(feedItems) {
           <g transform="translate(812 468)">
             <text x="248" y="43" class="brand">alex</text>
             <text x="248" y="99" class="brand">getman</text>
-            ${avatarDataUri ? `<image href="${avatarDataUri}" x="276" y="0" width="104" height="104" clip-path="url(#avatarClip)"/>` : '<circle cx="328" cy="52" r="52" fill="#F04465"/>'}
+            ${avatarDataUri ? `<image href="${avatarDataUri}" x="276" y="0" width="104" height="104"/>` : '<circle cx="328" cy="52" r="52" fill="#F04465"/>'}
           </g>
           <defs>
             <radialGradient id="corner" cx="100%" cy="100%" r="58%">
@@ -239,7 +246,6 @@ async function generatePostOgImages(feedItems) {
               <stop offset="48%" stop-color="rgba(0,0,0,0.20)"/>
               <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
             </radialGradient>
-            <clipPath id="avatarClip"><circle cx="52" cy="52" r="52"/></clipPath>
           </defs>
           <style>
             .brand{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;fill:white;font-size:52px;font-weight:900;letter-spacing:0;text-anchor:end;filter:drop-shadow(0 4px 16px rgba(0,0,0,.88))}
@@ -253,7 +259,7 @@ async function generatePostOgImages(feedItems) {
           <text x="74" y="174" class="badge">${escapeXml(badge)}</text>
           ${lineSvg}
           <g transform="translate(74 520)">
-            ${avatarDataUri ? `<image href="${avatarDataUri}" x="0" y="-34" width="68" height="68" clip-path="url(#avatarClip)"/>` : '<circle cx="34" cy="0" r="34" fill="#F04465"/>'}
+            ${avatarDataUri ? `<image href="${avatarDataUri}" x="0" y="-34" width="68" height="68"/>` : '<circle cx="34" cy="0" r="34" fill="#F04465"/>'}
             <text x="86" y="-8" class="author">alex</text>
             <text x="86" y="26" class="post">getman</text>
           </g>
@@ -261,7 +267,6 @@ async function generatePostOgImages(feedItems) {
             <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
               <path d="M 48 0 L 0 0 0 48" fill="none" stroke="#202635" stroke-width="1"/>
             </pattern>
-            <clipPath id="avatarClip"><circle cx="34" cy="0" r="34"/></clipPath>
           </defs>
           <style>
             .site,.badge,.title,.author,.post{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;letter-spacing:0}
