@@ -1,7 +1,7 @@
 ---
 import Layout from '../../../layouts/Layout.astro';
 import { loadFeedItems } from '../../../utils/feed';
-import { categoryLabel, categorySlugFromBadge, excerptAfterTitle, getFirstSentence, getSmartBadge, truncateText } from '../../../utils/helpers';
+import { categoryLabel, categorySlugFromBadge, excerptAfterTitle, getFirstSentence, getSmartBadge, postImagePath, responsiveImageSrcSet, truncateText } from '../../../utils/helpers';
 
 export async function getStaticPaths() {
   const feedItems = loadFeedItems().filter((item: any) => item.has_ru && item.post_id);
@@ -19,7 +19,8 @@ const posts = loadFeedItems()
     url: `/ru/${item.post_id}/${item.slug_ru}/`,
     title: getFirstSentence(item.text || '') || `Пост ${item.post_id}`,
     excerpt: excerptAfterTitle(item.text || '', getFirstSentence(item.text || '') || `Пост ${item.post_id}`, 170),
-    date: item.date
+    date: item.date,
+    image: postImagePath(item, 'ru')
   }));
 
 const description = `Публикации категории ${label} от Алексея Гетманца про ИИ, автоматизацию, инструменты разработки и self-hosted системы.`;
@@ -44,9 +45,14 @@ const description = `Публикации категории ${label} от Ал�
     <div class="post-list">
       {posts.map((post) => (
         <a href={post.url} class="post-row">
-          <time datetime={post.date}>{new Date(post.date).toLocaleDateString('ru-RU', { timeZone: 'Europe/Moscow' })}</time>
-          <strong>{post.title}</strong>
-          <span>{post.excerpt}</span>
+          <div class="post-thumb">
+            {post.image ? <img src={`/${post.image}`} srcset={responsiveImageSrcSet(post.image)} sizes="72px" alt="" loading="lazy" decoding="async" /> : <span>{label}</span>}
+          </div>
+          <div class="post-copy">
+            <time datetime={post.date}>{new Date(post.date).toLocaleDateString('ru-RU', { timeZone: 'Europe/Moscow' })}</time>
+            <strong>{post.title}</strong>
+            <span>{post.excerpt}</span>
+          </div>
         </a>
       ))}
     </div>
@@ -58,12 +64,15 @@ const description = `Публикации категории ${label} от Ал�
   .eyebrow { margin: 0 0 0.75rem; color: var(--accent); font-family: var(--font-mono); font-size: 0.82rem; font-weight: 800; }
   h1 { margin: 0 0 2rem; font-size: clamp(2.4rem, 5vw, 4.2rem); line-height: 1.02; letter-spacing: 0; }
   .post-list { display: grid; gap: 0.75rem; }
-  .post-row { display: grid; grid-template-columns: 120px 1fr; gap: 0.2rem 1rem; padding: 1rem 0; border-bottom: 1px solid var(--border); color: var(--text-main); }
+  .post-row { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 0.8rem; align-items: center; padding: 1rem 0; border-bottom: 1px solid var(--border); color: var(--text-main); }
+  .post-thumb { width: 72px; aspect-ratio: 1 / 1; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--card-bg); display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-family: var(--font-mono); font-size: 0.68rem; font-weight: 800; text-align: center; }
+  .post-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .post-copy { min-width: 0; display: grid; gap: 0.2rem; }
   .post-row time { color: var(--text-muted); font-size: 0.9rem; }
   .post-row strong { color: var(--text-header); }
-  .post-row span { grid-column: 2; color: var(--text-secondary); font-size: 0.95rem; }
+  .post-row span { color: var(--text-secondary); font-size: 0.95rem; }
   @media (max-width: 640px) {
-    .post-row { grid-template-columns: 1fr; }
-    .post-row span { grid-column: auto; }
+    .post-row { grid-template-columns: 60px minmax(0, 1fr); }
+    .post-thumb { width: 60px; }
   }
 </style>

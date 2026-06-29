@@ -44,4 +44,6 @@ pnpm-debug.log*
 # Cache and dynamically modified files
 /src/data/habr_views_cache.json
 /public/habr-images/
+/public/generated/
+/public/og/
 .image-cache.json

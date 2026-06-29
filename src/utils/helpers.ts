@@ -197,6 +197,100 @@ export function getPostPath(item: any, locale = 'en'): string {
   return `/${item}/post-${item}/`;
 }
 
+export function normalizePublicPath(value: string | null | undefined): string {
+  return String(value || '').replace(/^\/+/, '');
+}
+
+export function postImagePath(item: any, locale = 'en'): string | null {
+  if (!item) return null;
+  const localizedMedia = locale === 'ru' ? item.media : item.media_en;
+  const fallbackMedia = locale === 'ru' ? item.media_en : item.media;
+  const media = Array.isArray(localizedMedia) && localizedMedia.length > 0
+    ? localizedMedia
+    : (Array.isArray(fallbackMedia) ? fallbackMedia : []);
+  const imageMedia = media.find((mediaItem: any) => mediaItem?.type !== 'video' && mediaItem?.path);
+  const directImage = locale === 'ru'
+    ? (item.image || item.image_en)
+    : (item.image_en || item.image);
+  return normalizePublicPath(directImage || imageMedia?.path) || null;
+}
+
+export function postOgImagePath(item: any, locale = 'en'): string {
+  const postId = item?.post_id || item?.id;
+  if (!postId) return '/social-image.jpg';
+  return `/og/posts/post-${postId}-${locale === 'ru' ? 'ru' : 'en'}.jpg`;
+}
+
+export function responsiveImageSrcSet(publicPath: string | null | undefined): string | undefined {
+  const normalized = normalizePublicPath(publicPath);
+  if (!normalized || !/\.(png|jpe?g)$/i.test(normalized)) return undefined;
+  const base = normalized
+    .replace(/[\\/]/g, '-')
+    .replace(/\.[a-z0-9]+$/i, '');
+  return [360, 640, 960]
+    .map((width) => `/generated/responsive/${base}-${width}.webp ${width}w`)
+    .join(', ');
+}
+
+function hasBlockHtml(value: string): boolean {
+  return /<(p|ul|ol|li|pre|blockquote|h2|h3|table|figure|div)\b/i.test(value);
+}
+
+function paragraphizeLines(lines: string[]): string {
+  const blocks: string[] = [];
+  let index = 0;
+  while (index < lines.length) {
+    const line = lines[index].trim();
+    if (!line) {
+      index += 1;
+      continue;
+    }
+
+    const bulletItems: string[] = [];
+    while (index < lines.length) {
+      const match = lines[index].trim().match(/^(?:[-*•])\s+(.+)$/);
+      if (!match) break;
+      bulletItems.push(match[1]);
+      index += 1;
+    }
+    if (bulletItems.length) {
+      blocks.push(`<ul>${bulletItems.map((item) => `<li>${item}</li>`).join('')}</ul>`);
+      continue;
+    }
+
+    const numberedItems: string[] = [];
+    while (index < lines.length) {
+      const match = lines[index].trim().match(/^\d+[.)]\s+(.+)$/);
+      if (!match) break;
+      numberedItems.push(match[1]);
+      index += 1;
+    }
+    if (numberedItems.length) {
+      blocks.push(`<ol>${numberedItems.map((item) => `<li>${item}</li>`).join('')}</ol>`);
+      continue;
+    }
+
+    blocks.push(`<p>${line}</p>`);
+    index += 1;
+  }
+  return blocks.join('\n');
+}
+
+export function semanticPostHtml(value: string): string {
+  const html = String(value || '').trim();
+  if (!html) return '';
+  if (hasBlockHtml(html)) return html;
+  const normalized = html
+    .replace(/\r\n/g, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/\n{3,}/g, '\n\n');
+  const chunks = normalized
+    .split(/\n{2,}/)
+    .map((chunk) => paragraphizeLines(chunk.split('\n')))
+    .filter(Boolean);
+  return chunks.join('\n');
+}
+
 export function formatViewsCount(views: number): string {
   if (!views) return "0";
   if (views >= 1000000) {

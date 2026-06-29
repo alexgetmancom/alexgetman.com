@@ -11,6 +11,10 @@ interface Props {
   rssHref?: string;
   alternateLinks?: Array<{ hreflang: string; href: string }>;
   robots?: string;
+  socialImage?: string;
+  socialImageWidth?: number;
+  socialImageHeight?: number;
+  ogType?: string;
 }
 
 const {
@@ -22,13 +26,20 @@ const {
   siteName = "Алексей Гетманец",
   rssHref = "/feed.xml",
   alternateLinks = [],
-  robots = "index, follow"
+  robots = "index, follow",
+  socialImage: socialImageProp,
+  socialImageWidth = 500,
+  socialImageHeight = 500,
+  ogType = "website"
 } = Astro.props;
 
 const cleanDescription = removeLeadingEmoji(description);
 const siteAuthor = siteName;
 const publicBaseUrl = "https://alexgetman.com";
-const socialImage = `${publicBaseUrl}/social-image.jpg`;
+const socialImage = socialImageProp
+  ? (socialImageProp.startsWith('http') ? socialImageProp : `${publicBaseUrl}${socialImageProp.startsWith('/') ? socialImageProp : `/${socialImageProp}`}`)
+  : `${publicBaseUrl}/social-image.jpg`;
+const twitterCard = socialImageWidth >= 1000 ? "summary_large_image" : "summary";
 const isRu = lang === "ru";
 const navHomeHref = isRu ? "/ru/#top" : "/#top";
 const navSearchHref = isRu ? "/ru/search/" : "/search/";
@@ -56,17 +67,17 @@ const navRssHref = isRu ? "/ru/feed.xml" : "/feed.xml";
     <link rel="agent-skills" type="application/json" href="/.well-known/agent-skills/index.json">
     
     <!-- Open Graph / Facebook -->
-    <meta property="og:type" content="website">
+    <meta property="og:type" content={ogType}>
     <meta property="og:site_name" content={siteAuthor}>
     <meta property="og:title" content={title.split(' | ')[0]}>
     <meta property="og:description" content={cleanDescription}>
     <meta property="og:url" content={canonicalUrl}>
     <meta property="og:image" content={socialImage}>
-    <meta property="og:image:width" content="500">
-    <meta property="og:image:height" content="500">
+    <meta property="og:image:width" content={String(socialImageWidth)}>
+    <meta property="og:image:height" content={String(socialImageHeight)}>
 
     <!-- Twitter -->
-    <meta name="twitter:card" content="summary">
+    <meta name="twitter:card" content={twitterCard}>
     <meta name="twitter:title" content={title.split(' | ')[0]}>
     <meta name="twitter:description" content={cleanDescription}>
     <meta name="twitter:image" content={socialImage}>

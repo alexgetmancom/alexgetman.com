@@ -10,18 +10,12 @@ import {
   formatRelativeTime,
   getFirstSentence,
   getSmartBadge,
+  postImagePath,
+  responsiveImageSrcSet,
   truncateText
 } from '../utils/helpers';
 
 const feedItems = loadFeedItems();
-
-function postImage(item) {
-  const media = Array.isArray(item.media_en) && item.media_en.length > 0
-    ? item.media_en
-    : (Array.isArray(item.media) ? item.media : []);
-  const imageMedia = media.find((mediaItem) => mediaItem?.type !== 'video' && mediaItem?.path);
-  return item.image_en || imageMedia?.path || item.image || null;
-}
 
 function toEnglishPost(item) {
   const id = item.post_id;
@@ -36,7 +30,7 @@ function toEnglishPost(item) {
     excerpt: excerptAfterTitle(text, title, 180),
     date: item.date,
     relativeDate: formatRelativeTime(item.date, 'en'),
-    image: postImage(item),
+    image: postImagePath(item, 'en'),
     views: Number(item.views || 0),
     categorySlug,
     category: categoryLabel(categorySlug, 'en'),
@@ -162,7 +156,7 @@ function formatDate(value) {
         <a href={leadPost.url} class="lead-card">
           <div class="lead-card__media">
             {leadPost.image ? (
-              <img src={`/${leadPost.image}`} alt="" loading="eager" decoding="async" sizes="(max-width: 760px) 100vw, 680px" />
+              <img src={`/${leadPost.image}`} srcset={responsiveImageSrcSet(leadPost.image)} alt="" loading="eager" decoding="async" sizes="(max-width: 760px) 100vw, 680px" />
             ) : (
               <span>{leadPost.category}</span>
             )}
@@ -188,9 +182,18 @@ function formatDate(value) {
         <div class="post-list">
           {latestEnglishPosts.map((post) => (
             <a href={post.url} class="post-row">
-              <span class="post-row__date">{post.relativeDate || `${formatDate(post.date)} MSK`}</span>
-              <strong>{post.title}</strong>
-              <span>{post.excerpt}</span>
+              <div class="post-row__thumb">
+                {post.image ? (
+                  <img src={`/${post.image}`} srcset={responsiveImageSrcSet(post.image)} alt="" loading="lazy" decoding="async" sizes="76px" />
+                ) : (
+                  <span>{post.category}</span>
+                )}
+              </div>
+              <div class="post-row__content">
+                <span class="post-row__date">{post.relativeDate || `${formatDate(post.date)} MSK`}</span>
+                <strong>{post.title}</strong>
+                <span>{post.excerpt}</span>
+              </div>
             </a>
           ))}
         </div>
@@ -435,12 +438,44 @@ function formatDate(value) {
 
   .post-row {
     display: grid;
-    gap: 0.25rem;
+    grid-template-columns: 76px minmax(0, 1fr);
+    gap: 0.8rem;
+    align-items: center;
     padding: 1rem;
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--card-bg);
     min-width: 0;
+  }
+
+  .post-row__thumb {
+    width: 76px;
+    aspect-ratio: 1 / 1;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    background: linear-gradient(135deg, rgba(240, 68, 101, 0.12), rgba(255, 255, 255, 0.03));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-align: center;
+  }
+
+  .post-row__thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .post-row__content {
+    min-width: 0;
+    display: grid;
+    gap: 0.25rem;
   }
 
   .post-row span,

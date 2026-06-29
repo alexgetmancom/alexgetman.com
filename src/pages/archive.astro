@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import Layout from '../layouts/Layout.astro';
-import { excerptAfterTitle, getFirstSentence, truncateText } from '../utils/helpers';
+import { excerptAfterTitle, getFirstSentence, postImagePath, responsiveImageSrcSet, truncateText } from '../utils/helpers';
 
 const dataDir = process.env.DATA_DIR || '/home/deploy/ialexey-feed/data';
 const prodFeedJsonPath = path.join(dataDir, 'feed.json');
@@ -34,7 +34,8 @@ const posts = feedItems
     url: `/${item.post_id}/${item.slug_en}/`,
     title: getFirstSentence(item.text_en || item.text || "") || `Post ${item.post_id}`,
     excerpt: excerptAfterTitle(item.text_en || item.text || "", getFirstSentence(item.text_en || item.text || "") || `Post ${item.post_id}`, 150),
-    date: item.date
+    date: item.date,
+    image: postImagePath(item, 'en')
   }));
 
 function formatMonth(value) {
@@ -93,9 +94,14 @@ const description = "Archive of English posts by Alex Getman about AI news, auto
         <div class="archive-list">
           {monthPosts.map((post) => (
             <a href={post.url} class="archive-row">
-              <time datetime={post.date}>{formatDate(post.date)}</time>
-              <strong>{post.title}</strong>
-              <span>{post.excerpt}</span>
+              <div class="archive-thumb">
+                {post.image ? <img src={`/${post.image}`} srcset={responsiveImageSrcSet(post.image)} sizes="72px" alt="" loading="lazy" decoding="async" /> : <span>Post</span>}
+              </div>
+              <div class="archive-copy">
+                <time datetime={post.date}>{formatDate(post.date)}</time>
+                <strong>{post.title}</strong>
+                <span>{post.excerpt}</span>
+              </div>
             </a>
           ))}
         </div>
@@ -113,13 +119,16 @@ const description = "Archive of English posts by Alex Getman about AI news, auto
   .month-group { margin-top: 2.25rem; }
   h2 { margin: 0 0 1rem; font-size: 1.25rem; letter-spacing: 0; }
   .archive-list { display: grid; gap: 0.75rem; }
-  .archive-row { display: grid; grid-template-columns: 120px 1fr; gap: 0.2rem 1rem; padding: 1rem 0; border-bottom: 1px solid var(--border); color: var(--text-main); }
+  .archive-row { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 0.8rem; align-items: center; padding: 1rem 0; border-bottom: 1px solid var(--border); color: var(--text-main); }
+  .archive-thumb { width: 72px; aspect-ratio: 1 / 1; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--card-bg); display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-family: var(--font-mono); font-size: 0.72rem; font-weight: 800; }
+  .archive-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .archive-copy { min-width: 0; display: grid; gap: 0.2rem; }
   .archive-row time { color: var(--text-muted); font-size: 0.9rem; }
   .archive-row strong { color: var(--text-header); }
-  .archive-row span { grid-column: 2; color: var(--text-secondary); font-size: 0.95rem; }
+  .archive-row span { color: var(--text-secondary); font-size: 0.95rem; }
   .empty { color: var(--text-secondary); }
   @media (max-width: 640px) {
-    .archive-row { grid-template-columns: 1fr; }
-    .archive-row span { grid-column: auto; }
+    .archive-row { grid-template-columns: 60px minmax(0, 1fr); }
+    .archive-thumb { width: 60px; }
   }
 </style>

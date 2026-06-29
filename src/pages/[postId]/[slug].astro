@@ -9,6 +9,10 @@ import {
   categorySlugFromBadge,
   estimateReadTime,
   formatDate,
+  postImagePath,
+  postOgImagePath,
+  responsiveImageSrcSet,
+  semanticPostHtml,
   sanitizeHtml
 } from '../../utils/helpers';
 
@@ -80,7 +84,7 @@ export async function getStaticPaths() {
         slug: x.slug_en,
         title: getFirstSentence(x.text_en || ""),
         date: x.date,
-        image: x.image
+        image: postImagePath(x, 'en')
       }));
 
     return {
@@ -221,6 +225,9 @@ const postMedia = Array.isArray(item.media_en) && item.media_en.length > 0
 const schemaImages = postMedia
   .filter((mediaItem: any) => mediaItem.type !== "video" && mediaItem.path)
   .map((mediaItem: any) => `https://alexgetman.com/${String(mediaItem.path).replace(/^\/+/, '')}`);
+const ogImage = postOgImagePath(item, 'en');
+const articleBodyHtml = semanticPostHtml(postBodyHtml || item.html || item.text);
+const schemaImageUrls = schemaImages.length ? schemaImages : [`https://alexgetman.com${ogImage}`];
 
 // Schema.org Article dynamic markup
 const schemaObject = {
@@ -243,7 +250,7 @@ const schemaObject = {
     "url": "https://alexgetman.com/"
   },
   "mainEntityOfPage": localUrl,
-  ...(schemaImages.length ? { "image": schemaImages } : {})
+  "image": schemaImageUrls
 };
 
 const schema = JSON.stringify(schemaObject);
@@ -256,6 +263,10 @@ const schema = JSON.stringify(schemaObject);
   lang="en"
   siteName="Alex Getman"
   rssHref="/feed.xml"
+  socialImage={ogImage}
+  socialImageWidth={1200}
+  socialImageHeight={630}
+  ogType="article"
   alternateLinks={[
     { hreflang: "en", href: localUrl },
     ...(item.has_ru ? [{ hreflang: "ru", href: `https://alexgetman.com/ru/${postId}/${item.slug_ru}/` }] : []),
@@ -296,6 +307,7 @@ const schema = JSON.stringify(schemaObject);
                           <div class="article-image-wrap">
                               <img
                                   src={`/${mediaItem.path}`}
+                                  srcset={responsiveImageSrcSet(mediaItem.path)}
                                   class="article-image"
                                   alt={postTitle}
                                   loading="lazy"
@@ -308,7 +320,7 @@ const schema = JSON.stringify(schemaObject);
               </div>
           )}
           
-          <div class="article-body" set:html={sanitizeHtml(postBodyHtml || item.html || item.text)}></div>
+          <div class="article-body" set:html={sanitizeHtml(articleBodyHtml)}></div>
 
           {telegramUrl && <a href={telegramUrl} target="_blank" rel="noopener noreferrer" class="discussion-link">
               <span>Discuss in Telegram</span>
@@ -388,7 +400,7 @@ const schema = JSON.stringify(schemaObject);
                           <a href={postUrl} class="related-card">
                               <div class="related-card-img-wrap">
                                   {post.image ? (
-                                      <img src={`/${post.image}`} alt={post.title} class="related-card-img" loading="lazy" decoding="async" />
+                                      <img src={`/${post.image}`} srcset={responsiveImageSrcSet(post.image)} sizes="(max-width: 720px) 100vw, 280px" alt={post.title} class="related-card-img" loading="lazy" decoding="async" />
                                   ) : (
                                       <div class="related-card-placeholder">
                                           <span>{smartBadge.label}</span>

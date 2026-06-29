@@ -35,12 +35,15 @@ const description = "Search English posts on alexgetman.com by title, excerpt an
   .search-form input { flex: 1; min-width: 0; padding: 0.85rem 1rem; border: 1px solid var(--border); border-radius: 8px; background: var(--card-bg); color: var(--text-main); font: inherit; }
   .search-form button { padding: 0.85rem 1rem; border: 1px solid var(--border); border-radius: 8px; background: var(--accent); color: white; font-weight: 800; cursor: pointer; }
   .results { display: grid; gap: 0.75rem; }
-  .result-row { display: grid; gap: 0.25rem; padding: 1rem 0; border-bottom: 1px solid var(--border); color: var(--text-main); }
+  .result-row { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 0.8rem; align-items: center; padding: 1rem 0; border-bottom: 1px solid var(--border); color: var(--text-main); }
+  .result-thumb { width: 72px; aspect-ratio: 1 / 1; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--card-bg); display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-family: var(--font-mono); font-size: 0.68rem; font-weight: 800; }
+  .result-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .result-copy { min-width: 0; display: grid; gap: 0.25rem; }
   .result-row strong { color: var(--text-header); }
   .result-row span { color: var(--text-secondary); }
   .result-row small { color: var(--text-muted); font-family: var(--font-mono); }
   .empty { color: var(--text-secondary); }
-  @media (max-width: 640px) { .search-form { flex-direction: column; } }
+  @media (max-width: 640px) { .search-form { flex-direction: column; } .result-row { grid-template-columns: 60px minmax(0, 1fr); } .result-thumb { width: 60px; } }
 </style>
 
 <script>
@@ -69,9 +72,12 @@ const description = "Search English posts on alexgetman.com by title, excerpt an
       .slice(0, 80);
     results.innerHTML = items.length ? items.map((item: any) => `
       <a class="result-row" href="${escapeHtml(item.url)}">
-        <small>${escapeHtml(item.category || 'Post')}</small>
-        <strong>${escapeHtml(item.title || 'Post')}</strong>
-        <span>${escapeHtml(item.excerpt || '')}</span>
+        <span class="result-thumb">${item.image ? `<img src="${escapeHtml(item.image)}" alt="" loading="lazy" decoding="async">` : escapeHtml(item.category || 'Post')}</span>
+        <span class="result-copy">
+          <small>${escapeHtml(item.category || 'Post')}</small>
+          <strong>${escapeHtml(item.title || 'Post')}</strong>
+          <span>${escapeHtml(item.excerpt || '')}</span>
+        </span>
       </a>
     `).join('') : '<p class="empty">No posts found.</p>';
   }

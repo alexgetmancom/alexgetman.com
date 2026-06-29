@@ -84,31 +84,64 @@ function loadFeedItems() {
   return [];
 }
 
+function postImagePath(item, locale = 'en') {
+  const localizedMedia = locale === 'ru' ? item.media : item.media_en;
+  const fallbackMedia = locale === 'ru' ? item.media_en : item.media;
+  const media = Array.isArray(localizedMedia) && localizedMedia.length > 0
+    ? localizedMedia
+    : (Array.isArray(fallbackMedia) ? fallbackMedia : []);
+  const imageMedia = media.find((mediaItem) => mediaItem?.type !== 'video' && mediaItem?.path);
+  const directImage = locale === 'ru'
+    ? (item.image || item.image_en)
+    : (item.image_en || item.image);
+  const image = String(directImage || imageMedia?.path || '').replace(/^\/+/, '');
+  return image ? `/${image}` : null;
+}
 
-function telegramToSearchItem(item) {
+function telegramToSearchItems(item) {
   const postId = item.post_id;
-  const text = compactText(item.text || item.html || '');
-  const title = compactText(item.title || getFirstSentence(item.text || text)) || `Публикация ${postId}`;
-  return {
-    id: `post:${postId}`,
-    type: 'post',
-    title: truncateText(title, 120),
-    excerpt: excerptAfterTitle(text, title, 180),
-    url: item.has_en
-      ? `/${postId}/${item.slug_en}/`
-      : `/ru/${postId}/${item.slug_ru}/`,
-    date: item.date,
-    source: 'alexgetman.com',
-    category: getSmartBadge(item.text || text),
-    image: item.image ? `/${item.image}` : null
-  };
+  const entries = [];
+
+  if (item.has_en && item.text_en && item.slug_en) {
+    const text = compactText(item.text_en || item.html_en || '');
+    const title = compactText(getFirstSentence(item.text_en || text)) || `Post ${postId}`;
+    entries.push({
+      id: `post:${postId}:en`,
+      type: 'post',
+      title: truncateText(title, 120),
+      excerpt: excerptAfterTitle(text, title, 180),
+      url: `/${postId}/${item.slug_en}/`,
+      date: item.date,
+      source: 'alexgetman.com',
+      category: getSmartBadge(item.text || text),
+      image: postImagePath(item, 'en')
+    });
+  }
+
+  if (item.has_ru && item.text && item.slug_ru) {
+    const text = compactText(item.text || item.html || '');
+    const title = compactText(item.title || getFirstSentence(item.text || text)) || `Публикация ${postId}`;
+    entries.push({
+      id: `post:${postId}:ru`,
+      type: 'post',
+      title: truncateText(title, 120),
+      excerpt: excerptAfterTitle(text, title, 180),
+      url: `/ru/${postId}/${item.slug_ru}/`,
+      date: item.date,
+      source: 'alexgetman.com',
+      category: getSmartBadge(item.text || text),
+      image: postImagePath(item, 'ru')
+    });
+  }
+
+  return entries;
 }
 
 
 export async function GET() {
   const telegramItems = loadFeedItems()
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    .map(telegramToSearchItem);
+    .flatMap(telegramToSearchItems);
 
   return new Response(JSON.stringify({
     generatedAt: new Date().toISOString(),
