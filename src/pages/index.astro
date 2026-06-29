@@ -1,47 +1,67 @@
 ---
-import fs from 'node:fs';
-import path from 'node:path';
 import Layout from '../layouts/Layout.astro';
 import projects from '../data/projects.json';
-import { getFirstSentence, truncateText } from '../utils/helpers';
+import { loadFeedItems } from '../utils/feed';
+import {
+  categoryLabel,
+  categorySlugFromBadge,
+  excerptAfterTitle,
+  formatDate,
+  formatRelativeTime,
+  getFirstSentence,
+  getSmartBadge,
+  truncateText
+} from '../utils/helpers';
 
-const dataDir = process.env.DATA_DIR || '/home/deploy/ialexey-feed/data';
-const prodFeedJsonPath = path.join(dataDir, 'feed.json');
-const localFeedJsonPath = path.resolve('src/data/feed.json');
+const feedItems = loadFeedItems();
 
-let parsedData = null;
-for (const filePath of [prodFeedJsonPath, localFeedJsonPath]) {
-  if (!parsedData && fs.existsSync(filePath)) {
-    try {
-      parsedData = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-    } catch (e) {
-      console.error(`Error reading ${filePath}:`, e);
-    }
-  }
+function postImage(item) {
+  const media = Array.isArray(item.media_en) && item.media_en.length > 0
+    ? item.media_en
+    : (Array.isArray(item.media) ? item.media : []);
+  const imageMedia = media.find((mediaItem) => mediaItem?.type !== 'video' && mediaItem?.path);
+  return item.image_en || imageMedia?.path || item.image || null;
 }
 
-let feedItems = [];
-if (Array.isArray(parsedData)) {
-  feedItems = parsedData;
-} else if (parsedData?.items && Array.isArray(parsedData.items)) {
-  feedItems = parsedData.items;
+function toEnglishPost(item) {
+  const id = item.post_id;
+  const text = item.text_en || item.text || "";
+  const title = getFirstSentence(text) || `Post ${id}`;
+  const badge = getSmartBadge(item.text || text);
+  const categorySlug = categorySlugFromBadge(badge);
+  return {
+    id,
+    url: `/${id}/${item.slug_en}/`,
+    title,
+    excerpt: excerptAfterTitle(text, title, 180),
+    date: item.date,
+    relativeDate: formatRelativeTime(item.date, 'en'),
+    image: postImage(item),
+    views: Number(item.views || 0),
+    categorySlug,
+    category: categoryLabel(categorySlug, 'en'),
+  };
 }
 
-const latestEnglishPosts = feedItems
+const englishPosts = feedItems
   .filter((item) => item.has_en && item.text_en && item.post_id)
   .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-  .slice(0, 8)
-  .map((item) => {
-    const id = item.post_id;
-    const text = item.text_en || item.text || "";
-    return {
-      id,
-      url: `/${id}/${item.slug_en}/`,
-      title: getFirstSentence(text) || `Post ${id}`,
-      excerpt: truncateText(text, 180),
-      date: item.date
-    };
-  });
+  .map(toEnglishPost);
+
+const leadPost = englishPosts[0] || null;
+const latestEnglishPosts = englishPosts.slice(leadPost ? 1 : 0, leadPost ? 8 : 9);
+const trendingPosts = [...englishPosts]
+  .filter((post) => !leadPost || post.id !== leadPost.id)
+  .sort((a, b) => (b.views - a.views) || (new Date(b.date).getTime() - new Date(a.date).getTime()))
+  .slice(0, 5);
+const topicStats = Array.from(
+  englishPosts.reduce((map, post) => {
+    const current = map.get(post.categorySlug) || { slug: post.categorySlug, label: post.category, count: 0 };
+    current.count += 1;
+    map.set(post.categorySlug, current);
+    return map;
+  }, new Map()).values()
+).sort((a, b) => b.count - a.count);
 
 const title = "Alex Getman | AI, automation and self-hosted systems";
 const description = "English hub for Alex Getman: AI news, automation, developer tools, self-hosted systems and public projects.";
@@ -137,45 +157,95 @@ function formatDate(value) {
       </div>
     </section>
 
-    <section class="section" aria-labelledby="posts-title">
-      <div class="section__header">
-        <h2 class="section__title" id="posts-title">Latest English posts</h2>
-        <a href="/archive/" class="section__link">Archive</a>
-      </div>
-      <div class="post-list">
-        {latestEnglishPosts.length > 0 ? latestEnglishPosts.map((post) => (
-          <a href={post.url} class="post-row">
-            <span class="post-row__date">{formatDate(post.date)} MSK</span>
-            <strong>{post.title}</strong>
-            <span>{post.excerpt}</span>
-          </a>
-        )) : (
-          <p class="empty">English posts will appear here after publication approval.</p>
-        )}
-      </div>
-    </section>
+    {leadPost ? (
+      <section class="lead-section" aria-labelledby="lead-title">
+        <a href={leadPost.url} class="lead-card">
+          <div class="lead-card__media">
+            {leadPost.image ? (
+              <img src={`/${leadPost.image}`} alt="" loading="eager" decoding="async" sizes="(max-width: 760px) 100vw, 680px" />
+            ) : (
+              <span>{leadPost.category}</span>
+            )}
+          </div>
+          <div class="lead-card__body">
+            <span class="pill">{leadPost.category}</span>
+            <h2 id="lead-title">{leadPost.title}</h2>
+            <p>{leadPost.excerpt}</p>
+            <small>{leadPost.relativeDate || `${formatDate(leadPost.date)} MSK`}</small>
+          </div>
+        </a>
+      </section>
+    ) : (
+      <p class="empty">English posts will appear here after publication approval.</p>
+    )}
 
-    <section class="section" aria-labelledby="projects-title">
-      <div class="section__header">
-        <h2 class="section__title" id="projects-title">Public projects</h2>
-        <a href="/projects/" class="section__link">All projects</a>
-      </div>
-      <div class="project-grid">
-        {projects.slice(0, 4).map((project) => (
-          <a href={project.url} class="project-card" target="_blank" rel="noopener noreferrer">
-            <span>{project.kind}</span>
-            <strong>{project.name}</strong>
-            <small>{project.accent}</small>
-          </a>
-        ))}
-      </div>
-    </section>
+    <div class="content-grid">
+      <section class="section" aria-labelledby="posts-title">
+        <div class="section__header">
+          <h2 class="section__title" id="posts-title">Latest English posts</h2>
+          <a href="/archive/" class="section__link">Archive</a>
+        </div>
+        <div class="post-list">
+          {latestEnglishPosts.map((post) => (
+            <a href={post.url} class="post-row">
+              <span class="post-row__date">{post.relativeDate || `${formatDate(post.date)} MSK`}</span>
+              <strong>{post.title}</strong>
+              <span>{post.excerpt}</span>
+            </a>
+          ))}
+        </div>
+      </section>
+
+      <aside class="home-sidebar" aria-label="Homepage side sections">
+        <section class="panel" aria-labelledby="trending-title">
+          <div class="section__header">
+            <h2 class="section__title" id="trending-title">Trending</h2>
+            <a href="/search/" class="section__link">Search</a>
+          </div>
+          <div class="compact-list">
+            {trendingPosts.map((post) => (
+              <a href={post.url} class="compact-row">
+                <span>{post.category}</span>
+                <strong>{truncateText(post.title, 82)}</strong>
+              </a>
+            ))}
+          </div>
+        </section>
+
+        <section class="panel" aria-labelledby="topics-title">
+          <h2 class="section__title" id="topics-title">Topics</h2>
+          <div class="topic-grid">
+            {topicStats.map((topic) => (
+              <a href={`/category/${topic.slug}/`} class="topic-pill">
+                <span>{topic.label}</span>
+                <small>{topic.count}</small>
+              </a>
+            ))}
+          </div>
+        </section>
+
+        <section class="panel" aria-labelledby="projects-title">
+          <div class="section__header">
+            <h2 class="section__title" id="projects-title">Projects</h2>
+            <a href="/projects/" class="section__link">All</a>
+          </div>
+          <div class="project-list">
+            {projects.slice(0, 3).map((project) => (
+              <a href={project.url} class="project-row" target="_blank" rel="noopener noreferrer">
+                <span>{project.kind}</span>
+                <strong>{project.name}</strong>
+              </a>
+            ))}
+          </div>
+        </section>
+      </aside>
+    </div>
   </main>
 </Layout>
 
 <style>
   .home-page {
-    max-width: 1040px;
+    max-width: 1120px;
     margin: 0 auto;
     padding: 1rem 0 3rem;
     min-width: 0;
@@ -247,6 +317,105 @@ function formatDate(value) {
     margin-top: 1.4rem;
   }
 
+  .lead-section {
+    margin-top: 0.5rem;
+  }
+
+  .lead-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+    gap: 1.2rem;
+    padding: 1rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--card-bg);
+    color: var(--text-main);
+  }
+
+  .lead-card__media {
+    min-height: 260px;
+    aspect-ratio: 16 / 9;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    background: linear-gradient(135deg, rgba(240, 68, 101, 0.12), rgba(255, 255, 255, 0.03));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-weight: 800;
+  }
+
+  .lead-card__media img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .lead-card__body {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.8rem;
+  }
+
+  .lead-card h2 {
+    margin: 0;
+    font-size: clamp(1.7rem, 3.4vw, 3rem);
+    line-height: 1.08;
+    letter-spacing: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .lead-card p {
+    margin: 0;
+    color: var(--text-secondary);
+  }
+
+  .lead-card small {
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+  }
+
+  .pill {
+    width: fit-content;
+    padding: 0.2rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    font-weight: 800;
+  }
+
+  .content-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.75fr) minmax(280px, 0.8fr);
+    gap: 1.3rem;
+    align-items: start;
+    margin-top: 1.4rem;
+  }
+
+  .content-grid .section {
+    margin-top: 0;
+  }
+
+  .home-sidebar {
+    display: grid;
+    gap: 0.9rem;
+  }
+
+  .panel {
+    padding: 1rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--card-bg);
+    min-width: 0;
+  }
+
   .section__header {
     justify-content: space-between;
     margin-bottom: 0.85rem;
@@ -258,13 +427,13 @@ function formatDate(value) {
   }
 
   .post-list,
-  .project-grid {
+  .compact-list,
+  .project-list {
     display: grid;
     gap: 0.75rem;
   }
 
-  .post-row,
-  .project-card {
+  .post-row {
     display: grid;
     gap: 0.25rem;
     padding: 1rem;
@@ -275,8 +444,8 @@ function formatDate(value) {
   }
 
   .post-row span,
-  .project-card span,
-  .project-card small {
+  .compact-row span,
+  .project-row span {
     color: var(--text-secondary);
   }
 
@@ -284,8 +453,55 @@ function formatDate(value) {
     font-size: 0.82rem;
   }
 
-  .project-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .compact-row,
+  .project-row {
+    display: grid;
+    gap: 0.2rem;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-main);
+    min-width: 0;
+  }
+
+  .compact-row:last-child,
+  .project-row:last-child {
+    border-bottom: 0;
+  }
+
+  .compact-row strong,
+  .project-row strong {
+    color: var(--text-header);
+    font-size: 0.92rem;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
+
+  .compact-row span,
+  .project-row span {
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+  }
+
+  .topic-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.9rem;
+  }
+
+  .topic-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.4rem 0.55rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-main);
+    font-size: 0.84rem;
+  }
+
+  .topic-pill small {
+    color: var(--text-muted);
   }
 
   .empty {
@@ -298,8 +514,12 @@ function formatDate(value) {
       padding-top: 1rem;
     }
 
-    .project-grid {
+    .lead-card,
+    .content-grid {
       grid-template-columns: 1fr;
+    }
+    .lead-card__media {
+      min-height: 180px;
     }
   }
 </style>

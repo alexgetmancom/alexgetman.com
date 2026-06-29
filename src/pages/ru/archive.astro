@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import Layout from '../../layouts/Layout.astro';
-import { getFirstSentence, truncateText } from '../../utils/helpers';
+import { excerptAfterTitle, getFirstSentence, truncateText } from '../../utils/helpers';
 
 const dataDir = process.env.DATA_DIR || '/home/deploy/ialexey-feed/data';
 const prodFeedJsonPath = path.join(dataDir, 'feed.json');
@@ -33,7 +33,7 @@ const posts = feedItems
     id: item.post_id,
     url: `/ru/${item.post_id}/${item.slug_ru}/`,
     title: getFirstSentence(item.text || "") || `Пост ${item.post_id}`,
-    excerpt: truncateText(item.text || "", 150),
+    excerpt: excerptAfterTitle(item.text || "", getFirstSentence(item.text || "") || `Пост ${item.post_id}`, 150),
     date: item.date
   }));
 

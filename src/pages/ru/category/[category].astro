@@ -1,7 +1,7 @@
 ---
 import Layout from '../../../layouts/Layout.astro';
 import { loadFeedItems } from '../../../utils/feed';
-import { categoryLabel, categorySlugFromBadge, getFirstSentence, getSmartBadge, truncateText } from '../../../utils/helpers';
+import { categoryLabel, categorySlugFromBadge, excerptAfterTitle, getFirstSentence, getSmartBadge, truncateText } from '../../../utils/helpers';
 
 export async function getStaticPaths() {
   const feedItems = loadFeedItems().filter((item: any) => item.has_ru && item.post_id);
@@ -18,7 +18,7 @@ const posts = loadFeedItems()
   .map((item: any) => ({
     url: `/ru/${item.post_id}/${item.slug_ru}/`,
     title: getFirstSentence(item.text || '') || `Пост ${item.post_id}`,
-    excerpt: truncateText(item.text || '', 170),
+    excerpt: excerptAfterTitle(item.text || '', getFirstSentence(item.text || '') || `Пост ${item.post_id}`, 170),
     date: item.date
   }));
 

@@ -20,6 +20,19 @@ function truncateText(value, limit) {
   return `${text.slice(0, Math.max(0, limit - 1)).trimEnd()}…`;
 }
 
+function excerptAfterTitle(text, title, limit) {
+  const source = compactText(text);
+  const cleanTitle = compactText(title);
+  let excerpt = source;
+  if (cleanTitle && source.toLowerCase().startsWith(cleanTitle.toLowerCase())) {
+    excerpt = source.slice(cleanTitle.length).replace(/^[\s:—–-]+/, '').trim();
+  }
+  if (!excerpt || excerpt.length < 24) {
+    excerpt = source;
+  }
+  return truncateText(excerpt, limit);
+}
+
 function getFirstSentence(text) {
   const value = String(text || '').trim();
   if (!value) return '';
@@ -77,7 +90,7 @@ function telegramToSearchItem(item) {
     id: `post:${postId}`,
     type: 'post',
     title: truncateText(title, 120),
-    excerpt: truncateText(text.replace(title, ''), 180) || truncateText(text, 180),
+    excerpt: excerptAfterTitle(text, title, 180),
     url: item.has_en
       ? `/${postId}/${item.slug_en}/`
       : `/ru/${postId}/${item.slug_ru}/`,

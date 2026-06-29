@@ -17,6 +17,19 @@ export function truncateText(value: string, limit: number): string {
   return text.slice(0, Math.max(0, limit - 1)).trimEnd() + "…";
 }
 
+export function excerptAfterTitle(text: string, title: string, limit: number): string {
+  const source = compactText(text);
+  const cleanTitle = compactText(title);
+  let excerpt = source;
+  if (cleanTitle && source.toLowerCase().startsWith(cleanTitle.toLowerCase())) {
+    excerpt = source.slice(cleanTitle.length).replace(/^[\s:—–-]+/, "").trim();
+  }
+  if (!excerpt || excerpt.length < 24) {
+    excerpt = source;
+  }
+  return truncateText(excerpt, limit);
+}
+
 export function removeLeadingEmoji(text: string): string {
   if (!text) return "";
   let cleaned = text.trim();
@@ -93,6 +106,23 @@ export function formatDateRussian(value: string): string {
     return formatter.format(date).replace(" в ", ", ");
   } catch (e) {
     return value;
+  }
+}
+
+export function formatRelativeTime(value: string, locale = 'en'): string {
+  try {
+    const date = new Date(value);
+    const diffMs = Date.now() - date.getTime();
+    const absMs = Math.abs(diffMs);
+    const minute = 60 * 1000;
+    const hour = 60 * minute;
+    const day = 24 * hour;
+    const rtf = new Intl.RelativeTimeFormat(locale === 'ru' ? 'ru' : 'en', { numeric: 'auto' });
+    if (absMs < hour) return rtf.format(Math.round(-diffMs / minute), 'minute');
+    if (absMs < day) return rtf.format(Math.round(-diffMs / hour), 'hour');
+    return rtf.format(Math.round(-diffMs / day), 'day');
+  } catch (e) {
+    return "";
   }
 }
 
