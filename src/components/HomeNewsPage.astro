@@ -1,0 +1,552 @@
+---
+import {
+  responsiveImageSrcSet,
+  truncateText
+} from '../utils/helpers';
+
+interface HomePost {
+  id: number | string;
+  url: string;
+  title: string;
+  excerpt: string;
+  date: string;
+  relativeDate: string;
+  image: string | null;
+  views: number;
+  categorySlug: string;
+  category: string;
+}
+
+interface TopicStat {
+  slug: string;
+  label: string;
+  count: number;
+}
+
+interface Project {
+  name: string;
+  kind: string;
+  url: string;
+}
+
+interface Labels {
+  latestStory: string;
+  primaryLinks: string;
+  archive: string;
+  search: string;
+  featuredCategory: string;
+  languageSwitch: string;
+  empty: string;
+  latestPosts: string;
+  trending: string;
+  topics: string;
+  projects: string;
+  all: string;
+  sidebarLabel: string;
+  mskSuffix: string;
+}
+
+interface Props {
+  posts: HomePost[];
+  latestPosts: HomePost[];
+  trendingPosts: HomePost[];
+  topicStats: TopicStat[];
+  projects: Project[];
+  labels: Labels;
+  locale: 'en' | 'ru';
+  categoryBasePath: string;
+}
+
+const {
+  posts,
+  latestPosts,
+  trendingPosts,
+  topicStats,
+  projects,
+  labels,
+  locale,
+  categoryBasePath
+} = Astro.props;
+
+const leadPost = posts[0] || null;
+const categoryHref = (slug: string) => `${categoryBasePath}${slug}/`;
+
+function formatMskDate(value: string) {
+  if (!value) return "";
+  try {
+    return new Intl.DateTimeFormat(locale === 'ru' ? 'ru-RU' : 'en-GB', {
+      timeZone: "Europe/Moscow",
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(new Date(value));
+  } catch (e) {
+    return value;
+  }
+}
+---
+
+<main class="home-page">
+  {leadPost ? (
+    <section class="news-hero" aria-labelledby="lead-title">
+      <div class="news-hero__header">
+        <p class="news-hero__eyebrow">{labels.latestStory}</p>
+        <nav class="news-hero__links" aria-label={labels.primaryLinks}>
+          <a href={locale === 'ru' ? '/ru/archive/' : '/archive/'}>{labels.archive}</a>
+          <a href={locale === 'ru' ? '/ru/search/' : '/search/'}>{labels.search}</a>
+          <a href={categoryHref(leadPost.categorySlug)}>{leadPost.category}</a>
+          <a href={locale === 'ru' ? '/' : '/ru/'}>{labels.languageSwitch}</a>
+        </nav>
+      </div>
+
+      <a href={leadPost.url} class:list={['lead-card', { 'lead-card--no-image': !leadPost.image }]}>
+        <div class="lead-card__media" aria-hidden="true">
+          {leadPost.image ? (
+            <img
+              src={`/${leadPost.image}`}
+              srcset={responsiveImageSrcSet(leadPost.image)}
+              alt=""
+              loading="eager"
+              decoding="async"
+              sizes="(max-width: 860px) 100vw, 42vw"
+            />
+          ) : (
+            <span>{leadPost.category}</span>
+          )}
+        </div>
+        <div class="lead-card__body">
+          <div class="lead-card__meta">
+            <span class="pill">{leadPost.category}</span>
+            <time datetime={leadPost.date}>{leadPost.relativeDate || `${formatMskDate(leadPost.date)} ${labels.mskSuffix}`}</time>
+          </div>
+          <h1 id="lead-title">{leadPost.title}</h1>
+          {leadPost.excerpt && <p>{leadPost.excerpt}</p>}
+        </div>
+      </a>
+    </section>
+  ) : (
+    <p class="empty">{labels.empty}</p>
+  )}
+
+  <div class="content-grid">
+    <section class="section" aria-labelledby="posts-title">
+      <div class="section__header">
+        <h2 class="section__title" id="posts-title">{labels.latestPosts}</h2>
+        <a href={locale === 'ru' ? '/ru/archive/' : '/archive/'} class="section__link">{labels.archive}</a>
+      </div>
+      <div class="post-list">
+        {latestPosts.map((post) => (
+          <a href={post.url} class="post-row">
+            <div class="post-row__thumb" aria-hidden="true">
+              {post.image ? (
+                <img src={`/${post.image}`} srcset={responsiveImageSrcSet(post.image)} alt="" loading="lazy" decoding="async" sizes="76px" />
+              ) : (
+                <span>{post.category}</span>
+              )}
+            </div>
+            <div class="post-row__content">
+              <span class="post-row__date">{post.relativeDate || `${formatMskDate(post.date)} ${labels.mskSuffix}`}</span>
+              <strong>{post.title}</strong>
+              {post.excerpt && <span>{post.excerpt}</span>}
+            </div>
+          </a>
+        ))}
+      </div>
+    </section>
+
+    <aside class="home-sidebar" aria-label={labels.sidebarLabel}>
+      <section class="panel" aria-labelledby="trending-title">
+        <div class="section__header">
+          <h2 class="section__title" id="trending-title">{labels.trending}</h2>
+          <a href={locale === 'ru' ? '/ru/search/' : '/search/'} class="section__link">{labels.search}</a>
+        </div>
+        <div class="compact-list">
+          {trendingPosts.map((post) => (
+            <a href={post.url} class="compact-row">
+              <span>{post.category}</span>
+              <strong>{truncateText(post.title, 82)}</strong>
+            </a>
+          ))}
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="topics-title">
+        <h2 class="section__title" id="topics-title">{labels.topics}</h2>
+        <div class="topic-grid">
+          {topicStats.map((topic) => (
+            <a href={categoryHref(topic.slug)} class="topic-pill">
+              <span>{topic.label}</span>
+              <small>{topic.count}</small>
+            </a>
+          ))}
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="projects-title">
+        <div class="section__header">
+          <h2 class="section__title" id="projects-title">{labels.projects}</h2>
+          <a href="/projects/" class="section__link">{labels.all}</a>
+        </div>
+        <div class="project-list">
+          {projects.slice(0, 3).map((project) => (
+            <a href={project.url} class="project-row" target="_blank" rel="noopener noreferrer">
+              <span>{project.kind}</span>
+              <strong>{project.name}</strong>
+            </a>
+          ))}
+        </div>
+      </section>
+    </aside>
+  </div>
+</main>
+
+<style>
+  .home-page {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 1.25rem 0 3rem;
+    min-width: 0;
+  }
+
+  .news-hero {
+    min-width: 0;
+  }
+
+  .news-hero__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 0.9rem;
+  }
+
+  .news-hero__eyebrow {
+    margin: 0;
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    font-weight: 800;
+  }
+
+  .news-hero__links,
+  .section__header {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .news-hero__links a,
+  .section__link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 38px;
+    padding: 0.45rem 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--card-bg);
+    color: var(--text-main);
+    font-weight: 700;
+  }
+
+  .news-hero__links a:hover,
+  .section__link:hover {
+    color: var(--text-header);
+    border-color: var(--border-hover);
+    background: var(--accent-glow);
+  }
+
+  .section {
+    margin-top: 1.4rem;
+  }
+
+  .lead-card {
+    display: grid;
+    grid-template-columns: minmax(260px, 0.72fr) minmax(0, 1fr);
+    min-height: 320px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--card-bg);
+    color: var(--text-main);
+    overflow: hidden;
+  }
+
+  .lead-card__media {
+    min-height: 100%;
+    overflow: hidden;
+    background: linear-gradient(135deg, rgba(240, 68, 101, 0.12), rgba(255, 255, 255, 0.03));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    font-weight: 800;
+    text-align: center;
+  }
+
+  .lead-card--no-image .lead-card__media {
+    min-height: 100%;
+  }
+
+  .lead-card__media img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .lead-card__body {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1rem;
+    padding: clamp(1.25rem, 3vw, 2.5rem);
+  }
+
+  .lead-card__meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .lead-card__meta time {
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+  }
+
+  .lead-card h1 {
+    margin: 0;
+    font-size: clamp(2rem, 4vw, 3.65rem);
+    line-height: 1.02;
+    letter-spacing: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .lead-card p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 1.02rem;
+  }
+
+  .pill {
+    width: fit-content;
+    padding: 0.2rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    font-weight: 800;
+  }
+
+  .content-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.75fr) minmax(280px, 0.8fr);
+    gap: 1.3rem;
+    align-items: start;
+    margin-top: 1.4rem;
+  }
+
+  .content-grid .section {
+    margin-top: 0;
+  }
+
+  .home-sidebar {
+    display: grid;
+    gap: 0.9rem;
+  }
+
+  .panel {
+    padding: 1rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--card-bg);
+    min-width: 0;
+  }
+
+  .section__header {
+    justify-content: space-between;
+    margin-bottom: 0.85rem;
+  }
+
+  .section__title {
+    margin: 0;
+    font-size: 1.15rem;
+  }
+
+  .post-list,
+  .compact-list,
+  .project-list {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .post-row {
+    display: grid;
+    grid-template-columns: 76px minmax(0, 1fr);
+    gap: 0.8rem;
+    align-items: center;
+    padding: 1rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--card-bg);
+    min-width: 0;
+  }
+
+  .post-row__thumb {
+    width: 76px;
+    aspect-ratio: 1 / 1;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    background: linear-gradient(135deg, rgba(240, 68, 101, 0.12), rgba(255, 255, 255, 0.03));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-align: center;
+  }
+
+  .post-row__thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .post-row__content {
+    min-width: 0;
+    display: grid;
+    gap: 0.25rem;
+  }
+
+  .post-row span,
+  .compact-row span,
+  .project-row span {
+    color: var(--text-secondary);
+  }
+
+  .post-row__date {
+    font-size: 0.82rem;
+  }
+
+  .compact-row,
+  .project-row {
+    display: grid;
+    gap: 0.2rem;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-main);
+    min-width: 0;
+  }
+
+  .compact-row:last-child,
+  .project-row:last-child {
+    border-bottom: 0;
+  }
+
+  .compact-row strong,
+  .project-row strong {
+    color: var(--text-header);
+    font-size: 0.92rem;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
+
+  .compact-row span,
+  .project-row span {
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+  }
+
+  .topic-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.9rem;
+  }
+
+  .topic-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.4rem 0.55rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-main);
+    font-size: 0.84rem;
+  }
+
+  .topic-pill small {
+    color: var(--text-muted);
+  }
+
+  .empty {
+    margin: 0;
+    color: var(--text-secondary);
+  }
+
+  @media (max-width: 860px) {
+    .lead-card {
+      grid-template-columns: 1fr;
+      min-height: 0;
+    }
+
+    .lead-card__media {
+      min-height: 220px;
+      aspect-ratio: 16 / 9;
+    }
+
+    .lead-card--no-image .lead-card__media {
+      min-height: 120px;
+      aspect-ratio: auto;
+    }
+  }
+
+  @media (max-width: 720px) {
+    .home-page {
+      padding-top: 0.75rem;
+    }
+
+    .news-hero__header {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    .news-hero__links {
+      width: 100%;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .lead-card h1 {
+      font-size: clamp(1.75rem, 9vw, 2.55rem);
+    }
+
+    .content-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .post-row {
+      grid-template-columns: 64px minmax(0, 1fr);
+      padding: 0.85rem;
+    }
+
+    .post-row__thumb {
+      width: 64px;
+    }
+  }
+</style>
