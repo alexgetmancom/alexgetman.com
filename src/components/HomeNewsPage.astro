@@ -11,6 +11,8 @@ interface HomePost {
   relativeDate: string;
   image: string | null;
   mediaType?: 'image' | 'video' | null;
+  audioUrl?: string | null;
+  spotifyUrl?: string | null;
   imageSrcSet?: string;
   views: number;
   categorySlug: string;
@@ -129,7 +131,7 @@ function metricValue(value: number) {
                     alt=""
                     loading="eager"
                     decoding="async"
-                    sizes="(max-width: 760px) min(100vw - 2rem, 410px), 410px"
+                    sizes="(max-width: 760px) min(100vw - 2rem, 390px), 320px"
                     hidden={activePost.mediaType === 'video'}
                     data-story-image
                   />
@@ -145,7 +147,7 @@ function metricValue(value: number) {
                   ></video>
                 </>
               ) : (
-                <span class="story-visual__fallback" data-story-fallback>{activePost.category}</span>
+                <span class="story-visual__fallback" data-story-fallback>{activePost.title}</span>
               )}
             </a>
             <div class="story-visual__chrome" aria-hidden="true">
@@ -156,6 +158,7 @@ function metricValue(value: number) {
               <span aria-hidden="true">♪</span>
               <span data-audio-label>{ui.muted}</span>
             </button>
+            <audio preload="none" data-story-audio></audio>
           </article>
 
           <button class="story-arrow story-arrow--next" type="button" aria-label={ui.next} data-story-next>
@@ -202,6 +205,10 @@ function metricValue(value: number) {
           <div class="story-panel" data-panel="sources" hidden>
             <h2>{ui.sourcesTab}</h2>
             <p>{ui.sourcesHint}</p>
+            <div class="source-actions" data-source-actions hidden>
+              <a class="story-action" href={activePost.audioUrl || '#'} data-story-audio-link hidden>Audio</a>
+              <a class="story-action" href={activePost.spotifyUrl || '#'} data-story-spotify-link hidden>Spotify</a>
+            </div>
             <a class="story-action story-action--primary" href={activePost.url} data-story-source-link>{ui.openPost}</a>
           </div>
         </aside>
@@ -225,7 +232,7 @@ function metricValue(value: number) {
                     alt=""
                     loading={index < 4 ? 'eager' : 'lazy'}
                     decoding="async"
-                    sizes="120px"
+                    sizes="180px"
                   />
                 )
               ) : (
@@ -253,6 +260,8 @@ function metricValue(value: number) {
           relativeDate: post.relativeDate,
           image: post.image ? `/${post.image}` : null,
           mediaType: post.mediaType || null,
+          audioUrl: post.audioUrl || null,
+          spotifyUrl: post.spotifyUrl || null,
           imageSrcSet: post.imageSrcSet || '',
           views: metricValue(post.views),
           category: post.category,
@@ -298,6 +307,10 @@ function metricValue(value: number) {
     const discuss = root.querySelector('[data-story-discuss]');
     const audioToggle = root.querySelector('[data-audio-toggle]');
     const audioLabel = root.querySelector('[data-audio-label]');
+    const audio = root.querySelector('[data-story-audio]');
+    const sourceActions = root.querySelector('[data-source-actions]');
+    const audioLink = root.querySelector('[data-story-audio-link]');
+    const spotifyLink = root.querySelector('[data-story-spotify-link]');
     const tabs = Array.from(root.querySelectorAll('[data-panel-tab]'));
     const panels = Array.from(root.querySelectorAll('[data-panel]'));
 
@@ -351,7 +364,7 @@ function metricValue(value: number) {
       }
       if (fallback) {
         fallback.hidden = !!post.image;
-        fallback.textContent = post.category;
+        fallback.textContent = post.title;
       }
       if (kicker) kicker.textContent = post.category;
       if (time) time.textContent = post.relativeDate;
@@ -373,6 +386,28 @@ function metricValue(value: number) {
       [open, discussionLink, sourceLink].forEach((link) => {
         if (link) link.href = post.url;
       });
+      if (audio) {
+        audio.pause?.();
+        if (post.audioUrl) {
+          if (audio.getAttribute('src') !== post.audioUrl) {
+            audio.setAttribute('src', post.audioUrl);
+            audio.load?.();
+          }
+          audio.muted = muted;
+        } else {
+          audio.removeAttribute('src');
+          audio.load?.();
+        }
+      }
+      if (audioLink) {
+        audioLink.hidden = !post.audioUrl;
+        if (post.audioUrl) audioLink.href = post.audioUrl;
+      }
+      if (spotifyLink) {
+        spotifyLink.hidden = !post.spotifyUrl;
+        if (post.spotifyUrl) spotifyLink.href = post.spotifyUrl;
+      }
+      if (sourceActions) sourceActions.hidden = !(post.audioUrl || post.spotifyUrl);
 
       progressBars.forEach((bar, i) => {
         bar.classList.toggle('is-active', i === active);
@@ -464,6 +499,14 @@ function metricValue(value: number) {
       audioToggle.setAttribute('aria-pressed', String(muted));
       audioToggle.classList.toggle('is-on', !muted);
       if (audioLabel) audioLabel.textContent = muted ? (ui.muted || 'Muted') : (ui.mute || 'Audio');
+      if (audio) {
+        audio.muted = muted;
+        if (!muted && audio.getAttribute('src')) {
+          audio.play?.().catch(() => {});
+        } else {
+          audio.pause?.();
+        }
+      }
     });
 
     let startX = 0;
@@ -486,26 +529,26 @@ function metricValue(value: number) {
 
 <style>
   .home-page {
-    width: min(1500px, calc(100vw - 4rem));
+    width: min(1320px, calc(100vw - 3rem));
     max-width: none;
     margin-left: 50%;
     transform: translateX(-50%);
-    padding: 0.65rem 0 3rem;
+    padding: 0.55rem 0 2rem;
     min-width: 0;
   }
 
   .story-player {
     display: grid;
-    gap: 1rem;
+    gap: 0.85rem;
   }
 
   .story-player__main {
     display: grid;
-    grid-template-columns: minmax(360px, 0.82fr) minmax(380px, 0.72fr);
-    gap: clamp(1.2rem, 3vw, 2.8rem);
+    grid-template-columns: minmax(280px, 340px) minmax(440px, 580px);
+    gap: clamp(0.8rem, 1.6vw, 1.45rem);
     align-items: center;
     justify-content: center;
-    min-height: min(76vh, 760px);
+    min-height: 0;
   }
 
   .story-visual-wrap {
@@ -517,7 +560,7 @@ function metricValue(value: number) {
 
   .story-visual {
     position: relative;
-    width: min(410px, 100%);
+    width: min(320px, 100%);
     aspect-ratio: 9 / 16;
     border: 1px solid var(--border-hover);
     border-radius: 10px;
@@ -550,13 +593,16 @@ function metricValue(value: number) {
 
   .story-visual__fallback {
     display: grid;
-    place-items: center;
+    align-content: end;
     background:
       radial-gradient(circle at 35% 18%, rgba(240, 68, 101, 0.18), transparent 35%),
       linear-gradient(135deg, rgba(240, 68, 101, 0.12), rgba(255, 255, 255, 0.03));
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-    font-weight: 800;
+    color: var(--text-header);
+    font-weight: 900;
+    font-size: clamp(1.6rem, 3.1vw, 2.7rem);
+    line-height: 1.04;
+    padding: 1.2rem;
+    overflow-wrap: anywhere;
   }
 
   .story-progress {
@@ -665,17 +711,17 @@ function metricValue(value: number) {
   }
 
   .story-arrow--prev {
-    left: max(0.65rem, calc(50% - 255px));
+    left: max(0.5rem, calc(50% - 210px));
   }
 
   .story-arrow--next {
-    right: max(0.65rem, calc(50% - 255px));
+    right: max(0.5rem, calc(50% - 210px));
   }
 
   .story-context {
     align-self: center;
-    min-height: min(680px, 72vh);
-    max-height: min(720px, 76vh);
+    min-height: min(520px, 64vh);
+    max-height: min(580px, 68vh);
     display: flex;
     flex-direction: column;
     border: 1px solid var(--border);
@@ -751,7 +797,7 @@ function metricValue(value: number) {
   }
 
   .story-panel h1 {
-    font-size: clamp(2rem, 3.2vw, 3.3rem);
+    font-size: clamp(1.85rem, 2.55vw, 2.75rem);
   }
 
   .story-panel h2 {
@@ -762,7 +808,7 @@ function metricValue(value: number) {
     display: grid;
     gap: 0.7rem;
     color: var(--text-main);
-    font-size: clamp(0.98rem, 1.14vw, 1.08rem);
+    font-size: clamp(0.94rem, 1vw, 1.02rem);
     line-height: 1.46;
   }
 
@@ -791,6 +837,13 @@ function metricValue(value: number) {
     flex-wrap: wrap;
     gap: 0.65rem;
     margin-top: 1rem;
+  }
+
+  .source-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+    margin: 1rem 0;
   }
 
   .story-action {
@@ -838,17 +891,17 @@ function metricValue(value: number) {
   .story-rail {
     display: grid;
     grid-auto-flow: column;
-    grid-auto-columns: minmax(104px, 128px);
-    gap: 0.75rem;
+    grid-auto-columns: minmax(142px, 166px);
+    gap: 0.85rem;
     overflow-x: auto;
     overscroll-behavior-x: contain;
-    padding: 0.1rem 0.05rem 0.55rem;
+    padding: 0.05rem 0.05rem 0.45rem;
     scrollbar-width: thin;
   }
 
   .rail-card {
     position: relative;
-    aspect-ratio: 9 / 16;
+    aspect-ratio: 3 / 4;
     border: 1px solid var(--border);
     border-radius: 8px;
     overflow: hidden;
@@ -902,19 +955,19 @@ function metricValue(value: number) {
     flex-direction: column;
     justify-content: flex-end;
     gap: 0.28rem;
-    padding: 0.62rem;
+    padding: 0.72rem;
   }
 
   .rail-card__text span {
     color: var(--accent);
     font-family: var(--font-mono);
-    font-size: 0.62rem;
+    font-size: 0.66rem;
     font-weight: 900;
   }
 
   .rail-card__text strong {
-    font-size: 0.78rem;
-    line-height: 1.08;
+    font-size: 0.92rem;
+    line-height: 1.12;
     overflow-wrap: anywhere;
   }
 
@@ -943,11 +996,11 @@ function metricValue(value: number) {
     }
 
     .story-arrow--prev {
-      left: max(0.65rem, calc(50% - 255px));
+      left: max(0.65rem, calc(50% - 210px));
     }
 
     .story-arrow--next {
-      right: max(0.65rem, calc(50% - 255px));
+      right: max(0.65rem, calc(50% - 210px));
     }
   }
 
@@ -958,7 +1011,7 @@ function metricValue(value: number) {
     }
 
     .story-visual {
-      width: min(100%, 410px);
+      width: min(100%, 390px);
     }
 
     .story-arrow {
@@ -984,8 +1037,8 @@ function metricValue(value: number) {
     }
 
     .story-rail {
-      grid-auto-columns: minmax(86px, 104px);
-      gap: 0.55rem;
+      grid-auto-columns: minmax(132px, 154px);
+      gap: 0.65rem;
     }
   }
 

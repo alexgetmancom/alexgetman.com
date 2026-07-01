@@ -13,6 +13,7 @@ import {
   getFirstSentence,
   getSmartBadge,
   postImagePath,
+  postOgImagePath,
   postVisualMedia
 } from '../utils/helpers';
 
@@ -20,12 +21,13 @@ const feedItems = loadFeedItems();
 
 function existingSiteImage(publicPath) {
   if (!publicPath) return null;
+  const normalizedPath = String(publicPath).replace(/^\/+/, '');
   const candidates = [
-    path.resolve('public', publicPath),
-    path.resolve(publicPath),
-    path.join(process.env.SITE_ROOT || '/home/deploy/ialexey-web', publicPath),
+    path.resolve('public', normalizedPath),
+    path.resolve(normalizedPath),
+    path.join(process.env.SITE_ROOT || '/home/deploy/ialexey-web', normalizedPath),
   ];
-  return candidates.some((candidate) => fs.existsSync(candidate)) ? publicPath : null;
+  return candidates.some((candidate) => fs.existsSync(candidate)) ? normalizedPath : null;
 }
 
 function responsiveSrcSetFor(publicPath) {
@@ -41,6 +43,18 @@ function responsiveSrcSetFor(publicPath) {
     .join(', ');
 }
 
+function audioUrlFor(item, locale = 'en') {
+  return locale === 'ru'
+    ? (item.audio_url_ru || item.audio_ru || item.audio_url || item.audio || null)
+    : (item.audio_url_en || item.audio_en || item.audio_url || item.audio || null);
+}
+
+function spotifyUrlFor(item, locale = 'en') {
+  return locale === 'ru'
+    ? (item.spotify_url_ru || item.spotify_ru || item.spotify_url || item.spotify || null)
+    : (item.spotify_url_en || item.spotify_en || item.spotify_url || item.spotify || null);
+}
+
 function toEnglishPost(item) {
   const id = item.post_id;
   const text = item.text_en || item.text || "";
@@ -49,6 +63,9 @@ function toEnglishPost(item) {
   const categorySlug = categorySlugFromBadge(badge);
   const visualMedia = postVisualMedia(item, 'en');
   const visualPath = existingSiteImage(visualMedia?.path);
+  const fallbackOgPath = existingSiteImage(postOgImagePath(item, 'en'));
+  const image = visualPath || fallbackOgPath;
+  const mediaType = visualPath ? visualMedia?.type || 'image' : (fallbackOgPath ? 'image' : null);
   return {
     id,
     url: `/${id}/${item.slug_en}/`,
@@ -57,9 +74,11 @@ function toEnglishPost(item) {
     excerpt: excerptAfterTitle(text, title, 180),
     date: item.date,
     relativeDate: formatRelativeTime(item.date, 'en'),
-    image: visualPath,
-    mediaType: visualPath ? visualMedia?.type || 'image' : null,
-    imageSrcSet: visualMedia?.type === 'image' ? responsiveSrcSetFor(postImagePath(item, 'en')) : undefined,
+    image,
+    mediaType,
+    audioUrl: audioUrlFor(item, 'en'),
+    spotifyUrl: spotifyUrlFor(item, 'en'),
+    imageSrcSet: mediaType === 'image' ? responsiveSrcSetFor(visualPath ? postImagePath(item, 'en') : image) : undefined,
     views: Number(item.views || 0),
     categorySlug,
     category: categoryLabel(categorySlug, 'en'),
