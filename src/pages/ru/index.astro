@@ -78,7 +78,7 @@ function toRussianPost(item) {
     mediaType,
     audioUrl: audioUrlFor(item, 'ru'),
     spotifyUrl: spotifyUrlFor(item, 'ru'),
-    imageSrcSet: mediaType === 'image' ? responsiveSrcSetFor(visualPath ? postImagePath(item, 'ru') : image) : undefined,
+    imageSrcSet: visualPath && mediaType === 'image' ? responsiveSrcSetFor(postImagePath(item, 'ru')) : undefined,
     views: Number(item.views || 0),
     categorySlug,
     category: categoryLabel(categorySlug, 'ru'),

@@ -78,7 +78,7 @@ function toEnglishPost(item) {
     mediaType,
     audioUrl: audioUrlFor(item, 'en'),
     spotifyUrl: spotifyUrlFor(item, 'en'),
-    imageSrcSet: mediaType === 'image' ? responsiveSrcSetFor(visualPath ? postImagePath(item, 'en') : image) : undefined,
+    imageSrcSet: visualPath && mediaType === 'image' ? responsiveSrcSetFor(postImagePath(item, 'en')) : undefined,
     views: Number(item.views || 0),
     categorySlug,
     category: categoryLabel(categorySlug, 'en'),
