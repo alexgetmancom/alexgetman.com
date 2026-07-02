@@ -83,9 +83,16 @@
   video?.addEventListener('playing', () => {
     const post = posts[active];
     if (post && post.mediaType === 'video') {
+      if (!video.currentSrc.endsWith(post.image)) {
+        return;
+      }
       const activeBar = progressBars[active];
       const fill = activeBar?.querySelector('i');
       if (fill) {
+        if (fill.style.animation && fill.style.animation !== 'none') {
+          fill.style.animationPlayState = (isManualPaused || isHoverPaused) ? 'paused' : 'running';
+          return;
+        }
         const duration = video.duration ? Math.min(15000, video.duration * 1000) : intervalMs;
         fill.style.animation = 'none';
         fill.offsetHeight; // trigger reflow

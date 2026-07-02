@@ -21,7 +21,7 @@ const { posts, ui } = Astro.props;
         {post.image ? (
           post.mediaType === 'video' ? (
             <video
-              src={`/${post.image}`}
+              src={`/${post.image}#t=0.001`}
               poster={post.fallbackImage ? `/${post.fallbackImage}` : undefined}
               muted
               loop
