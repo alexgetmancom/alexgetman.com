@@ -91,36 +91,34 @@
     overflow-wrap: anywhere;
   }
 
-  .story-progress {
+  .rail-card__progress {
     position: absolute;
-    z-index: 3;
-    top: 0.75rem;
-    left: 0.75rem;
-    right: 0.75rem;
-    display: grid;
-    grid-template-columns: repeat(var(--story-count, 8), 1fr);
-    grid-auto-flow: column;
-    gap: 0.34rem;
-  }
-
-  .story-progress span {
-    height: 4px;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.22);
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: rgba(255, 255, 255, 0.08);
     overflow: hidden;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    z-index: 5;
   }
 
-  .story-progress i {
+  .rail-card.is-active .rail-card__progress {
+    opacity: 1;
+  }
+
+  .rail-card__progress i {
     display: block;
     width: 100%;
     height: 100%;
     transform: scaleX(0);
     transform-origin: left center;
     background: #dc2626;
-    box-shadow: 0 0 6px #dc2626, 0 0 12px #dc2626;
+    box-shadow: 0 0 8px #dc2626, 0 0 16px #dc2626;
   }
 
-  .story-progress .is-done i {
+  .rail-card__progress.is-done i {
     transform: scaleX(1);
     box-shadow: none;
   }

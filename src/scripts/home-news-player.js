@@ -19,7 +19,7 @@
   const views = root.querySelector('[data-story-views]');
   const copy = root.querySelector('[data-story-copy]');
   const readMore = root.querySelector('[data-story-read-more]');
-  const progressContainer = root.querySelector('[data-story-progress]');
+  const rail = root.querySelector('.story-rail');
   const progressBars = Array.from(root.querySelectorAll('[data-story-progress-bar]'));
   const railCards = Array.from(root.querySelectorAll('[data-story-index]'));
   const share = root.querySelector('[data-story-share]');
@@ -244,7 +244,7 @@
   }
 
   // Animation end listener for progress bars to switch automatically
-  progressContainer?.addEventListener('animationend', (event) => {
+  rail?.addEventListener('animationend', (event) => {
     if (event.target && event.target.tagName === 'I') {
       render(active + 1);
     }

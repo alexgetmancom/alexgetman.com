@@ -12,13 +12,6 @@ const { activePost, posts, ui } = Astro.props;
 
 <div class="story-visual-wrap">
   <article class={`story-visual${activePost.image ? '' : ' story-visual--no-image'}`} data-story-visual>
-    <div class="story-progress" aria-hidden="true" style={`--story-count: ${posts.length}`} data-story-progress>
-      {posts.map((post, index) => (
-        <span class={index === 0 ? 'is-active' : ''} data-story-progress-bar>
-          <i></i>
-        </span>
-      ))}
-    </div>
     <a class="story-visual__link" href={activePost.url} aria-label={activePost.title} data-story-card-link>
       {activePost.image ? (
         <>
