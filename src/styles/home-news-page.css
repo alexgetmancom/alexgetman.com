@@ -101,7 +101,7 @@
     overflow: hidden;
     opacity: 0;
     transition: opacity 0.3s ease;
-    z-index: 5;
+    z-index: 11;
   }
 
   .rail-card.is-active .rail-card__progress {
@@ -114,8 +114,8 @@
     height: 100%;
     transform: scaleX(0);
     transform-origin: left center;
-    background: #dc2626;
-    box-shadow: 0 0 8px #dc2626, 0 0 16px #dc2626;
+    background: #ef4444;
+    box-shadow: 0 0 10px #ef4444, 0 0 20px #ef4444;
   }
 
   .rail-card__progress.is-done i {
@@ -454,22 +454,22 @@
     right: 0.05rem;
     top: calc(2 * (100% - 2.2rem) / 5 + 1.1rem);
     height: calc((100% - 2.2rem) / 5);
-    border: 2px solid #dc2626;
+    border: 2px solid rgba(255, 255, 255, 0.95);
     border-radius: 8px;
     pointer-events: none;
     z-index: 10;
-    box-shadow: 0 0 14px rgba(220, 38, 38, 0.5), inset 0 0 10px rgba(220, 38, 38, 0.25);
+    box-shadow: 0 0 14px rgba(255, 255, 255, 0.15), inset 0 0 10px rgba(255, 255, 255, 0.08);
     animation: focusPulse 2s infinite ease-in-out;
   }
 
   @keyframes focusPulse {
     0%, 100% {
       opacity: 0.85;
-      box-shadow: 0 0 14px rgba(220, 38, 38, 0.5), inset 0 0 10px rgba(220, 38, 38, 0.25);
+      box-shadow: 0 0 14px rgba(255, 255, 255, 0.15), inset 0 0 10px rgba(255, 255, 255, 0.08);
     }
     50% {
       opacity: 1;
-      box-shadow: 0 0 20px rgba(220, 38, 38, 0.7), inset 0 0 14px rgba(220, 38, 38, 0.35);
+      box-shadow: 0 0 20px rgba(255, 255, 255, 0.25), inset 0 0 14px rgba(255, 255, 255, 0.15);
     }
   }
 
