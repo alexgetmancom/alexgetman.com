@@ -25,7 +25,6 @@ function existingSiteImage(publicPath) {
   const candidates = [
     path.resolve('public', normalizedPath),
     path.resolve(normalizedPath),
-    path.join(process.env.SITE_ROOT || '/home/deploy/ialexey-web', normalizedPath),
   ];
   return candidates.some((candidate) => fs.existsSync(candidate)) ? normalizedPath : null;
 }
@@ -75,6 +74,7 @@ function toRussianPost(item) {
     date: item.date,
     relativeDate: formatRelativeTime(item.date, 'ru'),
     image,
+    fallbackImage: fallbackOgPath,
     mediaType,
     audioUrl: audioUrlFor(item, 'ru'),
     spotifyUrl: spotifyUrlFor(item, 'ru'),

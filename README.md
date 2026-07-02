@@ -37,3 +37,13 @@ Public routes include:
 Production deployment still uses existing server paths and service names. Treat those as operational internals until the server migration plan explicitly renames them.
 
 Nginx cache rules live in `deploy/nginx/`. Cloudflare notes live in `docs/alexgetman-cloudflare.md`.
+
+## Layout Notes
+
+This is a public Astro site repository. Keep `src/`, `public/`, `docs`, `scripts` and `deploy` at the top level; do not add a cosmetic `code/` wrapper. See `docs/repository-layout.md` for boundaries and future cleanup notes.
+
+## Docs
+
+- `plans.md` is the current public roadmap.
+- `docs/README.md` is the entry point for brand, design, SEO/AIO and site-facing notes.
+- Runtime posting, social API limits and private operations live in the private `alexgetman-posting` / `infra-agent` repos, not here.

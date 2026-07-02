@@ -1,0 +1,52 @@
+---
+import { truncateText } from '../../utils/helpers';
+import type { HomePost, StoryUi } from './types';
+
+interface Props {
+  posts: HomePost[];
+  ui: StoryUi;
+}
+
+const { posts, ui } = Astro.props;
+---
+
+<nav class="story-rail" aria-label={ui.storyRail}>
+  {posts.map((post, index) => (
+    <a
+      href={post.url}
+      class={`rail-card${index === 0 ? ' is-active' : ''}${post.image ? '' : ' rail-card--no-image'}`}
+      data-story-index={index}
+    >
+      <span class="rail-card__media" aria-hidden="true">
+        {post.image ? (
+          post.mediaType === 'video' ? (
+            <video
+              src={`/${post.image}`}
+              poster={post.fallbackImage ? `/${post.fallbackImage}` : undefined}
+              muted
+              loop
+              playsinline
+              preload="metadata"
+            ></video>
+          ) : (
+            <img
+              src={`/${post.image}`}
+              srcset={post.imageSrcSet}
+              alt=""
+              loading={index < 4 ? 'eager' : 'lazy'}
+              decoding="async"
+              sizes="72px"
+              data-fallback-src={post.fallbackImage ? `/${post.fallbackImage}` : undefined}
+            />
+          )
+        ) : (
+          <span>{post.category}</span>
+        )}
+      </span>
+      <span class="rail-card__shade"></span>
+      <span class="rail-card__text">
+        <strong>{truncateText(post.title, 62)}</strong>
+      </span>
+    </a>
+  ))}
+</nav>

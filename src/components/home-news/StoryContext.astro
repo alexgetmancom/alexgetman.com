@@ -1,0 +1,27 @@
+---
+import type { HomePost, StoryUi } from './types';
+
+interface Props {
+  activePost: HomePost;
+  paragraphs: string[];
+  ui: StoryUi;
+}
+
+const { activePost, paragraphs, ui } = Astro.props;
+---
+
+<aside class="story-context" data-story-context>
+  <div class="story-panel is-active" data-panel="post">
+    <h1 data-story-title>{activePost.title}</h1>
+    <div class="story-copy" data-story-copy>
+      {paragraphs.map((paragraph) => (
+        <p>{paragraph}</p>
+      ))}
+    </div>
+    <button class="read-more-button" type="button" data-story-read-more hidden>{ui.readMore}</button>
+    <div class="story-actions">
+      <button class="story-action" type="button" data-story-discuss>{ui.discuss}</button>
+      <button class="story-action" type="button" data-story-share>{ui.share}</button>
+    </div>
+  </div>
+</aside>

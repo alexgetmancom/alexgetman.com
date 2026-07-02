@@ -43,141 +43,44 @@ Telegram не должен мелькать как:
 
 Если где-то в публичном HTML, RSS, JSON-LD, `.well-known`, `llms.txt`, `index.md` или markdown endpoint текст всё ещё говорит “Telegram source/original”, это баг и его надо убирать.
 
-## Ближайший спринт: Critical Correctness
+## Активный план
 
-- [x] Удалить/отключить публичные следы `ialexey.ru`, `ialexey`, `iAlexey`, `ialexeyru` там, где они видны пользователям, поисковикам или ИИ-агентам.
-- [ ] Убрать 301/302 редиректы `ialexey.ru -> alexgetman.com` в Nginx/Cloudflare, если домен ещё обслуживается.
-- [x] Проверить, что старые post routes возвращают корректный `410 Gone` и `noindex`:
-  - `/posts/*`
-  - `/ru/posts/*`
-  - `/en/*`
-- [x] Проверить, что `/pipeline-status` и Command Center используют только canonical `post_id`, без Telegram ID как номера поста.
-- [x] Проверить, что sitemap, feeds, `llms.txt`, `index.md`, markdown endpoints и JSON-LD используют только новые canonical URL.
-- [x] Убрать любые “original Telegram post/source” формулировки из публичного сайта.
-- [x] Оставить Telegram-ссылки только как discussion/community links.
+Остались только проверки, которые зависят от production-деплоя или внешних сервисов. Пока `tw-nl` недоступен из-за технических работ, их не закрываем.
 
-## SEO Foundation
+1. Проверить OpenGraph/Twitter image для постов после финального деплоя текущих media-правок.
+   - Проверить EN и RU post pages.
+   - Проверить, что `og:image`, `twitter:image`, `og:image:width`, `og:image:height` ведут на рабочие картинки.
+   - Проверить шаринг в Telegram/соцсетях на 1-2 свежих постах.
+2. Проверить LCP на мобильных для главной и страниц постов после финального production deploy vertical-first layout.
+   - Главная EN `/`.
+   - Главная RU `/ru/`.
+   - EN post page.
+   - RU post page.
+3. После изменений `.well-known`, markdown negotiation, MCP, auth metadata или robots проверять, что `isitagentready.com` не просел ниже текущего baseline **100/100 Level 5**.
+4. Когда сервер снова доступен, повторить smoke:
+   - `https://alexgetman.com` должен отдавать `200`.
+   - `https://ialexey.ru` должен отдавать `410 Gone` + `X-Robots-Tag: noindex, nofollow`, без редиректа на `alexgetman.com`.
+   - `/pipeline-status`, sitemap, feeds, `llms.txt`, `index.md`, `.well-known/*` должны открываться.
 
-- [x] Создать `/about` и `/ru/about`.
-  - EN: Alex Getman, Almaty, Kazakhstan, AI mentor, technology consultant, DevOps/self-hosted background.
-  - RU: Алексей Гетманец, Алматы, Казахстан, ИИ-ментор, IT-консультант, DevOps/self-hosted background.
-  - Без Москвы/России в bio/meta/schema.
-- [x] Создать Privacy Policy на EN и RU.
-  - Указать Alex Getman и `i@alexgetman.com`.
-  - Описать Giscus, likes, hashed IP, analytics без лишних персональных данных.
-- [x] Создать кастомную `404.astro`.
-- [x] Проверить `robots.txt`: sitemap и agent signals уже отдаются через `src/pages/robots.txt.js`.
-  - Sitemap: `https://alexgetman.com/sitemap-index.xml`.
-  - Сохранить совместимость с текущим `isitagentready.com` 100/100.
-- [x] Добавить/проверить `manifest.json` и `theme-color`.
-- [x] Исправить Schema.org `Article`:
-  - убрать `isBasedOn`, если ещё есть;
-  - добавить обязательное `image`;
-  - author/publisher должны быть `Alex Getman` / `alexgetman.com`;
-  - canonical URL должен вести на сайт.
-- [x] Ограничить meta description постов до 155-160 символов.
-- [ ] Проверить OpenGraph/Twitter image для постов.
-- [x] Ленивая загрузка Giscus через IntersectionObserver.
+## Закрыто
 
-## Public Brand Cleanup
-
-- [x] Проверить и вычистить старые домены в:
-  - `public/.well-known/*`;
-  - MCP/server-card metadata;
-  - `auth.md`;
-  - `llms.txt`;
-  - `index.md`;
-  - OpenAPI/API catalog;
-  - README и публичных docs;
-  - JSON-LD `sameAs`;
-  - footer/header/contact pages.
-- [x] Исправить Threads links:
-  - EN: `https://www.threads.net/@alexgetmanco` или актуальный canonical Threads URL;
-  - RU: `https://www.threads.net/@alexgetmanru`.
-- [x] Исправить контакты:
-  - Telegram Forum должен иметь Telegram icon, не X icon;
-  - LinkedIn/Instagram карточки не должны наследовать неправильные CSS-классы.
-- [x] Переименовать карточку проекта `ialexey.ru` в `alexgetman.com`.
-
-## Content UX
-
-- [x] Сделать `/archive` и `/ru/archive` с группировкой по годам/месяцам.
-- [x] Сделать `/search` и `/ru/search` на базе `search-index.json`.
-- [x] Сделать страницы категорий:
-  - `/category/[category]`
-  - `/ru/category/[category]`
-- [x] Сделать бейджи/теги на страницах постов кликабельными.
-- [x] Добавить read time.
-- [x] Убрать дублирование заголовка в карточках постов: preview должен начинаться после первого заголовочного предложения.
-- [x] Добавить блок `Trending Posts` на EN homepage.
-- [ ] Добавить emoji reactions под постами, если это не усложнит privacy/антиспам.
-- [x] Улучшить code/pre styling для readability.
-
-## Homepage Redesign
-
-- [x] Использовать единый news layout для EN `/` и RU `/ru/`.
-- [x] Сделать lead story без дублирования заголовка в OG-картинке: сайт показывает реальное media поста или спокойный category placeholder, OG-картинки остаются только для шаринга.
-- [x] Добавить thumbnails в списках постов.
-- [x] Добавить компактный sidebar для latest/trending/social links.
-- [x] Использовать относительное время в списках (`3h ago`, `вчера`) с `<time datetime="...">`.
-- [x] Разделить главную по темам/рубрикам, когда появится достаточно постов.
-
-## Media & Performance
-
-- [x] Зафиксировать основной формат article image: **1:1, 1200x1200**. Если нужен только один вариант картинки для сайта и соцсетей, генерируем квадрат. 16:9/1200x630 можно добавить позже как отдельный OpenGraph derivative, но не как source format.
-- [x] Добавить минимальную build-time генерацию WebP variants для локальных public images.
-- [ ] Сохранять локальные optimized media, не зависеть от Telegram CDN.
-- [ ] Проверить LCP на мобильных для главной и страниц постов.
-- [x] Добавить responsive image sizes для post thumbnails/hero.
-- [x] Не ломать media fallback для EN/RU локалей.
-
-## Content Semantics
-
-- [x] Улучшить базовый HTML постов:
-  - двойные переносы -> `<p>`;
-  - списки -> `<ul>/<ol>`, если структура очевидна;
-  - inline code/pre сохранять безопасно.
-- [ ] Добавить логичные подзаголовки -> `<h2>/<h3>`, когда появится надежное правило, а не эвристика ради эвристики.
-- [ ] Сохранять Telegram entities только как входной formatting source, а не как публичную зависимость.
-- [ ] Для соцсетей, которые не поддерживают HTML, продолжать отдавать plain text.
-
-## AIO / Agent-Native Maintenance
-
-- [x] Достигнуть `isitagentready.com` 100/100 Level 5 Agent-Native.
-- [ ] После каждого изменения `.well-known`, markdown negotiation, MCP, auth metadata или robots проверять, что оценка не просела.
-- [ ] Не добавлять новые AIO-фичи только ради баллов, если уже 100/100.
-- [ ] Поддерживать актуальными:
-  - `llms.txt`;
-  - `index.md`;
-  - markdown endpoints;
-  - `.well-known` metadata;
-  - MCP/server-card;
-  - API catalog.
-
-## Distribution
-
-- [ ] Считать уже подключённые каналы базовой дистрибуцией:
-  - Threads RU/EN;
-  - X;
-  - Facebook RU/EN;
-  - LinkedIn;
-  - Bluesky;
-  - Mastodon;
-  - dev.to;
-  - GitHub Discussions/Giscus.
-- [ ] Для каждой внешней площадки хранить canonical URL сайта.
-- [ ] Следить, чтобы внешние публикации не создавали дубликаты без canonical ссылки.
-- [ ] Добавить метрики внешних площадок только там, где API стабилен и не создаёт лишний maintenance.
-
-## Operational Cleanup
-
-- [ ] В Nginx/Cloudflare убрать обслуживание `ialexey.ru`, если домен больше не нужен.
-- [ ] Внутренние server paths с `ialexey-*` переименовывать только отдельным maintenance окном с backup и rollback.
-- [ ] Не делать большой rename вместе с функциональными изменениями сайта.
-- [ ] В deployment docs явно различать:
-  - public brand cleanup;
-  - internal path cleanup;
-  - domain retirement.
+- Canonical model: посты используют собственный `post_id`, не Telegram message ID.
+- URL policy: EN `/<post_id>/<english-slug>/`, RU `/ru/<post_id>/<russian-slug>/`.
+- EN-first: английский контент живёт в корне сайта, русский под `/ru/`.
+- EN/RU UI policy: обе версии используют один news layout и отличаются только языком, URL, датами, категориями и доступным набором постов.
+- Telegram больше не source of truth; допустим только как target, discussion/community link или технический входной канал.
+- Legacy routes `/posts/*`, `/ru/posts/*`, `/en/*` возвращают `410 Gone`/`noindex`.
+- `ialexey.ru` retired: без 301/302 на `alexgetman.com`; на VPS оставлен явный `410 Gone`, чтобы домен не попадал в default virtual host.
+- SEO foundation: `/about`, `/ru/about`, Privacy Policy EN/RU, кастомный `404`, robots/sitemap, manifest/theme-color, JSON-LD Article, meta description.
+- Public brand cleanup: старые публичные `ialexey` references вычищены; контакты и Threads links приведены в порядок.
+- Content UX: archive, search, category pages, clickable tags, read time, code/pre styling, trending/sidebar, relative time.
+- Homepage redesign: единый vertical-first news layout для EN/RU; горизонтальная версия сохранена в branch `codex/home-horizontal-backup` на commit `4e9140e`.
+- Media policy: основной article image format **9:16, 1080x1920**; сайт кропает под конкретные слоты; build-time WebP variants и responsive image sizes включены.
+- Distribution: Threads RU/EN, X, Facebook RU/EN, LinkedIn, Bluesky, Mastodon, dev.to, GitHub Discussions/Giscus считаются базовой дистрибуцией.
+- External canonical: внешние площадки должны ссылаться на canonical URL сайта.
+- Metrics policy: собираем только стабильные API; недоступные metrics показываем как `—`, не `n/a`; thread metrics суммируются по частям, где API это позволяет.
+- Dev.to: публикуем cover image через `main_image`; body images/video пока не усложняем.
+- Operational cleanup: внутренние server paths с `ialexey-*` не переименовываем без отдельного maintenance window.
 
 ## Отложено
 
@@ -187,6 +90,9 @@ Telegram не должен мелькать как:
 - [ ] Полный rename production paths `/home/deploy/ialexey-web` -> `/home/deploy/alexgetman-web` без отдельной необходимости.
 - [ ] Прямое чтение production SQLite из Astro build через `better-sqlite3`/Drizzle.
 - [ ] Перевод Astro build на HTTP API как единственный source of truth.
+- [ ] Emoji reactions под постами: вернуться отдельно, когда будет понятна privacy/антиспам модель и реальная польза для retention.
+- [ ] Логичные `<h2>/<h3>` внутри постов: делать только после надежного правила разметки, не эвристикой ради HTML.
+- [ ] Полная поддержка media inside body для Dev.to: пока используем только cover image, чтобы не плодить отдельный upload/hosting слой.
 - [ ] Pinterest API automation.
 - [ ] Reddit automation до стабильного аккаунта и понятного moderation strategy.
 - [ ] TikTok/Reels/Shorts automation.
