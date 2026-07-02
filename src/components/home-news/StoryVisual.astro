@@ -11,10 +11,6 @@ const { activePost, posts, ui } = Astro.props;
 ---
 
 <div class="story-visual-wrap">
-  <button class="story-arrow story-arrow--prev" type="button" aria-label={ui.previous} data-story-prev>
-    <span aria-hidden="true">‹</span>
-  </button>
-
   <article class={`story-visual${activePost.image ? '' : ' story-visual--no-image'}`} data-story-visual>
     <div class="story-progress" aria-hidden="true" style={`--story-count: ${posts.length}`} data-story-progress>
       {posts.map((post, index) => (
@@ -54,18 +50,10 @@ const { activePost, posts, ui } = Astro.props;
         <span class="story-visual__fallback" data-story-fallback>{activePost.title}</span>
       )}
     </a>
-    <div class="story-visual__chrome" aria-hidden="true">
-      <span data-story-kicker>{activePost.category}</span>
-      <span data-story-time>{activePost.relativeDate}</span>
-    </div>
     <button class="audio-chip" type="button" data-audio-toggle aria-pressed="true">
       <span aria-hidden="true">♪</span>
       <span data-audio-label>{ui.muted}</span>
     </button>
     <audio preload="none" data-story-audio></audio>
   </article>
-
-  <button class="story-arrow story-arrow--next" type="button" aria-label={ui.next} data-story-next>
-    <span aria-hidden="true">›</span>
-  </button>
 </div>
