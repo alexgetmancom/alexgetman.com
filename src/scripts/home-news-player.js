@@ -41,15 +41,26 @@
 
     function applyImageFallback(img) {
       const fallbackSrc = img?.dataset?.fallbackSrc;
-      if (!fallbackSrc || img.getAttribute('src') === fallbackSrc) return false;
+      if (!fallbackSrc || img.getAttribute('src') === fallbackSrc) {
+        img.style.display = 'none';
+        return false;
+      }
       img.setAttribute('src', fallbackSrc);
       img.removeAttribute('srcset');
       return true;
     }
 
-    root.querySelectorAll('img[data-fallback-src]').forEach((img) => {
-      img.addEventListener('error', () => applyImageFallback(img));
-      if (img.complete && img.naturalWidth === 0) applyImageFallback(img);
+    root.querySelectorAll('img').forEach((img) => {
+      img.addEventListener('error', () => {
+        if (!applyImageFallback(img)) {
+          img.style.display = 'none';
+        }
+      });
+      if (img.complete && img.naturalWidth === 0) {
+        if (!applyImageFallback(img)) {
+          img.style.display = 'none';
+        }
+      }
     });
 
     video?.addEventListener('error', () => {
