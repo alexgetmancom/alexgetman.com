@@ -281,8 +281,7 @@
   }
 
   .story-copy {
-    display: grid;
-    gap: 0.36rem;
+    display: block;
     color: #e2e8f0;
     font-size: clamp(1.16rem, 1.28vw, 1.48rem);
     line-height: 1.32;
@@ -313,7 +312,7 @@
 
   .story-copy p,
   .story-panel > p {
-    margin: 0 0 0.72rem 0;
+    margin: 0 0 1.1rem 0;
     max-width: 52ch;
   }
 
@@ -358,16 +357,16 @@
   }
 
   .story-action--primary {
-    border-color: var(--accent);
-    background: var(--accent);
+    border-color: #dc2626;
+    background: #dc2626;
     color: white;
   }
 
   .story-action--primary:hover {
-    background: var(--accent);
+    background: #e53e3e;
+    border-color: #e53e3e;
     color: white;
-    box-shadow: 0 0 16px rgba(240, 68, 101, 0.45);
-    border-color: var(--accent);
+    box-shadow: 0 0 16px rgba(220, 38, 38, 0.5);
     transform: translateY(-1px);
   }
 
@@ -415,11 +414,25 @@
     padding: 0;
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
+    transition: filter 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.3s ease, box-shadow 0.3s ease;
+  }
+
+  .rail-card:not(.is-active) {
+    filter: grayscale(100%);
+    opacity: 0.38;
+  }
+
+  .rail-card:not(.is-active):hover {
+    filter: grayscale(35%);
+    opacity: 0.75;
+    border-color: rgba(255, 255, 255, 0.2);
   }
 
   .rail-card.is-active {
-    border-color: rgba(240, 68, 101, 0.82);
-    box-shadow: 0 0 0 1px rgba(240, 68, 101, 0.3);
+    border-color: #dc2626;
+    box-shadow: 0 0 0 1px rgba(220, 38, 38, 0.3), 0 8px 24px rgba(220, 38, 38, 0.15);
+    filter: none;
+    opacity: 1;
   }
 
   .rail-card__media,
