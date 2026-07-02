@@ -451,8 +451,8 @@
     overflow-y: auto;
     overflow-x: hidden;
     overscroll-behavior-y: contain;
-    padding-top: calc(2 * calc((100% - 2.2rem) / 5) + 1.1rem);
-    padding-bottom: calc(2 * calc((100% - 2.2rem) / 5) + 1.1rem);
+    padding-top: calc(2 * clamp(90px, 9.6vh, 116px) + 1.1rem);
+    padding-bottom: calc(2 * clamp(90px, 9.6vh, 116px) + 1.1rem);
     padding-left: 0.05rem;
     padding-right: 0.05rem;
     scrollbar-width: none;
@@ -465,7 +465,7 @@
   .rail-card {
     position: relative;
     min-height: 0;
-    height: calc((100% - 2.2rem) / 5);
+    height: clamp(90px, 9.6vh, 116px);
     flex-shrink: 0;
     display: flex;
     align-items: stretch;
