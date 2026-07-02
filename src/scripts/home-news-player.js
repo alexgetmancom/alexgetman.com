@@ -130,6 +130,7 @@
             video.setAttribute('src', post.image);
             video.load();
           }
+          video.muted = muted;
           video.play?.().catch(() => {});
         } else {
           video.pause?.();
@@ -167,12 +168,15 @@
       if (views) views.textContent = post.views || '0';
       if (audio) {
         audio.pause?.();
-        if (post.audioUrl) {
+        if (post.audioUrl && post.mediaType !== 'video') {
           if (audio.getAttribute('src') !== post.audioUrl) {
             audio.setAttribute('src', post.audioUrl);
             audio.load?.();
           }
           audio.muted = muted;
+          if (!muted) {
+            audio.play?.().catch(() => {});
+          }
         } else {
           audio.removeAttribute('src');
           audio.load?.();
@@ -341,11 +345,16 @@
       if (audioLabel) audioLabel.textContent = muted ? (ui.muted || 'Muted') : (ui.mute || 'Audio');
       if (audio) {
         audio.muted = muted;
-        if (!muted && audio.getAttribute('src')) {
+        const post = posts[active];
+        const isVideo = post && post.mediaType === 'video';
+        if (!muted && audio.getAttribute('src') && !isVideo) {
           audio.play?.().catch(() => {});
         } else {
           audio.pause?.();
         }
+      }
+      if (video) {
+        video.muted = muted;
       }
     });
 
