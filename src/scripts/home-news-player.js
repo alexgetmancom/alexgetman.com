@@ -274,6 +274,11 @@
       event.preventDefault();
       isManualPaused = !isManualPaused;
 
+      // If manual pause is toggled off, temporarily ignore hover-pause so it plays immediately
+      if (!isManualPaused) {
+        isHoverPaused = false;
+      }
+
       const icon = playPauseOverlay.querySelector('.play-pause-icon');
       if (icon) {
         icon.className = `play-pause-icon ${isManualPaused ? 'is-paused' : 'is-playing'}`;
@@ -284,6 +289,25 @@
 
       startTimer();
     });
+
+    let lastWheelTime = 0;
+    const wheelCooldownMs = 500;
+
+    visual?.addEventListener('wheel', (event) => {
+      if (Math.abs(event.deltaY) < 10) return;
+      event.preventDefault();
+
+      const now = Date.now();
+      if (now - lastWheelTime < wheelCooldownMs) return;
+      lastWheelTime = now;
+
+      if (event.deltaY > 0) {
+        render(active + 1);
+      } else {
+        render(active - 1);
+      }
+      startTimer();
+    }, { passive: false });
     readMore?.addEventListener('click', () => {
       expanded = !expanded;
       syncReadMore(posts[active] || {});
