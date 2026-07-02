@@ -41,6 +41,7 @@
   let paused = false;
   let muted = localStorage.getItem('story-player-muted') !== 'false';
   let expanded = false;
+  let animationTimer = null;
   const intervalMs = 8500;
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -194,6 +195,10 @@
       }
     }
 
+    if (animationTimer) {
+      window.clearTimeout(animationTimer);
+    }
+
     progressBars.forEach((bar, i) => {
       const isActive = i === active;
       bar.classList.toggle('is-active', isActive);
@@ -205,7 +210,12 @@
         fill.offsetHeight; // trigger reflow
         
         if (isActive) {
-          fill.style.animation = !reduceMotion ? `storyProgressVertical ${intervalMs}ms linear forwards` : 'none';
+          animationTimer = window.setTimeout(() => {
+            if (i === active) {
+              fill.style.animation = !reduceMotion ? `storyProgressVertical ${intervalMs}ms linear forwards` : 'none';
+              fill.style.animationPlayState = paused ? 'paused' : 'running';
+            }
+          }, 380);
         } else {
           fill.style.transform = i < active ? 'scaleY(1)' : 'scaleY(0)';
         }
