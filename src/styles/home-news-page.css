@@ -282,10 +282,10 @@
 
   .story-copy {
     display: grid;
-    gap: 0.5rem;
+    gap: 0.36rem;
     color: #e2e8f0;
-    font-size: clamp(0.96rem, 1.05vw, 1.15rem);
-    line-height: 1.45;
+    font-size: clamp(1.16rem, 1.28vw, 1.48rem);
+    line-height: 1.32;
     flex-grow: 1;
     overflow-y: auto;
     position: relative;
@@ -430,8 +430,8 @@
 
   .rail-card__media {
     position: relative;
-    width: clamp(62px, 5.2vw, 80px);
     height: 100%;
+    aspect-ratio: 9 / 16;
     flex-shrink: 0;
     overflow: hidden;
     background:
@@ -505,8 +505,8 @@
     }
 
     .story-copy {
-      font-size: clamp(0.92rem, 1vw, 1.08rem);
-      line-height: 1.4;
+      font-size: clamp(1rem, 1.08vw, 1.15rem);
+      line-height: 1.3;
     }
 
     .story-actions {
