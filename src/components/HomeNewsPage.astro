@@ -111,6 +111,40 @@ function metricValue(value: number) {
   {activePost ? (
     <section class="story-player" aria-label={ui.storyLabel} data-story-player>
       <div class="story-player__main">
+        <nav class="story-rail" aria-label={ui.storyRail}>
+          {storyPosts.map((post, index) => (
+            <a
+              href={post.url}
+              class={`rail-card${index === 0 ? ' is-active' : ''}${post.image ? '' : ' rail-card--no-image'}`}
+              data-story-index={index}
+            >
+              <span class="rail-card__media" aria-hidden="true">
+                {post.image ? (
+                  post.mediaType === 'video' ? (
+                    <video src={`/${post.image}`} muted loop playsinline preload="metadata"></video>
+                  ) : (
+                    <img
+                      src={`/${post.image}`}
+                      srcset={post.imageSrcSet}
+                      alt=""
+                      loading={index < 4 ? 'eager' : 'lazy'}
+                      decoding="async"
+                      sizes="72px"
+                    />
+                  )
+                ) : (
+                  <span>{post.category}</span>
+                )}
+              </span>
+              <span class="rail-card__shade"></span>
+              <span class="rail-card__text">
+                <span>{post.category}</span>
+                <strong>{truncateText(post.title, 62)}</strong>
+              </span>
+            </a>
+          ))}
+        </nav>
+
         <div class="story-visual-wrap">
           <button class="story-arrow story-arrow--prev" type="button" aria-label={ui.previous} data-story-prev>
             <span aria-hidden="true">‹</span>
@@ -184,40 +218,6 @@ function metricValue(value: number) {
           </div>
         </aside>
       </div>
-
-      <nav class="story-rail" aria-label={ui.storyRail}>
-        {storyPosts.map((post, index) => (
-          <a
-            href={post.url}
-            class={`rail-card${index === 0 ? ' is-active' : ''}${post.image ? '' : ' rail-card--no-image'}`}
-            data-story-index={index}
-          >
-            <span class="rail-card__media" aria-hidden="true">
-              {post.image ? (
-                post.mediaType === 'video' ? (
-                  <video src={`/${post.image}`} muted loop playsinline preload="metadata"></video>
-                ) : (
-                  <img
-                    src={`/${post.image}`}
-                    srcset={post.imageSrcSet}
-                    alt=""
-                    loading={index < 4 ? 'eager' : 'lazy'}
-                    decoding="async"
-                    sizes="180px"
-                  />
-                )
-              ) : (
-                <span>{post.category}</span>
-              )}
-            </span>
-            <span class="rail-card__shade"></span>
-            <span class="rail-card__text">
-              <span>{post.category}</span>
-              <strong>{truncateText(post.title, 56)}</strong>
-            </span>
-          </a>
-        ))}
-      </nav>
 
       <script type="application/json" data-story-payload set:html={JSON.stringify({
         ui,
@@ -482,7 +482,7 @@ function metricValue(value: number) {
 
 <style>
   .home-page {
-    width: min(1200px, calc(100vw - 2rem));
+    width: min(1420px, calc(100vw - 2rem));
     max-width: none;
     margin-left: 50%;
     transform: translateX(-50%);
@@ -492,16 +492,17 @@ function metricValue(value: number) {
 
   .story-player {
     display: grid;
-    gap: 0.62rem;
+    gap: 0;
   }
 
   .story-player__main {
     display: grid;
-    grid-template-columns: minmax(280px, 320px) minmax(390px, 500px);
-    gap: clamp(0.6rem, 1vw, 0.9rem);
-    align-items: start;
+    grid-template-columns: minmax(250px, 320px) minmax(300px, 360px) minmax(360px, 500px);
+    gap: clamp(0.8rem, 1.35vw, 1.3rem);
+    align-items: center;
     justify-content: center;
-    min-height: 0;
+    min-height: min(640px, calc(100vh - 2rem));
+    max-height: calc(100vh - 2rem);
   }
 
   .story-visual-wrap {
@@ -513,7 +514,7 @@ function metricValue(value: number) {
 
   .story-visual {
     position: relative;
-    width: min(310px, 100%);
+    width: min(350px, 100%);
     aspect-ratio: 9 / 16;
     border: 1px solid var(--border-hover);
     border-radius: 10px;
@@ -672,9 +673,9 @@ function metricValue(value: number) {
   }
 
   .story-context {
-    align-self: start;
-    height: min(552px, calc(100vh - 292px));
-    min-height: 500px;
+    align-self: center;
+    height: min(560px, calc(100vh - 2rem));
+    min-height: 520px;
     display: flex;
     flex-direction: column;
     border: 1px solid var(--border);
@@ -726,7 +727,7 @@ function metricValue(value: number) {
     min-height: 100%;
     display: flex;
     flex-direction: column;
-    padding: clamp(0.85rem, 1.25vw, 1.05rem);
+    padding: clamp(1rem, 1.5vw, 1.35rem);
     overflow: hidden;
   }
 
@@ -739,7 +740,7 @@ function metricValue(value: number) {
   }
 
   .story-panel h1 {
-    font-size: clamp(1.35rem, 1.65vw, 1.92rem);
+    font-size: clamp(1.55rem, 2vw, 2.35rem);
   }
 
   .story-panel h2 {
@@ -752,7 +753,7 @@ function metricValue(value: number) {
     color: var(--text-main);
     font-size: clamp(0.82rem, 0.84vw, 0.9rem);
     line-height: 1.36;
-    max-height: min(300px, 40vh);
+    max-height: min(330px, 46vh);
     overflow: hidden;
     position: relative;
   }
@@ -852,29 +853,32 @@ function metricValue(value: number) {
   }
 
   .story-rail {
+    align-self: center;
     display: grid;
-    width: min(850px, 100%);
-    margin: 0 auto;
-    grid-auto-flow: column;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    grid-auto-flow: row;
-    grid-auto-columns: auto;
-    gap: 0.78rem;
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
-    padding: 0.05rem 0.05rem 0.45rem;
+    width: 100%;
+    max-height: min(560px, calc(100vh - 2rem));
+    grid-template-columns: 1fr;
+    gap: 0.62rem;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    padding: 0.05rem 0.12rem 0.05rem 0.05rem;
     scrollbar-width: thin;
   }
 
   .rail-card {
     position: relative;
-    aspect-ratio: 9 / 16;
+    min-height: 96px;
+    display: grid;
+    grid-template-columns: 58px minmax(0, 1fr);
+    gap: 0.7rem;
+    align-items: center;
     border: 1px solid var(--border);
     border-radius: 8px;
     overflow: hidden;
     background: var(--card-bg);
     color: var(--text-header);
     isolation: isolate;
+    padding: 0.58rem;
   }
 
   .rail-card.is-active {
@@ -883,10 +887,23 @@ function metricValue(value: number) {
   }
 
   .rail-card__media,
-  .rail-card__shade,
-  .rail-card__text {
+  .rail-card__shade {
     position: absolute;
     inset: 0;
+  }
+
+  .rail-card__media {
+    position: relative;
+    width: 58px;
+    aspect-ratio: 9 / 16;
+    border: 1px solid rgba(243, 246, 250, 0.1);
+    border-radius: 6px;
+    overflow: hidden;
+    background: rgba(8, 11, 16, 0.55);
+  }
+
+  .rail-card__text {
+    position: relative;
   }
 
   .rail-card__media img,
@@ -901,7 +918,8 @@ function metricValue(value: number) {
     display: grid;
     place-items: center;
     height: 100%;
-    padding: 0.6rem;
+    padding: 0.35rem;
+    font-size: 0.56rem;
     color: var(--text-muted);
     font-family: var(--font-mono);
     font-weight: 800;
@@ -913,16 +931,17 @@ function metricValue(value: number) {
 
   .rail-card__shade {
     z-index: 1;
-    background: linear-gradient(180deg, transparent 25%, rgba(8, 11, 16, 0.94) 100%);
+    background: linear-gradient(90deg, rgba(8, 11, 16, 0), rgba(240, 68, 101, 0.03));
+    pointer-events: none;
   }
 
   .rail-card__text {
     z-index: 2;
     display: flex;
     flex-direction: column;
-    justify-content: flex-end;
-    gap: 0.28rem;
-    padding: 0.72rem;
+    justify-content: center;
+    gap: 0.24rem;
+    min-width: 0;
   }
 
   .rail-card__text span {
@@ -933,9 +952,13 @@ function metricValue(value: number) {
   }
 
   .rail-card__text strong {
-    font-size: 0.92rem;
-    line-height: 1.12;
+    font-size: 0.86rem;
+    line-height: 1.16;
     overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 
   .empty {
@@ -952,15 +975,66 @@ function metricValue(value: number) {
     .story-player__main {
       grid-template-columns: 1fr;
       min-height: 0;
+      max-height: none;
       gap: 1rem;
     }
 
+    .story-visual-wrap {
+      order: 1;
+    }
+
     .story-context {
+      order: 2;
       width: min(100%, 720px);
       justify-self: center;
       height: auto;
       min-height: 0;
       max-height: none;
+    }
+
+    .story-rail {
+      order: 3;
+      width: min(100%, 720px);
+      justify-self: center;
+      max-height: none;
+      grid-template-columns: repeat(5, minmax(104px, 124px));
+      grid-auto-flow: column;
+      grid-auto-columns: minmax(104px, 124px);
+      overflow-x: auto;
+      overflow-y: hidden;
+      overscroll-behavior-x: contain;
+      overscroll-behavior-y: auto;
+      padding: 0.05rem 0.05rem 0.48rem;
+    }
+
+    .rail-card {
+      min-height: 0;
+      aspect-ratio: 9 / 16;
+      display: block;
+      padding: 0;
+    }
+
+    .rail-card__media,
+    .rail-card__shade,
+    .rail-card__text {
+      position: absolute;
+      inset: 0;
+    }
+
+    .rail-card__media {
+      width: auto;
+      aspect-ratio: auto;
+      border: 0;
+      border-radius: 0;
+    }
+
+    .rail-card__shade {
+      background: linear-gradient(180deg, transparent 32%, rgba(8, 11, 16, 0.94) 100%);
+    }
+
+    .rail-card__text {
+      justify-content: flex-end;
+      padding: 0.72rem;
     }
 
     .story-arrow--prev {
@@ -1006,8 +1080,6 @@ function metricValue(value: number) {
 
     .story-rail {
       width: 100%;
-      grid-template-columns: repeat(5, minmax(104px, 124px));
-      grid-auto-columns: auto;
       gap: 0.65rem;
     }
   }
