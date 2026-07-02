@@ -205,9 +205,9 @@
         fill.offsetHeight; // trigger reflow
         
         if (isActive) {
-          fill.style.animation = !reduceMotion ? `storyProgress ${intervalMs}ms linear forwards` : 'none';
+          fill.style.animation = !reduceMotion ? `storyProgressVertical ${intervalMs}ms linear forwards` : 'none';
         } else {
-          fill.style.transform = i < active ? 'scaleX(1)' : 'scaleX(0)';
+          fill.style.transform = i < active ? 'scaleY(1)' : 'scaleY(0)';
         }
       }
     });

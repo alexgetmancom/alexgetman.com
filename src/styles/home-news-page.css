@@ -93,11 +93,11 @@
 
   .rail-card__progress {
     position: absolute;
+    top: 0;
     bottom: 0;
     left: 0;
-    right: 0;
-    height: 3px;
-    background: rgba(255, 255, 255, 0.08);
+    width: 3px;
+    height: 100%;
     overflow: hidden;
     opacity: 0;
     transition: opacity 0.3s ease;
@@ -112,14 +112,14 @@
     display: block;
     width: 100%;
     height: 100%;
-    transform: scaleX(0);
-    transform-origin: left center;
+    transform: scaleY(0);
+    transform-origin: top center;
     background: #ef4444;
     box-shadow: 0 0 10px #ef4444, 0 0 20px #ef4444;
   }
 
   .rail-card__progress.is-done i {
-    transform: scaleX(1);
+    transform: scaleY(1);
     box-shadow: none;
   }
 
@@ -450,26 +450,26 @@
 
   .story-rail-focus-overlay {
     position: absolute;
-    left: 0.05rem;
-    right: 0.05rem;
+    left: 0;
     top: calc(2 * (100% - 2.2rem) / 5 + 1.1rem);
     height: calc((100% - 2.2rem) / 5);
-    border: 2px solid rgba(255, 255, 255, 0.95);
-    border-radius: 8px;
+    width: 3px;
+    background: rgba(255, 255, 255, 0.22);
+    border-radius: 999px;
     pointer-events: none;
     z-index: 10;
-    box-shadow: 0 0 14px rgba(255, 255, 255, 0.15), inset 0 0 10px rgba(255, 255, 255, 0.08);
+    box-shadow: 0 0 8px rgba(255, 255, 255, 0.15);
     animation: focusPulse 2s infinite ease-in-out;
   }
 
   @keyframes focusPulse {
     0%, 100% {
       opacity: 0.85;
-      box-shadow: 0 0 14px rgba(255, 255, 255, 0.15), inset 0 0 10px rgba(255, 255, 255, 0.08);
+      box-shadow: 0 0 8px rgba(255, 255, 255, 0.15);
     }
     50% {
       opacity: 1;
-      box-shadow: 0 0 20px rgba(255, 255, 255, 0.25), inset 0 0 14px rgba(255, 255, 255, 0.15);
+      box-shadow: 0 0 14px rgba(255, 255, 255, 0.35);
     }
   }
 
@@ -644,9 +644,9 @@
     color: var(--text-secondary);
   }
 
-  @keyframes storyProgress {
-    from { transform: scaleX(0); }
-    to { transform: scaleX(1); }
+  @keyframes storyProgressVertical {
+    from { transform: scaleY(0); }
+    to { transform: scaleY(1); }
   }
 
   @media (max-width: 1120px) {
