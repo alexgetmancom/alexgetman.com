@@ -170,7 +170,13 @@
           fill.style.transform = i < active ? 'scaleX(1)' : 'scaleX(0)';
         }
       });
-      railCards.forEach((card, i) => card.classList.toggle('is-active', i === active));
+      railCards.forEach((card, i) => {
+        const isCurrent = i === active;
+        card.classList.toggle('is-active', isCurrent);
+        if (isCurrent) {
+          card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      });
     }
 
     function stopTimer() {

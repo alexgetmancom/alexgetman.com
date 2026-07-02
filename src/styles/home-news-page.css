@@ -391,10 +391,15 @@
     grid-template-columns: 1fr;
     grid-template-rows: repeat(5, minmax(0, 1fr));
     gap: 0.55rem;
-    overflow: hidden;
+    overflow-y: auto;
+    overflow-x: hidden;
     overscroll-behavior-y: contain;
     padding: 0.05rem;
-    scrollbar-width: thin;
+    scrollbar-width: none;
+  }
+
+  .story-rail::-webkit-scrollbar {
+    display: none;
   }
 
   .rail-card {
