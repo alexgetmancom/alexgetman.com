@@ -7,12 +7,23 @@ interface Props {
   ui: StoryUi;
 }
 
-const { activePost, paragraphs, ui } = Astro.props;
+const wordsCount = paragraphs.join(' ').split(/\s+/).length;
+const readingTimeMin = Math.max(1, Math.ceil(wordsCount / 180));
 ---
 
 <aside class="story-context" data-story-context>
   <div class="story-panel is-active" data-panel="post">
+    <div class="story-category-wrap">
+      <span class="story-category-badge" data-story-kicker>{activePost.category}</span>
+    </div>
     <h1 data-story-title>{activePost.title}</h1>
+    <div class="story-meta">
+      <span class="story-meta-item" data-story-reading-time>⏱️ {readingTimeMin} min</span>
+      <span class="story-meta-dot">•</span>
+      <span class="story-meta-item" data-story-time>{activePost.relativeDate}</span>
+      <span class="story-meta-dot">•</span>
+      <span class="story-meta-item">👁️ <span data-story-views>{activePost.views || '0'}</span></span>
+    </div>
     <div class="story-copy" data-story-copy>
       {paragraphs.map((paragraph) => (
         <p>{paragraph}</p>
@@ -20,8 +31,22 @@ const { activePost, paragraphs, ui } = Astro.props;
     </div>
     <button class="read-more-button" type="button" data-story-read-more hidden>{ui.readMore}</button>
     <div class="story-actions">
-      <button class="story-action story-action--primary" type="button" data-story-discuss>{ui.discuss}</button>
-      <button class="story-action" type="button" data-story-share>{ui.share}</button>
+      <button class="story-action story-action--primary" type="button" data-story-discuss>
+        <svg class="story-action-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+        </svg>
+        <span>{ui.discuss}</span>
+      </button>
+      <button class="story-action" type="button" data-story-share>
+        <svg class="story-action-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;">
+          <circle cx="18" cy="5" r="3"></circle>
+          <circle cx="6" cy="12" r="3"></circle>
+          <circle cx="18" cy="19" r="3"></circle>
+          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+          <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+        </svg>
+        <span>{ui.share}</span>
+      </button>
     </div>
   </div>
 </aside>

@@ -48,7 +48,7 @@
       rgba(0, 0, 0, 0.58);
     overflow: hidden;
     isolation: isolate;
-    box-shadow: 0 22px 70px rgba(0, 0, 0, 0.34);
+    box-shadow: 0 22px 70px rgba(0, 0, 0, 0.52), 0 0 45px rgba(220, 38, 38, 0.12);
     backdrop-filter: blur(18px);
     -webkit-backdrop-filter: blur(18px);
   }
@@ -264,6 +264,50 @@
     overflow: hidden;
   }
 
+  .story-category-wrap {
+    margin-bottom: 0.44rem;
+    flex-shrink: 0;
+  }
+
+  .story-category-badge {
+    display: inline-flex;
+    align-items: center;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 900;
+    text-transform: uppercase;
+    color: #dc2626;
+    background: rgba(220, 38, 38, 0.08);
+    border: 1px solid rgba(220, 38, 38, 0.28);
+    padding: 0.22rem 0.54rem;
+    border-radius: 6px;
+    letter-spacing: 0.05em;
+  }
+
+  .story-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin-top: -0.2rem;
+    margin-bottom: 1rem;
+    font-family: var(--font-sans);
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  .story-meta-item {
+    display: inline-flex;
+    align-items: center;
+    font-weight: 500;
+  }
+
+  .story-meta-dot {
+    color: rgba(255, 255, 255, 0.16);
+    font-weight: bold;
+    font-size: 0.9rem;
+  }
+
   .story-panel h1,
   .story-panel h2 {
     margin: 0 0 0.62rem;
@@ -278,6 +322,25 @@
 
   .story-panel h2 {
     font-size: 1.2rem;
+  }
+
+  /* Transition for updates */
+  .story-panel h1,
+  .story-copy,
+  .story-meta,
+  .story-category-wrap {
+    transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .story-panel.is-updating h1,
+  .story-panel.is-updating .story-copy,
+  .story-panel.is-updating .story-meta,
+  .story-panel.is-updating .story-category-wrap {
+    opacity: 0;
+    transform: translateY(8px);
+    transition: none !important;
   }
 
   .story-copy {
@@ -520,6 +583,14 @@
 
     .story-panel h1 {
       font-size: clamp(1.4rem, 1.85vw, 1.95rem);
+    }
+
+    .story-meta {
+      margin-bottom: 0.65rem;
+    }
+
+    .story-category-wrap {
+      margin-bottom: 0.28rem;
     }
 
     .story-copy {
