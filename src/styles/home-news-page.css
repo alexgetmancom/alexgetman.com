@@ -483,7 +483,7 @@
     height: 100%;
     min-height: 0;
     gap: 0.55rem;
-    overflow-y: auto;
+    overflow-y: hidden;
     overflow-x: hidden;
     overscroll-behavior-y: contain;
     padding: 0.05rem;

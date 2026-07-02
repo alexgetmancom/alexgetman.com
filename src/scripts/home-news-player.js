@@ -296,7 +296,7 @@
   let lastWheelTime = 0;
   const wheelCooldownMs = 500;
 
-  visual?.addEventListener('wheel', (event) => {
+  function handleWheel(event) {
     if (Math.abs(event.deltaY) < 10) return;
     event.preventDefault();
 
@@ -309,7 +309,10 @@
     } else {
       render(active - 1);
     }
-  }, { passive: false });
+  }
+
+  visual?.addEventListener('wheel', handleWheel, { passive: false });
+  root.querySelector('.story-rail-container')?.addEventListener('wheel', handleWheel, { passive: false });
 
   readMore?.addEventListener('click', () => {
     expanded = !expanded;
