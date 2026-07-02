@@ -80,6 +80,32 @@
     image.removeAttribute('srcset');
   });
 
+  video?.addEventListener('playing', () => {
+    const post = posts[active];
+    if (post && post.mediaType === 'video') {
+      const activeBar = progressBars[active];
+      const fill = activeBar?.querySelector('i');
+      if (fill) {
+        const duration = video.duration ? Math.min(15000, video.duration * 1000) : intervalMs;
+        fill.style.animation = 'none';
+        fill.offsetHeight; // trigger reflow
+        fill.style.animation = !reduceMotion ? `storyProgressVertical ${duration}ms linear forwards` : 'none';
+        fill.style.animationPlayState = (isManualPaused || isHoverPaused) ? 'paused' : 'running';
+      }
+    }
+  });
+
+  video?.addEventListener('waiting', () => {
+    const post = posts[active];
+    if (post && post.mediaType === 'video') {
+      const activeBar = progressBars[active];
+      const fill = activeBar?.querySelector('i');
+      if (fill) {
+        fill.style.animationPlayState = 'paused';
+      }
+    }
+  });
+
   function syncReadMore(post) {
     if (!copy || !readMore) return;
     copy.classList.toggle('is-expanded', expanded);
@@ -210,12 +236,17 @@
         fill.offsetHeight; // trigger reflow
         
         if (isActive) {
-          animationTimer = window.setTimeout(() => {
-            if (i === active) {
-              fill.style.animation = !reduceMotion ? `storyProgressVertical ${intervalMs}ms linear forwards` : 'none';
-              fill.style.animationPlayState = paused ? 'paused' : 'running';
-            }
-          }, 380);
+          const post = posts[active];
+          if (post && post.mediaType === 'video') {
+            fill.style.transform = 'scaleY(0)';
+          } else {
+            animationTimer = window.setTimeout(() => {
+              if (i === active) {
+                fill.style.animation = !reduceMotion ? `storyProgressVertical ${intervalMs}ms linear forwards` : 'none';
+                fill.style.animationPlayState = paused ? 'paused' : 'running';
+              }
+            }, 380);
+          }
         } else {
           fill.style.transform = i < active ? 'scaleY(1)' : 'scaleY(0)';
         }
