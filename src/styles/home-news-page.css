@@ -48,10 +48,7 @@
       rgba(0, 0, 0, 0.58);
     overflow: hidden;
     isolation: isolate;
-    box-shadow:
-      0 22px 70px rgba(0, 0, 0, 0.62),
-      0 0 30px rgba(220, 38, 38, 0.28),
-      0 0 65px rgba(220, 38, 38, 0.14);
+    box-shadow: 0 22px 70px rgba(0, 0, 0, 0.85);
     backdrop-filter: blur(18px);
     -webkit-backdrop-filter: blur(18px);
   }
@@ -115,7 +112,7 @@
     transform: scaleY(0);
     transform-origin: top center;
     background: #dc2626;
-    box-shadow: 0 0 8px #dc2626, 0 0 16px rgba(220, 38, 38, 0.6);
+    box-shadow: none;
   }
 
   .rail-card__progress.is-done i {
@@ -510,14 +507,10 @@
     border: 1px solid var(--border);
     border-radius: 8px;
     overflow: hidden;
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.038), rgba(255, 255, 255, 0.012)),
-      rgba(0, 0, 0, 0.5);
+    background: rgba(0, 0, 0, 0.65);
     color: var(--text-header);
     isolation: isolate;
-    padding: 0;
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
+    padding: 0 0 0 4px;
     transition: filter 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.3s ease, box-shadow 0.3s ease;
   }
 
@@ -551,11 +544,8 @@
     aspect-ratio: 9 / 16;
     flex-shrink: 0;
     overflow: hidden;
-    background:
-      radial-gradient(circle at 35% 18%, rgba(240, 68, 101, 0.22), transparent 44%),
-      linear-gradient(135deg, rgba(240, 68, 101, 0.15), rgba(255, 255, 255, 0.04)),
-      #050609;
-    border-right: 1px solid rgba(243, 246, 250, 0.1);
+    background: #000000;
+    border-right: 1px solid var(--border);
   }
 
   .rail-card__text {
