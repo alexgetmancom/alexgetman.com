@@ -15,6 +15,7 @@ interface Props {
   socialImageWidth?: number;
   socialImageHeight?: number;
   ogType?: string;
+  immersiveHome?: boolean;
 }
 
 const {
@@ -30,7 +31,8 @@ const {
   socialImage: socialImageProp,
   socialImageWidth = 500,
   socialImageHeight = 500,
-  ogType = "website"
+  ogType = "website",
+  immersiveHome = false
 } = Astro.props;
 
 const cleanDescription = removeLeadingEmoji(description);
@@ -974,6 +976,152 @@ const isCurrentPath = (href: string) => {
             stroke: currentColor;
         }
 
+        .immersive-dock {
+            display: none;
+        }
+
+        @media (min-width: 901px) {
+            body.immersive-home {
+                padding-left: 92px;
+            }
+
+            body.immersive-home .media-header {
+                display: none;
+            }
+
+            body.immersive-home > .container {
+                max-width: none;
+                padding-left: 0;
+                padding-right: 0;
+            }
+
+            body.immersive-home .site-footer {
+                display: none;
+            }
+
+            body.immersive-home {
+                color-scheme: dark;
+                --bg-main: #080b10;
+                --bg-secondary: #0d1118;
+                --card-bg: #111620;
+                --card-bg-hover: #151b27;
+                --text-main: #d7deea;
+                --text-secondary: #99a3b2;
+                --text-header: #f3f6fa;
+                --border: #222b3b;
+                --border-hover: #38445a;
+            }
+
+            body.immersive-home .immersive-dock {
+                position: fixed;
+                z-index: 110;
+                top: 0;
+                left: 0;
+                bottom: 0;
+                width: 92px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 0.55rem;
+                padding: 1rem 0.55rem;
+                border-right: 1px solid rgba(243, 246, 250, 0.08);
+                background: rgba(8, 11, 16, 0.82);
+                backdrop-filter: blur(16px);
+                -webkit-backdrop-filter: blur(16px);
+            }
+
+            html[data-theme="light"] body.immersive-home .immersive-dock {
+                background: rgba(246, 248, 250, 0.84);
+            }
+
+            .immersive-dock__brand {
+                width: 68px;
+                min-height: 78px;
+                display: inline-flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                gap: 0.36rem;
+                margin-bottom: 0.35rem;
+                border: 1px solid rgba(243, 246, 250, 0.08);
+                border-radius: 16px;
+                background: rgba(17, 22, 32, 0.42);
+                color: var(--text-header);
+                text-align: center;
+                font-size: 0.72rem;
+                font-weight: 900;
+                line-height: 1.02;
+            }
+
+            .immersive-dock__brand img {
+                width: 38px;
+                height: 38px;
+                border-radius: 50%;
+                object-fit: cover;
+                border: 1px solid var(--border);
+            }
+
+            .immersive-dock__brand:hover {
+                border-color: rgba(240, 68, 101, 0.35);
+                background: rgba(240, 68, 101, 0.12);
+                color: var(--text-header);
+            }
+
+            .immersive-dock__nav {
+                width: 100%;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 0.55rem;
+                margin-top: auto;
+                margin-bottom: auto;
+            }
+
+            .immersive-dock__language {
+                width: 100%;
+                display: flex;
+                justify-content: center;
+                margin-top: auto;
+            }
+
+            .immersive-dock__button {
+                width: 68px;
+                min-height: 58px;
+                display: inline-flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                gap: 0.28rem;
+                border: 1px solid transparent;
+                border-radius: 14px;
+                background: transparent;
+                color: var(--text-muted);
+                font-family: var(--font-sans);
+                font-size: 0.68rem;
+                font-weight: 800;
+                line-height: 1.1;
+                cursor: pointer;
+            }
+
+            .immersive-dock__button svg {
+                width: 19px;
+                height: 19px;
+            }
+
+            .immersive-dock__button:hover,
+            .immersive-dock__button[aria-current="page"] {
+                color: var(--text-header);
+                border-color: rgba(240, 68, 101, 0.22);
+                background: rgba(240, 68, 101, 0.14);
+            }
+
+            .immersive-dock__text {
+                font-family: var(--font-mono);
+                font-size: 0.9rem;
+                font-weight: 900;
+            }
+        }
+
         /* Responsive Mobile Queries */
         @media (max-width: 768px) {
             .media-header {
@@ -1231,7 +1379,7 @@ const isCurrentPath = (href: string) => {
       })();
     </script>
 </head>
-<body>
+<body class={immersiveHome ? "immersive-home" : undefined}>
     <!-- Navigation Overlay -->
     <div class="nav-overlay" id="nav-overlay"></div>
     
@@ -1291,6 +1439,34 @@ const isCurrentPath = (href: string) => {
             </ul>
         </nav>
     </aside>
+
+    {immersiveHome && (
+        <aside class="immersive-dock" aria-label={navLabels.drawerTitle}>
+            <a class="immersive-dock__brand" href={isRu ? "/ru/" : "/"} aria-label={brandDisplayName}>
+                <img src="/brand-avatar-small-20260629.webp" alt="" width="38" height="38" />
+                <span>alex<br />getman</span>
+            </a>
+            <div class="immersive-dock__nav">
+                <a class="immersive-dock__button" href={navHomeHref} aria-current={isCurrentPath(navHomeHref) ? "page" : undefined}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                    <span>{navLabels.home}</span>
+                </a>
+                <a class="immersive-dock__button" href={navArchiveHref} aria-current={isCurrentPath(navArchiveHref) ? "page" : undefined}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h18"/><path d="M5 4v16h14V4"/><path d="M8 9h8"/><path d="M8 13h8"/></svg>
+                    <span>{navLabels.archive}</span>
+                </a>
+                <a class="immersive-dock__button" href={navSearchHref}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                    <span>{navLabels.search}</span>
+                </a>
+            </div>
+            <div class="immersive-dock__language">
+                <a class="immersive-dock__button notranslate" href={isRu ? "/" : "/ru/"} aria-label={navLabels.language}>
+                    <span class="immersive-dock__text">{isRu ? "EN" : "RU"}</span>
+                </a>
+            </div>
+        </aside>
+    )}
 
     <!-- Compact Media Header -->
     <header class="media-header">
@@ -1409,7 +1585,10 @@ const isCurrentPath = (href: string) => {
     // Expandable Social Bar & Theme Toggle Logic
     document.addEventListener('DOMContentLoaded', () => {
         // Navigation Drawer Toggle Logic
-        const burgerBtn = document.getElementById('burger-toggle-btn');
+        const burgerButtons = [
+            document.getElementById('burger-toggle-btn'),
+            document.getElementById('immersive-burger-btn')
+        ].filter(Boolean);
         const navCloseBtn = document.getElementById('nav-close-btn');
         const navOverlay = document.getElementById('nav-overlay');
         const navDrawer = document.getElementById('nav-drawer');
@@ -1428,9 +1607,7 @@ const isCurrentPath = (href: string) => {
             }
         }
 
-        if (burgerBtn) {
-            burgerBtn.addEventListener('click', openDrawer);
-        }
+        burgerButtons.forEach((button) => button.addEventListener('click', openDrawer));
 
         if (navCloseBtn) {
             navCloseBtn.addEventListener('click', closeDrawer);
@@ -1648,8 +1825,8 @@ const isCurrentPath = (href: string) => {
         }
 
         // Theme Toggle Logic
-        const themeToggleBtn = document.getElementById('theme-toggle-btn');
-        if (themeToggleBtn) {
+        const themeToggleButtons = document.querySelectorAll('.theme-toggle');
+        themeToggleButtons.forEach((themeToggleBtn) => {
             themeToggleBtn.addEventListener('click', () => {
                 const currentTheme = document.documentElement.getAttribute('data-theme');
                 const newTheme = currentTheme === 'light' ? 'dark' : 'light';
@@ -1662,7 +1839,7 @@ const isCurrentPath = (href: string) => {
                     localStorage.setItem('theme', 'dark');
                 }
             });
-        }
+        });
 
         // Language Toggle Logic
         const langToggleBtn = document.getElementById('lang-toggle-btn');
