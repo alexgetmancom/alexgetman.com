@@ -20,14 +20,13 @@ const { posts, ui } = Astro.props;
       <span class="rail-card__media" aria-hidden="true">
         {post.image ? (
           post.mediaType === 'video' ? (
-            <video
-              src={`/${post.image}#t=0.001`}
-              poster={post.fallbackImage ? `/${post.fallbackImage}` : undefined}
-              muted
-              loop
-              playsinline
-              preload="metadata"
-            ></video>
+            <img
+              src={post.fallbackImage ? `/${post.fallbackImage}` : `/${post.image}`}
+              alt=""
+              loading={index < 4 ? 'eager' : 'lazy'}
+              decoding="async"
+              sizes="72px"
+            />
           ) : (
             <img
               src={`/${post.image}`}
