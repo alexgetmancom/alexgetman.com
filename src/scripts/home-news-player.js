@@ -143,7 +143,12 @@
       if (copy) {
         copy.innerHTML = '';
         copy.classList.remove('is-expanded');
-        (post.body && post.body.length ? post.body : [post.excerpt]).filter(Boolean).forEach((paragraph) => {
+        const paragraphs = Array.isArray(post.body)
+          ? post.body
+          : typeof post.body === 'string'
+            ? [post.body]
+            : [post.excerpt];
+        paragraphs.filter(Boolean).forEach((paragraph) => {
           const p = document.createElement('p');
           p.textContent = paragraph;
           copy.appendChild(p);
@@ -185,7 +190,9 @@
 
       const readingTime = root.querySelector('[data-story-reading-time]');
       if (readingTime) {
-        const bodyText = post.body || post.excerpt || '';
+        const bodyText = Array.isArray(post.body)
+          ? post.body.join(' ')
+          : (post.body || post.excerpt || '');
         const words = bodyText.split(/\s+/).length;
         const mins = Math.max(1, Math.ceil(words / 180));
         readingTime.textContent = `⏱️ ${mins} min`;
