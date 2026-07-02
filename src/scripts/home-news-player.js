@@ -43,7 +43,7 @@
     let isManualPaused = false;
     let isHoverPaused = false;
     let paused = false;
-    let muted = true;
+    let muted = localStorage.getItem('story-player-muted') !== 'false';
     let expanded = false;
     const intervalMs = 8500;
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -340,6 +340,7 @@
     });
     audioToggle?.addEventListener('click', () => {
       muted = !muted;
+      localStorage.setItem('story-player-muted', String(muted));
       audioToggle.setAttribute('aria-pressed', String(muted));
       audioToggle.classList.toggle('is-on', !muted);
       if (audioLabel) audioLabel.textContent = muted ? (ui.muted || 'Muted') : (ui.mute || 'Audio');
@@ -370,6 +371,11 @@
         startTimer();
       }
     }, { passive: true });
+
+    // Sync initial button states with stored preference
+    audioToggle?.setAttribute('aria-pressed', String(muted));
+    audioToggle?.classList.toggle('is-on', !muted);
+    if (audioLabel) audioLabel.textContent = muted ? (ui.muted || 'Muted') : (ui.mute || 'Audio');
 
     render(0);
     startTimer();
