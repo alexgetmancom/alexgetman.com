@@ -440,6 +440,41 @@
     font-weight: 900;
   }
 
+  .story-rail-container {
+    position: relative;
+    grid-column: 1;
+    height: 100%;
+    min-height: 0;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .story-rail-focus-overlay {
+    position: absolute;
+    left: 0.05rem;
+    right: 0.05rem;
+    top: calc(2 * (100% - 2.2rem) / 5 + 1.1rem);
+    height: calc((100% - 2.2rem) / 5);
+    border: 2px solid #dc2626;
+    border-radius: 8px;
+    pointer-events: none;
+    z-index: 10;
+    box-shadow: 0 0 14px rgba(220, 38, 38, 0.5), inset 0 0 10px rgba(220, 38, 38, 0.25);
+    animation: focusPulse 2s infinite ease-in-out;
+  }
+
+  @keyframes focusPulse {
+    0%, 100% {
+      opacity: 0.85;
+      box-shadow: 0 0 14px rgba(220, 38, 38, 0.5), inset 0 0 10px rgba(220, 38, 38, 0.25);
+    }
+    50% {
+      opacity: 1;
+      box-shadow: 0 0 20px rgba(220, 38, 38, 0.7), inset 0 0 14px rgba(220, 38, 38, 0.35);
+    }
+  }
+
   .story-rail {
     align-self: center;
     display: flex;
@@ -451,11 +486,16 @@
     overflow-y: auto;
     overflow-x: hidden;
     overscroll-behavior-y: contain;
-    padding-top: calc(2 * clamp(90px, 9.6vh, 116px) + 1.1rem);
-    padding-bottom: calc(2 * clamp(90px, 9.6vh, 116px) + 1.1rem);
-    padding-left: 0.05rem;
-    padding-right: 0.05rem;
+    padding: 0.05rem;
     scrollbar-width: none;
+  }
+
+  .story-rail::before,
+  .story-rail::after {
+    content: '';
+    display: block;
+    height: calc(2 * (100% - 2.2rem) / 5 + 1.1rem);
+    flex-shrink: 0;
   }
 
   .story-rail::-webkit-scrollbar {
@@ -465,7 +505,7 @@
   .rail-card {
     position: relative;
     min-height: 0;
-    height: clamp(90px, 9.6vh, 116px);
+    height: calc((100% - 2.2rem) / 5);
     flex-shrink: 0;
     display: flex;
     align-items: stretch;
@@ -633,10 +673,22 @@
       max-height: none;
     }
 
-    .story-rail {
+    .story-rail-container {
       order: 3;
       width: min(100%, 720px);
       justify-self: center;
+      height: auto;
+      min-height: 0;
+      flex-direction: row;
+    }
+
+    .story-rail-focus-overlay {
+      display: none;
+    }
+
+    .story-rail {
+      width: 100%;
+      height: auto;
       max-height: none;
       display: flex;
       flex-direction: row;
@@ -646,6 +698,11 @@
       overscroll-behavior-x: contain;
       overscroll-behavior-y: auto;
       padding: 0.05rem 0.05rem 0.48rem;
+    }
+
+    .story-rail::before,
+    .story-rail::after {
+      display: none;
     }
 
     .rail-card {

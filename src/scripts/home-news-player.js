@@ -216,7 +216,9 @@
       const isCurrent = i === active;
       card.classList.toggle('is-active', isCurrent);
       if (isCurrent) {
-        card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        window.setTimeout(() => {
+          card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 60);
       }
     });
 
