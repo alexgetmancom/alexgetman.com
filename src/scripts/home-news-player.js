@@ -31,8 +31,17 @@
     const audioLabel = root.querySelector('[data-audio-label]');
     const audio = root.querySelector('[data-story-audio]');
 
+    const playPauseOverlay = document.createElement('div');
+    playPauseOverlay.className = 'play-pause-overlay';
+    playPauseOverlay.innerHTML = '<div class="play-pause-icon"></div>';
+    if (visual) {
+      visual.appendChild(playPauseOverlay);
+    }
+
     let active = 0;
     let timer = null;
+    let isManualPaused = false;
+    let isHoverPaused = false;
     let paused = false;
     let muted = true;
     let expanded = false;
@@ -170,14 +179,20 @@
         }
       }
       progressBars.forEach((bar, i) => {
-        bar.classList.toggle('is-active', i === active);
+        const isActive = i === active;
+        bar.classList.toggle('is-active', isActive);
         bar.classList.toggle('is-done', i < active);
         const fill = bar.querySelector('i');
         if (fill) {
-          fill.style.animation = 'none';
-          fill.offsetHeight;
-          fill.style.animation = i === active && !paused && !reduceMotion ? `storyProgress ${intervalMs}ms linear forwards` : 'none';
-          fill.style.transform = i < active ? 'scaleX(1)' : 'scaleX(0)';
+          if (isActive) {
+            if (!fill.style.animation || fill.style.animation === 'none') {
+              fill.style.animation = !reduceMotion ? `storyProgress ${intervalMs}ms linear forwards` : 'none';
+            }
+            fill.style.animationPlayState = paused ? 'paused' : 'running';
+          } else {
+            fill.style.animation = 'none';
+            fill.style.transform = i < active ? 'scaleX(1)' : 'scaleX(0)';
+          }
         }
       });
       railCards.forEach((card, i) => {
@@ -214,7 +229,11 @@
 
     function startTimer() {
       stopTimer();
-      if (paused || reduceMotion || posts.length < 2) return;
+      paused = isManualPaused || isHoverPaused;
+      if (paused || reduceMotion || posts.length < 2) {
+        render(active);
+        return;
+      }
       timer = window.setInterval(() => render(active + 1), intervalMs);
       render(active);
     }
@@ -235,19 +254,34 @@
       });
     });
     root.addEventListener('mouseenter', () => {
-      paused = true;
+      isHoverPaused = true;
       startTimer();
     });
     root.addEventListener('mouseleave', () => {
-      paused = false;
+      isHoverPaused = false;
       startTimer();
     });
     root.addEventListener('focusin', () => {
-      paused = true;
+      isHoverPaused = true;
       startTimer();
     });
     root.addEventListener('focusout', () => {
-      paused = false;
+      isHoverPaused = false;
+      startTimer();
+    });
+
+    cardLink?.addEventListener('click', (event) => {
+      event.preventDefault();
+      isManualPaused = !isManualPaused;
+
+      const icon = playPauseOverlay.querySelector('.play-pause-icon');
+      if (icon) {
+        icon.className = `play-pause-icon ${isManualPaused ? 'is-paused' : 'is-playing'}`;
+        playPauseOverlay.classList.remove('is-visible');
+        void playPauseOverlay.offsetWidth; // reset CSS transition keyframe states
+        playPauseOverlay.classList.add('is-visible');
+      }
+
       startTimer();
     });
     readMore?.addEventListener('click', () => {

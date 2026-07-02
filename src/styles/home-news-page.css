@@ -106,7 +106,7 @@
   .story-progress span {
     height: 4px;
     border-radius: 999px;
-    background: rgba(243, 246, 250, 0.48);
+    background: rgba(255, 255, 255, 0.22);
     overflow: hidden;
   }
 
@@ -116,11 +116,13 @@
     height: 100%;
     transform: scaleX(0);
     transform-origin: left center;
-    background: var(--accent);
+    background: #dc2626;
+    box-shadow: 0 0 6px #dc2626, 0 0 12px #dc2626;
   }
 
   .story-progress .is-done i {
     transform: scaleX(1);
+    box-shadow: none;
   }
 
   .story-visual__chrome {
@@ -139,16 +141,24 @@
   .story-visual__chrome span {
     max-width: 50%;
     padding: 0.28rem 0.52rem;
-    border: 1px solid rgba(240, 68, 101, 0.32);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 7px;
-    background: rgba(8, 11, 16, 0.58);
-    color: rgba(243, 246, 250, 0.82);
+    background: rgba(0, 0, 0, 0.42);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: rgba(243, 246, 250, 0.88);
     font-family: var(--font-mono);
     font-size: 0.72rem;
     font-weight: 800;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .story-visual__chrome span[data-story-kicker] {
+    border-color: rgba(220, 38, 38, 0.35);
+    background: rgba(220, 38, 38, 0.06);
+    color: #ef4444;
   }
 
   .audio-chip {
@@ -160,19 +170,28 @@
     align-items: center;
     gap: 0.32rem;
     min-height: 34px;
-    padding: 0.25rem 0.5rem;
-    border: 1px solid rgba(243, 246, 250, 0.18);
+    padding: 0.25rem 0.58rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 999px;
-    background: rgba(0, 0, 0, 0.62);
+    background: rgba(0, 0, 0, 0.42);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
     color: var(--text-main);
     font-size: 0.76rem;
     font-weight: 800;
     cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .audio-chip:hover {
+    background: rgba(0, 0, 0, 0.6);
+    border-color: rgba(255, 255, 255, 0.18);
   }
 
   .audio-chip.is-on {
-    border-color: rgba(240, 68, 101, 0.5);
-    color: var(--accent);
+    border-color: rgba(220, 38, 38, 0.45);
+    color: #ef4444;
+    background: rgba(220, 38, 38, 0.06);
   }
 
   .story-arrow {
@@ -742,4 +761,115 @@
       display: grid;
       grid-template-columns: 1fr;
     }
+  }
+
+  /* Play/Pause Overlay */
+  .play-pause-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: grid;
+    place-items: center;
+    background: rgba(0, 0, 0, 0.12);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+  }
+
+  .play-pause-overlay.is-visible {
+    animation: playPauseFlash 0.65s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  .play-pause-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.72);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    display: grid;
+    place-items: center;
+    position: relative;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  }
+
+  /* Pause Icon (Double bar) */
+  .play-pause-icon.is-paused::before,
+  .play-pause-icon.is-paused::after {
+    content: '';
+    width: 6px;
+    height: 20px;
+    background: #ffffff;
+    border-radius: 2px;
+    position: absolute;
+    top: 22px;
+  }
+  .play-pause-icon.is-paused::before {
+    left: 23px;
+  }
+  .play-pause-icon.is-paused::after {
+    right: 23px;
+  }
+
+  /* Play Icon (Triangle) */
+  .play-pause-icon.is-playing::before {
+    content: '';
+    width: 0;
+    height: 0;
+    border-style: solid;
+    border-width: 10px 0 10px 18px;
+    border-color: transparent transparent transparent #ffffff;
+    position: absolute;
+    left: 25px;
+    top: 22px;
+  }
+
+  @keyframes playPauseFlash {
+    0% {
+      opacity: 0;
+      transform: scale(0.85);
+    }
+    15% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    85% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(1.08);
+    }
+  }
+
+  /* App Entry Reveal Animations */
+  @keyframes appReveal {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .story-rail {
+    animation: appReveal 0.68s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    animation-delay: 0.08s;
+    opacity: 0;
+  }
+
+  .story-visual-wrap {
+    animation: appReveal 0.68s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    animation-delay: 0.22s;
+    opacity: 0;
+  }
+
+  .story-context {
+    animation: appReveal 0.68s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    animation-delay: 0.36s;
+    opacity: 0;
   }
