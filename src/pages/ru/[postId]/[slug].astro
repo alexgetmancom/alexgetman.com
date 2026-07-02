@@ -298,6 +298,7 @@ const schema = JSON.stringify(schemaObject);
                       mediaItem.type === "video" ? (
                           <video
                               src={`/${mediaItem.path}`}
+                              poster={mediaItem.poster ? `/${mediaItem.poster}` : undefined}
                               class="article-video"
                               controls
                               preload="metadata"

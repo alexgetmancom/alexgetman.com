@@ -62,6 +62,7 @@ function toRussianPost(item) {
   const categorySlug = categorySlugFromBadge(badge);
   const visualMedia = postVisualMedia(item, 'ru');
   const visualPath = existingSiteImage(visualMedia?.path);
+  const posterPath = existingSiteImage(visualMedia?.poster);
   const fallbackOgPath = existingSiteImage(postOgImagePath(item, 'ru'));
   const image = visualPath || fallbackOgPath;
   const mediaType = visualPath ? visualMedia?.type || 'image' : (fallbackOgPath ? 'image' : null);
@@ -74,7 +75,7 @@ function toRussianPost(item) {
     date: item.date,
     relativeDate: formatRelativeTime(item.date, 'ru'),
     image,
-    fallbackImage: fallbackOgPath,
+    fallbackImage: posterPath || fallbackOgPath,
     mediaType,
     audioUrl: audioUrlFor(item, 'ru'),
     spotifyUrl: spotifyUrlFor(item, 'ru'),

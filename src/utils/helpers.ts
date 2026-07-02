@@ -215,7 +215,7 @@ export function postImagePath(item: any, locale = 'en'): string | null {
   return normalizePublicPath(directImage || imageMedia?.path) || null;
 }
 
-export function postVisualMedia(item: any, locale = 'en'): { type: 'image' | 'video'; path: string } | null {
+export function postVisualMedia(item: any, locale = 'en'): { type: 'image' | 'video'; path: string; poster?: string } | null {
   if (!item) return null;
   const directImage = locale === 'ru'
     ? (item.image || item.image_en)
@@ -236,7 +236,8 @@ export function postVisualMedia(item: any, locale = 'en'): { type: 'image' | 'vi
   const type = String(mediaItem?.type || '').toLowerCase() === 'video' || /\.(mp4|webm|mov)$/i.test(path)
     ? 'video'
     : 'image';
-  return { type, path };
+  const poster = type === 'video' ? normalizePublicPath(mediaItem?.poster) : '';
+  return poster ? { type, path, poster } : { type, path };
 }
 
 export function postOgImagePath(item: any, locale = 'en'): string {

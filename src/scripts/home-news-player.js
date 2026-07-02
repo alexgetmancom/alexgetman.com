@@ -42,8 +42,24 @@
   let muted = localStorage.getItem('story-player-muted') !== 'false';
   let expanded = false;
   let animationTimer = null;
+  let videoProgressFallbackTimer = null;
   const intervalMs = 8500;
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function clearVideoProgressFallback() {
+    if (videoProgressFallbackTimer) {
+      window.clearTimeout(videoProgressFallbackTimer);
+      videoProgressFallbackTimer = null;
+    }
+  }
+
+  function startProgressAnimation(fill, duration) {
+    if (!fill) return;
+    fill.style.animation = 'none';
+    fill.offsetHeight; // trigger reflow
+    fill.style.animation = !reduceMotion ? `storyProgressVertical ${duration}ms linear forwards` : 'none';
+    fill.style.animationPlayState = paused ? 'paused' : 'running';
+  }
 
   function applyImageFallback(img) {
     const fallbackSrc = img?.dataset?.fallbackSrc;
@@ -86,6 +102,7 @@
       if (!video.currentSrc.endsWith(post.image)) {
         return;
       }
+      clearVideoProgressFallback();
       const activeBar = progressBars[active];
       const fill = activeBar?.querySelector('i');
       if (fill) {
@@ -94,10 +111,7 @@
           return;
         }
         const duration = video.duration ? Math.min(15000, video.duration * 1000) : intervalMs;
-        fill.style.animation = 'none';
-        fill.offsetHeight; // trigger reflow
-        fill.style.animation = !reduceMotion ? `storyProgressVertical ${duration}ms linear forwards` : 'none';
-        fill.style.animationPlayState = (isManualPaused || isHoverPaused) ? 'paused' : 'running';
+        startProgressAnimation(fill, duration);
       }
     }
   });
@@ -231,6 +245,7 @@
     if (animationTimer) {
       window.clearTimeout(animationTimer);
     }
+    clearVideoProgressFallback();
 
     progressBars.forEach((bar, i) => {
       const isActive = i === active;
@@ -246,11 +261,15 @@
           const post = posts[active];
           if (post && post.mediaType === 'video') {
             fill.style.transform = 'scaleY(0)';
+            videoProgressFallbackTimer = window.setTimeout(() => {
+              if (i === active && posts[active]?.mediaType === 'video') {
+                startProgressAnimation(fill, intervalMs);
+              }
+            }, 2000);
           } else {
             animationTimer = window.setTimeout(() => {
               if (i === active) {
-                fill.style.animation = !reduceMotion ? `storyProgressVertical ${intervalMs}ms linear forwards` : 'none';
-                fill.style.animationPlayState = paused ? 'paused' : 'running';
+                startProgressAnimation(fill, intervalMs);
               }
             }, 380);
           }
