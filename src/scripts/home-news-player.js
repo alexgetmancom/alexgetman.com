@@ -52,6 +52,10 @@
   let storyViewTimer = null;
   const intervalMs = 8500;
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let advanceTimer = null;
+  let progressStartedAt = 0;
+  let progressRemainingMs = intervalMs;
+  let progressActive = false;
 
   function normalizedPath(value) {
     try {
@@ -102,12 +106,46 @@
     }
   }
 
+  function clearAdvanceTimer() {
+    if (advanceTimer) {
+      window.clearTimeout(advanceTimer);
+      advanceTimer = null;
+    }
+  }
+
+  function scheduleAdvance(duration) {
+    clearAdvanceTimer();
+    if (paused || !progressActive) return;
+    progressRemainingMs = Math.max(250, duration);
+    progressStartedAt = Date.now();
+    advanceTimer = window.setTimeout(() => {
+      advanceTimer = null;
+      if (!paused) {
+        render(active + 1);
+      }
+    }, progressRemainingMs + 80);
+  }
+
+  function pauseAdvanceTimer() {
+    if (!advanceTimer) return;
+    const elapsed = Date.now() - progressStartedAt;
+    progressRemainingMs = Math.max(250, progressRemainingMs - elapsed);
+    clearAdvanceTimer();
+  }
+
   function startProgressAnimation(fill, duration) {
     if (!fill) return;
+    progressActive = true;
+    progressRemainingMs = duration;
     fill.style.animation = 'none';
     fill.offsetHeight; // trigger reflow
     fill.style.animation = !reduceMotion ? `storyProgressVertical ${duration}ms linear forwards` : 'none';
     fill.style.animationPlayState = paused ? 'paused' : 'running';
+    if (reduceMotion) {
+      scheduleAdvance(intervalMs);
+    } else {
+      scheduleAdvance(duration);
+    }
   }
 
   function applyImageFallback(img) {
@@ -193,6 +231,14 @@
     const fill = activeBar?.querySelector('i');
     if (fill) {
       fill.style.animationPlayState = paused ? 'paused' : 'running';
+    }
+
+    if (progressActive) {
+      if (paused) {
+        pauseAdvanceTimer();
+      } else if (!advanceTimer) {
+        scheduleAdvance(progressRemainingMs);
+      }
     }
 
     if (video && posts[active]?.mediaType === 'video') {
@@ -333,6 +379,8 @@
       window.clearTimeout(animationTimer);
     }
     clearVideoProgressFallback();
+    clearAdvanceTimer();
+    progressActive = false;
 
     progressBars.forEach((bar, i) => {
       const isActive = i === active;
@@ -345,9 +393,9 @@
         fill.offsetHeight; // trigger reflow
         
         if (isActive) {
+          fill.style.transform = 'scaleY(0)';
           const post = posts[active];
           if (post && post.mediaType === 'video') {
-            fill.style.transform = 'scaleY(0)';
             videoProgressFallbackTimer = window.setTimeout(() => {
               if (i === active && posts[active]?.mediaType === 'video') {
                 startProgressAnimation(fill, intervalMs);
@@ -398,35 +446,11 @@
     }
   }
 
-  // Animation end listener for progress bars to switch automatically
-  rail?.addEventListener('animationend', (event) => {
-    if (event.target && event.target.tagName === 'I') {
-      render(active + 1);
-    }
-  });
-
   railCards.forEach((card, index) => {
     card.addEventListener('click', (event) => {
       event.preventDefault();
       render(index);
     });
-  });
-
-  root.addEventListener('mouseenter', () => {
-    isHoverPaused = true;
-    updatePlayState();
-  });
-  root.addEventListener('mouseleave', () => {
-    isHoverPaused = false;
-    updatePlayState();
-  });
-  root.addEventListener('focusin', () => {
-    isHoverPaused = true;
-    updatePlayState();
-  });
-  root.addEventListener('focusout', () => {
-    isHoverPaused = false;
-    updatePlayState();
   });
 
   cardLink?.addEventListener('click', (event) => {
