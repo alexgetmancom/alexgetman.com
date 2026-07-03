@@ -66,4 +66,10 @@ export interface StoryUi {
   views: string;
   replies: string;
   reactions: string;
+  feedLatest: string;
+  feedDeep: string;
+  feedWatched: string;
+  menu: string;
+  language: string;
+  telegram: string;
 }

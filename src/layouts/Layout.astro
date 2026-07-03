@@ -239,30 +239,6 @@ const isCurrentPath = (href: string) => {
         </nav>
     </aside>
 
-    {immersiveHome && (
-        <aside class="immersive-dock" aria-label={navLabels.drawerTitle}>
-            <a class="immersive-dock__brand" href={isRu ? "/ru/" : "/"} aria-label={brandDisplayName}>
-                <img src="/brand-avatar-small-20260629.webp" alt="" width="38" height="38" />
-                <span>alex<br />getman</span>
-            </a>
-            <div class="immersive-dock__nav">
-                <a class="immersive-dock__button" href={navHomeHref} aria-current={isCurrentPath(navHomeHref) ? "page" : undefined}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-                    <span>{navLabels.home}</span>
-                </a>
-                <a class="immersive-dock__button" href="https://t.me/alexgetmancom" target="_blank" rel="noopener noreferrer">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
-                    <span>Telegram</span>
-                </a>
-            </div>
-            <div class="immersive-dock__language">
-                <a class="immersive-dock__button notranslate" href={isRu ? "/" : "/ru/"} aria-label={navLabels.language}>
-                    <span class="immersive-dock__text">{isRu ? "EN" : "RU"}</span>
-                </a>
-            </div>
-        </aside>
-    )}
-
     <!-- Compact Media Header -->
     <header class="media-header">
         <div class="container header-container">

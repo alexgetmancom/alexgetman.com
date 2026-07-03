@@ -711,7 +711,7 @@ html {
 
 @media (min-width: 901px) {
     body.immersive-home {
-        padding-left: 92px;
+        padding-left: 0;
         overflow: hidden;
         height: 100vh;
         width: 100vw;

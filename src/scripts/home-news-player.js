@@ -25,6 +25,7 @@
   const rail = root.querySelector('.story-rail');
   const progressBars = Array.from(root.querySelectorAll('[data-story-progress-bar]'));
   const railCards = Array.from(root.querySelectorAll('[data-story-index]'));
+  const feedModeButtons = Array.from(root.querySelectorAll('[data-feed-mode]'));
   const share = root.querySelector('[data-story-share]');
   const discuss = root.querySelector('[data-story-discuss]');
   const discussLabel = discuss?.querySelector('span');
@@ -65,6 +66,7 @@
   let progressRestartBlocked = false;
   let discussionTerm = '';
   let discussionVisible = false;
+  let activeFeedMode = 'latest';
   const debugEnabled = new URLSearchParams(window.location.search).has('debug');
   const debugPanel = debugEnabled ? document.createElement('pre') : null;
 
@@ -165,6 +167,37 @@
     }, 850);
   }
 
+  function visibleStoryIndexes() {
+    const visible = posts
+      .map((post, index) => ({ post, index }))
+      .filter(({ post }) => activeFeedMode === 'latest' || post.feedModes?.includes(activeFeedMode))
+      .map(({ index }) => index);
+    return visible.length ? visible : posts.map((_, index) => index);
+  }
+
+  function isStoryVisible(index) {
+    return visibleStoryIndexes().includes(index);
+  }
+
+  function nextVisibleStoryIndex(direction) {
+    const visible = visibleStoryIndexes();
+    const currentPosition = visible.indexOf(active);
+    if (currentPosition === -1) return visible[0] ?? active;
+    return visible[(currentPosition + direction + visible.length) % visible.length];
+  }
+
+  function syncFeedModeControls() {
+    feedModeButtons.forEach((button) => {
+      const isActive = button.dataset.feedMode === activeFeedMode;
+      button.classList.toggle('is-active', isActive);
+      button.setAttribute('aria-pressed', String(isActive));
+    });
+    const visible = new Set(visibleStoryIndexes());
+    railCards.forEach((card, index) => {
+      card.classList.toggle('is-filtered-out', !visible.has(index));
+    });
+  }
+
   function scheduleAdvance(duration) {
     clearAdvanceTimer();
     if (paused || !progressActive) return;
@@ -173,7 +206,7 @@
     advanceTimer = window.setTimeout(() => {
       advanceTimer = null;
       if (!paused) {
-        render(active + 1);
+        render(nextVisibleStoryIndex(1));
       }
     }, progressRemainingMs + 80);
   }
@@ -591,6 +624,7 @@
     }
 
     updatePlayState();
+    syncFeedModeControls();
     scheduleStoryView(post);
     hydrateRailMedia();
     preloadAdjacentMedia();
@@ -607,7 +641,23 @@
   railCards.forEach((card, index) => {
     card.addEventListener('click', (event) => {
       event.preventDefault();
+      if (!isStoryVisible(index)) return;
       render(index, { keepProgressIdle: true });
+      resumeProgressAfterManualNavigation();
+    });
+  });
+
+  feedModeButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      const nextMode = button.dataset.feedMode || 'latest';
+      if (nextMode === activeFeedMode) return;
+      activeFeedMode = nextMode;
+      syncFeedModeControls();
+      if (!isStoryVisible(active)) {
+        render(visibleStoryIndexes()[0] ?? 0, { keepProgressIdle: true });
+      } else {
+        render(active, { keepProgressIdle: true });
+      }
       resumeProgressAfterManualNavigation();
     });
   });
@@ -658,9 +708,9 @@
     lockWheelGesture();
 
     if (event.deltaY > 0) {
-      render(active + 1, { keepProgressIdle: true });
+      render(nextVisibleStoryIndex(1), { keepProgressIdle: true });
     } else {
-      render(active - 1, { keepProgressIdle: true });
+      render(nextVisibleStoryIndex(-1), { keepProgressIdle: true });
     }
     resumeProgressAfterManualNavigation();
   }
@@ -731,7 +781,7 @@
     const endX = event.changedTouches[0]?.clientX || 0;
     const delta = endX - startX;
     if (Math.abs(delta) > 55) {
-      render(active + (delta < 0 ? 1 : -1), { keepProgressIdle: true });
+      render(nextVisibleStoryIndex(delta < 0 ? 1 : -1), { keepProgressIdle: true });
       resumeProgressAfterManualNavigation();
     }
   }, { passive: true });
@@ -742,11 +792,11 @@
     if (tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT') return;
     if (event.key === 'ArrowDown' || event.key === 'PageDown') {
       event.preventDefault();
-      render(active + 1, { keepProgressIdle: true });
+      render(nextVisibleStoryIndex(1), { keepProgressIdle: true });
       resumeProgressAfterManualNavigation();
     } else if (event.key === 'ArrowUp' || event.key === 'PageUp') {
       event.preventDefault();
-      render(active - 1, { keepProgressIdle: true });
+      render(nextVisibleStoryIndex(-1), { keepProgressIdle: true });
       resumeProgressAfterManualNavigation();
     } else if (event.key === ' ') {
       event.preventDefault();
@@ -764,6 +814,7 @@
   audioToggle?.setAttribute('aria-pressed', String(muted));
   audioToggle?.classList.toggle('is-on', !muted);
   if (audioLabel) audioLabel.textContent = muted ? (ui.muted || 'Muted') : (ui.mute || 'Audio');
+  syncFeedModeControls();
 
   if (debugPanel) {
     debugPanel.className = 'story-debug-panel';

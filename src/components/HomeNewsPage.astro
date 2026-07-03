@@ -35,10 +35,20 @@ const storyPosts = selectedPost
   : posts;
 const activePost = storyPosts[0] || null;
 const isRu = locale === 'ru';
+const watchedCutoff = [...storyPosts]
+  .map((post) => post.views || 0)
+  .sort((a, b) => b - a)[Math.min(7, Math.max(0, storyPosts.length - 1))] || 0;
 const fullTextFor = (post: HomePost) => (post.body || post.excerpt || post.title)
   .split(/\n+/)
   .map((line) => line.trim())
   .filter(Boolean);
+const feedModesFor = (post: HomePost) => {
+  const text = fullTextFor(post).join(' ');
+  const modes = ['latest'];
+  if (text.length >= 700 || fullTextFor(post).length >= 4) modes.push('deep');
+  if ((post.views || 0) >= watchedCutoff && watchedCutoff > 0) modes.push('watched');
+  return modes;
+};
 const ui = {
   storyLabel: isRu ? 'Новостной плеер' : 'AI news player',
   postTab: isRu ? 'Пост' : 'Post',
@@ -61,6 +71,12 @@ const ui = {
   views: isRu ? 'просмотров' : 'views',
   replies: isRu ? 'ответов' : 'replies',
   reactions: isRu ? 'реакций' : 'reactions',
+  feedLatest: 'Latest',
+  feedDeep: 'Deep',
+  feedWatched: 'Watched',
+  menu: isRu ? 'Меню' : 'Menu',
+  language: isRu ? 'English' : 'Русский',
+  telegram: 'Telegram',
 };
 
 ---
@@ -68,8 +84,23 @@ const ui = {
 <main class="home-page">
   {activePost ? (
     <section class="story-player" aria-label={ui.storyLabel} data-story-player data-initial-paused={initialPaused ? 'true' : 'false'}>
+      <div class="story-avatar-menu">
+        <button class="story-avatar-menu__button" type="button" aria-label={ui.menu}>
+          <img src="/brand-avatar-small-20260629.webp" alt="" width="42" height="42" />
+        </button>
+        <div class="story-avatar-menu__panel">
+          <a href={isRu ? '/ru/' : '/'}>Alex Getman</a>
+          <a class="notranslate" href={isRu ? '/' : '/ru/'}>{ui.language}</a>
+          <a href="https://t.me/alexgetmancom" target="_blank" rel="noopener noreferrer">{ui.telegram}</a>
+        </div>
+      </div>
       <div class="story-player__main">
         <div class="story-rail-container">
+          <div class="feed-mode-switch" role="group" aria-label="Feed modes">
+            <button class="is-active" type="button" data-feed-mode="latest">{ui.feedLatest}</button>
+            <button type="button" data-feed-mode="deep">{ui.feedDeep}</button>
+            <button type="button" data-feed-mode="watched">{ui.feedWatched}</button>
+          </div>
           <StoryRail posts={storyPosts} ui={ui} />
         </div>
         <StoryVisual activePost={activePost} posts={storyPosts} ui={ui} />
@@ -95,6 +126,7 @@ const ui = {
           imageSrcSet: post.imageSrcSet || '',
           views: metricValue(post.views),
           category: post.category,
+          feedModes: feedModesFor(post),
           readMore: ui.readMore,
           collapse: ui.collapse,
         })),
