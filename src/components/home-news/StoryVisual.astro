@@ -12,6 +12,9 @@ const { activePost, posts, ui } = Astro.props;
 
 <div class="story-visual-wrap">
   <article class={`story-visual${activePost.image ? '' : ' story-visual--no-image'}`} data-story-visual>
+    <span class="story-visual-progress" aria-hidden="true">
+      <i data-story-current-progress></i>
+    </span>
     <a class="story-visual__link" href={activePost.url} aria-label={activePost.title} data-story-card-link>
       {activePost.image ? (
         <>

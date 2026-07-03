@@ -24,8 +24,12 @@
   const readMore = root.querySelector('[data-story-read-more]');
   const rail = root.querySelector('.story-rail');
   const progressBars = Array.from(root.querySelectorAll('[data-story-progress-bar]'));
+  const currentProgressFill = root.querySelector('[data-story-current-progress]');
   const railCards = Array.from(root.querySelectorAll('[data-story-index]'));
   const feedModeButtons = Array.from(root.querySelectorAll('[data-feed-mode]'));
+  const feedModeTrigger = root.querySelector('[data-feed-mode-trigger]');
+  const feedModeLabel = root.querySelector('[data-feed-mode-label]');
+  const feedModeMenu = root.querySelector('.feed-mode-menu');
   const share = root.querySelector('[data-story-share]');
   const discuss = root.querySelector('[data-story-discuss]');
   const discussLabel = discuss?.querySelector('span');
@@ -139,6 +143,11 @@
       fill.style.animationPlayState = 'running';
       fill.style.transform = 'scaleY(0)';
     });
+    if (currentProgressFill) {
+      currentProgressFill.style.animation = 'none';
+      currentProgressFill.style.animationPlayState = 'running';
+      currentProgressFill.style.transform = 'scaleX(0)';
+    }
   }
 
   function resumeProgressAfterManualNavigation() {
@@ -187,11 +196,14 @@
   }
 
   function syncFeedModeControls() {
+    let activeLabel = ui.feedLatest || 'Latest';
     feedModeButtons.forEach((button) => {
       const isActive = button.dataset.feedMode === activeFeedMode;
       button.classList.toggle('is-active', isActive);
       button.setAttribute('aria-pressed', String(isActive));
+      if (isActive) activeLabel = button.textContent?.trim() || activeLabel;
     });
+    if (feedModeLabel) feedModeLabel.textContent = activeLabel;
     const visible = new Set(visibleStoryIndexes());
     railCards.forEach((card, index) => {
       card.classList.toggle('is-filtered-out', !visible.has(index));
@@ -226,6 +238,13 @@
     fill.offsetHeight; // trigger reflow
     fill.style.animation = !reduceMotion ? `storyProgressVertical ${duration}ms linear forwards` : 'none';
     fill.style.animationPlayState = paused ? 'paused' : 'running';
+    if (currentProgressFill) {
+      currentProgressFill.style.animation = 'none';
+      currentProgressFill.style.transform = 'scaleX(0)';
+      currentProgressFill.offsetHeight; // trigger reflow
+      currentProgressFill.style.animation = !reduceMotion ? `storyProgressHorizontal ${duration}ms linear forwards` : 'none';
+      currentProgressFill.style.animationPlayState = paused ? 'paused' : 'running';
+    }
     if (reduceMotion) {
       scheduleAdvance(intervalMs);
     } else {
@@ -315,6 +334,9 @@
       if (fill) {
         fill.style.animationPlayState = 'paused';
       }
+      if (currentProgressFill) {
+        currentProgressFill.style.animationPlayState = 'paused';
+      }
     }
   });
 
@@ -335,6 +357,9 @@
     const fill = activeBar?.querySelector('i');
     if (fill) {
       fill.style.animationPlayState = paused ? 'paused' : 'running';
+    }
+    if (currentProgressFill) {
+      currentProgressFill.style.animationPlayState = paused ? 'paused' : 'running';
     }
 
     if (progressActive) {
@@ -580,6 +605,11 @@
         fill.style.transform = 'scaleY(0)';
       }
     });
+    if (currentProgressFill) {
+      currentProgressFill.style.animation = 'none';
+      currentProgressFill.style.animationPlayState = 'running';
+      currentProgressFill.style.transform = 'scaleX(0)';
+    }
 
     progressBars.forEach((bar, i) => {
       const isActive = i === active;
@@ -650,6 +680,8 @@
   feedModeButtons.forEach((button) => {
     button.addEventListener('click', () => {
       const nextMode = button.dataset.feedMode || 'latest';
+      feedModeMenu?.classList.remove('is-open');
+      feedModeTrigger?.setAttribute('aria-expanded', 'false');
       if (nextMode === activeFeedMode) return;
       activeFeedMode = nextMode;
       syncFeedModeControls();
@@ -660,6 +692,20 @@
       }
       resumeProgressAfterManualNavigation();
     });
+  });
+
+  feedModeTrigger?.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const isOpen = !feedModeMenu?.classList.contains('is-open');
+    feedModeMenu?.classList.toggle('is-open', isOpen);
+    feedModeTrigger.setAttribute('aria-expanded', String(isOpen));
+  });
+
+  document.addEventListener('click', (event) => {
+    if (!feedModeMenu || !feedModeTrigger) return;
+    if (feedModeMenu.contains(event.target)) return;
+    feedModeMenu.classList.remove('is-open');
+    feedModeTrigger.setAttribute('aria-expanded', 'false');
   });
 
   cardLink?.addEventListener('click', (event) => {

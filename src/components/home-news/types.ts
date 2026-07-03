@@ -59,6 +59,7 @@ export interface StoryUi {
   mute: string;
   muted: string;
   storyRail: string;
+  feedMode: string;
   noDiscussion: string;
   sourcesHint: string;
   backToPost: string;
