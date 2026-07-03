@@ -15,15 +15,24 @@ interface Props {
   labels: HomeLabels;
   locale: 'en' | 'ru';
   categoryBasePath: string;
+  initialPostId?: number | string;
+  initialPaused?: boolean;
 }
 
 const {
   posts,
   labels,
   locale,
+  initialPostId,
+  initialPaused = false,
 } = Astro.props;
 
-const storyPosts = posts.slice(0, 5);
+const selectedPost = initialPostId
+  ? posts.find((post) => String(post.id) === String(initialPostId))
+  : null;
+const storyPosts = selectedPost
+  ? [selectedPost, ...posts.filter((post) => String(post.id) !== String(selectedPost.id)).slice(0, 4)]
+  : posts.slice(0, 5);
 const activePost = storyPosts[0] || null;
 const isRu = locale === 'ru';
 const ui = {
@@ -43,6 +52,8 @@ const ui = {
   storyRail: isRu ? 'Выбор новостей' : 'Story rail',
   noDiscussion: isRu ? 'Обсуждения подключим здесь. Пока можно открыть пост и поделиться ссылкой.' : 'Discussion will live here. For now, open the post or share the link.',
   sourcesHint: isRu ? 'Источники и социальные копии появятся здесь, когда они есть у поста.' : 'Sources and social copies will appear here when a post has them.',
+  backToPost: isRu ? 'К посту' : 'Back to post',
+  copied: isRu ? 'Скопировано' : 'Copied',
   views: isRu ? 'просмотров' : 'views',
   replies: isRu ? 'ответов' : 'replies',
   reactions: isRu ? 'реакций' : 'reactions',
@@ -52,7 +63,7 @@ const ui = {
 
 <main class="home-page">
   {activePost ? (
-    <section class="story-player" aria-label={ui.storyLabel} data-story-player>
+    <section class="story-player" aria-label={ui.storyLabel} data-story-player data-initial-paused={initialPaused ? 'true' : 'false'}>
       <div class="story-player__main">
         <div class="story-rail-container">
           <StoryRail posts={storyPosts} ui={ui} />
@@ -82,6 +93,14 @@ const ui = {
           readMore: ui.readMore,
           collapse: ui.collapse,
         })),
+        initialPaused,
+        giscus: {
+          repo: 'alexgetmancom/alexgetman.com',
+          repoId: 'R_kgDOSJwPnQ',
+          category: 'Announcements',
+          categoryId: 'DIC_kwDOSJwPnc4C-S2f',
+          lang: isRu ? 'ru' : 'en',
+        },
       })}></script>
     </section>
   ) : (

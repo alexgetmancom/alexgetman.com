@@ -2,94 +2,12 @@
 import Layout from '../../layouts/Layout.astro';
 import HomeNewsPage from '../../components/HomeNewsPage.astro';
 import projects from '../../data/projects.json';
-import fs from 'node:fs';
-import path from 'node:path';
 import { loadFeedItems } from '../../utils/feed';
-import {
-  categoryLabel,
-  categorySlugFromBadge,
-  excerptAfterTitle,
-  formatRelativeTime,
-  getFirstSentence,
-  getSmartBadge,
-  postImagePath,
-  postOgImagePath,
-  postVisualMedia
-} from '../../utils/helpers';
+import { sortedHomePosts, topicStatsFor } from '../../utils/home-posts';
 
 const feedItems = loadFeedItems();
 
-function existingSiteImage(publicPath) {
-  if (!publicPath) return null;
-  const normalizedPath = String(publicPath).replace(/^\/+/, '');
-  const candidates = [
-    path.resolve('public', normalizedPath),
-    path.resolve(normalizedPath),
-  ];
-  return candidates.some((candidate) => fs.existsSync(candidate)) ? normalizedPath : null;
-}
-
-function responsiveSrcSetFor(publicPath) {
-  if (!publicPath || !/\.(png|jpe?g)$/i.test(publicPath)) return undefined;
-  const publicFile = path.resolve('public', publicPath);
-  if (!fs.existsSync(publicFile)) return undefined;
-  const base = publicPath
-    .replace(/^\/+/, '')
-    .replace(/[\\/]/g, '-')
-    .replace(/\.[a-z0-9]+$/i, '');
-  return [360, 640, 960]
-    .map((width) => `/generated/responsive/${base}-${width}.webp ${width}w`)
-    .join(', ');
-}
-
-function audioUrlFor(item, locale = 'ru') {
-  return locale === 'ru'
-    ? (item.audio_url_ru || item.audio_ru || item.audio_url || item.audio || null)
-    : (item.audio_url_en || item.audio_en || item.audio_url || item.audio || null);
-}
-
-function spotifyUrlFor(item, locale = 'ru') {
-  return locale === 'ru'
-    ? (item.spotify_url_ru || item.spotify_ru || item.spotify_url || item.spotify || null)
-    : (item.spotify_url_en || item.spotify_en || item.spotify_url || item.spotify || null);
-}
-
-function toRussianPost(item) {
-  const id = item.post_id;
-  const text = item.text || "";
-  const title = getFirstSentence(text) || `Пост ${id}`;
-  const badge = getSmartBadge(text);
-  const categorySlug = categorySlugFromBadge(badge);
-  const visualMedia = postVisualMedia(item, 'ru');
-  const visualPath = existingSiteImage(visualMedia?.path);
-  const posterPath = existingSiteImage(visualMedia?.poster);
-  const fallbackOgPath = existingSiteImage(postOgImagePath(item, 'ru'));
-  const image = visualPath || fallbackOgPath;
-  const mediaType = visualPath ? visualMedia?.type || 'image' : (fallbackOgPath ? 'image' : null);
-  return {
-    id,
-    url: `/ru/${id}/${item.slug_ru}/`,
-    title,
-    body: text,
-    excerpt: excerptAfterTitle(text, title, 180),
-    date: item.date,
-    relativeDate: formatRelativeTime(item.date, 'ru'),
-    image,
-    fallbackImage: posterPath || fallbackOgPath,
-    mediaType,
-    audioUrl: audioUrlFor(item, 'ru'),
-    spotifyUrl: spotifyUrlFor(item, 'ru'),
-    imageSrcSet: visualPath && mediaType === 'image' ? responsiveSrcSetFor(postImagePath(item, 'ru')) : undefined,
-    views: Number(item.views || 0),
-    categorySlug,
-    category: categoryLabel(categorySlug, 'ru'),
-  };
-}
-
-const russianPosts = feedItems
-  .filter((item) => item.has_ru && item.text && item.post_id)
-  .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-  .map(toRussianPost);
+const russianPosts = sortedHomePosts(feedItems, 'ru');
 
 const leadPost = russianPosts[0] || null;
 const latestRussianPosts = russianPosts.slice(leadPost ? 1 : 0, leadPost ? 8 : 9);
@@ -97,14 +15,7 @@ const trendingPosts = [...russianPosts]
   .filter((post) => !leadPost || post.id !== leadPost.id)
   .sort((a, b) => (b.views - a.views) || (new Date(b.date).getTime() - new Date(a.date).getTime()))
   .slice(0, 5);
-const topicStats = Array.from(
-  russianPosts.reduce((map, post) => {
-    const current = map.get(post.categorySlug) || { slug: post.categorySlug, label: post.category, count: 0 };
-    current.count += 1;
-    map.set(post.categorySlug, current);
-    return map;
-  }, new Map()).values()
-).sort((a, b) => b.count - a.count);
+const topicStats = topicStatsFor(russianPosts);
 
 const title = "Алексей Гетманец | новости ИИ и developer tools";
 const description = "Новости ИИ, developer tools, автоматизация и изменения продуктов от Алексея Гетманца.";

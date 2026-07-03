@@ -6,6 +6,7 @@
   const payload = payloadEl ? JSON.parse(payloadEl.textContent || '{}') : {};
   const posts = payload.posts || [];
   const ui = payload.ui || {};
+  const giscusConfig = payload.giscus || {};
   if (!posts.length) return;
 
   const image = root.querySelector('[data-story-image]');
@@ -24,6 +25,11 @@
   const railCards = Array.from(root.querySelectorAll('[data-story-index]'));
   const share = root.querySelector('[data-story-share]');
   const discuss = root.querySelector('[data-story-discuss]');
+  const postPanel = root.querySelector('[data-panel="post"]');
+  const discussionPanel = root.querySelector('[data-panel="discussion"]');
+  const discussionBack = root.querySelector('[data-story-discussion-back]');
+  const discussionTitle = root.querySelector('[data-story-discussion-title]');
+  const discussionFrame = root.querySelector('[data-story-discussion-frame]');
   const audioToggle = root.querySelector('[data-audio-toggle]');
   const audioLabel = root.querySelector('[data-audio-label]');
   const audio = root.querySelector('[data-story-audio]');
@@ -36,15 +42,58 @@
   }
 
   let active = 0;
-  let isManualPaused = false;
+  let isManualPaused = payload.initialPaused === true || root.dataset.initialPaused === 'true';
   let isHoverPaused = false;
-  let paused = false;
+  let paused = isManualPaused;
   let muted = localStorage.getItem('story-player-muted') !== 'false';
   let expanded = false;
   let animationTimer = null;
   let videoProgressFallbackTimer = null;
+  let storyViewTimer = null;
   const intervalMs = 8500;
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function normalizedPath(value) {
+    try {
+      const url = new URL(value, window.location.origin);
+      return url.pathname.endsWith('/') ? url.pathname : `${url.pathname}/`;
+    } catch (_) {
+      return '/';
+    }
+  }
+
+  function recordStoryView(post) {
+    if (!post?.url) return;
+    if (window.location.hostname.includes('localhost') || window.location.hostname.includes('127.0.0.1')) return;
+    const path = normalizedPath(post.url);
+    if (normalizedPath(window.location.pathname) === path) return;
+    const key = `story-view:${path}`;
+    try {
+      if (window.sessionStorage.getItem(key)) return;
+      window.sessionStorage.setItem(key, '1');
+    } catch (_) {}
+
+    const payload = JSON.stringify({ path, source: 'home_story', post_id: post.id });
+    try {
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon('/stats/pageview', new Blob([payload], { type: 'application/json' }));
+        return;
+      }
+      fetch('/stats/pageview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload,
+        keepalive: true,
+        credentials: 'omit',
+        cache: 'no-store'
+      });
+    } catch (_) {}
+  }
+
+  function scheduleStoryView(post) {
+    if (storyViewTimer) window.clearTimeout(storyViewTimer);
+    storyViewTimer = window.setTimeout(() => recordStoryView(post), 1200);
+  }
 
   function clearVideoProgressFallback() {
     if (videoProgressFallbackTimer) {
@@ -155,11 +204,48 @@
     }
   }
 
+  function setDiscussionVisible(isVisible) {
+    if (!postPanel || !discussionPanel) return;
+    postPanel.hidden = isVisible;
+    discussionPanel.hidden = !isVisible;
+    root.classList.toggle('is-discussing', isVisible);
+    if (isVisible) {
+      isManualPaused = true;
+    }
+    updatePlayState();
+  }
+
+  function loadDiscussion(post) {
+    if (!discussionFrame || !post?.url) return;
+    const url = new URL(post.url, window.location.origin).href;
+    if (discussionFrame.dataset.term === url) return;
+    discussionFrame.dataset.term = url;
+    discussionFrame.innerHTML = '';
+    const script = document.createElement('script');
+    script.src = 'https://giscus.app/client.js';
+    script.async = true;
+    script.crossOrigin = 'anonymous';
+    script.setAttribute('data-repo', giscusConfig.repo || 'alexgetmancom/alexgetman.com');
+    script.setAttribute('data-repo-id', giscusConfig.repoId || 'R_kgDOSJwPnQ');
+    script.setAttribute('data-category', giscusConfig.category || 'Announcements');
+    script.setAttribute('data-category-id', giscusConfig.categoryId || 'DIC_kwDOSJwPnc4C-S2f');
+    script.setAttribute('data-mapping', 'specific');
+    script.setAttribute('data-term', url);
+    script.setAttribute('data-strict', '1');
+    script.setAttribute('data-reactions-enabled', '1');
+    script.setAttribute('data-emit-metadata', '0');
+    script.setAttribute('data-input-position', 'bottom');
+    script.setAttribute('data-theme', document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark');
+    script.setAttribute('data-lang', giscusConfig.lang || document.documentElement.lang || 'en');
+    discussionFrame.appendChild(script);
+  }
+
   function render(index) {
     active = (index + posts.length) % posts.length;
     const post = posts[active];
     if (!post) return;
     expanded = false;
+    setDiscussionVisible(false);
 
     const panel = root.querySelector('.story-panel');
     if (panel) {
@@ -225,6 +311,7 @@
     }
     syncReadMore(post);
     if (views) views.textContent = post.views || '0';
+    if (discussionTitle) discussionTitle.textContent = post.title;
     if (audio) {
       audio.pause?.();
       if (post.audioUrl && post.mediaType !== 'video') {
@@ -300,6 +387,7 @@
     }
 
     updatePlayState();
+    scheduleStoryView(post);
 
     if (panel) {
       window.requestAnimationFrame(() => {
@@ -388,7 +476,12 @@
 
   discuss?.addEventListener('click', () => {
     const post = posts[active];
-    if (post?.url) window.location.href = `${post.url}#comments`;
+    loadDiscussion(post);
+    setDiscussionVisible(true);
+  });
+
+  discussionBack?.addEventListener('click', () => {
+    setDiscussionVisible(false);
   });
 
   share?.addEventListener('click', async () => {

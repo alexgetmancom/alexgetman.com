@@ -51,4 +51,13 @@ const readingTimeMin = Math.max(1, Math.ceil(wordsCount / 180));
       </button>
     </div>
   </div>
+  <div class="story-panel story-panel--discussion" data-panel="discussion" hidden>
+    <div class="story-discussion-head">
+      <button class="story-action" type="button" data-story-discussion-back>
+        <span>{ui.backToPost}</span>
+      </button>
+      <span class="story-category-badge" data-story-discussion-title>{activePost.title}</span>
+    </div>
+    <div class="story-discussion-frame" data-story-discussion-frame></div>
+  </div>
 </aside>

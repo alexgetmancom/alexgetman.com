@@ -2,94 +2,12 @@
 import Layout from '../layouts/Layout.astro';
 import HomeNewsPage from '../components/HomeNewsPage.astro';
 import projects from '../data/projects.json';
-import fs from 'node:fs';
-import path from 'node:path';
 import { loadFeedItems } from '../utils/feed';
-import {
-  categoryLabel,
-  categorySlugFromBadge,
-  excerptAfterTitle,
-  formatRelativeTime,
-  getFirstSentence,
-  getSmartBadge,
-  postImagePath,
-  postOgImagePath,
-  postVisualMedia
-} from '../utils/helpers';
+import { sortedHomePosts, topicStatsFor } from '../utils/home-posts';
 
 const feedItems = loadFeedItems();
 
-function existingSiteImage(publicPath) {
-  if (!publicPath) return null;
-  const normalizedPath = String(publicPath).replace(/^\/+/, '');
-  const candidates = [
-    path.resolve('public', normalizedPath),
-    path.resolve(normalizedPath),
-  ];
-  return candidates.some((candidate) => fs.existsSync(candidate)) ? normalizedPath : null;
-}
-
-function responsiveSrcSetFor(publicPath) {
-  if (!publicPath || !/\.(png|jpe?g)$/i.test(publicPath)) return undefined;
-  const publicFile = path.resolve('public', publicPath);
-  if (!fs.existsSync(publicFile)) return undefined;
-  const base = publicPath
-    .replace(/^\/+/, '')
-    .replace(/[\\/]/g, '-')
-    .replace(/\.[a-z0-9]+$/i, '');
-  return [360, 640, 960]
-    .map((width) => `/generated/responsive/${base}-${width}.webp ${width}w`)
-    .join(', ');
-}
-
-function audioUrlFor(item, locale = 'en') {
-  return locale === 'ru'
-    ? (item.audio_url_ru || item.audio_ru || item.audio_url || item.audio || null)
-    : (item.audio_url_en || item.audio_en || item.audio_url || item.audio || null);
-}
-
-function spotifyUrlFor(item, locale = 'en') {
-  return locale === 'ru'
-    ? (item.spotify_url_ru || item.spotify_ru || item.spotify_url || item.spotify || null)
-    : (item.spotify_url_en || item.spotify_en || item.spotify_url || item.spotify || null);
-}
-
-function toEnglishPost(item) {
-  const id = item.post_id;
-  const text = item.text_en || item.text || "";
-  const title = getFirstSentence(text) || `Post ${id}`;
-  const badge = getSmartBadge(item.text || text);
-  const categorySlug = categorySlugFromBadge(badge);
-  const visualMedia = postVisualMedia(item, 'en');
-  const visualPath = existingSiteImage(visualMedia?.path);
-  const posterPath = existingSiteImage(visualMedia?.poster);
-  const fallbackOgPath = existingSiteImage(postOgImagePath(item, 'en'));
-  const image = visualPath || fallbackOgPath;
-  const mediaType = visualPath ? visualMedia?.type || 'image' : (fallbackOgPath ? 'image' : null);
-  return {
-    id,
-    url: `/${id}/${item.slug_en}/`,
-    title,
-    body: text,
-    excerpt: excerptAfterTitle(text, title, 180),
-    date: item.date,
-    relativeDate: formatRelativeTime(item.date, 'en'),
-    image,
-    fallbackImage: posterPath || fallbackOgPath,
-    mediaType,
-    audioUrl: audioUrlFor(item, 'en'),
-    spotifyUrl: spotifyUrlFor(item, 'en'),
-    imageSrcSet: visualPath && mediaType === 'image' ? responsiveSrcSetFor(postImagePath(item, 'en')) : undefined,
-    views: Number(item.views || 0),
-    categorySlug,
-    category: categoryLabel(categorySlug, 'en'),
-  };
-}
-
-const englishPosts = feedItems
-  .filter((item) => item.has_en && item.text_en && item.post_id)
-  .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-  .map(toEnglishPost);
+const englishPosts = sortedHomePosts(feedItems, 'en');
 
 const leadPost = englishPosts[0] || null;
 const latestEnglishPosts = englishPosts.slice(leadPost ? 1 : 0, leadPost ? 8 : 9);
@@ -97,14 +15,7 @@ const trendingPosts = [...englishPosts]
   .filter((post) => !leadPost || post.id !== leadPost.id)
   .sort((a, b) => (b.views - a.views) || (new Date(b.date).getTime() - new Date(a.date).getTime()))
   .slice(0, 5);
-const topicStats = Array.from(
-  englishPosts.reduce((map, post) => {
-    const current = map.get(post.categorySlug) || { slug: post.categorySlug, label: post.category, count: 0 };
-    current.count += 1;
-    map.set(post.categorySlug, current);
-    return map;
-  }, new Map()).values()
-).sort((a, b) => b.count - a.count);
+const topicStats = topicStatsFor(englishPosts);
 
 const title = "Alex Getman | AI news and developer tools";
 const description = "Latest AI news, developer tools, automation updates and product changes from Alex Getman.";

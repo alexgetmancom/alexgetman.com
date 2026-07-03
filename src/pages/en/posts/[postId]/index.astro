@@ -1,5 +1,5 @@
 ---
-import Layout from '../../../../layouts/Layout.astro';
+import LegacyRedirect from '../../../../components/LegacyRedirect.astro';
 import { loadFeedItems } from '../../../../utils/feed';
 
 export async function getStaticPaths() {
@@ -9,17 +9,6 @@ export async function getStaticPaths() {
 }
 
 const { item } = Astro.props;
-const target = `/${item.post_id}/${item.slug_en}/`;
 ---
 
-<Layout title="Old English post URL | Alex Getman" description="This legacy English post URL has moved." canonicalUrl={`https://alexgetman.com${target}`} robots="noindex, follow">
-  <main class="legacy-page">
-    <h1>Post URL moved</h1>
-    <p>This old address is intentionally excluded from the index.</p>
-    <a href={target}>Open canonical post</a>
-  </main>
-</Layout>
-
-<style>
-  .legacy-page { max-width: 720px; margin: 0 auto; padding: 4rem 0; }
-</style>
+<LegacyRedirect target={`/${item.post_id}/${item.slug_en}/`} title="English post URL moved" />

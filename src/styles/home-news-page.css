@@ -423,6 +423,44 @@
     transform: translateY(-1px);
   }
 
+  .story-panel[hidden] {
+    display: none !important;
+  }
+
+  .story-panel--discussion {
+    gap: 0.85rem;
+  }
+
+  .story-discussion-head {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.6rem;
+    align-items: center;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .story-discussion-head .story-category-badge {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+
+  .story-discussion-frame {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 0.2rem;
+  }
+
+  .story-discussion-frame .giscus,
+  .story-discussion-frame iframe {
+    width: 100% !important;
+  }
+
   .pill {
     width: fit-content;
     padding: 0.22rem 0.54rem;

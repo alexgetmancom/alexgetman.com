@@ -1,439 +1,109 @@
 ---
-import fs from 'node:fs';
-import path from 'node:path';
 import Layout from '../../layouts/Layout.astro';
-import '../../styles/post-page.css';
-import {
-  getFirstSentence,
-  truncateText,
-  getSmartBadge,
-  categorySlugFromBadge,
-  estimateReadTime,
-  formatDate,
-  postImagePath,
-  postOgImagePath,
-  responsiveImageSrcSet,
-  semanticPostHtml,
-  sanitizeHtml
-} from '../../utils/helpers';
+import HomeNewsPage from '../../components/HomeNewsPage.astro';
+import projects from '../../data/projects.json';
+import { loadFeedItems } from '../../utils/feed';
+import { getFirstSentence, postOgImagePath, truncateText } from '../../utils/helpers';
+import { sortedHomePosts, topicStatsFor } from '../../utils/home-posts';
 
-// getStaticPaths is required in Astro static mode for dynamic routes
 export async function getStaticPaths() {
-  const fs = await import('node:fs');
-  const path = await import('node:path');
-  
-  const dataDir = process.env.DATA_DIR || '/home/deploy/ialexey-feed/data';
-  const prodFeedJsonPath = path.join(dataDir, 'feed.json');
-  const localFeedJsonPath = path.resolve('src/data/feed.json');
-
-  let parsedData = null;
-
-  if (fs.existsSync(prodFeedJsonPath)) {
-    try {
-      parsedData = JSON.parse(fs.readFileSync(prodFeedJsonPath, 'utf-8'));
-    } catch (e) {
-      console.error(e);
-    }
-  }
-
-  if (!parsedData && fs.existsSync(localFeedJsonPath)) {
-    try {
-      parsedData = JSON.parse(fs.readFileSync(localFeedJsonPath, 'utf-8'));
-    } catch (e) {
-      console.error(e);
-    }
-  }
-
-  let feedItems = [];
-  if (parsedData) {
-    if (Array.isArray(parsedData)) {
-      feedItems = parsedData;
-    } else if (parsedData.items && Array.isArray(parsedData.items)) {
-      feedItems = parsedData.items;
-    }
-  }
-
-  // Filter by text_en and sort items by date descending to find the newest posts
-  const filteredItems = feedItems.filter((item: any) => item.has_en && item.text_en && item.post_id);
-  const sortedItems = [...filteredItems].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-  return sortedItems.map((item: any) => {
-    // Map item text and html to translated English versions
-    const enItem = {
-      ...item,
-      text: item.text_en,
-      html: item.html_en || item.text_en
-    };
-
-    const id = enItem.post_id;
-    const currentIndex = sortedItems.findIndex((x: any) => {
-      const xId = x.post_id;
-      return String(xId) === String(id);
-    });
-    const newerItem = currentIndex > 0 ? sortedItems[currentIndex - 1] : null;
-    const olderItem = currentIndex >= 0 && currentIndex < sortedItems.length - 1 ? sortedItems[currentIndex + 1] : null;
-    
-    // Select latest 3 posts excluding the current one for related grid
-    const latestPosts = sortedItems
-      .filter((x: any) => {
-        const xId = x.post_id;
-        return String(xId) !== String(id);
-      })
-      .slice(0, 3)
-      .map((x: any) => ({
-        id: x.post_id,
-        slug: x.slug_en,
-        title: getFirstSentence(x.text_en || ""),
-        date: x.date,
-        image: postImagePath(x, 'en')
-      }));
-
-    return {
-      params: { postId: String(id), slug: enItem.slug_en },
-      props: {
-        item: enItem,
-        latestPosts,
-        newerPost: newerItem ? {
-          id: newerItem.post_id,
-          slug: newerItem.slug_en,
-          title: getFirstSentence(newerItem.text_en || ""),
-          date: newerItem.date
-        } : null,
-        olderPost: olderItem ? {
-          id: olderItem.post_id,
-          slug: olderItem.slug_en,
-          title: getFirstSentence(olderItem.text_en || ""),
-          date: olderItem.date
-        } : null
-      },
-    };
-  });
-}
-
-interface Props {
-  item: any;
-  latestPosts: Array<{
-    id: string | number;
-    title: string;
-    date: string;
-    image: string | null;
-    slug: string;
-  }>;
-  newerPost: {
-    id: string | number;
-    title: string;
-    date: string;
-    slug: string;
-  } | null;
-  olderPost: {
-    id: string | number;
-    title: string;
-    date: string;
-    slug: string;
-  } | null;
+  const feedItems = loadFeedItems();
+  return feedItems
+    .filter((item: any) => item.has_en && item.text_en && item.post_id)
+    .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .map((item: any) => ({
+      params: { postId: String(item.post_id), slug: item.slug_en },
+      props: { item },
+    }));
 }
 
 const { postId, slug } = Astro.params;
-const { item, latestPosts, newerPost, olderPost } = Astro.props as Props;
+const { item } = Astro.props;
+const feedItems = loadFeedItems();
+const englishPosts = sortedHomePosts(feedItems, 'en');
+const selectedPost = englishPosts.find((post) => String(post.id) === String(postId));
+const leadPost = englishPosts[0] || null;
+const latestEnglishPosts = englishPosts.slice(leadPost ? 1 : 0, leadPost ? 8 : 9);
+const trendingPosts = [...englishPosts]
+  .filter((post) => !leadPost || post.id !== leadPost.id)
+  .sort((a, b) => (b.views - a.views) || (new Date(b.date).getTime() - new Date(a.date).getTime()))
+  .slice(0, 5);
+const topicStats = topicStatsFor(englishPosts);
 
-const channelUsername = "alexgetmancom";
-const siteAuthor = "Alex Getman";
-
-// Scoped split post helper is kept locally since it performs the HTML tag index traversal
-
-
-// Helper to split post content into first sentence (title) and the remaining body text/HTML
-function splitPostContent(text: string, html: string) {
-  if (!text) return { title: "", titleHtml: "", bodyHtml: "" };
-  
-  const firstSentence = getFirstSentence(text);
-  
-  // Consume HTML to find exact index corresponding to firstSentence length
-  const targetLen = firstSentence.length;
-  let textCharCount = 0;
-  let htmlIdx = 0;
-  let insideTag = false;
-  const rawHtml = html || text;
-  
-  while (htmlIdx < rawHtml.length && textCharCount < targetLen) {
-    const char = rawHtml[htmlIdx];
-    if (char === '<') {
-      insideTag = true;
-      htmlIdx++;
-    } else if (char === '>') {
-      insideTag = false;
-      htmlIdx++;
-    } else if (insideTag) {
-      htmlIdx++;
-    } else {
-      if (char === '&') {
-        const semiIdx = rawHtml.indexOf(';', htmlIdx);
-        if (semiIdx !== -1 && semiIdx - htmlIdx < 10) {
-          htmlIdx = semiIdx + 1;
-          textCharCount++;
-          continue;
-        }
-      }
-      textCharCount++;
-      htmlIdx++;
-    }
-  }
-  
-  let titleHtml = rawHtml.slice(0, htmlIdx).trim();
-  let bodyHtml = rawHtml.slice(htmlIdx).trim();
-  
-  // Strip trailing breaks from title and leading breaks from body
-  titleHtml = titleHtml.replace(/<br\s*\/?>$/, '').trim();
-  while (bodyHtml.startsWith('<br>') || bodyHtml.startsWith('<br/>') || bodyHtml.startsWith('<br />')) {
-    bodyHtml = bodyHtml.replace(/^<br\s*\/?>/, '').trim();
-  }
-  
-  // Clean plain text version of the title for page tags
-  const plainTitle = titleHtml
-    .replace(/<[^>]+>/g, '')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'");
-    
-  return {
-    title: plainTitle || firstSentence,
-    titleHtml: titleHtml || firstSentence,
-    bodyHtml: bodyHtml
-  };
-}
-
-const { title: postTitle, titleHtml: postTitleHtml, bodyHtml: postBodyHtml } = splitPostContent(item.text || "", item.html || "");
-
-const pageMetaTitle = postTitle || `Post ${postId}`;
-const postDescription = truncateText(postBodyHtml.replace(/<[^>]+>/g, '') || item.text || "", 158) || "AI news, automation notes and developer updates by Alex Getman on alexgetman.com.";
-
+const siteAuthor = 'Alex Getman';
+const postText = item.text_en || item.text || '';
+const pageTitle = selectedPost?.title || getFirstSentence(postText) || `Post ${postId}`;
+const postDescription = truncateText(postText.replace(/\s+/g, ' '), 158) || 'AI news, automation notes and developer updates by Alex Getman on alexgetman.com.';
 const localUrl = `https://alexgetman.com/${postId}/${slug}/`;
-const telegramUrl = item.url || null;
-
-
-
-const formattedDate = formatDate(item.date);
-const badge = getSmartBadge(item.text);
-const categorySlug = categorySlugFromBadge(badge);
-const readTime = estimateReadTime(postBodyHtml || item.html || item.text, 'en');
-const postMedia = Array.isArray(item.media_en) && item.media_en.length > 0
-  ? item.media_en
-  : (Array.isArray(item.media) && item.media.length > 0
-    ? item.media
-    : (item.image_en ? [{ type: "image", path: item.image_en }] : (item.image ? [{ type: "image", path: item.image }] : [])));
-const schemaImages = postMedia
-  .filter((mediaItem: any) => mediaItem.type !== "video" && mediaItem.path)
-  .map((mediaItem: any) => `https://alexgetman.com/${String(mediaItem.path).replace(/^\/+/, '')}`);
 const ogImage = postOgImagePath(item, 'en');
-const articleBodyHtml = semanticPostHtml(postBodyHtml || item.html || item.text);
-const schemaImageUrls = schemaImages.length ? schemaImages : [`https://alexgetman.com${ogImage}`];
+const schema = JSON.stringify({
+  '@context': 'https://schema.org',
+  '@type': 'Article',
+  headline: pageTitle,
+  description: postDescription,
+  url: localUrl,
+  datePublished: item.date,
+  dateModified: item.date,
+  inLanguage: 'en-US',
+  author: {
+    '@type': 'Person',
+    name: siteAuthor,
+    url: 'https://alexgetman.com/'
+  },
+  publisher: {
+    '@type': 'Person',
+    name: siteAuthor,
+    url: 'https://alexgetman.com/'
+  },
+  mainEntityOfPage: localUrl,
+  image: [`https://alexgetman.com${ogImage}`]
+});
 
-// Schema.org Article dynamic markup
-const schemaObject = {
-  "@context": "https://schema.org",
-  "@type": "Article",
-  "headline": postTitle,
-  "description": postDescription,
-  "url": localUrl,
-  "datePublished": item.date,
-  "dateModified": item.date,
-  "inLanguage": "en-US",
-  "author": {
-    "@type": "Person",
-    "name": siteAuthor,
-    "url": "https://alexgetman.com/"
-  },
-  "publisher": {
-    "@type": "Person",
-    "name": siteAuthor,
-    "url": "https://alexgetman.com/"
-  },
-  "mainEntityOfPage": localUrl,
-  "image": schemaImageUrls
+const labels = {
+  archive: 'Archive',
+  search: 'Search',
+  languageSwitch: 'RU',
+  empty: 'English posts will appear here after publication approval.',
+  latestPosts: 'Latest English posts',
+  latestUpdates: 'Latest updates',
+  trending: 'Trending',
+  topics: 'Topics',
+  projects: 'Projects',
+  all: 'All',
+  sidebarLabel: 'Homepage side sections',
+  mskSuffix: 'MSK'
 };
-
-const schema = JSON.stringify(schemaObject);
 ---
+
 <Layout
-  title={`${pageMetaTitle} | ${siteAuthor}`}
+  title={`${pageTitle} | ${siteAuthor}`}
   description={postDescription}
   schema={schema}
   canonicalUrl={localUrl}
   lang="en"
-  siteName="Alex Getman"
+  siteName={siteAuthor}
   rssHref="/feed.xml"
   socialImage={ogImage}
   socialImageWidth={1200}
   socialImageHeight={630}
   ogType="article"
   alternateLinks={[
-    { hreflang: "en", href: localUrl },
-    ...(item.has_ru ? [{ hreflang: "ru", href: `https://alexgetman.com/ru/${postId}/${item.slug_ru}/` }] : []),
-    { hreflang: "x-default", href: localUrl }
+    { hreflang: 'en', href: localUrl },
+    ...(item.has_ru ? [{ hreflang: 'ru', href: `https://alexgetman.com/ru/${postId}/${item.slug_ru}/` }] : []),
+    { hreflang: 'x-default', href: localUrl }
   ]}
+  immersiveHome
 >
-  <main
-    class="post-main"
-    data-post-page
-    data-copy-success="Copied!"
-    data-copy-default="Link"
-    data-giscus-lang="en"
-  >
-      
-      <!-- Scoped back button -->
-      <a class="back-link" href="/">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="back-arrow"><path d="m15 18-6-6 6-6"/></svg>
-          <span>Home</span>
-      </a>
-
-      <article class="post-article">
-          <div class="meta-row">
-              <a class={`badge ${badge.class}`} href={`/category/${categorySlug}/`}>{badge.label}</a>
-              <div class="meta-right">
-                  {telegramUrl && <><a href={telegramUrl} target="_blank" rel="noopener" class="tg-source">Discussion / @{channelUsername}</a><span class="meta-dot">•</span></>}
-                  <time datetime={item.date}>{formattedDate} MSK</time>
-                  <span class="meta-dot">•</span><span>{readTime}</span>
-              </div>
-          </div>
-          
-          <h1 class="article-title" set:html={sanitizeHtml(postTitleHtml)}></h1>
-          
-          {postMedia.length > 0 && (
-              <div class="article-media-grid">
-                  {postMedia.map((mediaItem: any) => (
-                      mediaItem.type === "video" ? (
-                          <video
-                              src={`/${mediaItem.path}`}
-                              poster={mediaItem.poster ? `/${mediaItem.poster}` : undefined}
-                              class="article-video"
-                              controls
-                              preload="metadata"
-                          ></video>
-                      ) : (
-                          <div class="article-image-wrap">
-                              <img
-                                  src={`/${mediaItem.path}`}
-                                  srcset={responsiveImageSrcSet(mediaItem.path)}
-                                  class="article-image"
-                                  alt={postTitle}
-                                  loading="lazy"
-                                  decoding="async"
-                                  sizes="(max-width: 720px) 100vw, 640px"
-                              />
-                          </div>
-                      )
-                  ))}
-              </div>
-          )}
-          
-          <div class="article-body" set:html={sanitizeHtml(articleBodyHtml)}></div>
-
-          {telegramUrl && <a href={telegramUrl} target="_blank" rel="noopener noreferrer" class="discussion-link">
-              <span>Discuss in Telegram</span>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg>
-          </a>}
-
-          <!-- Divider -->
-          <div class="post-divider"></div>
-
-          <!-- Share Bar with Likes -->
-          <div class="share-bar">
-              <div class="likes-container">
-                  <button class="like-btn" id="like-btn" data-post-id={postId} aria-label="Like this post">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="like-btn-icon">
-                          <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>
-                      </svg>
-                      <span id="like-count">0</span>
-                  </button>
-              </div>
-              <div class="share-buttons-wrap">
-                  <span class="share-title">Share:</span>
-                  <div class="share-buttons">
-                      <a href={`https://t.me/share/url?url=${encodeURIComponent(localUrl)}&text=${encodeURIComponent(postTitle)}`} target="_blank" rel="noopener noreferrer" class="share-btn share-btn--telegram" aria-label="Поделиться в Telegram">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="share-btn-icon tg-icon-stroke"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
-                          <span>Telegram</span>
-                      </a>
-                      <a href={`https://twitter.com/intent/tweet?url=${encodeURIComponent(localUrl)}&text=${encodeURIComponent(postTitle)}`} target="_blank" rel="noopener noreferrer" class="share-btn share-btn--twitter" aria-label="Поделиться в X">
-                          <svg viewBox="0 0 24 24" fill="currentColor" class="share-btn-icon"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
-                          <span>X (Twitter)</span>
-                      </a>
-                      <button class="share-btn share-btn--copy" id="copy-link-btn" data-url={localUrl} aria-label="Copy link">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="share-btn-icon"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-                          <span id="copy-btn-text">Link</span>
-                      </button>
-                  </div>
-              </div>
-          </div>
-      </article>
-
-      {(newerPost || olderPost) && (
-          <nav class="post-neighbors" aria-label="Neighbor posts">
-              {newerPost ? (
-                  <a href={`/${newerPost.id}/${newerPost.slug}/`} class="neighbor-card neighbor-card--newer">
-                      <span class="neighbor-label">Newer</span>
-                      <span class="neighbor-title">{truncateText(newerPost.title, 80)}</span>
-                  </a>
-              ) : (
-                  <span class="neighbor-card neighbor-card--empty">Latest post</span>
-              )}
-              {olderPost ? (
-                  <a href={`/${olderPost.id}/${olderPost.slug}/`} class="neighbor-card neighbor-card--older">
-                      <span class="neighbor-label">Older</span>
-                      <span class="neighbor-title">{truncateText(olderPost.title, 80)}</span>
-                  </a>
-              ) : (
-                  <span class="neighbor-card neighbor-card--empty">No older posts</span>
-              )}
-          </nav>
-      )}
-
-      <!-- Comments Section (Giscus) -->
-      <div class="comments-section">
-          <div id="giscus-container" class="giscus-container">
-              <!-- Dynamic Giscus iframe will load here -->
-          </div>
-      </div>
-
-      <!-- Related Posts Section -->
-      {latestPosts && latestPosts.length > 0 && (
-          <div class="related-posts">
-              <h2 class="related-title">Read also</h2>
-              <div class="related-grid">
-                  {latestPosts.map((post) => {
-                      const postUrl = `/${post.id}/${post.slug}/`;
-                      const smartBadge = getSmartBadge(post.title);
-                      return (
-                          <a href={postUrl} class="related-card">
-                              <div class="related-card-img-wrap">
-                                  {post.image ? (
-                                      <img src={`/${post.image}`} srcset={responsiveImageSrcSet(post.image)} sizes="(max-width: 720px) 100vw, 280px" alt={post.title} class="related-card-img" loading="lazy" decoding="async" />
-                                  ) : (
-                                      <div class="related-card-placeholder">
-                                          <span>{smartBadge.label}</span>
-                                      </div>
-                                  )}
-                              </div>
-                              <div class="related-card-content">
-                                  <h3 class="related-card-title">{truncateText(post.title, 55)}</h3>
-                                  <span class="related-card-date">{formatDate(post.date)}</span>
-                              </div>
-                          </a>
-                      );
-                  })}
-              </div>
-          </div>
-      )}
-  </main>
-
-  <!-- Lightbox Modal -->
-  <div id="lightbox-modal" class="lightbox-modal">
-      <span class="lightbox-close">&times;</span>
-      <img class="lightbox-content" id="lightbox-img" alt="Enlarged image" />
-  </div>
+  <HomeNewsPage
+    posts={englishPosts}
+    latestPosts={latestEnglishPosts}
+    trendingPosts={trendingPosts}
+    topicStats={topicStats}
+    projects={projects}
+    labels={labels}
+    locale="en"
+    categoryBasePath="/category/"
+    initialPostId={postId}
+    initialPaused
+  />
 </Layout>
-
-
-
-<script src="../../scripts/post-page.js"></script>

@@ -61,6 +61,8 @@ export interface StoryUi {
   storyRail: string;
   noDiscussion: string;
   sourcesHint: string;
+  backToPost: string;
+  copied: string;
   views: string;
   replies: string;
   reactions: string;
