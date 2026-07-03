@@ -50,6 +50,18 @@ const { activePost, posts, ui } = Astro.props;
       <span aria-hidden="true">♪</span>
       <span data-audio-label>{ui.muted}</span>
     </button>
+    <div class="story-mobile-caption" aria-hidden="true">
+      <span data-story-mobile-kicker>{activePost.category}</span>
+      <strong data-story-mobile-title>{activePost.title}</strong>
+    </div>
+    <div class="story-mobile-actions" aria-label={ui.storyLabel}>
+      <button class="story-action story-action--primary" type="button" data-story-discuss>
+        <span>{ui.discuss}</span>
+      </button>
+      <button class="story-action" type="button" data-story-share>
+        <span>{ui.share}</span>
+      </button>
+    </div>
     <audio preload="none" data-story-audio></audio>
   </article>
 </div>

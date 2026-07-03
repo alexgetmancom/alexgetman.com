@@ -18,6 +18,8 @@
   const categoryWrap = root.querySelector('.story-category-wrap');
   const meta = root.querySelector('.story-meta');
   const kicker = root.querySelector('[data-story-kicker]');
+  const mobileKicker = root.querySelector('[data-story-mobile-kicker]');
+  const mobileTitle = root.querySelector('[data-story-mobile-title]');
   const time = root.querySelector('[data-story-time]');
   const views = root.querySelector('[data-story-views]');
   const copy = root.querySelector('[data-story-copy]');
@@ -30,9 +32,11 @@
   const feedModeTrigger = root.querySelector('[data-feed-mode-trigger]');
   const feedModeLabel = root.querySelector('[data-feed-mode-label]');
   const feedModeMenu = root.querySelector('.feed-mode-menu');
-  const share = root.querySelector('[data-story-share]');
-  const discuss = root.querySelector('[data-story-discuss]');
-  const discussLabel = discuss?.querySelector('span');
+  const shareButtons = Array.from(root.querySelectorAll('[data-story-share]'));
+  const discussButtons = Array.from(root.querySelectorAll('[data-story-discuss]'));
+  const discussLabels = discussButtons
+    .map((button) => button.querySelector('span'))
+    .filter(Boolean);
   const postPanel = root.querySelector('[data-panel="post"]');
   const discussionPanel = root.querySelector('[data-panel="discussion"]');
   const discussionFrame = root.querySelector('[data-story-discussion-frame]');
@@ -460,9 +464,9 @@
     if (title) title.hidden = isVisible;
     if (copy) copy.hidden = isVisible;
     if (readMore) readMore.hidden = true;
-    if (discussLabel) {
-      discussLabel.textContent = isVisible ? (ui.backToPost || 'Back to post') : (ui.discuss || 'Discuss');
-    }
+    discussLabels.forEach((label) => {
+      label.textContent = isVisible ? (ui.backToPost || 'Back to post') : (ui.discuss || 'Discuss');
+    });
     if (isVisible) {
       isManualPaused = true;
     } else if (wasDiscussionVisible) {
@@ -553,6 +557,8 @@
       fallback.textContent = post.title;
     }
     if (kicker) kicker.textContent = post.category;
+    if (mobileKicker) mobileKicker.textContent = post.category;
+    if (mobileTitle) mobileTitle.textContent = post.title;
     if (time) time.textContent = post.relativeDate;
     if (title) title.textContent = post.title;
     if (copy) {
@@ -769,17 +775,22 @@
     syncReadMore(posts[active] || {});
   });
 
-  discuss?.addEventListener('click', () => {
-    if (discussionVisible) {
-      setDiscussionVisible(false);
-      return;
-    }
-    const post = posts[active];
-    loadDiscussion(post);
-    setDiscussionVisible(true);
+  discussButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      if (discussionVisible) {
+        setDiscussionVisible(false);
+        return;
+      }
+      const post = posts[active];
+      loadDiscussion(post);
+      setDiscussionVisible(true);
+      if (window.matchMedia('(max-width: 760px)').matches) {
+        discussionPanel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
   });
 
-  share?.addEventListener('click', async () => {
+  async function shareCurrentPost(button) {
     const post = posts[active];
     const url = new URL(post.url, window.location.origin).href;
     try {
@@ -787,7 +798,7 @@
         await navigator.share({ title: post.title, url });
       } else {
         await navigator.clipboard.writeText(url);
-        const span = share.querySelector('span');
+        const span = button.querySelector('span');
         if (span) {
           span.textContent = ui.copied || 'Copied';
           window.setTimeout(() => { span.textContent = ui.share || 'Share'; }, 1400);
@@ -796,6 +807,12 @@
     } catch (error) {
       await navigator.clipboard?.writeText(url).catch(() => {});
     }
+  }
+
+  shareButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      shareCurrentPost(button);
+    });
   });
 
   audioToggle?.addEventListener('click', () => {
