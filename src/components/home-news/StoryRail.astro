@@ -16,9 +16,13 @@ const { posts, ui } = Astro.props;
       href={post.url}
       class={`rail-card${index === 0 ? ' is-active' : ''}${post.image ? '' : ' rail-card--no-image'}`}
       data-story-index={index}
+      data-media-src={post.image ? `/${post.image}` : undefined}
+      data-media-type={post.mediaType || undefined}
+      data-media-fallback={post.fallbackImage ? `/${post.fallbackImage}` : undefined}
+      data-media-srcset={post.imageSrcSet || undefined}
     >
       <span class="rail-card__media" aria-hidden="true">
-        {post.image ? (
+        {post.image && index < 7 ? (
           post.mediaType === 'video' ? (
             post.fallbackImage ? (
               <img

@@ -105,6 +105,15 @@
     opacity: 1;
   }
 
+  .story-player.is-manual-navigating .rail-card__progress {
+    opacity: 0 !important;
+  }
+
+  .story-player.is-manual-navigating .rail-card__progress i {
+    animation: none !important;
+    transform: scaleY(0) !important;
+  }
+
   .rail-card__progress i {
     display: block;
     width: 100%;
@@ -459,6 +468,37 @@
   .story-discussion-frame .giscus,
   .story-discussion-frame iframe {
     width: 100% !important;
+  }
+
+  .story-discussion-loading {
+    min-height: 120px;
+    display: grid;
+    place-items: center;
+    color: var(--text-secondary);
+    font-weight: 800;
+  }
+
+  .story-seo-content {
+    max-width: 760px;
+    margin: 2rem auto;
+    color: var(--text-main);
+  }
+
+  .story-debug-panel {
+    position: fixed;
+    right: 12px;
+    bottom: 12px;
+    z-index: 9999;
+    max-width: min(360px, calc(100vw - 24px));
+    max-height: 48vh;
+    overflow: auto;
+    padding: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.82);
+    color: #e5e7eb;
+    font: 12px/1.45 var(--font-mono);
+    white-space: pre-wrap;
   }
 
   .pill {

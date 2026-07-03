@@ -44,6 +44,7 @@
   let active = 0;
   let isManualPaused = payload.initialPaused === true || root.dataset.initialPaused === 'true';
   let isHoverPaused = false;
+  let isInteractionPaused = false;
   let paused = isManualPaused;
   let muted = localStorage.getItem('story-player-muted') !== 'false';
   let expanded = false;
@@ -56,6 +57,14 @@
   let progressStartedAt = 0;
   let progressRemainingMs = intervalMs;
   let progressActive = false;
+  let wheelGestureLocked = false;
+  let wheelUnlockTimer = null;
+  let manualProgressTimer = null;
+  let interactionPauseTimer = null;
+  let progressRestartBlocked = false;
+  let discussionTerm = '';
+  const debugEnabled = new URLSearchParams(window.location.search).has('debug');
+  const debugPanel = debugEnabled ? document.createElement('pre') : null;
 
   function normalizedPath(value) {
     try {
@@ -96,7 +105,12 @@
 
   function scheduleStoryView(post) {
     if (storyViewTimer) window.clearTimeout(storyViewTimer);
-    storyViewTimer = window.setTimeout(() => recordStoryView(post), 1200);
+    const scheduledIndex = active;
+    storyViewTimer = window.setTimeout(() => {
+      if (scheduledIndex === active) {
+        recordStoryView(post);
+      }
+    }, 2000);
   }
 
   function clearVideoProgressFallback() {
@@ -111,6 +125,56 @@
       window.clearTimeout(advanceTimer);
       advanceTimer = null;
     }
+  }
+
+  function resetProgressFills() {
+    progressBars.forEach((bar) => {
+      const fill = bar.querySelector('i');
+      if (!fill) return;
+      fill.style.animation = 'none';
+      fill.style.animationPlayState = 'running';
+      fill.style.transform = 'scaleY(0)';
+    });
+  }
+
+  function resumeProgressAfterManualNavigation() {
+    if (manualProgressTimer) {
+      window.clearTimeout(manualProgressTimer);
+    }
+    root.classList.add('is-manual-navigating');
+    progressRestartBlocked = true;
+    clearAdvanceTimer();
+    if (animationTimer) {
+      window.clearTimeout(animationTimer);
+      animationTimer = null;
+    }
+    clearVideoProgressFallback();
+    progressActive = false;
+    resetProgressFills();
+
+    manualProgressTimer = window.setTimeout(() => {
+      manualProgressTimer = null;
+      root.classList.remove('is-manual-navigating');
+      progressRestartBlocked = false;
+      resetProgressFills();
+      if (!paused) {
+        scheduleCurrentProgress(260);
+      }
+    }, 850);
+  }
+
+  function temporarilyPauseAutoplay(ms = 12000) {
+    if (isManualPaused) return;
+    isInteractionPaused = true;
+    if (interactionPauseTimer) {
+      window.clearTimeout(interactionPauseTimer);
+    }
+    updatePlayState();
+    interactionPauseTimer = window.setTimeout(() => {
+      interactionPauseTimer = null;
+      isInteractionPaused = false;
+      updatePlayState();
+    }, ms);
   }
 
   function scheduleAdvance(duration) {
@@ -145,6 +209,25 @@
       scheduleAdvance(intervalMs);
     } else {
       scheduleAdvance(duration);
+    }
+  }
+
+  function scheduleCurrentProgress(delay = 380) {
+    if (progressRestartBlocked) return;
+    const post = posts[active];
+    const activeBar = progressBars[active];
+    const fill = activeBar?.querySelector('i');
+    if (!post || !fill) return;
+    if (post.mediaType === 'video') {
+      videoProgressFallbackTimer = window.setTimeout(() => {
+        if (posts[active]?.mediaType === 'video') {
+          startProgressAnimation(fill, intervalMs);
+        }
+      }, Math.max(delay, 700));
+    } else {
+      animationTimer = window.setTimeout(() => {
+        startProgressAnimation(fill, intervalMs);
+      }, delay);
     }
   }
 
@@ -225,7 +308,7 @@
   }
 
   function updatePlayState() {
-    paused = isManualPaused || isHoverPaused;
+    paused = isManualPaused || isHoverPaused || isInteractionPaused;
 
     const activeBar = progressBars[active];
     const fill = activeBar?.querySelector('i');
@@ -239,6 +322,8 @@
       } else if (!advanceTimer) {
         scheduleAdvance(progressRemainingMs);
       }
+    } else if (!paused && !progressRestartBlocked && !animationTimer && !videoProgressFallbackTimer) {
+      scheduleCurrentProgress(0);
     }
 
     if (video && posts[active]?.mediaType === 'video') {
@@ -248,6 +333,81 @@
         video.play?.().catch(() => {});
       }
     }
+    renderDebugState();
+  }
+
+  function hydrateRailMedia() {
+    railCards.forEach((card, index) => {
+      const distance = Math.min(Math.abs(index - active), posts.length - Math.abs(index - active));
+      if (distance > 5 || card.dataset.mediaHydrated === 'true') return;
+      const media = card.querySelector('.rail-card__media');
+      const src = card.dataset.mediaSrc;
+      if (!media || !src) return;
+      const type = card.dataset.mediaType;
+      const fallbackSrc = card.dataset.mediaFallback;
+      const srcset = card.dataset.mediaSrcset;
+      media.innerHTML = '';
+      if (type === 'video' && !fallbackSrc) {
+        const thumbVideo = document.createElement('video');
+        thumbVideo.src = `${src}#t=0.001`;
+        thumbVideo.muted = true;
+        thumbVideo.playsInline = true;
+        thumbVideo.preload = 'metadata';
+        media.appendChild(thumbVideo);
+      } else {
+        const img = document.createElement('img');
+        img.src = fallbackSrc || src;
+        if (srcset && type !== 'video') img.srcset = srcset;
+        img.alt = '';
+        img.loading = 'lazy';
+        img.decoding = 'async';
+        img.sizes = '72px';
+        media.appendChild(img);
+      }
+      card.dataset.mediaHydrated = 'true';
+    });
+  }
+
+  function preloadAdjacentMedia() {
+    [-1, 1, 2].forEach((offset) => {
+      const post = posts[(active + offset + posts.length) % posts.length];
+      if (!post?.image) return;
+      const src = post.fallbackImage || post.image;
+      if (!src || post.__preloaded) return;
+      post.__preloaded = true;
+      if (post.mediaType === 'video') {
+        const preloadVideo = document.createElement('video');
+        preloadVideo.src = post.image;
+        preloadVideo.preload = 'metadata';
+      } else {
+        const preloadImage = new Image();
+        preloadImage.src = src;
+        if (post.imageSrcSet) preloadImage.srcset = post.imageSrcSet;
+      }
+    });
+  }
+
+  function updateUrlForPost(post) {
+    if (!post?.url || !window.history?.replaceState) return;
+    const nextUrl = new URL(post.url, window.location.origin);
+    if (nextUrl.pathname === window.location.pathname) return;
+    window.history.replaceState({ storyPostId: post.id }, '', nextUrl.pathname);
+  }
+
+  function renderDebugState() {
+    if (!debugPanel) return;
+    debugPanel.textContent = JSON.stringify({
+      active,
+      postId: posts[active]?.id,
+      paused,
+      isManualPaused,
+      isInteractionPaused,
+      progressActive,
+      progressRestartBlocked,
+      advanceTimer: Boolean(advanceTimer),
+      mediaType: posts[active]?.mediaType || null,
+      url: posts[active]?.url || null,
+    }, null, 2);
   }
 
   function setDiscussionVisible(isVisible) {
@@ -264,9 +424,13 @@
   function loadDiscussion(post) {
     if (!discussionFrame || !post?.url) return;
     const url = new URL(post.url, window.location.origin).href;
-    if (discussionFrame.dataset.term === url) return;
-    discussionFrame.dataset.term = url;
+    if (discussionTerm === url) return;
+    discussionTerm = url;
     discussionFrame.innerHTML = '';
+    const loading = document.createElement('div');
+    loading.className = 'story-discussion-loading';
+    loading.textContent = ui.discussionTab || 'Discussion';
+    discussionFrame.appendChild(loading);
     const script = document.createElement('script');
     script.src = 'https://giscus.app/client.js';
     script.async = true;
@@ -286,7 +450,7 @@
     discussionFrame.appendChild(script);
   }
 
-  function render(index) {
+  function render(index, options = {}) {
     active = (index + posts.length) % posts.length;
     const post = posts[active];
     if (!post) return;
@@ -381,6 +545,17 @@
     clearVideoProgressFallback();
     clearAdvanceTimer();
     progressActive = false;
+    progressRestartBlocked = !!options.keepProgressIdle;
+
+    progressBars.forEach((bar, i) => {
+      const fill = bar.querySelector('i');
+      bar.classList.remove('is-active', 'is-done');
+      if (fill) {
+        fill.style.animation = 'none';
+        fill.style.animationPlayState = 'running';
+        fill.style.transform = 'scaleY(0)';
+      }
+    });
 
     progressBars.forEach((bar, i) => {
       const isActive = i === active;
@@ -388,25 +563,15 @@
       bar.classList.toggle('is-done', i < active);
       const fill = bar.querySelector('i');
       if (fill) {
-        fill.style.animation = 'none';
-        fill.style.animationPlayState = 'running';
         fill.offsetHeight; // trigger reflow
         
         if (isActive) {
           fill.style.transform = 'scaleY(0)';
           const post = posts[active];
-          if (post && post.mediaType === 'video') {
-            videoProgressFallbackTimer = window.setTimeout(() => {
-              if (i === active && posts[active]?.mediaType === 'video') {
-                startProgressAnimation(fill, intervalMs);
-              }
-            }, 2000);
-          } else {
-            animationTimer = window.setTimeout(() => {
-              if (i === active) {
-                startProgressAnimation(fill, intervalMs);
-              }
-            }, 380);
+          if (paused || options.keepProgressIdle) {
+            progressRemainingMs = intervalMs;
+          } else if (post) {
+            scheduleCurrentProgress();
           }
         } else {
           fill.style.transform = i < active ? 'scaleY(1)' : 'scaleY(0)';
@@ -436,6 +601,9 @@
 
     updatePlayState();
     scheduleStoryView(post);
+    hydrateRailMedia();
+    preloadAdjacentMedia();
+    updateUrlForPost(post);
 
     if (panel) {
       window.requestAnimationFrame(() => {
@@ -449,7 +617,9 @@
   railCards.forEach((card, index) => {
     card.addEventListener('click', (event) => {
       event.preventDefault();
-      render(index);
+      render(index, { keepProgressIdle: true });
+      resumeProgressAfterManualNavigation();
+      temporarilyPauseAutoplay();
     });
   });
 
@@ -473,21 +643,38 @@
   });
 
   let lastWheelTime = 0;
-  const wheelCooldownMs = 500;
+  const wheelCooldownMs = 900;
+
+  function lockWheelGesture() {
+    wheelGestureLocked = true;
+    if (wheelUnlockTimer) {
+      window.clearTimeout(wheelUnlockTimer);
+    }
+    wheelUnlockTimer = window.setTimeout(() => {
+      wheelGestureLocked = false;
+      wheelUnlockTimer = null;
+    }, wheelCooldownMs);
+  }
 
   function handleWheel(event) {
     if (Math.abs(event.deltaY) < 10) return;
     event.preventDefault();
 
     const now = Date.now();
-    if (now - lastWheelTime < wheelCooldownMs) return;
+    if (wheelGestureLocked || now - lastWheelTime < wheelCooldownMs) {
+      lockWheelGesture();
+      return;
+    }
     lastWheelTime = now;
+    lockWheelGesture();
 
     if (event.deltaY > 0) {
-      render(active + 1);
+      render(active + 1, { keepProgressIdle: true });
     } else {
-      render(active - 1);
+      render(active - 1, { keepProgressIdle: true });
     }
+    resumeProgressAfterManualNavigation();
+    temporarilyPauseAutoplay();
   }
 
   visual?.addEventListener('wheel', handleWheel, { passive: false });
@@ -556,14 +743,47 @@
     const endX = event.changedTouches[0]?.clientX || 0;
     const delta = endX - startX;
     if (Math.abs(delta) > 55) {
-      render(active + (delta < 0 ? 1 : -1));
+      render(active + (delta < 0 ? 1 : -1), { keepProgressIdle: true });
+      resumeProgressAfterManualNavigation();
+      temporarilyPauseAutoplay();
     }
   }, { passive: true });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.defaultPrevented) return;
+    const tagName = document.activeElement?.tagName;
+    if (tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT') return;
+    if (event.key === 'ArrowDown' || event.key === 'PageDown') {
+      event.preventDefault();
+      render(active + 1, { keepProgressIdle: true });
+      resumeProgressAfterManualNavigation();
+      temporarilyPauseAutoplay();
+    } else if (event.key === 'ArrowUp' || event.key === 'PageUp') {
+      event.preventDefault();
+      render(active - 1, { keepProgressIdle: true });
+      resumeProgressAfterManualNavigation();
+      temporarilyPauseAutoplay();
+    } else if (event.key === ' ') {
+      event.preventDefault();
+      isManualPaused = !isManualPaused;
+      isInteractionPaused = false;
+      if (interactionPauseTimer) {
+        window.clearTimeout(interactionPauseTimer);
+        interactionPauseTimer = null;
+      }
+      updatePlayState();
+    }
+  });
 
   // Sync initial button states with stored preference
   audioToggle?.setAttribute('aria-pressed', String(muted));
   audioToggle?.classList.toggle('is-on', !muted);
   if (audioLabel) audioLabel.textContent = muted ? (ui.muted || 'Muted') : (ui.mute || 'Audio');
+
+  if (debugPanel) {
+    debugPanel.className = 'story-debug-panel';
+    root.appendChild(debugPanel);
+  }
 
   render(0);
 })();

@@ -31,10 +31,14 @@ const selectedPost = initialPostId
   ? posts.find((post) => String(post.id) === String(initialPostId))
   : null;
 const storyPosts = selectedPost
-  ? [selectedPost, ...posts.filter((post) => String(post.id) !== String(selectedPost.id)).slice(0, 4)]
-  : posts.slice(0, 5);
+  ? [selectedPost, ...posts.filter((post) => String(post.id) !== String(selectedPost.id))]
+  : posts;
 const activePost = storyPosts[0] || null;
 const isRu = locale === 'ru';
+const fullTextFor = (post: HomePost) => (post.body || post.excerpt || post.title)
+  .split(/\n+/)
+  .map((line) => line.trim())
+  .filter(Boolean);
 const ui = {
   storyLabel: isRu ? 'Новостной плеер' : 'AI news player',
   postTab: isRu ? 'Пост' : 'Post',
@@ -79,6 +83,7 @@ const ui = {
           url: post.url,
           title: post.title,
           body: paragraphsFor(post),
+          fullBody: fullTextFor(post),
           excerpt: post.excerpt,
           date: post.date,
           relativeDate: post.relativeDate,
@@ -102,6 +107,14 @@ const ui = {
           lang: isRu ? 'ru' : 'en',
         },
       })}></script>
+      <noscript>
+        <article class="story-seo-content">
+          <h1>{activePost.title}</h1>
+          {fullTextFor(activePost).map((paragraph) => (
+            <p>{paragraph}</p>
+          ))}
+        </article>
+      </noscript>
     </section>
   ) : (
     <p class="empty">{labels.empty}</p>
