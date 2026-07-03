@@ -436,26 +436,25 @@
     display: none !important;
   }
 
+  .story-context [hidden] {
+    display: none !important;
+  }
+
+  .story-player.is-discussing .story-category-wrap,
+  .story-player.is-discussing .story-meta,
+  .story-player.is-discussing [data-story-title],
+  .story-player.is-discussing [data-story-copy],
+  .story-player.is-discussing [data-story-read-more] {
+    display: none !important;
+  }
+
   .story-panel--discussion {
+    height: auto;
+    min-height: 0;
+    flex: 1 1 auto;
     gap: 0.85rem;
-  }
-
-  .story-discussion-head {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: 0.6rem;
-    align-items: center;
-    padding-bottom: 0.75rem;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .story-discussion-head .story-category-badge {
-    min-width: 0;
+    padding: 0;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    text-transform: none;
-    letter-spacing: 0;
   }
 
   .story-discussion-frame {

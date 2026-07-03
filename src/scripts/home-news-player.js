@@ -15,6 +15,8 @@
   const cardLink = root.querySelector('[data-story-card-link]');
   const visual = root.querySelector('[data-story-visual]');
   const title = root.querySelector('[data-story-title]');
+  const categoryWrap = root.querySelector('.story-category-wrap');
+  const meta = root.querySelector('.story-meta');
   const kicker = root.querySelector('[data-story-kicker]');
   const time = root.querySelector('[data-story-time]');
   const views = root.querySelector('[data-story-views]');
@@ -25,10 +27,9 @@
   const railCards = Array.from(root.querySelectorAll('[data-story-index]'));
   const share = root.querySelector('[data-story-share]');
   const discuss = root.querySelector('[data-story-discuss]');
+  const discussLabel = discuss?.querySelector('span');
   const postPanel = root.querySelector('[data-panel="post"]');
   const discussionPanel = root.querySelector('[data-panel="discussion"]');
-  const discussionBack = root.querySelector('[data-story-discussion-back]');
-  const discussionTitle = root.querySelector('[data-story-discussion-title]');
   const discussionFrame = root.querySelector('[data-story-discussion-frame]');
   const audioToggle = root.querySelector('[data-audio-toggle]');
   const audioLabel = root.querySelector('[data-audio-label]');
@@ -63,6 +64,7 @@
   let interactionPauseTimer = null;
   let progressRestartBlocked = false;
   let discussionTerm = '';
+  let discussionVisible = false;
   const debugEnabled = new URLSearchParams(window.location.search).has('debug');
   const debugPanel = debugEnabled ? document.createElement('pre') : null;
 
@@ -161,20 +163,6 @@
         scheduleCurrentProgress(260);
       }
     }, 850);
-  }
-
-  function temporarilyPauseAutoplay(ms = 12000) {
-    if (isManualPaused) return;
-    isInteractionPaused = true;
-    if (interactionPauseTimer) {
-      window.clearTimeout(interactionPauseTimer);
-    }
-    updatePlayState();
-    interactionPauseTimer = window.setTimeout(() => {
-      interactionPauseTimer = null;
-      isInteractionPaused = false;
-      updatePlayState();
-    }, ms);
   }
 
   function scheduleAdvance(duration) {
@@ -387,13 +375,6 @@
     });
   }
 
-  function updateUrlForPost(post) {
-    if (!post?.url || !window.history?.replaceState) return;
-    const nextUrl = new URL(post.url, window.location.origin);
-    if (nextUrl.pathname === window.location.pathname) return;
-    window.history.replaceState({ storyPostId: post.id }, '', nextUrl.pathname);
-  }
-
   function renderDebugState() {
     if (!debugPanel) return;
     debugPanel.textContent = JSON.stringify({
@@ -412,11 +393,22 @@
 
   function setDiscussionVisible(isVisible) {
     if (!postPanel || !discussionPanel) return;
-    postPanel.hidden = isVisible;
+    const wasDiscussionVisible = discussionVisible;
+    discussionVisible = isVisible;
     discussionPanel.hidden = !isVisible;
     root.classList.toggle('is-discussing', isVisible);
+    if (categoryWrap) categoryWrap.hidden = isVisible;
+    if (meta) meta.hidden = isVisible;
+    if (title) title.hidden = isVisible;
+    if (copy) copy.hidden = isVisible;
+    if (readMore) readMore.hidden = true;
+    if (discussLabel) {
+      discussLabel.textContent = isVisible ? (ui.backToPost || 'Back to post') : (ui.discuss || 'Discuss');
+    }
     if (isVisible) {
       isManualPaused = true;
+    } else if (wasDiscussionVisible) {
+      isManualPaused = false;
     }
     updatePlayState();
   }
@@ -521,7 +513,6 @@
     }
     syncReadMore(post);
     if (views) views.textContent = post.views || '0';
-    if (discussionTitle) discussionTitle.textContent = post.title;
     if (audio) {
       audio.pause?.();
       if (post.audioUrl && post.mediaType !== 'video') {
@@ -603,7 +594,6 @@
     scheduleStoryView(post);
     hydrateRailMedia();
     preloadAdjacentMedia();
-    updateUrlForPost(post);
 
     if (panel) {
       window.requestAnimationFrame(() => {
@@ -619,7 +609,6 @@
       event.preventDefault();
       render(index, { keepProgressIdle: true });
       resumeProgressAfterManualNavigation();
-      temporarilyPauseAutoplay();
     });
   });
 
@@ -643,7 +632,7 @@
   });
 
   let lastWheelTime = 0;
-  const wheelCooldownMs = 900;
+  const wheelCooldownMs = 140;
 
   function lockWheelGesture() {
     wheelGestureLocked = true;
@@ -674,7 +663,6 @@
       render(active - 1, { keepProgressIdle: true });
     }
     resumeProgressAfterManualNavigation();
-    temporarilyPauseAutoplay();
   }
 
   visual?.addEventListener('wheel', handleWheel, { passive: false });
@@ -686,13 +674,13 @@
   });
 
   discuss?.addEventListener('click', () => {
+    if (discussionVisible) {
+      setDiscussionVisible(false);
+      return;
+    }
     const post = posts[active];
     loadDiscussion(post);
     setDiscussionVisible(true);
-  });
-
-  discussionBack?.addEventListener('click', () => {
-    setDiscussionVisible(false);
   });
 
   share?.addEventListener('click', async () => {
@@ -745,7 +733,6 @@
     if (Math.abs(delta) > 55) {
       render(active + (delta < 0 ? 1 : -1), { keepProgressIdle: true });
       resumeProgressAfterManualNavigation();
-      temporarilyPauseAutoplay();
     }
   }, { passive: true });
 
@@ -757,12 +744,10 @@
       event.preventDefault();
       render(active + 1, { keepProgressIdle: true });
       resumeProgressAfterManualNavigation();
-      temporarilyPauseAutoplay();
     } else if (event.key === 'ArrowUp' || event.key === 'PageUp') {
       event.preventDefault();
       render(active - 1, { keepProgressIdle: true });
       resumeProgressAfterManualNavigation();
-      temporarilyPauseAutoplay();
     } else if (event.key === ' ') {
       event.preventDefault();
       isManualPaused = !isManualPaused;
