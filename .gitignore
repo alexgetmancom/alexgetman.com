@@ -58,3 +58,4 @@ pnpm-debug.log*
 /apps/web/public/generated/
 /apps/web/public/og/
 /apps/web/.image-cache.json
+/apps/web/public/media/

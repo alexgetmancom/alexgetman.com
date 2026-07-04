@@ -28,13 +28,11 @@
 ## Почему Telegram ещё может мелькать
 
 Telegram допустим в трёх местах:
-
 - как platform target в pipeline/Command Center;
 - как ссылка `Discuss in Telegram` / `Обсудить в Telegram`;
 - как Telegram channel/community в контактах.
 
 Telegram не должен мелькать как:
-
 - `original source`;
 - `isBasedOn` в Schema.org;
 - источник RSS/feed описаний;
@@ -43,50 +41,41 @@ Telegram не должен мелькать как:
 
 Если где-то в публичном HTML, RSS, JSON-LD, `.well-known`, `llms.txt`, `index.md` или markdown endpoint текст всё ещё говорит “Telegram source/original”, это баг и его надо убирать.
 
-## Активный план
+## Активный план: ИИ-оптимизация (AI-SEO / AIO)
 
-Остались только проверки, которые зависят от production-деплоя или внешних сервисов. Пока `tw-nl` недоступен из-за технических работ, их не закрываем.
+### Шаг 1. Перевод ссылок в `llms.txt` на `.md` версии постов
+Динамические Markdown-версии страниц уже созданы, но ссылки в фиде для моделей ведут на стандартный HTML.
+- **Реализация**: Обновить генератор [llms.txt.js](file:///Users/alex/projects/alexgetman.com/apps/web/src/pages/llms.txt.js) (строка 45), чтобы ссылки вели на эндпоинты с `.md`.
 
-1. Проверить OpenGraph/Twitter image для постов после финального деплоя текущих media-правок.
-   - Проверить EN и RU post pages.
-   - Проверить, что `og:image`, `twitter:image`, `og:image:width`, `og:image:height` ведут на рабочие картинки.
-   - Проверить шаринг в Telegram/соцсетях на 1-2 свежих постах.
-2. Проверить LCP на мобильных для главной и страниц постов после финального production deploy vertical-first layout.
-   - Главная EN `/`.
-   - Главная RU `/ru/`.
-   - EN post page.
-   - RU post page.
-3. После изменений `.well-known`, markdown negotiation, MCP, auth metadata или robots проверять, что `isitagentready.com` не просел ниже текущего baseline **100/100 Level 5**.
-4. Когда сервер снова доступен, повторить smoke:
-   - `https://alexgetman.com` должен отдавать `200`.
-   - `https://ialexey.ru` должен отдавать `410 Gone` + `X-Robots-Tag: noindex, nofollow`, без редиректа на `alexgetman.com`.
-   - `/pipeline-status`, sitemap, feeds, `llms.txt`, `index.md`, `.well-known/*` должны открываться.
+### Шаг 2. Расширенный фид для ИИ-моделей (`/feed-ai.json`)
+Стандартный `feed.json` не содержит специфических метаданных для ИИ.
+- **Реализация**: Создать эндпоинт `/feed-ai.json`. Добавить для каждого поста:
+  - `tldr` или `summary`: краткое резюме поста (1-2 предложения).
+  - `key_entities`: список ключевых технологий, нейросетей, брендов.
+  - `actions`: ссылки на внешние репозитории или источники.
 
-## Закрыто
+### Шаг 3. Аналитика и мониторинг активности ИИ на дашборде
+Отслеживание запросов от ИИ-агентов для понимания их интересов.
+- **Реализация**:
+  - Отфильтровать запросы Nginx от ботов: `OAI-SearchBot`, `GPTBot`, `ClaudeBot`, `Perplexibot`.
+  - Сохранять количество запросов в базу `pipeline.db` (новая метрика `ai_hits`).
+  - Вывести метрику в Command Center отдельной колонкой 🤖 `AI Hits`.
 
-- Canonical model: посты используют собственный `post_id`, не Telegram message ID.
-- URL policy: EN `/<post_id>/<english-slug>/`, RU `/ru/<post_id>/<russian-slug>/`.
-- EN-first: английский контент живёт в корне сайта, русский под `/ru/`.
-- EN/RU UI policy: обе версии используют один news layout и отличаются только языком, URL, датами, категориями и доступным набором постов.
-- Telegram больше не source of truth; допустим только как target, discussion/community link или технический входной канал.
-- Legacy routes `/posts/*`, `/ru/posts/*`, `/en/*` возвращают `410 Gone`/`noindex`.
-- `ialexey.ru` retired: без 301/302 на `alexgetman.com`; на VPS оставлен явный `410 Gone`, чтобы домен не попадал в default virtual host.
-- SEO foundation: `/about`, `/ru/about`, Privacy Policy EN/RU, кастомный `404`, robots/sitemap, manifest/theme-color, JSON-LD Article, meta description.
-- Public brand cleanup: старые публичные `ialexey` references вычищены; контакты и Threads links приведены в порядок.
-- Content UX: archive, search, category pages, clickable tags, read time, code/pre styling, trending/sidebar, relative time.
-- Homepage redesign: единый vertical-first news layout для EN/RU; горизонтальная версия сохранена в branch `codex/home-horizontal-backup` на commit `4e9140e`.
-- Media policy: основной article image format **9:16, 1080x1920**; сайт кропает под конкретные слоты; build-time WebP variants и responsive image sizes включены.
-- Distribution: Threads RU/EN, X, Facebook RU/EN, LinkedIn, Bluesky, Mastodon, dev.to, GitHub Discussions/Giscus считаются базовой дистрибуцией.
-- External canonical: внешние площадки должны ссылаться на canonical URL сайта.
-- Metrics policy: собираем только стабильные API; недоступные metrics показываем как `—`, не `n/a`; thread metrics суммируются по частям, где API это позволяет.
-- Dev.to: публикуем cover image через `main_image`; body images/video пока не усложняем.
-- Operational cleanup: внутренние server paths с `ialexey-*` не переименовываем без отдельного maintenance window.
+### Шаг 4. Автоматическая генерация тегов `alt` для изображений
+Улучшение семантической разметки картинок для поисковых роботов.
+- **Реализация**: В компонентах [StoryVisual.astro](file:///Users/alex/projects/alexgetman.com/apps/web/src/components/home-news/StoryVisual.astro) и [StoryRail.astro](file:///Users/alex/projects/alexgetman.com/apps/web/src/components/home-news/StoryRail.astro) заменить пустой атрибут `alt=""` на динамический `alt={activePost.title}`.
+
+### Шаг 5. Поддержка Markdown Negotiation (Accept: text/markdown)
+Автоматическая отдача Markdown-версии страницы, если клиент запрашивает её в заголовках.
+- **Реализация**: В Nginx-конфигурации (`ialexey-cache.conf`) настроить обработку заголовка `Accept`: если пришёл `Accept: text/markdown`, делать внутреннее перенаправление с `/` на `/index.md`, а с `/{postId}/{slug}/` — на `/{postId}/{slug}.md`.
+
+### Шаг 6. Проверка и настройка HTTP Link Headers
+- **Реализация**: Убедиться, что на сервере в глобальном `nginx.conf` настроена переменная `$link_header`, содержащая ссылки на `api-catalog`, `agent-skills` и `llms.txt`.
 
 ## Отложено
 
 Эти задачи не делаем в ближайшем спринте, чтобы не тратить время на низкий ROI или высокий операционный риск.
 
-- [ ] Монорепозиторий `website/backend`.
 - [ ] Полный rename production paths `/home/deploy/ialexey-web` -> `/home/deploy/alexgetman-web` без отдельной необходимости.
 - [ ] Прямое чтение production SQLite из Astro build через `better-sqlite3`/Drizzle.
 - [ ] Перевод Astro build на HTTP API как единственный source of truth.
@@ -100,5 +89,3 @@ Telegram не должен мелькать как:
 - [ ] Docker Hub image ради backlink.
 - [ ] Boosty/монетизация.
 - [ ] Новые языки (`es`, `zh`) до стабилизации EN/RU.
-- [ ] Cloudflare/DNS-AID доработки, если текущий `isitagentready.com` остаётся 100/100.
-- [ ] Тяжелая конвертация всех post media в WebP/AVIF и хранение optimized variants. В этом прогоне сделан только безопасный минимум: existing build-time avatar/social image generation плюс `loading`, `decoding` и `sizes` на post images.

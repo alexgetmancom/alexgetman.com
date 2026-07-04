@@ -22,7 +22,6 @@ Bot-approved publishing pipeline for `alexgetman.com`.
 - `site_feed/` - FastAPI site-feed package, route groups and CLI entrypoints.
 - `site_feed/` - likes, metrics, pipeline/ops payloads, Telegram source conversion and rendering helpers.
 - `deploy/` - systemd/deployment examples.
-- `docs/` - operational notes and test matrix.
 - `scripts/` - validation, smoke, deploy, backup and restore helpers.
 
 ## Runtime State
