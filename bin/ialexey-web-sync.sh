@@ -43,6 +43,15 @@ if [ -d "$REPO"/apps/web/public/habr-images ]; then
   /usr/bin/rsync -a "$REPO"/apps/web/public/habr-images/ "$PUBLIC"/habr-images/
 fi
 
+# 1b. Sync runtime media referenced by feed.json. dist sync excludes media to avoid
+# deleting files owned by the posting pipeline, so copy them explicitly.
+mkdir -p "$PUBLIC"/media
+if [ -d "$REPO"/apps/web/public/media ]; then
+  /usr/bin/rsync -a "$REPO"/apps/web/public/media/ "$PUBLIC"/media/
+elif [ -d "$REPO"/media ]; then
+  /usr/bin/rsync -a "$REPO"/media/ "$PUBLIC"/media/
+fi
+
 # 2. Sync Python feed scripts to public directory
 mkdir -p "$PUBLIC"/feed
 /usr/bin/rsync -a --delete "$REPO"/apps/web/feed/ "$PUBLIC"/feed/

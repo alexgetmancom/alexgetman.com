@@ -8,6 +8,7 @@ interface Props {
 }
 
 const { activePost, posts, ui } = Astro.props;
+const publicSrc = (value?: string | null) => value ? `/${String(value).replace(/^\/+/, '')}` : undefined;
 ---
 
 <div class="story-visual-wrap">
@@ -19,7 +20,7 @@ const { activePost, posts, ui } = Astro.props;
       {activePost.image ? (
         <>
           <img
-            src={activePost.mediaType === 'video' ? '' : `/${activePost.image}`}
+            src={activePost.mediaType === 'video' ? '' : publicSrc(activePost.image)}
             srcset={activePost.mediaType === 'video' ? undefined : activePost.imageSrcSet}
             alt=""
             loading="eager"
@@ -27,11 +28,11 @@ const { activePost, posts, ui } = Astro.props;
             sizes="(max-width: 760px) min(100vw - 2rem, 390px), 320px"
             hidden={activePost.mediaType === 'video'}
             data-story-image
-            data-fallback-src={activePost.fallbackImage ? `/${activePost.fallbackImage}` : undefined}
+            data-fallback-src={publicSrc(activePost.fallbackImage)}
           />
           <video
-            src={activePost.mediaType === 'video' ? `/${activePost.image}` : ''}
-            poster={activePost.fallbackImage ? `/${activePost.fallbackImage}` : undefined}
+            src={activePost.mediaType === 'video' ? publicSrc(activePost.image) : ''}
+            poster={publicSrc(activePost.fallbackImage)}
             muted
             loop
             autoplay
@@ -39,7 +40,7 @@ const { activePost, posts, ui } = Astro.props;
             preload="metadata"
             hidden={activePost.mediaType !== 'video'}
             data-story-video
-            data-fallback-src={activePost.fallbackImage ? `/${activePost.fallbackImage}` : undefined}
+            data-fallback-src={publicSrc(activePost.fallbackImage)}
           ></video>
         </>
       ) : (

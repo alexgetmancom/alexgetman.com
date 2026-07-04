@@ -27,21 +27,23 @@
   .rail-card__media {
     position: relative;
     height: 100%;
-    aspect-ratio: 9 / 16;
+    order: 2;
+    width: clamp(92px, 30%, 148px);
+    max-width: 42%;
     flex-shrink: 0;
     overflow: hidden;
     background: #000000;
-    border-right: 1px solid var(--border);
+    border-left: 1px solid var(--border);
   }
 
   .rail-card.is-active .rail-card__media {
     order: 2;
-    border-right: 0;
     border-left: 1px solid rgba(255, 255, 255, 0.08);
   }
 
   .rail-card__text {
     position: relative;
+    order: 1;
   }
 
   .rail-card.is-active .rail-card__text {
@@ -54,7 +56,8 @@
   .rail-card__media video {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
+    object-position: center;
     display: block;
   }
 

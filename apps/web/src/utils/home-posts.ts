@@ -13,21 +13,26 @@ import {
 } from './helpers';
 import type { HomePost } from '../components/home-news/types';
 
+const WEB_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..');
+const PUBLIC_ROOT = path.join(WEB_ROOT, 'public');
+
 export function existingSiteImage(publicPath: string | null | undefined) {
   if (!publicPath) return null;
   const normalizedPath = String(publicPath).replace(/^\/+/, '');
   const candidates = [
-    path.resolve('apps/web/public', normalizedPath),
-    path.resolve(normalizedPath),
+    path.join(PUBLIC_ROOT, normalizedPath),
+    path.resolve(process.cwd(), 'public', normalizedPath),
+    path.resolve(process.cwd(), 'apps/web/public', normalizedPath),
   ];
   return candidates.some((candidate) => fs.existsSync(candidate)) ? normalizedPath : null;
 }
 
 export function responsiveSrcSetFor(publicPath: string | null | undefined) {
   if (!publicPath || !/\.(png|jpe?g)$/i.test(publicPath)) return undefined;
-  const publicFile = path.resolve('apps/web/public', publicPath);
+  const normalizedPath = String(publicPath).replace(/^\/+/, '');
+  const publicFile = path.join(PUBLIC_ROOT, normalizedPath);
   if (!fs.existsSync(publicFile)) return undefined;
-  const base = publicPath
+  const base = normalizedPath
     .replace(/^\/+/, '')
     .replace(/[\\/]/g, '-')
     .replace(/\.[a-z0-9]+$/i, '');

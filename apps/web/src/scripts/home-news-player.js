@@ -31,6 +31,12 @@
     const tagName = element?.tagName;
     return tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT';
   });
+  const toPublicSrc = (value) => {
+    if (!value) return '';
+    const src = String(value);
+    if (/^(https?:|data:|blob:|\/)/i.test(src)) return src;
+    return `/${src.replace(/^\/+/, '')}`;
+  };
 
   const image = root.querySelector('[data-story-image]');
   const video = root.querySelector('[data-story-video]');
@@ -402,19 +408,19 @@
       media.innerHTML = '';
       if (type === 'video' && !fallbackSrc) {
         const thumbVideo = document.createElement('video');
-        thumbVideo.src = `${src}#t=0.001`;
+        thumbVideo.src = `${toPublicSrc(src)}#t=0.001`;
         thumbVideo.muted = true;
         thumbVideo.playsInline = true;
         thumbVideo.preload = 'metadata';
         media.appendChild(thumbVideo);
       } else {
         const img = document.createElement('img');
-        img.src = fallbackSrc || src;
+        img.src = toPublicSrc(fallbackSrc || src);
         if (srcset && type !== 'video') img.srcset = srcset;
         img.alt = '';
         img.loading = 'lazy';
         img.decoding = 'async';
-        img.sizes = '72px';
+        img.sizes = '(max-width: 760px) 38vw, 140px';
         media.appendChild(img);
       }
       card.dataset.mediaHydrated = 'true';
@@ -436,7 +442,7 @@
     [-1, 1, 2].forEach((offset) => {
       const post = posts[(active + offset + posts.length) % posts.length];
       if (!post?.image) return;
-      const src = post.fallbackImage || post.image;
+      const src = toPublicSrc(post.fallbackImage || post.image);
       if (!src || post.__preloaded) return;
       post.__preloaded = true;
       if (post.mediaType === 'video') {
@@ -534,10 +540,10 @@
     if (visual) visual.classList.toggle('story-visual--no-image', !post.image);
     if (image) {
       image.hidden = !post.image || post.mediaType === 'video';
-      if (post.fallbackImage) image.dataset.fallbackSrc = post.fallbackImage;
+      if (post.fallbackImage) image.dataset.fallbackSrc = toPublicSrc(post.fallbackImage);
       else delete image.dataset.fallbackSrc;
       if (post.image && post.mediaType !== 'video') {
-        image.setAttribute('src', post.image);
+        image.setAttribute('src', toPublicSrc(post.image));
         if (post.imageSrcSet) image.setAttribute('srcset', post.imageSrcSet);
         else image.removeAttribute('srcset');
       } else {
@@ -547,13 +553,14 @@
     }
     if (video) {
       video.hidden = !post.image || post.mediaType !== 'video';
-      if (post.fallbackImage) video.dataset.fallbackSrc = post.fallbackImage;
+      if (post.fallbackImage) video.dataset.fallbackSrc = toPublicSrc(post.fallbackImage);
       else delete video.dataset.fallbackSrc;
       if (post.image && post.mediaType === 'video') {
-        if (post.fallbackImage) video.setAttribute('poster', post.fallbackImage);
+        if (post.fallbackImage) video.setAttribute('poster', toPublicSrc(post.fallbackImage));
         else video.removeAttribute('poster');
-        if (video.getAttribute('src') !== post.image) {
-          video.setAttribute('src', post.image);
+        const videoSrc = toPublicSrc(post.image);
+        if (video.getAttribute('src') !== videoSrc) {
+          video.setAttribute('src', videoSrc);
           video.load();
         }
         video.muted = muted;

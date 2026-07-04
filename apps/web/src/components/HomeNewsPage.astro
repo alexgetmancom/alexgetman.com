@@ -49,6 +49,7 @@ const feedModesFor = (post: HomePost) => {
   if ((post.views || 0) >= watchedCutoff && watchedCutoff > 0) modes.push('watched');
   return modes;
 };
+const publicSrc = (value?: string | null) => value ? `/${String(value).replace(/^\/+/, '')}` : null;
 const ui = {
   storyLabel: isRu ? 'Новостной плеер' : 'AI news player',
   postTab: isRu ? 'Пост' : 'Post',
@@ -127,8 +128,8 @@ const ui = {
           excerpt: post.excerpt,
           date: post.date,
           relativeDate: post.relativeDate,
-          image: post.image ? `/${post.image}` : null,
-          fallbackImage: post.fallbackImage ? `/${post.fallbackImage}` : null,
+          image: publicSrc(post.image),
+          fallbackImage: publicSrc(post.fallbackImage),
           mediaType: post.mediaType || null,
           audioUrl: post.audioUrl || null,
           spotifyUrl: post.spotifyUrl || null,
