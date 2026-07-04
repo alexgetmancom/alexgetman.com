@@ -1,46 +1,8 @@
 import rss from '@astrojs/rss';
-import fs from 'node:fs';
-import path from 'node:path';
+import { loadFeedItems, truncateText } from '../utils/content-feed.js';
 
 export async function GET(context) {
-  const dataDir = process.env.DATA_DIR || '/home/deploy/ialexey-feed/data';
-  const prodFeedJsonPath = path.join(dataDir, 'feed.json');
-  const localFeedJsonPath = path.resolve('apps/web/src/data/feed.json');
-
-  let parsedData = null;
-
-  for (const filePath of [prodFeedJsonPath, localFeedJsonPath]) {
-    if (!parsedData && fs.existsSync(filePath)) {
-      try {
-        parsedData = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-      } catch (e) {
-        console.error(`Error reading ${filePath}:`, e);
-      }
-    }
-  }
-
-  let feedItems = [];
-  if (Array.isArray(parsedData)) {
-    feedItems = parsedData;
-  } else if (parsedData?.items && Array.isArray(parsedData.items)) {
-    feedItems = parsedData.items;
-  }
-
-  function cleanText(text) {
-    return (text || "").replace(/\n{3,}/g, "\n\n").trim();
-  }
-  function compactText(text) {
-    return cleanText(text).replace(/\s+/g, " ").trim();
-  }
-  function truncateText(value, limit) {
-    const text = compactText(value);
-    if (text.length <= limit) {
-      return text;
-    }
-    return text.slice(0, Math.max(0, limit - 1)).trimEnd() + "…";
-  }
-
-  const sortedItems = feedItems
+  const sortedItems = loadFeedItems()
     .filter(item => item.has_en && item.text_en && item.post_id)
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     .slice(0, 50);

@@ -1,64 +1,11 @@
-import fs from 'node:fs';
-import path from 'node:path';
+import { formatDate, loadFeedItems, siteUrlFromContext, truncateText } from '../utils/content-feed.js';
 
 export async function GET(context) {
-  const dataDir = process.env.DATA_DIR || '/home/deploy/ialexey-feed/data';
-  const prodFeedJsonPath = path.join(dataDir, 'feed.json');
-  const localFeedJsonPath = path.resolve('apps/web/src/data/feed.json');
-
-  let parsedData = null;
-  for (const filePath of [prodFeedJsonPath, localFeedJsonPath]) {
-    if (!parsedData && fs.existsSync(filePath)) {
-      try {
-        parsedData = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-      } catch (e) {
-        console.error(e);
-      }
-    }
-  }
-
-  let feedItems = [];
-  if (Array.isArray(parsedData)) {
-    feedItems = parsedData;
-  } else if (parsedData?.items && Array.isArray(parsedData.items)) {
-    feedItems = parsedData.items;
-  }
-
-  const sortedItems = feedItems
+  const sortedItems = loadFeedItems()
     .filter(item => item.text_en)
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-  const siteUrl = context.site ? context.site.toString().replace(/\/$/, '') : 'https://alexgetman.com';
-
-  function cleanText(text) {
-    return (text || "").replace(/\n{3,}/g, "\n\n").trim();
-  }
-  function compactText(text) {
-    return cleanText(text).replace(/\s+/g, " ").trim();
-  }
-  function truncateText(value, limit) {
-    const text = compactText(value);
-    if (text.length <= limit) {
-      return text;
-    }
-    return text.slice(0, Math.max(0, limit - 1)).trimEnd() + "…";
-  }
-  function formatDate(value) {
-    if (!value) return "";
-    try {
-      return new Intl.DateTimeFormat("en-GB", {
-        timeZone: "Europe/Moscow",
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-      }).format(new Date(value));
-    } catch (e) {
-      return value;
-    }
-  }
+  const siteUrl = siteUrlFromContext(context);
 
   const lines = [
     "# Alex Getman",

@@ -1,34 +1,9 @@
-import fs from 'node:fs';
-import path from 'node:path';
+import { loadFeedItems, siteUrlFromContext } from '../../../utils/content-feed.js';
 
 export async function getStaticPaths() {
-  const dataDir = process.env.DATA_DIR || '/home/deploy/ialexey-feed/data';
-  const prodFeedJsonPath = path.join(dataDir, 'feed.json');
-  const localFeedJsonPath = path.resolve('apps/web/src/data/feed.json');
-
-  let parsedData = null;
-  for (const filePath of [prodFeedJsonPath, localFeedJsonPath]) {
-    if (!parsedData && fs.existsSync(filePath)) {
-      try {
-        parsedData = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-      } catch (e) {
-        console.error(e);
-      }
-    }
-  }
-
-  let feedItems = [];
-  if (parsedData) {
-    if (Array.isArray(parsedData)) {
-      feedItems = parsedData;
-    } else if (parsedData.items && Array.isArray(parsedData.items)) {
-      feedItems = parsedData.items;
-    }
-  }
-
-  const filteredItems = feedItems.filter((item) => item.has_ru && item.text && item.post_id);
-
-  return filteredItems.map((item) => {
+  return loadFeedItems()
+    .filter((item) => item.has_ru && item.text && item.post_id)
+    .map((item) => {
     return {
       params: { postId: String(item.post_id), slug: item.slug_ru },
       props: { item }
@@ -38,7 +13,7 @@ export async function getStaticPaths() {
 
 export async function GET(context) {
   const { item } = context.props;
-  const siteUrl = context.site ? context.site.toString().replace(/\/$/, '') : 'https://alexgetman.com';
+  const siteUrl = siteUrlFromContext(context);
 
   const lines = [
     `# ${item.text.split('\n')[0] || `Пост ${item.post_id}`}`,
