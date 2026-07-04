@@ -8,9 +8,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY site-feed/collector.py /app/collector.py
-COPY site-feed/fastapi_app.py /app/fastapi_app.py
 COPY posting_core /app/posting_core
 COPY site_feed /app/site_feed
 
-CMD ["python3", "-u", "/app/fastapi_app.py", "serve"]
+CMD ["python3", "-u", "-m", "site_feed.app", "serve"]

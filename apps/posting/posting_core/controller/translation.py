@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import json
-import urllib.request
 from posting_core.controller.config import DEEPSEEK_API_KEY, log
+from posting_core.http_client import request_json
 
 def has_cyrillic(value):
     return any('\u0400' <= ch <= '\u04FF' for ch in (value or ''))
@@ -48,9 +47,13 @@ def translate_ru_to_en(text):
     )
     def call_deepseek(system_prompt):
         payload = {'model': 'deepseek-chat', 'messages': [{'role': 'system', 'content': system_prompt}, {'role': 'user', 'content': text}], 'temperature': 0.1}
-        req = urllib.request.Request('https://api.deepseek.com/v1/chat/completions', data=json.dumps(payload).encode('utf-8'), headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {DEEPSEEK_API_KEY}'}, method='POST')
-        with urllib.request.urlopen(req, timeout=40) as resp:
-            data = json.loads(resp.read().decode('utf-8'))
+        data = request_json(
+            'https://api.deepseek.com/v1/chat/completions',
+            method='POST',
+            payload=payload,
+            headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {DEEPSEEK_API_KEY}'},
+            timeout=40,
+        )
         return data['choices'][0]['message']['content'].strip()
 
     try:

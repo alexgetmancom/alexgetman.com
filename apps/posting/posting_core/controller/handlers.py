@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from posting_core.controller.config import ADMIN_IDS, TEST_PLAN_TEXT, api, log, now_iso
+from posting_core.controller.config import ADMIN_IDS, TEST_PLAN_TEXT, api, log
 from posting_core.controller.albums import append_pending_album
 from posting_core.controller.db import db, get_draft, get_scheduled_drafts, get_state, set_state, update_draft
 from posting_core.controller.drafts import create_draft
@@ -18,6 +18,7 @@ from posting_core.controller.schedule import (
     preset_schedule_time,
     schedule_summary,
 )
+from posting_core.time_utils import now_iso
 from posting_core.controller.translation import translate_ru_to_en
 from posting_core.controller.ui import (
     answer_callback,

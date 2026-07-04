@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import json
-import urllib.request
-import urllib.error
 
+from posting_core.http_client import HttpRequestError, request_json
 from posting_core.publish_config import (
     GITHUB_DISCUSSIONS_TOKEN,
     GITHUB_DISCUSSIONS_REPO_ID,
@@ -49,39 +48,33 @@ def publish_to_github_discussion(title: str, body_markdown: str) -> str | None:
         "body": body_markdown,
     }
 
-    payload = json.dumps({
-        "query": query,
-        "variables": variables
-    }).encode("utf-8")
-
     try:
-        req = urllib.request.Request(
+        resp_data = request_json(
             "https://api.github.com/graphql",
-            data=payload,
+            payload={
+                "query": query,
+                "variables": variables,
+            },
             headers={
                 "Authorization": f"Bearer {GITHUB_DISCUSSIONS_TOKEN}",
                 "Content-Type": "application/json",
                 "User-Agent": "alexgetman-posting",
             },
             method="POST",
+            timeout=30,
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            resp_data = json.loads(resp.read().decode("utf-8"))
-            
-            # GraphQL error checking
-            if "errors" in resp_data:
-                errs = resp_data["errors"]
-                log(f"GitHub GraphQL error: {json.dumps(errs)}")
-                return None
-                
-            discussion = resp_data.get("data", {}).get("createDiscussion", {}).get("discussion", {})
-            url = discussion.get("url")
-            log(f"GitHub Discussion published: {url}")
-            return url
+        if "errors" in resp_data:
+            errs = resp_data["errors"]
+            log(f"GitHub GraphQL error: {json.dumps(errs)}")
+            return None
 
-    except urllib.error.HTTPError as exc:
-        body = exc.read().decode(errors="replace")
-        log(f"GitHub Discussions publish failed: {exc.code} {body}")
+        discussion = resp_data.get("data", {}).get("createDiscussion", {}).get("discussion", {})
+        url = discussion.get("url")
+        log(f"GitHub Discussion published: {url}")
+        return url
+
+    except HttpRequestError as exc:
+        log(f"GitHub Discussions publish failed: {exc.status} {exc.body}")
         return None
     except Exception as exc:
         log(f"GitHub Discussions publish error: {exc}")

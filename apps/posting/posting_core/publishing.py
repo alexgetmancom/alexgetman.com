@@ -13,7 +13,7 @@ from posting_core.publish_config import (
     THREADS_ACCESS_TOKEN,
     log,
 )
-from posting_core.clients.meta import publish_threads_post_or_thread
+from posting_core.clients.meta import crosspost_to_targets
 from posting_core.clients.telegram import call_telegram
 from posting_core.media import cleanup_temp_media, maybe_cleanup_media
 from posting_core.queue import claim_due_publish_jobs, complete_publish_job, fail_publish_job, worker_id
@@ -69,7 +69,7 @@ def process_publish_queue(state):
                 continue
             allowed_targets = {claimed_job["target"] for claimed_job in jobs}
             log(f"Processing queued publish jobs {post_id or message_id}: {', '.join(sorted(allowed_targets))}")
-            result = publish_threads_post_or_thread(
+            result = crosspost_to_targets(
                 text,
                 media_items,
                 message_id=message_id,

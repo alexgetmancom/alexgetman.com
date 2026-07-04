@@ -7,10 +7,15 @@ from site_feed.auth import command_allowed
 from site_feed.config import PIPELINE_DB
 from site_feed.command_actions import parse_action_request, run_command_action
 from site_feed.command_center_ui import command_center_page
-from site_feed.ops_dashboard import command_center_payload
 from site_feed.pipeline import pipeline_status_payload
+from posting_core.control.service import command_center_payload
 from posting_core.db import connect
 from posting_core.ops_lookup import resolve_publication_ref
+
+
+def command_center_ops_payload():
+    with connect(PIPELINE_DB) as conn:
+        return command_center_payload(conn)
 
 
 def register_dashboard_routes(app: FastAPI) -> None:
@@ -26,7 +31,7 @@ def register_dashboard_routes(app: FastAPI) -> None:
     async def command_center_json(request: Request):
         if not command_allowed(request):
             raise HTTPException(status_code=403, detail="forbidden")
-        return command_center_payload()
+        return command_center_ops_payload()
 
     @app.get("/api/post-debug")
     async def post_debug_json(request: Request, ref: str | None = None):
@@ -54,7 +59,7 @@ def register_dashboard_routes(app: FastAPI) -> None:
     async def ops_dashboard_json(request: Request):
         if not command_allowed(request):
             raise HTTPException(status_code=403, detail="forbidden")
-        return {"pipeline": pipeline_status_payload(), "ops": command_center_payload()}
+        return {"pipeline": pipeline_status_payload(), "ops": command_center_ops_payload()}
 
     @app.get("/pipeline-status", response_class=HTMLResponse)
     async def pipeline_status_page(request: Request):

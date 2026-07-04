@@ -4,7 +4,8 @@ import asyncio
 import time
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
-from site_feed.config import PIPELINE_DB, log, now_iso
+from posting_core.time_utils import now_iso
+from site_feed.config import PIPELINE_DB, log
 
 MAX_FEEDBACK_NAME_CHARS = 120
 MAX_FEEDBACK_MESSAGE_CHARS = 2000

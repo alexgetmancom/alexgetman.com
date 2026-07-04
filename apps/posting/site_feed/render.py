@@ -8,9 +8,10 @@ import secrets
 import shutil
 import subprocess
 import sys
-import urllib.request
 from pathlib import Path
 
+from posting_core.http_client import request
+from posting_core.time_utils import now_iso
 from site_feed.config import (
     BOT_SOURCE_POLL_SECONDS,
     FEED_JSON,
@@ -27,12 +28,11 @@ from site_feed.config import (
     SITE_ROOT,
     atomic_write,
     log,
-    now_iso,
     public_url_host,
     site_url,
 )
 from site_feed.feed_store import load_feed
-from site_feed.ops_dashboard import db_rows
+from posting_core.db import connect
 from site_feed.site_jobs import claim_site_jobs, complete_site_jobs, enqueue_site_job, fail_site_jobs
 
 def publish_public_feed(text=None):
@@ -44,20 +44,23 @@ def publish_public_feed(text=None):
 
 
 def publish_content_index():
-    memory = db_rows(
-        PIPELINE_DB,
-        """
-        SELECT p.post_id, p.updated_at,
-               ru.slug AS slug_ru, ru.text AS text_ru, ru.site_enabled AS has_ru,
-               en.slug AS slug_en, en.text AS text_en, en.site_enabled AS has_en
-        FROM publications p
-        LEFT JOIN post_locales ru ON ru.post_id=p.post_id AND ru.locale='ru'
-        LEFT JOIN post_locales en ON en.post_id=p.post_id AND en.locale='en'
-        WHERE p.status='published'
-        ORDER BY p.post_id DESC
-        LIMIT 200
-        """,
-    )
+    with connect(PIPELINE_DB) as conn:
+        memory = [
+            dict(row)
+            for row in conn.execute(
+                """
+                SELECT p.post_id, p.updated_at,
+                       ru.slug AS slug_ru, ru.text AS text_ru, ru.site_enabled AS has_ru,
+                       en.slug AS slug_en, en.text AS text_en, en.site_enabled AS has_en
+                FROM publications p
+                LEFT JOIN post_locales ru ON ru.post_id=p.post_id AND ru.locale='ru'
+                LEFT JOIN post_locales en ON en.post_id=p.post_id AND en.locale='en'
+                WHERE p.status='published'
+                ORDER BY p.post_id DESC
+                LIMIT 200
+                """
+            )
+        ]
     items = []
     for row in memory:
         post_id = int(row.get("post_id") or 0)
@@ -125,18 +128,18 @@ def ping_indexnow(urls):
         "keyLocation": site_url(f"/{key}.txt"),
         "urlList": urls[:100],
     }
-    req = urllib.request.Request(
-        "https://api.indexnow.org/indexnow",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
     try:
-        with urllib.request.urlopen(req, timeout=8) as response:
-            state["last_status"] = response.status
-            state["last_success_at"] = now_iso()
-            atomic_write(INDEXNOW_STATE_JSON, json.dumps(state, ensure_ascii=False, indent=2) + "\n", permissions=0o664)
-            log(f"IndexNow ping: {response.status}, urls: {len(payload['urlList'])}")
+        response = request(
+            "https://api.indexnow.org/indexnow",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+            timeout=8,
+        )
+        state["last_status"] = response.status
+        state["last_success_at"] = now_iso()
+        atomic_write(INDEXNOW_STATE_JSON, json.dumps(state, ensure_ascii=False, indent=2) + "\n", permissions=0o664)
+        log(f"IndexNow ping: {response.status}, urls: {len(payload['urlList'])}")
     except Exception as exc:
         log(f"IndexNow пропущен после ошибки: {exc}")
 

@@ -6,7 +6,7 @@ import {
   loadFeedItems,
   postImagePath,
   truncateText,
-} from '../utils/content-feed.js';
+} from '../utils/helpers';
 
 function telegramToSearchItems(item) {
   const postId = item.post_id;

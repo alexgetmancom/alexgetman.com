@@ -3,13 +3,14 @@ from __future__ import annotations
 import json
 from datetime import datetime, time, timedelta, timezone
 
-from posting_core.controller.config import api, log, now_iso
+from posting_core.controller.config import api, log
 from posting_core.controller.db import db, get_draft
 from posting_core.controller.publish import publish_to_channel
 from posting_core.publications import ensure_publication, release_unpublished_publication, sync_publication_from_draft
 from posting_core.queue import cancel_publication_jobs, enqueue_publication
 from posting_core.scheduling import MAX_POSTS_PER_DAY, MSK, daily_slots, format_msk, to_utc_iso
 from posting_core.targets import SOCIAL_TARGET_IDS, TARGET_BY_ID
+from posting_core.time_utils import now_iso
 
 
 def _targets_for(draft: dict) -> dict[str, bool]:

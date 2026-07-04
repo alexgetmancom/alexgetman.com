@@ -56,13 +56,13 @@ def request_json(
     *,
     method: str = "GET",
     payload: dict | None = None,
+    data: bytes | None = None,
     headers: dict[str, str] | None = None,
     timeout: int = 30,
     query: dict | None = None,
     empty_id_header: str | None = None,
 ) -> dict:
     req_headers = dict(headers or {})
-    data = None
     if payload is not None:
         req_headers.setdefault("Content-Type", "application/json")
         data = json.dumps(payload).encode("utf-8")

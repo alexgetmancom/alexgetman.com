@@ -5,10 +5,10 @@ import os
 import re
 import subprocess
 import time
-import urllib.request
 from pathlib import Path
 
 from posting_core.clients.telegram import get_telegram_file_url
+from posting_core.http_client import request
 from posting_core.publish_config import (
     CONTROLLER_BOT_TOKEN,
     MEDIA_CLEANUP_INTERVAL_SECONDS,
@@ -223,7 +223,7 @@ def prepare_crosspost_media_items(source_items, uploaded_files, local_files_to_c
                 TEMP_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
                 local_path = TEMP_MEDIA_DIR / f"{filename_prefix}_{source_name}{ext}"
                 log(f"Downloading custom {item_type.lower()} from Telegram for EN crosspost...")
-                urllib.request.urlretrieve(telegram_file, local_path)
+                local_path.write_bytes(request(telegram_file, timeout=60).body)
                 local_files_to_cleanup.append(local_path)
             else:
                 local_path = Path(telegram_file)

@@ -3,7 +3,7 @@ import json
 import pytest
 
 from posting_core.controller.limits import DraftTextTooLong, MAX_DRAFT_TEXT_CHARS, validate_draft_text
-from posting_core.queue_errors import normalize_publish_result
+from posting_core.queue.errors import normalize_publish_result
 from posting_core.text import grapheme_len, split_text
 
 

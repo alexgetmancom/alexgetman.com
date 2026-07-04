@@ -7,9 +7,9 @@ import re
 import sqlite3
 import uuid
 import asyncio
-import urllib.request
 from pathlib import Path
 
+from posting_core.http_client import request_json
 from posting_core.publish_config import (
     ENABLE_TELEGRAM_STORIES,
     PUBLIC_SITE_BASE_URL,
@@ -52,14 +52,13 @@ def _post_story_multipart(payload, upload_path):
     if not TELEGRAM_STORIES_BOT_TOKEN:
         raise RuntimeError("missing TELEGRAM_STORIES_BOT_TOKEN")
     boundary, body = _multipart_body(payload, {"story": upload_path})
-    req = urllib.request.Request(
+    return request_json(
         f"{TELEGRAM_API_BASE_URL}/bot{TELEGRAM_STORIES_BOT_TOKEN}/postStory",
         data=body,
         headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
         method="POST",
+        timeout=60,
     )
-    with urllib.request.urlopen(req, timeout=60) as response:
-        return json.loads(response.read().decode("utf-8"))
 
 
 def _business_connection_id():

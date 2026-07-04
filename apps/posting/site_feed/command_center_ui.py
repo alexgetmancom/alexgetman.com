@@ -5,10 +5,13 @@ from datetime import datetime
 from fastapi import Request
 
 from zoneinfo import ZoneInfo
+from posting_core.text import truncate_text
 from posting_core.targets import TARGETS
-from site_feed.config import truncate_text, parse_date
+from site_feed.config import parse_date
 from site_feed.command_center_charts import weekly_chart
-from site_feed.ops_dashboard import command_center_payload
+from site_feed.config import PIPELINE_DB
+from posting_core.control.service import command_center_payload
+from posting_core.db import connect
 from site_feed.pipeline import (
     pipeline_status_payload,
     target_cell,
@@ -387,7 +390,8 @@ def _diagnostics_section(ops: dict) -> str:
 
 def command_center_page(request: Request, forced_tab: str | None = None) -> str:
     tab = forced_tab or _active_tab(request)
-    ops = command_center_payload()
+    with connect(PIPELINE_DB) as conn:
+        ops = command_center_payload(conn)
     if tab == "repair":
         body = _repair_section(request)
     elif tab == "queue":

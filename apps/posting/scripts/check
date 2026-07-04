@@ -9,7 +9,7 @@ else
   PYTHON="${PYTHON:-python3}"
 fi
 
-"$PYTHON" -m compileall -q posting posting_core site-feed site_feed tests scripts/postingctl
+"$PYTHON" -m compileall -q posting posting_core site_feed tests scripts/postingctl
 "$PYTHON" -m ruff check .
 "$PYTHON" -m ruff format --check tests
 "$PYTHON" -m pytest

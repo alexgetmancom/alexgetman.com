@@ -4,10 +4,10 @@ import json
 import os
 import threading
 import time
-import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+from posting_core.http_client import request
 from posting_core.state import publish_plan_for_message, publish_plan_for_post, plan_target_enabled, wait_for_english_translation
 from posting_core.media import delete_media_from_vps, normalize_video_for_threads, plan_media_to_items, prepare_crosspost_media_items, upload_media_to_vps
 from posting_core.clients.telegram import get_telegram_file_url
@@ -108,7 +108,7 @@ def _publish_guarded(target: str, action):
         return {"ok": False, "error": str(exc)}
 
 
-def publish_threads_post_or_thread(text, media_items, message_id=None, post_id=None, allowed_targets=None):
+def crosspost_to_targets(text, media_items, message_id=None, post_id=None, allowed_targets=None):
     """
     media_items is a list of dicts: [{"type": "IMAGE"|"VIDEO", "file_id": "..."}]
     """
@@ -157,7 +157,7 @@ def publish_threads_post_or_thread(text, media_items, message_id=None, post_id=N
                     TEMP_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
                     local_path = TEMP_MEDIA_DIR / f"{source_name}{ext}"
                     log(f"Downloading {item_type.lower()} from Telegram...")
-                    urllib.request.urlretrieve(telegram_file, local_path)
+                    local_path.write_bytes(request(telegram_file, timeout=60).body)
                     local_files_to_cleanup.append(local_path)
                 else:
                     local_path = Path(telegram_file)

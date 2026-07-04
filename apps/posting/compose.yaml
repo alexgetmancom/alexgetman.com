@@ -59,7 +59,7 @@ services:
   site-feed:
     build:
       context: .
-      dockerfile: site-feed/Dockerfile
+      dockerfile: site_feed/Dockerfile
     image: alexgetman-site-feed:latest
     container_name: alexgetman-site-feed
     restart: unless-stopped
@@ -74,7 +74,7 @@ services:
       TELEGRAM_API_BASE_URL: http://bot-api:8081
       BIND_HOST: 0.0.0.0
       PIPELINE_BASELINE_MESSAGE_ID: "422"
-    command: ["python3", "-u", "/app/fastapi_app.py", "serve"]
+    command: ["python3", "-u", "-m", "site_feed.app", "serve"]
     depends_on:
       - bot-api
     volumes:

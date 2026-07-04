@@ -93,7 +93,7 @@ def wait_for_english_translation(message_id):
 
 def load_state():
     try:
-        state = load_worker_state("telegram_to_threads", {"last_update_id": 0, "processed_message_ids": [], "target_status": {}})
+        state = load_worker_state("crosspost_worker", {"last_update_id": 0, "processed_message_ids": [], "target_status": {}})
         state.setdefault("processed_message_ids", [])
         state.setdefault("target_status", {})
         return state
@@ -111,6 +111,6 @@ def save_state(state):
                 key: value for key, value in state["target_status"].items()
                 if key in keep
             }
-        save_worker_state("telegram_to_threads", state)
+        save_worker_state("crosspost_worker", state)
     except Exception as exc:
         log(f"Error saving worker state to DB: {exc}")

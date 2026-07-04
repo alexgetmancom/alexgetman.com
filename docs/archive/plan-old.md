@@ -314,7 +314,7 @@
             * `bin/ialexey-web-sync.sh` ➔ `bin/alexgetman-web-sync.sh` (в репозитории и в `/home/deploy/bin/` на сервере). Переписать вызов рендерера на новый путь бэкенда `/home/deploy/alexgetman-feed/collector.py render`.
             * `deploy/nginx/ialexey-cache.conf` ➔ `deploy/nginx/alexgetman-cache.conf`.
             * **Удалить папку `feed/`** с устаревшими файлами (`collector.py`, `ialexey-feed.service`, `ialexey-feed.env.example`) из репозитория `alexgetman.com`.
-            * В репозитории `alexgetman-posting`: `site-feed/ialexey-feed.env.example` ➔ `site-feed/alexgetman-feed.env.example`.
+            * В репозитории `alexgetman-posting`: `site_feed/ialexey-feed.env.example` ➔ `site_feed/alexgetman-feed.env.example`.
     *   **Обновить внутренние пути и ссылки в конфигах**:
         - В `deploy/nginx/alexgetman.com.conf.example` update путь до кэша (`alexgetman-cache.conf`) и имя корневой директории сайта `/home/deploy/alexgetman-web`.
         - В `README.md` заменить все старые названия файлов, путей (`/home/deploy/ialexey-web`, `ialexey-feed.service`) на новые.
@@ -419,5 +419,4 @@
     *   Обернуть время в семантический тег `<time datetime="...">` с указанием точного UTC-времени, а на клиенте внедрить легкий скрипт автоматического перевода даты в локальный часовой пояс читателя.
 5.  **Тематические Рубрики (Рубрикация)**:
     *   Группировать посты по категориям/тегам на главной странице, выводя отдельные компактные блоки для популярных тем (например, "AI & Products" и "Infrastructure / DevOps").
-
 

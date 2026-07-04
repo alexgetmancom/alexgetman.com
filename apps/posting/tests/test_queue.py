@@ -5,7 +5,7 @@ from urllib.error import HTTPError
 import pytest
 
 from posting_core.db import ensure_pipeline_schema
-from posting_core.queue_errors import normalize_publish_result
+from posting_core.queue.errors import normalize_publish_result
 from posting_core.paths import PostingPaths
 from posting_core.queue import (
     claim_due_publish_jobs,

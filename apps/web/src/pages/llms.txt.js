@@ -1,4 +1,4 @@
-import { formatDate, loadFeedItems, siteUrlFromContext, truncateText } from '../utils/content-feed.js';
+import { formatDate, loadFeedItems, siteUrlFromContext, truncateText } from '../utils/helpers';
 
 export async function GET(context) {
   const sortedItems = loadFeedItems()

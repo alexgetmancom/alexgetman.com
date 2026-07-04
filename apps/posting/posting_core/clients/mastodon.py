@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import urllib.parse
 
-from posting_core.http_client import request, request_json
+from posting_core.http_client import HttpRequestError, request, request_json
 from posting_core.publish_config import MASTODON_INSTANCE, MASTODON_ACCESS_TOKEN, log
 
 
@@ -141,10 +141,9 @@ def publish_to_mastodon(text: str, media_items: list, canonical_url: str | None 
             "retryable": False,
         }
 
-    except urllib.error.HTTPError as exc:
-        body = exc.read().decode(errors="replace")
-        log(f"Mastodon publish failed: {exc.code} {body}")
-        return {"ok": False, "error": f"Mastodon API HTTP {exc.code}: {body}", "retryable": exc.code >= 500}
+    except HttpRequestError as exc:
+        log(f"Mastodon publish failed: {exc.status} {exc.body}")
+        return {"ok": False, "error": f"Mastodon API HTTP {exc.status}: {exc.body}", "retryable": exc.status >= 500}
     except Exception as exc:
         log(f"Mastodon publish error: {exc}")
         return {"ok": False, "error": str(exc), "retryable": True}

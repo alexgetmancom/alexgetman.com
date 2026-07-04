@@ -31,7 +31,7 @@ class FakeHTTPException(Exception):
 
 
 def test_fastapi_app_registers_production_routes_without_collector(monkeypatch):
-    module_path = Path(__file__).resolve().parents[1] / "site-feed" / "fastapi_app.py"
+    module_path = Path(__file__).resolve().parents[1] / "site_feed" / "app.py"
     fake_fastapi = types.ModuleType("fastapi")
     fake_fastapi.FastAPI = FakeFastAPI
     fake_fastapi.HTTPException = FakeHTTPException

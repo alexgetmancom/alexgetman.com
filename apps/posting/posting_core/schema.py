@@ -1,13 +1,9 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
 
 from posting_core.targets import PUBLISH_TARGET_IDS
-
-
-def now_iso() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+from posting_core.time_utils import now_iso
 
 def _ensure_columns(conn: sqlite3.Connection, table: str, migrations: dict[str, str]) -> None:
     columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}

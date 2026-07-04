@@ -1,5 +1,5 @@
 import rss from '@astrojs/rss';
-import { loadFeedItems, truncateText } from '../../utils/content-feed.js';
+import { loadFeedItems, truncateText } from '../../utils/helpers';
 
 export async function GET(context) {
   const sortedItems = loadFeedItems()

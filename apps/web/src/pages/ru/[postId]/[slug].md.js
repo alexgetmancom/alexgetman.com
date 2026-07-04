@@ -1,4 +1,4 @@
-import { loadFeedItems, siteUrlFromContext } from '../../../utils/content-feed.js';
+import { loadFeedItems, siteUrlFromContext } from '../../../utils/helpers';
 
 export async function getStaticPaths() {
   return loadFeedItems()

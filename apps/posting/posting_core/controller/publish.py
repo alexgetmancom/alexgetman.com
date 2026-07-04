@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 
-from posting_core.controller.config import CHANNEL_ID, api, api_upload, now_iso
+from posting_core.controller.config import CHANNEL_ID, api, api_upload
 from posting_core.controller.db import update_draft
 from posting_core.controller.media import media_group_payload, media_payload_ref, normalize_media_list
 from posting_core.controller.ui import media_for, targets_for
@@ -11,6 +11,7 @@ from posting_core.content import parse_entities
 from posting_core.publications import post_key, sync_publication_from_draft
 from posting_core.queue import enqueue_publication
 from posting_core.targets import SOCIAL_TARGET_IDS, TARGET_BY_ID
+from posting_core.time_utils import now_iso
 from posting_core.controller.db import db
 
 

@@ -23,13 +23,16 @@ def test_send_alerts_suppresses_duplicate_batch_rows(monkeypatch):
     calls = []
     monkeypatch.setattr(alerts, "CONTROLLER_BOT_TOKEN", "token")
     monkeypatch.setattr(alerts, "ADMIN_IDS", [100])
-    monkeypatch.setattr(alerts, "telegram_api", lambda method, payload: calls.append((method, payload)))
+    monkeypatch.setattr(
+        alerts, "call_telegram", lambda method, payload, token=None: calls.append((method, payload, token))
+    )
 
     sent = alerts.send_alerts(conn)
 
     assert sent == 1
     assert len(calls) == 1
     assert calls[0][1]["text"].count("same error") == 1
+    assert calls[0][2] == "token"
     assert conn.execute("SELECT COUNT(*) AS c FROM post_events WHERE acked_at IS NULL").fetchone()["c"] == 0
     assert conn.execute("SELECT suppressed_count FROM alert_dedup").fetchone()["suppressed_count"] == 1
     conn.close()

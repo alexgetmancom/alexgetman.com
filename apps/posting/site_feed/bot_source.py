@@ -6,10 +6,12 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from posting_core.db import connect, ensure_pipeline_schema
-from site_feed.config import PIPELINE_DB, PUBLIC_MEDIA_DIR, SOURCE_MEDIA_DIR, log, now_iso
+from posting_core.text import clean_text
+from posting_core.time_utils import now_iso
+from site_feed.config import PIPELINE_DB, PUBLIC_MEDIA_DIR, SOURCE_MEDIA_DIR, log
 from site_feed.feed_store import load_feed, save_feed
 from site_feed.render import request_render
-from site_feed.telegram import clean_text, download_media, download_telegram_media, text_to_html
+from site_feed.telegram import download_media, download_telegram_media, text_to_html
 
 
 def video_poster_path(media_path):

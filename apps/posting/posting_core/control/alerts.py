@@ -7,16 +7,15 @@ from datetime import datetime, timezone
 from posting_core.control.config import (
     ADMIN_IDS,
     ALERT_COOLDOWN_SECONDS,
-    BOT_API_BASE,
     COMMAND_CENTER_URL,
     CONTROLLER_BOT_TOKEN,
     QUEUE_STALE_SECONDS,
     now_iso,
     post_key,
 )
+from posting_core.clients.telegram import call_telegram
 from posting_core.control.events import emit_event_once
 from posting_core.db import ensure_pipeline_schema
-from posting_core.http_client import request_json
 
 def parse_iso(value):
     try:
@@ -75,19 +74,6 @@ def scan_observability(conn):
     conn.commit()
 
 
-def telegram_api(method, payload):
-    if not CONTROLLER_BOT_TOKEN:
-        return None
-    url = f"{BOT_API_BASE}/bot{CONTROLLER_BOT_TOKEN}/{method}"
-    return request_json(
-        url,
-        payload=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-        timeout=20,
-    )
-
-
 def send_alerts(conn):
     if not CONTROLLER_BOT_TOKEN or not ADMIN_IDS:
         return 0
@@ -136,7 +122,7 @@ def send_alerts(conn):
     lines.extend(["", COMMAND_CENTER_URL])
     text = "\n".join(lines)
     for admin_id in ADMIN_IDS:
-        telegram_api("sendMessage", {"chat_id": admin_id, "text": text, "disable_web_page_preview": True})
+        call_telegram("sendMessage", {"chat_id": admin_id, "text": text, "disable_web_page_preview": True}, token=CONTROLLER_BOT_TOKEN)
     conn.executemany("UPDATE post_events SET acked_at=? WHERE id=?", [(now, row["id"]) for row, _ in send_rows])
     conn.executemany(
         """

@@ -7,10 +7,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
-from posting_core.text import clean_text as _clean_text
-from posting_core.text import compact_text as _compact_text
-from posting_core.text import truncate_text as _truncate_text
-
 CHANNEL_USERNAME = os.environ.get("CHANNEL_USERNAME", "iAlexeyRu").lstrip("@")
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/home/deploy/ialexey-feed/data"))
 SITE_INDEX = Path(os.environ.get("SITE_INDEX", "/home/deploy/ialexey-web/index.html"))
@@ -54,10 +50,6 @@ SITE_AUTHOR = "Алексей Гетманец"
 X_PROFILE_URL = "https://x.com/iAlexeyRu"
 TELEGRAM_URL = f"https://t.me/{CHANNEL_USERNAME}"
 
-def now_iso():
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-
-
 def log(message):
     print(message, flush=True)
 
@@ -99,18 +91,6 @@ def parse_date(value):
         return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc)
     except Exception:
         return datetime.now(timezone.utc)
-
-
-def clean_text(text):
-    return _clean_text(text)
-
-
-def compact_text(value):
-    return _compact_text(value)
-
-
-def truncate_text(value, limit):
-    return _truncate_text(value, limit)
 
 
 def post_path(item):

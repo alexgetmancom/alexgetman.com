@@ -4,11 +4,12 @@ import json
 import time
 from datetime import datetime
 
-from posting_core.controller.config import ALBUM_SETTLE_SECONDS, api, log, now_iso
+from posting_core.controller.config import ALBUM_SETTLE_SECONDS, api, log
 from posting_core.controller.db import db, set_state, update_draft
 from posting_core.controller.drafts import create_draft
 from posting_core.controller.media import media_json_value
 from posting_core.controller.ui import send_preview
+from posting_core.time_utils import now_iso
 
 
 def album_key(admin_id, chat_id, media_group_id, action=None, draft_id=None):

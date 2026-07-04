@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 import time
 import urllib.parse
-import urllib.request
 
+from posting_core.http_client import request_json
 from posting_core.publish_config import (
     FACEBOOK_GRAPH_API_VERSION,
     INSTAGRAM_ACCESS_TOKEN,
@@ -25,29 +25,35 @@ def _graph_post(path, payload, token=None):
     if not access_token:
         raise RuntimeError("missing INSTAGRAM_ACCESS_TOKEN")
     url = f"{_graph_base(access_token)}/{path.lstrip('/')}"
-    data = urllib.parse.urlencode({**payload, "access_token": access_token}).encode("utf-8")
-    req = urllib.request.Request(url, data=data, method="POST")
-    with urllib.request.urlopen(req, timeout=60) as response:
-        return json.loads(response.read().decode("utf-8"))
+    return request_json(
+        url,
+        method="POST",
+        data=urllib.parse.urlencode({**payload, "access_token": access_token}).encode("utf-8"),
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        timeout=60,
+    )
 
 
 def _graph_get(path, fields, token=None):
     access_token = token or INSTAGRAM_ACCESS_TOKEN
     if not access_token:
         raise RuntimeError("missing INSTAGRAM_ACCESS_TOKEN")
-    query = urllib.parse.urlencode({"fields": fields, "access_token": access_token})
-    url = f"{_graph_base(access_token)}/{path.lstrip('/')}?{query}"
-    with urllib.request.urlopen(url, timeout=30) as response:
-        return json.loads(response.read().decode("utf-8"))
+    return request_json(
+        f"{_graph_base(access_token)}/{path.lstrip('/')}",
+        query={"fields": fields, "access_token": access_token},
+        timeout=30,
+    )
 
 
 def _graph_get_query(path, query, token=None):
     access_token = token or INSTAGRAM_ACCESS_TOKEN
     if not access_token:
         raise RuntimeError("missing INSTAGRAM_ACCESS_TOKEN")
-    url = f"{_graph_base(access_token)}/{path.lstrip('/')}?{urllib.parse.urlencode({**query, 'access_token': access_token})}"
-    with urllib.request.urlopen(url, timeout=30) as response:
-        return json.loads(response.read().decode("utf-8"))
+    return request_json(
+        f"{_graph_base(access_token)}/{path.lstrip('/')}",
+        query={**query, "access_token": access_token},
+        timeout=30,
+    )
 
 
 def _wait_for_container(creation_id, token=None):

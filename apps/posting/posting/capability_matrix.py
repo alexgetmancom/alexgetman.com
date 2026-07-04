@@ -2,11 +2,11 @@
 import argparse
 import json
 import os
-from datetime import datetime, timezone
 from pathlib import Path
 
 from posting_core.db import connect as db_connect, ensure_pipeline_schema
 from posting_core.targets import ALL_TARGET_IDS as TARGETS
+from posting_core.time_utils import now_iso
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/opt/telegram-to-threads/data"))
 DB_PATH = Path(os.environ.get("PIPELINE_DB", str(DATA_DIR / "pipeline.db")))
@@ -22,10 +22,6 @@ TEST_CASES = [
     ("T08", "video_picture", "Video + picture", "Send album with 1 video and 1 photo with caption.", ["telegram", "site_ru", "site_en", "threads_ru", "linkedin"]),
     ("T09", "videos_pictures", "Videos + pictures", "Send mixed album with 2+ videos and 2+ photos with caption.", ["telegram", "site_ru", "site_en", "threads_ru", "linkedin"]),
 ]
-
-
-def now_iso():
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
 def connect():

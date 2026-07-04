@@ -7,7 +7,8 @@ import sqlite3
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from site_feed.config import METRICS_LOCK, PIPELINE_DB, now_iso
+from posting_core.time_utils import now_iso
+from site_feed.config import METRICS_LOCK, PIPELINE_DB
 from site_feed.feed_store import load_metrics, save_metrics
 
 def metrics_day():

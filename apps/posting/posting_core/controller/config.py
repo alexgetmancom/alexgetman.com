@@ -3,14 +3,13 @@ from __future__ import annotations
 import json
 import os
 import time
-import urllib.request
-from datetime import datetime, timezone
 from pathlib import Path
+
+from posting_core.clients.telegram import call_telegram
 
 DATA_DIR = Path(os.environ.get('DATA_DIR', '/data'))
 DB_PATH = Path(os.environ.get('CONTROLLER_DB') or os.environ.get('PIPELINE_DB', str(DATA_DIR / 'pipeline.db')))
 BOT_TOKEN = os.environ['CONTROLLER_BOT_TOKEN']
-BOT_API_BASE = os.environ.get('TELEGRAM_API_BASE_URL', 'http://bot-api:8081').rstrip('/')
 ADMIN_IDS = {int(x.strip()) for x in os.environ.get('CONTROLLER_ADMIN_IDS', '').split(',') if x.strip()}
 CHANNEL_ID = os.environ.get('CONTROLLER_CHANNEL_ID', '@alexgetmancom')
 DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY')
@@ -37,26 +36,19 @@ Telegram, Site RU, Site EN, Threads RU, LinkedIn.
 Known current rule:
 LinkedIn supports image albums. Video albums and mixed media use a platform fallback, so the draft preview shows a partial-support note."""
 
-def now_iso():
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-
-
 def log(message):
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {message}", flush=True)
 
 
 def api(method, payload=None):
-    url = f'{BOT_API_BASE}/bot{BOT_TOKEN}/{method}'
-    data = json.dumps(payload).encode('utf-8') if payload is not None else None
-    req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'}, method='POST' if payload is not None else 'GET')
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        return json.loads(resp.read().decode('utf-8'))
+    return call_telegram(method, payload, token=BOT_TOKEN)
 
 
 def api_upload(method, payload, file_field, file_path):
     import requests
 
-    url = f'{BOT_API_BASE}/bot{BOT_TOKEN}/{method}'
+    bot_api_base = os.environ.get('TELEGRAM_API_BASE_URL', 'http://bot-api:8081').rstrip('/')
+    url = f'{bot_api_base}/bot{BOT_TOKEN}/{method}'
     form = {}
     for key, value in (payload or {}).items():
         if isinstance(value, (dict, list)):

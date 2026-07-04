@@ -7,7 +7,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from posting_core.db import connect, ensure_pipeline_schema
-from site_feed.config import PIPELINE_DB, now_iso
+from posting_core.time_utils import now_iso
+from site_feed.config import PIPELINE_DB
 
 SITE_JOB_CLAIM_LIMIT = int(os.environ.get("SITE_JOB_CLAIM_LIMIT", "20"))
 SITE_JOB_MAX_ATTEMPTS = int(os.environ.get("SITE_JOB_MAX_ATTEMPTS", "5"))

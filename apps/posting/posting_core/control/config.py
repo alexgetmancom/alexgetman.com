@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 import os
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 from posting_core.targets import CREDENTIAL_REQUIREMENTS
+from posting_core.time_utils import now_iso
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 DB_PATH = Path(os.environ.get("PIPELINE_DB", str(DATA_DIR / "pipeline.db")))
@@ -20,10 +20,6 @@ QUEUE_STALE_SECONDS = int(os.environ.get("QUEUE_STALE_SECONDS", "900"))
 ALERT_COOLDOWN_SECONDS = int(os.environ.get("ALERT_COOLDOWN_SECONDS", "3600"))
 
 LIFECYCLE_ORDER = ("draft", "approved", "publishing", "published", "metrics_active", "archived", "frozen")
-
-def now_iso():
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-
 
 def log(message):
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {message}", flush=True)

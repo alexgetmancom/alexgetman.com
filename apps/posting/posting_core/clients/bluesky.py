@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import json
 import urllib.parse
-import urllib.request
-import urllib.error
 from datetime import datetime, timedelta, timezone
 
+from posting_core.http_client import HttpRequestError, request, request_json
 from posting_core.publish_config import BLUESKY_HANDLE, BLUESKY_APP_PASSWORD, log
 
 DEFAULT_BLUESKY_HANDLE = "alexgetmancom.bsky.social"
@@ -33,9 +32,7 @@ def verify_bluesky_root_visible(uri: str | None, handle: str | None = None) -> t
         + urllib.parse.urlencode({"actor": profile, "limit": 30, "filter": "posts_no_replies"})
     )
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "alexgetman-posting/1.0"})
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            data = json.loads(resp.read())
+        data = request_json(url, headers={"User-Agent": "alexgetman-posting/1.0"}, timeout=20)
         for item in data.get("feed", []):
             post_uri = str(((item.get("post") or {}).get("uri")) or "")
             if post_uri.rsplit("/", 1)[-1] == rkey:
@@ -51,19 +48,17 @@ def _create_session() -> tuple[str, str] | None:
         log("Bluesky credentials missing")
         return None
     try:
-        payload = json.dumps({
-            "identifier": BLUESKY_HANDLE,
-            "password": BLUESKY_APP_PASSWORD,
-        }).encode()
-        req = urllib.request.Request(
+        data = request_json(
             "https://bsky.social/xrpc/com.atproto.server.createSession",
-            data=payload,
+            payload={
+                "identifier": BLUESKY_HANDLE,
+                "password": BLUESKY_APP_PASSWORD,
+            },
             headers={"Content-Type": "application/json"},
             method="POST",
+            timeout=30,
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read())
-            return data["did"], data["accessJwt"]
+        return data["did"], data["accessJwt"]
     except Exception as exc:
         log(f"Bluesky auth failed: {exc}")
         return None
@@ -81,7 +76,7 @@ def _upload_image(access_jwt: str, file_path: str) -> dict | None:
             mime = "image/png"
         elif file_path_str.lower().endswith(".webp"):
             mime = "image/webp"
-        req = urllib.request.Request(
+        resp = request(
             "https://bsky.social/xrpc/com.atproto.repo.uploadBlob",
             data=image_data,
             headers={
@@ -89,10 +84,10 @@ def _upload_image(access_jwt: str, file_path: str) -> dict | None:
                 "Content-Type": mime,
             },
             method="POST",
+            timeout=60,
         )
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            data = json.loads(resp.read())
-            return data.get("blob")
+        data = json.loads(resp.body.decode("utf-8"))
+        return data.get("blob")
     except Exception as exc:
         log(f"Bluesky image upload failed: {exc}")
         return None
@@ -156,41 +151,38 @@ def publish_to_bluesky(text: str, media_items: list, canonical_url: str | None =
             }
 
         try:
-            payload = json.dumps({
-                "repo": did,
-                "collection": "app.bsky.feed.post",
-                "record": record,
-            }).encode()
-            req = urllib.request.Request(
+            data = request_json(
                 "https://bsky.social/xrpc/com.atproto.repo.createRecord",
-                data=payload,
+                payload={
+                    "repo": did,
+                    "collection": "app.bsky.feed.post",
+                    "record": record,
+                },
                 headers={
                     "Authorization": f"Bearer {access_jwt}",
                     "Content-Type": "application/json",
                 },
                 method="POST",
+                timeout=30,
             )
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                data = json.loads(resp.read())
-                uri = data.get("uri")
-                cid = data.get("cid")
+            uri = data.get("uri")
+            cid = data.get("cid")
                 
-                if i == 0:
-                    first_uri = uri
-                    root_post = {"uri": uri, "cid": cid}
-                
-                parent_post = {"uri": uri, "cid": cid}
-                if uri:
-                    uris.append(uri)
-                    public = bluesky_public_url(uri)
-                    if public:
-                        urls.append(public)
-                log(f"Bluesky post {i} published: {uri}")
-        except urllib.error.HTTPError as exc:
-            body = exc.read().decode(errors="replace")
-            log(f"Bluesky publish failed on step {i}: {exc.code} {body}")
             if i == 0:
-                return {"ok": False, "error": f"Bluesky API HTTP {exc.code}: {body}", "retryable": exc.code >= 500}
+                first_uri = uri
+                root_post = {"uri": uri, "cid": cid}
+                
+            parent_post = {"uri": uri, "cid": cid}
+            if uri:
+                uris.append(uri)
+                public = bluesky_public_url(uri)
+                if public:
+                    urls.append(public)
+            log(f"Bluesky post {i} published: {uri}")
+        except HttpRequestError as exc:
+            log(f"Bluesky publish failed on step {i}: {exc.status} {exc.body}")
+            if i == 0:
+                return {"ok": False, "error": f"Bluesky API HTTP {exc.status}: {exc.body}", "retryable": exc.status >= 500}
         except Exception as exc:
             log(f"Bluesky publish error on step {i}: {exc}")
             if i == 0:

@@ -11,7 +11,7 @@ WORKDIR /app
 RUN mkdir -p /data
 
 # Copy the app and shared core.
-COPY posting/telegram_to_threads.py /app/
+COPY posting/crosspost_worker.py /app/
 COPY posting/pipeline_metrics.py /app/
 COPY posting/controller_bot.py /app/
 COPY posting/capability_matrix.py /app/
@@ -20,7 +20,7 @@ COPY posting/app.py /app/
 COPY posting_core /app/posting_core
 
 # Set executable permission
-RUN chmod +x /app/telegram_to_threads.py /app/controller_bot.py /app/capability_matrix.py /app/control_plane.py /app/app.py
+RUN chmod +x /app/crosspost_worker.py /app/controller_bot.py /app/capability_matrix.py /app/control_plane.py /app/app.py
 
 # Run the script
 CMD ["python", "-u", "/app/app.py"]

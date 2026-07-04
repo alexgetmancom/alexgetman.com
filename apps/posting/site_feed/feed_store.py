@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from site_feed.config import CHANNEL_USERNAME, FEED_JSON, METRICS_JSON, PIPELINE_DB, atomic_write, log, now_iso
+from posting_core.time_utils import now_iso
+from site_feed.config import CHANNEL_USERNAME, FEED_JSON, METRICS_JSON, PIPELINE_DB, atomic_write, log
 
 def load_feed():
     if not FEED_JSON.exists():

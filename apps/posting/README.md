@@ -8,8 +8,8 @@ Bot-approved publishing pipeline for `alexgetman.com`.
 - `posting-app` runs the controller bot, publishing bridge, metrics scheduler and observability loop in one Python process.
 - Controller bot approvals support immediate publishing or automatic scheduling in the fixed MSK RU/EN slot table.
 - `posting_core/publishing.py` is the publishing orchestrator. Target/API implementation is isolated behind `posting_core/clients/*`, `posting_core/media.py`, `posting_core/text.py` and `posting_core/state.py`.
-- `site-feed/fastapi_app.py` creates the FastAPI app; route groups live in `site_feed/*_routes.py`.
-- `site-feed/collector.py` is the site-feed CLI entrypoint for render/webhook maintenance commands.
+- `site_feed/app.py` creates the FastAPI app; route groups live in `site_feed/*_routes.py`.
+- `site_feed/cli.py` is the site-feed CLI entrypoint for render/webhook maintenance commands.
 - `pipeline_metrics.py` is the metrics scheduler/orchestrator; feed import, repository writes, schedule logic and source collectors live in `posting_core/metrics/`.
 - `control_plane.py` maintains lifecycle state, media assets, platform rules, credential checks, analytics rollups, public content memory and observability events.
 - `capability_matrix.py` records tested media formats per platform.
@@ -19,7 +19,7 @@ Bot-approved publishing pipeline for `alexgetman.com`.
 
 - `posting/` - app entrypoint, Telegram controller bot, runners, metrics worker, control plane and media capability matrix.
 - `posting_core/` - shared DB, durable per-target queue, repair service and publishing clients.
-- `site-feed/` - FastAPI site-feed and site-feed CLI entrypoints.
+- `site_feed/` - FastAPI site-feed package, route groups and CLI entrypoints.
 - `site_feed/` - likes, metrics, pipeline/ops payloads, Telegram source conversion and rendering helpers.
 - `deploy/` - systemd/deployment examples.
 - `docs/` - operational notes and test matrix.

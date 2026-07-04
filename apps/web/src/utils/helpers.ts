@@ -1,12 +1,43 @@
 // Shared helper functions for alexgetman.com Astro website
+import fs from 'node:fs';
+import path from 'node:path';
 import sanitizeHtmlLibrary from 'sanitize-html';
+
+const dataDir = process.env.DATA_DIR || '/home/deploy/ialexey-feed/data';
+const prodFeedJsonPath = path.join(dataDir, 'feed.json');
+const localFeedJsonPath = path.resolve('apps/web/src/data/feed.json');
+
+export function loadFeedItems(): any[] {
+  let parsedData: any = null;
+  for (const filePath of [prodFeedJsonPath, localFeedJsonPath]) {
+    if (!parsedData && fs.existsSync(filePath)) {
+      try {
+        parsedData = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+      } catch (error) {
+        console.error(`Error reading ${filePath}:`, error);
+      }
+    }
+  }
+  if (Array.isArray(parsedData)) return parsedData;
+  if (parsedData?.items && Array.isArray(parsedData.items)) return parsedData.items;
+  return [];
+}
+
+export function siteUrlFromContext(context: any): string {
+  return context.site ? context.site.toString().replace(/\/$/, '') : 'https://alexgetman.com';
+}
 
 export function cleanText(text: string): string {
   return (text || "").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 export function compactText(text: string): string {
-  return cleanText(text).replace(/\s+/g, " ").trim();
+  return cleanText(text)
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export function truncateText(value: string, limit: number): string {
@@ -74,14 +105,14 @@ export function getFirstSentence(text: string): string {
   return text.trim();
 }
 
-export function formatDate(value: string): string {
+export function formatDate(value: string, locale = "en-GB"): string {
   if (!value) return "";
   try {
     const date = new Date(value);
-    const formatter = new Intl.DateTimeFormat("ru-RU", {
+    const formatter = new Intl.DateTimeFormat(locale, {
       timeZone: "Europe/Moscow",
       day: "2-digit",
-      month: "2-digit",
+      month: locale === "ru-RU" ? "2-digit" : "short",
       year: "numeric",
       hour: "2-digit",
       minute: "2-digit",
@@ -157,6 +188,10 @@ export function getSmartBadge(text: string): { label: string; class: string; emo
     return { label: "Нейросети", class: "badge--neural", emoji: "🎨" };
   }
   return { label: "Новости", class: "badge--news", emoji: "📰" };
+}
+
+export function getSmartCategory(text: string): string {
+  return getSmartBadge(text).label;
 }
 
 export function categorySlugFromBadge(badge: { class?: string; label?: string } | string): string {

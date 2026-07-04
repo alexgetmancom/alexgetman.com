@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
 from pathlib import Path
 
 from posting_core.schema import (
@@ -13,6 +12,7 @@ from posting_core.schema import (
     ensure_queue_schema,
     seed_platform_rules,
 )
+from posting_core.time_utils import now_iso
 
 
 def connect(db_path: Path) -> sqlite3.Connection:
@@ -21,10 +21,6 @@ def connect(db_path: Path) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=30000")
     return conn
-
-
-def now_iso() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
 __all__ = [

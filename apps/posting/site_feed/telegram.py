@@ -5,20 +5,20 @@ import json
 import os
 import re
 import shutil
-import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
+from posting_core.clients.telegram import call_telegram, get_telegram_file_url
+from posting_core.http_client import request
+from posting_core.text import clean_text
+from posting_core.time_utils import now_iso
 from site_feed.config import (
     CHANNEL_USERNAME,
     PUBLIC_BASE_URL,
     PUBLIC_MEDIA_DIR,
     SOURCE_MEDIA_DIR,
-    TELEGRAM_API_BASE_URL,
     WEBHOOK_PATH,
-    clean_text,
     log,
-    now_iso,
     require_env,
 )
 def iso_from_unix(ts):
@@ -44,12 +44,11 @@ def download_media(url, message_id, suffix, index=0):
             shutil.copy2(local_source, source_path)
             shutil.copy2(local_source, public_path)
         else:
-            req = urllib.request.Request(
+            data = request(
                 url,
-                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-            )
-            with urllib.request.urlopen(req, timeout=30) as response:
-                data = response.read()
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+                timeout=30,
+            ).body
             source_path.write_bytes(data)
             public_path.write_bytes(data)
         source_path.chmod(0o664)
@@ -63,33 +62,6 @@ def download_media(url, message_id, suffix, index=0):
 
 def download_image(url, message_id):
     return download_media(url, message_id, "jpg")
-
-
-def telegram_api(method, payload=None, token=None):
-    token = token or os.environ.get("CONTROLLER_BOT_TOKEN") or require_env("TELEGRAM_BOT_TOKEN")
-    url = f"{TELEGRAM_API_BASE_URL}/bot{token}/{method}"
-    data = None
-    headers = {}
-    if payload is not None:
-        data = json.dumps(payload).encode("utf-8")
-        headers["Content-Type"] = "application/json"
-    req = urllib.request.Request(url, data=data, headers=headers)
-    with urllib.request.urlopen(req, timeout=20) as response:
-        return json.loads(response.read().decode("utf-8"))
-
-
-def get_telegram_file_url(file_id, token=None):
-    try:
-        file_info = telegram_api("getFile", {"file_id": file_id}, token=token)
-        if file_info.get("ok"):
-            file_path = file_info["result"]["file_path"]
-            if os.path.isabs(str(file_path)):
-                return file_path
-            token = token or os.environ.get("CONTROLLER_BOT_TOKEN") or require_env("TELEGRAM_BOT_TOKEN")
-            return f"{TELEGRAM_API_BASE_URL}/file/bot{token}/{file_path}"
-    except Exception as exc:
-        log(f"Ошибка getFile: {exc}")
-    return None
 
 
 def media_suffix(file_id, media_type):
@@ -211,20 +183,22 @@ def message_to_item(message, edited=False):
 
 def set_webhook():
     secret = require_env("TELEGRAM_WEBHOOK_SECRET")
+    token = os.environ.get("CONTROLLER_BOT_TOKEN") or require_env("TELEGRAM_BOT_TOKEN")
     payload = {
         "url": PUBLIC_BASE_URL + WEBHOOK_PATH,
         "allowed_updates": ["channel_post", "edited_channel_post"],
         "secret_token": secret,
         "drop_pending_updates": False,
     }
-    result = telegram_api("setWebhook", payload)
+    result = call_telegram("setWebhook", payload, token=token)
     if not result.get("ok"):
         raise SystemExit(f"Telegram setWebhook failed: {result}")
     log("Telegram webhook установлен")
 
 
 def webhook_info():
-    result = telegram_api("getWebhookInfo")
+    token = os.environ.get("CONTROLLER_BOT_TOKEN") or require_env("TELEGRAM_BOT_TOKEN")
+    result = call_telegram("getWebhookInfo", token=token)
     safe = result.copy()
     if isinstance(safe.get("result"), dict) and safe["result"].get("url"):
         safe["result"]["url"] = safe["result"]["url"].replace(PUBLIC_BASE_URL, PUBLIC_BASE_URL)

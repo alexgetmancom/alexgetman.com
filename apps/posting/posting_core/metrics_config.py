@@ -6,6 +6,7 @@ import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from posting_core.targets import ALL_TARGET_IDS as TARGETS, METRIC_TARGET_IDS
+from posting_core.time_utils import now_iso
 
 SCHEDULED_TARGETS = tuple(target for target in METRIC_TARGET_IDS if target not in {"x", "linkedin"})
 
@@ -30,10 +31,6 @@ if not FACEBOOK_GRAPH_API_VERSION.startswith("v"):
 THREADS_METRICS = os.environ.get("THREADS_METRICS", "views,likes,replies,reposts,quotes")
 MAX_METRIC_TASKS_PER_CYCLE = int(os.environ.get("MAX_METRIC_TASKS_PER_CYCLE", "30"))
 PIPELINE_BASELINE_MESSAGE_ID = int(os.environ.get("PIPELINE_BASELINE_MESSAGE_ID", "422"))
-
-def now_iso():
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-
 
 def log(message):
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {message}", flush=True)

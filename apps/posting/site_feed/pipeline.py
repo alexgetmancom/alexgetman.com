@@ -11,11 +11,11 @@ from site_feed.config import (
     CHANNEL_USERNAME,
     FEED_JSON,
     PIPELINE_DB,
-    compact_text,
     log,
-    now_iso,
     parse_date,
 )
+from posting_core.text import compact_text
+from posting_core.time_utils import now_iso
 from posting_core.targets import TARGETS
 from posting_core.social_urls import target_public_url
 
@@ -443,7 +443,7 @@ def load_pipeline_publications(limit=30, week_offset: int = 0):
 def pipeline_status_payload(week_offset: int = 0):
     feed = load_json_file(FEED_JSON, {"items": [], "updated_at": None, "channel": CHANNEL_USERNAME})
     feed_items = feed.get("items") if isinstance(feed, dict) else []
-    worker_state = db_rows(PIPELINE_DB, "SELECT state_json FROM worker_state WHERE name='telegram_to_threads'")
+    worker_state = db_rows(PIPELINE_DB, "SELECT state_json FROM worker_state WHERE name='crosspost_worker'")
     try:
         state = json.loads(worker_state[0].get("state_json") or "{}") if worker_state else {}
     except Exception:

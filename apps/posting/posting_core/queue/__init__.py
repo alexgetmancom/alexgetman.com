@@ -3,12 +3,24 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from .db import connect, ensure_pipeline_schema
-from .paths import PostingPaths, get_paths
-from .targets import ALL_TARGET_IDS, SOCIAL_TARGET_IDS
-from .time_utils import now_iso
-from .queue_jobs import _post_key_for, claim_due_publish_jobs, complete_publish_job, fail_publish_job, worker_id
-from .queue_state import load_worker_state, save_worker_state
+from .jobs import _post_key_for, claim_due_publish_jobs, complete_publish_job, fail_publish_job, worker_id
+from .state import load_worker_state, save_worker_state
+from ..db import connect, ensure_pipeline_schema
+from ..paths import PostingPaths, get_paths
+from ..targets import ALL_TARGET_IDS, SOCIAL_TARGET_IDS
+from ..time_utils import now_iso
+
+__all__ = [
+    "cancel_publication_jobs",
+    "claim_due_publish_jobs",
+    "complete_publish_job",
+    "enqueue_publication",
+    "enqueue_publish_message",
+    "fail_publish_job",
+    "load_worker_state",
+    "save_worker_state",
+    "worker_id",
+]
 
 def _enabled_targets(plan: dict[str, Any], fallback: dict[str, Any] | None = None) -> dict[str, bool]:
     raw = plan.get("targets") if isinstance(plan.get("targets"), dict) else (fallback or {})

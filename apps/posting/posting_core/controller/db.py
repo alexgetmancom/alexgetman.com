@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from posting_core.controller.config import DATA_DIR, DB_PATH, now_iso
+from posting_core.controller.config import DATA_DIR, DB_PATH
 from posting_core.db import connect as db_connect, ensure_pipeline_schema
+from posting_core.time_utils import now_iso
 
 
 def db():

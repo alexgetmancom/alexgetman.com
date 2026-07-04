@@ -33,7 +33,7 @@
 
    ```bash
    sudo systemctl restart ialexey-feed
-   /usr/bin/python3 /home/deploy/ialexey-web/feed/collector.py set-webhook
+   docker compose -f /opt/alexgetman-posting/compose.yaml exec -T site-feed python3 -m site_feed.cli set-webhook
    ```
 
 ## Cloudflare DNS

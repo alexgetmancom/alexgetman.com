@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import time
-import urllib.request
 from pathlib import Path
 
 from posting_core.clients.telegram import get_telegram_file_url
 from posting_core.controller.config import BOT_TOKEN, DATA_DIR
+from posting_core.http_client import request
 
 STORY_WIDTH = 1080
 STORY_HEIGHT = 1920
@@ -120,7 +120,7 @@ def _download_media_item(item, draft_id, locale):
     tmp_dir = DATA_DIR / 'story-media'
     tmp_dir.mkdir(parents=True, exist_ok=True)
     tmp = tmp_dir / f'draft-{draft_id}-{locale}-{int(time.time())}-source.jpg'
-    urllib.request.urlretrieve(source, tmp)
+    tmp.write_bytes(request(source, timeout=60).body)
     return tmp
 
 
