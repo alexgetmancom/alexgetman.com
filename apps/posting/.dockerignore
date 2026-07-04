@@ -1,0 +1,11 @@
+.git
+data
+bot-api-data
+bot-api-temp
+secrets.env
+site-feed.env
+telegram-bot-api.env
+*.db
+*.sqlite
+*.pyc
+__pycache__

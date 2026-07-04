@@ -21,7 +21,7 @@ if [ "$before" != "$after" ]; then
   /usr/bin/git pull --ff-only origin main
   
   # Check if npm dependencies changed
-  if ! /usr/bin/git diff --quiet "$before" "$after" -- package.json; then
+  if ! /usr/bin/git diff --quiet "$before" "$after" -- package.json package-lock.json; then
     echo "package.json changed, running npm install..."
     npm install
   fi
@@ -39,11 +39,13 @@ mkdir -p "$PUBLIC"
 
 # 1a. Sync cached habr images (not in dist/ since they're downloaded during build, after Astro copies public/)
 mkdir -p "$PUBLIC"/habr-images
-/usr/bin/rsync -a "$REPO"/public/habr-images/ "$PUBLIC"/habr-images/
+if [ -d "$REPO"/apps/web/public/habr-images ]; then
+  /usr/bin/rsync -a "$REPO"/apps/web/public/habr-images/ "$PUBLIC"/habr-images/
+fi
 
 # 2. Sync Python feed scripts to public directory
 mkdir -p "$PUBLIC"/feed
-/usr/bin/rsync -a --delete "$REPO"/feed/ "$PUBLIC"/feed/
+/usr/bin/rsync -a --delete "$REPO"/apps/web/feed/ "$PUBLIC"/feed/
 
 # 3. Sync bin scripts
 mkdir -p "$PUBLIC"/bin

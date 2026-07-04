@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+set -eu
+
+cd "$(dirname "$0")/.."
+
+npm run check:web
+
+if [ -x apps/posting/scripts/check ]; then
+  npm run check:posting
+fi

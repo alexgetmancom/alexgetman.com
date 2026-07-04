@@ -1,0 +1,32 @@
+#!/usr/bin/env sh
+set -eu
+
+HOST="${HOST:-tw-nl}"
+BASE_URL="${BASE_URL:-https://alexgetman.com}"
+
+check_url() {
+  label="$1"
+  url="$2"
+  expected="${3:-200}"
+  attempt=1
+  while [ "$attempt" -le 30 ]; do
+    status="$(ssh "$HOST" "curl -sS -o /dev/null -w '%{http_code}' '$url'" || true)"
+    case " $expected " in
+      *" $status "*)
+      printf '%s:%s\n' "$label" "$status"
+      return 0
+      ;;
+    esac
+    sleep 2
+    attempt=$((attempt + 1))
+  done
+  printf '%s:%s\n' "$label" "$status"
+  return 1
+}
+
+ssh "$HOST" 'cd /opt/alexgetman-posting && docker compose ps'
+check_url site "$BASE_URL/"
+check_url status "$BASE_URL/pipeline-status" "200 401"
+check_url api "$BASE_URL/api/pipeline-status" "200 401"
+check_url feed "$BASE_URL/feed.json"
+check_url content_index "$BASE_URL/content-index.json"

@@ -9,7 +9,10 @@
     "dev": "astro dev",
     "build": "node scripts/generate-responsive-images.mjs && astro build",
     "preview": "astro preview",
-    "astro": "astro"
+    "astro": "astro",
+    "check:web": "npm run build",
+    "check:posting": "cd apps/posting && ./scripts/check",
+    "check:all": "./scripts/check-all"
   },
   "dependencies": {
     "@astrojs/rss": "^4.0.18",

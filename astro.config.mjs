@@ -4,6 +4,9 @@ import sitemap from '@astrojs/sitemap';
 // https://astro.build/config
 export default defineConfig({
   site: 'https://alexgetman.com',
+  srcDir: './apps/web/src',
+  publicDir: './apps/web/public',
+  outDir: './dist',
   integrations: [sitemap({
     lastmod: new Date(),
     filter: (page) => ![

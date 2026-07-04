@@ -1,6 +1,19 @@
 # alexgetman.com
 
-Astro site for [alexgetman.com](https://alexgetman.com): EN/RU posts, public pages, RSS/JSON feeds, agent metadata and static assets.
+Open monorepo for [alexgetman.com](https://alexgetman.com): the Astro vertical news site, publishing pipeline, site-feed API, metrics and command-center tooling.
+
+## Repository Layout
+
+```text
+apps/
+  web/       Astro site source, public assets and legacy feed collector
+  posting/   publishing pipeline, site-feed API, metrics, Telegram controller and tests
+docs/        public architecture, brand, SEO/AIO and operations notes
+deploy/      nginx examples and deployment snippets
+scripts/     repository-level checks and build helpers
+```
+
+Runtime secrets, SQLite databases, Telegram sessions, generated media, logs and production `.env` files are intentionally excluded from git. Use `.env.example` files only.
 
 ## Local Development
 
@@ -19,9 +32,17 @@ npm run build
 
 The build generates responsive images first and then runs `astro build`.
 
+To run the full monorepo gate:
+
+```bash
+npm run check:all
+```
+
+That runs the web build and, when Python dev dependencies are available, the posting pipeline checks from `apps/posting`.
+
 ## Content
 
-Runtime post data is read from `DATA_DIR/feed.json` in production and falls back to `src/data/feed.json` locally.
+Runtime post data is read from `DATA_DIR/feed.json` in production and falls back to `apps/web/src/data/feed.json` locally.
 
 Public routes include:
 
@@ -38,12 +59,8 @@ Production deployment still uses existing server paths and service names. Treat 
 
 Nginx cache rules live in `deploy/nginx/`. Cloudflare notes live in `docs/alexgetman-cloudflare.md`.
 
-## Layout Notes
-
-This is a public Astro site repository. Keep `src/`, `public/`, `docs`, `scripts` and `deploy` at the top level; do not add a cosmetic `code/` wrapper. See `docs/repository-layout.md` for boundaries and future cleanup notes.
-
 ## Docs
 
 - `plans.md` is the current public roadmap.
 - `docs/README.md` is the entry point for brand, design, SEO/AIO and site-facing notes.
-- Runtime posting, social API limits and private operations live in the private `alexgetman-posting` / `infra-agent` repos, not here.
+- `apps/posting/docs/operations.md` documents the publishing stack without live secrets.

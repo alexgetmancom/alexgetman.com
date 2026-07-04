@@ -13,10 +13,21 @@ Thumbs.db
 *.swp
 *.swo
 
-# Feed Application dynamic files and secrets
-/feed/ialexey-feed.env
-/feed/data/
-/feed/*.log
+# Runtime dynamic files and secrets
+/apps/web/feed/ialexey-feed.env
+/apps/web/feed/data/
+/apps/web/feed/*.log
+/apps/posting/secrets.env
+/apps/posting/secrets.*
+/apps/posting/data/
+/apps/posting/logs/
+/apps/posting/media-cache/
+/apps/posting/*.sqlite
+/apps/posting/*.sqlite3
+/apps/posting/*.db
+/apps/posting/.venv/
+/apps/posting/.pytest_cache/
+/apps/posting/.ruff_cache/
 
 # Local static files that are generated dynamically on server (root only)
 /feed.json
@@ -42,8 +53,8 @@ pnpm-debug.log*
 !.env.*.example
 
 # Cache and dynamically modified files
-/src/data/habr_views_cache.json
-/public/habr-images/
-/public/generated/
-/public/og/
-.image-cache.json
+/apps/web/src/data/habr_views_cache.json
+/apps/web/public/habr-images/
+/apps/web/public/generated/
+/apps/web/public/og/
+/apps/web/.image-cache.json

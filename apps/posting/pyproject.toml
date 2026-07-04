@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "alexgetman-posting"
+version = "0.1.0"
+requires-python = ">=3.9"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<9",
+    "ruff>=0.11,<1",
+]
+
+[tool.setuptools.packages.find]
+include = ["posting_core*", "site_feed*"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
+[tool.ruff.lint.per-file-ignores]
+"posting_core/control/config.py" = ["F401"]
+"posting_core/metrics_config.py" = ["F401"]
+"posting_core/publish_config.py" = ["F401"]
+"posting_core/queue.py" = ["F401"]

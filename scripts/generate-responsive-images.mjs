@@ -3,14 +3,15 @@ import path from 'node:path';
 import sharp from 'sharp';
 
 const root = process.cwd();
-const publicDir = path.join(root, 'public');
+const webRoot = path.join(root, 'apps', 'web');
+const publicDir = path.join(webRoot, 'public');
 const publishedDir = process.env.PUBLISHED_DIR || '/home/deploy/ialexey-web';
 const dataDir = process.env.DATA_DIR || '/home/deploy/ialexey-feed/data';
 const feedJsonPaths = [
   path.join(dataDir, 'feed.json'),
-  path.join(root, 'src/data/feed.json'),
+  path.join(webRoot, 'src/data/feed.json'),
 ];
-const cacheFile = path.join(root, '.image-cache.json');
+const cacheFile = path.join(webRoot, '.image-cache.json');
 const widths = [360, 640, 960];
 
 async function exists(filePath) {
