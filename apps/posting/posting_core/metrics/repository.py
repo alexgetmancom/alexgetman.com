@@ -159,3 +159,8 @@ def upsert_metric(conn, key, target, value, source, raw=None, error=None, metric
             "INSERT INTO metric_samples(post_key, target, metric_name, value, sampled_at, source, raw_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (key, target, metric_name, int(value), sampled_at, source, raw_json),
         )
+
+
+def upsert_metrics(conn, key, target, metrics: dict, source, raw=None):
+    for metric_name, value in (metrics or {}).items():
+        upsert_metric(conn, key, target, int(value), source, raw, metric_name=metric_name)

@@ -4,7 +4,7 @@ import json
 
 from posting_core.http_client import HttpRequestError, request_json
 from posting_core.metrics_config import THREADS_ACCESS_TOKEN, THREADS_EN_ACCESS_TOKEN, THREADS_METRICS, log, now_iso
-from posting_core.metrics.repository import upsert_metric
+from posting_core.metrics.repository import upsert_metric, upsert_metrics
 from posting_core.metrics.schedule import finish_metric_task
 
 
@@ -110,24 +110,6 @@ def sync_threads_metrics(conn, tasks):
             upsert_metric(conn, row["post_key"], target, None, "threads_insights_api", {"ids": ids, "errors": errors}, error=error)
             finish_metric_task(conn, row["post_key"], target, row["date_utc"], error=error)
             continue
-        for target_metric, value in totals.items():
-            sampled_at = now_iso()
-            conn.execute(
-                """
-                INSERT INTO post_metrics(post_key, target, metric_name, value, source, sampled_at, error, raw_json)
-                VALUES (?, ?, ?, ?, 'threads_insights_api', ?, NULL, ?)
-                ON CONFLICT(post_key, target, metric_name) DO UPDATE SET
-                    value=excluded.value,
-                    source=excluded.source,
-                    sampled_at=excluded.sampled_at,
-                    error=NULL,
-                    raw_json=excluded.raw_json
-                """,
-                (row["post_key"], target, target_metric, int(value), sampled_at, json.dumps({"ids": ids, "parts": parts, "errors": errors, "api_metric": target_metric}, ensure_ascii=False)),
-            )
-            conn.execute(
-                "INSERT INTO metric_samples(post_key, target, metric_name, value, sampled_at, source, raw_json) VALUES (?, ?, ?, ?, ?, 'threads_insights_api', ?)",
-                (row["post_key"], target, target_metric, int(value), sampled_at, json.dumps({"ids": ids, "parts": parts, "errors": errors, "api_metric": target_metric}, ensure_ascii=False)),
-            )
+        upsert_metrics(conn, row["post_key"], target, totals, "threads_insights_api", {"ids": ids, "parts": parts, "errors": errors})
         finish_metric_task(conn, row["post_key"], target, row["date_utc"], error=None)
     conn.commit()

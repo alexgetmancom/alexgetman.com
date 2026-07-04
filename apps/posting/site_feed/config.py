@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import os
-import re
 import tempfile
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
+
+from posting_core.text import clean_text as _clean_text
+from posting_core.text import compact_text as _compact_text
+from posting_core.text import truncate_text as _truncate_text
 
 CHANNEL_USERNAME = os.environ.get("CHANNEL_USERNAME", "iAlexeyRu").lstrip("@")
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/home/deploy/ialexey-feed/data"))
@@ -99,18 +102,15 @@ def parse_date(value):
 
 
 def clean_text(text):
-    return re.sub(r"\n{3,}", "\n\n", (text or "").strip())
+    return _clean_text(text)
 
 
 def compact_text(value):
-    return re.sub(r"\s+", " ", clean_text(value)).strip()
+    return _compact_text(value)
 
 
 def truncate_text(value, limit):
-    value = compact_text(value)
-    if len(value) <= limit:
-        return value
-    return value[: max(0, limit - 1)].rstrip() + "…"
+    return _truncate_text(value, limit)
 
 
 def post_path(item):

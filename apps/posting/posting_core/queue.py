@@ -15,6 +15,98 @@ def _enabled_targets(plan: dict[str, Any], fallback: dict[str, Any] | None = Non
     return {target: bool(raw.get(target)) for target in ALL_TARGET_IDS if raw.get(target)}
 
 
+def _json(value: dict[str, Any]) -> str:
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _upsert_json_row(conn, table: str, key_name: str, key_value: int, json_column: str, value: dict[str, Any], now: str) -> None:
+    conn.execute(
+        f"""
+        INSERT INTO {table}({key_name}, {json_column}, created_at, updated_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT({key_name}) DO UPDATE SET
+            {json_column}=excluded.{json_column},
+            updated_at=excluded.updated_at
+        """,
+        (key_value, _json(value), now, now),
+    )
+
+
+def _insert_site_job(
+    conn,
+    *,
+    message_id: int,
+    now: str,
+    reason: str,
+    post_id: int | None = None,
+    next_attempt_at: str | None = None,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO site_jobs(post_id, message_id, reason, status, next_attempt_at, created_at, updated_at)
+        VALUES (?, ?, ?, 'queued', ?, ?, ?)
+        """,
+        (post_id, message_id, reason, next_attempt_at, now, now),
+    )
+
+
+def _enqueue_legacy_publish_job(conn, post_key: str, message_id: int, target: str, job: dict[str, Any], publish_at: str | None, now: str) -> None:
+    conn.execute(
+        """
+        INSERT INTO publish_jobs(post_key, message_id, target, status, publish_at, payload_json, created_at, updated_at)
+        VALUES (?, ?, ?, 'queued', ?, ?, ?, ?)
+        ON CONFLICT(message_id, target, status) DO UPDATE SET
+            publish_at=excluded.publish_at,
+            payload_json=excluded.payload_json,
+            updated_at=excluded.updated_at
+        """,
+        (post_key, message_id, target, publish_at, _json(job), now, now),
+    )
+
+
+def _enqueue_publication_publish_job(
+    conn,
+    *,
+    post_key: str,
+    post_id: int,
+    message_id: int,
+    target: str,
+    job: dict[str, Any],
+    publish_at: str | None,
+    now: str,
+) -> None:
+    existing = conn.execute(
+        """
+        SELECT job_id
+        FROM publish_jobs
+        WHERE post_id=? AND target=? AND status IN ('queued', 'publishing', 'published', 'skipped')
+        ORDER BY job_id DESC
+        LIMIT 1
+        """,
+        (post_id, target),
+    ).fetchone()
+    if existing:
+        conn.execute(
+            """
+            UPDATE publish_jobs
+            SET publish_at=?, payload_json=?, updated_at=?
+            WHERE job_id=? AND status='queued'
+            """,
+            (publish_at, _json(job), now, existing["job_id"]),
+        )
+        return
+    conn.execute(
+        """
+        INSERT INTO publish_jobs(
+            post_key, post_id, message_id, target, status, publish_at,
+            payload_json, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?)
+        """,
+        (post_key, post_id, message_id, target, publish_at, _json(job), now, now),
+    )
+
+
 def enqueue_publish_message(
     message_id: int,
     plan: dict[str, Any],
@@ -32,36 +124,13 @@ def enqueue_publish_message(
         with connect(paths.pipeline_db) as conn:
             ensure_pipeline_schema(conn)
             post_key = _post_key_for(conn, message_id)
-            conn.execute(
-                """
-                INSERT INTO publish_plans(message_id, plan_json, created_at, updated_at)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(message_id) DO UPDATE SET plan_json=excluded.plan_json, updated_at=excluded.updated_at
-                """,
-                (message_id, json.dumps(plan, ensure_ascii=False), now, now),
-            )
+            _upsert_json_row(conn, "publish_plans", "message_id", message_id, "plan_json", plan, now)
             if source_item is not None:
-                conn.execute(
-                    """
-                    INSERT INTO site_source_items(message_id, item_json, created_at, updated_at)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(message_id) DO UPDATE SET item_json=excluded.item_json, updated_at=excluded.updated_at
-                    """,
-                    (message_id, json.dumps(source_item, ensure_ascii=False), now, now),
-                )
-                conn.execute(
-                    "INSERT INTO site_jobs(message_id, reason, status, created_at, updated_at) VALUES (?, 'publish', 'queued', ?, ?)",
-                    (message_id, now, now),
-                )
+                _upsert_json_row(conn, "site_source_items", "message_id", message_id, "item_json", source_item, now)
+                _insert_site_job(conn, message_id=message_id, reason="publish", now=now)
                 site_en_at = publish_at_by_target.get("site_en")
                 if site_en_at:
-                    conn.execute(
-                        """
-                        INSERT INTO site_jobs(message_id, reason, status, next_attempt_at, created_at, updated_at)
-                        VALUES (?, 'publish_en', 'queued', ?, ?, ?)
-                        """,
-                        (message_id, site_en_at, now, now),
-                    )
+                    _insert_site_job(conn, message_id=message_id, reason="publish_en", next_attempt_at=site_en_at, now=now)
             targets = (
                 enqueue_targets
                 if enqueue_targets is not None
@@ -75,17 +144,7 @@ def enqueue_publish_message(
             for target, enabled in targets.items():
                 if not enabled or target not in SOCIAL_TARGET_IDS:
                     continue
-                conn.execute(
-                    """
-                    INSERT INTO publish_jobs(post_key, message_id, target, status, publish_at, payload_json, created_at, updated_at)
-                    VALUES (?, ?, ?, 'queued', ?, ?, ?, ?)
-                    ON CONFLICT(message_id, target, status) DO UPDATE SET
-                        publish_at=excluded.publish_at,
-                        payload_json=excluded.payload_json,
-                        updated_at=excluded.updated_at
-                    """,
-                    (post_key, message_id, target, publish_at_by_target.get(target), json.dumps(job, ensure_ascii=False), now, now),
-                )
+                _enqueue_legacy_publish_job(conn, post_key, message_id, target, job, publish_at_by_target.get(target), now)
             conn.commit()
 
 
@@ -106,88 +165,33 @@ def enqueue_publication(
     with connect(paths.pipeline_db) as conn:
         ensure_pipeline_schema(conn)
         post_key = f"post:{post_id}"
-        conn.execute(
-            """
-            INSERT INTO publication_plans(post_id, plan_json, created_at, updated_at)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(post_id) DO UPDATE SET
-                plan_json=excluded.plan_json,
-                updated_at=excluded.updated_at
-            """,
-            (post_id, json.dumps(plan, ensure_ascii=False), now, now),
-        )
+        _upsert_json_row(conn, "publication_plans", "post_id", post_id, "plan_json", plan, now)
         if source_item is not None:
-            conn.execute(
-                """
-                INSERT INTO publication_sources(post_id, item_json, created_at, updated_at)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(post_id) DO UPDATE SET
-                    item_json=excluded.item_json,
-                    updated_at=excluded.updated_at
-                """,
-                (post_id, json.dumps(source_item, ensure_ascii=False), now, now),
-            )
+            _upsert_json_row(conn, "publication_sources", "post_id", post_id, "item_json", source_item, now)
             for target, locale in (("site_ru", "ru"), ("site_en", "en")):
                 if not plan.get("targets", {}).get(target):
                     continue
-                due_at = publish_at_by_target.get(target)
-                conn.execute(
-                    """
-                    INSERT INTO site_jobs(
-                        post_id, message_id, reason, status, next_attempt_at,
-                        created_at, updated_at
-                    )
-                    VALUES (?, ?, ?, 'queued', ?, ?, ?)
-                    """,
-                    (post_id, legacy_message_id, f"publish_{locale}", due_at, now, now),
+                _insert_site_job(
+                    conn,
+                    post_id=post_id,
+                    message_id=legacy_message_id,
+                    reason=f"publish_{locale}",
+                    next_attempt_at=publish_at_by_target.get(target),
+                    now=now,
                 )
         targets = enqueue_targets if enqueue_targets is not None else _enabled_targets(plan)
         for target, enabled in targets.items():
             if not enabled or target not in SOCIAL_TARGET_IDS:
                 continue
-            existing = conn.execute(
-                """
-                SELECT job_id
-                FROM publish_jobs
-                WHERE post_id=? AND target=? AND status IN ('queued', 'publishing', 'published', 'skipped')
-                ORDER BY job_id DESC
-                LIMIT 1
-                """,
-                (post_id, target),
-            ).fetchone()
-            if existing:
-                conn.execute(
-                    """
-                    UPDATE publish_jobs
-                    SET publish_at=?, payload_json=?, updated_at=?
-                    WHERE job_id=? AND status='queued'
-                    """,
-                    (
-                        publish_at_by_target.get(target),
-                        json.dumps(job, ensure_ascii=False),
-                        now,
-                        existing["job_id"],
-                    ),
-                )
-                continue
-            conn.execute(
-                """
-                INSERT INTO publish_jobs(
-                    post_key, post_id, message_id, target, status, publish_at,
-                    payload_json, created_at, updated_at
-                )
-                VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?)
-                """,
-                (
-                    post_key,
-                    post_id,
-                    legacy_message_id,
-                    target,
-                    publish_at_by_target.get(target),
-                    json.dumps(job, ensure_ascii=False),
-                    now,
-                    now,
-                ),
+            _enqueue_publication_publish_job(
+                conn,
+                post_key=post_key,
+                post_id=post_id,
+                message_id=legacy_message_id,
+                target=target,
+                job=job,
+                publish_at=publish_at_by_target.get(target),
+                now=now,
             )
         conn.commit()
 

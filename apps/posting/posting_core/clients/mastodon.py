@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import json
-import urllib.request
-import urllib.error
 import urllib.parse
 
+from posting_core.http_client import request, request_json
 from posting_core.publish_config import MASTODON_INSTANCE, MASTODON_ACCESS_TOKEN, log
 
 
@@ -27,7 +26,7 @@ def _post_status(text: str, media_ids: list[str] | None = None, in_reply_to_id: 
         encoded = encoded + b"&" + extra.encode()
 
     url = f"https://{MASTODON_INSTANCE}/api/v1/statuses"
-    req = urllib.request.Request(
+    resp = request(
         url,
         data=encoded,
         headers={
@@ -35,10 +34,10 @@ def _post_status(text: str, media_ids: list[str] | None = None, in_reply_to_id: 
             "Content-Type": "application/x-www-form-urlencoded",
         },
         method="POST",
+        timeout=30,
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        data = json.loads(resp.read())
-        return data.get("url"), data.get("id")
+    data = json.loads(resp.body)
+    return data.get("url"), data.get("id")
 
 
 def _upload_media(file_path: str) -> str | None:
@@ -58,7 +57,7 @@ def _upload_media(file_path: str) -> str | None:
     ).encode() + file_data + f"\r\n--{boundary}--\r\n".encode()
 
     url = f"https://{MASTODON_INSTANCE}/api/v2/media"
-    req = urllib.request.Request(
+    resp = request(
         url,
         data=body,
         headers={
@@ -66,19 +65,17 @@ def _upload_media(file_path: str) -> str | None:
             "Content-Type": f"multipart/form-data; boundary={boundary}",
         },
         method="POST",
+        timeout=60,
     )
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        data = json.loads(resp.read())
-        return data.get("id")
+    data = json.loads(resp.body)
+    return data.get("id")
 
 
 def _status_split_limit() -> int:
     if not MASTODON_INSTANCE:
         return 480
     try:
-        req = urllib.request.Request(f"https://{MASTODON_INSTANCE}/api/v2/instance", method="GET")
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            data = json.loads(resp.read())
+        data = request_json(f"https://{MASTODON_INSTANCE}/api/v2/instance", timeout=15)
         statuses = ((data.get("configuration") or {}).get("statuses") or {})
         max_chars = int(statuses.get("max_characters") or 500)
         return max(1, max_chars - 20)

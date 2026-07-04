@@ -1,10 +1,18 @@
 from __future__ import annotations
 
 import json
-import urllib.request
-import urllib.error
 
+from posting_core.http_client import HttpRequestError, request, request_json
 from posting_core.publish_config import DEVTO_API_KEY, log
+
+DEVTO_BASE_HEADERS = {
+    "Content-Type": "application/json",
+    "User-Agent": "Mozilla/5.0 (compatible; alexgetman-posting/1.0; +https://alexgetman.com)",
+}
+
+
+def _devto_headers() -> dict[str, str]:
+    return {**DEVTO_BASE_HEADERS, "api-key": DEVTO_API_KEY}
 
 
 def publish_to_devto(
@@ -46,27 +54,19 @@ def publish_to_devto(
     if clean_tags:
         article["tags"] = clean_tags
 
-    payload = json.dumps({"article": article}).encode()
-
     try:
-        req = urllib.request.Request(
+        data = request_json(
             "https://dev.to/api/articles",
-            data=payload,
-            headers={
-                "api-key": DEVTO_API_KEY,
-                "Content-Type": "application/json",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            },
+            payload={"article": article},
+            headers=_devto_headers(),
             method="POST",
+            timeout=30,
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read())
-            url = data.get("url")
-            log(f"dev.to article published: {url}")
-            return url
-    except urllib.error.HTTPError as exc:
-        body = exc.read().decode(errors="replace")
-        log(f"dev.to publish failed: {exc.code} {body}")
+        url = data.get("url")
+        log(f"dev.to article published: {url}")
+        return url
+    except HttpRequestError as exc:
+        log(f"dev.to publish failed: {exc.status} {exc.body}")
         return None
     except Exception as exc:
         log(f"dev.to publish error: {exc}")
@@ -77,21 +77,15 @@ def update_devto_article(article_id: int, **kwargs) -> bool:
     """Update an existing dev.to article by ID."""
     if not DEVTO_API_KEY:
         return False
-    payload = json.dumps({"article": kwargs}).encode()
     try:
-        req = urllib.request.Request(
+        request(
             f"https://dev.to/api/articles/{article_id}",
-            data=payload,
-            headers={
-                "api-key": DEVTO_API_KEY,
-                "Content-Type": "application/json",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            },
+            data=json.dumps({"article": kwargs}).encode("utf-8"),
+            headers=_devto_headers(),
             method="PUT",
+            timeout=30,
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            resp.read()
-            return True
+        return True
     except Exception as exc:
         log(f"dev.to update failed: {exc}")
         return False

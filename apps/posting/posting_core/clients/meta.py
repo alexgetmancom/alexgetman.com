@@ -88,6 +88,26 @@ def _normalize_target_result(result):
     return {"ok": bool(result), "id": str(result)}
 
 
+def _skipped(reason: str | None = None):
+    result = {"ok": False, "skipped": True}
+    if reason:
+        result["reason"] = reason
+    return result
+
+
+def _target_allowed(plan, target: str, *requirements) -> bool:
+    return all(requirements) and plan_target_enabled(plan, target, True)
+
+
+def _publish_guarded(target: str, action):
+    log(f"Async target start: {target}")
+    try:
+        return action()
+    except Exception as exc:
+        log(f"Error crossposting to {target}: {exc}")
+        return {"ok": False, "error": str(exc)}
+
+
 def publish_threads_post_or_thread(text, media_items, message_id=None, post_id=None, allowed_targets=None):
     """
     media_items is a list of dicts: [{"type": "IMAGE"|"VIDEO", "file_id": "..."}]
@@ -217,57 +237,53 @@ def publish_threads_post_or_thread(text, media_items, message_id=None, post_id=N
             return publish_to_threads_target(english_text, english_media_items, plan, THREADS_EN_ACCESS_TOKEN, "threads_en")
 
         def publish_facebook_task(english_future):
-            if not (ENABLE_FACEBOOK and FACEBOOK_PAGE_ACCESS_TOKEN and FACEBOOK_PAGE_ID and plan_target_enabled(plan, "facebook", True)):
-                return {"ok": False, "skipped": True}
-            log("Async target start: facebook")
+            if not _target_allowed(plan, "facebook", ENABLE_FACEBOOK, FACEBOOK_PAGE_ACCESS_TOKEN, FACEBOOK_PAGE_ID):
+                return _skipped()
             english_text, english_media_items = get_english_context(english_future)
             if not english_text:
-                return {"ok": False, "skipped": True, "reason": "missing_english_translation"}
-            try:
+                return _skipped("missing_english_translation")
+
+            def action():
                 facebook_id = publish_to_facebook(english_text, english_media_items)
                 return {"ok": bool(facebook_id), "id": facebook_id}
-            except Exception as exc:
-                log(f"Error crossposting to Facebook: {exc}")
-                return {"ok": False, "error": str(exc)}
+
+            return _publish_guarded("facebook", action)
 
         def publish_linkedin_task(english_future):
-            if not (ENABLE_LINKEDIN and LINKEDIN_ACCESS_TOKEN and LINKEDIN_AUTHOR_URN and plan_target_enabled(plan, "linkedin", True)):
-                return {"ok": False, "skipped": True}
-            log("Async target start: linkedin")
+            if not _target_allowed(plan, "linkedin", ENABLE_LINKEDIN, LINKEDIN_ACCESS_TOKEN, LINKEDIN_AUTHOR_URN):
+                return _skipped()
             english_text, english_media_items = get_english_context(english_future)
             if not english_text:
-                return {"ok": False, "skipped": True, "reason": "missing_english_translation"}
-            try:
+                return _skipped("missing_english_translation")
+
+            def action():
                 linkedin_id = publish_to_linkedin(english_text, english_media_items)
                 return {"ok": bool(linkedin_id), "id": linkedin_id}
-            except Exception as exc:
-                log(f"Error crossposting to LinkedIn: {exc}")
-                return {"ok": False, "error": str(exc)}
+
+            return _publish_guarded("linkedin", action)
 
         def publish_facebook_ru_task():
-            if not (ENABLE_FACEBOOK_RU and FACEBOOK_RU_PAGE_ACCESS_TOKEN and FACEBOOK_RU_PAGE_ID and plan_target_enabled(plan, "facebook_ru", True)):
-                return {"ok": False, "skipped": True}
-            log("Async target start: facebook_ru")
-            try:
+            if not _target_allowed(plan, "facebook_ru", ENABLE_FACEBOOK_RU, FACEBOOK_RU_PAGE_ACCESS_TOKEN, FACEBOOK_RU_PAGE_ID):
+                return _skipped()
+
+            def action():
                 facebook_id = publish_to_facebook(text, media_items, page_id=FACEBOOK_RU_PAGE_ID, token=FACEBOOK_RU_PAGE_ACCESS_TOKEN)
                 return {"ok": bool(facebook_id), "id": facebook_id}
-            except Exception as exc:
-                log(f"Error crossposting to Facebook RU: {exc}")
-                return {"ok": False, "error": str(exc)}
+
+            return _publish_guarded("facebook_ru", action)
 
         def publish_x_task(english_future):
-            if not (ENABLE_X and X_CONSUMER_KEY and X_CONSUMER_SECRET and X_ACCESS_TOKEN and X_ACCESS_TOKEN_SECRET and plan_target_enabled(plan, "x", True)):
-                return {"ok": False, "skipped": True}
-            log("Async target start: x")
+            if not _target_allowed(plan, "x", ENABLE_X, X_CONSUMER_KEY, X_CONSUMER_SECRET, X_ACCESS_TOKEN, X_ACCESS_TOKEN_SECRET):
+                return _skipped()
             english_text, english_media_items = get_english_context(english_future)
             if not english_text:
-                return {"ok": False, "skipped": True, "reason": "missing_english_translation"}
-            try:
+                return _skipped("missing_english_translation")
+
+            def action():
                 x_id = publish_to_x(english_text, english_media_items)
                 return {"ok": bool(x_id), "id": x_id}
-            except Exception as exc:
-                log(f"Error crossposting to X: {exc}")
-                return {"ok": False, "error": str(exc)}
+
+            return _publish_guarded("x", action)
 
         def publish_bluesky_task(english_future):
             if not (ENABLE_BLUESKY and BLUESKY_APP_PASSWORD and plan_target_enabled(plan, "bluesky", True)):
@@ -300,27 +316,26 @@ def publish_threads_post_or_thread(text, media_items, message_id=None, post_id=N
                 return {"ok": False, "error": str(exc)}
 
         def publish_mastodon_task(english_future):
-            if not (ENABLE_MASTODON and MASTODON_ACCESS_TOKEN and plan_target_enabled(plan, "mastodon", True)):
-                return {"ok": False, "skipped": True}
-            log("Async target start: mastodon")
+            if not _target_allowed(plan, "mastodon", ENABLE_MASTODON, MASTODON_ACCESS_TOKEN):
+                return _skipped()
             english_text, english_media_items = get_english_context(english_future)
             if not english_text:
-                return {"ok": False, "skipped": True, "reason": "missing_english_translation"}
-            try:
+                return _skipped("missing_english_translation")
+
+            def action():
                 canonical_url = (plan or {}).get("url_en") or (plan or {}).get("canonical_url")
                 return publish_to_mastodon(english_text, english_media_items, canonical_url)
-            except Exception as exc:
-                log(f"Error crossposting to Mastodon: {exc}")
-                return {"ok": False, "error": str(exc)}
+
+            return _publish_guarded("mastodon", action)
 
         def publish_devto_task(english_future):
-            if not (ENABLE_DEVTO and DEVTO_API_KEY and plan_target_enabled(plan, "devto", True)):
-                return {"ok": False, "skipped": True}
-            log("Async target start: devto")
+            if not _target_allowed(plan, "devto", ENABLE_DEVTO, DEVTO_API_KEY):
+                return _skipped()
             english_text, english_media_items = get_english_context(english_future)
             if not english_text:
-                return {"ok": False, "skipped": True, "reason": "missing_english_translation"}
-            try:
+                return _skipped("missing_english_translation")
+
+            def action():
                 # For dev.to we post the full English text as markdown article
                 # canonical_url is extracted from the plan if available
                 canonical_url = (plan or {}).get("url_en") or (plan or {}).get("canonical_url")
@@ -334,9 +349,8 @@ def publish_threads_post_or_thread(text, media_items, message_id=None, post_id=N
                     main_image=_first_public_image_url(english_media_items),
                 )
                 return {"ok": bool(url), "id": url}
-            except Exception as exc:
-                log(f"Error crossposting to dev.to: {exc}")
-                return {"ok": False, "error": str(exc)}
+
+            return _publish_guarded("devto", action)
 
         def publish_github_en_task(english_future):
             if not (ENABLE_GITHUB_EN and GITHUB_DISCUSSIONS_TOKEN and plan_target_enabled(plan, "github_en", True)):
@@ -405,44 +419,43 @@ def publish_threads_post_or_thread(text, media_items, message_id=None, post_id=N
 
         def publish_telegram_stories_task():
             if not plan_target_enabled(plan, "telegram_stories", True):
-                return {"ok": False, "skipped": True}
-            log("Async target start: telegram_stories")
-            try:
+                return _skipped()
+
+            def action():
                 return publish_telegram_story(media_items, caption=text, link_url=(plan or {}).get("url_ru"))
-            except Exception as exc:
-                log(f"Error posting Telegram Story: {exc}")
-                return {"ok": False, "error": str(exc)}
+
+            return _publish_guarded("telegram_stories", action)
 
         def publish_instagram_stories_task(english_future):
-            if not (ENABLE_INSTAGRAM_STORIES and INSTAGRAM_EN_ACCESS_TOKEN and INSTAGRAM_EN_USER_ID and plan_target_enabled(plan, "instagram_stories", True)):
-                return {"ok": False, "skipped": True}
-            log("Async target start: instagram_stories")
+            if not _target_allowed(plan, "instagram_stories", ENABLE_INSTAGRAM_STORIES, INSTAGRAM_EN_ACCESS_TOKEN, INSTAGRAM_EN_USER_ID):
+                return _skipped()
             english_text, english_media_items = get_english_context(english_future)
-            try:
+            if not english_text:
+                return _skipped("missing_english_translation")
+
+            def action():
                 return publish_instagram_story(
                     english_media_items,
                     caption=english_text,
                     ig_user_id=INSTAGRAM_EN_USER_ID,
                     token=INSTAGRAM_EN_ACCESS_TOKEN,
                 )
-            except Exception as exc:
-                log(f"Error posting Instagram Story: {exc}")
-                return {"ok": False, "error": str(exc)}
+
+            return _publish_guarded("instagram_stories", action)
 
         def publish_instagram_stories_ru_task():
-            if not (ENABLE_INSTAGRAM_STORIES and INSTAGRAM_RU_ACCESS_TOKEN and INSTAGRAM_RU_USER_ID and plan_target_enabled(plan, "instagram_stories_ru", True)):
-                return {"ok": False, "skipped": True}
-            log("Async target start: instagram_stories_ru")
-            try:
+            if not _target_allowed(plan, "instagram_stories_ru", ENABLE_INSTAGRAM_STORIES, INSTAGRAM_RU_ACCESS_TOKEN, INSTAGRAM_RU_USER_ID):
+                return _skipped()
+
+            def action():
                 return publish_instagram_story(
                     media_items,
                     caption=text,
                     ig_user_id=INSTAGRAM_RU_USER_ID,
                     token=INSTAGRAM_RU_ACCESS_TOKEN,
                 )
-            except Exception as exc:
-                log(f"Error posting Instagram Story RU: {exc}")
-                return {"ok": False, "error": str(exc)}
+
+            return _publish_guarded("instagram_stories_ru", action)
 
         futures = {}
         effective_workers = max(PUBLISH_MAX_WORKERS, 6 if english_crosspost_enabled else 2)

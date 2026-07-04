@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import re
 import urllib.parse
-import urllib.request
 import asyncio
 
 from posting_core.http_client import request_json
@@ -160,8 +159,10 @@ def _sync_github(conn, row) -> None:
         _upsert_many(conn, row, "github_graphql", {}, {"url": row["url"] or row["external_id"]}, "missing_github_discussion_url")
         return
     owner, repo, number = parsed
-    payload = json.dumps({
-        "query": """
+    data = request_json(
+        "https://api.github.com/graphql",
+        payload={
+            "query": """
         query($owner:String!, $repo:String!, $number:Int!) {
           repository(owner:$owner, name:$repo) {
             discussion(number:$number) {
@@ -171,20 +172,16 @@ def _sync_github(conn, row) -> None:
           }
         }
         """,
-        "variables": {"owner": owner, "repo": repo, "number": number},
-    }).encode("utf-8")
-    req = urllib.request.Request(
-        "https://api.github.com/graphql",
-        data=payload,
+            "variables": {"owner": owner, "repo": repo, "number": number},
+        },
         headers={
             "Authorization": f"Bearer {GITHUB_DISCUSSIONS_TOKEN}",
             "Content-Type": "application/json",
             "User-Agent": "alexgetman-posting/1.0",
         },
         method="POST",
+        timeout=30,
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        data = json.loads(resp.read())
     discussion = (((data.get("data") or {}).get("repository") or {}).get("discussion") or {})
     metrics = {
         "likes": int(((discussion.get("reactions") or {}).get("totalCount")) or 0),

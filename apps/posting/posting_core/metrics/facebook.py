@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import json
-
 from posting_core.http_client import request_json
-from posting_core.metrics_config import FACEBOOK_GRAPH_API_VERSION, FACEBOOK_PAGE_ACCESS_TOKEN, FACEBOOK_RU_PAGE_ACCESS_TOKEN, now_iso, log
-from posting_core.metrics.repository import upsert_metric
+from posting_core.metrics_config import FACEBOOK_GRAPH_API_VERSION, FACEBOOK_PAGE_ACCESS_TOKEN, FACEBOOK_RU_PAGE_ACCESS_TOKEN, log
+from posting_core.metrics.repository import upsert_metric, upsert_metrics
 from posting_core.metrics.schedule import finish_metric_task
 
 
@@ -127,24 +125,6 @@ def sync_facebook_metrics(conn, tasks):
                 upsert_metric(conn, row["post_key"], target, None, "facebook_insights_api", {"external_id": row["external_id"]}, error=error)
                 finish_metric_task(conn, row["post_key"], target, row["date_utc"], error=error)
                 continue
-            for metric_name, value in (metrics or {}).items():
-                sampled_at = now_iso()
-                conn.execute(
-                    f"""
-                    INSERT INTO post_metrics(post_key, target, metric_name, value, source, sampled_at, error, raw_json)
-                    VALUES (?, '{target}', ?, ?, 'facebook_insights_api', ?, NULL, ?)
-                    ON CONFLICT(post_key, target, metric_name) DO UPDATE SET
-                        value=excluded.value,
-                        source=excluded.source,
-                        sampled_at=excluded.sampled_at,
-                        error=NULL,
-                        raw_json=excluded.raw_json
-                    """,
-                    (row["post_key"], metric_name, int(value), sampled_at, json.dumps({"external_id": row["external_id"], "api_metric": metric_name}, ensure_ascii=False)),
-                )
-                conn.execute(
-                    f"INSERT INTO metric_samples(post_key, target, metric_name, value, sampled_at, source, raw_json) VALUES (?, '{target}', ?, ?, ?, 'facebook_insights_api', ?)",
-                    (row["post_key"], metric_name, int(value), sampled_at, json.dumps({"external_id": row["external_id"], "api_metric": metric_name}, ensure_ascii=False)),
-                )
+            upsert_metrics(conn, row["post_key"], target, metrics, "facebook_insights_api", {"external_id": row["external_id"]})
             finish_metric_task(conn, row["post_key"], target, row["date_utc"], error=None)
     conn.commit()

@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import json
 import os
-import urllib.error
 import urllib.parse
-import urllib.request
 from typing import Any
 
 from .db import connect
+from .http_client import HttpRequestError, request
 
 def load_secrets(paths) -> dict[str, str]:
         values = dict(os.environ)
@@ -24,15 +23,14 @@ def load_secrets(paths) -> dict[str, str]:
 
 
 def post_json(url: str, payload: dict[str, Any], headers: dict[str, str] | None = None, timeout: int = 15) -> tuple[int, dict[str, Any] | None]:
-        request = urllib.request.Request(
+        response = request(
             url,
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json", **(headers or {})},
             method="POST",
+            timeout=timeout,
         )
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            raw = response.read()
-            return response.status, json.loads(raw.decode("utf-8")) if raw else None
+        return response.status, json.loads(response.body.decode("utf-8")) if response.body else None
 
 
 def edit_published_targets(paths, post: Any, text_ru: str | None, text_en: str | None) -> list[dict[str, Any]]:
@@ -103,8 +101,8 @@ def edit_published_targets(paths, post: Any, text_ru: str | None, text_en: str |
                         },
                     )
                     results.append({"target": target, "ok": status in {200, 204}, "status": status, "response": data})
-            except urllib.error.HTTPError as exc:
-                results.append({"target": target, "ok": False, "status": exc.code, "error": exc.read().decode("utf-8", errors="replace")})
+            except HttpRequestError as exc:
+                results.append({"target": target, "ok": False, "status": exc.status, "error": exc.body})
             except Exception as exc:
                 results.append({"target": target, "ok": False, "error": str(exc)})
         return results

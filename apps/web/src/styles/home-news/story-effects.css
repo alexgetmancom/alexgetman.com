@@ -1,0 +1,122 @@
+
+  @media (max-width: 440px) {
+    .story-visual__chrome span:last-child,
+    .audio-chip span:last-child {
+      display: none;
+    }
+
+    .story-actions {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  /* Play/Pause Overlay */
+  .play-pause-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: grid;
+    place-items: center;
+    background: rgba(0, 0, 0, 0.12);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+  }
+
+  .play-pause-overlay.is-visible {
+    animation: playPauseFlash 0.65s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  .play-pause-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.72);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    display: grid;
+    place-items: center;
+    position: relative;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  }
+
+  /* Pause Icon (Double bar) */
+  .play-pause-icon.is-paused::before,
+  .play-pause-icon.is-paused::after {
+    content: '';
+    width: 6px;
+    height: 20px;
+    background: #ffffff;
+    border-radius: 2px;
+    position: absolute;
+    top: 22px;
+  }
+  .play-pause-icon.is-paused::before {
+    left: 23px;
+  }
+  .play-pause-icon.is-paused::after {
+    right: 23px;
+  }
+
+  /* Play Icon (Triangle) */
+  .play-pause-icon.is-playing::before {
+    content: '';
+    width: 0;
+    height: 0;
+    border-style: solid;
+    border-width: 10px 0 10px 18px;
+    border-color: transparent transparent transparent #ffffff;
+    position: absolute;
+    left: 25px;
+    top: 22px;
+  }
+
+  @keyframes playPauseFlash {
+    0% {
+      opacity: 0;
+      transform: scale(0.85);
+    }
+    15% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    85% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(1.08);
+    }
+  }
+
+  /* App Entry Reveal Animations */
+  @keyframes appReveal {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .story-rail {
+    animation: appReveal 0.68s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    animation-delay: 0.08s;
+    opacity: 0;
+  }
+
+  .story-visual-wrap {
+    animation: appReveal 0.68s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    animation-delay: 0.22s;
+    opacity: 0;
+  }
+
+  .story-context {
+    animation: appReveal 0.68s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    animation-delay: 0.36s;
+    opacity: 0;
+  }

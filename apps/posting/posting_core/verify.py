@@ -1,18 +1,16 @@
 from __future__ import annotations
 
-import urllib.parse
-import urllib.request
 from typing import Any
 
+from .http_client import request
 from .clients.bluesky import verify_bluesky_root_visible
 from .social_urls import target_public_url
 
 
 def _http_visible(url: str, timeout: int = 15) -> tuple[bool, str | None]:
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "alexgetman-posting-verify/1.0"})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return int(resp.status) < 500, f"http_{resp.status}"
+        resp = request(url, headers={"User-Agent": "alexgetman-posting-verify/1.0"}, timeout=timeout)
+        return int(resp.status) < 500, f"http_{resp.status}"
     except Exception as exc:
         return False, str(exc)
 

@@ -8,6 +8,29 @@
   const ui = payload.ui || {};
   const giscusConfig = payload.giscus || {};
   if (!posts.length) return;
+  const playerUtils = window.StoryPlayerUtils || {};
+  const normalizedPath = playerUtils.normalizedPath || ((value) => {
+    try {
+      const url = new URL(value, window.location.origin);
+      return url.pathname.endsWith('/') ? url.pathname : `${url.pathname}/`;
+    } catch (_) {
+      return '/';
+    }
+  });
+  const applyImageFallback = playerUtils.applyImageFallback || ((img) => {
+    const fallbackSrc = img?.dataset?.fallbackSrc;
+    if (!fallbackSrc || img.getAttribute('src') === fallbackSrc) {
+      img.style.display = 'none';
+      return false;
+    }
+    img.setAttribute('src', fallbackSrc);
+    img.removeAttribute('srcset');
+    return true;
+  });
+  const isTypingTarget = playerUtils.isTypingTarget || ((element) => {
+    const tagName = element?.tagName;
+    return tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT';
+  });
 
   const image = root.querySelector('[data-story-image]');
   const video = root.querySelector('[data-story-video]');
@@ -77,15 +100,6 @@
   let activeFeedMode = 'latest';
   const debugEnabled = new URLSearchParams(window.location.search).has('debug');
   const debugPanel = debugEnabled ? document.createElement('pre') : null;
-
-  function normalizedPath(value) {
-    try {
-      const url = new URL(value, window.location.origin);
-      return url.pathname.endsWith('/') ? url.pathname : `${url.pathname}/`;
-    } catch (_) {
-      return '/';
-    }
-  }
 
   function recordStoryView(post) {
     if (!post?.url) return;
@@ -275,17 +289,6 @@
     }
   }
 
-  function applyImageFallback(img) {
-    const fallbackSrc = img?.dataset?.fallbackSrc;
-    if (!fallbackSrc || img.getAttribute('src') === fallbackSrc) {
-      img.style.display = 'none';
-      return false;
-    }
-    img.setAttribute('src', fallbackSrc);
-    img.removeAttribute('srcset');
-    return true;
-  }
-
   root.querySelectorAll('img').forEach((img) => {
     img.addEventListener('error', () => {
       if (!applyImageFallback(img)) {
@@ -415,6 +418,17 @@
         media.appendChild(img);
       }
       card.dataset.mediaHydrated = 'true';
+    });
+  }
+
+  function centerRailCard(card) {
+    if (!rail || !card) return;
+    const left = card.offsetLeft - (rail.clientWidth - card.offsetWidth) / 2;
+    const top = card.offsetTop - (rail.clientHeight - card.offsetHeight) / 2;
+    rail.scrollTo({
+      left: Math.max(0, left),
+      top: Math.max(0, top),
+      behavior: 'smooth',
     });
   }
 
@@ -644,7 +658,7 @@
       card.classList.toggle('is-active', isCurrent);
       if (isCurrent) {
         window.setTimeout(() => {
-          card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          centerRailCard(card);
         }, 60);
       }
     });
@@ -851,8 +865,7 @@
 
   document.addEventListener('keydown', (event) => {
     if (event.defaultPrevented) return;
-    const tagName = document.activeElement?.tagName;
-    if (tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT') return;
+    if (isTypingTarget(document.activeElement)) return;
     if (event.key === 'ArrowDown' || event.key === 'PageDown') {
       event.preventDefault();
       render(nextVisibleStoryIndex(1), { keepProgressIdle: true });

@@ -29,6 +29,21 @@ def strip_urls(text):
     return text.strip()
 
 
+def clean_text(text):
+    return re.sub(r"\n{3,}", "\n\n", (text or "").strip())
+
+
+def compact_text(value):
+    return re.sub(r"\s+", " ", clean_text(value)).strip()
+
+
+def truncate_text(value, limit):
+    value = compact_text(value)
+    if len(value) <= limit:
+        return value
+    return value[: max(0, limit - 1)].rstrip() + "…"
+
+
 def iter_graphemes(text: str):
     cluster = ""
     join_next = False

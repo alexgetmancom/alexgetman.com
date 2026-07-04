@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import time
 from datetime import datetime, timezone
-import urllib.request
 
 from posting_core.control.config import (
     ADMIN_IDS,
@@ -18,6 +16,7 @@ from posting_core.control.config import (
 )
 from posting_core.control.events import emit_event_once
 from posting_core.db import ensure_pipeline_schema
+from posting_core.http_client import request_json
 
 def parse_iso(value):
     try:
@@ -80,14 +79,13 @@ def telegram_api(method, payload):
     if not CONTROLLER_BOT_TOKEN:
         return None
     url = f"{BOT_API_BASE}/bot{CONTROLLER_BOT_TOKEN}/{method}"
-    req = urllib.request.Request(
+    return request_json(
         url,
-        data=json.dumps(payload).encode("utf-8"),
+        payload=payload,
         headers={"Content-Type": "application/json"},
         method="POST",
+        timeout=20,
     )
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        return json.loads(resp.read().decode("utf-8"))
 
 
 def send_alerts(conn):

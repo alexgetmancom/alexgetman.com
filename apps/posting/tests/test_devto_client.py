@@ -2,26 +2,24 @@ import json
 
 
 class FakeResponse:
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_args):
-        return False
-
-    def read(self):
-        return json.dumps({"url": "https://dev.to/alexgetmancom/post"}).encode()
+    status = 200
+    headers = {}
+    body = json.dumps({"url": "https://dev.to/alexgetmancom/post"}).encode()
 
 
 def test_publish_to_devto_sends_main_image(monkeypatch):
     captured = {}
 
-    def fake_urlopen(req, timeout=None):
-        captured["body"] = json.loads(req.data.decode())
+    def fake_request(url, *, data=None, headers=None, method="GET", timeout=30, **_kwargs):
+        captured["url"] = url
+        captured["body"] = json.loads(data.decode())
+        captured["headers"] = headers
+        captured["method"] = method
         captured["timeout"] = timeout
         return FakeResponse()
 
     monkeypatch.setattr("posting_core.clients.devto.DEVTO_API_KEY", "token")
-    monkeypatch.setattr("posting_core.clients.devto.urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("posting_core.http_client.request", fake_request)
 
     from posting_core.clients.devto import publish_to_devto
 
