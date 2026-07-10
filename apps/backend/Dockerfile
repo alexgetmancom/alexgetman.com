@@ -13,8 +13,7 @@ USER bun
 RUN bun install --frozen-lockfile \
   && bun run --filter @alexgetman/shared typecheck \
   && bun run --filter @alexgetman/backend typecheck \
-  && bun run --filter @alexgetman/backend build \
-  && DATA_DIR=apps/web/src/data bun run build
+  && bun run --filter @alexgetman/backend build
 
 FROM oven/bun:1.3.14-debian AS backend
 
@@ -38,4 +37,5 @@ ARG GIT_REVISION=unknown
 ENV GIT_REVISION=${GIT_REVISION}
 
 USER bun
+RUN DATA_DIR=apps/web/src/data bun run build
 ENTRYPOINT ["bun", "--smol", "/app/apps/backend/dist/site/builder.js"]
