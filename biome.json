@@ -1,0 +1,31 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.3/schema.json",
+  "files": {
+    "includes": [
+      "**",
+      "!**/node_modules",
+      "!dist",
+      "!**/dist",
+      "!coverage",
+      "!**/coverage",
+      "!**/.astro",
+      "!apps/backend/data",
+      "!apps/backend/bot-api-data",
+      "!apps/backend/bot-api-temp"
+    ]
+  },
+  "formatter": {
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 140
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "suspicious": {
+        "noExplicitAny": "off"
+      }
+    }
+  }
+}

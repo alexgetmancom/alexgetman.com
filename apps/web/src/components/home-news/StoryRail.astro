@@ -1,6 +1,6 @@
 ---
-import { truncateText } from '../../utils/helpers';
-import type { HomePost, StoryUi } from './types';
+import { truncateText } from "../../utils/helpers";
+import type { HomePost, StoryUi } from "./types";
 
 interface Props {
   posts: HomePost[];
@@ -8,7 +8,7 @@ interface Props {
 }
 
 const { posts, ui } = Astro.props;
-const publicSrc = (value?: string | null) => value ? `/${String(value).replace(/^\/+/, '')}` : undefined;
+const publicSrc = (value?: string | null) => (value ? `/${String(value).replace(/^\/+/, "")}` : undefined);
 ---
 
 <nav class="story-rail" aria-label={ui.storyRail}>
@@ -28,7 +28,7 @@ const publicSrc = (value?: string | null) => value ? `/${String(value).replace(/
             post.fallbackImage ? (
               <img
                 src={publicSrc(post.fallbackImage)}
-                alt=""
+                alt={post.title}
                 loading={index < 4 ? 'eager' : 'lazy'}
                 decoding="async"
                 sizes="(max-width: 760px) 38vw, 140px"
@@ -45,7 +45,7 @@ const publicSrc = (value?: string | null) => value ? `/${String(value).replace(/
             <img
               src={publicSrc(post.image)}
               srcset={post.imageSrcSet}
-              alt=""
+              alt={post.title}
               loading={index < 4 ? 'eager' : 'lazy'}
               decoding="async"
               sizes="(max-width: 760px) 38vw, 140px"

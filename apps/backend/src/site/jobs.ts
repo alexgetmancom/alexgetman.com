@@ -6,9 +6,9 @@ import type { BackendDb } from "../db/client.js";
 import { nextRetryAt } from "../queue/errors.js";
 import { reconcilePublication, workerId } from "../queue/publish.js";
 import { recordWorkerState } from "../services/workerState.js";
-import { materializeSiteMedia } from "./media.js";
 import { publishContentIndex } from "./contentIndex.js";
 import { pingIndexNow } from "./indexNow.js";
+import { materializeSiteMedia } from "./media.js";
 
 type SiteJob = {
   job_id: number;
@@ -40,7 +40,7 @@ export async function runSiteJobCycle(config: BackendConfig, backendDb: BackendD
   return jobs.length;
 }
 
-export function recoverStaleSiteJobs(config: BackendConfig, backendDb: BackendDb): number {
+function recoverStaleSiteJobs(config: BackendConfig, backendDb: BackendDb): number {
   const cutoff = new Date(Date.now() - config.SITE_JOB_LOCK_TIMEOUT_SECONDS * 1000).toISOString();
   const now = new Date().toISOString();
   const result = backendDb.sqlite
@@ -60,7 +60,9 @@ export async function renderFeedFiles(config: BackendConfig, backendDb: BackendD
     const messageId = Number(item.telegram_message_id ?? item.message_id ?? 0);
     item.views = views.get(messageId) ?? Number(item.views ?? 0);
   }
-  const ordered = items.filter((value): value is Record<string, unknown> => value != null).sort((a, b) => String(b.date ?? b.created_at ?? "").localeCompare(String(a.date ?? a.created_at ?? "")));
+  const ordered = items
+    .filter((value): value is Record<string, unknown> => value != null)
+    .sort((a, b) => String(b.date ?? b.created_at ?? "").localeCompare(String(a.date ?? a.created_at ?? "")));
   atomicWriteJson(config.FEED_JSON, { updated_at: new Date().toISOString(), channel: config.CHANNEL_USERNAME, items: ordered });
   atomicWriteJson(config.SITE_METRICS_JSON, {
     updated_at: new Date().toISOString(),
@@ -82,13 +84,17 @@ function claimSiteJobs(config: BackendConfig, backendDb: BackendDb): SiteJob[] {
     )
     .all(now, config.SITE_JOB_CLAIM_LIMIT) as SiteJob[];
   const claimed: SiteJob[] = [];
-  const update = backendDb.sqlite.prepare("UPDATE site_jobs SET status='rendering', locked_by=?, locked_at=?, updated_at=? WHERE job_id=? AND status='queued'");
+  const update = backendDb.sqlite.prepare(
+    "UPDATE site_jobs SET status='rendering', locked_by=?, locked_at=?, updated_at=? WHERE job_id=? AND status='queued'",
+  );
   backendDb.sqlite.transaction(() => {
     for (const row of rows) {
       if (update.run(workerId("site"), now, now, row.job_id).changes === 1) claimed.push(row);
     }
     if (claimed.length > 0) {
-      insertSiteEvent(backendDb, "site.build.claimed", "info", `claimed ${claimed.length} site build job(s)`, { job_ids: claimed.map((job) => job.job_id) });
+      insertSiteEvent(backendDb, "site.build.claimed", "info", `claimed ${claimed.length} site build job(s)`, {
+        job_ids: claimed.map((job) => job.job_id),
+      });
     }
   })();
   return claimed;
@@ -98,11 +104,16 @@ function completeSiteJobs(backendDb: BackendDb, jobs: SiteJob[]): void {
   const now = new Date().toISOString();
   backendDb.sqlite.transaction(() => {
     for (const job of jobs) {
-      backendDb.sqlite.prepare("UPDATE site_jobs SET status='published', locked_by=NULL, locked_at=NULL, last_error=NULL, updated_at=? WHERE job_id=?").run(now, job.job_id);
+      backendDb.sqlite
+        .prepare("UPDATE site_jobs SET status='published', locked_by=NULL, locked_at=NULL, last_error=NULL, updated_at=? WHERE job_id=?")
+        .run(now, job.job_id);
     }
-    insertSiteEvent(backendDb, "site.build.published", "info", `published ${jobs.length} site build job(s)`, { job_ids: jobs.map((job) => job.job_id) });
+    insertSiteEvent(backendDb, "site.build.published", "info", `published ${jobs.length} site build job(s)`, {
+      job_ids: jobs.map((job) => job.job_id),
+    });
   })();
-  for (const postId of new Set(jobs.map((job) => job.post_id).filter((value): value is number => value != null))) reconcilePublication(backendDb, postId);
+  for (const postId of new Set(jobs.map((job) => job.post_id).filter((value): value is number => value != null)))
+    reconcilePublication(backendDb, postId);
 }
 
 function failSiteJobs(config: BackendConfig, backendDb: BackendDb, jobs: SiteJob[], error: unknown): void {
@@ -113,21 +124,45 @@ function failSiteJobs(config: BackendConfig, backendDb: BackendDb, jobs: SiteJob
       const attempt = Number(job.attempt_count ?? 0) + 1;
       const retry = attempt < config.SITE_JOB_MAX_ATTEMPTS;
       backendDb.sqlite
-        .prepare("UPDATE site_jobs SET status=?, attempt_count=?, next_attempt_at=?, locked_by=NULL, locked_at=NULL, last_error=?, updated_at=? WHERE job_id=?")
-        .run(retry ? "queued" : "failed", attempt, retry ? nextRetryAt(attempt, config.SITE_JOB_BACKOFF_BASE_SECONDS, config.SITE_JOB_BACKOFF_MAX_SECONDS) : null, message, now, job.job_id);
+        .prepare(
+          "UPDATE site_jobs SET status=?, attempt_count=?, next_attempt_at=?, locked_by=NULL, locked_at=NULL, last_error=?, updated_at=? WHERE job_id=?",
+        )
+        .run(
+          retry ? "queued" : "failed",
+          attempt,
+          retry ? nextRetryAt(attempt, config.SITE_JOB_BACKOFF_BASE_SECONDS, config.SITE_JOB_BACKOFF_MAX_SECONDS) : null,
+          message,
+          now,
+          job.job_id,
+        );
     }
     insertSiteEvent(backendDb, "site.build.failed", "error", message, { job_ids: jobs.map((job) => job.job_id) });
   })();
-  for (const postId of new Set(jobs.filter((job) => Number(job.attempt_count ?? 0) + 1 >= config.SITE_JOB_MAX_ATTEMPTS).map((job) => job.post_id).filter((value): value is number => value != null))) reconcilePublication(backendDb, postId);
+  for (const postId of new Set(
+    jobs
+      .filter((job) => Number(job.attempt_count ?? 0) + 1 >= config.SITE_JOB_MAX_ATTEMPTS)
+      .map((job) => job.post_id)
+      .filter((value): value is number => value != null),
+  ))
+    reconcilePublication(backendDb, postId);
 }
 
 function sourceItems(backendDb: BackendDb): Record<string, unknown>[] {
-  const rows = backendDb.sqlite.prepare("SELECT s.item_json, p.telegram_message_id FROM publication_sources s JOIN publications p ON p.post_id=s.post_id ORDER BY s.post_id DESC").all() as { item_json: string; telegram_message_id: number | null }[];
-  if (rows.length > 0) return rows.flatMap((row): Record<string, unknown>[] => {
-    const item = parseObject(row.item_json);
-    return item ? [{ ...item, telegram_message_id: row.telegram_message_id ?? item.telegram_message_id }] : [];
-  });
-  return (backendDb.sqlite.prepare("SELECT raw_json, post_key, message_id, date_utc, text, text_en, media_json FROM posts ORDER BY created_at DESC").all() as Record<string, unknown>[]).map((row) => ({
+  const rows = backendDb.sqlite
+    .prepare(
+      "SELECT s.item_json, p.telegram_message_id FROM publication_sources s JOIN publications p ON p.post_id=s.post_id ORDER BY s.post_id DESC",
+    )
+    .all() as { item_json: string; telegram_message_id: number | null }[];
+  if (rows.length > 0)
+    return rows.flatMap((row): Record<string, unknown>[] => {
+      const item = parseObject(row.item_json);
+      return item ? [{ ...item, telegram_message_id: row.telegram_message_id ?? item.telegram_message_id }] : [];
+    });
+  return (
+    backendDb.sqlite
+      .prepare("SELECT raw_json, post_key, message_id, date_utc, text, text_en, media_json FROM posts ORDER BY created_at DESC")
+      .all() as Record<string, unknown>[]
+  ).map((row) => ({
     id: row.post_key,
     message_id: row.message_id,
     date: row.date_utc,
@@ -138,18 +173,25 @@ function sourceItems(backendDb: BackendDb): Record<string, unknown>[] {
   }));
 }
 
-async function prepareFeedItem(config: BackendConfig, backendDb: BackendDb, source: Record<string, unknown>, fetchImpl: typeof fetch): Promise<Record<string, unknown> | null> {
+async function prepareFeedItem(
+  config: BackendConfig,
+  backendDb: BackendDb,
+  source: Record<string, unknown>,
+  fetchImpl: typeof fetch,
+): Promise<Record<string, unknown> | null> {
   const postId = Number(source.post_id ?? 0);
   if (!postId) return null;
   const now = Date.now();
-  const targets = source.targets && typeof source.targets === "object" ? source.targets as Record<string, unknown> : {};
+  const targets = source.targets && typeof source.targets === "object" ? (source.targets as Record<string, unknown>) : {};
   const hasRu = Boolean(source.has_ru ?? targets.site_ru) && isDue(source.publish_at_ru, now);
   const hasEn = Boolean(source.has_en ?? targets.site_en) && isDue(source.publish_at_en, now);
   if (!hasRu && !hasEn) return null;
   const mediaRu = hasRu ? await materializeSiteMedia(config, postId, "ru", source.media ?? source.media_ru, fetchImpl) : [];
   const mediaEnSource = source.media_en ?? source.media ?? source.media_ru;
   const mediaEn = hasEn ? await materializeSiteMedia(config, postId, "en", mediaEnSource, fetchImpl) : [];
-  const post = backendDb.sqlite.prepare("SELECT message_id, telegram_url FROM posts WHERE post_key=?").get(`post:${postId}`) as { message_id?: number; telegram_url?: string | null } | undefined;
+  const post = backendDb.sqlite.prepare("SELECT message_id, telegram_url FROM posts WHERE post_key=?").get(`post:${postId}`) as
+    | { message_id?: number; telegram_url?: string | null }
+    | undefined;
   return {
     ...source,
     id: `post:${postId}`,
@@ -205,9 +247,16 @@ async function runSiteBuild(config: BackendConfig): Promise<void> {
       child.kill("SIGKILL");
       reject(new Error(`site build timed out after ${config.SITE_BUILD_TIMEOUT_SECONDS}s`));
     }, config.SITE_BUILD_TIMEOUT_SECONDS * 1000);
-    child.stdout.on("data", (chunk) => { output += String(chunk); });
-    child.stderr.on("data", (chunk) => { output += String(chunk); });
-    child.once("error", (error) => { clearTimeout(timeout); reject(error); });
+    child.stdout.on("data", (chunk) => {
+      output += String(chunk);
+    });
+    child.stderr.on("data", (chunk) => {
+      output += String(chunk);
+    });
+    child.once("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
     child.once("exit", (code) => {
       clearTimeout(timeout);
       code === 0 ? resolve() : reject(new Error(`site build failed: ${output.trim() || `exit ${code}`}`));
@@ -215,7 +264,13 @@ async function runSiteBuild(config: BackendConfig): Promise<void> {
   });
 }
 
-function insertSiteEvent(backendDb: BackendDb, eventType: string, severity: string, message: string, details: Record<string, unknown>): void {
+function insertSiteEvent(
+  backendDb: BackendDb,
+  eventType: string,
+  severity: string,
+  message: string,
+  details: Record<string, unknown>,
+): void {
   backendDb.sqlite
     .prepare("INSERT INTO post_events(event_type, severity, message, details_json, created_at) VALUES (?, ?, ?, ?, ?)")
     .run(eventType, severity, message, JSON.stringify(details), new Date().toISOString());

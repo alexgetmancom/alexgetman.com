@@ -1,8 +1,8 @@
-import { formatDate, loadFeedItems, siteUrlFromContext, truncateText } from '../utils/helpers';
+import { formatDate, loadFeedItems, siteUrlFromContext, truncateText } from "../utils/helpers";
 
 export async function GET(context: any) {
   const sortedItems = loadFeedItems()
-    .filter(item => item.text_en)
+    .filter((item) => item.text_en)
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   const siteUrl = siteUrlFromContext(context);
@@ -42,13 +42,13 @@ export async function GET(context: any) {
       const title = truncateText(item.text_en || item.text || "", 86) || `Post ${id}`;
       const date = formatDate(item.date);
       if (!item.has_en || !id) continue;
-      lines.push(`- [${title}](${siteUrl}/${id}/${item.slug_en}/) - ${date} MSK`);
+      lines.push(`- [${title}](${siteUrl}/${id}/${item.slug_en}.md) - ${date} MSK`);
     }
   }
 
   return new Response(lines.join("\n") + "\n", {
     headers: {
-      'Content-Type': 'text/plain; charset=utf-8'
-    }
+      "Content-Type": "text/plain; charset=utf-8",
+    },
   });
 }

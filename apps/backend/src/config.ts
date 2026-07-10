@@ -12,7 +12,6 @@ const envSchema = z.object({
   BIND_HOST: z.string().default("127.0.0.1"),
   DATA_DIR: z.string().default("/data"),
   PIPELINE_DB: z.string().default("/data/pipeline.db"),
-  CONTROLLER_DB: z.string().optional(),
   FEED_JSON: z.string().default("/feed-data/feed.json"),
   SITE_METRICS_JSON: z.string().default("/feed-data/metrics.json"),
   TELEGRAM_API_BASE_URL: z.string().default("http://bot-api:8081"),
@@ -36,7 +35,7 @@ const envSchema = z.object({
   CONTROLLER_ADMIN_IDS: z.string().optional(),
   CHANNEL_USERNAME: z.string().default("alexgetmancom"),
   PIPELINE_BASELINE_MESSAGE_ID: z.coerce.number().int().default(422),
-  METRICS_REFRESH_INTERVAL_SECONDS: z.coerce.number().int().positive().default(300),
+  METRICS_REFRESH_INTERVAL_SECONDS: z.coerce.number().int().positive().default(10),
   TELEGRAM_METRICS_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(10),
   MAX_METRIC_TASKS_PER_CYCLE: z.coerce.number().int().positive().default(30),
   OBSERVABILITY_INTERVAL_SECONDS: z.coerce.number().int().positive().default(300),
@@ -102,6 +101,7 @@ const envSchema = z.object({
   PUBLIC_BASE_URL: z.string().default("https://alexgetman.com"),
   ENABLE_BOT_POLLING: booleanFlag.default("false"),
   ENABLE_WORKERS: booleanFlag.default("true"),
+  ENABLE_SITE_WORKER: booleanFlag.default("true"),
   INDEXNOW_ENABLED: booleanFlag.default("true"),
 });
 

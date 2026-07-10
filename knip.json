@@ -1,0 +1,18 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/*.ts", "apps/web/src/pages/**/*.astro", "apps/web/src/components/**/*.astro"],
+      "project": ["apps/web/src/**/*.ts", "apps/web/src/**/*.astro", "scripts/**/*.ts"]
+    },
+    "apps/backend": {
+      "entry": ["src/index.ts", "src/cli.ts", "src/runtime/buildSite.ts", "src/site/builder.ts", "tests/**/*.test.ts"],
+      "project": ["src/**/*.ts", "tests/**/*.ts"]
+    },
+    "packages/shared": {
+      "entry": [],
+      "project": ["src/**/*.ts"]
+    }
+  },
+  "ignore": ["apps/web/src/utils/helpers.ts", "apps/web/src/utils/home-posts.ts"]
+}

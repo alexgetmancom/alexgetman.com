@@ -1,5 +1,5 @@
 ---
-import type { HomePost, StoryUi } from './types';
+import type { HomePost, StoryUi } from "./types";
 
 interface Props {
   activePost: HomePost;
@@ -8,7 +8,7 @@ interface Props {
 }
 
 const { activePost, posts, ui } = Astro.props;
-const publicSrc = (value?: string | null) => value ? `/${String(value).replace(/^\/+/, '')}` : undefined;
+const publicSrc = (value?: string | null) => (value ? `/${String(value).replace(/^\/+/, "")}` : undefined);
 ---
 
 <div class="story-visual-wrap">
@@ -22,7 +22,7 @@ const publicSrc = (value?: string | null) => value ? `/${String(value).replace(/
           <img
             src={activePost.mediaType === 'video' ? '' : publicSrc(activePost.image)}
             srcset={activePost.mediaType === 'video' ? undefined : activePost.imageSrcSet}
-            alt=""
+            alt={activePost.title}
             loading="eager"
             decoding="async"
             sizes="(max-width: 760px) min(100vw - 2rem, 390px), 320px"

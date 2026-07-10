@@ -1,7 +1,7 @@
 import type { BackendConfig } from "../config.js";
 import { HttpPublishError, type PublishResult } from "../queue/errors.js";
 
-export type DevtoArticleInput = {
+type DevtoArticleInput = {
   title: string;
   bodyMarkdown: string;
   canonicalUrl?: string | null;
@@ -11,8 +11,16 @@ export type DevtoArticleInput = {
 };
 
 export function devtoArticleFromPayload(payload: Record<string, unknown>, config: BackendConfig): DevtoArticleInput {
-  const title = stringValue(payload.title) || firstLine(stringValue(payload.text_en) || stringValue(payload.text) || stringValue(payload.bodyMarkdown)) || "Alex Getman update";
-  const bodyMarkdown = stringValue(payload.bodyMarkdown) || stringValue(payload.body_markdown) || stringValue(payload.text_en) || stringValue(payload.text) || "";
+  const title =
+    stringValue(payload.title) ||
+    firstLine(stringValue(payload.text_en) || stringValue(payload.text) || stringValue(payload.bodyMarkdown)) ||
+    "Alex Getman update";
+  const bodyMarkdown =
+    stringValue(payload.bodyMarkdown) ||
+    stringValue(payload.body_markdown) ||
+    stringValue(payload.text_en) ||
+    stringValue(payload.text) ||
+    "";
   const canonicalUrl = stringValue(payload.canonicalUrl) || stringValue(payload.canonical_url) || canonicalFromPayload(payload, config);
   const tags = Array.isArray(payload.tags) ? payload.tags.map((tag) => String(tag)) : [];
   const mainImage = stringValue(payload.mainImage) || stringValue(payload.main_image) || null;
@@ -26,7 +34,11 @@ export function devtoArticleFromPayload(payload: Record<string, unknown>, config
   };
 }
 
-export async function publishToDevto(input: DevtoArticleInput, config: BackendConfig, fetchImpl: typeof fetch = fetch): Promise<PublishResult> {
+export async function publishToDevto(
+  input: DevtoArticleInput,
+  config: BackendConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<PublishResult> {
   if (!config.DEVTO_API_KEY) {
     return { skipped: true, reason: "missing DEVTO_API_KEY" };
   }

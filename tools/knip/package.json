@@ -1,0 +1,9 @@
+{
+  "name": "@alexgetman/knip-tools",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "knip": "^5.88.1",
+    "typescript": "5.9.3"
+  }
+}

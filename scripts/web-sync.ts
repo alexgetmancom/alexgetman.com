@@ -2,9 +2,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { output, run } from "./process.js";
 
-const repository = process.env.WEB_REPOSITORY ?? "/home/deploy/repos/ialexey-web";
-const publicDirectory = process.env.WEB_PUBLIC_DIR ?? "/home/deploy/ialexey-web";
-const lockDirectory = process.env.WEB_SYNC_LOCK ?? "/tmp/ialexey-web-sync.lock";
+const repository = requiredEnv("WEB_REPOSITORY");
+const publicDirectory = requiredEnv("WEB_PUBLIC_DIR");
+const lockDirectory = process.env.WEB_SYNC_LOCK ?? "/tmp/alexgetman-web-sync.lock";
+
+function requiredEnv(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) throw new Error(`${name} is required`);
+  return value;
+}
 
 function acquireLock(): boolean {
   try {

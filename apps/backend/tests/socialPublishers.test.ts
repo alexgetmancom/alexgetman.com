@@ -20,7 +20,9 @@ describe("LinkedIn publisher", () => {
       const url = String(input);
       calls.push({ url, ...(init ? { init } : {}) });
       if (url.includes("images?action=initializeUpload")) {
-        return new Response(JSON.stringify({ value: { uploadUrl: "https://upload.linkedin.test/image", image: "urn:li:image:1" } }), { status: 200 });
+        return new Response(JSON.stringify({ value: { uploadUrl: "https://upload.linkedin.test/image", image: "urn:li:image:1" } }), {
+          status: 200,
+        });
       }
       if (url === "https://upload.linkedin.test/image") return new Response("", { status: 201 });
       return new Response("", { status: 201, headers: { "x-restli-id": "urn:li:share:55" } });
@@ -35,9 +37,11 @@ describe("LinkedIn publisher", () => {
       "https://upload.linkedin.test/image",
       "https://api.linkedin.com/rest/posts",
     ]);
-    const postBody = JSON.parse(String(calls[2]?.init?.body)) as Record<string, unknown>;
+    const postCall = calls[2];
+    if (!postCall?.init) throw new Error("missing LinkedIn post request");
+    const postBody = JSON.parse(String(postCall.init.body)) as Record<string, unknown>;
     expect(postBody).toMatchObject({ author: "urn:li:person:1", commentary: "Launch", content: { media: { id: "urn:li:image:1" } } });
-    expect((calls[2]?.init?.headers as Record<string, string>)["Linkedin-Version"]).toBe("202606");
+    expect((postCall.init.headers as Record<string, string>)["Linkedin-Version"]).toBe("202606");
   });
 });
 
@@ -53,19 +57,28 @@ describe("X publisher", () => {
     }) as unknown as typeof fetch;
     const config = xConfig();
 
-    const result = await publishToX({ text_en: "Post https://example.com/source", media: [{ type: "IMAGE", local_path: imagePath }] }, config, fetchImpl);
+    const result = await publishToX(
+      { text_en: "Post https://example.com/source", media: [{ type: "IMAGE", local_path: imagePath }] },
+      config,
+      fetchImpl,
+    );
 
     expect(result).toMatchObject({ ok: true, id: "tweet-1", url: "https://x.com/i/web/status/tweet-1" });
     expect(calls).toHaveLength(2);
-    for (const call of calls) expect((call.init?.headers as Record<string, string>).Authorization).toMatch(/^OAuth .*oauth_signature=/);
-    expect(JSON.parse(String(calls[1]?.init?.body))).toEqual({ text: "Post", media: { media_ids: ["media-1"] } });
+    for (const call of calls) {
+      if (!call.init) throw new Error("missing X request init");
+      expect((call.init.headers as Record<string, string>).Authorization).toMatch(/^OAuth .*oauth_signature=/);
+    }
+    const postCall = calls[1];
+    if (!postCall?.init) throw new Error("missing X post request");
+    expect(JSON.parse(String(postCall.init.body))).toEqual({ text: "Post", media: { media_ids: ["media-1"] } });
   });
 
   it("produces a deterministic OAuth signature", () => {
     const header = oauthAuthorization("POST", "https://api.twitter.com/2/tweets", xConfig(), undefined, "fixed-nonce", 1_700_000_000);
     expect(header).toContain('oauth_nonce="fixed-nonce"');
     expect(header).toContain('oauth_timestamp="1700000000"');
-    expect(header).toMatch(/oauth_signature="[^\"]+"/);
+    expect(header).toMatch(/oauth_signature="[^"]+"/);
   });
 });
 

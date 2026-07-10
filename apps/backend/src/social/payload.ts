@@ -16,7 +16,7 @@ export type PublishMediaItem = {
 };
 
 export function payloadText(payload: Record<string, unknown>): string {
-  return stringValue(payload.text_en) || stringValue(payload.text) || stringValue(payload.bodyMarkdown) || stringValue(payload.body_markdown) || "";
+  return stringValue(payload.text_en) || stringValue(payload.text) || "";
 }
 
 export function payloadTitle(payload: Record<string, unknown>): string {
@@ -28,7 +28,7 @@ export function payloadCanonicalUrl(payload: Record<string, unknown>, config: Ba
   if (direct) return direct;
   const postId = payload.post_id ?? payload.postId;
   const locale = stringValue(payload.locale).toLowerCase();
-  const slug = locale === "ru" ? payload.slug_ru ?? payload.slug : payload.slug_en ?? payload.slugEn ?? payload.slug;
+  const slug = locale === "ru" ? (payload.slug_ru ?? payload.slug) : (payload.slug_en ?? payload.slugEn ?? payload.slug);
   if (postId == null || !slug) return null;
   const localePrefix = locale === "ru" ? "/ru" : "";
   return `${config.PUBLIC_BASE_URL.replace(/\/$/, "")}${localePrefix}/${postId}/${String(slug).replace(/^\/+/, "")}/`;
@@ -81,7 +81,10 @@ export function stripLeadingEmojis(text: string): string {
 }
 
 export function stripUrls(text: string): string {
-  return text.replace(/https?:\/\/[^\s<>)]*/g, "").replace(/[ \t]+\n/g, "\n").trim();
+  return text
+    .replace(/https?:\/\/[^\s<>)]*/g, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .trim();
 }
 
 export async function readFileBlob(filePath: string, contentType = guessContentType(filePath)): Promise<Blob> {
@@ -89,12 +92,17 @@ export async function readFileBlob(filePath: string, contentType = guessContentT
   return new Blob([bytes], { type: contentType });
 }
 
-export function fileSize(filePath: string): number {
+function fileSize(filePath: string): number {
   return fs.statSync(filePath).size;
 }
 
 export function safeMediaName(value: string): string {
-  return value.replace(/[^A-Za-z0-9_.-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 120) || "media";
+  return (
+    value
+      .replace(/[^A-Za-z0-9_.-]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 120) || "media"
+  );
 }
 
 export function mediaExtension(item: PublishMediaItem): string {
@@ -115,7 +123,7 @@ export function guessContentType(filePath: string): string {
   return "image/jpeg";
 }
 
-export function stringValue(value: unknown): string {
+function stringValue(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 

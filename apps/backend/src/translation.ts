@@ -17,7 +17,14 @@ export async function translateToEnglish(text: string, config: BackendConfig, fe
   const result = await requestJson<ChatCompletion>(fetchImpl, "https://api.deepseek.com/v1/chat/completions", {
     method: "POST",
     headers: { Authorization: `Bearer ${config.DEEPSEEK_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "deepseek-chat", messages: [{ role: "system", content: system }, { role: "user", content: source }], temperature: 0.1 }),
+    body: JSON.stringify({
+      model: "deepseek-chat",
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: source },
+      ],
+      temperature: 0.1,
+    }),
     signal: AbortSignal.timeout(40_000),
   });
   const translated = result.choices?.[0]?.message?.content?.trim() ?? "";
@@ -25,6 +32,6 @@ export async function translateToEnglish(text: string, config: BackendConfig, fe
   return translated;
 }
 
-export function hasCyrillic(value: string): boolean {
+function hasCyrillic(value: string): boolean {
   return /[\u0400-\u04FF]/.test(value);
 }

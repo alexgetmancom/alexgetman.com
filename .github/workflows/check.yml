@@ -2,10 +2,15 @@ name: CI
 
 on:
   push:
+    paths-ignore:
+      - "docs/**"
   pull_request:
+    paths-ignore:
+      - "docs/**"
 
 permissions:
   contents: read
+  packages: write
 
 jobs:
   quality:
@@ -15,14 +20,21 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
       - name: Install
         run: bun install --frozen-lockfile
-      - name: Install media runtime
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: TypeScript-only language gate
         run: bun run check:language
       - name: Typecheck
         run: bun run typecheck
+      - name: Lint
+        run: bun run lint
+      - name: Dead-code report
+        run: bun run knip
       - name: Backend tests
         run: bun run test
       - name: Web production build
@@ -35,12 +47,35 @@ jobs:
 
   docker:
     needs: quality
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: oven-sh/setup-bun@v2
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
         with:
-          bun-version: 1.3.14
-      - run: bun install --frozen-lockfile
-      - name: Build backend image
-        run: docker build --build-arg GIT_REVISION=${GITHUB_SHA::7} -f apps/backend/Dockerfile -t alexgetman-backend:ci .
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/backend/Dockerfile
+          target: backend
+          build-args: GIT_REVISION=${{ github.sha }}
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/alexgetman-backend:${{ github.sha }},ghcr.io/${{ github.repository_owner }}/alexgetman-backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Build and publish site-builder image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/backend/Dockerfile
+          target: site-builder
+          build-args: GIT_REVISION=${{ github.sha }}
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/alexgetman-site-builder:${{ github.sha }},ghcr.io/${{ github.repository_owner }}/alexgetman-site-builder:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

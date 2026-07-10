@@ -18,14 +18,18 @@ type CreateRecordResponse = {
   cid?: string;
 };
 
-export function blueskyPublicUrl(uri: string | undefined | null, handle: string | undefined | null): string | null {
+function blueskyPublicUrl(uri: string | undefined | null, handle: string | undefined | null): string | null {
   if (!uri || !uri.includes("/app.bsky.feed.post/")) return null;
   const postId = uri.split("/").pop();
   const profile = handle || "alexgetmancom.bsky.social";
   return postId ? `https://bsky.app/profile/${profile}/post/${postId}` : null;
 }
 
-export async function publishToBluesky(payload: Record<string, unknown>, config: BackendConfig, fetchImpl: typeof fetch = fetch): Promise<PublishResult> {
+export async function publishToBluesky(
+  payload: Record<string, unknown>,
+  config: BackendConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<PublishResult> {
   if (!config.BLUESKY_HANDLE || !config.BLUESKY_APP_PASSWORD) return { skipped: true, reason: "missing Bluesky credentials" };
   const session = await requestJson<Session>(fetchImpl, "https://bsky.social/xrpc/com.atproto.server.createSession", {
     method: "POST",
@@ -56,12 +60,12 @@ export async function publishToBluesky(payload: Record<string, unknown>, config:
   const createdAt = Date.now();
   for (const [index, part] of splitText(payloadText(payload), 300).entries()) {
     const record: Record<string, unknown> = {
-      "$type": "app.bsky.feed.post",
+      $type: "app.bsky.feed.post",
       text: part,
       createdAt: new Date(createdAt + index * 1000).toISOString().replace(/\.\d{3}Z$/, ".000Z"),
       langs: ["ru", "en"],
     };
-    if (index === 0 && images.length > 0) record.embed = { "$type": "app.bsky.embed.images", images };
+    if (index === 0 && images.length > 0) record.embed = { $type: "app.bsky.embed.images", images };
     if (root && parent) record.reply = { root, parent };
     const created = await requestJson<CreateRecordResponse>(fetchImpl, "https://bsky.social/xrpc/com.atproto.repo.createRecord", {
       method: "POST",

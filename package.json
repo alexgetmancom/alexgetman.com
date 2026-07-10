@@ -9,7 +9,8 @@
   },
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "tools/*"
   ],
   "scripts": {
     "dev": "astro dev",
@@ -18,11 +19,15 @@
     "astro": "astro",
     "typecheck": "tsc -p tsconfig.json --noEmit && bun run --filter @alexgetman/shared typecheck && bun run --filter @alexgetman/backend typecheck",
     "test": "bun run --filter @alexgetman/backend test",
+    "lint": "biome lint .",
+    "format": "biome format --write .",
+    "knip": "bun tools/knip/node_modules/.bin/knip --config knip.json",
     "check:web": "bun run build",
     "check:backend": "bun run --filter @alexgetman/backend check",
     "check:language": "tsx scripts/enforce-typescript.ts",
     "check:all": "tsx scripts/check-all.ts",
-    "sync:production-web": "tsx scripts/web-sync.ts"
+    "sync:production-web": "tsx scripts/web-sync.ts",
+    "prepare": "simple-git-hooks"
   },
   "dependencies": {
     "@astrojs/rss": "^4.0.18",
@@ -32,8 +37,13 @@
   },
   "devDependencies": {
     "@types/sanitize-html": "^2.16.1",
+    "@biomejs/biome": "^2.0.6",
     "sharp": "^0.34.5",
+    "simple-git-hooks": "^2.11.1",
     "tsx": "^4.23.0",
     "typescript": "7.0.2"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "bunx biome check --staged"
   }
 }

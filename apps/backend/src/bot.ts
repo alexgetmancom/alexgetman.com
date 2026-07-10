@@ -1,13 +1,13 @@
-import { Bot, InlineKeyboard, type Context } from "grammy";
+import { Bot, type Context, InlineKeyboard } from "grammy";
+import { DEFAULT_TARGETS, isSiteTarget, PRESETS, TARGET_BY_ID, TARGETS, type TargetId, targetLocale } from "./botTargets.js";
 import type { BackendConfig } from "./config.js";
 import type { BackendDb } from "./db/client.js";
-import { DEFAULT_TARGETS, PRESETS, TARGETS, TARGET_BY_ID, isSiteTarget, targetLocale, type TargetId } from "./botTargets.js";
 import { log } from "./logger.js";
+import { generateStoryMedia } from "./media/story.js";
+import { localizeTargetPayload } from "./publicationPayload.js";
 import { formatMsk, nextPublishingSlot, parseManualSchedule, schedulePreset } from "./publishingSchedule.js";
 import { enqueuePublishJob } from "./queue/publish.js";
 import { translateToEnglish } from "./translation.js";
-import { generateStoryMedia } from "./media/story.js";
-import { localizeTargetPayload } from "./publicationPayload.js";
 
 export function createBot(config: BackendConfig, backendDb: BackendDb): Bot | null {
   if (!config.controllerBotToken) {
@@ -24,7 +24,7 @@ export function createBot(config: BackendConfig, backendDb: BackendDb): Bot | nu
   return bot;
 }
 
-export function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb): void {
+function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb): void {
   bot.command("start", (ctx) => ctx.reply("Send draft text with optional photo/video. Use Publish after preview."));
   bot.command("pipeline_status", (ctx) => ctx.reply(`${config.COMMAND_CENTER_URL.replace(/\/$/, "")}/pipeline-status`));
   bot.on("message", async (ctx) => {
@@ -73,7 +73,7 @@ export function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: Back
   });
 }
 
-export async function processTelegramUpdate(bot: Bot, update: Parameters<Bot["handleUpdate"]>[0]): Promise<void> {
+async function processTelegramUpdate(bot: Bot, update: Parameters<Bot["handleUpdate"]>[0]): Promise<void> {
   await bot.handleUpdate(update);
 }
 
@@ -115,7 +115,9 @@ async function handleDraftCallback(ctx: Context, backendDb: BackendDb, config: B
     return;
   }
   if (action === "preset" && first && PRESETS[first]) {
-    backendDb.sqlite.prepare("UPDATE drafts SET targets_json=?, updated_at=? WHERE id=?").run(JSON.stringify(PRESETS[first]), new Date().toISOString(), draftId);
+    backendDb.sqlite
+      .prepare("UPDATE drafts SET targets_json=?, updated_at=? WHERE id=?")
+      .run(JSON.stringify(PRESETS[first]), new Date().toISOString(), draftId);
     await ctx.answerCallbackQuery({ text: `${first} preset` });
     await sendDraftPreview(ctx, backendDb, draftId);
     return;
@@ -123,7 +125,9 @@ async function handleDraftCallback(ctx: Context, backendDb: BackendDb, config: B
   if (action === "edit_ru" || action === "edit_en" || action === "replace_ru_media" || action === "replace_en_media") {
     setAdminState(backendDb, Number(ctx.from?.id), action, draftId);
     await ctx.answerCallbackQuery({ text: "Send the replacement as the next message" });
-    await ctx.reply(action.startsWith("edit") ? "Send edited text as the next message." : "Send replacement photo/video as the next message.");
+    await ctx.reply(
+      action.startsWith("edit") ? "Send edited text as the next message." : "Send replacement photo/video as the next message.",
+    );
     return;
   }
   if (action === "use_ru_media") {
@@ -135,10 +139,12 @@ async function handleDraftCallback(ctx: Context, backendDb: BackendDb, config: B
   if (action === "generate_story_ru" || action === "generate_story_en") {
     const locale = action.endsWith("_ru") ? "ru" : "en";
     const draft = requireDraft(backendDb, draftId);
-    const source = locale === "en" ? parseJson(draft.media_en_json) ?? parseJson(draft.media_ru_json) : parseJson(draft.media_ru_json);
+    const source = locale === "en" ? (parseJson(draft.media_en_json) ?? parseJson(draft.media_ru_json)) : parseJson(draft.media_ru_json);
     const generated = await generateStoryMedia(source, draftId, locale, config);
     const column = locale === "en" ? "media_en_json" : "media_ru_json";
-    backendDb.sqlite.prepare(`UPDATE drafts SET ${column}=?, updated_at=? WHERE id=?`).run(JSON.stringify(generated), new Date().toISOString(), draftId);
+    backendDb.sqlite
+      .prepare(`UPDATE drafts SET ${column}=?, updated_at=? WHERE id=?`)
+      .run(JSON.stringify(generated), new Date().toISOString(), draftId);
     await ctx.answerCallbackQuery({ text: `${locale.toUpperCase()} 9:16 generated` });
     await sendDraftPreview(ctx, backendDb, draftId);
     return;
@@ -157,10 +163,17 @@ async function handleDraftCallback(ctx: Context, backendDb: BackendDb, config: B
   }
   if (action === "schedule") {
     const keyboard = new InlineKeyboard()
-      .text("Auto next slots", `sched_auto:${draftId}`).text("+30 min", `sched_preset:plus30:${draftId}`).row()
-      .text("+1 hour", `sched_preset:plus60:${draftId}`).text("Today 21:00", `sched_preset:today2100:${draftId}`).row()
-      .text("Tomorrow 10:00", `sched_preset:tomorrow1000:${draftId}`).row()
-      .text("Manual both", `sched_manual:both:${draftId}`).text("Manual RU", `sched_manual:ru:${draftId}`).text("Manual EN", `sched_manual:en:${draftId}`);
+      .text("Auto next slots", `sched_auto:${draftId}`)
+      .text("+30 min", `sched_preset:plus30:${draftId}`)
+      .row()
+      .text("+1 hour", `sched_preset:plus60:${draftId}`)
+      .text("Today 21:00", `sched_preset:today2100:${draftId}`)
+      .row()
+      .text("Tomorrow 10:00", `sched_preset:tomorrow1000:${draftId}`)
+      .row()
+      .text("Manual both", `sched_manual:both:${draftId}`)
+      .text("Manual RU", `sched_manual:ru:${draftId}`)
+      .text("Manual EN", `sched_manual:en:${draftId}`);
     await ctx.answerCallbackQuery();
     await ctx.reply(`Choose schedule time for draft #${draftId}.`, { reply_markup: keyboard });
     return;
@@ -195,14 +208,24 @@ async function handleDraftCallback(ctx: Context, backendDb: BackendDb, config: B
 function cancelDraft(backendDb: BackendDb, draftId: number): void {
   const now = new Date().toISOString();
   backendDb.sqlite.transaction(() => {
-    const publication = backendDb.sqlite.prepare("SELECT post_id FROM publications WHERE draft_id=?").get(draftId) as { post_id?: number } | undefined;
+    const publication = backendDb.sqlite.prepare("SELECT post_id FROM publications WHERE draft_id=?").get(draftId) as
+      | { post_id?: number }
+      | undefined;
     const postId = publication?.post_id;
-    backendDb.sqlite.prepare("UPDATE drafts SET status='cancelled', scheduled_at=NULL, scheduled_en_at=NULL, updated_at=? WHERE id=?").run(now, draftId);
+    backendDb.sqlite
+      .prepare("UPDATE drafts SET status='cancelled', scheduled_at=NULL, scheduled_en_at=NULL, updated_at=? WHERE id=?")
+      .run(now, draftId);
     if (!postId) return;
-    const finalCount = backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM publish_jobs WHERE post_id=? AND status IN ('publishing','published','skipped')").get(postId) as { count: number };
+    const finalCount = backendDb.sqlite
+      .prepare("SELECT COUNT(*) AS count FROM publish_jobs WHERE post_id=? AND status IN ('publishing','published','skipped')")
+      .get(postId) as { count: number };
     if (finalCount.count > 0) {
-      backendDb.sqlite.prepare("UPDATE publish_jobs SET status='cancelled', updated_at=? WHERE post_id=? AND status IN ('queued','failed')").run(now, postId);
-      backendDb.sqlite.prepare("UPDATE site_jobs SET status='cancelled', updated_at=? WHERE post_id=? AND status IN ('queued','failed')").run(now, postId);
+      backendDb.sqlite
+        .prepare("UPDATE publish_jobs SET status='cancelled', updated_at=? WHERE post_id=? AND status IN ('queued','failed')")
+        .run(now, postId);
+      backendDb.sqlite
+        .prepare("UPDATE site_jobs SET status='cancelled', updated_at=? WHERE post_id=? AND status IN ('queued','failed')")
+        .run(now, postId);
       return;
     }
     backendDb.sqlite.prepare("DELETE FROM publish_jobs WHERE post_id=?").run(postId);
@@ -224,10 +247,18 @@ export function publishDraftToQueue(
   const draft = requireDraft(backendDb, draftId);
   const now = new Date().toISOString();
   const mode = options.mode ?? "immediate";
-  const ruAt = mode === "immediate" ? now : options.ruAt?.toISOString() ?? null;
-  const enAt = mode === "immediate" ? now : options.enAt?.toISOString() ?? null;
-  const existing = backendDb.sqlite.prepare("SELECT post_id FROM publications WHERE draft_id=?").get(draftId) as { post_id?: number } | undefined;
-  const postId = existing?.post_id ?? Number(backendDb.sqlite.prepare("INSERT INTO publications(status, draft_id, created_at, updated_at) VALUES (?, ?, ?, ?)").run(mode === "immediate" ? "published" : "scheduled", draftId, now, now).lastInsertRowid);
+  const ruAt = mode === "immediate" ? now : (options.ruAt?.toISOString() ?? null);
+  const enAt = mode === "immediate" ? now : (options.enAt?.toISOString() ?? null);
+  const existing = backendDb.sqlite.prepare("SELECT post_id FROM publications WHERE draft_id=?").get(draftId) as
+    | { post_id?: number }
+    | undefined;
+  const postId =
+    existing?.post_id ??
+    Number(
+      backendDb.sqlite
+        .prepare("INSERT INTO publications(status, draft_id, created_at, updated_at) VALUES (?, ?, ?, ?)")
+        .run(mode === "immediate" ? "published" : "scheduled", draftId, now, now).lastInsertRowid,
+    );
   const messageId = Number(draft.channel_message_id ?? postId);
   const postKey = `post:${postId}`;
   const mediaRu = parseJson(draft.media_ru_json);
@@ -266,21 +297,62 @@ export function publishDraftToQueue(
       .prepare(`INSERT INTO posts(post_key, post_id, source, channel, message_id, date_utc, text, text_en, media_json, media_count, created_at, updated_at, raw_json)
         VALUES (?, ?, 'bot', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(post_key) DO UPDATE SET post_id=excluded.post_id, date_utc=excluded.date_utc, text=excluded.text, text_en=excluded.text_en, media_json=excluded.media_json, media_count=excluded.media_count, updated_at=excluded.updated_at, raw_json=excluded.raw_json`)
-      .run(postKey, postId, "controller", messageId, ruAt ?? enAt ?? now, payload.text, payload.text_en, JSON.stringify(mediaRu ?? []), Array.isArray(mediaRu) ? mediaRu.length : 0, now, now, JSON.stringify(payload));
-    backendDb.sqlite.prepare(`INSERT INTO post_locales(post_id, locale, slug, text, html, entities_json, media_json, site_enabled, published_at, updated_at)
+      .run(
+        postKey,
+        postId,
+        "controller",
+        messageId,
+        ruAt ?? enAt ?? now,
+        payload.text,
+        payload.text_en,
+        JSON.stringify(mediaRu ?? []),
+        Array.isArray(mediaRu) ? mediaRu.length : 0,
+        now,
+        now,
+        JSON.stringify(payload),
+      );
+    backendDb.sqlite
+      .prepare(`INSERT INTO post_locales(post_id, locale, slug, text, html, entities_json, media_json, site_enabled, published_at, updated_at)
       VALUES (?, 'ru', ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(post_id, locale) DO UPDATE SET slug=excluded.slug, text=excluded.text, html=excluded.html, entities_json=excluded.entities_json, media_json=excluded.media_json, site_enabled=excluded.site_enabled, published_at=excluded.published_at, updated_at=excluded.updated_at`)
-      .run(postId, slugRu, textRu, entitiesToHtml(textRu, entitiesRu), draft.text_ru_entities_json ?? null, JSON.stringify(mediaRu ?? []), targets.site_ru ? 1 : 0, targets.site_ru ? ruAt : null, now);
-    backendDb.sqlite.prepare(`INSERT INTO post_locales(post_id, locale, slug, text, html, entities_json, media_json, site_enabled, published_at, updated_at)
+      .run(
+        postId,
+        slugRu,
+        textRu,
+        entitiesToHtml(textRu, entitiesRu),
+        draft.text_ru_entities_json ?? null,
+        JSON.stringify(mediaRu ?? []),
+        targets.site_ru ? 1 : 0,
+        targets.site_ru ? ruAt : null,
+        now,
+      );
+    backendDb.sqlite
+      .prepare(`INSERT INTO post_locales(post_id, locale, slug, text, html, entities_json, media_json, site_enabled, published_at, updated_at)
       VALUES (?, 'en', ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(post_id, locale) DO UPDATE SET slug=excluded.slug, text=excluded.text, html=excluded.html, entities_json=excluded.entities_json, media_json=excluded.media_json, site_enabled=excluded.site_enabled, published_at=excluded.published_at, updated_at=excluded.updated_at`)
-      .run(postId, slugEn, textEn, entitiesToHtml(textEn, entitiesEn), draft.text_en_entities_json ?? null, JSON.stringify(mediaEn ?? []), targets.site_en ? 1 : 0, targets.site_en ? enAt : null, now);
-    backendDb.sqlite.prepare(`INSERT INTO publication_plans(post_id, plan_json, created_at, updated_at) VALUES (?, ?, ?, ?)
-      ON CONFLICT(post_id) DO UPDATE SET plan_json=excluded.plan_json, updated_at=excluded.updated_at`).run(postId, JSON.stringify({ draft_id: draftId, targets, scheduled_at: ruAt, scheduled_en_at: enAt, created_at: now }), now, now);
-    backendDb.sqlite.prepare(`INSERT INTO publication_sources(post_id, item_json, created_at, updated_at) VALUES (?, ?, ?, ?)
-      ON CONFLICT(post_id) DO UPDATE SET item_json=excluded.item_json, updated_at=excluded.updated_at`).run(postId, JSON.stringify(payload), now, now);
-    backendDb.sqlite.prepare(`INSERT INTO site_source_items(message_id, item_json, created_at, updated_at) VALUES (?, ?, ?, ?)
-      ON CONFLICT(message_id) DO UPDATE SET item_json=excluded.item_json, updated_at=excluded.updated_at`).run(messageId, JSON.stringify(payload), now, now);
+      .run(
+        postId,
+        slugEn,
+        textEn,
+        entitiesToHtml(textEn, entitiesEn),
+        draft.text_en_entities_json ?? null,
+        JSON.stringify(mediaEn ?? []),
+        targets.site_en ? 1 : 0,
+        targets.site_en ? enAt : null,
+        now,
+      );
+    backendDb.sqlite
+      .prepare(`INSERT INTO publication_plans(post_id, plan_json, created_at, updated_at) VALUES (?, ?, ?, ?)
+      ON CONFLICT(post_id) DO UPDATE SET plan_json=excluded.plan_json, updated_at=excluded.updated_at`)
+      .run(postId, JSON.stringify({ draft_id: draftId, targets, scheduled_at: ruAt, scheduled_en_at: enAt, created_at: now }), now, now);
+    backendDb.sqlite
+      .prepare(`INSERT INTO publication_sources(post_id, item_json, created_at, updated_at) VALUES (?, ?, ?, ?)
+      ON CONFLICT(post_id) DO UPDATE SET item_json=excluded.item_json, updated_at=excluded.updated_at`)
+      .run(postId, JSON.stringify(payload), now, now);
+    backendDb.sqlite
+      .prepare(`INSERT INTO site_source_items(message_id, item_json, created_at, updated_at) VALUES (?, ?, ?, ?)
+      ON CONFLICT(message_id) DO UPDATE SET item_json=excluded.item_json, updated_at=excluded.updated_at`)
+      .run(messageId, JSON.stringify(payload), now, now);
     backendDb.sqlite.prepare("DELETE FROM publish_jobs WHERE post_id=? AND status IN ('queued','failed')").run(postId);
     backendDb.sqlite.prepare("DELETE FROM site_jobs WHERE post_id=? AND status IN ('queued','failed')").run(postId);
     for (const [target, enabled] of Object.entries(targets)) {
@@ -288,11 +360,23 @@ export function publishDraftToQueue(
       const publishAt = targetLocale(target) === "en" ? enAt : ruAt;
       enqueuePublishJob(backendDb, { postId, postKey, messageId, target, payload: localizeTargetPayload(payload, target), publishAt });
     }
-    for (const [locale, enabled, publishAt] of [["ru", targets.site_ru, ruAt], ["en", targets.site_en, enAt]] as const) {
-      if (enabled && publishAt) backendDb.sqlite.prepare("INSERT INTO site_jobs(post_id, message_id, reason, status, next_attempt_at, created_at, updated_at) VALUES (?, ?, ?, 'queued', ?, ?, ?)").run(postId, messageId, `publish_${locale}`, publishAt, now, now);
+    for (const [locale, enabled, publishAt] of [
+      ["ru", targets.site_ru, ruAt],
+      ["en", targets.site_en, enAt],
+    ] as const) {
+      if (enabled && publishAt)
+        backendDb.sqlite
+          .prepare(
+            "INSERT INTO site_jobs(post_id, message_id, reason, status, next_attempt_at, created_at, updated_at) VALUES (?, ?, ?, 'queued', ?, ?, ?)",
+          )
+          .run(postId, messageId, `publish_${locale}`, publishAt, now, now);
     }
-    backendDb.sqlite.prepare("UPDATE drafts SET status=?, post_id=?, publish_mode=?, scheduled_at=?, scheduled_en_at=?, updated_at=? WHERE id=?").run(mode === "immediate" ? "published" : "scheduled", postId, mode, ruAt, enAt, now, draftId);
-    backendDb.sqlite.prepare("UPDATE publications SET status=?, updated_at=? WHERE post_id=?").run(mode === "immediate" ? "published" : "scheduled", now, postId);
+    backendDb.sqlite
+      .prepare("UPDATE drafts SET status=?, post_id=?, publish_mode=?, scheduled_at=?, scheduled_en_at=?, updated_at=? WHERE id=?")
+      .run(mode === "immediate" ? "published" : "scheduled", postId, mode, ruAt, enAt, now, draftId);
+    backendDb.sqlite
+      .prepare("UPDATE publications SET status=?, updated_at=? WHERE post_id=?")
+      .run(mode === "immediate" ? "published" : "scheduled", now, postId);
   })();
   return postId;
 }
@@ -306,9 +390,15 @@ function draftPreview(backendDb: BackendDb, draftId: number): { text: string; ke
   const draft = backendDb.sqlite.prepare("SELECT * FROM drafts WHERE id=?").get(draftId) as Record<string, unknown>;
   const targets = parseTargets(draft.targets_json);
   const keyboard = new InlineKeyboard();
-  keyboard.text("Full", `preset:full:${draftId}`).text("RU only", `preset:ru:${draftId}`).text("EN only", `preset:en:${draftId}`).text("TG only", `preset:tg:${draftId}`).row();
+  keyboard
+    .text("Full", `preset:full:${draftId}`)
+    .text("RU only", `preset:ru:${draftId}`)
+    .text("EN only", `preset:en:${draftId}`)
+    .text("TG only", `preset:tg:${draftId}`)
+    .row();
   for (let index = 0; index < TARGETS.length; index += 2) {
-    for (const [target, label] of TARGETS.slice(index, index + 2)) keyboard.text(`${targets[target] ? "✓" : "□"} ${label}`, `toggle:${draftId}:${target}`);
+    for (const [target, label] of TARGETS.slice(index, index + 2))
+      keyboard.text(`${targets[target] ? "✓" : "□"} ${label}`, `toggle:${draftId}:${target}`);
     keyboard.row();
   }
   keyboard.text("Edit RU", `edit_ru:${draftId}`).text("Edit EN", `edit_en:${draftId}`).row();
@@ -317,22 +407,38 @@ function draftPreview(backendDb: BackendDb, draftId: number): { text: string; ke
   keyboard.text("Use RU media for EN", `use_ru_media:${draftId}`).row();
   keyboard.text("Publish now", `publish:${draftId}`).text("Schedule", `schedule:${draftId}`).row();
   keyboard.text("Cancel", `cancel:${draftId}`);
-  const enabled = TARGETS.filter(([id]) => targets[id]).map(([, label]) => label).join(", ") || "none";
-  const schedule = draft.status === "scheduled" ? `\n\nScheduled RU: ${formatMsk(draft.scheduled_at ? String(draft.scheduled_at) : null)}\nScheduled EN: ${formatMsk(draft.scheduled_en_at ? String(draft.scheduled_en_at) : null)}` : "";
-  return { text: `Draft #${draftId}\n\nRU:\n${String(draft.text_ru || "[media only]").slice(0, 1000)}\n\nEN:\n${String(draft.text_en_approved || draft.text_en_machine || "[not translated]").slice(0, 1000)}\n\nTargets: ${enabled}${schedule}`, keyboard };
+  const enabled =
+    TARGETS.filter(([id]) => targets[id])
+      .map(([, label]) => label)
+      .join(", ") || "none";
+  const schedule =
+    draft.status === "scheduled"
+      ? `\n\nScheduled RU: ${formatMsk(draft.scheduled_at ? String(draft.scheduled_at) : null)}\nScheduled EN: ${formatMsk(draft.scheduled_en_at ? String(draft.scheduled_en_at) : null)}`
+      : "";
+  return {
+    text: `Draft #${draftId}\n\nRU:\n${String(draft.text_ru || "[media only]").slice(0, 1000)}\n\nEN:\n${String(draft.text_en_approved || draft.text_en_machine || "[not translated]").slice(0, 1000)}\n\nTargets: ${enabled}${schedule}`,
+    keyboard,
+  };
 }
 
 function toggleDraftTarget(backendDb: BackendDb, draftId: number, target: string): void {
   const row = backendDb.sqlite.prepare("SELECT targets_json FROM drafts WHERE id=?").get(draftId) as Record<string, unknown> | undefined;
   const targets = parseTargets(row?.targets_json);
   targets[target] = !targets[target];
-  backendDb.sqlite.prepare("UPDATE drafts SET targets_json=?, updated_at=? WHERE id=?").run(JSON.stringify(targets), new Date().toISOString(), draftId);
+  backendDb.sqlite
+    .prepare("UPDATE drafts SET targets_json=?, updated_at=? WHERE id=?")
+    .run(JSON.stringify(targets), new Date().toISOString(), draftId);
 }
 
 function extractMessage(ctx: Context): DraftMessage {
   const message = ctx.message;
   const text = message && "text" in message ? (message.text ?? "") : message && "caption" in message ? (message.caption ?? "") : "";
-  const entities = message && "entities" in message ? (message.entities ?? []) : message && "caption_entities" in message ? (message.caption_entities ?? []) : [];
+  const entities =
+    message && "entities" in message
+      ? (message.entities ?? [])
+      : message && "caption_entities" in message
+        ? (message.caption_entities ?? [])
+        : [];
   const media: Record<string, unknown>[] = [];
   const photos = message && "photo" in message ? message.photo : undefined;
   if (photos?.length) {
@@ -340,7 +446,13 @@ function extractMessage(ctx: Context): DraftMessage {
     media.push({ type: "photo", file_id: photo.file_id, width: photo.width, height: photo.height });
   }
   if (message && "video" in message && message.video) {
-    media.push({ type: "video", file_id: message.video.file_id, width: message.video.width, height: message.video.height, duration: message.video.duration });
+    media.push({
+      type: "video",
+      file_id: message.video.file_id,
+      width: message.video.width,
+      height: message.video.height,
+      duration: message.video.duration,
+    });
   }
   return { text, media, entities };
 }
@@ -355,7 +467,10 @@ function parseTargets(value: unknown): Record<string, boolean> {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     return { ...DEFAULT_TARGETS };
   }
-  return { ...DEFAULT_TARGETS, ...Object.fromEntries(Object.entries(parsed as Record<string, unknown>).map(([key, enabled]) => [key, Boolean(enabled)])) };
+  return {
+    ...DEFAULT_TARGETS,
+    ...Object.fromEntries(Object.entries(parsed as Record<string, unknown>).map(([key, enabled]) => [key, Boolean(enabled)])),
+  };
 }
 
 function parseJson(value: unknown): unknown {
@@ -400,11 +515,15 @@ function hasLocaleTarget(targets: Record<string, boolean>, locale: "ru" | "en"):
 }
 
 function getAdminState(backendDb: BackendDb, adminId: number): { action: string | null; draft_id: number | null } | null {
-  return backendDb.sqlite.prepare("SELECT action, draft_id FROM admin_state WHERE admin_id=?").get(adminId) as { action: string | null; draft_id: number | null } | null;
+  return backendDb.sqlite.prepare("SELECT action, draft_id FROM admin_state WHERE admin_id=?").get(adminId) as {
+    action: string | null;
+    draft_id: number | null;
+  } | null;
 }
 
 function setAdminState(backendDb: BackendDb, adminId: number, action: string | null = null, draftId: number | null = null): void {
-  backendDb.sqlite.prepare(`INSERT INTO admin_state(admin_id, action, draft_id, updated_at) VALUES (?, ?, ?, ?)
+  backendDb.sqlite
+    .prepare(`INSERT INTO admin_state(admin_id, action, draft_id, updated_at) VALUES (?, ?, ?, ?)
     ON CONFLICT(admin_id) DO UPDATE SET action=excluded.action, draft_id=excluded.draft_id, updated_at=excluded.updated_at`)
     .run(adminId, action, draftId, new Date().toISOString());
 }
@@ -423,7 +542,9 @@ async function applyAdminState(ctx: Context, backendDb: BackendDb, action: strin
     if (!message.text) throw new Error("edited text is empty");
     const column = action === "edit_ru" ? "text_ru" : "text_en_approved";
     const entitiesColumn = action === "edit_ru" ? "text_ru_entities_json" : "text_en_entities_json";
-    backendDb.sqlite.prepare(`UPDATE drafts SET ${column}=?, ${entitiesColumn}=?, updated_at=? WHERE id=?`).run(message.text, JSON.stringify(message.entities), now, draftId);
+    backendDb.sqlite
+      .prepare(`UPDATE drafts SET ${column}=?, ${entitiesColumn}=?, updated_at=? WHERE id=?`)
+      .run(message.text, JSON.stringify(message.entities), now, draftId);
   } else if (action === "replace_ru_media" || action === "replace_en_media") {
     if (message.media.length === 0) throw new Error("replacement media is empty");
     const column = action === "replace_ru_media" ? "media_ru_json" : "media_en_json";
@@ -453,21 +574,37 @@ type PendingAlbumInput = {
 
 function appendPendingAlbum(backendDb: BackendDb, input: PendingAlbumInput): boolean {
   const id = `${input.adminId}:${input.chatId}:${input.mediaGroupId}:${input.action ?? "draft"}:${input.draftId ?? ""}`;
-  const row = backendDb.sqlite.prepare("SELECT media_json,text_ru,text_entities_json FROM pending_albums WHERE id=?").get(id) as { media_json?: string; text_ru?: string; text_entities_json?: string } | undefined;
+  const row = backendDb.sqlite.prepare("SELECT media_json,text_ru,text_entities_json FROM pending_albums WHERE id=?").get(id) as
+    | { media_json?: string; text_ru?: string; text_entities_json?: string }
+    | undefined;
   const media = row ? parseArrayValue(row.media_json) : [];
   media.push(input.media);
   const now = new Date().toISOString();
-  backendDb.sqlite.prepare(`INSERT INTO pending_albums(id,admin_id,chat_id,media_group_id,action,draft_id,text_ru,text_entities_json,media_json,notified,updated_at)
+  backendDb.sqlite
+    .prepare(`INSERT INTO pending_albums(id,admin_id,chat_id,media_group_id,action,draft_id,text_ru,text_entities_json,media_json,notified,updated_at)
     VALUES (?,?,?,?,?,?,?,?,?,1,?)
     ON CONFLICT(id) DO UPDATE SET text_ru=excluded.text_ru,text_entities_json=excluded.text_entities_json,media_json=excluded.media_json,updated_at=excluded.updated_at`)
-    .run(id, input.adminId, input.chatId, input.mediaGroupId, input.action, input.draftId, input.text || row?.text_ru || "", JSON.stringify(input.entities.length ? input.entities : parseArrayValue(row?.text_entities_json)), JSON.stringify(media), now);
+    .run(
+      id,
+      input.adminId,
+      input.chatId,
+      input.mediaGroupId,
+      input.action,
+      input.draftId,
+      input.text || row?.text_ru || "",
+      JSON.stringify(input.entities.length ? input.entities : parseArrayValue(row?.text_entities_json)),
+      JSON.stringify(media),
+      now,
+    );
   return !row;
 }
 
 export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendDb, config: BackendConfig): Promise<number> {
   if (!bot) return 0;
   const cutoff = new Date(Date.now() - config.CONTROLLER_ALBUM_SETTLE_SECONDS * 1000).toISOString();
-  const rows = backendDb.sqlite.prepare("SELECT * FROM pending_albums WHERE updated_at<=? ORDER BY updated_at").all(cutoff) as Array<Record<string, unknown>>;
+  const rows = backendDb.sqlite.prepare("SELECT * FROM pending_albums WHERE updated_at<=? ORDER BY updated_at").all(cutoff) as Array<
+    Record<string, unknown>
+  >;
   let completed = 0;
   for (const row of rows) {
     try {
@@ -476,15 +613,26 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
       const draftId = row.draft_id == null ? null : Number(row.draft_id);
       if (["replace_ru_media", "replace_en_media"].includes(action) && draftId) {
         const column = action === "replace_ru_media" ? "media_ru_json" : "media_en_json";
-        backendDb.sqlite.prepare(`UPDATE drafts SET ${column}=?, updated_at=? WHERE id=?`).run(JSON.stringify(media), new Date().toISOString(), draftId);
+        backendDb.sqlite
+          .prepare(`UPDATE drafts SET ${column}=?, updated_at=? WHERE id=?`)
+          .run(JSON.stringify(media), new Date().toISOString(), draftId);
         setAdminState(backendDb, Number(row.admin_id));
         const preview = draftPreview(backendDb, draftId);
         await bot.api.sendMessage(Number(row.chat_id), preview.text, { reply_markup: preview.keyboard });
       } else {
         const text = String(row.text_ru ?? "");
         let textEn = text;
-        try { textEn = await translateToEnglish(text, config); } catch { textEn = ""; }
-        const created = createDraftFromMessage(backendDb, Number(row.admin_id), { text, textEn, media, entities: parseArrayValue(row.text_entities_json) });
+        try {
+          textEn = await translateToEnglish(text, config);
+        } catch {
+          textEn = "";
+        }
+        const created = createDraftFromMessage(backendDb, Number(row.admin_id), {
+          text,
+          textEn,
+          media,
+          entities: parseArrayValue(row.text_entities_json),
+        });
         const preview = draftPreview(backendDb, created);
         await bot.api.sendMessage(Number(row.chat_id), preview.text, { reply_markup: preview.keyboard });
       }
@@ -515,16 +663,26 @@ export function entitiesToHtml(text: string, entities: Record<string, unknown>[]
     if (start == null || end == null || start >= end) continue;
     const inner = value.slice(start, end);
     const type = String(entity.type ?? "");
-    const wrapped = type === "bold" ? `<strong>${inner}</strong>`
-      : type === "italic" ? `<em>${inner}</em>`
-        : type === "underline" ? `<u>${inner}</u>`
-          : type === "strikethrough" ? `<s>${inner}</s>`
-            : type === "spoiler" ? `<span class="spoiler">${inner}</span>`
-              : type === "code" ? `<code>${inner}</code>`
-                : type === "pre" ? `<pre><code>${inner}</code></pre>`
-                  : type === "text_link" && typeof entity.url === "string" ? `<a href="${escapeHtml(entity.url)}" rel="noopener noreferrer">${inner}</a>`
-                    : type === "url" ? `<a href="${inner}" rel="noopener noreferrer">${inner}</a>`
-                      : inner;
+    const wrapped =
+      type === "bold"
+        ? `<strong>${inner}</strong>`
+        : type === "italic"
+          ? `<em>${inner}</em>`
+          : type === "underline"
+            ? `<u>${inner}</u>`
+            : type === "strikethrough"
+              ? `<s>${inner}</s>`
+              : type === "spoiler"
+                ? `<span class="spoiler">${inner}</span>`
+                : type === "code"
+                  ? `<code>${inner}</code>`
+                  : type === "pre"
+                    ? `<pre><code>${inner}</code></pre>`
+                    : type === "text_link" && typeof entity.url === "string"
+                      ? `<a href="${escapeHtml(entity.url)}" rel="noopener noreferrer">${inner}</a>`
+                      : type === "url"
+                        ? `<a href="${inner}" rel="noopener noreferrer">${inner}</a>`
+                        : inner;
     value = `${value.slice(0, start)}${wrapped}${value.slice(end)}`;
   }
   return value;

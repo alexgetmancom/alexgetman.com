@@ -1,7 +1,7 @@
-export const transientStatusCodes = new Set([408, 425, 429, 500, 502, 503, 504]);
-export const permanentStatusCodes = new Set([400, 401, 403, 404, 409, 410, 413, 415, 422]);
+const transientStatusCodes = new Set([408, 425, 429, 500, 502, 503, 504]);
+const permanentStatusCodes = new Set([400, 401, 403, 404, 409, 410, 413, 415, 422]);
 
-export type PublishErrorClass = "transient" | "permanent" | "unknown";
+type PublishErrorClass = "transient" | "permanent" | "unknown";
 
 export class HttpPublishError extends Error {
   constructor(
@@ -18,11 +18,19 @@ export function classifyPublishError(error: unknown): PublishErrorClass {
     if (transientStatusCodes.has(error.status)) return "transient";
     if (permanentStatusCodes.has(error.status)) return "permanent";
   }
-  const text = String(error instanceof Error ? error.message : error ?? "").toLowerCase();
-  if (["timeout", "timed out", "temporarily", "connection reset", "network", "502", "503", "504", "429"].some((marker) => text.includes(marker))) {
+  const text = String(error instanceof Error ? error.message : (error ?? "")).toLowerCase();
+  if (
+    ["timeout", "timed out", "temporarily", "connection reset", "network", "502", "503", "504", "429"].some((marker) =>
+      text.includes(marker),
+    )
+  ) {
     return "transient";
   }
-  if (["401", "403", "unauthorized", "forbidden", "invalid token", "permission", "unsupported", "validation", "400"].some((marker) => text.includes(marker))) {
+  if (
+    ["401", "403", "unauthorized", "forbidden", "invalid token", "permission", "unsupported", "validation", "400"].some((marker) =>
+      text.includes(marker),
+    )
+  ) {
     return "permanent";
   }
   return "unknown";

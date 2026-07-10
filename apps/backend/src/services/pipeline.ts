@@ -1,10 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { desc, sql } from "drizzle-orm";
+import { TARGETS } from "../botTargets.js";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
-import { metricSamples, postMetrics, postTargets, posts, publishJobs, workerState } from "../db/schema.js";
+import { metricSamples, postMetrics, posts, postTargets, publishJobs, workerState } from "../db/schema.js";
 import { gitRevision } from "../runtime/git.js";
-import { TARGETS } from "../botTargets.js";
 
 export function pipelineStatusPayload(config: BackendConfig, backendDb: BackendDb, weekOffset = 0) {
   const jobs = backendDb.db
@@ -53,7 +53,9 @@ export function pipelineStatusPayload(config: BackendConfig, backendDb: BackendD
   const [metricCount] = backendDb.db.select({ count: sql<number>`count(*)` }).from(postMetrics).all();
   const [sampleCount] = backendDb.db.select({ count: sql<number>`count(*)` }).from(metricSamples).all();
   const siteJobs = backendDb.sqlite
-    .prepare("SELECT job_id, post_id, message_id, reason, status, attempt_count, last_error, created_at, updated_at FROM site_jobs ORDER BY updated_at DESC, job_id DESC LIMIT 25")
+    .prepare(
+      "SELECT job_id, post_id, message_id, reason, status, attempt_count, last_error, created_at, updated_at FROM site_jobs ORDER BY updated_at DESC, job_id DESC LIMIT 25",
+    )
     .all();
   const recentMetrics = backendDb.sqlite
     .prepare(
@@ -77,8 +79,12 @@ export function pipelineStatusPayload(config: BackendConfig, backendDb: BackendD
   const legacyPosts = legacyPipelinePosts(backendDb, weekOffset);
   const feed = readFeedSummary(config);
   const socialState = readWorkerState(backendDb, "crosspost_worker") ?? readWorkerState(backendDb, "queue") ?? {};
-  const currentTargetFailures = backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM post_targets WHERE status='failed'").get() as { count: number };
-  const currentSiteFailures = backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM site_jobs WHERE status='failed'").get() as { count: number };
+  const currentTargetFailures = backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM post_targets WHERE status='failed'").get() as {
+    count: number;
+  };
+  const currentSiteFailures = backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM site_jobs WHERE status='failed'").get() as {
+    count: number;
+  };
 
   return {
     ok: currentTargetFailures.count === 0 && currentSiteFailures.count === 0 && workers.every((worker) => worker.ok),
@@ -105,7 +111,9 @@ export function pipelineStatusPayload(config: BackendConfig, backendDb: BackendD
     social_worker: {
       pipeline_db: config.PIPELINE_DB,
       last_update_id: socialState.last_update_id ?? null,
-      processed_count: Array.isArray(socialState.processed_message_ids) ? socialState.processed_message_ids.length : Number(socialState.claimed ?? 0),
+      processed_count: Array.isArray(socialState.processed_message_ids)
+        ? socialState.processed_message_ids.length
+        : Number(socialState.claimed ?? 0),
     },
     posts: legacyPosts,
   };
@@ -113,8 +121,9 @@ export function pipelineStatusPayload(config: BackendConfig, backendDb: BackendD
 
 function legacyPipelinePosts(backendDb: BackendDb, weekOffset: number): Record<string, unknown>[] {
   const [start, end] = weekBounds(weekOffset);
-  const rows = backendDb.sqlite.prepare(
-    `SELECT 'post:' || p.post_id AS post_key, p.post_id, p.telegram_message_id, p.created_at AS created_at, p.updated_at,
+  const rows = backendDb.sqlite
+    .prepare(
+      `SELECT 'post:' || p.post_id AS post_key, p.post_id, p.telegram_message_id, p.created_at AS created_at, p.updated_at,
             ru.text AS text_ru, ru.media_json AS media_ru_json, ru.site_enabled AS site_ru, ru.slug AS slug_ru,
             en.text AS text_en, en.media_json AS media_en_json, en.site_enabled AS site_en, en.slug AS slug_en,
             po.message_id, po.date_msk, po.telegram_url
@@ -131,28 +140,43 @@ function legacyPipelinePosts(backendDb: BackendDb, weekOffset: number): Record<s
      FROM posts po
      WHERE po.post_key LIKE 'telegram:%' AND po.date_utc>=? AND po.date_utc<=?
      ORDER BY 4 DESC LIMIT 100`,
-  ).all(start, end, start, end) as Array<Record<string, unknown>>;
+    )
+    .all(start, end, start, end) as Array<Record<string, unknown>>;
   return rows.map((row) => {
     const postId = row.post_id == null ? null : Number(row.post_id);
     const postKey = String(row.post_key ?? `post:${postId}`);
-    const targets = Object.fromEntries((backendDb.sqlite.prepare(
-      "SELECT target,status,external_id,external_ids_json,url,error,skipped,updated_at,raw_json FROM post_targets WHERE post_key=? ORDER BY target",
-    ).all(postKey) as Array<Record<string, unknown>>).map((target) => [String(target.target), {
-      status: target.status,
-      ok: target.status === "published",
-      external_id: target.external_id,
-      external_ids: parseArray(target.external_ids_json),
-      url: target.url,
-      error: target.error,
-      skipped: Boolean(target.skipped),
-      updated_at: target.updated_at,
-      raw: parseObject(target.raw_json),
-    }]));
+    const targets = Object.fromEntries(
+      (
+        backendDb.sqlite
+          .prepare(
+            "SELECT target,status,external_id,external_ids_json,url,error,skipped,updated_at,raw_json FROM post_targets WHERE post_key=? ORDER BY target",
+          )
+          .all(postKey) as Array<Record<string, unknown>>
+      ).map((target) => [
+        String(target.target),
+        {
+          status: target.status,
+          ok: target.status === "published",
+          external_id: target.external_id,
+          external_ids: parseArray(target.external_ids_json),
+          url: target.url,
+          error: target.error,
+          skipped: Boolean(target.skipped),
+          updated_at: target.updated_at,
+          raw: parseObject(target.raw_json),
+        },
+      ]),
+    );
     const metrics: Record<string, Record<string, unknown>> = {};
-    for (const metric of backendDb.sqlite.prepare(
-      "SELECT target,metric_name,value,sampled_at,source,error,raw_json FROM post_metrics WHERE post_key=? ORDER BY target,metric_name",
-    ).all(postKey) as Array<Record<string, unknown>>) {
-      (metrics[String(metric.target)] ??= {})[String(metric.metric_name)] = {
+    for (const metric of backendDb.sqlite
+      .prepare(
+        "SELECT target,metric_name,value,sampled_at,source,error,raw_json FROM post_metrics WHERE post_key=? ORDER BY target,metric_name",
+      )
+      .all(postKey) as Array<Record<string, unknown>>) {
+      const target = String(metric.target);
+      const targetMetrics = metrics[target] ?? {};
+      metrics[target] = targetMetrics;
+      targetMetrics[String(metric.metric_name)] = {
         value: metric.value,
         sampled_at: metric.sampled_at,
         source: metric.source,
@@ -165,9 +189,12 @@ function legacyPipelinePosts(backendDb: BackendDb, weekOffset: number): Record<s
     const textRu = String(row.text_ru ?? "");
     const textEn = String(row.text_en ?? "");
     const telegramMessageId = row.telegram_message_id == null ? null : Number(row.telegram_message_id);
-    const telegramUrl = typeof row.telegram_url === "string" && row.telegram_url
-      ? row.telegram_url
-      : telegramMessageId ? `https://t.me/${configlessChannel(backendDb)}/${telegramMessageId}` : null;
+    const telegramUrl =
+      typeof row.telegram_url === "string" && row.telegram_url
+        ? row.telegram_url
+        : telegramMessageId
+          ? `https://t.me/${configlessChannel(backendDb)}/${telegramMessageId}`
+          : null;
     const localesMap = { ru: { site_enabled: Number(row.site_ru ?? 0) }, en: { site_enabled: Number(row.site_en ?? 0) } };
     const result: Record<string, unknown> = {
       post_id: postId,
@@ -181,7 +208,13 @@ function legacyPipelinePosts(backendDb: BackendDb, weekOffset: number): Record<s
       full_text_en: textEn,
       text: shortText(textRu),
       media_count: (mediaEn.length ? mediaEn : mediaRu).length,
-      media_types: [...new Set((mediaEn.length ? mediaEn : mediaRu).map((item) => item && typeof item === "object" ? String((item as Record<string, unknown>).type ?? "") : "").filter(Boolean))],
+      media_types: [
+        ...new Set(
+          (mediaEn.length ? mediaEn : mediaRu)
+            .map((item) => (item && typeof item === "object" ? String((item as Record<string, unknown>).type ?? "") : ""))
+            .filter(Boolean),
+        ),
+      ],
       slug_en: row.slug_en,
       site_url: Number(row.site_ru) ? `/ru/${postId}/${row.slug_ru}/` : Number(row.site_en) ? `/${postId}/${row.slug_en}/` : null,
       telegram_url: telegramUrl,
@@ -191,7 +224,11 @@ function legacyPipelinePosts(backendDb: BackendDb, weekOffset: number): Record<s
     };
     for (const [target] of TARGETS) {
       const record = targets[target] as { status?: unknown } | undefined;
-      result[target] = record?.status === "published" || (target === "telegram" && Boolean(telegramUrl)) || (target === "site_ru" && Boolean(row.site_ru)) || (target === "site_en" && Boolean(row.site_en));
+      result[target] =
+        record?.status === "published" ||
+        (target === "telegram" && Boolean(telegramUrl)) ||
+        (target === "site_ru" && Boolean(row.site_ru)) ||
+        (target === "site_en" && Boolean(row.site_en));
     }
     return result;
   });
@@ -200,7 +237,11 @@ function legacyPipelinePosts(backendDb: BackendDb, weekOffset: number): Record<s
 function readFeedSummary(config: BackendConfig): { channel: string; updated_at: unknown; items: number } {
   try {
     const value = JSON.parse(readFileSync(config.FEED_JSON, "utf8")) as { channel?: string; updated_at?: unknown; items?: unknown[] };
-    return { channel: value.channel ?? config.CHANNEL_USERNAME, updated_at: value.updated_at ?? null, items: Array.isArray(value.items) ? value.items.length : 0 };
+    return {
+      channel: value.channel ?? config.CHANNEL_USERNAME,
+      updated_at: value.updated_at ?? null,
+      items: Array.isArray(value.items) ? value.items.length : 0,
+    };
   } catch {
     return { channel: config.CHANNEL_USERNAME, updated_at: null, items: 0 };
   }
@@ -220,12 +261,22 @@ function weekBounds(offset: number): [string, string] {
 
 function parseArray(value: unknown): unknown[] {
   if (typeof value !== "string" || !value) return [];
-  try { const parsed = JSON.parse(value) as unknown; return Array.isArray(parsed) ? parsed : []; } catch { return []; }
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
 function parseObject(value: unknown): Record<string, unknown> {
   if (typeof value !== "string" || !value) return {};
-  try { const parsed = JSON.parse(value) as unknown; return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}; } catch { return {}; }
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
 }
 
 function shortText(value: string): string {
@@ -235,10 +286,19 @@ function shortText(value: string): string {
 
 function formatMskDate(value: string): string {
   const date = new Date(value);
-  return new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Moscow", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(date);
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Europe/Moscow",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
 }
 
 function configlessChannel(backendDb: BackendDb): string {
-  const row = backendDb.sqlite.prepare("SELECT channel FROM posts WHERE channel<>'' ORDER BY updated_at DESC LIMIT 1").get() as { channel?: string } | undefined;
+  const row = backendDb.sqlite.prepare("SELECT channel FROM posts WHERE channel<>'' ORDER BY updated_at DESC LIMIT 1").get() as
+    | { channel?: string }
+    | undefined;
   return row?.channel?.replace(/^@/, "") || "alexgetmancom";
 }

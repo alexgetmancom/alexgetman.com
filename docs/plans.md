@@ -1,139 +1,93 @@
-# План развития alexgetman.com
+# План Production Parity и эксплуатации
 
-Документ фиксирует актуальный roadmap сайта `alexgetman.com` после перехода на canonical post model, новых URL и результата `isitagentready.com` **100/100 Level 5 Agent-Native**.
+Цель: довести TypeScript monorepo до полной замены legacy Python-системы, устойчивой публикации и быстрого delivery. Публичная модель: EN в `/`, RU в `/ru/`, canonical URL независим от Telegram message ID; Telegram не является source of truth.
 
-## Текущий статус
+## Критический контекст
 
-- Домен: `alexgetman.com`.
-- Основной язык роста: EN в корне сайта `/`.
-- Русский раздел: `/ru/`.
-- Посты имеют собственный canonical `post_id`, независимый от Telegram message ID.
-- URL постов:
-  - EN: `/<post_id>/<english-slug>/`
-  - RU: `/ru/<post_id>/<russian-slug>/`
-- Старые Telegram-номера `430/440/...` не должны использоваться как публичная нумерация сайта.
-- `isitagentready.com`: **100/100**, Level 5 Agent-Native. Дальше цель не “догнать оценку”, а сохранить её без деградации при развитии сайта.
-- `ialexey.ru`: SEO-ценности, трафика и важных статей нет. Стратегия: **полный разрыв со старым брендом без 301/302**.
+- Инцидент поста 54 показал, что девять параллельных ffmpeg для одного видео могут заблокировать backend и сеть VPS. Пункты 8-17 и 46-49 имеют приоритет перед новыми продуктами.
+- Production SQLite нельзя изменять через destructive schema sync. Любая миграция сначала проверяется на копии живой базы.
+- VPS не должен собирать Docker images: CI собирает immutable image, production только скачивает и запускает его.
+- Уже реализованные функции не считаются закрытыми до проверки тестом и production/fixture gate.
 
-## Принципы
+| Задача | Зачем и критерий готовности | Состояние |
+| --- | --- | --- |
+| 1. Legacy parity matrix | Сверить каждый крупный Python-модуль из git history с TS-модулями, тестами и production-путями; незакрытые функции имеют отдельные строки ниже. | В работе |
+| 2. schema.py -> DB schema | Сверить все legacy tables, columns, indexes и constraints с `schema.ts` на fixture и production-readonly базе. | Не начато |
+| 3. meta.py -> Meta clients | Сверить Facebook, Instagram и Threads payloads, auth, media upload и error mapping с legacy реализацией. | Не начато |
+| 4. command_center_ui.py -> Dashboard | Сверить все страницы, actions, auth, pipeline fields и UX Command Center. | Частично |
+| 5. pipeline.py -> Queue/worker | Сверить locks, retries, scheduling, stale recovery, metrics и site jobs с legacy pipeline. | Частично |
+| 6. controller/schedule.py -> bot schedule | Сверить расписание, MSK slots, rebalance и ручное изменение времени. | Частично |
+| 7. Legacy test suite coverage | Для каждой перенесённой критической функции добавить TS test либо явно зафиксировать непереносимый integration test. | В работе |
+| 8. Production recovery guard | После рестартов не оставлять jobs в `publishing` и не запускать опасный повтор автоматически. | Частично |
+| 9. Async ffmpeg | Запуск ffmpeg не блокирует event loop, healthcheck, Hono или grammY; есть timeout и SIGKILL. | В работе |
+| 10. Shared media cache | Один download/transcode/stage на пост и локаль, без параллельных ffmpeg и дублирующих файлов. | Частично |
+| 11. Durable media cache | Кэш media переживает процесс и безопасно очищается только после всех target jobs. | Не начато |
+| 12. Media resource limits | ffmpeg и worker имеют CPU/RAM/pids limits, чтобы не положить VPS или сеть. | Не начато |
+| 13. Publish queue locks | Claim, lock, stale-lock recovery и exactly-once transitions покрыты unit/integration tests. | Частично |
+| 14. Duplicate job cleanup | Финализация удаляет лишние queued/failed jobs только в пределах одного post/target. | Частично |
+| 15. Retry/backoff policy | Единые bounded retries, retryable errors и observability для всех target clients; legacy payload fallbacks удалены после wire-format audit. | Не начато |
+| 16. Threads media retry | Ошибка `media is missing` повторяется с задержкой и не создаёт дубль публикации. | Частично |
+| 17. Threads partial publication | Уже опубликованные части треда сохраняются; retry продолжает с непубликованной части. | Не начато |
+| 18. Scheduled publishing | Due drafts автоматически создают и исполняют jobs в заданное время. | Частично |
+| 19. Schedule rebalance | Изменение времени пересчитывает MSK slots и связанные jobs без дубликатов. | Не начато |
+| 20. RU/EN target localization | Каждый target получает правильные locale text, media, URL и entities; тесты покрывают RU/EN. | Частично |
+| 21. Telegram entities | Bold, italic, links и captions сохраняются и передаются в Telegram API. | Частично |
+| 22. Post HTML rendering | Telegram entities преобразуются в безопасный HTML для `post_locales`; сайт показывает форматирование. | Частично |
+| 23. Channel stories | Telegram Stories публикуются только в настроенный channel peer, URL и peer подтверждаются integration test. | Не начато |
+| 24. Business stories mode | Решить и реализовать/удалить legacy Bot API Business Connection mode с явной конфигурацией. | Не начато |
+| 25. Instagram stories | RU/EN credentials, public media URL, status polling и failure mapping покрыты тестами. | Не начато |
+| 26. Social repair | Edit/retry published targets обновляет поддерживаемые внешние сети либо явно сообщает unsupported target. | Не начато |
+| 27. Cancelled draft cleanup | Отмена неопубликованного draft удаляет связанные jobs, locales, sources и планы без удаления опубликованных данных. | Частично |
+| 28. `/schedule` bot command | Админ видит scheduled drafts и может открыть/изменить их через inline keyboard. | Не начато |
+| 29. Bot architecture and business updates | `bot.ts` разделён на handlers/albums/drafts; Business Connection updates либо обрабатываются, либо feature полностью отключён и документирован. | Не начато |
+| 30. Target visibility verification | Bluesky и другие SPA targets проверяются через platform API, не только HTTP 200. | Не начато |
+| 31. Observability alerts | Stale jobs, failed targets, credentials и site build failures создают deduplicated alerts. | Частично |
+| 32. Pipeline status API | `/pipeline-status` и `/api/pipeline-status` показывают реальные jobs, loops, errors, metrics и git revision. | Частично |
+| 33. Command Center dashboard | Dashboard соответствует данным pipeline API, защищён auth и имеет action/error states. | Частично |
+| 34. Dashboard live updates | SSE/MCP feed подключён к Dashboard либо заменён polling с корректными refresh/error states. | Не начато |
+| 35. SQLite parity and safety | WAL, busy timeout, fixture compatibility и production-readonly schema audit подтверждены. | Частично |
+| 36. Safe DB migrations | Baseline migrations создаются из существующей DB без destructive `push`; apply проверяется на копии production DB. | Не начато |
+| 37. Typed DB boundary | Приоритетные raw SQL в publish/site jobs получают typed repositories; `SqliteCompat any` сокращается. | Не начато |
+| 38. Config and deploy-path audit | Удалить/объяснить `CONTROLLER_DB`, baseline constants и обязательные env; исправить `web-sync` old-brand defaults; Zod fail-fast покрыт тестами. | Не начато |
+| 39. Web canonical parity | EN root, RU `/ru`, canonical URLs, feeds, sitemap и JSON-LD не используют Telegram как source. | Не начато |
+| 40. Duplicate EN routes | Проверить `/en/posts/[postId]`, удалить duplicate canonical route или оставить явный redirect. | Готово |
+| 41. AI-ready content | `llms.txt` использует Markdown URLs, добавлен `feed-ai.json`, image alt и AI analytics имеют данные/тесты. | Частично |
+| 42. Markdown and Link headers | Markdown negotiation и HTTP Link headers проверяются end-to-end после deploy. | Требует проверки |
+| 43. Site trigger and freshness | Публикация будит site job немедленно; fallback metrics interval равен 10 seconds, а не 300. | Частично |
+| 44. Site builder isolation | Astro/Sharp build выполняется отдельным service/container, не в backend process. | Частично |
+| 45. Incremental site rendering | Изменение одного поста не требует полного Astro build; fallback full build надёжен. | Не начато |
+| 46. Thin backend image | Multi-stage image содержит только runtime deps; без source, dev deps, Astro, Sharp, Git, rsync и `chown -R`. | Частично |
+| 47. Lean ffmpeg runtime | Выбрать проверенный Debian slim или минимальный codec build; H.264/AAC/MP4 и poster generation проходят media tests. | Не начато |
+| 48. Registry-based deploy | CI публикует immutable image в GHCR; VPS делает pull/up, хранит текущий и rollback image, не собирает Docker. | Не начато |
+| 49. Fast CI/CD | Path filters, parallel Vitest, Bun/BuildKit cache, отсутствие лишнего ffmpeg install, image build only for affected main changes и deploy gate дают измеримый быстрый pipeline. | Частично |
+| 50. Code quality gates | Biome, Knip, staged hook, typecheck, unit/integration tests, Docker smoke test и browser checks обязательны в CI. | Частично |
 
-1. `alexgetman.com` является первоисточником контента.
-2. Telegram не является source of truth. Он может появляться только как канал публикации, ссылка на обсуждение или комьюнити.
-3. Все публичные страницы, feeds, sitemap, JSON-LD и markdown endpoints должны ссылаться на canonical URL сайта.
-4. Внешние платформы получают ссылку на сайт, а не наоборот.
-5. EN-first: английский контент в корне, RU только под `/ru/`.
-6. Операционный rename путей на сервере делаем только если он даёт реальную пользу, а не ради косметики.
-7. EN и RU версии публичного сайта должны использовать один и тот же UI/UX каркас. Отличаться могут только язык интерфейса, локализованные тексты, URL, даты, категории и набор доступных постов. Нельзя развивать `/` и `/ru/` как разные дизайны.
+## Сохранённый отложенный backlog
 
-## Почему Telegram ещё может мелькать
+Эти пункты не отменены. Они не входят в первые 50, потому что не должны задерживать production parity. Перед началом любого из них требуется отдельная оценка ROI, безопасности и влияния на текущую систему.
 
-Telegram допустим в трёх местах:
-- как platform target в pipeline/Command Center;
-- как ссылка `Discuss in Telegram` / `Обсудить в Telegram`;
-- как Telegram channel/community в контактах.
+| Задача | Зачем и критерий готовности | Состояние |
+| --- | --- | --- |
+| Hono RPC client | Типы Hono API экспортируются во frontend; ручные API-вызовы заменяются там, где это снижает риск рассинхронизации. | Отложено |
+| Nano Stores | Добавить только при реальной потребности связать несколько Astro islands общим реактивным state. | Отложено |
+| Type-safe MCP tools | Декларировать MCP tools через Zod после определения внешнего consumer и модели авторизации. | Отложено |
+| Direct SQLite from Astro | Оценить только если изоляция site-builder не решает нужную скорость и консистентность. | Отложено |
+| Astro through HTTP API only | Рассматривать после стабилизации canonical feed contract и site-builder. | Отложено |
+| Emoji reactions | Вернуться после утверждения privacy, anti-spam и retention модели. | Отложено |
+| Structured headings in posts | Добавить только при надёжном редакторском правиле, не эвристикой ради HTML. | Отложено |
+| Dev.to inline media | Поддержать после отдельного решения о public upload/hosting lifecycle. | Отложено |
+| Reddit automation | Возобновить после стабильного аккаунта и утверждённой moderation strategy. | Отложено |
+| npm package backlink | Рассматривать только как отдельный продукт, а не как искусственный SEO backlink. | Отложено |
+| Docker Hub image backlink | Рассматривать только при реальной ценности публичного образа. | Отложено |
+| Boosty/monetization | Требует отдельной продуктовой модели и платёжной/правовой проверки. | Отложено |
+| New locales (`es`, `zh`) | Не начинать до стабилизации EN/RU publication и site workflows. | Отложено |
 
-Telegram не должен мелькать как:
-- `original source`;
-- `isBasedOn` в Schema.org;
-- источник RSS/feed описаний;
-- основа публичной нумерации постов;
-- обязательный backend для EN-only/RU-only публикаций.
+Pinterest и TikTok/Reels/Shorts исключены из плана по текущему решению.
 
-Если где-то в публичном HTML, RSS, JSON-LD, `.well-known`, `llms.txt`, `index.md` или markdown endpoint текст всё ещё говорит “Telegram source/original”, это баг и его надо убирать.
+## Правила исполнения
 
-## Активный план: ИИ-оптимизация (AI-SEO / AIO)
-
-### Шаг 1. Перевод ссылок в `llms.txt` на `.md` версии постов
-Динамические Markdown-версии страниц уже созданы, но ссылки в фиде для моделей ведут на стандартный HTML.
-- **Реализация**: Обновить генератор `apps/web/src/pages/llms.txt.ts`, чтобы ссылки вели на эндпоинты с `.md`.
-
-### Шаг 2. Расширенный фид для ИИ-моделей (`/feed-ai.json`)
-Стандартный `feed.json` не содержит специфических метаданных для ИИ.
-- **Реализация**: Создать эндпоинт `/feed-ai.json`. Добавить для каждого поста:
-  - `tldr` или `summary`: краткое резюме поста (1-2 предложения).
-  - `key_entities`: список ключевых технологий, нейросетей, брендов.
-  - `actions`: ссылки на внешние репозитории или источники.
-
-### Шаг 3. Аналитика и мониторинг активности ИИ на дашборде
-Отслеживание запросов от ИИ-агентов для понимания их интересов.
-- **Реализация**:
-  - Отфильтровать запросы Nginx от ботов: `OAI-SearchBot`, `GPTBot`, `ClaudeBot`, `Perplexibot`.
-  - Сохранять количество запросов в базу `pipeline.db` (новая метрика `ai_hits`).
-  - Вывести метрику в Command Center отдельной колонкой 🤖 `AI Hits`.
-
-### Шаг 4. Автоматическая генерация тегов `alt` для изображений
-Улучшение семантической разметки картинок для поисковых роботов.
-- **Реализация**: В компонентах [StoryVisual.astro](file:///Users/alex/projects/alexgetman.com/apps/web/src/components/home-news/StoryVisual.astro) и [StoryRail.astro](file:///Users/alex/projects/alexgetman.com/apps/web/src/components/home-news/StoryRail.astro) заменить пустой атрибут `alt=""` на динамический `alt={activePost.title}`.
-
-### Шаг 5. Поддержка Markdown Negotiation (Accept: text/markdown)
-Автоматическая отдача Markdown-версии страницы, если клиент запрашивает её в заголовках.
-- **Реализация**: В Nginx-конфигурации (`ialexey-cache.conf`) настроить обработку заголовка `Accept`: если пришёл `Accept: text/markdown`, делать внутреннее перенаправление с `/` на `/index.md`, а с `/{postId}/{slug}/` — на `/{postId}/{slug}.md`.
-
-### Шаг 6. Проверка и настройка HTTP Link Headers
-- **Реализация**: Убедиться, что на сервере в глобальном `nginx.conf` настроена переменная `$link_header`, содержащая ссылки на `api-catalog`, `agent-skills` и `llms.txt`.
-
-## Потенциал TypeScript Monorepo (новые возможности)
-
-Переход на единый стек TypeScript, Bun workspaces и базу Drizzle ORM открывает возможности для внедрения фич, которые на старом стыке Python и JS было архитектурно тяжело реализовать.
-
-### 1. Сквозная валидация данных (Shared Zod)
-- **Суть**: Описание схем данных постов, черновиков и API-запросов один раз в `packages/shared` через Zod.
-- **Польза**: Схемы Zod импортируются как во фронтенд (для проверки форм редактирования постов в админке на лету), так и в бэкенд (для автоматической валидации Hono API и webhook-payloads). Любое изменение структуры данных проверяется компилятором на обоих концах.
-
-### 2. Типизированный Hono RPC (Remote Procedure Call)
-- **Суть**: Экспорт типов API бэкенда во фронтенд.
-- **Польза**: Отказ от ручных `fetch('/api/...')` на фронтенде сайта. Вызов эндпоинтов бэкенда происходит через строго типизированный RPC-клиент с автодополнением параметров, query-строк и структур ответа в редакторе (VS Code). Любые изменения в API бэкенда ломают сборку сайта, предотвращая рантайм-баги.
-
-### 3. Интерактивная админка в реальном времени (SSE / WebSockets)
-- **Суть**: Перевод Command Center на стриминг статуса публикаций по Server-Sent Events.
-- **Польза**: Нажав кнопку «Опубликовать», админ видит живой лог отправки по 11 соцсетям в реальном времени (например, прогресс-бар загрузки видео в Threads, статус Dev.to, ошибки лимитов X.com) без постоянных интервальных опросов сервера.
-
-### 4. Унифицированный медиа-конвейер (Unified Sharp)
-- **Суть**: Использование библиотеки `sharp` на бэкенде для предобработки медиа.
-- **Польза**: В момент получения картинки или видео от бота бэкенд может сразу нарезать её под адаптивные размеры фронтенда (responsive sizes), сконвертировать в WebP и положить в готовую публичную папку сайта, обеспечивая мгновенную отдачу и быструю пересборку Astro.
-
-### 5. Упрощенное E2E-тестирование (Vitest Mocking)
-- **Суть**: Глобальный мокинг `fetch` запросов в Vitest на бэкенде.
-- **Польза**: Написание быстрых и надежных модульных тестов для всех 11 клиентов соцсетей без необходимости сложного патчинга сокетов или Python-библиотек.
-
-### 6. Микро-стейт менеджмент на Nano Stores (Astro Islands)
-- **Суть**: Использование библиотеки `nanostores` (весом всего 1 КБ) на чистом TS вместо тяжелых фреймворков.
-- **Польза**: Связывание независимых островов интерактива (плеер историй `home-news-player.ts`, переключатель тем, прогресс чтения) с реактивным стейтом без перерендеринга страниц и оверхеда.
-
-### 7. Type-Safe AI Agents & MCP Tools (Zod-инструменты)
-- **Суть**: Декларативное описание функций бэкенда и MCP-инструментов с помощью Zod-схем.
-- **Польза**: Предоставление ИИ-моделям (в фиде `/feed-ai.json` или по MCP) строго типизированных сигнатур инструментов для автоматического вызова функций моделями без риска передачи невалидных аргументов.
-
-### 8. Интеграция Biome для линтинга и форматирования кода
-- **Суть**: Использование единого инструмента Biome.js на Rust вместо связки ESLint + Prettier.
-- **Польза**: Внедрение стандартов форматирования и линтинга для TS, CSS и JSON. В отличие от тяжелых ESLint/Prettier, Biome работает мгновенно (сотые доли секунды на весь проект) и не перегружает `package.json` десятками конфигов и плагинов.
-
-### 9. Очистка мертвого кода и неиспользуемых зависимостей (Knip)
-- **Суть**: Использование инструмента Knip для автоматического статического анализа монорепозитория.
-- **Польза**: Поиск забытых после миграции файлов, неиспользуемых экспортов функций и устаревших пакетов в `package.json`, помогающий поддерживать кодовую базу в чистоте.
-
-### 10. Обновление CI/CD (GitHub Actions) под Bun и TypeScript
-- **Суть**: Адаптация файла `.github/workflows/check.yml` под новую монорепозиторную структуру.
-- **Польза**: Удаление устаревших шагов установки Python/pip и автозапуск Bun, Vitest, typecheck, web build и Docker build при пушах в репозиторий.
-
-### 11. Автоматическое форматирование при коммите (Git Hooks + Biome)
-- **Суть**: Настройка легковесного pre-commit хука (например, через `simple-git-hooks`).
-- **Польза**: Гарантия того, что в Git попадает только чистый, автоматически отформатированный код. Скрипт будет проверять и форматировать с помощью Biome только измененные (staged) файлы непосредственно перед коммитом.
-
-## Отложено
-
-Эти задачи не делаем в ближайшем спринте, чтобы не тратить время на низкий ROI или высокий операционный риск.
-
-- [ ] Полный rename production paths `/home/deploy/ialexey-web` -> `/home/deploy/alexgetman-web` без отдельной необходимости.
-- [ ] Прямое чтение production SQLite из Astro build через `bun:sqlite`/Drizzle.
-- [ ] Перевод Astro build на HTTP API как единственный source of truth.
-- [ ] Emoji reactions под постами: вернуться отдельно, когда будет понятна privacy/антиспам модель и реальная польза для retention.
-- [ ] Логичные `<h2>/<h3>` внутри постов: делать только после надежного правила разметки, не эвристикой ради HTML.
-- [ ] Полная поддержка media inside body для Dev.to: пока используем только cover image, чтобы не плодить отдельный upload/hosting слой.
-- [ ] Pinterest API automation.
-- [ ] Reddit automation до стабильного аккаунта и понятного moderation strategy.
-- [ ] TikTok/Reels/Shorts automation.
-- [ ] npm package ради backlink.
-- [ ] Docker Hub image ради backlink.
-- [ ] Boosty/монетизация.
-- [ ] Новые языки (`es`, `zh`) до стабилизации EN/RU.
+1. Пункт становится `Готово` только после кода, релевантного теста и проверки production/fixture там, где это применимо.
+2. `Частично` означает, что часть реализации уже есть, но критерий строки ещё не доказан целиком.
+3. Изменения production SQLite сначала проверяются на копии базы; destructive schema sync запрещён.
+4. VPS не собирает Docker images. Сборка и тесты происходят в CI, сервер только получает готовый immutable image.
+5. Новые социальные цели и отложенные платформы не добавляются, пока пункты 8-37 не подтверждены.
