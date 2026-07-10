@@ -9,7 +9,7 @@
     "start": "bun --smol dist/index.js",
     "ops": "bun src/cli.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "bun --bun vitest run",
+    "test": "bun scripts/run-tests.ts",
     "check": "bun run typecheck && bun run test"
   },
   "dependencies": {
