@@ -9,6 +9,7 @@ COPY --chown=bun:bun scripts ./scripts
 COPY --chown=bun:bun tools/knip ./tools/knip
 COPY --chown=bun:bun biome.json knip.json ./
 
+RUN chown bun:bun /app
 USER bun
 RUN bun install --frozen-lockfile
 RUN bun run --filter @alexgetman/shared typecheck && bun run --filter @alexgetman/backend typecheck

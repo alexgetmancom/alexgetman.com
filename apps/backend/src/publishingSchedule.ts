@@ -64,14 +64,18 @@ export function rebalanceScheduledDrafts(backendDb: BackendDb, now = new Date())
         .prepare("UPDATE drafts SET scheduled_at=?, scheduled_en_at=?, updated_at=? WHERE id=?")
         .run(assignment.ru, assignment.en, updatedAt, row.id);
       if (!row.post_id) continue;
+      syncPublicationSchedule(backendDb, row.post_id, assignment, updatedAt);
       const jobs = backendDb.sqlite
-        .prepare("SELECT target FROM publish_jobs WHERE post_id=? AND status IN ('queued','failed')")
-        .all(row.post_id) as Array<{ target: string }>;
+        .prepare("SELECT target, payload_json FROM publish_jobs WHERE post_id=? AND status IN ('queued','failed')")
+        .all(row.post_id) as Array<{ target: string; payload_json: string | null }>;
       for (const job of jobs) {
         const publishAt = targetLocale(job.target) === "en" ? assignment.en : assignment.ru;
+        const payload = updateSchedulePayload(job.payload_json, assignment, publishAt);
         backendDb.sqlite
-          .prepare("UPDATE publish_jobs SET next_attempt_at=?, updated_at=? WHERE post_id=? AND target=? AND status IN ('queued','failed')")
-          .run(publishAt, updatedAt, row.post_id, job.target);
+          .prepare(
+            "UPDATE publish_jobs SET payload_json=?, next_attempt_at=?, updated_at=? WHERE post_id=? AND target=? AND status IN ('queued','failed')",
+          )
+          .run(payload, publishAt, updatedAt, row.post_id, job.target);
       }
       backendDb.sqlite
         .prepare(
@@ -177,6 +181,65 @@ function parseTargets(value: string | null): Record<string, boolean> {
 
 function hasLocaleTarget(targets: Record<string, boolean>, locale: TargetLocale): boolean {
   return Object.entries(targets).some(([target, enabled]) => enabled && targetLocale(target) === locale);
+}
+
+function syncPublicationSchedule(
+  backendDb: BackendDb,
+  postId: number,
+  assignment: { ru: string | null; en: string | null },
+  updatedAt: string,
+): void {
+  const publishedAt = assignment.ru ?? assignment.en;
+  backendDb.sqlite.prepare("UPDATE posts SET date_utc=?, updated_at=? WHERE post_id=?").run(publishedAt, updatedAt, postId);
+  backendDb.sqlite
+    .prepare("UPDATE post_locales SET published_at=?, updated_at=? WHERE post_id=? AND locale='ru'")
+    .run(assignment.ru, updatedAt, postId);
+  backendDb.sqlite
+    .prepare("UPDATE post_locales SET published_at=?, updated_at=? WHERE post_id=? AND locale='en'")
+    .run(assignment.en, updatedAt, postId);
+  for (const table of ["publication_plans", "publication_sources"] as const) {
+    const column = table === "publication_plans" ? "plan_json" : "item_json";
+    const row = backendDb.sqlite.prepare(`SELECT ${column} AS value FROM ${table} WHERE post_id=?`).get(postId) as
+      | { value: string | null }
+      | undefined;
+    if (row)
+      backendDb.sqlite
+        .prepare(`UPDATE ${table} SET ${column}=?, updated_at=? WHERE post_id=?`)
+        .run(updateSchedulePayload(row.value, assignment, publishedAt), updatedAt, postId);
+  }
+  const source = backendDb.sqlite.prepare("SELECT message_id FROM posts WHERE post_id=?").get(postId) as { message_id: number } | undefined;
+  if (!source) return;
+  const row = backendDb.sqlite.prepare("SELECT item_json FROM site_source_items WHERE message_id=?").get(source.message_id) as
+    | { item_json: string | null }
+    | undefined;
+  if (row)
+    backendDb.sqlite
+      .prepare("UPDATE site_source_items SET item_json=?, updated_at=? WHERE message_id=?")
+      .run(updateSchedulePayload(row.item_json, assignment, publishedAt), updatedAt, source.message_id);
+}
+
+function updateSchedulePayload(
+  value: string | null,
+  assignment: { ru: string | null; en: string | null },
+  publishAt: string | null,
+): string {
+  try {
+    const payload = JSON.parse(value || "{}") as Record<string, unknown>;
+    payload.scheduled_at = assignment.ru;
+    payload.scheduled_en_at = assignment.en;
+    payload.publish_at_ru = assignment.ru;
+    payload.publish_at_en = assignment.en;
+    payload.date = publishAt ?? assignment.ru ?? assignment.en;
+    return JSON.stringify(payload);
+  } catch {
+    return JSON.stringify({
+      scheduled_at: assignment.ru,
+      scheduled_en_at: assignment.en,
+      publish_at_ru: assignment.ru,
+      publish_at_en: assignment.en,
+      date: publishAt ?? assignment.ru ?? assignment.en,
+    });
+  }
 }
 
 function mskSlot(year: number, month: number, day: number, clock: string): Date {

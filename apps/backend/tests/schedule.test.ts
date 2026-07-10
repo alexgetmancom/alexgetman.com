@@ -67,10 +67,14 @@ describe("publishing schedule", () => {
         .prepare("SELECT id, scheduled_at FROM drafts WHERE id IN (?,?) ORDER BY id")
         .all(first, second) as Array<{ id: number; scheduled_at: string }>;
       expect(drafts.map((draft) => draft.scheduled_at)).toEqual(["2026-07-10T07:37:00.000Z", "2026-07-10T10:37:00.000Z"]);
-      const jobs = backendDb.sqlite.prepare("SELECT next_attempt_at FROM publish_jobs ORDER BY post_id").all() as Array<{
+      const jobs = backendDb.sqlite.prepare("SELECT next_attempt_at, payload_json FROM publish_jobs ORDER BY post_id").all() as Array<{
         next_attempt_at: string;
+        payload_json: string;
       }>;
       expect(jobs.map((job) => job.next_attempt_at)).toEqual(drafts.map((draft) => draft.scheduled_at));
+      expect(jobs.map((job) => (JSON.parse(job.payload_json) as { publish_at_ru: string }).publish_at_ru)).toEqual(
+        drafts.map((draft) => draft.scheduled_at),
+      );
     } finally {
       backendDb.close();
     }
