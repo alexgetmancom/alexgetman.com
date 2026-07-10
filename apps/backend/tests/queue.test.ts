@@ -121,4 +121,31 @@ describe("publish queue", () => {
       backendDb.close();
     }
   });
+
+  it("does not leave a job publishing when result finalization fails", async () => {
+    const backendDb = tempDb();
+    try {
+      const id = enqueuePublishJob(backendDb, {
+        messageId: 105,
+        target: "devto",
+        payload: { title: "Queued", bodyMarkdown: "Body" },
+      });
+      await runPublishCycle(loadConfig({ DEVTO_API_KEY: "secret" }), backendDb, {
+        devto: async () => {
+          backendDb.sqlite.exec("DROP TABLE post_events; CREATE TABLE post_events (id INTEGER PRIMARY KEY)");
+          return { ok: true, id: "devto-1" };
+        },
+      });
+      const job = backendDb.sqlite.prepare("SELECT status, locked_by, last_error FROM publish_jobs WHERE job_id=?").get(id) as {
+        status: string;
+        locked_by: string | null;
+        last_error: string;
+      };
+      expect(job.status).toBe("failed");
+      expect(job.locked_by).toBeNull();
+      expect(job.last_error).toContain("worker finalization failed");
+    } finally {
+      backendDb.close();
+    }
+  });
 });

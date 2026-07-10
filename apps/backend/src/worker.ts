@@ -14,7 +14,7 @@ import { runObservabilityCycle } from "./services/observability.js";
 export async function runPublishCycle(config: BackendConfig, backendDb: BackendDb, publishers: Record<string, Publisher> = createPublishers(config, backendDb)): Promise<number> {
   recoverStalePublishJobs(backendDb, config.PUBLISH_LOCK_TIMEOUT_SECONDS);
   const jobs = claimDuePublishJobs(backendDb, config.PUBLISH_CLAIM_LIMIT);
-  await Promise.allSettled(
+  const results = await Promise.allSettled(
     jobs.map(async (job) => {
       const publisher = publishers[job.target];
       if (!publisher) {
@@ -28,6 +28,19 @@ export async function runPublishCycle(config: BackendConfig, backendDb: BackendD
       }
     }),
   );
+  for (const [index, result] of results.entries()) {
+    if (result.status !== "rejected") continue;
+    const job = jobs[index]!;
+    const error = `worker finalization failed: ${String(result.reason instanceof Error ? result.reason.message : result.reason)}`;
+    log("error", "publish job finalization failed", { jobId: job.jobId, target: job.target, error });
+    const now = new Date().toISOString();
+    backendDb.sqlite
+      .prepare("UPDATE publish_jobs SET status='failed', locked_by=NULL, locked_at=NULL, last_error=?, updated_at=? WHERE job_id=? AND status='publishing'")
+      .run(error, now, job.jobId);
+    backendDb.sqlite
+      .prepare("UPDATE post_targets SET status='failed', error=?, skipped=0, updated_at=? WHERE post_key=? AND target=?")
+      .run(error, now, job.postKey, job.target);
+  }
   recordWorkerState(backendDb, "queue", { claimed: jobs.length });
   return jobs.length;
 }
