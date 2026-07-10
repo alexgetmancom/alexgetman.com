@@ -1,8 +1,8 @@
 import { Database } from "bun:sqlite";
-import { drizzle } from "drizzle-orm/bun-sqlite";
-import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
+import { drizzle } from "drizzle-orm/bun-sqlite";
 import * as schema from "./schema.js";
 
 export type BackendDb = {
@@ -10,6 +10,8 @@ export type BackendDb = {
   db: BunSQLiteDatabase<typeof schema>;
   close: () => void;
 };
+
+export type MigrationStatus = { id: string; appliedAt: string };
 
 type SqliteCompat = Omit<Database, "prepare" | "query"> & {
   prepare: (sql: string) => any;
@@ -22,17 +24,36 @@ export function openBackendDb(path: string, timeout = 30_000): BackendDb {
     mkdirSync(dirname(path), { recursive: true });
   }
   const sqlite = new Database(path, { create: true, strict: true }) as SqliteCompat;
-  sqlite.backup = async (target: string) => { await Bun.write(target, sqlite.serialize()); };
+  sqlite.backup = async (target: string) => {
+    await Bun.write(target, sqlite.serialize());
+  };
   sqlite.run("PRAGMA journal_mode = WAL");
   sqlite.run(`PRAGMA busy_timeout = ${timeout}`);
   sqlite.run("PRAGMA foreign_keys = ON");
-  ensureCoreSchema(sqlite);
+  runMigrations(sqlite);
   const db = drizzle(sqlite, { schema });
   return {
     sqlite,
     db,
     close: () => sqlite.close(),
   };
+}
+
+export function migrationStatus(sqlite: SqliteCompat): MigrationStatus[] {
+  sqlite.exec("CREATE TABLE IF NOT EXISTS backend_migrations (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
+  return sqlite.prepare("SELECT id, applied_at FROM backend_migrations ORDER BY id").all() as MigrationStatus[];
+}
+
+function runMigrations(sqlite: SqliteCompat): void {
+  const migrations: Array<{ id: string; up: (database: SqliteCompat) => void }> = [{ id: "0001_core_schema", up: ensureCoreSchema }];
+  const applied = new Set(migrationStatus(sqlite).map((migration) => migration.id));
+  for (const migration of migrations) {
+    if (applied.has(migration.id)) continue;
+    sqlite.transaction(() => {
+      migration.up(sqlite);
+      sqlite.prepare("INSERT INTO backend_migrations(id, applied_at) VALUES (?, ?)").run(migration.id, new Date().toISOString());
+    })();
+  }
 }
 
 function ensureCoreSchema(sqlite: SqliteCompat): void {

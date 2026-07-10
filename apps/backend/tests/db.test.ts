@@ -1,10 +1,10 @@
+import { Database } from "bun:sqlite";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Database } from "bun:sqlite";
 import { describe, expect, it } from "vitest";
 import { createDraftFromMessage, publishDraftToQueue } from "../src/bot.js";
-import { openBackendDb } from "../src/db/client.js";
+import { migrationStatus, openBackendDb } from "../src/db/client.js";
 
 describe("openBackendDb", () => {
   it("enables WAL, busy timeout and foreign keys", () => {
@@ -39,6 +39,7 @@ describe("openBackendDb", () => {
       expect(tables).toContain("post_locales");
       expect(tables).toContain("media_assets");
       expect(tables).toContain("credential_checks");
+      expect(migrationStatus(backendDb.sqlite)).toEqual([expect.objectContaining({ id: "0001_core_schema" })]);
     } finally {
       backendDb.close();
     }
@@ -64,11 +65,15 @@ describe("openBackendDb", () => {
     try {
       const draftId = createDraftFromMessage(backendDb, 42, { text: "Production fixture", entities: [], media: [] });
       const postId = publishDraftToQueue(backendDb, draftId);
-      expect(backendDb.sqlite.prepare("SELECT draft_id, status FROM publications WHERE post_id=?").get(postId)).toEqual({ draft_id: draftId, status: "published" });
+      expect(backendDb.sqlite.prepare("SELECT draft_id, status FROM publications WHERE post_id=?").get(postId)).toEqual({
+        draft_id: draftId,
+        status: "published",
+      });
       expect(backendDb.sqlite.prepare("SELECT locale, slug FROM post_locales WHERE post_id=? ORDER BY locale").all(postId)).toEqual([
         { locale: "en", slug: "production-fixture" },
         { locale: "ru", slug: "production-fixture" },
       ]);
+      expect(migrationStatus(backendDb.sqlite).map((migration) => migration.id)).toEqual(["0001_core_schema"]);
     } finally {
       backendDb.close();
     }
