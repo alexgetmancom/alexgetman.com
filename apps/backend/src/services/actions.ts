@@ -1,5 +1,4 @@
 import type { BackendDb } from "../db/client.js";
-import { enqueuePublishJob } from "../queue/publish.js";
 import { localizeTargetPayload } from "../publicationPayload.js";
 
 export type CommandAction = {
@@ -41,13 +40,12 @@ function requeue(backendDb: BackendDb, postId: number, target?: string): Record<
     for (const [targetId, row] of latest) {
       const existing = backendDb.sqlite.prepare("SELECT job_id FROM publish_jobs WHERE post_id=? AND target=? AND status='queued'").get(postId, targetId);
       if (!existing) {
-        enqueuePublishJob(backendDb, {
-          postId,
-          postKey: String(row.post_key ?? `post:${postId}`),
-          messageId: Number(row.message_id),
-          target: targetId,
-          payload: localizeTargetPayload(Object.keys(source).length > 0 ? source : parseObject(row.payload_json), targetId),
-        });
+        const now = new Date().toISOString();
+        const payload = localizeTargetPayload(Object.keys(source).length > 0 ? source : parseObject(row.payload_json), targetId);
+        backendDb.sqlite.prepare(
+          `UPDATE publish_jobs SET status='queued', attempt_count=0, publish_at=?, next_attempt_at=NULL,
+             locked_by=NULL, locked_at=NULL, payload_json=?, last_error=NULL, updated_at=? WHERE job_id=?`,
+        ).run(now, JSON.stringify(payload), now, Number(row.job_id));
       }
       backendDb.sqlite.prepare(`INSERT INTO post_targets(post_key,target,status,error,skipped,updated_at,raw_json)
         VALUES (?,?,'queued',NULL,0,?,?) ON CONFLICT(post_key,target) DO UPDATE SET status='queued',error=NULL,skipped=0,updated_at=excluded.updated_at,raw_json=excluded.raw_json`)

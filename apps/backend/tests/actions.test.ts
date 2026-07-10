@@ -30,6 +30,7 @@ describe("command center actions", () => {
       const payloads = Object.fromEntries(jobs.map((job) => [job.target, JSON.parse(job.payload_json) as Record<string, unknown>]));
       expect(payloads.threads_ru).toMatchObject({ locale: "ru", text: "Русский текст", text_en: "", media: [{ file_id: "ru-photo" }] });
       expect(payloads.threads_en).toMatchObject({ locale: "en", text: "English text", text_en: "English text", media: [{ file_id: "en-photo" }] });
+      expect((backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM publish_jobs WHERE post_id=52").get() as { count: number }).count).toBe(2);
     } finally {
       backendDb.close();
     }

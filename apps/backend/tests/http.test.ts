@@ -53,7 +53,8 @@ describe("Hono backend routes", () => {
       publishDraftToQueue(backendDb, draftId);
       const app = createHttpApp(loadConfig({}), backendDb);
       const response = await app.request("/api/pipeline-status");
-      const payload = await response.json() as { updated_at: string; feed: { items: number }; social_worker: { pipeline_db: string }; posts: Array<Record<string, unknown>> };
+      const payload = await response.json() as { ok: boolean; updated_at: string; feed: { items: number }; social_worker: { pipeline_db: string }; posts: Array<Record<string, unknown>> };
+      expect(payload.ok).toBe(true);
       expect(payload.updated_at).toBeTruthy();
       expect(payload.feed.items).toBe(0);
       expect(payload.social_worker.pipeline_db).toBe("/data/pipeline.db");

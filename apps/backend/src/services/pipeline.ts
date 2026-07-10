@@ -77,9 +77,11 @@ export function pipelineStatusPayload(config: BackendConfig, backendDb: BackendD
   const legacyPosts = legacyPipelinePosts(backendDb, weekOffset);
   const feed = readFeedSummary(config);
   const socialState = readWorkerState(backendDb, "crosspost_worker") ?? readWorkerState(backendDb, "queue") ?? {};
+  const currentTargetFailures = backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM post_targets WHERE status='failed'").get() as { count: number };
+  const currentSiteFailures = backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM site_jobs WHERE status='failed'").get() as { count: number };
 
   return {
-    ok: jobs.every((job) => job.status !== "failed"),
+    ok: currentTargetFailures.count === 0 && currentSiteFailures.count === 0 && workers.every((worker) => worker.ok),
     generatedAt: new Date().toISOString(),
     gitRevision: gitRevision(),
     pipelineDb: {
