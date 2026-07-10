@@ -291,7 +291,7 @@ function renderWeeklyChart(posts: any[], orderedTargets: any[]): string {
   
   const days: Record<string, Record<string, number>> = {};
   for (const post of posts) {
-    const day = getMskDateString(post.created_at);
+    const day = getMskDateString(post.date);
     if (!days[day]) {
       days[day] = { views: 0, likes: 0, replies: 0 };
     }
@@ -441,7 +441,7 @@ function renderPipelineSection(weekOffset: number, data: any): string {
   // Group posts by day (MSK)
   const daysDict: Record<string, { dayTitle: string; posts: any[] }> = {};
   for (const post of data?.posts || []) {
-    const date = new Date(post.created_at);
+    const date = new Date(post.date);
     if (isNaN(date.getTime())) continue;
     const msk = new Date(date.getTime() + 3 * 3_600_000);
     const dayStr = msk.toISOString().slice(0, 10);
@@ -497,7 +497,7 @@ function renderPipelineSection(weekOffset: number, data: any): string {
     );
 
     for (const post of dayPosts) {
-      const timeStr = formatTimeMsk(post.created_at);
+      const timeStr = formatTimeMsk(post.date);
       const displayId = escapeHtml(post.post_id || post.message_id);
       const postLink = post.site_url
         ? `<a href="${escapeHtml(post.site_url)}">${displayId}</a>`
