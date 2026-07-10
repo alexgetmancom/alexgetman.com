@@ -25,6 +25,7 @@ services:
       dockerfile: apps/backend/Dockerfile
     image: alexgetman-backend:latest
     container_name: alexgetman-backend
+    command: ["node", "--enable-source-maps", "/app/apps/backend/dist/src/index.js"]
     restart: unless-stopped
     env_file:
       - path: ./secrets.env
