@@ -8,6 +8,7 @@ if (files.length === 0) {
 }
 
 for (const file of files) {
+  console.log(`Running ${file}`);
   const child = Bun.spawn([
     process.execPath,
     "--bun",
@@ -24,6 +25,9 @@ for (const file of files) {
   });
   const exitCode = await child.exited;
   if (exitCode !== 0) {
+    if (process.env.GITHUB_ACTIONS === "true") {
+      console.error(`::error title=Backend test failed::${file} exited with code ${exitCode}`);
+    }
     throw new Error(`${file} failed with exit code ${exitCode}`);
   }
 }
