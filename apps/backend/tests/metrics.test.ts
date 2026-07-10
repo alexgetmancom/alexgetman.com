@@ -49,6 +49,19 @@ describe("Telegram public metrics", () => {
   });
 });
 
+describe("Mastodon metrics", () => {
+  it("normalizes an instance hostname without a protocol", async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ favourites_count: 2, replies_count: 1, reblogs_count: 3 }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    })) as unknown as typeof fetch;
+    const collector = createMetricCollectors(loadConfig({ MASTODON_INSTANCE: "mastodon.social" }), fetchImpl).mastodon!;
+    const result = await collector({ ...task("mastodon"), externalId: "123", externalIds: ["123"] });
+    expect(fetchImpl).toHaveBeenCalledWith("https://mastodon.social/api/v1/statuses/123", expect.anything());
+    expect(result.metrics).toEqual({ likes: 2, replies: 1, reposts: 3 });
+  });
+});
+
 function seedPublishedPost(backendDb: ReturnType<typeof openBackendDb>, postKey: string, target: string): void {
   const date = new Date(Date.now() - 2 * 3_600_000).toISOString();
   backendDb.sqlite.prepare(

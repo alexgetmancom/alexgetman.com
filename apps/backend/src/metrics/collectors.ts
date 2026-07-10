@@ -1,7 +1,8 @@
-import { Api, TelegramClient, sessions } from "telegram";
+import { Api, TelegramClient } from "telegram";
 import type { BackendConfig } from "../config.js";
 import { requestJson, requestText } from "../social/http.js";
 import { oauthAuthorization } from "../social/x.js";
+import { loadChannelStorySession } from "../social/telegramSession.js";
 import type { MetricTask } from "./schedule.js";
 
 export type MetricResult = { metrics: Record<string, number>; source: string; raw: unknown; url?: string };
@@ -172,7 +173,8 @@ async function collectBluesky(task: MetricTask, fetchImpl: typeof fetch): Promis
 async function collectMastodon(task: MetricTask, config: BackendConfig, fetchImpl: typeof fetch): Promise<MetricResult> {
   const ids = task.externalIds.map((id) => id.match(/\/(\d+)(?:$|[?#])/)?.[1] ?? (/^\d+$/.test(id) ? id : null)).filter((id): id is string => Boolean(id));
   if (ids.length === 0) throw new Error("missing_mastodon_status_ids");
-  const host = (config.MASTODON_INSTANCE ?? "https://mastodon.social").replace(/\/$/, "");
+  const configuredHost = config.MASTODON_INSTANCE ?? "https://mastodon.social";
+  const host = `${/^https?:\/\//i.test(configuredHost) ? "" : "https://"}${configuredHost}`.replace(/\/$/, "");
   const totals = { likes: 0, replies: 0, reposts: 0 };
   const parts = [];
   for (const id of ids) {
@@ -215,7 +217,7 @@ async function collectInstagramStory(task: MetricTask, config: BackendConfig, fe
 
 async function collectTelegramStory(task: MetricTask, config: BackendConfig): Promise<MetricResult> {
   if (!config.TELEGRAM_CHANNEL_STORIES_API_ID || !config.TELEGRAM_CHANNEL_STORIES_API_HASH || !config.TELEGRAM_CHANNEL_STORIES_SESSION || !task.externalId) throw new Error("missing_telegram_story_credentials_or_id");
-  const instance = new TelegramClient(new sessions.StringSession(config.TELEGRAM_CHANNEL_STORIES_SESSION), config.TELEGRAM_CHANNEL_STORIES_API_ID, config.TELEGRAM_CHANNEL_STORIES_API_HASH, { connectionRetries: 5 });
+  const instance = new TelegramClient(loadChannelStorySession(config.TELEGRAM_CHANNEL_STORIES_SESSION), config.TELEGRAM_CHANNEL_STORIES_API_ID, config.TELEGRAM_CHANNEL_STORIES_API_HASH, { connectionRetries: 5 });
   await instance.connect();
   try {
     const peer = await instance.getInputEntity(config.CHANNEL_USERNAME.replace(/^@/, ""));

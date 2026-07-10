@@ -14,7 +14,7 @@ export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb
     .all() as Record<string, unknown>[];
   const jobs = backendDb.sqlite.prepare("SELECT * FROM publish_jobs ORDER BY updated_at DESC, job_id DESC LIMIT 100").all() as Record<string, unknown>[];
   const drafts = backendDb.sqlite.prepare("SELECT * FROM drafts ORDER BY updated_at DESC, id DESC LIMIT 50").all() as Record<string, unknown>[];
-  const credentials = optionalRows(backendDb, "SELECT * FROM credential_checks ORDER BY updated_at DESC LIMIT 100");
+  const credentials = optionalRows(backendDb, "SELECT * FROM credential_checks ORDER BY last_checked_at DESC LIMIT 100");
   const lifecycle = optionalRows(backendDb, "SELECT * FROM post_lifecycle ORDER BY updated_at DESC LIMIT 100");
   const actions = optionalRows(backendDb, "SELECT * FROM ops_actions ORDER BY created_at DESC, action_id DESC LIMIT 100");
   return {

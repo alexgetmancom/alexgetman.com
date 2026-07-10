@@ -114,6 +114,7 @@ describe("Hono backend routes", () => {
     const dir = mkdtempSync(join(tmpdir(), "alexgetman-markdown-"));
     writeFileSync(join(dir, "auth.md"), "# auth.md\n");
     try {
+      backendDb.sqlite.prepare("INSERT INTO credential_checks(target,status,required_env_json,missing_env_json,last_checked_at) VALUES ('telegram','ready','[]','[]',?)").run(new Date().toISOString());
       const app = createHttpApp(loadConfig({ COMMAND_CENTER_TOKEN: "secret", SITE_PUBLIC_DIR: dir, SITE_METRICS_JSON: join(dir, "metrics.json") }), backendDb);
       const markdown = await app.request("/auth.md");
       expect(markdown.status).toBe(200);
@@ -127,6 +128,8 @@ describe("Hono backend routes", () => {
       expect(html).toContain("Credentials");
       expect(html).toContain("Diagnostics");
       expect(html).toContain("Lifecycle");
+      const payload = await (await app.request("/api/command-center?token=secret")).json() as { credentials: Array<{ target: string }> };
+      expect(payload.credentials).toEqual([expect.objectContaining({ target: "telegram" })]);
     } finally {
       backendDb.close();
     }
