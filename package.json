@@ -26,8 +26,7 @@
     "check:backend": "bun run --filter @alexgetman/backend check",
     "check:language": "tsx scripts/enforce-typescript.ts",
     "check:all": "tsx scripts/check-all.ts",
-    "sync:production-web": "tsx scripts/web-sync.ts",
-    "hooks:install": "simple-git-hooks"
+    "sync:production-web": "tsx scripts/web-sync.ts"
   },
   "dependencies": {
     "@astrojs/rss": "^4.0.18",
@@ -39,11 +38,7 @@
     "@types/sanitize-html": "^2.16.1",
     "@biomejs/biome": "^2.0.6",
     "sharp": "^0.34.5",
-    "simple-git-hooks": "^2.11.1",
     "tsx": "^4.23.0",
     "typescript": "7.0.2"
-  },
-  "simple-git-hooks": {
-    "pre-commit": "bunx biome check --staged --no-errors-on-unmatched"
   }
 }
