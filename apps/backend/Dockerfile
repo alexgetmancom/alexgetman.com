@@ -18,7 +18,8 @@ COPY scripts ./scripts
 RUN bun install --frozen-lockfile
 RUN bun run --filter @alexgetman/shared typecheck \
   && bun run --filter @alexgetman/backend typecheck \
-  && bun run --filter @alexgetman/backend build
+  && bun run --filter @alexgetman/backend build \
+  && DATA_DIR=apps/web/src/data bun run build
 
 RUN chown -R bun:bun /app
 
