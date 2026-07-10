@@ -4,9 +4,19 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadConfig } from "../src/config.js";
 import { publishToLinkedIn } from "../src/social/linkedin.js";
+import { payloadMedia, payloadText } from "../src/social/payload.js";
 import { oauthAuthorization, publishToX } from "../src/social/x.js";
 
 const tempDirs: string[] = [];
+
+describe("publish payload validation", () => {
+  it("drops malformed text and media values without throwing", () => {
+    expect(payloadText({ text_en: 42 } as unknown as Record<string, unknown>)).toBe("");
+    expect(payloadMedia({ media: [{ type: "video", local_path: 7 }, null, { type: "photo", file_id: "ok" }] })).toEqual([
+      { type: "IMAGE", fileId: "ok" },
+    ]);
+  });
+});
 
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });

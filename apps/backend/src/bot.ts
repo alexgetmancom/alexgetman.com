@@ -27,6 +27,21 @@ export function createBot(config: BackendConfig, backendDb: BackendDb): Bot | nu
 function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb): void {
   bot.command("start", (ctx) => ctx.reply("Send draft text with optional photo/video. Use Publish after preview."));
   bot.command("pipeline_status", (ctx) => ctx.reply(`${config.COMMAND_CENTER_URL.replace(/\/$/, "")}/pipeline-status`));
+  bot.command("schedule", async (ctx) => {
+    if (!isAdmin(config, ctx.from?.id)) {
+      await ctx.reply("Forbidden");
+      return;
+    }
+    const drafts = scheduledDrafts(backendDb);
+    if (drafts.length === 0) {
+      await ctx.reply("No scheduled drafts.");
+      return;
+    }
+    const keyboard = new InlineKeyboard();
+    for (const draft of drafts)
+      keyboard.text(`#${draft.id} ${formatMsk(draft.scheduledAt)} / ${formatMsk(draft.scheduledEnAt)}`, `schedule:${draft.id}`).row();
+    await ctx.reply("Scheduled drafts", { reply_markup: keyboard });
+  });
   bot.on("message", async (ctx) => {
     if (!isAdmin(config, ctx.from?.id)) {
       await ctx.reply("Forbidden");
@@ -97,6 +112,16 @@ export function createDraftFromMessage(backendDb: BackendDb, adminId: number, me
       now,
     );
   return Number(result.lastInsertRowid);
+}
+
+export function scheduledDrafts(backendDb: BackendDb): Array<{ id: number; scheduledAt: string | null; scheduledEnAt: string | null }> {
+  return (
+    backendDb.sqlite
+      .prepare(
+        "SELECT id, scheduled_at, scheduled_en_at FROM drafts WHERE status='scheduled' ORDER BY COALESCE(scheduled_at, scheduled_en_at), id",
+      )
+      .all() as Array<{ id: number; scheduled_at: string | null; scheduled_en_at: string | null }>
+  ).map((draft) => ({ id: draft.id, scheduledAt: draft.scheduled_at, scheduledEnAt: draft.scheduled_en_at }));
 }
 
 async function handleDraftCallback(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<void> {

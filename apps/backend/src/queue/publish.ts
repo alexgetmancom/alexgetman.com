@@ -1,5 +1,6 @@
 import os from "node:os";
 import process from "node:process";
+import * as z from "zod";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { classifyPublishError, nextRetryAt, normalizePublishResult, type PublishResult } from "./errors.js";
@@ -56,7 +57,10 @@ export function claimDuePublishJobs(backendDb: BackendDb, limit: number, worker 
       if (result.changes !== 1) continue;
       const postKey = jobPostKey(row);
       markTarget.run(postKey, String(row.target), now, JSON.stringify({ job_id: jobId, worker }));
-      insertEvent(backendDb, postKey, String(row.target), "publish.job.claimed", "info", `Publishing ${String(row.target)}`, { job_id: jobId, worker });
+      insertEvent(backendDb, postKey, String(row.target), "publish.job.claimed", "info", `Publishing ${String(row.target)}`, {
+        job_id: jobId,
+        worker,
+      });
       claimed.push({
         jobId,
         postId: row.post_id == null ? null : Number(row.post_id),
@@ -117,18 +121,38 @@ export function completePublishJob(backendDb: BackendDb, jobId: number, result: 
         now,
         normalized.rawJson,
       );
-    backendDb.sqlite.prepare("UPDATE publish_jobs SET status=?, locked_by=NULL, locked_at=NULL, last_error=?, updated_at=? WHERE job_id=?").run(normalized.status, normalized.error, now, jobId);
-    backendDb.sqlite.prepare("DELETE FROM publish_jobs WHERE target=? AND job_id<>? AND status IN ('queued','failed') AND (post_key=? OR (post_key IS NULL AND message_id=?))").run(String(job.target), jobId, postKey, Number(job.message_id));
+    backendDb.sqlite
+      .prepare("UPDATE publish_jobs SET status=?, locked_by=NULL, locked_at=NULL, last_error=?, updated_at=? WHERE job_id=?")
+      .run(normalized.status, normalized.error, now, jobId);
+    backendDb.sqlite
+      .prepare(
+        "DELETE FROM publish_jobs WHERE target=? AND job_id<>? AND status IN ('queued','failed') AND (post_key=? OR (post_key IS NULL AND message_id=?))",
+      )
+      .run(String(job.target), jobId, postKey, Number(job.message_id));
     if (String(job.target) === "telegram" && normalized.status === "published" && normalized.externalId && job.post_id != null) {
       const messageId = Number(normalized.externalId);
-      backendDb.sqlite.prepare("UPDATE publications SET telegram_message_id=?, updated_at=? WHERE post_id=?").run(messageId, now, Number(job.post_id));
-      backendDb.sqlite.prepare("UPDATE drafts SET channel_message_id=?, updated_at=? WHERE post_id=?").run(messageId, now, Number(job.post_id));
-      backendDb.sqlite.prepare("UPDATE posts SET message_id=?, telegram_url=?, updated_at=? WHERE post_key=?").run(messageId, normalized.url, now, postKey);
+      backendDb.sqlite
+        .prepare("UPDATE publications SET telegram_message_id=?, updated_at=? WHERE post_id=?")
+        .run(messageId, now, Number(job.post_id));
+      backendDb.sqlite
+        .prepare("UPDATE drafts SET channel_message_id=?, updated_at=? WHERE post_id=?")
+        .run(messageId, now, Number(job.post_id));
+      backendDb.sqlite
+        .prepare("UPDATE posts SET message_id=?, telegram_url=?, updated_at=? WHERE post_key=?")
+        .run(messageId, normalized.url, now, postKey);
     }
-    insertEvent(backendDb, postKey, String(job.target), `publish.job.${normalized.status}`, normalized.status === "failed" ? "error" : "info", `${String(job.target)} ${normalized.status}`, {
-      job_id: jobId,
-      result,
-    });
+    insertEvent(
+      backendDb,
+      postKey,
+      String(job.target),
+      `publish.job.${normalized.status}`,
+      normalized.status === "failed" ? "error" : "info",
+      `${String(job.target)} ${normalized.status}`,
+      {
+        job_id: jobId,
+        result,
+      },
+    );
   })();
   if (job.post_id != null) reconcilePublication(backendDb, Number(job.post_id));
 }
@@ -140,17 +164,22 @@ export function failPublishJob(backendDb: BackendDb, config: BackendConfig, jobI
   const postKey = jobPostKey(job);
   const attempt = Number(job.attempt_count ?? 0) + 1;
   const errorClass = classifyPublishError(error);
-  const shouldRetry =
-    (errorClass === "transient" && attempt < config.PUBLISH_MAX_ATTEMPTS) ||
-    (errorClass === "unknown" && attempt < 2);
+  const shouldRetry = (errorClass === "transient" && attempt < config.PUBLISH_MAX_ATTEMPTS) || (errorClass === "unknown" && attempt < 2);
   const status = shouldRetry ? "queued" : "failed";
   const nextAttempt = shouldRetry ? nextRetryAt(attempt, config.PUBLISH_BACKOFF_BASE_SECONDS, config.PUBLISH_BACKOFF_MAX_SECONDS) : null;
   const errorText = String(error instanceof Error ? error.message : error);
   backendDb.sqlite.transaction(() => {
     backendDb.sqlite
-      .prepare("UPDATE publish_jobs SET status=?, attempt_count=?, next_attempt_at=?, locked_by=NULL, locked_at=NULL, last_error=?, updated_at=? WHERE job_id=?")
+      .prepare(
+        "UPDATE publish_jobs SET status=?, attempt_count=?, next_attempt_at=?, locked_by=NULL, locked_at=NULL, last_error=?, updated_at=? WHERE job_id=?",
+      )
       .run(status, attempt, nextAttempt, errorText, now, jobId);
-    if (!shouldRetry) backendDb.sqlite.prepare("DELETE FROM publish_jobs WHERE target=? AND job_id<>? AND status IN ('queued','failed') AND (post_key=? OR (post_key IS NULL AND message_id=?))").run(String(job.target), jobId, postKey, Number(job.message_id));
+    if (!shouldRetry)
+      backendDb.sqlite
+        .prepare(
+          "DELETE FROM publish_jobs WHERE target=? AND job_id<>? AND status IN ('queued','failed') AND (post_key=? OR (post_key IS NULL AND message_id=?))",
+        )
+        .run(String(job.target), jobId, postKey, Number(job.message_id));
     backendDb.sqlite
       .prepare(
         `INSERT INTO post_targets(post_key, target, status, error, skipped, updated_at, raw_json)
@@ -162,30 +191,49 @@ export function failPublishJob(backendDb: BackendDb, config: BackendConfig, jobI
            updated_at=excluded.updated_at,
            raw_json=excluded.raw_json`,
       )
-      .run(postKey, String(job.target), status, errorText, now, JSON.stringify({ job_id: jobId, error_class: errorClass, attempt, next_attempt_at: nextAttempt }));
-    insertEvent(backendDb, postKey, String(job.target), shouldRetry ? "publish.job.retry" : "publish.job.failed", shouldRetry ? "warn" : "error", errorText, {
-      job_id: jobId,
-      error_class: errorClass,
-      attempt,
-      next_attempt_at: nextAttempt,
-    });
+      .run(
+        postKey,
+        String(job.target),
+        status,
+        errorText,
+        now,
+        JSON.stringify({ job_id: jobId, error_class: errorClass, attempt, next_attempt_at: nextAttempt }),
+      );
+    insertEvent(
+      backendDb,
+      postKey,
+      String(job.target),
+      shouldRetry ? "publish.job.retry" : "publish.job.failed",
+      shouldRetry ? "warn" : "error",
+      errorText,
+      {
+        job_id: jobId,
+        error_class: errorClass,
+        attempt,
+        next_attempt_at: nextAttempt,
+      },
+    );
   })();
   if (!shouldRetry && job.post_id != null) reconcilePublication(backendDb, Number(job.post_id));
 }
 
 export function reconcilePublication(backendDb: BackendDb, postId: number): void {
-  const social = backendDb.sqlite.prepare(
-    `SELECT
+  const social = backendDb.sqlite
+    .prepare(
+      `SELECT
        SUM(CASE WHEN status IN ('queued','publishing') THEN 1 ELSE 0 END) AS pending,
        SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failed
      FROM publish_jobs WHERE post_id=?`,
-  ).get(postId) as { pending: number | null; failed: number | null };
-  const site = backendDb.sqlite.prepare(
-    `SELECT
+    )
+    .get(postId) as { pending: number | null; failed: number | null };
+  const site = backendDb.sqlite
+    .prepare(
+      `SELECT
        SUM(CASE WHEN status IN ('queued','rendering') THEN 1 ELSE 0 END) AS pending,
        SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failed
      FROM site_jobs WHERE post_id=?`,
-  ).get(postId) as { pending: number | null; failed: number | null };
+    )
+    .get(postId) as { pending: number | null; failed: number | null };
   if (Number(social.pending ?? 0) + Number(site.pending ?? 0) > 0) return;
   const status = Number(social.failed ?? 0) + Number(site.failed ?? 0) > 0 ? "failed" : "published";
   const now = new Date().toISOString();
@@ -195,7 +243,17 @@ export function reconcilePublication(backendDb: BackendDb, postId: number): void
   })();
 }
 
-export function enqueuePublishJob(backendDb: BackendDb, input: { messageId: number; target: string; payload: Record<string, unknown>; postId?: number | null; postKey?: string | null; publishAt?: string | null }): number {
+export function enqueuePublishJob(
+  backendDb: BackendDb,
+  input: {
+    messageId: number;
+    target: string;
+    payload: Record<string, unknown>;
+    postId?: number | null;
+    postKey?: string | null;
+    publishAt?: string | null;
+  },
+): number {
   const now = new Date().toISOString();
   const postKey = input.postKey ?? (input.postId != null ? `post:${input.postId}` : `telegram:alexgetmancom:${input.messageId}`);
   const result = backendDb.sqlite
@@ -210,8 +268,8 @@ export function enqueuePublishJob(backendDb: BackendDb, input: { messageId: numb
 function parsePayload(value: unknown): Record<string, unknown> {
   if (typeof value !== "string" || !value) return {};
   try {
-    const parsed = JSON.parse(value) as unknown;
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+    const parsed = z.record(z.string(), z.unknown()).safeParse(JSON.parse(value));
+    return parsed.success ? parsed.data : {};
   } catch {
     return {};
   }
@@ -223,8 +281,18 @@ function jobPostKey(row: Record<string, unknown>): string {
   return `telegram:alexgetmancom:${Number(row.message_id)}`;
 }
 
-function insertEvent(backendDb: BackendDb, postKey: string | null, target: string | null, eventType: string, severity: string, message: string, details: Record<string, unknown>): void {
+function insertEvent(
+  backendDb: BackendDb,
+  postKey: string | null,
+  target: string | null,
+  eventType: string,
+  severity: string,
+  message: string,
+  details: Record<string, unknown>,
+): void {
   backendDb.sqlite
-    .prepare("INSERT INTO post_events(post_key, event_type, severity, target, message, details_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .prepare(
+      "INSERT INTO post_events(post_key, event_type, severity, target, message, details_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    )
     .run(postKey, eventType, severity, target, message, JSON.stringify(details), new Date().toISOString());
 }

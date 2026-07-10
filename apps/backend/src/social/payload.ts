@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import * as z from "zod";
 import type { BackendConfig } from "../config.js";
 
 export type MediaKind = "IMAGE" | "VIDEO";
@@ -15,8 +16,56 @@ export type PublishMediaItem = {
   [key: string]: unknown;
 };
 
+const mediaRecordSchema = z
+  .object({
+    type: z.unknown().optional(),
+    localPath: z.string().optional(),
+    local_path: z.string().optional(),
+    path: z.string().optional(),
+    fileId: z.string().optional(),
+    file_id: z.string().optional(),
+    token: z.string().optional(),
+    vpsUrl: z.string().optional(),
+    vps_url: z.string().optional(),
+    public_url: z.string().optional(),
+    url: z.string().optional(),
+    storyLocalPath: z.string().optional(),
+    story_local_path: z.string().optional(),
+    storyVpsUrl: z.string().optional(),
+    story_vps_url: z.string().optional(),
+  })
+  .passthrough();
+
+const publishPayloadSchema = z
+  .object({
+    text: z.string().optional(),
+    text_en: z.string().optional(),
+    title: z.string().optional(),
+    locale: z.string().optional(),
+    post_id: z.union([z.string(), z.number()]).optional(),
+    postId: z.union([z.string(), z.number()]).optional(),
+    slug: z.string().optional(),
+    slug_ru: z.string().optional(),
+    slug_en: z.string().optional(),
+    slugEn: z.string().optional(),
+    canonicalUrl: z.string().optional(),
+    canonical_url: z.string().optional(),
+    url: z.string().optional(),
+    media: z.unknown().optional(),
+    media_en: z.unknown().optional(),
+    mediaItems: z.unknown().optional(),
+    media_items: z.unknown().optional(),
+  })
+  .passthrough();
+
+export function parsePublishPayload(value: unknown): Record<string, unknown> {
+  const parsed = publishPayloadSchema.safeParse(value);
+  return parsed.success ? parsed.data : {};
+}
+
 export function payloadText(payload: Record<string, unknown>): string {
-  return stringValue(payload.text_en) || stringValue(payload.text) || "";
+  const parsed = parsePublishPayload(payload);
+  return stringValue(parsed.text_en) || stringValue(parsed.text) || "";
 }
 
 export function payloadTitle(payload: Record<string, unknown>): string {
@@ -24,6 +73,7 @@ export function payloadTitle(payload: Record<string, unknown>): string {
 }
 
 export function payloadCanonicalUrl(payload: Record<string, unknown>, config: BackendConfig): string | null {
+  payload = parsePublishPayload(payload);
   const direct = stringValue(payload.canonicalUrl) || stringValue(payload.canonical_url) || stringValue(payload.url);
   if (direct) return direct;
   const postId = payload.post_id ?? payload.postId;
@@ -35,18 +85,20 @@ export function payloadCanonicalUrl(payload: Record<string, unknown>, config: Ba
 }
 
 export function payloadMedia(payload: Record<string, unknown>): PublishMediaItem[] {
+  payload = parsePublishPayload(payload);
   const raw = payload.media_en ?? payload.media ?? payload.mediaItems ?? payload.media_items;
   const values = Array.isArray(raw) ? raw : raw && typeof raw === "object" ? [raw] : [];
   return values.flatMap((value) => {
-    if (!value || typeof value !== "object") return [];
-    const record = value as Record<string, unknown>;
+    const parsed = mediaRecordSchema.safeParse(value);
+    if (!parsed.success) return [];
+    const record = parsed.data;
     const type = normalizeMediaType(record.type);
     if (!type) return [];
     const localPath = stringValue(record.localPath) || stringValue(record.local_path) || stringValue(record.path);
     const fileId = stringValue(record.fileId) || stringValue(record.file_id);
     const vpsUrl = stringValue(record.vpsUrl) || stringValue(record.vps_url) || stringValue(record.public_url) || stringValue(record.url);
     if (!localPath && !fileId && !vpsUrl) return [];
-    const item: PublishMediaItem = { ...record, type };
+    const item: PublishMediaItem = { type };
     if (localPath) item.localPath = localPath;
     if (fileId) item.fileId = fileId;
     const token = stringValue(record.token);
