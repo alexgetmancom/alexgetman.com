@@ -24,4 +24,4 @@ RUN chown -R node:node /app
 USER node
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["pnpm", "--filter", "@alexgetman/backend", "start"]
+CMD ["node", "--enable-source-maps", "/app/apps/backend/dist/src/index.js"]
