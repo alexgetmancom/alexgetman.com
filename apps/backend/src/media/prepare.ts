@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import type { BackendConfig } from "../config.js";
 import { runFfmpeg } from "../runtime/ffmpeg.js";
 import { requestJson } from "../social/http.js";
@@ -13,6 +14,7 @@ type TelegramFileResponse = {
 };
 
 export async function prepareMediaItems(config: BackendConfig, sourceItems: PublishMediaItem[], fetchImpl: typeof fetch = fetch): Promise<{ items: PublishMediaItem[]; cleanup: () => Promise<void> }> {
+  const batchId = `${Date.now()}_${randomUUID()}`;
   const tempFiles: string[] = [];
   const stagedFiles: string[] = [];
   const prepared: PublishMediaItem[] = [];
@@ -21,13 +23,13 @@ export async function prepareMediaItems(config: BackendConfig, sourceItems: Publ
 
   for (let index = 0; index < sourceItems.length; index += 1) {
     const item = sourceItems[index]!;
-    const localPath = await ensureLocalMedia(config, item, index, tempFiles, fetchImpl);
+    const localPath = await ensureLocalMedia(config, item, index, batchId, tempFiles, fetchImpl);
     let uploadPath = localPath;
     if (item.type === "VIDEO") {
       uploadPath = await normalizeVideoForPublicUpload(config, localPath);
       tempFiles.push(uploadPath);
     }
-    const remoteFilename = `${Math.floor(Date.now() / 1000)}_crosspost_${index}_${safeMediaName(item.fileId || localPath)}${mediaExtension(item)}`;
+    const remoteFilename = `${batchId}_crosspost_${index}_${safeMediaName(item.fileId || localPath)}${mediaExtension(item)}`;
     const stagedPath = path.join(config.REMOTE_MEDIA_PATH, remoteFilename);
     await fs.promises.copyFile(uploadPath, stagedPath);
     await fs.promises.chmod(stagedPath, 0o644);
@@ -60,12 +62,12 @@ export async function prepareMediaItems(config: BackendConfig, sourceItems: Publ
   };
 }
 
-async function ensureLocalMedia(config: BackendConfig, item: PublishMediaItem, index: number, tempFiles: string[], fetchImpl: typeof fetch): Promise<string> {
+async function ensureLocalMedia(config: BackendConfig, item: PublishMediaItem, index: number, batchId: string, tempFiles: string[], fetchImpl: typeof fetch): Promise<string> {
   if (item.localPath) return item.localPath;
   if (!item.fileId) throw new Error("media item has neither localPath nor fileId");
   const fileUrl = await getTelegramFileUrl(config, item.fileId, item.token, fetchImpl);
   const ext = mediaExtension(item);
-  const target = path.join(config.TEMP_MEDIA_DIR, `telegram_${index}_${safeMediaName(item.fileId)}${ext}`);
+  const target = path.join(config.TEMP_MEDIA_DIR, `telegram_${batchId}_${index}_${safeMediaName(item.fileId)}${ext}`);
   if (fileUrl.startsWith("file://")) {
     const source = fileUrl.slice("file://".length);
     await fs.promises.copyFile(source, target);

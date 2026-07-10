@@ -27,9 +27,11 @@ export function payloadCanonicalUrl(payload: Record<string, unknown>, config: Ba
   const direct = stringValue(payload.canonicalUrl) || stringValue(payload.canonical_url) || stringValue(payload.url);
   if (direct) return direct;
   const postId = payload.post_id ?? payload.postId;
-  const slug = payload.slug_en ?? payload.slugEn ?? payload.slug;
+  const locale = stringValue(payload.locale).toLowerCase();
+  const slug = locale === "ru" ? payload.slug_ru ?? payload.slug : payload.slug_en ?? payload.slugEn ?? payload.slug;
   if (postId == null || !slug) return null;
-  return `${config.PUBLIC_BASE_URL.replace(/\/$/, "")}/${postId}/${String(slug).replace(/^\/+/, "")}/`;
+  const localePrefix = locale === "ru" ? "/ru" : "";
+  return `${config.PUBLIC_BASE_URL.replace(/\/$/, "")}${localePrefix}/${postId}/${String(slug).replace(/^\/+/, "")}/`;
 }
 
 export function payloadMedia(payload: Record<string, unknown>): PublishMediaItem[] {

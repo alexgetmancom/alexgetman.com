@@ -59,6 +59,29 @@ describe("Telegram controller flow", () => {
     ]);
   });
 
+  it("queues locale-specific text and media for RU and EN targets", () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createDraftFromMessage(backendDb, 42, {
+      text: "Русский текст",
+      textEn: "English text",
+      entities: [],
+      media: [{ type: "photo", file_id: "ru-image" }],
+    });
+    backendDb.sqlite.prepare("UPDATE drafts SET text_en_approved=?, media_en_json=? WHERE id=?")
+      .run("Edited English text", JSON.stringify([{ type: "photo", file_id: "en-image" }]), draftId);
+    publishDraftToQueue(backendDb, draftId);
+
+    const jobs = backendDb.sqlite.prepare("SELECT target,payload_json FROM publish_jobs WHERE target IN ('telegram','threads_ru','x','github_en') ORDER BY target").all() as Array<{ target: string; payload_json: string }>;
+    const payloads = Object.fromEntries(jobs.map((job) => [job.target, JSON.parse(job.payload_json) as Record<string, unknown>]));
+    for (const target of ["telegram", "threads_ru"]) {
+      expect(payloads[target]).toMatchObject({ locale: "ru", text: "Русский текст", text_en: "", bodyMarkdown: "Русский текст", media: [{ file_id: "ru-image" }] });
+      expect(payloads[target]).not.toHaveProperty("media_en");
+    }
+    for (const target of ["x", "github_en"]) {
+      expect(payloads[target]).toMatchObject({ locale: "en", text: "Edited English text", text_en: "Edited English text", bodyMarkdown: "Edited English text", media: [{ file_id: "en-image" }], media_en: [{ file_id: "en-image" }] });
+    }
+  });
+
   it("finalizes a durable Telegram media album into one draft", async () => {
     backendDb = openBackendDb(":memory:");
     backendDb.sqlite.prepare(`INSERT INTO pending_albums(id,admin_id,chat_id,media_group_id,text_ru,text_entities_json,media_json,notified,updated_at)

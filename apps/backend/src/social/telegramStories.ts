@@ -24,7 +24,7 @@ export async function publishTelegramStory(
   const caption = payloadText(payload).slice(0, 2048);
   const link = caption.match(URL_RE)?.[0] ?? payloadCanonicalUrl(payload, config) ?? config.PUBLIC_BASE_URL;
 
-  if (config.TELEGRAM_CHANNEL_STORIES_API_ID && config.TELEGRAM_CHANNEL_STORIES_API_HASH && config.TELEGRAM_CHANNEL_STORIES_SESSION) {
+  if (config.TELEGRAM_CHANNEL_STORIES_API_ID && config.TELEGRAM_CHANNEL_STORIES_API_HASH && config.TELEGRAM_CHANNEL_STORIES_SESSION && isGramJsSession(config.TELEGRAM_CHANNEL_STORIES_SESSION)) {
     return publishChannelStory(media, caption, link, config);
   }
   if (!config.ENABLE_TELEGRAM_STORIES) return { ok: false, skipped: true, reason: "telegram_stories_disabled" };
@@ -32,6 +32,15 @@ export async function publishTelegramStory(
   if (!businessConnectionId) return { ok: false, skipped: true, reason: "missing_business_connection_id" };
   if (media.type === "VIDEO") return { ok: false, skipped: true, reason: "telegram_story_video_requires_h265_profile" };
   return publishBusinessStory(media, caption, link, businessConnectionId, config, fetchImpl);
+}
+
+function isGramJsSession(value: string): boolean {
+  try {
+    new sessions.StringSession(value);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function publishChannelStory(media: PublishMediaItem, caption: string, link: string, config: BackendConfig): Promise<PublishResult> {

@@ -84,4 +84,29 @@ describe("story publishers", () => {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("falls back to the Bot API when the configured MTProto session is a legacy file path", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-story-legacy-"));
+    const imagePath = path.join(dir, "story.jpg");
+    fs.writeFileSync(imagePath, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+    const backendDb = openBackendDb(":memory:");
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ ok: true, result: { id: 88 } }), { status: 200 })) as unknown as typeof fetch;
+    try {
+      const config = loadConfig({
+        ENABLE_TELEGRAM_STORIES: "true",
+        TELEGRAM_STORIES_BOT_TOKEN: "bot-token",
+        TELEGRAM_STORIES_BUSINESS_CONNECTION_ID: "business-1",
+        TELEGRAM_CHANNEL_STORIES_API_ID: "123",
+        TELEGRAM_CHANNEL_STORIES_API_HASH: "hash",
+        TELEGRAM_CHANNEL_STORIES_SESSION: "/data/telegram_channel_stories.session",
+        TELEGRAM_API_BASE_URL: "https://telegram.local",
+      });
+      const result = await publishTelegramStory({ text: "Story", media: [{ type: "IMAGE", local_path: imagePath }] }, config, backendDb, fetchImpl);
+      expect(result).toMatchObject({ ok: true, id: 88 });
+      expect(fetchImpl).toHaveBeenCalledOnce();
+    } finally {
+      backendDb.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
