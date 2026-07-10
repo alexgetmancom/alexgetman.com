@@ -5,10 +5,11 @@ import path from "node:path";
 const root = process.env.APP_ROOT ?? "/app";
 const outputDirectory = path.join(root, "dist");
 const publicDirectory = process.env.SITE_PUBLIC_DIR ?? "/site-public";
+const feedDirectory = process.env.SITE_DATA_DIR ?? path.dirname(process.env.FEED_JSON ?? "/feed-data/feed.json");
 
 const build = spawnSync("pnpm", ["run", "build"], {
   cwd: root,
-  env: { ...process.env, DATA_DIR: process.env.DATA_DIR ?? "/feed-data" },
+  env: { ...process.env, DATA_DIR: feedDirectory },
   encoding: "utf8",
   stdio: "inherit",
 });
