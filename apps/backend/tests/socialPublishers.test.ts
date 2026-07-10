@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadConfig } from "../src/config.js";
 import { publishToLinkedIn } from "../src/social/linkedin.js";
 import { payloadMedia, payloadText } from "../src/social/payload.js";
+import { publishToThreads } from "../src/social/threads.js";
 import { oauthAuthorization, publishToX } from "../src/social/x.js";
 
 const tempDirs: string[] = [];
@@ -52,6 +53,30 @@ describe("LinkedIn publisher", () => {
     const postBody = JSON.parse(String(postCall.init.body)) as Record<string, unknown>;
     expect(postBody).toMatchObject({ author: "urn:li:person:1", commentary: "Launch", content: { media: { id: "urn:li:image:1" } } });
     expect((postCall.init.headers as Record<string, string>)["Linkedin-Version"]).toBe("202606");
+  });
+});
+
+describe("Threads publisher", () => {
+  it("resumes a partial thread after the last published reply", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      calls.push({ url, ...(init ? { init } : {}) });
+      if (url.includes("fields=status")) return new Response(JSON.stringify({ status: "FINISHED" }), { status: 200 });
+      if (url.includes("fields=permalink"))
+        return new Response(JSON.stringify({ permalink: "https://www.threads.net/@a/post/root" }), { status: 200 });
+      if (url.includes("threads_publish")) return new Response(JSON.stringify({ id: "reply-2" }), { status: 200 });
+      return new Response(JSON.stringify({ id: "container-2" }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const result = await publishToThreads(
+      { text_en: `${"A".repeat(470)} ${"B".repeat(120)}`, _threadsPublishedIds: ["root-1"] },
+      loadConfig({ THREADS_ACCESS_TOKEN: "token", THREADS_CONTAINER_TIMEOUT_SECONDS: "1" }),
+      fetchImpl,
+    );
+    expect(result).toMatchObject({ ok: true, ids: ["root-1", "reply-2"] });
+    const creation = calls.find((call) => call.url.endsWith("/me/threads"));
+    expect(String(creation?.init?.body)).toContain("reply_to_id=root-1");
+    expect(calls.filter((call) => call.url.endsWith("/me/threads")).length).toBe(1);
   });
 });
 

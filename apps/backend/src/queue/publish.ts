@@ -88,11 +88,31 @@ export function recoverStalePublishJobs(backendDb: BackendDb, timeoutSeconds: nu
   return result.changes;
 }
 
-export function completePublishJob(backendDb: BackendDb, jobId: number, result: PublishResult): void {
+export function completePublishJob(backendDb: BackendDb, config: BackendConfig, jobId: number, result: PublishResult): void {
   const now = new Date().toISOString();
   const job = backendDb.sqlite.prepare("SELECT * FROM publish_jobs WHERE job_id=?").get(jobId) as Record<string, unknown> | undefined;
   if (!job) return;
   const postKey = jobPostKey(job);
+  if (result.partial && String(job.target).startsWith("threads")) {
+    const ids = Array.isArray(result.ids) ? result.ids.map(String).filter(Boolean) : [];
+    const attempt = Number(job.attempt_count ?? 0) + 1;
+    const retryAt = nextRetryAt(attempt, config.PUBLISH_BACKOFF_BASE_SECONDS, config.PUBLISH_BACKOFF_MAX_SECONDS);
+    const payload = { ...parsePayload(job.payload_json), _threadsPublishedIds: ids };
+    const error = String(result.error ?? "Threads partial publication");
+    backendDb.sqlite.transaction(() => {
+      backendDb.sqlite
+        .prepare(
+          "UPDATE publish_jobs SET status='queued', attempt_count=?, next_attempt_at=?, locked_by=NULL, locked_at=NULL, payload_json=?, last_error=?, updated_at=? WHERE job_id=?",
+        )
+        .run(attempt, retryAt, JSON.stringify(payload), error, now, jobId);
+      backendDb.sqlite
+        .prepare(`INSERT INTO post_targets(post_key,target,status,external_id,external_ids_json,error,skipped,updated_at,raw_json)
+        VALUES (?,?,'queued',?,?,?,0,?,?) ON CONFLICT(post_key,target) DO UPDATE SET status='queued',external_id=excluded.external_id,external_ids_json=excluded.external_ids_json,error=excluded.error,updated_at=excluded.updated_at,raw_json=excluded.raw_json`)
+        .run(postKey, String(job.target), ids[0] ?? null, JSON.stringify(ids), error, now, JSON.stringify(result));
+      insertEvent(backendDb, postKey, String(job.target), "publish.job.partial", "warn", error, { job_id: jobId, ids, retry_at: retryAt });
+    })();
+    return;
+  }
   const normalized = normalizePublishResult(result);
   backendDb.sqlite.transaction(() => {
     backendDb.sqlite

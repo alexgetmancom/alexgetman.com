@@ -22,11 +22,11 @@ export async function runPublishCycle(
     jobs.map(async (job) => {
       const publisher = publishers[job.target];
       if (!publisher) {
-        completePublishJob(backendDb, job.jobId, { skipped: true, reason: `unsupported target: ${job.target}` });
+        completePublishJob(backendDb, config, job.jobId, { skipped: true, reason: `unsupported target: ${job.target}` });
         return;
       }
       try {
-        completePublishJob(backendDb, job.jobId, await publisher(job));
+        completePublishJob(backendDb, config, job.jobId, await publisher(job));
       } catch (error) {
         failPublishJob(backendDb, config, job.jobId, error);
       }
