@@ -54,6 +54,7 @@ const envSchema = z.object({
   SITE_JOB_BACKOFF_MAX_SECONDS: z.coerce.number().int().positive().default(900),
   SITE_BUILD_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(180),
   FFMPEG_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(600),
+  FFMPEG_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(2).default(2),
   MEDIA_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(300),
   SITE_BUILD_COMMAND: z.string().optional(),
   SITE_PUBLIC_DIR: z.string().default("/site-public"),

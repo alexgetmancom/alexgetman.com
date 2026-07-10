@@ -4,10 +4,11 @@ import { loadConfig } from "./config.js";
 import { openBackendDb } from "./db/client.js";
 import { createHttpApp } from "./http.js";
 import { log } from "./logger.js";
-import { assertFfmpegAvailable } from "./runtime/ffmpeg.js";
+import { assertFfmpegAvailable, configureFfmpegConcurrency } from "./runtime/ffmpeg.js";
 import { startWorkers } from "./worker.js";
 
 const config = loadConfig();
+configureFfmpegConcurrency(config.FFMPEG_MAX_CONCURRENCY);
 const backendDb = openBackendDb(config.PIPELINE_DB);
 const bot = createBot(config, backendDb);
 const app = createHttpApp(config, backendDb, bot);

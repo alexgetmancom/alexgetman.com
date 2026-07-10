@@ -244,5 +244,16 @@ function updateSchedulePayload(
 
 function mskSlot(year: number, month: number, day: number, clock: string): Date {
   const [hour, minute] = clock.split(":").map(Number) as [number, number];
-  return new Date(Date.UTC(year, month - 1, day, hour - 3, minute, 0));
+  const wallClock = new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
+  return new Date(wallClock.getTime() - timezoneOffsetMs(wallClock, "Europe/Moscow"));
+}
+
+function timezoneOffsetMs(date: Date, timeZone: string): number {
+  const zone = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "longOffset" })
+    .formatToParts(date)
+    .find((part) => part.type === "timeZoneName")?.value;
+  const match = zone?.match(/^GMT([+-])(\d{2}):(\d{2})$/);
+  if (!match) throw new Error(`Cannot resolve ${timeZone} offset`);
+  const offset = (Number(match[2]) * 60 + Number(match[3])) * 60_000;
+  return match[1] === "+" ? offset : -offset;
 }
