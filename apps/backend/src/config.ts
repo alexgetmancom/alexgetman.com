@@ -90,6 +90,7 @@ const envSchema = z.object({
   INSTAGRAM_GRAPH_API_VERSION: z.string().default("v23.0"),
   ENABLE_INSTAGRAM_STORIES: booleanFlag.default("false"),
   ENABLE_TELEGRAM_STORIES: booleanFlag.default("false"),
+  TELEGRAM_STORIES_CHANNEL: z.string().optional(),
   TELEGRAM_STORIES_BOT_TOKEN: z.string().optional(),
   TELEGRAM_STORIES_BUSINESS_CONNECTION_ID: z.string().optional(),
   TELEGRAM_CHANNEL_STORIES_API_ID: z.coerce.number().int().positive().optional(),
