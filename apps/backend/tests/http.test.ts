@@ -2,8 +2,8 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { loadConfig } from "../src/config.js";
 import { createDraftFromMessage, publishDraftToQueue } from "../src/bot.js";
+import { loadConfig } from "../src/config.js";
 import { openBackendDb } from "../src/db/client.js";
 import { createHttpApp } from "../src/http.js";
 import { enqueuePublishJob } from "../src/queue/publish.js";
@@ -49,11 +49,22 @@ describe("Hono backend routes", () => {
   it("keeps the legacy detailed pipeline-status wire format", async () => {
     const backendDb = tempDb();
     try {
-      const draftId = createDraftFromMessage(backendDb, 42, { text: "Статус пайплайна", textEn: "Pipeline status", entities: [], media: [] });
+      const draftId = createDraftFromMessage(backendDb, 42, {
+        text: "Статус пайплайна",
+        textEn: "Pipeline status",
+        entities: [],
+        media: [],
+      });
       publishDraftToQueue(backendDb, draftId);
       const app = createHttpApp(loadConfig({}), backendDb);
       const response = await app.request("/api/pipeline-status");
-      const payload = await response.json() as { ok: boolean; updated_at: string; feed: { items: number }; social_worker: { pipeline_db: string }; posts: Array<Record<string, unknown>> };
+      const payload = (await response.json()) as {
+        ok: boolean;
+        updated_at: string;
+        feed: { items: number };
+        social_worker: { pipeline_db: string };
+        posts: Array<Record<string, unknown>>;
+      };
       expect(payload.ok).toBe(true);
       expect(payload.updated_at).toBeTruthy();
       expect(payload.feed.items).toBe(0);
@@ -72,18 +83,45 @@ describe("Hono backend routes", () => {
     const dir = mkdtempSync(join(tmpdir(), "alexgetman-engagement-"));
     try {
       const handleUpdate = vi.fn(async () => undefined);
-      const app = createHttpApp(loadConfig({ SITE_METRICS_JSON: join(dir, "metrics.json"), LIKES_SALT: "salt", TELEGRAM_WEBHOOK_SECRET: "webhook-secret" }), backendDb, { handleUpdate } as unknown as import("grammy").Bot);
-      expect((await app.request("/stats/pageview", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: "/post/" }) })).status).toBe(204);
+      const app = createHttpApp(
+        loadConfig({ SITE_METRICS_JSON: join(dir, "metrics.json"), LIKES_SALT: "salt", TELEGRAM_WEBHOOK_SECRET: "webhook-secret" }),
+        backendDb,
+        { handleUpdate } as unknown as import("grammy").Bot,
+      );
+      expect(
+        (
+          await app.request("/stats/pageview", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ path: "/post/" }),
+          })
+        ).status,
+      ).toBe(204);
       expect(JSON.parse(readFileSync(join(dir, "metrics.json"), "utf8"))).toMatchObject({ total: 1 });
 
       const like = await app.request("/api/likes?post_id=1", { method: "POST", headers: { "x-forwarded-for": "203.0.113.1" } });
       expect(await like.json()).toEqual({ likes: 1, user_liked: true });
-      expect(await (await app.request("/api/likes?post_id=1", { headers: { "x-forwarded-for": "203.0.113.1" } })).json()).toEqual({ likes: 1, user_liked: true });
+      expect(await (await app.request("/api/likes?post_id=1", { headers: { "x-forwarded-for": "203.0.113.1" } })).json()).toEqual({
+        likes: 1,
+        user_liked: true,
+      });
 
-      const initialized = await app.request("/api/mcp", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" }) });
+      const initialized = await app.request("/api/mcp", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" }),
+      });
       expect(await initialized.json()).toMatchObject({ jsonrpc: "2.0", id: 1, result: { protocolVersion: "2024-11-05" } });
       expect((await app.request("/tg-feed/webhook", { method: "POST", body: "{}" })).status).toBe(403);
-      expect((await app.request("/tg-feed/webhook", { method: "POST", headers: { "X-Telegram-Bot-Api-Secret-Token": "webhook-secret" }, body: "{}" })).status).toBe(200);
+      expect(
+        (
+          await app.request("/tg-feed/webhook", {
+            method: "POST",
+            headers: { "X-Telegram-Bot-Api-Secret-Token": "webhook-secret" },
+            body: "{}",
+          })
+        ).status,
+      ).toBe(200);
       expect(handleUpdate).toHaveBeenCalledOnce();
     } finally {
       backendDb.close();
@@ -103,9 +141,13 @@ describe("Hono backend routes", () => {
       });
       expect(response.status).toBe(200);
       expect(await response.json()).toMatchObject({ ok: true, post_id: postId, text_en: true });
-      expect(backendDb.sqlite.prepare("SELECT text FROM post_locales WHERE post_id=? AND locale='en'").get(postId)).toEqual({ text: "Edited English" });
+      expect(backendDb.sqlite.prepare("SELECT text FROM post_locales WHERE post_id=? AND locale='en'").get(postId)).toEqual({
+        text: "Edited English",
+      });
       expect((backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM ops_actions").get() as { count: number }).count).toBe(1);
-      expect((backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM site_jobs WHERE post_id=?").get(postId) as { count: number }).count).toBe(3);
+      expect(
+        (backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM site_jobs WHERE post_id=?").get(postId) as { count: number }).count,
+      ).toBe(3);
     } finally {
       backendDb.close();
     }
@@ -116,11 +158,19 @@ describe("Hono backend routes", () => {
     const dir = mkdtempSync(join(tmpdir(), "alexgetman-markdown-"));
     writeFileSync(join(dir, "auth.md"), "# auth.md\n");
     try {
-      backendDb.sqlite.prepare("INSERT INTO credential_checks(target,status,required_env_json,missing_env_json,last_checked_at) VALUES ('telegram','ready','[]','[]',?)").run(new Date().toISOString());
-      const app = createHttpApp(loadConfig({ COMMAND_CENTER_TOKEN: "secret", SITE_PUBLIC_DIR: dir, SITE_METRICS_JSON: join(dir, "metrics.json") }), backendDb);
+      backendDb.sqlite
+        .prepare(
+          "INSERT INTO credential_checks(target,status,required_env_json,missing_env_json,last_checked_at) VALUES ('telegram','ready','[]','[]',?)",
+        )
+        .run(new Date().toISOString());
+      const app = createHttpApp(
+        loadConfig({ COMMAND_CENTER_TOKEN: "secret", SITE_PUBLIC_DIR: dir, SITE_METRICS_JSON: join(dir, "metrics.json") }),
+        backendDb,
+      );
       const markdown = await app.request("/auth.md");
       expect(markdown.status).toBe(200);
       expect(markdown.headers.get("content-type")).toContain("text/markdown");
+      expect(markdown.headers.get("link")).toBe('<https://alexgetman.com/auth/>; rel="canonical"');
       expect(await markdown.text()).toBe("# auth.md\n");
       expect((await app.request("/%2e%2e/package.json")).status).toBe(404);
       const dashboard = await app.request("/command-center?tab=diagnostics&token=secret");
@@ -130,8 +180,24 @@ describe("Hono backend routes", () => {
       expect(html).toContain("Credentials");
       expect(html).toContain("Diagnostics");
       expect(html).toContain("Lifecycle");
-      const payload = await (await app.request("/api/command-center?token=secret")).json() as { credentials: Array<{ target: string }> };
+      const payload = (await (await app.request("/api/command-center?token=secret")).json()) as { credentials: Array<{ target: string }> };
       expect(payload.credentials).toEqual([expect.objectContaining({ target: "telegram" })]);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("streams current pipeline snapshots as SSE", async () => {
+    const backendDb = tempDb();
+    try {
+      const app = createHttpApp(loadConfig({}), backendDb);
+      const response = await app.request("/api/pipeline-status/stream");
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toContain("text/event-stream");
+      const reader = response.body?.getReader();
+      const first = await reader?.read();
+      await reader?.cancel();
+      expect(new TextDecoder().decode(first?.value)).toContain("event: pipeline");
     } finally {
       backendDb.close();
     }

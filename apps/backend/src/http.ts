@@ -1,19 +1,19 @@
+import crypto from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { Hono } from "hono";
-import type { Bot } from "grammy";
-import { streamSSE } from "hono/streaming";
-import crypto from "node:crypto";
 import { serveStatic } from "@hono/node-server/serve-static";
+import type { Bot } from "grammy";
+import { Hono } from "hono";
+import { streamSSE } from "hono/streaming";
 import type { BackendConfig } from "./config.js";
 import type { BackendDb } from "./db/client.js";
 import { commandAllowed } from "./httpAuth.js";
+import { type CommandAction, runCommandAction } from "./services/actions.js";
 import { commandCenterPayload, postDebugPayload } from "./services/commandCenter.js";
-import { pipelineStatusPayload } from "./services/pipeline.js";
+import { renderDashboard } from "./services/dashboard.js";
 import { batchLikes, clientIpHash, likesInfo, metricsSummary, recordPageview, toggleLike } from "./services/engagement.js";
 import { mcpResponse } from "./services/mcp.js";
-import { runCommandAction, type CommandAction } from "./services/actions.js";
-import { renderDashboard } from "./services/dashboard.js";
+import { pipelineStatusPayload } from "./services/pipeline.js";
 
 export function createHttpApp(config: BackendConfig, backendDb: BackendDb, bot: Bot | null = null) {
   const app = new Hono();
@@ -30,6 +30,15 @@ export function createHttpApp(config: BackendConfig, backendDb: BackendDb, bot: 
   });
 
   app.get("/api/pipeline-status", (c) => c.json(pipelineStatusPayload(config, backendDb, Number(c.req.query("week_offset") ?? 0) || 0)));
+  app.get("/api/pipeline-status/stream", (c) =>
+    streamSSE(c, async (stream) => {
+      const weekOffset = Number(c.req.query("week_offset") ?? 0) || 0;
+      while (!stream.aborted) {
+        await stream.writeSSE({ event: "pipeline", data: JSON.stringify(pipelineStatusPayload(config, backendDb, weekOffset)) });
+        await stream.sleep(10_000);
+      }
+    }),
+  );
 
   app.post("/stats/pageview", async (c) => {
     const body: { path?: string } = await c.req.json<{ path?: string }>().catch(() => ({}));
@@ -39,7 +48,9 @@ export function createHttpApp(config: BackendConfig, backendDb: BackendDb, bot: 
 
   app.get("/stats", (c) => {
     const summary = metricsSummary(config);
-    return c.html(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Alex Getman metrics</title></head><body><main><h1>Site metrics</h1><p>Total: ${summary.total}</p><p>Today: ${summary.today}</p><p>Last 7 days: ${summary.last7}</p><p>Updated: ${String(summary.updated_at ?? "-")}</p></main></body></html>`);
+    return c.html(
+      `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Alex Getman metrics</title></head><body><main><h1>Site metrics</h1><p>Total: ${summary.total}</p><p>Today: ${summary.today}</p><p>Last 7 days: ${summary.last7}</p><p>Updated: ${String(summary.updated_at ?? "-")}</p></main></body></html>`,
+    );
   });
 
   app.get("/api/likes", (c) => {
@@ -48,7 +59,11 @@ export function createHttpApp(config: BackendConfig, backendDb: BackendDb, bot: 
   });
 
   app.get("/api/likes/batch", (c) => {
-    const ids = (c.req.query("ids") ?? "").split(",").map((value) => value.trim()).filter(Boolean).slice(0, 100);
+    const ids = (c.req.query("ids") ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .slice(0, 100);
     return c.json(batchLikes(backendDb, ids, clientIpHash(c, config)));
   });
 
@@ -57,13 +72,15 @@ export function createHttpApp(config: BackendConfig, backendDb: BackendDb, bot: 
     return postId ? c.json(toggleLike(backendDb, postId, clientIpHash(c, config))) : c.json({ error: "Missing post_id parameter" }, 400);
   });
 
-  app.get("/api/mcp", (c) => streamSSE(c, async (stream) => {
-    await stream.writeSSE({ event: "endpoint", data: `/api/mcp?connection_id=${crypto.randomUUID()}` });
-    while (!stream.aborted) {
-      await stream.sleep(30_000);
-      await stream.writeSSE({ event: "ping", data: new Date().toISOString() });
-    }
-  }));
+  app.get("/api/mcp", (c) =>
+    streamSSE(c, async (stream) => {
+      await stream.writeSSE({ event: "endpoint", data: `/api/mcp?connection_id=${crypto.randomUUID()}` });
+      while (!stream.aborted) {
+        await stream.sleep(30_000);
+        await stream.writeSSE({ event: "ping", data: new Date().toISOString() });
+      }
+    }),
+  );
 
   app.post("/api/mcp", async (c) => {
     const body = await c.req.json().catch(() => null);
@@ -73,7 +90,8 @@ export function createHttpApp(config: BackendConfig, backendDb: BackendDb, bot: 
   });
 
   app.post(config.WEBHOOK_PATH, async (c) => {
-    if (!safeEqual(c.req.header("X-Telegram-Bot-Api-Secret-Token") ?? "", config.TELEGRAM_WEBHOOK_SECRET ?? "")) return c.text("forbidden\n", 403);
+    if (!safeEqual(c.req.header("X-Telegram-Bot-Api-Secret-Token") ?? "", config.TELEGRAM_WEBHOOK_SECRET ?? ""))
+      return c.text("forbidden\n", 403);
     const update = await c.req.json().catch(() => null);
     if (bot && update) await bot.handleUpdate(update as Parameters<Bot["handleUpdate"]>[0]);
     return c.text("ok\n");
@@ -100,7 +118,7 @@ export function createHttpApp(config: BackendConfig, backendDb: BackendDb, bot: 
 
   app.post("/api/command-center/action", async (c) => {
     const body = c.req.header("content-type")?.includes("application/json")
-      ? await c.req.json<CommandAction>().catch(() => ({} as CommandAction))
+      ? await c.req.json<CommandAction>().catch(() => ({}) as CommandAction)
       : await c.req.parseBody().then((value) => value as unknown as CommandAction);
     if (!commandAllowed(c, config, body.token)) return c.json({ detail: "forbidden" }, 403);
     try {
@@ -146,7 +164,11 @@ export function createHttpApp(config: BackendConfig, backendDb: BackendDb, bot: 
     try {
       const content = await readFile(filePath, "utf8");
       recordPageview(backendDb, config, c.req.path.replace(/\.md$/, "") || "/");
-      return c.body(content, 200, { "content-type": "text/markdown; charset=utf-8" });
+      const htmlPath = c.req.path.replace(/\.md$/, "/");
+      return c.body(content, 200, {
+        "content-type": "text/markdown; charset=utf-8",
+        Link: `<${config.PUBLIC_BASE_URL.replace(/\/$/, "")}${htmlPath}>; rel="canonical"`,
+      });
     } catch {
       return c.text("Markdown file not found\n", 404);
     }
