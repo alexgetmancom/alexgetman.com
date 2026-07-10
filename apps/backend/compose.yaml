@@ -52,6 +52,7 @@ services:
       SITE_BUILD_COMMAND: node /app/apps/backend/dist/src/runtime/buildSite.js
       SITE_PUBLIC_DIR: /site-public
       ENABLE_BOT_POLLING: "true"
+      ENABLE_TELEGRAM_STORIES: "true"
       BIND_HOST: 0.0.0.0
       PORT: "8788"
     volumes:
