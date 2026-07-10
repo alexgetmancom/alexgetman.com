@@ -19,6 +19,7 @@ Thumbs.db
 /apps/web/feed/*.log
 /apps/backend/secrets.env
 /apps/backend/secrets.*
+/apps/backend/site-feed.env
 /apps/backend/data/
 /apps/backend/logs/
 /apps/backend/media-cache/

@@ -27,7 +27,9 @@ services:
     container_name: alexgetman-backend
     restart: unless-stopped
     env_file:
-      - ./secrets.env
+      - path: ./secrets.env
+      - path: ./site-feed.env
+        required: false
     group_add:
       - "101"
     depends_on:
