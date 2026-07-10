@@ -109,30 +109,14 @@ export function createHttpApp(config: BackendConfig, backendDb: BackendDb) {
   });
 
   app.get("/pipeline-status", (c) => {
-    const payload = pipelineStatusPayload(config, backendDb);
-    const rows = payload.jobs
-      .slice(0, 20)
-      .map((job) => `<tr><td>${job.messageId}</td><td>${job.target}</td><td>${job.status}</td><td>${job.updatedAt}</td></tr>`)
-      .join("");
-    return c.html(`<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><title>Pipeline status</title><meta name="viewport" content="width=device-width, initial-scale=1"></head>
-<body>
-  <h1>Pipeline status</h1>
-  <p>ok: ${payload.ok}</p>
-  <p>git: ${payload.gitRevision ?? "unknown"}</p>
-  <p>db: ${payload.pipelineDb.path}</p>
-  <h2>Metrics</h2>
-  <pre>${escapeHtml(JSON.stringify(payload.metrics, null, 2))}</pre>
-  <h2>Jobs</h2>
-  <table><thead><tr><th>Message</th><th>Target</th><th>Status</th><th>Updated</th></tr></thead><tbody>${rows}</tbody></table>
-</body>
-</html>`);
+    const weekOffset = Number(c.req.query("week_offset") ?? 0) || 0;
+    return c.html(renderDashboard(config, backendDb, "pipeline", weekOffset));
   });
 
   app.get("/command-center", (c) => {
     if (!commandAllowed(c, config)) return c.text("forbidden\n", 403);
-    return c.html(renderDashboard(commandCenterPayload(config, backendDb), c.req.query("tab")));
+    const weekOffset = Number(c.req.query("week_offset") ?? 0) || 0;
+    return c.html(renderDashboard(config, backendDb, c.req.query("tab"), weekOffset));
   });
 
   app.get("/feed.json", async (c) => {
