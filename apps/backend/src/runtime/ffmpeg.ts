@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 export function assertFfmpegAvailable(): boolean {
   const result = spawnSync("ffmpeg", ["-version"], { stdio: "ignore" });
@@ -6,11 +6,26 @@ export function assertFfmpegAvailable(): boolean {
 }
 
 export async function runFfmpeg(args: string[], timeoutSeconds = 600): Promise<void> {
-  const result = spawnSync("ffmpeg", args, { encoding: "utf8", timeout: timeoutSeconds * 1000, killSignal: "SIGKILL" });
-  if (result.error && "code" in result.error && result.error.code === "ETIMEDOUT") {
-    throw new Error(`ffmpeg timed out after ${timeoutSeconds}s`);
-  }
-  if (result.status !== 0) {
-    throw new Error(`ffmpeg failed: ${(result.stderr ?? result.error?.message ?? "unknown error").slice(-2000)}`);
-  }
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });
+    let stderr = "";
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGKILL");
+    }, timeoutSeconds * 1000);
+
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk: string) => { stderr = (stderr + chunk).slice(-2000); });
+    child.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.once("close", (code) => {
+      clearTimeout(timer);
+      if (timedOut) reject(new Error(`ffmpeg timed out after ${timeoutSeconds}s`));
+      else if (code !== 0) reject(new Error(`ffmpeg failed: ${stderr || `exit code ${code ?? "unknown"}`}`));
+      else resolve();
+    });
+  });
 }
