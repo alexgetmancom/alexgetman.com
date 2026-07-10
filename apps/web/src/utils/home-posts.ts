@@ -20,6 +20,7 @@ export function existingSiteImage(publicPath: string | null | undefined) {
   if (!publicPath) return null;
   const normalizedPath = String(publicPath).replace(/^\/+/, '');
   const candidates = [
+    ...(process.env.SITE_PUBLIC_DIR ? [path.join(process.env.SITE_PUBLIC_DIR, normalizedPath)] : []),
     path.join(PUBLIC_ROOT, normalizedPath),
     path.resolve(process.cwd(), 'public', normalizedPath),
     path.resolve(process.cwd(), 'apps/web/public', normalizedPath),

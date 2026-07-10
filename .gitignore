@@ -17,17 +17,14 @@ Thumbs.db
 /apps/web/feed/ialexey-feed.env
 /apps/web/feed/data/
 /apps/web/feed/*.log
-/apps/posting/secrets.env
-/apps/posting/secrets.*
-/apps/posting/data/
-/apps/posting/logs/
-/apps/posting/media-cache/
-/apps/posting/*.sqlite
-/apps/posting/*.sqlite3
-/apps/posting/*.db
-/apps/posting/.venv/
-/apps/posting/.pytest_cache/
-/apps/posting/.ruff_cache/
+/apps/backend/secrets.env
+/apps/backend/secrets.*
+/apps/backend/data/
+/apps/backend/logs/
+/apps/backend/media-cache/
+/apps/backend/*.sqlite
+/apps/backend/*.sqlite3
+/apps/backend/*.db
 
 # Local static files that are generated dynamically on server (root only)
 /feed.json
@@ -42,7 +39,9 @@ Thumbs.db
 node_modules/
 dist/
 .astro/
+*.tsbuildinfo
 npm-debug.log*
+package-lock.json
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*

@@ -1,0 +1,51 @@
+import { describe, expect, it, vi } from "vitest";
+import { loadConfig } from "../src/config.js";
+import { devtoArticleFromPayload, publishToDevto } from "../src/social/devto.js";
+
+describe("Dev.to publisher", () => {
+  it("builds article input from legacy job payload", () => {
+    const article = devtoArticleFromPayload(
+      {
+        post_id: 42,
+        slug_en: "hello-world",
+        text_en: "Hello world\nBody",
+        tags: ["AI News", "self-hosted", "typescript", "extra", "ignored"],
+      },
+      loadConfig({ PUBLIC_BASE_URL: "https://alexgetman.com" }),
+    );
+    expect(article).toMatchObject({
+      title: "Hello world",
+      bodyMarkdown: "Hello world\nBody",
+      canonicalUrl: "https://alexgetman.com/42/hello-world/",
+      published: true,
+    });
+  });
+
+  it("sends Dev.to API request with normalized tags and auth", async () => {
+    const fetchMock = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => new Response(JSON.stringify({ id: 123, url: "https://dev.to/a/post" }), { status: 201 }));
+    const result = await publishToDevto(
+      {
+        title: "Title",
+        bodyMarkdown: "Body",
+        canonicalUrl: "https://alexgetman.com/1/title/",
+        tags: ["AI News", "Type-Script", "LongTagLongTagLongTag"],
+      },
+      loadConfig({ DEVTO_API_KEY: "secret" }),
+      fetchMock as typeof fetch,
+    );
+
+    expect(result).toMatchObject({ ok: true, id: 123, url: "https://dev.to/a/post" });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.headers).toMatchObject({ "api-key": "secret" });
+    expect(JSON.parse(String(init.body))).toEqual({
+      article: {
+        title: "Title",
+        body_markdown: "Body",
+        canonical_url: "https://alexgetman.com/1/title/",
+        published: true,
+        tags: ["ainews", "typescript", "longtaglongtaglongta"],
+      },
+    });
+  });
+});

@@ -8,30 +8,19 @@ permissions:
   contents: read
 
 jobs:
-  web:
+  monorepo:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.13.1
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
-      - run: npm ci
-      - run: DATA_DIR=apps/web/src/data npm run check:web
-
-  posting:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/posting
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-          cache-dependency-path: apps/posting/pyproject.toml
-      - name: Install development dependencies
-        run: python -m pip install --upgrade pip '.[dev]'
-      - name: Run checks
-        run: ./scripts/check
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run check:all
+        env:
+          CI: "true"
+          DATA_DIR: apps/web/src/data

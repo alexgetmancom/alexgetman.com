@@ -1,0 +1,73 @@
+name: alexgetman-backend
+
+services:
+  bot-api:
+    image: aiogram/telegram-bot-api:latest
+    container_name: alexgetman-telegram-bot-api
+    restart: unless-stopped
+    env_file:
+      - ./telegram-bot-api.env
+    environment:
+      TELEGRAM_LOCAL: "1"
+      TELEGRAM_WORK_DIR: /var/lib/telegram-bot-api
+      TELEGRAM_TEMP_DIR: /tmp/telegram-bot-api
+    volumes:
+      - ./bot-api-data:/var/lib/telegram-bot-api
+      - ./bot-api-temp:/tmp/telegram-bot-api
+    ports:
+      - "127.0.0.1:8081:8081"
+    networks:
+      - agent_default
+
+  backend:
+    build:
+      context: ../..
+      dockerfile: apps/backend/Dockerfile
+    image: alexgetman-backend:latest
+    container_name: alexgetman-backend
+    restart: unless-stopped
+    env_file:
+      - ./secrets.env
+    depends_on:
+      - bot-api
+    environment:
+      DATA_DIR: /data
+      PIPELINE_DB: /data/pipeline.db
+      FEED_JSON: /feed-data/feed.json
+      SITE_METRICS_JSON: /feed-data/metrics.json
+      CHANNEL_USERNAME: alexgetmancom
+      METRICS_REFRESH_INTERVAL_SECONDS: "300"
+      PIPELINE_BASELINE_MESSAGE_ID: "422"
+      IDLE_POLL_INTERVAL_SECONDS: "5"
+      TELEGRAM_API_BASE_URL: http://bot-api:8081
+      COMMAND_CENTER_URL: https://alexgetman.com/command-center
+      OBSERVABILITY_INTERVAL_SECONDS: "300"
+      REMOTE_MEDIA_PATH: /media/threads
+      PUBLIC_MEDIA_BASE_URL: https://alexgetman.com/media/threads
+      SITE_BUILD_COMMAND: node /app/apps/backend/dist/src/runtime/buildSite.js
+      SITE_PUBLIC_DIR: /site-public
+      ENABLE_BOT_POLLING: "true"
+      BIND_HOST: 0.0.0.0
+      PORT: "8788"
+    volumes:
+      - ./data:/data
+      - ./bot-api-data:/var/lib/telegram-bot-api:ro
+      - /home/deploy/ialexey-web/media/threads:/media/threads
+      - /home/deploy/ialexey-feed/data:/feed-data
+      - /home/deploy/ialexey-web:/site-public
+    ports:
+      - "127.0.0.1:8788:8788"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8788/readyz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - agent_default
+    mem_limit: 1536m
+    pids_limit: 192
+
+networks:
+  agent_default:
+    external: true

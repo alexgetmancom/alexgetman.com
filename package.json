@@ -1,18 +1,28 @@
 {
-  "name": "radiant-ring",
+  "name": "alexgetman-monorepo",
+  "private": true,
   "type": "module",
   "version": "0.0.1",
+  "packageManager": "pnpm@10.13.1",
   "engines": {
     "node": ">=22.12.0"
   },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev": "astro dev",
-    "build": "node scripts/generate-responsive-images.mjs && astro build",
+    "build": "tsx scripts/generate-responsive-images.ts && astro build",
     "preview": "astro preview",
     "astro": "astro",
-    "check:web": "npm run build",
-    "check:posting": "cd apps/posting && ./scripts/check",
-    "check:all": "./scripts/check-all"
+    "typecheck": "tsc -p tsconfig.json --noEmit && pnpm --filter @alexgetman/shared typecheck && pnpm --filter @alexgetman/backend typecheck",
+    "test": "pnpm --filter @alexgetman/backend test",
+    "check:web": "pnpm run build",
+    "check:backend": "pnpm --filter @alexgetman/backend check",
+    "check:language": "tsx scripts/enforce-typescript.ts",
+    "check:all": "tsx scripts/check-all.ts",
+    "sync:production-web": "tsx scripts/web-sync.ts"
   },
   "dependencies": {
     "@astrojs/rss": "^4.0.18",
@@ -22,6 +32,8 @@
   },
   "devDependencies": {
     "@types/sanitize-html": "^2.16.1",
-    "sharp": "^0.34.5"
+    "sharp": "^0.34.5",
+    "tsx": "^4.23.0",
+    "typescript": "^5.8.3"
   }
 }

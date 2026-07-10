@@ -1,5 +1,0 @@
-#!/usr/bin/env sh
-set -eu
-
-HOST="${HOST:-tw-nl}"
-ssh "$HOST" 'cd /opt/alexgetman-posting && docker compose run --rm posting-app python /app/control_plane.py backup'

@@ -18,9 +18,28 @@ export function loadFeedItems(): any[] {
       }
     }
   }
-  if (Array.isArray(parsedData)) return parsedData;
-  if (parsedData?.items && Array.isArray(parsedData.items)) return parsedData.items;
-  return [];
+  const items = Array.isArray(parsedData) ? parsedData : parsedData?.items && Array.isArray(parsedData.items) ? parsedData.items : [];
+  return items.map(normalizeFeedItem);
+}
+
+function normalizeFeedItem(item: any): any {
+  const legacyId = String(item?.id ?? "").match(/(?:post:)?(\d+)$/)?.[1];
+  const postId = item?.post_id ?? (legacyId ? Number(legacyId) : item?.message_id);
+  let legacySlug: string | undefined;
+  try {
+    const segments = new URL(String(item?.url ?? ""), "https://alexgetman.com").pathname.split("/").filter(Boolean);
+    legacySlug = segments.at(-1);
+  } catch {
+    legacySlug = undefined;
+  }
+  return {
+    ...item,
+    post_id: postId,
+    has_ru: item?.has_ru ?? Boolean(item?.text),
+    has_en: item?.has_en ?? Boolean(item?.text_en),
+    slug_ru: item?.slug_ru ?? legacySlug ?? `post-${postId}`,
+    slug_en: item?.slug_en ?? legacySlug ?? `post-${postId}`,
+  };
 }
 
 export function siteUrlFromContext(context: any): string {

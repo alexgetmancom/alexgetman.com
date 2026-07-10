@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist",
+    "types": ["node", "vitest/globals"],
+    "paths": {
+      "@alexgetman/shared": ["../../packages/shared/src/index.ts"],
+      "@alexgetman/shared/*": ["../../packages/shared/src/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts", "vitest.config.ts", "drizzle.config.ts"]
+}

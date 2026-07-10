@@ -7,7 +7,9 @@ Open monorepo for [alexgetman.com](https://alexgetman.com): the Astro vertical n
 ```text
 apps/
   web/       Astro site source and public assets
-  posting/   publishing pipeline, site-feed API, metrics, Telegram controller and tests
+  backend/   Hono API, grammY bot, workers, metrics and command-center tooling
+packages/
+  shared/    shared TypeScript types, Zod schemas and contracts
 docs/        public architecture, brand, SEO/AIO and operations notes
 deploy/      nginx examples and deployment snippets
 scripts/     repository-level checks and build helpers
@@ -18,8 +20,9 @@ Runtime secrets, SQLite databases, Telegram sessions, generated media, logs and 
 ## Local Development
 
 ```bash
-npm install
-npm run dev
+corepack enable
+pnpm install --frozen-lockfile
+pnpm run dev
 ```
 
 Open `http://127.0.0.1:4321`.
@@ -27,7 +30,7 @@ Open `http://127.0.0.1:4321`.
 ## Build
 
 ```bash
-npm run build
+pnpm run build
 ```
 
 The build generates responsive images first and then runs `astro build`.
@@ -35,10 +38,20 @@ The build generates responsive images first and then runs `astro build`.
 To run the full monorepo gate:
 
 ```bash
-npm run check:all
+pnpm run check:all
 ```
 
-That runs the web build and, when Python dev dependencies are available, the posting pipeline checks from `apps/posting`.
+That runs the Astro build and the TypeScript backend typecheck/test gate.
+It also rejects Python, JavaScript and shell source files so the repository cannot drift back to a mixed-language runtime.
+
+Backend operations are exposed through one TypeScript CLI:
+
+```bash
+pnpm --filter @alexgetman/backend ops status --db ./data/pipeline.db
+pnpm --filter @alexgetman/backend ops backup --db ./data/pipeline.db
+pnpm --filter @alexgetman/backend ops audit --db ./data/pipeline.db
+pnpm --filter @alexgetman/backend ops capabilities --db ./data/pipeline.db
+```
 
 ## Content
 
