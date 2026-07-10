@@ -5,7 +5,7 @@ import type { BackendDb } from "./db/client.js";
 import { log } from "./logger.js";
 import { generateStoryMedia } from "./media/story.js";
 import { localizeTargetPayload } from "./publicationPayload.js";
-import { formatMsk, nextPublishingSlot, parseManualSchedule, schedulePreset } from "./publishingSchedule.js";
+import { formatMsk, nextPublishingSlot, parseManualSchedule, rebalanceScheduledDrafts, schedulePreset } from "./publishingSchedule.js";
 import { enqueuePublishJob } from "./queue/publish.js";
 import { translateToEnglish } from "./translation.js";
 
@@ -184,6 +184,7 @@ async function handleDraftCallback(ctx: Context, backendDb: BackendDb, config: B
     const ruAt = hasLocaleTarget(targets, "ru") ? nextPublishingSlot(backendDb, "ru") : null;
     const enAt = hasLocaleTarget(targets, "en") ? nextPublishingSlot(backendDb, "en") : null;
     const postId = publishDraftToQueue(backendDb, draftId, { mode: "scheduled", ruAt, enAt });
+    rebalanceScheduledDrafts(backendDb);
     await ctx.answerCallbackQuery({ text: "Scheduled" });
     await ctx.reply(`Draft #${draftId} scheduled as post #${postId}.\nRU: ${formatMsk(ruAt)}\nEN: ${formatMsk(enAt)}`);
     await sendDraftPreview(ctx, backendDb, draftId);
@@ -192,6 +193,7 @@ async function handleDraftCallback(ctx: Context, backendDb: BackendDb, config: B
   if (action === "sched_preset" && second) {
     const value = schedulePreset(first!);
     const postId = publishDraftToQueue(backendDb, draftId, { mode: "scheduled", ruAt: value, enAt: value });
+    rebalanceScheduledDrafts(backendDb);
     await ctx.answerCallbackQuery({ text: "Scheduled" });
     await ctx.reply(`Draft #${draftId} scheduled as post #${postId}.\nRU/EN: ${formatMsk(value)}`);
     return;
@@ -237,6 +239,7 @@ function cancelDraft(backendDb: BackendDb, draftId: number): void {
     backendDb.sqlite.prepare("DELETE FROM publications WHERE post_id=?").run(postId);
     backendDb.sqlite.prepare("UPDATE drafts SET post_id=NULL, updated_at=? WHERE id=?").run(now, draftId);
   })();
+  rebalanceScheduledDrafts(backendDb);
 }
 
 export function publishDraftToQueue(
@@ -538,6 +541,7 @@ async function applyAdminState(ctx: Context, backendDb: BackendDb, action: strin
     const ruAt = scope === "en" ? dateOrNull(draft.scheduled_at) : value;
     const enAt = scope === "ru" ? dateOrNull(draft.scheduled_en_at) : value;
     publishDraftToQueue(backendDb, draftId, { mode: "scheduled", ruAt, enAt });
+    rebalanceScheduledDrafts(backendDb);
   } else if (action === "edit_ru" || action === "edit_en") {
     if (!message.text) throw new Error("edited text is empty");
     const column = action === "edit_ru" ? "text_ru" : "text_en_approved";

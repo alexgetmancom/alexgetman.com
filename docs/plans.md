@@ -29,7 +29,7 @@
 | 16. Threads media retry | Ошибка `media is missing` повторяется с задержкой и не создаёт дубль публикации. | Частично |
 | 17. Threads partial publication | Уже опубликованные части треда сохраняются; retry продолжает с непубликованной части. | Не начато |
 | 18. Scheduled publishing | Due drafts автоматически создают и исполняют jobs в заданное время. | Частично |
-| 19. Schedule rebalance | Изменение времени пересчитывает MSK slots и связанные jobs без дубликатов. | Не начато |
+| 19. Schedule rebalance | Изменение времени пересчитывает MSK slots и связанные jobs без дубликатов. | Частично |
 | 20. RU/EN target localization | Каждый target получает правильные locale text, media, URL и entities; тесты покрывают RU/EN. | Частично |
 | 21. Telegram entities | Bold, italic, links и captions сохраняются и передаются в Telegram API. | Частично |
 | 22. Post HTML rendering | Telegram entities преобразуются в безопасный HTML для `post_locales`; сайт показывает форматирование. | Частично |

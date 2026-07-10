@@ -10,10 +10,9 @@ COPY --chown=bun:bun tools/knip ./tools/knip
 COPY --chown=bun:bun biome.json knip.json ./
 
 USER bun
-RUN bun install --frozen-lockfile \
-  && bun run --filter @alexgetman/shared typecheck \
-  && bun run --filter @alexgetman/backend typecheck \
-  && bun run --filter @alexgetman/backend build
+RUN bun install --frozen-lockfile
+RUN bun run --filter @alexgetman/shared typecheck && bun run --filter @alexgetman/backend typecheck
+RUN bun run --filter @alexgetman/backend build
 
 FROM oven/bun:1.3.14-debian AS backend
 
