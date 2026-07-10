@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { loadConfig } from "../src/config.js";
 import { createDraftFromMessage, publishDraftToQueue } from "../src/bot.js";
 import { openBackendDb } from "../src/db/client.js";
@@ -71,7 +71,8 @@ describe("Hono backend routes", () => {
     const backendDb = tempDb();
     const dir = mkdtempSync(join(tmpdir(), "alexgetman-engagement-"));
     try {
-      const app = createHttpApp(loadConfig({ SITE_METRICS_JSON: join(dir, "metrics.json"), LIKES_SALT: "salt", TELEGRAM_WEBHOOK_SECRET: "webhook-secret" }), backendDb);
+      const handleUpdate = vi.fn(async () => undefined);
+      const app = createHttpApp(loadConfig({ SITE_METRICS_JSON: join(dir, "metrics.json"), LIKES_SALT: "salt", TELEGRAM_WEBHOOK_SECRET: "webhook-secret" }), backendDb, { handleUpdate } as unknown as import("grammy").Bot);
       expect((await app.request("/stats/pageview", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: "/post/" }) })).status).toBe(204);
       expect(JSON.parse(readFileSync(join(dir, "metrics.json"), "utf8"))).toMatchObject({ total: 1 });
 
@@ -83,6 +84,7 @@ describe("Hono backend routes", () => {
       expect(await initialized.json()).toMatchObject({ jsonrpc: "2.0", id: 1, result: { protocolVersion: "2024-11-05" } });
       expect((await app.request("/tg-feed/webhook", { method: "POST", body: "{}" })).status).toBe(403);
       expect((await app.request("/tg-feed/webhook", { method: "POST", headers: { "X-Telegram-Bot-Api-Secret-Token": "webhook-secret" }, body: "{}" })).status).toBe(200);
+      expect(handleUpdate).toHaveBeenCalledOnce();
     } finally {
       backendDb.close();
     }

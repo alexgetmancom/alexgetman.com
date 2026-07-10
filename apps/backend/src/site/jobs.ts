@@ -201,10 +201,17 @@ async function runSiteBuild(config: BackendConfig): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const child = spawn(config.SITE_BUILD_COMMAND!, { shell: true, cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"] });
     let output = "";
+    const timeout = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(new Error(`site build timed out after ${config.SITE_BUILD_TIMEOUT_SECONDS}s`));
+    }, config.SITE_BUILD_TIMEOUT_SECONDS * 1000);
     child.stdout.on("data", (chunk) => { output += String(chunk); });
     child.stderr.on("data", (chunk) => { output += String(chunk); });
-    child.once("error", reject);
-    child.once("exit", (code) => code === 0 ? resolve() : reject(new Error(`site build failed: ${output.trim() || `exit ${code}`}`)));
+    child.once("error", (error) => { clearTimeout(timeout); reject(error); });
+    child.once("exit", (code) => {
+      clearTimeout(timeout);
+      code === 0 ? resolve() : reject(new Error(`site build failed: ${output.trim() || `exit ${code}`}`));
+    });
   });
 }
 

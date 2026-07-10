@@ -17,6 +17,16 @@ import { publishToX } from "./x.js";
 
 export type Publisher = (job: ClaimedPublishJob) => Promise<PublishResult>;
 
+type PreparedMedia = Awaited<ReturnType<typeof prepareMediaItems>>;
+type MediaCacheEntry = {
+  prepared: Promise<PreparedMedia>;
+  users: number;
+  cleanupTimer: ReturnType<typeof setTimeout> | null;
+};
+
+const mediaCache = new Map<string, MediaCacheEntry>();
+let mediaPreparationTail: Promise<void> = Promise.resolve();
+
 export function createPublishers(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch = fetch): Record<string, Publisher> {
   const threadsEnConfig = { ...config, THREADS_ACCESS_TOKEN: config.THREADS_EN_ACCESS_TOKEN ?? config.THREADS_ACCESS_TOKEN };
   const facebookRuConfig = { ...config, FACEBOOK_PAGE_ACCESS_TOKEN: config.FACEBOOK_RU_PAGE_ACCESS_TOKEN ?? config.FACEBOOK_PAGE_ACCESS_TOKEN, FACEBOOK_PAGE_ID: config.FACEBOOK_RU_PAGE_ID ?? config.FACEBOOK_PAGE_ID };
@@ -50,10 +60,43 @@ export function createPublishers(config: BackendConfig, backendDb: BackendDb, fe
 async function withPreparedMedia(job: ClaimedPublishJob, config: BackendConfig, fetchImpl: typeof fetch, publish: (payload: Record<string, unknown>) => Promise<PublishResult>): Promise<PublishResult> {
   const media = payloadMedia(job.payload);
   if (media.length === 0) return publish(job.payload);
-  const prepared = await prepareMediaItems(config, media, fetchImpl);
+  const key = mediaCacheKey(job, media, config);
+  let entry = mediaCache.get(key);
+  if (!entry) {
+    entry = { prepared: enqueueMediaPreparation(() => prepareMediaItems(config, media, fetchImpl)), users: 0, cleanupTimer: null };
+    mediaCache.set(key, entry);
+  }
+  if (entry.cleanupTimer) {
+    clearTimeout(entry.cleanupTimer);
+    entry.cleanupTimer = null;
+  }
+  entry.users += 1;
+  let prepared: PreparedMedia;
+  try {
+    prepared = await entry.prepared;
+  } catch (error) {
+    entry.users -= 1;
+    if (entry.users === 0) mediaCache.delete(key);
+    throw error;
+  }
   try {
     return await publish({ ...job.payload, media: prepared.items, media_en: prepared.items });
   } finally {
-    await prepared.cleanup();
+    entry.users -= 1;
+    if (entry.users === 0) {
+      entry.cleanupTimer = setTimeout(() => {
+        void prepared.cleanup().finally(() => mediaCache.delete(key));
+      }, config.MEDIA_CACHE_TTL_SECONDS * 1000);
+    }
   }
+}
+
+function mediaCacheKey(job: ClaimedPublishJob, media: ReturnType<typeof payloadMedia>, config: BackendConfig): string {
+  return JSON.stringify({ post: job.postKey, locale: job.payload.locale ?? "en", media: media.map((item) => [item.fileId, item.localPath, item.type]), remote: config.REMOTE_MEDIA_PATH });
+}
+
+function enqueueMediaPreparation<T>(prepare: () => Promise<T>): Promise<T> {
+  const next = mediaPreparationTail.then(prepare, prepare);
+  mediaPreparationTail = next.then(() => undefined, () => undefined);
+  return next;
 }

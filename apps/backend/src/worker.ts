@@ -57,6 +57,10 @@ export function startWorkers(config: BackendConfig, backendDb: BackendDb, bot: B
     }),
     startLoop("queue", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
       const claimed = await runPublishCycle(config, backendDb);
+      if (claimed > 0) {
+        const siteClaimed = await runSiteJobCycle(config, backendDb);
+        if (siteClaimed) log("debug", "site build triggered by publish cycle", { claimed: siteClaimed });
+      }
       log("debug", "queue loop tick", { claimed });
     }),
     startLoop("metrics", config.METRICS_REFRESH_INTERVAL_SECONDS * 1000, async () => {

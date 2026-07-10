@@ -24,6 +24,7 @@ const REQUIREMENTS: Record<string, string[]> = {
 
 export async function runObservabilityCycle(config: BackendConfig, backendDb: BackendDb, bot: Bot | null): Promise<{ alerts: number; credentials: number }> {
   const credentials = updateCredentialChecks(config, backendDb);
+  scanPublicationFailures(config, backendDb);
   let alerts = 0;
   const events = backendDb.sqlite.prepare(
     "SELECT id,event_type,severity,target,message,created_at FROM post_events WHERE severity IN ('warn','error') AND acked_at IS NULL ORDER BY created_at,id LIMIT 20",
@@ -48,6 +49,18 @@ export async function runObservabilityCycle(config: BackendConfig, backendDb: Ba
   }
   recordWorkerState(backendDb, "observability", { alerts, credentials });
   return { alerts, credentials };
+}
+
+function scanPublicationFailures(config: BackendConfig, backendDb: BackendDb): void {
+  const now = new Date().toISOString();
+  const staleBefore = new Date(Date.now() - config.PUBLISH_LOCK_TIMEOUT_SECONDS * 1000).toISOString();
+  const stale = backendDb.sqlite.prepare("SELECT job_id,post_key,target,locked_at FROM publish_jobs WHERE status='publishing' AND locked_at<?").all(staleBefore) as Array<{ job_id: number; post_key: string | null; target: string; locked_at: string }>;
+  const failed = backendDb.sqlite.prepare("SELECT post_key,target,last_error FROM publish_jobs WHERE status='failed' ORDER BY updated_at DESC LIMIT 100").all() as Array<{ post_key: string | null; target: string; last_error: string | null }>;
+  const insert = backendDb.sqlite.prepare("INSERT INTO post_events(post_key,event_type,severity,target,message,details_json,created_at) SELECT ?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM post_events WHERE post_key IS ? AND event_type=? AND target IS ? AND acked_at IS NULL)");
+  backendDb.sqlite.transaction(() => {
+    for (const job of stale) insert.run(job.post_key, "queue.stale", "error", job.target, `Publish job ${job.job_id} exceeded lock timeout`, JSON.stringify({ job_id: job.job_id, locked_at: job.locked_at }), now, job.post_key, "queue.stale", job.target);
+    for (const job of failed) insert.run(job.post_key, "target.failed", "error", job.target, job.last_error ?? `${job.target} failed`, "{}", now, job.post_key, "target.failed", job.target);
+  })();
 }
 
 function updateCredentialChecks(config: BackendConfig, backendDb: BackendDb): number {

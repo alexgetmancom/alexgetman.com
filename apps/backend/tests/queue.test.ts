@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
 import { openBackendDb } from "../src/db/client.js";
 import { HttpPublishError } from "../src/queue/errors.js";
-import { claimDuePublishJobs, enqueuePublishJob, recoverStalePublishJobs } from "../src/queue/publish.js";
+import { claimDuePublishJobs, completePublishJob, enqueuePublishJob, recoverStalePublishJobs } from "../src/queue/publish.js";
 import { runPublishCycle } from "../src/worker.js";
 
 function tempDb() {
@@ -144,6 +144,19 @@ describe("publish queue", () => {
       expect(job.status).toBe("failed");
       expect(job.locked_by).toBeNull();
       expect(job.last_error).toContain("worker finalization failed");
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("does not delete another legacy post while deduplicating a completed target", () => {
+    const backendDb = tempDb();
+    try {
+      const first = enqueuePublishJob(backendDb, { messageId: 201, target: "devto", payload: { title: "One" } });
+      const second = enqueuePublishJob(backendDb, { messageId: 202, target: "devto", payload: { title: "Two" } });
+      claimDuePublishJobs(backendDb, 1, "test-worker");
+      completePublishJob(backendDb, first, { ok: true, id: "first" });
+      expect(backendDb.sqlite.prepare("SELECT status FROM publish_jobs WHERE job_id=?").get(second)).toEqual({ status: "queued" });
     } finally {
       backendDb.close();
     }

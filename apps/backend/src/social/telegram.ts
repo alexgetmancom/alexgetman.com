@@ -15,12 +15,14 @@ export async function publishToTelegram(payload: Record<string, unknown>, config
   const chatId = String(payload.chat_id ?? payload.chatId ?? payload.channel ?? `@${config.CHANNEL_USERNAME.replace(/^@/, "")}`);
   const text = payloadText(payload);
   const media = payloadMedia(payload);
+  const entities = Array.isArray(payload.entities) ? payload.entities : undefined;
 
   if (media.length > 1) {
     const items = media.slice(0, 10).map((item, index) => ({
       type: item.type === "VIDEO" ? "video" : "photo",
       media: item.fileId || item.vpsUrl || item.localPath,
       caption: index === 0 ? text.slice(0, 1024) : undefined,
+      caption_entities: index === 0 ? entities : undefined,
     }));
     const result = await telegramCall<TelegramResponse>(config, token, "sendMediaGroup", { chat_id: chatId, media: items }, fetchImpl);
     return normalizeTelegramResult(result, chatId);
@@ -30,11 +32,11 @@ export async function publishToTelegram(payload: Record<string, unknown>, config
   if (item) {
     const method = item.type === "VIDEO" ? "sendVideo" : "sendPhoto";
     const mediaKey = item.type === "VIDEO" ? "video" : "photo";
-    const result = await telegramCall<TelegramResponse>(config, token, method, { chat_id: chatId, [mediaKey]: item.fileId || item.vpsUrl || item.localPath, caption: text.slice(0, 1024) }, fetchImpl);
+    const result = await telegramCall<TelegramResponse>(config, token, method, { chat_id: chatId, [mediaKey]: item.fileId || item.vpsUrl || item.localPath, caption: text.slice(0, 1024), caption_entities: entities }, fetchImpl);
     return normalizeTelegramResult(result, chatId);
   }
 
-  const result = await telegramCall<TelegramResponse>(config, token, "sendMessage", { chat_id: chatId, text, disable_web_page_preview: false }, fetchImpl);
+  const result = await telegramCall<TelegramResponse>(config, token, "sendMessage", { chat_id: chatId, text, entities, disable_web_page_preview: false }, fetchImpl);
   return normalizeTelegramResult(result, chatId);
 }
 

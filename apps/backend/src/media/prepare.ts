@@ -125,6 +125,6 @@ async function normalizeVideoForPublicUpload(config: BackendConfig, inputPath: s
     "-movflags",
     "+faststart",
     outputPath,
-  ]);
+  ], config.FFMPEG_TIMEOUT_SECONDS);
   return outputPath;
 }

@@ -118,6 +118,7 @@ export function completePublishJob(backendDb: BackendDb, jobId: number, result: 
         normalized.rawJson,
       );
     backendDb.sqlite.prepare("UPDATE publish_jobs SET status=?, locked_by=NULL, locked_at=NULL, last_error=?, updated_at=? WHERE job_id=?").run(normalized.status, normalized.error, now, jobId);
+    backendDb.sqlite.prepare("DELETE FROM publish_jobs WHERE target=? AND job_id<>? AND status IN ('queued','failed') AND (post_key=? OR (post_key IS NULL AND message_id=?))").run(String(job.target), jobId, postKey, Number(job.message_id));
     if (String(job.target) === "telegram" && normalized.status === "published" && normalized.externalId && job.post_id != null) {
       const messageId = Number(normalized.externalId);
       backendDb.sqlite.prepare("UPDATE publications SET telegram_message_id=?, updated_at=? WHERE post_id=?").run(messageId, now, Number(job.post_id));
@@ -149,6 +150,7 @@ export function failPublishJob(backendDb: BackendDb, config: BackendConfig, jobI
     backendDb.sqlite
       .prepare("UPDATE publish_jobs SET status=?, attempt_count=?, next_attempt_at=?, locked_by=NULL, locked_at=NULL, last_error=?, updated_at=? WHERE job_id=?")
       .run(status, attempt, nextAttempt, errorText, now, jobId);
+    if (!shouldRetry) backendDb.sqlite.prepare("DELETE FROM publish_jobs WHERE target=? AND job_id<>? AND status IN ('queued','failed') AND (post_key=? OR (post_key IS NULL AND message_id=?))").run(String(job.target), jobId, postKey, Number(job.message_id));
     backendDb.sqlite
       .prepare(
         `INSERT INTO post_targets(post_key, target, status, error, skipped, updated_at, raw_json)
@@ -195,12 +197,13 @@ export function reconcilePublication(backendDb: BackendDb, postId: number): void
 
 export function enqueuePublishJob(backendDb: BackendDb, input: { messageId: number; target: string; payload: Record<string, unknown>; postId?: number | null; postKey?: string | null; publishAt?: string | null }): number {
   const now = new Date().toISOString();
+  const postKey = input.postKey ?? (input.postId != null ? `post:${input.postId}` : `telegram:alexgetmancom:${input.messageId}`);
   const result = backendDb.sqlite
     .prepare(
       `INSERT INTO publish_jobs(post_id, post_key, message_id, target, status, publish_at, payload_json, created_at, updated_at)
        VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?)`,
     )
-    .run(input.postId ?? null, input.postKey ?? null, input.messageId, input.target, input.publishAt ?? null, JSON.stringify(input.payload), now, now);
+    .run(input.postId ?? null, postKey, input.messageId, input.target, input.publishAt ?? null, JSON.stringify(input.payload), now, now);
   return Number(result.lastInsertRowid);
 }
 

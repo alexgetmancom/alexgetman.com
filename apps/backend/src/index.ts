@@ -9,8 +9,8 @@ import { startWorkers } from "./worker.js";
 
 const config = loadConfig();
 const backendDb = openBackendDb(config.PIPELINE_DB);
-const app = createHttpApp(config, backendDb);
 const bot = createBot(config, backendDb);
+const app = createHttpApp(config, backendDb, bot);
 const loops = startWorkers(config, backendDb, bot);
 
 if (!assertFfmpegAvailable()) {

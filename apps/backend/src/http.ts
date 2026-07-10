@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { Hono } from "hono";
+import type { Bot } from "grammy";
 import { streamSSE } from "hono/streaming";
 import crypto from "node:crypto";
 import { serveStatic } from "@hono/node-server/serve-static";
@@ -14,7 +15,7 @@ import { mcpResponse } from "./services/mcp.js";
 import { runCommandAction, type CommandAction } from "./services/actions.js";
 import { renderDashboard } from "./services/dashboard.js";
 
-export function createHttpApp(config: BackendConfig, backendDb: BackendDb) {
+export function createHttpApp(config: BackendConfig, backendDb: BackendDb, bot: Bot | null = null) {
   const app = new Hono();
 
   app.get("/healthz", (c) => c.text("ok\n"));
@@ -73,7 +74,8 @@ export function createHttpApp(config: BackendConfig, backendDb: BackendDb) {
 
   app.post(config.WEBHOOK_PATH, async (c) => {
     if (!safeEqual(c.req.header("X-Telegram-Bot-Api-Secret-Token") ?? "", config.TELEGRAM_WEBHOOK_SECRET ?? "")) return c.text("forbidden\n", 403);
-    await c.req.json().catch(() => ({}));
+    const update = await c.req.json().catch(() => null);
+    if (bot && update) await bot.handleUpdate(update as Parameters<Bot["handleUpdate"]>[0]);
     return c.text("ok\n");
   });
 

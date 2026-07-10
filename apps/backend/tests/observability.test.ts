@@ -20,6 +20,10 @@ describe("observability", () => {
       expect(await runObservabilityCycle(config, backendDb, bot)).toMatchObject({ alerts: 0 });
       expect(sendMessage).toHaveBeenCalledOnce();
       expect((backendDb.sqlite.prepare("SELECT suppressed_count FROM alert_dedup").get() as { suppressed_count: number }).suppressed_count).toBe(1);
+
+      backendDb.sqlite.prepare("INSERT INTO publish_jobs(post_key,message_id,target,status,locked_at,payload_json,created_at,updated_at) VALUES ('post:stale',1,'threads','publishing','2000-01-01T00:00:00.000Z','{}',?,?)").run(new Date().toISOString(), new Date().toISOString());
+      await runObservabilityCycle(config, backendDb, null);
+      expect((backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM post_events WHERE event_type='queue.stale'").get() as { count: number }).count).toBe(1);
     } finally {
       backendDb.close();
     }

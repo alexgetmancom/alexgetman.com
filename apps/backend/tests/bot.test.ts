@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Bot } from "grammy";
-import { createDraftFromMessage, finalizePendingAlbums, publishDraftToQueue } from "../src/bot.js";
+import { createDraftFromMessage, entitiesToHtml, finalizePendingAlbums, publishDraftToQueue } from "../src/bot.js";
 import { loadConfig } from "../src/config.js";
 import { openBackendDb, type BackendDb } from "../src/db/client.js";
 
@@ -82,6 +82,20 @@ describe("Telegram controller flow", () => {
     }
   });
 
+  it("preserves Telegram entities in target payloads and site HTML", () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createDraftFromMessage(backendDb, 42, {
+      text: "Жирный и ссылка",
+      textEn: "Bold and link",
+      entities: [{ type: "bold", offset: 0, length: 6 }],
+      media: [],
+    });
+    publishDraftToQueue(backendDb, draftId);
+    const payload = JSON.parse((backendDb.sqlite.prepare("SELECT payload_json FROM publish_jobs WHERE target='telegram'").get() as { payload_json: string }).payload_json) as Record<string, unknown>;
+    expect(payload.entities).toEqual([{ type: "bold", offset: 0, length: 6 }]);
+    expect(backendDb.sqlite.prepare("SELECT html FROM post_locales WHERE locale='ru'").get()).toEqual({ html: "<strong>Жирный</strong> и ссылка" });
+  });
+
   it("finalizes a durable Telegram media album into one draft", async () => {
     backendDb = openBackendDb(":memory:");
     backendDb.sqlite.prepare(`INSERT INTO pending_albums(id,admin_id,chat_id,media_group_id,text_ru,text_entities_json,media_json,notified,updated_at)
@@ -96,5 +110,11 @@ describe("Telegram controller flow", () => {
     expect(JSON.parse(draft.media_ru_json)).toHaveLength(2);
     expect(sendMessage).toHaveBeenCalledOnce();
     expect((backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM pending_albums").get() as { count: number }).count).toBe(0);
+  });
+});
+
+describe("Telegram entity HTML", () => {
+  it("renders links and line breaks without exposing raw markup", () => {
+    expect(entitiesToHtml("See link\nnext", [{ type: "text_link", offset: 4, length: 4, url: "https://example.com/?a=1&b=2" }])).toBe('See <a href="https://example.com/?a=1&amp;b=2" rel="noopener noreferrer">link</a><br>next');
   });
 });
