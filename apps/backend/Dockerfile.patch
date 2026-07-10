@@ -1,6 +1,9 @@
 ARG BASE_IMAGE=alexgetman-backend:base
 FROM ${BASE_IMAGE}
 
+ARG GIT_REVISION=unknown
+ENV GIT_REVISION=${GIT_REVISION}
+
 USER root
 COPY --chown=node:node dist /app/apps/backend/dist
 USER node

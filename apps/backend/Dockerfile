@@ -1,5 +1,8 @@
 FROM node:22-bookworm-slim
 
+ARG GIT_REVISION=unknown
+ENV GIT_REVISION=${GIT_REVISION}
+
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates ffmpeg git rsync tini \
   && rm -rf /var/lib/apt/lists/*
