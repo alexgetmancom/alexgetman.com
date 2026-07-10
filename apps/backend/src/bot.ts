@@ -7,6 +7,7 @@ import { formatMsk, nextPublishingSlot, parseManualSchedule, schedulePreset } fr
 import { enqueuePublishJob } from "./queue/publish.js";
 import { translateToEnglish } from "./translation.js";
 import { generateStoryMedia } from "./media/story.js";
+import { localizeTargetPayload } from "./publicationPayload.js";
 
 export function createBot(config: BackendConfig, backendDb: BackendDb): Bot | null {
   if (!config.controllerBotToken) {
@@ -261,7 +262,7 @@ export function publishDraftToQueue(
     for (const [target, enabled] of Object.entries(targets)) {
       if (!enabled || isSiteTarget(target)) continue;
       const publishAt = targetLocale(target) === "en" ? enAt : ruAt;
-      enqueuePublishJob(backendDb, { postId, postKey, messageId, target, payload: localizedPayload(payload, target), publishAt });
+      enqueuePublishJob(backendDb, { postId, postKey, messageId, target, payload: localizeTargetPayload(payload, target), publishAt });
     }
     for (const [locale, enabled, publishAt] of [["ru", targets.site_ru, ruAt], ["en", targets.site_en, enAt]] as const) {
       if (enabled && publishAt) backendDb.sqlite.prepare("INSERT INTO site_jobs(post_id, message_id, reason, status, next_attempt_at, created_at, updated_at) VALUES (?, ?, ?, 'queued', ?, ?, ?)").run(postId, messageId, `publish_${locale}`, publishAt, now, now);
@@ -270,37 +271,6 @@ export function publishDraftToQueue(
     backendDb.sqlite.prepare("UPDATE publications SET status=?, updated_at=? WHERE post_id=?").run(mode === "immediate" ? "published" : "scheduled", now, postId);
   })();
   return postId;
-}
-
-function localizedPayload(payload: Record<string, unknown>, target: string): Record<string, unknown> {
-  const locale = targetLocale(target) ?? "en";
-  if (locale === "ru") {
-    const text = String(payload.text_ru ?? payload.text ?? "");
-    return {
-      ...payload,
-      locale,
-      title: firstLine(text),
-      text,
-      text_en: "",
-      bodyMarkdown: text,
-      media: payload.media,
-      media_en: undefined,
-      slug: payload.slug_ru,
-      slug_en: undefined,
-    };
-  }
-  const text = String(payload.text_en ?? payload.text ?? "");
-  return {
-    ...payload,
-    locale,
-    title: firstLine(text),
-    text,
-    text_en: text,
-    bodyMarkdown: text,
-    media: payload.media_en ?? payload.media,
-    media_en: payload.media_en ?? payload.media,
-    slug: payload.slug_en,
-  };
 }
 
 async function sendDraftPreview(ctx: Context, backendDb: BackendDb, draftId: number): Promise<void> {

@@ -1,5 +1,6 @@
 import type { BackendDb } from "../db/client.js";
 import { enqueuePublishJob } from "../queue/publish.js";
+import { localizeTargetPayload } from "../publicationPayload.js";
 
 export type CommandAction = {
   action: string;
@@ -27,6 +28,8 @@ export function runCommandAction(backendDb: BackendDb, input: CommandAction): Re
 }
 
 function requeue(backendDb: BackendDb, postId: number, target?: string): Record<string, unknown> {
+  const sourceRow = backendDb.sqlite.prepare("SELECT item_json FROM publication_sources WHERE post_id=?").get(postId) as { item_json?: string } | undefined;
+  const source = parseObject(sourceRow?.item_json);
   const rows = backendDb.sqlite.prepare(
     `SELECT * FROM publish_jobs WHERE post_id=? ${target ? "AND target=?" : ""} ORDER BY job_id DESC`,
   ).all(...(target ? [postId, target] : [postId])) as Array<Record<string, unknown>>;
@@ -43,7 +46,7 @@ function requeue(backendDb: BackendDb, postId: number, target?: string): Record<
           postKey: String(row.post_key ?? `post:${postId}`),
           messageId: Number(row.message_id),
           target: targetId,
-          payload: parseObject(row.payload_json),
+          payload: localizeTargetPayload(Object.keys(source).length > 0 ? source : parseObject(row.payload_json), targetId),
         });
       }
       backendDb.sqlite.prepare(`INSERT INTO post_targets(post_key,target,status,error,skipped,updated_at,raw_json)
