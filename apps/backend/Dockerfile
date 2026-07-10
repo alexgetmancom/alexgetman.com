@@ -19,5 +19,9 @@ RUN pnpm --filter @alexgetman/shared typecheck \
   && pnpm --filter @alexgetman/backend typecheck \
   && pnpm --filter @alexgetman/backend build
 
+RUN chown -R node:node /app
+
+USER node
+
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["pnpm", "--filter", "@alexgetman/backend", "start"]

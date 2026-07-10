@@ -28,6 +28,8 @@ services:
     restart: unless-stopped
     env_file:
       - ./secrets.env
+    group_add:
+      - "101"
     depends_on:
       - bot-api
     environment:
