@@ -114,7 +114,7 @@ export function pipelineStatusPayload(config: BackendConfig, backendDb: BackendD
 function legacyPipelinePosts(backendDb: BackendDb, weekOffset: number): Record<string, unknown>[] {
   const [start, end] = weekBounds(weekOffset);
   const rows = backendDb.sqlite.prepare(
-    `SELECT p.post_id, p.telegram_message_id, p.created_at, p.updated_at,
+    `SELECT 'post:' || p.post_id AS post_key, p.post_id, p.telegram_message_id, p.created_at AS created_at, p.updated_at,
             ru.text AS text_ru, ru.media_json AS media_ru_json, ru.site_enabled AS site_ru, ru.slug AS slug_ru,
             en.text AS text_en, en.media_json AS media_en_json, en.site_enabled AS site_en, en.slug AS slug_en,
             po.message_id, po.date_msk, po.telegram_url
@@ -123,11 +123,18 @@ function legacyPipelinePosts(backendDb: BackendDb, weekOffset: number): Record<s
      LEFT JOIN post_locales en ON en.post_id=p.post_id AND en.locale='en'
      LEFT JOIN posts po ON po.post_key='post:' || p.post_id
      WHERE p.created_at>=? AND p.created_at<=?
-     ORDER BY p.created_at DESC LIMIT 100`,
-  ).all(start, end) as Array<Record<string, unknown>>;
+     UNION ALL
+     SELECT po.post_key, NULL, po.message_id, po.date_utc, po.updated_at,
+            po.text, po.media_json, 0, NULL,
+            po.text_en, po.media_json, 0, NULL,
+            po.message_id, po.date_msk, po.telegram_url
+     FROM posts po
+     WHERE po.post_key LIKE 'telegram:%' AND po.date_utc>=? AND po.date_utc<=?
+     ORDER BY 4 DESC LIMIT 100`,
+  ).all(start, end, start, end) as Array<Record<string, unknown>>;
   return rows.map((row) => {
-    const postId = Number(row.post_id);
-    const postKey = `post:${postId}`;
+    const postId = row.post_id == null ? null : Number(row.post_id);
+    const postKey = String(row.post_key ?? `post:${postId}`);
     const targets = Object.fromEntries((backendDb.sqlite.prepare(
       "SELECT target,status,external_id,external_ids_json,url,error,skipped,updated_at,raw_json FROM post_targets WHERE post_key=? ORDER BY target",
     ).all(postKey) as Array<Record<string, unknown>>).map((target) => [String(target.target), {

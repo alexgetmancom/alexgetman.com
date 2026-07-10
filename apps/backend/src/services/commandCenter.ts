@@ -12,11 +12,21 @@ export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb
   const events = backendDb.sqlite
     .prepare("SELECT * FROM post_events ORDER BY created_at DESC, id DESC LIMIT 50")
     .all() as Record<string, unknown>[];
+  const jobs = backendDb.sqlite.prepare("SELECT * FROM publish_jobs ORDER BY updated_at DESC, job_id DESC LIMIT 100").all() as Record<string, unknown>[];
+  const drafts = backendDb.sqlite.prepare("SELECT * FROM drafts ORDER BY updated_at DESC, id DESC LIMIT 50").all() as Record<string, unknown>[];
+  const credentials = optionalRows(backendDb, "SELECT * FROM credential_checks ORDER BY updated_at DESC LIMIT 100");
+  const lifecycle = optionalRows(backendDb, "SELECT * FROM post_lifecycle ORDER BY updated_at DESC LIMIT 100");
+  const actions = optionalRows(backendDb, "SELECT * FROM ops_actions ORDER BY created_at DESC, action_id DESC LIMIT 100");
   return {
     generatedAt: new Date().toISOString(),
     pipeline: pipelineStatusPayload(config, backendDb),
     queue,
     targets,
+    jobs,
+    drafts,
+    credentials,
+    lifecycle,
+    actions,
     events: events.map((event) => ({
       id: event.id,
       postKey: event.post_key,
@@ -30,6 +40,8 @@ export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb
     })),
   };
 }
+
+export type ReturnTypeOfCommandCenter = ReturnType<typeof commandCenterPayload>;
 
 export function postDebugPayload(backendDb: BackendDb, ref: string) {
   const postKey = resolvePostKey(backendDb, ref);
@@ -72,4 +84,8 @@ function parseJson(value: unknown): unknown {
   } catch {
     return {};
   }
+}
+
+function optionalRows(backendDb: BackendDb, query: string): Record<string, unknown>[] {
+  try { return backendDb.sqlite.prepare(query).all() as Record<string, unknown>[]; } catch { return []; }
 }

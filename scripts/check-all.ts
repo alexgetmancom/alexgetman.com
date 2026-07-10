@@ -4,6 +4,8 @@ import { run } from "./process.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-run("pnpm", ["run", "check:language"], { cwd: root });
-run("pnpm", ["run", "check:web"], { cwd: root });
-run("pnpm", ["run", "check:backend"], { cwd: root });
+run("bun", ["run", "check:language"], { cwd: root });
+run("bun", ["run", "typecheck"], { cwd: root });
+run("bun", ["run", "test"], { cwd: root });
+run("bun", ["run", "check:web"], { cwd: root });
+run("bun", ["run", "--filter", "@alexgetman/backend", "build"], { cwd: root });

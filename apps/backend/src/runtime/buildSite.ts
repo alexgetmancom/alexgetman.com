@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -7,14 +6,14 @@ const outputDirectory = path.join(root, "dist");
 const publicDirectory = process.env.SITE_PUBLIC_DIR ?? "/site-public";
 const feedDirectory = process.env.SITE_DATA_DIR ?? path.dirname(process.env.FEED_JSON ?? "/feed-data/feed.json");
 
-const build = spawnSync("pnpm", ["run", "build"], {
+const build = Bun.spawn(["bun", "run", "build"], {
   cwd: root,
   env: { ...process.env, DATA_DIR: feedDirectory },
-  encoding: "utf8",
-  stdio: "inherit",
+  stdout: "inherit",
+  stderr: "inherit",
 });
-if (build.error) throw build.error;
-if (build.status !== 0) process.exit(build.status ?? 1);
+const exitCode = await build.exited;
+if (exitCode !== 0) process.exit(exitCode);
 
 fs.mkdirSync(publicDirectory, { recursive: true });
 for (const entry of fs.readdirSync(publicDirectory)) {

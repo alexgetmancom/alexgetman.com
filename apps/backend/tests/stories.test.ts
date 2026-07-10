@@ -1,12 +1,14 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { Database } from "bun:sqlite";
 import { describe, expect, it, vi } from "vitest";
 import { loadConfig } from "../src/config.js";
 import { openBackendDb } from "../src/db/client.js";
 import { publishInstagramStory } from "../src/social/instagram.js";
 import { publishTelegramStory } from "../src/social/telegramStories.js";
 import { generateStoryMedia } from "../src/media/story.js";
+import { loadChannelStorySession } from "../src/social/telegramSession.js";
 
 describe("story publishers", () => {
   it("generates a 1080x1920 story-safe image with ffmpeg", async () => {
@@ -53,59 +55,45 @@ describe("story publishers", () => {
     expect(String(requests[0]?.init?.body)).toContain("image_url=https%3A%2F%2Fexample.com%2Fstory.jpg");
   });
 
-  it("posts a photo story through a Telegram business connection", async () => {
+  it("never falls back to a personal Telegram business story", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-story-"));
     const imagePath = path.join(dir, "story.jpg");
     fs.writeFileSync(imagePath, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
     const backendDb = openBackendDb(":memory:");
-    const calls: Array<{ url: string; init?: RequestInit }> = [];
-    const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      calls.push({ url: String(input), ...(init ? { init } : {}) });
-      return new Response(JSON.stringify({ ok: true, result: { id: 77 } }), { status: 200 });
-    }) as unknown as typeof fetch;
+    const fetchImpl = vi.fn() as unknown as typeof fetch;
     try {
       const config = loadConfig({
         ENABLE_TELEGRAM_STORIES: "true",
         TELEGRAM_STORIES_BOT_TOKEN: "bot-token",
         TELEGRAM_STORIES_BUSINESS_CONNECTION_ID: "business-1",
-        TELEGRAM_API_BASE_URL: "https://telegram.local",
       });
       const result = await publishTelegramStory({ text: "Read https://alexgetman.com/1/post/", media: [{ type: "IMAGE", local_path: imagePath }] }, config, backendDb, fetchImpl);
 
-      expect(result).toMatchObject({ ok: true, id: 77 });
-      expect(calls[0]?.url).toBe("https://telegram.local/botbot-token/postStory");
-      expect(calls[0]?.init?.body).toBeInstanceOf(FormData);
-      const form = calls[0]?.init?.body as FormData;
-      expect(form.get("business_connection_id")).toBe("business-1");
-      expect(form.get("content")).toBe(JSON.stringify({ type: "photo", photo: "attach://story" }));
-      expect(form.get("areas")).toContain("https://alexgetman.com/1/post/");
+      expect(result).toMatchObject({ skipped: true, reason: "missing_channel_story_credentials" });
+      expect(fetchImpl).not.toHaveBeenCalled();
     } finally {
       backendDb.close();
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  it("falls back to the Bot API when the configured MTProto session is a legacy file path", async () => {
+  it("converts a Telethon SQLite session basename for GramJS", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-story-legacy-"));
     const imagePath = path.join(dir, "story.jpg");
     fs.writeFileSync(imagePath, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
-    const backendDb = openBackendDb(":memory:");
-    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ ok: true, result: { id: 88 } }), { status: 200 })) as unknown as typeof fetch;
+    const sessionPath = path.join(dir, "telegram_channel_stories.session");
+    const sqlite = new Database(sessionPath);
+    sqlite.exec("CREATE TABLE sessions (dc_id INTEGER PRIMARY KEY, server_address TEXT, port INTEGER, auth_key BLOB, takeout_id INTEGER)");
+    sqlite.prepare("INSERT INTO sessions(dc_id,server_address,port,auth_key) VALUES (?,?,?,?)").run(2, "149.154.167.51", 443, Buffer.alloc(256, 7));
+    sqlite.close();
     try {
-      const config = loadConfig({
-        ENABLE_TELEGRAM_STORIES: "true",
-        TELEGRAM_STORIES_BOT_TOKEN: "bot-token",
-        TELEGRAM_STORIES_BUSINESS_CONNECTION_ID: "business-1",
-        TELEGRAM_CHANNEL_STORIES_API_ID: "123",
-        TELEGRAM_CHANNEL_STORIES_API_HASH: "hash",
-        TELEGRAM_CHANNEL_STORIES_SESSION: "/data/telegram_channel_stories.session",
-        TELEGRAM_API_BASE_URL: "https://telegram.local",
-      });
-      const result = await publishTelegramStory({ text: "Story", media: [{ type: "IMAGE", local_path: imagePath }] }, config, backendDb, fetchImpl);
-      expect(result).toMatchObject({ ok: true, id: 88 });
-      expect(fetchImpl).toHaveBeenCalledOnce();
+      const session = loadChannelStorySession(path.join(dir, "telegram_channel_stories"));
+      await session.load();
+      expect(session.dcId).toBe(2);
+      expect(session.serverAddress).toBe("149.154.167.51");
+      expect(session.port).toBe(443);
+      expect(session.authKey?.getKey()).toEqual(Buffer.alloc(256, 7));
     } finally {
-      backendDb.close();
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });

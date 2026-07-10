@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 export const mediaItemSchema = z.object({
   type: z.string().optional(),

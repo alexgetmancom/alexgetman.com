@@ -1,7 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import Database from "better-sqlite3";
+import { Database } from "bun:sqlite";
 import { describe, expect, it } from "vitest";
 import { createDraftFromMessage, publishDraftToQueue } from "../src/bot.js";
 import { openBackendDb } from "../src/db/client.js";
@@ -11,9 +11,9 @@ describe("openBackendDb", () => {
     const dir = mkdtempSync(join(tmpdir(), "alexgetman-backend-"));
     const backendDb = openBackendDb(join(dir, "pipeline.db"), 5000);
     try {
-      expect(backendDb.sqlite.pragma("journal_mode", { simple: true })).toBe("wal");
-      expect(backendDb.sqlite.pragma("busy_timeout", { simple: true })).toBe(5000);
-      expect(backendDb.sqlite.pragma("foreign_keys", { simple: true })).toBe(1);
+      expect(backendDb.sqlite.query("PRAGMA journal_mode").get()).toMatchObject({ journal_mode: "wal" });
+      expect(backendDb.sqlite.query("PRAGMA busy_timeout").get()).toMatchObject({ timeout: 5000 });
+      expect(backendDb.sqlite.query("PRAGMA foreign_keys").get()).toMatchObject({ foreign_keys: 1 });
     } finally {
       backendDb.close();
     }
@@ -25,7 +25,7 @@ describe("openBackendDb", () => {
       const tables = backendDb.sqlite
         .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
         .all()
-        .map((row) => (row as { name: string }).name);
+        .map((row: { name: string }) => row.name);
       expect(tables).toContain("publish_jobs");
       expect(tables).toContain("publish_plans");
       expect(tables).toContain("site_source_items");

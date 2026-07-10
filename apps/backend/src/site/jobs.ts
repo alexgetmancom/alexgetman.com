@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import type { BackendConfig } from "../config.js";
@@ -7,6 +7,8 @@ import { nextRetryAt } from "../queue/errors.js";
 import { reconcilePublication, workerId } from "../queue/publish.js";
 import { recordWorkerState } from "../services/workerState.js";
 import { materializeSiteMedia } from "./media.js";
+import { publishContentIndex } from "./contentIndex.js";
+import { pingIndexNow } from "./indexNow.js";
 
 type SiteJob = {
   job_id: number;
@@ -24,7 +26,11 @@ export async function runSiteJobCycle(config: BackendConfig, backendDb: BackendD
   }
   try {
     await renderFeedFiles(config, backendDb);
-    runSiteBuild(config);
+    if (config.SITE_BUILD_COMMAND) {
+      await runSiteBuild(config);
+      const urls = publishContentIndex(config, backendDb);
+      await pingIndexNow(config, urls);
+    }
     completeSiteJobs(backendDb, jobs);
     recordWorkerState(backendDb, "site", { claimed: jobs.length, published: jobs.length });
   } catch (error) {
@@ -190,12 +196,16 @@ function atomicWriteJson(filePath: string, value: unknown): void {
   fs.renameSync(temp, filePath);
 }
 
-function runSiteBuild(config: BackendConfig): void {
+async function runSiteBuild(config: BackendConfig): Promise<void> {
   if (!config.SITE_BUILD_COMMAND) return;
-  const result = spawnSync(config.SITE_BUILD_COMMAND, { shell: true, cwd: process.cwd(), encoding: "utf8" });
-  if (result.status !== 0) {
-    throw new Error(`site build failed: ${result.stderr || result.stdout}`);
-  }
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(config.SITE_BUILD_COMMAND!, { shell: true, cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"] });
+    let output = "";
+    child.stdout.on("data", (chunk) => { output += String(chunk); });
+    child.stderr.on("data", (chunk) => { output += String(chunk); });
+    child.once("error", reject);
+    child.once("exit", (code) => code === 0 ? resolve() : reject(new Error(`site build failed: ${output.trim() || `exit ${code}`}`)));
+  });
 }
 
 function insertSiteEvent(backendDb: BackendDb, eventType: string, severity: string, message: string, details: Record<string, unknown>): void {

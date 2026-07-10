@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { socialTargetSchema } from "./social.js";
 
 export const publicationStatusSchema = z.enum([

@@ -41,9 +41,8 @@ try {
     run("/usr/bin/git", ["pull", "--ff-only", "origin", "main"], { cwd: repository });
   }
   run("corepack", ["enable"], { cwd: repository });
-  run("corepack", ["prepare", "pnpm@10.13.1", "--activate"], { cwd: repository });
-  run("pnpm", ["install", "--frozen-lockfile"], { cwd: repository });
-  run("pnpm", ["run", "build"], { cwd: repository });
+  run("bun", ["install", "--frozen-lockfile"], { cwd: repository });
+  run("bun", ["run", "build"], { cwd: repository });
   syncDirectory(path.join(repository, "dist"), publicDirectory, new Set(["media", "habr-images"]));
 
   const habrSource = path.join(repository, "apps/web/public/habr-images");

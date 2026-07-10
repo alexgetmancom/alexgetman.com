@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { z } from "zod";
+import * as z from "zod";
 
 const booleanFlag = z
   .string()
@@ -99,6 +99,7 @@ const envSchema = z.object({
   PUBLIC_BASE_URL: z.string().default("https://alexgetman.com"),
   ENABLE_BOT_POLLING: booleanFlag.default("false"),
   ENABLE_WORKERS: booleanFlag.default("true"),
+  INDEXNOW_ENABLED: booleanFlag.default("true"),
 });
 
 export type BackendConfig = z.infer<typeof envSchema> & {

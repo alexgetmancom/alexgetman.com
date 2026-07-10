@@ -4,18 +4,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json",
-    "start": "node --enable-source-maps dist/src/index.js",
-    "ops": "tsx src/cli.ts",
+    "dev": "bun --watch src/index.ts",
+    "build": "bun build src/index.ts src/runtime/buildSite.ts src/cli.ts --outdir dist --target bun --splitting --minify --sourcemap=external",
+    "start": "bun --smol dist/index.js",
+    "ops": "bun src/cli.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
-    "check": "pnpm run typecheck && pnpm run test"
+    "test": "bun --bun vitest run",
+    "check": "bun run typecheck && bun run test"
   },
   "dependencies": {
     "@alexgetman/shared": "file:../../packages/shared",
     "@hono/node-server": "^1.17.1",
-    "better-sqlite3": "^12.11.1",
     "dotenv": "^16.6.1",
     "drizzle-orm": "^0.44.3",
     "grammy": "^1.36.3",
@@ -24,11 +23,11 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^22.16.0",
+    "@types/bun": "1.3.14",
+    "@types/node": "^24.0.0",
     "drizzle-kit": "^0.31.4",
     "tsx": "^4.20.3",
-    "typescript": "^5.8.3",
+    "typescript": "7.0.2",
     "vitest": "^3.2.4"
   }
 }

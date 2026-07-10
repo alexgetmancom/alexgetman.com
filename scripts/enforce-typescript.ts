@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const ignoredDirectories = new Set([".git", ".astro", "node_modules", "dist", "coverage", ".pnpm-store"]);
+const ignoredDirectories = new Set([".git", ".astro", "node_modules", "dist", "coverage"]);
 const forbiddenExtensions = new Set([".py", ".pyi", ".js", ".jsx", ".mjs", ".cjs"]);
 const shellNames = new Set(["sh", "bash", "zsh"]);
 const violations: string[] = [];

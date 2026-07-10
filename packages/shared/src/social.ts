@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 export const postLanguageSchema = z.enum(["ru", "en"]);
 export type PostLanguage = z.infer<typeof postLanguageSchema>;

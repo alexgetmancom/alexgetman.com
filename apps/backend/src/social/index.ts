@@ -12,7 +12,6 @@ import { publishToLinkedIn } from "./linkedin.js";
 import { publishToMastodon } from "./mastodon.js";
 import { payloadMedia } from "./payload.js";
 import { publishToTelegram } from "./telegram.js";
-import { publishTelegramStory } from "./telegramStories.js";
 import { publishToThreads } from "./threads.js";
 import { publishToX } from "./x.js";
 
@@ -43,8 +42,8 @@ export function createPublishers(config: BackendConfig, backendDb: BackendDb, fe
     instagram_story: (job) => withPreparedMedia(job, config, fetchImpl, (payload) => publishInstagramStory(payload, config, fetchImpl)),
     instagram_stories: (job) => withPreparedMedia(job, instagramEnConfig, fetchImpl, (payload) => publishInstagramStory(payload, instagramEnConfig, fetchImpl)),
     instagram_stories_ru: (job) => withPreparedMedia(job, instagramRuConfig, fetchImpl, (payload) => publishInstagramStory(payload, instagramRuConfig, fetchImpl)),
-    telegram_story: (job) => withPreparedMedia(job, config, fetchImpl, (payload) => publishTelegramStory(payload, config, backendDb, fetchImpl)),
-    telegram_stories: (job) => withPreparedMedia(job, config, fetchImpl, (payload) => publishTelegramStory(payload, config, backendDb, fetchImpl)),
+    telegram_story: (job) => withPreparedMedia(job, config, fetchImpl, async (payload) => (await import("./telegramStories.js")).publishTelegramStory(payload, config, backendDb, fetchImpl)),
+    telegram_stories: (job) => withPreparedMedia(job, config, fetchImpl, async (payload) => (await import("./telegramStories.js")).publishTelegramStory(payload, config, backendDb, fetchImpl)),
   };
 }
 

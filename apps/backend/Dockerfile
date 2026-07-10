@@ -1,4 +1,4 @@
-FROM node:22-bookworm-slim
+FROM oven/bun:1.3.14-debian
 
 ARG GIT_REVISION=unknown
 ENV GIT_REVISION=${GIT_REVISION}
@@ -9,22 +9,20 @@ RUN apt-get update \
 
 WORKDIR /app
 
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json tsconfig.base.json astro.config.ts ./
+COPY package.json bun.lock tsconfig.json tsconfig.base.json astro.config.ts ./
 COPY packages/shared ./packages/shared
 COPY apps/backend ./apps/backend
 COPY apps/web ./apps/web
 COPY scripts ./scripts
 
-RUN corepack enable \
-  && corepack prepare pnpm@10.13.1 --activate \
-  && pnpm install --frozen-lockfile
-RUN pnpm --filter @alexgetman/shared typecheck \
-  && pnpm --filter @alexgetman/backend typecheck \
-  && pnpm --filter @alexgetman/backend build
+RUN bun install --frozen-lockfile
+RUN bun run --filter @alexgetman/shared typecheck \
+  && bun run --filter @alexgetman/backend typecheck \
+  && bun run --filter @alexgetman/backend build
 
-RUN chown -R node:node /app
+RUN chown -R bun:bun /app
 
-USER node
+USER bun
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["node", "--enable-source-maps", "/app/apps/backend/dist/src/index.js"]
+CMD ["bun", "--smol", "/app/apps/backend/dist/index.js"]

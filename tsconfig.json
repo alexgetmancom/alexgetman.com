@@ -1,10 +1,9 @@
 {
   "extends": "astro/tsconfigs/strict",
   "compilerOptions": {
-    "baseUrl": ".",
     "paths": {
-      "@alexgetman/shared": ["packages/shared/src/index.ts"],
-      "@alexgetman/shared/*": ["packages/shared/src/*"]
+      "@alexgetman/shared": ["./packages/shared/src/index.ts"],
+      "@alexgetman/shared/*": ["./packages/shared/src/*"]
     }
   },
   "include": [".astro/types.d.ts", "apps/web/src/**/*", "astro.config.ts"],

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { publicationJobSchema } from "./publication.js";
 
 export const workerLoopStatusSchema = z.object({

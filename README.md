@@ -21,8 +21,8 @@ Runtime secrets, SQLite databases, Telegram sessions, generated media, logs and 
 
 ```bash
 corepack enable
-pnpm install --frozen-lockfile
-pnpm run dev
+bun install --frozen-lockfile
+bun run dev
 ```
 
 Open `http://127.0.0.1:4321`.
@@ -30,7 +30,7 @@ Open `http://127.0.0.1:4321`.
 ## Build
 
 ```bash
-pnpm run build
+bun run build
 ```
 
 The build generates responsive images first and then runs `astro build`.
@@ -38,7 +38,7 @@ The build generates responsive images first and then runs `astro build`.
 To run the full monorepo gate:
 
 ```bash
-pnpm run check:all
+bun run check:all
 ```
 
 That runs the Astro build and the TypeScript backend typecheck/test gate.
@@ -47,10 +47,10 @@ It also rejects Python, JavaScript and shell source files so the repository cann
 Backend operations are exposed through one TypeScript CLI:
 
 ```bash
-pnpm --filter @alexgetman/backend ops status --db ./data/pipeline.db
-pnpm --filter @alexgetman/backend ops backup --db ./data/pipeline.db
-pnpm --filter @alexgetman/backend ops audit --db ./data/pipeline.db
-pnpm --filter @alexgetman/backend ops capabilities --db ./data/pipeline.db
+bun run --filter @alexgetman/backend ops status --db ./data/pipeline.db
+bun run --filter @alexgetman/backend ops backup --db ./data/pipeline.db
+bun run --filter @alexgetman/backend ops audit --db ./data/pipeline.db
+bun run --filter @alexgetman/backend ops capabilities --db ./data/pipeline.db
 ```
 
 ## Content

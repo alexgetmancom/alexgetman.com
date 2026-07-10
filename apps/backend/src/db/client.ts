@@ -1,24 +1,31 @@
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import { Database } from "bun:sqlite";
+import { drizzle } from "drizzle-orm/bun-sqlite";
+import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import * as schema from "./schema.js";
 
 export type BackendDb = {
-  sqlite: Database.Database;
-  db: BetterSQLite3Database<typeof schema>;
+  sqlite: SqliteCompat;
+  db: BunSQLiteDatabase<typeof schema>;
   close: () => void;
+};
+
+type SqliteCompat = Omit<Database, "prepare" | "query"> & {
+  prepare: (sql: string) => any;
+  query: (sql: string) => any;
+  backup: (target: string) => Promise<void>;
 };
 
 export function openBackendDb(path: string, timeout = 30_000): BackendDb {
   if (path !== ":memory:") {
     mkdirSync(dirname(path), { recursive: true });
   }
-  const sqlite = new Database(path, { timeout });
-  sqlite.pragma("journal_mode = WAL");
-  sqlite.pragma(`busy_timeout = ${timeout}`);
-  sqlite.pragma("foreign_keys = ON");
+  const sqlite = new Database(path, { create: true, strict: true }) as SqliteCompat;
+  sqlite.backup = async (target: string) => { await Bun.write(target, sqlite.serialize()); };
+  sqlite.run("PRAGMA journal_mode = WAL");
+  sqlite.run(`PRAGMA busy_timeout = ${timeout}`);
+  sqlite.run("PRAGMA foreign_keys = ON");
   ensureCoreSchema(sqlite);
   const db = drizzle(sqlite, { schema });
   return {
@@ -28,7 +35,7 @@ export function openBackendDb(path: string, timeout = 30_000): BackendDb {
   };
 }
 
-function ensureCoreSchema(sqlite: Database.Database): void {
+function ensureCoreSchema(sqlite: SqliteCompat): void {
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS publish_jobs (
       job_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -439,7 +446,7 @@ function ensureCoreSchema(sqlite: Database.Database): void {
   sqlite.exec("CREATE INDEX IF NOT EXISTS idx_post_targets_target_external ON post_targets(target, external_id)");
 }
 
-function ensureColumn(sqlite: Database.Database, table: string, column: string, definition: string): void {
-  const columns = sqlite.pragma(`table_info(${table})`) as Array<{ name: string }>;
+function ensureColumn(sqlite: SqliteCompat, table: string, column: string, definition: string): void {
+  const columns = sqlite.query(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
   if (!columns.some((item) => item.name === column)) sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }

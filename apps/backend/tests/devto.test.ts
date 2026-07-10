@@ -31,7 +31,7 @@ describe("Dev.to publisher", () => {
         tags: ["AI News", "Type-Script", "LongTagLongTagLongTag"],
       },
       loadConfig({ DEVTO_API_KEY: "secret" }),
-      fetchMock as typeof fetch,
+      fetchMock as unknown as typeof fetch,
     );
 
     expect(result).toMatchObject({ ok: true, id: 123, url: "https://dev.to/a/post" });

@@ -3,7 +3,7 @@
   "compilerOptions": {
     "rootDir": ".",
     "outDir": "dist",
-    "types": ["node", "vitest/globals"],
+    "types": ["bun", "node", "vitest/globals"],
     "paths": {
       "@alexgetman/shared": ["../../packages/shared/src/index.ts"],
       "@alexgetman/shared/*": ["../../packages/shared/src/*"]

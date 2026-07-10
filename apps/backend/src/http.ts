@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import crypto from "node:crypto";
@@ -11,6 +12,7 @@ import { pipelineStatusPayload } from "./services/pipeline.js";
 import { batchLikes, clientIpHash, likesInfo, metricsSummary, recordPageview, toggleLike } from "./services/engagement.js";
 import { mcpResponse } from "./services/mcp.js";
 import { runCommandAction, type CommandAction } from "./services/actions.js";
+import { renderDashboard } from "./services/dashboard.js";
 
 export function createHttpApp(config: BackendConfig, backendDb: BackendDb) {
   const app = new Hono();
@@ -130,20 +132,7 @@ export function createHttpApp(config: BackendConfig, backendDb: BackendDb) {
 
   app.get("/command-center", (c) => {
     if (!commandAllowed(c, config)) return c.text("forbidden\n", 403);
-    const payload = commandCenterPayload(config, backendDb);
-    return c.html(`<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><title>Command center</title><meta name="viewport" content="width=device-width, initial-scale=1"></head>
-<body>
-  <h1>Command center</h1>
-  <h2>Queue</h2>
-  <pre>${escapeHtml(JSON.stringify(payload.queue, null, 2))}</pre>
-  <h2>Targets</h2>
-  <pre>${escapeHtml(JSON.stringify(payload.targets, null, 2))}</pre>
-  <h2>Recent events</h2>
-  <pre>${escapeHtml(JSON.stringify(payload.events.slice(0, 20), null, 2))}</pre>
-</body>
-</html>`);
+    return c.html(renderDashboard(commandCenterPayload(config, backendDb), c.req.query("tab")));
   });
 
   app.get("/feed.json", async (c) => {
@@ -161,6 +150,21 @@ export function createHttpApp(config: BackendConfig, backendDb: BackendDb) {
   });
 
   app.use("/media/*", serveStatic({ root: "/" }));
+
+  app.get("/*", async (c) => {
+    if (!c.req.path.endsWith(".md")) return c.text("not found\n", 404);
+    const root = path.resolve(config.SITE_PUBLIC_DIR);
+    const relative = decodeURIComponent(c.req.path).replace(/^\/+/, "");
+    const filePath = path.resolve(root, relative);
+    if (filePath !== root && !filePath.startsWith(`${root}${path.sep}`)) return c.text("forbidden\n", 403);
+    try {
+      const content = await readFile(filePath, "utf8");
+      recordPageview(backendDb, config, c.req.path.replace(/\.md$/, "") || "/");
+      return c.body(content, 200, { "content-type": "text/markdown; charset=utf-8" });
+    } catch {
+      return c.text("Markdown file not found\n", 404);
+    }
+  });
 
   return app;
 }

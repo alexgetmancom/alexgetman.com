@@ -25,7 +25,7 @@ services:
       dockerfile: apps/backend/Dockerfile
     image: alexgetman-backend:latest
     container_name: alexgetman-backend
-    command: ["node", "--enable-source-maps", "/app/apps/backend/dist/src/index.js"]
+    command: ["bun", "--smol", "/app/apps/backend/dist/index.js"]
     restart: unless-stopped
     env_file:
       - path: ./secrets.env
@@ -49,7 +49,7 @@ services:
       OBSERVABILITY_INTERVAL_SECONDS: "300"
       REMOTE_MEDIA_PATH: /media/threads
       PUBLIC_MEDIA_BASE_URL: https://alexgetman.com/media/threads
-      SITE_BUILD_COMMAND: node /app/apps/backend/dist/src/runtime/buildSite.js
+      SITE_BUILD_COMMAND: bun /app/apps/backend/dist/runtime/buildSite.js
       SITE_PUBLIC_DIR: /site-public
       ENABLE_BOT_POLLING: "true"
       ENABLE_TELEGRAM_STORIES: "true"
@@ -64,7 +64,7 @@ services:
     ports:
       - "127.0.0.1:8788:8788"
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8788/readyz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:8788/readyz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3

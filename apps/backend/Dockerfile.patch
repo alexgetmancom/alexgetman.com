@@ -5,8 +5,8 @@ ARG GIT_REVISION=unknown
 ENV GIT_REVISION=${GIT_REVISION}
 
 USER root
-COPY --chown=node:node dist /app/apps/backend/dist
-USER node
+COPY --chown=bun:bun dist /app/apps/backend/dist
+USER bun
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["node", "--enable-source-maps", "/app/apps/backend/dist/src/index.js"]
+CMD ["bun", "--smol", "/app/apps/backend/dist/index.js"]

@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -104,6 +104,29 @@ describe("Hono backend routes", () => {
       expect(backendDb.sqlite.prepare("SELECT text FROM post_locales WHERE post_id=? AND locale='en'").get(postId)).toEqual({ text: "Edited English" });
       expect((backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM ops_actions").get() as { count: number }).count).toBe(1);
       expect((backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM site_jobs WHERE post_id=?").get(postId) as { count: number }).count).toBe(3);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("serves generated Markdown safely and renders the full command center", async () => {
+    const backendDb = tempDb();
+    const dir = mkdtempSync(join(tmpdir(), "alexgetman-markdown-"));
+    writeFileSync(join(dir, "auth.md"), "# auth.md\n");
+    try {
+      const app = createHttpApp(loadConfig({ COMMAND_CENTER_TOKEN: "secret", SITE_PUBLIC_DIR: dir, SITE_METRICS_JSON: join(dir, "metrics.json") }), backendDb);
+      const markdown = await app.request("/auth.md");
+      expect(markdown.status).toBe(200);
+      expect(markdown.headers.get("content-type")).toContain("text/markdown");
+      expect(await markdown.text()).toBe("# auth.md\n");
+      expect((await app.request("/%2e%2e/package.json")).status).toBe(404);
+      const dashboard = await app.request("/command-center?tab=diagnostics&token=secret");
+      const html = await dashboard.text();
+      expect(dashboard.status).toBe(200);
+      expect(html).toContain("Publications");
+      expect(html).toContain("Credentials");
+      expect(html).toContain("Diagnostics");
+      expect(html).toContain("Lifecycle");
     } finally {
       backendDb.close();
     }
