@@ -10,7 +10,7 @@ COPY --chown=bun:bun tools/knip ./tools/knip
 COPY --chown=bun:bun biome.json knip.json ./
 
 USER bun
-RUN bun install --frozen-lockfile \
+RUN bun install --frozen-lockfile --ignore-scripts \
   && bun run --filter @alexgetman/shared typecheck \
   && bun run --filter @alexgetman/backend typecheck \
   && bun run --filter @alexgetman/backend build \

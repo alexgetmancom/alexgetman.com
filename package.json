@@ -44,6 +44,6 @@
     "typescript": "7.0.2"
   },
   "simple-git-hooks": {
-    "pre-commit": "bunx biome check --staged"
+    "pre-commit": "bunx biome check --staged --no-errors-on-unmatched"
   }
 }
