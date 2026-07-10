@@ -27,7 +27,7 @@
     "check:language": "tsx scripts/enforce-typescript.ts",
     "check:all": "tsx scripts/check-all.ts",
     "sync:production-web": "tsx scripts/web-sync.ts",
-    "prepare": "simple-git-hooks"
+    "hooks:install": "simple-git-hooks"
   },
   "dependencies": {
     "@astrojs/rss": "^4.0.18",
