@@ -6,11 +6,13 @@ import type { BackendConfig } from "./config.js";
 import type { BackendDb } from "./db/client.js";
 import { postTargets, publishJobs } from "./db/schema.js";
 import { log } from "./logger.js";
+import { pruneMediaCache } from "./media/prepare.js";
 import { runMetricsCycle } from "./metrics/index.js";
 import { claimDuePublishJobs, completePublishJob, failPublishJob, recoverStalePublishJobs } from "./queue/publish.js";
 import { type ScheduledLoop, startLoop } from "./scheduler.js";
 import { runObservabilityCycle } from "./services/observability.js";
 import { recordWorkerState } from "./services/workerState.js";
+import { runSiteJobCycle } from "./site/jobs.js";
 import { createPublishers, type Publisher } from "./social/index.js";
 
 export async function runPublishCycle(
@@ -75,6 +77,14 @@ export function startWorkers(config: BackendConfig, backendDb: BackendDb, bot: B
     startLoop("metrics", config.METRICS_REFRESH_INTERVAL_SECONDS * 1000, async () => {
       const checked = await runMetricsCycle(config, backendDb);
       log("debug", "metrics loop tick", { checked });
+    }),
+    startLoop("site", config.METRICS_REFRESH_INTERVAL_SECONDS * 1000, async () => {
+      const claimed = await runSiteJobCycle(config, backendDb);
+      log("debug", "site materialization loop tick", { claimed });
+    }),
+    startLoop("media-cache", 60 * 60 * 1000, async () => {
+      const removed = await pruneMediaCache(config);
+      if (removed) log("info", "pruned expired media cache", { removed });
     }),
     startLoop("observability", config.OBSERVABILITY_INTERVAL_SECONDS * 1000, async () => {
       const result = await runObservabilityCycle(config, backendDb, bot);

@@ -1,5 +1,5 @@
 import type { BackendDb } from "../db/client.js";
-import { metricSamples, postMetrics } from "../db/schema.js";
+import { type JsonValue, metricSamples, postMetrics } from "../db/schema.js";
 
 export function upsertMetrics(
   backendDb: BackendDb,
@@ -7,22 +7,24 @@ export function upsertMetrics(
   target: string,
   metrics: Record<string, number>,
   source: string,
-  raw: unknown,
+  raw: JsonValue,
 ): void {
   const sampledAt = new Date().toISOString();
-  const rawJson = JSON.stringify(raw);
   backendDb.sqlite.transaction(() => {
     for (const [name, value] of Object.entries(metrics)) {
       const normalized = Number.isFinite(value) ? Math.trunc(value) : 0;
       backendDb.db
         .insert(postMetrics)
-        .values({ postKey, target, metricName: name, value: normalized, source, sampledAt, error: null, rawJson })
+        .values({ postKey, target, metricName: name, value: normalized, source, sampledAt, error: null, rawJson: raw })
         .onConflictDoUpdate({
           target: [postMetrics.postKey, postMetrics.target, postMetrics.metricName],
-          set: { value: normalized, source, sampledAt, error: null, rawJson },
+          set: { value: normalized, source, sampledAt, error: null, rawJson: raw },
         })
         .run();
-      backendDb.db.insert(metricSamples).values({ postKey, target, metricName: name, value: normalized, sampledAt, source, rawJson }).run();
+      backendDb.db
+        .insert(metricSamples)
+        .values({ postKey, target, metricName: name, value: normalized, sampledAt, source, rawJson: raw })
+        .run();
     }
   })();
 }
@@ -33,16 +35,15 @@ export function upsertMetricError(
   target: string,
   source: string,
   error: string,
-  raw: unknown,
+  raw: JsonValue,
 ): void {
   const sampledAt = new Date().toISOString();
-  const rawJson = JSON.stringify(raw);
   backendDb.db
     .insert(postMetrics)
-    .values({ postKey, target, metricName: "views", value: null, source, sampledAt, error, rawJson })
+    .values({ postKey, target, metricName: "views", value: null, source, sampledAt, error, rawJson: raw })
     .onConflictDoUpdate({
       target: [postMetrics.postKey, postMetrics.target, postMetrics.metricName],
-      set: { source, sampledAt, error, rawJson },
+      set: { source, sampledAt, error, rawJson: raw },
     })
     .run();
 }

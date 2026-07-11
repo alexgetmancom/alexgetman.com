@@ -6,20 +6,11 @@ import { loadFeedItems } from "../../../utils/feed";
 import { getFirstSentence, postOgImagePath, truncateText } from "../../../utils/helpers";
 import { sortedHomePosts, topicStatsFor } from "../../../utils/home-posts";
 
-export async function getStaticPaths() {
-  const feedItems = loadFeedItems();
-  return feedItems
-    .filter((item: any) => item.has_ru && item.text && item.post_id)
-    .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    .map((item: any) => ({
-      params: { postId: String(item.post_id), slug: item.slug_ru },
-      props: { item },
-    }));
-}
+export const prerender = false;
 
 const { postId, slug } = Astro.params;
-const { item } = Astro.props;
 const feedItems = loadFeedItems();
+const item = feedItems.find((entry: any) => String(entry.post_id) === String(postId) && entry.slug_ru === slug) ?? {};
 const russianPosts = sortedHomePosts(feedItems, "ru");
 const selectedPost = russianPosts.find((post) => String(post.id) === String(postId));
 const leadPost = russianPosts[0] || null;

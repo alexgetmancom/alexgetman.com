@@ -154,15 +154,6 @@ function _fileSize(filePath: string): number {
   return fs.statSync(filePath).size;
 }
 
-export function safeMediaName(value: string): string {
-  return (
-    value
-      .replace(/[^A-Za-z0-9_.-]+/g, "_")
-      .replace(/^_+|_+$/g, "")
-      .slice(0, 120) || "media"
-  );
-}
-
 export function mediaExtension(item: PublishMediaItem): string {
   if (item.localPath) {
     const ext = path.extname(item.localPath);

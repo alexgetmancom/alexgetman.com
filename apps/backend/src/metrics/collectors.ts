@@ -1,10 +1,11 @@
 import type { BackendConfig } from "../config.js";
+import type { JsonValue } from "../db/schema.js";
 import { requestJson, requestText } from "../social/http.js";
 import { createChannelStoryClient } from "../social/telegramSession.js";
 import { oauthAuthorization } from "../social/x.js";
 import type { MetricTask } from "./schedule.js";
 
-export type MetricResult = { metrics: Record<string, number>; source: string; raw: unknown; url?: string };
+export type MetricResult = { metrics: Record<string, number>; source: string; raw: JsonValue; url?: string };
 export type MetricCollector = (task: MetricTask) => Promise<MetricResult>;
 
 export function createMetricCollectors(config: BackendConfig, fetchImpl: typeof fetch = fetch): Record<string, MetricCollector> {
@@ -59,7 +60,7 @@ async function collectThreads(task: MetricTask, config: BackendConfig, fetchImpl
     task.target === "threads_en" ? (config.THREADS_EN_ACCESS_TOKEN ?? config.THREADS_ACCESS_TOKEN) : config.THREADS_ACCESS_TOKEN;
   if (!token || task.externalIds.length === 0) throw new Error("missing_threads_token_or_id");
   const totals: Record<string, number> = {};
-  const parts: unknown[] = [];
+  const parts: JsonValue[] = [];
   for (const id of task.externalIds) {
     const url = new URL(`https://graph.threads.net/v1.0/${id}/insights`);
     url.searchParams.set("metric", config.THREADS_METRICS);
@@ -167,7 +168,7 @@ async function collectDevto(task: MetricTask, config: BackendConfig, fetchImpl: 
       replies: Number(article.comments_count ?? 0),
     },
     source,
-    raw: { api_id: article.id, slug },
+    raw: { api_id: article.id ?? null, slug: slug ?? null },
   };
 }
 
@@ -251,7 +252,7 @@ async function collectGitHub(task: MetricTask, config: BackendConfig, fetchImpl:
   return {
     metrics: { likes: Number(discussion?.reactions?.totalCount ?? 0), replies: Number(discussion?.comments?.totalCount ?? 0) },
     source: "github_graphql",
-    raw: { owner, repo, number },
+    raw: { owner: owner ?? null, repo: repo ?? null, number: number ?? null },
   };
 }
 

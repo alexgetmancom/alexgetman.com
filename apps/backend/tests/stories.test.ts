@@ -36,6 +36,20 @@ describe("story publishers", () => {
     }
   });
 
+  it("letterboxes video into a 1080x1920 H.264 story", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-story-video-"));
+    const source = path.join(dir, "source.mp4");
+    fs.writeFileSync(source, "fake video");
+    try {
+      const generated = await generateStoryMedia([{ type: "video", local_path: source }], 2, "en", loadConfig({ DATA_DIR: dir }));
+      expect(generated[0]).toMatchObject({ story_width: 1080, story_height: 1920 });
+      expect(String(generated[0]?.story_local_path)).toEndWith(".mp4");
+      expect(fs.existsSync(String(generated[0]?.story_local_path))).toBe(true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("creates, waits for and publishes an Instagram story", async () => {
     const requests: Array<{ url: string; init?: RequestInit }> = [];
     const responses = [

@@ -63,7 +63,6 @@ describe("site jobs", () => {
       FEED_JSON: path.join(tempDir, "feed.json"),
       SITE_METRICS_JSON: path.join(tempDir, "metrics.json"),
       SITE_PUBLIC_DIR: tempDir,
-      SITE_BUILDER_MODE: "true",
     });
     backendDb = openBackendDb(":memory:");
     const now = new Date().toISOString();

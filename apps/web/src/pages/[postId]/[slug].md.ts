@@ -1,18 +1,12 @@
 import { loadFeedItems, siteUrlFromContext } from "../../utils/helpers";
 
-export async function getStaticPaths() {
-  return loadFeedItems()
-    .filter((item) => item.has_en && item.text_en && item.post_id)
-    .map((item) => {
-      return {
-        params: { postId: String(item.post_id), slug: item.slug_en },
-        props: { item },
-      };
-    });
-}
+export const prerender = false;
 
 export async function GET(context: any) {
-  const { item } = context.props;
+  const item = loadFeedItems().find(
+    (entry) => String(entry.post_id) === String(context.params.postId) && entry.slug_en === context.params.slug,
+  );
+  if (!item) return new Response("Markdown file not found\n", { status: 404 });
   const siteUrl = siteUrlFromContext(context);
 
   const lines = [

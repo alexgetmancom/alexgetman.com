@@ -19,9 +19,6 @@ type SiteJob = {
 };
 
 export async function runSiteJobCycle(config: BackendConfig, backendDb: BackendDb): Promise<number> {
-  if (!config.SITE_BUILDER_MODE) {
-    throw new Error("Site jobs may only run in the dedicated site-builder process");
-  }
   recoverStaleSiteJobs(config, backendDb);
   const jobs = claimSiteJobs(config, backendDb);
   if (jobs.length === 0) {
@@ -30,11 +27,12 @@ export async function runSiteJobCycle(config: BackendConfig, backendDb: BackendD
   }
   try {
     await renderFeedFiles(config, backendDb);
-    if (config.SITE_BUILD_COMMAND) {
-      await runSiteBuild(config);
-      const urls = publishContentIndex(config, backendDb);
-      await pingIndexNow(config, urls);
-    }
+    const urls = publishContentIndex(config, backendDb);
+    // IndexNow is an external notification, not a prerequisite for serving the
+    // already materialized feed through SSR.
+    void pingIndexNow(config, urls).catch((error) => {
+      insertSiteEvent(backendDb, "site.indexnow.failed", "warn", String(error instanceof Error ? error.message : error), { urls });
+    });
     completeSiteJobs(backendDb, jobs);
     recordWorkerState(backendDb, "site", { claimed: jobs.length, published: jobs.length });
   } catch (error) {
@@ -264,24 +262,6 @@ async function atomicWriteJson(filePath: string, value: unknown): Promise<void> 
   await Bun.write(temp, `${JSON.stringify(value, null, 2)}\n`);
   fs.chmodSync(temp, 0o664);
   fs.renameSync(temp, filePath);
-}
-
-async function runSiteBuild(config: BackendConfig): Promise<void> {
-  if (!config.SITE_BUILD_COMMAND) return;
-  const child = Bun.spawn(["/bin/sh", "-c", config.SITE_BUILD_COMMAND], { cwd: process.cwd(), stdout: "pipe", stderr: "pipe" });
-  let timedOut = false;
-  const timeout = setTimeout(() => {
-    timedOut = true;
-    child.kill("SIGKILL");
-  }, config.SITE_BUILD_TIMEOUT_SECONDS * 1000);
-  const [exitCode, stdout, stderr] = await Promise.all([
-    child.exited,
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-  ]);
-  clearTimeout(timeout);
-  if (timedOut) throw new Error(`site build timed out after ${config.SITE_BUILD_TIMEOUT_SECONDS}s`);
-  if (exitCode !== 0) throw new Error(`site build failed: ${(stdout + stderr).trim().slice(-4000) || `exit ${exitCode}`}`);
 }
 
 function insertSiteEvent(

@@ -21,6 +21,14 @@ describe("Dev.to publisher", () => {
     });
   });
 
+  it("embeds the first public image in Markdown exactly once", () => {
+    const article = devtoArticleFromPayload(
+      { title: "Title", text_en: "Body", media: [{ type: "IMAGE", vps_url: "https://alexgetman.com/media/post.jpg" }] },
+      loadConfig({}),
+    );
+    expect(article.bodyMarkdown).toBe("![Title](https://alexgetman.com/media/post.jpg)\n\nBody");
+  });
+
   it("sends Dev.to API request with normalized tags and auth", async () => {
     const fetchMock = mock(
       async (_url: string | URL | Request, _init?: RequestInit) =>

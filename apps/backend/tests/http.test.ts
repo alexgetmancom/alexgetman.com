@@ -2,10 +2,10 @@ import { describe, expect, it, mock } from "bun:test";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createApiHandler } from "../src/api.js";
 import { createDraftFromMessage, publishDraftToQueue } from "../src/bot.js";
 import { loadConfig } from "../src/config.js";
 import { openBackendDb } from "../src/db/client.js";
-import { createHttpApp } from "../src/http.js";
 import { enqueuePublishJob } from "../src/queue/publish.js";
 
 function tempDb() {
@@ -13,11 +13,25 @@ function tempDb() {
   return openBackendDb(join(dir, "pipeline.db"), 5000);
 }
 
-describe("Hono backend routes", () => {
+function createApiApp(
+  config: ReturnType<typeof loadConfig>,
+  backendDb: ReturnType<typeof openBackendDb>,
+  bot: import("grammy").Bot | null = null,
+) {
+  const handler = createApiHandler({ config, backendDb, bot });
+  return {
+    request(path: string, init?: RequestInit) {
+      const request = new Request(`http://localhost${path}`, init);
+      return handler(request, new URL(request.url).pathname);
+    },
+  };
+}
+
+describe("Astro endpoint controller", () => {
   it("protects command center JSON with legacy token sources", async () => {
     const backendDb = tempDb();
     try {
-      const app = createHttpApp(loadConfig({ COMMAND_CENTER_TOKEN: "secret" }), backendDb);
+      const app = createApiApp(loadConfig({ COMMAND_CENTER_TOKEN: "secret" }), backendDb);
       expect((await app.request("/api/command-center")).status).toBe(403);
       expect((await app.request("/api/command-center", { headers: { "X-Command-Token": "secret" } })).status).toBe(200);
       expect((await app.request("/api/command-center?token=secret")).status).toBe(200);
@@ -35,7 +49,7 @@ describe("Hono backend routes", () => {
         postKey: "telegram:alexgetmancom:123",
         payload: { title: "Debug", bodyMarkdown: "Body" },
       });
-      const app = createHttpApp(loadConfig({ COMMAND_CENTER_TOKEN: "secret" }), backendDb);
+      const app = createApiApp(loadConfig({ COMMAND_CENTER_TOKEN: "secret" }), backendDb);
       const response = await app.request("/api/post-debug?ref=123", { headers: { "X-Admin-Token": "secret" } });
       expect(response.status).toBe(200);
       const payload = (await response.json()) as { ref: { postKey: string }; jobs: unknown[] };
@@ -56,7 +70,7 @@ describe("Hono backend routes", () => {
         media: [],
       });
       publishDraftToQueue(backendDb, draftId);
-      const app = createHttpApp(loadConfig({}), backendDb);
+      const app = createApiApp(loadConfig({}), backendDb);
       const response = await app.request("/api/pipeline-status");
       const payload = (await response.json()) as {
         ok: boolean;
@@ -83,7 +97,7 @@ describe("Hono backend routes", () => {
     const dir = mkdtempSync(join(tmpdir(), "alexgetman-engagement-"));
     try {
       const handleUpdate = mock(async () => undefined);
-      const app = createHttpApp(
+      const app = createApiApp(
         loadConfig({ SITE_METRICS_JSON: join(dir, "metrics.json"), LIKES_SALT: "salt", TELEGRAM_WEBHOOK_SECRET: "webhook-secret" }),
         backendDb,
         { handleUpdate } as unknown as import("grammy").Bot,
@@ -133,7 +147,7 @@ describe("Hono backend routes", () => {
     try {
       const draftId = createDraftFromMessage(backendDb, 42, { text: "Исходник", textEn: "Original", entities: [], media: [] });
       const postId = publishDraftToQueue(backendDb, draftId);
-      const app = createHttpApp(loadConfig({ COMMAND_CENTER_TOKEN: "secret" }), backendDb);
+      const app = createApiApp(loadConfig({ COMMAND_CENTER_TOKEN: "secret" }), backendDb);
       const response = await app.request("/api/command-center/action", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -153,26 +167,19 @@ describe("Hono backend routes", () => {
     }
   });
 
-  it("serves generated Markdown safely and renders the full command center", async () => {
+  it("renders the full command center through the framework-neutral controller", async () => {
     const backendDb = tempDb();
     const dir = mkdtempSync(join(tmpdir(), "alexgetman-markdown-"));
-    writeFileSync(join(dir, "auth.md"), "# auth.md\n");
     try {
       backendDb.sqlite
         .prepare(
           "INSERT INTO credential_checks(target,status,required_env_json,missing_env_json,last_checked_at) VALUES ('telegram','ready','[]','[]',?)",
         )
         .run(new Date().toISOString());
-      const app = createHttpApp(
+      const app = createApiApp(
         loadConfig({ COMMAND_CENTER_TOKEN: "secret", SITE_PUBLIC_DIR: dir, SITE_METRICS_JSON: join(dir, "metrics.json") }),
         backendDb,
       );
-      const markdown = await app.request("/auth.md");
-      expect(markdown.status).toBe(200);
-      expect(markdown.headers.get("content-type")).toContain("text/markdown");
-      expect(markdown.headers.get("link")).toBe('<https://alexgetman.com/auth/>; rel="canonical"');
-      expect(await markdown.text()).toBe("# auth.md\n");
-      expect((await app.request("/%2e%2e/package.json")).status).toBe(404);
       const dashboard = await app.request("/command-center?tab=diagnostics&token=secret");
       const html = await dashboard.text();
       expect(dashboard.status).toBe(200);
@@ -192,7 +199,7 @@ describe("Hono backend routes", () => {
   it("streams current pipeline snapshots as SSE", async () => {
     const backendDb = tempDb();
     try {
-      const app = createHttpApp(loadConfig({}), backendDb);
+      const app = createApiApp(loadConfig({}), backendDb);
       const response = await app.request("/api/pipeline-status/stream");
       expect(response.status).toBe(200);
       expect(response.headers.get("content-type")).toContain("text/event-stream");

@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun --watch src/index.ts",
-    "build": "bun build src/index.ts src/runtime/buildSite.ts src/site/builder.ts src/cli.ts --outdir dist --target bun --splitting --minify --sourcemap=external",
-    "start": "bun --smol dist/index.js",
+    "dev": "bun --watch ../../apps/web/server.ts",
+    "build": "bun build src/cli.ts --outdir dist --target bun --splitting --minify --sourcemap=external",
+    "start": "bun --smol ../../apps/web/server.ts",
     "ops": "bun src/cli.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "bun test tests/*.test.ts",
@@ -17,7 +17,7 @@
     "drizzle-orm": "^0.45.2",
     "drizzle-zod": "^0.8.3",
     "grammy": "^1.44.0",
-    "hono": "^4.12.29",
+    "oauth-1.0a": "^2.2.6",
     "p-limit": "^7.3.0",
     "zod": "^4.4.3"
   },

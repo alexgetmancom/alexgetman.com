@@ -1,5 +1,7 @@
+import { asc, eq, sql } from "drizzle-orm";
 import { TARGETS } from "../botTargets.js";
 import type { BackendDb } from "../db/client.js";
+import { mediaTestCases, mediaTestResults, platformCapabilities, posts, postTargets } from "../db/schema.js";
 
 const MEDIA_TEST_CASES = [
   ["T01", "text_only", "Text only", "Send a plain text message."],
@@ -17,58 +19,95 @@ const expectedTargets = ["telegram", "site_ru", "site_en", "threads_ru", "linked
 
 export function seedCapabilities(backendDb: BackendDb): void {
   const now = new Date().toISOString();
-  backendDb.sqlite.transaction(() => {
+  backendDb.db.transaction((tx) => {
     for (const [testId, formatKey, title, recipe] of MEDIA_TEST_CASES) {
-      backendDb.sqlite
-        .prepare(`INSERT INTO media_test_cases(test_id,format_key,title,input_recipe,expected_targets_json,created_at,updated_at)
-        VALUES (?,?,?,?,?,?,?) ON CONFLICT(test_id) DO UPDATE SET format_key=excluded.format_key,title=excluded.title,input_recipe=excluded.input_recipe,expected_targets_json=excluded.expected_targets_json,updated_at=excluded.updated_at`)
-        .run(testId, formatKey, title, recipe, JSON.stringify(expectedTargets), now, now);
+      tx.insert(mediaTestCases)
+        .values({
+          testId,
+          formatKey,
+          title,
+          inputRecipe: recipe,
+          expectedTargetsJson: JSON.stringify(expectedTargets),
+          createdAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: mediaTestCases.testId,
+          set: { formatKey, title, inputRecipe: recipe, expectedTargetsJson: JSON.stringify(expectedTargets), updatedAt: now },
+        })
+        .run();
       for (const [target] of TARGETS)
-        backendDb.sqlite
-          .prepare("INSERT OR IGNORE INTO platform_capabilities(target,format_key,status,updated_at) VALUES (?,?,'unknown',?)")
-          .run(target, formatKey, now);
+        tx.insert(platformCapabilities).values({ target, formatKey, status: "unknown", updatedAt: now }).onConflictDoNothing().run();
     }
-  })();
+  });
 }
 
 export function recordCapabilityPost(backendDb: BackendDb, testId: string, messageId: number, notes?: string): string {
   seedCapabilities(backendDb);
-  const test = backendDb.sqlite.prepare("SELECT * FROM media_test_cases WHERE test_id=?").get(testId) as
-    | Record<string, unknown>
-    | undefined;
+  const test = backendDb.db.select().from(mediaTestCases).where(eq(mediaTestCases.testId, testId)).get();
   if (!test) throw new Error(`unknown test: ${testId}`);
-  const post = backendDb.sqlite.prepare("SELECT post_key FROM posts WHERE message_id=?").get(messageId) as { post_key: string } | undefined;
+  const post = backendDb.db.select({ postKey: posts.postKey }).from(posts).where(eq(posts.messageId, messageId)).get();
   if (!post) throw new Error(`message not found: ${messageId}`);
-  const rows = backendDb.sqlite.prepare("SELECT * FROM post_targets WHERE post_key=?").all(post.post_key) as Record<string, unknown>[];
-  const byTarget = new Map(rows.map((row) => [String(row.target), row]));
-  const expected = JSON.parse(String(test.expected_targets_json)) as string[];
+  const rows = backendDb.db.select().from(postTargets).where(eq(postTargets.postKey, post.postKey)).all();
+  const byTarget = new Map(rows.map((row) => [row.target, row]));
+  const expected = JSON.parse(test.expectedTargetsJson) as string[];
   const statuses: string[] = [];
   const now = new Date().toISOString();
-  backendDb.sqlite.transaction(() => {
+  backendDb.db.transaction((tx) => {
     for (const [target] of TARGETS) {
       const row = byTarget.get(target);
       const status = row?.status === "published" ? "supported" : row?.skipped ? "blocked" : row?.status === "failed" ? "failed" : "unknown";
       if (expected.includes(target)) statuses.push(status);
-      backendDb.sqlite
-        .prepare(`INSERT INTO media_test_results(test_id,target,message_id,status,external_id,url,error,notes,raw_json,checked_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(test_id,target,message_id) DO UPDATE SET status=excluded.status,external_id=excluded.external_id,url=excluded.url,error=excluded.error,notes=excluded.notes,raw_json=excluded.raw_json,checked_at=excluded.checked_at`)
-        .run(
+      tx.insert(mediaTestResults)
+        .values({
           testId,
           target,
           messageId,
           status,
-          row?.external_id ?? null,
-          row?.url ?? null,
-          row?.error ?? null,
-          notes ?? null,
-          row?.raw_json ?? null,
-          now,
-        );
+          externalId: row?.externalId ?? null,
+          url: row?.url ?? null,
+          error: row?.error ?? null,
+          notes: notes ?? null,
+          rawJson: row?.rawJson ?? null,
+          checkedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [mediaTestResults.testId, mediaTestResults.target, mediaTestResults.messageId],
+          set: {
+            status,
+            externalId: row?.externalId ?? null,
+            url: row?.url ?? null,
+            error: row?.error ?? null,
+            notes: notes ?? null,
+            rawJson: row?.rawJson ?? null,
+            checkedAt: now,
+          },
+        })
+        .run();
       if (expected.includes(target) && ["supported", "failed", "blocked"].includes(status)) {
-        backendDb.sqlite
-          .prepare(`INSERT INTO platform_capabilities(target,format_key,status,evidence_test_id,evidence_message_id,evidence_url,notes,updated_at)
-          VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(target,format_key) DO UPDATE SET status=excluded.status,evidence_test_id=excluded.evidence_test_id,evidence_message_id=excluded.evidence_message_id,evidence_url=excluded.evidence_url,notes=excluded.notes,updated_at=excluded.updated_at`)
-          .run(target, test.format_key, status, testId, messageId, row?.url ?? row?.external_id ?? null, notes ?? null, now);
+        tx.insert(platformCapabilities)
+          .values({
+            target,
+            formatKey: test.formatKey,
+            status,
+            evidenceTestId: testId,
+            evidenceMessageId: messageId,
+            evidenceUrl: row?.url ?? row?.externalId ?? null,
+            notes: notes ?? null,
+            updatedAt: now,
+          })
+          .onConflictDoUpdate({
+            target: [platformCapabilities.target, platformCapabilities.formatKey],
+            set: {
+              status,
+              evidenceTestId: testId,
+              evidenceMessageId: messageId,
+              evidenceUrl: row?.url ?? row?.externalId ?? null,
+              notes: notes ?? null,
+              updatedAt: now,
+            },
+          })
+          .run();
       }
     }
     const testStatus = statuses.every((value) => value === "supported")
@@ -78,17 +117,31 @@ export function recordCapabilityPost(backendDb: BackendDb, testId: string, messa
         : statuses.some((value) => value === "supported")
           ? "partial"
           : "pending";
-    backendDb.sqlite
-      .prepare("UPDATE media_test_cases SET status=?,last_message_id=?,notes=COALESCE(?,notes),updated_at=? WHERE test_id=?")
-      .run(testStatus, messageId, notes ?? null, now, testId);
-  })();
-  return String((backendDb.sqlite.prepare("SELECT status FROM media_test_cases WHERE test_id=?").get(testId) as { status: string }).status);
+    tx.update(mediaTestCases)
+      .set({ status: testStatus, lastMessageId: messageId, ...(notes ? { notes } : {}), updatedAt: now })
+      .where(eq(mediaTestCases.testId, testId))
+      .run();
+  });
+  return (
+    backendDb.db.select({ status: mediaTestCases.status }).from(mediaTestCases).where(eq(mediaTestCases.testId, testId)).get()?.status ??
+    "pending"
+  );
 }
 
 export function capabilitySummary(backendDb: BackendDb): Record<string, unknown>[] {
   seedCapabilities(backendDb);
-  return backendDb.sqlite
-    .prepare(`SELECT c.test_id,c.title,c.format_key,c.status,c.last_message_id,
-    json_group_object(p.target,p.status) AS capabilities FROM media_test_cases c LEFT JOIN platform_capabilities p ON p.format_key=c.format_key GROUP BY c.test_id ORDER BY c.test_id`)
-    .all() as Record<string, unknown>[];
+  return backendDb.db
+    .select({
+      testId: mediaTestCases.testId,
+      title: mediaTestCases.title,
+      formatKey: mediaTestCases.formatKey,
+      status: mediaTestCases.status,
+      lastMessageId: mediaTestCases.lastMessageId,
+      capabilities: sql<string>`json_group_object(${platformCapabilities.target}, ${platformCapabilities.status})`,
+    })
+    .from(mediaTestCases)
+    .leftJoin(platformCapabilities, eq(platformCapabilities.formatKey, mediaTestCases.formatKey))
+    .groupBy(mediaTestCases.testId)
+    .orderBy(asc(mediaTestCases.testId))
+    .all();
 }

@@ -3,14 +3,7 @@ import LegacyRedirect from "../../../components/LegacyRedirect.astro";
 import { loadFeedItems } from "../../../utils/feed";
 import { categorySlugFromBadge, getSmartBadge } from "../../../utils/helpers";
 
-export async function getStaticPaths() {
-  const categories = new Set(
-    loadFeedItems()
-      .filter((item: any) => item.has_ru && item.text && item.post_id)
-      .map((item: any) => categorySlugFromBadge(getSmartBadge(item.text || ""))),
-  );
-  return Array.from(categories).map((category) => ({ params: { category } }));
-}
+export const prerender = false;
 ---
 
 <LegacyRedirect target="/ru/" title="Категория переехала" message="Эта страница переехала в главный новостной плеер." lang="ru" />

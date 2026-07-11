@@ -1,10 +1,9 @@
-import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { BackendConfig } from "../config.js";
 import { runFfmpeg } from "../runtime/ffmpeg.js";
 import { requestJson } from "../social/http.js";
-import { mediaExtension, type PublishMediaItem, safeMediaName } from "../social/payload.js";
+import { mediaExtension, type PublishMediaItem } from "../social/payload.js";
 
 type TelegramFileResponse = {
   ok?: boolean;
@@ -18,38 +17,32 @@ export async function prepareMediaItems(
   sourceItems: PublishMediaItem[],
   fetchImpl: typeof fetch = fetch,
 ): Promise<{ items: PublishMediaItem[]; cleanup: () => Promise<void> }> {
-  const batchId = `${Date.now()}_${randomUUID()}`;
   const tempFiles: string[] = [];
-  const stagedFiles: string[] = [];
   const prepared: PublishMediaItem[] = [];
-  await fs.promises.mkdir(config.TEMP_MEDIA_DIR, { recursive: true });
+  await fs.promises.mkdir(config.MEDIA_CACHE_DIR, { recursive: true });
   await fs.promises.mkdir(config.REMOTE_MEDIA_PATH, { recursive: true });
 
   for (let index = 0; index < sourceItems.length; index += 1) {
     const item = sourceItems[index]!;
-    const localPath = await ensureLocalMedia(config, item, index, batchId, tempFiles, fetchImpl);
+    const cacheKey = await mediaCacheKey(item, index);
+    const localPath = await ensureLocalMedia(config, item, cacheKey, fetchImpl);
     let uploadPath = localPath;
     if (item.type === "VIDEO") {
-      uploadPath = await normalizeVideoForPublicUpload(config, localPath);
-      tempFiles.push(uploadPath);
+      uploadPath = await normalizeVideoForPublicUpload(config, localPath, cacheKey);
     }
-    const remoteFilename = `${batchId}_crosspost_${index}_${safeMediaName(item.fileId || localPath)}${mediaExtension(item)}`;
+    const remoteFilename = `cache-${cacheKey}${path.extname(uploadPath) || mediaExtension(item)}`;
     const stagedPath = path.join(config.REMOTE_MEDIA_PATH, remoteFilename);
-    await fs.promises.copyFile(uploadPath, stagedPath);
-    await fs.promises.chmod(stagedPath, 0o644);
-    stagedFiles.push(stagedPath);
+    await copyIfMissing(uploadPath, stagedPath);
 
     const preparedItem: PublishMediaItem = {
       ...item,
       localPath: uploadPath,
       vpsUrl: `${config.PUBLIC_MEDIA_BASE_URL.replace(/\/$/, "")}/${remoteFilename}`,
     };
-    if (item.storyLocalPath && item.type === "IMAGE") {
-      const storyRemoteFilename = `${Math.floor(Date.now() / 1000)}_crosspost_${index}_${safeMediaName(item.storyLocalPath)}_story.jpg`;
+    if (item.storyLocalPath) {
+      const storyRemoteFilename = `cache-${cacheKey}-story${path.extname(item.storyLocalPath) || mediaExtension(item)}`;
       const storyStagedPath = path.join(config.REMOTE_MEDIA_PATH, storyRemoteFilename);
-      await fs.promises.copyFile(item.storyLocalPath, storyStagedPath);
-      await fs.promises.chmod(storyStagedPath, 0o644);
-      stagedFiles.push(storyStagedPath);
+      await copyIfMissing(item.storyLocalPath, storyStagedPath);
       preparedItem.storyVpsUrl = `${config.PUBLIC_MEDIA_BASE_URL.replace(/\/$/, "")}/${storyRemoteFilename}`;
     }
     prepared.push(preparedItem);
@@ -59,30 +52,44 @@ export async function prepareMediaItems(
     items: prepared,
     cleanup: async () => {
       await Promise.allSettled(tempFiles.map((file) => fs.promises.rm(file, { force: true })));
-      if (stagedFiles.length > 0) {
-        await Promise.allSettled(stagedFiles.map((file) => fs.promises.rm(file, { force: true })));
-      }
     },
   };
 }
 
-async function ensureLocalMedia(
-  config: BackendConfig,
-  item: PublishMediaItem,
-  index: number,
-  batchId: string,
-  tempFiles: string[],
-  fetchImpl: typeof fetch,
-): Promise<string> {
-  if (item.localPath) return item.localPath;
+export async function pruneMediaCache(config: BackendConfig, now = Date.now()): Promise<number> {
+  const cutoff = now - config.MEDIA_CACHE_TTL_SECONDS * 1000;
+  const roots = [config.MEDIA_CACHE_DIR, config.REMOTE_MEDIA_PATH];
+  let removed = 0;
+  for (const root of roots) {
+    const entries = await fs.promises.readdir(root, { withFileTypes: true }).catch(() => []);
+    await Promise.all(
+      entries.map(async (entry) => {
+        if (!entry.isFile() || (root === config.REMOTE_MEDIA_PATH && !entry.name.startsWith("cache-"))) return;
+        const target = path.join(root, entry.name);
+        const stat = await fs.promises.stat(target).catch(() => null);
+        if (stat && stat.mtimeMs < cutoff) {
+          await fs.promises.rm(target, { force: true });
+          removed += 1;
+        }
+      }),
+    );
+  }
+  return removed;
+}
+
+async function ensureLocalMedia(config: BackendConfig, item: PublishMediaItem, cacheKey: string, fetchImpl: typeof fetch): Promise<string> {
+  const extension = mediaExtension(item);
+  const target = path.join(config.MEDIA_CACHE_DIR, `${cacheKey}${extension}`);
+  if (await Bun.file(target).exists()) return target;
+  if (item.localPath) {
+    await copyIfMissing(item.localPath, target);
+    return target;
+  }
   if (!item.fileId) throw new Error("media item has neither localPath nor fileId");
   const fileUrl = await getTelegramFileUrl(config, item.fileId, item.token, fetchImpl);
-  const ext = mediaExtension(item);
-  const target = path.join(config.TEMP_MEDIA_DIR, `telegram_${batchId}_${index}_${safeMediaName(item.fileId)}${ext}`);
   if (fileUrl.startsWith("file://")) {
     const source = fileUrl.slice("file://".length);
-    await fs.promises.copyFile(source, target);
-    tempFiles.push(target);
+    await copyIfMissing(source, target);
     return target;
   }
   const response = await fetchImpl(fileUrl);
@@ -91,8 +98,7 @@ async function ensureLocalMedia(
     throw new Error(`Telegram file download failed: ${response.status} ${body}`);
   }
   const bytes = Buffer.from(await response.arrayBuffer());
-  await fs.promises.writeFile(target, bytes);
-  tempFiles.push(target);
+  await Bun.write(target, bytes);
   return target;
 }
 
@@ -115,11 +121,9 @@ async function getTelegramFileUrl(
   return `${apiBase}/file/bot${botToken}/${filePath}`;
 }
 
-async function normalizeVideoForPublicUpload(config: BackendConfig, inputPath: string): Promise<string> {
-  const outputPath = path.join(
-    config.TEMP_MEDIA_DIR,
-    `threads_${Math.floor(Date.now() / 1000)}_${path.basename(inputPath, path.extname(inputPath))}.mp4`,
-  );
+async function normalizeVideoForPublicUpload(config: BackendConfig, inputPath: string, cacheKey: string): Promise<string> {
+  const outputPath = path.join(config.MEDIA_CACHE_DIR, `${cacheKey}.normalized.mp4`);
+  if (await Bun.file(outputPath).exists()) return outputPath;
   await runFfmpeg(
     [
       "-y",
@@ -148,4 +152,26 @@ async function normalizeVideoForPublicUpload(config: BackendConfig, inputPath: s
     config.FFMPEG_TIMEOUT_SECONDS,
   );
   return outputPath;
+}
+
+async function mediaCacheKey(item: PublishMediaItem, index: number): Promise<string> {
+  const localStat = item.localPath ? await fs.promises.stat(item.localPath).catch(() => null) : null;
+  const identity = JSON.stringify({
+    index,
+    type: item.type,
+    fileId: item.fileId ?? null,
+    localPath: item.localPath ?? null,
+    size: localStat?.size ?? null,
+    modified: localStat?.mtimeMs ?? null,
+  });
+  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(identity));
+  return Array.from(new Uint8Array(bytes), (value) => value.toString(16).padStart(2, "0"))
+    .join("")
+    .slice(0, 24);
+}
+
+async function copyIfMissing(source: string, target: string): Promise<void> {
+  if (await Bun.file(target).exists()) return;
+  await fs.promises.copyFile(source, target);
+  await fs.promises.chmod(target, 0o644);
 }

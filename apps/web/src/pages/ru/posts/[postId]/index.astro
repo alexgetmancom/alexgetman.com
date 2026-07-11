@@ -2,13 +2,10 @@
 import LegacyRedirect from "../../../../components/LegacyRedirect.astro";
 import { loadFeedItems } from "../../../../utils/feed";
 
-export async function getStaticPaths() {
-  return loadFeedItems()
-    .filter((item: any) => item.has_ru && item.post_id && item.slug_ru)
-    .map((item: any) => ({ params: { postId: String(item.post_id) }, props: { item } }));
-}
+export const prerender = false;
 
-const { item } = Astro.props;
+const { postId } = Astro.params;
+const item = loadFeedItems().find((entry: any) => String(entry.post_id) === String(postId) && entry.has_ru) ?? {};
 ---
 
 <LegacyRedirect target={`/ru/${item.post_id}/${item.slug_ru}/`} title="Адрес поста изменился" message="Эта страница переехала в canonical-пост." lang="ru" />

@@ -1,5 +1,7 @@
+import { and, asc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
+import { metricSchedule, posts, postTargets } from "../db/schema.js";
 
 export type MetricTask = {
   postKey: string;
@@ -16,89 +18,88 @@ const INTERVALS_MS = [3, 6, 12, 24, 48].map((hours) => hours * 3_600_000).concat
 
 export function ensureMetricSchedule(backendDb: BackendDb, targets: readonly string[]): number {
   if (targets.length === 0) return 0;
-  const placeholders = targets.map(() => "?").join(",");
-  const rows = backendDb.sqlite
-    .prepare(
-      `SELECT p.post_key, p.date_utc, t.target
-     FROM posts p JOIN post_targets t ON t.post_key=p.post_key
-     WHERE p.status='active' AND t.status='published' AND t.target IN (${placeholders})`,
-    )
-    .all(...targets) as Array<{ post_key: string; date_utc: string | null; target: string }>;
-  const insert = backendDb.sqlite.prepare(
-    `INSERT INTO metric_schedule(post_key, target, next_check_at, frozen_at, updated_at)
-     VALUES (?, ?, ?, NULL, ?) ON CONFLICT(post_key, target) DO NOTHING`,
-  );
+  const rows = backendDb.db
+    .select({ postKey: posts.postKey, dateUtc: posts.dateUtc, target: postTargets.target })
+    .from(posts)
+    .innerJoin(postTargets, eq(postTargets.postKey, posts.postKey))
+    .where(and(eq(posts.status, "active"), eq(postTargets.status, "published"), inArray(postTargets.target, [...targets])))
+    .all();
   let changes = 0;
   const now = new Date().toISOString();
-  backendDb.sqlite.transaction(() => {
+  backendDb.db.transaction((tx) => {
     for (const row of rows) {
-      const publishedAt = parseDate(row.date_utc);
-      changes += insert.run(row.post_key, row.target, new Date(publishedAt.getTime() + 3_600_000).toISOString(), now).changes;
+      const publishedAt = parseDate(row.dateUtc);
+      tx.insert(metricSchedule)
+        .values({
+          postKey: row.postKey,
+          target: row.target,
+          nextCheckAt: new Date(publishedAt.getTime() + 3_600_000).toISOString(),
+          frozenAt: null,
+          updatedAt: now,
+        })
+        .onConflictDoNothing()
+        .run();
+      changes += 1;
     }
-  })();
+  });
   return changes;
 }
 
 export function dueMetricTasks(backendDb: BackendDb, config: BackendConfig): MetricTask[] {
-  const rows = backendDb.sqlite
-    .prepare(
-      `SELECT s.post_key, s.target, s.check_count, p.message_id, p.date_utc,
-            t.external_id, t.external_ids_json, t.url
-     FROM metric_schedule s
-     JOIN posts p ON p.post_key=s.post_key
-     JOIN post_targets t ON t.post_key=s.post_key AND t.target=s.target
-     WHERE s.frozen_at IS NULL AND t.status='published' AND (s.next_check_at IS NULL OR s.next_check_at <= ?)
-     ORDER BY p.date_utc DESC, s.check_count ASC LIMIT ?`,
+  const rows = backendDb.db
+    .select({
+      postKey: metricSchedule.postKey,
+      target: metricSchedule.target,
+      checkCount: metricSchedule.checkCount,
+      messageId: posts.messageId,
+      dateUtc: posts.dateUtc,
+      externalId: postTargets.externalId,
+      externalIds: postTargets.externalIdsJson,
+      url: postTargets.url,
+    })
+    .from(metricSchedule)
+    .innerJoin(posts, eq(posts.postKey, metricSchedule.postKey))
+    .innerJoin(postTargets, and(eq(postTargets.postKey, metricSchedule.postKey), eq(postTargets.target, metricSchedule.target)))
+    .where(
+      and(
+        isNull(metricSchedule.frozenAt),
+        eq(postTargets.status, "published"),
+        or(isNull(metricSchedule.nextCheckAt), lte(metricSchedule.nextCheckAt, new Date().toISOString())),
+      ),
     )
-    .all(new Date().toISOString(), config.MAX_METRIC_TASKS_PER_CYCLE) as Array<Record<string, unknown>>;
+    .orderBy(sql`${posts.dateUtc} DESC`, asc(metricSchedule.checkCount))
+    .limit(config.MAX_METRIC_TASKS_PER_CYCLE)
+    .all();
   return rows.map((row) => ({
-    postKey: String(row.post_key),
-    target: String(row.target),
-    checkCount: Number(row.check_count ?? 0),
-    messageId: Number(row.message_id),
-    dateUtc: stringOrNull(row.date_utc),
-    externalId: stringOrNull(row.external_id),
-    externalIds: parseIds(row.external_ids_json, row.external_id),
-    url: stringOrNull(row.url),
+    postKey: row.postKey,
+    target: row.target,
+    checkCount: row.checkCount,
+    messageId: row.messageId,
+    dateUtc: row.dateUtc,
+    externalId: row.externalId,
+    externalIds: row.externalIds ?? (row.externalId ? [row.externalId] : []),
+    url: row.url,
   }));
 }
 
 export function finishMetricTask(backendDb: BackendDb, task: MetricTask, error: string | null): void {
   const now = new Date();
   const interval = INTERVALS_MS[task.checkCount];
-  backendDb.sqlite
-    .prepare(
-      `UPDATE metric_schedule SET next_check_at=?, last_checked_at=?, check_count=check_count+1,
-       frozen_at=?, last_error=?, updated_at=? WHERE post_key=? AND target=?`,
-    )
-    .run(
-      interval == null ? null : new Date(now.getTime() + interval).toISOString(),
-      now.toISOString(),
-      interval == null ? now.toISOString() : null,
-      error,
-      now.toISOString(),
-      task.postKey,
-      task.target,
-    );
-}
-
-function parseIds(raw: unknown, fallback: unknown): string[] {
-  if (typeof raw === "string" && raw) {
-    try {
-      const parsed = JSON.parse(raw) as unknown;
-      if (Array.isArray(parsed)) return parsed.filter(Boolean).map(String);
-    } catch {
-      // Fall through to the primary external ID.
-    }
-  }
-  return fallback == null || fallback === "" ? [] : [String(fallback)];
+  backendDb.db
+    .update(metricSchedule)
+    .set({
+      nextCheckAt: interval == null ? null : new Date(now.getTime() + interval).toISOString(),
+      lastCheckedAt: now.toISOString(),
+      checkCount: sql`${metricSchedule.checkCount} + 1`,
+      frozenAt: interval == null ? now.toISOString() : null,
+      lastError: error,
+      updatedAt: now.toISOString(),
+    })
+    .where(and(eq(metricSchedule.postKey, task.postKey), eq(metricSchedule.target, task.target)))
+    .run();
 }
 
 function parseDate(value: string | null): Date {
   const date = value ? new Date(value) : new Date();
   return Number.isNaN(date.getTime()) ? new Date() : date;
-}
-
-function stringOrNull(value: unknown): string | null {
-  return typeof value === "string" && value ? value : null;
 }

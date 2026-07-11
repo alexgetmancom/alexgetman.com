@@ -23,7 +23,7 @@ services:
     image: ${BACKEND_IMAGE:-ghcr.io/alexgetmancom/alexgetman-backend:latest}
     pull_policy: always
     container_name: alexgetman-backend
-    command: ["bun", "--smol", "/app/apps/backend/dist/index.js"]
+    command: ["bun", "--smol", "/app/runtime/server.js"]
     restart: unless-stopped
     env_file:
       - path: ./secrets.env
@@ -36,8 +36,9 @@ services:
     environment:
       DATA_DIR: /data
       PIPELINE_DB: /data/pipeline.db
-      FEED_JSON: /feed-data/feed.json
-      SITE_METRICS_JSON: /feed-data/metrics.json
+      FEED_JSON: /data/feed.json
+      SITE_METRICS_JSON: /data/metrics.json
+      SITE_PUBLIC_DIR: /data/site
       CHANNEL_USERNAME: alexgetmancom
       METRICS_REFRESH_INTERVAL_SECONDS: "10"
       PIPELINE_BASELINE_MESSAGE_ID: "422"
@@ -47,7 +48,6 @@ services:
       OBSERVABILITY_INTERVAL_SECONDS: "300"
       REMOTE_MEDIA_PATH: /media/threads
       PUBLIC_MEDIA_BASE_URL: https://alexgetman.com/media/threads
-      SITE_BUILDER_MODE: "false"
       ENABLE_BOT_POLLING: "true"
       ENABLE_TELEGRAM_STORIES: "true"
       BIND_HOST: 0.0.0.0
@@ -56,7 +56,6 @@ services:
       - ./data:/data
       - ./bot-api-data:/var/lib/telegram-bot-api:ro
       - /home/deploy/ialexey-web/media/threads:/media/threads
-      - /home/deploy/ialexey-feed/data:/feed-data
     ports:
       - "127.0.0.1:8788:8788"
     healthcheck:
@@ -70,46 +69,6 @@ services:
     mem_limit: 768m
     cpus: 1.0
     pids_limit: 96
-
-  site-builder:
-    image: ${SITE_BUILDER_IMAGE:-ghcr.io/alexgetmancom/alexgetman-site-builder:latest}
-    pull_policy: always
-    container_name: alexgetman-site-builder
-    restart: unless-stopped
-    env_file:
-      - path: ./secrets.env
-      - path: ./site-feed.env
-        required: false
-    depends_on:
-      - bot-api
-    environment:
-      DATA_DIR: /data
-      PIPELINE_DB: /data/pipeline.db
-      DRIZZLE_MIGRATIONS_DIR: /app/apps/backend/drizzle
-      FEED_JSON: /feed-data/feed.json
-      SITE_METRICS_JSON: /feed-data/metrics.json
-      CHANNEL_USERNAME: alexgetmancom
-      METRICS_REFRESH_INTERVAL_SECONDS: "10"
-      TELEGRAM_API_BASE_URL: http://bot-api:8081
-      REMOTE_MEDIA_PATH: /media/threads
-      PUBLIC_MEDIA_BASE_URL: https://alexgetman.com/media/threads
-      SITE_BUILD_COMMAND: bun /app/apps/backend/dist/runtime/buildSite.js
-      SITE_PUBLIC_DIR: /site-public
-      SITE_DATA_DIR: /feed-data
-      ENABLE_WORKERS: "false"
-      SITE_BUILDER_MODE: "true"
-      INDEXNOW_ENABLED: "true"
-    volumes:
-      - ./data:/data
-      - ./bot-api-data:/var/lib/telegram-bot-api:ro
-      - /home/deploy/ialexey-web/media/threads:/media/threads
-      - /home/deploy/ialexey-feed/data:/feed-data
-      - /home/deploy/ialexey-web:/site-public
-    mem_limit: 1024m
-    cpus: 1.0
-    pids_limit: 128
-    networks:
-      - agent_default
 
 networks:
   agent_default:

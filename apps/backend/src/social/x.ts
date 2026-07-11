@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
+import OAuth from "oauth-1.0a";
 import type { BackendConfig } from "../config.js";
 import type { PublishResult } from "../queue/errors.js";
 import { HttpPublishError } from "../queue/errors.js";
@@ -138,28 +139,22 @@ export function oauthAuthorization(
   timestamp = Math.floor(Date.now() / 1000),
 ): string {
   assertCredentials(config);
-  const url = new URL(rawUrl);
-  const oauth: Record<string, string> = {
-    oauth_consumer_key: config.X_CONSUMER_KEY!,
-    oauth_nonce: nonce,
-    oauth_signature_method: "HMAC-SHA1",
-    oauth_timestamp: String(timestamp),
-    oauth_token: config.X_ACCESS_TOKEN!,
-    oauth_version: "1.0",
-  };
-  const allParams = [...url.searchParams.entries(), ...(formParams ? [...formParams.entries()] : []), ...Object.entries(oauth)].sort(
-    ([leftKey, leftValue], [rightKey, rightValue]) =>
-      encode(leftKey).localeCompare(encode(rightKey)) || encode(leftValue).localeCompare(encode(rightValue)),
+  const oauth = new OAuth({
+    consumer: { key: config.X_CONSUMER_KEY!, secret: config.X_CONSUMER_SECRET! },
+    signature_method: "HMAC-SHA1",
+    hash_function: (base, key) => crypto.createHmac("sha1", key).update(base).digest("base64"),
+  });
+  oauth.getNonce = () => nonce;
+  oauth.getTimeStamp = () => timestamp;
+  const data = formParams ? Object.fromEntries(formParams.entries()) : undefined;
+  const authorization = oauth.authorize(
+    { url: rawUrl, method: method.toUpperCase(), ...(data ? { data } : {}) },
+    {
+      key: config.X_ACCESS_TOKEN!,
+      secret: config.X_ACCESS_TOKEN_SECRET!,
+    },
   );
-  const normalized = allParams.map(([key, value]) => `${encode(key)}=${encode(value)}`).join("&");
-  const baseUrl = `${url.protocol}//${url.host}${url.pathname}`;
-  const signatureBase = [method.toUpperCase(), encode(baseUrl), encode(normalized)].join("&");
-  const signingKey = `${encode(config.X_CONSUMER_SECRET!)}&${encode(config.X_ACCESS_TOKEN_SECRET!)}`;
-  oauth.oauth_signature = crypto.createHmac("sha1", signingKey).update(signatureBase).digest("base64");
-  return `OAuth ${Object.entries(oauth)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, value]) => `${encode(key)}="${encode(value)}"`)
-    .join(", ")}`;
+  return oauth.toHeader(authorization).Authorization;
 }
 
 async function jsonResponse<T>(response: Response, label: string): Promise<T> {
@@ -176,10 +171,6 @@ async function responseError(response: Response, label: string): Promise<HttpPub
 function assertCredentials(config: BackendConfig): void {
   if (!config.X_CONSUMER_KEY || !config.X_CONSUMER_SECRET || !config.X_ACCESS_TOKEN || !config.X_ACCESS_TOKEN_SECRET)
     throw new Error("missing X credentials");
-}
-
-function encode(value: string): string {
-  return encodeURIComponent(value).replace(/[!'()*]/g, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
 }
 
 function delay(ms: number): Promise<void> {

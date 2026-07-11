@@ -1,7 +1,9 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { and, eq, lt } from "drizzle-orm";
 import type { BackendDb } from "../db/client.js";
+import { maintenanceLocks } from "../db/schema.js";
 
 export async function backupDatabase(backendDb: BackendDb, sourcePath: string, destinationDirectory?: string): Promise<string> {
   if (sourcePath === ":memory:") throw new Error("cannot back up an in-memory database");
@@ -98,17 +100,21 @@ export function withMaintenanceLock<T>(backendDb: BackendDb, operation: () => T)
   const owner = `${os.hostname()}:${process.pid}`;
   const now = new Date();
   const expires = new Date(now.getTime() + 30 * 60_000).toISOString();
-  backendDb.sqlite.transaction(() => {
-    backendDb.sqlite.prepare("DELETE FROM maintenance_locks WHERE name=? AND expires_at < ?").run(name, now.toISOString());
-    backendDb.sqlite
-      .prepare("INSERT OR IGNORE INTO maintenance_locks(name,owner,expires_at,created_at) VALUES (?,?,?,?)")
-      .run(name, owner, expires, now.toISOString());
-    const row = backendDb.sqlite.prepare("SELECT owner FROM maintenance_locks WHERE name=?").get(name) as { owner: string };
+  backendDb.db.transaction((tx) => {
+    tx.delete(maintenanceLocks)
+      .where(and(eq(maintenanceLocks.name, name), lt(maintenanceLocks.expiresAt, now.toISOString())))
+      .run();
+    tx.insert(maintenanceLocks).values({ name, owner, expiresAt: expires, createdAt: now.toISOString() }).onConflictDoNothing().run();
+    const row = tx.select({ owner: maintenanceLocks.owner }).from(maintenanceLocks).where(eq(maintenanceLocks.name, name)).get();
+    if (!row) throw new Error("maintenance lock could not be acquired");
     if (row.owner !== owner) throw new Error(`maintenance lock is held by ${row.owner}`);
-  })();
+  });
   try {
     return operation();
   } finally {
-    backendDb.sqlite.prepare("DELETE FROM maintenance_locks WHERE name=? AND owner=?").run(name, owner);
+    backendDb.db
+      .delete(maintenanceLocks)
+      .where(and(eq(maintenanceLocks.name, name), eq(maintenanceLocks.owner, owner)))
+      .run();
   }
 }

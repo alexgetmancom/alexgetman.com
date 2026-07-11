@@ -1,5 +1,6 @@
 import type { BackendConfig } from "../config.js";
 import { HttpPublishError, type PublishResult } from "../queue/errors.js";
+import { payloadMedia } from "./payload.js";
 
 type DevtoArticleInput = {
   title: string;
@@ -24,9 +25,11 @@ export function devtoArticleFromPayload(payload: Record<string, unknown>, config
   const canonicalUrl = stringValue(payload.canonicalUrl) || stringValue(payload.canonical_url) || canonicalFromPayload(payload, config);
   const tags = Array.isArray(payload.tags) ? payload.tags.map((tag) => String(tag)) : [];
   const mainImage = stringValue(payload.mainImage) || stringValue(payload.main_image) || null;
+  const inlineImage = mainImage ?? payloadMedia(payload).find((item) => item.type === "IMAGE" && item.vpsUrl)?.vpsUrl ?? null;
   return {
     title,
-    bodyMarkdown,
+    bodyMarkdown:
+      inlineImage && !bodyMarkdown.includes(`](${inlineImage})`) ? `![${title}](${inlineImage})\n\n${bodyMarkdown}` : bodyMarkdown,
     canonicalUrl,
     tags,
     mainImage,

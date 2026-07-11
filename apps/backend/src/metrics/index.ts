@@ -1,5 +1,7 @@
+import { and, eq } from "drizzle-orm";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
+import { type JsonValue, postTargets } from "../db/schema.js";
 import { recordWorkerState } from "../services/workerState.js";
 import { createMetricCollectors, type MetricCollector } from "./collectors.js";
 import { upsertMetricError, upsertMetrics } from "./repository.js";
@@ -17,20 +19,23 @@ export async function runMetricsCycle(
     if (!collector) continue;
     try {
       const result = await collector(task);
-      backendDb.sqlite.transaction(() => {
+      backendDb.db.transaction((tx) => {
         upsertMetrics(backendDb, task.postKey, task.target, result.metrics, result.source, result.raw);
         if (result.url)
-          backendDb.sqlite
-            .prepare("UPDATE post_targets SET url=?, updated_at=? WHERE post_key=? AND target=?")
-            .run(result.url, new Date().toISOString(), task.postKey, task.target);
+          tx.update(postTargets)
+            .set({ url: result.url, updatedAt: new Date().toISOString() })
+            .where(and(eq(postTargets.postKey, task.postKey), eq(postTargets.target, task.target)))
+            .run();
         finishMetricTask(backendDb, task, null);
-      })();
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      backendDb.sqlite.transaction(() => {
-        upsertMetricError(backendDb, task.postKey, task.target, `${task.target}_metrics`, message, { external_id: task.externalId });
+      backendDb.db.transaction(() => {
+        upsertMetricError(backendDb, task.postKey, task.target, `${task.target}_metrics`, message, {
+          external_id: task.externalId,
+        } as JsonValue);
         finishMetricTask(backendDb, task, message);
-      })();
+      });
     }
   }
   recordWorkerState(backendDb, "metrics", { checked: tasks.length });

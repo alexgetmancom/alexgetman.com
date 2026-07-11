@@ -1,14 +1,21 @@
+import { asc, eq, or } from "drizzle-orm";
 import type { BackendDb } from "../db/client.js";
+import { posts, postTargets } from "../db/schema.js";
 
 export async function verifyPostTargets(backendDb: BackendDb, ref: string): Promise<Record<string, unknown>[]> {
   const id = Number(ref.replace(/^post:/, ""));
-  const post = backendDb.sqlite.prepare("SELECT post_key FROM posts WHERE post_key=? OR post_id=? OR message_id=?").get(ref, id, id) as
-    | { post_key: string }
-    | undefined;
+  const post = backendDb.db
+    .select({ postKey: posts.postKey })
+    .from(posts)
+    .where(or(eq(posts.postKey, ref), eq(posts.postId, id), eq(posts.messageId, id)))
+    .get();
   if (!post) throw new Error(`post not found: ${ref}`);
-  const targets = backendDb.sqlite
-    .prepare("SELECT target,status,url,error FROM post_targets WHERE post_key=? ORDER BY target")
-    .all(post.post_key) as Array<{ target: string; status: string; url: string | null; error: string | null }>;
+  const targets = backendDb.db
+    .select({ target: postTargets.target, status: postTargets.status, url: postTargets.url, error: postTargets.error })
+    .from(postTargets)
+    .where(eq(postTargets.postKey, post.postKey))
+    .orderBy(asc(postTargets.target))
+    .all();
   return Promise.all(
     targets.map(async (record) => {
       if (record.status !== "published") return { ...record, ok: false, reason: record.error ?? "not_published" };

@@ -29,7 +29,7 @@ export async function publishToTelegram(
       caption_entities: index === 0 ? entities : undefined,
     }));
     const result = await telegramCall<TelegramResponse>(config, token, "sendMediaGroup", { chat_id: chatId, media: items }, fetchImpl);
-    return normalizeTelegramResult(result, chatId);
+    return reactToPublishedMessage(normalizeTelegramResult(result, chatId), config, token, chatId, fetchImpl);
   }
 
   const item = media[0];
@@ -48,7 +48,7 @@ export async function publishToTelegram(
       },
       fetchImpl,
     );
-    return normalizeTelegramResult(result, chatId);
+    return reactToPublishedMessage(normalizeTelegramResult(result, chatId), config, token, chatId, fetchImpl);
   }
 
   const result = await telegramCall<TelegramResponse>(
@@ -58,7 +58,7 @@ export async function publishToTelegram(
     { chat_id: chatId, text, entities, disable_web_page_preview: false },
     fetchImpl,
   );
-  return normalizeTelegramResult(result, chatId);
+  return reactToPublishedMessage(normalizeTelegramResult(result, chatId), config, token, chatId, fetchImpl);
 }
 
 async function telegramCall<T>(
@@ -83,4 +83,31 @@ function normalizeTelegramResult(result: TelegramResponse, chatId: string): Publ
     .filter((id): id is string | number => typeof id === "string" || typeof id === "number");
   const channel = chatId.startsWith("@") ? chatId.slice(1) : null;
   return { ok: true, id: ids[0] ?? null, ids, url: channel && ids[0] ? `https://t.me/${channel}/${ids[0]}` : null, raw: result };
+}
+
+async function reactToPublishedMessage(
+  result: PublishResult,
+  config: BackendConfig,
+  token: string,
+  chatId: string,
+  fetchImpl: typeof fetch,
+): Promise<PublishResult> {
+  if (!result.ok || result.id == null) return result;
+  try {
+    await telegramCall<TelegramResponse>(
+      config,
+      token,
+      "setMessageReaction",
+      {
+        chat_id: chatId,
+        message_id: result.id,
+        reaction: [{ type: "emoji", emoji: "❤" }],
+        is_big: false,
+      },
+      fetchImpl,
+    );
+  } catch {
+    // Reaction permission is optional and must not retry an already published post.
+  }
+  return result;
 }

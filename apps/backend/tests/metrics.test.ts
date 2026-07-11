@@ -31,11 +31,12 @@ describe("metrics cycle", () => {
         backendDb.db.select({ checkCount: metricSchedule.checkCount, lastError: metricSchedule.lastError }).from(metricSchedule).get(),
       ).toEqual({ checkCount: 1, lastError: null });
       expect(
-        JSON.parse(
-          backendDb.db.select({ stateJson: workerState.stateJson }).from(workerState).where(eq(workerState.name, "metrics")).get()!
-            .stateJson,
-        ),
-      ).toMatchObject({ checked: 1, ok: true, last_error: null });
+        backendDb.db.select({ stateJson: workerState.stateJson }).from(workerState).where(eq(workerState.name, "metrics")).get()!.stateJson,
+      ).toMatchObject({
+        checked: 1,
+        ok: true,
+        last_error: null,
+      });
     } finally {
       backendDb.close();
     }

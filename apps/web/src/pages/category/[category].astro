@@ -3,14 +3,7 @@ import LegacyRedirect from "../../components/LegacyRedirect.astro";
 import { loadFeedItems } from "../../utils/feed";
 import { categorySlugFromBadge, getSmartBadge } from "../../utils/helpers";
 
-export async function getStaticPaths() {
-  const categories = new Set(
-    loadFeedItems()
-      .filter((item: any) => item.has_en && item.text_en && item.post_id)
-      .map((item: any) => categorySlugFromBadge(getSmartBadge(item.text || item.text_en || ""))),
-  );
-  return Array.from(categories).map((category) => ({ params: { category } }));
-}
+export const prerender = false;
 ---
 
 <LegacyRedirect target="/" title="Category moved" />

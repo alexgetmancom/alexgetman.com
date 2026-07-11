@@ -1,14 +1,19 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import type { Context } from "hono";
+import { and, eq, or, sql } from "drizzle-orm";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
+import { likes, metricSamples, postMetrics, posts } from "../db/schema.js";
 
 export function likesInfo(backendDb: BackendDb, postId: string, clientHash: string): { likes: number; user_liked: boolean } {
-  const count = backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM likes WHERE post_id=?").get(postId) as { count: number };
-  const liked = backendDb.sqlite.prepare("SELECT 1 AS found FROM likes WHERE post_id=? AND ip_hash=?").get(postId, clientHash);
-  return { likes: Number(count.count), user_liked: Boolean(liked) };
+  const count = backendDb.db.select({ count: sql<number>`count(*)` }).from(likes).where(eq(likes.postId, postId)).get();
+  const liked = backendDb.db
+    .select({ postId: likes.postId })
+    .from(likes)
+    .where(and(eq(likes.postId, postId), eq(likes.ipHash, clientHash)))
+    .get();
+  return { likes: Number(count?.count ?? 0), user_liked: Boolean(liked) };
 }
 
 export function batchLikes(
@@ -20,17 +25,24 @@ export function batchLikes(
 }
 
 export function toggleLike(backendDb: BackendDb, postId: string, clientHash: string): { likes: number; user_liked: boolean } {
-  backendDb.sqlite.transaction(() => {
-    const exists = backendDb.sqlite.prepare("SELECT 1 FROM likes WHERE post_id=? AND ip_hash=?").get(postId, clientHash);
-    if (exists) backendDb.sqlite.prepare("DELETE FROM likes WHERE post_id=? AND ip_hash=?").run(postId, clientHash);
-    else backendDb.sqlite.prepare("INSERT INTO likes(post_id, ip_hash) VALUES (?, ?)").run(postId, clientHash);
-  })();
+  backendDb.db.transaction((tx) => {
+    const exists = tx
+      .select({ postId: likes.postId })
+      .from(likes)
+      .where(and(eq(likes.postId, postId), eq(likes.ipHash, clientHash)))
+      .get();
+    if (exists)
+      tx.delete(likes)
+        .where(and(eq(likes.postId, postId), eq(likes.ipHash, clientHash)))
+        .run();
+    else tx.insert(likes).values({ postId, ipHash: clientHash }).run();
+  });
   return likesInfo(backendDb, postId, clientHash);
 }
 
-export function clientIpHash(c: Context, config: BackendConfig): string {
-  const forwarded = c.req.header("x-forwarded-for")?.split(",", 1)[0]?.trim();
-  const address = forwarded || c.req.header("x-real-ip") || "unknown";
+export function clientIpHash(request: Request, config: BackendConfig): string {
+  const forwarded = request.headers.get("x-forwarded-for")?.split(",", 1)[0]?.trim();
+  const address = forwarded || request.headers.get("x-real-ip") || "unknown";
   return crypto
     .createHmac("sha256", config.LIKES_SALT || config.commandCenterToken || "alexgetman-likes")
     .update(address)
@@ -57,28 +69,56 @@ export function recordPageview(backendDb: BackendDb, config: BackendConfig, rawP
   atomicWrite(config.SITE_METRICS_JSON, data);
 
   const candidates = path.endsWith("/") ? [path, path.slice(0, -1)] : [path, `${path}/`];
-  const row = backendDb.sqlite
-    .prepare(
-      `SELECT post_key, 'site_ru' AS target FROM posts WHERE site_ru_path IN (?, ?)
-     UNION ALL SELECT post_key, 'site_en' AS target FROM posts WHERE site_en_path IN (?, ?) LIMIT 1`,
-    )
-    .get(...candidates, ...candidates) as { post_key?: string; target?: string } | undefined;
-  if (row?.post_key && row.target) {
-    const existing = backendDb.sqlite
-      .prepare("SELECT value FROM post_metrics WHERE post_key=? AND target=? AND metric_name='views'")
-      .get(row.post_key, row.target) as { value?: number } | undefined;
+  const ru = backendDb.db
+    .select({ postKey: posts.postKey })
+    .from(posts)
+    .where(or(eq(posts.siteRuPath, candidates[0]!), eq(posts.siteRuPath, candidates[1]!)))
+    .get();
+  const en = ru
+    ? null
+    : backendDb.db
+        .select({ postKey: posts.postKey })
+        .from(posts)
+        .where(or(eq(posts.siteEnPath, candidates[0]!), eq(posts.siteEnPath, candidates[1]!)))
+        .get();
+  const row = ru ? { postKey: ru.postKey, target: "site_ru" } : en ? { postKey: en.postKey, target: "site_en" } : null;
+  if (row) {
+    const existing = backendDb.db
+      .select({ value: postMetrics.value })
+      .from(postMetrics)
+      .where(and(eq(postMetrics.postKey, row.postKey), eq(postMetrics.target, row.target), eq(postMetrics.metricName, "views")))
+      .get();
     const value = Number(existing?.value ?? 0) + 1;
-    const rawJson = JSON.stringify({ path });
-    backendDb.sqlite
-      .prepare(`INSERT INTO post_metrics(post_key,target,metric_name,value,source,sampled_at,error,raw_json)
-      VALUES (?,?,'views',?,'site_pageview_endpoint',?,NULL,?)
-      ON CONFLICT(post_key,target,metric_name) DO UPDATE SET value=excluded.value,source=excluded.source,sampled_at=excluded.sampled_at,error=NULL,raw_json=excluded.raw_json`)
-      .run(row.post_key, row.target, value, now.toISOString(), rawJson);
-    backendDb.sqlite
-      .prepare(
-        "INSERT INTO metric_samples(post_key,target,metric_name,value,sampled_at,source,raw_json) VALUES (?,?,'views',?,?,'site_pageview_endpoint',?)",
-      )
-      .run(row.post_key, row.target, value, now.toISOString(), rawJson);
+    const sampledAt = now.toISOString();
+    backendDb.db
+      .insert(postMetrics)
+      .values({
+        postKey: row.postKey,
+        target: row.target,
+        metricName: "views",
+        value,
+        source: "site_pageview_endpoint",
+        sampledAt,
+        error: null,
+        rawJson: { path },
+      })
+      .onConflictDoUpdate({
+        target: [postMetrics.postKey, postMetrics.target, postMetrics.metricName],
+        set: { value, source: "site_pageview_endpoint", sampledAt, error: null, rawJson: { path } },
+      })
+      .run();
+    backendDb.db
+      .insert(metricSamples)
+      .values({
+        postKey: row.postKey,
+        target: row.target,
+        metricName: "views",
+        value,
+        sampledAt,
+        source: "site_pageview_endpoint",
+        rawJson: { path },
+      })
+      .run();
   }
   return path;
 }

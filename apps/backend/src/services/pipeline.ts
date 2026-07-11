@@ -1,9 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
-import { desc, sql } from "drizzle-orm";
+import { and, desc, eq, ne, sql } from "drizzle-orm";
 import { TARGETS } from "../botTargets.js";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
-import { metricSamples, postMetrics, posts, postTargets, publishJobs, workerState } from "../db/schema.js";
+import { type JsonValue, metricSamples, postMetrics, posts, postTargets, publishJobs, siteJobs, workerState } from "../db/schema.js";
 import { gitRevision } from "../runtime/git.js";
 
 export function pipelineStatusPayload(config: BackendConfig, backendDb: BackendDb, weekOffset = 0) {
@@ -33,12 +33,7 @@ export function pipelineStatusPayload(config: BackendConfig, backendDb: BackendD
     .from(workerState)
     .all()
     .map((row) => {
-      let state: Record<string, unknown> = {};
-      try {
-        state = JSON.parse(row.stateJson) as Record<string, unknown>;
-      } catch {
-        state = { parseError: true };
-      }
+      const state: Record<string, JsonValue> = row.stateJson;
       return {
         name: row.name,
         ok: state.ok !== false,
@@ -52,7 +47,7 @@ export function pipelineStatusPayload(config: BackendConfig, backendDb: BackendD
   const [targetCount] = backendDb.db.select({ count: sql<number>`count(*)` }).from(postTargets).all();
   const [metricCount] = backendDb.db.select({ count: sql<number>`count(*)` }).from(postMetrics).all();
   const [sampleCount] = backendDb.db.select({ count: sql<number>`count(*)` }).from(metricSamples).all();
-  const siteJobs = backendDb.sqlite
+  const latestSiteJobs = backendDb.sqlite
     .prepare(
       "SELECT job_id, post_id, message_id, reason, status, attempt_count, last_error, created_at, updated_at FROM site_jobs ORDER BY updated_at DESC, job_id DESC LIMIT 25",
     )
@@ -79,15 +74,19 @@ export function pipelineStatusPayload(config: BackendConfig, backendDb: BackendD
   const legacyPosts = legacyPipelinePosts(backendDb, weekOffset);
   const feed = readFeedSummary(config);
   const socialState = readWorkerState(backendDb, "crosspost_worker") ?? readWorkerState(backendDb, "queue") ?? {};
-  const currentTargetFailures = backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM post_targets WHERE status='failed'").get() as {
-    count: number;
-  };
-  const currentSiteFailures = backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM site_jobs WHERE status='failed'").get() as {
-    count: number;
-  };
+  const currentTargetFailures = backendDb.db
+    .select({ postKey: postTargets.postKey })
+    .from(postTargets)
+    .where(eq(postTargets.status, "failed"))
+    .all().length;
+  const currentSiteFailures = backendDb.db
+    .select({ jobId: siteJobs.jobId })
+    .from(siteJobs)
+    .where(eq(siteJobs.status, "failed"))
+    .all().length;
 
   return {
-    ok: currentTargetFailures.count === 0 && currentSiteFailures.count === 0 && workers.every((worker) => worker.ok),
+    ok: currentTargetFailures === 0 && currentSiteFailures === 0 && workers.every((worker) => worker.ok),
     generatedAt: new Date().toISOString(),
     gitRevision: gitRevision(),
     pipelineDb: {
@@ -95,7 +94,7 @@ export function pipelineStatusPayload(config: BackendConfig, backendDb: BackendD
       exists: existsSync(config.PIPELINE_DB),
     },
     jobs,
-    siteJobs,
+    siteJobs: latestSiteJobs,
     workers,
     metrics: {
       generatedAt: new Date().toISOString(),
@@ -248,8 +247,8 @@ function readFeedSummary(config: BackendConfig): { channel: string; updated_at: 
 }
 
 function readWorkerState(backendDb: BackendDb, name: string): Record<string, unknown> | null {
-  const row = backendDb.sqlite.prepare("SELECT state_json FROM worker_state WHERE name=?").get(name) as { state_json?: string } | undefined;
-  return row?.state_json ? parseObject(row.state_json) : null;
+  const row = backendDb.db.select({ stateJson: workerState.stateJson }).from(workerState).where(eq(workerState.name, name)).get();
+  return row?.stateJson ?? null;
 }
 
 function weekBounds(offset: number): [string, string] {
@@ -297,8 +296,6 @@ function formatMskDate(value: string): string {
 }
 
 function configlessChannel(backendDb: BackendDb): string {
-  const row = backendDb.sqlite.prepare("SELECT channel FROM posts WHERE channel<>'' ORDER BY updated_at DESC LIMIT 1").get() as
-    | { channel?: string }
-    | undefined;
-  return row?.channel?.replace(/^@/, "") || "alexgetmancom";
+  const row = backendDb.db.select({ channel: posts.channel }).from(posts).where(ne(posts.channel, "")).orderBy(desc(posts.updatedAt)).get();
+  return row?.channel.replace(/^@/, "") || "alexgetmancom";
 }

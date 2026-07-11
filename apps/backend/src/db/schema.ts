@@ -1,6 +1,8 @@
 import { sql } from "drizzle-orm";
 import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
+export type JsonValue = boolean | number | string | null | JsonValue[] | { [key: string]: JsonValue };
+
 export const publishJobs = sqliteTable(
   "publish_jobs",
   {
@@ -30,7 +32,7 @@ export const publishJobs = sqliteTable(
 
 export const workerState = sqliteTable("worker_state", {
   name: text("name").primaryKey(),
-  stateJson: text("state_json").notNull(),
+  stateJson: text("state_json", { mode: "json" }).$type<Record<string, JsonValue>>().notNull(),
   updatedAt: text("updated_at").notNull(),
 });
 
@@ -173,7 +175,7 @@ export const postTargets = sqliteTable(
     target: text("target").notNull(),
     status: text("status").notNull().default("unknown"),
     externalId: text("external_id"),
-    externalIdsJson: text("external_ids_json"),
+    externalIdsJson: text("external_ids_json", { mode: "json" }).$type<string[] | null>(),
     url: text("url"),
     error: text("error"),
     skipped: integer("skipped").notNull().default(0),
@@ -197,7 +199,7 @@ export const postMetrics = sqliteTable(
     source: text("source"),
     sampledAt: text("sampled_at"),
     error: text("error"),
-    rawJson: text("raw_json"),
+    rawJson: text("raw_json", { mode: "json" }).$type<JsonValue | null>(),
   },
   (table) => ({
     pk: primaryKey({ columns: [table.postKey, table.target, table.metricName] }),
@@ -214,7 +216,7 @@ export const metricSamples = sqliteTable(
     value: integer("value"),
     sampledAt: text("sampled_at").notNull(),
     source: text("source"),
-    rawJson: text("raw_json"),
+    rawJson: text("raw_json", { mode: "json" }).$type<JsonValue | null>(),
   },
   (table) => ({
     lookup: index("idx_metric_samples_lookup").on(table.postKey, table.target, table.metricName, table.sampledAt),
@@ -421,7 +423,7 @@ export const mediaTestResults = sqliteTable(
     url: text("url"),
     error: text("error"),
     notes: text("notes"),
-    rawJson: text("raw_json"),
+    rawJson: text("raw_json", { mode: "json" }).$type<JsonValue | null>(),
     checkedAt: text("checked_at").notNull(),
   },
   (table) => ({ pk: primaryKey({ columns: [table.testId, table.target, table.messageId] }) }),

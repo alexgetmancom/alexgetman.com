@@ -12,8 +12,8 @@ const envSchema = z
     BIND_HOST: z.string().default("127.0.0.1"),
     DATA_DIR: z.string().default("/data"),
     PIPELINE_DB: z.string().default("/data/pipeline.db"),
-    FEED_JSON: z.string().default("/feed-data/feed.json"),
-    SITE_METRICS_JSON: z.string().default("/feed-data/metrics.json"),
+    FEED_JSON: z.string().default("/data/feed.json"),
+    SITE_METRICS_JSON: z.string().default("/data/metrics.json"),
     TELEGRAM_API_BASE_URL: z.string().default("http://bot-api:8081"),
     TELEGRAM_BOT_TOKEN: z.string().optional(),
     CONTROLLER_BOT_TOKEN: z.string().optional(),
@@ -53,12 +53,11 @@ const envSchema = z
     SITE_JOB_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
     SITE_JOB_BACKOFF_BASE_SECONDS: z.coerce.number().int().positive().default(60),
     SITE_JOB_BACKOFF_MAX_SECONDS: z.coerce.number().int().positive().default(900),
-    SITE_BUILD_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(180),
     FFMPEG_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(600),
     FFMPEG_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(2).default(2),
-    MEDIA_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(300),
-    SITE_BUILD_COMMAND: z.string().optional(),
-    SITE_PUBLIC_DIR: z.string().default("/site-public"),
+    MEDIA_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86_400),
+    MEDIA_CACHE_DIR: z.string().default("/data/media-cache"),
+    SITE_PUBLIC_DIR: z.string().default("/data/site"),
     DEVTO_API_KEY: z.string().optional(),
     MASTODON_INSTANCE: z.string().optional(),
     MASTODON_ACCESS_TOKEN: z.string().optional(),
@@ -103,9 +102,6 @@ const envSchema = z
     PUBLIC_BASE_URL: z.string().default("https://alexgetman.com"),
     ENABLE_BOT_POLLING: booleanFlag.default(false),
     ENABLE_WORKERS: booleanFlag.default(true),
-    // Only the dedicated site-builder process is allowed to claim render jobs
-    // and execute Astro. The API/queue worker merely enqueues them.
-    SITE_BUILDER_MODE: booleanFlag.default(false),
     INDEXNOW_ENABLED: booleanFlag.default(true),
   })
   .superRefine((env, context) => {

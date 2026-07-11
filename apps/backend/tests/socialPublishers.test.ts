@@ -91,6 +91,20 @@ describe("Telegram publisher", () => {
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as Record<string, unknown>;
     expect(body).toMatchObject({ photo: "ru-image", caption: "Русский текст" });
   });
+
+  it("sets a heart reaction after a successful channel publication", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetchImpl = mock(async (input: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(input), ...(init ? { init } : {}) });
+      return new Response(JSON.stringify({ ok: true, result: { message_id: 42 } }), { status: 200 });
+    }) as unknown as typeof fetch;
+    await publishToTelegram({ text_en: "Post" }, loadConfig({ CONTROLLER_BOT_TOKEN: "bot-token" }), fetchImpl);
+    expect(calls.map((call) => call.url)).toEqual([
+      expect.stringContaining("/sendMessage"),
+      expect.stringContaining("/setMessageReaction"),
+    ]);
+    expect(JSON.parse(String(calls[1]?.init?.body))).toMatchObject({ message_id: 42, reaction: [{ type: "emoji", emoji: "❤" }] });
+  });
 });
 
 describe("Threads publisher", () => {
