@@ -37,7 +37,7 @@
 | 41. AI-ready content | `llms.txt` использует Markdown URLs, добавлен `feed-ai.json`, image alt и AI analytics имеют данные/тесты. | Частично |
 | 42. Markdown and Link headers | Markdown negotiation и HTTP Link headers проверяются end-to-end после deploy. | Требует проверки |
 | 47. Lean ffmpeg runtime | Выбрать проверенный Debian slim или минимальный codec build; H.264/AAC/MP4 и poster generation проходят media tests. | Не начато |
-| 48. Registry-based deploy | CI публикует immutable image в GHCR; VPS делает pull/up, хранит текущий и rollback image, не собирает Docker. | Не начато |
+| 48. Intelligent Registry-based deploy | GitHub Actions пушит образ в GHCR и триггерит деплой. Скрипт на сервере проверяет здоровье `/readyz` нового контейнера. В случае сбоя — авто-откат на стабильный хэш. Бот шлет статус в Telegram с инлайн-кнопкой «Откатить» для ручного отката в 1 клик. | Не начато |
 | 49. Fast CI/CD | Path filters, parallel `bun test`, Bun/BuildKit cache, отсутствие лишнего ffmpeg install, image build only for affected main changes и deploy gate дают измеримый быстрый pipeline. | Частично |
 | 50. Code quality gates | Biome, Knip, staged hook, typecheck, unit/integration tests, Docker smoke test и browser checks обязательны в CI. | Частично |
 | 57. Zod Env Validator | Валидировать конфигурацию и ключи API в `.env` при старте приложения с помощью схем Zod. Оценка: Не дрочь (9/10, уберет скрытые падения при деплое). | Частично |
