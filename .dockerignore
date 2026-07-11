@@ -24,3 +24,4 @@ apps/backend/bot-api-temp
 **/__pycache__
 **/.pytest_cache
 **/.ruff_cache
+apps/web/public/media
