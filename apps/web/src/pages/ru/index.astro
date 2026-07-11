@@ -5,6 +5,8 @@ import Layout from "../../layouts/Layout.astro";
 import { loadFeedItems } from "../../utils/feed";
 import { sortedHomePosts, topicStatsFor } from "../../utils/home-posts";
 
+export const prerender = false;
+
 const feedItems = loadFeedItems();
 
 const russianPosts = sortedHomePosts(feedItems, "ru");

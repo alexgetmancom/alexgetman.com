@@ -1,5 +1,7 @@
 import { loadFeedItems } from "../../utils/feed";
 
+export const prerender = false;
+
 export async function GET() {
   const items = loadFeedItems()
     .filter((item) => item.has_ru && item.post_id)

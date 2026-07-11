@@ -2,6 +2,8 @@ import rss from "@astrojs/rss";
 import { loadFeedItems } from "../utils/feed";
 import { truncateText } from "../utils/helpers";
 
+export const prerender = false;
+
 export async function GET(context: any) {
   const sortedItems = loadFeedItems()
     .filter((item) => item.has_en && item.text_en && item.post_id)

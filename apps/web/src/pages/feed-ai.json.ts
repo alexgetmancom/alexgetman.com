@@ -1,6 +1,8 @@
 import { loadFeedItems } from "../utils/feed";
 import { compactText, truncateText } from "../utils/helpers";
 
+export const prerender = false;
+
 function keyEntities(value: string): string[] {
   const terms =
     compactText(value).match(

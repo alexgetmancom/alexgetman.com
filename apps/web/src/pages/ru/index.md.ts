@@ -1,6 +1,8 @@
 import { loadFeedItems } from "../../utils/feed";
 import { formatDate, siteUrlFromContext, truncateText } from "../../utils/helpers";
 
+export const prerender = false;
+
 export async function GET(context: any) {
   const sortedItems = loadFeedItems()
     .filter((item) => item.text_ru)
