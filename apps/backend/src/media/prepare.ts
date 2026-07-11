@@ -119,6 +119,9 @@ async function getTelegramFileUrl(
   });
   const filePath = info.result?.file_path;
   if (!info.ok || !filePath) throw new Error(`Telegram getFile failed for ${fileId}`);
+  if (path.isAbsolute(filePath)) {
+    return `file://${filePath}`;
+  }
   return `${apiBase}/file/bot${botToken}/${filePath}`;
 }
 
