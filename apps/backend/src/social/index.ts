@@ -29,9 +29,21 @@ let mediaPreparationTail: Promise<void> = Promise.resolve();
 
 export function createPublishers(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch = fetch): Record<string, Publisher> {
   const threadsEnConfig = { ...config, THREADS_ACCESS_TOKEN: config.THREADS_EN_ACCESS_TOKEN ?? config.THREADS_ACCESS_TOKEN };
-  const facebookRuConfig = { ...config, FACEBOOK_PAGE_ACCESS_TOKEN: config.FACEBOOK_RU_PAGE_ACCESS_TOKEN ?? config.FACEBOOK_PAGE_ACCESS_TOKEN, FACEBOOK_PAGE_ID: config.FACEBOOK_RU_PAGE_ID ?? config.FACEBOOK_PAGE_ID };
-  const instagramEnConfig = { ...config, INSTAGRAM_ACCESS_TOKEN: config.INSTAGRAM_EN_ACCESS_TOKEN ?? config.INSTAGRAM_ACCESS_TOKEN, INSTAGRAM_USER_ID: config.INSTAGRAM_EN_USER_ID ?? config.INSTAGRAM_USER_ID };
-  const instagramRuConfig = { ...config, INSTAGRAM_ACCESS_TOKEN: config.INSTAGRAM_RU_ACCESS_TOKEN ?? config.INSTAGRAM_ACCESS_TOKEN, INSTAGRAM_USER_ID: config.INSTAGRAM_RU_USER_ID ?? config.INSTAGRAM_USER_ID };
+  const facebookRuConfig = {
+    ...config,
+    FACEBOOK_PAGE_ACCESS_TOKEN: config.FACEBOOK_RU_PAGE_ACCESS_TOKEN ?? config.FACEBOOK_PAGE_ACCESS_TOKEN,
+    FACEBOOK_PAGE_ID: config.FACEBOOK_RU_PAGE_ID ?? config.FACEBOOK_PAGE_ID,
+  };
+  const instagramEnConfig = {
+    ...config,
+    INSTAGRAM_ACCESS_TOKEN: config.INSTAGRAM_EN_ACCESS_TOKEN ?? config.INSTAGRAM_ACCESS_TOKEN,
+    INSTAGRAM_USER_ID: config.INSTAGRAM_EN_USER_ID ?? config.INSTAGRAM_USER_ID,
+  };
+  const instagramRuConfig = {
+    ...config,
+    INSTAGRAM_ACCESS_TOKEN: config.INSTAGRAM_RU_ACCESS_TOKEN ?? config.INSTAGRAM_ACCESS_TOKEN,
+    INSTAGRAM_USER_ID: config.INSTAGRAM_RU_USER_ID ?? config.INSTAGRAM_USER_ID,
+  };
   return {
     devto: (job) => publishToDevto(devtoArticleFromPayload(job.payload, config), config, fetchImpl),
     telegram: (job) => publishToTelegram(job.payload, config, fetchImpl),
@@ -43,21 +55,36 @@ export function createPublishers(config: BackendConfig, backendDb: BackendDb, fe
     github_ru: (job) => publishToGitHubDiscussion(job.payload, config, fetchImpl),
     threads: (job) => withPreparedMedia(job, config, fetchImpl, (payload) => publishToThreads(payload, config, fetchImpl)),
     threads_ru: (job) => withPreparedMedia(job, config, fetchImpl, (payload) => publishToThreads(payload, config, fetchImpl)),
-    threads_en: (job) => withPreparedMedia(job, threadsEnConfig, fetchImpl, (payload) => publishToThreads(payload, threadsEnConfig, fetchImpl)),
+    threads_en: (job) =>
+      withPreparedMedia(job, threadsEnConfig, fetchImpl, (payload) => publishToThreads(payload, threadsEnConfig, fetchImpl)),
     facebook: (job) => withPreparedMedia(job, config, fetchImpl, (payload) => publishToFacebook(payload, config, fetchImpl)),
-    facebook_ru: (job) => withPreparedMedia(job, facebookRuConfig, fetchImpl, (payload) => publishToFacebook(payload, facebookRuConfig, fetchImpl)),
+    facebook_ru: (job) =>
+      withPreparedMedia(job, facebookRuConfig, fetchImpl, (payload) => publishToFacebook(payload, facebookRuConfig, fetchImpl)),
     linkedin: (job) => withPreparedMedia(job, config, fetchImpl, (payload) => publishToLinkedIn(payload, config, fetchImpl)),
     x: (job) => withPreparedMedia(job, config, fetchImpl, (payload) => publishToX(payload, config, fetchImpl)),
     twitter: (job) => withPreparedMedia(job, config, fetchImpl, (payload) => publishToX(payload, config, fetchImpl)),
     instagram_story: (job) => withPreparedMedia(job, config, fetchImpl, (payload) => publishInstagramStory(payload, config, fetchImpl)),
-    instagram_stories: (job) => withPreparedMedia(job, instagramEnConfig, fetchImpl, (payload) => publishInstagramStory(payload, instagramEnConfig, fetchImpl)),
-    instagram_stories_ru: (job) => withPreparedMedia(job, instagramRuConfig, fetchImpl, (payload) => publishInstagramStory(payload, instagramRuConfig, fetchImpl)),
-    telegram_story: (job) => withPreparedMedia(job, config, fetchImpl, async (payload) => (await import("./telegramStories.js")).publishTelegramStory(payload, config, backendDb, fetchImpl)),
-    telegram_stories: (job) => withPreparedMedia(job, config, fetchImpl, async (payload) => (await import("./telegramStories.js")).publishTelegramStory(payload, config, backendDb, fetchImpl)),
+    instagram_stories: (job) =>
+      withPreparedMedia(job, instagramEnConfig, fetchImpl, (payload) => publishInstagramStory(payload, instagramEnConfig, fetchImpl)),
+    instagram_stories_ru: (job) =>
+      withPreparedMedia(job, instagramRuConfig, fetchImpl, (payload) => publishInstagramStory(payload, instagramRuConfig, fetchImpl)),
+    telegram_story: (job) =>
+      withPreparedMedia(job, config, fetchImpl, async (payload) =>
+        (await import("./telegramStories.js")).publishTelegramStory(payload, config, backendDb, fetchImpl),
+      ),
+    telegram_stories: (job) =>
+      withPreparedMedia(job, config, fetchImpl, async (payload) =>
+        (await import("./telegramStories.js")).publishTelegramStory(payload, config, backendDb, fetchImpl),
+      ),
   };
 }
 
-async function withPreparedMedia(job: ClaimedPublishJob, config: BackendConfig, fetchImpl: typeof fetch, publish: (payload: Record<string, unknown>) => Promise<PublishResult>): Promise<PublishResult> {
+async function withPreparedMedia(
+  job: ClaimedPublishJob,
+  config: BackendConfig,
+  fetchImpl: typeof fetch,
+  publish: (payload: Record<string, unknown>) => Promise<PublishResult>,
+): Promise<PublishResult> {
   const media = payloadMedia(job.payload);
   if (media.length === 0) return publish(job.payload);
   const key = mediaCacheKey(job, media, config);
@@ -92,11 +119,19 @@ async function withPreparedMedia(job: ClaimedPublishJob, config: BackendConfig, 
 }
 
 function mediaCacheKey(job: ClaimedPublishJob, media: ReturnType<typeof payloadMedia>, config: BackendConfig): string {
-  return JSON.stringify({ post: job.postKey, locale: job.payload.locale ?? "en", media: media.map((item) => [item.fileId, item.localPath, item.type]), remote: config.REMOTE_MEDIA_PATH });
+  return JSON.stringify({
+    post: job.postKey,
+    locale: job.payload.locale ?? "en",
+    media: media.map((item) => [item.fileId, item.localPath, item.type]),
+    remote: config.REMOTE_MEDIA_PATH,
+  });
 }
 
 function enqueueMediaPreparation<T>(prepare: () => Promise<T>): Promise<T> {
   const next = mediaPreparationTail.then(prepare, prepare);
-  mediaPreparationTail = next.then(() => undefined, () => undefined);
+  mediaPreparationTail = next.then(
+    () => undefined,
+    () => undefined,
+  );
   return next;
 }

@@ -3,7 +3,7 @@ import { openBackendDb } from "../db/client.js";
 import { log } from "../logger.js";
 import { runSiteJobCycle } from "./jobs.js";
 
-const config = loadConfig();
+const config = loadConfig({ ...process.env, SITE_BUILDER_MODE: "true" });
 const backendDb = openBackendDb(config.PIPELINE_DB);
 let stopping = false;
 let running = false;

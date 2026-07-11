@@ -1,11 +1,17 @@
-import type { Context } from "hono";
 import { timingSafeEqual } from "node:crypto";
+import type { Context } from "hono";
 import type { BackendConfig } from "./config.js";
 
 export function commandAllowed(c: Context, config: BackendConfig, payloadToken?: string | null): boolean {
   if (c.req.header("X-Authenticated-User")) return true;
   if (!config.commandCenterToken) return false;
-  const token = payloadToken?.trim() || c.req.header("X-Command-Token") || c.req.header("X-Admin-Token") || new URL(c.req.url).searchParams.get("token") || cookieValue(c.req.header("Cookie"), "command_token") || "";
+  const token =
+    payloadToken?.trim() ||
+    c.req.header("X-Command-Token") ||
+    c.req.header("X-Admin-Token") ||
+    new URL(c.req.url).searchParams.get("token") ||
+    cookieValue(c.req.header("Cookie"), "command_token") ||
+    "";
   return safeEqual(token, config.commandCenterToken);
 }
 

@@ -1,10 +1,10 @@
 ---
-import '../styles/home-news-page.css';
-import StoryContext from './home-news/StoryContext.astro';
-import StoryRail from './home-news/StoryRail.astro';
-import StoryVisual from './home-news/StoryVisual.astro';
-import { metricValue, paragraphsFor } from './home-news/storyHelpers';
-import type { HomeLabels, HomePost, Project, TopicStat } from './home-news/types';
+import StoryContext from "./home-news/StoryContext.astro";
+import StoryRail from "./home-news/StoryRail.astro";
+import StoryVisual from "./home-news/StoryVisual.astro";
+import { metricValue, paragraphsFor } from "./home-news/storyHelpers";
+import "../styles/home-news-page.css";
+import type { HomeLabels, HomePost, Project, TopicStat } from "./home-news/types";
 
 interface Props {
   posts: HomePost[];
@@ -13,74 +13,67 @@ interface Props {
   topicStats: TopicStat[];
   projects: Project[];
   labels: HomeLabels;
-  locale: 'en' | 'ru';
+  locale: "en" | "ru";
   categoryBasePath: string;
   initialPostId?: number | string;
   initialPaused?: boolean;
 }
 
-const {
-  posts,
-  labels,
-  locale,
-  initialPostId,
-  initialPaused = false,
-} = Astro.props;
+const { posts, labels, locale, initialPostId, initialPaused = false } = Astro.props;
 
-const selectedPost = initialPostId
-  ? posts.find((post) => String(post.id) === String(initialPostId))
-  : null;
-const storyPosts = selectedPost
-  ? [selectedPost, ...posts.filter((post) => String(post.id) !== String(selectedPost.id))]
-  : posts;
+const selectedPost = initialPostId ? posts.find((post) => String(post.id) === String(initialPostId)) : null;
+const storyPosts = selectedPost ? [selectedPost, ...posts.filter((post) => String(post.id) !== String(selectedPost.id))] : posts;
 const activePost = storyPosts[0] || null;
-const isRu = locale === 'ru';
-const watchedCutoff = [...storyPosts]
-  .map((post) => post.views || 0)
-  .sort((a, b) => b - a)[Math.min(7, Math.max(0, storyPosts.length - 1))] || 0;
-const fullTextFor = (post: HomePost) => (post.body || post.excerpt || post.title)
-  .split(/\n+/)
-  .map((line) => line.trim())
-  .filter(Boolean);
+const isRu = locale === "ru";
+const watchedCutoff =
+  [...storyPosts].map((post) => post.views || 0).sort((a, b) => b - a)[Math.min(7, Math.max(0, storyPosts.length - 1))] || 0;
+const fullTextFor = (post: HomePost) =>
+  (post.body || post.excerpt || post.title)
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
 const feedModesFor = (post: HomePost) => {
-  const text = fullTextFor(post).join(' ');
-  const modes = ['latest'];
-  if (text.length >= 700 || fullTextFor(post).length >= 4) modes.push('deep');
-  if ((post.views || 0) >= watchedCutoff && watchedCutoff > 0) modes.push('watched');
+  const text = fullTextFor(post).join(" ");
+  const modes = ["latest"];
+  if (text.length >= 700 || fullTextFor(post).length >= 4) modes.push("deep");
+  if ((post.views || 0) >= watchedCutoff && watchedCutoff > 0) modes.push("watched");
   return modes;
 };
-const publicSrc = (value?: string | null) => value ? `/${String(value).replace(/^\/+/, '')}` : null;
+const publicSrc = (value?: string | null) => (value ? `/${String(value).replace(/^\/+/, "")}` : null);
 const ui = {
-  storyLabel: isRu ? 'Новостной плеер' : 'AI news player',
-  postTab: isRu ? 'Пост' : 'Post',
-  discussionTab: isRu ? 'Обсуждение' : 'Discussion',
-  sourcesTab: isRu ? 'Источники' : 'Sources',
-  previous: isRu ? 'Предыдущая новость' : 'Previous story',
-  next: isRu ? 'Следующая новость' : 'Next story',
-  discuss: isRu ? 'Обсудить' : 'Discuss',
-  share: isRu ? 'Поделиться' : 'Share',
-  readMore: isRu ? 'Читать дальше' : 'Read more',
-  collapse: isRu ? 'Свернуть' : 'Collapse',
-  openPost: isRu ? 'Открыть пост' : 'Open post',
-  mute: isRu ? 'Звук' : 'Audio',
-  muted: isRu ? 'Звук выкл' : 'Muted',
-  storyRail: isRu ? 'Выбор новостей' : 'Story rail',
-  feedMode: isRu ? 'Режим ленты' : 'Feed mode',
-  noDiscussion: isRu ? 'Обсуждения подключим здесь. Пока можно открыть пост и поделиться ссылкой.' : 'Discussion will live here. For now, open the post or share the link.',
-  sourcesHint: isRu ? 'Источники и социальные копии появятся здесь, когда они есть у поста.' : 'Sources and social copies will appear here when a post has them.',
-  backToPost: isRu ? 'К посту' : 'Back to post',
-  copied: isRu ? 'Скопировано' : 'Copied',
-  views: isRu ? 'просмотров' : 'views',
-  replies: isRu ? 'ответов' : 'replies',
-  reactions: isRu ? 'реакций' : 'reactions',
-  feedLatest: 'Latest',
-  feedDeep: 'Deep',
-  feedWatched: 'Watched',
-  menu: isRu ? 'Меню' : 'Menu',
-  language: isRu ? 'English' : 'Русский',
-  telegram: 'Telegram',
+  storyLabel: isRu ? "Новостной плеер" : "AI news player",
+  postTab: isRu ? "Пост" : "Post",
+  discussionTab: isRu ? "Обсуждение" : "Discussion",
+  sourcesTab: isRu ? "Источники" : "Sources",
+  previous: isRu ? "Предыдущая новость" : "Previous story",
+  next: isRu ? "Следующая новость" : "Next story",
+  discuss: isRu ? "Обсудить" : "Discuss",
+  share: isRu ? "Поделиться" : "Share",
+  readMore: isRu ? "Читать дальше" : "Read more",
+  collapse: isRu ? "Свернуть" : "Collapse",
+  openPost: isRu ? "Открыть пост" : "Open post",
+  mute: isRu ? "Звук" : "Audio",
+  muted: isRu ? "Звук выкл" : "Muted",
+  storyRail: isRu ? "Выбор новостей" : "Story rail",
+  feedMode: isRu ? "Режим ленты" : "Feed mode",
+  noDiscussion: isRu
+    ? "Обсуждения подключим здесь. Пока можно открыть пост и поделиться ссылкой."
+    : "Discussion will live here. For now, open the post or share the link.",
+  sourcesHint: isRu
+    ? "Источники и социальные копии появятся здесь, когда они есть у поста."
+    : "Sources and social copies will appear here when a post has them.",
+  backToPost: isRu ? "К посту" : "Back to post",
+  copied: isRu ? "Скопировано" : "Copied",
+  views: isRu ? "просмотров" : "views",
+  replies: isRu ? "ответов" : "replies",
+  reactions: isRu ? "реакций" : "reactions",
+  feedLatest: "Latest",
+  feedDeep: "Deep",
+  feedWatched: "Watched",
+  menu: isRu ? "Меню" : "Menu",
+  language: isRu ? "English" : "Русский",
+  telegram: "Telegram",
 };
-
 ---
 
 <main class="home-page">

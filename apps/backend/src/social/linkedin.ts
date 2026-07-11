@@ -2,11 +2,15 @@ import fs from "node:fs";
 import type { BackendConfig } from "../config.js";
 import type { PublishResult } from "../queue/errors.js";
 import { HttpPublishError } from "../queue/errors.js";
-import { payloadMedia, payloadText, stripLeadingEmojis, type PublishMediaItem } from "./payload.js";
+import { type PublishMediaItem, payloadMedia, payloadText, stripLeadingEmojis } from "./payload.js";
 
 type LinkedInResponse = Record<string, unknown> & { id?: string; value?: Record<string, unknown>; status?: string };
 
-export async function publishToLinkedIn(payload: Record<string, unknown>, config: BackendConfig, fetchImpl: typeof fetch = fetch): Promise<PublishResult> {
+export async function publishToLinkedIn(
+  payload: Record<string, unknown>,
+  config: BackendConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<PublishResult> {
   if (!config.LINKEDIN_ACCESS_TOKEN || !config.LINKEDIN_AUTHOR_URN) throw new Error("missing LinkedIn credentials");
   const media = payloadMedia(payload).filter((item) => item.localPath);
   const post: Record<string, unknown> = {
@@ -23,9 +27,10 @@ export async function publishToLinkedIn(payload: Record<string, unknown>, config
     const urns = await Promise.all(images.slice(0, 20).map((item) => uploadImage(item.localPath!, config, fetchImpl)));
     post.content = { multiImage: { images: urns.map((id) => ({ id, altText: "Post image" })) } };
   } else if (media[0]) {
-    const mediaUrn = media[0].type === "VIDEO"
-      ? await uploadVideo(media[0], config, fetchImpl)
-      : await uploadImage(media[0].localPath!, config, fetchImpl);
+    const mediaUrn =
+      media[0].type === "VIDEO"
+        ? await uploadVideo(media[0], config, fetchImpl)
+        : await uploadImage(media[0].localPath!, config, fetchImpl);
     post.content = { media: { title: "Post Media", id: mediaUrn } };
   }
 
@@ -39,7 +44,7 @@ async function uploadImage(localPath: string, config: BackendConfig, fetchImpl: 
     body: JSON.stringify({ initializeUploadRequest: { owner: config.LINKEDIN_AUTHOR_URN } }),
   });
   const value = initialized.value ?? {};
-  const instructions = Array.isArray(value.uploadInstructions) ? value.uploadInstructions as Array<Record<string, unknown>> : [];
+  const instructions = Array.isArray(value.uploadInstructions) ? (value.uploadInstructions as Array<Record<string, unknown>>) : [];
   const uploadUrl = stringValue(value.uploadUrl) || stringValue(instructions[0]?.uploadUrl);
   const imageUrn = stringValue(value.image);
   if (!uploadUrl || !imageUrn) throw new Error(`LinkedIn image initializeUpload incomplete: ${JSON.stringify(value)}`);
@@ -51,13 +56,21 @@ async function uploadVideo(item: PublishMediaItem, config: BackendConfig, fetchI
   const localPath = item.localPath!;
   const initialized = await callLinkedIn(config, "rest/videos?action=initializeUpload", fetchImpl, {
     method: "POST",
-    body: JSON.stringify({ initializeUploadRequest: { owner: config.LINKEDIN_AUTHOR_URN, fileSizeBytes: fs.statSync(localPath).size, uploadCaptions: false, uploadThumbnail: false } }),
+    body: JSON.stringify({
+      initializeUploadRequest: {
+        owner: config.LINKEDIN_AUTHOR_URN,
+        fileSizeBytes: fs.statSync(localPath).size,
+        uploadCaptions: false,
+        uploadThumbnail: false,
+      },
+    }),
   });
   const value = initialized.value ?? {};
   const videoUrn = stringValue(value.video);
   const uploadToken = stringValue(value.uploadToken);
-  const instructions = Array.isArray(value.uploadInstructions) ? value.uploadInstructions as Array<Record<string, unknown>> : [];
-  if (!videoUrn || !uploadToken || instructions.length === 0) throw new Error(`LinkedIn video initializeUpload incomplete: ${JSON.stringify(value)}`);
+  const instructions = Array.isArray(value.uploadInstructions) ? (value.uploadInstructions as Array<Record<string, unknown>>) : [];
+  if (!videoUrn || !uploadToken || instructions.length === 0)
+    throw new Error(`LinkedIn video initializeUpload incomplete: ${JSON.stringify(value)}`);
 
   const file = await fs.promises.open(localPath, "r");
   const uploadedPartIds: string[] = [];
@@ -98,7 +111,12 @@ async function uploadBinary(url: string, bytes: Buffer, fetchImpl: typeof fetch,
   return etag;
 }
 
-async function callLinkedIn(config: BackendConfig, endpoint: string, fetchImpl: typeof fetch, init: RequestInit): Promise<LinkedInResponse> {
+async function callLinkedIn(
+  config: BackendConfig,
+  endpoint: string,
+  fetchImpl: typeof fetch,
+  init: RequestInit,
+): Promise<LinkedInResponse> {
   const response = await fetchImpl(`https://api.linkedin.com/${endpoint}`, {
     ...init,
     headers: {
@@ -111,7 +129,7 @@ async function callLinkedIn(config: BackendConfig, endpoint: string, fetchImpl: 
   });
   const body = await response.text();
   if (!response.ok) throw new HttpPublishError(`LinkedIn API ${response.status}: ${body}`, response.status, body);
-  const parsed = body ? JSON.parse(body) as LinkedInResponse : {};
+  const parsed = body ? (JSON.parse(body) as LinkedInResponse) : {};
   return { ...parsed, ...(parsed.id ? {} : response.headers.get("x-restli-id") ? { id: response.headers.get("x-restli-id")! } : {}) };
 }
 

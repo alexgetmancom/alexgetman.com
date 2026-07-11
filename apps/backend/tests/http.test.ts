@@ -1,7 +1,7 @@
+import { describe, expect, it, mock } from "bun:test";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
 import { createDraftFromMessage, publishDraftToQueue } from "../src/bot.js";
 import { loadConfig } from "../src/config.js";
 import { openBackendDb } from "../src/db/client.js";
@@ -82,7 +82,7 @@ describe("Hono backend routes", () => {
     const backendDb = tempDb();
     const dir = mkdtempSync(join(tmpdir(), "alexgetman-engagement-"));
     try {
-      const handleUpdate = vi.fn(async () => undefined);
+      const handleUpdate = mock(async () => undefined);
       const app = createHttpApp(
         loadConfig({ SITE_METRICS_JSON: join(dir, "metrics.json"), LIKES_SALT: "salt", TELEGRAM_WEBHOOK_SECRET: "webhook-secret" }),
         backendDb,
@@ -122,7 +122,7 @@ describe("Hono backend routes", () => {
           })
         ).status,
       ).toBe(200);
-      expect(handleUpdate).toHaveBeenCalledOnce();
+      expect(handleUpdate).toHaveBeenCalledTimes(1);
     } finally {
       backendDb.close();
     }
@@ -176,10 +176,12 @@ describe("Hono backend routes", () => {
       const dashboard = await app.request("/command-center?tab=diagnostics&token=secret");
       const html = await dashboard.text();
       expect(dashboard.status).toBe(200);
-      expect(html).toContain("Publications");
+      expect(html).toContain("Pipeline");
       expect(html).toContain("Credentials");
       expect(html).toContain("Diagnostics");
       expect(html).toContain("Lifecycle");
+      expect(html).toContain("font:16px -apple-system");
+      expect(html).not.toContain("width: 22px; text-align: center; font-family: monospace");
       const payload = (await (await app.request("/api/command-center?token=secret")).json()) as { credentials: Array<{ target: string }> };
       expect(payload.credentials).toEqual([expect.objectContaining({ target: "telegram" })]);
     } finally {

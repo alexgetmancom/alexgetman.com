@@ -1,7 +1,21 @@
+import { and, asc, count, eq, inArray, lte, sql } from "drizzle-orm";
 import { Bot, type Context, InlineKeyboard } from "grammy";
-import { DEFAULT_TARGETS, isSiteTarget, PRESETS, TARGET_BY_ID, TARGETS, type TargetId, targetLocale } from "./botTargets.js";
+import { DEFAULT_TARGETS, isSiteTarget, PRESETS, TARGETS, targetLocale } from "./botTargets.js";
 import type { BackendConfig } from "./config.js";
 import type { BackendDb } from "./db/client.js";
+import {
+  adminState,
+  drafts,
+  pendingAlbums,
+  postLocales,
+  posts,
+  publicationPlans,
+  publicationSources,
+  publications,
+  publishJobs,
+  siteJobs,
+  siteSourceItems,
+} from "./db/schema.js";
 import { log } from "./logger.js";
 import { generateStoryMedia } from "./media/story.js";
 import { localizeTargetPayload } from "./publicationPayload.js";
@@ -88,40 +102,38 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
   });
 }
 
-async function processTelegramUpdate(bot: Bot, update: Parameters<Bot["handleUpdate"]>[0]): Promise<void> {
+async function _processTelegramUpdate(bot: Bot, update: Parameters<Bot["handleUpdate"]>[0]): Promise<void> {
   await bot.handleUpdate(update);
 }
 
 export function createDraftFromMessage(backendDb: BackendDb, adminId: number, message: DraftMessage): number {
   const now = new Date().toISOString();
   const targets = { ...DEFAULT_TARGETS };
-  const result = backendDb.sqlite
-    .prepare(
-      `INSERT INTO drafts(admin_id, status, text_ru, text_en_machine, text_en_approved, targets_json, media_ru_json, text_ru_entities_json, created_at, updated_at)
-       VALUES (?, 'needs_review', ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(
+  return backendDb.db
+    .insert(drafts)
+    .values({
       adminId,
-      message.text,
-      message.textEn ?? message.text,
-      message.textEn ?? message.text,
-      JSON.stringify(targets),
-      message.media.length ? JSON.stringify(message.media) : null,
-      JSON.stringify(message.entities),
-      now,
-      now,
-    );
-  return Number(result.lastInsertRowid);
+      status: "needs_review",
+      textRu: message.text,
+      textEnMachine: message.textEn ?? message.text,
+      textEnApproved: message.textEn ?? message.text,
+      targetsJson: JSON.stringify(targets),
+      mediaRuJson: message.media.length ? JSON.stringify(message.media) : null,
+      textRuEntitiesJson: JSON.stringify(message.entities),
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning({ id: drafts.id })
+    .get()!.id;
 }
 
 export function scheduledDrafts(backendDb: BackendDb): Array<{ id: number; scheduledAt: string | null; scheduledEnAt: string | null }> {
-  return (
-    backendDb.sqlite
-      .prepare(
-        "SELECT id, scheduled_at, scheduled_en_at FROM drafts WHERE status='scheduled' ORDER BY COALESCE(scheduled_at, scheduled_en_at), id",
-      )
-      .all() as Array<{ id: number; scheduled_at: string | null; scheduled_en_at: string | null }>
-  ).map((draft) => ({ id: draft.id, scheduledAt: draft.scheduled_at, scheduledEnAt: draft.scheduled_en_at }));
+  return backendDb.db
+    .select({ id: drafts.id, scheduledAt: drafts.scheduledAt, scheduledEnAt: drafts.scheduledEnAt })
+    .from(drafts)
+    .where(eq(drafts.status, "scheduled"))
+    .orderBy(asc(sql`coalesce(${drafts.scheduledAt}, ${drafts.scheduledEnAt})`), asc(drafts.id))
+    .all();
 }
 
 async function handleDraftCallback(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<void> {
@@ -140,9 +152,11 @@ async function handleDraftCallback(ctx: Context, backendDb: BackendDb, config: B
     return;
   }
   if (action === "preset" && first && PRESETS[first]) {
-    backendDb.sqlite
-      .prepare("UPDATE drafts SET targets_json=?, updated_at=? WHERE id=?")
-      .run(JSON.stringify(PRESETS[first]), new Date().toISOString(), draftId);
+    backendDb.db
+      .update(drafts)
+      .set({ targetsJson: JSON.stringify(PRESETS[first]), updatedAt: new Date().toISOString() })
+      .where(eq(drafts.id, draftId))
+      .run();
     await ctx.answerCallbackQuery({ text: `${first} preset` });
     await sendDraftPreview(ctx, backendDb, draftId);
     return;
@@ -156,7 +170,7 @@ async function handleDraftCallback(ctx: Context, backendDb: BackendDb, config: B
     return;
   }
   if (action === "use_ru_media") {
-    backendDb.sqlite.prepare("UPDATE drafts SET media_en_json=NULL, updated_at=? WHERE id=?").run(new Date().toISOString(), draftId);
+    backendDb.db.update(drafts).set({ mediaEnJson: null, updatedAt: new Date().toISOString() }).where(eq(drafts.id, draftId)).run();
     await ctx.answerCallbackQuery({ text: "EN media uses RU fallback" });
     await sendDraftPreview(ctx, backendDb, draftId);
     return;
@@ -166,10 +180,18 @@ async function handleDraftCallback(ctx: Context, backendDb: BackendDb, config: B
     const draft = requireDraft(backendDb, draftId);
     const source = locale === "en" ? (parseJson(draft.media_en_json) ?? parseJson(draft.media_ru_json)) : parseJson(draft.media_ru_json);
     const generated = await generateStoryMedia(source, draftId, locale, config);
-    const column = locale === "en" ? "media_en_json" : "media_ru_json";
-    backendDb.sqlite
-      .prepare(`UPDATE drafts SET ${column}=?, updated_at=? WHERE id=?`)
-      .run(JSON.stringify(generated), new Date().toISOString(), draftId);
+    if (locale === "en")
+      backendDb.db
+        .update(drafts)
+        .set({ mediaEnJson: JSON.stringify(generated), updatedAt: new Date().toISOString() })
+        .where(eq(drafts.id, draftId))
+        .run();
+    else
+      backendDb.db
+        .update(drafts)
+        .set({ mediaRuJson: JSON.stringify(generated), updatedAt: new Date().toISOString() })
+        .where(eq(drafts.id, draftId))
+        .run();
     await ctx.answerCallbackQuery({ text: `${locale.toUpperCase()} 9:16 generated` });
     await sendDraftPreview(ctx, backendDb, draftId);
     return;
@@ -232,38 +254,41 @@ async function handleDraftCallback(ctx: Context, backendDb: BackendDb, config: B
   await ctx.answerCallbackQuery({ text: "Unknown action" });
 }
 
-function cancelDraft(backendDb: BackendDb, draftId: number): void {
+export function cancelDraft(backendDb: BackendDb, draftId: number): void {
   const now = new Date().toISOString();
-  backendDb.sqlite.transaction(() => {
-    const publication = backendDb.sqlite.prepare("SELECT post_id FROM publications WHERE draft_id=?").get(draftId) as
-      | { post_id?: number }
-      | undefined;
-    const postId = publication?.post_id;
-    backendDb.sqlite
-      .prepare("UPDATE drafts SET status='cancelled', scheduled_at=NULL, scheduled_en_at=NULL, updated_at=? WHERE id=?")
-      .run(now, draftId);
+  backendDb.db.transaction((tx) => {
+    const publication = tx.select({ postId: publications.postId }).from(publications).where(eq(publications.draftId, draftId)).get();
+    const postId = publication?.postId;
+    tx.update(drafts)
+      .set({ status: "cancelled", scheduledAt: null, scheduledEnAt: null, updatedAt: now })
+      .where(eq(drafts.id, draftId))
+      .run();
     if (!postId) return;
-    const finalCount = backendDb.sqlite
-      .prepare("SELECT COUNT(*) AS count FROM publish_jobs WHERE post_id=? AND status IN ('publishing','published','skipped')")
-      .get(postId) as { count: number };
-    if (finalCount.count > 0) {
-      backendDb.sqlite
-        .prepare("UPDATE publish_jobs SET status='cancelled', updated_at=? WHERE post_id=? AND status IN ('queued','failed')")
-        .run(now, postId);
-      backendDb.sqlite
-        .prepare("UPDATE site_jobs SET status='cancelled', updated_at=? WHERE post_id=? AND status IN ('queued','failed')")
-        .run(now, postId);
+    const finalCount = tx
+      .select({ count: count() })
+      .from(publishJobs)
+      .where(and(eq(publishJobs.postId, postId), inArray(publishJobs.status, ["publishing", "published", "skipped"])))
+      .get()!.count;
+    if (finalCount > 0) {
+      tx.update(publishJobs)
+        .set({ status: "cancelled", updatedAt: now })
+        .where(and(eq(publishJobs.postId, postId), inArray(publishJobs.status, ["queued", "failed"])))
+        .run();
+      tx.update(siteJobs)
+        .set({ status: "cancelled", updatedAt: now })
+        .where(and(eq(siteJobs.postId, postId), inArray(siteJobs.status, ["queued", "failed"])))
+        .run();
       return;
     }
-    backendDb.sqlite.prepare("DELETE FROM publish_jobs WHERE post_id=?").run(postId);
-    backendDb.sqlite.prepare("DELETE FROM site_jobs WHERE post_id=?").run(postId);
-    backendDb.sqlite.prepare("DELETE FROM publication_plans WHERE post_id=?").run(postId);
-    backendDb.sqlite.prepare("DELETE FROM publication_sources WHERE post_id=?").run(postId);
-    backendDb.sqlite.prepare("DELETE FROM post_locales WHERE post_id=?").run(postId);
-    backendDb.sqlite.prepare("DELETE FROM posts WHERE post_id=?").run(postId);
-    backendDb.sqlite.prepare("DELETE FROM publications WHERE post_id=?").run(postId);
-    backendDb.sqlite.prepare("UPDATE drafts SET post_id=NULL, updated_at=? WHERE id=?").run(now, draftId);
-  })();
+    tx.delete(publishJobs).where(eq(publishJobs.postId, postId)).run();
+    tx.delete(siteJobs).where(eq(siteJobs.postId, postId)).run();
+    tx.delete(publicationPlans).where(eq(publicationPlans.postId, postId)).run();
+    tx.delete(publicationSources).where(eq(publicationSources.postId, postId)).run();
+    tx.delete(postLocales).where(eq(postLocales.postId, postId)).run();
+    tx.delete(posts).where(eq(posts.postId, postId)).run();
+    tx.delete(publications).where(eq(publications.postId, postId)).run();
+    tx.update(drafts).set({ postId: null, updatedAt: now }).where(eq(drafts.id, draftId)).run();
+  });
   rebalanceScheduledDrafts(backendDb);
 }
 
@@ -277,16 +302,14 @@ export function publishDraftToQueue(
   const mode = options.mode ?? "immediate";
   const ruAt = mode === "immediate" ? now : (options.ruAt?.toISOString() ?? null);
   const enAt = mode === "immediate" ? now : (options.enAt?.toISOString() ?? null);
-  const existing = backendDb.sqlite.prepare("SELECT post_id FROM publications WHERE draft_id=?").get(draftId) as
-    | { post_id?: number }
-    | undefined;
+  const existing = backendDb.db.select({ postId: publications.postId }).from(publications).where(eq(publications.draftId, draftId)).get();
   const postId =
-    existing?.post_id ??
-    Number(
-      backendDb.sqlite
-        .prepare("INSERT INTO publications(status, draft_id, created_at, updated_at) VALUES (?, ?, ?, ?)")
-        .run(mode === "immediate" ? "published" : "scheduled", draftId, now, now).lastInsertRowid,
-    );
+    existing?.postId ??
+    backendDb.db
+      .insert(publications)
+      .values({ status: mode === "immediate" ? "published" : "scheduled", draftId, createdAt: now, updatedAt: now })
+      .returning({ postId: publications.postId })
+      .get()!.postId;
   const messageId = Number(draft.channel_message_id ?? postId);
   const postKey = `post:${postId}`;
   const mediaRu = parseJson(draft.media_ru_json);
@@ -298,6 +321,30 @@ export function publishDraftToQueue(
   const textEn = String(draft.text_en_approved ?? draft.text_en_machine ?? draft.text_ru ?? "");
   const slugRu = slugify(firstLine(textRu), postId);
   const slugEn = slugify(firstLine(textEn), postId);
+  const ruLocale: typeof postLocales.$inferInsert = {
+    postId,
+    locale: "ru",
+    slug: slugRu,
+    text: textRu,
+    html: entitiesToHtml(textRu, entitiesRu),
+    entitiesJson: typeof draft.text_ru_entities_json === "string" ? draft.text_ru_entities_json : null,
+    mediaJson: JSON.stringify(mediaRu ?? []),
+    siteEnabled: targets.site_ru ? 1 : 0,
+    publishedAt: targets.site_ru ? ruAt : null,
+    updatedAt: now,
+  };
+  const enLocale: typeof postLocales.$inferInsert = {
+    postId,
+    locale: "en",
+    slug: slugEn,
+    text: textEn,
+    html: entitiesToHtml(textEn, entitiesEn),
+    entitiesJson: typeof draft.text_en_entities_json === "string" ? draft.text_en_entities_json : null,
+    mediaJson: JSON.stringify(mediaEn ?? []),
+    siteEnabled: targets.site_en ? 1 : 0,
+    publishedAt: targets.site_en ? enAt : null,
+    updatedAt: now,
+  };
   const payload = {
     draft_id: draftId,
     post_id: postId,
@@ -320,69 +367,98 @@ export function publishDraftToQueue(
     has_en: Boolean(targets.site_en),
   };
 
-  backendDb.sqlite.transaction(() => {
-    backendDb.sqlite
-      .prepare(`INSERT INTO posts(post_key, post_id, source, channel, message_id, date_utc, text, text_en, media_json, media_count, created_at, updated_at, raw_json)
-        VALUES (?, ?, 'bot', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(post_key) DO UPDATE SET post_id=excluded.post_id, date_utc=excluded.date_utc, text=excluded.text, text_en=excluded.text_en, media_json=excluded.media_json, media_count=excluded.media_count, updated_at=excluded.updated_at, raw_json=excluded.raw_json`)
-      .run(
+  backendDb.db.transaction((tx) => {
+    tx.insert(posts)
+      .values({
         postKey,
         postId,
-        "controller",
+        source: "bot",
+        channel: "controller",
         messageId,
-        ruAt ?? enAt ?? now,
-        payload.text,
-        payload.text_en,
-        JSON.stringify(mediaRu ?? []),
-        Array.isArray(mediaRu) ? mediaRu.length : 0,
-        now,
-        now,
-        JSON.stringify(payload),
-      );
-    backendDb.sqlite
-      .prepare(`INSERT INTO post_locales(post_id, locale, slug, text, html, entities_json, media_json, site_enabled, published_at, updated_at)
-      VALUES (?, 'ru', ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(post_id, locale) DO UPDATE SET slug=excluded.slug, text=excluded.text, html=excluded.html, entities_json=excluded.entities_json, media_json=excluded.media_json, site_enabled=excluded.site_enabled, published_at=excluded.published_at, updated_at=excluded.updated_at`)
-      .run(
+        dateUtc: ruAt ?? enAt ?? now,
+        text: payload.text,
+        textEn: payload.text_en,
+        mediaJson: JSON.stringify(mediaRu ?? []),
+        mediaCount: Array.isArray(mediaRu) ? mediaRu.length : 0,
+        createdAt: now,
+        updatedAt: now,
+        rawJson: JSON.stringify(payload),
+      })
+      .onConflictDoUpdate({
+        target: posts.postKey,
+        set: {
+          postId,
+          dateUtc: ruAt ?? enAt ?? now,
+          text: payload.text,
+          textEn: payload.text_en,
+          mediaJson: JSON.stringify(mediaRu ?? []),
+          mediaCount: Array.isArray(mediaRu) ? mediaRu.length : 0,
+          updatedAt: now,
+          rawJson: JSON.stringify(payload),
+        },
+      })
+      .run();
+    tx.insert(postLocales)
+      .values(ruLocale)
+      .onConflictDoUpdate({
+        target: [postLocales.postId, postLocales.locale],
+        set: {
+          slug: ruLocale.slug,
+          text: ruLocale.text,
+          html: ruLocale.html,
+          entitiesJson: ruLocale.entitiesJson,
+          mediaJson: ruLocale.mediaJson,
+          siteEnabled: ruLocale.siteEnabled,
+          publishedAt: ruLocale.publishedAt,
+          updatedAt: now,
+        },
+      })
+      .run();
+    tx.insert(postLocales)
+      .values(enLocale)
+      .onConflictDoUpdate({
+        target: [postLocales.postId, postLocales.locale],
+        set: {
+          slug: enLocale.slug,
+          text: enLocale.text,
+          html: enLocale.html,
+          entitiesJson: enLocale.entitiesJson,
+          mediaJson: enLocale.mediaJson,
+          siteEnabled: enLocale.siteEnabled,
+          publishedAt: enLocale.publishedAt,
+          updatedAt: now,
+        },
+      })
+      .run();
+    tx.insert(publicationPlans)
+      .values({
         postId,
-        slugRu,
-        textRu,
-        entitiesToHtml(textRu, entitiesRu),
-        draft.text_ru_entities_json ?? null,
-        JSON.stringify(mediaRu ?? []),
-        targets.site_ru ? 1 : 0,
-        targets.site_ru ? ruAt : null,
-        now,
-      );
-    backendDb.sqlite
-      .prepare(`INSERT INTO post_locales(post_id, locale, slug, text, html, entities_json, media_json, site_enabled, published_at, updated_at)
-      VALUES (?, 'en', ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(post_id, locale) DO UPDATE SET slug=excluded.slug, text=excluded.text, html=excluded.html, entities_json=excluded.entities_json, media_json=excluded.media_json, site_enabled=excluded.site_enabled, published_at=excluded.published_at, updated_at=excluded.updated_at`)
-      .run(
-        postId,
-        slugEn,
-        textEn,
-        entitiesToHtml(textEn, entitiesEn),
-        draft.text_en_entities_json ?? null,
-        JSON.stringify(mediaEn ?? []),
-        targets.site_en ? 1 : 0,
-        targets.site_en ? enAt : null,
-        now,
-      );
-    backendDb.sqlite
-      .prepare(`INSERT INTO publication_plans(post_id, plan_json, created_at, updated_at) VALUES (?, ?, ?, ?)
-      ON CONFLICT(post_id) DO UPDATE SET plan_json=excluded.plan_json, updated_at=excluded.updated_at`)
-      .run(postId, JSON.stringify({ draft_id: draftId, targets, scheduled_at: ruAt, scheduled_en_at: enAt, created_at: now }), now, now);
-    backendDb.sqlite
-      .prepare(`INSERT INTO publication_sources(post_id, item_json, created_at, updated_at) VALUES (?, ?, ?, ?)
-      ON CONFLICT(post_id) DO UPDATE SET item_json=excluded.item_json, updated_at=excluded.updated_at`)
-      .run(postId, JSON.stringify(payload), now, now);
-    backendDb.sqlite
-      .prepare(`INSERT INTO site_source_items(message_id, item_json, created_at, updated_at) VALUES (?, ?, ?, ?)
-      ON CONFLICT(message_id) DO UPDATE SET item_json=excluded.item_json, updated_at=excluded.updated_at`)
-      .run(messageId, JSON.stringify(payload), now, now);
-    backendDb.sqlite.prepare("DELETE FROM publish_jobs WHERE post_id=? AND status IN ('queued','failed')").run(postId);
-    backendDb.sqlite.prepare("DELETE FROM site_jobs WHERE post_id=? AND status IN ('queued','failed')").run(postId);
+        planJson: JSON.stringify({ draft_id: draftId, targets, scheduled_at: ruAt, scheduled_en_at: enAt, created_at: now }),
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: publicationPlans.postId,
+        set: {
+          planJson: JSON.stringify({ draft_id: draftId, targets, scheduled_at: ruAt, scheduled_en_at: enAt, created_at: now }),
+          updatedAt: now,
+        },
+      })
+      .run();
+    tx.insert(publicationSources)
+      .values({ postId, itemJson: JSON.stringify(payload), createdAt: now, updatedAt: now })
+      .onConflictDoUpdate({ target: publicationSources.postId, set: { itemJson: JSON.stringify(payload), updatedAt: now } })
+      .run();
+    tx.insert(siteSourceItems)
+      .values({ messageId, itemJson: JSON.stringify(payload), createdAt: now, updatedAt: now })
+      .onConflictDoUpdate({ target: siteSourceItems.messageId, set: { itemJson: JSON.stringify(payload), updatedAt: now } })
+      .run();
+    tx.delete(publishJobs)
+      .where(and(eq(publishJobs.postId, postId), inArray(publishJobs.status, ["queued", "failed"])))
+      .run();
+    tx.delete(siteJobs)
+      .where(and(eq(siteJobs.postId, postId), inArray(siteJobs.status, ["queued", "failed"])))
+      .run();
     for (const [target, enabled] of Object.entries(targets)) {
       if (!enabled || isSiteTarget(target)) continue;
       const publishAt = targetLocale(target) === "en" ? enAt : ruAt;
@@ -393,19 +469,34 @@ export function publishDraftToQueue(
       ["en", targets.site_en, enAt],
     ] as const) {
       if (enabled && publishAt)
-        backendDb.sqlite
-          .prepare(
-            "INSERT INTO site_jobs(post_id, message_id, reason, status, next_attempt_at, created_at, updated_at) VALUES (?, ?, ?, 'queued', ?, ?, ?)",
-          )
-          .run(postId, messageId, `publish_${locale}`, publishAt, now, now);
+        tx.insert(siteJobs)
+          .values({
+            postId,
+            messageId,
+            reason: `publish_${locale}`,
+            status: "queued",
+            nextAttemptAt: publishAt,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .run();
     }
-    backendDb.sqlite
-      .prepare("UPDATE drafts SET status=?, post_id=?, publish_mode=?, scheduled_at=?, scheduled_en_at=?, updated_at=? WHERE id=?")
-      .run(mode === "immediate" ? "published" : "scheduled", postId, mode, ruAt, enAt, now, draftId);
-    backendDb.sqlite
-      .prepare("UPDATE publications SET status=?, updated_at=? WHERE post_id=?")
-      .run(mode === "immediate" ? "published" : "scheduled", now, postId);
-  })();
+    tx.update(drafts)
+      .set({
+        status: mode === "immediate" ? "published" : "scheduled",
+        postId,
+        publishMode: mode,
+        scheduledAt: ruAt,
+        scheduledEnAt: enAt,
+        updatedAt: now,
+      })
+      .where(eq(drafts.id, draftId))
+      .run();
+    tx.update(publications)
+      .set({ status: mode === "immediate" ? "published" : "scheduled", updatedAt: now })
+      .where(eq(publications.postId, postId))
+      .run();
+  });
   return postId;
 }
 
@@ -415,7 +506,7 @@ async function sendDraftPreview(ctx: Context, backendDb: BackendDb, draftId: num
 }
 
 function draftPreview(backendDb: BackendDb, draftId: number): { text: string; keyboard: InlineKeyboard } {
-  const draft = backendDb.sqlite.prepare("SELECT * FROM drafts WHERE id=?").get(draftId) as Record<string, unknown>;
+  const draft = requireDraft(backendDb, draftId);
   const targets = parseTargets(draft.targets_json);
   const keyboard = new InlineKeyboard();
   keyboard
@@ -450,12 +541,14 @@ function draftPreview(backendDb: BackendDb, draftId: number): { text: string; ke
 }
 
 function toggleDraftTarget(backendDb: BackendDb, draftId: number, target: string): void {
-  const row = backendDb.sqlite.prepare("SELECT targets_json FROM drafts WHERE id=?").get(draftId) as Record<string, unknown> | undefined;
-  const targets = parseTargets(row?.targets_json);
+  const row = backendDb.db.select({ targetsJson: drafts.targetsJson }).from(drafts).where(eq(drafts.id, draftId)).get();
+  const targets = parseTargets(row?.targetsJson);
   targets[target] = !targets[target];
-  backendDb.sqlite
-    .prepare("UPDATE drafts SET targets_json=?, updated_at=? WHERE id=?")
-    .run(JSON.stringify(targets), new Date().toISOString(), draftId);
+  backendDb.db
+    .update(drafts)
+    .set({ targetsJson: JSON.stringify(targets), updatedAt: new Date().toISOString() })
+    .where(eq(drafts.id, draftId))
+    .run();
 }
 
 function extractMessage(ctx: Context): DraftMessage {
@@ -533,7 +626,25 @@ type DraftMessage = {
 };
 
 function requireDraft(backendDb: BackendDb, draftId: number): Record<string, unknown> {
-  const draft = backendDb.sqlite.prepare("SELECT * FROM drafts WHERE id=?").get(draftId) as Record<string, unknown> | undefined;
+  const draft = backendDb.db
+    .select({
+      id: drafts.id,
+      status: drafts.status,
+      text_ru: drafts.textRu,
+      text_en_machine: drafts.textEnMachine,
+      text_en_approved: drafts.textEnApproved,
+      targets_json: drafts.targetsJson,
+      media_ru_json: drafts.mediaRuJson,
+      media_en_json: drafts.mediaEnJson,
+      channel_message_id: drafts.channelMessageId,
+      scheduled_at: drafts.scheduledAt,
+      scheduled_en_at: drafts.scheduledEnAt,
+      text_ru_entities_json: drafts.textRuEntitiesJson,
+      text_en_entities_json: drafts.textEnEntitiesJson,
+    })
+    .from(drafts)
+    .where(eq(drafts.id, draftId))
+    .get();
   if (!draft) throw new Error(`draft ${draftId} not found`);
   return draft;
 }
@@ -543,17 +654,21 @@ function hasLocaleTarget(targets: Record<string, boolean>, locale: "ru" | "en"):
 }
 
 function getAdminState(backendDb: BackendDb, adminId: number): { action: string | null; draft_id: number | null } | null {
-  return backendDb.sqlite.prepare("SELECT action, draft_id FROM admin_state WHERE admin_id=?").get(adminId) as {
-    action: string | null;
-    draft_id: number | null;
-  } | null;
+  return (
+    backendDb.db
+      .select({ action: adminState.action, draft_id: adminState.draftId })
+      .from(adminState)
+      .where(eq(adminState.adminId, adminId))
+      .get() ?? null
+  );
 }
 
 function setAdminState(backendDb: BackendDb, adminId: number, action: string | null = null, draftId: number | null = null): void {
-  backendDb.sqlite
-    .prepare(`INSERT INTO admin_state(admin_id, action, draft_id, updated_at) VALUES (?, ?, ?, ?)
-    ON CONFLICT(admin_id) DO UPDATE SET action=excluded.action, draft_id=excluded.draft_id, updated_at=excluded.updated_at`)
-    .run(adminId, action, draftId, new Date().toISOString());
+  backendDb.db
+    .insert(adminState)
+    .values({ adminId, action, draftId, updatedAt: new Date().toISOString() })
+    .onConflictDoUpdate({ target: adminState.adminId, set: { action, draftId, updatedAt: new Date().toISOString() } })
+    .run();
 }
 
 async function applyAdminState(ctx: Context, backendDb: BackendDb, action: string, draftId: number): Promise<void> {
@@ -569,15 +684,32 @@ async function applyAdminState(ctx: Context, backendDb: BackendDb, action: strin
     rebalanceScheduledDrafts(backendDb);
   } else if (action === "edit_ru" || action === "edit_en") {
     if (!message.text) throw new Error("edited text is empty");
-    const column = action === "edit_ru" ? "text_ru" : "text_en_approved";
-    const entitiesColumn = action === "edit_ru" ? "text_ru_entities_json" : "text_en_entities_json";
-    backendDb.sqlite
-      .prepare(`UPDATE drafts SET ${column}=?, ${entitiesColumn}=?, updated_at=? WHERE id=?`)
-      .run(message.text, JSON.stringify(message.entities), now, draftId);
+    if (action === "edit_ru")
+      backendDb.db
+        .update(drafts)
+        .set({ textRu: message.text, textRuEntitiesJson: JSON.stringify(message.entities), updatedAt: now })
+        .where(eq(drafts.id, draftId))
+        .run();
+    else
+      backendDb.db
+        .update(drafts)
+        .set({ textEnApproved: message.text, textEnEntitiesJson: JSON.stringify(message.entities), updatedAt: now })
+        .where(eq(drafts.id, draftId))
+        .run();
   } else if (action === "replace_ru_media" || action === "replace_en_media") {
     if (message.media.length === 0) throw new Error("replacement media is empty");
-    const column = action === "replace_ru_media" ? "media_ru_json" : "media_en_json";
-    backendDb.sqlite.prepare(`UPDATE drafts SET ${column}=?, updated_at=? WHERE id=?`).run(JSON.stringify(message.media), now, draftId);
+    if (action === "replace_ru_media")
+      backendDb.db
+        .update(drafts)
+        .set({ mediaRuJson: JSON.stringify(message.media), updatedAt: now })
+        .where(eq(drafts.id, draftId))
+        .run();
+    else
+      backendDb.db
+        .update(drafts)
+        .set({ mediaEnJson: JSON.stringify(message.media), updatedAt: now })
+        .where(eq(drafts.id, draftId))
+        .run();
   }
   setAdminState(backendDb, Number(ctx.from?.id));
   await ctx.reply(`Draft #${draftId} updated.`);
@@ -603,37 +735,56 @@ type PendingAlbumInput = {
 
 function appendPendingAlbum(backendDb: BackendDb, input: PendingAlbumInput): boolean {
   const id = `${input.adminId}:${input.chatId}:${input.mediaGroupId}:${input.action ?? "draft"}:${input.draftId ?? ""}`;
-  const row = backendDb.sqlite.prepare("SELECT media_json,text_ru,text_entities_json FROM pending_albums WHERE id=?").get(id) as
-    | { media_json?: string; text_ru?: string; text_entities_json?: string }
-    | undefined;
+  const row = backendDb.db
+    .select({ media_json: pendingAlbums.mediaJson, text_ru: pendingAlbums.textRu, text_entities_json: pendingAlbums.textEntitiesJson })
+    .from(pendingAlbums)
+    .where(eq(pendingAlbums.id, id))
+    .get();
   const media = row ? parseArrayValue(row.media_json) : [];
   media.push(input.media);
   const now = new Date().toISOString();
-  backendDb.sqlite
-    .prepare(`INSERT INTO pending_albums(id,admin_id,chat_id,media_group_id,action,draft_id,text_ru,text_entities_json,media_json,notified,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,1,?)
-    ON CONFLICT(id) DO UPDATE SET text_ru=excluded.text_ru,text_entities_json=excluded.text_entities_json,media_json=excluded.media_json,updated_at=excluded.updated_at`)
-    .run(
-      id,
-      input.adminId,
-      input.chatId,
-      input.mediaGroupId,
-      input.action,
-      input.draftId,
-      input.text || row?.text_ru || "",
-      JSON.stringify(input.entities.length ? input.entities : parseArrayValue(row?.text_entities_json)),
-      JSON.stringify(media),
-      now,
-    );
+  const values = {
+    id,
+    adminId: input.adminId,
+    chatId: input.chatId,
+    mediaGroupId: input.mediaGroupId,
+    action: input.action,
+    draftId: input.draftId,
+    textRu: input.text || row?.text_ru || "",
+    textEntitiesJson: JSON.stringify(input.entities.length ? input.entities : parseArrayValue(row?.text_entities_json)),
+    mediaJson: JSON.stringify(media),
+    notified: 1,
+    updatedAt: now,
+  };
+  backendDb.db
+    .insert(pendingAlbums)
+    .values(values)
+    .onConflictDoUpdate({
+      target: pendingAlbums.id,
+      set: { textRu: values.textRu, textEntitiesJson: values.textEntitiesJson, mediaJson: values.mediaJson, updatedAt: now },
+    })
+    .run();
   return !row;
 }
 
 export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendDb, config: BackendConfig): Promise<number> {
   if (!bot) return 0;
   const cutoff = new Date(Date.now() - config.CONTROLLER_ALBUM_SETTLE_SECONDS * 1000).toISOString();
-  const rows = backendDb.sqlite.prepare("SELECT * FROM pending_albums WHERE updated_at<=? ORDER BY updated_at").all(cutoff) as Array<
-    Record<string, unknown>
-  >;
+  const rows = backendDb.db
+    .select({
+      id: pendingAlbums.id,
+      admin_id: pendingAlbums.adminId,
+      chat_id: pendingAlbums.chatId,
+      action: pendingAlbums.action,
+      draft_id: pendingAlbums.draftId,
+      text_ru: pendingAlbums.textRu,
+      text_entities_json: pendingAlbums.textEntitiesJson,
+      media_json: pendingAlbums.mediaJson,
+    })
+    .from(pendingAlbums)
+    .where(lte(pendingAlbums.updatedAt, cutoff))
+    .orderBy(asc(pendingAlbums.updatedAt))
+    .all();
   let completed = 0;
   for (const row of rows) {
     try {
@@ -641,10 +792,18 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
       const action = String(row.action ?? "");
       const draftId = row.draft_id == null ? null : Number(row.draft_id);
       if (["replace_ru_media", "replace_en_media"].includes(action) && draftId) {
-        const column = action === "replace_ru_media" ? "media_ru_json" : "media_en_json";
-        backendDb.sqlite
-          .prepare(`UPDATE drafts SET ${column}=?, updated_at=? WHERE id=?`)
-          .run(JSON.stringify(media), new Date().toISOString(), draftId);
+        if (action === "replace_ru_media")
+          backendDb.db
+            .update(drafts)
+            .set({ mediaRuJson: JSON.stringify(media), updatedAt: new Date().toISOString() })
+            .where(eq(drafts.id, draftId))
+            .run();
+        else
+          backendDb.db
+            .update(drafts)
+            .set({ mediaEnJson: JSON.stringify(media), updatedAt: new Date().toISOString() })
+            .where(eq(drafts.id, draftId))
+            .run();
         setAdminState(backendDb, Number(row.admin_id));
         const preview = draftPreview(backendDb, draftId);
         await bot.api.sendMessage(Number(row.chat_id), preview.text, { reply_markup: preview.keyboard });
@@ -665,7 +824,7 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
         const preview = draftPreview(backendDb, created);
         await bot.api.sendMessage(Number(row.chat_id), preview.text, { reply_markup: preview.keyboard });
       }
-      backendDb.sqlite.prepare("DELETE FROM pending_albums WHERE id=?").run(String(row.id));
+      backendDb.db.delete(pendingAlbums).where(eq(pendingAlbums.id, row.id)).run();
       completed += 1;
     } catch (error) {
       log("error", "album finalization failed", { album: row.id, error: String(error) });

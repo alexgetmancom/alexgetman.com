@@ -1,14 +1,16 @@
+import { and, eq } from "drizzle-orm";
 import type { Bot } from "grammy";
+import pLimit from "p-limit";
 import { finalizePendingAlbums } from "./bot.js";
 import type { BackendConfig } from "./config.js";
 import type { BackendDb } from "./db/client.js";
+import { postTargets, publishJobs } from "./db/schema.js";
 import { log } from "./logger.js";
 import { runMetricsCycle } from "./metrics/index.js";
 import { claimDuePublishJobs, completePublishJob, failPublishJob, recoverStalePublishJobs } from "./queue/publish.js";
 import { type ScheduledLoop, startLoop } from "./scheduler.js";
 import { runObservabilityCycle } from "./services/observability.js";
 import { recordWorkerState } from "./services/workerState.js";
-import { runSiteJobCycle } from "./site/jobs.js";
 import { createPublishers, type Publisher } from "./social/index.js";
 
 export async function runPublishCycle(
@@ -18,19 +20,22 @@ export async function runPublishCycle(
 ): Promise<number> {
   recoverStalePublishJobs(backendDb, config.PUBLISH_LOCK_TIMEOUT_SECONDS);
   const jobs = claimDuePublishJobs(backendDb, config.PUBLISH_CLAIM_LIMIT);
+  const publishLimit = pLimit(config.PUBLISH_MAX_CONCURRENCY);
   const results = await Promise.allSettled(
-    jobs.map(async (job) => {
-      const publisher = publishers[job.target];
-      if (!publisher) {
-        completePublishJob(backendDb, config, job.jobId, { skipped: true, reason: `unsupported target: ${job.target}` });
-        return;
-      }
-      try {
-        completePublishJob(backendDb, config, job.jobId, await publisher(job));
-      } catch (error) {
-        failPublishJob(backendDb, config, job.jobId, error);
-      }
-    }),
+    jobs.map((job) =>
+      publishLimit(async () => {
+        const publisher = publishers[job.target];
+        if (!publisher) {
+          completePublishJob(backendDb, config, job.jobId, { skipped: true, reason: `unsupported target: ${job.target}` });
+          return;
+        }
+        try {
+          completePublishJob(backendDb, config, job.jobId, await publisher(job));
+        } catch (error) {
+          failPublishJob(backendDb, config, job.jobId, error);
+        }
+      }),
+    ),
   );
   for (const [index, result] of results.entries()) {
     if (result.status !== "rejected") continue;
@@ -38,14 +43,16 @@ export async function runPublishCycle(
     const error = `worker finalization failed: ${String(result.reason instanceof Error ? result.reason.message : result.reason)}`;
     log("error", "publish job finalization failed", { jobId: job.jobId, target: job.target, error });
     const now = new Date().toISOString();
-    backendDb.sqlite
-      .prepare(
-        "UPDATE publish_jobs SET status='failed', locked_by=NULL, locked_at=NULL, last_error=?, updated_at=? WHERE job_id=? AND status='publishing'",
-      )
-      .run(error, now, job.jobId);
-    backendDb.sqlite
-      .prepare("UPDATE post_targets SET status='failed', error=?, skipped=0, updated_at=? WHERE post_key=? AND target=?")
-      .run(error, now, job.postKey, job.target);
+    backendDb.db
+      .update(publishJobs)
+      .set({ status: "failed", lockedBy: null, lockedAt: null, lastError: error, updatedAt: now })
+      .where(and(eq(publishJobs.jobId, job.jobId), eq(publishJobs.status, "publishing")))
+      .run();
+    backendDb.db
+      .update(postTargets)
+      .set({ status: "failed", error, skipped: 0, updatedAt: now })
+      .where(and(eq(postTargets.postKey, job.postKey), eq(postTargets.target, job.target)))
+      .run();
   }
   recordWorkerState(backendDb, "queue", { claimed: jobs.length });
   return jobs.length;
@@ -63,16 +70,11 @@ export function startWorkers(config: BackendConfig, backendDb: BackendDb, bot: B
     }),
     startLoop("queue", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
       const claimed = await runPublishCycle(config, backendDb);
-      if (claimed > 0 && config.ENABLE_SITE_WORKER) {
-        const siteClaimed = await runSiteJobCycle(config, backendDb);
-        if (siteClaimed) log("debug", "site build triggered by publish cycle", { claimed: siteClaimed });
-      }
       log("debug", "queue loop tick", { claimed });
     }),
     startLoop("metrics", config.METRICS_REFRESH_INTERVAL_SECONDS * 1000, async () => {
-      const claimed = config.ENABLE_SITE_WORKER ? await runSiteJobCycle(config, backendDb) : 0;
       const checked = await runMetricsCycle(config, backendDb);
-      log("debug", "site/metrics loop tick", { claimed, checked });
+      log("debug", "metrics loop tick", { checked });
     }),
     startLoop("observability", config.OBSERVABILITY_INTERVAL_SECONDS * 1000, async () => {
       const result = await runObservabilityCycle(config, backendDb, bot);

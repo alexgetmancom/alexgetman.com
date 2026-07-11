@@ -1,6 +1,6 @@
+import { TARGETS } from "../botTargets.js";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
-import { TARGETS } from "../botTargets.js";
 import { commandCenterPayload } from "./commandCenter.js";
 import { pipelineStatusPayload } from "./pipeline.js";
 
@@ -14,24 +14,31 @@ function escapeHtml(value: unknown): string {
 }
 
 const ORDERED_IDS = [
-  "site_en", "site_ru",
-  "threads_en", "threads_ru",
-  "facebook", "facebook_ru",
-  "instagram_stories", "instagram_stories_ru",
-  "telegram", "linkedin", "x",
+  "site_en",
+  "site_ru",
+  "threads_en",
+  "threads_ru",
+  "facebook",
+  "facebook_ru",
+  "instagram_stories",
+  "instagram_stories_ru",
+  "telegram",
+  "linkedin",
+  "x",
   "telegram_stories",
-  "bluesky", "mastodon", "devto",
-  "github_en", "github_ru",
+  "bluesky",
+  "mastodon",
+  "devto",
+  "github_en",
+  "github_ru",
 ] as const;
 
 type TargetInfo = { id: string; label: string; locale: string; kind: string };
 
-const ORDERED_TARGETS: TargetInfo[] = ORDERED_IDS
-  .map((id) => {
-    const found = TARGETS.find((t) => t[0] === id);
-    return found ? { id: found[0] as string, label: found[1] as string, locale: found[2] as string, kind: found[3] as string } : null;
-  })
-  .filter((t) => t !== null) as TargetInfo[];
+const ORDERED_TARGETS: TargetInfo[] = ORDERED_IDS.map((id) => {
+  const found = TARGETS.find((t) => t[0] === id);
+  return found ? { id: found[0] as string, label: found[1] as string, locale: found[2] as string, kind: found[3] as string } : null;
+}).filter((t) => t !== null) as TargetInfo[];
 
 const PLATFORM_ICONS: Record<string, string> = {
   site: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>`,
@@ -61,24 +68,20 @@ function platformKey(targetId: string): string {
 }
 
 function formatDayHeaderRu(date: Date): string {
-  const ruMonths = [
-    "января", "февраля", "марта", "апреля",
-    "мая", "июня", "июля", "августа",
-    "сентября", "октября", "ноября", "декабря"
-  ];
+  const ruMonths = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
   return `${date.getUTCDate()} ${ruMonths[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
 }
 
 function getMskDateString(dateStr: string): string {
   const date = new Date(dateStr);
-  if (isNaN(date.getTime())) return new Date().toISOString().slice(0, 10);
+  if (Number.isNaN(date.getTime())) return new Date().toISOString().slice(0, 10);
   const msk = new Date(date.getTime() + 3 * 3_600_000);
   return msk.toISOString().slice(0, 10);
 }
 
 function formatTimeMsk(dateStr: string): string {
   const date = new Date(dateStr);
-  if (isNaN(date.getTime())) return "--:--";
+  if (Number.isNaN(date.getTime())) return "--:--";
   const msk = new Date(date.getTime() + 3 * 3_600_000);
   const hours = String(msk.getUTCHours()).padStart(2, "0");
   const minutes = String(msk.getUTCMinutes()).padStart(2, "0");
@@ -88,7 +91,7 @@ function formatTimeMsk(dateStr: string): string {
 function formatMetricValue(value: unknown): string {
   if (value === null || value === undefined) return "";
   const num = Number(value);
-  if (isNaN(num)) return "";
+  if (Number.isNaN(num)) return "";
   if (num >= 1_000_000) {
     return `${(num / 1_000_000).toFixed(1)}m`.replace(".0m", "m");
   }
@@ -100,7 +103,7 @@ function formatMetricValue(value: unknown): string {
 
 function getTargetStatus(post: any, target: string): string | null {
   const record = post.targets?.[target];
-  if (record && record.status && record.status !== "unknown") {
+  if (record?.status && record.status !== "unknown") {
     return record.status;
   }
   if (target === "telegram" && post.telegram_url) return "published";
@@ -116,7 +119,7 @@ function getTargetMetric(post: any, target: string, metricName: string): number 
     const val = metric?.value;
     if (val !== undefined && val !== null) {
       const num = Number(val);
-      return isNaN(num) ? 0 : num;
+      return Number.isNaN(num) ? 0 : num;
     }
   }
   return 0;
@@ -125,7 +128,7 @@ function getTargetMetric(post: any, target: string, metricName: string): number 
 function hasTargetMetric(post: any, target: string, metricName: string): boolean {
   if (target === "site_ru" || target === "site_en") {
     if (metricName === "views") {
-      const botViews = post.metrics?.[target]?.["bot_views"];
+      const botViews = post.metrics?.[target]?.bot_views;
       if (botViews?.value !== undefined && botViews?.value !== null) return true;
     }
   }
@@ -134,7 +137,7 @@ function hasTargetMetric(post: any, target: string, metricName: string): boolean
 }
 
 function blueskyPublicUrlFromUri(uri: string | null, handle = "alexgetmancom.bsky.social"): string | null {
-  if (!uri || !uri.includes("/app.bsky.feed.post/")) return null;
+  if (!uri?.includes("/app.bsky.feed.post/")) return null;
   const parts = uri.split("/");
   const rkey = parts[parts.length - 1];
   return rkey ? `https://bsky.app/profile/${handle}/post/${rkey}` : null;
@@ -161,10 +164,10 @@ function targetPublicUrl(target: string, externalId: string | null = null, url: 
     return `https://www.threads.com/@alexgetmanco/post/${externalId}`;
   }
   if (target === "linkedin") {
-    return "https://www.linkedin.com/feed/update/" + externalId;
+    return `https://www.linkedin.com/feed/update/${externalId}`;
   }
   if (target === "facebook" || target === "facebook_ru") {
-    return "https://www.facebook.com/" + externalId;
+    return `https://www.facebook.com/${externalId}`;
   }
   if (target === "mastodon") {
     return externalId.startsWith("https://") ? externalId : null;
@@ -203,10 +206,10 @@ function getTargetUrl(post: any, target: string): string | null {
     return `https://www.threads.com/@alexgetmanco/post/${externalId}`;
   }
   if (target === "linkedin" && externalId) {
-    return "https://www.linkedin.com/feed/update/" + externalId;
+    return `https://www.linkedin.com/feed/update/${externalId}`;
   }
   if ((target === "facebook" || target === "facebook_ru") && externalId) {
-    return "https://www.facebook.com/" + externalId;
+    return `https://www.facebook.com/${externalId}`;
   }
   if (target === "x" && externalId) {
     return `https://x.com/alexgetmancom/status/${externalId}`;
@@ -217,22 +220,23 @@ function getTargetUrl(post: any, target: string): string | null {
 function targetCell(post: any, target: string): string {
   const status = getTargetStatus(post, target);
   if (status === "published") {
-    const views = getTargetMetric(post, target, "views") +
+    const views =
+      getTargetMetric(post, target, "views") +
       (target === "site_ru" || target === "site_en" ? getTargetMetric(post, target, "bot_views") : 0);
     const likes = getTargetMetric(post, target, "likes");
     const replies = getTargetMetric(post, target, "replies");
     const reposts = getTargetMetric(post, target, "reposts");
     const url = getTargetUrl(post, target);
-    
+
     const renderSubCell = (val: number, label: string, name: string) => {
       const hasMetric = hasTargetMetric(post, target, name);
-      const text = !hasMetric ? "—" : (val > 0 ? formatMetricValue(val) : "0");
+      const text = !hasMetric ? "—" : val > 0 ? formatMetricValue(val) : "0";
       if (url && label === "mv") {
         return `<a class="metric-link" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer"><span class="${label}">${escapeHtml(text)}</span></a>`;
       }
       return `<span class="${label}">${escapeHtml(text)}</span>`;
     };
-    
+
     return (
       renderSubCell(views, "mv", "views") +
       renderSubCell(likes, "ml", "likes") +
@@ -249,24 +253,19 @@ function targetCell(post: any, target: string): string {
 function getWeekBounds(weekOffset: number): [Date, Date, string, string] {
   const nowMsk = new Date(Date.now() + 3 * 3_600_000);
   const weekday = (nowMsk.getUTCDay() + 6) % 7;
-  
+
   const start = Date.UTC(nowMsk.getUTCFullYear(), nowMsk.getUTCMonth(), nowMsk.getUTCDate() - weekday - weekOffset * 7, -3, 0, 0);
   const startMsk = new Date(start + 3 * 3_600_000);
   const endMsk = new Date(start + 7 * 86_400_000 - 1 + 3 * 3_600_000);
-  
-  return [
-    startMsk,
-    endMsk,
-    new Date(start).toISOString(),
-    new Date(start + 7 * 86_400_000 - 1).toISOString(),
-  ];
+
+  return [startMsk, endMsk, new Date(start).toISOString(), new Date(start + 7 * 86_400_000 - 1).toISOString()];
 }
 
 function shortPipelineText(value: string | null | undefined, wordLimit = 7): string {
   if (!value) return "";
   const words = value.replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
   if (words.length <= wordLimit) return words.join(" ");
-  return words.slice(0, wordLimit).join(" ") + "...";
+  return `${words.slice(0, wordLimit).join(" ")}...`;
 }
 
 function formatMedia(post: any): string {
@@ -288,7 +287,7 @@ function renderWeeklyChart(posts: any[], orderedTargets: any[]): string {
   const metrics = ["views", "likes", "replies"] as const;
   const colors = { views: "#58a6ff", likes: "#f778ba", replies: "#a5d6ff" };
   const labels = { views: "views", likes: "likes", replies: "replies" };
-  
+
   const days: Record<string, Record<string, number>> = {};
   for (const post of posts) {
     const day = getMskDateString(post.date);
@@ -343,18 +342,18 @@ function renderWeeklyChart(posts: any[], orderedTargets: any[]): string {
     ordered.forEach(([day, bucket], i) => {
       const [x, y] = point(i, metric, bucket[metric] || 0);
       metricPoints.push(`${x.toFixed(1)},${y.toFixed(1)}`);
-      
-      const dayValues = metrics
-        .map((item) => `${labels[item]}: ${formatMetricValue(bucket[item] || 0)}`)
-        .join(" · ");
+
+      const dayValues = metrics.map((item) => `${labels[item]}: ${formatMetricValue(bucket[item] || 0)}`).join(" · ");
       const tooltip = `${day.slice(5)} · ${dayValues}`;
-      
+
       points.push(
         `<circle class="chart-point" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.8" fill="${colors[metric]}" />` +
-        `<circle class="chart-hit" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="10" data-tooltip="${escapeHtml(tooltip)}" />`
+          `<circle class="chart-hit" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="10" data-tooltip="${escapeHtml(tooltip)}" />`,
       );
     });
-    lines.push(`<polyline class="chart-line" points="${metricPoints.join(" ")}" fill="none" stroke="${colors[metric]}" stroke-width="2.2" />`);
+    lines.push(
+      `<polyline class="chart-line" points="${metricPoints.join(" ")}" fill="none" stroke="${colors[metric]}" stroke-width="2.2" />`,
+    );
   }
 
   const xLabels = ordered
@@ -385,14 +384,13 @@ function renderPipelineSection(weekOffset: number, data: any): string {
   const weekStartStr = formatDayHeaderRu(startOfWeek);
   const weekEndStr = formatDayHeaderRu(endOfWeek);
 
-  const nextBtn = weekOffset > 0
-    ? `<a class="pag-btn" href="/command-center?tab=pipeline&week_offset=${weekOffset - 1}">Следующая неделя &rarr;</a>`
-    : '<span class="pag-btn disabled">Следующая неделя &rarr;</span>';
-  const currentBtn = weekOffset > 0
-    ? `<a class="pag-btn" href="/command-center?tab=pipeline&week_offset=0">Текущая неделя</a>`
-    : '';
+  const nextBtn =
+    weekOffset > 0
+      ? `<a class="pag-btn" href="/command-center?tab=pipeline&week_offset=${weekOffset - 1}">Следующая неделя &rarr;</a>`
+      : '<span class="pag-btn disabled">Следующая неделя &rarr;</span>';
+  const currentBtn = weekOffset > 0 ? `<a class="pag-btn" href="/command-center?tab=pipeline&week_offset=0">Текущая неделя</a>` : "";
   const prevBtn = `<a class="pag-btn" href="/command-center?tab=pipeline&week_offset=${weekOffset + 1}">&larr; Предыдущая неделя</a>`;
-  
+
   const paginationBar = `
     <div class="pagination-bar">
       ${prevBtn}
@@ -417,11 +415,12 @@ function renderPipelineSection(weekOffset: number, data: any): string {
 
     const nextTarget = i + 1 < n ? ORDERED_TARGETS[i + 1] : null;
     if (nextTarget && platformKey(nextTarget.id) === pkey) {
-      const label = ({
-        x: "X (Twitter)",
-        github: "GitHub",
-        devto: "dev.to",
-      })[pkey] || pkey.charAt(0).toUpperCase() + pkey.slice(1);
+      const label =
+        {
+          x: "X (Twitter)",
+          github: "GitHub",
+          devto: "dev.to",
+        }[pkey] || pkey.charAt(0).toUpperCase() + pkey.slice(1);
       row1Headers.push(`<th colspan="2" class="text-center" title="${label}">${icon}</th>`);
       row2Headers.push(`<th class="text-center">${target.locale.toUpperCase()}</th>`);
       row2Headers.push(`<th class="text-center">${nextTarget.locale.toUpperCase()}</th>`);
@@ -429,7 +428,7 @@ function renderPipelineSection(weekOffset: number, data: any): string {
     } else {
       const label = target.label;
       row1Headers.push(`<th class="text-center" title="${label}">${icon}</th>`);
-      row2Headers.push('<th></th>');
+      row2Headers.push("<th></th>");
       i += 1;
     }
   }
@@ -442,7 +441,7 @@ function renderPipelineSection(weekOffset: number, data: any): string {
   const daysDict: Record<string, { dayTitle: string; posts: any[] }> = {};
   for (const post of data?.posts || []) {
     const date = new Date(post.date);
-    if (isNaN(date.getTime())) continue;
+    if (Number.isNaN(date.getTime())) continue;
     const msk = new Date(date.getTime() + 3 * 3_600_000);
     const dayStr = msk.toISOString().slice(0, 10);
     if (!daysDict[dayStr]) {
@@ -455,7 +454,7 @@ function renderPipelineSection(weekOffset: number, data: any): string {
   type MetricName = (typeof metricsList)[number];
 
   const renderMetricSpan = (val: number, className: string) => {
-    const text = val > 0 ? formatMetricValue(val) : (className === "mv" ? "0" : "—");
+    const text = val > 0 ? formatMetricValue(val) : className === "mv" ? "0" : "—";
     return `<span class="${className}">${escapeHtml(text)}</span>`;
   };
 
@@ -467,10 +466,16 @@ function renderPipelineSection(weekOffset: number, data: any): string {
     const dayPosts = dayInfo.posts;
 
     const dayM: Record<MetricName, Record<string, number>> = {
-      views: {}, likes: {}, replies: {}, reposts: {},
+      views: {},
+      likes: {},
+      replies: {},
+      reposts: {},
     };
     const dayTotals: Record<MetricName, number> = {
-      views: 0, likes: 0, replies: 0, reposts: 0,
+      views: 0,
+      likes: 0,
+      replies: 0,
+      reposts: 0,
     };
 
     for (const target of ORDERED_TARGETS) {
@@ -491,25 +496,21 @@ function renderPipelineSection(weekOffset: number, data: any): string {
     }
 
     renderedRows.push(
-      `<tr class="day-separator">` +
-      `<td colspan="${totalCols}"><span class="day-label">${dayTitle}</span></td>` +
-      `</tr>`
+      `<tr class="day-separator">` + `<td colspan="${totalCols}"><span class="day-label">${dayTitle}</span></td>` + `</tr>`,
     );
 
     for (const post of dayPosts) {
       const timeStr = formatTimeMsk(post.date);
       const displayId = escapeHtml(post.post_id || post.message_id);
-      const postLink = post.site_url
-        ? `<a href="${escapeHtml(post.site_url)}">${displayId}</a>`
-        : displayId;
-      
+      const postLink = post.site_url ? `<a href="${escapeHtml(post.site_url)}">${displayId}</a>` : displayId;
+
       const ptotals = {
         views: ORDERED_TARGETS.reduce((sum, t) => sum + getTargetMetric(post, t.id, "views"), 0),
         likes: ORDERED_TARGETS.reduce((sum, t) => sum + getTargetMetric(post, t.id, "likes"), 0),
         replies: ORDERED_TARGETS.reduce((sum, t) => sum + getTargetMetric(post, t.id, "replies"), 0),
         reposts: ORDERED_TARGETS.reduce((sum, t) => sum + getTargetMetric(post, t.id, "reposts"), 0),
       };
-      
+
       const sigma =
         renderMetricSpan(ptotals.views, "mv") +
         renderMetricSpan(ptotals.likes, "ml") +
@@ -528,7 +529,7 @@ function renderPipelineSection(weekOffset: number, data: any): string {
         `<td>${escapeHtml(formatMedia(post))}</td>` +
         `<td class="text-center nowrap font-bold">${sigma}</td>` +
         ORDERED_TARGETS.map((target) => `<td class="text-center">${targetCell(post, target.id)}</td>`).join("") +
-        `<td class="text-center"><a href="/command-center?tab=repair&ref=${escapeHtml(post.post_id || post.message_id || '')}&message_id=${escapeHtml(post.telegram_message_id || '')}" title="Repair">${TOOL_ICON}</a></td>` +
+        `<td class="text-center"><a href="/command-center?tab=repair&ref=${escapeHtml(post.post_id || post.message_id || "")}&message_id=${escapeHtml(post.telegram_message_id || "")}" title="Repair">${TOOL_ICON}</a></td>` +
         `</tr>`;
       renderedRows.push(postRow);
     }
@@ -539,11 +540,7 @@ function renderPipelineSection(weekOffset: number, data: any): string {
       renderMetricSpan(dayTotals.replies, "mr") +
       renderMetricSpan(dayTotals.reposts, "mp");
 
-    const dayCols = [
-      '<td colspan="4"></td>',
-      '<td></td>',
-      `<td class="text-center font-bold">${daySigma}</td>`
-    ];
+    const dayCols = ['<td colspan="4"></td>', "<td></td>", `<td class="text-center font-bold">${daySigma}</td>`];
     for (const target of ORDERED_TARGETS) {
       const cell =
         renderMetricSpan(dayM.views[target.id] || 0, "mv") +
@@ -552,15 +549,21 @@ function renderPipelineSection(weekOffset: number, data: any): string {
         renderMetricSpan(dayM.reposts[target.id] || 0, "mp");
       dayCols.push(`<td class="text-center font-bold">${cell}</td>`);
     }
-    dayCols.push('<td></td>');
+    dayCols.push("<td></td>");
     renderedRows.push(`<tr class="day-header">${dayCols.join("")}</tr>`);
   }
 
   const weekM: Record<MetricName, Record<string, number>> = {
-    views: {}, likes: {}, replies: {}, reposts: {},
+    views: {},
+    likes: {},
+    replies: {},
+    reposts: {},
   };
   const weekTotals: Record<MetricName, number> = {
-    views: 0, likes: 0, replies: 0, reposts: 0,
+    views: 0,
+    likes: 0,
+    replies: 0,
+    reposts: 0,
   };
   for (const target of ORDERED_TARGETS) {
     weekM.views[target.id] = 0;
@@ -583,11 +586,7 @@ function renderPipelineSection(weekOffset: number, data: any): string {
     renderMetricSpan(weekTotals.replies, "mr") +
     renderMetricSpan(weekTotals.reposts, "mp");
 
-  const weekCols = [
-    '<td colspan="4"><b>Итого за неделю</b></td>',
-    '<td></td>',
-    `<td class="text-center font-bold">${weekSigma}</td>`
-  ];
+  const weekCols = ['<td colspan="4"><b>Итого за неделю</b></td>', "<td></td>", `<td class="text-center font-bold">${weekSigma}</td>`];
   for (const target of ORDERED_TARGETS) {
     const cell =
       renderMetricSpan(weekM.views[target.id] || 0, "mv") +
@@ -596,7 +595,7 @@ function renderPipelineSection(weekOffset: number, data: any): string {
       renderMetricSpan(weekM.reposts[target.id] || 0, "mp");
     weekCols.push(`<td class="text-center font-bold">${cell}</td>`);
   }
-  weekCols.push('<td></td>');
+  weekCols.push("<td></td>");
   renderedRows.push(`<tr class="week-total">${weekCols.join("")}</tr>`);
 
   const rows = renderedRows.join("\n");
@@ -649,9 +648,7 @@ function renderPipelineSection(weekOffset: number, data: any): string {
 }
 
 function renderRepairSection(ref: string, messageId: string): string {
-  const options = ORDERED_TARGETS
-    .map((t) => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.label)}</option>`)
-    .join("\n");
+  const options = ORDERED_TARGETS.map((t) => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.label)}</option>`).join("\n");
   return `
     <section>
       <h2>Repair</h2>
@@ -678,29 +675,33 @@ function renderRepairSection(ref: string, messageId: string): string {
 }
 
 function renderQueueSection(ops: any): string {
-  const draftsList = (ops.drafts || [])
-    .map((row: any) => {
-      const ruText = row.text_ru ?? "";
-      return `<tr><td>${Number(row.id)}</td><td>${escapeHtml(row.status)}</td><td class="wide">${escapeHtml(shortPipelineText(ruText, 20))}</td><td>${escapeHtml(row.scheduled_at ?? "")}</td><td>${escapeHtml(row.scheduled_en_at ?? "")}</td><td>${escapeHtml(row.channel_message_id ?? "")}</td><td>${escapeHtml(row.updated_at)}</td></tr>`;
-    })
-    .join("\n") || "<tr><td colspan='7'>empty</td></tr>";
+  const draftsList =
+    (ops.drafts || [])
+      .map((row: any) => {
+        const ruText = row.text_ru ?? "";
+        return `<tr><td>${Number(row.id)}</td><td>${escapeHtml(row.status)}</td><td class="wide">${escapeHtml(shortPipelineText(ruText, 20))}</td><td>${escapeHtml(row.scheduled_at ?? "")}</td><td>${escapeHtml(row.scheduled_en_at ?? "")}</td><td>${escapeHtml(row.channel_message_id ?? "")}</td><td>${escapeHtml(row.updated_at)}</td></tr>`;
+      })
+      .join("\n") || "<tr><td colspan='7'>empty</td></tr>";
 
-  const queueList = (ops.jobs || [])
-    .map((row: any) => {
-      return `<tr>` +
-        `<td>${escapeHtml(row.job_id ?? row.jobId ?? "")}</td>` +
-        `<td>${escapeHtml(row.post_id ?? row.postId ?? "")}</td>` +
-        `<td>${escapeHtml(row.message_id ?? row.messageId ?? "")}</td>` +
-        `<td>${escapeHtml(row.target)}</td>` +
-        `<td>${escapeHtml(row.status)}</td>` +
-        `<td>${Number(row.attempt_count ?? row.attemptCount ?? 0)}</td>` +
-        `<td>${escapeHtml(row.publish_at ?? row.publishAt ?? "")}</td>` +
-        `<td>${escapeHtml(row.next_attempt_at ?? row.nextAttemptAt ?? "")}</td>` +
-        `<td class="wide">${escapeHtml(row.last_error ?? row.lastError ?? "")}</td>` +
-        `<td>${escapeHtml(row.updated_at ?? row.updatedAt ?? "")}</td>` +
-        `</tr>`;
-    })
-    .join("\n") || "<tr><td colspan='9'>empty</td></tr>";
+  const queueList =
+    (ops.jobs || [])
+      .map((row: any) => {
+        return (
+          `<tr>` +
+          `<td>${escapeHtml(row.job_id ?? row.jobId ?? "")}</td>` +
+          `<td>${escapeHtml(row.post_id ?? row.postId ?? "")}</td>` +
+          `<td>${escapeHtml(row.message_id ?? row.messageId ?? "")}</td>` +
+          `<td>${escapeHtml(row.target)}</td>` +
+          `<td>${escapeHtml(row.status)}</td>` +
+          `<td>${Number(row.attempt_count ?? row.attemptCount ?? 0)}</td>` +
+          `<td>${escapeHtml(row.publish_at ?? row.publishAt ?? "")}</td>` +
+          `<td>${escapeHtml(row.next_attempt_at ?? row.nextAttemptAt ?? "")}</td>` +
+          `<td class="wide">${escapeHtml(row.last_error ?? row.lastError ?? "")}</td>` +
+          `<td>${escapeHtml(row.updated_at ?? row.updatedAt ?? "")}</td>` +
+          `</tr>`
+        );
+      })
+      .join("\n") || "<tr><td colspan='9'>empty</td></tr>";
 
   return `
     <section><h2>Drafts</h2><table><thead><tr><th>ID</th><th>Status</th><th>RU</th><th>RU slot</th><th>EN slot</th><th>Message</th><th>Updated</th></tr></thead><tbody>${draftsList}</tbody></table></section>
@@ -709,29 +710,32 @@ function renderQueueSection(ops: any): string {
 }
 
 function renderCredentialsSection(ops: any): string {
-  const rows = (ops.credentials || [])
-    .map((row: any) => {
-      return `<tr><td>${escapeHtml(row.target ?? row.name ?? row.credential)}</td><td>${escapeHtml(row.status ?? (row.ok ? "ok" : "failed"))}</td><td>${escapeHtml(row.missing_env_json ?? row.error ?? "")}</td><td>${escapeHtml(row.last_checked_at ?? row.checked_at ?? row.updated_at ?? "")}</td></tr>`;
-    })
-    .join("\n") || "<tr><td colspan='4'>empty</td></tr>";
+  const rows =
+    (ops.credentials || [])
+      .map((row: any) => {
+        return `<tr><td>${escapeHtml(row.target ?? row.name ?? row.credential)}</td><td>${escapeHtml(row.status ?? (row.ok ? "ok" : "failed"))}</td><td>${escapeHtml(row.missing_env_json ?? row.error ?? "")}</td><td>${escapeHtml(row.last_checked_at ?? row.checked_at ?? row.updated_at ?? "")}</td></tr>`;
+      })
+      .join("\n") || "<tr><td colspan='4'>empty</td></tr>";
   return `<section><h2>Credentials</h2><table><thead><tr><th>Target</th><th>Status</th><th>Missing</th><th>Checked</th></tr></thead><tbody>${rows}</tbody></table></section>`;
 }
 
 function renderDiagnosticsSection(ops: any): string {
-  const errors = (ops.pipeline?.metrics?.recent || [])
-    .filter((row: any) => row.error || row.status === "failed")
-    .slice(0, 30)
-    .map((row: any) => {
-      return `<tr><td>${escapeHtml(row.message_id ?? row.messageId ?? "")}</td><td>${escapeHtml(row.target)}</td><td>${escapeHtml(row.status ?? "failed")}</td><td class="wide">${escapeHtml(row.error)}</td></tr>`;
-    })
-    .join("\n") || "<tr><td colspan='4'>empty</td></tr>";
+  const errors =
+    (ops.pipeline?.metrics?.recent || [])
+      .filter((row: any) => row.error || row.status === "failed")
+      .slice(0, 30)
+      .map((row: any) => {
+        return `<tr><td>${escapeHtml(row.message_id ?? row.messageId ?? "")}</td><td>${escapeHtml(row.target)}</td><td>${escapeHtml(row.status ?? "failed")}</td><td class="wide">${escapeHtml(row.error)}</td></tr>`;
+      })
+      .join("\n") || "<tr><td colspan='4'>empty</td></tr>";
 
-  const lifecycle = (ops.lifecycle || [])
-    .slice(0, 30)
-    .map((row: any) => {
-      return `<tr><td>${escapeHtml(row.post_key ?? row.post_id ?? "")}</td><td>${escapeHtml(row.state ?? row.status ?? "")}</td><td>${escapeHtml(row.reason ?? "")}</td><td>${escapeHtml(row.updated_at)}</td></tr>`;
-    })
-    .join("\n") || "<tr><td colspan='4'>empty</td></tr>";
+  const lifecycle =
+    (ops.lifecycle || [])
+      .slice(0, 30)
+      .map((row: any) => {
+        return `<tr><td>${escapeHtml(row.post_key ?? row.post_id ?? "")}</td><td>${escapeHtml(row.state ?? row.status ?? "")}</td><td>${escapeHtml(row.reason ?? "")}</td><td>${escapeHtml(row.updated_at)}</td></tr>`;
+      })
+      .join("\n") || "<tr><td colspan='4'>empty</td></tr>";
 
   return `
     <section><h2>Errors</h2><table><thead><tr><th>Message</th><th>Target</th><th>Status</th><th>Error</th></tr></thead><tbody>${errors}</tbody></table></section>
@@ -743,7 +747,7 @@ function renderDiagnosticsSection(ops: any): string {
 export function renderDashboard(config: BackendConfig, backendDb: BackendDb, requestedTab: string | undefined, weekOffset: number): string {
   const TABS = ["pipeline", "repair", "queue", "credentials", "diagnostics"] as const;
   type DashboardTab = (typeof TABS)[number];
-  const tab: DashboardTab = TABS.includes(requestedTab as DashboardTab) ? requestedTab as DashboardTab : "pipeline";
+  const tab: DashboardTab = TABS.includes(requestedTab as DashboardTab) ? (requestedTab as DashboardTab) : "pipeline";
 
   const ops = commandCenterPayload(config, backendDb);
   const data = tab === "pipeline" ? pipelineStatusPayload(config, backendDb, weekOffset) : null;
@@ -762,13 +766,13 @@ export function renderDashboard(config: BackendConfig, backendDb: BackendDb, req
   }
 
   const navLinks = TABS.map((item) => {
-    const label = ({
-      pipeline: "Publications",
+    const label = {
+      pipeline: "Pipeline",
       repair: "Repair",
       queue: "Queue",
       credentials: "Credentials",
       diagnostics: "Diagnostics",
-    })[item];
+    }[item];
     return `<a class="${item === tab ? "active" : ""}" href="/command-center?tab=${item}&week_offset=${weekOffset}">${label}</a>`;
   }).join("");
 
@@ -780,7 +784,7 @@ export function renderDashboard(config: BackendConfig, backendDb: BackendDb, req
   <meta name="robots" content="noindex, nofollow">
   <title>Command Center</title>
   <style>
-    body { margin:0; padding:24px; background:#0d1117; color:#c9d1d9; font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    body { margin:0; padding:24px; background:#0d1117; color:#c9d1d9; font:16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
     main { max-width:1480px; margin:0 auto; }
     h1,h2 { color:#fff; }
     nav { display:flex; gap:8px; flex-wrap:wrap; margin:18px 0 0; padding-top:12px; border-top:1px solid #30363d; }
@@ -792,17 +796,17 @@ export function renderDashboard(config: BackendConfig, backendDb: BackendDb, req
     section { margin-top:0; padding:10px; overflow-x:auto; }
     .table-wrap { overflow-x:auto; }
     table { width:100%; min-width:980px; border-collapse:collapse; }
-    th,td { padding:6px 10px; border-bottom:1px solid #30363d; text-align:left; vertical-align:top; font-size:12px; }
+    th,td { padding:6px 10px; border-bottom:1px solid #30363d; text-align:left; vertical-align:top; }
     th { color:#8b949e; white-space:nowrap; }
     a { color:#58a6ff; } .wide { max-width:520px; overflow-wrap:anywhere; }
-    .post-text { max-width:280px; overflow-wrap:anywhere; }
+    .post-text { min-width:160px; max-width:280px; overflow-wrap:anywhere; }
     .nowrap { white-space:nowrap; } .note { color:#8b949e; }
     .date-col { width:60px; }
     .text-center { text-align:center; }
 
     th svg { color:#8b949e; transition:color 0.2s; }
     th:hover svg { color:#fff; }
-    form { display:grid; gap:12px; max-width:680px; background:#161b22; padding:16px; border-radius:8px; }
+    form { display:flex; flex-wrap:wrap; gap:8px; }
     input,select,textarea,button { background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:6px; padding:8px; }
     textarea { min-width:min(720px,100%); min-height:70px; }
     
@@ -845,11 +849,14 @@ export function renderDashboard(config: BackendConfig, backendDb: BackendDb, req
     .chart-tooltip { position:fixed; z-index:50; pointer-events:none; max-width:280px; padding:7px 9px; background:#161b22; border:1px solid #58a6ff; border-radius:6px; color:#f0f6fc; font-size:12px; box-shadow:0 8px 24px rgba(0,0,0,.35); white-space:nowrap; }
     
     .metric-link { text-decoration: none; }
-    .text-center span { display: inline-block; width: 22px; text-align: center; font-family: monospace; }
     
     @media (max-width: 760px) {
+      body { padding:10px; }
+      main { max-width:none; }
       .metric-dashboard { grid-template-columns:1fr; }
       .metric-toggle--vertical { flex-direction:row; justify-content:flex-start; }
+      .pagination-bar { align-items:stretch; flex-wrap:wrap; justify-content:center; }
+      .pag-current { flex:1 1 100%; text-align:center; }
     }
   </style>
 </head>

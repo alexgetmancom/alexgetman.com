@@ -1,6 +1,6 @@
 export async function GET(context: any) {
-  const siteUrl = context.site ? context.site.toString().replace(/\/$/, '') : 'https://alexgetman.com';
-  const host = context.site ? context.site.host : 'alexgetman.com';
+  const siteUrl = context.site ? context.site.toString().replace(/\/$/, "") : "https://alexgetman.com";
+  const host = context.site ? context.site.host : "alexgetman.com";
 
   const body = `User-agent: *
 Allow: /
@@ -15,7 +15,7 @@ Content-Signal: ai-train=no, search=yes, ai-input=no
 
   return new Response(body, {
     headers: {
-      'Content-Type': 'text/plain; charset=utf-8'
-    }
+      "Content-Type": "text/plain; charset=utf-8",
+    },
   });
 }

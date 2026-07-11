@@ -1,10 +1,10 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
 import type { BackendConfig } from "../config.js";
 import { runFfmpeg } from "../runtime/ffmpeg.js";
 import { requestJson } from "../social/http.js";
-import { mediaExtension, safeMediaName, type PublishMediaItem } from "../social/payload.js";
+import { mediaExtension, type PublishMediaItem, safeMediaName } from "../social/payload.js";
 
 type TelegramFileResponse = {
   ok?: boolean;
@@ -13,7 +13,11 @@ type TelegramFileResponse = {
   };
 };
 
-export async function prepareMediaItems(config: BackendConfig, sourceItems: PublishMediaItem[], fetchImpl: typeof fetch = fetch): Promise<{ items: PublishMediaItem[]; cleanup: () => Promise<void> }> {
+export async function prepareMediaItems(
+  config: BackendConfig,
+  sourceItems: PublishMediaItem[],
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ items: PublishMediaItem[]; cleanup: () => Promise<void> }> {
   const batchId = `${Date.now()}_${randomUUID()}`;
   const tempFiles: string[] = [];
   const stagedFiles: string[] = [];
@@ -62,7 +66,14 @@ export async function prepareMediaItems(config: BackendConfig, sourceItems: Publ
   };
 }
 
-async function ensureLocalMedia(config: BackendConfig, item: PublishMediaItem, index: number, batchId: string, tempFiles: string[], fetchImpl: typeof fetch): Promise<string> {
+async function ensureLocalMedia(
+  config: BackendConfig,
+  item: PublishMediaItem,
+  index: number,
+  batchId: string,
+  tempFiles: string[],
+  fetchImpl: typeof fetch,
+): Promise<string> {
   if (item.localPath) return item.localPath;
   if (!item.fileId) throw new Error("media item has neither localPath nor fileId");
   const fileUrl = await getTelegramFileUrl(config, item.fileId, item.token, fetchImpl);
@@ -85,7 +96,12 @@ async function ensureLocalMedia(config: BackendConfig, item: PublishMediaItem, i
   return target;
 }
 
-async function getTelegramFileUrl(config: BackendConfig, fileId: string, token: string | undefined, fetchImpl: typeof fetch): Promise<string> {
+async function getTelegramFileUrl(
+  config: BackendConfig,
+  fileId: string,
+  token: string | undefined,
+  fetchImpl: typeof fetch,
+): Promise<string> {
   const botToken = token || config.controllerBotToken;
   if (!botToken) throw new Error("missing Telegram bot token for media download");
   const apiBase = config.TELEGRAM_API_BASE_URL.replace(/\/$/, "");
@@ -96,35 +112,40 @@ async function getTelegramFileUrl(config: BackendConfig, fileId: string, token: 
   });
   const filePath = info.result?.file_path;
   if (!info.ok || !filePath) throw new Error(`Telegram getFile failed for ${fileId}`);
-  if (path.isAbsolute(filePath)) return `file://${filePath}`;
   return `${apiBase}/file/bot${botToken}/${filePath}`;
 }
 
 async function normalizeVideoForPublicUpload(config: BackendConfig, inputPath: string): Promise<string> {
-  const outputPath = path.join(config.TEMP_MEDIA_DIR, `threads_${Math.floor(Date.now() / 1000)}_${path.basename(inputPath, path.extname(inputPath))}.mp4`);
-  await runFfmpeg([
-    "-y",
-    "-i",
-    inputPath,
-    "-map",
-    "0:v:0",
-    "-map",
-    "0:a:0?",
-    "-c:v",
-    "libx264",
-    "-preset",
-    "veryfast",
-    "-crf",
-    "23",
-    "-pix_fmt",
-    "yuv420p",
-    "-c:a",
-    "aac",
-    "-b:a",
-    "128k",
-    "-movflags",
-    "+faststart",
-    outputPath,
-  ], config.FFMPEG_TIMEOUT_SECONDS);
+  const outputPath = path.join(
+    config.TEMP_MEDIA_DIR,
+    `threads_${Math.floor(Date.now() / 1000)}_${path.basename(inputPath, path.extname(inputPath))}.mp4`,
+  );
+  await runFfmpeg(
+    [
+      "-y",
+      "-i",
+      inputPath,
+      "-map",
+      "0:v:0",
+      "-map",
+      "0:a:0?",
+      "-c:v",
+      "libx264",
+      "-preset",
+      "veryfast",
+      "-crf",
+      "23",
+      "-pix_fmt",
+      "yuv420p",
+      "-c:a",
+      "aac",
+      "-b:a",
+      "128k",
+      "-movflags",
+      "+faststart",
+      outputPath,
+    ],
+    config.FFMPEG_TIMEOUT_SECONDS,
+  );
   return outputPath;
 }

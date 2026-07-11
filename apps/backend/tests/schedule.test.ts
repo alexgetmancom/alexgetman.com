@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
+import { asc, eq, inArray } from "drizzle-orm";
 import { openBackendDb } from "../src/db/client.js";
+import { drafts, publishJobs } from "../src/db/schema.js";
 import { nextPublishingSlot, parseManualSchedule, rebalanceScheduledDrafts, schedulePreset } from "../src/publishingSchedule.js";
 
 describe("publishing schedule", () => {
@@ -9,11 +11,18 @@ describe("publishing schedule", () => {
       const now = new Date("2026-07-10T05:00:00.000Z"); // 08:00 MSK
       expect(nextPublishingSlot(backendDb, "ru", now).toISOString()).toBe("2026-07-10T07:37:00.000Z");
       expect(nextPublishingSlot(backendDb, "en", now).toISOString()).toBe("2026-07-10T14:37:00.000Z");
-      backendDb.sqlite
-        .prepare(
-          "INSERT INTO drafts(admin_id,status,text_ru,targets_json,scheduled_at,created_at,updated_at) VALUES (1,'scheduled','x','{}',?,?,?)",
-        )
-        .run("2026-07-10T07:37:00.000Z", now.toISOString(), now.toISOString());
+      backendDb.db
+        .insert(drafts)
+        .values({
+          adminId: 1,
+          status: "scheduled",
+          textRu: "x",
+          targetsJson: "{}",
+          scheduledAt: "2026-07-10T07:37:00.000Z",
+          createdAt: now.toISOString(),
+          updatedAt: now.toISOString(),
+        })
+        .run();
       expect(nextPublishingSlot(backendDb, "ru", now).toISOString()).toBe("2026-07-10T10:37:00.000Z");
     } finally {
       backendDb.close();
@@ -35,45 +44,77 @@ describe("publishing schedule", () => {
     try {
       const now = new Date("2026-07-10T05:00:00.000Z");
       const createdAt = now.toISOString();
-      const first = Number(
-        backendDb.sqlite
-          .prepare(
-            "INSERT INTO drafts(admin_id,status,text_ru,targets_json,scheduled_at,created_at,updated_at) VALUES (1,'scheduled','one','{\"site_ru\":true}',?,?,?)",
-          )
-          .run("2026-07-11T07:37:00.000Z", createdAt, createdAt).lastInsertRowid,
-      );
-      const second = Number(
-        backendDb.sqlite
-          .prepare(
-            "INSERT INTO drafts(admin_id,status,text_ru,targets_json,scheduled_at,created_at,updated_at) VALUES (1,'scheduled','two','{\"site_ru\":true}',?,?,?)",
-          )
-          .run("2026-07-12T07:37:00.000Z", createdAt, createdAt).lastInsertRowid,
-      );
-      backendDb.sqlite.prepare("UPDATE drafts SET post_id=? WHERE id=?").run(101, first);
-      backendDb.sqlite.prepare("UPDATE drafts SET post_id=? WHERE id=?").run(102, second);
-      backendDb.sqlite
-        .prepare(
-          "INSERT INTO publish_jobs(post_id,message_id,target,payload_json,status,next_attempt_at,created_at,updated_at) VALUES (101,101,'telegram','{}','queued',?,?,?)",
-        )
-        .run(createdAt, createdAt, createdAt);
-      backendDb.sqlite
-        .prepare(
-          "INSERT INTO publish_jobs(post_id,message_id,target,payload_json,status,next_attempt_at,created_at,updated_at) VALUES (102,102,'telegram','{}','queued',?,?,?)",
-        )
-        .run(createdAt, createdAt, createdAt);
+      const first = backendDb.db
+        .insert(drafts)
+        .values({
+          adminId: 1,
+          status: "scheduled",
+          textRu: "one",
+          targetsJson: '{"site_ru":true}',
+          scheduledAt: "2026-07-11T07:37:00.000Z",
+          createdAt,
+          updatedAt: createdAt,
+        })
+        .returning({ id: drafts.id })
+        .get()!.id;
+      const second = backendDb.db
+        .insert(drafts)
+        .values({
+          adminId: 1,
+          status: "scheduled",
+          textRu: "two",
+          targetsJson: '{"site_ru":true}',
+          scheduledAt: "2026-07-12T07:37:00.000Z",
+          createdAt,
+          updatedAt: createdAt,
+        })
+        .returning({ id: drafts.id })
+        .get()!.id;
+      backendDb.db.update(drafts).set({ postId: 101 }).where(eq(drafts.id, first)).run();
+      backendDb.db.update(drafts).set({ postId: 102 }).where(eq(drafts.id, second)).run();
+      backendDb.db
+        .insert(publishJobs)
+        .values({
+          postId: 101,
+          messageId: 101,
+          target: "telegram",
+          payloadJson: "{}",
+          status: "queued",
+          nextAttemptAt: createdAt,
+          createdAt,
+          updatedAt: createdAt,
+        })
+        .run();
+      backendDb.db
+        .insert(publishJobs)
+        .values({
+          postId: 102,
+          messageId: 102,
+          target: "telegram",
+          payloadJson: "{}",
+          status: "queued",
+          nextAttemptAt: createdAt,
+          createdAt,
+          updatedAt: createdAt,
+        })
+        .run();
 
       expect(rebalanceScheduledDrafts(backendDb, now)).toBe(2);
-      const drafts = backendDb.sqlite
-        .prepare("SELECT id, scheduled_at FROM drafts WHERE id IN (?,?) ORDER BY id")
-        .all(first, second) as Array<{ id: number; scheduled_at: string }>;
-      expect(drafts.map((draft) => draft.scheduled_at)).toEqual(["2026-07-10T07:37:00.000Z", "2026-07-10T10:37:00.000Z"]);
-      const jobs = backendDb.sqlite.prepare("SELECT next_attempt_at, payload_json FROM publish_jobs ORDER BY post_id").all() as Array<{
-        next_attempt_at: string;
-        payload_json: string;
-      }>;
-      expect(jobs.map((job) => job.next_attempt_at)).toEqual(drafts.map((draft) => draft.scheduled_at));
-      expect(jobs.map((job) => (JSON.parse(job.payload_json) as { publish_at_ru: string }).publish_at_ru)).toEqual(
-        drafts.map((draft) => draft.scheduled_at),
+      const scheduledDrafts = backendDb.db
+        .select({ id: drafts.id, scheduledAt: drafts.scheduledAt })
+        .from(drafts)
+        .where(inArray(drafts.id, [first, second]))
+        .orderBy(asc(drafts.id))
+        .all();
+      expect(scheduledDrafts.map((draft) => draft.scheduledAt)).toEqual(["2026-07-10T07:37:00.000Z", "2026-07-10T10:37:00.000Z"]);
+      const jobs = backendDb.db
+        .select({ nextAttemptAt: publishJobs.nextAttemptAt, payloadJson: publishJobs.payloadJson })
+        .from(publishJobs)
+        .orderBy(asc(publishJobs.postId))
+        .all();
+      expect(jobs.map((job) => job.nextAttemptAt)).toEqual(scheduledDrafts.map((draft) => draft.scheduledAt!));
+      expect(jobs.map((job) => (JSON.parse(job.payloadJson!) as { publish_at_ru: string }).publish_at_ru)).toEqual(
+        scheduledDrafts.map((draft) => draft.scheduledAt!),
       );
     } finally {
       backendDb.close();

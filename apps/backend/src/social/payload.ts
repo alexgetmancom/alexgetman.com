@@ -65,6 +65,9 @@ function parsePublishPayload(value: unknown): Record<string, unknown> {
 
 export function payloadText(payload: Record<string, unknown>): string {
   const parsed = parsePublishPayload(payload);
+  if (stringValue(parsed.locale).toLowerCase() === "ru") {
+    return stringValue(parsed.text_ru) || stringValue(parsed.text) || stringValue(parsed.text_en) || "";
+  }
   return stringValue(parsed.text_en) || stringValue(parsed.text) || "";
 }
 
@@ -86,7 +89,10 @@ export function payloadCanonicalUrl(payload: Record<string, unknown>, config: Ba
 
 export function payloadMedia(payload: Record<string, unknown>): PublishMediaItem[] {
   payload = parsePublishPayload(payload);
-  const raw = payload.media_en ?? payload.media ?? payload.mediaItems ?? payload.media_items;
+  const raw =
+    stringValue(payload.locale).toLowerCase() === "ru"
+      ? (payload.media ?? payload.media_en ?? payload.mediaItems ?? payload.media_items)
+      : (payload.media_en ?? payload.media ?? payload.mediaItems ?? payload.media_items);
   const values = Array.isArray(raw) ? raw : raw && typeof raw === "object" ? [raw] : [];
   return values.flatMap((value) => {
     const parsed = mediaRecordSchema.safeParse(value);
@@ -144,7 +150,7 @@ export async function readFileBlob(filePath: string, contentType = guessContentT
   return new Blob([bytes], { type: contentType });
 }
 
-function fileSize(filePath: string): number {
+function _fileSize(filePath: string): number {
   return fs.statSync(filePath).size;
 }
 

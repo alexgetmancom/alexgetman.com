@@ -9,7 +9,11 @@ type TelegramResponse = {
   description?: string;
 };
 
-export async function publishToTelegram(payload: Record<string, unknown>, config: BackendConfig, fetchImpl: typeof fetch = fetch): Promise<PublishResult> {
+export async function publishToTelegram(
+  payload: Record<string, unknown>,
+  config: BackendConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<PublishResult> {
   const token = config.controllerBotToken;
   if (!token) return { skipped: true, reason: "missing Telegram bot token" };
   const chatId = String(payload.chat_id ?? payload.chatId ?? payload.channel ?? `@${config.CHANNEL_USERNAME.replace(/^@/, "")}`);
@@ -32,15 +36,38 @@ export async function publishToTelegram(payload: Record<string, unknown>, config
   if (item) {
     const method = item.type === "VIDEO" ? "sendVideo" : "sendPhoto";
     const mediaKey = item.type === "VIDEO" ? "video" : "photo";
-    const result = await telegramCall<TelegramResponse>(config, token, method, { chat_id: chatId, [mediaKey]: item.fileId || item.vpsUrl || item.localPath, caption: text.slice(0, 1024), caption_entities: entities }, fetchImpl);
+    const result = await telegramCall<TelegramResponse>(
+      config,
+      token,
+      method,
+      {
+        chat_id: chatId,
+        [mediaKey]: item.fileId || item.vpsUrl || item.localPath,
+        caption: text.slice(0, 1024),
+        caption_entities: entities,
+      },
+      fetchImpl,
+    );
     return normalizeTelegramResult(result, chatId);
   }
 
-  const result = await telegramCall<TelegramResponse>(config, token, "sendMessage", { chat_id: chatId, text, entities, disable_web_page_preview: false }, fetchImpl);
+  const result = await telegramCall<TelegramResponse>(
+    config,
+    token,
+    "sendMessage",
+    { chat_id: chatId, text, entities, disable_web_page_preview: false },
+    fetchImpl,
+  );
   return normalizeTelegramResult(result, chatId);
 }
 
-async function telegramCall<T>(config: BackendConfig, token: string, method: string, payload: Record<string, unknown>, fetchImpl: typeof fetch): Promise<T> {
+async function telegramCall<T>(
+  config: BackendConfig,
+  token: string,
+  method: string,
+  payload: Record<string, unknown>,
+  fetchImpl: typeof fetch,
+): Promise<T> {
   return requestJson<T>(fetchImpl, `${config.TELEGRAM_API_BASE_URL.replace(/\/$/, "")}/bot${token}/${method}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

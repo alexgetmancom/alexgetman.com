@@ -19,7 +19,10 @@ export async function runMetricsCycle(
       const result = await collector(task);
       backendDb.sqlite.transaction(() => {
         upsertMetrics(backendDb, task.postKey, task.target, result.metrics, result.source, result.raw);
-        if (result.url) backendDb.sqlite.prepare("UPDATE post_targets SET url=?, updated_at=? WHERE post_key=? AND target=?").run(result.url, new Date().toISOString(), task.postKey, task.target);
+        if (result.url)
+          backendDb.sqlite
+            .prepare("UPDATE post_targets SET url=?, updated_at=? WHERE post_key=? AND target=?")
+            .run(result.url, new Date().toISOString(), task.postKey, task.target);
         finishMetricTask(backendDb, task, null);
       })();
     } catch (error) {

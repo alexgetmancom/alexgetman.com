@@ -1,9 +1,11 @@
+import { describe, expect, it } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 import { loadConfig } from "../src/config.js";
 import { openBackendDb } from "../src/db/client.js";
+import { postTargets, publishJobs } from "../src/db/schema.js";
 import { HttpPublishError } from "../src/queue/errors.js";
 import { claimDuePublishJobs, completePublishJob, enqueuePublishJob, recoverStalePublishJobs } from "../src/queue/publish.js";
 import { runPublishCycle } from "../src/worker.js";
@@ -24,13 +26,34 @@ describe("publish queue", () => {
       });
       const [job] = claimDuePublishJobs(backendDb, 10, "test-worker");
       expect(job).toMatchObject({ jobId: id, messageId: 100, target: "devto" });
-      const row = backendDb.sqlite.prepare("SELECT status, locked_by FROM publish_jobs WHERE job_id=?").get(id) as {
-        status: string;
-        locked_by: string;
-      };
-      expect(row).toEqual({ status: "publishing", locked_by: "test-worker" });
-      const target = backendDb.sqlite.prepare("SELECT status FROM post_targets WHERE target='devto'").get() as { status: string };
+      const row = backendDb.db
+        .select({ status: publishJobs.status, lockedBy: publishJobs.lockedBy })
+        .from(publishJobs)
+        .where(eq(publishJobs.jobId, id))
+        .get();
+      expect(row).toEqual({ status: "publishing", lockedBy: "test-worker" });
+      const target = backendDb.db.select({ status: postTargets.status }).from(postTargets).where(eq(postTargets.target, "devto")).get()!;
       expect(target.status).toBe("publishing");
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("does not claim a scheduled job before its publish time and executes it when due", async () => {
+    const backendDb = tempDb();
+    try {
+      const id = enqueuePublishJob(backendDb, {
+        messageId: 99,
+        target: "devto",
+        publishAt: new Date(Date.now() + 60_000).toISOString(),
+        payload: { title: "Scheduled", bodyMarkdown: "Body" },
+      });
+      expect(claimDuePublishJobs(backendDb, 10)).toEqual([]);
+      backendDb.db.update(publishJobs).set({ publishAt: null }).where(eq(publishJobs.jobId, id)).run();
+      await runPublishCycle(loadConfig({ DEVTO_API_KEY: "secret" }), backendDb, { devto: async () => ({ ok: true, id: "due" }) });
+      expect(backendDb.db.select({ status: publishJobs.status }).from(publishJobs).where(eq(publishJobs.jobId, id)).get()).toEqual({
+        status: "published",
+      });
     } finally {
       backendDb.close();
     }
@@ -48,17 +71,44 @@ describe("publish queue", () => {
         devto: async () => ({ ok: true, id: "devto-1", url: "https://dev.to/a/devto-1" }),
       });
       expect(claimed).toBe(1);
-      const job = backendDb.sqlite.prepare("SELECT status, last_error FROM publish_jobs WHERE job_id=?").get(id) as {
-        status: string;
-        last_error: string | null;
-      };
-      expect(job).toEqual({ status: "published", last_error: null });
-      const target = backendDb.sqlite.prepare("SELECT status, external_id, url FROM post_targets WHERE target='devto'").get() as {
-        status: string;
-        external_id: string;
-        url: string;
-      };
-      expect(target).toEqual({ status: "published", external_id: "devto-1", url: "https://dev.to/a/devto-1" });
+      const job = backendDb.db
+        .select({ status: publishJobs.status, lastError: publishJobs.lastError })
+        .from(publishJobs)
+        .where(eq(publishJobs.jobId, id))
+        .get();
+      expect(job).toEqual({ status: "published", lastError: null });
+      const target = backendDb.db
+        .select({ status: postTargets.status, externalId: postTargets.externalId, url: postTargets.url })
+        .from(postTargets)
+        .where(eq(postTargets.target, "devto"))
+        .get();
+      expect(target).toEqual({ status: "published", externalId: "devto-1", url: "https://dev.to/a/devto-1" });
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("bounds concurrent target publishing", async () => {
+    const backendDb = tempDb();
+    try {
+      for (let index = 0; index < 5; index += 1)
+        enqueuePublishJob(backendDb, { messageId: 600 + index, target: `target-${index}`, payload: { title: "Queued" } });
+      let active = 0;
+      let maximum = 0;
+      const publishers = Object.fromEntries(
+        Array.from({ length: 5 }, (_, index) => [
+          `target-${index}`,
+          async () => {
+            active += 1;
+            maximum = Math.max(maximum, active);
+            await Bun.sleep(10);
+            active -= 1;
+            return { ok: true, id: String(index) };
+          },
+        ]),
+      );
+      await runPublishCycle(loadConfig({ PUBLISH_MAX_CONCURRENCY: "2" }), backendDb, publishers);
+      expect(maximum).toBe(2);
     } finally {
       backendDb.close();
     }
@@ -77,18 +127,20 @@ describe("publish queue", () => {
           throw new HttpPublishError("temporary", 503, "temporary");
         },
       });
-      const job = backendDb.sqlite
-        .prepare("SELECT status, attempt_count, next_attempt_at, last_error FROM publish_jobs WHERE job_id=?")
-        .get(id) as {
-        status: string;
-        attempt_count: number;
-        next_attempt_at: string | null;
-        last_error: string;
-      };
+      const job = backendDb.db
+        .select({
+          status: publishJobs.status,
+          attemptCount: publishJobs.attemptCount,
+          nextAttemptAt: publishJobs.nextAttemptAt,
+          lastError: publishJobs.lastError,
+        })
+        .from(publishJobs)
+        .where(eq(publishJobs.jobId, id))
+        .get()!;
       expect(job.status).toBe("queued");
-      expect(job.attempt_count).toBe(1);
-      expect(job.next_attempt_at).toBeTruthy();
-      expect(job.last_error).toContain("temporary");
+      expect(job.attemptCount).toBe(1);
+      expect(job.nextAttemptAt).toBeTruthy();
+      expect(job.lastError).toContain("temporary");
     } finally {
       backendDb.close();
     }
@@ -110,26 +162,28 @@ describe("publish queue", () => {
       const config = loadConfig({ DEVTO_API_KEY: "secret", PUBLISH_BACKOFF_BASE_SECONDS: "1" });
       await runPublishCycle(config, backendDb, publishers);
       expect(
-        backendDb.sqlite.prepare("SELECT status, attempt_count FROM publish_jobs WHERE job_id=?").get(id) as {
-          status: string;
-          attempt_count: number;
-        },
-      ).toEqual({ status: "queued", attempt_count: 1 });
+        backendDb.db
+          .select({ status: publishJobs.status, attemptCount: publishJobs.attemptCount })
+          .from(publishJobs)
+          .where(eq(publishJobs.jobId, id))
+          .get(),
+      ).toEqual({ status: "queued", attemptCount: 1 });
 
-      backendDb.sqlite.prepare("UPDATE publish_jobs SET next_attempt_at=NULL WHERE job_id=?").run(id);
+      backendDb.db.update(publishJobs).set({ nextAttemptAt: null }).where(eq(publishJobs.jobId, id)).run();
       await runPublishCycle(config, backendDb, publishers);
       expect(
-        backendDb.sqlite.prepare("SELECT status, attempt_count FROM publish_jobs WHERE job_id=?").get(id) as {
-          status: string;
-          attempt_count: number;
-        },
-      ).toEqual({ status: "failed", attempt_count: 2 });
+        backendDb.db
+          .select({ status: publishJobs.status, attemptCount: publishJobs.attemptCount })
+          .from(publishJobs)
+          .where(eq(publishJobs.jobId, id))
+          .get(),
+      ).toEqual({ status: "failed", attemptCount: 2 });
     } finally {
       backendDb.close();
     }
   });
 
-  it("recovers stale publishing locks", () => {
+  it("fails stale publishing locks without automatically repeating an external publication", () => {
     const backendDb = tempDb();
     try {
       const id = enqueuePublishJob(backendDb, {
@@ -137,15 +191,18 @@ describe("publish queue", () => {
         target: "devto",
         payload: { title: "Queued", bodyMarkdown: "Body" },
       });
-      backendDb.sqlite
-        .prepare("UPDATE publish_jobs SET status='publishing', locked_by='old-worker', locked_at=?, updated_at=? WHERE job_id=?")
-        .run("2000-01-01T00:00:00.000Z", "2000-01-01T00:00:00.000Z", id);
+      backendDb.db
+        .update(publishJobs)
+        .set({ status: "publishing", lockedBy: "old-worker", lockedAt: "2000-01-01T00:00:00.000Z", updatedAt: "2000-01-01T00:00:00.000Z" })
+        .where(eq(publishJobs.jobId, id))
+        .run();
       expect(recoverStalePublishJobs(backendDb, 1)).toBe(1);
-      const job = backendDb.sqlite.prepare("SELECT status, locked_by FROM publish_jobs WHERE job_id=?").get(id) as {
-        status: string;
-        locked_by: string | null;
-      };
-      expect(job).toEqual({ status: "queued", locked_by: null });
+      const job = backendDb.db
+        .select({ status: publishJobs.status, lockedBy: publishJobs.lockedBy })
+        .from(publishJobs)
+        .where(eq(publishJobs.jobId, id))
+        .get();
+      expect(job).toEqual({ status: "failed", lockedBy: null });
     } finally {
       backendDb.close();
     }
@@ -165,14 +222,14 @@ describe("publish queue", () => {
           return { ok: true, id: "devto-1" };
         },
       });
-      const job = backendDb.sqlite.prepare("SELECT status, locked_by, last_error FROM publish_jobs WHERE job_id=?").get(id) as {
-        status: string;
-        locked_by: string | null;
-        last_error: string;
-      };
+      const job = backendDb.db
+        .select({ status: publishJobs.status, lockedBy: publishJobs.lockedBy, lastError: publishJobs.lastError })
+        .from(publishJobs)
+        .where(eq(publishJobs.jobId, id))
+        .get()!;
       expect(job.status).toBe("failed");
-      expect(job.locked_by).toBeNull();
-      expect(job.last_error).toContain("worker finalization failed");
+      expect(job.lockedBy).toBeNull();
+      expect(job.lastError).toContain("worker finalization failed");
     } finally {
       backendDb.close();
     }
@@ -185,7 +242,9 @@ describe("publish queue", () => {
       const second = enqueuePublishJob(backendDb, { messageId: 202, target: "devto", payload: { title: "Two" } });
       claimDuePublishJobs(backendDb, 1, "test-worker");
       completePublishJob(backendDb, loadConfig({}), first, { ok: true, id: "first" });
-      expect(backendDb.sqlite.prepare("SELECT status FROM publish_jobs WHERE job_id=?").get(second)).toEqual({ status: "queued" });
+      expect(backendDb.db.select({ status: publishJobs.status }).from(publishJobs).where(eq(publishJobs.jobId, second)).get()).toEqual({
+        status: "queued",
+      });
     } finally {
       backendDb.close();
     }
@@ -201,13 +260,20 @@ describe("publish queue", () => {
         ids: ["root-id"],
         error: "reply container missing",
       });
-      const job = backendDb.sqlite
-        .prepare("SELECT status,attempt_count,payload_json,last_error FROM publish_jobs WHERE job_id=?")
-        .get(id) as { status: string; attempt_count: number; payload_json: string; last_error: string };
+      const job = backendDb.db
+        .select({
+          status: publishJobs.status,
+          attemptCount: publishJobs.attemptCount,
+          payloadJson: publishJobs.payloadJson,
+          lastError: publishJobs.lastError,
+        })
+        .from(publishJobs)
+        .where(eq(publishJobs.jobId, id))
+        .get()!;
       expect(job.status).toBe("queued");
-      expect(job.attempt_count).toBe(1);
-      expect(JSON.parse(job.payload_json)).toMatchObject({ _threadsPublishedIds: ["root-id"] });
-      expect(job.last_error).toContain("reply container missing");
+      expect(job.attemptCount).toBe(1);
+      expect(JSON.parse(job.payloadJson!)).toMatchObject({ _threadsPublishedIds: ["root-id"] });
+      expect(job.lastError).toContain("reply container missing");
     } finally {
       backendDb.close();
     }

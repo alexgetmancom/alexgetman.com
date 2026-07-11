@@ -7,17 +7,25 @@ import { guessContentType, payloadMedia, payloadText, stripUrls } from "./payloa
 
 const UPLOAD_URL = "https://upload.twitter.com/1.1/media/upload.json";
 
-export async function publishToX(payload: Record<string, unknown>, config: BackendConfig, fetchImpl: typeof fetch = fetch): Promise<PublishResult> {
+export async function publishToX(
+  payload: Record<string, unknown>,
+  config: BackendConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<PublishResult> {
   assertCredentials(config);
   const mediaIds: string[] = [];
   for (const item of payloadMedia(payload)) {
     if (!item.localPath || !fs.existsSync(item.localPath)) continue;
-    mediaIds.push(item.type === "VIDEO"
-      ? await uploadVideo(item.localPath, config, fetchImpl)
-      : await uploadImage(item.localPath, config, fetchImpl));
+    mediaIds.push(
+      item.type === "VIDEO" ? await uploadVideo(item.localPath, config, fetchImpl) : await uploadImage(item.localPath, config, fetchImpl),
+    );
   }
   const body = JSON.stringify({ text: stripUrls(payloadText(payload)), ...(mediaIds.length ? { media: { media_ids: mediaIds } } : {}) });
-  const response = await oauthFetch("https://api.twitter.com/2/tweets", config, fetchImpl, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+  const response = await oauthFetch("https://api.twitter.com/2/tweets", config, fetchImpl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+  });
   const result = await jsonResponse<{ data?: { id?: string } }>(response, "X tweet create");
   const id = result.data?.id;
   return { ok: Boolean(id), id: id ?? null, url: id ? `https://x.com/i/web/status/${id}` : null, raw: result };
@@ -25,7 +33,11 @@ export async function publishToX(payload: Record<string, unknown>, config: Backe
 
 async function uploadImage(filePath: string, config: BackendConfig, fetchImpl: typeof fetch): Promise<string> {
   const form = new FormData();
-  form.set("media", new Blob([await fs.promises.readFile(filePath)], { type: guessContentType(filePath) }), filePath.split("/").pop() || "image");
+  form.set(
+    "media",
+    new Blob([await fs.promises.readFile(filePath)], { type: guessContentType(filePath) }),
+    filePath.split("/").pop() || "image",
+  );
   const response = await oauthFetch(UPLOAD_URL, config, fetchImpl, { method: "POST", body: form });
   const result = await jsonResponse<{ media_id_string?: string }>(response, "X media upload");
   if (!result.media_id_string) throw new Error("X media upload missing media_id_string");
@@ -33,7 +45,12 @@ async function uploadImage(filePath: string, config: BackendConfig, fetchImpl: t
 }
 
 async function uploadVideo(filePath: string, config: BackendConfig, fetchImpl: typeof fetch): Promise<string> {
-  const initParams = new URLSearchParams({ command: "INIT", total_bytes: String(fs.statSync(filePath).size), media_type: "video/mp4", media_category: "amplify_video" });
+  const initParams = new URLSearchParams({
+    command: "INIT",
+    total_bytes: String(fs.statSync(filePath).size),
+    media_type: "video/mp4",
+    media_category: "amplify_video",
+  });
   const initialized = await jsonResponse<{ media_id_string?: string }>(
     await oauthFetch(UPLOAD_URL, config, fetchImpl, formInit(initParams), initParams),
     "X media INIT",
@@ -72,7 +89,12 @@ async function uploadVideo(filePath: string, config: BackendConfig, fetchImpl: t
   return mediaId;
 }
 
-async function waitForProcessing(mediaId: string, initial: ProcessingInfo | undefined, config: BackendConfig, fetchImpl: typeof fetch): Promise<void> {
+async function waitForProcessing(
+  mediaId: string,
+  initial: ProcessingInfo | undefined,
+  config: BackendConfig,
+  fetchImpl: typeof fetch,
+): Promise<void> {
   let processing = initial;
   const deadline = Date.now() + 600_000;
   while (processing && ["pending", "in_progress"].includes(processing.state ?? "")) {
@@ -95,13 +117,26 @@ function formInit(params: URLSearchParams): RequestInit {
   return { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: params };
 }
 
-async function oauthFetch(url: string, config: BackendConfig, fetchImpl: typeof fetch, init: RequestInit, formParams?: URLSearchParams): Promise<Response> {
+async function oauthFetch(
+  url: string,
+  config: BackendConfig,
+  fetchImpl: typeof fetch,
+  init: RequestInit,
+  formParams?: URLSearchParams,
+): Promise<Response> {
   const method = (init.method ?? "GET").toUpperCase();
   const authorization = oauthAuthorization(method, url, config, formParams);
   return fetchImpl(url, { ...init, headers: { ...init.headers, Authorization: authorization } });
 }
 
-export function oauthAuthorization(method: string, rawUrl: string, config: BackendConfig, formParams?: URLSearchParams, nonce = crypto.randomBytes(16).toString("hex"), timestamp = Math.floor(Date.now() / 1000)): string {
+export function oauthAuthorization(
+  method: string,
+  rawUrl: string,
+  config: BackendConfig,
+  formParams?: URLSearchParams,
+  nonce = crypto.randomBytes(16).toString("hex"),
+  timestamp = Math.floor(Date.now() / 1000),
+): string {
   assertCredentials(config);
   const url = new URL(rawUrl);
   const oauth: Record<string, string> = {
@@ -112,20 +147,25 @@ export function oauthAuthorization(method: string, rawUrl: string, config: Backe
     oauth_token: config.X_ACCESS_TOKEN!,
     oauth_version: "1.0",
   };
-  const allParams = [...url.searchParams.entries(), ...(formParams ? [...formParams.entries()] : []), ...Object.entries(oauth)]
-    .sort(([leftKey, leftValue], [rightKey, rightValue]) => encode(leftKey).localeCompare(encode(rightKey)) || encode(leftValue).localeCompare(encode(rightValue)));
+  const allParams = [...url.searchParams.entries(), ...(formParams ? [...formParams.entries()] : []), ...Object.entries(oauth)].sort(
+    ([leftKey, leftValue], [rightKey, rightValue]) =>
+      encode(leftKey).localeCompare(encode(rightKey)) || encode(leftValue).localeCompare(encode(rightValue)),
+  );
   const normalized = allParams.map(([key, value]) => `${encode(key)}=${encode(value)}`).join("&");
   const baseUrl = `${url.protocol}//${url.host}${url.pathname}`;
   const signatureBase = [method.toUpperCase(), encode(baseUrl), encode(normalized)].join("&");
   const signingKey = `${encode(config.X_CONSUMER_SECRET!)}&${encode(config.X_ACCESS_TOKEN_SECRET!)}`;
   oauth.oauth_signature = crypto.createHmac("sha1", signingKey).update(signatureBase).digest("base64");
-  return `OAuth ${Object.entries(oauth).sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => `${encode(key)}="${encode(value)}"`).join(", ")}`;
+  return `OAuth ${Object.entries(oauth)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${encode(key)}="${encode(value)}"`)
+    .join(", ")}`;
 }
 
 async function jsonResponse<T>(response: Response, label: string): Promise<T> {
   const body = await response.text();
   if (!response.ok) throw new HttpPublishError(`${label} ${response.status}: ${body}`, response.status, body);
-  return body ? JSON.parse(body) as T : {} as T;
+  return body ? (JSON.parse(body) as T) : ({} as T);
 }
 
 async function responseError(response: Response, label: string): Promise<HttpPublishError> {
@@ -134,7 +174,8 @@ async function responseError(response: Response, label: string): Promise<HttpPub
 }
 
 function assertCredentials(config: BackendConfig): void {
-  if (!config.X_CONSUMER_KEY || !config.X_CONSUMER_SECRET || !config.X_ACCESS_TOKEN || !config.X_ACCESS_TOKEN_SECRET) throw new Error("missing X credentials");
+  if (!config.X_CONSUMER_KEY || !config.X_CONSUMER_SECRET || !config.X_ACCESS_TOKEN || !config.X_ACCESS_TOKEN_SECRET)
+    throw new Error("missing X credentials");
 }
 
 function encode(value: string): string {

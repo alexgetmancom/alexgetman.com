@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, mock } from "bun:test";
 import { loadConfig } from "../src/config.js";
 import { devtoArticleFromPayload, publishToDevto } from "../src/social/devto.js";
 
@@ -22,7 +22,10 @@ describe("Dev.to publisher", () => {
   });
 
   it("sends Dev.to API request with normalized tags and auth", async () => {
-    const fetchMock = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => new Response(JSON.stringify({ id: 123, url: "https://dev.to/a/post" }), { status: 201 }));
+    const fetchMock = mock(
+      async (_url: string | URL | Request, _init?: RequestInit) =>
+        new Response(JSON.stringify({ id: 123, url: "https://dev.to/a/post" }), { status: 201 }),
+    );
     const result = await publishToDevto(
       {
         title: "Title",
@@ -35,7 +38,7 @@ describe("Dev.to publisher", () => {
     );
 
     expect(result).toMatchObject({ ok: true, id: 123, url: "https://dev.to/a/post" });
-    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(init.headers).toMatchObject({ "api-key": "secret" });
     expect(JSON.parse(String(init.body))).toEqual({

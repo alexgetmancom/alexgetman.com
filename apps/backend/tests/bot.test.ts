@@ -1,6 +1,14 @@
+import { afterEach, describe, expect, it, mock } from "bun:test";
 import type { Bot } from "grammy";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { createDraftFromMessage, entitiesToHtml, finalizePendingAlbums, publishDraftToQueue, scheduledDrafts } from "../src/bot.js";
+import {
+  cancelDraft,
+  createDraftFromMessage,
+  entitiesToHtml,
+  finalizePendingAlbums,
+  publishDraftToQueue,
+  scheduledDrafts,
+} from "../src/bot.js";
+import { TARGETS, targetLocale } from "../src/botTargets.js";
 import { loadConfig } from "../src/config.js";
 import { type BackendDb, openBackendDb } from "../src/db/client.js";
 
@@ -85,6 +93,21 @@ describe("Telegram controller flow", () => {
     expect(scheduledDrafts(backendDb)).toEqual([{ id: draftId, scheduledAt: ruAt.toISOString(), scheduledEnAt: enAt.toISOString() }]);
   });
 
+  it("removes all unpublished draft artifacts while retaining published history", () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createDraftFromMessage(backendDb, 42, { text: "Cancel", textEn: "Cancel", entities: [], media: [] });
+    const postId = publishDraftToQueue(backendDb, draftId, {
+      mode: "scheduled",
+      ruAt: new Date(Date.now() + 60_000),
+      enAt: new Date(Date.now() + 60_000),
+    });
+    cancelDraft(backendDb, draftId);
+    expect(backendDb.sqlite.prepare("SELECT post_id FROM drafts WHERE id=?").get(draftId)).toEqual({ post_id: null });
+    expect(backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM publications WHERE post_id=?").get(postId)).toEqual({ count: 0 });
+    expect(backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM publish_jobs WHERE post_id=?").get(postId)).toEqual({ count: 0 });
+    expect(backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM post_locales WHERE post_id=?").get(postId)).toEqual({ count: 0 });
+  });
+
   it("queues locale-specific text and media for RU and EN targets", () => {
     backendDb = openBackendDb(":memory:");
     const draftId = createDraftFromMessage(backendDb, 42, {
@@ -124,6 +147,32 @@ describe("Telegram controller flow", () => {
     }
   });
 
+  it("localizes every enabled social target from its declared locale", () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createDraftFromMessage(backendDb, 42, {
+      text: "Русский текст",
+      textEn: "English text",
+      entities: [],
+      media: [{ type: "photo", file_id: "ru-image" }],
+    });
+    backendDb.sqlite
+      .prepare("UPDATE drafts SET media_en_json=? WHERE id=?")
+      .run(JSON.stringify([{ type: "photo", file_id: "en-image" }]), draftId);
+    const postId = publishDraftToQueue(backendDb, draftId);
+    const jobs = backendDb.sqlite.prepare("SELECT target,payload_json FROM publish_jobs WHERE post_id=?").all(postId) as Array<{
+      target: string;
+      payload_json: string;
+    }>;
+    for (const job of jobs) {
+      const payload = JSON.parse(job.payload_json) as Record<string, unknown>;
+      const locale = targetLocale(job.target);
+      expect(payload.locale).toBe(locale);
+      expect(payload.text).toBe(locale === "ru" ? "Русский текст" : "English text");
+      expect(payload.media).toEqual([{ type: "photo", file_id: locale === "ru" ? "ru-image" : "en-image" }]);
+    }
+    expect(jobs).toHaveLength(TARGETS.filter(([, , , kind]) => kind !== "site").length);
+  });
+
   it("preserves Telegram entities in target payloads and site HTML", () => {
     backendDb = openBackendDb(":memory:");
     const draftId = createDraftFromMessage(backendDb, 42, {
@@ -154,14 +203,14 @@ describe("Telegram controller flow", () => {
           { type: "photo", file_id: "two" },
         ]),
       );
-    const sendMessage = vi.fn(async () => ({ message_id: 1, date: 1, chat: { id: 42, type: "private" as const } }));
+    const sendMessage = mock(async () => ({ message_id: 1, date: 1, chat: { id: 42, type: "private" as const } }));
     const fakeBot = { api: { sendMessage } } as unknown as Bot;
 
     expect(await finalizePendingAlbums(fakeBot, backendDb, loadConfig({ CONTROLLER_ALBUM_SETTLE_SECONDS: "1" }))).toBe(1);
     const draft = backendDb.sqlite.prepare("SELECT text_ru, media_ru_json FROM drafts").get() as { text_ru: string; media_ru_json: string };
     expect(draft.text_ru).toBe("Album caption");
     expect(JSON.parse(draft.media_ru_json)).toHaveLength(2);
-    expect(sendMessage).toHaveBeenCalledOnce();
+    expect(sendMessage).toHaveBeenCalledTimes(1);
     expect((backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM pending_albums").get() as { count: number }).count).toBe(0);
   });
 });
@@ -171,5 +220,18 @@ describe("Telegram entity HTML", () => {
     expect(entitiesToHtml("See link\nnext", [{ type: "text_link", offset: 4, length: 4, url: "https://example.com/?a=1&b=2" }])).toBe(
       'See <a href="https://example.com/?a=1&amp;b=2" rel="noopener noreferrer">link</a><br>next',
     );
+  });
+
+  it("renders every supported Telegram formatting entity safely", () => {
+    const text = "bold italic under strike code";
+    expect(
+      entitiesToHtml(text, [
+        { type: "bold", offset: 0, length: 4 },
+        { type: "italic", offset: 5, length: 6 },
+        { type: "underline", offset: 12, length: 5 },
+        { type: "strikethrough", offset: 18, length: 6 },
+        { type: "code", offset: 25, length: 4 },
+      ]),
+    ).toBe("<strong>bold</strong> <em>italic</em> <u>under</u> <s>strike</s> <code>code</code>");
   });
 });

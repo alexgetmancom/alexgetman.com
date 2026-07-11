@@ -15,7 +15,11 @@ type GitHubDiscussionResponse = {
   errors?: unknown[];
 };
 
-export async function publishToGitHubDiscussion(payload: Record<string, unknown>, config: BackendConfig, fetchImpl: typeof fetch = fetch): Promise<PublishResult> {
+export async function publishToGitHubDiscussion(
+  payload: Record<string, unknown>,
+  config: BackendConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<PublishResult> {
   if (!config.GITHUB_DISCUSSIONS_TOKEN) return { skipped: true, reason: "missing GITHUB_DISCUSSIONS_TOKEN" };
   const query = `
     mutation($repoId: ID!, $catId: ID!, $title: String!, $body: String!) {
@@ -45,5 +49,10 @@ export async function publishToGitHubDiscussion(payload: Record<string, unknown>
     return { ok: false, error: JSON.stringify(data.errors), retryable: false };
   }
   const discussion = data.data?.createDiscussion?.discussion;
-  return { ok: Boolean(discussion?.url || discussion?.id), id: discussion?.id ?? discussion?.url ?? null, url: discussion?.url ?? null, raw: data };
+  return {
+    ok: Boolean(discussion?.url || discussion?.id),
+    id: discussion?.id ?? discussion?.url ?? null,
+    url: discussion?.url ?? null,
+    raw: data,
+  };
 }

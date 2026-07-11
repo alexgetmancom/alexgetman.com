@@ -123,7 +123,7 @@ async function callThreadsWithRetry(
       lastError = error;
       const message = String(error instanceof Error ? error.message : error).toLowerCase();
       if (!message.includes("media") && !message.includes("4279009") && !message.includes("429") && !message.includes("5")) throw error;
-      await new Promise((resolve) => setTimeout(resolve, 2_000 * (attempt + 1)));
+      await Bun.sleep(config.THREADS_RETRY_DELAY_MS * (attempt + 1));
     }
   }
   throw lastError;

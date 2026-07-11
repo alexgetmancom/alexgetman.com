@@ -13,28 +13,46 @@ export async function generateStoryMedia(
   const items = Array.isArray(raw) ? raw : raw && typeof raw === "object" ? [raw] : [];
   if (items.length !== 1) throw new Error("Story-safe generation supports one media item");
   const item = items[0] as Record<string, unknown>;
-  if (!['photo', 'image'].includes(String(item.type ?? "").toLowerCase())) throw new Error("Story-safe generation supports photo media");
+  if (!["photo", "image"].includes(String(item.type ?? "").toLowerCase())) throw new Error("Story-safe generation supports photo media");
   const directory = path.join(config.DATA_DIR, "story-media");
   await fs.promises.mkdir(directory, { recursive: true });
   const source = await resolveSource(item, draftId, locale, directory, config, fetchImpl);
   const output = path.join(directory, `draft-${draftId}-${locale}-story-${Date.now()}.jpg`);
   await runFfmpeg([
-    "-y", "-i", source,
-    "-vf", "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black",
-    "-frames:v", "1", "-q:v", "2", output,
+    "-y",
+    "-i",
+    source,
+    "-vf",
+    "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black",
+    "-frames:v",
+    "1",
+    "-q:v",
+    "2",
+    output,
   ]);
   await fs.promises.chmod(output, 0o664);
   return [{ ...item, story_local_path: output, storyLocalPath: output, story_width: 1080, story_height: 1920 }];
 }
 
-async function resolveSource(item: Record<string, unknown>, draftId: number, locale: string, directory: string, config: BackendConfig, fetchImpl: typeof fetch): Promise<string> {
+async function resolveSource(
+  item: Record<string, unknown>,
+  draftId: number,
+  locale: string,
+  directory: string,
+  config: BackendConfig,
+  fetchImpl: typeof fetch,
+): Promise<string> {
   const local = stringValue(item.local_path) || stringValue(item.localPath) || stringValue(item.path);
   if (local && path.isAbsolute(local) && fs.existsSync(local)) return local;
   const fileId = stringValue(item.file_id) || stringValue(item.fileId);
   if (!fileId || !config.controllerBotToken) throw new Error("Cannot resolve story source media");
   const base = config.TELEGRAM_API_BASE_URL.replace(/\/$/, "");
-  const response = await fetchImpl(`${base}/bot${config.controllerBotToken}/getFile`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ file_id: fileId }) });
-  const info = await response.json() as { ok?: boolean; result?: { file_path?: string } };
+  const response = await fetchImpl(`${base}/bot${config.controllerBotToken}/getFile`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ file_id: fileId }),
+  });
+  const info = (await response.json()) as { ok?: boolean; result?: { file_path?: string } };
   const filePath = info.result?.file_path;
   if (!response.ok || !info.ok || !filePath) throw new Error("Telegram getFile failed for story media");
   if (path.isAbsolute(filePath)) return filePath;

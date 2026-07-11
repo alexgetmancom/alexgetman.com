@@ -3,7 +3,14 @@ import path from "node:path";
 import type { BackendConfig } from "../config.js";
 import { runFfmpeg } from "../runtime/ffmpeg.js";
 
-type SiteMedia = Record<string, unknown> & { type?: string; file_id?: string; fileId?: string; path?: string; local_path?: string; localPath?: string };
+type SiteMedia = Record<string, unknown> & {
+  type?: string;
+  file_id?: string;
+  fileId?: string;
+  path?: string;
+  local_path?: string;
+  localPath?: string;
+};
 
 export async function materializeSiteMedia(
   config: BackendConfig,
@@ -56,8 +63,12 @@ async function copyOrDownload(config: BackendConfig, item: SiteMedia, target: st
   const token = config.controllerBotToken;
   if (!token) throw new Error("missing Telegram token for site media");
   const base = config.TELEGRAM_API_BASE_URL.replace(/\/$/, "");
-  const infoResponse = await fetchImpl(`${base}/bot${token}/getFile`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ file_id: fileId }) });
-  const info = await infoResponse.json() as { ok?: boolean; result?: { file_path?: string } };
+  const infoResponse = await fetchImpl(`${base}/bot${token}/getFile`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ file_id: fileId }),
+  });
+  const info = (await infoResponse.json()) as { ok?: boolean; result?: { file_path?: string } };
   if (!infoResponse.ok || !info.ok || !info.result?.file_path) throw new Error(`Telegram getFile failed for ${fileId}`);
   const filePath = info.result.file_path;
   if (path.isAbsolute(filePath)) {

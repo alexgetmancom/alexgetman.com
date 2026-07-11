@@ -35,7 +35,12 @@ function visit(directory: string): void {
 
 visit(root);
 if (violations.length > 0) {
-  console.error("Non-TypeScript executable source found:\n" + [...new Set(violations)].sort().map((file) => `- ${file}`).join("\n"));
+  console.error(
+    `Non-TypeScript executable source found:\n${[...new Set(violations)]
+      .sort()
+      .map((file) => `- ${file}`)
+      .join("\n")}`,
+  );
   process.exit(1);
 }
 console.log("Language gate passed: no Python, JavaScript, or shell source files.");

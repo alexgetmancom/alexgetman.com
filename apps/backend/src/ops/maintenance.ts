@@ -1,16 +1,20 @@
 import fs from "node:fs";
-import path from "node:path";
 import os from "node:os";
+import path from "node:path";
 import type { BackendDb } from "../db/client.js";
 
 export async function backupDatabase(backendDb: BackendDb, sourcePath: string, destinationDirectory?: string): Promise<string> {
   if (sourcePath === ":memory:") throw new Error("cannot back up an in-memory database");
   const directory = destinationDirectory ?? path.join(path.dirname(sourcePath), "backups");
   fs.mkdirSync(directory, { recursive: true });
-  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+  const stamp = new Date()
+    .toISOString()
+    .replace(/[-:]/g, "")
+    .replace(/\.\d{3}Z$/, "Z");
   const destination = path.join(directory, `${path.basename(sourcePath, path.extname(sourcePath))}-${stamp}.db`);
   await backendDb.sqlite.backup(destination);
-  backendDb.sqlite.prepare("INSERT INTO deployment_snapshots(action,status,backup_path,created_at) VALUES ('backup','ok',?,?)")
+  backendDb.sqlite
+    .prepare("INSERT INTO deployment_snapshots(action,status,backup_path,created_at) VALUES ('backup','ok',?,?)")
     .run(destination, new Date().toISOString());
   return destination;
 }
@@ -34,33 +38,58 @@ export function buildMetricsBackfillPlan(
     where.push(`p.post_key IN (${options.refs.map(() => "?").join(",")})`);
     parameters.push(...options.refs);
   }
-  if (options.dateFrom) { where.push("p.date_utc >= ?"); parameters.push(options.dateFrom); }
-  if (options.dateTo) { where.push("p.date_utc <= ?"); parameters.push(options.dateTo); }
-  return backendDb.sqlite.prepare(
-    `SELECT p.post_key,p.post_id,p.message_id,p.date_utc,t.target FROM posts p JOIN post_targets t ON t.post_key=p.post_key WHERE ${where.join(" AND ")} ORDER BY p.date_utc DESC,t.target`,
-  ).all(...parameters) as Record<string, unknown>[];
+  if (options.dateFrom) {
+    where.push("p.date_utc >= ?");
+    parameters.push(options.dateFrom);
+  }
+  if (options.dateTo) {
+    where.push("p.date_utc <= ?");
+    parameters.push(options.dateTo);
+  }
+  return backendDb.sqlite
+    .prepare(
+      `SELECT p.post_key,p.post_id,p.message_id,p.date_utc,t.target FROM posts p JOIN post_targets t ON t.post_key=p.post_key WHERE ${where.join(" AND ")} ORDER BY p.date_utc DESC,t.target`,
+    )
+    .all(...parameters) as Record<string, unknown>[];
 }
 
 export function applyMetricsBackfill(backendDb: BackendDb, rows: Record<string, unknown>[], resetCounts = false): number {
   const now = new Date().toISOString();
   backendDb.sqlite.transaction(() => {
     for (const row of rows) {
-      backendDb.sqlite.prepare(`INSERT INTO metric_schedule(post_key,target,next_check_at,check_count,frozen_at,last_error,updated_at)
+      backendDb.sqlite
+        .prepare(`INSERT INTO metric_schedule(post_key,target,next_check_at,check_count,frozen_at,last_error,updated_at)
         VALUES (?,?,NULL,0,NULL,NULL,?) ON CONFLICT(post_key,target) DO UPDATE SET next_check_at=NULL,
         check_count=${resetCounts ? "0" : "metric_schedule.check_count"},frozen_at=NULL,last_error=NULL,updated_at=excluded.updated_at`)
         .run(row.post_key, row.target, now);
     }
-    backendDb.sqlite.prepare("UPDATE metric_schedule SET frozen_at=?,next_check_at=NULL,updated_at=? WHERE target IN ('x','linkedin')").run(now, now);
+    backendDb.sqlite
+      .prepare("UPDATE metric_schedule SET frozen_at=?,next_check_at=NULL,updated_at=? WHERE target IN ('x','linkedin')")
+      .run(now, now);
   })();
   return rows.length;
 }
 
 export function auditOperations(backendDb: BackendDb): Record<string, unknown> {
   return {
-    postEventsByType: backendDb.sqlite.prepare("SELECT severity,event_type,count(*) AS count,max(created_at) AS latest FROM post_events GROUP BY severity,event_type ORDER BY severity,event_type").all(),
-    recentPostEvents: backendDb.sqlite.prepare("SELECT severity,event_type,target,message,created_at FROM post_events ORDER BY created_at DESC LIMIT 20").all(),
-    failedPublishJobs: backendDb.sqlite.prepare("SELECT target,count(*) AS count,max(updated_at) AS latest FROM publish_jobs WHERE status='failed' GROUP BY target ORDER BY target").all(),
-    metricScheduleErrors: backendDb.sqlite.prepare("SELECT target,count(*) AS count,max(updated_at) AS latest FROM metric_schedule WHERE last_error IS NOT NULL AND last_error != '' GROUP BY target ORDER BY target").all(),
+    postEventsByType: backendDb.sqlite
+      .prepare(
+        "SELECT severity,event_type,count(*) AS count,max(created_at) AS latest FROM post_events GROUP BY severity,event_type ORDER BY severity,event_type",
+      )
+      .all(),
+    recentPostEvents: backendDb.sqlite
+      .prepare("SELECT severity,event_type,target,message,created_at FROM post_events ORDER BY created_at DESC LIMIT 20")
+      .all(),
+    failedPublishJobs: backendDb.sqlite
+      .prepare(
+        "SELECT target,count(*) AS count,max(updated_at) AS latest FROM publish_jobs WHERE status='failed' GROUP BY target ORDER BY target",
+      )
+      .all(),
+    metricScheduleErrors: backendDb.sqlite
+      .prepare(
+        "SELECT target,count(*) AS count,max(updated_at) AS latest FROM metric_schedule WHERE last_error IS NOT NULL AND last_error != '' GROUP BY target ORDER BY target",
+      )
+      .all(),
   };
 }
 
@@ -71,9 +100,15 @@ export function withMaintenanceLock<T>(backendDb: BackendDb, operation: () => T)
   const expires = new Date(now.getTime() + 30 * 60_000).toISOString();
   backendDb.sqlite.transaction(() => {
     backendDb.sqlite.prepare("DELETE FROM maintenance_locks WHERE name=? AND expires_at < ?").run(name, now.toISOString());
-    backendDb.sqlite.prepare("INSERT OR IGNORE INTO maintenance_locks(name,owner,expires_at,created_at) VALUES (?,?,?,?)").run(name, owner, expires, now.toISOString());
+    backendDb.sqlite
+      .prepare("INSERT OR IGNORE INTO maintenance_locks(name,owner,expires_at,created_at) VALUES (?,?,?,?)")
+      .run(name, owner, expires, now.toISOString());
     const row = backendDb.sqlite.prepare("SELECT owner FROM maintenance_locks WHERE name=?").get(name) as { owner: string };
     if (row.owner !== owner) throw new Error(`maintenance lock is held by ${row.owner}`);
   })();
-  try { return operation(); } finally { backendDb.sqlite.prepare("DELETE FROM maintenance_locks WHERE name=? AND owner=?").run(name, owner); }
+  try {
+    return operation();
+  } finally {
+    backendDb.sqlite.prepare("DELETE FROM maintenance_locks WHERE name=? AND owner=?").run(name, owner);
+  }
 }

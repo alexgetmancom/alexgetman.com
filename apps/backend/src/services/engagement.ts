@@ -97,9 +97,10 @@ export function metricsSummary(config: BackendConfig): { total: number; today: n
 
 function normalizeMetricPath(value: string): string {
   let path = String(value || "/")
-    .split("#", 1)[0]!
-    .split("?", 1)[0]!
-    .trim();
+    .split("#", 1)[0]
+    ?.split("?", 1)[0]
+    ?.trim();
+  if (!path) path = "/";
   if (!path.startsWith("/") || path.startsWith("//")) path = "/";
   if (path.length > 180) path = path.slice(0, 180);
   if (!/^\/[\p{L}A-Za-z0-9._~!$&'()*+,;=:@%/-]*$/u.test(path)) path = "/";

@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
+import { asc, count, eq } from "drizzle-orm";
 import { openBackendDb } from "../src/db/client.js";
+import { publicationSources, publications, publishJobs } from "../src/db/schema.js";
 import { enqueuePublishJob } from "../src/queue/publish.js";
 import { runCommandAction } from "../src/services/actions.js";
 
@@ -17,20 +19,36 @@ describe("command center actions", () => {
         slug_ru: "russian",
         slug_en: "english",
       };
-      backendDb.sqlite.prepare("INSERT INTO publications(post_id,status,telegram_message_id,created_at,updated_at) VALUES (52,'published',492,?,?)").run(now, now);
-      backendDb.sqlite.prepare("INSERT INTO publication_sources(post_id,item_json,created_at,updated_at) VALUES (52,?,?,?)").run(JSON.stringify(source), now, now);
+      backendDb.db
+        .insert(publications)
+        .values({ postId: 52, status: "published", telegramMessageId: 492, createdAt: now, updatedAt: now })
+        .run();
+      backendDb.db
+        .insert(publicationSources)
+        .values({ postId: 52, itemJson: JSON.stringify(source), createdAt: now, updatedAt: now })
+        .run();
 
       for (const target of ["threads_ru", "threads_en"]) {
         const id = enqueuePublishJob(backendDb, { postId: 52, postKey: "post:52", messageId: 52, target, payload: source });
-        backendDb.sqlite.prepare("UPDATE publish_jobs SET status='failed' WHERE job_id=?").run(id);
+        backendDb.db.update(publishJobs).set({ status: "failed" }).where(eq(publishJobs.jobId, id)).run();
         runCommandAction(backendDb, { action: "retry", ref: "post:52", target });
       }
 
-      const jobs = backendDb.sqlite.prepare("SELECT target,payload_json FROM publish_jobs WHERE post_id=52 AND status='queued' ORDER BY target").all() as Array<{ target: string; payload_json: string }>;
-      const payloads = Object.fromEntries(jobs.map((job) => [job.target, JSON.parse(job.payload_json) as Record<string, unknown>]));
+      const jobs = backendDb.db
+        .select({ target: publishJobs.target, payloadJson: publishJobs.payloadJson })
+        .from(publishJobs)
+        .where(eq(publishJobs.postId, 52))
+        .orderBy(asc(publishJobs.target))
+        .all();
+      const payloads = Object.fromEntries(jobs.map((job) => [job.target, JSON.parse(job.payloadJson!) as Record<string, unknown>]));
       expect(payloads.threads_ru).toMatchObject({ locale: "ru", text: "Русский текст", text_en: "", media: [{ file_id: "ru-photo" }] });
-      expect(payloads.threads_en).toMatchObject({ locale: "en", text: "English text", text_en: "English text", media: [{ file_id: "en-photo" }] });
-      expect((backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM publish_jobs WHERE post_id=52").get() as { count: number }).count).toBe(2);
+      expect(payloads.threads_en).toMatchObject({
+        locale: "en",
+        text: "English text",
+        text_en: "English text",
+        media: [{ file_id: "en-photo" }],
+      });
+      expect(backendDb.db.select({ count: count() }).from(publishJobs).where(eq(publishJobs.postId, 52)).get()!.count).toBe(2);
     } finally {
       backendDb.close();
     }

@@ -1,19 +1,19 @@
 ---
-import Layout from '../layouts/Layout.astro';
-import HomeNewsPage from '../components/HomeNewsPage.astro';
-import projects from '../data/projects.json';
-import { loadFeedItems } from '../utils/feed';
-import { sortedHomePosts, topicStatsFor } from '../utils/home-posts';
+import HomeNewsPage from "../components/HomeNewsPage.astro";
+import projects from "../data/projects.json";
+import Layout from "../layouts/Layout.astro";
+import { loadFeedItems } from "../utils/feed";
+import { sortedHomePosts, topicStatsFor } from "../utils/home-posts";
 
 const feedItems = loadFeedItems();
 
-const englishPosts = sortedHomePosts(feedItems, 'en');
+const englishPosts = sortedHomePosts(feedItems, "en");
 
 const leadPost = englishPosts[0] || null;
 const latestEnglishPosts = englishPosts.slice(leadPost ? 1 : 0, leadPost ? 8 : 9);
 const trendingPosts = [...englishPosts]
   .filter((post) => !leadPost || post.id !== leadPost.id)
-  .sort((a, b) => (b.views - a.views) || (new Date(b.date).getTime() - new Date(a.date).getTime()))
+  .sort((a, b) => b.views - a.views || new Date(b.date).getTime() - new Date(a.date).getTime())
   .slice(0, 5);
 const topicStats = topicStatsFor(englishPosts);
 
@@ -26,10 +26,10 @@ const schema = JSON.stringify({
     {
       "@type": "Person",
       "@id": "https://alexgetman.com/#person",
-      "name": "Alex Getman",
-      "url": "https://alexgetman.com/",
-      "image": "https://alexgetman.com/avatar.png",
-      "sameAs": [
+      name: "Alex Getman",
+      url: "https://alexgetman.com/",
+      image: "https://alexgetman.com/avatar.png",
+      sameAs: [
         "https://t.me/alexgetmancom",
         "https://www.threads.net/@alexgetmanco",
         "https://www.youtube.com/@alexgetmancom",
@@ -38,28 +38,28 @@ const schema = JSON.stringify({
         "https://www.linkedin.com/in/alexgetmancom",
         "https://www.instagram.com/alexgetmancom/",
         "https://www.facebook.com/profile.php?id=61590942205426",
-        "https://discord.gg/Z7sSm56rcb"
-      ]
+        "https://discord.gg/Z7sSm56rcb",
+      ],
     },
     {
       "@type": "WebSite",
       "@id": "https://alexgetman.com/#website",
-      "url": "https://alexgetman.com/",
-      "name": "Alex Getman",
-      "description": description,
-      "inLanguage": "en-US",
-      "publisher": { "@id": "https://alexgetman.com/#person" }
+      url: "https://alexgetman.com/",
+      name: "Alex Getman",
+      description: description,
+      inLanguage: "en-US",
+      publisher: { "@id": "https://alexgetman.com/#person" },
     },
     {
       "@type": "CollectionPage",
       "@id": "https://alexgetman.com/#home",
-      "url": "https://alexgetman.com/",
-      "name": title,
-      "description": description,
-      "inLanguage": "en-US",
-      "isPartOf": { "@id": "https://alexgetman.com/#website" }
-    }
-  ]
+      url: "https://alexgetman.com/",
+      name: title,
+      description: description,
+      inLanguage: "en-US",
+      isPartOf: { "@id": "https://alexgetman.com/#website" },
+    },
+  ],
 });
 
 const labels = {
@@ -74,7 +74,7 @@ const labels = {
   projects: "Projects",
   all: "All",
   sidebarLabel: "Homepage side sections",
-  mskSuffix: "MSK"
+  mskSuffix: "MSK",
 };
 ---
 

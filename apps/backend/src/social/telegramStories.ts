@@ -1,14 +1,12 @@
-import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { Api, client, type sessions, TelegramClient } from "telegram";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import type { PublishResult } from "../queue/errors.js";
 import { runFfmpeg } from "../runtime/ffmpeg.js";
-import { guessContentType, type PublishMediaItem, payloadCanonicalUrl, payloadMedia, payloadText } from "./payload.js";
-import { loadChannelStorySession } from "./telegramSession.js";
+import { type PublishMediaItem, payloadCanonicalUrl, payloadMedia, payloadText } from "./payload.js";
+import { createChannelStoryClient } from "./telegramSession.js";
 
 const URL_RE = /https?:\/\/[^\s<>)]*/;
 const STORY_MAX_BYTES = Math.floor(9.8 * 1024 * 1024);
@@ -31,24 +29,16 @@ export async function publishTelegramStory(
     return { ok: false, skipped: true, reason: "missing_channel_story_credentials" };
   }
   if (!config.TELEGRAM_STORIES_CHANNEL) return { ok: false, skipped: true, reason: "missing_story_channel" };
-  return publishChannelStory(media, caption, link, config, loadChannelStorySession(config.TELEGRAM_CHANNEL_STORIES_SESSION));
+  return publishChannelStory(media, caption, link, config);
 }
 
-async function publishChannelStory(
-  media: PublishMediaItem,
-  caption: string,
-  link: string,
-  config: BackendConfig,
-  session: sessions.StringSession,
-): Promise<PublishResult> {
+async function publishChannelStory(media: PublishMediaItem, caption: string, link: string, config: BackendConfig): Promise<PublishResult> {
   let uploadPath = media.storyLocalPath || media.localPath!;
   let cleanupPath: string | null = null;
-  const clientInstance = new TelegramClient(session, config.TELEGRAM_CHANNEL_STORIES_API_ID!, config.TELEGRAM_CHANNEL_STORIES_API_HASH!, {
-    connectionRetries: 5,
-  });
+  const clientInstance = createChannelStoryClient(config);
   await clientInstance.connect();
   try {
-    const metadata = probeVideo(uploadPath, media);
+    const metadata = await probeVideo(uploadPath, media);
     if (media.type === "VIDEO" && fs.statSync(uploadPath).size > STORY_MAX_BYTES) {
       cleanupPath = path.join(os.tmpdir(), `tg_story_${Date.now()}.mp4`);
       const targetBytes = 9.5 * 1024 * 1024;
@@ -76,78 +66,43 @@ async function publishChannelStory(
       uploadPath = cleanupPath;
     }
 
-    const stat = fs.statSync(uploadPath);
-    const uploaded = await clientInstance.uploadFile({
-      file: new client.uploads.CustomFile(path.basename(uploadPath), stat.size, uploadPath),
-      workers: 1,
-    });
-    const inputMedia =
-      media.type === "VIDEO"
-        ? new Api.InputMediaUploadedDocument({
-            file: uploaded,
-            mimeType: guessContentType(uploadPath),
-            attributes: [
-              new Api.DocumentAttributeVideo({
-                duration: metadata.duration,
-                w: metadata.width,
-                h: metadata.height,
-                supportsStreaming: true,
-                nosound: false,
-              }),
-            ],
-          })
-        : new Api.InputMediaUploadedPhoto({ file: uploaded });
-    const storyChannel = config.TELEGRAM_STORIES_CHANNEL!.replace(/^@/, "");
-    const entity = await clientInstance.getEntity(storyChannel);
-    if (!(entity instanceof Api.Channel)) throw new Error("telegram_story_target_is_not_channel");
-    const peer = await clientInstance.getInputEntity(entity);
-    const result = await withTimeout(
-      clientInstance.invoke(
-        new Api.stories.SendStory({
-          peer,
-          media: inputMedia,
-          privacyRules: [new Api.InputPrivacyValueAllowAll()],
-          ...(link
-            ? {
-                mediaAreas: [
-                  new Api.MediaAreaUrl({
-                    coordinates: new Api.MediaAreaCoordinates({ x: 50, y: 86, w: 82, h: 12, rotation: 0, radius: 4 }),
-                    url: link,
-                  }),
-                ],
-              }
-            : {}),
-          ...(caption ? { caption } : {}),
-          period: 86_400,
-        }),
-      ),
+    const storyChannel = config.TELEGRAM_STORIES_CHANNEL?.replace(/^@/, "");
+    if (!storyChannel) throw new Error("telegram_story_channel_missing");
+    const story = await withTimeout(
+      clientInstance.sendStory({
+        peer: storyChannel,
+        media: uploadPath,
+        caption: [caption, link].filter(Boolean).join("\n"),
+        period: 86_400,
+      }),
       120_000,
       "telegram_channel_story_timeout",
     );
-    const update = "updates" in result ? result.updates.find((item) => item instanceof Api.UpdateStoryID) : undefined;
-    const storyId = update instanceof Api.UpdateStoryID ? update.id : null;
-    if (!storyId) throw new Error("telegram_channel_story_missing_story_id");
+    const storyId = story.id;
     return { ok: true, id: storyId, url: `https://t.me/${storyChannel}/s/${storyId}`, raw: { source: "mtproto_stories.sendStory", link } };
   } finally {
-    await clientInstance.disconnect();
+    await clientInstance.destroy();
     if (cleanupPath) await fs.promises.rm(cleanupPath, { force: true });
   }
 }
 
-function probeVideo(filePath: string, media: PublishMediaItem): { width: number; height: number; duration: number } {
+async function probeVideo(filePath: string, media: PublishMediaItem): Promise<{ width: number; height: number; duration: number }> {
   const fallback = {
     width: Number(media.width ?? 720),
     height: Number(media.height ?? 1280),
     duration: Math.round(Number(media.duration ?? 10)),
   };
   if (media.type !== "VIDEO") return fallback;
-  const result = spawnSync("ffprobe", ["-v", "quiet", "-print_format", "json", "-show_streams", filePath], {
-    encoding: "utf8",
-    timeout: 10_000,
+  const child = Bun.spawn(["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", filePath], {
+    stdout: "pipe",
+    stderr: "ignore",
   });
-  if (result.status !== 0) return fallback;
+  const timeout = setTimeout(() => child.kill("SIGKILL"), 10_000);
+  const [exitCode, stdout] = await Promise.all([child.exited, new Response(child.stdout).text()]);
+  clearTimeout(timeout);
+  if (exitCode !== 0) return fallback;
   try {
-    const streams = (JSON.parse(result.stdout) as { streams?: Array<Record<string, unknown>> }).streams ?? [];
+    const streams = (JSON.parse(stdout) as { streams?: Array<Record<string, unknown>> }).streams ?? [];
     const video = streams.find((stream) => stream.codec_type === "video") ?? {};
     return {
       width: Number(video.width ?? fallback.width),

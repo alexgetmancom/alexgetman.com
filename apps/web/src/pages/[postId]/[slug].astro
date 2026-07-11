@@ -1,10 +1,10 @@
 ---
-import Layout from '../../layouts/Layout.astro';
-import HomeNewsPage from '../../components/HomeNewsPage.astro';
-import projects from '../../data/projects.json';
-import { loadFeedItems } from '../../utils/feed';
-import { getFirstSentence, postOgImagePath, truncateText } from '../../utils/helpers';
-import { sortedHomePosts, topicStatsFor } from '../../utils/home-posts';
+import HomeNewsPage from "../../components/HomeNewsPage.astro";
+import projects from "../../data/projects.json";
+import Layout from "../../layouts/Layout.astro";
+import { loadFeedItems } from "../../utils/feed";
+import { getFirstSentence, postOgImagePath, truncateText } from "../../utils/helpers";
+import { sortedHomePosts, topicStatsFor } from "../../utils/home-posts";
 
 export async function getStaticPaths() {
   const feedItems = loadFeedItems();
@@ -20,58 +20,59 @@ export async function getStaticPaths() {
 const { postId, slug } = Astro.params;
 const { item } = Astro.props;
 const feedItems = loadFeedItems();
-const englishPosts = sortedHomePosts(feedItems, 'en');
+const englishPosts = sortedHomePosts(feedItems, "en");
 const selectedPost = englishPosts.find((post) => String(post.id) === String(postId));
 const leadPost = englishPosts[0] || null;
 const latestEnglishPosts = englishPosts.slice(leadPost ? 1 : 0, leadPost ? 8 : 9);
 const trendingPosts = [...englishPosts]
   .filter((post) => !leadPost || post.id !== leadPost.id)
-  .sort((a, b) => (b.views - a.views) || (new Date(b.date).getTime() - new Date(a.date).getTime()))
+  .sort((a, b) => b.views - a.views || new Date(b.date).getTime() - new Date(a.date).getTime())
   .slice(0, 5);
 const topicStats = topicStatsFor(englishPosts);
 
-const siteAuthor = 'Alex Getman';
-const postText = item.text_en || item.text || '';
+const siteAuthor = "Alex Getman";
+const postText = item.text_en || item.text || "";
 const pageTitle = selectedPost?.title || getFirstSentence(postText) || `Post ${postId}`;
-const postDescription = truncateText(postText.replace(/\s+/g, ' '), 158) || 'AI news, automation notes and developer updates by Alex Getman on alexgetman.com.';
+const postDescription =
+  truncateText(postText.replace(/\s+/g, " "), 158) || "AI news, automation notes and developer updates by Alex Getman on alexgetman.com.";
 const localUrl = `https://alexgetman.com/${postId}/${slug}/`;
-const ogImage = postOgImagePath(item, 'en');
+const ogImage = postOgImagePath(item, "en");
 const schema = JSON.stringify({
-  '@context': 'https://schema.org',
-  '@type': 'Article',
+  "@context": "https://schema.org",
+  "@type": "Article",
   headline: pageTitle,
   description: postDescription,
   url: localUrl,
   datePublished: item.date,
   dateModified: item.date,
-  inLanguage: 'en-US',
+  inLanguage: "en-US",
   author: {
-    '@type': 'Person',
+    "@type": "Person",
     name: siteAuthor,
-    url: 'https://alexgetman.com/'
+    url: "https://alexgetman.com/",
   },
   publisher: {
-    '@type': 'Person',
+    "@type": "Person",
     name: siteAuthor,
-    url: 'https://alexgetman.com/'
+    url: "https://alexgetman.com/",
   },
   mainEntityOfPage: localUrl,
-  image: [`https://alexgetman.com${ogImage}`]
+  image: [`https://alexgetman.com${ogImage}`],
 });
 
 const labels = {
-  archive: 'Archive',
-  search: 'Search',
-  languageSwitch: 'RU',
-  empty: 'English posts will appear here after publication approval.',
-  latestPosts: 'Latest English posts',
-  latestUpdates: 'Latest updates',
-  trending: 'Trending',
-  topics: 'Topics',
-  projects: 'Projects',
-  all: 'All',
-  sidebarLabel: 'Homepage side sections',
-  mskSuffix: 'MSK'
+  archive: "Archive",
+  search: "Search",
+  languageSwitch: "RU",
+  empty: "English posts will appear here after publication approval.",
+  latestPosts: "Latest English posts",
+  latestUpdates: "Latest updates",
+  trending: "Trending",
+  topics: "Topics",
+  projects: "Projects",
+  all: "All",
+  sidebarLabel: "Homepage side sections",
+  mskSuffix: "MSK",
 };
 ---
 

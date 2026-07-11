@@ -20,9 +20,12 @@ export const TARGETS = [
   ["instagram_stories", "Instagram Stories EN", "en", "social"],
 ] as const;
 
-export type TargetId = (typeof TARGETS)[number][0];
+type TargetId = (typeof TARGETS)[number][0];
 
-export const TARGET_BY_ID = Object.fromEntries(TARGETS.map(([id, label, locale, kind]) => [id, { id, label, locale, kind }])) as Record<TargetId, { id: TargetId; label: string; locale: TargetLocale; kind: "telegram" | "site" | "social" }>;
+const targetById = Object.fromEntries(TARGETS.map(([id, label, locale, kind]) => [id, { id, label, locale, kind }])) as Record<
+  TargetId,
+  { id: TargetId; label: string; locale: TargetLocale; kind: "telegram" | "site" | "social" }
+>;
 export const DEFAULT_TARGETS = Object.fromEntries(TARGETS.map(([id]) => [id, true])) as Record<TargetId, boolean>;
 
 export const PRESETS: Record<string, Record<TargetId, boolean>> = {
@@ -33,9 +36,9 @@ export const PRESETS: Record<string, Record<TargetId, boolean>> = {
 };
 
 export function targetLocale(target: string): TargetLocale | null {
-  return TARGET_BY_ID[target as TargetId]?.locale ?? null;
+  return targetById[target as TargetId]?.locale ?? null;
 }
 
 export function isSiteTarget(target: string): boolean {
-  return TARGET_BY_ID[target as TargetId]?.kind === "site";
+  return targetById[target as TargetId]?.kind === "site";
 }

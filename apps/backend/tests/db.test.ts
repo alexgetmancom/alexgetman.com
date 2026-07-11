@@ -1,8 +1,8 @@
 import { Database } from "bun:sqlite";
+import { describe, expect, it } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
 import { createDraftFromMessage, publishDraftToQueue } from "../src/bot.js";
 import { baselineDrizzleMigrations, migrationStatus, openBackendDb } from "../src/db/client.js";
 
@@ -40,6 +40,53 @@ describe("openBackendDb", () => {
       expect(tables).toContain("media_assets");
       expect(tables).toContain("credential_checks");
       expect(migrationStatus(backendDb.sqlite)).toHaveLength(2);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("preserves every legacy pipeline table when applying Drizzle migrations", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const tables = new Set(
+        backendDb.sqlite
+          .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+          .all()
+          .map((row: { name: string }) => row.name),
+      );
+      for (const table of [
+        "admin_state",
+        "alert_dedup",
+        "analytics_rollups",
+        "content_memory",
+        "credential_checks",
+        "deployment_snapshots",
+        "drafts",
+        "media_assets",
+        "media_test_cases",
+        "media_test_results",
+        "metric_samples",
+        "metric_schedule",
+        "ops_actions",
+        "pending_albums",
+        "platform_capabilities",
+        "platform_rules",
+        "post_events",
+        "post_lifecycle",
+        "post_locales",
+        "post_metrics",
+        "post_targets",
+        "posts",
+        "publication_plans",
+        "publication_sources",
+        "publications",
+        "publish_jobs",
+        "publish_plans",
+        "site_jobs",
+        "site_source_items",
+        "worker_state",
+      ])
+        expect(tables, table).toContain(table);
     } finally {
       backendDb.close();
     }

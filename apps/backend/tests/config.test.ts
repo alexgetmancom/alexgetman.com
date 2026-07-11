@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { loadConfig } from "../src/config.js";
 
 describe("loadConfig", () => {
@@ -17,5 +17,10 @@ describe("loadConfig", () => {
   it("accepts the production controller admin variable", () => {
     const config = loadConfig({ CONTROLLER_ADMIN_IDS: "101, 202" });
     expect(config.ADMIN_IDS).toEqual([101, 202]);
+  });
+
+  it("rejects enabled Stories with incomplete credentials at startup", () => {
+    expect(() => loadConfig({ ENABLE_TELEGRAM_STORIES: "true" })).toThrow("TELEGRAM_STORIES_CHANNEL is required");
+    expect(() => loadConfig({ ENABLE_INSTAGRAM_STORIES: "true" })).toThrow("INSTAGRAM_ACCESS_TOKEN and INSTAGRAM_USER_ID are required");
   });
 });

@@ -3,11 +3,11 @@
   "compilerOptions": {
     "rootDir": ".",
     "outDir": "dist",
-    "types": ["bun", "node", "vitest/globals"],
+    "types": ["bun"],
     "paths": {
       "@alexgetman/shared": ["../../packages/shared/src/index.ts"],
       "@alexgetman/shared/*": ["../../packages/shared/src/*"]
     }
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts", "vitest.config.ts", "drizzle.config.ts"]
+  "include": ["src/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts", "drizzle.config.ts"]
 }

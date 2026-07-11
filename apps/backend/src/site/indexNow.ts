@@ -52,7 +52,11 @@ function readOrCreateKey(filePath: string): string {
 }
 
 function readState(filePath: string): IndexNowState {
-  try { return JSON.parse(fs.readFileSync(filePath, "utf8")) as IndexNowState; } catch { return {}; }
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8")) as IndexNowState;
+  } catch {
+    return {};
+  }
 }
 
 function writeState(filePath: string, state: IndexNowState): void {

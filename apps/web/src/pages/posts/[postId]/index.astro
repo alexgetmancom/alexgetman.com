@@ -1,6 +1,6 @@
 ---
-import LegacyRedirect from '../../../components/LegacyRedirect.astro';
-import { loadFeedItems } from '../../../utils/feed';
+import LegacyRedirect from "../../../components/LegacyRedirect.astro";
+import { loadFeedItems } from "../../../utils/feed";
 
 export async function getStaticPaths() {
   return loadFeedItems()
@@ -9,9 +9,7 @@ export async function getStaticPaths() {
 }
 
 const { item } = Astro.props;
-const target = item?.has_en && item?.slug_en
-  ? `/${item.post_id}/${item.slug_en}/`
-  : `/ru/${item.post_id}/${item.slug_ru}/`;
+const target = item?.has_en && item?.slug_en ? `/${item.post_id}/${item.slug_en}/` : `/ru/${item.post_id}/${item.slug_ru}/`;
 ---
 
 <LegacyRedirect target={target} title="Post URL moved" />

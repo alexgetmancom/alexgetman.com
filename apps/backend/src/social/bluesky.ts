@@ -19,7 +19,7 @@ type CreateRecordResponse = {
 };
 
 function blueskyPublicUrl(uri: string | undefined | null, handle: string | undefined | null): string | null {
-  if (!uri || !uri.includes("/app.bsky.feed.post/")) return null;
+  if (!uri?.includes("/app.bsky.feed.post/")) return null;
   const postId = uri.split("/").pop();
   const profile = handle || "alexgetmancom.bsky.social";
   return postId ? `https://bsky.app/profile/${profile}/post/${postId}` : null;

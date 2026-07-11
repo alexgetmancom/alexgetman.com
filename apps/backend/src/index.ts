@@ -1,4 +1,3 @@
-import { serve } from "@hono/node-server";
 import { createBot } from "./bot.js";
 import { loadConfig } from "./config.js";
 import { openBackendDb } from "./db/client.js";
@@ -18,14 +17,12 @@ if (!assertFfmpegAvailable()) {
   log("warn", "ffmpeg is not available; video poster generation will fail until Docker/runtime installs it");
 }
 
-const server = serve(
-  {
-    fetch: app.fetch,
-    hostname: config.BIND_HOST,
-    port: config.PORT,
-  },
-  (info) => log("info", "backend listening", info),
-);
+const server = Bun.serve({
+  fetch: app.fetch,
+  hostname: config.BIND_HOST,
+  port: config.PORT,
+});
+log("info", "backend listening", { hostname: config.BIND_HOST, port: config.PORT });
 
 if (bot && config.ENABLE_BOT_POLLING) {
   void bot.start({
@@ -41,15 +38,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   if (bot?.isRunning()) {
     await bot.stop();
   }
-  await new Promise<void>((resolve, reject) => {
-    server.close((error) => {
-      if (error) {
-        reject(error);
-      } else {
-        resolve();
-      }
-    });
-  });
+  server.stop(true);
   backendDb.close();
   process.exit(0);
 }

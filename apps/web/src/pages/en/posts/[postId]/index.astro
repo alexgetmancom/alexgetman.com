@@ -1,6 +1,6 @@
 ---
-import LegacyRedirect from '../../../../components/LegacyRedirect.astro';
-import { loadFeedItems } from '../../../../utils/feed';
+import LegacyRedirect from "../../../../components/LegacyRedirect.astro";
+import { loadFeedItems } from "../../../../utils/feed";
 
 export async function getStaticPaths() {
   return loadFeedItems()

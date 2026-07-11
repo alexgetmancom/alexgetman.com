@@ -1,17 +1,14 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import sharp from 'sharp';
+import fs from "node:fs/promises";
+import path from "node:path";
+import sharp from "sharp";
 
 const root = process.cwd();
-const webRoot = path.join(root, 'apps', 'web');
-const publicDir = path.join(webRoot, 'public');
-const publishedDir = process.env.PUBLISHED_DIR || '/home/deploy/ialexey-web';
-const dataDir = process.env.DATA_DIR || '/home/deploy/ialexey-feed/data';
-const feedJsonPaths = [
-  path.join(dataDir, 'feed.json'),
-  path.join(webRoot, 'src/data/feed.json'),
-];
-const cacheFile = path.join(webRoot, '.image-cache.json');
+const webRoot = path.join(root, "apps", "web");
+const publicDir = path.join(webRoot, "public");
+const publishedDir = process.env.PUBLISHED_DIR || "/home/deploy/ialexey-web";
+const dataDir = process.env.DATA_DIR || "/home/deploy/ialexey-feed/data";
+const feedJsonPaths = [path.join(dataDir, "feed.json"), path.join(webRoot, "src/data/feed.json")];
+const cacheFile = path.join(webRoot, ".image-cache.json");
 const widths = [360, 640, 960];
 
 async function exists(filePath) {
@@ -25,7 +22,7 @@ async function exists(filePath) {
 
 async function readJson(filePath) {
   try {
-    return JSON.parse(await fs.readFile(filePath, 'utf-8'));
+    return JSON.parse(await fs.readFile(filePath, "utf-8"));
   } catch {
     return null;
   }
@@ -48,7 +45,7 @@ if (await exists(cacheFile)) {
 
 async function saveCache() {
   try {
-    await fs.writeFile(cacheFile, JSON.stringify(cache, null, 2), 'utf-8');
+    await fs.writeFile(cacheFile, JSON.stringify(cache, null, 2), "utf-8");
   } catch {}
 }
 
@@ -67,11 +64,11 @@ async function needsUpdate(inputPath, key) {
 }
 
 function compactText(value) {
-  return String(value || '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/\s+/g, ' ')
+  return String(value || "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
@@ -82,9 +79,9 @@ function truncateText(value, limit) {
 }
 
 function getFirstSentence(text) {
-  const value = String(text || '').trim();
-  if (!value) return '';
-  const newlineIdx = value.indexOf('\n');
+  const value = String(text || "").trim();
+  if (!value) return "";
+  const newlineIdx = value.indexOf("\n");
   const match = value.match(/^.*?[.!?](?:\s|\n|$)/s);
   if (match) {
     if (newlineIdx !== -1 && newlineIdx < match[0].length) {
@@ -97,17 +94,17 @@ function getFirstSentence(text) {
 }
 
 function escapeXml(value) {
-  return String(value || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 function splitLines(text, maxChars, maxLines) {
   const words = compactText(text).split(/\s+/).filter(Boolean);
   const lines = [];
-  let current = '';
+  let current = "";
   for (const word of words) {
     const next = current ? `${current} ${word}` : word;
     if (next.length > maxChars && current) {
@@ -123,43 +120,46 @@ function splitLines(text, maxChars, maxLines) {
 }
 
 function categoryLabel(text, locale) {
-  const t = String(text || '').toLowerCase();
-  if (t.includes('gpt') || t.includes('gemini') || t.includes('claude') || t.includes('anthropic') || t.includes('openai') || t.includes('google') || t.includes('llama') || t.includes('codex')) {
-    return locale === 'ru' ? 'ИИ-Модели' : 'AI Models';
+  const t = String(text || "").toLowerCase();
+  if (
+    t.includes("gpt") ||
+    t.includes("gemini") ||
+    t.includes("claude") ||
+    t.includes("anthropic") ||
+    t.includes("openai") ||
+    t.includes("google") ||
+    t.includes("llama") ||
+    t.includes("codex")
+  ) {
+    return locale === "ru" ? "ИИ-Модели" : "AI Models";
   }
-  if (t.includes('нейросеть') || t.includes('midjourney') || t.includes('sora') || t.includes('генераци') || t.includes('ai ')) {
-    return locale === 'ru' ? 'Нейросети' : 'Neural Networks';
+  if (t.includes("нейросеть") || t.includes("midjourney") || t.includes("sora") || t.includes("генераци") || t.includes("ai ")) {
+    return locale === "ru" ? "Нейросети" : "Neural Networks";
   }
-  if (t.includes('слив') || t.includes('leak')) {
-    return locale === 'ru' ? 'Сливы' : 'Leaks';
+  if (t.includes("слив") || t.includes("leak")) {
+    return locale === "ru" ? "Сливы" : "Leaks";
   }
-  return locale === 'ru' ? 'Новости' : 'News';
+  return locale === "ru" ? "Новости" : "News";
 }
 
 function normalizePublicPath(value) {
-  return String(value || '').replace(/^\/+/, '');
+  return String(value || "").replace(/^\/+/, "");
 }
 
 function postImagePath(item, locale) {
-  const localizedMedia = locale === 'ru' ? item.media : item.media_en;
-  const fallbackMedia = locale === 'ru' ? item.media_en : item.media;
-  const media = Array.isArray(localizedMedia) && localizedMedia.length > 0
-    ? localizedMedia
-    : (Array.isArray(fallbackMedia) ? fallbackMedia : []);
-  const imageMedia = media.find((mediaItem) => mediaItem?.type !== 'video' && mediaItem?.path);
-  const directImage = locale === 'ru'
-    ? (item.image || item.image_en)
-    : (item.image_en || item.image);
+  const localizedMedia = locale === "ru" ? item.media : item.media_en;
+  const fallbackMedia = locale === "ru" ? item.media_en : item.media;
+  const media =
+    Array.isArray(localizedMedia) && localizedMedia.length > 0 ? localizedMedia : Array.isArray(fallbackMedia) ? fallbackMedia : [];
+  const imageMedia = media.find((mediaItem) => mediaItem?.type !== "video" && mediaItem?.path);
+  const directImage = locale === "ru" ? item.image || item.image_en : item.image_en || item.image;
   return normalizePublicPath(directImage || imageMedia?.path);
 }
 
 async function resolvePublicImage(publicPath) {
   const normalized = normalizePublicPath(publicPath);
   if (!normalized) return null;
-  const candidates = [
-    path.join(publicDir, normalized),
-    path.join(publishedDir, normalized),
-  ];
+  const candidates = [path.join(publicDir, normalized), path.join(publishedDir, normalized)];
   for (const candidate of candidates) {
     if (await exists(candidate)) return candidate;
   }
@@ -167,73 +167,80 @@ async function resolvePublicImage(publicPath) {
 }
 
 async function generateAvatar() {
-  const inputPath = path.join(publicDir, 'avatar-small.png');
+  const inputPath = path.join(publicDir, "avatar-small.png");
   if (!(await exists(inputPath))) return;
 
-  const updated = await needsUpdate(inputPath, 'avatar-small');
+  const updated = await needsUpdate(inputPath, "avatar-small");
   if (!updated) return;
 
   await sharp(inputPath)
-    .resize({ width: 72, height: 72, fit: 'cover' })
+    .resize({ width: 72, height: 72, fit: "cover" })
     .webp({ quality: 76, effort: 6 })
-    .toFile(path.join(publicDir, 'avatar-small.webp'));
+    .toFile(path.join(publicDir, "avatar-small.webp"));
 }
 
 async function generateSocialImage() {
-  const inputPath = path.join(publicDir, 'avatar.png');
+  const inputPath = path.join(publicDir, "avatar.png");
   if (!(await exists(inputPath))) return;
 
-  const updated = await needsUpdate(inputPath, 'avatar');
+  const updated = await needsUpdate(inputPath, "avatar");
   if (!updated) return;
 
   await sharp(inputPath)
-    .resize({ width: 500, height: 500, fit: 'cover' })
+    .resize({ width: 500, height: 500, fit: "cover" })
     .jpeg({ quality: 82, mozjpeg: true })
-    .toFile(path.join(publicDir, 'social-image.jpg'));
+    .toFile(path.join(publicDir, "social-image.jpg"));
 }
 
 async function generatePostOgImages(feedItems) {
-  const outputDir = path.join(publicDir, 'og/posts');
+  const outputDir = path.join(publicDir, "og/posts");
   await fs.mkdir(outputDir, { recursive: true });
-  const avatarPath = await resolvePublicImage('avatar-small.png') || await resolvePublicImage('avatar.png');
+  const avatarPath = (await resolvePublicImage("avatar-small.png")) || (await resolvePublicImage("avatar.png"));
   const avatarDataUri = avatarPath
-    ? `data:image/png;base64,${(await sharp(avatarPath)
-        .resize({ width: 160, height: 160, fit: 'cover' })
-        .composite([{
-          input: Buffer.from('<svg width="160" height="160"><circle cx="80" cy="80" r="80" fill="white"/></svg>'),
-          blend: 'dest-in'
-        }])
-        .png()
-        .toBuffer()).toString('base64')}`
-    : '';
+    ? `data:image/png;base64,${(
+        await sharp(avatarPath)
+          .resize({ width: 160, height: 160, fit: "cover" })
+          .composite([
+            {
+              input: Buffer.from('<svg width="160" height="160"><circle cx="80" cy="80" r="80" fill="white"/></svg>'),
+              blend: "dest-in",
+            },
+          ])
+          .png()
+          .toBuffer()
+      ).toString("base64")}`
+    : "";
 
   for (const item of feedItems) {
     const postId = item?.post_id;
     if (!postId) continue;
 
     const variants = [
-      { locale: 'en', enabled: item.has_en && item.text_en, text: item.text_en, image: postImagePath(item, 'en') },
-      { locale: 'ru', enabled: item.has_ru && item.text, text: item.text, image: postImagePath(item, 'ru') },
+      { locale: "en", enabled: item.has_en && item.text_en, text: item.text_en, image: postImagePath(item, "en") },
+      { locale: "ru", enabled: item.has_ru && item.text, text: item.text, image: postImagePath(item, "ru") },
     ];
 
     for (const variant of variants) {
       if (!variant.enabled) continue;
       const title = truncateText(getFirstSentence(variant.text) || `Post ${postId}`, 132);
       const sourceImage = await resolvePublicImage(variant.image);
-      const lines = splitLines(title, variant.locale === 'ru' ? 25 : 28, sourceImage ? 3 : 4);
+      const lines = splitLines(title, variant.locale === "ru" ? 25 : 28, sourceImage ? 3 : 4);
       const badge = categoryLabel(variant.text, variant.locale);
-      const sourceImageStamp = sourceImage ? (await fs.stat(sourceImage)).mtimeMs : 'none';
+      const sourceImageStamp = sourceImage ? (await fs.stat(sourceImage)).mtimeMs : "none";
       const key = `og:v5:${postId}:${variant.locale}:${compactText(title)}:${badge}:${sourceImageStamp}:${Boolean(avatarDataUri)}`;
       const outputPath = path.join(outputDir, `post-${postId}-${variant.locale}.jpg`);
 
-      if (cache[key] && await exists(outputPath)) continue;
+      if (cache[key] && (await exists(outputPath))) continue;
       cache[key] = Date.now();
 
-      const lineSvg = lines.map((line, index) =>
-        `<text x="74" y="${sourceImage ? 340 + index * 72 : 255 + index * 76}" class="title">${escapeXml(line)}</text>`
-      ).join('');
+      const lineSvg = lines
+        .map(
+          (line, index) => `<text x="74" y="${sourceImage ? 340 + index * 72 : 255 + index * 76}" class="title">${escapeXml(line)}</text>`,
+        )
+        .join("");
 
-      const svg = sourceImage ? `
+      const svg = sourceImage
+        ? `
         <svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
           <rect width="1200" height="630" fill="url(#corner)"/>
           <g transform="translate(812 468)">
@@ -252,7 +259,8 @@ async function generatePostOgImages(feedItems) {
             .brand{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;fill:white;font-size:52px;font-weight:900;letter-spacing:0;text-anchor:end;filter:drop-shadow(0 4px 16px rgba(0,0,0,.88))}
           </style>
         </svg>
-      ` : `
+      `
+        : `
         <svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
           <rect width="1200" height="630" fill="#080B10"/>
           <rect x="0" y="0" width="1200" height="630" fill="url(#grid)" opacity="0.28"/>
@@ -282,13 +290,15 @@ async function generatePostOgImages(feedItems) {
 
       const base = sourceImage
         ? await sharp(sourceImage)
-            .resize({ width: 1200, height: 630, fit: 'cover' })
+            .resize({ width: 1200, height: 630, fit: "cover" })
             .modulate({ brightness: 0.98, saturation: 1.0 })
             .jpeg({ quality: 92, mozjpeg: true })
             .toBuffer()
         : await sharp({
-            create: { width: 1200, height: 630, channels: 3, background: '#080B10' }
-          }).jpeg().toBuffer();
+            create: { width: 1200, height: 630, channels: 3, background: "#080B10" },
+          })
+            .jpeg()
+            .toBuffer();
 
       await sharp(base)
         .composite([{ input: Buffer.from(svg), top: 0, left: 0 }])
@@ -300,19 +310,19 @@ async function generatePostOgImages(feedItems) {
 
 function responsiveOutputName(publicPath, width) {
   return String(publicPath)
-    .replace(/^\/+/, '')
-    .replace(/[\\/]/g, '-')
+    .replace(/^\/+/, "")
+    .replace(/[\\/]/g, "-")
     .replace(/\.[a-z0-9]+$/i, `-${width}.webp`);
 }
 
-async function collectImages(dir, prefix = '') {
+async function collectImages(dir, prefix = "") {
   const entries = await fs.readdir(dir, { withFileTypes: true });
   const images = [];
   for (const entry of entries) {
-    const publicPath = path.join(prefix, entry.name).replace(/\\/g, '/');
+    const publicPath = path.join(prefix, entry.name).replace(/\\/g, "/");
     if (entry.isDirectory()) {
-      if (['generated', 'og', '.well-known'].includes(entry.name)) continue;
-      images.push(...await collectImages(path.join(dir, entry.name), publicPath));
+      if (["generated", "og", ".well-known"].includes(entry.name)) continue;
+      images.push(...(await collectImages(path.join(dir, entry.name), publicPath)));
     } else if (/\.(png|jpe?g)$/i.test(entry.name)) {
       if (/^(avatar|social-image|favicon)/.test(publicPath)) continue;
       images.push(publicPath);
@@ -322,11 +332,11 @@ async function collectImages(dir, prefix = '') {
 }
 
 async function generateResponsiveImages() {
-  const outputDir = path.join(publicDir, 'generated/responsive');
+  const outputDir = path.join(publicDir, "generated/responsive");
   await fs.mkdir(outputDir, { recursive: true });
   const images = new Set(await collectImages(publicDir));
   for (const item of await loadFeedItems()) {
-    for (const locale of ['en', 'ru']) {
+    for (const locale of ["en", "ru"]) {
       const image = postImagePath(item, locale);
       if (image && /\.(png|jpe?g)$/i.test(image)) images.add(image);
     }
@@ -341,11 +351,8 @@ async function generateResponsiveImages() {
 
     for (const width of widths) {
       const outputPath = path.join(outputDir, responsiveOutputName(publicPath, width));
-      if (!updated && await exists(outputPath)) continue;
-      await sharp(inputPath)
-        .resize({ width, withoutEnlargement: true })
-        .webp({ quality: 78, effort: 5 })
-        .toFile(outputPath);
+      if (!updated && (await exists(outputPath))) continue;
+      await sharp(inputPath).resize({ width, withoutEnlargement: true }).webp({ quality: 78, effort: 5 }).toFile(outputPath);
     }
   }
 }

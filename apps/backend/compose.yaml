@@ -47,7 +47,7 @@ services:
       OBSERVABILITY_INTERVAL_SECONDS: "300"
       REMOTE_MEDIA_PATH: /media/threads
       PUBLIC_MEDIA_BASE_URL: https://alexgetman.com/media/threads
-      ENABLE_SITE_WORKER: "false"
+      SITE_BUILDER_MODE: "false"
       ENABLE_BOT_POLLING: "true"
       ENABLE_TELEGRAM_STORIES: "true"
       BIND_HOST: 0.0.0.0
@@ -96,7 +96,7 @@ services:
       SITE_PUBLIC_DIR: /site-public
       SITE_DATA_DIR: /feed-data
       ENABLE_WORKERS: "false"
-      ENABLE_SITE_WORKER: "true"
+      SITE_BUILDER_MODE: "true"
       INDEXNOW_ENABLED: "true"
     volumes:
       - ./data:/data

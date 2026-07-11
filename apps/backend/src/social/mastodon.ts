@@ -12,7 +12,11 @@ type MastodonMedia = {
   id?: string;
 };
 
-export async function publishToMastodon(payload: Record<string, unknown>, config: BackendConfig, fetchImpl: typeof fetch = fetch): Promise<PublishResult> {
+export async function publishToMastodon(
+  payload: Record<string, unknown>,
+  config: BackendConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<PublishResult> {
   if (!config.MASTODON_INSTANCE || !config.MASTODON_ACCESS_TOKEN) return { skipped: true, reason: "missing Mastodon credentials" };
   const base = `https://${config.MASTODON_INSTANCE.replace(/^https?:\/\//, "").replace(/\/$/, "")}`;
   const text = [payloadText(payload), payloadCanonicalUrl(payload, config)].filter(Boolean).join("\n\n");

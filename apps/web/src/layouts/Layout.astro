@@ -1,6 +1,6 @@
 ---
-import { removeLeadingEmoji } from '../utils/helpers';
-import '../styles/layout.css';
+import { removeLeadingEmoji } from "../utils/helpers";
+import "../styles/layout.css";
 
 interface Props {
   title?: string;
@@ -33,7 +33,7 @@ const {
   socialImageWidth = 500,
   socialImageHeight = 500,
   ogType = "website",
-  immersiveHome = false
+  immersiveHome = false,
 } = Astro.props;
 
 const cleanDescription = removeLeadingEmoji(description);
@@ -41,7 +41,9 @@ const siteAuthor = siteName;
 const publicBaseUrl = "https://alexgetman.com";
 const brandAssetVersion = "20260629-new-avatar";
 const socialImage = socialImageProp
-  ? (socialImageProp.startsWith('http') ? socialImageProp : `${publicBaseUrl}${socialImageProp.startsWith('/') ? socialImageProp : `/${socialImageProp}`}`)
+  ? socialImageProp.startsWith("http")
+    ? socialImageProp
+    : `${publicBaseUrl}${socialImageProp.startsWith("/") ? socialImageProp : `/${socialImageProp}`}`
   : `${publicBaseUrl}/brand-social-20260629.jpg`;
 const twitterCard = socialImageWidth >= 1000 ? "summary_large_image" : "summary";
 const isRu = lang === "ru";
@@ -55,14 +57,14 @@ const navLabels = {
   language: isRu ? "Смена языка" : "Change language",
   theme: isRu ? "Переключить тему" : "Toggle theme",
   themeTooltip: isRu ? "Тема" : "Theme",
-  rights: isRu ? "Все права защищены." : "All rights reserved."
+  rights: isRu ? "Все права защищены." : "All rights reserved.",
 };
 const navHomeHref = isRu ? "/ru/#top" : "/#top";
 const navRssHref = isRu ? "/ru/feed.xml" : "/feed.xml";
 const currentPath = Astro.url.pathname;
 const isCurrentPath = (href: string) => {
-  const path = href.split('#')[0];
-  return currentPath === path || (path !== '/' && path !== '/ru/' && currentPath.startsWith(path));
+  const path = href.split("#")[0];
+  return currentPath === path || (path !== "/" && path !== "/ru/" && currentPath.startsWith(path));
 };
 ---
 <!DOCTYPE html>

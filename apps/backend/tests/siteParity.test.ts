@@ -1,7 +1,7 @@
+import { describe, expect, it, mock } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
 import { createDraftFromMessage, publishDraftToQueue } from "../src/bot.js";
 import { loadConfig } from "../src/config.js";
 import { openBackendDb } from "../src/db/client.js";
@@ -19,10 +19,10 @@ describe("site parity", () => {
       const urls = publishContentIndex(config, backendDb);
       expect(existsSync(join(dir, "content-index.json"))).toBe(true);
       expect(readFileSync(join(dir, "content-memory.md"), "utf8")).toContain("English title");
-      const fetchImpl = vi.fn(async () => new Response("", { status: 202 })) as unknown as typeof fetch;
+      const fetchImpl = mock(async () => new Response("", { status: 202 })) as unknown as typeof fetch;
       await pingIndexNow(config, urls, fetchImpl);
       await pingIndexNow(config, urls, fetchImpl);
-      expect(fetchImpl).toHaveBeenCalledOnce();
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
       expect(existsSync(join(dir, "indexnow.json"))).toBe(true);
     } finally {
       backendDb.close();

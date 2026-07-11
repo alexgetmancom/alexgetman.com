@@ -75,7 +75,12 @@ async function publishReadyContainer(config: BackendConfig, creationId: string, 
   throw new Error("failed_to_publish_instagram_story");
 }
 
-async function graphPost(config: BackendConfig, path: string, payload: Record<string, string>, fetchImpl: typeof fetch): Promise<GraphResponse> {
+async function graphPost(
+  config: BackendConfig,
+  path: string,
+  payload: Record<string, string>,
+  fetchImpl: typeof fetch,
+): Promise<GraphResponse> {
   return graphRequest(config, path, fetchImpl, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -83,7 +88,12 @@ async function graphPost(config: BackendConfig, path: string, payload: Record<st
   });
 }
 
-async function graphGet(config: BackendConfig, path: string, query: Record<string, string>, fetchImpl: typeof fetch): Promise<GraphResponse> {
+async function graphGet(
+  config: BackendConfig,
+  path: string,
+  query: Record<string, string>,
+  fetchImpl: typeof fetch,
+): Promise<GraphResponse> {
   const params = new URLSearchParams({ ...query, access_token: config.INSTAGRAM_ACCESS_TOKEN! });
   return graphRequest(config, `${path}?${params}`, fetchImpl);
 }

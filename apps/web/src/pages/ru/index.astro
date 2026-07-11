@@ -1,19 +1,19 @@
 ---
-import Layout from '../../layouts/Layout.astro';
-import HomeNewsPage from '../../components/HomeNewsPage.astro';
-import projects from '../../data/projects.json';
-import { loadFeedItems } from '../../utils/feed';
-import { sortedHomePosts, topicStatsFor } from '../../utils/home-posts';
+import HomeNewsPage from "../../components/HomeNewsPage.astro";
+import projects from "../../data/projects.json";
+import Layout from "../../layouts/Layout.astro";
+import { loadFeedItems } from "../../utils/feed";
+import { sortedHomePosts, topicStatsFor } from "../../utils/home-posts";
 
 const feedItems = loadFeedItems();
 
-const russianPosts = sortedHomePosts(feedItems, 'ru');
+const russianPosts = sortedHomePosts(feedItems, "ru");
 
 const leadPost = russianPosts[0] || null;
 const latestRussianPosts = russianPosts.slice(leadPost ? 1 : 0, leadPost ? 8 : 9);
 const trendingPosts = [...russianPosts]
   .filter((post) => !leadPost || post.id !== leadPost.id)
-  .sort((a, b) => (b.views - a.views) || (new Date(b.date).getTime() - new Date(a.date).getTime()))
+  .sort((a, b) => b.views - a.views || new Date(b.date).getTime() - new Date(a.date).getTime())
   .slice(0, 5);
 const topicStats = topicStatsFor(russianPosts);
 
@@ -26,11 +26,11 @@ const schema = JSON.stringify({
     {
       "@type": "Person",
       "@id": "https://alexgetman.com/#person",
-      "name": "Алексей Гетманец",
-      "alternateName": "Alex Getman",
-      "url": "https://alexgetman.com/ru/",
-      "image": "https://alexgetman.com/avatar.png",
-      "sameAs": [
+      name: "Алексей Гетманец",
+      alternateName: "Alex Getman",
+      url: "https://alexgetman.com/ru/",
+      image: "https://alexgetman.com/avatar.png",
+      sameAs: [
         "https://t.me/alexgetmancom",
         "https://www.threads.net/@alexgetmanru",
         "https://www.youtube.com/@alexgetmancom",
@@ -39,28 +39,28 @@ const schema = JSON.stringify({
         "https://www.linkedin.com/in/alexgetmancom",
         "https://www.instagram.com/alexgetmancom/",
         "https://www.facebook.com/profile.php?id=61590942205426",
-        "https://discord.gg/Z7sSm56rcb"
-      ]
+        "https://discord.gg/Z7sSm56rcb",
+      ],
     },
     {
       "@type": "WebSite",
       "@id": "https://alexgetman.com/#website",
-      "url": "https://alexgetman.com/ru/",
-      "name": "Алексей Гетманец",
-      "description": description,
-      "inLanguage": "ru-RU",
-      "publisher": { "@id": "https://alexgetman.com/#person" }
+      url: "https://alexgetman.com/ru/",
+      name: "Алексей Гетманец",
+      description: description,
+      inLanguage: "ru-RU",
+      publisher: { "@id": "https://alexgetman.com/#person" },
     },
     {
       "@type": "CollectionPage",
       "@id": "https://alexgetman.com/ru/#home",
-      "url": "https://alexgetman.com/ru/",
-      "name": title,
-      "description": description,
-      "inLanguage": "ru-RU",
-      "isPartOf": { "@id": "https://alexgetman.com/#website" }
-    }
-  ]
+      url: "https://alexgetman.com/ru/",
+      name: title,
+      description: description,
+      inLanguage: "ru-RU",
+      isPartOf: { "@id": "https://alexgetman.com/#website" },
+    },
+  ],
 });
 
 const labels = {
@@ -75,7 +75,7 @@ const labels = {
   projects: "Проекты",
   all: "Все",
   sidebarLabel: "Боковые разделы главной страницы",
-  mskSuffix: "МСК"
+  mskSuffix: "МСК",
 };
 ---
 

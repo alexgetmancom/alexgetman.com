@@ -1,8 +1,8 @@
-import { formatDate, loadFeedItems, siteUrlFromContext, truncateText } from '../utils/helpers';
+import { formatDate, loadFeedItems, siteUrlFromContext, truncateText } from "../utils/helpers";
 
 export async function GET(context: any) {
   const sortedItems = loadFeedItems()
-    .filter(item => item.text_en)
+    .filter((item) => item.text_en)
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   const siteUrl = siteUrlFromContext(context);
@@ -48,9 +48,9 @@ export async function GET(context: any) {
     }
   }
 
-  return new Response(lines.join("\n") + "\n", {
+  return new Response(`${lines.join("\n")}\n`, {
     headers: {
-      'Content-Type': 'text/markdown; charset=utf-8'
-    }
+      "Content-Type": "text/markdown; charset=utf-8",
+    },
   });
 }

@@ -17,11 +17,13 @@ const INTERVALS_MS = [3, 6, 12, 24, 48].map((hours) => hours * 3_600_000).concat
 export function ensureMetricSchedule(backendDb: BackendDb, targets: readonly string[]): number {
   if (targets.length === 0) return 0;
   const placeholders = targets.map(() => "?").join(",");
-  const rows = backendDb.sqlite.prepare(
-    `SELECT p.post_key, p.date_utc, t.target
+  const rows = backendDb.sqlite
+    .prepare(
+      `SELECT p.post_key, p.date_utc, t.target
      FROM posts p JOIN post_targets t ON t.post_key=p.post_key
      WHERE p.status='active' AND t.status='published' AND t.target IN (${placeholders})`,
-  ).all(...targets) as Array<{ post_key: string; date_utc: string | null; target: string }>;
+    )
+    .all(...targets) as Array<{ post_key: string; date_utc: string | null; target: string }>;
   const insert = backendDb.sqlite.prepare(
     `INSERT INTO metric_schedule(post_key, target, next_check_at, frozen_at, updated_at)
      VALUES (?, ?, ?, NULL, ?) ON CONFLICT(post_key, target) DO NOTHING`,
@@ -38,15 +40,17 @@ export function ensureMetricSchedule(backendDb: BackendDb, targets: readonly str
 }
 
 export function dueMetricTasks(backendDb: BackendDb, config: BackendConfig): MetricTask[] {
-  const rows = backendDb.sqlite.prepare(
-    `SELECT s.post_key, s.target, s.check_count, p.message_id, p.date_utc,
+  const rows = backendDb.sqlite
+    .prepare(
+      `SELECT s.post_key, s.target, s.check_count, p.message_id, p.date_utc,
             t.external_id, t.external_ids_json, t.url
      FROM metric_schedule s
      JOIN posts p ON p.post_key=s.post_key
      JOIN post_targets t ON t.post_key=s.post_key AND t.target=s.target
      WHERE s.frozen_at IS NULL AND t.status='published' AND (s.next_check_at IS NULL OR s.next_check_at <= ?)
      ORDER BY p.date_utc DESC, s.check_count ASC LIMIT ?`,
-  ).all(new Date().toISOString(), config.MAX_METRIC_TASKS_PER_CYCLE) as Array<Record<string, unknown>>;
+    )
+    .all(new Date().toISOString(), config.MAX_METRIC_TASKS_PER_CYCLE) as Array<Record<string, unknown>>;
   return rows.map((row) => ({
     postKey: String(row.post_key),
     target: String(row.target),
@@ -62,18 +66,20 @@ export function dueMetricTasks(backendDb: BackendDb, config: BackendConfig): Met
 export function finishMetricTask(backendDb: BackendDb, task: MetricTask, error: string | null): void {
   const now = new Date();
   const interval = INTERVALS_MS[task.checkCount];
-  backendDb.sqlite.prepare(
-    `UPDATE metric_schedule SET next_check_at=?, last_checked_at=?, check_count=check_count+1,
+  backendDb.sqlite
+    .prepare(
+      `UPDATE metric_schedule SET next_check_at=?, last_checked_at=?, check_count=check_count+1,
        frozen_at=?, last_error=?, updated_at=? WHERE post_key=? AND target=?`,
-  ).run(
-    interval == null ? null : new Date(now.getTime() + interval).toISOString(),
-    now.toISOString(),
-    interval == null ? now.toISOString() : null,
-    error,
-    now.toISOString(),
-    task.postKey,
-    task.target,
-  );
+    )
+    .run(
+      interval == null ? null : new Date(now.getTime() + interval).toISOString(),
+      now.toISOString(),
+      interval == null ? now.toISOString() : null,
+      error,
+      now.toISOString(),
+      task.postKey,
+      task.target,
+    );
 }
 
 function parseIds(raw: unknown, fallback: unknown): string[] {

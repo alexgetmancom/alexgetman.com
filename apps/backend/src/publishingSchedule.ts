@@ -1,5 +1,7 @@
+import { and, asc, eq, gte, inArray, lt, lte, or } from "drizzle-orm";
 import { type TargetLocale, targetLocale } from "./botTargets.js";
 import type { BackendDb } from "./db/client.js";
+import { drafts, postLocales, posts, publicationPlans, publicationSources, publishJobs, siteJobs, siteSourceItems } from "./db/schema.js";
 
 const SLOTS: Record<TargetLocale, readonly string[]> = {
   ru: ["10:37", "13:37", "17:37", "20:37", "23:37"],
@@ -9,14 +11,19 @@ const SLOTS: Record<TargetLocale, readonly string[]> = {
 const MAX_POSTS_PER_DAY = 5;
 
 export function nextPublishingSlot(backendDb: BackendDb, locale: TargetLocale, now = new Date()): Date {
-  const column = locale === "ru" ? "scheduled_at" : "scheduled_en_at";
-  const occupied = new Set(
-    (
-      backendDb.sqlite.prepare(`SELECT ${column} AS value FROM drafts WHERE status='scheduled' AND ${column} IS NOT NULL`).all() as Array<{
-        value: string;
-      }>
-    ).map((row) => row.value),
-  );
+  const values =
+    locale === "ru"
+      ? backendDb.db
+          .select({ value: drafts.scheduledAt })
+          .from(drafts)
+          .where(and(eq(drafts.status, "scheduled"), gte(drafts.scheduledAt, "")))
+          .all()
+      : backendDb.db
+          .select({ value: drafts.scheduledEnAt })
+          .from(drafts)
+          .where(and(eq(drafts.status, "scheduled"), gte(drafts.scheduledEnAt, "")))
+          .all();
+  const occupied = new Set(values.flatMap((row) => (row.value ? [row.value] : [])));
   for (let offset = 0; offset < 366; offset += 1) {
     const day = mskDateParts(new Date(now.getTime() + offset * 86_400_000));
     for (const clock of SLOTS[locale]) {
@@ -30,82 +37,88 @@ export function nextPublishingSlot(backendDb: BackendDb, locale: TargetLocale, n
 
 /** Re-pack future scheduled drafts after scheduling, cancelling, or changing targets. */
 export function rebalanceScheduledDrafts(backendDb: BackendDb, now = new Date()): number {
-  const rows = backendDb.sqlite
-    .prepare("SELECT id, post_id, targets_json, scheduled_at, scheduled_en_at FROM drafts WHERE status='scheduled' ORDER BY created_at, id")
-    .all() as Array<{
-    id: number;
-    post_id: number | null;
-    targets_json: string | null;
-    scheduled_at: string | null;
-    scheduled_en_at: string | null;
-  }>;
+  const rows = backendDb.db
+    .select({
+      id: drafts.id,
+      postId: drafts.postId,
+      targetsJson: drafts.targetsJson,
+      scheduledAt: drafts.scheduledAt,
+      scheduledEnAt: drafts.scheduledEnAt,
+    })
+    .from(drafts)
+    .where(eq(drafts.status, "scheduled"))
+    .orderBy(asc(drafts.createdAt), asc(drafts.id))
+    .all();
   if (rows.length === 0) return 0;
 
-  const assignments = new Map(rows.map((row) => [row.id, { ru: row.scheduled_at, en: row.scheduled_en_at }]));
+  const assignments = new Map(rows.map((row) => [row.id, { ru: row.scheduledAt, en: row.scheduledEnAt }]));
   for (const locale of ["ru", "en"] as const) {
     const column = locale === "ru" ? "scheduled_at" : "scheduled_en_at";
     const pending = rows.filter((row) => {
-      if (!hasLocaleTarget(parseTargets(row.targets_json), locale)) {
-        assignments.get(row.id)![locale] = null;
+      if (!hasLocaleTarget(parseTargets(row.targetsJson), locale)) {
+        const assignment = assignments.get(row.id);
+        if (assignment) assignment[locale] = null;
         return false;
       }
-      const scheduledAt = row[column];
+      const scheduledAt = locale === "ru" ? row.scheduledAt : row.scheduledEnAt;
       return !scheduledAt || new Date(scheduledAt) > now;
     });
     const slots = availableSlots(backendDb, locale, now, pending.length);
-    for (const [index, row] of pending.entries()) assignments.get(row.id)![locale] = slots[index]!.toISOString();
+    for (const [index, row] of pending.entries()) {
+      const assignment = assignments.get(row.id);
+      const slot = slots[index];
+      if (assignment && slot) assignment[locale] = slot.toISOString();
+    }
   }
 
   const updatedAt = now.toISOString();
-  backendDb.sqlite.transaction(() => {
+  backendDb.db.transaction((tx) => {
     for (const row of rows) {
-      const assignment = assignments.get(row.id)!;
-      backendDb.sqlite
-        .prepare("UPDATE drafts SET scheduled_at=?, scheduled_en_at=?, updated_at=? WHERE id=?")
-        .run(assignment.ru, assignment.en, updatedAt, row.id);
-      if (!row.post_id) continue;
-      syncPublicationSchedule(backendDb, row.post_id, assignment, updatedAt);
-      const jobs = backendDb.sqlite
-        .prepare("SELECT target, payload_json FROM publish_jobs WHERE post_id=? AND status IN ('queued','failed')")
-        .all(row.post_id) as Array<{ target: string; payload_json: string | null }>;
+      const assignment = assignments.get(row.id);
+      if (!assignment) continue;
+      tx.update(drafts).set({ scheduledAt: assignment.ru, scheduledEnAt: assignment.en, updatedAt }).where(eq(drafts.id, row.id)).run();
+      if (!row.postId) continue;
+      syncPublicationSchedule(tx, row.postId, assignment, updatedAt);
+      const jobs = tx
+        .select({ target: publishJobs.target, payloadJson: publishJobs.payloadJson })
+        .from(publishJobs)
+        .where(and(eq(publishJobs.postId, row.postId), inArray(publishJobs.status, ["queued", "failed"])))
+        .all();
       for (const job of jobs) {
         const publishAt = targetLocale(job.target) === "en" ? assignment.en : assignment.ru;
-        const payload = updateSchedulePayload(job.payload_json, assignment, publishAt);
-        backendDb.sqlite
-          .prepare(
-            "UPDATE publish_jobs SET payload_json=?, next_attempt_at=?, updated_at=? WHERE post_id=? AND target=? AND status IN ('queued','failed')",
+        const payload = updateSchedulePayload(job.payloadJson, assignment, publishAt);
+        tx.update(publishJobs)
+          .set({ payloadJson: payload, nextAttemptAt: publishAt, updatedAt })
+          .where(
+            and(eq(publishJobs.postId, row.postId), eq(publishJobs.target, job.target), inArray(publishJobs.status, ["queued", "failed"])),
           )
-          .run(payload, publishAt, updatedAt, row.post_id, job.target);
+          .run();
       }
-      backendDb.sqlite
-        .prepare(
-          "UPDATE site_jobs SET next_attempt_at=?, updated_at=? WHERE post_id=? AND reason='publish_ru' AND status IN ('queued','failed')",
-        )
-        .run(assignment.ru, updatedAt, row.post_id);
-      backendDb.sqlite
-        .prepare(
-          "UPDATE site_jobs SET next_attempt_at=?, updated_at=? WHERE post_id=? AND reason='publish_en' AND status IN ('queued','failed')",
-        )
-        .run(assignment.en, updatedAt, row.post_id);
+      tx.update(siteJobs)
+        .set({ nextAttemptAt: assignment.ru, updatedAt })
+        .where(and(eq(siteJobs.postId, row.postId), eq(siteJobs.reason, "publish_ru"), inArray(siteJobs.status, ["queued", "failed"])))
+        .run();
+      tx.update(siteJobs)
+        .set({ nextAttemptAt: assignment.en, updatedAt })
+        .where(and(eq(siteJobs.postId, row.postId), eq(siteJobs.reason, "publish_en"), inArray(siteJobs.status, ["queued", "failed"])))
+        .run();
     }
-  })();
+  });
   return rows.length;
 }
 
 export function formatMsk(value: string | Date | null): string {
   if (!value) return "-";
   const date = typeof value === "string" ? new Date(value) : value;
-  return (
-    new Intl.DateTimeFormat("ru-RU", {
-      timeZone: "Europe/Moscow",
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }).format(date) + " MSK"
-  );
+  return `${new Intl.DateTimeFormat("ru-RU", {
+    timeZone: "Europe/Moscow",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date)} MSK`;
 }
 
 export function schedulePreset(kind: string, now = new Date()): Date {
@@ -125,15 +138,15 @@ export function parseManualSchedule(value: string, now = new Date()): Date {
   const today = mskDateParts(now);
   let match = input.match(/^(\d{1,2}):(\d{2})$/);
   if (match) {
-    const candidate = mskSlot(today.year, today.month, today.day, `${match[1]!.padStart(2, "0")}:${match[2]}`);
+    const candidate = mskSlot(today.year, today.month, today.day, `${match[1]?.padStart(2, "0")}:${match[2]}`);
     return candidate > now ? candidate : new Date(candidate.getTime() + 86_400_000);
   }
   match = input.match(/^(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))? (\d{1,2}):(\d{2})$/);
   if (!match) throw new Error("Cannot parse time. Use HH:MM or DD.MM HH:MM");
   let year = Number(match[3] ?? today.year);
-  let candidate = mskSlot(year, Number(match[2]), Number(match[1]), `${match[4]!.padStart(2, "0")}:${match[5]}`);
+  let candidate = mskSlot(year, Number(match[2]), Number(match[1]), `${match[4]?.padStart(2, "0")}:${match[5]}`);
   if (!match[3] && candidate <= now)
-    candidate = mskSlot(++year, Number(match[2]), Number(match[1]), `${match[4]!.padStart(2, "0")}:${match[5]}`);
+    candidate = mskSlot(++year, Number(match[2]), Number(match[1]), `${match[4]?.padStart(2, "0")}:${match[5]}`);
   return candidate;
 }
 
@@ -149,19 +162,25 @@ function mskDateParts(date: Date): { year: number; month: number; day: number } 
 }
 
 function availableSlots(backendDb: BackendDb, locale: TargetLocale, now: Date, needed: number): Date[] {
-  const column = locale === "ru" ? "scheduled_at" : "scheduled_en_at";
   const result: Date[] = [];
   for (let offset = 0; offset < 366 && result.length < needed; offset += 1) {
     const date = new Date(now.getTime() + offset * 86_400_000);
     const day = mskDateParts(date);
     const start = mskSlot(day.year, day.month, day.day, "00:00").toISOString();
     const end = new Date(new Date(start).getTime() + 86_400_000).toISOString();
-    const consumed = backendDb.sqlite
-      .prepare(
-        `SELECT publish_mode FROM drafts WHERE ${column}>=? AND ${column}<? AND (status='published' OR (status='scheduled' AND ${column}<=?))`,
+    const scheduleColumn = locale === "ru" ? drafts.scheduledAt : drafts.scheduledEnAt;
+    const consumed = backendDb.db
+      .select({ publishMode: drafts.publishMode })
+      .from(drafts)
+      .where(
+        and(
+          gte(scheduleColumn, start),
+          lt(scheduleColumn, end),
+          or(eq(drafts.status, "published"), and(eq(drafts.status, "scheduled"), lte(scheduleColumn, now.toISOString()))),
+        ),
       )
-      .all(start, end, now.toISOString()) as Array<{ publish_mode: string | null }>;
-    const immediateCount = consumed.filter((row) => row.publish_mode === "immediate").length;
+      .all();
+    const immediateCount = consumed.filter((row) => row.publishMode === "immediate").length;
     const capacity = Math.max(0, MAX_POSTS_PER_DAY - consumed.length);
     const candidates = SLOTS[locale].map((clock) => mskSlot(day.year, day.month, day.day, clock)).filter((slot) => slot > now);
     result.push(...candidates.slice(offset === 0 ? immediateCount : 0, (offset === 0 ? immediateCount : 0) + capacity));
@@ -184,38 +203,49 @@ function hasLocaleTarget(targets: Record<string, boolean>, locale: TargetLocale)
 }
 
 function syncPublicationSchedule(
-  backendDb: BackendDb,
+  db: BackendDb["db"],
   postId: number,
   assignment: { ru: string | null; en: string | null },
   updatedAt: string,
 ): void {
   const publishedAt = assignment.ru ?? assignment.en;
-  backendDb.sqlite.prepare("UPDATE posts SET date_utc=?, updated_at=? WHERE post_id=?").run(publishedAt, updatedAt, postId);
-  backendDb.sqlite
-    .prepare("UPDATE post_locales SET published_at=?, updated_at=? WHERE post_id=? AND locale='ru'")
-    .run(assignment.ru, updatedAt, postId);
-  backendDb.sqlite
-    .prepare("UPDATE post_locales SET published_at=?, updated_at=? WHERE post_id=? AND locale='en'")
-    .run(assignment.en, updatedAt, postId);
-  for (const table of ["publication_plans", "publication_sources"] as const) {
-    const column = table === "publication_plans" ? "plan_json" : "item_json";
-    const row = backendDb.sqlite.prepare(`SELECT ${column} AS value FROM ${table} WHERE post_id=?`).get(postId) as
-      | { value: string | null }
-      | undefined;
-    if (row)
-      backendDb.sqlite
-        .prepare(`UPDATE ${table} SET ${column}=?, updated_at=? WHERE post_id=?`)
-        .run(updateSchedulePayload(row.value, assignment, publishedAt), updatedAt, postId);
-  }
-  const source = backendDb.sqlite.prepare("SELECT message_id FROM posts WHERE post_id=?").get(postId) as { message_id: number } | undefined;
+  db.update(posts).set({ dateUtc: publishedAt, updatedAt }).where(eq(posts.postId, postId)).run();
+  db.update(postLocales)
+    .set({ publishedAt: assignment.ru, updatedAt })
+    .where(and(eq(postLocales.postId, postId), eq(postLocales.locale, "ru")))
+    .run();
+  db.update(postLocales)
+    .set({ publishedAt: assignment.en, updatedAt })
+    .where(and(eq(postLocales.postId, postId), eq(postLocales.locale, "en")))
+    .run();
+  const plan = db.select({ value: publicationPlans.planJson }).from(publicationPlans).where(eq(publicationPlans.postId, postId)).get();
+  if (plan)
+    db.update(publicationPlans)
+      .set({ planJson: updateSchedulePayload(plan.value, assignment, publishedAt), updatedAt })
+      .where(eq(publicationPlans.postId, postId))
+      .run();
+  const publicationSource = db
+    .select({ value: publicationSources.itemJson })
+    .from(publicationSources)
+    .where(eq(publicationSources.postId, postId))
+    .get();
+  if (publicationSource)
+    db.update(publicationSources)
+      .set({ itemJson: updateSchedulePayload(publicationSource.value, assignment, publishedAt), updatedAt })
+      .where(eq(publicationSources.postId, postId))
+      .run();
+  const source = db.select({ messageId: posts.messageId }).from(posts).where(eq(posts.postId, postId)).get();
   if (!source) return;
-  const row = backendDb.sqlite.prepare("SELECT item_json FROM site_source_items WHERE message_id=?").get(source.message_id) as
-    | { item_json: string | null }
-    | undefined;
+  const row = db
+    .select({ itemJson: siteSourceItems.itemJson })
+    .from(siteSourceItems)
+    .where(eq(siteSourceItems.messageId, source.messageId))
+    .get();
   if (row)
-    backendDb.sqlite
-      .prepare("UPDATE site_source_items SET item_json=?, updated_at=? WHERE message_id=?")
-      .run(updateSchedulePayload(row.item_json, assignment, publishedAt), updatedAt, source.message_id);
+    db.update(siteSourceItems)
+      .set({ itemJson: updateSchedulePayload(row.itemJson, assignment, publishedAt), updatedAt })
+      .where(eq(siteSourceItems.messageId, source.messageId))
+      .run();
 }
 
 function updateSchedulePayload(

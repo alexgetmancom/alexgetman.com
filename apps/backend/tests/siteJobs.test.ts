@@ -1,9 +1,10 @@
+import { afterEach, describe, expect, it } from "bun:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
-import { openBackendDb, type BackendDb } from "../src/db/client.js";
+import { type BackendDb, openBackendDb } from "../src/db/client.js";
+import { publicationSources, publications, siteJobs } from "../src/db/schema.js";
 import { renderFeedFiles, runSiteJobCycle } from "../src/site/jobs.js";
 
 let backendDb: BackendDb | null = null;
@@ -24,31 +25,55 @@ describe("site jobs", () => {
     const config = loadConfig({ FEED_JSON: feedJson, SITE_METRICS_JSON: metricsJson, SITE_PUBLIC_DIR: tempDir });
     backendDb = openBackendDb(":memory:");
     const now = new Date().toISOString();
-    backendDb.sqlite.prepare("INSERT INTO publications(post_id, status, created_at, updated_at) VALUES (1, 'published', ?, ?)").run(now, now);
-    backendDb.sqlite.prepare("INSERT INTO publication_sources(post_id, item_json, created_at, updated_at) VALUES (1, ?, ?, ?)").run(
-      JSON.stringify({ id: "post:1", post_id: 1, message_id: 11, date: now, text: "RU", text_ru: "RU", text_en: "EN", has_ru: true, has_en: true, slug_ru: "ru", slug_en: "en" }),
-      now,
-      now,
-    );
+    backendDb.db.insert(publications).values({ postId: 1, status: "published", createdAt: now, updatedAt: now }).run();
+    backendDb.db
+      .insert(publicationSources)
+      .values({
+        postId: 1,
+        itemJson: JSON.stringify({
+          id: "post:1",
+          post_id: 1,
+          message_id: 11,
+          date: now,
+          text: "RU",
+          text_ru: "RU",
+          text_en: "EN",
+          has_ru: true,
+          has_en: true,
+          slug_ru: "ru",
+          slug_en: "en",
+        }),
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
 
     await renderFeedFiles(config, backendDb);
 
     const feed = JSON.parse(fs.readFileSync(feedJson, "utf8")) as Record<string, unknown>;
     const metrics = JSON.parse(fs.readFileSync(metricsJson, "utf8")) as Record<string, unknown>;
     expect(feed).toMatchObject({ channel: "alexgetmancom" });
-    expect((feed.items as unknown[])).toHaveLength(1);
+    expect(feed.items as unknown[]).toHaveLength(1);
     expect(metrics.posts).toBe(1);
   });
 
   it("claims and completes queued site jobs", async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-site-"));
-    const config = loadConfig({ FEED_JSON: path.join(tempDir, "feed.json"), SITE_METRICS_JSON: path.join(tempDir, "metrics.json"), SITE_PUBLIC_DIR: tempDir });
+    const config = loadConfig({
+      FEED_JSON: path.join(tempDir, "feed.json"),
+      SITE_METRICS_JSON: path.join(tempDir, "metrics.json"),
+      SITE_PUBLIC_DIR: tempDir,
+      SITE_BUILDER_MODE: "true",
+    });
     backendDb = openBackendDb(":memory:");
     const now = new Date().toISOString();
-    backendDb.sqlite.prepare("INSERT INTO site_jobs(post_id, message_id, reason, status, created_at, updated_at) VALUES (1, 11, 'publish', 'queued', ?, ?)").run(now, now);
+    backendDb.db
+      .insert(siteJobs)
+      .values({ postId: 1, messageId: 11, reason: "publish", status: "queued", createdAt: now, updatedAt: now })
+      .run();
 
     expect(await runSiteJobCycle(config, backendDb)).toBe(1);
-    const job = backendDb.sqlite.prepare("SELECT status FROM site_jobs").get() as Record<string, unknown>;
+    const job = backendDb.db.select({ status: siteJobs.status }).from(siteJobs).get()!;
     expect(job.status).toBe("published");
   });
 });

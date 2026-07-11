@@ -12,7 +12,7 @@
       "!apps/backend/data",
       "!apps/backend/bot-api-data",
       "!apps/backend/bot-api-temp",
-      "!apps/backend/drizzle/**"
+      "!apps/backend/drizzle"
     ]
   },
   "formatter": {
@@ -23,7 +23,7 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       "suspicious": {
         "noExplicitAny": "off"
       }

@@ -6,12 +6,7 @@ interface Props {
   lang?: string;
 }
 
-const {
-  target,
-  title = 'Moved',
-  message = 'This page moved to the main news player.',
-  lang = 'en'
-} = Astro.props;
+const { target, title = "Moved", message = "This page moved to the main news player.", lang = "en" } = Astro.props;
 ---
 
 <!DOCTYPE html>

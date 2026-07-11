@@ -1,8 +1,11 @@
 import os from "node:os";
 import process from "node:process";
+import { and, eq, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
 import * as z from "zod";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
+import { drafts, postEvents, posts, postTargets, publications, publishJobs, siteJobs } from "../db/schema.js";
+import { insertPublishJobSchema } from "../db/validation.js";
 import { classifyPublishError, nextRetryAt, normalizePublishResult, type PublishResult } from "./errors.js";
 
 export type ClaimedPublishJob = {
@@ -21,246 +24,256 @@ export function workerId(prefix = "backend"): string {
 
 export function claimDuePublishJobs(backendDb: BackendDb, limit: number, worker = workerId()): ClaimedPublishJob[] {
   const now = new Date().toISOString();
-  const rows = backendDb.sqlite
-    .prepare(
-      `SELECT *
-       FROM publish_jobs
-       WHERE status='queued'
-         AND (publish_at IS NULL OR publish_at <= ?)
-         AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
-       ORDER BY created_at, job_id
-       LIMIT ?`,
+  const rows = backendDb.db
+    .select()
+    .from(publishJobs)
+    .where(
+      and(
+        eq(publishJobs.status, "queued"),
+        or(isNull(publishJobs.publishAt), lte(publishJobs.publishAt, now)),
+        or(isNull(publishJobs.nextAttemptAt), lte(publishJobs.nextAttemptAt, now)),
+      ),
     )
-    .all(now, now, limit) as Record<string, unknown>[];
-
+    .orderBy(publishJobs.createdAt, publishJobs.jobId)
+    .limit(limit)
+    .all();
   const claimed: ClaimedPublishJob[] = [];
-  const update = backendDb.sqlite.prepare(
-    `UPDATE publish_jobs
-     SET status='publishing', locked_by=?, locked_at=?, updated_at=?
-     WHERE job_id=? AND status='queued'`,
-  );
-  const markTarget = backendDb.sqlite.prepare(
-    `INSERT INTO post_targets(post_key, target, status, error, skipped, updated_at, raw_json)
-     VALUES (?, ?, 'publishing', NULL, 0, ?, ?)
-     ON CONFLICT(post_key, target) DO UPDATE SET
-       status='publishing',
-       error=NULL,
-       skipped=0,
-       updated_at=excluded.updated_at,
-       raw_json=excluded.raw_json`,
-  );
-
-  backendDb.sqlite.transaction(() => {
+  backendDb.db.transaction((tx) => {
     for (const row of rows) {
-      const jobId = Number(row.job_id);
-      const result = update.run(worker, now, now, jobId);
-      if (result.changes !== 1) continue;
+      const locked = tx
+        .update(publishJobs)
+        .set({ status: "publishing", lockedBy: worker, lockedAt: now, updatedAt: now })
+        .where(and(eq(publishJobs.jobId, row.jobId), eq(publishJobs.status, "queued")))
+        .returning({ jobId: publishJobs.jobId })
+        .get();
+      if (!locked) continue;
       const postKey = jobPostKey(row);
-      markTarget.run(postKey, String(row.target), now, JSON.stringify({ job_id: jobId, worker }));
-      insertEvent(backendDb, postKey, String(row.target), "publish.job.claimed", "info", `Publishing ${String(row.target)}`, {
-        job_id: jobId,
-        worker,
-      });
+      tx.insert(postTargets)
+        .values({
+          postKey,
+          target: row.target,
+          status: "publishing",
+          error: null,
+          skipped: 0,
+          updatedAt: now,
+          rawJson: JSON.stringify({ job_id: row.jobId, worker }),
+        })
+        .onConflictDoUpdate({
+          target: [postTargets.postKey, postTargets.target],
+          set: { status: "publishing", error: null, skipped: 0, updatedAt: now, rawJson: JSON.stringify({ job_id: row.jobId, worker }) },
+        })
+        .run();
+      insertEvent(tx, postKey, row.target, "publish.job.claimed", "info", `Publishing ${row.target}`, { job_id: row.jobId, worker });
       claimed.push({
-        jobId,
-        postId: row.post_id == null ? null : Number(row.post_id),
+        jobId: row.jobId,
+        postId: row.postId,
         postKey,
-        messageId: Number(row.message_id),
-        target: String(row.target),
-        payload: parsePayload(row.payload_json),
-        attemptCount: Number(row.attempt_count ?? 0),
+        messageId: row.messageId,
+        target: row.target,
+        payload: parsePayload(row.payloadJson),
+        attemptCount: row.attemptCount,
       });
     }
-  })();
+  });
   return claimed;
 }
 
 export function recoverStalePublishJobs(backendDb: BackendDb, timeoutSeconds: number): number {
   const cutoff = new Date(Date.now() - timeoutSeconds * 1000).toISOString();
   const now = new Date().toISOString();
-  const result = backendDb.sqlite
-    .prepare(
-      `UPDATE publish_jobs
-       SET status='queued', locked_by=NULL, locked_at=NULL, next_attempt_at=?, updated_at=?, last_error=COALESCE(last_error, 'stale publish lock recovered')
-       WHERE status='publishing' AND locked_at IS NOT NULL AND locked_at < ?`,
-    )
-    .run(now, now, cutoff);
-  return result.changes;
+  return backendDb.db
+    .update(publishJobs)
+    .set({
+      status: "failed",
+      lockedBy: null,
+      lockedAt: null,
+      nextAttemptAt: null,
+      updatedAt: now,
+      lastError: sql`coalesce(${publishJobs.lastError}, 'stale publish lock requires manual repair')`,
+    })
+    .where(and(eq(publishJobs.status, "publishing"), lt(publishJobs.lockedAt, cutoff)))
+    .returning({ jobId: publishJobs.jobId })
+    .all().length;
 }
 
 export function completePublishJob(backendDb: BackendDb, config: BackendConfig, jobId: number, result: PublishResult): void {
   const now = new Date().toISOString();
-  const job = backendDb.sqlite.prepare("SELECT * FROM publish_jobs WHERE job_id=?").get(jobId) as Record<string, unknown> | undefined;
+  const job = backendDb.db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get();
   if (!job) return;
   const postKey = jobPostKey(job);
-  if (result.partial && String(job.target).startsWith("threads")) {
+  if (result.partial && job.target.startsWith("threads")) {
     const ids = Array.isArray(result.ids) ? result.ids.map(String).filter(Boolean) : [];
-    const attempt = Number(job.attempt_count ?? 0) + 1;
+    const attempt = job.attemptCount + 1;
     const retryAt = nextRetryAt(attempt, config.PUBLISH_BACKOFF_BASE_SECONDS, config.PUBLISH_BACKOFF_MAX_SECONDS);
-    const payload = { ...parsePayload(job.payload_json), _threadsPublishedIds: ids };
+    const payload = { ...parsePayload(job.payloadJson), _threadsPublishedIds: ids };
     const error = String(result.error ?? "Threads partial publication");
-    backendDb.sqlite.transaction(() => {
-      backendDb.sqlite
-        .prepare(
-          "UPDATE publish_jobs SET status='queued', attempt_count=?, next_attempt_at=?, locked_by=NULL, locked_at=NULL, payload_json=?, last_error=?, updated_at=? WHERE job_id=?",
-        )
-        .run(attempt, retryAt, JSON.stringify(payload), error, now, jobId);
-      backendDb.sqlite
-        .prepare(`INSERT INTO post_targets(post_key,target,status,external_id,external_ids_json,error,skipped,updated_at,raw_json)
-        VALUES (?,?,'queued',?,?,?,0,?,?) ON CONFLICT(post_key,target) DO UPDATE SET status='queued',external_id=excluded.external_id,external_ids_json=excluded.external_ids_json,error=excluded.error,updated_at=excluded.updated_at,raw_json=excluded.raw_json`)
-        .run(postKey, String(job.target), ids[0] ?? null, JSON.stringify(ids), error, now, JSON.stringify(result));
-      insertEvent(backendDb, postKey, String(job.target), "publish.job.partial", "warn", error, { job_id: jobId, ids, retry_at: retryAt });
-    })();
+    backendDb.db.transaction((tx) => {
+      tx.update(publishJobs)
+        .set({
+          status: "queued",
+          attemptCount: attempt,
+          nextAttemptAt: retryAt,
+          lockedBy: null,
+          lockedAt: null,
+          payloadJson: JSON.stringify(payload),
+          lastError: error,
+          updatedAt: now,
+        })
+        .where(eq(publishJobs.jobId, jobId))
+        .run();
+      tx.insert(postTargets)
+        .values({
+          postKey,
+          target: job.target,
+          status: "queued",
+          externalId: ids[0] ?? null,
+          externalIdsJson: JSON.stringify(ids),
+          error,
+          skipped: 0,
+          updatedAt: now,
+          rawJson: JSON.stringify(result),
+        })
+        .onConflictDoUpdate({
+          target: [postTargets.postKey, postTargets.target],
+          set: {
+            status: "queued",
+            externalId: ids[0] ?? null,
+            externalIdsJson: JSON.stringify(ids),
+            error,
+            skipped: 0,
+            updatedAt: now,
+            rawJson: JSON.stringify(result),
+          },
+        })
+        .run();
+      insertEvent(tx, postKey, job.target, "publish.job.partial", "warn", error, { job_id: jobId, ids, retry_at: retryAt });
+    });
     return;
   }
   const normalized = normalizePublishResult(result);
-  backendDb.sqlite.transaction(() => {
-    backendDb.sqlite
-      .prepare(
-        `INSERT INTO post_targets(post_key, target, status, external_id, external_ids_json, url, error, skipped, updated_at, raw_json)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(post_key, target) DO UPDATE SET
-           status=excluded.status,
-           external_id=CASE WHEN excluded.status='published' THEN excluded.external_id ELSE NULL END,
-           external_ids_json=CASE WHEN excluded.status='published' THEN excluded.external_ids_json ELSE NULL END,
-           url=CASE WHEN excluded.status='published' THEN excluded.url ELSE NULL END,
-           error=excluded.error,
-           skipped=excluded.skipped,
-           updated_at=excluded.updated_at,
-           raw_json=excluded.raw_json`,
-      )
-      .run(
+  backendDb.db.transaction((tx) => {
+    const published = normalized.status === "published";
+    tx.insert(postTargets)
+      .values({
         postKey,
-        String(job.target),
-        normalized.status,
-        normalized.externalId,
-        normalized.externalIds == null ? null : JSON.stringify(normalized.externalIds),
-        normalized.url,
-        normalized.error,
-        normalized.skipped,
-        now,
-        normalized.rawJson,
-      );
-    backendDb.sqlite
-      .prepare("UPDATE publish_jobs SET status=?, locked_by=NULL, locked_at=NULL, last_error=?, updated_at=? WHERE job_id=?")
-      .run(normalized.status, normalized.error, now, jobId);
-    backendDb.sqlite
-      .prepare(
-        "DELETE FROM publish_jobs WHERE target=? AND job_id<>? AND status IN ('queued','failed') AND (post_key=? OR (post_key IS NULL AND message_id=?))",
-      )
-      .run(String(job.target), jobId, postKey, Number(job.message_id));
-    if (String(job.target) === "telegram" && normalized.status === "published" && normalized.externalId && job.post_id != null) {
+        target: job.target,
+        status: normalized.status,
+        externalId: published ? normalized.externalId : null,
+        externalIdsJson: published && normalized.externalIds != null ? JSON.stringify(normalized.externalIds) : null,
+        url: published ? normalized.url : null,
+        error: normalized.error,
+        skipped: normalized.skipped,
+        updatedAt: now,
+        rawJson: normalized.rawJson,
+      })
+      .onConflictDoUpdate({
+        target: [postTargets.postKey, postTargets.target],
+        set: {
+          status: normalized.status,
+          externalId: published ? normalized.externalId : null,
+          externalIdsJson: published && normalized.externalIds != null ? JSON.stringify(normalized.externalIds) : null,
+          url: published ? normalized.url : null,
+          error: normalized.error,
+          skipped: normalized.skipped,
+          updatedAt: now,
+          rawJson: normalized.rawJson,
+        },
+      })
+      .run();
+    tx.update(publishJobs)
+      .set({ status: normalized.status, lockedBy: null, lockedAt: null, lastError: normalized.error, updatedAt: now })
+      .where(eq(publishJobs.jobId, jobId))
+      .run();
+    deleteSupersededJobs(tx, job, jobId, postKey);
+    if (job.target === "telegram" && published && normalized.externalId && job.postId != null) {
       const messageId = Number(normalized.externalId);
-      backendDb.sqlite
-        .prepare("UPDATE publications SET telegram_message_id=?, updated_at=? WHERE post_id=?")
-        .run(messageId, now, Number(job.post_id));
-      backendDb.sqlite
-        .prepare("UPDATE drafts SET channel_message_id=?, updated_at=? WHERE post_id=?")
-        .run(messageId, now, Number(job.post_id));
-      backendDb.sqlite
-        .prepare("UPDATE posts SET message_id=?, telegram_url=?, updated_at=? WHERE post_key=?")
-        .run(messageId, normalized.url, now, postKey);
+      tx.update(publications).set({ telegramMessageId: messageId, updatedAt: now }).where(eq(publications.postId, job.postId)).run();
+      tx.update(drafts).set({ channelMessageId: messageId, updatedAt: now }).where(eq(drafts.postId, job.postId)).run();
+      tx.update(posts).set({ messageId, telegramUrl: normalized.url, updatedAt: now }).where(eq(posts.postKey, postKey)).run();
     }
     insertEvent(
-      backendDb,
+      tx,
       postKey,
-      String(job.target),
+      job.target,
       `publish.job.${normalized.status}`,
       normalized.status === "failed" ? "error" : "info",
-      `${String(job.target)} ${normalized.status}`,
-      {
-        job_id: jobId,
-        result,
-      },
+      `${job.target} ${normalized.status}`,
+      { job_id: jobId, result },
     );
-  })();
-  if (job.post_id != null) reconcilePublication(backendDb, Number(job.post_id));
+  });
+  if (job.postId != null) reconcilePublication(backendDb, job.postId);
 }
 
 export function failPublishJob(backendDb: BackendDb, config: BackendConfig, jobId: number, error: unknown): void {
   const now = new Date().toISOString();
-  const job = backendDb.sqlite.prepare("SELECT * FROM publish_jobs WHERE job_id=?").get(jobId) as Record<string, unknown> | undefined;
+  const job = backendDb.db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get();
   if (!job) return;
   const postKey = jobPostKey(job);
-  const attempt = Number(job.attempt_count ?? 0) + 1;
+  const attempt = job.attemptCount + 1;
   const errorClass = classifyPublishError(error);
   const shouldRetry = (errorClass === "transient" && attempt < config.PUBLISH_MAX_ATTEMPTS) || (errorClass === "unknown" && attempt < 2);
   const status = shouldRetry ? "queued" : "failed";
   const nextAttempt = shouldRetry ? nextRetryAt(attempt, config.PUBLISH_BACKOFF_BASE_SECONDS, config.PUBLISH_BACKOFF_MAX_SECONDS) : null;
   const errorText = String(error instanceof Error ? error.message : error);
-  backendDb.sqlite.transaction(() => {
-    backendDb.sqlite
-      .prepare(
-        "UPDATE publish_jobs SET status=?, attempt_count=?, next_attempt_at=?, locked_by=NULL, locked_at=NULL, last_error=?, updated_at=? WHERE job_id=?",
-      )
-      .run(status, attempt, nextAttempt, errorText, now, jobId);
-    if (!shouldRetry)
-      backendDb.sqlite
-        .prepare(
-          "DELETE FROM publish_jobs WHERE target=? AND job_id<>? AND status IN ('queued','failed') AND (post_key=? OR (post_key IS NULL AND message_id=?))",
-        )
-        .run(String(job.target), jobId, postKey, Number(job.message_id));
-    backendDb.sqlite
-      .prepare(
-        `INSERT INTO post_targets(post_key, target, status, error, skipped, updated_at, raw_json)
-         VALUES (?, ?, ?, ?, 0, ?, ?)
-         ON CONFLICT(post_key, target) DO UPDATE SET
-           status=excluded.status,
-           error=excluded.error,
-           skipped=0,
-           updated_at=excluded.updated_at,
-           raw_json=excluded.raw_json`,
-      )
-      .run(
-        postKey,
-        String(job.target),
+  backendDb.db.transaction((tx) => {
+    tx.update(publishJobs)
+      .set({
         status,
-        errorText,
-        now,
-        JSON.stringify({ job_id: jobId, error_class: errorClass, attempt, next_attempt_at: nextAttempt }),
-      );
+        attemptCount: attempt,
+        nextAttemptAt: nextAttempt,
+        lockedBy: null,
+        lockedAt: null,
+        lastError: errorText,
+        updatedAt: now,
+      })
+      .where(eq(publishJobs.jobId, jobId))
+      .run();
+    if (!shouldRetry) deleteSupersededJobs(tx, job, jobId, postKey);
+    tx.insert(postTargets)
+      .values({
+        postKey,
+        target: job.target,
+        status,
+        error: errorText,
+        skipped: 0,
+        updatedAt: now,
+        rawJson: JSON.stringify({ job_id: jobId, error_class: errorClass, attempt, next_attempt_at: nextAttempt }),
+      })
+      .onConflictDoUpdate({
+        target: [postTargets.postKey, postTargets.target],
+        set: {
+          status,
+          error: errorText,
+          skipped: 0,
+          updatedAt: now,
+          rawJson: JSON.stringify({ job_id: jobId, error_class: errorClass, attempt, next_attempt_at: nextAttempt }),
+        },
+      })
+      .run();
     insertEvent(
-      backendDb,
+      tx,
       postKey,
-      String(job.target),
+      job.target,
       shouldRetry ? "publish.job.retry" : "publish.job.failed",
       shouldRetry ? "warn" : "error",
       errorText,
-      {
-        job_id: jobId,
-        error_class: errorClass,
-        attempt,
-        next_attempt_at: nextAttempt,
-      },
+      { job_id: jobId, error_class: errorClass, attempt, next_attempt_at: nextAttempt },
     );
-  })();
-  if (!shouldRetry && job.post_id != null) reconcilePublication(backendDb, Number(job.post_id));
+  });
+  if (!shouldRetry && job.postId != null) reconcilePublication(backendDb, job.postId);
 }
 
 export function reconcilePublication(backendDb: BackendDb, postId: number): void {
-  const social = backendDb.sqlite
-    .prepare(
-      `SELECT
-       SUM(CASE WHEN status IN ('queued','publishing') THEN 1 ELSE 0 END) AS pending,
-       SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failed
-     FROM publish_jobs WHERE post_id=?`,
-    )
-    .get(postId) as { pending: number | null; failed: number | null };
-  const site = backendDb.sqlite
-    .prepare(
-      `SELECT
-       SUM(CASE WHEN status IN ('queued','rendering') THEN 1 ELSE 0 END) AS pending,
-       SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failed
-     FROM site_jobs WHERE post_id=?`,
-    )
-    .get(postId) as { pending: number | null; failed: number | null };
-  if (Number(social.pending ?? 0) + Number(site.pending ?? 0) > 0) return;
-  const status = Number(social.failed ?? 0) + Number(site.failed ?? 0) > 0 ? "failed" : "published";
+  const social = backendDb.db.select({ status: publishJobs.status }).from(publishJobs).where(eq(publishJobs.postId, postId)).all();
+  const site = backendDb.db.select({ status: siteJobs.status }).from(siteJobs).where(eq(siteJobs.postId, postId)).all();
+  const all = [...social, ...site];
+  if (all.some((job) => job.status === "queued" || job.status === "publishing" || job.status === "rendering")) return;
+  const status = all.some((job) => job.status === "failed") ? "failed" : "published";
   const now = new Date().toISOString();
-  backendDb.sqlite.transaction(() => {
-    backendDb.sqlite.prepare("UPDATE publications SET status=?, updated_at=? WHERE post_id=?").run(status, now, postId);
-    backendDb.sqlite.prepare("UPDATE drafts SET status=?, updated_at=? WHERE post_id=?").run(status, now, postId);
-  })();
+  backendDb.db.transaction((tx) => {
+    tx.update(publications).set({ status, updatedAt: now }).where(eq(publications.postId, postId)).run();
+    tx.update(drafts).set({ status, updatedAt: now }).where(eq(drafts.postId, postId)).run();
+  });
 }
 
 export function enqueuePublishJob(
@@ -276,17 +289,35 @@ export function enqueuePublishJob(
 ): number {
   const now = new Date().toISOString();
   const postKey = input.postKey ?? (input.postId != null ? `post:${input.postId}` : `telegram:alexgetmancom:${input.messageId}`);
-  const result = backendDb.sqlite
-    .prepare(
-      `INSERT INTO publish_jobs(post_id, post_key, message_id, target, status, publish_at, payload_json, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?)`,
-    )
-    .run(input.postId ?? null, postKey, input.messageId, input.target, input.publishAt ?? null, JSON.stringify(input.payload), now, now);
-  return Number(result.lastInsertRowid);
+  const record = insertPublishJobSchema.parse({
+    postId: input.postId ?? null,
+    postKey,
+    messageId: input.messageId,
+    target: input.target,
+    status: "queued",
+    publishAt: input.publishAt ?? null,
+    payloadJson: JSON.stringify(input.payload),
+    createdAt: now,
+    updatedAt: now,
+  });
+  return backendDb.db.insert(publishJobs).values(record).returning({ jobId: publishJobs.jobId }).get()!.jobId;
 }
 
-function parsePayload(value: unknown): Record<string, unknown> {
-  if (typeof value !== "string" || !value) return {};
+function deleteSupersededJobs(tx: BackendDb["db"], job: typeof publishJobs.$inferSelect, jobId: number, postKey: string): void {
+  tx.delete(publishJobs)
+    .where(
+      and(
+        eq(publishJobs.target, job.target),
+        ne(publishJobs.jobId, jobId),
+        inArray(publishJobs.status, ["queued", "failed"]),
+        or(eq(publishJobs.postKey, postKey), and(isNull(publishJobs.postKey), eq(publishJobs.messageId, job.messageId))),
+      ),
+    )
+    .run();
+}
+
+function parsePayload(value: string | null): Record<string, unknown> {
+  if (!value) return {};
   try {
     const parsed = z.record(z.string(), z.unknown()).safeParse(JSON.parse(value));
     return parsed.success ? parsed.data : {};
@@ -295,14 +326,12 @@ function parsePayload(value: unknown): Record<string, unknown> {
   }
 }
 
-function jobPostKey(row: Record<string, unknown>): string {
-  if (row.post_key) return String(row.post_key);
-  if (row.post_id) return `post:${Number(row.post_id)}`;
-  return `telegram:alexgetmancom:${Number(row.message_id)}`;
+function jobPostKey(job: Pick<typeof publishJobs.$inferSelect, "postKey" | "postId" | "messageId">): string {
+  return job.postKey ?? (job.postId != null ? `post:${job.postId}` : `telegram:alexgetmancom:${job.messageId}`);
 }
 
 function insertEvent(
-  backendDb: BackendDb,
+  tx: BackendDb["db"],
   postKey: string | null,
   target: string | null,
   eventType: string,
@@ -310,9 +339,7 @@ function insertEvent(
   message: string,
   details: Record<string, unknown>,
 ): void {
-  backendDb.sqlite
-    .prepare(
-      "INSERT INTO post_events(post_key, event_type, severity, target, message, details_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    )
-    .run(postKey, eventType, severity, target, message, JSON.stringify(details), new Date().toISOString());
+  tx.insert(postEvents)
+    .values({ postKey, eventType, severity, target, message, detailsJson: JSON.stringify(details), createdAt: new Date().toISOString() })
+    .run();
 }

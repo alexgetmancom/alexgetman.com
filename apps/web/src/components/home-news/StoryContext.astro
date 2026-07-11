@@ -1,5 +1,5 @@
 ---
-import type { HomePost, StoryUi } from './types';
+import type { HomePost, StoryUi } from "./types";
 
 interface Props {
   activePost: HomePost;
@@ -9,7 +9,7 @@ interface Props {
 
 const { activePost, paragraphs, ui } = Astro.props;
 
-const wordsCount = paragraphs.join(' ').split(/\s+/).length;
+const wordsCount = paragraphs.join(" ").split(/\s+/).length;
 const readingTimeMin = Math.max(1, Math.ceil(wordsCount / 180));
 ---
 

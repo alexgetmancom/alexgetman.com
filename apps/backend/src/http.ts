@@ -1,9 +1,9 @@
 import crypto from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { serveStatic } from "@hono/node-server/serve-static";
 import type { Bot } from "grammy";
 import { Hono } from "hono";
+import { serveStatic } from "hono/bun";
 import { streamSSE } from "hono/streaming";
 import type { BackendConfig } from "./config.js";
 import type { BackendDb } from "./db/client.js";
@@ -177,7 +177,7 @@ export function createHttpApp(config: BackendConfig, backendDb: BackendDb, bot: 
   return app;
 }
 
-function escapeHtml(value: string): string {
+function _escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (char) => {
     switch (char) {
       case "&":

@@ -1,10 +1,11 @@
+import { afterEach, describe, expect, it, mock } from "bun:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadConfig } from "../src/config.js";
 import { publishToLinkedIn } from "../src/social/linkedin.js";
 import { payloadMedia, payloadText } from "../src/social/payload.js";
+import { publishToTelegram } from "../src/social/telegram.js";
 import { publishToThreads } from "../src/social/threads.js";
 import { oauthAuthorization, publishToX } from "../src/social/x.js";
 
@@ -17,6 +18,19 @@ describe("publish payload validation", () => {
       { type: "IMAGE", fileId: "ok" },
     ]);
   });
+
+  it("uses Russian text and media for a Russian target payload even when legacy English fields remain", () => {
+    const payload = {
+      locale: "ru",
+      text: "Русский текст",
+      text_ru: "Русский текст",
+      text_en: "English text",
+      media: [{ type: "photo", file_id: "ru-image" }],
+      media_en: [{ type: "photo", file_id: "en-image" }],
+    };
+    expect(payloadText(payload)).toBe("Русский текст");
+    expect(payloadMedia(payload)).toEqual([{ type: "IMAGE", fileId: "ru-image" }]);
+  });
 });
 
 afterEach(() => {
@@ -27,7 +41,7 @@ describe("LinkedIn publisher", () => {
   it("initializes an image upload and creates a post", async () => {
     const imagePath = tempImage();
     const calls: Array<{ url: string; init?: RequestInit }> = [];
-    const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+    const fetchImpl = mock(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       calls.push({ url, ...(init ? { init } : {}) });
       if (url.includes("images?action=initializeUpload")) {
@@ -56,10 +70,55 @@ describe("LinkedIn publisher", () => {
   });
 });
 
+describe("Telegram publisher", () => {
+  it("sends the Russian variant for a Russian payload even when English legacy fields are present", async () => {
+    const fetchMock = mock(async (_input: string | URL | Request, init?: RequestInit) => {
+      return new Response(JSON.stringify({ ok: true, result: { message_id: 42 } }), { status: 200 });
+    });
+    const fetchImpl = fetchMock as unknown as typeof fetch;
+    await publishToTelegram(
+      {
+        locale: "ru",
+        text: "Русский текст",
+        text_ru: "Русский текст",
+        text_en: "English text",
+        media: [{ type: "photo", file_id: "ru-image" }],
+        media_en: [{ type: "photo", file_id: "en-image" }],
+      },
+      loadConfig({ CONTROLLER_BOT_TOKEN: "bot-token" }),
+      fetchImpl,
+    );
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as Record<string, unknown>;
+    expect(body).toMatchObject({ photo: "ru-image", caption: "Русский текст" });
+  });
+});
+
 describe("Threads publisher", () => {
+  it("retries a transient media availability error without publishing a duplicate", async () => {
+    let creates = 0;
+    const fetchImpl = mock(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("fields=status")) return new Response(JSON.stringify({ status: "FINISHED" }), { status: 200 });
+      if (url.includes("fields=permalink"))
+        return new Response(JSON.stringify({ permalink: "https://threads.net/@a/post/1" }), { status: 200 });
+      if (url.includes("threads_publish")) return new Response(JSON.stringify({ id: "published-1" }), { status: 200 });
+      creates += 1;
+      return creates === 1
+        ? new Response(JSON.stringify({ error: { message: "media is missing" } }), { status: 503 })
+        : new Response(JSON.stringify({ id: "container-1" }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const result = await publishToThreads(
+      { text_en: "Post", media: [{ type: "IMAGE", vps_url: "https://example.com/image.jpg" }] },
+      loadConfig({ THREADS_ACCESS_TOKEN: "token", THREADS_CONTAINER_TIMEOUT_SECONDS: "1", THREADS_RETRY_DELAY_MS: "1" }),
+      fetchImpl,
+    );
+    expect(result).toMatchObject({ ok: true, ids: ["published-1"] });
+    expect(creates).toBe(2);
+  });
+
   it("resumes a partial thread after the last published reply", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
-    const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+    const fetchImpl = mock(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       calls.push({ url, ...(init ? { init } : {}) });
       if (url.includes("fields=status")) return new Response(JSON.stringify({ status: "FINISHED" }), { status: 200 });
@@ -84,7 +143,7 @@ describe("X publisher", () => {
   it("uploads an image and creates a tweet with OAuth 1.0a", async () => {
     const imagePath = tempImage();
     const calls: Array<{ url: string; init?: RequestInit }> = [];
-    const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+    const fetchImpl = mock(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       calls.push({ url, ...(init ? { init } : {}) });
       if (url.includes("media/upload.json")) return new Response(JSON.stringify({ media_id_string: "media-1" }), { status: 200 });

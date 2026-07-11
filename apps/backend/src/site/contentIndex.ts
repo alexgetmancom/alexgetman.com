@@ -15,7 +15,8 @@ type ContentRow = {
 };
 
 export function publishContentIndex(config: BackendConfig, backendDb: BackendDb): string[] {
-  const rows = backendDb.sqlite.prepare(`
+  const rows = backendDb.sqlite
+    .prepare(`
     SELECT p.post_id, p.updated_at,
       ru.slug AS slug_ru, ru.text AS text_ru, ru.site_enabled AS has_ru,
       en.slug AS slug_en, en.text AS text_en, en.site_enabled AS has_en
@@ -24,7 +25,8 @@ export function publishContentIndex(config: BackendConfig, backendDb: BackendDb)
     LEFT JOIN post_locales en ON en.post_id=p.post_id AND en.locale='en'
     WHERE p.status='published'
     ORDER BY p.post_id DESC LIMIT 200
-  `).all() as ContentRow[];
+  `)
+    .all() as ContentRow[];
   const base = config.PUBLIC_BASE_URL.replace(/\/$/, "");
   const items = rows.map((row) => ({
     post_id: row.post_id,
@@ -34,7 +36,10 @@ export function publishContentIndex(config: BackendConfig, backendDb: BackendDb)
     updated_at: row.updated_at,
   }));
   const updatedAt = new Date().toISOString();
-  atomicWrite(path.join(config.SITE_PUBLIC_DIR, "content-index.json"), `${JSON.stringify({ updated_at: updatedAt, brand: "alexgetmancom", site: base, items }, null, 2)}\n`);
+  atomicWrite(
+    path.join(config.SITE_PUBLIC_DIR, "content-index.json"),
+    `${JSON.stringify({ updated_at: updatedAt, brand: "alexgetmancom", site: base, items }, null, 2)}\n`,
+  );
   const lines = ["# AlexGetman Content Memory", "", `Updated: ${updatedAt}`, ""];
   for (const item of items.slice(0, 80)) {
     lines.push(`## ${item.post_id} - ${item.title}`);
@@ -44,7 +49,11 @@ export function publishContentIndex(config: BackendConfig, backendDb: BackendDb)
   }
   atomicWrite(path.join(config.SITE_PUBLIC_DIR, "content-memory.md"), `${lines.join("\n").trimEnd()}\n`);
   return [
-    `${base}/`, `${base}/feed.xml`, `${base}/llms.txt`, `${base}/content-index.json`, `${base}/content-memory.md`,
+    `${base}/`,
+    `${base}/feed.xml`,
+    `${base}/llms.txt`,
+    `${base}/content-index.json`,
+    `${base}/content-memory.md`,
     ...items.flatMap((item) => [item.url_en, item.url_ru]).filter((url): url is string => Boolean(url)),
   ];
 }

@@ -8,7 +8,7 @@ export interface HomePost {
   relativeDate: string;
   image: string | null;
   fallbackImage?: string | null;
-  mediaType?: 'image' | 'video' | null;
+  mediaType?: "image" | "video" | null;
   audioUrl?: string | null;
   spotifyUrl?: string | null;
   imageSrcSet?: string;

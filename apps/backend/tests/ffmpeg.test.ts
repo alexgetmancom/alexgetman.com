@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { configureFfmpegConcurrency, ffmpegMaxConcurrency } from "../src/runtime/ffmpeg.js";
 
 describe("ffmpeg guard", () => {

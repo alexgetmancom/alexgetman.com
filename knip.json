@@ -6,7 +6,7 @@
       "project": ["apps/web/src/**/*.ts", "apps/web/src/**/*.astro", "scripts/**/*.ts"]
     },
     "apps/backend": {
-      "entry": ["src/index.ts", "src/cli.ts", "src/runtime/buildSite.ts", "src/site/builder.ts", "tests/**/*.test.ts"],
+      "entry": ["src/index.ts", "src/runtime/buildSite.ts", "src/site/builder.ts", "tests/**/*.test.ts"],
       "project": ["src/**/*.ts", "tests/**/*.ts"]
     },
     "packages/shared": {
