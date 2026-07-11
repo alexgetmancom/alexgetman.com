@@ -10,6 +10,15 @@ import { publishInstagramStory } from "../src/social/instagram.js";
 import { createChannelStoryClient } from "../src/social/telegramSession.js";
 import { publishTelegramStory } from "../src/social/telegramStories.js";
 
+mock.module("../src/runtime/ffmpeg.js", () => {
+  return {
+    runFfmpeg: async (args: string[]) => {
+      const outputPath = args[args.length - 1]!;
+      fs.writeFileSync(outputPath, "fake story image content");
+    },
+  };
+});
+
 describe("story publishers", () => {
   it("generates a 1080x1920 story-safe image with ffmpeg", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-story-image-"));
