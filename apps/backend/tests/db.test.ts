@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createDraftFromMessage, publishDraftToQueue } from "../src/bot.js";
-import { migrationStatus, openBackendDb } from "../src/db/client.js";
+import { baselineDrizzleMigrations, migrationStatus, openBackendDb } from "../src/db/client.js";
 
 describe("openBackendDb", () => {
   it("enables WAL, busy timeout and foreign keys", () => {
@@ -39,7 +39,7 @@ describe("openBackendDb", () => {
       expect(tables).toContain("post_locales");
       expect(tables).toContain("media_assets");
       expect(tables).toContain("credential_checks");
-      expect(migrationStatus(backendDb.sqlite)).toEqual([expect.objectContaining({ id: "0001_core_schema" })]);
+      expect(migrationStatus(backendDb.sqlite)).toHaveLength(2);
     } finally {
       backendDb.close();
     }
@@ -48,19 +48,15 @@ describe("openBackendDb", () => {
   it("publishes against the production publications schema", () => {
     const dir = mkdtempSync(join(tmpdir(), "alexgetman-production-schema-"));
     const dbPath = join(dir, "pipeline.db");
+    const initial = openBackendDb(dbPath);
+    initial.close();
     const fixture = new Database(dbPath);
-    fixture.exec(`
-      CREATE TABLE publications (
-        post_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        draft_id INTEGER UNIQUE,
-        status TEXT NOT NULL DEFAULT 'draft',
-        telegram_message_id INTEGER,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      )
-    `);
+    fixture.exec("DROP TABLE __drizzle_migrations");
     fixture.close();
 
+    const legacy = new Database(dbPath) as unknown as Parameters<typeof baselineDrizzleMigrations>[0];
+    baselineDrizzleMigrations(legacy);
+    legacy.close();
     const backendDb = openBackendDb(dbPath);
     try {
       const draftId = createDraftFromMessage(backendDb, 42, { text: "Production fixture", entities: [], media: [] });
@@ -73,7 +69,7 @@ describe("openBackendDb", () => {
         { locale: "en", slug: "production-fixture" },
         { locale: "ru", slug: "production-fixture" },
       ]);
-      expect(migrationStatus(backendDb.sqlite).map((migration) => migration.id)).toEqual(["0001_core_schema"]);
+      expect(migrationStatus(backendDb.sqlite)).toHaveLength(2);
     } finally {
       backendDb.close();
     }

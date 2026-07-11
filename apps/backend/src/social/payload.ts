@@ -58,7 +58,7 @@ const publishPayloadSchema = z
   })
   .passthrough();
 
-export function parsePublishPayload(value: unknown): Record<string, unknown> {
+function parsePublishPayload(value: unknown): Record<string, unknown> {
   const parsed = publishPayloadSchema.safeParse(value);
   return parsed.success ? parsed.data : {};
 }

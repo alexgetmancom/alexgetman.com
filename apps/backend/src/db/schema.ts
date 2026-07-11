@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const publishJobs = sqliteTable(
@@ -311,25 +312,33 @@ export const mediaAssets = sqliteTable("media_assets", {
   updatedAt: text("updated_at").notNull(),
 });
 
-export const platformRules = sqliteTable("platform_rules", {
-  target: text("target").notNull(),
-  formatKey: text("format_key").notNull(),
-  supportStatus: text("support_status").notNull().default("unknown"),
-  maxItems: integer("max_items"),
-  notes: text("notes"),
-  updatedAt: text("updated_at").notNull(),
-}, (table) => ({ pk: primaryKey({ columns: [table.target, table.formatKey] }) }));
+export const platformRules = sqliteTable(
+  "platform_rules",
+  {
+    target: text("target").notNull(),
+    formatKey: text("format_key").notNull(),
+    supportStatus: text("support_status").notNull().default("unknown"),
+    maxItems: integer("max_items"),
+    notes: text("notes"),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => ({ pk: primaryKey({ columns: [table.target, table.formatKey] }) }),
+);
 
-export const platformCapabilities = sqliteTable("platform_capabilities", {
-  target: text("target").notNull(),
-  formatKey: text("format_key").notNull(),
-  status: text("status").notNull().default("unknown"),
-  evidenceTestId: text("evidence_test_id"),
-  evidenceMessageId: integer("evidence_message_id"),
-  evidenceUrl: text("evidence_url"),
-  notes: text("notes"),
-  updatedAt: text("updated_at").notNull(),
-}, (table) => ({ pk: primaryKey({ columns: [table.target, table.formatKey] }) }));
+export const platformCapabilities = sqliteTable(
+  "platform_capabilities",
+  {
+    target: text("target").notNull(),
+    formatKey: text("format_key").notNull(),
+    status: text("status").notNull().default("unknown"),
+    evidenceTestId: text("evidence_test_id"),
+    evidenceMessageId: integer("evidence_message_id"),
+    evidenceUrl: text("evidence_url"),
+    notes: text("notes"),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => ({ pk: primaryKey({ columns: [table.target, table.formatKey] }) }),
+);
 
 export const credentialChecks = sqliteTable("credential_checks", {
   target: text("target").primaryKey(),
@@ -401,21 +410,29 @@ export const mediaTestCases = sqliteTable("media_test_cases", {
   updatedAt: text("updated_at").notNull(),
 });
 
-export const mediaTestResults = sqliteTable("media_test_results", {
-  testId: text("test_id").notNull(),
-  target: text("target").notNull(),
-  messageId: integer("message_id").notNull(),
-  status: text("status").notNull(),
-  externalId: text("external_id"),
-  url: text("url"),
-  error: text("error"),
-  notes: text("notes"),
-  rawJson: text("raw_json"),
-  checkedAt: text("checked_at").notNull(),
-}, (table) => ({ pk: primaryKey({ columns: [table.testId, table.target, table.messageId] }) }));
+export const mediaTestResults = sqliteTable(
+  "media_test_results",
+  {
+    testId: text("test_id").notNull(),
+    target: text("target").notNull(),
+    messageId: integer("message_id").notNull(),
+    status: text("status").notNull(),
+    externalId: text("external_id"),
+    url: text("url"),
+    error: text("error"),
+    notes: text("notes"),
+    rawJson: text("raw_json"),
+    checkedAt: text("checked_at").notNull(),
+  },
+  (table) => ({ pk: primaryKey({ columns: [table.testId, table.target, table.messageId] }) }),
+);
 
-export const likes = sqliteTable("likes", {
-  postId: text("post_id").notNull(),
-  ipHash: text("ip_hash").notNull(),
-  createdAt: text("created_at").notNull(),
-}, (table) => ({ pk: primaryKey({ columns: [table.postId, table.ipHash] }) }));
+export const likes = sqliteTable(
+  "likes",
+  {
+    postId: text("post_id").notNull(),
+    ipHash: text("ip_hash").notNull(),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({ pk: primaryKey({ columns: [table.postId, table.ipHash] }) }),
+);

@@ -89,8 +89,8 @@ const envSchema = z.object({
   INSTAGRAM_RU_ACCESS_TOKEN: z.string().optional(),
   INSTAGRAM_RU_USER_ID: z.string().optional(),
   INSTAGRAM_GRAPH_API_VERSION: z.string().default("v23.0"),
-  ENABLE_INSTAGRAM_STORIES: booleanFlag.default("false"),
-  ENABLE_TELEGRAM_STORIES: booleanFlag.default("false"),
+  ENABLE_INSTAGRAM_STORIES: booleanFlag.default(false),
+  ENABLE_TELEGRAM_STORIES: booleanFlag.default(false),
   TELEGRAM_STORIES_CHANNEL: z.string().optional(),
   TELEGRAM_STORIES_BOT_TOKEN: z.string().optional(),
   TELEGRAM_STORIES_BUSINESS_CONNECTION_ID: z.string().optional(),
@@ -101,10 +101,10 @@ const envSchema = z.object({
   PUBLIC_MEDIA_BASE_URL: z.string().default("https://alexgetman.com/media"),
   TEMP_MEDIA_DIR: z.string().default("/tmp/alexgetman-media"),
   PUBLIC_BASE_URL: z.string().default("https://alexgetman.com"),
-  ENABLE_BOT_POLLING: booleanFlag.default("false"),
-  ENABLE_WORKERS: booleanFlag.default("true"),
-  ENABLE_SITE_WORKER: booleanFlag.default("true"),
-  INDEXNOW_ENABLED: booleanFlag.default("true"),
+  ENABLE_BOT_POLLING: booleanFlag.default(false),
+  ENABLE_WORKERS: booleanFlag.default(true),
+  ENABLE_SITE_WORKER: booleanFlag.default(true),
+  INDEXNOW_ENABLED: booleanFlag.default(true),
 });
 
 export type BackendConfig = z.infer<typeof envSchema> & {

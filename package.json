@@ -22,6 +22,7 @@
     "lint": "biome lint .",
     "format": "biome format --write .",
     "knip": "bun tools/knip/node_modules/.bin/knip --config knip.json",
+    "deps:check": "taze",
     "check:web": "bun run build",
     "check:backend": "bun run --filter @alexgetman/backend check",
     "check:language": "tsx scripts/enforce-typescript.ts",
@@ -29,15 +30,16 @@
     "sync:production-web": "tsx scripts/web-sync.ts"
   },
   "dependencies": {
-    "@astrojs/rss": "^4.0.18",
+    "@astrojs/rss": "^4.0.19",
     "@astrojs/sitemap": "^3.7.3",
-    "astro": "^6.4.2",
-    "sanitize-html": "^2.17.4"
+    "astro": "^7.0.7",
+    "sanitize-html": "^2.17.6"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.3",
     "@types/sanitize-html": "^2.16.1",
-    "@biomejs/biome": "^2.0.6",
-    "sharp": "^0.34.5",
+    "sharp": "^0.35.3",
+    "taze": "^19.14.1",
     "tsx": "^4.23.0",
     "typescript": "7.0.2"
   }

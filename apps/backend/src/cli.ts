@@ -1,5 +1,5 @@
 import { loadConfig } from "./config.js";
-import { migrationStatus, openBackendDb } from "./db/client.js";
+import { baselineDrizzleMigrations, migrationStatus, openBackendDb } from "./db/client.js";
 import { capabilitySummary, recordCapabilityPost, seedCapabilities } from "./ops/capabilities.js";
 import {
   applyMetricsBackfill,
@@ -41,6 +41,7 @@ function printHelp(): void {
 
   status [--db PATH]
   migrations [--db PATH]
+  migrations-baseline --db PATH
   backup [--db PATH] [--output DIRECTORY]
   restore --source PATH [--db PATH] --force
   audit [--db PATH]
@@ -60,6 +61,15 @@ async function main(): Promise<void> {
   if (args.command === "restore") {
     restoreDatabase(required(args, "source"), dbPath, args.flags.has("force"));
     console.log(JSON.stringify({ ok: true, restored: dbPath }, null, 2));
+    return;
+  }
+  if (args.command === "migrations-baseline") {
+    const sqlite = new (await import("bun:sqlite")).Database(dbPath, { strict: true }) as Parameters<typeof baselineDrizzleMigrations>[0];
+    try {
+      console.log(JSON.stringify({ migrations: baselineDrizzleMigrations(sqlite) }, null, 2));
+    } finally {
+      sqlite.close();
+    }
     return;
   }
   const config = loadConfig({ ...process.env, PIPELINE_DB: dbPath });

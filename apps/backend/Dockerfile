@@ -19,6 +19,7 @@ FROM oven/bun:1.3.14-debian AS backend
 
 ARG GIT_REVISION=unknown
 ENV GIT_REVISION=${GIT_REVISION}
+ENV DRIZZLE_MIGRATIONS_DIR=/app/apps/backend/drizzle
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates ffmpeg tini \
@@ -26,6 +27,7 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY --from=build --chown=bun:bun /app/apps/backend/dist ./apps/backend/dist
+COPY --from=build --chown=bun:bun /app/apps/backend/drizzle ./apps/backend/drizzle
 
 USER bun
 ENTRYPOINT ["/usr/bin/tini", "--"]
