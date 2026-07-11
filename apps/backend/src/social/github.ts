@@ -1,7 +1,8 @@
+import crypto from "node:crypto";
 import type { BackendConfig } from "../config.js";
 import type { PublishResult } from "../queue/errors.js";
 import { requestJson } from "./http.js";
-import { payloadText, payloadTitle } from "./payload.js";
+import { payloadCanonicalUrl, payloadMedia, payloadText, payloadTitle } from "./payload.js";
 
 type GitHubDiscussionResponse = {
   data?: {
@@ -28,6 +29,29 @@ export async function publishToGitHubDiscussion(
       }
     }
   `;
+  const text = payload.bodyMarkdown ?? payload.body_markdown ?? payloadText(payload);
+  let body = String(text ?? "");
+
+  const media = payloadMedia(payload);
+  if (media.length > 0) {
+    let imgMarkdown = "";
+    for (const item of media) {
+      if (item.vpsUrl) {
+        imgMarkdown += `\n\n![Image](${item.vpsUrl})`;
+      }
+    }
+    body += imgMarkdown;
+  }
+
+  const articleUrl = payloadCanonicalUrl(payload, config);
+  if (articleUrl) {
+    body += `\n\n---\n🔗 Read the full post on [alexgetman.com](${articleUrl})`;
+  }
+
+  const title = payloadTitle(payload);
+  const titleHash = crypto.createHash("sha1").update(title, "utf8").digest("hex");
+  body += `\n\n<!-- sha1: ${titleHash} -->`;
+
   const data = await requestJson<GitHubDiscussionResponse>(fetchImpl, "https://api.github.com/graphql", {
     method: "POST",
     headers: {
@@ -40,8 +64,8 @@ export async function publishToGitHubDiscussion(
       variables: {
         repoId: config.GITHUB_DISCUSSIONS_REPO_ID,
         catId: config.GITHUB_DISCUSSIONS_CATEGORY_ID,
-        title: payloadTitle(payload),
-        body: payload.bodyMarkdown ?? payload.body_markdown ?? payloadText(payload),
+        title,
+        body,
       },
     }),
   });

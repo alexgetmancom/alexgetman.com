@@ -1,7 +1,7 @@
 import type { BackendConfig } from "../config.js";
 import type { PublishResult } from "../queue/errors.js";
 import { formBody, requestJson } from "./http.js";
-import { guessContentType, payloadCanonicalUrl, payloadMedia, payloadText, readFileBlob, splitText } from "./payload.js";
+import { guessContentType, payloadMedia, payloadText, readFileBlob, splitText } from "./payload.js";
 
 type MastodonStatus = {
   id?: string;
@@ -19,7 +19,7 @@ export async function publishToMastodon(
 ): Promise<PublishResult> {
   if (!config.MASTODON_INSTANCE || !config.MASTODON_ACCESS_TOKEN) return { skipped: true, reason: "missing Mastodon credentials" };
   const base = `https://${config.MASTODON_INSTANCE.replace(/^https?:\/\//, "").replace(/\/$/, "")}`;
-  const text = [payloadText(payload), payloadCanonicalUrl(payload, config)].filter(Boolean).join("\n\n");
+  const text = payloadText(payload);
   const mediaIds: string[] = [];
   for (const item of payloadMedia(payload)) {
     if (item.type !== "IMAGE" || !item.localPath) continue;

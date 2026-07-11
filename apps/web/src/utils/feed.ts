@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import type { BackendDb } from "../../../backend/src/db/client.js";
 import { postLocales, postMetrics, posts, publications } from "../../../backend/src/db/schema.js";
@@ -59,7 +59,7 @@ export function loadFeedItems(backendDb: BackendDb = getRuntime().backendDb): Fe
       postMetrics,
       and(eq(postMetrics.postKey, posts.postKey), eq(postMetrics.target, "telegram"), eq(postMetrics.metricName, "views")),
     )
-    .where(eq(publications.status, "published"))
+    .where(inArray(publications.status, ["published", "failed"]))
     .orderBy(desc(posts.dateUtc), desc(publications.postId))
     .all();
 
