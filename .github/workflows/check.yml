@@ -91,6 +91,7 @@ jobs:
       group: production-deploy
       cancel-in-progress: false
     steps:
+      - uses: actions/checkout@v5
       - name: Configure SSH
         env:
           DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
@@ -109,5 +110,8 @@ jobs:
           RELEASE: ${{ github.sha }}
         run: |
           test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER" && test -n "$DEPLOY_AGENT_TOKEN"
+          runtime=/home/deploy/alexgetman-runtime
+          scp -o BatchMode=yes apps/backend/compose.yaml "$DEPLOY_USER@$DEPLOY_HOST:$runtime/compose.yaml.next"
+          ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "set -e; docker compose --env-file $runtime/deploy-image.env -f $runtime/compose.yaml.next config --quiet; mv $runtime/compose.yaml.next $runtime/compose.yaml"
           payload=$(printf '{"image":"%s","release":"%s"}' "$IMAGE" "$RELEASE")
           ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "curl --fail-with-body --silent --show-error --retry 2 --retry-all-errors -H 'Authorization: Bearer $DEPLOY_AGENT_TOKEN' -H 'Content-Type: application/json' --data '$payload' http://127.0.0.1:9899/v1/deploy"
