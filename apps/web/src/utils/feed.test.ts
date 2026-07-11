@@ -86,4 +86,34 @@ describe("Drizzle site feed", () => {
       .run();
     expect(loadFeedItems(backendDb)).toEqual([]);
   });
+
+  it("maps published Telegram media IDs to the deterministic site media manifest", () => {
+    backendDb = openBackendDb(":memory:");
+    const now = new Date().toISOString();
+    backendDb.db.insert(publications).values({ postId: 9, status: "published", createdAt: now, updatedAt: now }).run();
+    backendDb.db
+      .insert(posts)
+      .values({ postKey: "post:9", postId: 9, source: "bot", channel: "controller", messageId: 99, createdAt: now, updatedAt: now })
+      .run();
+    backendDb.db
+      .insert(postLocales)
+      .values({
+        postId: 9,
+        locale: "en",
+        slug: "media-post",
+        text: "Media post",
+        mediaJson: [{ type: "photo", file_id: "telegram-file" }],
+        siteEnabled: 1,
+        publishedAt: now,
+        updatedAt: now,
+      })
+      .run();
+
+    expect(loadFeedItems(backendDb)[0]).toEqual(
+      expect.objectContaining({
+        image_en: "media/posts/9-en-0.jpg",
+        media_en: [expect.objectContaining({ path: "media/posts/9-en-0.jpg" })],
+      }),
+    );
+  });
 });

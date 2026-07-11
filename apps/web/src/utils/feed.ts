@@ -66,8 +66,24 @@ export function loadFeedItems(backendDb: BackendDb = getRuntime().backendDb): Fe
   const now = Date.now();
   return rows.flatMap((row): FeedItem[] => {
     if (row.postId == null || row.messageId == null || row.postKey == null) return [];
-    const ru = locale(row.ruEnabled, row.ruPublishedAt, row.ruText, row.ruSlug, row.ruHtml, row.ruMedia as SiteMedia[] | null, now);
-    const en = locale(row.enEnabled, row.enPublishedAt, row.enText, row.enSlug, row.enHtml, row.enMedia as SiteMedia[] | null, now);
+    const ru = locale(
+      row.ruEnabled,
+      row.ruPublishedAt,
+      row.ruText,
+      row.ruSlug,
+      row.ruHtml,
+      publishedMedia(row.ruMedia as SiteMedia[] | null, row.postId, "ru"),
+      now,
+    );
+    const en = locale(
+      row.enEnabled,
+      row.enPublishedAt,
+      row.enText,
+      row.enSlug,
+      row.enHtml,
+      publishedMedia(row.enMedia as SiteMedia[] | null, row.postId, "en"),
+      now,
+    );
     if (!ru.enabled && !en.enabled) return [];
     const media = ru.media;
     const mediaEn = en.media.length > 0 ? en.media : media;
@@ -111,4 +127,18 @@ function locale(
 
 function firstImage(media: SiteMedia[]): string | null {
   return media.find((item) => item.type !== "video" && typeof item.path === "string")?.path ?? null;
+}
+
+function publishedMedia(media: SiteMedia[] | null, postId: number, locale: "ru" | "en"): SiteMedia[] {
+  return (media ?? []).map((item, index) => {
+    if (typeof item.path === "string" && item.path) return item;
+    const type = String(item.type ?? "image").toLowerCase() === "video" ? "video" : "image";
+    const filename = `${postId}-${locale}-${index}`;
+    return {
+      ...item,
+      type,
+      path: `media/posts/${filename}.${type === "video" ? "mp4" : "jpg"}`,
+      ...(type === "video" ? { poster: `media/posts/${filename}-poster.jpg` } : {}),
+    };
+  });
 }
