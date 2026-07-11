@@ -1,37 +1,40 @@
 FROM oven/bun:1.3.14-debian AS build
 
 WORKDIR /app
-COPY --chown=bun:bun package.json bun.lock tsconfig.json tsconfig.base.json astro.config.ts ./
-COPY --chown=bun:bun apps/backend ./apps/backend
-COPY --chown=bun:bun apps/web ./apps/web
-COPY --chown=bun:bun scripts ./scripts
-COPY --chown=bun:bun tools/knip ./tools/knip
-COPY --chown=bun:bun biome.json knip.json ./
+# Сначала копируем только конфигурации и файлы package.json для максимального кэширования зависимостей
+COPY --chown=bun:bun package.json bun.lock tsconfig.json tsconfig.base.json astro.config.ts biome.json knip.json ./
+COPY --chown=bun:bun apps/backend/package.json ./apps/backend/package.json
+COPY --chown=bun:bun tools/knip/package.json ./tools/knip/package.json
 
 RUN chown bun:bun /app
 USER bun
 RUN --mount=type=cache,target=/home/bun/.bun,uid=1000,gid=1000 bun install --frozen-lockfile --ignore-scripts
+
+# Теперь копируем исходный код (после установки зависимостей!)
+COPY --chown=bun:bun apps/backend ./apps/backend
+COPY --chown=bun:bun apps/web ./apps/web
+COPY --chown=bun:bun scripts ./scripts
+COPY --chown=bun:bun tools/knip ./tools/knip
+
 RUN bun run --filter @alexgetman/backend typecheck
 RUN DATA_DIR=/data bun run build
 RUN bun build apps/web/server.ts --outdir runtime --target bun --splitting --minify --sourcemap=external
 
-# Копируем и сжимаем ffmpeg и ffprobe с помощью UPX (lzma метод)
+# Копируем и быстро сжимаем ffmpeg и ffprobe с помощью UPX (уровень 1 - занимает секунды!)
 USER root
 COPY --from=mwader/static-ffmpeg:6.1.1 /ffmpeg /tmp/ffmpeg
 COPY --from=mwader/static-ffmpeg:6.1.1 /ffprobe /tmp/ffprobe
 RUN apt-get update && apt-get install -y --no-install-recommends upx-ucl \
-  && upx --best --lzma /tmp/ffmpeg /tmp/ffprobe \
+  && upx -1 /tmp/ffmpeg /tmp/ffprobe \
   && rm -rf /var/lib/apt/lists/*
 
 FROM oven/bun:1.3.14-debian AS prod-deps
 
 WORKDIR /app
-COPY --chown=bun:bun package.json bun.lock tsconfig.json tsconfig.base.json astro.config.ts ./
-COPY --chown=bun:bun apps/backend ./apps/backend
-COPY --chown=bun:bun apps/web ./apps/web
-COPY --chown=bun:bun scripts ./scripts
-COPY --chown=bun:bun tools/knip ./tools/knip
-COPY --chown=bun:bun biome.json knip.json ./
+# Копируем файлы package.json для кэширования продакшн зависимостей
+COPY --chown=bun:bun package.json bun.lock tsconfig.json tsconfig.base.json astro.config.ts biome.json knip.json ./
+COPY --chown=bun:bun apps/backend/package.json ./apps/backend/package.json
+COPY --chown=bun:bun tools/knip/package.json ./tools/knip/package.json
 
 RUN chown bun:bun /app
 USER bun
@@ -47,7 +50,7 @@ ENV DRIZZLE_MIGRATIONS_DIR=/app/apps/backend/drizzle
 
 RUN apk add --no-cache ca-certificates tini
 
-# Копируем ультра-сжатые с помощью UPX бинарники
+# Копируем сжатые с помощью быстрого UPX бинарники
 COPY --from=build /tmp/ffmpeg /usr/local/bin/
 COPY --from=build /tmp/ffprobe /usr/local/bin/
 
@@ -60,4 +63,3 @@ COPY --from=build --chown=bun:bun /app/apps/backend/drizzle ./apps/backend/drizz
 USER bun
 ENTRYPOINT ["tini", "--"]
 CMD ["bun", "--smol", "/app/runtime/server.js"]
-
