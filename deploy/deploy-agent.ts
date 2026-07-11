@@ -79,7 +79,7 @@ async function currentImage(): Promise<string | undefined> {
     .catch(() => "");
   const declared = env.match(/^BACKEND_IMAGE=(.+)$/m)?.[1]?.trim();
   if (immutableImage(declared)) return declared;
-  const repoDigest = await command(["inspect", "--format", "{{index .RepoDigests 0}}", config.container], true);
+  const repoDigest = await command(["image", "inspect", "--format", "{{index .RepoDigests 0}}", config.container], true);
   return immutableImage(repoDigest) ? repoDigest : undefined;
 }
 
