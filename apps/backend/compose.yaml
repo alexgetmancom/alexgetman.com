@@ -56,7 +56,7 @@ services:
       - ./data:/data
       - ./bot-api-data:/var/lib/telegram-bot-api:ro
       - /home/deploy/ialexey-web/media/threads:/media/threads
-      - /home/deploy/ialexey-web/media:/data/site/media:ro
+      - /home/deploy/ialexey-web/media:/data/site/media
     ports:
       - "127.0.0.1:8788:8788"
     extra_hosts:
