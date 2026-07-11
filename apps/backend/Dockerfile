@@ -10,11 +10,11 @@ COPY --chown=bun:bun biome.json knip.json ./
 
 RUN chown bun:bun /app
 USER bun
-RUN bun install --frozen-lockfile
+RUN bun install --frozen-lockfile --ignore-scripts
 RUN bun run --filter @alexgetman/backend typecheck
 RUN DATA_DIR=/data bun run build
 RUN bun build apps/web/server.ts --outdir runtime --target bun --splitting --minify --sourcemap=external
-RUN bun install --production --frozen-lockfile
+RUN bun install --production --frozen-lockfile --ignore-scripts
 
 FROM oven/bun:1.3.14-debian AS app
 
