@@ -23,4 +23,12 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ ENABLE_TELEGRAM_STORIES: "true" })).toThrow("TELEGRAM_STORIES_CHANNEL is required");
     expect(() => loadConfig({ ENABLE_INSTAGRAM_STORIES: "true" })).toThrow("INSTAGRAM_ACCESS_TOKEN and INSTAGRAM_USER_ID are required");
   });
+
+  it("requires a complete private deployment-agent configuration", () => {
+    expect(() => loadConfig({ DEPLOY_AGENT_URL: "http://host.docker.internal:9899" })).toThrow("DEPLOY_AGENT_URL and DEPLOY_AGENT_TOKEN");
+    expect(() => loadConfig({ DEPLOY_AGENT_TOKEN: "a".repeat(16) })).toThrow("DEPLOY_AGENT_URL and DEPLOY_AGENT_TOKEN");
+    expect(loadConfig({ DEPLOY_AGENT_URL: "http://host.docker.internal:9899", DEPLOY_AGENT_TOKEN: "a".repeat(16) }).DEPLOY_AGENT_URL).toBe(
+      "http://host.docker.internal:9899",
+    );
+  });
 });

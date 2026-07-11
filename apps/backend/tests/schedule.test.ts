@@ -56,7 +56,7 @@ describe("publishing schedule", () => {
           updatedAt: createdAt,
         })
         .returning({ id: drafts.id })
-        .get()!.id;
+        .get()?.id;
       const second = backendDb.db
         .insert(drafts)
         .values({
@@ -69,7 +69,7 @@ describe("publishing schedule", () => {
           updatedAt: createdAt,
         })
         .returning({ id: drafts.id })
-        .get()!.id;
+        .get()?.id;
       backendDb.db.update(drafts).set({ postId: 101 }).where(eq(drafts.id, first)).run();
       backendDb.db.update(drafts).set({ postId: 102 }).where(eq(drafts.id, second)).run();
       backendDb.db
@@ -78,7 +78,7 @@ describe("publishing schedule", () => {
           postId: 101,
           messageId: 101,
           target: "telegram",
-          payloadJson: "{}",
+          payloadJson: {},
           status: "queued",
           nextAttemptAt: createdAt,
           createdAt,
@@ -91,7 +91,7 @@ describe("publishing schedule", () => {
           postId: 102,
           messageId: 102,
           target: "telegram",
-          payloadJson: "{}",
+          payloadJson: {},
           status: "queued",
           nextAttemptAt: createdAt,
           createdAt,
@@ -112,10 +112,9 @@ describe("publishing schedule", () => {
         .from(publishJobs)
         .orderBy(asc(publishJobs.postId))
         .all();
-      expect(jobs.map((job) => job.nextAttemptAt)).toEqual(scheduledDrafts.map((draft) => draft.scheduledAt!));
-      expect(jobs.map((job) => (JSON.parse(job.payloadJson!) as { publish_at_ru: string }).publish_at_ru)).toEqual(
-        scheduledDrafts.map((draft) => draft.scheduledAt!),
-      );
+      const scheduledAt = scheduledDrafts.map((draft) => draft.scheduledAt ?? "");
+      expect(jobs.map((job) => job.nextAttemptAt)).toEqual(scheduledAt);
+      expect(jobs.map((job) => (job.payloadJson as { publish_at_ru: string }).publish_at_ru)).toEqual(scheduledAt);
     } finally {
       backendDb.close();
     }

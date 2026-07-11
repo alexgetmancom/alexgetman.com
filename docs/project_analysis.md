@@ -2,6 +2,15 @@
 
 > 23 файла проанализированы от самых крупных к самым маленьким. Drizzle snapshots (автогенерация) пропущены.
 
+## Статус исправлений (2026-07-11)
+
+| Рекомендация | Статус | Результат |
+|---|---|---|
+| Direct SQLite feed | Готово | Astro SSR и pipeline summary читают SQLite через Drizzle; `feed.json` больше не является runtime source. |
+| Дублирование JSON parsers | Частично готово | Добавлен `src/json.ts`; bot, command center, actions и pipeline используют единый парсер. Остальные JSON-колонки переводятся отдельно. |
+| N+1 в pipeline | Готово | Targets и metrics недельного view загружаются двумя batch Drizzle-запросами. |
+| Декомпозиция bot.ts | Готово | Transport, callbacks, albums, drafts и preview разделены на отдельные модули; `bot.ts` оставляет только grammY binding. |
+
 ---
 
 ## 📊 Карта проекта по размеру и оценкам

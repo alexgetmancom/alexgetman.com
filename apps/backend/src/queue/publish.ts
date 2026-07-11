@@ -4,7 +4,7 @@ import { and, eq, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
 import * as z from "zod";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
-import { drafts, postEvents, posts, postTargets, publications, publishJobs, siteJobs } from "../db/schema.js";
+import { drafts, type JsonObject, postEvents, posts, postTargets, publications, publishJobs, siteJobs } from "../db/schema.js";
 import { insertPublishJobSchema } from "../db/validation.js";
 import { classifyPublishError, nextRetryAt, normalizePublishResult, type PublishResult } from "./errors.js";
 
@@ -14,7 +14,7 @@ export type ClaimedPublishJob = {
   postKey: string;
   messageId: number;
   target: string;
-  payload: Record<string, unknown>;
+  payload: JsonObject;
   attemptCount: number;
 };
 
@@ -115,7 +115,7 @@ export function completePublishJob(backendDb: BackendDb, config: BackendConfig, 
           nextAttemptAt: retryAt,
           lockedBy: null,
           lockedAt: null,
-          payloadJson: JSON.stringify(payload),
+          payloadJson: payload,
           lastError: error,
           updatedAt: now,
         })
@@ -281,7 +281,7 @@ export function enqueuePublishJob(
   input: {
     messageId: number;
     target: string;
-    payload: Record<string, unknown>;
+    payload: JsonObject;
     postId?: number | null;
     postKey?: string | null;
     publishAt?: string | null;
@@ -289,18 +289,22 @@ export function enqueuePublishJob(
 ): number {
   const now = new Date().toISOString();
   const postKey = input.postKey ?? (input.postId != null ? `post:${input.postId}` : `telegram:alexgetmancom:${input.messageId}`);
-  const record = insertPublishJobSchema.parse({
+  const inputRecord = {
     postId: input.postId ?? null,
     postKey,
     messageId: input.messageId,
     target: input.target,
     status: "queued",
     publishAt: input.publishAt ?? null,
-    payloadJson: JSON.stringify(input.payload),
+    payloadJson: input.payload,
     createdAt: now,
     updatedAt: now,
-  });
-  return backendDb.db.insert(publishJobs).values(record).returning({ jobId: publishJobs.jobId }).get()!.jobId;
+  } satisfies typeof publishJobs.$inferInsert;
+  insertPublishJobSchema.parse(inputRecord);
+  const record = inputRecord;
+  const inserted = backendDb.db.insert(publishJobs).values(record).returning({ jobId: publishJobs.jobId }).get();
+  if (!inserted) throw new Error("publish job insert did not return an id");
+  return inserted.jobId;
 }
 
 function deleteSupersededJobs(tx: BackendDb["db"], job: typeof publishJobs.$inferSelect, jobId: number, postKey: string): void {
@@ -316,14 +320,9 @@ function deleteSupersededJobs(tx: BackendDb["db"], job: typeof publishJobs.$infe
     .run();
 }
 
-function parsePayload(value: string | null): Record<string, unknown> {
-  if (!value) return {};
-  try {
-    const parsed = z.record(z.string(), z.unknown()).safeParse(JSON.parse(value));
-    return parsed.success ? parsed.data : {};
-  } catch {
-    return {};
-  }
+function parsePayload(value: JsonObject | null): JsonObject {
+  const parsed = z.record(z.string(), z.json()).safeParse(value);
+  return parsed.success ? parsed.data : {};
 }
 
 function jobPostKey(job: Pick<typeof publishJobs.$inferSelect, "postKey" | "postId" | "messageId">): string {

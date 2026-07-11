@@ -28,5 +28,28 @@
         "noExplicitAny": "off"
       }
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["apps/web/src/**/*.astro"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUnusedImports": "off",
+            "noUnusedVariables": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["apps/web/src/styles/**/*.css"],
+      "linter": {
+        "rules": {
+          "complexity": {
+            "noImportantStyles": "off"
+          }
+        }
+      }
+    }
+  ]
 }

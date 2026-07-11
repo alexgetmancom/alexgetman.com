@@ -72,7 +72,7 @@ describe("LinkedIn publisher", () => {
 
 describe("Telegram publisher", () => {
   it("sends the Russian variant for a Russian payload even when English legacy fields are present", async () => {
-    const fetchMock = mock(async (_input: string | URL | Request, init?: RequestInit) => {
+    const fetchMock = mock(async (_input: string | URL | Request, _init?: RequestInit) => {
       return new Response(JSON.stringify({ ok: true, result: { message_id: 42 } }), { status: 200 });
     });
     const fetchImpl = fetchMock as unknown as typeof fetch;

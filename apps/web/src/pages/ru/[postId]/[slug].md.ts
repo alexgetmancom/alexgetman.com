@@ -1,4 +1,5 @@
-import { loadFeedItems, siteUrlFromContext } from "../../../utils/helpers";
+import { loadFeedItems } from "../../../utils/feed";
+import { siteUrlFromContext } from "../../../utils/helpers";
 
 export const prerender = false;
 

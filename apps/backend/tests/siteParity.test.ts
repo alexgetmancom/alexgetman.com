@@ -2,7 +2,7 @@ import { describe, expect, it, mock } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createDraftFromMessage, publishDraftToQueue } from "../src/bot.js";
+import { createDraftFromMessage, publishDraftToQueue } from "../src/bot/drafts.js";
 import { loadConfig } from "../src/config.js";
 import { openBackendDb } from "../src/db/client.js";
 import { publishContentIndex } from "../src/site/contentIndex.js";

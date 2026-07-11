@@ -45,6 +45,8 @@ jobs:
     needs: quality
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    outputs:
+      image_digest: ${{ steps.image.outputs.digest }}
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
@@ -66,6 +68,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and publish backend image
+        id: image
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -78,3 +81,33 @@ jobs:
           tags: ghcr.io/${{ github.repository_owner }}/alexgetman-backend:${{ github.sha }},ghcr.io/${{ github.repository_owner }}/alexgetman-backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy immutable image
+    needs: docker
+    if: github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    steps:
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Activate image and verify readiness
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_AGENT_TOKEN: ${{ secrets.DEPLOY_AGENT_TOKEN }}
+          IMAGE: ghcr.io/${{ github.repository_owner }}/alexgetman-backend@${{ needs.docker.outputs.image_digest }}
+          RELEASE: ${{ github.sha }}
+        run: |
+          test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER" && test -n "$DEPLOY_AGENT_TOKEN"
+          payload=$(printf '{"image":"%s","release":"%s"}' "$IMAGE" "$RELEASE")
+          ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "curl --fail-with-body --silent --show-error --retry 2 --retry-all-errors -H 'Authorization: Bearer $DEPLOY_AGENT_TOKEN' -H 'Content-Type: application/json' --data '$payload' http://127.0.0.1:9899/v1/deploy"

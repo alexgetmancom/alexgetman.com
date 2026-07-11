@@ -23,7 +23,8 @@ export async function prepareMediaItems(
   await fs.promises.mkdir(config.REMOTE_MEDIA_PATH, { recursive: true });
 
   for (let index = 0; index < sourceItems.length; index += 1) {
-    const item = sourceItems[index]!;
+    const item = sourceItems[index];
+    if (!item) continue;
     const cacheKey = await mediaCacheKey(item, index);
     const localPath = await ensureLocalMedia(config, item, cacheKey, fetchImpl);
     let uploadPath = localPath;

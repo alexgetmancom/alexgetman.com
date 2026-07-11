@@ -33,7 +33,8 @@ export async function publishTelegramStory(
 }
 
 async function publishChannelStory(media: PublishMediaItem, caption: string, link: string, config: BackendConfig): Promise<PublishResult> {
-  let uploadPath = media.storyLocalPath || media.localPath!;
+  let uploadPath = media.storyLocalPath || media.localPath;
+  if (!uploadPath) return { ok: false, skipped: true, reason: "missing_media_path" };
   let cleanupPath: string | null = null;
   const clientInstance = createChannelStoryClient(config);
   await clientInstance.connect();

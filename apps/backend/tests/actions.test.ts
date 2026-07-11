@@ -23,10 +23,7 @@ describe("command center actions", () => {
         .insert(publications)
         .values({ postId: 52, status: "published", telegramMessageId: 492, createdAt: now, updatedAt: now })
         .run();
-      backendDb.db
-        .insert(publicationSources)
-        .values({ postId: 52, itemJson: JSON.stringify(source), createdAt: now, updatedAt: now })
-        .run();
+      backendDb.db.insert(publicationSources).values({ postId: 52, itemJson: source, createdAt: now, updatedAt: now }).run();
 
       for (const target of ["threads_ru", "threads_en"]) {
         const id = enqueuePublishJob(backendDb, { postId: 52, postKey: "post:52", messageId: 52, target, payload: source });
@@ -40,7 +37,7 @@ describe("command center actions", () => {
         .where(eq(publishJobs.postId, 52))
         .orderBy(asc(publishJobs.target))
         .all();
-      const payloads = Object.fromEntries(jobs.map((job) => [job.target, JSON.parse(job.payloadJson!) as Record<string, unknown>]));
+      const payloads = Object.fromEntries(jobs.map((job) => [job.target, job.payloadJson ?? {}]));
       expect(payloads.threads_ru).toMatchObject({ locale: "ru", text: "Русский текст", text_en: "", media: [{ file_id: "ru-photo" }] });
       expect(payloads.threads_en).toMatchObject({
         locale: "en",
@@ -48,7 +45,7 @@ describe("command center actions", () => {
         text_en: "English text",
         media: [{ file_id: "en-photo" }],
       });
-      expect(backendDb.db.select({ count: count() }).from(publishJobs).where(eq(publishJobs.postId, 52)).get()!.count).toBe(2);
+      expect(backendDb.db.select({ count: count() }).from(publishJobs).where(eq(publishJobs.postId, 52)).get()?.count).toBe(2);
     } finally {
       backendDb.close();
     }

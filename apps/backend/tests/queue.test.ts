@@ -32,7 +32,8 @@ describe("publish queue", () => {
         .where(eq(publishJobs.jobId, id))
         .get();
       expect(row).toEqual({ status: "publishing", lockedBy: "test-worker" });
-      const target = backendDb.db.select({ status: postTargets.status }).from(postTargets).where(eq(postTargets.target, "devto")).get()!;
+      const target = backendDb.db.select({ status: postTargets.status }).from(postTargets).where(eq(postTargets.target, "devto")).get();
+      if (!target) throw new Error("expected post target");
       expect(target.status).toBe("publishing");
     } finally {
       backendDb.close();
@@ -136,7 +137,8 @@ describe("publish queue", () => {
         })
         .from(publishJobs)
         .where(eq(publishJobs.jobId, id))
-        .get()!;
+        .get();
+      if (!job) throw new Error("expected retry job");
       expect(job.status).toBe("queued");
       expect(job.attemptCount).toBe(1);
       expect(job.nextAttemptAt).toBeTruthy();
@@ -226,7 +228,8 @@ describe("publish queue", () => {
         .select({ status: publishJobs.status, lockedBy: publishJobs.lockedBy, lastError: publishJobs.lastError })
         .from(publishJobs)
         .where(eq(publishJobs.jobId, id))
-        .get()!;
+        .get();
+      if (!job) throw new Error("expected failed job");
       expect(job.status).toBe("failed");
       expect(job.lockedBy).toBeNull();
       expect(job.lastError).toContain("worker finalization failed");
@@ -269,10 +272,11 @@ describe("publish queue", () => {
         })
         .from(publishJobs)
         .where(eq(publishJobs.jobId, id))
-        .get()!;
+        .get();
+      if (!job) throw new Error("expected partial job");
       expect(job.status).toBe("queued");
       expect(job.attemptCount).toBe(1);
-      expect(JSON.parse(job.payloadJson!)).toMatchObject({ _threadsPublishedIds: ["root-id"] });
+      expect(job.payloadJson).toMatchObject({ _threadsPublishedIds: ["root-id"] });
       expect(job.lastError).toContain("reply container missing");
     } finally {
       backendDb.close();

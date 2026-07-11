@@ -1,19 +1,17 @@
-import { Database } from "bun:sqlite";
 import { describe, expect, it, mock } from "bun:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { loadConfig } from "../src/config.js";
-import { openBackendDb } from "../src/db/client.js";
 import { generateStoryMedia } from "../src/media/story.js";
 import { publishInstagramStory } from "../src/social/instagram.js";
 import { createChannelStoryClient } from "../src/social/telegramSession.js";
-import { publishTelegramStory } from "../src/social/telegramStories.js";
 
 mock.module("../src/runtime/ffmpeg.js", () => {
   return {
     runFfmpeg: async (args: string[]) => {
-      const outputPath = args[args.length - 1]!;
+      const outputPath = args.at(-1);
+      if (!outputPath) throw new Error("ffmpeg output path is missing");
       fs.writeFileSync(outputPath, "fake story image content");
     },
   };

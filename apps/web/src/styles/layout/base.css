@@ -1,6 +1,7 @@
 :root,
 html[data-theme="dark"] {
   --bg-color: #000000; /* Pure black media background */
+  --bg-deep: #050505;
   --card-bg: rgba(5, 6, 9, 0.74); /* Glass-like black panel */
   --text-main: #dde3ec; /* High comfort primary grey text */
   --text-secondary: #a3adbc; /* Softer secondary grey text */
@@ -32,6 +33,7 @@ html[data-theme="light"] {
   --border-soft: rgba(17, 24, 39, 0.08);
   --border-dashed: rgba(17, 24, 39, 0.18);
   --meta-dot: rgba(17, 24, 39, 0.22);
+  --bg-deep: #050505;
 }
 
 *,
@@ -89,6 +91,38 @@ a {
 
 a:hover {
   color: var(--accent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.skip-link {
+  position: fixed;
+  left: 1rem;
+  top: 1rem;
+  z-index: 2000;
+  transform: translateY(-200%);
+  padding: 0.55rem 0.75rem;
+  color: var(--text-header);
+  background: var(--bg-color);
+  border: 1px solid var(--accent);
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
 
 .container {

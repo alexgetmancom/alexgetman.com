@@ -50,7 +50,7 @@ describe("observability", () => {
           target: "threads",
           status: "publishing",
           lockedAt: "2000-01-01T00:00:00.000Z",
-          payloadJson: "{}",
+          payloadJson: {},
           createdAt: now,
           updatedAt: now,
         })

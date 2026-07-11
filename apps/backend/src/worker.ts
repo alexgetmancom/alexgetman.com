@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import type { Bot } from "grammy";
 import pLimit from "p-limit";
-import { finalizePendingAlbums } from "./bot.js";
+import { finalizePendingAlbums } from "./bot/albums.js";
 import type { BackendConfig } from "./config.js";
 import type { BackendDb } from "./db/client.js";
 import { postTargets, publishJobs } from "./db/schema.js";
@@ -41,7 +41,8 @@ export async function runPublishCycle(
   );
   for (const [index, result] of results.entries()) {
     if (result.status !== "rejected") continue;
-    const job = jobs[index]!;
+    const job = jobs[index];
+    if (!job) continue;
     const error = `worker finalization failed: ${String(result.reason instanceof Error ? result.reason.message : result.reason)}`;
     log("error", "publish job finalization failed", { jobId: job.jobId, target: job.target, error });
     const now = new Date().toISOString();

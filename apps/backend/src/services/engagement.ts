@@ -69,17 +69,19 @@ export function recordPageview(backendDb: BackendDb, config: BackendConfig, rawP
   atomicWrite(config.SITE_METRICS_JSON, data);
 
   const candidates = path.endsWith("/") ? [path, path.slice(0, -1)] : [path, `${path}/`];
+  const [firstCandidate, secondCandidate] = candidates;
+  if (!firstCandidate || !secondCandidate) return path;
   const ru = backendDb.db
     .select({ postKey: posts.postKey })
     .from(posts)
-    .where(or(eq(posts.siteRuPath, candidates[0]!), eq(posts.siteRuPath, candidates[1]!)))
+    .where(or(eq(posts.siteRuPath, firstCandidate), eq(posts.siteRuPath, secondCandidate)))
     .get();
   const en = ru
     ? null
     : backendDb.db
         .select({ postKey: posts.postKey })
         .from(posts)
-        .where(or(eq(posts.siteEnPath, candidates[0]!), eq(posts.siteEnPath, candidates[1]!)))
+        .where(or(eq(posts.siteEnPath, firstCandidate), eq(posts.siteEnPath, secondCandidate)))
         .get();
   const row = ru ? { postKey: ru.postKey, target: "site_ru" } : en ? { postKey: en.postKey, target: "site_en" } : null;
   if (row) {

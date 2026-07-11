@@ -495,9 +495,7 @@ function renderPipelineSection(weekOffset: number, data: any): string {
       }
     }
 
-    renderedRows.push(
-      `<tr class="day-separator">` + `<td colspan="${totalCols}"><span class="day-label">${dayTitle}</span></td>` + `</tr>`,
-    );
+    renderedRows.push(`<tr class="day-separator"><td colspan="${totalCols}"><span class="day-label">${dayTitle}</span></td></tr>`);
 
     for (const post of dayPosts) {
       const timeStr = formatTimeMsk(post.date);

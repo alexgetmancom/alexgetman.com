@@ -3,7 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createDraftFromMessage, publishDraftToQueue } from "../src/bot.js";
+import { createDraftFromMessage, publishDraftToQueue } from "../src/bot/drafts.js";
 import { baselineDrizzleMigrations, migrationStatus, openBackendDb } from "../src/db/client.js";
 
 describe("openBackendDb", () => {

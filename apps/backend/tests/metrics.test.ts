@@ -31,7 +31,7 @@ describe("metrics cycle", () => {
         backendDb.db.select({ checkCount: metricSchedule.checkCount, lastError: metricSchedule.lastError }).from(metricSchedule).get(),
       ).toEqual({ checkCount: 1, lastError: null });
       expect(
-        backendDb.db.select({ stateJson: workerState.stateJson }).from(workerState).where(eq(workerState.name, "metrics")).get()!.stateJson,
+        backendDb.db.select({ stateJson: workerState.stateJson }).from(workerState).where(eq(workerState.name, "metrics")).get()?.stateJson,
       ).toMatchObject({
         checked: 1,
         ok: true,
@@ -68,7 +68,8 @@ describe("Telegram public metrics", () => {
   it("parses compact views and sums reactions", async () => {
     const html = `<section><div data-post="alexgetmancom/42"><span class="tgme_widget_message_views">1.2K</span><span class="tgme_reaction"><i></i>3</span><span class="tgme_reaction"><i></i>2</span></div></section>`;
     const fetchImpl = mock(async () => new Response(html, { status: 200 })) as unknown as typeof fetch;
-    const collector = createMetricCollectors(loadConfig({}), fetchImpl).telegram!;
+    const collector = createMetricCollectors(loadConfig({}), fetchImpl).telegram;
+    if (!collector) throw new Error("Telegram collector is missing");
     const result = await collector(task("telegram"));
     expect(result).toMatchObject({ metrics: { views: 1200, likes: 5 }, source: "t_me_public" });
   });
@@ -83,7 +84,8 @@ describe("Mastodon metrics", () => {
           headers: { "content-type": "application/json" },
         }),
     ) as unknown as typeof fetch;
-    const collector = createMetricCollectors(loadConfig({ MASTODON_INSTANCE: "mastodon.social" }), fetchImpl).mastodon!;
+    const collector = createMetricCollectors(loadConfig({ MASTODON_INSTANCE: "mastodon.social" }), fetchImpl).mastodon;
+    if (!collector) throw new Error("Mastodon collector is missing");
     const result = await collector({ ...task("mastodon"), externalId: "123", externalIds: ["123"] });
     expect(fetchImpl).toHaveBeenCalledWith("https://mastodon.social/api/v1/statuses/123", expect.anything());
     expect(result.metrics).toEqual({ likes: 2, replies: 1, reposts: 3 });

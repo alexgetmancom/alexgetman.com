@@ -1,4 +1,5 @@
-import { compactText, loadFeedItems, truncateText } from "../utils/helpers";
+import { loadFeedItems } from "../utils/feed";
+import { compactText, truncateText } from "../utils/helpers";
 
 function keyEntities(value: string): string[] {
   const terms =

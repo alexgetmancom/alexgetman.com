@@ -22,7 +22,8 @@ export async function publishInstagramStory(
 
   const media = payloadMedia(payload).find((item) => item.storyVpsUrl || item.vpsUrl);
   if (!media) return { ok: false, skipped: true, reason: "missing_public_media_url" };
-  const publicUrl = media.storyVpsUrl || media.vpsUrl!;
+  const publicUrl = media.storyVpsUrl || media.vpsUrl;
+  if (!publicUrl) return { ok: false, skipped: true, reason: "missing_public_media_url" };
   const creation = await graphPost(
     config,
     `${config.INSTAGRAM_USER_ID}/media`,
@@ -84,7 +85,7 @@ async function graphPost(
   return graphRequest(config, path, fetchImpl, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ ...payload, access_token: config.INSTAGRAM_ACCESS_TOKEN! }),
+    body: new URLSearchParams({ ...payload, access_token: instagramToken(config) }),
   });
 }
 
@@ -94,7 +95,7 @@ async function graphGet(
   query: Record<string, string>,
   fetchImpl: typeof fetch,
 ): Promise<GraphResponse> {
-  const params = new URLSearchParams({ ...query, access_token: config.INSTAGRAM_ACCESS_TOKEN! });
+  const params = new URLSearchParams({ ...query, access_token: instagramToken(config) });
   return graphRequest(config, `${path}?${params}`, fetchImpl);
 }
 
@@ -109,4 +110,9 @@ async function graphRequest(config: BackendConfig, path: string, fetchImpl: type
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function instagramToken(config: BackendConfig): string {
+  if (!config.INSTAGRAM_ACCESS_TOKEN) throw new Error("missing Instagram access token");
+  return config.INSTAGRAM_ACCESS_TOKEN;
 }

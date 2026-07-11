@@ -1,12 +1,5 @@
-import {
-  compactText,
-  excerptAfterTitle,
-  getFirstSentence,
-  getSmartCategory,
-  loadFeedItems,
-  postImagePath,
-  truncateText,
-} from "../utils/helpers";
+import { loadFeedItems } from "../utils/feed";
+import { compactText, excerptAfterTitle, getFirstSentence, getSmartCategory, postImagePath, truncateText } from "../utils/helpers";
 
 function telegramToSearchItems(item: any) {
   const postId = item.post_id;

@@ -199,11 +199,12 @@ const isCurrentPath = (href: string) => {
     </script>
 </head>
 <body class={immersiveHome ? "immersive-home" : undefined}>
+    <a class="skip-link" href="#main-content">{isRu ? "К содержанию" : "Skip to content"}</a>
     <!-- Navigation Overlay -->
-    <div class="nav-overlay" id="nav-overlay"></div>
+    <div class="nav-overlay" id="nav-overlay" aria-hidden="true"></div>
     
     <!-- Navigation Drawer -->
-    <aside class="nav-drawer" id="nav-drawer">
+    <aside class="nav-drawer" id="nav-drawer" aria-hidden="true" aria-label={navLabels.drawerTitle}>
         <div class="nav-drawer__header">
             <div class="drawer-header-left">
                 <img src="/brand-avatar-small-20260629.webp" alt={brandDisplayName} class="logo-avatar" width="32" height="32" />
@@ -245,7 +246,7 @@ const isCurrentPath = (href: string) => {
     <header class="media-header">
         <div class="container header-container">
             <div class="header-left">
-                <button class="burger-toggle btn-social" id="burger-toggle-btn" aria-label={navLabels.openMenu} data-tooltip={navLabels.menuTooltip}>
+                <button class="burger-toggle btn-social" id="burger-toggle-btn" aria-label={navLabels.openMenu} aria-expanded="false" aria-controls="nav-drawer" data-tooltip={navLabels.menuTooltip}>
                     <!-- Hamburger Icon -->
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="4" x2="20" y1="12" y2="12" />
@@ -283,9 +284,10 @@ const isCurrentPath = (href: string) => {
         </div>
     </header>
 
-    <div class="container" id="top">
+    <main class="container" id="main-content" tabindex="-1">
         <slot />
-        
+    </main>
+    <div class="container" id="top">
         <footer class="site-footer">
             <div class="footer-social-grid">
                 <a href="https://t.me/alexgetmancom" target="_blank" rel="noopener noreferrer" class="footer-social-link" title="Telegram">

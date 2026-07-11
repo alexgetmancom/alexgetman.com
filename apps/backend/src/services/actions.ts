@@ -12,6 +12,7 @@ import {
   siteJobs,
   siteSourceItems,
 } from "../db/schema.js";
+import { jsonObject } from "../json.js";
 import { localizeTargetPayload } from "../publicationPayload.js";
 
 export type CommandAction = {
@@ -40,7 +41,7 @@ export function runCommandAction(backendDb: BackendDb, input: CommandAction): Re
 }
 
 function requeue(backendDb: BackendDb, postId: number, target?: string): Record<string, unknown> {
-  const source = parseObject(
+  const source = jsonObject(
     backendDb.db
       .select({ itemJson: publicationSources.itemJson })
       .from(publicationSources)
@@ -66,7 +67,7 @@ function requeue(backendDb: BackendDb, postId: number, target?: string): Record<
         .where(and(eq(publishJobs.postId, postId), eq(publishJobs.target, targetId), eq(publishJobs.status, "queued")))
         .get();
       if (!existing) {
-        const payload = localizeTargetPayload(Object.keys(source).length > 0 ? source : parseObject(row.payloadJson), targetId);
+        const payload = localizeTargetPayload(Object.keys(source).length > 0 ? source : jsonObject(row.payloadJson), targetId);
         tx.update(publishJobs)
           .set({
             status: "queued",
@@ -75,7 +76,7 @@ function requeue(backendDb: BackendDb, postId: number, target?: string): Record<
             nextAttemptAt: null,
             lockedBy: null,
             lockedAt: null,
-            payloadJson: JSON.stringify(payload),
+            payloadJson: payload,
             lastError: null,
             updatedAt: now,
           })
@@ -136,9 +137,9 @@ function replaceEnglishMedia(backendDb: BackendDb, postId: number, media: Record
       .from(postLocales)
       .where(and(eq(postLocales.postId, postId), eq(postLocales.locale, "ru")))
       .get();
-    const effective = media == null ? parseArray(ru?.mediaJson) : media;
+    const effective = media == null ? (ru?.mediaJson ?? []) : media;
     tx.update(postLocales)
-      .set({ mediaJson: JSON.stringify(effective), updatedAt: now })
+      .set({ mediaJson: effective, updatedAt: now })
       .where(and(eq(postLocales.postId, postId), eq(postLocales.locale, "en")))
       .run();
     updateSource(tx, postId, { media_en: media }, now);
@@ -153,11 +154,8 @@ function updateSource(db: BackendDb["db"], postId: number, patch: Record<string,
     .from(publicationSources)
     .where(eq(publicationSources.postId, postId))
     .get();
-  const source = { ...parseObject(row?.itemJson), ...patch };
-  db.update(publicationSources)
-    .set({ itemJson: JSON.stringify(source), updatedAt: now })
-    .where(eq(publicationSources.postId, postId))
-    .run();
+  const source = { ...jsonObject(row?.itemJson), ...patch };
+  db.update(publicationSources).set({ itemJson: source, updatedAt: now }).where(eq(publicationSources.postId, postId)).run();
   const message = db
     .select({ telegramMessageId: publications.telegramMessageId })
     .from(publications)
@@ -165,7 +163,7 @@ function updateSource(db: BackendDb["db"], postId: number, patch: Record<string,
     .get();
   if (message?.telegramMessageId)
     db.update(siteSourceItems)
-      .set({ itemJson: JSON.stringify(source), updatedAt: now })
+      .set({ itemJson: source, updatedAt: now })
       .where(eq(siteSourceItems.messageId, message.telegramMessageId))
       .run();
 }
@@ -238,24 +236,4 @@ function recordAction(backendDb: BackendDb, action: string, postId: number, targ
       completedAt: now,
     })
     .run();
-}
-
-function parseObject(value: unknown): Record<string, unknown> {
-  if (typeof value !== "string" || !value) return {};
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
-  } catch {
-    return {};
-  }
-}
-
-function parseArray(value: unknown): Record<string, unknown>[] {
-  if (typeof value !== "string" || !value) return [];
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return Array.isArray(parsed) ? (parsed as Record<string, unknown>[]) : [];
-  } catch {
-    return [];
-  }
 }

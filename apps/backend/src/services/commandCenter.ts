@@ -13,6 +13,7 @@ import {
   postTargets,
   publishJobs,
 } from "../db/schema.js";
+import { parseJsonValue } from "../json.js";
 import { pipelineStatusPayload } from "./pipeline.js";
 
 export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb) {
@@ -51,7 +52,7 @@ export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb
       severity: event.severity,
       target: event.target,
       message: event.message,
-      details: parseJson(event.detailsJson),
+      details: parseJsonValue(event.detailsJson),
       createdAt: event.createdAt,
       ackedAt: event.ackedAt,
     })),
@@ -121,13 +122,4 @@ function resolvePostKey(backendDb: BackendDb, ref: string): string | null {
 
 function numericRef(ref: string): number | null {
   return /^\d+$/.test(ref) ? Number(ref) : null;
-}
-
-function parseJson(value: unknown): unknown {
-  if (typeof value !== "string" || !value) return {};
-  try {
-    return JSON.parse(value) as unknown;
-  } catch {
-    return {};
-  }
 }

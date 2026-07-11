@@ -1,4 +1,4 @@
-import { loadFeedItems } from "../../utils/helpers";
+import { loadFeedItems } from "../../utils/feed";
 
 export async function GET() {
   const items = loadFeedItems()

@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { and, eq, lt } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, lt, lte, sql } from "drizzle-orm";
 import type { BackendDb } from "../db/client.js";
-import { maintenanceLocks } from "../db/schema.js";
+import { deploymentSnapshots, maintenanceLocks, metricSchedule, postEvents, posts, postTargets, publishJobs } from "../db/schema.js";
 
 export async function backupDatabase(backendDb: BackendDb, sourcePath: string, destinationDirectory?: string): Promise<string> {
   if (sourcePath === ":memory:") throw new Error("cannot back up an in-memory database");
@@ -15,9 +15,10 @@ export async function backupDatabase(backendDb: BackendDb, sourcePath: string, d
     .replace(/\.\d{3}Z$/, "Z");
   const destination = path.join(directory, `${path.basename(sourcePath, path.extname(sourcePath))}-${stamp}.db`);
   await backendDb.sqlite.backup(destination);
-  backendDb.sqlite
-    .prepare("INSERT INTO deployment_snapshots(action,status,backup_path,created_at) VALUES ('backup','ok',?,?)")
-    .run(destination, new Date().toISOString());
+  backendDb.db
+    .insert(deploymentSnapshots)
+    .values({ action: "backup", status: "ok", backupPath: destination, createdAt: new Date().toISOString() })
+    .run();
   return destination;
 }
 
@@ -34,63 +35,86 @@ export function buildMetricsBackfillPlan(
   options: { targets: string[]; refs?: string[]; dateFrom?: string; dateTo?: string },
 ): Record<string, unknown>[] {
   if (options.targets.length === 0) return [];
-  const where = ["p.status='active'", "t.status='published'", `t.target IN (${options.targets.map(() => "?").join(",")})`];
-  const parameters: unknown[] = [...options.targets];
-  if (options.refs?.length) {
-    where.push(`p.post_key IN (${options.refs.map(() => "?").join(",")})`);
-    parameters.push(...options.refs);
-  }
-  if (options.dateFrom) {
-    where.push("p.date_utc >= ?");
-    parameters.push(options.dateFrom);
-  }
-  if (options.dateTo) {
-    where.push("p.date_utc <= ?");
-    parameters.push(options.dateTo);
-  }
-  return backendDb.sqlite
-    .prepare(
-      `SELECT p.post_key,p.post_id,p.message_id,p.date_utc,t.target FROM posts p JOIN post_targets t ON t.post_key=p.post_key WHERE ${where.join(" AND ")} ORDER BY p.date_utc DESC,t.target`,
-    )
-    .all(...parameters) as Record<string, unknown>[];
+  const conditions = [eq(posts.status, "active"), eq(postTargets.status, "published"), inArray(postTargets.target, options.targets)];
+  if (options.refs?.length) conditions.push(inArray(posts.postKey, options.refs));
+  if (options.dateFrom) conditions.push(gte(posts.dateUtc, options.dateFrom));
+  if (options.dateTo) conditions.push(lte(posts.dateUtc, options.dateTo));
+  return backendDb.db
+    .select({
+      postKey: posts.postKey,
+      postId: posts.postId,
+      messageId: posts.messageId,
+      dateUtc: posts.dateUtc,
+      target: postTargets.target,
+    })
+    .from(posts)
+    .innerJoin(postTargets, eq(postTargets.postKey, posts.postKey))
+    .where(and(...conditions))
+    .orderBy(desc(posts.dateUtc), postTargets.target)
+    .all();
 }
 
 export function applyMetricsBackfill(backendDb: BackendDb, rows: Record<string, unknown>[], resetCounts = false): number {
   const now = new Date().toISOString();
-  backendDb.sqlite.transaction(() => {
+  backendDb.db.transaction((tx) => {
     for (const row of rows) {
-      backendDb.sqlite
-        .prepare(`INSERT INTO metric_schedule(post_key,target,next_check_at,check_count,frozen_at,last_error,updated_at)
-        VALUES (?,?,NULL,0,NULL,NULL,?) ON CONFLICT(post_key,target) DO UPDATE SET next_check_at=NULL,
-        check_count=${resetCounts ? "0" : "metric_schedule.check_count"},frozen_at=NULL,last_error=NULL,updated_at=excluded.updated_at`)
-        .run(row.post_key, row.target, now);
+      const postKey = typeof row.postKey === "string" ? row.postKey : "";
+      const target = typeof row.target === "string" ? row.target : "";
+      if (!postKey || !target) continue;
+      tx.insert(metricSchedule)
+        .values({ postKey, target, nextCheckAt: null, checkCount: 0, frozenAt: null, lastError: null, updatedAt: now })
+        .onConflictDoUpdate({
+          target: [metricSchedule.postKey, metricSchedule.target],
+          set: { nextCheckAt: null, ...(resetCounts ? { checkCount: 0 } : {}), frozenAt: null, lastError: null, updatedAt: now },
+        })
+        .run();
     }
-    backendDb.sqlite
-      .prepare("UPDATE metric_schedule SET frozen_at=?,next_check_at=NULL,updated_at=? WHERE target IN ('x','linkedin')")
-      .run(now, now);
-  })();
+    tx.update(metricSchedule)
+      .set({ frozenAt: now, nextCheckAt: null, updatedAt: now })
+      .where(inArray(metricSchedule.target, ["x", "linkedin"]))
+      .run();
+  });
   return rows.length;
 }
 
 export function auditOperations(backendDb: BackendDb): Record<string, unknown> {
   return {
-    postEventsByType: backendDb.sqlite
-      .prepare(
-        "SELECT severity,event_type,count(*) AS count,max(created_at) AS latest FROM post_events GROUP BY severity,event_type ORDER BY severity,event_type",
-      )
+    postEventsByType: backendDb.db
+      .select({
+        severity: postEvents.severity,
+        eventType: postEvents.eventType,
+        count: sql<number>`count(*)`,
+        latest: sql<string | null>`max(${postEvents.createdAt})`,
+      })
+      .from(postEvents)
+      .groupBy(postEvents.severity, postEvents.eventType)
+      .orderBy(postEvents.severity, postEvents.eventType)
       .all(),
-    recentPostEvents: backendDb.sqlite
-      .prepare("SELECT severity,event_type,target,message,created_at FROM post_events ORDER BY created_at DESC LIMIT 20")
+    recentPostEvents: backendDb.db
+      .select({
+        severity: postEvents.severity,
+        eventType: postEvents.eventType,
+        target: postEvents.target,
+        message: postEvents.message,
+        createdAt: postEvents.createdAt,
+      })
+      .from(postEvents)
+      .orderBy(desc(postEvents.createdAt))
+      .limit(20)
       .all(),
-    failedPublishJobs: backendDb.sqlite
-      .prepare(
-        "SELECT target,count(*) AS count,max(updated_at) AS latest FROM publish_jobs WHERE status='failed' GROUP BY target ORDER BY target",
-      )
+    failedPublishJobs: backendDb.db
+      .select({ target: publishJobs.target, count: sql<number>`count(*)`, latest: sql<string | null>`max(${publishJobs.updatedAt})` })
+      .from(publishJobs)
+      .where(eq(publishJobs.status, "failed"))
+      .groupBy(publishJobs.target)
+      .orderBy(publishJobs.target)
       .all(),
-    metricScheduleErrors: backendDb.sqlite
-      .prepare(
-        "SELECT target,count(*) AS count,max(updated_at) AS latest FROM metric_schedule WHERE last_error IS NOT NULL AND last_error != '' GROUP BY target ORDER BY target",
-      )
+    metricScheduleErrors: backendDb.db
+      .select({ target: metricSchedule.target, count: sql<number>`count(*)`, latest: sql<string | null>`max(${metricSchedule.updatedAt})` })
+      .from(metricSchedule)
+      .where(and(isNotNull(metricSchedule.lastError), sql`${metricSchedule.lastError} != ''`))
+      .groupBy(metricSchedule.target)
+      .orderBy(metricSchedule.target)
       .all(),
   };
 }

@@ -138,9 +138,9 @@ export function oauthAuthorization(
   nonce = crypto.randomBytes(16).toString("hex"),
   timestamp = Math.floor(Date.now() / 1000),
 ): string {
-  assertCredentials(config);
+  const credentials = xCredentials(config);
   const oauth = new OAuth({
-    consumer: { key: config.X_CONSUMER_KEY!, secret: config.X_CONSUMER_SECRET! },
+    consumer: { key: credentials.consumerKey, secret: credentials.consumerSecret },
     signature_method: "HMAC-SHA1",
     hash_function: (base, key) => crypto.createHmac("sha1", key).update(base).digest("base64"),
   });
@@ -150,8 +150,8 @@ export function oauthAuthorization(
   const authorization = oauth.authorize(
     { url: rawUrl, method: method.toUpperCase(), ...(data ? { data } : {}) },
     {
-      key: config.X_ACCESS_TOKEN!,
-      secret: config.X_ACCESS_TOKEN_SECRET!,
+      key: credentials.accessToken,
+      secret: credentials.accessTokenSecret,
     },
   );
   return oauth.toHeader(authorization).Authorization;
@@ -169,8 +169,23 @@ async function responseError(response: Response, label: string): Promise<HttpPub
 }
 
 function assertCredentials(config: BackendConfig): void {
+  void xCredentials(config);
+}
+
+function xCredentials(config: BackendConfig): {
+  consumerKey: string;
+  consumerSecret: string;
+  accessToken: string;
+  accessTokenSecret: string;
+} {
   if (!config.X_CONSUMER_KEY || !config.X_CONSUMER_SECRET || !config.X_ACCESS_TOKEN || !config.X_ACCESS_TOKEN_SECRET)
     throw new Error("missing X credentials");
+  return {
+    consumerKey: config.X_CONSUMER_KEY,
+    consumerSecret: config.X_CONSUMER_SECRET,
+    accessToken: config.X_ACCESS_TOKEN,
+    accessTokenSecret: config.X_ACCESS_TOKEN_SECRET,
+  };
 }
 
 function delay(ms: number): Promise<void> {

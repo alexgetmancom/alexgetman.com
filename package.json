@@ -18,7 +18,7 @@
     "preview": "astro preview",
     "astro": "astro",
     "typecheck": "tsc -p tsconfig.json --noEmit && bun run --filter @alexgetman/backend typecheck",
-    "test": "bun run --filter @alexgetman/backend test",
+    "test": "bun test apps/backend/tests/*.test.ts apps/web/src/**/*.test.ts",
     "lint": "biome lint .",
     "format": "biome format --write .",
     "knip": "bun tools/knip/node_modules/.bin/knip --config knip.json",
@@ -27,6 +27,7 @@
     "check:backend": "bun run --filter @alexgetman/backend check",
     "check:language": "bun scripts/enforce-typescript.ts",
     "check:all": "bun scripts/check-all.ts",
+    "check:prepush": "bun scripts/check-prepush.ts",
     "sync:production-web": "bun scripts/web-sync.ts"
   },
   "dependencies": {
@@ -34,7 +35,8 @@
     "@astrojs/rss": "^4.0.19",
     "@astrojs/sitemap": "^3.7.3",
     "@mtcute/bun": "^0.30.3",
-    "astro": "^7.0.7"
+    "astro": "^7.0.7",
+    "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.3",

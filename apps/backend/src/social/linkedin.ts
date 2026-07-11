@@ -24,13 +24,17 @@ export async function publishToLinkedIn(
   const images = media.filter((item) => item.type === "IMAGE");
   const videos = media.filter((item) => item.type === "VIDEO");
   if (images.length >= 2 && videos.length === 0) {
-    const urns = await Promise.all(images.slice(0, 20).map((item) => uploadImage(item.localPath!, config, fetchImpl)));
+    const urns = await Promise.all(
+      images.slice(0, 20).flatMap((item) => (item.localPath ? [uploadImage(item.localPath, config, fetchImpl)] : [])),
+    );
     post.content = { multiImage: { images: urns.map((id) => ({ id, altText: "Post image" })) } };
   } else if (media[0]) {
+    const firstMedia = media[0];
+    if (!firstMedia?.localPath) return { ok: false, skipped: true, reason: "missing_local_media" };
     const mediaUrn =
-      media[0].type === "VIDEO"
-        ? await uploadVideo(media[0], config, fetchImpl)
-        : await uploadImage(media[0].localPath!, config, fetchImpl);
+      firstMedia.type === "VIDEO"
+        ? await uploadVideo(firstMedia, config, fetchImpl)
+        : await uploadImage(firstMedia.localPath, config, fetchImpl);
     post.content = { media: { title: "Post Media", id: mediaUrn } };
   }
 
@@ -53,7 +57,8 @@ async function uploadImage(localPath: string, config: BackendConfig, fetchImpl: 
 }
 
 async function uploadVideo(item: PublishMediaItem, config: BackendConfig, fetchImpl: typeof fetch): Promise<string> {
-  const localPath = item.localPath!;
+  const localPath = item.localPath;
+  if (!localPath) throw new Error("LinkedIn video local path is missing");
   const initialized = await callLinkedIn(config, "rest/videos?action=initializeUpload", fetchImpl, {
     method: "POST",
     body: JSON.stringify({
@@ -130,7 +135,8 @@ async function callLinkedIn(
   const body = await response.text();
   if (!response.ok) throw new HttpPublishError(`LinkedIn API ${response.status}: ${body}`, response.status, body);
   const parsed = body ? (JSON.parse(body) as LinkedInResponse) : {};
-  return { ...parsed, ...(parsed.id ? {} : response.headers.get("x-restli-id") ? { id: response.headers.get("x-restli-id")! } : {}) };
+  const restliId = response.headers.get("x-restli-id");
+  return { ...parsed, ...(parsed.id || !restliId ? {} : { id: restliId }) };
 }
 
 function stringValue(value: unknown): string {

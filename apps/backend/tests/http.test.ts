@@ -1,9 +1,9 @@
 import { describe, expect, it, mock } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApiHandler } from "../src/api.js";
-import { createDraftFromMessage, publishDraftToQueue } from "../src/bot.js";
+import { createDraftFromMessage, publishDraftToQueue } from "../src/bot/drafts.js";
 import { loadConfig } from "../src/config.js";
 import { openBackendDb } from "../src/db/client.js";
 import { enqueuePublishJob } from "../src/queue/publish.js";
@@ -81,7 +81,7 @@ describe("Astro endpoint controller", () => {
       };
       expect(payload.ok).toBe(true);
       expect(payload.updated_at).toBeTruthy();
-      expect(payload.feed.items).toBe(0);
+      expect(payload.feed.items).toBe(1);
       expect(payload.social_worker.pipeline_db).toBe("/data/pipeline.db");
       expect(payload.posts).toHaveLength(1);
       expect(payload.posts[0]).toMatchObject({ post_id: 1, text_en: "Pipeline status", site_ru: true, site_en: true, telegram: false });

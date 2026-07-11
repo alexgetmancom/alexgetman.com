@@ -30,11 +30,23 @@ document.addEventListener("DOMContentLoaded", () => {
   const navCloseBtn = document.getElementById("nav-close-btn");
   const navOverlay = document.getElementById("nav-overlay");
   const navDrawer = document.getElementById("nav-drawer");
+  let restoreFocus: HTMLElement | null = null;
+  const drawerFocusables = () =>
+    navDrawer
+      ? Array.from(navDrawer.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'))
+      : [];
 
   function openDrawer() {
     if (navDrawer && navOverlay) {
+      restoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       navDrawer.classList.add("active");
       navOverlay.classList.add("active");
+      navDrawer.setAttribute("aria-hidden", "false");
+      navOverlay.setAttribute("aria-hidden", "false");
+      burgerButtons.forEach((button) => {
+        button.setAttribute("aria-expanded", "true");
+      });
+      drawerFocusables()[0]?.focus();
     }
   }
 
@@ -42,6 +54,13 @@ document.addEventListener("DOMContentLoaded", () => {
     if (navDrawer && navOverlay) {
       navDrawer.classList.remove("active");
       navOverlay.classList.remove("active");
+      navDrawer.setAttribute("aria-hidden", "true");
+      navOverlay.setAttribute("aria-hidden", "true");
+      burgerButtons.forEach((button) => {
+        button.setAttribute("aria-expanded", "false");
+      });
+      restoreFocus?.focus();
+      restoreFocus = null;
     }
   }
 
@@ -61,6 +80,20 @@ document.addEventListener("DOMContentLoaded", () => {
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       closeDrawer();
+    }
+    if (e.key === "Tab" && navDrawer?.classList.contains("active")) {
+      const focusables = drawerFocusables();
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables.at(-1);
+      if (!first || !last) return;
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     }
   });
 

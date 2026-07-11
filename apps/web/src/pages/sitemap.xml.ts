@@ -1,4 +1,4 @@
-import { loadFeedItems } from "../utils/helpers";
+import { loadFeedItems } from "../utils/feed";
 
 export const prerender = false;
 
@@ -10,7 +10,7 @@ export async function GET(context: any) {
     if (item.has_ru && item.post_id && item.slug_ru) urls.push(`${siteUrl}/ru/${item.post_id}/${item.slug_ru}/`);
     return urls;
   });
-  const urls = [siteUrl + "/", `${siteUrl}/ru/`, ...pages];
+  const urls = [`${siteUrl}/`, `${siteUrl}/ru/`, ...pages];
   const body = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls
     .map((url) => `  <url><loc>${url}</loc></url>`)
     .join("\n")}\n</urlset>\n`;

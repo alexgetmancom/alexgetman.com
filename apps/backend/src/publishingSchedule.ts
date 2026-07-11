@@ -1,7 +1,17 @@
-import { and, asc, eq, gte, inArray, lt, lte, or } from "drizzle-orm";
+import { and, asc, eq, gte, inArray } from "drizzle-orm";
 import { type TargetLocale, targetLocale } from "./botTargets.js";
 import type { BackendDb } from "./db/client.js";
-import { drafts, postLocales, posts, publicationPlans, publicationSources, publishJobs, siteJobs, siteSourceItems } from "./db/schema.js";
+import {
+  drafts,
+  type JsonObject,
+  postLocales,
+  posts,
+  publicationPlans,
+  publicationSources,
+  publishJobs,
+  siteJobs,
+  siteSourceItems,
+} from "./db/schema.js";
 
 const SLOTS: Record<TargetLocale, readonly string[]> = {
   ru: ["10:37", "13:37", "17:37", "20:37", "23:37"],
@@ -53,7 +63,7 @@ export function rebalanceScheduledDrafts(backendDb: BackendDb, now = new Date())
 
   const assignments = new Map(rows.map((row) => [row.id, { ru: row.scheduledAt, en: row.scheduledEnAt }]));
   for (const locale of ["ru", "en"] as const) {
-    const column = locale === "ru" ? "scheduled_at" : "scheduled_en_at";
+    const _column = locale === "ru" ? "scheduled_at" : "scheduled_en_at";
     const pending = rows.filter((row) => {
       if (!hasLocaleTarget(parseTargets(row.targetsJson), locale)) {
         const assignment = assignments.get(row.id);
@@ -163,23 +173,18 @@ function mskDateParts(date: Date): { year: number; month: number; day: number } 
 
 function availableSlots(backendDb: BackendDb, locale: TargetLocale, now: Date, needed: number): Date[] {
   const result: Date[] = [];
+  const scheduleColumn = locale === "ru" ? drafts.scheduledAt : drafts.scheduledEnAt;
+  const consumedRows = backendDb.db
+    .select({ scheduledAt: scheduleColumn, publishMode: drafts.publishMode })
+    .from(drafts)
+    .where(and(inArray(drafts.status, ["published", "scheduled"]), gte(scheduleColumn, now.toISOString())))
+    .all();
   for (let offset = 0; offset < 366 && result.length < needed; offset += 1) {
     const date = new Date(now.getTime() + offset * 86_400_000);
     const day = mskDateParts(date);
     const start = mskSlot(day.year, day.month, day.day, "00:00").toISOString();
     const end = new Date(new Date(start).getTime() + 86_400_000).toISOString();
-    const scheduleColumn = locale === "ru" ? drafts.scheduledAt : drafts.scheduledEnAt;
-    const consumed = backendDb.db
-      .select({ publishMode: drafts.publishMode })
-      .from(drafts)
-      .where(
-        and(
-          gte(scheduleColumn, start),
-          lt(scheduleColumn, end),
-          or(eq(drafts.status, "published"), and(eq(drafts.status, "scheduled"), lte(scheduleColumn, now.toISOString()))),
-        ),
-      )
-      .all();
+    const consumed = consumedRows.filter((row) => row.scheduledAt != null && row.scheduledAt >= start && row.scheduledAt < end);
     const immediateCount = consumed.filter((row) => row.publishMode === "immediate").length;
     const capacity = Math.max(0, MAX_POSTS_PER_DAY - consumed.length);
     const candidates = SLOTS[locale].map((clock) => mskSlot(day.year, day.month, day.day, clock)).filter((slot) => slot > now);
@@ -249,27 +254,18 @@ function syncPublicationSchedule(
 }
 
 function updateSchedulePayload(
-  value: string | null,
+  value: JsonObject | null,
   assignment: { ru: string | null; en: string | null },
   publishAt: string | null,
-): string {
-  try {
-    const payload = JSON.parse(value || "{}") as Record<string, unknown>;
-    payload.scheduled_at = assignment.ru;
-    payload.scheduled_en_at = assignment.en;
-    payload.publish_at_ru = assignment.ru;
-    payload.publish_at_en = assignment.en;
-    payload.date = publishAt ?? assignment.ru ?? assignment.en;
-    return JSON.stringify(payload);
-  } catch {
-    return JSON.stringify({
-      scheduled_at: assignment.ru,
-      scheduled_en_at: assignment.en,
-      publish_at_ru: assignment.ru,
-      publish_at_en: assignment.en,
-      date: publishAt ?? assignment.ru ?? assignment.en,
-    });
-  }
+): JsonObject {
+  return {
+    ...(value ?? {}),
+    scheduled_at: assignment.ru,
+    scheduled_en_at: assignment.en,
+    publish_at_ru: assignment.ru,
+    publish_at_en: assignment.en,
+    date: publishAt ?? assignment.ru ?? assignment.en,
+  };
 }
 
 function mskSlot(year: number, month: number, day: number, clock: string): Date {

@@ -278,6 +278,7 @@ function insertSiteEvent(
 }
 
 function parseObject(value: unknown): Record<string, unknown> | null {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
   if (typeof value !== "string" || !value) return null;
   try {
     const parsed = JSON.parse(value) as unknown;

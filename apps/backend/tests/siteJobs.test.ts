@@ -30,7 +30,7 @@ describe("site jobs", () => {
       .insert(publicationSources)
       .values({
         postId: 1,
-        itemJson: JSON.stringify({
+        itemJson: {
           id: "post:1",
           post_id: 1,
           message_id: 11,
@@ -42,7 +42,7 @@ describe("site jobs", () => {
           has_en: true,
           slug_ru: "ru",
           slug_en: "en",
-        }),
+        },
         createdAt: now,
         updatedAt: now,
       })
@@ -72,7 +72,8 @@ describe("site jobs", () => {
       .run();
 
     expect(await runSiteJobCycle(config, backendDb)).toBe(1);
-    const job = backendDb.db.select({ status: siteJobs.status }).from(siteJobs).get()!;
+    const job = backendDb.db.select({ status: siteJobs.status }).from(siteJobs).get();
+    if (!job) throw new Error("expected site job");
     expect(job.status).toBe("published");
   });
 });

@@ -1,22 +1,3 @@
-.story-tab::after {
-  content: "";
-  position: absolute;
-  left: 0.35rem;
-  right: 0.35rem;
-  bottom: -1px;
-  height: 2px;
-  border-radius: 999px;
-  background: transparent;
-}
-
-.story-tab.is-active {
-  color: var(--accent);
-}
-
-.story-tab.is-active::after {
-  background: var(--accent);
-}
-
 .story-panel {
   height: 100%;
   display: flex;
@@ -37,7 +18,7 @@
   font-size: 0.7rem;
   font-weight: 900;
   text-transform: uppercase;
-  color: #dc2626;
+  color: var(--accent);
   background: rgba(220, 38, 38, 0.08);
   border: 1px solid rgba(220, 38, 38, 0.28);
   padding: 0.22rem 0.54rem;
@@ -183,8 +164,8 @@
 }
 
 .story-action--primary {
-  border-color: #dc2626;
-  background: #dc2626;
+  border-color: var(--accent);
+  background: var(--accent);
   color: white;
 }
 

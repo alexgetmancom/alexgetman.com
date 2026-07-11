@@ -99,7 +99,7 @@
   height: 100%;
   transform: scaleX(0);
   transform-origin: left center;
-  background: #dc2626;
+  background: var(--accent);
   box-shadow: 0 0 12px rgba(220, 38, 38, 0.62);
 }
 
@@ -149,7 +149,7 @@
   height: 100%;
   transform: scaleY(0);
   transform-origin: top center;
-  background: #dc2626;
+  background: var(--accent);
   box-shadow: none;
 }
 
@@ -191,7 +191,7 @@
 .story-visual__chrome span[data-story-kicker] {
   border-color: rgba(220, 38, 38, 0.35);
   background: rgba(220, 38, 38, 0.06);
-  color: #ef4444;
+  color: var(--accent);
 }
 
 .audio-chip {
@@ -223,7 +223,7 @@
 
 .audio-chip.is-on {
   border-color: rgba(220, 38, 38, 0.45);
-  color: #ef4444;
+  color: var(--accent);
   background: rgba(220, 38, 38, 0.06);
 }
 
@@ -267,4 +267,23 @@
   font-weight: 900;
   font-size: 0.95rem;
   cursor: pointer;
+}
+
+.story-tab::after {
+  content: "";
+  position: absolute;
+  left: 0.35rem;
+  right: 0.35rem;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.story-tab.is-active {
+  color: var(--accent);
+}
+
+.story-tab.is-active::after {
+  background: var(--accent);
 }

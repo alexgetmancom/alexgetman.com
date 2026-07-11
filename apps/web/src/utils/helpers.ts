@@ -1,45 +1,4 @@
-// Shared helper functions for alexgetman.com Astro website
-import fs from "node:fs";
-import path from "node:path";
-
-const dataDir = process.env.DATA_DIR || "/home/deploy/ialexey-feed/data";
-const prodFeedJsonPath = path.join(dataDir, "feed.json");
-const localFeedJsonPath = path.resolve("apps/web/src/data/feed.json");
-
-export function loadFeedItems(): any[] {
-  let parsedData: any = null;
-  for (const filePath of [prodFeedJsonPath, localFeedJsonPath]) {
-    if (!parsedData && fs.existsSync(filePath)) {
-      try {
-        parsedData = JSON.parse(fs.readFileSync(filePath, "utf-8"));
-      } catch (error) {
-        console.error(`Error reading ${filePath}:`, error);
-      }
-    }
-  }
-  const items = Array.isArray(parsedData) ? parsedData : parsedData?.items && Array.isArray(parsedData.items) ? parsedData.items : [];
-  return items.map(normalizeFeedItem);
-}
-
-function normalizeFeedItem(item: any): any {
-  const legacyId = String(item?.id ?? "").match(/(?:post:)?(\d+)$/)?.[1];
-  const postId = item?.post_id ?? (legacyId ? Number(legacyId) : item?.message_id);
-  let legacySlug: string | undefined;
-  try {
-    const segments = new URL(String(item?.url ?? ""), "https://alexgetman.com").pathname.split("/").filter(Boolean);
-    legacySlug = segments.at(-1);
-  } catch {
-    legacySlug = undefined;
-  }
-  return {
-    ...item,
-    post_id: postId,
-    has_ru: item?.has_ru ?? Boolean(item?.text),
-    has_en: item?.has_en ?? Boolean(item?.text_en),
-    slug_ru: item?.slug_ru ?? legacySlug ?? `post-${postId}`,
-    slug_en: item?.slug_en ?? legacySlug ?? `post-${postId}`,
-  };
-}
+// Shared presentation helpers for Astro pages.
 
 export function siteUrlFromContext(context: any): string {
   return context.site ? context.site.toString().replace(/\/$/, "") : "https://alexgetman.com";

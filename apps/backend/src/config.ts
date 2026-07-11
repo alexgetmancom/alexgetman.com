@@ -100,6 +100,8 @@ const envSchema = z
     PUBLIC_MEDIA_BASE_URL: z.string().default("https://alexgetman.com/media"),
     TEMP_MEDIA_DIR: z.string().default("/tmp/alexgetman-media"),
     PUBLIC_BASE_URL: z.string().default("https://alexgetman.com"),
+    DEPLOY_AGENT_URL: z.url().optional(),
+    DEPLOY_AGENT_TOKEN: z.string().min(16).optional(),
     ENABLE_BOT_POLLING: booleanFlag.default(false),
     ENABLE_WORKERS: booleanFlag.default(true),
     INDEXNOW_ENABLED: booleanFlag.default(true),
@@ -120,6 +122,13 @@ const envSchema = z
         code: "custom",
         path: ["INSTAGRAM_ACCESS_TOKEN"],
         message: "INSTAGRAM_ACCESS_TOKEN and INSTAGRAM_USER_ID are required when ENABLE_INSTAGRAM_STORIES=true",
+      });
+    }
+    if (Boolean(env.DEPLOY_AGENT_URL) !== Boolean(env.DEPLOY_AGENT_TOKEN)) {
+      context.addIssue({
+        code: "custom",
+        path: ["DEPLOY_AGENT_URL"],
+        message: "DEPLOY_AGENT_URL and DEPLOY_AGENT_TOKEN must be configured together",
       });
     }
   });

@@ -16,7 +16,8 @@ export async function publishToFacebook(
   const text = stripLeadingEmojis(payloadText(payload));
   const media = payloadMedia(payload).filter((item) => item.vpsUrl);
   if (media.some((item) => item.type === "VIDEO")) {
-    const video = media.find((item) => item.type === "VIDEO")!;
+    const video = media.find((item) => item.type === "VIDEO");
+    if (!video) throw new Error("Facebook video selection failed");
     const res = await callFacebook(
       config,
       `${config.FACEBOOK_PAGE_ID}/videos`,

@@ -1,13 +1,8 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
 import type { Bot } from "grammy";
-import {
-  cancelDraft,
-  createDraftFromMessage,
-  entitiesToHtml,
-  finalizePendingAlbums,
-  publishDraftToQueue,
-  scheduledDrafts,
-} from "../src/bot.js";
+import { finalizePendingAlbums } from "../src/bot/albums.js";
+import { cancelDraft, createDraftFromMessage, publishDraftToQueue, scheduledDrafts } from "../src/bot/drafts.js";
+import { entitiesToHtml } from "../src/bot/text.js";
 import { TARGETS, targetLocale } from "../src/botTargets.js";
 import { loadConfig } from "../src/config.js";
 import { type BackendDb, openBackendDb } from "../src/db/client.js";

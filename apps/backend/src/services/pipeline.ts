@@ -1,9 +1,22 @@
-import { existsSync, readFileSync } from "node:fs";
-import { and, desc, eq, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, like, ne, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
 import { TARGETS } from "../botTargets.js";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
-import { type JsonValue, metricSamples, postMetrics, posts, postTargets, publishJobs, siteJobs, workerState } from "../db/schema.js";
+import {
+  type JsonValue,
+  metricSamples,
+  metricSchedule,
+  postLocales,
+  postMetrics,
+  posts,
+  postTargets,
+  publications,
+  publishJobs,
+  siteJobs,
+  workerState,
+} from "../db/schema.js";
+import { jsonArray, jsonObject } from "../json.js";
 import { gitRevision } from "../runtime/git.js";
 
 export function pipelineStatusPayload(config: BackendConfig, backendDb: BackendDb, weekOffset = 0) {
@@ -47,32 +60,37 @@ export function pipelineStatusPayload(config: BackendConfig, backendDb: BackendD
   const [targetCount] = backendDb.db.select({ count: sql<number>`count(*)` }).from(postTargets).all();
   const [metricCount] = backendDb.db.select({ count: sql<number>`count(*)` }).from(postMetrics).all();
   const [sampleCount] = backendDb.db.select({ count: sql<number>`count(*)` }).from(metricSamples).all();
-  const latestSiteJobs = backendDb.sqlite
-    .prepare(
-      "SELECT job_id, post_id, message_id, reason, status, attempt_count, last_error, created_at, updated_at FROM site_jobs ORDER BY updated_at DESC, job_id DESC LIMIT 25",
-    )
+  const latestSiteJobs = backendDb.db.select().from(siteJobs).orderBy(desc(siteJobs.updatedAt), desc(siteJobs.jobId)).limit(25).all();
+  const recentMetrics = backendDb.db
+    .select({
+      postKey: postMetrics.postKey,
+      target: postMetrics.target,
+      metricName: postMetrics.metricName,
+      value: postMetrics.value,
+      source: postMetrics.source,
+      sampledAt: postMetrics.sampledAt,
+      error: postMetrics.error,
+      messageId: posts.messageId,
+      postUrl: sql<string | null>`coalesce(${posts.siteEnPath}, ${posts.siteRuPath}, ${posts.telegramUrl})`,
+    })
+    .from(postMetrics)
+    .leftJoin(posts, eq(posts.postKey, postMetrics.postKey))
+    .orderBy(desc(postMetrics.sampledAt), asc(postMetrics.postKey), asc(postMetrics.target), asc(postMetrics.metricName))
+    .limit(100)
     .all();
-  const recentMetrics = backendDb.sqlite
-    .prepare(
-      `SELECT m.post_key, m.target, m.metric_name, m.value, m.source, m.sampled_at, m.error,
-              p.message_id, COALESCE(p.site_en_path, p.site_ru_path, p.telegram_url) AS post_url
-       FROM post_metrics m LEFT JOIN posts p ON p.post_key=m.post_key
-       ORDER BY m.sampled_at DESC, m.post_key, m.target, m.metric_name LIMIT 100`,
-    )
+  const now = new Date().toISOString();
+  const [metricScheduleSummary] = backendDb.db
+    .select({
+      total: sql<number>`count(*)`,
+      frozen: sql<number>`sum(case when ${metricSchedule.frozenAt} is not null then 1 else 0 end)`,
+      due: sql<number>`sum(case when ${metricSchedule.frozenAt} is null and (${metricSchedule.nextCheckAt} is null or ${metricSchedule.nextCheckAt} <= ${now}) then 1 else 0 end)`,
+      errors: sql<number>`sum(case when ${metricSchedule.lastError} is not null then 1 else 0 end)`,
+      lastCheckedAt: sql<string | null>`max(${metricSchedule.lastCheckedAt})`,
+    })
+    .from(metricSchedule)
     .all();
-  const metricSchedule = backendDb.sqlite
-    .prepare(
-      `SELECT
-         COUNT(*) AS total,
-         SUM(CASE WHEN frozen_at IS NOT NULL THEN 1 ELSE 0 END) AS frozen,
-         SUM(CASE WHEN frozen_at IS NULL AND (next_check_at IS NULL OR next_check_at <= ?) THEN 1 ELSE 0 END) AS due,
-         SUM(CASE WHEN last_error IS NOT NULL THEN 1 ELSE 0 END) AS errors,
-         MAX(last_checked_at) AS last_checked_at
-       FROM metric_schedule`,
-    )
-    .get(new Date().toISOString());
   const legacyPosts = legacyPipelinePosts(backendDb, weekOffset);
-  const feed = readFeedSummary(config);
+  const feed = readFeedSummary(config, backendDb);
   const socialState = readWorkerState(backendDb, "crosspost_worker") ?? readWorkerState(backendDb, "queue") ?? {};
   const currentTargetFailures = backendDb.db
     .select({ postKey: postTargets.postKey })
@@ -91,7 +109,7 @@ export function pipelineStatusPayload(config: BackendConfig, backendDb: BackendD
     gitRevision: gitRevision(),
     pipelineDb: {
       path: config.PIPELINE_DB,
-      exists: existsSync(config.PIPELINE_DB),
+      exists: true,
     },
     jobs,
     siteJobs: latestSiteJobs,
@@ -102,7 +120,7 @@ export function pipelineStatusPayload(config: BackendConfig, backendDb: BackendD
       targets: Number(targetCount?.count ?? 0),
       metrics: Number(metricCount?.count ?? 0),
       samples: Number(sampleCount?.count ?? 0),
-      schedule: metricSchedule,
+      schedule: metricScheduleSummary,
       recent: recentMetrics,
     },
     updated_at: new Date().toISOString(),
@@ -120,71 +138,139 @@ export function pipelineStatusPayload(config: BackendConfig, backendDb: BackendD
 
 function legacyPipelinePosts(backendDb: BackendDb, weekOffset: number): Record<string, unknown>[] {
   const [start, end] = weekBounds(weekOffset);
-  const rows = backendDb.sqlite
-    .prepare(
-      `SELECT 'post:' || p.post_id AS post_key, p.post_id, p.telegram_message_id, p.created_at AS created_at, p.updated_at,
-            ru.text AS text_ru, ru.media_json AS media_ru_json, ru.site_enabled AS site_ru, ru.slug AS slug_ru,
-            en.text AS text_en, en.media_json AS media_en_json, en.site_enabled AS site_en, en.slug AS slug_en,
-            po.message_id, po.date_msk, po.telegram_url
-     FROM publications p
-     LEFT JOIN post_locales ru ON ru.post_id=p.post_id AND ru.locale='ru'
-     LEFT JOIN post_locales en ON en.post_id=p.post_id AND en.locale='en'
-     LEFT JOIN posts po ON po.post_key='post:' || p.post_id
-     WHERE p.created_at>=? AND p.created_at<=?
-     UNION ALL
-     SELECT po.post_key, NULL, po.message_id, po.date_utc, po.updated_at,
-            po.text, po.media_json, 0, NULL,
-            po.text_en, po.media_json, 0, NULL,
-            po.message_id, po.date_msk, po.telegram_url
-     FROM posts po
-     WHERE po.post_key LIKE 'telegram:%' AND po.date_utc>=? AND po.date_utc<=?
-     ORDER BY 4 DESC LIMIT 100`,
-    )
-    .all(start, end, start, end) as Array<Record<string, unknown>>;
+  const ru = alias(postLocales, "pipeline_ru");
+  const en = alias(postLocales, "pipeline_en");
+  const publicationRows = backendDb.db
+    .select({
+      postId: publications.postId,
+      telegramMessageId: publications.telegramMessageId,
+      createdAt: publications.createdAt,
+      updatedAt: publications.updatedAt,
+      textRu: ru.text,
+      mediaRuJson: ru.mediaJson,
+      siteRu: ru.siteEnabled,
+      slugRu: ru.slug,
+      textEn: en.text,
+      mediaEnJson: en.mediaJson,
+      siteEn: en.siteEnabled,
+      slugEn: en.slug,
+    })
+    .from(publications)
+    .leftJoin(ru, and(eq(ru.postId, publications.postId), eq(ru.locale, "ru")))
+    .leftJoin(en, and(eq(en.postId, publications.postId), eq(en.locale, "en")))
+    .where(and(sql`${publications.createdAt} >= ${start}`, sql`${publications.createdAt} <= ${end}`))
+    .all();
+  const publicationKeys = publicationRows.map((row) => `post:${row.postId}`);
+  const publicationPosts = publicationKeys.length
+    ? backendDb.db.select().from(posts).where(inArray(posts.postKey, publicationKeys)).all()
+    : [];
+  const postByKey = new Map(publicationPosts.map((post) => [post.postKey, post]));
+  const telegramRows = backendDb.db
+    .select()
+    .from(posts)
+    .where(and(like(posts.postKey, "telegram:%"), sql`${posts.dateUtc} >= ${start}`, sql`${posts.dateUtc} <= ${end}`))
+    .all();
+  const rows: Array<Record<string, unknown>> = [
+    ...publicationRows.map((row) => {
+      const post = postByKey.get(`post:${row.postId}`);
+      return {
+        post_key: `post:${row.postId}`,
+        post_id: row.postId,
+        telegram_message_id: row.telegramMessageId,
+        created_at: row.createdAt,
+        updated_at: row.updatedAt,
+        text_ru: row.textRu,
+        media_ru_json: row.mediaRuJson,
+        site_ru: row.siteRu,
+        slug_ru: row.slugRu,
+        text_en: row.textEn,
+        media_en_json: row.mediaEnJson,
+        site_en: row.siteEn,
+        slug_en: row.slugEn,
+        message_id: post?.messageId ?? row.telegramMessageId,
+        date_msk: post?.dateMsk,
+        telegram_url: post?.telegramUrl,
+      };
+    }),
+    ...telegramRows.map((post) => ({
+      post_key: post.postKey,
+      post_id: null,
+      telegram_message_id: post.messageId,
+      created_at: post.dateUtc,
+      updated_at: post.updatedAt,
+      text_ru: post.text,
+      media_ru_json: post.mediaJson,
+      site_ru: 0,
+      slug_ru: null,
+      text_en: post.textEn,
+      media_en_json: post.mediaJson,
+      site_en: 0,
+      slug_en: null,
+      message_id: post.messageId,
+      date_msk: post.dateMsk,
+      telegram_url: post.telegramUrl,
+    })),
+  ]
+    .sort((left, right) => String(right.created_at ?? "").localeCompare(String(left.created_at ?? "")))
+    .slice(0, 100);
+  const postKeys = rows.map((row) => String(row.post_key ?? "")).filter(Boolean);
+  const targetRows = postKeys.length
+    ? backendDb.db.select().from(postTargets).where(inArray(postTargets.postKey, postKeys)).orderBy(asc(postTargets.target)).all()
+    : [];
+  const metricRows = postKeys.length
+    ? backendDb.db
+        .select()
+        .from(postMetrics)
+        .where(inArray(postMetrics.postKey, postKeys))
+        .orderBy(asc(postMetrics.target), asc(postMetrics.metricName))
+        .all()
+    : [];
+  const targetsByPost = new Map<string, (typeof targetRows)[number][]>();
+  for (const target of targetRows) {
+    const values = targetsByPost.get(target.postKey) ?? [];
+    values.push(target);
+    targetsByPost.set(target.postKey, values);
+  }
+  const metricsByPost = new Map<string, (typeof metricRows)[number][]>();
+  for (const metric of metricRows) {
+    const values = metricsByPost.get(metric.postKey) ?? [];
+    values.push(metric);
+    metricsByPost.set(metric.postKey, values);
+  }
   return rows.map((row) => {
     const postId = row.post_id == null ? null : Number(row.post_id);
     const postKey = String(row.post_key ?? `post:${postId}`);
     const targets = Object.fromEntries(
-      (
-        backendDb.sqlite
-          .prepare(
-            "SELECT target,status,external_id,external_ids_json,url,error,skipped,updated_at,raw_json FROM post_targets WHERE post_key=? ORDER BY target",
-          )
-          .all(postKey) as Array<Record<string, unknown>>
-      ).map((target) => [
-        String(target.target),
+      (targetsByPost.get(postKey) ?? []).map((target) => [
+        target.target,
         {
           status: target.status,
           ok: target.status === "published",
-          external_id: target.external_id,
-          external_ids: parseArray(target.external_ids_json),
+          external_id: target.externalId,
+          external_ids: target.externalIdsJson ?? [],
           url: target.url,
           error: target.error,
           skipped: Boolean(target.skipped),
-          updated_at: target.updated_at,
-          raw: parseObject(target.raw_json),
+          updated_at: target.updatedAt,
+          raw: jsonObject(target.rawJson),
         },
       ]),
     );
     const metrics: Record<string, Record<string, unknown>> = {};
-    for (const metric of backendDb.sqlite
-      .prepare(
-        "SELECT target,metric_name,value,sampled_at,source,error,raw_json FROM post_metrics WHERE post_key=? ORDER BY target,metric_name",
-      )
-      .all(postKey) as Array<Record<string, unknown>>) {
-      const target = String(metric.target);
+    for (const metric of metricsByPost.get(postKey) ?? []) {
+      const target = metric.target;
       const targetMetrics = metrics[target] ?? {};
       metrics[target] = targetMetrics;
-      targetMetrics[String(metric.metric_name)] = {
+      targetMetrics[metric.metricName] = {
         value: metric.value,
-        sampled_at: metric.sampled_at,
+        sampled_at: metric.sampledAt,
         source: metric.source,
         error: metric.error,
-        raw: parseObject(metric.raw_json),
+        raw: metric.rawJson ?? {},
       };
     }
-    const mediaRu = parseArray(row.media_ru_json);
-    const mediaEn = parseArray(row.media_en_json);
+    const mediaRu = jsonArray(row.media_ru_json);
+    const mediaEn = jsonArray(row.media_en_json);
     const textRu = String(row.text_ru ?? "");
     const textEn = String(row.text_en ?? "");
     const telegramMessageId = row.telegram_message_id == null ? null : Number(row.telegram_message_id);
@@ -233,17 +319,12 @@ function legacyPipelinePosts(backendDb: BackendDb, weekOffset: number): Record<s
   });
 }
 
-function readFeedSummary(config: BackendConfig): { channel: string; updated_at: unknown; items: number } {
-  try {
-    const value = JSON.parse(readFileSync(config.FEED_JSON, "utf8")) as { channel?: string; updated_at?: unknown; items?: unknown[] };
-    return {
-      channel: value.channel ?? config.CHANNEL_USERNAME,
-      updated_at: value.updated_at ?? null,
-      items: Array.isArray(value.items) ? value.items.length : 0,
-    };
-  } catch {
-    return { channel: config.CHANNEL_USERNAME, updated_at: null, items: 0 };
-  }
+function readFeedSummary(config: BackendConfig, backendDb: BackendDb): { channel: string; updated_at: string | null; items: number } {
+  const [summary] = backendDb.db
+    .select({ items: sql<number>`count(*)`, updatedAt: sql<string | null>`max(${posts.updatedAt})` })
+    .from(posts)
+    .all();
+  return { channel: config.CHANNEL_USERNAME, updated_at: summary?.updatedAt ?? null, items: Number(summary?.items ?? 0) };
 }
 
 function readWorkerState(backendDb: BackendDb, name: string): Record<string, unknown> | null {
@@ -256,26 +337,6 @@ function weekBounds(offset: number): [string, string] {
   const weekday = (nowMsk.getUTCDay() + 6) % 7;
   const start = Date.UTC(nowMsk.getUTCFullYear(), nowMsk.getUTCMonth(), nowMsk.getUTCDate() - weekday - offset * 7, -3, 0, 0);
   return [new Date(start).toISOString(), new Date(start + 7 * 86_400_000 - 1).toISOString()];
-}
-
-function parseArray(value: unknown): unknown[] {
-  if (typeof value !== "string" || !value) return [];
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function parseObject(value: unknown): Record<string, unknown> {
-  if (typeof value !== "string" || !value) return {};
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
-  } catch {
-    return {};
-  }
 }
 
 function shortText(value: string): string {

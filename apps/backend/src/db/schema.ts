@@ -2,6 +2,8 @@ import { sql } from "drizzle-orm";
 import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export type JsonValue = boolean | number | string | null | JsonValue[] | { [key: string]: JsonValue };
+export type JsonObject = Record<string, unknown>;
+export type MediaPayload = Record<string, unknown>;
 
 export const publishJobs = sqliteTable(
   "publish_jobs",
@@ -17,7 +19,7 @@ export const publishJobs = sqliteTable(
     nextAttemptAt: text("next_attempt_at"),
     lockedBy: text("locked_by"),
     lockedAt: text("locked_at"),
-    payloadJson: text("payload_json"),
+    payloadJson: text("payload_json", { mode: "json" }).$type<JsonObject | null>(),
     lastError: text("last_error"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
@@ -38,28 +40,28 @@ export const workerState = sqliteTable("worker_state", {
 
 export const publishPlans = sqliteTable("publish_plans", {
   messageId: integer("message_id").primaryKey(),
-  planJson: text("plan_json").notNull(),
+  planJson: text("plan_json", { mode: "json" }).$type<JsonObject>().notNull(),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
 
 export const siteSourceItems = sqliteTable("site_source_items", {
   messageId: integer("message_id").primaryKey(),
-  itemJson: text("item_json").notNull(),
+  itemJson: text("item_json", { mode: "json" }).$type<JsonObject>().notNull(),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
 
 export const publicationPlans = sqliteTable("publication_plans", {
   postId: integer("post_id").primaryKey(),
-  planJson: text("plan_json").notNull(),
+  planJson: text("plan_json", { mode: "json" }).$type<JsonObject>().notNull(),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
 
 export const publicationSources = sqliteTable("publication_sources", {
   postId: integer("post_id").primaryKey(),
-  itemJson: text("item_json").notNull(),
+  itemJson: text("item_json", { mode: "json" }).$type<JsonObject>().notNull(),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
@@ -160,7 +162,7 @@ export const postLocales = sqliteTable(
     text: text("text"),
     html: text("html"),
     entitiesJson: text("entities_json"),
-    mediaJson: text("media_json"),
+    mediaJson: text("media_json", { mode: "json" }).$type<MediaPayload[] | null>(),
     siteEnabled: integer("site_enabled").notNull().default(0),
     publishedAt: text("published_at"),
     updatedAt: text("updated_at").notNull(),

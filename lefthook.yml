@@ -8,4 +8,4 @@ pre-commit:
 pre-push:
   commands:
     quality:
-      run: bun run check:all
+      run: bun scripts/check-prepush.ts

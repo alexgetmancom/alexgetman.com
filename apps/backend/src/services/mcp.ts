@@ -1,4 +1,5 @@
 import type { BackendDb } from "../db/client.js";
+import { postEvents } from "../db/schema.js";
 
 const feedbackHits = new Map<string, number[]>();
 
@@ -35,11 +36,17 @@ export function mcpResponse(backendDb: BackendDb, body: unknown, clientKey: stri
     if (!message) return rpcError(id, -32602, "message is required");
     if (name.length > 120 || message.length > 2000) return rpcError(id, -32602, "feedback is too long");
     if (rateLimited(clientKey)) return rpcError(id, -32000, "rate limit exceeded");
-    backendDb.sqlite
-      .prepare(
-        "INSERT INTO post_events(post_key,target,event_type,severity,message,created_at) VALUES ('mcp:feedback','mcp','mcp.feedback.received','info',?,?)",
-      )
-      .run(`MCP Feedback from ${name}: ${message}`, new Date().toISOString());
+    backendDb.db
+      .insert(postEvents)
+      .values({
+        postKey: "mcp:feedback",
+        target: "mcp",
+        eventType: "mcp.feedback.received",
+        severity: "info",
+        message: `MCP Feedback from ${name}: ${message}`,
+        createdAt: new Date().toISOString(),
+      })
+      .run();
     return { jsonrpc: "2.0", id, result: { content: [{ type: "text", text: `Thank you, ${name}! Your feedback has been logged.` }] } };
   }
   return { jsonrpc: "2.0", id, result: {} };
