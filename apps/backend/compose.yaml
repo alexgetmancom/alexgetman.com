@@ -85,6 +85,7 @@ services:
     environment:
       DATA_DIR: /data
       PIPELINE_DB: /data/pipeline.db
+      DRIZZLE_MIGRATIONS_DIR: /app/apps/backend/drizzle
       FEED_JSON: /feed-data/feed.json
       SITE_METRICS_JSON: /feed-data/metrics.json
       CHANNEL_USERNAME: alexgetmancom
