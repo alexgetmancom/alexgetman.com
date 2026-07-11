@@ -9,6 +9,7 @@
 
 | Задача | Зачем и критерий готовности | Состояние |
 | --- | --- | --- |
+| 48. Intelligent Registry-based deploy (ВЫСШИЙ ПРИОРИТЕТ) | GitHub Actions пушит образ в GHCR и триггерит деплой. Скрипт на сервере проверяет здоровье `/readyz` нового контейнера. В случае сбоя — авто-откат на стабильный хэш. Бот шлет статус в Telegram с инлайн-кнопкой «Откатить» для ручного отката в 1 клик. | Не начато |
 | 1. Legacy parity matrix | Сверить каждый крупный Python-модуль из git history с TS-модулями, тестами и production-путями; незакрытые функции имеют отдельные строки ниже. | В работе |
 | 2. schema.py -> DB schema | Сверить все legacy tables, columns, indexes и constraints с `schema.ts` на fixture и production-readonly базе. | Частично |
 | 3. meta.py -> Meta clients | Сверить Facebook, Instagram и Threads payloads, auth, media upload и error mapping с legacy реализацией. | Не начато |
@@ -37,7 +38,6 @@
 | 41. AI-ready content | `llms.txt` использует Markdown URLs, добавлен `feed-ai.json`, image alt и AI analytics имеют данные/тесты. | Частично |
 | 42. Markdown and Link headers | Markdown negotiation и HTTP Link headers проверяются end-to-end после deploy. | Требует проверки |
 | 47. Lean ffmpeg runtime | Выбрать проверенный Debian slim или минимальный codec build; H.264/AAC/MP4 и poster generation проходят media tests. | Не начато |
-| 48. Intelligent Registry-based deploy | GitHub Actions пушит образ в GHCR и триггерит деплой. Скрипт на сервере проверяет здоровье `/readyz` нового контейнера. В случае сбоя — авто-откат на стабильный хэш. Бот шлет статус в Telegram с инлайн-кнопкой «Откатить» для ручного отката в 1 клик. | Не начато |
 | 49. Fast CI/CD | Path filters, parallel `bun test`, Bun/BuildKit cache, отсутствие лишнего ffmpeg install, image build only for affected main changes и deploy gate дают измеримый быстрый pipeline. | Частично |
 | 50. Code quality gates | Biome, Knip, staged hook, typecheck, unit/integration tests, Docker smoke test и browser checks обязательны в CI. | Частично |
 | 57. Zod Env Validator | Валидировать конфигурацию и ключи API в `.env` при старте приложения с помощью схем Zod. Оценка: Не дрочь (9/10, уберет скрытые падения при деплое). | Частично |
