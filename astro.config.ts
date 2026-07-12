@@ -10,9 +10,7 @@ export default defineConfig({
   outDir: "./dist",
   output: "server",
   adapter: node({ mode: "middleware" }),
-  // Telegram validates every webhook with its secret token in the endpoint.
-  // Astro's browser-origin CSRF guard would otherwise reject Telegram's POST.
-  security: { checkOrigin: false },
+  security: { checkOrigin: true },
   vite: {
     ssr: {
       external: ["@mtcute/bun", "@mtcute/wasm"],

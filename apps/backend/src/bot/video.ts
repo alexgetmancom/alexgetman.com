@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { type Context, InlineKeyboard } from "grammy";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
-import { videoBotSessions, videoJobs, videoTargets } from "../db/schema.js";
+import { videoJobs, videoTargets } from "../db/schema.js";
 import { parseManualSchedule } from "../publishingSchedule.js";
 import {
   cancelVideo,
@@ -19,8 +19,21 @@ import {
 } from "../video/service.js";
 import { storeTelegramVideo } from "../video/storage.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../video/types.js";
+import {
+  askInstagramOrSchedule,
+  askSchedule,
+  callbackMessageId,
+  clearSession,
+  getSession,
+  saveSession,
+  setControlFromSession,
+  setData,
+  targetKeyboard,
+  updateVideoControl,
+  type VideoSession,
+} from "./video-session.js";
 
-type Session = { draftId: number | null; step: string; selected: VideoTarget[]; data: Record<string, unknown> };
+type Session = VideoSession;
 
 export async function startVideoFlow(ctx: Context, backendDb: BackendDb): Promise<void> {
   const adminId = Number(ctx.from?.id);
@@ -249,7 +262,7 @@ export async function handleVideoCallback(ctx: Context, backendDb: BackendDb, co
       await ctx.answerCallbackQuery();
       try {
         await ctx.deleteMessage();
-      } catch (err) {}
+      } catch {}
       const keyboard = new InlineKeyboard();
       if (config.studio.modules.text_posting) keyboard.text("📝 Новый пост", "menu_text");
       if (config.studio.modules.video_posting) keyboard.text("🎬 Новое видео", "video_start");
@@ -440,22 +453,6 @@ export async function handleVideoCallback(ctx: Context, backendDb: BackendDb, co
   return true;
 }
 
-async function askInstagramOrSchedule(ctx: Context, backendDb: BackendDb, adminId: number, session: Session): Promise<void> {
-  if (session.selected.includes("instagram_reels")) {
-    const next = { ...session, step: "instagram_caption" };
-    saveSession(backendDb, adminId, next);
-    await updateVideoControl(ctx, next, "⌨ Описание для Instagram Reels (или «-»):");
-  } else await askSchedule(ctx, backendDb, adminId, session);
-}
-
-async function askSchedule(ctx: Context, backendDb: BackendDb, adminId: number, session: Session): Promise<void> {
-  saveSession(backendDb, adminId, { ...session, step: "schedule_choice" });
-  const keyboard = new InlineKeyboard().text("Одно время для всех", `video_common:${session.draftId}`);
-  if (session.selected.length > 1) keyboard.row().text("Разное время", `video_individual:${session.draftId}`);
-  keyboard.row().text("← Cancel", "video_cancel_dialog");
-  await updateVideoControl(ctx, { ...session, step: "schedule_choice" }, "Данные сохранены. Выберите расписание (МСК):", keyboard);
-}
-
 async function finishSchedule(
   ctx: Context,
   backendDb: BackendDb,
@@ -490,81 +487,4 @@ async function finishSchedule(
     `✅ Запланировано. Напомню за ${config.VIDEO_REMINDER_MINUTES} минут.\n\n${preview.text}`,
     preview.keyboard,
   );
-}
-
-function targetKeyboard(config: BackendConfig, selected: VideoTarget[]): InlineKeyboard {
-  const keyboard = new InlineKeyboard();
-  for (const target of VIDEO_TARGETS) {
-    if (target === "youtube_shorts" && !config.studio.modules.youtube) continue;
-    if (target === "instagram_reels" && !config.studio.modules.instagram) continue;
-    keyboard.text(`${selected.includes(target) ? "✓" : "○"} ${videoTargetLabel(target)}`, `video_toggle:${target}`).row();
-  }
-  keyboard.text("Далее", "video_targets_done").row();
-  keyboard.text("← Cancel", "video_cancel_dialog");
-  return keyboard;
-}
-
-function getSession(backendDb: BackendDb, adminId: number): Session | null {
-  const row = backendDb.db.select().from(videoBotSessions).where(eq(videoBotSessions.adminId, adminId)).get();
-  return row
-    ? { draftId: row.videoDraftId, step: row.step, selected: row.selectedTargetsJson as VideoTarget[], data: row.dataJson ?? {} }
-    : null;
-}
-
-function saveSession(backendDb: BackendDb, adminId: number, session: Session): void {
-  const now = new Date().toISOString();
-  backendDb.db
-    .insert(videoBotSessions)
-    .values({
-      adminId,
-      videoDraftId: session.draftId,
-      step: session.step,
-      selectedTargetsJson: session.selected,
-      dataJson: session.data,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: videoBotSessions.adminId,
-      set: {
-        videoDraftId: session.draftId,
-        step: session.step,
-        selectedTargetsJson: session.selected,
-        dataJson: session.data,
-        updatedAt: now,
-      },
-    })
-    .run();
-}
-
-function setData(backendDb: BackendDb, adminId: number, session: Session, key: string, value: unknown, nextStep: string): Session {
-  const next = { ...session, step: nextStep, data: { ...session.data, [key]: value } };
-  saveSession(backendDb, adminId, next);
-  return next;
-}
-
-function clearSession(backendDb: BackendDb, adminId: number): void {
-  backendDb.db.delete(videoBotSessions).where(eq(videoBotSessions.adminId, adminId)).run();
-}
-
-async function updateVideoControl(ctx: Context, session: Session, text: string, keyboard?: InlineKeyboard): Promise<void> {
-  const messageId = Number(session.data.controlMessageId);
-  const replyMarkup = keyboard ?? new InlineKeyboard().text("← Cancel", "video_cancel_dialog");
-  if (messageId && ctx.chat?.id) {
-    await ctx.api.editMessageText(ctx.chat.id, messageId, text, {
-      parse_mode: "Markdown",
-      reply_markup: replyMarkup,
-    });
-    return;
-  }
-  await ctx.reply(text, { parse_mode: "Markdown", reply_markup: replyMarkup });
-}
-
-function setControlFromSession(backendDb: BackendDb, draftId: number, ctx: Context, session: Session): void {
-  const messageId = Number(session.data.controlMessageId);
-  if (messageId && ctx.chat?.id) setVideoControlCard(backendDb, draftId, Number(ctx.chat.id), messageId);
-}
-
-function callbackMessageId(ctx: Context): number | null {
-  const message = ctx.callbackQuery?.message;
-  return message && "message_id" in message ? message.message_id : null;
 }

@@ -203,7 +203,10 @@ export function cancelVideo(backendDb: BackendDb, videoDraftId: number, retentio
       .set({ status: "cancelled", updatedAt: now })
       .where(and(eq(videoJobs.videoDraftId, videoDraftId), eq(videoJobs.status, "queued")))
       .run();
-    tx.update(videoTargets).set({ status: "cancelled", updatedAt: now }).where(eq(videoTargets.videoDraftId, videoDraftId)).run();
+    tx.update(videoTargets)
+      .set({ status: "cancelled", updatedAt: now })
+      .where(and(eq(videoTargets.videoDraftId, videoDraftId), eq(videoTargets.status, "queued")))
+      .run();
     tx.update(videoDrafts)
       .set({ status: "cancelled", retentionUntil: new Date(Date.now() + retentionHours * 60 * 60_000).toISOString(), updatedAt: now })
       .where(eq(videoDrafts.id, videoDraftId))

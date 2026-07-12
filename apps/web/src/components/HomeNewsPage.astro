@@ -40,6 +40,8 @@ const feedModesFor = (post: HomePost) => {
   return modes;
 };
 const publicSrc = (value?: string | null) => (value ? `/${String(value).replace(/^\/+/, "")}` : null);
+const safeJsonForScript = (value: unknown) =>
+  JSON.stringify(value).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026");
 const ui = {
   storyLabel: isRu ? "Новостной плеер" : "AI news player",
   postTab: isRu ? "Пост" : "Post",
@@ -110,7 +112,7 @@ const ui = {
         <StoryContext activePost={activePost} paragraphs={paragraphsFor(activePost)} ui={ui} />
       </div>
 
-      <script type="application/json" data-story-payload set:html={JSON.stringify({
+      <script type="application/json" data-story-payload set:html={safeJsonForScript({
         ui,
         posts: storyPosts.map((post) => ({
           id: post.id,

@@ -25,7 +25,7 @@ export function entitiesToHtml(text: string, entities: Record<string, unknown>[]
                   ? `<code>${inner}</code>`
                   : type === "pre"
                     ? `<pre><code>${inner}</code></pre>`
-                    : type === "text_link" && typeof entity.url === "string"
+                    : type === "text_link" && typeof entity.url === "string" && safeHttpUrl(entity.url)
                       ? `<a href="${escapeHtml(entity.url)}" rel="noopener noreferrer">${inner}</a>`
                       : type === "url"
                         ? `<a href="${inner}" rel="noopener noreferrer">${inner}</a>`
@@ -33,6 +33,14 @@ export function entitiesToHtml(text: string, entities: Record<string, unknown>[]
     value = `${value.slice(0, start)}${wrapped}${value.slice(end)}`;
   }
   return value;
+}
+
+function safeHttpUrl(value: string): boolean {
+  try {
+    return ["http:", "https:"].includes(new URL(value).protocol);
+  } catch {
+    return false;
+  }
 }
 
 function htmlOffset(text: string, offset: number): number | null {

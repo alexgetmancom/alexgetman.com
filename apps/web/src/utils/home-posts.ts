@@ -35,7 +35,10 @@ export function responsiveSrcSetFor(publicPath: string | null | undefined) {
     .replace(/^\/+/, "")
     .replace(/[\\/]/g, "-")
     .replace(/\.[a-z0-9]+$/i, "");
-  return [360, 640, 960].map((width) => `/generated/responsive/${base}-${width}.webp ${width}w`).join(", ");
+  const candidates = [360, 640, 960].filter((width) =>
+    fs.existsSync(path.join(PUBLIC_ROOT, "generated/responsive", `${base}-${width}.webp`)),
+  );
+  return candidates.length ? candidates.map((width) => `/generated/responsive/${base}-${width}.webp ${width}w`).join(", ") : undefined;
 }
 
 function audioUrlFor(item: any, locale: "en" | "ru") {

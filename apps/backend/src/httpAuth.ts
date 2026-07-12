@@ -2,7 +2,6 @@ import { timingSafeEqual } from "node:crypto";
 import type { BackendConfig } from "./config.js";
 
 export function commandAllowed(request: Request, config: BackendConfig, payloadToken?: string | null): boolean {
-  if (request.headers.get("X-Authenticated-User")) return true;
   if (!config.commandCenterToken) return false;
   const token =
     payloadToken?.trim() ||

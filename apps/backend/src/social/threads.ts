@@ -121,12 +121,20 @@ async function callThreadsWithRetry(
       return await callThreads(config, endpoint, payload, fetchImpl, method);
     } catch (error) {
       lastError = error;
-      const message = String(error instanceof Error ? error.message : error).toLowerCase();
-      if (!message.includes("media") && !message.includes("4279009") && !message.includes("429") && !message.includes("5")) throw error;
+      if (!isRetryableThreadsError(error)) throw error;
       await Bun.sleep(config.THREADS_RETRY_DELAY_MS * (attempt + 1));
     }
   }
   throw lastError;
+}
+
+function isRetryableThreadsError(error: unknown): boolean {
+  if (error instanceof Error && "status" in error) {
+    const status = Number((error as { status?: unknown }).status);
+    if (status === 429 || status >= 500) return true;
+  }
+  const message = String(error instanceof Error ? error.message : error).toLowerCase();
+  return message.includes("media") || message.includes("4279009") || message.includes("timed out");
 }
 
 async function callThreads(

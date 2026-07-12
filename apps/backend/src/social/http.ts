@@ -1,7 +1,7 @@
 import { HttpPublishError } from "../queue/errors.js";
 
 export async function requestJson<T = Record<string, unknown>>(fetchImpl: typeof fetch, url: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetchImpl(url, init);
+  const response = await fetchWithTimeout(fetchImpl, url, init);
   const body = await response.text();
   if (!response.ok) {
     throw new HttpPublishError(
@@ -15,7 +15,7 @@ export async function requestJson<T = Record<string, unknown>>(fetchImpl: typeof
 }
 
 export async function requestText(fetchImpl: typeof fetch, url: string, init: RequestInit = {}): Promise<string> {
-  const response = await fetchImpl(url, init);
+  const response = await fetchWithTimeout(fetchImpl, url, init);
   const body = await response.text();
   if (!response.ok) {
     throw new HttpPublishError(
@@ -25,6 +25,19 @@ export async function requestText(fetchImpl: typeof fetch, url: string, init: Re
     );
   }
   return body;
+}
+
+async function fetchWithTimeout(fetchImpl: typeof fetch, url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30_000);
+  try {
+    return await fetchImpl(url, { ...init, signal: init.signal ?? controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error(`${init.method ?? "GET"} ${safeUrl(url)} timed out after 30s`, { cause: error });
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function safeUrl(value: string): string {

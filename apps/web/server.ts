@@ -28,7 +28,15 @@ const MIME_TYPES: Record<string, string> = {
 
 const server = createServer((req, res) => {
   const urlPath = req.url?.split("?")[0] || "/";
-  const safePath = path.normalize(decodeURIComponent(urlPath)).replace(/^(\.\.[/\\])+/, "");
+  let decodedPath: string;
+  try {
+    decodedPath = decodeURIComponent(urlPath);
+  } catch {
+    res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("Bad request\n");
+    return;
+  }
+  const safePath = path.normalize(decodedPath).replace(/^(\.\.[/\\])+/, "");
   const filePath = path.join(CLIENT_DIR, safePath);
 
   // Serve static client assets directly if they exist on disk
@@ -36,7 +44,10 @@ const server = createServer((req, res) => {
     const ext = path.extname(filePath).toLowerCase();
     res.writeHead(200, {
       "Content-Type": MIME_TYPES[ext] || "application/octet-stream",
-      "Cache-Control": safePath.startsWith("/_astro/") ? "public, max-age=31536000, immutable" : "public, max-age=3600",
+      "Cache-Control":
+        safePath.startsWith("/_astro/") || safePath.startsWith("/generated/")
+          ? "public, max-age=31536000, immutable"
+          : "public, max-age=3600",
     });
     fs.createReadStream(filePath).pipe(res);
     return;

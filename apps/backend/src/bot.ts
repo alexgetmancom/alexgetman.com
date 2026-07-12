@@ -81,7 +81,7 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
       textEn = await translateToEnglish(message.text, config);
     } catch (error) {
       log("warn", "draft translation failed", { error: String(error) });
-      textEn = "";
+      textEn = message.text;
     }
     const draftId = createDraftFromMessage(backendDb, adminId, { ...message, textEn });
     await sendDraftPreview(ctx, backendDb, draftId);
@@ -99,7 +99,7 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
       await ctx.answerCallbackQuery();
       try {
         await ctx.deleteMessage();
-      } catch (err) {}
+      } catch {}
       await showMainMenu(ctx, config);
       return;
     }
@@ -159,5 +159,5 @@ async function showMainMenu(ctx: Context, config: BackendConfig): Promise<void> 
 
 function isAdmin(config: BackendConfig, userId: number | undefined): boolean {
   if (!userId) return false;
-  return config.ADMIN_IDS.length === 0 || config.ADMIN_IDS.includes(userId);
+  return config.ADMIN_IDS.includes(userId);
 }

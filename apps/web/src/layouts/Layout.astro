@@ -66,6 +66,7 @@ const isCurrentPath = (href: string) => {
   const path = href.split("#")[0];
   return currentPath === path || (path !== "/" && path !== "/ru/" && currentPath.startsWith(path));
 };
+const safeSchema = schema?.replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026");
 ---
 <!DOCTYPE html>
 <html lang={lang}>
@@ -105,7 +106,7 @@ const isCurrentPath = (href: string) => {
     <meta name="twitter:description" content={cleanDescription}>
     <meta name="twitter:image" content={socialImage}>
 
-    {schema && <script type="application/ld+json" set:html={schema}></script>}
+    {safeSchema && <script type="application/ld+json" set:html={safeSchema}></script>}
 
     <!-- Blocking Theme Script to prevent flash -->
     <script is:inline>
