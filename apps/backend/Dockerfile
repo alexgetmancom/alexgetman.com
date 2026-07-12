@@ -69,6 +69,9 @@ COPY --from=ffmpeg-bin /tmp/ffprobe /usr/local/bin/
 WORKDIR /app
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/runtime ./runtime
+# Bun emits mtcute's dynamically loaded WASM files beside the server bundle,
+# while mtcute resolves them relative to the process working directory.
+COPY --from=build /app/runtime/*.wasm ./
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/apps/backend/drizzle ./apps/backend/drizzle
 
