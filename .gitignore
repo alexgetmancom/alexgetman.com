@@ -26,6 +26,10 @@ Thumbs.db
 /apps/backend/*.sqlite
 /apps/backend/*.sqlite3
 /apps/backend/*.db
+/*.db
+/*.db-wal
+/*.db-shm
+/*.zip
 
 # Local static files that are generated dynamically on server (root only)
 /feed.json

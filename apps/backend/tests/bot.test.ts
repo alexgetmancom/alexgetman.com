@@ -20,9 +20,9 @@ describe("Telegram controller flow", () => {
     backendDb = openBackendDb(":memory:");
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Card", textEn: "Card", entities: [], media: [] });
     const preview = draftPreview(backendDb, draftId);
-    expect(preview.text).toContain("Режим: *Full*");
-    expect(JSON.stringify(preview.keyboard)).toContain(`mode:${draftId}`);
-    expect(JSON.stringify(preview.keyboard)).toContain(`toggle:${draftId}:telegram`);
+    expect(preview.text).toContain("Mode: *Full*");
+    expect(JSON.stringify(preview.keyboard)).toContain(`cycle_mode:${draftId}`);
+    expect(JSON.stringify(preview.keyboard)).toContain(`platforms:${draftId}`);
     expect(JSON.stringify(preview.keyboard)).not.toContain("use_ru_media");
   });
 

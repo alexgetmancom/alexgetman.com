@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import type { Context } from "grammy";
+import { type Context, InlineKeyboard } from "grammy";
 import { PRESETS } from "../botTargets.js";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
@@ -8,7 +8,7 @@ import { isDeploymentRollbackCallback, requestDeploymentRollback } from "../depl
 import { formatMsk, nextPublishingSlot, parseManualSchedule, rebalanceScheduledDrafts, schedulePreset } from "../publishingSchedule.js";
 import { cancelDraft, hasLocaleTarget, publishDraftToQueue, requireDraft } from "./drafts.js";
 import { extractMessage, parseTargets } from "./message.js";
-import { draftPreview, toggleDraftTarget } from "./preview.js";
+import { type DraftView, draftMode, draftPreview, modeLabel, toggleDraftTarget } from "./preview.js";
 
 type AdminState = { action: string | null; draft_id: number | null; control_message_id: number | null };
 
@@ -53,19 +53,32 @@ export async function handleDraftCallback(ctx: Context, backendDb: BackendDb, co
   if (!Number.isSafeInteger(draftId)) return void (await ctx.answerCallbackQuery({ text: "Bad draft id" }));
   if (action === "toggle" && second) {
     toggleDraftTarget(backendDb, draftId, second);
-    return editDraftPreview(ctx, backendDb, draftId);
+    await ctx.answerCallbackQuery({ text: `${second} toggled` });
+    return editDraftPreview(ctx, backendDb, draftId, "platforms");
   }
   if (action === "preview") return editDraftPreview(ctx, backendDb, draftId);
-  if (action === "mode") return editDraftPreview(ctx, backendDb, draftId, "modes");
-  if (action === "preset" && first && PRESETS[first]) {
+  if (action === "platforms") return editDraftPreview(ctx, backendDb, draftId, "platforms");
+  if (action === "cycle_mode") {
+    const draft = requireDraft(backendDb, draftId);
+    const targets = parseTargets(draft.targets_json);
+    const mode = draftMode(targets);
+    let nextMode: keyof typeof PRESETS = "full";
+    if (mode === "full") nextMode = "ru";
+    else if (mode === "ru") nextMode = "en";
+    else if (mode === "en") nextMode = "tg";
+    else nextMode = "full";
+
     backendDb.db
       .update(drafts)
-      .set({ targetsJson: JSON.stringify(PRESETS[first]), updatedAt: new Date().toISOString() })
+      .set({ targetsJson: JSON.stringify(PRESETS[nextMode]), updatedAt: new Date().toISOString() })
       .where(eq(drafts.id, draftId))
       .run();
-    return editDraftPreview(ctx, backendDb, draftId, "modes");
+    await ctx.answerCallbackQuery({ text: `Mode: ${modeLabel(nextMode)}` });
+    return editDraftPreview(ctx, backendDb, draftId);
   }
-  if (action === "preset" && first === "manual") {
+  if (action === "cancel_state") {
+    clearAdminState(backendDb, Number(ctx.from?.id));
+    await ctx.answerCallbackQuery();
     return editDraftPreview(ctx, backendDb, draftId);
   }
   if (["edit_ru", "edit_en", "replace_ru_media", "replace_en_media"].includes(action ?? "")) {
@@ -141,12 +154,40 @@ export async function applyAdminState(
     publishDraftToQueue(backendDb, draftId, { mode: "scheduled", ruAt, enAt });
     rebalanceScheduledDrafts(backendDb);
   } else if (action === "edit_ru" || action === "edit_en") {
-    if (!message.text) throw new Error("edited text is empty");
-    const values =
-      action === "edit_ru"
-        ? { textRu: message.text, textRuEntitiesJson: JSON.stringify(message.entities), updatedAt: now }
-        : { textEnApproved: message.text, textEnEntitiesJson: JSON.stringify(message.entities), updatedAt: now };
-    backendDb.db.update(drafts).set(values).where(eq(drafts.id, draftId)).run();
+    const isRu = action === "edit_ru";
+    const updatePayload: any = { updatedAt: now };
+    const cleanText = message.text?.trim().toLowerCase();
+    const shouldClearMedia =
+      cleanText === "/delmedia" || cleanText === "очистить" || cleanText === "без медиа" || cleanText === "clear media";
+
+    if (shouldClearMedia) {
+      if (isRu) {
+        updatePayload.mediaRuJson = null;
+      } else {
+        updatePayload.mediaEnJson = null;
+      }
+    } else {
+      if (message.media.length > 0) {
+        if (isRu) {
+          updatePayload.mediaRuJson = JSON.stringify(message.media);
+        } else {
+          updatePayload.mediaEnJson = JSON.stringify(message.media);
+        }
+      }
+      if (message.text) {
+        if (isRu) {
+          updatePayload.textRu = message.text;
+          updatePayload.textRuEntitiesJson = JSON.stringify(message.entities);
+        } else {
+          updatePayload.textEnApproved = message.text;
+          updatePayload.textEnEntitiesJson = JSON.stringify(message.entities);
+        }
+      }
+    }
+    if (Object.keys(updatePayload).length <= 1) {
+      throw new Error("No text or media detected for editing.");
+    }
+    backendDb.db.update(drafts).set(updatePayload).where(eq(drafts.id, draftId)).run();
   } else if (action === "replace_ru_media" || action === "replace_en_media") {
     if (message.media.length === 0) throw new Error("replacement media is empty");
     backendDb.db
@@ -171,12 +212,7 @@ export async function sendDraftPreview(ctx: Pick<Context, "reply">, backendDb: B
   await ctx.reply(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
 }
 
-async function editDraftPreview(
-  ctx: Context,
-  backendDb: BackendDb,
-  draftId: number,
-  view: "overview" | "modes" | "schedule" | "confirm_publish" = "overview",
-): Promise<void> {
+async function editDraftPreview(ctx: Context, backendDb: BackendDb, draftId: number, view: DraftView = "overview"): Promise<void> {
   const preview = draftPreview(backendDb, draftId, view);
   await ctx.answerCallbackQuery();
   await ctx.editMessageText(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
@@ -184,7 +220,8 @@ async function editDraftPreview(
 
 async function editDraftPrompt(ctx: Context, backendDb: BackendDb, draftId: number, prompt: string): Promise<void> {
   const preview = draftPreview(backendDb, draftId);
-  await ctx.editMessageText(`${preview.text}\n\n${prompt}`, { parse_mode: "Markdown", reply_markup: preview.keyboard });
+  const keyboard = new InlineKeyboard().text("← Cancel", `cancel_state:${draftId}`);
+  await ctx.editMessageText(`${preview.text}\n\n${prompt}`, { parse_mode: "Markdown", reply_markup: keyboard });
 }
 
 export function clearAdminState(backendDb: BackendDb, adminId: number): void {

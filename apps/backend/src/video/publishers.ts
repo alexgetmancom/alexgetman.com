@@ -26,19 +26,32 @@ export async function prepareYouTubeVideo(
 ): Promise<{ id: string; url: string }> {
   const token = await youtubeAccessToken(config);
   const file = Bun.file(filePath);
-  const init = await fetch("https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json; charset=utf-8",
-      "X-Upload-Content-Type": "video/mp4",
-      "X-Upload-Content-Length": String(file.size),
+  const init = await fetch(
+    "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status,recordingDetails",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json; charset=utf-8",
+        "X-Upload-Content-Type": "video/mp4",
+        "X-Upload-Content-Length": String(file.size),
+      },
+      body: JSON.stringify({
+        snippet: {
+          title: metadata.title,
+          description: metadata.description,
+          tags: metadata.tags,
+          categoryId: "20",
+          defaultLanguage: "ru",
+          defaultAudioLanguage: "ru",
+        },
+        status: { privacyStatus: "private", publishAt, selfDeclaredMadeForKids: false },
+        recordingDetails: {
+          recordingDate: publishAt,
+        },
+      }),
     },
-    body: JSON.stringify({
-      snippet: { title: metadata.title, description: metadata.description, tags: metadata.tags, categoryId: "20" },
-      status: { privacyStatus: "private", publishAt, selfDeclaredMadeForKids: false },
-    }),
-  });
+  );
   if (!init.ok) throw new Error(`YouTube upload session failed: ${init.status} ${await init.text()}`);
   const location = init.headers.get("location");
   if (!location) throw new Error("YouTube did not return an upload location.");

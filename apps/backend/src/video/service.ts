@@ -167,18 +167,32 @@ function insertVideoJob(tx: BackendDb["db"], videoDraftId: number, videoTargetId
 export function videoPreview(backendDb: BackendDb, videoDraftId: number): { text: string; keyboard: InlineKeyboard } {
   const draft = getVideoDraft(backendDb, videoDraftId);
   const targets = listVideoTargets(backendDb, videoDraftId);
-  const lines = [`🎬 *${escapeMarkdown(draft.label || "Без названия")}*`, `Статус: *${draft.status}*`];
+  const lines = [`🎬 *${escapeMarkdown(draft.label || "Untitled")}*`, `Status: *${draft.status.toUpperCase()}*`];
   for (const target of targets) {
     lines.push(
       `• ${videoTargetLabel(target.target as VideoTarget)}: ${target.status}${target.scheduledAt ? ` · ${formatTime(target.scheduledAt)}` : ""}`,
     );
   }
   const keyboard = new InlineKeyboard();
-  if (["editing", "draft"].includes(draft.status)) keyboard.text("📅 Запланировать", `video_schedule:${draft.id}`).row();
-  if (["scheduled", "failed", "partial"].includes(draft.status)) {
-    keyboard.text("🕒 Перенести", `video_schedule:${draft.id}`).text("▶️ Сейчас", `video_now:${draft.id}`).row();
+  const ytTarget = targets.find((t) => t.target === "youtube_shorts");
+  const igTarget = targets.find((t) => t.target === "instagram_reels");
+
+  if (ytTarget) {
+    keyboard.text("🕒 Time YT", `video_time:youtube_shorts:${draft.id}`);
+    keyboard.text("❌ Remove YT", `video_remove:youtube_shorts:${draft.id}`).row();
   }
-  keyboard.text("✏️ Изменить", `video_edit:${draft.id}`).text("❌ Отменить", `video_cancel:${draft.id}`);
+  if (igTarget) {
+    keyboard.text("🕒 Time IG", `video_time:instagram_reels:${draft.id}`);
+    keyboard.text("❌ Remove IG", `video_remove:instagram_reels:${draft.id}`).row();
+  }
+  if (targets.length > 0 && (draft.status === "draft" || draft.status === "editing")) {
+    keyboard.text("📅 Schedule", `video_schedule:${draft.id}`).row();
+  }
+
+  keyboard.text("✏️ Edit text", `video_edit_menu:${draft.id}`);
+  keyboard.text("🗑 Delete video", `video_cancel:${draft.id}`).row();
+  keyboard.text("← Back to Queue", "queue_home");
+
   return { text: lines.join("\n"), keyboard };
 }
 
@@ -386,7 +400,7 @@ function recoverVideoLocks(backendDb: BackendDb, timeoutSeconds: number): void {
     .run();
 }
 
-function refreshVideoDraftStatus(backendDb: BackendDb, videoDraftId: number, retentionHours: number): void {
+export function refreshVideoDraftStatus(backendDb: BackendDb, videoDraftId: number, retentionHours: number): void {
   const targets = listVideoTargets(backendDb, videoDraftId);
   if (targets.length === 0) return;
   const final = targets.every((target) => ["published", "failed", "cancelled"].includes(target.status));

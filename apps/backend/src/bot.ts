@@ -4,6 +4,7 @@ import { appendPendingAlbum } from "./bot/albums.js";
 import { applyAdminState, getAdminState, handleDraftCallback, sendDraftPreview } from "./bot/callbacks.js";
 import { createDraftFromMessage, scheduledDrafts } from "./bot/drafts.js";
 import { extractMessage } from "./bot/message.js";
+import { showQueue } from "./bot/queue.js";
 import { handleVideoCallback, handleVideoMessage, startVideoFlow } from "./bot/video.js";
 import type { BackendConfig } from "./config.js";
 import type { BackendDb } from "./db/client.js";
@@ -30,12 +31,17 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
     await showMainMenu(ctx, config);
   });
   bot.hears("☰ Показать меню", (ctx) => showMainMenu(ctx, config));
-  bot.hears("🎬 Видеопубликация", async (ctx) => {
+  bot.hears("🎬 Новое видео", async (ctx) => {
     if (!isAdmin(config, ctx.from?.id)) return void (await ctx.reply("Forbidden"));
     if (!config.studio.modules.video_posting) return void (await ctx.reply("Видеопубликация выключена в studio.yaml."));
     await startVideoFlow(ctx, backendDb);
   });
-  bot.hears("📝 Обычная публикация", (ctx) => ctx.reply("Пришлите текст с опциональным фото или видео для обычной публикации."));
+  bot.hears("📝 Новый пост", async (ctx) => {
+    if (!isAdmin(config, ctx.from?.id)) return void (await ctx.reply("Forbidden"));
+    await ctx.reply("📝 Пришлите текст с опциональным фото или видео для нового поста.", {
+      reply_markup: new InlineKeyboard().text("← Cancel", "cancel_dialog"),
+    });
+  });
   bot.command("pipeline_status", (ctx) => ctx.reply(`${config.COMMAND_CENTER_URL.replace(/\/$/, "")}/pipeline-status`));
   bot.command("schedule", async (ctx) => {
     if (!isAdmin(config, ctx.from?.id)) return void (await ctx.reply("Forbidden"));
@@ -84,7 +90,22 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
     if (!isAdmin(config, ctx.from?.id)) return void (await ctx.answerCallbackQuery({ text: "Forbidden" }));
     if (ctx.callbackQuery.data === "menu_text") {
       await ctx.answerCallbackQuery();
-      await ctx.editMessageText("📝 Пришлите текст с опциональным фото или видео для обычной публикации.");
+      await ctx.editMessageText("📝 Пришлите текст с опциональным фото или видео для нового поста.", {
+        reply_markup: new InlineKeyboard().text("← Cancel", "cancel_dialog"),
+      });
+      return;
+    }
+    if (ctx.callbackQuery.data === "cancel_dialog") {
+      await ctx.answerCallbackQuery();
+      try {
+        await ctx.deleteMessage();
+      } catch (err) {}
+      await showMainMenu(ctx, config);
+      return;
+    }
+    if (ctx.callbackQuery.data === "queue_home") {
+      await ctx.answerCallbackQuery();
+      await showQueue(ctx, backendDb, config);
       return;
     }
     if (
@@ -128,9 +149,11 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
 
 async function showMainMenu(ctx: Context, config: BackendConfig): Promise<void> {
   const keyboard = new InlineKeyboard();
-  if (config.studio.modules.text_posting) keyboard.text("📝 Обычная публикация", "menu_text");
-  if (config.studio.modules.video_posting) keyboard.text("🎬 Видеопубликация", "video_start");
-  if (config.studio.modules.analytics) keyboard.row().text("📊 Статистика", "analytics_home");
+  if (config.studio.modules.text_posting) keyboard.text("📝 Новый пост", "menu_text");
+  if (config.studio.modules.video_posting) keyboard.text("🎬 Новое видео", "video_start");
+  keyboard.row();
+  keyboard.text("📋 Очередь", "queue_home");
+  if (config.studio.modules.analytics) keyboard.text("📊 Статистика", "analytics_home");
   await ctx.reply("Панель управления:", { reply_markup: keyboard });
 }
 
