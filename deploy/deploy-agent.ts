@@ -85,7 +85,14 @@ async function currentImage(): Promise<string | undefined> {
 
 async function writeImage(image: string): Promise<void> {
   const temporary = `${config.imageEnvFile}.next`;
-  await Bun.write(temporary, `BACKEND_IMAGE=${image}\n`);
+  const existing = await Bun.file(config.imageEnvFile)
+    .text()
+    .catch(() => "");
+  const preserved = existing
+    .split(/\r?\n/)
+    .filter((line) => !line.startsWith("BACKEND_IMAGE="))
+    .filter(Boolean);
+  await Bun.write(temporary, [`BACKEND_IMAGE=${image}`, ...preserved, ""].join("\n"));
   await rename(temporary, config.imageEnvFile);
 }
 
