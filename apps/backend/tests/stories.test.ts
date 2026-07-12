@@ -52,11 +52,11 @@ describe("story publishers", () => {
   it("uploads generated story paths as files, rather than treating them as Telegram file IDs", () => {
     expect(telegramStoryUploadMedia("/data/story-media/draft-59-ru.jpg", "IMAGE")).toEqual({
       type: "photo",
-      file: "/data/story-media/draft-59-ru.jpg",
+      file: "file:/data/story-media/draft-59-ru.jpg",
     });
     expect(telegramStoryUploadMedia("/data/story-media/draft-59-en.mp4", "VIDEO")).toEqual({
       type: "video",
-      file: "/data/story-media/draft-59-en.mp4",
+      file: "file:/data/story-media/draft-59-en.mp4",
     });
   });
 

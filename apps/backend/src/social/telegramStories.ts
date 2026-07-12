@@ -38,6 +38,10 @@ async function publishChannelStory(media: PublishMediaItem, caption: string, lin
   let cleanupPath: string | null = null;
   const clientInstance = createChannelStoryClient(config);
   await clientInstance.connect();
+  // Stories are posted on behalf of the authenticated channel. Load the
+  // account once so mtcute has its own peer cached before resolving the
+  // target channel and sending media.
+  await clientInstance.getMe();
   try {
     const metadata = await probeVideo(uploadPath, media);
     if (media.type === "VIDEO" && fs.statSync(uploadPath).size > STORY_MAX_BYTES) {
@@ -91,7 +95,9 @@ async function publishChannelStory(media: PublishMediaItem, caption: string, lin
 }
 
 export function telegramStoryUploadMedia(filePath: string, type: PublishMediaItem["type"]): { type: "photo" | "video"; file: string } {
-  return { type: type === "VIDEO" ? "video" : "photo", file: filePath };
+  // mtcute treats a bare string as a TDLib/Bot API file ID. The `file:`
+  // prefix explicitly selects a local filesystem upload.
+  return { type: type === "VIDEO" ? "video" : "photo", file: `file:${filePath}` };
 }
 
 async function probeVideo(filePath: string, media: PublishMediaItem): Promise<{ width: number; height: number; duration: number }> {
