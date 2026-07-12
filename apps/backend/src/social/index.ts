@@ -25,10 +25,24 @@ type MediaCacheEntry = {
   cleanupTimer: ReturnType<typeof setTimeout> | null;
 };
 
-const mediaCache = new Map<string, MediaCacheEntry>();
-let mediaPreparationTail: Promise<void> = Promise.resolve();
-
 export function createPublishers(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch = fetch): Record<string, Publisher> {
+  // Publisher instances own their preparation state. This prevents cache entries
+  // from leaking between test runs or independently configured worker instances.
+  const mediaCache = new Map<string, MediaCacheEntry>();
+  let mediaPreparationTail: Promise<void> = Promise.resolve();
+  const prepare = (
+    job: ClaimedPublishJob,
+    publisherConfig: BackendConfig,
+    publish: (payload: Record<string, unknown>) => Promise<PublishResult>,
+  ) =>
+    withPreparedMedia(job, publisherConfig, fetchImpl, publish, mediaCache, (work) => {
+      const next = mediaPreparationTail.then(work, work);
+      mediaPreparationTail = next.then(
+        () => undefined,
+        () => undefined,
+      );
+      return next;
+    });
   const threadsEnConfig = { ...config, THREADS_ACCESS_TOKEN: config.THREADS_EN_ACCESS_TOKEN ?? config.THREADS_ACCESS_TOKEN };
   const facebookRuConfig = {
     ...config,
@@ -46,35 +60,34 @@ export function createPublishers(config: BackendConfig, backendDb: BackendDb, fe
     INSTAGRAM_USER_ID: config.INSTAGRAM_RU_USER_ID ?? config.INSTAGRAM_USER_ID,
   };
   return {
-    devto: (job) => publishToDevto(devtoArticleFromPayload(job.payload, config), config, fetchImpl),
+    // Every target that can use media goes through the same preparation step.
+    // It supplies both local files (Bluesky, Mastodon) and public URLs (Dev.to, GitHub).
+    devto: (job) => prepare(job, config, (payload) => publishToDevto(devtoArticleFromPayload(payload, config), config, fetchImpl)),
     telegram: (job) => publishToTelegram(job.payload, config, fetchImpl),
-    mastodon: (job) => publishToMastodon(job.payload, config, fetchImpl),
-    bluesky: (job) => publishToBluesky(job.payload, config, fetchImpl),
-    github: (job) => publishToGitHubDiscussion(job.payload, config, fetchImpl),
-    github_discussions: (job) => publishToGitHubDiscussion(job.payload, config, fetchImpl),
-    github_en: (job) => publishToGitHubDiscussion(job.payload, config, fetchImpl),
-    github_ru: (job) => publishToGitHubDiscussion(job.payload, config, fetchImpl),
-    threads: (job) => withPreparedMedia(job, config, fetchImpl, (payload) => publishToThreads(payload, config, fetchImpl)),
-    threads_ru: (job) => withPreparedMedia(job, config, fetchImpl, (payload) => publishToThreads(payload, config, fetchImpl)),
-    threads_en: (job) =>
-      withPreparedMedia(job, threadsEnConfig, fetchImpl, (payload) => publishToThreads(payload, threadsEnConfig, fetchImpl)),
-    facebook: (job) => withPreparedMedia(job, config, fetchImpl, (payload) => publishToFacebook(payload, config, fetchImpl)),
-    facebook_ru: (job) =>
-      withPreparedMedia(job, facebookRuConfig, fetchImpl, (payload) => publishToFacebook(payload, facebookRuConfig, fetchImpl)),
-    linkedin: (job) => withPreparedMedia(job, config, fetchImpl, (payload) => publishToLinkedIn(payload, config, fetchImpl)),
-    x: (job) => withPreparedMedia(job, config, fetchImpl, (payload) => publishToX(payload, config, fetchImpl)),
-    twitter: (job) => withPreparedMedia(job, config, fetchImpl, (payload) => publishToX(payload, config, fetchImpl)),
-    instagram_story: (job) => withPreparedMedia(job, config, fetchImpl, (payload) => publishInstagramStory(payload, config, fetchImpl)),
-    instagram_stories: (job) =>
-      withPreparedMedia(job, instagramEnConfig, fetchImpl, (payload) => publishInstagramStory(payload, instagramEnConfig, fetchImpl)),
+    mastodon: (job) => prepare(job, config, (payload) => publishToMastodon(payload, config, fetchImpl)),
+    bluesky: (job) => prepare(job, config, (payload) => publishToBluesky(payload, config, fetchImpl)),
+    github: (job) => prepare(job, config, (payload) => publishToGitHubDiscussion(payload, config, fetchImpl)),
+    github_discussions: (job) => prepare(job, config, (payload) => publishToGitHubDiscussion(payload, config, fetchImpl)),
+    github_en: (job) => prepare(job, config, (payload) => publishToGitHubDiscussion(payload, config, fetchImpl)),
+    github_ru: (job) => prepare(job, config, (payload) => publishToGitHubDiscussion(payload, config, fetchImpl)),
+    threads: (job) => prepare(job, config, (payload) => publishToThreads(payload, config, fetchImpl)),
+    threads_ru: (job) => prepare(job, config, (payload) => publishToThreads(payload, config, fetchImpl)),
+    threads_en: (job) => prepare(job, threadsEnConfig, (payload) => publishToThreads(payload, threadsEnConfig, fetchImpl)),
+    facebook: (job) => prepare(job, config, (payload) => publishToFacebook(payload, config, fetchImpl)),
+    facebook_ru: (job) => prepare(job, facebookRuConfig, (payload) => publishToFacebook(payload, facebookRuConfig, fetchImpl)),
+    linkedin: (job) => prepare(job, config, (payload) => publishToLinkedIn(payload, config, fetchImpl)),
+    x: (job) => prepare(job, config, (payload) => publishToX(payload, config, fetchImpl)),
+    twitter: (job) => prepare(job, config, (payload) => publishToX(payload, config, fetchImpl)),
+    instagram_story: (job) => prepare(job, config, (payload) => publishInstagramStory(payload, config, fetchImpl)),
+    instagram_stories: (job) => prepare(job, instagramEnConfig, (payload) => publishInstagramStory(payload, instagramEnConfig, fetchImpl)),
     instagram_stories_ru: (job) =>
-      withPreparedMedia(job, instagramRuConfig, fetchImpl, (payload) => publishInstagramStory(payload, instagramRuConfig, fetchImpl)),
+      prepare(job, instagramRuConfig, (payload) => publishInstagramStory(payload, instagramRuConfig, fetchImpl)),
     telegram_story: (job) =>
-      withPreparedMedia(job, config, fetchImpl, async (payload) =>
+      prepare(job, config, async (payload) =>
         (await import("./telegramStories.js")).publishTelegramStory(payload, config, backendDb, fetchImpl),
       ),
     telegram_stories: (job) =>
-      withPreparedMedia(job, config, fetchImpl, async (payload) =>
+      prepare(job, config, async (payload) =>
         (await import("./telegramStories.js")).publishTelegramStory(payload, config, backendDb, fetchImpl),
       ),
   };
@@ -85,6 +98,8 @@ async function withPreparedMedia(
   config: BackendConfig,
   fetchImpl: typeof fetch,
   publish: (payload: Record<string, unknown>) => Promise<PublishResult>,
+  mediaCache: Map<string, MediaCacheEntry>,
+  enqueue: <T>(prepare: () => Promise<T>) => Promise<T>,
 ): Promise<PublishResult> {
   const media = payloadMedia(job.payload);
   if (media.length === 0) return publish(job.payload);
@@ -92,7 +107,7 @@ async function withPreparedMedia(
   const key = mediaCacheKey(job, sourceMedia, config);
   let entry = mediaCache.get(key);
   if (!entry) {
-    entry = { prepared: enqueueMediaPreparation(() => prepareMediaItems(config, sourceMedia, fetchImpl)), users: 0, cleanupTimer: null };
+    entry = { prepared: enqueue(() => prepareMediaItems(config, sourceMedia, fetchImpl)), users: 0, cleanupTimer: null };
     mediaCache.set(key, entry);
   }
   if (entry.cleanupTimer) {
@@ -144,13 +159,4 @@ function mediaCacheKey(job: ClaimedPublishJob, media: ReturnType<typeof payloadM
     media: media.map((item) => [item.fileId, item.localPath, item.type]),
     remote: config.REMOTE_MEDIA_PATH,
   });
-}
-
-function enqueueMediaPreparation<T>(prepare: () => Promise<T>): Promise<T> {
-  const next = mediaPreparationTail.then(prepare, prepare);
-  mediaPreparationTail = next.then(
-    () => undefined,
-    () => undefined,
-  );
-  return next;
 }

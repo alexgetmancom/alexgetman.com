@@ -1,6 +1,6 @@
 import type { BackendConfig } from "../config.js";
 import { HttpPublishError, type PublishResult } from "../queue/errors.js";
-import { payloadMedia } from "./payload.js";
+import { payloadCanonicalUrl, payloadMedia } from "./payload.js";
 
 type DevtoArticleInput = {
   title: string;
@@ -22,7 +22,7 @@ export function devtoArticleFromPayload(payload: Record<string, unknown>, config
     stringValue(payload.text_en) ||
     stringValue(payload.text) ||
     "";
-  const canonicalUrl = stringValue(payload.canonicalUrl) || stringValue(payload.canonical_url) || canonicalFromPayload(payload, config);
+  const canonicalUrl = payloadCanonicalUrl(payload, config);
   const tags = Array.isArray(payload.tags) ? payload.tags.map((tag) => String(tag)) : [];
   const mainImage = stringValue(payload.mainImage) || stringValue(payload.main_image) || null;
   const inlineImage = mainImage ?? payloadMedia(payload).find((item) => item.type === "IMAGE" && item.vpsUrl)?.vpsUrl ?? null;
@@ -32,7 +32,9 @@ export function devtoArticleFromPayload(payload: Record<string, unknown>, config
       inlineImage && !bodyMarkdown.includes(`](${inlineImage})`) ? `![${title}](${inlineImage})\n\n${bodyMarkdown}` : bodyMarkdown,
     canonicalUrl,
     tags,
-    mainImage,
+    // Dev.to needs this field for the card cover; the same image is also put
+    // into Markdown so the article body remains complete outside the card view.
+    mainImage: inlineImage,
     published: payload.published == null ? true : Boolean(payload.published),
   };
 }
@@ -116,11 +118,4 @@ function stringValue(value: unknown): string {
 
 function firstLine(value: string): string {
   return value.split(/\r?\n/, 1)[0]?.trim() ?? "";
-}
-
-function canonicalFromPayload(payload: Record<string, unknown>, config: BackendConfig): string | null {
-  const postId = payload.post_id ?? payload.postId;
-  const slug = payload.slug_en ?? payload.slugEn;
-  if (postId == null || !slug) return null;
-  return `${config.PUBLIC_BASE_URL.replace(/\/$/, "")}/${postId}/${String(slug).replace(/^\/+/, "")}/`;
 }

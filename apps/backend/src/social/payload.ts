@@ -39,6 +39,7 @@ const mediaRecordSchema = z
 const publishPayloadSchema = z
   .object({
     text: z.string().optional(),
+    text_ru: z.string().optional(),
     text_en: z.string().optional(),
     title: z.string().optional(),
     locale: z.string().optional(),
@@ -50,6 +51,10 @@ const publishPayloadSchema = z
     slugEn: z.string().optional(),
     canonicalUrl: z.string().optional(),
     canonical_url: z.string().optional(),
+    bodyMarkdown: z.string().optional(),
+    body_markdown: z.string().optional(),
+    mainImage: z.string().optional(),
+    main_image: z.string().optional(),
     url: z.string().optional(),
     media: z.unknown().optional(),
     media_en: z.unknown().optional(),

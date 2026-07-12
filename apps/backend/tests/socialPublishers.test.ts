@@ -5,7 +5,10 @@ import path from "node:path";
 import { loadConfig } from "../src/config.js";
 import { publishToBluesky } from "../src/social/bluesky.js";
 import { updateDevtoArticle } from "../src/social/devto.js";
+import { publishToGitHubDiscussion } from "../src/social/github.js";
+import { createPublishers } from "../src/social/index.js";
 import { publishToLinkedIn } from "../src/social/linkedin.js";
+import { publishToMastodon } from "../src/social/mastodon.js";
 import { payloadMedia, payloadText } from "../src/social/payload.js";
 import { publishToTelegram } from "../src/social/telegram.js";
 import { publishToThreads } from "../src/social/threads.js";
@@ -193,6 +196,26 @@ describe("X publisher", () => {
 });
 
 describe("Bluesky publisher", () => {
+  it("uploads a prepared local image into the first post", async () => {
+    const imagePath = tempImage();
+    const fetchMock = mock(async (input: string | URL | Request, _init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("createSession")) return new Response(JSON.stringify({ did: "did:plc:1", accessJwt: "jwt" }), { status: 200 });
+      if (url.includes("uploadBlob"))
+        return new Response(JSON.stringify({ blob: { $type: "blob", ref: { $link: "blob-1" } } }), { status: 200 });
+      if (url.includes("createRecord"))
+        return new Response(JSON.stringify({ uri: "at://did/app.bsky.feed.post/root", cid: "cid" }), { status: 200 });
+      return new Response(JSON.stringify({ feed: [{ post: { uri: "at://did/app.bsky.feed.post/root" } }] }), { status: 200 });
+    });
+    await publishToBluesky(
+      { text_en: "Post", media: [{ type: "IMAGE", local_path: imagePath }] },
+      loadConfig({ BLUESKY_HANDLE: "me.test", BLUESKY_APP_PASSWORD: "password" }),
+      fetchMock as unknown as typeof fetch,
+    );
+    const recordCall = fetchMock.mock.calls.find(([url]) => String(url).includes("createRecord"));
+    expect(String(recordCall?.[1]?.body)).toContain("app.bsky.embed.images");
+  });
+
   it("marks a created root post retryable when it is not visible in the author feed", async () => {
     const calls: string[] = [];
     const fetchImpl = mock(async (input: string | URL | Request) => {
@@ -212,6 +235,85 @@ describe("Bluesky publisher", () => {
 
     expect(result).toMatchObject({ ok: false, retryable: true, error: "bluesky_visibility_failed:not_in_author_feed" });
     expect(calls.some((url) => url.includes("getAuthorFeed"))).toBe(true);
+  });
+});
+
+describe("Mastodon and GitHub publishers", () => {
+  it("uploads prepared local media to Mastodon", async () => {
+    const imagePath = tempImage();
+    const fetchMock = mock(async (input: string | URL | Request) =>
+      String(input).includes("/media")
+        ? new Response(JSON.stringify({ id: "media-1" }), { status: 200 })
+        : new Response(JSON.stringify({ id: "status-1", url: "https://mastodon.test/@me/1" }), { status: 200 }),
+    );
+    await publishToMastodon(
+      { text_en: "Post", media: [{ type: "IMAGE", local_path: imagePath }] },
+      loadConfig({ MASTODON_INSTANCE: "mastodon.test", MASTODON_ACCESS_TOKEN: "token" }),
+      fetchMock as unknown as typeof fetch,
+    );
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+      "https://mastodon.test/api/v2/media",
+      "https://mastodon.test/api/v1/statuses",
+    ]);
+  });
+
+  it("embeds public media in GitHub without a forced site CTA", async () => {
+    const fetchMock = mock(
+      async (_input: string | URL | Request, _init?: RequestInit) =>
+        new Response(JSON.stringify({ data: { createDiscussion: { discussion: { id: "d1", url: "https://github.test/d/1" } } } }), {
+          status: 200,
+        }),
+    );
+    await publishToGitHubDiscussion(
+      {
+        title: "Title",
+        text_en: "Post",
+        media: [{ type: "IMAGE", vps_url: "https://alexgetman.com/media/post.jpg" }],
+        post_id: 1,
+        slug_en: "post",
+      },
+      loadConfig({ GITHUB_DISCUSSIONS_TOKEN: "token" }),
+      fetchMock as unknown as typeof fetch,
+    );
+    const body = String(fetchMock.mock.calls[0]?.[1]?.body);
+    expect(body).toContain("![Image](https://alexgetman.com/media/post.jpg)");
+    expect(body).not.toContain("Read the full post");
+  });
+});
+
+describe("publisher media routing", () => {
+  it("prepares a Telegram file before sending a Dev.to cover and inline image", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-routing-"));
+    tempDirs.push(dir);
+    const config = loadConfig({
+      CONTROLLER_BOT_TOKEN: "bot-token",
+      DEVTO_API_KEY: "devto-key",
+      TELEGRAM_API_BASE_URL: "https://telegram.test",
+      MEDIA_CACHE_DIR: path.join(dir, "cache"),
+      REMOTE_MEDIA_PATH: path.join(dir, "public"),
+      PUBLIC_MEDIA_BASE_URL: "https://alexgetman.com/media",
+    });
+    const fetchMock = mock(async (input: string | URL | Request, _init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("getFile"))
+        return new Response(JSON.stringify({ ok: true, result: { file_path: "photos/source.jpg" } }), { status: 200 });
+      if (url.includes("/file/bot")) return new Response(Buffer.from([0xff, 0xd8, 0xff, 0xd9]), { status: 200 });
+      return new Response(JSON.stringify({ id: 1, url: "https://dev.to/me/post" }), { status: 201 });
+    });
+    const publisher = createPublishers(config, {} as never, fetchMock as unknown as typeof fetch).devto;
+    if (!publisher) throw new Error("missing Dev.to publisher");
+    const result = await publisher({
+      jobId: 1,
+      postKey: "post:1",
+      target: "devto",
+      payload: { title: "Title", text_en: "Body", media: [{ type: "photo", file_id: "telegram-image" }] },
+    } as never);
+
+    expect(result).toMatchObject({ ok: true });
+    const devtoCall = fetchMock.mock.calls.find(([url]) => String(url) === "https://dev.to/api/articles");
+    const article = JSON.parse(String(devtoCall?.[1]?.body)).article as Record<string, string>;
+    expect(article.main_image).toMatch(/^https:\/\/alexgetman\.com\/media\/cache-[a-f0-9]{24}\.jpg$/);
+    expect(article.body_markdown).toContain(`![Title](${article.main_image})`);
   });
 });
 
