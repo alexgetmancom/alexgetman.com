@@ -54,7 +54,7 @@ services:
       BIND_HOST: 0.0.0.0
       PORT: "8788"
     volumes:
-      - ${STUDIO_CONFIG_FILE:-../../studio.yaml}:/app/studio.yaml:ro
+      - ${STUDIO_CONFIG_FILE:-./studio.yaml}:/app/studio.yaml:ro
       - ./data:/data
       - ./video-media:/data/video-media
       - ./bot-api-data:/var/lib/telegram-bot-api:ro
