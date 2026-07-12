@@ -43,6 +43,42 @@ export async function runCreatorAnalyticsCycle(
 }
 
 export function creatorDashboard(backendDb: BackendDb, config: BackendConfig, days: number): { text: string; hasComments: boolean } {
+  const hasComments = backendDb.db.select({ id: socialComments.commentId }).from(socialComments).limit(1).get() != null;
+
+  if (days === 0) {
+    const lines = ["🌐 *Общая статистика*"];
+    if (config.studio.modules.youtube) {
+      const ytProfile = profile(backendDb, "youtube");
+      lines.push("\n🔴 *YouTube (Канал):*");
+      if (ytProfile) {
+        lines.push(`• Подписчиков: ${number(ytProfile.subscriberCount)}`);
+        lines.push(`• Просмотров за все время: ${number(ytProfile.viewCount)}`);
+        lines.push(`• Всего видео: ${number(ytProfile.videoCount)}`);
+        lines.push(`• За последние 30 дней:`);
+        lines.push(`  - Просмотры: ${number(ytProfile.views)}`);
+        const watchHours = (number(ytProfile.estimatedMinutesWatched) / 60).toFixed(1);
+        lines.push(`  - Время просмотра: ${watchHours} ч.`);
+        const gained = number(ytProfile.subscribersGained);
+        const lost = number(ytProfile.subscribersLost);
+        lines.push(`  - Подписчики: +${gained} / -${lost} (прирост: ${gained - lost})`);
+      } else {
+        lines.push("• Данные канала еще не синхронизированы.");
+      }
+    }
+    if (config.studio.modules.instagram) {
+      const igProfile = profile(backendDb, "instagram");
+      lines.push("\n📸 *Instagram (Профиль):*");
+      if (igProfile) {
+        lines.push(`• Подписчиков: ${number(igProfile.followersCount)}`);
+        lines.push(`• Всего Reels/публикаций: ${number(igProfile.mediaCount)}`);
+      } else {
+        lines.push("• Данные профиля еще не синхронизированы.");
+      }
+    }
+    lines.push("\nДанные обновляются не чаще раза в сутки — это бережно к API платформ.");
+    return { text: lines.join("\n"), hasComments };
+  }
+
   const since = new Date(Date.now() - days * 24 * 60 * 60_000).toISOString();
   const latest = latestVideoMetrics(backendDb, since);
   const lines = [`📊 *Статистика за ${days === 1 ? "сегодня" : `${days} дней`}*`];
@@ -66,13 +102,31 @@ export function creatorDashboard(backendDb: BackendDb, config: BackendConfig, da
         `Instagram: ${sum(instagram, "views")} просмотров · ${sum(instagram, "likes")} лайков · ${sum(instagram, "comments")} комментариев${profileData ? ` · ${number(profileData.followersCount)} подписчиков` : ""}`,
       );
     }
-    const top = all.sort((a, b) => number(b.metrics.views) - number(a.metrics.views)).slice(0, 3);
+
+    // Group by video label to sum up cross-platform statistics
+    const groupedVideos: Record<string, { views: number; likes: number; comments: number }> = {};
+    for (const row of latest) {
+      const label = row.label || "Без названия";
+      if (!groupedVideos[label]) {
+        groupedVideos[label] = { views: 0, likes: 0, comments: 0 };
+      }
+      groupedVideos[label].views += number(row.metrics.views);
+      groupedVideos[label].likes += number(row.metrics.likes);
+      groupedVideos[label].comments += number(row.metrics.comments);
+    }
+
+    const top = Object.entries(groupedVideos)
+      .map(([label, metrics]) => ({ label, ...metrics }))
+      .sort((a, b) => b.views - a.views)
+      .slice(0, 3);
+
     if (top.length) {
-      lines.push("\n🏆 *Топ публикаций*");
-      for (const row of top) lines.push(`• ${row.label || "Без названия"} — ${number(row.metrics.views)} просмотров`);
+      lines.push("\n🏆 *Топ публикаций (суммарно)*");
+      for (const item of top) {
+        lines.push(`• ${item.label} — ${number(item.views)} просмотров · ${item.likes} 👍 · ${item.comments} 💬`);
+      }
     }
   }
-  const hasComments = backendDb.db.select({ id: socialComments.commentId }).from(socialComments).limit(1).get() != null;
   lines.push("\nДанные обновляются не чаще раза в сутки — это бережно к API платформ.");
   return { text: lines.join("\n"), hasComments };
 }

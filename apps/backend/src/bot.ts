@@ -87,14 +87,27 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
       await ctx.editMessageText("📝 Пришлите текст с опциональным фото или видео для обычной публикации.");
       return;
     }
-    if (ctx.callbackQuery.data === "analytics_home" || ctx.callbackQuery.data.startsWith("analytics_period:")) {
-      const days = ctx.callbackQuery.data === "analytics_home" ? 7 : Number(ctx.callbackQuery.data.slice("analytics_period:".length));
-      const dashboard = creatorDashboard(backendDb, config, [1, 7, 30].includes(days) ? days : 7);
+    if (
+      ctx.callbackQuery.data === "analytics_home" ||
+      ctx.callbackQuery.data === "analytics_total" ||
+      ctx.callbackQuery.data.startsWith("analytics_period:")
+    ) {
+      let days = 7;
+      if (ctx.callbackQuery.data === "analytics_total") {
+        days = 0;
+      } else if (ctx.callbackQuery.data.startsWith("analytics_period:")) {
+        days = Number(ctx.callbackQuery.data.slice("analytics_period:".length));
+      }
+      const dashboard = creatorDashboard(backendDb, config, [0, 1, 7, 30].includes(days) ? days : 7);
       const keyboard = new InlineKeyboard()
         .text("Сегодня", "analytics_period:1")
         .text("7 дней", "analytics_period:7")
-        .text("30 дней", "analytics_period:30");
-      if (dashboard.hasComments && config.DEEPSEEK_API_KEY) keyboard.row().text("🤖 ИИ-анализ аудитории", "analytics_ai");
+        .text("30 дней", "analytics_period:30")
+        .row()
+        .text("📊 Общая", "analytics_total");
+      if (dashboard.hasComments && config.DEEPSEEK_API_KEY) {
+        keyboard.text("🤖 ИИ-анализ аудитории", "analytics_ai");
+      }
       await ctx.answerCallbackQuery();
       await ctx.editMessageText(dashboard.text, { parse_mode: "Markdown", reply_markup: keyboard });
       return;
