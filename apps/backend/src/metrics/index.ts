@@ -4,7 +4,7 @@ import type { BackendDb } from "../db/client.js";
 import { type JsonValue, postTargets } from "../db/schema.js";
 import { recordWorkerState } from "../services/workerState.js";
 import { createMetricCollectors, type MetricCollector } from "./collectors.js";
-import { upsertMetricError, upsertMetrics } from "./repository.js";
+import { pruneMetricSamples, upsertMetricError, upsertMetrics } from "./repository.js";
 import { dueMetricTasks, ensureMetricSchedule, finishMetricTask } from "./schedule.js";
 
 export async function runMetricsCycle(
@@ -38,6 +38,13 @@ export async function runMetricsCycle(
       });
     }
   }
+
+  try {
+    pruneMetricSamples(backendDb, 7);
+  } catch (error) {
+    console.error("Failed to prune old metric samples:", error);
+  }
+
   recordWorkerState(backendDb, "metrics", { checked: tasks.length });
   return tasks.length;
 }

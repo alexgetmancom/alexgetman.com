@@ -1,3 +1,4 @@
+import { lte } from "drizzle-orm";
 import type { BackendDb } from "../db/client.js";
 import { type JsonValue, metricSamples, postMetrics } from "../db/schema.js";
 
@@ -46,4 +47,9 @@ export function upsertMetricError(
       set: { source, sampledAt, error, rawJson: raw },
     })
     .run();
+}
+
+export function pruneMetricSamples(backendDb: BackendDb, daysKeep = 7): void {
+  const cutoff = new Date(Date.now() - daysKeep * 24 * 60 * 60 * 1000).toISOString();
+  backendDb.db.delete(metricSamples).where(lte(metricSamples.sampledAt, cutoff)).run();
 }
