@@ -5,10 +5,9 @@ import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { adminState, drafts } from "../db/schema.js";
 import { isDeploymentRollbackCallback, requestDeploymentRollback } from "../deployment.js";
-import { generateStoryMedia } from "../media/story.js";
 import { formatMsk, nextPublishingSlot, parseManualSchedule, rebalanceScheduledDrafts, schedulePreset } from "../publishingSchedule.js";
 import { cancelDraft, hasLocaleTarget, publishDraftToQueue, requireDraft } from "./drafts.js";
-import { extractMessage, parseJson, parseTargets } from "./message.js";
+import { extractMessage, parseTargets } from "./message.js";
 import { draftPreview, toggleDraftTarget } from "./preview.js";
 
 type AdminState = { action: string | null; draft_id: number | null };
@@ -71,23 +70,6 @@ export async function handleDraftCallback(ctx: Context, backendDb: BackendDb, co
   if (action === "use_ru_media") {
     backendDb.db.update(drafts).set({ mediaEnJson: null, updatedAt: new Date().toISOString() }).where(eq(drafts.id, draftId)).run();
     await ctx.answerCallbackQuery({ text: "EN media uses RU fallback" });
-    return sendDraftPreview(ctx, backendDb, draftId);
-  }
-  if (action === "generate_story_ru" || action === "generate_story_en") {
-    const locale = action.endsWith("_ru") ? "ru" : "en";
-    const draft = requireDraft(backendDb, draftId);
-    const source = locale === "en" ? (parseJson(draft.media_en_json) ?? parseJson(draft.media_ru_json)) : parseJson(draft.media_ru_json);
-    const generated = await generateStoryMedia(source, draftId, locale, config);
-    backendDb.db
-      .update(drafts)
-      .set(
-        locale === "en"
-          ? { mediaEnJson: JSON.stringify(generated), updatedAt: new Date().toISOString() }
-          : { mediaRuJson: JSON.stringify(generated), updatedAt: new Date().toISOString() },
-      )
-      .where(eq(drafts.id, draftId))
-      .run();
-    await ctx.answerCallbackQuery({ text: `${locale.toUpperCase()} 9:16 generated` });
     return sendDraftPreview(ctx, backendDb, draftId);
   }
   if (action === "cancel") {

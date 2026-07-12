@@ -35,16 +35,12 @@ export function extractMessage(ctx: Context): DraftMessage {
 }
 
 export function parseTargets(value: unknown): Record<string, boolean> {
-  const parsed = parseJson(value);
+  const parsed = parseJsonValue(value);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return { ...DEFAULT_TARGETS };
   return {
     ...DEFAULT_TARGETS,
     ...Object.fromEntries(Object.entries(parsed as Record<string, unknown>).map(([key, enabled]) => [key, Boolean(enabled)])),
   };
-}
-
-export function parseJson(value: unknown): unknown {
-  return parseJsonValue(value);
 }
 
 export function parseArrayValue(value: unknown): Record<string, unknown>[] {

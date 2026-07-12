@@ -24,7 +24,6 @@ export function draftPreview(backendDb: BackendDb, draftId: number): { text: str
   }
   keyboard.text("Edit RU", `edit_ru:${draftId}`).text("Edit EN", `edit_en:${draftId}`).row();
   keyboard.text("Replace RU media", `replace_ru_media:${draftId}`).text("Replace EN media", `replace_en_media:${draftId}`).row();
-  keyboard.text("Generate RU 9:16", `generate_story_ru:${draftId}`).text("Generate EN 9:16", `generate_story_en:${draftId}`).row();
   keyboard.text("Use RU media for EN", `use_ru_media:${draftId}`).row();
   keyboard.text("Publish now", `publish:${draftId}`).text("Schedule", `schedule:${draftId}`).row();
   keyboard.text("Cancel", `cancel:${draftId}`);

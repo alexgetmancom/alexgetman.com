@@ -1,6 +1,7 @@
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { prepareMediaItems } from "../media/prepare.js";
+import { generateStoryMedia } from "../media/story.js";
 import type { PublishResult } from "../queue/errors.js";
 import type { ClaimedPublishJob } from "../queue/publish.js";
 import { publishToBluesky } from "./bluesky.js";
@@ -87,10 +88,11 @@ async function withPreparedMedia(
 ): Promise<PublishResult> {
   const media = payloadMedia(job.payload);
   if (media.length === 0) return publish(job.payload);
-  const key = mediaCacheKey(job, media, config);
+  const sourceMedia = isStoryTarget(job.target) ? await createStoryMedia(job, media, config) : media;
+  const key = mediaCacheKey(job, sourceMedia, config);
   let entry = mediaCache.get(key);
   if (!entry) {
-    entry = { prepared: enqueueMediaPreparation(() => prepareMediaItems(config, media, fetchImpl)), users: 0, cleanupTimer: null };
+    entry = { prepared: enqueueMediaPreparation(() => prepareMediaItems(config, sourceMedia, fetchImpl)), users: 0, cleanupTimer: null };
     mediaCache.set(key, entry);
   }
   if (entry.cleanupTimer) {
@@ -116,6 +118,20 @@ async function withPreparedMedia(
       }, config.MEDIA_CACHE_TTL_SECONDS * 1000);
     }
   }
+}
+
+function isStoryTarget(target: string): boolean {
+  return (
+    target === "telegram_story" || target === "telegram_stories" || target === "instagram_story" || target.startsWith("instagram_stories")
+  );
+}
+
+async function createStoryMedia(job: ClaimedPublishJob, media: ReturnType<typeof payloadMedia>, config: BackendConfig) {
+  const [source] = media;
+  if (!source) return media;
+  const locale = job.payload.locale === "ru" ? "ru" : "en";
+  const draftId = Number(job.payload.draft_id ?? job.postId ?? job.jobId);
+  return generateStoryMedia([source], Number.isSafeInteger(draftId) ? draftId : job.jobId, locale, config);
 }
 
 function mediaCacheKey(job: ClaimedPublishJob, media: ReturnType<typeof payloadMedia>, config: BackendConfig): string {

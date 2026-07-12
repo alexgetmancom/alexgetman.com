@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { BackendConfig } from "../config.js";
 import { runFfmpeg } from "../runtime/ffmpeg.js";
+import type { PublishMediaItem } from "../social/payload.js";
 
 export async function generateStoryMedia(
   raw: unknown,
@@ -9,7 +10,7 @@ export async function generateStoryMedia(
   locale: "ru" | "en",
   config: BackendConfig,
   fetchImpl: typeof fetch = fetch,
-): Promise<Record<string, unknown>[]> {
+): Promise<PublishMediaItem[]> {
   const items = Array.isArray(raw) ? raw : raw && typeof raw === "object" ? [raw] : [];
   if (items.length !== 1) throw new Error("Story-safe generation supports one media item");
   const item = items[0] as Record<string, unknown>;
@@ -47,7 +48,9 @@ export async function generateStoryMedia(
     config.FFMPEG_TIMEOUT_SECONDS,
   );
   await fs.promises.chmod(output, 0o664);
-  return [{ ...item, story_local_path: output, storyLocalPath: output, story_width: 1080, story_height: 1920 }];
+  return [
+    { ...(item as unknown as PublishMediaItem), story_local_path: output, storyLocalPath: output, story_width: 1080, story_height: 1920 },
+  ];
 }
 
 async function resolveSource(
