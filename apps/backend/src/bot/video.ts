@@ -10,9 +10,10 @@ import {
   listVideoTargets,
   replaceVideoTargets,
   saveVideoMetadata,
-  scheduledVideos,
   scheduleVideo,
+  setVideoControlCard,
   updateVideoLabel,
+  validateVideoDraft,
   videoPreview,
 } from "../video/service.js";
 import { storeTelegramVideo } from "../video/storage.js";
@@ -22,16 +23,14 @@ type Session = { draftId: number | null; step: string; selected: VideoTarget[]; 
 
 export async function startVideoFlow(ctx: Context, backendDb: BackendDb): Promise<void> {
   const adminId = Number(ctx.from?.id);
-  saveSession(backendDb, adminId, { draftId: null, step: "asset", selected: [], data: {} });
-  await ctx.reply("🎬 Пришлите видео MP4. После загрузки я попрошу короткую подпись, платформы и параметры публикации.");
-}
-
-export async function showUnpublishedVideos(ctx: Context, backendDb: BackendDb): Promise<void> {
-  const rows = scheduledVideos(backendDb);
-  if (!rows.length) return void (await ctx.reply("Нет отложенных видеопубликаций."));
-  const keyboard = new InlineKeyboard();
-  for (const row of rows.slice(0, 20)) keyboard.text(`🎬 ${row.label || `Видео #${row.id}`}`, `video_open:${row.id}`).row();
-  await ctx.reply("Неопубликованные видео:", { reply_markup: keyboard });
+  const messageId = callbackMessageId(ctx);
+  if (messageId) await ctx.editMessageText("🎬 Пришлите видео MP4. Затем я попрошу подпись, платформы и параметры публикации.");
+  else {
+    const message = await ctx.reply("🎬 Пришлите видео MP4. Затем я попрошу подпись, платформы и параметры публикации.");
+    saveSession(backendDb, adminId, { draftId: null, step: "asset", selected: [], data: { controlMessageId: message.message_id } });
+    return;
+  }
+  saveSession(backendDb, adminId, { draftId: null, step: "asset", selected: [], data: { controlMessageId: messageId } });
 }
 
 export async function handleVideoMessage(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<boolean> {
@@ -43,30 +42,33 @@ export async function handleVideoMessage(ctx: Context, backendDb: BackendDb, con
     if (session.step === "asset") {
       const stored = await storeTelegramVideo(ctx, config);
       const draftId = createVideoDraft(backendDb, adminId, stored.assetKey);
-      saveSession(backendDb, adminId, { draftId, step: "label", selected: [], data: {} });
-      await ctx.reply("Как кратко назвать это видео для списка? Например: «Hades, часть 3». Это только внутренняя подпись.");
+      const next = { ...session, draftId, step: "label" };
+      saveSession(backendDb, adminId, next);
+      setControlFromSession(backendDb, draftId, ctx, next);
+      await updateVideoControl(ctx, next, "✏️ Как кратко назвать это видео? Например: «Hades, часть 3». Это внутренняя подпись.");
       return true;
     }
     const text = ctx.message && "text" in ctx.message ? (ctx.message.text?.trim() ?? "") : "";
     if (!text) {
-      await ctx.reply("Сейчас жду текстовый ответ. Или отправьте /start, чтобы начать заново.");
+      await updateVideoControl(ctx, session, "⌨ Сейчас жду текстовый ответ. Нажмите «☰ Показать меню», чтобы начать другой сценарий.");
       return true;
     }
     if (!session.draftId) return false;
     if (session.step === "label") {
       updateVideoLabel(backendDb, session.draftId, text);
-      saveSession(backendDb, adminId, { ...session, step: "targets" });
-      await ctx.reply("Выберите платформы, затем нажмите «Далее».", { reply_markup: targetKeyboard(config, []) });
+      const next = { ...session, step: "targets" };
+      saveSession(backendDb, adminId, next);
+      await updateVideoControl(ctx, next, "Выберите платформы, затем нажмите «Далее».", targetKeyboard(config, []));
       return true;
     }
     if (session.step === "youtube_title") {
-      setData(backendDb, adminId, session, "youtube_title", text, "youtube_description");
-      await ctx.reply("Описание для YouTube (можно отправить «-», если не нужно):");
+      const next = setData(backendDb, adminId, session, "youtube_title", text, "youtube_description");
+      await updateVideoControl(ctx, next, "⌨ Описание для YouTube (отправьте «-», если не нужно):");
       return true;
     }
     if (session.step === "youtube_description") {
-      setData(backendDb, adminId, session, "youtube_description", text === "-" ? "" : text, "youtube_tags");
-      await ctx.reply("Теги YouTube через запятую (или «-»):");
+      const next = setData(backendDb, adminId, session, "youtube_description", text === "-" ? "" : text, "youtube_tags");
+      await updateVideoControl(ctx, next, "⌨ Теги YouTube через запятую (или «-»):");
       return true;
     }
     if (session.step === "youtube_tags") {
@@ -86,8 +88,8 @@ export async function handleVideoMessage(ctx: Context, backendDb: BackendDb, con
       return true;
     }
     if (session.step === "instagram_caption") {
-      setData(backendDb, adminId, session, "instagram_caption", text === "-" ? "" : text, "instagram_hashtags");
-      await ctx.reply("Хэштеги Instagram через пробел или запятую (или «-»):");
+      const next = setData(backendDb, adminId, session, "instagram_caption", text === "-" ? "" : text, "instagram_hashtags");
+      await updateVideoControl(ctx, next, "⌨ Хэштеги Instagram через пробел или запятую (или «-»):");
       return true;
     }
     if (session.step === "instagram_hashtags") {
@@ -127,7 +129,11 @@ export async function handleVideoMessage(ctx: Context, backendDb: BackendDb, con
       const remaining = session.selected.find((item) => !schedule[item]);
       if (remaining) {
         saveSession(backendDb, adminId, { ...session, step: `schedule_target:${remaining}`, data: { ...session.data, schedule } });
-        await ctx.reply(`Когда опубликовать на ${videoTargetLabel(remaining)}? Формат: 15.07 18:30 (МСК).`);
+        await updateVideoControl(
+          ctx,
+          { ...session, step: `schedule_target:${remaining}`, data: { ...session.data, schedule } },
+          `⌨ Когда опубликовать на ${videoTargetLabel(remaining)}? Формат: 15.07 18:30 (МСК).`,
+        );
       } else {
         await finishSchedule(
           ctx,
@@ -141,7 +147,7 @@ export async function handleVideoMessage(ctx: Context, backendDb: BackendDb, con
       return true;
     }
   } catch (error) {
-    await ctx.reply(`Не получилось: ${error instanceof Error ? error.message : String(error)}`);
+    await updateVideoControl(ctx, session, `🔴 Не получилось: ${error instanceof Error ? error.message : String(error)}`);
     return true;
   }
   return false;
@@ -153,7 +159,6 @@ export async function handleVideoCallback(ctx: Context, backendDb: BackendDb, co
   const adminId = Number(ctx.from?.id);
   try {
     if (data === "video_start") await startVideoFlow(ctx, backendDb);
-    else if (data === "video_list") await showUnpublishedVideos(ctx, backendDb);
     else if (data.startsWith("video_toggle:")) {
       const target = data.slice("video_toggle:".length) as VideoTarget;
       const session = getSession(backendDb, adminId);
@@ -168,21 +173,26 @@ export async function handleVideoCallback(ctx: Context, backendDb: BackendDb, co
       if (!session?.draftId || !session.selected.length) throw new Error("Выберите хотя бы одну платформу.");
       replaceVideoTargets(backendDb, session.draftId, session.selected);
       if (session.selected.includes("youtube_shorts")) {
-        saveSession(backendDb, adminId, { ...session, step: "youtube_title" });
-        await ctx.reply("Название для YouTube Shorts:");
+        const next = { ...session, step: "youtube_title" };
+        saveSession(backendDb, adminId, next);
+        await updateVideoControl(ctx, next, "⌨ Название для YouTube Shorts:");
       } else await askInstagramOrSchedule(ctx, backendDb, adminId, session);
     } else if (data.startsWith("video_open:")) {
       const id = Number(data.slice("video_open:".length));
       const preview = videoPreview(backendDb, id);
-      await ctx.reply(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
+      const messageId = callbackMessageId(ctx);
+      if (messageId && ctx.chat?.id) setVideoControlCard(backendDb, id, Number(ctx.chat.id), messageId);
+      await ctx.editMessageText(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
     } else if (data.startsWith("video_schedule:")) {
       const id = Number(data.slice("video_schedule:".length));
       const targets = listVideoTargets(backendDb, id).map((row) => row.target as VideoTarget);
       if (!targets.length) throw new Error("У видео не выбраны платформы.");
-      saveSession(backendDb, adminId, { draftId: id, step: "schedule_choice", selected: targets, data: {} });
       const keyboard = new InlineKeyboard().text("Одно время для всех", `video_common:${id}`);
       if (targets.length > 1) keyboard.row().text("Разное время", `video_individual:${id}`);
-      await ctx.reply("Время публикации (МСК):", { reply_markup: keyboard });
+      const session = { draftId: id, step: "schedule_choice", selected: targets, data: { controlMessageId: callbackMessageId(ctx) } };
+      saveSession(backendDb, adminId, session);
+      setControlFromSession(backendDb, id, ctx, session);
+      await updateVideoControl(ctx, session, "📅 Время публикации (МСК):", keyboard);
     } else if (data.startsWith("video_common:") || data.startsWith("video_individual:")) {
       const id = Number(data.split(":")[1]);
       const session = getSession(backendDb, adminId);
@@ -190,7 +200,11 @@ export async function handleVideoCallback(ctx: Context, backendDb: BackendDb, co
       if (!session || !targets.length) throw new Error("Откройте публикацию ещё раз.");
       if (data.startsWith("video_common:")) {
         saveSession(backendDb, adminId, { ...session, draftId: id, selected: targets, step: "schedule_common" });
-        await ctx.reply("Введите дату и время, например: 15.07 18:30 (МСК).");
+        await updateVideoControl(
+          ctx,
+          { ...session, draftId: id, selected: targets, step: "schedule_common" },
+          "⌨ Введите дату и время, например: 15.07 18:30 (МСК).",
+        );
       } else {
         const first = targets[0];
         if (!first) throw new Error("У видео не выбраны платформы.");
@@ -199,34 +213,47 @@ export async function handleVideoCallback(ctx: Context, backendDb: BackendDb, co
           draftId: id,
           selected: targets,
           step: `schedule_target:${first}`,
-          data: { schedule: {} },
+          data: { ...session.data, schedule: {} },
         });
-        await ctx.reply(`Когда опубликовать на ${videoTargetLabel(first)}? Формат: 15.07 18:30 (МСК).`);
+        await updateVideoControl(
+          ctx,
+          { ...session, draftId: id, selected: targets, step: `schedule_target:${first}`, data: { ...session.data, schedule: {} } },
+          `⌨ Когда опубликовать на ${videoTargetLabel(first)}? Формат: 15.07 18:30 (МСК).`,
+        );
       }
     } else if (data.startsWith("video_now:")) {
       const id = Number(data.slice("video_now:".length));
+      const preview = videoPreview(backendDb, id);
+      await ctx.editMessageText(`${preview.text}\n\n⚠️ *Опубликовать сейчас?* Видео будет поставлено в очередь на ближайшую минуту.`, {
+        parse_mode: "Markdown",
+        reply_markup: new InlineKeyboard().text("✅ Да, опубликовать", `video_now_confirm:${id}`).text("← Назад", `video_open:${id}`),
+      });
+    } else if (data.startsWith("video_now_confirm:")) {
+      const id = Number(data.slice("video_now_confirm:".length));
       const targets = listVideoTargets(backendDb, id).map((row) => row.target as VideoTarget);
       await finishSchedule(
         ctx,
         backendDb,
         config,
         adminId,
-        { draftId: id, step: "", selected: targets, data: {} },
+        { draftId: id, step: "", selected: targets, data: { controlMessageId: callbackMessageId(ctx) } },
         Object.fromEntries(targets.map((target) => [target, new Date(Date.now() + 60_000)])),
       );
     } else if (data.startsWith("video_cancel:")) {
       cancelVideo(backendDb, Number(data.slice("video_cancel:".length)), config.VIDEO_MEDIA_RETENTION_HOURS);
       clearSession(backendDb, adminId);
-      await ctx.reply(`Видеопубликация отменена. Исходник останется на сервере ещё ${config.VIDEO_MEDIA_RETENTION_HOURS} ч.`);
+      await ctx.editMessageText(`🗑 Видеопубликация отменена. Исходник останется на сервере ещё ${config.VIDEO_MEDIA_RETENTION_HOURS} ч.`);
     } else if (data.startsWith("video_edit:")) {
       const id = Number(data.slice("video_edit:".length));
-      saveSession(backendDb, adminId, {
+      const session = {
         draftId: id,
         step: "label",
         selected: listVideoTargets(backendDb, id).map((row) => row.target as VideoTarget),
-        data: {},
-      });
-      await ctx.reply("Введите новую внутреннюю подпись видео:");
+        data: { controlMessageId: callbackMessageId(ctx) },
+      };
+      saveSession(backendDb, adminId, session);
+      setControlFromSession(backendDb, id, ctx, session);
+      await updateVideoControl(ctx, session, "⌨ Введите новую внутреннюю подпись видео:");
     }
     await ctx.answerCallbackQuery();
   } catch (error) {
@@ -237,8 +264,9 @@ export async function handleVideoCallback(ctx: Context, backendDb: BackendDb, co
 
 async function askInstagramOrSchedule(ctx: Context, backendDb: BackendDb, adminId: number, session: Session): Promise<void> {
   if (session.selected.includes("instagram_reels")) {
-    saveSession(backendDb, adminId, { ...session, step: "instagram_caption" });
-    await ctx.reply("Описание для Instagram Reels (или «-»):");
+    const next = { ...session, step: "instagram_caption" };
+    saveSession(backendDb, adminId, next);
+    await updateVideoControl(ctx, next, "⌨ Описание для Instagram Reels (или «-»):");
   } else await askSchedule(ctx, backendDb, adminId, session);
 }
 
@@ -246,7 +274,7 @@ async function askSchedule(ctx: Context, backendDb: BackendDb, adminId: number, 
   saveSession(backendDb, adminId, { ...session, step: "schedule_choice" });
   const keyboard = new InlineKeyboard().text("Одно время для всех", `video_common:${session.draftId}`);
   if (session.selected.length > 1) keyboard.row().text("Разное время", `video_individual:${session.draftId}`);
-  await ctx.reply("Данные сохранены. Выберите расписание (МСК):", { reply_markup: keyboard });
+  await updateVideoControl(ctx, { ...session, step: "schedule_choice" }, "Данные сохранены. Выберите расписание (МСК):", keyboard);
 }
 
 async function finishSchedule(
@@ -258,16 +286,20 @@ async function finishSchedule(
   schedule: Partial<Record<VideoTarget, Date>>,
 ): Promise<void> {
   if (!session.draftId) throw new Error("Черновик не найден.");
+  validateVideoDraft(config, backendDb, session.draftId);
   scheduleVideo(backendDb, session.draftId, schedule, {
     prepareLeadMinutes: config.VIDEO_PREPARE_LEAD_MINUTES,
     reminderMinutes: config.VIDEO_REMINDER_MINUTES,
   });
   clearSession(backendDb, adminId);
   const preview = videoPreview(backendDb, session.draftId);
-  await ctx.reply(`✅ Запланировано. Напомню за ${config.VIDEO_REMINDER_MINUTES} минут.\n\n${preview.text}`, {
-    parse_mode: "Markdown",
-    reply_markup: preview.keyboard,
-  });
+  setControlFromSession(backendDb, session.draftId, ctx, session);
+  await updateVideoControl(
+    ctx,
+    session,
+    `✅ Запланировано. Напомню за ${config.VIDEO_REMINDER_MINUTES} минут.\n\n${preview.text}`,
+    preview.keyboard,
+  );
 }
 
 function targetKeyboard(config: BackendConfig, selected: VideoTarget[]): InlineKeyboard {
@@ -312,10 +344,34 @@ function saveSession(backendDb: BackendDb, adminId: number, session: Session): v
     .run();
 }
 
-function setData(backendDb: BackendDb, adminId: number, session: Session, key: string, value: unknown, nextStep: string): void {
-  saveSession(backendDb, adminId, { ...session, step: nextStep, data: { ...session.data, [key]: value } });
+function setData(backendDb: BackendDb, adminId: number, session: Session, key: string, value: unknown, nextStep: string): Session {
+  const next = { ...session, step: nextStep, data: { ...session.data, [key]: value } };
+  saveSession(backendDb, adminId, next);
+  return next;
 }
 
 function clearSession(backendDb: BackendDb, adminId: number): void {
   backendDb.db.delete(videoBotSessions).where(eq(videoBotSessions.adminId, adminId)).run();
+}
+
+async function updateVideoControl(ctx: Context, session: Session, text: string, keyboard?: InlineKeyboard): Promise<void> {
+  const messageId = Number(session.data.controlMessageId);
+  if (messageId && ctx.chat?.id) {
+    await ctx.api.editMessageText(ctx.chat.id, messageId, text, {
+      parse_mode: "Markdown",
+      ...(keyboard ? { reply_markup: keyboard } : {}),
+    });
+    return;
+  }
+  await ctx.reply(text, { parse_mode: "Markdown", ...(keyboard ? { reply_markup: keyboard } : {}) });
+}
+
+function setControlFromSession(backendDb: BackendDb, draftId: number, ctx: Context, session: Session): void {
+  const messageId = Number(session.data.controlMessageId);
+  if (messageId && ctx.chat?.id) setVideoControlCard(backendDb, draftId, Number(ctx.chat.id), messageId);
+}
+
+function callbackMessageId(ctx: Context): number | null {
+  const message = ctx.callbackQuery?.message;
+  return message && "message_id" in message ? message.message_id : null;
 }

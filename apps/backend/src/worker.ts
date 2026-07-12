@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import type { Bot } from "grammy";
 import pLimit from "p-limit";
+import { runCreatorAnalyticsCycle } from "./analytics/creator.js";
 import { finalizePendingAlbums } from "./bot/albums.js";
 import type { BackendConfig } from "./config.js";
 import type { BackendDb } from "./db/client.js";
@@ -88,7 +89,8 @@ export function startWorkers(config: BackendConfig, backendDb: BackendDb, bot: B
       ? [
           startLoop("metrics", config.METRICS_REFRESH_INTERVAL_SECONDS * 1000, async () => {
             const checked = await runMetricsCycle(config, backendDb);
-            log("debug", "metrics loop tick", { checked });
+            const creators = await runCreatorAnalyticsCycle(config, backendDb);
+            log("debug", "metrics loop tick", { checked, creators });
           }),
         ]
       : []),

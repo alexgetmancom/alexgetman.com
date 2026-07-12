@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, mock } from "bun:test";
 import type { Bot } from "grammy";
 import { finalizePendingAlbums } from "../src/bot/albums.js";
 import { cancelDraft, createDraftFromMessage, publishDraftToQueue, scheduledDrafts } from "../src/bot/drafts.js";
+import { draftPreview } from "../src/bot/preview.js";
 import { entitiesToHtml } from "../src/bot/text.js";
 import { TARGETS, targetLocale } from "../src/botTargets.js";
 import { loadConfig } from "../src/config.js";
@@ -15,6 +16,16 @@ afterEach(() => {
 });
 
 describe("Telegram controller flow", () => {
+  it("keeps mode and manual target controls on one ordinary-publication card", () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createDraftFromMessage(backendDb, 42, { text: "Card", textEn: "Card", entities: [], media: [] });
+    const preview = draftPreview(backendDb, draftId);
+    expect(preview.text).toContain("Режим: *Full*");
+    expect(JSON.stringify(preview.keyboard)).toContain(`mode:${draftId}`);
+    expect(JSON.stringify(preview.keyboard)).toContain(`toggle:${draftId}:telegram`);
+    expect(JSON.stringify(preview.keyboard)).not.toContain("use_ru_media");
+  });
+
   it("creates a draft and queues enabled publication targets without Telegram API", () => {
     backendDb = openBackendDb(":memory:");
     const draftId = createDraftFromMessage(backendDb, 42, {

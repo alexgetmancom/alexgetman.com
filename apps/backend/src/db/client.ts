@@ -57,12 +57,13 @@ export function baselineDrizzleMigrations(sqlite: SqliteCompat): MigrationStatus
     "CREATE TABLE IF NOT EXISTS __drizzle_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, hash text NOT NULL, created_at numeric)",
   );
   if (migrationStatus(sqlite).length > 0) return migrationStatus(sqlite);
+  const migrations = drizzleMigrationMetadata();
   // Only the legacy snapshot is baselined. Every migration added afterwards is
   // intentionally applied by Drizzle, including when this command is rerun.
-  const migrations = drizzleMigrationMetadata().slice(0, 1);
+  const baseline = migrations.slice(0, 1);
   sqlite.transaction(() => {
     const insert = sqlite.prepare("INSERT INTO __drizzle_migrations(hash, created_at) VALUES (?, ?)");
-    for (const migration of migrations) insert.run(migration.hash, migration.createdAt);
+    for (const migration of baseline) insert.run(migration.hash, migration.createdAt);
   })();
   return migrationStatus(sqlite);
 }

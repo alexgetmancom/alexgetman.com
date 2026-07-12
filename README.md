@@ -19,7 +19,7 @@ Runtime secrets, SQLite databases, Telegram sessions, generated media, logs and 
 
 ## Modular studio setup
 
-`studio.yaml` is the public feature switchboard: it selects the site, ordinary text publishing, video publishing, YouTube Shorts, Instagram Reels and analytics. It contains no secrets. Start from `studio.video-only.example.yaml` when only a video bot is needed, then put tokens in `apps/backend/secrets.env` (ignored by Git).
+`studio.yaml` is the public feature switchboard: it selects the site, ordinary text publishing, video publishing, YouTube Shorts, Instagram Reels and analytics. It contains no secrets. Start from `studio.video-only.example.yaml` when only a video bot is needed, then put tokens in `apps/backend/secrets.env` (ignored by Git). Creator analytics are cached once per 24 hours; it stores at most 50 recent comments per published YouTube Short or Instagram Reel for the optional local AI audience report.
 
 Video publication is one durable workflow: choose YouTube and/or Instagram in Telegram, enter platform-specific metadata, and choose one shared time or a separate Moscow time for each platform. The bot reminds the owner five minutes before each target. Source media stays on the server until 24 hours after the final target result (published, failed, or cancelled), so one platform never deletes the file needed by the other.
 

@@ -41,7 +41,10 @@ describe("openBackendDb", () => {
       expect(tables).toContain("credential_checks");
       expect(tables).toContain("video_drafts");
       expect(tables).toContain("video_targets");
-      expect(migrationStatus(backendDb.sqlite)).toHaveLength(4);
+      expect(tables).toContain("creator_profiles");
+      expect(tables).toContain("video_metric_snapshots");
+      expect(tables).toContain("social_comments");
+      expect(migrationStatus(backendDb.sqlite)).toHaveLength(7);
     } finally {
       backendDb.close();
     }
@@ -101,7 +104,9 @@ describe("openBackendDb", () => {
     initial.close();
     const fixture = new Database(dbPath);
     fixture.exec("DROP TABLE __drizzle_migrations");
-    fixture.exec("DROP TABLE video_bot_sessions; DROP TABLE video_jobs; DROP TABLE video_targets; DROP TABLE video_drafts");
+    fixture.exec(
+      "DROP TABLE video_bot_sessions; DROP TABLE video_jobs; DROP TABLE video_targets; DROP TABLE video_drafts; DROP TABLE analytics_sync; DROP TABLE creator_profiles; DROP TABLE video_metric_snapshots; DROP TABLE social_comments; DROP TABLE admin_state; CREATE TABLE admin_state (admin_id integer PRIMARY KEY NOT NULL, action text, draft_id integer, updated_at text NOT NULL)",
+    );
     fixture.close();
 
     const legacy = new Database(dbPath) as unknown as Parameters<typeof baselineDrizzleMigrations>[0];
@@ -119,7 +124,7 @@ describe("openBackendDb", () => {
         { locale: "en", slug: "production-fixture" },
         { locale: "ru", slug: "production-fixture" },
       ]);
-      expect(migrationStatus(backendDb.sqlite)).toHaveLength(4);
+      expect(migrationStatus(backendDb.sqlite)).toHaveLength(7);
     } finally {
       backendDb.close();
     }

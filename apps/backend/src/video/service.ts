@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import { statSync } from "node:fs";
+import path from "node:path";
 import { and, asc, eq, isNull, lte, or } from "drizzle-orm";
 import { type Bot, InlineKeyboard } from "grammy";
 import type { BackendConfig } from "../config.js";
@@ -38,6 +40,14 @@ export function listVideoTargets(backendDb: BackendDb, videoDraftId: number): Vi
 
 export function updateVideoLabel(backendDb: BackendDb, id: number, label: string): void {
   backendDb.db.update(videoDrafts).set({ label: label.trim(), updatedAt: new Date().toISOString() }).where(eq(videoDrafts.id, id)).run();
+}
+
+export function setVideoControlCard(backendDb: BackendDb, id: number, chatId: number, messageId: number): void {
+  backendDb.db
+    .update(videoDrafts)
+    .set({ controlChatId: chatId, controlMessageId: messageId, updatedAt: new Date().toISOString() })
+    .where(eq(videoDrafts.id, id))
+    .run();
 }
 
 export function replaceVideoTargets(backendDb: BackendDb, videoDraftId: number, targets: VideoTarget[]): void {
@@ -105,6 +115,25 @@ export function scheduleVideo(
   });
 }
 
+export function validateVideoDraft(config: BackendConfig, backendDb: BackendDb, videoDraftId: number): void {
+  const draft = getVideoDraft(backendDb, videoDraftId);
+  const source = videoPath(config, draft.assetKey);
+  if (!source) throw new Error("Исходное видео не найдено на сервере. Отправьте файл ещё раз.");
+  if (path.extname(source).toLowerCase() !== ".mp4") throw new Error("Для Shorts и Reels нужен файл MP4.");
+  const size = statSync(source).size;
+  if (size <= 0) throw new Error("Видео пустое. Отправьте файл ещё раз.");
+  if (size > config.VIDEO_MAX_BYTES)
+    throw new Error(
+      `Видео слишком большое: ${Math.ceil(size / 1024 / 1024)} МБ. Лимит профиля: ${Math.floor(config.VIDEO_MAX_BYTES / 1024 / 1024)} МБ.`,
+    );
+  for (const target of listVideoTargets(backendDb, videoDraftId)) {
+    if (target.target === "youtube_shorts" && (!config.YOUTUBE_CLIENT_ID || !config.YOUTUBE_CLIENT_SECRET || !config.YOUTUBE_REFRESH_TOKEN))
+      throw new Error("YouTube не настроен: нужны OAuth-ключи и refresh token.");
+    if (target.target === "instagram_reels" && (!config.INSTAGRAM_ACCESS_TOKEN || !config.INSTAGRAM_USER_ID))
+      throw new Error("Instagram не настроен: нужны access token и user ID.");
+  }
+}
+
 function insertVideoJob(tx: BackendDb["db"], videoDraftId: number, videoTargetId: number | null, kind: JobKind, runAt: string): void {
   const exists = tx
     .select({ id: videoJobs.id })
@@ -153,15 +182,6 @@ export function videoPreview(backendDb: BackendDb, videoDraftId: number): { text
   return { text: lines.join("\n"), keyboard };
 }
 
-export function scheduledVideos(backendDb: BackendDb): VideoDraft[] {
-  return backendDb.db
-    .select()
-    .from(videoDrafts)
-    .where(and(eq(videoDrafts.status, "scheduled")))
-    .orderBy(asc(videoDrafts.scheduledAt))
-    .all();
-}
-
 export function cancelVideo(backendDb: BackendDb, videoDraftId: number, retentionHours: number): void {
   const now = new Date().toISOString();
   backendDb.db.transaction((tx) => {
@@ -185,12 +205,29 @@ export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb,
     try {
       await executeVideoJob(config, backendDb, bot, job);
       completeVideoJob(backendDb, job.id);
+      await refreshVideoControlCard(backendDb, bot, job.videoDraftId);
     } catch (error) {
       failVideoJob(backendDb, job, String(error instanceof Error ? error.message : error), config);
+      await refreshVideoControlCard(backendDb, bot, job.videoDraftId);
     }
   }
   pruneExpiredVideos(config, backendDb);
   return jobs.length;
+}
+
+async function refreshVideoControlCard(backendDb: BackendDb, bot: Bot | null, videoDraftId: number): Promise<void> {
+  if (!bot) return;
+  const draft = getVideoDraft(backendDb, videoDraftId);
+  if (!draft.controlChatId || !draft.controlMessageId) return;
+  const preview = videoPreview(backendDb, videoDraftId);
+  try {
+    await bot.api.editMessageText(draft.controlChatId, draft.controlMessageId, preview.text, {
+      parse_mode: "Markdown",
+      reply_markup: preview.keyboard,
+    });
+  } catch {
+    // A deleted or manually edited Telegram message must not stop publication.
+  }
 }
 
 function claimVideoJobs(backendDb: BackendDb, limit: number): VideoJob[] {

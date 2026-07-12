@@ -267,6 +267,7 @@ export const adminState = sqliteTable("admin_state", {
   adminId: integer("admin_id").primaryKey(),
   action: text("action"),
   draftId: integer("draft_id"),
+  controlMessageId: integer("control_message_id"),
   updatedAt: text("updated_at").notNull(),
 });
 
@@ -281,6 +282,8 @@ export const videoDrafts = sqliteTable(
     scheduledAt: text("scheduled_at"),
     reminderSentAt: text("reminder_sent_at"),
     retentionUntil: text("retention_until"),
+    controlChatId: integer("control_chat_id"),
+    controlMessageId: integer("control_message_id"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },
@@ -452,6 +455,50 @@ export const analyticsRollups = sqliteTable("analytics_rollups", {
   metricJson: text("metric_json").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
+
+export const analyticsSync = sqliteTable("analytics_sync", {
+  source: text("source").primaryKey(),
+  lastSyncedAt: text("last_synced_at").notNull(),
+  lastError: text("last_error"),
+});
+
+export const creatorProfiles = sqliteTable("creator_profiles", {
+  platform: text("platform").primaryKey(),
+  dataJson: text("data_json", { mode: "json" }).$type<JsonObject>().notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const videoMetricSnapshots = sqliteTable(
+  "video_metric_snapshots",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    videoTargetId: integer("video_target_id").notNull(),
+    platform: text("platform").notNull(),
+    metricsJson: text("metrics_json", { mode: "json" }).$type<JsonObject>().notNull(),
+    sampledAt: text("sampled_at").notNull(),
+  },
+  (table) => ({
+    targetSampled: index("idx_video_metric_snapshots_target_sampled").on(table.videoTargetId, table.sampledAt),
+  }),
+);
+
+export const socialComments = sqliteTable(
+  "social_comments",
+  {
+    platform: text("platform").notNull(),
+    commentId: text("comment_id").notNull(),
+    videoTargetId: integer("video_target_id").notNull(),
+    author: text("author"),
+    text: text("text").notNull(),
+    likeCount: integer("like_count").notNull().default(0),
+    publishedAt: text("published_at"),
+    fetchedAt: text("fetched_at").notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.platform, table.commentId] }),
+    target: index("idx_social_comments_target").on(table.videoTargetId, table.publishedAt),
+  }),
+);
 
 export const deploymentSnapshots = sqliteTable("deployment_snapshots", {
   id: integer("id").primaryKey({ autoIncrement: true }),

@@ -4,7 +4,7 @@ modules:
   video_posting: true
   youtube: true
   instagram: true
-  analytics: false
+  analytics: true
 
 video:
   prepare_lead_minutes: 15

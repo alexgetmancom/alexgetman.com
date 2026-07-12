@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { type Context, InlineKeyboard } from "grammy";
+import type { Context } from "grammy";
 import { PRESETS } from "../botTargets.js";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
@@ -10,24 +10,30 @@ import { cancelDraft, hasLocaleTarget, publishDraftToQueue, requireDraft } from 
 import { extractMessage, parseTargets } from "./message.js";
 import { draftPreview, toggleDraftTarget } from "./preview.js";
 
-type AdminState = { action: string | null; draft_id: number | null };
+type AdminState = { action: string | null; draft_id: number | null; control_message_id: number | null };
 
 export function getAdminState(backendDb: BackendDb, adminId: number): AdminState | null {
   return (
     backendDb.db
-      .select({ action: adminState.action, draft_id: adminState.draftId })
+      .select({ action: adminState.action, draft_id: adminState.draftId, control_message_id: adminState.controlMessageId })
       .from(adminState)
       .where(eq(adminState.adminId, adminId))
       .get() ?? null
   );
 }
 
-function setAdminState(backendDb: BackendDb, adminId: number, action: string | null = null, draftId: number | null = null): void {
+function setAdminState(
+  backendDb: BackendDb,
+  adminId: number,
+  action: string | null = null,
+  draftId: number | null = null,
+  controlMessageId: number | null = null,
+): void {
   const updatedAt = new Date().toISOString();
   backendDb.db
     .insert(adminState)
-    .values({ adminId, action, draftId, updatedAt })
-    .onConflictDoUpdate({ target: adminState.adminId, set: { action, draftId, updatedAt } })
+    .values({ adminId, action, draftId, controlMessageId, updatedAt })
+    .onConflictDoUpdate({ target: adminState.adminId, set: { action, draftId, controlMessageId, updatedAt } })
     .run();
 }
 
@@ -47,56 +53,49 @@ export async function handleDraftCallback(ctx: Context, backendDb: BackendDb, co
   if (!Number.isSafeInteger(draftId)) return void (await ctx.answerCallbackQuery({ text: "Bad draft id" }));
   if (action === "toggle" && second) {
     toggleDraftTarget(backendDb, draftId, second);
-    await ctx.answerCallbackQuery({ text: `${second} toggled` });
-    return sendDraftPreview(ctx, backendDb, draftId);
+    return editDraftPreview(ctx, backendDb, draftId);
   }
+  if (action === "preview") return editDraftPreview(ctx, backendDb, draftId);
+  if (action === "mode") return editDraftPreview(ctx, backendDb, draftId, "modes");
   if (action === "preset" && first && PRESETS[first]) {
     backendDb.db
       .update(drafts)
       .set({ targetsJson: JSON.stringify(PRESETS[first]), updatedAt: new Date().toISOString() })
       .where(eq(drafts.id, draftId))
       .run();
-    await ctx.answerCallbackQuery({ text: `${first} preset` });
-    return sendDraftPreview(ctx, backendDb, draftId);
+    return editDraftPreview(ctx, backendDb, draftId, "modes");
+  }
+  if (action === "preset" && first === "manual") {
+    return editDraftPreview(ctx, backendDb, draftId);
   }
   if (["edit_ru", "edit_en", "replace_ru_media", "replace_en_media"].includes(action ?? "")) {
     if (!action) return;
-    setAdminState(backendDb, Number(ctx.from?.id), action, draftId);
+    setAdminState(backendDb, Number(ctx.from?.id), action, draftId, callbackMessageId(ctx));
     await ctx.answerCallbackQuery({ text: "Send the replacement as the next message" });
-    return void (await ctx.reply(
-      action.startsWith("edit") ? "Send edited text as the next message." : "Send replacement photo/video as the next message.",
-    ));
-  }
-  if (action === "use_ru_media") {
-    backendDb.db.update(drafts).set({ mediaEnJson: null, updatedAt: new Date().toISOString() }).where(eq(drafts.id, draftId)).run();
-    await ctx.answerCallbackQuery({ text: "EN media uses RU fallback" });
-    return sendDraftPreview(ctx, backendDb, draftId);
+    return editDraftPrompt(
+      ctx,
+      backendDb,
+      draftId,
+      action.startsWith("edit")
+        ? "⌨ Отправьте новый текст следующим сообщением."
+        : "📎 Отправьте новое фото или видео следующим сообщением.",
+    );
   }
   if (action === "cancel") {
     cancelDraft(backendDb, draftId);
     await ctx.answerCallbackQuery({ text: "Cancelled" });
-    return void (await ctx.reply(`Draft #${draftId} cancelled.`));
+    return void (await ctx.editMessageText(`🗑 Черновик #${draftId} отменён.`));
   }
   if (action === "publish") {
+    return editDraftPreview(ctx, backendDb, draftId, "confirm_publish");
+  }
+  if (action === "publish_confirm") {
     const postId = publishDraftToQueue(backendDb, draftId);
-    await ctx.answerCallbackQuery({ text: "Queued" });
-    return void (await ctx.reply(`Draft #${draftId} queued as post #${postId}`));
+    await ctx.answerCallbackQuery({ text: "В очереди" });
+    return void (await ctx.editMessageText(`🟢 Публикация #${draftId} поставлена в очередь как пост #${postId}.`));
   }
   if (action === "schedule") {
-    const keyboard = new InlineKeyboard()
-      .text("Auto next slots", `sched_auto:${draftId}`)
-      .text("+30 min", `sched_preset:plus30:${draftId}`)
-      .row()
-      .text("+1 hour", `sched_preset:plus60:${draftId}`)
-      .text("Today 21:00", `sched_preset:today2100:${draftId}`)
-      .row()
-      .text("Tomorrow 10:00", `sched_preset:tomorrow1000:${draftId}`)
-      .row()
-      .text("Manual both", `sched_manual:both:${draftId}`)
-      .text("Manual RU", `sched_manual:ru:${draftId}`)
-      .text("Manual EN", `sched_manual:en:${draftId}`);
-    await ctx.answerCallbackQuery();
-    return void (await ctx.reply(`Choose schedule time for draft #${draftId}.`, { reply_markup: keyboard }));
+    return editDraftPreview(ctx, backendDb, draftId, "schedule");
   }
   if (action === "sched_auto") {
     const targets = parseTargets(requireDraft(backendDb, draftId).targets_json);
@@ -105,25 +104,32 @@ export async function handleDraftCallback(ctx: Context, backendDb: BackendDb, co
     const postId = publishDraftToQueue(backendDb, draftId, { mode: "scheduled", ruAt, enAt });
     rebalanceScheduledDrafts(backendDb);
     await ctx.answerCallbackQuery({ text: "Scheduled" });
-    await ctx.reply(`Draft #${draftId} scheduled as post #${postId}.\nRU: ${formatMsk(ruAt)}\nEN: ${formatMsk(enAt)}`);
-    return sendDraftPreview(ctx, backendDb, draftId);
+    return void (await ctx.editMessageText(
+      `🟢 Черновик #${draftId} запланирован как пост #${postId}.\nRU: ${formatMsk(ruAt)}\nEN: ${formatMsk(enAt)}`,
+    ));
   }
   if (action === "sched_preset" && second && first) {
     const value = schedulePreset(first);
     const postId = publishDraftToQueue(backendDb, draftId, { mode: "scheduled", ruAt: value, enAt: value });
     rebalanceScheduledDrafts(backendDb);
     await ctx.answerCallbackQuery({ text: "Scheduled" });
-    return void (await ctx.reply(`Draft #${draftId} scheduled as post #${postId}.\nRU/EN: ${formatMsk(value)}`));
+    return void (await ctx.editMessageText(`🟢 Черновик #${draftId} запланирован как пост #${postId}.\nRU/EN: ${formatMsk(value)}`));
   }
   if (action === "sched_manual" && first) {
-    setAdminState(backendDb, Number(ctx.from?.id), `schedule_manual_${first}`, draftId);
+    setAdminState(backendDb, Number(ctx.from?.id), `schedule_manual_${first}`, draftId, callbackMessageId(ctx));
     await ctx.answerCallbackQuery({ text: "Send time" });
-    return void (await ctx.reply("Send time as HH:MM or DD.MM HH:MM."));
+    return editDraftPrompt(ctx, backendDb, draftId, "⌨ Введите дату и время: `15.07 18:30` (МСК).");
   }
   await ctx.answerCallbackQuery({ text: "Unknown action" });
 }
 
-export async function applyAdminState(ctx: Context, backendDb: BackendDb, action: string, draftId: number): Promise<void> {
+export async function applyAdminState(
+  ctx: Context,
+  backendDb: BackendDb,
+  action: string,
+  draftId: number,
+  controlMessageId: number | null,
+): Promise<void> {
   const message = extractMessage(ctx);
   const now = new Date().toISOString();
   if (action.startsWith("schedule_manual_")) {
@@ -154,13 +160,31 @@ export async function applyAdminState(ctx: Context, backendDb: BackendDb, action
       .run();
   }
   setAdminState(backendDb, Number(ctx.from?.id));
-  await ctx.reply(`Draft #${draftId} updated.`);
-  await sendDraftPreview(ctx, backendDb, draftId);
+  if (controlMessageId && ctx.chat?.id) {
+    const preview = draftPreview(backendDb, draftId);
+    await ctx.api.editMessageText(ctx.chat.id, controlMessageId, preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
+  } else await sendDraftPreview(ctx, backendDb, draftId);
 }
 
 export async function sendDraftPreview(ctx: Pick<Context, "reply">, backendDb: BackendDb, draftId: number): Promise<void> {
   const preview = draftPreview(backendDb, draftId);
-  await ctx.reply(preview.text, { reply_markup: preview.keyboard });
+  await ctx.reply(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
+}
+
+async function editDraftPreview(
+  ctx: Context,
+  backendDb: BackendDb,
+  draftId: number,
+  view: "overview" | "modes" | "schedule" | "confirm_publish" = "overview",
+): Promise<void> {
+  const preview = draftPreview(backendDb, draftId, view);
+  await ctx.answerCallbackQuery();
+  await ctx.editMessageText(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
+}
+
+async function editDraftPrompt(ctx: Context, backendDb: BackendDb, draftId: number, prompt: string): Promise<void> {
+  const preview = draftPreview(backendDb, draftId);
+  await ctx.editMessageText(`${preview.text}\n\n${prompt}`, { parse_mode: "Markdown", reply_markup: preview.keyboard });
 }
 
 export function clearAdminState(backendDb: BackendDb, adminId: number): void {
@@ -171,4 +195,9 @@ function dateOrNull(value: string | null): Date | null {
   if (!value) return null;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function callbackMessageId(ctx: Context): number | null {
+  const message = ctx.callbackQuery?.message;
+  return message && "message_id" in message ? message.message_id : null;
 }

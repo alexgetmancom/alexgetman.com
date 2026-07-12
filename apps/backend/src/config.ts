@@ -60,6 +60,7 @@ const envSchema = z
     MEDIA_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86_400),
     MEDIA_CACHE_DIR: z.string().default("/data/media-cache"),
     VIDEO_MEDIA_DIR: z.string().default("/data/video-media"),
+    VIDEO_MAX_BYTES: z.coerce.number().int().positive().max(2_000_000_000).default(1_000_000_000),
     VIDEO_PREPARE_LEAD_MINUTES: z.coerce.number().int().min(1).max(120).default(15),
     VIDEO_REMINDER_MINUTES: z.coerce.number().int().min(1).max(60).default(5),
     VIDEO_MEDIA_RETENTION_HOURS: z.coerce.number().int().min(24).max(720).default(24),

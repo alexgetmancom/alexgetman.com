@@ -8,7 +8,7 @@ type InstagramContainer = { id: string };
 type InstagramStatus = { status_code?: string; status?: string };
 type InstagramPublish = { id: string };
 
-async function youtubeToken(config: BackendConfig): Promise<string> {
+export async function youtubeAccessToken(config: BackendConfig): Promise<string> {
   const body = formBody({
     client_id: config.YOUTUBE_CLIENT_ID,
     client_secret: config.YOUTUBE_CLIENT_SECRET,
@@ -24,7 +24,7 @@ export async function prepareYouTubeVideo(
   metadata: YouTubeMetadata,
   publishAt: string,
 ): Promise<{ id: string; url: string }> {
-  const token = await youtubeToken(config);
+  const token = await youtubeAccessToken(config);
   const file = Bun.file(filePath);
   const init = await fetch("https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status", {
     method: "POST",
