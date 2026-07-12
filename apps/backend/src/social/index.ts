@@ -138,6 +138,9 @@ function mediaCacheKey(job: ClaimedPublishJob, media: ReturnType<typeof payloadM
   return JSON.stringify({
     post: job.postKey,
     locale: job.payload.locale ?? "en",
+    // Story media is a separately rendered 9:16 asset. It must never share
+    // a preparation entry with the source image used by feed targets.
+    story: isStoryTarget(job.target),
     media: media.map((item) => [item.fileId, item.localPath, item.type]),
     remote: config.REMOTE_MEDIA_PATH,
   });

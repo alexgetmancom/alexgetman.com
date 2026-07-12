@@ -41,7 +41,8 @@ export async function prepareMediaItems(
       vpsUrl: `${config.PUBLIC_MEDIA_BASE_URL.replace(/\/$/, "")}/${remoteFilename}`,
     };
     if (item.storyLocalPath) {
-      const storyRemoteFilename = `cache-${cacheKey}-story${path.extname(item.storyLocalPath) || mediaExtension(item)}`;
+      const storyCacheKey = await mediaCacheKey({ ...item, localPath: item.storyLocalPath }, index);
+      const storyRemoteFilename = `cache-${storyCacheKey}-story${path.extname(item.storyLocalPath) || mediaExtension(item)}`;
       const storyStagedPath = path.join(config.REMOTE_MEDIA_PATH, storyRemoteFilename);
       await copyIfMissing(item.storyLocalPath, storyStagedPath);
       preparedItem.storyVpsUrl = `${config.PUBLIC_MEDIA_BASE_URL.replace(/\/$/, "")}/${storyRemoteFilename}`;
