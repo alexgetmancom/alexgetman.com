@@ -270,6 +270,81 @@ export const adminState = sqliteTable("admin_state", {
   updatedAt: text("updated_at").notNull(),
 });
 
+export const videoDrafts = sqliteTable(
+  "video_drafts",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    adminId: integer("admin_id").notNull(),
+    label: text("label").notNull().default(""),
+    assetKey: text("asset_key").notNull(),
+    status: text("status").notNull().default("draft"),
+    scheduledAt: text("scheduled_at"),
+    reminderSentAt: text("reminder_sent_at"),
+    retentionUntil: text("retention_until"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => ({
+    statusSchedule: index("idx_video_drafts_status_schedule").on(table.status, table.scheduledAt),
+  }),
+);
+
+export const videoTargets = sqliteTable(
+  "video_targets",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    videoDraftId: integer("video_draft_id").notNull(),
+    target: text("target").notNull(),
+    metadataJson: text("metadata_json", { mode: "json" }).$type<JsonObject>().notNull(),
+    scheduledAt: text("scheduled_at"),
+    status: text("status").notNull().default("draft"),
+    externalId: text("external_id"),
+    externalUrl: text("external_url"),
+    preparedAt: text("prepared_at"),
+    publishedAt: text("published_at"),
+    lastError: text("last_error"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => ({
+    target: uniqueIndex("idx_video_targets_draft_target").on(table.videoDraftId, table.target),
+    statusSchedule: index("idx_video_targets_status_schedule").on(table.status, table.scheduledAt),
+  }),
+);
+
+export const videoJobs = sqliteTable(
+  "video_jobs",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    videoDraftId: integer("video_draft_id").notNull(),
+    videoTargetId: integer("video_target_id"),
+    kind: text("kind").notNull(),
+    runAt: text("run_at").notNull(),
+    status: text("status").notNull().default("queued"),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    nextAttemptAt: text("next_attempt_at"),
+    lockedBy: text("locked_by"),
+    lockedAt: text("locked_at"),
+    lastError: text("last_error"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => ({
+    due: index("idx_video_jobs_due").on(table.status, table.runAt, table.nextAttemptAt),
+    lock: index("idx_video_jobs_lock").on(table.status, table.lockedAt),
+    dedupe: uniqueIndex("idx_video_jobs_unique").on(table.videoDraftId, table.videoTargetId, table.kind),
+  }),
+);
+
+export const videoBotSessions = sqliteTable("video_bot_sessions", {
+  adminId: integer("admin_id").primaryKey(),
+  videoDraftId: integer("video_draft_id"),
+  step: text("step").notNull(),
+  selectedTargetsJson: text("selected_targets_json", { mode: "json" }).$type<string[]>().notNull().default([]),
+  dataJson: text("data_json", { mode: "json" }).$type<JsonObject>().notNull().default({}),
+  updatedAt: text("updated_at").notNull(),
+});
+
 export const pendingAlbums = sqliteTable("pending_albums", {
   id: text("id").primaryKey(),
   adminId: integer("admin_id").notNull(),

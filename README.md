@@ -17,6 +17,20 @@ scripts/     repository-level checks and build helpers
 
 Runtime secrets, SQLite databases, Telegram sessions, generated media, logs and production `.env` files are intentionally excluded from git. Use `.env.example` files only.
 
+## Modular studio setup
+
+`studio.yaml` is the public feature switchboard: it selects the site, ordinary text publishing, video publishing, YouTube Shorts, Instagram Reels and analytics. It contains no secrets. Start from `studio.video-only.example.yaml` when only a video bot is needed, then put tokens in `apps/backend/secrets.env` (ignored by Git).
+
+Video publication is one durable workflow: choose YouTube and/or Instagram in Telegram, enter platform-specific metadata, and choose one shared time or a separate Moscow time for each platform. The bot reminds the owner five minutes before each target. Source media stays on the server until 24 hours after the final target result (published, failed, or cancelled), so one platform never deletes the file needed by the other.
+
+```bash
+cp studio.video-only.example.yaml studio.yaml
+cp apps/backend/secrets.env.example apps/backend/secrets.env
+bun run --filter @alexgetman/backend ops doctor
+```
+
+For Instagram Reels, `PUBLIC_BASE_URL` must be the public HTTPS address of the running service: Meta downloads the video from `/media/video/<asset>`. YouTube uses a manually-created OAuth refresh token (`YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`, `YOUTUBE_REFRESH_TOKEN`); the token values must never be committed.
+
 ## Local Development
 
 ```bash

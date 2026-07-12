@@ -1,0 +1,12 @@
+modules:
+  site: false
+  text_posting: false
+  video_posting: true
+  youtube: true
+  instagram: true
+  analytics: false
+
+video:
+  prepare_lead_minutes: 15
+  reminder_minutes: 5
+  retention_hours: 24

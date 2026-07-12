@@ -1,0 +1,13 @@
+# User-facing feature selection. Secrets always live in an ignored .env file.
+modules:
+  site: true
+  text_posting: true
+  video_posting: false
+  youtube: false
+  instagram: false
+  analytics: true
+
+video:
+  prepare_lead_minutes: 15
+  reminder_minutes: 5
+  retention_hours: 24

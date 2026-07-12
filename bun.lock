@@ -10,6 +10,7 @@
         "@astrojs/sitemap": "^3.7.3",
         "@mtcute/bun": "^0.30.3",
         "astro": "^7.0.7",
+        "drizzle-orm": "^0.45.2",
       },
       "devDependencies": {
         "@biomejs/biome": "^2.5.3",
@@ -29,6 +30,7 @@
         "grammy": "^1.44.0",
         "oauth-1.0a": "^2.2.6",
         "p-limit": "^7.3.0",
+        "yaml": "^2.8.2",
         "zod": "^4.4.3",
       },
       "devDependencies": {

@@ -14,6 +14,7 @@ import { runObservabilityCycle } from "./services/observability.js";
 import { recordWorkerState } from "./services/workerState.js";
 import { runSiteJobCycle } from "./site/jobs.js";
 import { createPublishers, type Publisher } from "./social/index.js";
+import { runVideoCycle } from "./video/service.js";
 
 export async function runPublishCycle(
   config: BackendConfig,
@@ -75,14 +76,30 @@ export function startWorkers(config: BackendConfig, backendDb: BackendDb, bot: B
       const claimed = await runPublishCycle(config, backendDb);
       log("debug", "queue loop tick", { claimed });
     }),
-    startLoop("metrics", config.METRICS_REFRESH_INTERVAL_SECONDS * 1000, async () => {
-      const checked = await runMetricsCycle(config, backendDb);
-      log("debug", "metrics loop tick", { checked });
-    }),
-    startLoop("site", config.METRICS_REFRESH_INTERVAL_SECONDS * 1000, async () => {
-      const claimed = await runSiteJobCycle(config, backendDb);
-      log("debug", "site materialization loop tick", { claimed });
-    }),
+    ...(config.studio.modules.video_posting
+      ? [
+          startLoop("video", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
+            const claimed = await runVideoCycle(config, backendDb, bot);
+            log("debug", "video loop tick", { claimed });
+          }),
+        ]
+      : []),
+    ...(config.studio.modules.analytics
+      ? [
+          startLoop("metrics", config.METRICS_REFRESH_INTERVAL_SECONDS * 1000, async () => {
+            const checked = await runMetricsCycle(config, backendDb);
+            log("debug", "metrics loop tick", { checked });
+          }),
+        ]
+      : []),
+    ...(config.studio.modules.site
+      ? [
+          startLoop("site", config.METRICS_REFRESH_INTERVAL_SECONDS * 1000, async () => {
+            const claimed = await runSiteJobCycle(config, backendDb);
+            log("debug", "site materialization loop tick", { claimed });
+          }),
+        ]
+      : []),
     startLoop("media-cache", 60 * 60 * 1000, async () => {
       const removed = await pruneMediaCache(config);
       if (removed) log("info", "pruned expired media cache", { removed });

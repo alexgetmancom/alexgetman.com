@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { loadStudioConfig, type StudioConfig } from "./studio.js";
 
 const booleanFlag = z
   .string()
@@ -11,6 +12,7 @@ const envSchema = z
     PORT: z.coerce.number().int().positive().default(8788),
     BIND_HOST: z.string().default("127.0.0.1"),
     DATA_DIR: z.string().default("/data"),
+    STUDIO_CONFIG: z.string().default("studio.yaml"),
     PIPELINE_DB: z.string().default("/data/pipeline.db"),
     FEED_JSON: z.string().default("/data/feed.json"),
     SITE_METRICS_JSON: z.string().default("/data/metrics.json"),
@@ -57,6 +59,10 @@ const envSchema = z
     FFMPEG_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(2).default(2),
     MEDIA_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86_400),
     MEDIA_CACHE_DIR: z.string().default("/data/media-cache"),
+    VIDEO_MEDIA_DIR: z.string().default("/data/video-media"),
+    VIDEO_PREPARE_LEAD_MINUTES: z.coerce.number().int().min(1).max(120).default(15),
+    VIDEO_REMINDER_MINUTES: z.coerce.number().int().min(1).max(60).default(5),
+    VIDEO_MEDIA_RETENTION_HOURS: z.coerce.number().int().min(24).max(720).default(24),
     SITE_PUBLIC_DIR: z.string().default("/data/site"),
     DEVTO_API_KEY: z.string().optional(),
     MASTODON_INSTANCE: z.string().optional(),
@@ -91,6 +97,9 @@ const envSchema = z
     INSTAGRAM_RU_ACCESS_TOKEN: z.string().optional(),
     INSTAGRAM_RU_USER_ID: z.string().optional(),
     INSTAGRAM_GRAPH_API_VERSION: z.string().default("v23.0"),
+    YOUTUBE_CLIENT_ID: z.string().optional(),
+    YOUTUBE_CLIENT_SECRET: z.string().optional(),
+    YOUTUBE_REFRESH_TOKEN: z.string().optional(),
     ENABLE_INSTAGRAM_STORIES: booleanFlag.default(false),
     ENABLE_TELEGRAM_STORIES: booleanFlag.default(false),
     TELEGRAM_STORIES_CHANNEL: z.string().optional(),
@@ -137,6 +146,7 @@ const envSchema = z
 export type BackendConfig = z.infer<typeof envSchema> & {
   controllerBotToken: string | undefined;
   commandCenterToken: string | undefined;
+  studio: StudioConfig;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): BackendConfig {
@@ -144,9 +154,22 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BackendConfig 
     ...env,
     ADMIN_IDS: env.ADMIN_IDS ?? env.CONTROLLER_ADMIN_IDS,
   });
+  const studio = loadStudioConfig(parsed.STUDIO_CONFIG);
+  if (studio.modules.youtube && studio.modules.video_posting) {
+    for (const key of ["YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "YOUTUBE_REFRESH_TOKEN"] as const) {
+      if (!parsed[key]) throw new Error(`${key} is required when YouTube video publishing is enabled`);
+    }
+  }
+  if (studio.modules.instagram && studio.modules.video_posting && (!parsed.INSTAGRAM_ACCESS_TOKEN || !parsed.INSTAGRAM_USER_ID)) {
+    throw new Error("INSTAGRAM_ACCESS_TOKEN and INSTAGRAM_USER_ID are required when Instagram video publishing is enabled");
+  }
   return {
     ...parsed,
+    VIDEO_PREPARE_LEAD_MINUTES: studio.video.prepare_lead_minutes,
+    VIDEO_REMINDER_MINUTES: studio.video.reminder_minutes,
+    VIDEO_MEDIA_RETENTION_HOURS: studio.video.retention_hours,
     controllerBotToken: parsed.CONTROLLER_BOT_TOKEN ?? parsed.TELEGRAM_BOT_TOKEN,
     commandCenterToken: parsed.COMMAND_CENTER_TOKEN ?? parsed.TELEGRAM_WEBHOOK_SECRET,
+    studio,
   };
 }

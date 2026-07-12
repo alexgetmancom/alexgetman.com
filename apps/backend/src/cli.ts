@@ -47,6 +47,7 @@ function printHelp(): void {
   audit [--db PATH]
   metrics-backfill [--targets a,b] [--refs post:1,post:2] [--from ISO] [--to ISO] [--apply] [--reset-counts]
   capabilities [--db PATH]
+  doctor
   capability-record --test T01 --message-id 123 [--notes TEXT]
   verify --ref post:1`);
 }
@@ -75,7 +76,28 @@ async function main(): Promise<void> {
   const config = loadConfig({ ...process.env, PIPELINE_DB: dbPath });
   const backendDb = openBackendDb(dbPath);
   try {
-    if (args.command === "status") console.log(JSON.stringify(pipelineStatusPayload(config, backendDb), null, 2));
+    if (args.command === "doctor") {
+      const enabled = Object.entries(config.studio.modules)
+        .filter(([, value]) => value)
+        .map(([key]) => key);
+      console.log(
+        JSON.stringify(
+          {
+            ok: true,
+            modules: enabled,
+            video: config.studio.video,
+            publicBaseUrl: config.PUBLIC_BASE_URL,
+            checks: {
+              telegramBot: Boolean(config.controllerBotToken),
+              youtube: !config.studio.modules.youtube || Boolean(config.YOUTUBE_REFRESH_TOKEN),
+              instagram: !config.studio.modules.instagram || Boolean(config.INSTAGRAM_ACCESS_TOKEN && config.INSTAGRAM_USER_ID),
+            },
+          },
+          null,
+          2,
+        ),
+      );
+    } else if (args.command === "status") console.log(JSON.stringify(pipelineStatusPayload(config, backendDb), null, 2));
     else if (args.command === "migrations") console.log(JSON.stringify({ migrations: migrationStatus(backendDb.sqlite) }, null, 2));
     else if (args.command === "backup")
       console.log(JSON.stringify({ ok: true, path: await backupDatabase(backendDb, dbPath, args.values.get("output")) }, null, 2));

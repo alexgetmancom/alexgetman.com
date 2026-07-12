@@ -15,6 +15,20 @@
       "when": 1783727987476,
       "tag": "0001_sparkling_cable",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1783847686823,
+      "tag": "0002_nasty_scalphunter",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1783847978529,
+      "tag": "0003_tired_lila_cheney",
+      "breakpoints": true
     }
   ]
 }

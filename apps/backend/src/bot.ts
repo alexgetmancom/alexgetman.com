@@ -1,8 +1,9 @@
-import { Bot, InlineKeyboard } from "grammy";
+import { Bot, InlineKeyboard, Keyboard } from "grammy";
 import { appendPendingAlbum } from "./bot/albums.js";
 import { applyAdminState, getAdminState, handleDraftCallback, sendDraftPreview } from "./bot/callbacks.js";
 import { createDraftFromMessage, scheduledDrafts } from "./bot/drafts.js";
 import { extractMessage } from "./bot/message.js";
+import { handleVideoCallback, handleVideoMessage, showUnpublishedVideos, startVideoFlow } from "./bot/video.js";
 import type { BackendConfig } from "./config.js";
 import type { BackendDb } from "./db/client.js";
 import { log } from "./logger.js";
@@ -21,7 +22,26 @@ export function createBot(config: BackendConfig, backendDb: BackendDb): Bot | nu
 }
 
 function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb): void {
-  bot.command("start", (ctx) => ctx.reply("Send draft text with optional photo/video. Use Publish after preview."));
+  bot.command("start", (ctx) =>
+    ctx.reply("Выберите тип публикации.", {
+      reply_markup: new Keyboard()
+        .text("📝 Обычная публикация")
+        .text("🎬 Видеопубликация")
+        .row()
+        .text("📋 Неопубликованные видео")
+        .resized(),
+    }),
+  );
+  bot.hears("🎬 Видеопубликация", async (ctx) => {
+    if (!isAdmin(config, ctx.from?.id)) return void (await ctx.reply("Forbidden"));
+    if (!config.studio.modules.video_posting) return void (await ctx.reply("Видеопубликация выключена в studio.yaml."));
+    await startVideoFlow(ctx, backendDb);
+  });
+  bot.hears("📋 Неопубликованные видео", async (ctx) => {
+    if (!isAdmin(config, ctx.from?.id)) return void (await ctx.reply("Forbidden"));
+    await showUnpublishedVideos(ctx, backendDb);
+  });
+  bot.hears("📝 Обычная публикация", (ctx) => ctx.reply("Пришлите текст с опциональным фото или видео для обычной публикации."));
   bot.command("pipeline_status", (ctx) => ctx.reply(`${config.COMMAND_CENTER_URL.replace(/\/$/, "")}/pipeline-status`));
   bot.command("schedule", async (ctx) => {
     if (!isAdmin(config, ctx.from?.id)) return void (await ctx.reply("Forbidden"));
@@ -35,6 +55,7 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
   bot.on("message", async (ctx) => {
     if (!isAdmin(config, ctx.from?.id)) return void (await ctx.reply("Forbidden"));
     const adminId = Number(ctx.from?.id);
+    if (await handleVideoMessage(ctx, backendDb, config)) return;
     const state = getAdminState(backendDb, adminId);
     const message = extractMessage(ctx);
     const mediaGroupId = ctx.message && "media_group_id" in ctx.message ? ctx.message.media_group_id : undefined;
@@ -67,6 +88,7 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
   });
   bot.on("callback_query:data", async (ctx) => {
     if (!isAdmin(config, ctx.from?.id)) return void (await ctx.answerCallbackQuery({ text: "Forbidden" }));
+    if (await handleVideoCallback(ctx, backendDb, config)) return;
     await handleDraftCallback(ctx, backendDb, config);
   });
 }

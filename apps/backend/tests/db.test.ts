@@ -39,7 +39,9 @@ describe("openBackendDb", () => {
       expect(tables).toContain("post_locales");
       expect(tables).toContain("media_assets");
       expect(tables).toContain("credential_checks");
-      expect(migrationStatus(backendDb.sqlite)).toHaveLength(2);
+      expect(tables).toContain("video_drafts");
+      expect(tables).toContain("video_targets");
+      expect(migrationStatus(backendDb.sqlite)).toHaveLength(4);
     } finally {
       backendDb.close();
     }
@@ -99,6 +101,7 @@ describe("openBackendDb", () => {
     initial.close();
     const fixture = new Database(dbPath);
     fixture.exec("DROP TABLE __drizzle_migrations");
+    fixture.exec("DROP TABLE video_bot_sessions; DROP TABLE video_jobs; DROP TABLE video_targets; DROP TABLE video_drafts");
     fixture.close();
 
     const legacy = new Database(dbPath) as unknown as Parameters<typeof baselineDrizzleMigrations>[0];
@@ -116,7 +119,7 @@ describe("openBackendDb", () => {
         { locale: "en", slug: "production-fixture" },
         { locale: "ru", slug: "production-fixture" },
       ]);
-      expect(migrationStatus(backendDb.sqlite)).toHaveLength(2);
+      expect(migrationStatus(backendDb.sqlite)).toHaveLength(4);
     } finally {
       backendDb.close();
     }

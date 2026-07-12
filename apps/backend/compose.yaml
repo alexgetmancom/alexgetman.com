@@ -1,4 +1,4 @@
-name: alexgetman-backend
+name: ${PROJECT_NAME:-alexgetman}-backend
 
 services:
   bot-api:
@@ -35,6 +35,7 @@ services:
       - bot-api
     environment:
       DATA_DIR: /data
+      STUDIO_CONFIG: /app/studio.yaml
       PIPELINE_DB: /data/pipeline.db
       FEED_JSON: /data/feed.json
       SITE_METRICS_JSON: /data/metrics.json
@@ -53,7 +54,9 @@ services:
       BIND_HOST: 0.0.0.0
       PORT: "8788"
     volumes:
+      - ../../studio.yaml:/app/studio.yaml:ro
       - ./data:/data
+      - ./video-media:/data/video-media
       - ./bot-api-data:/var/lib/telegram-bot-api:ro
       - /home/deploy/ialexey-web/media/threads:/media/threads
       - /home/deploy/ialexey-web/media:/data/site/media
