@@ -77,6 +77,7 @@ jobs:
           runtime=/home/deploy/alexgetman-runtime
           scp -o BatchMode=yes apps/backend/compose.yaml "$DEPLOY_USER@$DEPLOY_HOST:$runtime/compose.yaml.next"
           ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "set -e; docker compose --env-file $runtime/deploy-image.env -f $runtime/compose.yaml.next config --quiet; mv $runtime/compose.yaml.next $runtime/compose.yaml"
+          ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "set -e; runtime=$runtime; image=\$(bun -e 'const state=JSON.parse(await Bun.file(\"/var/lib/alexgetman-deploy/state.json\").text()); process.stdout.write(state.current?.image ?? \"\")'); printf '%s\\n' \"\$image\" | grep -Eq '^ghcr.io/alexgetmancom/alexgetman-backend@sha256:[0-9a-fA-F]{64}\$' || exit 1; if ! grep -Eq '^BACKEND_IMAGE=ghcr.io/alexgetmancom/alexgetman-backend@sha256:[0-9a-fA-F]{64}\$' \"\$runtime/deploy-image.env\"; then tmp=\"\$runtime/deploy-image.env.next\"; { grep -v '^BACKEND_IMAGE=' \"\$runtime/deploy-image.env\" || true; printf 'BACKEND_IMAGE=%s\\n' \"\$image\"; } > \"\$tmp\"; mv \"\$tmp\" \"\$runtime/deploy-image.env\"; fi"
           if [ "$NGINX_DEPLOY_ENABLED" = "true" ]; then
             ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "install -d $runtime/nginx"
             scp -o BatchMode=yes deploy/nginx/alexgetman.com.conf.example "$DEPLOY_USER@$DEPLOY_HOST:$runtime/nginx/alexgetman.com.conf"
