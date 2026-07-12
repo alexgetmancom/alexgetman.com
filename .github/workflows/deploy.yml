@@ -75,6 +75,12 @@ jobs:
         run: |
           test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER" && test -n "$DEPLOY_AGENT_TOKEN"
           runtime=/home/deploy/alexgetman-runtime
+          echo "=== DEBUG INFO: Server Disk Space ==="
+          ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "df -h" || true
+          echo "=== DEBUG INFO: Deployment Agent Service Logs ==="
+          ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "sudo journalctl -u alexgetman-deploy-agent -n 50 --no-pager" || true
+          echo "=== DEBUG INFO: Manual Compose Pull ==="
+          ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "docker compose --env-file $runtime/deploy-image.env -f $runtime/compose.yaml pull backend" || true
           scp -o BatchMode=yes apps/backend/compose.yaml "$DEPLOY_USER@$DEPLOY_HOST:$runtime/compose.yaml.next"
           ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "set -e; docker compose --env-file $runtime/deploy-image.env -f $runtime/compose.yaml.next config --quiet; mv $runtime/compose.yaml.next $runtime/compose.yaml"
           if [ "$NGINX_DEPLOY_ENABLED" = "true" ]; then
