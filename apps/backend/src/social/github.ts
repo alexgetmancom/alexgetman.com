@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import type { BackendConfig } from "../config.js";
 import type { PublishResult } from "../queue/errors.js";
 import { requestJson } from "./http.js";
-import { payloadCanonicalUrl, payloadMedia, payloadText, payloadTitle } from "./payload.js";
+import { payloadMedia, payloadText, payloadTitle } from "./payload.js";
 
 type GitHubDiscussionResponse = {
   data?: {
@@ -41,11 +41,6 @@ export async function publishToGitHubDiscussion(
       }
     }
     body += imgMarkdown;
-  }
-
-  const articleUrl = payloadCanonicalUrl(payload, config);
-  if (articleUrl) {
-    body += `\n\n---\n🔗 Read the full post on [alexgetman.com](${articleUrl})`;
   }
 
   const title = payloadTitle(payload);

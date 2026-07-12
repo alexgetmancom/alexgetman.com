@@ -31,8 +31,6 @@ export function existingSiteImage(publicPath: string | null | undefined) {
 export function responsiveSrcSetFor(publicPath: string | null | undefined) {
   if (!publicPath || !/\.(png|jpe?g)$/i.test(publicPath)) return undefined;
   const normalizedPath = String(publicPath).replace(/^\/+/, "");
-  const publicFile = path.join(PUBLIC_ROOT, normalizedPath);
-  if (!fs.existsSync(publicFile)) return undefined;
   const base = normalizedPath
     .replace(/^\/+/, "")
     .replace(/[\\/]/g, "-")

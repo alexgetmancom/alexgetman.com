@@ -47,7 +47,7 @@ const publicSrc = (value?: string | null) => (value ? `/${String(value).replace(
         <span class="story-visual__fallback" data-story-fallback>{activePost.title}</span>
       )}
     </a>
-    <button class="audio-chip" type="button" data-audio-toggle aria-pressed="true">
+    <button class="audio-chip" type="button" data-audio-toggle aria-pressed="true" aria-label={ui.mute}>
       <span aria-hidden="true">♪</span>
       <span data-audio-label>{ui.muted}</span>
     </button>

@@ -27,6 +27,7 @@ describe("Dev.to publisher", () => {
       loadConfig({}),
     );
     expect(article.bodyMarkdown).toBe("![Title](https://alexgetman.com/media/post.jpg)\n\nBody");
+    expect(article.mainImage).toBe("https://alexgetman.com/media/post.jpg");
   });
 
   it("sends Dev.to API request with normalized tags and auth", async () => {

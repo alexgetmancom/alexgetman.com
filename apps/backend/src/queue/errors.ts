@@ -50,6 +50,7 @@ export type PublishResult = {
   error?: string | null;
   reason?: string | null;
   retryable?: boolean;
+  partial?: boolean;
   [key: string]: unknown;
 };
 
