@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
 import type { Context } from "grammy";
 import type { BackendConfig } from "../config.js";
@@ -21,16 +21,24 @@ export async function storeTelegramVideo(ctx: Context, config: BackendConfig): P
   mkdirSync(config.VIDEO_MEDIA_DIR, { recursive: true });
   const extension = path.extname(name) || ".mp4";
   const sourcePath = path.join(config.VIDEO_MEDIA_DIR, `${assetKey}${extension.toLowerCase()}`);
-  const url = `${config.TELEGRAM_API_BASE_URL.replace(/\/$/, "")}/file/bot${config.controllerBotToken}/${apiFile.file_path}`;
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Telegram video download failed: ${response.status}`);
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  await Bun.write(sourcePath, bytes);
+
+  let sizeBytes = 0;
+  if (path.isAbsolute(apiFile.file_path)) {
+    copyFileSync(apiFile.file_path, sourcePath);
+    sizeBytes = statSync(sourcePath).size;
+  } else {
+    const url = `${config.TELEGRAM_API_BASE_URL.replace(/\/$/, "")}/file/bot${config.controllerBotToken}/${apiFile.file_path}`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Telegram video download failed: ${response.status}`);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    await Bun.write(sourcePath, bytes);
+    sizeBytes = bytes.byteLength;
+  }
   return {
     assetKey,
     sourcePath,
     publicUrl: `${config.PUBLIC_BASE_URL.replace(/\/$/, "")}/media/video/${assetKey}`,
-    sizeBytes: bytes.byteLength,
+    sizeBytes,
   };
 }
 

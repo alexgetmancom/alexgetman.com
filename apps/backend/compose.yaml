@@ -30,7 +30,7 @@ services:
       - path: ./site-feed.env
         required: false
     group_add:
-      - "101"
+      - "${BOT_API_GID:-101}"
     depends_on:
       - bot-api
     environment:
