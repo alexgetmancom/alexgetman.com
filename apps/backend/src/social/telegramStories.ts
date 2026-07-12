@@ -5,10 +5,10 @@ import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import type { PublishResult } from "../queue/errors.js";
 import { runFfmpeg } from "../runtime/ffmpeg.js";
-import { type PublishMediaItem, payloadCanonicalUrl, payloadMedia, payloadText } from "./payload.js";
+import { type PublishMediaItem, payloadMedia, payloadText } from "./payload.js";
 import { createChannelStoryClient } from "./telegramSession.js";
 
-const URL_RE = /https?:\/\/[^\s<>)]*/;
+const URL_RE = /https?:\/\/[^\s<>)]*/g;
 const STORY_MAX_BYTES = Math.floor(9.8 * 1024 * 1024);
 
 export async function publishTelegramStory(
@@ -21,18 +21,19 @@ export async function publishTelegramStory(
   void fetchImpl;
   const media = payloadMedia(payload).find((item) => item.storyLocalPath || item.localPath);
   if (!media) return { ok: false, skipped: true, reason: "missing_media" };
-  const caption = payloadText(payload).slice(0, 2048);
-  const link = caption.match(URL_RE)?.[0] ?? payloadCanonicalUrl(payload, config) ?? config.PUBLIC_BASE_URL;
+  // Stories should be a clean visual format: never append or preserve links
+  // in their caption. Links remain available on the regular post targets.
+  const caption = telegramStoryCaption(payloadText(payload));
 
   if (!config.ENABLE_TELEGRAM_STORIES) return { ok: false, skipped: true, reason: "telegram_stories_disabled" };
   if (!config.TELEGRAM_CHANNEL_STORIES_API_ID || !config.TELEGRAM_CHANNEL_STORIES_API_HASH || !config.TELEGRAM_CHANNEL_STORIES_SESSION) {
     return { ok: false, skipped: true, reason: "missing_channel_story_credentials" };
   }
   if (!config.TELEGRAM_STORIES_CHANNEL) return { ok: false, skipped: true, reason: "missing_story_channel" };
-  return publishChannelStory(media, caption, link, config);
+  return publishChannelStory(media, caption, config);
 }
 
-async function publishChannelStory(media: PublishMediaItem, caption: string, link: string, config: BackendConfig): Promise<PublishResult> {
+async function publishChannelStory(media: PublishMediaItem, caption: string, config: BackendConfig): Promise<PublishResult> {
   let uploadPath = media.storyLocalPath || media.localPath;
   if (!uploadPath) return { ok: false, skipped: true, reason: "missing_media_path" };
   let cleanupPath: string | null = null;
@@ -80,14 +81,14 @@ async function publishChannelStory(media: PublishMediaItem, caption: string, lin
         // filesystem path.  Keep the generated 1080x1920 file explicit so
         // Telegram uploads it verbatim (including its letterbox padding).
         media: telegramStoryUploadMedia(uploadPath, media.type),
-        caption: [caption, link].filter(Boolean).join("\n"),
+        caption,
         period: 86_400,
       }),
       120_000,
       "telegram_channel_story_timeout",
     );
     const storyId = story.id;
-    return { ok: true, id: storyId, url: `https://t.me/${storyChannel}/s/${storyId}`, raw: { source: "mtproto_stories.sendStory", link } };
+    return { ok: true, id: storyId, url: `https://t.me/${storyChannel}/s/${storyId}`, raw: { source: "mtproto_stories.sendStory" } };
   } finally {
     await clientInstance.destroy();
     if (cleanupPath) await fs.promises.rm(cleanupPath, { force: true });
@@ -98,6 +99,15 @@ export function telegramStoryUploadMedia(filePath: string, type: PublishMediaIte
   // mtcute treats a bare string as a TDLib/Bot API file ID. The `file:`
   // prefix explicitly selects a local filesystem upload.
   return { type: type === "VIDEO" ? "video" : "photo", file: `file:${filePath}` };
+}
+
+export function telegramStoryCaption(text: string): string {
+  return text
+    .replace(URL_RE, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+    .slice(0, 2048);
 }
 
 async function probeVideo(filePath: string, media: PublishMediaItem): Promise<{ width: number; height: number; duration: number }> {

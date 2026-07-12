@@ -6,7 +6,7 @@ import { loadConfig } from "../src/config.js";
 import { generateStoryMedia } from "../src/media/story.js";
 import { publishInstagramStory } from "../src/social/instagram.js";
 import { createChannelStoryClient } from "../src/social/telegramSession.js";
-import { telegramStoryUploadMedia } from "../src/social/telegramStories.js";
+import { telegramStoryCaption, telegramStoryUploadMedia } from "../src/social/telegramStories.js";
 
 mock.module("../src/runtime/ffmpeg.js", () => {
   return {
@@ -58,6 +58,10 @@ describe("story publishers", () => {
       type: "video",
       file: "file:/data/story-media/draft-59-en.mp4",
     });
+  });
+
+  it("removes links from Telegram Story captions", () => {
+    expect(telegramStoryCaption("Read more: https://alexgetman.com/post/59\n\n\nThank you")).toBe("Read more:\n\nThank you");
   });
 
   it("creates, waits for and publishes an Instagram story", async () => {
