@@ -73,6 +73,36 @@ export async function publishToDevto(
   return { ok: true, id: typeof data.id === "number" || typeof data.id === "string" ? data.id : url, url, raw: data };
 }
 
+export async function updateDevtoArticle(
+  articleId: number,
+  patch: Partial<DevtoArticleInput>,
+  config: BackendConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<boolean> {
+  if (!config.DEVTO_API_KEY) return false;
+  const article: Record<string, unknown> = {};
+  if (patch.title) article.title = patch.title;
+  if (patch.bodyMarkdown) article.body_markdown = patch.bodyMarkdown;
+  if (patch.canonicalUrl) article.canonical_url = patch.canonicalUrl;
+  if (patch.mainImage) article.main_image = patch.mainImage;
+  if (patch.tags) article.tags = cleanTags(patch.tags);
+  if (patch.published != null) article.published = patch.published;
+  const response = await fetchImpl(`https://dev.to/api/articles/${articleId}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      "User-Agent": "Mozilla/5.0 (compatible; alexgetman-backend/1.0; +https://alexgetman.com)",
+      "api-key": config.DEVTO_API_KEY,
+    },
+    body: JSON.stringify({ article }),
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new HttpPublishError(`dev.to update failed: ${response.status} ${body}`, response.status, body);
+  }
+  return true;
+}
+
 function cleanTags(tags: string[]): string[] {
   return tags
     .map((tag) => tag.toLowerCase().replaceAll(" ", "").replaceAll("-", "").slice(0, 20))

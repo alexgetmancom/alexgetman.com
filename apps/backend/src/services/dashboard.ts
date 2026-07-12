@@ -278,7 +278,7 @@ function formatMedia(post: any): string {
   } catch {}
   if (!Array.isArray(media)) media = [];
   if (media.length === 0) return "text";
-  const hasVideo = media.some((m: any) => m.type === "video" || m.media_type === "video");
+  const hasVideo = media.some((m: any) => String(m?.type ?? m?.media_type ?? "").toLowerCase() === "video");
   const mtype = hasVideo ? "vid" : "pic";
   return `${mtype} (${media.length})`;
 }

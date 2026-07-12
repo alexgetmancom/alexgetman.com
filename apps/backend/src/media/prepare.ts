@@ -128,34 +128,69 @@ async function getTelegramFileUrl(
 async function normalizeVideoForPublicUpload(config: BackendConfig, inputPath: string, cacheKey: string): Promise<string> {
   const outputPath = path.join(config.MEDIA_CACHE_DIR, `${cacheKey}.normalized.mp4`);
   if (await Bun.file(outputPath).exists()) return outputPath;
-  await runFfmpeg(
-    [
-      "-y",
-      "-i",
-      inputPath,
-      "-map",
-      "0:v:0",
-      "-map",
-      "0:a:0?",
-      "-c:v",
-      "libx264",
-      "-preset",
-      "veryfast",
-      "-crf",
-      "23",
-      "-pix_fmt",
-      "yuv420p",
-      "-c:a",
-      "aac",
-      "-b:a",
-      "128k",
-      "-movflags",
-      "+faststart",
-      outputPath,
-    ],
-    config.FFMPEG_TIMEOUT_SECONDS,
-  );
+  const { width, height } = await probeVideoDimensions(inputPath);
+  const { maxWidth, maxHeight } = threadsVideoBounds(width, height);
+  const args =
+    width <= maxWidth && height <= maxHeight
+      ? ["-y", "-i", inputPath, "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy", "-movflags", "+faststart", outputPath]
+      : [
+          "-y",
+          "-i",
+          inputPath,
+          "-map",
+          "0:v:0",
+          "-map",
+          "0:a:0?",
+          "-vf",
+          `scale='min(${maxWidth},iw)':'min(${maxHeight},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=yuv420p`,
+          "-c:v",
+          "libx264",
+          "-preset",
+          "veryfast",
+          "-crf",
+          "23",
+          "-pix_fmt",
+          "yuv420p",
+          "-c:a",
+          "aac",
+          "-b:a",
+          "128k",
+          "-ar",
+          "48000",
+          "-ac",
+          "2",
+          "-movflags",
+          "+faststart",
+          outputPath,
+        ];
+  await runFfmpeg(args, config.FFMPEG_TIMEOUT_SECONDS);
   return outputPath;
+}
+
+async function probeVideoDimensions(inputPath: string): Promise<{ width: number; height: number }> {
+  const child = Bun.spawn(
+    ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "json", inputPath],
+    {
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
+  const [exitCode, stdout, stderr] = await Promise.all([
+    child.exited,
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+  ]);
+  if (exitCode !== 0) throw new Error(`ffprobe failed: ${stderr.trim().slice(-2000) || `exit code ${exitCode}`}`);
+  const streams = (JSON.parse(stdout || "{}") as { streams?: Array<{ width?: number; height?: number }> }).streams ?? [];
+  const stream = streams[0];
+  if (!stream?.width || !stream.height) throw new Error("ffprobe did not find a video stream");
+  return { width: Number(stream.width), height: Number(stream.height) };
+}
+
+function threadsVideoBounds(width: number, height: number): { maxWidth: number; maxHeight: number } {
+  if (width > height) return { maxWidth: 1920, maxHeight: 1080 };
+  if (height > width) return { maxWidth: 1080, maxHeight: 1920 };
+  return { maxWidth: 1080, maxHeight: 1080 };
 }
 
 async function mediaCacheKey(item: PublishMediaItem, index: number): Promise<string> {

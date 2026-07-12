@@ -1,4 +1,5 @@
 import { and, desc, eq, or } from "drizzle-orm";
+import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import {
   drafts,
@@ -15,6 +16,13 @@ import {
 import { jsonObject } from "../json.js";
 import { localizeTargetPayload } from "../publicationPayload.js";
 
+type PublicationRef = {
+  input: string;
+  postId: number | null;
+  postKey: string;
+  messageId: number;
+};
+
 export type CommandAction = {
   action: string;
   ref?: string;
@@ -25,37 +33,66 @@ export type CommandAction = {
   token?: string;
 };
 
-export function runCommandAction(backendDb: BackendDb, input: CommandAction): Record<string, unknown> {
+export async function runCommandAction(
+  backendDb: BackendDb,
+  input: CommandAction,
+  config?: BackendConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<Record<string, unknown>> {
   const ref = input.ref || (input.message_id == null ? "" : String(input.message_id));
   if (!ref) throw new Error("missing publication ref");
-  const postId = resolvePostId(backendDb, ref);
-  if (!postId) throw new Error(`publication not found: ${ref}`);
+  const publicationRef = resolvePublicationRef(backendDb, ref);
+  if (!publicationRef) throw new Error(`publication not found: ${ref}`);
   let result: Record<string, unknown>;
-  if (input.action === "retry" || input.action === "republish") result = requeue(backendDb, postId, input.target);
-  else if (input.action === "edit_en") result = editEnglish(backendDb, postId, input.text_en ?? "");
-  else if (input.action === "replace_en_media") result = replaceEnglishMedia(backendDb, postId, parseMedia(input.media_en_json));
-  else if (input.action === "use_ru_media_for_en") result = replaceEnglishMedia(backendDb, postId, null);
+  if (input.action === "retry" || input.action === "republish") result = requeue(backendDb, publicationRef, input.target);
+  else if (input.action === "edit_en") {
+    result = editEnglish(backendDb, publicationRef, input.text_en ?? "");
+    if (config) result.external = await editPublishedTargets(backendDb, publicationRef, null, input.text_en ?? "", config, fetchImpl);
+  } else if (input.action === "replace_en_media") result = replaceEnglishMedia(backendDb, publicationRef, parseMedia(input.media_en_json));
+  else if (input.action === "use_ru_media_for_en") result = replaceEnglishMedia(backendDb, publicationRef, null);
   else throw new Error(`unknown action: ${input.action}`);
-  recordAction(backendDb, input.action, postId, input.target ?? null, result);
+  recordAction(backendDb, input.action, publicationRef, input.target ?? null, result);
   return result;
 }
 
-function requeue(backendDb: BackendDb, postId: number, target?: string): Record<string, unknown> {
-  const source = jsonObject(
-    backendDb.db
-      .select({ itemJson: publicationSources.itemJson })
-      .from(publicationSources)
-      .where(eq(publicationSources.postId, postId))
-      .get()?.itemJson,
-  );
+function requeue(backendDb: BackendDb, ref: PublicationRef, target?: string): Record<string, unknown> {
+  const source = sourcePayload(backendDb, ref);
+  const whereRef = ref.postId != null ? eq(publishJobs.postId, ref.postId) : eq(publishJobs.postKey, ref.postKey);
   const rows = backendDb.db
     .select()
     .from(publishJobs)
-    .where(target ? and(eq(publishJobs.postId, postId), eq(publishJobs.target, target)) : eq(publishJobs.postId, postId))
+    .where(target ? and(whereRef, eq(publishJobs.target, target)) : whereRef)
     .orderBy(desc(publishJobs.jobId))
     .all();
   const latest = new Map<string, typeof publishJobs.$inferSelect>();
   for (const row of rows) if (!latest.has(row.target)) latest.set(row.target, row);
+  if (latest.size === 0 && target) {
+    const fallback = backendDb.db.select().from(publishJobs).where(whereRef).orderBy(desc(publishJobs.updatedAt)).get();
+    const payload = localizeTargetPayload(Object.keys(source).length > 0 ? source : jsonObject(fallback?.payloadJson), target);
+    if (Object.keys(payload).length === 0) throw new Error("no publish jobs found");
+    const now = new Date().toISOString();
+    const inserted = backendDb.db
+      .insert(publishJobs)
+      .values({
+        postId: ref.postId,
+        postKey: ref.postKey,
+        messageId: ref.messageId,
+        target,
+        status: "queued",
+        attemptCount: 0,
+        publishAt: now,
+        nextAttemptAt: null,
+        lockedBy: null,
+        lockedAt: null,
+        payloadJson: payload,
+        lastError: null,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning()
+      .get();
+    if (inserted) latest.set(target, inserted);
+  }
   if (latest.size === 0) throw new Error("no publish jobs found");
   const now = new Date().toISOString();
   const queued: string[] = [];
@@ -64,7 +101,13 @@ function requeue(backendDb: BackendDb, postId: number, target?: string): Record<
       const existing = tx
         .select({ jobId: publishJobs.jobId })
         .from(publishJobs)
-        .where(and(eq(publishJobs.postId, postId), eq(publishJobs.target, targetId), eq(publishJobs.status, "queued")))
+        .where(
+          and(
+            ref.postId != null ? eq(publishJobs.postId, ref.postId) : eq(publishJobs.postKey, ref.postKey),
+            eq(publishJobs.target, targetId),
+            eq(publishJobs.status, "queued"),
+          ),
+        )
         .get();
       if (!existing) {
         const payload = localizeTargetPayload(Object.keys(source).length > 0 ? source : jsonObject(row.payloadJson), targetId);
@@ -85,7 +128,7 @@ function requeue(backendDb: BackendDb, postId: number, target?: string): Record<
       }
       tx.insert(postTargets)
         .values({
-          postKey: row.postKey ?? `post:${postId}`,
+          postKey: row.postKey ?? ref.postKey,
           target: targetId,
           status: "queued",
           error: null,
@@ -100,85 +143,85 @@ function requeue(backendDb: BackendDb, postId: number, target?: string): Record<
         .run();
       queued.push(targetId);
     }
-    tx.update(publications).set({ status: "published", updatedAt: now }).where(eq(publications.postId, postId)).run();
+    if (ref.postId != null)
+      tx.update(publications).set({ status: "published", updatedAt: now }).where(eq(publications.postId, ref.postId)).run();
   });
-  return { ok: true, post_id: postId, target: target ?? null, targets: queued };
+  return { ok: true, post_id: ref.postId, post_key: ref.postKey, message_id: ref.messageId, target: target ?? null, targets: queued };
 }
 
-function editEnglish(backendDb: BackendDb, postId: number, text: string): Record<string, unknown> {
+function editEnglish(backendDb: BackendDb, ref: PublicationRef, text: string): Record<string, unknown> {
   const value = text.trim();
   if (!value) throw new Error("text_en is required");
   const now = new Date().toISOString();
   backendDb.db.transaction((tx) => {
-    tx.update(drafts).set({ textEnApproved: value, updatedAt: now }).where(eq(drafts.postId, postId)).run();
-    tx.update(postLocales)
-      .set({ text: value, updatedAt: now })
-      .where(and(eq(postLocales.postId, postId), eq(postLocales.locale, "en")))
-      .run();
-    tx.update(posts)
-      .set({ textEn: value, updatedAt: now })
-      .where(eq(posts.postKey, `post:${postId}`))
-      .run();
-    updateSource(tx, postId, { text_en: value, bodyMarkdown: value }, now);
-    enqueueRepairSiteJob(tx, postId, "edit_en", now);
+    if (ref.postId != null) {
+      tx.update(drafts).set({ textEnApproved: value, updatedAt: now }).where(eq(drafts.postId, ref.postId)).run();
+      tx.update(postLocales)
+        .set({ text: value, updatedAt: now })
+        .where(and(eq(postLocales.postId, ref.postId), eq(postLocales.locale, "en")))
+        .run();
+    }
+    tx.update(posts).set({ textEn: value, updatedAt: now }).where(eq(posts.postKey, ref.postKey)).run();
+    updateSource(tx, ref, { text_en: value, bodyMarkdown: value }, now);
+    enqueueRepairSiteJob(tx, ref, "edit_en", now);
   });
-  return { ok: true, post_id: postId, text_en: true };
+  return { ok: true, post_id: ref.postId, post_key: ref.postKey, text_en: true };
 }
 
-function replaceEnglishMedia(backendDb: BackendDb, postId: number, media: Record<string, unknown>[] | null): Record<string, unknown> {
+function replaceEnglishMedia(backendDb: BackendDb, ref: PublicationRef, media: Record<string, unknown>[] | null): Record<string, unknown> {
   const now = new Date().toISOString();
   backendDb.db.transaction((tx) => {
-    tx.update(drafts)
-      .set({ mediaEnJson: media == null ? null : JSON.stringify(media), updatedAt: now })
-      .where(eq(drafts.postId, postId))
-      .run();
-    const ru = tx
-      .select({ mediaJson: postLocales.mediaJson })
-      .from(postLocales)
-      .where(and(eq(postLocales.postId, postId), eq(postLocales.locale, "ru")))
-      .get();
-    const effective = media == null ? (ru?.mediaJson ?? []) : media;
-    tx.update(postLocales)
-      .set({ mediaJson: effective, updatedAt: now })
-      .where(and(eq(postLocales.postId, postId), eq(postLocales.locale, "en")))
-      .run();
-    updateSource(tx, postId, { media_en: media }, now);
-    enqueueRepairSiteJob(tx, postId, media == null ? "use_ru_media_for_en" : "replace_en_media", now);
+    if (ref.postId != null) {
+      tx.update(drafts)
+        .set({ mediaEnJson: media == null ? null : JSON.stringify(media), updatedAt: now })
+        .where(eq(drafts.postId, ref.postId))
+        .run();
+      const ru = tx
+        .select({ mediaJson: postLocales.mediaJson })
+        .from(postLocales)
+        .where(and(eq(postLocales.postId, ref.postId), eq(postLocales.locale, "ru")))
+        .get();
+      const effective = media == null ? (ru?.mediaJson ?? []) : media;
+      tx.update(postLocales)
+        .set({ mediaJson: effective, updatedAt: now })
+        .where(and(eq(postLocales.postId, ref.postId), eq(postLocales.locale, "en")))
+        .run();
+    }
+    updateSource(tx, ref, { media_en: media }, now);
+    enqueueRepairSiteJob(tx, ref, media == null ? "use_ru_media_for_en" : "replace_en_media", now);
   });
-  return { ok: true, post_id: postId, media_en: media != null };
+  return { ok: true, post_id: ref.postId, post_key: ref.postKey, media_en: media != null };
 }
 
-function updateSource(db: BackendDb["db"], postId: number, patch: Record<string, unknown>, now: string): void {
-  const row = db
-    .select({ itemJson: publicationSources.itemJson })
-    .from(publicationSources)
-    .where(eq(publicationSources.postId, postId))
-    .get();
+function updateSource(db: BackendDb["db"], ref: PublicationRef, patch: Record<string, unknown>, now: string): void {
+  const row =
+    ref.postId == null
+      ? null
+      : db
+          .select({ itemJson: publicationSources.itemJson })
+          .from(publicationSources)
+          .where(eq(publicationSources.postId, ref.postId))
+          .get();
   const source = { ...jsonObject(row?.itemJson), ...patch };
-  db.update(publicationSources).set({ itemJson: source, updatedAt: now }).where(eq(publicationSources.postId, postId)).run();
-  const message = db
-    .select({ telegramMessageId: publications.telegramMessageId })
-    .from(publications)
-    .where(eq(publications.postId, postId))
+  if (ref.postId != null)
+    db.update(publicationSources).set({ itemJson: source, updatedAt: now }).where(eq(publicationSources.postId, ref.postId)).run();
+  const siteSource = db
+    .select({ itemJson: siteSourceItems.itemJson })
+    .from(siteSourceItems)
+    .where(eq(siteSourceItems.messageId, ref.messageId))
     .get();
-  if (message?.telegramMessageId)
-    db.update(siteSourceItems)
-      .set({ itemJson: source, updatedAt: now })
-      .where(eq(siteSourceItems.messageId, message.telegramMessageId))
-      .run();
+  const sitePayload = { ...jsonObject(siteSource?.itemJson), ...source };
+  db.insert(siteSourceItems)
+    .values({ messageId: ref.messageId, itemJson: sitePayload, createdAt: now, updatedAt: now })
+    .onConflictDoUpdate({ target: siteSourceItems.messageId, set: { itemJson: sitePayload, updatedAt: now } })
+    .run();
 }
 
-function enqueueRepairSiteJob(db: BackendDb["db"], postId: number, reason: string, now: string): void {
-  const publication = db
-    .select({ telegramMessageId: publications.telegramMessageId, postId: publications.postId })
-    .from(publications)
-    .where(eq(publications.postId, postId))
-    .get();
-  if (!publication) throw new Error(`publication not found: ${postId}`);
+function enqueueRepairSiteJob(db: BackendDb["db"], ref: PublicationRef, reason: string, now: string): void {
   db.insert(siteJobs)
     .values({
-      postId,
-      messageId: publication.telegramMessageId ?? publication.postId,
+      postId: ref.postId,
+      messageId: ref.messageId,
       reason,
       status: "queued",
       nextAttemptAt: now,
@@ -188,23 +231,40 @@ function enqueueRepairSiteJob(db: BackendDb["db"], postId: number, reason: strin
     .run();
 }
 
-function resolvePostId(backendDb: BackendDb, ref: string): number | null {
-  const direct = ref.match(/^post:(\d+)$/)?.[1] ?? (/^\d+$/.test(ref) ? ref : null);
-  if (!direct) return null;
-  const id = Number(direct);
+function resolvePublicationRef(backendDb: BackendDb, ref: string): PublicationRef | null {
+  const trimmed = ref.trim();
+  const postKeyRef = trimmed.startsWith("post:") || trimmed.startsWith("telegram:") ? trimmed : null;
+  const numeric = trimmed.match(/^post:(\d+)$/)?.[1] ?? (/^\d+$/.test(trimmed) ? trimmed : null);
+  if (postKeyRef) {
+    const post = backendDb.db.select().from(posts).where(eq(posts.postKey, postKeyRef)).get();
+    if (post) return { input: ref, postId: post.postId, postKey: post.postKey, messageId: post.messageId };
+  }
+  if (!numeric) return null;
+  const id = Number(numeric);
   const publication = backendDb.db
-    .select({ postId: publications.postId })
+    .select({ postId: publications.postId, telegramMessageId: publications.telegramMessageId })
     .from(publications)
     .where(or(eq(publications.postId, id), eq(publications.telegramMessageId, id)))
     .get();
-  if (publication) return publication.postId;
-  return (
-    backendDb.db
-      .select({ postId: posts.postId })
+  if (publication) {
+    const post = backendDb.db
+      .select()
       .from(posts)
-      .where(or(eq(posts.messageId, id), eq(posts.postKey, `post:${id}`)))
-      .get()?.postId ?? null
-  );
+      .where(eq(posts.postKey, `post:${publication.postId}`))
+      .get();
+    return {
+      input: ref,
+      postId: publication.postId,
+      postKey: `post:${publication.postId}`,
+      messageId: post?.messageId ?? publication.telegramMessageId ?? publication.postId,
+    };
+  }
+  const post = backendDb.db
+    .select()
+    .from(posts)
+    .where(or(eq(posts.messageId, id), eq(posts.postId, id), eq(posts.postKey, `post:${id}`)))
+    .get();
+  return post ? { input: ref, postId: post.postId, postKey: post.postKey, messageId: post.messageId } : null;
 }
 
 function parseMedia(raw: string | undefined): Record<string, unknown>[] | null {
@@ -216,19 +276,20 @@ function parseMedia(raw: string | undefined): Record<string, unknown>[] | null {
   return items as Record<string, unknown>[];
 }
 
-function recordAction(backendDb: BackendDb, action: string, postId: number, target: string | null, details: Record<string, unknown>): void {
-  const message = backendDb.db
-    .select({ telegramMessageId: publications.telegramMessageId })
-    .from(publications)
-    .where(eq(publications.postId, postId))
-    .get();
+function recordAction(
+  backendDb: BackendDb,
+  action: string,
+  ref: PublicationRef,
+  target: string | null,
+  details: Record<string, unknown>,
+): void {
   const now = new Date().toISOString();
   backendDb.db
     .insert(opsActions)
     .values({
       actorType: "command-center",
       action,
-      messageId: message?.telegramMessageId ?? null,
+      messageId: ref.messageId,
       target,
       status: "ok",
       detailsJson: JSON.stringify(details),
@@ -236,4 +297,129 @@ function recordAction(backendDb: BackendDb, action: string, postId: number, targ
       completedAt: now,
     })
     .run();
+}
+
+function sourcePayload(backendDb: BackendDb, ref: PublicationRef): Record<string, unknown> {
+  if (ref.postId != null) {
+    const publicationSource = backendDb.db
+      .select({ itemJson: publicationSources.itemJson })
+      .from(publicationSources)
+      .where(eq(publicationSources.postId, ref.postId))
+      .get();
+    const payload = jsonObject(publicationSource?.itemJson);
+    if (Object.keys(payload).length > 0) return payload;
+  }
+  const siteSource = backendDb.db
+    .select({ itemJson: siteSourceItems.itemJson })
+    .from(siteSourceItems)
+    .where(eq(siteSourceItems.messageId, ref.messageId))
+    .get();
+  const payload = jsonObject(siteSource?.itemJson);
+  if (Object.keys(payload).length > 0) return payload;
+  return jsonObject(backendDb.db.select({ rawJson: posts.rawJson }).from(posts).where(eq(posts.postKey, ref.postKey)).get()?.rawJson);
+}
+
+async function editPublishedTargets(
+  backendDb: BackendDb,
+  ref: PublicationRef,
+  textRu: string | null,
+  textEn: string | null,
+  config: BackendConfig,
+  fetchImpl: typeof fetch,
+): Promise<Array<Record<string, unknown>>> {
+  const post = backendDb.db
+    .select({ chatId: posts.chatId, mediaCount: posts.mediaCount })
+    .from(posts)
+    .where(eq(posts.postKey, ref.postKey))
+    .get();
+  const rows = backendDb.db
+    .select({ target: postTargets.target, status: postTargets.status, externalId: postTargets.externalId })
+    .from(postTargets)
+    .where(eq(postTargets.postKey, ref.postKey))
+    .all();
+  const results: Array<Record<string, unknown>> = [];
+  for (const row of rows) {
+    if (row.status !== "published" || !row.externalId) continue;
+    try {
+      if (row.target === "telegram" && textRu) {
+        const token = config.controllerBotToken;
+        if (!token) {
+          results.push({ target: row.target, ok: false, skipped: true, error: "missing CONTROLLER_BOT_TOKEN" });
+          continue;
+        }
+        const method = Number(post?.mediaCount ?? 0) > 0 ? "editMessageCaption" : "editMessageText";
+        const field = Number(post?.mediaCount ?? 0) > 0 ? "caption" : "text";
+        results.push(
+          await postJson(fetchImpl, `${config.TELEGRAM_API_BASE_URL.replace(/\/$/, "")}/bot${token}/${method}`, row.target, {
+            chat_id: post?.chatId || config.CHANNEL_USERNAME,
+            message_id: Number(row.externalId),
+            [field]: textRu,
+          }),
+        );
+      } else if (row.target === "facebook" && textEn) {
+        if (!config.FACEBOOK_PAGE_ACCESS_TOKEN) {
+          results.push({ target: row.target, ok: false, skipped: true, error: "missing FACEBOOK_PAGE_ACCESS_TOKEN" });
+          continue;
+        }
+        results.push(
+          await postJson(fetchImpl, `https://graph.facebook.com/${config.FACEBOOK_GRAPH_API_VERSION}/${row.externalId}`, row.target, {
+            message: textEn,
+            description: textEn,
+            access_token: config.FACEBOOK_PAGE_ACCESS_TOKEN,
+          }),
+        );
+      } else if (row.target === "facebook_ru" && textRu) {
+        if (!config.FACEBOOK_RU_PAGE_ACCESS_TOKEN) {
+          results.push({ target: row.target, ok: false, skipped: true, error: "missing FACEBOOK_RU_PAGE_ACCESS_TOKEN" });
+          continue;
+        }
+        results.push(
+          await postJson(fetchImpl, `https://graph.facebook.com/${config.FACEBOOK_GRAPH_API_VERSION}/${row.externalId}`, row.target, {
+            message: textRu,
+            description: textRu,
+            access_token: config.FACEBOOK_RU_PAGE_ACCESS_TOKEN,
+          }),
+        );
+      } else if (row.target === "linkedin" && textEn) {
+        if (!config.LINKEDIN_ACCESS_TOKEN) {
+          results.push({ target: row.target, ok: false, skipped: true, error: "missing LINKEDIN_ACCESS_TOKEN" });
+          continue;
+        }
+        results.push(
+          await postJson(
+            fetchImpl,
+            `https://api.linkedin.com/rest/posts/${encodeURIComponent(row.externalId)}`,
+            row.target,
+            { patch: { $set: { commentary: textEn } } },
+            {
+              Authorization: `Bearer ${config.LINKEDIN_ACCESS_TOKEN}`,
+              "Linkedin-Version": config.LINKEDIN_API_VERSION,
+              "X-Restli-Method": "PARTIAL_UPDATE",
+              "X-Restli-Protocol-Version": "2.0.0",
+            },
+          ),
+        );
+      }
+    } catch (error) {
+      results.push({ target: row.target, ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return results;
+}
+
+async function postJson(
+  fetchImpl: typeof fetch,
+  url: string,
+  target: string,
+  payload: Record<string, unknown>,
+  headers: Record<string, string> = {},
+): Promise<Record<string, unknown>> {
+  const response = await fetchImpl(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...headers },
+    body: JSON.stringify(payload),
+  });
+  const text = await response.text();
+  const body = text ? (JSON.parse(text) as Record<string, unknown>) : null;
+  return { target, ok: response.ok && (body == null || body.ok !== false), status: response.status, response: body };
 }

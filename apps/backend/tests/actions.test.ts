@@ -1,12 +1,13 @@
 import { describe, expect, it } from "bun:test";
 import { asc, count, eq } from "drizzle-orm";
+import { loadConfig } from "../src/config.js";
 import { openBackendDb } from "../src/db/client.js";
-import { publicationSources, publications, publishJobs } from "../src/db/schema.js";
+import { posts, postTargets, publicationSources, publications, publishJobs, siteSourceItems } from "../src/db/schema.js";
 import { enqueuePublishJob } from "../src/queue/publish.js";
 import { runCommandAction } from "../src/services/actions.js";
 
 describe("command center actions", () => {
-  it("rebuilds retried jobs from the source using the target locale", () => {
+  it("rebuilds retried jobs from the source using the target locale", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const now = new Date().toISOString();
@@ -28,7 +29,7 @@ describe("command center actions", () => {
       for (const target of ["threads_ru", "threads_en"]) {
         const id = enqueuePublishJob(backendDb, { postId: 52, postKey: "post:52", messageId: 52, target, payload: source });
         backendDb.db.update(publishJobs).set({ status: "failed" }).where(eq(publishJobs.jobId, id)).run();
-        runCommandAction(backendDb, { action: "retry", ref: "post:52", target });
+        await runCommandAction(backendDb, { action: "retry", ref: "post:52", target });
       }
 
       const jobs = backendDb.db
@@ -46,6 +47,95 @@ describe("command center actions", () => {
         media: [{ file_id: "en-photo" }],
       });
       expect(backendDb.db.select({ count: count() }).from(publishJobs).where(eq(publishJobs.postId, 52)).get()?.count).toBe(2);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("requeues a missing target job for a legacy Telegram post", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      backendDb.db
+        .insert(posts)
+        .values({
+          postKey: "telegram:alexgetmancom:777",
+          channel: "alexgetmancom",
+          messageId: 777,
+          text: "Русский",
+          textEn: "English",
+          status: "active",
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      backendDb.db
+        .insert(siteSourceItems)
+        .values({
+          messageId: 777,
+          itemJson: { text_ru: "Русский", text_en: "English", media: [{ file_id: "ru" }], media_en: [{ file_id: "en" }] },
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      const result = await runCommandAction(backendDb, { action: "retry", ref: "777", target: "threads_en" });
+      expect(result).toMatchObject({ ok: true, post_key: "telegram:alexgetmancom:777", targets: ["threads_en"] });
+      expect(backendDb.db.select().from(publishJobs).where(eq(publishJobs.target, "threads_en")).get()?.payloadJson).toMatchObject({
+        locale: "en",
+        text: "English",
+        media: [{ file_id: "en" }],
+      });
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("edits published external targets as a best-effort side effect", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      backendDb.db
+        .insert(publications)
+        .values({ postId: 7, status: "published", telegramMessageId: 707, createdAt: now, updatedAt: now })
+        .run();
+      backendDb.db
+        .insert(posts)
+        .values({
+          postKey: "post:7",
+          postId: 7,
+          channel: "controller",
+          chatId: "-1001",
+          messageId: 707,
+          text: "RU",
+          textEn: "EN",
+          status: "active",
+          mediaCount: 0,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      backendDb.db
+        .insert(postTargets)
+        .values({ postKey: "post:7", target: "linkedin", status: "published", externalId: "urn:li:share:7", updatedAt: now })
+        .run();
+      const calls: string[] = [];
+      const fetchImpl = (async (input: string | URL | Request) => {
+        calls.push(String(input));
+        return new Response("", { status: 204 });
+      }) as typeof fetch;
+      const result = await runCommandAction(
+        backendDb,
+        { action: "edit_en", ref: "post:7", text_en: "Updated EN" },
+        loadConfig({
+          LINKEDIN_ACCESS_TOKEN: "token",
+          LINKEDIN_API_VERSION: "202606",
+          TELEGRAM_API_BASE_URL: "https://api.telegram.org",
+          CHANNEL_USERNAME: "alexgetmancom",
+        }),
+        fetchImpl,
+      );
+      expect(result.external).toEqual([{ target: "linkedin", ok: true, status: 204, response: null }]);
+      expect(calls).toEqual(["https://api.linkedin.com/rest/posts/urn%3Ali%3Ashare%3A7"]);
     } finally {
       backendDb.close();
     }

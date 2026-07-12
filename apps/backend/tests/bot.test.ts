@@ -88,6 +88,19 @@ describe("Telegram controller flow", () => {
     expect(scheduledDrafts(backendDb)).toEqual([{ id: draftId, scheduledAt: ruAt.toISOString(), scheduledEnAt: enAt.toISOString() }]);
   });
 
+  it("does not enqueue a duplicate target job after that target is already final", () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createDraftFromMessage(backendDb, 42, { text: "Repeat", textEn: "Repeat", entities: [], media: [] });
+    const postId = publishDraftToQueue(backendDb, draftId);
+    backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE post_id=? AND target='threads_en'").run(postId);
+
+    publishDraftToQueue(backendDb, draftId);
+
+    expect(
+      backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM publish_jobs WHERE post_id=? AND target='threads_en'").get(postId),
+    ).toEqual({ count: 1 });
+  });
+
   it("removes all unpublished draft artifacts while retaining published history", () => {
     backendDb = openBackendDb(":memory:");
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Cancel", textEn: "Cancel", entities: [], media: [] });

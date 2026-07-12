@@ -103,7 +103,7 @@ export function createApiHandler(context: ApiContext) {
       const body = await commandAction(request);
       if (!commandAllowed(request, config, body.token)) return json({ detail: "forbidden" }, 403);
       try {
-        return json(runCommandAction(backendDb, body));
+        return json(await runCommandAction(backendDb, body, config));
       } catch (error) {
         return json({ detail: error instanceof Error ? error.message : String(error) }, 400);
       }

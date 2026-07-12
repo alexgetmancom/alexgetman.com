@@ -62,6 +62,20 @@ describe("metrics cycle", () => {
       backendDb.close();
     }
   });
+
+  it("does not schedule or run X metrics unless explicitly enabled", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      seedPublishedPost(backendDb, "post:paid-x", "x");
+      const config = loadConfig({ MAX_METRIC_TASKS_PER_CYCLE: "10" });
+      const collectors = createMetricCollectors(config);
+      expect(collectors.x).toBeUndefined();
+      expect(await runMetricsCycle(config, backendDb, collectors)).toBe(0);
+      expect(backendDb.db.select().from(metricSchedule).all()).toEqual([]);
+    } finally {
+      backendDb.close();
+    }
+  });
 });
 
 describe("Telegram public metrics", () => {

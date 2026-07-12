@@ -12,7 +12,7 @@ export function createMetricCollectors(config: BackendConfig, fetchImpl: typeof 
   const threads = (task: MetricTask) => collectThreads(task, config, fetchImpl);
   const facebook = (task: MetricTask) => collectFacebook(task, config, fetchImpl);
   const instagram = (task: MetricTask) => collectInstagramStory(task, config, fetchImpl);
-  return {
+  const collectors: Record<string, MetricCollector> = {
     telegram: (task) => collectTelegram(task, config, fetchImpl),
     threads: threads,
     threads_ru: threads,
@@ -30,10 +30,13 @@ export function createMetricCollectors(config: BackendConfig, fetchImpl: typeof 
     instagram_stories_ru: instagram,
     telegram_story: (task) => collectTelegramStory(task, config),
     telegram_stories: (task) => collectTelegramStory(task, config),
-    x: (task) => collectX(task, config, fetchImpl),
-    twitter: (task) => collectX(task, config, fetchImpl),
     linkedin: (task) => collectLinkedIn(task, config, fetchImpl),
   };
+  if (config.ENABLE_X_METRICS) {
+    collectors.x = (task) => collectX(task, config, fetchImpl);
+    collectors.twitter = (task) => collectX(task, config, fetchImpl);
+  }
+  return collectors;
 }
 
 async function collectTelegram(task: MetricTask, config: BackendConfig, fetchImpl: typeof fetch): Promise<MetricResult> {

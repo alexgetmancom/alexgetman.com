@@ -1,0 +1,94 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  actions: read
+  packages: write
+
+jobs:
+  docker:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      image_digest: ${{ steps.image.outputs.digest }}
+      release_sha: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - name: Download web runtime artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-runtime
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish backend image
+        id: image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/backend/Dockerfile
+          target: app
+          build-args: |
+            BUILD_SOURCE=on-host
+            GIT_REVISION=${{ github.event.workflow_run.head_sha }}
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/alexgetman-backend:${{ github.event.workflow_run.head_sha }},ghcr.io/${{ github.repository_owner }}/alexgetman-backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy immutable image
+    needs: docker
+    if: vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.docker.outputs.release_sha }}
+      - uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+      - name: Configure known hosts
+        env:
+          DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Activate image and verify readiness
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_AGENT_TOKEN: ${{ secrets.DEPLOY_AGENT_TOKEN }}
+          IMAGE: ghcr.io/${{ github.repository_owner }}/alexgetman-backend@${{ needs.docker.outputs.image_digest }}
+          RELEASE: ${{ needs.docker.outputs.release_sha }}
+          NGINX_DEPLOY_ENABLED: ${{ vars.NGINX_DEPLOY_ENABLED }}
+        run: |
+          test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER" && test -n "$DEPLOY_AGENT_TOKEN"
+          runtime=/home/deploy/alexgetman-runtime
+          scp -o BatchMode=yes apps/backend/compose.yaml "$DEPLOY_USER@$DEPLOY_HOST:$runtime/compose.yaml.next"
+          ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "set -e; docker compose --env-file $runtime/deploy-image.env -f $runtime/compose.yaml.next config --quiet; mv $runtime/compose.yaml.next $runtime/compose.yaml"
+          if [ "$NGINX_DEPLOY_ENABLED" = "true" ]; then
+            ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "install -d $runtime/nginx"
+            scp -o BatchMode=yes deploy/nginx/alexgetman.com.conf.example "$DEPLOY_USER@$DEPLOY_HOST:$runtime/nginx/alexgetman.com.conf"
+            scp -o BatchMode=yes deploy/nginx/ialexey-cache.conf "$DEPLOY_USER@$DEPLOY_HOST:$runtime/nginx/ialexey-cache.conf"
+            ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "set -e; sudo install -m 0644 $runtime/nginx/alexgetman.com.conf /etc/nginx/sites-available/alexgetman.com; sudo install -m 0644 $runtime/nginx/ialexey-cache.conf /home/deploy/repos/ialexey-web/deploy/nginx/ialexey-cache.conf; sudo nginx -t; sudo systemctl reload nginx"
+          fi
+          payload=$(printf '{"image":"%s","release":"%s"}' "$IMAGE" "$RELEASE")
+          ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "curl --fail-with-body --silent --show-error --retry 2 --retry-all-errors -H 'Authorization: Bearer $DEPLOY_AGENT_TOKEN' -H 'Content-Type: application/json' --data '$payload' http://127.0.0.1:9899/v1/deploy"
+          curl --fail --silent --show-error --retry 3 --retry-all-errors https://alexgetman.com/readyz

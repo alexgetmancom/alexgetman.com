@@ -3,6 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { loadConfig } from "../src/config.js";
+import { publishToBluesky } from "../src/social/bluesky.js";
+import { updateDevtoArticle } from "../src/social/devto.js";
 import { publishToLinkedIn } from "../src/social/linkedin.js";
 import { payloadMedia, payloadText } from "../src/social/payload.js";
 import { publishToTelegram } from "../src/social/telegram.js";
@@ -187,6 +189,49 @@ describe("X publisher", () => {
     expect(header).toContain('oauth_nonce="fixed-nonce"');
     expect(header).toContain('oauth_timestamp="1700000000"');
     expect(header).toMatch(/oauth_signature="[^"]+"/);
+  });
+});
+
+describe("Bluesky publisher", () => {
+  it("marks a created root post retryable when it is not visible in the author feed", async () => {
+    const calls: string[] = [];
+    const fetchImpl = mock(async (input: string | URL | Request) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.includes("createSession")) return new Response(JSON.stringify({ did: "did:plc:1", accessJwt: "jwt" }), { status: 200 });
+      if (url.includes("createRecord"))
+        return new Response(JSON.stringify({ uri: "at://did/app.bsky.feed.post/root", cid: "cid" }), { status: 200 });
+      return new Response(JSON.stringify({ feed: [] }), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const result = await publishToBluesky(
+      { text_en: "Post" },
+      loadConfig({ BLUESKY_HANDLE: "alexgetmancom.bsky.social", BLUESKY_APP_PASSWORD: "password" }),
+      fetchImpl,
+    );
+
+    expect(result).toMatchObject({ ok: false, retryable: true, error: "bluesky_visibility_failed:not_in_author_feed" });
+    expect(calls.some((url) => url.includes("getAuthorFeed"))).toBe(true);
+  });
+});
+
+describe("dev.to publisher", () => {
+  it("updates an existing article", async () => {
+    const fetchMock = mock(
+      async (_input: string | URL | Request, _init?: RequestInit) => new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    );
+    const fetchImpl = fetchMock as unknown as typeof fetch;
+    await expect(
+      updateDevtoArticle(
+        123,
+        { title: "New title", bodyMarkdown: "Body", tags: ["Dev Ops", "AI"] },
+        loadConfig({ DEVTO_API_KEY: "key" }),
+        fetchImpl,
+      ),
+    ).resolves.toBe(true);
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://dev.to/api/articles/123");
+    expect(JSON.parse(String(init?.body))).toEqual({ article: { title: "New title", body_markdown: "Body", tags: ["devops", "ai"] } });
   });
 });
 

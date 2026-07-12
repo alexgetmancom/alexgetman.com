@@ -260,8 +260,16 @@ export function publishDraftToQueue(backendDb: BackendDb, draftId: number, optio
     tx.delete(siteJobs)
       .where(and(eq(siteJobs.postId, postId), inArray(siteJobs.status, ["queued", "failed"])))
       .run();
+    const finalTargets = new Set(
+      tx
+        .select({ target: publishJobs.target })
+        .from(publishJobs)
+        .where(and(eq(publishJobs.postId, postId), inArray(publishJobs.status, ["publishing", "published", "skipped"])))
+        .all()
+        .map((row) => row.target),
+    );
     for (const [target, enabled] of Object.entries(targets)) {
-      if (enabled && !isSiteTarget(target))
+      if (enabled && !isSiteTarget(target) && !finalTargets.has(target))
         enqueuePublishJob(backendDb, {
           postId,
           postKey,

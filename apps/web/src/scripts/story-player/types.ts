@@ -1,0 +1,62 @@
+export type StoryPost = {
+  id?: string | number;
+  url: string;
+  image?: string;
+  fallbackImage?: string;
+  imageSrcSet?: string;
+  mediaType: "image" | "video";
+  title: string;
+  category: string;
+  relativeDate: string;
+  views?: string;
+  audioUrl?: string;
+  body?: string | string[];
+  excerpt?: string;
+  collapse?: string;
+  readMore?: string;
+  feedModes?: string[];
+  __preloaded?: boolean;
+};
+
+export type StoryPayload = {
+  posts?: StoryPost[];
+  ui?: Record<string, string>;
+  giscus?: Record<string, string>;
+  initialPaused?: boolean;
+};
+
+export type StoryPlayerElements = {
+  image: HTMLImageElement | null;
+  video: HTMLVideoElement | null;
+  fallback: HTMLElement | null;
+  cardLink: HTMLAnchorElement | null;
+  visual: HTMLElement | null;
+  title: HTMLElement | null;
+  categoryWrap: HTMLElement | null;
+  meta: HTMLElement | null;
+  kicker: HTMLElement | null;
+  mobileKicker: HTMLElement | null;
+  mobileTitle: HTMLElement | null;
+  time: HTMLElement | null;
+  views: HTMLElement | null;
+  copy: HTMLElement | null;
+  readMore: HTMLButtonElement | null;
+  rail: HTMLElement | null;
+  progressBars: HTMLElement[];
+  currentProgressFill: HTMLElement | null;
+  railCards: HTMLElement[];
+  feedModeButtons: HTMLButtonElement[];
+  feedModeTrigger: HTMLButtonElement | null;
+  feedModeLabel: HTMLElement | null;
+  feedModeMenu: HTMLElement | null;
+  shareButtons: HTMLButtonElement[];
+  discussButtons: HTMLButtonElement[];
+  discussLabels: HTMLSpanElement[];
+  postPanel: HTMLElement | null;
+  discussionPanel: HTMLElement | null;
+  discussionFrame: HTMLElement | null;
+  audioToggle: HTMLButtonElement | null;
+  audioLabel: HTMLElement | null;
+  audio: HTMLAudioElement | null;
+  playPauseOverlay: HTMLDivElement;
+};

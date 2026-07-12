@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lte, notInArray, or, sql } from "drizzle-orm";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { metricSchedule, posts, postTargets } from "../db/schema.js";
@@ -15,6 +15,7 @@ export type MetricTask = {
 };
 
 const INTERVALS_MS = [3, 6, 12, 24, 48].map((hours) => hours * 3_600_000).concat([7 * 86_400_000, 30 * 86_400_000]);
+const PAID_METRIC_TARGETS = ["x", "twitter"] as const;
 
 export function ensureMetricSchedule(backendDb: BackendDb, targets: readonly string[]): number {
   if (targets.length === 0) return 0;
@@ -64,6 +65,7 @@ export function dueMetricTasks(backendDb: BackendDb, config: BackendConfig): Met
       and(
         isNull(metricSchedule.frozenAt),
         eq(postTargets.status, "published"),
+        ...(config.ENABLE_X_METRICS ? [] : [notInArray(metricSchedule.target, [...PAID_METRIC_TARGETS])]),
         or(isNull(metricSchedule.nextCheckAt), lte(metricSchedule.nextCheckAt, new Date().toISOString())),
       ),
     )
