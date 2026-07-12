@@ -19,7 +19,7 @@ jobs:
       image_digest: ${{ steps.image.outputs.digest }}
       release_sha: ${{ github.event.workflow_run.head_sha }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
       - uses: docker/setup-buildx-action@v3
@@ -52,7 +52,7 @@ jobs:
       group: production-deploy
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.docker.outputs.release_sha }}
       - uses: webfactory/ssh-agent@v0.9.1
