@@ -72,7 +72,10 @@ async function publishChannelStory(media: PublishMediaItem, caption: string, lin
     const story = await withTimeout(
       clientInstance.sendStory({
         peer: storyChannel,
-        media: uploadPath,
+        // A string is interpreted by mtcute as a Bot API/TDLib file ID, not a
+        // filesystem path.  Keep the generated 1080x1920 file explicit so
+        // Telegram uploads it verbatim (including its letterbox padding).
+        media: telegramStoryUploadMedia(uploadPath, media.type),
         caption: [caption, link].filter(Boolean).join("\n"),
         period: 86_400,
       }),
@@ -85,6 +88,10 @@ async function publishChannelStory(media: PublishMediaItem, caption: string, lin
     await clientInstance.destroy();
     if (cleanupPath) await fs.promises.rm(cleanupPath, { force: true });
   }
+}
+
+export function telegramStoryUploadMedia(filePath: string, type: PublishMediaItem["type"]): { type: "photo" | "video"; file: string } {
+  return { type: type === "VIDEO" ? "video" : "photo", file: filePath };
 }
 
 async function probeVideo(filePath: string, media: PublishMediaItem): Promise<{ width: number; height: number; duration: number }> {

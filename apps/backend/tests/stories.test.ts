@@ -6,6 +6,7 @@ import { loadConfig } from "../src/config.js";
 import { generateStoryMedia } from "../src/media/story.js";
 import { publishInstagramStory } from "../src/social/instagram.js";
 import { createChannelStoryClient } from "../src/social/telegramSession.js";
+import { telegramStoryUploadMedia } from "../src/social/telegramStories.js";
 
 mock.module("../src/runtime/ffmpeg.js", () => {
   return {
@@ -46,6 +47,17 @@ describe("story publishers", () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("uploads generated story paths as files, rather than treating them as Telegram file IDs", () => {
+    expect(telegramStoryUploadMedia("/data/story-media/draft-59-ru.jpg", "IMAGE")).toEqual({
+      type: "photo",
+      file: "/data/story-media/draft-59-ru.jpg",
+    });
+    expect(telegramStoryUploadMedia("/data/story-media/draft-59-en.mp4", "VIDEO")).toEqual({
+      type: "video",
+      file: "/data/story-media/draft-59-en.mp4",
+    });
   });
 
   it("creates, waits for and publishes an Instagram story", async () => {
