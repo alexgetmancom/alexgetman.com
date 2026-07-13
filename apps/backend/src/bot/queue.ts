@@ -12,7 +12,7 @@ type QueueItem = {
   callback: string;
 };
 
-export async function showQueue(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<void> {
+export async function showQueue(ctx: Context, backendDb: BackendDb, _config: BackendConfig): Promise<void> {
   const postDrafts = backendDb.db.select().from(drafts).where(eq(drafts.status, "scheduled")).all();
   const vDrafts = backendDb.db.select().from(videoDrafts).where(eq(videoDrafts.status, "scheduled")).all();
 
@@ -42,8 +42,8 @@ export async function showQueue(ctx: Context, backendDb: BackendDb, config: Back
 
     const times = activeTargets
       .map((t) => t.scheduledAt)
-      .filter(Boolean)
-      .map((t) => new Date(t!));
+      .filter((scheduledAt): scheduledAt is string => Boolean(scheduledAt))
+      .map((scheduledAt) => new Date(scheduledAt));
     if (times.length === 0) continue;
     const earliestTime = new Date(Math.min(...times.map((t) => t.getTime())));
 

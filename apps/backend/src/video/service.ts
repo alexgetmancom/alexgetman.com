@@ -123,7 +123,7 @@ export function scheduleVideo(
   });
 }
 
-export type VideoTechnicalCheck = { summary: string; warning: string | null };
+type VideoTechnicalCheck = { summary: string; warning: string | null };
 
 export async function validateVideoDraft(config: BackendConfig, backendDb: BackendDb, videoDraftId: number): Promise<VideoTechnicalCheck> {
   const draft = getVideoDraft(backendDb, videoDraftId);
