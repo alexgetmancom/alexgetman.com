@@ -86,7 +86,10 @@ jobs:
             scp -o BatchMode=yes deploy/maru.compose.yaml "$DEPLOY_USER@$DEPLOY_HOST:$maru_runtime/maru.compose.yaml.next"
             ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "set -e; runtime=$maru_runtime; docker compose --env-file \$runtime/deploy-image.env -f \$runtime/maru.compose.yaml.next config --quiet; mv \$runtime/maru.compose.yaml.next \$runtime/maru.compose.yaml"
           fi
-          if [ "$NGINX_DEPLOY_ENABLED" = "true" ]; then
+          # Maru has no public site, but Meta must fetch its Reel source from
+          # the media-only /maru-media route. Keep that Nginx route in sync
+          # whenever the Maru service is deployed.
+          if [ "$NGINX_DEPLOY_ENABLED" = "true" ] || [ "$MARU_DEPLOY_ENABLED" = "true" ]; then
             ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "install -d $runtime/nginx"
             scp -o BatchMode=yes deploy/nginx/alexgetman.com.conf.example "$DEPLOY_USER@$DEPLOY_HOST:$runtime/nginx/alexgetman.com.conf"
             scp -o BatchMode=yes deploy/nginx/ialexey-cache.conf "$DEPLOY_USER@$DEPLOY_HOST:$runtime/nginx/ialexey-cache.conf"
