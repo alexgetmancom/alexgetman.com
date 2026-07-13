@@ -1,7 +1,15 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import type { BackendDb } from "../src/db/client.js";
 import { openBackendDb } from "../src/db/client.js";
-import { cancelVideo, createVideoDraft, listVideoTargets, replaceVideoTargets, scheduleVideo } from "../src/video/service.js";
+import {
+  cancelVideo,
+  createVideoDraft,
+  listVideoTargets,
+  replaceVideoTargets,
+  saveVideoMetadata,
+  scheduleVideo,
+  videoPreview,
+} from "../src/video/service.js";
 
 let backendDb: BackendDb | null = null;
 
@@ -46,5 +54,26 @@ describe("video publication queue", () => {
     };
     expect(row.status).toBe("cancelled");
     expect(new Date(row.retention_until).getTime()).toBeGreaterThanOrEqual(Date.now() + 23 * 60 * 60_000);
+  });
+
+  it("shows separate YouTube and Instagram metadata on the control card", () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createVideoDraft(backendDb, 42, "video-source");
+    replaceVideoTargets(backendDb, draftId, ["youtube_shorts", "instagram_reels"]);
+    saveVideoMetadata(backendDb, draftId, "youtube_shorts", {
+      title: "Название ролика",
+      description: "Описание для YouTube",
+      tags: ["game", "shorts"],
+    });
+    saveVideoMetadata(backendDb, draftId, "instagram_reels", {
+      caption: "Описание для Instagram",
+      hashtags: ["#game", "#reels"],
+    });
+
+    const preview = videoPreview(backendDb, draftId);
+    expect(preview.text).toContain("▶️ *YouTube Shorts*");
+    expect(preview.text).toContain("Название: Название ролика");
+    expect(preview.text).toContain("📸 *Instagram Reels*");
+    expect(preview.text).toContain("Описание: Описание для Instagram");
   });
 });

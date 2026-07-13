@@ -167,33 +167,55 @@ function insertVideoJob(tx: BackendDb["db"], videoDraftId: number, videoTargetId
 export function videoPreview(backendDb: BackendDb, videoDraftId: number): { text: string; keyboard: InlineKeyboard } {
   const draft = getVideoDraft(backendDb, videoDraftId);
   const targets = listVideoTargets(backendDb, videoDraftId);
-  const lines = [`🎬 *${escapeMarkdown(draft.label || "Untitled")}*`, `Status: *${draft.status.toUpperCase()}*`];
-  for (const target of targets) {
-    lines.push(
-      `• ${videoTargetLabel(target.target as VideoTarget)}: ${target.status}${target.scheduledAt ? ` · ${formatTime(target.scheduledAt)}` : ""}`,
-    );
-  }
+  const title = draft.label || "Видеопубликация";
+  const lines = [`🎬 *${escapeMarkdown(title)}*`, `Статус: *${videoStatusLabel(draft.status)}*`];
   const keyboard = new InlineKeyboard();
   const ytTarget = targets.find((t) => t.target === "youtube_shorts");
   const igTarget = targets.find((t) => t.target === "instagram_reels");
 
   if (ytTarget) {
-    keyboard.text("🕒 Time YT", `video_time:youtube_shorts:${draft.id}`);
-    keyboard.text("❌ Remove YT", `video_remove:youtube_shorts:${draft.id}`).row();
+    const metadata = (ytTarget.metadataJson ?? {}) as Partial<YouTubeMetadata>;
+    lines.push("", "▶️ *YouTube Shorts*");
+    lines.push(`Название: ${escapeMarkdown(metadata.title || "—")}`);
+    if (metadata.description) lines.push(`Описание: ${escapeMarkdown(metadata.description)}`);
+    if (metadata.tags?.length) lines.push(`Теги: ${escapeMarkdown(metadata.tags.join(", "))}`);
+    lines.push(`Состояние: ${videoStatusLabel(ytTarget.status)}${ytTarget.scheduledAt ? ` · ${formatTime(ytTarget.scheduledAt)}` : ""}`);
+    keyboard.text("🕒 Время YouTube", `video_time:youtube_shorts:${draft.id}`);
+    keyboard.text("❌ Убрать YouTube", `video_remove:youtube_shorts:${draft.id}`).row();
   }
   if (igTarget) {
-    keyboard.text("🕒 Time IG", `video_time:instagram_reels:${draft.id}`);
-    keyboard.text("❌ Remove IG", `video_remove:instagram_reels:${draft.id}`).row();
+    const metadata = (igTarget.metadataJson ?? {}) as Partial<InstagramMetadata>;
+    lines.push("", "📸 *Instagram Reels*");
+    lines.push(`Описание: ${escapeMarkdown(metadata.caption || "—")}`);
+    if (metadata.hashtags?.length) lines.push(`Хэштеги: ${escapeMarkdown(metadata.hashtags.join(" "))}`);
+    lines.push(`Состояние: ${videoStatusLabel(igTarget.status)}${igTarget.scheduledAt ? ` · ${formatTime(igTarget.scheduledAt)}` : ""}`);
+    keyboard.text("🕒 Время Instagram", `video_time:instagram_reels:${draft.id}`);
+    keyboard.text("❌ Убрать Instagram", `video_remove:instagram_reels:${draft.id}`).row();
   }
   if (targets.length > 0 && (draft.status === "draft" || draft.status === "editing")) {
-    keyboard.text("📅 Schedule", `video_schedule:${draft.id}`).row();
+    keyboard.text("📅 Запланировать", `video_schedule:${draft.id}`).row();
   }
 
-  keyboard.text("✏️ Edit text", `video_edit_menu:${draft.id}`);
-  keyboard.text("🗑 Delete video", `video_cancel:${draft.id}`).row();
-  keyboard.text("← Back to Queue", "queue_home");
+  keyboard.text("✏️ Изменить данные", `video_edit_menu:${draft.id}`);
+  keyboard.text("🗑 Удалить видео", `video_cancel:${draft.id}`).row();
+  keyboard.text("← К очереди", "queue_home");
 
   return { text: lines.join("\n"), keyboard };
+}
+
+function videoStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    editing: "заполняется",
+    draft: "черновик",
+    scheduled: "запланировано",
+    preparing: "подготовка",
+    prepared: "готово к публикации",
+    publishing: "публикуется",
+    published: "опубликовано",
+    failed: "ошибка",
+    cancelled: "отменено",
+  };
+  return labels[status] ?? status;
 }
 
 export function cancelVideo(backendDb: BackendDb, videoDraftId: number, retentionHours: number): void {

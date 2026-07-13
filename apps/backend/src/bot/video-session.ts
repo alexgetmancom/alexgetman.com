@@ -18,6 +18,13 @@ export function targetKeyboard(config: BackendConfig, selected: VideoTarget[]): 
   return keyboard.text("Далее", "video_targets_done").row().text("← Cancel", "video_cancel_dialog");
 }
 
+export function enabledVideoTargets(config: BackendConfig): VideoTarget[] {
+  return VIDEO_TARGETS.filter(
+    (target) =>
+      (target !== "youtube_shorts" || config.studio.modules.youtube) && (target !== "instagram_reels" || config.studio.modules.instagram),
+  );
+}
+
 export function getSession(backendDb: BackendDb, adminId: number): VideoSession | null {
   const row = backendDb.db.select().from(videoBotSessions).where(eq(videoBotSessions.adminId, adminId)).get();
   return row
@@ -75,11 +82,34 @@ export async function updateVideoControl(ctx: Context, session: VideoSession, te
   await ctx.reply(text, { parse_mode: "Markdown", reply_markup: replyMarkup });
 }
 
+/** Sends the next question as a normal chat message, without moving an earlier control card. */
+export async function replyVideoPrompt(ctx: Context, text: string): Promise<void> {
+  await ctx.reply(text, { parse_mode: "Markdown" });
+}
+
+/**
+ * Sends a temporary interactive card and remembers only that card for checkbox/schedule edits.
+ * Regular questions deliberately use replyVideoPrompt so the conversation stays at the bottom.
+ */
+export async function sendVideoControl(
+  ctx: Context,
+  backendDb: BackendDb,
+  adminId: number,
+  session: VideoSession,
+  text: string,
+  keyboard: InlineKeyboard,
+): Promise<VideoSession> {
+  const message = await ctx.reply(text, { parse_mode: "Markdown", reply_markup: keyboard });
+  const next = { ...session, data: { ...session.data, controlMessageId: message.message_id } };
+  saveSession(backendDb, adminId, next);
+  return next;
+}
+
 export async function askInstagramOrSchedule(ctx: Context, backendDb: BackendDb, adminId: number, session: VideoSession): Promise<void> {
   if (session.selected.includes("instagram_reels")) {
     const next = { ...session, step: "instagram_caption" };
     saveSession(backendDb, adminId, next);
-    await updateVideoControl(ctx, next, "⌨ Описание для Instagram Reels (или «-»):");
+    await replyVideoPrompt(ctx, "⌨ Описание для Instagram Reels (или «-»):");
     return;
   }
   await askSchedule(ctx, backendDb, adminId, session);
@@ -91,7 +121,7 @@ export async function askSchedule(ctx: Context, backendDb: BackendDb, adminId: n
   const keyboard = new InlineKeyboard().text("Одно время для всех", `video_common:${session.draftId}`);
   if (session.selected.length > 1) keyboard.row().text("Разное время", `video_individual:${session.draftId}`);
   keyboard.row().text("← Cancel", "video_cancel_dialog");
-  await updateVideoControl(ctx, next, "Данные сохранены. Выберите расписание (МСК):", keyboard);
+  await sendVideoControl(ctx, backendDb, adminId, next, "Данные сохранены. Выберите расписание (МСК):", keyboard);
 }
 
 export function setControlFromSession(backendDb: BackendDb, draftId: number, ctx: Context, session: VideoSession): void {
