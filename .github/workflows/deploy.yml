@@ -10,6 +10,7 @@ permissions:
   contents: read
   actions: read
   packages: write
+  statuses: write
 
 jobs:
   docker:
@@ -97,3 +98,30 @@ jobs:
             ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "curl --fail-with-body --silent --show-error --retry 2 --retry-all-errors -H 'Authorization: Bearer $DEPLOY_AGENT_TOKEN' -H 'Content-Type: application/json' --data '$payload' http://127.0.0.1:9899/v1/deploy/maru"
           fi
           curl --fail --silent --show-error --retry 3 --retry-all-errors https://alexgetman.com/readyz
+
+  deployment-status:
+    name: Production deployment status
+    needs: [docker, deploy]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish final production status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          TARGET_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          DOCKER_RESULT: ${{ needs.docker.result }}
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
+        run: |
+          if [ "$DOCKER_RESULT" = "success" ] && [ "$DEPLOY_RESULT" = "success" ]; then
+            state=success
+            description='Image activated and production readiness passed'
+          else
+            state=failure
+            description='Docker build or production deployment failed'
+          fi
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$SHA" \
+            -f state="$state" \
+            -f context='production deployment' \
+            -f description="$description" \
+            -f target_url="$TARGET_URL"

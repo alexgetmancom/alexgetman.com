@@ -11,8 +11,26 @@ on:
 permissions:
   contents: read
   packages: write
+  statuses: write
 
 jobs:
+  deployment-status-pending:
+    name: Production deployment
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mark production deployment as pending
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+          TARGET_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$SHA" \
+            -f state=pending \
+            -f context='production deployment' \
+            -f description='Waiting for CI and production deployment' \
+            -f target_url="$TARGET_URL"
+
   quality:
     runs-on: ubuntu-latest
     steps:
@@ -40,3 +58,21 @@ jobs:
           DATA_DIR: apps/web/src/data
       - name: Astro SSR bundle
         run: bun build apps/web/server.ts --outdir runtime --target bun
+
+  deployment-status-on-ci-failure:
+    name: Production deployment status on CI failure
+    needs: [quality, deployment-status-pending]
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.quality.result != 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mark production deployment as blocked
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+          TARGET_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$SHA" \
+            -f state=failure \
+            -f context='production deployment' \
+            -f description='CI failed; production deployment was not started' \
+            -f target_url="$TARGET_URL"
