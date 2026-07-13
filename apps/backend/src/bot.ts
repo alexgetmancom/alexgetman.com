@@ -1,5 +1,6 @@
+import { eq } from "drizzle-orm";
 import { Bot, type Context, InlineKeyboard, Keyboard } from "grammy";
-import { audienceAnalysis, creatorDashboard } from "./analytics/creator.js";
+import { audienceAnalysis, creatorDashboard, creatorVideoArchive, creatorVideoMetrics } from "./analytics/creator.js";
 import { appendPendingAlbum } from "./bot/albums.js";
 import { applyAdminState, getAdminState, handleDraftCallback, sendDraftPreview } from "./bot/callbacks.js";
 import { createDraftFromMessage, scheduledDrafts } from "./bot/drafts.js";
@@ -8,6 +9,7 @@ import { showQueue } from "./bot/queue.js";
 import { handleVideoCallback, handleVideoMessage, startVideoFlow } from "./bot/video.js";
 import type { BackendConfig } from "./config.js";
 import type { BackendDb } from "./db/client.js";
+import { botSettings } from "./db/schema.js";
 import { log } from "./logger.js";
 import { formatMsk } from "./publishingSchedule.js";
 import { translateToEnglish } from "./translation.js";
@@ -26,11 +28,15 @@ export function createBot(config: BackendConfig, backendDb: BackendDb): Bot | nu
 function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb): void {
   bot.command("start", async (ctx) => {
     await ctx.reply("Кнопка меню всегда останется внизу чата.", {
-      reply_markup: new Keyboard().text("☰ Показать меню").resized().persistent(),
+      reply_markup: persistentKeyboard(config),
     });
     await showMainMenu(ctx, config);
   });
   bot.hears("☰ Показать меню", (ctx) => showMainMenu(ctx, config));
+  bot.hears("⚙️", async (ctx) => {
+    if (!isAdmin(config, ctx.from?.id)) return;
+    await showSettings(ctx, config);
+  });
   bot.hears("🎬 Новое видео", async (ctx) => {
     if (!isAdmin(config, ctx.from?.id)) return void (await ctx.reply("Forbidden"));
     if (!config.studio.modules.video_posting) return void (await ctx.reply("Видеопубликация выключена в studio.yaml."));
@@ -55,6 +61,17 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
   bot.on("message", async (ctx) => {
     if (!isAdmin(config, ctx.from?.id)) return void (await ctx.reply("Forbidden"));
     const adminId = Number(ctx.from?.id);
+    const setting = backendDb.db.select().from(botSettings).where(eq(botSettings.adminId, adminId)).get();
+    if (setting?.pendingAction === "youtube_signature") {
+      backendDb.db
+        .update(botSettings)
+        .set({ youtubeSignature: messageText(ctx), pendingAction: null, updatedAt: new Date().toISOString() })
+        .where(eq(botSettings.adminId, adminId))
+        .run();
+      await ctx.reply("✅ Подпись YouTube сохранена.");
+      await showYouTubeSignature(ctx, backendDb);
+      return;
+    }
     if (await handleVideoMessage(ctx, backendDb, config)) return;
     const state = getAdminState(backendDb, adminId);
     const message = extractMessage(ctx);
@@ -108,6 +125,52 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
       await showQueue(ctx, backendDb, config);
       return;
     }
+    if (ctx.callbackQuery.data === "settings_home") {
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText("⚙️ Настройки", {
+        reply_markup: new InlineKeyboard().text("▶️ Подпись YouTube", "settings_youtube_signature").row().text("← К меню", "settings_menu"),
+      });
+      return;
+    }
+    if (ctx.callbackQuery.data === "settings_menu") {
+      await ctx.answerCallbackQuery();
+      await ctx.deleteMessage().catch(() => {});
+      await showMainMenu(ctx, config);
+      return;
+    }
+    if (ctx.callbackQuery.data === "settings_youtube_signature") {
+      await ctx.answerCallbackQuery();
+      await showYouTubeSignature(ctx, backendDb, true);
+      return;
+    }
+    if (ctx.callbackQuery.data === "settings_youtube_edit") {
+      const adminId = Number(ctx.from?.id);
+      backendDb.db
+        .insert(botSettings)
+        .values({ adminId, youtubeSignature: "", pendingAction: "youtube_signature", updatedAt: new Date().toISOString() })
+        .onConflictDoUpdate({
+          target: botSettings.adminId,
+          set: { pendingAction: "youtube_signature", updatedAt: new Date().toISOString() },
+        })
+        .run();
+      await ctx.answerCallbackQuery();
+      await ctx.reply("⌨ Отправьте новый постоянный текст для конца YouTube-описания. Чтобы оставить пустым — отправьте «-».");
+      return;
+    }
+    if (ctx.callbackQuery.data === "settings_youtube_clear") {
+      const adminId = Number(ctx.from?.id);
+      backendDb.db
+        .insert(botSettings)
+        .values({ adminId, youtubeSignature: "", pendingAction: null, updatedAt: new Date().toISOString() })
+        .onConflictDoUpdate({
+          target: botSettings.adminId,
+          set: { youtubeSignature: "", pendingAction: null, updatedAt: new Date().toISOString() },
+        })
+        .run();
+      await ctx.answerCallbackQuery({ text: "Очищено" });
+      await showYouTubeSignature(ctx, backendDb, true);
+      return;
+    }
     if (
       ctx.callbackQuery.data === "analytics_home" ||
       ctx.callbackQuery.data === "analytics_total" ||
@@ -129,8 +192,29 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
       if (dashboard.hasComments && config.DEEPSEEK_API_KEY) {
         keyboard.text("🤖 ИИ-анализ аудитории", "analytics_ai");
       }
+      keyboard.row().text("📚 Архив роликов", "analytics_archive:0");
       await ctx.answerCallbackQuery();
       await ctx.editMessageText(dashboard.text, { parse_mode: "Markdown", reply_markup: keyboard });
+      return;
+    }
+    if (ctx.callbackQuery.data.startsWith("analytics_archive:")) {
+      const offset = Math.max(0, Number(ctx.callbackQuery.data.slice("analytics_archive:".length)) || 0);
+      const archive = creatorVideoArchive(backendDb, offset);
+      const keyboard = new InlineKeyboard();
+      for (const item of archive.items) keyboard.text(item.label, `analytics_video:${item.id}`).row();
+      if (archive.hasMore) keyboard.text("Ещё", `analytics_archive:${offset + archive.items.length}`).row();
+      keyboard.text("← К статистике", "analytics_home");
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(archive.text, { reply_markup: keyboard });
+      return;
+    }
+    if (ctx.callbackQuery.data.startsWith("analytics_video:")) {
+      const id = Number(ctx.callbackQuery.data.slice("analytics_video:".length));
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(creatorVideoMetrics(backendDb, id), {
+        parse_mode: "Markdown",
+        reply_markup: new InlineKeyboard().text("← К архиву", "analytics_archive:0"),
+      });
       return;
     }
     if (ctx.callbackQuery.data === "analytics_ai") {
@@ -160,4 +244,43 @@ async function showMainMenu(ctx: Context, config: BackendConfig): Promise<void> 
 function isAdmin(config: BackendConfig, userId: number | undefined): boolean {
   if (!userId) return false;
   return config.ADMIN_IDS.includes(userId);
+}
+
+function persistentKeyboard(config: BackendConfig): Keyboard {
+  const keyboard = new Keyboard().text("☰ Показать меню");
+  if (config.studio.modules.youtube) keyboard.text("⚙️");
+  return keyboard.resized().persistent();
+}
+
+async function showSettings(ctx: Context, config: BackendConfig): Promise<void> {
+  if (!config.studio.modules.youtube) return;
+  await ctx.reply("⚙️ Настройки", {
+    reply_markup: new InlineKeyboard().text("▶️ Подпись YouTube", "settings_youtube_signature").row().text("← К меню", "settings_menu"),
+  });
+}
+
+async function showYouTubeSignature(ctx: Context, backendDb: BackendDb, edit = false): Promise<void> {
+  const signature = backendDb.db
+    .select()
+    .from(botSettings)
+    .where(eq(botSettings.adminId, Number(ctx.from?.id)))
+    .get()
+    ?.youtubeSignature.trim();
+  const text = `▶️ *Подпись YouTube*\n\nЭтот текст автоматически добавляется в конец каждого YouTube-описания.\n\n*Сейчас:*\n${signature ? escapeMarkdown(signature) : "Не задана"}`;
+  const keyboard = new InlineKeyboard()
+    .text("✏️ Изменить", "settings_youtube_edit")
+    .text("🗑 Очистить", "settings_youtube_clear")
+    .row()
+    .text("← К настройкам", "settings_home");
+  if (edit) await ctx.editMessageText(text, { parse_mode: "Markdown", reply_markup: keyboard });
+  else await ctx.reply(text, { parse_mode: "Markdown", reply_markup: keyboard });
+}
+
+function messageText(ctx: Context): string {
+  const text = ctx.message && "text" in ctx.message ? (ctx.message.text?.trim() ?? "") : "";
+  return text === "-" ? "" : text;
+}
+
+function escapeMarkdown(value: string): string {
+  return value.replace(/([_*[\]()~`>#+\-=|{}.!])/g, "\\$1");
 }

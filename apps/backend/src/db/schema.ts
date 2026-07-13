@@ -348,6 +348,13 @@ export const videoBotSessions = sqliteTable("video_bot_sessions", {
   updatedAt: text("updated_at").notNull(),
 });
 
+export const botSettings = sqliteTable("bot_settings", {
+  adminId: integer("admin_id").primaryKey(),
+  youtubeSignature: text("youtube_signature").notNull().default(""),
+  pendingAction: text("pending_action"),
+  updatedAt: text("updated_at").notNull(),
+});
+
 export const pendingAlbums = sqliteTable("pending_albums", {
   id: text("id").primaryKey(),
   adminId: integer("admin_id").notNull(),
@@ -481,6 +488,16 @@ export const videoMetricSnapshots = sqliteTable(
     targetSampled: index("idx_video_metric_snapshots_target_sampled").on(table.videoTargetId, table.sampledAt),
   }),
 );
+
+export const videoMetricSchedule = sqliteTable("video_metric_schedule", {
+  videoTargetId: integer("video_target_id").primaryKey(),
+  checkpointIndex: integer("checkpoint_index").notNull().default(0),
+  nextCheckAt: text("next_check_at").notNull(),
+  lastCheckedAt: text("last_checked_at"),
+  lastError: text("last_error"),
+  frozenAt: text("frozen_at"),
+  updatedAt: text("updated_at").notNull(),
+});
 
 export const socialComments = sqliteTable(
   "social_comments",

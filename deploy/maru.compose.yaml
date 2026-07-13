@@ -17,6 +17,9 @@ services:
       PIPELINE_DB: /data/pipeline.db
       MEDIA_CACHE_DIR: /data/media-cache
       VIDEO_MEDIA_DIR: /data/video-media
+      # This is a media-only public endpoint for Meta to fetch Reels source
+      # files. It does not enable the Maru site module.
+      PUBLIC_BASE_URL: ${MARU_PUBLIC_BASE_URL:-https://alexgetman.com/maru-media}
       TELEGRAM_API_BASE_URL: http://alexgetman-telegram-bot-api:8081
       ENABLE_BOT_POLLING: "true"
       ENABLE_WORKERS: "true"

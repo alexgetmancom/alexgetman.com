@@ -5,9 +5,16 @@ import { and, asc, eq, isNull, lte, or } from "drizzle-orm";
 import { type Bot, InlineKeyboard } from "grammy";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
-import { videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
+import { botSettings, videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
 import { nextRetryAt } from "../queue/errors.js";
-import { instagramContainerReady, prepareInstagramReel, prepareYouTubeVideo, publishInstagramReel } from "./publishers.js";
+import {
+  InstagramContainerInvalidError,
+  InstagramContainerProcessingError,
+  instagramContainerReady,
+  prepareInstagramReel,
+  prepareYouTubeVideo,
+  publishInstagramReel,
+} from "./publishers.js";
 import { deleteVideo, videoPath } from "./storage.js";
 import type { InstagramMetadata, VideoMetadata, VideoTarget, YouTubeMetadata } from "./types.js";
 import { VIDEO_TARGETS, videoTargetLabel } from "./types.js";
@@ -116,7 +123,9 @@ export function scheduleVideo(
   });
 }
 
-export function validateVideoDraft(config: BackendConfig, backendDb: BackendDb, videoDraftId: number): void {
+export type VideoTechnicalCheck = { summary: string; warning: string | null };
+
+export async function validateVideoDraft(config: BackendConfig, backendDb: BackendDb, videoDraftId: number): Promise<VideoTechnicalCheck> {
   const draft = getVideoDraft(backendDb, videoDraftId);
   const source = videoPath(config, draft.assetKey);
   if (!source) throw new Error("Исходное видео не найдено на сервере. Отправьте файл ещё раз.");
@@ -133,6 +142,41 @@ export function validateVideoDraft(config: BackendConfig, backendDb: BackendDb, 
     if (target.target === "instagram_reels" && (!config.INSTAGRAM_ACCESS_TOKEN || !config.INSTAGRAM_USER_ID))
       throw new Error("Instagram не настроен: нужны access token и user ID.");
   }
+  return probeVideo(source, size);
+}
+
+async function probeVideo(source: string, size: number): Promise<VideoTechnicalCheck> {
+  const child = Bun.spawn(
+    [
+      "ffprobe",
+      "-v",
+      "error",
+      "-show_entries",
+      "format=duration:stream=codec_type,codec_name,width,height,avg_frame_rate",
+      "-of",
+      "json",
+      source,
+    ],
+    { stdout: "pipe" },
+  );
+  const output = await new Response(child.stdout).text();
+  if ((await child.exited) !== 0) throw new Error("Не удалось проверить видео через ffprobe. Отправьте MP4 ещё раз.");
+  const data = JSON.parse(output) as {
+    format?: { duration?: string };
+    streams?: Array<{ codec_type?: string; codec_name?: string; width?: number; height?: number; avg_frame_rate?: string }>;
+  };
+  const video = data.streams?.find((stream) => stream.codec_type === "video");
+  const audio = data.streams?.find((stream) => stream.codec_type === "audio");
+  if (!video?.width || !video.height) throw new Error("В MP4 не найден видеопоток.");
+  const [a = 0, b = 1] = (video.avg_frame_rate ?? "0/1").split("/").map(Number);
+  const fps = b ? a / b : 0;
+  const seconds = Math.max(0, Math.round(Number(data.format?.duration ?? 0)));
+  const warning =
+    Math.abs(video.width / video.height - 9 / 16) > 0.02 ? "⚠️ Формат не 9:16: платформы могут обрезать ролик или добавить поля." : null;
+  return {
+    summary: `🔎 Проверка видео: ${video.width}×${video.height}, ${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}, ${(video.codec_name ?? "video").toUpperCase()}/${(audio?.codec_name ?? "без звука").toUpperCase()}, ${audio ? "звук есть" : "без звука"}, ${fps ? `${fps.toFixed(0)} FPS` : "FPS неизвестен"}, ${Math.ceil(size / 1024 / 1024)} МБ — подходит.`,
+    warning,
+  };
 }
 
 function insertVideoJob(tx: BackendDb["db"], videoDraftId: number, videoTargetId: number | null, kind: JobKind, runAt: string): void {
@@ -246,7 +290,7 @@ export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb,
       completeVideoJob(backendDb, job.id);
       await refreshVideoControlCard(backendDb, bot, job.videoDraftId);
     } catch (error) {
-      failVideoJob(backendDb, job, String(error instanceof Error ? error.message : error), config);
+      failVideoJob(backendDb, job, error, config);
       await refreshVideoControlCard(backendDb, bot, job.videoDraftId);
     }
   }
@@ -313,7 +357,10 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, bot:
       const result = await prepareYouTubeVideo(
         config,
         filePath,
-        metadata as YouTubeMetadata,
+        {
+          ...(metadata as YouTubeMetadata),
+          description: appendYouTubeSignature(backendDb, draft.adminId, (metadata as YouTubeMetadata).description),
+        },
         target.scheduledAt ?? new Date().toISOString(),
       );
       backendDb.db
@@ -350,7 +397,7 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, bot:
       .run();
   } else {
     if (!target.externalId) throw new Error("Instagram upload has not completed yet.");
-    if (!(await instagramContainerReady(config, target.externalId))) throw new Error("Instagram is still processing the Reel.");
+    await instagramContainerReady(config, target.externalId);
     const result = await publishInstagramReel(config, target.externalId);
     backendDb.db
       .update(videoTargets)
@@ -390,8 +437,31 @@ function completeVideoJob(backendDb: BackendDb, id: number): void {
     .run();
 }
 
-function failVideoJob(backendDb: BackendDb, job: VideoJob, error: string, config: BackendConfig): void {
+function failVideoJob(backendDb: BackendDb, job: VideoJob, cause: unknown, config: BackendConfig): void {
+  const error = cause instanceof Error ? cause.message : String(cause);
   const attempts = job.attemptCount + 1;
+  if (cause instanceof InstagramContainerProcessingError) {
+    const now = new Date().toISOString();
+    backendDb.db.transaction((tx) => {
+      tx.update(videoJobs)
+        .set({
+          status: "queued",
+          nextAttemptAt: new Date(Date.now() + 30_000).toISOString(),
+          lockedAt: null,
+          lockedBy: null,
+          lastError: error,
+          updatedAt: now,
+        })
+        .where(eq(videoJobs.id, job.id))
+        .run();
+      if (job.videoTargetId)
+        tx.update(videoTargets)
+          .set({ status: "prepared", lastError: null, updatedAt: now })
+          .where(eq(videoTargets.id, job.videoTargetId))
+          .run();
+    });
+    return;
+  }
   const retry = attempts < config.PUBLISH_MAX_ATTEMPTS;
   const now = new Date().toISOString();
   backendDb.db.transaction((tx) => {
@@ -407,13 +477,55 @@ function failVideoJob(backendDb: BackendDb, job: VideoJob, error: string, config
       })
       .where(eq(videoJobs.id, job.id))
       .run();
-    if (job.videoTargetId)
+    if (job.videoTargetId && cause instanceof InstagramContainerInvalidError && job.kind === "publish" && retry) {
+      tx.update(videoTargets)
+        .set({ status: "scheduled", externalId: null, externalUrl: null, preparedAt: null, lastError: error, updatedAt: now })
+        .where(eq(videoTargets.id, job.videoTargetId))
+        .run();
+      tx.update(videoJobs)
+        .set({
+          status: "queued",
+          runAt: now,
+          attemptCount: 0,
+          nextAttemptAt: null,
+          lockedAt: null,
+          lockedBy: null,
+          lastError: null,
+          updatedAt: now,
+        })
+        .where(
+          and(eq(videoJobs.videoDraftId, job.videoDraftId), eq(videoJobs.videoTargetId, job.videoTargetId), eq(videoJobs.kind, "prepare")),
+        )
+        .run();
+      tx.update(videoJobs)
+        .set({
+          status: "queued",
+          attemptCount: attempts,
+          nextAttemptAt: new Date(Date.now() + 60_000).toISOString(),
+          lockedAt: null,
+          lockedBy: null,
+          lastError: error,
+          updatedAt: now,
+        })
+        .where(eq(videoJobs.id, job.id))
+        .run();
+    } else if (job.videoTargetId)
       tx.update(videoTargets)
         .set({ status: retry ? "scheduled" : "failed", lastError: error, updatedAt: now })
         .where(eq(videoTargets.id, job.videoTargetId))
         .run();
   });
   refreshVideoDraftStatus(backendDb, job.videoDraftId, config.VIDEO_MEDIA_RETENTION_HOURS);
+}
+
+function appendYouTubeSignature(backendDb: BackendDb, adminId: number, description: string): string {
+  const signature = backendDb.db
+    .select({ value: botSettings.youtubeSignature })
+    .from(botSettings)
+    .where(eq(botSettings.adminId, adminId))
+    .get()
+    ?.value.trim();
+  return signature ? [description.trim(), signature].filter(Boolean).join("\n\n") : description;
 }
 
 function recoverVideoLocks(backendDb: BackendDb, timeoutSeconds: number): void {

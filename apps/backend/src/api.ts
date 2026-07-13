@@ -9,6 +9,7 @@ import { renderCommandCenterLogin, renderDashboard } from "./services/dashboard.
 import { batchLikes, clientIpHash, likesInfo, metricsSummary, recordPageview, toggleLike } from "./services/engagement.js";
 import { mcpResponse } from "./services/mcp.js";
 import { pipelineStatusPayload } from "./services/pipeline.js";
+import { videoPath } from "./video/storage.js";
 
 type ApiContext = { config: BackendConfig; backendDb: BackendDb; bot: Bot | null };
 const COMMAND_CENTER_ORIGIN = "https://alexgetman.com";
@@ -34,6 +35,20 @@ export function createApiHandler(context: ApiContext) {
     if (path === "/readyz") {
       const status = pipelineStatusPayload(config, backendDb);
       return json({ ok: true, pipeline_db: status.pipelineDb.path, pipeline_db_exists: status.pipelineDb.exists });
+    }
+    const videoMatch = path.match(/^\/media\/video\/([A-Za-z0-9_-]{20,})$/);
+    if (videoMatch && (request.method === "GET" || request.method === "HEAD")) {
+      const filePath = videoPath(config, videoMatch[1] ?? "");
+      if (!filePath) return text("not found\n", 404);
+      const file = Bun.file(filePath);
+      return new Response(request.method === "HEAD" ? null : file, {
+        headers: {
+          "content-type": file.type || "video/mp4",
+          "content-length": String(file.size),
+          "cache-control": "private, no-store",
+          "x-robots-tag": "noindex, nofollow",
+        },
+      });
     }
     if (path === "/api/pipeline-status" && request.method === "GET")
       return json(pipelineStatusPayload(config, backendDb, Number(url.searchParams.get("week_offset") ?? 0) || 0));

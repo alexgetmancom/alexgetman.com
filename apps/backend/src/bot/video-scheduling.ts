@@ -14,7 +14,7 @@ export async function finishVideoSchedule(
   schedule: Partial<Record<VideoTarget, Date>>,
 ): Promise<void> {
   if (!session.draftId) throw new Error("Черновик не найден.");
-  validateVideoDraft(config, backendDb, session.draftId);
+  const technical = await validateVideoDraft(config, backendDb, session.draftId);
   const fullSchedule = { ...schedule };
   for (const target of listVideoTargets(backendDb, session.draftId)) {
     const key = target.target as VideoTarget;
@@ -26,9 +26,12 @@ export async function finishVideoSchedule(
   });
   clearSession(backendDb, adminId);
   const preview = videoPreview(backendDb, session.draftId);
-  const message = await ctx.reply(`✅ Запланировано. Напомню за ${config.VIDEO_REMINDER_MINUTES} минут.\n\n${preview.text}`, {
-    parse_mode: "Markdown",
-    reply_markup: preview.keyboard,
-  });
+  const message = await ctx.reply(
+    `${technical.summary}${technical.warning ? `\n${technical.warning}` : ""}\n\n✅ Запланировано. Напомню за ${config.VIDEO_REMINDER_MINUTES} минут.\n\n${preview.text}`,
+    {
+      parse_mode: "Markdown",
+      reply_markup: preview.keyboard,
+    },
+  );
   if (ctx.chat?.id) setVideoControlCard(backendDb, session.draftId, Number(ctx.chat.id), message.message_id);
 }

@@ -44,7 +44,7 @@ describe("openBackendDb", () => {
       expect(tables).toContain("creator_profiles");
       expect(tables).toContain("video_metric_snapshots");
       expect(tables).toContain("social_comments");
-      expect(migrationStatus(backendDb.sqlite)).toHaveLength(7);
+      expect(migrationStatus(backendDb.sqlite)).toHaveLength(8);
     } finally {
       backendDb.close();
     }
@@ -124,7 +124,7 @@ describe("openBackendDb", () => {
         { locale: "en", slug: "production-fixture" },
         { locale: "ru", slug: "production-fixture" },
       ]);
-      expect(migrationStatus(backendDb.sqlite)).toHaveLength(7);
+      expect(migrationStatus(backendDb.sqlite)).toHaveLength(8);
     } finally {
       backendDb.close();
     }
