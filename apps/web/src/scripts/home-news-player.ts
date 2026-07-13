@@ -138,7 +138,7 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
     img.addEventListener("error", () => {
       if (!applyImageFallback(img)) img.style.display = "none";
     });
-    if (img.complete && img.naturalWidth === 0 && !applyImageFallback(img)) img.style.display = "none";
+    if (img.getAttribute("src") && img.complete && img.naturalWidth === 0 && !applyImageFallback(img)) img.style.display = "none";
   });
 
   video?.addEventListener("error", () => {

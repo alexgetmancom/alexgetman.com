@@ -11,6 +11,19 @@ import { mcpResponse } from "./services/mcp.js";
 import { pipelineStatusPayload } from "./services/pipeline.js";
 
 type ApiContext = { config: BackendConfig; backendDb: BackendDb; bot: Bot | null };
+const COMMAND_CENTER_ORIGIN = "https://alexgetman.com";
+
+function sameOriginCommandLogin(request: Request): boolean {
+  const origin = request.headers.get("origin");
+  if (origin) return origin === COMMAND_CENTER_ORIGIN;
+  const referer = request.headers.get("referer");
+  if (!referer) return false;
+  try {
+    return new URL(referer).origin === COMMAND_CENTER_ORIGIN;
+  } catch {
+    return false;
+  }
+}
 
 export function createApiHandler(context: ApiContext) {
   return async (request: Request, path: string): Promise<Response> => {
@@ -71,6 +84,7 @@ export function createApiHandler(context: ApiContext) {
       );
     }
     if (path === "/command-center" && request.method === "POST") {
+      if (!sameOriginCommandLogin(request)) return text("forbidden\n", 403);
       const form = await request.formData().catch(() => new FormData());
       const token = form.get("token");
       if (typeof token !== "string" || !commandAllowed(request, config, token)) return html(renderCommandCenterLogin(true));

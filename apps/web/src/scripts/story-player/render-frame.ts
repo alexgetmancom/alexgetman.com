@@ -35,6 +35,7 @@ export function renderStoryFrame(options: {
   if (visual) visual.classList.toggle("story-visual--no-image", !post.image);
   if (image) {
     image.hidden = !post.image || post.mediaType === "video";
+    image.style.removeProperty("display");
     if (post.fallbackImage) image.dataset.fallbackSrc = toPublicSrc(post.fallbackImage);
     else delete image.dataset.fallbackSrc;
     if (post.image && post.mediaType !== "video") {

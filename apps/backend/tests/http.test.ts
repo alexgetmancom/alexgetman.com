@@ -185,13 +185,19 @@ describe("Astro endpoint controller", () => {
       expect(await login.text()).toContain("Введите Command Center token");
       const signIn = await app.request("/command-center", {
         method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded" },
+        headers: { "content-type": "application/x-www-form-urlencoded", origin: "https://alexgetman.com" },
         body: "token=secret",
       });
       expect(signIn.status).toBe(303);
       const cookie = signIn.headers.get("set-cookie");
       expect(cookie).toContain("HttpOnly");
       expect(cookie).toContain("Max-Age=15552000");
+      const crossSiteSignIn = await app.request("/command-center", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", origin: "https://example.com" },
+        body: "token=secret",
+      });
+      expect(crossSiteSignIn.status).toBe(403);
       const dashboard = await app.request("/command-center", { headers: { cookie: cookie ?? "" } });
       const html = await dashboard.text();
       expect(dashboard.status).toBe(200);

@@ -10,7 +10,9 @@ export default defineConfig({
   outDir: "./dist",
   output: "server",
   adapter: node({ mode: "middleware" }),
-  security: { checkOrigin: true },
+  // Command Center validates its own canonical Origin. Astro's generic check
+  // sees the internal reverse-proxy host and rejects a legitimate login form.
+  security: { checkOrigin: false },
   vite: {
     ssr: {
       external: ["@mtcute/bun", "@mtcute/wasm"],
