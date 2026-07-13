@@ -1,6 +1,6 @@
 import { and, asc, eq, gte, inArray, notInArray, or } from "drizzle-orm";
-import { type TargetLocale, targetLocale } from "./botTargets.js";
-import type { BackendDb } from "./db/client.js";
+import { type TargetLocale, targetLocale } from "../botTargets.js";
+import type { BackendDb } from "../db/client.js";
 import {
   drafts,
   type JsonObject,
@@ -11,7 +11,7 @@ import {
   publishJobs,
   siteJobs,
   siteSourceItems,
-} from "./db/schema.js";
+} from "../db/schema.js";
 
 const SLOTS: Record<TargetLocale, readonly string[]> = {
   ru: ["10:37", "13:37", "17:37", "20:37", "23:37"],

@@ -7,7 +7,7 @@ import { entitiesToHtml } from "../src/bot/text.js";
 import { TARGETS, targetLocale } from "../src/botTargets.js";
 import { loadConfig } from "../src/config.js";
 import { type BackendDb, openBackendDb } from "../src/db/client.js";
-import { reconcilePublication } from "../src/queue/publish.js";
+import { reconcilePublication } from "../src/publishing/queue.js";
 
 let backendDb: BackendDb | null = null;
 

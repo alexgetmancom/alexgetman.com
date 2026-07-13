@@ -1,6 +1,6 @@
 import type { BackendConfig } from "../config.js";
-import type { PublishResult } from "../queue/errors.js";
-import { HttpPublishError } from "../queue/errors.js";
+import type { PublishResult } from "../publishing/errors.js";
+import { HttpPublishError } from "../publishing/errors.js";
 import { payloadMedia, payloadText } from "./payload.js";
 
 type GraphResponse = {

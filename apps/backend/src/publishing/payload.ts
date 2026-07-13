@@ -1,4 +1,4 @@
-import { targetLocale } from "./botTargets.js";
+import { targetLocale } from "../botTargets.js";
 
 export function localizeTargetPayload(payload: Record<string, unknown>, target: string): Record<string, unknown> {
   const locale = targetLocale(target) ?? "en";

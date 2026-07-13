@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import type { BackendConfig } from "../config.js";
-import type { PublishResult } from "../queue/errors.js";
-import { HttpPublishError } from "../queue/errors.js";
+import type { PublishResult } from "../publishing/errors.js";
+import { HttpPublishError } from "../publishing/errors.js";
 import { type PublishMediaItem, payloadMedia, payloadText, stripLeadingEmojis } from "./payload.js";
 
 type LinkedInResponse = Record<string, unknown> & { id?: string; value?: Record<string, unknown>; status?: string };

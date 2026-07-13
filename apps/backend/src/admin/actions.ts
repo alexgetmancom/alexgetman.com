@@ -14,7 +14,7 @@ import {
   siteSourceItems,
 } from "../db/schema.js";
 import { jsonObject } from "../json.js";
-import { localizeTargetPayload } from "../publicationPayload.js";
+import { localizeTargetPayload } from "../publishing/payload.js";
 
 type PublicationRef = {
   input: string;
@@ -138,7 +138,13 @@ function requeue(backendDb: BackendDb, ref: PublicationRef, target?: string): Re
         })
         .onConflictDoUpdate({
           target: [postTargets.postKey, postTargets.target],
-          set: { status: "queued", error: null, skipped: 0, updatedAt: now, rawJson: JSON.stringify({ requeued: true }) },
+          set: {
+            status: "queued",
+            error: null,
+            skipped: 0,
+            updatedAt: now,
+            rawJson: JSON.stringify({ requeued: true }),
+          },
         })
         .run();
       queued.push(targetId);
@@ -146,7 +152,14 @@ function requeue(backendDb: BackendDb, ref: PublicationRef, target?: string): Re
     if (ref.postId != null)
       tx.update(publications).set({ status: "scheduled", updatedAt: now }).where(eq(publications.postId, ref.postId)).run();
   });
-  return { ok: true, post_id: ref.postId, post_key: ref.postKey, message_id: ref.messageId, target: target ?? null, targets: queued };
+  return {
+    ok: true,
+    post_id: ref.postId,
+    post_key: ref.postKey,
+    message_id: ref.messageId,
+    target: target ?? null,
+    targets: queued,
+  };
 }
 
 function editEnglish(backendDb: BackendDb, ref: PublicationRef, text: string): Record<string, unknown> {
@@ -165,7 +178,12 @@ function editEnglish(backendDb: BackendDb, ref: PublicationRef, text: string): R
     updateSource(tx, ref, { text_en: value, bodyMarkdown: value }, now);
     enqueueRepairSiteJob(tx, ref, "edit_en", now);
   });
-  return { ok: true, post_id: ref.postId, post_key: ref.postKey, text_en: true };
+  return {
+    ok: true,
+    post_id: ref.postId,
+    post_key: ref.postKey,
+    text_en: true,
+  };
 }
 
 function replaceEnglishMedia(backendDb: BackendDb, ref: PublicationRef, media: Record<string, unknown>[] | null): Record<string, unknown> {
@@ -173,7 +191,10 @@ function replaceEnglishMedia(backendDb: BackendDb, ref: PublicationRef, media: R
   backendDb.db.transaction((tx) => {
     if (ref.postId != null) {
       tx.update(drafts)
-        .set({ mediaEnJson: media == null ? null : JSON.stringify(media), updatedAt: now })
+        .set({
+          mediaEnJson: media == null ? null : JSON.stringify(media),
+          updatedAt: now,
+        })
         .where(eq(drafts.postId, ref.postId))
         .run();
       const ru = tx
@@ -190,7 +211,12 @@ function replaceEnglishMedia(backendDb: BackendDb, ref: PublicationRef, media: R
     updateSource(tx, ref, { media_en: media }, now);
     enqueueRepairSiteJob(tx, ref, media == null ? "use_ru_media_for_en" : "replace_en_media", now);
   });
-  return { ok: true, post_id: ref.postId, post_key: ref.postKey, media_en: media != null };
+  return {
+    ok: true,
+    post_id: ref.postId,
+    post_key: ref.postKey,
+    media_en: media != null,
+  };
 }
 
 function updateSource(db: BackendDb["db"], ref: PublicationRef, patch: Record<string, unknown>, now: string): void {
@@ -212,8 +238,16 @@ function updateSource(db: BackendDb["db"], ref: PublicationRef, patch: Record<st
     .get();
   const sitePayload = { ...jsonObject(siteSource?.itemJson), ...source };
   db.insert(siteSourceItems)
-    .values({ messageId: ref.messageId, itemJson: sitePayload, createdAt: now, updatedAt: now })
-    .onConflictDoUpdate({ target: siteSourceItems.messageId, set: { itemJson: sitePayload, updatedAt: now } })
+    .values({
+      messageId: ref.messageId,
+      itemJson: sitePayload,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: siteSourceItems.messageId,
+      set: { itemJson: sitePayload, updatedAt: now },
+    })
     .run();
 }
 
@@ -237,12 +271,21 @@ function resolvePublicationRef(backendDb: BackendDb, ref: string): PublicationRe
   const numeric = trimmed.match(/^post:(\d+)$/)?.[1] ?? (/^\d+$/.test(trimmed) ? trimmed : null);
   if (postKeyRef) {
     const post = backendDb.db.select().from(posts).where(eq(posts.postKey, postKeyRef)).get();
-    if (post) return { input: ref, postId: post.postId, postKey: post.postKey, messageId: post.messageId };
+    if (post)
+      return {
+        input: ref,
+        postId: post.postId,
+        postKey: post.postKey,
+        messageId: post.messageId,
+      };
   }
   if (!numeric) return null;
   const id = Number(numeric);
   const publication = backendDb.db
-    .select({ postId: publications.postId, telegramMessageId: publications.telegramMessageId })
+    .select({
+      postId: publications.postId,
+      telegramMessageId: publications.telegramMessageId,
+    })
     .from(publications)
     .where(or(eq(publications.postId, id), eq(publications.telegramMessageId, id)))
     .get();
@@ -264,7 +307,14 @@ function resolvePublicationRef(backendDb: BackendDb, ref: string): PublicationRe
     .from(posts)
     .where(or(eq(posts.messageId, id), eq(posts.postId, id), eq(posts.postKey, `post:${id}`)))
     .get();
-  return post ? { input: ref, postId: post.postId, postKey: post.postKey, messageId: post.messageId } : null;
+  return post
+    ? {
+        input: ref,
+        postId: post.postId,
+        postKey: post.postKey,
+        messageId: post.messageId,
+      }
+    : null;
 }
 
 function parseMedia(raw: string | undefined): Record<string, unknown>[] | null {
@@ -333,7 +383,11 @@ async function editPublishedTargets(
     .where(eq(posts.postKey, ref.postKey))
     .get();
   const rows = backendDb.db
-    .select({ target: postTargets.target, status: postTargets.status, externalId: postTargets.externalId })
+    .select({
+      target: postTargets.target,
+      status: postTargets.status,
+      externalId: postTargets.externalId,
+    })
     .from(postTargets)
     .where(eq(postTargets.postKey, ref.postKey))
     .all();
@@ -344,7 +398,12 @@ async function editPublishedTargets(
       if (row.target === "telegram" && textRu) {
         const token = config.controllerBotToken;
         if (!token) {
-          results.push({ target: row.target, ok: false, skipped: true, error: "missing CONTROLLER_BOT_TOKEN" });
+          results.push({
+            target: row.target,
+            ok: false,
+            skipped: true,
+            error: "missing CONTROLLER_BOT_TOKEN",
+          });
           continue;
         }
         const method = Number(post?.mediaCount ?? 0) > 0 ? "editMessageCaption" : "editMessageText";
@@ -358,7 +417,12 @@ async function editPublishedTargets(
         );
       } else if (row.target === "facebook" && textEn) {
         if (!config.FACEBOOK_PAGE_ACCESS_TOKEN) {
-          results.push({ target: row.target, ok: false, skipped: true, error: "missing FACEBOOK_PAGE_ACCESS_TOKEN" });
+          results.push({
+            target: row.target,
+            ok: false,
+            skipped: true,
+            error: "missing FACEBOOK_PAGE_ACCESS_TOKEN",
+          });
           continue;
         }
         results.push(
@@ -370,7 +434,12 @@ async function editPublishedTargets(
         );
       } else if (row.target === "facebook_ru" && textRu) {
         if (!config.FACEBOOK_RU_PAGE_ACCESS_TOKEN) {
-          results.push({ target: row.target, ok: false, skipped: true, error: "missing FACEBOOK_RU_PAGE_ACCESS_TOKEN" });
+          results.push({
+            target: row.target,
+            ok: false,
+            skipped: true,
+            error: "missing FACEBOOK_RU_PAGE_ACCESS_TOKEN",
+          });
           continue;
         }
         results.push(
@@ -382,7 +451,12 @@ async function editPublishedTargets(
         );
       } else if (row.target === "linkedin" && textEn) {
         if (!config.LINKEDIN_ACCESS_TOKEN) {
-          results.push({ target: row.target, ok: false, skipped: true, error: "missing LINKEDIN_ACCESS_TOKEN" });
+          results.push({
+            target: row.target,
+            ok: false,
+            skipped: true,
+            error: "missing LINKEDIN_ACCESS_TOKEN",
+          });
           continue;
         }
         results.push(
@@ -401,7 +475,11 @@ async function editPublishedTargets(
         );
       }
     } catch (error) {
-      results.push({ target: row.target, ok: false, error: error instanceof Error ? error.message : String(error) });
+      results.push({
+        target: row.target,
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
   return results;
@@ -421,5 +499,10 @@ async function postJson(
   });
   const text = await response.text();
   const body = text ? (JSON.parse(text) as Record<string, unknown>) : null;
-  return { target, ok: response.ok && (body == null || body.ok !== false), status: response.status, response: body };
+  return {
+    target,
+    ok: response.ok && (body == null || body.ok !== false),
+    status: response.status,
+    response: body,
+  };
 }

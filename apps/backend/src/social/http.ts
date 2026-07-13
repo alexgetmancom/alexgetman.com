@@ -1,4 +1,4 @@
-import { HttpPublishError } from "../queue/errors.js";
+import { HttpPublishError } from "../publishing/errors.js";
 
 export async function requestJson<T = Record<string, unknown>>(fetchImpl: typeof fetch, url: string, init: RequestInit = {}): Promise<T> {
   const response = await fetchWithTimeout(fetchImpl, url, init);

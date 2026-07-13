@@ -1,19 +1,23 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import type { Bot } from "grammy";
+import { type CommandAction, runCommandAction } from "./admin/actions.js";
+import { commandCenterPayload, postDebugPayload } from "./admin/commandCenter.js";
+import { renderCommandCenterLogin, renderDashboard } from "./admin/dashboard.js";
 import type { BackendConfig } from "./config.js";
 import type { BackendDb } from "./db/client.js";
 import { commandAllowed } from "./httpAuth.js";
-import { type CommandAction, runCommandAction } from "./services/actions.js";
-import { commandCenterPayload, postDebugPayload } from "./services/commandCenter.js";
-import { renderCommandCenterLogin, renderDashboard } from "./services/dashboard.js";
 import { batchLikes, clientIpHash, likesInfo, metricsSummary, recordPageview, toggleLike } from "./services/engagement.js";
 import { mcpResponse } from "./services/mcp.js";
 import { pipelineStatusPayload } from "./services/pipeline.js";
 import { allowPublicRequest } from "./services/publicRateLimit.js";
 import { videoPath } from "./video/storage.js";
 
-type ApiContext = { config: BackendConfig; backendDb: BackendDb; bot: Bot | null };
+type ApiContext = {
+  config: BackendConfig;
+  backendDb: BackendDb;
+  bot: Bot | null;
+};
 const COMMAND_CENTER_ORIGIN = "https://alexgetman.com";
 
 function sameOriginCommandLogin(request: Request): boolean {
@@ -35,7 +39,11 @@ export function createApiHandler(context: ApiContext) {
 
     if (path === "/healthz" || path === "/tg-feed/healthz") return text("ok\n");
     if (path === "/readyz") {
-      return json({ ok: true, pipeline_db: config.PIPELINE_DB, pipeline_db_exists: fs.existsSync(config.PIPELINE_DB) });
+      return json({
+        ok: true,
+        pipeline_db: config.PIPELINE_DB,
+        pipeline_db_exists: fs.existsSync(config.PIPELINE_DB),
+      });
     }
     const videoMatch = path.match(/^\/media\/video\/([A-Za-z0-9_-]{20,})$/);
     if (videoMatch && (request.method === "GET" || request.method === "HEAD")) {
@@ -165,7 +173,12 @@ export function createApiHandler(context: ApiContext) {
       });
     if (path === "/api/mcp" && request.method === "POST") {
       const body = await request.json().catch(() => null);
-      if (body == null) return json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Invalid JSON" } });
+      if (body == null)
+        return json({
+          jsonrpc: "2.0",
+          id: null,
+          error: { code: -32700, message: "Invalid JSON" },
+        });
       return json(mcpResponse(backendDb, body, clientIpHash(request, config)));
     }
     if (path === config.WEBHOOK_PATH && request.method === "POST") {
@@ -179,7 +192,10 @@ export function createApiHandler(context: ApiContext) {
       return commandAllowed(request, config) ? json(commandCenterPayload(config, backendDb)) : json({ detail: "forbidden" }, 403);
     if (path === "/api/ops-dashboard" && request.method === "GET")
       return commandAllowed(request, config)
-        ? json({ pipeline: pipelineStatusPayload(config, backendDb), ops: commandCenterPayload(config, backendDb) })
+        ? json({
+            pipeline: pipelineStatusPayload(config, backendDb),
+            ops: commandCenterPayload(config, backendDb),
+          })
         : json({ detail: "forbidden" }, 403);
     if (path === "/api/post-debug" && request.method === "GET") {
       if (!commandAllowed(request, config)) return json({ detail: "forbidden" }, 403);
@@ -208,19 +224,29 @@ async function commandAction(request: Request): Promise<CommandAction> {
 }
 
 function json(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
-  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json; charset=utf-8", ...headers } });
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json; charset=utf-8", ...headers },
+  });
 }
 
 function text(body: string, status = 200): Response {
-  return new Response(body, { status, headers: { "content-type": "text/plain; charset=utf-8" } });
+  return new Response(body, {
+    status,
+    headers: { "content-type": "text/plain; charset=utf-8" },
+  });
 }
 
 function rateLimited(retryAfter: number): Response {
-  return json({ detail: "rate limit exceeded" }, 429, { "retry-after": String(retryAfter) });
+  return json({ detail: "rate limit exceeded" }, 429, {
+    "retry-after": String(retryAfter),
+  });
 }
 
 function html(body: string): Response {
-  return new Response(body, { headers: { "content-type": "text/html; charset=utf-8" } });
+  return new Response(body, {
+    headers: { "content-type": "text/html; charset=utf-8" },
+  });
 }
 
 function sse(start: (send: (event: string, data: unknown) => void) => ReturnType<typeof setInterval>): Response {
@@ -237,7 +263,13 @@ function sse(start: (send: (event: string, data: unknown) => void) => ReturnType
       if (timer) clearInterval(timer);
     },
   });
-  return new Response(stream, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" } });
+  return new Response(stream, {
+    headers: {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache",
+      connection: "keep-alive",
+    },
+  });
 }
 
 function safeEqual(received: string, expected: string): boolean {

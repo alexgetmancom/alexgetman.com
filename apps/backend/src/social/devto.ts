@@ -1,5 +1,5 @@
 import type { BackendConfig } from "../config.js";
-import { HttpPublishError, type PublishResult } from "../queue/errors.js";
+import { HttpPublishError, type PublishResult } from "../publishing/errors.js";
 import { payloadCanonicalUrl, payloadMedia } from "./payload.js";
 
 type DevtoArticleInput = {

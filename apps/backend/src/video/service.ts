@@ -5,7 +5,7 @@ import { InlineKeyboard } from "grammy";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { socialComments, videoDrafts, videoJobs, videoMetricSchedule, videoMetricSnapshots, videoTargets } from "../db/schema.js";
-import { isVideoTargetEditable, isVideoTargetSchedulable } from "../services/publicationState.js";
+import { isVideoTargetEditable, isVideoTargetSchedulable } from "../publishing/state.js";
 import { formatVideoTime, getVideoDraft, insertVideoJob, listVideoTargets } from "./data.js";
 import { videoPath } from "./storage.js";
 import type { InstagramMetadata, VideoMetadata, VideoTarget, YouTubeMetadata } from "./types.js";

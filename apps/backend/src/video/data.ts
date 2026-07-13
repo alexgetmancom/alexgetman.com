@@ -1,7 +1,7 @@
 import { and, asc, eq, isNull } from "drizzle-orm";
 import type { BackendDb } from "../db/client.js";
 import { videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
-import { isVideoTargetFinal, videoDraftStatus } from "../services/publicationState.js";
+import { isVideoTargetFinal, videoDraftStatus } from "../publishing/state.js";
 
 type VideoDraft = typeof videoDrafts.$inferSelect;
 type VideoTargetRow = typeof videoTargets.$inferSelect;

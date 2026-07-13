@@ -3,7 +3,7 @@ import { InlineKeyboard } from "grammy";
 import { PRESETS, TARGETS } from "../botTargets.js";
 import type { BackendDb } from "../db/client.js";
 import { drafts } from "../db/schema.js";
-import { formatMsk } from "../publishingSchedule.js";
+import { formatMsk } from "../publishing/schedule.js";
 import { requireDraft } from "./drafts.js";
 import { parseTargets } from "./message.js";
 

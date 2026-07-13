@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { isVideoTargetEditable, isVideoTargetSchedulable, publicationStatus, videoDraftStatus } from "../src/services/publicationState.js";
+import { isVideoTargetEditable, isVideoTargetSchedulable, publicationStatus, videoDraftStatus } from "../src/publishing/state.js";
 
 describe("publication state transitions", () => {
   it("keeps published video targets immutable while allowing scheduled targets to move", () => {

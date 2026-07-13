@@ -4,8 +4,8 @@ import { and, asc, count, desc, eq, isNotNull, isNull, lt, lte, or, sql } from "
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { postEvents, postMetrics, posts, postTargets, publicationSources, publications, siteJobs } from "../db/schema.js";
-import { nextRetryAt } from "../queue/errors.js";
-import { reconcilePublication, workerId } from "../queue/publish.js";
+import { nextRetryAt } from "../publishing/errors.js";
+import { reconcilePublication, workerId } from "../publishing/queue.js";
 import { recordWorkerState } from "../services/workerState.js";
 import { publishContentIndex } from "./contentIndex.js";
 import { pingIndexNow } from "./indexNow.js";

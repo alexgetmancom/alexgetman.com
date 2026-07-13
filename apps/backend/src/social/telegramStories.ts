@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
-import type { PublishResult } from "../queue/errors.js";
+import type { PublishResult } from "../publishing/errors.js";
 import { runFfmpeg } from "../runtime/ffmpeg.js";
 import { type PublishMediaItem, payloadMedia, payloadText } from "./payload.js";
 import { createChannelStoryClient } from "./telegramSession.js";

@@ -1,5 +1,5 @@
 import type { BackendConfig } from "../config.js";
-import type { PublishResult } from "../queue/errors.js";
+import type { PublishResult } from "../publishing/errors.js";
 import { formBody, requestJson } from "./http.js";
 import { payloadMedia, payloadText, splitText } from "./payload.js";
 

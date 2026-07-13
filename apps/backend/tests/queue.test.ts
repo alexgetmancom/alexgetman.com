@@ -6,8 +6,8 @@ import { eq } from "drizzle-orm";
 import { loadConfig } from "../src/config.js";
 import { openBackendDb } from "../src/db/client.js";
 import { postTargets, publishJobs } from "../src/db/schema.js";
-import { HttpPublishError } from "../src/queue/errors.js";
-import { claimDuePublishJobs, completePublishJob, enqueuePublishJob, recoverStalePublishJobs } from "../src/queue/publish.js";
+import { HttpPublishError } from "../src/publishing/errors.js";
+import { claimDuePublishJobs, completePublishJob, enqueuePublishJob, recoverStalePublishJobs } from "../src/publishing/queue.js";
 import { runPublishCycle } from "../src/worker.js";
 
 function tempDb() {

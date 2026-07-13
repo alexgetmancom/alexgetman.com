@@ -11,7 +11,7 @@ import type { BackendConfig } from "./config.js";
 import type { BackendDb } from "./db/client.js";
 import { botSettings } from "./db/schema.js";
 import { log } from "./logger.js";
-import { formatMsk } from "./publishingSchedule.js";
+import { formatMsk } from "./publishing/schedule.js";
 import { translateToEnglish } from "./translation.js";
 
 export function createBot(config: BackendConfig, backendDb: BackendDb): Bot | null {

@@ -1,10 +1,15 @@
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
+import {
+  renderCredentialsSection,
+  renderDiagnosticsSection,
+  renderQueueSection,
+  renderRepairSection,
+} from "../services/dashboard/ops-sections.js";
+import { renderPipelineSection } from "../services/dashboard/pipeline-section.js";
+import { renderDashboardShell } from "../services/dashboard/shell.js";
+import { pipelineStatusPayload } from "../services/pipeline.js";
 import { commandCenterPayload } from "./commandCenter.js";
-import { renderCredentialsSection, renderDiagnosticsSection, renderQueueSection, renderRepairSection } from "./dashboard/ops-sections.js";
-import { renderPipelineSection } from "./dashboard/pipeline-section.js";
-import { renderDashboardShell } from "./dashboard/shell.js";
-import { pipelineStatusPayload } from "./pipeline.js";
 
 export function renderDashboard(config: BackendConfig, backendDb: BackendDb, weekOffset: number, ref = "", messageId = ""): string {
   const ops = commandCenterPayload(config, backendDb);

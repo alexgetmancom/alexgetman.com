@@ -6,8 +6,8 @@ import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { drafts, type JsonObject, postEvents, posts, postTargets, publications, publishJobs, siteJobs } from "../db/schema.js";
 import { insertPublishJobSchema } from "../db/validation.js";
-import { publicationStatus } from "../services/publicationState.js";
 import { classifyPublishError, nextRetryAt, normalizePublishResult, type PublishResult } from "./errors.js";
+import { publicationStatus } from "./state.js";
 
 export type ClaimedPublishJob = {
   jobId: number;

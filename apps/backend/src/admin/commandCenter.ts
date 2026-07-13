@@ -14,7 +14,7 @@ import {
   publishJobs,
 } from "../db/schema.js";
 import { parseJsonValue } from "../json.js";
-import { pipelineStatusPayload } from "./pipeline.js";
+import { pipelineStatusPayload } from "../services/pipeline.js";
 
 export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb) {
   const queue = backendDb.db
@@ -24,7 +24,11 @@ export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb
     .orderBy(asc(publishJobs.status))
     .all();
   const targets = backendDb.db
-    .select({ target: postTargets.target, status: postTargets.status, count: sql<number>`count(*)` })
+    .select({
+      target: postTargets.target,
+      status: postTargets.status,
+      count: sql<number>`count(*)`,
+    })
     .from(postTargets)
     .groupBy(postTargets.target, postTargets.status)
     .orderBy(asc(postTargets.target), asc(postTargets.status))

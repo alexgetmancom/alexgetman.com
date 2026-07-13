@@ -3,7 +3,7 @@ import { type Context, InlineKeyboard } from "grammy";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { videoJobs, videoTargets } from "../db/schema.js";
-import { parseManualSchedule } from "../publishingSchedule.js";
+import { parseManualSchedule } from "../publishing/schedule.js";
 import {
   cancelVideo,
   createVideoDraft,

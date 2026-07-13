@@ -4,7 +4,7 @@ import { type Bot, InlineKeyboard } from "grammy";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { botSettings, videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
-import { nextRetryAt } from "../queue/errors.js";
+import { nextRetryAt } from "../publishing/errors.js";
 import { formatVideoTime, getVideoDraft, refreshVideoDraftStatus, type VideoJob } from "./data.js";
 import {
   InstagramContainerInvalidError,

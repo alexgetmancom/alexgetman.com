@@ -2,8 +2,8 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import OAuth from "oauth-1.0a";
 import type { BackendConfig } from "../config.js";
-import type { PublishResult } from "../queue/errors.js";
-import { HttpPublishError } from "../queue/errors.js";
+import type { PublishResult } from "../publishing/errors.js";
+import { HttpPublishError } from "../publishing/errors.js";
 import { guessContentType, payloadMedia, payloadText, stripUrls } from "./payload.js";
 
 const UPLOAD_URL = "https://upload.twitter.com/1.1/media/upload.json";

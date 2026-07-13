@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { asc, eq, inArray } from "drizzle-orm";
 import { openBackendDb } from "../src/db/client.js";
 import { drafts, publishJobs } from "../src/db/schema.js";
-import { nextPublishingSlot, parseManualSchedule, rebalanceScheduledDrafts, schedulePreset } from "../src/publishingSchedule.js";
+import { nextPublishingSlot, parseManualSchedule, rebalanceScheduledDrafts, schedulePreset } from "../src/publishing/schedule.js";
 
 describe("publishing schedule", () => {
   it("uses independent fixed MSK slot grids and skips occupied slots", () => {

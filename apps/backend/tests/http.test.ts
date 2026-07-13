@@ -6,7 +6,7 @@ import { createApiHandler } from "../src/api.js";
 import { createDraftFromMessage, publishDraftToQueue } from "../src/bot/drafts.js";
 import { loadConfig } from "../src/config.js";
 import { openBackendDb } from "../src/db/client.js";
-import { enqueuePublishJob } from "../src/queue/publish.js";
+import { enqueuePublishJob } from "../src/publishing/queue.js";
 
 function tempDb() {
   const dir = mkdtempSync(join(tmpdir(), "alexgetman-http-"));

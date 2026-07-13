@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { createDraftFromMessage, publishDraftToQueue } from "../src/bot/drafts.js";
 import { loadConfig } from "../src/config.js";
 import { openBackendDb } from "../src/db/client.js";
-import { reconcilePublication } from "../src/queue/publish.js";
+import { reconcilePublication } from "../src/publishing/queue.js";
 import { publishContentIndex } from "../src/site/contentIndex.js";
 import { pingIndexNow } from "../src/site/indexNow.js";
 

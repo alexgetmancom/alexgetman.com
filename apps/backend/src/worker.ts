@@ -9,7 +9,7 @@ import { postTargets, publishJobs } from "./db/schema.js";
 import { log } from "./logger.js";
 import { pruneMediaCache } from "./media/prepare.js";
 import { runMetricsCycle } from "./metrics/index.js";
-import { claimDuePublishJobs, completePublishJob, failPublishJob, recoverStalePublishJobs } from "./queue/publish.js";
+import { claimDuePublishJobs, completePublishJob, failPublishJob, recoverStalePublishJobs } from "./publishing/queue.js";
 import { type ScheduledLoop, startLoop } from "./scheduler.js";
 import { runObservabilityCycle } from "./services/observability.js";
 import { recordWorkerState } from "./services/workerState.js";

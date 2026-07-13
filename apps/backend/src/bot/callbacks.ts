@@ -5,7 +5,7 @@ import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { adminState, drafts } from "../db/schema.js";
 import { parseDeploymentRollbackCallback, requestDeploymentRollback } from "../deployment.js";
-import { formatMsk, nextPublishingSlot, parseManualSchedule, rebalanceScheduledDrafts, schedulePreset } from "../publishingSchedule.js";
+import { formatMsk, nextPublishingSlot, parseManualSchedule, rebalanceScheduledDrafts, schedulePreset } from "../publishing/schedule.js";
 import { cancelDraft, hasLocaleTarget, publishDraftToQueue, requireDraft } from "./drafts.js";
 import { extractMessage, parseTargets } from "./message.js";
 import { type DraftView, draftMode, draftPreview, modeLabel, toggleDraftTarget } from "./preview.js";

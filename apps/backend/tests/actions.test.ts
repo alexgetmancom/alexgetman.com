@@ -1,10 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import { asc, count, eq } from "drizzle-orm";
+import { runCommandAction } from "../src/admin/actions.js";
 import { loadConfig } from "../src/config.js";
 import { openBackendDb } from "../src/db/client.js";
 import { posts, postTargets, publicationSources, publications, publishJobs, siteSourceItems } from "../src/db/schema.js";
-import { enqueuePublishJob } from "../src/queue/publish.js";
-import { runCommandAction } from "../src/services/actions.js";
+import { enqueuePublishJob } from "../src/publishing/queue.js";
 
 describe("command center actions", () => {
   it("rebuilds retried jobs from the source using the target locale", async () => {
@@ -22,24 +22,56 @@ describe("command center actions", () => {
       };
       backendDb.db
         .insert(publications)
-        .values({ postId: 52, status: "published", telegramMessageId: 492, createdAt: now, updatedAt: now })
+        .values({
+          postId: 52,
+          status: "published",
+          telegramMessageId: 492,
+          createdAt: now,
+          updatedAt: now,
+        })
         .run();
-      backendDb.db.insert(publicationSources).values({ postId: 52, itemJson: source, createdAt: now, updatedAt: now }).run();
+      backendDb.db
+        .insert(publicationSources)
+        .values({
+          postId: 52,
+          itemJson: source,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
 
       for (const target of ["threads_ru", "threads_en"]) {
-        const id = enqueuePublishJob(backendDb, { postId: 52, postKey: "post:52", messageId: 52, target, payload: source });
+        const id = enqueuePublishJob(backendDb, {
+          postId: 52,
+          postKey: "post:52",
+          messageId: 52,
+          target,
+          payload: source,
+        });
         backendDb.db.update(publishJobs).set({ status: "failed" }).where(eq(publishJobs.jobId, id)).run();
-        await runCommandAction(backendDb, { action: "retry", ref: "post:52", target });
+        await runCommandAction(backendDb, {
+          action: "retry",
+          ref: "post:52",
+          target,
+        });
       }
 
       const jobs = backendDb.db
-        .select({ target: publishJobs.target, payloadJson: publishJobs.payloadJson })
+        .select({
+          target: publishJobs.target,
+          payloadJson: publishJobs.payloadJson,
+        })
         .from(publishJobs)
         .where(eq(publishJobs.postId, 52))
         .orderBy(asc(publishJobs.target))
         .all();
       const payloads = Object.fromEntries(jobs.map((job) => [job.target, job.payloadJson ?? {}]));
-      expect(payloads.threads_ru).toMatchObject({ locale: "ru", text: "Русский текст", text_en: "", media: [{ file_id: "ru-photo" }] });
+      expect(payloads.threads_ru).toMatchObject({
+        locale: "ru",
+        text: "Русский текст",
+        text_en: "",
+        media: [{ file_id: "ru-photo" }],
+      });
       expect(payloads.threads_en).toMatchObject({
         locale: "en",
         text: "English text",
@@ -73,13 +105,26 @@ describe("command center actions", () => {
         .insert(siteSourceItems)
         .values({
           messageId: 777,
-          itemJson: { text_ru: "Русский", text_en: "English", media: [{ file_id: "ru" }], media_en: [{ file_id: "en" }] },
+          itemJson: {
+            text_ru: "Русский",
+            text_en: "English",
+            media: [{ file_id: "ru" }],
+            media_en: [{ file_id: "en" }],
+          },
           createdAt: now,
           updatedAt: now,
         })
         .run();
-      const result = await runCommandAction(backendDb, { action: "retry", ref: "777", target: "threads_en" });
-      expect(result).toMatchObject({ ok: true, post_key: "telegram:alexgetmancom:777", targets: ["threads_en"] });
+      const result = await runCommandAction(backendDb, {
+        action: "retry",
+        ref: "777",
+        target: "threads_en",
+      });
+      expect(result).toMatchObject({
+        ok: true,
+        post_key: "telegram:alexgetmancom:777",
+        targets: ["threads_en"],
+      });
       expect(backendDb.db.select().from(publishJobs).where(eq(publishJobs.target, "threads_en")).get()?.payloadJson).toMatchObject({
         locale: "en",
         text: "English",
@@ -96,7 +141,13 @@ describe("command center actions", () => {
       const now = new Date().toISOString();
       backendDb.db
         .insert(publications)
-        .values({ postId: 7, status: "published", telegramMessageId: 707, createdAt: now, updatedAt: now })
+        .values({
+          postId: 7,
+          status: "published",
+          telegramMessageId: 707,
+          createdAt: now,
+          updatedAt: now,
+        })
         .run();
       backendDb.db
         .insert(posts)
@@ -116,7 +167,13 @@ describe("command center actions", () => {
         .run();
       backendDb.db
         .insert(postTargets)
-        .values({ postKey: "post:7", target: "linkedin", status: "published", externalId: "urn:li:share:7", updatedAt: now })
+        .values({
+          postKey: "post:7",
+          target: "linkedin",
+          status: "published",
+          externalId: "urn:li:share:7",
+          updatedAt: now,
+        })
         .run();
       const calls: string[] = [];
       const fetchImpl = (async (input: string | URL | Request) => {
