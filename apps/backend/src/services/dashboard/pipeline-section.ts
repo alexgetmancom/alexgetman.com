@@ -13,10 +13,10 @@ export function renderPipelineSection(weekOffset: number, data: PipelineData | n
   const posts = data?.posts ?? [];
   const nextBtn =
     weekOffset > 0
-      ? `<a class="pag-btn" href="/command-center?tab=pipeline&week_offset=${weekOffset - 1}">Следующая неделя &rarr;</a>`
+      ? `<a class="pag-btn" href="/command-center?week_offset=${weekOffset - 1}">Следующая неделя &rarr;</a>`
       : '<span class="pag-btn disabled">Следующая неделя &rarr;</span>';
-  const currentBtn = weekOffset > 0 ? `<a class="pag-btn" href="/command-center?tab=pipeline&week_offset=0">Текущая неделя</a>` : "";
-  const prevBtn = `<a class="pag-btn" href="/command-center?tab=pipeline&week_offset=${weekOffset + 1}">&larr; Предыдущая неделя</a>`;
+  const currentBtn = weekOffset > 0 ? `<a class="pag-btn" href="/command-center?week_offset=0">Текущая неделя</a>` : "";
+  const prevBtn = `<a class="pag-btn" href="/command-center?week_offset=${weekOffset + 1}">&larr; Предыдущая неделя</a>`;
   const processedCount = data?.social_worker?.processed_count ?? 0;
   const lastUpdateId = data?.social_worker?.last_update_id ?? "n/a";
   const updatedTime = data?.updated_at ?? new Date().toISOString();

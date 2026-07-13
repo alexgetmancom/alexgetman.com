@@ -5,7 +5,7 @@ import type { BackendDb } from "./db/client.js";
 import { commandAllowed } from "./httpAuth.js";
 import { type CommandAction, runCommandAction } from "./services/actions.js";
 import { commandCenterPayload, postDebugPayload } from "./services/commandCenter.js";
-import { renderDashboard } from "./services/dashboard.js";
+import { renderCommandCenterLogin, renderDashboard } from "./services/dashboard.js";
 import { batchLikes, clientIpHash, likesInfo, metricsSummary, recordPageview, toggleLike } from "./services/engagement.js";
 import { mcpResponse } from "./services/mcp.js";
 import { pipelineStatusPayload } from "./services/pipeline.js";
@@ -42,13 +42,45 @@ export function createApiHandler(context: ApiContext) {
       );
     }
     if (path === "/pipeline-status" && request.method === "GET") {
-      return html(renderDashboard(config, backendDb, "pipeline", Number(url.searchParams.get("week_offset") ?? 0) || 0));
+      const target = new URL("/command-center", url);
+      const weekOffset = url.searchParams.get("week_offset");
+      if (weekOffset) target.searchParams.set("week_offset", weekOffset);
+      return Response.redirect(target, 308);
     }
     if (path === "/command-center" && request.method === "GET") {
-      if (!commandAllowed(request, config)) return text("forbidden\n", 403);
+      const queryToken = url.searchParams.get("token");
+      if (queryToken && commandAllowed(request, config)) {
+        url.searchParams.delete("token");
+        return new Response(null, {
+          status: 303,
+          headers: {
+            location: `${url.pathname}${url.search}${url.hash}`,
+            "set-cookie": `command_token=${encodeURIComponent(queryToken)}; Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=15552000`,
+          },
+        });
+      }
+      if (!commandAllowed(request, config)) return html(renderCommandCenterLogin());
       return html(
-        renderDashboard(config, backendDb, url.searchParams.get("tab") ?? undefined, Number(url.searchParams.get("week_offset") ?? 0) || 0),
+        renderDashboard(
+          config,
+          backendDb,
+          Number(url.searchParams.get("week_offset") ?? 0) || 0,
+          url.searchParams.get("ref") ?? "",
+          url.searchParams.get("message_id") ?? "",
+        ),
       );
+    }
+    if (path === "/command-center" && request.method === "POST") {
+      const form = await request.formData().catch(() => new FormData());
+      const token = form.get("token");
+      if (typeof token !== "string" || !commandAllowed(request, config, token)) return html(renderCommandCenterLogin(true));
+      return new Response(null, {
+        status: 303,
+        headers: {
+          location: "/command-center",
+          "set-cookie": `command_token=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=15552000`,
+        },
+      });
     }
     if (path === "/api/likes" && request.method === "GET") {
       const postId = url.searchParams.get("post_id")?.trim();

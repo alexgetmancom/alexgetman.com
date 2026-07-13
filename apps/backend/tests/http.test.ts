@@ -180,12 +180,24 @@ describe("Astro endpoint controller", () => {
         loadConfig({ COMMAND_CENTER_TOKEN: "secret", SITE_PUBLIC_DIR: dir, SITE_METRICS_JSON: join(dir, "metrics.json") }),
         backendDb,
       );
-      const dashboard = await app.request("/command-center?tab=diagnostics&token=secret");
+      const login = await app.request("/command-center");
+      expect(login.status).toBe(200);
+      expect(await login.text()).toContain("Введите Command Center token");
+      const signIn = await app.request("/command-center", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: "token=secret",
+      });
+      expect(signIn.status).toBe(303);
+      const cookie = signIn.headers.get("set-cookie");
+      expect(cookie).toContain("HttpOnly");
+      expect(cookie).toContain("Max-Age=15552000");
+      const dashboard = await app.request("/command-center", { headers: { cookie: cookie ?? "" } });
       const html = await dashboard.text();
       expect(dashboard.status).toBe(200);
       expect(html).toContain("Pipeline");
       expect(html).toContain("Credentials");
-      expect(html).toContain("Diagnostics");
+      expect(html).toContain("Health: credentials и diagnostics");
       expect(html).toContain("Lifecycle");
       expect(html).toContain("font:16px -apple-system");
       expect(html).not.toContain("width: 22px; text-align: center; font-family: monospace");

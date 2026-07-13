@@ -1,10 +1,9 @@
 ---
 import HomeNewsPage from "../../components/HomeNewsPage.astro";
-import projects from "../../data/projects.json";
 import Layout from "../../layouts/Layout.astro";
 import { loadFeedItems } from "../../utils/feed";
 import { getFirstSentence, postOgImagePath, truncateText } from "../../utils/helpers";
-import { sortedHomePosts, topicStatsFor } from "../../utils/home-posts";
+import { sortedHomePosts } from "../../utils/home-posts";
 
 export const prerender = false;
 
@@ -13,14 +12,6 @@ const feedItems = loadFeedItems();
 const item = feedItems.find((entry: any) => String(entry.post_id) === String(postId) && entry.slug_en === slug) ?? {};
 const englishPosts = sortedHomePosts(feedItems, "en");
 const selectedPost = englishPosts.find((post) => String(post.id) === String(postId));
-const leadPost = englishPosts[0] || null;
-const latestEnglishPosts = englishPosts.slice(leadPost ? 1 : 0, leadPost ? 8 : 9);
-const trendingPosts = [...englishPosts]
-  .filter((post) => !leadPost || post.id !== leadPost.id)
-  .sort((a, b) => b.views - a.views || new Date(b.date).getTime() - new Date(a.date).getTime())
-  .slice(0, 5);
-const topicStats = topicStatsFor(englishPosts);
-
 const siteAuthor = "Alex Getman";
 const postText = item.text_en || item.text || "";
 const pageTitle = selectedPost?.title || getFirstSentence(postText) || `Post ${postId}`;
@@ -52,18 +43,7 @@ const schema = JSON.stringify({
 });
 
 const labels = {
-  archive: "Archive",
-  search: "Search",
-  languageSwitch: "RU",
   empty: "English posts will appear here after publication approval.",
-  latestPosts: "Latest English posts",
-  latestUpdates: "Latest updates",
-  trending: "Trending",
-  topics: "Topics",
-  projects: "Projects",
-  all: "All",
-  sidebarLabel: "Homepage side sections",
-  mskSuffix: "MSK",
 };
 ---
 
@@ -88,13 +68,8 @@ const labels = {
 >
   <HomeNewsPage
     posts={englishPosts}
-    latestPosts={latestEnglishPosts}
-    trendingPosts={trendingPosts}
-    topicStats={topicStats}
-    projects={projects}
     labels={labels}
     locale="en"
-    categoryBasePath="/category/"
     initialPostId={postId}
     initialPaused
   />

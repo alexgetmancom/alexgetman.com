@@ -1,4 +1,4 @@
-export function renderDashboardShell(body: string, navLinks: string): string {
+export function renderDashboardShell(body: string): string {
   return `<!doctype html>
 <html lang="ru">
 <head>
@@ -10,13 +10,17 @@ export function renderDashboardShell(body: string, navLinks: string): string {
     body { margin:0; padding:24px; background:#0d1117; color:#c9d1d9; font:16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
     main { max-width:1480px; margin:0 auto; }
     h1,h2 { color:#fff; }
-    nav { display:flex; gap:8px; flex-wrap:wrap; margin:18px 0 0; padding-top:12px; border-top:1px solid #30363d; }
-    nav a { color:#c9d1d9; border:1px solid #30363d; padding:6px 9px; border-radius:6px; text-decoration:none; font-size:13px; }
-    nav a.active { color:#fff; border-color:#58a6ff; background:#13233a; }
+    .dashboard-heading { margin-bottom:12px; }
+    .dashboard-heading h1 { margin-bottom:4px; }
+    .command-login { max-width:560px; margin:12vh auto; padding:24px; }
+    .login-error { color:#ff7b72; }
     .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin:12px 0 18px; }
     .stat, section { border:1px solid #30363d; background:#161b22; border-radius:8px; }
     .stat { padding:14px; } .stat span { display:block; color:#58a6ff; font-size:24px; font-weight:700; margin-top:6px; }
     section { margin-top:0; padding:10px; overflow-x:auto; }
+    details { margin:12px 0; border:1px solid #30363d; border-radius:8px; background:#161b22; }
+    details > summary { cursor:pointer; padding:12px; color:#fff; font-size:18px; font-weight:700; }
+    details > section { border:0; border-radius:0; border-top:1px solid #30363d; }
     .table-wrap { overflow-x:auto; }
     table { width:100%; min-width:980px; border-collapse:collapse; }
     th,td { padding:6px 10px; border-bottom:1px solid #30363d; text-align:left; vertical-align:top; }
@@ -86,11 +90,8 @@ export function renderDashboardShell(body: string, navLinks: string): string {
 <body>
 <main>
   ${body}
-  <nav>${navLinks}</nav>
 </main>
 <script>
-  const token = new URLSearchParams(location.search).get('token') || '';
-  document.querySelectorAll('input[name="token"]').forEach((input) => input.value = token);
   function setMetric(m) {
     const tbl = document.getElementById('pipeline-table');
     if (!tbl) return;

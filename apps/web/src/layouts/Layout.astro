@@ -5,7 +5,7 @@ import "../styles/layout.css";
 interface Props {
   title?: string;
   description?: string;
-  schema?: string; // Stringified JSON-LD
+  schema?: string;
   canonicalUrl?: string;
   lang?: string;
   siteName?: string;
@@ -37,7 +37,6 @@ const {
 } = Astro.props;
 
 const cleanDescription = removeLeadingEmoji(description);
-const siteAuthor = siteName;
 const publicBaseUrl = "https://alexgetman.com";
 const brandAssetVersion = "20260629-new-avatar";
 const socialImage = socialImageProp
@@ -46,285 +45,72 @@ const socialImage = socialImageProp
     : `${publicBaseUrl}${socialImageProp.startsWith("/") ? socialImageProp : `/${socialImageProp}`}`
   : `${publicBaseUrl}/brand-social-20260629.jpg`;
 const twitterCard = socialImageWidth >= 1000 ? "summary_large_image" : "summary";
-const isRu = lang === "ru";
-const brandDisplayName = isRu ? "Алексей Гетманец" : "alex getman";
-const navLabels = {
-  drawerTitle: isRu ? "Навигация" : "Navigation",
-  closeMenu: isRu ? "Закрыть меню" : "Close menu",
-  openMenu: isRu ? "Открыть меню" : "Open menu",
-  menuTooltip: isRu ? "Меню" : "Menu",
-  home: isRu ? "Главная" : "Home",
-  language: isRu ? "Смена языка" : "Change language",
-  theme: isRu ? "Переключить тему" : "Toggle theme",
-  themeTooltip: isRu ? "Тема" : "Theme",
-  rights: isRu ? "Все права защищены." : "All rights reserved.",
-};
-const navHomeHref = isRu ? "/ru/#top" : "/#top";
-const navRssHref = isRu ? "/ru/feed.xml" : "/feed.xml";
-const currentPath = Astro.url.pathname;
-const isCurrentPath = (href: string) => {
-  const path = href.split("#")[0];
-  return currentPath === path || (path !== "/" && path !== "/ru/" && currentPath.startsWith(path));
-};
 const safeSchema = schema?.replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026");
 ---
 <!DOCTYPE html>
 <html lang={lang}>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{title}</title>
-    <meta name="description" content={cleanDescription}>
-    <meta name="robots" content={robots}>
-    <meta name="theme-color" content="#080B10">
-    <link rel="icon" type="image/png" href="/brand-favicon-20260629.png">
-    <link rel="apple-touch-icon" href="/brand-favicon-20260629.png">
-    <link rel="icon" type="image/svg+xml" href={`/favicon.svg?v=${brandAssetVersion}`}>
-    <link rel="alternate icon" type="image/x-icon" href={`/favicon.ico?v=${brandAssetVersion}`}>
-    <link rel="manifest" href="/manifest.json">
-    <link rel="canonical" href={canonicalUrl}>
-    <link rel="alternate" type="application/rss+xml" title={title} href={rssHref}>
-    {alternateLinks.map((link) => (
-      <link rel="alternate" hreflang={link.hreflang} href={link.href}>
-    ))}
-    <link rel="api-catalog" type="application/linkset+json" href="/.well-known/api-catalog">
-    <link rel="agent-skills" type="application/json" href="/.well-known/agent-skills/index.json">
-    
-    <!-- Open Graph / Facebook -->
-    <meta property="og:type" content={ogType}>
-    <meta property="og:site_name" content={siteAuthor}>
-    <meta property="og:title" content={title.split(' | ')[0]}>
-    <meta property="og:description" content={cleanDescription}>
-    <meta property="og:url" content={canonicalUrl}>
-    <meta property="og:image" content={socialImage}>
-    <meta property="og:image:width" content={String(socialImageWidth)}>
-    <meta property="og:image:height" content={String(socialImageHeight)}>
-
-    <!-- Twitter -->
-    <meta name="twitter:card" content={twitterCard}>
-    <meta name="twitter:title" content={title.split(' | ')[0]}>
-    <meta name="twitter:description" content={cleanDescription}>
-    <meta name="twitter:image" content={socialImage}>
-
+    <meta name="description" content={cleanDescription} />
+    <meta name="robots" content={robots} />
+    <meta name="theme-color" content="#080B10" />
+    <link rel="icon" type="image/png" href="/brand-favicon-20260629.png" />
+    <link rel="apple-touch-icon" href="/brand-favicon-20260629.png" />
+    <link rel="icon" type="image/svg+xml" href={`/favicon.svg?v=${brandAssetVersion}`} />
+    <link rel="alternate icon" type="image/x-icon" href={`/favicon.ico?v=${brandAssetVersion}`} />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="canonical" href={canonicalUrl} />
+    <link rel="alternate" type="application/rss+xml" title={title} href={rssHref} />
+    {alternateLinks.map((link) => <link rel="alternate" hreflang={link.hreflang} href={link.href} />)}
+    <link rel="api-catalog" type="application/linkset+json" href="/.well-known/api-catalog" />
+    <link rel="agent-skills" type="application/json" href="/.well-known/agent-skills/index.json" />
+    <meta property="og:type" content={ogType} />
+    <meta property="og:site_name" content={siteName} />
+    <meta property="og:title" content={title.split(" | ")[0]} />
+    <meta property="og:description" content={cleanDescription} />
+    <meta property="og:url" content={canonicalUrl} />
+    <meta property="og:image" content={socialImage} />
+    <meta property="og:image:width" content={String(socialImageWidth)} />
+    <meta property="og:image:height" content={String(socialImageHeight)} />
+    <meta name="twitter:card" content={twitterCard} />
+    <meta name="twitter:title" content={title.split(" | ")[0]} />
+    <meta name="twitter:description" content={cleanDescription} />
+    <meta name="twitter:image" content={socialImage} />
     {safeSchema && <script type="application/ld+json" set:html={safeSchema}></script>}
-
-    <!-- Blocking Theme Script to prevent flash -->
-    <script is:inline>
-        (() => {
-            const savedTheme = localStorage.getItem('theme');
-            const theme = savedTheme || 'dark';
-            if (theme === 'light') {
-                document.documentElement.setAttribute('data-theme', 'light');
-            } else {
-                document.documentElement.setAttribute('data-theme', 'dark');
-            }
-
-        })();
-    </script>
-    
-    <!-- WebMCP tools registration for AI agents -->
     <script is:inline>
       (() => {
         const registerWebMCP = async () => {
-          if (typeof navigator !== 'undefined' && navigator.modelContext) {
-            try {
-              const provideContext = navigator.modelContext.provideContext || navigator.modelContext.registerTool;
-              if (typeof provideContext === 'function') {
-                if (navigator.modelContext.provideContext) {
-                  await navigator.modelContext.provideContext({
-                    tools: [
-                      {
-                        name: 'read_feed',
-                        description: 'Get the latest AI news, automation notes and developer updates from alexgetman.com.',
-                        inputSchema: {
-                          type: 'object',
-                          properties: {
-                            limit: { type: 'number', description: 'Number of posts to return (default 5, max 12)' }
-                          }
-                        },
-                        execute: async (args) => {
-                          try {
-                            let res = await fetch('/feed.json').catch(() => null);
-                            if (!res || !res.ok) {
-                              res = await fetch('https://alexgetman.com/feed.json');
-                            }
-                            const data = await res.json();
-                            const items = data.items || data;
-                            return {
-                              result: items.slice(0, args.limit || 5)
-                            };
-                          } catch (e) {
-                            return { error: e.message };
-                          }
-                        }
-                      }
-                    ]
-                  });
-                  console.log('WebMCP registered successfully using provideContext');
-                } else if (navigator.modelContext.registerTool) {
-                  await navigator.modelContext.registerTool({
-                    name: 'read_feed',
-                    description: 'Get the latest AI news, automation notes and developer updates from alexgetman.com.',
-                    inputSchema: {
-                      type: 'object',
-                      properties: {
-                        limit: { type: 'number', description: 'Number of posts to return (default 5, max 12)' }
-                      }
-                    }
-                  }, async (args) => {
-                    try {
-                      let res = await fetch('/feed.json').catch(() => null);
-                      if (!res || !res.ok) {
-                        res = await fetch('https://alexgetman.com/feed.json');
-                      }
-                      const data = await res.json();
-                      const items = data.items || data;
-                      return {
-                        result: items.slice(0, args.limit || 5)
-                      };
-                    } catch (e) {
-                      return { error: e.message };
-                    }
-                  });
-                  console.log('WebMCP registered successfully using registerTool');
+          if (!navigator.modelContext) return;
+          try {
+            const provideContext = navigator.modelContext.provideContext || navigator.modelContext.registerTool;
+            if (typeof provideContext !== "function") return;
+            const tool = {
+              name: "read_feed",
+              description: "Get the latest AI news, automation notes and developer updates from alexgetman.com.",
+              inputSchema: { type: "object", properties: { limit: { type: "number", description: "Number of posts to return (default 5, max 12)" } } },
+              execute: async (args) => {
+                try {
+                  const response = await fetch("/feed.json");
+                  const data = await response.json();
+                  return { result: (data.items || data).slice(0, args.limit || 5) };
+                } catch (error) {
+                  return { error: error instanceof Error ? error.message : String(error) };
                 }
-              }
-            } catch (err) {
-              console.error('Failed to register WebMCP:', err);
-            }
-          }
+              },
+            };
+            if (navigator.modelContext.provideContext) await navigator.modelContext.provideContext({ tools: [tool] });
+            else await navigator.modelContext.registerTool(tool, tool.execute);
+          } catch {}
         };
         registerWebMCP();
-        document.addEventListener('DOMContentLoaded', registerWebMCP);
       })();
     </script>
-</head>
-<body class={immersiveHome ? "immersive-home" : undefined}>
-    <a class="skip-link" href="#main-content">{isRu ? "К содержанию" : "Skip to content"}</a>
-    <!-- Navigation Overlay -->
-    <div class="nav-overlay" id="nav-overlay" aria-hidden="true"></div>
-    
-    <!-- Navigation Drawer -->
-    <aside class="nav-drawer" id="nav-drawer" aria-hidden="true" aria-label={navLabels.drawerTitle}>
-        <div class="nav-drawer__header">
-            <div class="drawer-header-left">
-                <img src="/brand-avatar-small-20260629.webp" alt={brandDisplayName} class="logo-avatar" width="32" height="32" />
-                <span class="drawer-title">{navLabels.drawerTitle}</span>
-            </div>
-            <button class="nav-drawer__close" id="nav-close-btn" aria-label={navLabels.closeMenu}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="18" x2="6" y1="6" y2="18"/>
-                    <line x1="6" x2="18" y1="6" y2="18"/>
-                </svg>
-            </button>
-        </div>
-        
-        <nav class="nav-drawer__nav">
-            <ul class="nav-drawer__list">
-                <li>
-                    <a href={navHomeHref} class="nav-drawer__link">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-                        {navLabels.home}
-                    </a>
-                </li>
-                <li>
-                    <a href="https://t.me/alexgetmancom" target="_blank" rel="noopener noreferrer" class="nav-drawer__link">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
-                        Telegram
-                    </a>
-                </li>
-                <li>
-                    <a href={navRssHref} class="nav-drawer__link">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg>
-                        RSS
-                    </a>
-                </li>
-            </ul>
-        </nav>
-    </aside>
-
-    <!-- Compact Media Header -->
-    <header class="media-header">
-        <div class="container header-container">
-            <div class="header-left">
-                <button class="burger-toggle btn-social" id="burger-toggle-btn" aria-label={navLabels.openMenu} aria-expanded="false" aria-controls="nav-drawer" data-tooltip={navLabels.menuTooltip}>
-                    <!-- Hamburger Icon -->
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="4" x2="20" y1="12" y2="12" />
-                        <line x1="4" x2="20" y1="6" y2="6" />
-                        <line x1="4" x2="20" y1="18" y2="18" />
-                    </svg>
-                </button>
-                <nav class="header-nav" aria-label={navLabels.drawerTitle}>
-                    <a href={navHomeHref} aria-current={isCurrentPath(navHomeHref) ? "page" : undefined}>{navLabels.home}</a>
-                </nav>
-            </div>
-            
-            <a href={isRu ? "/ru/" : "/"} class="logo-wrap">
-                <img src="/brand-avatar-small-20260629.webp" alt={brandDisplayName} class="logo-avatar" width="36" height="36" />
-                <span class="logo-text">{brandDisplayName}</span>
-            </a>
-            
-            <div class="social-row">
-                <button class="btn-social lang-toggle notranslate" id="lang-toggle-btn" aria-label={navLabels.language} data-tooltip={navLabels.language}>
-                    <span class="lang-ru-text">RU</span>
-                    <span class="lang-en-text">EN</span>
-                </button>
-                <button class="btn-social theme-toggle" id="theme-toggle-btn" aria-label={navLabels.theme} data-tooltip={navLabels.themeTooltip}>
-                    <!-- Sun Icon (visible in light mode) -->
-                    <svg class="sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="12" cy="12" r="4"/>
-                        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
-                    </svg>
-                    <!-- Moon Icon (visible in dark mode) -->
-                    <svg class="moon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
-                    </svg>
-                </button>
-            </div>
-        </div>
-    </header>
-
-    <main class="container" id="main-content" tabindex="-1">
-        <slot />
-    </main>
-    <div class="container" id="top">
-        <footer class="site-footer">
-            <div class="footer-social-grid">
-                <a href="https://t.me/alexgetmancom" target="_blank" rel="noopener noreferrer" class="footer-social-link" title="Telegram">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="tg-icon-stroke"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
-                </a>
-                <a href="https://x.com/alexgetmancom" target="_blank" rel="noopener noreferrer" class="footer-social-link" title="X (Twitter)">
-                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
-                </a>
-                <a href="https://discord.gg/Z7sSm56rcb" target="_blank" rel="noopener noreferrer" class="footer-social-link" title="Discord">
-                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.873-.894.077.077 0 0 1-.008-.128c.126-.093.252-.19.372-.287a.075.075 0 0 1 .077-.011 13.925 13.925 0 0 0 10.95 0 .074.074 0 0 1 .078.01c.12.099.246.196.373.289a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.894.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084-.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.156-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.156 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.156-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.156 2.418z"/></svg>
-                </a>
-                <a href="https://www.youtube.com/@alexgetmancom" target="_blank" rel="noopener noreferrer" class="footer-social-link" title="YouTube">
-                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.163a3.003 3.003 0 0 0-2.11-2.11C19.517 3.545 12 3.545 12 3.545s-7.517 0-9.388.508a3.003 3.003 0 0 0-2.11 2.11C0 8.033 0 12 0 12s0 3.967.502 5.837a3.003 3.003 0 0 0 2.11 2.11c1.871.508 9.388.508 9.388.508s7.517 0 9.388-.508a3.003 3.003 0 0 0 2.11-2.11C24 15.967 24 12 24 12s0-3.967-.502-5.837zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
-                </a>
-                <a href="https://twitch.tv/alexgetmancom" target="_blank" rel="noopener noreferrer" class="footer-social-link" title="Twitch">
-                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714Z"/></svg>
-                </a>
-                <a href="https://github.com/alexgetmancom" target="_blank" rel="noopener noreferrer" class="footer-social-link" title="GitHub">
-                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2A10 10 0 0 0 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.9-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.52 2.34 1.07 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0 0 12 2z"/></svg>
-                </a>
-                <a href="mailto:i@alexgetman.com" class="footer-social-link" title="Email">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="tg-icon-stroke"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
-                </a>
-                <a href="/feed.xml" class="footer-social-link footer-rss-link" title="RSS">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="tg-icon-stroke"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg>
-                    <span>RSS</span>
-                </a>
-            </div>
-            <div class="footer-copy">
-                &copy; {new Date().getFullYear()} {siteAuthor}. {navLabels.rights}
-            </div>
-        </footer>
-    </div>
-    
-    <script>
-        import '../scripts/site-interactions.ts';
-    </script>
-</body>
+  </head>
+  <body class={immersiveHome ? "immersive-home" : undefined}>
+    <a class="skip-link" href="#main-content">{lang === "ru" ? "К содержанию" : "Skip to content"}</a>
+    <main class="container" id="main-content" tabindex="-1"><slot /></main>
+    <script>import "../scripts/site-interactions.ts";</script>
+  </body>
 </html>

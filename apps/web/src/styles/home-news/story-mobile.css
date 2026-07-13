@@ -116,11 +116,6 @@
     overflow-x: hidden;
   }
 
-  body.immersive-home .media-header,
-  body.immersive-home .site-footer {
-    display: none;
-  }
-
   body.immersive-home > .container {
     max-width: none;
     padding: 0;

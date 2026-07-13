@@ -7,6 +7,21 @@
   height: 100%;
 }
 
+@media (min-width: 761px) {
+  body.immersive-home {
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+    color-scheme: dark;
+  }
+
+  body.immersive-home > .container {
+    max-width: none;
+    padding-left: 0;
+    padding-right: 0;
+  }
+}
+
 .story-player {
   position: relative;
   display: grid;

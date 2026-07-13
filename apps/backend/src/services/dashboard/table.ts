@@ -117,7 +117,7 @@ function renderPostRow(post: PipelinePost): string {
     `<td>${escapeHtml(formatMedia(post))}</td>` +
     `<td class="text-center nowrap font-bold">${sigma}</td>` +
     ORDERED_TARGETS.map((target) => `<td class="text-center">${targetCell(post, target.id)}</td>`).join("") +
-    `<td class="text-center"><a href="/command-center?tab=repair&ref=${escapeHtml(post.post_id || post.message_id || "")}&message_id=${escapeHtml(post.telegram_message_id || "")}" title="Repair">${TOOL_ICON}</a></td>` +
+    `<td class="text-center"><a href="/command-center?ref=${escapeHtml(post.post_id || post.message_id || "")}&message_id=${escapeHtml(post.telegram_message_id || "")}#repair" title="Repair">${TOOL_ICON}</a></td>` +
     `</tr>`
   );
 }

@@ -1,5 +1,19 @@
 ---
-import LegacyRedirect from "../components/LegacyRedirect.astro";
+import Layout from "../layouts/Layout.astro";
 ---
 
-<LegacyRedirect target="/" title="Privacy moved" />
+<Layout title="Privacy | Alex Getman" description="Privacy information for alexgetman.com." lang="en" robots="noindex, follow">
+  <article class="privacy-page">
+    <h1>Privacy</h1>
+    <p>alexgetman.com is a public news feed. We collect the minimum technical information needed to operate it: aggregate page-view counters and anonymous like state.</p>
+    <p>We do not sell personal data. Posts, comments and links opened on third-party platforms are governed by those platforms’ own privacy policies.</p>
+    <p>The site does not use an account system or advertising profile. Essential server logs may be kept for security and reliability.</p>
+    <p>For privacy questions, contact <a href="mailto:i@alexgetman.com">i@alexgetman.com</a>.</p>
+  </article>
+</Layout>
+
+<style>
+  .privacy-page { max-width: 720px; margin: 5rem auto; padding: 1.5rem; }
+  .privacy-page h1 { margin-top: 0; }
+  .privacy-page a { color: var(--accent); }
+</style>

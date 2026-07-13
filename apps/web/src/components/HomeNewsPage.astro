@@ -4,17 +4,12 @@ import StoryRail from "./home-news/StoryRail.astro";
 import StoryVisual from "./home-news/StoryVisual.astro";
 import { metricValue, paragraphsFor } from "./home-news/storyHelpers";
 import "../styles/home-news-page.css";
-import type { HomeLabels, HomePost, Project, TopicStat } from "./home-news/types";
+import type { HomeLabels, HomePost } from "./home-news/types";
 
 interface Props {
   posts: HomePost[];
-  latestPosts: HomePost[];
-  trendingPosts: HomePost[];
-  topicStats: TopicStat[];
-  projects: Project[];
   labels: HomeLabels;
   locale: "en" | "ru";
-  categoryBasePath: string;
   initialPostId?: number | string;
   initialPaused?: boolean;
 }
@@ -44,31 +39,14 @@ const safeJsonForScript = (value: unknown) =>
   JSON.stringify(value).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026");
 const ui = {
   storyLabel: isRu ? "Новостной плеер" : "AI news player",
-  postTab: isRu ? "Пост" : "Post",
-  discussionTab: isRu ? "Обсуждение" : "Discussion",
-  sourcesTab: isRu ? "Источники" : "Sources",
-  previous: isRu ? "Предыдущая новость" : "Previous story",
-  next: isRu ? "Следующая новость" : "Next story",
   discuss: isRu ? "Обсудить" : "Discuss",
   share: isRu ? "Поделиться" : "Share",
   readMore: isRu ? "Читать дальше" : "Read more",
   collapse: isRu ? "Свернуть" : "Collapse",
-  openPost: isRu ? "Открыть пост" : "Open post",
   mute: isRu ? "Звук" : "Audio",
   muted: isRu ? "Звук выкл" : "Muted",
   storyRail: isRu ? "Выбор новостей" : "Story rail",
   feedMode: isRu ? "Режим ленты" : "Feed mode",
-  noDiscussion: isRu
-    ? "Обсуждения подключим здесь. Пока можно открыть пост и поделиться ссылкой."
-    : "Discussion will live here. For now, open the post or share the link.",
-  sourcesHint: isRu
-    ? "Источники и социальные копии появятся здесь, когда они есть у поста."
-    : "Sources and social copies will appear here when a post has them.",
-  backToPost: isRu ? "К посту" : "Back to post",
-  copied: isRu ? "Скопировано" : "Copied",
-  views: isRu ? "просмотров" : "views",
-  replies: isRu ? "ответов" : "replies",
-  reactions: isRu ? "реакций" : "reactions",
   feedLatest: "Latest",
   feedDeep: "Deep",
   feedWatched: "Watched",

@@ -42,7 +42,7 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
       reply_markup: new InlineKeyboard().text("← Cancel", "cancel_dialog"),
     });
   });
-  bot.command("pipeline_status", (ctx) => ctx.reply(`${config.COMMAND_CENTER_URL.replace(/\/$/, "")}/pipeline-status`));
+  bot.command("pipeline_status", (ctx) => ctx.reply(config.COMMAND_CENTER_URL));
   bot.command("schedule", async (ctx) => {
     if (!isAdmin(config, ctx.from?.id)) return void (await ctx.reply("Forbidden"));
     const rows = scheduledDrafts(backendDb);

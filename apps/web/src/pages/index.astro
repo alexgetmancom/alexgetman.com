@@ -1,23 +1,14 @@
 ---
 import HomeNewsPage from "../components/HomeNewsPage.astro";
-import projects from "../data/projects.json";
 import Layout from "../layouts/Layout.astro";
 import { loadFeedItems } from "../utils/feed";
-import { sortedHomePosts, topicStatsFor } from "../utils/home-posts";
+import { sortedHomePosts } from "../utils/home-posts";
 
 export const prerender = false;
 
 const feedItems = loadFeedItems();
 
 const englishPosts = sortedHomePosts(feedItems, "en");
-
-const leadPost = englishPosts[0] || null;
-const latestEnglishPosts = englishPosts.slice(leadPost ? 1 : 0, leadPost ? 8 : 9);
-const trendingPosts = [...englishPosts]
-  .filter((post) => !leadPost || post.id !== leadPost.id)
-  .sort((a, b) => b.views - a.views || new Date(b.date).getTime() - new Date(a.date).getTime())
-  .slice(0, 5);
-const topicStats = topicStatsFor(englishPosts);
 
 const title = "Alex Getman | AI news and developer tools";
 const description = "Latest AI news, developer tools, automation updates and product changes from Alex Getman.";
@@ -65,18 +56,7 @@ const schema = JSON.stringify({
 });
 
 const labels = {
-  archive: "Archive",
-  search: "Search",
-  languageSwitch: "RU",
   empty: "English posts will appear here after publication approval.",
-  latestPosts: "Latest English posts",
-  latestUpdates: "Latest updates",
-  trending: "Trending",
-  topics: "Topics",
-  projects: "Projects",
-  all: "All",
-  sidebarLabel: "Homepage side sections",
-  mskSuffix: "MSK",
 };
 ---
 
@@ -97,12 +77,7 @@ const labels = {
 >
   <HomeNewsPage
     posts={englishPosts}
-    latestPosts={latestEnglishPosts}
-    trendingPosts={trendingPosts}
-    topicStats={topicStats}
-    projects={projects}
     labels={labels}
     locale="en"
-    categoryBasePath="/category/"
   />
 </Layout>

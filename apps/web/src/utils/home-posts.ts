@@ -93,16 +93,3 @@ export function sortedHomePosts(feedItems: any[], locale: "en" | "ru") {
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     .map((item) => toHomePost(item, locale));
 }
-
-export function topicStatsFor(posts: HomePost[]) {
-  return Array.from(
-    posts
-      .reduce((map, post) => {
-        const current = map.get(post.categorySlug) || { slug: post.categorySlug, label: post.category, count: 0 };
-        current.count += 1;
-        map.set(post.categorySlug, current);
-        return map;
-      }, new Map<string, { slug: string; label: string; count: number }>())
-      .values(),
-  ).sort((a, b) => b.count - a.count);
-}

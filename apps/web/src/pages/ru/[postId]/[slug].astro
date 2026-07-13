@@ -1,10 +1,9 @@
 ---
 import HomeNewsPage from "../../../components/HomeNewsPage.astro";
-import projects from "../../../data/projects.json";
 import Layout from "../../../layouts/Layout.astro";
 import { loadFeedItems } from "../../../utils/feed";
 import { getFirstSentence, postOgImagePath, truncateText } from "../../../utils/helpers";
-import { sortedHomePosts, topicStatsFor } from "../../../utils/home-posts";
+import { sortedHomePosts } from "../../../utils/home-posts";
 
 export const prerender = false;
 
@@ -13,14 +12,6 @@ const feedItems = loadFeedItems();
 const item = feedItems.find((entry: any) => String(entry.post_id) === String(postId) && entry.slug_ru === slug) ?? {};
 const russianPosts = sortedHomePosts(feedItems, "ru");
 const selectedPost = russianPosts.find((post) => String(post.id) === String(postId));
-const leadPost = russianPosts[0] || null;
-const latestRussianPosts = russianPosts.slice(leadPost ? 1 : 0, leadPost ? 8 : 9);
-const trendingPosts = [...russianPosts]
-  .filter((post) => !leadPost || post.id !== leadPost.id)
-  .sort((a, b) => b.views - a.views || new Date(b.date).getTime() - new Date(a.date).getTime())
-  .slice(0, 5);
-const topicStats = topicStatsFor(russianPosts);
-
 const siteAuthor = "Алексей Гетманец";
 const postText = item.text || "";
 const pageTitle = selectedPost?.title || getFirstSentence(postText) || `Публикация ${postId}`;
@@ -53,18 +44,7 @@ const schema = JSON.stringify({
 });
 
 const labels = {
-  archive: "Архив",
-  search: "Поиск",
-  languageSwitch: "EN",
   empty: "Русские посты появятся здесь после публикации.",
-  latestPosts: "Последние русские посты",
-  latestUpdates: "Последние обновления",
-  trending: "Популярное",
-  topics: "Темы",
-  projects: "Проекты",
-  all: "Все",
-  sidebarLabel: "Боковые разделы главной страницы",
-  mskSuffix: "МСК",
 };
 ---
 
@@ -89,13 +69,8 @@ const labels = {
 >
   <HomeNewsPage
     posts={russianPosts}
-    latestPosts={latestRussianPosts}
-    trendingPosts={trendingPosts}
-    topicStats={topicStats}
-    projects={projects}
     labels={labels}
     locale="ru"
-    categoryBasePath="/ru/category/"
     initialPostId={postId}
     initialPaused
   />

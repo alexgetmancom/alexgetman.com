@@ -1,5 +1,19 @@
 ---
-import LegacyRedirect from "../../components/LegacyRedirect.astro";
+import Layout from "../../layouts/Layout.astro";
 ---
 
-<LegacyRedirect target="/ru/" title="Privacy переехала" message="Эта страница переехала в главный новостной плеер." lang="ru" />
+<Layout title="Конфиденциальность | Алексей Гетманец" description="Информация о конфиденциальности alexgetman.com." lang="ru" robots="noindex, follow">
+  <article class="privacy-page">
+    <h1>Конфиденциальность</h1>
+    <p>alexgetman.com — публичная новостная лента. Сайт собирает только минимум технических данных для работы: агрегированные счётчики просмотров и анонимное состояние лайков.</p>
+    <p>Персональные данные не продаются. Публикации, комментарии и ссылки на внешние платформы регулируются правилами конфиденциальности соответствующих сервисов.</p>
+    <p>На сайте нет учётных записей и рекламного профилирования. Базовые серверные логи могут храниться для безопасности и надёжности.</p>
+    <p>По вопросам конфиденциальности: <a href="mailto:i@alexgetman.com">i@alexgetman.com</a>.</p>
+  </article>
+</Layout>
+
+<style>
+  .privacy-page { max-width: 720px; margin: 5rem auto; padding: 1.5rem; }
+  .privacy-page h1 { margin-top: 0; }
+  .privacy-page a { color: var(--accent); }
+</style>

@@ -17,56 +17,20 @@ export interface HomePost {
   category: string;
 }
 
-export interface TopicStat {
-  slug: string;
-  label: string;
-  count: number;
-}
-
-export interface Project {
-  name: string;
-  kind: string;
-  url: string;
-}
-
 export interface HomeLabels {
-  archive: string;
-  search: string;
-  languageSwitch: string;
   empty: string;
-  latestPosts: string;
-  latestUpdates: string;
-  trending: string;
-  topics: string;
-  projects: string;
-  all: string;
-  sidebarLabel: string;
-  mskSuffix: string;
 }
 
 export interface StoryUi {
   storyLabel: string;
-  postTab: string;
-  discussionTab: string;
-  sourcesTab: string;
-  previous: string;
-  next: string;
   discuss: string;
   share: string;
   readMore: string;
   collapse: string;
-  openPost: string;
   mute: string;
   muted: string;
   storyRail: string;
   feedMode: string;
-  noDiscussion: string;
-  sourcesHint: string;
-  backToPost: string;
-  copied: string;
-  views: string;
-  replies: string;
-  reactions: string;
   feedLatest: string;
   feedDeep: string;
   feedWatched: string;
