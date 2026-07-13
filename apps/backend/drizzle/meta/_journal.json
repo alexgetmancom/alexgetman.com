@@ -57,6 +57,20 @@
       "when": 1784020000000,
       "tag": "0007_video_metrics_and_bot_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1784100000000,
+      "tag": "0008_video_foreign_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1784200000000,
+      "tag": "0009_site_pageviews",
+      "breakpoints": true
     }
   ]
 }

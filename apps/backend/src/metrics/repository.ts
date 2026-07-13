@@ -49,7 +49,9 @@ export function upsertMetricError(
     .run();
 }
 
-export function pruneMetricSamples(backendDb: BackendDb, daysKeep = 7): void {
+// Creator reports include a 30-day period and need a checkpoint immediately
+// before its start to calculate a delta.
+export function pruneMetricSamples(backendDb: BackendDb, daysKeep = 35): void {
   const cutoff = new Date(Date.now() - daysKeep * 24 * 60 * 60 * 1000).toISOString();
   backendDb.db.delete(metricSamples).where(lte(metricSamples.sampledAt, cutoff)).run();
 }

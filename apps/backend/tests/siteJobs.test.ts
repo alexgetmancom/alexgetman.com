@@ -21,8 +21,8 @@ describe("site jobs", () => {
   it("renders feed and metrics JSON from publication sources", async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-site-"));
     const feedJson = path.join(tempDir, "feed.json");
-    const metricsJson = path.join(tempDir, "metrics.json");
-    const config = loadConfig({ FEED_JSON: feedJson, SITE_METRICS_JSON: metricsJson, SITE_PUBLIC_DIR: tempDir });
+    const metricsJson = path.join(tempDir, "content-metrics.json");
+    const config = loadConfig({ FEED_JSON: feedJson, SITE_CONTENT_METRICS_JSON: metricsJson, SITE_PUBLIC_DIR: tempDir });
     backendDb = openBackendDb(":memory:");
     const now = new Date().toISOString();
     backendDb.db.insert(publications).values({ postId: 1, status: "published", createdAt: now, updatedAt: now }).run();
@@ -62,6 +62,7 @@ describe("site jobs", () => {
     const config = loadConfig({
       FEED_JSON: path.join(tempDir, "feed.json"),
       SITE_METRICS_JSON: path.join(tempDir, "metrics.json"),
+      SITE_CONTENT_METRICS_JSON: path.join(tempDir, "content-metrics.json"),
       SITE_PUBLIC_DIR: tempDir,
     });
     backendDb = openBackendDb(":memory:");

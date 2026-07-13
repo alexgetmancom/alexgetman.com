@@ -296,7 +296,9 @@ export const videoTargets = sqliteTable(
   "video_targets",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
-    videoDraftId: integer("video_draft_id").notNull(),
+    videoDraftId: integer("video_draft_id")
+      .notNull()
+      .references(() => videoDrafts.id, { onDelete: "cascade" }),
     target: text("target").notNull(),
     metadataJson: text("metadata_json", { mode: "json" }).$type<JsonObject>().notNull(),
     scheduledAt: text("scheduled_at"),
@@ -319,8 +321,10 @@ export const videoJobs = sqliteTable(
   "video_jobs",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
-    videoDraftId: integer("video_draft_id").notNull(),
-    videoTargetId: integer("video_target_id"),
+    videoDraftId: integer("video_draft_id")
+      .notNull()
+      .references(() => videoDrafts.id, { onDelete: "cascade" }),
+    videoTargetId: integer("video_target_id").references(() => videoTargets.id, { onDelete: "cascade" }),
     kind: text("kind").notNull(),
     runAt: text("run_at").notNull(),
     status: text("status").notNull().default("queued"),
@@ -479,7 +483,9 @@ export const videoMetricSnapshots = sqliteTable(
   "video_metric_snapshots",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
-    videoTargetId: integer("video_target_id").notNull(),
+    videoTargetId: integer("video_target_id")
+      .notNull()
+      .references(() => videoTargets.id, { onDelete: "cascade" }),
     platform: text("platform").notNull(),
     metricsJson: text("metrics_json", { mode: "json" }).$type<JsonObject>().notNull(),
     sampledAt: text("sampled_at").notNull(),
@@ -490,7 +496,9 @@ export const videoMetricSnapshots = sqliteTable(
 );
 
 export const videoMetricSchedule = sqliteTable("video_metric_schedule", {
-  videoTargetId: integer("video_target_id").primaryKey(),
+  videoTargetId: integer("video_target_id")
+    .primaryKey()
+    .references(() => videoTargets.id, { onDelete: "cascade" }),
   checkpointIndex: integer("checkpoint_index").notNull().default(0),
   nextCheckAt: text("next_check_at").notNull(),
   lastCheckedAt: text("last_checked_at"),
@@ -504,7 +512,9 @@ export const socialComments = sqliteTable(
   {
     platform: text("platform").notNull(),
     commentId: text("comment_id").notNull(),
-    videoTargetId: integer("video_target_id").notNull(),
+    videoTargetId: integer("video_target_id")
+      .notNull()
+      .references(() => videoTargets.id, { onDelete: "cascade" }),
     author: text("author"),
     text: text("text").notNull(),
     likeCount: integer("like_count").notNull().default(0),
@@ -578,4 +588,15 @@ export const likes = sqliteTable(
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   },
   (table) => ({ pk: primaryKey({ columns: [table.postId, table.ipHash] }) }),
+);
+
+export const sitePageviews = sqliteTable(
+  "site_pageviews",
+  {
+    day: text("day").notNull(),
+    path: text("path").notNull(),
+    count: integer("count").notNull().default(0),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => ({ pk: primaryKey({ columns: [table.day, table.path] }), day: index("idx_site_pageviews_day").on(table.day) }),
 );

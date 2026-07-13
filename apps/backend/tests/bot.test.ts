@@ -7,6 +7,7 @@ import { entitiesToHtml } from "../src/bot/text.js";
 import { TARGETS, targetLocale } from "../src/botTargets.js";
 import { loadConfig } from "../src/config.js";
 import { type BackendDb, openBackendDb } from "../src/db/client.js";
+import { reconcilePublication } from "../src/queue/publish.js";
 
 let backendDb: BackendDb | null = null;
 
@@ -45,7 +46,7 @@ describe("Telegram controller flow", () => {
       .prepare("SELECT locale, site_enabled FROM post_locales WHERE post_id=? ORDER BY locale")
       .all(postId) as Record<string, unknown>[];
 
-    expect(draft).toMatchObject({ status: "published", post_id: postId });
+    expect(draft).toMatchObject({ status: "scheduled", post_id: postId });
     expect(jobs.map((job) => job.target)).toEqual([
       "bluesky",
       "devto",
@@ -110,6 +111,36 @@ describe("Telegram controller flow", () => {
     expect(
       backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM publish_jobs WHERE post_id=? AND target='threads_en'").get(postId),
     ).toEqual({ count: 1 });
+  });
+
+  it("marks a publication published only after every social and site job is final", () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createDraftFromMessage(backendDb, 42, { text: "Complete", textEn: "Complete", entities: [], media: [] });
+    const postId = publishDraftToQueue(backendDb, draftId);
+    expect(backendDb.sqlite.prepare("SELECT status FROM publications WHERE post_id=?").get(postId)).toEqual({ status: "scheduled" });
+
+    backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE post_id=?").run(postId);
+    backendDb.sqlite.prepare("UPDATE site_jobs SET status='published' WHERE post_id=?").run(postId);
+    reconcilePublication(backendDb, postId);
+
+    expect(backendDb.sqlite.prepare("SELECT status FROM publications WHERE post_id=?").get(postId)).toEqual({ status: "published" });
+    expect(backendDb.sqlite.prepare("SELECT status FROM drafts WHERE id=?").get(draftId)).toEqual({ status: "published" });
+  });
+
+  it("marks a publication failed when one final target fails and preserves cancellation", () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createDraftFromMessage(backendDb, 42, { text: "Failure", textEn: "Failure", entities: [], media: [] });
+    const postId = publishDraftToQueue(backendDb, draftId);
+    backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE post_id=?").run(postId);
+    backendDb.sqlite.prepare("UPDATE publish_jobs SET status='failed' WHERE post_id=? AND target='bluesky'").run(postId);
+    backendDb.sqlite.prepare("UPDATE site_jobs SET status='published' WHERE post_id=?").run(postId);
+    reconcilePublication(backendDb, postId);
+    expect(backendDb.sqlite.prepare("SELECT status FROM publications WHERE post_id=?").get(postId)).toEqual({ status: "failed" });
+
+    cancelDraft(backendDb, draftId);
+    backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE post_id=?").run(postId);
+    reconcilePublication(backendDb, postId);
+    expect(backendDb.sqlite.prepare("SELECT status FROM publications WHERE post_id=?").get(postId)).toEqual({ status: "cancelled" });
   });
 
   it("removes all unpublished draft artifacts while retaining published history", () => {

@@ -8,7 +8,7 @@ type IndexNowState = { last_digest?: string; last_attempt_at?: string; last_succ
 
 export async function pingIndexNow(config: BackendConfig, urls: string[], fetchImpl: typeof fetch = fetch): Promise<void> {
   if (!config.INDEXNOW_ENABLED) return;
-  const unique = [...new Set(urls)].sort().slice(0, 100);
+  const unique = [...new Set(urls)].sort().slice(0, 10_000);
   if (unique.length === 0) return;
   const keyFile = path.join(config.DATA_DIR, "indexnow.key");
   const stateFile = path.join(config.DATA_DIR, "indexnow.json");
@@ -17,7 +17,7 @@ export async function pingIndexNow(config: BackendConfig, urls: string[], fetchI
   const digest = crypto.createHash("sha256").update(unique.join("\n")).digest("hex");
   const previous = readState(stateFile);
   if (previous.last_digest === digest) return;
-  const state: IndexNowState = { last_digest: digest, last_attempt_at: new Date().toISOString(), url_count: unique.length };
+  const state: IndexNowState = { ...previous, last_attempt_at: new Date().toISOString(), url_count: unique.length };
   writeState(stateFile, state);
   try {
     const response = await fetchImpl("https://api.indexnow.org/indexnow", {
@@ -32,11 +32,19 @@ export async function pingIndexNow(config: BackendConfig, urls: string[], fetchI
       signal: AbortSignal.timeout(8_000),
     });
     state.last_status = response.status;
-    if (response.ok || response.status === 202) state.last_success_at = new Date().toISOString();
+    if (response.ok || response.status === 202) {
+      state.last_digest = digest;
+      state.last_success_at = new Date().toISOString();
+    }
     writeState(stateFile, state);
-    if (!response.ok && response.status !== 202) log("warn", "IndexNow request rejected", { status: response.status, urls: unique.length });
+    if (!response.ok && response.status !== 202) {
+      const error = new Error(`IndexNow request rejected: ${response.status}`);
+      log("warn", error.message, { status: response.status, urls: unique.length });
+      throw error;
+    }
   } catch (error) {
     log("warn", "IndexNow request failed", { error: String(error) });
+    throw error;
   }
 }
 

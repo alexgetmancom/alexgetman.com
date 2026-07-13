@@ -144,7 +144,7 @@ function requeue(backendDb: BackendDb, ref: PublicationRef, target?: string): Re
       queued.push(targetId);
     }
     if (ref.postId != null)
-      tx.update(publications).set({ status: "published", updatedAt: now }).where(eq(publications.postId, ref.postId)).run();
+      tx.update(publications).set({ status: "scheduled", updatedAt: now }).where(eq(publications.postId, ref.postId)).run();
   });
   return { ok: true, post_id: ref.postId, post_key: ref.postKey, message_id: ref.messageId, target: target ?? null, targets: queued };
 }

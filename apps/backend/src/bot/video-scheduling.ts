@@ -1,7 +1,7 @@
 import type { Context } from "grammy";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
-import { listVideoTargets, scheduleVideo, setVideoControlCard, validateVideoDraft, videoPreview } from "../video/service.js";
+import { scheduleVideo, setVideoControlCard, validateVideoDraft, videoPreview } from "../video/service.js";
 import type { VideoTarget } from "../video/types.js";
 import { clearSession, type VideoSession } from "./video-session.js";
 
@@ -15,12 +15,7 @@ export async function finishVideoSchedule(
 ): Promise<void> {
   if (!session.draftId) throw new Error("Черновик не найден.");
   const technical = await validateVideoDraft(config, backendDb, session.draftId);
-  const fullSchedule = { ...schedule };
-  for (const target of listVideoTargets(backendDb, session.draftId)) {
-    const key = target.target as VideoTarget;
-    if (!fullSchedule[key]) fullSchedule[key] = target.scheduledAt ? new Date(target.scheduledAt) : new Date(Date.now() + 60_000);
-  }
-  scheduleVideo(backendDb, session.draftId, fullSchedule, {
+  scheduleVideo(backendDb, session.draftId, schedule, {
     prepareLeadMinutes: config.VIDEO_PREPARE_LEAD_MINUTES,
     reminderMinutes: config.VIDEO_REMINDER_MINUTES,
   });

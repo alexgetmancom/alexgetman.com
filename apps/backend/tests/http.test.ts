@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApiHandler } from "../src/api.js";
@@ -92,13 +92,29 @@ describe("Astro endpoint controller", () => {
     }
   });
 
+  it("protects pipeline JSON when the command center is configured", async () => {
+    const backendDb = tempDb();
+    try {
+      const app = createApiApp(loadConfig({ COMMAND_CENTER_TOKEN: "secret" }), backendDb);
+      expect((await app.request("/api/pipeline-status")).status).toBe(401);
+      expect((await app.request("/api/pipeline-status", { headers: { "X-Admin-Token": "secret" } })).status).toBe(200);
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("serves engagement, MCP and authenticated Telegram webhook routes", async () => {
     const backendDb = tempDb();
     const dir = mkdtempSync(join(tmpdir(), "alexgetman-engagement-"));
     try {
       const handleUpdate = mock(async () => undefined);
       const app = createApiApp(
-        loadConfig({ SITE_METRICS_JSON: join(dir, "metrics.json"), LIKES_SALT: "salt", TELEGRAM_WEBHOOK_SECRET: "webhook-secret" }),
+        loadConfig({
+          SITE_METRICS_JSON: join(dir, "metrics.json"),
+          LIKES_SALT: "salt",
+          TELEGRAM_WEBHOOK_SECRET: "webhook-secret",
+          TRUSTED_CLIENT_IP_HEADER: "x-real-ip",
+        }),
         backendDb,
         { handleUpdate } as unknown as import("grammy").Bot,
       );
@@ -111,7 +127,7 @@ describe("Astro endpoint controller", () => {
           })
         ).status,
       ).toBe(204);
-      expect(JSON.parse(readFileSync(join(dir, "metrics.json"), "utf8"))).toMatchObject({ total: 1 });
+      expect(backendDb.sqlite.prepare("SELECT count FROM site_pageviews WHERE path=?").get("/post/")).toEqual({ count: 1 });
 
       const like = await app.request("/api/likes?post_id=1", { method: "POST", headers: { "x-forwarded-for": "203.0.113.1" } });
       expect(await like.json()).toEqual({ likes: 1, user_liked: true });
@@ -126,6 +142,30 @@ describe("Astro endpoint controller", () => {
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" }),
       });
       expect(await initialized.json()).toMatchObject({ jsonrpc: "2.0", id: 1, result: { protocolVersion: "2024-11-05" } });
+      for (let index = 0; index < 5; index++) {
+        const response = await app.request("/api/mcp", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-real-ip": "203.0.113.1", "x-forwarded-for": `198.51.100.${index + 1}` },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: index,
+            method: "tools/call",
+            params: { name: "submit_feedback", arguments: { message: `Feedback ${index}` } },
+          }),
+        });
+        expect(await response.json()).toMatchObject({ result: { content: [{ type: "text" }] } });
+      }
+      const limitedFeedback = await app.request("/api/mcp", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-real-ip": "203.0.113.1", "x-forwarded-for": "198.51.100.99" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 99,
+          method: "tools/call",
+          params: { name: "submit_feedback", arguments: { message: "Too many requests" } },
+        }),
+      });
+      expect(await limitedFeedback.json()).toMatchObject({ error: { code: -32000, message: "rate limit exceeded" } });
       expect((await app.request("/tg-feed/webhook", { method: "POST", body: "{}" })).status).toBe(403);
       expect(
         (

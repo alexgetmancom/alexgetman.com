@@ -205,6 +205,53 @@ describe("publish queue", () => {
         .where(eq(publishJobs.jobId, id))
         .get();
       expect(job).toEqual({ status: "failed", lockedBy: null });
+      expect(backendDb.db.select({ status: postTargets.status }).from(postTargets).where(eq(postTargets.target, "devto")).get()).toEqual({
+        status: "failed",
+      });
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("does not let a stale worker overwrite a recovered job", () => {
+    const backendDb = tempDb();
+    try {
+      const id = enqueuePublishJob(backendDb, { messageId: 104, target: "devto", payload: { title: "Queued", bodyMarkdown: "Body" } });
+      const [claimed] = claimDuePublishJobs(backendDb, 1, "old-worker");
+      if (!claimed) throw new Error("expected claimed job");
+      backendDb.db.update(publishJobs).set({ lockedAt: "2000-01-01T00:00:00.000Z" }).where(eq(publishJobs.jobId, id)).run();
+      recoverStalePublishJobs(backendDb, 1);
+
+      completePublishJob(backendDb, loadConfig({}), id, { ok: true, id: "late" }, claimed.lockId);
+
+      expect(backendDb.db.select({ status: publishJobs.status }).from(publishJobs).where(eq(publishJobs.jobId, id)).get()).toEqual({
+        status: "failed",
+      });
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("requeues a retryable result with an external ID as reconciliation, not a new publication", () => {
+    const backendDb = tempDb();
+    try {
+      const id = enqueuePublishJob(backendDb, { messageId: 106, target: "bluesky", payload: { text_en: "Queued" } });
+      claimDuePublishJobs(backendDb, 1, "test-worker");
+      completePublishJob(backendDb, loadConfig({ PUBLISH_BACKOFF_BASE_SECONDS: "1" }), id, {
+        ok: false,
+        id: "at://did/app.bsky.feed.post/root",
+        retryable: true,
+        error: "bluesky_visibility_failed:not_in_author_feed",
+      });
+
+      const job = backendDb.db
+        .select({ status: publishJobs.status, payloadJson: publishJobs.payloadJson })
+        .from(publishJobs)
+        .where(eq(publishJobs.jobId, id))
+        .get();
+      expect(job).toMatchObject({ status: "queued", payloadJson: { _reconcile_ids: ["at://did/app.bsky.feed.post/root"] } });
+      const target = backendDb.db.select({ status: postTargets.status, externalId: postTargets.externalId }).from(postTargets).get();
+      expect(target).toEqual({ status: "queued", externalId: "at://did/app.bsky.feed.post/root" });
     } finally {
       backendDb.close();
     }

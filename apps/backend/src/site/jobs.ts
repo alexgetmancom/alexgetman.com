@@ -27,13 +27,17 @@ export async function runSiteJobCycle(config: BackendConfig, backendDb: BackendD
   }
   try {
     await renderFeedFiles(config, backendDb);
-    const urls = publishContentIndex(config, backendDb);
-    // IndexNow is an external notification, not a prerequisite for serving the
-    // already materialized feed through SSR.
-    void pingIndexNow(config, urls).catch((error) => {
-      insertSiteEvent(backendDb, "site.indexnow.failed", "warn", String(error instanceof Error ? error.message : error), { urls });
-    });
     completeSiteJobs(backendDb, jobs);
+    try {
+      const urls = publishContentIndex(config, backendDb);
+      // IndexNow is an external notification, not a prerequisite for serving
+      // the already materialized feed through SSR.
+      void pingIndexNow(config, urls).catch((error) => {
+        insertSiteEvent(backendDb, "site.indexnow.failed", "warn", String(error instanceof Error ? error.message : error), { urls });
+      });
+    } catch (error) {
+      insertSiteEvent(backendDb, "site.index.build.failed", "warn", String(error instanceof Error ? error.message : error), {});
+    }
     recordWorkerState(backendDb, "site", { claimed: jobs.length, published: jobs.length });
   } catch (error) {
     failSiteJobs(config, backendDb, jobs, error);
@@ -76,7 +80,7 @@ export async function renderFeedFiles(config: BackendConfig, backendDb: BackendD
     .from(postTargets)
     .groupBy(postTargets.target, postTargets.status)
     .all();
-  await atomicWriteJson(config.SITE_METRICS_JSON, {
+  await atomicWriteJson(config.SITE_CONTENT_METRICS_JSON, {
     updated_at: new Date().toISOString(),
     total: ordered.reduce((sum, item) => sum + Number(item.views ?? 0), 0),
     posts: ordered.length,

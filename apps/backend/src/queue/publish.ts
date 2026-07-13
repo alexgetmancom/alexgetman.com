@@ -1,11 +1,12 @@
 import os from "node:os";
 import process from "node:process";
-import { and, eq, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, lte, ne, or } from "drizzle-orm";
 import * as z from "zod";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { drafts, type JsonObject, postEvents, posts, postTargets, publications, publishJobs, siteJobs } from "../db/schema.js";
 import { insertPublishJobSchema } from "../db/validation.js";
+import { publicationStatus } from "../services/publicationState.js";
 import { classifyPublishError, nextRetryAt, normalizePublishResult, type PublishResult } from "./errors.js";
 
 export type ClaimedPublishJob = {
@@ -16,6 +17,7 @@ export type ClaimedPublishJob = {
   target: string;
   payload: JsonObject;
   attemptCount: number;
+  lockId: string;
 };
 
 export function workerId(prefix = "backend"): string {
@@ -72,6 +74,7 @@ export function claimDuePublishJobs(backendDb: BackendDb, limit: number, worker 
         target: row.target,
         payload: parsePayload(row.payloadJson),
         attemptCount: row.attemptCount,
+        lockId: worker,
       });
     }
   });
@@ -81,25 +84,62 @@ export function claimDuePublishJobs(backendDb: BackendDb, limit: number, worker 
 export function recoverStalePublishJobs(backendDb: BackendDb, timeoutSeconds: number): number {
   const cutoff = new Date(Date.now() - timeoutSeconds * 1000).toISOString();
   const now = new Date().toISOString();
-  return backendDb.db
-    .update(publishJobs)
-    .set({
-      status: "failed",
-      lockedBy: null,
-      lockedAt: null,
-      nextAttemptAt: null,
-      updatedAt: now,
-      lastError: sql`coalesce(${publishJobs.lastError}, 'stale publish lock requires manual repair')`,
-    })
+  const stale = backendDb.db
+    .select()
+    .from(publishJobs)
     .where(and(eq(publishJobs.status, "publishing"), lt(publishJobs.lockedAt, cutoff)))
-    .returning({ jobId: publishJobs.jobId })
-    .all().length;
+    .all();
+  backendDb.db.transaction((tx) => {
+    for (const job of stale) {
+      const lockedAt = job.lockedAt;
+      if (!lockedAt) continue;
+      const error = job.lastError || "stale publish lock requires manual repair";
+      const updated = tx
+        .update(publishJobs)
+        .set({ status: "failed", lockedBy: null, lockedAt: null, nextAttemptAt: null, updatedAt: now, lastError: error })
+        .where(and(eq(publishJobs.jobId, job.jobId), eq(publishJobs.status, "publishing"), eq(publishJobs.lockedAt, lockedAt)))
+        .returning({ jobId: publishJobs.jobId })
+        .get();
+      if (!updated) continue;
+      const postKey = jobPostKey(job);
+      tx.insert(postTargets)
+        .values({
+          postKey,
+          target: job.target,
+          status: "failed",
+          error,
+          skipped: 0,
+          updatedAt: now,
+          rawJson: JSON.stringify({ job_id: job.jobId, recovered_stale_lock: true }),
+        })
+        .onConflictDoUpdate({
+          target: [postTargets.postKey, postTargets.target],
+          set: {
+            status: "failed",
+            error,
+            skipped: 0,
+            updatedAt: now,
+            rawJson: JSON.stringify({ job_id: job.jobId, recovered_stale_lock: true }),
+          },
+        })
+        .run();
+      insertEvent(tx, postKey, job.target, "publish.job.failed", "error", error, { job_id: job.jobId, recovered_stale_lock: true });
+    }
+  });
+  for (const job of stale) if (job.postId != null) reconcilePublication(backendDb, job.postId);
+  return stale.length;
 }
 
-export function completePublishJob(backendDb: BackendDb, config: BackendConfig, jobId: number, result: PublishResult): void {
+export function completePublishJob(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  jobId: number,
+  result: PublishResult,
+  lockId?: string,
+): void {
   const now = new Date().toISOString();
   const job = backendDb.db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get();
-  if (!job) return;
+  if (!job || (lockId != null && (job.status !== "publishing" || job.lockedBy !== lockId))) return;
   const postKey = jobPostKey(job);
   if (result.partial && job.target.startsWith("threads")) {
     const ids = Array.isArray(result.ids) ? result.ids.map(String).filter(Boolean) : [];
@@ -148,6 +188,62 @@ export function completePublishJob(backendDb: BackendDb, config: BackendConfig, 
         .run();
       insertEvent(tx, postKey, job.target, "publish.job.partial", "warn", error, { job_id: jobId, ids, retry_at: retryAt });
     });
+    return;
+  }
+  const reconciliationIds = externalIds(result);
+  if (result.retryable && !result.ok && !result.skipped && reconciliationIds.length > 0) {
+    const attempt = job.attemptCount + 1;
+    const retry = attempt < config.PUBLISH_MAX_ATTEMPTS;
+    const retryAt = retry ? nextRetryAt(attempt, config.PUBLISH_BACKOFF_BASE_SECONDS, config.PUBLISH_BACKOFF_MAX_SECONDS) : null;
+    const error = String(result.error ?? "external publication requires reconciliation");
+    const payload = { ...parsePayload(job.payloadJson), _reconcile_ids: reconciliationIds };
+    backendDb.db.transaction((tx) => {
+      tx.update(publishJobs)
+        .set({
+          status: retry ? "queued" : "failed",
+          attemptCount: attempt,
+          nextAttemptAt: retryAt,
+          lockedBy: null,
+          lockedAt: null,
+          payloadJson: payload,
+          lastError: error,
+          updatedAt: now,
+        })
+        .where(eq(publishJobs.jobId, jobId))
+        .run();
+      tx.insert(postTargets)
+        .values({
+          postKey,
+          target: job.target,
+          status: retry ? "queued" : "failed",
+          externalId: reconciliationIds[0] ?? null,
+          externalIdsJson: reconciliationIds,
+          error,
+          skipped: 0,
+          updatedAt: now,
+          rawJson: JSON.stringify(result),
+        })
+        .onConflictDoUpdate({
+          target: [postTargets.postKey, postTargets.target],
+          set: {
+            status: retry ? "queued" : "failed",
+            externalId: reconciliationIds[0] ?? null,
+            externalIdsJson: reconciliationIds,
+            error,
+            skipped: 0,
+            updatedAt: now,
+            rawJson: JSON.stringify(result),
+          },
+        })
+        .run();
+      insertEvent(tx, postKey, job.target, retry ? "publish.job.reconcile" : "publish.job.failed", retry ? "warn" : "error", error, {
+        job_id: jobId,
+        external_ids: reconciliationIds,
+        attempt,
+        next_attempt_at: retryAt,
+      });
+    });
+    if (!retry && job.postId != null) reconcilePublication(backendDb, job.postId);
     return;
   }
   const normalized = normalizePublishResult(result);
@@ -204,10 +300,10 @@ export function completePublishJob(backendDb: BackendDb, config: BackendConfig, 
   if (job.postId != null) reconcilePublication(backendDb, job.postId);
 }
 
-export function failPublishJob(backendDb: BackendDb, config: BackendConfig, jobId: number, error: unknown): void {
+export function failPublishJob(backendDb: BackendDb, config: BackendConfig, jobId: number, error: unknown, lockId?: string): void {
   const now = new Date().toISOString();
   const job = backendDb.db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get();
-  if (!job) return;
+  if (!job || (lockId != null && (job.status !== "publishing" || job.lockedBy !== lockId))) return;
   const postKey = jobPostKey(job);
   const attempt = job.attemptCount + 1;
   const errorClass = classifyPublishError(error);
@@ -264,11 +360,13 @@ export function failPublishJob(backendDb: BackendDb, config: BackendConfig, jobI
 }
 
 export function reconcilePublication(backendDb: BackendDb, postId: number): void {
+  const existing = backendDb.db.select({ status: publications.status }).from(publications).where(eq(publications.postId, postId)).get();
+  if (existing?.status === "cancelled") return;
   const social = backendDb.db.select({ status: publishJobs.status }).from(publishJobs).where(eq(publishJobs.postId, postId)).all();
   const site = backendDb.db.select({ status: siteJobs.status }).from(siteJobs).where(eq(siteJobs.postId, postId)).all();
   const all = [...social, ...site];
-  if (all.some((job) => job.status === "queued" || job.status === "publishing" || job.status === "rendering")) return;
-  const status = all.some((job) => job.status === "failed") ? "failed" : "published";
+  const status = publicationStatus(all.map((job) => job.status));
+  if (!status) return;
   const now = new Date().toISOString();
   backendDb.db.transaction((tx) => {
     tx.update(publications).set({ status, updatedAt: now }).where(eq(publications.postId, postId)).run();
@@ -323,6 +421,12 @@ function deleteSupersededJobs(tx: BackendDb["db"], job: typeof publishJobs.$infe
 function parsePayload(value: JsonObject | null): JsonObject {
   const parsed = z.record(z.string(), z.json()).safeParse(value);
   return parsed.success ? parsed.data : {};
+}
+
+function externalIds(result: PublishResult): string[] {
+  const ids = Array.isArray(result.ids) ? result.ids.map(String).filter(Boolean) : [];
+  if (ids.length > 0) return [...new Set(ids)];
+  return result.id == null ? [] : [String(result.id)];
 }
 
 function jobPostKey(job: Pick<typeof publishJobs.$inferSelect, "postKey" | "postId" | "messageId">): string {

@@ -35,6 +35,26 @@ export async function publishToBluesky(
   fetchImpl: typeof fetch = fetch,
 ): Promise<PublishResult> {
   if (!config.BLUESKY_HANDLE || !config.BLUESKY_APP_PASSWORD) return { skipped: true, reason: "missing Bluesky credentials" };
+  const reconcileIds = Array.isArray(payload._reconcile_ids)
+    ? payload._reconcile_ids.filter((id): id is string => typeof id === "string" && id.length > 0)
+    : [];
+  if (reconcileIds.length > 0) {
+    const rootId = reconcileIds[0];
+    if (!rootId) return { ok: false, error: "bluesky_reconciliation_missing_id", retryable: false };
+    const visible = await verifyBlueskyRootVisible(rootId, config, fetchImpl);
+    const urls = reconcileIds.map((id) => blueskyPublicUrl(id, config.BLUESKY_HANDLE)).filter((url): url is string => Boolean(url));
+    return visible.ok
+      ? { ok: true, id: rootId, ids: reconcileIds, url: urls[0] ?? null, urls }
+      : {
+          ok: false,
+          id: rootId,
+          ids: reconcileIds,
+          url: urls[0] ?? null,
+          urls,
+          error: `bluesky_visibility_failed:${visible.reason}`,
+          retryable: true,
+        };
+  }
   const session = await requestJson<Session>(fetchImpl, "https://bsky.social/xrpc/com.atproto.server.createSession", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

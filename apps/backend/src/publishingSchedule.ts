@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, inArray } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, notInArray, or } from "drizzle-orm";
 import { type TargetLocale, targetLocale } from "./botTargets.js";
 import type { BackendDb } from "./db/client.js";
 import {
@@ -63,7 +63,6 @@ export function rebalanceScheduledDrafts(backendDb: BackendDb, now = new Date())
 
   const assignments = new Map(rows.map((row) => [row.id, { ru: row.scheduledAt, en: row.scheduledEnAt }]));
   for (const locale of ["ru", "en"] as const) {
-    const _column = locale === "ru" ? "scheduled_at" : "scheduled_en_at";
     const pending = rows.filter((row) => {
       if (!hasLocaleTarget(parseTargets(row.targetsJson), locale)) {
         const assignment = assignments.get(row.id);
@@ -73,7 +72,13 @@ export function rebalanceScheduledDrafts(backendDb: BackendDb, now = new Date())
       const scheduledAt = locale === "ru" ? row.scheduledAt : row.scheduledEnAt;
       return !scheduledAt || new Date(scheduledAt) > now;
     });
-    const slots = availableSlots(backendDb, locale, now, pending.length);
+    const slots = availableSlots(
+      backendDb,
+      locale,
+      now,
+      pending.length,
+      rows.map((row) => row.id),
+    );
     for (const [index, row] of pending.entries()) {
       const assignment = assignments.get(row.id);
       const slot = slots[index];
@@ -98,7 +103,7 @@ export function rebalanceScheduledDrafts(backendDb: BackendDb, now = new Date())
         const publishAt = targetLocale(job.target) === "en" ? assignment.en : assignment.ru;
         const payload = updateSchedulePayload(job.payloadJson, assignment, publishAt);
         tx.update(publishJobs)
-          .set({ payloadJson: payload, nextAttemptAt: publishAt, updatedAt })
+          .set({ payloadJson: payload, publishAt, nextAttemptAt: publishAt, updatedAt })
           .where(
             and(eq(publishJobs.postId, row.postId), eq(publishJobs.target, job.target), inArray(publishJobs.status, ["queued", "failed"])),
           )
@@ -148,15 +153,26 @@ export function parseManualSchedule(value: string, now = new Date()): Date {
   const today = mskDateParts(now);
   let match = input.match(/^(\d{1,2}):(\d{2})$/);
   if (match) {
+    const hour = Number(match[1]);
+    const minute = Number(match[2]);
+    if (hour > 23 || minute > 59) throw new Error("Cannot parse time. Use a valid HH:MM");
     const candidate = mskSlot(today.year, today.month, today.day, `${match[1]?.padStart(2, "0")}:${match[2]}`);
     return candidate > now ? candidate : new Date(candidate.getTime() + 86_400_000);
   }
   match = input.match(/^(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))? (\d{1,2}):(\d{2})$/);
   if (!match) throw new Error("Cannot parse time. Use HH:MM or DD.MM HH:MM");
   let year = Number(match[3] ?? today.year);
-  let candidate = mskSlot(year, Number(match[2]), Number(match[1]), `${match[4]?.padStart(2, "0")}:${match[5]}`);
-  if (!match[3] && candidate <= now)
-    candidate = mskSlot(++year, Number(match[2]), Number(match[1]), `${match[4]?.padStart(2, "0")}:${match[5]}`);
+  const month = Number(match[2]);
+  const day = Number(match[1]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59)
+    throw new Error("Cannot parse time. Use a valid date and time");
+  let candidate = mskSlot(year, month, day, `${match[4]?.padStart(2, "0")}:${match[5]}`);
+  const parts = mskDateParts(candidate);
+  if (parts.year !== year || parts.month !== month || parts.day !== day) throw new Error("Cannot parse time. Use a valid calendar date");
+  if (!match[3] && candidate <= now) candidate = mskSlot(++year, month, day, `${match[4]?.padStart(2, "0")}:${match[5]}`);
+  if (candidate <= now) throw new Error("Publication time must be in the future");
   return candidate;
 }
 
@@ -171,13 +187,18 @@ function mskDateParts(date: Date): { year: number; month: number; day: number } 
   return { year: Number(value.year), month: Number(value.month), day: Number(value.day) };
 }
 
-function availableSlots(backendDb: BackendDb, locale: TargetLocale, now: Date, needed: number): Date[] {
+function availableSlots(backendDb: BackendDb, locale: TargetLocale, now: Date, needed: number, rebalancedDraftIds: number[]): Date[] {
   const result: Date[] = [];
   const scheduleColumn = locale === "ru" ? drafts.scheduledAt : drafts.scheduledEnAt;
   const consumedRows = backendDb.db
     .select({ scheduledAt: scheduleColumn, publishMode: drafts.publishMode })
     .from(drafts)
-    .where(and(inArray(drafts.status, ["published", "scheduled"]), gte(scheduleColumn, now.toISOString())))
+    .where(
+      and(
+        gte(scheduleColumn, now.toISOString()),
+        or(eq(drafts.status, "published"), and(eq(drafts.status, "scheduled"), notInArray(drafts.id, rebalancedDraftIds))),
+      ),
+    )
     .all();
   for (let offset = 0; offset < 366 && result.length < needed; offset += 1) {
     const date = new Date(now.getTime() + offset * 86_400_000);

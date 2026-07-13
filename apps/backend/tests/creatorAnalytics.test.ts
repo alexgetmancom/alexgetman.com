@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { creatorDashboard, runCreatorAnalyticsCycle } from "../src/analytics/creator.js";
 import { loadConfig } from "../src/config.js";
 import { openBackendDb } from "../src/db/client.js";
-import { creatorProfiles, videoDrafts, videoMetricSchedule, videoMetricSnapshots, videoTargets } from "../src/db/schema.js";
+import { creatorProfiles, metricSamples, videoDrafts, videoMetricSchedule, videoMetricSnapshots, videoTargets } from "../src/db/schema.js";
 
 describe("creator analytics", () => {
   it("builds a compact video dashboard from cached platform data", () => {
@@ -18,7 +18,15 @@ describe("creator analytics", () => {
       if (!draft) throw new Error("video draft missing");
       const target = backendDb.db
         .insert(videoTargets)
-        .values({ videoDraftId: draft.id, target: "youtube_shorts", metadataJson: {}, status: "published", createdAt: now, updatedAt: now })
+        .values({
+          videoDraftId: draft.id,
+          target: "youtube_shorts",
+          metadataJson: {},
+          status: "published",
+          publishedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        })
         .returning({ id: videoTargets.id })
         .get();
       if (!target) throw new Error("video target missing");
@@ -52,6 +60,78 @@ describe("creator analytics", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       expect(await runCreatorAnalyticsCycle(loadConfig({}), backendDb)).toBe(0);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("reports a video delta instead of a lifetime total for an older publication", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const publishedAt = new Date(Date.now() - 90 * 24 * 60 * 60_000).toISOString();
+      const beforePeriod = new Date(Date.now() - 2 * 24 * 60 * 60_000).toISOString();
+      const now = new Date().toISOString();
+      const draft = backendDb.db
+        .insert(videoDrafts)
+        .values({ adminId: 1, assetKey: "asset", label: "Older video", status: "published", createdAt: publishedAt, updatedAt: now })
+        .returning({ id: videoDrafts.id })
+        .get();
+      if (!draft) throw new Error("video draft missing");
+      const target = backendDb.db
+        .insert(videoTargets)
+        .values({
+          videoDraftId: draft.id,
+          target: "youtube_shorts",
+          metadataJson: {},
+          status: "published",
+          publishedAt,
+          createdAt: publishedAt,
+          updatedAt: now,
+        })
+        .returning({ id: videoTargets.id })
+        .get();
+      if (!target) throw new Error("video target missing");
+      backendDb.db
+        .insert(videoMetricSnapshots)
+        .values({ videoTargetId: target.id, platform: "youtube_shorts", metricsJson: { views: 100, likes: 5 }, sampledAt: beforePeriod })
+        .run();
+      backendDb.db
+        .insert(videoMetricSnapshots)
+        .values({ videoTargetId: target.id, platform: "youtube_shorts", metricsJson: { views: 180, likes: 8 }, sampledAt: now })
+        .run();
+      const config = loadConfig({});
+      config.studio.modules.video_posting = true;
+      config.studio.modules.youtube = true;
+
+      expect(creatorDashboard(backendDb, config, 1).text).toContain("Видео: 80 просмотров · 3 взаимодействий");
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("uses metric sample deltas for text and site periods", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const before = new Date(Date.now() - 2 * 24 * 60 * 60_000).toISOString();
+      const now = new Date().toISOString();
+      backendDb.db
+        .insert(metricSamples)
+        .values([
+          { postKey: "post:1", target: "site_ru", metricName: "views", value: 100, sampledAt: before },
+          { postKey: "post:1", target: "site_ru", metricName: "views", value: 145, sampledAt: now },
+          { postKey: "post:2", target: "telegram", metricName: "views", value: 20, sampledAt: before },
+          { postKey: "post:2", target: "telegram", metricName: "views", value: 50, sampledAt: now },
+          { postKey: "post:2", target: "telegram", metricName: "likes", value: 4, sampledAt: before },
+          { postKey: "post:2", target: "telegram", metricName: "likes", value: 9, sampledAt: now },
+        ])
+        .run();
+      const config = loadConfig({});
+      config.studio.modules.site = true;
+      config.studio.modules.text_posting = true;
+
+      const text = creatorDashboard(backendDb, config, 1).text;
+      expect(text).toContain("Сайт: 45 просмотров материалов");
+      expect(text).toContain("Посты: 30 просмотров · 5 реакций");
     } finally {
       backendDb.close();
     }

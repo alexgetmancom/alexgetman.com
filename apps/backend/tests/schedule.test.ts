@@ -37,6 +37,9 @@ describe("publishing schedule", () => {
     expect(schedulePreset("plus30", now).toISOString()).toBe("2026-07-10T15:30:00.000Z");
     expect(schedulePreset("today2100", now).toISOString()).toBe("2026-07-10T18:00:00.000Z");
     expect(schedulePreset("tomorrow1000", now).toISOString()).toBe("2026-07-11T07:00:00.000Z");
+    expect(() => parseManualSchedule("25:00", now)).toThrow("valid HH:MM");
+    expect(() => parseManualSchedule("31.02 10:00", now)).toThrow("valid calendar date");
+    expect(() => parseManualSchedule("01.01.2020 10:00", now)).toThrow("future");
   });
 
   it("rebalances scheduled drafts and their queued jobs by locale", () => {
@@ -108,11 +111,12 @@ describe("publishing schedule", () => {
         .all();
       expect(scheduledDrafts.map((draft) => draft.scheduledAt)).toEqual(["2026-07-10T07:37:00.000Z", "2026-07-10T10:37:00.000Z"]);
       const jobs = backendDb.db
-        .select({ nextAttemptAt: publishJobs.nextAttemptAt, payloadJson: publishJobs.payloadJson })
+        .select({ publishAt: publishJobs.publishAt, nextAttemptAt: publishJobs.nextAttemptAt, payloadJson: publishJobs.payloadJson })
         .from(publishJobs)
         .orderBy(asc(publishJobs.postId))
         .all();
       const scheduledAt = scheduledDrafts.map((draft) => draft.scheduledAt ?? "");
+      expect(jobs.map((job) => job.publishAt)).toEqual(scheduledAt);
       expect(jobs.map((job) => job.nextAttemptAt)).toEqual(scheduledAt);
       expect(jobs.map((job) => (job.payloadJson as { publish_at_ru: string }).publish_at_ru)).toEqual(scheduledAt);
     } finally {

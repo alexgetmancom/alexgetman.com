@@ -101,6 +101,7 @@ async function withPreparedMedia(
   mediaCache: Map<string, MediaCacheEntry>,
   enqueue: <T>(prepare: () => Promise<T>) => Promise<T>,
 ): Promise<PublishResult> {
+  if (Array.isArray(job.payload._reconcile_ids)) return publish(job.payload);
   const media = payloadMedia(job.payload);
   if (media.length === 0) return publish(job.payload);
   const sourceMedia = isStoryTarget(job.target) ? await createStoryMedia(job, media, config) : media;

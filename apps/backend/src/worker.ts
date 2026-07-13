@@ -30,13 +30,13 @@ export async function runPublishCycle(
       publishLimit(async () => {
         const publisher = publishers[job.target];
         if (!publisher) {
-          completePublishJob(backendDb, config, job.jobId, { skipped: true, reason: `unsupported target: ${job.target}` });
+          completePublishJob(backendDb, config, job.jobId, { skipped: true, reason: `unsupported target: ${job.target}` }, job.lockId);
           return;
         }
         try {
-          completePublishJob(backendDb, config, job.jobId, await publisher(job));
+          completePublishJob(backendDb, config, job.jobId, await publisher(job), job.lockId);
         } catch (error) {
-          failPublishJob(backendDb, config, job.jobId, error);
+          failPublishJob(backendDb, config, job.jobId, error, job.lockId);
         }
       }),
     ),

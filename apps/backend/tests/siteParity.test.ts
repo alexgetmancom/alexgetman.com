@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { createDraftFromMessage, publishDraftToQueue } from "../src/bot/drafts.js";
 import { loadConfig } from "../src/config.js";
 import { openBackendDb } from "../src/db/client.js";
+import { reconcilePublication } from "../src/queue/publish.js";
 import { publishContentIndex } from "../src/site/contentIndex.js";
 import { pingIndexNow } from "../src/site/indexNow.js";
 
@@ -15,7 +16,10 @@ describe("site parity", () => {
     const config = loadConfig({ DATA_DIR: dir, SITE_PUBLIC_DIR: dir, PUBLIC_BASE_URL: "https://example.test", INDEXNOW_ENABLED: "true" });
     try {
       const draft = createDraftFromMessage(backendDb, 1, { text: "Русский заголовок", textEn: "English title", media: [], entities: [] });
-      publishDraftToQueue(backendDb, draft);
+      const postId = publishDraftToQueue(backendDb, draft);
+      backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE post_id=?").run(postId);
+      backendDb.sqlite.prepare("UPDATE site_jobs SET status='published' WHERE post_id=?").run(postId);
+      reconcilePublication(backendDb, postId);
       const urls = publishContentIndex(config, backendDb);
       expect(existsSync(join(dir, "content-index.json"))).toBe(true);
       expect(readFileSync(join(dir, "content-memory.md"), "utf8")).toContain("English title");
@@ -27,5 +31,14 @@ describe("site parity", () => {
     } finally {
       backendDb.close();
     }
+  });
+
+  it("retries an IndexNow batch after a rejected response", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "alexgetman-indexnow-"));
+    const config = loadConfig({ DATA_DIR: dir, SITE_PUBLIC_DIR: dir, PUBLIC_BASE_URL: "https://example.test", INDEXNOW_ENABLED: "true" });
+    const fetchImpl = mock(async () => new Response("", { status: 500 })) as unknown as typeof fetch;
+    await expect(pingIndexNow(config, ["https://example.test/post"], fetchImpl)).rejects.toThrow("500");
+    await expect(pingIndexNow(config, ["https://example.test/post"], fetchImpl)).rejects.toThrow("500");
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 });

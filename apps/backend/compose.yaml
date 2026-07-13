@@ -39,6 +39,8 @@ services:
       PIPELINE_DB: /data/pipeline.db
       FEED_JSON: /data/feed.json
       SITE_METRICS_JSON: /data/metrics.json
+      SITE_CONTENT_METRICS_JSON: /data/content-metrics.json
+      TRUSTED_CLIENT_IP_HEADER: x-real-ip
       SITE_PUBLIC_DIR: /data/site
       CHANNEL_USERNAME: alexgetmancom
       METRICS_REFRESH_INTERVAL_SECONDS: "10"

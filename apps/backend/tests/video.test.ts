@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { and, eq } from "drizzle-orm";
 import type { BackendDb } from "../src/db/client.js";
 import { openBackendDb } from "../src/db/client.js";
-import { videoTargets } from "../src/db/schema.js";
+import { socialComments, videoMetricSchedule, videoMetricSnapshots, videoTargets } from "../src/db/schema.js";
 import {
   cancelVideo,
   createVideoDraft,
@@ -57,6 +57,65 @@ describe("video publication queue", () => {
     };
     expect(row.status).toBe("cancelled");
     expect(new Date(row.retention_until).getTime()).toBeGreaterThanOrEqual(Date.now() + 23 * 60 * 60_000);
+    expect(backendDb.sqlite.prepare("SELECT status FROM video_targets WHERE video_draft_id=?").all(draftId)).toEqual([
+      { status: "cancelled" },
+    ]);
+  });
+
+  it("reschedules only the selected platform and never requeues a published target", () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    replaceVideoTargets(backendDb, draftId, ["youtube_shorts", "instagram_reels"]);
+    const initial = new Date(Date.now() + 60 * 60_000);
+    scheduleVideo(
+      backendDb,
+      draftId,
+      { youtube_shorts: initial, instagram_reels: new Date(initial.getTime() + 60 * 60_000) },
+      { prepareLeadMinutes: 15, reminderMinutes: 5 },
+    );
+    backendDb.db
+      .update(videoTargets)
+      .set({ status: "published" })
+      .where(and(eq(videoTargets.videoDraftId, draftId), eq(videoTargets.target, "youtube_shorts")))
+      .run();
+
+    const instagramAt = new Date(Date.now() + 3 * 60 * 60_000);
+    scheduleVideo(backendDb, draftId, { instagram_reels: instagramAt }, { prepareLeadMinutes: 15, reminderMinutes: 5 });
+
+    expect(
+      listVideoTargets(backendDb, draftId).map((target) => ({
+        target: target.target,
+        status: target.status,
+        scheduledAt: target.scheduledAt,
+      })),
+    ).toEqual([
+      { target: "youtube_shorts", status: "published", scheduledAt: initial.toISOString() },
+      { target: "instagram_reels", status: "scheduled", scheduledAt: instagramAt.toISOString() },
+    ]);
+  });
+
+  it("cleans dependent analytics rows when editable targets are replaced", () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
+    const target = listVideoTargets(backendDb, draftId)[0];
+    if (!target) throw new Error("target missing");
+    const now = new Date().toISOString();
+    backendDb.db
+      .insert(videoMetricSnapshots)
+      .values({ videoTargetId: target.id, platform: "youtube_shorts", metricsJson: {}, sampledAt: now })
+      .run();
+    backendDb.db.insert(videoMetricSchedule).values({ videoTargetId: target.id, nextCheckAt: now, updatedAt: now }).run();
+    backendDb.db
+      .insert(socialComments)
+      .values({ platform: "youtube", commentId: "comment", videoTargetId: target.id, text: "x", fetchedAt: now })
+      .run();
+
+    replaceVideoTargets(backendDb, draftId, ["instagram_reels"]);
+
+    expect(backendDb.db.select().from(videoMetricSnapshots).all()).toHaveLength(0);
+    expect(backendDb.db.select().from(videoMetricSchedule).all()).toHaveLength(0);
+    expect(backendDb.db.select().from(socialComments).all()).toHaveLength(0);
   });
 
   it("sets a 24-hour retention deadline as soon as a draft video is uploaded", () => {

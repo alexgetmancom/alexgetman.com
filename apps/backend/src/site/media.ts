@@ -26,22 +26,30 @@ export async function materializeSiteMedia(
   for (let index = 0; index < source.length; index += 1) {
     const item = source[index] as SiteMedia;
     const kind = String(item.type ?? "image").toLowerCase() === "video" ? "video" : "image";
-    const extension = kind === "video" ? "mp4" : "jpg";
+    const extension = mediaExtension(item, kind);
     const filename = `${postId}-${locale}-${index}.${extension}`;
     const target = path.join(directory, filename);
-    if (!fs.existsSync(target)) await copyOrDownload(config, item, target, fetchImpl);
+    await copyOrDownload(config, item, target, fetchImpl);
     await fs.promises.chmod(target, 0o664);
     const output: Record<string, unknown> = { ...item, type: kind, path: `media/posts/${filename}` };
     if (kind === "video") {
       const posterName = `${postId}-${locale}-${index}-poster.jpg`;
       const poster = path.join(directory, posterName);
-      if (!fs.existsSync(poster)) await runFfmpeg(["-y", "-ss", "0.5", "-i", target, "-frames:v", "1", "-q:v", "2", poster]);
+      await runFfmpeg(["-y", "-ss", "0.5", "-i", target, "-frames:v", "1", "-q:v", "2", poster]);
       await fs.promises.chmod(poster, 0o664);
       output.poster = `media/posts/${posterName}`;
     }
     result.push(output);
   }
   return result;
+}
+
+function mediaExtension(item: SiteMedia, kind: "image" | "video"): string {
+  if (kind === "video") return "mp4";
+  const source = stringValue(item.local_path) || stringValue(item.localPath) || stringValue(item.path);
+  const extension = path.extname(source).slice(1).toLowerCase();
+  if (["jpg", "jpeg", "png", "webp", "gif", "avif"].includes(extension)) return extension === "jpeg" ? "jpg" : extension;
+  return "jpg";
 }
 
 async function copyOrDownload(config: BackendConfig, item: SiteMedia, target: string, fetchImpl: typeof fetch): Promise<void> {

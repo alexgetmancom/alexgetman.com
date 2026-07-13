@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import fs from "node:fs";
 import type { Bot } from "grammy";
 import type { BackendConfig } from "./config.js";
 import type { BackendDb } from "./db/client.js";
@@ -9,6 +10,7 @@ import { renderCommandCenterLogin, renderDashboard } from "./services/dashboard.
 import { batchLikes, clientIpHash, likesInfo, metricsSummary, recordPageview, toggleLike } from "./services/engagement.js";
 import { mcpResponse } from "./services/mcp.js";
 import { pipelineStatusPayload } from "./services/pipeline.js";
+import { allowPublicRequest } from "./services/publicRateLimit.js";
 import { videoPath } from "./video/storage.js";
 
 type ApiContext = { config: BackendConfig; backendDb: BackendDb; bot: Bot | null };
@@ -33,8 +35,7 @@ export function createApiHandler(context: ApiContext) {
 
     if (path === "/healthz" || path === "/tg-feed/healthz") return text("ok\n");
     if (path === "/readyz") {
-      const status = pipelineStatusPayload(config, backendDb);
-      return json({ ok: true, pipeline_db: status.pipelineDb.path, pipeline_db_exists: status.pipelineDb.exists });
+      return json({ ok: true, pipeline_db: config.PIPELINE_DB, pipeline_db_exists: fs.existsSync(config.PIPELINE_DB) });
     }
     const videoMatch = path.match(/^\/media\/video\/([A-Za-z0-9_-]{20,})$/);
     if (videoMatch && (request.method === "GET" || request.method === "HEAD")) {
@@ -50,21 +51,31 @@ export function createApiHandler(context: ApiContext) {
         },
       });
     }
-    if (path === "/api/pipeline-status" && request.method === "GET")
+    if (path === "/api/pipeline-status" && request.method === "GET") {
+      if (config.commandCenterToken && !commandAllowed(request, config)) return text("unauthorized\n", 401);
       return json(pipelineStatusPayload(config, backendDb, Number(url.searchParams.get("week_offset") ?? 0) || 0));
-    if (path === "/api/pipeline-status/stream" && request.method === "GET")
+    }
+    if (path === "/api/pipeline-status/stream" && request.method === "GET") {
+      if (config.commandCenterToken && !commandAllowed(request, config)) return text("unauthorized\n", 401);
       return sse((send) => {
         const weekOffset = Number(url.searchParams.get("week_offset") ?? 0) || 0;
         send("pipeline", pipelineStatusPayload(config, backendDb, weekOffset));
         return setInterval(() => send("pipeline", pipelineStatusPayload(config, backendDb, weekOffset)), 10_000);
       });
+    }
     if (path === "/stats/pageview" && request.method === "POST") {
+      const limit = allowPublicRequest(
+        `pageview:${clientIpHash(request, config)}`,
+        config.PUBLIC_RATE_LIMIT_PAGEVIEWS,
+        config.PUBLIC_RATE_LIMIT_WINDOW_SECONDS,
+      );
+      if (!limit.allowed) return new Response(null, { status: 204 });
       const body = await request.json().catch(() => ({}) as { path?: string });
       recordPageview(backendDb, config, typeof body?.path === "string" ? body.path : "/");
       return new Response(null, { status: 204 });
     }
     if (path === "/stats" && request.method === "GET") {
-      const summary = metricsSummary(config);
+      const summary = metricsSummary(backendDb);
       return html(
         `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Alex Getman metrics</title></head><body><main><h1>Site metrics</h1><p>Total: ${summary.total}</p><p>Today: ${summary.today}</p><p>Last 7 days: ${summary.last7}</p><p>Updated: ${String(summary.updated_at ?? "-")}</p></main></body></html>`,
       );
@@ -112,10 +123,22 @@ export function createApiHandler(context: ApiContext) {
       });
     }
     if (path === "/api/likes" && request.method === "GET") {
+      const limit = allowPublicRequest(
+        `likes:${clientIpHash(request, config)}`,
+        config.PUBLIC_RATE_LIMIT_LIKES,
+        config.PUBLIC_RATE_LIMIT_WINDOW_SECONDS,
+      );
+      if (!limit.allowed) return rateLimited(limit.retryAfter);
       const postId = url.searchParams.get("post_id")?.trim();
       return postId ? json(likesInfo(backendDb, postId, clientIpHash(request, config))) : json({ error: "Missing post_id parameter" }, 400);
     }
     if (path === "/api/likes/batch" && request.method === "GET") {
+      const limit = allowPublicRequest(
+        `likes:${clientIpHash(request, config)}`,
+        config.PUBLIC_RATE_LIMIT_LIKES,
+        config.PUBLIC_RATE_LIMIT_WINDOW_SECONDS,
+      );
+      if (!limit.allowed) return rateLimited(limit.retryAfter);
       const ids = (url.searchParams.get("ids") ?? "")
         .split(",")
         .map((value) => value.trim())
@@ -124,6 +147,12 @@ export function createApiHandler(context: ApiContext) {
       return json(batchLikes(backendDb, ids, clientIpHash(request, config)));
     }
     if (path === "/api/likes" && request.method === "POST") {
+      const limit = allowPublicRequest(
+        `likes:${clientIpHash(request, config)}`,
+        config.PUBLIC_RATE_LIMIT_LIKES,
+        config.PUBLIC_RATE_LIMIT_WINDOW_SECONDS,
+      );
+      if (!limit.allowed) return rateLimited(limit.retryAfter);
       const postId = url.searchParams.get("post_id")?.trim();
       return postId
         ? json(toggleLike(backendDb, postId, clientIpHash(request, config)))
@@ -137,8 +166,7 @@ export function createApiHandler(context: ApiContext) {
     if (path === "/api/mcp" && request.method === "POST") {
       const body = await request.json().catch(() => null);
       if (body == null) return json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Invalid JSON" } });
-      const client = request.headers.get("x-forwarded-for")?.split(",", 1)[0]?.trim() || request.headers.get("x-real-ip") || "unknown";
-      return json(mcpResponse(backendDb, body, client));
+      return json(mcpResponse(backendDb, body, clientIpHash(request, config)));
     }
     if (path === config.WEBHOOK_PATH && request.method === "POST") {
       if (!safeEqual(request.headers.get("X-Telegram-Bot-Api-Secret-Token") ?? "", config.TELEGRAM_WEBHOOK_SECRET ?? ""))
@@ -179,12 +207,16 @@ async function commandAction(request: Request): Promise<CommandAction> {
   return Object.fromEntries(form.entries()) as unknown as CommandAction;
 }
 
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json; charset=utf-8" } });
+function json(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
+  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json; charset=utf-8", ...headers } });
 }
 
 function text(body: string, status = 200): Response {
   return new Response(body, { status, headers: { "content-type": "text/plain; charset=utf-8" } });
+}
+
+function rateLimited(retryAfter: number): Response {
+  return json({ detail: "rate limit exceeded" }, 429, { "retry-after": String(retryAfter) });
 }
 
 function html(body: string): Response {

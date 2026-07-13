@@ -236,6 +236,24 @@ describe("Bluesky publisher", () => {
     expect(result).toMatchObject({ ok: false, retryable: true, error: "bluesky_visibility_failed:not_in_author_feed" });
     expect(calls.some((url) => url.includes("getAuthorFeed"))).toBe(true);
   });
+
+  it("reconciles a previously created post without creating a duplicate", async () => {
+    const calls: string[] = [];
+    const fetchImpl = mock(async (input: string | URL | Request) => {
+      const url = String(input);
+      calls.push(url);
+      return new Response(JSON.stringify({ feed: [{ post: { uri: "at://did/app.bsky.feed.post/root" } }] }), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const result = await publishToBluesky(
+      { _reconcile_ids: ["at://did/app.bsky.feed.post/root"] },
+      loadConfig({ BLUESKY_HANDLE: "alexgetmancom.bsky.social", BLUESKY_APP_PASSWORD: "password" }),
+      fetchImpl,
+    );
+
+    expect(result).toMatchObject({ ok: true, id: "at://did/app.bsky.feed.post/root" });
+    expect(calls.some((url) => url.includes("createSession") || url.includes("createRecord"))).toBe(false);
+  });
 });
 
 describe("Mastodon and GitHub publishers", () => {

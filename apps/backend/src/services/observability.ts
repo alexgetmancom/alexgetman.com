@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { and, asc, desc, eq, inArray, isNull, lt } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lt } from "drizzle-orm";
 import type { Bot } from "grammy";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
@@ -112,9 +112,19 @@ function scanPublicationFailures(config: BackendConfig, backendDb: BackendDb): v
       `Publish job ${job.jobId} exceeded lock timeout`,
       { jobId: job.jobId, lockedAt: job.lockedAt },
       now,
+      config.ALERT_COOLDOWN_SECONDS,
     );
   for (const job of failed)
-    insertFailureEvent(backendDb, job.postKey, "target.failed", job.target, job.lastError ?? `${job.target} failed`, {}, now);
+    insertFailureEvent(
+      backendDb,
+      job.postKey,
+      "target.failed",
+      job.target,
+      job.lastError ?? `${job.target} failed`,
+      {},
+      now,
+      config.ALERT_COOLDOWN_SECONDS,
+    );
   for (const job of failedSite)
     insertFailureEvent(
       backendDb,
@@ -124,6 +134,7 @@ function scanPublicationFailures(config: BackendConfig, backendDb: BackendDb): v
       job.lastError ?? `Site job ${job.jobId} failed`,
       { jobId: job.jobId, reason: job.reason },
       now,
+      config.ALERT_COOLDOWN_SECONDS,
     );
 }
 
@@ -135,12 +146,16 @@ function insertFailureEvent(
   message: string,
   details: Record<string, unknown>,
   now: string,
+  cooldownSeconds: number,
 ): void {
   const postCondition = postKey == null ? isNull(postEvents.postKey) : eq(postEvents.postKey, postKey);
+  const cooldownCutoff = new Date(new Date(now).getTime() - cooldownSeconds * 1000).toISOString();
   const exists = backendDb.db
     .select({ id: postEvents.id })
     .from(postEvents)
-    .where(and(postCondition, eq(postEvents.eventType, eventType), eq(postEvents.target, target)))
+    .where(
+      and(postCondition, eq(postEvents.eventType, eventType), eq(postEvents.target, target), gte(postEvents.createdAt, cooldownCutoff)),
+    )
     .get();
   if (!exists)
     backendDb.db

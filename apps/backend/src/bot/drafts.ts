@@ -14,7 +14,7 @@ import {
 } from "../db/schema.js";
 import { localizeTargetPayload } from "../publicationPayload.js";
 import { rebalanceScheduledDrafts } from "../publishingSchedule.js";
-import { enqueuePublishJob } from "../queue/publish.js";
+import { enqueuePublishJob, reconcilePublication } from "../queue/publish.js";
 import { type DraftMessage, firstLine, parseArrayValue, parseTargets, slugify } from "./message.js";
 import { entitiesToHtml } from "./text.js";
 
@@ -89,6 +89,7 @@ export function cancelDraft(backendDb: BackendDb, draftId: number): void {
       .where(eq(drafts.id, draftId))
       .run();
     if (!postId) return;
+    tx.update(publications).set({ status: "cancelled", updatedAt: now }).where(eq(publications.postId, postId)).run();
     const finalCount =
       tx
         .select({ count: count() })
@@ -129,7 +130,7 @@ export function publishDraftToQueue(backendDb: BackendDb, draftId: number, optio
     existing?.postId == null
       ? backendDb.db
           .insert(publications)
-          .values({ status: mode === "immediate" ? "published" : "scheduled", draftId, createdAt: now, updatedAt: now })
+          .values({ status: "scheduled", draftId, createdAt: now, updatedAt: now })
           .returning({ postId: publications.postId })
           .get()
       : null;
@@ -298,7 +299,7 @@ export function publishDraftToQueue(backendDb: BackendDb, draftId: number, optio
     }
     tx.update(drafts)
       .set({
-        status: mode === "immediate" ? "published" : "scheduled",
+        status: "scheduled",
         postId,
         publishMode: mode,
         scheduledAt: ruAt,
@@ -307,10 +308,10 @@ export function publishDraftToQueue(backendDb: BackendDb, draftId: number, optio
       })
       .where(eq(drafts.id, draftId))
       .run();
-    tx.update(publications)
-      .set({ status: mode === "immediate" ? "published" : "scheduled", updatedAt: now })
-      .where(eq(publications.postId, postId))
-      .run();
+    tx.update(publications).set({ status: "scheduled", updatedAt: now }).where(eq(publications.postId, postId)).run();
   });
+  // A publication without enabled targets is immediately complete. Every
+  // ordinary publication remains scheduled until its jobs reconcile.
+  reconcilePublication(backendDb, postId);
   return postId;
 }

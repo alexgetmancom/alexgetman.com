@@ -34,6 +34,8 @@ type YouTubeComments = {
 };
 type InstagramProfile = { username?: string; biography?: string; followers_count?: number; media_count?: number };
 type InstagramMedia = {
+  plays?: number;
+  video_views?: number;
   like_count?: number;
   comments_count?: number;
   permalink?: string;
@@ -100,9 +102,11 @@ export function creatorDashboard(backendDb: BackendDb, config: BackendConfig, da
   const since = new Date(Date.now() - days * 24 * 60 * 60_000).toISOString();
   const latest = latestVideoMetrics(backendDb, since);
   const lines = [`📊 *Статистика за ${days === 1 ? "сегодня" : `${days} дней`}*`];
-  if (config.studio.modules.site) lines.push(`🌐 Сайт: ${siteTotal(backendDb)} просмотров материалов`);
-  if (config.studio.modules.text_posting)
-    lines.push(`📝 Посты: ${textTotals(backendDb).views} просмотров · ${textTotals(backendDb).interactions} реакций`);
+  if (config.studio.modules.site) lines.push(`🌐 Сайт: ${siteTotal(backendDb, since)} просмотров материалов`);
+  if (config.studio.modules.text_posting) {
+    const text = textTotals(backendDb, since);
+    lines.push(`📝 Посты: ${text.views} просмотров · ${text.interactions} реакций`);
+  }
   if (config.studio.modules.video_posting) {
     const youtube = latest.filter((row) => row.platform === "youtube_shorts");
     const instagram = latest.filter((row) => row.platform === "instagram_reels");
@@ -432,12 +436,13 @@ async function collectInstagramVideoMetrics(
   const base = `https://graph.facebook.com/${config.INSTAGRAM_GRAPH_API_VERSION}/${target.externalId}`;
   const media = await requestJson<InstagramMedia>(
     fetchImpl,
-    `${base}?fields=like_count,comments_count,permalink,timestamp,caption&access_token=${encodeURIComponent(token)}`,
+    `${base}?fields=plays,like_count,comments_count,permalink,timestamp,caption&access_token=${encodeURIComponent(token)}`,
   );
   upsertVideoSnapshot(backendDb, target.id, "instagram_reels", {
     title: target.label ?? "Без названия",
     url: media.permalink ?? target.externalUrl,
     publishedAt: media.timestamp ?? target.publishedAt,
+    views: number(media.plays ?? media.video_views),
     likes: number(media.like_count),
     comments: number(media.comments_count),
   });
@@ -524,39 +529,78 @@ function latestVideoMetrics(
 ): Array<{ platform: string; label: string; metrics: Record<string, unknown> }> {
   const rows = backendDb.sqlite
     .prepare(
-      `SELECT snapshot.platform, snapshot.metrics_json, draft.label
-       FROM video_metric_snapshots snapshot
-       JOIN video_drafts draft ON draft.id = (SELECT video_draft_id FROM video_targets WHERE id = snapshot.video_target_id)
-       WHERE snapshot.sampled_at >= ?
-       AND snapshot.id IN (SELECT MAX(id) FROM video_metric_snapshots WHERE sampled_at >= ? GROUP BY video_target_id)
-       ORDER BY snapshot.id DESC`,
+      `SELECT target.target AS platform, draft.label, target.published_at,
+              latest.metrics_json AS latest_metrics, latest.sampled_at AS latest_sampled_at,
+              baseline.metrics_json AS baseline_metrics
+       FROM video_targets target
+       JOIN video_drafts draft ON draft.id = target.video_draft_id
+       JOIN video_metric_snapshots latest ON latest.id = (
+         SELECT id FROM video_metric_snapshots WHERE video_target_id = target.id ORDER BY sampled_at DESC, id DESC LIMIT 1
+       )
+       LEFT JOIN video_metric_snapshots baseline ON baseline.id = (
+         SELECT id FROM video_metric_snapshots WHERE video_target_id = target.id AND sampled_at <= ? ORDER BY sampled_at DESC, id DESC LIMIT 1
+       )
+       WHERE target.status = 'published'
+       ORDER BY latest.id DESC`,
     )
-    .all(since, since) as Array<{ platform: string; metrics_json: string; label: string }>;
-  return rows.map((row) => ({
-    platform: row.platform,
-    label: row.label,
-    metrics: JSON.parse(row.metrics_json) as Record<string, unknown>,
-  }));
+    .all(since) as Array<{
+    platform: string;
+    label: string;
+    published_at: string | null;
+    latest_metrics: string;
+    latest_sampled_at: string;
+    baseline_metrics: string | null;
+  }>;
+  return rows.flatMap((row) => {
+    const latest = JSON.parse(row.latest_metrics) as Record<string, unknown>;
+    const baseline = row.baseline_metrics ? (JSON.parse(row.baseline_metrics) as Record<string, unknown>) : null;
+    const publishedDuringPeriod = row.published_at != null && row.published_at >= since;
+    // For old videos without a checkpoint before the period we cannot infer a
+    // delta. Excluding them is preferable to reporting their lifetime totals.
+    if (!baseline && !publishedDuringPeriod) return [];
+    const metrics = Object.fromEntries(
+      Object.entries(latest).map(([key, value]) => [key, Math.max(0, number(value) - number(baseline?.[key]))]),
+    );
+    return [{ platform: row.platform, label: row.label, metrics }];
+  });
 }
 
 function profile(backendDb: BackendDb, platform: string): Record<string, unknown> | null {
   return backendDb.db.select().from(creatorProfiles).where(eq(creatorProfiles.platform, platform)).get()?.dataJson ?? null;
 }
 
-function textTotals(backendDb: BackendDb): { views: number; interactions: number } {
-  const row = backendDb.sqlite
-    .prepare(
-      "SELECT COALESCE(SUM(CASE WHEN metric_name='views' THEN value END),0) AS views, COALESCE(SUM(CASE WHEN metric_name IN ('likes','replies','reposts','comments') THEN value END),0) AS interactions FROM post_metrics",
-    )
-    .get() as { views: number; interactions: number };
-  return row;
+function textTotals(backendDb: BackendDb, since: string): { views: number; interactions: number } {
+  const totals = metricDeltasSince(backendDb, since, "target NOT LIKE 'site_%'");
+  return {
+    views: totals.views ?? 0,
+    interactions: (totals.likes ?? 0) + (totals.replies ?? 0) + (totals.reposts ?? 0) + (totals.comments ?? 0),
+  };
 }
 
-function siteTotal(backendDb: BackendDb): number {
-  const row = backendDb.sqlite
-    .prepare("SELECT COALESCE(SUM(value),0) AS total FROM post_metrics WHERE target='telegram' AND metric_name='views'")
-    .get() as { total: number };
-  return row.total;
+function siteTotal(backendDb: BackendDb, since: string): number {
+  return metricDeltasSince(backendDb, since, "target LIKE 'site_%'").views ?? 0;
+}
+
+function metricDeltasSince(backendDb: BackendDb, since: string, where: string): Record<string, number> {
+  const rows = backendDb.sqlite
+    .prepare(`SELECT post_key, target, metric_name, value, sampled_at FROM metric_samples WHERE ${where} ORDER BY sampled_at ASC, id ASC`)
+    .all() as Array<{ post_key: string; target: string; metric_name: string; value: number | null; sampled_at: string }>;
+  const series = new Map<string, { metric: string; firstAt: string; latest: number; baseline: number | null }>();
+  for (const row of rows) {
+    const key = `${row.post_key}\u0000${row.target}\u0000${row.metric_name}`;
+    const value = number(row.value);
+    const entry = series.get(key) ?? { metric: row.metric_name, firstAt: row.sampled_at, latest: value, baseline: null };
+    entry.latest = value;
+    if (row.sampled_at <= since) entry.baseline = value;
+    series.set(key, entry);
+  }
+  const totals: Record<string, number> = {};
+  for (const entry of series.values()) {
+    if (entry.baseline == null && entry.firstAt < since) continue;
+    const delta = Math.max(0, entry.latest - (entry.baseline ?? 0));
+    totals[entry.metric] = (totals[entry.metric] ?? 0) + delta;
+  }
+  return totals;
 }
 
 function number(value: unknown): number {

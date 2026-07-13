@@ -1,12 +1,21 @@
 import crypto from "node:crypto";
 import { statSync } from "node:fs";
 import path from "node:path";
-import { and, asc, eq, isNull, lte, or } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lte, ne, or } from "drizzle-orm";
 import { type Bot, InlineKeyboard } from "grammy";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
-import { botSettings, videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
+import {
+  botSettings,
+  socialComments,
+  videoDrafts,
+  videoJobs,
+  videoMetricSchedule,
+  videoMetricSnapshots,
+  videoTargets,
+} from "../db/schema.js";
 import { nextRetryAt } from "../queue/errors.js";
+import { isVideoTargetEditable, isVideoTargetFinal, isVideoTargetSchedulable, videoDraftStatus } from "../services/publicationState.js";
 import {
   InstagramContainerInvalidError,
   InstagramContainerProcessingError,
@@ -63,6 +72,20 @@ export function replaceVideoTargets(backendDb: BackendDb, videoDraftId: number, 
   if (allowed.length === 0) throw new Error("Choose at least one video platform.");
   const now = new Date().toISOString();
   backendDb.db.transaction((tx) => {
+    const existingIds = tx
+      .select({ id: videoTargets.id })
+      .from(videoTargets)
+      .where(eq(videoTargets.videoDraftId, videoDraftId))
+      .all()
+      .map((target) => target.id);
+    // SQLite's historical schema has no cascading foreign keys. Keep every
+    // dependent table in sync before replacing editable targets.
+    if (existingIds.length > 0) {
+      tx.delete(socialComments).where(inArray(socialComments.videoTargetId, existingIds)).run();
+      tx.delete(videoMetricSnapshots).where(inArray(videoMetricSnapshots.videoTargetId, existingIds)).run();
+      tx.delete(videoMetricSchedule).where(inArray(videoMetricSchedule.videoTargetId, existingIds)).run();
+    }
+    tx.delete(videoJobs).where(eq(videoJobs.videoDraftId, videoDraftId)).run();
     tx.delete(videoTargets).where(eq(videoTargets.videoDraftId, videoDraftId)).run();
     for (const target of allowed) {
       tx.insert(videoTargets).values({ videoDraftId, target, metadataJson: {}, status: "editing", createdAt: now, updatedAt: now }).run();
@@ -88,17 +111,17 @@ export function scheduleVideo(
   const now = new Date();
   const targets = listVideoTargets(backendDb, videoDraftId);
   if (targets.length === 0) throw new Error("Choose video platforms first.");
-  for (const target of targets) {
+  const selectedTargets = targets.filter((target) => schedule[target.target as VideoTarget] != null);
+  if (selectedTargets.length === 0) throw new Error("Choose at least one video platform to schedule.");
+  for (const target of selectedTargets) {
     const date = schedule[target.target as VideoTarget];
     if (!date || Number.isNaN(date.getTime()) || date.getTime() <= now.getTime())
       throw new Error("Publication time must be in the future.");
   }
-  const scheduledTargets = targets.map((target) => schedule[target.target as VideoTarget]).filter((date): date is Date => Boolean(date));
-  const common = Math.min(...scheduledTargets.map((date) => date.getTime()));
   backendDb.db.transaction((tx) => {
-    for (const target of targets) {
+    for (const target of selectedTargets) {
       const targetSchedule = schedule[target.target as VideoTarget];
-      if (!targetSchedule) throw new Error("Publication time must be in the future.");
+      if (!targetSchedule) continue;
       const publishAt = targetSchedule.toISOString();
       const preparedAt = new Date(targetSchedule.getTime() - timing.prepareLeadMinutes * 60_000);
       const reminderAt = new Date(targetSchedule.getTime() - timing.reminderMinutes * 60_000);
@@ -110,10 +133,17 @@ export function scheduleVideo(
       insertVideoJob(tx, videoDraftId, target.id, "publish", publishAt);
       insertVideoJob(tx, videoDraftId, target.id, "reminder", reminderAt.toISOString());
     }
+    const activeSchedules = tx
+      .select({ scheduledAt: videoTargets.scheduledAt })
+      .from(videoTargets)
+      .where(and(eq(videoTargets.videoDraftId, videoDraftId), ne(videoTargets.status, "published"), ne(videoTargets.status, "cancelled")))
+      .all()
+      .flatMap((target) => (target.scheduledAt ? [new Date(target.scheduledAt).getTime()] : []));
+    const common = activeSchedules.length > 0 ? Math.min(...activeSchedules) : null;
     tx.update(videoDrafts)
       .set({
         status: "scheduled",
-        scheduledAt: new Date(common).toISOString(),
+        scheduledAt: common == null ? null : new Date(common).toISOString(),
         reminderSentAt: null,
         retentionUntil: null,
         updatedAt: now.toISOString(),
@@ -256,16 +286,16 @@ export function videoPreview(backendDb: BackendDb, videoDraftId: number): { text
     if (metadata.gameUrl) lines.push(`Игра: ${escapeMarkdown(metadata.gameUrl)}`);
     if (metadata.tags?.length) lines.push(`Теги: ${escapeMarkdown(metadata.tags.join(", "))}`);
     lines.push(`Состояние: ${videoStatusLabel(ytTarget.status)}${ytTarget.scheduledAt ? ` · ${formatTime(ytTarget.scheduledAt)}` : ""}`);
-    keyboard.text("🕒 Время YouTube", `video_time:youtube_shorts:${draft.id}`);
-    keyboard.text("❌ Убрать YouTube", `video_remove:youtube_shorts:${draft.id}`).row();
+    if (isVideoTargetSchedulable(ytTarget.status)) keyboard.text("🕒 Время YouTube", `video_time:youtube_shorts:${draft.id}`);
+    if (isVideoTargetEditable(ytTarget.status)) keyboard.text("❌ Убрать YouTube", `video_remove:youtube_shorts:${draft.id}`).row();
   }
   if (igTarget) {
     const metadata = (igTarget.metadataJson ?? {}) as Partial<InstagramMetadata>;
     lines.push("", "📸 *Instagram Reels*");
     lines.push(`Описание: ${escapeMarkdown(metadata.caption || "—")}`);
     lines.push(`Состояние: ${videoStatusLabel(igTarget.status)}${igTarget.scheduledAt ? ` · ${formatTime(igTarget.scheduledAt)}` : ""}`);
-    keyboard.text("🕒 Время Instagram", `video_time:instagram_reels:${draft.id}`);
-    keyboard.text("❌ Убрать Instagram", `video_remove:instagram_reels:${draft.id}`).row();
+    if (isVideoTargetSchedulable(igTarget.status)) keyboard.text("🕒 Время Instagram", `video_time:instagram_reels:${draft.id}`);
+    if (isVideoTargetEditable(igTarget.status)) keyboard.text("❌ Убрать Instagram", `video_remove:instagram_reels:${draft.id}`).row();
     if (igTarget.status === "failed") keyboard.text("🔁 Повторить Instagram", `video_retry:instagram_reels:${draft.id}`).row();
   }
   if (ytTarget?.status === "failed") keyboard.text("🔁 Повторить YouTube", `video_retry:youtube_shorts:${draft.id}`).row();
@@ -304,7 +334,7 @@ export function cancelVideo(backendDb: BackendDb, videoDraftId: number, retentio
       .run();
     tx.update(videoTargets)
       .set({ status: "cancelled", updatedAt: now })
-      .where(and(eq(videoTargets.videoDraftId, videoDraftId), eq(videoTargets.status, "queued")))
+      .where(and(eq(videoTargets.videoDraftId, videoDraftId), ne(videoTargets.status, "published")))
       .run();
     tx.update(videoDrafts)
       .set({ status: "cancelled", retentionUntil: new Date(Date.now() + retentionHours * 60 * 60_000).toISOString(), updatedAt: now })
@@ -396,11 +426,11 @@ function claimVideoJobs(backendDb: BackendDb, limit: number): VideoJob[] {
 }
 
 async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, bot: Bot | null, job: VideoJob): Promise<void> {
-  if (job.kind === "reminder") return sendVideoReminder(backendDb, bot, job.videoDraftId, job.videoTargetId);
+  if (job.kind === "reminder") return sendVideoReminder(backendDb, bot, job.videoDraftId, job.videoTargetId, config.VIDEO_REMINDER_MINUTES);
   if (!job.videoTargetId) throw new Error("Video platform job has no target.");
   const target = backendDb.db.select().from(videoTargets).where(eq(videoTargets.id, job.videoTargetId)).get();
   const draft = getVideoDraft(backendDb, job.videoDraftId);
-  if (!target || ["cancelled", "published"].includes(target.status)) return;
+  if (!target || target.status === "cancelled" || target.status === "published") return;
   const filePath = videoPath(config, draft.assetKey);
   if (!filePath) throw new Error("Video source was removed before publication completed.");
   const metadata = target.metadataJson as VideoMetadata;
@@ -466,11 +496,17 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, bot:
   refreshVideoDraftStatus(backendDb, draft.id, config.VIDEO_MEDIA_RETENTION_HOURS);
 }
 
-async function sendVideoReminder(backendDb: BackendDb, bot: Bot | null, videoDraftId: number, videoTargetId: number | null): Promise<void> {
+async function sendVideoReminder(
+  backendDb: BackendDb,
+  bot: Bot | null,
+  videoDraftId: number,
+  videoTargetId: number | null,
+  reminderMinutes: number,
+): Promise<void> {
   const draft = getVideoDraft(backendDb, videoDraftId);
   const target = videoTargetId == null ? null : backendDb.db.select().from(videoTargets).where(eq(videoTargets.id, videoTargetId)).get();
   if (!bot || !target || draft.status !== "scheduled") return;
-  const text = `⏰ Через 5 минут публикация:\n\n🎬 ${draft.label || "Без названия"}\n• ${videoTargetLabel(target.target as VideoTarget)}\n\n${formatTime(target.scheduledAt)}`;
+  const text = `⏰ Через ${reminderMinutes} мин. публикация:\n\n🎬 ${draft.label || "Без названия"}\n• ${videoTargetLabel(target.target as VideoTarget)}\n\n${formatTime(target.scheduledAt)}`;
   await bot.api.sendMessage(draft.adminId, text, {
     reply_markup: new InlineKeyboard().text("Открыть", `video_open:${draft.id}`).text("Отменить", `video_cancel:${draft.id}`),
   });
@@ -492,12 +528,13 @@ function completeVideoJob(backendDb: BackendDb, id: number): void {
 function failVideoJob(backendDb: BackendDb, job: VideoJob, cause: unknown, config: BackendConfig): void {
   const error = cause instanceof Error ? cause.message : String(cause);
   const attempts = job.attemptCount + 1;
-  if (cause instanceof InstagramContainerProcessingError) {
+  if (cause instanceof InstagramContainerProcessingError && attempts < config.PUBLISH_MAX_ATTEMPTS) {
     const now = new Date().toISOString();
     backendDb.db.transaction((tx) => {
       tx.update(videoJobs)
         .set({
           status: "queued",
+          attemptCount: attempts,
           nextAttemptAt: new Date(Date.now() + 30_000).toISOString(),
           lockedAt: null,
           lockedBy: null,
@@ -593,8 +630,8 @@ function recoverVideoLocks(backendDb: BackendDb, timeoutSeconds: number): void {
 export function refreshVideoDraftStatus(backendDb: BackendDb, videoDraftId: number, retentionHours: number): void {
   const targets = listVideoTargets(backendDb, videoDraftId);
   if (targets.length === 0) return;
-  const final = targets.every((target) => ["published", "failed", "cancelled"].includes(target.status));
-  const status = final ? (targets.every((target) => target.status === "published") ? "published" : "partial") : "scheduled";
+  const final = targets.every((target) => isVideoTargetFinal(target.status));
+  const status = videoDraftStatus(targets.map((target) => target.status));
   backendDb.db
     .update(videoDrafts)
     .set({

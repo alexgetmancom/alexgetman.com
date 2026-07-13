@@ -44,7 +44,8 @@ describe("openBackendDb", () => {
       expect(tables).toContain("creator_profiles");
       expect(tables).toContain("video_metric_snapshots");
       expect(tables).toContain("social_comments");
-      expect(migrationStatus(backendDb.sqlite)).toHaveLength(8);
+      expect(tables).toContain("site_pageviews");
+      expect(migrationStatus(backendDb.sqlite)).toHaveLength(10);
     } finally {
       backendDb.close();
     }
@@ -97,6 +98,42 @@ describe("openBackendDb", () => {
     }
   });
 
+  it("cascades video dependencies at the database level", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      backendDb.sqlite
+        .prepare("INSERT INTO video_drafts (admin_id, label, asset_key, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+        .run(1, "", "asset", "draft", now, now);
+      backendDb.sqlite
+        .prepare(
+          "INSERT INTO video_targets (video_draft_id, target, metadata_json, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .run(1, "youtube_shorts", "{}", "draft", now, now);
+      backendDb.sqlite
+        .prepare(
+          "INSERT INTO video_jobs (video_draft_id, video_target_id, kind, run_at, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(1, 1, "publish", now, "queued", now, now);
+      backendDb.sqlite
+        .prepare("INSERT INTO video_metric_snapshots (video_target_id, platform, metrics_json, sampled_at) VALUES (?, ?, ?, ?)")
+        .run(1, "youtube_shorts", "{}", now);
+      backendDb.sqlite
+        .prepare("INSERT INTO video_metric_schedule (video_target_id, next_check_at, updated_at) VALUES (?, ?, ?)")
+        .run(1, now, now);
+      backendDb.sqlite
+        .prepare("INSERT INTO social_comments (platform, comment_id, video_target_id, text, fetched_at) VALUES (?, ?, ?, ?, ?)")
+        .run("youtube", "comment", 1, "x", now);
+
+      backendDb.sqlite.prepare("DELETE FROM video_drafts WHERE id=?").run(1);
+
+      for (const table of ["video_targets", "video_jobs", "video_metric_snapshots", "video_metric_schedule", "social_comments"])
+        expect(backendDb.sqlite.prepare(`SELECT count(*) AS count FROM ${table}`).get()).toEqual({ count: 0 });
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("publishes against the production publications schema", () => {
     const dir = mkdtempSync(join(tmpdir(), "alexgetman-production-schema-"));
     const dbPath = join(dir, "pipeline.db");
@@ -105,7 +142,7 @@ describe("openBackendDb", () => {
     const fixture = new Database(dbPath);
     fixture.exec("DROP TABLE __drizzle_migrations");
     fixture.exec(
-      "DROP TABLE video_bot_sessions; DROP TABLE video_jobs; DROP TABLE video_targets; DROP TABLE video_drafts; DROP TABLE analytics_sync; DROP TABLE creator_profiles; DROP TABLE video_metric_snapshots; DROP TABLE social_comments; DROP TABLE admin_state; CREATE TABLE admin_state (admin_id integer PRIMARY KEY NOT NULL, action text, draft_id integer, updated_at text NOT NULL)",
+      "DROP TABLE site_pageviews; DROP TABLE video_bot_sessions; DROP TABLE video_jobs; DROP TABLE video_targets; DROP TABLE video_drafts; DROP TABLE analytics_sync; DROP TABLE creator_profiles; DROP TABLE video_metric_snapshots; DROP TABLE social_comments; DROP TABLE admin_state; CREATE TABLE admin_state (admin_id integer PRIMARY KEY NOT NULL, action text, draft_id integer, updated_at text NOT NULL)",
     );
     fixture.close();
 
@@ -118,13 +155,13 @@ describe("openBackendDb", () => {
       const postId = publishDraftToQueue(backendDb, draftId);
       expect(backendDb.sqlite.prepare("SELECT draft_id, status FROM publications WHERE post_id=?").get(postId)).toEqual({
         draft_id: draftId,
-        status: "published",
+        status: "scheduled",
       });
       expect(backendDb.sqlite.prepare("SELECT locale, slug FROM post_locales WHERE post_id=? ORDER BY locale").all(postId)).toEqual([
         { locale: "en", slug: "production-fixture" },
         { locale: "ru", slug: "production-fixture" },
       ]);
-      expect(migrationStatus(backendDb.sqlite)).toHaveLength(8);
+      expect(migrationStatus(backendDb.sqlite)).toHaveLength(10);
     } finally {
       backendDb.close();
     }
