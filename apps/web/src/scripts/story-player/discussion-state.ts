@@ -1,4 +1,4 @@
-export type DiscussionState = {
+type DiscussionState = {
   visible: boolean;
   isManualPaused: boolean;
   manualPausedBeforeDiscussion: boolean;

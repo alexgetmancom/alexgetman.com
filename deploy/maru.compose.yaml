@@ -20,6 +20,7 @@ services:
       # This is a media-only public endpoint for Meta to fetch Reels source
       # files. It does not enable the Maru site module.
       PUBLIC_BASE_URL: ${MARU_PUBLIC_BASE_URL:-https://alexgetman.com/maru-media}
+      TRUSTED_CLIENT_IP_HEADER: x-real-ip
       TELEGRAM_API_BASE_URL: http://alexgetman-telegram-bot-api:8081
       ENABLE_BOT_POLLING: "true"
       ENABLE_WORKERS: "true"
@@ -33,6 +34,12 @@ services:
       - ${MARU_BOT_API_DATA_DIR:-/home/deploy/alexgetman-runtime/bot-api-data}:/var/lib/telegram-bot-api:ro
     ports:
       - "127.0.0.1:8789:8788"
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:8788/readyz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     networks:
       - agent_default
     mem_limit: 512m
