@@ -1,7 +1,7 @@
 import { createBot } from "../../../backend/src/bot.js";
 import { type BackendConfig, loadConfig } from "../../../backend/src/config.js";
 import { type BackendDb, openBackendDb } from "../../../backend/src/db/client.js";
-import { log } from "../../../backend/src/logger.js";
+import { configureLogging, log } from "../../../backend/src/logger.js";
 import { assertFfmpegAvailable, configureFfmpegConcurrency } from "../../../backend/src/runtime/ffmpeg.js";
 import type { ScheduledLoop } from "../../../backend/src/scheduler.js";
 import { startWorkers } from "../../../backend/src/worker.js";
@@ -13,6 +13,7 @@ let runtime: AppRuntime | undefined;
 export function startRuntime(): AppRuntime {
   if (runtime) return runtime;
   const config = loadConfig(Bun.env);
+  configureLogging(config.LOG_LEVEL);
   configureFfmpegConcurrency(config.FFMPEG_MAX_CONCURRENCY);
   const backendDb = openBackendDb(config.PIPELINE_DB);
   const bot = createBot(config, backendDb);

@@ -58,6 +58,8 @@ jobs:
           DATA_DIR: apps/web/src/data
       - name: Astro SSR bundle
         run: bun build apps/web/server.ts --outdir runtime --target bun
+      - name: Operations CLI bundle
+        run: bun build apps/backend/src/cli.ts --outdir ops --target bun
 
   deployment-status-on-ci-failure:
     name: Production deployment status on CI failure

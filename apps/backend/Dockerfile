@@ -31,11 +31,13 @@ COPY --chown=bun:bun tools/knip ./tools/knip
 RUN bun run --filter @alexgetman/backend typecheck
 RUN DATA_DIR=/data bun run build
 RUN bun build apps/web/server.ts --outdir runtime --target bun --splitting --minify --sourcemap=external
+RUN bun build apps/backend/src/cli.ts --outdir ops --target bun --minify --sourcemap=external
 
 # --- СТАДИЯ КОПИРОВАНИЯ ГОТОВОГО БИЛДА С ХОСТА (для сборки в GitHub Actions) ---
 FROM scratch AS build-on-host
 COPY dist /app/dist
 COPY runtime /app/runtime
+COPY ops /app/ops
 COPY apps/backend/drizzle /app/apps/backend/drizzle
 
 # --- ДИНАМИЧЕСКИЙ ВЫБОР СТАДИИ СБОРКИ НА ОСНОВЕ ПЕРЕМЕННОЙ ---
@@ -69,6 +71,7 @@ COPY --from=ffmpeg-bin /tmp/ffprobe /usr/local/bin/
 WORKDIR /app
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/runtime ./runtime
+COPY --from=build /app/ops ./ops
 # Bun emits mtcute's dynamically loaded WASM files beside the server bundle,
 # while mtcute resolves them relative to the process working directory.
 COPY --from=build /app/runtime/*.wasm ./

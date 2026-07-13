@@ -5,6 +5,10 @@ import { log } from "../backend/src/logger.js";
 import { startRuntime, stopRuntime } from "./src/server/runtime.js";
 
 const runtime = startRuntime();
+if (runtime.bot && !runtime.config.ENABLE_BOT_POLLING) {
+  await runtime.bot.init();
+  log("info", "grammY webhook bot initialized");
+}
 const entry = process.env.ASTRO_DIST_ENTRY ?? "/app/dist/server/entry.mjs";
 const { handler } = await import(entry);
 

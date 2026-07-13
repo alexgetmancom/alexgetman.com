@@ -7,6 +7,7 @@ describe("loadConfig", () => {
     expect(config.PIPELINE_DB).toBe("/data/pipeline.db");
     expect(config.TELEGRAM_API_BASE_URL).toBe("http://bot-api:8081");
     expect(config.PIPELINE_BASELINE_MESSAGE_ID).toBe(422);
+    expect(config.LOG_LEVEL).toBe("info");
   });
 
   it("uses controller token as primary bot token", () => {

@@ -9,6 +9,7 @@ const booleanFlag = z
 const envSchema = z
   .object({
     NODE_ENV: z.string().default("development"),
+    LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
     PORT: z.coerce.number().int().positive().default(8788),
     BIND_HOST: z.string().default("127.0.0.1"),
     DATA_DIR: z.string().default("/data"),

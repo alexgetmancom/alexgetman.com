@@ -75,3 +75,18 @@ that target's previous digest automatically on failure. A successful deployment
 sends the controller bot a target-specific one-click rollback button. The callback
 is accepted only from `CONTROLLER_ADMIN_IDS` and is rejected after a newer release
 exists for that target.
+
+## Read-only runtime diagnostics
+
+The production image includes the bundled backend operations CLI, so status can be
+inspected without a checkout on the host:
+
+```text
+docker exec alexgetman-backend bun /app/ops/cli.js status
+docker exec alexgetman-backend bun /app/ops/cli.js doctor
+docker exec alexgetman-backend bun /app/ops/cli.js audit
+```
+
+Use only the read-only commands above for routine diagnostics. Commands such as
+`backup`, `restore`, and `metrics-backfill --apply` mutate state and require an
+explicit maintenance task.
