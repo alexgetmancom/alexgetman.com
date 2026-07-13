@@ -66,7 +66,9 @@ export async function prepareYouTubeVideo(
 }
 
 export async function prepareInstagramReel(config: BackendConfig, publicUrl: string, metadata: InstagramMetadata): Promise<{ id: string }> {
-  const caption = [metadata.caption, ...metadata.hashtags].filter(Boolean).join("\n\n");
+  // Instagram has a single caption field. Hashtags are part of the caption the
+  // creator writes, rather than a second field appended during publication.
+  const caption = metadata.caption.trim();
   const response = await requestJson<InstagramContainer>(
     fetch,
     `https://graph.facebook.com/${config.INSTAGRAM_GRAPH_API_VERSION}/${config.INSTAGRAM_USER_ID}/media`,

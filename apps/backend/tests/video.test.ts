@@ -77,8 +77,7 @@ describe("video publication queue", () => {
       tags: ["game", "shorts"],
     });
     saveVideoMetadata(backendDb, draftId, "instagram_reels", {
-      caption: "Описание для Instagram",
-      hashtags: ["#game", "#reels"],
+      caption: "Описание для Instagram\n#game #reels",
     });
 
     const preview = videoPreview(backendDb, draftId);

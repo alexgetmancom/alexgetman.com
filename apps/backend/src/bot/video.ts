@@ -171,43 +171,14 @@ export async function handleVideoMessage(ctx: Context, backendDb: BackendDb, con
           .get();
         const metadata = (target?.metadataJson as any) || {};
         metadata.caption = text === "-" ? "" : text;
+        delete metadata.hashtags;
         saveVideoMetadata(backendDb, session.draftId, "instagram_reels", metadata);
         clearSession(backendDb, adminId);
         const preview = videoPreview(backendDb, session.draftId);
         await updateVideoControl(ctx, session, preview.text, preview.keyboard);
         return true;
       }
-      setData(backendDb, adminId, session, "instagram_caption", text === "-" ? "" : text, "instagram_hashtags");
-      await replyVideoPrompt(ctx, "⌨ Хэштеги Instagram через пробел или запятую (или «-»):");
-      return true;
-    }
-    if (session.step === "instagram_hashtags") {
-      const hashtags =
-        text === "-"
-          ? []
-          : text
-              .split(/[\s,]+/)
-              .map((tag) => tag.trim())
-              .filter(Boolean)
-              .map((tag) => (tag.startsWith("#") ? tag : `#${tag}`));
-      if (session.data.is_single_edit) {
-        const target = backendDb.db
-          .select()
-          .from(videoTargets)
-          .where(and(eq(videoTargets.videoDraftId, session.draftId), eq(videoTargets.target, "instagram_reels")))
-          .get();
-        const metadata = (target?.metadataJson as any) || {};
-        metadata.hashtags = hashtags;
-        saveVideoMetadata(backendDb, session.draftId, "instagram_reels", metadata);
-        clearSession(backendDb, adminId);
-        const preview = videoPreview(backendDb, session.draftId);
-        await updateVideoControl(ctx, session, preview.text, preview.keyboard);
-        return true;
-      }
-      const metadata = {
-        caption: String(session.data.instagram_caption ?? ""),
-        hashtags,
-      };
+      const metadata = { caption: text === "-" ? "" : text };
       saveVideoMetadata(backendDb, session.draftId, "instagram_reels", metadata);
       if (!session.selected.includes("youtube_shorts")) updateVideoLabel(backendDb, session.draftId, metadata.caption || "Instagram Reels");
       await askSchedule(ctx, backendDb, adminId, session);
@@ -402,8 +373,7 @@ export async function handleVideoCallback(ctx: Context, backendDb: BackendDb, co
         keyboard.text("✏️ Теги YouTube", `video_edit_field:youtube_tags:${id}`).row();
       }
       if (targets.includes("instagram_reels")) {
-        keyboard.text("✏️ Описание Instagram", `video_edit_field:instagram_caption:${id}`).row();
-        keyboard.text("✏️ Хэштеги Instagram", `video_edit_field:instagram_hashtags:${id}`).row();
+        keyboard.text("✏️ Подпись Instagram", `video_edit_field:instagram_caption:${id}`).row();
       }
       keyboard.text("← Назад", `video_open:${id}`);
       await ctx.editMessageText("✏️ *Что изменить?*", { parse_mode: "Markdown", reply_markup: keyboard });
@@ -425,8 +395,7 @@ export async function handleVideoCallback(ctx: Context, backendDb: BackendDb, co
       else if (field === "youtube_title") prompt = "⌨ Введите новое название для YouTube Shorts:";
       else if (field === "youtube_description") prompt = "⌨ Введите новое описание для YouTube (или «-»):";
       else if (field === "youtube_tags") prompt = "⌨ Введите новые теги YouTube через запятую (или «-»):";
-      else if (field === "instagram_caption") prompt = "⌨ Введите новое описание для Instagram Reels (или «-»):";
-      else if (field === "instagram_hashtags") prompt = "⌨ Введите новые хэштеги Instagram через пробел (или «-»):";
+      else if (field === "instagram_caption") prompt = "⌨ Введите подпись для Instagram Reels — вместе с хэштегами (или «-»):";
       await replyVideoPrompt(ctx, prompt);
       return true;
     } else if (data.startsWith("video_edit:")) {

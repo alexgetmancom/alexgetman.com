@@ -188,7 +188,6 @@ export function videoPreview(backendDb: BackendDb, videoDraftId: number): { text
     const metadata = (igTarget.metadataJson ?? {}) as Partial<InstagramMetadata>;
     lines.push("", "📸 *Instagram Reels*");
     lines.push(`Описание: ${escapeMarkdown(metadata.caption || "—")}`);
-    if (metadata.hashtags?.length) lines.push(`Хэштеги: ${escapeMarkdown(metadata.hashtags.join(" "))}`);
     lines.push(`Состояние: ${videoStatusLabel(igTarget.status)}${igTarget.scheduledAt ? ` · ${formatTime(igTarget.scheduledAt)}` : ""}`);
     keyboard.text("🕒 Время Instagram", `video_time:instagram_reels:${draft.id}`);
     keyboard.text("❌ Убрать Instagram", `video_remove:instagram_reels:${draft.id}`).row();

@@ -109,7 +109,7 @@ export async function askInstagramOrSchedule(ctx: Context, backendDb: BackendDb,
   if (session.selected.includes("instagram_reels")) {
     const next = { ...session, step: "instagram_caption" };
     saveSession(backendDb, adminId, next);
-    await replyVideoPrompt(ctx, "⌨ Описание для Instagram Reels (или «-»):");
+    await replyVideoPrompt(ctx, "⌨ Подпись для Instagram Reels — текст и хэштеги вместе (или «-»):");
     return;
   }
   await askSchedule(ctx, backendDb, adminId, session);
