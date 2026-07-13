@@ -123,6 +123,36 @@ export function scheduleVideo(
   });
 }
 
+/** Requeues only the failed platform; the other platform and its media stay untouched. */
+export function retryFailedVideoTarget(backendDb: BackendDb, videoDraftId: number, targetName: VideoTarget): void {
+  const target = backendDb.db
+    .select()
+    .from(videoTargets)
+    .where(and(eq(videoTargets.videoDraftId, videoDraftId), eq(videoTargets.target, targetName)))
+    .get();
+  if (target?.status !== "failed") throw new Error("Повторить можно только площадку с ошибкой.");
+  const now = new Date();
+  const nowIso = now.toISOString();
+  backendDb.db.transaction((tx) => {
+    const reusePreparedYouTube = targetName === "youtube_shorts" && Boolean(target.externalId);
+    tx.update(videoTargets)
+      .set({
+        status: reusePreparedYouTube ? "prepared" : "scheduled",
+        ...(reusePreparedYouTube ? {} : { externalId: null, externalUrl: null, preparedAt: null }),
+        lastError: null,
+        updatedAt: nowIso,
+      })
+      .where(eq(videoTargets.id, target.id))
+      .run();
+    if (!reusePreparedYouTube) insertVideoJob(tx, videoDraftId, target.id, "prepare", nowIso);
+    insertVideoJob(tx, videoDraftId, target.id, "publish", new Date(now.getTime() + 60_000).toISOString());
+    tx.update(videoDrafts)
+      .set({ status: "scheduled", retentionUntil: null, updatedAt: nowIso })
+      .where(eq(videoDrafts.id, videoDraftId))
+      .run();
+  });
+}
+
 type VideoTechnicalCheck = { summary: string; warning: string | null };
 
 export async function validateVideoDraft(config: BackendConfig, backendDb: BackendDb, videoDraftId: number): Promise<VideoTechnicalCheck> {
@@ -223,6 +253,7 @@ export function videoPreview(backendDb: BackendDb, videoDraftId: number): { text
     lines.push("", "▶️ *YouTube Shorts*");
     lines.push(`Название: ${escapeMarkdown(metadata.title || "—")}`);
     if (metadata.description) lines.push(`Описание: ${escapeMarkdown(metadata.description)}`);
+    if (metadata.gameUrl) lines.push(`Игра: ${escapeMarkdown(metadata.gameUrl)}`);
     if (metadata.tags?.length) lines.push(`Теги: ${escapeMarkdown(metadata.tags.join(", "))}`);
     lines.push(`Состояние: ${videoStatusLabel(ytTarget.status)}${ytTarget.scheduledAt ? ` · ${formatTime(ytTarget.scheduledAt)}` : ""}`);
     keyboard.text("🕒 Время YouTube", `video_time:youtube_shorts:${draft.id}`);
@@ -235,7 +266,9 @@ export function videoPreview(backendDb: BackendDb, videoDraftId: number): { text
     lines.push(`Состояние: ${videoStatusLabel(igTarget.status)}${igTarget.scheduledAt ? ` · ${formatTime(igTarget.scheduledAt)}` : ""}`);
     keyboard.text("🕒 Время Instagram", `video_time:instagram_reels:${draft.id}`);
     keyboard.text("❌ Убрать Instagram", `video_remove:instagram_reels:${draft.id}`).row();
+    if (igTarget.status === "failed") keyboard.text("🔁 Повторить Instagram", `video_retry:instagram_reels:${draft.id}`).row();
   }
+  if (ytTarget?.status === "failed") keyboard.text("🔁 Повторить YouTube", `video_retry:youtube_shorts:${draft.id}`).row();
   if (targets.length > 0 && (draft.status === "draft" || draft.status === "editing")) {
     keyboard.text("📅 Запланировать", `video_schedule:${draft.id}`).row();
   }
@@ -291,11 +324,30 @@ export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb,
       await refreshVideoControlCard(backendDb, bot, job.videoDraftId);
     } catch (error) {
       failVideoJob(backendDb, job, error, config);
+      await notifyFinalVideoFailure(backendDb, bot, job);
       await refreshVideoControlCard(backendDb, bot, job.videoDraftId);
     }
   }
   pruneExpiredVideos(config, backendDb);
   return jobs.length;
+}
+
+async function notifyFinalVideoFailure(backendDb: BackendDb, bot: Bot | null, job: VideoJob): Promise<void> {
+  if (!bot || !job.videoTargetId) return;
+  const target = backendDb.db.select().from(videoTargets).where(eq(videoTargets.id, job.videoTargetId)).get();
+  if (target?.status !== "failed") return;
+  const draft = getVideoDraft(backendDb, job.videoDraftId);
+  const targetName = target.target as VideoTarget;
+  await bot.api.sendMessage(
+    draft.adminId,
+    `🔴 ${videoTargetLabel(targetName)} не опубликовал ролик «${draft.label || "Без названия"}».\n\n${target.lastError || "Неизвестная ошибка"}`,
+    {
+      reply_markup: new InlineKeyboard().text(
+        `🔁 Повторить ${targetName === "youtube_shorts" ? "YouTube" : "Instagram"}`,
+        `video_retry:${targetName}:${draft.id}`,
+      ),
+    },
+  );
 }
 
 async function refreshVideoControlCard(backendDb: BackendDb, bot: Bot | null, videoDraftId: number): Promise<void> {
@@ -359,7 +411,7 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, bot:
         filePath,
         {
           ...(metadata as YouTubeMetadata),
-          description: appendYouTubeSignature(backendDb, draft.adminId, (metadata as YouTubeMetadata).description),
+          description: composeYouTubeDescription(backendDb, draft.adminId, metadata as YouTubeMetadata),
         },
         target.scheduledAt ?? new Date().toISOString(),
       );
@@ -518,14 +570,15 @@ function failVideoJob(backendDb: BackendDb, job: VideoJob, cause: unknown, confi
   refreshVideoDraftStatus(backendDb, job.videoDraftId, config.VIDEO_MEDIA_RETENTION_HOURS);
 }
 
-function appendYouTubeSignature(backendDb: BackendDb, adminId: number, description: string): string {
+function composeYouTubeDescription(backendDb: BackendDb, adminId: number, metadata: YouTubeMetadata): string {
   const signature = backendDb.db
     .select({ value: botSettings.youtubeSignature })
     .from(botSettings)
     .where(eq(botSettings.adminId, adminId))
     .get()
     ?.value.trim();
-  return signature ? [description.trim(), signature].filter(Boolean).join("\n\n") : description;
+  const gameLine = metadata.gameUrl ? `📀 Steam: ${metadata.gameUrl}` : "";
+  return [metadata.description.trim(), gameLine, signature].filter(Boolean).join("\n\n");
 }
 
 function recoverVideoLocks(backendDb: BackendDb, timeoutSeconds: number): void {

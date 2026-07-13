@@ -42,7 +42,7 @@ describe("metrics cycle", () => {
     }
   });
 
-  it("stores collector errors and advances the durable schedule", async () => {
+  it("stores collector errors and retries the same durable checkpoint", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
       seedPublishedPost(backendDb, "post:2", "devto");
@@ -57,7 +57,7 @@ describe("metrics cycle", () => {
       });
       expect(
         backendDb.db.select({ checkCount: metricSchedule.checkCount, lastError: metricSchedule.lastError }).from(metricSchedule).get(),
-      ).toEqual({ checkCount: 1, lastError: "upstream unavailable" });
+      ).toEqual({ checkCount: 0, lastError: "upstream unavailable" });
     } finally {
       backendDb.close();
     }

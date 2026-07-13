@@ -10,6 +10,7 @@ import {
   listVideoTargets,
   refreshVideoDraftStatus,
   replaceVideoTargets,
+  retryFailedVideoTarget,
   saveVideoMetadata,
   setVideoControlCard,
   updateVideoLabel,
@@ -126,7 +127,28 @@ export async function handleVideoMessage(ctx: Context, backendDb: BackendDb, con
         await updateVideoControl(ctx, session, preview.text, preview.keyboard);
         return true;
       }
-      setData(backendDb, adminId, session, "youtube_description", text === "-" ? "" : text, "youtube_tags");
+      setData(backendDb, adminId, session, "youtube_description", text === "-" ? "" : text, "youtube_game_url");
+      await ctx.reply("📀 Ссылка на Steam или страницу игры?", {
+        reply_markup: new InlineKeyboard().text("⏭ Пропустить", "video_game_skip"),
+      });
+      return true;
+    }
+    if (session.step === "youtube_game_url") {
+      if (session.data.is_single_edit) {
+        const target = backendDb.db
+          .select()
+          .from(videoTargets)
+          .where(and(eq(videoTargets.videoDraftId, session.draftId), eq(videoTargets.target, "youtube_shorts")))
+          .get();
+        const metadata = (target?.metadataJson as any) || {};
+        metadata.gameUrl = text === "-" ? undefined : text;
+        saveVideoMetadata(backendDb, session.draftId, "youtube_shorts", metadata);
+        clearSession(backendDb, adminId);
+        const preview = videoPreview(backendDb, session.draftId);
+        await updateVideoControl(ctx, session, preview.text, preview.keyboard);
+        return true;
+      }
+      setData(backendDb, adminId, session, "youtube_game_url", text === "-" ? "" : text, "youtube_tags");
       await replyVideoPrompt(ctx, "⌨ Теги YouTube через запятую (или «-»):");
       return true;
     }
@@ -155,6 +177,7 @@ export async function handleVideoMessage(ctx: Context, backendDb: BackendDb, con
       const metadata = {
         title: String(session.data.youtube_title ?? ""),
         description: String(session.data.youtube_description ?? ""),
+        ...(String(session.data.youtube_game_url ?? "") ? { gameUrl: String(session.data.youtube_game_url) } : {}),
         tags,
       };
       saveVideoMetadata(backendDb, session.draftId, "youtube_shorts", metadata);
@@ -263,12 +286,30 @@ export async function handleVideoCallback(ctx: Context, backendDb: BackendDb, co
         saveSession(backendDb, adminId, next);
         await replyVideoPrompt(ctx, "⌨ Название для YouTube Shorts:");
       } else await askInstagramOrSchedule(ctx, backendDb, adminId, session);
+    } else if (data === "video_game_skip") {
+      const session = getSession(backendDb, adminId);
+      if (!session?.draftId || session.step !== "youtube_game_url") throw new Error("Откройте создание видео заново.");
+      setData(backendDb, adminId, session, "youtube_game_url", "", "youtube_tags");
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText("📀 Ссылка на игру пропущена.");
+      await replyVideoPrompt(ctx, "⌨ Теги YouTube через запятую (или «-»):");
+      return true;
     } else if (data.startsWith("video_open:")) {
       const id = Number(data.slice("video_open:".length));
       const preview = videoPreview(backendDb, id);
       const messageId = callbackMessageId(ctx);
       if (messageId && ctx.chat?.id) setVideoControlCard(backendDb, id, Number(ctx.chat.id), messageId);
       await ctx.editMessageText(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
+    } else if (data.startsWith("video_retry:")) {
+      const [, target, idText] = data.split(":");
+      const targetName = target as VideoTarget;
+      const id = Number(idText);
+      if (!VIDEO_TARGETS.includes(targetName)) throw new Error("Неизвестная площадка.");
+      retryFailedVideoTarget(backendDb, id, targetName);
+      const preview = videoPreview(backendDb, id);
+      await ctx.answerCallbackQuery({ text: `${videoTargetLabel(targetName)} снова поставлен в очередь` });
+      await ctx.editMessageText(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
+      return true;
     } else if (data.startsWith("video_schedule:")) {
       const id = Number(data.slice("video_schedule:".length));
       const targets = listVideoTargets(backendDb, id).map((row) => row.target as VideoTarget);
@@ -370,6 +411,7 @@ export async function handleVideoCallback(ctx: Context, backendDb: BackendDb, co
       if (targets.includes("youtube_shorts")) {
         keyboard.text("✏️ Название YouTube", `video_edit_field:youtube_title:${id}`).row();
         keyboard.text("✏️ Описание YouTube", `video_edit_field:youtube_description:${id}`).row();
+        keyboard.text("📀 Ссылка на игру", `video_edit_field:youtube_game_url:${id}`).row();
         keyboard.text("✏️ Теги YouTube", `video_edit_field:youtube_tags:${id}`).row();
       }
       if (targets.includes("instagram_reels")) {
@@ -394,6 +436,7 @@ export async function handleVideoCallback(ctx: Context, backendDb: BackendDb, co
       if (field === "label") prompt = "⌨ Введите новую внутреннюю подпись видео:";
       else if (field === "youtube_title") prompt = "⌨ Введите новое название для YouTube Shorts:";
       else if (field === "youtube_description") prompt = "⌨ Введите новое описание для YouTube (или «-»):";
+      else if (field === "youtube_game_url") prompt = "📀 Введите ссылку на Steam/страницу игры (или «-»):";
       else if (field === "youtube_tags") prompt = "⌨ Введите новые теги YouTube через запятую (или «-»):";
       else if (field === "instagram_caption") prompt = "⌨ Введите подпись для Instagram Reels — вместе с хэштегами (или «-»):";
       await replyVideoPrompt(ctx, prompt);

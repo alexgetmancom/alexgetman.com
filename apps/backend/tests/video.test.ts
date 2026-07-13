@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { and, eq } from "drizzle-orm";
 import type { BackendDb } from "../src/db/client.js";
 import { openBackendDb } from "../src/db/client.js";
+import { videoTargets } from "../src/db/schema.js";
 import {
   cancelVideo,
   createVideoDraft,
   listVideoTargets,
   replaceVideoTargets,
+  retryFailedVideoTarget,
   saveVideoMetadata,
   scheduleVideo,
   videoPreview,
@@ -74,6 +77,7 @@ describe("video publication queue", () => {
     saveVideoMetadata(backendDb, draftId, "youtube_shorts", {
       title: "Название ролика",
       description: "Описание для YouTube",
+      gameUrl: "https://store.steampowered.com/app/123",
       tags: ["game", "shorts"],
     });
     saveVideoMetadata(backendDb, draftId, "instagram_reels", {
@@ -83,7 +87,31 @@ describe("video publication queue", () => {
     const preview = videoPreview(backendDb, draftId);
     expect(preview.text).toContain("▶️ *YouTube Shorts*");
     expect(preview.text).toContain("Название: Название ролика");
+    expect(preview.text).toContain("Игра: https://store.steampowered.com/app/123");
     expect(preview.text).toContain("📸 *Instagram Reels*");
     expect(preview.text).toContain("Описание: Описание для Instagram");
+  });
+
+  it("retries only a failed platform without touching the other target", () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    replaceVideoTargets(backendDb, draftId, ["youtube_shorts", "instagram_reels"]);
+    const instagram = backendDb.db
+      .select()
+      .from(videoTargets)
+      .where(and(eq(videoTargets.videoDraftId, draftId), eq(videoTargets.target, "instagram_reels")))
+      .get();
+    if (!instagram) throw new Error("instagram target missing");
+    backendDb.db.update(videoTargets).set({ status: "failed", lastError: "Meta failed" }).where(eq(videoTargets.id, instagram.id)).run();
+
+    retryFailedVideoTarget(backendDb, draftId, "instagram_reels");
+
+    expect(backendDb.sqlite.prepare("SELECT status FROM video_targets WHERE id=?").get(instagram.id)).toEqual({ status: "scheduled" });
+    expect(
+      backendDb.sqlite.prepare("SELECT count(*) AS count FROM video_jobs WHERE video_target_id=? AND kind='prepare'").get(instagram.id),
+    ).toEqual({ count: 1 });
+    expect(
+      backendDb.sqlite.prepare("SELECT status FROM video_targets WHERE video_draft_id=? AND target='youtube_shorts'").get(draftId),
+    ).toEqual({ status: "editing" });
   });
 });

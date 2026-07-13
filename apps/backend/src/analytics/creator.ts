@@ -1,7 +1,17 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, isNull, lte, or } from "drizzle-orm";
+import type { Bot } from "grammy";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
-import { analyticsSync, creatorProfiles, socialComments, videoDrafts, videoMetricSnapshots, videoTargets } from "../db/schema.js";
+import {
+  analyticsSync,
+  creatorProfiles,
+  socialComments,
+  videoDrafts,
+  videoMetricSchedule,
+  videoMetricSnapshots,
+  videoTargets,
+} from "../db/schema.js";
+import { metricCheckpointAt } from "../metrics/checkpoints.js";
 import { requestJson } from "../social/http.js";
 import { youtubeAccessToken } from "../video/publishers.js";
 
@@ -23,7 +33,13 @@ type YouTubeComments = {
   }>;
 };
 type InstagramProfile = { username?: string; biography?: string; followers_count?: number; media_count?: number };
-type InstagramMedia = { like_count?: number; comments_count?: number; permalink?: string; timestamp?: string; caption?: string };
+type InstagramMedia = {
+  like_count?: number;
+  comments_count?: number;
+  permalink?: string;
+  timestamp?: string;
+  caption?: string;
+};
 type InstagramComments = { data?: Array<{ id?: string; text?: string; username?: string; timestamp?: string; like_count?: number }> };
 
 export async function runCreatorAnalyticsCycle(
@@ -34,14 +50,14 @@ export async function runCreatorAnalyticsCycle(
   if (!config.studio.modules.analytics || !config.studio.modules.video_posting) return 0;
   let synced = 0;
   if (config.studio.modules.youtube && canSync(backendDb, "youtube")) {
-    await syncYouTube(config, backendDb, fetchImpl);
+    await syncYouTubeProfile(config, backendDb, fetchImpl);
     synced += 1;
   }
   if (config.studio.modules.instagram && canSync(backendDb, "instagram")) {
-    await syncInstagram(config, backendDb, fetchImpl);
+    await syncInstagramProfile(config, backendDb, fetchImpl);
     synced += 1;
   }
-  return synced;
+  return synced + (await runVideoMetricSchedule(config, backendDb, fetchImpl));
 }
 
 export function creatorDashboard(backendDb: BackendDb, config: BackendConfig, days: number): { text: string; hasComments: boolean } {
@@ -175,7 +191,38 @@ export function creatorVideoMetrics(backendDb: BackendDb, videoDraftId: number):
   return lines.join("\n");
 }
 
-async function syncYouTube(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
+/** Sends one creator-summary each Sunday after 21:00 Moscow time. */
+export async function runWeeklyCreatorSummary(
+  config: BackendConfig,
+  backendDb: BackendDb,
+  bot: Bot | null,
+  now = new Date(),
+): Promise<boolean> {
+  if (!bot || !config.studio.modules.analytics || !config.studio.modules.video_posting) return false;
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Moscow",
+      weekday: "short",
+      hour: "2-digit",
+      hourCycle: "h23",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    })
+      .formatToParts(now)
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value]),
+  ) as Record<string, string>;
+  if (parts.weekday !== "Sun" || Number(parts.hour) < 21) return false;
+  const key = `weekly_summary:${parts.year}-${parts.month}-${parts.day}`;
+  if (backendDb.db.select().from(analyticsSync).where(eq(analyticsSync.source, key)).get()) return false;
+  const report = creatorDashboard(backendDb, config, 7).text.replace("📊 *Статистика за 7 дней*", "📊 *Итоги недели*");
+  for (const adminId of config.ADMIN_IDS) await bot.api.sendMessage(adminId, report, { parse_mode: "Markdown" });
+  markSynced(backendDb, key);
+  return true;
+}
+
+async function syncYouTubeProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
   try {
     const token = await youtubeAccessToken(config);
     const auth = { Authorization: `Bearer ${token}` };
@@ -193,51 +240,6 @@ async function syncYouTube(config: BackendConfig, backendDb: BackendDb, fetchImp
       videoCount: number(channelItem?.statistics?.videoCount),
       ...period,
     });
-    const targets = publishedTargets(backendDb, "youtube_shorts");
-    for (const target of targets) {
-      const video = await requestJson<YouTubeVideo>(
-        fetchImpl,
-        `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics&id=${encodeURIComponent(target.externalId)}`,
-        {
-          headers: auth,
-        },
-      );
-      const item = video.items?.[0];
-      upsertVideoSnapshot(backendDb, target.id, "youtube_shorts", {
-        title: item?.snippet?.title ?? target.label,
-        url: target.externalUrl,
-        publishedAt: item?.snippet?.publishedAt ?? target.publishedAt,
-        views: number(item?.statistics?.viewCount),
-        likes: number(item?.statistics?.likeCount),
-        comments: number(item?.statistics?.commentCount),
-      });
-      const comments = await requestJson<YouTubeComments>(
-        fetchImpl,
-        `https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=${encodeURIComponent(target.externalId)}&maxResults=50&order=time`,
-        { headers: auth },
-      );
-      for (const comment of comments.items ?? []) {
-        const details = comment.snippet?.topLevelComment?.snippet;
-        if (!comment.id || !details?.textDisplay) continue;
-        backendDb.db
-          .insert(socialComments)
-          .values({
-            platform: "youtube",
-            commentId: comment.id,
-            videoTargetId: target.id,
-            author: details.authorDisplayName ?? null,
-            text: details.textDisplay,
-            likeCount: number(details.likeCount),
-            publishedAt: details.publishedAt ?? null,
-            fetchedAt: new Date().toISOString(),
-          })
-          .onConflictDoUpdate({
-            target: [socialComments.platform, socialComments.commentId],
-            set: { text: details.textDisplay, likeCount: number(details.likeCount), fetchedAt: new Date().toISOString() },
-          })
-          .run();
-      }
-    }
     markSynced(backendDb, "youtube");
   } catch (error) {
     markSynced(backendDb, "youtube", error instanceof Error ? error.message : String(error));
@@ -258,7 +260,7 @@ async function youtubeReport(fetchImpl: typeof fetch, token: string): Promise<Re
   );
 }
 
-async function syncInstagram(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
+async function syncInstagramProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
   try {
     const token = config.INSTAGRAM_ACCESS_TOKEN;
     const userId = config.INSTAGRAM_USER_ID;
@@ -273,48 +275,218 @@ async function syncInstagram(config: BackendConfig, backendDb: BackendDb, fetchI
       followersCount: number(profileData.followers_count),
       mediaCount: number(profileData.media_count),
     });
-    for (const target of publishedTargets(backendDb, "instagram_reels")) {
-      const base = `https://graph.facebook.com/${config.INSTAGRAM_GRAPH_API_VERSION}/${target.externalId}`;
-      const media = await requestJson<InstagramMedia>(
-        fetchImpl,
-        `${base}?fields=like_count,comments_count,permalink,timestamp,caption&access_token=${encodeURIComponent(token)}`,
-      );
-      upsertVideoSnapshot(backendDb, target.id, "instagram_reels", {
-        title: target.label,
-        url: media.permalink ?? target.externalUrl,
-        publishedAt: media.timestamp ?? target.publishedAt,
-        likes: number(media.like_count),
-        comments: number(media.comments_count),
-      });
-      const comments = await requestJson<InstagramComments>(
-        fetchImpl,
-        `${base}/comments?fields=id,text,username,timestamp,like_count&limit=50&access_token=${encodeURIComponent(token)}`,
-      );
-      for (const comment of comments.data ?? []) {
-        if (!comment.id || !comment.text) continue;
-        backendDb.db
-          .insert(socialComments)
-          .values({
-            platform: "instagram",
-            commentId: comment.id,
-            videoTargetId: target.id,
-            author: comment.username ?? null,
-            text: comment.text,
-            likeCount: number(comment.like_count),
-            publishedAt: comment.timestamp ?? null,
-            fetchedAt: new Date().toISOString(),
-          })
-          .onConflictDoUpdate({
-            target: [socialComments.platform, socialComments.commentId],
-            set: { text: comment.text, likeCount: number(comment.like_count), fetchedAt: new Date().toISOString() },
-          })
-          .run();
-      }
-    }
     markSynced(backendDb, "instagram");
   } catch (error) {
     markSynced(backendDb, "instagram", error instanceof Error ? error.message : String(error));
   }
+}
+
+type VideoMetricTask = {
+  id: number;
+  target: "youtube_shorts" | "instagram_reels";
+  externalId: string;
+  externalUrl: string | null;
+  publishedAt: string;
+  label: string | null;
+  checkpointIndex: number;
+};
+
+/** Uses the same fixed-from-publication checkpoints as text-post metrics. */
+async function runVideoMetricSchedule(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<number> {
+  ensureVideoMetricSchedule(backendDb);
+  const tasks = dueVideoMetricTasks(backendDb, config.MAX_METRIC_TASKS_PER_CYCLE);
+  for (const task of tasks) {
+    try {
+      if (task.target === "youtube_shorts") await collectYouTubeVideoMetrics(config, backendDb, task, fetchImpl);
+      else await collectInstagramVideoMetrics(config, backendDb, task, fetchImpl);
+      finishVideoMetricTask(backendDb, task, null);
+    } catch (error) {
+      finishVideoMetricTask(backendDb, task, error instanceof Error ? error.message : String(error));
+    }
+  }
+  return tasks.length;
+}
+
+function ensureVideoMetricSchedule(backendDb: BackendDb): void {
+  const now = new Date().toISOString();
+  const targets = backendDb.db
+    .select({ id: videoTargets.id, publishedAt: videoTargets.publishedAt })
+    .from(videoTargets)
+    .where(
+      and(eq(videoTargets.status, "published"), or(eq(videoTargets.target, "youtube_shorts"), eq(videoTargets.target, "instagram_reels"))),
+    )
+    .all();
+  for (const target of targets) {
+    const publishedAt = new Date(target.publishedAt ?? now);
+    backendDb.db
+      .insert(videoMetricSchedule)
+      .values({
+        videoTargetId: target.id,
+        checkpointIndex: 0,
+        nextCheckAt: metricCheckpointAt(publishedAt.toISOString(), 0, publishedAt)?.toISOString() ?? publishedAt.toISOString(),
+        updatedAt: now,
+      })
+      .onConflictDoNothing()
+      .run();
+  }
+}
+
+function dueVideoMetricTasks(backendDb: BackendDb, limit: number): VideoMetricTask[] {
+  const now = new Date().toISOString();
+  return backendDb.db
+    .select({
+      id: videoTargets.id,
+      target: videoTargets.target,
+      externalId: videoTargets.externalId,
+      externalUrl: videoTargets.externalUrl,
+      publishedAt: videoTargets.publishedAt,
+      label: videoDrafts.label,
+      checkpointIndex: videoMetricSchedule.checkpointIndex,
+    })
+    .from(videoMetricSchedule)
+    .innerJoin(videoTargets, eq(videoTargets.id, videoMetricSchedule.videoTargetId))
+    .innerJoin(videoDrafts, eq(videoDrafts.id, videoTargets.videoDraftId))
+    .where(
+      and(
+        eq(videoTargets.status, "published"),
+        isNull(videoMetricSchedule.frozenAt),
+        lte(videoMetricSchedule.nextCheckAt, now),
+        or(eq(videoTargets.target, "youtube_shorts"), eq(videoTargets.target, "instagram_reels")),
+      ),
+    )
+    .orderBy(asc(videoMetricSchedule.nextCheckAt))
+    .limit(limit)
+    .all()
+    .filter((task) => Boolean(task.externalId && task.publishedAt)) as VideoMetricTask[];
+}
+
+function finishVideoMetricTask(backendDb: BackendDb, task: VideoMetricTask, error: string | null): void {
+  const now = new Date();
+  const nextIndex = error ? task.checkpointIndex : task.checkpointIndex + 1;
+  const nextCheckAt = error ? new Date(now.getTime() + 15 * 60_000) : metricCheckpointAt(task.publishedAt, nextIndex, now);
+  backendDb.db
+    .update(videoMetricSchedule)
+    .set({
+      checkpointIndex: nextIndex,
+      nextCheckAt: (nextCheckAt ?? now).toISOString(),
+      lastCheckedAt: now.toISOString(),
+      lastError: error,
+      frozenAt: nextCheckAt == null ? now.toISOString() : null,
+      updatedAt: now.toISOString(),
+    })
+    .where(eq(videoMetricSchedule.videoTargetId, task.id))
+    .run();
+}
+
+async function collectYouTubeVideoMetrics(
+  config: BackendConfig,
+  backendDb: BackendDb,
+  target: VideoMetricTask,
+  fetchImpl: typeof fetch,
+): Promise<void> {
+  const token = await youtubeAccessToken(config);
+  const auth = { Authorization: `Bearer ${token}` };
+  const video = await requestJson<YouTubeVideo>(
+    fetchImpl,
+    `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics&id=${encodeURIComponent(target.externalId)}`,
+    { headers: auth },
+  );
+  const item = video.items?.[0];
+  upsertVideoSnapshot(backendDb, target.id, "youtube_shorts", {
+    title: item?.snippet?.title ?? target.label ?? "Без названия",
+    url: target.externalUrl,
+    publishedAt: item?.snippet?.publishedAt ?? target.publishedAt,
+    views: number(item?.statistics?.viewCount),
+    likes: number(item?.statistics?.likeCount),
+    comments: number(item?.statistics?.commentCount),
+  });
+  const comments = await requestJson<YouTubeComments>(
+    fetchImpl,
+    `https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=${encodeURIComponent(target.externalId)}&maxResults=50&order=time`,
+    { headers: auth },
+  );
+  for (const comment of comments.items ?? []) {
+    const details = comment.snippet?.topLevelComment?.snippet;
+    if (!comment.id || !details?.textDisplay) continue;
+    upsertComment(
+      backendDb,
+      "youtube",
+      comment.id,
+      target.id,
+      details.textDisplay,
+      details.authorDisplayName,
+      number(details.likeCount),
+      details.publishedAt,
+    );
+  }
+}
+
+async function collectInstagramVideoMetrics(
+  config: BackendConfig,
+  backendDb: BackendDb,
+  target: VideoMetricTask,
+  fetchImpl: typeof fetch,
+): Promise<void> {
+  const token = config.INSTAGRAM_ACCESS_TOKEN;
+  if (!token) throw new Error("Instagram credentials are missing");
+  const base = `https://graph.facebook.com/${config.INSTAGRAM_GRAPH_API_VERSION}/${target.externalId}`;
+  const media = await requestJson<InstagramMedia>(
+    fetchImpl,
+    `${base}?fields=like_count,comments_count,permalink,timestamp,caption&access_token=${encodeURIComponent(token)}`,
+  );
+  upsertVideoSnapshot(backendDb, target.id, "instagram_reels", {
+    title: target.label ?? "Без названия",
+    url: media.permalink ?? target.externalUrl,
+    publishedAt: media.timestamp ?? target.publishedAt,
+    likes: number(media.like_count),
+    comments: number(media.comments_count),
+  });
+  const comments = await requestJson<InstagramComments>(
+    fetchImpl,
+    `${base}/comments?fields=id,text,username,timestamp,like_count&limit=50&access_token=${encodeURIComponent(token)}`,
+  );
+  for (const comment of comments.data ?? []) {
+    if (!comment.id || !comment.text) continue;
+    upsertComment(
+      backendDb,
+      "instagram",
+      comment.id,
+      target.id,
+      comment.text,
+      comment.username,
+      number(comment.like_count),
+      comment.timestamp,
+    );
+  }
+}
+
+function upsertComment(
+  backendDb: BackendDb,
+  platform: "youtube" | "instagram",
+  commentId: string,
+  videoTargetId: number,
+  text: string,
+  author: string | undefined,
+  likeCount: number,
+  publishedAt: string | undefined,
+): void {
+  backendDb.db
+    .insert(socialComments)
+    .values({
+      platform,
+      commentId,
+      videoTargetId,
+      author: author ?? null,
+      text,
+      likeCount,
+      publishedAt: publishedAt ?? null,
+      fetchedAt: new Date().toISOString(),
+    })
+    .onConflictDoUpdate({
+      target: [socialComments.platform, socialComments.commentId],
+      set: { text, likeCount, fetchedAt: new Date().toISOString() },
+    })
+    .run();
 }
 
 function canSync(backendDb: BackendDb, source: string): boolean {
@@ -344,22 +516,6 @@ function upsertVideoSnapshot(backendDb: BackendDb, videoTargetId: number, platfo
     .insert(videoMetricSnapshots)
     .values({ videoTargetId, platform, metricsJson: metrics, sampledAt: new Date().toISOString() })
     .run();
-}
-
-function publishedTargets(backendDb: BackendDb, platform: "youtube_shorts" | "instagram_reels") {
-  return backendDb.db
-    .select({
-      id: videoTargets.id,
-      externalId: videoTargets.externalId,
-      externalUrl: videoTargets.externalUrl,
-      publishedAt: videoTargets.publishedAt,
-      label: videoDrafts.label,
-    })
-    .from(videoTargets)
-    .innerJoin(videoDrafts, eq(videoDrafts.id, videoTargets.videoDraftId))
-    .where(and(eq(videoTargets.target, platform), eq(videoTargets.status, "published")))
-    .all()
-    .filter((target): target is typeof target & { externalId: string } => Boolean(target.externalId));
 }
 
 function latestVideoMetrics(

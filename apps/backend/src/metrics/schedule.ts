@@ -2,6 +2,7 @@ import { and, asc, eq, inArray, isNull, lte, notInArray, or, sql } from "drizzle
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { metricSchedule, posts, postTargets } from "../db/schema.js";
+import { metricCheckpointAt } from "./checkpoints.js";
 
 export type MetricTask = {
   postKey: string;
@@ -14,7 +15,6 @@ export type MetricTask = {
   url: string | null;
 };
 
-const INTERVALS_MS = [3, 6, 12, 24, 48].map((hours) => hours * 3_600_000).concat([7 * 86_400_000, 30 * 86_400_000]);
 const PAID_METRIC_TARGETS = ["x", "twitter"] as const;
 
 export function ensureMetricSchedule(backendDb: BackendDb, targets: readonly string[]): number {
@@ -34,7 +34,7 @@ export function ensureMetricSchedule(backendDb: BackendDb, targets: readonly str
         .values({
           postKey: row.postKey,
           target: row.target,
-          nextCheckAt: new Date(publishedAt.getTime() + 3_600_000).toISOString(),
+          nextCheckAt: metricCheckpointAt(publishedAt.toISOString(), 0, publishedAt)?.toISOString() ?? publishedAt.toISOString(),
           frozenAt: null,
           updatedAt: now,
         })
@@ -86,14 +86,15 @@ export function dueMetricTasks(backendDb: BackendDb, config: BackendConfig): Met
 
 export function finishMetricTask(backendDb: BackendDb, task: MetricTask, error: string | null): void {
   const now = new Date();
-  const interval = INTERVALS_MS[task.checkCount];
+  const nextIndex = error ? task.checkCount : task.checkCount + 1;
+  const nextCheckpoint = error ? new Date(now.getTime() + 15 * 60_000) : metricCheckpointAt(task.dateUtc, nextIndex, now);
   backendDb.db
     .update(metricSchedule)
     .set({
-      nextCheckAt: interval == null ? null : new Date(now.getTime() + interval).toISOString(),
+      nextCheckAt: nextCheckpoint?.toISOString() ?? null,
       lastCheckedAt: now.toISOString(),
-      checkCount: sql`${metricSchedule.checkCount} + 1`,
-      frozenAt: interval == null ? now.toISOString() : null,
+      checkCount: error ? task.checkCount : sql`${metricSchedule.checkCount} + 1`,
+      frozenAt: nextCheckpoint == null ? now.toISOString() : null,
       lastError: error,
       updatedAt: now.toISOString(),
     })
