@@ -32,7 +32,6 @@ import {
   setData,
   targetKeyboard,
   updateVideoControl,
-  type VideoSession,
 } from "./video-session.js";
 
 export async function startVideoFlow(ctx: Context, backendDb: BackendDb): Promise<void> {
@@ -108,7 +107,7 @@ export async function handleVideoMessage(ctx: Context, backendDb: BackendDb, con
         await updateVideoControl(ctx, session, preview.text, preview.keyboard);
         return true;
       }
-      const next = setData(backendDb, adminId, session, "youtube_title", text, "youtube_description");
+      setData(backendDb, adminId, session, "youtube_title", text, "youtube_description");
       await replyVideoPrompt(ctx, "⌨ Описание для YouTube (отправьте «-», если не нужно):");
       return true;
     }
@@ -127,7 +126,7 @@ export async function handleVideoMessage(ctx: Context, backendDb: BackendDb, con
         await updateVideoControl(ctx, session, preview.text, preview.keyboard);
         return true;
       }
-      const next = setData(backendDb, adminId, session, "youtube_description", text === "-" ? "" : text, "youtube_tags");
+      setData(backendDb, adminId, session, "youtube_description", text === "-" ? "" : text, "youtube_tags");
       await replyVideoPrompt(ctx, "⌨ Теги YouTube через запятую (или «-»):");
       return true;
     }
@@ -178,7 +177,7 @@ export async function handleVideoMessage(ctx: Context, backendDb: BackendDb, con
         await updateVideoControl(ctx, session, preview.text, preview.keyboard);
         return true;
       }
-      const next = setData(backendDb, adminId, session, "instagram_caption", text === "-" ? "" : text, "instagram_hashtags");
+      setData(backendDb, adminId, session, "instagram_caption", text === "-" ? "" : text, "instagram_hashtags");
       await replyVideoPrompt(ctx, "⌨ Хэштеги Instagram через пробел или запятую (или «-»):");
       return true;
     }
