@@ -132,6 +132,10 @@
   overflow-wrap: anywhere;
 }
 
+.story-visual__fallback[hidden] {
+  display: none;
+}
+
 .rail-card__progress {
   position: absolute;
   top: 0;
