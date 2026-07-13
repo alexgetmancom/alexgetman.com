@@ -17,11 +17,12 @@ type VideoTargetRow = typeof videoTargets.$inferSelect;
 type VideoJob = typeof videoJobs.$inferSelect;
 type JobKind = "prepare" | "publish" | "reminder";
 
-export function createVideoDraft(backendDb: BackendDb, adminId: number, assetKey: string): number {
+export function createVideoDraft(backendDb: BackendDb, adminId: number, assetKey: string, retentionHours: number): number {
   const now = new Date().toISOString();
+  const retentionUntil = new Date(Date.now() + retentionHours * 60 * 60_000).toISOString();
   const row = backendDb.db
     .insert(videoDrafts)
-    .values({ adminId, assetKey, status: "editing", createdAt: now, updatedAt: now })
+    .values({ adminId, assetKey, status: "editing", retentionUntil, createdAt: now, updatedAt: now })
     .returning({ id: videoDrafts.id })
     .get();
   if (!row) throw new Error("Could not create video draft.");
@@ -443,19 +444,34 @@ export function refreshVideoDraftStatus(backendDb: BackendDb, videoDraftId: numb
 
 function pruneExpiredVideos(config: BackendConfig, backendDb: BackendDb): void {
   const now = new Date().toISOString();
+  // Old drafts created before draft retention was introduced have no deadline.
+  // Treat them as expired after the same retention interval from their creation.
+  const legacyDraftExpiresAt = new Date(Date.now() - config.VIDEO_MEDIA_RETENTION_HOURS * 60 * 60_000).toISOString();
   const rows = backendDb.db
     .select()
     .from(videoDrafts)
     .where(
-      and(
-        lte(videoDrafts.retentionUntil, now),
-        or(eq(videoDrafts.status, "published"), eq(videoDrafts.status, "partial"), eq(videoDrafts.status, "cancelled")),
+      or(
+        and(
+          lte(videoDrafts.retentionUntil, now),
+          or(
+            eq(videoDrafts.status, "published"),
+            eq(videoDrafts.status, "partial"),
+            eq(videoDrafts.status, "cancelled"),
+            eq(videoDrafts.status, "editing"),
+          ),
+        ),
+        and(eq(videoDrafts.status, "editing"), isNull(videoDrafts.retentionUntil), lte(videoDrafts.createdAt, legacyDraftExpiresAt)),
       ),
     )
     .all();
   for (const row of rows) {
     deleteVideo(config, row.assetKey);
-    backendDb.db.update(videoDrafts).set({ retentionUntil: null, updatedAt: now }).where(eq(videoDrafts.id, row.id)).run();
+    backendDb.db
+      .update(videoDrafts)
+      .set({ status: row.status === "editing" ? "cancelled" : row.status, retentionUntil: null, updatedAt: now })
+      .where(eq(videoDrafts.id, row.id))
+      .run();
   }
 }
 

@@ -21,7 +21,7 @@ afterEach(() => {
 describe("video publication queue", () => {
   it("keeps independent platform schedules and queues prepare, reminder and publish work", () => {
     backendDb = openBackendDb(":memory:");
-    const draftId = createVideoDraft(backendDb, 42, "video-source");
+    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts", "instagram_reels"]);
     const youtubeAt = new Date(Date.now() + 60 * 60_000);
     const instagramAt = new Date(Date.now() + 2 * 60 * 60_000);
@@ -45,7 +45,7 @@ describe("video publication queue", () => {
 
   it("retains a cancelled source for at least the configured 24 hours", () => {
     backendDb = openBackendDb(":memory:");
-    const draftId = createVideoDraft(backendDb, 42, "video-source");
+    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
     cancelVideo(backendDb, draftId, 24);
     const row = backendDb.sqlite.prepare("SELECT status, retention_until FROM video_drafts WHERE id=?").get(draftId) as {
@@ -56,9 +56,20 @@ describe("video publication queue", () => {
     expect(new Date(row.retention_until).getTime()).toBeGreaterThanOrEqual(Date.now() + 23 * 60 * 60_000);
   });
 
+  it("sets a 24-hour retention deadline as soon as a draft video is uploaded", () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    const row = backendDb.sqlite.prepare("SELECT status, retention_until FROM video_drafts WHERE id=?").get(draftId) as {
+      status: string;
+      retention_until: string;
+    };
+    expect(row.status).toBe("editing");
+    expect(new Date(row.retention_until).getTime()).toBeGreaterThanOrEqual(Date.now() + 23 * 60 * 60_000);
+  });
+
   it("shows separate YouTube and Instagram metadata on the control card", () => {
     backendDb = openBackendDb(":memory:");
-    const draftId = createVideoDraft(backendDb, 42, "video-source");
+    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts", "instagram_reels"]);
     saveVideoMetadata(backendDb, draftId, "youtube_shorts", {
       title: "Название ролика",

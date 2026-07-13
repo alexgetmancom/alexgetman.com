@@ -51,7 +51,7 @@ export async function handleVideoMessage(ctx: Context, backendDb: BackendDb, con
   try {
     if (session.step === "asset") {
       const stored = await storeTelegramVideo(ctx, config);
-      const draftId = createVideoDraft(backendDb, adminId, stored.assetKey);
+      const draftId = createVideoDraft(backendDb, adminId, stored.assetKey, config.VIDEO_MEDIA_RETENTION_HOURS);
       const selected = enabledVideoTargets(config);
       const next = { ...session, draftId, step: "targets", selected };
       saveSession(backendDb, adminId, next);
