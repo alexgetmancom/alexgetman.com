@@ -72,12 +72,19 @@ jobs:
           IMAGE: ghcr.io/${{ github.repository_owner }}/alexgetman-backend@${{ needs.docker.outputs.image_digest }}
           RELEASE: ${{ needs.docker.outputs.release_sha }}
           NGINX_DEPLOY_ENABLED: ${{ vars.NGINX_DEPLOY_ENABLED }}
+          MARU_DEPLOY_ENABLED: ${{ vars.MARU_DEPLOY_ENABLED }}
         run: |
           test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER" && test -n "$DEPLOY_AGENT_TOKEN"
           runtime=/home/deploy/alexgetman-runtime
           scp -o BatchMode=yes apps/backend/compose.yaml "$DEPLOY_USER@$DEPLOY_HOST:$runtime/compose.yaml.next"
           ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "set -e; docker compose --env-file $runtime/deploy-image.env -f $runtime/compose.yaml.next config --quiet; mv $runtime/compose.yaml.next $runtime/compose.yaml"
           ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "set -e; runtime=$runtime; image=\$(bun -e 'const state=JSON.parse(await Bun.file(\"/var/lib/alexgetman-deploy/state.json\").text()); process.stdout.write(state.current?.image ?? \"\")'); printf '%s\\n' \"\$image\" | grep -Eq '^ghcr.io/alexgetmancom/alexgetman-backend@sha256:[0-9a-fA-F]{64}\$' || exit 1; if ! grep -Eq '^BACKEND_IMAGE=ghcr.io/alexgetmancom/alexgetman-backend@sha256:[0-9a-fA-F]{64}\$' \"\$runtime/deploy-image.env\"; then tmp=\"\$runtime/deploy-image.env.next\"; { grep -v '^BACKEND_IMAGE=' \"\$runtime/deploy-image.env\" || true; printf 'BACKEND_IMAGE=%s\\n' \"\$image\"; } > \"\$tmp\"; mv \"\$tmp\" \"\$runtime/deploy-image.env\"; fi"
+          if [ "$MARU_DEPLOY_ENABLED" = "true" ]; then
+            maru_runtime=/home/deploy/maru
+            ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "set -e; runtime=$maru_runtime; image=\$(docker image inspect --format '{{index .RepoDigests 0}}' maru-backend); printf '%s\\n' \"\$image\" | grep -Eq '^ghcr.io/alexgetmancom/alexgetman-backend@sha256:[0-9a-fA-F]{64}\$' || exit 1; if ! grep -Eq '^BACKEND_IMAGE=ghcr.io/alexgetmancom/alexgetman-backend@sha256:[0-9a-fA-F]{64}\$' \"\$runtime/deploy-image.env\" 2>/dev/null; then tmp=\"\$runtime/deploy-image.env.next\"; { grep -v '^BACKEND_IMAGE=' \"\$runtime/deploy-image.env\" 2>/dev/null || true; printf 'BACKEND_IMAGE=%s\\n' \"\$image\"; } > \"\$tmp\"; mv \"\$tmp\" \"\$runtime/deploy-image.env\"; fi"
+            scp -o BatchMode=yes deploy/maru.compose.yaml "$DEPLOY_USER@$DEPLOY_HOST:$maru_runtime/maru.compose.yaml.next"
+            ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "set -e; runtime=$maru_runtime; docker compose --env-file \$runtime/deploy-image.env -f \$runtime/maru.compose.yaml.next config --quiet; mv \$runtime/maru.compose.yaml.next \$runtime/maru.compose.yaml"
+          fi
           if [ "$NGINX_DEPLOY_ENABLED" = "true" ]; then
             ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "install -d $runtime/nginx"
             scp -o BatchMode=yes deploy/nginx/alexgetman.com.conf.example "$DEPLOY_USER@$DEPLOY_HOST:$runtime/nginx/alexgetman.com.conf"
@@ -86,4 +93,7 @@ jobs:
           fi
           payload=$(printf '{"image":"%s","release":"%s"}' "$IMAGE" "$RELEASE")
           ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "curl --fail-with-body --silent --show-error --retry 2 --retry-all-errors -H 'Authorization: Bearer $DEPLOY_AGENT_TOKEN' -H 'Content-Type: application/json' --data '$payload' http://127.0.0.1:9899/v1/deploy"
+          if [ "$MARU_DEPLOY_ENABLED" = "true" ]; then
+            ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "curl --fail-with-body --silent --show-error --retry 2 --retry-all-errors -H 'Authorization: Bearer $DEPLOY_AGENT_TOKEN' -H 'Content-Type: application/json' --data '$payload' http://127.0.0.1:9899/v1/deploy/maru"
+          fi
           curl --fail --silent --show-error --retry 3 --retry-all-errors https://alexgetman.com/readyz

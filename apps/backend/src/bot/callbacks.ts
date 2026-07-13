@@ -4,7 +4,7 @@ import { PRESETS } from "../botTargets.js";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { adminState, drafts } from "../db/schema.js";
-import { isDeploymentRollbackCallback, requestDeploymentRollback } from "../deployment.js";
+import { parseDeploymentRollbackCallback, requestDeploymentRollback } from "../deployment.js";
 import { formatMsk, nextPublishingSlot, parseManualSchedule, rebalanceScheduledDrafts, schedulePreset } from "../publishingSchedule.js";
 import { cancelDraft, hasLocaleTarget, publishDraftToQueue, requireDraft } from "./drafts.js";
 import { extractMessage, parseTargets } from "./message.js";
@@ -39,8 +39,9 @@ function setAdminState(
 
 export async function handleDraftCallback(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<void> {
   const data = ctx.callbackQuery?.data ?? "";
-  if (isDeploymentRollbackCallback(data)) {
-    const result = await requestDeploymentRollback(config, data.slice("deploy_rollback:".length));
+  const deploymentRollback = parseDeploymentRollbackCallback(data);
+  if (deploymentRollback) {
+    const result = await requestDeploymentRollback(config, deploymentRollback.target, deploymentRollback.revision);
     await ctx.answerCallbackQuery({ text: "Rollback requested" });
     await ctx.reply(
       result.ok ? `Rollback complete: ${result.currentRevision.slice(0, 12)}.` : `Rollback was not performed: ${result.message}`,

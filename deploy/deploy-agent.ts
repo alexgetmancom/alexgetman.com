@@ -4,16 +4,19 @@ import { dirname } from "node:path";
 
 type Release = { image: string; revision: string; deployedAt: string };
 type DeploymentState = { current?: Release; previous?: Release; lastFailure?: { revision: string; message: string; at: string } };
+type DeploymentTarget = {
+  name: string;
+  composeFile: string;
+  imageEnvFile: string;
+  stateFile: string;
+  healthUrl: string;
+  container: string;
+};
 
 const config = {
   host: Bun.env.DEPLOY_AGENT_HOST ?? "172.17.0.1",
   port: Number(Bun.env.DEPLOY_AGENT_PORT ?? "9899"),
   token: required("DEPLOY_AGENT_TOKEN"),
-  composeFile: required("DEPLOY_COMPOSE_FILE"),
-  imageEnvFile: required("DEPLOY_IMAGE_ENV_FILE"),
-  stateFile: Bun.env.DEPLOY_STATE_FILE ?? "/var/lib/alexgetman-deploy/state.json",
-  healthUrl: Bun.env.DEPLOY_HEALTH_URL ?? "http://127.0.0.1:8788/readyz",
-  container: Bun.env.DEPLOY_CONTAINER_NAME ?? "alexgetman-backend",
   repository: Bun.env.DEPLOY_IMAGE_REPOSITORY ?? "ghcr.io/alexgetmancom/alexgetman-backend",
   notificationToken: Bun.env.DEPLOY_NOTIFICATION_BOT_TOKEN ?? Bun.env.CONTROLLER_BOT_TOKEN ?? Bun.env.TELEGRAM_BOT_TOKEN,
   notificationChatId: Bun.env.DEPLOY_NOTIFICATION_CHAT_ID,
@@ -46,6 +49,41 @@ function revision(value: unknown): value is string {
   return typeof value === "string" && /^[a-f0-9]{7,40}$/i.test(value);
 }
 
+function deploymentTargets(): Map<string, DeploymentTarget> {
+  const configured = Bun.env.DEPLOY_TARGETS_JSON?.trim();
+  if (!configured) {
+    const target: DeploymentTarget = {
+      name: "alex",
+      composeFile: required("DEPLOY_COMPOSE_FILE"),
+      imageEnvFile: required("DEPLOY_IMAGE_ENV_FILE"),
+      stateFile: Bun.env.DEPLOY_STATE_FILE ?? "/var/lib/alexgetman-deploy/state.json",
+      healthUrl: Bun.env.DEPLOY_HEALTH_URL ?? "http://127.0.0.1:8788/readyz",
+      container: Bun.env.DEPLOY_CONTAINER_NAME ?? "alexgetman-backend",
+    };
+    return new Map([[target.name, target]]);
+  }
+  const parsed = JSON.parse(configured) as Record<string, Omit<DeploymentTarget, "name">>;
+  const targets = new Map<string, DeploymentTarget>();
+  for (const [name, value] of Object.entries(parsed)) {
+    if (!/^[a-z][a-z0-9_-]{0,6}$/.test(name)) throw new Error(`Invalid deployment target name: ${name}`);
+    if (!value || typeof value !== "object") throw new Error(`Invalid deployment target: ${name}`);
+    for (const key of ["composeFile", "imageEnvFile", "stateFile", "healthUrl", "container"] as const) {
+      if (typeof value[key] !== "string" || !value[key].trim()) throw new Error(`Deployment target ${name} is missing ${key}`);
+    }
+    targets.set(name, { name, ...value });
+  }
+  if (targets.size === 0) throw new Error("DEPLOY_TARGETS_JSON must configure at least one target.");
+  return targets;
+}
+
+const targets = deploymentTargets();
+
+function target(name: string | undefined): DeploymentTarget {
+  const selected = targets.get(name ?? "alex");
+  if (!selected) throw new HttpError(404, `Unknown deployment target: ${name ?? "alex"}`);
+  return selected;
+}
+
 async function command(args: string[], allowFailure = false): Promise<string> {
   const process = Bun.spawn(["docker", ...args], { stdout: "pipe", stderr: "pipe" });
   const [stdout, stderr, code] = await Promise.all([
@@ -57,35 +95,35 @@ async function command(args: string[], allowFailure = false): Promise<string> {
   return stdout.trim();
 }
 
-function composeArgs(...args: string[]): string[] {
-  return ["compose", "--env-file", config.imageEnvFile, "-f", config.composeFile, ...args];
+function composeArgs(deploymentTarget: DeploymentTarget, ...args: string[]): string[] {
+  return ["compose", "--env-file", deploymentTarget.imageEnvFile, "-f", deploymentTarget.composeFile, ...args];
 }
 
-async function state(): Promise<DeploymentState> {
-  const file = Bun.file(config.stateFile);
+async function state(deploymentTarget: DeploymentTarget): Promise<DeploymentState> {
+  const file = Bun.file(deploymentTarget.stateFile);
   if (!(await file.exists())) return {};
   const parsed = await file.json().catch(() => null);
   return parsed && typeof parsed === "object" ? (parsed as DeploymentState) : {};
 }
 
-async function writeState(value: DeploymentState): Promise<void> {
-  await mkdir(dirname(config.stateFile), { recursive: true });
-  await Bun.write(config.stateFile, `${JSON.stringify(value, null, 2)}\n`);
+async function writeState(deploymentTarget: DeploymentTarget, value: DeploymentState): Promise<void> {
+  await mkdir(dirname(deploymentTarget.stateFile), { recursive: true });
+  await Bun.write(deploymentTarget.stateFile, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-async function currentImage(): Promise<string | undefined> {
-  const env = await Bun.file(config.imageEnvFile)
+async function currentImage(deploymentTarget: DeploymentTarget): Promise<string | undefined> {
+  const env = await Bun.file(deploymentTarget.imageEnvFile)
     .text()
     .catch(() => "");
   const declared = env.match(/^BACKEND_IMAGE=(.+)$/m)?.[1]?.trim();
   if (immutableImage(declared)) return declared;
-  const repoDigest = await command(["image", "inspect", "--format", "{{index .RepoDigests 0}}", config.container], true);
+  const repoDigest = await command(["image", "inspect", "--format", "{{index .RepoDigests 0}}", deploymentTarget.container], true);
   return immutableImage(repoDigest) ? repoDigest : undefined;
 }
 
-async function writeImage(image: string): Promise<void> {
-  const temporary = `${config.imageEnvFile}.next`;
-  const existing = await Bun.file(config.imageEnvFile)
+async function writeImage(deploymentTarget: DeploymentTarget, image: string): Promise<void> {
+  const temporary = `${deploymentTarget.imageEnvFile}.next`;
+  const existing = await Bun.file(deploymentTarget.imageEnvFile)
     .text()
     .catch(() => "");
   const preserved = existing
@@ -93,20 +131,20 @@ async function writeImage(image: string): Promise<void> {
     .filter((line) => !line.startsWith("BACKEND_IMAGE="))
     .filter(Boolean);
   await Bun.write(temporary, [`BACKEND_IMAGE=${image}`, ...preserved, ""].join("\n"));
-  await rename(temporary, config.imageEnvFile);
+  await rename(temporary, deploymentTarget.imageEnvFile);
 }
 
-async function waitForHealthy(): Promise<void> {
+async function waitForHealthy(deploymentTarget: DeploymentTarget): Promise<void> {
   const deadline = Date.now() + 90_000;
   let last = "container did not become ready";
   while (Date.now() < deadline) {
     const health = await command(
-      ["inspect", "--format", "{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}", config.container],
+      ["inspect", "--format", "{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}", deploymentTarget.container],
       true,
     );
     if (health === "unhealthy" || health === "exited" || health === "dead") throw new Error(`container state is ${health}`);
     try {
-      const response = await fetch(config.healthUrl, { signal: AbortSignal.timeout(5_000) });
+      const response = await fetch(deploymentTarget.healthUrl, { signal: AbortSignal.timeout(5_000) });
       if (response.ok) return;
       last = `readyz returned ${response.status}`;
     } catch (error) {
@@ -117,16 +155,22 @@ async function waitForHealthy(): Promise<void> {
   throw new Error(`health check timeout: ${last}`);
 }
 
-async function activate(image: string): Promise<void> {
-  await writeImage(image);
-  await command(composeArgs("pull", "backend"));
-  await command(composeArgs("up", "-d", "--no-deps", "--force-recreate", "backend"));
-  await waitForHealthy();
+async function activate(deploymentTarget: DeploymentTarget, image: string): Promise<void> {
+  await writeImage(deploymentTarget, image);
+  await command(composeArgs(deploymentTarget, "pull", "backend"));
+  await command(composeArgs(deploymentTarget, "up", "-d", "--no-deps", "--force-recreate", "backend"));
+  await waitForHealthy(deploymentTarget);
 }
 
-async function notify(text: string, release?: string): Promise<void> {
+async function notify(text: string, deploymentTarget: DeploymentTarget, release?: string): Promise<void> {
   if (!config.notificationToken || !config.notificationChatId) return;
-  const reply_markup = release ? { inline_keyboard: [[{ text: "Откатить", callback_data: `deploy_rollback:${release}` }]] } : undefined;
+  const reply_markup = release
+    ? {
+        inline_keyboard: [
+          [{ text: `Откатить ${deploymentTarget.name}`, callback_data: `deploy_rollback:${deploymentTarget.name}:${release}` }],
+        ],
+      }
+    : undefined;
   await fetch(`${config.notificationApiBaseUrl.replace(/\/$/, "")}/bot${config.notificationToken}/sendMessage`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -145,51 +189,58 @@ async function withDeploymentLock<T>(operation: () => Promise<T>): Promise<T> {
   }
 }
 
-async function deploy(image: string, release: string): Promise<DeploymentState> {
+async function deploy(deploymentTarget: DeploymentTarget, image: string, release: string): Promise<DeploymentState> {
   return withDeploymentLock(async () => {
-    const previousImage = await currentImage();
+    const previousImage = await currentImage(deploymentTarget);
     if (!previousImage)
       throw new HttpError(409, "Current release is not an immutable GHCR digest; seed DEPLOY_IMAGE_ENV_FILE before deploying.");
-    const previousState = await state();
+    const previousState = await state(deploymentTarget);
     const previous: Release = previousState.current ?? {
       image: previousImage,
       revision: previousImage.slice(-12),
       deployedAt: new Date().toISOString(),
     };
     try {
-      await activate(image);
+      await activate(deploymentTarget, image);
       const next = { current: { image, revision: release, deployedAt: new Date().toISOString() }, previous };
-      await writeState(next);
-      await notify(`Deploy ${release.slice(0, 12)} successful and healthy.`, release);
+      await writeState(deploymentTarget, next);
+      await notify(`Deploy ${deploymentTarget.name} ${release.slice(0, 12)} successful and healthy.`, deploymentTarget, release);
       return next;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       try {
-        await activate(previousImage);
+        await activate(deploymentTarget, previousImage);
       } catch (rollbackError) {
         throw new HttpError(500, `Deploy failed (${message}); automatic rollback also failed: ${String(rollbackError)}`);
       }
       const next = { ...previousState, current: previous, lastFailure: { revision: release, message, at: new Date().toISOString() } };
-      await writeState(next);
-      await notify(`Deploy ${release.slice(0, 12)} failed; automatic rollback to ${previous.revision.slice(0, 12)} succeeded.`);
+      await writeState(deploymentTarget, next);
+      await notify(
+        `Deploy ${deploymentTarget.name} ${release.slice(0, 12)} failed; automatic rollback to ${previous.revision.slice(0, 12)} succeeded.`,
+        deploymentTarget,
+      );
       throw new HttpError(502, `Deploy failed and was rolled back: ${message}`);
     }
   });
 }
 
-async function rollback(release: string): Promise<DeploymentState> {
+async function rollback(deploymentTarget: DeploymentTarget, release: string): Promise<DeploymentState> {
   return withDeploymentLock(async () => {
-    const before = await state();
+    const before = await state(deploymentTarget);
     if (!before.current || !before.previous) throw new HttpError(409, "No rollback release is available.");
     if (before.current.revision !== release) throw new HttpError(409, "This rollback button belongs to an older release.");
     try {
-      await activate(before.previous.image);
+      await activate(deploymentTarget, before.previous.image);
     } catch (error) {
       throw new HttpError(502, `Rollback failed: ${error instanceof Error ? error.message : String(error)}`);
     }
     const next = { current: { ...before.previous, deployedAt: new Date().toISOString() }, previous: before.current };
-    await writeState(next);
-    await notify(`Manual rollback to ${next.current.revision.slice(0, 12)} successful and healthy.`, next.current.revision);
+    await writeState(deploymentTarget, next);
+    await notify(
+      `Manual rollback of ${deploymentTarget.name} to ${next.current.revision.slice(0, 12)} successful and healthy.`,
+      deploymentTarget,
+      next.current.revision,
+    );
     return next;
   });
 }
@@ -214,16 +265,18 @@ async function requestHandler(request: Request): Promise<Response> {
   try {
     const url = new URL(request.url);
     const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
-    if (request.method === "POST" && url.pathname === "/v1/deploy") {
+    const [, , action, requestedTarget] = url.pathname.split("/");
+    const deploymentTarget = target(requestedTarget);
+    if (request.method === "POST" && action === "deploy") {
       if (!immutableImage(body?.image) || !revision(body?.release))
         throw new HttpError(400, "image must be an immutable configured GHCR digest and release must be a Git SHA.");
-      const next = await deploy(body.image, body.release);
-      return json({ ok: true, release: next.current?.revision, currentRevision: next.current?.revision });
+      const next = await deploy(deploymentTarget, body.image, body.release);
+      return json({ ok: true, target: deploymentTarget.name, release: next.current?.revision, currentRevision: next.current?.revision });
     }
-    if (request.method === "POST" && url.pathname === "/v1/rollback") {
+    if (request.method === "POST" && action === "rollback") {
       if (!revision(body?.release)) throw new HttpError(400, "release must be a Git SHA.");
-      const next = await rollback(body.release);
-      return json({ ok: true, release: next.current?.revision, currentRevision: next.current?.revision });
+      const next = await rollback(deploymentTarget, body.release);
+      return json({ ok: true, target: deploymentTarget.name, release: next.current?.revision, currentRevision: next.current?.revision });
     }
     return json({ ok: false, message: "not found" }, 404);
   } catch (error) {

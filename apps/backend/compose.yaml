@@ -49,6 +49,8 @@ services:
       OBSERVABILITY_INTERVAL_SECONDS: "300"
       REMOTE_MEDIA_PATH: /media/threads
       PUBLIC_MEDIA_BASE_URL: https://alexgetman.com/media/threads
+      MEDIA_CACHE_DIR: /data/media-cache
+      VIDEO_MEDIA_DIR: /data/video-media
       ENABLE_BOT_POLLING: "true"
       ENABLE_TELEGRAM_STORIES: "true"
       BIND_HOST: 0.0.0.0
@@ -56,10 +58,11 @@ services:
     volumes:
       - ${STUDIO_CONFIG_FILE:-./studio.yaml}:/app/studio.yaml:ro
       - ./data:/data
-      - ./video-media:/data/video-media
+      - ${ALEX_MEDIA_CACHE_DIR_HOST:-./media-cache}:/data/media-cache
+      - ${ALEX_VIDEO_MEDIA_DIR_HOST:-./video-media}:/data/video-media
       - ./bot-api-data:/var/lib/telegram-bot-api:ro
-      - /home/deploy/ialexey-web/media/threads:/media/threads
-      - /home/deploy/ialexey-web/media:/data/site/media
+      - ${ALEX_THREADS_MEDIA_DIR_HOST:-/home/deploy/ialexey-web/media/threads}:/media/threads
+      - ${ALEX_SITE_MEDIA_DIR_HOST:-/home/deploy/ialexey-web/media}:/data/site/media
     ports:
       - "127.0.0.1:8788:8788"
     extra_hosts:

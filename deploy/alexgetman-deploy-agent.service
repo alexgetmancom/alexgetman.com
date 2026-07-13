@@ -15,7 +15,7 @@ RestartSec=3
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=/var/lib/alexgetman-deploy /home/deploy/alexgetman-runtime /var/run/docker.sock
+ReadWritePaths=/var/lib/alexgetman-deploy /home/deploy/alexgetman-runtime /home/deploy/maru /var/run/docker.sock
 
 [Install]
 WantedBy=multi-user.target
