@@ -5,7 +5,6 @@ type StoryDebugState = {
   posts: StoryPost[];
   paused: boolean;
   isManualPaused: boolean;
-  isInteractionPaused: boolean;
   progressActive: boolean;
   progressRestartBlocked: boolean;
   advanceTimer: number | null;
@@ -19,7 +18,6 @@ export function renderDebugState(debugPanel: HTMLPreElement | null, state: Story
       postId: state.posts[state.active]?.id,
       paused: state.paused,
       isManualPaused: state.isManualPaused,
-      isInteractionPaused: state.isInteractionPaused,
       progressActive: state.progressActive,
       progressRestartBlocked: state.progressRestartBlocked,
       advanceTimer: Boolean(state.advanceTimer),

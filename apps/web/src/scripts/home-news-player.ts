@@ -2,9 +2,11 @@ import { createStoryViewTracker } from "./story-player/analytics";
 import { storyPlayerBrowserUtils } from "./story-player/browser";
 import { renderDebugState } from "./story-player/debug";
 import { loadGiscusDiscussion } from "./story-player/discussion";
+import { setDiscussionVisibility } from "./story-player/discussion-state";
 import { bindStoryPlayerElements, readStoryPayload } from "./story-player/dom";
 import { createFeedModeController } from "./story-player/feed-mode";
 import { centerRailCard, hydrateRailMedia, preloadAdjacentMedia } from "./story-player/media";
+import { readMutedPreference } from "./story-player/preferences";
 import { createStoryProgressController } from "./story-player/progress";
 import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
 
@@ -53,16 +55,14 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
 
   let active = 0;
   let isManualPaused = payload.initialPaused === true || root.dataset.initialPaused === "true";
-  let isHoverPaused = false;
-  let isInteractionPaused = false;
   let paused = isManualPaused;
-  let muted = localStorage.getItem("story-player-muted") !== "false";
+  let muted = readMutedPreference();
   let expanded = false;
   let wheelGestureLocked = false;
   let wheelUnlockTimer: number | null = null;
-  let interactionPauseTimer: number | null = null;
   let discussionTerm = "";
   let discussionVisible = false;
+  let manualPausedBeforeDiscussion = isManualPaused;
   const debugPanel = new URLSearchParams(window.location.search).has("debug") ? document.createElement("pre") : null;
 
   const feedMode = createFeedModeController({ posts, ui, railCards, feedModeButtons, feedModeLabel, activeIndex: () => active });
@@ -79,19 +79,21 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
   });
 
   function updatePlayState(): void {
-    paused = isManualPaused || isHoverPaused || isInteractionPaused;
+    paused = isManualPaused;
     progress.update(paused);
     if (video && posts[active]?.mediaType === "video") {
       if (paused) video.pause?.();
       else video.play?.().catch(() => {});
     }
-    renderDebugState(debugPanel, { active, posts, paused, isManualPaused, isInteractionPaused, ...progress.debugState() });
+    renderDebugState(debugPanel, { active, posts, paused, isManualPaused, ...progress.debugState() });
   }
 
   function setDiscussionVisible(isVisible: boolean): void {
     if (!postPanel || !discussionPanel) return;
-    const wasDiscussionVisible = discussionVisible;
-    discussionVisible = isVisible;
+    const nextState = setDiscussionVisibility({ visible: discussionVisible, isManualPaused, manualPausedBeforeDiscussion }, isVisible);
+    discussionVisible = nextState.visible;
+    isManualPaused = nextState.isManualPaused;
+    manualPausedBeforeDiscussion = nextState.manualPausedBeforeDiscussion;
     discussionPanel.hidden = !isVisible;
     root.classList.toggle("is-discussing", isVisible);
     if (categoryWrap) categoryWrap.hidden = isVisible;
@@ -102,8 +104,6 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
     discussLabels.forEach((label) => {
       label.textContent = isVisible ? ui.backToPost || "Back to post" : ui.discuss || "Discuss";
     });
-    if (isVisible) isManualPaused = true;
-    else if (wasDiscussionVisible) isManualPaused = false;
     updatePlayState();
   }
 
@@ -191,7 +191,6 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
   cardLink?.addEventListener("click", (event) => {
     event.preventDefault();
     isManualPaused = !isManualPaused;
-    if (!isManualPaused) isHoverPaused = false;
     const icon = playPauseOverlay.querySelector(".play-pause-icon");
     if (icon) {
       icon.className = `play-pause-icon ${isManualPaused ? "is-paused" : "is-playing"}`;
@@ -263,7 +262,9 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
   });
   audioToggle?.addEventListener("click", () => {
     muted = !muted;
-    localStorage.setItem("story-player-muted", String(muted));
+    try {
+      localStorage.setItem("story-player-muted", String(muted));
+    } catch {}
     audioToggle.setAttribute("aria-pressed", String(muted));
     audioToggle.classList.toggle("is-on", !muted);
     if (audioLabel) audioLabel.textContent = muted ? ui.muted || "Muted" : ui.mute || "Audio";
@@ -296,9 +297,6 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
     } else if (event.key === " ") {
       event.preventDefault();
       isManualPaused = !isManualPaused;
-      isInteractionPaused = false;
-      if (interactionPauseTimer) window.clearTimeout(interactionPauseTimer);
-      interactionPauseTimer = null;
       updatePlayState();
     }
   });

@@ -172,6 +172,7 @@ export function createStoryProgressController({
     if (!fill) return;
     if (fill.style.animation && fill.style.animation !== "none") {
       fill.style.animationPlayState = isPaused() ? "paused" : "running";
+      if (!isPaused() && !advanceTimer) scheduleAdvance(progressRemainingMs);
       return;
     }
     startProgressAnimation(fill, video.duration ? Math.min(15000, video.duration * 1000) : intervalMs);
@@ -179,6 +180,7 @@ export function createStoryProgressController({
 
   function handleVideoWaiting(): void {
     if (posts[activeIndex()]?.mediaType !== "video") return;
+    pauseAdvanceTimer();
     const fill = progressBars[activeIndex()]?.querySelector<HTMLElement>("i");
     if (fill) fill.style.animationPlayState = "paused";
     if (currentProgressFill) currentProgressFill.style.animationPlayState = "paused";

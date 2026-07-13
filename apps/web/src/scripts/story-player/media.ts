@@ -63,7 +63,7 @@ export function preloadAdjacentMedia(options: {
     post.__preloaded = true;
     if (post.mediaType === "video") {
       const preloadVideo = document.createElement("video");
-      preloadVideo.src = post.image;
+      preloadVideo.src = src;
       preloadVideo.preload = "metadata";
     } else {
       const preloadImage = new Image();
