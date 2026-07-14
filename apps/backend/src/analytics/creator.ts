@@ -10,6 +10,7 @@ import { runVideoMetricSchedule } from "./videoMetrics.js";
 
 export { audienceAnalysis } from "./audience.js";
 export { creatorDashboard } from "./dashboard.js";
+export { creatorPostArchive, creatorPostMetrics } from "./postArchive.js";
 export { creatorVideoArchive, creatorVideoMetrics } from "./videoArchive.js";
 
 export async function runCreatorAnalyticsCycle(

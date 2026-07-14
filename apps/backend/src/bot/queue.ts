@@ -3,6 +3,7 @@ import { type Context, InlineKeyboard } from "grammy";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { drafts, videoDrafts, videoTargets } from "../db/schema.js";
+import { botLocale, ui } from "./i18n.js";
 
 type QueueItem = {
   id: number;
@@ -12,14 +13,13 @@ type QueueItem = {
   callback: string;
 };
 
-type QueueView = "home" | "upcoming" | "drafts" | "attention";
+type QueueView = "upcoming" | "drafts";
 
-export async function showQueue(ctx: Context, backendDb: BackendDb, _config: BackendConfig, view: QueueView = "home"): Promise<void> {
-  if (view === "home") return showQueueHome(ctx, backendDb);
+export async function showQueue(ctx: Context, backendDb: BackendDb, _config: BackendConfig, view: QueueView = "upcoming"): Promise<void> {
   if (view === "drafts") return showDrafts(ctx, backendDb);
-  if (view === "attention") return showAttention(ctx, backendDb);
   const postDrafts = backendDb.db.select().from(drafts).where(eq(drafts.status, "scheduled")).all();
   const vDrafts = backendDb.db.select().from(videoDrafts).where(eq(videoDrafts.status, "scheduled")).all();
+  const locale = botLocale(backendDb, Number(ctx.from?.id));
 
   const items: QueueItem[] = [];
 
@@ -77,9 +77,15 @@ export async function showQueue(ctx: Context, backendDb: BackendDb, _config: Bac
     const timeStr = formatQueueTime(item.time);
     keyboard.text(`${item.name} ${timeStr} - ${item.type}`, item.callback).row();
   }
-  keyboard.text("← Back", "queue_home").row().text("← Menu", "cancel_dialog");
+  keyboard
+    .text(ui(locale, "🟡 Drafts", "🟡 Черновики"), "queue_drafts")
+    .row()
+    .text(ui(locale, "← Menu", "← Меню"), "menu_home");
 
-  const text = items.length === 0 ? "📋 No upcoming publications." : `📋 *Upcoming publications (${items.length}):*`;
+  const text =
+    items.length === 0
+      ? ui(locale, "📋 No upcoming publications.", "📋 Нет ближайших публикаций.")
+      : `📋 *${ui(locale, "Upcoming publications", "Ближайшие публикации")} (${items.length}):*`;
 
   const messageId = ctx.callbackQuery?.message?.message_id;
   if (messageId && ctx.chat?.id) {
@@ -95,26 +101,8 @@ export async function showQueue(ctx: Context, backendDb: BackendDb, _config: Bac
   }
 }
 
-async function showQueueHome(ctx: Context, backendDb: BackendDb): Promise<void> {
-  const textDrafts = backendDb.db.select({ id: drafts.id }).from(drafts).where(eq(drafts.status, "needs_review")).all().length;
-  const videoDraftCount = backendDb.db
-    .select({ id: videoDrafts.id })
-    .from(videoDrafts)
-    .where(inArray(videoDrafts.status, ["draft", "editing"]))
-    .all().length;
-  const failedPosts = backendDb.db.select({ id: drafts.id }).from(drafts).where(eq(drafts.status, "failed")).all().length;
-  const failedVideos = backendDb.db.select({ id: videoDrafts.id }).from(videoDrafts).where(eq(videoDrafts.status, "partial")).all().length;
-  const keyboard = new InlineKeyboard()
-    .text("🕒 Upcoming", "queue_upcoming")
-    .text(`🟡 Drafts (${textDrafts + videoDraftCount})`, "queue_drafts")
-    .row()
-    .text(`🔴 Needs attention (${failedPosts + failedVideos})`, "queue_attention")
-    .row()
-    .text("← Menu", "cancel_dialog");
-  await replaceQueueMessage(ctx, "📋 *Work queue*\n\nChoose what to review:", keyboard);
-}
-
 async function showDrafts(ctx: Context, backendDb: BackendDb): Promise<void> {
+  const locale = botLocale(backendDb, Number(ctx.from?.id));
   const textDrafts = backendDb.db.select().from(drafts).where(eq(drafts.status, "needs_review")).all();
   const videos = backendDb.db
     .select()
@@ -123,21 +111,20 @@ async function showDrafts(ctx: Context, backendDb: BackendDb): Promise<void> {
     .all();
   const keyboard = new InlineKeyboard();
   for (const draft of textDrafts)
-    keyboard.text(`📝 #${draft.id} ${(draft.textRu.split("\n")[0] || "Post").slice(0, 28)}`, `preview:${draft.id}`).row();
-  for (const video of videos) keyboard.text(`🎬 #${video.id} ${(video.label || "Video").slice(0, 28)}`, `video_open:${video.id}`).row();
-  keyboard.text("← Work queue", "queue_home");
-  await replaceQueueMessage(ctx, textDrafts.length + videos.length ? "🟡 *Drafts*" : "🟡 No drafts.", keyboard);
-}
-
-async function showAttention(ctx: Context, backendDb: BackendDb): Promise<void> {
-  const textPosts = backendDb.db.select().from(drafts).where(eq(drafts.status, "failed")).all();
-  const videos = backendDb.db.select().from(videoDrafts).where(eq(videoDrafts.status, "partial")).all();
-  const keyboard = new InlineKeyboard();
-  for (const draft of textPosts) keyboard.text(`❌ Post #${draft.id}`, `progress_details:${draft.id}`).row();
+    keyboard
+      .text(`📝 #${draft.id} ${(draft.textRu.split("\n")[0] || ui(locale, "Post", "Пост")).slice(0, 28)}`, `preview:${draft.id}`)
+      .row();
   for (const video of videos)
-    keyboard.text(`❌ Video #${video.id} ${(video.label || "Video").slice(0, 22)}`, `video_open:${video.id}`).row();
-  keyboard.text("← Work queue", "queue_home");
-  await replaceQueueMessage(ctx, textPosts.length + videos.length ? "🔴 *Needs attention*" : "✅ Nothing needs attention.", keyboard);
+    keyboard.text(`🎬 #${video.id} ${(video.label || ui(locale, "Video", "Видео")).slice(0, 28)}`, `video_open:${video.id}`).row();
+  keyboard
+    .text(ui(locale, "← Upcoming", "← Ближайшие"), "queue_home")
+    .row()
+    .text(ui(locale, "← Menu", "← Меню"), "menu_home");
+  await replaceQueueMessage(
+    ctx,
+    textDrafts.length + videos.length ? `🟡 *${ui(locale, "Drafts", "Черновики")}*` : ui(locale, "🟡 No drafts.", "🟡 Нет черновиков."),
+    keyboard,
+  );
 }
 
 async function replaceQueueMessage(ctx: Context, text: string, keyboard: InlineKeyboard): Promise<void> {

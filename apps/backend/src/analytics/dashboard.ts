@@ -1,27 +1,54 @@
 import { eq } from "drizzle-orm";
+import { type BotLocale, ui } from "../bot/i18n.js";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { creatorProfiles, socialComments } from "../db/schema.js";
 import { metricNumber } from "./creatorStore.js";
 
-export function creatorDashboard(backendDb: BackendDb, config: BackendConfig, days: number): { text: string; hasComments: boolean } {
+export function creatorDashboard(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  days: number,
+  locale: BotLocale = "ru",
+): { text: string; hasComments: boolean } {
   const hasComments = backendDb.db.select({ id: socialComments.commentId }).from(socialComments).limit(1).get() != null;
-  if (days === 0) return overallDashboard(backendDb, config, hasComments);
+  if (days === 0) return overallDashboard(backendDb, config, hasComments, locale);
   const since = new Date(Date.now() - days * 24 * 60 * 60_000).toISOString();
   const latest = latestVideoMetrics(backendDb, since);
-  const lines = [`📊 *Статистика за ${days === 1 ? "сегодня" : `${days} дней`}*`];
-  if (config.studio.modules.site) lines.push(`🌐 Сайт: ${siteTotal(backendDb, since)} просмотров материалов`);
+  const period = days === 1 ? ui(locale, "today", "сегодня") : ui(locale, `${days} days`, `${days} дней`);
+  const lines = [`📊 *${ui(locale, `Statistics for ${period}`, `Статистика за ${period}`)}*`];
+  if (config.studio.modules.site)
+    lines.push(`🌐 ${ui(locale, "Site", "Сайт")}: ${siteTotal(backendDb, since)} ${ui(locale, "material views", "просмотров материалов")}`);
   if (config.studio.modules.text_posting) {
     const text = textTotals(backendDb, since);
-    lines.push(`📝 Посты: ${text.views} просмотров · ${text.interactions} реакций`);
+    lines.push(
+      `📝 ${ui(locale, "Posts", "Посты")}: ${text.views} ${ui(locale, "views", "просмотров")} · ${text.interactions} ${ui(locale, "interactions", "реакций")}`,
+    );
   }
-  if (config.studio.modules.video_posting) appendVideoDashboard(lines, latest, backendDb, config);
-  lines.push("\nДанные обновляются не чаще раза в сутки — это бережно к API платформ.");
+  if (config.studio.modules.video_posting) appendVideoDashboard(lines, latest, backendDb, config, locale);
+  lines.push(
+    `\n${ui(locale, "Data refreshes at most once a day to protect platform APIs.", "Данные обновляются не чаще раза в сутки — это бережно к API платформ.")}`,
+  );
   return { text: lines.join("\n"), hasComments };
 }
 
-function overallDashboard(backendDb: BackendDb, config: BackendConfig, hasComments: boolean): { text: string; hasComments: boolean } {
-  const lines = ["🌐 *Общая статистика*"];
+function overallDashboard(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  hasComments: boolean,
+  locale: BotLocale,
+): { text: string; hasComments: boolean } {
+  const lines = [`🌐 *${ui(locale, "Overall statistics", "Общая статистика")}*`];
+  if (config.studio.modules.site)
+    lines.push(
+      `\n🌐 ${ui(locale, "Site", "Сайт")}: ${siteTotal(backendDb, "0000-01-01T00:00:00.000Z")} ${ui(locale, "material views", "просмотров материалов")}`,
+    );
+  if (config.studio.modules.text_posting) {
+    const text = textTotals(backendDb, "0000-01-01T00:00:00.000Z");
+    lines.push(
+      `📝 ${ui(locale, "Posts", "Посты")}: ${text.views} ${ui(locale, "views", "просмотров")} · ${text.interactions} ${ui(locale, "interactions", "реакций")}`,
+    );
+  }
   if (config.studio.modules.youtube) {
     const profileData = profile(backendDb, "youtube");
     lines.push("\n🔴 *YouTube (Канал):*");
@@ -50,15 +77,25 @@ function overallDashboard(backendDb: BackendDb, config: BackendConfig, hasCommen
         `• Всего Reels/публикаций: ${metricNumber(profileData.mediaCount)}`,
       );
   }
-  lines.push("\nДанные обновляются не чаще раза в сутки — это бережно к API платформ.");
+  lines.push(
+    `\n${ui(locale, "Data refreshes at most once a day to protect platform APIs.", "Данные обновляются не чаще раза в сутки — это бережно к API платформ.")}`,
+  );
   return { text: lines.join("\n"), hasComments };
 }
 
-function appendVideoDashboard(lines: string[], latest: VideoMetricRow[], backendDb: BackendDb, config: BackendConfig): void {
+function appendVideoDashboard(
+  lines: string[],
+  latest: VideoMetricRow[],
+  backendDb: BackendDb,
+  config: BackendConfig,
+  locale: BotLocale,
+): void {
   const youtube = latest.filter((row) => row.platform === "youtube_shorts");
   const instagram = latest.filter((row) => row.platform === "instagram_reels");
   const all = [...youtube, ...instagram];
-  lines.push(`🎬 Видео: ${sum(all, "views")} просмотров · ${sum(all, "likes") + sum(all, "comments")} взаимодействий`);
+  lines.push(
+    `🎬 ${ui(locale, "Videos", "Видео")}: ${sum(all, "views")} ${ui(locale, "views", "просмотров")} · ${sum(all, "likes") + sum(all, "comments")} ${ui(locale, "interactions", "взаимодействий")}`,
+  );
   if (config.studio.modules.youtube) {
     const data = profile(backendDb, "youtube");
     lines.push(

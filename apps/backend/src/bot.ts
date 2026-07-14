@@ -1,6 +1,13 @@
 import { eq } from "drizzle-orm";
 import { Bot, type Context, InlineKeyboard, Keyboard } from "grammy";
-import { audienceAnalysis, creatorDashboard, creatorVideoArchive, creatorVideoMetrics } from "./analytics/creator.js";
+import {
+  audienceAnalysis,
+  creatorDashboard,
+  creatorPostArchive,
+  creatorPostMetrics,
+  creatorVideoArchive,
+  creatorVideoMetrics,
+} from "./analytics/creator.js";
 import { appendPendingAlbum } from "./bot/albums.js";
 import {
   applyAdminState,
@@ -41,7 +48,7 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
     });
     await showMainMenu(ctx, config, backendDb);
   });
-  bot.hears(["☰ Показать меню", "☰ Show menu"], (ctx) => showMainMenu(ctx, config, backendDb));
+  bot.hears(["☰ Меню", "☰ Menu", "☰ Показать меню", "☰ Show menu"], (ctx) => showMainMenu(ctx, config, backendDb));
   bot.hears("⚙️", async (ctx) => {
     if (!isAdmin(config, ctx.from?.id)) return;
     await showSettings(ctx, config, backendDb);
@@ -180,13 +187,14 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
       await showQueue(ctx, backendDb, config);
       return;
     }
-    if (
-      ctx.callbackQuery.data === "queue_upcoming" ||
-      ctx.callbackQuery.data === "queue_drafts" ||
-      ctx.callbackQuery.data === "queue_attention"
-    ) {
+    if (ctx.callbackQuery.data === "queue_drafts") {
       await ctx.answerCallbackQuery();
-      await showQueue(ctx, backendDb, config, ctx.callbackQuery.data.slice("queue_".length) as "upcoming" | "drafts" | "attention");
+      await showQueue(ctx, backendDb, config, "drafts");
+      return;
+    }
+    if (ctx.callbackQuery.data === "menu_home") {
+      await ctx.answerCallbackQuery();
+      await editMainMenu(ctx, config, backendDb);
       return;
     }
     if (ctx.callbackQuery.data.startsWith("progress:")) {
@@ -221,8 +229,7 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
     }
     if (ctx.callbackQuery.data === "settings_menu") {
       await ctx.answerCallbackQuery();
-      await ctx.deleteMessage().catch(() => {});
-      await showMainMenu(ctx, config, backendDb);
+      await editMainMenu(ctx, config, backendDb);
       return;
     }
     if (ctx.callbackQuery.data === "settings_youtube_signature") {
@@ -298,17 +305,27 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
       } else if (ctx.callbackQuery.data.startsWith("analytics_period:")) {
         days = Number(ctx.callbackQuery.data.slice("analytics_period:".length));
       }
-      const dashboard = creatorDashboard(backendDb, config, [0, 1, 7, 30].includes(days) ? days : 7);
+      const locale = botLocale(backendDb, Number(ctx.from?.id));
+      const dashboard = creatorDashboard(backendDb, config, [0, 1, 7, 30].includes(days) ? days : 7, locale);
       const keyboard = new InlineKeyboard()
-        .text("Сегодня", "analytics_period:1")
-        .text("7 дней", "analytics_period:7")
-        .text("30 дней", "analytics_period:30")
+        .text(ui(locale, "Today", "Сегодня"), "analytics_period:1")
+        .text(ui(locale, "7 days", "7 дней"), "analytics_period:7")
+        .text(ui(locale, "30 days", "30 дней"), "analytics_period:30")
         .row()
-        .text("📊 Общая", "analytics_total");
+        .text(ui(locale, "📊 Overall", "📊 Общая"), "analytics_total");
       if (dashboard.hasComments && config.DEEPSEEK_API_KEY) {
         keyboard.text("🤖 ИИ-анализ аудитории", "analytics_ai");
       }
-      keyboard.row().text("📚 Архив роликов", "analytics_archive:0");
+      keyboard
+        .row()
+        .text(
+          config.studio.modules.video_posting
+            ? ui(locale, "📚 Video archive", "📚 Архив роликов")
+            : ui(locale, "📚 Post archive", "📚 Архив постов"),
+          config.studio.modules.video_posting ? "analytics_archive:0" : "analytics_post_archive:0",
+        )
+        .row()
+        .text(ui(locale, "← Menu", "← Меню"), "menu_home");
       await ctx.answerCallbackQuery();
       await ctx.editMessageText(dashboard.text, { parse_mode: "Markdown", reply_markup: keyboard });
       return;
@@ -319,7 +336,7 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
       const keyboard = new InlineKeyboard();
       for (const item of archive.items) keyboard.text(item.label, `analytics_video:${item.id}`).row();
       if (archive.hasMore) keyboard.text("Ещё", `analytics_archive:${offset + archive.items.length}`).row();
-      keyboard.text("← К статистике", "analytics_home");
+      keyboard.text("← Analytics", "analytics_home").row().text("← Menu", "menu_home");
       await ctx.answerCallbackQuery();
       await ctx.editMessageText(archive.text, { reply_markup: keyboard });
       return;
@@ -329,7 +346,27 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
       await ctx.answerCallbackQuery();
       await ctx.editMessageText(creatorVideoMetrics(backendDb, id), {
         parse_mode: "Markdown",
-        reply_markup: new InlineKeyboard().text("← К архиву", "analytics_archive:0"),
+        reply_markup: new InlineKeyboard().text("← Archive", "analytics_archive:0").row().text("← Menu", "menu_home"),
+      });
+      return;
+    }
+    if (ctx.callbackQuery.data.startsWith("analytics_post_archive:")) {
+      const offset = Math.max(0, Number(ctx.callbackQuery.data.slice("analytics_post_archive:".length)) || 0);
+      const archive = creatorPostArchive(backendDb, offset);
+      const keyboard = new InlineKeyboard();
+      for (const item of archive.items) keyboard.text(item.label, `analytics_post:${item.id}`).row();
+      if (archive.hasMore) keyboard.text("More", `analytics_post_archive:${offset + archive.items.length}`).row();
+      keyboard.text("← Analytics", "analytics_home").row().text("← Menu", "menu_home");
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(archive.text, { reply_markup: keyboard });
+      return;
+    }
+    if (ctx.callbackQuery.data.startsWith("analytics_post:")) {
+      const id = Number(ctx.callbackQuery.data.slice("analytics_post:".length));
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(creatorPostMetrics(backendDb, id), {
+        parse_mode: "Markdown",
+        reply_markup: new InlineKeyboard().text("← Archive", "analytics_post_archive:0").row().text("← Menu", "menu_home"),
       });
       return;
     }
@@ -355,6 +392,7 @@ async function showMainMenu(ctx: Context, config: BackendConfig, backendDb: Back
   keyboard.row();
   keyboard.text(ui(locale, "📋 Work queue", "📋 Очередь"), "queue_home");
   if (config.studio.modules.analytics) keyboard.text(ui(locale, "📊 Analytics", "📊 Статистика"), "analytics_home");
+  keyboard.row().text("⚙️", "settings_home");
   await ctx.reply(ui(locale, "Control panel:", "Панель управления:"), { reply_markup: keyboard });
 }
 
@@ -363,10 +401,20 @@ function isAdmin(config: BackendConfig, userId: number | undefined): boolean {
   return config.ADMIN_IDS.includes(userId);
 }
 
-function persistentKeyboard(config: BackendConfig, locale: BotLocale = "en"): Keyboard {
-  const keyboard = new Keyboard().text(ui(locale, "☰ Show menu", "☰ Показать меню"));
-  if (config.studio.modules.youtube) keyboard.text("⚙️");
+function persistentKeyboard(_config: BackendConfig, locale: BotLocale = "en"): Keyboard {
+  const keyboard = new Keyboard().text(ui(locale, "☰ Menu", "☰ Меню"));
   return keyboard.resized().persistent();
+}
+
+async function editMainMenu(ctx: Context, config: BackendConfig, backendDb: BackendDb): Promise<void> {
+  const locale = botLocale(backendDb, Number(ctx.from?.id));
+  const keyboard = new InlineKeyboard();
+  if (config.studio.modules.text_posting) keyboard.text(ui(locale, "📝 New post", "📝 Новый пост"), "menu_text");
+  if (config.studio.modules.video_posting) keyboard.text(ui(locale, "🎬 New video", "🎬 Новое видео"), "video_start");
+  keyboard.row().text(ui(locale, "📋 Work queue", "📋 Очередь"), "queue_home");
+  if (config.studio.modules.analytics) keyboard.text(ui(locale, "📊 Analytics", "📊 Статистика"), "analytics_home");
+  keyboard.row().text("⚙️", "settings_home");
+  await ctx.editMessageText(ui(locale, "Control panel:", "Панель управления:"), { reply_markup: keyboard });
 }
 
 async function showSettings(ctx: Context, config: BackendConfig, backendDb: BackendDb, edit = false): Promise<void> {
