@@ -1,9 +1,10 @@
 import crypto from "node:crypto";
-import { and, asc, desc, eq, gte, inArray, isNull, lt } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lt } from "drizzle-orm";
 import type { Bot } from "grammy";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { alertDedup, credentialChecks, postEvents, publishJobs, siteJobs } from "../db/schema.js";
+import { notificationService } from "../studio/services/notifications.js";
 import { recordWorkerState } from "./workerState.js";
 
 const REQUIREMENTS: Record<string, string[]> = {
@@ -82,7 +83,6 @@ export async function runObservabilityCycle(
 }
 
 function scanPublicationFailures(config: BackendConfig, backendDb: BackendDb): void {
-  const now = new Date().toISOString();
   const staleBefore = new Date(Date.now() - config.PUBLISH_LOCK_TIMEOUT_SECONDS * 1000).toISOString();
   const stale = backendDb.db
     .select()
@@ -104,64 +104,34 @@ function scanPublicationFailures(config: BackendConfig, backendDb: BackendDb): v
     .limit(100)
     .all();
   for (const job of stale)
-    insertFailureEvent(
-      backendDb,
-      job.postKey,
-      "queue.stale",
-      job.target,
-      `Publish job ${job.jobId} exceeded lock timeout`,
-      { jobId: job.jobId, lockedAt: job.lockedAt },
-      now,
-      config.ALERT_COOLDOWN_SECONDS,
-    );
+    notificationService(backendDb).record({
+      ref: job.postKey,
+      type: "queue.stale",
+      severity: "error",
+      target: job.target,
+      message: `Publish job ${job.jobId} exceeded lock timeout`,
+      details: { jobId: job.jobId, lockedAt: job.lockedAt },
+      cooldownSeconds: config.ALERT_COOLDOWN_SECONDS,
+    });
   for (const job of failed)
-    insertFailureEvent(
-      backendDb,
-      job.postKey,
-      "target.failed",
-      job.target,
-      job.lastError ?? `${job.target} failed`,
-      {},
-      now,
-      config.ALERT_COOLDOWN_SECONDS,
-    );
+    notificationService(backendDb).record({
+      ref: job.postKey,
+      type: "target.failed",
+      severity: "error",
+      target: job.target,
+      message: job.lastError ?? `${job.target} failed`,
+      cooldownSeconds: config.ALERT_COOLDOWN_SECONDS,
+    });
   for (const job of failedSite)
-    insertFailureEvent(
-      backendDb,
-      job.postId == null ? null : `post:${job.postId}`,
-      "site.build.failed",
-      "site",
-      job.lastError ?? `Site job ${job.jobId} failed`,
-      { jobId: job.jobId, reason: job.reason },
-      now,
-      config.ALERT_COOLDOWN_SECONDS,
-    );
-}
-
-function insertFailureEvent(
-  backendDb: BackendDb,
-  postKey: string | null,
-  eventType: string,
-  target: string,
-  message: string,
-  details: Record<string, unknown>,
-  now: string,
-  cooldownSeconds: number,
-): void {
-  const postCondition = postKey == null ? isNull(postEvents.postKey) : eq(postEvents.postKey, postKey);
-  const cooldownCutoff = new Date(new Date(now).getTime() - cooldownSeconds * 1000).toISOString();
-  const exists = backendDb.db
-    .select({ id: postEvents.id })
-    .from(postEvents)
-    .where(
-      and(postCondition, eq(postEvents.eventType, eventType), eq(postEvents.target, target), gte(postEvents.createdAt, cooldownCutoff)),
-    )
-    .get();
-  if (!exists)
-    backendDb.db
-      .insert(postEvents)
-      .values({ postKey, eventType, severity: "error", target, message, detailsJson: JSON.stringify(details), createdAt: now })
-      .run();
+    notificationService(backendDb).record({
+      ref: job.postId == null ? null : `post:${job.postId}`,
+      type: "site.build.failed",
+      severity: "error",
+      target: "site",
+      message: job.lastError ?? `Site job ${job.jobId} failed`,
+      details: { jobId: job.jobId, reason: job.reason },
+      cooldownSeconds: config.ALERT_COOLDOWN_SECONDS,
+    });
 }
 
 function updateCredentialChecks(config: BackendConfig, backendDb: BackendDb): number {

@@ -3,7 +3,7 @@ import { type Context, InlineKeyboard } from "grammy";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { videoBotSessions } from "../db/schema.js";
-import { setVideoControlCard } from "../video/service.js";
+import { studioServices } from "../studio/services/index.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../video/types.js";
 
 export type VideoSession = { draftId: number | null; step: string; selected: VideoTarget[]; data: Record<string, unknown> };
@@ -124,9 +124,16 @@ export async function askSchedule(ctx: Context, backendDb: BackendDb, adminId: n
   await sendVideoControl(ctx, backendDb, adminId, next, "Данные сохранены. Выберите расписание (МСК):", keyboard);
 }
 
-export function setControlFromSession(backendDb: BackendDb, draftId: number, ctx: Context, session: VideoSession): void {
+export function setControlFromSession(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  adminId: number,
+  draftId: number,
+  ctx: Context,
+  session: VideoSession,
+): void {
   const messageId = Number(session.data.controlMessageId);
-  if (messageId && ctx.chat?.id) setVideoControlCard(backendDb, draftId, Number(ctx.chat.id), messageId);
+  if (messageId && ctx.chat?.id) studioServices(backendDb, config).videos.setControlCard(adminId, draftId, Number(ctx.chat.id), messageId);
 }
 
 export function callbackMessageId(ctx: Context): number | null {

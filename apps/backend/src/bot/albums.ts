@@ -2,12 +2,12 @@ import { asc, eq, lte } from "drizzle-orm";
 import type { Bot } from "grammy";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
-import { drafts, pendingAlbums } from "../db/schema.js";
+import { pendingAlbums } from "../db/schema.js";
 import { log } from "../logger.js";
+import { studioServices } from "../studio/services/index.js";
 import { translateToEnglish } from "../translation.js";
-import { clearAdminState } from "./callbacks.js";
-import { createDraftFromMessage, setDraftControlCard } from "./drafts.js";
 import { parseArrayValue } from "./message.js";
+import { clearPostAdminState } from "./post-state.js";
 import { draftPreview } from "./preview.js";
 
 type PendingAlbumInput = {
@@ -79,19 +79,17 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
       const media = parseArrayValue(row.mediaJson);
       const draftId = row.draftId;
       if ((row.action === "replace_ru_media" || row.action === "replace_en_media") && draftId) {
-        backendDb.db
-          .update(drafts)
-          .set(
-            row.action === "replace_ru_media"
-              ? { mediaRuJson: JSON.stringify(media), updatedAt: new Date().toISOString() }
-              : { mediaEnJson: JSON.stringify(media), updatedAt: new Date().toISOString() },
-          )
-          .where(eq(drafts.id, draftId))
-          .run();
-        clearAdminState(backendDb, row.adminId);
+        studioServices(backendDb, config).posts.editContent(row.adminId, draftId, {
+          locale: row.action === "replace_ru_media" ? "ru" : "en",
+          text: "",
+          entities: [],
+          media,
+          replaceMediaOnly: true,
+        });
+        clearPostAdminState(backendDb, row.adminId);
         const preview = draftPreview(backendDb, draftId);
         const control = await bot.api.sendMessage(row.chatId, preview.text, { reply_markup: preview.keyboard });
-        setDraftControlCard(backendDb, draftId, row.chatId, control.message_id);
+        studioServices(backendDb, config).posts.setControlCard(row.adminId, draftId, row.chatId, control.message_id);
       } else {
         const text = row.textRu;
         let textEn = text;
@@ -100,7 +98,7 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
         } catch {
           textEn = "";
         }
-        const created = createDraftFromMessage(backendDb, row.adminId, {
+        const created = studioServices(backendDb, config).posts.create(row.adminId, {
           text,
           textEn,
           media,
@@ -108,8 +106,8 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
         });
         const preview = draftPreview(backendDb, created);
         const control = await bot.api.sendMessage(row.chatId, preview.text, { reply_markup: preview.keyboard });
-        setDraftControlCard(backendDb, created, row.chatId, control.message_id);
-        clearAdminState(backendDb, row.adminId);
+        studioServices(backendDb, config).posts.setControlCard(row.adminId, created, row.chatId, control.message_id);
+        clearPostAdminState(backendDb, row.adminId);
       }
       backendDb.db.delete(pendingAlbums).where(eq(pendingAlbums.id, row.id)).run();
       completed += 1;

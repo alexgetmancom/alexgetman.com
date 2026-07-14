@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { and, eq } from "drizzle-orm";
-import { handleVideoCallback, handleVideoMessage } from "../src/bot/video.js";
+import { handleVideoCallback, handleVideoMessage } from "../src/bot/video-screen.js";
 import { getSession, saveSession } from "../src/bot/video-session.js";
 import { loadConfig } from "../src/config.js";
 import type { BackendDb } from "../src/db/client.js";
 import { openBackendDb } from "../src/db/client.js";
 import { socialComments, videoMetricSchedule, videoMetricSnapshots, videoTargets } from "../src/db/schema.js";
+import { videoPreview } from "../src/interfaces/telegram/video-preview.js";
+import { videoService } from "../src/studio/services/videos.js";
 import {
   cancelVideo,
   createVideoDraft,
@@ -14,7 +16,6 @@ import {
   retryFailedVideoTarget,
   saveVideoMetadata,
   scheduleVideo,
-  videoPreview,
 } from "../src/video/service.js";
 
 let backendDb: BackendDb | null = null;
@@ -121,6 +122,18 @@ describe("video publication queue", () => {
     expect(backendDb.sqlite.prepare("SELECT status FROM video_targets WHERE video_draft_id=?").all(draftId)).toEqual([
       { status: "cancelled" },
     ]);
+  });
+
+  it("does not let another admin remove a video platform", () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    replaceVideoTargets(backendDb, draftId, ["youtube_shorts", "instagram_reels"]);
+    const service = videoService(backendDb, videoConfig());
+
+    expect(() => service.removeTarget(7, draftId, "youtube_shorts")).toThrow("not available");
+    expect(listVideoTargets(backendDb, draftId)).toHaveLength(2);
+    expect(service.removeTarget(42, draftId, "youtube_shorts")).toEqual({ cancelled: false });
+    expect(listVideoTargets(backendDb, draftId).map((target) => target.target)).toEqual(["instagram_reels"]);
   });
 
   it("reschedules only the selected platform and never requeues a published target", () => {

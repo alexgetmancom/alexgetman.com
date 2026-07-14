@@ -8,6 +8,7 @@ import { entitiesToHtml } from "../src/bot/text.js";
 import { TARGETS, targetLocale } from "../src/botTargets.js";
 import { loadConfig } from "../src/config.js";
 import { type BackendDb, openBackendDb } from "../src/db/client.js";
+import { botUiSettings } from "../src/db/schema.js";
 import { reconcilePublication } from "../src/publishing/queue.js";
 
 let backendDb: BackendDb | null = null;
@@ -26,6 +27,17 @@ describe("Telegram controller flow", () => {
     expect(JSON.stringify(preview.keyboard)).toContain(`cycle_mode:${draftId}`);
     expect(JSON.stringify(preview.keyboard)).toContain(`platforms:${draftId}`);
     expect(JSON.stringify(preview.keyboard)).not.toContain("use_ru_media");
+  });
+
+  it("renders post preview and confirmation controls in the selected interface language", () => {
+    backendDb = openBackendDb(":memory:");
+    backendDb.db.insert(botUiSettings).values({ adminId: 42, locale: "ru", updatedAt: new Date().toISOString() }).run();
+    const draftId = createDraftFromMessage(backendDb, 42, { text: "Карточка", textEn: "Card", entities: [], media: [] });
+    const preview = draftPreview(backendDb, draftId);
+
+    expect(preview.text).toContain("Режим: *Полный*");
+    expect(JSON.stringify(preview.keyboard)).toContain("Опубликовать");
+    expect(JSON.stringify(preview.keyboard)).toContain("Запланировать");
   });
 
   it("creates a draft and queues enabled publication targets without Telegram API", () => {

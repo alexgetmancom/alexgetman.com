@@ -1,11 +1,10 @@
-import { eq } from "drizzle-orm";
 import { InlineKeyboard } from "grammy";
 import { PRESETS, TARGETS } from "../botTargets.js";
 import type { BackendDb } from "../db/client.js";
-import { drafts } from "../db/schema.js";
 import { formatMsk } from "../publishing/schedule.js";
+import { parseTargets } from "../publishing/targets.js";
 import { requireDraft } from "./drafts.js";
-import { parseTargets } from "./message.js";
+import { type BotLocale, botLocale, ui } from "./i18n.js";
 
 export type DraftView = "overview" | "modes" | "schedule" | "confirm_publish" | "confirm_delete" | "platforms";
 
@@ -15,86 +14,88 @@ export function draftPreview(
   view: DraftView = "overview",
 ): { text: string; keyboard: InlineKeyboard } {
   const draft = requireDraft(backendDb, draftId);
+  const locale = botLocale(backendDb, draft.admin_id);
   const targets = parseTargets(draft.targets_json);
   const keyboard = new InlineKeyboard();
   const mode = draftMode(targets);
 
   if (view === "platforms") {
-    // Render toggles in columns of 2
     for (let index = 0; index < TARGETS.length; index += 2) {
-      for (const [target, label] of TARGETS.slice(index, index + 2)) {
+      for (const [target, label] of TARGETS.slice(index, index + 2))
         keyboard.text(`${targets[target] ? "✓" : "□"} ${label}`, `toggle:${draftId}:${target}`);
-      }
       keyboard.row();
     }
-    keyboard.text("← Back to preview", `preview:${draftId}`).row();
-
-    const enabled =
-      TARGETS.filter(([id]) => targets[id])
-        .map(([, label]) => label)
-        .join(", ") || "none";
+    keyboard.text(ui(locale, "← Back to preview", "← К предпросмотру"), `preview:${draftId}`).row();
+    const enabled = enabledTargetLabels(targets) || ui(locale, "none", "нет");
     return {
-      text: `📝 *Choose platforms for post #${draftId}*\n\nActive: *${enabled}*\n\nToggle platforms below:`,
+      text: `📝 *${ui(locale, `Platforms for post #${draftId}`, `Площадки поста #${draftId}`)}*\n\n${ui(locale, "Active", "Активны")}: *${enabled}*\n\n${ui(locale, "Toggle platforms below:", "Выберите площадки ниже:")}`,
       keyboard,
     };
   }
 
   if (view === "schedule") {
     keyboard
-      .text("📥 Auto next slot", `sched_choose:auto:${draftId}`)
+      .text(ui(locale, "📥 Next free slot", "📥 Ближайшее свободное"), `sched_choose:auto:${draftId}`)
       .text("+30 min", `sched_choose:plus30:${draftId}`)
       .row()
       .text("+1 hour", `sched_choose:plus60:${draftId}`)
-      .text("Today 21:00", `sched_choose:today2100:${draftId}`)
+      .text(ui(locale, "Today 21:00", "Сегодня 21:00"), `sched_choose:today2100:${draftId}`)
       .row()
-      .text("Tomorrow 10:00", `sched_choose:tomorrow1000:${draftId}`)
+      .text(ui(locale, "Tomorrow 10:00", "Завтра 10:00"), `sched_choose:tomorrow1000:${draftId}`)
       .row()
-      .text("Enter time manually", `sched_manual:both:${draftId}`)
+      .text(ui(locale, "Enter time", "Ввести время"), `sched_manual:both:${draftId}`)
       .row()
-      .text("← Back", `preview:${draftId}`);
+      .text(ui(locale, "← Back", "← Назад"), `preview:${draftId}`);
     return {
-      text: `${draftHeader(draftId, targets)}\n\n📅 *Scheduling*\nSelect slot or enter manually:`,
+      text: `${draftHeader(draftId, targets, locale)}\n\n📅 *${ui(locale, "Schedule", "Планирование")}*\n${ui(locale, "Choose a slot or enter a time.", "Выберите слот или введите время.")}`,
       keyboard,
     };
   }
 
   if (view === "confirm_publish") {
-    const enabled = enabledTargetLabels(targets);
-    keyboard.text("✅ Yes, publish now", `publish_confirm:${draftId}`).text("← Back", `preview:${draftId}`);
+    const enabled = enabledTargetLabels(targets) || ui(locale, "no platforms selected", "площадки не выбраны");
+    keyboard
+      .text(ui(locale, "✅ Publish now", "✅ Опубликовать"), `publish_confirm:${draftId}`)
+      .text(ui(locale, "← Back", "← Назад"), `preview:${draftId}`);
     return {
-      text: `${draftHeader(draftId, targets)}\n\n⚠️ *Confirm publication now*\nTo be sent to: ${enabled || "no platforms selected"}.`,
+      text: `${draftHeader(draftId, targets, locale)}\n\n⚠️ *${ui(locale, "Publish now?", "Опубликовать сейчас?")}*\n${ui(locale, "Will be sent to", "Будет отправлено в")}: ${enabled}.`,
       keyboard,
     };
   }
 
   if (view === "confirm_delete") {
-    keyboard.text("🗑 Yes, delete", `cancel_confirm:${draftId}`).text("← Back", `preview:${draftId}`);
+    keyboard
+      .text(ui(locale, "🗑 Delete draft", "🗑 Удалить черновик"), `cancel_confirm:${draftId}`)
+      .text(ui(locale, "← Back", "← Назад"), `preview:${draftId}`);
     return {
-      text: `${draftHeader(draftId, targets)}\n\n⚠️ *Delete this draft?*\nScheduled work that has not started will be cancelled.`,
+      text: `${draftHeader(draftId, targets, locale)}\n\n⚠️ *${ui(locale, "Delete this draft?", "Удалить этот черновик?")}*\n${ui(locale, "Unstarted scheduled work will be cancelled.", "Незапущенные запланированные задачи будут отменены.")}`,
       keyboard,
     };
   }
 
-  // overview view
   const modeEmoji = mode === "manual" ? "🛞" : "⚙️";
-  keyboard.text(`${modeEmoji} Mode: ${modeLabel(mode)}`, `cycle_mode:${draftId}`).row();
-  keyboard.text("🌐 Choose platforms", `platforms:${draftId}`).row();
-
-  keyboard.text("Edit RU", `edit_ru:${draftId}`).text("Edit EN", `edit_en:${draftId}`).row();
-  keyboard.text("▶️ Publish now", `publish:${draftId}`).text("📅 Schedule", `schedule:${draftId}`).row();
-  keyboard.text("🗑 Delete draft", `cancel:${draftId}`);
+  keyboard.text(`${modeEmoji} ${ui(locale, "Mode", "Режим")}: ${modeLabel(mode, locale)}`, `cycle_mode:${draftId}`).row();
+  keyboard.text(ui(locale, "🌐 Choose platforms", "🌐 Выбрать площадки"), `platforms:${draftId}`).row();
+  keyboard
+    .text(ui(locale, "Edit RU", "Изменить RU"), `edit_ru:${draftId}`)
+    .text(ui(locale, "Edit EN", "Изменить EN"), `edit_en:${draftId}`)
+    .row();
+  keyboard
+    .text(ui(locale, "▶️ Publish now", "▶️ Опубликовать"), `publish:${draftId}`)
+    .text(ui(locale, "📅 Schedule", "📅 Запланировать"), `schedule:${draftId}`)
+    .row();
+  keyboard.text(ui(locale, "🗑 Delete draft", "🗑 Удалить черновик"), `cancel:${draftId}`);
 
   const schedule =
     draft.status === "scheduled"
-      ? `\n\nScheduled RU: ${formatMsk(draft.scheduled_at ? String(draft.scheduled_at) : null)}\nScheduled EN: ${formatMsk(draft.scheduled_en_at ? String(draft.scheduled_en_at) : null)}`
+      ? `\n\n${ui(locale, "Scheduled RU", "Запланировано RU")}: ${formatMsk(draft.scheduled_at ? String(draft.scheduled_at) : null)}\n${ui(locale, "Scheduled EN", "Запланировано EN")}: ${formatMsk(draft.scheduled_en_at ? String(draft.scheduled_en_at) : null)}`
       : "";
-
   const mediaRu = safeMediaCount(draft.media_ru_json);
   const mediaEn = safeMediaCount(draft.media_en_json);
-  const media = mediaRu || mediaEn ? `\nMedia: ${mediaRu || 0} RU · ${mediaEn || mediaRu || 0} EN` : "";
-  const enMediaWarning = mediaRu > 0 && mediaEn === 0 ? "\n⚠️ EN uses RU media" : "";
+  const media = mediaRu || mediaEn ? `\n${ui(locale, "Media", "Медиа")}: ${mediaRu || 0} RU · ${mediaEn || mediaRu || 0} EN` : "";
+  const enMediaWarning = mediaRu > 0 && mediaEn === 0 ? `\n⚠️ ${ui(locale, "EN uses RU media", "EN использует RU-медиа")}` : "";
   return {
-    text: `${draftHeader(draftId, targets)}${media}${enMediaWarning}\n\nRU:\n${String(draft.text_ru || "[media only]").slice(0, 1000)}\n\nEN:\n${String(draft.text_en_approved || draft.text_en_machine || "[not translated]").slice(0, 1000)}${schedule}`,
+    text: `${draftHeader(draftId, targets, locale)}${media}${enMediaWarning}\n\nRU:\n${String(draft.text_ru || ui(locale, "[media only]", "[только медиа]")).slice(0, 1000)}\n\nEN:\n${String(draft.text_en_approved || draft.text_en_machine || ui(locale, "[not translated]", "[не переведено]")).slice(0, 1000)}${schedule}`,
     keyboard,
   };
 }
@@ -108,8 +109,8 @@ function safeMediaCount(value: string | null): number {
   }
 }
 
-function draftHeader(draftId: number, targets: Record<string, boolean>): string {
-  return `📝 *Post #${draftId}*\nMode: *${modeLabel(draftMode(targets))}* · Platforms: *${Object.values(targets).filter(Boolean).length}*`;
+function draftHeader(draftId: number, targets: Record<string, boolean>, locale: BotLocale): string {
+  return `📝 *${ui(locale, `Post #${draftId}`, `Пост #${draftId}`)}*\n${ui(locale, "Mode", "Режим")}: *${modeLabel(draftMode(targets), locale)}* · ${ui(locale, "Platforms", "Площадки")}: *${Object.values(targets).filter(Boolean).length}*`;
 }
 
 function enabledTargetLabels(targets: Record<string, boolean>): string {
@@ -118,35 +119,17 @@ function enabledTargetLabels(targets: Record<string, boolean>): string {
     .join(", ");
 }
 
-export function draftMode(targets: Record<string, boolean>): keyof typeof PRESETS | "manual" {
+function draftMode(targets: Record<string, boolean>): keyof typeof PRESETS | "manual" {
   for (const [name, preset] of Object.entries(PRESETS)) {
     if (TARGETS.every(([target]) => Boolean(targets[target]) === Boolean(preset[target]))) return name as keyof typeof PRESETS;
   }
   return "manual";
 }
 
-export function modeLabel(mode: keyof typeof PRESETS | "manual"): string {
-  switch (mode) {
-    case "full":
-      return "Full";
-    case "ru":
-      return "RU only";
-    case "en":
-      return "EN only";
-    case "tg":
-      return "TG only";
-    default:
-      return "Manual";
-  }
-}
-
-export function toggleDraftTarget(backendDb: BackendDb, draftId: number, target: string): void {
-  const row = backendDb.db.select({ targetsJson: drafts.targetsJson }).from(drafts).where(eq(drafts.id, draftId)).get();
-  const targets = parseTargets(row?.targetsJson);
-  targets[target] = !targets[target];
-  backendDb.db
-    .update(drafts)
-    .set({ targetsJson: JSON.stringify(targets), updatedAt: new Date().toISOString() })
-    .where(eq(drafts.id, draftId))
-    .run();
+export function modeLabel(mode: keyof typeof PRESETS | "manual", locale: BotLocale = "en"): string {
+  if (mode === "full") return ui(locale, "Full", "Полный");
+  if (mode === "ru") return ui(locale, "RU only", "Только RU");
+  if (mode === "en") return ui(locale, "EN only", "Только EN");
+  if (mode === "tg") return ui(locale, "Telegram only", "Только Telegram");
+  return ui(locale, "Custom", "Свой");
 }

@@ -1,4 +1,5 @@
 import { and, asc, eq, isNull } from "drizzle-orm";
+import type { BotLocale } from "../bot/i18n.js";
 import type { BackendDb } from "../db/client.js";
 import { videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
 import { isVideoTargetFinal, videoDraftStatus } from "../publishing/state.js";
@@ -80,12 +81,14 @@ export function refreshVideoDraftStatus(backendDb: BackendDb, videoDraftId: numb
     .run();
 }
 
-export function formatVideoTime(value: string | null): string {
+export function formatVideoTime(value: string | null, locale: BotLocale = "ru"): string {
   return value
-    ? new Intl.DateTimeFormat("ru-RU", {
+    ? new Intl.DateTimeFormat(locale === "ru" ? "ru-RU" : "en-GB", {
         dateStyle: "short",
         timeStyle: "short",
         timeZone: "Europe/Moscow",
       }).format(new Date(value))
-    : "время не задано";
+    : locale === "ru"
+      ? "время не задано"
+      : "time is not set";
 }

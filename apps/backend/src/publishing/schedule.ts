@@ -12,6 +12,7 @@ import {
   siteJobs,
   siteSourceItems,
 } from "../db/schema.js";
+import { parseTargets } from "./targets.js";
 
 const SLOTS: Record<TargetLocale, readonly string[]> = {
   ru: ["10:37", "13:37", "17:37", "20:37", "23:37"],
@@ -213,15 +214,6 @@ function availableSlots(backendDb: BackendDb, locale: TargetLocale, now: Date, n
   }
   if (result.length < needed) throw new Error(`No free ${locale.toUpperCase()} publishing slot found`);
   return result;
-}
-
-function parseTargets(value: string | null): Record<string, boolean> {
-  try {
-    const parsed = JSON.parse(value || "{}") as Record<string, unknown>;
-    return Object.fromEntries(Object.entries(parsed).map(([target, enabled]) => [target, Boolean(enabled)]));
-  } catch {
-    return {};
-  }
 }
 
 function hasLocaleTarget(targets: Record<string, boolean>, locale: TargetLocale): boolean {

@@ -1,6 +1,5 @@
 import type { Context } from "grammy";
-import { DEFAULT_TARGETS } from "../botTargets.js";
-import { jsonRecordArray, parseJsonValue } from "../json.js";
+import { jsonRecordArray } from "../json.js";
 
 export type DraftMessage = {
   text: string;
@@ -32,15 +31,6 @@ export function extractMessage(ctx: Context): DraftMessage {
     });
   }
   return { text, media, entities };
-}
-
-export function parseTargets(value: unknown): Record<string, boolean> {
-  const parsed = parseJsonValue(value);
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return { ...DEFAULT_TARGETS };
-  return {
-    ...DEFAULT_TARGETS,
-    ...Object.fromEntries(Object.entries(parsed as Record<string, unknown>).map(([key, enabled]) => [key, Boolean(enabled)])),
-  };
 }
 
 export function parseArrayValue(value: unknown): Record<string, unknown>[] {

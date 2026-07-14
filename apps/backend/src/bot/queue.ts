@@ -1,130 +1,91 @@
-import { eq, inArray } from "drizzle-orm";
 import { type Context, InlineKeyboard } from "grammy";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
-import { drafts, videoDrafts, videoTargets } from "../db/schema.js";
-import { botLocale, ui } from "./i18n.js";
+import { studioServices } from "../studio/services/index.js";
+import type { StudioQueueItem, StudioQueueSnapshot } from "../studio/services/queue.js";
+import { type BotLocale, botLocale, ui } from "./i18n.js";
 
-type QueueItem = {
-  id: number;
-  name: string;
-  time: Date;
-  type: "POST" | "YT" | "IG" | "ВСЕ";
-  callback: string;
-};
+type QueueView = "upcoming" | "drafts" | "attention";
 
-type QueueView = "upcoming" | "drafts";
-
-export async function showQueue(ctx: Context, backendDb: BackendDb, _config: BackendConfig, view: QueueView = "upcoming"): Promise<void> {
-  if (view === "drafts") return showDrafts(ctx, backendDb);
-  const postDrafts = backendDb.db.select().from(drafts).where(eq(drafts.status, "scheduled")).all();
-  const vDrafts = backendDb.db.select().from(videoDrafts).where(eq(videoDrafts.status, "scheduled")).all();
+export async function showQueue(
+  ctx: Context,
+  backendDb: BackendDb,
+  config: BackendConfig,
+  requestedView: QueueView = "upcoming",
+): Promise<void> {
   const locale = botLocale(backendDb, Number(ctx.from?.id));
-
-  const items: QueueItem[] = [];
-
-  for (const draft of postDrafts) {
-    const timeStr = draft.scheduledAt ?? draft.scheduledEnAt;
-    if (!timeStr) continue;
-
-    // Extract first line and slice to 10 chars
-    const rawLabel = draft.textRu.split("\n")[0]?.trim() || `Post #${draft.id}`;
-    const name = rawLabel.slice(0, 10).trim() || `Post #${draft.id}`;
-
-    items.push({
-      id: draft.id,
-      name,
-      time: new Date(timeStr),
-      type: "POST",
-      callback: `preview:${draft.id}`,
-    });
-  }
-
-  for (const vd of vDrafts) {
-    const targets = backendDb.db.select().from(videoTargets).where(eq(videoTargets.videoDraftId, vd.id)).all();
-    const activeTargets = targets.filter((t) => t.status === "scheduled");
-    if (activeTargets.length === 0) continue;
-
-    const times = activeTargets
-      .map((t) => t.scheduledAt)
-      .filter((scheduledAt): scheduledAt is string => Boolean(scheduledAt))
-      .map((scheduledAt) => new Date(scheduledAt));
-    if (times.length === 0) continue;
-    const earliestTime = new Date(Math.min(...times.map((t) => t.getTime())));
-
-    const hasYt = activeTargets.some((t) => t.target === "youtube_shorts");
-    const hasIg = activeTargets.some((t) => t.target === "instagram_reels");
-    let type: "YT" | "IG" | "ВСЕ" = "YT";
-    if (hasYt && hasIg) type = "ВСЕ";
-    else if (hasIg) type = "IG";
-
-    const name = vd.label.trim().slice(0, 10).trim() || `Video #${vd.id}`;
-
-    items.push({
-      id: vd.id,
-      name,
-      time: earliestTime,
-      type,
-      callback: `video_open:${vd.id}`,
-    });
-  }
-
-  // Sort chronologically
-  items.sort((a, b) => a.time.getTime() - b.time.getTime());
-
+  const snapshot = studioServices(backendDb, config).queue.snapshot(Number(ctx.from?.id));
+  const view = requestedView === "upcoming" && snapshot.upcoming.length === 0 ? "drafts" : requestedView;
   const keyboard = new InlineKeyboard();
-  for (const item of items) {
-    const timeStr = formatQueueTime(item.time);
-    keyboard.text(`${item.name} ${timeStr} - ${item.type}`, item.callback).row();
-  }
-  keyboard
-    .text(ui(locale, "🟡 Drafts", "🟡 Черновики"), "queue_drafts")
-    .row()
-    .text(ui(locale, "← Menu", "← Меню"), "menu_home");
+  let text: string;
 
-  const text =
-    items.length === 0
-      ? ui(locale, "📋 No upcoming publications.", "📋 Нет ближайших публикаций.")
-      : `📋 *${ui(locale, "Upcoming publications", "Ближайшие публикации")} (${items.length}):*`;
-
-  const messageId = ctx.callbackQuery?.message?.message_id;
-  if (messageId && ctx.chat?.id) {
-    await ctx.api.editMessageText(ctx.chat.id, messageId, text, {
-      parse_mode: "Markdown",
-      reply_markup: keyboard,
-    });
+  if (view === "upcoming") {
+    text = upcomingText(snapshot, locale);
+    for (const item of snapshot.upcoming) keyboard.text(itemButton(item, locale), itemCallback(item)).row();
+  } else if (view === "drafts") {
+    text = draftsText(snapshot, locale);
+    for (const item of snapshot.drafts) keyboard.text(`${kindIcon(item.kind)} ${item.label}`, itemCallback(item)).row();
   } else {
-    await ctx.reply(text, {
-      parse_mode: "Markdown",
-      reply_markup: keyboard,
-    });
+    text = attentionText(snapshot, locale);
+    for (const item of snapshot.attention) keyboard.text(`${kindIcon(item.kind)} ${item.label}`, attentionCallback(item)).row();
   }
+
+  if (view !== "upcoming" && snapshot.upcoming.length) keyboard.text(ui(locale, "📅 Upcoming", "📅 Ближайшие"), "queue_home");
+  if (view !== "drafts")
+    keyboard.text(ui(locale, `🟡 Drafts (${snapshot.drafts.length})`, `🟡 Черновики (${snapshot.drafts.length})`), "queue_drafts");
+  if (view !== "attention" && snapshot.attention.length)
+    keyboard.text(
+      ui(locale, `⚠️ Needs attention (${snapshot.attention.length})`, `⚠️ Требует внимания (${snapshot.attention.length})`),
+      "queue_attention",
+    );
+  keyboard.row().text(ui(locale, "← Menu", "← Меню"), "menu_home");
+  await replaceQueueMessage(ctx, text, keyboard);
 }
 
-async function showDrafts(ctx: Context, backendDb: BackendDb): Promise<void> {
-  const locale = botLocale(backendDb, Number(ctx.from?.id));
-  const textDrafts = backendDb.db.select().from(drafts).where(eq(drafts.status, "needs_review")).all();
-  const videos = backendDb.db
-    .select()
-    .from(videoDrafts)
-    .where(inArray(videoDrafts.status, ["draft", "editing"]))
-    .all();
-  const keyboard = new InlineKeyboard();
-  for (const draft of textDrafts)
-    keyboard
-      .text(`📝 #${draft.id} ${(draft.textRu.split("\n")[0] || ui(locale, "Post", "Пост")).slice(0, 28)}`, `preview:${draft.id}`)
-      .row();
-  for (const video of videos)
-    keyboard.text(`🎬 #${video.id} ${(video.label || ui(locale, "Video", "Видео")).slice(0, 28)}`, `video_open:${video.id}`).row();
-  keyboard
-    .text(ui(locale, "← Upcoming", "← Ближайшие"), "queue_home")
-    .row()
-    .text(ui(locale, "← Menu", "← Меню"), "menu_home");
-  await replaceQueueMessage(
-    ctx,
-    textDrafts.length + videos.length ? `🟡 *${ui(locale, "Drafts", "Черновики")}*` : ui(locale, "🟡 No drafts.", "🟡 Нет черновиков."),
-    keyboard,
-  );
+function upcomingText(snapshot: StudioQueueSnapshot, locale: BotLocale): string {
+  const lines = [`📋 *${ui(locale, "Work queue", "Очередь")}*`, "", `*${ui(locale, "Upcoming", "Ближайшие публикации")}*`];
+  for (const item of snapshot.upcoming.slice(0, 5))
+    lines.push(`• ${formatQueueTime(item.time, locale)} — ${kindIcon(item.kind)} ${item.label}`);
+  lines.push("", summary(snapshot, locale));
+  return lines.join("\n");
+}
+
+function draftsText(snapshot: StudioQueueSnapshot, locale: BotLocale): string {
+  const lines = [`🟡 *${ui(locale, "Drafts", "Черновики")}*`];
+  if (!snapshot.drafts.length)
+    lines.push(`\n${ui(locale, "No drafts. Start a post or video from the menu.", "Черновиков нет. Начните пост или видео из меню.")}`);
+  else lines.push(`\n${ui(locale, "Choose a draft to continue:", "Выберите черновик, чтобы продолжить:")}`);
+  return lines.join("\n");
+}
+
+function attentionText(snapshot: StudioQueueSnapshot, locale: BotLocale): string {
+  const lines = [`⚠️ *${ui(locale, "Needs attention", "Требует внимания")}*`];
+  if (!snapshot.attention.length) lines.push(`\n${ui(locale, "Everything is on track.", "Всё идёт по плану.")}`);
+  else lines.push(`\n${ui(locale, "Open an item to see its failed targets.", "Откройте пункт, чтобы увидеть площадки с ошибкой.")}`);
+  return lines.join("\n");
+}
+
+function summary(snapshot: StudioQueueSnapshot, locale: BotLocale): string {
+  const draftsLabel = ui(locale, "Drafts", "Черновики");
+  const attentionLabel = ui(locale, "needs attention", "требует внимания");
+  return `🟡 ${draftsLabel}: ${snapshot.drafts.length}${snapshot.attention.length ? ` · ⚠️ ${attentionLabel}: ${snapshot.attention.length}` : ""}`;
+}
+
+function itemButton(item: StudioQueueItem, locale: BotLocale): string {
+  const targets = item.targets ? ` · ${item.targets} ${ui(locale, "platforms", "площадок")}` : "";
+  return `${formatQueueTime(item.time, locale)} · ${kindIcon(item.kind)} ${item.label}${targets}`.slice(0, 60);
+}
+
+function kindIcon(kind: StudioQueueItem["kind"]): string {
+  return kind === "post" ? "📝" : "🎬";
+}
+
+function itemCallback(item: StudioQueueItem): string {
+  return item.kind === "post" ? `preview:${item.id}` : `video_open:${item.id}`;
+}
+
+function attentionCallback(item: { id: number; kind: StudioQueueItem["kind"] }): string {
+  return item.kind === "post" ? `progress_details:${item.id}` : `video_open:${item.id}`;
 }
 
 async function replaceQueueMessage(ctx: Context, text: string, keyboard: InlineKeyboard): Promise<void> {
@@ -134,12 +95,23 @@ async function replaceQueueMessage(ctx: Context, text: string, keyboard: InlineK
   else await ctx.reply(text, { parse_mode: "Markdown", reply_markup: keyboard });
 }
 
-function formatQueueTime(date: Date): string {
-  // Moscow is UTC + 3
-  const mskTime = new Date(date.getTime() + 3 * 3600 * 1000);
-  const day = String(mskTime.getUTCDate()).padStart(2, "0");
-  const month = String(mskTime.getUTCMonth() + 1).padStart(2, "0");
-  const hours = String(mskTime.getUTCHours()).padStart(2, "0");
-  const minutes = String(mskTime.getUTCMinutes()).padStart(2, "0");
-  return `${day}.${month} ${hours}:${minutes}`;
+function formatQueueTime(date: Date, locale: BotLocale): string {
+  const now = new Date();
+  const dateKey = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(date);
+  const todayKey = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(now);
+  const tomorrowKey = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(new Date(now.getTime() + 24 * 60 * 60_000));
+  const time = new Intl.DateTimeFormat(locale === "ru" ? "ru-RU" : "en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZone: "Europe/Moscow",
+  }).format(date);
+  if (dateKey === todayKey) return `${ui(locale, "Today", "Сегодня")}, ${time}`;
+  if (dateKey === tomorrowKey) return `${ui(locale, "Tomorrow", "Завтра")}, ${time}`;
+  const day = new Intl.DateTimeFormat(locale === "ru" ? "ru-RU" : "en-GB", {
+    day: "numeric",
+    month: "short",
+    timeZone: "Europe/Moscow",
+  }).format(date);
+  return `${day}, ${time}`;
 }

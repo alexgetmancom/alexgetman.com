@@ -16,7 +16,8 @@ import {
 import { localizeTargetPayload } from "../publishing/payload.js";
 import { enqueuePublishJobTx, reconcilePublication } from "../publishing/queue.js";
 import { rebalanceScheduledDrafts } from "../publishing/schedule.js";
-import { type DraftMessage, firstLine, parseArrayValue, parseTargets, slugify } from "./message.js";
+import { parseTargets } from "../publishing/targets.js";
+import { type DraftMessage, firstLine, parseArrayValue, slugify } from "./message.js";
 import { entitiesToHtml } from "./text.js";
 
 type PublishDraftOptions = { mode?: "immediate" | "scheduled"; ruAt?: Date | null; enAt?: Date | null };
@@ -56,6 +57,7 @@ export function requireDraft(backendDb: BackendDb, draftId: number) {
   const draft = backendDb.db
     .select({
       id: drafts.id,
+      admin_id: drafts.adminId,
       status: drafts.status,
       text_ru: drafts.textRu,
       text_en_machine: drafts.textEnMachine,
@@ -125,6 +127,23 @@ export function setDraftControlCard(backendDb: BackendDb, draftId: number, chatI
     .insert(postControlCards)
     .values({ draftId, chatId, messageId, updatedAt: new Date().toISOString() })
     .onConflictDoUpdate({ target: postControlCards.draftId, set: { chatId, messageId, updatedAt: new Date().toISOString() } })
+    .run();
+}
+
+/** Cancels only jobs that have not reached a final external state. */
+export function cancelRemainingPostJobs(backendDb: BackendDb, draftId: number): void {
+  const draft = backendDb.db.select({ postId: drafts.postId }).from(drafts).where(eq(drafts.id, draftId)).get();
+  if (!draft?.postId) return;
+  const now = new Date().toISOString();
+  backendDb.db
+    .update(publishJobs)
+    .set({ status: "cancelled", updatedAt: now })
+    .where(and(eq(publishJobs.postId, draft.postId), inArray(publishJobs.status, ["queued", "failed"])))
+    .run();
+  backendDb.db
+    .update(siteJobs)
+    .set({ status: "cancelled", updatedAt: now })
+    .where(and(eq(siteJobs.postId, draft.postId), inArray(siteJobs.status, ["queued", "failed"])))
     .run();
 }
 

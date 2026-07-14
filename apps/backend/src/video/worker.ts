@@ -1,11 +1,13 @@
 import crypto from "node:crypto";
 import { and, asc, eq, isNull, lte, or } from "drizzle-orm";
-import { type Bot, InlineKeyboard } from "grammy";
+import type { Bot } from "grammy";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { botSettings, videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
+import { notifyFinalVideoFailure, refreshVideoControlCard, sendVideoReminder } from "../interfaces/telegram/video-notifications.js";
 import { nextRetryAt } from "../publishing/errors.js";
-import { formatVideoTime, getVideoDraft, refreshVideoDraftStatus, type VideoJob } from "./data.js";
+import { notificationService } from "../studio/services/notifications.js";
+import { getVideoDraft, refreshVideoDraftStatus, type VideoJob } from "./data.js";
 import {
   InstagramContainerInvalidError,
   InstagramContainerProcessingError,
@@ -14,10 +16,8 @@ import {
   prepareYouTubeVideo,
   publishInstagramReel,
 } from "./publishers.js";
-import { videoPreview } from "./service.js";
 import { deleteVideo, videoPath } from "./storage.js";
-import type { InstagramMetadata, VideoMetadata, VideoTarget, YouTubeMetadata } from "./types.js";
-import { videoTargetLabel } from "./types.js";
+import type { InstagramMetadata, VideoMetadata, YouTubeMetadata } from "./types.js";
 
 export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb, bot: Bot | null): Promise<number> {
   if (!config.studio.modules.video_posting) return 0;
@@ -36,39 +36,6 @@ export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb,
   }
   pruneExpiredVideos(config, backendDb);
   return jobs.length;
-}
-
-async function notifyFinalVideoFailure(backendDb: BackendDb, bot: Bot | null, job: VideoJob): Promise<void> {
-  if (!bot || !job.videoTargetId) return;
-  const target = backendDb.db.select().from(videoTargets).where(eq(videoTargets.id, job.videoTargetId)).get();
-  if (target?.status !== "failed") return;
-  const draft = getVideoDraft(backendDb, job.videoDraftId);
-  const targetName = target.target as VideoTarget;
-  await bot.api.sendMessage(
-    draft.adminId,
-    `🔴 ${videoTargetLabel(targetName)} не опубликовал ролик «${draft.label || "Без названия"}».\n\n${target.lastError || "Неизвестная ошибка"}`,
-    {
-      reply_markup: new InlineKeyboard().text(
-        `🔁 Повторить ${targetName === "youtube_shorts" ? "YouTube" : "Instagram"}`,
-        `video_retry:${targetName}:${draft.id}`,
-      ),
-    },
-  );
-}
-
-async function refreshVideoControlCard(backendDb: BackendDb, bot: Bot | null, videoDraftId: number): Promise<void> {
-  if (!bot) return;
-  const draft = getVideoDraft(backendDb, videoDraftId);
-  if (!draft.controlChatId || !draft.controlMessageId) return;
-  const preview = videoPreview(backendDb, videoDraftId);
-  try {
-    await bot.api.editMessageText(draft.controlChatId, draft.controlMessageId, preview.text, {
-      parse_mode: "Markdown",
-      reply_markup: preview.keyboard,
-    });
-  } catch {
-    // A deleted or manually edited Telegram message must not stop publication.
-  }
 }
 
 function claimVideoJobs(backendDb: BackendDb, limit: number): VideoJob[] {
@@ -186,30 +153,6 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, bot:
   refreshVideoDraftStatus(backendDb, draft.id, config.VIDEO_MEDIA_RETENTION_HOURS);
 }
 
-async function sendVideoReminder(
-  backendDb: BackendDb,
-  bot: Bot | null,
-  videoDraftId: number,
-  videoTargetId: number | null,
-  reminderMinutes: number,
-): Promise<void> {
-  const draft = getVideoDraft(backendDb, videoDraftId);
-  const target = videoTargetId == null ? null : backendDb.db.select().from(videoTargets).where(eq(videoTargets.id, videoTargetId)).get();
-  if (!bot || !target || draft.status !== "scheduled") return;
-  const text = `⏰ Через ${reminderMinutes} мин. публикация:\n\n🎬 ${draft.label || "Без названия"}\n• ${videoTargetLabel(target.target as VideoTarget)}\n\n${formatVideoTime(target.scheduledAt)}`;
-  await bot.api.sendMessage(draft.adminId, text, {
-    reply_markup: new InlineKeyboard().text("Открыть", `video_open:${draft.id}`).text("Отменить", `video_cancel:${draft.id}`),
-  });
-  backendDb.db
-    .update(videoDrafts)
-    .set({
-      reminderSentAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    })
-    .where(eq(videoDrafts.id, draft.id))
-    .run();
-}
-
 function completeVideoJob(backendDb: BackendDb, id: number): void {
   backendDb.db
     .update(videoJobs)
@@ -314,6 +257,21 @@ function failVideoJob(backendDb: BackendDb, job: VideoJob, cause: unknown, confi
         .run();
   });
   refreshVideoDraftStatus(backendDb, job.videoDraftId, config.VIDEO_MEDIA_RETENTION_HOURS);
+  if (!retry) {
+    const target =
+      job.videoTargetId == null
+        ? null
+        : backendDb.db.select({ target: videoTargets.target }).from(videoTargets).where(eq(videoTargets.id, job.videoTargetId)).get();
+    notificationService(backendDb).record({
+      ref: `video:${job.videoDraftId}`,
+      type: "video.target.failed",
+      severity: "error",
+      target: target?.target ?? "video",
+      message: error,
+      details: { videoDraftId: job.videoDraftId, videoTargetId: job.videoTargetId, jobId: job.id, kind: job.kind },
+      cooldownSeconds: config.ALERT_COOLDOWN_SECONDS,
+    });
+  }
 }
 
 function composeYouTubeDescription(backendDb: BackendDb, adminId: number, metadata: YouTubeMetadata): string {

@@ -8,9 +8,12 @@ import { publishInstagramStory } from "../src/social/instagram.js";
 import { createChannelStoryClient } from "../src/social/telegramSession.js";
 import { telegramStoryCaption, telegramStoryUploadMedia } from "../src/social/telegramStories.js";
 
+const ffmpegCalls: string[][] = [];
+
 mock.module("../src/runtime/ffmpeg.js", () => {
   return {
     runFfmpeg: async (args: string[]) => {
+      ffmpegCalls.push(args);
       const outputPath = args.at(-1);
       if (!outputPath) throw new Error("ffmpeg output path is missing");
       fs.writeFileSync(outputPath, "fake story image content");
@@ -44,6 +47,9 @@ describe("story publishers", () => {
       expect(generated[0]).toMatchObject({ story_width: 1080, story_height: 1920 });
       expect(String(generated[0]?.story_local_path)).toEndWith(".mp4");
       expect(fs.existsSync(String(generated[0]?.story_local_path))).toBe(true);
+      const ffmpegArgs = ffmpegCalls.at(-1) ?? [];
+      expect(ffmpegArgs[ffmpegArgs.indexOf("-t") + 1]).toBe("59");
+      expect(ffmpegArgs).not.toContain("-r");
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

@@ -2,13 +2,13 @@
 
 - Work only on `main`; do not create branches or PRs.
 - Before every push: typecheck, tests, and production build.
-- Push directly to `main`; CI/CD is the only production deploy path.
+- Push directly to `main`; CI/CD is main prodiction path
 
 ## Tatically after 2026-07-15. All other production deployments remain CI/CD-only.
 
 ## Runtime diagnostics
 
-- Production SSH alias: `ssh tw-nl`. Подключаться только когда задача требует production-диагностики; доступ read-only.
+- Production SSH alias: `ssh tw-nl`.
 - Перед анализом worker, очередей, конфигурации, публикаций или ошибок сначала выполнить CLI локально. Это проверяет контракт и доступность команды, но локальная БД/volumes могут отсутствовать:
   - `bun run --filter @alexgetman/backend ops status`
   - `bun run --filter @alexgetman/backend ops doctor`

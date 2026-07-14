@@ -1,8 +1,10 @@
 import type { Context } from "grammy";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
-import { scheduleVideo, setVideoControlCard, validateVideoDraft, videoPreview } from "../video/service.js";
+import { videoPreview } from "../interfaces/telegram/video-preview.js";
+import { studioServices } from "../studio/services/index.js";
 import type { VideoTarget } from "../video/types.js";
+import { botLocale, ui } from "./i18n.js";
 import { clearSession, type VideoSession } from "./video-session.js";
 
 export async function finishVideoSchedule(
@@ -13,20 +15,19 @@ export async function finishVideoSchedule(
   session: VideoSession,
   schedule: Partial<Record<VideoTarget, Date>>,
 ): Promise<void> {
-  if (!session.draftId) throw new Error("Черновик не найден.");
-  const technical = await validateVideoDraft(config, backendDb, session.draftId);
-  scheduleVideo(backendDb, session.draftId, schedule, {
-    prepareLeadMinutes: config.VIDEO_PREPARE_LEAD_MINUTES,
-    reminderMinutes: config.VIDEO_REMINDER_MINUTES,
-  });
+  if (!session.draftId) throw new Error("Video draft is missing.");
+  const locale = botLocale(backendDb, adminId);
+  const technical = await studioServices(backendDb, config).videos.schedule(adminId, session.draftId, schedule);
+  const preview = videoPreview(backendDb, session.draftId, locale);
+  const text = `${technical.summary}${technical.warning ? `\n${technical.warning}` : ""}\n\n✅ ${ui(locale, "Scheduled", "Запланировано")}. ${ui(locale, `I will remind you ${config.VIDEO_REMINDER_MINUTES} minutes beforehand.`, `Напомню за ${config.VIDEO_REMINDER_MINUTES} минут.`)}\n\n${preview.text}`;
+  const controlMessageId = Number(session.data.controlMessageId);
   clearSession(backendDb, adminId);
-  const preview = videoPreview(backendDb, session.draftId);
-  const message = await ctx.reply(
-    `${technical.summary}${technical.warning ? `\n${technical.warning}` : ""}\n\n✅ Запланировано. Напомню за ${config.VIDEO_REMINDER_MINUTES} минут.\n\n${preview.text}`,
-    {
-      parse_mode: "Markdown",
-      reply_markup: preview.keyboard,
-    },
-  );
-  if (ctx.chat?.id) setVideoControlCard(backendDb, session.draftId, Number(ctx.chat.id), message.message_id);
+  if (controlMessageId && ctx.chat?.id) {
+    await ctx.api.editMessageText(ctx.chat.id, controlMessageId, text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
+    studioServices(backendDb, config).videos.setControlCard(adminId, session.draftId, Number(ctx.chat.id), controlMessageId);
+    return;
+  }
+  const message = await ctx.reply(text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
+  if (ctx.chat?.id)
+    studioServices(backendDb, config).videos.setControlCard(adminId, session.draftId, Number(ctx.chat.id), message.message_id);
 }

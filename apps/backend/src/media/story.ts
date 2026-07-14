@@ -4,6 +4,11 @@ import type { BackendConfig } from "../config.js";
 import { runFfmpeg } from "../runtime/ffmpeg.js";
 import type { PublishMediaItem } from "../social/payload.js";
 
+// Keep one second of headroom below the 60-second story limit used by the
+// supported publishing targets. Do not alter the source frame rate: 60 FPS is
+// a valid story format and should be retained when supplied by the author.
+const STORY_MAX_DURATION_SECONDS = 59;
+
 export async function generateStoryMedia(
   raw: unknown,
   draftId: number,
@@ -28,6 +33,8 @@ export async function generateStoryMedia(
           "-y",
           "-i",
           source,
+          "-t",
+          String(STORY_MAX_DURATION_SECONDS),
           "-vf",
           filter,
           "-map",

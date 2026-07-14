@@ -1,14 +1,13 @@
 import { statSync } from "node:fs";
 import path from "node:path";
 import { and, eq, inArray, ne } from "drizzle-orm";
-import { InlineKeyboard } from "grammy";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { socialComments, videoDrafts, videoJobs, videoMetricSchedule, videoMetricSnapshots, videoTargets } from "../db/schema.js";
-import { isVideoTargetEditable, isVideoTargetSchedulable } from "../publishing/state.js";
-import { formatVideoTime, getVideoDraft, insertVideoJob, listVideoTargets } from "./data.js";
+import { isVideoTargetEditable } from "../publishing/state.js";
+import { getVideoDraft, insertVideoJob, listVideoTargets, refreshVideoDraftStatus } from "./data.js";
 import { videoPath } from "./storage.js";
-import type { InstagramMetadata, VideoMetadata, VideoTarget, YouTubeMetadata } from "./types.js";
+import type { VideoMetadata, VideoTarget } from "./types.js";
 import { VIDEO_TARGETS } from "./types.js";
 
 export { refreshVideoDraftStatus } from "./data.js";
@@ -84,6 +83,41 @@ export function replaceVideoTargets(backendDb: BackendDb, videoDraftId: number, 
         .run();
     tx.update(videoDrafts).set({ status: "editing", updatedAt: now }).where(eq(videoDrafts.id, videoDraftId)).run();
   });
+}
+
+/** Removes one editable target and every dependent job/metric row atomically. */
+export function removeVideoTarget(backendDb: BackendDb, videoDraftId: number, targetName: VideoTarget, retentionHours: number): boolean {
+  const target = backendDb.db
+    .select()
+    .from(videoTargets)
+    .where(and(eq(videoTargets.videoDraftId, videoDraftId), eq(videoTargets.target, targetName)))
+    .get();
+  if (!target) throw new Error("Video platform was not found.");
+  if (!isVideoTargetEditable(target.status)) throw new Error("This video platform can no longer be removed.");
+
+  const now = new Date().toISOString();
+  const remaining = backendDb.db.transaction((tx) => {
+    tx.delete(socialComments).where(eq(socialComments.videoTargetId, target.id)).run();
+    tx.delete(videoMetricSnapshots).where(eq(videoMetricSnapshots.videoTargetId, target.id)).run();
+    tx.delete(videoMetricSchedule).where(eq(videoMetricSchedule.videoTargetId, target.id)).run();
+    tx.delete(videoJobs)
+      .where(and(eq(videoJobs.videoDraftId, videoDraftId), eq(videoJobs.videoTargetId, target.id)))
+      .run();
+    tx.delete(videoTargets).where(eq(videoTargets.id, target.id)).run();
+    const remainingTargets = tx.select({ id: videoTargets.id }).from(videoTargets).where(eq(videoTargets.videoDraftId, videoDraftId)).all();
+    if (remainingTargets.length === 0)
+      tx.update(videoDrafts)
+        .set({
+          status: "cancelled",
+          retentionUntil: new Date(Date.now() + retentionHours * 60 * 60_000).toISOString(),
+          updatedAt: now,
+        })
+        .where(eq(videoDrafts.id, videoDraftId))
+        .run();
+    return remainingTargets.length;
+  });
+  if (remaining > 0) refreshVideoDraftStatus(backendDb, videoDraftId, retentionHours);
+  return remaining === 0;
 }
 
 export function saveVideoMetadata(backendDb: BackendDb, videoDraftId: number, target: VideoTarget, metadata: VideoMetadata): void {
@@ -245,47 +279,6 @@ async function probeVideo(source: string, size: number): Promise<VideoTechnicalC
   };
 }
 
-export function videoPreview(backendDb: BackendDb, videoDraftId: number): { text: string; keyboard: InlineKeyboard } {
-  const draft = getVideoDraft(backendDb, videoDraftId);
-  const targets = listVideoTargets(backendDb, videoDraftId);
-  const title = draft.label || "Видеопубликация";
-  const lines = [`🎬 *${escapeMarkdown(title)}*`, `Статус: *${videoStatusLabel(draft.status)}*`];
-  const keyboard = new InlineKeyboard();
-  const ytTarget = targets.find((target) => target.target === "youtube_shorts");
-  const igTarget = targets.find((target) => target.target === "instagram_reels");
-  if (ytTarget) {
-    const metadata = (ytTarget.metadataJson ?? {}) as Partial<YouTubeMetadata>;
-    lines.push("", "▶️ *YouTube Shorts*", `Название: ${escapeMarkdown(metadata.title || "—")}`);
-    if (metadata.description) lines.push(`Описание: ${escapeMarkdown(metadata.description)}`);
-    if (metadata.gameUrl) lines.push(`Игра: ${escapeMarkdown(metadata.gameUrl)}`);
-    if (metadata.tags?.length) lines.push(`Теги: ${escapeMarkdown(metadata.tags.join(", "))}`);
-    lines.push(
-      `Состояние: ${videoStatusLabel(ytTarget.status)}${ytTarget.scheduledAt ? ` · ${formatVideoTime(ytTarget.scheduledAt)}` : ""}`,
-    );
-    if (isVideoTargetSchedulable(ytTarget.status)) keyboard.text("🕒 Время YouTube", `video_time:youtube_shorts:${draft.id}`);
-    if (isVideoTargetEditable(ytTarget.status)) keyboard.text("❌ Убрать YouTube", `video_remove:youtube_shorts:${draft.id}`).row();
-  }
-  if (igTarget) {
-    const metadata = (igTarget.metadataJson ?? {}) as Partial<InstagramMetadata>;
-    lines.push(
-      "",
-      "📸 *Instagram Reels*",
-      `Описание: ${escapeMarkdown(metadata.caption || "—")}`,
-      `Состояние: ${videoStatusLabel(igTarget.status)}${igTarget.scheduledAt ? ` · ${formatVideoTime(igTarget.scheduledAt)}` : ""}`,
-    );
-    if (isVideoTargetSchedulable(igTarget.status)) keyboard.text("🕒 Время Instagram", `video_time:instagram_reels:${draft.id}`);
-    if (isVideoTargetEditable(igTarget.status)) keyboard.text("❌ Убрать Instagram", `video_remove:instagram_reels:${draft.id}`).row();
-    if (igTarget.status === "failed") keyboard.text("🔁 Повторить Instagram", `video_retry:instagram_reels:${draft.id}`).row();
-  }
-  if (ytTarget?.status === "failed") keyboard.text("🔁 Повторить YouTube", `video_retry:youtube_shorts:${draft.id}`).row();
-  if (targets.length > 0 && (draft.status === "draft" || draft.status === "editing"))
-    keyboard.text("📅 Запланировать", `video_schedule:${draft.id}`).row();
-  keyboard.text("✏️ Изменить данные", `video_edit_menu:${draft.id}`);
-  keyboard.text("🗑 Удалить видео", `video_cancel:${draft.id}`).row();
-  keyboard.text("← К очереди", "queue_home");
-  return { text: lines.join("\n"), keyboard };
-}
-
 export function cancelVideo(backendDb: BackendDb, videoDraftId: number, retentionHours: number): void {
   const now = new Date().toISOString();
   backendDb.db.transaction((tx) => {
@@ -306,23 +299,4 @@ export function cancelVideo(backendDb: BackendDb, videoDraftId: number, retentio
       .where(eq(videoDrafts.id, videoDraftId))
       .run();
   });
-}
-
-function videoStatusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    editing: "заполняется",
-    draft: "черновик",
-    scheduled: "запланировано",
-    preparing: "подготовка",
-    prepared: "готово к публикации",
-    publishing: "публикуется",
-    published: "опубликовано",
-    failed: "ошибка",
-    cancelled: "отменено",
-  };
-  return labels[status] ?? status;
-}
-
-function escapeMarkdown(value: string): string {
-  return value.replace(/([_*[\]`])/g, "\\$1");
 }
