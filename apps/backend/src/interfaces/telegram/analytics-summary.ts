@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import type { Bot } from "grammy";
 import { markSynced } from "../../analytics/creatorStore.js";
-import { creatorDashboard } from "../../analytics/engine.js";
+import { creatorDashboard } from "../../analytics/dashboard.js";
 import type { BackendDb } from "../../db/client.js";
 import { analyticsSync } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";

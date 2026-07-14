@@ -1,11 +1,7 @@
-import {
-  audienceAnalysis,
-  creatorPostArchive,
-  creatorPostMetrics,
-  creatorVideoArchive,
-  creatorVideoMetrics,
-  studioAnalyticsDashboard,
-} from "../../analytics/engine.js";
+import { audienceAnalysis } from "../../analytics/audience.js";
+import { creatorPostArchive, creatorPostMetrics } from "../../analytics/postArchive.js";
+import { studioAnalyticsDashboard } from "../../analytics/studioDashboard.js";
+import { creatorVideoArchive, creatorVideoMetrics } from "../../analytics/videoArchive.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import type { StudioLocale as BotLocale } from "../locale.js";

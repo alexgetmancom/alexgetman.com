@@ -3,7 +3,7 @@ import { asc, count, eq } from "drizzle-orm";
 import { openBackendDb } from "../src/db/client.js";
 import { posts, postTargets, publicationSources, publications, publishJobs, siteSourceItems } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
-import { runCommandAction } from "../src/operations/actions.js";
+import { runOperationCommand } from "../src/operations/commands.js";
 import { enqueuePublishJob } from "../src/publishing/queue.js";
 
 describe("command center actions", () => {
@@ -49,7 +49,7 @@ describe("command center actions", () => {
           payload: source,
         });
         backendDb.db.update(publishJobs).set({ status: "failed" }).where(eq(publishJobs.jobId, id)).run();
-        await runCommandAction(backendDb, {
+        await runOperationCommand(backendDb, {
           action: "retry",
           ref: "post:52",
           target,
@@ -115,7 +115,7 @@ describe("command center actions", () => {
           updatedAt: now,
         })
         .run();
-      const result = await runCommandAction(backendDb, {
+      const result = await runOperationCommand(backendDb, {
         action: "retry",
         ref: "777",
         target: "threads_en",
@@ -180,7 +180,7 @@ describe("command center actions", () => {
         calls.push(String(input));
         return new Response("", { status: 204 });
       }) as typeof fetch;
-      const result = await runCommandAction(
+      const result = await runOperationCommand(
         backendDb,
         { action: "edit_en", ref: "post:7", text_en: "Updated EN" },
         loadConfig({
@@ -227,7 +227,7 @@ describe("command center actions", () => {
         return new Response("{}", { status: 200 });
       }) as typeof fetch;
 
-      const result = await runCommandAction(
+      const result = await runOperationCommand(
         backendDb,
         { action: "edit_en", ref: "post:8", text_en: "Updated EN" },
         loadConfig({ FACEBOOK_PAGE_ACCESS_TOKEN: "en-token" }),
@@ -241,7 +241,7 @@ describe("command center actions", () => {
         },
       ]);
       expect(result.external).toEqual([{ target: "facebook", ok: true, status: 200, response: {} }]);
-      const missingToken = await runCommandAction(
+      const missingToken = await runOperationCommand(
         backendDb,
         { action: "edit_en", ref: "post:8", text_en: "No token" },
         loadConfig({}),

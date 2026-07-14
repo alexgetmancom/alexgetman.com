@@ -91,11 +91,11 @@ describe("Studio architecture boundaries", () => {
 
   it("keeps Delivery facades out of Telegram and Studio", () => {
     for (const relativePath of [
-      "delivery/media.ts",
+      "delivery/media-prepare.ts",
       "delivery/publish-workflow.ts",
       "delivery/ports/social.ts",
-      "delivery/site.ts",
-      "delivery/video.ts",
+      "delivery/site-jobs.ts",
+      "delivery/video-worker.ts",
     ]) {
       const source = readFileSync(`${root}${relativePath}`, "utf8");
       expect(source, `${relativePath} imports Telegram`).not.toContain('from "grammy"');
@@ -166,8 +166,36 @@ describe("Studio architecture boundaries", () => {
       expect(existsSync(`${root}${legacyPath}`), `legacy Delivery facade ${legacyPath} should be absent`).toBe(false);
   });
 
+  it("does not retain technical re-export facades", () => {
+    for (const legacyPath of [
+      "analytics/metrics.ts",
+      "analytics/collectors.ts",
+      "delivery/media.ts",
+      "delivery/site.ts",
+      "delivery/video.ts",
+      "operations/actions.ts",
+      "operations/observability.ts",
+      "operations/capability-report.ts",
+    ])
+      expect(existsSync(`${root}${legacyPath}`), `technical facade ${legacyPath} should be absent`).toBe(false);
+  });
+
+  it("keeps Operations command dispatch, repairs and Observability physically separate", () => {
+    const dispatcher = readFileSync(`${root}operations/commands.ts`, "utf8");
+    const repair = readFileSync(`${root}operations/commands/content-repair.ts`, "utf8");
+    const requeue = readFileSync(`${root}operations/commands/requeue.ts`, "utf8");
+    const observability = readFileSync(`${root}observability/cycle.ts`, "utf8");
+    expect(dispatcher).toContain('from "./commands/content-repair.js"');
+    expect(dispatcher).toContain('from "./commands/requeue.js"');
+    expect(dispatcher).not.toContain('from "drizzle-orm"');
+    expect(repair).toContain('from "../../db/schema.js"');
+    expect(requeue).toContain('from "../../publishing/payload.js"');
+    expect(observability).toContain('from "./capabilities.js"');
+    expect(observability).not.toContain('from "../bot/');
+  });
+
   it("keeps Operations and Public services independent from interface and Studio implementations", () => {
-    for (const relativePath of ["operations/observability.ts", "operations/service.ts", "public/service.ts"]) {
+    for (const relativePath of ["observability/cycle.ts", "operations/service.ts", "public/service.ts"]) {
       const source = readFileSync(`${root}${relativePath}`, "utf8");
       for (const forbidden of ["grammy", "../interfaces/", "../studio/"])
         expect(source, `${relativePath} imports ${forbidden}`).not.toContain(forbidden);
@@ -175,7 +203,7 @@ describe("Studio architecture boundaries", () => {
   });
 
   it("keeps external publication edits inside Delivery, not Operations", () => {
-    const operations = readFileSync(`${root}operations/actions.ts`, "utf8");
+    const operations = readFileSync(`${root}operations/commands.ts`, "utf8");
     const gateway = readFileSync(`${root}delivery/external-edits.ts`, "utf8");
     expect(operations).toContain('from "../delivery/external-edits.js"');
     for (const externalHost of ["api.linkedin.com", "graph.facebook.com", "editMessageText"])
@@ -185,7 +213,7 @@ describe("Studio architecture boundaries", () => {
   });
 
   it("keeps Operations dispatch separate from publication lookup and audit persistence", () => {
-    const source = readFileSync(`${root}operations/actions.ts`, "utf8");
+    const source = readFileSync(`${root}operations/commands.ts`, "utf8");
     expect(source).toContain('from "./action-audit.js"');
     expect(source).toContain('from "./publication-ref.js"');
     expect(source).not.toContain("function resolvePublicationRef");

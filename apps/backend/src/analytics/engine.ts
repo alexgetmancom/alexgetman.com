@@ -5,12 +5,6 @@ import { canSync } from "./creatorStore.js";
 import { syncInstagramProfile, syncYouTubeProfile } from "./profileSync.js";
 import { runVideoMetricSchedule } from "./videoMetrics.js";
 
-export { audienceAnalysis } from "./audience.js";
-export { creatorDashboard } from "./dashboard.js";
-export { creatorPostArchive, creatorPostMetrics } from "./postArchive.js";
-export { studioAnalyticsDashboard } from "./studioDashboard.js";
-export { creatorVideoArchive, creatorVideoMetrics } from "./videoArchive.js";
-
 /** Runs the transport-neutral analytics collection cycle. */
 export async function runAnalyticsCycle(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch = fetch): Promise<number> {
   if (!config.studio.modules.analytics || !config.studio.modules.video_posting) return 0;

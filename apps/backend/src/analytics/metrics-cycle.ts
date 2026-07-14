@@ -3,7 +3,9 @@ import type { BackendDb } from "../db/client.js";
 import { type JsonValue, postTargets } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { recordWorkerState } from "../foundation/runtime/worker-state.js";
-import { createMetricCollectors, isTerminalMetricError, type MetricCollector } from "./collectors.js";
+import { isTerminalMetricError } from "./collectors/errors.js";
+import { createMetricCollectors } from "./collectors/index.js";
+import type { MetricCollector } from "./collectors/types.js";
 import { pruneMetricSamples, upsertMetricError, upsertMetrics } from "./metric-repository.js";
 import { dueMetricTasks, ensureMetricSchedule, finishMetricTask, freezeDisabledMetricSchedules } from "./metric-schedule.js";
 

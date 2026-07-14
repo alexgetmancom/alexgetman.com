@@ -7,10 +7,10 @@ import { openBackendDb } from "../src/db/client.js";
 import { socialComments, videoMetricSchedule, videoMetricSnapshots, videoTargets } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { videoPreview } from "../src/interfaces/telegram/video-preview.js";
+import { listVideoTargets } from "../src/publishing/video-data.js";
 import {
   cancelVideo,
   createVideoDraft,
-  listVideoTargets,
   replaceVideoTargets,
   retryFailedVideoTarget,
   saveVideoMetadata,

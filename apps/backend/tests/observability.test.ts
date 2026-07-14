@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { openBackendDb } from "../src/db/client.js";
 import { alertDedup, credentialChecks, postEvents, publishJobs, siteJobs } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
-import { runObservabilityCycle } from "../src/operations/observability.js";
+import { runObservabilityCycle } from "../src/observability/cycle.js";
 
 describe("observability", () => {
   it("checks credentials, alerts the owner and deduplicates repeated errors", async () => {

@@ -5,7 +5,7 @@ import { alertDedup, credentialChecks, postEvents, publishJobs, siteJobs } from 
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { recordWorkerState } from "../foundation/runtime/worker-state.js";
-import { capabilityReport } from "./capability-report.js";
+import { capabilityReport } from "./capabilities.js";
 
 type OperationsAlertPort = { sendAlert?: (text: string) => Promise<void> };
 

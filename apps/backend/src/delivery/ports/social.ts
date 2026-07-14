@@ -2,7 +2,7 @@ import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import type { PublishResult } from "../../publishing/errors.js";
 import type { ClaimedPublishJob } from "../../publishing/queue.js";
-import { generateStoryMedia, prepareMediaItems } from "../media.js";
+import { prepareMediaItems } from "../media-prepare.js";
 import type { DeliveryPorts } from "../ports.js";
 import { publishToBluesky } from "../social/bluesky.js";
 import { devtoArticleFromPayload, publishToDevto } from "../social/devto.js";
@@ -15,6 +15,7 @@ import { payloadMedia } from "../social/payload.js";
 import { publishToTelegram } from "../social/telegram.js";
 import { publishToThreads } from "../social/threads.js";
 import { publishToX } from "../social/x.js";
+import { generateStoryMedia } from "../story-media.js";
 
 type PreparedMedia = Awaited<ReturnType<typeof prepareMediaItems>>;
 type MediaCacheEntry = {

@@ -29,8 +29,6 @@ export function createVideoDraft(backendDb: BackendDb, adminId: number, assetKey
   return row.id;
 }
 
-export { listVideoTargets } from "./video-data.js";
-
 export function updateVideoLabel(backendDb: BackendDb, id: number, label: string): void {
   backendDb.db.update(videoDrafts).set({ label: label.trim(), updatedAt: new Date().toISOString() }).where(eq(videoDrafts.id, id)).run();
 }
