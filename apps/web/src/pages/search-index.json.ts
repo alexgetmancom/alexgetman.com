@@ -1,5 +1,7 @@
 import { type FeedItem, loadFeedItems } from "../utils/feed";
-import { compactText, excerptAfterTitle, getFirstSentence, getSmartCategory, postImagePath, truncateText } from "../utils/helpers";
+import { postImagePath } from "../utils/media";
+import { getSmartCategory } from "../utils/taxonomy";
+import { compactText, excerptAfterTitle, getFirstSentence, truncateText } from "../utils/text";
 
 export const prerender = false;
 

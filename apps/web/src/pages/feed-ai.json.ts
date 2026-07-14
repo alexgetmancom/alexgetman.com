@@ -1,5 +1,5 @@
 import { loadFeedItems } from "../utils/feed";
-import { compactText, truncateText } from "../utils/helpers";
+import { compactText, truncateText } from "../utils/text";
 
 export const prerender = false;
 

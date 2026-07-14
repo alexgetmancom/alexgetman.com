@@ -1,4 +1,4 @@
-import { compactText } from "../../utils/helpers";
+import { compactText } from "../../utils/text";
 import type { HomePost } from "./types";
 
 export function paragraphsFor(post: HomePost) {

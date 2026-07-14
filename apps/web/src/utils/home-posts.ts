@@ -1,18 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { HomePost } from "../components/home-news/types";
+import { formatRelativeTime } from "./dates";
 import type { FeedItem } from "./feed";
-import {
-  categoryLabel,
-  categorySlugFromBadge,
-  excerptAfterTitle,
-  formatRelativeTime,
-  getFirstSentence,
-  getSmartBadge,
-  postImagePath,
-  postOgImagePath,
-  postVisualMedia,
-} from "./helpers";
+import { postImagePath, postOgImagePath, postVisualMedia } from "./media";
+import { categoryLabel, categorySlugFromBadge, getSmartBadge } from "./taxonomy";
+import { excerptAfterTitle, getFirstSentence } from "./text";
 
 const WEB_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", "..");
 const PUBLIC_ROOT = path.join(WEB_ROOT, "public");

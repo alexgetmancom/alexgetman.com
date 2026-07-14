@@ -2,8 +2,9 @@
 import HomeNewsPage from "../../components/HomeNewsPage.astro";
 import Layout from "../../layouts/Layout.astro";
 import { loadFeedItems } from "../../utils/feed";
-import { getFirstSentence, postOgImagePath, truncateText } from "../../utils/helpers";
 import { sortedHomePosts } from "../../utils/home-posts";
+import { postOgImagePath } from "../../utils/media";
+import { getFirstSentence, truncateText } from "../../utils/text";
 
 export const prerender = false;
 

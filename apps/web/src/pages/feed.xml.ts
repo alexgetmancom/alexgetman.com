@@ -1,6 +1,6 @@
 import rss from "@astrojs/rss";
 import { loadFeedItems } from "../utils/feed";
-import { truncateText } from "../utils/helpers";
+import { truncateText } from "../utils/text";
 
 export const prerender = false;
 
