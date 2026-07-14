@@ -1,4 +1,4 @@
-import { loadFeedItems } from "../utils/feed";
+import { loadFeedItems } from "../server/public-site";
 import { compactText, truncateText } from "../utils/text";
 
 export const prerender = false;

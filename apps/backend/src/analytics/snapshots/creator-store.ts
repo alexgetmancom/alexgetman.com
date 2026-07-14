@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
-import type { BackendDb } from "../db/client.js";
-import { analyticsSync, creatorProfiles, socialComments, videoMetricSnapshots } from "../db/schema.js";
+import type { BackendDb } from "../../db/client.js";
+import { analyticsSync, creatorProfiles, socialComments, videoMetricSnapshots } from "../../db/schema.js";
 
 const DAILY_SYNC_MS = 24 * 60 * 60_000;
 

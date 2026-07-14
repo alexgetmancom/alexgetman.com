@@ -1,8 +1,8 @@
 import type { BackendConfig } from "../foundation/config.js";
+import { youtubeAccessToken } from "../foundation/external/youtube.js";
 import { formBody, requestJson } from "../foundation/http.js";
 import type { InstagramMetadata, YouTubeMetadata } from "../publishing/video-types.js";
 
-type YouTubeToken = { access_token: string };
 type YouTubeVideo = { id: string };
 type InstagramContainer = { id: string };
 type InstagramStatus = { status_code?: string; status?: string };
@@ -15,16 +15,6 @@ function instagramGraphBase(config: BackendConfig): string {
   const host = config.INSTAGRAM_ACCESS_TOKEN?.startsWith("IG") ? "graph.instagram.com" : "graph.facebook.com";
   const version = host === "graph.instagram.com" ? config.INSTAGRAM_GRAPH_API_VERSION : config.FACEBOOK_GRAPH_API_VERSION;
   return `https://${host}/${version}`;
-}
-
-export async function youtubeAccessToken(config: BackendConfig): Promise<string> {
-  const body = formBody({
-    client_id: config.YOUTUBE_CLIENT_ID,
-    client_secret: config.YOUTUBE_CLIENT_SECRET,
-    refresh_token: config.YOUTUBE_REFRESH_TOKEN,
-    grant_type: "refresh_token",
-  });
-  return (await requestJson<YouTubeToken>(fetch, "https://oauth2.googleapis.com/token", { method: "POST", body })).access_token;
 }
 
 export async function prepareYouTubeVideo(

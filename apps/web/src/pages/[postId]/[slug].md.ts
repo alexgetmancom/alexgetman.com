@@ -1,4 +1,4 @@
-import { loadFeedItems } from "../../utils/feed";
+import { loadFeedItems } from "../../server/public-site";
 import { siteUrlFromContext } from "../../utils/site";
 
 export const prerender = false;

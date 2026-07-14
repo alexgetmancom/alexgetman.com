@@ -1,7 +1,6 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
-import OAuth from "oauth-1.0a";
 import type { BackendConfig } from "../../foundation/config.js";
+import { assertXCredentials, oauthAuthorization } from "../../foundation/external/x-oauth.js";
 import { externalFetch, redactExternalSecrets } from "../../foundation/http.js";
 import type { PublishResult } from "../../publishing/errors.js";
 import { HttpPublishError } from "../../publishing/errors.js";
@@ -15,7 +14,7 @@ export async function publishToX(
   config: BackendConfig,
   fetchImpl: typeof fetch = fetch,
 ): Promise<PublishResult> {
-  assertCredentials(config);
+  assertXCredentials(config);
   const mediaIds: string[] = [];
   for (const item of payloadMedia(payload)) {
     if (!item.localPath || !fs.existsSync(item.localPath)) continue;
@@ -135,33 +134,6 @@ async function oauthFetch(
   return externalFetch(fetchImpl, url, { ...init, headers: { ...init.headers, Authorization: authorization } });
 }
 
-export function oauthAuthorization(
-  method: string,
-  rawUrl: string,
-  config: BackendConfig,
-  formParams?: URLSearchParams,
-  nonce = crypto.randomBytes(16).toString("hex"),
-  timestamp = Math.floor(Date.now() / 1000),
-): string {
-  const credentials = xCredentials(config);
-  const oauth = new OAuth({
-    consumer: { key: credentials.consumerKey, secret: credentials.consumerSecret },
-    signature_method: "HMAC-SHA1",
-    hash_function: (base, key) => crypto.createHmac("sha1", key).update(base).digest("base64"),
-  });
-  oauth.getNonce = () => nonce;
-  oauth.getTimeStamp = () => timestamp;
-  const data = formParams ? Object.fromEntries(formParams.entries()) : undefined;
-  const authorization = oauth.authorize(
-    { url: rawUrl, method: method.toUpperCase(), ...(data ? { data } : {}) },
-    {
-      key: credentials.accessToken,
-      secret: credentials.accessTokenSecret,
-    },
-  );
-  return oauth.toHeader(authorization).Authorization;
-}
-
 async function jsonResponse<T>(response: Response, label: string): Promise<T> {
   const body = await response.text();
   if (!response.ok) {
@@ -175,26 +147,6 @@ async function responseError(response: Response, label: string): Promise<HttpPub
   const body = await response.text();
   const safeBody = redactExternalSecrets(body);
   return new HttpPublishError(`${label} ${response.status}: ${safeBody}`, response.status, safeBody);
-}
-
-function assertCredentials(config: BackendConfig): void {
-  void xCredentials(config);
-}
-
-function xCredentials(config: BackendConfig): {
-  consumerKey: string;
-  consumerSecret: string;
-  accessToken: string;
-  accessTokenSecret: string;
-} {
-  if (!config.X_CONSUMER_KEY || !config.X_CONSUMER_SECRET || !config.X_ACCESS_TOKEN || !config.X_ACCESS_TOKEN_SECRET)
-    throw new Error("missing X credentials");
-  return {
-    consumerKey: config.X_CONSUMER_KEY,
-    consumerSecret: config.X_CONSUMER_SECRET,
-    accessToken: config.X_ACCESS_TOKEN,
-    accessTokenSecret: config.X_ACCESS_TOKEN_SECRET,
-  };
 }
 
 function delay(ms: number): Promise<void> {

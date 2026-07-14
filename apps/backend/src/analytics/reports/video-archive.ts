@@ -1,6 +1,6 @@
-import type { BackendDb } from "../db/client.js";
-import { type StudioLocale as BotLocale, localize as ui } from "../studio/locale.js";
-import { metricNumber } from "./creatorStore.js";
+import type { BackendDb } from "../../db/client.js";
+import { type StudioLocale as BotLocale, localize as ui } from "../../foundation/locale.js";
+import { metricNumber } from "../snapshots/creator-store.js";
 
 export function creatorVideoArchive(
   backendDb: BackendDb,

@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import type { BackendDb } from "../db/client.js";
 import { botUiSettings } from "../db/schema.js";
-import { localize, type StudioLocale } from "../studio/locale.js";
+import { localize, type StudioLocale } from "../foundation/locale.js";
 
 export type BotLocale = StudioLocale;
 

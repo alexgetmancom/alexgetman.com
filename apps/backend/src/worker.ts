@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import type { Bot } from "grammy";
-import { runAnalyticsCycle } from "./analytics/collection.js";
-import { runMetricsCycle } from "./analytics/metrics-cycle.js";
+import { runAnalyticsCycle } from "./analytics/collection/creator-cycle.js";
+import { runMetricsCycle } from "./analytics/collection/metrics-cycle.js";
 import { finalizePendingAlbums } from "./bot/albums.js";
 import { refreshPostControlCard } from "./bot/progress.js";
 import type { BackendDb } from "./db/client.js";

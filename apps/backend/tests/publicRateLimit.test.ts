@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { allowPublicRequest } from "../src/public/rate-limit.js";
+import { allowPublicRequest } from "../src/engagement/rate-limit.js";
 
 describe("public rate limiter", () => {
   it("limits a key inside its window and resets it afterwards", () => {

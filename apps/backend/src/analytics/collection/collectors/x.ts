@@ -1,6 +1,6 @@
-import { oauthAuthorization } from "../../delivery/social/x.js";
-import type { BackendConfig } from "../../foundation/config.js";
-import { externalFetch, redactExternalSecrets } from "../../foundation/http.js";
+import type { BackendConfig } from "../../../foundation/config.js";
+import { oauthAuthorization } from "../../../foundation/external/x-oauth.js";
+import { externalFetch, redactExternalSecrets } from "../../../foundation/http.js";
 import type { MetricTask } from "../metric-schedule.js";
 import type { MetricResult } from "./types.js";
 

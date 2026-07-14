@@ -1,10 +1,12 @@
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
-import { batchLikes, clientIpHash, likesInfo, metricsSummary, recordPageview, toggleLike } from "./engagement.js";
+import { clientIpHash } from "./identity.js";
+import { batchLikes, likesInfo, toggleLike } from "./likes.js";
+import { metricsSummary, recordPageview } from "./pageviews.js";
 import { allowPublicRequest } from "./rate-limit.js";
 
-/** Public HTTP use cases. Controllers receive this contract instead of table-facing helpers. */
-export function publicService(backendDb: BackendDb, config: BackendConfig) {
+/** Public engagement use cases: pageviews, reactions and their rate limits. */
+export function engagementService(backendDb: BackendDb, config: BackendConfig) {
   const clientKey = (request: Request) => clientIpHash(request, config);
   const allowLikes = (request: Request) =>
     allowPublicRequest(`likes:${clientKey(request)}`, config.PUBLIC_RATE_LIMIT_LIKES, config.PUBLIC_RATE_LIMIT_WINDOW_SECONDS);
@@ -17,7 +19,7 @@ export function publicService(backendDb: BackendDb, config: BackendConfig) {
         config.PUBLIC_RATE_LIMIT_WINDOW_SECONDS,
       );
       if (!allowed.allowed) return false;
-      recordPageview(backendDb, config, path);
+      recordPageview(backendDb, path);
       return true;
     },
     metrics: () => metricsSummary(backendDb),
@@ -28,4 +30,4 @@ export function publicService(backendDb: BackendDb, config: BackendConfig) {
   };
 }
 
-export type PublicService = ReturnType<typeof publicService>;
+export type EngagementService = ReturnType<typeof engagementService>;

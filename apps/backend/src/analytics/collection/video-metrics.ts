@@ -1,10 +1,10 @@
 import { and, asc, eq, isNull, lte, or } from "drizzle-orm";
-import type { BackendDb } from "../db/client.js";
-import { videoDrafts, videoMetricSchedule, videoTargets } from "../db/schema.js";
-import { youtubeAccessToken } from "../delivery/video-publishers.js";
-import type { BackendConfig } from "../foundation/config.js";
-import { requestJson } from "../foundation/http.js";
-import { metricNumber, upsertComment, upsertVideoSnapshot } from "./creatorStore.js";
+import type { BackendDb } from "../../db/client.js";
+import { videoDrafts, videoMetricSchedule, videoTargets } from "../../db/schema.js";
+import type { BackendConfig } from "../../foundation/config.js";
+import { youtubeAccessToken } from "../../foundation/external/youtube.js";
+import { requestJson } from "../../foundation/http.js";
+import { metricNumber, upsertComment, upsertVideoSnapshot } from "../snapshots/creator-store.js";
 import { metricCheckpointAt } from "./metric-checkpoints.js";
 
 type VideoMetricTask = {

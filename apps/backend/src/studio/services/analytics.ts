@@ -1,10 +1,10 @@
-import { audienceAnalysis } from "../../analytics/audience.js";
-import { creatorPostArchive, creatorPostMetrics } from "../../analytics/postArchive.js";
-import { studioAnalyticsDashboard } from "../../analytics/studioDashboard.js";
-import { creatorVideoArchive, creatorVideoMetrics } from "../../analytics/videoArchive.js";
+import { audienceAnalysis } from "../../analytics/reports/audience.js";
+import { creatorPostArchive, creatorPostMetrics } from "../../analytics/reports/post-archive.js";
+import { studioAnalyticsDashboard } from "../../analytics/reports/studio-dashboard.js";
+import { creatorVideoArchive, creatorVideoMetrics } from "../../analytics/reports/video-archive.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
-import type { StudioLocale as BotLocale } from "../locale.js";
+import type { StudioLocale as BotLocale } from "../../foundation/locale.js";
 
 type AnalyticsSection = "overview" | "posts" | "video";
 type AnalyticsPeriod = 1 | 7 | 30;

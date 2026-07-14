@@ -1,8 +1,8 @@
-import type { BackendDb } from "../db/client.js";
-import { youtubeAccessToken } from "../delivery/video-publishers.js";
-import type { BackendConfig } from "../foundation/config.js";
-import { requestJson } from "../foundation/http.js";
-import { markSynced, metricNumber, upsertProfile } from "./creatorStore.js";
+import type { BackendDb } from "../../db/client.js";
+import type { BackendConfig } from "../../foundation/config.js";
+import { youtubeAccessToken } from "../../foundation/external/youtube.js";
+import { requestJson } from "../../foundation/http.js";
+import { markSynced, metricNumber, upsertProfile } from "../snapshots/creator-store.js";
 
 type YouTubeChannel = {
   items?: Array<{

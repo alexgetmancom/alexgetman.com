@@ -1,9 +1,9 @@
 import { eq } from "drizzle-orm";
-import type { BackendDb } from "../db/client.js";
-import { creatorProfiles, socialComments } from "../db/schema.js";
-import type { BackendConfig } from "../foundation/config.js";
-import { type StudioLocale as BotLocale, localize as ui } from "../studio/locale.js";
-import { metricNumber } from "./creatorStore.js";
+import type { BackendDb } from "../../db/client.js";
+import { creatorProfiles, socialComments } from "../../db/schema.js";
+import type { BackendConfig } from "../../foundation/config.js";
+import { type StudioLocale as BotLocale, localize as ui } from "../../foundation/locale.js";
+import { metricNumber } from "../snapshots/creator-store.js";
 
 export function creatorDashboard(
   backendDb: BackendDb,

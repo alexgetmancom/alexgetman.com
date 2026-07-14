@@ -1,4 +1,4 @@
-import type { FeedItem, SiteMedia } from "./feed";
+import type { FeedItem, SiteMedia } from "../../../backend/src/public/site-read-model";
 
 type FeedLocale = "en" | "ru";
 

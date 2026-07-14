@@ -3,10 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
+import { createChannelStoryClient } from "../../foundation/external/telegram-session.js";
 import { runFfmpeg } from "../../foundation/runtime/ffmpeg.js";
 import type { PublishResult } from "../../publishing/errors.js";
 import { type PublishMediaItem, payloadMedia, payloadText } from "./payload.js";
-import { createChannelStoryClient } from "./telegramSession.js";
 
 const URL_RE = /https?:\/\/[^\s<>)]*/g;
 const STORY_MAX_BYTES = Math.floor(9.8 * 1024 * 1024);

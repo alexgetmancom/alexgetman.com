@@ -1,5 +1,5 @@
+import { loadFeedItems } from "../../server/public-site";
 import { formatDate } from "../../utils/dates";
-import { loadFeedItems } from "../../utils/feed";
 import { siteUrlFromContext } from "../../utils/site";
 import { truncateText } from "../../utils/text";
 

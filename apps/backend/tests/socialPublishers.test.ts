@@ -11,8 +11,9 @@ import { publishToMastodon } from "../src/delivery/social/mastodon.js";
 import { payloadMedia, payloadText } from "../src/delivery/social/payload.js";
 import { publishToTelegram } from "../src/delivery/social/telegram.js";
 import { publishToThreads } from "../src/delivery/social/threads.js";
-import { oauthAuthorization, publishToX } from "../src/delivery/social/x.js";
+import { publishToX } from "../src/delivery/social/x.js";
 import { loadConfig } from "../src/foundation/config.js";
+import { oauthAuthorization } from "../src/foundation/external/x-oauth.js";
 
 const tempDirs: string[] = [];
 

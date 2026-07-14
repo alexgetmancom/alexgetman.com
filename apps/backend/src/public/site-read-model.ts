@@ -1,9 +1,8 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import * as z from "zod";
-import type { BackendDb } from "../../../backend/src/db/client.js";
-import { postLocales, postMetrics, posts, publications } from "../../../backend/src/db/schema.js";
-import { getRuntime } from "../server/runtime.js";
+import type { BackendDb } from "../db/client.js";
+import { postLocales, postMetrics, posts, publications } from "../db/schema.js";
 
 export const siteMediaSchema = z
   .object({
@@ -52,7 +51,8 @@ export const feedItemSchema = z
 
 export type FeedItem = z.infer<typeof feedItemSchema>;
 
-export function loadFeedItems(backendDb: BackendDb = getRuntime().backendDb): FeedItem[] {
+/** Published-site read model. It reads only stable publication data. */
+export function loadPublicSiteFeed(backendDb: BackendDb): FeedItem[] {
   const ruLocale = alias(postLocales, "site_locale_ru");
   const enLocale = alias(postLocales, "site_locale_en");
   const rows = backendDb.db

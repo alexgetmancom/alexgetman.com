@@ -1,6 +1,6 @@
 import { lte } from "drizzle-orm";
-import type { BackendDb } from "../db/client.js";
-import { type JsonValue, metricSamples, postMetrics } from "../db/schema.js";
+import type { BackendDb } from "../../db/client.js";
+import { type JsonValue, metricSamples, postMetrics } from "../../db/schema.js";
 
 /** Persistence for collected analytics samples. */
 export function upsertMetrics(

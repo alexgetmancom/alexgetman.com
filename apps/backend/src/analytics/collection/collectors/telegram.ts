@@ -1,6 +1,6 @@
-import { createChannelStoryClient } from "../../delivery/social/telegramSession.js";
-import type { BackendConfig } from "../../foundation/config.js";
-import { requestText } from "../../foundation/http.js";
+import type { BackendConfig } from "../../../foundation/config.js";
+import { createChannelStoryClient } from "../../../foundation/external/telegram-session.js";
+import { requestText } from "../../../foundation/http.js";
 import type { MetricTask } from "../metric-schedule.js";
 import { TerminalMetricError } from "./errors.js";
 import type { MetricResult } from "./types.js";

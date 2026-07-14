@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { HomePost } from "../components/home-news/types";
+import type { FeedItem } from "../server/public-site";
 import { formatRelativeTime } from "./dates";
-import type { FeedItem } from "./feed";
 import { postImagePath, postOgImagePath, postVisualMedia } from "./media";
 import { categoryLabel, categorySlugFromBadge, getSmartBadge } from "./taxonomy";
 import { excerptAfterTitle, getFirstSentence } from "./text";

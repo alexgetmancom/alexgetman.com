@@ -3,13 +3,13 @@ import fs from "node:fs";
 import type { Bot } from "grammy";
 import { videoPath } from "./content/video-assets.js";
 import type { BackendDb } from "./db/client.js";
+import { type EngagementService, engagementService } from "./engagement/service.js";
 import type { BackendConfig } from "./foundation/config.js";
 import { commandAllowed } from "./foundation/http-auth.js";
 import { mcpResponse } from "./interfaces/mcp.js";
 import type { OperationsCommand } from "./operations/contracts.js";
 import { renderCommandCenterLogin, renderDashboard } from "./operations/dashboard.js";
 import { type OperationsService, operationsService } from "./operations/service.js";
-import { type PublicService, publicService } from "./public/service.js";
 
 type ApiContext = {
   config: BackendConfig;
@@ -43,7 +43,7 @@ export function createApiHandler(context: ApiContext) {
   return async (request: Request, path: string): Promise<Response> => {
     const { config, backendDb, bot } = context;
     const operations: OperationsService = operationsService(backendDb, config);
-    const publicApi: PublicService = publicService(backendDb, config);
+    const engagement: EngagementService = engagementService(backendDb, config);
     const url = new URL(request.url);
 
     if (path === "/healthz" || path === "/tg-feed/healthz") return text("ok\n");
@@ -82,11 +82,11 @@ export function createApiHandler(context: ApiContext) {
     }
     if (path === "/stats/pageview" && request.method === "POST") {
       const body = await request.json().catch(() => ({}) as { path?: string });
-      if (!publicApi.recordPageview(request, typeof body?.path === "string" ? body.path : "/")) return new Response(null, { status: 204 });
+      if (!engagement.recordPageview(request, typeof body?.path === "string" ? body.path : "/")) return new Response(null, { status: 204 });
       return new Response(null, { status: 204 });
     }
     if (path === "/stats" && request.method === "GET") {
-      const summary = publicApi.metrics();
+      const summary = engagement.metrics();
       return html(
         `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Alex Getman metrics</title></head><body><main><h1>Site metrics</h1><p>Total: ${summary.total}</p><p>Today: ${summary.today}</p><p>Last 7 days: ${summary.last7}</p><p>Updated: ${String(summary.updated_at ?? "-")}</p></main></body></html>`,
       );
@@ -134,26 +134,26 @@ export function createApiHandler(context: ApiContext) {
       });
     }
     if (path === "/api/likes" && request.method === "GET") {
-      const limit = publicApi.allowLikes(request);
+      const limit = engagement.allowLikes(request);
       if (!limit.allowed) return rateLimited(limit.retryAfter);
       const postId = url.searchParams.get("post_id")?.trim();
-      return postId ? json(publicApi.likes(request, postId)) : json({ error: "Missing post_id parameter" }, 400);
+      return postId ? json(engagement.likes(request, postId)) : json({ error: "Missing post_id parameter" }, 400);
     }
     if (path === "/api/likes/batch" && request.method === "GET") {
-      const limit = publicApi.allowLikes(request);
+      const limit = engagement.allowLikes(request);
       if (!limit.allowed) return rateLimited(limit.retryAfter);
       const ids = (url.searchParams.get("ids") ?? "")
         .split(",")
         .map((value) => value.trim())
         .filter(Boolean)
         .slice(0, 100);
-      return json(publicApi.likesBatch(request, ids));
+      return json(engagement.likesBatch(request, ids));
     }
     if (path === "/api/likes" && request.method === "POST") {
-      const limit = publicApi.allowLikes(request);
+      const limit = engagement.allowLikes(request);
       if (!limit.allowed) return rateLimited(limit.retryAfter);
       const postId = url.searchParams.get("post_id")?.trim();
-      return postId ? json(publicApi.toggleLike(request, postId)) : json({ error: "Missing post_id parameter" }, 400);
+      return postId ? json(engagement.toggleLike(request, postId)) : json({ error: "Missing post_id parameter" }, 400);
     }
     if (path === "/api/mcp" && request.method === "GET")
       return sse((send) => {
@@ -168,7 +168,7 @@ export function createApiHandler(context: ApiContext) {
           id: null,
           error: { code: -32700, message: "Invalid JSON" },
         });
-      return json(mcpResponse(backendDb, config, body, publicApi.clientKey(request), mcpStudioActor(request, config)));
+      return json(mcpResponse(backendDb, config, body, engagement.clientKey(request), mcpStudioActor(request, config)));
     }
     if (path === config.WEBHOOK_PATH && request.method === "POST") {
       if (!safeEqual(request.headers.get("X-Telegram-Bot-Api-Secret-Token") ?? "", config.TELEGRAM_WEBHOOK_SECRET ?? ""))

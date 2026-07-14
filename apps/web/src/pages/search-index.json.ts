@@ -1,4 +1,4 @@
-import { type FeedItem, loadFeedItems } from "../utils/feed";
+import { type FeedItem, loadFeedItems } from "../server/public-site";
 import { postImagePath } from "../utils/media";
 import { getSmartCategory } from "../utils/taxonomy";
 import { compactText, excerptAfterTitle, getFirstSentence, truncateText } from "../utils/text";

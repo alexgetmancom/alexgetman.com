@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { type BackendDb, openBackendDb } from "../../../backend/src/db/client.js";
 import { postLocales, postMetrics, posts, publications } from "../../../backend/src/db/schema.js";
-import { loadFeedItems } from "./feed.js";
+import { loadPublicSiteFeed } from "../../../backend/src/public/site-read-model.js";
 
 let backendDb: BackendDb | undefined;
 
@@ -57,7 +57,7 @@ describe("Drizzle site feed", () => {
       .values({ postKey: "post:7", target: "telegram", metricName: "views", value: 321, unit: "count" })
       .run();
 
-    expect(loadFeedItems(backendDb)).toEqual([
+    expect(loadPublicSiteFeed(backendDb)).toEqual([
       expect.objectContaining({
         id: "post:7",
         post_id: 7,
@@ -84,7 +84,7 @@ describe("Drizzle site feed", () => {
       .insert(postLocales)
       .values({ postId: 8, locale: "en", slug: "future", text: "Future", mediaJson: [], siteEnabled: 1, publishedAt: now, updatedAt: now })
       .run();
-    expect(loadFeedItems(backendDb)).toEqual([]);
+    expect(loadPublicSiteFeed(backendDb)).toEqual([]);
   });
 
   it("maps published Telegram media IDs to the deterministic site media manifest", () => {
@@ -109,7 +109,7 @@ describe("Drizzle site feed", () => {
       })
       .run();
 
-    expect(loadFeedItems(backendDb)[0]).toEqual(
+    expect(loadPublicSiteFeed(backendDb)[0]).toEqual(
       expect.objectContaining({
         image_en: "media/posts/9-en-0.jpg",
         media_en: [expect.objectContaining({ path: "media/posts/9-en-0.jpg" })],

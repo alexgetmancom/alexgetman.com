@@ -42,14 +42,14 @@ describe("Studio architecture boundaries", () => {
     expect(source).toContain(".videos.parseSchedule(");
   });
 
-  it("keeps HTTP controllers on the Operations and Studio boundaries", () => {
+  it("keeps HTTP controllers on the Operations and Engagement boundaries", () => {
     const source = readFileSync(`${root}api.ts`, "utf8");
     expect(source).toContain('from "./operations/service.js"');
-    expect(source).toContain('from "./public/service.js"');
+    expect(source).toContain('from "./engagement/service.js"');
     expect(source).not.toContain('from "./operations/actions.js"');
     expect(source).not.toContain('from "./operations/command-center.js"');
-    expect(source).not.toContain('from "./public/engagement.js"');
-    expect(source).not.toContain('from "./public/rate-limit.js"');
+    expect(source).not.toContain('from "./engagement/likes.js"');
+    expect(source).not.toContain('from "./engagement/pageviews.js"');
   });
 
   it("keeps MCP as a Studio-services adapter rather than a database adapter", () => {
@@ -77,16 +77,19 @@ describe("Studio architecture boundaries", () => {
 
   it("keeps Analytics transport-neutral", () => {
     for (const relativePath of [
-      "analytics/collection.ts",
-      "analytics/dashboard.ts",
-      "analytics/studioDashboard.ts",
-      "analytics/postArchive.ts",
-      "analytics/videoArchive.ts",
-      "analytics/audience.ts",
+      "analytics/collection/creator-cycle.ts",
+      "analytics/collection/metrics-cycle.ts",
+      "analytics/reports/dashboard.ts",
+      "analytics/reports/studio-dashboard.ts",
+      "analytics/reports/post-archive.ts",
+      "analytics/reports/video-archive.ts",
+      "analytics/reports/audience.ts",
     ]) {
       const source = readFileSync(`${root}${relativePath}`, "utf8");
       expect(source, `${relativePath} imports Telegram`).not.toContain('from "../bot/');
       expect(source, `${relativePath} imports an interface adapter`).not.toContain('from "../interfaces/');
+      expect(source, `${relativePath} imports Delivery`).not.toContain('from "../../delivery/');
+      expect(source, `${relativePath} imports Studio`).not.toContain('from "../../studio/');
     }
   });
 
@@ -207,20 +210,37 @@ describe("Studio architecture boundaries", () => {
   });
 
   it("keeps Content translation and Analytics collection in their owning contexts", () => {
-    for (const legacyPath of ["translation.ts", "analytics/engine.ts", "operations/pipeline.ts"])
+    for (const legacyPath of [
+      "translation.ts",
+      "analytics/engine.ts",
+      "analytics/collection.ts",
+      "analytics/metrics-cycle.ts",
+      "analytics/metric-schedule.ts",
+      "analytics/creatorStore.ts",
+      "analytics/dashboard.ts",
+      "operations/pipeline.ts",
+    ])
       expect(existsSync(`${root}${legacyPath}`), `legacy context entry ${legacyPath} should be absent`).toBe(false);
     expect(existsSync(`${root}content/translation.ts`)).toBe(true);
-    expect(existsSync(`${root}analytics/collection.ts`)).toBe(true);
+    for (const analyticsPath of [
+      "analytics/collection/creator-cycle.ts",
+      "analytics/collection/metrics-cycle.ts",
+      "analytics/snapshots/creator-store.ts",
+      "analytics/reports/dashboard.ts",
+    ])
+      expect(existsSync(`${root}${analyticsPath}`), `Analytics module ${analyticsPath} should exist`).toBe(true);
     const translation = readFileSync(`${root}content/translation.ts`, "utf8");
     expect(translation).not.toContain('from "../bot/');
   });
 
-  it("keeps Operations and Public services independent from interface and Studio implementations", () => {
-    for (const relativePath of ["observability/cycle.ts", "operations/service.ts", "public/service.ts"]) {
+  it("keeps Operations, Engagement and Public Site independent from interface and Studio implementations", () => {
+    for (const relativePath of ["observability/cycle.ts", "operations/service.ts", "engagement/service.ts", "public/site-read-model.ts"]) {
       const source = readFileSync(`${root}${relativePath}`, "utf8");
-      for (const forbidden of ["grammy", "../interfaces/", "../studio/"])
+      for (const forbidden of ["grammy", "../interfaces/", "../studio/", "../delivery/", "../bot/"])
         expect(source, `${relativePath} imports ${forbidden}`).not.toContain(forbidden);
     }
+    for (const legacyPath of ["public/service.ts", "public/engagement.ts", "public/rate-limit.ts"])
+      expect(existsSync(`${root}${legacyPath}`), `legacy public facade ${legacyPath} should be absent`).toBe(false);
   });
 
   it("keeps external publication edits inside Delivery, not Operations", () => {

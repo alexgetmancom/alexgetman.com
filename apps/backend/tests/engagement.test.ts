@@ -1,8 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import { openBackendDb } from "../src/db/client.js";
 import { likes } from "../src/db/schema.js";
+import { clientIpHash } from "../src/engagement/identity.js";
+import { batchLikes } from "../src/engagement/likes.js";
+import { metricsSummary, recordPageview } from "../src/engagement/pageviews.js";
 import { loadConfig } from "../src/foundation/config.js";
-import { batchLikes, clientIpHash, metricsSummary, recordPageview } from "../src/public/engagement.js";
 
 describe("engagement likes", () => {
   it("returns batched counts and caller liked state", () => {
@@ -30,8 +32,8 @@ describe("engagement likes", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const config = loadConfig({ LIKES_SALT: "salt", TRUSTED_CLIENT_IP_HEADER: "x-real-ip" });
-      recordPageview(backendDb, config, "/article/");
-      recordPageview(backendDb, config, "/article/");
+      recordPageview(backendDb, "/article/");
+      recordPageview(backendDb, "/article/");
       expect(backendDb.sqlite.prepare("SELECT count FROM site_pageviews WHERE path=?").get("/article/")).toEqual({ count: 2 });
       expect(metricsSummary(backendDb)).toMatchObject({ total: 2, today: 2, last7: 2 });
 

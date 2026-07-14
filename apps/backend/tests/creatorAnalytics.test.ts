@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
-import { runAnalyticsCycle } from "../src/analytics/collection.js";
-import { creatorDashboard } from "../src/analytics/dashboard.js";
-import { studioAnalyticsDashboard } from "../src/analytics/studioDashboard.js";
+import { runAnalyticsCycle } from "../src/analytics/collection/creator-cycle.js";
+import { creatorDashboard } from "../src/analytics/reports/dashboard.js";
+import { studioAnalyticsDashboard } from "../src/analytics/reports/studio-dashboard.js";
 import { openBackendDb } from "../src/db/client.js";
 import { creatorProfiles, metricSamples, videoDrafts, videoMetricSchedule, videoMetricSnapshots, videoTargets } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";

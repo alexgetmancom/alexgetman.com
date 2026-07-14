@@ -1,9 +1,9 @@
 import { describe, expect, it, mock } from "bun:test";
 import { asc, eq } from "drizzle-orm";
-import { TerminalMetricError } from "../src/analytics/collectors/errors.js";
-import { createMetricCollectors } from "../src/analytics/collectors/index.js";
-import type { MetricTask } from "../src/analytics/metric-schedule.js";
-import { runMetricsCycle } from "../src/analytics/metrics-cycle.js";
+import { TerminalMetricError } from "../src/analytics/collection/collectors/errors.js";
+import { createMetricCollectors } from "../src/analytics/collection/collectors/index.js";
+import type { MetricTask } from "../src/analytics/collection/metric-schedule.js";
+import { runMetricsCycle } from "../src/analytics/collection/metrics-cycle.js";
 import { openBackendDb } from "../src/db/client.js";
 import { metricSamples, metricSchedule, postMetrics, posts, postTargets, workerState } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";

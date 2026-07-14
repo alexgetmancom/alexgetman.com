@@ -3,10 +3,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { publishInstagramStory } from "../src/delivery/social/instagram.js";
-import { createChannelStoryClient } from "../src/delivery/social/telegramSession.js";
 import { telegramStoryCaption, telegramStoryUploadMedia } from "../src/delivery/social/telegramStories.js";
 import { generateStoryMedia } from "../src/delivery/story-media.js";
 import { loadConfig } from "../src/foundation/config.js";
+import { createChannelStoryClient } from "../src/foundation/external/telegram-session.js";
 
 const ffmpegCalls: string[][] = [];
 
