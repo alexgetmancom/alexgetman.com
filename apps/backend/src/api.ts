@@ -8,7 +8,6 @@ import { commandAllowed } from "./foundation/http-auth.js";
 import { mcpResponse } from "./interfaces/mcp.js";
 import type { OperationsCommand } from "./operations/contracts.js";
 import { renderCommandCenterLogin, renderDashboard } from "./operations/dashboard.js";
-import { pipelineStatusPayload } from "./operations/pipeline.js";
 import { type OperationsService, operationsService } from "./operations/service.js";
 import { type PublicService, publicService } from "./public/service.js";
 
@@ -71,14 +70,14 @@ export function createApiHandler(context: ApiContext) {
     }
     if (path === "/api/pipeline-status" && request.method === "GET") {
       if (config.commandCenterToken && !commandAllowed(request, config)) return text("unauthorized\n", 401);
-      return json(pipelineStatusPayload(config, backendDb, Number(url.searchParams.get("week_offset") ?? 0) || 0));
+      return json(operations.pipeline(Number(url.searchParams.get("week_offset") ?? 0) || 0));
     }
     if (path === "/api/pipeline-status/stream" && request.method === "GET") {
       if (config.commandCenterToken && !commandAllowed(request, config)) return text("unauthorized\n", 401);
       return sse((send) => {
         const weekOffset = Number(url.searchParams.get("week_offset") ?? 0) || 0;
-        send("pipeline", pipelineStatusPayload(config, backendDb, weekOffset));
-        return setInterval(() => send("pipeline", pipelineStatusPayload(config, backendDb, weekOffset)), 10_000);
+        send("pipeline", operations.pipeline(weekOffset));
+        return setInterval(() => send("pipeline", operations.pipeline(weekOffset)), 10_000);
       });
     }
     if (path === "/stats/pageview" && request.method === "POST") {
@@ -186,7 +185,7 @@ export function createApiHandler(context: ApiContext) {
     if (path === "/api/ops-dashboard" && request.method === "GET")
       return commandAllowed(request, config)
         ? json({
-            pipeline: pipelineStatusPayload(config, backendDb),
+            pipeline: operations.pipeline(),
             ops: operations.dashboard(),
           })
         : json({ detail: "forbidden" }, 403);

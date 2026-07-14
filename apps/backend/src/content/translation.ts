@@ -1,5 +1,5 @@
-import { requestJson } from "./delivery/social/http.js";
-import type { BackendConfig } from "./foundation/config.js";
+import type { BackendConfig } from "../foundation/config.js";
+import { requestJson } from "../foundation/http.js";
 
 type ChatCompletion = { choices?: Array<{ message?: { content?: string } }> };
 

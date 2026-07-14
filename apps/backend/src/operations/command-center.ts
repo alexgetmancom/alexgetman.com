@@ -14,7 +14,7 @@ import {
 } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { parseJsonValue } from "../json.js";
-import { pipelineStatusPayload } from "./pipeline.js";
+import { pipelineStatusPayload } from "./read-model.js";
 
 export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb) {
   const queue = backendDb.db

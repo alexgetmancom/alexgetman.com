@@ -66,17 +66,18 @@ describe("Studio architecture boundaries", () => {
   });
 
   it("keeps Content transport-neutral", () => {
-    for (const relativePath of ["content/drafts.ts", "content/message.ts", "content/text.ts"]) {
+    for (const relativePath of ["content/drafts.ts", "content/message.ts", "content/text.ts", "content/translation.ts"]) {
       const source = readFileSync(`${root}${relativePath}`, "utf8");
       expect(source, `${relativePath} imports Telegram`).not.toContain('from "grammy"');
       expect(source, `${relativePath} imports a Telegram adapter`).not.toContain('from "../bot/');
       expect(source, `${relativePath} imports an interface adapter`).not.toContain('from "../interfaces/');
+      expect(source, `${relativePath} imports Delivery`).not.toContain('from "../delivery/');
     }
   });
 
   it("keeps Analytics transport-neutral", () => {
     for (const relativePath of [
-      "analytics/engine.ts",
+      "analytics/collection.ts",
       "analytics/dashboard.ts",
       "analytics/studioDashboard.ts",
       "analytics/postArchive.ts",
@@ -190,8 +191,28 @@ describe("Studio architecture boundaries", () => {
     expect(dispatcher).not.toContain('from "drizzle-orm"');
     expect(repair).toContain('from "../../db/schema.js"');
     expect(requeue).toContain('from "../../publishing/payload.js"');
-    expect(observability).toContain('from "./capabilities.js"');
+    expect(observability).toContain('from "./credentials.js"');
+    expect(observability).toContain('from "./failures.js"');
     expect(observability).not.toContain('from "../bot/');
+  });
+
+  it("keeps Operations as the external diagnostics contract", () => {
+    const api = readFileSync(`${root}api.ts`, "utf8");
+    const cli = readFileSync(`${root}cli.ts`, "utf8");
+    const service = readFileSync(`${root}operations/service.ts`, "utf8");
+    expect(api).not.toContain('from "./operations/read-model.js"');
+    expect(cli).not.toContain('from "./operations/read-model.js"');
+    expect(service).toContain('from "./read-model.js"');
+    expect(service).toContain('from "../observability/health.js"');
+  });
+
+  it("keeps Content translation and Analytics collection in their owning contexts", () => {
+    for (const legacyPath of ["translation.ts", "analytics/engine.ts", "operations/pipeline.ts"])
+      expect(existsSync(`${root}${legacyPath}`), `legacy context entry ${legacyPath} should be absent`).toBe(false);
+    expect(existsSync(`${root}content/translation.ts`)).toBe(true);
+    expect(existsSync(`${root}analytics/collection.ts`)).toBe(true);
+    const translation = readFileSync(`${root}content/translation.ts`, "utf8");
+    expect(translation).not.toContain('from "../bot/');
   });
 
   it("keeps Operations and Public services independent from interface and Studio implementations", () => {

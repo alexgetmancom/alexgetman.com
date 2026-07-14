@@ -1,9 +1,9 @@
 import { type Context, InlineKeyboard } from "grammy";
+import { translateToEnglish } from "../content/translation.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { log } from "../foundation/logger.js";
 import { studioServices } from "../studio/services/index.js";
-import { translateToEnglish } from "../translation.js";
 import { appendPendingAlbum } from "./albums.js";
 import { botLocale, ui } from "./i18n.js";
 import { extractMessage } from "./message.js";

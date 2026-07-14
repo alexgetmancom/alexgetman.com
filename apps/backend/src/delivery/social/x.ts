@@ -2,10 +2,10 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import OAuth from "oauth-1.0a";
 import type { BackendConfig } from "../../foundation/config.js";
+import { externalFetch, redactExternalSecrets } from "../../foundation/http.js";
 import type { PublishResult } from "../../publishing/errors.js";
 import { HttpPublishError } from "../../publishing/errors.js";
 import { formatPlatformText } from "../../publishing/platform-profiles.js";
-import { externalFetch, redactExternalSecrets } from "./http.js";
 import { guessContentType, payloadMedia, payloadText } from "./payload.js";
 
 const UPLOAD_URL = "https://upload.twitter.com/1.1/media/upload.json";

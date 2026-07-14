@@ -14,9 +14,10 @@ export class HttpPublishError extends Error {
 }
 
 export function classifyPublishError(error: unknown): PublishErrorClass {
-  if (error instanceof HttpPublishError) {
-    if (transientStatusCodes.has(error.status)) return "transient";
-    if (permanentStatusCodes.has(error.status)) return "permanent";
+  const status = typeof error === "object" && error != null && "status" in error && typeof error.status === "number" ? error.status : null;
+  if (status != null) {
+    if (transientStatusCodes.has(status)) return "transient";
+    if (permanentStatusCodes.has(status)) return "permanent";
   }
   const text = String(error instanceof Error ? error.message : (error ?? "")).toLowerCase();
   if (

@@ -1,6 +1,6 @@
-import { externalFetch, redactExternalSecrets } from "../../delivery/social/http.js";
 import { oauthAuthorization } from "../../delivery/social/x.js";
 import type { BackendConfig } from "../../foundation/config.js";
+import { externalFetch, redactExternalSecrets } from "../../foundation/http.js";
 import type { MetricTask } from "../metric-schedule.js";
 import type { MetricResult } from "./types.js";
 

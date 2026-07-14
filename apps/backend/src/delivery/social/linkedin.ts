@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import type { BackendConfig } from "../../foundation/config.js";
+import { externalFetch, redactExternalSecrets } from "../../foundation/http.js";
 import type { PublishResult } from "../../publishing/errors.js";
 import { HttpPublishError } from "../../publishing/errors.js";
-import { externalFetch, redactExternalSecrets } from "./http.js";
 import { type PublishMediaItem, payloadMedia, payloadText, stripLeadingEmojis } from "./payload.js";
 
 type LinkedInResponse = Record<string, unknown> & { id?: string; value?: Record<string, unknown>; status?: string };

@@ -1,6 +1,6 @@
 import type { BackendConfig } from "../foundation/config.js";
+import { formBody, requestJson } from "../foundation/http.js";
 import type { InstagramMetadata, YouTubeMetadata } from "../publishing/video-types.js";
-import { formBody, requestJson } from "./social/http.js";
 
 type YouTubeToken = { access_token: string };
 type YouTubeVideo = { id: string };

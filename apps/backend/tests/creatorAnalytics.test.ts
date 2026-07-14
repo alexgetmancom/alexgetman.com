@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
+import { runAnalyticsCycle } from "../src/analytics/collection.js";
 import { creatorDashboard } from "../src/analytics/dashboard.js";
-import { runAnalyticsCycle } from "../src/analytics/engine.js";
 import { studioAnalyticsDashboard } from "../src/analytics/studioDashboard.js";
 import { openBackendDb } from "../src/db/client.js";
 import { creatorProfiles, metricSamples, videoDrafts, videoMetricSchedule, videoMetricSnapshots, videoTargets } from "../src/db/schema.js";

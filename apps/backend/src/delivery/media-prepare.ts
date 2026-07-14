@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { BackendConfig } from "../foundation/config.js";
+import { requestJson } from "../foundation/http.js";
 import { runFfmpeg } from "../foundation/runtime/ffmpeg.js";
 import { videoBounds } from "../publishing/platform-profiles.js";
-import { requestJson } from "./social/http.js";
 import { mediaExtension, type PublishMediaItem } from "./social/payload.js";
 
 type TelegramFileResponse = {

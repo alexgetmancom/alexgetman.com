@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import type { BackendConfig } from "../../foundation/config.js";
+import { requestJson } from "../../foundation/http.js";
 import type { PublishResult } from "../../publishing/errors.js";
-import { requestJson } from "./http.js";
 import { payloadMedia, payloadText, payloadTitle } from "./payload.js";
 
 type GitHubDiscussionResponse = {

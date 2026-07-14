@@ -1,10 +1,18 @@
-import { HttpPublishError } from "../../publishing/errors.js";
+class ExternalHttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly body?: string,
+  ) {
+    super(message);
+  }
+}
 
 export async function requestJson<T = Record<string, unknown>>(fetchImpl: typeof fetch, url: string, init: RequestInit = {}): Promise<T> {
   const response = await externalFetch(fetchImpl, url, init);
   const body = await response.text();
   if (!response.ok) {
-    throw new HttpPublishError(
+    throw new ExternalHttpError(
       `${init.method ?? "GET"} ${safeUrl(url)} failed: ${response.status} ${redactExternalSecrets(body)}`,
       response.status,
       redactExternalSecrets(body),
@@ -18,7 +26,7 @@ export async function requestText(fetchImpl: typeof fetch, url: string, init: Re
   const response = await externalFetch(fetchImpl, url, init);
   const body = await response.text();
   if (!response.ok) {
-    throw new HttpPublishError(
+    throw new ExternalHttpError(
       `${init.method ?? "GET"} ${safeUrl(url)} failed: ${response.status} ${redactExternalSecrets(body)}`,
       response.status,
       redactExternalSecrets(body),

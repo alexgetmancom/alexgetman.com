@@ -10,7 +10,7 @@ import {
   restoreDatabase,
   withMaintenanceLock,
 } from "./operations/maintenance.js";
-import { pipelineStatusPayload } from "./operations/pipeline.js";
+import { operationsService } from "./operations/service.js";
 import { verifyPostTargets } from "./operations/verify.js";
 
 type Arguments = { command: string; values: Map<string, string>; flags: Set<string> };
@@ -102,7 +102,7 @@ async function main(): Promise<void> {
           2,
         ),
       );
-    } else if (args.command === "status") console.log(JSON.stringify(pipelineStatusPayload(config, backendDb), null, 2));
+    } else if (args.command === "status") console.log(JSON.stringify(operationsService(backendDb, config).pipeline(), null, 2));
     else if (args.command === "migrations") console.log(JSON.stringify({ migrations: migrationStatus(backendDb.sqlite) }, null, 2));
     else if (args.command === "backup")
       console.log(JSON.stringify({ ok: true, path: await backupDatabase(backendDb, dbPath, args.values.get("output")) }, null, 2));

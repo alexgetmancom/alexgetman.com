@@ -1,6 +1,6 @@
 import type { BackendConfig } from "../../foundation/config.js";
+import { requestJson } from "../../foundation/http.js";
 import type { PublishResult } from "../../publishing/errors.js";
-import { requestJson } from "./http.js";
 import { payloadMedia, payloadText } from "./payload.js";
 
 type TelegramResponse = {

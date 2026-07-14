@@ -1,6 +1,6 @@
 import type { BackendConfig } from "../../foundation/config.js";
+import { externalFetch, redactExternalSecrets } from "../../foundation/http.js";
 import { HttpPublishError, type PublishResult } from "../../publishing/errors.js";
-import { externalFetch, redactExternalSecrets } from "./http.js";
 import { payloadCanonicalUrl, payloadMedia } from "./payload.js";
 
 type DevtoArticleInput = {

@@ -1,6 +1,6 @@
 import type { BackendConfig } from "../../foundation/config.js";
+import { formBody, requestJson } from "../../foundation/http.js";
 import type { PublishResult } from "../../publishing/errors.js";
-import { formBody, requestJson } from "./http.js";
 import { guessContentType, payloadMedia, payloadText, readFileBlob, splitText } from "./payload.js";
 
 type MastodonStatus = {

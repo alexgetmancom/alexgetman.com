@@ -1,5 +1,5 @@
-import { requestJson } from "../../delivery/social/http.js";
 import type { BackendConfig } from "../../foundation/config.js";
+import { requestJson } from "../../foundation/http.js";
 import type { MetricTask } from "../metric-schedule.js";
 import { errorMessage, terminalIfMissingRemoteObject } from "./errors.js";
 import type { MetricResult } from "./types.js";
