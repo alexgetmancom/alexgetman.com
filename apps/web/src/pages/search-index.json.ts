@@ -1,9 +1,9 @@
-import { loadFeedItems } from "../utils/feed";
+import { type FeedItem, loadFeedItems } from "../utils/feed";
 import { compactText, excerptAfterTitle, getFirstSentence, getSmartCategory, postImagePath, truncateText } from "../utils/helpers";
 
 export const prerender = false;
 
-function telegramToSearchItems(item: any) {
+function telegramToSearchItems(item: FeedItem) {
   const postId = item.post_id;
   const entries = [];
 
@@ -25,7 +25,7 @@ function telegramToSearchItems(item: any) {
 
   if (item.has_ru && item.text && item.slug_ru) {
     const text = compactText(item.text || item.html || "");
-    const title = compactText(item.title || getFirstSentence(item.text || text)) || `Публикация ${postId}`;
+    const title = compactText(getFirstSentence(item.text || text)) || `Публикация ${postId}`;
     entries.push({
       id: `post:${postId}:ru`,
       type: "post",

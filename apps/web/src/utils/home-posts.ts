@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { HomePost } from "../components/home-news/types";
+import type { FeedItem } from "./feed";
 import {
   categoryLabel,
   categorySlugFromBadge,
@@ -41,19 +42,19 @@ export function responsiveSrcSetFor(publicPath: string | null | undefined) {
   return candidates.length ? candidates.map((width) => `/generated/responsive/${base}-${width}.webp ${width}w`).join(", ") : undefined;
 }
 
-function audioUrlFor(item: any, locale: "en" | "ru") {
+function audioUrlFor(item: FeedItem, locale: "en" | "ru") {
   return locale === "ru"
     ? item.audio_url_ru || item.audio_ru || item.audio_url || item.audio || null
     : item.audio_url_en || item.audio_en || item.audio_url || item.audio || null;
 }
 
-function spotifyUrlFor(item: any, locale: "en" | "ru") {
+function spotifyUrlFor(item: FeedItem, locale: "en" | "ru") {
   return locale === "ru"
     ? item.spotify_url_ru || item.spotify_ru || item.spotify_url || item.spotify || null
     : item.spotify_url_en || item.spotify_en || item.spotify_url || item.spotify || null;
 }
 
-export function toHomePost(item: any, locale: "en" | "ru"): HomePost {
+export function toHomePost(item: FeedItem, locale: "en" | "ru"): HomePost {
   const id = item.post_id;
   const text = locale === "ru" ? item.text || "" : item.text_en || item.text || "";
   const title = getFirstSentence(text) || (locale === "ru" ? `Пост ${id}` : `Post ${id}`);
@@ -87,7 +88,7 @@ export function toHomePost(item: any, locale: "en" | "ru"): HomePost {
   };
 }
 
-export function sortedHomePosts(feedItems: any[], locale: "en" | "ru") {
+export function sortedHomePosts(feedItems: readonly FeedItem[], locale: "en" | "ru"): HomePost[] {
   return feedItems
     .filter((item) => (locale === "ru" ? item.has_ru && item.text && item.post_id : item.has_en && item.text_en && item.post_id))
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())

@@ -9,24 +9,23 @@ export const prerender = false;
 
 const { postId, slug } = Astro.params;
 const feedItems = loadFeedItems();
-const item = feedItems.find((entry: any) => String(entry.post_id) === String(postId) && entry.slug_en === slug) ?? {};
+const item = feedItems.find((entry) => String(entry.post_id) === String(postId) && entry.slug_en === slug);
 const englishPosts = sortedHomePosts(feedItems, "en");
 const selectedPost = englishPosts.find((post) => String(post.id) === String(postId));
 const siteAuthor = "Alex Getman";
-const postText = item.text_en || item.text || "";
+const postText = item?.text_en || item?.text || "";
 const pageTitle = selectedPost?.title || getFirstSentence(postText) || `Post ${postId}`;
 const postDescription =
   truncateText(postText.replace(/\s+/g, " "), 158) || "AI news, automation notes and developer updates by Alex Getman on alexgetman.com.";
 const localUrl = `https://alexgetman.com/${postId}/${slug}/`;
-const ogImage = postOgImagePath(item, "en");
+const ogImage = item ? postOgImagePath(item, "en") : "/social-image.jpg";
 const schema = JSON.stringify({
   "@context": "https://schema.org",
   "@type": "Article",
   headline: pageTitle,
   description: postDescription,
   url: localUrl,
-  datePublished: item.date,
-  dateModified: item.date,
+  ...(item ? { datePublished: item.date, dateModified: item.date } : {}),
   inLanguage: "en-US",
   author: {
     "@type": "Person",
@@ -61,7 +60,7 @@ const labels = {
   ogType="article"
   alternateLinks={[
     { hreflang: 'en', href: localUrl },
-    ...(item.has_ru ? [{ hreflang: 'ru', href: `https://alexgetman.com/ru/${postId}/${item.slug_ru}/` }] : []),
+    ...(item?.has_ru ? [{ hreflang: 'ru', href: `https://alexgetman.com/ru/${postId}/${item.slug_ru}/` }] : []),
     { hreflang: 'x-default', href: localUrl }
   ]}
   immersiveHome

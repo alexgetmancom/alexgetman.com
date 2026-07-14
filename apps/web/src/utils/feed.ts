@@ -1,31 +1,56 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
+import * as z from "zod";
 import type { BackendDb } from "../../../backend/src/db/client.js";
 import { postLocales, postMetrics, posts, publications } from "../../../backend/src/db/schema.js";
 import { getRuntime } from "../server/runtime.js";
 
-type SiteMedia = { type?: string; path?: string; poster?: string; [key: string]: unknown };
+export const siteMediaSchema = z
+  .object({
+    type: z.string().optional(),
+    path: z.string().optional(),
+    poster: z.string().optional(),
+  })
+  .passthrough();
 
-type FeedItem = {
-  id: string;
-  post_id: number;
-  message_id: number;
-  date: string;
-  text: string;
-  text_ru: string;
-  text_en: string;
-  html: string;
-  html_en: string;
-  slug_ru: string | null;
-  slug_en: string | null;
-  has_ru: boolean;
-  has_en: boolean;
-  media: SiteMedia[];
-  media_en: SiteMedia[];
-  image: string | null;
-  image_en: string | null;
-  views: number;
-};
+export type SiteMedia = z.infer<typeof siteMediaSchema>;
+
+export const feedItemSchema = z
+  .object({
+    id: z.string(),
+    post_id: z.number().int().positive(),
+    message_id: z.number().int().positive(),
+    date: z.string(),
+    text: z.string(),
+    text_ru: z.string(),
+    text_en: z.string(),
+    html: z.string(),
+    html_en: z.string(),
+    slug_ru: z.string().nullable(),
+    slug_en: z.string().nullable(),
+    has_ru: z.boolean(),
+    has_en: z.boolean(),
+    media: z.array(siteMediaSchema),
+    media_en: z.array(siteMediaSchema),
+    image: z.string().nullable(),
+    image_en: z.string().nullable(),
+    audio_url: z.string().nullable().optional(),
+    audio_url_ru: z.string().nullable().optional(),
+    audio_url_en: z.string().nullable().optional(),
+    audio_ru: z.string().nullable().optional(),
+    audio_en: z.string().nullable().optional(),
+    audio: z.string().nullable().optional(),
+    spotify_url: z.string().nullable().optional(),
+    spotify_url_ru: z.string().nullable().optional(),
+    spotify_url_en: z.string().nullable().optional(),
+    spotify_ru: z.string().nullable().optional(),
+    spotify_en: z.string().nullable().optional(),
+    spotify: z.string().nullable().optional(),
+    views: z.number(),
+  })
+  .strict();
+
+export type FeedItem = z.infer<typeof feedItemSchema>;
 
 export function loadFeedItems(backendDb: BackendDb = getRuntime().backendDb): FeedItem[] {
   const ruLocale = alias(postLocales, "site_locale_ru");
@@ -72,7 +97,7 @@ export function loadFeedItems(backendDb: BackendDb = getRuntime().backendDb): Fe
       row.ruText,
       row.ruSlug,
       row.ruHtml,
-      publishedMedia(row.ruMedia as SiteMedia[] | null, row.postId, "ru"),
+      publishedMedia(row.ruMedia, row.postId, "ru"),
       now,
     );
     const en = locale(
@@ -81,14 +106,14 @@ export function loadFeedItems(backendDb: BackendDb = getRuntime().backendDb): Fe
       row.enText,
       row.enSlug,
       row.enHtml,
-      publishedMedia(row.enMedia as SiteMedia[] | null, row.postId, "en"),
+      publishedMedia(row.enMedia, row.postId, "en"),
       now,
     );
     if (!ru.enabled && !en.enabled) return [];
     const media = ru.media;
     const mediaEn = en.media.length > 0 ? en.media : media;
     return [
-      {
+      feedItemSchema.parse({
         id: row.postKey,
         post_id: row.postId,
         message_id: row.messageId,
@@ -107,7 +132,7 @@ export function loadFeedItems(backendDb: BackendDb = getRuntime().backendDb): Fe
         image: firstImage(media),
         image_en: firstImage(mediaEn),
         views: row.views ?? 0,
-      },
+      }),
     ];
   });
 }
@@ -129,8 +154,9 @@ function firstImage(media: SiteMedia[]): string | null {
   return media.find((item) => item.type !== "video" && typeof item.path === "string")?.path ?? null;
 }
 
-function publishedMedia(media: SiteMedia[] | null, postId: number, locale: "ru" | "en"): SiteMedia[] {
-  return (media ?? []).map((item, index) => {
+function publishedMedia(media: unknown, postId: number, locale: "ru" | "en"): SiteMedia[] {
+  const items = z.array(siteMediaSchema).safeParse(media);
+  return (items.success ? items.data : []).map((item, index) => {
     if (typeof item.path === "string" && item.path) return item;
     const type = String(item.type ?? "image").toLowerCase() === "video" ? "video" : "image";
     const filename = `${postId}-${locale}-${index}`;

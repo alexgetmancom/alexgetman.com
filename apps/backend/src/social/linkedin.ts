@@ -2,6 +2,7 @@ import fs from "node:fs";
 import type { BackendConfig } from "../config.js";
 import type { PublishResult } from "../publishing/errors.js";
 import { HttpPublishError } from "../publishing/errors.js";
+import { externalFetch, redactExternalSecrets } from "./http.js";
 import { type PublishMediaItem, payloadMedia, payloadText, stripLeadingEmojis } from "./payload.js";
 
 type LinkedInResponse = Record<string, unknown> & { id?: string; value?: Record<string, unknown>; status?: string };
@@ -108,9 +109,16 @@ async function uploadVideo(item: PublishMediaItem, config: BackendConfig, fetchI
 async function uploadBinary(url: string, bytes: Buffer, fetchImpl: typeof fetch, requireEtag = false): Promise<string> {
   if (!url) throw new Error("LinkedIn upload URL is missing");
   const bodyBytes = Uint8Array.from(bytes).buffer;
-  const response = await fetchImpl(url, { method: "PUT", headers: { "Content-Type": "application/octet-stream" }, body: bodyBytes });
+  const response = await externalFetch(fetchImpl, url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/octet-stream" },
+    body: bodyBytes,
+  });
   const body = await response.text();
-  if (!response.ok) throw new HttpPublishError(`LinkedIn upload ${response.status}: ${body}`, response.status, body);
+  if (!response.ok) {
+    const safeBody = redactExternalSecrets(body);
+    throw new HttpPublishError(`LinkedIn upload ${response.status}: ${safeBody}`, response.status, safeBody);
+  }
   const etag = response.headers.get("etag") ?? "";
   if (requireEtag && !etag) throw new Error("ETag header not found in LinkedIn chunk upload response");
   return etag;
@@ -122,7 +130,7 @@ async function callLinkedIn(
   fetchImpl: typeof fetch,
   init: RequestInit,
 ): Promise<LinkedInResponse> {
-  const response = await fetchImpl(`https://api.linkedin.com/${endpoint}`, {
+  const response = await externalFetch(fetchImpl, `https://api.linkedin.com/${endpoint}`, {
     ...init,
     headers: {
       Authorization: `Bearer ${config.LINKEDIN_ACCESS_TOKEN}`,
@@ -133,7 +141,10 @@ async function callLinkedIn(
     },
   });
   const body = await response.text();
-  if (!response.ok) throw new HttpPublishError(`LinkedIn API ${response.status}: ${body}`, response.status, body);
+  if (!response.ok) {
+    const safeBody = redactExternalSecrets(body);
+    throw new HttpPublishError(`LinkedIn API ${response.status}: ${safeBody}`, response.status, safeBody);
+  }
   const parsed = body ? (JSON.parse(body) as LinkedInResponse) : {};
   const restliId = response.headers.get("x-restli-id");
   return { ...parsed, ...(parsed.id || !restliId ? {} : { id: restliId }) };

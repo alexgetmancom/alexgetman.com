@@ -1,5 +1,6 @@
 import type { BackendConfig } from "../config.js";
 import { HttpPublishError, type PublishResult } from "../publishing/errors.js";
+import { externalFetch, redactExternalSecrets } from "./http.js";
 import { payloadCanonicalUrl, payloadMedia } from "./payload.js";
 
 type DevtoArticleInput = {
@@ -57,7 +58,7 @@ export async function publishToDevto(
   const tags = cleanTags(input.tags ?? []);
   if (tags.length > 0) article.tags = tags;
 
-  const response = await fetchImpl("https://dev.to/api/articles", {
+  const response = await externalFetch(fetchImpl, "https://dev.to/api/articles", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -68,7 +69,8 @@ export async function publishToDevto(
   });
   const body = await response.text();
   if (!response.ok) {
-    throw new HttpPublishError(`dev.to publish failed: ${response.status} ${body}`, response.status, body);
+    const safeBody = redactExternalSecrets(body);
+    throw new HttpPublishError(`dev.to publish failed: ${response.status} ${safeBody}`, response.status, safeBody);
   }
   const data = body ? (JSON.parse(body) as Record<string, unknown>) : {};
   const url = typeof data.url === "string" ? data.url : null;
@@ -89,7 +91,7 @@ export async function updateDevtoArticle(
   if (patch.mainImage) article.main_image = patch.mainImage;
   if (patch.tags) article.tags = cleanTags(patch.tags);
   if (patch.published != null) article.published = patch.published;
-  const response = await fetchImpl(`https://dev.to/api/articles/${articleId}`, {
+  const response = await externalFetch(fetchImpl, `https://dev.to/api/articles/${articleId}`, {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
@@ -100,7 +102,8 @@ export async function updateDevtoArticle(
   });
   if (!response.ok) {
     const body = await response.text();
-    throw new HttpPublishError(`dev.to update failed: ${response.status} ${body}`, response.status, body);
+    const safeBody = redactExternalSecrets(body);
+    throw new HttpPublishError(`dev.to update failed: ${response.status} ${safeBody}`, response.status, safeBody);
   }
   return true;
 }

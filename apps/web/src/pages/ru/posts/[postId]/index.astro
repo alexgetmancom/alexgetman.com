@@ -5,7 +5,8 @@ import { loadFeedItems } from "../../../../utils/feed";
 export const prerender = false;
 
 const { postId } = Astro.params;
-const item = loadFeedItems().find((entry: any) => String(entry.post_id) === String(postId) && entry.has_ru) ?? {};
+const item = loadFeedItems().find((entry) => String(entry.post_id) === String(postId) && entry.has_ru);
+const target = item?.slug_ru ? `/ru/${item.post_id}/${item.slug_ru}/` : "/ru/";
 ---
 
-<LegacyRedirect target={`/ru/${item.post_id}/${item.slug_ru}/`} title="Адрес поста изменился" message="Эта страница переехала в canonical-пост." lang="ru" />
+<LegacyRedirect target={target} title="Адрес поста изменился" message="Эта страница переехала в canonical-пост." lang="ru" />

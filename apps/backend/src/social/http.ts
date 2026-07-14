@@ -1,13 +1,13 @@
 import { HttpPublishError } from "../publishing/errors.js";
 
 export async function requestJson<T = Record<string, unknown>>(fetchImpl: typeof fetch, url: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetchWithTimeout(fetchImpl, url, init);
+  const response = await externalFetch(fetchImpl, url, init);
   const body = await response.text();
   if (!response.ok) {
     throw new HttpPublishError(
-      `${init.method ?? "GET"} ${safeUrl(url)} failed: ${response.status} ${redactSecrets(body)}`,
+      `${init.method ?? "GET"} ${safeUrl(url)} failed: ${response.status} ${redactExternalSecrets(body)}`,
       response.status,
-      redactSecrets(body),
+      redactExternalSecrets(body),
     );
   }
   if (!body) return {} as T;
@@ -15,19 +15,19 @@ export async function requestJson<T = Record<string, unknown>>(fetchImpl: typeof
 }
 
 export async function requestText(fetchImpl: typeof fetch, url: string, init: RequestInit = {}): Promise<string> {
-  const response = await fetchWithTimeout(fetchImpl, url, init);
+  const response = await externalFetch(fetchImpl, url, init);
   const body = await response.text();
   if (!response.ok) {
     throw new HttpPublishError(
-      `${init.method ?? "GET"} ${safeUrl(url)} failed: ${response.status} ${redactSecrets(body)}`,
+      `${init.method ?? "GET"} ${safeUrl(url)} failed: ${response.status} ${redactExternalSecrets(body)}`,
       response.status,
-      redactSecrets(body),
+      redactExternalSecrets(body),
     );
   }
   return body;
 }
 
-async function fetchWithTimeout(fetchImpl: typeof fetch, url: string, init: RequestInit): Promise<Response> {
+export async function externalFetch(fetchImpl: typeof fetch, url: string, init: RequestInit = {}): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30_000);
   try {
@@ -49,11 +49,11 @@ function safeUrl(value: string): string {
     url.pathname = url.pathname.replace(/\/bot[^/]+(?=\/|$)/, "/bot[REDACTED]");
     return url.toString();
   } catch {
-    return redactSecrets(value);
+    return redactExternalSecrets(value);
   }
 }
 
-function redactSecrets(value: string): string {
+export function redactExternalSecrets(value: string): string {
   return value
     .replace(/(access_token|api[_-]?key|password|token)=([^\s&"']+)/gi, "$1=[REDACTED]")
     .replace(/\/bot\d{6,}:[A-Za-z0-9_-]+/g, "/bot[REDACTED]")

@@ -4,6 +4,7 @@ import OAuth from "oauth-1.0a";
 import type { BackendConfig } from "../config.js";
 import type { PublishResult } from "../publishing/errors.js";
 import { HttpPublishError } from "../publishing/errors.js";
+import { externalFetch, redactExternalSecrets } from "./http.js";
 import { guessContentType, payloadMedia, payloadText, stripUrls } from "./payload.js";
 
 const UPLOAD_URL = "https://upload.twitter.com/1.1/media/upload.json";
@@ -127,7 +128,7 @@ async function oauthFetch(
 ): Promise<Response> {
   const method = (init.method ?? "GET").toUpperCase();
   const authorization = oauthAuthorization(method, url, config, formParams);
-  return fetchImpl(url, { ...init, headers: { ...init.headers, Authorization: authorization } });
+  return externalFetch(fetchImpl, url, { ...init, headers: { ...init.headers, Authorization: authorization } });
 }
 
 export function oauthAuthorization(
@@ -159,13 +160,17 @@ export function oauthAuthorization(
 
 async function jsonResponse<T>(response: Response, label: string): Promise<T> {
   const body = await response.text();
-  if (!response.ok) throw new HttpPublishError(`${label} ${response.status}: ${body}`, response.status, body);
+  if (!response.ok) {
+    const safeBody = redactExternalSecrets(body);
+    throw new HttpPublishError(`${label} ${response.status}: ${safeBody}`, response.status, safeBody);
+  }
   return body ? (JSON.parse(body) as T) : ({} as T);
 }
 
 async function responseError(response: Response, label: string): Promise<HttpPublishError> {
   const body = await response.text();
-  return new HttpPublishError(`${label} ${response.status}: ${body}`, response.status, body);
+  const safeBody = redactExternalSecrets(body);
+  return new HttpPublishError(`${label} ${response.status}: ${safeBody}`, response.status, safeBody);
 }
 
 function assertCredentials(config: BackendConfig): void {
