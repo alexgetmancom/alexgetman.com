@@ -5,10 +5,10 @@ import {
   creatorVideoArchive,
   creatorVideoMetrics,
   studioAnalyticsDashboard,
-} from "../../analytics/creator.js";
-import type { BotLocale } from "../../bot/i18n.js";
+} from "../../analytics/engine.js";
 import type { BackendConfig } from "../../config.js";
 import type { BackendDb } from "../../db/client.js";
+import type { StudioLocale as BotLocale } from "../locale.js";
 
 type AnalyticsSection = "overview" | "posts" | "video";
 type AnalyticsPeriod = 1 | 7 | 30;

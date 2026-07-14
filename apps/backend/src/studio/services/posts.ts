@@ -1,21 +1,17 @@
 import { eq } from "drizzle-orm";
-import {
-  cancelDraft,
-  cancelRemainingPostJobs,
-  createDraftFromMessage,
-  publishDraftToQueue,
-  requireDraft,
-  setDraftControlCard,
-} from "../../bot/drafts.js";
-import type { DraftMessage } from "../../bot/message.js";
-import { PRESETS, TARGETS } from "../../botTargets.js";
+import { PRESETS, TARGETS, targetLocale } from "../../botTargets.js";
+import { createDraftFromMessage, requireDraft } from "../../content/drafts.js";
+import type { DraftMessage } from "../../content/message.js";
 import type { BackendDb } from "../../db/client.js";
 import { drafts } from "../../db/schema.js";
-import { rebalanceScheduledDrafts } from "../../publishing/schedule.js";
+import { recordDomainEvent } from "../../domain/events.js";
+import { cancelDraft, cancelRemainingPostJobs, publishDraftToQueue, setDraftControlCard } from "../../publishing/drafts.js";
+import { nextPublishingSlot, parseManualSchedule, rebalanceScheduledDrafts, schedulePreset } from "../../publishing/schedule.js";
 import { parseTargets } from "../../publishing/targets.js";
 import { postProgressState } from "./post-progress.js";
 
 type ScheduleInput = { ruAt: Date | null; enAt: Date | null };
+type ScheduleScope = "ru" | "en" | "both";
 type EditInput = { locale: "ru" | "en"; text: string; entities: unknown[]; media: Record<string, unknown>[]; replaceMediaOnly?: boolean };
 
 /** Commands for post drafts. These are deliberately transport-free and become the
@@ -28,6 +24,23 @@ export function postService(backendDb: BackendDb) {
     details(actorId: number, draftId: number) {
       return requireOwnedDraft(backendDb, actorId, draftId);
     },
+    preview(actorId: number, draftId: number) {
+      const draft = requireOwnedDraft(backendDb, actorId, draftId);
+      return {
+        id: draft.id,
+        status: draft.status,
+        locales: [
+          {
+            locale: "ru" as const,
+            text: draft.text_ru,
+            entities: JSON.parse(draft.text_ru_entities_json ?? "[]"),
+            media: JSON.parse(draft.media_ru_json ?? "[]"),
+          },
+          { locale: "en" as const, text: draft.text_en_approved, entities: [], media: JSON.parse(draft.media_en_json ?? "[]") },
+        ],
+        targets: parseTargets(draft.targets_json),
+      };
+    },
     publishNow(actorId: number, draftId: number): number {
       requireOwnedDraft(backendDb, actorId, draftId);
       return publishDraftToQueue(backendDb, draftId);
@@ -37,6 +50,24 @@ export function postService(backendDb: BackendDb) {
       const postId = publishDraftToQueue(backendDb, draftId, { mode: "scheduled", ...input });
       rebalanceScheduledDrafts(backendDb);
       return postId;
+    },
+    scheduleChoice(actorId: number, draftId: number, choice: string): ScheduleInput {
+      const draft = requireOwnedDraft(backendDb, actorId, draftId);
+      const targets = parseTargets(draft.targets_json);
+      if (choice === "auto") {
+        return {
+          ruAt: hasLocaleTarget(targets, "ru") ? nextPublishingSlot(backendDb, "ru") : null,
+          enAt: hasLocaleTarget(targets, "en") ? nextPublishingSlot(backendDb, "en") : null,
+        };
+      }
+      const value = schedulePreset(choice);
+      return { ruAt: value, enAt: value };
+    },
+    manualSchedule(actorId: number, draftId: number, scope: ScheduleScope, value: string): ScheduleInput {
+      return scheduleAt(requireOwnedDraft(backendDb, actorId, draftId), scope, parseManualSchedule(value));
+    },
+    scheduleAt(actorId: number, draftId: number, scope: ScheduleScope, value: Date): ScheduleInput {
+      return scheduleAt(requireOwnedDraft(backendDb, actorId, draftId), scope, value);
     },
     cancel(actorId: number, draftId: number): void {
       requireOwnedDraft(backendDb, actorId, draftId);
@@ -87,8 +118,32 @@ export function postService(backendDb: BackendDb) {
       }
       if (Object.keys(update).length === 1) throw new Error("No text or media detected for editing.");
       backendDb.db.update(drafts).set(update).where(eq(drafts.id, draftId)).run();
+      recordDomainEvent(backendDb, {
+        ref: `draft:${draftId}`,
+        type: "content.draft.edited",
+        severity: "info",
+        message: `Draft #${draftId} content updated`,
+        details: { locale: input.locale, media_changed: input.media.length > 0 || clearMedia, text_changed: !input.replaceMediaOnly },
+      });
     },
   };
+}
+
+function hasLocaleTarget(targets: Record<string, boolean>, locale: "ru" | "en"): boolean {
+  return Object.entries(targets).some(([target, enabled]) => enabled && targetLocale(target) === locale);
+}
+
+function scheduleAt(draft: ReturnType<typeof requireDraft>, scope: ScheduleScope, value: Date): ScheduleInput {
+  return {
+    ruAt: scope === "en" ? dateOrNull(draft.scheduled_at) : value,
+    enAt: scope === "ru" ? dateOrNull(draft.scheduled_en_at) : value,
+  };
+}
+
+function dateOrNull(value: string | null): Date | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function requireOwnedDraft(backendDb: BackendDb, actorId: number, draftId: number) {

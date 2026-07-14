@@ -1,6 +1,6 @@
 import { type Context, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
-import { formatMsk } from "../publishing/schedule.js";
+import { formatMsk } from "../interfaces/telegram/time.js";
 import { botLocale, ui } from "./i18n.js";
 import { type DraftView, draftPreview } from "./preview.js";
 

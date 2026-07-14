@@ -30,6 +30,8 @@ const envSchema = z
     PUBLIC_RATE_LIMIT_LIKES: z.coerce.number().int().min(1).max(10_000).default(30),
     COMMAND_CENTER_TOKEN: z.string().optional(),
     COMMAND_CENTER_URL: z.string().default("https://alexgetman.com/command-center"),
+    MCP_STUDIO_TOKEN: z.string().min(16).optional(),
+    MCP_STUDIO_ACTOR_ID: z.coerce.number().int().positive().optional(),
     DEEPSEEK_API_KEY: z.string().optional(),
     ADMIN_IDS: z
       .string()
@@ -147,6 +149,20 @@ const envSchema = z
         code: "custom",
         path: ["DEPLOY_AGENT_URL"],
         message: "DEPLOY_AGENT_URL and DEPLOY_AGENT_TOKEN must be configured together",
+      });
+    }
+    if (Boolean(env.MCP_STUDIO_TOKEN) !== Boolean(env.MCP_STUDIO_ACTOR_ID)) {
+      context.addIssue({
+        code: "custom",
+        path: ["MCP_STUDIO_TOKEN"],
+        message: "MCP_STUDIO_TOKEN and MCP_STUDIO_ACTOR_ID must be configured together",
+      });
+    }
+    if (env.MCP_STUDIO_ACTOR_ID && !env.ADMIN_IDS.includes(env.MCP_STUDIO_ACTOR_ID)) {
+      context.addIssue({
+        code: "custom",
+        path: ["MCP_STUDIO_ACTOR_ID"],
+        message: "MCP_STUDIO_ACTOR_ID must belong to ADMIN_IDS",
       });
     }
   });

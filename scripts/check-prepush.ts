@@ -6,5 +6,6 @@ async function run(name: string, args: string[]): Promise<void> {
 }
 
 await run("language", ["check:language"]);
+await run("studio boundaries", ["--filter", "@alexgetman/backend", "test", "tests/studioArchitecture.test.ts"]);
 await Promise.all([run("lint", ["lint"]), run("knip", ["knip"]), run("typecheck", ["typecheck"])]);
 await Promise.all([run("test", ["test"]), run("web", ["check:web"]), run("backend", ["--filter", "@alexgetman/backend", "build"])]);

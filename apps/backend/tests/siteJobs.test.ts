@@ -5,7 +5,7 @@ import path from "node:path";
 import { loadConfig } from "../src/config.js";
 import { type BackendDb, openBackendDb } from "../src/db/client.js";
 import { publicationSources, publications, siteJobs } from "../src/db/schema.js";
-import { renderFeedFiles, runSiteJobCycle } from "../src/site/jobs.js";
+import { renderFeedFiles, runSiteJobCycle } from "../src/delivery/site.js";
 
 let backendDb: BackendDb | null = null;
 let tempDir: string | null = null;

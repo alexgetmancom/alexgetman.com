@@ -1,12 +1,12 @@
 import { asc, eq, lte } from "drizzle-orm";
 import type { Bot } from "grammy";
 import type { BackendConfig } from "../config.js";
+import { parseArrayValue } from "../content/message.js";
 import type { BackendDb } from "../db/client.js";
 import { pendingAlbums } from "../db/schema.js";
 import { log } from "../logger.js";
 import { studioServices } from "../studio/services/index.js";
 import { translateToEnglish } from "../translation.js";
-import { parseArrayValue } from "./message.js";
 import { clearPostAdminState } from "./post-state.js";
 import { draftPreview } from "./preview.js";
 

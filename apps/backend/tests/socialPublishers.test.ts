@@ -3,16 +3,16 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { loadConfig } from "../src/config.js";
-import { publishToBluesky } from "../src/social/bluesky.js";
-import { updateDevtoArticle } from "../src/social/devto.js";
-import { publishToGitHubDiscussion } from "../src/social/github.js";
-import { createPublishers } from "../src/social/index.js";
-import { publishToLinkedIn } from "../src/social/linkedin.js";
-import { publishToMastodon } from "../src/social/mastodon.js";
-import { payloadMedia, payloadText } from "../src/social/payload.js";
-import { publishToTelegram } from "../src/social/telegram.js";
-import { publishToThreads } from "../src/social/threads.js";
-import { oauthAuthorization, publishToX } from "../src/social/x.js";
+import { publishToBluesky } from "../src/delivery/social/bluesky.js";
+import { updateDevtoArticle } from "../src/delivery/social/devto.js";
+import { publishToGitHubDiscussion } from "../src/delivery/social/github.js";
+import { createPublishers } from "../src/delivery/social/index.js";
+import { publishToLinkedIn } from "../src/delivery/social/linkedin.js";
+import { publishToMastodon } from "../src/delivery/social/mastodon.js";
+import { payloadMedia, payloadText } from "../src/delivery/social/payload.js";
+import { publishToTelegram } from "../src/delivery/social/telegram.js";
+import { publishToThreads } from "../src/delivery/social/threads.js";
+import { oauthAuthorization, publishToX } from "../src/delivery/social/x.js";
 
 const tempDirs: string[] = [];
 

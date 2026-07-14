@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import { loadConfig } from "../src/config.js";
-import { devtoArticleFromPayload, publishToDevto } from "../src/social/devto.js";
+import { devtoArticleFromPayload, publishToDevto } from "../src/delivery/social/devto.js";
 
 describe("Dev.to publisher", () => {
   it("builds article input from legacy job payload", () => {

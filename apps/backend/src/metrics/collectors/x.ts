@@ -1,6 +1,6 @@
 import type { BackendConfig } from "../../config.js";
-import { externalFetch, redactExternalSecrets } from "../../social/http.js";
-import { oauthAuthorization } from "../../social/x.js";
+import { externalFetch, redactExternalSecrets } from "../../delivery/social/http.js";
+import { oauthAuthorization } from "../../delivery/social/x.js";
 import type { MetricTask } from "../schedule.js";
 import type { MetricResult } from "./types.js";
 

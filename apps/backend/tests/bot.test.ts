@@ -1,14 +1,15 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
 import type { Bot } from "grammy";
 import { finalizePendingAlbums } from "../src/bot/albums.js";
-import { cancelDraft, createDraftFromMessage, publishDraftToQueue, scheduledDrafts } from "../src/bot/drafts.js";
 import { draftPreview } from "../src/bot/preview.js";
 import { postProgress } from "../src/bot/progress.js";
-import { entitiesToHtml } from "../src/bot/text.js";
 import { TARGETS, targetLocale } from "../src/botTargets.js";
 import { loadConfig } from "../src/config.js";
+import { createDraftFromMessage } from "../src/content/drafts.js";
+import { entitiesToHtml } from "../src/content/text.js";
 import { type BackendDb, openBackendDb } from "../src/db/client.js";
 import { botUiSettings } from "../src/db/schema.js";
+import { cancelDraft, publishDraftToQueue, scheduledDrafts } from "../src/publishing/drafts.js";
 import { reconcilePublication } from "../src/publishing/queue.js";
 
 let backendDb: BackendDb | null = null;

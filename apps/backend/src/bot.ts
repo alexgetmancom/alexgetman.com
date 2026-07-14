@@ -1,6 +1,5 @@
 import { Bot, InlineKeyboard } from "grammy";
 import { handleAnalyticsCallback } from "./bot/analytics-screen.js";
-import { scheduledDrafts } from "./bot/drafts.js";
 import { botLocale, ui } from "./bot/i18n.js";
 import { persistentKeyboard, showMainMenu, showSettings } from "./bot/navigation.js";
 import { handleNotificationsCallback } from "./bot/notifications-screen.js";
@@ -14,8 +13,9 @@ import { startVideoConversation } from "./bot/video-conversation.js";
 import { handleVideoCallback, handleVideoMessage } from "./bot/video-screen.js";
 import type { BackendConfig } from "./config.js";
 import type { BackendDb } from "./db/client.js";
+import { formatMsk } from "./interfaces/telegram/time.js";
 import { log } from "./logger.js";
-import { formatMsk } from "./publishing/schedule.js";
+import { studioServices } from "./studio/services/index.js";
 
 export function createBot(config: BackendConfig, backendDb: BackendDb): Bot | null {
   if (!config.controllerBotToken) {
@@ -53,11 +53,12 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
   bot.command("pipeline_status", (ctx) => ctx.reply(config.COMMAND_CENTER_URL));
   bot.command("schedule", async (ctx) => {
     if (!isAdmin(config, ctx.from?.id)) return void (await ctx.reply("Forbidden"));
-    const rows = scheduledDrafts(backendDb);
+    const rows = studioServices(backendDb, config)
+      .queue.snapshot(Number(ctx.from?.id))
+      .upcoming.filter((item) => item.kind === "post");
     if (rows.length === 0) return void (await ctx.reply("No scheduled drafts."));
     const keyboard = new InlineKeyboard();
-    for (const draft of rows)
-      keyboard.text(`#${draft.id} ${formatMsk(draft.scheduledAt)} / ${formatMsk(draft.scheduledEnAt)}`, `schedule:${draft.id}`).row();
+    for (const draft of rows) keyboard.text(`#${draft.id} ${formatMsk(draft.time)}`, `schedule:${draft.id}`).row();
     await ctx.reply("Scheduled drafts", { reply_markup: keyboard });
   });
   bot.on("message", async (ctx) => {

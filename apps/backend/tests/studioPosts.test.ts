@@ -22,9 +22,24 @@ describe("Studio post commands", () => {
     expect(() => posts.cancel(7, draftId)).toThrow("not available");
     expect(() => posts.cancelRemaining(7, draftId)).toThrow("not available");
     expect(() => posts.progress(7, draftId)).toThrow("not available");
+    expect(() => posts.scheduleChoice(7, draftId, "auto")).toThrow("not available");
+    expect(() => posts.manualSchedule(7, draftId, "both", "21:15")).toThrow("not available");
 
     posts.toggleTarget(42, draftId, "telegram");
     expect(posts.details(42, draftId).id).toBe(draftId);
     expect(posts.progress(42, draftId).targets.length).toBeGreaterThan(0);
+  });
+
+  it("resolves automatic and manual plans before publishing them", () => {
+    backendDb = openBackendDb(":memory:");
+    const posts = postService(backendDb);
+    const draftId = posts.create(42, { text: "Schedule", textEn: "Schedule", entities: [], media: [] });
+
+    const automatic = posts.scheduleChoice(42, draftId, "auto");
+    expect(automatic.ruAt).toBeInstanceOf(Date);
+    expect(automatic.enAt).toBeInstanceOf(Date);
+    const manual = posts.manualSchedule(42, draftId, "both", "23:15");
+    expect(manual.ruAt?.getMinutes()).toBe(15);
+    expect(manual.enAt?.getMinutes()).toBe(15);
   });
 });

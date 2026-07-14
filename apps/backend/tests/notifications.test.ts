@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { createDraftFromMessage } from "../src/content/drafts.js";
 import { openBackendDb } from "../src/db/client.js";
 import { notificationService } from "../src/studio/services/notifications.js";
 import { createVideoDraft } from "../src/video/service.js";
@@ -44,6 +45,18 @@ describe("Studio notifications", () => {
       expect(notifications.acknowledge(42, id)).toBe(true);
       expect(notifications.inbox(42)).toHaveLength(1);
       expect(notifications.inbox(7)).toHaveLength(2);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("keeps Content and Publishing audit events visible only to the draft owner", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const draftId = createDraftFromMessage(backendDb, 42, { text: "Private", entities: [], media: [] });
+      const notifications = notificationService(backendDb);
+      expect(notifications.inbox(42).some((event) => event.eventType === "content.draft.created")).toBe(true);
+      expect(notifications.inbox(7).some((event) => event.postKey === `draft:${draftId}`)).toBe(false);
     } finally {
       backendDb.close();
     }

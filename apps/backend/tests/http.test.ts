@@ -3,9 +3,10 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApiHandler } from "../src/api.js";
-import { createDraftFromMessage, publishDraftToQueue } from "../src/bot/drafts.js";
 import { loadConfig } from "../src/config.js";
+import { createDraftFromMessage } from "../src/content/drafts.js";
 import { openBackendDb } from "../src/db/client.js";
+import { publishDraftToQueue } from "../src/publishing/drafts.js";
 import { enqueuePublishJob } from "../src/publishing/queue.js";
 
 function tempDb() {

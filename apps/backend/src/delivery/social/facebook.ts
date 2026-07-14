@@ -1,5 +1,5 @@
-import type { BackendConfig } from "../config.js";
-import type { PublishResult } from "../publishing/errors.js";
+import type { BackendConfig } from "../../config.js";
+import type { PublishResult } from "../../publishing/errors.js";
 import { requestJson } from "./http.js";
 import { payloadMedia, payloadText, stripLeadingEmojis } from "./payload.js";
 

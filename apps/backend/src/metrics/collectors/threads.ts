@@ -1,6 +1,6 @@
 import type { BackendConfig } from "../../config.js";
 import type { JsonValue } from "../../db/schema.js";
-import { requestJson } from "../../social/http.js";
+import { requestJson } from "../../delivery/social/http.js";
 import type { MetricTask } from "../schedule.js";
 import { terminalIfMissingRemoteObject } from "./errors.js";
 import type { MetricResult } from "./types.js";

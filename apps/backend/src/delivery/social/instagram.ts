@@ -1,6 +1,6 @@
-import type { BackendConfig } from "../config.js";
-import type { PublishResult } from "../publishing/errors.js";
-import { HttpPublishError } from "../publishing/errors.js";
+import type { BackendConfig } from "../../config.js";
+import type { PublishResult } from "../../publishing/errors.js";
+import { HttpPublishError } from "../../publishing/errors.js";
 import { externalFetch, redactExternalSecrets } from "./http.js";
 import { payloadMedia, payloadText } from "./payload.js";
 

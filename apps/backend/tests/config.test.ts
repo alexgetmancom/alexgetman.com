@@ -32,4 +32,13 @@ describe("loadConfig", () => {
       "http://host.docker.internal:9899",
     );
   });
+
+  it("requires Studio MCP token and owner to be configured together", () => {
+    expect(() => loadConfig({ MCP_STUDIO_TOKEN: "a".repeat(16) })).toThrow("MCP_STUDIO_TOKEN and MCP_STUDIO_ACTOR_ID");
+    expect(() => loadConfig({ MCP_STUDIO_ACTOR_ID: "42" })).toThrow("MCP_STUDIO_TOKEN and MCP_STUDIO_ACTOR_ID");
+    expect(() => loadConfig({ MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "42" })).toThrow(
+      "MCP_STUDIO_ACTOR_ID must belong to ADMIN_IDS",
+    );
+    expect(loadConfig({ ADMIN_IDS: "42", MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "42" }).MCP_STUDIO_ACTOR_ID).toBe(42);
+  });
 });

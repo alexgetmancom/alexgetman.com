@@ -1,10 +1,8 @@
 import type { Context } from "grammy";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
-import { formatMsk, nextPublishingSlot, parseManualSchedule, schedulePreset } from "../publishing/schedule.js";
-import { parseTargets } from "../publishing/targets.js";
+import { formatMsk } from "../interfaces/telegram/time.js";
 import { studioServices } from "../studio/services/index.js";
-import { hasLocaleTarget, requireDraft } from "./drafts.js";
 import { botLocale, ui } from "./i18n.js";
 import { extractMessage } from "./message.js";
 import { editDraftPreview, editDraftPrompt, sendDraftPreview, showScheduleConfirmation } from "./post-card.js";
@@ -78,18 +76,12 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
     return editDraftPreview(ctx, backendDb, draftId, "schedule");
   }
   if (action === "sched_choose" && first) {
-    const targets = requireDraftTargets(backendDb, draftId);
-    const value = first === "auto" ? null : schedulePreset(first);
-    const ruAt = first === "auto" && hasLocaleTarget(targets, "ru") ? nextPublishingSlot(backendDb, "ru") : value;
-    const enAt = first === "auto" && hasLocaleTarget(targets, "en") ? nextPublishingSlot(backendDb, "en") : value;
+    const { ruAt, enAt } = studioServices(backendDb, config).posts.scheduleChoice(actorId, draftId, first);
     await ctx.answerCallbackQuery();
     return showScheduleConfirmation(ctx, backendDb, draftId, ruAt, enAt, `sched_confirm:${first}:${draftId}`);
   }
   if (action === "sched_confirm" && first) {
-    const targets = requireDraftTargets(backendDb, draftId);
-    const value = first === "auto" ? null : schedulePreset(first);
-    const ruAt = first === "auto" && hasLocaleTarget(targets, "ru") ? nextPublishingSlot(backendDb, "ru") : value;
-    const enAt = first === "auto" && hasLocaleTarget(targets, "en") ? nextPublishingSlot(backendDb, "en") : value;
+    const { ruAt, enAt } = studioServices(backendDb, config).posts.scheduleChoice(actorId, draftId, first);
     const postId = studioServices(backendDb, config).posts.schedule(actorId, draftId, { ruAt, enAt });
     await ctx.answerCallbackQuery({ text: ui(locale, "Scheduled", "Запланировано") });
     return void (await ctx.editMessageText(scheduledDraftText(locale, draftId, postId, ruAt, enAt)));
@@ -112,29 +104,23 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
       return void (await ctx.answerCallbackQuery({
         text: ui(locale, "Schedule confirmation expired", "Подтверждение планирования устарело"),
       }));
-    const draft = requireDraft(backendDb, draftId);
-    const ruAt = scope === "en" ? dateOrNull(draft.scheduled_at) : value;
-    const enAt = scope === "ru" ? dateOrNull(draft.scheduled_en_at) : value;
+    const { ruAt, enAt } = studioServices(backendDb, config).posts.scheduleAt(actorId, draftId, scheduleScope(scope), value);
     const postId = studioServices(backendDb, config).posts.schedule(actorId, draftId, { ruAt, enAt });
     clearPostAdminState(backendDb, Number(ctx.from?.id));
     await ctx.answerCallbackQuery({ text: ui(locale, "Scheduled", "Запланировано") });
     return void (await ctx.editMessageText(scheduledDraftText(locale, draftId, postId, ruAt, enAt)));
   }
   if (action === "sched_auto") {
-    const targets = requireDraftTargets(backendDb, draftId);
-    const ruAt = hasLocaleTarget(targets, "ru") ? nextPublishingSlot(backendDb, "ru") : null;
-    const enAt = hasLocaleTarget(targets, "en") ? nextPublishingSlot(backendDb, "en") : null;
+    const { ruAt, enAt } = studioServices(backendDb, config).posts.scheduleChoice(actorId, draftId, "auto");
     const postId = studioServices(backendDb, config).posts.schedule(actorId, draftId, { ruAt, enAt });
     await ctx.answerCallbackQuery({ text: ui(locale, "Scheduled", "Запланировано") });
     return void (await ctx.editMessageText(scheduledDraftText(locale, draftId, postId, ruAt, enAt)));
   }
   if (action === "sched_preset" && second && first) {
-    const value = schedulePreset(first);
-    const postId = studioServices(backendDb, config).posts.schedule(actorId, draftId, { ruAt: value, enAt: value });
+    const schedule = studioServices(backendDb, config).posts.scheduleChoice(actorId, draftId, first);
+    const postId = studioServices(backendDb, config).posts.schedule(actorId, draftId, schedule);
     await ctx.answerCallbackQuery({ text: ui(locale, "Scheduled", "Запланировано") });
-    return void (await ctx.editMessageText(
-      `🟢 ${ui(locale, `Draft #${draftId} is scheduled as post #${postId}.`, `Черновик #${draftId} запланирован как пост #${postId}.`)}\n${ui(locale, "RU/EN", "RU/EN")}: ${formatMsk(value)}`,
-    ));
+    return void (await ctx.editMessageText(scheduledDraftText(locale, draftId, postId, schedule.ruAt, schedule.enAt)));
   }
   if (action === "sched_manual" && first) {
     setPostAdminState(backendDb, Number(ctx.from?.id), `schedule_manual_${first}`, draftId, callbackMessageId(ctx));
@@ -160,11 +146,15 @@ export async function applyAdminState(
 ): Promise<void> {
   const message = extractMessage(ctx);
   if (action.startsWith("schedule_manual_")) {
-    const value = parseManualSchedule(message.text);
     const scope = action.slice("schedule_manual_".length);
-    const draft = requireDraft(backendDb, draftId);
-    const ruAt = scope === "en" ? dateOrNull(draft.scheduled_at) : value;
-    const enAt = scope === "ru" ? dateOrNull(draft.scheduled_en_at) : value;
+    const { ruAt, enAt } = studioServices(backendDb, config).posts.manualSchedule(
+      Number(ctx.from?.id),
+      draftId,
+      scheduleScope(scope),
+      message.text,
+    );
+    const value = ruAt ?? enAt;
+    if (!value) throw new Error("No publication time selected.");
     setPostAdminState(backendDb, Number(ctx.from?.id), `schedule_confirm_${scope}_${value.toISOString()}`, draftId, controlMessageId);
     if (controlMessageId && ctx.chat?.id)
       return showScheduleConfirmation(ctx, backendDb, draftId, ruAt, enAt, `sched_manual_confirm:${draftId}`, controlMessageId);
@@ -202,18 +192,12 @@ function scheduledDraftText(
   return `🟢 ${ui(locale, `Draft #${draftId} is scheduled as post #${postId}.`, `Черновик #${draftId} запланирован как пост #${postId}.`)}\n${ui(locale, "RU", "RU")}: ${formatMsk(ruAt)}\n${ui(locale, "EN", "EN")}: ${formatMsk(enAt)}`;
 }
 
-function dateOrNull(value: string | null): Date | null {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
 function callbackMessageId(ctx: Context): number | null {
   const message = ctx.callbackQuery?.message;
   return message && "message_id" in message ? message.message_id : null;
 }
 
-function requireDraftTargets(backendDb: BackendDb, draftId: number): Record<string, boolean> {
-  const { targets_json } = requireDraft(backendDb, draftId);
-  return parseTargets(targets_json);
+function scheduleScope(value: string): "ru" | "en" | "both" {
+  if (value === "ru" || value === "en" || value === "both") return value;
+  throw new Error("Unknown schedule scope.");
 }

@@ -188,7 +188,7 @@ export function createApiHandler(context: ApiContext) {
           id: null,
           error: { code: -32700, message: "Invalid JSON" },
         });
-      return json(mcpResponse(backendDb, body, clientIpHash(request, config)));
+      return json(mcpResponse(backendDb, config, body, clientIpHash(request, config), mcpStudioActor(request, config)));
     }
     if (path === config.WEBHOOK_PATH && request.method === "POST") {
       if (!safeEqual(request.headers.get("X-Telegram-Bot-Api-Secret-Token") ?? "", config.TELEGRAM_WEBHOOK_SECRET ?? ""))
@@ -289,4 +289,11 @@ function safeEqual(received: string, expected: string): boolean {
   const left = Buffer.from(received);
   const right = Buffer.from(expected);
   return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
+function mcpStudioActor(request: Request, config: BackendConfig): number | null {
+  if (!config.MCP_STUDIO_TOKEN || !config.MCP_STUDIO_ACTOR_ID) return null;
+  const authorization = request.headers.get("authorization") ?? "";
+  const token = authorization.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : "";
+  return safeEqual(token, config.MCP_STUDIO_TOKEN) ? config.MCP_STUDIO_ACTOR_ID : null;
 }

@@ -1,8 +1,8 @@
 import { eq } from "drizzle-orm";
-import { type BotLocale, ui } from "../bot/i18n.js";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { creatorProfiles, socialComments } from "../db/schema.js";
+import { type StudioLocale as BotLocale, localize as ui } from "../studio/locale.js";
 import { metricNumber } from "./creatorStore.js";
 
 export function creatorDashboard(

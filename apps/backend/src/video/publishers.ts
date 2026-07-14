@@ -1,5 +1,5 @@
 import type { BackendConfig } from "../config.js";
-import { formBody, requestJson } from "../social/http.js";
+import { formBody, requestJson } from "../delivery/social/http.js";
 import type { InstagramMetadata, YouTubeMetadata } from "./types.js";
 
 type YouTubeToken = { access_token: string };

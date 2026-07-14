@@ -1,5 +1,8 @@
 import { and, asc, count, eq, inArray, sql } from "drizzle-orm";
-import { DEFAULT_TARGETS, isSiteTarget, targetLocale } from "../botTargets.js";
+import { isSiteTarget, targetLocale } from "../botTargets.js";
+import { requireDraft } from "../content/drafts.js";
+import { firstLine, parseArrayValue, slugify } from "../content/message.js";
+import { entitiesToHtml } from "../content/text.js";
 import type { BackendDb } from "../db/client.js";
 import {
   drafts,
@@ -13,36 +16,13 @@ import {
   siteJobs,
   siteSourceItems,
 } from "../db/schema.js";
-import { localizeTargetPayload } from "../publishing/payload.js";
-import { enqueuePublishJobTx, reconcilePublication } from "../publishing/queue.js";
-import { rebalanceScheduledDrafts } from "../publishing/schedule.js";
-import { parseTargets } from "../publishing/targets.js";
-import { type DraftMessage, firstLine, parseArrayValue, slugify } from "./message.js";
-import { entitiesToHtml } from "./text.js";
+import { recordDomainEvent } from "../domain/events.js";
+import { localizeTargetPayload } from "./payload.js";
+import { enqueuePublishJobTx, reconcilePublication } from "./queue.js";
+import { rebalanceScheduledDrafts } from "./schedule.js";
+import { parseTargets } from "./targets.js";
 
 type PublishDraftOptions = { mode?: "immediate" | "scheduled"; ruAt?: Date | null; enAt?: Date | null };
-
-export function createDraftFromMessage(backendDb: BackendDb, adminId: number, message: DraftMessage): number {
-  const now = new Date().toISOString();
-  const created = backendDb.db
-    .insert(drafts)
-    .values({
-      adminId,
-      status: "needs_review",
-      textRu: message.text,
-      textEnMachine: message.textEn ?? message.text,
-      textEnApproved: message.textEn ?? message.text,
-      targetsJson: JSON.stringify(DEFAULT_TARGETS),
-      mediaRuJson: message.media.length ? JSON.stringify(message.media) : null,
-      textRuEntitiesJson: JSON.stringify(message.entities),
-      createdAt: now,
-      updatedAt: now,
-    })
-    .returning({ id: drafts.id })
-    .get();
-  if (!created) throw new Error("draft insert did not return an id");
-  return created.id;
-}
 
 export function scheduledDrafts(backendDb: BackendDb): Array<{ id: number; scheduledAt: string | null; scheduledEnAt: string | null }> {
   return backendDb.db
@@ -51,35 +31,6 @@ export function scheduledDrafts(backendDb: BackendDb): Array<{ id: number; sched
     .where(eq(drafts.status, "scheduled"))
     .orderBy(asc(sql`coalesce(${drafts.scheduledAt}, ${drafts.scheduledEnAt})`), asc(drafts.id))
     .all();
-}
-
-export function requireDraft(backendDb: BackendDb, draftId: number) {
-  const draft = backendDb.db
-    .select({
-      id: drafts.id,
-      admin_id: drafts.adminId,
-      status: drafts.status,
-      text_ru: drafts.textRu,
-      text_en_machine: drafts.textEnMachine,
-      text_en_approved: drafts.textEnApproved,
-      targets_json: drafts.targetsJson,
-      media_ru_json: drafts.mediaRuJson,
-      media_en_json: drafts.mediaEnJson,
-      channel_message_id: drafts.channelMessageId,
-      scheduled_at: drafts.scheduledAt,
-      scheduled_en_at: drafts.scheduledEnAt,
-      text_ru_entities_json: drafts.textRuEntitiesJson,
-      text_en_entities_json: drafts.textEnEntitiesJson,
-    })
-    .from(drafts)
-    .where(eq(drafts.id, draftId))
-    .get();
-  if (!draft) throw new Error(`draft ${draftId} not found`);
-  return draft;
-}
-
-export function hasLocaleTarget(targets: Record<string, boolean>, locale: "ru" | "en"): boolean {
-  return Object.entries(targets).some(([target, enabled]) => enabled && targetLocale(target) === locale);
 }
 
 export function cancelDraft(backendDb: BackendDb, draftId: number): void {
@@ -120,6 +71,12 @@ export function cancelDraft(backendDb: BackendDb, draftId: number): void {
     tx.update(drafts).set({ postId: null, updatedAt: now }).where(eq(drafts.id, draftId)).run();
   });
   rebalanceScheduledDrafts(backendDb);
+  recordDomainEvent(backendDb, {
+    ref: `draft:${draftId}`,
+    type: "publishing.draft.cancelled",
+    severity: "info",
+    message: `Publication for draft #${draftId} cancelled`,
+  });
 }
 
 export function setDraftControlCard(backendDb: BackendDb, draftId: number, chatId: number, messageId: number): void {
@@ -140,6 +97,12 @@ export function cancelRemainingPostJobs(backendDb: BackendDb, draftId: number): 
     .set({ status: "cancelled", updatedAt: now })
     .where(and(eq(publishJobs.postId, draft.postId), inArray(publishJobs.status, ["queued", "failed"])))
     .run();
+  recordDomainEvent(backendDb, {
+    ref: `draft:${draftId}`,
+    type: "publishing.remaining.cancelled",
+    severity: "warn",
+    message: `Remaining publication jobs for draft #${draftId} cancelled`,
+  });
   backendDb.db
     .update(siteJobs)
     .set({ status: "cancelled", updatedAt: now })
@@ -286,6 +249,13 @@ export function publishDraftToQueue(backendDb: BackendDb, draftId: number, optio
   // A publication without enabled targets is immediately complete. Every
   // ordinary publication remains scheduled until its jobs reconcile.
   reconcilePublication(backendDb, postId);
+  recordDomainEvent(backendDb, {
+    ref: `post:${postId}`,
+    type: "publishing.plan.created",
+    severity: "info",
+    message: `Publication plan created for draft #${draftId}`,
+    details: { draft_id: draftId, mode, ru_at: ruAt, en_at: enAt, targets: Object.keys(targets).filter((target) => targets[target]) },
+  });
   return postId;
 }
 

@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { BackendConfig } from "../config.js";
+import type { PublishMediaItem } from "../delivery/social/payload.js";
 import { runFfmpeg } from "../runtime/ffmpeg.js";
-import type { PublishMediaItem } from "../social/payload.js";
 
 // Keep one second of headroom below the 60-second story limit used by the
 // supported publishing targets. Do not alter the source frame rate: 60 FPS is

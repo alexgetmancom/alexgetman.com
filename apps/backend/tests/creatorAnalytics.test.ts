@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
-import { creatorDashboard, runCreatorAnalyticsCycle, studioAnalyticsDashboard } from "../src/analytics/creator.js";
+import { creatorDashboard, runAnalyticsCycle, studioAnalyticsDashboard } from "../src/analytics/engine.js";
 import { loadConfig } from "../src/config.js";
 import { openBackendDb } from "../src/db/client.js";
 import { creatorProfiles, metricSamples, videoDrafts, videoMetricSchedule, videoMetricSnapshots, videoTargets } from "../src/db/schema.js";
@@ -59,7 +59,7 @@ describe("creator analytics", () => {
   it("does not call creator APIs when the video module is disabled", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      expect(await runCreatorAnalyticsCycle(loadConfig({}), backendDb)).toBe(0);
+      expect(await runAnalyticsCycle(loadConfig({}), backendDb)).toBe(0);
     } finally {
       backendDb.close();
     }
@@ -171,7 +171,7 @@ describe("creator analytics", () => {
         if (url.includes("reel-1")) return new Response(JSON.stringify({ plays: 20, like_count: 2, comments_count: 1 }));
         return new Response(JSON.stringify({ username: "maru", followers_count: 10, media_count: 1 }));
       }) as typeof fetch;
-      await runCreatorAnalyticsCycle(config, backendDb, fetchMock);
+      await runAnalyticsCycle(config, backendDb, fetchMock);
 
       expect(backendDb.db.select().from(videoMetricSnapshots).all()).toHaveLength(1);
       const schedule = backendDb.db.select().from(videoMetricSchedule).where(eq(videoMetricSchedule.videoTargetId, target.id)).get();

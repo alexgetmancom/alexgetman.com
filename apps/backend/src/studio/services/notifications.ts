@@ -1,46 +1,13 @@
-import { and, eq, gte, isNull } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import type { BackendDb } from "../../db/client.js";
 import { drafts, postEvents, posts, videoDrafts } from "../../db/schema.js";
+import { type DomainEventInput, recordDomainEvent } from "../../domain/events.js";
 
 /** Durable Studio inbox backed by the existing operations event journal. */
 export function notificationService(backendDb: BackendDb) {
   return {
-    record(input: {
-      ref?: string | null;
-      type: string;
-      severity: "info" | "warn" | "error";
-      target?: string | null;
-      message: string;
-      details?: Record<string, unknown>;
-      cooldownSeconds?: number;
-    }): void {
-      const now = new Date().toISOString();
-      const cutoff = new Date(Date.now() - (input.cooldownSeconds ?? 0) * 1000).toISOString();
-      const ref = input.ref ?? null;
-      const refCondition = ref == null ? isNull(postEvents.postKey) : eq(postEvents.postKey, ref);
-      const target = input.target ?? null;
-      const targetCondition = target == null ? isNull(postEvents.target) : eq(postEvents.target, target);
-      if (
-        input.cooldownSeconds &&
-        backendDb.db
-          .select({ id: postEvents.id })
-          .from(postEvents)
-          .where(and(refCondition, eq(postEvents.eventType, input.type), targetCondition, gte(postEvents.createdAt, cutoff)))
-          .get()
-      )
-        return;
-      backendDb.db
-        .insert(postEvents)
-        .values({
-          postKey: ref,
-          eventType: input.type,
-          severity: input.severity,
-          target: input.target ?? null,
-          message: input.message,
-          detailsJson: JSON.stringify(input.details ?? {}),
-          createdAt: now,
-        })
-        .run();
+    record(input: DomainEventInput): boolean {
+      return recordDomainEvent(backendDb, input);
     },
     inbox(actorId: number, limit = 50) {
       const events = backendDb.db
@@ -64,6 +31,17 @@ export function notificationService(backendDb: BackendDb) {
 /** Operational events without a Studio entity remain shared; draft/video events are private to their owner. */
 function isVisibleTo(backendDb: BackendDb, ref: string | null, actorId: number): boolean {
   if (!ref) return true;
+  if (ref.startsWith("draft:")) {
+    const id = Number(ref.slice("draft:".length));
+    return (
+      Number.isSafeInteger(id) &&
+      backendDb.db
+        .select({ id: drafts.id })
+        .from(drafts)
+        .where(and(eq(drafts.id, id), eq(drafts.adminId, actorId)))
+        .get() != null
+    );
+  }
   if (ref.startsWith("video:")) {
     const id = Number(ref.slice("video:".length));
     if (!Number.isSafeInteger(id)) return false;

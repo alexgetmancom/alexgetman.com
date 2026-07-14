@@ -1,5 +1,5 @@
-import { type BotLocale, ui } from "../bot/i18n.js";
 import type { BackendDb } from "../db/client.js";
+import { type StudioLocale as BotLocale, localize as ui } from "../studio/locale.js";
 import { metricNumber } from "./creatorStore.js";
 
 export function creatorVideoArchive(

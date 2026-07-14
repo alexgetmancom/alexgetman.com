@@ -10,8 +10,6 @@ import { videoPath } from "./storage.js";
 import type { VideoMetadata, VideoTarget } from "./types.js";
 import { VIDEO_TARGETS } from "./types.js";
 
-export { runVideoCycle } from "./worker.js";
-
 export function createVideoDraft(backendDb: BackendDb, adminId: number, assetKey: string, retentionHours: number): number {
   const now = new Date().toISOString();
   const retentionUntil = new Date(Date.now() + retentionHours * 60 * 60_000).toISOString();

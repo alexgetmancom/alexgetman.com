@@ -1,7 +1,7 @@
 import fs from "node:fs";
-import type { BackendConfig } from "../config.js";
-import type { PublishResult } from "../publishing/errors.js";
-import { HttpPublishError } from "../publishing/errors.js";
+import type { BackendConfig } from "../../config.js";
+import type { PublishResult } from "../../publishing/errors.js";
+import { HttpPublishError } from "../../publishing/errors.js";
 import { externalFetch, redactExternalSecrets } from "./http.js";
 import { type PublishMediaItem, payloadMedia, payloadText, stripLeadingEmojis } from "./payload.js";
 

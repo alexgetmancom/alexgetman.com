@@ -1,9 +1,9 @@
 import { InlineKeyboard } from "grammy";
 import { PRESETS, TARGETS } from "../botTargets.js";
+import { requireDraft } from "../content/drafts.js";
 import type { BackendDb } from "../db/client.js";
-import { formatMsk } from "../publishing/schedule.js";
+import { formatMsk } from "../interfaces/telegram/time.js";
 import { parseTargets } from "../publishing/targets.js";
-import { requireDraft } from "./drafts.js";
 import { type BotLocale, botLocale, ui } from "./i18n.js";
 
 export type DraftView = "overview" | "modes" | "schedule" | "confirm_publish" | "confirm_delete" | "platforms";

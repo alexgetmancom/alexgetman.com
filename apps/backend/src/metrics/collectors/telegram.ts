@@ -1,6 +1,6 @@
 import type { BackendConfig } from "../../config.js";
-import { requestText } from "../../social/http.js";
-import { createChannelStoryClient } from "../../social/telegramSession.js";
+import { requestText } from "../../delivery/social/http.js";
+import { createChannelStoryClient } from "../../delivery/social/telegramSession.js";
 import type { MetricTask } from "../schedule.js";
 import { TerminalMetricError } from "./errors.js";
 import type { MetricResult } from "./types.js";

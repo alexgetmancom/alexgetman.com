@@ -3,8 +3,9 @@ import { describe, expect, it } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createDraftFromMessage, publishDraftToQueue } from "../src/bot/drafts.js";
+import { createDraftFromMessage } from "../src/content/drafts.js";
 import { baselineDrizzleMigrations, migrationStatus, openBackendDb } from "../src/db/client.js";
+import { publishDraftToQueue } from "../src/publishing/drafts.js";
 
 describe("openBackendDb", () => {
   it("enables WAL, busy timeout and foreign keys", () => {

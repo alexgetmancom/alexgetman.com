@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { BackendConfig } from "../config.js";
+import { requestJson } from "../delivery/social/http.js";
+import { mediaExtension, type PublishMediaItem } from "../delivery/social/payload.js";
 import { runFfmpeg } from "../runtime/ffmpeg.js";
-import { requestJson } from "../social/http.js";
-import { mediaExtension, type PublishMediaItem } from "../social/payload.js";
 
 type TelegramFileResponse = {
   ok?: boolean;
