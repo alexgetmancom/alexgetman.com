@@ -1,17 +1,16 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import type { Bot } from "grammy";
-import { type CommandAction, runCommandAction } from "./admin/actions.js";
-import { commandCenterPayload, postDebugPayload } from "./admin/commandCenter.js";
-import { renderCommandCenterLogin, renderDashboard } from "./admin/dashboard.js";
 import type { BackendConfig } from "./config.js";
+import { videoPath } from "./content/video-assets.js";
 import type { BackendDb } from "./db/client.js";
 import { commandAllowed } from "./httpAuth.js";
-import { batchLikes, clientIpHash, likesInfo, metricsSummary, recordPageview, toggleLike } from "./services/engagement.js";
-import { mcpResponse } from "./services/mcp.js";
-import { pipelineStatusPayload } from "./services/pipeline.js";
-import { allowPublicRequest } from "./services/publicRateLimit.js";
-import { videoPath } from "./video/storage.js";
+import { mcpResponse } from "./interfaces/mcp.js";
+import { renderCommandCenterLogin, renderDashboard } from "./operations/dashboard.js";
+import { pipelineStatusPayload } from "./operations/pipeline.js";
+import { type CommandAction, operationsService } from "./operations/service.js";
+import { batchLikes, clientIpHash, likesInfo, metricsSummary, recordPageview, toggleLike } from "./public/engagement.js";
+import { allowPublicRequest } from "./public/rate-limit.js";
 
 type ApiContext = {
   config: BackendConfig;
@@ -44,6 +43,7 @@ function sameOriginCommandLogin(request: Request): boolean {
 export function createApiHandler(context: ApiContext) {
   return async (request: Request, path: string): Promise<Response> => {
     const { config, backendDb, bot } = context;
+    const operations = operationsService(backendDb, config);
     const url = new URL(request.url);
 
     if (path === "/healthz" || path === "/tg-feed/healthz") return text("ok\n");
@@ -201,26 +201,26 @@ export function createApiHandler(context: ApiContext) {
       return text("ok\n");
     }
     if (path === "/api/command-center" && request.method === "GET")
-      return commandAllowed(request, config) ? json(commandCenterPayload(config, backendDb)) : json({ detail: "forbidden" }, 403);
+      return commandAllowed(request, config) ? json(operations.dashboard()) : json({ detail: "forbidden" }, 403);
     if (path === "/api/ops-dashboard" && request.method === "GET")
       return commandAllowed(request, config)
         ? json({
             pipeline: pipelineStatusPayload(config, backendDb),
-            ops: commandCenterPayload(config, backendDb),
+            ops: operations.dashboard(),
           })
         : json({ detail: "forbidden" }, 403);
     if (path === "/api/post-debug" && request.method === "GET") {
       if (!commandAllowed(request, config)) return json({ detail: "forbidden" }, 403);
       const ref = url.searchParams.get("ref");
       if (!ref) return json({ detail: "missing ref" }, 400);
-      const payload = postDebugPayload(backendDb, ref);
+      const payload = operations.postDebug(ref);
       return payload ? json(payload) : json({ detail: "not found" }, 404);
     }
     if (path === "/api/command-center/action" && request.method === "POST") {
       const body = await commandAction(request);
       if (!commandAllowed(request, config, body.token)) return json({ detail: "forbidden" }, 403);
       try {
-        return json(await runCommandAction(backendDb, body, config));
+        return json(await operations.command(body));
       } catch (error) {
         return json({ detail: error instanceof Error ? error.message : String(error) }, 400);
       }

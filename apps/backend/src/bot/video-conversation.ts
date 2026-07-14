@@ -1,11 +1,10 @@
 import { type Context, InlineKeyboard } from "grammy";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
+import { storeTelegramVideo } from "../interfaces/telegram/video-ingress.js";
 import { videoPreview } from "../interfaces/telegram/video-preview.js";
-import { parseManualSchedule } from "../publishing/schedule.js";
+import { type VideoMetadata, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import { studioServices } from "../studio/services/index.js";
-import { storeTelegramVideo } from "../video/storage.js";
-import { type VideoMetadata, type VideoTarget, videoTargetLabel } from "../video/types.js";
 import { botLocale, ui } from "./i18n.js";
 import {
   askInstagramOrSchedule,
@@ -107,7 +106,7 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
       return true;
     }
     if (session.step === "schedule_common" || session.step.startsWith("schedule_target:"))
-      return handleScheduleMessage(ctx, backendDb, adminId, session, text);
+      return handleScheduleMessage(ctx, backendDb, config, adminId, session, text);
   } catch (error) {
     const locale = botLocale(backendDb, adminId);
     if (session.step === "schedule_common" || session.step.startsWith("schedule_target:"))
@@ -213,12 +212,13 @@ async function handleYouTubeMessage(
 async function handleScheduleMessage(
   ctx: Context,
   backendDb: BackendDb,
+  config: BackendConfig,
   adminId: number,
   session: VideoSession,
   text: string,
 ): Promise<boolean> {
   if (session.step === "schedule_common") {
-    const date = parseManualSchedule(text);
+    const date = studioServices(backendDb, config).videos.parseSchedule(adminId, session.draftId ?? 0, text);
     await confirmVideoSchedule(
       ctx,
       backendDb,
@@ -229,7 +229,12 @@ async function handleScheduleMessage(
     return true;
   }
   const target = session.step.slice("schedule_target:".length) as VideoTarget;
-  const schedule = { ...(session.data.schedule as Record<string, string> | undefined), [target]: parseManualSchedule(text).toISOString() };
+  const schedule = {
+    ...(session.data.schedule as Record<string, string> | undefined),
+    [target]: studioServices(backendDb, config)
+      .videos.parseSchedule(adminId, session.draftId ?? 0, text)
+      .toISOString(),
+  };
   const remaining = session.selected.find((item) => !schedule[item]);
   if (remaining) {
     saveSession(backendDb, adminId, { ...session, step: `schedule_target:${remaining}`, data: { ...session.data, schedule } });

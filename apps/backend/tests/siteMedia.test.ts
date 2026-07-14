@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { loadConfig } from "../src/config.js";
-import { materializeSiteMedia } from "../src/site/media.js";
+import { materializeSiteMedia } from "../src/delivery/site-media.js";
 
 let directory: string | null = null;
 

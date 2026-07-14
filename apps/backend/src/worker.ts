@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import type { Bot } from "grammy";
 import { runAnalyticsCycle } from "./analytics/engine.js";
+import { runMetricsCycle } from "./analytics/metrics.js";
 import { finalizePendingAlbums } from "./bot/albums.js";
 import { refreshPostControlCard } from "./bot/progress.js";
 import type { BackendConfig } from "./config.js";
@@ -12,10 +13,10 @@ import { createPublishers, type Publisher } from "./delivery/publishers.js";
 import { runSiteJobCycle } from "./delivery/site.js";
 import { runVideoCycle } from "./delivery/video.js";
 import { sendWeeklyAnalyticsSummary } from "./interfaces/telegram/analytics-summary.js";
+import { notifyFinalVideoFailure, refreshVideoControlCard, sendVideoReminder } from "./interfaces/telegram/video-notifications.js";
 import { log } from "./logger.js";
-import { runMetricsCycle } from "./metrics/index.js";
+import { runObservabilityCycle } from "./operations/observability.js";
 import { type ScheduledLoop, startLoop } from "./scheduler.js";
-import { runObservabilityCycle } from "./services/observability.js";
 
 export async function runPublishCycle(
   config: BackendConfig,
@@ -49,7 +50,11 @@ export function startWorkers(config: BackendConfig, backendDb: BackendDb, bot: B
     ...(config.studio.modules.video_posting
       ? [
           startLoop("video", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
-            const claimed = await runVideoCycle(config, backendDb, bot);
+            const claimed = await runVideoCycle(config, backendDb, {
+              sendReminder: (job) => sendVideoReminder(backendDb, bot, job.videoDraftId, job.videoTargetId, config.VIDEO_REMINDER_MINUTES),
+              notifyFinalFailure: (job) => notifyFinalVideoFailure(backendDb, bot, job),
+              refreshProgress: (videoDraftId) => refreshVideoControlCard(backendDb, bot, videoDraftId),
+            });
             log("debug", "video loop tick", { claimed });
           }),
         ]

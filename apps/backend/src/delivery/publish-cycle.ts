@@ -6,7 +6,7 @@ import { postTargets, publishJobs } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import { log } from "../logger.js";
 import { claimDuePublishJobs, completePublishJob, failPublishJob, recoverStalePublishJobs } from "../publishing/queue.js";
-import { recordWorkerState } from "../services/workerState.js";
+import { recordWorkerState } from "../runtime/worker-state.js";
 import { createPublishers, type Publisher } from "./publishers.js";
 
 /** Executes Publishing jobs through Delivery adapters without knowing any UI. */

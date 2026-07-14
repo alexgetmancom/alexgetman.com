@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { loadConfig } from "../src/config.js";
-import { prepareMediaItems, pruneMediaCache } from "../src/media/prepare.js";
+import { prepareMediaItems, pruneMediaCache } from "../src/delivery/media-prepare.js";
 
 describe("media preparation", () => {
   it("reuses durable local and public files for identical target uploads", async () => {

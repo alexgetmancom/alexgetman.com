@@ -1,6 +1,7 @@
 import type { BackendConfig } from "../../config.js";
 import type { BackendDb } from "../../db/client.js";
-import { getVideoDraft, listVideoTargets } from "../../video/data.js";
+import { parseManualSchedule } from "../../publishing/schedule.js";
+import { getVideoDraft, listVideoTargets } from "../../publishing/video-data.js";
 import {
   cancelVideo,
   createVideoDraft,
@@ -12,8 +13,8 @@ import {
   setVideoControlCard,
   updateVideoLabel,
   validateVideoDraft,
-} from "../../video/service.js";
-import type { VideoMetadata, VideoTarget } from "../../video/types.js";
+} from "../../publishing/video-service.js";
+import type { VideoMetadata, VideoTarget } from "../../publishing/video-types.js";
 
 /** Video publication command boundary for Telegram Studio, Web Studio and MCP. */
 export function videoService(backendDb: BackendDb, config: BackendConfig) {
@@ -62,6 +63,10 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
     setControlCard(actorId: number, videoDraftId: number, chatId: number, messageId: number): void {
       requireOwnedVideo(backendDb, actorId, videoDraftId);
       setVideoControlCard(backendDb, videoDraftId, chatId, messageId);
+    },
+    parseSchedule(actorId: number, videoDraftId: number, value: string): Date {
+      requireOwnedVideo(backendDb, actorId, videoDraftId);
+      return parseManualSchedule(value);
     },
   };
 }

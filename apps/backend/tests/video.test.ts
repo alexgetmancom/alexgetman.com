@@ -7,7 +7,6 @@ import type { BackendDb } from "../src/db/client.js";
 import { openBackendDb } from "../src/db/client.js";
 import { socialComments, videoMetricSchedule, videoMetricSnapshots, videoTargets } from "../src/db/schema.js";
 import { videoPreview } from "../src/interfaces/telegram/video-preview.js";
-import { videoService } from "../src/studio/services/videos.js";
 import {
   cancelVideo,
   createVideoDraft,
@@ -16,7 +15,8 @@ import {
   retryFailedVideoTarget,
   saveVideoMetadata,
   scheduleVideo,
-} from "../src/video/service.js";
+} from "../src/publishing/video-service.js";
+import { videoService } from "../src/studio/services/videos.js";
 
 let backendDb: BackendDb | null = null;
 

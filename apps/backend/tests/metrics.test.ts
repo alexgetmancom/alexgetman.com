@@ -1,11 +1,11 @@
 import { describe, expect, it, mock } from "bun:test";
 import { asc, eq } from "drizzle-orm";
+import { createMetricCollectors, TerminalMetricError } from "../src/analytics/collectors.js";
+import type { MetricTask } from "../src/analytics/metric-schedule.js";
+import { runMetricsCycle } from "../src/analytics/metrics-cycle.js";
 import { loadConfig } from "../src/config.js";
 import { openBackendDb } from "../src/db/client.js";
 import { metricSamples, metricSchedule, postMetrics, posts, postTargets, workerState } from "../src/db/schema.js";
-import { createMetricCollectors, TerminalMetricError } from "../src/metrics/collectors.js";
-import { runMetricsCycle } from "../src/metrics/index.js";
-import type { MetricTask } from "../src/metrics/schedule.js";
 
 describe("metrics cycle", () => {
   it("schedules published targets and persists metric samples", async () => {

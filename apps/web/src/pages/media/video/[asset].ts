@@ -1,5 +1,5 @@
 import type { APIRoute } from "astro";
-import { videoPath } from "../../../../../backend/src/video/storage.js";
+import { videoPath } from "../../../../../backend/src/content/video-assets.js";
 import { getRuntime } from "../../../server/runtime.js";
 
 export const GET: APIRoute = ({ params }) => {

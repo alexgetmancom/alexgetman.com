@@ -3,8 +3,8 @@ import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openBackendDb } from "../src/db/client.js";
-import { capabilitySummary, seedCapabilities } from "../src/ops/capabilities.js";
-import { applyMetricsBackfill, backupDatabase, buildMetricsBackfillPlan, withMaintenanceLock } from "../src/ops/maintenance.js";
+import { capabilitySummary, seedCapabilities } from "../src/operations/capabilities.js";
+import { applyMetricsBackfill, backupDatabase, buildMetricsBackfillPlan, withMaintenanceLock } from "../src/operations/maintenance.js";
 
 describe("TypeScript operations tooling", () => {
   it("creates a consistent SQLite backup", async () => {

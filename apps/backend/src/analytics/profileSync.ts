@@ -1,7 +1,7 @@
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { requestJson } from "../delivery/social/http.js";
-import { youtubeAccessToken } from "../video/publishers.js";
+import { youtubeAccessToken } from "../delivery/video-publishers.js";
 import { markSynced, metricNumber, upsertProfile } from "./creatorStore.js";
 
 type YouTubeChannel = {

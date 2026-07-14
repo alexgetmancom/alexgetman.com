@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import { openBackendDb } from "../src/db/client.js";
+import { createVideoDraft } from "../src/publishing/video-service.js";
 import { notificationService } from "../src/studio/services/notifications.js";
-import { createVideoDraft } from "../src/video/service.js";
 
 describe("Studio notifications", () => {
   it("keeps a durable inbox, suppresses cooled-down duplicates and acknowledges events", () => {

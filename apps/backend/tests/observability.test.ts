@@ -4,7 +4,7 @@ import type { Bot } from "grammy";
 import { loadConfig } from "../src/config.js";
 import { openBackendDb } from "../src/db/client.js";
 import { alertDedup, credentialChecks, postEvents, publishJobs, siteJobs } from "../src/db/schema.js";
-import { runObservabilityCycle } from "../src/services/observability.js";
+import { runObservabilityCycle } from "../src/operations/observability.js";
 
 describe("observability", () => {
   it("checks credentials, alerts the owner and deduplicates repeated errors", async () => {

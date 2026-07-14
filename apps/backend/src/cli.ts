@@ -1,6 +1,6 @@
 import { loadConfig } from "./config.js";
 import { baselineDrizzleMigrations, migrationStatus, openBackendDb } from "./db/client.js";
-import { capabilitySummary, recordCapabilityPost, seedCapabilities } from "./ops/capabilities.js";
+import { capabilitySummary, recordCapabilityPost, seedCapabilities } from "./operations/capabilities.js";
 import {
   applyMetricsBackfill,
   auditOperations,
@@ -8,9 +8,9 @@ import {
   buildMetricsBackfillPlan,
   restoreDatabase,
   withMaintenanceLock,
-} from "./ops/maintenance.js";
-import { verifyPostTargets } from "./ops/verify.js";
-import { pipelineStatusPayload } from "./services/pipeline.js";
+} from "./operations/maintenance.js";
+import { pipelineStatusPayload } from "./operations/pipeline.js";
+import { verifyPostTargets } from "./operations/verify.js";
 
 type Arguments = { command: string; values: Map<string, string>; flags: Set<string> };
 

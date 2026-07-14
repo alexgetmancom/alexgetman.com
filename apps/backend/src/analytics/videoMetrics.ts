@@ -3,9 +3,9 @@ import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { videoDrafts, videoMetricSchedule, videoTargets } from "../db/schema.js";
 import { requestJson } from "../delivery/social/http.js";
-import { metricCheckpointAt } from "../metrics/checkpoints.js";
-import { youtubeAccessToken } from "../video/publishers.js";
+import { youtubeAccessToken } from "../delivery/video-publishers.js";
 import { metricNumber, upsertComment, upsertVideoSnapshot } from "./creatorStore.js";
+import { metricCheckpointAt } from "./metric-checkpoints.js";
 
 type VideoMetricTask = {
   id: number;

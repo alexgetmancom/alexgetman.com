@@ -2,8 +2,8 @@ import type { Context } from "grammy";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { videoPreview } from "../interfaces/telegram/video-preview.js";
+import type { VideoTarget } from "../publishing/video-types.js";
 import { studioServices } from "../studio/services/index.js";
-import type { VideoTarget } from "../video/types.js";
 import { botLocale, ui } from "./i18n.js";
 import { clearSession, type VideoSession } from "./video-session.js";
 

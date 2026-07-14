@@ -3,8 +3,8 @@ import { type Context, InlineKeyboard } from "grammy";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { videoBotSessions } from "../db/schema.js";
+import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import { studioServices } from "../studio/services/index.js";
-import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../video/types.js";
 
 export type VideoSession = { draftId: number | null; step: string; selected: VideoTarget[]; data: Record<string, unknown> };
 

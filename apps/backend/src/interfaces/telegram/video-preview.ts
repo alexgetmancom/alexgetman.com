@@ -2,8 +2,9 @@ import { InlineKeyboard } from "grammy";
 import { type BotLocale, ui } from "../../bot/i18n.js";
 import type { BackendDb } from "../../db/client.js";
 import { isVideoTargetEditable, isVideoTargetSchedulable } from "../../publishing/state.js";
-import { formatVideoTime, getVideoDraft, listVideoTargets } from "../../video/data.js";
-import type { InstagramMetadata, YouTubeMetadata } from "../../video/types.js";
+import { getVideoDraft, listVideoTargets } from "../../publishing/video-data.js";
+import type { InstagramMetadata, YouTubeMetadata } from "../../publishing/video-types.js";
+import { formatVideoTime } from "./video-time.js";
 
 /** Telegram-only representation of a video draft. The video domain itself
  * exposes data and operations, never grammY markup or interface language. */

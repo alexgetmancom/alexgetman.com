@@ -6,7 +6,7 @@ import { loadConfig } from "../src/config.js";
 import { publishInstagramStory } from "../src/delivery/social/instagram.js";
 import { createChannelStoryClient } from "../src/delivery/social/telegramSession.js";
 import { telegramStoryCaption, telegramStoryUploadMedia } from "../src/delivery/social/telegramStories.js";
-import { generateStoryMedia } from "../src/media/story.js";
+import { generateStoryMedia } from "../src/delivery/story-media.js";
 
 const ffmpegCalls: string[][] = [];
 

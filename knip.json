@@ -15,7 +15,7 @@
     "apps/web/src/utils/helpers.ts",
     "apps/web/src/utils/home-posts.ts",
     "apps/backend/src/fsUtils.ts",
-    "apps/backend/src/services/dashboard/**",
+    "apps/backend/src/operations/dashboard/**",
     "apps/web/src/utils/brand.ts"
   ]
 }

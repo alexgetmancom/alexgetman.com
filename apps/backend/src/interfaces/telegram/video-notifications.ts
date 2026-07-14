@@ -2,10 +2,11 @@ import { eq } from "drizzle-orm";
 import { type Bot, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../../db/client.js";
 import { videoDrafts, videoTargets } from "../../db/schema.js";
-import { formatVideoTime, getVideoDraft, type VideoJob } from "../../video/data.js";
-import type { VideoTarget } from "../../video/types.js";
-import { videoTargetLabel } from "../../video/types.js";
+import { getVideoDraft, type VideoJob } from "../../publishing/video-data.js";
+import type { VideoTarget } from "../../publishing/video-types.js";
+import { videoTargetLabel } from "../../publishing/video-types.js";
 import { videoPreview } from "./video-preview.js";
+import { formatVideoTime } from "./video-time.js";
 
 export async function notifyFinalVideoFailure(backendDb: BackendDb, bot: Bot | null, job: VideoJob): Promise<void> {
   if (!bot || !job.videoTargetId) return;
