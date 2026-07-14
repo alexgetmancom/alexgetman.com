@@ -13,6 +13,7 @@ import {
   siteJobs,
   siteSourceItems,
 } from "../db/schema.js";
+import { editPublishedTargets } from "../delivery/external-edits.js";
 import { jsonObject } from "../json.js";
 import { localizeTargetPayload } from "../publishing/payload.js";
 
@@ -48,7 +49,13 @@ export async function runCommandAction(
   if (input.action === "retry" || input.action === "republish") result = requeue(backendDb, publicationRef, input.target);
   else if (input.action === "edit_en") {
     result = editEnglish(backendDb, publicationRef, input.text_en ?? "");
-    if (config) result.external = await editPublishedTargets(backendDb, publicationRef, null, input.text_en ?? "", config, fetchImpl);
+    if (config)
+      result.external = await editPublishedTargets(
+        backendDb,
+        { postKey: publicationRef.postKey, textRu: null, textEn: input.text_en ?? "" },
+        config,
+        fetchImpl,
+      );
   } else if (input.action === "replace_en_media") result = replaceEnglishMedia(backendDb, publicationRef, parseMedia(input.media_en_json));
   else if (input.action === "use_ru_media_for_en") result = replaceEnglishMedia(backendDb, publicationRef, null);
   else throw new Error(`unknown action: ${input.action}`);
@@ -368,149 +375,4 @@ function sourcePayload(backendDb: BackendDb, ref: PublicationRef): Record<string
   const payload = jsonObject(siteSource?.itemJson);
   if (Object.keys(payload).length > 0) return payload;
   return jsonObject(backendDb.db.select({ rawJson: posts.rawJson }).from(posts).where(eq(posts.postKey, ref.postKey)).get()?.rawJson);
-}
-
-async function editPublishedTargets(
-  backendDb: BackendDb,
-  ref: PublicationRef,
-  textRu: string | null,
-  textEn: string | null,
-  config: BackendConfig,
-  fetchImpl: typeof fetch,
-): Promise<Array<Record<string, unknown>>> {
-  const post = backendDb.db
-    .select({ chatId: posts.chatId, mediaCount: posts.mediaCount })
-    .from(posts)
-    .where(eq(posts.postKey, ref.postKey))
-    .get();
-  const rows = backendDb.db
-    .select({
-      target: postTargets.target,
-      status: postTargets.status,
-      externalId: postTargets.externalId,
-    })
-    .from(postTargets)
-    .where(eq(postTargets.postKey, ref.postKey))
-    .all();
-  const results: Array<Record<string, unknown>> = [];
-  for (const row of rows) {
-    if (row.status !== "published" || !row.externalId) continue;
-    try {
-      if (row.target === "telegram" && textRu) {
-        const token = config.controllerBotToken;
-        if (!token) {
-          results.push({
-            target: row.target,
-            ok: false,
-            skipped: true,
-            error: "missing CONTROLLER_BOT_TOKEN",
-          });
-          continue;
-        }
-        const method = Number(post?.mediaCount ?? 0) > 0 ? "editMessageCaption" : "editMessageText";
-        const field = Number(post?.mediaCount ?? 0) > 0 ? "caption" : "text";
-        results.push(
-          await postJson(fetchImpl, `${config.TELEGRAM_API_BASE_URL.replace(/\/$/, "")}/bot${token}/${method}`, row.target, {
-            chat_id: post?.chatId || config.CHANNEL_USERNAME,
-            message_id: Number(row.externalId),
-            [field]: textRu,
-          }),
-        );
-      } else if (row.target === "facebook" && textEn) {
-        results.push(
-          await editFacebookTarget(
-            fetchImpl,
-            config,
-            row.target,
-            row.externalId,
-            textEn,
-            config.FACEBOOK_PAGE_ACCESS_TOKEN,
-            "FACEBOOK_PAGE_ACCESS_TOKEN",
-          ),
-        );
-      } else if (row.target === "facebook_ru" && textRu) {
-        results.push(
-          await editFacebookTarget(
-            fetchImpl,
-            config,
-            row.target,
-            row.externalId,
-            textRu,
-            config.FACEBOOK_RU_PAGE_ACCESS_TOKEN,
-            "FACEBOOK_RU_PAGE_ACCESS_TOKEN",
-          ),
-        );
-      } else if (row.target === "linkedin" && textEn) {
-        if (!config.LINKEDIN_ACCESS_TOKEN) {
-          results.push({
-            target: row.target,
-            ok: false,
-            skipped: true,
-            error: "missing LINKEDIN_ACCESS_TOKEN",
-          });
-          continue;
-        }
-        results.push(
-          await postJson(
-            fetchImpl,
-            `https://api.linkedin.com/rest/posts/${encodeURIComponent(row.externalId)}`,
-            row.target,
-            { patch: { $set: { commentary: textEn } } },
-            {
-              Authorization: `Bearer ${config.LINKEDIN_ACCESS_TOKEN}`,
-              "Linkedin-Version": config.LINKEDIN_API_VERSION,
-              "X-Restli-Method": "PARTIAL_UPDATE",
-              "X-Restli-Protocol-Version": "2.0.0",
-            },
-          ),
-        );
-      }
-    } catch (error) {
-      results.push({
-        target: row.target,
-        ok: false,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-  return results;
-}
-
-async function editFacebookTarget(
-  fetchImpl: typeof fetch,
-  config: BackendConfig,
-  target: string,
-  externalId: string,
-  text: string,
-  token: string | undefined,
-  tokenName: string,
-): Promise<Record<string, unknown>> {
-  if (!token) return { target, ok: false, skipped: true, error: `missing ${tokenName}` };
-  return postJson(fetchImpl, `https://graph.facebook.com/${config.FACEBOOK_GRAPH_API_VERSION}/${externalId}`, target, {
-    message: text,
-    description: text,
-    access_token: token,
-  });
-}
-
-async function postJson(
-  fetchImpl: typeof fetch,
-  url: string,
-  target: string,
-  payload: Record<string, unknown>,
-  headers: Record<string, string> = {},
-): Promise<Record<string, unknown>> {
-  const response = await fetchImpl(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...headers },
-    body: JSON.stringify(payload),
-  });
-  const text = await response.text();
-  const body = text ? (JSON.parse(text) as Record<string, unknown>) : null;
-  return {
-    target,
-    ok: response.ok && (body == null || body.ok !== false),
-    status: response.status,
-    response: body,
-  };
 }

@@ -142,6 +142,16 @@ describe("Studio architecture boundaries", () => {
     }
   });
 
+  it("keeps external publication edits inside Delivery, not Operations", () => {
+    const operations = readFileSync(`${root}operations/actions.ts`, "utf8");
+    const gateway = readFileSync(`${root}delivery/external-edits.ts`, "utf8");
+    expect(operations).toContain('from "../delivery/external-edits.js"');
+    for (const externalHost of ["api.linkedin.com", "graph.facebook.com", "editMessageText"])
+      expect(operations, `Operations contains ${externalHost}`).not.toContain(externalHost);
+    expect(gateway).toContain("api.linkedin.com");
+    expect(gateway).toContain("graph.facebook.com");
+  });
+
   it("keeps Telegram settings as a Studio command adapter", () => {
     const source = readFileSync(`${root}bot/settings-screen.ts`, "utf8");
     expect(source).toContain('from "../studio/services/index.js"');
