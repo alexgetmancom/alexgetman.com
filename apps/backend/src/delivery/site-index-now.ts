@@ -1,8 +1,8 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import type { BackendConfig } from "../config.js";
-import { log } from "../logger.js";
+import type { BackendConfig } from "../foundation/config.js";
+import { log } from "../foundation/logger.js";
 
 type IndexNowState = { last_digest?: string; last_attempt_at?: string; last_success_at?: string; last_status?: number; url_count?: number };
 

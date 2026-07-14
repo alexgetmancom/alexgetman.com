@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import * as z from "zod";
-import type { BackendConfig } from "../../config.js";
+import type { BackendConfig } from "../../foundation/config.js";
 
 export type MediaKind = "IMAGE" | "VIDEO";
 

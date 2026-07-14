@@ -1,4 +1,4 @@
-export type SmartBadge = { label: string; class: string; emoji: string };
+type SmartBadge = { label: string; class: string; emoji: string };
 
 export function getSmartBadge(text: string): SmartBadge {
   const value = (text || "").toLowerCase();

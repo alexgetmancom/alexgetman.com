@@ -1,5 +1,5 @@
-import type { BackendConfig } from "../../config.js";
 import type { BackendDb } from "../../db/client.js";
+import type { BackendConfig } from "../../foundation/config.js";
 import type { StudioLocale as BotLocale } from "../locale.js";
 import { analyticsService } from "./analytics.js";
 import { notificationService } from "./notifications.js";

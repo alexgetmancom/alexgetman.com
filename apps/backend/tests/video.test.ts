@@ -2,10 +2,10 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { and, eq } from "drizzle-orm";
 import { handleVideoCallback, handleVideoMessage } from "../src/bot/video-screen.js";
 import { getSession, saveSession } from "../src/bot/video-session.js";
-import { loadConfig } from "../src/config.js";
 import type { BackendDb } from "../src/db/client.js";
 import { openBackendDb } from "../src/db/client.js";
 import { socialComments, videoMetricSchedule, videoMetricSnapshots, videoTargets } from "../src/db/schema.js";
+import { loadConfig } from "../src/foundation/config.js";
 import { videoPreview } from "../src/interfaces/telegram/video-preview.js";
 import {
   cancelVideo,

@@ -1,5 +1,5 @@
-import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
+import type { BackendConfig } from "../foundation/config.js";
 import { runCommandAction } from "./actions.js";
 import { commandCenterPayload, postDebugPayload } from "./command-center.js";
 import type { OperationsCommand } from "./contracts.js";

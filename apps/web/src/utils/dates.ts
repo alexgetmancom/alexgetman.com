@@ -17,24 +17,6 @@ export function formatDate(value: string, locale = "en-GB"): string {
   }
 }
 
-export function formatDateRussian(value: string): string {
-  if (!value) return "";
-  try {
-    return new Intl.DateTimeFormat("ru-RU", {
-      timeZone: "Europe/Moscow",
-      day: "numeric",
-      month: "long",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    })
-      .format(new Date(value))
-      .replace(" в ", ", ");
-  } catch {
-    return value;
-  }
-}
-
 export function formatRelativeTime(value: string, locale = "en"): string {
   try {
     const diffMs = Date.now() - new Date(value).getTime();
@@ -46,17 +28,6 @@ export function formatRelativeTime(value: string, locale = "en"): string {
     if (absMs < hour) return rtf.format(Math.round(-diffMs / minute), "minute");
     if (absMs < day) return rtf.format(Math.round(-diffMs / hour), "hour");
     return rtf.format(Math.round(-diffMs / day), "day");
-  } catch {
-    return "";
-  }
-}
-
-export function formatTimeOnly(value: string): string {
-  if (!value) return "";
-  try {
-    return new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", hour: "2-digit", minute: "2-digit", hour12: false }).format(
-      new Date(value),
-    );
   } catch {
     return "";
   }

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { BackendConfig } from "../config.js";
-import { runFfmpeg } from "../runtime/ffmpeg.js";
+import type { BackendConfig } from "../foundation/config.js";
+import { runFfmpeg } from "../foundation/runtime/ffmpeg.js";
 import type { PublishMediaItem } from "./social/payload.js";
 
 // Keep one second of headroom below the 60-second story limit used by the

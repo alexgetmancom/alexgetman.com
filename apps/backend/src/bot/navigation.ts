@@ -1,6 +1,6 @@
 import { type Context, InlineKeyboard, Keyboard } from "grammy";
-import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
+import type { BackendConfig } from "../foundation/config.js";
 import { type BotLocale, botLocale, ui } from "./i18n.js";
 
 export function persistentKeyboard(locale: BotLocale = "en"): Keyboard {

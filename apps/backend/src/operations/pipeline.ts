@@ -1,7 +1,6 @@
 import { and, asc, desc, eq, inArray, like, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { TARGETS } from "../botTargets.js";
-import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import {
   type JsonValue,
@@ -16,8 +15,9 @@ import {
   siteJobs,
   workerState,
 } from "../db/schema.js";
+import type { BackendConfig } from "../foundation/config.js";
+import { gitRevision } from "../foundation/runtime/git.js";
 import { jsonArray, jsonObject } from "../json.js";
-import { gitRevision } from "../runtime/git.js";
 
 /** Operations read model over publication, delivery and worker state. */
 export function pipelineStatusPayload(config: BackendConfig, backendDb: BackendDb, weekOffset = 0) {

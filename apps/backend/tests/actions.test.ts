@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { asc, count, eq } from "drizzle-orm";
-import { loadConfig } from "../src/config.js";
 import { openBackendDb } from "../src/db/client.js";
 import { posts, postTargets, publicationSources, publications, publishJobs, siteSourceItems } from "../src/db/schema.js";
+import { loadConfig } from "../src/foundation/config.js";
 import { runCommandAction } from "../src/operations/actions.js";
 import { enqueuePublishJob } from "../src/publishing/queue.js";
 

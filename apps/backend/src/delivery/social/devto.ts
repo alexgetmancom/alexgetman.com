@@ -1,4 +1,4 @@
-import type { BackendConfig } from "../../config.js";
+import type { BackendConfig } from "../../foundation/config.js";
 import { HttpPublishError, type PublishResult } from "../../publishing/errors.js";
 import { externalFetch, redactExternalSecrets } from "./http.js";
 import { payloadCanonicalUrl, payloadMedia } from "./payload.js";

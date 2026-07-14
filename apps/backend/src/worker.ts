@@ -4,24 +4,25 @@ import { runAnalyticsCycle } from "./analytics/engine.js";
 import { runMetricsCycle } from "./analytics/metrics.js";
 import { finalizePendingAlbums } from "./bot/albums.js";
 import { refreshPostControlCard } from "./bot/progress.js";
-import type { BackendConfig } from "./config.js";
 import type { BackendDb } from "./db/client.js";
 import { drafts } from "./db/schema.js";
 import { pruneMediaCache } from "./delivery/media.js";
-import { runDeliveryPublishCycle } from "./delivery/publish-cycle.js";
-import { createPublishers, type Publisher } from "./delivery/publishers.js";
+import { createPlatformPorts } from "./delivery/ports/social.js";
+import type { DeliveryPort } from "./delivery/ports.js";
+import { runDeliveryPublishCycle } from "./delivery/publish-workflow.js";
 import { runSiteJobCycle } from "./delivery/site.js";
 import { runVideoCycle } from "./delivery/video.js";
+import type { BackendConfig } from "./foundation/config.js";
+import { log } from "./foundation/logger.js";
+import { type ScheduledLoop, startLoop } from "./foundation/scheduler.js";
 import { sendWeeklyAnalyticsSummary } from "./interfaces/telegram/analytics-summary.js";
 import { notifyFinalVideoFailure, refreshVideoControlCard, sendVideoReminder } from "./interfaces/telegram/video-notifications.js";
-import { log } from "./logger.js";
 import { runObservabilityCycle } from "./operations/observability.js";
-import { type ScheduledLoop, startLoop } from "./scheduler.js";
 
 export async function runPublishCycle(
   config: BackendConfig,
   backendDb: BackendDb,
-  publishers: Record<string, Publisher> = createPublishers(config, backendDb),
+  publishers: Record<string, DeliveryPort> = createPlatformPorts(config, backendDb),
   bot: Bot | null = null,
 ): Promise<number> {
   return runDeliveryPublishCycle(config, backendDb, publishers, async (postIds) => {

@@ -1,5 +1,4 @@
 import { asc, desc, eq, or, sql } from "drizzle-orm";
-import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import {
   credentialChecks,
@@ -13,6 +12,7 @@ import {
   postTargets,
   publishJobs,
 } from "../db/schema.js";
+import type { BackendConfig } from "../foundation/config.js";
 import { parseJsonValue } from "../json.js";
 import { pipelineStatusPayload } from "./pipeline.js";
 

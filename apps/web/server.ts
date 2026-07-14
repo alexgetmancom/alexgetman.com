@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { createServer } from "node:http";
 import path from "node:path";
-import { log } from "../backend/src/logger.js";
+import { log } from "../backend/src/foundation/logger.js";
 import { startRuntime, stopRuntime } from "./src/server/runtime.js";
 
 const runtime = startRuntime();

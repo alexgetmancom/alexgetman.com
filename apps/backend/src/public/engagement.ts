@@ -1,8 +1,8 @@
 import crypto from "node:crypto";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
-import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { likes, posts } from "../db/schema.js";
+import type { BackendConfig } from "../foundation/config.js";
 
 /** Public-site engagement use cases, isolated from Studio and Operations. */
 export function likesInfo(backendDb: BackendDb, postId: string, clientHash: string): { likes: number; user_liked: boolean } {

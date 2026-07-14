@@ -1,6 +1,6 @@
-import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { recordDomainEvent } from "../domain/events.js";
+import type { BackendConfig } from "../foundation/config.js";
 import { type StudioServices, studioServices } from "../studio/services/index.js";
 
 const feedbackHits = new Map<string, number[]>();

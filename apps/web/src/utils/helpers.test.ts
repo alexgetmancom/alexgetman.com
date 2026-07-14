@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { formatDate } from "./dates";
 import { semanticPostHtml } from "./html";
 import { responsiveImageSrcSet } from "./media";
@@ -18,9 +18,7 @@ describe("focused web helpers", () => {
     expect(formatDate("2026-07-15T10:00:00.000Z")).toContain("2026");
   });
 
-  it("keeps helpers.ts as a compatibility facade only", () => {
-    const source = readFileSync(new URL("./helpers.ts", import.meta.url), "utf8");
-    expect(source).toContain('export * from "./text"');
-    expect(source).not.toContain("function compactText");
+  it("has no legacy helper facade", () => {
+    expect(existsSync(new URL("./helpers.ts", import.meta.url))).toBe(false);
   });
 });

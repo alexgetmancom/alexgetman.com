@@ -1,5 +1,5 @@
-import type { BackendDb } from "../db/client.js";
-import { type JsonValue, workerState } from "../db/schema.js";
+import type { BackendDb } from "../../db/client.js";
+import { type JsonValue, workerState } from "../../db/schema.js";
 
 /** Runtime heartbeat persistence shared by background cycles. */
 export function recordWorkerState(backendDb: BackendDb, name: string, state: Record<string, JsonValue>, error: string | null = null): void {

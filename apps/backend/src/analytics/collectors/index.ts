@@ -1,4 +1,4 @@
-import type { BackendConfig } from "../../config.js";
+import type { BackendConfig } from "../../foundation/config.js";
 import type { MetricTask } from "../metric-schedule.js";
 import { collectBluesky, collectDevto, collectGitHub, collectMastodon } from "./community.js";
 import { collectLinkedIn } from "./linkedin.js";

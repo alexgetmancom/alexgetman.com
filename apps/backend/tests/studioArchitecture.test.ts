@@ -92,8 +92,8 @@ describe("Studio architecture boundaries", () => {
   it("keeps Delivery facades out of Telegram and Studio", () => {
     for (const relativePath of [
       "delivery/media.ts",
-      "delivery/publish-cycle.ts",
-      "delivery/publishers.ts",
+      "delivery/publish-workflow.ts",
+      "delivery/ports/social.ts",
       "delivery/site.ts",
       "delivery/video.ts",
     ]) {
@@ -132,6 +132,38 @@ describe("Studio architecture boundaries", () => {
   it("keeps analytics and operational code in their owning contexts", () => {
     for (const legacyPath of ["metrics/index.ts", "admin/actions.ts", "ops/maintenance.ts", "services/pipeline.ts", "services/mcp.ts"])
       expect(existsSync(`${root}${legacyPath}`), `legacy ${legacyPath} should be absent`).toBe(false);
+  });
+
+  it("keeps Foundation physical and does not retain root compatibility facades", () => {
+    for (const legacyPath of [
+      "config.ts",
+      "logger.ts",
+      "scheduler.ts",
+      "httpAuth.ts",
+      "deployment.ts",
+      "runtime/ffmpeg.ts",
+      "runtime/git.ts",
+      "runtime/worker-state.ts",
+    ]) {
+      expect(existsSync(`${root}${legacyPath}`), `legacy Foundation facade ${legacyPath} should be absent`).toBe(false);
+    }
+    for (const foundationPath of [
+      "foundation/config.ts",
+      "foundation/logger.ts",
+      "foundation/scheduler.ts",
+      "foundation/runtime/worker-state.ts",
+    ])
+      expect(existsSync(`${root}${foundationPath}`), `Foundation module ${foundationPath} should exist`).toBe(true);
+  });
+
+  it("keeps Delivery orchestration separate from platform ports without legacy facades", () => {
+    const workflow = readFileSync(`${root}delivery/publish-workflow.ts`, "utf8");
+    const ports = readFileSync(`${root}delivery/ports/social.ts`, "utf8");
+    expect(workflow).toContain('from "./ports/social.js"');
+    expect(workflow).toContain('from "./ports.js"');
+    expect(ports).not.toContain('from "grammy"');
+    for (const legacyPath of ["delivery/publish-cycle.ts", "delivery/publishers.ts", "delivery/social/index.ts"])
+      expect(existsSync(`${root}${legacyPath}`), `legacy Delivery facade ${legacyPath} should be absent`).toBe(false);
   });
 
   it("keeps Operations and Public services independent from interface and Studio implementations", () => {

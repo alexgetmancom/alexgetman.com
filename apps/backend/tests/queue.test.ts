@@ -3,9 +3,9 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { eq } from "drizzle-orm";
-import { loadConfig } from "../src/config.js";
 import { openBackendDb } from "../src/db/client.js";
 import { postTargets, publishJobs } from "../src/db/schema.js";
+import { loadConfig } from "../src/foundation/config.js";
 import { HttpPublishError } from "../src/publishing/errors.js";
 import {
   claimDuePublishJobs,

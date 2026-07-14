@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray, isNull, lte, notInArray, or, sql } from "drizzle-orm";
-import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { metricSchedule, posts, postTargets } from "../db/schema.js";
+import type { BackendConfig } from "../foundation/config.js";
 import { metricCheckpointAt } from "./metric-checkpoints.js";
 
 export type MetricTask = {

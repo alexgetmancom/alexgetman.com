@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import { loadConfig } from "../src/config.js";
 import { openBackendDb } from "../src/db/client.js";
 import { likes } from "../src/db/schema.js";
+import { loadConfig } from "../src/foundation/config.js";
 import { batchLikes, clientIpHash, metricsSummary, recordPageview } from "../src/public/engagement.js";
 
 describe("engagement likes", () => {

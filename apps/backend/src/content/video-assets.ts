@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, rmSync } from "node:fs";
 import path from "node:path";
-import type { BackendConfig } from "../config.js";
+import type { BackendConfig } from "../foundation/config.js";
 
 /** Content-owned persistence for raw video assets, independent of ingress UI. */
 export function videoPath(config: BackendConfig, assetKey: string): string | null {

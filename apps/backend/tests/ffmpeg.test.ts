@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { configureFfmpegConcurrency, ffmpegMaxConcurrency } from "../src/runtime/ffmpeg.js";
+import { configureFfmpegConcurrency, ffmpegMaxConcurrency } from "../src/foundation/runtime/ffmpeg.js";
 
 describe("ffmpeg guard", () => {
   it("never permits more than two concurrent transcodes", () => {

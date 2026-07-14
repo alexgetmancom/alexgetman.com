@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { createApiHandler } from "../src/api.js";
-import { loadConfig } from "../src/config.js";
 import { openBackendDb } from "../src/db/client.js";
+import { loadConfig } from "../src/foundation/config.js";
 
 function request(app: ReturnType<typeof createApiHandler>, body: unknown, authorization?: string) {
   return app(

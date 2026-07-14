@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
-import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { posts, postTargets } from "../db/schema.js";
+import type { BackendConfig } from "../foundation/config.js";
 
 type PublishedTargetEdit = { postKey: string; textRu: string | null; textEn: string | null };
 

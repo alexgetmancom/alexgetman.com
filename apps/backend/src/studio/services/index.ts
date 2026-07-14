@@ -1,5 +1,5 @@
-import type { BackendConfig } from "../../config.js";
 import type { BackendDb } from "../../db/client.js";
+import type { BackendConfig } from "../../foundation/config.js";
 import type { StudioActorId, StudioLocale } from "../contracts.js";
 import { analyticsService } from "./analytics.js";
 import { studioDashboard } from "./dashboard.js";

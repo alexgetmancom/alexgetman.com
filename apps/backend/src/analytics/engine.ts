@@ -1,6 +1,6 @@
-import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { recordDomainEvent } from "../domain/events.js";
+import type { BackendConfig } from "../foundation/config.js";
 import { canSync } from "./creatorStore.js";
 import { syncInstagramProfile, syncYouTubeProfile } from "./profileSync.js";
 import { runVideoMetricSchedule } from "./videoMetrics.js";

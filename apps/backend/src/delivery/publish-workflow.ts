@@ -1,19 +1,20 @@
 import { and, eq } from "drizzle-orm";
 import pLimit from "p-limit";
-import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { postTargets, publishJobs } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
-import { log } from "../logger.js";
+import type { BackendConfig } from "../foundation/config.js";
+import { log } from "../foundation/logger.js";
+import { recordWorkerState } from "../foundation/runtime/worker-state.js";
 import { claimDuePublishJobs, completePublishJob, failPublishJob, recoverStalePublishJobs } from "../publishing/queue.js";
-import { recordWorkerState } from "../runtime/worker-state.js";
-import { createPublishers, type Publisher } from "./publishers.js";
+import { createPlatformPorts } from "./ports/social.js";
+import type { DeliveryPort } from "./ports.js";
 
 /** Executes Publishing jobs through Delivery adapters without knowing any UI. */
 export async function runDeliveryPublishCycle(
   config: BackendConfig,
   backendDb: BackendDb,
-  publishers: Record<string, Publisher> = createPublishers(config, backendDb),
+  publishers: Record<string, DeliveryPort> = createPlatformPorts(config, backendDb),
   onSettledPosts?: (postIds: number[]) => Promise<void>,
 ): Promise<number> {
   recoverStalePublishJobs(backendDb, config.PUBLISH_LOCK_TIMEOUT_SECONDS);

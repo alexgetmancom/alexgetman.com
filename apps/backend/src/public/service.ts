@@ -1,5 +1,5 @@
-import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
+import type { BackendConfig } from "../foundation/config.js";
 import { batchLikes, clientIpHash, likesInfo, metricsSummary, recordPageview, toggleLike } from "./engagement.js";
 import { allowPublicRequest } from "./rate-limit.js";
 

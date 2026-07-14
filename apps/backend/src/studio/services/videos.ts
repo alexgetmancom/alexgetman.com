@@ -1,5 +1,5 @@
-import type { BackendConfig } from "../../config.js";
 import type { BackendDb } from "../../db/client.js";
+import type { BackendConfig } from "../../foundation/config.js";
 import { parseManualSchedule } from "../../publishing/schedule.js";
 import { getVideoDraft, listVideoTargets } from "../../publishing/video-data.js";
 import {

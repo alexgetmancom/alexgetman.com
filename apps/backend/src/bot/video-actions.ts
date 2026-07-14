@@ -1,6 +1,6 @@
 import { type Context, InlineKeyboard } from "grammy";
-import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
+import type { BackendConfig } from "../foundation/config.js";
 import { videoPreview } from "../interfaces/telegram/video-preview.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import { studioServices } from "../studio/services/index.js";

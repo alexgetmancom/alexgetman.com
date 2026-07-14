@@ -4,11 +4,11 @@ import { finalizePendingAlbums } from "../src/bot/albums.js";
 import { draftPreview } from "../src/bot/preview.js";
 import { postProgress } from "../src/bot/progress.js";
 import { TARGETS, targetLocale } from "../src/botTargets.js";
-import { loadConfig } from "../src/config.js";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import { entitiesToHtml } from "../src/content/text.js";
 import { type BackendDb, openBackendDb } from "../src/db/client.js";
 import { botUiSettings } from "../src/db/schema.js";
+import { loadConfig } from "../src/foundation/config.js";
 import { cancelDraft, publishDraftToQueue, scheduledDrafts } from "../src/publishing/drafts.js";
 import { reconcilePublication } from "../src/publishing/queue.js";
 

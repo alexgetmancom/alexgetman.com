@@ -1,10 +1,10 @@
 import crypto from "node:crypto";
 import { and, asc, desc, eq, inArray, isNull, lt } from "drizzle-orm";
-import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { alertDedup, credentialChecks, postEvents, publishJobs, siteJobs } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
-import { recordWorkerState } from "../runtime/worker-state.js";
+import type { BackendConfig } from "../foundation/config.js";
+import { recordWorkerState } from "../foundation/runtime/worker-state.js";
 import { capabilityReport } from "./capability-report.js";
 
 type OperationsAlertPort = { sendAlert?: (text: string) => Promise<void> };

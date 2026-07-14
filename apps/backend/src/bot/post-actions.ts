@@ -1,6 +1,6 @@
 import type { Context } from "grammy";
-import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
+import type { BackendConfig } from "../foundation/config.js";
 import { formatMsk } from "../interfaces/telegram/time.js";
 import { studioServices } from "../studio/services/index.js";
 import { botLocale, ui } from "./i18n.js";

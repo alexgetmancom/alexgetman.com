@@ -1,5 +1,5 @@
 import * as z from "zod";
-import { loadStudioConfig, type StudioConfig } from "./studio.js";
+import { loadStudioConfig, type StudioConfig } from "../studio.js";
 
 const booleanFlag = z
   .string()

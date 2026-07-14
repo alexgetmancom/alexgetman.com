@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it } from "bun:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { loadConfig } from "../src/config.js";
 import { materializeSiteMedia } from "../src/delivery/site-media.js";
+import { loadConfig } from "../src/foundation/config.js";
 
 let directory: string | null = null;
 

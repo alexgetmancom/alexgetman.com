@@ -1,9 +1,9 @@
 import { createBot } from "../../../backend/src/bot.js";
-import { type BackendConfig, loadConfig } from "../../../backend/src/config.js";
 import { type BackendDb, openBackendDb } from "../../../backend/src/db/client.js";
-import { configureLogging, log } from "../../../backend/src/logger.js";
-import { assertFfmpegAvailable, configureFfmpegConcurrency } from "../../../backend/src/runtime/ffmpeg.js";
-import type { ScheduledLoop } from "../../../backend/src/scheduler.js";
+import { type BackendConfig, loadConfig } from "../../../backend/src/foundation/config.js";
+import { configureLogging, log } from "../../../backend/src/foundation/logger.js";
+import { assertFfmpegAvailable, configureFfmpegConcurrency } from "../../../backend/src/foundation/runtime/ffmpeg.js";
+import type { ScheduledLoop } from "../../../backend/src/foundation/scheduler.js";
 import { startWorkers } from "../../../backend/src/worker.js";
 
 type AppRuntime = { config: BackendConfig; backendDb: BackendDb; bot: ReturnType<typeof createBot>; loops: ScheduledLoop[] };

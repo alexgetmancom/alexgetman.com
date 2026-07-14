@@ -1,6 +1,6 @@
 import { type Context, InlineKeyboard } from "grammy";
-import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
+import type { BackendConfig } from "../foundation/config.js";
 import { studioServices } from "../studio/services/index.js";
 import { botLocale, ui } from "./i18n.js";
 import { persistentKeyboard, settingsKeyboard, showMainMenu, showSettings } from "./navigation.js";

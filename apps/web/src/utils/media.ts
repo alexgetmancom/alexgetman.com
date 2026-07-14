@@ -1,16 +1,8 @@
 import type { FeedItem, SiteMedia } from "./feed";
 
-export type FeedLocale = "en" | "ru";
+type FeedLocale = "en" | "ru";
 
-export function getPostPath(item: FeedItem | number | string | null | undefined, locale: FeedLocale = "en"): string {
-  if (!item) return "/";
-  if (typeof item !== "object") return `/${item}/post-${item}/`;
-  const postId = item.post_id;
-  if (!postId) return "/";
-  return locale === "ru" ? `/ru/${postId}/${item.slug_ru || `post-${postId}`}/` : `/${postId}/${item.slug_en || `post-${postId}`}/`;
-}
-
-export function normalizePublicPath(value: string | null | undefined): string {
+function normalizePublicPath(value: string | null | undefined): string {
   return String(value || "").replace(/^\/+/, "");
 }
 

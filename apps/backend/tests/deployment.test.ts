@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
-import { loadConfig } from "../src/config.js";
-import { deploymentRollbackCallback, parseDeploymentRollbackCallback, requestDeploymentRollback } from "../src/deployment.js";
+import { loadConfig } from "../src/foundation/config.js";
+import { deploymentRollbackCallback, parseDeploymentRollbackCallback, requestDeploymentRollback } from "../src/foundation/deployment.js";
 
 describe("deployment rollback protocol", () => {
   const revision = "a".repeat(40);

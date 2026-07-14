@@ -2,9 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { and, desc, eq } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
-import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { postLocales, publications } from "../db/schema.js";
+import type { BackendConfig } from "../foundation/config.js";
 
 /** Delivery projection used to materialize the public-site content index. */
 export function publishContentIndex(config: BackendConfig, backendDb: BackendDb): string[] {

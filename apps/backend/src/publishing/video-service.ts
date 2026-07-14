@@ -1,10 +1,10 @@
 import { statSync } from "node:fs";
 import path from "node:path";
 import { and, eq, inArray, ne } from "drizzle-orm";
-import type { BackendConfig } from "../config.js";
 import { videoPath } from "../content/video-assets.js";
 import type { BackendDb } from "../db/client.js";
 import { socialComments, videoDrafts, videoJobs, videoMetricSchedule, videoMetricSnapshots, videoTargets } from "../db/schema.js";
+import type { BackendConfig } from "../foundation/config.js";
 import { isVideoTargetEditable } from "./state.js";
 import { getVideoDraft, insertVideoJob, listVideoTargets, refreshVideoDraftStatus } from "./video-data.js";
 import type { VideoMetadata, VideoTarget } from "./video-types.js";

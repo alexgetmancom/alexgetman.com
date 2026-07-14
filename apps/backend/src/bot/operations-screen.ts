@@ -1,6 +1,6 @@
 import type { Context } from "grammy";
-import type { BackendConfig } from "../config.js";
-import { parseDeploymentRollbackCallback, requestDeploymentRollback } from "../deployment.js";
+import type { BackendConfig } from "../foundation/config.js";
+import { parseDeploymentRollbackCallback, requestDeploymentRollback } from "../foundation/deployment.js";
 
 /** Operations callbacks are deliberately outside content/post screens. */
 export async function handleOperationsCallback(ctx: Context, config: BackendConfig): Promise<boolean> {

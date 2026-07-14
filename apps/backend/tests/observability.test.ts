@@ -1,8 +1,8 @@
 import { describe, expect, it, mock } from "bun:test";
 import { eq } from "drizzle-orm";
-import { loadConfig } from "../src/config.js";
 import { openBackendDb } from "../src/db/client.js";
 import { alertDedup, credentialChecks, postEvents, publishJobs, siteJobs } from "../src/db/schema.js";
+import { loadConfig } from "../src/foundation/config.js";
 import { runObservabilityCycle } from "../src/operations/observability.js";
 
 describe("observability", () => {

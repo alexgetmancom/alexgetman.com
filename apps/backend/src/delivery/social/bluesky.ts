@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import type { BackendConfig } from "../../config.js";
+import type { BackendConfig } from "../../foundation/config.js";
 import type { PublishResult } from "../../publishing/errors.js";
 import { requestJson } from "./http.js";
 import { guessContentType, payloadMedia, payloadText, splitText } from "./payload.js";

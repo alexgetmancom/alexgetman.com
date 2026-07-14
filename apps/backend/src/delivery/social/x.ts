@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import OAuth from "oauth-1.0a";
-import type { BackendConfig } from "../../config.js";
+import type { BackendConfig } from "../../foundation/config.js";
 import type { PublishResult } from "../../publishing/errors.js";
 import { HttpPublishError } from "../../publishing/errors.js";
 import { formatPlatformText } from "../../publishing/platform-profiles.js";

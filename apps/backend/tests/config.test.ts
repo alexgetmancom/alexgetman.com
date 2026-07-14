@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { loadConfig } from "../src/config.js";
+import { loadConfig } from "../src/foundation/config.js";
 
 describe("loadConfig", () => {
   it("keeps production data paths compatible", () => {

@@ -1,5 +1,5 @@
-import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
+import type { BackendConfig } from "../foundation/config.js";
 import { renderCredentialsSection, renderDiagnosticsSection, renderQueueSection, renderRepairSection } from "./dashboard/ops-sections.js";
 import { renderPipelineSection } from "./dashboard/pipeline-section.js";
 import { renderDashboardShell } from "./dashboard/shell.js";

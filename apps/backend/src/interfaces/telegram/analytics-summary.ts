@@ -2,9 +2,9 @@ import { eq } from "drizzle-orm";
 import type { Bot } from "grammy";
 import { markSynced } from "../../analytics/creatorStore.js";
 import { creatorDashboard } from "../../analytics/engine.js";
-import type { BackendConfig } from "../../config.js";
 import type { BackendDb } from "../../db/client.js";
 import { analyticsSync } from "../../db/schema.js";
+import type { BackendConfig } from "../../foundation/config.js";
 
 /** Telegram-only weekly delivery of an already computed Analytics report. */
 export async function sendWeeklyAnalyticsSummary(

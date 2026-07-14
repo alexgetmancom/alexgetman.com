@@ -1,5 +1,4 @@
 import { and, desc, eq } from "drizzle-orm";
-import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import {
   drafts,
@@ -13,6 +12,7 @@ import {
   siteSourceItems,
 } from "../db/schema.js";
 import { editPublishedTargets } from "../delivery/external-edits.js";
+import type { BackendConfig } from "../foundation/config.js";
 import { jsonObject } from "../json.js";
 import { localizeTargetPayload } from "../publishing/payload.js";
 import { recordOperationAction } from "./action-audit.js";

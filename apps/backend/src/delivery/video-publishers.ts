@@ -1,4 +1,4 @@
-import type { BackendConfig } from "../config.js";
+import type { BackendConfig } from "../foundation/config.js";
 import type { InstagramMetadata, YouTubeMetadata } from "../publishing/video-types.js";
 import { formBody, requestJson } from "./social/http.js";
 

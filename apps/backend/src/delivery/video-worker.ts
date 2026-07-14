@@ -1,10 +1,10 @@
 import crypto from "node:crypto";
 import { and, asc, eq, isNull, lte, or } from "drizzle-orm";
-import type { BackendConfig } from "../config.js";
 import { deleteVideo, videoPath } from "../content/video-assets.js";
 import type { BackendDb } from "../db/client.js";
 import { botSettings, videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
+import type { BackendConfig } from "../foundation/config.js";
 import { nextRetryAt } from "../publishing/errors.js";
 import { getVideoDraft, refreshVideoDraftStatus, type VideoJob } from "../publishing/video-data.js";
 import type { InstagramMetadata, VideoMetadata, YouTubeMetadata } from "../publishing/video-types.js";

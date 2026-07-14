@@ -1,7 +1,7 @@
 import { type Context, InlineKeyboard } from "grammy";
-import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
-import { log } from "../logger.js";
+import type { BackendConfig } from "../foundation/config.js";
+import { log } from "../foundation/logger.js";
 import { studioServices } from "../studio/services/index.js";
 import { translateToEnglish } from "../translation.js";
 import { appendPendingAlbum } from "./albums.js";

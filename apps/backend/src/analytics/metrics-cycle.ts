@@ -1,8 +1,8 @@
 import { and, eq } from "drizzle-orm";
-import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { type JsonValue, postTargets } from "../db/schema.js";
-import { recordWorkerState } from "../runtime/worker-state.js";
+import type { BackendConfig } from "../foundation/config.js";
+import { recordWorkerState } from "../foundation/runtime/worker-state.js";
 import { createMetricCollectors, isTerminalMetricError, type MetricCollector } from "./collectors.js";
 import { pruneMetricSamples, upsertMetricError, upsertMetrics } from "./metric-repository.js";
 import { dueMetricTasks, ensureMetricSchedule, finishMetricTask, freezeDisabledMetricSchedules } from "./metric-schedule.js";

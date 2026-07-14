@@ -6,8 +6,8 @@ import {
   creatorVideoMetrics,
   studioAnalyticsDashboard,
 } from "../../analytics/engine.js";
-import type { BackendConfig } from "../../config.js";
 import type { BackendDb } from "../../db/client.js";
+import type { BackendConfig } from "../../foundation/config.js";
 import type { StudioLocale as BotLocale } from "../locale.js";
 
 type AnalyticsSection = "overview" | "posts" | "video";

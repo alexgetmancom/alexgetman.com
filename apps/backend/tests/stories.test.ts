@@ -2,15 +2,15 @@ import { describe, expect, it, mock } from "bun:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { loadConfig } from "../src/config.js";
 import { publishInstagramStory } from "../src/delivery/social/instagram.js";
 import { createChannelStoryClient } from "../src/delivery/social/telegramSession.js";
 import { telegramStoryCaption, telegramStoryUploadMedia } from "../src/delivery/social/telegramStories.js";
 import { generateStoryMedia } from "../src/delivery/story-media.js";
+import { loadConfig } from "../src/foundation/config.js";
 
 const ffmpegCalls: string[][] = [];
 
-mock.module("../src/runtime/ffmpeg.js", () => {
+mock.module("../src/foundation/runtime/ffmpeg.js", () => {
   return {
     runFfmpeg: async (args: string[]) => {
       ffmpegCalls.push(args);

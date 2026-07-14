@@ -1,9 +1,9 @@
 import { and, asc, eq, isNull, lte, or } from "drizzle-orm";
-import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { videoDrafts, videoMetricSchedule, videoTargets } from "../db/schema.js";
 import { requestJson } from "../delivery/social/http.js";
 import { youtubeAccessToken } from "../delivery/video-publishers.js";
+import type { BackendConfig } from "../foundation/config.js";
 import { metricNumber, upsertComment, upsertVideoSnapshot } from "./creatorStore.js";
 import { metricCheckpointAt } from "./metric-checkpoints.js";
 

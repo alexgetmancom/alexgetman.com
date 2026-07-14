@@ -1,21 +1,20 @@
-import type { BackendConfig } from "../../config.js";
 import type { BackendDb } from "../../db/client.js";
+import type { BackendConfig } from "../../foundation/config.js";
 import type { PublishResult } from "../../publishing/errors.js";
 import type { ClaimedPublishJob } from "../../publishing/queue.js";
 import { generateStoryMedia, prepareMediaItems } from "../media.js";
-import { publishToBluesky } from "./bluesky.js";
-import { devtoArticleFromPayload, publishToDevto } from "./devto.js";
-import { publishToFacebook } from "./facebook.js";
-import { publishToGitHubDiscussion } from "./github.js";
-import { publishInstagramStory } from "./instagram.js";
-import { publishToLinkedIn } from "./linkedin.js";
-import { publishToMastodon } from "./mastodon.js";
-import { payloadMedia } from "./payload.js";
-import { publishToTelegram } from "./telegram.js";
-import { publishToThreads } from "./threads.js";
-import { publishToX } from "./x.js";
-
-export type Publisher = (job: ClaimedPublishJob) => Promise<PublishResult>;
+import type { DeliveryPorts } from "../ports.js";
+import { publishToBluesky } from "../social/bluesky.js";
+import { devtoArticleFromPayload, publishToDevto } from "../social/devto.js";
+import { publishToFacebook } from "../social/facebook.js";
+import { publishToGitHubDiscussion } from "../social/github.js";
+import { publishInstagramStory } from "../social/instagram.js";
+import { publishToLinkedIn } from "../social/linkedin.js";
+import { publishToMastodon } from "../social/mastodon.js";
+import { payloadMedia } from "../social/payload.js";
+import { publishToTelegram } from "../social/telegram.js";
+import { publishToThreads } from "../social/threads.js";
+import { publishToX } from "../social/x.js";
 
 type PreparedMedia = Awaited<ReturnType<typeof prepareMediaItems>>;
 type MediaCacheEntry = {
@@ -24,7 +23,7 @@ type MediaCacheEntry = {
   cleanupTimer: ReturnType<typeof setTimeout> | null;
 };
 
-export function createPublishers(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch = fetch): Record<string, Publisher> {
+export function createPlatformPorts(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch = fetch): DeliveryPorts {
   // Publisher instances own their preparation state. This prevents cache entries
   // from leaking between test runs or independently configured worker instances.
   const mediaCache = new Map<string, MediaCacheEntry>();
@@ -83,11 +82,11 @@ export function createPublishers(config: BackendConfig, backendDb: BackendDb, fe
       prepare(job, instagramRuConfig, (payload) => publishInstagramStory(payload, instagramRuConfig, fetchImpl)),
     telegram_story: (job) =>
       prepare(job, config, async (payload) =>
-        (await import("./telegramStories.js")).publishTelegramStory(payload, config, backendDb, fetchImpl),
+        (await import("../social/telegramStories.js")).publishTelegramStory(payload, config, backendDb, fetchImpl),
       ),
     telegram_stories: (job) =>
       prepare(job, config, async (payload) =>
-        (await import("./telegramStories.js")).publishTelegramStory(payload, config, backendDb, fetchImpl),
+        (await import("../social/telegramStories.js")).publishTelegramStory(payload, config, backendDb, fetchImpl),
       ),
   };
 }

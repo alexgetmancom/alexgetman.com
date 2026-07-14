@@ -1,9 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
 import { creatorDashboard, runAnalyticsCycle, studioAnalyticsDashboard } from "../src/analytics/engine.js";
-import { loadConfig } from "../src/config.js";
 import { openBackendDb } from "../src/db/client.js";
 import { creatorProfiles, metricSamples, videoDrafts, videoMetricSchedule, videoMetricSnapshots, videoTargets } from "../src/db/schema.js";
+import { loadConfig } from "../src/foundation/config.js";
 
 describe("creator analytics", () => {
   it("builds a compact video dashboard from cached platform data", () => {

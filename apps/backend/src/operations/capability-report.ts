@@ -1,4 +1,4 @@
-import type { BackendConfig } from "../config.js";
+import type { BackendConfig } from "../foundation/config.js";
 import { PLATFORM_PROFILES } from "../publishing/platform-profiles.js";
 
 type CapabilityStatus = "ready" | "missing";

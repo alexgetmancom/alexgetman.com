@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
-import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { creatorProfiles } from "../db/schema.js";
+import type { BackendConfig } from "../foundation/config.js";
 import { type StudioLocale as BotLocale, localize as ui } from "../studio/locale.js";
 import { metricNumber } from "./creatorStore.js";
 

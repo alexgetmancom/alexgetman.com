@@ -1,4 +1,4 @@
-export function cleanText(text: string): string {
+function cleanText(text: string): string {
   return (text || "").replace(/\n{3,}/g, "\n\n").trim();
 }
 
@@ -48,10 +48,4 @@ export function getFirstSentence(text: string): string {
   const match = text.match(/^.*?[.!?](?:\s|\n|$)/s);
   if (match) return newlineIdx !== -1 && newlineIdx < match[0].length ? text.slice(0, newlineIdx).trim() : match[0].trim();
   return newlineIdx !== -1 ? text.slice(0, newlineIdx).trim() : text.trim();
-}
-
-export function estimateReadTime(text: string, locale = "en"): string {
-  const clean = compactText(String(text || "").replace(/<[^>]+>/g, " "));
-  const minutes = Math.max(1, Math.ceil((clean ? clean.split(/\s+/).length : 0) / 220));
-  return locale === "ru" ? `${minutes} мин чтения` : `${minutes} min read`;
 }

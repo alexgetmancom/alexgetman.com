@@ -2,11 +2,11 @@ import { describe, expect, it, mock } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadConfig } from "../src/config.js";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import { openBackendDb } from "../src/db/client.js";
 import { publishContentIndex } from "../src/delivery/site-content-index.js";
 import { pingIndexNow } from "../src/delivery/site-index-now.js";
+import { loadConfig } from "../src/foundation/config.js";
 import { publishDraftToQueue } from "../src/publishing/drafts.js";
 import { reconcilePublication } from "../src/publishing/queue.js";
 

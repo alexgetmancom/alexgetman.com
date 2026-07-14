@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { copyFileSync, mkdirSync, statSync } from "node:fs";
 import path from "node:path";
 import type { Context } from "grammy";
-import type { BackendConfig } from "../../config.js";
+import type { BackendConfig } from "../../foundation/config.js";
 
 type StoredVideo = { assetKey: string; sourcePath: string; publicUrl: string; sizeBytes: number };
 

@@ -1,10 +1,10 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import type { Bot } from "grammy";
-import type { BackendConfig } from "./config.js";
 import { videoPath } from "./content/video-assets.js";
 import type { BackendDb } from "./db/client.js";
-import { commandAllowed } from "./httpAuth.js";
+import type { BackendConfig } from "./foundation/config.js";
+import { commandAllowed } from "./foundation/http-auth.js";
 import { mcpResponse } from "./interfaces/mcp.js";
 import type { OperationsCommand } from "./operations/contracts.js";
 import { renderCommandCenterLogin, renderDashboard } from "./operations/dashboard.js";

@@ -2,10 +2,10 @@ import { afterEach, describe, expect, it } from "bun:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { loadConfig } from "../src/config.js";
 import { type BackendDb, openBackendDb } from "../src/db/client.js";
 import { publicationSources, publications, siteJobs } from "../src/db/schema.js";
 import { renderFeedFiles, runSiteJobCycle } from "../src/delivery/site.js";
+import { loadConfig } from "../src/foundation/config.js";
 
 let backendDb: BackendDb | null = null;
 let tempDir: string | null = null;

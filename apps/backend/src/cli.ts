@@ -1,5 +1,5 @@
-import { loadConfig } from "./config.js";
 import { baselineDrizzleMigrations, migrationStatus, openBackendDb } from "./db/client.js";
+import { loadConfig } from "./foundation/config.js";
 import { capabilitySummary, recordCapabilityPost } from "./operations/capabilities.js";
 import { capabilityReport } from "./operations/capability-report.js";
 import {

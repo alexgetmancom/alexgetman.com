@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { gitRevision } from "../src/runtime/git.js";
+import { gitRevision } from "../src/foundation/runtime/git.js";
 
 describe("gitRevision", () => {
   const original = process.env.GIT_REVISION;

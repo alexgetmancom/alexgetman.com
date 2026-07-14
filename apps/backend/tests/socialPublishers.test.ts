@@ -2,17 +2,17 @@ import { afterEach, describe, expect, it, mock } from "bun:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { loadConfig } from "../src/config.js";
+import { createPlatformPorts } from "../src/delivery/ports/social.js";
 import { publishToBluesky } from "../src/delivery/social/bluesky.js";
 import { updateDevtoArticle } from "../src/delivery/social/devto.js";
 import { publishToGitHubDiscussion } from "../src/delivery/social/github.js";
-import { createPublishers } from "../src/delivery/social/index.js";
 import { publishToLinkedIn } from "../src/delivery/social/linkedin.js";
 import { publishToMastodon } from "../src/delivery/social/mastodon.js";
 import { payloadMedia, payloadText } from "../src/delivery/social/payload.js";
 import { publishToTelegram } from "../src/delivery/social/telegram.js";
 import { publishToThreads } from "../src/delivery/social/threads.js";
 import { oauthAuthorization, publishToX } from "../src/delivery/social/x.js";
+import { loadConfig } from "../src/foundation/config.js";
 
 const tempDirs: string[] = [];
 
@@ -318,7 +318,7 @@ describe("publisher media routing", () => {
       if (url.includes("/file/bot")) return new Response(Buffer.from([0xff, 0xd8, 0xff, 0xd9]), { status: 200 });
       return new Response(JSON.stringify({ id: 1, url: "https://dev.to/me/post" }), { status: 201 });
     });
-    const publisher = createPublishers(config, {} as never, fetchMock as unknown as typeof fetch).devto;
+    const publisher = createPlatformPorts(config, {} as never, fetchMock as unknown as typeof fetch).devto;
     if (!publisher) throw new Error("missing Dev.to publisher");
     const result = await publisher({
       jobId: 1,

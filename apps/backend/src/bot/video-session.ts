@@ -1,8 +1,8 @@
 import { eq } from "drizzle-orm";
 import { type Context, InlineKeyboard } from "grammy";
-import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { videoBotSessions } from "../db/schema.js";
+import type { BackendConfig } from "../foundation/config.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import { studioServices } from "../studio/services/index.js";
 import { nextVideoFlowStep } from "../studio/video-fsm.js";

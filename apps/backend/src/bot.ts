@@ -11,10 +11,10 @@ import { showQueue } from "./bot/queue.js";
 import { handleSettingsCallback, handleSettingsMessage } from "./bot/settings-screen.js";
 import { startVideoConversation } from "./bot/video-conversation.js";
 import { handleVideoCallback, handleVideoMessage } from "./bot/video-screen.js";
-import type { BackendConfig } from "./config.js";
 import type { BackendDb } from "./db/client.js";
+import type { BackendConfig } from "./foundation/config.js";
+import { log } from "./foundation/logger.js";
 import { formatMsk } from "./interfaces/telegram/time.js";
-import { log } from "./logger.js";
 import { studioServices } from "./studio/services/index.js";
 
 export function createBot(config: BackendConfig, backendDb: BackendDb): Bot | null {

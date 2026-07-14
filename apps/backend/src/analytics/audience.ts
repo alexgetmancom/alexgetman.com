@@ -1,8 +1,8 @@
 import { desc } from "drizzle-orm";
-import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { socialComments } from "../db/schema.js";
 import { requestJson } from "../delivery/social/http.js";
+import type { BackendConfig } from "../foundation/config.js";
 import { type StudioLocale as BotLocale, localize as ui } from "../studio/locale.js";
 
 export async function audienceAnalysis(

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { BackendConfig } from "../config.js";
-import { runFfmpeg } from "../runtime/ffmpeg.js";
+import type { BackendConfig } from "../foundation/config.js";
+import { runFfmpeg } from "../foundation/runtime/ffmpeg.js";
 
 type SiteMedia = Record<string, unknown> & {
   type?: string;
