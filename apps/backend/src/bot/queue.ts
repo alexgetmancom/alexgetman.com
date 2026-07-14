@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { type Context, InlineKeyboard } from "grammy";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
@@ -12,7 +12,12 @@ type QueueItem = {
   callback: string;
 };
 
-export async function showQueue(ctx: Context, backendDb: BackendDb, _config: BackendConfig): Promise<void> {
+type QueueView = "home" | "upcoming" | "drafts" | "attention";
+
+export async function showQueue(ctx: Context, backendDb: BackendDb, _config: BackendConfig, view: QueueView = "home"): Promise<void> {
+  if (view === "home") return showQueueHome(ctx, backendDb);
+  if (view === "drafts") return showDrafts(ctx, backendDb);
+  if (view === "attention") return showAttention(ctx, backendDb);
   const postDrafts = backendDb.db.select().from(drafts).where(eq(drafts.status, "scheduled")).all();
   const vDrafts = backendDb.db.select().from(videoDrafts).where(eq(videoDrafts.status, "scheduled")).all();
 
@@ -72,9 +77,9 @@ export async function showQueue(ctx: Context, backendDb: BackendDb, _config: Bac
     const timeStr = formatQueueTime(item.time);
     keyboard.text(`${item.name} ${timeStr} - ${item.type}`, item.callback).row();
   }
-  keyboard.text("← Back to Menu", "cancel_dialog").row();
+  keyboard.text("← Back", "queue_home").row().text("← Menu", "cancel_dialog");
 
-  const text = items.length === 0 ? "📋 Queue is empty. No scheduled posts or videos." : `📋 *Scheduled Queue (${items.length} items):*`;
+  const text = items.length === 0 ? "📋 No upcoming publications." : `📋 *Upcoming publications (${items.length}):*`;
 
   const messageId = ctx.callbackQuery?.message?.message_id;
   if (messageId && ctx.chat?.id) {
@@ -88,6 +93,58 @@ export async function showQueue(ctx: Context, backendDb: BackendDb, _config: Bac
       reply_markup: keyboard,
     });
   }
+}
+
+async function showQueueHome(ctx: Context, backendDb: BackendDb): Promise<void> {
+  const textDrafts = backendDb.db.select({ id: drafts.id }).from(drafts).where(eq(drafts.status, "needs_review")).all().length;
+  const videoDraftCount = backendDb.db
+    .select({ id: videoDrafts.id })
+    .from(videoDrafts)
+    .where(inArray(videoDrafts.status, ["draft", "editing"]))
+    .all().length;
+  const failedPosts = backendDb.db.select({ id: drafts.id }).from(drafts).where(eq(drafts.status, "failed")).all().length;
+  const failedVideos = backendDb.db.select({ id: videoDrafts.id }).from(videoDrafts).where(eq(videoDrafts.status, "partial")).all().length;
+  const keyboard = new InlineKeyboard()
+    .text("🕒 Upcoming", "queue_upcoming")
+    .text(`🟡 Drafts (${textDrafts + videoDraftCount})`, "queue_drafts")
+    .row()
+    .text(`🔴 Needs attention (${failedPosts + failedVideos})`, "queue_attention")
+    .row()
+    .text("← Menu", "cancel_dialog");
+  await replaceQueueMessage(ctx, "📋 *Work queue*\n\nChoose what to review:", keyboard);
+}
+
+async function showDrafts(ctx: Context, backendDb: BackendDb): Promise<void> {
+  const textDrafts = backendDb.db.select().from(drafts).where(eq(drafts.status, "needs_review")).all();
+  const videos = backendDb.db
+    .select()
+    .from(videoDrafts)
+    .where(inArray(videoDrafts.status, ["draft", "editing"]))
+    .all();
+  const keyboard = new InlineKeyboard();
+  for (const draft of textDrafts)
+    keyboard.text(`📝 #${draft.id} ${(draft.textRu.split("\n")[0] || "Post").slice(0, 28)}`, `preview:${draft.id}`).row();
+  for (const video of videos) keyboard.text(`🎬 #${video.id} ${(video.label || "Video").slice(0, 28)}`, `video_open:${video.id}`).row();
+  keyboard.text("← Work queue", "queue_home");
+  await replaceQueueMessage(ctx, textDrafts.length + videos.length ? "🟡 *Drafts*" : "🟡 No drafts.", keyboard);
+}
+
+async function showAttention(ctx: Context, backendDb: BackendDb): Promise<void> {
+  const textPosts = backendDb.db.select().from(drafts).where(eq(drafts.status, "failed")).all();
+  const videos = backendDb.db.select().from(videoDrafts).where(eq(videoDrafts.status, "partial")).all();
+  const keyboard = new InlineKeyboard();
+  for (const draft of textPosts) keyboard.text(`❌ Post #${draft.id}`, `progress_details:${draft.id}`).row();
+  for (const video of videos)
+    keyboard.text(`❌ Video #${video.id} ${(video.label || "Video").slice(0, 22)}`, `video_open:${video.id}`).row();
+  keyboard.text("← Work queue", "queue_home");
+  await replaceQueueMessage(ctx, textPosts.length + videos.length ? "🔴 *Needs attention*" : "✅ Nothing needs attention.", keyboard);
+}
+
+async function replaceQueueMessage(ctx: Context, text: string, keyboard: InlineKeyboard): Promise<void> {
+  const messageId = ctx.callbackQuery?.message?.message_id;
+  if (messageId && ctx.chat?.id)
+    await ctx.api.editMessageText(ctx.chat.id, messageId, text, { parse_mode: "Markdown", reply_markup: keyboard });
+  else await ctx.reply(text, { parse_mode: "Markdown", reply_markup: keyboard });
 }
 
 function formatQueueTime(date: Date): string {

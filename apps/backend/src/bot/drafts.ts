@@ -3,6 +3,7 @@ import { DEFAULT_TARGETS, isSiteTarget, targetLocale } from "../botTargets.js";
 import type { BackendDb } from "../db/client.js";
 import {
   drafts,
+  postControlCards,
   postLocales,
   posts,
   publicationPlans,
@@ -117,6 +118,14 @@ export function cancelDraft(backendDb: BackendDb, draftId: number): void {
     tx.update(drafts).set({ postId: null, updatedAt: now }).where(eq(drafts.id, draftId)).run();
   });
   rebalanceScheduledDrafts(backendDb);
+}
+
+export function setDraftControlCard(backendDb: BackendDb, draftId: number, chatId: number, messageId: number): void {
+  backendDb.db
+    .insert(postControlCards)
+    .values({ draftId, chatId, messageId, updatedAt: new Date().toISOString() })
+    .onConflictDoUpdate({ target: postControlCards.draftId, set: { chatId, messageId, updatedAt: new Date().toISOString() } })
+    .run();
 }
 
 export function publishDraftToQueue(backendDb: BackendDb, draftId: number, options: PublishDraftOptions = {}): number {

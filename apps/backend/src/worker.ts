@@ -3,9 +3,10 @@ import type { Bot } from "grammy";
 import pLimit from "p-limit";
 import { runCreatorAnalyticsCycle, runWeeklyCreatorSummary } from "./analytics/creator.js";
 import { finalizePendingAlbums } from "./bot/albums.js";
+import { refreshPostControlCard } from "./bot/progress.js";
 import type { BackendConfig } from "./config.js";
 import type { BackendDb } from "./db/client.js";
-import { postTargets, publishJobs } from "./db/schema.js";
+import { drafts, postTargets, publishJobs } from "./db/schema.js";
 import { log } from "./logger.js";
 import { pruneMediaCache } from "./media/prepare.js";
 import { runMetricsCycle } from "./metrics/index.js";
@@ -21,6 +22,7 @@ export async function runPublishCycle(
   config: BackendConfig,
   backendDb: BackendDb,
   publishers: Record<string, Publisher> = createPublishers(config, backendDb),
+  bot: Bot | null = null,
 ): Promise<number> {
   recoverStalePublishJobs(backendDb, config.PUBLISH_LOCK_TIMEOUT_SECONDS);
   const jobs = claimDuePublishJobs(backendDb, config.PUBLISH_CLAIM_LIMIT);
@@ -59,6 +61,13 @@ export async function runPublishCycle(
       .where(and(eq(postTargets.postKey, job.postKey), eq(postTargets.target, job.target)))
       .run();
   }
+  if (bot && jobs.length) {
+    const postIds = [...new Set(jobs.map((job) => job.postId).filter((id): id is number => id != null))];
+    for (const postId of postIds) {
+      const draft = backendDb.db.select({ id: drafts.id }).from(drafts).where(eq(drafts.postId, postId)).get();
+      if (draft) await refreshPostControlCard(backendDb, bot, draft.id);
+    }
+  }
   recordWorkerState(backendDb, "queue", { claimed: jobs.length });
   return jobs.length;
 }
@@ -74,7 +83,7 @@ export function startWorkers(config: BackendConfig, backendDb: BackendDb, bot: B
       if (completed) log("info", "album drafts finalized", { completed });
     }),
     startLoop("queue", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
-      const claimed = await runPublishCycle(config, backendDb);
+      const claimed = await runPublishCycle(config, backendDb, undefined, bot);
       log("debug", "queue loop tick", { claimed });
     }),
     ...(config.studio.modules.video_posting

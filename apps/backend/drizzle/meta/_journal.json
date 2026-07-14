@@ -71,6 +71,13 @@
       "when": 1784200000000,
       "tag": "0009_site_pageviews",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1784250000000,
+      "tag": "0010_bot_ux_control_cards",
+      "breakpoints": true
     }
   ]
 }

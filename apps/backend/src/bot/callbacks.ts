@@ -6,9 +6,10 @@ import type { BackendDb } from "../db/client.js";
 import { adminState, drafts } from "../db/schema.js";
 import { parseDeploymentRollbackCallback, requestDeploymentRollback } from "../deployment.js";
 import { formatMsk, nextPublishingSlot, parseManualSchedule, rebalanceScheduledDrafts, schedulePreset } from "../publishing/schedule.js";
-import { cancelDraft, hasLocaleTarget, publishDraftToQueue, requireDraft } from "./drafts.js";
+import { cancelDraft, hasLocaleTarget, publishDraftToQueue, requireDraft, setDraftControlCard } from "./drafts.js";
 import { extractMessage, parseTargets } from "./message.js";
 import { type DraftView, draftMode, draftPreview, modeLabel, toggleDraftTarget } from "./preview.js";
+import { postProgress } from "./progress.js";
 
 type AdminState = { action: string | null; draft_id: number | null; control_message_id: number | null };
 
@@ -96,6 +97,9 @@ export async function handleDraftCallback(ctx: Context, backendDb: BackendDb, co
     );
   }
   if (action === "cancel") {
+    return editDraftPreview(ctx, backendDb, draftId, "confirm_delete");
+  }
+  if (action === "cancel_confirm") {
     cancelDraft(backendDb, draftId);
     await ctx.answerCallbackQuery({ text: "Cancelled" });
     return void (await ctx.editMessageText(`🗑 Черновик #${draftId} отменён.`));
@@ -104,12 +108,42 @@ export async function handleDraftCallback(ctx: Context, backendDb: BackendDb, co
     return editDraftPreview(ctx, backendDb, draftId, "confirm_publish");
   }
   if (action === "publish_confirm") {
-    const postId = publishDraftToQueue(backendDb, draftId);
+    publishDraftToQueue(backendDb, draftId);
     await ctx.answerCallbackQuery({ text: "В очереди" });
-    return void (await ctx.editMessageText(`🟢 Публикация #${draftId} поставлена в очередь как пост #${postId}.`));
+    const messageId = callbackMessageId(ctx);
+    if (messageId && ctx.chat?.id) setDraftControlCard(backendDb, draftId, Number(ctx.chat.id), messageId);
+    const progress = postProgress(backendDb, draftId);
+    return void (await ctx.editMessageText(progress.text, { parse_mode: "Markdown", reply_markup: progress.keyboard }));
   }
   if (action === "schedule") {
     return editDraftPreview(ctx, backendDb, draftId, "schedule");
+  }
+  if (action === "sched_choose" && first) {
+    const targets = parseTargets(requireDraft(backendDb, draftId).targets_json);
+    const value = first === "auto" ? null : schedulePreset(first);
+    const ruAt = first === "auto" && hasLocaleTarget(targets, "ru") ? nextPublishingSlot(backendDb, "ru") : value;
+    const enAt = first === "auto" && hasLocaleTarget(targets, "en") ? nextPublishingSlot(backendDb, "en") : value;
+    const preview = draftPreview(backendDb, draftId);
+    const keyboard = new InlineKeyboard()
+      .text("✅ Confirm schedule", `sched_confirm:${first}:${draftId}`)
+      .text("← Back", `schedule:${draftId}`);
+    await ctx.answerCallbackQuery();
+    return void (await ctx.editMessageText(`${preview.text}\n\n📅 *Confirm schedule*\nRU: ${formatMsk(ruAt)}\nEN: ${formatMsk(enAt)}`, {
+      parse_mode: "Markdown",
+      reply_markup: keyboard,
+    }));
+  }
+  if (action === "sched_confirm" && first) {
+    const targets = parseTargets(requireDraft(backendDb, draftId).targets_json);
+    const value = first === "auto" ? null : schedulePreset(first);
+    const ruAt = first === "auto" && hasLocaleTarget(targets, "ru") ? nextPublishingSlot(backendDb, "ru") : value;
+    const enAt = first === "auto" && hasLocaleTarget(targets, "en") ? nextPublishingSlot(backendDb, "en") : value;
+    const postId = publishDraftToQueue(backendDb, draftId, { mode: "scheduled", ruAt, enAt });
+    rebalanceScheduledDrafts(backendDb);
+    await ctx.answerCallbackQuery({ text: "Scheduled" });
+    return void (await ctx.editMessageText(
+      `🟢 Черновик #${draftId} запланирован как пост #${postId}.\nRU: ${formatMsk(ruAt)}\nEN: ${formatMsk(enAt)}`,
+    ));
   }
   if (action === "sched_auto") {
     const targets = parseTargets(requireDraft(backendDb, draftId).targets_json);
@@ -208,9 +242,9 @@ export async function applyAdminState(
   } else await sendDraftPreview(ctx, backendDb, draftId);
 }
 
-export async function sendDraftPreview(ctx: Pick<Context, "reply">, backendDb: BackendDb, draftId: number): Promise<void> {
+export async function sendDraftPreview(ctx: Pick<Context, "reply">, backendDb: BackendDb, draftId: number) {
   const preview = draftPreview(backendDb, draftId);
-  await ctx.reply(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
+  return ctx.reply(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
 }
 
 async function editDraftPreview(ctx: Context, backendDb: BackendDb, draftId: number, view: DraftView = "overview"): Promise<void> {
@@ -227,6 +261,10 @@ async function editDraftPrompt(ctx: Context, backendDb: BackendDb, draftId: numb
 
 export function clearAdminState(backendDb: BackendDb, adminId: number): void {
   setAdminState(backendDb, adminId);
+}
+
+export function startPostDialog(backendDb: BackendDb, adminId: number): void {
+  setAdminState(backendDb, adminId, "new_post");
 }
 
 function dateOrNull(value: string | null): Date | null {

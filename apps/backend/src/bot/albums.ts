@@ -6,7 +6,7 @@ import { drafts, pendingAlbums } from "../db/schema.js";
 import { log } from "../logger.js";
 import { translateToEnglish } from "../translation.js";
 import { clearAdminState } from "./callbacks.js";
-import { createDraftFromMessage } from "./drafts.js";
+import { createDraftFromMessage, setDraftControlCard } from "./drafts.js";
 import { parseArrayValue } from "./message.js";
 import { draftPreview } from "./preview.js";
 
@@ -90,7 +90,8 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
           .run();
         clearAdminState(backendDb, row.adminId);
         const preview = draftPreview(backendDb, draftId);
-        await bot.api.sendMessage(row.chatId, preview.text, { reply_markup: preview.keyboard });
+        const control = await bot.api.sendMessage(row.chatId, preview.text, { reply_markup: preview.keyboard });
+        setDraftControlCard(backendDb, draftId, row.chatId, control.message_id);
       } else {
         const text = row.textRu;
         let textEn = text;
@@ -106,7 +107,9 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
           entities: parseArrayValue(row.textEntitiesJson),
         });
         const preview = draftPreview(backendDb, created);
-        await bot.api.sendMessage(row.chatId, preview.text, { reply_markup: preview.keyboard });
+        const control = await bot.api.sendMessage(row.chatId, preview.text, { reply_markup: preview.keyboard });
+        setDraftControlCard(backendDb, created, row.chatId, control.message_id);
+        clearAdminState(backendDb, row.adminId);
       }
       backendDb.db.delete(pendingAlbums).where(eq(pendingAlbums.id, row.id)).run();
       completed += 1;

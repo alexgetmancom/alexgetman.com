@@ -359,6 +359,19 @@ export const botSettings = sqliteTable("bot_settings", {
   updatedAt: text("updated_at").notNull(),
 });
 
+export const botUiSettings = sqliteTable("bot_ui_settings", {
+  adminId: integer("admin_id").primaryKey(),
+  locale: text("locale").notNull().default("en"),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const postControlCards = sqliteTable("post_control_cards", {
+  draftId: integer("draft_id").primaryKey(),
+  chatId: integer("chat_id").notNull(),
+  messageId: integer("message_id").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
 export const pendingAlbums = sqliteTable("pending_albums", {
   id: text("id").primaryKey(),
   adminId: integer("admin_id").notNull(),

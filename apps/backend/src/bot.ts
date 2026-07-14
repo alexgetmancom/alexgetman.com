@@ -2,14 +2,22 @@ import { eq } from "drizzle-orm";
 import { Bot, type Context, InlineKeyboard, Keyboard } from "grammy";
 import { audienceAnalysis, creatorDashboard, creatorVideoArchive, creatorVideoMetrics } from "./analytics/creator.js";
 import { appendPendingAlbum } from "./bot/albums.js";
-import { applyAdminState, getAdminState, handleDraftCallback, sendDraftPreview } from "./bot/callbacks.js";
-import { createDraftFromMessage, scheduledDrafts } from "./bot/drafts.js";
+import {
+  applyAdminState,
+  clearAdminState,
+  getAdminState,
+  handleDraftCallback,
+  sendDraftPreview,
+  startPostDialog,
+} from "./bot/callbacks.js";
+import { createDraftFromMessage, scheduledDrafts, setDraftControlCard } from "./bot/drafts.js";
+import { type BotLocale, botLocale, ui } from "./bot/i18n.js";
 import { extractMessage } from "./bot/message.js";
 import { showQueue } from "./bot/queue.js";
 import { handleVideoCallback, handleVideoMessage, startVideoFlow } from "./bot/video.js";
 import type { BackendConfig } from "./config.js";
 import type { BackendDb } from "./db/client.js";
-import { botSettings } from "./db/schema.js";
+import { botSettings, botUiSettings } from "./db/schema.js";
 import { log } from "./logger.js";
 import { formatMsk } from "./publishing/schedule.js";
 import { translateToEnglish } from "./translation.js";
@@ -27,26 +35,36 @@ export function createBot(config: BackendConfig, backendDb: BackendDb): Bot | nu
 
 function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb): void {
   bot.command("start", async (ctx) => {
-    await ctx.reply("Кнопка меню всегда останется внизу чата.", {
-      reply_markup: persistentKeyboard(config),
+    const locale = botLocale(backendDb, Number(ctx.from?.id));
+    await ctx.reply(ui(locale, "The menu button stays at the bottom of this chat.", "Кнопка меню всегда останется внизу чата."), {
+      reply_markup: persistentKeyboard(config, locale),
     });
-    await showMainMenu(ctx, config);
+    await showMainMenu(ctx, config, backendDb);
   });
-  bot.hears("☰ Показать меню", (ctx) => showMainMenu(ctx, config));
+  bot.hears(["☰ Показать меню", "☰ Show menu"], (ctx) => showMainMenu(ctx, config, backendDb));
   bot.hears("⚙️", async (ctx) => {
     if (!isAdmin(config, ctx.from?.id)) return;
-    await showSettings(ctx, config);
+    await showSettings(ctx, config, backendDb);
   });
-  bot.hears("🎬 Новое видео", async (ctx) => {
+  bot.hears(["🎬 Новое видео", "🎬 New video"], async (ctx) => {
     if (!isAdmin(config, ctx.from?.id)) return void (await ctx.reply("Forbidden"));
     if (!config.studio.modules.video_posting) return void (await ctx.reply("Видеопубликация выключена в studio.yaml."));
     await startVideoFlow(ctx, backendDb);
   });
-  bot.hears("📝 Новый пост", async (ctx) => {
+  bot.hears(["📝 Новый пост", "📝 New post"], async (ctx) => {
     if (!isAdmin(config, ctx.from?.id)) return void (await ctx.reply("Forbidden"));
-    await ctx.reply("📝 Пришлите текст с опциональным фото или видео для нового поста.", {
-      reply_markup: new InlineKeyboard().text("← Cancel", "cancel_dialog"),
-    });
+    startPostDialog(backendDb, Number(ctx.from?.id));
+    const locale = botLocale(backendDb, Number(ctx.from?.id));
+    await ctx.reply(
+      ui(
+        locale,
+        "📝 Send text with optional photos or video for a new post.",
+        "📝 Пришлите текст с опциональным фото или видео для нового поста.",
+      ),
+      {
+        reply_markup: new InlineKeyboard().text(ui(locale, "← Cancel", "← Отмена"), "cancel_dialog"),
+      },
+    );
   });
   bot.command("pipeline_status", (ctx) => ctx.reply(config.COMMAND_CENTER_URL));
   bot.command("schedule", async (ctx) => {
@@ -92,7 +110,32 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
       if (isNew) await ctx.reply("Album received. I will create or update the draft in a few seconds.");
       return;
     }
-    if (state?.action && state.draft_id) return applyAdminState(ctx, backendDb, state.action, state.draft_id, state.control_message_id);
+    if (state?.action && state.action !== "new_post" && state.draft_id) {
+      try {
+        return await applyAdminState(ctx, backendDb, state.action, state.draft_id, state.control_message_id);
+      } catch (error) {
+        const locale = botLocale(backendDb, adminId);
+        const message = error instanceof Error ? error.message : String(error);
+        await ctx.reply(
+          ui(
+            locale,
+            `I couldn't use that value: ${message}\n\nPlease try again or tap Cancel.`,
+            `Не удалось обработать значение: ${message}\n\nПопробуйте ещё раз или нажмите «Отмена».`,
+          ),
+        );
+        return;
+      }
+    }
+    if (state?.action !== "new_post") {
+      const locale = botLocale(backendDb, adminId);
+      await ctx.reply(
+        ui(locale, "Choose 📝 New post from the menu before sending a new publication.", "Сначала выберите «📝 Новый пост» в меню."),
+        {
+          reply_markup: persistentKeyboard(config, locale),
+        },
+      );
+      return;
+    }
     let textEn = message.text;
     try {
       textEn = await translateToEnglish(message.text, config);
@@ -101,23 +144,35 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
       textEn = message.text;
     }
     const draftId = createDraftFromMessage(backendDb, adminId, { ...message, textEn });
-    await sendDraftPreview(ctx, backendDb, draftId);
+    clearAdminState(backendDb, adminId);
+    const control = await sendDraftPreview(ctx, backendDb, draftId);
+    if (ctx.chat?.id) setDraftControlCard(backendDb, draftId, Number(ctx.chat.id), control.message_id);
   });
   bot.on("callback_query:data", async (ctx) => {
     if (!isAdmin(config, ctx.from?.id)) return void (await ctx.answerCallbackQuery({ text: "Forbidden" }));
     if (ctx.callbackQuery.data === "menu_text") {
       await ctx.answerCallbackQuery();
-      await ctx.editMessageText("📝 Пришлите текст с опциональным фото или видео для нового поста.", {
-        reply_markup: new InlineKeyboard().text("← Cancel", "cancel_dialog"),
-      });
+      startPostDialog(backendDb, Number(ctx.from?.id));
+      const locale = botLocale(backendDb, Number(ctx.from?.id));
+      await ctx.editMessageText(
+        ui(
+          locale,
+          "📝 Send text with optional photos or video for a new post.",
+          "📝 Пришлите текст с опциональным фото или видео для нового поста.",
+        ),
+        {
+          reply_markup: new InlineKeyboard().text(ui(locale, "← Cancel", "← Отмена"), "cancel_dialog"),
+        },
+      );
       return;
     }
     if (ctx.callbackQuery.data === "cancel_dialog") {
       await ctx.answerCallbackQuery();
+      clearAdminState(backendDb, Number(ctx.from?.id));
       try {
         await ctx.deleteMessage();
       } catch {}
-      await showMainMenu(ctx, config);
+      await showMainMenu(ctx, config, backendDb);
       return;
     }
     if (ctx.callbackQuery.data === "queue_home") {
@@ -125,17 +180,49 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
       await showQueue(ctx, backendDb, config);
       return;
     }
+    if (
+      ctx.callbackQuery.data === "queue_upcoming" ||
+      ctx.callbackQuery.data === "queue_drafts" ||
+      ctx.callbackQuery.data === "queue_attention"
+    ) {
+      await ctx.answerCallbackQuery();
+      await showQueue(ctx, backendDb, config, ctx.callbackQuery.data.slice("queue_".length) as "upcoming" | "drafts" | "attention");
+      return;
+    }
+    if (ctx.callbackQuery.data.startsWith("progress:")) {
+      const draftId = Number(ctx.callbackQuery.data.slice("progress:".length));
+      const { postProgress } = await import("./bot/progress.js");
+      const progress = postProgress(backendDb, draftId);
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(progress.text, { parse_mode: "Markdown", reply_markup: progress.keyboard });
+      return;
+    }
+    if (ctx.callbackQuery.data.startsWith("progress_details:")) {
+      const draftId = Number(ctx.callbackQuery.data.slice("progress_details:".length));
+      const { postProgress } = await import("./bot/progress.js");
+      const progress = postProgress(backendDb, draftId, true);
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(progress.text, { parse_mode: "Markdown", reply_markup: progress.keyboard });
+      return;
+    }
+    if (ctx.callbackQuery.data.startsWith("progress_cancel:")) {
+      const draftId = Number(ctx.callbackQuery.data.slice("progress_cancel:".length));
+      const { cancelRemainingPostJobs, postProgress } = await import("./bot/progress.js");
+      cancelRemainingPostJobs(backendDb, draftId);
+      const progress = postProgress(backendDb, draftId);
+      await ctx.answerCallbackQuery({ text: "Remaining work cancelled" });
+      await ctx.editMessageText(progress.text, { parse_mode: "Markdown", reply_markup: progress.keyboard });
+      return;
+    }
     if (ctx.callbackQuery.data === "settings_home") {
       await ctx.answerCallbackQuery();
-      await ctx.editMessageText("⚙️ Настройки", {
-        reply_markup: new InlineKeyboard().text("▶️ Подпись YouTube", "settings_youtube_signature").row().text("← К меню", "settings_menu"),
-      });
+      await showSettings(ctx, config, backendDb, true);
       return;
     }
     if (ctx.callbackQuery.data === "settings_menu") {
       await ctx.answerCallbackQuery();
       await ctx.deleteMessage().catch(() => {});
-      await showMainMenu(ctx, config);
+      await showMainMenu(ctx, config, backendDb);
       return;
     }
     if (ctx.callbackQuery.data === "settings_youtube_signature") {
@@ -169,6 +256,35 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
         .run();
       await ctx.answerCallbackQuery({ text: "Очищено" });
       await showYouTubeSignature(ctx, backendDb, true);
+      return;
+    }
+    if (ctx.callbackQuery.data === "settings_language") {
+      const locale = botLocale(backendDb, Number(ctx.from?.id));
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(ui(locale, "🌐 Interface language", "🌐 Язык интерфейса"), {
+        reply_markup: new InlineKeyboard()
+          .text("English", "settings_language:en")
+          .text("Русский", "settings_language:ru")
+          .row()
+          .text(ui(locale, "← Back", "← Назад"), "settings_home"),
+      });
+      return;
+    }
+    if (ctx.callbackQuery.data.startsWith("settings_language:")) {
+      const locale = ctx.callbackQuery.data.endsWith(":ru") ? "ru" : "en";
+      const adminId = Number(ctx.from?.id);
+      backendDb.db
+        .insert(botUiSettings)
+        .values({ adminId, locale, updatedAt: new Date().toISOString() })
+        .onConflictDoUpdate({ target: botUiSettings.adminId, set: { locale, updatedAt: new Date().toISOString() } })
+        .run();
+      await ctx.answerCallbackQuery({ text: locale === "ru" ? "Язык: русский" : "Language: English" });
+      await ctx.editMessageText(locale === "ru" ? "⚙️ Настройки" : "⚙️ Settings", {
+        reply_markup: settingsKeyboard(locale),
+      });
+      await ctx.reply(locale === "ru" ? "Клавиатура обновлена." : "Keyboard updated.", {
+        reply_markup: persistentKeyboard(config, locale),
+      });
       return;
     }
     if (
@@ -231,14 +347,15 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
   });
 }
 
-async function showMainMenu(ctx: Context, config: BackendConfig): Promise<void> {
+async function showMainMenu(ctx: Context, config: BackendConfig, backendDb: BackendDb): Promise<void> {
+  const locale = botLocale(backendDb, Number(ctx.from?.id));
   const keyboard = new InlineKeyboard();
-  if (config.studio.modules.text_posting) keyboard.text("📝 Новый пост", "menu_text");
-  if (config.studio.modules.video_posting) keyboard.text("🎬 Новое видео", "video_start");
+  if (config.studio.modules.text_posting) keyboard.text(ui(locale, "📝 New post", "📝 Новый пост"), "menu_text");
+  if (config.studio.modules.video_posting) keyboard.text(ui(locale, "🎬 New video", "🎬 Новое видео"), "video_start");
   keyboard.row();
-  keyboard.text("📋 Очередь", "queue_home");
-  if (config.studio.modules.analytics) keyboard.text("📊 Статистика", "analytics_home");
-  await ctx.reply("Панель управления:", { reply_markup: keyboard });
+  keyboard.text(ui(locale, "📋 Work queue", "📋 Очередь"), "queue_home");
+  if (config.studio.modules.analytics) keyboard.text(ui(locale, "📊 Analytics", "📊 Статистика"), "analytics_home");
+  await ctx.reply(ui(locale, "Control panel:", "Панель управления:"), { reply_markup: keyboard });
 }
 
 function isAdmin(config: BackendConfig, userId: number | undefined): boolean {
@@ -246,17 +363,26 @@ function isAdmin(config: BackendConfig, userId: number | undefined): boolean {
   return config.ADMIN_IDS.includes(userId);
 }
 
-function persistentKeyboard(config: BackendConfig): Keyboard {
-  const keyboard = new Keyboard().text("☰ Показать меню");
+function persistentKeyboard(config: BackendConfig, locale: BotLocale = "en"): Keyboard {
+  const keyboard = new Keyboard().text(ui(locale, "☰ Show menu", "☰ Показать меню"));
   if (config.studio.modules.youtube) keyboard.text("⚙️");
   return keyboard.resized().persistent();
 }
 
-async function showSettings(ctx: Context, config: BackendConfig): Promise<void> {
-  if (!config.studio.modules.youtube) return;
-  await ctx.reply("⚙️ Настройки", {
-    reply_markup: new InlineKeyboard().text("▶️ Подпись YouTube", "settings_youtube_signature").row().text("← К меню", "settings_menu"),
-  });
+async function showSettings(ctx: Context, config: BackendConfig, backendDb: BackendDb, edit = false): Promise<void> {
+  const locale = botLocale(backendDb, Number(ctx.from?.id));
+  const text = ui(locale, "⚙️ Settings", "⚙️ Настройки");
+  if (edit) await ctx.editMessageText(text, { reply_markup: settingsKeyboard(locale, config.studio.modules.youtube) });
+  else await ctx.reply(text, { reply_markup: settingsKeyboard(locale, config.studio.modules.youtube) });
+}
+
+function settingsKeyboard(locale: BotLocale, hasYouTube = true): InlineKeyboard {
+  const keyboard = new InlineKeyboard();
+  if (hasYouTube) keyboard.text(ui(locale, "▶️ YouTube signature", "▶️ Подпись YouTube"), "settings_youtube_signature").row();
+  return keyboard
+    .text(ui(locale, "🌐 Language", "🌐 Язык"), "settings_language")
+    .row()
+    .text(ui(locale, "← Menu", "← К меню"), "settings_menu");
 }
 
 async function showYouTubeSignature(ctx: Context, backendDb: BackendDb, edit = false): Promise<void> {

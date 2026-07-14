@@ -3,6 +3,7 @@ import type { Bot } from "grammy";
 import { finalizePendingAlbums } from "../src/bot/albums.js";
 import { cancelDraft, createDraftFromMessage, publishDraftToQueue, scheduledDrafts } from "../src/bot/drafts.js";
 import { draftPreview } from "../src/bot/preview.js";
+import { postProgress } from "../src/bot/progress.js";
 import { entitiesToHtml } from "../src/bot/text.js";
 import { TARGETS, targetLocale } from "../src/botTargets.js";
 import { loadConfig } from "../src/config.js";
@@ -240,6 +241,25 @@ describe("Telegram controller flow", () => {
     expect(backendDb.sqlite.prepare("SELECT html FROM post_locales WHERE locale='ru'").get()).toEqual({
       html: "<strong>Жирный</strong> и ссылка",
     });
+  });
+
+  it("renders a live post progress card from publication job states", () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createDraftFromMessage(backendDb, 42, { text: "Progress", textEn: "Progress", entities: [], media: [] });
+    const postId = publishDraftToQueue(backendDb, draftId);
+    backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE post_id=? AND target='telegram'").run(postId);
+    backendDb.sqlite.prepare("UPDATE publish_jobs SET status='publishing' WHERE post_id=? AND target='linkedin'").run(postId);
+    backendDb.sqlite
+      .prepare("UPDATE publish_jobs SET status='failed', last_error='rate limit' WHERE post_id=? AND target='bluesky'")
+      .run(postId);
+
+    const progress = postProgress(backendDb, draftId, true);
+    expect(progress.text).toContain("Progress: *2 / 17*");
+    expect(progress.text).toContain("✅ Published: 1");
+    expect(progress.text).toContain("🔄 Publishing: 1");
+    expect(progress.text).toContain("❌ Failed: 1");
+    expect(progress.text).toContain("❌ Bluesky — rate limit");
+    expect(JSON.stringify(progress.keyboard)).toContain(`progress:${draftId}`);
   });
 
   it("finalizes a durable Telegram media album into one draft", async () => {

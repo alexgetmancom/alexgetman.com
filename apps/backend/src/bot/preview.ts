@@ -7,7 +7,7 @@ import { formatMsk } from "../publishing/schedule.js";
 import { requireDraft } from "./drafts.js";
 import { parseTargets } from "./message.js";
 
-export type DraftView = "overview" | "modes" | "schedule" | "confirm_publish" | "platforms";
+export type DraftView = "overview" | "modes" | "schedule" | "confirm_publish" | "confirm_delete" | "platforms";
 
 export function draftPreview(
   backendDb: BackendDb,
@@ -41,13 +41,13 @@ export function draftPreview(
 
   if (view === "schedule") {
     keyboard
-      .text("📥 Auto next slot", `sched_auto:${draftId}`)
-      .text("+30 min", `sched_preset:plus30:${draftId}`)
+      .text("📥 Auto next slot", `sched_choose:auto:${draftId}`)
+      .text("+30 min", `sched_choose:plus30:${draftId}`)
       .row()
-      .text("+1 hour", `sched_preset:plus60:${draftId}`)
-      .text("Today 21:00", `sched_preset:today2100:${draftId}`)
+      .text("+1 hour", `sched_choose:plus60:${draftId}`)
+      .text("Today 21:00", `sched_choose:today2100:${draftId}`)
       .row()
-      .text("Tomorrow 10:00", `sched_preset:tomorrow1000:${draftId}`)
+      .text("Tomorrow 10:00", `sched_choose:tomorrow1000:${draftId}`)
       .row()
       .text("Enter time manually", `sched_manual:both:${draftId}`)
       .row()
@@ -67,6 +67,14 @@ export function draftPreview(
     };
   }
 
+  if (view === "confirm_delete") {
+    keyboard.text("🗑 Yes, delete", `cancel_confirm:${draftId}`).text("← Back", `preview:${draftId}`);
+    return {
+      text: `${draftHeader(draftId, targets)}\n\n⚠️ *Delete this draft?*\nScheduled work that has not started will be cancelled.`,
+      keyboard,
+    };
+  }
+
   // overview view
   const modeEmoji = mode === "manual" ? "🛞" : "⚙️";
   keyboard.text(`${modeEmoji} Mode: ${modeLabel(mode)}`, `cycle_mode:${draftId}`).row();
@@ -74,17 +82,30 @@ export function draftPreview(
 
   keyboard.text("Edit RU", `edit_ru:${draftId}`).text("Edit EN", `edit_en:${draftId}`).row();
   keyboard.text("▶️ Publish now", `publish:${draftId}`).text("📅 Schedule", `schedule:${draftId}`).row();
-  keyboard.text("Cancel", `cancel:${draftId}`);
+  keyboard.text("🗑 Delete draft", `cancel:${draftId}`);
 
   const schedule =
     draft.status === "scheduled"
       ? `\n\nScheduled RU: ${formatMsk(draft.scheduled_at ? String(draft.scheduled_at) : null)}\nScheduled EN: ${formatMsk(draft.scheduled_en_at ? String(draft.scheduled_en_at) : null)}`
       : "";
 
+  const mediaRu = safeMediaCount(draft.media_ru_json);
+  const mediaEn = safeMediaCount(draft.media_en_json);
+  const media = mediaRu || mediaEn ? `\nMedia: ${mediaRu || 0} RU · ${mediaEn || mediaRu || 0} EN` : "";
+  const enMediaWarning = mediaRu > 0 && mediaEn === 0 ? "\n⚠️ EN uses RU media" : "";
   return {
-    text: `${draftHeader(draftId, targets)}\n\nRU:\n${String(draft.text_ru || "[media only]").slice(0, 1000)}\n\nEN:\n${String(draft.text_en_approved || draft.text_en_machine || "[not translated]").slice(0, 1000)}${schedule}`,
+    text: `${draftHeader(draftId, targets)}${media}${enMediaWarning}\n\nRU:\n${String(draft.text_ru || "[media only]").slice(0, 1000)}\n\nEN:\n${String(draft.text_en_approved || draft.text_en_machine || "[not translated]").slice(0, 1000)}${schedule}`,
     keyboard,
   };
+}
+
+function safeMediaCount(value: string | null): number {
+  try {
+    const media = value ? JSON.parse(value) : [];
+    return Array.isArray(media) ? media.length : 0;
+  } catch {
+    return 0;
+  }
 }
 
 function draftHeader(draftId: number, targets: Record<string, boolean>): string {
