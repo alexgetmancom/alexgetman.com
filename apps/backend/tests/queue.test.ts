@@ -14,7 +14,7 @@ import {
   failPublishJob,
   recoverStalePublishJobs,
 } from "../src/publishing/queue.js";
-import { runPublishCycle } from "../src/worker.js";
+import { runPublishCycle } from "../src/runtime/workers.js";
 
 function tempDb() {
   const dir = mkdtempSync(join(tmpdir(), "alexgetman-queue-"));

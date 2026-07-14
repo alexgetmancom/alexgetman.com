@@ -15,7 +15,6 @@ export async function runDeliveryPublishCycle(
   config: BackendConfig,
   backendDb: BackendDb,
   publishers: Record<string, DeliveryPort> = createPlatformPorts(config, backendDb),
-  onSettledPosts?: (postIds: number[]) => Promise<void>,
 ): Promise<number> {
   recoverStalePublishJobs(backendDb, config.PUBLISH_LOCK_TIMEOUT_SECONDS);
   const jobs = claimDuePublishJobs(backendDb, config.PUBLISH_CLAIM_LIMIT);
@@ -68,7 +67,15 @@ export async function runDeliveryPublishCycle(
     }
   }
   const postIds = [...new Set(jobs.map((job) => job.postId).filter((id): id is number => id != null))];
-  if (onSettledPosts && postIds.length) await onSettledPosts(postIds);
+  for (const postId of postIds)
+    recordDomainEvent(backendDb, {
+      ref: `post:${postId}`,
+      type: "delivery.post.settled",
+      severity: "info",
+      message: `Delivery cycle settled post #${postId}`,
+      details: { post_id: postId },
+      cooldownSeconds: 10,
+    });
   recordWorkerState(backendDb, "queue", { claimed: jobs.length });
   return jobs.length;
 }

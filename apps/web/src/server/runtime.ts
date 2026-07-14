@@ -4,7 +4,8 @@ import { type BackendConfig, loadConfig } from "../../../backend/src/foundation/
 import { configureLogging, log } from "../../../backend/src/foundation/logger.js";
 import { assertFfmpegAvailable, configureFfmpegConcurrency } from "../../../backend/src/foundation/runtime/ffmpeg.js";
 import type { ScheduledLoop } from "../../../backend/src/foundation/scheduler.js";
-import { startWorkers } from "../../../backend/src/worker.js";
+import { startTelegramWorkers } from "../../../backend/src/interfaces/telegram/worker.js";
+import { startCoreWorkers } from "../../../backend/src/runtime/workers.js";
 
 type AppRuntime = { config: BackendConfig; backendDb: BackendDb; bot: ReturnType<typeof createBot>; loops: ScheduledLoop[] };
 
@@ -17,7 +18,7 @@ export function startRuntime(): AppRuntime {
   configureFfmpegConcurrency(config.FFMPEG_MAX_CONCURRENCY);
   const backendDb = openBackendDb(config.PIPELINE_DB);
   const bot = createBot(config, backendDb);
-  const loops = startWorkers(config, backendDb, bot);
+  const loops = [...startCoreWorkers(config, backendDb), ...startTelegramWorkers(config, backendDb, bot)];
   runtime = { config, backendDb, bot, loops };
   if (!assertFfmpegAvailable()) log("warn", "ffmpeg is not available; video poster generation will fail until Docker/runtime installs it");
   return runtime;

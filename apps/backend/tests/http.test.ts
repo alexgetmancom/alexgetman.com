@@ -6,7 +6,7 @@ import { createApiHandler } from "../src/api.js";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import { openBackendDb } from "../src/db/client.js";
 import { loadConfig } from "../src/foundation/config.js";
-import { publishDraftToQueue } from "../src/publishing/drafts.js";
+import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
 import { enqueuePublishJob } from "../src/publishing/queue.js";
 
 function tempDb() {

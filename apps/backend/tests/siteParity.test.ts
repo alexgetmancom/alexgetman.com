@@ -7,7 +7,7 @@ import { openBackendDb } from "../src/db/client.js";
 import { publishContentIndex } from "../src/delivery/site-content-index.js";
 import { pingIndexNow } from "../src/delivery/site-index-now.js";
 import { loadConfig } from "../src/foundation/config.js";
-import { publishDraftToQueue } from "../src/publishing/drafts.js";
+import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
 import { reconcilePublication } from "../src/publishing/queue.js";
 
 describe("site parity", () => {

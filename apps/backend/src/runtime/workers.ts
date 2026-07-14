@@ -1,0 +1,69 @@
+import { runAnalyticsCycle } from "../analytics/collection/creator-cycle.js";
+import { runMetricsCycle } from "../analytics/collection/metrics-cycle.js";
+import type { BackendDb } from "../db/client.js";
+import { pruneMediaCache } from "../delivery/media-prepare.js";
+import { createPlatformPorts } from "../delivery/ports/social.js";
+import type { DeliveryPort } from "../delivery/ports.js";
+import { runDeliveryPublishCycle } from "../delivery/publish-workflow.js";
+import { runSiteJobCycle } from "../delivery/site-jobs.js";
+import { runVideoCycle } from "../delivery/video-worker.js";
+import type { BackendConfig } from "../foundation/config.js";
+import { log } from "../foundation/logger.js";
+import { type ScheduledLoop, startLoop } from "../foundation/scheduler.js";
+import { runObservabilityCycle } from "../observability/cycle.js";
+
+/** Delivery-only publish cycle. Interfaces learn about settled work through durable events. */
+export async function runPublishCycle(
+  config: BackendConfig,
+  backendDb: BackendDb,
+  publishers: Record<string, DeliveryPort> = createPlatformPorts(config, backendDb),
+): Promise<number> {
+  return runDeliveryPublishCycle(config, backendDb, publishers);
+}
+
+/** Starts domain workers only. It deliberately has no Telegram or HTTP dependency. */
+export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): ScheduledLoop[] {
+  if (!config.ENABLE_WORKERS) {
+    log("warn", "Workers are disabled by ENABLE_WORKERS");
+    return [];
+  }
+  return [
+    startLoop("queue", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
+      const claimed = await runPublishCycle(config, backendDb);
+      log("debug", "queue loop tick", { claimed });
+    }),
+    ...(config.studio.modules.video_posting
+      ? [
+          startLoop("video", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
+            const claimed = await runVideoCycle(config, backendDb);
+            log("debug", "video loop tick", { claimed });
+          }),
+        ]
+      : []),
+    ...(config.studio.modules.analytics
+      ? [
+          startLoop("metrics", config.METRICS_REFRESH_INTERVAL_SECONDS * 1000, async () => {
+            const checked = await runMetricsCycle(config, backendDb);
+            const creators = await runAnalyticsCycle(config, backendDb);
+            log("debug", "metrics loop tick", { checked, creators });
+          }),
+        ]
+      : []),
+    ...(config.studio.modules.site
+      ? [
+          startLoop("site", config.METRICS_REFRESH_INTERVAL_SECONDS * 1000, async () => {
+            const claimed = await runSiteJobCycle(config, backendDb);
+            log("debug", "site materialization loop tick", { claimed });
+          }),
+        ]
+      : []),
+    startLoop("media-cache", 60 * 60 * 1000, async () => {
+      const removed = await pruneMediaCache(config);
+      if (removed) log("info", "pruned expired media cache", { removed });
+    }),
+    startLoop("observability", config.OBSERVABILITY_INTERVAL_SECONDS * 1000, async () => {
+      const result = await runObservabilityCycle(config, backendDb);
+      log("debug", "observability loop tick", result);
+    }),
+  ];
+}

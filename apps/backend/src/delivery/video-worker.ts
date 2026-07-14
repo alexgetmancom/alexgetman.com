@@ -17,25 +17,18 @@ import {
   publishInstagramReel,
 } from "./video-publishers.js";
 
-type VideoCycleHooks = {
-  sendReminder?: (job: VideoJob) => Promise<void>;
-  notifyFinalFailure?: (job: VideoJob) => Promise<void>;
-  refreshProgress?: (videoDraftId: number) => Promise<void>;
-};
-
-export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb, hooks: VideoCycleHooks = {}): Promise<number> {
+export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb): Promise<number> {
   if (!config.studio.modules.video_posting) return 0;
   recoverVideoLocks(backendDb, config.PUBLISH_LOCK_TIMEOUT_SECONDS);
   const jobs = claimVideoJobs(backendDb, config.PUBLISH_CLAIM_LIMIT);
   for (const job of jobs) {
     try {
-      await executeVideoJob(config, backendDb, hooks, job);
+      await executeVideoJob(config, backendDb, job);
       completeVideoJob(backendDb, job.id);
-      await hooks.refreshProgress?.(job.videoDraftId);
+      recordVideoProgressEvent(backendDb, job, "video.job.completed");
     } catch (error) {
       failVideoJob(backendDb, job, error, config);
-      await hooks.notifyFinalFailure?.(job);
-      await hooks.refreshProgress?.(job.videoDraftId);
+      recordVideoProgressEvent(backendDb, job, "video.job.failed");
     }
   }
   pruneExpiredVideos(config, backendDb);
@@ -77,8 +70,17 @@ function claimVideoJobs(backendDb: BackendDb, limit: number): VideoJob[] {
   return claimed;
 }
 
-async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, hooks: VideoCycleHooks, job: VideoJob): Promise<void> {
-  if (job.kind === "reminder") return hooks.sendReminder?.(job);
+async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job: VideoJob): Promise<void> {
+  if (job.kind === "reminder") {
+    recordDomainEvent(backendDb, {
+      ref: `video:${job.videoDraftId}`,
+      type: "video.reminder.due",
+      severity: "info",
+      message: `Video reminder due for draft #${job.videoDraftId}`,
+      details: { videoDraftId: job.videoDraftId, videoTargetId: job.videoTargetId },
+    });
+    return;
+  }
   if (!job.videoTargetId) throw new Error("Video platform job has no target.");
   const target = backendDb.db.select().from(videoTargets).where(eq(videoTargets.id, job.videoTargetId)).get();
   const draft = getVideoDraft(backendDb, job.videoDraftId);
@@ -155,6 +157,16 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, hook
       .run();
   }
   refreshVideoDraftStatus(backendDb, draft.id, config.VIDEO_MEDIA_RETENTION_HOURS);
+}
+
+function recordVideoProgressEvent(backendDb: BackendDb, job: VideoJob, type: string): void {
+  recordDomainEvent(backendDb, {
+    ref: `video:${job.videoDraftId}`,
+    type,
+    severity: "info",
+    message: `Video job ${job.kind} settled for draft #${job.videoDraftId}`,
+    details: { videoDraftId: job.videoDraftId, videoTargetId: job.videoTargetId, jobId: job.id, kind: job.kind },
+  });
 }
 
 function completeVideoJob(backendDb: BackendDb, id: number): void {

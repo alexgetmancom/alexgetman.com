@@ -9,7 +9,8 @@ import { entitiesToHtml } from "../src/content/text.js";
 import { type BackendDb, openBackendDb } from "../src/db/client.js";
 import { botUiSettings } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
-import { cancelDraft, publishDraftToQueue, scheduledDrafts } from "../src/publishing/drafts.js";
+import { cancelDraft, scheduledDrafts } from "../src/publishing/draft-lifecycle.js";
+import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
 import { reconcilePublication } from "../src/publishing/queue.js";
 
 let backendDb: BackendDb | null = null;

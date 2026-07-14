@@ -2,17 +2,22 @@ import { eq } from "drizzle-orm";
 import { type Bot, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../../db/client.js";
 import { videoDrafts, videoTargets } from "../../db/schema.js";
-import { getVideoDraft, type VideoJob } from "../../publishing/video-data.js";
+import { getVideoDraft } from "../../publishing/video-data.js";
 import type { VideoTarget } from "../../publishing/video-types.js";
 import { videoTargetLabel } from "../../publishing/video-types.js";
 import { videoPreview } from "./video-preview.js";
 import { formatVideoTime } from "./video-time.js";
 
-export async function notifyFinalVideoFailure(backendDb: BackendDb, bot: Bot | null, job: VideoJob): Promise<void> {
-  if (!bot || !job.videoTargetId) return;
-  const target = backendDb.db.select().from(videoTargets).where(eq(videoTargets.id, job.videoTargetId)).get();
+export async function notifyFinalVideoFailure(
+  backendDb: BackendDb,
+  bot: Bot | null,
+  videoDraftId: number,
+  videoTargetId: number | null,
+): Promise<void> {
+  if (!bot || !videoTargetId) return;
+  const target = backendDb.db.select().from(videoTargets).where(eq(videoTargets.id, videoTargetId)).get();
   if (target?.status !== "failed") return;
-  const draft = getVideoDraft(backendDb, job.videoDraftId);
+  const draft = getVideoDraft(backendDb, videoDraftId);
   const targetName = target.target as VideoTarget;
   await bot.api.sendMessage(
     draft.adminId,

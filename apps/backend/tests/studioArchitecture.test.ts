@@ -273,4 +273,26 @@ describe("Studio architecture boundaries", () => {
     expect(source).toContain('from "../studio/services/index.js"');
     expect(source).not.toContain('from "../db/schema.js"');
   });
+
+  it("keeps core workers independent from Telegram and routes UI work through durable events", () => {
+    expect(existsSync(`${root}worker.ts`), "legacy root worker should be absent").toBe(false);
+    const core = readFileSync(`${root}runtime/workers.ts`, "utf8");
+    const telegram = readFileSync(`${root}interfaces/telegram/worker.ts`, "utf8");
+    const events = readFileSync(`${root}interfaces/telegram/event-consumer.ts`, "utf8");
+    for (const forbidden of ["grammy", "../bot/", "../interfaces/"])
+      expect(core, `core worker imports ${forbidden}`).not.toContain(forbidden);
+    expect(telegram).toContain('from "./event-consumer.js"');
+    expect(events).toContain("delivery.post.settled");
+    expect(events).toContain("video.target.failed");
+  });
+
+  it("keeps publication orchestration out of the draft lifecycle", () => {
+    expect(existsSync(`${root}publishing/drafts.ts`), "legacy publishing drafts facade should be absent").toBe(false);
+    const lifecycle = readFileSync(`${root}publishing/draft-lifecycle.ts`, "utf8");
+    const workflow = readFileSync(`${root}publishing/publication-workflow.ts`, "utf8");
+    expect(lifecycle).not.toContain("createPublicationPlan");
+    expect(workflow).toContain("createPublicationPlan");
+    expect(workflow).toContain("persistPublicationPlan");
+    expect(workflow).toContain("reconcilePublication");
+  });
 });

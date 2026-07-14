@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import { baselineDrizzleMigrations, migrationStatus, openBackendDb } from "../src/db/client.js";
-import { publishDraftToQueue } from "../src/publishing/drafts.js";
+import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
 
 describe("openBackendDb", () => {
   it("enables WAL, busy timeout and foreign keys", () => {
