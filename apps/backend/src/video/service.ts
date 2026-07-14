@@ -10,7 +10,6 @@ import { videoPath } from "./storage.js";
 import type { VideoMetadata, VideoTarget } from "./types.js";
 import { VIDEO_TARGETS } from "./types.js";
 
-export { refreshVideoDraftStatus } from "./data.js";
 export { runVideoCycle } from "./worker.js";
 
 export function createVideoDraft(backendDb: BackendDb, adminId: number, assetKey: string, retentionHours: number): number {
