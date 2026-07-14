@@ -84,10 +84,10 @@ export function dueMetricTasks(backendDb: BackendDb, config: BackendConfig): Met
   }));
 }
 
-export function finishMetricTask(backendDb: BackendDb, task: MetricTask, error: string | null): void {
+export function finishMetricTask(backendDb: BackendDb, task: MetricTask, error: string | null, terminal = false): void {
   const now = new Date();
   const nextIndex = error ? task.checkCount : task.checkCount + 1;
-  const nextCheckpoint = error ? new Date(now.getTime() + 15 * 60_000) : metricCheckpointAt(task.dateUtc, nextIndex, now);
+  const nextCheckpoint = terminal ? null : error ? new Date(now.getTime() + 15 * 60_000) : metricCheckpointAt(task.dateUtc, nextIndex, now);
   backendDb.db
     .update(metricSchedule)
     .set({
@@ -99,6 +99,16 @@ export function finishMetricTask(backendDb: BackendDb, task: MetricTask, error: 
       updatedAt: now.toISOString(),
     })
     .where(and(eq(metricSchedule.postKey, task.postKey), eq(metricSchedule.target, task.target)))
+    .run();
+}
+
+export function freezeDisabledMetricSchedules(backendDb: BackendDb, targets: readonly string[]): void {
+  if (targets.length === 0) return;
+  const now = new Date().toISOString();
+  backendDb.db
+    .update(metricSchedule)
+    .set({ frozenAt: now, nextCheckAt: null, lastError: null, updatedAt: now })
+    .where(and(isNull(metricSchedule.frozenAt), inArray(metricSchedule.target, [...targets])))
     .run();
 }
 

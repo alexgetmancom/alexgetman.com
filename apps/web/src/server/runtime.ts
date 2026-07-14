@@ -20,9 +20,6 @@ export function startRuntime(): AppRuntime {
   const loops = startWorkers(config, backendDb, bot);
   runtime = { config, backendDb, bot, loops };
   if (!assertFfmpegAvailable()) log("warn", "ffmpeg is not available; video poster generation will fail until Docker/runtime installs it");
-  if (bot && config.ENABLE_BOT_POLLING) {
-    void bot.start({ onStart: (botInfo) => log("info", "grammY polling started", { username: botInfo.username }) });
-  }
   return runtime;
 }
 

@@ -3,7 +3,7 @@ import { asc, eq } from "drizzle-orm";
 import { loadConfig } from "../src/config.js";
 import { openBackendDb } from "../src/db/client.js";
 import { metricSamples, metricSchedule, postMetrics, posts, postTargets, workerState } from "../src/db/schema.js";
-import { createMetricCollectors } from "../src/metrics/collectors.js";
+import { createMetricCollectors, TerminalMetricError } from "../src/metrics/collectors.js";
 import { runMetricsCycle } from "../src/metrics/index.js";
 import type { MetricTask } from "../src/metrics/schedule.js";
 
@@ -72,6 +72,48 @@ describe("metrics cycle", () => {
       expect(collectors.x).toBeUndefined();
       expect(await runMetricsCycle(config, backendDb, collectors)).toBe(0);
       expect(backendDb.db.select().from(metricSchedule).all()).toEqual([]);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("disables LinkedIn metrics by default and freezes an existing schedule", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      seedPublishedPost(backendDb, "post:linkedin", "linkedin");
+      backendDb.db
+        .insert(metricSchedule)
+        .values({
+          postKey: "post:linkedin",
+          target: "linkedin",
+          nextCheckAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        })
+        .run();
+      const config = loadConfig({});
+      const collectors = createMetricCollectors(config);
+      expect(collectors.linkedin).toBeUndefined();
+      await runMetricsCycle(config, backendDb, collectors);
+      expect(
+        backendDb.db.select({ frozenAt: metricSchedule.frozenAt, lastError: metricSchedule.lastError }).from(metricSchedule).get(),
+      ).toEqual({ frozenAt: expect.any(String), lastError: null });
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("freezes a terminal collector error instead of retrying it", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      seedPublishedPost(backendDb, "post:terminal", "devto");
+      await runMetricsCycle(loadConfig({}), backendDb, {
+        devto: async () => {
+          throw new TerminalMetricError("post expired");
+        },
+      });
+      expect(
+        backendDb.db.select({ frozenAt: metricSchedule.frozenAt, lastError: metricSchedule.lastError }).from(metricSchedule).get(),
+      ).toEqual({ frozenAt: expect.any(String), lastError: "post expired" });
     } finally {
       backendDb.close();
     }

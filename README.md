@@ -1,88 +1,92 @@
 # alexgetman.com
 
-Open monorepo for [alexgetman.com](https://alexgetman.com): the Astro vertical news site, publishing pipeline, site-feed API, metrics and command-center tooling.
+`alexgetman.com` is an open, self-hosted personal publishing system. It combines an Astro news site with a private Telegram control bot, durable social publishing, creator analytics, and production operations tooling.
 
-## Repository Layout
+It is designed for a small editorial workflow rather than as a multi-tenant CMS or SaaS product.
+
+## What it does
+
+- Publishes bilingual Russian and English posts to the site and selected social platforms from Telegram.
+- Keeps publication targets, schedules, retries, and external IDs in SQLite so a partial platform failure does not invalidate the rest of a publication.
+- Supports optional video workflows for YouTube Shorts and Instagram Reels, including independent schedules and source-media retention.
+- Serves an Astro site with feeds, sitemap, structured metadata, search, and machine-readable endpoints.
+- Collects publication and creator metrics, exposes a private Command Center, and sends operational alerts to the owner.
+
+## Stack
+
+- Bun and TypeScript
+- Astro with the Node adapter for the public site and SSR endpoints
+- grammY for the private Telegram bot
+- SQLite via `bun:sqlite`, Drizzle ORM, and versioned SQL migrations
+- Zod for runtime configuration and untrusted payload validation
+- Docker Compose, nginx, GitHub Actions, and immutable image deployment
+
+The HTTP layer uses standard `Request` and `Response` objects. There is no Hono, Express, Redis, RabbitMQ, or separate database server.
+
+## Repository layout
 
 ```text
 apps/
-  web/       Astro site source and public assets
-  backend/   Hono API, grammY bot, workers, metrics and command-center tooling
-packages/
-  shared/    shared TypeScript types, Zod schemas and contracts
-docs/        public architecture, brand, SEO/AIO and operations notes
-deploy/      nginx examples and deployment snippets
-scripts/     repository-level checks and build helpers
+  web/       Astro pages, components, feeds, and the server entry point
+  backend/   bot, API controller, workers, publishing, metrics, and operations
+deploy/      Docker, nginx, deployment-agent, and production runbook material
+docs/        architecture and operations notes
+scripts/     repository checks and build helpers
 ```
 
-Runtime secrets, SQLite databases, Telegram sessions, generated media, logs and production `.env` files are intentionally excluded from git. Use `.env.example` files only.
+## Local development
 
-## Modular studio setup
-
-`studio.yaml` is the public feature switchboard: it selects the site, ordinary text publishing, video publishing, YouTube Shorts, Instagram Reels and analytics. It contains no secrets. Start from `studio.video-only.example.yaml` when only a video bot is needed, then put tokens in `apps/backend/secrets.env` (ignored by Git). Creator analytics are cached once per 24 hours; it stores at most 50 recent comments per published YouTube Short or Instagram Reel for the optional local AI audience report.
-
-Video publication is one durable workflow: choose YouTube and/or Instagram in Telegram, enter platform-specific metadata, and choose one shared time or a separate Moscow time for each platform. The bot reminds the owner five minutes before each target. Source media stays on the server until 24 hours after the final target result (published, failed, or cancelled), so one platform never deletes the file needed by the other.
+Requirements: Bun `1.3.14` and the usual native build prerequisites for `sharp`.
 
 ```bash
-cp studio.video-only.example.yaml studio.yaml
-cp apps/backend/secrets.env.example apps/backend/secrets.env
-bun run --filter @alexgetman/backend ops doctor
-```
-
-For Instagram Reels, `PUBLIC_BASE_URL` must be the public HTTPS address of the running service: Meta downloads the video from `/media/video/<asset>`. YouTube uses a manually-created OAuth refresh token (`YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`, `YOUTUBE_REFRESH_TOKEN`); the token values must never be committed.
-
-## Local Development
-
-```bash
-corepack enable
 bun install --frozen-lockfile
+cp apps/backend/secrets.env.example apps/backend/secrets.env
 bun run dev
 ```
 
-Open `http://127.0.0.1:4321`.
+The site is available at `http://127.0.0.1:4321`.
 
-## Build
+`studio.yaml` is a committed, secret-free feature switchboard. It controls the site, text publishing, video publishing, platform modules, and analytics. Keep tokens and private credentials in the ignored `apps/backend/secrets.env` file.
+
+For a video-only bot configuration:
 
 ```bash
+cp studio.video-only.example.yaml studio.yaml
+bun run --filter @alexgetman/backend ops doctor
+```
+
+## Quality checks
+
+```bash
+bun run typecheck
+bun run lint
+bun run test
 bun run build
 ```
 
-The build generates responsive images first and then runs `astro build`.
+`bun run check:all` runs the repository gate. Git hooks run the same important checks before a push; CI builds the production image and is the only production deployment path.
 
-To run the full monorepo gate:
+## Operations
 
-```bash
-bun run check:all
-```
-
-That runs the Astro build and the TypeScript backend typecheck/test gate.
-It also rejects Python, JavaScript and shell source files so the repository cannot drift back to a mixed-language runtime.
-
-Backend operations are exposed through one TypeScript CLI:
+The backend CLI is intentionally split between read-only diagnostics and explicit maintenance commands:
 
 ```bash
 bun run --filter @alexgetman/backend ops status --db ./data/pipeline.db
-bun run --filter @alexgetman/backend ops backup --db ./data/pipeline.db
+bun run --filter @alexgetman/backend ops doctor
 bun run --filter @alexgetman/backend ops audit --db ./data/pipeline.db
-bun run --filter @alexgetman/backend ops capabilities --db ./data/pipeline.db
+bun run --filter @alexgetman/backend ops verify --ref post:123
 ```
 
-## Content
+Production images contain the same bundled CLI. See [Operations](docs/operations.md) for the read-only production commands, backup scope, and log guidance.
 
-Runtime post data is read from `DATA_DIR/feed.json` in production and falls back to `apps/web/src/data/feed.json` locally.
+## Documentation
 
-Public routes include:
+- [Architecture](docs/architecture.md) — system boundaries, data flow, and state.
+- [Operations](docs/operations.md) — diagnostics, backups, deployment, and logs.
+- [Self-hosting plan](docs/self-hosting.md) — a future simple Docker deployment path.
+- [Social links](docs/social-links.md) — official profiles and publication targets.
+- [Plans](docs/plans.md) — historical discovery and future ideas; it is not a mandatory release checklist.
 
-- `/` — English home and feed.
-- `/ru/` — Russian home and feed.
-- `/{post_id}/{english-slug}/` — English posts.
-- `/ru/{post_id}/{russian-slug}/` — Russian posts.
-- `/feed.xml`, `/feed.json`, `/ru/feed.xml`, `/ru/feed.json` — feeds.
-- `/about`, `/ru/about`, `/privacy`, `/ru/privacy` — static SEO and policy pages.
+## Security and privacy
 
-Nginx cache rules live in `deploy/nginx/`.
-
-## Docs
-
-- `docs/plans.md` is the current public roadmap.
-- `docs/social-links.md` documents the official profiles, feeds, and publishing targets.
+Runtime secrets, SQLite databases, Telegram sessions, generated media, logs, and production environment files are intentionally excluded from Git. The repository contains examples only; never commit a token, OAuth refresh token, session, or production data export.

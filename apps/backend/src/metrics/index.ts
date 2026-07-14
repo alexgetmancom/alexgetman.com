@@ -3,9 +3,9 @@ import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { type JsonValue, postTargets } from "../db/schema.js";
 import { recordWorkerState } from "../services/workerState.js";
-import { createMetricCollectors, type MetricCollector } from "./collectors.js";
+import { createMetricCollectors, isTerminalMetricError, type MetricCollector } from "./collectors.js";
 import { pruneMetricSamples, upsertMetricError, upsertMetrics } from "./repository.js";
-import { dueMetricTasks, ensureMetricSchedule, finishMetricTask } from "./schedule.js";
+import { dueMetricTasks, ensureMetricSchedule, finishMetricTask, freezeDisabledMetricSchedules } from "./schedule.js";
 
 export async function runMetricsCycle(
   config: BackendConfig,
@@ -13,6 +13,10 @@ export async function runMetricsCycle(
   collectors: Record<string, MetricCollector> = createMetricCollectors(config),
 ): Promise<number> {
   ensureMetricSchedule(backendDb, Object.keys(collectors));
+  freezeDisabledMetricSchedules(backendDb, [
+    ...(config.ENABLE_X_METRICS ? [] : ["x", "twitter"]),
+    ...(config.ENABLE_LINKEDIN_METRICS ? [] : ["linkedin"]),
+  ]);
   const tasks = dueMetricTasks(backendDb, config);
   for (const task of tasks) {
     const collector = collectors[task.target];
@@ -34,7 +38,7 @@ export async function runMetricsCycle(
         upsertMetricError(backendDb, task.postKey, task.target, `${task.target}_metrics`, message, {
           external_id: task.externalId,
         } as JsonValue);
-        finishMetricTask(backendDb, task, message);
+        finishMetricTask(backendDb, task, message, isTerminalMetricError(error));
       });
     }
   }

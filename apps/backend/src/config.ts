@@ -92,6 +92,7 @@ const envSchema = z
     LINKEDIN_ACCESS_TOKEN: z.string().optional(),
     LINKEDIN_AUTHOR_URN: z.string().optional(),
     LINKEDIN_API_VERSION: z.string().default("202606"),
+    ENABLE_LINKEDIN_METRICS: booleanFlag.default(false),
     X_CONSUMER_KEY: z.string().optional(),
     X_CONSUMER_SECRET: z.string().optional(),
     X_ACCESS_TOKEN: z.string().optional(),

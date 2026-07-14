@@ -8,6 +8,14 @@ import type { MetricTask } from "./schedule.js";
 export type MetricResult = { metrics: Record<string, number>; source: string; raw: JsonValue; url?: string };
 export type MetricCollector = (task: MetricTask) => Promise<MetricResult>;
 
+export class TerminalMetricError extends Error {
+  readonly terminal = true;
+}
+
+export function isTerminalMetricError(error: unknown): error is TerminalMetricError {
+  return error instanceof TerminalMetricError;
+}
+
 export function createMetricCollectors(config: BackendConfig, fetchImpl: typeof fetch = fetch): Record<string, MetricCollector> {
   const threads = (task: MetricTask) => collectThreads(task, config, fetchImpl);
   const facebook = (task: MetricTask) => collectFacebook(task, config, fetchImpl);
@@ -30,8 +38,8 @@ export function createMetricCollectors(config: BackendConfig, fetchImpl: typeof 
     instagram_stories_ru: instagram,
     telegram_story: (task) => collectTelegramStory(task, config),
     telegram_stories: (task) => collectTelegramStory(task, config),
-    linkedin: (task) => collectLinkedIn(task, config, fetchImpl),
   };
+  if (config.ENABLE_LINKEDIN_METRICS) collectors.linkedin = (task) => collectLinkedIn(task, config, fetchImpl);
   if (config.ENABLE_X_METRICS) {
     collectors.x = (task) => collectX(task, config, fetchImpl);
     collectors.twitter = (task) => collectX(task, config, fetchImpl);
@@ -68,7 +76,12 @@ async function collectThreads(task: MetricTask, config: BackendConfig, fetchImpl
     const url = new URL(`https://graph.threads.net/v1.0/${id}/insights`);
     url.searchParams.set("metric", config.THREADS_METRICS);
     url.searchParams.set("access_token", token);
-    const result = await requestJson<{ data?: Array<{ name?: string; values?: Array<{ value?: number }> }> }>(fetchImpl, url.toString());
+    let result: { data?: Array<{ name?: string; values?: Array<{ value?: number }> }> };
+    try {
+      result = await requestJson(fetchImpl, url.toString());
+    } catch (error) {
+      throw terminalIfMissingRemoteObject(error);
+    }
     const metrics: Record<string, number> = {};
     for (const item of result.data ?? []) {
       if (item.name) metrics[item.name] = Number(item.values?.[0]?.value ?? 0);
@@ -267,12 +280,17 @@ async function collectInstagramStory(task: MetricTask, config: BackendConfig, fe
   if (!token || !task.externalId) throw new Error("missing_instagram_story_token_or_id");
   const host = token.startsWith("IG") ? "graph.instagram.com" : "graph.facebook.com";
   const version = host === "graph.instagram.com" ? config.INSTAGRAM_GRAPH_API_VERSION : config.FACEBOOK_GRAPH_API_VERSION;
-  const insights = await requestJson<{ data?: Array<{ name?: string; values?: Array<{ value?: number }> }> }>(
-    fetchImpl,
-    graphUrl(`https://${host}/${version}/${task.externalId}/insights`, token, {
-      metric: "views,reach,replies,shares,total_interactions,navigation",
-    }),
-  );
+  let insights: { data?: Array<{ name?: string; values?: Array<{ value?: number }> }> };
+  try {
+    insights = await requestJson(
+      fetchImpl,
+      graphUrl(`https://${host}/${version}/${task.externalId}/insights`, token, {
+        metric: "views,reach,replies,shares,total_interactions,navigation",
+      }),
+    );
+  } catch (error) {
+    throw terminalIfMissingRemoteObject(error);
+  }
   const values = Object.fromEntries((insights.data ?? []).map((item) => [item.name ?? "", Number(item.values?.[0]?.value ?? 0)]));
   let likes = 0;
   try {
@@ -310,11 +328,12 @@ async function collectTelegramStory(task: MetricTask, config: BackendConfig): Pr
     !task.externalId
   )
     throw new Error("missing_telegram_story_credentials_or_id");
+  if (!/^\d+$/.test(task.externalId)) throw new TerminalMetricError(`invalid_telegram_story_id:${task.externalId}`);
   const instance = createChannelStoryClient(config);
   await instance.connect();
   try {
     const story = (await instance.getStoriesById(config.CHANNEL_USERNAME.replace(/^@/, ""), Number(task.externalId)))[0];
-    if (!story) throw new Error(`telegram_story_not_found:${task.externalId}`);
+    if (!story) throw new TerminalMetricError(`telegram_story_not_found:${task.externalId}`);
     const interactions = story.interactions;
     const reactions = Number(interactions?.reactionsCount ?? 0);
     const forwards = Number(interactions?.forwardsCount ?? 0);
@@ -412,4 +431,13 @@ function escapeRegExp(value: string): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function terminalIfMissingRemoteObject(error: unknown): Error {
+  const message = errorMessage(error);
+  return /(?:\b404\b|unsupported get request|does not exist|missing permissions|error_subcode\D*33)/i.test(message)
+    ? new TerminalMetricError(message)
+    : error instanceof Error
+      ? error
+      : new Error(message);
 }
