@@ -7,7 +7,13 @@ import { loadConfig } from "../src/config.js";
 import { openBackendDb } from "../src/db/client.js";
 import { postTargets, publishJobs } from "../src/db/schema.js";
 import { HttpPublishError } from "../src/publishing/errors.js";
-import { claimDuePublishJobs, completePublishJob, enqueuePublishJob, recoverStalePublishJobs } from "../src/publishing/queue.js";
+import {
+  claimDuePublishJobs,
+  completePublishJob,
+  enqueuePublishJob,
+  failPublishJob,
+  recoverStalePublishJobs,
+} from "../src/publishing/queue.js";
 import { runPublishCycle } from "../src/worker.js";
 
 function tempDb() {
@@ -16,6 +22,71 @@ function tempDb() {
 }
 
 describe("publish queue", () => {
+  it("does not let a stale worker fail a job claimed by another worker", () => {
+    const backendDb = tempDb();
+    try {
+      const id = enqueuePublishJob(backendDb, { messageId: 90, target: "devto", payload: { title: "Queued", bodyMarkdown: "Body" } });
+      const [claimed] = claimDuePublishJobs(backendDb, 1, "active-worker");
+      if (!claimed) throw new Error("job was not claimed");
+
+      failPublishJob(backendDb, loadConfig({}), id, new HttpPublishError("server error", 503), "stale-worker");
+
+      expect(
+        backendDb.db
+          .select({ status: publishJobs.status, lockedBy: publishJobs.lockedBy })
+          .from(publishJobs)
+          .where(eq(publishJobs.jobId, id))
+          .get(),
+      ).toEqual({
+        status: "publishing",
+        lockedBy: "active-worker",
+      });
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("retries a transient failed job while preserving its published external id", () => {
+    const backendDb = tempDb();
+    try {
+      const id = enqueuePublishJob(backendDb, { messageId: 91, target: "devto", payload: { title: "Queued", bodyMarkdown: "Body" } });
+      const [claimed] = claimDuePublishJobs(backendDb, 1, "active-worker");
+      if (!claimed) throw new Error("job was not claimed");
+      backendDb.db.update(postTargets).set({ externalId: "existing-id" }).where(eq(postTargets.target, "devto")).run();
+
+      failPublishJob(
+        backendDb,
+        loadConfig({ PUBLISH_BACKOFF_BASE_SECONDS: "1" }),
+        id,
+        new HttpPublishError("server error", 503),
+        claimed.lockId,
+      );
+
+      expect(
+        backendDb.db
+          .select({ status: publishJobs.status, attemptCount: publishJobs.attemptCount })
+          .from(publishJobs)
+          .where(eq(publishJobs.jobId, id))
+          .get(),
+      ).toEqual({
+        status: "queued",
+        attemptCount: 1,
+      });
+      expect(
+        backendDb.db
+          .select({ status: postTargets.status, externalId: postTargets.externalId })
+          .from(postTargets)
+          .where(eq(postTargets.target, "devto"))
+          .get(),
+      ).toEqual({
+        status: "queued",
+        externalId: "existing-id",
+      });
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("claims queued publish jobs and marks target publishing", () => {
     const backendDb = tempDb();
     try {

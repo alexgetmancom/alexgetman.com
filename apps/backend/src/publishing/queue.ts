@@ -50,21 +50,15 @@ export function claimDuePublishJobs(backendDb: BackendDb, limit: number, worker 
         .get();
       if (!locked) continue;
       const postKey = jobPostKey(row);
-      tx.insert(postTargets)
-        .values({
-          postKey,
-          target: row.target,
-          status: "publishing",
-          error: null,
-          skipped: 0,
-          updatedAt: now,
-          rawJson: JSON.stringify({ job_id: row.jobId, worker }),
-        })
-        .onConflictDoUpdate({
-          target: [postTargets.postKey, postTargets.target],
-          set: { status: "publishing", error: null, skipped: 0, updatedAt: now, rawJson: JSON.stringify({ job_id: row.jobId, worker }) },
-        })
-        .run();
+      upsertPostTarget(tx, {
+        postKey,
+        target: row.target,
+        status: "publishing",
+        error: null,
+        skipped: 0,
+        updatedAt: now,
+        rawJson: JSON.stringify({ job_id: row.jobId, worker }),
+      });
       insertEvent(tx, postKey, row.target, "publish.job.claimed", "info", `Publishing ${row.target}`, { job_id: row.jobId, worker });
       claimed.push({
         jobId: row.jobId,
@@ -102,27 +96,15 @@ export function recoverStalePublishJobs(backendDb: BackendDb, timeoutSeconds: nu
         .get();
       if (!updated) continue;
       const postKey = jobPostKey(job);
-      tx.insert(postTargets)
-        .values({
-          postKey,
-          target: job.target,
-          status: "failed",
-          error,
-          skipped: 0,
-          updatedAt: now,
-          rawJson: JSON.stringify({ job_id: job.jobId, recovered_stale_lock: true }),
-        })
-        .onConflictDoUpdate({
-          target: [postTargets.postKey, postTargets.target],
-          set: {
-            status: "failed",
-            error,
-            skipped: 0,
-            updatedAt: now,
-            rawJson: JSON.stringify({ job_id: job.jobId, recovered_stale_lock: true }),
-          },
-        })
-        .run();
+      upsertPostTarget(tx, {
+        postKey,
+        target: job.target,
+        status: "failed",
+        error,
+        skipped: 0,
+        updatedAt: now,
+        rawJson: JSON.stringify({ job_id: job.jobId, recovered_stale_lock: true }),
+      });
       insertEvent(tx, postKey, job.target, "publish.job.failed", "error", error, { job_id: job.jobId, recovered_stale_lock: true });
     }
   });
@@ -161,31 +143,17 @@ export function completePublishJob(
         })
         .where(eq(publishJobs.jobId, jobId))
         .run();
-      tx.insert(postTargets)
-        .values({
-          postKey,
-          target: job.target,
-          status: "queued",
-          externalId: ids[0] ?? null,
-          externalIdsJson: ids,
-          error,
-          skipped: 0,
-          updatedAt: now,
-          rawJson: JSON.stringify(result),
-        })
-        .onConflictDoUpdate({
-          target: [postTargets.postKey, postTargets.target],
-          set: {
-            status: "queued",
-            externalId: ids[0] ?? null,
-            externalIdsJson: ids,
-            error,
-            skipped: 0,
-            updatedAt: now,
-            rawJson: JSON.stringify(result),
-          },
-        })
-        .run();
+      upsertPostTarget(tx, {
+        postKey,
+        target: job.target,
+        status: "queued",
+        externalId: ids[0] ?? null,
+        externalIdsJson: ids,
+        error,
+        skipped: 0,
+        updatedAt: now,
+        rawJson: JSON.stringify(result),
+      });
       insertEvent(tx, postKey, job.target, "publish.job.partial", "warn", error, { job_id: jobId, ids, retry_at: retryAt });
     });
     return;
@@ -211,31 +179,17 @@ export function completePublishJob(
         })
         .where(eq(publishJobs.jobId, jobId))
         .run();
-      tx.insert(postTargets)
-        .values({
-          postKey,
-          target: job.target,
-          status: retry ? "queued" : "failed",
-          externalId: reconciliationIds[0] ?? null,
-          externalIdsJson: reconciliationIds,
-          error,
-          skipped: 0,
-          updatedAt: now,
-          rawJson: JSON.stringify(result),
-        })
-        .onConflictDoUpdate({
-          target: [postTargets.postKey, postTargets.target],
-          set: {
-            status: retry ? "queued" : "failed",
-            externalId: reconciliationIds[0] ?? null,
-            externalIdsJson: reconciliationIds,
-            error,
-            skipped: 0,
-            updatedAt: now,
-            rawJson: JSON.stringify(result),
-          },
-        })
-        .run();
+      upsertPostTarget(tx, {
+        postKey,
+        target: job.target,
+        status: retry ? "queued" : "failed",
+        externalId: reconciliationIds[0] ?? null,
+        externalIdsJson: reconciliationIds,
+        error,
+        skipped: 0,
+        updatedAt: now,
+        rawJson: JSON.stringify(result),
+      });
       insertEvent(tx, postKey, job.target, retry ? "publish.job.reconcile" : "publish.job.failed", retry ? "warn" : "error", error, {
         job_id: jobId,
         external_ids: reconciliationIds,
@@ -249,33 +203,18 @@ export function completePublishJob(
   const normalized = normalizePublishResult(result);
   backendDb.db.transaction((tx) => {
     const published = normalized.status === "published";
-    tx.insert(postTargets)
-      .values({
-        postKey,
-        target: job.target,
-        status: normalized.status,
-        externalId: published ? normalized.externalId : null,
-        externalIdsJson: published && normalized.externalIds != null ? normalized.externalIds.map(String) : null,
-        url: published ? normalized.url : null,
-        error: normalized.error,
-        skipped: normalized.skipped,
-        updatedAt: now,
-        rawJson: normalized.rawJson,
-      })
-      .onConflictDoUpdate({
-        target: [postTargets.postKey, postTargets.target],
-        set: {
-          status: normalized.status,
-          externalId: published ? normalized.externalId : null,
-          externalIdsJson: published && normalized.externalIds != null ? normalized.externalIds.map(String) : null,
-          url: published ? normalized.url : null,
-          error: normalized.error,
-          skipped: normalized.skipped,
-          updatedAt: now,
-          rawJson: normalized.rawJson,
-        },
-      })
-      .run();
+    upsertPostTarget(tx, {
+      postKey,
+      target: job.target,
+      status: normalized.status,
+      externalId: published ? normalized.externalId : null,
+      externalIdsJson: published && normalized.externalIds != null ? normalized.externalIds.map(String) : null,
+      url: published ? normalized.url : null,
+      error: normalized.error,
+      skipped: normalized.skipped,
+      updatedAt: now,
+      rawJson: normalized.rawJson,
+    });
     tx.update(publishJobs)
       .set({ status: normalized.status, lockedBy: null, lockedAt: null, lastError: normalized.error, updatedAt: now })
       .where(eq(publishJobs.jobId, jobId))
@@ -325,27 +264,15 @@ export function failPublishJob(backendDb: BackendDb, config: BackendConfig, jobI
       .where(eq(publishJobs.jobId, jobId))
       .run();
     if (!shouldRetry) deleteSupersededJobs(tx, job, jobId, postKey);
-    tx.insert(postTargets)
-      .values({
-        postKey,
-        target: job.target,
-        status,
-        error: errorText,
-        skipped: 0,
-        updatedAt: now,
-        rawJson: JSON.stringify({ job_id: jobId, error_class: errorClass, attempt, next_attempt_at: nextAttempt }),
-      })
-      .onConflictDoUpdate({
-        target: [postTargets.postKey, postTargets.target],
-        set: {
-          status,
-          error: errorText,
-          skipped: 0,
-          updatedAt: now,
-          rawJson: JSON.stringify({ job_id: jobId, error_class: errorClass, attempt, next_attempt_at: nextAttempt }),
-        },
-      })
-      .run();
+    upsertPostTarget(tx, {
+      postKey,
+      target: job.target,
+      status,
+      error: errorText,
+      skipped: 0,
+      updatedAt: now,
+      rawJson: JSON.stringify({ job_id: jobId, error_class: errorClass, attempt, next_attempt_at: nextAttempt }),
+    });
     insertEvent(
       tx,
       postKey,
@@ -374,17 +301,11 @@ export function reconcilePublication(backendDb: BackendDb, postId: number): void
   });
 }
 
-export function enqueuePublishJob(
-  backendDb: BackendDb,
-  input: {
-    messageId: number;
-    target: string;
-    payload: JsonObject;
-    postId?: number | null;
-    postKey?: string | null;
-    publishAt?: string | null;
-  },
-): number {
+export function enqueuePublishJob(backendDb: BackendDb, input: EnqueuePublishJobInput): number {
+  return enqueuePublishJobTx(backendDb.db, input);
+}
+
+export function enqueuePublishJobTx(db: BackendDb["db"], input: EnqueuePublishJobInput): number {
   const now = new Date().toISOString();
   const postKey = input.postKey ?? (input.postId != null ? `post:${input.postId}` : `telegram:alexgetmancom:${input.messageId}`);
   const inputRecord = {
@@ -399,11 +320,19 @@ export function enqueuePublishJob(
     updatedAt: now,
   } satisfies typeof publishJobs.$inferInsert;
   insertPublishJobSchema.parse(inputRecord);
-  const record = inputRecord;
-  const inserted = backendDb.db.insert(publishJobs).values(record).returning({ jobId: publishJobs.jobId }).get();
+  const inserted = db.insert(publishJobs).values(inputRecord).returning({ jobId: publishJobs.jobId }).get();
   if (!inserted) throw new Error("publish job insert did not return an id");
   return inserted.jobId;
 }
+
+type EnqueuePublishJobInput = {
+  messageId: number;
+  target: string;
+  payload: JsonObject;
+  postId?: number | null;
+  postKey?: string | null;
+  publishAt?: string | null;
+};
 
 function deleteSupersededJobs(tx: BackendDb["db"], job: typeof publishJobs.$inferSelect, jobId: number, postKey: string): void {
   tx.delete(publishJobs)
@@ -431,6 +360,15 @@ function externalIds(result: PublishResult): string[] {
 
 function jobPostKey(job: Pick<typeof publishJobs.$inferSelect, "postKey" | "postId" | "messageId">): string {
   return job.postKey ?? (job.postId != null ? `post:${job.postId}` : `telegram:alexgetmancom:${job.messageId}`);
+}
+
+/** Keeps target state updates consistent across claim, completion, and recovery paths. */
+function upsertPostTarget(db: BackendDb["db"], value: typeof postTargets.$inferInsert): void {
+  const { postKey, target, ...patch } = value;
+  db.insert(postTargets)
+    .values(value)
+    .onConflictDoUpdate({ target: [postTargets.postKey, postTargets.target], set: patch })
+    .run();
 }
 
 function insertEvent(

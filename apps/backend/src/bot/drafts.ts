@@ -13,7 +13,7 @@ import {
   siteSourceItems,
 } from "../db/schema.js";
 import { localizeTargetPayload } from "../publishing/payload.js";
-import { enqueuePublishJob, reconcilePublication } from "../publishing/queue.js";
+import { enqueuePublishJobTx, reconcilePublication } from "../publishing/queue.js";
 import { rebalanceScheduledDrafts } from "../publishing/schedule.js";
 import { type DraftMessage, firstLine, parseArrayValue, parseTargets, slugify } from "./message.js";
 import { entitiesToHtml } from "./text.js";
@@ -136,63 +136,8 @@ export function publishDraftToQueue(backendDb: BackendDb, draftId: number, optio
       : null;
   const postId = existing?.postId ?? inserted?.postId;
   if (postId == null) throw new Error("publication insert did not return an id");
-  const messageId = Number(draft.channel_message_id ?? postId);
-  const postKey = `post:${postId}`;
-  const mediaRu = parseArrayValue(draft.media_ru_json);
-  const parsedMediaEn = parseArrayValue(draft.media_en_json);
-  const mediaEn = parsedMediaEn.length > 0 ? parsedMediaEn : mediaRu;
-  const entitiesRu = parseArrayValue(draft.text_ru_entities_json);
-  const entitiesEn = parseArrayValue(draft.text_en_entities_json);
-  const targets = parseTargets(draft.targets_json);
-  const textRu = String(draft.text_ru ?? "");
-  const textEn = String(draft.text_en_approved ?? draft.text_en_machine ?? draft.text_ru ?? "");
-  const slugRu = slugify(firstLine(textRu), postId);
-  const slugEn = slugify(firstLine(textEn), postId);
-  const payload = {
-    draft_id: draftId,
-    post_id: postId,
-    title: firstLine(textEn),
-    text: textRu,
-    text_ru: textRu,
-    text_en: textEn,
-    bodyMarkdown: textEn,
-    media: mediaRu,
-    media_en: mediaEn,
-    entities_ru: entitiesRu,
-    entities_en: entitiesEn,
-    date: ruAt ?? enAt ?? now,
-    publish_at_ru: ruAt,
-    publish_at_en: enAt,
-    targets,
-    slug_ru: slugRu,
-    slug_en: slugEn,
-    has_ru: Boolean(targets.site_ru),
-    has_en: Boolean(targets.site_en),
-  };
-  const ruLocale: typeof postLocales.$inferInsert = {
-    postId,
-    locale: "ru",
-    slug: slugRu,
-    text: textRu,
-    html: entitiesToHtml(textRu, entitiesRu),
-    entitiesJson: typeof draft.text_ru_entities_json === "string" ? draft.text_ru_entities_json : null,
-    mediaJson: mediaRu,
-    siteEnabled: targets.site_ru ? 1 : 0,
-    publishedAt: targets.site_ru ? ruAt : null,
-    updatedAt: now,
-  };
-  const enLocale: typeof postLocales.$inferInsert = {
-    postId,
-    locale: "en",
-    slug: slugEn,
-    text: textEn,
-    html: entitiesToHtml(textEn, entitiesEn),
-    entitiesJson: typeof draft.text_en_entities_json === "string" ? draft.text_en_entities_json : null,
-    mediaJson: mediaEn,
-    siteEnabled: targets.site_en ? 1 : 0,
-    publishedAt: targets.site_en ? enAt : null,
-    updatedAt: now,
-  };
+  const prepared = prepareDraftPublication(draft, draftId, postId, ruAt, enAt, now);
+  const { messageId, postKey, mediaRu, targets, textRu, textEn, payload, ruLocale, enLocale } = prepared;
 
   backendDb.db.transaction((tx) => {
     const postValues = {
@@ -271,7 +216,7 @@ export function publishDraftToQueue(backendDb: BackendDb, draftId: number, optio
     );
     for (const [target, enabled] of Object.entries(targets)) {
       if (enabled && !isSiteTarget(target) && !finalTargets.has(target))
-        enqueuePublishJob(backendDb, {
+        enqueuePublishJobTx(tx, {
           postId,
           postKey,
           messageId,
@@ -314,4 +259,79 @@ export function publishDraftToQueue(backendDb: BackendDb, draftId: number, optio
   // ordinary publication remains scheduled until its jobs reconcile.
   reconcilePublication(backendDb, postId);
   return postId;
+}
+
+function prepareDraftPublication(
+  draft: ReturnType<typeof requireDraft>,
+  draftId: number,
+  postId: number,
+  ruAt: string | null,
+  enAt: string | null,
+  now: string,
+) {
+  const messageId = Number(draft.channel_message_id ?? postId);
+  const postKey = `post:${postId}`;
+  const mediaRu = parseArrayValue(draft.media_ru_json);
+  const parsedMediaEn = parseArrayValue(draft.media_en_json);
+  const mediaEn = parsedMediaEn.length > 0 ? parsedMediaEn : mediaRu;
+  const entitiesRu = parseArrayValue(draft.text_ru_entities_json);
+  const entitiesEn = parseArrayValue(draft.text_en_entities_json);
+  const targets = parseTargets(draft.targets_json);
+  const textRu = String(draft.text_ru ?? "");
+  const textEn = String(draft.text_en_approved ?? draft.text_en_machine ?? draft.text_ru ?? "");
+  const slugRu = slugify(firstLine(textRu), postId);
+  const slugEn = slugify(firstLine(textEn), postId);
+  const payload = {
+    draft_id: draftId,
+    post_id: postId,
+    title: firstLine(textEn),
+    text: textRu,
+    text_ru: textRu,
+    text_en: textEn,
+    bodyMarkdown: textEn,
+    media: mediaRu,
+    media_en: mediaEn,
+    entities_ru: entitiesRu,
+    entities_en: entitiesEn,
+    date: ruAt ?? enAt ?? now,
+    publish_at_ru: ruAt,
+    publish_at_en: enAt,
+    targets,
+    slug_ru: slugRu,
+    slug_en: slugEn,
+    has_ru: Boolean(targets.site_ru),
+    has_en: Boolean(targets.site_en),
+  };
+  const locale = (
+    localeName: "ru" | "en",
+    text: string,
+    slug: string,
+    media: Record<string, unknown>[],
+    entities: Record<string, unknown>[],
+    entitiesJson: unknown,
+    enabled: boolean,
+    publishedAt: string | null,
+  ): typeof postLocales.$inferInsert => ({
+    postId,
+    locale: localeName,
+    slug,
+    text,
+    html: entitiesToHtml(text, entities),
+    entitiesJson: typeof entitiesJson === "string" ? entitiesJson : null,
+    mediaJson: media,
+    siteEnabled: enabled ? 1 : 0,
+    publishedAt: enabled ? publishedAt : null,
+    updatedAt: now,
+  });
+  return {
+    messageId,
+    postKey,
+    mediaRu,
+    targets,
+    textRu,
+    textEn,
+    payload,
+    ruLocale: locale("ru", textRu, slugRu, mediaRu, entitiesRu, draft.text_ru_entities_json, Boolean(targets.site_ru), ruAt),
+    enLocale: locale("en", textEn, slugEn, mediaEn, entitiesEn, draft.text_en_entities_json, Boolean(targets.site_en), enAt),
+  };
 }

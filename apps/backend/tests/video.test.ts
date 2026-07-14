@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { and, eq } from "drizzle-orm";
+import { handleVideoCallback, handleVideoMessage } from "../src/bot/video.js";
+import { getSession, saveSession } from "../src/bot/video-session.js";
+import { loadConfig } from "../src/config.js";
 import type { BackendDb } from "../src/db/client.js";
 import { openBackendDb } from "../src/db/client.js";
 import { socialComments, videoMetricSchedule, videoMetricSnapshots, videoTargets } from "../src/db/schema.js";
@@ -21,7 +24,65 @@ afterEach(() => {
   backendDb = null;
 });
 
+function videoConfig() {
+  const config = loadConfig({});
+  config.studio.modules.video_posting = true;
+  config.studio.modules.youtube = true;
+  config.studio.modules.instagram = true;
+  return config;
+}
+
+function videoContext(input: { text?: string; callback?: string } = {}) {
+  const replies: string[] = [];
+  const callbackAnswers: Array<Record<string, unknown> | undefined> = [];
+  const context = {
+    from: { id: 42 },
+    chat: { id: 100 },
+    message: input.text == null ? undefined : { text: input.text },
+    callbackQuery: input.callback == null ? undefined : { data: input.callback, message: { message_id: 11 } },
+    reply: async (text: string) => {
+      replies.push(text);
+      return { message_id: 12 };
+    },
+    answerCallbackQuery: async (options?: Record<string, unknown>) => {
+      callbackAnswers.push(options);
+    },
+    editMessageReplyMarkup: async () => undefined,
+    editMessageText: async () => undefined,
+    api: { editMessageText: async () => undefined },
+  };
+  return { context: context as unknown as import("grammy").Context, replies, callbackAnswers };
+}
+
 describe("video publication queue", () => {
+  it("updates one video field through the Telegram message state machine", async () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
+    saveVideoMetadata(backendDb, draftId, "youtube_shorts", { title: "Old", description: "Description", tags: [] });
+    saveSession(backendDb, 42, { draftId, step: "youtube_title", selected: ["youtube_shorts"], data: { is_single_edit: true } });
+    const { context } = videoContext({ text: "New title" });
+
+    expect(await handleVideoMessage(context, backendDb, videoConfig())).toBe(true);
+    expect(listVideoTargets(backendDb, draftId)[0]?.metadataJson).toMatchObject({ title: "New title" });
+    expect(getSession(backendDb, 42)).toBeNull();
+  });
+
+  it("routes target selection callbacks and rejects an invalid target", async () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    saveSession(backendDb, 42, { draftId, step: "targets", selected: ["youtube_shorts"], data: {} });
+    const selected = videoContext({ callback: "video_targets_done" });
+
+    expect(await handleVideoCallback(selected.context, backendDb, videoConfig())).toBe(true);
+    expect(getSession(backendDb, 42)).toMatchObject({ draftId, step: "youtube_title" });
+    expect(listVideoTargets(backendDb, draftId).map((target) => target.target)).toEqual(["youtube_shorts"]);
+
+    const invalid = videoContext({ callback: "video_toggle:not-a-target" });
+    expect(await handleVideoCallback(invalid.context, backendDb, videoConfig())).toBe(true);
+    expect(invalid.callbackAnswers).toEqual([{ text: "Начните создание видео заново." }]);
+  });
+
   it("keeps independent platform schedules and queues prepare, reminder and publish work", () => {
     backendDb = openBackendDb(":memory:");
     const draftId = createVideoDraft(backendDb, 42, "video-source", 24);

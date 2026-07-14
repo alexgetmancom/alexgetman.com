@@ -416,38 +416,28 @@ async function editPublishedTargets(
           }),
         );
       } else if (row.target === "facebook" && textEn) {
-        if (!config.FACEBOOK_PAGE_ACCESS_TOKEN) {
-          results.push({
-            target: row.target,
-            ok: false,
-            skipped: true,
-            error: "missing FACEBOOK_PAGE_ACCESS_TOKEN",
-          });
-          continue;
-        }
         results.push(
-          await postJson(fetchImpl, `https://graph.facebook.com/${config.FACEBOOK_GRAPH_API_VERSION}/${row.externalId}`, row.target, {
-            message: textEn,
-            description: textEn,
-            access_token: config.FACEBOOK_PAGE_ACCESS_TOKEN,
-          }),
+          await editFacebookTarget(
+            fetchImpl,
+            config,
+            row.target,
+            row.externalId,
+            textEn,
+            config.FACEBOOK_PAGE_ACCESS_TOKEN,
+            "FACEBOOK_PAGE_ACCESS_TOKEN",
+          ),
         );
       } else if (row.target === "facebook_ru" && textRu) {
-        if (!config.FACEBOOK_RU_PAGE_ACCESS_TOKEN) {
-          results.push({
-            target: row.target,
-            ok: false,
-            skipped: true,
-            error: "missing FACEBOOK_RU_PAGE_ACCESS_TOKEN",
-          });
-          continue;
-        }
         results.push(
-          await postJson(fetchImpl, `https://graph.facebook.com/${config.FACEBOOK_GRAPH_API_VERSION}/${row.externalId}`, row.target, {
-            message: textRu,
-            description: textRu,
-            access_token: config.FACEBOOK_RU_PAGE_ACCESS_TOKEN,
-          }),
+          await editFacebookTarget(
+            fetchImpl,
+            config,
+            row.target,
+            row.externalId,
+            textRu,
+            config.FACEBOOK_RU_PAGE_ACCESS_TOKEN,
+            "FACEBOOK_RU_PAGE_ACCESS_TOKEN",
+          ),
         );
       } else if (row.target === "linkedin" && textEn) {
         if (!config.LINKEDIN_ACCESS_TOKEN) {
@@ -483,6 +473,23 @@ async function editPublishedTargets(
     }
   }
   return results;
+}
+
+async function editFacebookTarget(
+  fetchImpl: typeof fetch,
+  config: BackendConfig,
+  target: string,
+  externalId: string,
+  text: string,
+  token: string | undefined,
+  tokenName: string,
+): Promise<Record<string, unknown>> {
+  if (!token) return { target, ok: false, skipped: true, error: `missing ${tokenName}` };
+  return postJson(fetchImpl, `https://graph.facebook.com/${config.FACEBOOK_GRAPH_API_VERSION}/${externalId}`, target, {
+    message: text,
+    description: text,
+    access_token: token,
+  });
 }
 
 async function postJson(

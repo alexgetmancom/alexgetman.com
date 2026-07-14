@@ -197,4 +197,62 @@ describe("command center actions", () => {
       backendDb.close();
     }
   });
+
+  it("uses the Facebook token and reports a missing token without a network call", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      backendDb.db.insert(publications).values({ postId: 8, status: "published", createdAt: now, updatedAt: now }).run();
+      backendDb.db
+        .insert(posts)
+        .values({
+          postKey: "post:8",
+          postId: 8,
+          channel: "controller",
+          messageId: 8,
+          text: "RU",
+          textEn: "EN",
+          status: "active",
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      backendDb.db
+        .insert(postTargets)
+        .values([{ postKey: "post:8", target: "facebook", status: "published", externalId: "en-post", updatedAt: now }])
+        .run();
+      const requests: Array<{ url: string; body: string }> = [];
+      const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
+        requests.push({ url: String(input), body: String(init?.body) });
+        return new Response("{}", { status: 200 });
+      }) as typeof fetch;
+
+      const result = await runCommandAction(
+        backendDb,
+        { action: "edit_en", ref: "post:8", text_en: "Updated EN" },
+        loadConfig({ FACEBOOK_PAGE_ACCESS_TOKEN: "en-token" }),
+        fetchImpl,
+      );
+
+      expect(requests).toEqual([
+        {
+          url: "https://graph.facebook.com/v23.0/en-post",
+          body: JSON.stringify({ message: "Updated EN", description: "Updated EN", access_token: "en-token" }),
+        },
+      ]);
+      expect(result.external).toEqual([{ target: "facebook", ok: true, status: 200, response: {} }]);
+      const missingToken = await runCommandAction(
+        backendDb,
+        { action: "edit_en", ref: "post:8", text_en: "No token" },
+        loadConfig({}),
+        fetchImpl,
+      );
+      expect(missingToken.external).toEqual([
+        { target: "facebook", ok: false, skipped: true, error: "missing FACEBOOK_PAGE_ACCESS_TOKEN" },
+      ]);
+      expect(requests).toHaveLength(1);
+    } finally {
+      backendDb.close();
+    }
+  });
 });

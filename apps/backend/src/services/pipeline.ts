@@ -138,6 +138,23 @@ export function pipelineStatusPayload(config: BackendConfig, backendDb: BackendD
 
 function legacyPipelinePosts(backendDb: BackendDb, weekOffset: number): Record<string, unknown>[] {
   const [start, end] = weekBounds(weekOffset);
+  const rows = fetchLegacyPostRows(backendDb, start, end);
+  const postKeys = rows.map((row) => String(row.post_key ?? "")).filter(Boolean);
+  const targetRows = postKeys.length
+    ? backendDb.db.select().from(postTargets).where(inArray(postTargets.postKey, postKeys)).orderBy(asc(postTargets.target)).all()
+    : [];
+  const metricRows = postKeys.length
+    ? backendDb.db
+        .select()
+        .from(postMetrics)
+        .where(inArray(postMetrics.postKey, postKeys))
+        .orderBy(asc(postMetrics.target), asc(postMetrics.metricName))
+        .all()
+    : [];
+  return formatLegacyPipelinePosts(backendDb, rows, targetRows, metricRows);
+}
+
+function fetchLegacyPostRows(backendDb: BackendDb, start: string, end: string) {
   const ru = alias(postLocales, "pipeline_ru");
   const en = alias(postLocales, "pipeline_en");
   const publicationRows = backendDb.db
@@ -170,7 +187,7 @@ function legacyPipelinePosts(backendDb: BackendDb, weekOffset: number): Record<s
     .from(posts)
     .where(and(like(posts.postKey, "telegram:%"), sql`${posts.dateUtc} >= ${start}`, sql`${posts.dateUtc} <= ${end}`))
     .all();
-  const rows: Array<Record<string, unknown>> = [
+  return [
     ...publicationRows.map((row) => {
       const post = postByKey.get(`post:${row.postId}`);
       return {
@@ -213,18 +230,14 @@ function legacyPipelinePosts(backendDb: BackendDb, weekOffset: number): Record<s
   ]
     .sort((left, right) => String(right.created_at ?? "").localeCompare(String(left.created_at ?? "")))
     .slice(0, 100);
-  const postKeys = rows.map((row) => String(row.post_key ?? "")).filter(Boolean);
-  const targetRows = postKeys.length
-    ? backendDb.db.select().from(postTargets).where(inArray(postTargets.postKey, postKeys)).orderBy(asc(postTargets.target)).all()
-    : [];
-  const metricRows = postKeys.length
-    ? backendDb.db
-        .select()
-        .from(postMetrics)
-        .where(inArray(postMetrics.postKey, postKeys))
-        .orderBy(asc(postMetrics.target), asc(postMetrics.metricName))
-        .all()
-    : [];
+}
+
+function formatLegacyPipelinePosts(
+  backendDb: BackendDb,
+  rows: ReturnType<typeof fetchLegacyPostRows>,
+  targetRows: Array<typeof postTargets.$inferSelect>,
+  metricRows: Array<typeof postMetrics.$inferSelect>,
+): Record<string, unknown>[] {
   const targetsByPost = new Map<string, (typeof targetRows)[number][]>();
   for (const target of targetRows) {
     const values = targetsByPost.get(target.postKey) ?? [];
