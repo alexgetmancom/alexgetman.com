@@ -1,9 +1,8 @@
-import { and, desc, eq, or } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import {
   drafts,
-  opsActions,
   postLocales,
   posts,
   postTargets,
@@ -16,13 +15,8 @@ import {
 import { editPublishedTargets } from "../delivery/external-edits.js";
 import { jsonObject } from "../json.js";
 import { localizeTargetPayload } from "../publishing/payload.js";
-
-type PublicationRef = {
-  input: string;
-  postId: number | null;
-  postKey: string;
-  messageId: number;
-};
+import { recordOperationAction } from "./action-audit.js";
+import { type PublicationRef, resolvePublicationRef, sourcePayload } from "./publication-ref.js";
 
 /** Explicit maintenance command accepted by the Operations boundary. */
 export type CommandAction = {
@@ -59,7 +53,7 @@ export async function runCommandAction(
   } else if (input.action === "replace_en_media") result = replaceEnglishMedia(backendDb, publicationRef, parseMedia(input.media_en_json));
   else if (input.action === "use_ru_media_for_en") result = replaceEnglishMedia(backendDb, publicationRef, null);
   else throw new Error(`unknown action: ${input.action}`);
-  recordAction(backendDb, input.action, publicationRef, input.target ?? null, result);
+  recordOperationAction(backendDb, input.action, publicationRef, input.target ?? null, result);
   return result;
 }
 
@@ -273,58 +267,6 @@ function enqueueRepairSiteJob(db: BackendDb["db"], ref: PublicationRef, reason: 
     .run();
 }
 
-function resolvePublicationRef(backendDb: BackendDb, ref: string): PublicationRef | null {
-  const trimmed = ref.trim();
-  const postKeyRef = trimmed.startsWith("post:") || trimmed.startsWith("telegram:") ? trimmed : null;
-  const numeric = trimmed.match(/^post:(\d+)$/)?.[1] ?? (/^\d+$/.test(trimmed) ? trimmed : null);
-  if (postKeyRef) {
-    const post = backendDb.db.select().from(posts).where(eq(posts.postKey, postKeyRef)).get();
-    if (post)
-      return {
-        input: ref,
-        postId: post.postId,
-        postKey: post.postKey,
-        messageId: post.messageId,
-      };
-  }
-  if (!numeric) return null;
-  const id = Number(numeric);
-  const publication = backendDb.db
-    .select({
-      postId: publications.postId,
-      telegramMessageId: publications.telegramMessageId,
-    })
-    .from(publications)
-    .where(or(eq(publications.postId, id), eq(publications.telegramMessageId, id)))
-    .get();
-  if (publication) {
-    const post = backendDb.db
-      .select()
-      .from(posts)
-      .where(eq(posts.postKey, `post:${publication.postId}`))
-      .get();
-    return {
-      input: ref,
-      postId: publication.postId,
-      postKey: `post:${publication.postId}`,
-      messageId: post?.messageId ?? publication.telegramMessageId ?? publication.postId,
-    };
-  }
-  const post = backendDb.db
-    .select()
-    .from(posts)
-    .where(or(eq(posts.messageId, id), eq(posts.postId, id), eq(posts.postKey, `post:${id}`)))
-    .get();
-  return post
-    ? {
-        input: ref,
-        postId: post.postId,
-        postKey: post.postKey,
-        messageId: post.messageId,
-      }
-    : null;
-}
-
 function parseMedia(raw: string | undefined): Record<string, unknown>[] | null {
   if (!raw || ["none", "null", "ru", "fallback"].includes(raw.trim().toLowerCase())) return null;
   const parsed = JSON.parse(raw) as unknown;
@@ -332,47 +274,4 @@ function parseMedia(raw: string | undefined): Record<string, unknown>[] | null {
   if (!items || items.some((item) => !item || typeof item !== "object" || !(item as Record<string, unknown>).file_id))
     throw new Error("each media item needs file_id");
   return items as Record<string, unknown>[];
-}
-
-function recordAction(
-  backendDb: BackendDb,
-  action: string,
-  ref: PublicationRef,
-  target: string | null,
-  details: Record<string, unknown>,
-): void {
-  const now = new Date().toISOString();
-  backendDb.db
-    .insert(opsActions)
-    .values({
-      actorType: "command-center",
-      action,
-      messageId: ref.messageId,
-      target,
-      status: "ok",
-      detailsJson: JSON.stringify(details),
-      createdAt: now,
-      completedAt: now,
-    })
-    .run();
-}
-
-function sourcePayload(backendDb: BackendDb, ref: PublicationRef): Record<string, unknown> {
-  if (ref.postId != null) {
-    const publicationSource = backendDb.db
-      .select({ itemJson: publicationSources.itemJson })
-      .from(publicationSources)
-      .where(eq(publicationSources.postId, ref.postId))
-      .get();
-    const payload = jsonObject(publicationSource?.itemJson);
-    if (Object.keys(payload).length > 0) return payload;
-  }
-  const siteSource = backendDb.db
-    .select({ itemJson: siteSourceItems.itemJson })
-    .from(siteSourceItems)
-    .where(eq(siteSourceItems.messageId, ref.messageId))
-    .get();
-  const payload = jsonObject(siteSource?.itemJson);
-  if (Object.keys(payload).length > 0) return payload;
-  return jsonObject(backendDb.db.select({ rawJson: posts.rawJson }).from(posts).where(eq(posts.postKey, ref.postKey)).get()?.rawJson);
 }

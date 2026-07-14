@@ -5,6 +5,7 @@ import type { BackendDb } from "../db/client.js";
 import { videoBotSessions } from "../db/schema.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import { studioServices } from "../studio/services/index.js";
+import { nextVideoFlowStep } from "../studio/video-fsm.js";
 
 export type VideoSession = { draftId: number | null; step: string; selected: VideoTarget[]; data: Record<string, unknown> };
 
@@ -106,7 +107,7 @@ export async function sendVideoControl(
 }
 
 export async function askInstagramOrSchedule(ctx: Context, backendDb: BackendDb, adminId: number, session: VideoSession): Promise<void> {
-  if (session.selected.includes("instagram_reels")) {
+  if (nextVideoFlowStep(session.selected) === "instagram_caption") {
     const next = { ...session, step: "instagram_caption" };
     saveSession(backendDb, adminId, next);
     await replyVideoPrompt(ctx, "⌨ Подпись для Instagram Reels — текст и хэштеги вместе (или «-»):");

@@ -152,6 +152,21 @@ describe("Studio architecture boundaries", () => {
     expect(gateway).toContain("graph.facebook.com");
   });
 
+  it("keeps Operations dispatch separate from publication lookup and audit persistence", () => {
+    const source = readFileSync(`${root}operations/actions.ts`, "utf8");
+    expect(source).toContain('from "./action-audit.js"');
+    expect(source).toContain('from "./publication-ref.js"');
+    expect(source).not.toContain("function resolvePublicationRef");
+    expect(source).not.toContain("function recordOperationAction");
+  });
+
+  it("keeps Video scheduling decisions in the Studio FSM", () => {
+    const source = readFileSync(`${root}bot/video-conversation.ts`, "utf8");
+    expect(source).toContain('from "../studio/video-fsm.js"');
+    expect(source).toContain("advanceVideoTargetSchedule(");
+    expect(source).toContain("commonVideoSchedule(");
+  });
+
   it("keeps Telegram settings as a Studio command adapter", () => {
     const source = readFileSync(`${root}bot/settings-screen.ts`, "utf8");
     expect(source).toContain('from "../studio/services/index.js"');

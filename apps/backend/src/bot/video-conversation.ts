@@ -5,7 +5,13 @@ import { storeTelegramVideo } from "../interfaces/telegram/video-ingress.js";
 import { videoPreview } from "../interfaces/telegram/video-preview.js";
 import { type VideoMetadata, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import { studioServices } from "../studio/services/index.js";
-import { advanceVideoMetadata, firstVideoMetadataStep, type VideoPrompt } from "../studio/video-fsm.js";
+import {
+  advanceVideoMetadata,
+  advanceVideoTargetSchedule,
+  commonVideoSchedule,
+  firstVideoMetadataStep,
+  type VideoPrompt,
+} from "../studio/video-fsm.js";
 import { botLocale, ui } from "./i18n.js";
 import {
   askInstagramOrSchedule,
@@ -91,7 +97,8 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
         });
         return true;
       }
-      const metadata = { caption: text === "-" ? "" : text };
+      const transition = advanceVideoMetadata("instagram_caption", text, session.data);
+      const metadata = { caption: String(transition.data.instagram_caption ?? "") };
       studioServices(backendDb, config).videos.updateMetadata(adminId, session.draftId, "instagram_reels", metadata);
       if (!session.selected.includes("youtube_shorts"))
         studioServices(backendDb, config).videos.rename(adminId, session.draftId, metadata.caption || "Instagram Reels");
@@ -222,26 +229,23 @@ async function handleScheduleMessage(
 ): Promise<boolean> {
   if (session.step === "schedule_common") {
     const date = studioServices(backendDb, config).videos.parseSchedule(adminId, session.draftId ?? 0, text);
-    await confirmVideoSchedule(
-      ctx,
-      backendDb,
-      adminId,
-      session,
-      Object.fromEntries(session.selected.map((target) => [target, date])) as Partial<Record<VideoTarget, Date>>,
-    );
+    await confirmVideoSchedule(ctx, backendDb, adminId, session, commonVideoSchedule(session.selected, date));
     return true;
   }
   const target = session.step.slice("schedule_target:".length) as VideoTarget;
-  const schedule = {
-    ...(session.data.schedule as Record<string, string> | undefined),
-    [target]: studioServices(backendDb, config)
-      .videos.parseSchedule(adminId, session.draftId ?? 0, text)
-      .toISOString(),
-  };
-  const remaining = session.selected.find((item) => !schedule[item]);
-  if (remaining) {
-    saveSession(backendDb, adminId, { ...session, step: `schedule_target:${remaining}`, data: { ...session.data, schedule } });
-    await replyVideoPrompt(ctx, `⌨ Когда опубликовать на ${videoTargetLabel(remaining)}? Формат: 15.07 18:30 (МСК).`);
+  const transition = advanceVideoTargetSchedule(
+    session.selected,
+    (session.data.schedule as Record<string, string> | undefined) ?? {},
+    target,
+    studioServices(backendDb, config).videos.parseSchedule(adminId, session.draftId ?? 0, text),
+  );
+  if (transition.nextTarget) {
+    saveSession(backendDb, adminId, {
+      ...session,
+      step: `schedule_target:${transition.nextTarget}`,
+      data: { ...session.data, schedule: transition.schedule },
+    });
+    await replyVideoPrompt(ctx, `⌨ Когда опубликовать на ${videoTargetLabel(transition.nextTarget)}? Формат: 15.07 18:30 (МСК).`);
     return true;
   }
   await confirmVideoSchedule(
@@ -249,7 +253,9 @@ async function handleScheduleMessage(
     backendDb,
     adminId,
     session,
-    Object.fromEntries(Object.entries(schedule).map(([key, value]) => [key, new Date(value)])) as Partial<Record<VideoTarget, Date>>,
+    Object.fromEntries(Object.entries(transition.schedule).map(([key, value]) => [key, new Date(value)])) as Partial<
+      Record<VideoTarget, Date>
+    >,
   );
   return true;
 }

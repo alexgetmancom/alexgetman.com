@@ -34,3 +34,23 @@ export function advanceVideoMetadata(
   }
   return { data: { ...data, instagram_caption: text === "-" ? "" : text }, nextStep: null, prompt: "schedule" };
 }
+
+/** Chooses the next metadata or scheduling state without knowing about Telegram controls. */
+export function nextVideoFlowStep(selected: VideoTarget[]): "instagram_caption" | "schedule_choice" {
+  return selected.includes("instagram_reels") ? "instagram_caption" : "schedule_choice";
+}
+
+/** Adds one parsed target time and chooses either the next target prompt or confirmation. */
+export function advanceVideoTargetSchedule(
+  selected: VideoTarget[],
+  current: Record<string, string>,
+  target: VideoTarget,
+  value: Date,
+): { schedule: Record<string, string>; nextTarget: VideoTarget | null } {
+  const schedule = { ...current, [target]: value.toISOString() };
+  return { schedule, nextTarget: selected.find((item) => !schedule[item]) ?? null };
+}
+
+export function commonVideoSchedule(selected: VideoTarget[], value: Date): Partial<Record<VideoTarget, Date>> {
+  return Object.fromEntries(selected.map((target) => [target, value])) as Partial<Record<VideoTarget, Date>>;
+}
