@@ -5,10 +5,10 @@ import type { BackendDb } from "../db/client.js";
 import { creatorProfiles } from "../db/schema.js";
 import { metricNumber } from "./creatorStore.js";
 
-export type AnalyticsSection = "overview" | "posts" | "video";
-export type AnalyticsPeriod = 1 | 7 | 30;
+type AnalyticsSection = "overview" | "posts" | "video";
+type AnalyticsPeriod = 1 | 7 | 30;
 
-export type StudioAnalyticsDashboard = {
+type StudioAnalyticsDashboard = {
   text: string;
   hasComments: boolean;
 };
