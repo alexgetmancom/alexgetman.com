@@ -107,6 +107,7 @@ describe("Astro endpoint controller", () => {
     const backendDb = tempDb();
     const dir = mkdtempSync(join(tmpdir(), "alexgetman-engagement-"));
     try {
+      const init = mock(async () => undefined);
       const handleUpdate = mock(async () => undefined);
       const app = createApiApp(
         loadConfig({
@@ -116,7 +117,7 @@ describe("Astro endpoint controller", () => {
           TRUSTED_CLIENT_IP_HEADER: "x-real-ip",
         }),
         backendDb,
-        { handleUpdate } as unknown as import("grammy").Bot,
+        { init, handleUpdate } as unknown as import("grammy").Bot,
       );
       expect(
         (
@@ -177,6 +178,7 @@ describe("Astro endpoint controller", () => {
         ).status,
       ).toBe(200);
       expect(handleUpdate).toHaveBeenCalledTimes(1);
+      expect(init).toHaveBeenCalledTimes(1);
     } finally {
       backendDb.close();
     }

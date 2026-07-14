@@ -19,7 +19,7 @@ export const feedItemSchema = z
   .object({
     id: z.string(),
     post_id: z.number().int().positive(),
-    message_id: z.number().int().positive(),
+    message_id: z.number().int().nonnegative(),
     date: z.string(),
     text: z.string(),
     text_ru: z.string(),

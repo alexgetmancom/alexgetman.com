@@ -19,6 +19,15 @@ type ApiContext = {
   bot: Bot | null;
 };
 const COMMAND_CENTER_ORIGIN = "https://alexgetman.com";
+const botInitialization = new WeakMap<Bot, Promise<void>>();
+
+function initializeWebhookBot(bot: Bot): Promise<void> {
+  const existing = botInitialization.get(bot);
+  if (existing) return existing;
+  const initialization = bot.init();
+  botInitialization.set(bot, initialization);
+  return initialization;
+}
 
 function sameOriginCommandLogin(request: Request): boolean {
   const origin = request.headers.get("origin");
@@ -185,7 +194,10 @@ export function createApiHandler(context: ApiContext) {
       if (!safeEqual(request.headers.get("X-Telegram-Bot-Api-Secret-Token") ?? "", config.TELEGRAM_WEBHOOK_SECRET ?? ""))
         return text("forbidden\n", 403);
       const update = await request.json().catch(() => null);
-      if (bot && update) await bot.handleUpdate(update as Parameters<Bot["handleUpdate"]>[0]);
+      if (bot && update) {
+        await initializeWebhookBot(bot);
+        await bot.handleUpdate(update as Parameters<Bot["handleUpdate"]>[0]);
+      }
       return text("ok\n");
     }
     if (path === "/api/command-center" && request.method === "GET")
