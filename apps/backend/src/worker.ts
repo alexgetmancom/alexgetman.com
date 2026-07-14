@@ -82,7 +82,11 @@ export function startWorkers(config: BackendConfig, backendDb: BackendDb, bot: B
       if (removed) log("info", "pruned expired media cache", { removed });
     }),
     startLoop("observability", config.OBSERVABILITY_INTERVAL_SECONDS * 1000, async () => {
-      const result = await runObservabilityCycle(config, backendDb, bot);
+      const adminId = config.ADMIN_IDS[0];
+      const result =
+        bot && adminId !== undefined
+          ? await runObservabilityCycle(config, backendDb, { sendAlert: async (text) => void (await bot.api.sendMessage(adminId, text)) })
+          : await runObservabilityCycle(config, backendDb);
       log("debug", "observability loop tick", result);
     }),
   ];

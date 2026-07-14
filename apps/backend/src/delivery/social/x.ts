@@ -4,8 +4,9 @@ import OAuth from "oauth-1.0a";
 import type { BackendConfig } from "../../config.js";
 import type { PublishResult } from "../../publishing/errors.js";
 import { HttpPublishError } from "../../publishing/errors.js";
+import { formatPlatformText } from "../../publishing/platform-profiles.js";
 import { externalFetch, redactExternalSecrets } from "./http.js";
-import { guessContentType, payloadMedia, payloadText, stripUrls } from "./payload.js";
+import { guessContentType, payloadMedia, payloadText } from "./payload.js";
 
 const UPLOAD_URL = "https://upload.twitter.com/1.1/media/upload.json";
 
@@ -22,7 +23,10 @@ export async function publishToX(
       item.type === "VIDEO" ? await uploadVideo(item.localPath, config, fetchImpl) : await uploadImage(item.localPath, config, fetchImpl),
     );
   }
-  const body = JSON.stringify({ text: stripUrls(payloadText(payload)), ...(mediaIds.length ? { media: { media_ids: mediaIds } } : {}) });
+  const body = JSON.stringify({
+    text: formatPlatformText("x", payloadText(payload)),
+    ...(mediaIds.length ? { media: { media_ids: mediaIds } } : {}),
+  });
   const response = await oauthFetch("https://api.twitter.com/2/tweets", config, fetchImpl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

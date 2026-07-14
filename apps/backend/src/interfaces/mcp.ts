@@ -1,7 +1,7 @@
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { recordDomainEvent } from "../domain/events.js";
-import { studioServices } from "../studio/services/index.js";
+import { type StudioServices, studioServices } from "../studio/services/index.js";
 
 const feedbackHits = new Map<string, number[]>();
 const publicTools = [
@@ -95,7 +95,7 @@ export function mcpResponse(
 }
 
 function runStudioTool(backendDb: BackendDb, config: BackendConfig, actorId: number, name: string, args: JsonObject): unknown {
-  const studio = studioServices(backendDb, config);
+  const studio: StudioServices = studioServices(backendDb, config);
   let result: unknown;
   let ref: string | null = null;
   switch (name) {

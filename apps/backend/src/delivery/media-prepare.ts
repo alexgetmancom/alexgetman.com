@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { BackendConfig } from "../config.js";
+import { videoBounds } from "../publishing/platform-profiles.js";
 import { runFfmpeg } from "../runtime/ffmpeg.js";
 import { requestJson } from "./social/http.js";
 import { mediaExtension, type PublishMediaItem } from "./social/payload.js";
@@ -16,6 +17,7 @@ export async function prepareMediaItems(
   config: BackendConfig,
   sourceItems: PublishMediaItem[],
   fetchImpl: typeof fetch = fetch,
+  target?: string,
 ): Promise<{ items: PublishMediaItem[]; cleanup: () => Promise<void> }> {
   const tempFiles: string[] = [];
   const prepared: PublishMediaItem[] = [];
@@ -29,7 +31,7 @@ export async function prepareMediaItems(
     const localPath = await ensureLocalMedia(config, item, cacheKey, fetchImpl);
     let uploadPath = localPath;
     if (item.type === "VIDEO") {
-      uploadPath = await normalizeVideoForPublicUpload(config, localPath, cacheKey);
+      uploadPath = await normalizeVideoForPublicUpload(config, localPath, cacheKey, target);
     }
     const remoteFilename = `cache-${cacheKey}${path.extname(uploadPath) || mediaExtension(item)}`;
     const stagedPath = path.join(config.REMOTE_MEDIA_PATH, remoteFilename);
@@ -126,11 +128,13 @@ async function getTelegramFileUrl(
   return `${apiBase}/file/bot${botToken}/${filePath}`;
 }
 
-async function normalizeVideoForPublicUpload(config: BackendConfig, inputPath: string, cacheKey: string): Promise<string> {
+async function normalizeVideoForPublicUpload(config: BackendConfig, inputPath: string, cacheKey: string, target?: string): Promise<string> {
   const outputPath = path.join(config.MEDIA_CACHE_DIR, `${cacheKey}.normalized.mp4`);
   if (await Bun.file(outputPath).exists()) return outputPath;
   const { width, height } = await probeVideoDimensions(inputPath);
-  const { maxWidth, maxHeight } = threadsVideoBounds(width, height);
+  const bounds = target ? videoBounds(target, width, height) : null;
+  if (!bounds) return inputPath;
+  const { maxWidth, maxHeight } = bounds;
   const args =
     width <= maxWidth && height <= maxHeight
       ? ["-y", "-i", inputPath, "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy", "-movflags", "+faststart", outputPath]
@@ -186,12 +190,6 @@ async function probeVideoDimensions(inputPath: string): Promise<{ width: number;
   const stream = streams[0];
   if (!stream?.width || !stream.height) throw new Error("ffprobe did not find a video stream");
   return { width: Number(stream.width), height: Number(stream.height) };
-}
-
-function threadsVideoBounds(width: number, height: number): { maxWidth: number; maxHeight: number } {
-  if (width > height) return { maxWidth: 1920, maxHeight: 1080 };
-  if (height > width) return { maxWidth: 1080, maxHeight: 1920 };
-  return { maxWidth: 1080, maxHeight: 1080 };
 }
 
 async function mediaCacheKey(item: PublishMediaItem, index: number): Promise<string> {

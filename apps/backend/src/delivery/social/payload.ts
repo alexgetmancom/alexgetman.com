@@ -143,13 +143,6 @@ export function stripLeadingEmojis(text: string): string {
   return text.replace(/^[\s\p{Emoji_Presentation}\p{Extended_Pictographic}]+/u, "").trimStart();
 }
 
-export function stripUrls(text: string): string {
-  return text
-    .replace(/https?:\/\/[^\s<>)]*/g, "")
-    .replace(/[ \t]+\n/g, "\n")
-    .trim();
-}
-
 export async function readFileBlob(filePath: string, contentType = guessContentType(filePath)): Promise<Blob> {
   const bytes = await fs.promises.readFile(filePath);
   return new Blob([bytes], { type: contentType });

@@ -107,7 +107,7 @@ async function withPreparedMedia(
   const key = mediaCacheKey(job, sourceMedia, config);
   let entry = mediaCache.get(key);
   if (!entry) {
-    entry = { prepared: enqueue(() => prepareMediaItems(config, sourceMedia, fetchImpl)), users: 0, cleanupTimer: null };
+    entry = { prepared: enqueue(() => prepareMediaItems(config, sourceMedia, fetchImpl, job.target)), users: 0, cleanupTimer: null };
     mediaCache.set(key, entry);
   }
   if (entry.cleanupTimer) {
@@ -152,6 +152,7 @@ async function createStoryMedia(job: ClaimedPublishJob, media: ReturnType<typeof
 function mediaCacheKey(job: ClaimedPublishJob, media: ReturnType<typeof payloadMedia>, config: BackendConfig): string {
   return JSON.stringify({
     post: job.postKey,
+    target: job.target,
     locale: job.payload.locale ?? "en",
     // Story media is a separately rendered 9:16 asset. It must never share
     // a preparation entry with the source image used by feed targets.

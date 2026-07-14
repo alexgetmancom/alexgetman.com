@@ -5,6 +5,7 @@ import { storeTelegramVideo } from "../interfaces/telegram/video-ingress.js";
 import { videoPreview } from "../interfaces/telegram/video-preview.js";
 import { type VideoMetadata, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import { studioServices } from "../studio/services/index.js";
+import { advanceVideoMetadata, firstVideoMetadataStep, type VideoPrompt } from "../studio/video-fsm.js";
 import { botLocale, ui } from "./i18n.js";
 import {
   askInstagramOrSchedule,
@@ -48,19 +49,11 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
       const selected = enabledVideoTargets(config);
       if (!selected.length) throw new Error("No video platforms are enabled in studio.yaml.");
       studioServices(backendDb, config).videos.replaceTargets(adminId, draftId, selected);
-      const next = { ...session, draftId, step: selected.includes("youtube_shorts") ? "youtube_title" : "instagram_caption", selected };
+      const first = firstVideoMetadataStep(selected);
+      const next = { ...session, draftId, step: first.step, selected };
       saveSession(backendDb, adminId, next);
       const locale = botLocale(backendDb, adminId);
-      await replyVideoPrompt(
-        ctx,
-        selected.includes("youtube_shorts")
-          ? ui(locale, "⌨ Title for YouTube Shorts?", "⌨ Название для YouTube Shorts?")
-          : ui(
-              locale,
-              "⌨ Caption for Instagram Reels, including hashtags (or `-`)?",
-              "⌨ Подпись для Instagram Reels вместе с хэштегами (или `-`)?",
-            ),
-      );
+      await replyVideoPrompt(ctx, videoPrompt(locale, first.prompt));
       return true;
     }
     const text = ctx.message && "text" in ctx.message ? (ctx.message.text?.trim() ?? "") : "";
@@ -145,15 +138,9 @@ async function handleYouTubeMessage(
       });
       return true;
     }
-    setData(backendDb, adminId, session, "youtube_title", text, "youtube_description");
-    await replyVideoPrompt(
-      ctx,
-      ui(
-        botLocale(backendDb, adminId),
-        "⌨ YouTube description (send `-` to skip):",
-        "⌨ Описание для YouTube (отправьте `-`, если не нужно):",
-      ),
-    );
+    const transition = advanceVideoMetadata("youtube_title", text, session.data);
+    setData(backendDb, adminId, session, "youtube_title", text, transition.nextStep ?? "youtube_description");
+    await replyVideoPrompt(ctx, videoPrompt(botLocale(backendDb, adminId), transition.prompt));
     return true;
   }
   if (session.step === "youtube_description") {
@@ -163,8 +150,16 @@ async function handleYouTubeMessage(
       });
       return true;
     }
-    setData(backendDb, adminId, session, "youtube_description", text === "-" ? "" : text, "youtube_game_url");
-    await ctx.reply("📀 Ссылка на Steam или страницу игры?", {
+    const transition = advanceVideoMetadata("youtube_description", text, session.data);
+    setData(
+      backendDb,
+      adminId,
+      session,
+      "youtube_description",
+      transition.data.youtube_description,
+      transition.nextStep ?? "youtube_game_url",
+    );
+    await ctx.reply(videoPrompt(botLocale(backendDb, adminId), transition.prompt), {
       reply_markup: new InlineKeyboard().text("⏭ Пропустить", "video_game_skip"),
     });
     return true;
@@ -176,21 +171,14 @@ async function handleYouTubeMessage(
       });
       return true;
     }
-    setData(backendDb, adminId, session, "youtube_game_url", text === "-" ? "" : text, "youtube_tags");
-    await replyVideoPrompt(
-      ctx,
-      ui(botLocale(backendDb, adminId), "⌨ YouTube tags, comma-separated (or `-`):", "⌨ Теги YouTube через запятую (или `-`):"),
-    );
+    const transition = advanceVideoMetadata("youtube_game_url", text, session.data);
+    setData(backendDb, adminId, session, "youtube_game_url", transition.data.youtube_game_url, transition.nextStep ?? "youtube_tags");
+    await replyVideoPrompt(ctx, videoPrompt(botLocale(backendDb, adminId), transition.prompt));
     return true;
   }
   if (session.step !== "youtube_tags") return false;
-  const tags =
-    text === "-"
-      ? []
-      : text
-          .split(",")
-          .map((tag) => tag.trim())
-          .filter(Boolean);
+  const transition = advanceVideoMetadata("youtube_tags", text, session.data);
+  const tags = transition.data.youtube_tags as string[];
   if (session.data.is_single_edit) {
     await finishSingleVideoEdit(ctx, backendDb, config, adminId, session, "youtube_shorts", (metadata) => {
       metadata.tags = tags;
@@ -207,6 +195,21 @@ async function handleYouTubeMessage(
   studioServices(backendDb, config).videos.rename(adminId, session.draftId, metadata.title || "YouTube Shorts");
   await askInstagramOrSchedule(ctx, backendDb, adminId, session);
   return true;
+}
+
+function videoPrompt(locale: "en" | "ru", prompt: VideoPrompt): string {
+  if (prompt === "youtube_title") return ui(locale, "⌨ Title for YouTube Shorts?", "⌨ Название для YouTube Shorts?");
+  if (prompt === "youtube_description")
+    return ui(locale, "⌨ YouTube description (send `-` to skip):", "⌨ Описание для YouTube (отправьте `-`, если не нужно):");
+  if (prompt === "youtube_game_url") return ui(locale, "📀 Steam or game page URL?", "📀 Ссылка на Steam или страницу игры?");
+  if (prompt === "youtube_tags") return ui(locale, "⌨ YouTube tags, comma-separated (or `-`):", "⌨ Теги YouTube через запятую (или `-`):");
+  if (prompt === "instagram_caption")
+    return ui(
+      locale,
+      "⌨ Caption for Instagram Reels, including hashtags (or `-`)?",
+      "⌨ Подпись для Instagram Reels вместе с хэштегами (или `-`)?",
+    );
+  return ui(locale, "⌨ When should it be published?", "⌨ Когда опубликовать?");
 }
 
 async function handleScheduleMessage(

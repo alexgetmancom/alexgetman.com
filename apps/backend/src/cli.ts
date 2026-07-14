@@ -1,6 +1,7 @@
 import { loadConfig } from "./config.js";
 import { baselineDrizzleMigrations, migrationStatus, openBackendDb } from "./db/client.js";
-import { capabilitySummary, recordCapabilityPost, seedCapabilities } from "./operations/capabilities.js";
+import { capabilitySummary, recordCapabilityPost } from "./operations/capabilities.js";
+import { capabilityReport } from "./operations/capability-report.js";
 import {
   applyMetricsBackfill,
   auditOperations,
@@ -95,6 +96,7 @@ async function main(): Promise<void> {
               webhookSecretConfigured: Boolean(config.TELEGRAM_WEBHOOK_SECRET),
               commandCenterTokenSeparated: Boolean(config.COMMAND_CENTER_TOKEN && config.TELEGRAM_WEBHOOK_SECRET),
             },
+            capabilities: capabilityReport(config),
           },
           null,
           2,
@@ -126,7 +128,6 @@ async function main(): Promise<void> {
         : 0;
       console.log(JSON.stringify({ count: plan.length, applied, plan }, null, 2));
     } else if (args.command === "capabilities") {
-      seedCapabilities(backendDb);
       console.log(JSON.stringify(capabilitySummary(backendDb), null, 2));
     } else if (args.command === "capability-record") {
       const status = recordCapabilityPost(

@@ -130,7 +130,6 @@ export function recordCapabilityPost(backendDb: BackendDb, testId: string, messa
 }
 
 export function capabilitySummary(backendDb: BackendDb): Record<string, unknown>[] {
-  seedCapabilities(backendDb);
   return backendDb.db
     .select({
       testId: mediaTestCases.testId,

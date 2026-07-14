@@ -6,11 +6,11 @@ import { videoPath } from "./content/video-assets.js";
 import type { BackendDb } from "./db/client.js";
 import { commandAllowed } from "./httpAuth.js";
 import { mcpResponse } from "./interfaces/mcp.js";
+import type { OperationsCommand } from "./operations/contracts.js";
 import { renderCommandCenterLogin, renderDashboard } from "./operations/dashboard.js";
 import { pipelineStatusPayload } from "./operations/pipeline.js";
-import { type CommandAction, operationsService } from "./operations/service.js";
-import { batchLikes, clientIpHash, likesInfo, metricsSummary, recordPageview, toggleLike } from "./public/engagement.js";
-import { allowPublicRequest } from "./public/rate-limit.js";
+import { type OperationsService, operationsService } from "./operations/service.js";
+import { type PublicService, publicService } from "./public/service.js";
 
 type ApiContext = {
   config: BackendConfig;
@@ -43,7 +43,8 @@ function sameOriginCommandLogin(request: Request): boolean {
 export function createApiHandler(context: ApiContext) {
   return async (request: Request, path: string): Promise<Response> => {
     const { config, backendDb, bot } = context;
-    const operations = operationsService(backendDb, config);
+    const operations: OperationsService = operationsService(backendDb, config);
+    const publicApi: PublicService = publicService(backendDb, config);
     const url = new URL(request.url);
 
     if (path === "/healthz" || path === "/tg-feed/healthz") return text("ok\n");
@@ -81,18 +82,12 @@ export function createApiHandler(context: ApiContext) {
       });
     }
     if (path === "/stats/pageview" && request.method === "POST") {
-      const limit = allowPublicRequest(
-        `pageview:${clientIpHash(request, config)}`,
-        config.PUBLIC_RATE_LIMIT_PAGEVIEWS,
-        config.PUBLIC_RATE_LIMIT_WINDOW_SECONDS,
-      );
-      if (!limit.allowed) return new Response(null, { status: 204 });
       const body = await request.json().catch(() => ({}) as { path?: string });
-      recordPageview(backendDb, config, typeof body?.path === "string" ? body.path : "/");
+      if (!publicApi.recordPageview(request, typeof body?.path === "string" ? body.path : "/")) return new Response(null, { status: 204 });
       return new Response(null, { status: 204 });
     }
     if (path === "/stats" && request.method === "GET") {
-      const summary = metricsSummary(backendDb);
+      const summary = publicApi.metrics();
       return html(
         `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Alex Getman metrics</title></head><body><main><h1>Site metrics</h1><p>Total: ${summary.total}</p><p>Today: ${summary.today}</p><p>Last 7 days: ${summary.last7}</p><p>Updated: ${String(summary.updated_at ?? "-")}</p></main></body></html>`,
       );
@@ -140,40 +135,26 @@ export function createApiHandler(context: ApiContext) {
       });
     }
     if (path === "/api/likes" && request.method === "GET") {
-      const limit = allowPublicRequest(
-        `likes:${clientIpHash(request, config)}`,
-        config.PUBLIC_RATE_LIMIT_LIKES,
-        config.PUBLIC_RATE_LIMIT_WINDOW_SECONDS,
-      );
+      const limit = publicApi.allowLikes(request);
       if (!limit.allowed) return rateLimited(limit.retryAfter);
       const postId = url.searchParams.get("post_id")?.trim();
-      return postId ? json(likesInfo(backendDb, postId, clientIpHash(request, config))) : json({ error: "Missing post_id parameter" }, 400);
+      return postId ? json(publicApi.likes(request, postId)) : json({ error: "Missing post_id parameter" }, 400);
     }
     if (path === "/api/likes/batch" && request.method === "GET") {
-      const limit = allowPublicRequest(
-        `likes:${clientIpHash(request, config)}`,
-        config.PUBLIC_RATE_LIMIT_LIKES,
-        config.PUBLIC_RATE_LIMIT_WINDOW_SECONDS,
-      );
+      const limit = publicApi.allowLikes(request);
       if (!limit.allowed) return rateLimited(limit.retryAfter);
       const ids = (url.searchParams.get("ids") ?? "")
         .split(",")
         .map((value) => value.trim())
         .filter(Boolean)
         .slice(0, 100);
-      return json(batchLikes(backendDb, ids, clientIpHash(request, config)));
+      return json(publicApi.likesBatch(request, ids));
     }
     if (path === "/api/likes" && request.method === "POST") {
-      const limit = allowPublicRequest(
-        `likes:${clientIpHash(request, config)}`,
-        config.PUBLIC_RATE_LIMIT_LIKES,
-        config.PUBLIC_RATE_LIMIT_WINDOW_SECONDS,
-      );
+      const limit = publicApi.allowLikes(request);
       if (!limit.allowed) return rateLimited(limit.retryAfter);
       const postId = url.searchParams.get("post_id")?.trim();
-      return postId
-        ? json(toggleLike(backendDb, postId, clientIpHash(request, config)))
-        : json({ error: "Missing post_id parameter" }, 400);
+      return postId ? json(publicApi.toggleLike(request, postId)) : json({ error: "Missing post_id parameter" }, 400);
     }
     if (path === "/api/mcp" && request.method === "GET")
       return sse((send) => {
@@ -188,7 +169,7 @@ export function createApiHandler(context: ApiContext) {
           id: null,
           error: { code: -32700, message: "Invalid JSON" },
         });
-      return json(mcpResponse(backendDb, config, body, clientIpHash(request, config), mcpStudioActor(request, config)));
+      return json(mcpResponse(backendDb, config, body, publicApi.clientKey(request), mcpStudioActor(request, config)));
     }
     if (path === config.WEBHOOK_PATH && request.method === "POST") {
       if (!safeEqual(request.headers.get("X-Telegram-Bot-Api-Secret-Token") ?? "", config.TELEGRAM_WEBHOOK_SECRET ?? ""))
@@ -229,10 +210,10 @@ export function createApiHandler(context: ApiContext) {
   };
 }
 
-async function commandAction(request: Request): Promise<CommandAction> {
-  if (request.headers.get("content-type")?.includes("application/json")) return await request.json().catch(() => ({}) as CommandAction);
+async function commandAction(request: Request): Promise<OperationsCommand> {
+  if (request.headers.get("content-type")?.includes("application/json")) return await request.json().catch(() => ({}) as OperationsCommand);
   const form = await request.formData().catch(() => new FormData());
-  return Object.fromEntries(form.entries()) as unknown as CommandAction;
+  return Object.fromEntries(form.entries()) as unknown as OperationsCommand;
 }
 
 function json(body: unknown, status = 200, headers: Record<string, string> = {}): Response {

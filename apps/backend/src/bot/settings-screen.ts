@@ -1,26 +1,19 @@
-import { eq } from "drizzle-orm";
 import { type Context, InlineKeyboard } from "grammy";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
-import { botSettings, botUiSettings } from "../db/schema.js";
+import { studioServices } from "../studio/services/index.js";
 import { botLocale, ui } from "./i18n.js";
 import { persistentKeyboard, settingsKeyboard, showMainMenu, showSettings } from "./navigation.js";
 
 /** Settings is an interface screen: it owns its callbacks and the small
  * transient input state, keeping the root Telegram router transport-only. */
-export async function handleSettingsMessage(ctx: Context, backendDb: BackendDb): Promise<boolean> {
+export async function handleSettingsMessage(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<boolean> {
   const adminId = Number(ctx.from?.id);
-  const setting = backendDb.db.select().from(botSettings).where(eq(botSettings.adminId, adminId)).get();
-  if (setting?.pendingAction !== "youtube_signature") return false;
   const text = ctx.message && "text" in ctx.message ? (ctx.message.text?.trim() ?? "") : "";
-  backendDb.db
-    .update(botSettings)
-    .set({ youtubeSignature: text === "-" ? "" : text, pendingAction: null, updatedAt: new Date().toISOString() })
-    .where(eq(botSettings.adminId, adminId))
-    .run();
+  if (!studioServices(backendDb, config).settings.saveYoutubeSignature(adminId, text)) return false;
   const locale = botLocale(backendDb, adminId);
   await ctx.reply(ui(locale, "✅ YouTube signature saved.", "✅ Подпись YouTube сохранена."));
-  await showYouTubeSignature(ctx, backendDb);
+  await showYouTubeSignature(ctx, backendDb, config);
   return true;
 }
 
@@ -39,15 +32,11 @@ export async function handleSettingsCallback(ctx: Context, backendDb: BackendDb,
   }
   if (data === "settings_youtube_signature") {
     await ctx.answerCallbackQuery();
-    await showYouTubeSignature(ctx, backendDb, true);
+    await showYouTubeSignature(ctx, backendDb, config, true);
     return true;
   }
   if (data === "settings_youtube_edit") {
-    backendDb.db
-      .insert(botSettings)
-      .values({ adminId, youtubeSignature: "", pendingAction: "youtube_signature", updatedAt: new Date().toISOString() })
-      .onConflictDoUpdate({ target: botSettings.adminId, set: { pendingAction: "youtube_signature", updatedAt: new Date().toISOString() } })
-      .run();
+    studioServices(backendDb, config).settings.beginYoutubeSignatureEdit(adminId);
     const locale = botLocale(backendDb, adminId);
     await ctx.answerCallbackQuery();
     await ctx.reply(
@@ -60,16 +49,9 @@ export async function handleSettingsCallback(ctx: Context, backendDb: BackendDb,
     return true;
   }
   if (data === "settings_youtube_clear") {
-    backendDb.db
-      .insert(botSettings)
-      .values({ adminId, youtubeSignature: "", pendingAction: null, updatedAt: new Date().toISOString() })
-      .onConflictDoUpdate({
-        target: botSettings.adminId,
-        set: { youtubeSignature: "", pendingAction: null, updatedAt: new Date().toISOString() },
-      })
-      .run();
+    studioServices(backendDb, config).settings.clearYoutubeSignature(adminId);
     await ctx.answerCallbackQuery({ text: botLocale(backendDb, adminId) === "ru" ? "Очищено" : "Cleared" });
-    await showYouTubeSignature(ctx, backendDb, true);
+    await showYouTubeSignature(ctx, backendDb, config, true);
     return true;
   }
   if (data === "settings_language") {
@@ -86,11 +68,7 @@ export async function handleSettingsCallback(ctx: Context, backendDb: BackendDb,
   }
   if (data.startsWith("settings_language:")) {
     const locale = data.endsWith(":ru") ? "ru" : "en";
-    backendDb.db
-      .insert(botUiSettings)
-      .values({ adminId, locale, updatedAt: new Date().toISOString() })
-      .onConflictDoUpdate({ target: botUiSettings.adminId, set: { locale, updatedAt: new Date().toISOString() } })
-      .run();
+    studioServices(backendDb, config).settings.setLocale(adminId, locale);
     await ctx.answerCallbackQuery({ text: locale === "ru" ? "Язык: русский" : "Language: English" });
     await ctx.editMessageText(locale === "ru" ? "⚙️ Настройки" : "⚙️ Settings", {
       reply_markup: settingsKeyboard(locale, config.studio.modules.youtube),
@@ -101,9 +79,9 @@ export async function handleSettingsCallback(ctx: Context, backendDb: BackendDb,
   return false;
 }
 
-async function showYouTubeSignature(ctx: Context, backendDb: BackendDb, edit = false): Promise<void> {
+async function showYouTubeSignature(ctx: Context, backendDb: BackendDb, config: BackendConfig, edit = false): Promise<void> {
   const adminId = Number(ctx.from?.id);
-  const signature = backendDb.db.select().from(botSettings).where(eq(botSettings.adminId, adminId)).get()?.youtubeSignature.trim();
+  const signature = studioServices(backendDb, config).settings.youtubeSignature(adminId);
   const locale = botLocale(backendDb, adminId);
   const text = ui(
     locale,

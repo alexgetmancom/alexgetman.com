@@ -63,7 +63,7 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
   });
   bot.on("message", async (ctx) => {
     if (!isAdmin(config, ctx.from?.id)) return void (await ctx.reply("Forbidden"));
-    if (await handleSettingsMessage(ctx, backendDb)) return;
+    if (await handleSettingsMessage(ctx, backendDb, config)) return;
     if (await handleVideoMessage(ctx, backendDb, config)) return;
     await handlePostMessage(ctx, backendDb, config);
   });

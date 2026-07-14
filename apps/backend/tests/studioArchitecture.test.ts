@@ -45,8 +45,11 @@ describe("Studio architecture boundaries", () => {
   it("keeps HTTP controllers on the Operations and Studio boundaries", () => {
     const source = readFileSync(`${root}api.ts`, "utf8");
     expect(source).toContain('from "./operations/service.js"');
+    expect(source).toContain('from "./public/service.js"');
     expect(source).not.toContain('from "./operations/actions.js"');
     expect(source).not.toContain('from "./operations/command-center.js"');
+    expect(source).not.toContain('from "./public/engagement.js"');
+    expect(source).not.toContain('from "./public/rate-limit.js"');
   });
 
   it("keeps MCP as a Studio-services adapter rather than a database adapter", () => {
@@ -129,5 +132,19 @@ describe("Studio architecture boundaries", () => {
   it("keeps analytics and operational code in their owning contexts", () => {
     for (const legacyPath of ["metrics/index.ts", "admin/actions.ts", "ops/maintenance.ts", "services/pipeline.ts", "services/mcp.ts"])
       expect(existsSync(`${root}${legacyPath}`), `legacy ${legacyPath} should be absent`).toBe(false);
+  });
+
+  it("keeps Operations and Public services independent from interface and Studio implementations", () => {
+    for (const relativePath of ["operations/observability.ts", "operations/service.ts", "public/service.ts"]) {
+      const source = readFileSync(`${root}${relativePath}`, "utf8");
+      for (const forbidden of ["grammy", "../interfaces/", "../studio/"])
+        expect(source, `${relativePath} imports ${forbidden}`).not.toContain(forbidden);
+    }
+  });
+
+  it("keeps Telegram settings as a Studio command adapter", () => {
+    const source = readFileSync(`${root}bot/settings-screen.ts`, "utf8");
+    expect(source).toContain('from "../studio/services/index.js"');
+    expect(source).not.toContain('from "../db/schema.js"');
   });
 });

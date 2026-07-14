@@ -1,10 +1,12 @@
 import type { BackendConfig } from "../../config.js";
 import type { BackendDb } from "../../db/client.js";
+import type { StudioActorId, StudioLocale } from "../contracts.js";
 import { analyticsService } from "./analytics.js";
 import { studioDashboard } from "./dashboard.js";
 import { notificationService } from "./notifications.js";
 import { postService } from "./posts.js";
 import { queueService } from "./queue.js";
+import { settingsService } from "./settings.js";
 import { videoService } from "./videos.js";
 
 /**
@@ -19,6 +21,10 @@ export function studioServices(backendDb: BackendDb, config: BackendConfig) {
     queue: queueService(backendDb),
     notifications: notificationService(backendDb),
     analytics: analyticsService(backendDb, config),
-    dashboard: (actorId: number, locale: "en" | "ru") => studioDashboard(backendDb, config, actorId, locale),
+    settings: settingsService(backendDb),
+    dashboard: (actorId: StudioActorId, locale: StudioLocale) => studioDashboard(backendDb, config, actorId, locale),
   };
 }
+
+/** Explicit application contract shared by Telegram and MCP adapters. */
+export type StudioServices = ReturnType<typeof studioServices>;

@@ -1,34 +1,19 @@
 import crypto from "node:crypto";
 import { and, asc, desc, eq, inArray, isNull, lt } from "drizzle-orm";
-import type { Bot } from "grammy";
 import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { alertDedup, credentialChecks, postEvents, publishJobs, siteJobs } from "../db/schema.js";
+import { recordDomainEvent } from "../domain/events.js";
 import { recordWorkerState } from "../runtime/worker-state.js";
-import { notificationService } from "../studio/services/notifications.js";
+import { capabilityReport } from "./capability-report.js";
 
-const REQUIREMENTS: Record<string, string[]> = {
-  controller_bot: ["CONTROLLER_BOT_TOKEN", "ADMIN_IDS"],
-  telegram: ["CONTROLLER_BOT_TOKEN"],
-  threads_ru: ["THREADS_ACCESS_TOKEN"],
-  threads_en: ["THREADS_EN_ACCESS_TOKEN"],
-  facebook: ["FACEBOOK_PAGE_ID", "FACEBOOK_PAGE_ACCESS_TOKEN"],
-  facebook_ru: ["FACEBOOK_RU_PAGE_ID", "FACEBOOK_RU_PAGE_ACCESS_TOKEN"],
-  linkedin: ["LINKEDIN_AUTHOR_URN", "LINKEDIN_ACCESS_TOKEN"],
-  x: ["X_CONSUMER_KEY", "X_CONSUMER_SECRET", "X_ACCESS_TOKEN", "X_ACCESS_TOKEN_SECRET"],
-  bluesky: ["BLUESKY_HANDLE", "BLUESKY_APP_PASSWORD"],
-  mastodon: ["MASTODON_INSTANCE", "MASTODON_ACCESS_TOKEN"],
-  devto: ["DEVTO_API_KEY"],
-  github: ["GITHUB_DISCUSSIONS_TOKEN"],
-  telegram_stories: ["TELEGRAM_CHANNEL_STORIES_API_ID", "TELEGRAM_CHANNEL_STORIES_API_HASH", "TELEGRAM_CHANNEL_STORIES_SESSION"],
-  instagram_stories: ["INSTAGRAM_EN_USER_ID", "INSTAGRAM_EN_ACCESS_TOKEN"],
-  instagram_stories_ru: ["INSTAGRAM_RU_USER_ID", "INSTAGRAM_RU_ACCESS_TOKEN"],
-};
+type OperationsAlertPort = { sendAlert?: (text: string) => Promise<void> };
 
+/** Operations emits alerts through a port; Telegram is only one possible adapter. */
 export async function runObservabilityCycle(
   config: BackendConfig,
   backendDb: BackendDb,
-  bot: Bot | null,
+  alertsPort: OperationsAlertPort = {},
 ): Promise<{ alerts: number; credentials: number }> {
   const credentials = updateCredentialChecks(config, backendDb);
   scanPublicationFailures(config, backendDb);
@@ -63,11 +48,8 @@ export async function runObservabilityCycle(
       backendDb.db.update(postEvents).set({ ackedAt: new Date().toISOString() }).where(eq(postEvents.id, event.id)).run();
       continue;
     }
-    if (bot && config.ADMIN_IDS[0]) {
-      await bot.api.sendMessage(
-        config.ADMIN_IDS[0],
-        `[${event.severity.toUpperCase()}] ${event.target ?? event.eventType}\n${event.message}`.slice(0, 4000),
-      );
+    if (alertsPort.sendAlert) {
+      await alertsPort.sendAlert(`[${event.severity.toUpperCase()}] ${event.target ?? event.eventType}\n${event.message}`.slice(0, 4000));
       alerts += 1;
       const now = new Date().toISOString();
       backendDb.db
@@ -104,7 +86,7 @@ function scanPublicationFailures(config: BackendConfig, backendDb: BackendDb): v
     .limit(100)
     .all();
   for (const job of stale)
-    notificationService(backendDb).record({
+    recordDomainEvent(backendDb, {
       ref: job.postKey,
       type: "queue.stale",
       severity: "error",
@@ -114,7 +96,7 @@ function scanPublicationFailures(config: BackendConfig, backendDb: BackendDb): v
       cooldownSeconds: config.ALERT_COOLDOWN_SECONDS,
     });
   for (const job of failed)
-    notificationService(backendDb).record({
+    recordDomainEvent(backendDb, {
       ref: job.postKey,
       type: "target.failed",
       severity: "error",
@@ -123,7 +105,7 @@ function scanPublicationFailures(config: BackendConfig, backendDb: BackendDb): v
       cooldownSeconds: config.ALERT_COOLDOWN_SECONDS,
     });
   for (const job of failedSite)
-    notificationService(backendDb).record({
+    recordDomainEvent(backendDb, {
       ref: job.postId == null ? null : `post:${job.postId}`,
       type: "site.build.failed",
       severity: "error",
@@ -135,11 +117,9 @@ function scanPublicationFailures(config: BackendConfig, backendDb: BackendDb): v
 }
 
 function updateCredentialChecks(config: BackendConfig, backendDb: BackendDb): number {
-  const values = config as unknown as Record<string, unknown>;
   const now = new Date().toISOString();
-  for (const [target, required] of Object.entries(REQUIREMENTS)) {
-    const missing = required.filter((name) => (name === "ADMIN_IDS" ? config.ADMIN_IDS.length === 0 : !values[name]));
-    const status = missing.length ? "missing" : "ready";
+  const report = capabilityReport(config);
+  for (const { target, required, missing, status } of report) {
     const nextCheckAt = new Date(Date.now() + 3_600_000).toISOString();
     backendDb.db
       .insert(credentialChecks)
@@ -165,5 +145,5 @@ function updateCredentialChecks(config: BackendConfig, backendDb: BackendDb): nu
       })
       .run();
   }
-  return Object.keys(REQUIREMENTS).length;
+  return report.length;
 }

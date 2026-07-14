@@ -6,7 +6,8 @@ import type { BackendConfig } from "../config.js";
 import type { BackendDb } from "../db/client.js";
 import { drafts, type JsonObject, postEvents, posts, postTargets, publications, publishJobs, siteJobs } from "../db/schema.js";
 import { insertPublishJobSchema } from "../db/validation.js";
-import { classifyPublishError, nextRetryAt, normalizePublishResult, type PublishResult } from "./errors.js";
+import { nextRetryAt, normalizePublishResult, type PublishResult } from "./errors.js";
+import { failedJobTransition, reconciliationTransition } from "./job-policy.js";
 import { publicationStatus } from "./state.js";
 
 export type ClaimedPublishJob = {
@@ -160,15 +161,14 @@ export function completePublishJob(
   }
   const reconciliationIds = externalIds(result);
   if (result.retryable && !result.ok && !result.skipped && reconciliationIds.length > 0) {
-    const attempt = job.attemptCount + 1;
-    const retry = attempt < config.PUBLISH_MAX_ATTEMPTS;
-    const retryAt = retry ? nextRetryAt(attempt, config.PUBLISH_BACKOFF_BASE_SECONDS, config.PUBLISH_BACKOFF_MAX_SECONDS) : null;
+    const { attempt, status, nextAttemptAt: retryAt } = reconciliationTransition(job.attemptCount, publishRetryPolicy(config));
+    const retry = status === "queued";
     const error = String(result.error ?? "external publication requires reconciliation");
     const payload = { ...parsePayload(job.payloadJson), _reconcile_ids: reconciliationIds };
     backendDb.db.transaction((tx) => {
       tx.update(publishJobs)
         .set({
-          status: retry ? "queued" : "failed",
+          status,
           attemptCount: attempt,
           nextAttemptAt: retryAt,
           lockedBy: null,
@@ -182,7 +182,7 @@ export function completePublishJob(
       upsertPostTarget(tx, {
         postKey,
         target: job.target,
-        status: retry ? "queued" : "failed",
+        status,
         externalId: reconciliationIds[0] ?? null,
         externalIdsJson: reconciliationIds,
         error,
@@ -244,11 +244,13 @@ export function failPublishJob(backendDb: BackendDb, config: BackendConfig, jobI
   const job = backendDb.db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get();
   if (!job || (lockId != null && (job.status !== "publishing" || job.lockedBy !== lockId))) return;
   const postKey = jobPostKey(job);
-  const attempt = job.attemptCount + 1;
-  const errorClass = classifyPublishError(error);
-  const shouldRetry = (errorClass === "transient" && attempt < config.PUBLISH_MAX_ATTEMPTS) || (errorClass === "unknown" && attempt < 2);
-  const status = shouldRetry ? "queued" : "failed";
-  const nextAttempt = shouldRetry ? nextRetryAt(attempt, config.PUBLISH_BACKOFF_BASE_SECONDS, config.PUBLISH_BACKOFF_MAX_SECONDS) : null;
+  const {
+    attempt,
+    errorClass,
+    status,
+    nextAttemptAt: nextAttempt,
+  } = failedJobTransition(error, job.attemptCount, publishRetryPolicy(config));
+  const shouldRetry = status === "queued";
   const errorText = String(error instanceof Error ? error.message : error);
   backendDb.db.transaction((tx) => {
     tx.update(publishJobs)
@@ -284,6 +286,14 @@ export function failPublishJob(backendDb: BackendDb, config: BackendConfig, jobI
     );
   });
   if (!shouldRetry && job.postId != null) reconcilePublication(backendDb, job.postId);
+}
+
+function publishRetryPolicy(config: BackendConfig) {
+  return {
+    maxAttempts: config.PUBLISH_MAX_ATTEMPTS,
+    backoffBaseSeconds: config.PUBLISH_BACKOFF_BASE_SECONDS,
+    backoffMaxSeconds: config.PUBLISH_BACKOFF_MAX_SECONDS,
+  };
 }
 
 export function reconcilePublication(backendDb: BackendDb, postId: number): void {

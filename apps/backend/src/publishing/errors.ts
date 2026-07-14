@@ -1,7 +1,7 @@
 const transientStatusCodes = new Set([408, 425, 429, 500, 502, 503, 504]);
 const permanentStatusCodes = new Set([400, 401, 403, 404, 409, 410, 413, 415, 422]);
 
-type PublishErrorClass = "transient" | "permanent" | "unknown";
+export type PublishErrorClass = "transient" | "permanent" | "unknown";
 
 export class HttpPublishError extends Error {
   constructor(
