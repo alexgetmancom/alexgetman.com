@@ -2,11 +2,11 @@ import { eq } from "drizzle-orm";
 import { Bot, type Context, InlineKeyboard, Keyboard } from "grammy";
 import {
   audienceAnalysis,
-  creatorDashboard,
   creatorPostArchive,
   creatorPostMetrics,
   creatorVideoArchive,
   creatorVideoMetrics,
+  studioAnalyticsDashboard,
 } from "./analytics/creator.js";
 import { appendPendingAlbum } from "./bot/albums.js";
 import {
@@ -299,83 +299,83 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
       ctx.callbackQuery.data === "analytics_total" ||
       ctx.callbackQuery.data.startsWith("analytics_period:")
     ) {
-      let days = 7;
-      if (ctx.callbackQuery.data === "analytics_total") {
-        days = 0;
-      } else if (ctx.callbackQuery.data.startsWith("analytics_period:")) {
-        days = Number(ctx.callbackQuery.data.slice("analytics_period:".length));
-      }
-      const locale = botLocale(backendDb, Number(ctx.from?.id));
-      const dashboard = creatorDashboard(backendDb, config, [0, 1, 7, 30].includes(days) ? days : 7, locale);
-      const keyboard = new InlineKeyboard()
-        .text(ui(locale, "Today", "Сегодня"), "analytics_period:1")
-        .text(ui(locale, "7 days", "7 дней"), "analytics_period:7")
-        .text(ui(locale, "30 days", "30 дней"), "analytics_period:30")
-        .row()
-        .text(ui(locale, "📊 Overall", "📊 Общая"), "analytics_total");
-      if (dashboard.hasComments && config.DEEPSEEK_API_KEY) {
-        keyboard.text("🤖 ИИ-анализ аудитории", "analytics_ai");
-      }
-      keyboard
-        .row()
-        .text(
-          config.studio.modules.video_posting
-            ? ui(locale, "📚 Video archive", "📚 Архив роликов")
-            : ui(locale, "📚 Post archive", "📚 Архив постов"),
-          config.studio.modules.video_posting ? "analytics_archive:0" : "analytics_post_archive:0",
-        )
-        .row()
-        .text(ui(locale, "← Menu", "← Меню"), "menu_home");
+      const days = ctx.callbackQuery.data.startsWith("analytics_period:")
+        ? Number(ctx.callbackQuery.data.slice("analytics_period:".length))
+        : 7;
       await ctx.answerCallbackQuery();
-      await ctx.editMessageText(dashboard.text, { parse_mode: "Markdown", reply_markup: keyboard });
+      await showAnalyticsDashboard(ctx, backendDb, config, "overview", analyticsPeriod(days));
+      return;
+    }
+    if (ctx.callbackQuery.data.startsWith("analytics_section:")) {
+      const [, sectionValue, daysValue] = ctx.callbackQuery.data.split(":");
+      const section = sectionValue === "posts" || sectionValue === "video" ? sectionValue : "overview";
+      await ctx.answerCallbackQuery();
+      await showAnalyticsDashboard(ctx, backendDb, config, section, analyticsPeriod(Number(daysValue)));
       return;
     }
     if (ctx.callbackQuery.data.startsWith("analytics_archive:")) {
       const offset = Math.max(0, Number(ctx.callbackQuery.data.slice("analytics_archive:".length)) || 0);
-      const archive = creatorVideoArchive(backendDb, offset);
+      const locale = botLocale(backendDb, Number(ctx.from?.id));
+      const archive = creatorVideoArchive(backendDb, offset, locale);
       const keyboard = new InlineKeyboard();
       for (const item of archive.items) keyboard.text(item.label, `analytics_video:${item.id}`).row();
-      if (archive.hasMore) keyboard.text("Ещё", `analytics_archive:${offset + archive.items.length}`).row();
-      keyboard.text("← Analytics", "analytics_home").row().text("← Menu", "menu_home");
+      if (archive.hasMore) keyboard.text(ui(locale, "More", "Ещё"), `analytics_archive:${offset + archive.items.length}`).row();
+      keyboard
+        .text(ui(locale, "← Video", "← Видеопостинг"), "analytics_section:video:7")
+        .row()
+        .text(ui(locale, "← Menu", "← Меню"), "menu_home");
       await ctx.answerCallbackQuery();
       await ctx.editMessageText(archive.text, { reply_markup: keyboard });
       return;
     }
     if (ctx.callbackQuery.data.startsWith("analytics_video:")) {
       const id = Number(ctx.callbackQuery.data.slice("analytics_video:".length));
+      const locale = botLocale(backendDb, Number(ctx.from?.id));
       await ctx.answerCallbackQuery();
-      await ctx.editMessageText(creatorVideoMetrics(backendDb, id), {
+      await ctx.editMessageText(creatorVideoMetrics(backendDb, id, locale), {
         parse_mode: "Markdown",
-        reply_markup: new InlineKeyboard().text("← Archive", "analytics_archive:0").row().text("← Menu", "menu_home"),
+        reply_markup: new InlineKeyboard()
+          .text(ui(locale, "← Archive", "← Архив"), "analytics_archive:0")
+          .row()
+          .text(ui(locale, "← Menu", "← Меню"), "menu_home"),
       });
       return;
     }
     if (ctx.callbackQuery.data.startsWith("analytics_post_archive:")) {
       const offset = Math.max(0, Number(ctx.callbackQuery.data.slice("analytics_post_archive:".length)) || 0);
-      const archive = creatorPostArchive(backendDb, offset);
+      const locale = botLocale(backendDb, Number(ctx.from?.id));
+      const archive = creatorPostArchive(backendDb, offset, locale);
       const keyboard = new InlineKeyboard();
       for (const item of archive.items) keyboard.text(item.label, `analytics_post:${item.id}`).row();
-      if (archive.hasMore) keyboard.text("More", `analytics_post_archive:${offset + archive.items.length}`).row();
-      keyboard.text("← Analytics", "analytics_home").row().text("← Menu", "menu_home");
+      if (archive.hasMore) keyboard.text(ui(locale, "More", "Ещё"), `analytics_post_archive:${offset + archive.items.length}`).row();
+      keyboard
+        .text(ui(locale, "← Posts", "← Постинг"), "analytics_section:posts:7")
+        .row()
+        .text(ui(locale, "← Menu", "← Меню"), "menu_home");
       await ctx.answerCallbackQuery();
       await ctx.editMessageText(archive.text, { reply_markup: keyboard });
       return;
     }
     if (ctx.callbackQuery.data.startsWith("analytics_post:")) {
       const id = Number(ctx.callbackQuery.data.slice("analytics_post:".length));
+      const locale = botLocale(backendDb, Number(ctx.from?.id));
       await ctx.answerCallbackQuery();
-      await ctx.editMessageText(creatorPostMetrics(backendDb, id), {
+      await ctx.editMessageText(creatorPostMetrics(backendDb, id, locale), {
         parse_mode: "Markdown",
-        reply_markup: new InlineKeyboard().text("← Archive", "analytics_post_archive:0").row().text("← Menu", "menu_home"),
+        reply_markup: new InlineKeyboard()
+          .text(ui(locale, "← Archive", "← Архив"), "analytics_post_archive:0")
+          .row()
+          .text(ui(locale, "← Menu", "← Меню"), "menu_home"),
       });
       return;
     }
     if (ctx.callbackQuery.data === "analytics_ai") {
-      await ctx.answerCallbackQuery({ text: "Готовлю отчёт…" });
-      const report = await audienceAnalysis(backendDb, config);
+      const locale = botLocale(backendDb, Number(ctx.from?.id));
+      await ctx.answerCallbackQuery({ text: ui(locale, "Preparing report…", "Готовлю отчёт…") });
+      const report = await audienceAnalysis(backendDb, config, locale);
       await ctx.editMessageText(report, {
         parse_mode: "Markdown",
-        reply_markup: new InlineKeyboard().text("← К статистике", "analytics_home"),
+        reply_markup: new InlineKeyboard().text(ui(locale, "← Video analytics", "← К статистике видео"), "analytics_section:video:7"),
       });
       return;
     }
@@ -415,6 +415,42 @@ async function editMainMenu(ctx: Context, config: BackendConfig, backendDb: Back
   if (config.studio.modules.analytics) keyboard.text(ui(locale, "📊 Analytics", "📊 Статистика"), "analytics_home");
   keyboard.row().text("⚙️", "settings_home");
   await ctx.editMessageText(ui(locale, "Control panel:", "Панель управления:"), { reply_markup: keyboard });
+}
+
+function analyticsPeriod(value: number): 1 | 7 | 30 {
+  return value === 1 || value === 30 ? value : 7;
+}
+
+async function showAnalyticsDashboard(
+  ctx: Context,
+  backendDb: BackendDb,
+  config: BackendConfig,
+  section: "overview" | "posts" | "video",
+  days: 1 | 7 | 30,
+): Promise<void> {
+  const locale = botLocale(backendDb, Number(ctx.from?.id));
+  const dashboard = studioAnalyticsDashboard(backendDb, config, section, days, locale);
+  const callback = (nextDays: 1 | 7 | 30) => `analytics_section:${section}:${nextDays}`;
+  const keyboard = new InlineKeyboard()
+    .text(ui(locale, "Today", "Сегодня"), callback(1))
+    .text(ui(locale, "7 days", "7 дней"), callback(7))
+    .text(ui(locale, "30 days", "30 дней"), callback(30))
+    .row();
+  if (section !== "overview") keyboard.text(ui(locale, "📊 Overview", "📊 Общая"), "analytics_section:overview:7");
+  if (config.studio.modules.text_posting && section !== "posts")
+    keyboard.text(ui(locale, "📝 Posts", "📝 Постинг"), "analytics_section:posts:7");
+  if (config.studio.modules.video_posting && section !== "video")
+    keyboard.text(ui(locale, "🎬 Video", "🎬 Видеопостинг"), "analytics_section:video:7");
+  if (section === "posts") {
+    keyboard.row().text(ui(locale, "📚 Post archive", "📚 Архив постов"), "analytics_post_archive:0");
+  }
+  if (section === "video") {
+    keyboard.row().text(ui(locale, "📚 Video archive", "📚 Архив роликов"), "analytics_archive:0");
+    if (dashboard.hasComments && config.DEEPSEEK_API_KEY)
+      keyboard.text(ui(locale, "🤖 AI audience analysis", "🤖 ИИ-анализ аудитории"), "analytics_ai");
+  }
+  keyboard.row().text(ui(locale, "← Menu", "← Меню"), "menu_home");
+  await ctx.editMessageText(dashboard.text, { parse_mode: "Markdown", reply_markup: keyboard });
 }
 
 async function showSettings(ctx: Context, config: BackendConfig, backendDb: BackendDb, edit = false): Promise<void> {

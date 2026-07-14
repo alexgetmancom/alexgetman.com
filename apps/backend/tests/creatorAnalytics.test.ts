@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
-import { creatorDashboard, runCreatorAnalyticsCycle } from "../src/analytics/creator.js";
+import { creatorDashboard, runCreatorAnalyticsCycle, studioAnalyticsDashboard } from "../src/analytics/creator.js";
 import { loadConfig } from "../src/config.js";
 import { openBackendDb } from "../src/db/client.js";
 import { creatorProfiles, metricSamples, videoDrafts, videoMetricSchedule, videoMetricSnapshots, videoTargets } from "../src/db/schema.js";
@@ -177,6 +177,55 @@ describe("creator analytics", () => {
       const schedule = backendDb.db.select().from(videoMetricSchedule).where(eq(videoMetricSchedule.videoTargetId, target.id)).get();
       expect(schedule?.checkpointIndex).toBe(1);
       expect(new Date(schedule?.nextCheckAt ?? 0).getTime()).toBe(new Date(publishedAt).getTime() + 4 * 60 * 60_000);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("renders the compact Studio overview and keeps post and video analytics separate", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const before = new Date(Date.now() - 2 * 24 * 60 * 60_000).toISOString();
+      const now = new Date().toISOString();
+      backendDb.db
+        .insert(metricSamples)
+        .values([
+          { postKey: "post:1", target: "telegram", metricName: "views", value: 10, sampledAt: before },
+          { postKey: "post:1", target: "telegram", metricName: "views", value: 34, sampledAt: now },
+          { postKey: "post:1", target: "telegram", metricName: "likes", value: 2, sampledAt: before },
+          { postKey: "post:1", target: "telegram", metricName: "likes", value: 7, sampledAt: now },
+        ])
+        .run();
+      const config = loadConfig({});
+      config.studio.modules.text_posting = true;
+      const overview = studioAnalyticsDashboard(backendDb, config, "overview", 1, "ru").text;
+      const posts = studioAnalyticsDashboard(backendDb, config, "posts", 1, "ru").text;
+
+      expect(overview).toContain("Общая статистика · сегодня");
+      expect(overview).toContain("Просмотры контента: *24*");
+      expect(overview).toContain("Взаимодействия: *5*");
+      expect(posts).toContain("Постинг · сегодня");
+      expect(posts).toContain("Просмотры постов: *24*");
+      expect(posts).not.toContain("Видеопостинг");
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("tells the user when a requested analytics period predates collected history", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      backendDb.db
+        .insert(metricSamples)
+        .values({ postKey: "post:1", target: "telegram", metricName: "views", value: 10, sampledAt: now })
+        .run();
+      const config = loadConfig({});
+      config.studio.modules.text_posting = true;
+
+      const dashboard = studioAnalyticsDashboard(backendDb, config, "posts", 30, "en").text;
+      expect(dashboard).toContain("History has been collected since");
+      expect(dashboard).toContain("comparison is not complete yet");
     } finally {
       backendDb.close();
     }
