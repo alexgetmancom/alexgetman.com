@@ -4,6 +4,9 @@ import { formatPlatformText, platformProfile, videoBounds } from "../src/publish
 describe("platform profiles", () => {
   it("keeps platform-specific text formatting declarative", () => {
     expect(formatPlatformText("x", "Read https://example.com now")).toBe("Read now");
+    expect(formatPlatformText("x", "First paragraph\n\nSecond https://example.com/link paragraph")).toBe(
+      "First paragraph\n\nSecond paragraph",
+    );
     expect(formatPlatformText("telegram", "Read https://example.com now")).toBe("Read https://example.com now");
   });
 

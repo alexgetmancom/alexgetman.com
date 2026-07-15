@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import os from "node:os";
 import process from "node:process";
 import { and, eq, inArray, isNull, lt, lte, ne, or } from "drizzle-orm";
@@ -25,7 +26,11 @@ export function workerId(prefix = "backend"): string {
   return `${prefix}:${os.hostname()}:${process.pid}`;
 }
 
-export function claimDuePublishJobs(backendDb: BackendDb, limit: number, worker = workerId()): ClaimedPublishJob[] {
+export function claimDuePublishJobs(
+  backendDb: BackendDb,
+  limit: number,
+  worker = `${workerId()}:${crypto.randomUUID()}`,
+): ClaimedPublishJob[] {
   const now = new Date().toISOString();
   const rows = backendDb.db
     .select()

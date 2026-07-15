@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { and, asc, eq, isNull, lte, or } from "drizzle-orm";
+import { and, asc, eq, isNull, lte, or, sql } from "drizzle-orm";
 import { deleteVideo, videoPath } from "../content/video-assets.js";
 import type { BackendDb } from "../db/client.js";
 import { botSettings, videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
@@ -19,16 +19,14 @@ import {
 
 export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb): Promise<number> {
   if (!config.studio.modules.video_posting) return 0;
-  recoverVideoLocks(backendDb, config.PUBLISH_LOCK_TIMEOUT_SECONDS);
+  recoverVideoLocks(backendDb, config.PUBLISH_LOCK_TIMEOUT_SECONDS, config.VIDEO_MEDIA_RETENTION_HOURS);
   const jobs = claimVideoJobs(backendDb, config.PUBLISH_CLAIM_LIMIT);
   for (const job of jobs) {
     try {
       await executeVideoJob(config, backendDb, job);
-      completeVideoJob(backendDb, job.id);
-      recordVideoProgressEvent(backendDb, job, "video.job.completed");
+      if (completeVideoJob(backendDb, job)) recordVideoProgressEvent(backendDb, job, "video.job.completed");
     } catch (error) {
-      failVideoJob(backendDb, job, error, config);
-      recordVideoProgressEvent(backendDb, job, "video.job.failed");
+      if (failVideoJob(backendDb, job, error, config)) recordVideoProgressEvent(backendDb, job, "video.job.failed");
     }
   }
   pruneExpiredVideos(config, backendDb);
@@ -99,6 +97,7 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
         },
         target.scheduledAt ?? new Date().toISOString(),
       );
+      if (!ownsVideoJob(backendDb, job)) return;
       backendDb.db
         .update(videoTargets)
         .set({
@@ -116,6 +115,7 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
         `${config.PUBLIC_BASE_URL.replace(/\/$/, "")}/media/video/${draft.assetKey}`,
         metadata as InstagramMetadata,
       );
+      if (!ownsVideoJob(backendDb, job)) return;
       backendDb.db
         .update(videoTargets)
         .set({
@@ -131,6 +131,7 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
   }
   if (target.target === "youtube_shorts") {
     if (!target.externalId) throw new Error("YouTube upload has not completed yet.");
+    if (!ownsVideoJob(backendDb, job)) return;
     backendDb.db
       .update(videoTargets)
       .set({
@@ -143,7 +144,9 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
   } else {
     if (!target.externalId) throw new Error("Instagram upload has not completed yet.");
     await instagramContainerReady(config, target.externalId);
+    if (!ownsVideoJob(backendDb, job)) return;
     const result = await publishInstagramReel(config, target.externalId);
+    if (!ownsVideoJob(backendDb, job)) return;
     backendDb.db
       .update(videoTargets)
       .set({
@@ -169,8 +172,8 @@ function recordVideoProgressEvent(backendDb: BackendDb, job: VideoJob, type: str
   });
 }
 
-function completeVideoJob(backendDb: BackendDb, id: number): void {
-  backendDb.db
+function completeVideoJob(backendDb: BackendDb, job: VideoJob): boolean {
+  const completed = backendDb.db
     .update(videoJobs)
     .set({
       status: "completed",
@@ -178,17 +181,21 @@ function completeVideoJob(backendDb: BackendDb, id: number): void {
       lockedBy: null,
       updatedAt: new Date().toISOString(),
     })
-    .where(eq(videoJobs.id, id))
-    .run();
+    .where(activeVideoJob(job))
+    .returning({ id: videoJobs.id })
+    .get();
+  return completed != null;
 }
 
-function failVideoJob(backendDb: BackendDb, job: VideoJob, cause: unknown, config: BackendConfig): void {
+function failVideoJob(backendDb: BackendDb, job: VideoJob, cause: unknown, config: BackendConfig): boolean {
   const error = cause instanceof Error ? cause.message : String(cause);
   const attempts = job.attemptCount + 1;
   if (cause instanceof InstagramContainerProcessingError && attempts < config.PUBLISH_MAX_ATTEMPTS) {
     const now = new Date().toISOString();
+    let failed = false;
     backendDb.db.transaction((tx) => {
-      tx.update(videoJobs)
+      const updated = tx
+        .update(videoJobs)
         .set({
           status: "queued",
           attemptCount: attempts,
@@ -198,20 +205,25 @@ function failVideoJob(backendDb: BackendDb, job: VideoJob, cause: unknown, confi
           lastError: error,
           updatedAt: now,
         })
-        .where(eq(videoJobs.id, job.id))
-        .run();
+        .where(activeVideoJob(job))
+        .returning({ id: videoJobs.id })
+        .get();
+      if (!updated) return;
+      failed = true;
       if (job.videoTargetId)
         tx.update(videoTargets)
           .set({ status: "prepared", lastError: null, updatedAt: now })
           .where(eq(videoTargets.id, job.videoTargetId))
           .run();
     });
-    return;
+    return failed;
   }
   const retry = attempts < config.PUBLISH_MAX_ATTEMPTS;
   const now = new Date().toISOString();
+  let failed = false;
   backendDb.db.transaction((tx) => {
-    tx.update(videoJobs)
+    const updated = tx
+      .update(videoJobs)
       .set({
         status: retry ? "queued" : "failed",
         attemptCount: attempts,
@@ -221,8 +233,11 @@ function failVideoJob(backendDb: BackendDb, job: VideoJob, cause: unknown, confi
         lastError: error,
         updatedAt: now,
       })
-      .where(eq(videoJobs.id, job.id))
-      .run();
+      .where(activeVideoJob(job))
+      .returning({ id: videoJobs.id })
+      .get();
+    if (!updated) return;
+    failed = true;
     if (job.videoTargetId && cause instanceof InstagramContainerInvalidError && job.kind === "publish" && retry) {
       tx.update(videoTargets)
         .set({
@@ -272,6 +287,7 @@ function failVideoJob(backendDb: BackendDb, job: VideoJob, cause: unknown, confi
         .where(eq(videoTargets.id, job.videoTargetId))
         .run();
   });
+  if (!failed) return false;
   refreshVideoDraftStatus(backendDb, job.videoDraftId, config.VIDEO_MEDIA_RETENTION_HOURS);
   if (!retry) {
     const target =
@@ -288,6 +304,7 @@ function failVideoJob(backendDb: BackendDb, job: VideoJob, cause: unknown, confi
       cooldownSeconds: config.ALERT_COOLDOWN_SECONDS,
     });
   }
+  return true;
 }
 
 function composeYouTubeDescription(backendDb: BackendDb, adminId: number, metadata: YouTubeMetadata): string {
@@ -301,18 +318,47 @@ function composeYouTubeDescription(backendDb: BackendDb, adminId: number, metada
   return [metadata.description.trim(), gameLine, signature].filter(Boolean).join("\n\n");
 }
 
-function recoverVideoLocks(backendDb: BackendDb, timeoutSeconds: number): void {
+export function recoverVideoLocks(backendDb: BackendDb, timeoutSeconds: number, retentionHours: number): number {
   const cutoff = new Date(Date.now() - timeoutSeconds * 1000).toISOString();
-  backendDb.db
-    .update(videoJobs)
-    .set({
-      status: "queued",
-      lockedAt: null,
-      lockedBy: null,
-      updatedAt: new Date().toISOString(),
-    })
+  const now = new Date().toISOString();
+  const stale = backendDb.db
+    .select()
+    .from(videoJobs)
     .where(and(eq(videoJobs.status, "running"), lte(videoJobs.lockedAt, cutoff)))
-    .run();
+    .all();
+  let recovered = 0;
+  backendDb.db.transaction((tx) => {
+    for (const job of stale) {
+      if (!job.lockedAt) continue;
+      const updated = tx
+        .update(videoJobs)
+        .set({ status: "failed", lockedAt: null, lockedBy: null, lastError: "stale video lock requires manual retry", updatedAt: now })
+        .where(and(eq(videoJobs.id, job.id), eq(videoJobs.status, "running"), eq(videoJobs.lockedAt, job.lockedAt)))
+        .returning({ id: videoJobs.id })
+        .get();
+      if (!updated) continue;
+      recovered += 1;
+      if (job.videoTargetId)
+        tx.update(videoTargets)
+          .set({ status: "failed", lastError: "stale video lock requires manual retry", updatedAt: now })
+          .where(eq(videoTargets.id, job.videoTargetId))
+          .run();
+    }
+  });
+  for (const job of stale) refreshVideoDraftStatus(backendDb, job.videoDraftId, retentionHours);
+  return recovered;
+}
+
+function ownsVideoJob(backendDb: BackendDb, job: VideoJob): boolean {
+  return backendDb.db.select({ id: videoJobs.id }).from(videoJobs).where(activeVideoJob(job)).get() != null;
+}
+
+function activeVideoJob(job: VideoJob) {
+  return and(
+    eq(videoJobs.id, job.id),
+    eq(videoJobs.status, "running"),
+    job.lockedBy == null ? sql`false` : eq(videoJobs.lockedBy, job.lockedBy),
+  );
 }
 
 function pruneExpiredVideos(config: BackendConfig, backendDb: BackendDb): void {

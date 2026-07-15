@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { and, asc, count, desc, eq, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
@@ -16,6 +17,7 @@ type SiteJob = {
   post_id: number | null;
   message_id: number;
   attempt_count: number;
+  lock_id: string;
 };
 
 export async function runSiteJobCycle(config: BackendConfig, backendDb: BackendDb): Promise<number> {
@@ -27,7 +29,7 @@ export async function runSiteJobCycle(config: BackendConfig, backendDb: BackendD
   }
   try {
     await renderFeedFiles(config, backendDb);
-    completeSiteJobs(backendDb, jobs);
+    const completed = completeSiteJobs(backendDb, jobs);
     try {
       const urls = publishContentIndex(config, backendDb);
       // IndexNow is an external notification, not a prerequisite for serving
@@ -38,10 +40,15 @@ export async function runSiteJobCycle(config: BackendConfig, backendDb: BackendD
     } catch (error) {
       insertSiteEvent(backendDb, "site.index.build.failed", "warn", String(error instanceof Error ? error.message : error), {});
     }
-    recordWorkerState(backendDb, "site", { claimed: jobs.length, published: jobs.length });
+    recordWorkerState(backendDb, "site", { claimed: jobs.length, published: completed.length });
   } catch (error) {
-    failSiteJobs(config, backendDb, jobs, error);
-    recordWorkerState(backendDb, "site", { claimed: jobs.length, published: 0 }, error instanceof Error ? error.message : String(error));
+    const failed = failSiteJobs(config, backendDb, jobs, error);
+    recordWorkerState(
+      backendDb,
+      "site",
+      { claimed: jobs.length, published: 0, failed: failed.length },
+      error instanceof Error ? error.message : String(error),
+    );
   }
   return jobs.length;
 }
@@ -90,6 +97,7 @@ export async function renderFeedFiles(config: BackendConfig, backendDb: BackendD
 
 function claimSiteJobs(config: BackendConfig, backendDb: BackendDb): SiteJob[] {
   const now = new Date().toISOString();
+  const lockId = `${workerId("site")}:${crypto.randomUUID()}`;
   const rows = backendDb.db
     .select()
     .from(siteJobs)
@@ -102,12 +110,18 @@ function claimSiteJobs(config: BackendConfig, backendDb: BackendDb): SiteJob[] {
     for (const row of rows) {
       const claimedRow = tx
         .update(siteJobs)
-        .set({ status: "rendering", lockedBy: workerId("site"), lockedAt: now, updatedAt: now })
+        .set({ status: "rendering", lockedBy: lockId, lockedAt: now, updatedAt: now })
         .where(and(eq(siteJobs.jobId, row.jobId), eq(siteJobs.status, "queued")))
         .returning({ jobId: siteJobs.jobId })
         .get();
       if (claimedRow) {
-        claimed.push({ job_id: row.jobId, post_id: row.postId, message_id: row.messageId, attempt_count: row.attemptCount });
+        claimed.push({
+          job_id: row.jobId,
+          post_id: row.postId,
+          message_id: row.messageId,
+          attempt_count: row.attemptCount,
+          lock_id: lockId,
+        });
       }
     }
     if (claimed.length > 0) {
@@ -119,31 +133,39 @@ function claimSiteJobs(config: BackendConfig, backendDb: BackendDb): SiteJob[] {
   return claimed;
 }
 
-function completeSiteJobs(backendDb: BackendDb, jobs: SiteJob[]): void {
+function completeSiteJobs(backendDb: BackendDb, jobs: SiteJob[]): SiteJob[] {
   const now = new Date().toISOString();
+  const completed: SiteJob[] = [];
   backendDb.db.transaction((tx) => {
     for (const job of jobs) {
-      tx.update(siteJobs)
+      const updated = tx
+        .update(siteJobs)
         .set({ status: "published", lockedBy: null, lockedAt: null, lastError: null, updatedAt: now })
-        .where(eq(siteJobs.jobId, job.job_id))
-        .run();
+        .where(and(eq(siteJobs.jobId, job.job_id), eq(siteJobs.status, "rendering"), eq(siteJobs.lockedBy, job.lock_id)))
+        .returning({ jobId: siteJobs.jobId })
+        .get();
+      if (updated) completed.push(job);
     }
-    insertSiteEvent(backendDb, "site.build.published", "info", `published ${jobs.length} site build job(s)`, {
-      job_ids: jobs.map((job) => job.job_id),
-    });
+    if (completed.length > 0)
+      insertSiteEvent(backendDb, "site.build.published", "info", `published ${completed.length} site build job(s)`, {
+        job_ids: completed.map((job) => job.job_id),
+      });
   });
-  for (const postId of new Set(jobs.map((job) => job.post_id).filter((value): value is number => value != null)))
+  for (const postId of new Set(completed.map((job) => job.post_id).filter((value): value is number => value != null)))
     reconcilePublication(backendDb, postId);
+  return completed;
 }
 
-function failSiteJobs(config: BackendConfig, backendDb: BackendDb, jobs: SiteJob[], error: unknown): void {
+function failSiteJobs(config: BackendConfig, backendDb: BackendDb, jobs: SiteJob[], error: unknown): SiteJob[] {
   const now = new Date().toISOString();
   const message = String(error instanceof Error ? error.message : error);
+  const failed: SiteJob[] = [];
   backendDb.db.transaction((tx) => {
     for (const job of jobs) {
       const attempt = Number(job.attempt_count ?? 0) + 1;
       const retry = attempt < config.SITE_JOB_MAX_ATTEMPTS;
-      tx.update(siteJobs)
+      const updated = tx
+        .update(siteJobs)
         .set({
           status: retry ? "queued" : "failed",
           attemptCount: attempt,
@@ -153,18 +175,21 @@ function failSiteJobs(config: BackendConfig, backendDb: BackendDb, jobs: SiteJob
           lastError: message,
           updatedAt: now,
         })
-        .where(eq(siteJobs.jobId, job.job_id))
-        .run();
+        .where(and(eq(siteJobs.jobId, job.job_id), eq(siteJobs.status, "rendering"), eq(siteJobs.lockedBy, job.lock_id)))
+        .returning({ jobId: siteJobs.jobId })
+        .get();
+      if (updated) failed.push(job);
     }
-    insertSiteEvent(backendDb, "site.build.failed", "error", message, { job_ids: jobs.map((job) => job.job_id) });
+    if (failed.length > 0) insertSiteEvent(backendDb, "site.build.failed", "error", message, { job_ids: failed.map((job) => job.job_id) });
   });
   for (const postId of new Set(
-    jobs
+    failed
       .filter((job) => Number(job.attempt_count ?? 0) + 1 >= config.SITE_JOB_MAX_ATTEMPTS)
       .map((job) => job.post_id)
       .filter((value): value is number => value != null),
   ))
     reconcilePublication(backendDb, postId);
+  return failed;
 }
 
 function sourceItems(backendDb: BackendDb): Record<string, unknown>[] {

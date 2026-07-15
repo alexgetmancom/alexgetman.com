@@ -4,7 +4,8 @@ import { handleVideoCallback, handleVideoMessage } from "../src/bot/video-screen
 import { getSession, saveSession } from "../src/bot/video-session.js";
 import type { BackendDb } from "../src/db/client.js";
 import { openBackendDb } from "../src/db/client.js";
-import { socialComments, videoMetricSchedule, videoMetricSnapshots, videoTargets } from "../src/db/schema.js";
+import { socialComments, videoJobs, videoMetricSchedule, videoMetricSnapshots, videoTargets } from "../src/db/schema.js";
+import { recoverVideoLocks } from "../src/delivery/video-worker.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { videoPreview } from "../src/interfaces/telegram/video-preview.js";
 import { listVideoTargets } from "../src/publishing/video-data.js";
@@ -56,6 +57,38 @@ function videoContext(input: { text?: string; callback?: string } = {}) {
 }
 
 describe("video publication queue", () => {
+  it("fails a stale video lock instead of requeueing an external publication", () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    replaceVideoTargets(backendDb, draftId, ["instagram_reels"]);
+    const target = listVideoTargets(backendDb, draftId)[0];
+    if (!target) throw new Error("target missing");
+    const now = new Date().toISOString();
+    backendDb.db
+      .insert(videoJobs)
+      .values({
+        videoDraftId: draftId,
+        videoTargetId: target.id,
+        kind: "publish",
+        runAt: now,
+        status: "running",
+        lockedBy: "old-worker",
+        lockedAt: new Date(Date.now() - 2 * 60_000).toISOString(),
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+
+    expect(recoverVideoLocks(backendDb, 60, 24)).toBe(1);
+    expect(backendDb.db.select().from(videoJobs).all()).toMatchObject([
+      { status: "failed", lockedBy: null, lockedAt: null, lastError: "stale video lock requires manual retry" },
+    ]);
+    expect(backendDb.db.select().from(videoTargets).where(eq(videoTargets.id, target.id)).get()).toMatchObject({
+      status: "failed",
+      lastError: "stale video lock requires manual retry",
+    });
+  });
+
   it("updates one video field through the Telegram message state machine", async () => {
     backendDb = openBackendDb(":memory:");
     const draftId = createVideoDraft(backendDb, 42, "video-source", 24);

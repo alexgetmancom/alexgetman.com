@@ -42,11 +42,13 @@ export async function runDeliveryPublishCycle(
     const error = `worker finalization failed: ${String(result.reason instanceof Error ? result.reason.message : result.reason)}`;
     log("error", "publish job finalization failed", { jobId: job.jobId, target: job.target, error });
     const now = new Date().toISOString();
-    backendDb.db
+    const finalized = backendDb.db
       .update(publishJobs)
       .set({ status: "failed", lockedBy: null, lockedAt: null, lastError: error, updatedAt: now })
-      .where(and(eq(publishJobs.jobId, job.jobId), eq(publishJobs.status, "publishing")))
-      .run();
+      .where(and(eq(publishJobs.jobId, job.jobId), eq(publishJobs.status, "publishing"), eq(publishJobs.lockedBy, job.lockId)))
+      .returning({ jobId: publishJobs.jobId })
+      .get();
+    if (!finalized) continue;
     backendDb.db
       .update(postTargets)
       .set({ status: "failed", error, skipped: 0, updatedAt: now })

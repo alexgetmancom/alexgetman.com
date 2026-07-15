@@ -56,7 +56,11 @@ export function formatPlatformText(target: string, text: string): string {
   return platformProfile(target)?.text?.removeUrls
     ? text
         .replace(/https?:\/\/\S+/g, "")
-        .replace(/\s{2,}/g, " ")
+        // Keep paragraph breaks: `\s` also matches newlines, which used to turn
+        // two paragraphs into a single sentence on X after a URL was removed.
+        .replace(/[ \t]{2,}/g, " ")
+        .replace(/[ \t]+\n/g, "\n")
+        .replace(/\n[ \t]+/g, "\n")
         .trim()
     : text;
 }
