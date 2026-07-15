@@ -263,6 +263,27 @@ export const drafts = sqliteTable("drafts", {
   updatedAt: text("updated_at").notNull(),
 });
 
+/** Durable interface-neutral files. Telegram file ids are only one possible source. */
+export const studioMediaAssets = sqliteTable(
+  "studio_media_assets",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    adminId: integer("admin_id").notNull(),
+    kind: text("kind").notNull(),
+    mimeType: text("mime_type").notNull(),
+    filename: text("filename").notNull(),
+    localPath: text("local_path").notNull(),
+    byteSize: integer("byte_size").notNull(),
+    sha256: text("sha256").notNull(),
+    source: text("source").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => ({
+    owner: index("idx_studio_media_assets_owner").on(table.adminId, table.createdAt),
+    hash: index("idx_studio_media_assets_hash").on(table.sha256),
+  }),
+);
+
 export const adminState = sqliteTable("admin_state", {
   adminId: integer("admin_id").primaryKey(),
   action: text("action"),

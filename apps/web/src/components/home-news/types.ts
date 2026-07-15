@@ -9,12 +9,19 @@ export interface HomePost {
   image: string | null;
   fallbackImage?: string | null;
   mediaType?: "image" | "video" | null;
+  gallery?: HomeMedia[];
   audioUrl?: string | null;
   spotifyUrl?: string | null;
   imageSrcSet?: string;
   views: number;
   categorySlug: string;
   category: string;
+}
+
+export interface HomeMedia {
+  type: "image" | "video";
+  path: string;
+  poster?: string;
 }
 
 export interface HomeLabels {

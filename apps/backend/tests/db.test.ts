@@ -39,6 +39,7 @@ describe("openBackendDb", () => {
       expect(tables).toContain("post_metrics");
       expect(tables).toContain("post_locales");
       expect(tables).toContain("media_assets");
+      expect(tables).toContain("studio_media_assets");
       expect(tables).toContain("credential_checks");
       expect(tables).toContain("video_drafts");
       expect(tables).toContain("video_targets");
@@ -46,7 +47,7 @@ describe("openBackendDb", () => {
       expect(tables).toContain("video_metric_snapshots");
       expect(tables).toContain("social_comments");
       expect(tables).toContain("site_pageviews");
-      expect(migrationStatus(backendDb.sqlite)).toHaveLength(11);
+      expect(migrationStatus(backendDb.sqlite)).toHaveLength(12);
     } finally {
       backendDb.close();
     }
@@ -91,6 +92,7 @@ describe("openBackendDb", () => {
         "publish_plans",
         "site_jobs",
         "site_source_items",
+        "studio_media_assets",
         "worker_state",
       ])
         expect(tables, table).toContain(table);
@@ -162,7 +164,7 @@ describe("openBackendDb", () => {
         { locale: "en", slug: "production-fixture" },
         { locale: "ru", slug: "production-fixture" },
       ]);
-      expect(migrationStatus(backendDb.sqlite)).toHaveLength(11);
+      expect(migrationStatus(backendDb.sqlite)).toHaveLength(12);
     } finally {
       backendDb.close();
     }

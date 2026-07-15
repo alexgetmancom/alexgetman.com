@@ -86,6 +86,7 @@ describe("Astro endpoint controller", () => {
       expect(payload.social_worker.pipeline_db).toBe("/data/pipeline.db");
       expect(payload.posts).toHaveLength(1);
       expect(payload.posts[0]).toMatchObject({ post_id: 1, text_en: "Pipeline status", site_ru: true, site_en: true, telegram: false });
+      expect(payload.posts[0]?.media_count).toBe(0);
       expect(payload.posts[0]?.targets).toEqual({});
       expect(payload.posts[0]?.metrics).toEqual({});
     } finally {

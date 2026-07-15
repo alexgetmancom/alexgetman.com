@@ -104,6 +104,11 @@ const ui = {
           image: publicSrc(post.image),
           fallbackImage: publicSrc(post.fallbackImage),
           mediaType: post.mediaType || null,
+          gallery: (post.gallery || []).map((media) => ({
+            type: media.type,
+            path: publicSrc(media.path),
+            poster: publicSrc(media.poster),
+          })),
           audioUrl: post.audioUrl || null,
           spotifyUrl: post.spotifyUrl || null,
           imageSrcSet: post.imageSrcSet || '',

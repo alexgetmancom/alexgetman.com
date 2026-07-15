@@ -306,6 +306,9 @@ function formatLegacyPipelinePosts(
       full_text_ru: textRu,
       full_text_en: textEn,
       text: shortText(textRu),
+      // Dashboard rendering needs the raw arrays, not just their summary.
+      media_ru_json: row.media_ru_json,
+      media_en_json: row.media_en_json,
       media_count: (mediaEn.length ? mediaEn : mediaRu).length,
       media_types: [
         ...new Set(

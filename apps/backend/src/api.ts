@@ -10,6 +10,7 @@ import { mcpResponse } from "./interfaces/mcp.js";
 import type { OperationsCommand } from "./operations/contracts.js";
 import { renderCommandCenterLogin, renderDashboard } from "./operations/dashboard.js";
 import { type OperationsService, operationsService } from "./operations/service.js";
+import { studioServices } from "./studio/services/index.js";
 
 type ApiContext = {
   config: BackendConfig;
@@ -169,6 +170,24 @@ export function createApiHandler(context: ApiContext) {
           error: { code: -32700, message: "Invalid JSON" },
         });
       return json(await mcpResponse(backendDb, config, body, engagement.clientKey(request), mcpStudioActor(request, config)));
+    }
+    if (path === "/api/studio/media" && request.method === "POST") {
+      const actorId = mcpStudioActor(request, config);
+      if (!actorId) return text("forbidden\n", 403);
+      const form = await request.formData().catch(() => null);
+      const file = form?.get("file");
+      if (!(file instanceof File)) return json({ error: "Expected multipart field: file" }, 400);
+      try {
+        const asset = await studioServices(backendDb, config).media.import(actorId, {
+          filename: file.name,
+          contentType: file.type,
+          bytes: new Uint8Array(await file.arrayBuffer()),
+          source: "http_upload",
+        });
+        return json({ asset_id: asset.id, kind: asset.kind, filename: asset.filename, byte_size: asset.byteSize });
+      } catch (error) {
+        return json({ error: error instanceof Error ? error.message : String(error) }, 400);
+      }
     }
     if (path === config.WEBHOOK_PATH && request.method === "POST") {
       if (!safeEqual(request.headers.get("X-Telegram-Bot-Api-Secret-Token") ?? "", config.TELEGRAM_WEBHOOK_SECRET ?? ""))

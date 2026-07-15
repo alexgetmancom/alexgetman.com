@@ -15,6 +15,7 @@ const studioTools = [
   tool("studio_capabilities", "Read enabled Studio modules and sanitized platform readiness before selecting a command."),
   tool("studio_queue", "Read the authenticated owner's upcoming work, drafts and failures."),
   tool("studio_notifications", "Read the authenticated owner's durable Studio notification inbox.", { limit: integerSchema(1, 100) }),
+  tool("studio_media_list", "List the authenticated owner's reusable Studio media assets.", { limit: integerSchema(1, 100) }),
   tool("studio_acknowledge_notification", "Mark one visible Studio notification as read.", { id: integerSchema(1) }, ["id"]),
   tool(
     "studio_post_create",
@@ -23,6 +24,17 @@ const studioTools = [
     ["text"],
   ),
   tool("studio_post_get", "Read one owned post draft.", { draft_id: integerSchema(1) }, ["draft_id"]),
+  tool(
+    "studio_post_attach_media",
+    "Attach already uploaded Studio media assets to an owned post locale. Upload files through POST /api/studio/media first.",
+    {
+      draft_id: integerSchema(1),
+      locale: enumSchema(["ru", "en"]),
+      asset_ids: { type: "array", items: integerSchema(1), minItems: 1, maxItems: 10 },
+      replace: { type: "boolean" },
+    },
+    ["draft_id", "locale", "asset_ids"],
+  ),
   tool("studio_post_preview", "Read a transport-neutral preview of one owned post draft.", { draft_id: integerSchema(1) }, ["draft_id"]),
   tool(
     "studio_post_edit",
@@ -170,6 +182,8 @@ async function runStudioTool(
       return studio.queue.snapshot(actorId);
     case "studio_notifications":
       return studio.notifications.inbox(actorId, optionalInteger(args.limit, 50, 1, 100));
+    case "studio_media_list":
+      return studio.posts.mediaAssets(actorId, optionalInteger(args.limit, 50, 1, 100));
     case "studio_acknowledge_notification":
       result = { acknowledged: studio.notifications.acknowledge(actorId, integer(args.id, "id")) };
       break;
@@ -188,6 +202,15 @@ async function runStudioTool(
     case "studio_post_get": {
       const draftId = integer(args.draft_id, "draft_id");
       return studio.posts.details(actorId, draftId);
+    }
+    case "studio_post_attach_media": {
+      const draftId = integer(args.draft_id, "draft_id");
+      const locale = enumValue(args.locale, "locale", ["ru", "en"] as const);
+      const assetIds = integerArray(args.asset_ids, "asset_ids", 1, 10);
+      studio.posts.attachMediaAssets(actorId, draftId, locale, assetIds, Boolean(args.replace));
+      result = { draft_id: draftId, locale, asset_ids: assetIds, attached: true, replace: Boolean(args.replace) };
+      ref = `draft:${draftId}`;
+      break;
     }
     case "studio_post_preview":
       return studio.posts.preview(actorId, integer(args.draft_id, "draft_id"));
@@ -391,6 +414,13 @@ function optionalText(value: unknown, maxLength: number): string | undefined {
 function integer(value: unknown, name: string): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) throw new Error(`${name} must be a positive integer`);
   return value;
+}
+
+function integerArray(value: unknown, name: string, min: number, max: number): number[] {
+  if (!Array.isArray(value) || value.length < min || value.length > max)
+    throw new McpToolError(-32602, `${name} must contain ${min}-${max} integers`);
+  const result = value.map((item) => integer(item, name));
+  return [...new Set(result)];
 }
 
 function optionalInteger(value: unknown, fallback: number, min: number, max: number): number {

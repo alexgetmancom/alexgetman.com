@@ -2,6 +2,8 @@ import type { FeedItem, SiteMedia } from "../../../backend/src/public/site-read-
 
 type FeedLocale = "en" | "ru";
 
+export type PostVisualMedia = { type: "image" | "video"; path: string; poster?: string };
+
 function normalizePublicPath(value: string | null | undefined): string {
   return String(value || "").replace(/^\/+/, "");
 }
@@ -18,10 +20,7 @@ export function postImagePath(item: FeedItem, locale: FeedLocale = "en"): string
   return normalizePublicPath(directImage || imageMedia?.path) || null;
 }
 
-export function postVisualMedia(
-  item: FeedItem,
-  locale: FeedLocale = "en",
-): { type: "image" | "video"; path: string; poster?: string } | null {
+export function postVisualMedia(item: FeedItem, locale: FeedLocale = "en"): PostVisualMedia | null {
   const directImage = normalizePublicPath(locale === "ru" ? item.image || item.image_en : item.image_en || item.image);
   if (directImage) return { type: "image", path: directImage };
   const media = localizedMedia(item, locale).find((entry) => entry.path);
@@ -30,6 +29,26 @@ export function postVisualMedia(
   const type = String(media?.type || "").toLowerCase() === "video" || /\.(mp4|webm|mov)$/i.test(path) ? "video" : "image";
   const poster = type === "video" ? normalizePublicPath(media?.poster) : "";
   return poster ? { type, path, poster } : { type, path };
+}
+
+/** All renderable assets for a locale, in publishing order. The first one remains the card cover. */
+export function postMediaGallery(item: FeedItem, locale: FeedLocale = "en"): PostVisualMedia[] {
+  const directImage = normalizePublicPath(locale === "ru" ? item.image || item.image_en : item.image_en || item.image);
+  const candidates = [
+    ...(directImage ? [{ type: "image", path: directImage }] : []),
+    ...localizedMedia(item, locale).map((media) => {
+      const path = normalizePublicPath(media?.path);
+      const type = String(media?.type || "").toLowerCase() === "video" || /\.(mp4|webm|mov)$/i.test(path) ? "video" : "image";
+      const poster = type === "video" ? normalizePublicPath(media?.poster) : "";
+      return poster ? { type, path, poster } : { type, path };
+    }),
+  ];
+  const seen = new Set<string>();
+  return candidates.filter((media): media is PostVisualMedia => {
+    if (!media.path || seen.has(media.path)) return false;
+    seen.add(media.path);
+    return true;
+  });
 }
 
 export function postOgImagePath(item: FeedItem, locale: FeedLocale = "en"): string {

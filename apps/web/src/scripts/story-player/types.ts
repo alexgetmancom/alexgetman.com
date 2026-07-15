@@ -5,6 +5,7 @@ export type StoryPost = {
   fallbackImage?: string;
   imageSrcSet?: string;
   mediaType: "image" | "video";
+  gallery?: Array<{ type: "image" | "video"; path: string; poster?: string }>;
   title: string;
   category: string;
   relativeDate: string;
@@ -31,6 +32,7 @@ export type StoryPlayerElements = {
   fallback: HTMLElement | null;
   cardLink: HTMLAnchorElement | null;
   visual: HTMLElement | null;
+  gallery: HTMLElement | null;
   title: HTMLElement | null;
   categoryWrap: HTMLElement | null;
   meta: HTMLElement | null;

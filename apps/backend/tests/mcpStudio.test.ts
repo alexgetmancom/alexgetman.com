@@ -1,4 +1,7 @@
 import { describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createApiHandler } from "../src/api.js";
 import { openBackendDb } from "../src/db/client.js";
 import { loadConfig } from "../src/foundation/config.js";
@@ -134,6 +137,54 @@ describe("Studio MCP", () => {
       ).toEqual({ count: 3 });
     } finally {
       backendDb.close();
+    }
+  });
+
+  it("uploads a transport-neutral asset and attaches it through the owner-bound MCP contract", async () => {
+    const backendDb = openBackendDb(":memory:");
+    const directory = mkdtempSync(join(tmpdir(), "alexgetman-mcp-media-"));
+    try {
+      const token = "a".repeat(16);
+      const config = loadConfig({
+        ADMIN_IDS: "42",
+        MCP_STUDIO_TOKEN: token,
+        MCP_STUDIO_ACTOR_ID: "42",
+        STUDIO_MEDIA_DIR: directory,
+      });
+      const app = createApiHandler({ config, backendDb, bot: null });
+      const authorization = `Bearer ${token}`;
+      const created = await request(
+        app,
+        { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "studio_post_create", arguments: { text: "Asset draft" } } },
+        authorization,
+      );
+      expect(created.status).toBe(200);
+      const form = new FormData();
+      form.set("file", new File([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], "agent-image.jpg", { type: "image/jpeg" }));
+      const uploaded = await app(
+        new Request("http://localhost/api/studio/media", { method: "POST", headers: { authorization }, body: form }),
+        "/api/studio/media",
+      );
+      expect(await uploaded.json()).toMatchObject({ asset_id: 1, kind: "photo", filename: "agent-image.jpg", byte_size: 4 });
+
+      const attached = await request(
+        app,
+        {
+          jsonrpc: "2.0",
+          id: 2,
+          method: "tools/call",
+          params: { name: "studio_post_attach_media", arguments: { draft_id: 1, locale: "en", asset_ids: [1], replace: true } },
+        },
+        authorization,
+      );
+      expect(JSON.stringify(await attached.json())).toContain('\\"attached\\":true');
+      expect(backendDb.sqlite.prepare("SELECT media_en_json FROM drafts WHERE id=1").get()).toMatchObject({
+        media_en_json: expect.stringContaining('"asset_id":1'),
+      });
+      expect(backendDb.sqlite.prepare("SELECT source FROM studio_media_assets WHERE id=1").get()).toEqual({ source: "http_upload" });
+    } finally {
+      backendDb.close();
+      rmSync(directory, { recursive: true, force: true });
     }
   });
 });

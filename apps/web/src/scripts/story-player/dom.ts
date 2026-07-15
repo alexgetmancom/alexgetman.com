@@ -22,6 +22,7 @@ export function bindStoryPlayerElements(root: HTMLElement): StoryPlayerElements 
     fallback: root.querySelector<HTMLElement>("[data-story-fallback]"),
     cardLink: root.querySelector<HTMLAnchorElement>("[data-story-card-link]"),
     visual,
+    gallery: root.querySelector<HTMLElement>("[data-story-gallery]"),
     title: root.querySelector<HTMLElement>("[data-story-title]"),
     categoryWrap: root.querySelector<HTMLElement>(".story-category-wrap"),
     meta: root.querySelector<HTMLElement>(".story-meta"),

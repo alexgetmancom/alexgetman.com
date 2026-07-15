@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import type { BackendConfig } from "../../foundation/config.js";
 import { requestJson } from "../../foundation/http.js";
 import type { PublishResult } from "../../publishing/errors.js";
@@ -22,13 +24,17 @@ export async function publishToTelegram(
   const entities = Array.isArray(payload.entities) ? payload.entities : undefined;
 
   if (media.length > 1) {
+    const attachments: TelegramAttachment[] = [];
     const items = media.slice(0, 10).map((item, index) => ({
       type: item.type === "VIDEO" ? "video" : "photo",
-      media: item.fileId || item.vpsUrl || item.localPath,
+      media: telegramMediaSource(item.fileId, item.vpsUrl, item.localPath, `media-${index}`, attachments),
       caption: index === 0 ? text.slice(0, 1024) : undefined,
       caption_entities: index === 0 ? entities : undefined,
     }));
-    const result = await telegramCall<TelegramResponse>(config, token, "sendMediaGroup", { chat_id: chatId, media: items }, fetchImpl);
+    const request = attachments.length
+      ? await telegramForm({ chat_id: chatId, media: JSON.stringify(items) }, attachments)
+      : { chat_id: chatId, media: items };
+    const result = await telegramCall<TelegramResponse>(config, token, "sendMediaGroup", request, fetchImpl);
     return reactToPublishedMessage(normalizeTelegramResult(result, chatId), config, token, chatId, fetchImpl);
   }
 
@@ -36,18 +42,20 @@ export async function publishToTelegram(
   if (item) {
     const method = item.type === "VIDEO" ? "sendVideo" : "sendPhoto";
     const mediaKey = item.type === "VIDEO" ? "video" : "photo";
-    const result = await telegramCall<TelegramResponse>(
-      config,
-      token,
-      method,
-      {
-        chat_id: chatId,
-        [mediaKey]: item.fileId || item.vpsUrl || item.localPath,
-        caption: text.slice(0, 1024),
-        caption_entities: entities,
-      },
-      fetchImpl,
-    );
+    const attachments: TelegramAttachment[] = [];
+    const mediaSource = telegramMediaSource(item.fileId, item.vpsUrl, item.localPath, `file-${mediaKey}`, attachments);
+    const request = attachments.length
+      ? await telegramForm(
+          {
+            chat_id: chatId,
+            [mediaKey]: mediaSource ?? "",
+            caption: text.slice(0, 1024),
+            caption_entities: JSON.stringify(entities ?? []),
+          },
+          attachments,
+        )
+      : { chat_id: chatId, [mediaKey]: mediaSource, caption: text.slice(0, 1024), caption_entities: entities };
+    const result = await telegramCall<TelegramResponse>(config, token, method, request, fetchImpl);
     return reactToPublishedMessage(normalizeTelegramResult(result, chatId), config, token, chatId, fetchImpl);
   }
 
@@ -65,14 +73,40 @@ async function telegramCall<T>(
   config: BackendConfig,
   token: string,
   method: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown> | FormData,
   fetchImpl: typeof fetch,
 ): Promise<T> {
+  const form = payload instanceof FormData;
   return requestJson<T>(fetchImpl, `${config.TELEGRAM_API_BASE_URL.replace(/\/$/, "")}/bot${token}/${method}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    ...(form ? {} : { headers: { "Content-Type": "application/json" } }),
+    body: form ? payload : JSON.stringify(payload),
   });
+}
+
+type TelegramAttachment = { name: string; localPath: string };
+
+function telegramMediaSource(
+  fileId: string | undefined,
+  vpsUrl: string | undefined,
+  localPath: string | undefined,
+  attachmentName: string,
+  attachments: TelegramAttachment[],
+): string | undefined {
+  if (fileId || vpsUrl) return fileId || vpsUrl;
+  if (!localPath) return undefined;
+  attachments.push({ name: attachmentName, localPath });
+  return `attach://${attachmentName}`;
+}
+
+async function telegramForm(fields: Record<string, string>, attachments: TelegramAttachment[]): Promise<FormData> {
+  const form = new FormData();
+  for (const [key, value] of Object.entries(fields)) form.set(key, value);
+  for (const attachment of attachments) {
+    const bytes = await fs.promises.readFile(attachment.localPath);
+    form.set(attachment.name, new Blob([bytes]), path.basename(attachment.localPath));
+  }
+  return form;
 }
 
 function normalizeTelegramResult(result: TelegramResponse, chatId: string): PublishResult {

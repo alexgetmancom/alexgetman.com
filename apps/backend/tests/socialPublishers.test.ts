@@ -111,6 +111,28 @@ describe("Telegram publisher", () => {
     ]);
     expect(JSON.parse(String(calls[1]?.init?.body))).toMatchObject({ message_id: 42, reaction: [{ type: "emoji", emoji: "❤" }] });
   });
+
+  it("uploads a local Studio asset when it has no Telegram file id", async () => {
+    const imagePath = tempImage();
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetchImpl = mock(async (input: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(input), ...(init ? { init } : {}) });
+      return new Response(JSON.stringify({ ok: true, result: { message_id: 42 } }), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    await publishToTelegram(
+      { text_en: "Asset", media: [{ type: "photo", local_path: imagePath }] },
+      loadConfig({ CONTROLLER_BOT_TOKEN: "bot-token" }),
+      fetchImpl,
+    );
+
+    const form = calls[0]?.init?.body;
+    expect(form).toBeInstanceOf(FormData);
+    if (!(form instanceof FormData)) throw new Error("expected multipart Telegram request");
+    expect(form.get("photo")).toBe("attach://file-photo");
+    expect(form.get("caption")).toBe("Asset");
+    expect(form.get("file-photo")).toBeInstanceOf(File);
+  });
 });
 
 describe("Threads publisher", () => {

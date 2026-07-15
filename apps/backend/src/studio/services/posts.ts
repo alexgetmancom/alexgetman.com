@@ -1,11 +1,13 @@
 import { eq } from "drizzle-orm";
 import { PRESETS, TARGETS, targetLocale } from "../../botTargets.js";
+import { listStudioMediaAssets, mediaItemsFromAssets, requireStudioMediaAssets } from "../../content/assets.js";
 import { createDraftFromMessage, requireDraft } from "../../content/drafts.js";
 import type { DraftMessage } from "../../content/message.js";
 import type { BackendDb } from "../../db/client.js";
 import { drafts, postControlCards } from "../../db/schema.js";
 import { recordDomainEvent } from "../../domain/events.js";
 import { cancelDraft, cancelRemainingPostJobs, setDraftControlCard } from "../../publishing/draft-lifecycle.js";
+import { mediaPolicyForTarget } from "../../publishing/media-policy.js";
 import { publishDraftToQueue } from "../../publishing/publication-workflow.js";
 import { nextPublishingSlot, parseManualSchedule, rebalanceScheduledDrafts, schedulePreset } from "../../publishing/schedule.js";
 import { parseTargets } from "../../publishing/targets.js";
@@ -27,6 +29,9 @@ export function postService(backendDb: BackendDb) {
     },
     preview(actorId: number, draftId: number) {
       const draft = requireOwnedDraft(backendDb, actorId, draftId);
+      const ruMedia = JSON.parse(draft.media_ru_json ?? "[]") as unknown[];
+      const enMedia = JSON.parse(draft.media_en_json ?? "[]") as unknown[];
+      const targets = parseTargets(draft.targets_json);
       return {
         id: draft.id,
         status: draft.status,
@@ -35,11 +40,14 @@ export function postService(backendDb: BackendDb) {
             locale: "ru" as const,
             text: draft.text_ru,
             entities: JSON.parse(draft.text_ru_entities_json ?? "[]"),
-            media: JSON.parse(draft.media_ru_json ?? "[]"),
+            media: ruMedia,
           },
-          { locale: "en" as const, text: draft.text_en_approved, entities: [], media: JSON.parse(draft.media_en_json ?? "[]") },
+          { locale: "en" as const, text: draft.text_en_approved, entities: [], media: enMedia },
         ],
-        targets: parseTargets(draft.targets_json),
+        targets,
+        mediaPolicy: Object.entries(targets)
+          .filter(([, enabled]) => enabled)
+          .map(([target]) => mediaPolicyForTarget(target, targetLocale(target) === "ru" ? ruMedia : enMedia)),
       };
     },
     publishNow(actorId: number, draftId: number): number {
@@ -129,6 +137,27 @@ export function postService(backendDb: BackendDb) {
         severity: "info",
         message: `Draft #${draftId} content updated`,
         details: { locale: input.locale, media_changed: input.media.length > 0 || clearMedia, text_changed: !input.replaceMediaOnly },
+      });
+    },
+    mediaAssets(actorId: number, limit = 50) {
+      return listStudioMediaAssets(backendDb, actorId, limit);
+    },
+    attachMediaAssets(actorId: number, draftId: number, locale: "ru" | "en", assetIds: number[], replace = false): void {
+      const draft = requireOwnedDraft(backendDb, actorId, draftId);
+      const assets = mediaItemsFromAssets(requireStudioMediaAssets(backendDb, actorId, assetIds));
+      const key = locale === "ru" ? "mediaRuJson" : "mediaEnJson";
+      const current = replace ? [] : JSON.parse(locale === "ru" ? (draft.media_ru_json ?? "[]") : (draft.media_en_json ?? "[]"));
+      backendDb.db
+        .update(drafts)
+        .set({ [key]: JSON.stringify([...current, ...assets]), updatedAt: new Date().toISOString() })
+        .where(eq(drafts.id, draftId))
+        .run();
+      recordDomainEvent(backendDb, {
+        ref: `draft:${draftId}`,
+        type: "content.draft.media_attached",
+        severity: "info",
+        message: `Draft #${draftId} media attached`,
+        details: { locale, asset_ids: assetIds, replace },
       });
     },
   };

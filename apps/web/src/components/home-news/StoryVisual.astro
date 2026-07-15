@@ -9,6 +9,7 @@ interface Props {
 
 const { activePost, posts, ui } = Astro.props;
 const publicSrc = (value?: string | null) => (value ? `/${String(value).replace(/^\/+/, "")}` : undefined);
+const gallery = activePost.gallery || [];
 ---
 
 <div class="story-visual-wrap">
@@ -42,6 +43,13 @@ const publicSrc = (value?: string | null) => (value ? `/${String(value).replace(
       ></video>
       <span class="story-visual__fallback" data-story-fallback hidden={!!activePost.image}>{activePost.title}</span>
     </a>
+    <div class="story-media-gallery" aria-label="Post media" data-story-gallery hidden={gallery.length < 2}>
+      {gallery.map((media, index) => (
+        <a href={publicSrc(media.path)} target="_blank" rel="noopener noreferrer" data-story-gallery-item>
+          <img src={publicSrc(media.type === "video" ? media.poster || media.path : media.path)} alt={`${activePost.title} — ${index + 1}`} loading="lazy" />
+        </a>
+      ))}
+    </div>
     <button class="audio-chip" type="button" data-audio-toggle aria-pressed="true" aria-label={ui.muted}>
       <span aria-hidden="true">♪</span>
       <span data-audio-label>{ui.muted}</span>

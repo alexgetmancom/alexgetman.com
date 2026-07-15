@@ -1,3 +1,4 @@
+import { importStudioMediaAsset } from "../../content/assets.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import type { StudioActorId, StudioLocale } from "../contracts.js";
@@ -18,6 +19,10 @@ import { videoService } from "./videos.js";
 export function studioServices(backendDb: BackendDb, config: BackendConfig) {
   return {
     posts: postService(backendDb),
+    media: {
+      import: (actorId: StudioActorId, input: Parameters<typeof importStudioMediaAsset>[3]) =>
+        importStudioMediaAsset(backendDb, config, actorId, input),
+    },
     videos: videoService(backendDb, config),
     queue: queueService(backendDb),
     notifications: notificationService(backendDb),

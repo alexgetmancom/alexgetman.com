@@ -28,8 +28,23 @@ export function renderStoryFrame(options: {
   toPublicSrc: (value: string | undefined) => string;
 }): void {
   const { root, elements, post, muted, paused, expanded, ui, toPublicSrc } = options;
-  const { image, video, fallback, cardLink, visual, kicker, mobileKicker, mobileTitle, time, title, copy, readMore, views, audio } =
-    elements;
+  const {
+    image,
+    video,
+    fallback,
+    cardLink,
+    visual,
+    gallery,
+    kicker,
+    mobileKicker,
+    mobileTitle,
+    time,
+    title,
+    copy,
+    readMore,
+    views,
+    audio,
+  } = elements;
 
   if (cardLink) cardLink.href = post.url;
   if (visual) visual.classList.toggle("story-visual--no-image", !post.image);
@@ -72,6 +87,23 @@ export function renderStoryFrame(options: {
   if (fallback) {
     fallback.hidden = !!post.image;
     fallback.textContent = post.title;
+  }
+  if (gallery) {
+    const media = post.gallery || [];
+    gallery.hidden = media.length < 2;
+    gallery.textContent = "";
+    media.forEach((entry, index) => {
+      const link = document.createElement("a");
+      link.href = toPublicSrc(entry.path);
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      const thumbnail = document.createElement("img");
+      thumbnail.src = toPublicSrc(entry.type === "video" ? entry.poster || entry.path : entry.path);
+      thumbnail.alt = `${post.title} — ${index + 1}`;
+      thumbnail.loading = "lazy";
+      link.appendChild(thumbnail);
+      gallery.appendChild(link);
+    });
   }
   if (kicker) kicker.textContent = post.category;
   if (mobileKicker) mobileKicker.textContent = post.category;
