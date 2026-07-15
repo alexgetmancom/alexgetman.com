@@ -14,6 +14,7 @@ import { handleVideoCallback, handleVideoMessage } from "./bot/video-screen.js";
 import type { BackendDb } from "./db/client.js";
 import type { BackendConfig } from "./foundation/config.js";
 import { log } from "./foundation/logger.js";
+import { handleTelegramDeliveryPreviewCallback } from "./interfaces/telegram/delivery-previews.js";
 import { formatMsk } from "./interfaces/telegram/time.js";
 import { studioServices } from "./studio/services/index.js";
 
@@ -91,6 +92,7 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
       return;
     }
     if (await handleProgressCallback(ctx, backendDb, config)) return;
+    if (await handleTelegramDeliveryPreviewCallback(ctx, backendDb, config)) return;
     if (await handleNotificationsCallback(ctx, backendDb, config)) return;
     if (await handleSettingsCallback(ctx, backendDb, config)) return;
     if (await handleAnalyticsCallback(ctx, backendDb, config)) return;

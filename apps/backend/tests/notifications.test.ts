@@ -14,49 +14,49 @@ describe("Studio notifications", () => {
       const otherVideo = createVideoDraft(backendDb, 7, "other-video", 24);
       notifications.record({
         ref: `video:${ownedVideo}`,
-        type: "video.target.failed",
-        severity: "error",
+        type: "studio.notification.reminder.due",
+        severity: "info",
         target: "youtube",
-        message: "Upload failed",
+        message: "Upload is due",
         cooldownSeconds: 3600,
       });
       notifications.record({
         ref: `video:${ownedVideo}`,
-        type: "video.target.failed",
-        severity: "error",
+        type: "studio.notification.reminder.due",
+        severity: "info",
         target: "youtube",
-        message: "Upload failed",
+        message: "Upload is due",
         cooldownSeconds: 3600,
       });
       notifications.record({
         ref: `video:${otherVideo}`,
-        type: "video.target.failed",
-        severity: "error",
+        type: "studio.notification.reminder.due",
+        severity: "info",
         target: "youtube",
-        message: "Other upload failed",
+        message: "Other upload is due",
       });
       notifications.record({ type: "worker.failed", severity: "error", message: "No target", cooldownSeconds: 3600 });
       notifications.record({ type: "worker.failed", severity: "error", message: "No target", cooldownSeconds: 3600 });
       const inbox = notifications.inbox(42);
-      expect(inbox).toHaveLength(2);
-      expect(inbox[0]?.eventType).toBe("video.target.failed");
+      expect(inbox).toHaveLength(1);
+      expect(inbox[0]?.eventType).toBe("studio.notification.reminder.due");
       const id = inbox[0]?.id;
       if (!id) throw new Error("notification is missing id");
       expect(notifications.acknowledge(7, id)).toBe(false);
       expect(notifications.acknowledge(42, id)).toBe(true);
-      expect(notifications.inbox(42)).toHaveLength(1);
-      expect(notifications.inbox(7)).toHaveLength(2);
+      expect(notifications.inbox(42)).toHaveLength(0);
+      expect(notifications.inbox(7)).toHaveLength(1);
     } finally {
       backendDb.close();
     }
   });
 
-  it("keeps Content and Publishing audit events visible only to the draft owner", () => {
+  it("keeps Content and Publishing audit events out of the creator inbox", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const draftId = createDraftFromMessage(backendDb, 42, { text: "Private", entities: [], media: [] });
       const notifications = notificationService(backendDb);
-      expect(notifications.inbox(42).some((event) => event.eventType === "content.draft.created")).toBe(true);
+      expect(notifications.inbox(42).some((event) => event.eventType === "content.draft.created")).toBe(false);
       expect(notifications.inbox(7).some((event) => event.postKey === `draft:${draftId}`)).toBe(false);
     } finally {
       backendDb.close();

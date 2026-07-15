@@ -1,5 +1,4 @@
 import type { BackendDb } from "../../db/client.js";
-import { recordDomainEvent } from "../../domain/events.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { canSync } from "../snapshots/creator-store.js";
 import { syncInstagramProfile, syncYouTubeProfile } from "./profile-sync.js";
@@ -18,15 +17,8 @@ export async function runAnalyticsCycle(config: BackendConfig, backendDb: Backen
     profiles += 1;
   }
   const metrics = await runVideoMetricSchedule(config, backendDb, fetchImpl);
-  const collected = profiles + metrics;
-  if (collected)
-    recordDomainEvent(backendDb, {
-      ref: "analytics",
-      type: "analytics.sync.completed",
-      severity: "info",
-      message: "Analytics collection completed",
-      details: { profiles, metrics },
-      cooldownSeconds: 60 * 60,
-    });
-  return collected;
+  // A successful collection is worker telemetry, not a creator notification.
+  // Keeping it out of the domain event journal prevents every metrics cycle
+  // from becoming an unread Inbox item in every Studio interface.
+  return profiles + metrics;
 }

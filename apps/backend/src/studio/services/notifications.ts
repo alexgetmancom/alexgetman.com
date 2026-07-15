@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import type { BackendDb } from "../../db/client.js";
 import { drafts, postEvents, posts, videoDrafts } from "../../db/schema.js";
 import { type DomainEventInput, recordDomainEvent } from "../../domain/events.js";
@@ -14,10 +14,16 @@ export function notificationService(backendDb: BackendDb) {
         .select()
         .from(postEvents)
         .where(isNull(postEvents.ackedAt))
-        .orderBy(postEvents.createdAt)
-        .limit(limit)
+        .orderBy(desc(postEvents.createdAt), desc(postEvents.id))
+        // Filter after fetching: technical journal events can otherwise fill
+        // the page before any actual Studio notification is reached.
+        .limit(Math.max(limit * 10, 100))
         .all();
-      return events.filter((event) => isVisibleTo(backendDb, event.postKey, actorId));
+      return events.filter((event) => isInboxEvent(event.eventType) && isVisibleTo(backendDb, event.postKey, actorId)).slice(0, limit);
+    },
+    get(actorId: number, id: number) {
+      const event = backendDb.db.select().from(postEvents).where(eq(postEvents.id, id)).get();
+      return event && isInboxEvent(event.eventType) && isVisibleTo(backendDb, event.postKey, actorId) ? event : null;
     },
     acknowledge(actorId: number, id: number): boolean {
       const event = backendDb.db.select().from(postEvents).where(eq(postEvents.id, id)).get();
@@ -26,6 +32,17 @@ export function notificationService(backendDb: BackendDb) {
       return true;
     },
   };
+}
+
+/** The event journal also powers audit/observability. Only explicit Studio
+ * notifications belong in a human's inbox; worker progress never does. */
+function isInboxEvent(eventType: string): boolean {
+  return (
+    eventType.startsWith("studio.notification.") ||
+    eventType === "delivery.post.completed" ||
+    eventType === "delivery.video.completed" ||
+    eventType === "analytics.video_metrics.frozen"
+  );
 }
 
 /** Operational events without a Studio entity remain shared; draft/video events are private to their owner. */

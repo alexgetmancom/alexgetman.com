@@ -1,20 +1,31 @@
-import { type Context, InputFile } from "grammy";
+import { type Context, InlineKeyboard, InputFile } from "grammy";
+import type { BackendDb } from "../../db/client.js";
+import type { BackendConfig } from "../../foundation/config.js";
 import type { DeliveryProjection } from "../../studio/projections.js";
+import { studioServices } from "../../studio/services/index.js";
 
 /** Telegram renderer for Studio delivery projections. It owns no planning decisions. */
 export async function sendTelegramDeliveryPreviews(ctx: Context, projections: DeliveryProjection[]): Promise<void> {
   for (const projection of projections) {
     const targets = projection.targets.join(" · ");
     await ctx.reply(`👁 *${escapeMarkdown(projection.label)}*\n${escapeMarkdown(targets)}`, { parse_mode: "Markdown" });
-    await sendProjectionContent(ctx, projection);
+    const hasVideo = projection.media.some((item) => String(item.type ?? "photo").toLowerCase() === "video");
+    await sendProjectionContent(ctx, projection, !hasVideo);
+    if (hasVideo)
+      await ctx.reply("🎬 Видео подготовлено для предпросмотра.", {
+        reply_markup: new InlineKeyboard().text("▶️ Показать видео", `delivery_preview_video:${projection.id}`),
+      });
     if (projection.notes.length) await ctx.reply(`ℹ️ ${projection.notes.map(escapeMarkdown).join("\n• ")}`, { parse_mode: "Markdown" });
   }
 }
 
-async function sendProjectionContent(ctx: Context, projection: DeliveryProjection): Promise<void> {
+async function sendProjectionContent(ctx: Context, projection: DeliveryProjection, includeVideo = true): Promise<void> {
   const metadata = projection.metadata ? formatMetadata(projection.metadata) : "";
   const text = [projection.text, metadata].filter(Boolean).join("\n\n");
-  const first = projection.media[0];
+  const mediaItems = includeVideo
+    ? projection.media
+    : projection.media.filter((item) => String(item.type ?? "photo").toLowerCase() !== "video");
+  const first = mediaItems[0];
   if (!first) {
     if (text) await ctx.reply(text);
     return;
@@ -26,8 +37,8 @@ async function sendProjectionContent(ctx: Context, projection: DeliveryProjectio
   }
   const type = String(first.type ?? "photo").toLowerCase();
   const caption = text && text.length <= 1024 ? { caption: text } : {};
-  if (projection.media.length > 1) {
-    const group = projection.media.flatMap((item, index) => {
+  if (mediaItems.length > 1) {
+    const group = mediaItems.flatMap((item, index) => {
       const media = mediaSource(item);
       if (!media) return [];
       return [
@@ -47,12 +58,46 @@ async function sendProjectionContent(ctx: Context, projection: DeliveryProjectio
   if (type === "video") await ctx.replyWithVideo(source, caption);
   else await ctx.replyWithPhoto(source, caption);
   if (text && !caption.caption) await ctx.reply(text);
-  for (const item of projection.media.slice(1)) {
+  for (const item of mediaItems.slice(1)) {
     const next = mediaSource(item);
     if (!next) continue;
     if (String(item.type ?? "photo").toLowerCase() === "video") await ctx.replyWithVideo(next);
     else await ctx.replyWithPhoto(next);
   }
+}
+
+/** Callback-only Telegram adapter for deferred heavy video previews. */
+export async function handleTelegramDeliveryPreviewCallback(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<boolean> {
+  const data = ctx.callbackQuery?.data ?? "";
+  const prefix = "delivery_preview_video:";
+  if (!data.startsWith(prefix)) return false;
+  const projectionId = data.slice(prefix.length);
+  const actorId = Number(ctx.from?.id);
+  const [kind, idText] = projectionId.split(":");
+  const id = Number(idText);
+  if (!Number.isSafeInteger(id)) return false;
+  const delivery =
+    kind === "video"
+      ? studioServices(backendDb, config).videos.preview(actorId, id).delivery
+      : kind === "post"
+        ? studioServices(backendDb, config).posts.preview(actorId, id).delivery
+        : null;
+  const projection = delivery?.projections.find((item) => item.id === projectionId);
+  await ctx.answerCallbackQuery();
+  if (!projection) return true;
+  await sendProjectionContent(
+    ctx,
+    {
+      id: projection.id,
+      label: projection.label,
+      targets: projection.targets,
+      text: "",
+      media: projection.media,
+      notes: projection.notes,
+    },
+    true,
+  );
+  return true;
 }
 
 function mediaSource(media: Record<string, unknown>): InputFile | string | null {

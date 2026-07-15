@@ -41,13 +41,12 @@ type YouTubeComments = {
   }>;
 };
 type InstagramMedia = {
-  plays?: number;
-  video_views?: number;
   like_count?: number;
   comments_count?: number;
   permalink?: string;
   timestamp?: string;
 };
+type InstagramInsights = { data?: Array<{ values?: Array<{ value?: number }> }> };
 type InstagramComments = {
   data?: Array<{
     id?: string;
@@ -190,12 +189,20 @@ async function collectYouTubeVideoMetrics(
     likes: metricNumber(item?.statistics?.likeCount),
     comments: metricNumber(item?.statistics?.commentCount),
   });
-  const comments = await requestJson<YouTubeComments>(
-    fetchImpl,
-    `https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=${encodeURIComponent(target.externalId)}&maxResults=50&order=time`,
-    { headers: auth },
-  );
-  for (const comment of comments.items ?? []) {
+  // The basic video read works with the publishing token. Comment threads
+  // additionally require youtube.force-ssl; comments are enrichment and must
+  // never make the entire video metrics checkpoint fail or retry noisily.
+  let comments: YouTubeComments | null = null;
+  try {
+    comments = await requestJson<YouTubeComments>(
+      fetchImpl,
+      `https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=${encodeURIComponent(target.externalId)}&maxResults=50&order=time`,
+      { headers: auth },
+    );
+  } catch (error) {
+    if (!isInsufficientYouTubeCommentScope(error)) throw error;
+  }
+  for (const comment of comments?.items ?? []) {
     const details = comment.snippet?.topLevelComment?.snippet;
     if (comment.id && details?.textDisplay)
       upsertComment(
@@ -222,21 +229,29 @@ async function collectInstagramVideoMetrics(
   const base = `https://graph.facebook.com/${config.INSTAGRAM_GRAPH_API_VERSION}/${target.externalId}`;
   const media = await requestJson<InstagramMedia>(
     fetchImpl,
-    `${base}?fields=plays,like_count,comments_count,permalink,timestamp,caption&access_token=${encodeURIComponent(token)}`,
+    `${base}?fields=like_count,comments_count,permalink,timestamp,caption&access_token=${encodeURIComponent(token)}`,
   );
+  const views = await instagramReelViews(fetchImpl, base, token);
   upsertVideoSnapshot(backendDb, target.id, "instagram_reels", {
     title: target.label ?? "Без названия",
     url: media.permalink ?? target.externalUrl,
     publishedAt: media.timestamp ?? target.publishedAt,
-    views: metricNumber(media.plays ?? media.video_views),
+    views,
     likes: metricNumber(media.like_count),
     comments: metricNumber(media.comments_count),
   });
-  const comments = await requestJson<InstagramComments>(
-    fetchImpl,
-    `${base}/comments?fields=id,text,username,timestamp,like_count&limit=50&access_token=${encodeURIComponent(token)}`,
-  );
-  for (const comment of comments.data ?? [])
+  let comments: InstagramComments | null = null;
+  try {
+    comments = await requestJson<InstagramComments>(
+      fetchImpl,
+      `${base}/comments?fields=id,text,username,timestamp,like_count&limit=50&access_token=${encodeURIComponent(token)}`,
+    );
+  } catch {
+    // Comment access is optional enrichment just like the Reels play insight.
+    // A connected publishing account may publish video without comment-read
+    // access, and that must not poison its metrics schedule.
+  }
+  for (const comment of comments?.data ?? [])
     if (comment.id && comment.text)
       upsertComment(
         backendDb,
@@ -248,4 +263,24 @@ async function collectInstagramVideoMetrics(
         metricNumber(comment.like_count),
         comment.timestamp,
       );
+}
+
+async function instagramReelViews(fetchImpl: typeof fetch, base: string, token: string): Promise<number> {
+  try {
+    const insights = await requestJson<InstagramInsights>(
+      fetchImpl,
+      `${base}/insights?metric=plays&access_token=${encodeURIComponent(token)}`,
+    );
+    return metricNumber(insights.data?.[0]?.values?.[0]?.value);
+  } catch {
+    // Plays are an optional Reels insight and are not a field on the media
+    // object in Graph API v23. Keep likes/comments collection healthy when a
+    // connected account does not grant this insight.
+    return 0;
+  }
+}
+
+function isInsufficientYouTubeCommentScope(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /insufficient (authentication )?scopes?|insufficientpermissions|access_token_scope_insufficient/i.test(message);
 }
