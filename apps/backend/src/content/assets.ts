@@ -19,7 +19,10 @@ type ImportedStudioMedia = {
 /** Content-owned file storage. Interfaces hand it bytes; delivery later decides how to upload them. */
 export async function importStudioMediaAsset(backendDb: BackendDb, config: BackendConfig, adminId: number, input: ImportedStudioMedia) {
   if (input.bytes.byteLength === 0) throw new Error("Media file is empty.");
-  if (input.bytes.byteLength > config.STUDIO_MEDIA_MAX_BYTES) throw new Error("Media file exceeds the Studio upload limit.");
+  if (input.bytes.byteLength > config.STUDIO_MEDIA_MAX_BYTES)
+    throw new Error(
+      `Media file is ${formatMegabytes(input.bytes.byteLength)} MB; Studio accepts files up to ${formatMegabytes(config.STUDIO_MEDIA_MAX_BYTES)} MB.`,
+    );
   const kind = mediaKind(input.contentType, input.filename);
   if (!kind) throw new Error("Only image and MP4 video uploads are supported.");
   const extension = mediaExtension(kind, input.contentType, input.filename);
@@ -124,4 +127,8 @@ function safeFilename(value: string): string {
     .basename(value)
     .replace(/[^a-zA-Z0-9._-]+/g, "-")
     .slice(0, 180);
+}
+
+function formatMegabytes(bytes: number): number {
+  return Math.ceil(bytes / 1024 / 1024);
 }

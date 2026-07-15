@@ -36,8 +36,8 @@ export async function startVideoConversation(ctx: Context, backendDb: BackendDb)
   await ctx.reply(
     ui(
       locale,
-      "🎬 Send an MP4 video. I will ask only for the details that are needed.",
-      "🎬 Пришлите видео MP4. Затем я задам только нужные вопросы.",
+      "🎬 Send an MP4 video up to 100 MB. I will ask only for the details that are needed.",
+      "🎬 Пришлите видео MP4 до 100 МБ. Затем я задам только нужные вопросы.",
     ),
     { reply_markup: new InlineKeyboard().text(ui(locale, "← Cancel", "← Отмена"), "video_cancel_dialog") },
   );
