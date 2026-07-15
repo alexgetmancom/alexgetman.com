@@ -18,6 +18,7 @@ export async function handleNotificationsCallback(ctx: Context, backendDb: Backe
     lines.push(`\n${event.severity === "error" ? "🔴" : "🟡"} *${event.target ?? event.eventType}*\n${event.message}`);
     keyboard.text(ui(locale, "✓ Mark read", "✓ Прочитано"), `notification_ack:${event.id}`).row();
   }
+  keyboard.text(ui(locale, "⚙️ Notification settings", "⚙️ Настройки уведомлений"), "settings_notifications").row();
   keyboard.text(ui(locale, "← Menu", "← Меню"), "menu_home");
   await ctx.answerCallbackQuery();
   await ctx.editMessageText(lines.join("\n").slice(0, 3900), { parse_mode: "Markdown", reply_markup: keyboard });

@@ -145,7 +145,6 @@ export function scheduleVideo(
       if (!targetSchedule) continue;
       const publishAt = targetSchedule.toISOString();
       const preparedAt = new Date(targetSchedule.getTime() - timing.prepareLeadMinutes * 60_000);
-      const reminderAt = new Date(targetSchedule.getTime() - timing.reminderMinutes * 60_000);
       tx.update(videoTargets)
         .set({
           scheduledAt: publishAt,
@@ -157,7 +156,6 @@ export function scheduleVideo(
         .run();
       insertVideoJob(tx, videoDraftId, target.id, "prepare", preparedAt.toISOString());
       insertVideoJob(tx, videoDraftId, target.id, "publish", publishAt);
-      insertVideoJob(tx, videoDraftId, target.id, "reminder", reminderAt.toISOString());
     }
     const activeSchedules = tx
       .select({ scheduledAt: videoTargets.scheduledAt })

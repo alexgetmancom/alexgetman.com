@@ -117,7 +117,7 @@ describe("video publication queue", () => {
     expect(invalid.callbackAnswers).toEqual([{ text: "Начните создание видео заново." }]);
   });
 
-  it("keeps independent platform schedules and queues prepare, reminder and publish work", () => {
+  it("keeps independent platform schedules and queues Delivery prepare and publish work", () => {
     backendDb = openBackendDb(":memory:");
     const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts", "instagram_reels"]);
@@ -137,7 +137,6 @@ describe("video publication queue", () => {
     expect(backendDb.sqlite.prepare("SELECT kind, count(*) AS count FROM video_jobs GROUP BY kind ORDER BY kind").all()).toEqual([
       { kind: "prepare", count: 2 },
       { kind: "publish", count: 2 },
-      { kind: "reminder", count: 2 },
     ]);
   });
 

@@ -4,8 +4,9 @@ import { listStudioMediaAssets, mediaItemsFromAssets, requireStudioMediaAssets }
 import { createDraftFromMessage, requireDraft } from "../../content/drafts.js";
 import type { DraftMessage } from "../../content/message.js";
 import type { BackendDb } from "../../db/client.js";
-import { drafts, postEvents } from "../../db/schema.js";
+import { drafts, postEvents, studioNotificationSettings } from "../../db/schema.js";
 import { recordDomainEvent } from "../../domain/events.js";
+import { cancelScheduledNotifications, scheduleReminder } from "../../notifications/jobs.js";
 import { cancelDraft, cancelRemainingPostJobs } from "../../publishing/draft-lifecycle.js";
 import { mediaPolicyForTarget } from "../../publishing/media-policy.js";
 import { publicationPreflight } from "../../publishing/preflight.js";
@@ -64,9 +65,32 @@ export function postService(backendDb: BackendDb) {
       return publishDraftToQueue(backendDb, draftId);
     },
     schedule(actorId: number, draftId: number, input: ScheduleInput): number {
-      requireOwnedDraft(backendDb, actorId, draftId);
+      const draft = requireOwnedDraft(backendDb, actorId, draftId);
       const postId = publishDraftToQueue(backendDb, draftId, { mode: "scheduled", ...input });
       rebalanceScheduledDrafts(backendDb);
+      const scheduled = requireOwnedDraft(backendDb, actorId, draftId);
+      const preference = notificationPreference(backendDb, actorId);
+      const title = draft.text_ru.trim().split("\n")[0]?.slice(0, 100) || `Post #${postId}`;
+      if (scheduled.scheduled_at)
+        scheduleReminder(backendDb, {
+          adminId: actorId,
+          ref: `post:${postId}`,
+          kind: "post.ru",
+          publishAt: new Date(scheduled.scheduled_at),
+          title,
+          targets: localeTargets(draft.targets_json, "ru"),
+          preference,
+        });
+      if (scheduled.scheduled_en_at)
+        scheduleReminder(backendDb, {
+          adminId: actorId,
+          ref: `post:${postId}`,
+          kind: "post.en",
+          publishAt: new Date(scheduled.scheduled_en_at),
+          title,
+          targets: localeTargets(draft.targets_json, "en"),
+          preference,
+        });
       return postId;
     },
     scheduleChoice(actorId: number, draftId: number, choice: string): ScheduleInput {
@@ -88,12 +112,14 @@ export function postService(backendDb: BackendDb) {
       return scheduleAt(requireOwnedDraft(backendDb, actorId, draftId), scope, value);
     },
     cancel(actorId: number, draftId: number): void {
-      requireOwnedDraft(backendDb, actorId, draftId);
+      const draft = requireOwnedDraft(backendDb, actorId, draftId);
       cancelDraft(backendDb, draftId);
+      if (draft.post_id != null) cancelScheduledNotifications(backendDb, `post:${draft.post_id}`);
     },
     cancelRemaining(actorId: number, draftId: number): void {
-      requireOwnedDraft(backendDb, actorId, draftId);
+      const draft = requireOwnedDraft(backendDb, actorId, draftId);
       cancelRemainingPostJobs(backendDb, draftId);
+      if (draft.post_id != null) cancelScheduledNotifications(backendDb, `post:${draft.post_id}`);
     },
     progress(actorId: number, draftId: number) {
       requireOwnedDraft(backendDb, actorId, draftId);
@@ -179,6 +205,21 @@ export function postService(backendDb: BackendDb) {
       });
     },
   };
+}
+
+function notificationPreference(backendDb: BackendDb, actorId: number) {
+  const row = backendDb.db.select().from(studioNotificationSettings).where(eq(studioNotificationSettings.adminId, actorId)).get();
+  return {
+    remindersEnabled: row?.remindersEnabled !== 0,
+    reminderMinutes: row?.reminderMinutes ?? 5,
+    completionEnabled: row?.completionEnabled !== 0,
+  };
+}
+
+function localeTargets(json: string, locale: "ru" | "en"): string[] {
+  return Object.entries(parseTargets(json))
+    .filter(([target, enabled]) => enabled && targetLocale(target) === locale)
+    .map(([target]) => target);
 }
 
 function editDraftContent(backendDb: BackendDb, actorId: number, draftId: number, input: EditInput): void {

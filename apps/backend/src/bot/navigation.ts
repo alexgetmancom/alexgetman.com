@@ -42,6 +42,8 @@ export function settingsKeyboard(locale: BotLocale, hasYouTube: boolean): Inline
   const keyboard = new InlineKeyboard();
   if (hasYouTube) keyboard.text(ui(locale, "▶️ YouTube signature", "▶️ Подпись YouTube"), "settings_youtube_signature").row();
   return keyboard
+    .text(ui(locale, "🔔 Publication notifications", "🔔 Уведомления о публикациях"), "settings_notifications")
+    .row()
     .text(ui(locale, "🌐 Language", "🌐 Язык"), "settings_language")
     .row()
     .text(ui(locale, "← Menu", "← К меню"), "settings_menu");

@@ -24,13 +24,37 @@ export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb)
   for (const job of jobs) {
     try {
       await executeVideoJob(config, backendDb, job);
-      if (completeVideoJob(backendDb, job)) recordVideoProgressEvent(backendDb, job, "video.job.completed");
+      if (completeVideoJob(backendDb, job)) {
+        recordVideoProgressEvent(backendDb, job, "video.job.completed");
+        recordVideoCompletionIfFinal(backendDb, job.videoDraftId);
+      }
     } catch (error) {
-      if (failVideoJob(backendDb, job, error, config)) recordVideoProgressEvent(backendDb, job, "video.job.failed");
+      if (failVideoJob(backendDb, job, error, config)) {
+        recordVideoProgressEvent(backendDb, job, "video.job.failed");
+        recordVideoCompletionIfFinal(backendDb, job.videoDraftId);
+      }
     }
   }
   pruneExpiredVideos(config, backendDb);
   return jobs.length;
+}
+
+function recordVideoCompletionIfFinal(backendDb: BackendDb, videoDraftId: number): void {
+  const targets = backendDb.db
+    .select({ status: videoTargets.status })
+    .from(videoTargets)
+    .where(eq(videoTargets.videoDraftId, videoDraftId))
+    .all();
+  if (!targets.length || !targets.every((target) => ["published", "failed", "cancelled"].includes(target.status))) return;
+  const failed = targets.filter((target) => target.status === "failed").length;
+  recordDomainEvent(backendDb, {
+    ref: `video:${videoDraftId}`,
+    type: "delivery.video.completed",
+    severity: failed ? "warn" : "info",
+    message: failed ? `Video #${videoDraftId} completed with ${failed} failed target(s)` : `Video #${videoDraftId} published successfully`,
+    details: { videoDraftId, total: targets.length, failed, published: targets.filter((target) => target.status === "published").length },
+    cooldownSeconds: 60 * 60,
+  });
 }
 
 function claimVideoJobs(backendDb: BackendDb, limit: number): VideoJob[] {

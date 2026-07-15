@@ -10,6 +10,7 @@ import { runVideoCycle } from "../delivery/video-worker.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { log } from "../foundation/logger.js";
 import { type ScheduledLoop, startLoop } from "../foundation/scheduler.js";
+import { runNotificationCycle } from "../notifications/jobs.js";
 import { observabilityService } from "../observability/service.js";
 
 /** Delivery-only publish cycle. Interfaces learn about settled work through durable events. */
@@ -31,6 +32,10 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
     startLoop("queue", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
       const claimed = await runPublishCycle(config, backendDb);
       log("debug", "queue loop tick", { claimed });
+    }),
+    startLoop("notifications", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
+      const delivered = runNotificationCycle(backendDb);
+      log("debug", "notification loop tick", { delivered });
     }),
     ...(config.studio.modules.video_posting
       ? [

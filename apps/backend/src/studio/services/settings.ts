@@ -1,11 +1,56 @@
 import { eq } from "drizzle-orm";
 import type { BackendDb } from "../../db/client.js";
-import { botSettings, botUiSettings } from "../../db/schema.js";
+import { botSettings, botUiSettings, studioNotificationSettings } from "../../db/schema.js";
 import type { StudioActorId, StudioLocale } from "../contracts.js";
 
 /** Owner settings commands used by Telegram today and any future Studio adapter. */
 export function settingsService(backendDb: BackendDb) {
   return {
+    notifications(actorId: StudioActorId) {
+      const row = backendDb.db.select().from(studioNotificationSettings).where(eq(studioNotificationSettings.adminId, actorId)).get();
+      return {
+        remindersEnabled: row?.remindersEnabled !== 0,
+        reminderMinutes: row?.reminderMinutes ?? 5,
+        completionEnabled: row?.completionEnabled !== 0,
+      };
+    },
+    setNotifications(
+      actorId: StudioActorId,
+      input: Partial<{ remindersEnabled: boolean; reminderMinutes: number; completionEnabled: boolean }>,
+    ) {
+      if (
+        input.reminderMinutes != null &&
+        (!Number.isInteger(input.reminderMinutes) || input.reminderMinutes < 1 || input.reminderMinutes > 60)
+      )
+        throw new Error("Reminder interval must be between 1 and 60 minutes.");
+      const current = this.notifications(actorId);
+      const now = new Date().toISOString();
+      const next = {
+        remindersEnabled: input.remindersEnabled ?? current.remindersEnabled,
+        reminderMinutes: input.reminderMinutes ?? current.reminderMinutes,
+        completionEnabled: input.completionEnabled ?? current.completionEnabled,
+      };
+      backendDb.db
+        .insert(studioNotificationSettings)
+        .values({
+          adminId: actorId,
+          remindersEnabled: Number(next.remindersEnabled),
+          reminderMinutes: next.reminderMinutes,
+          completionEnabled: Number(next.completionEnabled),
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: studioNotificationSettings.adminId,
+          set: {
+            remindersEnabled: Number(next.remindersEnabled),
+            reminderMinutes: next.reminderMinutes,
+            completionEnabled: Number(next.completionEnabled),
+            updatedAt: now,
+          },
+        })
+        .run();
+      return next;
+    },
     youtubeSignature(actorId: StudioActorId): string {
       return backendDb.db.select().from(botSettings).where(eq(botSettings.adminId, actorId)).get()?.youtubeSignature.trim() ?? "";
     },

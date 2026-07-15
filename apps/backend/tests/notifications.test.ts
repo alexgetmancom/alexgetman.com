@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import { openBackendDb } from "../src/db/client.js";
+import { cancelScheduledNotifications, runNotificationCycle, scheduleReminder } from "../src/notifications/jobs.js";
 import { createVideoDraft } from "../src/publishing/video-service.js";
 import { notificationService } from "../src/studio/services/notifications.js";
 
@@ -57,6 +58,42 @@ describe("Studio notifications", () => {
       const notifications = notificationService(backendDb);
       expect(notifications.inbox(42).some((event) => event.eventType === "content.draft.created")).toBe(true);
       expect(notifications.inbox(7).some((event) => event.postKey === `draft:${draftId}`)).toBe(false);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("creates durable interface-neutral reminders and honours cancellation", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const videoId = createVideoDraft(backendDb, 42, "owner-video", 24);
+      scheduleReminder(backendDb, {
+        adminId: 42,
+        ref: `video:${videoId}`,
+        kind: "video.youtube_shorts",
+        publishAt: new Date(Date.now() + 30_000),
+        title: "Launch",
+        targets: ["youtube_shorts"],
+        preference: { remindersEnabled: true, reminderMinutes: 5, completionEnabled: true },
+      });
+      expect(runNotificationCycle(backendDb)).toBe(1);
+      expect(
+        notificationService(backendDb)
+          .inbox(42)
+          .some((event) => event.eventType === "studio.notification.reminder.due"),
+      ).toBe(true);
+
+      scheduleReminder(backendDb, {
+        adminId: 42,
+        ref: `video:${videoId}`,
+        kind: "video.instagram_reels",
+        publishAt: new Date(Date.now() + 60 * 60_000),
+        title: "Launch",
+        targets: ["instagram_reels"],
+        preference: { remindersEnabled: true, reminderMinutes: 5, completionEnabled: true },
+      });
+      cancelScheduledNotifications(backendDb, `video:${videoId}`);
+      expect(runNotificationCycle(backendDb)).toBe(0);
     } finally {
       backendDb.close();
     }

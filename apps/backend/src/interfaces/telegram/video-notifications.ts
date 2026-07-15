@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { type Bot, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../../db/client.js";
-import { videoDrafts, videoTargets } from "../../db/schema.js";
+import { drafts, studioNotificationSettings, videoDrafts, videoTargets } from "../../db/schema.js";
 import { getVideoDraft } from "../../publishing/video-data.js";
 import type { VideoTarget } from "../../publishing/video-types.js";
 import { videoTargetLabel } from "../../publishing/video-types.js";
@@ -66,4 +66,77 @@ export async function sendVideoReminder(
     .set({ reminderSentAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
     .where(eq(videoDrafts.id, draft.id))
     .run();
+}
+
+/** Telegram delivery adapter for Studio events. The event and preference live above Telegram. */
+export async function sendStudioReminder(
+  backendDb: BackendDb,
+  bot: Bot | null,
+  event: { postKey: string | null; detailsJson: unknown },
+): Promise<void> {
+  if (!bot) return;
+  const details = object(event.detailsJson);
+  const adminId = number(details.admin_id) ?? ownerForRef(backendDb, event.postKey);
+  if (adminId == null || !notificationPreference(backendDb, adminId).remindersEnabled) return;
+  const title = typeof details.title === "string" ? details.title : (event.postKey ?? "Publication");
+  const targets = Array.isArray(details.targets) ? details.targets.filter((value): value is string => typeof value === "string") : [];
+  const minutes = number(details.minutes) ?? 5;
+  const publishAt = typeof details.publish_at === "string" ? details.publish_at : null;
+  await bot.api.sendMessage(
+    adminId,
+    `⏰ Через ${minutes} мин. публикация:\n\n${title}\n${targets.length ? `• ${targets.join(", ")}` : ""}${publishAt ? `\n\n${formatVideoTime(publishAt)}` : ""}`.trim(),
+    { reply_markup: new InlineKeyboard().text("🔔 Уведомления", "notifications_home") },
+  );
+}
+
+export async function sendStudioCompletion(
+  backendDb: BackendDb,
+  bot: Bot | null,
+  event: { postKey: string | null; detailsJson: unknown },
+): Promise<void> {
+  if (!bot) return;
+  const adminId = ownerForRef(backendDb, event.postKey);
+  if (adminId == null || !notificationPreference(backendDb, adminId).completionEnabled) return;
+  const details = object(event.detailsJson);
+  const total = number(details.total) ?? 0;
+  const published = number(details.published) ?? 0;
+  const failed = number(details.failed) ?? 0;
+  const label = event.postKey?.startsWith("video:") ? "Видео" : "Пост";
+  const text = failed
+    ? `⚠️ ${label}: публикация завершена с ошибками\n✅ ${published} / ${total}\n❌ Ошибок: ${failed}`
+    : `✅ ${label} опубликован\n${published || total} / ${total}`;
+  await bot.api.sendMessage(adminId, text, { reply_markup: new InlineKeyboard().text("🔔 Уведомления", "notifications_home") });
+}
+
+function notificationPreference(backendDb: BackendDb, adminId: number) {
+  const row = backendDb.db.select().from(studioNotificationSettings).where(eq(studioNotificationSettings.adminId, adminId)).get();
+  return { remindersEnabled: row?.remindersEnabled !== 0, completionEnabled: row?.completionEnabled !== 0 };
+}
+
+function ownerForRef(backendDb: BackendDb, ref: string | null): number | null {
+  const match = ref?.match(/^(post|video):(\d+)$/);
+  if (!match) return null;
+  if (match[1] === "video")
+    return (
+      backendDb.db
+        .select({ adminId: videoDrafts.adminId })
+        .from(videoDrafts)
+        .where(eq(videoDrafts.id, Number(match[2])))
+        .get()?.adminId ?? null
+    );
+  return (
+    backendDb.db
+      .select({ adminId: drafts.adminId })
+      .from(drafts)
+      .where(eq(drafts.postId, Number(match[2])))
+      .get()?.adminId ?? null
+  );
+}
+
+function object(value: unknown): Record<string, unknown> {
+  return value != null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function number(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }

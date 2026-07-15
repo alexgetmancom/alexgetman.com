@@ -3,7 +3,13 @@ import type { Bot } from "grammy";
 import { refreshPostControlCard } from "../../bot/progress.js";
 import type { BackendDb } from "../../db/client.js";
 import { alertDedup, drafts, postEvents } from "../../db/schema.js";
-import { notifyFinalVideoFailure, refreshVideoControlCard, sendVideoReminder } from "./video-notifications.js";
+import {
+  notifyFinalVideoFailure,
+  refreshVideoControlCard,
+  sendStudioCompletion,
+  sendStudioReminder,
+  sendVideoReminder,
+} from "./video-notifications.js";
 
 const TELEGRAM_EVENT_TYPES = [
   "delivery.post.settled",
@@ -15,6 +21,9 @@ const TELEGRAM_EVENT_TYPES = [
   "video.target.failed",
   "video.job.completed",
   "video.job.failed",
+  "studio.notification.reminder.due",
+  "delivery.post.completed",
+  "delivery.video.completed",
 ];
 
 /** Consumes durable domain events and renders Telegram-only side effects once. */
@@ -30,10 +39,14 @@ export async function consumeTelegramEvents(backendDb: BackendDb, bot: Bot | nul
   let handled = 0;
   for (const event of events) {
     if (wasDelivered(backendDb, event.id)) continue;
-    const details = event.detailsJson ?? {};
+    const details = eventDetails(event.detailsJson);
     const videoDraftId = numberDetail(details, "videoDraftId");
     const videoTargetId = numberDetail(details, "videoTargetId");
-    if (event.eventType === "delivery.post.settled" || event.eventType.startsWith("publish.job.")) {
+    if (event.eventType === "studio.notification.reminder.due") {
+      await sendStudioReminder(backendDb, bot, { ...event, detailsJson: details });
+    } else if (event.eventType === "delivery.post.completed" || event.eventType === "delivery.video.completed") {
+      await sendStudioCompletion(backendDb, bot, { ...event, detailsJson: details });
+    } else if (event.eventType === "delivery.post.settled" || event.eventType.startsWith("publish.job.")) {
       const postId = numberDetail(details, "post_id") ?? postIdFromRef(event.postKey);
       const draft = postId == null ? null : backendDb.db.select({ id: drafts.id }).from(drafts).where(eq(drafts.postId, postId)).get();
       if (draft) await refreshPostControlCard(backendDb, bot, draft.id);
@@ -75,4 +88,15 @@ function numberDetail(details: unknown, key: string): number | null {
   if (!details || typeof details !== "object" || !(key in details)) return null;
   const value = (details as Record<string, unknown>)[key];
   return typeof value === "number" && Number.isSafeInteger(value) ? value : null;
+}
+
+function eventDetails(value: unknown): Record<string, unknown> {
+  if (value != null && typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
+  if (typeof value !== "string") return {};
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed != null && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
 }

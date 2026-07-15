@@ -16,6 +16,12 @@ const studioTools = [
   tool("studio_queue", "Read the authenticated owner's upcoming work, drafts and failures."),
   tool("studio_post_list", "List the authenticated owner's post drafts.", { limit: integerSchema(1, 100) }),
   tool("studio_notifications", "Read the authenticated owner's durable Studio notification inbox.", { limit: integerSchema(1, 100) }),
+  tool("studio_notification_settings", "Read the authenticated owner's Studio notification policy."),
+  tool(
+    "studio_notification_settings_update",
+    "Update notification policy. These settings apply to every connected interface; Telegram is only one delivery adapter.",
+    { reminders_enabled: { type: "boolean" }, reminder_minutes: integerSchema(1, 60), completion_enabled: { type: "boolean" } },
+  ),
   tool("studio_media_list", "List the authenticated owner's reusable Studio media assets.", { limit: integerSchema(1, 100) }),
   tool("studio_acknowledge_notification", "Mark one visible Studio notification as read.", { id: integerSchema(1) }, ["id"]),
   tool(
@@ -223,6 +229,14 @@ async function runStudioTool(
       return studio.posts.list(actorId, optionalInteger(args.limit, 50, 1, 100));
     case "studio_notifications":
       return studio.notifications.inbox(actorId, optionalInteger(args.limit, 50, 1, 100));
+    case "studio_notification_settings":
+      return studio.settings.notifications(actorId);
+    case "studio_notification_settings_update":
+      return studio.settings.setNotifications(actorId, {
+        ...(typeof args.reminders_enabled === "boolean" ? { remindersEnabled: args.reminders_enabled } : {}),
+        ...(typeof args.reminder_minutes === "number" ? { reminderMinutes: integer(args.reminder_minutes, "reminder_minutes") } : {}),
+        ...(typeof args.completion_enabled === "boolean" ? { completionEnabled: args.completion_enabled } : {}),
+      });
     case "studio_media_list":
       return studio.posts.mediaAssets(actorId, optionalInteger(args.limit, 50, 1, 100));
     case "studio_acknowledge_notification":

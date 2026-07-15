@@ -1,8 +1,9 @@
 import { desc, eq } from "drizzle-orm";
 import { requireStudioMediaAssets } from "../../content/assets.js";
 import type { BackendDb } from "../../db/client.js";
-import { postEvents, videoDrafts, videoJobs } from "../../db/schema.js";
+import { postEvents, studioNotificationSettings, videoDrafts, videoJobs } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
+import { cancelScheduledNotifications, scheduleReminder } from "../../notifications/jobs.js";
 import { parseManualSchedule } from "../../publishing/schedule.js";
 import { getVideoDraft, listVideoTargets } from "../../publishing/video-data.js";
 import {
@@ -43,12 +44,13 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
         .all();
     },
     async schedule(actorId: number, videoDraftId: number, schedule: Partial<Record<VideoTarget, Date>>) {
-      requireOwnedVideo(backendDb, actorId, videoDraftId);
+      const draft = requireOwnedVideo(backendDb, actorId, videoDraftId);
       const technical = await validateVideoDraft(config, backendDb, videoDraftId);
       scheduleVideo(backendDb, videoDraftId, schedule, {
         prepareLeadMinutes: config.VIDEO_PREPARE_LEAD_MINUTES,
         reminderMinutes: config.VIDEO_REMINDER_MINUTES,
       });
+      scheduleVideoReminders(backendDb, actorId, videoDraftId, draft.label, schedule);
       return technical;
     },
     async validate(actorId: number, videoDraftId: number) {
@@ -56,14 +58,18 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
       return validateVideoDraft(config, backendDb, videoDraftId);
     },
     async publish(actorId: number, videoDraftId: number) {
-      requireOwnedVideo(backendDb, actorId, videoDraftId);
+      const draft = requireOwnedVideo(backendDb, actorId, videoDraftId);
       const targets = listVideoTargets(backendDb, videoDraftId).map((row) => row.target as VideoTarget);
       if (!targets.length) throw new Error("Choose video platforms first.");
       const technical = await validateVideoDraft(config, backendDb, videoDraftId);
-      scheduleVideo(backendDb, videoDraftId, Object.fromEntries(targets.map((target) => [target, new Date(Date.now() + 60_000)])), {
+      const schedule = Object.fromEntries(targets.map((target) => [target, new Date(Date.now() + 60_000)])) as Partial<
+        Record<VideoTarget, Date>
+      >;
+      scheduleVideo(backendDb, videoDraftId, schedule, {
         prepareLeadMinutes: config.VIDEO_PREPARE_LEAD_MINUTES,
         reminderMinutes: config.VIDEO_REMINDER_MINUTES,
       });
+      scheduleVideoReminders(backendDb, actorId, videoDraftId, draft.label, schedule);
       return technical;
     },
     retry(actorId: number, videoDraftId: number, target: VideoTarget): void {
@@ -73,6 +79,7 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
     cancel(actorId: number, videoDraftId: number): void {
       requireOwnedVideo(backendDb, actorId, videoDraftId);
       cancelVideo(backendDb, videoDraftId, config.VIDEO_MEDIA_RETENTION_HOURS);
+      cancelScheduledNotifications(backendDb, `video:${videoDraftId}`);
     },
     preview(actorId: number, videoDraftId: number) {
       const draft = requireOwnedVideo(backendDb, actorId, videoDraftId);
@@ -123,6 +130,33 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
       return parseManualSchedule(value);
     },
   };
+}
+
+function scheduleVideoReminders(
+  backendDb: BackendDb,
+  actorId: number,
+  videoDraftId: number,
+  label: string,
+  schedule: Partial<Record<VideoTarget, Date>>,
+): void {
+  const row = backendDb.db.select().from(studioNotificationSettings).where(eq(studioNotificationSettings.adminId, actorId)).get();
+  const preference = {
+    remindersEnabled: row?.remindersEnabled !== 0,
+    reminderMinutes: row?.reminderMinutes ?? 5,
+    completionEnabled: row?.completionEnabled !== 0,
+  };
+  for (const [target, publishAt] of Object.entries(schedule) as Array<[VideoTarget, Date | undefined]>) {
+    if (publishAt)
+      scheduleReminder(backendDb, {
+        adminId: actorId,
+        ref: `video:${videoDraftId}`,
+        kind: `video.${target}`,
+        publishAt,
+        title: label || `Video #${videoDraftId}`,
+        targets: [target],
+        preference,
+      });
+  }
 }
 
 function requireOwnedVideo(backendDb: BackendDb, actorId: number, videoDraftId: number) {

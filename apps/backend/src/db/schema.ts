@@ -84,6 +84,35 @@ export const postEvents = sqliteTable(
   }),
 );
 
+/** Owner-level notification policy. It belongs to Studio, not to any interface. */
+export const studioNotificationSettings = sqliteTable("studio_notification_settings", {
+  adminId: integer("admin_id").primaryKey(),
+  remindersEnabled: integer("reminders_enabled").notNull().default(1),
+  reminderMinutes: integer("reminder_minutes").notNull().default(5),
+  completionEnabled: integer("completion_enabled").notNull().default(1),
+  updatedAt: text("updated_at").notNull(),
+});
+
+/** Durable, interface-neutral scheduled notification work. */
+export const studioNotificationJobs = sqliteTable(
+  "studio_notification_jobs",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    adminId: integer("admin_id").notNull(),
+    ref: text("ref").notNull(),
+    kind: text("kind").notNull(),
+    runAt: text("run_at").notNull(),
+    status: text("status").notNull().default("queued"),
+    payloadJson: text("payload_json", { mode: "json" }).$type<JsonObject>().notNull().default({}),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => ({
+    due: index("idx_studio_notification_jobs_due").on(table.status, table.runAt),
+    dedupe: uniqueIndex("idx_studio_notification_jobs_ref_kind").on(table.ref, table.kind),
+  }),
+);
+
 export const opsActions = sqliteTable("ops_actions", {
   actionId: integer("action_id").primaryKey({ autoIncrement: true }),
   actorType: text("actor_type").notNull(),

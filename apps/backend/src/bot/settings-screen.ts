@@ -35,6 +35,32 @@ export async function handleSettingsCallback(ctx: Context, backendDb: BackendDb,
     await showYouTubeSignature(ctx, backendDb, config, true);
     return true;
   }
+  if (data === "settings_notifications") {
+    await ctx.answerCallbackQuery();
+    await showNotificationSettings(ctx, backendDb, config, true);
+    return true;
+  }
+  if (data === "settings_notifications_reminders") {
+    const current = studioServices(backendDb, config).settings.notifications(adminId);
+    studioServices(backendDb, config).settings.setNotifications(adminId, { remindersEnabled: !current.remindersEnabled });
+    await ctx.answerCallbackQuery();
+    await showNotificationSettings(ctx, backendDb, config, true);
+    return true;
+  }
+  if (data === "settings_notifications_completion") {
+    const current = studioServices(backendDb, config).settings.notifications(adminId);
+    studioServices(backendDb, config).settings.setNotifications(adminId, { completionEnabled: !current.completionEnabled });
+    await ctx.answerCallbackQuery();
+    await showNotificationSettings(ctx, backendDb, config, true);
+    return true;
+  }
+  if (data.startsWith("settings_notifications_minutes:")) {
+    const minutes = Number(data.slice("settings_notifications_minutes:".length));
+    studioServices(backendDb, config).settings.setNotifications(adminId, { reminderMinutes: minutes });
+    await ctx.answerCallbackQuery({ text: `${minutes} min` });
+    await showNotificationSettings(ctx, backendDb, config, true);
+    return true;
+  }
   if (data === "settings_youtube_edit") {
     studioServices(backendDb, config).settings.beginYoutubeSignatureEdit(adminId);
     const locale = botLocale(backendDb, adminId);
@@ -77,6 +103,31 @@ export async function handleSettingsCallback(ctx: Context, backendDb: BackendDb,
     return true;
   }
   return false;
+}
+
+async function showNotificationSettings(ctx: Context, backendDb: BackendDb, config: BackendConfig, edit = false): Promise<void> {
+  const adminId = Number(ctx.from?.id);
+  const locale = botLocale(backendDb, adminId);
+  const settings = studioServices(backendDb, config).settings.notifications(adminId);
+  const on = (value: boolean) => (value ? ui(locale, "On", "Вкл") : ui(locale, "Off", "Выкл"));
+  const text = ui(
+    locale,
+    `🔔 *Publication notifications*\n\nReminder before scheduled publishing: *${on(settings.remindersEnabled)}* · *${settings.reminderMinutes} min*\nCompletion notification: *${on(settings.completionEnabled)}*\n\nThese are Studio settings. Telegram only delivers them.`,
+    `🔔 *Уведомления о публикациях*\n\nНапоминание перед отложенной публикацией: *${on(settings.remindersEnabled)}* · *${settings.reminderMinutes} мин.*\nУведомление о завершении: *${on(settings.completionEnabled)}*\n\nЭто настройки Studio. Telegram только доставляет их.`,
+  );
+  const keyboard = new InlineKeyboard()
+    .text(`${settings.remindersEnabled ? "✅" : "◻️"} ${ui(locale, "Reminder", "Напоминание")}`, "settings_notifications_reminders")
+    .text(`${settings.completionEnabled ? "✅" : "◻️"} ${ui(locale, "Completion", "Завершение")}`, "settings_notifications_completion")
+    .row()
+    .text("1", "settings_notifications_minutes:1")
+    .text("5", "settings_notifications_minutes:5")
+    .text("10", "settings_notifications_minutes:10")
+    .text("15", "settings_notifications_minutes:15")
+    .text("30", "settings_notifications_minutes:30")
+    .row()
+    .text(ui(locale, "← Settings", "← К настройкам"), "settings_home");
+  if (edit) await ctx.editMessageText(text, { parse_mode: "Markdown", reply_markup: keyboard });
+  else await ctx.reply(text, { parse_mode: "Markdown", reply_markup: keyboard });
 }
 
 async function showYouTubeSignature(ctx: Context, backendDb: BackendDb, config: BackendConfig, edit = false): Promise<void> {
