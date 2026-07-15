@@ -86,6 +86,15 @@ const studioTools = [
     ["video_draft_id"],
   ),
   tool(
+    "studio_video_preflight",
+    "Validate an owned video source and configured targets without scheduling it.",
+    { video_draft_id: integerSchema(1) },
+    ["video_draft_id"],
+  ),
+  tool("studio_video_publish", "Queue all configured video targets for immediate publication.", { video_draft_id: integerSchema(1) }, [
+    "video_draft_id",
+  ]),
+  tool(
     "studio_video_retry",
     "Retry one failed video target.",
     { video_draft_id: integerSchema(1), target: enumSchema(["youtube_shorts", "instagram_reels"]) },
@@ -294,6 +303,15 @@ async function runStudioTool(
         ...(instagram ? { instagram_reels: instagram } : {}),
       });
       result = { video_draft_id: videoDraftId, scheduled: true, technical };
+      ref = `video:${videoDraftId}`;
+      break;
+    }
+    case "studio_video_preflight":
+      return studio.videos.preflight(actorId, integer(args.video_draft_id, "video_draft_id"));
+    case "studio_video_publish": {
+      const videoDraftId = integer(args.video_draft_id, "video_draft_id");
+      const technical = await studio.videos.publishNow(actorId, videoDraftId);
+      result = { video_draft_id: videoDraftId, queued: true, technical };
       ref = `video:${videoDraftId}`;
       break;
     }

@@ -1,8 +1,6 @@
-/**
- * A read-only description of what each delivery adapter will do with a draft's
- * media. It is deliberately kept beside publishing rather than in a UI: every
- * interface (Telegram, MCP, a future Discord adapter) sees the same result.
- */
+import { platformProfile } from "./platform-profiles.js";
+
+/** A read-only projection of the delivery contract declared in platform profiles. */
 type MediaPolicy = {
   target: string;
   inputCount: number;
@@ -28,18 +26,11 @@ export function mediaPolicyForTarget(target: string, media: unknown[]): MediaPol
     note: inputCount > limit ? `${label} receives at most ${limit} media items.` : null,
   });
 
-  if (target === "telegram") return limited(10, "Telegram");
-  if (target === "bluesky" || target === "mastodon") return limited(4, target === "bluesky" ? "Bluesky" : "Mastodon");
-  if (target === "linkedin") return limited(20, "LinkedIn");
-  if (target === "instagram_story" || target === "instagram_stories" || target.startsWith("instagram_stories"))
-    return first("story-first", "Stories use a single rendered asset made from the first source item.");
-  if (target === "telegram_story" || target === "telegram_stories")
-    return first("story-first", "Stories use a single rendered asset made from the first source item.");
-  if (target === "facebook" || target === "facebook_ru") {
-    const hasVideo = media.some((item) => isVideo(item));
-    return hasVideo ? first("first", "Facebook publishes the first video when the selection contains video.") : all(target, inputCount);
-  }
-  if (target === "devto") return first("first", "Dev.to uses the first image as its cover and inline image.");
+  const rule = platformProfile(target)?.media;
+  if (!rule) return all(target, inputCount);
+  const selected = rule.whenVideo && media.some(isVideo) ? rule.whenVideo : rule;
+  if (selected.mode === "limited" && selected.limit && selected.label) return limited(selected.limit, selected.label);
+  if ((selected.mode === "first" || selected.mode === "story-first") && selected.note) return first(selected.mode, selected.note);
   return all(target, inputCount);
 }
 

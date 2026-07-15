@@ -201,6 +201,21 @@ describe("video publication queue", () => {
     ]);
   });
 
+  it("does not replace video targets once scheduling has begun", () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
+    scheduleVideo(
+      backendDb,
+      draftId,
+      { youtube_shorts: new Date(Date.now() + 60 * 60_000) },
+      { prepareLeadMinutes: 15, reminderMinutes: 5 },
+    );
+
+    expect(() => replaceVideoTargets(backendDb!, draftId, ["instagram_reels"])).toThrow("only before scheduling");
+    expect(listVideoTargets(backendDb, draftId).map((target) => target.target)).toEqual(["youtube_shorts"]);
+  });
+
   it("cleans dependent analytics rows when editable targets are replaced", () => {
     backendDb = openBackendDb(":memory:");
     const draftId = createVideoDraft(backendDb, 42, "video-source", 24);

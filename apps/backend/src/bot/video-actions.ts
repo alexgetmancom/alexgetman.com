@@ -6,7 +6,7 @@ import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing
 import { studioServices } from "../studio/services/index.js";
 import { botLocale } from "./i18n.js";
 import { startVideoConversation } from "./video-conversation.js";
-import { finishVideoSchedule } from "./video-scheduling.js";
+import { finishVideoNow, finishVideoSchedule } from "./video-scheduling.js";
 import {
   askInstagramOrSchedule,
   callbackMessageId,
@@ -111,17 +111,12 @@ export async function handleVideoActionCallback(ctx: Context, backendDb: Backend
       });
     } else if (data.startsWith("video_now_confirm:")) {
       const id = Number(data.slice("video_now_confirm:".length));
-      const targets = studioServices(backendDb, config)
-        .videos.details(adminId, id)
-        .targets.map((row) => row.target as VideoTarget);
-      await finishVideoSchedule(
-        ctx,
-        backendDb,
-        config,
-        adminId,
-        { draftId: id, step: "", selected: targets, data: { controlMessageId: callbackMessageId(ctx) } },
-        Object.fromEntries(targets.map((target) => [target, new Date(Date.now() + 60_000)])),
-      );
+      await finishVideoNow(ctx, backendDb, config, adminId, {
+        draftId: id,
+        step: "",
+        selected: [],
+        data: { controlMessageId: callbackMessageId(ctx) },
+      });
     } else if (data.startsWith("video_cancel:")) {
       studioServices(backendDb, config).videos.cancel(adminId, Number(data.slice("video_cancel:".length)));
       clearSession(backendDb, adminId);

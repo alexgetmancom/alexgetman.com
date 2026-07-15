@@ -18,6 +18,33 @@ export async function finishVideoSchedule(
   if (!session.draftId) throw new Error("Video draft is missing.");
   const locale = botLocale(backendDb, adminId);
   const technical = await studioServices(backendDb, config).videos.schedule(adminId, session.draftId, schedule);
+  await showScheduledVideo(ctx, backendDb, config, adminId, session, technical, locale);
+}
+
+/** Telegram only renders the result; the immediate scheduling policy lives in Video Studio. */
+export async function finishVideoNow(
+  ctx: Context,
+  backendDb: BackendDb,
+  config: BackendConfig,
+  adminId: number,
+  session: VideoSession,
+): Promise<void> {
+  if (!session.draftId) throw new Error("Video draft is missing.");
+  const locale = botLocale(backendDb, adminId);
+  const technical = await studioServices(backendDb, config).videos.publishNow(adminId, session.draftId);
+  await showScheduledVideo(ctx, backendDb, config, adminId, session, technical, locale);
+}
+
+async function showScheduledVideo(
+  ctx: Context,
+  backendDb: BackendDb,
+  config: BackendConfig,
+  adminId: number,
+  session: VideoSession,
+  technical: { summary: string; warning: string | null },
+  locale: "ru" | "en",
+): Promise<void> {
+  if (!session.draftId) throw new Error("Video draft is missing.");
   const preview = videoPreview(backendDb, session.draftId, locale);
   const text = `${technical.summary}${technical.warning ? `\n${technical.warning}` : ""}\n\n✅ ${ui(locale, "Scheduled", "Запланировано")}. ${ui(locale, `I will remind you ${config.VIDEO_REMINDER_MINUTES} minutes beforehand.`, `Напомню за ${config.VIDEO_REMINDER_MINUTES} минут.`)}\n\n${preview.text}`;
   const controlMessageId = Number(session.data.controlMessageId);

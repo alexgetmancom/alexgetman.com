@@ -50,6 +50,9 @@ export function replaceVideoTargets(backendDb: BackendDb, videoDraftId: number, 
   if (allowed.length === 0) throw new Error("Choose at least one video platform.");
   const now = new Date().toISOString();
   backendDb.db.transaction((tx) => {
+    const existingTargets = tx.select().from(videoTargets).where(eq(videoTargets.videoDraftId, videoDraftId)).all();
+    if (existingTargets.some((target) => !isVideoTargetEditable(target.status)))
+      throw new Error("Video platforms can be replaced only before scheduling. Remove an editable platform instead.");
     const existingIds = tx
       .select({ id: videoTargets.id })
       .from(videoTargets)

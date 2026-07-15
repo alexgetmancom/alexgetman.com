@@ -23,10 +23,26 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
       return createVideoDraft(backendDb, actorId, assetKey, config.VIDEO_MEDIA_RETENTION_HOURS);
     },
     async schedule(actorId: number, videoDraftId: number, schedule: Partial<Record<VideoTarget, Date>>) {
-      const draft = getVideoDraft(backendDb, videoDraftId);
-      if (draft.adminId !== actorId) throw new Error("Video draft is not available to this user.");
+      requireOwnedVideo(backendDb, actorId, videoDraftId);
       const technical = await validateVideoDraft(config, backendDb, videoDraftId);
       scheduleVideo(backendDb, videoDraftId, schedule, {
+        prepareLeadMinutes: config.VIDEO_PREPARE_LEAD_MINUTES,
+        reminderMinutes: config.VIDEO_REMINDER_MINUTES,
+      });
+      return technical;
+    },
+    /** Validate an owned source and configured targets without creating jobs. */
+    async preflight(actorId: number, videoDraftId: number) {
+      requireOwnedVideo(backendDb, actorId, videoDraftId);
+      return validateVideoDraft(config, backendDb, videoDraftId);
+    },
+    /** Immediate publication is still a schedule, but the time policy belongs to Studio—not Telegram. */
+    async publishNow(actorId: number, videoDraftId: number) {
+      requireOwnedVideo(backendDb, actorId, videoDraftId);
+      const targets = listVideoTargets(backendDb, videoDraftId).map((row) => row.target as VideoTarget);
+      if (!targets.length) throw new Error("Choose video platforms first.");
+      const technical = await validateVideoDraft(config, backendDb, videoDraftId);
+      scheduleVideo(backendDb, videoDraftId, Object.fromEntries(targets.map((target) => [target, new Date(Date.now() + 60_000)])), {
         prepareLeadMinutes: config.VIDEO_PREPARE_LEAD_MINUTES,
         reminderMinutes: config.VIDEO_REMINDER_MINUTES,
       });
