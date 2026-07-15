@@ -133,6 +133,26 @@ describe("Telegram publisher", () => {
     expect(form.get("caption")).toBe("Asset");
     expect(form.get("file-photo")).toBeInstanceOf(File);
   });
+
+  it("never sends caption entities beyond the Telegram media-caption limit", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetchImpl = mock(async (input: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(input), ...(init ? { init } : {}) });
+      return new Response(JSON.stringify({ ok: true, result: { message_id: 42 } }), { status: 200 });
+    }) as unknown as typeof fetch;
+    await publishToTelegram(
+      {
+        text: "А".repeat(1024) + "Б".repeat(30),
+        entities: [{ type: "bold", offset: 1025, length: 10 }],
+        media: [{ type: "photo", file_id: "image" }],
+      },
+      loadConfig({ CONTROLLER_BOT_TOKEN: "bot-token" }),
+      fetchImpl,
+    );
+    const body = JSON.parse(String(calls[0]?.init?.body)) as Record<string, unknown>;
+    expect(String(body.caption)).toHaveLength(1024);
+    expect(body.caption_entities).toEqual([]);
+  });
 });
 
 describe("Threads publisher", () => {

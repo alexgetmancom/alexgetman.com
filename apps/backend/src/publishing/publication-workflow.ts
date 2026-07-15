@@ -3,6 +3,7 @@ import { requireDraft } from "../content/drafts.js";
 import type { BackendDb } from "../db/client.js";
 import { publications } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
+import { assertPublicationPreflight } from "./preflight.js";
 import { createPublicationPlan, type PublishMode } from "./publication-plan.js";
 import { persistPublicationPlan } from "./publication-writer.js";
 import { reconcilePublication } from "./queue.js";
@@ -12,6 +13,7 @@ type PublishDraftOptions = { mode?: PublishMode; ruAt?: Date | null; enAt?: Date
 /** Coordinates validated content, durable plan persistence and initial queue reconciliation. */
 export function publishDraftToQueue(backendDb: BackendDb, draftId: number, options: PublishDraftOptions = {}): number {
   const draft = requireDraft(backendDb, draftId);
+  assertPublicationPreflight(draft);
   const now = new Date().toISOString();
   const mode = options.mode ?? "immediate";
   const ruAt = mode === "immediate" ? now : (options.ruAt?.toISOString() ?? null);

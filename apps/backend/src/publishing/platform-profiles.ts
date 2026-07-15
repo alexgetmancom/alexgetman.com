@@ -8,6 +8,7 @@ type PlatformProfile = {
   capabilities: { text: boolean; image: boolean; video: boolean };
   requirements: readonly string[];
   text?: { removeUrls?: boolean };
+  limits?: { text?: number; caption?: number; media?: number };
   video?: { landscape: readonly [number, number]; portrait: readonly [number, number]; square: readonly [number, number] };
 };
 
@@ -42,6 +43,7 @@ export const PLATFORM_PROFILES: Record<string, PlatformProfile> = Object.fromEnt
       kind,
       capabilities: { text: true, image: kind !== "site", video: kind !== "site" },
       requirements: requirements[id] ?? [],
+      ...(id === "telegram" ? { limits: { text: 4096, caption: 1024, media: 10 } } : {}),
       ...(id === "x" ? { text: { removeUrls: true } } : {}),
       ...(id.startsWith("threads") ? { video: threadsVideo } : {}),
     },

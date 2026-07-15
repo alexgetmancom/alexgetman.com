@@ -8,6 +8,7 @@ import { drafts, postControlCards } from "../../db/schema.js";
 import { recordDomainEvent } from "../../domain/events.js";
 import { cancelDraft, cancelRemainingPostJobs, setDraftControlCard } from "../../publishing/draft-lifecycle.js";
 import { mediaPolicyForTarget } from "../../publishing/media-policy.js";
+import { publicationPreflight } from "../../publishing/preflight.js";
 import { publishDraftToQueue } from "../../publishing/publication-workflow.js";
 import { nextPublishingSlot, parseManualSchedule, rebalanceScheduledDrafts, schedulePreset } from "../../publishing/schedule.js";
 import { parseTargets } from "../../publishing/targets.js";
@@ -26,6 +27,9 @@ export function postService(backendDb: BackendDb) {
     },
     details(actorId: number, draftId: number) {
       return requireOwnedDraft(backendDb, actorId, draftId);
+    },
+    preflight(actorId: number, draftId: number) {
+      return publicationPreflight(requireOwnedDraft(backendDb, actorId, draftId));
     },
     preview(actorId: number, draftId: number) {
       const draft = requireOwnedDraft(backendDb, actorId, draftId);

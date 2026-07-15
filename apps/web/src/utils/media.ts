@@ -2,7 +2,7 @@ import type { FeedItem, SiteMedia } from "../../../backend/src/public/site-read-
 
 type FeedLocale = "en" | "ru";
 
-export type PostVisualMedia = { type: "image" | "video"; path: string; poster?: string };
+type PostVisualMedia = { type: "image" | "video"; path: string; poster?: string };
 
 function normalizePublicPath(value: string | null | undefined): string {
   return String(value || "").replace(/^\/+/, "");

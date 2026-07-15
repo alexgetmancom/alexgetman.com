@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { publicationPreflight } from "../src/publishing/preflight.js";
 import { createPublicationPlan } from "../src/publishing/publication-plan.js";
 
 describe("PublicationPlan", () => {
@@ -33,5 +34,24 @@ describe("PublicationPlan", () => {
         expect.objectContaining({ locale: "en", siteEnabled: 1 }),
       ]),
     );
+  });
+});
+
+describe("publication preflight", () => {
+  it("blocks one-message Telegram media captions over the declared profile limit", () => {
+    const issues = publicationPreflight({
+      text_ru: "А".repeat(1025),
+      media_ru_json: JSON.stringify([{ type: "photo" }]),
+      targets_json: JSON.stringify({ telegram: true, site_ru: true }),
+    });
+    expect(issues).toEqual([
+      expect.objectContaining({ target: "telegram", actual: 1025, limit: 1024, message: expect.stringContaining("отключите Telegram") }),
+    ]);
+  });
+
+  it("does not block a long Telegram text post without media", () => {
+    expect(
+      publicationPreflight({ text_ru: "А".repeat(4096), media_ru_json: null, targets_json: JSON.stringify({ telegram: true }) }),
+    ).toEqual([]);
   });
 });

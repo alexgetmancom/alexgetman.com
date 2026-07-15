@@ -3,7 +3,7 @@
  * media. It is deliberately kept beside publishing rather than in a UI: every
  * interface (Telegram, MCP, a future Discord adapter) sees the same result.
  */
-export type MediaPolicy = {
+type MediaPolicy = {
   target: string;
   inputCount: number;
   deliveredCount: number;

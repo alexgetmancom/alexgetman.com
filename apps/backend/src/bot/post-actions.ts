@@ -62,6 +62,7 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
     return void (await ctx.editMessageText(ui(locale, `🗑 Draft #${draftId} cancelled.`, `🗑 Черновик #${draftId} отменён.`)));
   }
   if (action === "publish") {
+    if (await showPublicationPreflight(ctx, backendDb, config, actorId, draftId, locale)) return;
     return editDraftPreview(ctx, backendDb, draftId, "confirm_publish");
   }
   if (action === "publish_confirm") {
@@ -73,6 +74,7 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
     return void (await ctx.editMessageText(progress.text, { parse_mode: "Markdown", reply_markup: progress.keyboard }));
   }
   if (action === "schedule") {
+    if (await showPublicationPreflight(ctx, backendDb, config, actorId, draftId, locale)) return;
     return editDraftPreview(ctx, backendDb, draftId, "schedule");
   }
   if (action === "sched_choose" && first) {
@@ -134,6 +136,26 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
     );
   }
   await ctx.answerCallbackQuery({ text: ui(locale, "Unknown action", "Неизвестное действие") });
+}
+
+async function showPublicationPreflight(
+  ctx: Context,
+  backendDb: BackendDb,
+  config: BackendConfig,
+  actorId: number,
+  draftId: number,
+  locale: ReturnType<typeof botLocale>,
+): Promise<boolean> {
+  const issue = studioServices(backendDb, config).posts.preflight(actorId, draftId)[0];
+  if (!issue) return false;
+  await ctx.answerCallbackQuery({
+    text:
+      locale === "ru"
+        ? `${issue.message} Откройте «Выбрать площадки», чтобы выключить Telegram.`
+        : `Telegram with media: ${issue.actual}/${issue.limit} characters. Shorten RU text or disable Telegram in Platforms.`,
+    show_alert: true,
+  });
+  return true;
 }
 
 export async function applyAdminState(

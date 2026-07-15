@@ -22,14 +22,15 @@ export async function publishToTelegram(
   const text = payloadText(payload);
   const media = payloadMedia(payload);
   const entities = Array.isArray(payload.entities) ? payload.entities : undefined;
+  const caption = telegramCaption(text, entities);
 
   if (media.length > 1) {
     const attachments: TelegramAttachment[] = [];
     const items = media.slice(0, 10).map((item, index) => ({
       type: item.type === "VIDEO" ? "video" : "photo",
       media: telegramMediaSource(item.fileId, item.vpsUrl, item.localPath, `media-${index}`, attachments),
-      caption: index === 0 ? text.slice(0, 1024) : undefined,
-      caption_entities: index === 0 ? entities : undefined,
+      caption: index === 0 ? caption.text : undefined,
+      caption_entities: index === 0 ? caption.entities : undefined,
     }));
     const request = attachments.length
       ? await telegramForm({ chat_id: chatId, media: JSON.stringify(items) }, attachments)
@@ -49,12 +50,12 @@ export async function publishToTelegram(
           {
             chat_id: chatId,
             [mediaKey]: mediaSource ?? "",
-            caption: text.slice(0, 1024),
-            caption_entities: JSON.stringify(entities ?? []),
+            caption: caption.text,
+            caption_entities: JSON.stringify(caption.entities),
           },
           attachments,
         )
-      : { chat_id: chatId, [mediaKey]: mediaSource, caption: text.slice(0, 1024), caption_entities: entities };
+      : { chat_id: chatId, [mediaKey]: mediaSource, caption: caption.text, caption_entities: caption.entities };
     const result = await telegramCall<TelegramResponse>(config, token, method, request, fetchImpl);
     return reactToPublishedMessage(normalizeTelegramResult(result, chatId), config, token, chatId, fetchImpl);
   }
@@ -67,6 +68,25 @@ export async function publishToTelegram(
     fetchImpl,
   );
   return reactToPublishedMessage(normalizeTelegramResult(result, chatId), config, token, chatId, fetchImpl);
+}
+
+/** Defensive compatibility for pre-existing queued payloads. New drafts are blocked by Publishing preflight. */
+function telegramCaption(text: string, entities: unknown[] | undefined): { text: string; entities: Record<string, unknown>[] } {
+  const limit = 1024;
+  let caption = text.slice(0, limit);
+  // Do not split a surrogate pair; Telegram offsets are UTF-16 code units.
+  if (caption.length > 0 && /[\uD800-\uDBFF]/.test(caption.at(-1) ?? "")) caption = caption.slice(0, -1);
+  const length = caption.length;
+  const safeEntities = (entities ?? []).flatMap((entity) => {
+    if (!entity || typeof entity !== "object" || Array.isArray(entity)) return [];
+    const value = entity as Record<string, unknown>;
+    const offset = Number(value.offset);
+    const entityLength = Number(value.length);
+    if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(entityLength) || offset < 0 || entityLength <= 0 || offset >= length)
+      return [];
+    return [{ ...value, offset, length: Math.min(entityLength, length - offset) }];
+  });
+  return { text: caption, entities: safeEntities };
 }
 
 async function telegramCall<T>(

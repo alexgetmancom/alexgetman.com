@@ -7,9 +7,9 @@ import { studioMediaAssets } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
 
-export type StudioMediaKind = "photo" | "video";
+type StudioMediaKind = "photo" | "video";
 
-export type ImportedStudioMedia = {
+type ImportedStudioMedia = {
   filename: string;
   contentType: string;
   bytes: Uint8Array;
