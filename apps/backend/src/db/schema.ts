@@ -403,6 +403,7 @@ export const interfaceBindings = sqliteTable(
     entityId: integer("entity_id").notNull(),
     conversationId: text("conversation_id").notNull(),
     messageId: text("message_id").notNull(),
+    stateJson: text("state_json", { mode: "json" }).$type<Record<string, JsonValue>>().notNull().default({}),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },

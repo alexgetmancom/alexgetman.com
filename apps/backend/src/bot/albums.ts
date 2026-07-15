@@ -6,7 +6,7 @@ import type { BackendDb } from "../db/client.js";
 import { pendingAlbums } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { log } from "../foundation/logger.js";
-import { setTelegramPostCard, telegramPostCard } from "../interfaces/telegram/control-cards.js";
+import { setTelegramPostCard } from "../interfaces/telegram/control-cards.js";
 import { importTelegramAlbumMedia } from "../interfaces/telegram/media-ingress.js";
 import { studioServices } from "../studio/services/index.js";
 import { clearPostAdminStateIfCurrent } from "./post-state.js";
@@ -149,14 +149,8 @@ async function refreshDraftControlCard(
   chatId: number,
 ): Promise<void> {
   const preview = draftPreview(backendDb, draftId);
-  const card = telegramPostCard(backendDb, draftId);
-  if (card)
-    try {
-      await bot.api.editMessageText(card.chatId, card.messageId, preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
-      return;
-    } catch (error) {
-      log("warn", "draft control card could not be edited; sending a replacement", { draftId, error: String(error) });
-    }
+  // A completed chat edit gets a fresh card at the bottom. Previous cards are
+  // history, never a moving conversation prompt above the user's reply.
   const control = await bot.api.sendMessage(chatId, preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
   setTelegramPostCard(backendDb, draftId, chatId, control.message_id);
 }

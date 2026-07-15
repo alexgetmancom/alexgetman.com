@@ -1,6 +1,6 @@
 import { type Bot, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
-import { telegramPostCard } from "../interfaces/telegram/control-cards.js";
+import { telegramPostCard, telegramPostProgressCard } from "../interfaces/telegram/control-cards.js";
 import { type PostProgressState, type PostProgressStatus, postProgressState } from "../studio/services/post-progress.js";
 import { botLocale, ui } from "./i18n.js";
 
@@ -56,9 +56,9 @@ export function renderPostProgress(
 
 export async function refreshPostControlCard(backendDb: BackendDb, bot: Bot | null, draftId: number): Promise<void> {
   if (!bot) return;
-  const control = telegramPostCard(backendDb, draftId);
+  const control = telegramPostProgressCard(backendDb, draftId) ?? telegramPostCard(backendDb, draftId);
   if (!control) return;
-  const card = postProgress(backendDb, draftId);
+  const card = postProgress(backendDb, draftId, "details" in control && control.details === true);
   try {
     await bot.api.editMessageText(control.chatId, control.messageId, card.text, { parse_mode: "Markdown", reply_markup: card.keyboard });
   } catch {}

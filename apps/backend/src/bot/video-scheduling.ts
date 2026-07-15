@@ -51,9 +51,11 @@ async function showScheduledVideo(
   const controlMessageId = Number(session.data.controlMessageId);
   clearSession(backendDb, adminId);
   if (controlMessageId && ctx.chat?.id) {
-    await ctx.api.editMessageText(ctx.chat.id, controlMessageId, text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
-    setTelegramVideoCard(backendDb, session.draftId, Number(ctx.chat.id), controlMessageId);
-    return;
+    await ctx.api.editMessageText(
+      ctx.chat.id,
+      controlMessageId,
+      `✅ ${ui(locale, "Confirmed. Current publication card is below.", "Подтверждено. Актуальная карточка публикации — ниже.")}`,
+    );
   }
   const message = await ctx.reply(text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
   if (ctx.chat?.id) setTelegramVideoCard(backendDb, session.draftId, Number(ctx.chat.id), message.message_id);

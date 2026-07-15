@@ -1,6 +1,7 @@
 import type { Context } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { setTelegramPostProgressCard } from "../interfaces/telegram/control-cards.js";
 import { studioServices } from "../studio/services/index.js";
 import { botLocale } from "./i18n.js";
 import { renderPostProgress } from "./progress.js";
@@ -29,5 +30,7 @@ export async function handleProgressCallback(ctx: Context, backendDb: BackendDb,
     Boolean(details),
   );
   await ctx.editMessageText(progress.text, { parse_mode: "Markdown", reply_markup: progress.keyboard });
+  const messageId = ctx.callbackQuery?.message && "message_id" in ctx.callbackQuery.message ? ctx.callbackQuery.message.message_id : null;
+  if (messageId && ctx.chat?.id) setTelegramPostProgressCard(backendDb, draftId, Number(ctx.chat.id), messageId, Boolean(details));
   return true;
 }

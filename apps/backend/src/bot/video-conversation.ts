@@ -1,6 +1,7 @@
 import { type Context, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { sendTelegramDeliveryPreviews } from "../interfaces/telegram/delivery-previews.js";
 import { storeTelegramVideo } from "../interfaces/telegram/video-ingress.js";
 import { videoPreview } from "../interfaces/telegram/video-preview.js";
 import { type VideoMetadata, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
@@ -229,7 +230,7 @@ async function handleScheduleMessage(
 ): Promise<boolean> {
   if (session.step === "schedule_common") {
     const date = studioServices(backendDb, config).videos.parseSchedule(adminId, session.draftId ?? 0, text);
-    await confirmVideoSchedule(ctx, backendDb, adminId, session, commonVideoSchedule(session.selected, date));
+    await confirmVideoSchedule(ctx, backendDb, config, adminId, session, commonVideoSchedule(session.selected, date));
     return true;
   }
   const target = session.step.slice("schedule_target:".length) as VideoTarget;
@@ -251,6 +252,7 @@ async function handleScheduleMessage(
   await confirmVideoSchedule(
     ctx,
     backendDb,
+    config,
     adminId,
     session,
     Object.fromEntries(Object.entries(transition.schedule).map(([key, value]) => [key, new Date(value)])) as Partial<
@@ -263,6 +265,7 @@ async function handleScheduleMessage(
 async function confirmVideoSchedule(
   ctx: Context,
   backendDb: BackendDb,
+  config: BackendConfig,
   adminId: number,
   session: VideoSession,
   schedule: Partial<Record<VideoTarget, Date>>,
@@ -278,6 +281,8 @@ async function confirmVideoSchedule(
     },
   };
   saveSession(backendDb, adminId, next);
+  const delivery = studioServices(backendDb, config).videos.preview(adminId, session.draftId).delivery;
+  await sendTelegramDeliveryPreviews(ctx, delivery.projections);
   const lines = [`🎬 *${ui(locale, "Confirm schedule", "Подтвердите планирование")}*`];
   for (const target of next.selected) {
     const value = schedule[target];
@@ -289,7 +294,7 @@ async function confirmVideoSchedule(
   const keyboard = new InlineKeyboard()
     .text(ui(locale, "✅ Confirm", "✅ Подтвердить"), `video_schedule_confirm:${session.draftId}`)
     .text(ui(locale, "← Back", "← Назад"), `video_schedule:${session.draftId}`);
-  await updateVideoControl(ctx, next, lines.join("\n"), keyboard);
+  await sendVideoControl(ctx, backendDb, adminId, next, lines.join("\n"), keyboard);
 }
 
 async function finishSingleVideoEdit(

@@ -12,6 +12,7 @@ import { publicationPreflight } from "../../publishing/preflight.js";
 import { publishDraftToQueue } from "../../publishing/publication-workflow.js";
 import { nextPublishingSlot, parseManualSchedule, rebalanceScheduledDrafts, schedulePreset } from "../../publishing/schedule.js";
 import { parseTargets } from "../../publishing/targets.js";
+import { postDeliveryProjections } from "../projections.js";
 import { postProgressState } from "./post-progress.js";
 
 type ScheduleInput = { ruAt: Date | null; enAt: Date | null };
@@ -55,6 +56,7 @@ export function postService(backendDb: BackendDb) {
         mediaPolicy: Object.entries(targets)
           .filter(([, enabled]) => enabled)
           .map(([target]) => mediaPolicyForTarget(target, targetLocale(target) === "ru" ? ruMedia : enMedia)),
+        delivery: postDeliveryProjections(draft),
       };
     },
     publish(actorId: number, draftId: number): number {

@@ -1,7 +1,8 @@
 import type { Context } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
-import { setTelegramPostCard } from "../interfaces/telegram/control-cards.js";
+import { setTelegramPostProgressCard } from "../interfaces/telegram/control-cards.js";
+import { sendTelegramDeliveryPreviews } from "../interfaces/telegram/delivery-previews.js";
 import { formatMsk } from "../interfaces/telegram/time.js";
 import { studioServices } from "../studio/services/index.js";
 import { botLocale, ui } from "./i18n.js";
@@ -64,15 +65,22 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
   }
   if (action === "publish") {
     if (await showPublicationPreflight(ctx, backendDb, config, actorId, draftId, locale)) return;
-    return editDraftPreview(ctx, backendDb, draftId, "confirm_publish");
+    const delivery = studioServices(backendDb, config).posts.preview(actorId, draftId).delivery;
+    await sendTelegramDeliveryPreviews(ctx, delivery.projections);
+    const preview = draftPreview(backendDb, draftId, "confirm_publish");
+    await ctx.reply(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
+    return;
   }
   if (action === "publish_confirm") {
     studioServices(backendDb, config).posts.publish(actorId, draftId);
     await ctx.answerCallbackQuery({ text: ui(locale, "Queued", "В очереди") });
-    const messageId = callbackMessageId(ctx);
-    if (messageId && ctx.chat?.id) setTelegramPostCard(backendDb, draftId, Number(ctx.chat.id), messageId);
+    await ctx.editMessageText(
+      ui(locale, `✅ Post #${draftId} queued. Live progress is below.`, `✅ Пост #${draftId} поставлен в очередь. Прогресс — ниже.`),
+    );
     const progress = renderPostProgress(studioServices(backendDb, config).posts.progress(actorId, draftId), locale);
-    return void (await ctx.editMessageText(progress.text, { parse_mode: "Markdown", reply_markup: progress.keyboard }));
+    const message = await ctx.reply(progress.text, { parse_mode: "Markdown", reply_markup: progress.keyboard });
+    if (ctx.chat?.id) setTelegramPostProgressCard(backendDb, draftId, Number(ctx.chat.id), message.message_id);
+    return;
   }
   if (action === "schedule") {
     if (await showPublicationPreflight(ctx, backendDb, config, actorId, draftId, locale)) return;
@@ -81,6 +89,7 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
   if (action === "sched_choose" && first) {
     const { ruAt, enAt } = studioServices(backendDb, config).posts.scheduleChoice(actorId, draftId, first);
     await ctx.answerCallbackQuery();
+    await sendPostPreviews(ctx, backendDb, config, actorId, draftId);
     return showScheduleConfirmation(ctx, backendDb, draftId, ruAt, enAt, `sched_confirm:${first}:${draftId}`);
   }
   if (action === "sched_confirm" && first) {
@@ -179,8 +188,7 @@ export async function applyAdminState(
     const value = ruAt ?? enAt;
     if (!value) throw new Error("No publication time selected.");
     setPostAdminState(backendDb, Number(ctx.from?.id), `schedule_confirm_${scope}_${value.toISOString()}`, draftId, controlMessageId);
-    if (controlMessageId && ctx.chat?.id)
-      return showScheduleConfirmation(ctx, backendDb, draftId, ruAt, enAt, `sched_manual_confirm:${draftId}`, controlMessageId);
+    await sendPostPreviews(ctx, backendDb, config, Number(ctx.from?.id), draftId);
     return showScheduleConfirmation(ctx, backendDb, draftId, ruAt, enAt, `sched_manual_confirm:${draftId}`);
   } else if (action === "edit_ru" || action === "edit_en") {
     studioServices(backendDb, config).posts.edit(Number(ctx.from?.id), draftId, {
@@ -203,6 +211,17 @@ export async function applyAdminState(
     const preview = draftPreview(backendDb, draftId);
     await ctx.api.editMessageText(ctx.chat.id, controlMessageId, preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
   } else await sendDraftPreview(ctx, backendDb, draftId);
+}
+
+async function sendPostPreviews(
+  ctx: Context,
+  backendDb: BackendDb,
+  config: BackendConfig,
+  actorId: number,
+  draftId: number,
+): Promise<void> {
+  const delivery = studioServices(backendDb, config).posts.preview(actorId, draftId).delivery;
+  await sendTelegramDeliveryPreviews(ctx, delivery.projections);
 }
 
 function scheduledDraftText(

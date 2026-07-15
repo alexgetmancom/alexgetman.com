@@ -17,6 +17,7 @@ import {
   validateVideoDraft,
 } from "../../publishing/video-service.js";
 import type { VideoMetadata, VideoTarget } from "../../publishing/video-types.js";
+import { videoDeliveryProjections } from "../projections.js";
 
 type VideoEditInput = { label?: string; target?: VideoTarget; metadata?: VideoMetadata };
 
@@ -75,7 +76,7 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
     },
     preview(actorId: number, videoDraftId: number) {
       const draft = requireOwnedVideo(backendDb, actorId, videoDraftId);
-      return { draft, targets: listVideoTargets(backendDb, videoDraftId) };
+      return { draft, targets: listVideoTargets(backendDb, videoDraftId), delivery: videoDeliveryProjections(backendDb, videoDraftId) };
     },
     status(actorId: number, videoDraftId: number) {
       const draft = requireOwnedVideo(backendDb, actorId, videoDraftId);

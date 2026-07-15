@@ -7,6 +7,10 @@ import { notifyFinalVideoFailure, refreshVideoControlCard, sendVideoReminder } f
 
 const TELEGRAM_EVENT_TYPES = [
   "delivery.post.settled",
+  "publish.job.claimed",
+  "publish.job.published",
+  "publish.job.failed",
+  "publish.job.retry",
   "video.reminder.due",
   "video.target.failed",
   "video.job.completed",
@@ -29,8 +33,8 @@ export async function consumeTelegramEvents(backendDb: BackendDb, bot: Bot | nul
     const details = event.detailsJson ?? {};
     const videoDraftId = numberDetail(details, "videoDraftId");
     const videoTargetId = numberDetail(details, "videoTargetId");
-    if (event.eventType === "delivery.post.settled") {
-      const postId = numberDetail(details, "post_id");
+    if (event.eventType === "delivery.post.settled" || event.eventType.startsWith("publish.job.")) {
+      const postId = numberDetail(details, "post_id") ?? postIdFromRef(event.postKey);
       const draft = postId == null ? null : backendDb.db.select({ id: drafts.id }).from(drafts).where(eq(drafts.postId, postId)).get();
       if (draft) await refreshPostControlCard(backendDb, bot, draft.id);
     } else if (event.eventType === "video.reminder.due" && videoDraftId != null)
@@ -42,6 +46,11 @@ export async function consumeTelegramEvents(backendDb: BackendDb, bot: Bot | nul
     handled += 1;
   }
   return handled;
+}
+
+function postIdFromRef(value: string | null): number | null {
+  const match = value?.match(/^post:(\d+)$/);
+  return match ? Number(match[1]) : null;
 }
 
 function wasDelivered(backendDb: BackendDb, eventId: number): boolean {

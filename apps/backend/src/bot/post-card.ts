@@ -18,8 +18,7 @@ export async function editDraftPreview(ctx: Context, backendDb: BackendDb, draft
 
 export async function editDraftPrompt(ctx: Context, backendDb: BackendDb, draftId: number, prompt: string): Promise<void> {
   const locale = botLocale(backendDb, Number(ctx.from?.id));
-  const preview = draftPreview(backendDb, draftId);
-  await ctx.editMessageText(`${preview.text}\n\n${prompt}`, {
+  await ctx.reply(prompt, {
     parse_mode: "Markdown",
     reply_markup: new InlineKeyboard().text(ui(locale, "← Cancel", "← Отмена"), `cancel_state:${draftId}`),
   });
@@ -32,7 +31,6 @@ export async function showScheduleConfirmation(
   ruAt: Date | null,
   enAt: Date | null,
   confirmCallback: string,
-  controlMessageId?: number | null,
 ): Promise<void> {
   const locale = botLocale(backendDb, Number(ctx.from?.id));
   const preview = draftPreview(backendDb, draftId);
@@ -40,13 +38,5 @@ export async function showScheduleConfirmation(
     .text(ui(locale, "✅ Confirm schedule", "✅ Подтвердить"), confirmCallback)
     .text(ui(locale, "← Back", "← Назад"), `schedule:${draftId}`);
   const text = `${preview.text}\n\n📅 *${ui(locale, "Confirm schedule", "Подтвердите планирование")}*\nRU: ${formatMsk(ruAt)}\nEN: ${formatMsk(enAt)}`;
-  const messageId = controlMessageId ?? callbackMessageId(ctx);
-  if (messageId && ctx.chat?.id)
-    await ctx.api.editMessageText(ctx.chat.id, messageId, text, { parse_mode: "Markdown", reply_markup: keyboard });
-  else await ctx.reply(text, { parse_mode: "Markdown", reply_markup: keyboard });
-}
-
-function callbackMessageId(ctx: Context): number | null {
-  const message = ctx.callbackQuery?.message;
-  return message && "message_id" in message ? message.message_id : null;
+  await ctx.reply(text, { parse_mode: "Markdown", reply_markup: keyboard });
 }

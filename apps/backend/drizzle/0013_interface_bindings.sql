@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS `interface_bindings` (
   `entity_id` integer NOT NULL,
   `conversation_id` text NOT NULL,
   `message_id` text NOT NULL,
+  `state_json` text NOT NULL DEFAULT '{}',
   `created_at` text NOT NULL,
   `updated_at` text NOT NULL,
   PRIMARY KEY (`interface_id`, `entity_type`, `entity_id`)
