@@ -50,6 +50,7 @@ export function requireDraft(backendDb: BackendDb, draftId: number) {
       channel_message_id: drafts.channelMessageId,
       scheduled_at: drafts.scheduledAt,
       scheduled_en_at: drafts.scheduledEnAt,
+      post_id: drafts.postId,
       text_ru_entities_json: drafts.textRuEntitiesJson,
       text_en_entities_json: drafts.textEnEntitiesJson,
     })

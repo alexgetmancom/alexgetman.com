@@ -94,7 +94,7 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
       const isEdit = row.action === "edit_ru" || row.action === "edit_en";
       const isMediaReplacement = row.action === "replace_ru_media" || row.action === "replace_en_media";
       if ((isEdit || isMediaReplacement) && draftId) {
-        studioServices(backendDb, config).posts.editContent(row.adminId, draftId, {
+        studioServices(backendDb, config).posts.edit(row.adminId, draftId, {
           locale: row.action === "edit_ru" || row.action === "replace_ru_media" ? "ru" : "en",
           text: isMediaReplacement ? "" : row.textRu,
           entities: isMediaReplacement ? [] : parseArrayValue(row.textEntitiesJson),

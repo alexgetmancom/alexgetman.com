@@ -3,20 +3,20 @@ import { runMetricsCycle } from "../analytics/collection/metrics-cycle.js";
 import type { BackendDb } from "../db/client.js";
 import { pruneMediaCache } from "../delivery/media-prepare.js";
 import { createPlatformPorts } from "../delivery/ports/social.js";
-import type { DeliveryPort } from "../delivery/ports.js";
+import type { DeliveryPort, DeliveryPorts } from "../delivery/ports.js";
 import { runDeliveryPublishCycle } from "../delivery/publish-workflow.js";
 import { runSiteJobCycle } from "../delivery/site-jobs.js";
 import { runVideoCycle } from "../delivery/video-worker.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { log } from "../foundation/logger.js";
 import { type ScheduledLoop, startLoop } from "../foundation/scheduler.js";
-import { runObservabilityCycle } from "../observability/cycle.js";
+import { observabilityService } from "../observability/service.js";
 
 /** Delivery-only publish cycle. Interfaces learn about settled work through durable events. */
 export async function runPublishCycle(
   config: BackendConfig,
   backendDb: BackendDb,
-  publishers: Record<string, DeliveryPort> = createPlatformPorts(config, backendDb),
+  publishers: DeliveryPorts | Record<string, DeliveryPort> = createPlatformPorts(config, backendDb),
 ): Promise<number> {
   return runDeliveryPublishCycle(config, backendDb, publishers);
 }
@@ -62,7 +62,7 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
       if (removed) log("info", "pruned expired media cache", { removed });
     }),
     startLoop("observability", config.OBSERVABILITY_INTERVAL_SECONDS * 1000, async () => {
-      const result = await runObservabilityCycle(config, backendDb);
+      const result = await observabilityService(backendDb, config).run();
       log("debug", "observability loop tick", result);
     }),
   ];

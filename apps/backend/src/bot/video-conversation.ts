@@ -303,7 +303,7 @@ async function finishSingleVideoEdit(
 ): Promise<void> {
   if (session.draftId == null) throw new Error("Откройте редактирование видео заново.");
   const row = studioServices(backendDb, config)
-    .videos.details(adminId, session.draftId)
+    .videos.get(adminId, session.draftId)
     .targets.find((item) => item.target === target);
   const metadata = { ...(row?.metadataJson as Record<string, unknown> | undefined) };
   change(metadata, session.draftId);

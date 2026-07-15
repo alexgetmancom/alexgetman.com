@@ -8,13 +8,13 @@ import { log } from "../foundation/logger.js";
 import { recordWorkerState } from "../foundation/runtime/worker-state.js";
 import { claimDuePublishJobs, completePublishJob, failPublishJob, recoverStalePublishJobs } from "../publishing/queue.js";
 import { createPlatformPorts } from "./ports/social.js";
-import type { DeliveryPort } from "./ports.js";
+import { type DeliveryPort, type DeliveryPorts, deliveryAdapter } from "./ports.js";
 
 /** Executes Publishing jobs through Delivery adapters without knowing any UI. */
 export async function runDeliveryPublishCycle(
   config: BackendConfig,
   backendDb: BackendDb,
-  publishers: Record<string, DeliveryPort> = createPlatformPorts(config, backendDb),
+  publishers: DeliveryPorts | Record<string, DeliveryPort> = createPlatformPorts(config, backendDb),
 ): Promise<number> {
   recoverStalePublishJobs(backendDb, config.PUBLISH_LOCK_TIMEOUT_SECONDS);
   const jobs = claimDuePublishJobs(backendDb, config.PUBLISH_CLAIM_LIMIT);
@@ -22,13 +22,16 @@ export async function runDeliveryPublishCycle(
   const results = await Promise.allSettled(
     jobs.map((job) =>
       publishLimit(async () => {
-        const publisher = publishers[job.target];
-        if (!publisher) {
+        const port = publishers[job.target];
+        if (!port) {
           completePublishJob(backendDb, config, job.jobId, { skipped: true, reason: `unsupported target: ${job.target}` }, job.lockId);
           return;
         }
+        const adapter = "publish" in port ? port : deliveryAdapter(port);
         try {
-          completePublishJob(backendDb, config, job.jobId, await publisher(job), job.lockId);
+          await adapter.validate(job);
+          const published = await adapter.publish(job);
+          completePublishJob(backendDb, config, job.jobId, await adapter.verify(job, published), job.lockId);
         } catch (error) {
           failPublishJob(backendDb, config, job.jobId, error, job.lockId);
         }

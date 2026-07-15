@@ -31,7 +31,7 @@ export async function finishVideoNow(
 ): Promise<void> {
   if (!session.draftId) throw new Error("Video draft is missing.");
   const locale = botLocale(backendDb, adminId);
-  const technical = await studioServices(backendDb, config).videos.publishNow(adminId, session.draftId);
+  const technical = await studioServices(backendDb, config).videos.publish(adminId, session.draftId);
   await showScheduledVideo(ctx, backendDb, config, adminId, session, technical, locale);
 }
 

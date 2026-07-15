@@ -68,7 +68,7 @@ export async function handleVideoActionCallback(ctx: Context, backendDb: Backend
       return true;
     } else if (data.startsWith("video_open:")) {
       const id = Number(data.slice("video_open:".length));
-      studioServices(backendDb, config).videos.details(adminId, id);
+      studioServices(backendDb, config).videos.get(adminId, id);
       const preview = videoPreview(backendDb, id, botLocale(backendDb, adminId));
       const messageId = callbackMessageId(ctx);
       if (messageId && ctx.chat?.id) studioServices(backendDb, config).videos.setControlCard(adminId, id, Number(ctx.chat.id), messageId);
@@ -103,7 +103,7 @@ export async function handleVideoActionCallback(ctx: Context, backendDb: Backend
       // handled above
     } else if (data.startsWith("video_now:")) {
       const id = Number(data.slice("video_now:".length));
-      studioServices(backendDb, config).videos.details(adminId, id);
+      studioServices(backendDb, config).videos.get(adminId, id);
       const preview = videoPreview(backendDb, id, botLocale(backendDb, adminId));
       await ctx.editMessageText(`${preview.text}\n\n⚠️ *Опубликовать сейчас?* Видео будет поставлено в очередь на ближайшую минуту.`, {
         parse_mode: "Markdown",
@@ -125,7 +125,7 @@ export async function handleVideoActionCallback(ctx: Context, backendDb: Backend
       const [, targetText, idText] = data.split(":");
       const target = targetText as VideoTarget;
       const id = Number(idText);
-      studioServices(backendDb, config).videos.details(adminId, id);
+      studioServices(backendDb, config).videos.get(adminId, id);
       const session = {
         draftId: id,
         step: `schedule_target:${target}`,
@@ -152,7 +152,7 @@ export async function handleVideoActionCallback(ctx: Context, backendDb: Backend
     } else if (await handleEditMenuCallback(ctx, backendDb, config, adminId, data)) return true;
     else if (data.startsWith("video_edit:")) {
       const id = Number(data.slice("video_edit:".length));
-      const details = studioServices(backendDb, config).videos.details(adminId, id);
+      const details = studioServices(backendDb, config).videos.get(adminId, id);
       const session = {
         draftId: id,
         step: "label",
@@ -180,7 +180,7 @@ async function handleScheduleCallback(
   if (data.startsWith("video_schedule:")) {
     const id = Number(data.slice("video_schedule:".length));
     const targets = studioServices(backendDb, config)
-      .videos.details(adminId, id)
+      .videos.get(adminId, id)
       .targets.map((row) => row.target as VideoTarget);
     if (!targets.length) throw new Error("У видео не выбраны платформы.");
     const keyboard = new InlineKeyboard().text("Одно время для всех", `video_common:${id}`);
@@ -195,7 +195,7 @@ async function handleScheduleCallback(
   const id = Number(data.split(":")[1]);
   const session = getSession(backendDb, adminId);
   const targets = studioServices(backendDb, config)
-    .videos.details(adminId, id)
+    .videos.get(adminId, id)
     .targets.map((row) => row.target as VideoTarget);
   if (!session || !targets.length) throw new Error("Откройте публикацию ещё раз.");
   if (data.startsWith("video_common:")) {
@@ -226,7 +226,7 @@ async function handleEditMenuCallback(
   if (data.startsWith("video_edit_menu:")) {
     const id = Number(data.slice("video_edit_menu:".length));
     const targets = studioServices(backendDb, config)
-      .videos.details(adminId, id)
+      .videos.get(adminId, id)
       .targets.map((target) => target.target as VideoTarget);
     const keyboard = new InlineKeyboard().text("✏️ Изменить имя карточки", `video_edit_field:label:${id}`).row();
     if (targets.includes("youtube_shorts")) {
@@ -243,7 +243,7 @@ async function handleEditMenuCallback(
   if (!data.startsWith("video_edit_field:")) return false;
   const [, field = "", idText] = data.split(":");
   const id = Number(idText);
-  const targets = studioServices(backendDb, config).videos.details(adminId, id).targets;
+  const targets = studioServices(backendDb, config).videos.get(adminId, id).targets;
   const session = {
     draftId: id,
     step: field,

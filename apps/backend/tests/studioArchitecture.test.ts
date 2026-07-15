@@ -206,7 +206,15 @@ describe("Studio architecture boundaries", () => {
     expect(api).not.toContain('from "./operations/read-model.js"');
     expect(cli).not.toContain('from "./operations/read-model.js"');
     expect(service).toContain('from "./read-model.js"');
-    expect(service).toContain('from "../observability/health.js"');
+    expect(service).not.toContain('from "../observability/');
+  });
+
+  it("keeps Observability behind its own service boundary", () => {
+    const workers = readFileSync(`${root}runtime/workers.ts`, "utf8");
+    const service = readFileSync(`${root}observability/service.ts`, "utf8");
+    expect(workers).toContain('from "../observability/service.js"');
+    expect(service).toContain("healthReport");
+    expect(service).toContain("runObservabilityCycle");
   });
 
   it("keeps Content translation and Analytics collection in their owning contexts", () => {

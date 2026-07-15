@@ -14,6 +14,7 @@ const publicTools = [
 const studioTools = [
   tool("studio_capabilities", "Read enabled Studio modules and sanitized platform readiness before selecting a command."),
   tool("studio_queue", "Read the authenticated owner's upcoming work, drafts and failures."),
+  tool("studio_post_list", "List the authenticated owner's post drafts.", { limit: integerSchema(1, 100) }),
   tool("studio_notifications", "Read the authenticated owner's durable Studio notification inbox.", { limit: integerSchema(1, 100) }),
   tool("studio_media_list", "List the authenticated owner's reusable Studio media assets.", { limit: integerSchema(1, 100) }),
   tool("studio_acknowledge_notification", "Mark one visible Studio notification as read.", { id: integerSchema(1) }, ["id"]),
@@ -24,6 +25,14 @@ const studioTools = [
     ["text"],
   ),
   tool("studio_post_get", "Read one owned post draft.", { draft_id: integerSchema(1) }, ["draft_id"]),
+  tool("studio_post_validate", "Validate one owned post draft before publishing.", { draft_id: integerSchema(1) }, ["draft_id"]),
+  tool("studio_post_status", "Read queue and target status for one owned post draft.", { draft_id: integerSchema(1) }, ["draft_id"]),
+  tool(
+    "studio_post_history",
+    "Read durable event history for one owned post draft.",
+    { draft_id: integerSchema(1), limit: integerSchema(1, 100) },
+    ["draft_id"],
+  ),
   tool(
     "studio_post_attach_media",
     "Attach already uploaded Studio media assets to an owned post locale. Upload files through POST /api/studio/media first.",
@@ -32,6 +41,16 @@ const studioTools = [
       locale: enumSchema(["ru", "en"]),
       asset_ids: { type: "array", items: integerSchema(1), minItems: 1, maxItems: 10 },
       replace: { type: "boolean" },
+    },
+    ["draft_id", "locale", "asset_ids"],
+  ),
+  tool(
+    "studio_post_remove_media",
+    "Remove selected Studio media assets from one owned post locale.",
+    {
+      draft_id: integerSchema(1),
+      locale: enumSchema(["ru", "en"]),
+      asset_ids: { type: "array", items: integerSchema(1), minItems: 1, maxItems: 10 },
     },
     ["draft_id", "locale", "asset_ids"],
   ),
@@ -59,7 +78,18 @@ const studioTools = [
   tool("studio_video_create", "Create an owned video draft from an already-uploaded Studio asset.", { asset_key: stringSchema(1, 120) }, [
     "asset_key",
   ]),
+  tool("studio_video_list", "List the authenticated owner's video drafts.", { limit: integerSchema(1, 100) }),
   tool("studio_video_get", "Read an owned video draft and its targets.", { video_draft_id: integerSchema(1) }, ["video_draft_id"]),
+  tool("studio_video_preview", "Read an owned video draft preview and target metadata.", { video_draft_id: integerSchema(1) }, [
+    "video_draft_id",
+  ]),
+  tool("studio_video_status", "Read owned video targets and durable jobs.", { video_draft_id: integerSchema(1) }, ["video_draft_id"]),
+  tool(
+    "studio_video_history",
+    "Read durable event history for one owned video draft.",
+    { video_draft_id: integerSchema(1), limit: integerSchema(1, 100) },
+    ["video_draft_id"],
+  ),
   tool("studio_video_rename", "Rename an owned video draft.", { video_draft_id: integerSchema(1), label: stringSchema(1, 500) }, [
     "video_draft_id",
     "label",
@@ -189,6 +219,8 @@ async function runStudioTool(
       return studio.capabilities.report();
     case "studio_queue":
       return studio.queue.snapshot(actorId);
+    case "studio_post_list":
+      return studio.posts.list(actorId, optionalInteger(args.limit, 50, 1, 100));
     case "studio_notifications":
       return studio.notifications.inbox(actorId, optionalInteger(args.limit, 50, 1, 100));
     case "studio_media_list":
@@ -210,8 +242,14 @@ async function runStudioTool(
     }
     case "studio_post_get": {
       const draftId = integer(args.draft_id, "draft_id");
-      return studio.posts.details(actorId, draftId);
+      return studio.posts.get(actorId, draftId);
     }
+    case "studio_post_validate":
+      return studio.posts.validate(actorId, integer(args.draft_id, "draft_id"));
+    case "studio_post_status":
+      return studio.posts.status(actorId, integer(args.draft_id, "draft_id"));
+    case "studio_post_history":
+      return studio.posts.history(actorId, integer(args.draft_id, "draft_id"), optionalInteger(args.limit, 50, 1, 100));
     case "studio_post_attach_media": {
       const draftId = integer(args.draft_id, "draft_id");
       const locale = enumValue(args.locale, "locale", ["ru", "en"] as const);
@@ -221,12 +259,21 @@ async function runStudioTool(
       ref = `draft:${draftId}`;
       break;
     }
+    case "studio_post_remove_media": {
+      const draftId = integer(args.draft_id, "draft_id");
+      const locale = enumValue(args.locale, "locale", ["ru", "en"] as const);
+      const assetIds = integerArray(args.asset_ids, "asset_ids", 1, 10);
+      studio.posts.removeMedia(actorId, draftId, locale, assetIds);
+      result = { draft_id: draftId, locale, asset_ids: assetIds, removed: true };
+      ref = `draft:${draftId}`;
+      break;
+    }
     case "studio_post_preview":
       return studio.posts.preview(actorId, integer(args.draft_id, "draft_id"));
     case "studio_post_edit": {
       const draftId = integer(args.draft_id, "draft_id");
       const locale = enumValue(args.locale, "locale", ["ru", "en"] as const);
-      studio.posts.editContent(actorId, draftId, { locale, text: text(args.text, "text", 0, 20_000), entities: [], media: [] });
+      studio.posts.edit(actorId, draftId, { locale, text: text(args.text, "text", 0, 20_000), entities: [], media: [] });
       result = { draft_id: draftId, updated: true };
       ref = `draft:${draftId}`;
       break;
@@ -240,7 +287,7 @@ async function runStudioTool(
     }
     case "studio_post_publish": {
       const draftId = integer(args.draft_id, "draft_id");
-      const postId = studio.posts.publishNow(actorId, draftId);
+      const postId = studio.posts.publish(actorId, draftId);
       result = { draft_id: draftId, post_id: postId, queued: true };
       ref = `post:${postId}`;
       break;
@@ -269,8 +316,16 @@ async function runStudioTool(
       ref = `video:${videoDraftId}`;
       break;
     }
+    case "studio_video_list":
+      return studio.videos.list(actorId, optionalInteger(args.limit, 50, 1, 100));
     case "studio_video_get":
-      return studio.videos.details(actorId, integer(args.video_draft_id, "video_draft_id"));
+      return studio.videos.get(actorId, integer(args.video_draft_id, "video_draft_id"));
+    case "studio_video_preview":
+      return studio.videos.preview(actorId, integer(args.video_draft_id, "video_draft_id"));
+    case "studio_video_status":
+      return studio.videos.status(actorId, integer(args.video_draft_id, "video_draft_id"));
+    case "studio_video_history":
+      return studio.videos.history(actorId, integer(args.video_draft_id, "video_draft_id"), optionalInteger(args.limit, 50, 1, 100));
     case "studio_video_rename": {
       const videoDraftId = integer(args.video_draft_id, "video_draft_id");
       studio.videos.rename(actorId, videoDraftId, text(args.label, "label", 1, 500));
@@ -307,10 +362,10 @@ async function runStudioTool(
       break;
     }
     case "studio_video_preflight":
-      return studio.videos.preflight(actorId, integer(args.video_draft_id, "video_draft_id"));
+      return studio.videos.validate(actorId, integer(args.video_draft_id, "video_draft_id"));
     case "studio_video_publish": {
       const videoDraftId = integer(args.video_draft_id, "video_draft_id");
-      const technical = await studio.videos.publishNow(actorId, videoDraftId);
+      const technical = await studio.videos.publish(actorId, videoDraftId);
       result = { video_draft_id: videoDraftId, queued: true, technical };
       ref = `video:${videoDraftId}`;
       break;

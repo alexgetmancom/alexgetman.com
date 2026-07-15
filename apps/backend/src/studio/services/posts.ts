@@ -1,10 +1,10 @@
-import { eq } from "drizzle-orm";
+import { desc, eq, or } from "drizzle-orm";
 import { PRESETS, TARGETS, targetLocale } from "../../botTargets.js";
 import { listStudioMediaAssets, mediaItemsFromAssets, requireStudioMediaAssets } from "../../content/assets.js";
 import { createDraftFromMessage, requireDraft } from "../../content/drafts.js";
 import type { DraftMessage } from "../../content/message.js";
 import type { BackendDb } from "../../db/client.js";
-import { drafts, postControlCards } from "../../db/schema.js";
+import { drafts, postControlCards, postEvents } from "../../db/schema.js";
 import { recordDomainEvent } from "../../domain/events.js";
 import { cancelDraft, cancelRemainingPostJobs, setDraftControlCard } from "../../publishing/draft-lifecycle.js";
 import { mediaPolicyForTarget } from "../../publishing/media-policy.js";
@@ -25,10 +25,13 @@ export function postService(backendDb: BackendDb) {
     create(actorId: number, message: DraftMessage): number {
       return createDraftFromMessage(backendDb, actorId, message);
     },
-    details(actorId: number, draftId: number) {
+    get(actorId: number, draftId: number) {
       return requireOwnedDraft(backendDb, actorId, draftId);
     },
-    preflight(actorId: number, draftId: number) {
+    list(actorId: number, limit = 50) {
+      return backendDb.db.select().from(drafts).where(eq(drafts.adminId, actorId)).orderBy(desc(drafts.updatedAt)).limit(limit).all();
+    },
+    validate(actorId: number, draftId: number) {
       return publicationPreflight(requireOwnedDraft(backendDb, actorId, draftId));
     },
     preview(actorId: number, draftId: number) {
@@ -54,7 +57,7 @@ export function postService(backendDb: BackendDb) {
           .map(([target]) => mediaPolicyForTarget(target, targetLocale(target) === "ru" ? ruMedia : enMedia)),
       };
     },
-    publishNow(actorId: number, draftId: number): number {
+    publish(actorId: number, draftId: number): number {
       requireOwnedDraft(backendDb, actorId, draftId);
       return publishDraftToQueue(backendDb, draftId);
     },
@@ -94,6 +97,23 @@ export function postService(backendDb: BackendDb) {
       requireOwnedDraft(backendDb, actorId, draftId);
       return postProgressState(backendDb, draftId);
     },
+    status(actorId: number, draftId: number) {
+      return postProgressState(backendDb, requireOwnedDraft(backendDb, actorId, draftId).id);
+    },
+    history(actorId: number, draftId: number, limit = 50) {
+      const draft = requireOwnedDraft(backendDb, actorId, draftId);
+      const scope =
+        draft.post_id == null
+          ? eq(postEvents.postKey, `draft:${draft.id}`)
+          : or(eq(postEvents.postKey, `draft:${draft.id}`), eq(postEvents.postKey, `post:${draft.post_id}`));
+      return backendDb.db
+        .select()
+        .from(postEvents)
+        .where(scope)
+        .orderBy(desc(postEvents.createdAt), desc(postEvents.id))
+        .limit(limit)
+        .all();
+    },
     setControlCard(actorId: number, draftId: number, chatId: number, messageId: number): void {
       requireOwnedDraft(backendDb, actorId, draftId);
       setDraftControlCard(backendDb, draftId, chatId, messageId);
@@ -119,29 +139,8 @@ export function postService(backendDb: BackendDb) {
       saveTargets(backendDb, draftId, preset);
       return next;
     },
-    editContent(actorId: number, draftId: number, input: EditInput): void {
-      requireOwnedDraft(backendDb, actorId, draftId);
-      const cleanText = input.text.trim().toLowerCase();
-      const clearMedia = cleanText === "/delmedia" || cleanText === "очистить" || cleanText === "без медиа" || cleanText === "clear media";
-      const update: Record<string, unknown> = { updatedAt: new Date().toISOString() };
-      const ru = input.locale === "ru";
-      if (clearMedia) update[ru ? "mediaRuJson" : "mediaEnJson"] = null;
-      else {
-        if (input.media.length) update[ru ? "mediaRuJson" : "mediaEnJson"] = JSON.stringify(input.media);
-        if (!input.replaceMediaOnly && input.text) {
-          update[ru ? "textRu" : "textEnApproved"] = input.text;
-          update[ru ? "textRuEntitiesJson" : "textEnEntitiesJson"] = JSON.stringify(input.entities);
-        }
-      }
-      if (Object.keys(update).length === 1) throw new Error("No text or media detected for editing.");
-      backendDb.db.update(drafts).set(update).where(eq(drafts.id, draftId)).run();
-      recordDomainEvent(backendDb, {
-        ref: `draft:${draftId}`,
-        type: "content.draft.edited",
-        severity: "info",
-        message: `Draft #${draftId} content updated`,
-        details: { locale: input.locale, media_changed: input.media.length > 0 || clearMedia, text_changed: !input.replaceMediaOnly },
-      });
+    edit(actorId: number, draftId: number, input: EditInput): void {
+      editDraftContent(backendDb, actorId, draftId, input);
     },
     mediaAssets(actorId: number, limit = 50) {
       return listStudioMediaAssets(backendDb, actorId, limit);
@@ -164,7 +163,53 @@ export function postService(backendDb: BackendDb) {
         details: { locale, asset_ids: assetIds, replace },
       });
     },
+    removeMedia(actorId: number, draftId: number, locale: "ru" | "en", assetIds: number[]): void {
+      const draft = requireOwnedDraft(backendDb, actorId, draftId);
+      const current = JSON.parse(locale === "ru" ? (draft.media_ru_json ?? "[]") : (draft.media_en_json ?? "[]")) as Record<
+        string,
+        unknown
+      >[];
+      const removed = new Set(assetIds);
+      const media = current.filter((item) => !removed.has(Number(item.asset_id)));
+      backendDb.db
+        .update(drafts)
+        .set({ [locale === "ru" ? "mediaRuJson" : "mediaEnJson"]: JSON.stringify(media), updatedAt: new Date().toISOString() })
+        .where(eq(drafts.id, draftId))
+        .run();
+      recordDomainEvent(backendDb, {
+        ref: `draft:${draftId}`,
+        type: "content.draft.media_removed",
+        severity: "info",
+        message: `Draft #${draftId} media removed`,
+        details: { locale, asset_ids: assetIds },
+      });
+    },
   };
+}
+
+function editDraftContent(backendDb: BackendDb, actorId: number, draftId: number, input: EditInput): void {
+  requireOwnedDraft(backendDb, actorId, draftId);
+  const cleanText = input.text.trim().toLowerCase();
+  const clearMedia = cleanText === "/delmedia" || cleanText === "очистить" || cleanText === "без медиа" || cleanText === "clear media";
+  const update: Record<string, unknown> = { updatedAt: new Date().toISOString() };
+  const ru = input.locale === "ru";
+  if (clearMedia) update[ru ? "mediaRuJson" : "mediaEnJson"] = null;
+  else {
+    if (input.media.length) update[ru ? "mediaRuJson" : "mediaEnJson"] = JSON.stringify(input.media);
+    if (!input.replaceMediaOnly && input.text) {
+      update[ru ? "textRu" : "textEnApproved"] = input.text;
+      update[ru ? "textRuEntitiesJson" : "textEnEntitiesJson"] = JSON.stringify(input.entities);
+    }
+  }
+  if (Object.keys(update).length === 1) throw new Error("No text or media detected for editing.");
+  backendDb.db.update(drafts).set(update).where(eq(drafts.id, draftId)).run();
+  recordDomainEvent(backendDb, {
+    ref: `draft:${draftId}`,
+    type: "content.draft.edited",
+    severity: "info",
+    message: `Draft #${draftId} content updated`,
+    details: { locale: input.locale, media_changed: input.media.length > 0 || clearMedia, text_changed: !input.replaceMediaOnly },
+  });
 }
 
 function hasLocaleTarget(targets: Record<string, boolean>, locale: "ru" | "en"): boolean {

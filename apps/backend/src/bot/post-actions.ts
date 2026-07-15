@@ -20,7 +20,7 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
   const actorId = Number(ctx.from?.id);
   if (!Number.isSafeInteger(draftId))
     return void (await ctx.answerCallbackQuery({ text: ui(locale, "Invalid post", "Некорректный пост") }));
-  studioServices(backendDb, config).posts.details(actorId, draftId);
+  studioServices(backendDb, config).posts.get(actorId, draftId);
   if (action === "toggle" && second) {
     studioServices(backendDb, config).posts.toggleTarget(actorId, draftId, second);
     await ctx.answerCallbackQuery({ text: ui(locale, `${second} updated`, `${second}: обновлено`) });
@@ -66,7 +66,7 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
     return editDraftPreview(ctx, backendDb, draftId, "confirm_publish");
   }
   if (action === "publish_confirm") {
-    studioServices(backendDb, config).posts.publishNow(actorId, draftId);
+    studioServices(backendDb, config).posts.publish(actorId, draftId);
     await ctx.answerCallbackQuery({ text: ui(locale, "Queued", "В очереди") });
     const messageId = callbackMessageId(ctx);
     if (messageId && ctx.chat?.id) studioServices(backendDb, config).posts.setControlCard(actorId, draftId, Number(ctx.chat.id), messageId);
@@ -146,7 +146,7 @@ async function showPublicationPreflight(
   draftId: number,
   locale: ReturnType<typeof botLocale>,
 ): Promise<boolean> {
-  const issue = studioServices(backendDb, config).posts.preflight(actorId, draftId)[0];
+  const issue = studioServices(backendDb, config).posts.validate(actorId, draftId)[0];
   if (!issue) return false;
   await ctx.answerCallbackQuery({
     text:
@@ -182,14 +182,14 @@ export async function applyAdminState(
       return showScheduleConfirmation(ctx, backendDb, draftId, ruAt, enAt, `sched_manual_confirm:${draftId}`, controlMessageId);
     return showScheduleConfirmation(ctx, backendDb, draftId, ruAt, enAt, `sched_manual_confirm:${draftId}`);
   } else if (action === "edit_ru" || action === "edit_en") {
-    studioServices(backendDb, config).posts.editContent(Number(ctx.from?.id), draftId, {
+    studioServices(backendDb, config).posts.edit(Number(ctx.from?.id), draftId, {
       locale: action === "edit_ru" ? "ru" : "en",
       text: message.text,
       entities: message.entities,
       media: message.media,
     });
   } else if (action === "replace_ru_media" || action === "replace_en_media") {
-    studioServices(backendDb, config).posts.editContent(Number(ctx.from?.id), draftId, {
+    studioServices(backendDb, config).posts.edit(Number(ctx.from?.id), draftId, {
       locale: action === "replace_ru_media" ? "ru" : "en",
       text: message.text,
       entities: message.entities,

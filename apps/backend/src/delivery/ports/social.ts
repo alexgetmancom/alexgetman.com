@@ -3,7 +3,7 @@ import type { BackendConfig } from "../../foundation/config.js";
 import type { PublishResult } from "../../publishing/errors.js";
 import type { ClaimedPublishJob } from "../../publishing/queue.js";
 import { prepareMediaItems } from "../media-prepare.js";
-import type { DeliveryPorts } from "../ports.js";
+import { type DeliveryPort, type DeliveryPorts, deliveryAdapter } from "../ports.js";
 import { publishToBluesky } from "../social/bluesky.js";
 import { devtoArticleFromPayload, publishToDevto } from "../social/devto.js";
 import { publishToFacebook } from "../social/facebook.js";
@@ -58,7 +58,7 @@ export function createPlatformPorts(config: BackendConfig, backendDb: BackendDb,
     INSTAGRAM_ACCESS_TOKEN: config.INSTAGRAM_RU_ACCESS_TOKEN ?? config.INSTAGRAM_ACCESS_TOKEN,
     INSTAGRAM_USER_ID: config.INSTAGRAM_RU_USER_ID ?? config.INSTAGRAM_USER_ID,
   };
-  return {
+  const publishers: Record<string, DeliveryPort> = {
     // Every target that can use media goes through the same preparation step.
     // It supplies both local files (Bluesky, Mastodon) and public URLs (Dev.to, GitHub).
     devto: (job) => prepare(job, config, (payload) => publishToDevto(devtoArticleFromPayload(payload, config), config, fetchImpl)),
@@ -90,6 +90,7 @@ export function createPlatformPorts(config: BackendConfig, backendDb: BackendDb,
         (await import("../social/telegramStories.js")).publishTelegramStory(payload, config, backendDb, fetchImpl),
       ),
   };
+  return Object.fromEntries(Object.entries(publishers).map(([target, publish]) => [target, deliveryAdapter(publish)])) as DeliveryPorts;
 }
 
 async function withPreparedMedia(

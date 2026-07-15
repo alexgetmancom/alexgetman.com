@@ -49,6 +49,12 @@ describe("Studio MCP", () => {
         `Bearer ${"a".repeat(16)}`,
       );
       expect(JSON.stringify(await preview.json())).toContain("MCP draft");
+      const history = await request(
+        app,
+        { jsonrpc: "2.0", id: 51, method: "tools/call", params: { name: "studio_post_history", arguments: { draft_id: 1 } } },
+        `Bearer ${"a".repeat(16)}`,
+      );
+      expect(JSON.stringify(await history.json())).toContain("content.draft.created");
       expect(backendDb.sqlite.prepare("SELECT event_type, target FROM post_events WHERE event_type='studio.mcp.command'").get()).toEqual({
         event_type: "studio.mcp.command",
         target: "mcp",
@@ -82,6 +88,9 @@ describe("Studio MCP", () => {
       const listed = JSON.stringify(await tools.json());
       for (const name of [
         "studio_video_create",
+        "studio_video_list",
+        "studio_video_status",
+        "studio_video_history",
         "studio_video_replace_targets",
         "studio_video_update_metadata",
         "studio_video_schedule",

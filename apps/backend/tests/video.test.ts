@@ -211,9 +211,11 @@ describe("video publication queue", () => {
       { youtube_shorts: new Date(Date.now() + 60 * 60_000) },
       { prepareLeadMinutes: 15, reminderMinutes: 5 },
     );
+    const database = backendDb;
+    if (!database) throw new Error("database missing");
 
-    expect(() => replaceVideoTargets(backendDb!, draftId, ["instagram_reels"])).toThrow("only before scheduling");
-    expect(listVideoTargets(backendDb, draftId).map((target) => target.target)).toEqual(["youtube_shorts"]);
+    expect(() => replaceVideoTargets(database, draftId, ["instagram_reels"])).toThrow("only before scheduling");
+    expect(listVideoTargets(database, draftId).map((target) => target.target)).toEqual(["youtube_shorts"]);
   });
 
   it("cleans dependent analytics rows when editable targets are replaced", () => {

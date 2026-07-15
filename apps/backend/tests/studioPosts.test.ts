@@ -16,9 +16,9 @@ describe("Studio post commands", () => {
     const posts = postService(backendDb);
     const draftId = posts.create(42, { text: "Private draft", textEn: "Private draft", entities: [], media: [] });
 
-    expect(() => posts.details(7, draftId)).toThrow("not available");
+    expect(() => posts.get(7, draftId)).toThrow("not available");
     expect(() => posts.toggleTarget(7, draftId, "telegram")).toThrow("not available");
-    expect(() => posts.publishNow(7, draftId)).toThrow("not available");
+    expect(() => posts.publish(7, draftId)).toThrow("not available");
     expect(() => posts.cancel(7, draftId)).toThrow("not available");
     expect(() => posts.cancelRemaining(7, draftId)).toThrow("not available");
     expect(() => posts.progress(7, draftId)).toThrow("not available");
@@ -26,7 +26,7 @@ describe("Studio post commands", () => {
     expect(() => posts.manualSchedule(7, draftId, "both", "21:15")).toThrow("not available");
 
     posts.toggleTarget(42, draftId, "telegram");
-    expect(posts.details(42, draftId).id).toBe(draftId);
+    expect(posts.get(42, draftId).id).toBe(draftId);
     expect(posts.progress(42, draftId).targets.length).toBeGreaterThan(0);
   });
 
