@@ -1,5 +1,11 @@
 import { describe, expect, it } from "bun:test";
-import { formatPlatformText, PLATFORM_PROFILES, platformProfile, videoBounds } from "../src/publishing/platform-profiles.js";
+import {
+  formatPlatformText,
+  PLATFORM_PROFILES,
+  platformAnalyticsProfile,
+  platformProfile,
+  videoBounds,
+} from "../src/publishing/platform-profiles.js";
 
 describe("platform profiles", () => {
   it("keeps platform-specific text formatting declarative", () => {
@@ -23,5 +29,10 @@ describe("platform profiles", () => {
     expect(platformProfile("site_ru")?.media).toMatchObject({ mode: "all" });
     expect(platformProfile("telegram_stories")?.media).toMatchObject({ mode: "story-first" });
     expect(platformProfile("facebook")?.media?.whenVideo).toMatchObject({ mode: "first" });
+  });
+
+  it("declares analytics support beside publishing capabilities", () => {
+    expect(platformAnalyticsProfile("telegram")).toMatchObject({ enabled: true, source: "t_me_public" });
+    expect(platformAnalyticsProfile("site_ru")).toMatchObject({ enabled: false });
   });
 });

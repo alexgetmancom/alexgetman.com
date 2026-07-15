@@ -16,23 +16,38 @@ type ImportedStudioMedia = {
   source: "mcp_upload" | "http_upload" | "telegram_upload";
 };
 
+type ImportedStudioMediaFile = Omit<ImportedStudioMedia, "bytes"> & { localPath: string; byteSize?: number };
+
 /** Content-owned file storage. Interfaces hand it bytes; delivery later decides how to upload them. */
 export async function importStudioMediaAsset(backendDb: BackendDb, config: BackendConfig, adminId: number, input: ImportedStudioMedia) {
   if (input.bytes.byteLength === 0) throw new Error("Media file is empty.");
-  if (input.bytes.byteLength > config.STUDIO_MEDIA_MAX_BYTES)
-    throw new Error(
-      `Media file is ${formatMegabytes(input.bytes.byteLength)} MB; Studio accepts files up to ${formatMegabytes(config.STUDIO_MEDIA_MAX_BYTES)} MB.`,
-    );
+  assertStudioMediaSize(input.bytes.byteLength, config.STUDIO_MEDIA_MAX_BYTES);
+  const temporary = path.join(config.STUDIO_MEDIA_DIR, ".incoming", `${crypto.randomUUID()}`);
+  await fs.promises.mkdir(path.dirname(temporary), { recursive: true });
+  await fs.promises.writeFile(temporary, input.bytes);
+  try {
+    return await importStudioMediaFile(backendDb, config, adminId, { ...input, localPath: temporary, byteSize: input.bytes.byteLength });
+  } finally {
+    await fs.promises.rm(temporary, { force: true });
+  }
+}
+
+/** Streams/copies an already downloaded file into Content storage without loading it into application memory. */
+export async function importStudioMediaFile(backendDb: BackendDb, config: BackendConfig, adminId: number, input: ImportedStudioMediaFile) {
+  const stat = await fs.promises.stat(input.localPath);
+  const byteSize = input.byteSize ?? stat.size;
+  if (byteSize === 0) throw new Error("Media file is empty.");
+  assertStudioMediaSize(byteSize, config.STUDIO_MEDIA_MAX_BYTES);
   const kind = mediaKind(input.contentType, input.filename);
   if (!kind) throw new Error("Only image and MP4 video uploads are supported.");
   const extension = mediaExtension(kind, input.contentType, input.filename);
-  const sha256 = crypto.createHash("sha256").update(input.bytes).digest("hex");
+  const sha256 = await fileSha256(input.localPath);
   const filename = `${sha256.slice(0, 24)}${extension}`;
   const directory = path.join(config.STUDIO_MEDIA_DIR, String(adminId));
   const localPath = path.join(directory, filename);
   await fs.promises.mkdir(directory, { recursive: true });
   if (!fs.existsSync(localPath)) {
-    await fs.promises.writeFile(localPath, input.bytes);
+    await fs.promises.copyFile(input.localPath, localPath);
     await fs.promises.chmod(localPath, 0o640);
   }
   const now = new Date().toISOString();
@@ -51,7 +66,7 @@ export async function importStudioMediaAsset(backendDb: BackendDb, config: Backe
         mimeType: input.contentType || (kind === "video" ? "video/mp4" : "image/jpeg"),
         filename: safeFilename(input.filename) || filename,
         localPath,
-        byteSize: input.bytes.byteLength,
+        byteSize,
         sha256,
         source: input.source,
         createdAt: now,
@@ -65,7 +80,7 @@ export async function importStudioMediaAsset(backendDb: BackendDb, config: Backe
       type: "content.media.imported",
       severity: "info",
       message: `Studio media asset #${asset.id} imported`,
-      details: { owner_id: adminId, kind, byte_size: input.bytes.byteLength, source: input.source },
+      details: { owner_id: adminId, kind, byte_size: byteSize, source: input.source },
     });
   return asset;
 }
@@ -131,4 +146,15 @@ function safeFilename(value: string): string {
 
 function formatMegabytes(bytes: number): number {
   return Math.ceil(bytes / 1024 / 1024);
+}
+
+function assertStudioMediaSize(bytes: number, maxBytes: number): void {
+  if (bytes > maxBytes)
+    throw new Error(`Media file is ${formatMegabytes(bytes)} MB; Studio accepts files up to ${formatMegabytes(maxBytes)} MB.`);
+}
+
+async function fileSha256(filePath: string): Promise<string> {
+  const hash = crypto.createHash("sha256");
+  for await (const chunk of fs.createReadStream(filePath)) hash.update(chunk);
+  return hash.digest("hex");
 }

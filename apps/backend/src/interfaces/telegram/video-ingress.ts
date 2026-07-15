@@ -1,7 +1,8 @@
-import { readFileSync } from "node:fs";
+import crypto from "node:crypto";
+import fs from "node:fs";
 import path from "node:path";
 import type { Context } from "grammy";
-import { importStudioMediaAsset } from "../../content/assets.js";
+import { importStudioMediaFile } from "../../content/assets.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 
@@ -20,21 +21,28 @@ export async function storeTelegramVideo(ctx: Context, backendDb: BackendDb, con
   const apiFile = await ctx.api.getFile(file.file_id);
   if (!apiFile.file_path) throw new Error("Telegram did not return a file path.");
   const extension = path.extname(name) || ".mp4";
-  let bytes: Uint8Array;
-  if (path.isAbsolute(apiFile.file_path)) {
-    bytes = new Uint8Array(readFileSync(apiFile.file_path));
-  } else {
+  let localPath = apiFile.file_path;
+  let temporaryPath: string | null = null;
+  if (!path.isAbsolute(localPath)) {
     const url = `${config.TELEGRAM_API_BASE_URL.replace(/\/$/, "")}/file/bot${config.controllerBotToken}/${apiFile.file_path}`;
     const response = await fetch(url);
     if (!response.ok) throw new Error(`Telegram video download failed: ${response.status}`);
-    bytes = new Uint8Array(await response.arrayBuffer());
+    temporaryPath = path.join(config.STUDIO_MEDIA_DIR, ".incoming", `telegram-video-${crypto.randomUUID()}${extension.toLowerCase()}`);
+    await fs.promises.mkdir(path.dirname(temporaryPath), { recursive: true });
+    await Bun.write(temporaryPath, response);
+    localPath = temporaryPath;
   }
-  const asset = await importStudioMediaAsset(backendDb, config, adminId, {
-    filename: name || `telegram-video${extension.toLowerCase()}`,
-    contentType: mime || "video/mp4",
-    bytes,
-    source: "telegram_upload",
-  });
+  let asset: Awaited<ReturnType<typeof importStudioMediaFile>>;
+  try {
+    asset = await importStudioMediaFile(backendDb, config, adminId, {
+      filename: name || `telegram-video${extension.toLowerCase()}`,
+      contentType: mime || "video/mp4",
+      localPath,
+      source: "telegram_upload",
+    });
+  } finally {
+    if (temporaryPath) await fs.promises.rm(temporaryPath, { force: true });
+  }
   if (asset.kind !== "video") throw new Error("Only MP4 video files are supported.");
   return { assetId: asset.id };
 }

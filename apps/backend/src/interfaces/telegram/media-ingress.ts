@@ -1,7 +1,8 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { Bot } from "grammy";
-import { importStudioMediaAsset } from "../../content/assets.js";
+import { importStudioMediaFile } from "../../content/assets.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 
@@ -31,13 +32,18 @@ async function importTelegramMediaItem(
   if (!file.file_path) throw new Error("Telegram did not return a media file path.");
   const type = String(item.type ?? "photo").toLowerCase();
   const extension = type === "video" ? ".mp4" : ".jpg";
-  const bytes = await telegramFileBytes(config, file.file_path);
-  const asset = await importStudioMediaAsset(backendDb, config, actorId, {
-    filename: `telegram-${fileId}${extension}`,
-    contentType: type === "video" ? "video/mp4" : "image/jpeg",
-    bytes,
-    source: "telegram_upload",
-  });
+  const downloaded = await telegramFilePath(config, file.file_path, extension);
+  let asset: Awaited<ReturnType<typeof importStudioMediaFile>>;
+  try {
+    asset = await importStudioMediaFile(backendDb, config, actorId, {
+      filename: `telegram-${fileId}${extension}`,
+      contentType: type === "video" ? "video/mp4" : "image/jpeg",
+      localPath: downloaded.path,
+      source: "telegram_upload",
+    });
+  } finally {
+    if (downloaded.temporary) await fs.promises.rm(downloaded.path, { force: true });
+  }
   return {
     ...item,
     asset_id: asset.id,
@@ -47,13 +53,16 @@ async function importTelegramMediaItem(
   };
 }
 
-async function telegramFileBytes(config: BackendConfig, filePath: string): Promise<Uint8Array> {
-  if (path.isAbsolute(filePath)) return new Uint8Array(await fs.promises.readFile(filePath));
+async function telegramFilePath(config: BackendConfig, filePath: string, extension: string): Promise<{ path: string; temporary: boolean }> {
+  if (path.isAbsolute(filePath)) return { path: filePath, temporary: false };
   if (!config.controllerBotToken) throw new Error("Telegram bot token is not configured.");
   const url = `${config.TELEGRAM_API_BASE_URL.replace(/\/$/, "")}/file/bot${config.controllerBotToken}/${filePath}`;
   const response = await fetch(url);
   if (!response.ok) throw new Error(`Telegram media download failed: ${response.status}`);
-  return new Uint8Array(await response.arrayBuffer());
+  const target = path.join(config.STUDIO_MEDIA_DIR, ".incoming", `telegram-media-${crypto.randomUUID()}${extension}`);
+  await fs.promises.mkdir(path.dirname(target), { recursive: true });
+  await Bun.write(target, response);
+  return { path: target, temporary: true };
 }
 
 function string(value: unknown): string | null {

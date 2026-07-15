@@ -8,8 +8,8 @@ describe("loadConfig", () => {
     expect(config.TELEGRAM_API_BASE_URL).toBe("http://bot-api:8081");
     expect(config.PIPELINE_BASELINE_MESSAGE_ID).toBe(422);
     expect(config.LOG_LEVEL).toBe("info");
-    expect(config.STUDIO_MEDIA_MAX_BYTES).toBe(100_000_000);
-    expect(config.VIDEO_MAX_BYTES).toBe(100_000_000);
+    expect(config.STUDIO_MEDIA_MAX_BYTES).toBe(1_000_000_000);
+    expect(config.VIDEO_MAX_BYTES).toBe(1_000_000_000);
   });
 
   it("uses controller token as primary bot token", () => {

@@ -16,6 +16,25 @@ type PlatformProfile = {
   /** Delivery-facing media contract. Interfaces use this for previews; ports own execution. */
   media?: MediaRule & { whenVideo?: MediaRule };
   video?: { landscape: readonly [number, number]; portrait: readonly [number, number]; square: readonly [number, number] };
+  analytics?: { enabled: boolean; source: string };
+};
+
+const analyticsSources: Record<string, string> = {
+  telegram: "t_me_public",
+  threads_ru: "threads_insights_api",
+  threads_en: "threads_insights_api",
+  facebook: "facebook_insights_api",
+  facebook_ru: "facebook_insights_api",
+  linkedin: "linkedin_metrics",
+  x: "x_api",
+  bluesky: "bluesky_public_api",
+  mastodon: "mastodon_public_api",
+  devto: "devto_api_authenticated",
+  github_en: "github_graphql",
+  github_ru: "github_graphql",
+  telegram_stories: "telegram_story_api",
+  instagram_stories: "instagram_graph_api",
+  instagram_stories_ru: "instagram_graph_api",
 };
 
 const requirements: Record<string, readonly string[]> = {
@@ -95,6 +114,7 @@ export const PLATFORM_PROFILES: Record<string, PlatformProfile> = Object.fromEnt
       locale,
       kind,
       requirements: requirements[id] ?? [],
+      analytics: analyticsSources[id] ? { enabled: true, source: analyticsSources[id] } : { enabled: false, source: "unsupported" },
       ...platformOverrides[id],
     },
   ]),
@@ -102,6 +122,11 @@ export const PLATFORM_PROFILES: Record<string, PlatformProfile> = Object.fromEnt
 
 export function platformProfile(target: string): PlatformProfile | null {
   return PLATFORM_PROFILES[target] ?? null;
+}
+
+/** One catalogue for publishing, validation and analytics capability. */
+export function platformAnalyticsProfile(target: string): { enabled: boolean; source: string } {
+  return platformProfile(target)?.analytics ?? { enabled: false, source: "unsupported" };
 }
 
 export function formatPlatformText(target: string, text: string): string {

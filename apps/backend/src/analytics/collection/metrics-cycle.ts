@@ -3,6 +3,7 @@ import type { BackendDb } from "../../db/client.js";
 import { type JsonValue, postTargets } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { recordWorkerState } from "../../foundation/runtime/worker-state.js";
+import { platformAnalyticsProfile } from "../../publishing/platform-profiles.js";
 import { pruneMetricSamples, upsertMetricError, upsertMetrics } from "../snapshots/metric-repository.js";
 import { isTerminalMetricError } from "./collectors/errors.js";
 import { createMetricCollectors } from "./collectors/index.js";
@@ -14,7 +15,10 @@ export async function runMetricsCycle(
   backendDb: BackendDb,
   collectors: Record<string, MetricCollector> = createMetricCollectors(config),
 ): Promise<number> {
-  ensureMetricSchedule(backendDb, Object.keys(collectors));
+  ensureMetricSchedule(
+    backendDb,
+    Object.keys(collectors).filter((target) => platformAnalyticsProfile(target).enabled),
+  );
   freezeDisabledMetricSchedules(backendDb, [
     ...(config.ENABLE_X_METRICS ? [] : ["x", "twitter"]),
     ...(config.ENABLE_LINKEDIN_METRICS ? [] : ["linkedin"]),

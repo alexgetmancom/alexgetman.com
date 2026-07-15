@@ -1,14 +1,17 @@
 import { and, asc, eq, isNull, lte, or } from "drizzle-orm";
 import type { BackendDb } from "../../db/client.js";
 import { videoDrafts, videoMetricSchedule, videoTargets } from "../../db/schema.js";
+import { recordDomainEvent } from "../../domain/events.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { youtubeAccessToken } from "../../foundation/external/youtube.js";
 import { requestJson } from "../../foundation/http.js";
 import { metricNumber, upsertComment, upsertVideoSnapshot } from "../snapshots/creator-store.js";
+import { isTerminalMetricError, terminalIfMissingRemoteObject } from "./collectors/errors.js";
 import { metricCheckpointAt } from "./metric-checkpoints.js";
 
 type VideoMetricTask = {
   id: number;
+  videoDraftId: number;
   target: "youtube_shorts" | "instagram_reels";
   externalId: string;
   externalUrl: string | null;
@@ -65,7 +68,23 @@ export async function runVideoMetricSchedule(config: BackendConfig, backendDb: B
       else await collectInstagramVideoMetrics(config, backendDb, task, fetchImpl);
       finishVideoMetricTask(backendDb, task, null);
     } catch (error) {
-      finishVideoMetricTask(backendDb, task, error instanceof Error ? error.message : String(error));
+      const normalized = terminalIfMissingRemoteObject(error);
+      finishVideoMetricTask(
+        backendDb,
+        task,
+        normalized instanceof Error ? normalized.message : String(normalized),
+        isTerminalMetricError(normalized),
+      );
+      if (isTerminalMetricError(normalized))
+        recordDomainEvent(backendDb, {
+          ref: `video:${task.videoDraftId}`,
+          target: task.target,
+          type: "analytics.video_metrics.frozen",
+          severity: "warn",
+          message: normalized.message,
+          details: { video_target_id: task.id, reason: normalized.message },
+          cooldownSeconds: 60 * 60,
+        });
     }
   }
   return tasks.length;
@@ -100,6 +119,7 @@ function dueVideoMetricTasks(backendDb: BackendDb, limit: number): VideoMetricTa
   return backendDb.db
     .select({
       id: videoTargets.id,
+      videoDraftId: videoTargets.videoDraftId,
       target: videoTargets.target,
       externalId: videoTargets.externalId,
       externalUrl: videoTargets.externalUrl,
@@ -124,14 +144,20 @@ function dueVideoMetricTasks(backendDb: BackendDb, limit: number): VideoMetricTa
     .filter((task) => Boolean(task.externalId && task.publishedAt)) as VideoMetricTask[];
 }
 
-function finishVideoMetricTask(backendDb: BackendDb, task: VideoMetricTask, error: string | null): void {
+function finishVideoMetricTask(backendDb: BackendDb, task: VideoMetricTask, error: string | null, terminal = false): void {
   const now = new Date();
   const nextIndex = error ? task.checkpointIndex : task.checkpointIndex + 1;
-  const nextCheckAt = error ? new Date(now.getTime() + 15 * 60_000) : metricCheckpointAt(task.publishedAt, nextIndex, now);
+  const nextCheckAt = terminal
+    ? null
+    : error
+      ? new Date(now.getTime() + 15 * 60_000)
+      : metricCheckpointAt(task.publishedAt, nextIndex, now);
   backendDb.db
     .update(videoMetricSchedule)
     .set({
       checkpointIndex: nextIndex,
+      // The schedule row keeps a non-null timestamp for legacy SQLite schema;
+      // frozenAt is the authoritative terminal-state flag.
       nextCheckAt: (nextCheckAt ?? now).toISOString(),
       lastCheckedAt: now.toISOString(),
       lastError: error,
