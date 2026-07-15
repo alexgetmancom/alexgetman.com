@@ -2,6 +2,7 @@ import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import type { StudioActorId, StudioLocale } from "../contracts.js";
 import { analyticsService } from "./analytics.js";
+import { studioCapabilityService } from "./capabilities.js";
 import { studioDashboard } from "./dashboard.js";
 import { notificationService } from "./notifications.js";
 import { postService } from "./posts.js";
@@ -21,6 +22,7 @@ export function studioServices(backendDb: BackendDb, config: BackendConfig) {
     queue: queueService(backendDb),
     notifications: notificationService(backendDb),
     analytics: analyticsService(backendDb, config),
+    capabilities: studioCapabilityService(config),
     settings: settingsService(backendDb),
     dashboard: (actorId: StudioActorId, locale: StudioLocale) => studioDashboard(backendDb, config, actorId, locale),
   };

@@ -168,7 +168,7 @@ export function createApiHandler(context: ApiContext) {
           id: null,
           error: { code: -32700, message: "Invalid JSON" },
         });
-      return json(mcpResponse(backendDb, config, body, engagement.clientKey(request), mcpStudioActor(request, config)));
+      return json(await mcpResponse(backendDb, config, body, engagement.clientKey(request), mcpStudioActor(request, config)));
     }
     if (path === config.WEBHOOK_PATH && request.method === "POST") {
       if (!safeEqual(request.headers.get("X-Telegram-Bot-Api-Secret-Token") ?? "", config.TELEGRAM_WEBHOOK_SECRET ?? ""))
