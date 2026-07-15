@@ -10,6 +10,7 @@ describe("loadConfig", () => {
     expect(config.LOG_LEVEL).toBe("info");
     expect(config.STUDIO_MEDIA_MAX_BYTES).toBe(1_000_000_000);
     expect(config.VIDEO_MAX_BYTES).toBe(1_000_000_000);
+    expect(config.STUDIO_MEDIA_DIR).toBe("/data/video-media");
   });
 
   it("uses controller token as primary bot token", () => {

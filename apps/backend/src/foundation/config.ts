@@ -67,7 +67,9 @@ const envSchema = z
     FFMPEG_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(2).default(2),
     MEDIA_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86_400),
     MEDIA_CACHE_DIR: z.string().default("/data/media-cache"),
-    STUDIO_MEDIA_DIR: z.string().default("/data/studio-media"),
+    // Dedicated mounted media volume; never place large Studio assets on the
+    // pipeline/database disk mounted at /data.
+    STUDIO_MEDIA_DIR: z.string().default("/data/video-media"),
     STUDIO_MEDIA_MAX_BYTES: z.coerce.number().int().positive().max(2_000_000_000).default(1_000_000_000),
     VIDEO_MEDIA_DIR: z.string().default("/data/video-media"),
     VIDEO_MAX_BYTES: z.coerce.number().int().positive().max(2_000_000_000).default(1_000_000_000),
