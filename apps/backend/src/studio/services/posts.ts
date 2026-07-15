@@ -3,7 +3,7 @@ import { PRESETS, TARGETS, targetLocale } from "../../botTargets.js";
 import { createDraftFromMessage, requireDraft } from "../../content/drafts.js";
 import type { DraftMessage } from "../../content/message.js";
 import type { BackendDb } from "../../db/client.js";
-import { drafts } from "../../db/schema.js";
+import { drafts, postControlCards } from "../../db/schema.js";
 import { recordDomainEvent } from "../../domain/events.js";
 import { cancelDraft, cancelRemainingPostJobs, setDraftControlCard } from "../../publishing/draft-lifecycle.js";
 import { publishDraftToQueue } from "../../publishing/publication-workflow.js";
@@ -85,6 +85,10 @@ export function postService(backendDb: BackendDb) {
     setControlCard(actorId: number, draftId: number, chatId: number, messageId: number): void {
       requireOwnedDraft(backendDb, actorId, draftId);
       setDraftControlCard(backendDb, draftId, chatId, messageId);
+    },
+    controlCard(actorId: number, draftId: number) {
+      requireOwnedDraft(backendDb, actorId, draftId);
+      return backendDb.db.select().from(postControlCards).where(eq(postControlCards.draftId, draftId)).get() ?? null;
     },
     toggleTarget(actorId: number, draftId: number, target: string): void {
       const draft = requireOwnedDraft(backendDb, actorId, draftId);

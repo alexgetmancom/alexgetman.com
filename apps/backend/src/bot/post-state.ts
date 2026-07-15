@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import type { BackendDb } from "../db/client.js";
 import { adminState } from "../db/schema.js";
 
@@ -31,6 +31,29 @@ export function setPostAdminState(
 
 export function clearPostAdminState(backendDb: BackendDb, adminId: number): void {
   setPostAdminState(backendDb, adminId);
+}
+
+/** Do not erase a newer user action while an older asynchronous album completes. */
+export function clearPostAdminStateIfCurrent(
+  backendDb: BackendDb,
+  adminId: number,
+  action: string | null,
+  draftId: number | null,
+): boolean {
+  if (!action) return false;
+  const result = backendDb.db
+    .update(adminState)
+    .set({ action: null, draftId: null, controlMessageId: null, updatedAt: new Date().toISOString() })
+    .where(
+      and(
+        eq(adminState.adminId, adminId),
+        eq(adminState.action, action),
+        draftId == null ? isNull(adminState.draftId) : eq(adminState.draftId, draftId),
+      ),
+    )
+    .returning({ adminId: adminState.adminId })
+    .get();
+  return result != null;
 }
 
 export function startPostDialog(backendDb: BackendDb, adminId: number): void {

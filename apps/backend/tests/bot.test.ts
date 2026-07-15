@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
 import type { Bot } from "grammy";
 import { finalizePendingAlbums } from "../src/bot/albums.js";
+import { getPostAdminState, setPostAdminState } from "../src/bot/post-state.js";
 import { draftPreview } from "../src/bot/preview.js";
 import { postProgress } from "../src/bot/progress.js";
 import { TARGETS, targetLocale } from "../src/botTargets.js";
@@ -295,6 +296,73 @@ describe("Telegram controller flow", () => {
     expect(draft.text_ru).toBe("Album caption");
     expect(JSON.parse(draft.media_ru_json)).toHaveLength(2);
     expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect((backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM pending_albums").get() as { count: number }).count).toBe(0);
+  });
+
+  it("applies an English edit album to its draft instead of creating a new draft", async () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createDraftFromMessage(backendDb, 42, {
+      text: "Русский исходник",
+      textEn: "English source",
+      entities: [],
+      media: [{ type: "photo", file_id: "ru-photo" }],
+    });
+    setPostAdminState(backendDb, 42, "edit_en", draftId, 99);
+    backendDb.sqlite
+      .prepare(`INSERT INTO pending_albums(id,admin_id,chat_id,media_group_id,action,draft_id,text_ru,text_entities_json,media_json,notified,updated_at)
+      VALUES ('en-edit',42,42,'group','edit_en',?,'English replacement','[]',?,1,'2000-01-01T00:00:00.000Z')`)
+      .run(
+        draftId,
+        JSON.stringify([
+          { type: "photo", file_id: "en-photo-1" },
+          { type: "photo", file_id: "en-photo-2" },
+        ]),
+      );
+    const fakeBot = {
+      api: { sendMessage: mock(async () => ({ message_id: 100, date: 1, chat: { id: 42, type: "private" as const } })) },
+    } as unknown as Bot;
+
+    expect(await finalizePendingAlbums(fakeBot, backendDb, loadConfig({ CONTROLLER_ALBUM_SETTLE_SECONDS: "1" }))).toBe(1);
+    expect(backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM drafts").get()).toEqual({ count: 1 });
+    const draft = backendDb.sqlite
+      .prepare("SELECT text_ru, text_en_approved, media_ru_json, media_en_json FROM drafts WHERE id=?")
+      .get(draftId) as {
+      text_ru: string;
+      text_en_approved: string;
+      media_ru_json: string;
+      media_en_json: string;
+    };
+    expect(draft.text_ru).toBe("Русский исходник");
+    expect(draft.text_en_approved).toBe("English replacement");
+    expect(JSON.parse(draft.media_ru_json)).toEqual([{ type: "photo", file_id: "ru-photo" }]);
+    expect(JSON.parse(draft.media_en_json)).toEqual([
+      { type: "photo", file_id: "en-photo-1" },
+      { type: "photo", file_id: "en-photo-2" },
+    ]);
+    expect(getPostAdminState(backendDb, 42)).toMatchObject({ action: null, draft_id: null });
+  });
+
+  it("claims one pending album only once when Telegram workers overlap", async () => {
+    backendDb = openBackendDb(":memory:");
+    backendDb.sqlite
+      .prepare(`INSERT INTO pending_albums(id,admin_id,chat_id,media_group_id,action,text_ru,text_entities_json,media_json,notified,updated_at)
+      VALUES ('once',42,42,'group','new_post','Album caption','[]',?,1,'2000-01-01T00:00:00.000Z')`)
+      .run(
+        JSON.stringify([
+          { type: "photo", file_id: "one" },
+          { type: "photo", file_id: "two" },
+        ]),
+      );
+    const fakeBot = {
+      api: { sendMessage: mock(async () => ({ message_id: 1, date: 1, chat: { id: 42, type: "private" as const } })) },
+    } as unknown as Bot;
+
+    const completed = await Promise.all([
+      finalizePendingAlbums(fakeBot, backendDb, loadConfig({ CONTROLLER_ALBUM_SETTLE_SECONDS: "1" })),
+      finalizePendingAlbums(fakeBot, backendDb, loadConfig({ CONTROLLER_ALBUM_SETTLE_SECONDS: "1" })),
+    ]);
+    expect(completed).toEqual([1, 0]);
+    expect(backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM drafts").get()).toEqual({ count: 1 });
     expect((backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM pending_albums").get() as { count: number }).count).toBe(0);
   });
 });

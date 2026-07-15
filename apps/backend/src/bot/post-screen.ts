@@ -48,6 +48,18 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
   const message = extractMessage(ctx);
   const mediaGroupId = ctx.message && "media_group_id" in ctx.message ? ctx.message.media_group_id : undefined;
   if (mediaGroupId && message.media.length > 0) {
+    if (!state?.action || (state.action !== "new_post" && !state.draft_id)) {
+      const locale = botLocale(backendDb, adminId);
+      await ctx.reply(
+        ui(
+          locale,
+          "Choose 📝 New post or an edit action before sending an album.",
+          "Сначала выберите «📝 Новый пост» или действие редактирования.",
+        ),
+        { reply_markup: persistentKeyboard(locale) },
+      );
+      return;
+    }
     const media = message.media[0];
     if (!media) return;
     const isNew = appendPendingAlbum(backendDb, {
@@ -57,8 +69,8 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
       text: message.text,
       entities: message.entities,
       media,
-      action: state?.action ?? null,
-      draftId: state?.draft_id ?? null,
+      action: state.action,
+      draftId: state.draft_id,
     });
     if (isNew) await ctx.reply("Album received. I will create or update the draft in a few seconds.");
     return;
