@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { and, asc, eq, isNull, lte, or, sql } from "drizzle-orm";
-import { deleteVideo, videoPath } from "../content/video-assets.js";
+import { deleteVideo, videoPublicUrl, videoSourcePath } from "../content/video-assets.js";
 import type { BackendDb } from "../db/client.js";
 import { botSettings, videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
@@ -83,7 +83,7 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
   const target = backendDb.db.select().from(videoTargets).where(eq(videoTargets.id, job.videoTargetId)).get();
   const draft = getVideoDraft(backendDb, job.videoDraftId);
   if (!target || target.status === "cancelled" || target.status === "published") return;
-  const filePath = videoPath(config, draft.assetKey);
+  const filePath = videoSourcePath(backendDb, config, draft);
   if (!filePath) throw new Error("Video source was removed before publication completed.");
   const metadata = target.metadataJson as VideoMetadata;
   if (job.kind === "prepare") {
@@ -110,11 +110,7 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
         .where(eq(videoTargets.id, target.id))
         .run();
     } else {
-      const result = await prepareInstagramReel(
-        config,
-        `${config.PUBLIC_BASE_URL.replace(/\/$/, "")}/media/video/${draft.assetKey}`,
-        metadata as InstagramMetadata,
-      );
+      const result = await prepareInstagramReel(config, videoPublicUrl(config, draft), metadata as InstagramMetadata);
       if (!ownsVideoJob(backendDb, job)) return;
       backendDb.db
         .update(videoTargets)
@@ -383,7 +379,7 @@ function pruneExpiredVideos(config: BackendConfig, backendDb: BackendDb): void {
     )
     .all();
   for (const row of rows) {
-    deleteVideo(config, row.assetKey);
+    if (row.studioMediaAssetId == null) deleteVideo(config, row.assetKey);
     backendDb.db
       .update(videoDrafts)
       .set({

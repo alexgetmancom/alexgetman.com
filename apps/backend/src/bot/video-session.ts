@@ -3,8 +3,8 @@ import { type Context, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import { videoBotSessions } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { setTelegramVideoCard } from "../interfaces/telegram/control-cards.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
-import { studioServices } from "../studio/services/index.js";
 import { nextVideoFlowStep } from "../studio/video-fsm.js";
 
 export type VideoSession = { draftId: number | null; step: string; selected: VideoTarget[]; data: Record<string, unknown> };
@@ -127,14 +127,14 @@ export async function askSchedule(ctx: Context, backendDb: BackendDb, adminId: n
 
 export function setControlFromSession(
   backendDb: BackendDb,
-  config: BackendConfig,
-  adminId: number,
+  _config: BackendConfig,
+  _adminId: number,
   draftId: number,
   ctx: Context,
   session: VideoSession,
 ): void {
   const messageId = Number(session.data.controlMessageId);
-  if (messageId && ctx.chat?.id) studioServices(backendDb, config).videos.setControlCard(adminId, draftId, Number(ctx.chat.id), messageId);
+  if (messageId && ctx.chat?.id) setTelegramVideoCard(backendDb, draftId, Number(ctx.chat.id), messageId);
 }
 
 export function callbackMessageId(ctx: Context): number | null {

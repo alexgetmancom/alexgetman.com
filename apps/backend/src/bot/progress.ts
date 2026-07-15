@@ -1,7 +1,6 @@
-import { eq } from "drizzle-orm";
 import { type Bot, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
-import { postControlCards } from "../db/schema.js";
+import { telegramPostCard } from "../interfaces/telegram/control-cards.js";
 import { type PostProgressState, type PostProgressStatus, postProgressState } from "../studio/services/post-progress.js";
 import { botLocale, ui } from "./i18n.js";
 
@@ -57,7 +56,7 @@ export function renderPostProgress(
 
 export async function refreshPostControlCard(backendDb: BackendDb, bot: Bot | null, draftId: number): Promise<void> {
   if (!bot) return;
-  const control = backendDb.db.select().from(postControlCards).where(eq(postControlCards.draftId, draftId)).get();
+  const control = telegramPostCard(backendDb, draftId);
   if (!control) return;
   const card = postProgress(backendDb, draftId);
   try {

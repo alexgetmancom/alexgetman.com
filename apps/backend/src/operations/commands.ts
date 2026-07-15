@@ -15,6 +15,7 @@ export type CommandAction = {
   text_en?: string;
   media_en_json?: string;
   token?: string;
+  actor_type?: string;
 };
 
 /** Dispatches authorised Operations commands; persistence lives in command modules. */
@@ -43,6 +44,6 @@ export async function runOperationCommand(
     result = replaceEnglishMedia(backendDb, publicationRef, parseEnglishMedia(input.media_en_json));
   else if (input.action === "use_ru_media_for_en") result = replaceEnglishMedia(backendDb, publicationRef, null);
   else throw new Error(`unknown action: ${input.action}`);
-  recordOperationAction(backendDb, input.action, publicationRef, input.target ?? null, result);
+  recordOperationAction(backendDb, input.action, publicationRef, input.target ?? null, result, input.actor_type ?? "command-center");
   return result;
 }

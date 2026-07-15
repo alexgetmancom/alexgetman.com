@@ -5,6 +5,7 @@ import { videoDrafts, videoTargets } from "../../db/schema.js";
 import { getVideoDraft } from "../../publishing/video-data.js";
 import type { VideoTarget } from "../../publishing/video-types.js";
 import { videoTargetLabel } from "../../publishing/video-types.js";
+import { telegramVideoCard } from "./control-cards.js";
 import { videoPreview } from "./video-preview.js";
 import { formatVideoTime } from "./video-time.js";
 
@@ -33,11 +34,11 @@ export async function notifyFinalVideoFailure(
 
 export async function refreshVideoControlCard(backendDb: BackendDb, bot: Bot | null, videoDraftId: number): Promise<void> {
   if (!bot) return;
-  const draft = getVideoDraft(backendDb, videoDraftId);
-  if (!draft.controlChatId || !draft.controlMessageId) return;
+  const card = telegramVideoCard(backendDb, videoDraftId);
+  if (!card || card.chatId == null || card.messageId == null) return;
   const preview = videoPreview(backendDb, videoDraftId);
   try {
-    await bot.api.editMessageText(draft.controlChatId, draft.controlMessageId, preview.text, {
+    await bot.api.editMessageText(card.chatId, card.messageId, preview.text, {
       parse_mode: "Markdown",
       reply_markup: preview.keyboard,
     });

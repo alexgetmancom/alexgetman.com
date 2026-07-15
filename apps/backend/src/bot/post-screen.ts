@@ -3,6 +3,7 @@ import { translateToEnglish } from "../content/translation.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { log } from "../foundation/logger.js";
+import { setTelegramPostCard } from "../interfaces/telegram/control-cards.js";
 import { studioServices } from "../studio/services/index.js";
 import { appendPendingAlbum } from "./albums.js";
 import { botLocale, ui } from "./i18n.js";
@@ -115,7 +116,7 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
   const draftId = studioServices(backendDb, config).posts.create(adminId, { ...message, textEn });
   clearPostAdminState(backendDb, adminId);
   const control = await sendDraftPreview(ctx, backendDb, draftId);
-  if (ctx.chat?.id) studioServices(backendDb, config).posts.setControlCard(adminId, draftId, Number(ctx.chat.id), control.message_id);
+  if (ctx.chat?.id) setTelegramPostCard(backendDb, draftId, Number(ctx.chat.id), control.message_id);
 }
 
 export async function handlePostScreenCallback(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<boolean> {

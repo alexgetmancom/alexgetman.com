@@ -1,4 +1,5 @@
 import { desc, eq } from "drizzle-orm";
+import { requireStudioMediaAssets } from "../../content/assets.js";
 import type { BackendDb } from "../../db/client.js";
 import { postEvents, videoDrafts, videoJobs } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
@@ -12,7 +13,6 @@ import {
   retryFailedVideoTarget,
   saveVideoMetadata,
   scheduleVideo,
-  setVideoControlCard,
   updateVideoLabel,
   validateVideoDraft,
 } from "../../publishing/video-service.js";
@@ -23,8 +23,10 @@ type VideoEditInput = { label?: string; target?: VideoTarget; metadata?: VideoMe
 /** Video publication command boundary for Telegram Studio, Web Studio and MCP. */
 export function videoService(backendDb: BackendDb, config: BackendConfig) {
   return {
-    create(actorId: number, assetKey: string): number {
-      return createVideoDraft(backendDb, actorId, assetKey, config.VIDEO_MEDIA_RETENTION_HOURS);
+    create(actorId: number, studioMediaAssetId: number): number {
+      const [asset] = requireStudioMediaAssets(backendDb, actorId, [studioMediaAssetId]);
+      if (asset?.kind !== "video") throw new Error("Video Studio requires an owned MP4 media asset.");
+      return createVideoDraft(backendDb, actorId, { studioMediaAssetId }, config.VIDEO_MEDIA_RETENTION_HOURS);
     },
     get(actorId: number, videoDraftId: number) {
       const draft = requireOwnedVideo(backendDb, actorId, videoDraftId);
@@ -114,10 +116,6 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
     removeTarget(actorId: number, videoDraftId: number, target: VideoTarget): { cancelled: boolean } {
       requireOwnedVideo(backendDb, actorId, videoDraftId);
       return { cancelled: removeVideoTarget(backendDb, videoDraftId, target, config.VIDEO_MEDIA_RETENTION_HOURS) };
-    },
-    setControlCard(actorId: number, videoDraftId: number, chatId: number, messageId: number): void {
-      requireOwnedVideo(backendDb, actorId, videoDraftId);
-      setVideoControlCard(backendDb, videoDraftId, chatId, messageId);
     },
     parseSchedule(actorId: number, videoDraftId: number, value: string): Date {
       requireOwnedVideo(backendDb, actorId, videoDraftId);

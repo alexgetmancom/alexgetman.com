@@ -1,6 +1,7 @@
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import type { PublishResult } from "../../publishing/errors.js";
+import { platformProfile } from "../../publishing/platform-profiles.js";
 import type { ClaimedPublishJob } from "../../publishing/queue.js";
 import { prepareMediaItems } from "../media-prepare.js";
 import { type DeliveryPort, type DeliveryPorts, deliveryAdapter } from "../ports.js";
@@ -90,7 +91,21 @@ export function createPlatformPorts(config: BackendConfig, backendDb: BackendDb,
         (await import("../social/telegramStories.js")).publishTelegramStory(payload, config, backendDb, fetchImpl),
       ),
   };
-  return Object.fromEntries(Object.entries(publishers).map(([target, publish]) => [target, deliveryAdapter(publish)])) as DeliveryPorts;
+  return Object.fromEntries(
+    Object.entries(publishers).map(([target, publish]) => [
+      target,
+      deliveryAdapter(publish, { validate: async () => validatePlatformTarget(target, config) }),
+    ]),
+  ) as DeliveryPorts;
+}
+
+/** Fail before a provider request when the declarative target profile is not ready. */
+function validatePlatformTarget(target: string, config: BackendConfig): void {
+  const profile = platformProfile(target);
+  if (!profile?.requirements.length) return;
+  const values = config as unknown as Record<string, unknown>;
+  const missing = profile.requirements.filter((name) => !values[name]);
+  if (missing.length) throw new Error(`${profile.label} is not configured: ${missing.join(", ")}`);
 }
 
 async function withPreparedMedia(

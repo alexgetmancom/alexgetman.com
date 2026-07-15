@@ -1,16 +1,6 @@
 import { and, asc, count, eq, inArray, sql } from "drizzle-orm";
 import type { BackendDb } from "../db/client.js";
-import {
-  drafts,
-  postControlCards,
-  postLocales,
-  posts,
-  publicationPlans,
-  publicationSources,
-  publications,
-  publishJobs,
-  siteJobs,
-} from "../db/schema.js";
+import { drafts, postLocales, posts, publicationPlans, publicationSources, publications, publishJobs, siteJobs } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import { rebalanceScheduledDrafts } from "./schedule.js";
 
@@ -67,14 +57,6 @@ export function cancelDraft(backendDb: BackendDb, draftId: number): void {
     severity: "info",
     message: `Publication for draft #${draftId} cancelled`,
   });
-}
-
-export function setDraftControlCard(backendDb: BackendDb, draftId: number, chatId: number, messageId: number): void {
-  backendDb.db
-    .insert(postControlCards)
-    .values({ draftId, chatId, messageId, updatedAt: new Date().toISOString() })
-    .onConflictDoUpdate({ target: postControlCards.draftId, set: { chatId, messageId, updatedAt: new Date().toISOString() } })
-    .run();
 }
 
 /** Cancels only jobs that have not reached a final external state. */

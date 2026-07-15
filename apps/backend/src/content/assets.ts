@@ -13,7 +13,7 @@ type ImportedStudioMedia = {
   filename: string;
   contentType: string;
   bytes: Uint8Array;
-  source: "mcp_upload" | "http_upload";
+  source: "mcp_upload" | "http_upload" | "telegram_upload";
 };
 
 /** Content-owned file storage. Interfaces hand it bytes; delivery later decides how to upload them. */

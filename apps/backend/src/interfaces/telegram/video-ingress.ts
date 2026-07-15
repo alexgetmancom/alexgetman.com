@@ -1,13 +1,14 @@
-import crypto from "node:crypto";
-import { copyFileSync, mkdirSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { Context } from "grammy";
+import { importStudioMediaAsset } from "../../content/assets.js";
+import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 
-type StoredVideo = { assetKey: string; sourcePath: string; publicUrl: string; sizeBytes: number };
+type StoredVideo = { assetId: number };
 
 /** Telegram-only adapter that receives an uploaded video into Content storage. */
-export async function storeTelegramVideo(ctx: Context, config: BackendConfig): Promise<StoredVideo> {
+export async function storeTelegramVideo(ctx: Context, backendDb: BackendDb, config: BackendConfig, adminId: number): Promise<StoredVideo> {
   if (!config.controllerBotToken) throw new Error("Telegram bot token is not configured.");
   const video = ctx.message && "video" in ctx.message ? ctx.message.video : undefined;
   const document = ctx.message && "document" in ctx.message ? ctx.message.document : undefined;
@@ -18,27 +19,22 @@ export async function storeTelegramVideo(ctx: Context, config: BackendConfig): P
   if (document && !mime.startsWith("video/") && !name.toLowerCase().endsWith(".mp4")) throw new Error("Only video files are supported.");
   const apiFile = await ctx.api.getFile(file.file_id);
   if (!apiFile.file_path) throw new Error("Telegram did not return a file path.");
-  const assetKey = crypto.randomBytes(24).toString("base64url");
-  mkdirSync(config.VIDEO_MEDIA_DIR, { recursive: true });
   const extension = path.extname(name) || ".mp4";
-  const sourcePath = path.join(config.VIDEO_MEDIA_DIR, `${assetKey}${extension.toLowerCase()}`);
-
-  let sizeBytes = 0;
+  let bytes: Uint8Array;
   if (path.isAbsolute(apiFile.file_path)) {
-    copyFileSync(apiFile.file_path, sourcePath);
-    sizeBytes = statSync(sourcePath).size;
+    bytes = new Uint8Array(readFileSync(apiFile.file_path));
   } else {
     const url = `${config.TELEGRAM_API_BASE_URL.replace(/\/$/, "")}/file/bot${config.controllerBotToken}/${apiFile.file_path}`;
     const response = await fetch(url);
     if (!response.ok) throw new Error(`Telegram video download failed: ${response.status}`);
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    await Bun.write(sourcePath, bytes);
-    sizeBytes = bytes.byteLength;
+    bytes = new Uint8Array(await response.arrayBuffer());
   }
-  return {
-    assetKey,
-    sourcePath,
-    publicUrl: `${config.PUBLIC_BASE_URL.replace(/\/$/, "")}/media/video/${assetKey}`,
-    sizeBytes,
-  };
+  const asset = await importStudioMediaAsset(backendDb, config, adminId, {
+    filename: name || `telegram-video${extension.toLowerCase()}`,
+    contentType: mime || "video/mp4",
+    bytes,
+    source: "telegram_upload",
+  });
+  if (asset.kind !== "video") throw new Error("Only MP4 video files are supported.");
+  return { assetId: asset.id };
 }

@@ -75,8 +75,8 @@ const studioTools = [
     ["draft_id"],
   ),
   tool("studio_post_cancel", "Cancel an owned post draft and its remaining work.", { draft_id: integerSchema(1) }, ["draft_id"]),
-  tool("studio_video_create", "Create an owned video draft from an already-uploaded Studio asset.", { asset_key: stringSchema(1, 120) }, [
-    "asset_key",
+  tool("studio_video_create", "Create an owned video draft from an already-uploaded Studio video asset.", { asset_id: integerSchema(1) }, [
+    "asset_id",
   ]),
   tool("studio_video_list", "List the authenticated owner's video drafts.", { limit: integerSchema(1, 100) }),
   tool("studio_video_get", "Read an owned video draft and its targets.", { video_draft_id: integerSchema(1) }, ["video_draft_id"]),
@@ -310,8 +310,7 @@ async function runStudioTool(
       break;
     }
     case "studio_video_create": {
-      const mediaAssetKey = assetKey(args.asset_key);
-      const videoDraftId = studio.videos.create(actorId, mediaAssetKey);
+      const videoDraftId = studio.videos.create(actorId, integer(args.asset_id, "asset_id"));
       result = { video_draft_id: videoDraftId };
       ref = `video:${videoDraftId}`;
       break;
@@ -515,12 +514,6 @@ function optionalDate(value: unknown, name: string): Date | null {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) throw new Error(`${name} must be an ISO date`);
   return date;
-}
-
-function assetKey(value: unknown): string {
-  const result = text(value, "asset_key", 1, 120);
-  if (!/^[a-zA-Z0-9_-]+$/.test(result)) throw new Error("asset_key is invalid");
-  return result;
 }
 
 function videoTarget(value: unknown): "youtube_shorts" | "instagram_reels" {

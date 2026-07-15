@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApiHandler } from "../src/api.js";
 import { openBackendDb } from "../src/db/client.js";
+import { studioMediaAssets } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 
 function request(app: ReturnType<typeof createApiHandler>, body: unknown, authorization?: string) {
@@ -84,6 +85,21 @@ describe("Studio MCP", () => {
       const config = loadConfig({ ADMIN_IDS: "42", MCP_STUDIO_TOKEN: token, MCP_STUDIO_ACTOR_ID: "42" });
       const app = createApiHandler({ config, backendDb, bot: null });
       const authorization = `Bearer ${token}`;
+      const now = new Date().toISOString();
+      backendDb.db
+        .insert(studioMediaAssets)
+        .values({
+          adminId: 42,
+          kind: "video",
+          mimeType: "video/mp4",
+          filename: "uploaded.mp4",
+          localPath: "/tmp/uploaded.mp4",
+          byteSize: 1,
+          sha256: "video-asset",
+          source: "mcp_upload",
+          createdAt: now,
+        })
+        .run();
       const tools = await request(app, { jsonrpc: "2.0", id: 1, method: "tools/list" }, authorization);
       const listed = JSON.stringify(await tools.json());
       for (const name of [
@@ -104,13 +120,14 @@ describe("Studio MCP", () => {
           jsonrpc: "2.0",
           id: 2,
           method: "tools/call",
-          params: { name: "studio_video_create", arguments: { asset_key: "uploaded-video" } },
+          params: { name: "studio_video_create", arguments: { asset_id: 1 } },
         },
         authorization,
       );
-      expect(backendDb.sqlite.prepare("SELECT admin_id, asset_key FROM video_drafts WHERE id=1").get()).toEqual({
+      expect(backendDb.sqlite.prepare("SELECT admin_id, asset_key, studio_media_asset_id FROM video_drafts WHERE id=1").get()).toEqual({
         admin_id: 42,
-        asset_key: "uploaded-video",
+        asset_key: "studio-asset-1",
+        studio_media_asset_id: 1,
       });
 
       await request(

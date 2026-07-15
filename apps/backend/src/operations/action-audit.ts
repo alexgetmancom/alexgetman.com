@@ -8,12 +8,13 @@ export function recordOperationAction(
   ref: PublicationRef,
   target: string | null,
   details: Record<string, unknown>,
+  actorType = "command-center",
 ): void {
   const now = new Date().toISOString();
   backendDb.db
     .insert(opsActions)
     .values({
-      actorType: "command-center",
+      actorType,
       action,
       messageId: ref.messageId,
       target,

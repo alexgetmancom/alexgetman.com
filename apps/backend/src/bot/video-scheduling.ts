@@ -1,6 +1,7 @@
 import type { Context } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { setTelegramVideoCard } from "../interfaces/telegram/control-cards.js";
 import { videoPreview } from "../interfaces/telegram/video-preview.js";
 import type { VideoTarget } from "../publishing/video-types.js";
 import { studioServices } from "../studio/services/index.js";
@@ -51,10 +52,9 @@ async function showScheduledVideo(
   clearSession(backendDb, adminId);
   if (controlMessageId && ctx.chat?.id) {
     await ctx.api.editMessageText(ctx.chat.id, controlMessageId, text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
-    studioServices(backendDb, config).videos.setControlCard(adminId, session.draftId, Number(ctx.chat.id), controlMessageId);
+    setTelegramVideoCard(backendDb, session.draftId, Number(ctx.chat.id), controlMessageId);
     return;
   }
   const message = await ctx.reply(text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
-  if (ctx.chat?.id)
-    studioServices(backendDb, config).videos.setControlCard(adminId, session.draftId, Number(ctx.chat.id), message.message_id);
+  if (ctx.chat?.id) setTelegramVideoCard(backendDb, session.draftId, Number(ctx.chat.id), message.message_id);
 }

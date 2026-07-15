@@ -1,8 +1,10 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
+import { eq } from "drizzle-orm";
 import type { Bot } from "grammy";
 import { videoPath } from "./content/video-assets.js";
 import type { BackendDb } from "./db/client.js";
+import { studioMediaAssets } from "./db/schema.js";
 import { type EngagementService, engagementService } from "./engagement/service.js";
 import type { BackendConfig } from "./foundation/config.js";
 import { commandAllowed } from "./foundation/http-auth.js";
@@ -66,6 +68,24 @@ export function createApiHandler(context: ApiContext) {
           "content-length": String(file.size),
           "cache-control": "private, no-store",
           "x-robots-tag": "noindex, nofollow",
+        },
+      });
+    }
+    const studioVideoMatch = path.match(/^\/media\/video\/asset\/(\d+)$/);
+    if (studioVideoMatch && (request.method === "GET" || request.method === "HEAD")) {
+      const asset = backendDb.db
+        .select()
+        .from(studioMediaAssets)
+        .where(eq(studioMediaAssets.id, Number(studioVideoMatch[1])))
+        .get();
+      if (asset?.kind !== "video") return text("not found\n", 404);
+      const file = Bun.file(asset.localPath);
+      if (file.size === 0) return text("not found\n", 404);
+      return new Response(request.method === "HEAD" ? null : file, {
+        headers: {
+          "content-type": asset.mimeType || "video/mp4",
+          "content-length": String(file.size),
+          "cache-control": "public, max-age=300",
         },
       });
     }

@@ -1,7 +1,7 @@
 import { statSync } from "node:fs";
 import path from "node:path";
 import { and, eq, inArray, ne } from "drizzle-orm";
-import { videoPath } from "../content/video-assets.js";
+import { videoSourcePath } from "../content/video-assets.js";
 import type { BackendDb } from "../db/client.js";
 import { socialComments, videoDrafts, videoJobs, videoMetricSchedule, videoMetricSnapshots, videoTargets } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -10,14 +10,20 @@ import { getVideoDraft, insertVideoJob, listVideoTargets, refreshVideoDraftStatu
 import type { VideoMetadata, VideoTarget } from "./video-types.js";
 import { VIDEO_TARGETS } from "./video-types.js";
 
-export function createVideoDraft(backendDb: BackendDb, adminId: number, assetKey: string, retentionHours: number): number {
+export function createVideoDraft(
+  backendDb: BackendDb,
+  adminId: number,
+  source: string | { studioMediaAssetId: number },
+  retentionHours: number,
+): number {
   const now = new Date().toISOString();
   const retentionUntil = new Date(Date.now() + retentionHours * 60 * 60_000).toISOString();
   const row = backendDb.db
     .insert(videoDrafts)
     .values({
       adminId,
-      assetKey,
+      assetKey: typeof source === "string" ? source : `studio-asset-${source.studioMediaAssetId}`,
+      ...(typeof source === "string" ? {} : { studioMediaAssetId: source.studioMediaAssetId }),
       status: "editing",
       retentionUntil,
       createdAt: now,
@@ -31,18 +37,6 @@ export function createVideoDraft(backendDb: BackendDb, adminId: number, assetKey
 
 export function updateVideoLabel(backendDb: BackendDb, id: number, label: string): void {
   backendDb.db.update(videoDrafts).set({ label: label.trim(), updatedAt: new Date().toISOString() }).where(eq(videoDrafts.id, id)).run();
-}
-
-export function setVideoControlCard(backendDb: BackendDb, id: number, chatId: number, messageId: number): void {
-  backendDb.db
-    .update(videoDrafts)
-    .set({
-      controlChatId: chatId,
-      controlMessageId: messageId,
-      updatedAt: new Date().toISOString(),
-    })
-    .where(eq(videoDrafts.id, id))
-    .run();
 }
 
 export function replaceVideoTargets(backendDb: BackendDb, videoDraftId: number, targets: VideoTarget[]): void {
@@ -219,7 +213,7 @@ type VideoTechnicalCheck = { summary: string; warning: string | null };
 
 export async function validateVideoDraft(config: BackendConfig, backendDb: BackendDb, videoDraftId: number): Promise<VideoTechnicalCheck> {
   const draft = getVideoDraft(backendDb, videoDraftId);
-  const source = videoPath(config, draft.assetKey);
+  const source = videoSourcePath(backendDb, config, draft);
   if (!source) throw new Error("Исходное видео не найдено на сервере. Отправьте файл ещё раз.");
   if (path.extname(source).toLowerCase() !== ".mp4") throw new Error("Для Shorts и Reels нужен файл MP4.");
   const size = statSync(source).size;

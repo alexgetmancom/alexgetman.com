@@ -299,6 +299,7 @@ export const videoDrafts = sqliteTable(
     adminId: integer("admin_id").notNull(),
     label: text("label").notNull().default(""),
     assetKey: text("asset_key").notNull(),
+    studioMediaAssetId: integer("studio_media_asset_id").references(() => studioMediaAssets.id),
     status: text("status").notNull().default("draft"),
     scheduledAt: text("scheduled_at"),
     reminderSentAt: text("reminder_sent_at"),

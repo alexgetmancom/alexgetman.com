@@ -1,6 +1,7 @@
 import type { Context } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { setTelegramPostCard } from "../interfaces/telegram/control-cards.js";
 import { formatMsk } from "../interfaces/telegram/time.js";
 import { studioServices } from "../studio/services/index.js";
 import { botLocale, ui } from "./i18n.js";
@@ -69,7 +70,7 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
     studioServices(backendDb, config).posts.publish(actorId, draftId);
     await ctx.answerCallbackQuery({ text: ui(locale, "Queued", "В очереди") });
     const messageId = callbackMessageId(ctx);
-    if (messageId && ctx.chat?.id) studioServices(backendDb, config).posts.setControlCard(actorId, draftId, Number(ctx.chat.id), messageId);
+    if (messageId && ctx.chat?.id) setTelegramPostCard(backendDb, draftId, Number(ctx.chat.id), messageId);
     const progress = renderPostProgress(studioServices(backendDb, config).posts.progress(actorId, draftId), locale);
     return void (await ctx.editMessageText(progress.text, { parse_mode: "Markdown", reply_markup: progress.keyboard }));
   }

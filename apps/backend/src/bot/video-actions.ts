@@ -1,6 +1,7 @@
 import { type Context, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { setTelegramVideoCard } from "../interfaces/telegram/control-cards.js";
 import { videoPreview } from "../interfaces/telegram/video-preview.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import { studioServices } from "../studio/services/index.js";
@@ -71,7 +72,7 @@ export async function handleVideoActionCallback(ctx: Context, backendDb: Backend
       studioServices(backendDb, config).videos.get(adminId, id);
       const preview = videoPreview(backendDb, id, botLocale(backendDb, adminId));
       const messageId = callbackMessageId(ctx);
-      if (messageId && ctx.chat?.id) studioServices(backendDb, config).videos.setControlCard(adminId, id, Number(ctx.chat.id), messageId);
+      if (messageId && ctx.chat?.id) setTelegramVideoCard(backendDb, id, Number(ctx.chat.id), messageId);
       await ctx.editMessageText(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
     } else if (data.startsWith("video_retry:")) {
       const [, target, idText] = data.split(":");
