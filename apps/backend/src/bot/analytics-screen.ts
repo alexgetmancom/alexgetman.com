@@ -9,7 +9,12 @@ type AnalyticsSection = "overview" | "posts" | "video";
 /** Telegram adapter for the Analytics Studio screen. The analytics read model itself stays transport-neutral. */
 export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<boolean> {
   const data = ctx.callbackQuery?.data ?? "";
-  if (data === "analytics_home" || data === "analytics_total" || data.startsWith("analytics_period:")) {
+  if (data === "analytics_home") {
+    await ctx.answerCallbackQuery();
+    await showAnalyticsHome(ctx, backendDb, config);
+    return true;
+  }
+  if (data === "analytics_total" || data.startsWith("analytics_period:")) {
     const days = data.startsWith("analytics_period:") ? Number(data.slice("analytics_period:".length)) : 7;
     await ctx.answerCallbackQuery();
     await showAnalyticsDashboard(ctx, backendDb, config, "overview", analyticsPeriod(days));
@@ -87,6 +92,19 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
     reply_markup: new InlineKeyboard().text(ui(locale, "← Video analytics", "← К статистике видео"), "analytics_section:video:7"),
   });
   return true;
+}
+
+/** Root navigation is deliberately separate from a dashboard/archives so the
+ * main-menu Analytics button never appears to loop back into a post archive. */
+async function showAnalyticsHome(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<void> {
+  const locale = botLocale(backendDb, Number(ctx.from?.id));
+  const keyboard = new InlineKeyboard().text(ui(locale, "📊 Overview", "📊 Общая"), "analytics_section:overview:7").row();
+  if (config.studio.modules.text_posting) keyboard.text(ui(locale, "📝 Posts", "📝 Постинг"), "analytics_section:posts:7").row();
+  if (config.studio.modules.video_posting) keyboard.text(ui(locale, "🎬 Video", "🎬 Видеопостинг"), "analytics_section:video:7").row();
+  keyboard.text(ui(locale, "← Menu", "← Меню"), "menu_home");
+  await ctx.editMessageText(ui(locale, "📊 Analytics\n\nChoose a section.", "📊 Статистика\n\nВыберите раздел."), {
+    reply_markup: keyboard,
+  });
 }
 
 function analyticsPeriod(value: number): 1 | 7 | 30 {
