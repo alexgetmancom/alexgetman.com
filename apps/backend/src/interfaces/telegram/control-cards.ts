@@ -1,34 +1,70 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { BackendDb } from "../../db/client.js";
-import { postControlCards, videoDrafts } from "../../db/schema.js";
+import { interfaceBindings } from "../../db/schema.js";
+
+const TELEGRAM = "telegram";
 
 /** Telegram-only message references. Studio aggregates never need chat/message ids. */
 export function setTelegramPostCard(backendDb: BackendDb, draftId: number, chatId: number, messageId: number): void {
   backendDb.db
-    .insert(postControlCards)
-    .values({ draftId, chatId, messageId, updatedAt: new Date().toISOString() })
-    .onConflictDoUpdate({ target: postControlCards.draftId, set: { chatId, messageId, updatedAt: new Date().toISOString() } })
+    .insert(interfaceBindings)
+    .values({
+      interfaceId: TELEGRAM,
+      entityType: "draft",
+      entityId: draftId,
+      conversationId: String(chatId),
+      messageId: String(messageId),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    })
+    .onConflictDoUpdate({
+      target: [interfaceBindings.interfaceId, interfaceBindings.entityType, interfaceBindings.entityId],
+      set: { conversationId: String(chatId), messageId: String(messageId), updatedAt: new Date().toISOString() },
+    })
     .run();
 }
 
 export function telegramPostCard(backendDb: BackendDb, draftId: number) {
-  return backendDb.db.select().from(postControlCards).where(eq(postControlCards.draftId, draftId)).get() ?? null;
+  const binding = backendDb.db
+    .select()
+    .from(interfaceBindings)
+    .where(
+      and(eq(interfaceBindings.interfaceId, TELEGRAM), eq(interfaceBindings.entityType, "draft"), eq(interfaceBindings.entityId, draftId)),
+    )
+    .get();
+  return binding ? { chatId: Number(binding.conversationId), messageId: Number(binding.messageId) } : null;
 }
 
-/** Legacy video columns stay readable for existing cards; their access is confined to this adapter. */
 export function setTelegramVideoCard(backendDb: BackendDb, videoDraftId: number, chatId: number, messageId: number): void {
   backendDb.db
-    .update(videoDrafts)
-    .set({ controlChatId: chatId, controlMessageId: messageId, updatedAt: new Date().toISOString() })
-    .where(eq(videoDrafts.id, videoDraftId))
+    .insert(interfaceBindings)
+    .values({
+      interfaceId: TELEGRAM,
+      entityType: "video_draft",
+      entityId: videoDraftId,
+      conversationId: String(chatId),
+      messageId: String(messageId),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    })
+    .onConflictDoUpdate({
+      target: [interfaceBindings.interfaceId, interfaceBindings.entityType, interfaceBindings.entityId],
+      set: { conversationId: String(chatId), messageId: String(messageId), updatedAt: new Date().toISOString() },
+    })
     .run();
 }
 
 export function telegramVideoCard(backendDb: BackendDb, videoDraftId: number) {
-  const draft = backendDb.db
-    .select({ chatId: videoDrafts.controlChatId, messageId: videoDrafts.controlMessageId })
-    .from(videoDrafts)
-    .where(eq(videoDrafts.id, videoDraftId))
+  const binding = backendDb.db
+    .select()
+    .from(interfaceBindings)
+    .where(
+      and(
+        eq(interfaceBindings.interfaceId, TELEGRAM),
+        eq(interfaceBindings.entityType, "video_draft"),
+        eq(interfaceBindings.entityId, videoDraftId),
+      ),
+    )
     .get();
-  return draft?.chatId && draft.messageId ? draft : null;
+  return binding ? { chatId: Number(binding.conversationId), messageId: Number(binding.messageId) } : null;
 }

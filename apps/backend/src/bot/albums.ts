@@ -7,6 +7,7 @@ import { pendingAlbums } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { log } from "../foundation/logger.js";
 import { setTelegramPostCard, telegramPostCard } from "../interfaces/telegram/control-cards.js";
+import { importTelegramAlbumMedia } from "../interfaces/telegram/media-ingress.js";
 import { studioServices } from "../studio/services/index.js";
 import { clearPostAdminStateIfCurrent } from "./post-state.js";
 import { draftPreview } from "./preview.js";
@@ -90,7 +91,7 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
       .get();
     if (!claim) continue;
     try {
-      const media = parseArrayValue(row.mediaJson);
+      const media = await importTelegramAlbumMedia(bot, backendDb, config, row.adminId, parseArrayValue(row.mediaJson));
       const draftId = row.draftId;
       const isEdit = row.action === "edit_ru" || row.action === "edit_en";
       const isMediaReplacement = row.action === "replace_ru_media" || row.action === "replace_en_media";

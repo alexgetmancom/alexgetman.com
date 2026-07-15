@@ -106,13 +106,13 @@ export function postDebugPayload(backendDb: BackendDb, ref: string) {
 function resolvePostKey(backendDb: BackendDb, ref: string): string | null {
   const value = ref.trim();
   if (!value) return null;
-  if (value.startsWith("post:") || value.startsWith("telegram:")) return value;
+  if (value.startsWith("post:")) return value;
   const id = numericRef(value);
   if (id == null) return value;
   const post = backendDb.db
     .select({ postKey: posts.postKey })
     .from(posts)
-    .where(or(eq(posts.messageId, id), eq(posts.postKey, `post:${id}`)))
+    .where(or(eq(posts.postId, id), eq(posts.postKey, `post:${id}`), eq(posts.messageId, id)))
     .get();
   if (post?.postKey) return post.postKey;
   const job = backendDb.db
@@ -121,7 +121,7 @@ function resolvePostKey(backendDb: BackendDb, ref: string): string | null {
     .where(or(eq(publishJobs.messageId, id), eq(publishJobs.postId, id)))
     .orderBy(desc(publishJobs.jobId))
     .get();
-  return job?.postKey ?? (job?.postId != null ? `post:${job.postId}` : `telegram:alexgetmancom:${id}`);
+  return job?.postKey ?? (job?.postId != null ? `post:${job.postId}` : `post:${id}`);
 }
 
 function numericRef(ref: string): number | null {

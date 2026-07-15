@@ -122,7 +122,7 @@ export const siteJobs = sqliteTable(
 export const posts = sqliteTable("posts", {
   postKey: text("post_key").primaryKey(),
   postId: integer("post_id"),
-  source: text("source").notNull().default("telegram"),
+  source: text("source").notNull().default("studio"),
   channel: text("channel").notNull(),
   chatId: text("chat_id"),
   messageId: integer("message_id").notNull(),
@@ -393,6 +393,24 @@ export const postControlCards = sqliteTable("post_control_cards", {
   messageId: integer("message_id").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
+
+/** Interface-owned presentation references. Domain aggregates never store UI message ids. */
+export const interfaceBindings = sqliteTable(
+  "interface_bindings",
+  {
+    interfaceId: text("interface_id").notNull(),
+    entityType: text("entity_type").notNull(),
+    entityId: integer("entity_id").notNull(),
+    conversationId: text("conversation_id").notNull(),
+    messageId: text("message_id").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.interfaceId, table.entityType, table.entityId] }),
+    lookup: index("idx_interface_bindings_lookup").on(table.entityType, table.entityId),
+  }),
+);
 
 export const pendingAlbums = sqliteTable("pending_albums", {
   id: text("id").primaryKey(),

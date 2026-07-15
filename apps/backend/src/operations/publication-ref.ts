@@ -8,7 +8,7 @@ export type PublicationRef = { input: string; postId: number | null; postKey: st
 /** Resolves external command input to the stable publication identity used by Operations commands. */
 export function resolvePublicationRef(backendDb: BackendDb, ref: string): PublicationRef | null {
   const trimmed = ref.trim();
-  const postKeyRef = trimmed.startsWith("post:") || trimmed.startsWith("telegram:") ? trimmed : null;
+  const postKeyRef = trimmed.startsWith("post:") ? trimmed : null;
   const numeric = trimmed.match(/^post:(\d+)$/)?.[1] ?? (/^\d+$/.test(trimmed) ? trimmed : null);
   if (postKeyRef) {
     const post = backendDb.db.select().from(posts).where(eq(posts.postKey, postKeyRef)).get();
@@ -16,11 +16,7 @@ export function resolvePublicationRef(backendDb: BackendDb, ref: string): Public
   }
   if (!numeric) return null;
   const id = Number(numeric);
-  const publication = backendDb.db
-    .select({ postId: publications.postId, telegramMessageId: publications.telegramMessageId })
-    .from(publications)
-    .where(or(eq(publications.postId, id), eq(publications.telegramMessageId, id)))
-    .get();
+  const publication = backendDb.db.select({ postId: publications.postId }).from(publications).where(eq(publications.postId, id)).get();
   if (publication) {
     const post = backendDb.db
       .select()
@@ -31,7 +27,7 @@ export function resolvePublicationRef(backendDb: BackendDb, ref: string): Public
       input: ref,
       postId: publication.postId,
       postKey: `post:${publication.postId}`,
-      messageId: post?.messageId ?? publication.telegramMessageId ?? publication.postId,
+      messageId: post?.messageId ?? publication.postId,
     };
   }
   const post = backendDb.db

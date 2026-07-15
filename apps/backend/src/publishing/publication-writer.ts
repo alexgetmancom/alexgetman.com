@@ -21,8 +21,8 @@ export function persistPublicationPlan(backendDb: BackendDb, plan: PublicationPl
   backendDb.db.transaction((tx) => {
     const postValues = {
       postId: plan.postId,
-      source: "bot",
-      channel: "controller",
+      source: "studio",
+      channel: "studio",
       messageId: plan.messageId,
       dateUtc: plan.ruAt ?? plan.enAt ?? plan.now,
       text: plan.textRu,

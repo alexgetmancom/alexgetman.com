@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { and, asc, count, desc, eq, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 import type { BackendDb } from "../db/client.js";
-import { postEvents, postMetrics, posts, postTargets, publicationSources, publications, siteJobs } from "../db/schema.js";
+import { postEvents, postMetrics, posts, postTargets, publicationSources, siteJobs } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { recordWorkerState } from "../foundation/runtime/worker-state.js";
 import { nextRetryAt } from "../publishing/errors.js";
@@ -73,10 +73,9 @@ function recoverStaleSiteJobs(config: BackendConfig, backendDb: BackendDb): numb
 
 export async function renderFeedFiles(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch = fetch): Promise<void> {
   const items = await Promise.all(sourceItems(backendDb).map((item) => prepareFeedItem(config, backendDb, item, fetchImpl)));
-  const views = telegramViewsByMessageId(backendDb);
+  const views = viewsByPostKey(backendDb);
   for (const item of items.filter((value): value is Record<string, unknown> => value != null)) {
-    const messageId = Number(item.telegram_message_id ?? item.message_id ?? 0);
-    item.views = views.get(messageId) ?? Number(item.views ?? 0);
+    item.views = views.get(String(item.id ?? "")) ?? Number(item.views ?? 0);
   }
   const ordered = items
     .filter((value): value is Record<string, unknown> => value != null)
@@ -194,15 +193,14 @@ function failSiteJobs(config: BackendConfig, backendDb: BackendDb, jobs: SiteJob
 
 function sourceItems(backendDb: BackendDb): Record<string, unknown>[] {
   const rows = backendDb.db
-    .select({ itemJson: publicationSources.itemJson, telegramMessageId: publications.telegramMessageId })
+    .select({ itemJson: publicationSources.itemJson, postId: publicationSources.postId })
     .from(publicationSources)
-    .innerJoin(publications, eq(publications.postId, publicationSources.postId))
     .orderBy(desc(publicationSources.postId))
     .all();
   if (rows.length > 0)
     return rows.flatMap((row): Record<string, unknown>[] => {
       const item = parseObject(row.itemJson);
-      return item ? [{ ...item, telegram_message_id: row.telegramMessageId ?? item.telegram_message_id }] : [];
+      return item ? [{ ...item, id: `post:${row.postId}`, post_id: row.postId }] : [];
     });
   return backendDb.db
     .select({
@@ -219,7 +217,6 @@ function sourceItems(backendDb: BackendDb): Record<string, unknown>[] {
     .all()
     .map((row) => ({
       id: row.postKey,
-      message_id: row.messageId,
       date: row.dateUtc,
       text: row.text,
       text_en: row.textEn,
@@ -244,18 +241,19 @@ async function prepareFeedItem(
   const mediaRu = hasRu ? await materializeSiteMedia(config, postId, "ru", source.media ?? source.media_ru, fetchImpl) : [];
   const mediaEnSource = source.media_en ?? source.media ?? source.media_ru;
   const mediaEn = hasEn ? await materializeSiteMedia(config, postId, "en", mediaEnSource, fetchImpl) : [];
-  const post = backendDb.db
-    .select({ messageId: posts.messageId, telegramUrl: posts.telegramUrl })
-    .from(posts)
-    .where(eq(posts.postKey, `post:${postId}`))
-    .get();
+  const targetUrls = backendDb.db
+    .select({ target: postTargets.target, url: postTargets.url })
+    .from(postTargets)
+    .where(eq(postTargets.postKey, `post:${postId}`))
+    .all();
+  const url =
+    targetUrls.find((target) => target.target === "site_en" || target.target === "site_ru")?.url ??
+    targetUrls.find((target) => target.url)?.url;
   return {
     ...source,
     id: `post:${postId}`,
     post_id: postId,
-    message_id: post?.messageId ?? source.message_id,
-    telegram_message_id: post?.messageId ?? source.telegram_message_id,
-    url: post?.telegramUrl ?? source.url,
+    url: url ?? source.url,
     date: source.date ?? source.publish_at_ru ?? source.publish_at_en ?? new Date().toISOString(),
     text: source.text_ru ?? source.text ?? "",
     text_ru: source.text_ru ?? source.text ?? "",
@@ -275,14 +273,13 @@ function isDue(value: unknown, now: number): boolean {
   return Number.isNaN(time) || time <= now;
 }
 
-function telegramViewsByMessageId(backendDb: BackendDb): Map<number, number> {
+function viewsByPostKey(backendDb: BackendDb): Map<string, number> {
   const rows = backendDb.db
-    .select({ messageId: posts.messageId, value: postMetrics.value })
+    .select({ postKey: postMetrics.postKey, value: postMetrics.value })
     .from(postMetrics)
-    .innerJoin(posts, eq(posts.postKey, postMetrics.postKey))
     .where(and(eq(postMetrics.target, "telegram"), eq(postMetrics.metricName, "views")))
     .all();
-  return new Map(rows.map((row) => [Number(row.messageId), Number(row.value ?? 0)]));
+  return new Map(rows.map((row) => [row.postKey, Number(row.value ?? 0)]));
 }
 
 async function atomicWriteJson(filePath: string, value: unknown): Promise<void> {

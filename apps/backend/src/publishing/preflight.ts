@@ -1,16 +1,20 @@
+import { targetLocale } from "../botTargets.js";
 import { parseArrayValue } from "../content/message.js";
 import { platformProfile } from "./platform-profiles.js";
 import { parseTargets } from "./targets.js";
 
 type DraftForPreflight = {
   text_ru: string | null;
+  text_en_approved?: string | null;
+  text_en_machine?: string | null;
   media_ru_json: string | null;
+  media_en_json?: string | null;
   targets_json: string;
 };
 
 type PublicationPreflightIssue = {
   target: string;
-  locale: "ru";
+  locale: "ru" | "en";
   limit: number;
   actual: number;
   message: string;
@@ -19,24 +23,34 @@ type PublicationPreflightIssue = {
 /**
  * Checks constraints that must block a plan. Delivery still defensively
  * normalizes legacy payloads, but a new draft must never become a partial
- * publication merely because Telegram cannot accept its media caption.
+ * publication merely because a selected target cannot accept its media caption.
  */
 export function publicationPreflight(draft: DraftForPreflight): PublicationPreflightIssue[] {
   const targets = parseTargets(draft.targets_json);
-  const ruMedia = parseArrayValue(draft.media_ru_json);
-  const telegramCaptionLimit = platformProfile("telegram")?.limits?.caption;
-  if (!targets.telegram || ruMedia.length === 0 || !telegramCaptionLimit) return [];
-  const actual = String(draft.text_ru ?? "").length;
-  if (actual <= telegramCaptionLimit) return [];
-  return [
-    {
-      target: "telegram",
-      locale: "ru",
-      limit: telegramCaptionLimit,
-      actual,
-      message: `Telegram с медиа: ${actual}/${telegramCaptionLimit} символов. Сократите RU-текст или отключите Telegram.`,
+  const content = {
+    ru: { text: String(draft.text_ru ?? ""), media: parseArrayValue(draft.media_ru_json) },
+    en: {
+      text: String(draft.text_en_approved ?? draft.text_en_machine ?? ""),
+      media: parseArrayValue(draft.media_en_json ?? draft.media_ru_json),
     },
-  ];
+  } as const;
+  return Object.entries(targets).flatMap(([target, enabled]) => {
+    if (!enabled) return [];
+    const profile = platformProfile(target);
+    const locale = targetLocale(target) ?? "ru";
+    const value = content[locale];
+    const limit = profile?.limits?.caption;
+    if (!limit || value.media.length === 0 || value.text.length <= limit) return [];
+    return [
+      {
+        target,
+        locale,
+        limit,
+        actual: value.text.length,
+        message: `${profile?.label ?? target} с медиа: ${value.text.length}/${limit} символов. Сократите ${locale.toUpperCase()}-текст или отключите ${profile?.label ?? target}.`,
+      },
+    ];
+  });
 }
 
 export function assertPublicationPreflight(draft: DraftForPreflight): void {

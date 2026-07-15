@@ -4,7 +4,7 @@ import process from "node:process";
 import { and, eq, inArray, isNull, lt, lte, ne, or } from "drizzle-orm";
 import * as z from "zod";
 import type { BackendDb } from "../db/client.js";
-import { drafts, type JsonObject, postEvents, posts, postTargets, publications, publishJobs, siteJobs } from "../db/schema.js";
+import { drafts, type JsonObject, postEvents, postTargets, publications, publishJobs, siteJobs } from "../db/schema.js";
 import { insertPublishJobSchema } from "../db/validation.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { nextRetryAt, normalizePublishResult, type PublishResult } from "./errors.js";
@@ -225,12 +225,9 @@ export function completePublishJob(
       .where(eq(publishJobs.jobId, jobId))
       .run();
     deleteSupersededJobs(tx, job, jobId, postKey);
-    if (job.target === "telegram" && published && normalized.externalId && job.postId != null) {
-      const messageId = Number(normalized.externalId);
-      tx.update(publications).set({ telegramMessageId: messageId, updatedAt: now }).where(eq(publications.postId, job.postId)).run();
-      tx.update(drafts).set({ channelMessageId: messageId, updatedAt: now }).where(eq(drafts.postId, job.postId)).run();
-      tx.update(posts).set({ messageId, telegramUrl: normalized.url, updatedAt: now }).where(eq(posts.postKey, postKey)).run();
-    }
+    // `post_targets` is the canonical external-publication reference for every
+    // platform. Legacy Telegram message columns remain readable for history,
+    // but new delivery results never mutate the domain model for one platform.
     insertEvent(
       tx,
       postKey,

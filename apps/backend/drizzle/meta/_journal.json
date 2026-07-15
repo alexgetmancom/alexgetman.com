@@ -92,6 +92,13 @@
       "when": 1784261000000,
       "tag": "0012_video_studio_media_assets",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1784262000000,
+      "tag": "0013_interface_bindings",
+      "breakpoints": true
     }
   ]
 }
