@@ -35,7 +35,7 @@ function hasTargetMetric(post: PipelinePost, target: string, metricName: string)
 
 export function renderMetricSpan(val: number, className: string): string {
   const text = val > 0 ? formatMetricValue(val) : className === "mv" ? "0" : "—";
-  return `<span class="${className}">${escapeHtml(text)}</span>`;
+  return `<span class="${className}${val > 0 ? "" : " dim"}">${escapeHtml(text)}</span>`;
 }
 
 export function renderMetricSet(values: Record<DashboardMetricName, number>): string {
@@ -66,10 +66,10 @@ export function postMetricTotals(post: PipelinePost, targetIds: string[]): Recor
 export function targetCell(post: PipelinePost, target: string): string {
   const status = getTargetStatus(post, target);
   if (status === "publishing" || status === "queued") {
-    return '<span class="mv">~</span><span class="ml">~</span><span class="mr">~</span><span class="mp">~</span>';
+    return '<span class="mv dim">~</span><span class="ml dim">~</span><span class="mr dim">~</span><span class="mp dim">~</span>';
   }
   if (status !== "published") {
-    return '<span class="mv">—</span><span class="ml">—</span><span class="mr">—</span><span class="mp">—</span>';
+    return '<span class="mv dim">—</span><span class="ml dim">—</span><span class="mr dim">—</span><span class="mp dim">—</span>';
   }
 
   const views =
@@ -85,10 +85,11 @@ export function targetCell(post: PipelinePost, target: string): string {
   const renderSubCell = (value: number, label: string, name: DashboardMetricName) => {
     const hasMetric = hasTargetMetric(post, target, name);
     const text = !hasMetric ? "—" : value > 0 ? formatMetricValue(value) : "0";
+    const className = !hasMetric || value <= 0 ? `${label} dim` : label;
     if (url && label === "mv") {
-      return `<a class="metric-link" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer"><span class="${label}">${escapeHtml(text)}</span></a>`;
+      return `<a class="metric-link" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer"><span class="${className}">${escapeHtml(text)}</span></a>`;
     }
-    return `<span class="${label}">${escapeHtml(text)}</span>`;
+    return `<span class="${className}">${escapeHtml(text)}</span>`;
   };
 
   return (

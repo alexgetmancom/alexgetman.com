@@ -48,10 +48,11 @@ export function renderVideoSection(backendDb: BackendDb): string {
       ),
     ),
   ].join("");
+  const maxRowViews = Math.max(0, ...rows.map((row) => rowTotals(row).views));
   const tableRows = rows.length
-    ? rows.map((row) => renderVideoRow(row)).join("")
-    : '<tr><td colspan="6" class="note">Роликов пока нет.</td></tr>';
-  return `<section id="video" class="video-dashboard"><div class="grid video-stats">${cards}</div>${renderVideoChart(trend)}<div class="table-wrap"><table><thead><tr><th>Видео</th><th>Создано</th><th>План</th><th>▶️ YouTube</th><th>📸 Instagram</th><th>Σ</th></tr></thead><tbody>${tableRows}</tbody></table></div><p class="note">Подписчики — снимки канала/профиля. Их прирост показан рядом с роликами по времени, но API не позволяет честно приписать конкретного подписчика одному ролику.</p></section>`;
+    ? rows.map((row) => renderVideoRow(row, maxRowViews)).join("")
+    : '<tr><td colspan="7" class="note">Роликов пока нет.</td></tr>';
+  return `<section id="video" class="video-dashboard"><div class="grid video-stats">${cards}</div>${renderVideoChart(trend)}<div class="table-wrap"><table id="video-table"><thead><tr><th>Видео</th><th>Создано</th><th>План</th><th>▶️ YouTube</th><th>📸 Instagram</th><th>Σ</th><th class="text-center" title="Engagement rate: (лайки + комментарии) / просмотры">ER</th></tr></thead><tbody>${tableRows}</tbody></table></div><p class="note">Подписчики — снимки канала/профиля. Их прирост показан рядом с роликами по времени, но API не позволяет честно приписать конкретного подписчика одному ролику.</p></section>`;
 }
 
 function videoRows(backendDb: BackendDb): VideoRow[] {
@@ -77,13 +78,29 @@ function videoRows(backendDb: BackendDb): VideoRow[] {
   return drafts.map((draft) => ({ ...draft, targets: byDraft.get(draft.id) ?? [] }));
 }
 
-function renderVideoRow(row: VideoRow): string {
+function rowTotals(row: VideoRow): { views: number; likes: number; comments: number } {
   const youtube = row.targets.find((target) => target.target === "youtube_shorts");
   const instagram = row.targets.find((target) => target.target === "instagram_reels");
-  const total = [youtube, instagram]
+  return [youtube, instagram]
     .filter((target): target is VideoTarget => Boolean(target))
-    .reduce((value, target) => value + targetMetrics(target).views, 0);
-  return `<tr><td><b>#${row.id}</b> ${escapeHtml(row.label)}</td><td class="nowrap">${formatDate(row.createdAt)}</td><td class="nowrap">${formatDate(row.scheduledAt)}</td><td>${renderTarget(youtube)}</td><td>${renderTarget(instagram)}</td><td class="font-bold">${formatMetricValue(total)}</td></tr>`;
+    .reduce(
+      (total, target) => {
+        const metrics = targetMetrics(target);
+        return { views: total.views + metrics.views, likes: total.likes + metrics.likes, comments: total.comments + metrics.comments };
+      },
+      { views: 0, likes: 0, comments: 0 },
+    );
+}
+
+function renderVideoRow(row: VideoRow, maxViews: number): string {
+  const youtube = row.targets.find((target) => target.target === "youtube_shorts");
+  const instagram = row.targets.find((target) => target.target === "instagram_reels");
+  const totals = rowTotals(row);
+  const bar = maxViews
+    ? `<div class="sigma-bar sigma-bar-static mv"><i style="width:${Math.round((totals.views / maxViews) * 100)}%"></i></div>`
+    : "";
+  const er = totals.views > 0 ? `${(((totals.likes + totals.comments) / totals.views) * 100).toFixed(1)}%` : '<span class="dim">—</span>';
+  return `<tr><td><b>#${row.id}</b> ${escapeHtml(row.label)}</td><td class="nowrap">${formatDate(row.createdAt)}</td><td class="nowrap">${formatDate(row.scheduledAt)}</td><td>${renderTarget(youtube)}</td><td>${renderTarget(instagram)}</td><td class="font-bold">${formatMetricValue(totals.views)}${bar}</td><td class="text-center er-col">${er}</td></tr>`;
 }
 
 function renderTarget(target: VideoTarget | undefined): string {
@@ -162,20 +179,65 @@ function sumMetrics(
   return [...metrics.values()].reduce((total, value) => total + value[field], 0);
 }
 
+const VIDEO_SERIES = [
+  { field: "views" as const, label: "Просмотры", color: "#3987e5" },
+  { field: "likes" as const, label: "Лайки", color: "#199e70" },
+  { field: "comments" as const, label: "Комментарии", color: "#c98500" },
+];
+
 function renderVideoChart(points: VideoTrendPoint[]): string {
   if (points.length < 2) return '<p class="note video-chart-note">График появится после двух снимков метрик.</p>';
   const width = 960;
-  const height = 180;
-  const pad = { x: 16, y: 16 };
+  const height = 190;
+  const left = 46;
+  const right = 16;
+  const top = 16;
+  const bottom = 24;
+  const plotW = width - left - right;
+  const plotH = height - top - bottom;
   const max = Math.max(1, ...points.flatMap((point) => [point.views, point.likes, point.comments]));
-  const x = (index: number) => pad.x + (index * (width - pad.x * 2)) / Math.max(1, points.length - 1);
-  const y = (value: number) => height - pad.y - (value / max) * (height - pad.y * 2);
-  const line = (field: "views" | "likes" | "comments") =>
-    points.map((point, index) => `${x(index).toFixed(1)},${y(point[field]).toFixed(1)}`).join(" ");
-  const labels = (points.length > 6 ? [points[0], points[Math.floor(points.length / 2)], points[points.length - 1]] : points).filter(
-    (point): point is VideoTrendPoint => point != null,
+  const x = (index: number) => left + (index * plotW) / Math.max(1, points.length - 1);
+  const y = (value: number) => top + plotH - (value / max) * plotH;
+  let grid = "";
+  for (let i = 0; i < 3; i++) {
+    const gy = top + (plotH * i) / 2;
+    grid += `<line class="chart-grid" x1="${left}" y1="${gy.toFixed(1)}" x2="${width - right}" y2="${gy.toFixed(1)}"/>`;
+  }
+  const axis = [max, max / 2, 0]
+    .map(
+      (value, index) =>
+        `<text x="${left - 7}" y="${(top + (plotH * index) / 2 + 4).toFixed(1)}" text-anchor="end">${formatMetricValue(Math.round(value))}</text>`,
+    )
+    .join("");
+  const lines = VIDEO_SERIES.map(
+    (series) =>
+      `<polyline fill="none" stroke="${series.color}" stroke-width="2" class="chart-line" points="${points
+        .map((point, index) => `${x(index).toFixed(1)},${y(point[series.field]).toFixed(1)}`)
+        .join(" ")}"/>`,
+  ).join("");
+  const marks = points
+    .map((point, index) => {
+      const tooltip = `${point.day.slice(5)} · ${VIDEO_SERIES.map((series) => `${series.label.toLowerCase()}: ${formatMetricValue(point[series.field])}`).join(" · ")}`;
+      return VIDEO_SERIES.map(
+        (series) =>
+          `<circle class="chart-point" cx="${x(index).toFixed(1)}" cy="${y(point[series.field]).toFixed(1)}" r="2.6" fill="${series.color}"/>` +
+          `<circle class="chart-hit" cx="${x(index).toFixed(1)}" cy="${y(point[series.field]).toFixed(1)}" r="9" data-tooltip="${escapeHtml(tooltip)}"/>`,
+      ).join("");
+    })
+    .join("");
+  const labelPoints = (points.length > 6 ? [0, Math.floor(points.length / 2), points.length - 1] : points.map((_, index) => index)).filter(
+    (index, position, list) => list.indexOf(index) === position,
   );
-  return `<div class="metric-chart video-chart"><div class="metric-chart__legend"><span><i style="background:#58a6ff"></i>Просмотры</span><span><i style="background:#f778ba"></i>Лайки</span><span><i style="background:#a5d6ff"></i>Комментарии</span></div><svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Динамика метрик роликов"><line class="chart-grid" x1="${pad.x}" y1="${height / 2}" x2="${width - pad.x}" y2="${height / 2}"/><line class="chart-grid" x1="${pad.x}" y1="${height - pad.y}" x2="${width - pad.x}" y2="${height - pad.y}"/><polyline fill="none" stroke="#58a6ff" stroke-width="2" class="chart-line" points="${line("views")}"/><polyline fill="none" stroke="#f778ba" stroke-width="2" class="chart-line" points="${line("likes")}"/><polyline fill="none" stroke="#a5d6ff" stroke-width="2" class="chart-line" points="${line("comments")}"/></svg><div class="video-chart-labels">${labels.map((point) => `<span>${escapeHtml(point.day.slice(5))}</span>`).join("")}</div></div>`;
+  const xLabels = labelPoints
+    .map((index) => {
+      const point = points[index];
+      return point
+        ? `<text x="${x(index).toFixed(1)}" y="${height - 7}" text-anchor="middle">${escapeHtml(point.day.slice(5))}</text>`
+        : "";
+    })
+    .join("");
+  const legend = VIDEO_SERIES.map((series) => `<span><i style="background:${series.color}"></i>${series.label}</span>`).join("");
+  return `<div class="metric-chart video-chart"><div class="metric-chart__legend">${legend}</div><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Динамика метрик роликов">${grid}${axis}${lines}${marks}${xLabels}</svg><div class="chart-tooltip" id="chart-tooltip" hidden></div></div>`;
 }
 
 function stat(label: string, value: number, note?: string): string {
