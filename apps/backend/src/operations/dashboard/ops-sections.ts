@@ -1,4 +1,6 @@
+import type { BackendDb } from "../../db/client.js";
 import { creatorProfiles } from "../../db/schema.js";
+import type { BackendConfig } from "../../foundation/config.js";
 import { ORDERED_TARGETS } from "./assets.js";
 import { shortPipelineText } from "./format.js";
 import { escapeHtml } from "./html.js";
@@ -100,7 +102,3 @@ function metric(value: unknown): number {
 function label(platform: string): string {
   return platform.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
-
-import { studioAnalyticsDashboard } from "../../analytics/reports/studio-dashboard.js";
-import type { BackendDb } from "../../db/client.js";
-import type { BackendConfig } from "../../foundation/config.js";
