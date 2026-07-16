@@ -4,7 +4,7 @@ import type { BackendConfig } from "../../foundation/config.js";
 import { type StudioLocale as BotLocale, localize as ui } from "../../foundation/locale.js";
 import { metricNumber } from "../snapshots/creator-store.js";
 
-type AnalyticsSection = "overview" | "posts" | "video";
+type AnalyticsSection = "overview" | "audience" | "posts" | "video";
 type AnalyticsPeriod = 1 | 7 | 30;
 
 type StudioAnalyticsDashboard = {
@@ -47,6 +47,11 @@ export function studioAnalyticsDashboard(
     if (config.studio.modules.site) lines.push(`${ui(locale, "🌐 Site material views", "🌐 Просмотры материалов сайта")}: *${siteViews}*`);
     const stale = staleSources(backendDb);
     if (stale.length) lines.push(`\n⚠️ ${ui(locale, "Data attention", "Проверить данные")}: ${stale.join(", ")}`);
+  } else if (section === "audience") {
+    const profiles = audienceProfiles(backendDb, locale);
+    lines.push(
+      ...(profiles.length ? profiles : [ui(locale, "Audience data has not been collected yet.", "Данные об аудитории ещё не собраны.")]),
+    );
   } else if (section === "posts") {
     lines.push(`${ui(locale, "📝 Post views", "📝 Просмотры постов")}: *${post.views}*`);
     lines.push(`${ui(locale, "💬 Interactions", "💬 Реакции")}: *${post.interactions}*`);
@@ -72,9 +77,43 @@ export function studioAnalyticsDashboard(
 }
 
 function header(section: AnalyticsSection, period: string, locale: BotLocale): string {
+  if (section === "audience") return `👥 *${ui(locale, "Audience", "Аудитория")}*`;
   if (section === "posts") return `📝 *${ui(locale, `Posts · ${period}`, `Постинг · ${period}`)}*`;
   if (section === "video") return `🎬 *${ui(locale, `Video · ${period}`, `Видеопостинг · ${period}`)}*`;
   return `📊 *${ui(locale, `Overview · ${period}`, `Общая статистика · ${period}`)}*`;
+}
+
+function audienceProfiles(backendDb: BackendDb, locale: BotLocale): string[] {
+  const labels: Record<string, string> = {
+    bluesky: "Bluesky",
+    devto: "Dev.to",
+    facebook_en: "Facebook EN",
+    facebook_ru: "Facebook RU",
+    github: "GitHub",
+    instagram: "Instagram",
+    mastodon: "Mastodon",
+    telegram: "Telegram",
+    threads: "Threads",
+    x: "X",
+    youtube: "YouTube",
+  };
+  return backendDb.db
+    .select()
+    .from(creatorProfiles)
+    .all()
+    .sort((left, right) => (labels[left.platform] ?? left.platform).localeCompare(labels[right.platform] ?? right.platform))
+    .map((row) => {
+      const data = row.dataJson as Record<string, unknown>;
+      const followers = data.subscriberCount ?? data.followersCount;
+      const values: string[] = [];
+      if (followers != null) values.push(`${ui(locale, "followers", "подписчики")}: *${metricNumber(followers)}*`);
+      if (data.stars != null) values.push(`Stars: *${metricNumber(data.stars)}*`);
+      if (data.averageViewsPerPost != null)
+        values.push(`${ui(locale, "avg. views/post", "ср. просмотров/пост")}: ${metricNumber(data.averageViewsPerPost)}`);
+      if (!values.length)
+        values.push(ui(locale, "profile connected; follower count unavailable", "профиль подключён; число подписчиков недоступно"));
+      return `• *${labels[row.platform] ?? row.platform}* — ${values.join(" · ")}`;
+    });
 }
 
 function periodLabel(days: AnalyticsPeriod, locale: BotLocale): string {

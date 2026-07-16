@@ -144,7 +144,7 @@ const studioTools = [
   ),
   tool("studio_video_cancel", "Cancel an owned video publication.", { video_draft_id: integerSchema(1) }, ["video_draft_id"]),
   tool("studio_analytics_dashboard", "Read an analytics dashboard section for the authenticated Studio.", {
-    section: enumSchema(["overview", "posts", "video"]),
+    section: enumSchema(["overview", "audience", "posts", "video"]),
     days: { type: "integer", enum: [1, 7, 30] },
     locale: enumSchema(["ru", "en"]),
   }),
@@ -405,7 +405,7 @@ async function runStudioTool(
       break;
     }
     case "studio_analytics_dashboard": {
-      const section = enumValue(args.section ?? "overview", "section", ["overview", "posts", "video"] as const);
+      const section = enumValue(args.section ?? "overview", "section", ["overview", "audience", "posts", "video"] as const);
       const days = enumValue(args.days ?? 7, "days", [1, 7, 30] as const);
       const locale = enumValue(args.locale ?? "ru", "locale", ["ru", "en"] as const);
       return studio.analytics.dashboard(section, days, locale);

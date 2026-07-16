@@ -1,5 +1,6 @@
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
+import { createChannelStoryClient } from "../../foundation/external/telegram-session.js";
 import { oauthAuthorization } from "../../foundation/external/x-oauth.js";
 import { youtubeAccessToken } from "../../foundation/external/youtube.js";
 import { requestJson } from "../../foundation/http.js";
@@ -121,7 +122,16 @@ type MastodonProfile = {
 type GitHubProfile = { login?: string; followers?: number; following?: number };
 type GitHubRepo = { stargazers_count?: number };
 type TelegramCount = { ok?: boolean; result?: number };
+type TelegramBroadcastStats = {
+  _?: string;
+  followers?: { current?: number; previous?: number };
+  viewsPerPost?: { current?: number; previous?: number };
+  sharesPerPost?: { current?: number; previous?: number };
+  reactionsPerPost?: { current?: number; previous?: number };
+  period?: { minDate?: number; maxDate?: number };
+};
 type ThreadsProfile = { id?: string; username?: string };
+type DevtoArticle = { user?: { username?: string; name?: string } };
 
 export async function syncFacebookProfile(
   config: BackendConfig,
@@ -275,7 +285,18 @@ async function syncGitHubProfile(config: BackendConfig, backendDb: BackendDb, fe
 
 async function syncTelegramProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
   try {
-    if (!config.controllerBotToken) return;
+    const mtprotoMetrics = await collectTelegramChannelStats(config);
+    if (mtprotoMetrics) {
+      recordProfileSnapshot(backendDb, {
+        platform: "telegram",
+        account: config.CHANNEL_USERNAME.replace(/^@/, ""),
+        source: "telegram_mtproto_stats",
+        metrics: mtprotoMetrics,
+      });
+      markSynced(backendDb, "telegram_profile");
+      return;
+    }
+    if (!config.controllerBotToken) throw new Error("Telegram channel credentials are missing");
     const result = await requestJson<TelegramCount>(
       fetchImpl,
       `${config.TELEGRAM_API_BASE_URL.replace(/\/$/, "")}/bot${config.controllerBotToken}/getChatMemberCount`,
@@ -296,6 +317,33 @@ async function syncTelegramProfile(config: BackendConfig, backendDb: BackendDb, 
   } catch (error) {
     markSynced(backendDb, "telegram_profile", error instanceof Error ? error.message : String(error));
   }
+}
+
+async function collectTelegramChannelStats(config: BackendConfig): Promise<Record<string, number> | null> {
+  if (!config.TELEGRAM_CHANNEL_STORIES_API_ID || !config.TELEGRAM_CHANNEL_STORIES_API_HASH || !config.TELEGRAM_CHANNEL_STORIES_SESSION)
+    return null;
+  const client = createChannelStoryClient(config);
+  await client.connect();
+  try {
+    const channel = await client.resolveChannel(`@${config.CHANNEL_USERNAME.replace(/^@/, "")}`, true);
+    const stats = (await client.call({ _: "stats.getBroadcastStats", channel })) as TelegramBroadcastStats;
+    if (stats._ !== "stats.broadcastStats") throw new Error("Telegram returned an unexpected channel statistics response");
+    return telegramChannelMetrics(stats);
+  } finally {
+    await client.destroy();
+  }
+}
+
+export function telegramChannelMetrics(stats: TelegramBroadcastStats): Record<string, number> {
+  return {
+    followersCount: metricNumber(stats.followers?.current),
+    followersPrevious: metricNumber(stats.followers?.previous),
+    averageViewsPerPost: metricNumber(stats.viewsPerPost?.current),
+    averageSharesPerPost: metricNumber(stats.sharesPerPost?.current),
+    averageReactionsPerPost: metricNumber(stats.reactionsPerPost?.current),
+    periodStart: metricNumber(stats.period?.minDate),
+    periodEnd: metricNumber(stats.period?.maxDate),
+  };
 }
 
 async function syncThreadsProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
@@ -323,15 +371,28 @@ async function syncDevtoProfile(config: BackendConfig, backendDb: BackendDb, fet
   try {
     if (!config.DEVTO_API_KEY) return;
     const headers = { "api-key": config.DEVTO_API_KEY, "User-Agent": "alexgetman-backend/1.0" };
-    const user = await requestJson<{ username?: string; name?: string }>(fetchImpl, "https://dev.to/api/users/me", { headers });
-    if (!user.username) throw new Error("Dev.to profile response has no username");
-    const followers = await countDevtoPages(fetchImpl, "https://dev.to/api/followers/users?per_page=1000", headers);
+    // Dev.to accepts a publishing token for articles/me but may reject users/me.
+    // Derive the account from the authenticated article payload instead of requiring
+    // a broader token scope just to collect this optional profile projection.
+    const firstArticles = await requestJson<DevtoArticle[]>(fetchImpl, "https://dev.to/api/articles/me?per_page=1&page=1", { headers });
+    const user = firstArticles[0]?.user;
     const posts = await countDevtoPages(fetchImpl, "https://dev.to/api/articles/me?per_page=1000", headers);
+    let followers: number | undefined;
+    try {
+      followers = await countDevtoPages(fetchImpl, "https://dev.to/api/followers/users?per_page=1000", headers);
+    } catch {
+      // The followers endpoint is optional and currently returns 5xx for some
+      // authenticated Dev.to accounts. Keep article analytics healthy instead.
+    }
     recordProfileSnapshot(backendDb, {
       platform: "devto",
-      account: user.username,
+      account: user?.username ?? "devto",
       source: "devto_api",
-      metrics: { name: user.name ?? user.username, followersCount: followers, postsCount: posts },
+      metrics: {
+        name: user?.name ?? user?.username ?? "Dev.to",
+        ...(followers == null ? {} : { followersCount: followers }),
+        postsCount: posts,
+      },
     });
     markSynced(backendDb, "devto_profile");
   } catch (error) {

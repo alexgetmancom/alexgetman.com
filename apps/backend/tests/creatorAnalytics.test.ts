@@ -216,6 +216,7 @@ describe("creator analytics", () => {
         followersCount: 48,
         stars: 11,
       });
+      expect(studioAnalyticsDashboard(backendDb, config, "audience", 7, "ru").text).toContain("Stars: *11*");
     } finally {
       backendDb.close();
     }

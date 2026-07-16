@@ -4,7 +4,7 @@ import type { BackendConfig } from "../foundation/config.js";
 import { studioServices } from "../studio/services/index.js";
 import { botLocale, ui } from "./i18n.js";
 
-type AnalyticsSection = "overview" | "posts" | "video";
+type AnalyticsSection = "overview" | "audience" | "posts" | "video";
 
 /** Telegram adapter for the Analytics Studio screen. The analytics read model itself stays transport-neutral. */
 export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<boolean> {
@@ -22,7 +22,8 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
   }
   if (data.startsWith("analytics_section:")) {
     const [, sectionValue, daysValue] = data.split(":");
-    const section: AnalyticsSection = sectionValue === "posts" || sectionValue === "video" ? sectionValue : "overview";
+    const section: AnalyticsSection =
+      sectionValue === "audience" || sectionValue === "posts" || sectionValue === "video" ? sectionValue : "overview";
     await ctx.answerCallbackQuery();
     await showAnalyticsDashboard(ctx, backendDb, config, section, analyticsPeriod(Number(daysValue)));
     return true;
@@ -99,6 +100,7 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
 async function showAnalyticsHome(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<void> {
   const locale = botLocale(backendDb, Number(ctx.from?.id));
   const keyboard = new InlineKeyboard().text(ui(locale, "📊 Overview", "📊 Общая"), "analytics_section:overview:7").row();
+  keyboard.text(ui(locale, "👥 Audience", "👥 Аудитория"), "analytics_section:audience:7").row();
   if (config.studio.modules.text_posting) keyboard.text(ui(locale, "📝 Posts", "📝 Постинг"), "analytics_section:posts:7").row();
   if (config.studio.modules.video_posting) keyboard.text(ui(locale, "🎬 Video", "🎬 Видеопостинг"), "analytics_section:video:7").row();
   keyboard.text(ui(locale, "← Menu", "← Меню"), "menu_home");
@@ -121,12 +123,15 @@ async function showAnalyticsDashboard(
   const locale = botLocale(backendDb, Number(ctx.from?.id));
   const dashboard = studioServices(backendDb, config).analytics.dashboard(section, days, locale);
   const callback = (nextDays: 1 | 7 | 30) => `analytics_section:${section}:${nextDays}`;
-  const keyboard = new InlineKeyboard()
-    .text(ui(locale, "Today", "Сегодня"), callback(1))
-    .text(ui(locale, "7 days", "7 дней"), callback(7))
-    .text(ui(locale, "30 days", "30 дней"), callback(30))
-    .row();
+  const keyboard = new InlineKeyboard();
+  if (section !== "audience")
+    keyboard
+      .text(ui(locale, "Today", "Сегодня"), callback(1))
+      .text(ui(locale, "7 days", "7 дней"), callback(7))
+      .text(ui(locale, "30 days", "30 дней"), callback(30))
+      .row();
   if (section !== "overview") keyboard.text(ui(locale, "📊 Overview", "📊 Общая"), "analytics_section:overview:7");
+  if (section !== "audience") keyboard.text(ui(locale, "👥 Audience", "👥 Аудитория"), "analytics_section:audience:7");
   if (config.studio.modules.text_posting && section !== "posts")
     keyboard.text(ui(locale, "📝 Posts", "📝 Постинг"), "analytics_section:posts:7");
   if (config.studio.modules.video_posting && section !== "video")
