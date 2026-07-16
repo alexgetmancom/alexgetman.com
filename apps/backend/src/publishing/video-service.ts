@@ -269,7 +269,7 @@ async function probeVideo(source: string, size: number): Promise<VideoTechnicalC
   };
 }
 
-export type VideoCancellation = {
+type VideoCancellation = {
   /** Already-public targets are deliberately not deleted by automation. */
   manualRemoval: Array<{ target: VideoTarget; url: string | null }>;
   /** Private scheduled uploads which can be safely kept private. */

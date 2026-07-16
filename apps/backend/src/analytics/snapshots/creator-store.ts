@@ -21,7 +21,7 @@ export function markSynced(backendDb: BackendDb, source: string, error: string |
     .run();
 }
 
-export function upsertProfile(backendDb: BackendDb, platform: string, data: Record<string, unknown>): void {
+function upsertProfile(backendDb: BackendDb, platform: string, data: Record<string, unknown>): void {
   const updatedAt = new Date().toISOString();
   backendDb.db
     .insert(creatorProfiles)

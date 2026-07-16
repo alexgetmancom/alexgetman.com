@@ -334,7 +334,7 @@ async function collectTelegramChannelStats(config: BackendConfig): Promise<Recor
   }
 }
 
-export function telegramChannelMetrics(stats: TelegramBroadcastStats): Record<string, number> {
+function telegramChannelMetrics(stats: TelegramBroadcastStats): Record<string, number> {
   return {
     followersCount: metricNumber(stats.followers?.current),
     followersPrevious: metricNumber(stats.followers?.previous),
