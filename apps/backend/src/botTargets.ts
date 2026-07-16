@@ -26,10 +26,15 @@ const targetById = Object.fromEntries(TARGETS.map(([id, label, locale, kind]) =>
   TargetId,
   { id: TargetId; label: string; locale: TargetLocale; kind: "telegram" | "site" | "social" }
 >;
-export const DEFAULT_TARGETS = Object.fromEntries(TARGETS.map(([id]) => [id, true])) as Record<TargetId, boolean>;
+const ALL_TARGETS = Object.fromEntries(TARGETS.map(([id]) => [id, true])) as Record<TargetId, boolean>;
+
+// A new ordinary post starts in a deliberately manual state. LinkedIn is
+// temporarily restricted and X is normally published by hand; both remain
+// selectable on the platform screen and in the explicit Full preset.
+export const DEFAULT_TARGETS = { ...ALL_TARGETS, linkedin: false, x: false } as Record<TargetId, boolean>;
 
 export const PRESETS: Record<string, Record<TargetId, boolean>> = {
-  full: { ...DEFAULT_TARGETS },
+  full: { ...ALL_TARGETS },
   ru: Object.fromEntries(TARGETS.map(([id, , locale]) => [id, locale === "ru"])) as Record<TargetId, boolean>,
   en: Object.fromEntries(TARGETS.map(([id, , locale]) => [id, locale === "en"])) as Record<TargetId, boolean>,
   tg: Object.fromEntries(TARGETS.map(([id]) => [id, id === "telegram"])) as Record<TargetId, boolean>,

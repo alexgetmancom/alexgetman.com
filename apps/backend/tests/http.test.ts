@@ -246,6 +246,7 @@ describe("Astro endpoint controller", () => {
       const html = await dashboard.text();
       expect(dashboard.status).toBe(200);
       expect(html).toContain("Pipeline");
+      expect(html).toContain("Аудитория и profile metrics");
       expect(html).toContain("Credentials");
       expect(html).toContain("Health: credentials и diagnostics");
       expect(html).toContain("Lifecycle");

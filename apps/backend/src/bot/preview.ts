@@ -131,5 +131,5 @@ export function modeLabel(mode: keyof typeof PRESETS | "manual", locale: BotLoca
   if (mode === "ru") return ui(locale, "RU only", "Только RU");
   if (mode === "en") return ui(locale, "EN only", "Только EN");
   if (mode === "tg") return ui(locale, "Telegram only", "Только Telegram");
-  return ui(locale, "Custom", "Свой");
+  return ui(locale, "Manual", "Ручной");
 }

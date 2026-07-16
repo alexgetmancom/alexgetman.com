@@ -4,7 +4,7 @@ import { finalizePendingAlbums } from "../src/bot/albums.js";
 import { getPostAdminState, setPostAdminState } from "../src/bot/post-state.js";
 import { draftPreview } from "../src/bot/preview.js";
 import { postProgress } from "../src/bot/progress.js";
-import { TARGETS, targetLocale } from "../src/botTargets.js";
+import { DEFAULT_TARGETS, TARGETS, targetLocale } from "../src/botTargets.js";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import { entitiesToHtml } from "../src/content/text.js";
 import { type BackendDb, openBackendDb } from "../src/db/client.js";
@@ -26,7 +26,7 @@ describe("Telegram controller flow", () => {
     backendDb = openBackendDb(":memory:");
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Card", textEn: "Card", entities: [], media: [] });
     const preview = draftPreview(backendDb, draftId);
-    expect(preview.text).toContain("Mode: *Full*");
+    expect(preview.text).toContain("Mode: *Manual*");
     expect(JSON.stringify(preview.keyboard)).toContain(`cycle_mode:${draftId}`);
     expect(JSON.stringify(preview.keyboard)).toContain(`platforms:${draftId}`);
     expect(JSON.stringify(preview.keyboard)).not.toContain("use_ru_media");
@@ -38,7 +38,7 @@ describe("Telegram controller flow", () => {
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Карточка", textEn: "Card", entities: [], media: [] });
     const preview = draftPreview(backendDb, draftId);
 
-    expect(preview.text).toContain("Режим: *Полный*");
+    expect(preview.text).toContain("Режим: *Ручной*");
     expect(JSON.stringify(preview.keyboard)).toContain("Опубликовать");
     expect(JSON.stringify(preview.keyboard)).toContain("Запланировать");
   });
@@ -72,13 +72,11 @@ describe("Telegram controller flow", () => {
       "github_ru",
       "instagram_stories",
       "instagram_stories_ru",
-      "linkedin",
       "mastodon",
       "telegram",
       "telegram_stories",
       "threads_en",
       "threads_ru",
-      "x",
     ]);
     expect(jobs.every((job) => job.status === "queued")).toBe(true);
     expect(siteJobs).toEqual([
@@ -108,7 +106,7 @@ describe("Telegram controller flow", () => {
       publish_at: string;
     }>;
     expect(jobs.find((job) => job.target === "telegram")?.publish_at).toBe(ruAt.toISOString());
-    expect(jobs.find((job) => job.target === "linkedin")?.publish_at).toBe(enAt.toISOString());
+    expect(jobs.find((job) => job.target === "facebook")?.publish_at).toBe(enAt.toISOString());
     expect(backendDb.sqlite.prepare("SELECT reason, next_attempt_at FROM site_jobs WHERE post_id=? ORDER BY reason").all(postId)).toEqual([
       { reason: "publish_en", next_attempt_at: enAt.toISOString() },
       { reason: "publish_ru", next_attempt_at: ruAt.toISOString() },
@@ -188,7 +186,9 @@ describe("Telegram controller flow", () => {
     publishDraftToQueue(backendDb, draftId);
 
     const jobs = backendDb.sqlite
-      .prepare("SELECT target,payload_json FROM publish_jobs WHERE target IN ('telegram','threads_ru','x','github_en') ORDER BY target")
+      .prepare(
+        "SELECT target,payload_json FROM publish_jobs WHERE target IN ('telegram','threads_ru','facebook','github_en') ORDER BY target",
+      )
       .all() as Array<{ target: string; payload_json: string }>;
     const payloads = Object.fromEntries(jobs.map((job) => [job.target, JSON.parse(job.payload_json) as Record<string, unknown>]));
     for (const target of ["telegram", "threads_ru"]) {
@@ -201,7 +201,7 @@ describe("Telegram controller flow", () => {
       });
       expect(payloads[target]).not.toHaveProperty("media_en");
     }
-    for (const target of ["x", "github_en"]) {
+    for (const target of ["facebook", "github_en"]) {
       expect(payloads[target]).toMatchObject({
         locale: "en",
         text: "Edited English text",
@@ -236,7 +236,7 @@ describe("Telegram controller flow", () => {
       expect(payload.text).toBe(locale === "ru" ? "Русский текст" : "English text");
       expect(payload.media).toEqual([{ type: "photo", file_id: locale === "ru" ? "ru-image" : "en-image" }]);
     }
-    expect(jobs).toHaveLength(TARGETS.filter(([, , , kind]) => kind !== "site").length);
+    expect(jobs).toHaveLength(TARGETS.filter(([id, , , kind]) => kind !== "site" && DEFAULT_TARGETS[id]).length);
   });
 
   it("preserves Telegram entities in target payloads and site HTML", () => {
@@ -263,13 +263,13 @@ describe("Telegram controller flow", () => {
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Progress", textEn: "Progress", entities: [], media: [] });
     const postId = publishDraftToQueue(backendDb, draftId);
     backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE post_id=? AND target='telegram'").run(postId);
-    backendDb.sqlite.prepare("UPDATE publish_jobs SET status='publishing' WHERE post_id=? AND target='linkedin'").run(postId);
+    backendDb.sqlite.prepare("UPDATE publish_jobs SET status='publishing' WHERE post_id=? AND target='facebook'").run(postId);
     backendDb.sqlite
       .prepare("UPDATE publish_jobs SET status='failed', last_error='rate limit' WHERE post_id=? AND target='bluesky'")
       .run(postId);
 
     const progress = postProgress(backendDb, draftId, true);
-    expect(progress.text).toContain("Progress: *2 / 17*");
+    expect(progress.text).toContain("Progress: *2 / 15*");
     expect(progress.text).toContain("✅ Published: 1");
     expect(progress.text).toContain("🔄 Publishing: 1");
     expect(progress.text).toContain("❌ Failed: 1");

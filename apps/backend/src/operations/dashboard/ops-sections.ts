@@ -3,6 +3,12 @@ import { shortPipelineText } from "./format.js";
 import { escapeHtml } from "./html.js";
 import type { OpsPayload } from "./types.js";
 
+/** Reuses the Analytics read model; Command Center only renders it. */
+export function renderAudienceSection(backendDb: BackendDb, config: BackendConfig): string {
+  const dashboard = studioAnalyticsDashboard(backendDb, config, "audience", 7, "ru");
+  return `<section><h2>👥 Аудитория</h2><p class="note">Суточные снимки по подключённым площадкам. Это сумма подписок, а не число уникальных людей.</p><div class="audience-report">${renderMarkdown(dashboard.text)}</div></section>`;
+}
+
 export function renderRepairSection(ref: string, messageId: string): string {
   const options = ORDERED_TARGETS.map((target) => `<option value="${escapeHtml(target.id)}">${escapeHtml(target.label)}</option>`).join(
     "\n",
@@ -59,3 +65,13 @@ export function renderDiagnosticsSection(ops: OpsPayload): string {
       .join("\n") || "<tr><td colspan='4'>empty</td></tr>";
   return `<section><h2>Errors</h2><table><thead><tr><th>Message</th><th>Target</th><th>Status</th><th>Error</th></tr></thead><tbody>${errors}</tbody></table></section><section><h2>Lifecycle</h2><table><thead><tr><th>Message</th><th>State</th><th>Reason</th><th>Updated</th></tr></thead><tbody>${lifecycle}</tbody></table></section>`;
 }
+
+function renderMarkdown(value: string): string {
+  return escapeHtml(value)
+    .replace(/\*([^*\n]+)\*/g, "<strong>$1</strong>")
+    .replace(/\n/g, "<br>");
+}
+
+import { studioAnalyticsDashboard } from "../../analytics/reports/studio-dashboard.js";
+import type { BackendDb } from "../../db/client.js";
+import type { BackendConfig } from "../../foundation/config.js";

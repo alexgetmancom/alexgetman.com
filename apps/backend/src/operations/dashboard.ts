@@ -1,6 +1,12 @@
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
-import { renderCredentialsSection, renderDiagnosticsSection, renderQueueSection, renderRepairSection } from "./dashboard/ops-sections.js";
+import {
+  renderAudienceSection,
+  renderCredentialsSection,
+  renderDiagnosticsSection,
+  renderQueueSection,
+  renderRepairSection,
+} from "./dashboard/ops-sections.js";
 import { renderPipelineSection } from "./dashboard/pipeline-section.js";
 import { renderDashboardShell } from "./dashboard/shell.js";
 import { operationsService } from "./service.js";
@@ -13,7 +19,9 @@ export function renderDashboard(config: BackendConfig, backendDb: BackendDb, wee
       <h1>Command Center</h1>
       <p class="note">Pipeline, очередь, состояние интеграций и аварийные действия в одном месте.</p>
     </header>
+    <nav class="dashboard-tabs"><a href="#pipeline">Pipeline</a><a href="#audience">Аудитория</a><a href="#queue">Queue</a><a href="#health">Health</a></nav>
     <section id="pipeline"><h2>Pipeline</h2>${renderPipelineSection(weekOffset, service.pipeline(weekOffset))}</section>
+    <details id="audience" open><summary>Аудитория и profile metrics</summary>${renderAudienceSection(backendDb, config)}</details>
     <details id="queue"><summary>Queue и черновики</summary>${renderQueueSection(ops)}</details>
     <details id="health"><summary>Health: credentials и diagnostics</summary>${renderCredentialsSection(ops)}${renderDiagnosticsSection(ops)}</details>
     <details id="repair"><summary>Emergency repair</summary>${renderRepairSection(ref, messageId)}</details>
