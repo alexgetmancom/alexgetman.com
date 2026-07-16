@@ -1,3 +1,4 @@
+import { creatorProfiles } from "../../db/schema.js";
 import { ORDERED_TARGETS } from "./assets.js";
 import { shortPipelineText } from "./format.js";
 import { escapeHtml } from "./html.js";
@@ -5,8 +6,33 @@ import type { OpsPayload } from "./types.js";
 
 /** Reuses the Analytics read model; Command Center only renders it. */
 export function renderAudienceSection(backendDb: BackendDb, config: BackendConfig): string {
-  const dashboard = studioAnalyticsDashboard(backendDb, config, "audience", 7, "ru");
-  return `<section><h2>👥 Аудитория</h2><p class="note">Суточные снимки по подключённым площадкам. Это сумма подписок, а не число уникальных людей.</p><div class="audience-report">${renderMarkdown(dashboard.text)}</div></section>`;
+  if (!config.studio.modules.analytics) return "";
+  const rows = backendDb.db
+    .select()
+    .from(creatorProfiles)
+    .all()
+    .map((profile) => {
+      const data = profile.dataJson as Record<string, unknown>;
+      return {
+        platform: profile.platform,
+        account: String(data.username ?? data.title ?? profile.platform),
+        followers: metric(data.subscriberCount ?? data.followersCount),
+        stars: metric(data.stars),
+        views: metric(data.averageViewsPerPost),
+      };
+    })
+    .sort((left, right) => right.followers - left.followers || left.platform.localeCompare(right.platform));
+  if (!rows.length) return "";
+  const cards = rows
+    .map((item) => `<span class="audience-card"><strong>${escapeHtml(label(item.platform))}</strong><b>${item.followers || "—"}</b></span>`)
+    .join("");
+  const details = rows
+    .map(
+      (item) =>
+        `<tr><td>${escapeHtml(label(item.platform))}</td><td>${escapeHtml(item.account)}</td><td>${item.followers || "—"}</td><td>${item.stars || "—"}</td><td>${item.views || "—"}</td></tr>`,
+    )
+    .join("");
+  return `<div class="audience-strip"><div class="audience-cards">${cards}</div><details><summary>Показать больше</summary><div class="table-wrap"><table><thead><tr><th>Площадка</th><th>Аккаунт</th><th>Подписчики</th><th>Stars</th><th>Ср. просмотры/пост</th></tr></thead><tbody>${details}</tbody></table></div></details></div>`;
 }
 
 export function renderRepairSection(ref: string, messageId: string): string {
@@ -66,10 +92,13 @@ export function renderDiagnosticsSection(ops: OpsPayload): string {
   return `<section><h2>Errors</h2><table><thead><tr><th>Message</th><th>Target</th><th>Status</th><th>Error</th></tr></thead><tbody>${errors}</tbody></table></section><section><h2>Lifecycle</h2><table><thead><tr><th>Message</th><th>State</th><th>Reason</th><th>Updated</th></tr></thead><tbody>${lifecycle}</tbody></table></section>`;
 }
 
-function renderMarkdown(value: string): string {
-  return escapeHtml(value)
-    .replace(/\*([^*\n]+)\*/g, "<strong>$1</strong>")
-    .replace(/\n/g, "<br>");
+function metric(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function label(platform: string): string {
+  return platform.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 import { studioAnalyticsDashboard } from "../../analytics/reports/studio-dashboard.js";

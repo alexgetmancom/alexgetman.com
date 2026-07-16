@@ -11,7 +11,16 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
   const data = ctx.callbackQuery?.data ?? "";
   if (data === "analytics_home") {
     await ctx.answerCallbackQuery();
-    await showAnalyticsHome(ctx, backendDb, config);
+    await showAnalyticsDashboard(ctx, backendDb, config, "overview", 7);
+    return true;
+  }
+  if (data === "archive_home") {
+    const locale = botLocale(backendDb, Number(ctx.from?.id));
+    const keyboard = new InlineKeyboard().text(ui(locale, "📚 Post archive", "📚 Архив постов"), "analytics_post_archive:0");
+    if (config.studio.modules.video_posting) keyboard.row().text(ui(locale, "🎬 Video archive", "🎬 Архив роликов"), "analytics_archive:0");
+    keyboard.row().text(ui(locale, "← Menu", "← Меню"), "menu_home");
+    await ctx.answerCallbackQuery();
+    await ctx.editMessageText(ui(locale, "📚 Archive", "📚 Архив"), { reply_markup: keyboard });
     return true;
   }
   if (data === "analytics_total" || data.startsWith("analytics_period:")) {
@@ -95,20 +104,6 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
   return true;
 }
 
-/** Root navigation is deliberately separate from a dashboard/archives so the
- * main-menu Analytics button never appears to loop back into a post archive. */
-async function showAnalyticsHome(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<void> {
-  const locale = botLocale(backendDb, Number(ctx.from?.id));
-  const keyboard = new InlineKeyboard().text(ui(locale, "📊 Overview", "📊 Общая"), "analytics_section:overview:7").row();
-  keyboard.text(ui(locale, "👥 Audience", "👥 Аудитория"), "analytics_section:audience:7").row();
-  if (config.studio.modules.text_posting) keyboard.text(ui(locale, "📝 Posts", "📝 Постинг"), "analytics_section:posts:7").row();
-  if (config.studio.modules.video_posting) keyboard.text(ui(locale, "🎬 Video", "🎬 Видеопостинг"), "analytics_section:video:7").row();
-  keyboard.text(ui(locale, "← Menu", "← Меню"), "menu_home");
-  await ctx.editMessageText(ui(locale, "📊 Analytics\n\nChoose a section.", "📊 Статистика\n\nВыберите раздел."), {
-    reply_markup: keyboard,
-  });
-}
-
 function analyticsPeriod(value: number): 1 | 7 | 30 {
   return value === 1 || value === 30 ? value : 7;
 }
@@ -124,12 +119,11 @@ async function showAnalyticsDashboard(
   const dashboard = studioServices(backendDb, config).analytics.dashboard(section, days, locale);
   const callback = (nextDays: 1 | 7 | 30) => `analytics_section:${section}:${nextDays}`;
   const keyboard = new InlineKeyboard();
-  if (section !== "audience")
-    keyboard
-      .text(ui(locale, "Today", "Сегодня"), callback(1))
-      .text(ui(locale, "7 days", "7 дней"), callback(7))
-      .text(ui(locale, "30 days", "30 дней"), callback(30))
-      .row();
+  keyboard
+    .text(ui(locale, "Today", "Сегодня"), callback(1))
+    .text(ui(locale, "7 days", "7 дней"), callback(7))
+    .text(ui(locale, "30 days", "30 дней"), callback(30))
+    .row();
   if (section !== "overview") keyboard.text(ui(locale, "📊 Overview", "📊 Общая"), "analytics_section:overview:7");
   if (section !== "audience") keyboard.text(ui(locale, "👥 Audience", "👥 Аудитория"), "analytics_section:audience:7");
   if (config.studio.modules.text_posting && section !== "posts")

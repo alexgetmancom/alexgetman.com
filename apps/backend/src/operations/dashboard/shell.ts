@@ -12,10 +12,18 @@ export function renderDashboardShell(body: string): string {
     h1,h2 { color:#fff; }
     .dashboard-heading { margin-bottom:12px; }
     .dashboard-heading h1 { margin-bottom:4px; }
-    .dashboard-tabs { display:flex; gap:8px; flex-wrap:wrap; margin:0 0 12px; }
+    .dashboard-tabs { display:flex; gap:8px; flex-wrap:wrap; margin:0 0 8px; }
     .dashboard-tabs a { border:1px solid #30363d; border-radius:16px; padding:6px 11px; text-decoration:none; color:#c9d1d9; background:#161b22; }
     .dashboard-tabs a:hover { border-color:#58a6ff; color:#58a6ff; }
-    .audience-report { line-height:1.7; }
+    .overview { padding:0; border:0; background:transparent; overflow:visible; }
+    .audience-strip { margin:0 0 8px; padding:8px; border:1px solid #30363d; border-radius:8px; background:#161b22; }
+    .audience-cards { display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; }
+    .audience-card { flex:0 0 auto; min-width:96px; padding:7px 10px; border:1px solid #30363d; border-radius:6px; background:#0d1117; }
+    .audience-card strong,.audience-card b { display:block; }
+    .audience-card strong { color:#8b949e; font-size:12px; }
+    .audience-card b { color:#58a6ff; font-size:18px; margin-top:3px; }
+    .audience-strip details { margin:8px 0 0; }
+    .audience-strip details > summary { font-size:13px; padding:7px; }
     .command-login { max-width:560px; margin:12vh auto; padding:24px; }
     .login-error { color:#ff7b72; }
     .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin:12px 0 18px; }

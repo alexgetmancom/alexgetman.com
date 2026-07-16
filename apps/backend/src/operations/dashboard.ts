@@ -15,17 +15,11 @@ export function renderDashboard(config: BackendConfig, backendDb: BackendDb, wee
   const service = operationsService(backendDb, config);
   const ops = service.dashboard();
   const body = `
-    <header class="dashboard-heading">
-      <h1>Command Center</h1>
-      <p class="note">Pipeline, очередь, состояние интеграций и аварийные действия в одном месте.</p>
-    </header>
-    <nav class="dashboard-tabs"><a href="#pipeline">Pipeline</a><a href="#audience">Аудитория</a><a href="#queue">Queue</a><a href="#health">Health</a></nav>
-    <section id="pipeline"><h2>Pipeline</h2>${renderPipelineSection(weekOffset, service.pipeline(weekOffset))}</section>
-    <details id="audience" open><summary>Аудитория и profile metrics</summary>${renderAudienceSection(backendDb, config)}</details>
+    <nav class="dashboard-tabs"><a href="#overview">Обзор</a><a href="#queue">Очередь</a><a href="#health">Health</a></nav>
+    <section id="overview" class="overview">${renderAudienceSection(backendDb, config)}${renderPipelineSection(weekOffset, service.pipeline(weekOffset))}</section>
     <details id="queue"><summary>Queue и черновики</summary>${renderQueueSection(ops)}</details>
     <details id="health"><summary>Health: credentials и diagnostics</summary>${renderCredentialsSection(ops)}${renderDiagnosticsSection(ops)}</details>
-    <details id="repair"><summary>Emergency repair</summary>${renderRepairSection(ref, messageId)}</details>
-    <details id="json"><summary>JSON для агентов</summary><section><p><a href="/api/command-center">/api/command-center</a> — очередь, credentials, diagnostics и последние действия. <a href="/api/pipeline-status?week_offset=${weekOffset}">/api/pipeline-status</a> — неделя pipeline.</p><p class="note">Оба API требуют тот же Command Center token. Старый <code>/api/ops-dashboard</code> оставлен как совместимый alias.</p></section></details>`;
+    <details id="repair"><summary>Emergency repair</summary>${renderRepairSection(ref, messageId)}</details>`;
   return renderDashboardShell(body);
 }
 

@@ -123,7 +123,7 @@ describe("metrics cycle", () => {
 
 describe("Telegram public metrics", () => {
   it("parses compact views and sums reactions", async () => {
-    const html = `<section><div data-post="alexgetmancom/42"><span class="tgme_widget_message_views">1.2K</span><span class="tgme_reaction"><i></i>3</span><span class="tgme_reaction"><i></i>2</span></div></section>`;
+    const html = `<section><div data-post="alexgetmancom/523"><span class="tgme_widget_message_views">1.2K</span><span class="tgme_reaction"><i></i>3</span><span class="tgme_reaction"><i></i>2</span></div></section>`;
     const fetchImpl = mock(async () => new Response(html, { status: 200 })) as unknown as typeof fetch;
     const collector = createMetricCollectors(loadConfig({}), fetchImpl).telegram;
     if (!collector) throw new Error("Telegram collector is missing");
@@ -168,8 +168,8 @@ function task(target: string): MetricTask {
     checkCount: 0,
     messageId: 42,
     dateUtc: new Date().toISOString(),
-    externalId: "42",
-    externalIds: ["42"],
+    externalId: "523",
+    externalIds: ["523"],
     url: null,
   };
 }

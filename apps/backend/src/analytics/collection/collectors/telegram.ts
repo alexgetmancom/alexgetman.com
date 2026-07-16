@@ -6,12 +6,16 @@ import { TerminalMetricError } from "./errors.js";
 import type { MetricResult } from "./types.js";
 
 export async function collectTelegram(task: MetricTask, config: BackendConfig, fetchImpl: typeof fetch): Promise<MetricResult> {
+  const messageId = task.externalId;
+  if (!messageId || !/^\d+$/.test(messageId)) throw new TerminalMetricError(`invalid_telegram_message_id:${messageId ?? "missing"}`);
   const channel = config.CHANNEL_USERNAME.replace(/^@/, "");
   const html = await requestText(fetchImpl, `https://t.me/s/${channel}`, {
     headers: { "User-Agent": "Mozilla/5.0 (compatible; alexgetman-backend/1.0)" },
     signal: AbortSignal.timeout(config.TELEGRAM_METRICS_TIMEOUT_SECONDS * 1000),
   });
-  const escaped = escapeRegExp(`${channel}/${task.messageId}`);
+  // `posts.message_id` is a local Studio reference for newly-created drafts.
+  // The public channel URL and the metrics page use Delivery's external ID.
+  const escaped = escapeRegExp(`${channel}/${messageId}`);
   const section = html.match(
     new RegExp(`data-post=["']${escaped}["'][\\s\\S]*?(?=data-post=["']${escapeRegExp(channel)}\\/|<\\/section>|$)`),
   )?.[0];
@@ -21,7 +25,7 @@ export async function collectTelegram(task: MetricTask, config: BackendConfig, f
     .map((match) => parseCompactCount(match[1]) ?? 0)
     .reduce((sum, value) => sum + value, 0);
   if (views == null) throw new Error("telegram_views_not_found");
-  return { metrics: { views, likes: reactions }, source: "t_me_public", raw: { message_id: task.messageId } };
+  return { metrics: { views, likes: reactions }, source: "t_me_public", raw: { message_id: Number(messageId) } };
 }
 
 export async function collectTelegramStory(task: MetricTask, config: BackendConfig): Promise<MetricResult> {

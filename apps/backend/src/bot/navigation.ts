@@ -1,6 +1,7 @@
 import { type Context, InlineKeyboard, Keyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { studioServices } from "../studio/services/index.js";
 import { type BotLocale, botLocale, ui } from "./i18n.js";
 
 export function persistentKeyboard(locale: BotLocale = "en"): Keyboard {
@@ -12,22 +13,50 @@ export function persistentKeyboard(locale: BotLocale = "en"): Keyboard {
 
 export async function showMainMenu(ctx: Context, config: BackendConfig, backendDb: BackendDb, edit = false): Promise<void> {
   const locale = botLocale(backendDb, Number(ctx.from?.id));
-  const text = ui(locale, "Control panel:", "Панель управления:");
-  const options = { reply_markup: mainMenuKeyboard(config, locale) };
-  if (edit) await ctx.editMessageText(text, options);
-  else await ctx.reply(text, options);
+  const actorId = Number(ctx.from?.id);
+  const queue = studioServices(backendDb, config).queue.snapshot(actorId);
+  const unread = studioServices(backendDb, config).notifications.inbox(actorId, 100).length;
+  const text = queue.attention.length
+    ? ui(locale, `⚠️ Needs attention: ${queue.attention.length}`, `⚠️ Требуют внимания: ${queue.attention.length}`)
+    : "";
+  const options = { reply_markup: mainMenuKeyboard(config, locale, queue, unread) };
+  if (edit) await ctx.editMessageText(text || "‎", options);
+  else await ctx.reply(text || "‎", options);
 }
 
-function mainMenuKeyboard(config: BackendConfig, locale: BotLocale): InlineKeyboard {
+function mainMenuKeyboard(
+  config: BackendConfig,
+  locale: BotLocale,
+  queue: { upcoming: unknown[]; drafts: unknown[]; attention: unknown[] },
+  unread: number,
+): InlineKeyboard {
   const keyboard = new InlineKeyboard();
+  if (queue.attention.length)
+    keyboard
+      .text(ui(locale, `⚠️ Needs attention: ${queue.attention.length}`, `⚠️ Требуют внимания: ${queue.attention.length}`), "menu_attention")
+      .row();
   if (config.studio.modules.text_posting) keyboard.text(ui(locale, "📝 New post", "📝 Новый пост"), "menu_text");
   if (config.studio.modules.video_posting) keyboard.text(ui(locale, "🎬 New video", "🎬 Новое видео"), "video_start");
   keyboard
     .row()
-    .text(ui(locale, "📋 Work queue", "📋 Очередь"), "queue_home")
-    .text(ui(locale, "🔔 Notifications", "🔔 Уведомления"), "notifications_home");
+    .text(
+      ui(
+        locale,
+        `📋 Work queue${queue.upcoming.length + queue.drafts.length ? ` · ${queue.upcoming.length + queue.drafts.length}` : ""}`,
+        `📋 Очередь${queue.upcoming.length + queue.drafts.length ? ` · ${queue.upcoming.length + queue.drafts.length}` : ""}`,
+      ),
+      "queue_home",
+    )
+    .text(ui(locale, "📚 Archive", "📚 Архив"), "archive_home");
   if (config.studio.modules.analytics) keyboard.text(ui(locale, "📊 Analytics", "📊 Статистика"), "analytics_home");
-  return keyboard.row().text("⚙️", "settings_home");
+  keyboard
+    .row()
+    .text(
+      ui(locale, `🔔 Notifications${unread ? ` · ${unread}` : ""}`, `🔔 Уведомления${unread ? ` · ${unread}` : ""}`),
+      "notifications_home",
+    )
+    .text(ui(locale, "⚙️ Settings", "⚙️ Настройки"), "settings_home");
+  return keyboard;
 }
 
 export async function showSettings(ctx: Context, config: BackendConfig, backendDb: BackendDb, edit = false): Promise<void> {

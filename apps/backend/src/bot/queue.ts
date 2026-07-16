@@ -15,7 +15,9 @@ export async function showQueue(
 ): Promise<void> {
   const locale = botLocale(backendDb, Number(ctx.from?.id));
   const snapshot = studioServices(backendDb, config).queue.snapshot(Number(ctx.from?.id));
-  const view = requestedView === "upcoming" && snapshot.upcoming.length === 0 ? "drafts" : requestedView;
+  // Queue opens as a quiet operational overview. Draft history is opt-in,
+  // rather than becoming a wall of old cards whenever nothing is scheduled.
+  const view = requestedView;
   const keyboard = new InlineKeyboard();
   let text: string;
 
@@ -44,8 +46,10 @@ export async function showQueue(
 
 function upcomingText(snapshot: StudioQueueSnapshot, locale: BotLocale): string {
   const lines = [`📋 *${ui(locale, "Work queue", "Очередь")}*`, "", `*${ui(locale, "Upcoming", "Ближайшие публикации")}*`];
-  for (const item of snapshot.upcoming.slice(0, 5))
-    lines.push(`• ${formatQueueTime(item.time, locale)} — ${kindIcon(item.kind)} ${item.label}`);
+  if (!snapshot.upcoming.length) lines.push(ui(locale, "Nothing is scheduled.", "Ничего не запланировано."));
+  else
+    for (const item of snapshot.upcoming.slice(0, 5))
+      lines.push(`• ${formatQueueTime(item.time, locale)} — ${kindIcon(item.kind)} ${item.label}`);
   lines.push("", summary(snapshot, locale));
   return lines.join("\n");
 }
