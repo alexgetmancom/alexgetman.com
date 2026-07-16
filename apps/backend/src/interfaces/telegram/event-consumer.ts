@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, notExists, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, notExists, sql } from "drizzle-orm";
 import type { Bot } from "grammy";
 import { refreshPostControlCard } from "../../bot/progress.js";
 import type { BackendDb } from "../../db/client.js";
@@ -25,6 +25,10 @@ const TELEGRAM_EVENT_TYPES = [
   "delivery.post.completed",
   "delivery.video.completed",
 ];
+// Telegram is an immediate interface, not an archival notification transport.
+// Older undelivered events remain in the durable audit journal, but must never
+// be replayed after a restart and drown current reminders/completions.
+const TELEGRAM_EVENT_MAX_AGE_MS = 30 * 60 * 1000;
 
 /** Consumes durable domain events and renders Telegram-only side effects once. */
 export async function consumeTelegramEvents(backendDb: BackendDb, bot: Bot | null, reminderMinutes: number): Promise<number> {
@@ -38,7 +42,13 @@ export async function consumeTelegramEvents(backendDb: BackendDb, bot: Bot | nul
   const events = backendDb.db
     .select()
     .from(postEvents)
-    .where(and(inArray(postEvents.eventType, TELEGRAM_EVENT_TYPES), notExists(delivered)))
+    .where(
+      and(
+        inArray(postEvents.eventType, TELEGRAM_EVENT_TYPES),
+        gte(postEvents.createdAt, new Date(Date.now() - TELEGRAM_EVENT_MAX_AGE_MS).toISOString()),
+        notExists(delivered),
+      ),
+    )
     .orderBy(asc(postEvents.createdAt), asc(postEvents.id))
     .limit(50)
     .all();
