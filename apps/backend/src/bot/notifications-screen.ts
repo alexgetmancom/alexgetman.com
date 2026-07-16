@@ -43,7 +43,6 @@ async function renderInbox(
   for (const event of events) {
     keyboard.text(notificationLabel(event, locale), `notification_open:${event.id}`).text("✓", `notification_ack:${event.id}`).row();
   }
-  keyboard.text(ui(locale, "⚙️ Notification settings", "⚙️ Настройки уведомлений"), "settings_notifications").row();
   keyboard.text(ui(locale, "← Menu", "← Меню"), "menu_home");
   await ctx.editMessageText(lines.join("\n"), { reply_markup: keyboard });
   return true;

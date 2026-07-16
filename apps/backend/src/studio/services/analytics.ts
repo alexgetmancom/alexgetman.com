@@ -1,5 +1,5 @@
 import { audienceAnalysis } from "../../analytics/reports/audience.js";
-import { creatorPostArchive, creatorPostMetrics } from "../../analytics/reports/post-archive.js";
+import { creatorArchiveSummary, creatorPostArchive, creatorPostMedia, creatorPostMetrics } from "../../analytics/reports/post-archive.js";
 import { studioAnalyticsDashboard } from "../../analytics/reports/studio-dashboard.js";
 import { creatorVideoArchive, creatorVideoMetrics } from "../../analytics/reports/video-archive.js";
 import type { BackendDb } from "../../db/client.js";
@@ -23,6 +23,12 @@ export function analyticsService(backendDb: BackendDb, config: BackendConfig) {
     },
     postMetrics(postId: number, locale: BotLocale) {
       return creatorPostMetrics(backendDb, postId, locale);
+    },
+    postMedia(postId: number, locale: BotLocale) {
+      return creatorPostMedia(backendDb, postId, locale);
+    },
+    archiveSummary(locale: BotLocale) {
+      return creatorArchiveSummary(backendDb, config.studio.modules.video_posting, locale);
     },
     videoArchive(offset: number, locale: BotLocale) {
       return creatorVideoArchive(backendDb, offset, locale);

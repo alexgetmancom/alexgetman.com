@@ -9,8 +9,15 @@ export function creatorVideoArchive(
 ): {
   text: string;
   items: Array<{ id: number; label: string }>;
-  hasMore: boolean;
+  total: number;
 } {
+  const total = Number(
+    (
+      backendDb.sqlite.prepare("SELECT COUNT(DISTINCT video_draft_id) AS count FROM video_targets WHERE status='published'").get() as {
+        count: number;
+      }
+    ).count,
+  );
   const rows = backendDb.sqlite
     .prepare(
       `SELECT d.id, COALESCE(d.label, 'Без названия') AS label FROM video_drafts d WHERE EXISTS (SELECT 1 FROM video_targets t WHERE t.video_draft_id=d.id AND t.status='published') ORDER BY d.updated_at DESC LIMIT 11 OFFSET ?`,
@@ -22,7 +29,7 @@ export function creatorVideoArchive(
       ? `📚 ${ui(locale, "Video archive\n\nChoose a video:", "Архив роликов\n\nВыберите ролик:")}`
       : `📚 ${ui(locale, "No published videos yet.", "В архиве пока нет опубликованных роликов.")}`,
     items,
-    hasMore: rows.length > items.length,
+    total,
   };
 }
 export function creatorVideoMetrics(backendDb: BackendDb, videoDraftId: number, locale: BotLocale = "en"): string {

@@ -76,19 +76,9 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
       await showQueue(ctx, backendDb, config);
       return;
     }
-    if (ctx.callbackQuery.data === "menu_attention") {
-      await ctx.answerCallbackQuery();
-      await showQueue(ctx, backendDb, config, "attention");
-      return;
-    }
     if (ctx.callbackQuery.data === "queue_drafts") {
       await ctx.answerCallbackQuery();
       await showQueue(ctx, backendDb, config, "drafts");
-      return;
-    }
-    if (ctx.callbackQuery.data === "queue_attention") {
-      await ctx.answerCallbackQuery();
-      await showQueue(ctx, backendDb, config, "attention");
       return;
     }
     if (ctx.callbackQuery.data === "menu_home") {

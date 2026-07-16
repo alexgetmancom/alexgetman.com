@@ -49,8 +49,7 @@ export function renderPostProgress(
   );
   if (counts.waiting + counts.publishing > 0)
     keyboard.text(ui(locale, "Cancel remaining", "Отменить оставшиеся"), `progress_cancel:${state.draftId}`);
-  if (state.targets.some((item) => item.status === "failed"))
-    keyboard.row().text(ui(locale, "Open report", "Открыть отчёт"), `progress_details:${state.draftId}`);
+  keyboard.row().text(ui(locale, "← Menu", "← Меню"), "menu_home");
   return { text: lines.join("\n"), keyboard };
 }
 

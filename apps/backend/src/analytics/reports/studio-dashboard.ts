@@ -39,16 +39,18 @@ export function studioAnalyticsDashboard(
   if (section === "overview") {
     const followers = socialFollowers(backendDb, config);
     if (followers != null) lines.push(`${ui(locale, "👥 Followers across platforms", "👥 Подписчики по площадкам")}: *${followers}*`);
-    const growth = audienceGrowth(backendDb);
+    const growth = audienceGrowth(backendDb, since);
     if (growth != null)
-      lines.push(`${ui(locale, "📈 Daily audience growth", "📈 Прирост аудитории за сутки")}: *${growth >= 0 ? "+" : ""}${growth}*`);
+      lines.push(
+        `${ui(locale, `📈 Follower growth · ${period}`, `📈 Прирост подписчиков · ${period}`)}: *${growth >= 0 ? "+" : ""}${growth}*`,
+      );
     lines.push(`${ui(locale, "👁 Content views", "👁 Просмотры контента")}: *${post.views + video.views}*`);
     lines.push(`${ui(locale, "💬 Interactions", "💬 Взаимодействия")}: *${post.interactions + video.interactions}*`);
     if (config.studio.modules.site) lines.push(`${ui(locale, "🌐 Site material views", "🌐 Просмотры материалов сайта")}: *${siteViews}*`);
     const stale = staleSources(backendDb);
     if (stale.length) lines.push(`\n⚠️ ${ui(locale, "Data attention", "Проверить данные")}: ${stale.join(", ")}`);
   } else if (section === "audience") {
-    const profiles = audienceProfiles(backendDb, locale);
+    const profiles = audienceProfiles(backendDb, since, period, locale);
     lines.push(
       ...(profiles.length ? profiles : [ui(locale, "Audience data has not been collected yet.", "Данные об аудитории ещё не собраны.")]),
     );
@@ -77,13 +79,13 @@ export function studioAnalyticsDashboard(
 }
 
 function header(section: AnalyticsSection, period: string, locale: BotLocale): string {
-  if (section === "audience") return `👥 *${ui(locale, "Audience", "Аудитория")}*`;
+  if (section === "audience") return `👥 *${ui(locale, `Audience · ${period}`, `Аудитория · ${period}`)}*`;
   if (section === "posts") return `📝 *${ui(locale, `Posts · ${period}`, `Постинг · ${period}`)}*`;
   if (section === "video") return `🎬 *${ui(locale, `Video · ${period}`, `Видеопостинг · ${period}`)}*`;
   return `📊 *${ui(locale, `Overview · ${period}`, `Общая статистика · ${period}`)}*`;
 }
 
-function audienceProfiles(backendDb: BackendDb, locale: BotLocale): string[] {
+function audienceProfiles(backendDb: BackendDb, since: string, period: string, locale: BotLocale): string[] {
   const labels: Record<string, string> = {
     bluesky: "Bluesky",
     devto: "Dev.to",
@@ -97,16 +99,26 @@ function audienceProfiles(backendDb: BackendDb, locale: BotLocale): string[] {
     x: "X",
     youtube: "YouTube",
   };
+  const growth = audienceGrowthByAccount(backendDb, since);
   return backendDb.db
     .select()
     .from(creatorProfiles)
     .all()
-    .sort((left, right) => (labels[left.platform] ?? left.platform).localeCompare(labels[right.platform] ?? right.platform))
+    .sort((left, right) => {
+      const rightFollowers = metricNumber(right.dataJson.subscriberCount ?? right.dataJson.followersCount);
+      const leftFollowers = metricNumber(left.dataJson.subscriberCount ?? left.dataJson.followersCount);
+      return (
+        rightFollowers - leftFollowers || (labels[left.platform] ?? left.platform).localeCompare(labels[right.platform] ?? right.platform)
+      );
+    })
     .map((row) => {
       const data = row.dataJson as Record<string, unknown>;
       const followers = data.subscriberCount ?? data.followersCount;
       const values: string[] = [];
       if (followers != null) values.push(`${ui(locale, "followers", "подписчики")}: *${metricNumber(followers)}*`);
+      const deltas = [...growth.entries()].filter(([key]) => key.startsWith(`${row.platform}\u0000`)).map(([, value]) => value);
+      const delta = deltas.length ? deltas.reduce((total, value) => total + value, 0) : null;
+      if (delta != null) values.push(`${ui(locale, `growth · ${period}`, `прирост · ${period}`)}: *${delta >= 0 ? "+" : ""}${delta}*`);
       if (data.stars != null) values.push(`Stars: *${metricNumber(data.stars)}*`);
       if (data.averageViewsPerPost != null)
         values.push(`${ui(locale, "avg. views/post", "ср. просмотров/пост")}: ${metricNumber(data.averageViewsPerPost)}`);
@@ -131,22 +143,35 @@ function socialFollowers(backendDb: BackendDb, config: BackendConfig): number | 
   return values.length ? values.reduce((total, value) => total + value, 0) : null;
 }
 
-function audienceGrowth(backendDb: BackendDb): number | null {
+function audienceGrowth(backendDb: BackendDb, since: string): number | null {
+  const values = [...audienceGrowthByAccount(backendDb, since).values()];
+  return values.length ? values.reduce((total, value) => total + value, 0) : null;
+}
+
+/** Current projection minus the last observation at or before the selected period.
+ * A profile with no baseline is intentionally omitted instead of pretending that
+ * its lifetime follower number is growth. */
+function audienceGrowthByAccount(backendDb: BackendDb, since: string): Map<string, number> {
   const rows = backendDb.sqlite
     .prepare(
-      "SELECT platform, account, metrics_json FROM creator_profile_snapshots WHERE id IN (SELECT id FROM creator_profile_snapshots AS snapshot WHERE snapshot.platform=creator_profile_snapshots.platform AND snapshot.account=creator_profile_snapshots.account ORDER BY sampled_at DESC, id DESC LIMIT 2) ORDER BY platform, account, sampled_at DESC, id DESC",
+      "SELECT platform, account, metrics_json, sampled_at, id FROM creator_profile_snapshots ORDER BY platform, account, sampled_at ASC, id ASC",
     )
-    .all() as Array<{ platform: string; account: string; metrics_json: string }>;
-  const byAccount = new Map<string, number[]>();
+    .all() as Array<{ platform: string; account: string; metrics_json: string; sampled_at: string }>;
+  const byAccount = new Map<string, { latest: number; baseline: number | null }>();
   for (const row of rows) {
     const data = JSON.parse(row.metrics_json) as Record<string, unknown>;
     const key = `${row.platform}\u0000${row.account}`;
-    const values = byAccount.get(key) ?? [];
-    values.push(metricNumber(data.subscriberCount ?? data.followersCount));
-    byAccount.set(key, values);
+    const entry = byAccount.get(key) ?? { latest: 0, baseline: null };
+    const value = metricNumber(data.subscriberCount ?? data.followersCount);
+    entry.latest = value;
+    if (row.sampled_at <= since) entry.baseline = value;
+    byAccount.set(key, entry);
   }
-  const deltas = [...byAccount.values()].filter((values) => values.length === 2).map((values) => (values[0] ?? 0) - (values[1] ?? 0));
-  return deltas.length ? deltas.reduce((total, value) => total + value, 0) : null;
+  return new Map(
+    [...byAccount.entries()]
+      .filter(([, values]) => values.baseline != null)
+      .map(([key, values]) => [key, values.latest - (values.baseline ?? values.latest)]),
+  );
 }
 
 function staleSources(backendDb: BackendDb): string[] {

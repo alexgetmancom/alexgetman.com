@@ -222,6 +222,58 @@ describe("creator analytics", () => {
     }
   });
 
+  it("changes audience growth with the selected period instead of repeating lifetime totals", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      const thirtyFiveDaysAgo = new Date(Date.now() - 35 * 24 * 60 * 60_000).toISOString();
+      const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60_000).toISOString();
+      backendDb.db
+        .insert(creatorProfiles)
+        .values({ platform: "telegram", dataJson: { subscriberCount: 150 }, updatedAt: now })
+        .run();
+      backendDb.db
+        .insert(creatorProfileSnapshots)
+        .values([
+          {
+            platform: "telegram",
+            account: "channel",
+            sampledOn: "2026-06-11",
+            metricsJson: { subscriberCount: 100 },
+            source: "test",
+            sampledAt: thirtyFiveDaysAgo,
+          },
+          {
+            platform: "telegram",
+            account: "channel",
+            sampledOn: "2026-07-06",
+            metricsJson: { subscriberCount: 120 },
+            source: "test",
+            sampledAt: tenDaysAgo,
+          },
+          {
+            platform: "telegram",
+            account: "channel",
+            sampledOn: "2026-07-16",
+            metricsJson: { subscriberCount: 150 },
+            source: "test",
+            sampledAt: now,
+          },
+        ])
+        .run();
+      const config = loadConfig({});
+
+      const week = studioAnalyticsDashboard(backendDb, config, "audience", 7, "ru").text;
+      const month = studioAnalyticsDashboard(backendDb, config, "audience", 30, "ru").text;
+      expect(week).toContain("Аудитория · 7 дней");
+      expect(week).toContain("прирост · 7 дней: *+30*");
+      expect(month).toContain("Аудитория · 30 дней");
+      expect(month).toContain("прирост · 30 дней: *+50*");
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("renders the compact Studio overview and keeps post and video analytics separate", () => {
     const backendDb = openBackendDb(":memory:");
     try {

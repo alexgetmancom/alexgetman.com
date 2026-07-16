@@ -16,25 +16,21 @@ export async function showMainMenu(ctx: Context, config: BackendConfig, backendD
   const actorId = Number(ctx.from?.id);
   const queue = studioServices(backendDb, config).queue.snapshot(actorId);
   const unread = studioServices(backendDb, config).notifications.inbox(actorId, 100).length;
-  const text = queue.attention.length
-    ? ui(locale, `⚠️ Needs attention: ${queue.attention.length}`, `⚠️ Требуют внимания: ${queue.attention.length}`)
-    : "";
+  // Telegram does not allow a message consisting only of an inline keyboard.
+  // This is deliberately a neutral heading, not a noisy "all clear" status.
+  const text = ui(locale, "Control panel", "Панель управления");
   const options = { reply_markup: mainMenuKeyboard(config, locale, queue, unread) };
-  if (edit) await ctx.editMessageText(text || "‎", options);
-  else await ctx.reply(text || "‎", options);
+  if (edit) await ctx.editMessageText(text, options);
+  else await ctx.reply(text, options);
 }
 
 function mainMenuKeyboard(
   config: BackendConfig,
   locale: BotLocale,
-  queue: { upcoming: unknown[]; drafts: unknown[]; attention: unknown[] },
+  queue: { upcoming: unknown[]; drafts: unknown[] },
   unread: number,
 ): InlineKeyboard {
   const keyboard = new InlineKeyboard();
-  if (queue.attention.length)
-    keyboard
-      .text(ui(locale, `⚠️ Needs attention: ${queue.attention.length}`, `⚠️ Требуют внимания: ${queue.attention.length}`), "menu_attention")
-      .row();
   if (config.studio.modules.text_posting) keyboard.text(ui(locale, "📝 New post", "📝 Новый пост"), "menu_text");
   if (config.studio.modules.video_posting) keyboard.text(ui(locale, "🎬 New video", "🎬 Новое видео"), "video_start");
   keyboard
@@ -52,7 +48,11 @@ function mainMenuKeyboard(
   keyboard
     .row()
     .text(
-      ui(locale, `🔔 Notifications${unread ? ` · ${unread}` : ""}`, `🔔 Уведомления${unread ? ` · ${unread}` : ""}`),
+      ui(
+        locale,
+        `${unread ? "🔴" : "🔔"} Notifications${unread ? ` · ${unread}` : ""}`,
+        `${unread ? "🔴" : "🔔"} Уведомления${unread ? ` · ${unread}` : ""}`,
+      ),
       "notifications_home",
     )
     .text(ui(locale, "⚙️ Settings", "⚙️ Настройки"), "settings_home");

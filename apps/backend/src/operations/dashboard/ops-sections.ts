@@ -1,40 +1,69 @@
 import type { BackendDb } from "../../db/client.js";
-import { creatorProfiles } from "../../db/schema.js";
+import { creatorProfiles, metricSamples } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { ORDERED_TARGETS } from "./assets.js";
-import { shortPipelineText } from "./format.js";
+import { formatMetricValue, shortPipelineText } from "./format.js";
 import { escapeHtml } from "./html.js";
 import type { OpsPayload } from "./types.js";
 
-/** Reuses the Analytics read model; Command Center only renders it. */
+type AudiencePlatform = { key: string; label: string; metricTargets: string[] };
+type PeriodMetrics = { views: number; interactions: number };
+
+/** The catalogue is a presentation projection over platform profiles and the
+ * generic metric ledger. A missing value stays visible as —: it must never
+ * erase a connected publishing target from the operator's view. */
+const AUDIENCE_PLATFORMS: AudiencePlatform[] = [
+  { key: "telegram", label: "Telegram", metricTargets: ["telegram"] },
+  { key: "threads_ru", label: "Threads RU", metricTargets: ["threads_ru"] },
+  { key: "threads_en", label: "Threads EN", metricTargets: ["threads_en"] },
+  { key: "facebook_ru", label: "Facebook RU", metricTargets: ["facebook_ru"] },
+  { key: "facebook_en", label: "Facebook EN", metricTargets: ["facebook"] },
+  { key: "instagram", label: "Instagram", metricTargets: ["instagram_stories_ru", "instagram_stories"] },
+  { key: "linkedin", label: "LinkedIn", metricTargets: ["linkedin"] },
+  { key: "x", label: "X", metricTargets: ["x"] },
+  { key: "bluesky", label: "Bluesky", metricTargets: ["bluesky"] },
+  { key: "mastodon", label: "Mastodon", metricTargets: ["mastodon"] },
+  { key: "devto", label: "Dev.to", metricTargets: ["devto"] },
+  { key: "github", label: "GitHub", metricTargets: ["github_ru", "github_en"] },
+];
+
+/** Reuses Analytics projections and metric samples; Command Center only renders them. */
 export function renderAudienceSection(backendDb: BackendDb, config: BackendConfig): string {
   if (!config.studio.modules.analytics) return "";
-  const rows = backendDb.db
-    .select()
-    .from(creatorProfiles)
-    .all()
-    .map((profile) => {
-      const data = profile.dataJson as Record<string, unknown>;
-      return {
-        platform: profile.platform,
-        account: String(data.username ?? data.title ?? profile.platform),
-        followers: metric(data.subscriberCount ?? data.followersCount),
-        stars: metric(data.stars),
-        views: metric(data.averageViewsPerPost),
-      };
-    })
-    .sort((left, right) => right.followers - left.followers || left.platform.localeCompare(right.platform));
-  if (!rows.length) return "";
+  const profiles = new Map(
+    backendDb.db
+      .select()
+      .from(creatorProfiles)
+      .all()
+      .map((profile) => [profile.platform, profile.dataJson]),
+  );
+  const followerGrowth7 = followerGrowth(backendDb, 7);
+  const followerGrowth30 = followerGrowth(backendDb, 30);
+  const metrics7 = targetPeriodMetrics(backendDb, 7);
+  const metrics30 = targetPeriodMetrics(backendDb, 30);
+  const rows = AUDIENCE_PLATFORMS.map((platform) => {
+    const data = (profiles.get(platform.key) ?? {}) as Record<string, unknown>;
+    const followers = metric(data.subscriberCount ?? data.followersCount);
+    return {
+      ...platform,
+      followers,
+      stars: metric(data.stars),
+      growth7: followerGrowth7.get(platform.key),
+      growth30: followerGrowth30.get(platform.key),
+      metrics7: sumTargetMetrics(metrics7, platform.metricTargets),
+      metrics30: sumTargetMetrics(metrics30, platform.metricTargets),
+    };
+  }).sort((left, right) => right.followers - left.followers || left.label.localeCompare(right.label));
   const cards = rows
-    .map((item) => `<span class="audience-card"><strong>${escapeHtml(label(item.platform))}</strong><b>${item.followers || "—"}</b></span>`)
+    .map((item) => `<span class="audience-card"><strong>${escapeHtml(item.label)}</strong><b>${followersLabel(item)}</b></span>`)
     .join("");
   const details = rows
     .map(
       (item) =>
-        `<tr><td>${escapeHtml(label(item.platform))}</td><td>${escapeHtml(item.account)}</td><td>${item.followers || "—"}</td><td>${item.stars || "—"}</td><td>${item.views || "—"}</td></tr>`,
+        `<tr><td>${escapeHtml(item.label)}</td><td>${followersLabel(item)}</td><td>${delta(item.growth7)}</td><td>${delta(item.growth30)}</td><td>${metricCell(item.metrics7.views)}</td><td>${metricCell(item.metrics7.interactions)}</td><td>${metricCell(item.metrics30.views)}</td><td>${metricCell(item.metrics30.interactions)}</td></tr>`,
     )
     .join("");
-  return `<div class="audience-strip"><div class="audience-cards">${cards}</div><details><summary>Показать больше</summary><div class="table-wrap"><table><thead><tr><th>Площадка</th><th>Аккаунт</th><th>Подписчики</th><th>Stars</th><th>Ср. просмотры/пост</th></tr></thead><tbody>${details}</tbody></table></div></details></div>`;
+  return `<div class="audience-strip"><div class="audience-cards">${cards}</div><details><summary>Показать больше</summary><div class="table-wrap"><table><thead><tr><th>Площадка</th><th>Подписчики</th><th>Δ 7д</th><th>Δ 30д</th><th>Просмотры 7д</th><th>Реакции 7д</th><th>Просмотры 30д</th><th>Реакции 30д</th></tr></thead><tbody>${details}</tbody></table></div></details></div>`;
 }
 
 export function renderRepairSection(ref: string, messageId: string): string {
@@ -99,6 +128,79 @@ function metric(value: unknown): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function label(platform: string): string {
-  return platform.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+function followersLabel(item: { followers: number; stars: number }): string {
+  const followers = item.followers ? formatMetricValue(item.followers) : "—";
+  return item.stars ? `${followers} · ★${formatMetricValue(item.stars)}` : followers;
+}
+
+function delta(value: number | undefined): string {
+  if (value == null) return "—";
+  return `${value >= 0 ? "+" : ""}${formatMetricValue(value)}`;
+}
+
+function metricCell(value: number): string {
+  return value ? formatMetricValue(value) : "—";
+}
+
+function sumTargetMetrics(values: Map<string, PeriodMetrics>, targets: string[]): PeriodMetrics {
+  return targets.reduce(
+    (total, target) => ({
+      views: total.views + (values.get(target)?.views ?? 0),
+      interactions: total.interactions + (values.get(target)?.interactions ?? 0),
+    }),
+    { views: 0, interactions: 0 },
+  );
+}
+
+function targetPeriodMetrics(backendDb: BackendDb, days: number): Map<string, PeriodMetrics> {
+  const since = new Date(Date.now() - days * 24 * 60 * 60_000).toISOString();
+  const series = new Map<string, { target: string; metric: string; firstAt: string; latest: number; baseline: number | null }>();
+  for (const row of backendDb.db.select().from(metricSamples).all()) {
+    const key = `${row.postKey}\u0000${row.target}\u0000${row.metricName}`;
+    const value = metric(row.value);
+    const current = series.get(key) ?? {
+      target: row.target,
+      metric: row.metricName,
+      firstAt: row.sampledAt,
+      latest: value,
+      baseline: null,
+    };
+    current.latest = value;
+    if (row.sampledAt <= since) current.baseline = value;
+    series.set(key, current);
+  }
+  const totals = new Map<string, PeriodMetrics>();
+  for (const value of series.values()) {
+    if (value.baseline == null && value.firstAt < since) continue;
+    const row = totals.get(value.target) ?? { views: 0, interactions: 0 };
+    const deltaValue = Math.max(0, value.latest - (value.baseline ?? 0));
+    if (value.metric === "views" || value.metric === "bot_views") row.views += deltaValue;
+    if (["likes", "replies", "reposts", "comments"].includes(value.metric)) row.interactions += deltaValue;
+    totals.set(value.target, row);
+  }
+  return totals;
+}
+
+function followerGrowth(backendDb: BackendDb, days: number): Map<string, number> {
+  const since = new Date(Date.now() - days * 24 * 60 * 60_000).toISOString();
+  const rows = backendDb.sqlite
+    .prepare(
+      "SELECT platform, account, metrics_json, sampled_at, id FROM creator_profile_snapshots ORDER BY platform, account, sampled_at ASC, id ASC",
+    )
+    .all() as Array<{ platform: string; account: string; metrics_json: string; sampled_at: string }>;
+  const values = new Map<string, { platform: string; latest: number; baseline: number | null }>();
+  for (const row of rows) {
+    const metrics = JSON.parse(row.metrics_json) as Record<string, unknown>;
+    const key = `${row.platform}\u0000${row.account}`;
+    const value = values.get(key) ?? { platform: row.platform, latest: 0, baseline: null };
+    value.latest = metric(metrics.subscriberCount ?? metrics.followersCount);
+    if (row.sampled_at <= since) value.baseline = value.latest;
+    values.set(key, value);
+  }
+  const totals = new Map<string, number>();
+  for (const value of values.values()) {
+    if (value.baseline == null) continue;
+    totals.set(value.platform, (totals.get(value.platform) ?? 0) + value.latest - value.baseline);
+  }
+  return totals;
 }
