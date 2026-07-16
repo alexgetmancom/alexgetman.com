@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { mkdir, rename } from "node:fs/promises";
 
 const token = Bun.env.MEDIA_PROCESSOR_TOKEN;
@@ -36,6 +36,10 @@ function processedAsset(file: string, mediaKind: string, job: string): Response 
   return new Response(Bun.file(file), {
     headers: {
       "content-type": mediaKind === "video" ? "video/mp4" : "image/jpeg",
+      // The processor is reached through an SSH tunnel and a local TCP proxy.
+      // An explicit size makes the response framing deterministic for Bun's
+      // streaming client instead of relying on connection-close semantics.
+      "content-length": String(statSync(file).size),
       "x-media-processor-job": job,
     },
   });

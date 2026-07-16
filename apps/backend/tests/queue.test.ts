@@ -14,7 +14,7 @@ import {
   failPublishJob,
   recoverStalePublishJobs,
 } from "../src/publishing/queue.js";
-import { runPublishCycle } from "../src/runtime/workers.js";
+import { runPublishCycle, runPublishWatchdog } from "../src/runtime/workers.js";
 
 function tempDb() {
   const dir = mkdtempSync(join(tmpdir(), "alexgetman-queue-"));
@@ -279,6 +279,30 @@ describe("publish queue", () => {
         .get();
       expect(job).toEqual({ status: "queued", lockedBy: null });
       expect(backendDb.db.select({ status: postTargets.status }).from(postTargets).where(eq(postTargets.target, "devto")).get()).toEqual({
+        status: "queued",
+      });
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("keeps stale lock recovery available when the delivery loop is still awaiting a provider", () => {
+    const backendDb = tempDb();
+    try {
+      const id = enqueuePublishJob(backendDb, { messageId: 1031, target: "devto", payload: { title: "Queued", bodyMarkdown: "Body" } });
+      backendDb.db
+        .update(publishJobs)
+        .set({
+          status: "publishing",
+          lockedBy: "hung-provider",
+          lockedAt: "2000-01-01T00:00:00.000Z",
+          updatedAt: "2000-01-01T00:00:00.000Z",
+        })
+        .where(eq(publishJobs.jobId, id))
+        .run();
+
+      expect(runPublishWatchdog(loadConfig({ PUBLISH_LOCK_TIMEOUT_SECONDS: "1", PUBLISH_BACKOFF_BASE_SECONDS: "1" }), backendDb)).toBe(1);
+      expect(backendDb.db.select({ status: publishJobs.status }).from(publishJobs).where(eq(publishJobs.jobId, id)).get()).toEqual({
         status: "queued",
       });
     } finally {

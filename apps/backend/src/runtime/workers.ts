@@ -12,6 +12,7 @@ import { log } from "../foundation/logger.js";
 import { type ScheduledLoop, startLoop } from "../foundation/scheduler.js";
 import { runNotificationCycle } from "../notifications/jobs.js";
 import { observabilityService } from "../observability/service.js";
+import { recoverStalePublishJobs } from "../publishing/queue.js";
 
 /** Delivery-only publish cycle. Interfaces learn about settled work through durable events. */
 export async function runPublishCycle(
@@ -20,6 +21,12 @@ export async function runPublishCycle(
   publishers: DeliveryPorts | Record<string, DeliveryPort> = createPlatformPorts(config, backendDb),
 ): Promise<number> {
   return runDeliveryPublishCycle(config, backendDb, publishers);
+}
+
+/** Runs independently from delivery. A hung provider promise must never prevent
+ * stale publishing locks from returning to the bounded retry policy. */
+export function runPublishWatchdog(config: BackendConfig, backendDb: BackendDb): number {
+  return recoverStalePublishJobs(backendDb, config);
 }
 
 /** Starts domain workers only. It deliberately has no Telegram or HTTP dependency. */
@@ -32,6 +39,10 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
     startLoop("queue", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
       const claimed = await runPublishCycle(config, backendDb);
       log("debug", "queue loop tick", { claimed });
+    }),
+    startLoop("publish-watchdog", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
+      const recovered = runPublishWatchdog(config, backendDb);
+      if (recovered) log("warn", "recovered stale publishing locks", { recovered });
     }),
     startLoop("notifications", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
       const delivered = runNotificationCycle(backendDb);
