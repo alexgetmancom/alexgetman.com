@@ -104,6 +104,7 @@ const envSchema = z
     X_ACCESS_TOKEN: z.string().optional(),
     X_ACCESS_TOKEN_SECRET: z.string().optional(),
     ENABLE_X_METRICS: booleanFlag.default(false),
+    ENABLE_X_PROFILE_METRICS: booleanFlag.default(true),
     INSTAGRAM_ACCESS_TOKEN: z.string().optional(),
     INSTAGRAM_USER_ID: z.string().optional(),
     INSTAGRAM_EN_ACCESS_TOKEN: z.string().optional(),

@@ -553,6 +553,7 @@ export const analyticsRollups = sqliteTable("analytics_rollups", {
 export const analyticsSync = sqliteTable("analytics_sync", {
   source: text("source").primaryKey(),
   lastSyncedAt: text("last_synced_at").notNull(),
+  lastSuccessAt: text("last_success_at"),
   lastError: text("last_error"),
 });
 
@@ -561,6 +562,25 @@ export const creatorProfiles = sqliteTable("creator_profiles", {
   dataJson: text("data_json", { mode: "json" }).$type<JsonObject>().notNull(),
   updatedAt: text("updated_at").notNull(),
 });
+
+/** Immutable daily audience observations. creatorProfiles remains the latest
+ * read model, while this table is the Analytics history. */
+export const creatorProfileSnapshots = sqliteTable(
+  "creator_profile_snapshots",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    platform: text("platform").notNull(),
+    account: text("account").notNull(),
+    sampledOn: text("sampled_on").notNull(),
+    metricsJson: text("metrics_json", { mode: "json" }).$type<JsonObject>().notNull(),
+    source: text("source").notNull(),
+    sampledAt: text("sampled_at").notNull(),
+  },
+  (table) => ({
+    daily: uniqueIndex("idx_creator_profile_snapshots_daily").on(table.platform, table.account, table.sampledOn),
+    history: index("idx_creator_profile_snapshots_history").on(table.platform, table.account, table.sampledAt),
+  }),
+);
 
 export const videoMetricSnapshots = sqliteTable(
   "video_metric_snapshots",
@@ -571,6 +591,7 @@ export const videoMetricSnapshots = sqliteTable(
       .references(() => videoTargets.id, { onDelete: "cascade" }),
     platform: text("platform").notNull(),
     metricsJson: text("metrics_json", { mode: "json" }).$type<JsonObject>().notNull(),
+    checkpointIndex: integer("checkpoint_index"),
     sampledAt: text("sampled_at").notNull(),
   },
   (table) => ({

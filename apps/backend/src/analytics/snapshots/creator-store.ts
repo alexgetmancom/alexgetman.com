@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import type { BackendDb } from "../../db/client.js";
-import { analyticsSync, creatorProfiles, socialComments, videoMetricSnapshots } from "../../db/schema.js";
+import { analyticsSync, creatorProfileSnapshots, creatorProfiles, socialComments } from "../../db/schema.js";
 
 const DAILY_SYNC_MS = 24 * 60 * 60_000;
 
@@ -13,10 +13,10 @@ export function markSynced(backendDb: BackendDb, source: string, error: string |
   const lastSyncedAt = new Date().toISOString();
   backendDb.db
     .insert(analyticsSync)
-    .values({ source, lastSyncedAt, lastError: error })
+    .values({ source, lastSyncedAt, lastSuccessAt: error ? null : lastSyncedAt, lastError: error })
     .onConflictDoUpdate({
       target: analyticsSync.source,
-      set: { lastSyncedAt, lastError: error },
+      set: { lastSyncedAt, ...(error ? { lastError: error } : { lastSuccessAt: lastSyncedAt, lastError: null }) },
     })
     .run();
 }
@@ -33,16 +33,44 @@ export function upsertProfile(backendDb: BackendDb, platform: string, data: Reco
     .run();
 }
 
-export function upsertVideoSnapshot(backendDb: BackendDb, videoTargetId: number, platform: string, metrics: Record<string, unknown>): void {
+/** Saves the current profile projection and a single UTC-day observation. */
+export function recordProfileSnapshot(
+  backendDb: BackendDb,
+  input: { platform: string; account: string; metrics: Record<string, unknown>; source: string; sampledAt?: Date },
+): void {
+  const sampledAt = input.sampledAt ?? new Date();
+  const timestamp = sampledAt.toISOString();
   backendDb.db
-    .insert(videoMetricSnapshots)
+    .insert(creatorProfileSnapshots)
     .values({
-      videoTargetId,
-      platform,
-      metricsJson: metrics,
-      sampledAt: new Date().toISOString(),
+      platform: input.platform,
+      account: input.account,
+      sampledOn: timestamp.slice(0, 10),
+      metricsJson: input.metrics,
+      source: input.source,
+      sampledAt: timestamp,
+    })
+    .onConflictDoUpdate({
+      target: [creatorProfileSnapshots.platform, creatorProfileSnapshots.account, creatorProfileSnapshots.sampledOn],
+      set: { metricsJson: input.metrics, source: input.source, sampledAt: timestamp },
     })
     .run();
+  upsertProfile(backendDb, input.platform, input.metrics);
+}
+
+export function upsertVideoSnapshot(
+  backendDb: BackendDb,
+  videoTargetId: number,
+  platform: string,
+  checkpointIndex: number,
+  metrics: Record<string, unknown>,
+): void {
+  const sampledAt = new Date().toISOString();
+  backendDb.sqlite
+    .prepare(
+      "INSERT INTO video_metric_snapshots (video_target_id, platform, metrics_json, checkpoint_index, sampled_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(video_target_id, checkpoint_index) WHERE checkpoint_index IS NOT NULL DO UPDATE SET platform=excluded.platform, metrics_json=excluded.metrics_json, sampled_at=excluded.sampled_at",
+    )
+    .run(videoTargetId, platform, JSON.stringify(metrics), checkpointIndex, sampledAt);
 }
 
 export function upsertComment(

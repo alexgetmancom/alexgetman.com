@@ -9,7 +9,7 @@ export function isTerminalMetricError(error: unknown): error is TerminalMetricEr
 
 export function terminalIfMissingRemoteObject(error: unknown): Error {
   const message = error instanceof Error ? error.message : String(error);
-  return /(?:\b(?:400|401|403|404)\b|unsupported get request|does not exist|missing permissions|access_denied|error_subcode\D*33)/i.test(
+  return /(?:\b(?:400|401|403|404)\b|unsupported(?:\s+field|\s+metric|\s+get request)?|metrics_not_implemented|insufficient(?:\s+authentication)?\s+scopes?|does not exist|missing permissions|access_denied|error_subcode\D*33)/i.test(
     message,
   )
     ? new TerminalMetricError(message)

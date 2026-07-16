@@ -4,7 +4,15 @@ import { runAnalyticsCycle } from "../src/analytics/collection/creator-cycle.js"
 import { creatorDashboard } from "../src/analytics/reports/dashboard.js";
 import { studioAnalyticsDashboard } from "../src/analytics/reports/studio-dashboard.js";
 import { openBackendDb } from "../src/db/client.js";
-import { creatorProfiles, metricSamples, videoDrafts, videoMetricSchedule, videoMetricSnapshots, videoTargets } from "../src/db/schema.js";
+import {
+  creatorProfileSnapshots,
+  creatorProfiles,
+  metricSamples,
+  videoDrafts,
+  videoMetricSchedule,
+  videoMetricSnapshots,
+  videoTargets,
+} from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 
 describe("creator analytics", () => {
@@ -58,10 +66,12 @@ describe("creator analytics", () => {
     }
   });
 
-  it("does not call creator APIs when the video module is disabled", async () => {
+  it("does not call analytics collectors when Analytics itself is disabled", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      expect(await runAnalyticsCycle(loadConfig({}), backendDb)).toBe(0);
+      const config = loadConfig({});
+      config.studio.modules.analytics = false;
+      expect(await runAnalyticsCycle(config, backendDb)).toBe(0);
     } finally {
       backendDb.close();
     }
@@ -178,7 +188,31 @@ describe("creator analytics", () => {
       expect(backendDb.db.select().from(videoMetricSnapshots).all()).toHaveLength(1);
       const schedule = backendDb.db.select().from(videoMetricSchedule).where(eq(videoMetricSchedule.videoTargetId, target.id)).get();
       expect(schedule?.checkpointIndex).toBe(1);
-      expect(new Date(schedule?.nextCheckAt ?? 0).getTime()).toBe(new Date(publishedAt).getTime() + 4 * 60 * 60_000);
+      expect(new Date(schedule?.nextCheckAt ?? 0).getTime()).toBe(new Date(publishedAt).getTime() + 3 * 60 * 60_000);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("persists one daily profile observation while retaining the latest projection", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const config = loadConfig({ GITHUB_DISCUSSIONS_TOKEN: "token" });
+      config.studio.modules.video_posting = false;
+      const fetchMock = (async (input: URL | RequestInfo) => {
+        const url = String(input);
+        if (url === "https://api.github.com/user")
+          return new Response(JSON.stringify({ login: "alex", followers: 48, following: 10, public_repos: 3 }));
+        return new Response(JSON.stringify({ ok: true, result: 100 }));
+      }) as typeof fetch;
+      await runAnalyticsCycle(config, backendDb, fetchMock);
+      await runAnalyticsCycle(config, backendDb, fetchMock);
+      expect(backendDb.db.select().from(creatorProfileSnapshots).where(eq(creatorProfileSnapshots.platform, "github")).all()).toHaveLength(
+        1,
+      );
+      expect(backendDb.db.select().from(creatorProfiles).where(eq(creatorProfiles.platform, "github")).get()?.dataJson).toMatchObject({
+        followersCount: 48,
+      });
     } finally {
       backendDb.close();
     }

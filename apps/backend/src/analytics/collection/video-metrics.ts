@@ -7,7 +7,7 @@ import { youtubeAccessToken } from "../../foundation/external/youtube.js";
 import { requestJson } from "../../foundation/http.js";
 import { metricNumber, upsertComment, upsertVideoSnapshot } from "../snapshots/creator-store.js";
 import { isTerminalMetricError, terminalIfMissingRemoteObject } from "./collectors/errors.js";
-import { metricCheckpointAt } from "./metric-checkpoints.js";
+import { videoMetricCheckpointAt } from "./metric-checkpoints.js";
 
 type VideoMetricTask = {
   id: number;
@@ -105,7 +105,7 @@ function ensureVideoMetricSchedule(backendDb: BackendDb): void {
       .values({
         videoTargetId: target.id,
         checkpointIndex: 0,
-        nextCheckAt: metricCheckpointAt(publishedAt.toISOString(), 0, publishedAt)?.toISOString() ?? publishedAt.toISOString(),
+        nextCheckAt: videoMetricCheckpointAt(publishedAt.toISOString(), 0, publishedAt).toISOString(),
         updatedAt: now,
       })
       .onConflictDoNothing()
@@ -150,7 +150,7 @@ function finishVideoMetricTask(backendDb: BackendDb, task: VideoMetricTask, erro
     ? null
     : error
       ? new Date(now.getTime() + 15 * 60_000)
-      : metricCheckpointAt(task.publishedAt, nextIndex, now);
+      : videoMetricCheckpointAt(task.publishedAt, nextIndex, now);
   backendDb.db
     .update(videoMetricSchedule)
     .set({
@@ -181,7 +181,7 @@ async function collectYouTubeVideoMetrics(
     { headers: auth },
   );
   const item = video.items?.[0];
-  upsertVideoSnapshot(backendDb, target.id, "youtube_shorts", {
+  upsertVideoSnapshot(backendDb, target.id, "youtube_shorts", target.checkpointIndex, {
     title: item?.snippet?.title ?? target.label ?? "Без названия",
     url: target.externalUrl,
     publishedAt: item?.snippet?.publishedAt ?? target.publishedAt,
@@ -232,7 +232,7 @@ async function collectInstagramVideoMetrics(
     `${base}?fields=like_count,comments_count,permalink,timestamp,caption&access_token=${encodeURIComponent(token)}`,
   );
   const views = await instagramReelViews(fetchImpl, base, token);
-  upsertVideoSnapshot(backendDb, target.id, "instagram_reels", {
+  upsertVideoSnapshot(backendDb, target.id, "instagram_reels", target.checkpointIndex, {
     title: target.label ?? "Без названия",
     url: media.permalink ?? target.externalUrl,
     publishedAt: media.timestamp ?? target.publishedAt,

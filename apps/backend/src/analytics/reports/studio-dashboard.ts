@@ -1,6 +1,5 @@
-import { eq } from "drizzle-orm";
 import type { BackendDb } from "../../db/client.js";
-import { creatorProfiles } from "../../db/schema.js";
+import { analyticsSync, creatorProfiles } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { type StudioLocale as BotLocale, localize as ui } from "../../foundation/locale.js";
 import { metricNumber } from "../snapshots/creator-store.js";
@@ -40,9 +39,14 @@ export function studioAnalyticsDashboard(
   if (section === "overview") {
     const followers = socialFollowers(backendDb, config);
     if (followers != null) lines.push(`${ui(locale, "👥 Followers across platforms", "👥 Подписчики по площадкам")}: *${followers}*`);
+    const growth = audienceGrowth(backendDb);
+    if (growth != null)
+      lines.push(`${ui(locale, "📈 Daily audience growth", "📈 Прирост аудитории за сутки")}: *${growth >= 0 ? "+" : ""}${growth}*`);
     lines.push(`${ui(locale, "👁 Content views", "👁 Просмотры контента")}: *${post.views + video.views}*`);
     lines.push(`${ui(locale, "💬 Interactions", "💬 Взаимодействия")}: *${post.interactions + video.interactions}*`);
     if (config.studio.modules.site) lines.push(`${ui(locale, "🌐 Site material views", "🌐 Просмотры материалов сайта")}: *${siteViews}*`);
+    const stale = staleSources(backendDb);
+    if (stale.length) lines.push(`\n⚠️ ${ui(locale, "Data attention", "Проверить данные")}: ${stale.join(", ")}`);
   } else if (section === "posts") {
     lines.push(`${ui(locale, "📝 Post views", "📝 Просмотры постов")}: *${post.views}*`);
     lines.push(`${ui(locale, "💬 Interactions", "💬 Реакции")}: *${post.interactions}*`);
@@ -79,14 +83,41 @@ function periodLabel(days: AnalyticsPeriod, locale: BotLocale): string {
 }
 
 function socialFollowers(backendDb: BackendDb, config: BackendConfig): number | null {
-  const values: number[] = [];
-  if (config.studio.modules.youtube) values.push(metricNumber(profile(backendDb, "youtube")?.subscriberCount));
-  if (config.studio.modules.instagram) values.push(metricNumber(profile(backendDb, "instagram")?.followersCount));
+  if (!config.studio.modules.analytics) return null;
+  const values = backendDb.db
+    .select()
+    .from(creatorProfiles)
+    .all()
+    .map((row) => metricNumber(row.dataJson.subscriberCount ?? row.dataJson.followersCount));
   return values.length ? values.reduce((total, value) => total + value, 0) : null;
 }
 
-function profile(backendDb: BackendDb, platform: string): Record<string, unknown> | null {
-  return backendDb.db.select().from(creatorProfiles).where(eq(creatorProfiles.platform, platform)).get()?.dataJson ?? null;
+function audienceGrowth(backendDb: BackendDb): number | null {
+  const rows = backendDb.sqlite
+    .prepare(
+      "SELECT platform, account, metrics_json FROM creator_profile_snapshots WHERE id IN (SELECT id FROM creator_profile_snapshots AS snapshot WHERE snapshot.platform=creator_profile_snapshots.platform AND snapshot.account=creator_profile_snapshots.account ORDER BY sampled_at DESC, id DESC LIMIT 2) ORDER BY platform, account, sampled_at DESC, id DESC",
+    )
+    .all() as Array<{ platform: string; account: string; metrics_json: string }>;
+  const byAccount = new Map<string, number[]>();
+  for (const row of rows) {
+    const data = JSON.parse(row.metrics_json) as Record<string, unknown>;
+    const key = `${row.platform}\u0000${row.account}`;
+    const values = byAccount.get(key) ?? [];
+    values.push(metricNumber(data.subscriberCount ?? data.followersCount));
+    byAccount.set(key, values);
+  }
+  const deltas = [...byAccount.values()].filter((values) => values.length === 2).map((values) => (values[0] ?? 0) - (values[1] ?? 0));
+  return deltas.length ? deltas.reduce((total, value) => total + value, 0) : null;
+}
+
+function staleSources(backendDb: BackendDb): string[] {
+  return backendDb.db
+    .select()
+    .from(analyticsSync)
+    .all()
+    .filter((row) => row.lastError)
+    .map((row) => row.source)
+    .slice(0, 3);
 }
 
 function hasAudienceComments(backendDb: BackendDb): boolean {

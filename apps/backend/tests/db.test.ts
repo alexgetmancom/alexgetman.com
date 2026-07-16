@@ -44,10 +44,11 @@ describe("openBackendDb", () => {
       expect(tables).toContain("video_drafts");
       expect(tables).toContain("video_targets");
       expect(tables).toContain("creator_profiles");
+      expect(tables).toContain("creator_profile_snapshots");
       expect(tables).toContain("video_metric_snapshots");
       expect(tables).toContain("social_comments");
       expect(tables).toContain("site_pageviews");
-      expect(migrationStatus(backendDb.sqlite)).toHaveLength(15);
+      expect(migrationStatus(backendDb.sqlite)).toHaveLength(16);
     } finally {
       backendDb.close();
     }
@@ -145,7 +146,7 @@ describe("openBackendDb", () => {
     const fixture = new Database(dbPath);
     fixture.exec("DROP TABLE __drizzle_migrations");
     fixture.exec(
-      "DROP TABLE site_pageviews; DROP TABLE video_bot_sessions; DROP TABLE video_jobs; DROP TABLE video_targets; DROP TABLE video_drafts; DROP TABLE analytics_sync; DROP TABLE creator_profiles; DROP TABLE video_metric_snapshots; DROP TABLE social_comments; DROP TABLE admin_state; CREATE TABLE admin_state (admin_id integer PRIMARY KEY NOT NULL, action text, draft_id integer, updated_at text NOT NULL)",
+      "DROP TABLE site_pageviews; DROP TABLE video_bot_sessions; DROP TABLE video_jobs; DROP TABLE video_targets; DROP TABLE video_drafts; DROP TABLE analytics_sync; DROP TABLE creator_profiles; DROP TABLE creator_profile_snapshots; DROP TABLE video_metric_snapshots; DROP TABLE social_comments; DROP TABLE admin_state; CREATE TABLE admin_state (admin_id integer PRIMARY KEY NOT NULL, action text, draft_id integer, updated_at text NOT NULL)",
     );
     fixture.close();
 
@@ -164,7 +165,7 @@ describe("openBackendDb", () => {
         { locale: "en", slug: "production-fixture" },
         { locale: "ru", slug: "production-fixture" },
       ]);
-      expect(migrationStatus(backendDb.sqlite)).toHaveLength(15);
+      expect(migrationStatus(backendDb.sqlite)).toHaveLength(16);
     } finally {
       backendDb.close();
     }
