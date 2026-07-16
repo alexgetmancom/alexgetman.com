@@ -221,7 +221,12 @@ describe("Astro endpoint controller", () => {
         )
         .run(new Date().toISOString());
       const app = createApiApp(
-        loadConfig({ COMMAND_CENTER_TOKEN: "secret", SITE_PUBLIC_DIR: dir, SITE_METRICS_JSON: join(dir, "metrics.json") }),
+        loadConfig({
+          COMMAND_CENTER_TOKEN: "secret",
+          COMMAND_CENTER_URL: "https://marux.ru/command-center",
+          SITE_PUBLIC_DIR: dir,
+          SITE_METRICS_JSON: join(dir, "metrics.json"),
+        }),
         backendDb,
       );
       const login = await app.request("/command-center");
@@ -229,7 +234,7 @@ describe("Astro endpoint controller", () => {
       expect(await login.text()).toContain("Введите Command Center token");
       const signIn = await app.request("/command-center", {
         method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded", origin: "https://alexgetman.com" },
+        headers: { "content-type": "application/x-www-form-urlencoded", origin: "https://marux.ru" },
         body: "token=secret",
       });
       expect(signIn.status).toBe(303);

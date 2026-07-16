@@ -19,7 +19,6 @@ type ApiContext = {
   backendDb: BackendDb;
   bot: Bot | null;
 };
-const COMMAND_CENTER_ORIGIN = "https://alexgetman.com";
 const botInitialization = new WeakMap<Bot, Promise<void>>();
 
 function initializeWebhookBot(bot: Bot): Promise<void> {
@@ -30,13 +29,14 @@ function initializeWebhookBot(bot: Bot): Promise<void> {
   return initialization;
 }
 
-function sameOriginCommandLogin(request: Request): boolean {
+function sameOriginCommandLogin(request: Request, config: BackendConfig): boolean {
+  const expectedOrigin = new URL(config.COMMAND_CENTER_URL).origin;
   const origin = request.headers.get("origin");
-  if (origin) return origin === COMMAND_CENTER_ORIGIN;
+  if (origin) return origin === expectedOrigin;
   const referer = request.headers.get("referer");
   if (!referer) return false;
   try {
-    return new URL(referer).origin === COMMAND_CENTER_ORIGIN;
+    return new URL(referer).origin === expectedOrigin;
   } catch {
     return false;
   }
@@ -143,7 +143,7 @@ export function createApiHandler(context: ApiContext) {
       );
     }
     if (path === "/command-center" && request.method === "POST") {
-      if (!sameOriginCommandLogin(request)) return text("forbidden\n", 403);
+      if (!sameOriginCommandLogin(request, config)) return text("forbidden\n", 403);
       const form = await request.formData().catch(() => new FormData());
       const token = form.get("token");
       if (typeof token !== "string" || !commandAllowed(request, config, token)) return html(renderCommandCenterLogin(true));
