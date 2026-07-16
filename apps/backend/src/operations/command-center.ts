@@ -60,6 +60,11 @@ export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb
       createdAt: event.createdAt,
       ackedAt: event.ackedAt,
     })),
+    videoRevision: backendDb.sqlite
+      .prepare(
+        "SELECT MAX(value) AS value FROM (SELECT MAX(updated_at) AS value FROM video_drafts UNION ALL SELECT MAX(sampled_at) AS value FROM video_metric_snapshots)",
+      )
+      .get() as { value: string | null },
   };
 }
 

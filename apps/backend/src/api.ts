@@ -138,6 +138,7 @@ export function createApiHandler(context: ApiContext) {
           Number(url.searchParams.get("week_offset") ?? 0) || 0,
           url.searchParams.get("ref") ?? "",
           url.searchParams.get("message_id") ?? "",
+          url.searchParams.get("tab") ?? undefined,
         ),
       );
     }

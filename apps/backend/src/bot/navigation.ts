@@ -31,31 +31,21 @@ function mainMenuKeyboard(
   unread: number,
 ): InlineKeyboard {
   const keyboard = new InlineKeyboard();
-  if (config.studio.modules.text_posting) keyboard.text(ui(locale, "📝 New post", "📝 Новый пост"), "menu_text");
-  if (config.studio.modules.video_posting) keyboard.text(ui(locale, "🎬 New video", "🎬 Новое видео"), "video_start");
-  keyboard
-    .row()
-    .text(
-      ui(
-        locale,
-        `📋 Work queue${queue.upcoming.length + queue.drafts.length ? ` · ${queue.upcoming.length + queue.drafts.length}` : ""}`,
-        `📋 Очередь${queue.upcoming.length + queue.drafts.length ? ` · ${queue.upcoming.length + queue.drafts.length}` : ""}`,
-      ),
-      "queue_home",
-    )
-    .text(ui(locale, "📚 Archive", "📚 Архив"), "archive_home");
+  // Creation is the primary action and deliberately gets its own full row.
+  // A video-only Studio (such as Maru) therefore has the compact two-row
+  // layout, while a mixed Studio still keeps post and video creation obvious.
+  if (config.studio.modules.text_posting) keyboard.text(ui(locale, "📝 New post", "📝 Новый пост"), "menu_text").row();
+  if (config.studio.modules.video_posting) keyboard.text(ui(locale, "🎬 New video", "🎬 Новое видео"), "video_start").row();
+  keyboard.text(
+    ui(
+      locale,
+      `📋 Work queue${queue.upcoming.length + queue.drafts.length ? ` · ${queue.upcoming.length + queue.drafts.length}` : ""}`,
+      `📋 Очередь${queue.upcoming.length + queue.drafts.length ? ` · ${queue.upcoming.length + queue.drafts.length}` : ""}`,
+    ),
+    "queue_home",
+  );
   if (config.studio.modules.analytics) keyboard.text(ui(locale, "📊 Analytics", "📊 Статистика"), "analytics_home");
-  keyboard
-    .row()
-    .text(
-      ui(
-        locale,
-        `${unread ? "🔴" : "🔔"} Notifications${unread ? ` · ${unread}` : ""}`,
-        `${unread ? "🔴" : "🔔"} Уведомления${unread ? ` · ${unread}` : ""}`,
-      ),
-      "notifications_home",
-    )
-    .text(ui(locale, "⚙️ Settings", "⚙️ Настройки"), "settings_home");
+  keyboard.text(ui(locale, `⚙️ Settings${unread ? ` · 🔴${unread}` : ""}`, `⚙️ Настройки${unread ? ` · 🔴${unread}` : ""}`), "settings_home");
   return keyboard;
 }
 
@@ -71,6 +61,8 @@ export function settingsKeyboard(locale: BotLocale, hasYouTube: boolean): Inline
   const keyboard = new InlineKeyboard();
   if (hasYouTube) keyboard.text(ui(locale, "▶️ YouTube signature", "▶️ Подпись YouTube"), "settings_youtube_signature").row();
   return keyboard
+    .text(ui(locale, "🔔 Notifications", "🔔 Уведомления"), "notifications_home")
+    .row()
     .text(ui(locale, "🔔 Publication notifications", "🔔 Уведомления о публикациях"), "settings_notifications")
     .row()
     .text(ui(locale, "🌐 Language", "🌐 Язык"), "settings_language")

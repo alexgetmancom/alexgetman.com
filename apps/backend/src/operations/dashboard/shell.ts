@@ -15,6 +15,7 @@ export function renderDashboardShell(body: string): string {
     .dashboard-tabs { display:flex; gap:6px; flex-wrap:wrap; margin:0 0 6px; }
     .dashboard-tabs a { border:1px solid #30363d; border-radius:14px; padding:4px 9px; font-size:14px; text-decoration:none; color:#c9d1d9; background:#161b22; }
     .dashboard-tabs a:hover { border-color:#58a6ff; color:#58a6ff; }
+    .dashboard-tabs a.active { background:#1f6feb; border-color:#1f6feb; color:#fff; }
     .overview { padding:0; border:0; background:transparent; overflow:visible; }
     .audience-strip { margin:0 0 6px; padding:6px; border:1px solid #30363d; border-radius:8px; background:#161b22; }
     .audience-cards { display:flex; gap:6px; overflow-x:auto; padding-bottom:2px; }
@@ -33,6 +34,9 @@ export function renderDashboardShell(body: string): string {
     details { margin:6px 0; border:1px solid #30363d; border-radius:8px; background:#161b22; }
     details > summary { cursor:pointer; padding:8px 10px; color:#fff; font-size:15px; font-weight:700; }
     details > section { border:0; border-radius:0; border-top:1px solid #30363d; }
+    .pipeline-target-details { margin:6px 0 0; }
+    .pipeline-target-details > summary { padding:5px 8px; font-size:13px; }
+    .pipeline-target-details:not([open]) + .table-wrap .secondary-target { display:none; }
     .table-wrap { overflow-x:auto; }
     table { width:100%; min-width:980px; border-collapse:collapse; }
     th,td { padding:6px 10px; border-bottom:1px solid #30363d; text-align:left; vertical-align:top; }
@@ -88,6 +92,13 @@ export function renderDashboardShell(body: string): string {
     .chart-tooltip { position:fixed; z-index:50; pointer-events:none; max-width:280px; padding:7px 9px; background:#161b22; border:1px solid #58a6ff; border-radius:6px; color:#f0f6fc; font-size:12px; box-shadow:0 8px 24px rgba(0,0,0,.35); white-space:nowrap; }
     
     .metric-link { text-decoration: none; }
+    .video-dashboard { padding:10px; }
+    .video-stats { margin:0 0 10px; }
+    .video-dashboard small { color:#8b949e; }
+    .video-chart { margin:0 0 10px; }
+    .video-chart-note { margin:0 0 10px; }
+    .video-chart-labels { display:flex; justify-content:space-between; color:#8b949e; font-size:11px; }
+    .danger { color:#ff7b72; font-weight:700; }
     
     @media (max-width: 760px) {
       body { padding:10px; }
@@ -131,6 +142,17 @@ export function renderDashboardShell(body: string): string {
       if (chartTooltip) chartTooltip.hidden = true;
     });
   });
+  let dashboardFingerprint = '';
+  setInterval(async () => {
+    try {
+      const response = await fetch('/api/command-center', { credentials: 'same-origin' });
+      if (!response.ok) return;
+      const payload = await response.json();
+      const fingerprint = JSON.stringify([payload.pipeline?.updated_at, payload.jobs?.[0]?.updatedAt, payload.events?.[0]?.createdAt, payload.videoRevision?.value]);
+      if (dashboardFingerprint && fingerprint !== dashboardFingerprint) window.location.reload();
+      dashboardFingerprint = fingerprint;
+    } catch { /* the current screen remains usable while the worker restarts */ }
+  }, 15000);
 </script>
 </body>
 </html>`;

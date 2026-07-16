@@ -26,6 +26,9 @@ describe("production nginx topology", () => {
 
   it("keeps Maru media proxied and verifies both runtime services during deployment", () => {
     const http = read("deploy/nginx/production/ialexey.ru.conf");
+    const maruHttp = read("deploy/nginx/production/marux.ru.conf");
+    const maruTls = read("deploy/nginx/production/marux.ru-ssl.conf");
+    const stream = read("deploy/nginx/production/shared443.conf");
     const maru = read("deploy/maru.compose.yaml");
     const workflow = read(".github/workflows/deploy.yml");
 
@@ -39,5 +42,13 @@ describe("production nginx topology", () => {
     expect(workflow).toContain("/etc/nginx/sites-enabled/ialexey.ru");
     expect(workflow).toContain("sudo nginx -t; sudo systemctl reload nginx");
     expect(workflow).toContain("http://127.0.0.1:8789/readyz");
+    expect(stream).toContain("marux.ru marux_https;");
+    expect(maruTls).toContain("/etc/letsencrypt/live/marux.ru/fullchain.pem");
+    expect(maruHttp).toContain("location = /command-center");
+    expect(maruHttp).toContain("location = /api/command-center");
+    expect(maruHttp).toContain("location ^~ /media/video/asset/");
+    expect(maruHttp).toContain("return 404;");
+    expect(workflow).toContain("/etc/nginx/sites-enabled/marux.ru");
+    expect(workflow).toContain("marux.ru-bootstrap");
   });
 });

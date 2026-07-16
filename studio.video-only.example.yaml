@@ -10,3 +10,6 @@ video:
   prepare_lead_minutes: 15
   reminder_minutes: 5
   retention_hours: 24
+
+command_center:
+  default_mode: video
