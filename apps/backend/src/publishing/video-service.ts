@@ -269,12 +269,34 @@ async function probeVideo(source: string, size: number): Promise<VideoTechnicalC
   };
 }
 
-export function cancelVideo(backendDb: BackendDb, videoDraftId: number, retentionHours: number): void {
+export type VideoCancellation = {
+  /** Already-public targets are deliberately not deleted by automation. */
+  manualRemoval: Array<{ target: VideoTarget; url: string | null }>;
+  /** Private scheduled uploads which can be safely kept private. */
+  holdPrivateYouTubeIds: string[];
+};
+
+export function cancelVideo(backendDb: BackendDb, videoDraftId: number, retentionHours: number): VideoCancellation {
   const now = new Date().toISOString();
+  const nowMs = Date.now();
+  const targets = listVideoTargets(backendDb, videoDraftId);
+  const manualRemoval = targets
+    .filter((target) => target.status === "published")
+    .map((target) => ({ target: target.target as VideoTarget, url: target.externalUrl }));
+  const holdPrivateYouTubeIds = targets
+    .filter(
+      (target) =>
+        target.target === "youtube_shorts" &&
+        target.status !== "published" &&
+        target.externalId != null &&
+        target.scheduledAt != null &&
+        new Date(target.scheduledAt).getTime() > nowMs,
+    )
+    .map((target) => target.externalId as string);
   backendDb.db.transaction((tx) => {
     tx.update(videoJobs)
-      .set({ status: "cancelled", updatedAt: now })
-      .where(and(eq(videoJobs.videoDraftId, videoDraftId), eq(videoJobs.status, "queued")))
+      .set({ status: "cancelled", lockedAt: null, lockedBy: null, updatedAt: now })
+      .where(and(eq(videoJobs.videoDraftId, videoDraftId), inArray(videoJobs.status, ["queued", "running"])))
       .run();
     tx.update(videoTargets)
       .set({ status: "cancelled", updatedAt: now })
@@ -289,4 +311,5 @@ export function cancelVideo(backendDb: BackendDb, videoDraftId: number, retentio
       .where(eq(videoDrafts.id, videoDraftId))
       .run();
   });
+  return { manualRemoval, holdPrivateYouTubeIds };
 }

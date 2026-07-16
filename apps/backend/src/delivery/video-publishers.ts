@@ -4,6 +4,17 @@ import { formBody, requestJson } from "../foundation/http.js";
 import type { InstagramMetadata, YouTubeMetadata } from "../publishing/video-types.js";
 
 type YouTubeVideo = { id: string };
+type YouTubeVideoStatus = {
+  items?: Array<{
+    status?: {
+      license?: "youtube" | "creativeCommon";
+      embeddable?: boolean;
+      publicStatsViewable?: boolean;
+      selfDeclaredMadeForKids?: boolean;
+      containsSyntheticMedia?: boolean;
+    };
+  }>;
+};
 type InstagramContainer = { id: string };
 type InstagramStatus = { status_code?: string; status?: string };
 type InstagramPublish = { id: string };
@@ -62,6 +73,37 @@ export async function prepareYouTubeVideo(
   if (!uploaded.ok) throw new Error(`YouTube upload failed: ${uploaded.status} ${await uploaded.text()}`);
   const video = (await uploaded.json()) as YouTubeVideo;
   return { id: video.id, url: `https://www.youtube.com/watch?v=${video.id}` };
+}
+
+/** Stops a future YouTube release but deliberately retains the private upload.
+ * Do not call for a target that may already have been published. */
+export async function keepYouTubeUploadPrivate(config: BackendConfig, videoId: string): Promise<void> {
+  const token = await youtubeAccessToken(config);
+  const headers = { Authorization: `Bearer ${token}` };
+  const current = await requestJson<YouTubeVideoStatus>(
+    fetch,
+    `https://www.googleapis.com/youtube/v3/videos?part=status&id=${encodeURIComponent(videoId)}`,
+    { headers },
+  );
+  const status = current.items?.[0]?.status;
+  if (!status) throw new Error("YouTube upload was not found while cancelling its schedule.");
+  await requestJson(fetch, "https://www.googleapis.com/youtube/v3/videos?part=status", {
+    method: "PUT",
+    headers: { ...headers, "Content-Type": "application/json; charset=utf-8" },
+    // videos.update clears omitted mutable fields in the selected part. Keep
+    // the existing status settings and intentionally omit publishAt.
+    body: JSON.stringify({
+      id: videoId,
+      status: {
+        privacyStatus: "private",
+        ...(status.license == null ? {} : { license: status.license }),
+        ...(status.embeddable == null ? {} : { embeddable: status.embeddable }),
+        ...(status.publicStatsViewable == null ? {} : { publicStatsViewable: status.publicStatsViewable }),
+        ...(status.selfDeclaredMadeForKids == null ? {} : { selfDeclaredMadeForKids: status.selfDeclaredMadeForKids }),
+        ...(status.containsSyntheticMedia == null ? {} : { containsSyntheticMedia: status.containsSyntheticMedia }),
+      },
+    }),
+  });
 }
 
 export async function prepareInstagramReel(config: BackendConfig, publicUrl: string, metadata: InstagramMetadata): Promise<{ id: string }> {

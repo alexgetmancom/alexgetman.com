@@ -12,6 +12,7 @@ import {
   InstagramContainerInvalidError,
   InstagramContainerProcessingError,
   instagramContainerReady,
+  keepYouTubeUploadPrivate,
   prepareInstagramReel,
   prepareYouTubeVideo,
   publishInstagramReel,
@@ -121,7 +122,24 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
         },
         target.scheduledAt ?? new Date().toISOString(),
       );
-      if (!ownsVideoJob(backendDb, job)) return;
+      if (!ownsVideoJob(backendDb, job)) {
+        // Cancellation can happen while the resumable upload is in flight. The
+        // ID exists only in this response, so fence its future public release
+        // before discarding it from local state.
+        try {
+          await keepYouTubeUploadPrivate(config, result.id);
+        } catch (error) {
+          recordDomainEvent(backendDb, {
+            ref: `video:${job.videoDraftId}`,
+            type: "studio.notification.video_cancelled",
+            severity: "warn",
+            target: "youtube_shorts",
+            message: "A cancelled YouTube upload could not be kept private; check it manually.",
+            details: { videoDraftId: job.videoDraftId, videoId: result.id, error: error instanceof Error ? error.message : String(error) },
+          });
+        }
+        return;
+      }
       backendDb.db
         .update(videoTargets)
         .set({

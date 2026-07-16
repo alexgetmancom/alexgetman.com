@@ -400,8 +400,7 @@ async function runStudioTool(
     }
     case "studio_video_cancel": {
       const videoDraftId = integer(args.video_draft_id, "video_draft_id");
-      studio.videos.cancel(actorId, videoDraftId);
-      result = { video_draft_id: videoDraftId, cancelled: true };
+      result = { video_draft_id: videoDraftId, cancelled: true, ...(await studio.videos.cancel(actorId, videoDraftId)) };
       ref = `video:${videoDraftId}`;
       break;
     }

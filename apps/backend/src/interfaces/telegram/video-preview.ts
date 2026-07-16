@@ -52,7 +52,7 @@ export function videoPreview(
   if (targets.length > 0 && (draft.status === "draft" || draft.status === "editing"))
     keyboard.text(ui(locale, "📅 Schedule", "📅 Запланировать"), `video_schedule:${draft.id}`).row();
   keyboard.text(ui(locale, "✏️ Edit details", "✏️ Изменить данные"), `video_edit_menu:${draft.id}`);
-  keyboard.text(ui(locale, "🗑 Delete video", "🗑 Удалить видео"), `video_cancel:${draft.id}`).row();
+  keyboard.text(ui(locale, "🗑 Cancel publication", "🗑 Отменить публикацию"), `video_cancel:${draft.id}`).row();
   keyboard.text(ui(locale, "← Work queue", "← К очереди"), "queue_home");
   return { text: lines.join("\n"), keyboard };
 }

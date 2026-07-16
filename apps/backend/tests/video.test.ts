@@ -156,6 +156,45 @@ describe("video publication queue", () => {
     ]);
   });
 
+  it("fences running delivery and leaves already published targets for manual removal", () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    replaceVideoTargets(backendDb, draftId, ["youtube_shorts", "instagram_reels"]);
+    const targets = listVideoTargets(backendDb, draftId);
+    const youtube = targets.find((target) => target.target === "youtube_shorts");
+    const instagram = targets.find((target) => target.target === "instagram_reels");
+    if (!youtube || !instagram) throw new Error("video targets missing");
+    const now = new Date().toISOString();
+    backendDb.db
+      .update(videoTargets)
+      .set({ status: "published", externalUrl: "https://www.youtube.com/watch?v=published", publishedAt: now, updatedAt: now })
+      .where(eq(videoTargets.id, youtube.id))
+      .run();
+    backendDb.db
+      .insert(videoJobs)
+      .values({
+        videoDraftId: draftId,
+        videoTargetId: instagram.id,
+        kind: "publish",
+        runAt: now,
+        status: "running",
+        lockedBy: "worker-1",
+        lockedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+
+    const cancellation = cancelVideo(backendDb, draftId, 24);
+
+    expect(cancellation.manualRemoval).toEqual([{ target: "youtube_shorts", url: "https://www.youtube.com/watch?v=published" }]);
+    expect(backendDb.db.select().from(videoJobs).all()).toMatchObject([{ status: "cancelled", lockedBy: null, lockedAt: null }]);
+    expect(listVideoTargets(backendDb, draftId).map((target) => ({ target: target.target, status: target.status }))).toEqual([
+      { target: "youtube_shorts", status: "published" },
+      { target: "instagram_reels", status: "cancelled" },
+    ]);
+  });
+
   it("does not let another admin remove a video platform", () => {
     backendDb = openBackendDb(":memory:");
     const draftId = createVideoDraft(backendDb, 42, "video-source", 24);

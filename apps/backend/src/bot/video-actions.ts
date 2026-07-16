@@ -119,9 +119,20 @@ export async function handleVideoActionCallback(ctx: Context, backendDb: Backend
         data: { controlMessageId: callbackMessageId(ctx) },
       });
     } else if (data.startsWith("video_cancel:")) {
-      studioServices(backendDb, config).videos.cancel(adminId, Number(data.slice("video_cancel:".length)));
+      const cancellation = await studioServices(backendDb, config).videos.cancel(adminId, Number(data.slice("video_cancel:".length)));
       clearSession(backendDb, adminId);
-      await ctx.editMessageText(`🗑 Видеопубликация отменена. Исходник останется на сервере ещё ${config.VIDEO_MEDIA_RETENTION_HOURS} ч.`);
+      const manualRemoval = cancellation.manualRemoval
+        .map(({ target, url }) => `• ${videoTargetLabel(target)}${url ? `: ${url}` : ""} — удалите вручную.`)
+        .join("\n");
+      const heldPrivate = cancellation.heldPrivateYouTubeIds.length
+        ? "\nYouTube-загрузка оставлена private: её автопубликация отменена."
+        : "";
+      const attention = cancellation.holdFailures.length
+        ? "\n⚠️ Не удалось подтвердить отмену расписания YouTube — проверьте видео вручную."
+        : "";
+      await ctx.editMessageText(
+        `🗑 Видеопубликация отменена локально. Исходник останется на сервере ещё ${config.VIDEO_MEDIA_RETENTION_HOURS} ч.${heldPrivate}${attention}${manualRemoval ? `\n\nУже опубликовано:\n${manualRemoval}` : ""}`,
+      );
     } else if (data.startsWith("video_time:")) {
       const [, targetText, idText] = data.split(":");
       const target = targetText as VideoTarget;

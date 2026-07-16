@@ -2,6 +2,8 @@ import { desc, eq } from "drizzle-orm";
 import { requireStudioMediaAssets } from "../../content/assets.js";
 import type { BackendDb } from "../../db/client.js";
 import { postEvents, studioNotificationSettings, videoDrafts, videoJobs } from "../../db/schema.js";
+import { keepYouTubeUploadPrivate } from "../../delivery/video-publishers.js";
+import { recordDomainEvent } from "../../domain/events.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { cancelScheduledNotifications, scheduleReminder } from "../../notifications/jobs.js";
 import { parseManualSchedule } from "../../publishing/schedule.js";
@@ -76,10 +78,36 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
       requireOwnedVideo(backendDb, actorId, videoDraftId);
       retryFailedVideoTarget(backendDb, videoDraftId, target);
     },
-    cancel(actorId: number, videoDraftId: number): void {
+    async cancel(actorId: number, videoDraftId: number) {
       requireOwnedVideo(backendDb, actorId, videoDraftId);
-      cancelVideo(backendDb, videoDraftId, config.VIDEO_MEDIA_RETENTION_HOURS);
+      const cancellation = cancelVideo(backendDb, videoDraftId, config.VIDEO_MEDIA_RETENTION_HOURS);
       cancelScheduledNotifications(backendDb, `video:${videoDraftId}`);
+      const heldPrivateYouTubeIds: string[] = [];
+      const holdFailures: string[] = [];
+      for (const videoId of cancellation.holdPrivateYouTubeIds) {
+        try {
+          await keepYouTubeUploadPrivate(config, videoId);
+          heldPrivateYouTubeIds.push(videoId);
+        } catch (error) {
+          holdFailures.push(error instanceof Error ? error.message : String(error));
+        }
+      }
+      if (cancellation.manualRemoval.length || holdFailures.length) {
+        recordDomainEvent(backendDb, {
+          ref: `video:${videoDraftId}`,
+          type: "studio.notification.video_cancelled",
+          severity: holdFailures.length ? "warn" : "info",
+          message: cancellation.manualRemoval.length
+            ? `Video #${videoDraftId} was cancelled locally; published targets require manual removal.`
+            : `Video #${videoDraftId} was cancelled locally; YouTube schedule needs attention.`,
+          details: {
+            manual_removal: cancellation.manualRemoval,
+            held_private_youtube_ids: heldPrivateYouTubeIds,
+            hold_failures: holdFailures,
+          },
+        });
+      }
+      return { ...cancellation, heldPrivateYouTubeIds, holdFailures };
     },
     preview(actorId: number, videoDraftId: number) {
       const draft = requireOwnedVideo(backendDb, actorId, videoDraftId);
