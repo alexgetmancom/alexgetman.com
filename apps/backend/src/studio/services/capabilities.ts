@@ -28,6 +28,10 @@ export function studioCapabilityService(config: BackendConfig) {
           const state = readiness.get(target);
           return { target, status: state?.status ?? "missing", missing: state?.missing.length ?? 0 };
         }),
+        mediaProcessor: (() => {
+          const state = readiness.get("media_processor");
+          return { provider: config.MEDIA_PROCESSOR_PROVIDER, status: state?.status ?? "ready", missing: state?.missing.length ?? 0 };
+        })(),
       };
     },
   };

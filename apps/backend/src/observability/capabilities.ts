@@ -13,6 +13,8 @@ const serviceRequirements: Record<string, readonly string[]> = {
 /** Read-only readiness report shared by diagnostics, observability and future agents. */
 export function capabilityReport(config: BackendConfig): CapabilityReportEntry[] {
   const requirements = new Map<string, readonly string[]>(Object.entries(serviceRequirements));
+  if (config.MEDIA_PROCESSOR_PROVIDER === "remote_http")
+    requirements.set("media_processor", ["MEDIA_PROCESSOR_URL", "MEDIA_PROCESSOR_TOKEN"]);
   for (const profile of Object.values(PLATFORM_PROFILES))
     if (profile.requirements.length) requirements.set(profile.id, profile.requirements);
   const values = config as unknown as Record<string, unknown>;
@@ -20,4 +22,10 @@ export function capabilityReport(config: BackendConfig): CapabilityReportEntry[]
     const missing = required.filter((name) => (name === "ADMIN_IDS" ? config.ADMIN_IDS.length === 0 : !values[name]));
     return { target, required, missing: [...missing], status: missing.length ? "missing" : "ready" };
   });
+}
+
+/** Single policy gate for every interface, collector and delivery adapter.
+ * A disabled integration must be reported as unavailable, never probed. */
+export function isCapabilityReady(config: BackendConfig, target: string): boolean {
+  return capabilityReport(config).find((entry) => entry.target === target)?.status !== "missing";
 }

@@ -16,7 +16,7 @@ export async function runDeliveryPublishCycle(
   backendDb: BackendDb,
   publishers: DeliveryPorts | Record<string, DeliveryPort> = createPlatformPorts(config, backendDb),
 ): Promise<number> {
-  recoverStalePublishJobs(backendDb, config.PUBLISH_LOCK_TIMEOUT_SECONDS);
+  recoverStalePublishJobs(backendDb, config);
   const jobs = claimDuePublishJobs(backendDb, config.PUBLISH_CLAIM_LIMIT);
   const publishLimit = pLimit(config.PUBLISH_MAX_CONCURRENCY);
   const results = await Promise.allSettled(

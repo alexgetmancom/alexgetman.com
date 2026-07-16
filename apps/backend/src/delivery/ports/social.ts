@@ -1,5 +1,6 @@
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
+import { isCapabilityReady } from "../../observability/capabilities.js";
 import type { PublishResult } from "../../publishing/errors.js";
 import { platformProfile } from "../../publishing/platform-profiles.js";
 import type { ClaimedPublishJob } from "../../publishing/queue.js";
@@ -103,9 +104,9 @@ export function createPlatformPorts(config: BackendConfig, backendDb: BackendDb,
 function validatePlatformTarget(target: string, config: BackendConfig): void {
   const profile = platformProfile(target);
   if (!profile?.requirements.length) return;
-  const values = config as unknown as Record<string, unknown>;
-  const missing = profile.requirements.filter((name) => !values[name]);
-  if (missing.length) throw new Error(`${profile.label} is not configured: ${missing.join(", ")}`);
+  if (isCapabilityReady(config, profile.id)) return;
+  const missing = profile.requirements.filter((name) => !(config as unknown as Record<string, unknown>)[name]);
+  throw new Error(`${profile.label} is not configured: ${missing.join(", ")}`);
 }
 
 async function withPreparedMedia(

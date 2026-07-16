@@ -1,4 +1,4 @@
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, notExists, sql } from "drizzle-orm";
 import type { Bot } from "grammy";
 import { refreshPostControlCard } from "../../bot/progress.js";
 import type { BackendDb } from "../../db/client.js";
@@ -29,10 +29,16 @@ const TELEGRAM_EVENT_TYPES = [
 /** Consumes durable domain events and renders Telegram-only side effects once. */
 export async function consumeTelegramEvents(backendDb: BackendDb, bot: Bot | null, reminderMinutes: number): Promise<number> {
   if (!bot) return 0;
+  // Filter in SQL, before LIMIT. Filtering after LIMIT starves new events once
+  // the first page is occupied by historically delivered Telegram effects.
+  const delivered = backendDb.db
+    .select({ one: sql<number>`1` })
+    .from(alertDedup)
+    .where(eq(alertDedup.alertKey, sql<string>`'telegram:event:' || ${postEvents.id}`));
   const events = backendDb.db
     .select()
     .from(postEvents)
-    .where(inArray(postEvents.eventType, TELEGRAM_EVENT_TYPES))
+    .where(and(inArray(postEvents.eventType, TELEGRAM_EVENT_TYPES), notExists(delivered)))
     .orderBy(asc(postEvents.createdAt), asc(postEvents.id))
     .limit(50)
     .all();

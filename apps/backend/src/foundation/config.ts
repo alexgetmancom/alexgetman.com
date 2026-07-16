@@ -65,6 +65,12 @@ const envSchema = z
     SITE_JOB_BACKOFF_MAX_SECONDS: z.coerce.number().int().positive().default(900),
     FFMPEG_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(600),
     FFMPEG_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(2).default(2),
+    /** Where optional heavy media transforms execute. Remote workers are
+     * deliberately opt-in so a stock self-hosted Studio keeps working. */
+    MEDIA_PROCESSOR_PROVIDER: z.enum(["local", "remote_http"]).default("local"),
+    MEDIA_PROCESSOR_URL: z.string().url().optional(),
+    MEDIA_PROCESSOR_TOKEN: z.string().min(16).optional(),
+    MEDIA_PROCESSOR_TIMEOUT_SECONDS: z.coerce.number().int().min(10).max(3600).default(900),
     MEDIA_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86_400),
     MEDIA_CACHE_DIR: z.string().default("/data/media-cache"),
     // Dedicated mounted media volume; never place large Studio assets on the
@@ -191,6 +197,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BackendConfig 
   }
   if (studio.modules.instagram && studio.modules.video_posting && (!parsed.INSTAGRAM_ACCESS_TOKEN || !parsed.INSTAGRAM_USER_ID)) {
     throw new Error("INSTAGRAM_ACCESS_TOKEN and INSTAGRAM_USER_ID are required when Instagram video publishing is enabled");
+  }
+  if (parsed.MEDIA_PROCESSOR_PROVIDER === "remote_http" && (!parsed.MEDIA_PROCESSOR_URL || !parsed.MEDIA_PROCESSOR_TOKEN)) {
+    throw new Error("MEDIA_PROCESSOR_URL and MEDIA_PROCESSOR_TOKEN are required when MEDIA_PROCESSOR_PROVIDER=remote_http");
   }
   return {
     ...parsed,

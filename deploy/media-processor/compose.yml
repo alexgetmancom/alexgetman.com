@@ -1,0 +1,20 @@
+services:
+  media-processor:
+    build: .
+    container_name: studio-media-processor
+    restart: unless-stopped
+    # Loopback-only: the reverse SSH tunnel is the sole path from PS529.
+    ports:
+      - "${MEDIA_PROCESSOR_BIND_ADDRESS:-127.0.0.1}:9087:8787"
+    environment:
+      MEDIA_PROCESSOR_TOKEN: ${MEDIA_PROCESSOR_TOKEN:?set MEDIA_PROCESSOR_TOKEN}
+      MEDIA_PROCESSOR_MAX_BYTES: ${MEDIA_PROCESSOR_MAX_BYTES:-1073741824}
+      MEDIA_PROCESSOR_TIMEOUT_SECONDS: ${MEDIA_PROCESSOR_TIMEOUT_SECONDS:-900}
+    volumes:
+      - media_processor_jobs:/work
+    cpus: 2.0
+    mem_limit: 2g
+    pids_limit: 128
+
+volumes:
+  media_processor_jobs:

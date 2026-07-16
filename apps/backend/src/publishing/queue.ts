@@ -81,8 +81,8 @@ export function claimDuePublishJobs(
   return claimed;
 }
 
-export function recoverStalePublishJobs(backendDb: BackendDb, timeoutSeconds: number): number {
-  const cutoff = new Date(Date.now() - timeoutSeconds * 1000).toISOString();
+export function recoverStalePublishJobs(backendDb: BackendDb, config: BackendConfig): number {
+  const cutoff = new Date(Date.now() - config.PUBLISH_LOCK_TIMEOUT_SECONDS * 1000).toISOString();
   const now = new Date().toISOString();
   const stale = backendDb.db
     .select()
@@ -93,10 +93,19 @@ export function recoverStalePublishJobs(backendDb: BackendDb, timeoutSeconds: nu
     for (const job of stale) {
       const lockedAt = job.lockedAt;
       if (!lockedAt) continue;
-      const error = job.lastError || "stale publish lock requires manual repair";
+      const error = job.lastError || "worker_lost: publishing lock expired before completion";
+      const transition = failedJobTransition(new Error(error), job.attemptCount, publishRetryPolicy(config));
       const updated = tx
         .update(publishJobs)
-        .set({ status: "failed", lockedBy: null, lockedAt: null, nextAttemptAt: null, updatedAt: now, lastError: error })
+        .set({
+          status: transition.status,
+          attemptCount: transition.attempt,
+          lockedBy: null,
+          lockedAt: null,
+          nextAttemptAt: transition.nextAttemptAt,
+          updatedAt: now,
+          lastError: error,
+        })
         .where(and(eq(publishJobs.jobId, job.jobId), eq(publishJobs.status, "publishing"), eq(publishJobs.lockedAt, lockedAt)))
         .returning({ jobId: publishJobs.jobId })
         .get();
@@ -105,13 +114,27 @@ export function recoverStalePublishJobs(backendDb: BackendDb, timeoutSeconds: nu
       upsertPostTarget(tx, {
         postKey,
         target: job.target,
-        status: "failed",
+        status: transition.status,
         error,
         skipped: 0,
         updatedAt: now,
         rawJson: JSON.stringify({ job_id: job.jobId, recovered_stale_lock: true }),
       });
-      insertEvent(tx, postKey, job.target, "publish.job.failed", "error", error, { job_id: job.jobId, recovered_stale_lock: true });
+      insertEvent(
+        tx,
+        postKey,
+        job.target,
+        transition.status === "queued" ? "publish.job.retry" : "publish.job.failed",
+        transition.status === "queued" ? "warn" : "error",
+        error,
+        {
+          job_id: job.jobId,
+          recovered_stale_lock: true,
+          error_class: transition.errorClass,
+          attempt: transition.attempt,
+          next_attempt_at: transition.nextAttemptAt,
+        },
+      );
     }
   });
   for (const job of stale) if (job.postId != null) reconcilePublication(backendDb, job.postId);

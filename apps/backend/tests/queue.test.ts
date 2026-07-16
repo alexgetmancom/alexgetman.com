@@ -256,7 +256,7 @@ describe("publish queue", () => {
     }
   });
 
-  it("fails stale publishing locks without automatically repeating an external publication", () => {
+  it("recovers a stale publishing lock into its bounded retry policy", () => {
     const backendDb = tempDb();
     try {
       const id = enqueuePublishJob(backendDb, {
@@ -269,15 +269,17 @@ describe("publish queue", () => {
         .set({ status: "publishing", lockedBy: "old-worker", lockedAt: "2000-01-01T00:00:00.000Z", updatedAt: "2000-01-01T00:00:00.000Z" })
         .where(eq(publishJobs.jobId, id))
         .run();
-      expect(recoverStalePublishJobs(backendDb, 1)).toBe(1);
+      expect(recoverStalePublishJobs(backendDb, loadConfig({ PUBLISH_LOCK_TIMEOUT_SECONDS: "1", PUBLISH_BACKOFF_BASE_SECONDS: "1" }))).toBe(
+        1,
+      );
       const job = backendDb.db
         .select({ status: publishJobs.status, lockedBy: publishJobs.lockedBy })
         .from(publishJobs)
         .where(eq(publishJobs.jobId, id))
         .get();
-      expect(job).toEqual({ status: "failed", lockedBy: null });
+      expect(job).toEqual({ status: "queued", lockedBy: null });
       expect(backendDb.db.select({ status: postTargets.status }).from(postTargets).where(eq(postTargets.target, "devto")).get()).toEqual({
-        status: "failed",
+        status: "queued",
       });
     } finally {
       backendDb.close();
@@ -291,12 +293,12 @@ describe("publish queue", () => {
       const [claimed] = claimDuePublishJobs(backendDb, 1, "old-worker");
       if (!claimed) throw new Error("expected claimed job");
       backendDb.db.update(publishJobs).set({ lockedAt: "2000-01-01T00:00:00.000Z" }).where(eq(publishJobs.jobId, id)).run();
-      recoverStalePublishJobs(backendDb, 1);
+      recoverStalePublishJobs(backendDb, loadConfig({ PUBLISH_LOCK_TIMEOUT_SECONDS: "1" }));
 
       completePublishJob(backendDb, loadConfig({}), id, { ok: true, id: "late" }, claimed.lockId);
 
       expect(backendDb.db.select({ status: publishJobs.status }).from(publishJobs).where(eq(publishJobs.jobId, id)).get()).toEqual({
-        status: "failed",
+        status: "queued",
       });
     } finally {
       backendDb.close();

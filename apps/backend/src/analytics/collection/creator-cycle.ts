@@ -1,5 +1,6 @@
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
+import { isCapabilityReady } from "../../observability/capabilities.js";
 import { canSync } from "../snapshots/creator-store.js";
 import { syncCommunityProfiles, syncFacebookProfile, syncInstagramProfile, syncXProfile, syncYouTubeProfile } from "./profile-sync.js";
 import { runVideoMetricSchedule } from "./video-metrics.js";
@@ -8,11 +9,11 @@ import { runVideoMetricSchedule } from "./video-metrics.js";
 export async function runAnalyticsCycle(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch = fetch): Promise<number> {
   if (!config.studio.modules.analytics) return 0;
   let profiles = 0;
-  if (config.studio.modules.youtube && canSync(backendDb, "youtube")) {
+  if (config.studio.modules.youtube && isCapabilityReady(config, "youtube_shorts") && canSync(backendDb, "youtube")) {
     await syncYouTubeProfile(config, backendDb, fetchImpl);
     profiles += 1;
   }
-  if (config.studio.modules.instagram && canSync(backendDb, "instagram")) {
+  if (config.studio.modules.instagram && isCapabilityReady(config, "instagram_reels") && canSync(backendDb, "instagram")) {
     await syncInstagramProfile(config, backendDb, fetchImpl);
     profiles += 1;
   }
