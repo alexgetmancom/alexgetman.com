@@ -120,7 +120,12 @@ async function withPreparedMedia(
   if (Array.isArray(job.payload._reconcile_ids)) return publish(job.payload);
   const media = payloadMedia(job.payload);
   if (media.length === 0) return publish(job.payload);
-  const sourceMedia = isStoryTarget(job.target) ? await createStoryMedia(job, media, config) : media;
+  // Resolve the original asset through the normal media port before rendering a
+  // Story. Besides keeping source lookup consistent, this makes an existing
+  // Studio cache authoritative instead of downloading the same Telegram file
+  // again for every Story target.
+  const original = isStoryTarget(job.target) ? await prepareMediaItems(config, media, fetchImpl, job.target) : null;
+  const sourceMedia = isStoryTarget(job.target) ? await createStoryMedia(job, original?.items ?? media, config) : media;
   const key = mediaCacheKey(job, sourceMedia, config);
   let entry = mediaCache.get(key);
   if (!entry) {
@@ -143,6 +148,7 @@ async function withPreparedMedia(
   try {
     return await publish({ ...job.payload, media: prepared.items, media_en: prepared.items });
   } finally {
+    if (original) await original.cleanup();
     entry.users -= 1;
     if (entry.users === 0) {
       entry.cleanupTimer = setTimeout(() => {
@@ -161,6 +167,10 @@ function isStoryTarget(target: string): boolean {
 async function createStoryMedia(job: ClaimedPublishJob, media: ReturnType<typeof payloadMedia>, config: BackendConfig) {
   const [source] = media;
   if (!source) return media;
+  // A prior attempt may already have rendered a valid Story asset. Reusing it
+  // is both idempotent and essential for recovery: retrying must not depend on
+  // re-downloading or re-transcoding an unchanged source video.
+  if (source.storyLocalPath) return [source];
   const locale = job.payload.locale === "ru" ? "ru" : "en";
   const draftId = Number(job.payload.draft_id ?? job.postId ?? job.jobId);
   return generateStoryMedia([source], Number.isSafeInteger(draftId) ? draftId : job.jobId, locale, config);
