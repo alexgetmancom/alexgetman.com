@@ -118,7 +118,8 @@ type MastodonProfile = {
   following_count?: number;
   statuses_count?: number;
 };
-type GitHubProfile = { login?: string; followers?: number; following?: number; public_repos?: number };
+type GitHubProfile = { login?: string; followers?: number; following?: number };
+type GitHubRepo = { stargazers_count?: number };
 type TelegramCount = { ok?: boolean; result?: number };
 type ThreadsProfile = { id?: string; username?: string };
 
@@ -242,9 +243,19 @@ async function syncMastodonProfile(config: BackendConfig, backendDb: BackendDb, 
 async function syncGitHubProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
   try {
     if (!config.GITHUB_DISCUSSIONS_TOKEN) return;
-    const profile = await requestJson<GitHubProfile>(fetchImpl, "https://api.github.com/user", {
-      headers: { Authorization: `Bearer ${config.GITHUB_DISCUSSIONS_TOKEN}`, "User-Agent": "alexgetman-backend/1.0" },
-    });
+    const headers = { Authorization: `Bearer ${config.GITHUB_DISCUSSIONS_TOKEN}`, "User-Agent": "alexgetman-backend/1.0" };
+    const profile = await requestJson<GitHubProfile>(fetchImpl, "https://api.github.com/user", { headers });
+    let stars = 0;
+    for (let page = 1; page <= 20; page += 1) {
+      const repositories = await requestJson<GitHubRepo[]>(
+        fetchImpl,
+        `https://api.github.com/user/repos?affiliation=owner&per_page=100&page=${page}`,
+        { headers },
+      );
+      stars += repositories.reduce((total, repository) => total + (metricNumber(repository.stargazers_count) ?? 0), 0);
+      if (repositories.length < 100) break;
+      if (page === 20) throw new Error("GitHub owned-repository list exceeds safe analytics page limit");
+    }
     recordProfileSnapshot(backendDb, {
       platform: "github",
       account: profile.login ?? "github",
@@ -253,7 +264,7 @@ async function syncGitHubProfile(config: BackendConfig, backendDb: BackendDb, fe
         name: profile.login ?? "GitHub",
         followersCount: metricNumber(profile.followers),
         followingCount: metricNumber(profile.following),
-        publicRepos: metricNumber(profile.public_repos),
+        stars,
       },
     });
     markSynced(backendDb, "github_profile");

@@ -203,6 +203,8 @@ describe("creator analytics", () => {
         const url = String(input);
         if (url === "https://api.github.com/user")
           return new Response(JSON.stringify({ login: "alex", followers: 48, following: 10, public_repos: 3 }));
+        if (url.startsWith("https://api.github.com/user/repos"))
+          return new Response(JSON.stringify([{ stargazers_count: 4 }, { stargazers_count: 7 }]));
         return new Response(JSON.stringify({ ok: true, result: 100 }));
       }) as typeof fetch;
       await runAnalyticsCycle(config, backendDb, fetchMock);
@@ -212,6 +214,7 @@ describe("creator analytics", () => {
       );
       expect(backendDb.db.select().from(creatorProfiles).where(eq(creatorProfiles.platform, "github")).get()?.dataJson).toMatchObject({
         followersCount: 48,
+        stars: 11,
       });
     } finally {
       backendDb.close();
