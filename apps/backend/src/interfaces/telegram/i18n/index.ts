@@ -1,6 +1,5 @@
 import { catalog, type MessageKey, type UiLocale } from "./catalog.js";
 
-export type { MessageKey, UiLocale };
 export { catalog };
 
 /** Translate one interface key, interpolating `{name}` placeholders from params.
