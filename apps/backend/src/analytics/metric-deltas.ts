@@ -39,7 +39,7 @@ export function metricSeriesSince(backendDb: BackendDb, since: string, where = "
 }
 
 /** metric_samples delta summed per metric name, filtered by a raw target predicate. */
-export function metricDeltasSince(backendDb: BackendDb, since: string, where: string): Record<string, number> {
+function metricDeltasSince(backendDb: BackendDb, since: string, where: string): Record<string, number> {
   const totals: Record<string, number> = {};
   for (const entry of metricSeriesSince(backendDb, since, where)) {
     if (entry.baseline == null && entry.firstAt < since) continue;
