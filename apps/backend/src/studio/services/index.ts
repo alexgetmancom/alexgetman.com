@@ -7,6 +7,7 @@ import { studioCapabilityService } from "./capabilities.js";
 import { studioDashboard } from "./dashboard.js";
 import { notificationService } from "./notifications.js";
 import { postService } from "./posts.js";
+import { publicationService } from "./publications.js";
 import { queueService } from "./queue.js";
 import { settingsService } from "./settings.js";
 import { videoService } from "./videos.js";
@@ -23,6 +24,7 @@ export function studioServices(backendDb: BackendDb, config: BackendConfig) {
   assertEntityContract(videos);
   return {
     posts,
+    publications: publicationService(backendDb, config),
     media: {
       import: (actorId: StudioActorId, input: Parameters<typeof importStudioMediaAsset>[3]) =>
         importStudioMediaAsset(backendDb, config, actorId, input),
