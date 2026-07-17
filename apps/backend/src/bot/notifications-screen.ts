@@ -1,8 +1,9 @@
 import { type Context, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { t } from "../interfaces/telegram/i18n/index.js";
 import { studioServices } from "../studio/services/index.js";
-import { botLocale, ui } from "./i18n.js";
+import { botLocale } from "./i18n.js";
 
 export async function handleNotificationsCallback(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<boolean> {
   const data = ctx.callbackQuery?.data ?? "";
@@ -21,9 +22,9 @@ export async function handleNotificationsCallback(ctx: Context, backendDb: Backe
     await ctx.answerCallbackQuery();
     if (!event) return renderInbox(ctx, notifications.inbox(actorId, 10), locale);
     const keyboard = new InlineKeyboard()
-      .text(ui(locale, "✓ Mark read", "✓ Прочитано"), `notification_ack:${event.id}`)
+      .text(t(locale, "notif.mark-read"), `notification_ack:${event.id}`)
       .row()
-      .text(ui(locale, "← Notifications", "← Уведомления"), "notification_back");
+      .text(t(locale, "notif.back"), "notification_back");
     await ctx.editMessageText(notificationText(event, locale), { reply_markup: keyboard });
     return true;
   }
@@ -37,13 +38,13 @@ async function renderInbox(
   events: ReturnType<ReturnType<typeof studioServices>["notifications"]["inbox"]>,
   locale: ReturnType<typeof botLocale>,
 ): Promise<boolean> {
-  const lines = [`🔔 ${ui(locale, "Notifications", "Уведомления")}`];
-  if (!events.length) lines.push(`\n${ui(locale, "No pending notifications.", "Новых уведомлений нет.")}`);
+  const lines = [`🔔 ${t(locale, "notif.title")}`];
+  if (!events.length) lines.push(`\n${t(locale, "notif.none")}`);
   const keyboard = new InlineKeyboard();
   for (const event of events) {
     keyboard.text(notificationLabel(event, locale), `notification_open:${event.id}`).text("✓", `notification_ack:${event.id}`).row();
   }
-  keyboard.text(ui(locale, "← Menu", "← Меню"), "menu_home");
+  keyboard.text(t(locale, "progress.menu"), "menu_home");
   await ctx.editMessageText(lines.join("\n"), { reply_markup: keyboard });
   return true;
 }
@@ -63,10 +64,10 @@ function notificationText(
 ): string {
   const status =
     event.severity === "error"
-      ? ui(locale, "Error", "Ошибка")
+      ? t(locale, "notif.status-error")
       : event.severity === "warn"
-        ? ui(locale, "Warning", "Предупреждение")
-        : ui(locale, "Notification", "Уведомление");
+        ? t(locale, "notif.status-warning")
+        : t(locale, "notif.status-notification");
   return [
     `${event.severity === "error" ? "🔴" : event.severity === "warn" ? "🟡" : "🔔"} ${status}`,
     "",

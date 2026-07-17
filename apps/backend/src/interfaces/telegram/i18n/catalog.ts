@@ -120,6 +120,33 @@ const en = {
   "video.confirm": "✅ Confirm",
   "video.reminder": "I will remind you {minutes} minutes beforehand.",
   "video.confirmed-card": "Confirmed. Current publication card is below.",
+  // Settings screen
+  "settings.youtube-saved": "✅ YouTube signature saved.",
+  "settings.youtube-edit-prompt": "⌨ Send the persistent text to append to each YouTube description. Send `-` to leave it empty.",
+  "settings.cleared": "Cleared",
+  "settings.language-title": "🌐 Interface language",
+  "settings.language-set": "Language: English",
+  "settings.keyboard-updated": "Keyboard updated.",
+  "settings.minutes-toast": "{minutes} min",
+  "settings.on": "On",
+  "settings.off": "Off",
+  "settings.notif-body":
+    "🔔 *Publication notifications*\n\nReminder before scheduled publishing: *{reminders}* · *{minutes} min*\nCompletion notification: *{completion}*\n\nThese are Studio settings. Telegram only delivers them.",
+  "settings.reminder-label": "Reminder",
+  "settings.completion-label": "Completion",
+  "settings.back-to-settings": "← Settings",
+  "settings.youtube-body": "▶️ *YouTube signature*\n\nThis text is appended to every YouTube description.\n\n*Current:*\n{signature}",
+  "settings.youtube-not-set": "Not set",
+  "settings.edit": "✏️ Edit",
+  "settings.clear": "🗑 Clear",
+  // Notifications inbox
+  "notif.mark-read": "✓ Mark read",
+  "notif.back": "← Notifications",
+  "notif.title": "Notifications",
+  "notif.none": "No pending notifications.",
+  "notif.status-error": "Error",
+  "notif.status-warning": "Warning",
+  "notif.status-notification": "Notification",
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -237,6 +264,34 @@ const ru = {
   "video.confirm": "✅ Подтвердить",
   "video.reminder": "Напомню за {minutes} минут.",
   "video.confirmed-card": "Подтверждено. Актуальная карточка публикации — ниже.",
+  // Settings screen
+  "settings.youtube-saved": "✅ Подпись YouTube сохранена.",
+  "settings.youtube-edit-prompt": "⌨ Отправьте постоянный текст для конца YouTube-описания. Чтобы оставить пустым — отправьте «-».",
+  "settings.cleared": "Очищено",
+  "settings.language-title": "🌐 Язык интерфейса",
+  "settings.language-set": "Язык: русский",
+  "settings.keyboard-updated": "Клавиатура обновлена.",
+  "settings.minutes-toast": "{minutes} мин.",
+  "settings.on": "Вкл",
+  "settings.off": "Выкл",
+  "settings.notif-body":
+    "🔔 *Уведомления о публикациях*\n\nНапоминание перед отложенной публикацией: *{reminders}* · *{minutes} мин.*\nУведомление о завершении: *{completion}*\n\nЭто настройки Studio. Telegram только доставляет их.",
+  "settings.reminder-label": "Напоминание",
+  "settings.completion-label": "Завершение",
+  "settings.back-to-settings": "← К настройкам",
+  "settings.youtube-body":
+    "▶️ *Подпись YouTube*\n\nЭтот текст автоматически добавляется в конец каждого YouTube-описания.\n\n*Сейчас:*\n{signature}",
+  "settings.youtube-not-set": "Не задана",
+  "settings.edit": "✏️ Изменить",
+  "settings.clear": "🗑 Очистить",
+  // Notifications inbox
+  "notif.mark-read": "✓ Прочитано",
+  "notif.back": "← Уведомления",
+  "notif.title": "Уведомления",
+  "notif.none": "Новых уведомлений нет.",
+  "notif.status-error": "Ошибка",
+  "notif.status-warning": "Предупреждение",
+  "notif.status-notification": "Уведомление",
 } satisfies Record<MessageKey, string>;
 
 export const catalog: Record<UiLocale, Record<MessageKey, string>> = { en, ru };
