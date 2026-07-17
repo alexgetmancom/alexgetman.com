@@ -3,6 +3,19 @@ import path from "node:path";
 import sharp from "sharp";
 import { categorySlugFromBadge, getSmartBadge, categoryLabel as taxonomyLabel } from "../apps/web/src/utils/taxonomy.ts";
 
+type FeedMediaItem = { type?: string; path?: string };
+type FeedItem = {
+  post_id?: number | string;
+  has_en?: boolean;
+  has_ru?: boolean;
+  text?: string;
+  text_en?: string;
+  image?: string;
+  image_en?: string;
+  media?: FeedMediaItem[];
+  media_en?: FeedMediaItem[];
+};
+
 const root = process.cwd();
 const webRoot = path.join(root, "apps", "web");
 const publicDir = path.join(webRoot, "public");
@@ -12,7 +25,7 @@ const feedJsonPaths = [path.join(dataDir, "feed.json"), path.join(webRoot, "src/
 const cacheFile = path.join(webRoot, ".image-cache.json");
 const widths = [360, 640, 960];
 
-async function exists(filePath) {
+async function exists(filePath: string): Promise<boolean> {
   try {
     await fs.access(filePath);
     return true;
@@ -21,36 +34,36 @@ async function exists(filePath) {
   }
 }
 
-async function readJson(filePath) {
+async function readJson<T = unknown>(filePath: string): Promise<T | null> {
   try {
-    return JSON.parse(await fs.readFile(filePath, "utf-8"));
+    return JSON.parse(await fs.readFile(filePath, "utf-8")) as T;
   } catch {
     return null;
   }
 }
 
-async function loadFeedItems() {
+async function loadFeedItems(): Promise<FeedItem[]> {
   for (const filePath of feedJsonPaths) {
     if (!(await exists(filePath))) continue;
-    const parsed = await readJson(filePath);
+    const parsed = await readJson<FeedItem[] | { items?: FeedItem[] }>(filePath);
     if (Array.isArray(parsed)) return parsed;
     if (Array.isArray(parsed?.items)) return parsed.items;
   }
   return [];
 }
 
-let cache = {};
+let cache: Record<string, number> = {};
 if (await exists(cacheFile)) {
-  cache = (await readJson(cacheFile)) || {};
+  cache = (await readJson<Record<string, number>>(cacheFile)) || {};
 }
 
-async function saveCache() {
+async function saveCache(): Promise<void> {
   try {
     await fs.writeFile(cacheFile, JSON.stringify(cache, null, 2), "utf-8");
   } catch {}
 }
 
-async function needsUpdate(inputPath, key) {
+async function needsUpdate(inputPath: string, key: string): Promise<boolean> {
   try {
     const stat = await fs.stat(inputPath);
     const mtime = stat.mtimeMs;
@@ -130,7 +143,7 @@ function normalizePublicPath(value: unknown): string {
   return String(value || "").replace(/^\/+/, "");
 }
 
-function postImagePath(item, locale) {
+function postImagePath(item: FeedItem, locale: string): string {
   const localizedMedia = locale === "ru" ? item.media : item.media_en;
   const fallbackMedia = locale === "ru" ? item.media_en : item.media;
   const media =
@@ -140,7 +153,7 @@ function postImagePath(item, locale) {
   return normalizePublicPath(directImage || imageMedia?.path);
 }
 
-async function resolvePublicImage(publicPath) {
+async function resolvePublicImage(publicPath: string | null | undefined): Promise<string | null> {
   const normalized = normalizePublicPath(publicPath);
   if (!normalized) return null;
   const candidates = [path.join(publicDir, normalized), path.join(publishedDir, normalized)];
@@ -176,7 +189,7 @@ async function generateSocialImage() {
     .toFile(path.join(publicDir, "social-image.jpg"));
 }
 
-async function generatePostOgImages(feedItems) {
+async function generatePostOgImages(feedItems: FeedItem[]): Promise<void> {
   const outputDir = path.join(publicDir, "og/posts");
   await fs.mkdir(outputDir, { recursive: true });
   const avatarPath = (await resolvePublicImage("avatar-small.png")) || (await resolvePublicImage("avatar.png"));
@@ -299,9 +312,9 @@ function responsiveOutputName(publicPath: string, width: number): string {
     .replace(/\.[a-z0-9]+$/i, `-${width}.webp`);
 }
 
-async function collectImages(dir, prefix = "") {
+async function collectImages(dir: string, prefix = ""): Promise<string[]> {
   const entries = await fs.readdir(dir, { withFileTypes: true });
-  const images = [];
+  const images: string[] = [];
   for (const entry of entries) {
     const publicPath = path.join(prefix, entry.name).replace(/\\/g, "/");
     if (entry.isDirectory()) {

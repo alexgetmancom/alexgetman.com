@@ -17,21 +17,19 @@ export type MetricTask = {
 
 const PAID_METRIC_TARGETS = ["x", "twitter"] as const;
 
-export function ensureMetricSchedule(backendDb: BackendDb, targets: readonly string[]): number {
-  if (targets.length === 0) return 0;
+export function ensureMetricSchedule(backendDb: BackendDb, targets: readonly string[]): void {
+  if (targets.length === 0) return;
   const rows = backendDb.db
     .select({ postKey: posts.postKey, dateUtc: posts.dateUtc, target: postTargets.target })
     .from(posts)
     .innerJoin(postTargets, eq(postTargets.postKey, posts.postKey))
     .where(and(eq(posts.status, "active"), eq(postTargets.status, "published"), inArray(postTargets.target, [...targets])))
     .all();
-  let changes = 0;
   const now = new Date().toISOString();
   backendDb.db.transaction((tx) => {
     for (const row of rows) {
       const publishedAt = parseDate(row.dateUtc);
-      const inserted = tx
-        .insert(metricSchedule)
+      tx.insert(metricSchedule)
         .values({
           postKey: row.postKey,
           target: row.target,
@@ -40,12 +38,9 @@ export function ensureMetricSchedule(backendDb: BackendDb, targets: readonly str
           updatedAt: now,
         })
         .onConflictDoNothing()
-        .returning({ postKey: metricSchedule.postKey })
-        .get();
-      if (inserted) changes += 1;
+        .run();
     }
   });
-  return changes;
 }
 
 export function dueMetricTasks(backendDb: BackendDb, config: BackendConfig): MetricTask[] {

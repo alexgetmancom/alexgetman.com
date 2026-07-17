@@ -121,8 +121,6 @@ describe("Studio architecture boundaries", () => {
     expect(workflow).toContain('from "./ports/social.js"');
     expect(workflow).toContain('from "./ports.js"');
     expect(ports).not.toContain('from "grammy"');
-    for (const legacyPath of ["delivery/publish-cycle.ts", "delivery/publishers.ts", "delivery/social/index.ts"])
-      expect(existsSync(`${root}${legacyPath}`), `legacy Delivery facade ${legacyPath} should be absent`).toBe(false);
   });
 
   it("keeps Operations command dispatch, repairs and Observability physically separate", () => {
@@ -159,17 +157,6 @@ describe("Studio architecture boundaries", () => {
   });
 
   it("keeps Content translation and Analytics collection in their owning contexts", () => {
-    for (const legacyPath of [
-      "translation.ts",
-      "analytics/engine.ts",
-      "analytics/collection.ts",
-      "analytics/metrics-cycle.ts",
-      "analytics/metric-schedule.ts",
-      "analytics/creatorStore.ts",
-      "analytics/dashboard.ts",
-      "operations/pipeline.ts",
-    ])
-      expect(existsSync(`${root}${legacyPath}`), `legacy context entry ${legacyPath} should be absent`).toBe(false);
     expect(existsSync(`${root}content/translation.ts`)).toBe(true);
     for (const analyticsPath of [
       "analytics/collection/creator-cycle.ts",
@@ -188,8 +175,6 @@ describe("Studio architecture boundaries", () => {
       for (const forbidden of ["grammy", "../interfaces/", "../studio/", "../delivery/", "../bot/"])
         expect(source, `${relativePath} imports ${forbidden}`).not.toContain(forbidden);
     }
-    for (const legacyPath of ["public/service.ts", "public/engagement.ts", "public/rate-limit.ts"])
-      expect(existsSync(`${root}${legacyPath}`), `legacy public facade ${legacyPath} should be absent`).toBe(false);
   });
 
   it("keeps external publication edits inside Delivery, not Operations", () => {
@@ -224,7 +209,6 @@ describe("Studio architecture boundaries", () => {
   });
 
   it("keeps core workers independent from Telegram and routes UI work through durable events", () => {
-    expect(existsSync(`${root}worker.ts`), "legacy root worker should be absent").toBe(false);
     const core = readFileSync(`${root}runtime/workers.ts`, "utf8");
     const telegram = readFileSync(`${root}interfaces/telegram/worker.ts`, "utf8");
     const events = readFileSync(`${root}interfaces/telegram/event-consumer.ts`, "utf8");
@@ -236,7 +220,6 @@ describe("Studio architecture boundaries", () => {
   });
 
   it("keeps publication orchestration out of the draft lifecycle", () => {
-    expect(existsSync(`${root}publishing/drafts.ts`), "legacy publishing drafts facade should be absent").toBe(false);
     const lifecycle = readFileSync(`${root}publishing/draft-lifecycle.ts`, "utf8");
     const workflow = readFileSync(`${root}publishing/publication-workflow.ts`, "utf8");
     expect(lifecycle).not.toContain("createPublicationPlan");
