@@ -1,5 +1,6 @@
 import type { Context } from "grammy";
 import type { BackendDb } from "../db/client.js";
+import { withActionLock } from "../foundation/action-lock.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { setTelegramPostProgressCard } from "../interfaces/telegram/control-cards.js";
@@ -58,7 +59,10 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
     return editDraftPreview(ctx, backendDb, draftId, "confirm_delete");
   }
   if (action === "cancel_confirm") {
-    studioServices(backendDb, config).posts.cancel(actorId, draftId);
+    const result = await withActionLock(`${actorId}:${data}`, async () => {
+      studioServices(backendDb, config).posts.cancel(actorId, draftId);
+    });
+    if (!result.ok) return void (await ctx.answerCallbackQuery());
     await ctx.answerCallbackQuery({ text: t(locale, "action.cancelled") });
     return void (await ctx.editMessageText(t(locale, "action.draft-cancelled", { id: draftId })));
   }
@@ -71,7 +75,10 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
     return;
   }
   if (action === "publish_confirm") {
-    studioServices(backendDb, config).posts.publish(actorId, draftId);
+    const result = await withActionLock(`${actorId}:${data}`, async () => {
+      studioServices(backendDb, config).posts.publish(actorId, draftId);
+    });
+    if (!result.ok) return void (await ctx.answerCallbackQuery());
     await ctx.answerCallbackQuery({ text: t(locale, "action.queued") });
     await ctx.editMessageText(t(locale, "action.post-queued", { id: draftId }));
     const progress = renderPostProgress(studioServices(backendDb, config).posts.progress(actorId, draftId), locale);
@@ -90,10 +97,13 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
     return showScheduleConfirmation(ctx, backendDb, draftId, ruAt, enAt, `sched_confirm:${first}:${draftId}`);
   }
   if (action === "sched_confirm" && first) {
-    const { ruAt, enAt } = studioServices(backendDb, config).posts.scheduleChoice(actorId, draftId, first);
-    const postId = studioServices(backendDb, config).posts.schedule(actorId, draftId, { ruAt, enAt });
+    const result = await withActionLock(`${actorId}:${data}`, async () => {
+      const { ruAt, enAt } = studioServices(backendDb, config).posts.scheduleChoice(actorId, draftId, first);
+      return { postId: studioServices(backendDb, config).posts.schedule(actorId, draftId, { ruAt, enAt }), ruAt, enAt };
+    });
+    if (!result.ok) return void (await ctx.answerCallbackQuery());
     await ctx.answerCallbackQuery({ text: t(locale, "common.scheduled") });
-    return void (await ctx.editMessageText(scheduledDraftText(locale, draftId, postId, ruAt, enAt)));
+    return void (await ctx.editMessageText(scheduledDraftText(locale, draftId, result.value.postId, result.value.ruAt, result.value.enAt)));
   }
   if (action === "sched_manual_confirm") {
     const state = getPostAdminState(backendDb, Number(ctx.from?.id));
@@ -113,23 +123,34 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
       return void (await ctx.answerCallbackQuery({
         text: t(locale, "action.schedule-expired"),
       }));
-    const { ruAt, enAt } = studioServices(backendDb, config).posts.scheduleAt(actorId, draftId, scheduleScope(scope), value);
-    const postId = studioServices(backendDb, config).posts.schedule(actorId, draftId, { ruAt, enAt });
+    const result = await withActionLock(`${actorId}:sched_manual_confirm:${draftId}`, async () => {
+      const { ruAt, enAt } = studioServices(backendDb, config).posts.scheduleAt(actorId, draftId, scheduleScope(scope), value);
+      return { postId: studioServices(backendDb, config).posts.schedule(actorId, draftId, { ruAt, enAt }), ruAt, enAt };
+    });
+    if (!result.ok) return void (await ctx.answerCallbackQuery());
     clearPostAdminState(backendDb, Number(ctx.from?.id));
     await ctx.answerCallbackQuery({ text: t(locale, "common.scheduled") });
-    return void (await ctx.editMessageText(scheduledDraftText(locale, draftId, postId, ruAt, enAt)));
+    return void (await ctx.editMessageText(scheduledDraftText(locale, draftId, result.value.postId, result.value.ruAt, result.value.enAt)));
   }
   if (action === "sched_auto") {
-    const { ruAt, enAt } = studioServices(backendDb, config).posts.scheduleChoice(actorId, draftId, "auto");
-    const postId = studioServices(backendDb, config).posts.schedule(actorId, draftId, { ruAt, enAt });
+    const result = await withActionLock(`${actorId}:${data}`, async () => {
+      const { ruAt, enAt } = studioServices(backendDb, config).posts.scheduleChoice(actorId, draftId, "auto");
+      return { postId: studioServices(backendDb, config).posts.schedule(actorId, draftId, { ruAt, enAt }), ruAt, enAt };
+    });
+    if (!result.ok) return void (await ctx.answerCallbackQuery());
     await ctx.answerCallbackQuery({ text: t(locale, "common.scheduled") });
-    return void (await ctx.editMessageText(scheduledDraftText(locale, draftId, postId, ruAt, enAt)));
+    return void (await ctx.editMessageText(scheduledDraftText(locale, draftId, result.value.postId, result.value.ruAt, result.value.enAt)));
   }
   if (action === "sched_preset" && second && first) {
-    const schedule = studioServices(backendDb, config).posts.scheduleChoice(actorId, draftId, first);
-    const postId = studioServices(backendDb, config).posts.schedule(actorId, draftId, schedule);
+    const result = await withActionLock(`${actorId}:${data}`, async () => {
+      const schedule = studioServices(backendDb, config).posts.scheduleChoice(actorId, draftId, first);
+      return { postId: studioServices(backendDb, config).posts.schedule(actorId, draftId, schedule), schedule };
+    });
+    if (!result.ok) return void (await ctx.answerCallbackQuery());
     await ctx.answerCallbackQuery({ text: t(locale, "common.scheduled") });
-    return void (await ctx.editMessageText(scheduledDraftText(locale, draftId, postId, schedule.ruAt, schedule.enAt)));
+    return void (await ctx.editMessageText(
+      scheduledDraftText(locale, draftId, result.value.postId, result.value.schedule.ruAt, result.value.schedule.enAt),
+    ));
   }
   if (action === "sched_manual" && first) {
     setPostAdminState(backendDb, Number(ctx.from?.id), `schedule_manual_${first}`, draftId, callbackMessageId(ctx));

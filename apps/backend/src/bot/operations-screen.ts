@@ -1,4 +1,5 @@
 import { type Context, InlineKeyboard } from "grammy";
+import { withActionLock } from "../foundation/action-lock.js";
 import type { BackendConfig } from "../foundation/config.js";
 import {
   parseDeploymentPromoteAskCallback,
@@ -29,7 +30,7 @@ export async function handleOperationsCallback(ctx: Context, config: BackendConf
 
   const rollback = parseDeploymentRollbackCallback(data);
   if (rollback) {
-    await runDeployAction(ctx, `⏳ Rolling back ${rollback.target}…`, () =>
+    await runDeployAction(ctx, data, `⏳ Rolling back ${rollback.target}…`, () =>
       requestDeploymentRollback(config, rollback.target, rollback.revision),
     );
     return true;
@@ -37,7 +38,7 @@ export async function handleOperationsCallback(ctx: Context, config: BackendConf
 
   const promote = parseDeploymentPromoteCallback(data);
   if (promote) {
-    await runDeployAction(ctx, `⏳ Deploying ${promote.target} (${promote.revision.slice(0, 12)})…`, () =>
+    await runDeployAction(ctx, data, `⏳ Deploying ${promote.target} (${promote.revision.slice(0, 12)})…`, () =>
       requestDeploymentPromote(config, promote.target, promote.revision),
     );
     return true;
@@ -60,6 +61,7 @@ async function askConfirmation(ctx: Context, action: "rollback" | "promote", tar
 
 async function runDeployAction(
   ctx: Context,
+  lockKey: string,
   progressText: string,
   action: () => Promise<{ ok: true; release: string; currentRevision: string } | { ok: false; message: string }>,
 ): Promise<void> {
@@ -69,8 +71,10 @@ async function runDeployAction(
   // request alone can take up to ~150s (agent healthcheck plus image pull).
   // Awaiting it here would freeze every chat's buttons and messages until it
   // resolves. Let it run in the background and edit this message once it's done.
-  void action()
-    .then((result) => finishDeployAction(ctx, result))
+  // withActionLock stops a double tap on "✅ Yes" from firing the request twice
+  // before the button even disappears.
+  void withActionLock(lockKey, action)
+    .then((result) => (result.ok ? finishDeployAction(ctx, result.value) : undefined))
     .catch((error) => finishDeployAction(ctx, { ok: false, message: error instanceof Error ? error.message : String(error) }));
 }
 

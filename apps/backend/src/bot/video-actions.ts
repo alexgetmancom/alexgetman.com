@@ -1,5 +1,6 @@
 import { type Context, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
+import { withActionLock } from "../foundation/action-lock.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { setTelegramVideoCard } from "../interfaces/telegram/control-cards.js";
@@ -103,15 +104,17 @@ export async function handleVideoActionCallback(ctx: Context, backendDb: Backend
       if (!session || session.draftId !== id || session.step !== "schedule_confirm") throw new StudioError("action.schedule-expired");
       const values = session.data.schedule as Record<string, string> | undefined;
       if (!values) throw new StudioError("action.schedule-expired");
-      await finishVideoSchedule(
-        ctx,
-        backendDb,
-        config,
-        adminId,
-        session,
-        Object.fromEntries(Object.entries(values).map(([target, value]) => [target, new Date(value)])) as Partial<
-          Record<VideoTarget, Date>
-        >,
+      await withActionLock(`${adminId}:${data}`, () =>
+        finishVideoSchedule(
+          ctx,
+          backendDb,
+          config,
+          adminId,
+          session,
+          Object.fromEntries(Object.entries(values).map(([target, value]) => [target, new Date(value)])) as Partial<
+            Record<VideoTarget, Date>
+          >,
+        ),
       );
     } else if (await handleScheduleCallback(ctx, backendDb, config, adminId, data)) {
       // handled above
@@ -127,12 +130,14 @@ export async function handleVideoActionCallback(ctx: Context, backendDb: Backend
       });
     } else if (data.startsWith("video_now_confirm:")) {
       const id = Number(data.slice("video_now_confirm:".length));
-      await finishVideoNow(ctx, backendDb, config, adminId, {
-        draftId: id,
-        step: "",
-        selected: [],
-        data: { controlMessageId: callbackMessageId(ctx) },
-      });
+      await withActionLock(`${adminId}:${data}`, () =>
+        finishVideoNow(ctx, backendDb, config, adminId, {
+          draftId: id,
+          step: "",
+          selected: [],
+          data: { controlMessageId: callbackMessageId(ctx) },
+        }),
+      );
     } else if (data.startsWith("video_cancel_ask:")) {
       const id = Number(data.slice("video_cancel_ask:".length));
       studioServices(backendDb, config).videos.get(adminId, id);
@@ -166,13 +171,19 @@ export async function handleVideoActionCallback(ctx: Context, backendDb: Backend
       );
       return true;
     } else if (data.startsWith("video_cancel:")) {
-      const cancellation = await studioServices(backendDb, config).videos.cancel(adminId, Number(data.slice("video_cancel:".length)));
+      const result = await withActionLock(`${adminId}:${data}`, () =>
+        studioServices(backendDb, config).videos.cancel(adminId, Number(data.slice("video_cancel:".length))),
+      );
+      if (!result.ok) {
+        await ctx.answerCallbackQuery();
+        return true;
+      }
       clearSession(backendDb, adminId);
-      const manualRemoval = cancellation.manualRemoval
+      const manualRemoval = result.value.manualRemoval
         .map(({ target, url }) => t(locale, "video.remove-manually", { label: videoTargetLabel(target), url: url ? `: ${url}` : "" }))
         .join("\n");
-      const heldPrivate = cancellation.heldPrivateYouTubeIds.length ? `\n${t(locale, "video.held-private")}` : "";
-      const attention = cancellation.holdFailures.length ? `\n${t(locale, "video.hold-failed")}` : "";
+      const heldPrivate = result.value.heldPrivateYouTubeIds.length ? `\n${t(locale, "video.held-private")}` : "";
+      const attention = result.value.holdFailures.length ? `\n${t(locale, "video.hold-failed")}` : "";
       await ctx.editMessageText(
         `${t(locale, "video.cancelled-local", { hours: config.VIDEO_MEDIA_RETENTION_HOURS })}${heldPrivate}${attention}${manualRemoval ? `\n\n${t(locale, "video.already-published")}\n${manualRemoval}` : ""}`,
       );
@@ -194,7 +205,14 @@ export async function handleVideoActionCallback(ctx: Context, backendDb: Backend
       const [, targetText, idText] = data.split(":");
       const target = targetText as VideoTarget;
       const id = Number(idText);
-      const { cancelled } = studioServices(backendDb, config).videos.removeTarget(adminId, id, target);
+      const result = await withActionLock(`${adminId}:${data}`, async () =>
+        studioServices(backendDb, config).videos.removeTarget(adminId, id, target),
+      );
+      if (!result.ok) {
+        await ctx.answerCallbackQuery();
+        return true;
+      }
+      const { cancelled } = result.value;
       if (cancelled) {
         clearSession(backendDb, adminId);
         await ctx.editMessageText(t(locale, "video.all-removed"));
