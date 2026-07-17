@@ -1,4 +1,9 @@
 # User-facing feature selection. Secrets always live in an ignored .env file.
+# IANA zone used for every displayed schedule time; timezone_label is the short
+# suffix shown next to it (e.g. "18:30 MSK").
+timezone: Europe/Moscow
+timezone_label: MSK
+
 modules:
   site: true
   text_posting: true

@@ -3,6 +3,8 @@ import { parse } from "yaml";
 import * as z from "zod";
 
 const studioSchema = z.object({
+  timezone: z.string().default("Europe/Moscow"),
+  timezone_label: z.string().default("MSK"),
   modules: z
     .object({
       site: z.boolean().default(true),
@@ -32,6 +34,8 @@ const studioSchema = z.object({
 });
 
 export type StudioConfig = {
+  timezone: string;
+  timezoneLabel: string;
   modules: { site: boolean; text_posting: boolean; video_posting: boolean; youtube: boolean; instagram: boolean; analytics: boolean };
   video: { prepare_lead_minutes: number; reminder_minutes: number; retention_hours: number };
   commandCenter: { defaultMode: "posts" | "video" };
@@ -41,6 +45,8 @@ export function loadStudioConfig(path = process.env.STUDIO_CONFIG ?? "studio.yam
   const value = existsSync(path) ? parse(readFileSync(path, "utf8")) : {};
   const parsed = studioSchema.parse(value ?? {});
   return {
+    timezone: parsed.timezone,
+    timezoneLabel: parsed.timezone_label,
     modules: {
       site: parsed.modules.site ?? true,
       text_posting: parsed.modules.text_posting ?? true,

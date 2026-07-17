@@ -258,7 +258,7 @@ async function confirmVideoSchedule(
     const value = schedule[target];
     if (value)
       lines.push(
-        `${videoTargetLabel(target)}: ${value.toLocaleString(locale === "ru" ? "ru-RU" : "en-GB", { timeZone: "Europe/Moscow" })} MSK`,
+        `${videoTargetLabel(target)}: ${value.toLocaleString(locale === "ru" ? "ru-RU" : "en-GB", { timeZone: config.TIMEZONE })} ${config.TIMEZONE_LABEL}`,
       );
   }
   const keyboard = new InlineKeyboard()

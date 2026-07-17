@@ -12,7 +12,12 @@ import {
   siteJobs,
   siteSourceItems,
 } from "../db/schema.js";
+import { zonedDateParts, zonedSlot } from "../foundation/time.js";
 import { parseTargets } from "./targets.js";
+
+// Fixed posting cadence is defined in Moscow time; this is a business-cadence
+// choice independent of the display timezone configured in studio.yaml.
+const SCHEDULE_TIMEZONE = "Europe/Moscow";
 
 const SLOTS: Record<TargetLocale, readonly string[]> = {
   ru: ["10:37", "13:37", "17:37", "20:37", "23:37"],
@@ -164,14 +169,7 @@ export function parseManualSchedule(value: string, now = new Date()): Date {
 }
 
 function mskDateParts(date: Date): { year: number; month: number; day: number } {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Moscow",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(date);
-  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return { year: Number(value.year), month: Number(value.month), day: Number(value.day) };
+  return zonedDateParts(date, SCHEDULE_TIMEZONE);
 }
 
 function availableSlots(backendDb: BackendDb, locale: TargetLocale, now: Date, needed: number, rebalancedDraftIds: number[]): Date[] {
@@ -268,17 +266,5 @@ function updateSchedulePayload(
 }
 
 function mskSlot(year: number, month: number, day: number, clock: string): Date {
-  const [hour, minute] = clock.split(":").map(Number) as [number, number];
-  const wallClock = new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
-  return new Date(wallClock.getTime() - timezoneOffsetMs(wallClock, "Europe/Moscow"));
-}
-
-function timezoneOffsetMs(date: Date, timeZone: string): number {
-  const zone = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "longOffset" })
-    .formatToParts(date)
-    .find((part) => part.type === "timeZoneName")?.value;
-  const match = zone?.match(/^GMT([+-])(\d{2}):(\d{2})$/);
-  if (!match) throw new Error(`Cannot resolve ${timeZone} offset`);
-  const offset = (Number(match[2]) * 60 + Number(match[3])) * 60_000;
-  return match[1] === "+" ? offset : -offset;
+  return zonedSlot(year, month, day, clock, SCHEDULE_TIMEZONE);
 }

@@ -28,19 +28,19 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
   if (action === "toggle" && second) {
     studioServices(backendDb, config).posts.toggleTarget(actorId, draftId, second);
     await ctx.answerCallbackQuery({ text: t(locale, "action.target-updated", { target: second }) });
-    return editDraftPreview(ctx, backendDb, draftId, "platforms");
+    return editDraftPreview(ctx, backendDb, draftId, config, "platforms");
   }
-  if (action === "preview") return editDraftPreview(ctx, backendDb, draftId);
-  if (action === "platforms") return editDraftPreview(ctx, backendDb, draftId, "platforms");
+  if (action === "preview") return editDraftPreview(ctx, backendDb, draftId, config);
+  if (action === "platforms") return editDraftPreview(ctx, backendDb, draftId, config, "platforms");
   if (action === "cycle_mode") {
     const nextMode = studioServices(backendDb, config).posts.cycleMode(actorId, draftId);
     await ctx.answerCallbackQuery({ text: `${t(locale, "post.mode")}: ${modeLabel(nextMode, locale)}` });
-    return editDraftPreview(ctx, backendDb, draftId);
+    return editDraftPreview(ctx, backendDb, draftId, config);
   }
   if (action === "cancel_state") {
     clearPostAdminState(backendDb, Number(ctx.from?.id));
     await ctx.answerCallbackQuery();
-    return editDraftPreview(ctx, backendDb, draftId);
+    return editDraftPreview(ctx, backendDb, draftId, config);
   }
   if (["edit_ru", "edit_en", "replace_ru_media", "replace_en_media"].includes(action ?? "")) {
     if (!action) return;
@@ -56,7 +56,7 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
     );
   }
   if (action === "cancel") {
-    return editDraftPreview(ctx, backendDb, draftId, "confirm_delete");
+    return editDraftPreview(ctx, backendDb, draftId, config, "confirm_delete");
   }
   if (action === "cancel_confirm") {
     const result = await withActionLock(`${actorId}:${data}`, async () => {
@@ -70,7 +70,7 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
     if (await showPublicationPreflight(ctx, backendDb, config, actorId, draftId, locale)) return;
     const delivery = studioServices(backendDb, config).posts.preview(actorId, draftId).delivery;
     await sendTelegramDeliveryPreviews(ctx, delivery.projections, botLocale(backendDb, actorId));
-    const preview = draftPreview(backendDb, draftId, "confirm_publish");
+    const preview = draftPreview(backendDb, draftId, config, "confirm_publish");
     await ctx.reply(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
     return;
   }
@@ -88,13 +88,13 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
   }
   if (action === "schedule") {
     if (await showPublicationPreflight(ctx, backendDb, config, actorId, draftId, locale)) return;
-    return editDraftPreview(ctx, backendDb, draftId, "schedule");
+    return editDraftPreview(ctx, backendDb, draftId, config, "schedule");
   }
   if (action === "sched_choose" && first) {
     const { ruAt, enAt } = studioServices(backendDb, config).posts.scheduleChoice(actorId, draftId, first);
     await ctx.answerCallbackQuery();
     await sendPostPreviews(ctx, backendDb, config, actorId, draftId);
-    return showScheduleConfirmation(ctx, backendDb, draftId, ruAt, enAt, `sched_confirm:${first}:${draftId}`);
+    return showScheduleConfirmation(ctx, backendDb, draftId, config, ruAt, enAt, `sched_confirm:${first}:${draftId}`);
   }
   if (action === "sched_confirm" && first) {
     const result = await withActionLock(`${actorId}:${data}`, async () => {
@@ -103,7 +103,9 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
     });
     if (!result.ok) return void (await ctx.answerCallbackQuery());
     await ctx.answerCallbackQuery({ text: t(locale, "common.scheduled") });
-    return void (await ctx.editMessageText(scheduledDraftText(locale, draftId, result.value.postId, result.value.ruAt, result.value.enAt)));
+    return void (await ctx.editMessageText(
+      scheduledDraftText(locale, draftId, result.value.postId, result.value.ruAt, result.value.enAt, config),
+    ));
   }
   if (action === "sched_manual_confirm") {
     const state = getPostAdminState(backendDb, Number(ctx.from?.id));
@@ -130,7 +132,9 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
     if (!result.ok) return void (await ctx.answerCallbackQuery());
     clearPostAdminState(backendDb, Number(ctx.from?.id));
     await ctx.answerCallbackQuery({ text: t(locale, "common.scheduled") });
-    return void (await ctx.editMessageText(scheduledDraftText(locale, draftId, result.value.postId, result.value.ruAt, result.value.enAt)));
+    return void (await ctx.editMessageText(
+      scheduledDraftText(locale, draftId, result.value.postId, result.value.ruAt, result.value.enAt, config),
+    ));
   }
   if (action === "sched_auto") {
     const result = await withActionLock(`${actorId}:${data}`, async () => {
@@ -139,7 +143,9 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
     });
     if (!result.ok) return void (await ctx.answerCallbackQuery());
     await ctx.answerCallbackQuery({ text: t(locale, "common.scheduled") });
-    return void (await ctx.editMessageText(scheduledDraftText(locale, draftId, result.value.postId, result.value.ruAt, result.value.enAt)));
+    return void (await ctx.editMessageText(
+      scheduledDraftText(locale, draftId, result.value.postId, result.value.ruAt, result.value.enAt, config),
+    ));
   }
   if (action === "sched_preset" && second && first) {
     const result = await withActionLock(`${actorId}:${data}`, async () => {
@@ -149,7 +155,7 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
     if (!result.ok) return void (await ctx.answerCallbackQuery());
     await ctx.answerCallbackQuery({ text: t(locale, "common.scheduled") });
     return void (await ctx.editMessageText(
-      scheduledDraftText(locale, draftId, result.value.postId, result.value.schedule.ruAt, result.value.schedule.enAt),
+      scheduledDraftText(locale, draftId, result.value.postId, result.value.schedule.ruAt, result.value.schedule.enAt, config),
     ));
   }
   if (action === "sched_manual" && first) {
@@ -199,7 +205,7 @@ export async function applyAdminState(
     if (!value) throw new StudioError("err.no-pub-time");
     setPostAdminState(backendDb, Number(ctx.from?.id), `schedule_confirm_${scope}_${value.toISOString()}`, draftId, controlMessageId);
     await sendPostPreviews(ctx, backendDb, config, Number(ctx.from?.id), draftId);
-    return showScheduleConfirmation(ctx, backendDb, draftId, ruAt, enAt, `sched_manual_confirm:${draftId}`);
+    return showScheduleConfirmation(ctx, backendDb, draftId, config, ruAt, enAt, `sched_manual_confirm:${draftId}`);
   } else if (action === "edit_ru" || action === "edit_en") {
     studioServices(backendDb, config).posts.edit(Number(ctx.from?.id), draftId, {
       locale: action === "edit_ru" ? "ru" : "en",
@@ -218,9 +224,9 @@ export async function applyAdminState(
   }
   clearPostAdminState(backendDb, Number(ctx.from?.id));
   if (controlMessageId && ctx.chat?.id) {
-    const preview = draftPreview(backendDb, draftId);
+    const preview = draftPreview(backendDb, draftId, config);
     await ctx.api.editMessageText(ctx.chat.id, controlMessageId, preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
-  } else await sendDraftPreview(ctx, backendDb, draftId);
+  } else await sendDraftPreview(ctx, backendDb, draftId, config);
 }
 
 async function sendPostPreviews(
@@ -240,8 +246,9 @@ function scheduledDraftText(
   postId: number,
   ruAt: Date | null,
   enAt: Date | null,
+  config: BackendConfig,
 ): string {
-  return `🟢 ${t(locale, "action.scheduled-as", { draftId, postId })}\nRU: ${formatMsk(ruAt)}\nEN: ${formatMsk(enAt)}`;
+  return `🟢 ${t(locale, "action.scheduled-as", { draftId, postId })}\nRU: ${formatMsk(ruAt, config)}\nEN: ${formatMsk(enAt, config)}`;
 }
 
 function callbackMessageId(ctx: Context): number | null {

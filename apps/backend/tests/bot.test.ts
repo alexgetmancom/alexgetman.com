@@ -25,7 +25,7 @@ describe("Telegram controller flow", () => {
   it("keeps mode and manual target controls on one ordinary-publication card", () => {
     backendDb = openBackendDb(":memory:");
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Card", textEn: "Card", entities: [], media: [] });
-    const preview = draftPreview(backendDb, draftId);
+    const preview = draftPreview(backendDb, draftId, loadConfig({}));
     expect(preview.text).toContain("Mode: *Manual*");
     expect(JSON.stringify(preview.keyboard)).toContain(`cycle_mode:${draftId}`);
     expect(JSON.stringify(preview.keyboard)).toContain(`platforms:${draftId}`);
@@ -36,7 +36,7 @@ describe("Telegram controller flow", () => {
     backendDb = openBackendDb(":memory:");
     backendDb.db.insert(botUiSettings).values({ adminId: 42, locale: "ru", updatedAt: new Date().toISOString() }).run();
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Карточка", textEn: "Card", entities: [], media: [] });
-    const preview = draftPreview(backendDb, draftId);
+    const preview = draftPreview(backendDb, draftId, loadConfig({}));
 
     expect(preview.text).toContain("Режим: *Ручной*");
     expect(JSON.stringify(preview.keyboard)).toContain("Опубликовать");

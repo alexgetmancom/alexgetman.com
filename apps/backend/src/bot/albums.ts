@@ -146,12 +146,12 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
 async function refreshDraftControlCard(
   bot: Bot,
   backendDb: BackendDb,
-  _config: BackendConfig,
+  config: BackendConfig,
   _adminId: number,
   draftId: number,
   chatId: number,
 ): Promise<void> {
-  const preview = draftPreview(backendDb, draftId);
+  const preview = draftPreview(backendDb, draftId, config);
   // A completed chat edit gets a fresh card at the bottom. Previous cards are
   // history, never a moving conversation prompt above the user's reply.
   const control = await bot.api.sendMessage(chatId, preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });

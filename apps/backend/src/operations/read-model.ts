@@ -17,6 +17,7 @@ import {
 } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { gitRevision } from "../foundation/runtime/git.js";
+import { formatZonedSortable, zonedWeekBounds } from "../foundation/time.js";
 import { jsonArray, jsonObject } from "../json.js";
 
 /** Operations read model over publication, delivery and worker state. */
@@ -90,7 +91,7 @@ export function pipelineStatusPayload(config: BackendConfig, backendDb: BackendD
     })
     .from(metricSchedule)
     .all();
-  const legacyPosts = legacyPipelinePosts(backendDb, weekOffset);
+  const legacyPosts = legacyPipelinePosts(backendDb, config, weekOffset);
   const feed = readFeedSummary(config, backendDb);
   const socialState = readWorkerState(backendDb, "crosspost_worker") ?? readWorkerState(backendDb, "queue") ?? {};
   const currentTargetFailures = backendDb.db
@@ -137,8 +138,8 @@ export function pipelineStatusPayload(config: BackendConfig, backendDb: BackendD
   };
 }
 
-function legacyPipelinePosts(backendDb: BackendDb, weekOffset: number): Record<string, unknown>[] {
-  const [start, end] = weekBounds(weekOffset);
+function legacyPipelinePosts(backendDb: BackendDb, config: BackendConfig, weekOffset: number): Record<string, unknown>[] {
+  const [start, end] = zonedWeekBounds(weekOffset, config.TIMEZONE);
   const rows = fetchLegacyPostRows(backendDb, start, end);
   const postKeys = rows.map((row) => String(row.post_key ?? "")).filter(Boolean);
   const targetRows = postKeys.length
@@ -152,7 +153,7 @@ function legacyPipelinePosts(backendDb: BackendDb, weekOffset: number): Record<s
         .orderBy(asc(postMetrics.target), asc(postMetrics.metricName))
         .all()
     : [];
-  return formatLegacyPipelinePosts(backendDb, rows, targetRows, metricRows);
+  return formatLegacyPipelinePosts(backendDb, config, rows, targetRows, metricRows);
 }
 
 function fetchLegacyPostRows(backendDb: BackendDb, start: string, end: string) {
@@ -235,6 +236,7 @@ function fetchLegacyPostRows(backendDb: BackendDb, start: string, end: string) {
 
 function formatLegacyPipelinePosts(
   backendDb: BackendDb,
+  config: BackendConfig,
   rows: ReturnType<typeof fetchLegacyPostRows>,
   targetRows: Array<typeof postTargets.$inferSelect>,
   metricRows: Array<typeof postMetrics.$inferSelect>,
@@ -300,7 +302,7 @@ function formatLegacyPipelinePosts(
       message_id: postId,
       telegram_message_id: telegramMessageId,
       date: row.created_at,
-      date_msk: row.date_msk ?? formatMskDate(String(row.created_at)),
+      date_msk: row.date_msk ?? formatZonedSortable(String(row.created_at), config.TIMEZONE),
       text_ru: shortText(textRu),
       text_en: shortText(textEn),
       full_text_ru: textRu,
@@ -349,28 +351,9 @@ function readWorkerState(backendDb: BackendDb, name: string): Record<string, unk
   return row?.stateJson ?? null;
 }
 
-function weekBounds(offset: number): [string, string] {
-  const nowMsk = new Date(Date.now() + 3 * 3_600_000);
-  const weekday = (nowMsk.getUTCDay() + 6) % 7;
-  const start = Date.UTC(nowMsk.getUTCFullYear(), nowMsk.getUTCMonth(), nowMsk.getUTCDate() - weekday - offset * 7, -3, 0, 0);
-  return [new Date(start).toISOString(), new Date(start + 7 * 86_400_000 - 1).toISOString()];
-}
-
 function shortText(value: string): string {
   const words = value.replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
   return words.length <= 7 ? words.join(" ") : `${words.slice(0, 7).join(" ")}...`;
-}
-
-function formatMskDate(value: string): string {
-  const date = new Date(value);
-  return new Intl.DateTimeFormat("sv-SE", {
-    timeZone: "Europe/Moscow",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
 }
 
 function configlessChannel(backendDb: BackendDb): string {

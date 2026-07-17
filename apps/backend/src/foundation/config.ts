@@ -185,6 +185,8 @@ export type BackendConfig = z.infer<typeof envSchema> & {
   VIDEO_PREPARE_LEAD_MINUTES: number;
   VIDEO_REMINDER_MINUTES: number;
   VIDEO_MEDIA_RETENTION_HOURS: number;
+  TIMEZONE: string;
+  TIMEZONE_LABEL: string;
   controllerBotToken: string | undefined;
   commandCenterToken: string | undefined;
   studio: StudioConfig;
@@ -217,6 +219,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BackendConfig 
     VIDEO_PREPARE_LEAD_MINUTES: studio.video.prepare_lead_minutes,
     VIDEO_REMINDER_MINUTES: studio.video.reminder_minutes,
     VIDEO_MEDIA_RETENTION_HOURS: studio.video.retention_hours,
+    TIMEZONE: studio.timezone,
+    TIMEZONE_LABEL: studio.timezoneLabel,
     controllerBotToken: parsed.CONTROLLER_BOT_TOKEN ?? parsed.TELEGRAM_BOT_TOKEN,
     commandCenterToken: parsed.COMMAND_CENTER_TOKEN ?? parsed.TELEGRAM_WEBHOOK_SECRET,
     studio,

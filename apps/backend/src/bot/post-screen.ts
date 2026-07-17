@@ -85,7 +85,7 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
   }
   const draftId = studioServices(backendDb, config).publications.create(adminId, { kind: "post", message: { ...message, textEn } }).id;
   clearPostAdminState(backendDb, adminId);
-  const control = await sendDraftPreview(ctx, backendDb, draftId);
+  const control = await sendDraftPreview(ctx, backendDb, draftId, config);
   if (ctx.chat?.id) setTelegramPostCard(backendDb, draftId, Number(ctx.chat.id), control.message_id);
 }
 

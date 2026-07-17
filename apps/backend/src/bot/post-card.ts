@@ -1,18 +1,25 @@
 import { type Context, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
+import type { BackendConfig } from "../foundation/config.js";
 import { t } from "../interfaces/telegram/i18n/index.js";
 import { formatMsk } from "../interfaces/telegram/time.js";
 import { botLocale } from "./i18n.js";
 import { type DraftView, draftPreview } from "./preview.js";
 
 /** Telegram rendering for a post control card; mutations stay in post actions. */
-export async function sendDraftPreview(ctx: Pick<Context, "reply">, backendDb: BackendDb, draftId: number) {
-  const preview = draftPreview(backendDb, draftId);
+export async function sendDraftPreview(ctx: Pick<Context, "reply">, backendDb: BackendDb, draftId: number, config: BackendConfig) {
+  const preview = draftPreview(backendDb, draftId, config);
   return ctx.reply(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
 }
 
-export async function editDraftPreview(ctx: Context, backendDb: BackendDb, draftId: number, view: DraftView = "overview"): Promise<void> {
-  const preview = draftPreview(backendDb, draftId, view);
+export async function editDraftPreview(
+  ctx: Context,
+  backendDb: BackendDb,
+  draftId: number,
+  config: BackendConfig,
+  view: DraftView = "overview",
+): Promise<void> {
+  const preview = draftPreview(backendDb, draftId, config, view);
   await ctx.answerCallbackQuery();
   await ctx.editMessageText(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
 }
@@ -29,15 +36,16 @@ export async function showScheduleConfirmation(
   ctx: Context,
   backendDb: BackendDb,
   draftId: number,
+  config: BackendConfig,
   ruAt: Date | null,
   enAt: Date | null,
   confirmCallback: string,
 ): Promise<void> {
   const locale = botLocale(backendDb, Number(ctx.from?.id));
-  const preview = draftPreview(backendDb, draftId);
+  const preview = draftPreview(backendDb, draftId, config);
   const keyboard = new InlineKeyboard()
     .text(t(locale, "post.confirm-schedule-btn"), confirmCallback)
     .text(t(locale, "common.back"), `schedule:${draftId}`);
-  const text = `${preview.text}\n\n📅 *${t(locale, "common.confirm-schedule")}*\nRU: ${formatMsk(ruAt)}\nEN: ${formatMsk(enAt)}`;
+  const text = `${preview.text}\n\n📅 *${t(locale, "common.confirm-schedule")}*\nRU: ${formatMsk(ruAt, config)}\nEN: ${formatMsk(enAt, config)}`;
   await ctx.reply(text, { parse_mode: "Markdown", reply_markup: keyboard });
 }

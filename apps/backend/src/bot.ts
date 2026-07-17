@@ -63,7 +63,7 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
       .upcoming.filter((item) => item.kind === "post");
     if (rows.length === 0) return void (await ctx.reply(t(locale, "bot.no-scheduled")));
     const keyboard = new InlineKeyboard();
-    for (const draft of rows) keyboard.text(`#${draft.id} ${formatMsk(draft.time)}`, `schedule:${draft.id}`).row();
+    for (const draft of rows) keyboard.text(`#${draft.id} ${formatMsk(draft.time, config)}`, `schedule:${draft.id}`).row();
     await ctx.reply(t(locale, "bot.scheduled-drafts"), { reply_markup: keyboard });
   });
   bot.on("message", async (ctx) => {
