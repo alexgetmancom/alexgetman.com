@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { BackendConfig } from "../foundation/config.js";
+import { log } from "../foundation/logger.js";
 import { runFfmpeg } from "../foundation/runtime/ffmpeg.js";
 import type { PublishMediaItem } from "./social/payload.js";
 
@@ -25,8 +26,14 @@ export async function generateStoryMedia(
   if (!["photo", "image", "video"].includes(type)) throw new Error("Story-safe generation supports photo or video media");
   const directory = path.join(config.DATA_DIR, "story-media");
   await fs.promises.mkdir(directory, { recursive: true });
-  const source = await resolveSource(item, draftId, locale, directory, config, fetchImpl);
   const video = type === "video";
+  log("info", "story media source resolving", { draftId, locale, kind: video ? "video" : "image" });
+  const source = await withinStoryStageTimeout(
+    resolveSource(item, draftId, locale, directory, config, fetchImpl),
+    30_000,
+    "story_source_resolution_timeout",
+  );
+  log("info", "story media source resolved", { draftId, locale, source });
   const output = path.join(directory, `draft-${draftId}-${locale}-story-${Date.now()}.${video ? "mp4" : "jpg"}`);
   const filter = "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black";
   const args = video
@@ -73,9 +80,12 @@ export async function generateStoryMedia(
         output,
       ]
     : ["-y", "-i", source, "-vf", filter, "-frames:v", "1", "-q:v", "2", output];
+  log("info", "story media transform started", { draftId, locale, provider: config.MEDIA_PROCESSOR_PROVIDER });
   if (config.MEDIA_PROCESSOR_PROVIDER === "remote_http") await transformRemotely(source, output, video, config);
-  else await runFfmpeg(args, config.FFMPEG_TIMEOUT_SECONDS);
-  await fs.promises.chmod(output, 0o664);
+  else
+    await withinStoryStageTimeout(runFfmpeg(args, config.FFMPEG_TIMEOUT_SECONDS), storyTransformTimeout(config), "story_transform_timeout");
+  await withinStoryStageTimeout(fs.promises.chmod(output, 0o664), 30_000, "story_output_finalize_timeout");
+  log("info", "story media transform completed", { draftId, locale, output });
   return [
     { ...(item as unknown as PublishMediaItem), story_local_path: output, storyLocalPath: output, story_width: 1080, story_height: 1920 },
   ];
@@ -92,7 +102,8 @@ async function transformRemotely(source: string, output: string, video: boolean,
     .update(`${source}:${stat.size}:${stat.mtimeMs}:${video ? "video" : "image"}`)
     .digest("hex");
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), config.MEDIA_PROCESSOR_TIMEOUT_SECONDS * 1000);
+  const timeoutSeconds = storyTransformTimeout(config) / 1000;
+  const timer = setTimeout(() => controller.abort(), timeoutSeconds * 1000);
   try {
     const response = await fetch(`${config.MEDIA_PROCESSOR_URL.replace(/\/$/, "")}/v1/transforms/ffmpeg`, {
       method: "POST",
@@ -117,10 +128,30 @@ async function transformRemotely(source: string, output: string, video: boolean,
     await Bun.write(output, response);
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError")
-      throw new Error(`media_processor_timeout: remote worker exceeded ${config.MEDIA_PROCESSOR_TIMEOUT_SECONDS}s`);
+      throw new Error(`media_processor_timeout: remote worker exceeded ${timeoutSeconds}s`);
     throw error;
   } finally {
     clearTimeout(timer);
+  }
+}
+
+function storyTransformTimeout(config: BackendConfig): number {
+  // Leave time for provider publication and durable finalization before the
+  // queue-level deadline. The abort also stops the HTTP upload to VM-106.
+  return Math.max(10_000, Math.min(config.MEDIA_PROCESSOR_TIMEOUT_SECONDS * 1000, (config.PUBLISH_JOB_TIMEOUT_SECONDS - 30) * 1000));
+}
+
+async function withinStoryStageTimeout<T>(work: Promise<T>, ms: number, code: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(code)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 

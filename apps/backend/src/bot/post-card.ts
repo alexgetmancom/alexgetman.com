@@ -1,7 +1,8 @@
 import { type Context, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
+import { t } from "../interfaces/telegram/i18n/index.js";
 import { formatMsk } from "../interfaces/telegram/time.js";
-import { botLocale, ui } from "./i18n.js";
+import { botLocale } from "./i18n.js";
 import { type DraftView, draftPreview } from "./preview.js";
 
 /** Telegram rendering for a post control card; mutations stay in post actions. */
@@ -20,7 +21,7 @@ export async function editDraftPrompt(ctx: Context, backendDb: BackendDb, draftI
   const locale = botLocale(backendDb, Number(ctx.from?.id));
   await ctx.reply(prompt, {
     parse_mode: "Markdown",
-    reply_markup: new InlineKeyboard().text(ui(locale, "← Cancel", "← Отмена"), `cancel_state:${draftId}`),
+    reply_markup: new InlineKeyboard().text(t(locale, "post.cancel"), `cancel_state:${draftId}`),
   });
 }
 
@@ -35,8 +36,8 @@ export async function showScheduleConfirmation(
   const locale = botLocale(backendDb, Number(ctx.from?.id));
   const preview = draftPreview(backendDb, draftId);
   const keyboard = new InlineKeyboard()
-    .text(ui(locale, "✅ Confirm schedule", "✅ Подтвердить"), confirmCallback)
-    .text(ui(locale, "← Back", "← Назад"), `schedule:${draftId}`);
-  const text = `${preview.text}\n\n📅 *${ui(locale, "Confirm schedule", "Подтвердите планирование")}*\nRU: ${formatMsk(ruAt)}\nEN: ${formatMsk(enAt)}`;
+    .text(t(locale, "post.confirm-schedule-btn"), confirmCallback)
+    .text(t(locale, "post.back"), `schedule:${draftId}`);
+  const text = `${preview.text}\n\n📅 *${t(locale, "post.confirm-schedule-title")}*\nRU: ${formatMsk(ruAt)}\nEN: ${formatMsk(enAt)}`;
   await ctx.reply(text, { parse_mode: "Markdown", reply_markup: keyboard });
 }

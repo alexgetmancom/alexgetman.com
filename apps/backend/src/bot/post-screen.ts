@@ -4,9 +4,10 @@ import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { log } from "../foundation/logger.js";
 import { setTelegramPostCard } from "../interfaces/telegram/control-cards.js";
+import { t } from "../interfaces/telegram/i18n/index.js";
 import { studioServices } from "../studio/services/index.js";
 import { appendPendingAlbum } from "./albums.js";
-import { botLocale, ui } from "./i18n.js";
+import { botLocale } from "./i18n.js";
 import { extractMessage } from "./message.js";
 import { persistentKeyboard, showMainMenu } from "./navigation.js";
 import { applyAdminState } from "./post-actions.js";
@@ -19,28 +20,18 @@ export async function startPostScreen(ctx: Context, backendDb: BackendDb): Promi
   const adminId = Number(ctx.from?.id);
   startPostDialog(backendDb, adminId);
   const locale = botLocale(backendDb, adminId);
-  await ctx.reply(
-    ui(
-      locale,
-      "📝 Send text with optional photos or video for a new post.",
-      "📝 Пришлите текст с опциональным фото или видео для нового поста.",
-    ),
-    { reply_markup: new InlineKeyboard().text(ui(locale, "← Cancel", "← Отмена"), "cancel_dialog") },
-  );
+  await ctx.reply(t(locale, "post.dialog-prompt"), {
+    reply_markup: new InlineKeyboard().text(t(locale, "post.cancel"), "cancel_dialog"),
+  });
 }
 
 async function openPostScreen(ctx: Context, backendDb: BackendDb): Promise<void> {
   const adminId = Number(ctx.from?.id);
   startPostDialog(backendDb, adminId);
   const locale = botLocale(backendDb, adminId);
-  await ctx.editMessageText(
-    ui(
-      locale,
-      "📝 Send text with optional photos or video for a new post.",
-      "📝 Пришлите текст с опциональным фото или видео для нового поста.",
-    ),
-    { reply_markup: new InlineKeyboard().text(ui(locale, "← Cancel", "← Отмена"), "cancel_dialog") },
-  );
+  await ctx.editMessageText(t(locale, "post.dialog-prompt"), {
+    reply_markup: new InlineKeyboard().text(t(locale, "post.cancel"), "cancel_dialog"),
+  });
 }
 
 export async function handlePostMessage(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<void> {
@@ -51,14 +42,7 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
   if (mediaGroupId && message.media.length > 0) {
     if (!state?.action || (state.action !== "new_post" && !state.draft_id)) {
       const locale = botLocale(backendDb, adminId);
-      await ctx.reply(
-        ui(
-          locale,
-          "Choose 📝 New post or an edit action before sending an album.",
-          "Сначала выберите «📝 Новый пост» или действие редактирования.",
-        ),
-        { reply_markup: persistentKeyboard(locale) },
-      );
+      await ctx.reply(t(locale, "post.album-need-action"), { reply_markup: persistentKeyboard(locale) });
       return;
     }
     const media = message.media[0];
@@ -73,7 +57,7 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
       action: state.action,
       draftId: state.draft_id,
     });
-    if (isNew) await ctx.reply("Album received. I will create or update the draft in a few seconds.");
+    if (isNew) await ctx.reply(t(botLocale(backendDb, adminId), "post.album-received"));
     return;
   }
   if (state?.action && state.action !== "new_post" && state.draft_id) {
@@ -83,28 +67,13 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
       const locale = botLocale(backendDb, adminId);
       const errorMessage = error instanceof Error ? error.message : String(error);
       const scheduleInput = state.action.startsWith("schedule_manual_");
-      await ctx.reply(
-        scheduleInput
-          ? ui(
-              locale,
-              "I couldn't read that date and time. Send `HH:MM` or `DD.MM HH:MM` in MSK, for example `15.07 18:30`.",
-              "Не удалось распознать дату и время. Отправьте `ЧЧ:ММ` или `ДД.ММ ЧЧ:ММ` по МСК, например `15.07 18:30`.",
-            )
-          : ui(
-              locale,
-              `I couldn't use that value: ${errorMessage}\n\nPlease try again or tap Cancel.`,
-              `Не удалось обработать значение: ${errorMessage}\n\nПопробуйте ещё раз или нажмите «Отмена».`,
-            ),
-      );
+      await ctx.reply(scheduleInput ? t(locale, "post.schedule-parse-error") : t(locale, "post.value-error", { error: errorMessage }));
     }
     return;
   }
   if (state?.action !== "new_post") {
     const locale = botLocale(backendDb, adminId);
-    await ctx.reply(
-      ui(locale, "Choose 📝 New post from the menu before sending a new publication.", "Сначала выберите «📝 Новый пост» в меню."),
-      { reply_markup: persistentKeyboard(locale) },
-    );
+    await ctx.reply(t(locale, "post.need-new-post"), { reply_markup: persistentKeyboard(locale) });
     return;
   }
   let textEn = message.text;

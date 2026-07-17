@@ -94,6 +94,16 @@ const en = {
   "action.unknown": "Unknown action",
   "action.scheduled-as": "Draft #{draftId} is scheduled as post #{postId}.",
   "action.preflight": "Telegram with media: {actual}/{limit} characters. Shorten RU text or disable Telegram in Platforms.",
+  // Post-card rendering + conversational post screen
+  "post.cancel": "← Cancel",
+  "post.confirm-schedule-btn": "✅ Confirm schedule",
+  "post.confirm-schedule-title": "Confirm schedule",
+  "post.dialog-prompt": "📝 Send text with optional photos or video for a new post.",
+  "post.album-need-action": "Choose 📝 New post or an edit action before sending an album.",
+  "post.album-received": "Album received. I will create or update the draft in a few seconds.",
+  "post.schedule-parse-error": "I couldn't read that date and time. Send `HH:MM` or `DD.MM HH:MM` in MSK, for example `15.07 18:30`.",
+  "post.value-error": "I couldn't use that value: {error}\n\nPlease try again or tap Cancel.",
+  "post.need-new-post": "Choose 📝 New post from the menu before sending a new publication.",
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -185,6 +195,16 @@ const ru = {
   "action.unknown": "Неизвестное действие",
   "action.scheduled-as": "Черновик #{draftId} запланирован как пост #{postId}.",
   "action.preflight": "{message} Откройте «Выбрать площадки», чтобы выключить Telegram.",
+  // Post-card rendering + conversational post screen
+  "post.cancel": "← Отмена",
+  "post.confirm-schedule-btn": "✅ Подтвердить",
+  "post.confirm-schedule-title": "Подтвердите планирование",
+  "post.dialog-prompt": "📝 Пришлите текст с опциональным фото или видео для нового поста.",
+  "post.album-need-action": "Сначала выберите «📝 Новый пост» или действие редактирования.",
+  "post.album-received": "Альбом получен. Создам или обновлю черновик через несколько секунд.",
+  "post.schedule-parse-error": "Не удалось распознать дату и время. Отправьте `ЧЧ:ММ` или `ДД.ММ ЧЧ:ММ` по МСК, например `15.07 18:30`.",
+  "post.value-error": "Не удалось обработать значение: {error}\n\nПопробуйте ещё раз или нажмите «Отмена».",
+  "post.need-new-post": "Сначала выберите «📝 Новый пост» в меню.",
 } satisfies Record<MessageKey, string>;
 
 export const catalog: Record<UiLocale, Record<MessageKey, string>> = { en, ru };
