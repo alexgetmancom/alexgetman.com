@@ -1,6 +1,14 @@
+import { StudioError } from "../../../foundation/errors.js";
 import { catalog, type MessageKey, type UiLocale } from "./catalog.js";
 
 export { catalog };
+
+/** Render an error for a Telegram user. A StudioError carries a catalog code,
+ * so it is translated; anything else keeps its raw message for admin debugging. */
+export function describeError(locale: UiLocale, error: unknown): string {
+  if (error instanceof StudioError && error.code in catalog.en) return t(locale, error.code as MessageKey);
+  return error instanceof Error ? error.message : String(error);
+}
 
 /** Translate one interface key, interpolating `{name}` placeholders from params.
  * Domain and MCP never call this: they return codes, the renderer translates. */

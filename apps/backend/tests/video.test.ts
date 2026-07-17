@@ -114,7 +114,7 @@ describe("video publication queue", () => {
 
     const invalid = videoContext({ callback: "video_toggle:not-a-target" });
     expect(await handleVideoCallback(invalid.context, backendDb, videoConfig())).toBe(true);
-    expect(invalid.callbackAnswers).toEqual([{ text: "Начните создание видео заново." }]);
+    expect(invalid.callbackAnswers).toEqual([{ text: "Start creating the video again." }]);
   });
 
   it("keeps independent platform schedules and queues Delivery prepare and publish work", () => {
@@ -201,7 +201,7 @@ describe("video publication queue", () => {
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts", "instagram_reels"]);
     const service = videoService(backendDb, videoConfig());
 
-    expect(() => service.removeTarget(7, draftId, "youtube_shorts")).toThrow("not available");
+    expect(() => service.removeTarget(7, draftId, "youtube_shorts")).toThrow("err.video-not-yours");
     expect(listVideoTargets(backendDb, draftId)).toHaveLength(2);
     expect(service.removeTarget(42, draftId, "youtube_shorts")).toEqual({ cancelled: false });
     expect(listVideoTargets(backendDb, draftId).map((target) => target.target)).toEqual(["instagram_reels"]);

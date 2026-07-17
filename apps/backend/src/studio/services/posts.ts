@@ -6,6 +6,7 @@ import type { DraftMessage } from "../../content/message.js";
 import type { BackendDb } from "../../db/client.js";
 import { drafts, postEvents, studioNotificationSettings } from "../../db/schema.js";
 import { recordDomainEvent } from "../../domain/events.js";
+import { StudioError } from "../../foundation/errors.js";
 import { cancelScheduledNotifications, scheduleReminder } from "../../notifications/jobs.js";
 import { cancelDraft, cancelRemainingPostJobs } from "../../publishing/draft-lifecycle.js";
 import { mediaPolicyForTarget } from "../../publishing/media-policy.js";
@@ -144,7 +145,7 @@ export function postService(backendDb: BackendDb) {
     },
     toggleTarget(actorId: number, draftId: number, target: string): void {
       const draft = requireOwnedDraft(backendDb, actorId, draftId);
-      if (!TARGETS.some(([id]) => id === target)) throw new Error("Unknown publication target.");
+      if (!TARGETS.some(([id]) => id === target)) throw new StudioError("err.unknown-target");
       const targets = parseTargets(draft.targets_json);
       targets[target] = !targets[target];
       saveTargets(backendDb, draftId, targets);
@@ -155,7 +156,7 @@ export function postService(backendDb: BackendDb) {
       const current = presetName(targets);
       const next = current === "full" ? "ru" : current === "ru" ? "en" : current === "en" ? "tg" : "full";
       const preset = PRESETS[next];
-      if (!preset) throw new Error("Post mode is not configured.");
+      if (!preset) throw new StudioError("err.post-mode");
       saveTargets(backendDb, draftId, preset);
       return next;
     },
@@ -236,7 +237,7 @@ function editDraftContent(backendDb: BackendDb, actorId: number, draftId: number
       update[ru ? "textRuEntitiesJson" : "textEnEntitiesJson"] = JSON.stringify(input.entities);
     }
   }
-  if (Object.keys(update).length === 1) throw new Error("No text or media detected for editing.");
+  if (Object.keys(update).length === 1) throw new StudioError("err.post-no-edit");
   backendDb.db.update(drafts).set(update).where(eq(drafts.id, draftId)).run();
   recordDomainEvent(backendDb, {
     ref: `draft:${draftId}`,
@@ -266,7 +267,7 @@ function dateOrNull(value: string | null): Date | null {
 
 function requireOwnedDraft(backendDb: BackendDb, actorId: number, draftId: number) {
   const draft = requireDraft(backendDb, draftId);
-  if (draft.admin_id !== actorId) throw new Error("Draft is not available to this user.");
+  if (draft.admin_id !== actorId) throw new StudioError("err.post-not-yours");
   return draft;
 }
 

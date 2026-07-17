@@ -16,14 +16,14 @@ describe("Studio post commands", () => {
     const posts = postService(backendDb);
     const draftId = posts.create(42, { text: "Private draft", textEn: "Private draft", entities: [], media: [] });
 
-    expect(() => posts.get(7, draftId)).toThrow("not available");
-    expect(() => posts.toggleTarget(7, draftId, "telegram")).toThrow("not available");
-    expect(() => posts.publish(7, draftId)).toThrow("not available");
-    expect(() => posts.cancel(7, draftId)).toThrow("not available");
-    expect(() => posts.cancelRemaining(7, draftId)).toThrow("not available");
-    expect(() => posts.progress(7, draftId)).toThrow("not available");
-    expect(() => posts.scheduleChoice(7, draftId, "auto")).toThrow("not available");
-    expect(() => posts.manualSchedule(7, draftId, "both", "21:15")).toThrow("not available");
+    expect(() => posts.get(7, draftId)).toThrow("err.post-not-yours");
+    expect(() => posts.toggleTarget(7, draftId, "telegram")).toThrow("err.post-not-yours");
+    expect(() => posts.publish(7, draftId)).toThrow("err.post-not-yours");
+    expect(() => posts.cancel(7, draftId)).toThrow("err.post-not-yours");
+    expect(() => posts.cancelRemaining(7, draftId)).toThrow("err.post-not-yours");
+    expect(() => posts.progress(7, draftId)).toThrow("err.post-not-yours");
+    expect(() => posts.scheduleChoice(7, draftId, "auto")).toThrow("err.post-not-yours");
+    expect(() => posts.manualSchedule(7, draftId, "both", "21:15")).toThrow("err.post-not-yours");
 
     posts.toggleTarget(42, draftId, "telegram");
     expect(posts.get(42, draftId).id).toBe(draftId);

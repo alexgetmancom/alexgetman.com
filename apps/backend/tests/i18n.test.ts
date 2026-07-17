@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { catalog, plural, resolveUiLocale, t } from "../src/interfaces/telegram/i18n/index.js";
+import { StudioError } from "../src/foundation/errors.js";
+import { catalog, describeError, plural, resolveUiLocale, t } from "../src/interfaces/telegram/i18n/index.js";
 
 describe("telegram i18n", () => {
   it("translates keys and interpolates params per locale", () => {
@@ -29,5 +30,13 @@ describe("telegram i18n", () => {
     expect(resolveUiLocale(null, "ru-RU")).toBe("ru");
     expect(resolveUiLocale(null, "de-DE")).toBe("en");
     expect(resolveUiLocale(undefined, undefined)).toBe("en");
+  });
+
+  it("translates a StudioError by code and passes other errors through", () => {
+    expect(describeError("en", new StudioError("err.video-restart"))).toBe("Start creating the video again.");
+    expect(describeError("ru", new StudioError("err.video-restart"))).toBe("Начните создание видео заново.");
+    // An unknown code degrades to the raw code; a plain Error keeps its message for admin debugging.
+    expect(describeError("ru", new StudioError("err.does-not-exist"))).toBe("err.does-not-exist");
+    expect(describeError("ru", new Error("raw failure"))).toBe("raw failure");
   });
 });

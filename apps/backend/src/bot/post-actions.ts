@@ -1,6 +1,7 @@
 import type { Context } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { StudioError } from "../foundation/errors.js";
 import { setTelegramPostProgressCard } from "../interfaces/telegram/control-cards.js";
 import { sendTelegramDeliveryPreviews } from "../interfaces/telegram/delivery-previews.js";
 import { t } from "../interfaces/telegram/i18n/index.js";
@@ -174,7 +175,7 @@ export async function applyAdminState(
       message.text,
     );
     const value = ruAt ?? enAt;
-    if (!value) throw new Error("No publication time selected.");
+    if (!value) throw new StudioError("err.no-pub-time");
     setPostAdminState(backendDb, Number(ctx.from?.id), `schedule_confirm_${scope}_${value.toISOString()}`, draftId, controlMessageId);
     await sendPostPreviews(ctx, backendDb, config, Number(ctx.from?.id), draftId);
     return showScheduleConfirmation(ctx, backendDb, draftId, ruAt, enAt, `sched_manual_confirm:${draftId}`);
@@ -229,5 +230,5 @@ function callbackMessageId(ctx: Context): number | null {
 
 function scheduleScope(value: string): "ru" | "en" | "both" {
   if (value === "ru" || value === "en" || value === "both") return value;
-  throw new Error("Unknown schedule scope.");
+  throw new StudioError("err.unknown-scope");
 }

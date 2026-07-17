@@ -1,8 +1,9 @@
 import { type Context, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { StudioError } from "../foundation/errors.js";
 import { sendTelegramDeliveryPreviews } from "../interfaces/telegram/delivery-previews.js";
-import { t } from "../interfaces/telegram/i18n/index.js";
+import { describeError, t } from "../interfaces/telegram/i18n/index.js";
 import { storeTelegramVideo } from "../interfaces/telegram/video-ingress.js";
 import { videoPreview } from "../interfaces/telegram/video-preview.js";
 import { type VideoMetadata, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
@@ -50,7 +51,7 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
       const stored = await storeTelegramVideo(ctx, backendDb, config, adminId);
       const draftId = studioServices(backendDb, config).videos.create(adminId, stored.assetId);
       const selected = enabledVideoTargets(config);
-      if (!selected.length) throw new Error("No video platforms are enabled in studio.yaml.");
+      if (!selected.length) throw new StudioError("err.no-video-platforms-config");
       studioServices(backendDb, config).videos.replaceTargets(adminId, draftId, selected);
       const first = firstVideoMetadataStep(selected);
       const next = { ...session, draftId, step: first.step, selected };
@@ -108,7 +109,7 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
     const locale = botLocale(backendDb, adminId);
     if (session.step === "schedule_common" || session.step.startsWith("schedule_target:"))
       await replyVideoPrompt(ctx, t(locale, "post.schedule-parse-error"));
-    else await replyVideoPrompt(ctx, `🔴 ${t(locale, "video.value-error")}: ${error instanceof Error ? error.message : String(error)}`);
+    else await replyVideoPrompt(ctx, `🔴 ${t(locale, "video.value-error")}: ${describeError(locale, error)}`);
     return true;
   }
   return false;
@@ -252,7 +253,7 @@ async function confirmVideoSchedule(
   session: VideoSession,
   schedule: Partial<Record<VideoTarget, Date>>,
 ): Promise<void> {
-  if (!session.draftId) throw new Error("Video draft is missing.");
+  if (!session.draftId) throw new StudioError("err.video-missing");
   const locale = botLocale(backendDb, adminId);
   const next = {
     ...session,
@@ -288,7 +289,7 @@ async function finishSingleVideoEdit(
   target: VideoTarget,
   change: (metadata: Record<string, unknown>, draftId: number) => void,
 ): Promise<void> {
-  if (session.draftId == null) throw new Error("Reopen video editing.");
+  if (session.draftId == null) throw new StudioError("err.video-reopen-edit");
   const row = studioServices(backendDb, config)
     .videos.get(adminId, session.draftId)
     .targets.find((item) => item.target === target);

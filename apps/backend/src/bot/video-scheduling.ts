@@ -1,6 +1,7 @@
 import type { Context } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { StudioError } from "../foundation/errors.js";
 import { setTelegramVideoCard } from "../interfaces/telegram/control-cards.js";
 import { t } from "../interfaces/telegram/i18n/index.js";
 import { videoPreview } from "../interfaces/telegram/video-preview.js";
@@ -17,7 +18,7 @@ export async function finishVideoSchedule(
   session: VideoSession,
   schedule: Partial<Record<VideoTarget, Date>>,
 ): Promise<void> {
-  if (!session.draftId) throw new Error("Video draft is missing.");
+  if (!session.draftId) throw new StudioError("err.video-missing");
   const locale = botLocale(backendDb, adminId);
   const technical = await studioServices(backendDb, config).videos.schedule(adminId, session.draftId, schedule);
   await showScheduledVideo(ctx, backendDb, config, adminId, session, technical, locale);
@@ -31,7 +32,7 @@ export async function finishVideoNow(
   adminId: number,
   session: VideoSession,
 ): Promise<void> {
-  if (!session.draftId) throw new Error("Video draft is missing.");
+  if (!session.draftId) throw new StudioError("err.video-missing");
   const locale = botLocale(backendDb, adminId);
   const technical = await studioServices(backendDb, config).videos.publish(adminId, session.draftId);
   await showScheduledVideo(ctx, backendDb, config, adminId, session, technical, locale);
@@ -46,7 +47,7 @@ async function showScheduledVideo(
   technical: { summary: string; warning: string | null },
   locale: "ru" | "en",
 ): Promise<void> {
-  if (!session.draftId) throw new Error("Video draft is missing.");
+  if (!session.draftId) throw new StudioError("err.video-missing");
   const preview = videoPreview(backendDb, session.draftId, locale);
   const text = `${technical.summary}${technical.warning ? `\n${technical.warning}` : ""}\n\n✅ ${t(locale, "action.scheduled")}. ${t(locale, "video.reminder", { minutes: config.VIDEO_REMINDER_MINUTES })}\n\n${preview.text}`;
   const controlMessageId = Number(session.data.controlMessageId);

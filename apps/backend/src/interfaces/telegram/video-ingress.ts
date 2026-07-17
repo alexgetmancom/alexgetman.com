@@ -5,6 +5,7 @@ import type { Context } from "grammy";
 import { importStudioMediaFile } from "../../content/assets.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
+import { StudioError } from "../../foundation/errors.js";
 
 type StoredVideo = { assetId: number };
 
@@ -14,10 +15,10 @@ export async function storeTelegramVideo(ctx: Context, backendDb: BackendDb, con
   const video = ctx.message && "video" in ctx.message ? ctx.message.video : undefined;
   const document = ctx.message && "document" in ctx.message ? ctx.message.document : undefined;
   const file = video ?? document;
-  if (!file || !("file_id" in file)) throw new Error("Send an MP4 video file.");
+  if (!file || !("file_id" in file)) throw new StudioError("err.send-mp4");
   const mime = "mime_type" in file ? (file.mime_type ?? "") : "";
   const name = "file_name" in file ? (file.file_name ?? "") : "";
-  if (document && !mime.startsWith("video/") && !name.toLowerCase().endsWith(".mp4")) throw new Error("Only video files are supported.");
+  if (document && !mime.startsWith("video/") && !name.toLowerCase().endsWith(".mp4")) throw new StudioError("err.only-video");
   const apiFile = await ctx.api.getFile(file.file_id);
   if (!apiFile.file_path) throw new Error("Telegram did not return a file path.");
   const extension = path.extname(name) || ".mp4";
@@ -43,6 +44,6 @@ export async function storeTelegramVideo(ctx: Context, backendDb: BackendDb, con
   } finally {
     if (temporaryPath) await fs.promises.rm(temporaryPath, { force: true });
   }
-  if (asset.kind !== "video") throw new Error("Only MP4 video files are supported.");
+  if (asset.kind !== "video") throw new StudioError("err.only-mp4");
   return { assetId: asset.id };
 }

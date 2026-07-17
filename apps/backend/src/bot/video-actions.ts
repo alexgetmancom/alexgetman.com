@@ -1,7 +1,9 @@
 import { type Context, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { StudioError } from "../foundation/errors.js";
 import { setTelegramVideoCard } from "../interfaces/telegram/control-cards.js";
+import { describeError } from "../interfaces/telegram/i18n/index.js";
 import { videoPreview } from "../interfaces/telegram/video-preview.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import { studioServices } from "../studio/services/index.js";
@@ -44,7 +46,7 @@ export async function handleVideoActionCallback(ctx: Context, backendDb: Backend
     } else if (data.startsWith("video_toggle:")) {
       const target = data.slice("video_toggle:".length) as VideoTarget;
       const session = getSession(backendDb, adminId);
-      if (!session || !VIDEO_TARGETS.includes(target)) throw new Error("Начните создание видео заново.");
+      if (!session || !VIDEO_TARGETS.includes(target)) throw new StudioError("err.video-restart");
       const selected = session.selected.includes(target)
         ? session.selected.filter((item) => item !== target)
         : [...session.selected, target];
@@ -52,7 +54,7 @@ export async function handleVideoActionCallback(ctx: Context, backendDb: Backend
       await ctx.editMessageReplyMarkup({ reply_markup: targetKeyboard(config, selected) });
     } else if (data === "video_targets_done") {
       const session = getSession(backendDb, adminId);
-      if (!session?.draftId || !session.selected.length) throw new Error("Выберите хотя бы одну платформу.");
+      if (!session?.draftId || !session.selected.length) throw new StudioError("err.video-pick-platform");
       studioServices(backendDb, config).videos.replaceTargets(adminId, session.draftId, session.selected);
       if (session.selected.includes("youtube_shorts")) {
         const next = { ...session, step: "youtube_title" };
@@ -61,7 +63,7 @@ export async function handleVideoActionCallback(ctx: Context, backendDb: Backend
       } else await askInstagramOrSchedule(ctx, backendDb, adminId, session);
     } else if (data === "video_game_skip") {
       const session = getSession(backendDb, adminId);
-      if (!session?.draftId || session.step !== "youtube_game_url") throw new Error("Откройте создание видео заново.");
+      if (!session?.draftId || session.step !== "youtube_game_url") throw new StudioError("err.video-reopen-create");
       setData(backendDb, adminId, session, "youtube_game_url", "", "youtube_tags");
       await ctx.answerCallbackQuery();
       await ctx.editMessageText("📀 Ссылка на игру пропущена.");
@@ -78,7 +80,7 @@ export async function handleVideoActionCallback(ctx: Context, backendDb: Backend
       const [, target, idText] = data.split(":");
       const targetName = target as VideoTarget;
       const id = Number(idText);
-      if (!VIDEO_TARGETS.includes(targetName)) throw new Error("Неизвестная площадка.");
+      if (!VIDEO_TARGETS.includes(targetName)) throw new StudioError("err.unknown-platform");
       studioServices(backendDb, config).videos.retry(adminId, id, targetName);
       const preview = videoPreview(backendDb, id, botLocale(backendDb, adminId));
       await ctx.answerCallbackQuery({ text: `${videoTargetLabel(targetName)} снова поставлен в очередь` });
@@ -87,9 +89,9 @@ export async function handleVideoActionCallback(ctx: Context, backendDb: Backend
     } else if (data.startsWith("video_schedule_confirm:")) {
       const id = Number(data.slice("video_schedule_confirm:".length));
       const session = getSession(backendDb, adminId);
-      if (!session || session.draftId !== id || session.step !== "schedule_confirm") throw new Error("Schedule confirmation expired.");
+      if (!session || session.draftId !== id || session.step !== "schedule_confirm") throw new StudioError("action.schedule-expired");
       const values = session.data.schedule as Record<string, string> | undefined;
-      if (!values) throw new Error("Schedule confirmation expired.");
+      if (!values) throw new StudioError("action.schedule-expired");
       await finishVideoSchedule(
         ctx,
         backendDb,
@@ -177,7 +179,7 @@ export async function handleVideoActionCallback(ctx: Context, backendDb: Backend
     }
     await ctx.answerCallbackQuery();
   } catch (error) {
-    await ctx.answerCallbackQuery({ text: error instanceof Error ? error.message : "Ошибка" });
+    await ctx.answerCallbackQuery({ text: describeError(botLocale(backendDb, adminId), error) });
   }
   return true;
 }
@@ -194,7 +196,7 @@ async function handleScheduleCallback(
     const targets = studioServices(backendDb, config)
       .videos.get(adminId, id)
       .targets.map((row) => row.target as VideoTarget);
-    if (!targets.length) throw new Error("У видео не выбраны платформы.");
+    if (!targets.length) throw new StudioError("err.video-no-platforms");
     const keyboard = new InlineKeyboard().text("Одно время для всех", `video_common:${id}`);
     if (targets.length > 1) keyboard.row().text("Разное время", `video_individual:${id}`);
     const session = { draftId: id, step: "schedule_choice", selected: targets, data: { controlMessageId: callbackMessageId(ctx) } };
@@ -209,14 +211,14 @@ async function handleScheduleCallback(
   const targets = studioServices(backendDb, config)
     .videos.get(adminId, id)
     .targets.map((row) => row.target as VideoTarget);
-  if (!session || !targets.length) throw new Error("Откройте публикацию ещё раз.");
+  if (!session || !targets.length) throw new StudioError("err.video-reopen-publish");
   if (data.startsWith("video_common:")) {
     saveSession(backendDb, adminId, { ...session, draftId: id, selected: targets, step: "schedule_common" });
     await replyVideoPrompt(ctx, "⌨ Введите дату и время, например: 15.07 18:30 (МСК).");
     return true;
   }
   const first = targets[0];
-  if (!first) throw new Error("У видео не выбраны платформы.");
+  if (!first) throw new StudioError("err.video-no-platforms");
   saveSession(backendDb, adminId, {
     ...session,
     draftId: id,

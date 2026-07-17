@@ -5,6 +5,7 @@ import { postEvents, studioNotificationSettings, videoDrafts, videoJobs } from "
 import { keepYouTubeUploadPrivate } from "../../delivery/video-publishers.js";
 import { recordDomainEvent } from "../../domain/events.js";
 import type { BackendConfig } from "../../foundation/config.js";
+import { StudioError } from "../../foundation/errors.js";
 import { cancelScheduledNotifications, scheduleReminder } from "../../notifications/jobs.js";
 import { parseManualSchedule } from "../../publishing/schedule.js";
 import { getVideoDraft, listVideoTargets } from "../../publishing/video-data.js";
@@ -29,7 +30,7 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
   return {
     create(actorId: number, studioMediaAssetId: number): number {
       const [asset] = requireStudioMediaAssets(backendDb, actorId, [studioMediaAssetId]);
-      if (asset?.kind !== "video") throw new Error("Video Studio requires an owned MP4 media asset.");
+      if (asset?.kind !== "video") throw new StudioError("err.video-needs-asset");
       return createVideoDraft(backendDb, actorId, { studioMediaAssetId }, config.VIDEO_MEDIA_RETENTION_HOURS);
     },
     get(actorId: number, videoDraftId: number) {
@@ -62,7 +63,7 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
     async publish(actorId: number, videoDraftId: number) {
       const draft = requireOwnedVideo(backendDb, actorId, videoDraftId);
       const targets = listVideoTargets(backendDb, videoDraftId).map((row) => row.target as VideoTarget);
-      if (!targets.length) throw new Error("Choose video platforms first.");
+      if (!targets.length) throw new StudioError("err.video-choose-platforms");
       const technical = await validateVideoDraft(config, backendDb, videoDraftId);
       const schedule = Object.fromEntries(targets.map((target) => [target, new Date(Date.now() + 60_000)])) as Partial<
         Record<VideoTarget, Date>
@@ -139,7 +140,7 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
       requireOwnedVideo(backendDb, actorId, videoDraftId);
       if (input.label != null) updateVideoLabel(backendDb, videoDraftId, input.label);
       if (input.target && input.metadata) saveVideoMetadata(backendDb, videoDraftId, input.target, input.metadata);
-      if (input.label == null && (!input.target || !input.metadata)) throw new Error("No video fields supplied for editing.");
+      if (input.label == null && (!input.target || !input.metadata)) throw new StudioError("err.video-no-edit-fields");
     },
     rename(actorId: number, videoDraftId: number, label: string): void {
       requireOwnedVideo(backendDb, actorId, videoDraftId);
@@ -189,6 +190,6 @@ function scheduleVideoReminders(
 
 function requireOwnedVideo(backendDb: BackendDb, actorId: number, videoDraftId: number) {
   const draft = getVideoDraft(backendDb, videoDraftId);
-  if (draft.adminId !== actorId) throw new Error("Video draft is not available to this user.");
+  if (draft.adminId !== actorId) throw new StudioError("err.video-not-yours");
   return draft;
 }

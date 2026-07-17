@@ -4,7 +4,7 @@ import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { log } from "../foundation/logger.js";
 import { setTelegramPostCard } from "../interfaces/telegram/control-cards.js";
-import { t } from "../interfaces/telegram/i18n/index.js";
+import { describeError, t } from "../interfaces/telegram/i18n/index.js";
 import { studioServices } from "../studio/services/index.js";
 import { appendPendingAlbum } from "./albums.js";
 import { botLocale } from "./i18n.js";
@@ -65,9 +65,10 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
       await applyAdminState(ctx, backendDb, config, state.action, state.draft_id, state.control_message_id);
     } catch (error) {
       const locale = botLocale(backendDb, adminId);
-      const errorMessage = error instanceof Error ? error.message : String(error);
       const scheduleInput = state.action.startsWith("schedule_manual_");
-      await ctx.reply(scheduleInput ? t(locale, "post.schedule-parse-error") : t(locale, "post.value-error", { error: errorMessage }));
+      await ctx.reply(
+        scheduleInput ? t(locale, "post.schedule-parse-error") : t(locale, "post.value-error", { error: describeError(locale, error) }),
+      );
     }
     return;
   }

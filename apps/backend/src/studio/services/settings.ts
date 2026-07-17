@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import type { BackendDb } from "../../db/client.js";
 import { botSettings, botUiSettings, studioNotificationSettings } from "../../db/schema.js";
+import { StudioError } from "../../foundation/errors.js";
 import type { StudioActorId, StudioLocale } from "../contracts.js";
 
 /** Owner settings commands used by Telegram today and any future Studio adapter. */
@@ -22,7 +23,7 @@ export function settingsService(backendDb: BackendDb) {
         input.reminderMinutes != null &&
         (!Number.isInteger(input.reminderMinutes) || input.reminderMinutes < 1 || input.reminderMinutes > 60)
       )
-        throw new Error("Reminder interval must be between 1 and 60 minutes.");
+        throw new StudioError("err.reminder-range");
       const current = this.notifications(actorId);
       const now = new Date().toISOString();
       const next = {
