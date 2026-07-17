@@ -20,6 +20,10 @@ export function classifyPublishError(error: unknown): PublishErrorClass {
     if (permanentStatusCodes.has(status)) return "permanent";
   }
   const text = String(error instanceof Error ? error.message : (error ?? "")).toLowerCase();
+  // The worker stopped waiting for an external call. It is deliberately not
+  // retried automatically: a late provider success must never create a
+  // duplicate publication. An operator can reconcile and retry explicitly.
+  if (text.includes("delivery_execution_timeout")) return "permanent";
   if (
     ["timeout", "timed out", "temporarily", "connection reset", "network", "502", "503", "504", "429"].some((marker) =>
       text.includes(marker),

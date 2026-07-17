@@ -256,6 +256,33 @@ describe("publish queue", () => {
     }
   });
 
+  it("releases the queue after a bounded provider timeout without automatic duplicate retry", async () => {
+    const backendDb = tempDb();
+    try {
+      const id = enqueuePublishJob(backendDb, {
+        messageId: 105,
+        target: "slow-provider",
+        payload: { title: "Queued" },
+      });
+      await runPublishCycle(loadConfig({ PUBLISH_JOB_TIMEOUT_SECONDS: "1" }), backendDb, {
+        "slow-provider": async () => await new Promise<never>(() => undefined),
+      });
+      expect(
+        backendDb.db
+          .select({ status: publishJobs.status, attemptCount: publishJobs.attemptCount, lastError: publishJobs.lastError })
+          .from(publishJobs)
+          .where(eq(publishJobs.jobId, id))
+          .get(),
+      ).toEqual({
+        status: "failed",
+        attemptCount: 1,
+        lastError: "delivery_execution_timeout: slow-provider exceeded 1s; verify externally before retry",
+      });
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("recovers a stale publishing lock into its bounded retry policy", () => {
     const backendDb = tempDb();
     try {

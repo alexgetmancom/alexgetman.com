@@ -105,7 +105,14 @@ async function publishChannelStory(media: PublishMediaItem, caption: string, con
     const storyId = story.id;
     return { ok: true, id: storyId, url: `https://t.me/${storyChannel}/s/${storyId}`, raw: { source: "mtproto_stories.sendStory" } };
   } finally {
-    await clientInstance.destroy();
+    // MTProto teardown is best-effort. A stalled socket close must not keep a
+    // durable publishing job (and therefore the queue loop) locked forever.
+    try {
+      await withTimeout(clientInstance.destroy(), 5_000, "telegram_channel_story_destroy_timeout");
+    } catch {
+      // The session is process-local; a later worker run can establish a clean
+      // connection. Publishing outcome has already been recorded above.
+    }
     if (cleanupPath) await fs.promises.rm(cleanupPath, { force: true });
   }
 }

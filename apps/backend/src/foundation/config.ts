@@ -54,6 +54,10 @@ const envSchema = z
     CONTROLLER_ALBUM_SETTLE_SECONDS: z.coerce.number().positive().default(4),
     PUBLISH_CLAIM_LIMIT: z.coerce.number().int().positive().default(20),
     PUBLISH_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(4),
+    // A provider call must not hold the complete queue loop forever. Timeouts
+    // are terminal and require an explicit retry, because the provider may
+    // have accepted the request while its response was lost.
+    PUBLISH_JOB_TIMEOUT_SECONDS: z.coerce.number().int().min(1).max(3_600).default(240),
     PUBLISH_LOCK_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(900),
     PUBLISH_MAX_ATTEMPTS: z.coerce.number().int().positive().default(4),
     PUBLISH_BACKOFF_BASE_SECONDS: z.coerce.number().int().positive().default(60),

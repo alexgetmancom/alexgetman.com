@@ -29,9 +29,12 @@ export async function runDeliveryPublishCycle(
         }
         const adapter = "publish" in port ? port : deliveryAdapter(port);
         try {
-          await adapter.validate(job);
-          const published = await adapter.publish(job);
-          completePublishJob(backendDb, config, job.jobId, await adapter.verify(job, published), job.lockId);
+          const result = await withinPublishTimeout(config, job.target, async () => {
+            await adapter.validate(job);
+            const published = await adapter.publish(job);
+            return adapter.verify(job, published);
+          });
+          completePublishJob(backendDb, config, job.jobId, result, job.lockId);
         } catch (error) {
           failPublishJob(backendDb, config, job.jobId, error, job.lockId);
         }
@@ -101,4 +104,32 @@ export async function runDeliveryPublishCycle(
   }
   recordWorkerState(backendDb, "queue", { claimed: jobs.length });
   return jobs.length;
+}
+
+/**
+ * A stuck provider promise must release the queue loop. The delayed provider
+ * call is intentionally not retried automatically: it may still settle at the
+ * provider after our deadline, so a human/Operations retry is the only safe
+ * continuation.
+ */
+async function withinPublishTimeout<T>(config: BackendConfig, target: string, work: () => Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              new Error(
+                `delivery_execution_timeout: ${target} exceeded ${config.PUBLISH_JOB_TIMEOUT_SECONDS}s; verify externally before retry`,
+              ),
+            ),
+          config.PUBLISH_JOB_TIMEOUT_SECONDS * 1000,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
