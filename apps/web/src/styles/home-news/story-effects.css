@@ -1,6 +1,11 @@
 @media (max-width: 440px) {
+  .story-visual__chrome span:last-child,
   .audio-chip span:last-child {
     display: none;
+  }
+
+  .story-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -97,7 +102,7 @@
   }
 }
 
-.story-rail-container {
+.story-rail {
   animation: appReveal 0.68s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   animation-delay: 0.08s;
   opacity: 0;

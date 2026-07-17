@@ -5,7 +5,7 @@ import { loadGiscusDiscussion } from "./story-player/discussion";
 import { setDiscussionVisibility } from "./story-player/discussion-state";
 import { bindStoryPlayerElements, readStoryPayload } from "./story-player/dom";
 import { createFeedModeController } from "./story-player/feed-mode";
-import { hydrateRailMedia, layoutDrum, preloadAdjacentMedia } from "./story-player/media";
+import { centerRailCard, hydrateRailMedia, preloadAdjacentMedia } from "./story-player/media";
 import { readMutedPreference } from "./story-player/preferences";
 import { createStoryProgressController } from "./story-player/progress";
 import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
@@ -118,11 +118,12 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
     renderStoryFrame({ root, elements, post, muted, paused, expanded, ui, toPublicSrc });
     progress.resetForStory(options);
     railCards.forEach((card, cardIndex) => {
-      card.classList.toggle("is-active", cardIndex === active);
+      const isCurrent = cardIndex === active;
+      card.classList.toggle("is-active", isCurrent);
+      if (isCurrent) window.setTimeout(() => centerRailCard(rail, card), 60);
     });
     updatePlayState();
     feedMode.syncFeedModeControls();
-    layoutDrum({ rail, railCards, visibleIndexes: feedMode.visibleStoryIndexes(), active });
     storyViewTracker.scheduleStoryView(post);
     hydrateRailMedia({ active, posts, railCards, toPublicSrc });
     preloadAdjacentMedia({ active, posts, toPublicSrc });
@@ -276,30 +277,15 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
   });
 
   let startX = 0;
-  let startY = 0;
-  root.addEventListener(
-    "touchstart",
-    (event) => {
-      startX = event.touches[0]?.clientX || 0;
-      startY = event.touches[0]?.clientY || 0;
-    },
-    { passive: true },
-  );
+  root.addEventListener("touchstart", (event) => (startX = event.touches[0]?.clientX || 0), { passive: true });
   root.addEventListener(
     "touchend",
     (event) => {
-      const deltaX = (event.changedTouches[0]?.clientX || 0) - startX;
-      const deltaY = (event.changedTouches[0]?.clientY || 0) - startY;
-      if (discussionVisible) return;
-      if (Math.abs(deltaY) > Math.abs(deltaX)) {
-        if (Math.abs(deltaY) > 55) navigate(deltaY < 0 ? 1 : -1);
-      } else if (Math.abs(deltaX) > 55) {
-        navigate(deltaX < 0 ? 1 : -1);
-      }
+      const delta = (event.changedTouches[0]?.clientX || 0) - startX;
+      if (Math.abs(delta) > 55) navigate(delta < 0 ? 1 : -1);
     },
     { passive: true },
   );
-  window.addEventListener("resize", () => layoutDrum({ rail, railCards, visibleIndexes: feedMode.visibleStoryIndexes(), active }));
   document.addEventListener("keydown", (event) => {
     if (event.defaultPrevented || isTypingTarget(document.activeElement)) return;
     if (event.key === "ArrowDown" || event.key === "PageDown") {

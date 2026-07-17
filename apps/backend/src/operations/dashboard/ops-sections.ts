@@ -55,10 +55,7 @@ export function renderAudienceSection(backendDb: BackendDb, config: BackendConfi
     };
   }).sort((left, right) => right.followers - left.followers || left.label.localeCompare(right.label));
   const cards = rows
-    .map(
-      (item) =>
-        `<span class="audience-card"><strong>${escapeHtml(item.label)}</strong><b>${followersLabel(item)}</b>${cardDelta(item.growth7)}</span>`,
-    )
+    .map((item) => `<span class="audience-card"><strong>${escapeHtml(item.label)}</strong><b>${followersLabel(item)}</b></span>`)
     .join("");
   const details = rows
     .map(
@@ -67,33 +64,6 @@ export function renderAudienceSection(backendDb: BackendDb, config: BackendConfi
     )
     .join("");
   return `<div class="audience-strip"><div class="audience-cards">${cards}</div><details><summary>Показать больше</summary><div class="table-wrap"><table><thead><tr><th>Площадка</th><th>Подписчики</th><th>Δ 7д</th><th>Δ 30д</th><th>Просмотры 7д</th><th>Реакции 7д</th><th>Просмотры 30д</th><th>Реакции 30д</th></tr></thead><tbody>${details}</tbody></table></div></details></div>`;
-}
-
-function cardDelta(value: number | undefined): string {
-  if (value == null || value === 0) return "";
-  return `<small class="${value > 0 ? "delta-up" : "delta-down"}">${value > 0 ? "+" : "−"}${formatMetricValue(Math.abs(value))} за 7д</small>`;
-}
-
-/** Errors, queue depth and credential state must be visible without a click:
- * they are the reason the operator opens the dashboard. */
-export function renderStatusStrip(ops: OpsPayload): string {
-  const jobs = ops.jobs ?? [];
-  const queued = jobs.filter((job) => ["queued", "scheduled", "retry", "publishing"].includes(String(job.status ?? ""))).length;
-  const failedJobs = jobs.filter((job) => String(job.status ?? "") === "failed").length;
-  const metricErrors = (ops.pipeline?.metrics?.recent ?? []).filter((row) => row.error || row.status === "failed").length;
-  const errors = failedJobs + metricErrors;
-  const credentials = ops.credentials ?? [];
-  const badCredentials = credentials.filter((row) => String(row.status ?? (row.ok ? "ok" : "failed")) !== "ok").length;
-  const drafts = (ops.drafts ?? []).length;
-  const pills = [
-    `<a class="pill" href="#queue">⏳ Очередь: ${queued}</a>`,
-    errors ? `<a class="pill pill-danger" href="#health">⚠ Ошибки: ${errors}</a>` : '<span class="pill pill-ok">✓ Ошибок нет</span>',
-    badCredentials
-      ? `<a class="pill pill-danger" href="#health">🔑 Credentials: ${badCredentials} fail</a>`
-      : '<span class="pill pill-ok">🔑 Credentials ok</span>',
-    ...(drafts ? [`<a class="pill" href="#queue">Черновики: ${drafts}</a>`] : []),
-  ];
-  return `<div class="status-strip">${pills.join("")}</div>`;
 }
 
 export function renderRepairSection(ref: string, messageId: string): string {

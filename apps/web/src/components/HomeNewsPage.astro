@@ -37,22 +37,19 @@ const feedModesFor = (post: HomePost) => {
 const publicSrc = (value?: string | null) => (value ? `/${String(value).replace(/^\/+/, "")}` : null);
 const safeJsonForScript = (value: unknown) =>
   JSON.stringify(value).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026");
-const ambientSrc = activePost ? publicSrc(activePost.fallbackImage || (activePost.mediaType === "video" ? null : activePost.image)) : null;
 const ui = {
   storyLabel: isRu ? "Новостной плеер" : "AI news player",
   discuss: isRu ? "Обсудить" : "Discuss",
   share: isRu ? "Поделиться" : "Share",
-  copied: isRu ? "Скопировано" : "Copied",
-  backToPost: isRu ? "К посту" : "Back to post",
   readMore: isRu ? "Читать дальше" : "Read more",
   collapse: isRu ? "Свернуть" : "Collapse",
-  mute: isRu ? "Звук" : "Sound on",
-  muted: isRu ? "Включить звук" : "Tap for sound",
+  mute: isRu ? "Звук" : "Audio",
+  muted: isRu ? "Звук выкл" : "Muted",
   storyRail: isRu ? "Выбор новостей" : "Story rail",
   feedMode: isRu ? "Режим ленты" : "Feed mode",
-  feedLatest: isRu ? "Свежее" : "Latest",
-  feedDeep: isRu ? "Лонгриды" : "Deep dives",
-  feedWatched: isRu ? "Популярное" : "Popular",
+  feedLatest: "Latest",
+  feedDeep: "Deep",
+  feedWatched: "Watched",
   menu: isRu ? "Меню" : "Menu",
   language: isRu ? "English" : "Русский",
   telegram: "Telegram",
@@ -62,34 +59,35 @@ const ui = {
 <main class="home-page">
   {activePost ? (
     <section class="story-player" aria-label={ui.storyLabel} data-story-player data-initial-paused={initialPaused ? 'true' : 'false'}>
-      <div class="story-ambient" aria-hidden="true">
-        <img src={ambientSrc || undefined} alt="" loading="eager" decoding="async" data-story-ambient />
-      </div>
-      <div class="stage-top">
-        <div class="rail-avatar-menu">
-          <button class="rail-avatar-menu__button" type="button" aria-label={ui.menu}>
-            <img src="/brand-avatar-small-20260629.webp" alt="" width="34" height="34" />
-          </button>
-          <div class="rail-avatar-menu__panel">
-            <a href={isRu ? '/ru/' : '/'}>Alex Getman</a>
-            <a class="notranslate" href={isRu ? '/' : '/ru/'}>{ui.language}</a>
-            <a href="https://t.me/alexgetmancom" target="_blank" rel="noopener noreferrer">{ui.telegram}</a>
-          </div>
-        </div>
-        <div class="feed-mode-pills" role="group" aria-label={ui.feedMode}>
-          <button class="feed-pill is-active" type="button" data-feed-mode="latest">{ui.feedLatest}</button>
-          <button class="feed-pill" type="button" data-feed-mode="deep">{ui.feedDeep}</button>
-          <button class="feed-pill" type="button" data-feed-mode="watched">{ui.feedWatched}</button>
-        </div>
-      </div>
       <div class="story-player__main">
         <div class="story-rail-container">
+          <div class="rail-control" aria-label={ui.feedMode}>
+            <div class="rail-avatar-menu">
+              <button class="rail-avatar-menu__button" type="button" aria-label={ui.menu}>
+                <img src="/brand-avatar-small-20260629.webp" alt="" width="34" height="34" />
+              </button>
+              <div class="rail-avatar-menu__panel">
+                <a href={isRu ? '/ru/' : '/'}>Alex Getman</a>
+                <a class="notranslate" href={isRu ? '/' : '/ru/'}>{ui.language}</a>
+                <a href="https://t.me/alexgetmancom" target="_blank" rel="noopener noreferrer">{ui.telegram}</a>
+              </div>
+            </div>
+            <div class="feed-mode-menu">
+              <button class="feed-mode-menu__button is-active" type="button" aria-haspopup="true" aria-expanded="false" data-feed-mode-trigger>
+                <span data-feed-mode-label>{ui.feedLatest}</span>
+                <span aria-hidden="true">▾</span>
+              </button>
+              <div class="feed-mode-menu__panel" data-feed-mode-menu>
+                <button class="is-active" type="button" data-feed-mode="latest">{ui.feedLatest}</button>
+                <button type="button" data-feed-mode="deep">{ui.feedDeep}</button>
+                <button type="button" data-feed-mode="watched">{ui.feedWatched}</button>
+              </div>
+            </div>
+          </div>
           <StoryRail posts={storyPosts} ui={ui} />
         </div>
-        <div class="story-stage">
-          <StoryVisual activePost={activePost} posts={storyPosts} ui={ui} />
-          <StoryContext activePost={activePost} paragraphs={paragraphsFor(activePost)} ui={ui} />
-        </div>
+        <StoryVisual activePost={activePost} posts={storyPosts} ui={ui} />
+        <StoryContext activePost={activePost} paragraphs={paragraphsFor(activePost)} ui={ui} />
       </div>
 
       <script type="application/json" data-story-payload set:html={safeJsonForScript({

@@ -38,29 +38,14 @@ export function hydrateRailMedia(options: {
   });
 }
 
-/** Lays the rail cards out as a 3D drum: the active story sits in the middle,
- * neighbours tilt away into depth and far cards fade out entirely. */
-export function layoutDrum(options: {
-  rail: HTMLElement | null;
-  railCards: HTMLElement[];
-  visibleIndexes: number[];
-  active: number;
-}): void {
-  const { rail, railCards, visibleIndexes, active } = options;
-  if (!rail || railCards.length === 0) return;
-  const order = visibleIndexes.length ? visibleIndexes : railCards.map((_, index) => index);
-  const activePosition = Math.max(0, order.indexOf(active));
-  const step = Math.min(148, Math.max(92, rail.clientHeight / 5.4));
-  railCards.forEach((card, index) => {
-    const position = order.indexOf(index);
-    if (position === -1) return;
-    const offset = position - activePosition;
-    const clamped = Math.max(-4, Math.min(4, offset));
-    const shown = Math.abs(offset) <= 3;
-    card.style.transform = `translate(-50%, -50%) translateY(${(clamped * step).toFixed(1)}px) rotateX(${clamped * -14}deg) translateZ(${Math.abs(clamped) * -48}px)`;
-    card.style.opacity = shown ? String(1 - Math.abs(clamped) * 0.2) : "0";
-    card.style.zIndex = String(10 - Math.abs(clamped));
-    card.style.pointerEvents = shown ? "auto" : "none";
+export function centerRailCard(rail: HTMLElement | null, card: HTMLElement): void {
+  if (!rail || !card) return;
+  const left = card.offsetLeft - (rail.clientWidth - card.offsetWidth) / 2;
+  const top = card.offsetTop - (rail.clientHeight - card.offsetHeight) / 2;
+  rail.scrollTo({
+    left: Math.max(0, left),
+    top: Math.max(0, top),
+    behavior: "smooth",
   });
 }
 

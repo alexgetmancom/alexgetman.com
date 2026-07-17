@@ -18,7 +18,6 @@ export function bindStoryPlayerElements(root: HTMLElement): StoryPlayerElements 
 
   return {
     image: root.querySelector<HTMLImageElement>("[data-story-image]"),
-    ambient: root.querySelector<HTMLImageElement>("[data-story-ambient]"),
     video: root.querySelector<HTMLVideoElement>("[data-story-video]"),
     fallback: root.querySelector<HTMLElement>("[data-story-fallback]"),
     cardLink: root.querySelector<HTMLAnchorElement>("[data-story-card-link]"),

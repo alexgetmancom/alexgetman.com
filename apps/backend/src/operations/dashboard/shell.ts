@@ -100,42 +100,6 @@ export function renderDashboardShell(body: string): string {
     .video-chart-labels { display:flex; justify-content:space-between; color:#8b949e; font-size:11px; }
     .danger { color:#ff7b72; font-weight:700; }
     
-    .status-strip { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 8px; }
-    .pill { display:inline-flex; align-items:center; gap:5px; font-size:13px; color:#c9d1d9; text-decoration:none; border:1px solid #30363d; border-radius:14px; padding:4px 10px; background:#161b22; }
-    a.pill:hover { border-color:#58a6ff; }
-    .pill-danger { color:#ff7b72; border-color:#6e2b26; }
-    .pill-ok { color:#3fb950; border-color:#1f4428; }
-    .kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:8px; margin:0 0 8px; }
-    .kpi { border:1px solid #30363d; border-radius:8px; background:#161b22; padding:10px 12px; }
-    .kpi small { display:block; color:#8b949e; font-size:12px; }
-    .kpi-value { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; margin:2px 0 4px; }
-    .kpi-value b { color:#fff; font-size:22px; }
-    .kpi svg { width:100%; height:26px; display:block; }
-    .chip { font-size:12px; font-weight:600; border-radius:10px; padding:1px 7px; white-space:nowrap; }
-    .chip-up { color:#3fb950; background:rgba(63,185,80,.12); }
-    .chip-down { color:#f85149; background:rgba(248,81,73,.12); }
-    .chip-flat { color:#8b949e; background:#21262d; }
-    .delta-up { color:#3fb950; } .delta-down { color:#f85149; }
-    .dim { color:#57606a; }
-    .sigma-bar { display:none; height:4px; min-width:56px; background:#21262d; border-radius:2px; margin-top:3px; }
-    .sigma-bar i { display:block; height:4px; border-radius:2px; }
-    .sigma-bar.mv i { background:#3987e5; }
-    .sigma-bar.ml i { background:#199e70; }
-    .sigma-bar.mr i { background:#c98500; }
-    .sigma-bar.mp i { background:#9085e9; }
-    #pipeline-table.show-mv .sigma-bar.mv, #pipeline-table.show-ml .sigma-bar.ml, #pipeline-table.show-mr .sigma-bar.mr, #pipeline-table.show-mp .sigma-bar.mp { display:block; }
-    .sigma-bar-static { display:block; }
-    .best-post td { background:rgba(201,133,0,.07); }
-    .best-badge { color:#c98500; }
-    .er-col { color:#8b949e; white-space:nowrap; }
-    .cm { display:none; }
-    #weekly-chart.show-mv .cm-mv, #weekly-chart.show-ml .cm-ml, #weekly-chart.show-mr .cm-mr { display:inline; }
-    #pipeline-table thead, #video-table thead { position:sticky; top:0; z-index:3; }
-    #pipeline-table thead th, #video-table thead th { background:#0d1117; }
-    .heatmap-table { width:auto; min-width:0; border-collapse:separate; border-spacing:3px; }
-    .heatmap-table th, .heatmap-table td { border:0; padding:6px 12px; border-radius:4px; text-align:center; font-size:12px; }
-    .heatmap-table th { color:#8b949e; font-weight:400; }
-    .heatmap-note { color:#8b949e; font-size:12px; }
     @media (max-width: 760px) {
       body { padding:10px; }
       main { max-width:none; }
@@ -152,12 +116,10 @@ export function renderDashboardShell(body: string): string {
 </main>
 <script>
   function setMetric(m) {
-    for (const id of ['pipeline-table', 'weekly-chart']) {
-      const el = document.getElementById(id);
-      if (el) el.className = el.className.replace(/show-m\\w/g, '').trim() + ' show-' + m;
-    }
+    const tbl = document.getElementById('pipeline-table');
+    if (!tbl) return;
+    tbl.className = tbl.className.replace(/show-m\\w/g, '') + ' show-' + m;
     document.querySelectorAll('.mt-btn').forEach(b => b.classList.toggle('mt-active', b.dataset.m === m));
-    try { sessionStorage.setItem('cc-metric', m); } catch {}
   }
   document.getElementById('metric-toggle')?.addEventListener('click', (event) => {
     const button = event.target instanceof Element ? event.target.closest('.mt-btn') : null;
@@ -179,30 +141,6 @@ export function renderDashboardShell(body: string): string {
     point.addEventListener('mouseleave', () => {
       if (chartTooltip) chartTooltip.hidden = true;
     });
-  });
-  function openHashDetails() {
-    const id = location.hash.slice(1);
-    if (!id) return;
-    const el = document.getElementById(id);
-    if (el && el.tagName === 'DETAILS') el.open = true;
-  }
-  window.addEventListener('hashchange', openHashDetails);
-  openHashDetails();
-  try {
-    const savedMetric = sessionStorage.getItem('cc-metric');
-    if (savedMetric && document.querySelector('.mt-btn[data-m="' + savedMetric + '"]')) setMetric(savedMetric);
-    const openDetails = JSON.parse(sessionStorage.getItem('cc-details') || 'null');
-    if (Array.isArray(openDetails)) document.querySelectorAll('details').forEach((d, i) => { d.open = openDetails.includes(i); });
-    const scrollY = Number(sessionStorage.getItem('cc-scroll') || '');
-    if (scrollY) window.scrollTo(0, scrollY);
-    sessionStorage.removeItem('cc-details');
-    sessionStorage.removeItem('cc-scroll');
-  } catch {}
-  window.addEventListener('beforeunload', () => {
-    try {
-      sessionStorage.setItem('cc-scroll', String(window.scrollY));
-      sessionStorage.setItem('cc-details', JSON.stringify(Array.from(document.querySelectorAll('details')).flatMap((d, i) => d.open ? [i] : [])));
-    } catch {}
   });
   let dashboardFingerprint = '';
   setInterval(async () => {

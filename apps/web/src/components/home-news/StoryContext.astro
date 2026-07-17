@@ -35,5 +35,23 @@ const readingTimeMin = Math.max(1, Math.ceil(wordsCount / 180));
     <div class="story-panel story-panel--discussion" data-panel="discussion" hidden>
       <div class="story-discussion-frame" data-story-discussion-frame></div>
     </div>
+    <div class="story-actions">
+      <button class="story-action story-action--primary" type="button" data-story-discuss>
+        <svg class="story-action-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+        </svg>
+        <span>{ui.discuss}</span>
+      </button>
+      <button class="story-action" type="button" data-story-share>
+        <svg class="story-action-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;">
+          <circle cx="18" cy="5" r="3"></circle>
+          <circle cx="6" cy="12" r="3"></circle>
+          <circle cx="18" cy="19" r="3"></circle>
+          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+          <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+        </svg>
+        <span>{ui.share}</span>
+      </button>
+    </div>
   </div>
 </aside>

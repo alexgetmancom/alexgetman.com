@@ -1,13 +1,11 @@
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
-import { renderKpiSection, renderPostingHeatmap } from "./dashboard/kpi.js";
 import {
   renderAudienceSection,
   renderCredentialsSection,
   renderDiagnosticsSection,
   renderQueueSection,
   renderRepairSection,
-  renderStatusStrip,
 } from "./dashboard/ops-sections.js";
 import { renderPipelineSection } from "./dashboard/pipeline-section.js";
 import { renderDashboardShell } from "./dashboard/shell.js";
@@ -34,8 +32,7 @@ export function renderDashboard(
   const activeTab = showVideo ? "video" : "posts";
   const body = `
     <nav class="dashboard-tabs">${config.studio.modules.text_posting ? `<a class="${activeTab === "posts" ? "active" : ""}" href="/command-center?tab=posts">Обзор</a>` : ""}${config.studio.modules.video_posting ? `<a class="${activeTab === "video" ? "active" : ""}" href="/command-center?tab=video">Видео</a>` : ""}<a href="#queue">Очередь</a><a href="#health">Health</a></nav>
-    ${renderStatusStrip(ops)}
-    <section id="overview" class="overview">${showPosts ? `${renderAudienceSection(backendDb, config)}${renderKpiSection(backendDb)}${renderPipelineSection(weekOffset, service.pipeline(weekOffset))}${renderPostingHeatmap(backendDb)}` : ""}${showVideo ? renderVideoSection(backendDb) : ""}</section>
+    <section id="overview" class="overview">${showPosts ? `${renderAudienceSection(backendDb, config)}${renderPipelineSection(weekOffset, service.pipeline(weekOffset))}` : ""}${showVideo ? renderVideoSection(backendDb) : ""}</section>
     <details id="queue"><summary>Queue и черновики</summary>${renderQueueSection(ops)}</details>
     <details id="health"><summary>Health: credentials и diagnostics</summary>${renderCredentialsSection(ops)}${renderDiagnosticsSection(ops)}</details>
     <details id="repair"><summary>Emergency repair</summary>${renderRepairSection(ref, messageId)}</details>`;
