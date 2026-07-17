@@ -123,6 +123,38 @@ export async function handleVideoActionCallback(ctx: Context, backendDb: Backend
         selected: [],
         data: { controlMessageId: callbackMessageId(ctx) },
       });
+    } else if (data.startsWith("video_cancel_ask:")) {
+      const id = Number(data.slice("video_cancel_ask:".length));
+      studioServices(backendDb, config).videos.get(adminId, id);
+      const preview = videoPreview(backendDb, id, locale);
+      await ctx.editMessageText(
+        `${preview.text}\n\n⚠️ *${t(locale, "vpreview.cancel-confirm-q")}*\n${t(locale, "vpreview.cancel-confirm-warn")}`,
+        {
+          parse_mode: "Markdown",
+          reply_markup: new InlineKeyboard()
+            .text(t(locale, "vpreview.cancel-yes"), `video_cancel:${id}`)
+            .text(t(locale, "common.back"), `video_open:${id}`),
+        },
+      );
+      return true;
+    } else if (data.startsWith("video_remove_ask:")) {
+      const [, targetText, idText] = data.split(":");
+      const target = targetText as VideoTarget;
+      const id = Number(idText);
+      if (!VIDEO_TARGETS.includes(target)) throw new StudioError("err.unknown-platform");
+      studioServices(backendDb, config).videos.get(adminId, id);
+      const label = videoTargetLabel(target);
+      const preview = videoPreview(backendDb, id, locale);
+      await ctx.editMessageText(
+        `${preview.text}\n\n⚠️ *${t(locale, "vpreview.remove-confirm-q", { target: label })}*\n${t(locale, "vpreview.remove-confirm-warn", { target: label })}`,
+        {
+          parse_mode: "Markdown",
+          reply_markup: new InlineKeyboard()
+            .text(t(locale, "vpreview.remove-yes", { target: label }), `video_remove:${target}:${id}`)
+            .text(t(locale, "common.back"), `video_open:${id}`),
+        },
+      );
+      return true;
     } else if (data.startsWith("video_cancel:")) {
       const cancellation = await studioServices(backendDb, config).videos.cancel(adminId, Number(data.slice("video_cancel:".length)));
       clearSession(backendDb, adminId);

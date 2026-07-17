@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { fixUrlSlashes } from "../../content/message.js";
 import type { BackendDb } from "../../db/client.js";
 import { botSettings, botUiSettings, studioNotificationSettings } from "../../db/schema.js";
 import { StudioError } from "../../foundation/errors.js";
@@ -68,7 +69,7 @@ export function settingsService(backendDb: BackendDb) {
       if (setting?.pendingAction !== "youtube_signature") return false;
       backendDb.db
         .update(botSettings)
-        .set({ youtubeSignature: value === "-" ? "" : value, pendingAction: null, updatedAt: new Date().toISOString() })
+        .set({ youtubeSignature: value === "-" ? "" : fixUrlSlashes(value), pendingAction: null, updatedAt: new Date().toISOString() })
         .where(eq(botSettings.adminId, actorId))
         .run();
       return true;

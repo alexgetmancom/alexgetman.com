@@ -1,3 +1,4 @@
+import { fixUrlSlashes } from "../content/message.js";
 import type { VideoTarget } from "../publishing/video-types.js";
 
 type VideoWizardStep = "youtube_title" | "youtube_description" | "youtube_game_url" | "youtube_tags" | "instagram_caption";
@@ -21,7 +22,11 @@ export function advanceVideoMetadata(
   if (step === "youtube_description")
     return { data: { ...data, youtube_description: text === "-" ? "" : text }, nextStep: "youtube_game_url", prompt: "youtube_game_url" };
   if (step === "youtube_game_url")
-    return { data: { ...data, youtube_game_url: text === "-" ? "" : text }, nextStep: "youtube_tags", prompt: "youtube_tags" };
+    return {
+      data: { ...data, youtube_game_url: text === "-" ? "" : fixUrlSlashes(text) },
+      nextStep: "youtube_tags",
+      prompt: "youtube_tags",
+    };
   if (step === "youtube_tags") {
     const tags =
       text === "-"

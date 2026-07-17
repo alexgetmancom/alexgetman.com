@@ -16,6 +16,13 @@ export function firstLine(text: string): string {
   return text.split(/\r?\n/, 1)[0]?.trim() || "Alex Getman update";
 }
 
+/** Mobile keyboards occasionally autocorrect "/" to "\" inside a pasted URL.
+ * Straighten only the slashes inside recognized http(s) links, so unrelated
+ * backslashes elsewhere in free text (captions, signatures) are untouched. */
+export function fixUrlSlashes(text: string): string {
+  return text.replace(/https?:[\\/]{1,2}[^\s]*/gi, (url) => url.replace(/\\/g, "/"));
+}
+
 export function slugify(text: string, postId: number): string {
   const slug = text
     .normalize("NFKD")

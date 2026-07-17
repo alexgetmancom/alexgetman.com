@@ -1,4 +1,5 @@
 import { type Context, InlineKeyboard } from "grammy";
+import { fixUrlSlashes } from "../content/message.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
@@ -161,7 +162,7 @@ async function handleYouTubeMessage(
   if (session.step === "youtube_game_url") {
     if (session.data.is_single_edit) {
       await finishSingleVideoEdit(ctx, backendDb, config, adminId, session, "youtube_shorts", (metadata) => {
-        metadata.gameUrl = text === "-" ? undefined : text;
+        metadata.gameUrl = text === "-" ? undefined : fixUrlSlashes(text);
       });
       return true;
     }
