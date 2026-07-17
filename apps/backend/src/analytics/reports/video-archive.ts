@@ -1,5 +1,6 @@
 import type { BackendDb } from "../../db/client.js";
-import { type StudioLocale as BotLocale, localize as ui } from "../../foundation/locale.js";
+import type { StudioLocale as BotLocale } from "../../foundation/locale.js";
+import { t } from "../../interfaces/telegram/i18n/index.js";
 import { metricNumber } from "../snapshots/creator-store.js";
 
 export function creatorVideoArchive(
@@ -25,9 +26,7 @@ export function creatorVideoArchive(
     .all(offset) as Array<{ id: number; label: string }>;
   const items = rows.slice(0, 10);
   return {
-    text: items.length
-      ? `📚 ${ui(locale, "Video archive\n\nChoose a video:", "Архив роликов\n\nВыберите ролик:")}`
-      : `📚 ${ui(locale, "No published videos yet.", "В архиве пока нет опубликованных роликов.")}`,
+    text: items.length ? `📚 ${t(locale, "report.video-archive-choose")}` : `📚 ${t(locale, "report.no-videos")}`,
     items,
     total,
   };
@@ -36,7 +35,7 @@ export function creatorVideoMetrics(backendDb: BackendDb, videoDraftId: number, 
   const draft = backendDb.sqlite
     .prepare("SELECT COALESCE(label, 'Без названия') AS label FROM video_drafts WHERE id=?")
     .get(videoDraftId) as { label: string } | null;
-  if (!draft) return ui(locale, "Video not found.", "Ролик не найден.");
+  if (!draft) return t(locale, "report.video-not-found");
   const rows = backendDb.sqlite
     .prepare(
       `SELECT t.target, t.external_url, s.metrics_json, s.sampled_at FROM video_targets t LEFT JOIN video_metric_snapshots s ON s.id=(SELECT MAX(id) FROM video_metric_snapshots WHERE video_target_id=t.id) WHERE t.video_draft_id=? ORDER BY t.id`,
@@ -52,7 +51,7 @@ export function creatorVideoMetrics(backendDb: BackendDb, videoDraftId: number, 
     const metrics = row.metrics_json ? (JSON.parse(row.metrics_json) as Record<string, unknown>) : {};
     const name = row.target === "youtube_shorts" ? "▶️ YouTube" : "📸 Instagram";
     lines.push(
-      `\n${name}: ${metricNumber(metrics.views)} ${ui(locale, "views", "просмотров")} · ${metricNumber(metrics.likes)} ${ui(locale, "likes", "лайков")} · ${metricNumber(metrics.comments)} ${ui(locale, "comments", "комментариев")}${row.sampled_at ? `\n${ui(locale, "Updated", "Обновлено")}: ${new Date(row.sampled_at).toLocaleString(locale === "ru" ? "ru-RU" : "en-GB", { timeZone: "Europe/Moscow" })}` : `\n${ui(locale, "Metrics have not been collected yet.", "Метрики ещё не собраны.")}`}`,
+      `\n${name}: ${metricNumber(metrics.views)} ${t(locale, "report.views")} · ${metricNumber(metrics.likes)} ${t(locale, "report.likes")} · ${metricNumber(metrics.comments)} ${t(locale, "report.comments")}${row.sampled_at ? `\n${t(locale, "report.updated")}: ${new Date(row.sampled_at).toLocaleString(locale === "ru" ? "ru-RU" : "en-GB", { timeZone: "Europe/Moscow" })}` : `\n${t(locale, "report.no-metrics")}`}`,
     );
   }
   return lines.join("\n");

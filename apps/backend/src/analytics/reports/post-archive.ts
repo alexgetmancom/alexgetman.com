@@ -1,5 +1,6 @@
 import type { BackendDb } from "../../db/client.js";
-import { type StudioLocale as BotLocale, localize as ui } from "../../foundation/locale.js";
+import type { StudioLocale as BotLocale } from "../../foundation/locale.js";
+import { t } from "../../interfaces/telegram/i18n/index.js";
 import { metricNumber } from "../snapshots/creator-store.js";
 
 export function creatorPostArchive(
@@ -23,9 +24,7 @@ export function creatorPostArchive(
     .all(offset) as Array<{ id: number; label: string }>;
   const items = rows.slice(0, 10).map((item) => ({ ...item, label: item.label.replace(/\s+/g, " ").slice(0, 42) }));
   return {
-    text: items.length
-      ? `📚 ${ui(locale, "Post archive\n\nChoose a post:", "Архив постов\n\nВыберите пост:")}`
-      : `📚 ${ui(locale, "No published posts yet.", "В архиве пока нет опубликованных постов.")}`,
+    text: items.length ? `📚 ${t(locale, "report.post-archive-choose")}` : `📚 ${t(locale, "report.no-posts")}`,
     items,
     total,
   };
@@ -37,7 +36,7 @@ export function creatorPostMetrics(backendDb: BackendDb, postId: number, locale:
     media_count: number;
     date_msk: string | null;
   } | null;
-  if (!post) return ui(locale, "Post not found.", "Пост не найден.");
+  if (!post) return t(locale, "report.post-not-found");
   const rows = backendDb.sqlite
     .prepare(
       `SELECT target, metric_name, value FROM metric_samples WHERE post_key=? AND id IN (SELECT MAX(id) FROM metric_samples WHERE post_key=? GROUP BY target, metric_name) ORDER BY target, metric_name`,
@@ -53,17 +52,17 @@ export function creatorPostMetrics(backendDb: BackendDb, postId: number, locale:
     { views: 0, interactions: 0 },
   );
   const lines = [
-    `📝 *${ui(locale, `Post #${postId}`, `Пост #${postId}`)}*`,
-    `👁 ${ui(locale, "Total views", "Всего просмотров")}: *${totals.views}*`,
-    `💬 ${ui(locale, "Interactions", "Реакции")}: *${totals.interactions}*`,
-    `🖼 ${ui(locale, "Media", "Медиа")}: *${post.media_count}*`,
+    `📝 *${t(locale, "report.post-heading", { id: postId })}*`,
+    `👁 ${t(locale, "report.total-views")}: *${totals.views}*`,
+    `💬 ${t(locale, "report.interactions")}: *${totals.interactions}*`,
+    `🖼 ${t(locale, "report.media")}: *${post.media_count}*`,
     post.date_msk ? `🗓 ${post.date_msk}` : "",
     "",
-    post.text?.slice(0, 600) || ui(locale, "[media post]", "[пост с медиа]"),
+    post.text?.slice(0, 600) || t(locale, "report.media-post"),
   ].filter(Boolean);
   for (const [target, values] of metrics)
     lines.push(
-      `\n${target}: ${values.views ?? 0} ${ui(locale, "views", "просмотров")} · ${(values.likes ?? 0) + (values.replies ?? 0) + (values.comments ?? 0)} ${ui(locale, "interactions", "реакций")}`,
+      `\n${target}: ${values.views ?? 0} ${t(locale, "report.views")} · ${(values.likes ?? 0) + (values.replies ?? 0) + (values.comments ?? 0)} ${t(locale, "report.interactions-lc")}`,
     );
   return lines.join("\n");
 }
@@ -112,15 +111,11 @@ export function creatorArchiveSummary(
     : 0;
   return {
     text: [
-      `📚 *${ui(locale, "Archive", "Архив")}*`,
+      `📚 *${t(locale, "report.archive-title")}*`,
       "",
-      ui(
-        locale,
-        "Published materials and their final metrics are kept here.",
-        "Здесь хранятся опубликованные материалы и их итоговые метрики.",
-      ),
-      `${ui(locale, "Posts", "Посты")}: *${posts}*`,
-      hasVideo ? `${ui(locale, "Videos", "Ролики")}: *${videos}*` : "",
+      t(locale, "report.archive-desc"),
+      `${t(locale, "report.posts")}: *${posts}*`,
+      hasVideo ? `${t(locale, "report.videos")}: *${videos}*` : "",
     ]
       .filter(Boolean)
       .join("\n"),
