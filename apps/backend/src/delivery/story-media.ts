@@ -131,7 +131,12 @@ async function transformRemotely(source: string, output: string, video: boolean,
       const detail = (await response.text()).slice(0, 800);
       throw new Error(`media_processor_failed: ${response.status}${detail ? ` ${detail}` : ""}`);
     }
-    await withinStoryStageTimeout(Bun.write(output, response), 30_000, "media_processor_result_write_timeout");
+    // The shared Story master is explicitly capped below 30 MB.  Materialize
+    // that bounded response before writing it: piping a Response body straight
+    // into Bun.write can leave the stream open behind the SSH+socat hop even
+    // after the remote processor has returned HTTP 200.
+    const result = await withinStoryStageTimeout(response.arrayBuffer(), 30_000, "media_processor_result_read_timeout");
+    await withinStoryStageTimeout(Bun.write(output, result), 30_000, "media_processor_result_write_timeout");
     log("info", "story media remote result written", { output });
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError")
