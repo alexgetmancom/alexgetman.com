@@ -77,6 +77,23 @@ const en = {
   "progress.hide-details": "Hide details",
   "progress.cancel-remaining": "Cancel remaining",
   "progress.menu": "← Menu",
+  // Post-card callbacks
+  "action.invalid-post": "Invalid post",
+  "action.target-updated": "{target} updated",
+  "action.send-replacement": "Send the replacement in the next message",
+  "action.send-new-text": "⌨ Send the new text in the next message.",
+  "action.send-new-media": "📎 Send the new photo or video in the next message.",
+  "action.cancelled": "Cancelled",
+  "action.draft-cancelled": "🗑 Draft #{id} cancelled.",
+  "action.queued": "Queued",
+  "action.post-queued": "✅ Post #{id} queued. Live progress is below.",
+  "action.scheduled": "Scheduled",
+  "action.schedule-expired": "Schedule confirmation expired",
+  "action.send-time": "Send time",
+  "action.enter-datetime": "⌨ Send a date and time: `15.07 18:30` (MSK).",
+  "action.unknown": "Unknown action",
+  "action.scheduled-as": "Draft #{draftId} is scheduled as post #{postId}.",
+  "action.preflight": "Telegram with media: {actual}/{limit} characters. Shorten RU text or disable Telegram in Platforms.",
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -151,6 +168,23 @@ const ru = {
   "progress.hide-details": "Скрыть детали",
   "progress.cancel-remaining": "Отменить оставшиеся",
   "progress.menu": "← Меню",
+  // Post-card callbacks
+  "action.invalid-post": "Некорректный пост",
+  "action.target-updated": "{target}: обновлено",
+  "action.send-replacement": "Отправьте замену следующим сообщением",
+  "action.send-new-text": "⌨ Отправьте новый текст следующим сообщением.",
+  "action.send-new-media": "📎 Отправьте новое фото или видео следующим сообщением.",
+  "action.cancelled": "Отменено",
+  "action.draft-cancelled": "🗑 Черновик #{id} отменён.",
+  "action.queued": "В очереди",
+  "action.post-queued": "✅ Пост #{id} поставлен в очередь. Прогресс — ниже.",
+  "action.scheduled": "Запланировано",
+  "action.schedule-expired": "Подтверждение планирования устарело",
+  "action.send-time": "Введите время",
+  "action.enter-datetime": "⌨ Введите дату и время: `15.07 18:30` (МСК).",
+  "action.unknown": "Неизвестное действие",
+  "action.scheduled-as": "Черновик #{draftId} запланирован как пост #{postId}.",
+  "action.preflight": "{message} Откройте «Выбрать площадки», чтобы выключить Telegram.",
 } satisfies Record<MessageKey, string>;
 
 export const catalog: Record<UiLocale, Record<MessageKey, string>> = { en, ru };

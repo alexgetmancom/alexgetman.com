@@ -3,9 +3,10 @@ import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { setTelegramPostProgressCard } from "../interfaces/telegram/control-cards.js";
 import { sendTelegramDeliveryPreviews } from "../interfaces/telegram/delivery-previews.js";
+import { t } from "../interfaces/telegram/i18n/index.js";
 import { formatMsk } from "../interfaces/telegram/time.js";
 import { studioServices } from "../studio/services/index.js";
-import { botLocale, ui } from "./i18n.js";
+import { botLocale } from "./i18n.js";
 import { extractMessage } from "./message.js";
 import { editDraftPreview, editDraftPrompt, sendDraftPreview, showScheduleConfirmation } from "./post-card.js";
 import { clearPostAdminState, getPostAdminState, setPostAdminState } from "./post-state.js";
@@ -20,19 +21,18 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
   const draftId = Number(action === "preset" ? second : action?.startsWith("sched_") ? parts.at(-1) : first);
   const locale = botLocale(backendDb, Number(ctx.from?.id));
   const actorId = Number(ctx.from?.id);
-  if (!Number.isSafeInteger(draftId))
-    return void (await ctx.answerCallbackQuery({ text: ui(locale, "Invalid post", "Некорректный пост") }));
+  if (!Number.isSafeInteger(draftId)) return void (await ctx.answerCallbackQuery({ text: t(locale, "action.invalid-post") }));
   studioServices(backendDb, config).posts.get(actorId, draftId);
   if (action === "toggle" && second) {
     studioServices(backendDb, config).posts.toggleTarget(actorId, draftId, second);
-    await ctx.answerCallbackQuery({ text: ui(locale, `${second} updated`, `${second}: обновлено`) });
+    await ctx.answerCallbackQuery({ text: t(locale, "action.target-updated", { target: second }) });
     return editDraftPreview(ctx, backendDb, draftId, "platforms");
   }
   if (action === "preview") return editDraftPreview(ctx, backendDb, draftId);
   if (action === "platforms") return editDraftPreview(ctx, backendDb, draftId, "platforms");
   if (action === "cycle_mode") {
     const nextMode = studioServices(backendDb, config).posts.cycleMode(actorId, draftId);
-    await ctx.answerCallbackQuery({ text: `${ui(locale, "Mode", "Режим")}: ${modeLabel(nextMode, locale)}` });
+    await ctx.answerCallbackQuery({ text: `${t(locale, "post.mode")}: ${modeLabel(nextMode, locale)}` });
     return editDraftPreview(ctx, backendDb, draftId);
   }
   if (action === "cancel_state") {
@@ -44,15 +44,13 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
     if (!action) return;
     setPostAdminState(backendDb, Number(ctx.from?.id), action, draftId, callbackMessageId(ctx));
     await ctx.answerCallbackQuery({
-      text: ui(locale, "Send the replacement in the next message", "Отправьте замену следующим сообщением"),
+      text: t(locale, "action.send-replacement"),
     });
     return editDraftPrompt(
       ctx,
       backendDb,
       draftId,
-      action.startsWith("edit")
-        ? ui(locale, "⌨ Send the new text in the next message.", "⌨ Отправьте новый текст следующим сообщением.")
-        : ui(locale, "📎 Send the new photo or video in the next message.", "📎 Отправьте новое фото или видео следующим сообщением."),
+      action.startsWith("edit") ? t(locale, "action.send-new-text") : t(locale, "action.send-new-media"),
     );
   }
   if (action === "cancel") {
@@ -60,8 +58,8 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
   }
   if (action === "cancel_confirm") {
     studioServices(backendDb, config).posts.cancel(actorId, draftId);
-    await ctx.answerCallbackQuery({ text: ui(locale, "Cancelled", "Отменено") });
-    return void (await ctx.editMessageText(ui(locale, `🗑 Draft #${draftId} cancelled.`, `🗑 Черновик #${draftId} отменён.`)));
+    await ctx.answerCallbackQuery({ text: t(locale, "action.cancelled") });
+    return void (await ctx.editMessageText(t(locale, "action.draft-cancelled", { id: draftId })));
   }
   if (action === "publish") {
     if (await showPublicationPreflight(ctx, backendDb, config, actorId, draftId, locale)) return;
@@ -73,10 +71,8 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
   }
   if (action === "publish_confirm") {
     studioServices(backendDb, config).posts.publish(actorId, draftId);
-    await ctx.answerCallbackQuery({ text: ui(locale, "Queued", "В очереди") });
-    await ctx.editMessageText(
-      ui(locale, `✅ Post #${draftId} queued. Live progress is below.`, `✅ Пост #${draftId} поставлен в очередь. Прогресс — ниже.`),
-    );
+    await ctx.answerCallbackQuery({ text: t(locale, "action.queued") });
+    await ctx.editMessageText(t(locale, "action.post-queued", { id: draftId }));
     const progress = renderPostProgress(studioServices(backendDb, config).posts.progress(actorId, draftId), locale);
     const message = await ctx.reply(progress.text, { parse_mode: "Markdown", reply_markup: progress.keyboard });
     if (ctx.chat?.id) setTelegramPostProgressCard(backendDb, draftId, Number(ctx.chat.id), message.message_id);
@@ -95,7 +91,7 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
   if (action === "sched_confirm" && first) {
     const { ruAt, enAt } = studioServices(backendDb, config).posts.scheduleChoice(actorId, draftId, first);
     const postId = studioServices(backendDb, config).posts.schedule(actorId, draftId, { ruAt, enAt });
-    await ctx.answerCallbackQuery({ text: ui(locale, "Scheduled", "Запланировано") });
+    await ctx.answerCallbackQuery({ text: t(locale, "action.scheduled") });
     return void (await ctx.editMessageText(scheduledDraftText(locale, draftId, postId, ruAt, enAt)));
   }
   if (action === "sched_manual_confirm") {
@@ -103,49 +99,44 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
     const match = state?.action?.match(/^schedule_confirm_(ru|en|both)_(.+)$/);
     if (!match || state?.draft_id !== draftId)
       return void (await ctx.answerCallbackQuery({
-        text: ui(locale, "Schedule confirmation expired", "Подтверждение планирования устарело"),
+        text: t(locale, "action.schedule-expired"),
       }));
     const scope = match[1];
     const iso = match[2];
     if (!scope || !iso)
       return void (await ctx.answerCallbackQuery({
-        text: ui(locale, "Schedule confirmation expired", "Подтверждение планирования устарело"),
+        text: t(locale, "action.schedule-expired"),
       }));
     const value = new Date(iso);
     if (Number.isNaN(value.getTime()))
       return void (await ctx.answerCallbackQuery({
-        text: ui(locale, "Schedule confirmation expired", "Подтверждение планирования устарело"),
+        text: t(locale, "action.schedule-expired"),
       }));
     const { ruAt, enAt } = studioServices(backendDb, config).posts.scheduleAt(actorId, draftId, scheduleScope(scope), value);
     const postId = studioServices(backendDb, config).posts.schedule(actorId, draftId, { ruAt, enAt });
     clearPostAdminState(backendDb, Number(ctx.from?.id));
-    await ctx.answerCallbackQuery({ text: ui(locale, "Scheduled", "Запланировано") });
+    await ctx.answerCallbackQuery({ text: t(locale, "action.scheduled") });
     return void (await ctx.editMessageText(scheduledDraftText(locale, draftId, postId, ruAt, enAt)));
   }
   if (action === "sched_auto") {
     const { ruAt, enAt } = studioServices(backendDb, config).posts.scheduleChoice(actorId, draftId, "auto");
     const postId = studioServices(backendDb, config).posts.schedule(actorId, draftId, { ruAt, enAt });
-    await ctx.answerCallbackQuery({ text: ui(locale, "Scheduled", "Запланировано") });
+    await ctx.answerCallbackQuery({ text: t(locale, "action.scheduled") });
     return void (await ctx.editMessageText(scheduledDraftText(locale, draftId, postId, ruAt, enAt)));
   }
   if (action === "sched_preset" && second && first) {
     const schedule = studioServices(backendDb, config).posts.scheduleChoice(actorId, draftId, first);
     const postId = studioServices(backendDb, config).posts.schedule(actorId, draftId, schedule);
-    await ctx.answerCallbackQuery({ text: ui(locale, "Scheduled", "Запланировано") });
+    await ctx.answerCallbackQuery({ text: t(locale, "action.scheduled") });
     return void (await ctx.editMessageText(scheduledDraftText(locale, draftId, postId, schedule.ruAt, schedule.enAt)));
   }
   if (action === "sched_manual" && first) {
     setPostAdminState(backendDb, Number(ctx.from?.id), `schedule_manual_${first}`, draftId, callbackMessageId(ctx));
     const locale = botLocale(backendDb, Number(ctx.from?.id));
-    await ctx.answerCallbackQuery({ text: ui(locale, "Send time", "Введите время") });
-    return editDraftPrompt(
-      ctx,
-      backendDb,
-      draftId,
-      ui(locale, "⌨ Send a date and time: `15.07 18:30` (MSK).", "⌨ Введите дату и время: `15.07 18:30` (МСК)."),
-    );
+    await ctx.answerCallbackQuery({ text: t(locale, "action.send-time") });
+    return editDraftPrompt(ctx, backendDb, draftId, t(locale, "action.enter-datetime"));
   }
-  await ctx.answerCallbackQuery({ text: ui(locale, "Unknown action", "Неизвестное действие") });
+  await ctx.answerCallbackQuery({ text: t(locale, "action.unknown") });
 }
 
 async function showPublicationPreflight(
@@ -159,10 +150,7 @@ async function showPublicationPreflight(
   const issue = studioServices(backendDb, config).posts.validate(actorId, draftId)[0];
   if (!issue) return false;
   await ctx.answerCallbackQuery({
-    text:
-      locale === "ru"
-        ? `${issue.message} Откройте «Выбрать площадки», чтобы выключить Telegram.`
-        : `Telegram with media: ${issue.actual}/${issue.limit} characters. Shorten RU text or disable Telegram in Platforms.`,
+    text: t(locale, "action.preflight", { message: issue.message, actual: issue.actual, limit: issue.limit }),
     show_alert: true,
   });
   return true;
@@ -231,7 +219,7 @@ function scheduledDraftText(
   ruAt: Date | null,
   enAt: Date | null,
 ): string {
-  return `🟢 ${ui(locale, `Draft #${draftId} is scheduled as post #${postId}.`, `Черновик #${draftId} запланирован как пост #${postId}.`)}\n${ui(locale, "RU", "RU")}: ${formatMsk(ruAt)}\n${ui(locale, "EN", "EN")}: ${formatMsk(enAt)}`;
+  return `🟢 ${t(locale, "action.scheduled-as", { draftId, postId })}\nRU: ${formatMsk(ruAt)}\nEN: ${formatMsk(enAt)}`;
 }
 
 function callbackMessageId(ctx: Context): number | null {
