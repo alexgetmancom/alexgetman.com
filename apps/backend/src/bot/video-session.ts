@@ -4,19 +4,21 @@ import type { BackendDb } from "../db/client.js";
 import { videoBotSessions } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { setTelegramVideoCard } from "../interfaces/telegram/control-cards.js";
+import { t } from "../interfaces/telegram/i18n/index.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import { nextVideoFlowStep } from "../studio/video-fsm.js";
+import { type BotLocale, botLocale } from "./i18n.js";
 
 export type VideoSession = { draftId: number | null; step: string; selected: VideoTarget[]; data: Record<string, unknown> };
 
-export function targetKeyboard(config: BackendConfig, selected: VideoTarget[]): InlineKeyboard {
+export function targetKeyboard(config: BackendConfig, selected: VideoTarget[], locale: BotLocale): InlineKeyboard {
   const keyboard = new InlineKeyboard();
   for (const target of VIDEO_TARGETS) {
     if (target === "youtube_shorts" && !config.studio.modules.youtube) continue;
     if (target === "instagram_reels" && !config.studio.modules.instagram) continue;
     keyboard.text(`${selected.includes(target) ? "✓" : "○"} ${videoTargetLabel(target)}`, `video_toggle:${target}`).row();
   }
-  return keyboard.text("Далее", "video_targets_done").row().text("← Cancel", "video_cancel_dialog");
+  return keyboard.text(t(locale, "video.next"), "video_targets_done").row().text(t(locale, "common.cancel"), "video_cancel_dialog");
 }
 
 export function enabledVideoTargets(config: BackendConfig): VideoTarget[] {
@@ -75,9 +77,15 @@ export function clearSession(backendDb: BackendDb, adminId: number): void {
   backendDb.db.delete(videoBotSessions).where(eq(videoBotSessions.adminId, adminId)).run();
 }
 
-export async function updateVideoControl(ctx: Context, session: VideoSession, text: string, keyboard?: InlineKeyboard): Promise<void> {
+export async function updateVideoControl(
+  ctx: Context,
+  session: VideoSession,
+  text: string,
+  keyboard?: InlineKeyboard,
+  locale: BotLocale = "en",
+): Promise<void> {
   const messageId = Number(session.data.controlMessageId);
-  const replyMarkup = keyboard ?? new InlineKeyboard().text("← Cancel", "video_cancel_dialog");
+  const replyMarkup = keyboard ?? new InlineKeyboard().text(t(locale, "common.cancel"), "video_cancel_dialog");
   if (messageId && ctx.chat?.id)
     return void (await ctx.api.editMessageText(ctx.chat.id, messageId, text, { parse_mode: "Markdown", reply_markup: replyMarkup }));
   await ctx.reply(text, { parse_mode: "Markdown", reply_markup: replyMarkup });
@@ -110,7 +118,7 @@ export async function askInstagramOrSchedule(ctx: Context, backendDb: BackendDb,
   if (nextVideoFlowStep(session.selected) === "instagram_caption") {
     const next = { ...session, step: "instagram_caption" };
     saveSession(backendDb, adminId, next);
-    await replyVideoPrompt(ctx, "⌨ Подпись для Instagram Reels — текст и хэштеги вместе (или «-»):");
+    await replyVideoPrompt(ctx, t(botLocale(backendDb, adminId), "video.prompt-ig-caption"));
     return;
   }
   await askSchedule(ctx, backendDb, adminId, session);
@@ -119,10 +127,11 @@ export async function askInstagramOrSchedule(ctx: Context, backendDb: BackendDb,
 export async function askSchedule(ctx: Context, backendDb: BackendDb, adminId: number, session: VideoSession): Promise<void> {
   const next = { ...session, step: "schedule_choice" };
   saveSession(backendDb, adminId, next);
-  const keyboard = new InlineKeyboard().text("Одно время для всех", `video_common:${session.draftId}`);
-  if (session.selected.length > 1) keyboard.row().text("Разное время", `video_individual:${session.draftId}`);
-  keyboard.row().text("← Cancel", "video_cancel_dialog");
-  await sendVideoControl(ctx, backendDb, adminId, next, "Данные сохранены. Выберите расписание (МСК):", keyboard);
+  const locale = botLocale(backendDb, adminId);
+  const keyboard = new InlineKeyboard().text(t(locale, "video.same-time"), `video_common:${session.draftId}`);
+  if (session.selected.length > 1) keyboard.row().text(t(locale, "video.different-time"), `video_individual:${session.draftId}`);
+  keyboard.row().text(t(locale, "common.cancel"), "video_cancel_dialog");
+  await sendVideoControl(ctx, backendDb, adminId, next, t(locale, "video.saved-choose-schedule"), keyboard);
 }
 
 export function setControlFromSession(

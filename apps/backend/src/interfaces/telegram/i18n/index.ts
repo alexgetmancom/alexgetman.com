@@ -1,6 +1,7 @@
 import { StudioError } from "../../../foundation/errors.js";
 import { catalog, type MessageKey, type UiLocale } from "./catalog.js";
 
+export type { MessageKey, UiLocale };
 export { catalog };
 
 /** Render an error for a Telegram user. A StudioError carries a catalog code,

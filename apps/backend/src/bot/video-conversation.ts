@@ -83,7 +83,7 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
         adminId,
         next,
         t(botLocale(backendDb, adminId), "video.choose-platforms-next"),
-        targetKeyboard(config, session.selected),
+        targetKeyboard(config, session.selected, botLocale(backendDb, adminId)),
       );
       return true;
     }
