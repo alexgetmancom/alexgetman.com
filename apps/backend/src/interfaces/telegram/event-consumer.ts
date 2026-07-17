@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, inArray, notExists, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, notExists, notInArray, or, sql } from "drizzle-orm";
 import type { Bot } from "grammy";
 import { refreshPostControlCard } from "../../bot/progress.js";
 import type { BackendDb } from "../../db/client.js";
@@ -27,8 +27,14 @@ const TELEGRAM_EVENT_TYPES = [
 ];
 // Telegram is an immediate interface, not an archival notification transport.
 // Older undelivered events remain in the durable audit journal, but must never
-// be replayed after a restart and drown current reminders/completions.
-const TELEGRAM_EVENT_MAX_AGE_MS = 30 * 60 * 1000;
+// be replayed after a restart and drown current reminders/completions. A
+// reminder anchored to a specific moment ("5 minutes before") is meaningless
+// hours late, so it keeps a short window. A failure or completion describes
+// something that already happened and must survive an outage or deploy that
+// outlasts the short window, so it gets a much longer one.
+const REMINDER_EVENT_TYPES = ["video.reminder.due", "studio.notification.reminder.due"];
+const REMINDER_EVENT_MAX_AGE_MS = 30 * 60 * 1000;
+const OUTCOME_EVENT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 /** Consumes durable domain events and renders Telegram-only side effects once. */
 export async function consumeTelegramEvents(backendDb: BackendDb, bot: Bot | null, reminderMinutes: number): Promise<number> {
@@ -45,7 +51,16 @@ export async function consumeTelegramEvents(backendDb: BackendDb, bot: Bot | nul
     .where(
       and(
         inArray(postEvents.eventType, TELEGRAM_EVENT_TYPES),
-        gte(postEvents.createdAt, new Date(Date.now() - TELEGRAM_EVENT_MAX_AGE_MS).toISOString()),
+        or(
+          and(
+            inArray(postEvents.eventType, REMINDER_EVENT_TYPES),
+            gte(postEvents.createdAt, new Date(Date.now() - REMINDER_EVENT_MAX_AGE_MS).toISOString()),
+          ),
+          and(
+            notInArray(postEvents.eventType, REMINDER_EVENT_TYPES),
+            gte(postEvents.createdAt, new Date(Date.now() - OUTCOME_EVENT_MAX_AGE_MS).toISOString()),
+          ),
+        ),
         notExists(delivered),
       ),
     )
