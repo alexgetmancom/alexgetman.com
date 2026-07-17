@@ -5,10 +5,12 @@
  * fallback message so logs and non-localizing callers still read sensibly. */
 export class StudioError extends Error {
   readonly code: string;
+  readonly params: Record<string, string | number> | undefined;
 
-  constructor(code: string) {
+  constructor(code: string, params?: Record<string, string | number>) {
     super(code);
     this.code = code;
+    this.params = params;
     this.name = "StudioError";
   }
 }

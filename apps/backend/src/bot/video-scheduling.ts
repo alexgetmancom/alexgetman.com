@@ -5,9 +5,10 @@ import { StudioError } from "../foundation/errors.js";
 import { setTelegramVideoCard } from "../interfaces/telegram/control-cards.js";
 import { t } from "../interfaces/telegram/i18n/index.js";
 import { videoPreview } from "../interfaces/telegram/video-preview.js";
+import type { VideoTechnicalCheck } from "../publishing/video-service.js";
 import type { VideoTarget } from "../publishing/video-types.js";
 import { studioServices } from "../studio/services/index.js";
-import { botLocale } from "./i18n.js";
+import { type BotLocale, botLocale } from "./i18n.js";
 import { clearSession, type VideoSession } from "./video-session.js";
 
 export async function finishVideoSchedule(
@@ -38,18 +39,34 @@ export async function finishVideoNow(
   await showScheduledVideo(ctx, backendDb, config, adminId, session, technical, locale);
 }
 
+/** Formats the transport-neutral technical check into a Telegram summary line. */
+function videoCheckSummary(technical: VideoTechnicalCheck, locale: BotLocale): string {
+  const mm = String(Math.floor(technical.seconds / 60)).padStart(2, "0");
+  const ss = String(technical.seconds % 60).padStart(2, "0");
+  const audioCodec = technical.audioCodec ?? t(locale, "video.no-audio");
+  return t(locale, "video.check-summary", {
+    dims: `${technical.width}×${technical.height}`,
+    dur: `${mm}:${ss}`,
+    codecs: `${technical.videoCodec.toUpperCase()}/${audioCodec.toUpperCase()}`,
+    sound: technical.audioCodec ? t(locale, "video.has-audio") : t(locale, "video.no-audio"),
+    fps: technical.fps ? `${technical.fps.toFixed(0)} FPS` : t(locale, "video.fps-unknown"),
+    mb: Math.ceil(technical.sizeBytes / 1024 / 1024),
+  });
+}
+
 async function showScheduledVideo(
   ctx: Context,
   backendDb: BackendDb,
   config: BackendConfig,
   adminId: number,
   session: VideoSession,
-  technical: { summary: string; warning: string | null },
-  locale: "ru" | "en",
+  technical: VideoTechnicalCheck,
+  locale: BotLocale,
 ): Promise<void> {
   if (!session.draftId) throw new StudioError("err.video-missing");
   const preview = videoPreview(backendDb, session.draftId, locale);
-  const text = `${technical.summary}${technical.warning ? `\n${technical.warning}` : ""}\n\n✅ ${t(locale, "common.scheduled")}. ${t(locale, "video.reminder", { minutes: config.VIDEO_REMINDER_MINUTES })}\n\n${preview.text}`;
+  const warning = technical.aspectOk ? "" : `\n${t(locale, "video.aspect-warning")}`;
+  const text = `${videoCheckSummary(technical, locale)}${warning}\n\n✅ ${t(locale, "common.scheduled")}. ${t(locale, "video.reminder", { minutes: config.VIDEO_REMINDER_MINUTES })}\n\n${preview.text}`;
   const controlMessageId = Number(session.data.controlMessageId);
   clearSession(backendDb, adminId);
   if (controlMessageId && ctx.chat?.id) {

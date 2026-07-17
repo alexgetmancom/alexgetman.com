@@ -7,7 +7,7 @@ export { catalog };
 /** Render an error for a Telegram user. A StudioError carries a catalog code,
  * so it is translated; anything else keeps its raw message for admin debugging. */
 export function describeError(locale: UiLocale, error: unknown): string {
-  if (error instanceof StudioError && error.code in catalog.en) return t(locale, error.code as MessageKey);
+  if (error instanceof StudioError && error.code in catalog.en) return t(locale, error.code as MessageKey, error.params);
   return error instanceof Error ? error.message : String(error);
 }
 

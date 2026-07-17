@@ -5,6 +5,7 @@ import { videoSourcePath } from "../content/video-assets.js";
 import type { BackendDb } from "../db/client.js";
 import { videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { StudioError } from "../foundation/errors.js";
 import { isVideoTargetEditable } from "./state.js";
 import { getVideoDraft, insertVideoJob, listVideoTargets, refreshVideoDraftStatus } from "./video-data.js";
 import type { VideoMetadata, VideoTarget } from "./video-types.js";
@@ -170,7 +171,7 @@ export function retryFailedVideoTarget(backendDb: BackendDb, videoDraftId: numbe
     .from(videoTargets)
     .where(and(eq(videoTargets.videoDraftId, videoDraftId), eq(videoTargets.target, targetName)))
     .get();
-  if (target?.status !== "failed") throw new Error("Повторить можно только площадку с ошибкой.");
+  if (target?.status !== "failed") throw new StudioError("err.retry-only-failed");
   const now = new Date();
   const nowIso = now.toISOString();
   backendDb.db.transaction((tx) => {
@@ -193,24 +194,34 @@ export function retryFailedVideoTarget(backendDb: BackendDb, videoDraftId: numbe
   });
 }
 
-type VideoTechnicalCheck = { summary: string; warning: string | null };
+export type VideoTechnicalCheck = {
+  width: number;
+  height: number;
+  seconds: number;
+  videoCodec: string;
+  audioCodec: string | null;
+  fps: number;
+  sizeBytes: number;
+  aspectOk: boolean;
+};
 
 export async function validateVideoDraft(config: BackendConfig, backendDb: BackendDb, videoDraftId: number): Promise<VideoTechnicalCheck> {
   const draft = getVideoDraft(backendDb, videoDraftId);
   const source = videoSourcePath(backendDb, config, draft);
-  if (!source) throw new Error("Исходное видео не найдено на сервере. Отправьте файл ещё раз.");
-  if (path.extname(source).toLowerCase() !== ".mp4") throw new Error("Для Shorts и Reels нужен файл MP4.");
+  if (!source) throw new StudioError("err.source-missing");
+  if (path.extname(source).toLowerCase() !== ".mp4") throw new StudioError("err.need-mp4");
   const size = statSync(source).size;
-  if (size <= 0) throw new Error("Видео пустое. Отправьте файл ещё раз.");
+  if (size <= 0) throw new StudioError("err.video-empty");
   if (size > config.VIDEO_MAX_BYTES)
-    throw new Error(
-      `Видео слишком большое: ${Math.ceil(size / 1024 / 1024)} МБ. Лимит профиля: ${Math.floor(config.VIDEO_MAX_BYTES / 1024 / 1024)} МБ.`,
-    );
+    throw new StudioError("err.video-too-big", {
+      size: Math.ceil(size / 1024 / 1024),
+      limit: Math.floor(config.VIDEO_MAX_BYTES / 1024 / 1024),
+    });
   for (const target of listVideoTargets(backendDb, videoDraftId)) {
     if (target.target === "youtube_shorts" && (!config.YOUTUBE_CLIENT_ID || !config.YOUTUBE_CLIENT_SECRET || !config.YOUTUBE_REFRESH_TOKEN))
-      throw new Error("YouTube не настроен: нужны OAuth-ключи и refresh token.");
+      throw new StudioError("err.youtube-not-configured");
     if (target.target === "instagram_reels" && (!config.INSTAGRAM_ACCESS_TOKEN || !config.INSTAGRAM_USER_ID))
-      throw new Error("Instagram не настроен: нужны access token и user ID.");
+      throw new StudioError("err.instagram-not-configured");
   }
   return probeVideo(source, size);
 }
@@ -230,7 +241,7 @@ async function probeVideo(source: string, size: number): Promise<VideoTechnicalC
     { stdout: "pipe" },
   );
   const output = await new Response(child.stdout).text();
-  if ((await child.exited) !== 0) throw new Error("Не удалось проверить видео через ffprobe. Отправьте MP4 ещё раз.");
+  if ((await child.exited) !== 0) throw new StudioError("err.ffprobe-failed");
   const data = JSON.parse(output) as {
     format?: { duration?: string };
     streams?: Array<{
@@ -243,15 +254,19 @@ async function probeVideo(source: string, size: number): Promise<VideoTechnicalC
   };
   const video = data.streams?.find((stream) => stream.codec_type === "video");
   const audio = data.streams?.find((stream) => stream.codec_type === "audio");
-  if (!video?.width || !video.height) throw new Error("В MP4 не найден видеопоток.");
+  if (!video?.width || !video.height) throw new StudioError("err.no-video-stream");
   const [a = 0, b = 1] = (video.avg_frame_rate ?? "0/1").split("/").map(Number);
   const fps = b ? a / b : 0;
   const seconds = Math.max(0, Math.round(Number(data.format?.duration ?? 0)));
-  const warning =
-    Math.abs(video.width / video.height - 9 / 16) > 0.02 ? "⚠️ Формат не 9:16: платформы могут обрезать ролик или добавить поля." : null;
   return {
-    summary: `🔎 Проверка видео: ${video.width}×${video.height}, ${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}, ${(video.codec_name ?? "video").toUpperCase()}/${(audio?.codec_name ?? "без звука").toUpperCase()}, ${audio ? "звук есть" : "без звука"}, ${fps ? `${fps.toFixed(0)} FPS` : "FPS неизвестен"}, ${Math.ceil(size / 1024 / 1024)} МБ — подходит.`,
-    warning,
+    width: video.width,
+    height: video.height,
+    seconds,
+    videoCodec: video.codec_name ?? "video",
+    audioCodec: audio?.codec_name ?? null,
+    fps,
+    sizeBytes: size,
+    aspectOk: Math.abs(video.width / video.height - 9 / 16) <= 0.02,
   };
 }
 
