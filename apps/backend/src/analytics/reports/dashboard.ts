@@ -2,7 +2,8 @@ import { eq } from "drizzle-orm";
 import type { BackendDb } from "../../db/client.js";
 import { creatorProfiles, socialComments } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
-import { type StudioLocale as BotLocale, localize as ui } from "../../foundation/locale.js";
+import type { StudioLocale as BotLocale } from "../../foundation/locale.js";
+import { t } from "../../interfaces/telegram/i18n/index.js";
 import { latestVideoMetrics, siteTotal, sum, textTotals, type VideoMetricRow } from "../metric-deltas.js";
 import { metricNumber } from "../snapshots/creator-store.js";
 
@@ -16,20 +17,18 @@ export function creatorDashboard(
   if (days === 0) return overallDashboard(backendDb, config, hasComments, locale);
   const since = new Date(Date.now() - days * 24 * 60 * 60_000).toISOString();
   const latest = latestVideoMetrics(backendDb, since);
-  const period = days === 1 ? ui(locale, "today", "сегодня") : ui(locale, `${days} days`, `${days} дней`);
-  const lines = [`📊 *${ui(locale, `Statistics for ${period}`, `Статистика за ${period}`)}*`];
+  const period = days === 1 ? t(locale, "report.period-today") : t(locale, "report.period-days", { days });
+  const lines = [`📊 *${t(locale, "report.stats-for", { period })}*`];
   if (config.studio.modules.site)
-    lines.push(`🌐 ${ui(locale, "Site", "Сайт")}: ${siteTotal(backendDb, since)} ${ui(locale, "material views", "просмотров материалов")}`);
+    lines.push(`🌐 ${t(locale, "report.site")}: ${siteTotal(backendDb, since)} ${t(locale, "report.material-views")}`);
   if (config.studio.modules.text_posting) {
     const text = textTotals(backendDb, since);
     lines.push(
-      `📝 ${ui(locale, "Posts", "Посты")}: ${text.views} ${ui(locale, "views", "просмотров")} · ${text.interactions} ${ui(locale, "interactions", "реакций")}`,
+      `📝 ${t(locale, "report.posts")}: ${text.views} ${t(locale, "report.views")} · ${text.interactions} ${t(locale, "report.interactions-lc")}`,
     );
   }
   if (config.studio.modules.video_posting) appendVideoDashboard(lines, latest, backendDb, config, locale);
-  lines.push(
-    `\n${ui(locale, "Data refreshes at most once a day to protect platform APIs.", "Данные обновляются не чаще раза в сутки — это бережно к API платформ.")}`,
-  );
+  lines.push(`\n${t(locale, "report.data-refresh")}`);
   return { text: lines.join("\n"), hasComments };
 }
 
@@ -39,48 +38,46 @@ function overallDashboard(
   hasComments: boolean,
   locale: BotLocale,
 ): { text: string; hasComments: boolean } {
-  const lines = [`🌐 *${ui(locale, "Overall statistics", "Общая статистика")}*`];
+  const lines = [`🌐 *${t(locale, "report.overall-stats")}*`];
   if (config.studio.modules.site)
     lines.push(
-      `\n🌐 ${ui(locale, "Site", "Сайт")}: ${siteTotal(backendDb, "0000-01-01T00:00:00.000Z")} ${ui(locale, "material views", "просмотров материалов")}`,
+      `\n🌐 ${t(locale, "report.site")}: ${siteTotal(backendDb, "0000-01-01T00:00:00.000Z")} ${t(locale, "report.material-views")}`,
     );
   if (config.studio.modules.text_posting) {
     const text = textTotals(backendDb, "0000-01-01T00:00:00.000Z");
     lines.push(
-      `📝 ${ui(locale, "Posts", "Посты")}: ${text.views} ${ui(locale, "views", "просмотров")} · ${text.interactions} ${ui(locale, "interactions", "реакций")}`,
+      `📝 ${t(locale, "report.posts")}: ${text.views} ${t(locale, "report.views")} · ${text.interactions} ${t(locale, "report.interactions-lc")}`,
     );
   }
   if (config.studio.modules.youtube) {
     const profileData = profile(backendDb, "youtube");
-    lines.push("\n🔴 *YouTube (Канал):*");
-    if (!profileData) lines.push("• Данные канала еще не синхронизированы.");
+    lines.push(`\n${t(locale, "dash.youtube-channel")}`);
+    if (!profileData) lines.push(t(locale, "dash.channel-not-synced"));
     else {
       const gained = metricNumber(profileData.subscribersGained);
       const lost = metricNumber(profileData.subscribersLost);
       lines.push(
-        `• Подписчиков: ${metricNumber(profileData.subscriberCount)}`,
-        `• Просмотров за все время: ${metricNumber(profileData.viewCount)}`,
-        `• Всего видео: ${metricNumber(profileData.videoCount)}`,
-        "• За последние 30 дней:",
-        `  - Просмотры: ${metricNumber(profileData.views)}`,
-        `  - Время просмотра: ${(metricNumber(profileData.estimatedMinutesWatched) / 60).toFixed(1)} ч.`,
-        `  - Подписчики: +${gained} / -${lost} (прирост: ${gained - lost})`,
+        t(locale, "dash.subscribers-line", { n: metricNumber(profileData.subscriberCount) }),
+        t(locale, "dash.lifetime-views", { n: metricNumber(profileData.viewCount) }),
+        t(locale, "dash.total-videos", { n: metricNumber(profileData.videoCount) }),
+        t(locale, "dash.last-30-days"),
+        t(locale, "dash.views-sub", { n: metricNumber(profileData.views) }),
+        t(locale, "dash.watch-time", { n: (metricNumber(profileData.estimatedMinutesWatched) / 60).toFixed(1) }),
+        t(locale, "dash.subs-delta", { gained, lost, net: gained - lost }),
       );
     }
   }
   if (config.studio.modules.instagram) {
     const profileData = profile(backendDb, "instagram");
-    lines.push("\n📸 *Instagram (Профиль):*");
-    if (!profileData) lines.push("• Данные профиля еще не синхронизированы.");
+    lines.push(`\n${t(locale, "dash.instagram-profile")}`);
+    if (!profileData) lines.push(t(locale, "dash.profile-not-synced"));
     else
       lines.push(
-        `• Подписчиков: ${metricNumber(profileData.followersCount)}`,
-        `• Всего Reels/публикаций: ${metricNumber(profileData.mediaCount)}`,
+        t(locale, "dash.followers-line", { n: metricNumber(profileData.followersCount) }),
+        t(locale, "dash.total-reels", { n: metricNumber(profileData.mediaCount) }),
       );
   }
-  lines.push(
-    `\n${ui(locale, "Data refreshes at most once a day to protect platform APIs.", "Данные обновляются не чаще раза в сутки — это бережно к API платформ.")}`,
-  );
+  lines.push(`\n${t(locale, "report.data-refresh")}`);
   return { text: lines.join("\n"), hasComments };
 }
 
@@ -95,23 +92,23 @@ function appendVideoDashboard(
   const instagram = latest.filter((row) => row.platform === "instagram_reels");
   const all = [...youtube, ...instagram];
   lines.push(
-    `🎬 ${ui(locale, "Videos", "Видео")}: ${sum(all, "views")} ${ui(locale, "views", "просмотров")} · ${sum(all, "likes") + sum(all, "comments")} ${ui(locale, "interactions", "взаимодействий")}`,
+    `🎬 ${t(locale, "report.videos-word")}: ${sum(all, "views")} ${t(locale, "report.views")} · ${sum(all, "likes") + sum(all, "comments")} ${t(locale, "report.interactions-video")}`,
   );
   if (config.studio.modules.youtube) {
     const data = profile(backendDb, "youtube");
     lines.push(
-      `YouTube: ${sum(youtube, "views")} просмотров · ${sum(youtube, "likes")} лайков${data ? ` · ${metricNumber(data.subscriberCount)} подписчиков` : ""}`,
+      `${t(locale, "dash.yt-summary", { views: sum(youtube, "views"), likes: sum(youtube, "likes") })}${data ? t(locale, "dash.subs-suffix", { n: metricNumber(data.subscriberCount) }) : ""}`,
     );
   }
   if (config.studio.modules.instagram) {
     const data = profile(backendDb, "instagram");
     lines.push(
-      `Instagram: ${sum(instagram, "views")} просмотров · ${sum(instagram, "likes")} лайков · ${sum(instagram, "comments")} комментариев${data ? ` · ${metricNumber(data.followersCount)} подписчиков` : ""}`,
+      `${t(locale, "dash.ig-summary", { views: sum(instagram, "views"), likes: sum(instagram, "likes"), comments: sum(instagram, "comments") })}${data ? t(locale, "dash.followers-suffix", { n: metricNumber(data.followersCount) }) : ""}`,
     );
   }
   const grouped: Record<string, { views: number; likes: number; comments: number }> = {};
   for (const row of latest) {
-    const label = row.label || "Без названия";
+    const label = row.label || t(locale, "report.untitled");
     const item = grouped[label] ?? { views: 0, likes: 0, comments: 0 };
     item.views += metricNumber(row.metrics.views);
     item.likes += metricNumber(row.metrics.likes);
@@ -123,8 +120,11 @@ function appendVideoDashboard(
     .sort((a, b) => b.views - a.views)
     .slice(0, 3);
   if (top.length) {
-    lines.push("\n🏆 *Топ публикаций (суммарно)*");
-    for (const item of top) lines.push(`• ${item.label} — ${metricNumber(item.views)} просмотров · ${item.likes} 👍 · ${item.comments} 💬`);
+    lines.push(`\n${t(locale, "dash.top-publications")}`);
+    for (const item of top)
+      lines.push(
+        t(locale, "dash.top-item", { label: item.label, views: metricNumber(item.views), likes: item.likes, comments: item.comments }),
+      );
   }
 }
 
