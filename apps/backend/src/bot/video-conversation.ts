@@ -2,6 +2,7 @@ import { type Context, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { sendTelegramDeliveryPreviews } from "../interfaces/telegram/delivery-previews.js";
+import { t } from "../interfaces/telegram/i18n/index.js";
 import { storeTelegramVideo } from "../interfaces/telegram/video-ingress.js";
 import { videoPreview } from "../interfaces/telegram/video-preview.js";
 import { type VideoMetadata, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
@@ -13,7 +14,7 @@ import {
   firstVideoMetadataStep,
   type VideoPrompt,
 } from "../studio/video-fsm.js";
-import { botLocale, ui } from "./i18n.js";
+import { botLocale } from "./i18n.js";
 import {
   askInstagramOrSchedule,
   askSchedule,
@@ -33,14 +34,9 @@ import {
 export async function startVideoConversation(ctx: Context, backendDb: BackendDb): Promise<void> {
   const adminId = Number(ctx.from?.id);
   const locale = botLocale(backendDb, adminId);
-  await ctx.reply(
-    ui(
-      locale,
-      "🎬 Send an MP4 video up to 1 GB. I will ask only for the details that are needed.",
-      "🎬 Пришлите видео MP4 до 1 ГБ. Затем я задам только нужные вопросы.",
-    ),
-    { reply_markup: new InlineKeyboard().text(ui(locale, "← Cancel", "← Отмена"), "video_cancel_dialog") },
-  );
+  await ctx.reply(t(locale, "video.dialog-prompt"), {
+    reply_markup: new InlineKeyboard().text(t(locale, "post.cancel"), "video_cancel_dialog"),
+  });
   saveSession(backendDb, adminId, { draftId: null, step: "asset", selected: [], data: {} });
 }
 
@@ -65,7 +61,7 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
     }
     const text = ctx.message && "text" in ctx.message ? (ctx.message.text?.trim() ?? "") : "";
     if (!text) {
-      await replyVideoPrompt(ctx, "⌨ Сейчас жду текстовый ответ. Нажмите «☰ Показать меню», чтобы начать другой сценарий.");
+      await replyVideoPrompt(ctx, t(botLocale(backendDb, adminId), "video.await-text"));
       return true;
     }
     if (!session.draftId) return false;
@@ -85,7 +81,7 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
         backendDb,
         adminId,
         next,
-        ui(botLocale(backendDb, adminId), "Choose platforms, then tap Next.", "Выберите платформы, затем нажмите «Далее»."),
+        t(botLocale(backendDb, adminId), "video.choose-platforms-next"),
         targetKeyboard(config, session.selected),
       );
       return true;
@@ -111,19 +107,8 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
   } catch (error) {
     const locale = botLocale(backendDb, adminId);
     if (session.step === "schedule_common" || session.step.startsWith("schedule_target:"))
-      await replyVideoPrompt(
-        ctx,
-        ui(
-          locale,
-          "I couldn't read that date and time. Send `HH:MM` or `DD.MM HH:MM` in MSK, for example `15.07 18:30`.",
-          "Не удалось распознать дату и время. Отправьте `ЧЧ:ММ` или `ДД.ММ ЧЧ:ММ` по МСК, например `15.07 18:30`.",
-        ),
-      );
-    else
-      await replyVideoPrompt(
-        ctx,
-        `🔴 ${ui(locale, "I couldn't use that value", "Не удалось обработать значение")}: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      await replyVideoPrompt(ctx, t(locale, "post.schedule-parse-error"));
+    else await replyVideoPrompt(ctx, `🔴 ${t(locale, "video.value-error")}: ${error instanceof Error ? error.message : String(error)}`);
     return true;
   }
   return false;
@@ -168,7 +153,7 @@ async function handleYouTubeMessage(
       transition.nextStep ?? "youtube_game_url",
     );
     await ctx.reply(videoPrompt(botLocale(backendDb, adminId), transition.prompt), {
-      reply_markup: new InlineKeyboard().text("⏭ Пропустить", "video_game_skip"),
+      reply_markup: new InlineKeyboard().text(t(botLocale(backendDb, adminId), "video.skip"), "video_game_skip"),
     });
     return true;
   }
@@ -206,18 +191,12 @@ async function handleYouTubeMessage(
 }
 
 function videoPrompt(locale: "en" | "ru", prompt: VideoPrompt): string {
-  if (prompt === "youtube_title") return ui(locale, "⌨ Title for YouTube Shorts?", "⌨ Название для YouTube Shorts?");
-  if (prompt === "youtube_description")
-    return ui(locale, "⌨ YouTube description (send `-` to skip):", "⌨ Описание для YouTube (отправьте `-`, если не нужно):");
-  if (prompt === "youtube_game_url") return ui(locale, "📀 Steam or game page URL?", "📀 Ссылка на Steam или страницу игры?");
-  if (prompt === "youtube_tags") return ui(locale, "⌨ YouTube tags, comma-separated (or `-`):", "⌨ Теги YouTube через запятую (или `-`):");
-  if (prompt === "instagram_caption")
-    return ui(
-      locale,
-      "⌨ Caption for Instagram Reels, including hashtags (or `-`)?",
-      "⌨ Подпись для Instagram Reels вместе с хэштегами (или `-`)?",
-    );
-  return ui(locale, "⌨ When should it be published?", "⌨ Когда опубликовать?");
+  if (prompt === "youtube_title") return t(locale, "video.prompt-yt-title");
+  if (prompt === "youtube_description") return t(locale, "video.prompt-yt-description");
+  if (prompt === "youtube_game_url") return t(locale, "video.prompt-yt-game-url");
+  if (prompt === "youtube_tags") return t(locale, "video.prompt-yt-tags");
+  if (prompt === "instagram_caption") return t(locale, "video.prompt-ig-caption");
+  return t(locale, "video.prompt-when-publish");
 }
 
 async function handleScheduleMessage(
@@ -246,7 +225,10 @@ async function handleScheduleMessage(
       step: `schedule_target:${transition.nextTarget}`,
       data: { ...session.data, schedule: transition.schedule },
     });
-    await replyVideoPrompt(ctx, `⌨ Когда опубликовать на ${videoTargetLabel(transition.nextTarget)}? Формат: 15.07 18:30 (МСК).`);
+    await replyVideoPrompt(
+      ctx,
+      t(botLocale(backendDb, adminId), "video.schedule-target-prompt", { target: videoTargetLabel(transition.nextTarget) }),
+    );
     return true;
   }
   await confirmVideoSchedule(
@@ -283,7 +265,7 @@ async function confirmVideoSchedule(
   saveSession(backendDb, adminId, next);
   const delivery = studioServices(backendDb, config).videos.preview(adminId, session.draftId).delivery;
   await sendTelegramDeliveryPreviews(ctx, delivery.projections);
-  const lines = [`🎬 *${ui(locale, "Confirm schedule", "Подтвердите планирование")}*`];
+  const lines = [`🎬 *${t(locale, "post.confirm-schedule-title")}*`];
   for (const target of next.selected) {
     const value = schedule[target];
     if (value)
@@ -292,8 +274,8 @@ async function confirmVideoSchedule(
       );
   }
   const keyboard = new InlineKeyboard()
-    .text(ui(locale, "✅ Confirm", "✅ Подтвердить"), `video_schedule_confirm:${session.draftId}`)
-    .text(ui(locale, "← Back", "← Назад"), `video_schedule:${session.draftId}`);
+    .text(t(locale, "video.confirm"), `video_schedule_confirm:${session.draftId}`)
+    .text(t(locale, "post.back"), `video_schedule:${session.draftId}`);
   await sendVideoControl(ctx, backendDb, adminId, next, lines.join("\n"), keyboard);
 }
 
@@ -306,7 +288,7 @@ async function finishSingleVideoEdit(
   target: VideoTarget,
   change: (metadata: Record<string, unknown>, draftId: number) => void,
 ): Promise<void> {
-  if (session.draftId == null) throw new Error("Откройте редактирование видео заново.");
+  if (session.draftId == null) throw new Error("Reopen video editing.");
   const row = studioServices(backendDb, config)
     .videos.get(adminId, session.draftId)
     .targets.find((item) => item.target === target);

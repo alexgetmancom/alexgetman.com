@@ -104,6 +104,22 @@ const en = {
   "post.schedule-parse-error": "I couldn't read that date and time. Send `HH:MM` or `DD.MM HH:MM` in MSK, for example `15.07 18:30`.",
   "post.value-error": "I couldn't use that value: {error}\n\nPlease try again or tap Cancel.",
   "post.need-new-post": "Choose 📝 New post from the menu before sending a new publication.",
+  // Video conversation + scheduling
+  "video.dialog-prompt": "🎬 Send an MP4 video up to 1 GB. I will ask only for the details that are needed.",
+  "video.await-text": "⌨ I'm waiting for a text reply now. Tap «☰ Menu» to start a different flow.",
+  "video.choose-platforms-next": "Choose platforms, then tap Next.",
+  "video.prompt-yt-title": "⌨ Title for YouTube Shorts?",
+  "video.prompt-yt-description": "⌨ YouTube description (send `-` to skip):",
+  "video.prompt-yt-game-url": "📀 Steam or game page URL?",
+  "video.prompt-yt-tags": "⌨ YouTube tags, comma-separated (or `-`):",
+  "video.prompt-ig-caption": "⌨ Caption for Instagram Reels, including hashtags (or `-`)?",
+  "video.prompt-when-publish": "⌨ When should it be published?",
+  "video.skip": "⏭ Skip",
+  "video.schedule-target-prompt": "⌨ When to publish on {target}? Format: 15.07 18:30 (MSK).",
+  "video.value-error": "I couldn't use that value",
+  "video.confirm": "✅ Confirm",
+  "video.reminder": "I will remind you {minutes} minutes beforehand.",
+  "video.confirmed-card": "Confirmed. Current publication card is below.",
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -205,6 +221,22 @@ const ru = {
   "post.schedule-parse-error": "Не удалось распознать дату и время. Отправьте `ЧЧ:ММ` или `ДД.ММ ЧЧ:ММ` по МСК, например `15.07 18:30`.",
   "post.value-error": "Не удалось обработать значение: {error}\n\nПопробуйте ещё раз или нажмите «Отмена».",
   "post.need-new-post": "Сначала выберите «📝 Новый пост» в меню.",
+  // Video conversation + scheduling
+  "video.dialog-prompt": "🎬 Пришлите видео MP4 до 1 ГБ. Затем я задам только нужные вопросы.",
+  "video.await-text": "⌨ Сейчас жду текстовый ответ. Нажмите «☰ Показать меню», чтобы начать другой сценарий.",
+  "video.choose-platforms-next": "Выберите платформы, затем нажмите «Далее».",
+  "video.prompt-yt-title": "⌨ Название для YouTube Shorts?",
+  "video.prompt-yt-description": "⌨ Описание для YouTube (отправьте `-`, если не нужно):",
+  "video.prompt-yt-game-url": "📀 Ссылка на Steam или страницу игры?",
+  "video.prompt-yt-tags": "⌨ Теги YouTube через запятую (или `-`):",
+  "video.prompt-ig-caption": "⌨ Подпись для Instagram Reels вместе с хэштегами (или `-`)?",
+  "video.prompt-when-publish": "⌨ Когда опубликовать?",
+  "video.skip": "⏭ Пропустить",
+  "video.schedule-target-prompt": "⌨ Когда опубликовать на {target}? Формат: 15.07 18:30 (МСК).",
+  "video.value-error": "Не удалось обработать значение",
+  "video.confirm": "✅ Подтвердить",
+  "video.reminder": "Напомню за {minutes} минут.",
+  "video.confirmed-card": "Подтверждено. Актуальная карточка публикации — ниже.",
 } satisfies Record<MessageKey, string>;
 
 export const catalog: Record<UiLocale, Record<MessageKey, string>> = { en, ru };
