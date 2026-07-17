@@ -1,8 +1,9 @@
 import { type Bot, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import { telegramPostCard, telegramPostProgressCard } from "../interfaces/telegram/control-cards.js";
+import { t } from "../interfaces/telegram/i18n/index.js";
 import { type PostProgressState, type PostProgressStatus, postProgressState } from "../studio/services/post-progress.js";
-import { botLocale, ui } from "./i18n.js";
+import { botLocale } from "./i18n.js";
 
 /** Telegram renderer over the transport-free Studio progress state. */
 export function postProgress(backendDb: BackendDb, draftId: number, details = false): { text: string; keyboard: InlineKeyboard } {
@@ -19,18 +20,18 @@ export function renderPostProgress(
   const completed = counts.published + counts.failed + counts.cancelled;
   const total = state.targets.length;
   const title = counts.failed
-    ? ui(locale, "⚠️ Publication has issues", "⚠️ Публикация с ошибками")
+    ? t(locale, "progress.issues-title")
     : completed === total && total > 0
-      ? ui(locale, "✅ Publication complete", "✅ Публикация завершена")
-      : ui(locale, "🚀 Publishing", "🚀 Публикация");
+      ? t(locale, "progress.complete-title")
+      : t(locale, "progress.publishing-title");
   const lines = [
     `${title} · *Post #${state.draftId}*`,
     "",
-    `${ui(locale, "Progress", "Выполнение")}: *${completed} / ${total}*`,
-    `✅ ${ui(locale, "Published", "Опубликовано")}: ${counts.published}`,
-    `🔄 ${ui(locale, "Publishing", "Публикуется")}: ${counts.publishing}`,
-    `⏳ ${ui(locale, "Waiting", "Ожидают")}: ${counts.waiting}`,
-    `❌ ${ui(locale, "Failed", "Ошибок")}: ${counts.failed}`,
+    `${t(locale, "progress.progress")}: *${completed} / ${total}*`,
+    `✅ ${t(locale, "progress.published")}: ${counts.published}`,
+    `🔄 ${t(locale, "progress.publishing")}: ${counts.publishing}`,
+    `⏳ ${t(locale, "progress.waiting")}: ${counts.waiting}`,
+    `❌ ${t(locale, "progress.failed")}: ${counts.failed}`,
   ];
   if (details)
     for (const group of ["ru", "en"] as const) {
@@ -44,12 +45,11 @@ export function renderPostProgress(
     }
   const keyboard = new InlineKeyboard();
   keyboard.text(
-    ui(locale, details ? "Hide details" : "Show details", details ? "Скрыть детали" : "Показать детали"),
+    t(locale, details ? "progress.hide-details" : "progress.show-details"),
     `${details ? "progress" : "progress_details"}:${state.draftId}`,
   );
-  if (counts.waiting + counts.publishing > 0)
-    keyboard.text(ui(locale, "Cancel remaining", "Отменить оставшиеся"), `progress_cancel:${state.draftId}`);
-  keyboard.row().text(ui(locale, "← Menu", "← Меню"), "menu_home");
+  if (counts.waiting + counts.publishing > 0) keyboard.text(t(locale, "progress.cancel-remaining"), `progress_cancel:${state.draftId}`);
+  keyboard.row().text(t(locale, "progress.menu"), "menu_home");
   return { text: lines.join("\n"), keyboard };
 }
 
