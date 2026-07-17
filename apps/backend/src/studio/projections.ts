@@ -40,6 +40,22 @@ export function postDeliveryProjections(draft: {
       })(),
     },
   } as const;
+  // One platform-specific deviation note per locale, not a whole separate
+  // preview message per platform: with a dozen-plus targets, most differing
+  // only by a character limit or a dropped video, a full resend of the media
+  // for every single one buried the two previews that actually matter.
+  const deviationNotes: Record<"ru" | "en", string[]> = { ru: [], en: [] };
+  for (const target of targets) {
+    const locale = targetLocale(target) ?? "en";
+    const profile = platformProfile(target);
+    const text = formatPlatformText(target, content[locale].text);
+    const mediaPolicy = mediaPolicyForTarget(target, content[locale].media);
+    const notes = [
+      ...(text !== content[locale].text ? ["text is shortened/transformed for this platform"] : []),
+      ...(mediaPolicy.note ? [mediaPolicy.note] : []),
+    ];
+    if (notes.length) deviationNotes[locale].push(`${profile?.label ?? target}: ${notes.join("; ")}`);
+  }
   const canonical = (["ru", "en"] as const).flatMap((locale) => {
     const selected = targets.filter((target) => targetLocale(target) === locale);
     if (!selected.length) return [];
@@ -51,33 +67,11 @@ export function postDeliveryProjections(draft: {
         locale,
         text: content[locale].text,
         media: content[locale].media,
-        notes: [],
+        notes: deviationNotes[locale],
       } satisfies DeliveryProjection,
     ];
   });
-  const deviations = targets.flatMap((target) => {
-    const locale = targetLocale(target) ?? "en";
-    const profile = platformProfile(target);
-    const text = formatPlatformText(target, content[locale].text);
-    const mediaPolicy = mediaPolicyForTarget(target, content[locale].media);
-    const notes = [
-      ...(text !== content[locale].text ? ["Text is transformed for this platform."] : []),
-      ...(mediaPolicy.note ? [mediaPolicy.note] : []),
-    ];
-    if (!notes.length) return [];
-    return [
-      {
-        id: `post:${draft.id}:target:${target}`,
-        label: `Preview · ${profile?.label ?? target}`,
-        targets: [target],
-        locale,
-        text,
-        media: content[locale].media,
-        notes,
-      } satisfies DeliveryProjection,
-    ];
-  });
-  return { kind: "post" as const, draftId: draft.id, projections: [...canonical, ...deviations] };
+  return { kind: "post" as const, draftId: draft.id, projections: canonical };
 }
 
 export function videoDeliveryProjections(backendDb: BackendDb, videoDraftId: number) {
