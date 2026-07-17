@@ -1,7 +1,8 @@
 import type { BackendDb } from "../../db/client.js";
 import { analyticsSync, creatorProfiles } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
-import { type StudioLocale as BotLocale, localize as ui } from "../../foundation/locale.js";
+import type { StudioLocale as BotLocale } from "../../foundation/locale.js";
+import { t } from "../../interfaces/telegram/i18n/index.js";
 import { audienceGrowthByAccount, siteTotal, textTotals, videoTotals } from "../metric-deltas.js";
 import { metricNumber } from "../snapshots/creator-store.js";
 
@@ -34,51 +35,40 @@ export function studioAnalyticsDashboard(
 
   if (section === "overview") {
     const followers = socialFollowers(backendDb, config);
-    if (followers != null) lines.push(`${ui(locale, "👥 Followers across platforms", "👥 Подписчики по площадкам")}: *${followers}*`);
+    if (followers != null) lines.push(`${t(locale, "sdash.followers-across")}: *${followers}*`);
     const growth = audienceGrowth(backendDb, since);
-    if (growth != null)
-      lines.push(
-        `${ui(locale, `📈 Follower growth · ${period}`, `📈 Прирост подписчиков · ${period}`)}: *${growth >= 0 ? "+" : ""}${growth}*`,
-      );
-    lines.push(`${ui(locale, "👁 Content views", "👁 Просмотры контента")}: *${post.views + video.views}*`);
-    lines.push(`${ui(locale, "💬 Interactions", "💬 Взаимодействия")}: *${post.interactions + video.interactions}*`);
-    if (config.studio.modules.site) lines.push(`${ui(locale, "🌐 Site material views", "🌐 Просмотры материалов сайта")}: *${siteViews}*`);
+    if (growth != null) lines.push(`${t(locale, "sdash.follower-growth", { period })}: *${growth >= 0 ? "+" : ""}${growth}*`);
+    lines.push(`${t(locale, "sdash.content-views")}: *${post.views + video.views}*`);
+    lines.push(`${t(locale, "sdash.interactions")}: *${post.interactions + video.interactions}*`);
+    if (config.studio.modules.site) lines.push(`${t(locale, "sdash.site-material-views")}: *${siteViews}*`);
     const stale = staleSources(backendDb);
-    if (stale.length) lines.push(`\n⚠️ ${ui(locale, "Data attention", "Проверить данные")}: ${stale.join(", ")}`);
+    if (stale.length) lines.push(`\n⚠️ ${t(locale, "sdash.data-attention")}: ${stale.join(", ")}`);
   } else if (section === "audience") {
     const profiles = audienceProfiles(backendDb, since, period, locale);
-    lines.push(
-      ...(profiles.length ? profiles : [ui(locale, "Audience data has not been collected yet.", "Данные об аудитории ещё не собраны.")]),
-    );
+    lines.push(...(profiles.length ? profiles : [t(locale, "sdash.no-audience")]));
   } else if (section === "posts") {
-    lines.push(`${ui(locale, "📝 Post views", "📝 Просмотры постов")}: *${post.views}*`);
-    lines.push(`${ui(locale, "💬 Interactions", "💬 Реакции")}: *${post.interactions}*`);
-    if (config.studio.modules.site) lines.push(`${ui(locale, "🌐 Site material views", "🌐 Просмотры материалов сайта")}: *${siteViews}*`);
+    lines.push(`${t(locale, "sdash.post-views")}: *${post.views}*`);
+    lines.push(`${t(locale, "sdash.interactions-posts")}: *${post.interactions}*`);
+    if (config.studio.modules.site) lines.push(`${t(locale, "sdash.site-material-views")}: *${siteViews}*`);
   } else {
-    lines.push(`${ui(locale, "🎬 Video views", "🎬 Просмотры роликов")}: *${video.views}*`);
-    lines.push(`${ui(locale, "💬 Interactions", "💬 Взаимодействия")}: *${video.interactions}*`);
+    lines.push(`${t(locale, "sdash.video-views")}: *${video.views}*`);
+    lines.push(`${t(locale, "sdash.interactions")}: *${video.interactions}*`);
   }
 
   const coverage = earliestMeasurement(backendDb, config, section);
   if (coverage && coverage > since) {
-    lines.push(
-      `\n⚠️ ${ui(
-        locale,
-        `History has been collected since ${formatDate(coverage, locale)}. The ${period} comparison is not complete yet.`,
-        `История собирается с ${formatDate(coverage, locale)}. Сравнение за ${period} пока неполное.`,
-      )}`,
-    );
+    lines.push(`\n⚠️ ${t(locale, "sdash.coverage-warning", { date: formatDate(coverage, locale), period })}`);
   }
   const updatedAt = latestMeasurement(backendDb, config, section);
-  if (updatedAt) lines.push(`\n${ui(locale, "Updated", "Обновлено")}: ${formatDateTime(updatedAt, locale)}`);
+  if (updatedAt) lines.push(`\n${t(locale, "report.updated")}: ${formatDateTime(updatedAt, locale)}`);
   return { text: lines.join("\n"), hasComments: hasAudienceComments(backendDb) };
 }
 
 function header(section: AnalyticsSection, period: string, locale: BotLocale): string {
-  if (section === "audience") return `👥 *${ui(locale, `Audience · ${period}`, `Аудитория · ${period}`)}*`;
-  if (section === "posts") return `📝 *${ui(locale, `Posts · ${period}`, `Постинг · ${period}`)}*`;
-  if (section === "video") return `🎬 *${ui(locale, `Video · ${period}`, `Видеопостинг · ${period}`)}*`;
-  return `📊 *${ui(locale, `Overview · ${period}`, `Общая статистика · ${period}`)}*`;
+  if (section === "audience") return `👥 *${t(locale, "sdash.header-audience", { period })}*`;
+  if (section === "posts") return `📝 *${t(locale, "sdash.header-posts", { period })}*`;
+  if (section === "video") return `🎬 *${t(locale, "sdash.header-video", { period })}*`;
+  return `📊 *${t(locale, "sdash.header-overview", { period })}*`;
 }
 
 function audienceProfiles(backendDb: BackendDb, since: string, period: string, locale: BotLocale): string[] {
@@ -111,22 +101,20 @@ function audienceProfiles(backendDb: BackendDb, since: string, period: string, l
       const data = row.dataJson as Record<string, unknown>;
       const followers = data.subscriberCount ?? data.followersCount;
       const values: string[] = [];
-      if (followers != null) values.push(`${ui(locale, "followers", "подписчики")}: *${metricNumber(followers)}*`);
+      if (followers != null) values.push(`${t(locale, "sdash.followers-lc")}: *${metricNumber(followers)}*`);
       const deltas = [...growth.entries()].filter(([key]) => key.startsWith(`${row.platform}\u0000`)).map(([, value]) => value);
       const delta = deltas.length ? deltas.reduce((total, value) => total + value, 0) : null;
-      if (delta != null) values.push(`${ui(locale, `growth · ${period}`, `прирост · ${period}`)}: *${delta >= 0 ? "+" : ""}${delta}*`);
+      if (delta != null) values.push(`${t(locale, "sdash.growth-lc", { period })}: *${delta >= 0 ? "+" : ""}${delta}*`);
       if (data.stars != null) values.push(`Stars: *${metricNumber(data.stars)}*`);
-      if (data.averageViewsPerPost != null)
-        values.push(`${ui(locale, "avg. views/post", "ср. просмотров/пост")}: ${metricNumber(data.averageViewsPerPost)}`);
-      if (!values.length)
-        values.push(ui(locale, "profile connected; follower count unavailable", "профиль подключён; число подписчиков недоступно"));
+      if (data.averageViewsPerPost != null) values.push(`${t(locale, "sdash.avg-views")}: ${metricNumber(data.averageViewsPerPost)}`);
+      if (!values.length) values.push(t(locale, "sdash.no-follower-count"));
       return `• *${labels[row.platform] ?? row.platform}* — ${values.join(" · ")}`;
     });
 }
 
 function periodLabel(days: AnalyticsPeriod, locale: BotLocale): string {
-  if (days === 1) return ui(locale, "today", "сегодня");
-  return ui(locale, `${days} days`, `${days} дней`);
+  if (days === 1) return t(locale, "report.period-today");
+  return t(locale, "report.period-days", { days });
 }
 
 function socialFollowers(backendDb: BackendDb, config: BackendConfig): number | null {

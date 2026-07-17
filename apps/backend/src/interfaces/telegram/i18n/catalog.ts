@@ -258,6 +258,26 @@ const en = {
   "dash.followers-suffix": " · {n} followers",
   "dash.top-publications": "🏆 *Top publications (total)*",
   "dash.top-item": "• {label} — {views} views · {likes} 👍 · {comments} 💬",
+  // Studio analytics dashboard
+  "sdash.header-overview": "Overview · {period}",
+  "sdash.header-audience": "Audience · {period}",
+  "sdash.header-posts": "Posts · {period}",
+  "sdash.header-video": "Video · {period}",
+  "sdash.followers-across": "👥 Followers across platforms",
+  "sdash.follower-growth": "📈 Follower growth · {period}",
+  "sdash.content-views": "👁 Content views",
+  "sdash.interactions": "💬 Interactions",
+  "sdash.interactions-posts": "💬 Interactions",
+  "sdash.site-material-views": "🌐 Site material views",
+  "sdash.post-views": "📝 Post views",
+  "sdash.video-views": "🎬 Video views",
+  "sdash.data-attention": "Data attention",
+  "sdash.no-audience": "Audience data has not been collected yet.",
+  "sdash.coverage-warning": "History has been collected since {date}. The {period} comparison is not complete yet.",
+  "sdash.followers-lc": "followers",
+  "sdash.growth-lc": "growth · {period}",
+  "sdash.avg-views": "avg. views/post",
+  "sdash.no-follower-count": "profile connected; follower count unavailable",
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -514,6 +534,26 @@ const ru = {
   "dash.followers-suffix": " · {n} подписчиков",
   "dash.top-publications": "🏆 *Топ публикаций (суммарно)*",
   "dash.top-item": "• {label} — {views} просмотров · {likes} 👍 · {comments} 💬",
+  // Studio analytics dashboard
+  "sdash.header-overview": "Общая статистика · {period}",
+  "sdash.header-audience": "Аудитория · {period}",
+  "sdash.header-posts": "Постинг · {period}",
+  "sdash.header-video": "Видеопостинг · {period}",
+  "sdash.followers-across": "👥 Подписчики по площадкам",
+  "sdash.follower-growth": "📈 Прирост подписчиков · {period}",
+  "sdash.content-views": "👁 Просмотры контента",
+  "sdash.interactions": "💬 Взаимодействия",
+  "sdash.interactions-posts": "💬 Реакции",
+  "sdash.site-material-views": "🌐 Просмотры материалов сайта",
+  "sdash.post-views": "📝 Просмотры постов",
+  "sdash.video-views": "🎬 Просмотры роликов",
+  "sdash.data-attention": "Проверить данные",
+  "sdash.no-audience": "Данные об аудитории ещё не собраны.",
+  "sdash.coverage-warning": "История собирается с {date}. Сравнение за {period} пока неполное.",
+  "sdash.followers-lc": "подписчики",
+  "sdash.growth-lc": "прирост · {period}",
+  "sdash.avg-views": "ср. просмотров/пост",
+  "sdash.no-follower-count": "профиль подключён; число подписчиков недоступно",
 } satisfies Record<MessageKey, string>;
 
 export const catalog: Record<UiLocale, Record<MessageKey, string>> = { en, ru };
