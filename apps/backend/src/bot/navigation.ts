@@ -1,14 +1,12 @@
 import { type Context, InlineKeyboard, Keyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { t } from "../interfaces/telegram/i18n/index.js";
 import { studioServices } from "../studio/services/index.js";
-import { type BotLocale, botLocale, ui } from "./i18n.js";
+import { type BotLocale, botLocale } from "./i18n.js";
 
 export function persistentKeyboard(locale: BotLocale = "en"): Keyboard {
-  return new Keyboard()
-    .text(ui(locale, "☰ Menu", "☰ Меню"))
-    .resized()
-    .persistent();
+  return new Keyboard().text(t(locale, "menu.button")).resized().persistent();
 }
 
 export async function showMainMenu(ctx: Context, config: BackendConfig, backendDb: BackendDb, edit = false): Promise<void> {
@@ -18,7 +16,7 @@ export async function showMainMenu(ctx: Context, config: BackendConfig, backendD
   const unread = studioServices(backendDb, config).notifications.inbox(actorId, 100).length;
   // Telegram does not allow a message consisting only of an inline keyboard.
   // This is deliberately a neutral heading, not a noisy "all clear" status.
-  const text = ui(locale, "Control panel", "Панель управления");
+  const text = t(locale, "menu.control-panel");
   const options = { reply_markup: mainMenuKeyboard(config, locale, queue, unread) };
   if (edit) await ctx.editMessageText(text, options);
   else await ctx.reply(text, options);
@@ -34,24 +32,18 @@ function mainMenuKeyboard(
   // Creation is the primary action and deliberately gets its own full row.
   // A video-only Studio (such as Maru) therefore has the compact two-row
   // layout, while a mixed Studio still keeps post and video creation obvious.
-  if (config.studio.modules.text_posting) keyboard.text(ui(locale, "📝 New post", "📝 Новый пост"), "menu_text").row();
-  if (config.studio.modules.video_posting) keyboard.text(ui(locale, "🎬 New video", "🎬 Новое видео"), "video_start").row();
-  keyboard.text(
-    ui(
-      locale,
-      `📋 Work queue${queue.upcoming.length + queue.drafts.length ? ` · ${queue.upcoming.length + queue.drafts.length}` : ""}`,
-      `📋 Очередь${queue.upcoming.length + queue.drafts.length ? ` · ${queue.upcoming.length + queue.drafts.length}` : ""}`,
-    ),
-    "queue_home",
-  );
-  if (config.studio.modules.analytics) keyboard.text(ui(locale, "📊 Analytics", "📊 Статистика"), "analytics_home");
-  keyboard.text(ui(locale, `⚙️ Settings${unread ? ` · 🔴${unread}` : ""}`, `⚙️ Настройки${unread ? ` · 🔴${unread}` : ""}`), "settings_home");
+  if (config.studio.modules.text_posting) keyboard.text(t(locale, "menu.new-post"), "menu_text").row();
+  if (config.studio.modules.video_posting) keyboard.text(t(locale, "menu.new-video"), "video_start").row();
+  const pending = queue.upcoming.length + queue.drafts.length;
+  keyboard.text(pending ? t(locale, "menu.work-queue-count", { count: pending }) : t(locale, "menu.work-queue"), "queue_home");
+  if (config.studio.modules.analytics) keyboard.text(t(locale, "menu.analytics"), "analytics_home");
+  keyboard.text(unread ? t(locale, "menu.settings-unread", { count: unread }) : t(locale, "menu.settings"), "settings_home");
   return keyboard;
 }
 
 export async function showSettings(ctx: Context, config: BackendConfig, backendDb: BackendDb, edit = false): Promise<void> {
   const locale = botLocale(backendDb, Number(ctx.from?.id));
-  const text = ui(locale, "⚙️ Settings", "⚙️ Настройки");
+  const text = t(locale, "settings.title");
   const options = { reply_markup: settingsKeyboard(locale, config.studio.modules.youtube) };
   if (edit) await ctx.editMessageText(text, options);
   else await ctx.reply(text, options);
@@ -59,13 +51,13 @@ export async function showSettings(ctx: Context, config: BackendConfig, backendD
 
 export function settingsKeyboard(locale: BotLocale, hasYouTube: boolean): InlineKeyboard {
   const keyboard = new InlineKeyboard();
-  if (hasYouTube) keyboard.text(ui(locale, "▶️ YouTube signature", "▶️ Подпись YouTube"), "settings_youtube_signature").row();
+  if (hasYouTube) keyboard.text(t(locale, "settings.youtube-signature"), "settings_youtube_signature").row();
   return keyboard
-    .text(ui(locale, "🔔 Notifications", "🔔 Уведомления"), "notifications_home")
+    .text(t(locale, "settings.notifications"), "notifications_home")
     .row()
-    .text(ui(locale, "🔔 Publication notifications", "🔔 Уведомления о публикациях"), "settings_notifications")
+    .text(t(locale, "settings.publication-notifications"), "settings_notifications")
     .row()
-    .text(ui(locale, "🌐 Language", "🌐 Язык"), "settings_language")
+    .text(t(locale, "settings.language"), "settings_language")
     .row()
-    .text(ui(locale, "← Menu", "← К меню"), "settings_menu");
+    .text(t(locale, "settings.back-to-menu"), "settings_menu");
 }
