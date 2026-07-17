@@ -147,6 +147,18 @@ const en = {
   "notif.status-error": "Error",
   "notif.status-warning": "Warning",
   "notif.status-notification": "Notification",
+  // Work queue
+  "queue.upcoming-btn": "📅 Upcoming",
+  "queue.drafts-btn": "🟡 Drafts ({count})",
+  "queue.title": "Work queue",
+  "queue.upcoming-heading": "Upcoming",
+  "queue.nothing-scheduled": "Nothing is scheduled.",
+  "queue.drafts-label": "Drafts",
+  "queue.no-drafts": "No drafts. Start a post or video from the menu.",
+  "queue.choose-draft": "Choose a draft to continue:",
+  "queue.platforms-suffix": "platforms",
+  "queue.today": "Today",
+  "queue.tomorrow": "Tomorrow",
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -292,6 +304,18 @@ const ru = {
   "notif.status-error": "Ошибка",
   "notif.status-warning": "Предупреждение",
   "notif.status-notification": "Уведомление",
+  // Work queue
+  "queue.upcoming-btn": "📅 Ближайшие",
+  "queue.drafts-btn": "🟡 Черновики ({count})",
+  "queue.title": "Очередь",
+  "queue.upcoming-heading": "Ближайшие публикации",
+  "queue.nothing-scheduled": "Ничего не запланировано.",
+  "queue.drafts-label": "Черновики",
+  "queue.no-drafts": "Черновиков нет. Начните пост или видео из меню.",
+  "queue.choose-draft": "Выберите черновик, чтобы продолжить:",
+  "queue.platforms-suffix": "площадок",
+  "queue.today": "Сегодня",
+  "queue.tomorrow": "Завтра",
 } satisfies Record<MessageKey, string>;
 
 export const catalog: Record<UiLocale, Record<MessageKey, string>> = { en, ru };

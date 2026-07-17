@@ -1,9 +1,10 @@
 import { type Context, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { t } from "../interfaces/telegram/i18n/index.js";
 import { studioServices } from "../studio/services/index.js";
 import type { StudioQueueItem, StudioQueueSnapshot } from "../studio/services/queue.js";
-import { type BotLocale, botLocale, ui } from "./i18n.js";
+import { type BotLocale, botLocale } from "./i18n.js";
 
 type QueueView = "upcoming" | "drafts";
 
@@ -29,33 +30,31 @@ export async function showQueue(
     for (const item of snapshot.drafts) keyboard.text(`${kindIcon(item.kind)} ${item.label}`, itemCallback(item)).row();
   }
 
-  if (view !== "upcoming") keyboard.text(ui(locale, "📅 Upcoming", "📅 Ближайшие"), "queue_home");
-  if (view !== "drafts")
-    keyboard.text(ui(locale, `🟡 Drafts (${snapshot.drafts.length})`, `🟡 Черновики (${snapshot.drafts.length})`), "queue_drafts");
-  keyboard.row().text(ui(locale, "← Menu", "← Меню"), "menu_home");
+  if (view !== "upcoming") keyboard.text(t(locale, "queue.upcoming-btn"), "queue_home");
+  if (view !== "drafts") keyboard.text(t(locale, "queue.drafts-btn", { count: snapshot.drafts.length }), "queue_drafts");
+  keyboard.row().text(t(locale, "progress.menu"), "menu_home");
   await replaceQueueMessage(ctx, text, keyboard);
 }
 
 function upcomingText(snapshot: StudioQueueSnapshot, locale: BotLocale): string {
-  const lines = [`📋 *${ui(locale, "Work queue", "Очередь")}*`, "", `*${ui(locale, "Upcoming", "Ближайшие публикации")}*`];
-  if (!snapshot.upcoming.length) lines.push(ui(locale, "Nothing is scheduled.", "Ничего не запланировано."));
+  const lines = [`📋 *${t(locale, "queue.title")}*`, "", `*${t(locale, "queue.upcoming-heading")}*`];
+  if (!snapshot.upcoming.length) lines.push(t(locale, "queue.nothing-scheduled"));
   else
     for (const item of snapshot.upcoming.slice(0, 5))
       lines.push(`• ${formatQueueTime(item.time, locale)} — ${kindIcon(item.kind)} ${item.label}`);
-  lines.push("", `🟡 ${ui(locale, "Drafts", "Черновики")}: ${snapshot.drafts.length}`);
+  lines.push("", `🟡 ${t(locale, "queue.drafts-label")}: ${snapshot.drafts.length}`);
   return lines.join("\n");
 }
 
 function draftsText(snapshot: StudioQueueSnapshot, locale: BotLocale): string {
-  const lines = [`🟡 *${ui(locale, "Drafts", "Черновики")}*`];
-  if (!snapshot.drafts.length)
-    lines.push(`\n${ui(locale, "No drafts. Start a post or video from the menu.", "Черновиков нет. Начните пост или видео из меню.")}`);
-  else lines.push(`\n${ui(locale, "Choose a draft to continue:", "Выберите черновик, чтобы продолжить:")}`);
+  const lines = [`🟡 *${t(locale, "queue.drafts-label")}*`];
+  if (!snapshot.drafts.length) lines.push(`\n${t(locale, "queue.no-drafts")}`);
+  else lines.push(`\n${t(locale, "queue.choose-draft")}`);
   return lines.join("\n");
 }
 
 function itemButton(item: StudioQueueItem, locale: BotLocale): string {
-  const targets = item.targets ? ` · ${item.targets} ${ui(locale, "platforms", "площадок")}` : "";
+  const targets = item.targets ? ` · ${item.targets} ${t(locale, "queue.platforms-suffix")}` : "";
   return `${formatQueueTime(item.time, locale)} · ${kindIcon(item.kind)} ${item.label}${targets}`.slice(0, 60);
 }
 
@@ -85,8 +84,8 @@ function formatQueueTime(date: Date, locale: BotLocale): string {
     hourCycle: "h23",
     timeZone: "Europe/Moscow",
   }).format(date);
-  if (dateKey === todayKey) return `${ui(locale, "Today", "Сегодня")}, ${time}`;
-  if (dateKey === tomorrowKey) return `${ui(locale, "Tomorrow", "Завтра")}, ${time}`;
+  if (dateKey === todayKey) return `${t(locale, "queue.today")}, ${time}`;
+  if (dateKey === tomorrowKey) return `${t(locale, "queue.tomorrow")}, ${time}`;
   const day = new Intl.DateTimeFormat(locale === "ru" ? "ru-RU" : "en-GB", {
     day: "numeric",
     month: "short",
