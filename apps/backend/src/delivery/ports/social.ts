@@ -115,16 +115,14 @@ async function withPreparedMedia(
   if (Array.isArray(job.payload._reconcile_ids)) return publish(job.payload);
   const media = payloadMedia(job.payload);
   if (media.length === 0) return publish(job.payload);
-  // Resolve the original asset through the normal media port before rendering a
-  // Story. Besides keeping source lookup consistent, this makes an existing
-  // Studio cache authoritative instead of downloading the same Telegram file
-  // again for every Story target.
   // A Story is one vertical visual. Select the locale's first item before any
-  // cache copy or transformation: remaining album images belong only to feed
-  // targets and must not consume Story-processing capacity.
+  // transformation: remaining album images belong only to feed targets and
+  // must not consume Story-processing capacity. The Studio source is already
+  // a local durable asset, so do not send it through ordinary feed staging
+  // before Story rendering; that redundant step can otherwise stall a Story
+  // before it ever reaches the Media Processing Port.
   const storySource = isStoryTarget(job.target) ? media.slice(0, 1) : media;
-  const original = isStoryTarget(job.target) ? await prepareMediaItems(config, storySource, fetchImpl, job.target) : null;
-  const sourceMedia = isStoryTarget(job.target) ? await createStoryMedia(job, original ?? media, config) : media;
+  const sourceMedia = isStoryTarget(job.target) ? await createStoryMedia(job, storySource, config) : media;
   const key = mediaCacheKey(job, sourceMedia, config);
   // One preparation per (post, target, media) within a delivery cycle. The
   // rendered files persist on disk and are aged out by pruneMediaCache, so
