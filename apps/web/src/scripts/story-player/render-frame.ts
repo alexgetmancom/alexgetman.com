@@ -30,6 +30,7 @@ export function renderStoryFrame(options: {
   const { root, elements, post, muted, paused, expanded, ui, toPublicSrc } = options;
   const {
     image,
+    ambient,
     video,
     fallback,
     cardLink,
@@ -60,6 +61,17 @@ export function renderStoryFrame(options: {
     } else {
       image.removeAttribute("src");
       image.removeAttribute("srcset");
+    }
+  }
+  if (ambient) {
+    const ambientSrc = post.fallbackImage || (post.mediaType !== "video" ? post.image : undefined);
+    if (ambientSrc) {
+      const resolved = toPublicSrc(ambientSrc);
+      if (ambient.getAttribute("src") !== resolved) ambient.setAttribute("src", resolved);
+      ambient.style.opacity = "";
+    } else {
+      ambient.removeAttribute("src");
+      ambient.style.opacity = "0";
     }
   }
   if (video) {

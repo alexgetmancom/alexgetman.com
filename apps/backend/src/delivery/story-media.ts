@@ -6,8 +6,9 @@ import { runFfmpeg } from "../foundation/runtime/ffmpeg.js";
 import type { PublishMediaItem } from "./social/payload.js";
 
 // Keep one second of headroom below the 60-second story limit used by the
-// supported publishing targets. Do not alter the source frame rate: 60 FPS is
-// a valid story format and should be retained when supplied by the author.
+// supported publishing targets. Stories have one shared high-quality master:
+// 1080x1920, 50 FPS, HEVC video and AAC 320k audio. Its video rate is capped
+// to leave a safe margin below Telegram's 30 MB upload limit.
 const STORY_MAX_DURATION_SECONDS = 59;
 
 export async function generateStoryMedia(
@@ -37,16 +38,36 @@ export async function generateStoryMedia(
         String(STORY_MAX_DURATION_SECONDS),
         "-vf",
         filter,
+        "-r",
+        "50",
         "-map",
         "0:v:0",
         "-map",
         "0:a?",
         "-c:v",
-        "libx264",
+        "libx265",
+        "-preset",
+        "medium",
+        "-b:v",
+        "3150k",
+        "-maxrate",
+        "3300k",
+        "-bufsize",
+        "6600k",
+        "-g",
+        "50",
         "-pix_fmt",
         "yuv420p",
         "-c:a",
         "aac",
+        "-b:a",
+        "320k",
+        "-ar",
+        "48000",
+        "-ac",
+        "2",
+        "-tag:v",
+        "hvc1",
         "-movflags",
         "+faststart",
         output,

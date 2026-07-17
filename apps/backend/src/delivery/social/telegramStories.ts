@@ -9,7 +9,9 @@ import type { PublishResult } from "../../publishing/errors.js";
 import { type PublishMediaItem, payloadMedia, payloadText } from "./payload.js";
 
 const URL_RE = /https?:\/\/[^\s<>)]*/g;
-const STORY_MAX_BYTES = Math.floor(9.8 * 1024 * 1024);
+// The shared 1080x1920 Story master stays below 28 MiB, leaving headroom
+// under Telegram's 30 MB limit without a second, quality-losing transcode.
+const STORY_MAX_BYTES = 28 * 1024 * 1024;
 
 export async function publishTelegramStory(
   payload: Record<string, unknown>,
@@ -47,24 +49,37 @@ async function publishChannelStory(media: PublishMediaItem, caption: string, con
     const metadata = await probeVideo(uploadPath, media);
     if (media.type === "VIDEO" && fs.statSync(uploadPath).size > STORY_MAX_BYTES) {
       cleanupPath = path.join(os.tmpdir(), `tg_story_${Date.now()}.mp4`);
-      const targetBytes = 9.5 * 1024 * 1024;
-      const videoBitrate = Math.max(150_000, Math.floor((targetBytes * 8) / Math.max(metadata.duration, 1) - 64_000));
+      const targetBytes = 27 * 1024 * 1024;
+      const audioBitrate = 320_000;
+      const videoBitrate = Math.max(150_000, Math.floor((targetBytes * 8) / Math.max(metadata.duration, 1) - audioBitrate));
       await runFfmpeg([
         "-y",
         "-i",
         uploadPath,
+        "-r",
+        "50",
         "-c:v",
-        "libx264",
-        "-profile:v",
-        "high",
-        "-pix_fmt",
-        "yuv420p",
+        "libx265",
         "-b:v",
         `${Math.floor(videoBitrate / 1000)}k`,
+        "-maxrate",
+        `${Math.floor(videoBitrate / 1000)}k`,
+        "-bufsize",
+        `${Math.floor((videoBitrate * 2) / 1000)}k`,
+        "-g",
+        "50",
+        "-pix_fmt",
+        "yuv420p",
         "-c:a",
         "aac",
         "-b:a",
-        "64k",
+        "320k",
+        "-ar",
+        "48000",
+        "-ac",
+        "2",
+        "-tag:v",
+        "hvc1",
         "-movflags",
         "+faststart",
         cleanupPath,

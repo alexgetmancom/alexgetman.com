@@ -7,7 +7,7 @@ interface Props {
   ui: StoryUi;
 }
 
-const { activePost, posts, ui } = Astro.props;
+const { activePost, ui } = Astro.props;
 const publicSrc = (value?: string | null) => (value ? `/${String(value).replace(/^\/+/, "")}` : undefined);
 const gallery = activePost.gallery || [];
 ---
@@ -24,7 +24,7 @@ const gallery = activePost.gallery || [];
         alt={activePost.title}
         loading="eager"
         decoding="async"
-        sizes="(max-width: 760px) min(100vw - 2rem, 390px), 320px"
+        sizes="(max-width: 760px) 100vw, 460px"
         hidden={!activePost.image || activePost.mediaType === 'video'}
         data-story-image
         data-fallback-src={publicSrc(activePost.fallbackImage)}
@@ -54,18 +54,32 @@ const gallery = activePost.gallery || [];
       <span aria-hidden="true">♪</span>
       <span data-audio-label>{ui.muted}</span>
     </button>
-    <div class="story-mobile-caption" aria-hidden="true">
+    <div class="story-caption" aria-hidden="true">
       <span data-story-mobile-kicker>{activePost.category}</span>
       <strong data-story-mobile-title>{activePost.title}</strong>
     </div>
-    <div class="story-mobile-actions" aria-label={ui.storyLabel}>
-      <button class="story-action story-action--primary" type="button" data-story-discuss>
-        <span>{ui.discuss}</span>
-      </button>
-      <button class="story-action" type="button" data-story-share>
-        <span>{ui.share}</span>
-      </button>
-    </div>
     <audio preload="none" data-story-audio></audio>
   </article>
+  <div class="story-action-rail" aria-label={ui.storyLabel}>
+    <button class="rail-action rail-action--primary" type="button" data-story-discuss>
+      <i class="rail-action__icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+        </svg>
+      </i>
+      <span>{ui.discuss}</span>
+    </button>
+    <button class="rail-action" type="button" data-story-share>
+      <i class="rail-action__icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="18" cy="5" r="3"></circle>
+          <circle cx="6" cy="12" r="3"></circle>
+          <circle cx="18" cy="19" r="3"></circle>
+          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+          <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+        </svg>
+      </i>
+      <span>{ui.share}</span>
+    </button>
+  </div>
 </div>

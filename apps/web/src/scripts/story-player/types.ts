@@ -28,6 +28,7 @@ export type StoryPayload = {
 
 export type StoryPlayerElements = {
   image: HTMLImageElement | null;
+  ambient: HTMLImageElement | null;
   video: HTMLVideoElement | null;
   fallback: HTMLElement | null;
   cardLink: HTMLAnchorElement | null;
