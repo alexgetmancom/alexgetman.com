@@ -36,7 +36,7 @@ export async function startVideoConversation(ctx: Context, backendDb: BackendDb)
   const adminId = Number(ctx.from?.id);
   const locale = botLocale(backendDb, adminId);
   await ctx.reply(t(locale, "video.dialog-prompt"), {
-    reply_markup: new InlineKeyboard().text(t(locale, "post.cancel"), "video_cancel_dialog"),
+    reply_markup: new InlineKeyboard().text(t(locale, "common.cancel"), "video_cancel_dialog"),
   });
   saveSession(backendDb, adminId, { draftId: null, step: "asset", selected: [], data: {} });
 }
@@ -108,7 +108,7 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
   } catch (error) {
     const locale = botLocale(backendDb, adminId);
     if (session.step === "schedule_common" || session.step.startsWith("schedule_target:"))
-      await replyVideoPrompt(ctx, t(locale, "post.schedule-parse-error"));
+      await replyVideoPrompt(ctx, t(locale, "common.schedule-parse-error"));
     else await replyVideoPrompt(ctx, `🔴 ${t(locale, "video.value-error")}: ${describeError(locale, error)}`);
     return true;
   }
@@ -266,7 +266,7 @@ async function confirmVideoSchedule(
   saveSession(backendDb, adminId, next);
   const delivery = studioServices(backendDb, config).videos.preview(adminId, session.draftId).delivery;
   await sendTelegramDeliveryPreviews(ctx, delivery.projections);
-  const lines = [`🎬 *${t(locale, "post.confirm-schedule-title")}*`];
+  const lines = [`🎬 *${t(locale, "common.confirm-schedule")}*`];
   for (const target of next.selected) {
     const value = schedule[target];
     if (value)
@@ -275,8 +275,8 @@ async function confirmVideoSchedule(
       );
   }
   const keyboard = new InlineKeyboard()
-    .text(t(locale, "video.confirm"), `video_schedule_confirm:${session.draftId}`)
-    .text(t(locale, "post.back"), `video_schedule:${session.draftId}`);
+    .text(t(locale, "common.confirm"), `video_schedule_confirm:${session.draftId}`)
+    .text(t(locale, "common.back"), `video_schedule:${session.draftId}`);
   await sendVideoControl(ctx, backendDb, adminId, next, lines.join("\n"), keyboard);
 }
 

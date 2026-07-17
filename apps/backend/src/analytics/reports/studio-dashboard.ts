@@ -48,7 +48,7 @@ export function studioAnalyticsDashboard(
     lines.push(...(profiles.length ? profiles : [t(locale, "sdash.no-audience")]));
   } else if (section === "posts") {
     lines.push(`${t(locale, "sdash.post-views")}: *${post.views}*`);
-    lines.push(`${t(locale, "sdash.interactions-posts")}: *${post.interactions}*`);
+    lines.push(`${t(locale, "sdash.interactions")}: *${post.interactions}*`);
     if (config.studio.modules.site) lines.push(`${t(locale, "sdash.site-material-views")}: *${siteViews}*`);
   } else {
     lines.push(`${t(locale, "sdash.video-views")}: *${video.views}*`);

@@ -26,7 +26,7 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
     const keyboard = new InlineKeyboard().text(t(locale, "analytics.posts-btn", { count: summary.posts }), "analytics_post_archive:0");
     if (config.studio.modules.video_posting)
       keyboard.row().text(t(locale, "analytics.videos-btn", { count: summary.videos }), "analytics_archive:0");
-    keyboard.row().text(t(locale, "progress.menu"), "menu_home");
+    keyboard.row().text(t(locale, "common.menu"), "menu_home");
     await ctx.answerCallbackQuery();
     await ctx.editMessageText(summary.text, { parse_mode: "Markdown", reply_markup: keyboard });
     return true;
@@ -52,7 +52,7 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
     const keyboard = new InlineKeyboard();
     for (const item of archive.items) keyboard.text(item.label, `analytics_video:${item.id}`).row();
     archivePagination(keyboard, locale, "analytics_archive", offset, archive.items.length, archive.total);
-    keyboard.text(t(locale, "analytics.back-archive"), "archive_home").row().text(t(locale, "progress.menu"), "menu_home");
+    keyboard.text(t(locale, "analytics.back-archive"), "archive_home").row().text(t(locale, "common.menu"), "menu_home");
     await ctx.answerCallbackQuery();
     await ctx.editMessageText(archive.text, { reply_markup: keyboard });
     return true;
@@ -66,7 +66,7 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
       reply_markup: new InlineKeyboard()
         .text(t(locale, "analytics.back-archive"), "analytics_archive:0")
         .row()
-        .text(t(locale, "progress.menu"), "menu_home"),
+        .text(t(locale, "common.menu"), "menu_home"),
     });
     return true;
   }
@@ -77,7 +77,7 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
     const keyboard = new InlineKeyboard();
     for (const item of archive.items) keyboard.text(item.label, `analytics_post:${item.id}`).row();
     archivePagination(keyboard, locale, "analytics_post_archive", offset, archive.items.length, archive.total);
-    keyboard.text(t(locale, "analytics.back-archive"), "archive_home").row().text(t(locale, "progress.menu"), "menu_home");
+    keyboard.text(t(locale, "analytics.back-archive"), "archive_home").row().text(t(locale, "common.menu"), "menu_home");
     await ctx.answerCallbackQuery();
     await ctx.editMessageText(archive.text, { reply_markup: keyboard });
     return true;
@@ -89,7 +89,7 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
     await ctx.answerCallbackQuery();
     const keyboard = new InlineKeyboard();
     if (media.length) keyboard.text(t(locale, "analytics.show-media"), `analytics_post_media:${id}`).row();
-    keyboard.text(t(locale, "analytics.back-archive"), "analytics_post_archive:0").row().text(t(locale, "progress.menu"), "menu_home");
+    keyboard.text(t(locale, "analytics.back-archive"), "analytics_post_archive:0").row().text(t(locale, "common.menu"), "menu_home");
     await ctx.editMessageText(studioServices(backendDb, config).analytics.postMetrics(id, locale), {
       parse_mode: "Markdown",
       reply_markup: keyboard,
@@ -130,7 +130,7 @@ async function showAnalyticsDashboard(
   const callback = (nextDays: 1 | 7 | 30) => `analytics_section:${section}:${nextDays}`;
   const keyboard = new InlineKeyboard();
   keyboard
-    .text(t(locale, "queue.today"), callback(1))
+    .text(t(locale, "common.today"), callback(1))
     .text(t(locale, "analytics.7-days"), callback(7))
     .text(t(locale, "analytics.30-days"), callback(30))
     .row();
@@ -147,7 +147,7 @@ async function showAnalyticsDashboard(
     );
   if (section === "video" && dashboard.hasComments && config.DEEPSEEK_API_KEY)
     keyboard.row().text(t(locale, "analytics.ai-analysis"), "analytics_ai");
-  keyboard.row().text(t(locale, "progress.menu"), "menu_home");
+  keyboard.row().text(t(locale, "common.menu"), "menu_home");
   await ctx.editMessageText(dashboard.text, { parse_mode: "Markdown", reply_markup: keyboard });
 }
 

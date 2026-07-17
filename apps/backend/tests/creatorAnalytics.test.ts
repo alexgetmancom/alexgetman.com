@@ -143,7 +143,7 @@ describe("creator analytics", () => {
 
       const text = creatorDashboard(backendDb, config, 1).text;
       expect(text).toContain("Сайт: 45 просмотров материалов");
-      expect(text).toContain("Посты: 30 просмотров · 5 реакций");
+      expect(text).toContain("Посты: 30 просмотров · 5 взаимодействий");
     } finally {
       backendDb.close();
     }

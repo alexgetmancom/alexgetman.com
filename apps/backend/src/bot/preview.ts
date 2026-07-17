@@ -46,7 +46,7 @@ export function draftPreview(
       .row()
       .text(t(locale, "post.enter-time"), `sched_manual:both:${draftId}`)
       .row()
-      .text(t(locale, "post.back"), `preview:${draftId}`);
+      .text(t(locale, "common.back"), `preview:${draftId}`);
     return {
       text: `${draftHeader(draftId, targets, locale)}\n\n📅 *${t(locale, "post.schedule-title")}*\n${t(locale, "post.schedule-hint")}`,
       keyboard,
@@ -55,7 +55,7 @@ export function draftPreview(
 
   if (view === "confirm_publish") {
     const enabled = enabledTargetLabels(targets) || t(locale, "post.no-platforms");
-    keyboard.text(t(locale, "post.publish-now-btn"), `publish_confirm:${draftId}`).text(t(locale, "post.back"), `preview:${draftId}`);
+    keyboard.text(t(locale, "post.publish-now-btn"), `publish_confirm:${draftId}`).text(t(locale, "common.back"), `preview:${draftId}`);
     return {
       text: `${draftHeader(draftId, targets, locale)}\n\n⚠️ *${t(locale, "post.publish-now-q")}*\n${t(locale, "post.will-send-to")}: ${enabled}.`,
       keyboard,
@@ -63,7 +63,7 @@ export function draftPreview(
   }
 
   if (view === "confirm_delete") {
-    keyboard.text(t(locale, "post.delete-btn"), `cancel_confirm:${draftId}`).text(t(locale, "post.back"), `preview:${draftId}`);
+    keyboard.text(t(locale, "post.delete-btn"), `cancel_confirm:${draftId}`).text(t(locale, "common.back"), `preview:${draftId}`);
     return {
       text: `${draftHeader(draftId, targets, locale)}\n\n⚠️ *${t(locale, "post.delete-q")}*\n${t(locale, "post.delete-warn")}`,
       keyboard,

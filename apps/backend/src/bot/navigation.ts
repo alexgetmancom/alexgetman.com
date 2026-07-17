@@ -37,7 +37,7 @@ function mainMenuKeyboard(
   const pending = queue.upcoming.length + queue.drafts.length;
   keyboard.text(pending ? t(locale, "menu.work-queue-count", { count: pending }) : t(locale, "menu.work-queue"), "queue_home");
   if (config.studio.modules.analytics) keyboard.text(t(locale, "menu.analytics"), "analytics_home");
-  keyboard.text(unread ? t(locale, "menu.settings-unread", { count: unread }) : t(locale, "menu.settings"), "settings_home");
+  keyboard.text(unread ? t(locale, "menu.settings-unread", { count: unread }) : t(locale, "settings.title"), "settings_home");
   return keyboard;
 }
 
@@ -59,5 +59,5 @@ export function settingsKeyboard(locale: BotLocale, hasYouTube: boolean): Inline
     .row()
     .text(t(locale, "settings.language"), "settings_language")
     .row()
-    .text(t(locale, "settings.back-to-menu"), "settings_menu");
+    .text(t(locale, "common.menu"), "settings_menu");
 }

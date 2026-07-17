@@ -32,7 +32,7 @@ export async function showQueue(
 
   if (view !== "upcoming") keyboard.text(t(locale, "queue.upcoming-btn"), "queue_home");
   if (view !== "drafts") keyboard.text(t(locale, "queue.drafts-btn", { count: snapshot.drafts.length }), "queue_drafts");
-  keyboard.row().text(t(locale, "progress.menu"), "menu_home");
+  keyboard.row().text(t(locale, "common.menu"), "menu_home");
   await replaceQueueMessage(ctx, text, keyboard);
 }
 
@@ -84,8 +84,8 @@ function formatQueueTime(date: Date, locale: BotLocale): string {
     hourCycle: "h23",
     timeZone: "Europe/Moscow",
   }).format(date);
-  if (dateKey === todayKey) return `${t(locale, "queue.today")}, ${time}`;
-  if (dateKey === tomorrowKey) return `${t(locale, "queue.tomorrow")}, ${time}`;
+  if (dateKey === todayKey) return `${t(locale, "common.today")}, ${time}`;
+  if (dateKey === tomorrowKey) return `${t(locale, "common.tomorrow")}, ${time}`;
   const day = new Intl.DateTimeFormat(locale === "ru" ? "ru-RU" : "en-GB", {
     day: "numeric",
     month: "short",

@@ -49,7 +49,7 @@ export function renderPostProgress(
     `${details ? "progress" : "progress_details"}:${state.draftId}`,
   );
   if (counts.waiting + counts.publishing > 0) keyboard.text(t(locale, "progress.cancel-remaining"), `progress_cancel:${state.draftId}`);
-  keyboard.row().text(t(locale, "progress.menu"), "menu_home");
+  keyboard.row().text(t(locale, "common.menu"), "menu_home");
   return { text: lines.join("\n"), keyboard };
 }
 

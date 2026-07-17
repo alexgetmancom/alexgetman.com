@@ -83,7 +83,7 @@ export async function handleSettingsCallback(ctx: Context, backendDb: BackendDb,
         .text("English", "settings_language:en")
         .text("Русский", "settings_language:ru")
         .row()
-        .text(t(locale, "post.back"), "settings_home"),
+        .text(t(locale, "common.back"), "settings_home"),
     });
     return true;
   }

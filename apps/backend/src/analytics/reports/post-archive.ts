@@ -52,10 +52,10 @@ export function creatorPostMetrics(backendDb: BackendDb, postId: number, locale:
     { views: 0, interactions: 0 },
   );
   const lines = [
-    `📝 *${t(locale, "report.post-heading", { id: postId })}*`,
+    `📝 *${t(locale, "post.heading", { id: postId })}*`,
     `👁 ${t(locale, "report.total-views")}: *${totals.views}*`,
     `💬 ${t(locale, "report.interactions")}: *${totals.interactions}*`,
-    `🖼 ${t(locale, "report.media")}: *${post.media_count}*`,
+    `🖼 ${t(locale, "post.media")}: *${post.media_count}*`,
     post.date_msk ? `🗓 ${post.date_msk}` : "",
     "",
     post.text?.slice(0, 600) || t(locale, "report.media-post"),

@@ -92,7 +92,7 @@ function appendVideoDashboard(
   const instagram = latest.filter((row) => row.platform === "instagram_reels");
   const all = [...youtube, ...instagram];
   lines.push(
-    `🎬 ${t(locale, "report.videos-word")}: ${sum(all, "views")} ${t(locale, "report.views")} · ${sum(all, "likes") + sum(all, "comments")} ${t(locale, "report.interactions-video")}`,
+    `🎬 ${t(locale, "report.videos")}: ${sum(all, "views")} ${t(locale, "report.views")} · ${sum(all, "likes") + sum(all, "comments")} ${t(locale, "report.interactions-lc")}`,
   );
   if (config.studio.modules.youtube) {
     const data = profile(backendDb, "youtube");
@@ -108,7 +108,7 @@ function appendVideoDashboard(
   }
   const grouped: Record<string, { views: number; likes: number; comments: number }> = {};
   for (const row of latest) {
-    const label = row.label || t(locale, "report.untitled");
+    const label = row.label || t(locale, "common.untitled");
     const item = grouped[label] ?? { views: 0, likes: 0, comments: 0 };
     item.views += metricNumber(row.metrics.views);
     item.likes += metricNumber(row.metrics.likes);

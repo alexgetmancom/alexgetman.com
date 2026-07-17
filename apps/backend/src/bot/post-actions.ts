@@ -92,7 +92,7 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
   if (action === "sched_confirm" && first) {
     const { ruAt, enAt } = studioServices(backendDb, config).posts.scheduleChoice(actorId, draftId, first);
     const postId = studioServices(backendDb, config).posts.schedule(actorId, draftId, { ruAt, enAt });
-    await ctx.answerCallbackQuery({ text: t(locale, "action.scheduled") });
+    await ctx.answerCallbackQuery({ text: t(locale, "common.scheduled") });
     return void (await ctx.editMessageText(scheduledDraftText(locale, draftId, postId, ruAt, enAt)));
   }
   if (action === "sched_manual_confirm") {
@@ -116,19 +116,19 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
     const { ruAt, enAt } = studioServices(backendDb, config).posts.scheduleAt(actorId, draftId, scheduleScope(scope), value);
     const postId = studioServices(backendDb, config).posts.schedule(actorId, draftId, { ruAt, enAt });
     clearPostAdminState(backendDb, Number(ctx.from?.id));
-    await ctx.answerCallbackQuery({ text: t(locale, "action.scheduled") });
+    await ctx.answerCallbackQuery({ text: t(locale, "common.scheduled") });
     return void (await ctx.editMessageText(scheduledDraftText(locale, draftId, postId, ruAt, enAt)));
   }
   if (action === "sched_auto") {
     const { ruAt, enAt } = studioServices(backendDb, config).posts.scheduleChoice(actorId, draftId, "auto");
     const postId = studioServices(backendDb, config).posts.schedule(actorId, draftId, { ruAt, enAt });
-    await ctx.answerCallbackQuery({ text: t(locale, "action.scheduled") });
+    await ctx.answerCallbackQuery({ text: t(locale, "common.scheduled") });
     return void (await ctx.editMessageText(scheduledDraftText(locale, draftId, postId, ruAt, enAt)));
   }
   if (action === "sched_preset" && second && first) {
     const schedule = studioServices(backendDb, config).posts.scheduleChoice(actorId, draftId, first);
     const postId = studioServices(backendDb, config).posts.schedule(actorId, draftId, schedule);
-    await ctx.answerCallbackQuery({ text: t(locale, "action.scheduled") });
+    await ctx.answerCallbackQuery({ text: t(locale, "common.scheduled") });
     return void (await ctx.editMessageText(scheduledDraftText(locale, draftId, postId, schedule.ruAt, schedule.enAt)));
   }
   if (action === "sched_manual" && first) {

@@ -49,7 +49,7 @@ async function showScheduledVideo(
 ): Promise<void> {
   if (!session.draftId) throw new StudioError("err.video-missing");
   const preview = videoPreview(backendDb, session.draftId, locale);
-  const text = `${technical.summary}${technical.warning ? `\n${technical.warning}` : ""}\n\n✅ ${t(locale, "action.scheduled")}. ${t(locale, "video.reminder", { minutes: config.VIDEO_REMINDER_MINUTES })}\n\n${preview.text}`;
+  const text = `${technical.summary}${technical.warning ? `\n${technical.warning}` : ""}\n\n✅ ${t(locale, "common.scheduled")}. ${t(locale, "video.reminder", { minutes: config.VIDEO_REMINDER_MINUTES })}\n\n${preview.text}`;
   const controlMessageId = Number(session.data.controlMessageId);
   clearSession(backendDb, adminId);
   if (controlMessageId && ctx.chat?.id) {

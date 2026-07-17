@@ -21,7 +21,7 @@ export async function startPostScreen(ctx: Context, backendDb: BackendDb): Promi
   startPostDialog(backendDb, adminId);
   const locale = botLocale(backendDb, adminId);
   await ctx.reply(t(locale, "post.dialog-prompt"), {
-    reply_markup: new InlineKeyboard().text(t(locale, "post.cancel"), "cancel_dialog"),
+    reply_markup: new InlineKeyboard().text(t(locale, "common.cancel"), "cancel_dialog"),
   });
 }
 
@@ -30,7 +30,7 @@ async function openPostScreen(ctx: Context, backendDb: BackendDb): Promise<void>
   startPostDialog(backendDb, adminId);
   const locale = botLocale(backendDb, adminId);
   await ctx.editMessageText(t(locale, "post.dialog-prompt"), {
-    reply_markup: new InlineKeyboard().text(t(locale, "post.cancel"), "cancel_dialog"),
+    reply_markup: new InlineKeyboard().text(t(locale, "common.cancel"), "cancel_dialog"),
   });
 }
 
@@ -67,7 +67,7 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
       const locale = botLocale(backendDb, adminId);
       const scheduleInput = state.action.startsWith("schedule_manual_");
       await ctx.reply(
-        scheduleInput ? t(locale, "post.schedule-parse-error") : t(locale, "post.value-error", { error: describeError(locale, error) }),
+        scheduleInput ? t(locale, "common.schedule-parse-error") : t(locale, "post.value-error", { error: describeError(locale, error) }),
       );
     }
     return;

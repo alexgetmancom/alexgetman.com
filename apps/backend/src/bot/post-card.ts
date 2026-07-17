@@ -21,7 +21,7 @@ export async function editDraftPrompt(ctx: Context, backendDb: BackendDb, draftI
   const locale = botLocale(backendDb, Number(ctx.from?.id));
   await ctx.reply(prompt, {
     parse_mode: "Markdown",
-    reply_markup: new InlineKeyboard().text(t(locale, "post.cancel"), `cancel_state:${draftId}`),
+    reply_markup: new InlineKeyboard().text(t(locale, "common.cancel"), `cancel_state:${draftId}`),
   });
 }
 
@@ -37,7 +37,7 @@ export async function showScheduleConfirmation(
   const preview = draftPreview(backendDb, draftId);
   const keyboard = new InlineKeyboard()
     .text(t(locale, "post.confirm-schedule-btn"), confirmCallback)
-    .text(t(locale, "post.back"), `schedule:${draftId}`);
-  const text = `${preview.text}\n\n📅 *${t(locale, "post.confirm-schedule-title")}*\nRU: ${formatMsk(ruAt)}\nEN: ${formatMsk(enAt)}`;
+    .text(t(locale, "common.back"), `schedule:${draftId}`);
+  const text = `${preview.text}\n\n📅 *${t(locale, "common.confirm-schedule")}*\nRU: ${formatMsk(ruAt)}\nEN: ${formatMsk(enAt)}`;
   await ctx.reply(text, { parse_mode: "Markdown", reply_markup: keyboard });
 }
