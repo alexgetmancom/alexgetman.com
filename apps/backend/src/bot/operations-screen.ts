@@ -65,7 +65,19 @@ async function runDeployAction(
 ): Promise<void> {
   await ctx.answerCallbackQuery();
   await ctx.editMessageText(progressText, { reply_markup: new InlineKeyboard() });
-  const result = await action();
+  // Deliberately not awaited: the bot polls updates one at a time, and this
+  // request alone can take up to ~150s (agent healthcheck plus image pull).
+  // Awaiting it here would freeze every chat's buttons and messages until it
+  // resolves. Let it run in the background and edit this message once it's done.
+  void action()
+    .then((result) => finishDeployAction(ctx, result))
+    .catch((error) => finishDeployAction(ctx, { ok: false, message: error instanceof Error ? error.message : String(error) }));
+}
+
+async function finishDeployAction(
+  ctx: Context,
+  result: { ok: true; release: string; currentRevision: string } | { ok: false; message: string },
+): Promise<void> {
   const finalText = result.ok ? `✅ Done: now running ${result.currentRevision.slice(0, 12)}.` : `❌ Failed: ${result.message}`;
   try {
     await ctx.editMessageText(finalText);
