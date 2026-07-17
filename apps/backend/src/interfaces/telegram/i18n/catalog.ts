@@ -278,6 +278,14 @@ const en = {
   "sdash.growth-lc": "growth · {period}",
   "sdash.avg-views": "avg. views/post",
   "sdash.no-follower-count": "profile connected; follower count unavailable",
+  // AI audience analysis + bot start
+  "audience.unavailable": "AI analysis is unavailable: add DEEPSEEK_API_KEY to secrets.env.",
+  "audience.no-comments": "There are no cached comments yet. They will appear after the next daily metrics collection.",
+  "audience.prompt":
+    "You are a community editor. From these comments, write a concise report in English: 1) games or topics requested most often, 2) FAQ, 3) audience sentiment, 4) up to 3 ideas for the next Shorts/Reels. Use only these comments, do not invent facts or reveal author names, and use at most 10 bullet points.",
+  "audience.title": "AI audience analysis",
+  "audience.no-report": "I couldn't prepare a report.",
+  "start.menu-hint": "The menu button stays at the bottom of this chat.",
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -554,6 +562,14 @@ const ru = {
   "sdash.growth-lc": "прирост · {period}",
   "sdash.avg-views": "ср. просмотров/пост",
   "sdash.no-follower-count": "профиль подключён; число подписчиков недоступно",
+  // AI audience analysis + bot start
+  "audience.unavailable": "ИИ-анализ недоступен: добавьте DEEPSEEK_API_KEY в secrets.env.",
+  "audience.no-comments": "Пока нет закэшированных комментариев. Они появятся после следующего ежедневного сбора статистики.",
+  "audience.prompt":
+    "Ты редактор сообщества. По комментариям составь короткий отчёт на русском: 1) какие игры или темы чаще просят, 2) FAQ, 3) настроение аудитории, 4) до 3 идей следующих Shorts/Reels, основанных только на этих комментариях. Не выдумывай фактов, не раскрывай имена авторов, максимум 10 пунктов.",
+  "audience.title": "ИИ-анализ аудитории",
+  "audience.no-report": "Не удалось подготовить отчёт.",
+  "start.menu-hint": "Кнопка меню всегда останется внизу чата.",
 } satisfies Record<MessageKey, string>;
 
 export const catalog: Record<UiLocale, Record<MessageKey, string>> = { en, ru };

@@ -1,6 +1,6 @@
 import { Bot, InlineKeyboard } from "grammy";
 import { handleAnalyticsCallback } from "./bot/analytics-screen.js";
-import { botLocale, ui } from "./bot/i18n.js";
+import { botLocale } from "./bot/i18n.js";
 import { persistentKeyboard, showMainMenu, showSettings } from "./bot/navigation.js";
 import { handleNotificationsCallback } from "./bot/notifications-screen.js";
 import { handleOperationsCallback } from "./bot/operations-screen.js";
@@ -15,6 +15,7 @@ import type { BackendDb } from "./db/client.js";
 import type { BackendConfig } from "./foundation/config.js";
 import { log } from "./foundation/logger.js";
 import { handleTelegramDeliveryPreviewCallback } from "./interfaces/telegram/delivery-previews.js";
+import { t } from "./interfaces/telegram/i18n/index.js";
 import { formatMsk } from "./interfaces/telegram/time.js";
 import { studioServices } from "./studio/services/index.js";
 
@@ -32,7 +33,7 @@ export function createBot(config: BackendConfig, backendDb: BackendDb): Bot | nu
 function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb): void {
   bot.command("start", async (ctx) => {
     const locale = botLocale(backendDb, Number(ctx.from?.id));
-    await ctx.reply(ui(locale, "The menu button stays at the bottom of this chat.", "Кнопка меню всегда останется внизу чата."), {
+    await ctx.reply(t(locale, "start.menu-hint"), {
       reply_markup: persistentKeyboard(locale),
     });
     await showMainMenu(ctx, config, backendDb);
