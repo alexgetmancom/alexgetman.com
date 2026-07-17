@@ -26,13 +26,11 @@ describe("media preparation", () => {
         prepareMediaItems(config, source, fetchImpl),
         prepareMediaItems(config, source, fetchImpl),
       ]);
-      expect(first.items[0]?.localPath).toBe(second.items[0]?.localPath);
-      expect(first.items[0]?.vpsUrl).toBe(second.items[0]?.vpsUrl);
-      expect(fs.existsSync(String(first.items[0]?.localPath))).toBe(true);
-      await first.cleanup();
-      expect(fs.existsSync(String(second.items[0]?.localPath))).toBe(true);
-      await second.cleanup();
-      expect(fs.existsSync(String(second.items[0]?.vpsUrl).replace("https://example.com/media/", path.join(dir, "public/")))).toBe(true);
+      expect(first[0]?.localPath).toBe(second[0]?.localPath);
+      expect(first[0]?.vpsUrl).toBe(second[0]?.vpsUrl);
+      expect(fs.existsSync(String(first[0]?.localPath))).toBe(true);
+      expect(fs.existsSync(String(second[0]?.localPath))).toBe(true);
+      expect(fs.existsSync(String(second[0]?.vpsUrl).replace("https://example.com/media/", path.join(dir, "public/")))).toBe(true);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

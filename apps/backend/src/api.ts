@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { Bot } from "grammy";
 import { videoPath } from "./content/video-assets.js";
 import type { BackendDb } from "./db/client.js";
@@ -71,12 +71,14 @@ export function createApiHandler(context: ApiContext) {
         },
       });
     }
-    const studioVideoMatch = path.match(/^\/media\/video\/asset\/(\d+)$/);
+    const studioVideoMatch = path.match(/^\/media\/video\/asset\/([a-f0-9]{64})$/);
     if (studioVideoMatch && (request.method === "GET" || request.method === "HEAD")) {
+      // Content-addressed by sha256: the asset id is a small integer and was
+      // trivially enumerable, so unpublished Studio uploads were downloadable.
       const asset = backendDb.db
         .select()
         .from(studioMediaAssets)
-        .where(eq(studioMediaAssets.id, Number(studioVideoMatch[1])))
+        .where(and(eq(studioMediaAssets.sha256, studioVideoMatch[1] ?? ""), eq(studioMediaAssets.kind, "video")))
         .get();
       if (asset?.kind !== "video") return text("not found\n", 404);
       const file = Bun.file(asset.localPath);

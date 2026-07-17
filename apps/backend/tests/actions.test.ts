@@ -191,7 +191,7 @@ describe("command center actions", () => {
         }),
         fetchImpl,
       );
-      expect(result.external).toEqual([{ target: "linkedin", ok: true, status: 204, response: null }]);
+      expect(result.external).toEqual([{ target: "linkedin", ok: true, response: {} }]);
       expect(calls).toEqual(["https://api.linkedin.com/rest/posts/urn%3Ali%3Ashare%3A7"]);
     } finally {
       backendDb.close();
@@ -240,7 +240,7 @@ describe("command center actions", () => {
           body: JSON.stringify({ message: "Updated EN", description: "Updated EN", access_token: "en-token" }),
         },
       ]);
-      expect(result.external).toEqual([{ target: "facebook", ok: true, status: 200, response: {} }]);
+      expect(result.external).toEqual([{ target: "facebook", ok: true, response: {} }]);
       const missingToken = await runOperationCommand(
         backendDb,
         { action: "edit_en", ref: "post:8", text_en: "No token" },

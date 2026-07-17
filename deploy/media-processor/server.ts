@@ -1,10 +1,11 @@
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readdirSync, rmSync, statSync } from "node:fs";
 import { mkdir, rename } from "node:fs/promises";
 
 const token = Bun.env.MEDIA_PROCESSOR_TOKEN;
 if (!token || token.length < 16) throw new Error("MEDIA_PROCESSOR_TOKEN must contain at least 16 characters");
 const maxBytes = Number(Bun.env.MEDIA_PROCESSOR_MAX_BYTES ?? 1_073_741_824);
 const timeoutSeconds = Number(Bun.env.MEDIA_PROCESSOR_TIMEOUT_SECONDS ?? 900);
+const cacheTtlSeconds = Number(Bun.env.MEDIA_PROCESSOR_CACHE_TTL_SECONDS ?? 86_400);
 let tail: Promise<void> = Promise.resolve();
 let queued = 0;
 let active = 0;
@@ -31,6 +32,28 @@ function queue<T>(work: () => Promise<T>): Promise<T> {
   );
   return next;
 }
+
+// The VM disk is finite: aged cache entries and orphaned per-request folders
+// (left behind by a crash before their finally block) are reclaimed here.
+function pruneWorkDir(now = Date.now()): void {
+  const cutoff = now - cacheTtlSeconds * 1000;
+  for (const dir of ["/work", "/work/cache"]) {
+    let entries: string[] = [];
+    try {
+      entries = readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const name of entries) {
+      if (dir === "/work" && name === "cache") continue;
+      const target = `${dir}/${name}`;
+      try {
+        if (statSync(target).mtimeMs < cutoff) rmSync(target, { recursive: true, force: true });
+      } catch {}
+    }
+  }
+}
+setInterval(pruneWorkDir, 60 * 60 * 1000).unref();
 
 function processedAsset(file: string, mediaKind: string, job: string): Response {
   return new Response(Bun.file(file), {
@@ -142,19 +165,26 @@ async function transcode(
           partial,
         ]
       : ["-y", "-i", input, "-vf", filter, "-frames:v", "1", "-q:v", "2", partial];
-  const child = Bun.spawn(["ffmpeg", ...args], { stdout: "ignore", stderr: "pipe" });
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    child.kill("SIGKILL");
-  }, timeoutSeconds * 1000);
-  const [exitCode, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()]);
-  clearTimeout(timer);
-  if (exitCode !== 0) {
-    return new Response(ffmpegFailure(exitCode, stderr, timedOut), { status: 422 });
+  try {
+    const child = Bun.spawn(["ffmpeg", ...args], { stdout: "ignore", stderr: "pipe" });
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGKILL");
+    }, timeoutSeconds * 1000);
+    const [exitCode, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+    clearTimeout(timer);
+    if (exitCode !== 0) {
+      return new Response(ffmpegFailure(exitCode, stderr, timedOut), { status: 422 });
+    }
+    await rename(partial, cached);
+    return processedAsset(cached, mediaKind, id);
+  } finally {
+    // Only the atomically renamed cache entry survives a request; the source
+    // folder and any partial output are always reclaimed.
+    rmSync(folder, { recursive: true, force: true });
+    rmSync(partial, { force: true });
   }
-  await rename(partial, cached);
-  return processedAsset(cached, mediaKind, id);
 }
 
 Bun.serve({

@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import type { BackendDb } from "../db/client.js";
 import { posts, postTargets } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { requestJson } from "../foundation/http.js";
 
 type PublishedTargetEdit = { postKey: string; textRu: string | null; textEn: string | null };
 
@@ -116,12 +117,12 @@ async function postJson(
   payload: Record<string, unknown>,
   headers: Record<string, string> = {},
 ): Promise<Record<string, unknown>> {
-  const response = await fetchImpl(url, {
+  // Route external edits through the shared client: a 30s timeout and secret
+  // redaction apply, and a hung platform can no longer stall the repair path.
+  const body = await requestJson<Record<string, unknown>>(fetchImpl, url, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(payload),
   });
-  const text = await response.text();
-  const body = text ? (JSON.parse(text) as Record<string, unknown>) : null;
-  return { target, ok: response.ok && (body == null || body.ok !== false), status: response.status, response: body };
+  return { target, ok: body.ok !== false, response: body };
 }

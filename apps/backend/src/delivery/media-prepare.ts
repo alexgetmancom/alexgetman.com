@@ -18,8 +18,7 @@ export async function prepareMediaItems(
   sourceItems: PublishMediaItem[],
   fetchImpl: typeof fetch = fetch,
   target?: string,
-): Promise<{ items: PublishMediaItem[]; cleanup: () => Promise<void> }> {
-  const tempFiles: string[] = [];
+): Promise<PublishMediaItem[]> {
   const prepared: PublishMediaItem[] = [];
   await fs.promises.mkdir(config.MEDIA_CACHE_DIR, { recursive: true });
   await fs.promises.mkdir(config.REMOTE_MEDIA_PATH, { recursive: true });
@@ -52,17 +51,12 @@ export async function prepareMediaItems(
     prepared.push(preparedItem);
   }
 
-  return {
-    items: prepared,
-    cleanup: async () => {
-      await Promise.allSettled(tempFiles.map((file) => fs.promises.rm(file, { force: true })));
-    },
-  };
+  return prepared;
 }
 
 export async function pruneMediaCache(config: BackendConfig, now = Date.now()): Promise<number> {
   const cutoff = now - config.MEDIA_CACHE_TTL_SECONDS * 1000;
-  const roots = [config.MEDIA_CACHE_DIR, config.REMOTE_MEDIA_PATH];
+  const roots = [config.MEDIA_CACHE_DIR, config.REMOTE_MEDIA_PATH, path.join(config.DATA_DIR, "story-media")];
   let removed = 0;
   for (const root of roots) {
     const entries = await fs.promises.readdir(root, { withFileTypes: true }).catch(() => []);

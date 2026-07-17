@@ -30,9 +30,20 @@ export function videoSourcePath(
   return videoPath(config, source.assetKey);
 }
 
-export function videoPublicUrl(config: BackendConfig, source: { assetKey: string; studioMediaAssetId: number | null }): string {
+export function videoPublicUrl(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  source: { assetKey: string; studioMediaAssetId: number | null },
+): string {
   const base = config.PUBLIC_BASE_URL.replace(/\/$/, "");
-  return source.studioMediaAssetId == null
-    ? `${base}/media/video/${source.assetKey}`
-    : `${base}/media/video/asset/${source.studioMediaAssetId}`;
+  if (source.studioMediaAssetId == null) return `${base}/media/video/${source.assetKey}`;
+  // The public media route is content-addressed by sha256 so the unguessable
+  // digest, not the enumerable asset id, is what grants read access.
+  const asset = backendDb.db
+    .select({ sha256: studioMediaAssets.sha256 })
+    .from(studioMediaAssets)
+    .where(eq(studioMediaAssets.id, source.studioMediaAssetId))
+    .get();
+  if (!asset) throw new Error(`Studio media asset ${source.studioMediaAssetId} has no public URL`);
+  return `${base}/media/video/asset/${asset.sha256}`;
 }

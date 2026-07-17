@@ -20,16 +20,11 @@ import { publishToX } from "../social/x.js";
 import { generateStoryMedia } from "../story-media.js";
 
 type PreparedMedia = Awaited<ReturnType<typeof prepareMediaItems>>;
-type MediaCacheEntry = {
-  prepared: Promise<PreparedMedia>;
-  users: number;
-  cleanupTimer: ReturnType<typeof setTimeout> | null;
-};
 
 export function createPlatformPorts(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch = fetch): DeliveryPorts {
   // Publisher instances own their preparation state. This prevents cache entries
   // from leaking between test runs or independently configured worker instances.
-  const mediaCache = new Map<string, MediaCacheEntry>();
+  const mediaCache = new Map<string, Promise<PreparedMedia>>();
   let mediaPreparationTail: Promise<void> = Promise.resolve();
   const prepare = (
     job: ClaimedPublishJob,
@@ -114,7 +109,7 @@ async function withPreparedMedia(
   config: BackendConfig,
   fetchImpl: typeof fetch,
   publish: (payload: Record<string, unknown>) => Promise<PublishResult>,
-  mediaCache: Map<string, MediaCacheEntry>,
+  mediaCache: Map<string, Promise<PreparedMedia>>,
   enqueue: <T>(prepare: () => Promise<T>) => Promise<T>,
 ): Promise<PublishResult> {
   if (Array.isArray(job.payload._reconcile_ids)) return publish(job.payload);
@@ -125,37 +120,24 @@ async function withPreparedMedia(
   // Studio cache authoritative instead of downloading the same Telegram file
   // again for every Story target.
   const original = isStoryTarget(job.target) ? await prepareMediaItems(config, media, fetchImpl, job.target) : null;
-  const sourceMedia = isStoryTarget(job.target) ? await createStoryMedia(job, original?.items ?? media, config) : media;
+  const sourceMedia = isStoryTarget(job.target) ? await createStoryMedia(job, original ?? media, config) : media;
   const key = mediaCacheKey(job, sourceMedia, config);
-  let entry = mediaCache.get(key);
-  if (!entry) {
-    entry = { prepared: enqueue(() => prepareMediaItems(config, sourceMedia, fetchImpl, job.target)), users: 0, cleanupTimer: null };
-    mediaCache.set(key, entry);
+  // One preparation per (post, target, media) within a delivery cycle. The
+  // rendered files persist on disk and are aged out by pruneMediaCache, so
+  // there is no per-user refcount: nothing here owns eager deletion.
+  let prepared = mediaCache.get(key);
+  if (!prepared) {
+    prepared = enqueue(() => prepareMediaItems(config, sourceMedia, fetchImpl, job.target));
+    mediaCache.set(key, prepared);
   }
-  if (entry.cleanupTimer) {
-    clearTimeout(entry.cleanupTimer);
-    entry.cleanupTimer = null;
-  }
-  entry.users += 1;
-  let prepared: PreparedMedia;
+  let items: PreparedMedia;
   try {
-    prepared = await entry.prepared;
+    items = await prepared;
   } catch (error) {
-    entry.users -= 1;
-    if (entry.users === 0) mediaCache.delete(key);
+    mediaCache.delete(key);
     throw error;
   }
-  try {
-    return await publish({ ...job.payload, media: prepared.items, media_en: prepared.items });
-  } finally {
-    if (original) await original.cleanup();
-    entry.users -= 1;
-    if (entry.users === 0) {
-      entry.cleanupTimer = setTimeout(() => {
-        void prepared.cleanup().finally(() => mediaCache.delete(key));
-      }, config.MEDIA_CACHE_TTL_SECONDS * 1000);
-    }
-  }
+  return publish({ ...job.payload, media: items, media_en: items });
 }
 
 function isStoryTarget(target: string): boolean {

@@ -79,9 +79,8 @@ const envSchema = z
     STUDIO_MEDIA_MAX_BYTES: z.coerce.number().int().positive().max(2_000_000_000).default(1_000_000_000),
     VIDEO_MEDIA_DIR: z.string().default("/data/video-media"),
     VIDEO_MAX_BYTES: z.coerce.number().int().positive().max(2_000_000_000).default(1_000_000_000),
-    VIDEO_PREPARE_LEAD_MINUTES: z.coerce.number().int().min(1).max(120).default(15),
-    VIDEO_REMINDER_MINUTES: z.coerce.number().int().min(1).max(60).default(5),
-    VIDEO_MEDIA_RETENTION_HOURS: z.coerce.number().int().min(24).max(720).default(24),
+    // VIDEO_PREPARE_LEAD_MINUTES / VIDEO_REMINDER_MINUTES / VIDEO_MEDIA_RETENTION_HOURS
+    // are owned by studio.yaml (see loadConfig); they are not env-configurable.
     SITE_PUBLIC_DIR: z.string().default("/data/site"),
     DEVTO_API_KEY: z.string().optional(),
     MASTODON_INSTANCE: z.string().optional(),
@@ -179,6 +178,9 @@ const envSchema = z
   });
 
 export type BackendConfig = z.infer<typeof envSchema> & {
+  VIDEO_PREPARE_LEAD_MINUTES: number;
+  VIDEO_REMINDER_MINUTES: number;
+  VIDEO_MEDIA_RETENTION_HOURS: number;
   controllerBotToken: string | undefined;
   commandCenterToken: string | undefined;
   studio: StudioConfig;
@@ -189,6 +191,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BackendConfig 
     ...env,
     ADMIN_IDS: env.ADMIN_IDS ?? env.CONTROLLER_ADMIN_IDS,
   });
+  if (parsed.NODE_ENV === "production") {
+    if (!parsed.COMMAND_CENTER_TOKEN) throw new Error("COMMAND_CENTER_TOKEN is required in production");
+    if (parsed.COMMAND_CENTER_TOKEN === parsed.TELEGRAM_WEBHOOK_SECRET)
+      throw new Error("COMMAND_CENTER_TOKEN must be separate from TELEGRAM_WEBHOOK_SECRET in production");
+  }
   const studio = loadStudioConfig(parsed.STUDIO_CONFIG);
   if (studio.modules.youtube && studio.modules.video_posting) {
     for (const key of ["YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "YOUTUBE_REFRESH_TOKEN"] as const) {

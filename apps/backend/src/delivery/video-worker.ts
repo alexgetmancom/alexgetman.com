@@ -152,7 +152,7 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
         .where(eq(videoTargets.id, target.id))
         .run();
     } else {
-      const result = await prepareInstagramReel(config, videoPublicUrl(config, draft), metadata as InstagramMetadata);
+      const result = await prepareInstagramReel(config, videoPublicUrl(backendDb, config, draft), metadata as InstagramMetadata);
       if (!ownsVideoJob(backendDb, job)) return;
       backendDb.db
         .update(videoTargets)
