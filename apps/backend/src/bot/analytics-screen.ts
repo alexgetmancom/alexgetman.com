@@ -2,8 +2,9 @@ import { type Context, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { sendTelegramArchiveMedia } from "../interfaces/telegram/delivery-previews.js";
+import { t } from "../interfaces/telegram/i18n/index.js";
 import { studioServices } from "../studio/services/index.js";
-import { botLocale, ui } from "./i18n.js";
+import { botLocale } from "./i18n.js";
 
 type AnalyticsSection = "overview" | "audience" | "posts" | "video";
 
@@ -22,13 +23,10 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
   if (data === "archive_home") {
     const locale = botLocale(backendDb, Number(ctx.from?.id));
     const summary = studioServices(backendDb, config).analytics.archiveSummary(locale);
-    const keyboard = new InlineKeyboard().text(
-      ui(locale, `📝 Posts · ${summary.posts}`, `📝 Посты · ${summary.posts}`),
-      "analytics_post_archive:0",
-    );
+    const keyboard = new InlineKeyboard().text(t(locale, "analytics.posts-btn", { count: summary.posts }), "analytics_post_archive:0");
     if (config.studio.modules.video_posting)
-      keyboard.row().text(ui(locale, `🎬 Videos · ${summary.videos}`, `🎬 Ролики · ${summary.videos}`), "analytics_archive:0");
-    keyboard.row().text(ui(locale, "← Menu", "← Меню"), "menu_home");
+      keyboard.row().text(t(locale, "analytics.videos-btn", { count: summary.videos }), "analytics_archive:0");
+    keyboard.row().text(t(locale, "progress.menu"), "menu_home");
     await ctx.answerCallbackQuery();
     await ctx.editMessageText(summary.text, { parse_mode: "Markdown", reply_markup: keyboard });
     return true;
@@ -54,10 +52,7 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
     const keyboard = new InlineKeyboard();
     for (const item of archive.items) keyboard.text(item.label, `analytics_video:${item.id}`).row();
     archivePagination(keyboard, locale, "analytics_archive", offset, archive.items.length, archive.total);
-    keyboard
-      .text(ui(locale, "← Archive", "← Архив"), "archive_home")
-      .row()
-      .text(ui(locale, "← Menu", "← Меню"), "menu_home");
+    keyboard.text(t(locale, "analytics.back-archive"), "archive_home").row().text(t(locale, "progress.menu"), "menu_home");
     await ctx.answerCallbackQuery();
     await ctx.editMessageText(archive.text, { reply_markup: keyboard });
     return true;
@@ -69,9 +64,9 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
     await ctx.editMessageText(studioServices(backendDb, config).analytics.videoMetrics(id, locale), {
       parse_mode: "Markdown",
       reply_markup: new InlineKeyboard()
-        .text(ui(locale, "← Archive", "← Архив"), "analytics_archive:0")
+        .text(t(locale, "analytics.back-archive"), "analytics_archive:0")
         .row()
-        .text(ui(locale, "← Menu", "← Меню"), "menu_home"),
+        .text(t(locale, "progress.menu"), "menu_home"),
     });
     return true;
   }
@@ -82,10 +77,7 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
     const keyboard = new InlineKeyboard();
     for (const item of archive.items) keyboard.text(item.label, `analytics_post:${item.id}`).row();
     archivePagination(keyboard, locale, "analytics_post_archive", offset, archive.items.length, archive.total);
-    keyboard
-      .text(ui(locale, "← Archive", "← Архив"), "archive_home")
-      .row()
-      .text(ui(locale, "← Menu", "← Меню"), "menu_home");
+    keyboard.text(t(locale, "analytics.back-archive"), "archive_home").row().text(t(locale, "progress.menu"), "menu_home");
     await ctx.answerCallbackQuery();
     await ctx.editMessageText(archive.text, { reply_markup: keyboard });
     return true;
@@ -96,11 +88,8 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
     const media = studioServices(backendDb, config).analytics.postMedia(id, locale);
     await ctx.answerCallbackQuery();
     const keyboard = new InlineKeyboard();
-    if (media.length) keyboard.text(ui(locale, "🖼 Show media", "🖼 Показать медиа"), `analytics_post_media:${id}`).row();
-    keyboard
-      .text(ui(locale, "← Archive", "← Архив"), "analytics_post_archive:0")
-      .row()
-      .text(ui(locale, "← Menu", "← Меню"), "menu_home");
+    if (media.length) keyboard.text(t(locale, "analytics.show-media"), `analytics_post_media:${id}`).row();
+    keyboard.text(t(locale, "analytics.back-archive"), "analytics_post_archive:0").row().text(t(locale, "progress.menu"), "menu_home");
     await ctx.editMessageText(studioServices(backendDb, config).analytics.postMetrics(id, locale), {
       parse_mode: "Markdown",
       reply_markup: keyboard,
@@ -116,11 +105,11 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
   }
   if (data !== "analytics_ai") return false;
   const locale = botLocale(backendDb, Number(ctx.from?.id));
-  await ctx.answerCallbackQuery({ text: ui(locale, "Preparing report…", "Готовлю отчёт…") });
+  await ctx.answerCallbackQuery({ text: t(locale, "analytics.preparing-report") });
   const report = await studioServices(backendDb, config).analytics.audienceAnalysis(locale);
   await ctx.editMessageText(report, {
     parse_mode: "Markdown",
-    reply_markup: new InlineKeyboard().text(ui(locale, "← Video analytics", "← К статистике видео"), "analytics_section:video:7"),
+    reply_markup: new InlineKeyboard().text(t(locale, "analytics.back-video"), "analytics_section:video:7"),
   });
   return true;
 }
@@ -141,33 +130,24 @@ async function showAnalyticsDashboard(
   const callback = (nextDays: 1 | 7 | 30) => `analytics_section:${section}:${nextDays}`;
   const keyboard = new InlineKeyboard();
   keyboard
-    .text(ui(locale, "Today", "Сегодня"), callback(1))
-    .text(ui(locale, "7 days", "7 дней"), callback(7))
-    .text(ui(locale, "30 days", "30 дней"), callback(30))
+    .text(t(locale, "queue.today"), callback(1))
+    .text(t(locale, "analytics.7-days"), callback(7))
+    .text(t(locale, "analytics.30-days"), callback(30))
     .row();
   keyboard
-    .text(
-      ui(locale, section === "overview" ? "• Overview" : "📊 Overview", section === "overview" ? "• Общая" : "📊 Общая"),
-      `analytics_section:overview:${days}`,
-    )
-    .text(
-      ui(locale, section === "audience" ? "• Audience" : "👥 Audience", section === "audience" ? "• Аудитория" : "👥 Аудитория"),
-      `analytics_section:audience:${days}`,
-    )
-    .text(
-      ui(locale, section === "posts" ? "• Posts" : "📝 Posts", section === "posts" ? "• Постинг" : "📝 Постинг"),
-      `analytics_section:posts:${days}`,
-    )
+    .text(t(locale, section === "overview" ? "analytics.overview-active" : "analytics.overview"), `analytics_section:overview:${days}`)
+    .text(t(locale, section === "audience" ? "analytics.audience-active" : "analytics.audience"), `analytics_section:audience:${days}`)
+    .text(t(locale, section === "posts" ? "analytics.posts-section-active" : "analytics.posts-section"), `analytics_section:posts:${days}`)
     .row()
-    .text(ui(locale, "📚 Archive", "📚 Архив"), "archive_home");
+    .text(t(locale, "analytics.archive-btn"), "archive_home");
   if (config.studio.modules.video_posting)
     keyboard.text(
-      ui(locale, section === "video" ? "• Video" : "🎬 Video", section === "video" ? "• Видео" : "🎬 Видео"),
+      t(locale, section === "video" ? "analytics.video-section-active" : "analytics.video-section"),
       `analytics_section:video:${days}`,
     );
   if (section === "video" && dashboard.hasComments && config.DEEPSEEK_API_KEY)
-    keyboard.row().text(ui(locale, "🤖 AI audience analysis", "🤖 ИИ-анализ аудитории"), "analytics_ai");
-  keyboard.row().text(ui(locale, "← Menu", "← Меню"), "menu_home");
+    keyboard.row().text(t(locale, "analytics.ai-analysis"), "analytics_ai");
+  keyboard.row().text(t(locale, "progress.menu"), "menu_home");
   await ctx.editMessageText(dashboard.text, { parse_mode: "Markdown", reply_markup: keyboard });
 }
 
@@ -182,8 +162,8 @@ function archivePagination(
   if (!total) return;
   const page = Math.floor(offset / 10) + 1;
   const pages = Math.max(1, Math.ceil(total / 10));
-  if (offset > 0) keyboard.text(ui(locale, "← Previous", "← Назад"), `${prefix}:${Math.max(0, offset - 10)}`);
+  if (offset > 0) keyboard.text(t(locale, "analytics.prev"), `${prefix}:${Math.max(0, offset - 10)}`);
   keyboard.text(`${page}/${pages}`, "archive_noop");
-  if (offset + count < total) keyboard.text(ui(locale, "Next →", "Вперёд →"), `${prefix}:${offset + count}`);
+  if (offset + count < total) keyboard.text(t(locale, "analytics.next"), `${prefix}:${offset + count}`);
   keyboard.row();
 }
