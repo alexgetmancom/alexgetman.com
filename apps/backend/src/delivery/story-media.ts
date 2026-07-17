@@ -105,27 +105,34 @@ async function transformRemotely(source: string, output: string, video: boolean,
   const timeoutSeconds = storyTransformTimeout(config) / 1000;
   const timer = setTimeout(() => controller.abort(), timeoutSeconds * 1000);
   try {
-    const response = await fetch(`${config.MEDIA_PROCESSOR_URL.replace(/\/$/, "")}/v1/transforms/ffmpeg`, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${config.MEDIA_PROCESSOR_TOKEN}`,
-        "content-length": String(stat.size),
-        "content-type": video ? "video/mp4" : "image/jpeg",
-        "x-studio-transform": "story_vertical",
-        "x-studio-media-kind": video ? "video" : "image",
-        "x-studio-output-name": path.basename(output),
-        "x-studio-idempotency-key": idempotencyKey,
-      },
-      // Bun streams the Studio asset from disk: PS529 never buffers a 1 GB
-      // upload just to pass it to the remote processor.
-      body: Bun.file(source),
-      signal: controller.signal,
-    });
+    log("info", "story media remote upload started", { source, bytes: stat.size, timeoutSeconds });
+    const response = await withinStoryStageTimeout(
+      fetch(`${config.MEDIA_PROCESSOR_URL.replace(/\/$/, "")}/v1/transforms/ffmpeg`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${config.MEDIA_PROCESSOR_TOKEN}`,
+          "content-length": String(stat.size),
+          "content-type": video ? "video/mp4" : "image/jpeg",
+          "x-studio-transform": "story_vertical",
+          "x-studio-media-kind": video ? "video" : "image",
+          "x-studio-output-name": path.basename(output),
+          "x-studio-idempotency-key": idempotencyKey,
+        },
+        // Bun streams the Studio asset from disk: PS529 never buffers a 1 GB
+        // upload just to pass it to the remote processor.
+        body: Bun.file(source),
+        signal: controller.signal,
+      }),
+      timeoutSeconds * 1000,
+      "media_processor_upload_timeout",
+    );
+    log("info", "story media remote response received", { source, status: response.status });
     if (!response.ok || !response.body) {
       const detail = (await response.text()).slice(0, 800);
       throw new Error(`media_processor_failed: ${response.status}${detail ? ` ${detail}` : ""}`);
     }
-    await Bun.write(output, response);
+    await withinStoryStageTimeout(Bun.write(output, response), 30_000, "media_processor_result_write_timeout");
+    log("info", "story media remote result written", { output });
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError")
       throw new Error(`media_processor_timeout: remote worker exceeded ${timeoutSeconds}s`);
