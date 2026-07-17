@@ -30,7 +30,8 @@ export function ensureMetricSchedule(backendDb: BackendDb, targets: readonly str
   backendDb.db.transaction((tx) => {
     for (const row of rows) {
       const publishedAt = parseDate(row.dateUtc);
-      tx.insert(metricSchedule)
+      const inserted = tx
+        .insert(metricSchedule)
         .values({
           postKey: row.postKey,
           target: row.target,
@@ -39,8 +40,9 @@ export function ensureMetricSchedule(backendDb: BackendDb, targets: readonly str
           updatedAt: now,
         })
         .onConflictDoNothing()
-        .run();
-      changes += 1;
+        .returning({ postKey: metricSchedule.postKey })
+        .get();
+      if (inserted) changes += 1;
     }
   });
   return changes;

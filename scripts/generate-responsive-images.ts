@@ -63,7 +63,7 @@ async function needsUpdate(inputPath, key) {
   }
 }
 
-function compactText(value) {
+function compactText(value: unknown): string {
   return String(value || "")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/g, " ")
@@ -72,13 +72,13 @@ function compactText(value) {
     .trim();
 }
 
-function truncateText(value, limit) {
+function truncateText(value: unknown, limit: number): string {
   const text = compactText(value);
   if (text.length <= limit) return text;
   return `${text.slice(0, Math.max(0, limit - 1)).trimEnd()}...`;
 }
 
-function getFirstSentence(text) {
+function getFirstSentence(text: unknown): string {
   const value = String(text || "").trim();
   if (!value) return "";
   const newlineIdx = value.indexOf("\n");
@@ -93,7 +93,7 @@ function getFirstSentence(text) {
   return value;
 }
 
-function escapeXml(value) {
+function escapeXml(value: unknown): string {
   return String(value || "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -101,7 +101,7 @@ function escapeXml(value) {
     .replace(/"/g, "&quot;");
 }
 
-function splitLines(text, maxChars, maxLines) {
+function splitLines(text: string, maxChars: number, maxLines: number): string[] {
   const words = compactText(text).split(/\s+/).filter(Boolean);
   const lines = [];
   let current = "";
@@ -119,7 +119,7 @@ function splitLines(text, maxChars, maxLines) {
   return lines.slice(0, maxLines);
 }
 
-function categoryLabel(text, locale) {
+function categoryLabel(text: unknown, locale: string): string {
   const t = String(text || "").toLowerCase();
   if (
     t.includes("gpt") ||
@@ -142,7 +142,7 @@ function categoryLabel(text, locale) {
   return locale === "ru" ? "Новости" : "News";
 }
 
-function normalizePublicPath(value) {
+function normalizePublicPath(value: unknown): string {
   return String(value || "").replace(/^\/+/, "");
 }
 
@@ -308,7 +308,7 @@ async function generatePostOgImages(feedItems) {
   }
 }
 
-function responsiveOutputName(publicPath, width) {
+function responsiveOutputName(publicPath: string, width: number): string {
   return String(publicPath)
     .replace(/^\/+/, "")
     .replace(/[\\/]/g, "-")

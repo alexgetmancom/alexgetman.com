@@ -1,5 +1,5 @@
 import { InlineKeyboard } from "grammy";
-import { PRESETS, TARGETS } from "../botTargets.js";
+import { type PresetName, presetName, TARGETS } from "../botTargets.js";
 import { requireDraft } from "../content/drafts.js";
 import type { BackendDb } from "../db/client.js";
 import { formatMsk } from "../interfaces/telegram/time.js";
@@ -17,7 +17,7 @@ export function draftPreview(
   const locale = botLocale(backendDb, draft.admin_id);
   const targets = parseTargets(draft.targets_json);
   const keyboard = new InlineKeyboard();
-  const mode = draftMode(targets);
+  const mode = presetName(targets);
 
   if (view === "platforms") {
     for (let index = 0; index < TARGETS.length; index += 2) {
@@ -110,7 +110,7 @@ function safeMediaCount(value: string | null): number {
 }
 
 function draftHeader(draftId: number, targets: Record<string, boolean>, locale: BotLocale): string {
-  return `📝 *${ui(locale, `Post #${draftId}`, `Пост #${draftId}`)}*\n${ui(locale, "Mode", "Режим")}: *${modeLabel(draftMode(targets), locale)}* · ${ui(locale, "Platforms", "Площадки")}: *${Object.values(targets).filter(Boolean).length}*`;
+  return `📝 *${ui(locale, `Post #${draftId}`, `Пост #${draftId}`)}*\n${ui(locale, "Mode", "Режим")}: *${modeLabel(presetName(targets), locale)}* · ${ui(locale, "Platforms", "Площадки")}: *${Object.values(targets).filter(Boolean).length}*`;
 }
 
 function enabledTargetLabels(targets: Record<string, boolean>): string {
@@ -119,14 +119,7 @@ function enabledTargetLabels(targets: Record<string, boolean>): string {
     .join(", ");
 }
 
-function draftMode(targets: Record<string, boolean>): keyof typeof PRESETS | "manual" {
-  for (const [name, preset] of Object.entries(PRESETS)) {
-    if (TARGETS.every(([target]) => Boolean(targets[target]) === Boolean(preset[target]))) return name as keyof typeof PRESETS;
-  }
-  return "manual";
-}
-
-export function modeLabel(mode: keyof typeof PRESETS | "manual", locale: BotLocale = "en"): string {
+export function modeLabel(mode: PresetName, locale: BotLocale = "en"): string {
   if (mode === "full") return ui(locale, "Full", "Полный");
   if (mode === "ru") return ui(locale, "RU only", "Только RU");
   if (mode === "en") return ui(locale, "EN only", "Только EN");

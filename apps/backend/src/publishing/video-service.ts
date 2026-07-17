@@ -3,7 +3,7 @@ import path from "node:path";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { videoSourcePath } from "../content/video-assets.js";
 import type { BackendDb } from "../db/client.js";
-import { socialComments, videoDrafts, videoJobs, videoMetricSchedule, videoMetricSnapshots, videoTargets } from "../db/schema.js";
+import { videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { isVideoTargetEditable } from "./state.js";
 import { getVideoDraft, insertVideoJob, listVideoTargets, refreshVideoDraftStatus } from "./video-data.js";
@@ -47,19 +47,9 @@ export function replaceVideoTargets(backendDb: BackendDb, videoDraftId: number, 
     const existingTargets = tx.select().from(videoTargets).where(eq(videoTargets.videoDraftId, videoDraftId)).all();
     if (existingTargets.some((target) => !isVideoTargetEditable(target.status)))
       throw new Error("Video platforms can be replaced only before scheduling. Remove an editable platform instead.");
-    const existingIds = tx
-      .select({ id: videoTargets.id })
-      .from(videoTargets)
-      .where(eq(videoTargets.videoDraftId, videoDraftId))
-      .all()
-      .map((target) => target.id);
-    // SQLite's historical schema has no cascading foreign keys. Keep every
-    // dependent table in sync before replacing editable targets.
-    if (existingIds.length > 0) {
-      tx.delete(socialComments).where(inArray(socialComments.videoTargetId, existingIds)).run();
-      tx.delete(videoMetricSnapshots).where(inArray(videoMetricSnapshots.videoTargetId, existingIds)).run();
-      tx.delete(videoMetricSchedule).where(inArray(videoMetricSchedule.videoTargetId, existingIds)).run();
-    }
+    // Foreign keys cascade (PRAGMA foreign_keys=ON, migration 0008): deleting the
+    // target rows removes their comments, metric snapshots and schedules. Reminder
+    // jobs carry a null target, so the draft's jobs are cleared explicitly.
     tx.delete(videoJobs).where(eq(videoJobs.videoDraftId, videoDraftId)).run();
     tx.delete(videoTargets).where(eq(videoTargets.videoDraftId, videoDraftId)).run();
     for (const target of allowed)
@@ -89,12 +79,8 @@ export function removeVideoTarget(backendDb: BackendDb, videoDraftId: number, ta
 
   const now = new Date().toISOString();
   const remaining = backendDb.db.transaction((tx) => {
-    tx.delete(socialComments).where(eq(socialComments.videoTargetId, target.id)).run();
-    tx.delete(videoMetricSnapshots).where(eq(videoMetricSnapshots.videoTargetId, target.id)).run();
-    tx.delete(videoMetricSchedule).where(eq(videoMetricSchedule.videoTargetId, target.id)).run();
-    tx.delete(videoJobs)
-      .where(and(eq(videoJobs.videoDraftId, videoDraftId), eq(videoJobs.videoTargetId, target.id)))
-      .run();
+    // FK cascade (see replaceVideoTargets): removing the target row deletes its
+    // comments, metric snapshots, schedule and platform jobs.
     tx.delete(videoTargets).where(eq(videoTargets.id, target.id)).run();
     const remainingTargets = tx.select({ id: videoTargets.id }).from(videoTargets).where(eq(videoTargets.videoDraftId, videoDraftId)).all();
     if (remainingTargets.length === 0)

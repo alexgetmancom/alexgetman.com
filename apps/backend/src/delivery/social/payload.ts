@@ -148,10 +148,6 @@ export async function readFileBlob(filePath: string, contentType = guessContentT
   return new Blob([bytes], { type: contentType });
 }
 
-function _fileSize(filePath: string): number {
-  return fs.statSync(filePath).size;
-}
-
 export function mediaExtension(item: PublishMediaItem): string {
   if (item.localPath) {
     const ext = path.extname(item.localPath);

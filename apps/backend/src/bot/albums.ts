@@ -12,6 +12,11 @@ import { studioServices } from "../studio/services/index.js";
 import { clearPostAdminStateIfCurrent } from "./post-state.js";
 import { draftPreview } from "./preview.js";
 
+// pending_albums.notified lifecycle: an album is SETTLED once its caption and
+// media are collected, then CLAIMED by exactly one worker before finalization.
+const ALBUM_SETTLED = 1;
+const ALBUM_CLAIMED = 2;
+
 type PendingAlbumInput = {
   adminId: number;
   chatId: number;
@@ -43,7 +48,7 @@ export function appendPendingAlbum(backendDb: BackendDb, input: PendingAlbumInpu
     textRu: input.text || row?.textRu || "",
     textEntitiesJson: JSON.stringify(input.entities.length ? input.entities : parseArrayValue(row?.textEntitiesJson)),
     mediaJson: JSON.stringify(media),
-    notified: 1,
+    notified: ALBUM_SETTLED,
     updatedAt: now,
   };
   backendDb.db
@@ -55,7 +60,7 @@ export function appendPendingAlbum(backendDb: BackendDb, input: PendingAlbumInpu
         textRu: values.textRu,
         textEntitiesJson: values.textEntitiesJson,
         mediaJson: values.mediaJson,
-        notified: 1,
+        notified: ALBUM_SETTLED,
         updatedAt: now,
       },
     })
@@ -78,15 +83,15 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
       mediaJson: pendingAlbums.mediaJson,
     })
     .from(pendingAlbums)
-    .where(and(eq(pendingAlbums.notified, 1), lte(pendingAlbums.updatedAt, cutoff)))
+    .where(and(eq(pendingAlbums.notified, ALBUM_SETTLED), lte(pendingAlbums.updatedAt, cutoff)))
     .orderBy(asc(pendingAlbums.updatedAt))
     .all();
   let completed = 0;
   for (const row of rows) {
     const claim = backendDb.db
       .update(pendingAlbums)
-      .set({ notified: 2 })
-      .where(and(eq(pendingAlbums.id, row.id), eq(pendingAlbums.notified, 1), lte(pendingAlbums.updatedAt, cutoff)))
+      .set({ notified: ALBUM_CLAIMED })
+      .where(and(eq(pendingAlbums.id, row.id), eq(pendingAlbums.notified, ALBUM_SETTLED), lte(pendingAlbums.updatedAt, cutoff)))
       .returning({ id: pendingAlbums.id })
       .get();
     if (!claim) continue;
@@ -124,15 +129,15 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
       }
       const removed = backendDb.db
         .delete(pendingAlbums)
-        .where(and(eq(pendingAlbums.id, row.id), eq(pendingAlbums.notified, 2)))
+        .where(and(eq(pendingAlbums.id, row.id), eq(pendingAlbums.notified, ALBUM_CLAIMED)))
         .returning({ id: pendingAlbums.id })
         .get();
       if (removed) completed += 1;
     } catch (error) {
       backendDb.db
         .update(pendingAlbums)
-        .set({ notified: 1, updatedAt: new Date().toISOString() })
-        .where(and(eq(pendingAlbums.id, row.id), eq(pendingAlbums.notified, 2)))
+        .set({ notified: ALBUM_SETTLED, updatedAt: new Date().toISOString() })
+        .where(and(eq(pendingAlbums.id, row.id), eq(pendingAlbums.notified, ALBUM_CLAIMED)))
         .run();
       log("error", "album finalization failed", { album: row.id, error: String(error) });
     }

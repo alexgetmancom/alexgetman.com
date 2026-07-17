@@ -47,3 +47,13 @@ export function targetLocale(target: string): TargetLocale | null {
 export function isSiteTarget(target: string): boolean {
   return targetById[target as TargetId]?.kind === "site";
 }
+
+export type PresetName = keyof typeof PRESETS | "manual";
+
+/** Names the preset a target selection matches, or "manual" when it matches none. */
+export function presetName(targets: Record<string, boolean>): PresetName {
+  for (const [name, preset] of Object.entries(PRESETS)) {
+    if (TARGETS.every(([target]) => Boolean(targets[target]) === Boolean(preset[target]))) return name as keyof typeof PRESETS;
+  }
+  return "manual";
+}

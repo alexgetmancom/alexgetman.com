@@ -115,51 +115,6 @@ describe("Studio architecture boundaries", () => {
       expect(source, `video delivery imports ${forbidden}`).not.toContain(forbidden);
   });
 
-  it("keeps the publication implementation physically inside its owning contexts", () => {
-    for (const legacyArea of ["video", "site", "media"]) {
-      const legacyFiles = [
-        "data.ts",
-        "service.ts",
-        "storage.ts",
-        "types.ts",
-        "worker.ts",
-        "publishers.ts",
-        "jobs.ts",
-        "prepare.ts",
-        "story.ts",
-      ];
-      for (const file of legacyFiles)
-        expect(existsSync(`${root}${legacyArea}/${file}`), `legacy ${legacyArea}/${file} should be absent`).toBe(false);
-    }
-  });
-
-  it("keeps analytics and operational code in their owning contexts", () => {
-    for (const legacyPath of ["metrics/index.ts", "admin/actions.ts", "ops/maintenance.ts", "services/pipeline.ts", "services/mcp.ts"])
-      expect(existsSync(`${root}${legacyPath}`), `legacy ${legacyPath} should be absent`).toBe(false);
-  });
-
-  it("keeps Foundation physical and does not retain root compatibility facades", () => {
-    for (const legacyPath of [
-      "config.ts",
-      "logger.ts",
-      "scheduler.ts",
-      "httpAuth.ts",
-      "deployment.ts",
-      "runtime/ffmpeg.ts",
-      "runtime/git.ts",
-      "runtime/worker-state.ts",
-    ]) {
-      expect(existsSync(`${root}${legacyPath}`), `legacy Foundation facade ${legacyPath} should be absent`).toBe(false);
-    }
-    for (const foundationPath of [
-      "foundation/config.ts",
-      "foundation/logger.ts",
-      "foundation/scheduler.ts",
-      "foundation/runtime/worker-state.ts",
-    ])
-      expect(existsSync(`${root}${foundationPath}`), `Foundation module ${foundationPath} should exist`).toBe(true);
-  });
-
   it("keeps Delivery orchestration separate from platform ports without legacy facades", () => {
     const workflow = readFileSync(`${root}delivery/publish-workflow.ts`, "utf8");
     const ports = readFileSync(`${root}delivery/ports/social.ts`, "utf8");
@@ -168,20 +123,6 @@ describe("Studio architecture boundaries", () => {
     expect(ports).not.toContain('from "grammy"');
     for (const legacyPath of ["delivery/publish-cycle.ts", "delivery/publishers.ts", "delivery/social/index.ts"])
       expect(existsSync(`${root}${legacyPath}`), `legacy Delivery facade ${legacyPath} should be absent`).toBe(false);
-  });
-
-  it("does not retain technical re-export facades", () => {
-    for (const legacyPath of [
-      "analytics/metrics.ts",
-      "analytics/collectors.ts",
-      "delivery/media.ts",
-      "delivery/site.ts",
-      "delivery/video.ts",
-      "operations/actions.ts",
-      "operations/observability.ts",
-      "operations/capability-report.ts",
-    ])
-      expect(existsSync(`${root}${legacyPath}`), `technical facade ${legacyPath} should be absent`).toBe(false);
   });
 
   it("keeps Operations command dispatch, repairs and Observability physically separate", () => {

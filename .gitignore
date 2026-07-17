@@ -63,3 +63,9 @@ pnpm-debug.log*
 /apps/web/public/og/
 /apps/web/.image-cache.json
 /apps/web/public/media/
+
+# Local SQLite runtime artifacts and misc junk
+*.db
+*.db-shm
+*.db-wal
+*.zip

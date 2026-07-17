@@ -1,5 +1,5 @@
 import { desc, eq, or } from "drizzle-orm";
-import { PRESETS, TARGETS, targetLocale } from "../../botTargets.js";
+import { PRESETS, presetName, TARGETS, targetLocale } from "../../botTargets.js";
 import { listStudioMediaAssets, mediaItemsFromAssets, requireStudioMediaAssets } from "../../content/assets.js";
 import { createDraftFromMessage, requireDraft } from "../../content/drafts.js";
 import type { DraftMessage } from "../../content/message.js";
@@ -276,11 +276,4 @@ function saveTargets(backendDb: BackendDb, draftId: number, targets: Record<stri
     .set({ targetsJson: JSON.stringify(targets), updatedAt: new Date().toISOString() })
     .where(eq(drafts.id, draftId))
     .run();
-}
-
-function presetName(targets: Record<string, boolean>): keyof typeof PRESETS | "manual" {
-  for (const [name, preset] of Object.entries(PRESETS)) {
-    if (TARGETS.every(([target]) => Boolean(targets[target]) === Boolean(preset[target]))) return name as keyof typeof PRESETS;
-  }
-  return "manual";
 }
