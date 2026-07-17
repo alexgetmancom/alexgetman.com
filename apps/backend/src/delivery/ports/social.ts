@@ -26,20 +26,51 @@ export function createPlatformPorts(config: BackendConfig, backendDb: BackendDb,
   // Publisher instances own their preparation state. This prevents cache entries
   // from leaking between test runs or independently configured worker instances.
   const mediaCache = new Map<string, Promise<PreparedMedia>>();
+  // VM-106 accepts one ffmpeg job at a time.  Rendering had previously been
+  // started before the ordinary media-preparation queue, so three Story
+  // targets for one post could open concurrent streamed requests through the
+  // SSH tunnel.  Keep that resource explicit and share the finished render
+  // between Telegram and Instagram targets of the same locale.
+  const storyMediaCache = new Map<string, Promise<ReturnType<typeof payloadMedia>>>();
   let mediaPreparationTail: Promise<void> = Promise.resolve();
+  let storyPreparationTail: Promise<void> = Promise.resolve();
   const prepare = (
     job: ClaimedPublishJob,
     publisherConfig: BackendConfig,
     publish: (payload: Record<string, unknown>) => Promise<PublishResult>,
   ) =>
-    withPreparedMedia(job, publisherConfig, fetchImpl, publish, mediaCache, (work) => {
-      const next = mediaPreparationTail.then(work, work);
-      mediaPreparationTail = next.then(
-        () => undefined,
-        () => undefined,
-      );
-      return next;
-    });
+    withPreparedMedia(
+      job,
+      publisherConfig,
+      fetchImpl,
+      publish,
+      mediaCache,
+      (work) => {
+        const next = mediaPreparationTail.then(work, work);
+        mediaPreparationTail = next.then(
+          () => undefined,
+          () => undefined,
+        );
+        return next;
+      },
+      (job, media) => {
+        const key = storyMediaCacheKey(job, media);
+        let rendered = storyMediaCache.get(key);
+        if (!rendered) {
+          const next = storyPreparationTail.then(() => createStoryMedia(job, media, publisherConfig));
+          storyPreparationTail = next.then(
+            () => undefined,
+            () => undefined,
+          );
+          rendered = next;
+          storyMediaCache.set(key, rendered);
+        }
+        return rendered.catch((error) => {
+          storyMediaCache.delete(key);
+          throw error;
+        });
+      },
+    );
   const threadsEnConfig = { ...config, THREADS_ACCESS_TOKEN: config.THREADS_EN_ACCESS_TOKEN ?? config.THREADS_ACCESS_TOKEN };
   const facebookRuConfig = {
     ...config,
@@ -112,6 +143,7 @@ async function withPreparedMedia(
   publish: (payload: Record<string, unknown>) => Promise<PublishResult>,
   mediaCache: Map<string, Promise<PreparedMedia>>,
   enqueue: <T>(prepare: () => Promise<T>) => Promise<T>,
+  renderStory: (job: ClaimedPublishJob, media: ReturnType<typeof payloadMedia>) => Promise<ReturnType<typeof payloadMedia>>,
 ): Promise<PublishResult> {
   if (Array.isArray(job.payload._reconcile_ids)) return publish(job.payload);
   const media = payloadMedia(job.payload);
@@ -124,7 +156,7 @@ async function withPreparedMedia(
   // before it ever reaches the Media Processing Port.
   const storySource = isStoryTarget(job.target) ? media.slice(0, 1) : media;
   if (isStoryTarget(job.target)) log("info", "story delivery preparation started", { jobId: job.jobId, target: job.target });
-  const sourceMedia = isStoryTarget(job.target) ? await createStoryMedia(job, storySource, config) : media;
+  const sourceMedia = isStoryTarget(job.target) ? await renderStory(job, storySource) : media;
   const key = mediaCacheKey(job, sourceMedia, config);
   // One preparation per (post, target, media) within a delivery cycle. The
   // rendered files persist on disk and are aged out by pruneMediaCache, so
@@ -172,5 +204,13 @@ function mediaCacheKey(job: ClaimedPublishJob, media: ReturnType<typeof payloadM
     story: isStoryTarget(job.target),
     media: media.map((item) => [item.fileId, item.localPath, item.type]),
     remote: config.REMOTE_MEDIA_PATH,
+  });
+}
+
+function storyMediaCacheKey(job: ClaimedPublishJob, media: ReturnType<typeof payloadMedia>): string {
+  return JSON.stringify({
+    draft: job.payload.draft_id ?? job.postId,
+    locale: job.payload.locale ?? "en",
+    media: media.map((item) => [item.fileId, item.localPath, item.type]),
   });
 }
