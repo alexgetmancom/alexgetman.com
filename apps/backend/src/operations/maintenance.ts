@@ -3,7 +3,17 @@ import os from "node:os";
 import path from "node:path";
 import { and, desc, eq, gte, inArray, isNotNull, lt, lte, sql } from "drizzle-orm";
 import type { BackendDb } from "../db/client.js";
-import { deploymentSnapshots, maintenanceLocks, metricSchedule, postEvents, posts, postTargets, publishJobs } from "../db/schema.js";
+import {
+  deploymentSnapshots,
+  maintenanceLocks,
+  metricSchedule,
+  postEvents,
+  posts,
+  postTargets,
+  publishJobs,
+  videoDrafts,
+  videoTargets,
+} from "../db/schema.js";
 
 /** Explicitly invoked operational maintenance routines. */
 export async function backupDatabase(backendDb: BackendDb, sourcePath: string, destinationDirectory?: string): Promise<string> {
@@ -116,6 +126,25 @@ export function auditOperations(backendDb: BackendDb): Record<string, unknown> {
       .where(and(isNotNull(metricSchedule.lastError), sql`${metricSchedule.lastError} != ''`))
       .groupBy(metricSchedule.target)
       .orderBy(metricSchedule.target)
+      .all(),
+    // Video (YouTube Shorts / Instagram Reels) failures live in a separate
+    // pipeline from text posts above; without this, "did the video publish"
+    // required a hand-written SQL query every time.
+    recentVideoFailures: backendDb.db
+      .select({
+        videoDraftId: videoTargets.videoDraftId,
+        label: videoDrafts.label,
+        target: videoTargets.target,
+        status: videoTargets.status,
+        lastError: videoTargets.lastError,
+        scheduledAt: videoTargets.scheduledAt,
+        updatedAt: videoTargets.updatedAt,
+      })
+      .from(videoTargets)
+      .innerJoin(videoDrafts, eq(videoDrafts.id, videoTargets.videoDraftId))
+      .where(inArray(videoTargets.status, ["failed", "cancelled"]))
+      .orderBy(desc(videoTargets.updatedAt))
+      .limit(20)
       .all(),
   };
 }
