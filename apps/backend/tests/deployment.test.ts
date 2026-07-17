@@ -1,6 +1,13 @@
 import { describe, expect, it, mock } from "bun:test";
 import { loadConfig } from "../src/foundation/config.js";
-import { deploymentRollbackCallback, parseDeploymentRollbackCallback, requestDeploymentRollback } from "../src/foundation/deployment.js";
+import {
+  deploymentPromoteCallback,
+  deploymentRollbackCallback,
+  parseDeploymentPromoteCallback,
+  parseDeploymentRollbackCallback,
+  requestDeploymentPromote,
+  requestDeploymentRollback,
+} from "../src/foundation/deployment.js";
 
 describe("deployment rollback protocol", () => {
   const revision = "a".repeat(40);
@@ -36,5 +43,33 @@ describe("deployment rollback protocol", () => {
       message: "Deployment agent is not configured.",
     });
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
+describe("deployment promote protocol", () => {
+  const revision = "a".repeat(40);
+
+  it("only generates compact callbacks for Git SHAs", () => {
+    expect(deploymentPromoteCallback("maru", revision)).toBe(`deploy_promote:maru:${revision}`);
+    expect(parseDeploymentPromoteCallback(`deploy_promote:maru:${revision}`)).toEqual({ target: "maru", revision });
+    expect(parseDeploymentPromoteCallback("deploy_promote:maru:latest")).toBeNull();
+    expect(() => deploymentPromoteCallback("maru", "latest")).toThrow("Git SHA");
+  });
+
+  it("forwards an authenticated promote request to the private agent", async () => {
+    const fetchImpl = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe("http://host.docker.internal:9899/v1/promote/maru");
+      expect(init?.headers).toMatchObject({ authorization: `Bearer ${"t".repeat(16)}` });
+      expect(init?.body).toBe(JSON.stringify({ release: revision }));
+      return Response.json({ ok: true, release: revision, currentRevision: revision });
+    });
+    await expect(
+      requestDeploymentPromote(
+        loadConfig({ DEPLOY_AGENT_URL: "http://host.docker.internal:9899", DEPLOY_AGENT_TOKEN: "t".repeat(16) }),
+        "maru",
+        revision,
+        fetchImpl,
+      ),
+    ).resolves.toEqual({ ok: true, release: revision, currentRevision: revision });
   });
 });

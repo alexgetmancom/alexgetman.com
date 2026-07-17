@@ -162,15 +162,14 @@ async function activate(deploymentTarget: DeploymentTarget, image: string): Prom
   await waitForHealthy(deploymentTarget);
 }
 
-async function notify(text: string, deploymentTarget: DeploymentTarget, release?: string): Promise<void> {
+async function notify(text: string, deploymentTarget: DeploymentTarget, release?: string, offerPromoteTo?: string): Promise<void> {
   if (!config.notificationToken || !config.notificationChatId) return;
-  const reply_markup = release
-    ? {
-        inline_keyboard: [
-          [{ text: `Откатить ${deploymentTarget.name}`, callback_data: `deploy_rollback:${deploymentTarget.name}:${release}` }],
-        ],
-      }
-    : undefined;
+  const buttons: { text: string; callback_data: string }[][] = [];
+  if (release)
+    buttons.push([{ text: `Откатить ${deploymentTarget.name}`, callback_data: `deploy_rollback:${deploymentTarget.name}:${release}` }]);
+  if (release && offerPromoteTo)
+    buttons.push([{ text: `Раскатить ${offerPromoteTo}`, callback_data: `deploy_promote:${offerPromoteTo}:${release}` }]);
+  const reply_markup = buttons.length > 0 ? { inline_keyboard: buttons } : undefined;
   await fetch(`${config.notificationApiBaseUrl.replace(/\/$/, "")}/bot${config.notificationToken}/sendMessage`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -204,7 +203,12 @@ async function deploy(deploymentTarget: DeploymentTarget, image: string, release
       await activate(deploymentTarget, image);
       const next = { current: { image, revision: release, deployedAt: new Date().toISOString() }, previous };
       await writeState(deploymentTarget, next);
-      await notify(`Deploy ${deploymentTarget.name} ${release.slice(0, 12)} successful and healthy.`, deploymentTarget, release);
+      await notify(
+        `Deploy ${deploymentTarget.name} ${release.slice(0, 12)} successful and healthy.`,
+        deploymentTarget,
+        release,
+        promotionCandidate(deploymentTarget),
+      );
       return next;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -222,6 +226,20 @@ async function deploy(deploymentTarget: DeploymentTarget, image: string, release
       throw new HttpError(502, `Deploy failed and was rolled back: ${message}`);
     }
   });
+}
+
+/** Only "alex" is ever auto-deployed by CI; every other configured target is
+ * deployed manually, by promoting the exact image alex just proved healthy. */
+function promotionCandidate(deploymentTarget: DeploymentTarget): string | undefined {
+  if (deploymentTarget.name !== "alex") return undefined;
+  const others = [...targets.keys()].filter((name) => name !== "alex");
+  return others.length === 1 ? others[0] : undefined;
+}
+
+async function promote(sourceTarget: DeploymentTarget, destTarget: DeploymentTarget, release: string): Promise<DeploymentState> {
+  const sourceState = await state(sourceTarget);
+  if (sourceState.current?.revision !== release) throw new HttpError(409, "This button belongs to an older alex release.");
+  return deploy(destTarget, sourceState.current.image, release);
 }
 
 async function rollback(deploymentTarget: DeploymentTarget, release: string): Promise<DeploymentState> {
@@ -276,6 +294,11 @@ async function requestHandler(request: Request): Promise<Response> {
     if (request.method === "POST" && action === "rollback") {
       if (!revision(body?.release)) throw new HttpError(400, "release must be a Git SHA.");
       const next = await rollback(deploymentTarget, body.release);
+      return json({ ok: true, target: deploymentTarget.name, release: next.current?.revision, currentRevision: next.current?.revision });
+    }
+    if (request.method === "POST" && action === "promote") {
+      if (!revision(body?.release)) throw new HttpError(400, "release must be a Git SHA.");
+      const next = await promote(target("alex"), deploymentTarget, body.release);
       return json({ ok: true, target: deploymentTarget.name, release: next.current?.revision, currentRevision: next.current?.revision });
     }
     return json({ ok: false, message: "not found" }, 404);
