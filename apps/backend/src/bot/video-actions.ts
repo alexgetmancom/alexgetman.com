@@ -7,6 +7,7 @@ import { describeError, type MessageKey, t } from "../interfaces/telegram/i18n/i
 import { videoPreview } from "../interfaces/telegram/video-preview.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import { studioServices } from "../studio/services/index.js";
+import { previousVideoMetadataStep, type VideoWizardStep } from "../studio/video-fsm.js";
 import { botLocale } from "./i18n.js";
 import { startVideoConversation } from "./video-conversation.js";
 import { finishVideoNow, finishVideoSchedule } from "./video-scheduling.js";
@@ -17,6 +18,7 @@ import {
   getSession,
   replyVideoPrompt,
   saveSession,
+  sendVideoMetadataPrompt,
   setControlFromSession,
   setData,
   targetKeyboard,
@@ -68,7 +70,15 @@ export async function handleVideoActionCallback(ctx: Context, backendDb: Backend
       setData(backendDb, adminId, session, "youtube_game_url", "", "youtube_tags");
       await ctx.answerCallbackQuery();
       await ctx.editMessageText(t(locale, "video.game-skipped"));
-      await replyVideoPrompt(ctx, t(locale, "video.prompt-yt-tags"));
+      await sendVideoMetadataPrompt(ctx, backendDb, adminId, "youtube_tags", session.selected);
+      return true;
+    } else if (data === "video_meta_back") {
+      const session = getSession(backendDb, adminId);
+      const prevStep = session && previousVideoMetadataStep(session.step as VideoWizardStep, session.selected);
+      if (!session?.draftId || !prevStep) throw new StudioError("err.video-reopen-create");
+      saveSession(backendDb, adminId, { ...session, step: prevStep });
+      await ctx.answerCallbackQuery();
+      await sendVideoMetadataPrompt(ctx, backendDb, adminId, prevStep, session.selected);
       return true;
     } else if (data.startsWith("video_open:")) {
       const id = Number(data.slice("video_open:".length));

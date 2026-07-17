@@ -6,7 +6,7 @@ import type { BackendConfig } from "../foundation/config.js";
 import { setTelegramVideoCard } from "../interfaces/telegram/control-cards.js";
 import { t } from "../interfaces/telegram/i18n/index.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
-import { nextVideoFlowStep } from "../studio/video-fsm.js";
+import { nextVideoFlowStep, previousVideoMetadataStep, type VideoPrompt, type VideoWizardStep } from "../studio/video-fsm.js";
 import { type BotLocale, botLocale } from "./i18n.js";
 
 export type VideoSession = { draftId: number | null; step: string; selected: VideoTarget[]; data: Record<string, unknown> };
@@ -96,6 +96,41 @@ export async function replyVideoPrompt(ctx: Context, text: string): Promise<void
   await ctx.reply(text, { parse_mode: "Markdown" });
 }
 
+/** Every metadata-step prompt goes through here so "← Back" (and, for the
+ * game URL, "Skip") are always offered consistently, whether reached moving
+ * forward through the wizard or by tapping Back from a later step. */
+export async function sendVideoMetadataPrompt(
+  ctx: Context,
+  backendDb: BackendDb,
+  adminId: number,
+  step: VideoWizardStep,
+  selected: VideoTarget[],
+): Promise<void> {
+  const locale = botLocale(backendDb, adminId);
+  const keyboard = new InlineKeyboard();
+  let hasButtons = false;
+  if (step === "youtube_game_url") {
+    keyboard.text(t(locale, "video.skip"), "video_game_skip");
+    hasButtons = true;
+  }
+  if (previousVideoMetadataStep(step, selected)) {
+    keyboard.text(t(locale, "common.back"), "video_meta_back");
+    hasButtons = true;
+  }
+  const text = videoPrompt(locale, step);
+  if (hasButtons) await ctx.reply(text, { reply_markup: keyboard });
+  else await replyVideoPrompt(ctx, text);
+}
+
+function videoPrompt(locale: BotLocale, prompt: VideoPrompt): string {
+  if (prompt === "youtube_title") return t(locale, "video.prompt-yt-title");
+  if (prompt === "youtube_description") return t(locale, "video.prompt-yt-description");
+  if (prompt === "youtube_game_url") return t(locale, "video.prompt-yt-game-url");
+  if (prompt === "youtube_tags") return t(locale, "video.prompt-yt-tags");
+  if (prompt === "instagram_caption") return t(locale, "video.prompt-ig-caption");
+  return t(locale, "video.prompt-when-publish");
+}
+
 /**
  * Sends a temporary interactive card and remembers only that card for checkbox/schedule edits.
  * Regular questions deliberately use replyVideoPrompt so the conversation stays at the bottom.
@@ -118,7 +153,7 @@ export async function askInstagramOrSchedule(ctx: Context, backendDb: BackendDb,
   if (nextVideoFlowStep(session.selected) === "instagram_caption") {
     const next = { ...session, step: "instagram_caption" };
     saveSession(backendDb, adminId, next);
-    await replyVideoPrompt(ctx, t(botLocale(backendDb, adminId), "video.prompt-ig-caption"));
+    await sendVideoMetadataPrompt(ctx, backendDb, adminId, "instagram_caption", session.selected);
     return;
   }
   await askSchedule(ctx, backendDb, adminId, session);

@@ -1,7 +1,7 @@
 import { fixUrlSlashes } from "../content/message.js";
 import type { VideoTarget } from "../publishing/video-types.js";
 
-type VideoWizardStep = "youtube_title" | "youtube_description" | "youtube_game_url" | "youtube_tags" | "instagram_caption";
+export type VideoWizardStep = "youtube_title" | "youtube_description" | "youtube_game_url" | "youtube_tags" | "instagram_caption";
 export type VideoPrompt = "youtube_title" | "youtube_description" | "youtube_game_url" | "youtube_tags" | "instagram_caption" | "schedule";
 type VideoWizardData = Record<string, unknown>;
 
@@ -9,6 +9,17 @@ export function firstVideoMetadataStep(selected: VideoTarget[]): { step: VideoWi
   return selected.includes("youtube_shorts")
     ? { step: "youtube_title", prompt: "youtube_title" }
     : { step: "instagram_caption", prompt: "instagram_caption" };
+}
+
+/** The step a "← Back" tap returns to, or null if the current step is the
+ * first one in the metadata chain (nothing earlier to revisit). Mirrors
+ * advanceVideoMetadata's forward transitions in reverse. */
+export function previousVideoMetadataStep(step: VideoWizardStep, selected: VideoTarget[]): VideoWizardStep | null {
+  if (step === "youtube_description") return "youtube_title";
+  if (step === "youtube_game_url") return "youtube_description";
+  if (step === "youtube_tags") return "youtube_game_url";
+  if (step === "instagram_caption") return selected.includes("youtube_shorts") ? "youtube_tags" : null;
+  return null;
 }
 
 /** Pure conversation state machine. Persistence and Telegram rendering remain adapters. */

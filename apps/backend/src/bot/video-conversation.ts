@@ -9,13 +9,7 @@ import { storeTelegramVideo } from "../interfaces/telegram/video-ingress.js";
 import { videoPreview } from "../interfaces/telegram/video-preview.js";
 import { type VideoMetadata, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import { studioServices } from "../studio/services/index.js";
-import {
-  advanceVideoMetadata,
-  advanceVideoTargetSchedule,
-  commonVideoSchedule,
-  firstVideoMetadataStep,
-  type VideoPrompt,
-} from "../studio/video-fsm.js";
+import { advanceVideoMetadata, advanceVideoTargetSchedule, commonVideoSchedule, firstVideoMetadataStep } from "../studio/video-fsm.js";
 import { botLocale } from "./i18n.js";
 import {
   askInstagramOrSchedule,
@@ -26,6 +20,7 @@ import {
   replyVideoPrompt,
   saveSession,
   sendVideoControl,
+  sendVideoMetadataPrompt,
   setData,
   targetKeyboard,
   updateVideoControl,
@@ -57,8 +52,7 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
       const first = firstVideoMetadataStep(selected);
       const next = { ...session, draftId, step: first.step, selected };
       saveSession(backendDb, adminId, next);
-      const locale = botLocale(backendDb, adminId);
-      await replyVideoPrompt(ctx, videoPrompt(locale, first.prompt));
+      await sendVideoMetadataPrompt(ctx, backendDb, adminId, first.step, selected);
       return true;
     }
     const text = ctx.message && "text" in ctx.message ? (ctx.message.text?.trim() ?? "") : "";
@@ -135,7 +129,7 @@ async function handleYouTubeMessage(
     }
     const transition = advanceVideoMetadata("youtube_title", text, session.data);
     setData(backendDb, adminId, session, "youtube_title", text, transition.nextStep ?? "youtube_description");
-    await replyVideoPrompt(ctx, videoPrompt(botLocale(backendDb, adminId), transition.prompt));
+    await sendVideoMetadataPrompt(ctx, backendDb, adminId, "youtube_description", session.selected);
     return true;
   }
   if (session.step === "youtube_description") {
@@ -154,9 +148,7 @@ async function handleYouTubeMessage(
       transition.data.youtube_description,
       transition.nextStep ?? "youtube_game_url",
     );
-    await ctx.reply(videoPrompt(botLocale(backendDb, adminId), transition.prompt), {
-      reply_markup: new InlineKeyboard().text(t(botLocale(backendDb, adminId), "video.skip"), "video_game_skip"),
-    });
+    await sendVideoMetadataPrompt(ctx, backendDb, adminId, "youtube_game_url", session.selected);
     return true;
   }
   if (session.step === "youtube_game_url") {
@@ -168,7 +160,7 @@ async function handleYouTubeMessage(
     }
     const transition = advanceVideoMetadata("youtube_game_url", text, session.data);
     setData(backendDb, adminId, session, "youtube_game_url", transition.data.youtube_game_url, transition.nextStep ?? "youtube_tags");
-    await replyVideoPrompt(ctx, videoPrompt(botLocale(backendDb, adminId), transition.prompt));
+    await sendVideoMetadataPrompt(ctx, backendDb, adminId, "youtube_tags", session.selected);
     return true;
   }
   if (session.step !== "youtube_tags") return false;
@@ -190,15 +182,6 @@ async function handleYouTubeMessage(
   studioServices(backendDb, config).videos.rename(adminId, session.draftId, metadata.title || "YouTube Shorts");
   await askInstagramOrSchedule(ctx, backendDb, adminId, session);
   return true;
-}
-
-function videoPrompt(locale: "en" | "ru", prompt: VideoPrompt): string {
-  if (prompt === "youtube_title") return t(locale, "video.prompt-yt-title");
-  if (prompt === "youtube_description") return t(locale, "video.prompt-yt-description");
-  if (prompt === "youtube_game_url") return t(locale, "video.prompt-yt-game-url");
-  if (prompt === "youtube_tags") return t(locale, "video.prompt-yt-tags");
-  if (prompt === "instagram_caption") return t(locale, "video.prompt-ig-caption");
-  return t(locale, "video.prompt-when-publish");
 }
 
 async function handleScheduleMessage(

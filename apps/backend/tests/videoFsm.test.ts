@@ -1,5 +1,11 @@
 import { describe, expect, it } from "bun:test";
-import { advanceVideoMetadata, advanceVideoTargetSchedule, commonVideoSchedule, firstVideoMetadataStep } from "../src/studio/video-fsm.js";
+import {
+  advanceVideoMetadata,
+  advanceVideoTargetSchedule,
+  commonVideoSchedule,
+  firstVideoMetadataStep,
+  previousVideoMetadataStep,
+} from "../src/studio/video-fsm.js";
 
 describe("video metadata FSM", () => {
   it("selects the first required platform prompt", () => {
@@ -15,6 +21,19 @@ describe("video metadata FSM", () => {
     expect(description.data.youtube_description).toBe("");
     expect(tags).toMatchObject({ nextStep: null, prompt: "schedule" });
     expect(tags.data.youtube_tags).toEqual(["game", "devlog"]);
+  });
+
+  it("reverses the YouTube chain step by step, and stops at its start", () => {
+    const selected: ("youtube_shorts" | "instagram_reels")[] = ["youtube_shorts"];
+    expect(previousVideoMetadataStep("youtube_description", selected)).toBe("youtube_title");
+    expect(previousVideoMetadataStep("youtube_game_url", selected)).toBe("youtube_description");
+    expect(previousVideoMetadataStep("youtube_tags", selected)).toBe("youtube_game_url");
+    expect(previousVideoMetadataStep("youtube_title", selected)).toBeNull();
+  });
+
+  it("routes instagram_caption's back step depending on whether YouTube was also selected", () => {
+    expect(previousVideoMetadataStep("instagram_caption", ["youtube_shorts", "instagram_reels"])).toBe("youtube_tags");
+    expect(previousVideoMetadataStep("instagram_caption", ["instagram_reels"])).toBeNull();
   });
 
   it("advances independent and common schedules without Telegram state", () => {
