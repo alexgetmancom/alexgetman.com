@@ -83,7 +83,7 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
   } catch (error) {
     log("warn", "draft translation failed", { error: String(error) });
   }
-  const draftId = studioServices(backendDb, config).posts.create(adminId, { ...message, textEn });
+  const draftId = studioServices(backendDb, config).publications.create(adminId, { kind: "post", message: { ...message, textEn } }).id;
   clearPostAdminState(backendDb, adminId);
   const control = await sendDraftPreview(ctx, backendDb, draftId);
   if (ctx.chat?.id) setTelegramPostCard(backendDb, draftId, Number(ctx.chat.id), control.message_id);

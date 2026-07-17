@@ -118,12 +118,10 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
         } catch {
           textEn = "";
         }
-        const created = studioServices(backendDb, config).posts.create(row.adminId, {
-          text,
-          textEn,
-          media,
-          entities: parseArrayValue(row.textEntitiesJson),
-        });
+        const created = studioServices(backendDb, config).publications.create(row.adminId, {
+          kind: "post",
+          message: { text, textEn, media, entities: parseArrayValue(row.textEntitiesJson) },
+        }).id;
         await refreshDraftControlCard(bot, backendDb, config, row.adminId, created, row.chatId);
         clearPostAdminStateIfCurrent(backendDb, row.adminId, row.action, row.draftId);
       }

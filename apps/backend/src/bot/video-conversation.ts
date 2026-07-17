@@ -45,7 +45,10 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
   try {
     if (session.step === "asset") {
       const stored = await storeTelegramVideo(ctx, backendDb, config, adminId);
-      const draftId = studioServices(backendDb, config).videos.create(adminId, stored.assetId);
+      const draftId = studioServices(backendDb, config).publications.create(adminId, {
+        kind: "video",
+        studioMediaAssetId: stored.assetId,
+      }).id;
       const selected = enabledVideoTargets(config);
       if (!selected.length) throw new StudioError("err.no-video-platforms-config");
       studioServices(backendDb, config).videos.replaceTargets(adminId, draftId, selected);

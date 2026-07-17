@@ -244,12 +244,15 @@ async function runStudioTool(
       break;
     case "studio_post_create": {
       const textEn = optionalText(args.text_en, 20_000);
-      const draftId = studio.posts.create(actorId, {
-        text: text(args.text, "text", 1, 20_000),
-        ...(textEn === undefined ? {} : { textEn }),
-        entities: [],
-        media: [],
-      });
+      const draftId = studio.publications.create(actorId, {
+        kind: "post",
+        message: {
+          text: text(args.text, "text", 1, 20_000),
+          ...(textEn === undefined ? {} : { textEn }),
+          entities: [],
+          media: [],
+        },
+      }).id;
       result = { draft_id: draftId };
       ref = `draft:${draftId}`;
       break;
@@ -324,7 +327,10 @@ async function runStudioTool(
       break;
     }
     case "studio_video_create": {
-      const videoDraftId = studio.videos.create(actorId, integer(args.asset_id, "asset_id"));
+      const videoDraftId = studio.publications.create(actorId, {
+        kind: "video",
+        studioMediaAssetId: integer(args.asset_id, "asset_id"),
+      }).id;
       result = { video_draft_id: videoDraftId };
       ref = `video:${videoDraftId}`;
       break;
