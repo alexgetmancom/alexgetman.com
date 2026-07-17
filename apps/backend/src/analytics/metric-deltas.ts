@@ -3,7 +3,10 @@ import { metricNumber } from "./snapshots/creator-store.js";
 
 /** Single source for period-delta analytics shared by every report and dashboard.
  * Post/video engagement lives in metric_samples; audience growth in
- * creator_profile_snapshots. Callers differ only in how they aggregate the deltas. */
+ * creator_profile_snapshots. Callers differ only in how they aggregate the deltas.
+ * Both queries below let SQLite (via idx_metric_samples_lookup) find the
+ * latest/baseline row per group instead of pulling the whole matched history
+ * into JS and reducing it there. */
 
 export type VideoMetricRow = { platform: string; label: string; metrics: Record<string, unknown> };
 
@@ -18,24 +21,38 @@ type MetricSeries = { target: string; metric: string; firstAt: string; latest: n
  * is built on, so the scan and baseline rule exist in exactly one place. */
 export function metricSeriesSince(backendDb: BackendDb, since: string, where = "1=1"): MetricSeries[] {
   const rows = backendDb.sqlite
-    .prepare(`SELECT post_key, target, metric_name, value, sampled_at FROM metric_samples WHERE ${where} ORDER BY sampled_at ASC, id ASC`)
-    .all() as Array<{ post_key: string; target: string; metric_name: string; value: number | null; sampled_at: string }>;
-  const series = new Map<string, MetricSeries>();
-  for (const row of rows) {
-    const key = `${row.post_key}${KEY_SEP}${row.target}${KEY_SEP}${row.metric_name}`;
-    const value = metricNumber(row.value);
-    const entry = series.get(key) ?? {
-      target: row.target,
-      metric: row.metric_name,
-      firstAt: row.sampled_at,
-      latest: value,
-      baseline: null,
-    };
-    entry.latest = value;
-    if (row.sampled_at <= since) entry.baseline = value;
-    series.set(key, entry);
-  }
-  return [...series.values()];
+    .prepare(
+      `WITH matched AS (
+         SELECT post_key, target, metric_name, value, sampled_at, id FROM metric_samples WHERE ${where}
+       ),
+       ranked_latest AS (
+         SELECT post_key, target, metric_name, value,
+                ROW_NUMBER() OVER (PARTITION BY post_key, target, metric_name ORDER BY sampled_at DESC, id DESC) AS rn
+         FROM matched
+       ),
+       ranked_baseline AS (
+         SELECT post_key, target, metric_name, value,
+                ROW_NUMBER() OVER (PARTITION BY post_key, target, metric_name ORDER BY sampled_at DESC, id DESC) AS rn
+         FROM matched WHERE sampled_at <= ?
+       ),
+       first_seen AS (
+         SELECT post_key, target, metric_name, MIN(sampled_at) AS first_at FROM matched GROUP BY post_key, target, metric_name
+       )
+       SELECT f.target AS target, f.metric_name AS metric_name, f.first_at AS first_at,
+              CAST(COALESCE(l.value, 0) AS INTEGER) AS latest,
+              CASE WHEN b.post_key IS NOT NULL THEN CAST(COALESCE(b.value, 0) AS INTEGER) ELSE NULL END AS baseline
+       FROM first_seen f
+       JOIN ranked_latest l ON l.post_key = f.post_key AND l.target = f.target AND l.metric_name = f.metric_name AND l.rn = 1
+       LEFT JOIN ranked_baseline b ON b.post_key = f.post_key AND b.target = f.target AND b.metric_name = f.metric_name AND b.rn = 1`,
+    )
+    .all(since) as Array<{ target: string; metric_name: string; first_at: string; latest: number; baseline: number | null }>;
+  return rows.map((row) => ({
+    target: row.target,
+    metric: row.metric_name,
+    firstAt: row.first_at,
+    latest: row.latest,
+    baseline: row.baseline,
+  }));
 }
 
 /** metric_samples delta summed per metric name, filtered by a raw target predicate. */
@@ -98,22 +115,29 @@ export function sum(rows: VideoMetricRow[], field: string): number {
 export function audienceGrowthByAccount(backendDb: BackendDb, since: string): Map<string, number> {
   const rows = backendDb.sqlite
     .prepare(
-      "SELECT platform, account, metrics_json, sampled_at, id FROM creator_profile_snapshots ORDER BY platform, account, sampled_at ASC, id ASC",
+      `WITH samples AS (
+         SELECT platform, account, sampled_at, id,
+                CAST(COALESCE(json_extract(metrics_json, '$.subscriberCount'), json_extract(metrics_json, '$.followersCount'), 0) AS INTEGER) AS value
+         FROM creator_profile_snapshots
+       ),
+       ranked_latest AS (
+         SELECT platform, account, value,
+                ROW_NUMBER() OVER (PARTITION BY platform, account ORDER BY sampled_at DESC, id DESC) AS rn
+         FROM samples
+       ),
+       ranked_baseline AS (
+         SELECT platform, account, value,
+                ROW_NUMBER() OVER (PARTITION BY platform, account ORDER BY sampled_at DESC, id DESC) AS rn
+         FROM samples WHERE sampled_at <= ?
+       )
+       SELECT l.platform AS platform, l.account AS account, l.value AS latest,
+              CASE WHEN b.platform IS NOT NULL THEN b.value ELSE NULL END AS baseline
+       FROM ranked_latest l
+       LEFT JOIN ranked_baseline b ON b.platform = l.platform AND b.account = l.account AND b.rn = 1
+       WHERE l.rn = 1`,
     )
-    .all() as Array<{ platform: string; account: string; metrics_json: string; sampled_at: string }>;
-  const byAccount = new Map<string, { latest: number; baseline: number | null }>();
-  for (const row of rows) {
-    const data = JSON.parse(row.metrics_json) as Record<string, unknown>;
-    const key = `${row.platform}${KEY_SEP}${row.account}`;
-    const entry = byAccount.get(key) ?? { latest: 0, baseline: null };
-    const value = metricNumber(data.subscriberCount ?? data.followersCount);
-    entry.latest = value;
-    if (row.sampled_at <= since) entry.baseline = value;
-    byAccount.set(key, entry);
-  }
+    .all(since) as Array<{ platform: string; account: string; latest: number; baseline: number | null }>;
   return new Map(
-    [...byAccount.entries()]
-      .filter(([, values]) => values.baseline != null)
-      .map(([key, values]) => [key, values.latest - (values.baseline ?? values.latest)]),
+    rows.filter((row) => row.baseline != null).map((row) => [`${row.platform}${KEY_SEP}${row.account}`, row.latest - (row.baseline ?? 0)]),
   );
 }
