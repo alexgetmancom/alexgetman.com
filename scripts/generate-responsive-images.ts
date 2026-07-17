@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
+import { categorySlugFromBadge, getSmartBadge, categoryLabel as taxonomyLabel } from "../apps/web/src/utils/taxonomy.ts";
 
 const root = process.cwd();
 const webRoot = path.join(root, "apps", "web");
@@ -119,27 +120,10 @@ function splitLines(text: string, maxChars: number, maxLines: number): string[] 
   return lines.slice(0, maxLines);
 }
 
+// Category badges are a single source (apps/web taxonomy) so the OG image badge
+// always matches the badge rendered on the post page.
 function categoryLabel(text: unknown, locale: string): string {
-  const t = String(text || "").toLowerCase();
-  if (
-    t.includes("gpt") ||
-    t.includes("gemini") ||
-    t.includes("claude") ||
-    t.includes("anthropic") ||
-    t.includes("openai") ||
-    t.includes("google") ||
-    t.includes("llama") ||
-    t.includes("codex")
-  ) {
-    return locale === "ru" ? "ИИ-Модели" : "AI Models";
-  }
-  if (t.includes("нейросеть") || t.includes("midjourney") || t.includes("sora") || t.includes("генераци") || t.includes("ai ")) {
-    return locale === "ru" ? "Нейросети" : "Neural Networks";
-  }
-  if (t.includes("слив") || t.includes("leak")) {
-    return locale === "ru" ? "Сливы" : "Leaks";
-  }
-  return locale === "ru" ? "Новости" : "News";
+  return taxonomyLabel(categorySlugFromBadge(getSmartBadge(String(text ?? ""))), locale);
 }
 
 function normalizePublicPath(value: unknown): string {

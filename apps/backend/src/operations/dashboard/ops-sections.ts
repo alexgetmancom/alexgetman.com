@@ -1,5 +1,6 @@
+import { audienceGrowthByAccount, KEY_SEP, metricSeriesSince } from "../../analytics/metric-deltas.js";
 import type { BackendDb } from "../../db/client.js";
-import { creatorProfiles, metricSamples } from "../../db/schema.js";
+import { creatorProfiles } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { ORDERED_TARGETS } from "./assets.js";
 import { formatMetricValue, shortPipelineText } from "./format.js";
@@ -152,55 +153,28 @@ function sumTargetMetrics(values: Map<string, PeriodMetrics>, targets: string[])
   );
 }
 
+/** Per-target views/interactions over the period, built on the shared metric series. */
 function targetPeriodMetrics(backendDb: BackendDb, days: number): Map<string, PeriodMetrics> {
   const since = new Date(Date.now() - days * 24 * 60 * 60_000).toISOString();
-  const series = new Map<string, { target: string; metric: string; firstAt: string; latest: number; baseline: number | null }>();
-  for (const row of backendDb.db.select().from(metricSamples).all()) {
-    const key = `${row.postKey}\u0000${row.target}\u0000${row.metricName}`;
-    const value = metric(row.value);
-    const current = series.get(key) ?? {
-      target: row.target,
-      metric: row.metricName,
-      firstAt: row.sampledAt,
-      latest: value,
-      baseline: null,
-    };
-    current.latest = value;
-    if (row.sampledAt <= since) current.baseline = value;
-    series.set(key, current);
-  }
   const totals = new Map<string, PeriodMetrics>();
-  for (const value of series.values()) {
-    if (value.baseline == null && value.firstAt < since) continue;
-    const row = totals.get(value.target) ?? { views: 0, interactions: 0 };
-    const deltaValue = Math.max(0, value.latest - (value.baseline ?? 0));
-    if (value.metric === "views" || value.metric === "bot_views") row.views += deltaValue;
-    if (["likes", "replies", "reposts", "comments"].includes(value.metric)) row.interactions += deltaValue;
-    totals.set(value.target, row);
+  for (const entry of metricSeriesSince(backendDb, since)) {
+    if (entry.baseline == null && entry.firstAt < since) continue;
+    const row = totals.get(entry.target) ?? { views: 0, interactions: 0 };
+    const deltaValue = Math.max(0, entry.latest - (entry.baseline ?? 0));
+    if (entry.metric === "views" || entry.metric === "bot_views") row.views += deltaValue;
+    if (["likes", "replies", "reposts", "comments"].includes(entry.metric)) row.interactions += deltaValue;
+    totals.set(entry.target, row);
   }
   return totals;
 }
 
+/** Follower growth per platform, aggregating the shared per-account growth. */
 function followerGrowth(backendDb: BackendDb, days: number): Map<string, number> {
   const since = new Date(Date.now() - days * 24 * 60 * 60_000).toISOString();
-  const rows = backendDb.sqlite
-    .prepare(
-      "SELECT platform, account, metrics_json, sampled_at, id FROM creator_profile_snapshots ORDER BY platform, account, sampled_at ASC, id ASC",
-    )
-    .all() as Array<{ platform: string; account: string; metrics_json: string; sampled_at: string }>;
-  const values = new Map<string, { platform: string; latest: number; baseline: number | null }>();
-  for (const row of rows) {
-    const metrics = JSON.parse(row.metrics_json) as Record<string, unknown>;
-    const key = `${row.platform}\u0000${row.account}`;
-    const value = values.get(key) ?? { platform: row.platform, latest: 0, baseline: null };
-    value.latest = metric(metrics.subscriberCount ?? metrics.followersCount);
-    if (row.sampled_at <= since) value.baseline = value.latest;
-    values.set(key, value);
-  }
   const totals = new Map<string, number>();
-  for (const value of values.values()) {
-    if (value.baseline == null) continue;
-    totals.set(value.platform, (totals.get(value.platform) ?? 0) + value.latest - value.baseline);
+  for (const [key, growth] of audienceGrowthByAccount(backendDb, since)) {
+    const platform = key.split(KEY_SEP)[0] ?? key;
+    totals.set(platform, (totals.get(platform) ?? 0) + growth);
   }
   return totals;
 }

@@ -2,6 +2,7 @@ import type { BackendDb } from "../../db/client.js";
 import { analyticsSync, creatorProfiles } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { type StudioLocale as BotLocale, localize as ui } from "../../foundation/locale.js";
+import { audienceGrowthByAccount, siteTotal, textTotals, videoTotals } from "../metric-deltas.js";
 import { metricNumber } from "../snapshots/creator-store.js";
 
 type AnalyticsSection = "overview" | "audience" | "posts" | "video";
@@ -10,11 +11,6 @@ type AnalyticsPeriod = 1 | 7 | 30;
 type StudioAnalyticsDashboard = {
   text: string;
   hasComments: boolean;
-};
-
-type VideoMetricRow = {
-  platform: string;
-  metrics: Record<string, unknown>;
 };
 
 /**
@@ -151,29 +147,6 @@ function audienceGrowth(backendDb: BackendDb, since: string): number | null {
 /** Current projection minus the last observation at or before the selected period.
  * A profile with no baseline is intentionally omitted instead of pretending that
  * its lifetime follower number is growth. */
-function audienceGrowthByAccount(backendDb: BackendDb, since: string): Map<string, number> {
-  const rows = backendDb.sqlite
-    .prepare(
-      "SELECT platform, account, metrics_json, sampled_at, id FROM creator_profile_snapshots ORDER BY platform, account, sampled_at ASC, id ASC",
-    )
-    .all() as Array<{ platform: string; account: string; metrics_json: string; sampled_at: string }>;
-  const byAccount = new Map<string, { latest: number; baseline: number | null }>();
-  for (const row of rows) {
-    const data = JSON.parse(row.metrics_json) as Record<string, unknown>;
-    const key = `${row.platform}\u0000${row.account}`;
-    const entry = byAccount.get(key) ?? { latest: 0, baseline: null };
-    const value = metricNumber(data.subscriberCount ?? data.followersCount);
-    entry.latest = value;
-    if (row.sampled_at <= since) entry.baseline = value;
-    byAccount.set(key, entry);
-  }
-  return new Map(
-    [...byAccount.entries()]
-      .filter(([, values]) => values.baseline != null)
-      .map(([key, values]) => [key, values.latest - (values.baseline ?? values.latest)]),
-  );
-}
-
 function staleSources(backendDb: BackendDb): string[] {
   return backendDb.db
     .select()
@@ -190,68 +163,6 @@ function hasAudienceComments(backendDb: BackendDb): boolean {
 
 function emptyTotals(): { views: number; interactions: number } {
   return { views: 0, interactions: 0 };
-}
-
-function textTotals(backendDb: BackendDb, since: string): { views: number; interactions: number } {
-  const totals = metricDeltasSince(backendDb, since, "target NOT LIKE 'site_%'");
-  return {
-    views: totals.views ?? 0,
-    interactions: (totals.likes ?? 0) + (totals.replies ?? 0) + (totals.reposts ?? 0) + (totals.comments ?? 0),
-  };
-}
-
-function siteTotal(backendDb: BackendDb, since: string): number {
-  return metricDeltasSince(backendDb, since, "target LIKE 'site_%'").views ?? 0;
-}
-
-function videoTotals(backendDb: BackendDb, since: string): { views: number; interactions: number } {
-  const rows = latestVideoMetrics(backendDb, since);
-  return {
-    views: sum(rows, "views"),
-    interactions: sum(rows, "likes") + sum(rows, "comments"),
-  };
-}
-
-function metricDeltasSince(backendDb: BackendDb, since: string, where: string): Record<string, number> {
-  const rows = backendDb.sqlite
-    .prepare(`SELECT post_key, target, metric_name, value, sampled_at FROM metric_samples WHERE ${where} ORDER BY sampled_at ASC, id ASC`)
-    .all() as Array<{ post_key: string; target: string; metric_name: string; value: number | null; sampled_at: string }>;
-  const series = new Map<string, { metric: string; firstAt: string; latest: number; baseline: number | null }>();
-  for (const row of rows) {
-    const key = `${row.post_key}\u0000${row.target}\u0000${row.metric_name}`;
-    const value = metricNumber(row.value);
-    const entry = series.get(key) ?? { metric: row.metric_name, firstAt: row.sampled_at, latest: value, baseline: null };
-    entry.latest = value;
-    if (row.sampled_at <= since) entry.baseline = value;
-    series.set(key, entry);
-  }
-  const totals: Record<string, number> = {};
-  for (const entry of series.values()) {
-    if (entry.baseline == null && entry.firstAt < since) continue;
-    totals[entry.metric] = (totals[entry.metric] ?? 0) + Math.max(0, entry.latest - (entry.baseline ?? 0));
-  }
-  return totals;
-}
-
-function latestVideoMetrics(backendDb: BackendDb, since: string): VideoMetricRow[] {
-  const rows = backendDb.sqlite
-    .prepare(
-      `SELECT target.target AS platform, target.published_at, latest.metrics_json AS latest_metrics, baseline.metrics_json AS baseline_metrics FROM video_targets target JOIN video_metric_snapshots latest ON latest.id = (SELECT id FROM video_metric_snapshots WHERE video_target_id = target.id ORDER BY sampled_at DESC, id DESC LIMIT 1) LEFT JOIN video_metric_snapshots baseline ON baseline.id = (SELECT id FROM video_metric_snapshots WHERE video_target_id = target.id AND sampled_at <= ? ORDER BY sampled_at DESC, id DESC LIMIT 1) WHERE target.status = 'published' ORDER BY latest.id DESC`,
-    )
-    .all(since) as Array<{ platform: string; published_at: string | null; latest_metrics: string; baseline_metrics: string | null }>;
-  return rows.flatMap((row) => {
-    const latest = JSON.parse(row.latest_metrics) as Record<string, unknown>;
-    const baseline = row.baseline_metrics ? (JSON.parse(row.baseline_metrics) as Record<string, unknown>) : null;
-    if (!baseline && !(row.published_at != null && row.published_at >= since)) return [];
-    return [
-      {
-        platform: row.platform,
-        metrics: Object.fromEntries(
-          Object.entries(latest).map(([key, value]) => [key, Math.max(0, metricNumber(value) - metricNumber(baseline?.[key]))]),
-        ),
-      },
-    ];
-  });
 }
 
 function earliestMeasurement(backendDb: BackendDb, config: BackendConfig, section: AnalyticsSection): string | null {
@@ -284,10 +195,6 @@ function latestMeasurement(backendDb: BackendDb, config: BackendConfig, section:
     if (value.value) candidates.push(value.value);
   }
   return candidates.sort().at(-1) ?? null;
-}
-
-function sum(rows: VideoMetricRow[], field: string): number {
-  return rows.reduce((total, row) => total + metricNumber(row.metrics[field]), 0);
 }
 
 function formatDate(value: string, locale: BotLocale): string {
