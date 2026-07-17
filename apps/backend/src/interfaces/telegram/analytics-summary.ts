@@ -5,6 +5,7 @@ import { markSynced } from "../../analytics/snapshots/creator-store.js";
 import type { BackendDb } from "../../db/client.js";
 import { analyticsSync } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
+import { t } from "./i18n/index.js";
 
 /** Telegram-only weekly delivery of an already computed Analytics report. */
 export async function sendWeeklyAnalyticsSummary(
@@ -31,7 +32,8 @@ export async function sendWeeklyAnalyticsSummary(
   if (parts.weekday !== "Sun" || Number(parts.hour) < 21) return false;
   const key = `weekly_summary:${parts.year}-${parts.month}-${parts.day}`;
   if (backendDb.db.select().from(analyticsSync).where(eq(analyticsSync.source, key)).get()) return false;
-  const report = creatorDashboard(backendDb, config, 7).text.replace("📊 *Статистика за 7 дней*", "📊 *Итоги недели*");
+  const weekTitle = `📊 *${t("ru", "report.stats-for", { period: t("ru", "report.period-days", { days: 7 }) })}*`;
+  const report = creatorDashboard(backendDb, config, 7).text.replace(weekTitle, `📊 *${t("ru", "weekly.digest")}*`);
   for (const adminId of config.ADMIN_IDS) await bot.api.sendMessage(adminId, report, { parse_mode: "Markdown" });
   markSynced(backendDb, key);
   return true;

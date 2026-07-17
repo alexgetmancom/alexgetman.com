@@ -1,19 +1,25 @@
 import { type Context, InlineKeyboard, InputFile } from "grammy";
+import type { BotLocale } from "../../bot/i18n.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import type { DeliveryProjection } from "../../studio/projections.js";
 import { studioServices } from "../../studio/services/index.js";
+import { t } from "./i18n/index.js";
 
 /** Telegram renderer for Studio delivery projections. It owns no planning decisions. */
-export async function sendTelegramDeliveryPreviews(ctx: Context, projections: DeliveryProjection[]): Promise<void> {
+export async function sendTelegramDeliveryPreviews(
+  ctx: Context,
+  projections: DeliveryProjection[],
+  locale: BotLocale = "en",
+): Promise<void> {
   for (const projection of projections) {
     const targets = projection.targets.join(" · ");
     await ctx.reply(`👁 *${escapeMarkdown(projection.label)}*\n${escapeMarkdown(targets)}`, { parse_mode: "Markdown" });
     const hasVideo = projection.media.some((item) => String(item.type ?? "photo").toLowerCase() === "video");
     await sendProjectionContent(ctx, projection, !hasVideo);
     if (hasVideo)
-      await ctx.reply("🎬 Видео подготовлено для предпросмотра.", {
-        reply_markup: new InlineKeyboard().text("▶️ Показать видео", `delivery_preview_video:${projection.id}`),
+      await ctx.reply(t(locale, "preview.video-ready"), {
+        reply_markup: new InlineKeyboard().text(t(locale, "preview.show-video"), `delivery_preview_video:${projection.id}`),
       });
     if (projection.notes.length) await ctx.reply(`ℹ️ ${projection.notes.map(escapeMarkdown).join("\n• ")}`, { parse_mode: "Markdown" });
   }

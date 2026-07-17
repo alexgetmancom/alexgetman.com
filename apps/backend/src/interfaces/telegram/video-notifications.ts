@@ -1,11 +1,13 @@
 import { eq } from "drizzle-orm";
 import { type Bot, InlineKeyboard } from "grammy";
+import { botLocale } from "../../bot/i18n.js";
 import type { BackendDb } from "../../db/client.js";
 import { drafts, studioNotificationSettings, videoDrafts, videoTargets } from "../../db/schema.js";
 import { getVideoDraft } from "../../publishing/video-data.js";
 import type { VideoTarget } from "../../publishing/video-types.js";
 import { videoTargetLabel } from "../../publishing/video-types.js";
 import { telegramVideoCard } from "./control-cards.js";
+import { t } from "./i18n/index.js";
 import { videoPreview } from "./video-preview.js";
 import { formatVideoTime } from "./video-time.js";
 
@@ -20,12 +22,14 @@ export async function notifyFinalVideoFailure(
   if (target?.status !== "failed") return;
   const draft = getVideoDraft(backendDb, videoDraftId);
   const targetName = target.target as VideoTarget;
+  const locale = botLocale(backendDb, draft.adminId);
+  const title = draft.label || t(locale, "common.untitled");
   await bot.api.sendMessage(
     draft.adminId,
-    `🔴 ${videoTargetLabel(targetName)} не опубликовал ролик «${draft.label || "Без названия"}».\n\n${target.lastError || "Неизвестная ошибка"}`,
+    `${t(locale, "notif.video-failed", { label: videoTargetLabel(targetName), title })}\n\n${target.lastError || t(locale, "notif.unknown-error")}`,
     {
       reply_markup: new InlineKeyboard().text(
-        `🔁 Повторить ${targetName === "youtube_shorts" ? "YouTube" : "Instagram"}`,
+        t(locale, "notif.retry", { platform: targetName === "youtube_shorts" ? "YouTube" : "Instagram" }),
         `video_retry:${targetName}:${draft.id}`,
       ),
     },
@@ -57,9 +61,13 @@ export async function sendVideoReminder(
   const draft = getVideoDraft(backendDb, videoDraftId);
   const target = videoTargetId == null ? null : backendDb.db.select().from(videoTargets).where(eq(videoTargets.id, videoTargetId)).get();
   if (!bot || !target || draft.status !== "scheduled") return;
-  const text = `⏰ Через ${reminderMinutes} мин. публикация:\n\n🎬 ${draft.label || "Без названия"}\n• ${videoTargetLabel(target.target as VideoTarget)}\n\n${formatVideoTime(target.scheduledAt)}`;
+  const locale = botLocale(backendDb, draft.adminId);
+  const title = draft.label || t(locale, "common.untitled");
+  const text = `${t(locale, "notif.reminder-head", { minutes: reminderMinutes })}\n\n🎬 ${title}\n• ${videoTargetLabel(target.target as VideoTarget)}\n\n${formatVideoTime(target.scheduledAt, locale)}`;
   await bot.api.sendMessage(draft.adminId, text, {
-    reply_markup: new InlineKeyboard().text("Открыть", `video_open:${draft.id}`).text("Отменить", `video_cancel:${draft.id}`),
+    reply_markup: new InlineKeyboard()
+      .text(t(locale, "notif.open"), `video_open:${draft.id}`)
+      .text(t(locale, "notif.cancel-btn"), `video_cancel:${draft.id}`),
   });
   backendDb.db
     .update(videoDrafts)
@@ -78,14 +86,15 @@ export async function sendStudioReminder(
   const details = object(event.detailsJson);
   const adminId = number(details.admin_id) ?? ownerForRef(backendDb, event.postKey);
   if (adminId == null || !notificationPreference(backendDb, adminId).remindersEnabled) return;
-  const title = typeof details.title === "string" ? details.title : (event.postKey ?? "Publication");
+  const locale = botLocale(backendDb, adminId);
+  const title = typeof details.title === "string" ? details.title : (event.postKey ?? t(locale, "notif.publication"));
   const targets = Array.isArray(details.targets) ? details.targets.filter((value): value is string => typeof value === "string") : [];
   const minutes = number(details.minutes) ?? 5;
   const publishAt = typeof details.publish_at === "string" ? details.publish_at : null;
   await bot.api.sendMessage(
     adminId,
-    `⏰ Через ${minutes} мин. публикация:\n\n${title}\n${targets.length ? `• ${targets.join(", ")}` : ""}${publishAt ? `\n\n${formatVideoTime(publishAt)}` : ""}`.trim(),
-    { reply_markup: new InlineKeyboard().text("🔔 Уведомления", "notifications_home") },
+    `${t(locale, "notif.reminder-head", { minutes })}\n\n${title}\n${targets.length ? `• ${targets.join(", ")}` : ""}${publishAt ? `\n\n${formatVideoTime(publishAt, locale)}` : ""}`.trim(),
+    { reply_markup: new InlineKeyboard().text(t(locale, "settings.notifications"), "notifications_home") },
   );
 }
 
@@ -101,11 +110,14 @@ export async function sendStudioCompletion(
   const total = number(details.total) ?? 0;
   const published = number(details.published) ?? 0;
   const failed = number(details.failed) ?? 0;
-  const label = event.postKey?.startsWith("video:") ? "Видео" : "Пост";
+  const locale = botLocale(backendDb, adminId);
+  const label = event.postKey?.startsWith("video:") ? t(locale, "notif.label-video") : t(locale, "notif.label-post");
   const text = failed
-    ? `⚠️ ${label}: публикация завершена с ошибками\n✅ ${published} / ${total}\n❌ Ошибок: ${failed}`
-    : `✅ ${label} опубликован\n${published || total} / ${total}`;
-  await bot.api.sendMessage(adminId, text, { reply_markup: new InlineKeyboard().text("🔔 Уведомления", "notifications_home") });
+    ? t(locale, "notif.completion-failed", { label, published, total, failed })
+    : t(locale, "notif.completion-ok", { label, done: published || total, total });
+  await bot.api.sendMessage(adminId, text, {
+    reply_markup: new InlineKeyboard().text(t(locale, "settings.notifications"), "notifications_home"),
+  });
 }
 
 function notificationPreference(backendDb: BackendDb, adminId: number) {

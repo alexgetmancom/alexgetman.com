@@ -65,7 +65,7 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
   if (action === "publish") {
     if (await showPublicationPreflight(ctx, backendDb, config, actorId, draftId, locale)) return;
     const delivery = studioServices(backendDb, config).posts.preview(actorId, draftId).delivery;
-    await sendTelegramDeliveryPreviews(ctx, delivery.projections);
+    await sendTelegramDeliveryPreviews(ctx, delivery.projections, botLocale(backendDb, actorId));
     const preview = draftPreview(backendDb, draftId, "confirm_publish");
     await ctx.reply(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
     return;
@@ -210,7 +210,7 @@ async function sendPostPreviews(
   draftId: number,
 ): Promise<void> {
   const delivery = studioServices(backendDb, config).posts.preview(actorId, draftId).delivery;
-  await sendTelegramDeliveryPreviews(ctx, delivery.projections);
+  await sendTelegramDeliveryPreviews(ctx, delivery.projections, botLocale(backendDb, actorId));
 }
 
 function scheduledDraftText(

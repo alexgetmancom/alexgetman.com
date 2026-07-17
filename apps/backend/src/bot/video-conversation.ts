@@ -265,7 +265,7 @@ async function confirmVideoSchedule(
   };
   saveSession(backendDb, adminId, next);
   const delivery = studioServices(backendDb, config).videos.preview(adminId, session.draftId).delivery;
-  await sendTelegramDeliveryPreviews(ctx, delivery.projections);
+  await sendTelegramDeliveryPreviews(ctx, delivery.projections, botLocale(backendDb, adminId));
   const lines = [`🎬 *${t(locale, "common.confirm-schedule")}*`];
   for (const target of next.selected) {
     const value = schedule[target];

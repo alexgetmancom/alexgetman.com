@@ -44,33 +44,37 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
     await showSettings(ctx, config, backendDb);
   });
   bot.hears(["🎬 Новое видео", "🎬 New video"], async (ctx) => {
-    if (!isAdmin(config, ctx.from?.id)) return void (await ctx.reply("Forbidden"));
-    if (!config.studio.modules.video_posting) return void (await ctx.reply("Видеопубликация выключена в studio.yaml."));
+    const locale = botLocale(backendDb, Number(ctx.from?.id));
+    if (!isAdmin(config, ctx.from?.id)) return void (await ctx.reply(t(locale, "bot.forbidden")));
+    if (!config.studio.modules.video_posting) return void (await ctx.reply(t(locale, "bot.video-disabled")));
     await startVideoConversation(ctx, backendDb);
   });
   bot.hears(["📝 Новый пост", "📝 New post"], async (ctx) => {
-    if (!isAdmin(config, ctx.from?.id)) return void (await ctx.reply("Forbidden"));
+    const locale = botLocale(backendDb, Number(ctx.from?.id));
+    if (!isAdmin(config, ctx.from?.id)) return void (await ctx.reply(t(locale, "bot.forbidden")));
     await startPostScreen(ctx, backendDb);
   });
   bot.command("pipeline_status", (ctx) => ctx.reply(config.COMMAND_CENTER_URL));
   bot.command("schedule", async (ctx) => {
-    if (!isAdmin(config, ctx.from?.id)) return void (await ctx.reply("Forbidden"));
+    const locale = botLocale(backendDb, Number(ctx.from?.id));
+    if (!isAdmin(config, ctx.from?.id)) return void (await ctx.reply(t(locale, "bot.forbidden")));
     const rows = studioServices(backendDb, config)
       .queue.snapshot(Number(ctx.from?.id))
       .upcoming.filter((item) => item.kind === "post");
-    if (rows.length === 0) return void (await ctx.reply("No scheduled drafts."));
+    if (rows.length === 0) return void (await ctx.reply(t(locale, "bot.no-scheduled")));
     const keyboard = new InlineKeyboard();
     for (const draft of rows) keyboard.text(`#${draft.id} ${formatMsk(draft.time)}`, `schedule:${draft.id}`).row();
-    await ctx.reply("Scheduled drafts", { reply_markup: keyboard });
+    await ctx.reply(t(locale, "bot.scheduled-drafts"), { reply_markup: keyboard });
   });
   bot.on("message", async (ctx) => {
-    if (!isAdmin(config, ctx.from?.id)) return void (await ctx.reply("Forbidden"));
+    if (!isAdmin(config, ctx.from?.id)) return void (await ctx.reply(t(botLocale(backendDb, Number(ctx.from?.id)), "bot.forbidden")));
     if (await handleSettingsMessage(ctx, backendDb, config)) return;
     if (await handleVideoMessage(ctx, backendDb, config)) return;
     await handlePostMessage(ctx, backendDb, config);
   });
   bot.on("callback_query:data", async (ctx) => {
-    if (!isAdmin(config, ctx.from?.id)) return void (await ctx.answerCallbackQuery({ text: "Forbidden" }));
+    if (!isAdmin(config, ctx.from?.id))
+      return void (await ctx.answerCallbackQuery({ text: t(botLocale(backendDb, Number(ctx.from?.id)), "bot.forbidden") }));
     if (await handlePostScreenCallback(ctx, backendDb, config)) return;
     if (ctx.callbackQuery.data === "queue_home") {
       await ctx.answerCallbackQuery();
