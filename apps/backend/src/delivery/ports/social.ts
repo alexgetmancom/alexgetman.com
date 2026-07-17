@@ -1,5 +1,6 @@
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
+import { log } from "../../foundation/logger.js";
 import { isCapabilityReady } from "../../observability/capabilities.js";
 import type { PublishResult } from "../../publishing/errors.js";
 import { platformProfile } from "../../publishing/platform-profiles.js";
@@ -122,6 +123,7 @@ async function withPreparedMedia(
   // before Story rendering; that redundant step can otherwise stall a Story
   // before it ever reaches the Media Processing Port.
   const storySource = isStoryTarget(job.target) ? media.slice(0, 1) : media;
+  if (isStoryTarget(job.target)) log("info", "story delivery preparation started", { jobId: job.jobId, target: job.target });
   const sourceMedia = isStoryTarget(job.target) ? await createStoryMedia(job, storySource, config) : media;
   const key = mediaCacheKey(job, sourceMedia, config);
   // One preparation per (post, target, media) within a delivery cycle. The
