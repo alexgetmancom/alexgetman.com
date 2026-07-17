@@ -7,7 +7,7 @@ interface Props {
   ui: StoryUi;
 }
 
-const { activePost, paragraphs } = Astro.props;
+const { activePost, paragraphs, ui } = Astro.props;
 
 const wordsCount = paragraphs.join(" ").split(/\s+/).length;
 const readingTimeMin = Math.max(1, Math.ceil(wordsCount / 180));
