@@ -16,8 +16,32 @@ export function deploymentRollbackCallback(target: string, revision: string): st
 }
 
 export function parseDeploymentRollbackCallback(value: string): DeploymentRollback | null {
-  const [action, target, revision, extra] = value.split(":");
-  if (action !== "deploy_rollback" || extra !== undefined || !target || !revision) return null;
+  return parseDeploymentCallback(value, "deploy_rollback");
+}
+
+export function deploymentPromoteCallback(target: string, revision: string): string {
+  if (!targetPattern.test(target)) throw new Error("deployment target must be a short lowercase identifier");
+  if (!releasePattern.test(revision)) throw new Error("deployment revision must be a Git SHA");
+  return `deploy_promote:${target}:${revision}`;
+}
+
+export function parseDeploymentPromoteCallback(value: string): DeploymentRollback | null {
+  return parseDeploymentCallback(value, "deploy_promote");
+}
+
+// Ask-then-confirm callbacks. Kept under a short prefix (not "deploy_rollback_ask")
+// so the 64-byte callback_data budget still fits a full 40-character Git SHA.
+export function parseDeploymentRollbackAskCallback(value: string): DeploymentRollback | null {
+  return parseDeploymentCallback(value, "deploy_rb_ask");
+}
+
+export function parseDeploymentPromoteAskCallback(value: string): DeploymentRollback | null {
+  return parseDeploymentCallback(value, "deploy_pr_ask");
+}
+
+function parseDeploymentCallback(value: string, action: string): DeploymentRollback | null {
+  const [receivedAction, target, revision, extra] = value.split(":");
+  if (receivedAction !== action || extra !== undefined || !target || !revision) return null;
   return targetPattern.test(target) && releasePattern.test(revision) ? { target, revision } : null;
 }
 
@@ -28,18 +52,6 @@ export async function requestDeploymentRollback(
   fetchImpl: FetchImplementation = fetch,
 ): Promise<DeploymentRollbackResult> {
   return requestDeploymentAgent(config, "rollback", target, revision, fetchImpl);
-}
-
-export function deploymentPromoteCallback(target: string, revision: string): string {
-  if (!targetPattern.test(target)) throw new Error("deployment target must be a short lowercase identifier");
-  if (!releasePattern.test(revision)) throw new Error("deployment revision must be a Git SHA");
-  return `deploy_promote:${target}:${revision}`;
-}
-
-export function parseDeploymentPromoteCallback(value: string): DeploymentRollback | null {
-  const [action, target, revision, extra] = value.split(":");
-  if (action !== "deploy_promote" || extra !== undefined || !target || !revision) return null;
-  return targetPattern.test(target) && releasePattern.test(revision) ? { target, revision } : null;
 }
 
 /** Deploys to `target` the exact release already proven healthy on alex.
@@ -68,7 +80,10 @@ async function requestDeploymentAgent(
       method: "POST",
       headers: { authorization: `Bearer ${config.DEPLOY_AGENT_TOKEN}`, "content-type": "application/json" },
       body: JSON.stringify({ release: revision }),
-      signal: AbortSignal.timeout(15_000),
+      // The agent's own healthcheck loop alone runs up to 90s; leave enough
+      // margin for the image pull and container recreate around it so a slow
+      // deploy reports its real outcome instead of a false "unavailable".
+      signal: AbortSignal.timeout(150_000),
     });
     const body = (await response.json().catch(() => null)) as {
       ok?: unknown;

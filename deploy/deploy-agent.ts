@@ -165,10 +165,12 @@ async function activate(deploymentTarget: DeploymentTarget, image: string): Prom
 async function notify(text: string, deploymentTarget: DeploymentTarget, release?: string, offerPromoteTo?: string): Promise<void> {
   if (!config.notificationToken || !config.notificationChatId) return;
   const buttons: { text: string; callback_data: string }[][] = [];
+  // The bot asks for confirmation before actually acting, so these point at
+  // the short "_ask" callbacks rather than the ones that execute directly.
   if (release)
-    buttons.push([{ text: `Откатить ${deploymentTarget.name}`, callback_data: `deploy_rollback:${deploymentTarget.name}:${release}` }]);
+    buttons.push([{ text: `Откатить ${deploymentTarget.name}`, callback_data: `deploy_rb_ask:${deploymentTarget.name}:${release}` }]);
   if (release && offerPromoteTo)
-    buttons.push([{ text: `Раскатить ${offerPromoteTo}`, callback_data: `deploy_promote:${offerPromoteTo}:${release}` }]);
+    buttons.push([{ text: `Раскатить ${offerPromoteTo}`, callback_data: `deploy_pr_ask:${offerPromoteTo}:${release}` }]);
   const reply_markup = buttons.length > 0 ? { inline_keyboard: buttons } : undefined;
   await fetch(`${config.notificationApiBaseUrl.replace(/\/$/, "")}/bot${config.notificationToken}/sendMessage`, {
     method: "POST",

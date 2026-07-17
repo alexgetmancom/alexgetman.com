@@ -3,7 +3,9 @@ import { loadConfig } from "../src/foundation/config.js";
 import {
   deploymentPromoteCallback,
   deploymentRollbackCallback,
+  parseDeploymentPromoteAskCallback,
   parseDeploymentPromoteCallback,
+  parseDeploymentRollbackAskCallback,
   parseDeploymentRollbackCallback,
   requestDeploymentPromote,
   requestDeploymentRollback,
@@ -17,6 +19,12 @@ describe("deployment rollback protocol", () => {
     expect(parseDeploymentRollbackCallback(`deploy_rollback:maru:${revision}`)).toEqual({ target: "maru", revision });
     expect(parseDeploymentRollbackCallback("deploy_rollback:maru:latest")).toBeNull();
     expect(() => deploymentRollbackCallback("maru", "latest")).toThrow("Git SHA");
+  });
+
+  it("parses the confirm-first ask callback, distinct from the executing one", () => {
+    expect(parseDeploymentRollbackAskCallback(`deploy_rb_ask:maru:${revision}`)).toEqual({ target: "maru", revision });
+    expect(parseDeploymentRollbackAskCallback(`deploy_rollback:maru:${revision}`)).toBeNull();
+    expect(parseDeploymentRollbackCallback(`deploy_rb_ask:maru:${revision}`)).toBeNull();
   });
 
   it("forwards an authenticated rollback request to the private agent", async () => {
@@ -54,6 +62,12 @@ describe("deployment promote protocol", () => {
     expect(parseDeploymentPromoteCallback(`deploy_promote:maru:${revision}`)).toEqual({ target: "maru", revision });
     expect(parseDeploymentPromoteCallback("deploy_promote:maru:latest")).toBeNull();
     expect(() => deploymentPromoteCallback("maru", "latest")).toThrow("Git SHA");
+  });
+
+  it("parses the confirm-first ask callback, distinct from the executing one", () => {
+    expect(parseDeploymentPromoteAskCallback(`deploy_pr_ask:maru:${revision}`)).toEqual({ target: "maru", revision });
+    expect(parseDeploymentPromoteAskCallback(`deploy_promote:maru:${revision}`)).toBeNull();
+    expect(parseDeploymentPromoteCallback(`deploy_pr_ask:maru:${revision}`)).toBeNull();
   });
 
   it("forwards an authenticated promote request to the private agent", async () => {
