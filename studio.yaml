@@ -12,6 +12,10 @@ modules:
   instagram: false
   analytics: true
 
+analytics:
+  # The primary analytics card for this Studio. Maru uses "video".
+  default_tab: posts
+
 video:
   prepare_lead_minutes: 15
   reminder_minutes: 5

@@ -14,5 +14,3 @@ export function operationsService(backendDb: BackendDb, config: BackendConfig) {
     command: (input: OperationsCommand, fetchImpl?: typeof fetch) => runOperationCommand(backendDb, input, config, fetchImpl),
   };
 }
-
-export type OperationsService = ReturnType<typeof operationsService>;

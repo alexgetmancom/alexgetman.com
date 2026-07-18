@@ -9,6 +9,7 @@ import { metricNumber } from "./snapshots/creator-store.js";
  * into JS and reducing it there. */
 
 export type VideoMetricRow = { platform: string; label: string; metrics: Record<string, unknown> };
+type VideoContentMetrics = { views: number; likes: number; comments: number; shares: number; saves: number };
 
 /** NUL joins composite map keys so account display names (which can contain any
  * printable character) never collide with the separator. */
@@ -92,7 +93,12 @@ export function latestVideoMetrics(backendDb: BackendDb, since: string): VideoMe
   return rows.flatMap((row) => {
     const latest = JSON.parse(row.latest_metrics) as Record<string, unknown>;
     const baseline = row.baseline_metrics ? (JSON.parse(row.baseline_metrics) as Record<string, unknown>) : null;
-    if (!baseline && !(row.published_at != null && row.published_at >= since)) return [];
+    const publishedInPeriod = row.published_at != null && row.published_at >= since;
+    if (!baseline && !publishedInPeriod) return [];
+    // A provider migration can leave a synthetic all-zero baseline for an
+    // older video. Treating its lifetime count as this period's performance is
+    // worse than temporarily omitting it, so wait for a real observation.
+    if (!publishedInPeriod && baseline && !Object.values(baseline).some((value) => metricNumber(value) > 0)) return [];
     const metrics = Object.fromEntries(
       Object.entries(latest).map(([key, value]) => [key, Math.max(0, metricNumber(value) - metricNumber(baseline?.[key]))]),
     );
@@ -100,9 +106,20 @@ export function latestVideoMetrics(backendDb: BackendDb, since: string): VideoMe
   });
 }
 
-export function videoTotals(backendDb: BackendDb, since: string): { views: number; interactions: number } {
-  const rows = latestVideoMetrics(backendDb, since);
-  return { views: sum(rows, "views"), interactions: sum(rows, "likes") + sum(rows, "comments") };
+/** Per-platform video metrics for the selected period. `shares` is the Share
+ * action (Instagram sends / YouTube share button), never a repost. */
+export function videoContentMetricsByPlatform(backendDb: BackendDb, since: string): Map<string, VideoContentMetrics> {
+  const totals = new Map<string, VideoContentMetrics>();
+  for (const row of latestVideoMetrics(backendDb, since)) {
+    const value = totals.get(row.platform) ?? { views: 0, likes: 0, comments: 0, shares: 0, saves: 0 };
+    value.views += metricNumber(row.metrics.views);
+    value.likes += metricNumber(row.metrics.likes);
+    value.comments += metricNumber(row.metrics.comments);
+    value.shares += metricNumber(row.metrics.shares);
+    value.saves += metricNumber(row.metrics.saves);
+    totals.set(row.platform, value);
+  }
+  return totals;
 }
 
 export function sum(rows: VideoMetricRow[], field: string): number {

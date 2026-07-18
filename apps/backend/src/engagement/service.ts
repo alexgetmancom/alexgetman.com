@@ -29,5 +29,3 @@ export function engagementService(backendDb: BackendDb, config: BackendConfig) {
     toggleLike: (request: Request, postId: string) => toggleLike(backendDb, postId, clientKey(request)),
   };
 }
-
-export type EngagementService = ReturnType<typeof engagementService>;

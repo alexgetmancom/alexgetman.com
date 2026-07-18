@@ -17,7 +17,7 @@ export function startTelegramWorkers(config: BackendConfig, backendDb: BackendDb
       if (completed) log("info", "album drafts finalized", { completed });
     }),
     startLoop("telegram-events", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
-      const events = await consumeTelegramEvents(backendDb, bot, config.VIDEO_REMINDER_MINUTES);
+      const events = await consumeTelegramEvents(backendDb, bot, config);
       const adminId = config.ADMIN_IDS[0];
       const alerts = await deliverPendingAlerts(config, backendDb, {
         ...(adminId === undefined ? {} : { sendAlert: async (text) => void (await bot.api.sendMessage(adminId, text)) }),

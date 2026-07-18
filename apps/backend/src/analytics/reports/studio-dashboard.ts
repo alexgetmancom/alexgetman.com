@@ -1,9 +1,9 @@
 import type { BackendDb } from "../../db/client.js";
-import { analyticsSync, creatorProfiles } from "../../db/schema.js";
+import { creatorProfiles } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import type { StudioLocale as BotLocale } from "../../foundation/locale.js";
 import { t } from "../../interfaces/telegram/i18n/index.js";
-import { audienceGrowthByAccount, siteTotal, textTotals, videoTotals } from "../metric-deltas.js";
+import { audienceGrowthByAccount, KEY_SEP, siteTotal, textTotals, videoContentMetricsByPlatform } from "../metric-deltas.js";
 import { metricNumber } from "../snapshots/creator-store.js";
 
 type AnalyticsSection = "overview" | "audience" | "posts" | "video";
@@ -11,13 +11,13 @@ type AnalyticsPeriod = 1 | 7 | 30;
 
 type StudioAnalyticsDashboard = {
   text: string;
+  richMarkdown: string;
   hasComments: boolean;
 };
 
 /**
- * Compact, transport-neutral creator analytics for Studio surfaces. It deliberately
- * keeps platform detail out of the first card; Telegram, web and MCP can request
- * a section or an individual archive item afterwards.
+ * Transport-neutral creator analytics. Telegram renders `richMarkdown` through
+ * its Rich Message API, while text remains useful to web and MCP callers.
  */
 export function studioAnalyticsDashboard(
   backendDb: BackendDb,
@@ -28,21 +28,18 @@ export function studioAnalyticsDashboard(
 ): StudioAnalyticsDashboard {
   const since = new Date(Date.now() - days * 24 * 60 * 60_000).toISOString();
   const post = config.studio.modules.text_posting ? textTotals(backendDb, since) : emptyTotals();
-  const video = config.studio.modules.video_posting ? videoTotals(backendDb, since) : emptyTotals();
   const siteViews = config.studio.modules.site ? siteTotal(backendDb, since) : 0;
   const period = periodLabel(days, locale);
   const lines = [header(section, period, locale)];
 
   if (section === "overview") {
-    const followers = socialFollowers(backendDb, config);
-    if (followers != null) lines.push(`${t(locale, "sdash.followers-across")}: *${followers}*`);
-    const growth = audienceGrowth(backendDb, since, config);
-    if (growth != null) lines.push(`${t(locale, "sdash.follower-growth", { period })}: *${growth >= 0 ? "+" : ""}${growth}*`);
-    lines.push(`${t(locale, "sdash.content-views")}: *${post.views + video.views}*`);
-    lines.push(`${t(locale, "sdash.interactions")}: *${post.interactions + video.interactions}*`);
+    lines.push(...audienceTable(backendDb, config, locale));
+    if (config.studio.modules.video_posting) lines.push(...videoContentTable(backendDb, config, since, days, period, locale));
+    if (config.studio.modules.text_posting)
+      lines.push(
+        `\n📝 ${t(locale, "sdash.header-posts", { period })}: *${post.views}* ${t(locale, "report.views")} · *${post.interactions}* ${t(locale, "sdash.interactions").toLowerCase()}`,
+      );
     if (config.studio.modules.site) lines.push(`${t(locale, "sdash.site-material-views")}: *${siteViews}*`);
-    const stale = staleSources(backendDb);
-    if (stale.length) lines.push(`\n⚠️ ${t(locale, "sdash.data-attention")}: ${stale.join(", ")}`);
   } else if (section === "audience") {
     const profiles = audienceProfiles(backendDb, config, since, period, locale);
     lines.push(...(profiles.length ? profiles : [t(locale, "sdash.no-audience")]));
@@ -51,17 +48,12 @@ export function studioAnalyticsDashboard(
     lines.push(`${t(locale, "sdash.interactions")}: *${post.interactions}*`);
     if (config.studio.modules.site) lines.push(`${t(locale, "sdash.site-material-views")}: *${siteViews}*`);
   } else {
-    lines.push(`${t(locale, "sdash.video-views")}: *${video.views}*`);
-    lines.push(`${t(locale, "sdash.interactions")}: *${video.interactions}*`);
-  }
-
-  const coverage = earliestMeasurement(backendDb, config, section);
-  if (coverage && coverage > since) {
-    lines.push(`\n⚠️ ${t(locale, "sdash.coverage-warning", { date: formatDate(coverage, locale), period })}`);
+    lines.push(...videoContentTable(backendDb, config, since, days, period, locale));
   }
   const updatedAt = latestMeasurement(backendDb, config, section);
-  if (updatedAt) lines.push(`\n${t(locale, "report.updated")}: ${formatDateTime(updatedAt, locale)}`);
-  return { text: lines.join("\n"), hasComments: hasAudienceComments(backendDb) };
+  if (updatedAt) lines.push(`\n<footer>⟳ ${t(locale, "report.updated")}: ${formatDateTime(updatedAt, locale)}</footer>`);
+  const text = lines.join("\n");
+  return { text, richMarkdown: text, hasComments: hasAudienceComments(backendDb) };
 }
 
 function header(section: AnalyticsSection, period: string, locale: BotLocale): string {
@@ -113,28 +105,112 @@ function audienceProfiles(backendDb: BackendDb, config: BackendConfig, since: st
     });
 }
 
-function periodLabel(days: AnalyticsPeriod, locale: BotLocale): string {
-  if (days === 1) return t(locale, "report.period-today");
-  return t(locale, "report.period-days", { days });
-}
-
-function socialFollowers(backendDb: BackendDb, config: BackendConfig): number | null {
-  if (!config.studio.modules.analytics) return null;
-  const values = backendDb.db
+function audienceTable(backendDb: BackendDb, config: BackendConfig, locale: BotLocale): string[] {
+  const profiles = backendDb.db
     .select()
     .from(creatorProfiles)
     .all()
-    .filter((row) => enabledAudiencePlatforms(config).has(row.platform))
-    .map((row) => metricNumber(row.dataJson.subscriberCount ?? row.dataJson.followersCount));
-  return values.length ? values.reduce((total, value) => total + value, 0) : null;
+    .filter((row) => enabledAudiencePlatforms(config).has(row.platform));
+  if (!profiles.length) return [];
+  const labels: Record<string, string> = { instagram: "Instagram", youtube: "YouTube", telegram: "Telegram" };
+  const growth = ([1, 7, 30] as const).map((days) =>
+    audienceGrowthByAccount(backendDb, new Date(Date.now() - days * 86_400_000).toISOString()),
+  );
+  const rows = profiles
+    .sort((left, right) => (labels[left.platform] ?? left.platform).localeCompare(labels[right.platform] ?? right.platform))
+    .map((row) => {
+      const current = metricNumber(row.dataJson.subscriberCount ?? row.dataJson.followersCount);
+      const values = growth.map((periodGrowth) => sumAccountGrowth(periodGrowth, row.platform));
+      return { label: labels[row.platform] ?? row.platform, current, values };
+    });
+  const total = {
+    label: locale === "ru" ? "Все" : "All",
+    current: rows.reduce((sum, row) => sum + row.current, 0),
+    values: [0, 1, 2].map((index) => rows.reduce((sum, row) => sum + (row.values[index] ?? 0), 0)),
+  };
+  return [
+    `\n## ${locale === "ru" ? "Подписчики" : "Followers"}`,
+    `| ${locale === "ru" ? "Площадка" : "Platform"} | ${locale === "ru" ? "Сейчас" : "Now"} | ${locale === "ru" ? "Сегодня" : "Today"} | 7 ${locale === "ru" ? "д" : "d"} | 30 ${locale === "ru" ? "д" : "d"} |`,
+    "|:--|--:|--:|--:|--:|",
+    ...[total, ...rows].map(
+      (row) =>
+        `| ${row.label} | ${metricNumber(row.current)} | ${signed(row.values[0] ?? 0)} | ${signed(row.values[1] ?? 0)} | ${signed(row.values[2] ?? 0)} |`,
+    ),
+  ];
 }
 
-function audienceGrowth(backendDb: BackendDb, since: string, config: BackendConfig): number | null {
-  const platforms = enabledAudiencePlatforms(config);
-  const values = [...audienceGrowthByAccount(backendDb, since).entries()]
-    .filter(([key]) => platforms.has(key.split("\u0000", 1)[0] ?? ""))
-    .map(([, value]) => value);
-  return values.length ? values.reduce((total, value) => total + value, 0) : null;
+function videoContentTable(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  since: string,
+  days: AnalyticsPeriod,
+  period: string,
+  locale: BotLocale,
+): string[] {
+  const values = videoContentMetricsByPlatform(backendDb, since);
+  const accountMetrics = new Map(
+    backendDb.db
+      .select()
+      .from(creatorProfiles)
+      .all()
+      .map((row) => [row.platform, contentMetricsFromProfile(row.dataJson, days)]),
+  );
+  const rows = [
+    ...(config.studio.modules.instagram
+      ? [{ label: "Instagram", value: accountMetrics.get("instagram") ?? values.get("instagram_reels") }]
+      : []),
+    ...(config.studio.modules.youtube ? [{ label: "YouTube", value: accountMetrics.get("youtube") ?? values.get("youtube_shorts") }] : []),
+  ].map(({ label, value }) => ({ label, value: value ?? { views: 0, likes: 0, comments: 0, shares: 0, saves: 0 } }));
+  const total = rows.reduce(
+    (sum, row) => ({
+      views: sum.views + row.value.views,
+      likes: sum.likes + row.value.likes,
+      comments: sum.comments + row.value.comments,
+      shares: sum.shares + row.value.shares,
+      saves: sum.saves + row.value.saves,
+    }),
+    { views: 0, likes: 0, comments: 0, shares: 0, saves: 0 },
+  );
+  const all = locale === "ru" ? "Все" : "All";
+  return [
+    `\n## ${locale === "ru" ? "Контент" : "Content"} · ${period}`,
+    `| ${locale === "ru" ? "Площадка" : "Platform"} | 👁 | ♥ | 💬 | ↗ | 🔖 |`,
+    "|:--|--:|--:|--:|--:|--:|",
+    ...[{ label: all, value: total }, ...rows].map(
+      (row) =>
+        `| ${row.label} | ${row.value.views} | ${row.value.likes} | ${row.value.comments} | ${row.value.shares} | ${row.label === "YouTube" ? "—" : row.value.saves} |`,
+    ),
+  ];
+}
+
+function contentMetricsFromProfile(
+  data: Record<string, unknown>,
+  days: 1 | 7 | 30,
+): { views: number; likes: number; comments: number; shares: number; saves: number } | undefined {
+  const suffix = `${days}d`;
+  const value = (name: string): unknown => data[`${name}${suffix}`] ?? (days === 30 ? data[name] : undefined);
+  const views = value("views");
+  if (views == null) return undefined;
+  return {
+    views: metricNumber(views),
+    likes: metricNumber(value("likes")),
+    comments: metricNumber(value("comments")),
+    shares: metricNumber(value("shares")),
+    saves: metricNumber(value("saves")),
+  };
+}
+
+function sumAccountGrowth(values: Map<string, number>, platform: string): number {
+  return [...values.entries()].filter(([key]) => key.startsWith(`${platform}${KEY_SEP}`)).reduce((sum, [, value]) => sum + value, 0);
+}
+
+function signed(value: number): string {
+  return `${value >= 0 ? "+" : ""}${value}`;
+}
+
+function periodLabel(days: AnalyticsPeriod, locale: BotLocale): string {
+  if (days === 1) return t(locale, "report.period-today");
+  return t(locale, "report.period-days", { days });
 }
 
 /** Audience is shown only for platforms this Studio actually publishes to.
@@ -149,41 +225,12 @@ function enabledAudiencePlatforms(config: BackendConfig): Set<string> {
   return platforms;
 }
 
-/** Current projection minus the last observation at or before the selected period.
- * A profile with no baseline is intentionally omitted instead of pretending that
- * its lifetime follower number is growth. */
-function staleSources(backendDb: BackendDb): string[] {
-  return backendDb.db
-    .select()
-    .from(analyticsSync)
-    .all()
-    .filter((row) => row.lastError)
-    .map((row) => row.source)
-    .slice(0, 3);
-}
-
 function hasAudienceComments(backendDb: BackendDb): boolean {
   return backendDb.sqlite.prepare("SELECT 1 FROM social_comments LIMIT 1").get() != null;
 }
 
 function emptyTotals(): { views: number; interactions: number } {
   return { views: 0, interactions: 0 };
-}
-
-function earliestMeasurement(backendDb: BackendDb, config: BackendConfig, section: AnalyticsSection): string | null {
-  const candidates: string[] = [];
-  if (section !== "video" && (config.studio.modules.text_posting || config.studio.modules.site)) {
-    const where = section === "posts" ? "target NOT LIKE 'site_%'" : "1=1";
-    const value = backendDb.sqlite.prepare(`SELECT MIN(sampled_at) AS value FROM metric_samples WHERE ${where}`).get() as {
-      value: string | null;
-    };
-    if (value.value) candidates.push(value.value);
-  }
-  if (section !== "posts" && config.studio.modules.video_posting) {
-    const value = backendDb.sqlite.prepare("SELECT MIN(sampled_at) AS value FROM video_metric_snapshots").get() as { value: string | null };
-    if (value.value) candidates.push(value.value);
-  }
-  return candidates.sort()[0] ?? null;
 }
 
 function latestMeasurement(backendDb: BackendDb, config: BackendConfig, section: AnalyticsSection): string | null {
@@ -200,12 +247,6 @@ function latestMeasurement(backendDb: BackendDb, config: BackendConfig, section:
     if (value.value) candidates.push(value.value);
   }
   return candidates.sort().at(-1) ?? null;
-}
-
-function formatDate(value: string, locale: BotLocale): string {
-  return new Intl.DateTimeFormat(locale === "ru" ? "ru-RU" : "en-GB", { day: "numeric", month: "short", timeZone: "Europe/Moscow" }).format(
-    new Date(value),
-  );
 }
 
 function formatDateTime(value: string, locale: BotLocale): string {

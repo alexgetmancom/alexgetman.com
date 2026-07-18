@@ -53,7 +53,7 @@ export function creatorVideoMetrics(backendDb: BackendDb, videoDraftId: number, 
     const expanded =
       row.target === "instagram_reels" && ["reach", "shares", "saves", "follows", "averageWatchTimeMs"].some((key) => metrics[key] != null)
         ? locale === "ru"
-          ? `\nохват: ${metricNumber(metrics.reach)} · репосты: ${metricNumber(metrics.shares)} · сохранения: ${metricNumber(metrics.saves)} · подписки: ${metricNumber(metrics.follows)} · среднее: ${(metricNumber(metrics.averageWatchTimeMs) / 1000).toFixed(1)} с`
+          ? `\nохват: ${metricNumber(metrics.reach)} · пересылки: ${metricNumber(metrics.shares)} · сохранения: ${metricNumber(metrics.saves)} · подписки: ${metricNumber(metrics.follows)} · среднее: ${(metricNumber(metrics.averageWatchTimeMs) / 1000).toFixed(1)} с`
           : `\nreach: ${metricNumber(metrics.reach)} · shares: ${metricNumber(metrics.shares)} · saves: ${metricNumber(metrics.saves)} · follows: ${metricNumber(metrics.follows)} · avg watch: ${(metricNumber(metrics.averageWatchTimeMs) / 1000).toFixed(1)} s`
         : "";
     lines.push(

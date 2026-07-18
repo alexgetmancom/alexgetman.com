@@ -27,6 +27,14 @@ type ZernioAccount = { _id?: string; username?: string; displayName?: string; fo
 type ZernioAccounts = { accounts?: ZernioAccount[] } | ZernioAccount[];
 type ZernioInsights = { metrics?: Record<string, { total?: number }> };
 
+function studioAudiencePlatforms(config: BackendConfig): string[] {
+  return [
+    ...(config.studio.modules.text_posting ? ["telegram"] : []),
+    ...(config.studio.modules.video_posting && config.studio.modules.youtube ? ["youtube"] : []),
+    ...(config.studio.modules.video_posting && config.studio.modules.instagram ? ["instagram"] : []),
+  ];
+}
+
 /** Runs one platform sync and records its outcome; every platform below funnels through
  * this so a new integration can't forget the success/failure timestamp update. */
 async function synced(backendDb: BackendDb, source: string, run: () => Promise<void>): Promise<void> {
@@ -48,30 +56,44 @@ export async function syncYouTubeProfile(config: BackendConfig, backendDb: Backe
       { headers: auth },
     );
     const channelItem = channel.items?.[0];
-    const period = await youtubeReport(fetchImpl, token);
+    const [today, week, period] = await Promise.all([
+      youtubeReport(fetchImpl, token, 1),
+      youtubeReport(fetchImpl, token, 7),
+      youtubeReport(fetchImpl, token, 30),
+    ]);
     recordProfileSnapshot(backendDb, {
       platform: "youtube",
       account: channelItem?.snippet?.title ?? "channel",
       source: "youtube_data_api",
+      audiencePlatforms: studioAudiencePlatforms(config),
       metrics: {
         title: channelItem?.snippet?.title ?? "YouTube",
         subscriberCount: metricNumber(channelItem?.statistics?.subscriberCount),
         viewCount: metricNumber(channelItem?.statistics?.viewCount),
         videoCount: metricNumber(channelItem?.statistics?.videoCount),
         ...period,
+        ...periodMetrics(today, 1),
+        ...periodMetrics(week, 7),
       },
     });
   });
 }
 
-async function youtubeReport(fetchImpl: typeof fetch, token: string): Promise<Record<string, number>> {
+function periodMetrics(metrics: Record<string, number>, days: 1 | 7): Record<string, number> {
+  return Object.fromEntries(Object.entries(metrics).map(([name, value]) => [`${name}${days}d`, value]));
+}
+
+async function youtubeReport(fetchImpl: typeof fetch, token: string, days = 30): Promise<Record<string, number>> {
   const end = new Date().toISOString().slice(0, 10);
-  const start = new Date(Date.now() - 30 * 24 * 60 * 60_000).toISOString().slice(0, 10);
+  const start = new Date(Date.now() - days * 24 * 60 * 60_000).toISOString().slice(0, 10);
   const url = new URL("https://youtubeanalytics.googleapis.com/v2/reports");
   url.searchParams.set("ids", "channel==MINE");
   url.searchParams.set("startDate", start);
   url.searchParams.set("endDate", end);
-  url.searchParams.set("metrics", "views,likes,comments,estimatedMinutesWatched,averageViewDuration,subscribersGained,subscribersLost");
+  url.searchParams.set(
+    "metrics",
+    "views,likes,comments,shares,estimatedMinutesWatched,averageViewDuration,subscribersGained,subscribersLost",
+  );
   const report = await requestJson<YouTubeReport>(fetchImpl, url.toString(), {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -97,6 +119,7 @@ export async function syncInstagramProfile(config: BackendConfig, backendDb: Bac
       platform: "instagram",
       account: profileData.username ?? "instagram",
       source: "instagram_graph_api",
+      audiencePlatforms: studioAudiencePlatforms(config),
       metrics: {
         username: profileData.username ?? "Instagram",
         biography: profileData.biography ?? "",
@@ -114,13 +137,11 @@ async function syncZernioInstagramProfile(config: BackendConfig, backendDb: Back
   const accounts = await requestJson<ZernioAccounts>(fetchImpl, "https://zernio.com/api/v1/accounts", { headers });
   const account = (Array.isArray(accounts) ? accounts : (accounts.accounts ?? [])).find((item) => item._id === route.accountId);
   if (!account) throw new Error("Zernio Instagram account was not found");
-  const query = new URLSearchParams({
-    accountId: route.accountId,
-    metrics: "reach,views,accounts_engaged,total_interactions,comments,likes,saves,shares,profile_links_taps",
-  });
-  const insights = await requestJson<ZernioInsights>(fetchImpl, `https://zernio.com/api/v1/analytics/instagram/account-insights?${query}`, {
-    headers,
-  });
+  const [todayInsights, weekInsights, insights] = await Promise.all([
+    zernioInsights(fetchImpl, headers, route.accountId, 1),
+    zernioInsights(fetchImpl, headers, route.accountId, 7),
+    zernioInsights(fetchImpl, headers, route.accountId, 30),
+  ]);
   const history = await requestJson<ZernioInsights>(
     fetchImpl,
     `https://zernio.com/api/v1/analytics/instagram/follower-history?${new URLSearchParams({ accountId: route.accountId })}`,
@@ -131,6 +152,7 @@ async function syncZernioInstagramProfile(config: BackendConfig, backendDb: Back
     platform: "instagram",
     account: account.username ?? route.accountId,
     source: "zernio",
+    audiencePlatforms: studioAudiencePlatforms(config),
     metrics: {
       username: account.username ?? account.displayName ?? "Instagram",
       // Zernio's follower-history series starts only after its daily snapshotter
@@ -148,9 +170,31 @@ async function syncZernioInstagramProfile(config: BackendConfig, backendDb: Back
       comments30d: metric("comments"),
       saves30d: metric("saves"),
       shares30d: metric("shares"),
+      reposts30d: metric("reposts"),
       profileLinksTaps30d: metric("profile_links_taps"),
+      ...zernioPeriodMetrics(todayInsights, 1),
+      ...zernioPeriodMetrics(weekInsights, 7),
     },
   });
+}
+
+async function zernioInsights(
+  fetchImpl: typeof fetch,
+  headers: Record<string, string>,
+  accountId: string,
+  days: 1 | 7 | 30,
+): Promise<ZernioInsights> {
+  const query = new URLSearchParams({
+    accountId,
+    metrics: "reach,views,accounts_engaged,total_interactions,comments,likes,saves,shares,reposts,profile_links_taps",
+    since: new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10),
+    until: new Date().toISOString().slice(0, 10),
+  });
+  return requestJson<ZernioInsights>(fetchImpl, `https://zernio.com/api/v1/analytics/instagram/account-insights?${query}`, { headers });
+}
+
+function zernioPeriodMetrics(insights: ZernioInsights, days: 1 | 7): Record<string, number> {
+  return Object.fromEntries(Object.entries(insights.metrics ?? {}).map(([name, value]) => [`${name}${days}d`, metricNumber(value.total)]));
 }
 
 type FacebookPage = { name?: string; followers_count?: number; fan_count?: number; talking_about_count?: number };

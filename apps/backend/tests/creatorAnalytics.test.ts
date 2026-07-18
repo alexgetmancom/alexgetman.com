@@ -379,8 +379,7 @@ describe("creator analytics", () => {
       const posts = studioAnalyticsDashboard(backendDb, config, "posts", 1, "ru").text;
 
       expect(overview).toContain("Общая статистика · сегодня");
-      expect(overview).toContain("Просмотры контента: *24*");
-      expect(overview).toContain("Взаимодействия: *5*");
+      expect(overview).toContain("Постинг · сегодня: *24* просмотров · *5*");
       expect(posts).toContain("Постинг · сегодня");
       expect(posts).toContain("Просмотры постов: *24*");
       expect(posts).not.toContain("Видеопостинг");
@@ -409,7 +408,7 @@ describe("creator analytics", () => {
 
       const overview = studioAnalyticsDashboard(backendDb, config, "overview", 7, "ru").text;
       const audience = studioAnalyticsDashboard(backendDb, config, "audience", 7, "ru").text;
-      expect(overview).toContain("Подписчики по площадкам: *426*");
+      expect(overview).toContain("| Все | 426 |");
       expect(overview).not.toContain("556");
       expect(audience).toContain("Instagram");
       expect(audience).toContain("YouTube");
@@ -419,7 +418,7 @@ describe("creator analytics", () => {
     }
   });
 
-  it("tells the user when a requested analytics period predates collected history", () => {
+  it("keeps the overview compact when a requested period predates collected history", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const now = new Date().toISOString();
@@ -431,8 +430,7 @@ describe("creator analytics", () => {
       config.studio.modules.text_posting = true;
 
       const dashboard = studioAnalyticsDashboard(backendDb, config, "posts", 30, "en").text;
-      expect(dashboard).toContain("History has been collected since");
-      expect(dashboard).toContain("comparison is not complete yet");
+      expect(dashboard).not.toContain("History has been collected since");
     } finally {
       backendDb.close();
     }

@@ -425,32 +425,32 @@ const studioToolDefs = {
       days: z.union([z.literal(1), z.literal(7), z.literal(30)]).optional(),
       locale: localeSchema.optional(),
     }),
-    handler: (studio, actorId, input) => studio.analytics.dashboard(input.section ?? "overview", input.days ?? 7, input.locale ?? "ru"),
+    handler: (studio, _actorId, input) => studio.analytics.dashboard(input.section ?? "overview", input.days ?? 7, input.locale ?? "ru"),
   }),
   studio_analytics_post_archive: tool({
     description: "Read a page of post analytics archive.",
     schema: z.object({ offset: z.number().int().min(0).max(10_000).optional(), locale: localeSchema.optional() }),
-    handler: (studio, actorId, input) => studio.analytics.postArchive(input.offset ?? 0, input.locale ?? "ru"),
+    handler: (studio, _actorId, input) => studio.analytics.postArchive(input.offset ?? 0, input.locale ?? "ru"),
   }),
   studio_analytics_post_metrics: tool({
     description: "Read analytics for one published post.",
     schema: z.object({ post_id: positiveInt, locale: localeSchema.optional() }),
-    handler: (studio, actorId, input) => studio.analytics.postMetrics(input.post_id, input.locale ?? "ru"),
+    handler: (studio, _actorId, input) => studio.analytics.postMetrics(input.post_id, input.locale ?? "ru"),
   }),
   studio_analytics_video_archive: tool({
     description: "Read a page of video analytics archive.",
     schema: z.object({ offset: z.number().int().min(0).max(10_000).optional(), locale: localeSchema.optional() }),
-    handler: (studio, actorId, input) => studio.analytics.videoArchive(input.offset ?? 0, input.locale ?? "ru"),
+    handler: (studio, _actorId, input) => studio.analytics.videoArchive(input.offset ?? 0, input.locale ?? "ru"),
   }),
   studio_analytics_video_metrics: tool({
     description: "Read analytics for one video draft.",
     schema: z.object({ video_draft_id: positiveInt, locale: localeSchema.optional() }),
-    handler: (studio, actorId, input) => studio.analytics.videoMetrics(input.video_draft_id, input.locale ?? "ru"),
+    handler: (studio, _actorId, input) => studio.analytics.videoMetrics(input.video_draft_id, input.locale ?? "ru"),
   }),
   studio_analytics_audience: tool({
     description: "Read the creator audience analysis.",
     schema: z.object({ locale: localeSchema.optional() }),
-    handler: (studio, actorId, input) => studio.analytics.audienceAnalysis(input.locale ?? "ru"),
+    handler: (studio, _actorId, input) => studio.analytics.audienceAnalysis(input.locale ?? "ru"),
   }),
 };
 

@@ -3,6 +3,7 @@ import type { Bot } from "grammy";
 import { refreshPostControlCard } from "../../bot/progress.js";
 import type { BackendDb } from "../../db/client.js";
 import { alertDedup, drafts, postEvents } from "../../db/schema.js";
+import type { BackendConfig } from "../../foundation/config.js";
 import {
   notifyFinalVideoFailure,
   refreshVideoControlCard,
@@ -24,6 +25,7 @@ const TELEGRAM_EVENT_TYPES = [
   "studio.notification.reminder.due",
   "delivery.post.completed",
   "delivery.video.completed",
+  "analytics.milestone.reached",
 ];
 // Telegram is an immediate interface, not an archival notification transport.
 // Older undelivered events remain in the durable audit journal, but must never
@@ -37,7 +39,7 @@ const REMINDER_EVENT_MAX_AGE_MS = 30 * 60 * 1000;
 const OUTCOME_EVENT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 /** Consumes durable domain events and renders Telegram-only side effects once. */
-export async function consumeTelegramEvents(backendDb: BackendDb, bot: Bot | null, reminderMinutes: number): Promise<number> {
+export async function consumeTelegramEvents(backendDb: BackendDb, bot: Bot | null, config: BackendConfig): Promise<number> {
   if (!bot) return 0;
   // Filter in SQL, before LIMIT. Filtering after LIMIT starves new events once
   // the first page is occupied by historically delivered Telegram effects.
@@ -77,12 +79,14 @@ export async function consumeTelegramEvents(backendDb: BackendDb, bot: Bot | nul
       await sendStudioReminder(backendDb, bot, { ...event, detailsJson: details });
     } else if (event.eventType === "delivery.post.completed" || event.eventType === "delivery.video.completed") {
       await sendStudioCompletion(backendDb, bot, { ...event, detailsJson: details });
+    } else if (event.eventType === "analytics.milestone.reached") {
+      for (const adminId of config.ADMIN_IDS) await bot.api.sendMessage(adminId, event.message);
     } else if (event.eventType === "delivery.post.settled" || event.eventType.startsWith("publish.job.")) {
       const postId = numberDetail(details, "post_id") ?? postIdFromRef(event.postKey);
       const draft = postId == null ? null : backendDb.db.select({ id: drafts.id }).from(drafts).where(eq(drafts.postId, postId)).get();
       if (draft) await refreshPostControlCard(backendDb, bot, draft.id);
     } else if (event.eventType === "video.reminder.due" && videoDraftId != null)
-      await sendVideoReminder(backendDb, bot, videoDraftId, videoTargetId, reminderMinutes);
+      await sendVideoReminder(backendDb, bot, videoDraftId, videoTargetId, config.VIDEO_REMINDER_MINUTES);
     else if (event.eventType === "video.target.failed" && videoDraftId != null)
       await notifyFinalVideoFailure(backendDb, bot, videoDraftId, videoTargetId);
     else if (videoDraftId != null) await refreshVideoControlCard(backendDb, bot, videoDraftId);

@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import type { BackendDb } from "../../db/client.js";
-import { analyticsSync, creatorProfileSnapshots, creatorProfiles, socialComments } from "../../db/schema.js";
+import { alertDedup, analyticsSync, creatorProfileSnapshots, creatorProfiles, postEvents, socialComments } from "../../db/schema.js";
 
 const DAILY_SYNC_MS = 24 * 60 * 60_000;
 
@@ -33,10 +33,63 @@ function upsertProfile(backendDb: BackendDb, platform: string, data: Record<stri
     .run();
 }
 
+const FOLLOWER_MILESTONES = [100, 250, 500, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10_000];
+
+function followerCount(data: Record<string, unknown> | undefined): number {
+  return metricNumber(data?.subscriberCount ?? data?.followersCount);
+}
+
+function recordMilestone(backendDb: BackendDb, scope: string, threshold: number, message: string, target: string): void {
+  const key = `analytics:milestone:${scope}:${threshold}`;
+  if (backendDb.db.select().from(alertDedup).where(eq(alertDedup.alertKey, key)).get()) return;
+  const now = new Date().toISOString();
+  backendDb.db.insert(alertDedup).values({ alertKey: key, lastSentAt: now, suppressedCount: 0 }).run();
+  backendDb.db
+    .insert(postEvents)
+    .values({ eventType: "analytics.milestone.reached", severity: "info", target, message, createdAt: now })
+    .run();
+}
+
+function recordFollowerMilestones(
+  backendDb: BackendDb,
+  platform: string,
+  next: Record<string, unknown>,
+  audiencePlatforms: readonly string[] | undefined,
+): void {
+  const previous = backendDb.db.select().from(creatorProfiles).where(eq(creatorProfiles.platform, platform)).get();
+  const before = followerCount(previous?.dataJson);
+  const after = followerCount(next);
+  if (after <= before) return;
+  const platformLabel = platform === "youtube" ? "YouTube" : platform === "instagram" ? "Instagram" : platform;
+  for (const threshold of FOLLOWER_MILESTONES)
+    if (before < threshold && after >= threshold)
+      recordMilestone(backendDb, platform, threshold, `🎉 ${platformLabel}: ${threshold} подписчиков!`, platform);
+  const platforms = new Set(audiencePlatforms ?? []);
+  if (!platforms.has(platform)) return;
+  const totalBefore = backendDb.db
+    .select()
+    .from(creatorProfiles)
+    .all()
+    .filter((row) => platforms.has(row.platform))
+    .reduce((sum, row) => sum + followerCount(row.dataJson), 0);
+  const totalAfter = totalBefore - before + after;
+  for (const threshold of FOLLOWER_MILESTONES)
+    if (totalBefore < threshold && totalAfter >= threshold)
+      recordMilestone(backendDb, "total", threshold, `🏆 Всего: ${threshold} подписчиков на площадках!`, "audience");
+}
+
 /** Saves the current profile projection and a single UTC-day observation. */
 export function recordProfileSnapshot(
   backendDb: BackendDb,
-  input: { platform: string; account: string; metrics: Record<string, unknown>; source: string; sampledAt?: Date },
+  input: {
+    platform: string;
+    account: string;
+    metrics: Record<string, unknown>;
+    source: string;
+    /** Exact Studio-owned platforms that count toward the combined milestone. */
+    audiencePlatforms?: readonly string[];
+    sampledAt?: Date;
+  },
 ): void {
   const sampledAt = input.sampledAt ?? new Date();
   const timestamp = sampledAt.toISOString();
@@ -55,6 +108,7 @@ export function recordProfileSnapshot(
       set: { metricsJson: input.metrics, source: input.source, sampledAt: timestamp },
     })
     .run();
+  recordFollowerMilestones(backendDb, input.platform, input.metrics, input.audiencePlatforms);
   upsertProfile(backendDb, input.platform, input.metrics);
 }
 

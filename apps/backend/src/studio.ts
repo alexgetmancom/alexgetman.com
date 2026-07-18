@@ -16,6 +16,13 @@ const studioSchema = z.object({
     })
     .partial()
     .default({}),
+  analytics: z
+    .object({
+      /** First analytics card to open. This is a Studio decision, not a UI guess. */
+      default_tab: z.enum(["overview", "posts", "video"]).default("overview"),
+    })
+    .partial()
+    .default({}),
   video: z
     .object({
       prepare_lead_minutes: z.number().int().min(1).max(120).default(15),
@@ -37,6 +44,7 @@ export type StudioConfig = {
   timezone: string;
   timezoneLabel: string;
   modules: { site: boolean; text_posting: boolean; video_posting: boolean; youtube: boolean; instagram: boolean; analytics: boolean };
+  analytics: { defaultTab: "overview" | "posts" | "video" };
   video: { prepare_lead_minutes: number; reminder_minutes: number; retention_hours: number };
   commandCenter: { defaultMode: "posts" | "video" };
 };
@@ -55,6 +63,7 @@ export function loadStudioConfig(path = process.env.STUDIO_CONFIG ?? "studio.yam
       instagram: parsed.modules.instagram ?? false,
       analytics: parsed.modules.analytics ?? true,
     },
+    analytics: { defaultTab: parsed.analytics.default_tab ?? "overview" },
     video: {
       prepare_lead_minutes: parsed.video.prepare_lead_minutes ?? 15,
       reminder_minutes: parsed.video.reminder_minutes ?? 5,

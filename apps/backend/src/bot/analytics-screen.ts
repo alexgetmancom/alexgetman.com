@@ -17,7 +17,7 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
   }
   if (data === "analytics_home") {
     await ctx.answerCallbackQuery();
-    await showAnalyticsDashboard(ctx, backendDb, config, "overview", 7);
+    await showAnalyticsDashboard(ctx, backendDb, config, defaultAnalyticsSection(config), 1);
     return true;
   }
   if (data === "archive_home") {
@@ -152,7 +152,14 @@ async function showAnalyticsDashboard(
   if (section === "video" && dashboard.hasComments && config.DEEPSEEK_API_KEY)
     keyboard.row().text(t(locale, "analytics.ai-analysis"), "analytics_ai");
   keyboard.row().text(t(locale, "common.menu"), "menu_home");
-  await ctx.editMessageText(dashboard.text, { parse_mode: "Markdown", reply_markup: keyboard });
+  await ctx.editMessageText({ markdown: dashboard.richMarkdown }, { reply_markup: keyboard });
+}
+
+function defaultAnalyticsSection(config: BackendConfig): AnalyticsSection {
+  const preferred = config.studio.analytics.defaultTab;
+  if (preferred === "posts" && config.studio.modules.text_posting) return preferred;
+  if (preferred === "video" && config.studio.modules.video_posting) return preferred;
+  return "overview";
 }
 
 function periodButtonLabel(locale: ReturnType<typeof botLocale>, period: 1 | 7 | 30, selected: 1 | 7 | 30): string {
