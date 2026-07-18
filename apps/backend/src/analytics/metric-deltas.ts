@@ -107,7 +107,8 @@ export function latestTextPostMetrics(backendDb: BackendDb, since: string): Text
        FROM posts p
        JOIN post_targets t ON t.post_key = p.post_key
        LEFT JOIN ranked_samples sample ON sample.post_key = t.post_key AND sample.target = t.target AND sample.rn = 1
-       WHERE t.status = 'published' AND t.published_at >= ? AND t.target NOT LIKE 'site_%'
+       WHERE t.status = 'published' AND COALESCE(t.published_at, p.date_utc, p.created_at) >= ?
+         AND t.target NOT LIKE 'site_%' AND t.target NOT LIKE '%stories%'
        ORDER BY t.published_at DESC, t.target ASC`,
     )
     .all(since, since) as Array<{

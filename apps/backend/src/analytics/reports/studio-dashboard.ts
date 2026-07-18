@@ -199,7 +199,6 @@ function unifiedAnalyticsTable(
   const all = locale === "ru" ? "Все" : "All";
   return [
     `👥 ${locale === "ru" ? "Подписчики" : "Followers"} ${totalFollowers}${platformSummary ? ` · ${platformSummary}` : ""}`,
-    locale === "ru" ? `Аккаунт · ${periodLabel(days, locale)}` : `Account · ${periodLabel(days, locale)}`,
     `| ${locale === "ru" ? "Площадка" : "Platform"} | 👤 | 👁 | ♥ | 💬 | ↗ | 🔖 |`,
     "|:--|--:|--:|--:|--:|--:|--:|",
     ...[
@@ -210,32 +209,23 @@ function unifiedAnalyticsTable(
         `| ${row.label} | ${row.growth == null ? "—" : signed(row.growth)} | ${row.value.views} | ${row.value.likes} | ${row.value.comments} | ${row.value.shares} | ${row.platform === "youtube" ? "—" : row.value.saves} |`,
     ),
     ...(section === "posts"
-      ? publishedPostTable(backendDb, config, since, days, locale)
-      : publishedVideoTable(backendDb, config, section, since, days, locale)),
+      ? publishedPostTable(backendDb, config, since, locale)
+      : publishedVideoTable(backendDb, config, section, since, locale)),
   ];
 }
 
-function publishedPostTable(
-  backendDb: BackendDb,
-  config: BackendConfig,
-  since: string,
-  days: AnalyticsPeriod,
-  locale: BotLocale,
-): string[] {
+function publishedPostTable(backendDb: BackendDb, config: BackendConfig, since: string, locale: BotLocale): string[] {
   if (!config.studio.modules.text_posting) return [];
-  const rows = latestTextPostMetrics(backendDb, since).filter((row) => enabledAudiencePlatforms(config).has(row.platform));
+  const rows = latestTextPostMetrics(backendDb, since).filter((row) => Object.keys(row.metrics).length > 0);
   if (!rows.length) return [];
-  const title = locale === "ru" ? `Новые посты · ${periodLabel(days, locale)}` : `New posts · ${periodLabel(days, locale)}`;
+  const values = rows.map(contentMetrics);
+  const total = sumContentMetrics(values);
+  const all = locale === "ru" ? "Все" : "All";
   return [
-    title,
-    `| ${locale === "ru" ? "Пост · площадка" : "Post · platform"} | 👁 | ♥ | 💬 | ↗ | 🔖 |`,
+    `| ${locale === "ru" ? "Пост" : "Post"} | 👁 | ♥ | 💬 | ↗ | 🔖 |`,
     "|:--|--:|--:|--:|--:|--:|",
-    ...rows.map((row) => {
-      const metrics = row.metrics;
-      const comments = metricNumber(metrics.comments) + metricNumber(metrics.replies);
-      const shares = metricNumber(metrics.reposts) + metricNumber(metrics.shares);
-      return `| ${shortLabel(row.label)} · ${platformIcon(row.platform)} | ${metricNumber(metrics.views)} | ${metricNumber(metrics.likes)} | ${comments} | ${shares || "—"} | ${metricNumber(metrics.saves) || "—"} |`;
-    }),
+    `| ${all} | ${total.views} | ${total.likes} | ${total.comments} | ${dash(total.shares)} | ${dash(total.saves)} |`,
+    ...rows.map((row) => contentRow(`${shortLabel(row.label)} · ${platformIcon(row.platform)}`, contentMetrics(row))),
   ];
 }
 
@@ -266,7 +256,6 @@ function publishedVideoTable(
   config: BackendConfig,
   section: Exclude<AnalyticsSection, "audience">,
   since: string,
-  days: AnalyticsPeriod,
   locale: BotLocale,
 ): string[] {
   if (section === "posts" || !config.studio.modules.video_posting) return [];
@@ -279,17 +268,49 @@ function publishedVideoTable(
     )
     .sort((left, right) => (right.publishedAt ?? "").localeCompare(left.publishedAt ?? ""));
   if (!rows.length) return [];
-  const title = locale === "ru" ? `Новые видео · ${periodLabel(days, locale)}` : `New videos · ${periodLabel(days, locale)}`;
+  const values = rows.map((row) => contentMetrics(row));
+  const total = sumContentMetrics(values);
+  const all = locale === "ru" ? "Все" : "All";
   return [
-    title,
-    `| ${locale === "ru" ? "Видео · площадка" : "Video · platform"} | 👁 | ♥ | 💬 | ↗ | 🔖 |`,
+    `| ${locale === "ru" ? "Видео" : "Video"} | 👁 | ♥ | 💬 | ↗ | 🔖 |`,
     "|:--|--:|--:|--:|--:|--:|",
+    `| ${all} | ${total.views} | ${total.likes} | ${total.comments} | ${dash(total.shares)} | ${dash(total.saves)} |`,
     ...rows.map((row) => {
       const platform = row.platform === "instagram_reels" ? "instagram" : "youtube";
-      const metrics = row.metrics;
-      return `| ${shortLabel(row.label)} · ${platformIcon(platform)} | ${metricNumber(metrics.views)} | ${metricNumber(metrics.likes)} | ${metricNumber(metrics.comments)} | ${metricNumber(metrics.shares) || "—"} | ${platform === "youtube" ? "—" : metricNumber(metrics.saves) || "—"} |`;
+      return contentRow(`${shortLabel(row.label)} · ${platformIcon(platform)}`, contentMetrics(row), platform === "youtube");
     }),
   ];
+}
+
+function contentMetrics(row: { metrics: Record<string, unknown> }): ContentMetrics {
+  return {
+    views: metricNumber(row.metrics.views),
+    likes: metricNumber(row.metrics.likes),
+    comments: metricNumber(row.metrics.comments) + metricNumber(row.metrics.replies),
+    shares: metricNumber(row.metrics.shares) + metricNumber(row.metrics.reposts),
+    saves: metricNumber(row.metrics.saves),
+  };
+}
+
+function sumContentMetrics(values: ContentMetrics[]): ContentMetrics {
+  return values.reduce(
+    (sum, value) => ({
+      views: sum.views + value.views,
+      likes: sum.likes + value.likes,
+      comments: sum.comments + value.comments,
+      shares: sum.shares + value.shares,
+      saves: sum.saves + value.saves,
+    }),
+    emptyMetrics(),
+  );
+}
+
+function contentRow(label: string, metrics: ContentMetrics, hidesSaves = false): string {
+  return `| ${label} | ${metrics.views} | ${metrics.likes} | ${metrics.comments} | ${dash(metrics.shares)} | ${hidesSaves ? "—" : dash(metrics.saves)} |`;
+}
+
+function dash(value: number): string {
+  return value === 0 ? "—" : String(value);
 }
 
 function shortLabel(value: string): string {
@@ -313,13 +334,18 @@ function platformLabel(platform: string): string {
     {
       bluesky: "Bluesky",
       devto: "Dev.to",
+      facebook: "Facebook EN",
       facebook_en: "Facebook EN",
       facebook_ru: "Facebook RU",
       github: "GitHub",
+      github_en: "GitHub EN",
+      github_ru: "GitHub RU",
       instagram: "Instagram",
       mastodon: "Mastodon",
       telegram: "Telegram",
       threads: "Threads",
+      threads_en: "Threads EN",
+      threads_ru: "Threads RU",
       x: "X",
       youtube: "YouTube",
     }[platform] ?? platform
@@ -331,13 +357,18 @@ function platformIcon(platform: string): string {
     {
       bluesky: "🦋",
       devto: "📝",
+      facebook: "ⓕ",
       facebook_en: "ⓕ",
       facebook_ru: "ⓕ",
       github: "🐙",
+      github_en: "🐙",
+      github_ru: "🐙",
       instagram: "📸",
       mastodon: "🐘",
       telegram: "✈️",
       threads: "@",
+      threads_en: "@",
+      threads_ru: "@",
       x: "𝕏",
       youtube: "▶️",
     }[platform] ?? "•"

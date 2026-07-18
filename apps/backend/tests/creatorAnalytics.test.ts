@@ -460,9 +460,10 @@ describe("creator analytics", () => {
       config.studio.modules.instagram = true;
 
       const dashboard = studioAnalyticsDashboard(backendDb, config, "video", 1, "ru");
-      expect(dashboard.text).toContain("Аккаунт · сегодня");
+      expect(dashboard.text).not.toContain("Аккаунт ·");
       expect(dashboard.text).toContain("| 📸 Instagram | +0 | 63394 | 1227");
-      expect(dashboard.text).toContain("Новые видео · сегодня");
+      expect(dashboard.text).toContain("| Видео | 👁 | ♥ | 💬 | ↗ | 🔖 |");
+      expect(dashboard.text).toContain("| Все | 200 | 20 | 0 | 7 | 5 |");
       expect(dashboard.text).toContain("| Симулятор… · 📸 | 200 | 20 | 0 | 7 | 5 |");
       expect(dashboard.richHtml.match(/<table bordered striped>/g)?.length).toBe(2);
     } finally {
@@ -476,12 +477,17 @@ describe("creator analytics", () => {
       const now = new Date().toISOString();
       backendDb.db
         .insert(posts)
-        .values({ postKey: "post:1", channel: "telegram", messageId: 1, text: "Релиз новой функции", createdAt: now, updatedAt: now })
+        .values({
+          postKey: "post:1",
+          channel: "telegram",
+          messageId: 1,
+          text: "Релиз новой функции",
+          dateUtc: now,
+          createdAt: now,
+          updatedAt: now,
+        })
         .run();
-      backendDb.db
-        .insert(postTargets)
-        .values({ postKey: "post:1", target: "telegram", status: "published", publishedAt: now, updatedAt: now })
-        .run();
+      backendDb.db.insert(postTargets).values({ postKey: "post:1", target: "telegram", status: "published", updatedAt: now }).run();
       backendDb.db
         .insert(metricSamples)
         .values([
@@ -494,7 +500,8 @@ describe("creator analytics", () => {
       config.studio.modules.text_posting = true;
 
       const dashboard = studioAnalyticsDashboard(backendDb, config, "posts", 1, "ru");
-      expect(dashboard.text).toContain("Новые посты · сегодня");
+      expect(dashboard.text).toContain("| Пост | 👁 | ♥ | 💬 | ↗ | 🔖 |");
+      expect(dashboard.text).toContain("| Все | 200 | 20 | 0 | 7 | — |");
       expect(dashboard.text).toContain("| Релиз нов… · ✈️ | 200 | 20 | 0 | 7 | — |");
       expect(dashboard.richHtml.match(/<table bordered striped>/g)?.length).toBe(2);
     } finally {
