@@ -209,7 +209,7 @@ const en = {
   "analytics.video-section": "🎬 Video",
   "analytics.video-section-active": "• Video",
   "analytics.archive-btn": "📚 Archive",
-  "analytics.ai-analysis": "🤖 AI audience analysis",
+  "analytics.ai-analysis": "🤖 AI analysis",
   "analytics.prev": "← Previous",
   "analytics.next": "Next →",
   // Video preview card
@@ -586,7 +586,7 @@ const ru = {
   "analytics.video-section": "🎬 Видео",
   "analytics.video-section-active": "• Видео",
   "analytics.archive-btn": "📚 Архив",
-  "analytics.ai-analysis": "🤖 ИИ-анализ аудитории",
+  "analytics.ai-analysis": "🤖 ИИ-анализ",
   "analytics.prev": "← Назад",
   "analytics.next": "Вперёд →",
   // Video preview card

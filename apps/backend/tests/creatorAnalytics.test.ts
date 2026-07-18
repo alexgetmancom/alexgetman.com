@@ -378,10 +378,10 @@ describe("creator analytics", () => {
       const overview = studioAnalyticsDashboard(backendDb, config, "overview", 1, "ru").text;
       const posts = studioAnalyticsDashboard(backendDb, config, "posts", 1, "ru").text;
 
-      expect(overview).toContain("Общая статистика · сегодня");
-      expect(overview).toContain("Постинг · сегодня: *24* просмотров · *5*");
-      expect(posts).toContain("Постинг · сегодня");
-      expect(posts).toContain("Просмотры постов: *24*");
+      expect(overview).not.toContain("Общая статистика");
+      expect(overview).toContain("| Telegram | 24 | 5 | 0 | 0 | 0 |");
+      expect(posts).toContain("Контент · сегодня");
+      expect(posts).toContain("| Все | 24 | 5 | 0 | 0 | 0 |");
       expect(posts).not.toContain("Видеопостинг");
     } finally {
       backendDb.close();

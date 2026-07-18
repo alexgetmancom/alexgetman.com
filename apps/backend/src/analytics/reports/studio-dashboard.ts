@@ -3,7 +3,14 @@ import { creatorProfiles } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import type { StudioLocale as BotLocale } from "../../foundation/locale.js";
 import { t } from "../../interfaces/telegram/i18n/index.js";
-import { audienceGrowthByAccount, KEY_SEP, siteTotal, textTotals, videoContentMetricsByPlatform } from "../metric-deltas.js";
+import {
+  audienceGrowthByAccount,
+  type ContentMetrics,
+  KEY_SEP,
+  siteTotal,
+  textContentMetricsByPlatform,
+  videoContentMetricsByPlatform,
+} from "../metric-deltas.js";
 import { metricNumber } from "../snapshots/creator-store.js";
 
 type AnalyticsSection = "overview" | "audience" | "posts" | "video";
@@ -27,40 +34,30 @@ export function studioAnalyticsDashboard(
   locale: BotLocale,
 ): StudioAnalyticsDashboard {
   const since = new Date(Date.now() - days * 24 * 60 * 60_000).toISOString();
-  const post = config.studio.modules.text_posting ? textTotals(backendDb, since) : emptyTotals();
   const siteViews = config.studio.modules.site ? siteTotal(backendDb, since) : 0;
   const period = periodLabel(days, locale);
-  const lines = [header(section, period, locale)];
+  const updatedAt = latestMeasurement(backendDb, config, section);
+  const lines: string[] = [];
 
   if (section === "overview") {
-    lines.push(...audienceTable(backendDb, config, locale));
+    lines.push(...audienceTable(backendDb, config, locale, updatedAt));
     if (config.studio.modules.video_posting) lines.push(...videoContentTable(backendDb, config, since, days, period, locale));
-    if (config.studio.modules.text_posting)
-      lines.push(
-        `\n📝 ${t(locale, "sdash.header-posts", { period })}: *${post.views}* ${t(locale, "report.views")} · *${post.interactions}* ${t(locale, "sdash.interactions").toLowerCase()}`,
-      );
+    if (config.studio.modules.text_posting) lines.push(...textContentTable(backendDb, since, period, locale));
     if (config.studio.modules.site) lines.push(`${t(locale, "sdash.site-material-views")}: *${siteViews}*`);
   } else if (section === "audience") {
+    lines.push(`👥 *${t(locale, "sdash.header-audience", { period })}*`);
     const profiles = audienceProfiles(backendDb, config, since, period, locale);
     lines.push(...(profiles.length ? profiles : [t(locale, "sdash.no-audience")]));
   } else if (section === "posts") {
-    lines.push(`${t(locale, "sdash.post-views")}: *${post.views}*`);
-    lines.push(`${t(locale, "sdash.interactions")}: *${post.interactions}*`);
+    lines.push(...audienceTable(backendDb, config, locale, updatedAt));
+    lines.push(...textContentTable(backendDb, since, period, locale));
     if (config.studio.modules.site) lines.push(`${t(locale, "sdash.site-material-views")}: *${siteViews}*`);
   } else {
+    lines.push(...audienceTable(backendDb, config, locale, updatedAt));
     lines.push(...videoContentTable(backendDb, config, since, days, period, locale));
   }
-  const updatedAt = latestMeasurement(backendDb, config, section);
-  if (updatedAt) lines.push(`\n<footer>⟳ ${t(locale, "report.updated")}: ${formatDateTime(updatedAt, locale)}</footer>`);
   const text = lines.join("\n");
   return { text, richMarkdown: text, hasComments: hasAudienceComments(backendDb) };
-}
-
-function header(section: AnalyticsSection, period: string, locale: BotLocale): string {
-  if (section === "audience") return `👥 *${t(locale, "sdash.header-audience", { period })}*`;
-  if (section === "posts") return `📝 *${t(locale, "sdash.header-posts", { period })}*`;
-  if (section === "video") return `🎬 *${t(locale, "sdash.header-video", { period })}*`;
-  return `📊 *${t(locale, "sdash.header-overview", { period })}*`;
 }
 
 function audienceProfiles(backendDb: BackendDb, config: BackendConfig, since: string, period: string, locale: BotLocale): string[] {
@@ -105,7 +102,7 @@ function audienceProfiles(backendDb: BackendDb, config: BackendConfig, since: st
     });
 }
 
-function audienceTable(backendDb: BackendDb, config: BackendConfig, locale: BotLocale): string[] {
+function audienceTable(backendDb: BackendDb, config: BackendConfig, locale: BotLocale, updatedAt: string | null): string[] {
   const profiles = backendDb.db
     .select()
     .from(creatorProfiles)
@@ -129,7 +126,7 @@ function audienceTable(backendDb: BackendDb, config: BackendConfig, locale: BotL
     values: [0, 1, 2].map((index) => rows.reduce((sum, row) => sum + (row.values[index] ?? 0), 0)),
   };
   return [
-    `\n## ${locale === "ru" ? "Подписчики" : "Followers"}`,
+    `${locale === "ru" ? "Подписчики" : "Followers"}${updatedAt ? ` · ⟳ ${formatDateTime(updatedAt, locale)}` : ""}`,
     `| ${locale === "ru" ? "Площадка" : "Platform"} | ${locale === "ru" ? "Сейчас" : "Now"} | ${locale === "ru" ? "Сегодня" : "Today"} | 7 ${locale === "ru" ? "д" : "d"} | 30 ${locale === "ru" ? "д" : "d"} |`,
     "|:--|--:|--:|--:|--:|",
     ...[total, ...rows].map(
@@ -157,10 +154,37 @@ function videoContentTable(
   );
   const rows = [
     ...(config.studio.modules.instagram
-      ? [{ label: "Instagram", value: accountMetrics.get("instagram") ?? values.get("instagram_reels") }]
+      ? [{ label: "Instagram", value: preferLiveMetrics(accountMetrics.get("instagram"), values.get("instagram_reels")) }]
       : []),
-    ...(config.studio.modules.youtube ? [{ label: "YouTube", value: accountMetrics.get("youtube") ?? values.get("youtube_shorts") }] : []),
+    ...(config.studio.modules.youtube
+      ? [{ label: "YouTube", value: preferLiveMetrics(accountMetrics.get("youtube"), values.get("youtube_shorts")) }]
+      : []),
   ].map(({ label, value }) => ({ label, value: value ?? { views: 0, likes: 0, comments: 0, shares: 0, saves: 0 } }));
+  return contentTable(rows, period, locale);
+}
+
+function textContentTable(backendDb: BackendDb, since: string, period: string, locale: BotLocale): string[] {
+  const labels: Record<string, string> = {
+    telegram: "Telegram",
+    facebook_en: "Facebook EN",
+    facebook_ru: "Facebook RU",
+    threads: "Threads",
+    x: "X",
+    bluesky: "Bluesky",
+    mastodon: "Mastodon",
+    devto: "Dev.to",
+  };
+  return contentTable(
+    [...textContentMetricsByPlatform(backendDb, since).entries()].map(([platform, value]) => ({
+      label: labels[platform] ?? platform,
+      value,
+    })),
+    period,
+    locale,
+  );
+}
+
+function contentTable(rows: Array<{ label: string; value: ContentMetrics }>, period: string, locale: BotLocale): string[] {
   const total = rows.reduce(
     (sum, row) => ({
       views: sum.views + row.value.views,
@@ -173,7 +197,7 @@ function videoContentTable(
   );
   const all = locale === "ru" ? "Все" : "All";
   return [
-    `\n## ${locale === "ru" ? "Контент" : "Content"} · ${period}`,
+    `\n${locale === "ru" ? "Контент" : "Content"} · ${period}`,
     `| ${locale === "ru" ? "Площадка" : "Platform"} | 👁 | ♥ | 💬 | ↗ | 🔖 |`,
     "|:--|--:|--:|--:|--:|--:|",
     ...[{ label: all, value: total }, ...rows].map(
@@ -198,6 +222,14 @@ function contentMetricsFromProfile(
     shares: metricNumber(value("shares")),
     saves: metricNumber(value("saves")),
   };
+}
+
+/** YouTube Analytics can take a day to expose a just-published Short while
+ * the Data API snapshot already has its live counts. Prefer the latter only
+ * when the period aggregate is all zero. */
+function preferLiveMetrics(period: ContentMetrics | undefined, fallback: ContentMetrics | undefined): ContentMetrics | undefined {
+  if (period && (period.views > 0 || !fallback || fallback.views === 0)) return period;
+  return fallback ?? period;
 }
 
 function sumAccountGrowth(values: Map<string, number>, platform: string): number {
@@ -227,10 +259,6 @@ function enabledAudiencePlatforms(config: BackendConfig): Set<string> {
 
 function hasAudienceComments(backendDb: BackendDb): boolean {
   return backendDb.sqlite.prepare("SELECT 1 FROM social_comments LIMIT 1").get() != null;
-}
-
-function emptyTotals(): { views: number; interactions: number } {
-  return { views: 0, interactions: 0 };
 }
 
 function latestMeasurement(backendDb: BackendDb, config: BackendConfig, section: AnalyticsSection): string | null {

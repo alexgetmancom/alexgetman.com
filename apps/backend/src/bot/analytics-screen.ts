@@ -34,13 +34,14 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
   if (data === "analytics_total" || data.startsWith("analytics_period:")) {
     const days = data.startsWith("analytics_period:") ? Number(data.slice("analytics_period:".length)) : 7;
     await ctx.answerCallbackQuery();
-    await showAnalyticsDashboard(ctx, backendDb, config, "overview", analyticsPeriod(days));
+    await showAnalyticsDashboard(ctx, backendDb, config, defaultAnalyticsSection(config), analyticsPeriod(days));
     return true;
   }
   if (data.startsWith("analytics_section:")) {
     const [, sectionValue, daysValue] = data.split(":");
-    const section: AnalyticsSection =
+    const requested: AnalyticsSection =
       sectionValue === "audience" || sectionValue === "posts" || sectionValue === "video" ? sectionValue : "overview";
+    const section = requested === "overview" && !showOverview(config) ? defaultAnalyticsSection(config) : requested;
     await ctx.answerCallbackQuery();
     await showAnalyticsDashboard(ctx, backendDb, config, section, analyticsPeriod(Number(daysValue)));
     return true;
@@ -134,10 +135,11 @@ async function showAnalyticsDashboard(
     .text(periodButtonLabel(locale, 7, days), callback(7))
     .text(periodButtonLabel(locale, 30, days), callback(30))
     .row();
-  keyboard.text(
-    t(locale, section === "overview" ? "analytics.overview-active" : "analytics.overview"),
-    `analytics_section:overview:${days}`,
-  );
+  if (showOverview(config))
+    keyboard.text(
+      t(locale, section === "overview" ? "analytics.overview-active" : "analytics.overview"),
+      `analytics_section:overview:${days}`,
+    );
   if (config.studio.modules.text_posting)
     keyboard.text(
       t(locale, section === "posts" ? "analytics.posts-section-active" : "analytics.posts-section"),
@@ -149,8 +151,7 @@ async function showAnalyticsDashboard(
       `analytics_section:video:${days}`,
     );
   keyboard.row().text(t(locale, "analytics.archive-btn"), "archive_home");
-  if (section === "video" && dashboard.hasComments && config.DEEPSEEK_API_KEY)
-    keyboard.row().text(t(locale, "analytics.ai-analysis"), "analytics_ai");
+  if (dashboard.hasComments && config.DEEPSEEK_API_KEY) keyboard.text(t(locale, "analytics.ai-analysis"), "analytics_ai");
   keyboard.row().text(t(locale, "common.menu"), "menu_home");
   await ctx.editMessageText({ markdown: dashboard.richMarkdown }, { reply_markup: keyboard });
 }
@@ -160,6 +161,10 @@ function defaultAnalyticsSection(config: BackendConfig): AnalyticsSection {
   if (preferred === "posts" && config.studio.modules.text_posting) return preferred;
   if (preferred === "video" && config.studio.modules.video_posting) return preferred;
   return "overview";
+}
+
+function showOverview(config: BackendConfig): boolean {
+  return config.studio.modules.text_posting && config.studio.modules.video_posting;
 }
 
 function periodButtonLabel(locale: ReturnType<typeof botLocale>, period: 1 | 7 | 30, selected: 1 | 7 | 30): string {

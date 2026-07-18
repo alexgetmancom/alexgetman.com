@@ -9,7 +9,7 @@ import { metricNumber } from "./snapshots/creator-store.js";
  * into JS and reducing it there. */
 
 export type VideoMetricRow = { platform: string; label: string; metrics: Record<string, unknown> };
-type VideoContentMetrics = { views: number; likes: number; comments: number; shares: number; saves: number };
+export type ContentMetrics = { views: number; likes: number; comments: number; shares: number; saves: number };
 
 /** NUL joins composite map keys so account display names (which can contain any
  * printable character) never collide with the separator. */
@@ -66,6 +66,24 @@ function metricDeltasSince(backendDb: BackendDb, since: string, where: string): 
   return totals;
 }
 
+/** Text-post metric deltas grouped by delivery target. `reposts` is the
+ * platform's share/forward action and is rendered as “пересылки” in UI. */
+export function textContentMetricsByPlatform(backendDb: BackendDb, since: string): Map<string, ContentMetrics> {
+  const totals = new Map<string, ContentMetrics>();
+  for (const entry of metricSeriesSince(backendDb, since, "target NOT LIKE 'site_%'")) {
+    if (entry.baseline == null && entry.firstAt < since) continue;
+    const value = totals.get(entry.target) ?? { views: 0, likes: 0, comments: 0, shares: 0, saves: 0 };
+    const delta = Math.max(0, entry.latest - (entry.baseline ?? 0));
+    if (entry.metric === "views") value.views += delta;
+    else if (entry.metric === "likes") value.likes += delta;
+    else if (entry.metric === "comments" || entry.metric === "replies") value.comments += delta;
+    else if (entry.metric === "reposts") value.shares += delta;
+    else if (entry.metric === "saves") value.saves += delta;
+    totals.set(entry.target, value);
+  }
+  return totals;
+}
+
 export function textTotals(backendDb: BackendDb, since: string): { views: number; interactions: number } {
   const totals = metricDeltasSince(backendDb, since, "target NOT LIKE 'site_%'");
   return {
@@ -108,8 +126,8 @@ export function latestVideoMetrics(backendDb: BackendDb, since: string): VideoMe
 
 /** Per-platform video metrics for the selected period. `shares` is the Share
  * action (Instagram sends / YouTube share button), never a repost. */
-export function videoContentMetricsByPlatform(backendDb: BackendDb, since: string): Map<string, VideoContentMetrics> {
-  const totals = new Map<string, VideoContentMetrics>();
+export function videoContentMetricsByPlatform(backendDb: BackendDb, since: string): Map<string, ContentMetrics> {
+  const totals = new Map<string, ContentMetrics>();
   for (const row of latestVideoMetrics(backendDb, since)) {
     const value = totals.get(row.platform) ?? { views: 0, likes: 0, comments: 0, shares: 0, saves: 0 };
     value.views += metricNumber(row.metrics.views);
