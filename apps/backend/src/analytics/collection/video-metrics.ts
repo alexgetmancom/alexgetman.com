@@ -104,13 +104,20 @@ export async function runVideoMetricSchedule(config: BackendConfig, backendDb: B
   return tasks.length;
 }
 
+/** Only published targets that don't have a schedule row yet are new; the left
+ * join keeps this cheap regardless of how much publish history has piled up. */
 function ensureVideoMetricSchedule(backendDb: BackendDb): void {
   const now = new Date().toISOString();
   const targets = backendDb.db
     .select({ id: videoTargets.id, publishedAt: videoTargets.publishedAt })
     .from(videoTargets)
+    .leftJoin(videoMetricSchedule, eq(videoMetricSchedule.videoTargetId, videoTargets.id))
     .where(
-      and(eq(videoTargets.status, "published"), or(eq(videoTargets.target, "youtube_shorts"), eq(videoTargets.target, "instagram_reels"))),
+      and(
+        eq(videoTargets.status, "published"),
+        or(eq(videoTargets.target, "youtube_shorts"), eq(videoTargets.target, "instagram_reels")),
+        isNull(videoMetricSchedule.videoTargetId),
+      ),
     )
     .all();
   for (const target of targets) {
