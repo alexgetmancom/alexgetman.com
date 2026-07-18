@@ -41,6 +41,14 @@ export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb)
   return jobs.length;
 }
 
+/** Keeps target state updates consistent across the prepare/publish/fail/recovery paths. */
+function updateVideoTarget(db: BackendDb["db"], targetId: number, patch: Partial<typeof videoTargets.$inferInsert>): void {
+  db.update(videoTargets)
+    .set({ ...patch, updatedAt: new Date().toISOString() })
+    .where(eq(videoTargets.id, targetId))
+    .run();
+}
+
 function recordVideoCompletionIfFinal(backendDb: BackendDb, videoDraftId: number): void {
   const targets = backendDb.db
     .select({ status: videoTargets.status })
@@ -141,54 +149,28 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
         }
         return;
       }
-      backendDb.db
-        .update(videoTargets)
-        .set({
-          status: "prepared",
-          externalId: result.id,
-          externalUrl: result.url,
-          preparedAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        })
-        .where(eq(videoTargets.id, target.id))
-        .run();
+      updateVideoTarget(backendDb.db, target.id, {
+        status: "prepared",
+        externalId: result.id,
+        externalUrl: result.url,
+        preparedAt: new Date().toISOString(),
+      });
     } else if (target.deliveryProvider === "zernio") {
       // Zernio accepts the public video at its publish time, so prepare is a
       // local checkpoint only. Publishing early would violate the schedule.
       if (!target.providerAccountId) throw new Error("Zernio Instagram account is missing");
-      backendDb.db
-        .update(videoTargets)
-        .set({ status: "prepared", preparedAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
-        .where(eq(videoTargets.id, target.id))
-        .run();
+      updateVideoTarget(backendDb.db, target.id, { status: "prepared", preparedAt: new Date().toISOString() });
     } else {
       const result = await prepareInstagramReel(config, videoPublicUrl(backendDb, config, draft), metadata as InstagramMetadata);
       if (!ownsVideoJob(backendDb, job)) return;
-      backendDb.db
-        .update(videoTargets)
-        .set({
-          status: "prepared",
-          externalId: result.id,
-          preparedAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        })
-        .where(eq(videoTargets.id, target.id))
-        .run();
+      updateVideoTarget(backendDb.db, target.id, { status: "prepared", externalId: result.id, preparedAt: new Date().toISOString() });
     }
     return;
   }
   if (target.target === "youtube_shorts") {
     if (!target.externalId) throw new Error("YouTube upload has not completed yet.");
     if (!ownsVideoJob(backendDb, job)) return;
-    backendDb.db
-      .update(videoTargets)
-      .set({
-        status: "published",
-        publishedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      })
-      .where(eq(videoTargets.id, target.id))
-      .run();
+    updateVideoTarget(backendDb.db, target.id, { status: "published", publishedAt: new Date().toISOString() });
   } else if (target.deliveryProvider === "zernio") {
     const accountId = target.providerAccountId;
     if (!accountId) throw new Error("Zernio Instagram account is missing");
@@ -199,35 +181,25 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
       requestId: `video-target:${target.id}`,
     });
     if (!ownsVideoJob(backendDb, job)) return;
-    backendDb.db
-      .update(videoTargets)
-      .set({
-        status: "published",
-        providerPostId: result.providerPostId,
-        externalId: result.externalId,
-        externalUrl: result.url,
-        publishedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      })
-      .where(eq(videoTargets.id, target.id))
-      .run();
+    updateVideoTarget(backendDb.db, target.id, {
+      status: "published",
+      providerPostId: result.providerPostId,
+      externalId: result.externalId,
+      externalUrl: result.url,
+      publishedAt: new Date().toISOString(),
+    });
   } else {
     if (!target.externalId) throw new Error("Instagram upload has not completed yet.");
     await instagramContainerReady(config, target.externalId);
     if (!ownsVideoJob(backendDb, job)) return;
     const result = await publishInstagramReel(config, target.externalId);
     if (!ownsVideoJob(backendDb, job)) return;
-    backendDb.db
-      .update(videoTargets)
-      .set({
-        status: "published",
-        externalId: result.id,
-        externalUrl: result.url,
-        publishedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      })
-      .where(eq(videoTargets.id, target.id))
-      .run();
+    updateVideoTarget(backendDb.db, target.id, {
+      status: "published",
+      externalId: result.id,
+      externalUrl: result.url,
+      publishedAt: new Date().toISOString(),
+    });
   }
   refreshVideoDraftStatus(backendDb, draft.id, config.VIDEO_MEDIA_RETENTION_HOURS);
 }
@@ -280,11 +252,7 @@ function failVideoJob(backendDb: BackendDb, job: VideoJob, cause: unknown, confi
         .get();
       if (!updated) return;
       failed = true;
-      if (job.videoTargetId)
-        tx.update(videoTargets)
-          .set({ status: "prepared", lastError: null, updatedAt: now })
-          .where(eq(videoTargets.id, job.videoTargetId))
-          .run();
+      if (job.videoTargetId) updateVideoTarget(tx, job.videoTargetId, { status: "prepared", lastError: null });
     });
     return failed;
   }
@@ -309,53 +277,8 @@ function failVideoJob(backendDb: BackendDb, job: VideoJob, cause: unknown, confi
     if (!updated) return;
     failed = true;
     if (job.videoTargetId && cause instanceof InstagramContainerInvalidError && job.kind === "publish" && retry) {
-      tx.update(videoTargets)
-        .set({
-          status: "scheduled",
-          externalId: null,
-          externalUrl: null,
-          preparedAt: null,
-          lastError: error,
-          updatedAt: now,
-        })
-        .where(eq(videoTargets.id, job.videoTargetId))
-        .run();
-      tx.update(videoJobs)
-        .set({
-          status: "queued",
-          runAt: now,
-          attemptCount: 0,
-          nextAttemptAt: null,
-          lockedAt: null,
-          lockedBy: null,
-          lastError: null,
-          updatedAt: now,
-        })
-        .where(
-          and(eq(videoJobs.videoDraftId, job.videoDraftId), eq(videoJobs.videoTargetId, job.videoTargetId), eq(videoJobs.kind, "prepare")),
-        )
-        .run();
-      tx.update(videoJobs)
-        .set({
-          status: "queued",
-          attemptCount: attempts,
-          nextAttemptAt: new Date(Date.now() + 60_000).toISOString(),
-          lockedAt: null,
-          lockedBy: null,
-          lastError: error,
-          updatedAt: now,
-        })
-        .where(eq(videoJobs.id, job.id))
-        .run();
-    } else if (job.videoTargetId)
-      tx.update(videoTargets)
-        .set({
-          status: retry ? "scheduled" : "failed",
-          lastError: error,
-          updatedAt: now,
-        })
-        .where(eq(videoTargets.id, job.videoTargetId))
-        .run();
+      requeueInstagramPreparation(tx, job, error, now, attempts);
+    } else if (job.videoTargetId) updateVideoTarget(tx, job.videoTargetId, { status: retry ? "scheduled" : "failed", lastError: error });
   });
   if (!failed) return false;
   refreshVideoDraftStatus(backendDb, job.videoDraftId, config.VIDEO_MEDIA_RETENTION_HOURS);
@@ -375,6 +298,44 @@ function failVideoJob(backendDb: BackendDb, job: VideoJob, cause: unknown, confi
     });
   }
   return true;
+}
+
+/** Instagram containers can go stale between prepare and publish; re-run prepare
+ * from scratch instead of retrying the publish call against a dead container. */
+function requeueInstagramPreparation(tx: BackendDb["db"], job: VideoJob, error: string, now: string, attempts: number): void {
+  if (!job.videoTargetId) return;
+  updateVideoTarget(tx, job.videoTargetId, {
+    status: "scheduled",
+    externalId: null,
+    externalUrl: null,
+    preparedAt: null,
+    lastError: error,
+  });
+  tx.update(videoJobs)
+    .set({
+      status: "queued",
+      runAt: now,
+      attemptCount: 0,
+      nextAttemptAt: null,
+      lockedAt: null,
+      lockedBy: null,
+      lastError: null,
+      updatedAt: now,
+    })
+    .where(and(eq(videoJobs.videoDraftId, job.videoDraftId), eq(videoJobs.videoTargetId, job.videoTargetId), eq(videoJobs.kind, "prepare")))
+    .run();
+  tx.update(videoJobs)
+    .set({
+      status: "queued",
+      attemptCount: attempts,
+      nextAttemptAt: new Date(Date.now() + 60_000).toISOString(),
+      lockedAt: null,
+      lockedBy: null,
+      lastError: error,
+      updatedAt: now,
+    })
+    .where(eq(videoJobs.id, job.id))
+    .run();
 }
 
 function composeYouTubeDescription(backendDb: BackendDb, adminId: number, metadata: YouTubeMetadata): string {
@@ -409,10 +370,7 @@ export function recoverVideoLocks(backendDb: BackendDb, timeoutSeconds: number, 
       if (!updated) continue;
       recovered += 1;
       if (job.videoTargetId)
-        tx.update(videoTargets)
-          .set({ status: "failed", lastError: "stale video lock requires manual retry", updatedAt: now })
-          .where(eq(videoTargets.id, job.videoTargetId))
-          .run();
+        updateVideoTarget(tx, job.videoTargetId, { status: "failed", lastError: "stale video lock requires manual retry" });
     }
   });
   for (const job of stale) refreshVideoDraftStatus(backendDb, job.videoDraftId, retentionHours);

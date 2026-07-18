@@ -6,6 +6,9 @@ import { requestJson } from "../../foundation/http.js";
 import type { StudioLocale as BotLocale } from "../../foundation/locale.js";
 import { t } from "../../interfaces/telegram/i18n/index.js";
 
+const SYSTEM_PROMPT =
+  "You are a community editor. From these comments, write a concise report in English: 1) games or topics requested most often, 2) FAQ, 3) audience sentiment, 4) up to 3 ideas for the next Shorts/Reels. Use only these comments, do not invent facts or reveal author names, and use at most 10 bullet points.";
+
 export async function audienceAnalysis(
   backendDb: BackendDb,
   config: BackendConfig,
@@ -30,10 +33,7 @@ export async function audienceAnalysis(
         model: "deepseek-chat",
         temperature: 0.2,
         messages: [
-          {
-            role: "system",
-            content: t(locale, "audience.prompt"),
-          },
+          { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: comments.map((comment) => `[${comment.platform}] ${comment.text}`).join("\n") },
         ],
       }),

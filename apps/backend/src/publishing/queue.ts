@@ -7,7 +7,7 @@ import type { BackendDb } from "../db/client.js";
 import { drafts, type JsonObject, postEvents, postTargets, publications, publishJobs, siteJobs } from "../db/schema.js";
 import { insertPublishJobSchema } from "../db/validation.js";
 import type { BackendConfig } from "../foundation/config.js";
-import { nextRetryAt, normalizePublishResult, type PublishResult } from "./errors.js";
+import { normalizePublishResult, type PublishResult } from "./errors.js";
 import { failedJobTransition, reconciliationTransition } from "./job-policy.js";
 import { publicationStatus } from "./state.js";
 
@@ -111,28 +111,30 @@ export function recoverStalePublishJobs(backendDb: BackendDb, config: BackendCon
         .get();
       if (!updated) continue;
       const postKey = jobPostKey(job);
-      upsertPostTarget(tx, {
-        postKey,
-        target: job.target,
-        status: transition.status,
-        error,
-        skipped: 0,
-        updatedAt: now,
-        rawJson: JSON.stringify({ job_id: job.jobId, recovered_stale_lock: true }),
-      });
-      insertEvent(
+      settleJob(
         tx,
+        job.jobId,
+        null,
         postKey,
         job.target,
-        transition.status === "queued" ? "publish.job.retry" : "publish.job.failed",
-        transition.status === "queued" ? "warn" : "error",
-        error,
         {
-          job_id: job.jobId,
-          recovered_stale_lock: true,
-          error_class: transition.errorClass,
-          attempt: transition.attempt,
-          next_attempt_at: transition.nextAttemptAt,
+          status: transition.status,
+          error,
+          skipped: 0,
+          updatedAt: now,
+          rawJson: JSON.stringify({ job_id: job.jobId, recovered_stale_lock: true }),
+        },
+        {
+          type: transition.status === "queued" ? "publish.job.retry" : "publish.job.failed",
+          severity: transition.status === "queued" ? "warn" : "error",
+          message: error,
+          details: {
+            job_id: job.jobId,
+            recovered_stale_lock: true,
+            error_class: transition.errorClass,
+            attempt: transition.attempt,
+            next_attempt_at: transition.nextAttemptAt,
+          },
         },
       );
     }
@@ -152,116 +154,122 @@ export function completePublishJob(
   const job = backendDb.db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get();
   if (!job || (lockId != null && (job.status !== "publishing" || job.lockedBy !== lockId))) return;
   const postKey = jobPostKey(job);
+  // Threads partial-publish and generic reconciliation both resume from a set of
+  // external ids on the next attempt; they only differ in which payload key the
+  // platform's publisher reads back and in the event type recorded.
   if (result.partial && job.target.startsWith("threads")) {
     const ids = Array.isArray(result.ids) ? result.ids.map(String).filter(Boolean) : [];
-    const attempt = job.attemptCount + 1;
-    const retryAt = nextRetryAt(attempt, config.PUBLISH_BACKOFF_BASE_SECONDS, config.PUBLISH_BACKOFF_MAX_SECONDS);
-    const payload = { ...parsePayload(job.payloadJson), _threadsPublishedIds: ids };
-    const error = String(result.error ?? "Threads partial publication");
-    backendDb.db.transaction((tx) => {
-      tx.update(publishJobs)
-        .set({
-          status: "queued",
-          attemptCount: attempt,
-          nextAttemptAt: retryAt,
-          lockedBy: null,
-          lockedAt: null,
-          payloadJson: payload,
-          lastError: error,
-          updatedAt: now,
-        })
-        .where(eq(publishJobs.jobId, jobId))
-        .run();
-      upsertPostTarget(tx, {
-        postKey,
-        target: job.target,
-        status: "queued",
-        externalId: ids[0] ?? null,
-        externalIdsJson: ids,
-        error,
-        skipped: 0,
-        updatedAt: now,
-        rawJson: JSON.stringify(result),
-      });
-      insertEvent(tx, postKey, job.target, "publish.job.partial", "warn", error, { job_id: jobId, ids, retry_at: retryAt });
-    });
+    const retry = settleRetryableIds(
+      backendDb,
+      config,
+      job,
+      jobId,
+      postKey,
+      ids,
+      "_threadsPublishedIds",
+      "publish.job.partial",
+      "Threads partial publication",
+      result,
+      now,
+    );
+    if (!retry && job.postId != null) reconcilePublication(backendDb, job.postId);
     return;
   }
   const reconciliationIds = externalIds(result);
   if (result.retryable && !result.ok && !result.skipped && reconciliationIds.length > 0) {
-    const { attempt, status, nextAttemptAt: retryAt } = reconciliationTransition(job.attemptCount, publishRetryPolicy(config));
-    const retry = status === "queued";
-    const error = String(result.error ?? "external publication requires reconciliation");
-    const payload = { ...parsePayload(job.payloadJson), _reconcile_ids: reconciliationIds };
-    backendDb.db.transaction((tx) => {
-      tx.update(publishJobs)
-        .set({
-          status,
-          attemptCount: attempt,
-          nextAttemptAt: retryAt,
-          lockedBy: null,
-          lockedAt: null,
-          payloadJson: payload,
-          lastError: error,
-          updatedAt: now,
-        })
-        .where(eq(publishJobs.jobId, jobId))
-        .run();
-      upsertPostTarget(tx, {
-        postKey,
-        target: job.target,
-        status,
-        externalId: reconciliationIds[0] ?? null,
-        externalIdsJson: reconciliationIds,
-        error,
-        skipped: 0,
-        updatedAt: now,
-        rawJson: JSON.stringify(result),
-      });
-      insertEvent(tx, postKey, job.target, retry ? "publish.job.reconcile" : "publish.job.failed", retry ? "warn" : "error", error, {
-        job_id: jobId,
-        external_ids: reconciliationIds,
-        attempt,
-        next_attempt_at: retryAt,
-      });
-    });
+    const retry = settleRetryableIds(
+      backendDb,
+      config,
+      job,
+      jobId,
+      postKey,
+      reconciliationIds,
+      "_reconcile_ids",
+      "publish.job.reconcile",
+      "external publication requires reconciliation",
+      result,
+      now,
+    );
     if (!retry && job.postId != null) reconcilePublication(backendDb, job.postId);
     return;
   }
   const normalized = normalizePublishResult(result);
   backendDb.db.transaction((tx) => {
     const published = normalized.status === "published";
-    upsertPostTarget(tx, {
-      postKey,
-      target: job.target,
-      status: normalized.status,
-      externalId: published ? normalized.externalId : null,
-      externalIdsJson: published && normalized.externalIds != null ? normalized.externalIds.map(String) : null,
-      url: published ? normalized.url : null,
-      error: normalized.error,
-      skipped: normalized.skipped,
-      updatedAt: now,
-      rawJson: normalized.rawJson,
-    });
-    tx.update(publishJobs)
-      .set({ status: normalized.status, lockedBy: null, lockedAt: null, lastError: normalized.error, updatedAt: now })
-      .where(eq(publishJobs.jobId, jobId))
-      .run();
-    deleteSupersededJobs(tx, job, jobId, postKey);
     // `post_targets` is the canonical external-publication reference for every
     // platform. Legacy Telegram message columns remain readable for history,
     // but new delivery results never mutate the domain model for one platform.
-    insertEvent(
+    settleJob(
       tx,
+      jobId,
+      { status: normalized.status, lockedBy: null, lockedAt: null, lastError: normalized.error, updatedAt: now },
       postKey,
       job.target,
-      `publish.job.${normalized.status}`,
-      normalized.status === "failed" ? "error" : "info",
-      `${job.target} ${normalized.status}`,
-      { job_id: jobId, result },
+      {
+        status: normalized.status,
+        externalId: published ? normalized.externalId : null,
+        externalIdsJson: published && normalized.externalIds != null ? normalized.externalIds.map(String) : null,
+        url: published ? normalized.url : null,
+        error: normalized.error,
+        skipped: normalized.skipped,
+        updatedAt: now,
+        rawJson: normalized.rawJson,
+      },
+      {
+        type: `publish.job.${normalized.status}`,
+        severity: normalized.status === "failed" ? "error" : "info",
+        message: `${job.target} ${normalized.status}`,
+        details: { job_id: jobId, result },
+      },
     );
+    deleteSupersededJobs(tx, job, jobId, postKey);
   });
   if (job.postId != null) reconcilePublication(backendDb, job.postId);
+}
+
+function settleRetryableIds(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  job: typeof publishJobs.$inferSelect,
+  jobId: number,
+  postKey: string,
+  ids: string[],
+  payloadKey: "_threadsPublishedIds" | "_reconcile_ids",
+  retryEventType: string,
+  fallbackError: string,
+  result: PublishResult,
+  now: string,
+): boolean {
+  const { attempt, status, nextAttemptAt } = reconciliationTransition(job.attemptCount, publishRetryPolicy(config));
+  const retry = status === "queued";
+  const error = String(result.error ?? fallbackError);
+  const payload = { ...parsePayload(job.payloadJson), [payloadKey]: ids };
+  backendDb.db.transaction((tx) => {
+    settleJob(
+      tx,
+      jobId,
+      {
+        status,
+        attemptCount: attempt,
+        nextAttemptAt,
+        lockedBy: null,
+        lockedAt: null,
+        payloadJson: payload,
+        lastError: error,
+        updatedAt: now,
+      },
+      postKey,
+      job.target,
+      { status, externalId: ids[0] ?? null, externalIdsJson: ids, error, skipped: 0, updatedAt: now, rawJson: JSON.stringify(result) },
+      {
+        type: retry ? retryEventType : "publish.job.failed",
+        severity: retry ? "warn" : "error",
+        message: error,
+        details: { job_id: jobId, ids, attempt, next_attempt_at: nextAttemptAt },
+      },
+    );
+  });
+  return retry;
 }
 
 export function failPublishJob(backendDb: BackendDb, config: BackendConfig, jobId: number, error: unknown, lockId?: string): void {
@@ -278,37 +286,27 @@ export function failPublishJob(backendDb: BackendDb, config: BackendConfig, jobI
   const shouldRetry = status === "queued";
   const errorText = String(error instanceof Error ? error.message : error);
   backendDb.db.transaction((tx) => {
-    tx.update(publishJobs)
-      .set({
-        status,
-        attemptCount: attempt,
-        nextAttemptAt: nextAttempt,
-        lockedBy: null,
-        lockedAt: null,
-        lastError: errorText,
-        updatedAt: now,
-      })
-      .where(eq(publishJobs.jobId, jobId))
-      .run();
-    if (!shouldRetry) deleteSupersededJobs(tx, job, jobId, postKey);
-    upsertPostTarget(tx, {
-      postKey,
-      target: job.target,
-      status,
-      error: errorText,
-      skipped: 0,
-      updatedAt: now,
-      rawJson: JSON.stringify({ job_id: jobId, error_class: errorClass, attempt, next_attempt_at: nextAttempt }),
-    });
-    insertEvent(
+    settleJob(
       tx,
+      jobId,
+      { status, attemptCount: attempt, nextAttemptAt: nextAttempt, lockedBy: null, lockedAt: null, lastError: errorText, updatedAt: now },
       postKey,
       job.target,
-      shouldRetry ? "publish.job.retry" : "publish.job.failed",
-      shouldRetry ? "warn" : "error",
-      errorText,
-      { job_id: jobId, error_class: errorClass, attempt, next_attempt_at: nextAttempt },
+      {
+        status,
+        error: errorText,
+        skipped: 0,
+        updatedAt: now,
+        rawJson: JSON.stringify({ job_id: jobId, error_class: errorClass, attempt, next_attempt_at: nextAttempt }),
+      },
+      {
+        type: shouldRetry ? "publish.job.retry" : "publish.job.failed",
+        severity: shouldRetry ? "warn" : "error",
+        message: errorText,
+        details: { job_id: jobId, error_class: errorClass, attempt, next_attempt_at: nextAttempt },
+      },
     );
+    if (!shouldRetry) deleteSupersededJobs(tx, job, jobId, postKey);
   });
   if (!shouldRetry && job.postId != null) reconcilePublication(backendDb, job.postId);
 }
@@ -418,4 +416,20 @@ function insertEvent(
   tx.insert(postEvents)
     .values({ postKey, eventType, severity, target, message, detailsJson: JSON.stringify(details), createdAt: new Date().toISOString() })
     .run();
+}
+
+/** Every job-settling path (claim recovery, completion, failure, reconciliation) updates
+ * the job row, mirrors the target's state, and logs the transition as one unit. */
+function settleJob(
+  tx: BackendDb["db"],
+  jobId: number,
+  jobPatch: Partial<typeof publishJobs.$inferInsert> | null,
+  postKey: string,
+  target: string,
+  targetPatch: Omit<typeof postTargets.$inferInsert, "postKey" | "target">,
+  event: { type: string; severity: string; message: string; details: Record<string, unknown> },
+): void {
+  if (jobPatch) tx.update(publishJobs).set(jobPatch).where(eq(publishJobs.jobId, jobId)).run();
+  upsertPostTarget(tx, { postKey, target, ...targetPatch });
+  insertEvent(tx, postKey, target, event.type, event.severity, event.message, event.details);
 }

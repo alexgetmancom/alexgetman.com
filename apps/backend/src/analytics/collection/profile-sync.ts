@@ -27,8 +27,19 @@ type ZernioAccount = { _id?: string; username?: string; displayName?: string; fo
 type ZernioAccounts = { accounts?: ZernioAccount[] } | ZernioAccount[];
 type ZernioInsights = { metrics?: Record<string, { total?: number }> };
 
-export async function syncYouTubeProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
+/** Runs one platform sync and records its outcome; every platform below funnels through
+ * this so a new integration can't forget the success/failure timestamp update. */
+async function synced(backendDb: BackendDb, source: string, run: () => Promise<void>): Promise<void> {
   try {
+    await run();
+    markSynced(backendDb, source);
+  } catch (error) {
+    markSynced(backendDb, source, error instanceof Error ? error.message : String(error));
+  }
+}
+
+export async function syncYouTubeProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
+  await synced(backendDb, "youtube", async () => {
     const token = await youtubeAccessToken(config);
     const auth = { Authorization: `Bearer ${token}` };
     const channel = await requestJson<YouTubeChannel>(
@@ -50,10 +61,7 @@ export async function syncYouTubeProfile(config: BackendConfig, backendDb: Backe
         ...period,
       },
     });
-    markSynced(backendDb, "youtube");
-  } catch (error) {
-    markSynced(backendDb, "youtube", error instanceof Error ? error.message : String(error));
-  }
+  });
 }
 
 async function youtubeReport(fetchImpl: typeof fetch, token: string): Promise<Record<string, number>> {
@@ -73,10 +81,9 @@ async function youtubeReport(fetchImpl: typeof fetch, token: string): Promise<Re
 }
 
 export async function syncInstagramProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
-  try {
+  await synced(backendDb, "instagram", async () => {
     if (videoDeliveryRoute(config, "instagram_reels").provider === "zernio") {
       await syncZernioInstagramProfile(config, backendDb, fetchImpl);
-      markSynced(backendDb, "instagram");
       return;
     }
     const token = config.INSTAGRAM_ACCESS_TOKEN;
@@ -97,10 +104,7 @@ export async function syncInstagramProfile(config: BackendConfig, backendDb: Bac
         mediaCount: metricNumber(profileData.media_count),
       },
     });
-    markSynced(backendDb, "instagram");
-  } catch (error) {
-    markSynced(backendDb, "instagram", error instanceof Error ? error.message : String(error));
-  }
+  });
 }
 
 async function syncZernioInstagramProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
@@ -129,7 +133,11 @@ async function syncZernioInstagramProfile(config: BackendConfig, backendDb: Back
     source: "zernio",
     metrics: {
       username: account.username ?? account.displayName ?? "Instagram",
-      followersCount: metricNumber(history.metrics?.follower_count?.total ?? account.followersCount),
+      // Zernio's follower-history series starts only after its daily snapshotter
+      // sees an account. A just-connected account can therefore report `0` for
+      // the historical aggregate while /accounts already has the live count.
+      // The connected-account value is the authoritative current follower total.
+      followersCount: metricNumber(account.followersCount ?? history.metrics?.follower_count?.total),
       followersGained30d: metricNumber(history.metrics?.followers_gained?.total),
       followersLost30d: metricNumber(history.metrics?.followers_lost?.total),
       reach30d: metric("reach"),
@@ -191,7 +199,7 @@ export async function syncFacebookProfile(
   fetchImpl: typeof fetch,
 ): Promise<void> {
   const source = `facebook_profile_${locale}`;
-  try {
+  await synced(backendDb, source, async () => {
     const pageId = locale === "ru" ? config.FACEBOOK_RU_PAGE_ID : config.FACEBOOK_PAGE_ID;
     const token = locale === "ru" ? config.FACEBOOK_RU_PAGE_ACCESS_TOKEN : config.FACEBOOK_PAGE_ACCESS_TOKEN;
     if (!pageId || !token) throw new Error("Facebook Page credentials are missing");
@@ -210,15 +218,12 @@ export async function syncFacebookProfile(
         talkingAboutCount: metricNumber(page.talking_about_count),
       },
     });
-    markSynced(backendDb, source);
-  } catch (error) {
-    markSynced(backendDb, source, error instanceof Error ? error.message : String(error));
-  }
+  });
 }
 
 export async function syncXProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
-  try {
-    if (!config.ENABLE_X_PROFILE_METRICS) return;
+  if (!config.ENABLE_X_PROFILE_METRICS) return;
+  await synced(backendDb, "x_profile", async () => {
     const url = "https://api.x.com/2/users/me?user.fields=public_metrics";
     const profile = await requestJson<XProfile>(fetchImpl, url, { headers: { Authorization: oauthAuthorization("GET", url, config) } });
     const user = profile.data;
@@ -235,54 +240,59 @@ export async function syncXProfile(config: BackendConfig, backendDb: BackendDb, 
         listedCount: metricNumber(user.public_metrics?.listed_count),
       },
     });
-    markSynced(backendDb, "x_profile");
-  } catch (error) {
-    markSynced(backendDb, "x_profile", error instanceof Error ? error.message : String(error));
-  }
+  });
 }
 
 export async function syncCommunityProfiles(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
   const jobs: Promise<void>[] = [];
-  if (config.BLUESKY_HANDLE && canSync(backendDb, "bluesky_profile")) jobs.push(syncBlueskyProfile(config, backendDb, fetchImpl));
-  if (config.MASTODON_INSTANCE && config.MASTODON_ACCESS_TOKEN && canSync(backendDb, "mastodon_profile"))
+  const interval = config.CREATOR_PROFILE_REFRESH_INTERVAL_SECONDS;
+  if (config.BLUESKY_HANDLE && canSync(backendDb, "bluesky_profile", interval)) jobs.push(syncBlueskyProfile(config, backendDb, fetchImpl));
+  if (config.MASTODON_INSTANCE && config.MASTODON_ACCESS_TOKEN && canSync(backendDb, "mastodon_profile", interval))
     jobs.push(syncMastodonProfile(config, backendDb, fetchImpl));
-  if (config.GITHUB_DISCUSSIONS_TOKEN && canSync(backendDb, "github_profile")) jobs.push(syncGitHubProfile(config, backendDb, fetchImpl));
-  if (config.controllerBotToken && canSync(backendDb, "telegram_profile")) jobs.push(syncTelegramProfile(config, backendDb, fetchImpl));
-  if (config.THREADS_ACCESS_TOKEN && canSync(backendDb, "threads_profile")) jobs.push(syncThreadsProfile(config, backendDb, fetchImpl));
-  if (config.DEVTO_API_KEY && canSync(backendDb, "devto_profile")) jobs.push(syncDevtoProfile(config, backendDb, fetchImpl));
+  if (config.GITHUB_DISCUSSIONS_TOKEN && canSync(backendDb, "github_profile", interval))
+    jobs.push(syncGitHubProfile(config, backendDb, fetchImpl));
+  // A controller bot is not itself a Telegram publishing channel. In a
+  // video-only Studio (such as Maru) CHANNEL_USERNAME may merely fall back to
+  // the legacy default, so collecting it would leak another creator's audience
+  // into this dashboard.
+  if (config.studio.modules.text_posting && config.controllerBotToken && canSync(backendDb, "telegram_profile", interval))
+    jobs.push(syncTelegramProfile(config, backendDb, fetchImpl));
+  if (config.THREADS_ACCESS_TOKEN && canSync(backendDb, "threads_profile", interval))
+    jobs.push(syncThreadsProfile(config, backendDb, fetchImpl));
+  if (config.DEVTO_API_KEY && canSync(backendDb, "devto_profile", interval)) jobs.push(syncDevtoProfile(config, backendDb, fetchImpl));
   await Promise.all(jobs);
 }
 
 async function syncBlueskyProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
-  try {
-    if (!config.BLUESKY_HANDLE) return;
+  if (!config.BLUESKY_HANDLE) return;
+  const handle = config.BLUESKY_HANDLE;
+  await synced(backendDb, "bluesky_profile", async () => {
     const profile = await requestJson<BlueskyProfile>(
       fetchImpl,
-      `https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(config.BLUESKY_HANDLE)}`,
+      `https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(handle)}`,
     );
     recordProfileSnapshot(backendDb, {
       platform: "bluesky",
-      account: profile.handle ?? config.BLUESKY_HANDLE,
+      account: profile.handle ?? handle,
       source: "bluesky_public_api",
       metrics: {
-        name: profile.displayName ?? profile.handle ?? config.BLUESKY_HANDLE,
+        name: profile.displayName ?? profile.handle ?? handle,
         followersCount: metricNumber(profile.followersCount),
         followingCount: metricNumber(profile.followsCount),
         postsCount: metricNumber(profile.postsCount),
       },
     });
-    markSynced(backendDb, "bluesky_profile");
-  } catch (error) {
-    markSynced(backendDb, "bluesky_profile", error instanceof Error ? error.message : String(error));
-  }
+  });
 }
 
 async function syncMastodonProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
-  try {
-    if (!config.MASTODON_INSTANCE || !config.MASTODON_ACCESS_TOKEN) return;
-    const host = `${/^https?:\/\//i.test(config.MASTODON_INSTANCE) ? "" : "https://"}${config.MASTODON_INSTANCE}`.replace(/\/$/, "");
+  const instance = config.MASTODON_INSTANCE;
+  const accessToken = config.MASTODON_ACCESS_TOKEN;
+  if (!instance || !accessToken) return;
+  await synced(backendDb, "mastodon_profile", async () => {
+    const host = `${/^https?:\/\//i.test(instance) ? "" : "https://"}${instance}`.replace(/\/$/, "");
     const profile = await requestJson<MastodonProfile>(fetchImpl, `${host}/api/v1/accounts/verify_credentials`, {
-      headers: { Authorization: `Bearer ${config.MASTODON_ACCESS_TOKEN}` },
+      headers: { Authorization: `Bearer ${accessToken}` },
     });
     recordProfileSnapshot(backendDb, {
       platform: "mastodon",
@@ -295,15 +305,12 @@ async function syncMastodonProfile(config: BackendConfig, backendDb: BackendDb, 
         postsCount: metricNumber(profile.statuses_count),
       },
     });
-    markSynced(backendDb, "mastodon_profile");
-  } catch (error) {
-    markSynced(backendDb, "mastodon_profile", error instanceof Error ? error.message : String(error));
-  }
+  });
 }
 
 async function syncGitHubProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
-  try {
-    if (!config.GITHUB_DISCUSSIONS_TOKEN) return;
+  if (!config.GITHUB_DISCUSSIONS_TOKEN) return;
+  await synced(backendDb, "github_profile", async () => {
     const headers = { Authorization: `Bearer ${config.GITHUB_DISCUSSIONS_TOKEN}`, "User-Agent": "alexgetman-backend/1.0" };
     const profile = await requestJson<GitHubProfile>(fetchImpl, "https://api.github.com/user", { headers });
     let stars = 0;
@@ -328,14 +335,11 @@ async function syncGitHubProfile(config: BackendConfig, backendDb: BackendDb, fe
         stars,
       },
     });
-    markSynced(backendDb, "github_profile");
-  } catch (error) {
-    markSynced(backendDb, "github_profile", error instanceof Error ? error.message : String(error));
-  }
+  });
 }
 
 async function syncTelegramProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
-  try {
+  await synced(backendDb, "telegram_profile", async () => {
     const mtprotoMetrics = await collectTelegramChannelStats(config);
     if (mtprotoMetrics) {
       recordProfileSnapshot(backendDb, {
@@ -344,7 +348,6 @@ async function syncTelegramProfile(config: BackendConfig, backendDb: BackendDb, 
         source: "telegram_mtproto_stats",
         metrics: mtprotoMetrics,
       });
-      markSynced(backendDb, "telegram_profile");
       return;
     }
     if (!config.controllerBotToken) throw new Error("Telegram channel credentials are missing");
@@ -364,10 +367,7 @@ async function syncTelegramProfile(config: BackendConfig, backendDb: BackendDb, 
       source: "telegram_bot_api",
       metrics: { followersCount: metricNumber(result.result) },
     });
-    markSynced(backendDb, "telegram_profile");
-  } catch (error) {
-    markSynced(backendDb, "telegram_profile", error instanceof Error ? error.message : String(error));
-  }
+  });
 }
 
 async function collectTelegramChannelStats(config: BackendConfig): Promise<Record<string, number> | null> {
@@ -398,9 +398,9 @@ function telegramChannelMetrics(stats: TelegramBroadcastStats): Record<string, n
 }
 
 async function syncThreadsProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
-  try {
-    const token = config.THREADS_ACCESS_TOKEN;
-    if (!token) return;
+  const token = config.THREADS_ACCESS_TOKEN;
+  if (!token) return;
+  await synced(backendDb, "threads_profile", async () => {
     const profile = await requestJson<ThreadsProfile>(
       fetchImpl,
       `https://graph.threads.net/v1.0/me?fields=id,username&access_token=${encodeURIComponent(token)}`,
@@ -412,16 +412,14 @@ async function syncThreadsProfile(config: BackendConfig, backendDb: BackendDb, f
       source: "threads_api",
       metrics: { name: profile.username ?? profile.id },
     });
-    markSynced(backendDb, "threads_profile");
-  } catch (error) {
-    markSynced(backendDb, "threads_profile", error instanceof Error ? error.message : String(error));
-  }
+  });
 }
 
 async function syncDevtoProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
-  try {
-    if (!config.DEVTO_API_KEY) return;
-    const headers = { "api-key": config.DEVTO_API_KEY, "User-Agent": "alexgetman-backend/1.0" };
+  const apiKey = config.DEVTO_API_KEY;
+  if (!apiKey) return;
+  await synced(backendDb, "devto_profile", async () => {
+    const headers = { "api-key": apiKey, "User-Agent": "alexgetman-backend/1.0" };
     // Dev.to accepts a publishing token for articles/me but may reject users/me.
     // Derive the account from the authenticated article payload instead of requiring
     // a broader token scope just to collect this optional profile projection.
@@ -445,10 +443,7 @@ async function syncDevtoProfile(config: BackendConfig, backendDb: BackendDb, fet
         postsCount: posts,
       },
     });
-    markSynced(backendDb, "devto_profile");
-  } catch (error) {
-    markSynced(backendDb, "devto_profile", error instanceof Error ? error.message : String(error));
-  }
+  });
 }
 
 async function countDevtoPages(fetchImpl: typeof fetch, base: string, headers: Record<string, string>): Promise<number> {
