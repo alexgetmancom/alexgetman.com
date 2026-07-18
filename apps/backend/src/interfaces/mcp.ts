@@ -1,175 +1,288 @@
+import * as z from "zod";
 import type { BackendDb } from "../db/client.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { type StudioServices, studioServices } from "../studio/services/index.js";
 
 const feedbackHits = new Map<string, number[]>();
-const publicTools = [
-  {
-    name: "submit_feedback",
-    description: "Send feedback or a bug report to Alex Getman.",
-    inputSchema: { type: "object", properties: { name: { type: "string" }, message: { type: "string" } }, required: ["message"] },
+
+// --- Shared zod building blocks -------------------------------------------------
+
+const trimmed = (min: number, max: number) => z.string().trim().min(min).max(max);
+const positiveInt = z.number().int().min(1);
+const localeSchema = z.enum(["ru", "en"]);
+const videoTargetSchema = z.enum(["youtube_shorts", "instagram_reels"]);
+
+/** Plain shape for an optional ISO-date string field, for the client-facing schema.
+ * The parsing schema below adds a `.transform()` z.toJSONSchema can't represent,
+ * so tools with date fields keep this shape separately as their `list` schema. */
+function isoDateShape(maxLength: number) {
+  return z.string().max(maxLength).optional();
+}
+
+/** Empty string or absent both mean "no value"; otherwise must be a parseable ISO date. */
+function isoDateOrNull(maxLength: number) {
+  return isoDateShape(maxLength).transform((value, ctx) => {
+    if (value == null || value === "") return null;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      ctx.addIssue({ code: "custom", message: "must be an ISO date" });
+      return z.NEVER;
+    }
+    return date;
+  });
+}
+
+/** Plain shape for the client-facing schema; see isoDateShape. */
+function intArrayShape(min: number, max: number) {
+  return z.array(positiveInt).min(min).max(max);
+}
+
+function uniqueIntArray(min: number, max: number) {
+  return intArrayShape(min, max).transform((values) => [...new Set(values)]);
+}
+
+const youtubeMetadataSchema = z.object({
+  title: trimmed(1, 100),
+  description: trimmed(0, 5_000),
+  tags: z.array(trimmed(1, 100)).max(30),
+  game_url: trimmed(1, 500).optional(),
+});
+const instagramMetadataSchema = z.object({ caption: trimmed(1, 2_200) });
+
+/** JSON Schema for an MCP tool listing, stripped of the document-level $schema key.
+ * Uses `def.list` when a tool's real schema has a transform (dates, dedup, metadata
+ * shaping) that z.toJSONSchema can't represent. */
+function jsonSchema(def: { schema: z.ZodType; list?: z.ZodType }): JsonObject {
+  const { $schema: _dropped, ...rest } = z.toJSONSchema(def.list ?? def.schema) as JsonObject & { $schema?: unknown };
+  return rest;
+}
+
+function parseArgs<T>(schema: z.ZodType<T>, args: unknown): T {
+  const result = schema.safeParse(args);
+  if (!result.success) throw new Error(result.error.issues[0]?.message ?? "invalid arguments");
+  return result.data;
+}
+
+// --- Tool catalog: one zod schema per tool is both its validator and its client-facing schema ---
+
+const feedbackToolDef = {
+  description: "Send feedback or a bug report to Alex Getman.",
+  schema: z.object({ name: trimmed(0, 120).optional(), message: trimmed(1, 2_000) }),
+};
+
+const studioToolDefs = {
+  studio_capabilities: {
+    description: "Read enabled Studio modules and sanitized platform readiness before selecting a command.",
+    schema: z.object({}),
   },
-];
-const studioTools = [
-  tool("studio_capabilities", "Read enabled Studio modules and sanitized platform readiness before selecting a command."),
-  tool("studio_queue", "Read the authenticated owner's upcoming work, drafts and failures."),
-  tool("studio_post_list", "List the authenticated owner's post drafts.", { limit: integerSchema(1, 100) }),
-  tool("studio_notifications", "Read the authenticated owner's durable Studio notification inbox.", { limit: integerSchema(1, 100) }),
-  tool("studio_notification_settings", "Read the authenticated owner's Studio notification policy."),
-  tool(
-    "studio_notification_settings_update",
-    "Update notification policy. These settings apply to every connected interface; Telegram is only one delivery adapter.",
-    { reminders_enabled: { type: "boolean" }, reminder_minutes: integerSchema(1, 60), completion_enabled: { type: "boolean" } },
-  ),
-  tool("studio_media_list", "List the authenticated owner's reusable Studio media assets.", { limit: integerSchema(1, 100) }),
-  tool("studio_acknowledge_notification", "Mark one visible Studio notification as read.", { id: integerSchema(1) }, ["id"]),
-  tool(
-    "studio_post_create",
-    "Create a text-post draft for the authenticated owner.",
-    { text: stringSchema(1, 20_000), text_en: stringSchema(0, 20_000) },
-    ["text"],
-  ),
-  tool("studio_post_get", "Read one owned post draft.", { draft_id: integerSchema(1) }, ["draft_id"]),
-  tool("studio_post_validate", "Validate one owned post draft before publishing.", { draft_id: integerSchema(1) }, ["draft_id"]),
-  tool("studio_post_status", "Read queue and target status for one owned post draft.", { draft_id: integerSchema(1) }, ["draft_id"]),
-  tool(
-    "studio_post_history",
-    "Read durable event history for one owned post draft.",
-    { draft_id: integerSchema(1), limit: integerSchema(1, 100) },
-    ["draft_id"],
-  ),
-  tool(
-    "studio_post_attach_media",
-    "Attach already uploaded Studio media assets to an owned post locale. Upload files through POST /api/studio/media first.",
-    {
-      draft_id: integerSchema(1),
-      locale: enumSchema(["ru", "en"]),
-      asset_ids: { type: "array", items: integerSchema(1), minItems: 1, maxItems: 10 },
-      replace: { type: "boolean" },
-    },
-    ["draft_id", "locale", "asset_ids"],
-  ),
-  tool(
-    "studio_post_remove_media",
-    "Remove selected Studio media assets from one owned post locale.",
-    {
-      draft_id: integerSchema(1),
-      locale: enumSchema(["ru", "en"]),
-      asset_ids: { type: "array", items: integerSchema(1), minItems: 1, maxItems: 10 },
-    },
-    ["draft_id", "locale", "asset_ids"],
-  ),
-  tool("studio_post_preview", "Read a transport-neutral preview of one owned post draft.", { draft_id: integerSchema(1) }, ["draft_id"]),
-  tool(
-    "studio_post_edit",
-    "Edit text on one owned post draft.",
-    { draft_id: integerSchema(1), locale: enumSchema(["ru", "en"]), text: stringSchema(0, 20_000) },
-    ["draft_id", "locale", "text"],
-  ),
-  tool(
-    "studio_post_toggle_target",
-    "Toggle one configured target on an owned post draft.",
-    { draft_id: integerSchema(1), target: stringSchema(1, 120) },
-    ["draft_id", "target"],
-  ),
-  tool("studio_post_publish", "Queue an owned post draft for immediate publication.", { draft_id: integerSchema(1) }, ["draft_id"]),
-  tool(
-    "studio_post_schedule",
-    "Schedule an owned post draft. ISO dates are optional per locale.",
-    { draft_id: integerSchema(1), ru_at: stringSchema(0, 80), en_at: stringSchema(0, 80) },
-    ["draft_id"],
-  ),
-  tool("studio_post_cancel", "Cancel an owned post draft and its remaining work.", { draft_id: integerSchema(1) }, ["draft_id"]),
-  tool("studio_video_create", "Create an owned video draft from an already-uploaded Studio video asset.", { asset_id: integerSchema(1) }, [
-    "asset_id",
-  ]),
-  tool("studio_video_list", "List the authenticated owner's video drafts.", { limit: integerSchema(1, 100) }),
-  tool("studio_video_get", "Read an owned video draft and its targets.", { video_draft_id: integerSchema(1) }, ["video_draft_id"]),
-  tool("studio_video_preview", "Read an owned video draft preview and target metadata.", { video_draft_id: integerSchema(1) }, [
-    "video_draft_id",
-  ]),
-  tool("studio_video_status", "Read owned video targets and durable jobs.", { video_draft_id: integerSchema(1) }, ["video_draft_id"]),
-  tool(
-    "studio_video_history",
-    "Read durable event history for one owned video draft.",
-    { video_draft_id: integerSchema(1), limit: integerSchema(1, 100) },
-    ["video_draft_id"],
-  ),
-  tool("studio_video_rename", "Rename an owned video draft.", { video_draft_id: integerSchema(1), label: stringSchema(1, 500) }, [
-    "video_draft_id",
-    "label",
-  ]),
-  tool(
-    "studio_video_replace_targets",
-    "Replace editable video publication targets.",
-    {
-      video_draft_id: integerSchema(1),
-      targets: { type: "array", items: enumSchema(["youtube_shorts", "instagram_reels"]), minItems: 1, maxItems: 2 },
-    },
-    ["video_draft_id", "targets"],
-  ),
-  tool(
-    "studio_video_update_metadata",
-    "Set target metadata. YouTube requires title, description and tags; Instagram requires caption.",
-    { video_draft_id: integerSchema(1), target: enumSchema(["youtube_shorts", "instagram_reels"]), metadata: { type: "object" } },
-    ["video_draft_id", "target", "metadata"],
-  ),
-  tool(
-    "studio_video_schedule",
-    "Schedule one or both configured video targets at future ISO datetimes.",
-    { video_draft_id: integerSchema(1), youtube_shorts_at: stringSchema(0, 80), instagram_reels_at: stringSchema(0, 80) },
-    ["video_draft_id"],
-  ),
-  tool(
-    "studio_video_preflight",
-    "Validate an owned video source and configured targets without scheduling it.",
-    { video_draft_id: integerSchema(1) },
-    ["video_draft_id"],
-  ),
-  tool("studio_video_publish", "Queue all configured video targets for immediate publication.", { video_draft_id: integerSchema(1) }, [
-    "video_draft_id",
-  ]),
-  tool(
-    "studio_video_retry",
-    "Retry one failed video target.",
-    { video_draft_id: integerSchema(1), target: enumSchema(["youtube_shorts", "instagram_reels"]) },
-    ["video_draft_id", "target"],
-  ),
-  tool(
-    "studio_video_remove_target",
-    "Remove one editable video target.",
-    { video_draft_id: integerSchema(1), target: enumSchema(["youtube_shorts", "instagram_reels"]) },
-    ["video_draft_id", "target"],
-  ),
-  tool("studio_video_cancel", "Cancel an owned video publication.", { video_draft_id: integerSchema(1) }, ["video_draft_id"]),
-  tool("studio_analytics_dashboard", "Read an analytics dashboard section for the authenticated Studio.", {
-    section: enumSchema(["overview", "audience", "posts", "video"]),
-    days: { type: "integer", enum: [1, 7, 30] },
-    locale: enumSchema(["ru", "en"]),
-  }),
-  tool("studio_analytics_post_archive", "Read a page of post analytics archive.", {
-    offset: integerSchema(0, 10_000),
-    locale: enumSchema(["ru", "en"]),
-  }),
-  tool(
-    "studio_analytics_post_metrics",
-    "Read analytics for one published post.",
-    { post_id: integerSchema(1), locale: enumSchema(["ru", "en"]) },
-    ["post_id"],
-  ),
-  tool("studio_analytics_video_archive", "Read a page of video analytics archive.", {
-    offset: integerSchema(0, 10_000),
-    locale: enumSchema(["ru", "en"]),
-  }),
-  tool(
-    "studio_analytics_video_metrics",
-    "Read analytics for one video draft.",
-    { video_draft_id: integerSchema(1), locale: enumSchema(["ru", "en"]) },
-    ["video_draft_id"],
-  ),
-  tool("studio_analytics_audience", "Read the creator audience analysis.", { locale: enumSchema(["ru", "en"]) }),
-];
+  studio_queue: { description: "Read the authenticated owner's upcoming work, drafts and failures.", schema: z.object({}) },
+  studio_post_list: {
+    description: "List the authenticated owner's post drafts.",
+    schema: z.object({ limit: positiveInt.max(100).optional() }),
+  },
+  studio_notifications: {
+    description: "Read the authenticated owner's durable Studio notification inbox.",
+    schema: z.object({ limit: positiveInt.max(100).optional() }),
+  },
+  studio_notification_settings: {
+    description: "Read the authenticated owner's Studio notification policy.",
+    schema: z.object({}),
+  },
+  studio_notification_settings_update: {
+    description: "Update notification policy. These settings apply to every connected interface; Telegram is only one delivery adapter.",
+    schema: z.object({
+      reminders_enabled: z.boolean().optional(),
+      reminder_minutes: z.number().int().min(1).max(60).optional(),
+      completion_enabled: z.boolean().optional(),
+    }),
+  },
+  studio_media_list: {
+    description: "List the authenticated owner's reusable Studio media assets.",
+    schema: z.object({ limit: positiveInt.max(100).optional() }),
+  },
+  studio_acknowledge_notification: {
+    description: "Mark one visible Studio notification as read.",
+    schema: z.object({ id: positiveInt }),
+  },
+  studio_post_create: {
+    description: "Create a text-post draft for the authenticated owner.",
+    schema: z.object({ text: trimmed(1, 20_000), text_en: trimmed(0, 20_000).optional() }),
+  },
+  studio_post_get: { description: "Read one owned post draft.", schema: z.object({ draft_id: positiveInt }) },
+  studio_post_validate: {
+    description: "Validate one owned post draft before publishing.",
+    schema: z.object({ draft_id: positiveInt }),
+  },
+  studio_post_status: {
+    description: "Read queue and target status for one owned post draft.",
+    schema: z.object({ draft_id: positiveInt }),
+  },
+  studio_post_history: {
+    description: "Read durable event history for one owned post draft.",
+    schema: z.object({ draft_id: positiveInt, limit: positiveInt.max(100).optional() }),
+  },
+  studio_post_attach_media: {
+    description: "Attach already uploaded Studio media assets to an owned post locale. Upload files through POST /api/studio/media first.",
+    schema: z.object({
+      draft_id: positiveInt,
+      locale: localeSchema,
+      asset_ids: uniqueIntArray(1, 10),
+      replace: z.boolean().optional(),
+    }),
+    list: z.object({ draft_id: positiveInt, locale: localeSchema, asset_ids: intArrayShape(1, 10), replace: z.boolean().optional() }),
+  },
+  studio_post_remove_media: {
+    description: "Remove selected Studio media assets from one owned post locale.",
+    schema: z.object({ draft_id: positiveInt, locale: localeSchema, asset_ids: uniqueIntArray(1, 10) }),
+    list: z.object({ draft_id: positiveInt, locale: localeSchema, asset_ids: intArrayShape(1, 10) }),
+  },
+  studio_post_preview: {
+    description: "Read a transport-neutral preview of one owned post draft.",
+    schema: z.object({ draft_id: positiveInt }),
+  },
+  studio_post_edit: {
+    description: "Edit text on one owned post draft.",
+    schema: z.object({ draft_id: positiveInt, locale: localeSchema, text: trimmed(0, 20_000) }),
+  },
+  studio_post_toggle_target: {
+    description: "Toggle one configured target on an owned post draft.",
+    schema: z.object({ draft_id: positiveInt, target: trimmed(1, 120) }),
+  },
+  studio_post_publish: {
+    description: "Queue an owned post draft for immediate publication.",
+    schema: z.object({ draft_id: positiveInt }),
+  },
+  studio_post_schedule: {
+    description: "Schedule an owned post draft. ISO dates are optional per locale.",
+    schema: z
+      .object({ draft_id: positiveInt, ru_at: isoDateOrNull(80), en_at: isoDateOrNull(80) })
+      .refine((value) => value.ru_at || value.en_at, { message: "ru_at or en_at is required" }),
+    list: z.object({ draft_id: positiveInt, ru_at: isoDateShape(80), en_at: isoDateShape(80) }),
+  },
+  studio_post_cancel: {
+    description: "Cancel an owned post draft and its remaining work.",
+    schema: z.object({ draft_id: positiveInt }),
+  },
+  studio_video_create: {
+    description: "Create an owned video draft from an already-uploaded Studio video asset.",
+    schema: z.object({ asset_id: positiveInt }),
+  },
+  studio_video_list: {
+    description: "List the authenticated owner's video drafts.",
+    schema: z.object({ limit: positiveInt.max(100).optional() }),
+  },
+  studio_video_get: {
+    description: "Read an owned video draft and its targets.",
+    schema: z.object({ video_draft_id: positiveInt }),
+  },
+  studio_video_preview: {
+    description: "Read an owned video draft preview and target metadata.",
+    schema: z.object({ video_draft_id: positiveInt }),
+  },
+  studio_video_status: { description: "Read owned video targets and durable jobs.", schema: z.object({ video_draft_id: positiveInt }) },
+  studio_video_history: {
+    description: "Read durable event history for one owned video draft.",
+    schema: z.object({ video_draft_id: positiveInt, limit: positiveInt.max(100).optional() }),
+  },
+  studio_video_rename: {
+    description: "Rename an owned video draft.",
+    schema: z.object({ video_draft_id: positiveInt, label: trimmed(1, 500) }),
+  },
+  studio_video_replace_targets: {
+    description: "Replace editable video publication targets.",
+    schema: z.object({
+      video_draft_id: positiveInt,
+      targets: z
+        .array(videoTargetSchema)
+        .min(1)
+        .max(2)
+        .refine((values) => new Set(values).size === values.length, { message: "targets must not contain duplicates" }),
+    }),
+  },
+  studio_video_update_metadata: {
+    description: "Set target metadata. YouTube requires title, description and tags; Instagram requires caption.",
+    schema: z
+      .object({ video_draft_id: positiveInt, target: videoTargetSchema, metadata: z.record(z.string(), z.unknown()) })
+      .transform((value, ctx) => {
+        const parsed =
+          value.target === "youtube_shorts"
+            ? youtubeMetadataSchema.safeParse(value.metadata)
+            : instagramMetadataSchema.safeParse(value.metadata);
+        if (!parsed.success) {
+          ctx.addIssue({ code: "custom", message: parsed.error.issues[0]?.message ?? "metadata is invalid" });
+          return z.NEVER;
+        }
+        const metadata =
+          "game_url" in parsed.data
+            ? { title: parsed.data.title, description: parsed.data.description, tags: parsed.data.tags, gameUrl: parsed.data.game_url }
+            : parsed.data;
+        return { videoDraftId: value.video_draft_id, target: value.target, metadata };
+      }),
+    list: z.object({ video_draft_id: positiveInt, target: videoTargetSchema, metadata: z.record(z.string(), z.unknown()) }),
+  },
+  studio_video_schedule: {
+    description: "Schedule one or both configured video targets at future ISO datetimes.",
+    schema: z
+      .object({ video_draft_id: positiveInt, youtube_shorts_at: isoDateOrNull(80), instagram_reels_at: isoDateOrNull(80) })
+      .refine((value) => value.youtube_shorts_at || value.instagram_reels_at, {
+        message: "youtube_shorts_at or instagram_reels_at is required",
+      }),
+    list: z.object({ video_draft_id: positiveInt, youtube_shorts_at: isoDateShape(80), instagram_reels_at: isoDateShape(80) }),
+  },
+  studio_video_preflight: {
+    description: "Validate an owned video source and configured targets without scheduling it.",
+    schema: z.object({ video_draft_id: positiveInt }),
+  },
+  studio_video_publish: {
+    description: "Queue all configured video targets for immediate publication.",
+    schema: z.object({ video_draft_id: positiveInt }),
+  },
+  studio_video_retry: {
+    description: "Retry one failed video target.",
+    schema: z.object({ video_draft_id: positiveInt, target: videoTargetSchema }),
+  },
+  studio_video_remove_target: {
+    description: "Remove one editable video target.",
+    schema: z.object({ video_draft_id: positiveInt, target: videoTargetSchema }),
+  },
+  studio_video_cancel: { description: "Cancel an owned video publication.", schema: z.object({ video_draft_id: positiveInt }) },
+  studio_analytics_dashboard: {
+    description: "Read an analytics dashboard section for the authenticated Studio.",
+    schema: z.object({
+      section: z.enum(["overview", "audience", "posts", "video"]).optional(),
+      days: z.union([z.literal(1), z.literal(7), z.literal(30)]).optional(),
+      locale: localeSchema.optional(),
+    }),
+  },
+  studio_analytics_post_archive: {
+    description: "Read a page of post analytics archive.",
+    schema: z.object({ offset: z.number().int().min(0).max(10_000).optional(), locale: localeSchema.optional() }),
+  },
+  studio_analytics_post_metrics: {
+    description: "Read analytics for one published post.",
+    schema: z.object({ post_id: positiveInt, locale: localeSchema.optional() }),
+  },
+  studio_analytics_video_archive: {
+    description: "Read a page of video analytics archive.",
+    schema: z.object({ offset: z.number().int().min(0).max(10_000).optional(), locale: localeSchema.optional() }),
+  },
+  studio_analytics_video_metrics: {
+    description: "Read analytics for one video draft.",
+    schema: z.object({ video_draft_id: positiveInt, locale: localeSchema.optional() }),
+  },
+  studio_analytics_audience: {
+    description: "Read the creator audience analysis.",
+    schema: z.object({ locale: localeSchema.optional() }),
+  },
+} as const;
+
+const publicTools = [{ name: "submit_feedback", description: feedbackToolDef.description, inputSchema: jsonSchema(feedbackToolDef) }];
+const studioTools = Object.entries(studioToolDefs).map(([name, def]) => ({
+  name,
+  description: def.description,
+  inputSchema: jsonSchema(def),
+}));
 
 type JsonObject = Record<string, unknown>;
 
@@ -218,6 +331,8 @@ async function runStudioTool(
   args: JsonObject,
 ): Promise<unknown> {
   const studio: StudioServices = studioServices(backendDb, config);
+  const def = (studioToolDefs as Record<string, { schema: z.ZodType }>)[name];
+  if (!def) throw new Error(`Unknown Studio tool: ${name}`);
   let result: unknown;
   let ref: string | null = null;
   switch (name) {
@@ -225,219 +340,250 @@ async function runStudioTool(
       return studio.capabilities.report();
     case "studio_queue":
       return studio.queue.snapshot(actorId);
-    case "studio_post_list":
-      return studio.posts.list(actorId, optionalInteger(args.limit, 50, 1, 100));
-    case "studio_notifications":
-      return studio.notifications.inbox(actorId, optionalInteger(args.limit, 50, 1, 100));
+    case "studio_post_list": {
+      const input = parseArgs(def.schema, args) as { limit?: number };
+      return studio.posts.list(actorId, input.limit ?? 50);
+    }
+    case "studio_notifications": {
+      const input = parseArgs(def.schema, args) as { limit?: number };
+      return studio.notifications.inbox(actorId, input.limit ?? 50);
+    }
     case "studio_notification_settings":
       return studio.settings.notifications(actorId);
-    case "studio_notification_settings_update":
+    case "studio_notification_settings_update": {
+      const input = parseArgs(def.schema, args) as {
+        reminders_enabled?: boolean;
+        reminder_minutes?: number;
+        completion_enabled?: boolean;
+      };
       return studio.settings.setNotifications(actorId, {
-        ...(typeof args.reminders_enabled === "boolean" ? { remindersEnabled: args.reminders_enabled } : {}),
-        ...(typeof args.reminder_minutes === "number" ? { reminderMinutes: integer(args.reminder_minutes, "reminder_minutes") } : {}),
-        ...(typeof args.completion_enabled === "boolean" ? { completionEnabled: args.completion_enabled } : {}),
+        ...(input.reminders_enabled === undefined ? {} : { remindersEnabled: input.reminders_enabled }),
+        ...(input.reminder_minutes === undefined ? {} : { reminderMinutes: input.reminder_minutes }),
+        ...(input.completion_enabled === undefined ? {} : { completionEnabled: input.completion_enabled }),
       });
-    case "studio_media_list":
-      return studio.posts.mediaAssets(actorId, optionalInteger(args.limit, 50, 1, 100));
-    case "studio_acknowledge_notification":
-      result = { acknowledged: studio.notifications.acknowledge(actorId, integer(args.id, "id")) };
+    }
+    case "studio_media_list": {
+      const input = parseArgs(def.schema, args) as { limit?: number };
+      return studio.posts.mediaAssets(actorId, input.limit ?? 50);
+    }
+    case "studio_acknowledge_notification": {
+      const input = parseArgs(def.schema, args) as { id: number };
+      result = { acknowledged: studio.notifications.acknowledge(actorId, input.id) };
       break;
+    }
     case "studio_post_create": {
-      const textEn = optionalText(args.text_en, 20_000);
+      const input = parseArgs(def.schema, args) as { text: string; text_en?: string };
       const draftId = studio.publications.create(actorId, {
         kind: "post",
-        message: {
-          text: text(args.text, "text", 1, 20_000),
-          ...(textEn === undefined ? {} : { textEn }),
-          entities: [],
-          media: [],
-        },
+        message: { text: input.text, ...(input.text_en === undefined ? {} : { textEn: input.text_en }), entities: [], media: [] },
       }).id;
       result = { draft_id: draftId };
       ref = `draft:${draftId}`;
       break;
     }
     case "studio_post_get": {
-      const draftId = integer(args.draft_id, "draft_id");
-      return studio.posts.get(actorId, draftId);
+      const input = parseArgs(def.schema, args) as { draft_id: number };
+      return studio.posts.get(actorId, input.draft_id);
     }
-    case "studio_post_validate":
-      return studio.posts.validate(actorId, integer(args.draft_id, "draft_id"));
-    case "studio_post_status":
-      return studio.posts.status(actorId, integer(args.draft_id, "draft_id"));
-    case "studio_post_history":
-      return studio.posts.history(actorId, integer(args.draft_id, "draft_id"), optionalInteger(args.limit, 50, 1, 100));
+    case "studio_post_validate": {
+      const input = parseArgs(def.schema, args) as { draft_id: number };
+      return studio.posts.validate(actorId, input.draft_id);
+    }
+    case "studio_post_status": {
+      const input = parseArgs(def.schema, args) as { draft_id: number };
+      return studio.posts.status(actorId, input.draft_id);
+    }
+    case "studio_post_history": {
+      const input = parseArgs(def.schema, args) as { draft_id: number; limit?: number };
+      return studio.posts.history(actorId, input.draft_id, input.limit ?? 50);
+    }
     case "studio_post_attach_media": {
-      const draftId = integer(args.draft_id, "draft_id");
-      const locale = enumValue(args.locale, "locale", ["ru", "en"] as const);
-      const assetIds = integerArray(args.asset_ids, "asset_ids", 1, 10);
-      studio.posts.attachMediaAssets(actorId, draftId, locale, assetIds, Boolean(args.replace));
-      result = { draft_id: draftId, locale, asset_ids: assetIds, attached: true, replace: Boolean(args.replace) };
-      ref = `draft:${draftId}`;
+      const input = parseArgs(def.schema, args) as { draft_id: number; locale: "ru" | "en"; asset_ids: number[]; replace?: boolean };
+      studio.posts.attachMediaAssets(actorId, input.draft_id, input.locale, input.asset_ids, Boolean(input.replace));
+      result = {
+        draft_id: input.draft_id,
+        locale: input.locale,
+        asset_ids: input.asset_ids,
+        attached: true,
+        replace: Boolean(input.replace),
+      };
+      ref = `draft:${input.draft_id}`;
       break;
     }
     case "studio_post_remove_media": {
-      const draftId = integer(args.draft_id, "draft_id");
-      const locale = enumValue(args.locale, "locale", ["ru", "en"] as const);
-      const assetIds = integerArray(args.asset_ids, "asset_ids", 1, 10);
-      studio.posts.removeMedia(actorId, draftId, locale, assetIds);
-      result = { draft_id: draftId, locale, asset_ids: assetIds, removed: true };
-      ref = `draft:${draftId}`;
+      const input = parseArgs(def.schema, args) as { draft_id: number; locale: "ru" | "en"; asset_ids: number[] };
+      studio.posts.removeMedia(actorId, input.draft_id, input.locale, input.asset_ids);
+      result = { draft_id: input.draft_id, locale: input.locale, asset_ids: input.asset_ids, removed: true };
+      ref = `draft:${input.draft_id}`;
       break;
     }
-    case "studio_post_preview":
-      return studio.posts.preview(actorId, integer(args.draft_id, "draft_id"));
+    case "studio_post_preview": {
+      const input = parseArgs(def.schema, args) as { draft_id: number };
+      return studio.posts.preview(actorId, input.draft_id);
+    }
     case "studio_post_edit": {
-      const draftId = integer(args.draft_id, "draft_id");
-      const locale = enumValue(args.locale, "locale", ["ru", "en"] as const);
-      studio.posts.edit(actorId, draftId, { locale, text: text(args.text, "text", 0, 20_000), entities: [], media: [] });
-      result = { draft_id: draftId, updated: true };
-      ref = `draft:${draftId}`;
+      const input = parseArgs(def.schema, args) as { draft_id: number; locale: "ru" | "en"; text: string };
+      studio.posts.edit(actorId, input.draft_id, { locale: input.locale, text: input.text, entities: [], media: [] });
+      result = { draft_id: input.draft_id, updated: true };
+      ref = `draft:${input.draft_id}`;
       break;
     }
     case "studio_post_toggle_target": {
-      const draftId = integer(args.draft_id, "draft_id");
-      studio.posts.toggleTarget(actorId, draftId, text(args.target, "target", 1, 120));
-      result = { draft_id: draftId, updated: true };
-      ref = `draft:${draftId}`;
+      const input = parseArgs(def.schema, args) as { draft_id: number; target: string };
+      studio.posts.toggleTarget(actorId, input.draft_id, input.target);
+      result = { draft_id: input.draft_id, updated: true };
+      ref = `draft:${input.draft_id}`;
       break;
     }
     case "studio_post_publish": {
-      const draftId = integer(args.draft_id, "draft_id");
-      const postId = studio.posts.publish(actorId, draftId);
-      result = { draft_id: draftId, post_id: postId, queued: true };
+      const input = parseArgs(def.schema, args) as { draft_id: number };
+      const postId = studio.posts.publish(actorId, input.draft_id);
+      result = { draft_id: input.draft_id, post_id: postId, queued: true };
       ref = `post:${postId}`;
       break;
     }
     case "studio_post_schedule": {
-      const draftId = integer(args.draft_id, "draft_id");
-      const ruAt = optionalDate(args.ru_at, "ru_at");
-      const enAt = optionalDate(args.en_at, "en_at");
-      if (!ruAt && !enAt) throw new Error("ru_at or en_at is required");
-      const postId = studio.posts.schedule(actorId, draftId, { ruAt, enAt });
-      result = { draft_id: draftId, post_id: postId, scheduled: true };
+      const input = parseArgs(def.schema, args) as { draft_id: number; ru_at: Date | null; en_at: Date | null };
+      const postId = studio.posts.schedule(actorId, input.draft_id, { ruAt: input.ru_at, enAt: input.en_at });
+      result = { draft_id: input.draft_id, post_id: postId, scheduled: true };
       ref = `post:${postId}`;
       break;
     }
     case "studio_post_cancel": {
-      const draftId = integer(args.draft_id, "draft_id");
-      studio.posts.cancel(actorId, draftId);
-      result = { draft_id: draftId, cancelled: true };
-      ref = `draft:${draftId}`;
+      const input = parseArgs(def.schema, args) as { draft_id: number };
+      studio.posts.cancel(actorId, input.draft_id);
+      result = { draft_id: input.draft_id, cancelled: true };
+      ref = `draft:${input.draft_id}`;
       break;
     }
     case "studio_video_create": {
-      const videoDraftId = studio.publications.create(actorId, {
-        kind: "video",
-        studioMediaAssetId: integer(args.asset_id, "asset_id"),
-      }).id;
+      const input = parseArgs(def.schema, args) as { asset_id: number };
+      const videoDraftId = studio.publications.create(actorId, { kind: "video", studioMediaAssetId: input.asset_id }).id;
       result = { video_draft_id: videoDraftId };
       ref = `video:${videoDraftId}`;
       break;
     }
-    case "studio_video_list":
-      return studio.videos.list(actorId, optionalInteger(args.limit, 50, 1, 100));
-    case "studio_video_get":
-      return studio.videos.get(actorId, integer(args.video_draft_id, "video_draft_id"));
-    case "studio_video_preview":
-      return studio.videos.preview(actorId, integer(args.video_draft_id, "video_draft_id"));
-    case "studio_video_status":
-      return studio.videos.status(actorId, integer(args.video_draft_id, "video_draft_id"));
-    case "studio_video_history":
-      return studio.videos.history(actorId, integer(args.video_draft_id, "video_draft_id"), optionalInteger(args.limit, 50, 1, 100));
+    case "studio_video_list": {
+      const input = parseArgs(def.schema, args) as { limit?: number };
+      return studio.videos.list(actorId, input.limit ?? 50);
+    }
+    case "studio_video_get": {
+      const input = parseArgs(def.schema, args) as { video_draft_id: number };
+      return studio.videos.get(actorId, input.video_draft_id);
+    }
+    case "studio_video_preview": {
+      const input = parseArgs(def.schema, args) as { video_draft_id: number };
+      return studio.videos.preview(actorId, input.video_draft_id);
+    }
+    case "studio_video_status": {
+      const input = parseArgs(def.schema, args) as { video_draft_id: number };
+      return studio.videos.status(actorId, input.video_draft_id);
+    }
+    case "studio_video_history": {
+      const input = parseArgs(def.schema, args) as { video_draft_id: number; limit?: number };
+      return studio.videos.history(actorId, input.video_draft_id, input.limit ?? 50);
+    }
     case "studio_video_rename": {
-      const videoDraftId = integer(args.video_draft_id, "video_draft_id");
-      studio.videos.rename(actorId, videoDraftId, text(args.label, "label", 1, 500));
-      result = { video_draft_id: videoDraftId, updated: true };
-      ref = `video:${videoDraftId}`;
+      const input = parseArgs(def.schema, args) as { video_draft_id: number; label: string };
+      studio.videos.rename(actorId, input.video_draft_id, input.label);
+      result = { video_draft_id: input.video_draft_id, updated: true };
+      ref = `video:${input.video_draft_id}`;
       break;
     }
     case "studio_video_replace_targets": {
-      const videoDraftId = integer(args.video_draft_id, "video_draft_id");
-      studio.videos.replaceTargets(actorId, videoDraftId, videoTargets(args.targets));
-      result = { video_draft_id: videoDraftId, updated: true };
-      ref = `video:${videoDraftId}`;
+      const input = parseArgs(def.schema, args) as { video_draft_id: number; targets: Array<"youtube_shorts" | "instagram_reels"> };
+      studio.videos.replaceTargets(actorId, input.video_draft_id, input.targets);
+      result = { video_draft_id: input.video_draft_id, updated: true };
+      ref = `video:${input.video_draft_id}`;
       break;
     }
     case "studio_video_update_metadata": {
-      const videoDraftId = integer(args.video_draft_id, "video_draft_id");
-      const target = videoTarget(args.target);
-      studio.videos.updateMetadata(actorId, videoDraftId, target, videoMetadata(target, args.metadata));
-      result = { video_draft_id: videoDraftId, target, updated: true };
-      ref = `video:${videoDraftId}`;
+      const input = parseArgs(def.schema, args) as {
+        videoDraftId: number;
+        target: "youtube_shorts" | "instagram_reels";
+        metadata: Record<string, unknown>;
+      };
+      studio.videos.updateMetadata(actorId, input.videoDraftId, input.target, input.metadata as never);
+      result = { video_draft_id: input.videoDraftId, target: input.target, updated: true };
+      ref = `video:${input.videoDraftId}`;
       break;
     }
     case "studio_video_schedule": {
-      const videoDraftId = integer(args.video_draft_id, "video_draft_id");
-      const youtube = optionalDate(args.youtube_shorts_at, "youtube_shorts_at");
-      const instagram = optionalDate(args.instagram_reels_at, "instagram_reels_at");
-      if (!youtube && !instagram) throw new Error("youtube_shorts_at or instagram_reels_at is required");
-      const technical = await studio.videos.schedule(actorId, videoDraftId, {
-        ...(youtube ? { youtube_shorts: youtube } : {}),
-        ...(instagram ? { instagram_reels: instagram } : {}),
+      const input = parseArgs(def.schema, args) as {
+        video_draft_id: number;
+        youtube_shorts_at: Date | null;
+        instagram_reels_at: Date | null;
+      };
+      const technical = await studio.videos.schedule(actorId, input.video_draft_id, {
+        ...(input.youtube_shorts_at ? { youtube_shorts: input.youtube_shorts_at } : {}),
+        ...(input.instagram_reels_at ? { instagram_reels: input.instagram_reels_at } : {}),
       });
-      result = { video_draft_id: videoDraftId, scheduled: true, technical };
-      ref = `video:${videoDraftId}`;
+      result = { video_draft_id: input.video_draft_id, scheduled: true, technical };
+      ref = `video:${input.video_draft_id}`;
       break;
     }
-    case "studio_video_preflight":
-      return studio.videos.validate(actorId, integer(args.video_draft_id, "video_draft_id"));
+    case "studio_video_preflight": {
+      const input = parseArgs(def.schema, args) as { video_draft_id: number };
+      return studio.videos.validate(actorId, input.video_draft_id);
+    }
     case "studio_video_publish": {
-      const videoDraftId = integer(args.video_draft_id, "video_draft_id");
-      const technical = await studio.videos.publish(actorId, videoDraftId);
-      result = { video_draft_id: videoDraftId, queued: true, technical };
-      ref = `video:${videoDraftId}`;
+      const input = parseArgs(def.schema, args) as { video_draft_id: number };
+      const technical = await studio.videos.publish(actorId, input.video_draft_id);
+      result = { video_draft_id: input.video_draft_id, queued: true, technical };
+      ref = `video:${input.video_draft_id}`;
       break;
     }
     case "studio_video_retry": {
-      const videoDraftId = integer(args.video_draft_id, "video_draft_id");
-      const target = videoTarget(args.target);
-      studio.videos.retry(actorId, videoDraftId, target);
-      result = { video_draft_id: videoDraftId, target, retried: true };
-      ref = `video:${videoDraftId}`;
+      const input = parseArgs(def.schema, args) as { video_draft_id: number; target: "youtube_shorts" | "instagram_reels" };
+      studio.videos.retry(actorId, input.video_draft_id, input.target);
+      result = { video_draft_id: input.video_draft_id, target: input.target, retried: true };
+      ref = `video:${input.video_draft_id}`;
       break;
     }
     case "studio_video_remove_target": {
-      const videoDraftId = integer(args.video_draft_id, "video_draft_id");
-      const target = videoTarget(args.target);
-      result = { video_draft_id: videoDraftId, target, ...studio.videos.removeTarget(actorId, videoDraftId, target) };
-      ref = `video:${videoDraftId}`;
+      const input = parseArgs(def.schema, args) as { video_draft_id: number; target: "youtube_shorts" | "instagram_reels" };
+      result = {
+        video_draft_id: input.video_draft_id,
+        target: input.target,
+        ...studio.videos.removeTarget(actorId, input.video_draft_id, input.target),
+      };
+      ref = `video:${input.video_draft_id}`;
       break;
     }
     case "studio_video_cancel": {
-      const videoDraftId = integer(args.video_draft_id, "video_draft_id");
-      result = { video_draft_id: videoDraftId, cancelled: true, ...(await studio.videos.cancel(actorId, videoDraftId)) };
-      ref = `video:${videoDraftId}`;
+      const input = parseArgs(def.schema, args) as { video_draft_id: number };
+      result = { video_draft_id: input.video_draft_id, cancelled: true, ...(await studio.videos.cancel(actorId, input.video_draft_id)) };
+      ref = `video:${input.video_draft_id}`;
       break;
     }
     case "studio_analytics_dashboard": {
-      const section = enumValue(args.section ?? "overview", "section", ["overview", "audience", "posts", "video"] as const);
-      const days = enumValue(args.days ?? 7, "days", [1, 7, 30] as const);
-      const locale = enumValue(args.locale ?? "ru", "locale", ["ru", "en"] as const);
-      return studio.analytics.dashboard(section, days, locale);
+      const input = parseArgs(def.schema, args) as {
+        section?: "overview" | "audience" | "posts" | "video";
+        days?: 1 | 7 | 30;
+        locale?: "ru" | "en";
+      };
+      return studio.analytics.dashboard(input.section ?? "overview", input.days ?? 7, input.locale ?? "ru");
     }
-    case "studio_analytics_post_archive":
-      return studio.analytics.postArchive(
-        optionalInteger(args.offset, 0, 0, 10_000),
-        enumValue(args.locale ?? "ru", "locale", ["ru", "en"] as const),
-      );
-    case "studio_analytics_post_metrics":
-      return studio.analytics.postMetrics(
-        integer(args.post_id, "post_id"),
-        enumValue(args.locale ?? "ru", "locale", ["ru", "en"] as const),
-      );
-    case "studio_analytics_video_archive":
-      return studio.analytics.videoArchive(
-        optionalInteger(args.offset, 0, 0, 10_000),
-        enumValue(args.locale ?? "ru", "locale", ["ru", "en"] as const),
-      );
-    case "studio_analytics_video_metrics":
-      return studio.analytics.videoMetrics(
-        integer(args.video_draft_id, "video_draft_id"),
-        enumValue(args.locale ?? "ru", "locale", ["ru", "en"] as const),
-      );
-    case "studio_analytics_audience":
-      return studio.analytics.audienceAnalysis(enumValue(args.locale ?? "ru", "locale", ["ru", "en"] as const));
+    case "studio_analytics_post_archive": {
+      const input = parseArgs(def.schema, args) as { offset?: number; locale?: "ru" | "en" };
+      return studio.analytics.postArchive(input.offset ?? 0, input.locale ?? "ru");
+    }
+    case "studio_analytics_post_metrics": {
+      const input = parseArgs(def.schema, args) as { post_id: number; locale?: "ru" | "en" };
+      return studio.analytics.postMetrics(input.post_id, input.locale ?? "ru");
+    }
+    case "studio_analytics_video_archive": {
+      const input = parseArgs(def.schema, args) as { offset?: number; locale?: "ru" | "en" };
+      return studio.analytics.videoArchive(input.offset ?? 0, input.locale ?? "ru");
+    }
+    case "studio_analytics_video_metrics": {
+      const input = parseArgs(def.schema, args) as { video_draft_id: number; locale?: "ru" | "en" };
+      return studio.analytics.videoMetrics(input.video_draft_id, input.locale ?? "ru");
+    }
+    case "studio_analytics_audience": {
+      const input = parseArgs(def.schema, args) as { locale?: "ru" | "en" };
+      return studio.analytics.audienceAnalysis(input.locale ?? "ru");
+    }
     default:
       throw new Error(`Unknown Studio tool: ${name}`);
   }
@@ -453,15 +599,15 @@ async function runStudioTool(
 }
 
 function submitFeedback(backendDb: BackendDb, args: JsonObject, clientKey: string): string {
-  const name = optionalText(args.name, 120) || "Anonymous Agent";
-  const message = text(args.message, "message", 1, 2000);
+  const input = parseArgs(feedbackToolDef.schema, args);
+  const name = input.name || "Anonymous Agent";
   if (rateLimited(clientKey)) throw new McpToolError(-32000, "rate limit exceeded");
   recordDomainEvent(backendDb, {
     ref: "mcp:feedback",
     target: "mcp",
     type: "mcp.feedback.received",
     severity: "info",
-    message: `MCP Feedback from ${name}: ${message}`,
+    message: `MCP Feedback from ${name}: ${input.message}`,
   });
   return `Thank you, ${name}! Your feedback has been logged.`;
 }
@@ -470,96 +616,8 @@ function success(id: unknown, value: unknown): Record<string, unknown> {
   return { jsonrpc: "2.0", id, result: { content: [{ type: "text", text: JSON.stringify(value) }] } };
 }
 
-function tool(name: string, description: string, properties: JsonObject = {}, required: string[] = []): JsonObject {
-  return { name, description, inputSchema: { type: "object", properties, ...(required.length ? { required } : {}) } };
-}
-
-function stringSchema(minLength: number, maxLength: number): JsonObject {
-  return { type: "string", minLength, maxLength };
-}
-
-function integerSchema(minimum: number, maximum?: number): JsonObject {
-  return { type: "integer", minimum, ...(maximum ? { maximum } : {}) };
-}
-
-function enumSchema(values: readonly (string | number)[]): JsonObject {
-  return { enum: values };
-}
-
 function object(value: unknown): JsonObject {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as JsonObject) : {};
-}
-
-function text(value: unknown, name: string, minLength: number, maxLength: number): string {
-  if (typeof value !== "string") throw new Error(`${name} must be a string`);
-  const result = value.trim();
-  if (result.length < minLength || result.length > maxLength) throw new Error(`${name} must contain ${minLength}–${maxLength} characters`);
-  return result;
-}
-
-function optionalText(value: unknown, maxLength: number): string | undefined {
-  if (value == null) return undefined;
-  return text(value, "value", 0, maxLength);
-}
-
-function integer(value: unknown, name: string): number {
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) throw new Error(`${name} must be a positive integer`);
-  return value;
-}
-
-function integerArray(value: unknown, name: string, min: number, max: number): number[] {
-  if (!Array.isArray(value) || value.length < min || value.length > max)
-    throw new McpToolError(-32602, `${name} must contain ${min}-${max} integers`);
-  const result = value.map((item) => integer(item, name));
-  return [...new Set(result)];
-}
-
-function optionalInteger(value: unknown, fallback: number, min: number, max: number): number {
-  if (value == null) return fallback;
-  if (typeof value !== "number" || !Number.isSafeInteger(value)) throw new Error("limit must be an integer");
-  const result = value;
-  if (result < min || result > max) throw new Error(`limit must be ${min}–${max}`);
-  return result;
-}
-
-function enumValue<T extends string | number>(value: unknown, name: string, values: readonly T[]): T {
-  if (!values.includes(value as T)) throw new Error(`${name} is invalid`);
-  return value as T;
-}
-
-function optionalDate(value: unknown, name: string): Date | null {
-  if (value == null || value === "") return null;
-  if (typeof value !== "string") throw new Error(`${name} must be an ISO date`);
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) throw new Error(`${name} must be an ISO date`);
-  return date;
-}
-
-function videoTarget(value: unknown): "youtube_shorts" | "instagram_reels" {
-  return enumValue(value, "target", ["youtube_shorts", "instagram_reels"] as const);
-}
-
-function videoTargets(value: unknown): Array<"youtube_shorts" | "instagram_reels"> {
-  if (!Array.isArray(value) || value.length === 0 || value.length > 2) throw new Error("targets must contain one or two video targets");
-  const targets = value.map(videoTarget);
-  if (new Set(targets).size !== targets.length) throw new Error("targets must not contain duplicates");
-  return targets;
-}
-
-function videoMetadata(target: "youtube_shorts" | "instagram_reels", value: unknown) {
-  const metadata = object(value);
-  if (target === "youtube_shorts") {
-    const tags = metadata.tags;
-    if (!Array.isArray(tags) || tags.length > 30 || tags.some((tag) => typeof tag !== "string"))
-      throw new Error("metadata.tags must be an array of up to 30 strings");
-    return {
-      title: text(metadata.title, "metadata.title", 1, 100),
-      description: text(metadata.description, "metadata.description", 0, 5_000),
-      tags: tags.map((tag) => text(tag, "metadata.tags", 1, 100)),
-      ...(metadata.game_url == null ? {} : { gameUrl: text(metadata.game_url, "metadata.game_url", 1, 500) }),
-    };
-  }
-  return { caption: text(metadata.caption, "metadata.caption", 1, 2_200) };
 }
 
 function rpcError(id: unknown, code: number, message: string): Record<string, unknown> {
