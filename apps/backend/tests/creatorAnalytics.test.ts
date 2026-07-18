@@ -382,6 +382,7 @@ describe("creator analytics", () => {
       expect(overview).toContain("| Telegram | 24 | 5 | 0 | 0 | 0 |");
       expect(posts).toContain("Контент · сегодня");
       expect(posts).toContain("| Все | 24 | 5 | 0 | 0 | 0 |");
+      expect(studioAnalyticsDashboard(backendDb, config, "overview", 1, "ru").richHtml).toContain("<table bordered striped>");
       expect(posts).not.toContain("Видеопостинг");
     } finally {
       backendDb.close();

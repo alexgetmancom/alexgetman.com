@@ -18,12 +18,12 @@ type AnalyticsPeriod = 1 | 7 | 30;
 
 type StudioAnalyticsDashboard = {
   text: string;
-  richMarkdown: string;
+  richHtml: string;
   hasComments: boolean;
 };
 
 /**
- * Transport-neutral creator analytics. Telegram renders `richMarkdown` through
+ * Transport-neutral creator analytics. Telegram renders `richHtml` through
  * its Rich Message API, while text remains useful to web and MCP callers.
  */
 export function studioAnalyticsDashboard(
@@ -57,7 +57,56 @@ export function studioAnalyticsDashboard(
     lines.push(...videoContentTable(backendDb, config, since, days, period, locale));
   }
   const text = lines.join("\n");
-  return { text, richMarkdown: text, hasComments: hasAudienceComments(backendDb) };
+  return { text, richHtml: richMessageHtml(lines), hasComments: hasAudienceComments(backendDb) };
+}
+
+/** Telegram's new rich-message Markdown deliberately has no table syntax.
+ * Use its supported HTML <table> block instead of sending pipe characters as
+ * visible text. */
+function richMessageHtml(lines: string[]): string {
+  const blocks: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]?.trim() ?? "";
+    if (!line) continue;
+    if (line.startsWith("| ")) {
+      const headers = tableCells(line);
+      // Markdown table separator is only an intermediate text representation.
+      index += 1;
+      const rows: string[][] = [];
+      while (index + 1 < lines.length && (lines[index + 1]?.trimStart().startsWith("| ") ?? false)) {
+        index += 1;
+        rows.push(tableCells(lines[index] ?? ""));
+      }
+      blocks.push(
+        `<table bordered striped><tr>${headers.map((cell) => `<th>${escapeHtml(cell)}</th>`).join("")}</tr>${rows
+          .map(
+            (row) =>
+              `<tr>${row.map((cell, cellIndex) => `<td align="${cellIndex ? "right" : "left"}">${escapeHtml(cell)}</td>`).join("")}</tr>`,
+          )
+          .join("")}</table>`,
+      );
+      continue;
+    }
+    blocks.push(`<p>${richInlineHtml(line)}</p>`);
+  }
+  return blocks.join("\n");
+}
+
+function tableCells(line: string): string[] {
+  return line
+    .trim()
+    .replace(/^\|\s?/, "")
+    .replace(/\s?\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim());
+}
+
+function richInlineHtml(value: string): string {
+  return escapeHtml(value).replace(/\*([^*]+)\*/g, "<b>$1</b>");
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 function audienceProfiles(backendDb: BackendDb, config: BackendConfig, since: string, period: string, locale: BotLocale): string[] {

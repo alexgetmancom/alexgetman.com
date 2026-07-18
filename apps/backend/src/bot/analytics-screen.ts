@@ -153,7 +153,7 @@ async function showAnalyticsDashboard(
   keyboard.row().text(t(locale, "analytics.archive-btn"), "archive_home");
   if (dashboard.hasComments && config.DEEPSEEK_API_KEY) keyboard.text(t(locale, "analytics.ai-analysis"), "analytics_ai");
   keyboard.row().text(t(locale, "common.menu"), "menu_home");
-  await ctx.editMessageText({ markdown: dashboard.richMarkdown }, { reply_markup: keyboard });
+  await ctx.editMessageText({ html: dashboard.richHtml }, { reply_markup: keyboard });
 }
 
 function defaultAnalyticsSection(config: BackendConfig): AnalyticsSection {
