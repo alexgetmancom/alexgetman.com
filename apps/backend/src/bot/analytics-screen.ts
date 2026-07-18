@@ -25,52 +25,6 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
     await showAnalyticsDashboard(ctx, backendDb, config, defaultAnalyticsSection(config), 1);
     return true;
   }
-  if (data.startsWith("analytics_yesterday:") || data.startsWith("analytics_today:")) {
-    const [, , sectionValue, daysValue] = data.split(":");
-    const section = analyticsSection(sectionValue, config);
-    const days = analyticsPeriod(Number(daysValue));
-    const anchorDay = data.startsWith("analytics_yesterday:") ? addMskDays(mskDay(), -1) : undefined;
-    await ctx.answerCallbackQuery();
-    await showAnalyticsDashboard(ctx, backendDb, config, section, days, anchorDay);
-    return true;
-  }
-  if (data.startsWith("analytics_date:")) {
-    const [, , sectionValue, daysValue, anchorValue] = data.split(":");
-    clearTelegramAnalyticsDashboard(backendDb, Number(ctx.from?.id));
-    await ctx.answerCallbackQuery();
-    await showAnalyticsDatePicker(
-      ctx,
-      backendDb,
-      analyticsSection(sectionValue, config),
-      analyticsPeriod(Number(daysValue)),
-      validDay(anchorValue),
-    );
-    return true;
-  }
-  if (data.startsWith("analytics_date_shift:")) {
-    const [, , sectionValue, daysValue, anchorValue, deltaValue] = data.split(":");
-    const anchorDay = addMskDays(validDay(anchorValue), Number(deltaValue));
-    await ctx.answerCallbackQuery();
-    await showAnalyticsDatePicker(ctx, backendDb, analyticsSection(sectionValue, config), analyticsPeriod(Number(daysValue)), anchorDay);
-    return true;
-  }
-  if (data.startsWith("analytics_date_apply:")) {
-    const [, , sectionValue, daysValue, anchorValue] = data.split(":");
-    await ctx.answerCallbackQuery();
-    await showAnalyticsDashboard(
-      ctx,
-      backendDb,
-      config,
-      analyticsSection(sectionValue, config),
-      analyticsPeriod(Number(daysValue)),
-      validDay(anchorValue),
-    );
-    return true;
-  }
-  if (data === "analytics_date_noop") {
-    await ctx.answerCallbackQuery();
-    return true;
-  }
   if (data === "archive_home") {
     clearTelegramAnalyticsDashboard(backendDb, Number(ctx.from?.id));
     const locale = botLocale(backendDb, Number(ctx.from?.id));
@@ -178,16 +132,15 @@ async function showAnalyticsDashboard(
   config: BackendConfig,
   section: AnalyticsSection,
   days: 1 | 7 | 30,
-  anchorDay?: string,
 ): Promise<void> {
   const locale = botLocale(backendDb, Number(ctx.from?.id));
-  const dashboard = studioServices(backendDb, config).analytics.dashboard(section, days, locale, anchorDay);
-  const keyboard = analyticsKeyboard(config, locale, section, days, dashboard.hasComments, anchorDay);
+  const dashboard = studioServices(backendDb, config).analytics.dashboard(section, days, locale);
+  const keyboard = analyticsKeyboard(config, locale, section, days, dashboard.hasComments);
   await ctx.editMessageText({ html: dashboard.richHtml }, { reply_markup: keyboard });
   const adminId = Number(ctx.from?.id);
   const messageId = ctx.callbackQuery?.message?.message_id;
   if (section !== "audience" && Number.isSafeInteger(adminId) && messageId && ctx.chat?.id)
-    setTelegramAnalyticsDashboard(backendDb, adminId, Number(ctx.chat.id), messageId, section, days, anchorDay);
+    setTelegramAnalyticsDashboard(backendDb, adminId, Number(ctx.chat.id), messageId, section, days);
 }
 
 /** Refreshes only the currently open dashboard for each owner. The interface
@@ -197,14 +150,14 @@ export async function refreshTelegramAnalyticsDashboards(bot: Bot, backendDb: Ba
   for (const card of telegramAnalyticsDashboards(backendDb)) {
     const section = card.section === "overview" && !showOverview(config) ? defaultAnalyticsSection(config) : card.section;
     const locale = botLocale(backendDb, card.adminId);
-    const dashboard = studioServices(backendDb, config).analytics.dashboard(section, card.days, locale, card.anchorDay);
+    const dashboard = studioServices(backendDb, config).analytics.dashboard(section, card.days, locale);
     try {
       await bot.api.editMessageText(
         card.chatId,
         card.messageId,
         { html: dashboard.richHtml },
         {
-          reply_markup: analyticsKeyboard(config, locale, section, card.days, dashboard.hasComments, card.anchorDay),
+          reply_markup: analyticsKeyboard(config, locale, section, card.days, dashboard.hasComments),
         },
       );
       refreshed += 1;
@@ -223,13 +176,13 @@ function analyticsKeyboard(
   section: AnalyticsSection,
   days: 1 | 7 | 30,
   hasComments: boolean,
-  anchorDay?: string,
 ): InlineKeyboard {
+  const callback = (nextDays: 1 | 7 | 30) => `analytics_section:${section}:${nextDays}`;
   const keyboard = new InlineKeyboard();
   keyboard
-    .text("‹ Вчера", `analytics_yesterday:${section}:${days}`)
-    .text(`• ${dateButtonLabel(anchorDay, locale)}`, `analytics_today:${section}:${days}`)
-    .text("📅 Выбрать дату", `analytics_date:${section}:${days}:${anchorDay ?? mskDay()}`)
+    .text(periodButtonLabel(locale, 1, days), callback(1))
+    .text(periodButtonLabel(locale, 7, days), callback(7))
+    .text(periodButtonLabel(locale, 30, days), callback(30))
     .row();
   if (showOverview(config))
     keyboard.text(
@@ -252,57 +205,6 @@ function analyticsKeyboard(
   return keyboard;
 }
 
-async function showAnalyticsDatePicker(
-  ctx: Context,
-  backendDb: BackendDb,
-  section: AnalyticsSection,
-  days: 1 | 7 | 30,
-  anchorDay: string,
-): Promise<void> {
-  const locale = botLocale(backendDb, Number(ctx.from?.id));
-  const keyboard = new InlineKeyboard()
-    .text("‹", `analytics_date_shift:${section}:${days}:${anchorDay}:-1`)
-    .text(dateButtonLabel(anchorDay, locale), "analytics_date_noop");
-  if (anchorDay < mskDay()) keyboard.text("›", `analytics_date_shift:${section}:${days}:${anchorDay}:1`);
-  keyboard
-    .row()
-    .text(`${days === 1 ? "• " : ""}День`, `analytics_date_apply:${section}:1:${anchorDay}`)
-    .text(`${days === 7 ? "• " : ""}7 дней`, `analytics_date_apply:${section}:7:${anchorDay}`)
-    .text(`${days === 30 ? "• " : ""}30 дней`, `analytics_date_apply:${section}:30:${anchorDay}`)
-    .row()
-    .text("← К статистике", `analytics_date_apply:${section}:${days}:${anchorDay}`);
-  await ctx.editMessageText(`📅 ${locale === "ru" ? "Выбор даты и периода" : "Date and period"}`, { reply_markup: keyboard });
-}
-
-function analyticsSection(value: string | undefined, config: BackendConfig): AnalyticsSection {
-  const requested: AnalyticsSection = value === "posts" || value === "video" || value === "audience" ? value : "overview";
-  return requested === "overview" && !showOverview(config) ? defaultAnalyticsSection(config) : requested;
-}
-
-function mskDay(now = new Date()): string {
-  return new Date(now.getTime() + 3 * 60 * 60_000).toISOString().slice(0, 10);
-}
-
-function validDay(value: string | undefined): string {
-  const candidate = value ?? "";
-  return /^\d{4}-\d{2}-\d{2}$/.test(candidate) ? candidate : mskDay();
-}
-
-function addMskDays(day: string, amount: number): string {
-  const date = new Date(`${day}T00:00:00.000Z`);
-  date.setUTCDate(date.getUTCDate() + amount);
-  return date.toISOString().slice(0, 10);
-}
-
-function dateButtonLabel(anchorDay: string | undefined, locale: ReturnType<typeof botLocale>): string {
-  const day = anchorDay ?? mskDay();
-  if (day === mskDay()) return t(locale, "common.today");
-  const [, month, date] = day.split("-");
-  if (locale !== "ru") return day;
-  const months = ["янв.", "февр.", "мар.", "апр.", "мая", "июн.", "июл.", "авг.", "сент.", "окт.", "нояб.", "дек."];
-  return `${Number(date)} ${months[Number(month) - 1]}`;
-}
-
 function defaultAnalyticsSection(config: BackendConfig): AnalyticsSection {
   const preferred = config.studio.analytics.defaultTab;
   if (preferred === "posts" && config.studio.modules.text_posting) return preferred;
@@ -312,6 +214,11 @@ function defaultAnalyticsSection(config: BackendConfig): AnalyticsSection {
 
 function showOverview(config: BackendConfig): boolean {
   return config.studio.modules.text_posting && config.studio.modules.video_posting;
+}
+
+function periodButtonLabel(locale: ReturnType<typeof botLocale>, period: 1 | 7 | 30, selected: 1 | 7 | 30): string {
+  const key = period === 1 ? "common.today" : period === 7 ? "analytics.7-days" : "analytics.30-days";
+  return `${period === selected ? "• " : ""}${t(locale, key)}`;
 }
 
 function archivePagination(
