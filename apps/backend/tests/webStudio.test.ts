@@ -18,7 +18,7 @@ describe("Web Studio", () => {
       const app = createApiHandler({ config, backendDb, bot: null });
       const origin = new URL(config.COMMAND_CENTER_URL).origin;
 
-      const anonymous = await app(new Request("http://localhost/studio"), "/studio");
+      const anonymous = await app(new Request("http://localhost/studio"));
       expect(anonymous.status).toBe(200);
       expect(await anonymous.text()).toContain("Studio token");
 
@@ -28,7 +28,6 @@ describe("Web Studio", () => {
           headers: { origin, "content-type": "application/x-www-form-urlencoded" },
           body: "token=wrong",
         }),
-        "/studio",
       );
       expect(await badLogin.text()).toContain("Invalid token");
 
@@ -38,11 +37,10 @@ describe("Web Studio", () => {
           headers: { origin: "https://evil.example", "content-type": "application/x-www-form-urlencoded" },
           body: `token=${STUDIO_TOKEN}`,
         }),
-        "/studio",
       );
       expect(crossOrigin.status).toBe(403);
 
-      const tokenLogin = await app(new Request(`http://localhost/studio?token=${STUDIO_TOKEN}`), "/studio");
+      const tokenLogin = await app(new Request(`http://localhost/studio?token=${STUDIO_TOKEN}`));
       expect(tokenLogin.status).toBe(303);
       const cookie = tokenLogin.headers.get("set-cookie")?.split(";")[0];
       expect(cookie).toContain("studio_token=");
@@ -55,7 +53,7 @@ describe("Web Studio", () => {
         message: "Hello inbox",
       });
 
-      const dashboard = await app(new Request("http://localhost/studio", { headers: { cookie: cookie ?? "" } }), "/studio");
+      const dashboard = await app(new Request("http://localhost/studio", { headers: { cookie: cookie ?? "" } }));
       expect(dashboard.status).toBe(200);
       const dashboardText = await dashboard.text();
       expect(dashboardText).toContain("Hello inbox");
@@ -69,12 +67,11 @@ describe("Web Studio", () => {
           headers: { cookie: cookie ?? "", origin, "content-type": "application/x-www-form-urlencoded" },
           body: `id=${event.id}`,
         }),
-        "/studio/acknowledge",
       );
       expect(acknowledge.status).toBe(303);
       expect(acknowledge.headers.get("location")).toBe("/studio");
 
-      const afterAck = await app(new Request("http://localhost/studio", { headers: { cookie: cookie ?? "" } }), "/studio");
+      const afterAck = await app(new Request("http://localhost/studio", { headers: { cookie: cookie ?? "" } }));
       expect(await afterAck.text()).not.toContain("Hello inbox");
     } finally {
       backendDb.close();
@@ -92,7 +89,6 @@ describe("Web Studio", () => {
           headers: { "content-type": "application/x-www-form-urlencoded" },
           body: "id=1",
         }),
-        "/studio/acknowledge",
       );
       expect(denied.status).toBe(403);
     } finally {

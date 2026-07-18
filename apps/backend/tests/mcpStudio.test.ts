@@ -14,7 +14,6 @@ function request(app: ReturnType<typeof createApiHandler>, body: unknown, author
       headers: { "content-type": "application/json", ...(authorization ? { authorization } : {}) },
       body: JSON.stringify(body),
     }),
-    "/api/mcp",
   );
 }
 
@@ -189,7 +188,6 @@ describe("Studio MCP", () => {
       form.set("file", new File([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], "agent-image.jpg", { type: "image/jpeg" }));
       const uploaded = await app(
         new Request("http://localhost/api/studio/media", { method: "POST", headers: { authorization }, body: form }),
-        "/api/studio/media",
       );
       expect(await uploaded.json()).toMatchObject({ asset_id: 1, kind: "photo", filename: "agent-image.jpg", byte_size: 4 });
 
