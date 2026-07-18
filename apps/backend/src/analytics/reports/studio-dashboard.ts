@@ -193,37 +193,30 @@ function unifiedAnalyticsTable(
   );
   const totalFollowers = profiles.reduce((sum, row) => sum + metricNumber(row.dataJson.subscriberCount ?? row.dataJson.followersCount), 0);
   const totalGrowth = rows.reduce((sum, row) => sum + (row.growth ?? 0), 0);
-  const platformSummary = profiles
-    .filter((profile) => metricNumber(profile.dataJson.subscriberCount ?? profile.dataJson.followersCount) > 0)
-    .sort(
-      (left, right) =>
-        metricNumber(right.dataJson.subscriberCount ?? right.dataJson.followersCount) -
-        metricNumber(left.dataJson.subscriberCount ?? left.dataJson.followersCount),
-    )
-    .map(
-      (profile) =>
-        `${platformIcon(profile.platform)} ${platformLabel(profile.platform)} ${metricNumber(profile.dataJson.subscriberCount ?? profile.dataJson.followersCount)}`,
-    )
-    .join(" · ");
   const all = locale === "ru" ? "Все" : "All";
   return [
-    `👥 ${locale === "ru" ? "Подписчики" : "Followers"} ${totalFollowers}${platformSummary ? ` · ${platformSummary}` : ""}`,
-    `| ${locale === "ru" ? "Площадка" : "Platform"} | 👤 | 👁 | ♥ | 💬 | ↗ | 🔖 |`,
-    "|:--|--:|--:|--:|--:|--:|--:|",
+    `| ${locale === "ru" ? "Площадка" : "Platform"} | 👥 | 📈 | 👁 | ♥ | 💬 | ↗ | 🔖 |`,
+    "|:--|--:|--:|--:|--:|--:|--:|--:|",
     ...[
       { platform: "all", label: `📊 ${all}`, growth: totalGrowth, value: totalContent },
       ...rows.map((row) => ({ label: `${platformIcon(row.platform)} ${platformLabel(row.platform)}`, ...row })),
     ].map(
       (row) =>
-        `| ${row.label} | ${row.growth == null ? "—" : signed(row.growth)} | ${row.value.views} | ${row.value.likes} | ${row.value.comments} | ${row.value.shares} | ${row.platform === "youtube" ? "—" : row.value.saves} |`,
+        `| ${row.label} | ${row.platform === "all" ? totalFollowers : followerCount(profileMap.get(row.platform)?.dataJson)} | ${row.growth == null ? "—" : signed(row.growth)} | ${row.value.views} | ${row.value.likes} | ${row.value.comments} | ${dash(row.value.shares)} | ${row.platform === "youtube" ? "—" : dash(row.value.saves)} |`,
     ),
     ...(section === "posts"
-      ? publishedPostTable(backendDb, config, since, locale)
-      : publishedVideoTable(backendDb, config, section, since, locale)),
+      ? publishedPostTable(backendDb, config, since, days, locale)
+      : publishedVideoTable(backendDb, config, section, since, days, locale)),
   ];
 }
 
-function publishedPostTable(backendDb: BackendDb, config: BackendConfig, since: string, locale: BotLocale): string[] {
+function publishedPostTable(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  since: string,
+  days: AnalyticsPeriod,
+  locale: BotLocale,
+): string[] {
   if (!config.studio.modules.text_posting) return [];
   const rows = latestTextPostMetrics(backendDb, since).filter((row) => Object.keys(row.metrics).length > 0);
   if (!rows.length) return [];
@@ -234,7 +227,7 @@ function publishedPostTable(backendDb: BackendDb, config: BackendConfig, since: 
     `| ${locale === "ru" ? "Пост" : "Post"} | 👁 | ♥ | 💬 | ↗ | 🔖 |`,
     "|:--|--:|--:|--:|--:|--:|",
     `| ${all} | ${total.views} | ${total.likes} | ${total.comments} | ${dash(total.shares)} | ${dash(total.saves)} |`,
-    ...rows.map((row) => contentRow(`${shortLabel(row.label)} · ${platformIcon(row.platform)}`, contentMetrics(row))),
+    ...topDetails(rows, days).map((row) => contentRow(`${shortLabel(row.label)} · ${platformIcon(row.platform)}`, contentMetrics(row))),
   ];
 }
 
@@ -265,6 +258,7 @@ function publishedVideoTable(
   config: BackendConfig,
   section: Exclude<AnalyticsSection, "audience">,
   since: string,
+  days: AnalyticsPeriod,
   locale: BotLocale,
 ): string[] {
   if (section === "posts" || !config.studio.modules.video_posting) return [];
@@ -287,11 +281,16 @@ function publishedVideoTable(
     `| ${locale === "ru" ? "Видео" : "Video"} | 👁 | ♥ | 💬 | ↗ | 🔖 |`,
     "|:--|--:|--:|--:|--:|--:|",
     `| ${all} | ${total.views} | ${total.likes} | ${total.comments} | ${dash(total.shares)} | ${dash(total.saves)} |`,
-    ...rows.map((row) => {
+    ...topDetails(rows, days).map((row) => {
       const platform = row.platform === "instagram_reels" ? "instagram" : "youtube";
       return contentRow(`${shortLabel(row.label)} · ${platformIcon(platform)}`, contentMetrics(row), platform === "youtube");
     }),
   ];
+}
+
+function topDetails<T extends { metrics: Record<string, unknown> }>(rows: T[], days: AnalyticsPeriod): T[] {
+  if (days === 1) return rows;
+  return [...rows].sort((left, right) => metricNumber(right.metrics.views) - metricNumber(left.metrics.views)).slice(0, 10);
 }
 
 function contentMetrics(row: { metrics: Record<string, unknown> }): ContentMetrics {
@@ -339,6 +338,10 @@ function audiencePlatformsForSection(config: BackendConfig, section: Exclude<Ana
 
 function emptyMetrics(): ContentMetrics {
   return { views: 0, likes: 0, comments: 0, shares: 0, saves: 0 };
+}
+
+function followerCount(data: Record<string, unknown> | undefined): number {
+  return metricNumber(data?.subscriberCount ?? data?.followersCount);
 }
 
 function platformLabel(platform: string): string {

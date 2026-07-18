@@ -135,7 +135,7 @@ async function showAnalyticsDashboard(
 ): Promise<void> {
   const locale = botLocale(backendDb, Number(ctx.from?.id));
   const dashboard = studioServices(backendDb, config).analytics.dashboard(section, days, locale);
-  const keyboard = analyticsKeyboard(config, locale, section, days, dashboard.hasComments);
+  const keyboard = analyticsKeyboard(config, locale, section, days);
   await ctx.editMessageText({ html: dashboard.richHtml }, { reply_markup: keyboard });
   const adminId = Number(ctx.from?.id);
   const messageId = ctx.callbackQuery?.message?.message_id;
@@ -157,7 +157,7 @@ export async function refreshTelegramAnalyticsDashboards(bot: Bot, backendDb: Ba
         card.messageId,
         { html: dashboard.richHtml },
         {
-          reply_markup: analyticsKeyboard(config, locale, section, card.days, dashboard.hasComments),
+          reply_markup: analyticsKeyboard(config, locale, section, card.days),
         },
       );
       refreshed += 1;
@@ -175,7 +175,6 @@ function analyticsKeyboard(
   locale: ReturnType<typeof botLocale>,
   section: AnalyticsSection,
   days: 1 | 7 | 30,
-  hasComments: boolean,
 ): InlineKeyboard {
   const callback = (nextDays: 1 | 7 | 30) => `analytics_section:${section}:${nextDays}`;
   const keyboard = new InlineKeyboard();
@@ -199,8 +198,6 @@ function analyticsKeyboard(
       t(locale, section === "video" ? "analytics.video-section-active" : "analytics.video-section"),
       `analytics_section:video:${days}`,
     );
-  keyboard.row().text(t(locale, "analytics.archive-btn"), "archive_home");
-  if (hasComments && config.DEEPSEEK_API_KEY) keyboard.text(t(locale, "analytics.ai-analysis"), "analytics_ai");
   keyboard.row().text(t(locale, "common.menu"), "menu_home");
   return keyboard;
 }
@@ -217,8 +214,19 @@ function showOverview(config: BackendConfig): boolean {
 }
 
 function periodButtonLabel(locale: ReturnType<typeof botLocale>, period: 1 | 7 | 30, selected: 1 | 7 | 30): string {
-  const key = period === 1 ? "common.today" : period === 7 ? "analytics.7-days" : "analytics.30-days";
-  return `${period === selected ? "• " : ""}${t(locale, key)}`;
+  const label =
+    period === 1
+      ? locale === "ru"
+        ? "24 ч"
+        : "24 h"
+      : period === 7
+        ? locale === "ru"
+          ? "7 д"
+          : "7 d"
+        : locale === "ru"
+          ? "30 д"
+          : "30 d";
+  return `${period === selected ? "• " : ""}${label}`;
 }
 
 function archivePagination(
