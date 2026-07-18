@@ -17,6 +17,7 @@ import {
   prepareYouTubeVideo,
   publishInstagramReel,
 } from "./video-publishers.js";
+import { publishZernioInstagramReel } from "./zernio.js";
 
 export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb): Promise<number> {
   if (!config.studio.modules.video_posting) return 0;
@@ -151,6 +152,15 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
         })
         .where(eq(videoTargets.id, target.id))
         .run();
+    } else if (target.deliveryProvider === "zernio") {
+      // Zernio accepts the public video at its publish time, so prepare is a
+      // local checkpoint only. Publishing early would violate the schedule.
+      if (!target.providerAccountId) throw new Error("Zernio Instagram account is missing");
+      backendDb.db
+        .update(videoTargets)
+        .set({ status: "prepared", preparedAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
+        .where(eq(videoTargets.id, target.id))
+        .run();
     } else {
       const result = await prepareInstagramReel(config, videoPublicUrl(backendDb, config, draft), metadata as InstagramMetadata);
       if (!ownsVideoJob(backendDb, job)) return;
@@ -174,6 +184,28 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
       .update(videoTargets)
       .set({
         status: "published",
+        publishedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(videoTargets.id, target.id))
+      .run();
+  } else if (target.deliveryProvider === "zernio") {
+    const accountId = target.providerAccountId;
+    if (!accountId) throw new Error("Zernio Instagram account is missing");
+    const result = await publishZernioInstagramReel(config, {
+      accountId,
+      publicUrl: videoPublicUrl(backendDb, config, draft),
+      metadata: metadata as InstagramMetadata,
+      requestId: `video-target:${target.id}`,
+    });
+    if (!ownsVideoJob(backendDb, job)) return;
+    backendDb.db
+      .update(videoTargets)
+      .set({
+        status: "published",
+        providerPostId: result.providerPostId,
+        externalId: result.externalId,
+        externalUrl: result.url,
         publishedAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       })

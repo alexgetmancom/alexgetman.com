@@ -50,8 +50,14 @@ export function creatorVideoMetrics(backendDb: BackendDb, videoDraftId: number, 
   for (const row of rows) {
     const metrics = row.metrics_json ? (JSON.parse(row.metrics_json) as Record<string, unknown>) : {};
     const name = row.target === "youtube_shorts" ? "▶️ YouTube" : "📸 Instagram";
+    const expanded =
+      row.target === "instagram_reels" && ["reach", "shares", "saves", "follows", "averageWatchTimeMs"].some((key) => metrics[key] != null)
+        ? locale === "ru"
+          ? `\nохват: ${metricNumber(metrics.reach)} · репосты: ${metricNumber(metrics.shares)} · сохранения: ${metricNumber(metrics.saves)} · подписки: ${metricNumber(metrics.follows)} · среднее: ${(metricNumber(metrics.averageWatchTimeMs) / 1000).toFixed(1)} с`
+          : `\nreach: ${metricNumber(metrics.reach)} · shares: ${metricNumber(metrics.shares)} · saves: ${metricNumber(metrics.saves)} · follows: ${metricNumber(metrics.follows)} · avg watch: ${(metricNumber(metrics.averageWatchTimeMs) / 1000).toFixed(1)} s`
+        : "";
     lines.push(
-      `\n${name}: ${metricNumber(metrics.views)} ${t(locale, "report.views")} · ${metricNumber(metrics.likes)} ${t(locale, "report.likes")} · ${metricNumber(metrics.comments)} ${t(locale, "report.comments")}${row.sampled_at ? `\n${t(locale, "report.updated")}: ${new Date(row.sampled_at).toLocaleString(locale === "ru" ? "ru-RU" : "en-GB", { timeZone: "Europe/Moscow" })}` : `\n${t(locale, "report.no-metrics")}`}`,
+      `\n${name}: ${metricNumber(metrics.views)} ${t(locale, "report.views")} · ${metricNumber(metrics.likes)} ${t(locale, "report.likes")} · ${metricNumber(metrics.comments)} ${t(locale, "report.comments")}${expanded}${row.sampled_at ? `\n${t(locale, "report.updated")}: ${new Date(row.sampled_at).toLocaleString(locale === "ru" ? "ru-RU" : "en-GB", { timeZone: "Europe/Moscow" })}` : `\n${t(locale, "report.no-metrics")}`}`,
     );
   }
   return lines.join("\n");

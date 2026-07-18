@@ -44,4 +44,12 @@ describe("loadConfig", () => {
     );
     expect(loadConfig({ ADMIN_IDS: "42", MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "42" }).MCP_STUDIO_ACTOR_ID).toBe(42);
   });
+
+  it("parses a durable Zernio route for Instagram Reels", () => {
+    const config = loadConfig({
+      ZERNIO_API_KEY: "a".repeat(16),
+      PUBLISH_PROVIDER_ROUTES_JSON: '{"instagram_reels":{"provider":"zernio","accountId":"maru-account"}}',
+    });
+    expect(config.PUBLISH_PROVIDER_ROUTES_JSON.instagram_reels).toEqual({ provider: "zernio", accountId: "maru-account" });
+  });
 });

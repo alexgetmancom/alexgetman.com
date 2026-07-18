@@ -49,10 +49,16 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
     async schedule(actorId: number, videoDraftId: number, schedule: Partial<Record<VideoTarget, Date>>) {
       const draft = requireOwnedVideo(backendDb, actorId, videoDraftId);
       const technical = await validateVideoDraft(config, backendDb, videoDraftId);
-      scheduleVideo(backendDb, videoDraftId, schedule, {
-        prepareLeadMinutes: config.VIDEO_PREPARE_LEAD_MINUTES,
-        reminderMinutes: config.VIDEO_REMINDER_MINUTES,
-      });
+      scheduleVideo(
+        backendDb,
+        videoDraftId,
+        schedule,
+        {
+          prepareLeadMinutes: config.VIDEO_PREPARE_LEAD_MINUTES,
+          reminderMinutes: config.VIDEO_REMINDER_MINUTES,
+        },
+        config,
+      );
       scheduleVideoReminders(backendDb, actorId, videoDraftId, draft.label, schedule);
       return technical;
     },
@@ -68,10 +74,16 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
       const schedule = Object.fromEntries(targets.map((target) => [target, new Date(Date.now() + 60_000)])) as Partial<
         Record<VideoTarget, Date>
       >;
-      scheduleVideo(backendDb, videoDraftId, schedule, {
-        prepareLeadMinutes: config.VIDEO_PREPARE_LEAD_MINUTES,
-        reminderMinutes: config.VIDEO_REMINDER_MINUTES,
-      });
+      scheduleVideo(
+        backendDb,
+        videoDraftId,
+        schedule,
+        {
+          prepareLeadMinutes: config.VIDEO_PREPARE_LEAD_MINUTES,
+          reminderMinutes: config.VIDEO_REMINDER_MINUTES,
+        },
+        config,
+      );
       scheduleVideoReminders(backendDb, actorId, videoDraftId, draft.label, schedule);
       return technical;
     },

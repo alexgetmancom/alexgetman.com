@@ -71,11 +71,16 @@ function overallDashboard(
     const profileData = profile(backendDb, "instagram");
     lines.push(`\n${t(locale, "dash.instagram-profile")}`);
     if (!profileData) lines.push(t(locale, "dash.profile-not-synced"));
-    else
-      lines.push(
-        t(locale, "dash.followers-line", { n: metricNumber(profileData.followersCount) }),
-        t(locale, "dash.total-reels", { n: metricNumber(profileData.mediaCount) }),
-      );
+    else {
+      lines.push(t(locale, "dash.followers-line", { n: metricNumber(profileData.followersCount) }));
+      if (profileData.mediaCount != null) lines.push(t(locale, "dash.total-reels", { n: metricNumber(profileData.mediaCount) }));
+      if (profileData.reach30d != null)
+        lines.push(
+          locale === "ru"
+            ? `• 30 дней: охват ${metricNumber(profileData.reach30d)} · просмотры ${metricNumber(profileData.views30d)} · взаимодействия ${metricNumber(profileData.interactions30d)} · сохранения ${metricNumber(profileData.saves30d)} · репосты ${metricNumber(profileData.shares30d)}`
+            : `• 30 days: reach ${metricNumber(profileData.reach30d)} · views ${metricNumber(profileData.views30d)} · interactions ${metricNumber(profileData.interactions30d)} · saves ${metricNumber(profileData.saves30d)} · shares ${metricNumber(profileData.shares30d)}`,
+        );
+    }
   }
   lines.push(`\n${t(locale, "report.data-refresh")}`);
   return { text: lines.join("\n"), hasComments };

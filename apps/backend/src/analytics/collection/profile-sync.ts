@@ -4,6 +4,7 @@ import { createChannelStoryClient } from "../../foundation/external/telegram-ses
 import { oauthAuthorization } from "../../foundation/external/x-oauth.js";
 import { youtubeAccessToken } from "../../foundation/external/youtube.js";
 import { requestJson } from "../../foundation/http.js";
+import { videoDeliveryRoute } from "../../publishing/delivery-provider.js";
 import { canSync, markSynced, metricNumber, recordProfileSnapshot } from "../snapshots/creator-store.js";
 
 type YouTubeChannel = {
@@ -22,6 +23,9 @@ type InstagramProfile = {
   followers_count?: number;
   media_count?: number;
 };
+type ZernioAccount = { _id?: string; username?: string; displayName?: string; followersCount?: number };
+type ZernioAccounts = { accounts?: ZernioAccount[] } | ZernioAccount[];
+type ZernioInsights = { metrics?: Record<string, { total?: number }> };
 
 export async function syncYouTubeProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
   try {
@@ -70,6 +74,11 @@ async function youtubeReport(fetchImpl: typeof fetch, token: string): Promise<Re
 
 export async function syncInstagramProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
   try {
+    if (videoDeliveryRoute(config, "instagram_reels").provider === "zernio") {
+      await syncZernioInstagramProfile(config, backendDb, fetchImpl);
+      markSynced(backendDb, "instagram");
+      return;
+    }
     const token = config.INSTAGRAM_ACCESS_TOKEN;
     const userId = config.INSTAGRAM_USER_ID;
     if (!token || !userId) throw new Error("Instagram credentials are missing");
@@ -92,6 +101,48 @@ export async function syncInstagramProfile(config: BackendConfig, backendDb: Bac
   } catch (error) {
     markSynced(backendDb, "instagram", error instanceof Error ? error.message : String(error));
   }
+}
+
+async function syncZernioInstagramProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
+  const route = videoDeliveryRoute(config, "instagram_reels");
+  if (!config.ZERNIO_API_KEY || !route.accountId) throw new Error("Zernio Instagram credentials are missing");
+  const headers = { Authorization: `Bearer ${config.ZERNIO_API_KEY}` };
+  const accounts = await requestJson<ZernioAccounts>(fetchImpl, "https://zernio.com/api/v1/accounts", { headers });
+  const account = (Array.isArray(accounts) ? accounts : (accounts.accounts ?? [])).find((item) => item._id === route.accountId);
+  if (!account) throw new Error("Zernio Instagram account was not found");
+  const query = new URLSearchParams({
+    accountId: route.accountId,
+    metrics: "reach,views,accounts_engaged,total_interactions,comments,likes,saves,shares,profile_links_taps",
+  });
+  const insights = await requestJson<ZernioInsights>(fetchImpl, `https://zernio.com/api/v1/analytics/instagram/account-insights?${query}`, {
+    headers,
+  });
+  const history = await requestJson<ZernioInsights>(
+    fetchImpl,
+    `https://zernio.com/api/v1/analytics/instagram/follower-history?${new URLSearchParams({ accountId: route.accountId })}`,
+    { headers },
+  );
+  const metric = (name: string) => metricNumber(insights.metrics?.[name]?.total);
+  recordProfileSnapshot(backendDb, {
+    platform: "instagram",
+    account: account.username ?? route.accountId,
+    source: "zernio",
+    metrics: {
+      username: account.username ?? account.displayName ?? "Instagram",
+      followersCount: metricNumber(history.metrics?.follower_count?.total ?? account.followersCount),
+      followersGained30d: metricNumber(history.metrics?.followers_gained?.total),
+      followersLost30d: metricNumber(history.metrics?.followers_lost?.total),
+      reach30d: metric("reach"),
+      views30d: metric("views"),
+      accountsEngaged30d: metric("accounts_engaged"),
+      interactions30d: metric("total_interactions"),
+      likes30d: metric("likes"),
+      comments30d: metric("comments"),
+      saves30d: metric("saves"),
+      shares30d: metric("shares"),
+      profileLinksTaps30d: metric("profile_links_taps"),
+    },
+  });
 }
 
 type FacebookPage = { name?: string; followers_count?: number; fan_count?: number; talking_about_count?: number };

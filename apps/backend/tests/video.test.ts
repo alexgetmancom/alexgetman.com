@@ -140,6 +140,24 @@ describe("video publication queue", () => {
     ]);
   });
 
+  it("snapshots the Zernio route and account on a scheduled Instagram target", () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    replaceVideoTargets(backendDb, draftId, ["instagram_reels"]);
+    const config = loadConfig({
+      ZERNIO_API_KEY: "a".repeat(16),
+      PUBLISH_PROVIDER_ROUTES_JSON: '{"instagram_reels":{"provider":"zernio","accountId":"maru-account"}}',
+    });
+    scheduleVideo(
+      backendDb,
+      draftId,
+      { instagram_reels: new Date(Date.now() + 60 * 60_000) },
+      { prepareLeadMinutes: 15, reminderMinutes: 5 },
+      config,
+    );
+    expect(listVideoTargets(backendDb, draftId)[0]).toMatchObject({ deliveryProvider: "zernio", providerAccountId: "maru-account" });
+  });
+
   it("retains a cancelled source for at least the configured 24 hours", () => {
     backendDb = openBackendDb(":memory:");
     const draftId = createVideoDraft(backendDb, 42, "video-source", 24);

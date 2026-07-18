@@ -194,6 +194,91 @@ describe("creator analytics", () => {
     }
   });
 
+  it("collects Zernio Reel and account analytics without Meta credentials", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date(Date.now() - 2 * 60 * 60_000).toISOString();
+      const draft = backendDb.db
+        .insert(videoDrafts)
+        .values({ adminId: 1, assetKey: "asset", label: "Zernio Reel", status: "published", createdAt: now, updatedAt: now })
+        .returning({ id: videoDrafts.id })
+        .get();
+      if (!draft) throw new Error("video draft missing");
+      const target = backendDb.db
+        .insert(videoTargets)
+        .values({
+          videoDraftId: draft.id,
+          target: "instagram_reels",
+          metadataJson: {},
+          status: "published",
+          deliveryProvider: "zernio",
+          providerAccountId: "maru-account",
+          providerPostId: "zernio-post",
+          publishedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning({ id: videoTargets.id })
+        .get();
+      if (!target) throw new Error("video target missing");
+      const config = loadConfig({
+        ZERNIO_API_KEY: "a".repeat(16),
+        PUBLISH_PROVIDER_ROUTES_JSON: '{"instagram_reels":{"provider":"zernio","accountId":"maru-account"}}',
+      });
+      config.studio.modules.analytics = true;
+      config.studio.modules.video_posting = true;
+      config.studio.modules.instagram = true;
+      const fetchMock = (async (input: URL | RequestInfo) => {
+        const url = String(input);
+        if (url === "https://zernio.com/api/v1/accounts")
+          return new Response(JSON.stringify([{ _id: "maru-account", username: "marux_play", followersCount: 306 }]));
+        if (url.includes("account-insights"))
+          return new Response(
+            JSON.stringify({
+              metrics: {
+                reach: { total: 100 },
+                views: { total: 200 },
+                total_interactions: { total: 20 },
+                saves: { total: 5 },
+                shares: { total: 7 },
+              },
+            }),
+          );
+        if (url.includes("follower-history"))
+          return new Response(
+            JSON.stringify({ metrics: { follower_count: { total: 306 }, followers_gained: { total: 8 }, followers_lost: { total: 2 } } }),
+          );
+        if (url.includes("postId=zernio-post"))
+          return new Response(
+            JSON.stringify({
+              publishedAt: now,
+              platformPostUrl: "https://www.instagram.com/reel/example/",
+              analytics: { views: 200, likes: 20, comments: 3, reach: 160, shares: 7, saves: 5, follows: 2, igReelsAvgWatchTime: 7000 },
+            }),
+          );
+        throw new Error(`unexpected URL: ${url}`);
+      }) as typeof fetch;
+
+      await runAnalyticsCycle(config, backendDb, fetchMock);
+
+      expect(
+        backendDb.db.select().from(videoMetricSnapshots).where(eq(videoMetricSnapshots.videoTargetId, target.id)).get()?.metricsJson,
+      ).toMatchObject({
+        views: 200,
+        reach: 160,
+        saves: 5,
+        averageWatchTimeMs: 7000,
+      });
+      expect(backendDb.db.select().from(creatorProfiles).where(eq(creatorProfiles.platform, "instagram")).get()?.dataJson).toMatchObject({
+        followersCount: 306,
+        reach30d: 100,
+        followersGained30d: 8,
+      });
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("persists one daily profile observation while retaining the latest projection", async () => {
     const backendDb = openBackendDb(":memory:");
     try {

@@ -33,7 +33,7 @@ export function openBackendDb(path: string, timeout = 30_000): BackendDb {
   sqlite.run("PRAGMA journal_mode = WAL");
   sqlite.run(`PRAGMA busy_timeout = ${timeout}`);
   sqlite.run("PRAGMA foreign_keys = ON");
-  const db = drizzle(sqlite, { schema });
+  const db = drizzle(sqlite, { schema, casing: "snake_case" });
   migrate(db, { migrationsFolder: migrationsFolder() });
   return {
     sqlite,

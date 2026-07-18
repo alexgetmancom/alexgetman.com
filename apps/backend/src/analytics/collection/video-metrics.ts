@@ -14,6 +14,8 @@ type VideoMetricTask = {
   videoDraftId: number;
   target: "youtube_shorts" | "instagram_reels";
   externalId: string;
+  providerPostId: string | null;
+  deliveryProvider: string;
   externalUrl: string | null;
   publishedAt: string;
   label: string | null;
@@ -56,6 +58,18 @@ type InstagramComments = {
     like_count?: number;
   }>;
 };
+type ZernioPostAnalytics = {
+  status?: string;
+  publishedAt?: string;
+  platformPostUrl?: string;
+  analytics?: Record<string, number | string | null>;
+  platforms?: Array<{
+    platform?: string;
+    platformPostId?: string;
+    platformPostUrl?: string;
+    analytics?: Record<string, number | string | null>;
+  }>;
+};
 
 /** Uses the same fixed-from-publication checkpoints as text-post metrics. */
 export async function runVideoMetricSchedule(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<number> {
@@ -64,6 +78,7 @@ export async function runVideoMetricSchedule(config: BackendConfig, backendDb: B
   for (const task of tasks) {
     try {
       if (task.target === "youtube_shorts") await collectYouTubeVideoMetrics(config, backendDb, task, fetchImpl);
+      else if (task.deliveryProvider === "zernio") await collectZernioInstagramVideoMetrics(config, backendDb, task, fetchImpl);
       else await collectInstagramVideoMetrics(config, backendDb, task, fetchImpl);
       finishVideoMetricTask(backendDb, task, null);
     } catch (error) {
@@ -121,6 +136,8 @@ function dueVideoMetricTasks(backendDb: BackendDb, limit: number): VideoMetricTa
       videoDraftId: videoTargets.videoDraftId,
       target: videoTargets.target,
       externalId: videoTargets.externalId,
+      providerPostId: videoTargets.providerPostId,
+      deliveryProvider: videoTargets.deliveryProvider,
       externalUrl: videoTargets.externalUrl,
       publishedAt: videoTargets.publishedAt,
       label: videoDrafts.label,
@@ -140,7 +157,41 @@ function dueVideoMetricTasks(backendDb: BackendDb, limit: number): VideoMetricTa
     .orderBy(asc(videoMetricSchedule.nextCheckAt))
     .limit(limit)
     .all()
-    .filter((task) => Boolean(task.externalId && task.publishedAt)) as VideoMetricTask[];
+    .filter((task) =>
+      Boolean((task.deliveryProvider === "zernio" ? task.providerPostId : task.externalId) && task.publishedAt),
+    ) as VideoMetricTask[];
+}
+
+async function collectZernioInstagramVideoMetrics(
+  config: BackendConfig,
+  backendDb: BackendDb,
+  target: VideoMetricTask,
+  fetchImpl: typeof fetch,
+): Promise<void> {
+  if (!config.ZERNIO_API_KEY || !target.providerPostId) throw new Error("Zernio analytics credentials or post ID are missing");
+  const url = new URL("https://zernio.com/api/v1/analytics");
+  url.searchParams.set("postId", target.providerPostId);
+  const data = await requestJson<ZernioPostAnalytics>(fetchImpl, url.toString(), {
+    headers: { Authorization: `Bearer ${config.ZERNIO_API_KEY}` },
+  });
+  const platform = data.platforms?.find((item) => item.platform === "instagram");
+  const metrics = platform?.analytics ?? data.analytics ?? {};
+  upsertVideoSnapshot(backendDb, target.id, "instagram_reels", target.checkpointIndex, {
+    title: target.label ?? "Без названия",
+    url: platform?.platformPostUrl ?? data.platformPostUrl ?? target.externalUrl,
+    publishedAt: data.publishedAt ?? target.publishedAt,
+    views: metricNumber(metrics.views),
+    likes: metricNumber(metrics.likes),
+    comments: metricNumber(metrics.comments),
+    reach: metricNumber(metrics.reach),
+    impressions: metricNumber(metrics.impressions),
+    shares: metricNumber(metrics.shares),
+    saves: metricNumber(metrics.saves),
+    follows: metricNumber(metrics.follows),
+    engagementRate: metricNumber(metrics.engagementRate),
+    averageWatchTimeMs: metricNumber(metrics.igReelsAvgWatchTime),
+    totalWatchTimeMs: metricNumber(metrics.igReelsVideoViewTotalTime),
+  });
 }
 
 function finishVideoMetricTask(backendDb: BackendDb, task: VideoMetricTask, error: string | null, terminal = false): void {

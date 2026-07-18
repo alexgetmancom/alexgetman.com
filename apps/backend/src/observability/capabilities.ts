@@ -1,4 +1,5 @@
 import type { BackendConfig } from "../foundation/config.js";
+import { videoDeliveryRoute } from "../publishing/delivery-provider.js";
 import { PLATFORM_PROFILES } from "../publishing/platform-profiles.js";
 
 type CapabilityStatus = "ready" | "missing";
@@ -13,6 +14,7 @@ const serviceRequirements: Record<string, readonly string[]> = {
 /** Read-only readiness report shared by diagnostics, observability and future agents. */
 export function capabilityReport(config: BackendConfig): CapabilityReportEntry[] {
   const requirements = new Map<string, readonly string[]>(Object.entries(serviceRequirements));
+  if (videoDeliveryRoute(config, "instagram_reels").provider === "zernio") requirements.set("instagram_reels", ["ZERNIO_API_KEY"]);
   if (config.MEDIA_PROCESSOR_PROVIDER === "remote_http")
     requirements.set("media_processor", ["MEDIA_PROCESSOR_URL", "MEDIA_PROCESSOR_TOKEN"]);
   for (const profile of Object.values(PLATFORM_PROFILES))

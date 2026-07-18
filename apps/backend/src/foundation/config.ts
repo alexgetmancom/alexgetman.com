@@ -6,6 +6,25 @@ const booleanFlag = z
   .optional()
   .transform((value) => value != null && !["0", "false", "no", "off"].includes(value.toLowerCase()));
 
+const providerRouteSchema = z.object({
+  provider: z.enum(["native", "zernio"]),
+  accountId: z.string().min(1).optional(),
+});
+
+const providerRoutes = z
+  .string()
+  .default("{}")
+  .transform((value, context) => {
+    try {
+      const routes = z.record(z.string(), providerRouteSchema).safeParse(JSON.parse(value));
+      if (routes.success) return routes.data;
+      context.addIssue({ code: "custom", message: "PUBLISH_PROVIDER_ROUTES_JSON must be an object of provider routes" });
+    } catch {
+      context.addIssue({ code: "custom", message: "PUBLISH_PROVIDER_ROUTES_JSON must be valid JSON" });
+    }
+    return z.NEVER;
+  });
+
 const envSchema = z
   .object({
     NODE_ENV: z.string().default("development"),
@@ -121,6 +140,9 @@ const envSchema = z
     INSTAGRAM_RU_ACCESS_TOKEN: z.string().optional(),
     INSTAGRAM_RU_USER_ID: z.string().optional(),
     INSTAGRAM_GRAPH_API_VERSION: z.string().default("v23.0"),
+    /** Per durable target route, e.g. {"instagram_reels":{"provider":"zernio","accountId":"..."}}. */
+    PUBLISH_PROVIDER_ROUTES_JSON: providerRoutes,
+    ZERNIO_API_KEY: z.string().min(16).optional(),
     YOUTUBE_CLIENT_ID: z.string().optional(),
     YOUTUBE_CLIENT_SECRET: z.string().optional(),
     YOUTUBE_REFRESH_TOKEN: z.string().optional(),
@@ -208,8 +230,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BackendConfig 
       if (!parsed[key]) throw new Error(`${key} is required when YouTube video publishing is enabled`);
     }
   }
-  if (studio.modules.instagram && studio.modules.video_posting && (!parsed.INSTAGRAM_ACCESS_TOKEN || !parsed.INSTAGRAM_USER_ID)) {
-    throw new Error("INSTAGRAM_ACCESS_TOKEN and INSTAGRAM_USER_ID are required when Instagram video publishing is enabled");
+  const instagramRoute = parsed.PUBLISH_PROVIDER_ROUTES_JSON.instagram_reels;
+  if (studio.modules.instagram && studio.modules.video_posting) {
+    if (instagramRoute?.provider === "zernio") {
+      if (!parsed.ZERNIO_API_KEY || !instagramRoute.accountId)
+        throw new Error("ZERNIO_API_KEY and instagram_reels.accountId are required when Zernio Instagram publishing is enabled");
+    } else if (!parsed.INSTAGRAM_ACCESS_TOKEN || !parsed.INSTAGRAM_USER_ID) {
+      throw new Error("INSTAGRAM_ACCESS_TOKEN and INSTAGRAM_USER_ID are required when Instagram video publishing is enabled");
+    }
   }
   if (parsed.MEDIA_PROCESSOR_PROVIDER === "remote_http" && (!parsed.MEDIA_PROCESSOR_URL || !parsed.MEDIA_PROCESSOR_TOKEN)) {
     throw new Error("MEDIA_PROCESSOR_URL and MEDIA_PROCESSOR_TOKEN are required when MEDIA_PROCESSOR_PROVIDER=remote_http");

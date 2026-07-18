@@ -6,6 +6,7 @@ import type { BackendDb } from "../db/client.js";
 import { videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
+import { isZernioRouteReady, videoDeliveryRoute } from "./delivery-provider.js";
 import { isVideoTargetEditable } from "./state.js";
 import { getVideoDraft, insertVideoJob, listVideoTargets, refreshVideoDraftStatus } from "./video-data.js";
 import type { VideoMetadata, VideoTarget } from "./video-types.js";
@@ -115,6 +116,7 @@ export function scheduleVideo(
   videoDraftId: number,
   schedule: Partial<Record<VideoTarget, Date>>,
   timing: { prepareLeadMinutes: number; reminderMinutes: number },
+  config?: BackendConfig,
 ): void {
   const now = new Date();
   const targets = listVideoTargets(backendDb, videoDraftId);
@@ -132,11 +134,14 @@ export function scheduleVideo(
       if (!targetSchedule) continue;
       const publishAt = targetSchedule.toISOString();
       const preparedAt = new Date(targetSchedule.getTime() - timing.prepareLeadMinutes * 60_000);
+      const route = config ? videoDeliveryRoute(config, target.target as VideoTarget) : { provider: "native" as const };
       tx.update(videoTargets)
         .set({
           scheduledAt: publishAt,
           status: "scheduled",
           lastError: null,
+          deliveryProvider: route.provider,
+          providerAccountId: route.accountId ?? null,
           updatedAt: now.toISOString(),
         })
         .where(eq(videoTargets.id, target.id))
@@ -220,8 +225,12 @@ export async function validateVideoDraft(config: BackendConfig, backendDb: Backe
   for (const target of listVideoTargets(backendDb, videoDraftId)) {
     if (target.target === "youtube_shorts" && (!config.YOUTUBE_CLIENT_ID || !config.YOUTUBE_CLIENT_SECRET || !config.YOUTUBE_REFRESH_TOKEN))
       throw new StudioError("err.youtube-not-configured");
-    if (target.target === "instagram_reels" && (!config.INSTAGRAM_ACCESS_TOKEN || !config.INSTAGRAM_USER_ID))
-      throw new StudioError("err.instagram-not-configured");
+    if (target.target === "instagram_reels") {
+      const route = videoDeliveryRoute(config, "instagram_reels");
+      if (!isZernioRouteReady(config, route) && route.provider === "zernio") throw new StudioError("err.instagram-not-configured");
+      if (route.provider === "native" && (!config.INSTAGRAM_ACCESS_TOKEN || !config.INSTAGRAM_USER_ID))
+        throw new StudioError("err.instagram-not-configured");
+    }
   }
   return probeVideo(source, size);
 }
