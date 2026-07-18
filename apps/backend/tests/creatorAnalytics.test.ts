@@ -379,10 +379,9 @@ describe("creator analytics", () => {
       const posts = studioAnalyticsDashboard(backendDb, config, "posts", 1, "ru").text;
 
       expect(overview).not.toContain("Общая статистика");
-      expect(overview).toContain("| Telegram | 24 | 5 | 0 | 0 | 0 |");
-      expect(posts).toContain("Контент · сегодня");
-      expect(posts).toContain("| Все | 24 | 5 | 0 | 0 | 0 |");
-      expect(studioAnalyticsDashboard(backendDb, config, "overview", 1, "ru").richHtml).toContain("<table bordered striped>");
+      expect(overview).toContain("| ✈️ Telegram | — | 24 | 5 | 0 | 0 | 0 |");
+      expect(posts).toContain("| 📊 Все | +0 | 24 | 5 | 0 | 0 | 0 |");
+      expect(studioAnalyticsDashboard(backendDb, config, "overview", 1, "ru").richHtml).toContain("<caption>сегодня</caption>");
       expect(posts).not.toContain("Видеопостинг");
     } finally {
       backendDb.close();
@@ -409,7 +408,7 @@ describe("creator analytics", () => {
 
       const overview = studioAnalyticsDashboard(backendDb, config, "overview", 7, "ru").text;
       const audience = studioAnalyticsDashboard(backendDb, config, "audience", 7, "ru").text;
-      expect(overview).toContain("| Все | 426 |");
+      expect(overview).toContain("👥 426 подписчиков");
       expect(overview).not.toContain("556");
       expect(audience).toContain("Instagram");
       expect(audience).toContain("YouTube");

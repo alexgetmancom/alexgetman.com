@@ -7,7 +7,6 @@ import {
   audienceGrowthByAccount,
   type ContentMetrics,
   KEY_SEP,
-  siteTotal,
   textContentMetricsByPlatform,
   videoContentMetricsByPlatform,
 } from "../metric-deltas.js";
@@ -34,27 +33,16 @@ export function studioAnalyticsDashboard(
   locale: BotLocale,
 ): StudioAnalyticsDashboard {
   const since = new Date(Date.now() - days * 24 * 60 * 60_000).toISOString();
-  const siteViews = config.studio.modules.site ? siteTotal(backendDb, since) : 0;
   const period = periodLabel(days, locale);
   const updatedAt = latestMeasurement(backendDb, config, section);
   const lines: string[] = [];
 
-  if (section === "overview") {
-    lines.push(...audienceTable(backendDb, config, locale, updatedAt));
-    if (config.studio.modules.video_posting) lines.push(...videoContentTable(backendDb, config, since, days, period, locale));
-    if (config.studio.modules.text_posting) lines.push(...textContentTable(backendDb, since, period, locale));
-    if (config.studio.modules.site) lines.push(`${t(locale, "sdash.site-material-views")}: *${siteViews}*`);
-  } else if (section === "audience") {
+  if (section === "audience") {
     lines.push(`👥 *${t(locale, "sdash.header-audience", { period })}*`);
     const profiles = audienceProfiles(backendDb, config, since, period, locale);
     lines.push(...(profiles.length ? profiles : [t(locale, "sdash.no-audience")]));
-  } else if (section === "posts") {
-    lines.push(...audienceTable(backendDb, config, locale, updatedAt));
-    lines.push(...textContentTable(backendDb, since, period, locale));
-    if (config.studio.modules.site) lines.push(`${t(locale, "sdash.site-material-views")}: *${siteViews}*`);
   } else {
-    lines.push(...audienceTable(backendDb, config, locale, updatedAt));
-    lines.push(...videoContentTable(backendDb, config, since, days, period, locale));
+    lines.push(...unifiedAnalyticsTable(backendDb, config, section, since, days, period, locale, updatedAt));
   }
   const text = lines.join("\n");
   return { text, richHtml: richMessageHtml(lines), hasComments: hasAudienceComments(backendDb) };
@@ -66,8 +54,14 @@ export function studioAnalyticsDashboard(
 function richMessageHtml(lines: string[]): string {
   const blocks: string[] = [];
   for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index]?.trim() ?? "";
+    let line = lines[index]?.trim() ?? "";
     if (!line) continue;
+    let caption = "";
+    if (lines[index + 1]?.trimStart().startsWith("| ")) {
+      caption = line;
+      index += 1;
+      line = lines[index]?.trim() ?? "";
+    }
     if (line.startsWith("| ")) {
       const headers = tableCells(line);
       // Markdown table separator is only an intermediate text representation.
@@ -78,7 +72,7 @@ function richMessageHtml(lines: string[]): string {
         rows.push(tableCells(lines[index] ?? ""));
       }
       blocks.push(
-        `<table bordered striped><tr>${headers.map((cell) => `<th>${escapeHtml(cell)}</th>`).join("")}</tr>${rows
+        `<table bordered striped>${caption ? `<caption>${richInlineHtml(caption)}</caption>` : ""}<tr>${headers.map((cell) => `<th>${escapeHtml(cell)}</th>`).join("")}</tr>${rows
           .map(
             (row) =>
               `<tr>${row.map((cell, cellIndex) => `<td align="${cellIndex ? "right" : "left"}">${escapeHtml(cell)}</td>`).join("")}</tr>`,
@@ -151,90 +145,34 @@ function audienceProfiles(backendDb: BackendDb, config: BackendConfig, since: st
     });
 }
 
-function audienceTable(backendDb: BackendDb, config: BackendConfig, locale: BotLocale, updatedAt: string | null): string[] {
-  const profiles = backendDb.db
-    .select()
-    .from(creatorProfiles)
-    .all()
-    .filter((row) => enabledAudiencePlatforms(config).has(row.platform));
-  if (!profiles.length) return [];
-  const labels: Record<string, string> = { instagram: "Instagram", youtube: "YouTube", telegram: "Telegram" };
-  const growth = ([1, 7, 30] as const).map((days) =>
-    audienceGrowthByAccount(backendDb, new Date(Date.now() - days * 86_400_000).toISOString()),
-  );
-  const rows = profiles
-    .sort((left, right) => (labels[left.platform] ?? left.platform).localeCompare(labels[right.platform] ?? right.platform))
-    .map((row) => {
-      const current = metricNumber(row.dataJson.subscriberCount ?? row.dataJson.followersCount);
-      const values = growth.map((periodGrowth) => sumAccountGrowth(periodGrowth, row.platform));
-      return { label: labels[row.platform] ?? row.platform, current, values };
-    });
-  const total = {
-    label: locale === "ru" ? "Все" : "All",
-    current: rows.reduce((sum, row) => sum + row.current, 0),
-    values: [0, 1, 2].map((index) => rows.reduce((sum, row) => sum + (row.values[index] ?? 0), 0)),
-  };
-  return [
-    `${locale === "ru" ? "Подписчики" : "Followers"}${updatedAt ? ` · ⟳ ${formatDateTime(updatedAt, locale)}` : ""}`,
-    `| ${locale === "ru" ? "Площадка" : "Platform"} | ${locale === "ru" ? "Сейчас" : "Now"} | ${locale === "ru" ? "Сегодня" : "Today"} | 7 ${locale === "ru" ? "д" : "d"} | 30 ${locale === "ru" ? "д" : "d"} |`,
-    "|:--|--:|--:|--:|--:|",
-    ...[total, ...rows].map(
-      (row) =>
-        `| ${row.label} | ${metricNumber(row.current)} | ${signed(row.values[0] ?? 0)} | ${signed(row.values[1] ?? 0)} | ${signed(row.values[2] ?? 0)} |`,
-    ),
-  ];
-}
-
-function videoContentTable(
+function unifiedAnalyticsTable(
   backendDb: BackendDb,
   config: BackendConfig,
+  section: Exclude<AnalyticsSection, "audience">,
   since: string,
   days: AnalyticsPeriod,
   period: string,
   locale: BotLocale,
+  updatedAt: string | null,
 ): string[] {
-  const values = videoContentMetricsByPlatform(backendDb, since);
-  const accountMetrics = new Map(
-    backendDb.db
-      .select()
-      .from(creatorProfiles)
-      .all()
-      .map((row) => [row.platform, contentMetricsFromProfile(row.dataJson, days)]),
-  );
-  const rows = [
-    ...(config.studio.modules.instagram
-      ? [{ label: "Instagram", value: preferLiveMetrics(accountMetrics.get("instagram"), values.get("instagram_reels")) }]
-      : []),
-    ...(config.studio.modules.youtube
-      ? [{ label: "YouTube", value: preferLiveMetrics(accountMetrics.get("youtube"), values.get("youtube_shorts")) }]
-      : []),
-  ].map(({ label, value }) => ({ label, value: value ?? { views: 0, likes: 0, comments: 0, shares: 0, saves: 0 } }));
-  return contentTable(rows, period, locale);
-}
-
-function textContentTable(backendDb: BackendDb, since: string, period: string, locale: BotLocale): string[] {
-  const labels: Record<string, string> = {
-    telegram: "Telegram",
-    facebook_en: "Facebook EN",
-    facebook_ru: "Facebook RU",
-    threads: "Threads",
-    x: "X",
-    bluesky: "Bluesky",
-    mastodon: "Mastodon",
-    devto: "Dev.to",
-  };
-  return contentTable(
-    [...textContentMetricsByPlatform(backendDb, since).entries()].map(([platform, value]) => ({
-      label: labels[platform] ?? platform,
-      value,
-    })),
-    period,
-    locale,
-  );
-}
-
-function contentTable(rows: Array<{ label: string; value: ContentMetrics }>, period: string, locale: BotLocale): string[] {
-  const total = rows.reduce(
+  const profiles = backendDb.db
+    .select()
+    .from(creatorProfiles)
+    .all()
+    .filter((row) => audiencePlatformsForSection(config, section).has(row.platform));
+  const accountMetrics = new Map(profiles.map((row) => [row.platform, contentMetricsFromProfile(row.dataJson, days)]));
+  const content = contentMetricsForSection(backendDb, config, section, since, days, accountMetrics);
+  const growth = audienceGrowthByAccount(backendDb, since);
+  const profileMap = new Map(profiles.map((profile) => [profile.platform, profile]));
+  const platforms = new Set([...profileMap.keys(), ...content.keys()]);
+  const rows = [...platforms]
+    .sort((left, right) => platformLabel(left).localeCompare(platformLabel(right)))
+    .map((platform) => ({
+      platform,
+      growth: profileMap.has(platform) ? sumAccountGrowth(growth, platform) : null,
+      value: content.get(platform) ?? emptyMetrics(),
+    }));
+  const totalContent = rows.reduce(
     (sum, row) => ({
       views: sum.views + row.value.views,
       likes: sum.likes + row.value.likes,
@@ -242,18 +180,104 @@ function contentTable(rows: Array<{ label: string; value: ContentMetrics }>, per
       shares: sum.shares + row.value.shares,
       saves: sum.saves + row.value.saves,
     }),
-    { views: 0, likes: 0, comments: 0, shares: 0, saves: 0 },
+    emptyMetrics(),
   );
+  const totalFollowers = profiles.reduce((sum, row) => sum + metricNumber(row.dataJson.subscriberCount ?? row.dataJson.followersCount), 0);
+  const totalGrowth = rows.reduce((sum, row) => sum + (row.growth ?? 0), 0);
+  const platformSummary = profiles
+    .filter((profile) => metricNumber(profile.dataJson.subscriberCount ?? profile.dataJson.followersCount) > 0)
+    .sort(
+      (left, right) =>
+        metricNumber(right.dataJson.subscriberCount ?? right.dataJson.followersCount) -
+        metricNumber(left.dataJson.subscriberCount ?? left.dataJson.followersCount),
+    )
+    .map(
+      (profile) =>
+        `${platformIcon(profile.platform)} ${metricNumber(profile.dataJson.subscriberCount ?? profile.dataJson.followersCount)} ${platformLabel(profile.platform)}`,
+    )
+    .join(" / ");
   const all = locale === "ru" ? "Все" : "All";
   return [
-    `\n${locale === "ru" ? "Контент" : "Content"} · ${period}`,
-    `| ${locale === "ru" ? "Площадка" : "Platform"} | 👁 | ♥ | 💬 | ↗ | 🔖 |`,
-    "|:--|--:|--:|--:|--:|--:|",
-    ...[{ label: all, value: total }, ...rows].map(
+    `👥 ${totalFollowers} ${locale === "ru" ? "подписчиков" : "followers"}${platformSummary ? ` · ${platformSummary}` : ""}${updatedAt ? ` · ⟳ ${formatDateTime(updatedAt, locale)}` : ""}`,
+    period,
+    `| ${locale === "ru" ? "Площадка" : "Platform"} | 👤 | 👁 | ♥ | 💬 | ↗ | 🔖 |`,
+    "|:--|--:|--:|--:|--:|--:|--:|",
+    ...[
+      { platform: "all", label: `📊 ${all}`, growth: totalGrowth, value: totalContent },
+      ...rows.map((row) => ({ label: `${platformIcon(row.platform)} ${platformLabel(row.platform)}`, ...row })),
+    ].map(
       (row) =>
-        `| ${row.label} | ${row.value.views} | ${row.value.likes} | ${row.value.comments} | ${row.value.shares} | ${row.label === "YouTube" ? "—" : row.value.saves} |`,
+        `| ${row.label} | ${row.growth == null ? "—" : signed(row.growth)} | ${row.value.views} | ${row.value.likes} | ${row.value.comments} | ${row.value.shares} | ${row.platform === "youtube" ? "—" : row.value.saves} |`,
     ),
   ];
+}
+
+function contentMetricsForSection(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  section: Exclude<AnalyticsSection, "audience">,
+  since: string,
+  days: AnalyticsPeriod,
+  accountMetrics: Map<string, ContentMetrics | undefined>,
+): Map<string, ContentMetrics> {
+  const values = new Map<string, ContentMetrics>();
+  if (section !== "posts" && config.studio.modules.video_posting) {
+    const snapshots = videoContentMetricsByPlatform(backendDb, since);
+    if (config.studio.modules.instagram)
+      values.set("instagram", preferLiveMetrics(accountMetrics.get("instagram"), snapshots.get("instagram_reels")) ?? emptyMetrics());
+    if (config.studio.modules.youtube)
+      values.set("youtube", preferLiveMetrics(accountMetrics.get("youtube"), snapshots.get("youtube_shorts")) ?? emptyMetrics());
+  }
+  if (section !== "video" && config.studio.modules.text_posting)
+    for (const [platform, metrics] of textContentMetricsByPlatform(backendDb, since)) values.set(platform, metrics);
+  return values;
+}
+
+function audiencePlatformsForSection(config: BackendConfig, section: Exclude<AnalyticsSection, "audience">): Set<string> {
+  const enabled = enabledAudiencePlatforms(config);
+  if (section === "video") return new Set(["instagram", "youtube"].filter((platform) => enabled.has(platform)));
+  if (section === "posts") return new Set([...enabled].filter((platform) => platform !== "instagram" && platform !== "youtube"));
+  return enabled;
+}
+
+function emptyMetrics(): ContentMetrics {
+  return { views: 0, likes: 0, comments: 0, shares: 0, saves: 0 };
+}
+
+function platformLabel(platform: string): string {
+  return (
+    {
+      bluesky: "Bluesky",
+      devto: "Dev.to",
+      facebook_en: "Facebook EN",
+      facebook_ru: "Facebook RU",
+      github: "GitHub",
+      instagram: "Instagram",
+      mastodon: "Mastodon",
+      telegram: "Telegram",
+      threads: "Threads",
+      x: "X",
+      youtube: "YouTube",
+    }[platform] ?? platform
+  );
+}
+
+function platformIcon(platform: string): string {
+  return (
+    {
+      bluesky: "🦋",
+      devto: "📝",
+      facebook_en: "ⓕ",
+      facebook_ru: "ⓕ",
+      github: "🐙",
+      instagram: "📸",
+      mastodon: "🐘",
+      telegram: "✈️",
+      threads: "@",
+      x: "𝕏",
+      youtube: "▶️",
+    }[platform] ?? "•"
+  );
 }
 
 function contentMetricsFromProfile(
