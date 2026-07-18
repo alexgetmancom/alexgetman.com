@@ -42,6 +42,8 @@ describe("production nginx topology", () => {
     expect(workflow).toContain("/etc/nginx/sites-enabled/ialexey.ru");
     expect(workflow).toContain("sudo nginx -t; sudo systemctl reload nginx");
     expect(workflow).toContain("http://127.0.0.1:8789/readyz");
+    expect(workflow).toContain("docker image prune --all --force");
+    expect(workflow).toContain("docker builder prune --all --force");
     expect(stream).toContain("marux.ru marux_https;");
     expect(maruTls).toContain("/etc/letsencrypt/live/marux.ru/fullchain.pem");
     expect(maruHttp).toContain("location = /command-center");

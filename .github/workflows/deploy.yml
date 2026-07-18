@@ -106,6 +106,9 @@ jobs:
           # Maru isn't redeployed here, but it shares the nginx config just
           # reloaded above, so a smoke check catches collateral breakage.
           ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "curl --fail --silent --show-error --retry 3 --retry-all-errors http://127.0.0.1:8789/readyz"
+          # Keep only layers used by running containers. Volumes are deliberately
+          # excluded: they can contain persistent production data.
+          ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "set -e; docker image prune --all --force; docker builder prune --all --force"
 
   deployment-status:
     name: Production deployment status
