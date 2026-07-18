@@ -59,6 +59,21 @@ describe("Studio architecture boundaries", () => {
       expect(source, `MCP imports ${forbidden}`).not.toContain(`from "${forbidden}`);
   });
 
+  it("keeps Web Studio as a Studio-services adapter rather than a database or Operations adapter", () => {
+    const source = readFileSync(`${root}interfaces/web/studio.ts`, "utf8");
+    expect(source).toContain('from "../../studio/services/index.js"');
+    for (const forbidden of [
+      "../../db/schema.js",
+      "../../publishing/",
+      "../../delivery/",
+      "../../analytics/",
+      "../../worker.js",
+      "../../bot/",
+      "../../operations/",
+    ])
+      expect(source, `Web Studio imports ${forbidden}`).not.toContain(`from "${forbidden}`);
+  });
+
   it("keeps Command Center as an operational read model, not a delivery or interface runtime", () => {
     const source = readFileSync(`${root}operations/command-center.ts`, "utf8");
     for (const forbidden of ["../bot/", "../delivery/", "../analytics/", "../publishing/", "../worker.js", "grammy"])

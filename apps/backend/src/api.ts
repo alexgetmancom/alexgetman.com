@@ -5,8 +5,10 @@ import { videoPath } from "./content/video-assets.js";
 import type { BackendDb } from "./db/client.js";
 import { type EngagementService, engagementService } from "./engagement/service.js";
 import type { BackendConfig } from "./foundation/config.js";
-import { commandAllowed } from "./foundation/http-auth.js";
+import { commandAllowed, studioAllowed } from "./foundation/http-auth.js";
+import type { StudioLocale } from "./foundation/locale.js";
 import { mcpResponse } from "./interfaces/mcp.js";
+import { renderStudioDashboard, renderStudioLogin } from "./interfaces/web/studio.js";
 import type { OperationsCommand } from "./operations/contracts.js";
 import { renderCommandCenterLogin, renderDashboard } from "./operations/dashboard.js";
 import { type OperationsService, operationsService } from "./operations/service.js";
@@ -134,6 +136,44 @@ export function createApiHandler(context: ApiContext) {
           "set-cookie": `command_token=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=15552000`,
         },
       });
+    }
+    if (path === "/studio" && request.method === "GET") {
+      const queryToken = url.searchParams.get("token");
+      if (queryToken && studioAllowed(request, config)) {
+        url.searchParams.delete("token");
+        return new Response(null, {
+          status: 303,
+          headers: {
+            location: `${url.pathname}${url.search}${url.hash}`,
+            "set-cookie": `studio_token=${encodeURIComponent(queryToken)}; Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=15552000`,
+          },
+        });
+      }
+      const actorId = studioAllowed(request, config);
+      if (!actorId) return html(renderStudioLogin());
+      const locale: StudioLocale = url.searchParams.get("locale") === "en" ? "en" : "ru";
+      return html(renderStudioDashboard(config, backendDb, actorId, locale));
+    }
+    if (path === "/studio" && request.method === "POST") {
+      if (!sameOriginCommandLogin(request, config)) return text("forbidden\n", 403);
+      const form = await request.formData().catch(() => new FormData());
+      const token = form.get("token");
+      if (typeof token !== "string" || !studioAllowed(request, config, token)) return html(renderStudioLogin(true));
+      return new Response(null, {
+        status: 303,
+        headers: {
+          location: "/studio",
+          "set-cookie": `studio_token=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=15552000`,
+        },
+      });
+    }
+    if (path === "/studio/acknowledge" && request.method === "POST") {
+      const actorId = studioAllowed(request, config);
+      if (!actorId || !sameOriginCommandLogin(request, config)) return text("forbidden\n", 403);
+      const form = await request.formData().catch(() => new FormData());
+      const id = Number(form.get("id"));
+      if (Number.isSafeInteger(id)) studioServices(backendDb, config).notifications.acknowledge(actorId, id);
+      return new Response(null, { status: 303, headers: { location: "/studio" } });
     }
     if (path === "/api/likes" && request.method === "GET") {
       const limit = engagement.allowLikes(request);
