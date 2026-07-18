@@ -180,6 +180,7 @@ describe("creator analytics", () => {
       const config = loadConfig({ INSTAGRAM_ACCESS_TOKEN: "token", INSTAGRAM_USER_ID: "user" });
       config.studio.modules.video_posting = true;
       config.studio.modules.instagram = true;
+      config.studio.modules.youtube = true;
       const fetchMock = (async (input: URL | RequestInfo) => {
         const url = String(input);
         if (url.includes("/comments")) return new Response(JSON.stringify({ data: [] }));
@@ -458,6 +459,7 @@ describe("creator analytics", () => {
       const config = loadConfig({});
       config.studio.modules.video_posting = true;
       config.studio.modules.instagram = true;
+      config.studio.modules.youtube = true;
 
       const dashboard = studioAnalyticsDashboard(backendDb, config, "video", 1, "ru");
       expect(dashboard.text).not.toContain("Аккаунт ·");
@@ -465,6 +467,7 @@ describe("creator analytics", () => {
       expect(dashboard.text).toContain("| Видео | 👁 | ♥ | 💬 | ↗ | 🔖 |");
       expect(dashboard.text).toContain("| Все | 200 | 20 | 0 | 7 | 5 |");
       expect(dashboard.text).toContain("| Симулятор… · 📸 | 200 | 20 | 0 | 7 | 5 |");
+      expect(dashboard.text).not.toContain("| Симулятор… · ▶️ |");
       expect(dashboard.richHtml.match(/<table bordered striped>/g)?.length).toBe(2);
     } finally {
       backendDb.close();

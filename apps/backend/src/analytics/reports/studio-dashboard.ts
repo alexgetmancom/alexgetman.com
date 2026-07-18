@@ -266,6 +266,9 @@ function publishedVideoTable(
         ? config.studio.modules.instagram
         : row.platform === "youtube_shorts" && config.studio.modules.youtube,
     )
+    // A target with no observed metric is normally a removed or rolled-back
+    // publication; it must not look like a real zero-performance video.
+    .filter((row) => Object.values(contentMetrics(row)).some((value) => value > 0))
     .sort((left, right) => (right.publishedAt ?? "").localeCompare(left.publishedAt ?? ""));
   if (!rows.length) return [];
   const values = rows.map((row) => contentMetrics(row));
