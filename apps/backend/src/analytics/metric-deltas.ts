@@ -1,4 +1,5 @@
 import type { BackendDb } from "../db/client.js";
+import { creatorProfiles } from "../db/schema.js";
 import { metricNumber } from "./snapshots/creator-store.js";
 
 /** Single source for period-delta analytics shared by every report and dashboard.
@@ -175,4 +176,36 @@ export function audienceGrowthByAccount(backendDb: BackendDb, since: string): Ma
   return new Map(
     rows.filter((row) => row.baseline != null).map((row) => [`${row.platform}${KEY_SEP}${row.account}`, row.latest - (row.baseline ?? 0)]),
   );
+}
+
+/** Prefer a platform's own period report where it exists (YouTube exposes
+ * gained/lost subscribers directly). Zernio currently exposes this aggregate
+ * only for 30 days, so shorter Instagram periods continue to use our durable
+ * daily observations. */
+export function audienceGrowthByPlatform(backendDb: BackendDb, since: string, days: 1 | 7 | 30): Map<string, number> {
+  const totals = new Map<string, number>();
+  for (const [key, value] of audienceGrowthByAccount(backendDb, since)) {
+    const [platform] = key.split(KEY_SEP);
+    if (platform) totals.set(platform, (totals.get(platform) ?? 0) + value);
+  }
+  for (const profile of backendDb.db.select().from(creatorProfiles).all()) {
+    const direct = providerFollowerGrowth(profile.platform, profile.dataJson, days);
+    if (direct != null) totals.set(profile.platform, direct);
+  }
+  return totals;
+}
+
+function providerFollowerGrowth(platform: string, data: Record<string, unknown>, days: 1 | 7 | 30): number | null {
+  if (platform === "youtube") {
+    const suffix = days === 30 ? "" : `${days}d`;
+    const gained = data[`subscribersGained${suffix}`];
+    const lost = data[`subscribersLost${suffix}`];
+    if (gained != null || lost != null) return metricNumber(gained) - metricNumber(lost);
+  }
+  if (platform === "instagram" && days === 30) {
+    const gained = data.followersGained30d;
+    const lost = data.followersLost30d;
+    if (gained != null || lost != null) return metricNumber(gained) - metricNumber(lost);
+  }
+  return null;
 }

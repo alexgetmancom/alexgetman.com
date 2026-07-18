@@ -70,7 +70,7 @@ const envSchema = z
       .number()
       .int()
       .min(60)
-      .default(24 * 60 * 60),
+      .default(60 * 60),
     TELEGRAM_METRICS_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(10),
     MAX_METRIC_TASKS_PER_CYCLE: z.coerce.number().int().positive().default(30),
     OBSERVABILITY_INTERVAL_SECONDS: z.coerce.number().int().positive().default(300),

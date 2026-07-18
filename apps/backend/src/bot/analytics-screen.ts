@@ -1,6 +1,11 @@
-import { type Context, InlineKeyboard } from "grammy";
+import { type Bot, type Context, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
+import {
+  clearTelegramAnalyticsDashboard,
+  setTelegramAnalyticsDashboard,
+  telegramAnalyticsDashboards,
+} from "../interfaces/telegram/control-cards.js";
 import { sendTelegramArchiveMedia } from "../interfaces/telegram/delivery-previews.js";
 import { t } from "../interfaces/telegram/i18n/index.js";
 import { studioServices } from "../studio/services/index.js";
@@ -21,6 +26,7 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
     return true;
   }
   if (data === "archive_home") {
+    clearTelegramAnalyticsDashboard(backendDb, Number(ctx.from?.id));
     const locale = botLocale(backendDb, Number(ctx.from?.id));
     const summary = studioServices(backendDb, config).analytics.archiveSummary(locale);
     const keyboard = new InlineKeyboard().text(t(locale, "analytics.posts-btn", { count: summary.posts }), "analytics_post_archive:0");
@@ -105,6 +111,7 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
     return true;
   }
   if (data !== "analytics_ai") return false;
+  clearTelegramAnalyticsDashboard(backendDb, Number(ctx.from?.id));
   const locale = botLocale(backendDb, Number(ctx.from?.id));
   await ctx.answerCallbackQuery({ text: t(locale, "analytics.preparing-report") });
   const report = await studioServices(backendDb, config).analytics.audienceAnalysis(locale);
@@ -128,6 +135,48 @@ async function showAnalyticsDashboard(
 ): Promise<void> {
   const locale = botLocale(backendDb, Number(ctx.from?.id));
   const dashboard = studioServices(backendDb, config).analytics.dashboard(section, days, locale);
+  const keyboard = analyticsKeyboard(config, locale, section, days, dashboard.hasComments);
+  await ctx.editMessageText({ html: dashboard.richHtml }, { reply_markup: keyboard });
+  const adminId = Number(ctx.from?.id);
+  const messageId = ctx.callbackQuery?.message?.message_id;
+  if (section !== "audience" && Number.isSafeInteger(adminId) && messageId && ctx.chat?.id)
+    setTelegramAnalyticsDashboard(backendDb, adminId, Number(ctx.chat.id), messageId, section, days);
+}
+
+/** Refreshes only the currently open dashboard for each owner. The interface
+ * binding prevents hourly analytics collection from creating chat noise. */
+export async function refreshTelegramAnalyticsDashboards(bot: Bot, backendDb: BackendDb, config: BackendConfig): Promise<number> {
+  let refreshed = 0;
+  for (const card of telegramAnalyticsDashboards(backendDb)) {
+    const section = card.section === "overview" && !showOverview(config) ? defaultAnalyticsSection(config) : card.section;
+    const locale = botLocale(backendDb, card.adminId);
+    const dashboard = studioServices(backendDb, config).analytics.dashboard(section, card.days, locale);
+    try {
+      await bot.api.editMessageText(
+        card.chatId,
+        card.messageId,
+        { html: dashboard.richHtml },
+        {
+          reply_markup: analyticsKeyboard(config, locale, section, card.days, dashboard.hasComments),
+        },
+      );
+      refreshed += 1;
+    } catch (error) {
+      // The screen may have been superseded or deleted. It is harmless: the
+      // next explicit Analytics click records a new binding.
+      if (!String(error).includes("message is not modified")) console.warn("Analytics dashboard refresh failed:", error);
+    }
+  }
+  return refreshed;
+}
+
+function analyticsKeyboard(
+  config: BackendConfig,
+  locale: ReturnType<typeof botLocale>,
+  section: AnalyticsSection,
+  days: 1 | 7 | 30,
+  hasComments: boolean,
+): InlineKeyboard {
   const callback = (nextDays: 1 | 7 | 30) => `analytics_section:${section}:${nextDays}`;
   const keyboard = new InlineKeyboard();
   keyboard
@@ -151,9 +200,9 @@ async function showAnalyticsDashboard(
       `analytics_section:video:${days}`,
     );
   keyboard.row().text(t(locale, "analytics.archive-btn"), "archive_home");
-  if (dashboard.hasComments && config.DEEPSEEK_API_KEY) keyboard.text(t(locale, "analytics.ai-analysis"), "analytics_ai");
+  if (hasComments && config.DEEPSEEK_API_KEY) keyboard.text(t(locale, "analytics.ai-analysis"), "analytics_ai");
   keyboard.row().text(t(locale, "common.menu"), "menu_home");
-  await ctx.editMessageText({ html: dashboard.richHtml }, { reply_markup: keyboard });
+  return keyboard;
 }
 
 function defaultAnalyticsSection(config: BackendConfig): AnalyticsSection {

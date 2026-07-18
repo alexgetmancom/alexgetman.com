@@ -14,6 +14,7 @@ import { handleVideoCallback, handleVideoMessage } from "./bot/video-screen.js";
 import type { BackendDb } from "./db/client.js";
 import type { BackendConfig } from "./foundation/config.js";
 import { log } from "./foundation/logger.js";
+import { clearTelegramAnalyticsDashboard } from "./interfaces/telegram/control-cards.js";
 import { handleTelegramDeliveryPreviewCallback } from "./interfaces/telegram/delivery-previews.js";
 import { t } from "./interfaces/telegram/i18n/index.js";
 import { formatMsk } from "./interfaces/telegram/time.js";
@@ -87,6 +88,7 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
       return;
     }
     if (ctx.callbackQuery.data === "menu_home") {
+      clearTelegramAnalyticsDashboard(backendDb, Number(ctx.from?.id));
       await ctx.answerCallbackQuery();
       await showMainMenu(ctx, config, backendDb, true);
       return;

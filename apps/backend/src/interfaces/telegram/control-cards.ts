@@ -4,6 +4,8 @@ import { interfaceBindings } from "../../db/schema.js";
 
 const TELEGRAM = "telegram";
 
+type AnalyticsDashboardCard = { chatId: number; messageId: number; section: "overview" | "posts" | "video"; days: 1 | 7 | 30 };
+
 /** Telegram-only message references. Studio aggregates never need chat/message ids. */
 export function setTelegramPostCard(backendDb: BackendDb, draftId: number, chatId: number, messageId: number): void {
   backendDb.db
@@ -111,4 +113,61 @@ export function telegramVideoCard(backendDb: BackendDb, videoDraftId: number) {
     )
     .get();
   return binding ? { chatId: Number(binding.conversationId), messageId: Number(binding.messageId) } : null;
+}
+
+/** The last analytics screen is presentation state, so the Telegram adapter
+ * can refresh it without sending the owner a new message every hour. */
+export function setTelegramAnalyticsDashboard(
+  backendDb: BackendDb,
+  adminId: number,
+  chatId: number,
+  messageId: number,
+  section: AnalyticsDashboardCard["section"],
+  days: AnalyticsDashboardCard["days"],
+): void {
+  const now = new Date().toISOString();
+  backendDb.db
+    .insert(interfaceBindings)
+    .values({
+      interfaceId: TELEGRAM,
+      entityType: "analytics_dashboard",
+      entityId: adminId,
+      conversationId: String(chatId),
+      messageId: String(messageId),
+      stateJson: { section, days },
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [interfaceBindings.interfaceId, interfaceBindings.entityType, interfaceBindings.entityId],
+      set: { conversationId: String(chatId), messageId: String(messageId), stateJson: { section, days }, updatedAt: now },
+    })
+    .run();
+}
+
+export function telegramAnalyticsDashboards(backendDb: BackendDb): Array<AnalyticsDashboardCard & { adminId: number }> {
+  return backendDb.db
+    .select()
+    .from(interfaceBindings)
+    .where(and(eq(interfaceBindings.interfaceId, TELEGRAM), eq(interfaceBindings.entityType, "analytics_dashboard")))
+    .all()
+    .flatMap((binding) => {
+      const section = binding.stateJson?.section;
+      const days = binding.stateJson?.days;
+      if ((section !== "overview" && section !== "posts" && section !== "video") || (days !== 1 && days !== 7 && days !== 30)) return [];
+      return [{ adminId: binding.entityId, chatId: Number(binding.conversationId), messageId: Number(binding.messageId), section, days }];
+    });
+}
+
+export function clearTelegramAnalyticsDashboard(backendDb: BackendDb, adminId: number): void {
+  backendDb.db
+    .delete(interfaceBindings)
+    .where(
+      and(
+        eq(interfaceBindings.interfaceId, TELEGRAM),
+        eq(interfaceBindings.entityType, "analytics_dashboard"),
+        eq(interfaceBindings.entityId, adminId),
+      ),
+    )
+    .run();
 }

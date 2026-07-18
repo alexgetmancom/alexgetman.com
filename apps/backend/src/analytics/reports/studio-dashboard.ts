@@ -4,9 +4,8 @@ import type { BackendConfig } from "../../foundation/config.js";
 import type { StudioLocale as BotLocale } from "../../foundation/locale.js";
 import { t } from "../../interfaces/telegram/i18n/index.js";
 import {
-  audienceGrowthByAccount,
+  audienceGrowthByPlatform,
   type ContentMetrics,
-  KEY_SEP,
   textContentMetricsByPlatform,
   videoContentMetricsByPlatform,
 } from "../metric-deltas.js";
@@ -34,15 +33,14 @@ export function studioAnalyticsDashboard(
 ): StudioAnalyticsDashboard {
   const since = new Date(Date.now() - days * 24 * 60 * 60_000).toISOString();
   const period = periodLabel(days, locale);
-  const updatedAt = latestMeasurement(backendDb, config, section);
   const lines: string[] = [];
 
   if (section === "audience") {
     lines.push(`👥 *${t(locale, "sdash.header-audience", { period })}*`);
-    const profiles = audienceProfiles(backendDb, config, since, period, locale);
+    const profiles = audienceProfiles(backendDb, config, since, days, period, locale);
     lines.push(...(profiles.length ? profiles : [t(locale, "sdash.no-audience")]));
   } else {
-    lines.push(...unifiedAnalyticsTable(backendDb, config, section, since, days, period, locale, updatedAt));
+    lines.push(...unifiedAnalyticsTable(backendDb, config, section, since, days, locale));
   }
   const text = lines.join("\n");
   return { text, richHtml: richMessageHtml(lines), hasComments: hasAudienceComments(backendDb) };
@@ -54,14 +52,8 @@ export function studioAnalyticsDashboard(
 function richMessageHtml(lines: string[]): string {
   const blocks: string[] = [];
   for (let index = 0; index < lines.length; index += 1) {
-    let line = lines[index]?.trim() ?? "";
+    const line = lines[index]?.trim() ?? "";
     if (!line) continue;
-    let caption = "";
-    if (lines[index + 1]?.trimStart().startsWith("| ")) {
-      caption = line;
-      index += 1;
-      line = lines[index]?.trim() ?? "";
-    }
     if (line.startsWith("| ")) {
       const headers = tableCells(line);
       // Markdown table separator is only an intermediate text representation.
@@ -72,7 +64,7 @@ function richMessageHtml(lines: string[]): string {
         rows.push(tableCells(lines[index] ?? ""));
       }
       blocks.push(
-        `<table bordered striped>${caption ? `<caption>${richInlineHtml(caption)}</caption>` : ""}<tr>${headers.map((cell) => `<th>${escapeHtml(cell)}</th>`).join("")}</tr>${rows
+        `<table bordered striped><tr>${headers.map((cell) => `<th>${escapeHtml(cell)}</th>`).join("")}</tr>${rows
           .map(
             (row) =>
               `<tr>${row.map((cell, cellIndex) => `<td align="${cellIndex ? "right" : "left"}">${escapeHtml(cell)}</td>`).join("")}</tr>`,
@@ -103,7 +95,14 @@ function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-function audienceProfiles(backendDb: BackendDb, config: BackendConfig, since: string, period: string, locale: BotLocale): string[] {
+function audienceProfiles(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  since: string,
+  days: AnalyticsPeriod,
+  period: string,
+  locale: BotLocale,
+): string[] {
   const labels: Record<string, string> = {
     bluesky: "Bluesky",
     devto: "Dev.to",
@@ -117,7 +116,7 @@ function audienceProfiles(backendDb: BackendDb, config: BackendConfig, since: st
     x: "X",
     youtube: "YouTube",
   };
-  const growth = audienceGrowthByAccount(backendDb, since);
+  const growth = audienceGrowthByPlatform(backendDb, since, days);
   return backendDb.db
     .select()
     .from(creatorProfiles)
@@ -135,8 +134,7 @@ function audienceProfiles(backendDb: BackendDb, config: BackendConfig, since: st
       const followers = data.subscriberCount ?? data.followersCount;
       const values: string[] = [];
       if (followers != null) values.push(`${t(locale, "sdash.followers-lc")}: *${metricNumber(followers)}*`);
-      const deltas = [...growth.entries()].filter(([key]) => key.startsWith(`${row.platform}\u0000`)).map(([, value]) => value);
-      const delta = deltas.length ? deltas.reduce((total, value) => total + value, 0) : null;
+      const delta = growth.get(row.platform) ?? null;
       if (delta != null) values.push(`${t(locale, "sdash.growth-lc", { period })}: *${delta >= 0 ? "+" : ""}${delta}*`);
       if (data.stars != null) values.push(`Stars: *${metricNumber(data.stars)}*`);
       if (data.averageViewsPerPost != null) values.push(`${t(locale, "sdash.avg-views")}: ${metricNumber(data.averageViewsPerPost)}`);
@@ -151,9 +149,7 @@ function unifiedAnalyticsTable(
   section: Exclude<AnalyticsSection, "audience">,
   since: string,
   days: AnalyticsPeriod,
-  period: string,
   locale: BotLocale,
-  updatedAt: string | null,
 ): string[] {
   const profiles = backendDb.db
     .select()
@@ -161,15 +157,18 @@ function unifiedAnalyticsTable(
     .all()
     .filter((row) => audiencePlatformsForSection(config, section).has(row.platform));
   const accountMetrics = new Map(profiles.map((row) => [row.platform, contentMetricsFromProfile(row.dataJson, days)]));
-  const content = contentMetricsForSection(backendDb, config, section, since, days, accountMetrics);
-  const growth = audienceGrowthByAccount(backendDb, since);
+  const content = contentMetricsForSection(backendDb, config, section, since, accountMetrics);
+  const growth = audienceGrowthByPlatform(backendDb, since, days);
   const profileMap = new Map(profiles.map((profile) => [profile.platform, profile]));
   const platforms = new Set([...profileMap.keys(), ...content.keys()]);
   const rows = [...platforms]
-    .sort((left, right) => platformLabel(left).localeCompare(platformLabel(right)))
+    .sort(
+      (left, right) =>
+        (content.get(right)?.views ?? 0) - (content.get(left)?.views ?? 0) || platformLabel(left).localeCompare(platformLabel(right)),
+    )
     .map((platform) => ({
       platform,
-      growth: profileMap.has(platform) ? sumAccountGrowth(growth, platform) : null,
+      growth: profileMap.has(platform) ? (growth.get(platform) ?? 0) : null,
       value: content.get(platform) ?? emptyMetrics(),
     }));
   const totalContent = rows.reduce(
@@ -193,13 +192,12 @@ function unifiedAnalyticsTable(
     )
     .map(
       (profile) =>
-        `${platformIcon(profile.platform)} ${metricNumber(profile.dataJson.subscriberCount ?? profile.dataJson.followersCount)} ${platformLabel(profile.platform)}`,
+        `${platformIcon(profile.platform)} ${platformLabel(profile.platform)} ${metricNumber(profile.dataJson.subscriberCount ?? profile.dataJson.followersCount)}`,
     )
-    .join(" / ");
+    .join(" · ");
   const all = locale === "ru" ? "Все" : "All";
   return [
-    `👥 ${totalFollowers} ${locale === "ru" ? "подписчиков" : "followers"}${platformSummary ? ` · ${platformSummary}` : ""}${updatedAt ? ` · ⟳ ${formatDateTime(updatedAt, locale)}` : ""}`,
-    period,
+    `👥 ${locale === "ru" ? "Подписчики" : "Followers"} ${totalFollowers}${platformSummary ? ` · ${platformSummary}` : ""}`,
     `| ${locale === "ru" ? "Площадка" : "Platform"} | 👤 | 👁 | ♥ | 💬 | ↗ | 🔖 |`,
     "|:--|--:|--:|--:|--:|--:|--:|",
     ...[
@@ -217,7 +215,6 @@ function contentMetricsForSection(
   config: BackendConfig,
   section: Exclude<AnalyticsSection, "audience">,
   since: string,
-  days: AnalyticsPeriod,
   accountMetrics: Map<string, ContentMetrics | undefined>,
 ): Map<string, ContentMetrics> {
   const values = new Map<string, ContentMetrics>();
@@ -305,10 +302,6 @@ function preferLiveMetrics(period: ContentMetrics | undefined, fallback: Content
   return fallback ?? period;
 }
 
-function sumAccountGrowth(values: Map<string, number>, platform: string): number {
-  return [...values.entries()].filter(([key]) => key.startsWith(`${platform}${KEY_SEP}`)).reduce((sum, [, value]) => sum + value, 0);
-}
-
 function signed(value: number): string {
   return `${value >= 0 ? "+" : ""}${value}`;
 }
@@ -332,30 +325,4 @@ function enabledAudiencePlatforms(config: BackendConfig): Set<string> {
 
 function hasAudienceComments(backendDb: BackendDb): boolean {
   return backendDb.sqlite.prepare("SELECT 1 FROM social_comments LIMIT 1").get() != null;
-}
-
-function latestMeasurement(backendDb: BackendDb, config: BackendConfig, section: AnalyticsSection): string | null {
-  const candidates: string[] = [];
-  if (section !== "video" && (config.studio.modules.text_posting || config.studio.modules.site)) {
-    const where = section === "posts" ? "target NOT LIKE 'site_%'" : "1=1";
-    const value = backendDb.sqlite.prepare(`SELECT MAX(sampled_at) AS value FROM metric_samples WHERE ${where}`).get() as {
-      value: string | null;
-    };
-    if (value.value) candidates.push(value.value);
-  }
-  if (section !== "posts" && config.studio.modules.video_posting) {
-    const value = backendDb.sqlite.prepare("SELECT MAX(sampled_at) AS value FROM video_metric_snapshots").get() as { value: string | null };
-    if (value.value) candidates.push(value.value);
-  }
-  return candidates.sort().at(-1) ?? null;
-}
-
-function formatDateTime(value: string, locale: BotLocale): string {
-  return new Intl.DateTimeFormat(locale === "ru" ? "ru-RU" : "en-GB", {
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Europe/Moscow",
-  }).format(new Date(value));
 }

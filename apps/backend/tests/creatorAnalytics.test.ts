@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
 import { runAnalyticsCycle } from "../src/analytics/collection/creator-cycle.js";
+import { audienceGrowthByPlatform } from "../src/analytics/metric-deltas.js";
 import { creatorDashboard } from "../src/analytics/reports/dashboard.js";
 import { studioAnalyticsDashboard } from "../src/analytics/reports/studio-dashboard.js";
 import { openBackendDb } from "../src/db/client.js";
@@ -359,6 +360,26 @@ describe("creator analytics", () => {
     }
   });
 
+  it("uses YouTube's native gained and lost subscriber reports for each selected period", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      backendDb.db
+        .insert(creatorProfiles)
+        .values({
+          platform: "youtube",
+          dataJson: { subscriberCount: 120, subscribersGained1d: 9, subscribersLost1d: 2, subscribersGained7d: 28, subscribersLost7d: 5 },
+          updatedAt: now,
+        })
+        .run();
+      const since = new Date(Date.now() - 7 * 24 * 60 * 60_000).toISOString();
+      expect(audienceGrowthByPlatform(backendDb, since, 1).get("youtube")).toBe(7);
+      expect(audienceGrowthByPlatform(backendDb, since, 7).get("youtube")).toBe(23);
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("renders the compact Studio overview and keeps post and video analytics separate", () => {
     const backendDb = openBackendDb(":memory:");
     try {
@@ -381,7 +402,7 @@ describe("creator analytics", () => {
       expect(overview).not.toContain("Общая статистика");
       expect(overview).toContain("| ✈️ Telegram | — | 24 | 5 | 0 | 0 | 0 |");
       expect(posts).toContain("| 📊 Все | +0 | 24 | 5 | 0 | 0 | 0 |");
-      expect(studioAnalyticsDashboard(backendDb, config, "overview", 1, "ru").richHtml).toContain("<caption>сегодня</caption>");
+      expect(studioAnalyticsDashboard(backendDb, config, "overview", 1, "ru").richHtml).toContain("<table bordered striped>");
       expect(posts).not.toContain("Видеопостинг");
     } finally {
       backendDb.close();
@@ -408,7 +429,7 @@ describe("creator analytics", () => {
 
       const overview = studioAnalyticsDashboard(backendDb, config, "overview", 7, "ru").text;
       const audience = studioAnalyticsDashboard(backendDb, config, "audience", 7, "ru").text;
-      expect(overview).toContain("👥 426 подписчиков");
+      expect(overview).toContain("👥 Подписчики 426");
       expect(overview).not.toContain("556");
       expect(audience).toContain("Instagram");
       expect(audience).toContain("YouTube");

@@ -1,5 +1,6 @@
 import type { Bot } from "grammy";
 import { finalizePendingAlbums } from "../../bot/albums.js";
+import { refreshTelegramAnalyticsDashboards } from "../../bot/analytics-screen.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { log } from "../../foundation/logger.js";
@@ -24,6 +25,10 @@ export function startTelegramWorkers(config: BackendConfig, backendDb: BackendDb
       });
       const weeklySummary = await sendWeeklyAnalyticsSummary(config, backendDb, bot);
       log("debug", "telegram interface loop tick", { events, alerts, weeklySummary });
+    }),
+    startLoop("telegram-analytics-dashboard", 60 * 60 * 1000, async () => {
+      const refreshed = await refreshTelegramAnalyticsDashboards(bot, backendDb, config);
+      if (refreshed) log("debug", "analytics dashboards refreshed", { refreshed });
     }),
   ];
 }
