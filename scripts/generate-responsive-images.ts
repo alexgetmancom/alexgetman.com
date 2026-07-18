@@ -57,23 +57,41 @@ if (await exists(cacheFile)) {
   cache = (await readJson<Record<string, number>>(cacheFile)) || {};
 }
 
+// Keys touched this run are the only ones worth keeping: og:v* keys embed the
+// post title/media hash, so an edited post leaves its old key permanently
+// orphaned unless we prune anything we didn't see while generating.
+const usedCacheKeys = new Set<string>();
+
 async function saveCache(): Promise<void> {
+  for (const key of Object.keys(cache)) {
+    if (!usedCacheKeys.has(key)) delete cache[key];
+  }
   try {
     await fs.writeFile(cacheFile, JSON.stringify(cache, null, 2), "utf-8");
-  } catch {}
+  } catch (error) {
+    console.warn("Failed to save image cache:", error);
+  }
 }
 
+/** Reports whether `inputPath` changed since the last successful run. Does not
+ * commit — call commitCache after the corresponding output is written, so a
+ * failed generation is retried on the next run instead of being skipped. */
 async function needsUpdate(inputPath: string, key: string): Promise<boolean> {
+  usedCacheKeys.add(key);
   try {
     const stat = await fs.stat(inputPath);
-    const mtime = stat.mtimeMs;
-    if (cache[key] === mtime) {
-      return false;
-    }
-    cache[key] = mtime;
-    return true;
+    return cache[key] !== stat.mtimeMs;
   } catch {
     return true;
+  }
+}
+
+async function commitCache(inputPath: string, key: string): Promise<void> {
+  try {
+    cache[key] = (await fs.stat(inputPath)).mtimeMs;
+  } catch {
+    // Input disappeared between generation and commit; leave the cache key
+    // absent so the next run retries it.
   }
 }
 
@@ -167,26 +185,26 @@ async function generateAvatar() {
   const inputPath = path.join(publicDir, "avatar-small.png");
   if (!(await exists(inputPath))) return;
 
-  const updated = await needsUpdate(inputPath, "avatar-small");
-  if (!updated) return;
+  if (!(await needsUpdate(inputPath, "avatar-small"))) return;
 
   await sharp(inputPath)
     .resize({ width: 72, height: 72, fit: "cover" })
     .webp({ quality: 76, effort: 6 })
     .toFile(path.join(publicDir, "avatar-small.webp"));
+  await commitCache(inputPath, "avatar-small");
 }
 
 async function generateSocialImage() {
   const inputPath = path.join(publicDir, "avatar.png");
   if (!(await exists(inputPath))) return;
 
-  const updated = await needsUpdate(inputPath, "avatar");
-  if (!updated) return;
+  if (!(await needsUpdate(inputPath, "avatar"))) return;
 
   await sharp(inputPath)
     .resize({ width: 500, height: 500, fit: "cover" })
     .jpeg({ quality: 82, mozjpeg: true })
     .toFile(path.join(publicDir, "social-image.jpg"));
+  await commitCache(inputPath, "avatar");
 }
 
 async function generatePostOgImages(feedItems: FeedItem[]): Promise<void> {
@@ -226,9 +244,9 @@ async function generatePostOgImages(feedItems: FeedItem[]): Promise<void> {
       const sourceImageStamp = sourceImage ? (await fs.stat(sourceImage)).mtimeMs : "none";
       const key = `og:v5:${postId}:${variant.locale}:${compactText(title)}:${badge}:${sourceImageStamp}:${Boolean(avatarDataUri)}`;
       const outputPath = path.join(outputDir, `post-${postId}-${variant.locale}.jpg`);
+      usedCacheKeys.add(key);
 
       if (cache[key] && (await exists(outputPath))) continue;
-      cache[key] = Date.now();
 
       const lineSvg = lines
         .map(
@@ -301,6 +319,7 @@ async function generatePostOgImages(feedItems: FeedItem[]): Promise<void> {
         .composite([{ input: Buffer.from(svg), top: 0, left: 0 }])
         .jpeg({ quality: 84, mozjpeg: true })
         .toFile(outputPath);
+      cache[key] = Date.now();
     }
   }
 }
@@ -342,15 +361,23 @@ async function generateResponsiveImages() {
   for (const publicPath of images) {
     const inputPath = await resolvePublicImage(publicPath);
     if (!inputPath) continue;
-    const updated = await needsUpdate(inputPath, `responsive:${publicPath}`);
+    const key = `responsive:${publicPath}`;
+    const updated = await needsUpdate(inputPath, key);
     const metadata = await sharp(inputPath).metadata();
     if (!metadata.width) continue;
 
+    let allOk = true;
     for (const width of widths) {
       const outputPath = path.join(outputDir, responsiveOutputName(publicPath, width));
       if (!updated && (await exists(outputPath))) continue;
-      await sharp(inputPath).resize({ width, withoutEnlargement: true }).webp({ quality: 78, effort: 5 }).toFile(outputPath);
+      try {
+        await sharp(inputPath).resize({ width, withoutEnlargement: true }).webp({ quality: 78, effort: 5 }).toFile(outputPath);
+      } catch (error) {
+        allOk = false;
+        console.warn(`Failed to generate ${outputPath}:`, error);
+      }
     }
+    if (allOk) await commitCache(inputPath, key);
   }
 }
 
