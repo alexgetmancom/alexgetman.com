@@ -130,25 +130,34 @@ async function showAnalyticsDashboard(
   const callback = (nextDays: 1 | 7 | 30) => `analytics_section:${section}:${nextDays}`;
   const keyboard = new InlineKeyboard();
   keyboard
-    .text(t(locale, "common.today"), callback(1))
-    .text(t(locale, "analytics.7-days"), callback(7))
-    .text(t(locale, "analytics.30-days"), callback(30))
+    .text(periodButtonLabel(locale, 1, days), callback(1))
+    .text(periodButtonLabel(locale, 7, days), callback(7))
+    .text(periodButtonLabel(locale, 30, days), callback(30))
     .row();
-  keyboard
-    .text(t(locale, section === "overview" ? "analytics.overview-active" : "analytics.overview"), `analytics_section:overview:${days}`)
-    .text(t(locale, section === "audience" ? "analytics.audience-active" : "analytics.audience"), `analytics_section:audience:${days}`)
-    .text(t(locale, section === "posts" ? "analytics.posts-section-active" : "analytics.posts-section"), `analytics_section:posts:${days}`)
-    .row()
-    .text(t(locale, "analytics.archive-btn"), "archive_home");
+  keyboard.text(
+    t(locale, section === "overview" ? "analytics.overview-active" : "analytics.overview"),
+    `analytics_section:overview:${days}`,
+  );
+  if (config.studio.modules.text_posting)
+    keyboard.text(
+      t(locale, section === "posts" ? "analytics.posts-section-active" : "analytics.posts-section"),
+      `analytics_section:posts:${days}`,
+    );
   if (config.studio.modules.video_posting)
     keyboard.text(
       t(locale, section === "video" ? "analytics.video-section-active" : "analytics.video-section"),
       `analytics_section:video:${days}`,
     );
+  keyboard.row().text(t(locale, "analytics.archive-btn"), "archive_home");
   if (section === "video" && dashboard.hasComments && config.DEEPSEEK_API_KEY)
     keyboard.row().text(t(locale, "analytics.ai-analysis"), "analytics_ai");
   keyboard.row().text(t(locale, "common.menu"), "menu_home");
   await ctx.editMessageText(dashboard.text, { parse_mode: "Markdown", reply_markup: keyboard });
+}
+
+function periodButtonLabel(locale: ReturnType<typeof botLocale>, period: 1 | 7 | 30, selected: 1 | 7 | 30): string {
+  const key = period === 1 ? "common.today" : period === 7 ? "analytics.7-days" : "analytics.30-days";
+  return `${period === selected ? "• " : ""}${t(locale, key)}`;
 }
 
 function archivePagination(

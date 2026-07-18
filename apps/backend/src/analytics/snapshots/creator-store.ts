@@ -4,9 +4,9 @@ import { analyticsSync, creatorProfileSnapshots, creatorProfiles, socialComments
 
 const DAILY_SYNC_MS = 24 * 60 * 60_000;
 
-export function canSync(backendDb: BackendDb, source: string): boolean {
+export function canSync(backendDb: BackendDb, source: string, intervalSeconds = DAILY_SYNC_MS / 1000): boolean {
   const row = backendDb.db.select().from(analyticsSync).where(eq(analyticsSync.source, source)).get();
-  return !row || Date.now() - new Date(row.lastSyncedAt).getTime() >= DAILY_SYNC_MS;
+  return !row || Date.now() - new Date(row.lastSyncedAt).getTime() >= intervalSeconds * 1000;
 }
 
 export function markSynced(backendDb: BackendDb, source: string, error: string | null = null): void {

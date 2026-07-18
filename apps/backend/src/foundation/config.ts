@@ -65,6 +65,12 @@ const envSchema = z
     CHANNEL_USERNAME: z.string().default("alexgetmancom"),
     PIPELINE_BASELINE_MESSAGE_ID: z.coerce.number().int().default(422),
     METRICS_REFRESH_INTERVAL_SECONDS: z.coerce.number().int().positive().default(10),
+    /** Refreshes account-level followers and aggregate platform insights. */
+    CREATOR_PROFILE_REFRESH_INTERVAL_SECONDS: z.coerce
+      .number()
+      .int()
+      .min(60)
+      .default(24 * 60 * 60),
     TELEGRAM_METRICS_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(10),
     MAX_METRIC_TASKS_PER_CYCLE: z.coerce.number().int().positive().default(30),
     OBSERVABILITY_INTERVAL_SECONDS: z.coerce.number().int().positive().default(300),

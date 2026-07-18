@@ -8,20 +8,21 @@ import { runVideoMetricSchedule } from "./video-metrics.js";
 /** Runs the transport-neutral analytics collection cycle. */
 export async function runAnalyticsCycle(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch = fetch): Promise<number> {
   if (!config.studio.modules.analytics) return 0;
+  const profileInterval = config.CREATOR_PROFILE_REFRESH_INTERVAL_SECONDS;
   let profiles = 0;
-  if (config.studio.modules.youtube && isCapabilityReady(config, "youtube_shorts") && canSync(backendDb, "youtube")) {
+  if (config.studio.modules.youtube && isCapabilityReady(config, "youtube_shorts") && canSync(backendDb, "youtube", profileInterval)) {
     await syncYouTubeProfile(config, backendDb, fetchImpl);
     profiles += 1;
   }
-  if (config.studio.modules.instagram && isCapabilityReady(config, "instagram_reels") && canSync(backendDb, "instagram")) {
+  if (config.studio.modules.instagram && isCapabilityReady(config, "instagram_reels") && canSync(backendDb, "instagram", profileInterval)) {
     await syncInstagramProfile(config, backendDb, fetchImpl);
     profiles += 1;
   }
-  if (config.FACEBOOK_PAGE_ID && config.FACEBOOK_PAGE_ACCESS_TOKEN && canSync(backendDb, "facebook_profile_en")) {
+  if (config.FACEBOOK_PAGE_ID && config.FACEBOOK_PAGE_ACCESS_TOKEN && canSync(backendDb, "facebook_profile_en", profileInterval)) {
     await syncFacebookProfile(config, backendDb, "en", fetchImpl);
     profiles += 1;
   }
-  if (config.FACEBOOK_RU_PAGE_ID && config.FACEBOOK_RU_PAGE_ACCESS_TOKEN && canSync(backendDb, "facebook_profile_ru")) {
+  if (config.FACEBOOK_RU_PAGE_ID && config.FACEBOOK_RU_PAGE_ACCESS_TOKEN && canSync(backendDb, "facebook_profile_ru", profileInterval)) {
     await syncFacebookProfile(config, backendDb, "ru", fetchImpl);
     profiles += 1;
   }
@@ -31,7 +32,7 @@ export async function runAnalyticsCycle(config: BackendConfig, backendDb: Backen
     config.X_CONSUMER_SECRET &&
     config.X_ACCESS_TOKEN &&
     config.X_ACCESS_TOKEN_SECRET &&
-    canSync(backendDb, "x_profile")
+    canSync(backendDb, "x_profile", profileInterval)
   ) {
     await syncXProfile(config, backendDb, fetchImpl);
     profiles += 1;
@@ -44,7 +45,7 @@ export async function runAnalyticsCycle(config: BackendConfig, backendDb: Backen
     ...(config.THREADS_ACCESS_TOKEN ? ["threads_profile"] : []),
     ...(config.DEVTO_API_KEY ? ["devto_profile"] : []),
   ];
-  if (community.some((source) => canSync(backendDb, source))) {
+  if (community.some((source) => canSync(backendDb, source, profileInterval))) {
     await syncCommunityProfiles(config, backendDb, fetchImpl);
     profiles += 1;
   }

@@ -36,7 +36,7 @@ export function studioAnalyticsDashboard(
   if (section === "overview") {
     const followers = socialFollowers(backendDb, config);
     if (followers != null) lines.push(`${t(locale, "sdash.followers-across")}: *${followers}*`);
-    const growth = audienceGrowth(backendDb, since);
+    const growth = audienceGrowth(backendDb, since, config);
     if (growth != null) lines.push(`${t(locale, "sdash.follower-growth", { period })}: *${growth >= 0 ? "+" : ""}${growth}*`);
     lines.push(`${t(locale, "sdash.content-views")}: *${post.views + video.views}*`);
     lines.push(`${t(locale, "sdash.interactions")}: *${post.interactions + video.interactions}*`);
@@ -44,7 +44,7 @@ export function studioAnalyticsDashboard(
     const stale = staleSources(backendDb);
     if (stale.length) lines.push(`\n⚠️ ${t(locale, "sdash.data-attention")}: ${stale.join(", ")}`);
   } else if (section === "audience") {
-    const profiles = audienceProfiles(backendDb, since, period, locale);
+    const profiles = audienceProfiles(backendDb, config, since, period, locale);
     lines.push(...(profiles.length ? profiles : [t(locale, "sdash.no-audience")]));
   } else if (section === "posts") {
     lines.push(`${t(locale, "sdash.post-views")}: *${post.views}*`);
@@ -71,7 +71,7 @@ function header(section: AnalyticsSection, period: string, locale: BotLocale): s
   return `📊 *${t(locale, "sdash.header-overview", { period })}*`;
 }
 
-function audienceProfiles(backendDb: BackendDb, since: string, period: string, locale: BotLocale): string[] {
+function audienceProfiles(backendDb: BackendDb, config: BackendConfig, since: string, period: string, locale: BotLocale): string[] {
   const labels: Record<string, string> = {
     bluesky: "Bluesky",
     devto: "Dev.to",
@@ -90,6 +90,7 @@ function audienceProfiles(backendDb: BackendDb, since: string, period: string, l
     .select()
     .from(creatorProfiles)
     .all()
+    .filter((row) => enabledAudiencePlatforms(config).has(row.platform))
     .sort((left, right) => {
       const rightFollowers = metricNumber(right.dataJson.subscriberCount ?? right.dataJson.followersCount);
       const leftFollowers = metricNumber(left.dataJson.subscriberCount ?? left.dataJson.followersCount);
@@ -123,13 +124,29 @@ function socialFollowers(backendDb: BackendDb, config: BackendConfig): number | 
     .select()
     .from(creatorProfiles)
     .all()
+    .filter((row) => enabledAudiencePlatforms(config).has(row.platform))
     .map((row) => metricNumber(row.dataJson.subscriberCount ?? row.dataJson.followersCount));
   return values.length ? values.reduce((total, value) => total + value, 0) : null;
 }
 
-function audienceGrowth(backendDb: BackendDb, since: string): number | null {
-  const values = [...audienceGrowthByAccount(backendDb, since).values()];
+function audienceGrowth(backendDb: BackendDb, since: string, config: BackendConfig): number | null {
+  const platforms = enabledAudiencePlatforms(config);
+  const values = [...audienceGrowthByAccount(backendDb, since).entries()]
+    .filter(([key]) => platforms.has(key.split("\u0000", 1)[0] ?? ""))
+    .map(([, value]) => value);
   return values.length ? values.reduce((total, value) => total + value, 0) : null;
+}
+
+/** Audience is shown only for platforms this Studio actually publishes to.
+ * A controller bot alone must never make its default Telegram channel appear. */
+function enabledAudiencePlatforms(config: BackendConfig): Set<string> {
+  // Community profiles have their own explicit credentials. Only the three
+  // Studio-owned platform projections need module gating here.
+  const platforms = new Set(["bluesky", "devto", "facebook_en", "facebook_ru", "github", "mastodon", "threads", "x"]);
+  if (config.studio.modules.text_posting) platforms.add("telegram");
+  if (config.studio.modules.video_posting && config.studio.modules.youtube) platforms.add("youtube");
+  if (config.studio.modules.video_posting && config.studio.modules.instagram) platforms.add("instagram");
+  return platforms;
 }
 
 /** Current projection minus the last observation at or before the selected period.

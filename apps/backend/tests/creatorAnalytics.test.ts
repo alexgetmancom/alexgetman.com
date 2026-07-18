@@ -246,7 +246,7 @@ describe("creator analytics", () => {
           );
         if (url.includes("follower-history"))
           return new Response(
-            JSON.stringify({ metrics: { follower_count: { total: 306 }, followers_gained: { total: 8 }, followers_lost: { total: 2 } } }),
+            JSON.stringify({ metrics: { follower_count: { total: 0 }, followers_gained: { total: 8 }, followers_lost: { total: 2 } } }),
           );
         if (url.includes("postId=zernio-post"))
           return new Response(
@@ -384,6 +384,36 @@ describe("creator analytics", () => {
       expect(posts).toContain("Постинг · сегодня");
       expect(posts).toContain("Просмотры постов: *24*");
       expect(posts).not.toContain("Видеопостинг");
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("scopes a video-only Studio audience to its enabled video platforms", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      backendDb.db
+        .insert(creatorProfiles)
+        .values([
+          { platform: "telegram", dataJson: { followersCount: 130 }, updatedAt: now },
+          { platform: "youtube", dataJson: { subscriberCount: 120 }, updatedAt: now },
+          { platform: "instagram", dataJson: { followersCount: 306 }, updatedAt: now },
+        ])
+        .run();
+      const config = loadConfig({});
+      config.studio.modules.text_posting = false;
+      config.studio.modules.video_posting = true;
+      config.studio.modules.youtube = true;
+      config.studio.modules.instagram = true;
+
+      const overview = studioAnalyticsDashboard(backendDb, config, "overview", 7, "ru").text;
+      const audience = studioAnalyticsDashboard(backendDb, config, "audience", 7, "ru").text;
+      expect(overview).toContain("Подписчики по площадкам: *426*");
+      expect(overview).not.toContain("556");
+      expect(audience).toContain("Instagram");
+      expect(audience).toContain("YouTube");
+      expect(audience).not.toContain("Telegram");
     } finally {
       backendDb.close();
     }
