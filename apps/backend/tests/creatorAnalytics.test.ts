@@ -469,6 +469,7 @@ describe("creator analytics", () => {
       expect(dashboard.text).toContain("| Симулятор… · 📸 | 200 | 20 | 0 | 7 | 5 |");
       expect(dashboard.text).not.toContain("| Симулятор… · ▶️ |");
       expect(dashboard.richHtml.match(/<table bordered striped>/g)?.length).toBe(2);
+      expect(dashboard.richHtml).not.toContain("|:--");
     } finally {
       backendDb.close();
     }

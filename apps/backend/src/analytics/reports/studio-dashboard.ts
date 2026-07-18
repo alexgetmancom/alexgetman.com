@@ -60,10 +60,15 @@ function richMessageHtml(lines: string[]): string {
       // Markdown table separator is only an intermediate text representation.
       index += 1;
       const rows: string[][] = [];
-      while (index + 1 < lines.length && (lines[index + 1]?.trimStart().startsWith("| ") ?? false)) {
-        index += 1;
-        rows.push(tableCells(lines[index] ?? ""));
+      let rowIndex = index + 1;
+      while (rowIndex < lines.length && (lines[rowIndex]?.trimStart().startsWith("| ") ?? false)) {
+        // A divider immediately after a pipe line means that line is the
+        // header of the next adjacent table, not a row of this one.
+        if (isTableDivider(lines[rowIndex + 1] ?? "")) break;
+        rows.push(tableCells(lines[rowIndex] ?? ""));
+        rowIndex += 1;
       }
+      index = rowIndex - 1;
       blocks.push(
         `<table bordered striped><tr>${headers.map((cell) => `<th>${escapeHtml(cell)}</th>`).join("")}</tr>${rows
           .map(
@@ -77,6 +82,10 @@ function richMessageHtml(lines: string[]): string {
     blocks.push(`<p>${richInlineHtml(line)}</p>`);
   }
   return blocks.join("\n");
+}
+
+function isTableDivider(line: string): boolean {
+  return /^\|\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?$/.test(line.trim());
 }
 
 function tableCells(line: string): string[] {
