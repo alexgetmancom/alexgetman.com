@@ -25,8 +25,9 @@ socket and can only request a rollback using a private bearer-authenticated rout
    Never seed it with `latest`; rollback is deliberately refused without a digest.
 
 2. Copy `deploy-agent.env.example` to `/etc/alexgetman/deploy-agent.env`, fill the
-   token/chat values, and set mode `0600`. Set `DEPLOY_AGENT_HOST` to Docker's host
-   gateway address (normally `172.17.0.1`). Set `DEPLOY_TARGETS_JSON` exactly as
+   token/chat values, and set mode `0600`. Set `DEPLOY_AGENT_HOST` to the gateway
+   address of the Docker network used by the backends (obtain it with
+   `docker network inspect agent_default`). Set `DEPLOY_TARGETS_JSON` exactly as
    shown in that example: it gives Alex and Maru independent health checks and
    rollback histories. Maru's host health endpoint must be bound to `127.0.0.1:8789`.
 
@@ -40,10 +41,12 @@ socket and can only request a rollback using a private bearer-authenticated rout
    ALEX_VIDEO_MEDIA_DIR_HOST=/mnt/alex-media/alex/video-media
    ALEX_THREADS_MEDIA_DIR_HOST=/home/deploy/ialexey-web/media/threads
    ALEX_SITE_MEDIA_DIR_HOST=/home/deploy/ialexey-web/media
+   DEPLOY_AGENT_HOST_GATEWAY=<agent_default gateway>
 
    # /home/deploy/maru/deploy-image.env
    MARU_MEDIA_CACHE_DIR_HOST=/mnt/alex-media/maru/media-cache
    MARU_VIDEO_MEDIA_DIR_HOST=/mnt/alex-media/maru/video-media
+   DEPLOY_AGENT_HOST_GATEWAY=<agent_default gateway>
    ```
 
    The existing `threads` directory is already a bind mount to the second disk.
@@ -52,7 +55,7 @@ socket and can only request a rollback using a private bearer-authenticated rout
 
 3. Set the same `DEPLOY_AGENT_URL=http://host.docker.internal:9899` and
    `DEPLOY_AGENT_TOKEN` in the backend `secrets.env`. The compose manifest maps
-   `host.docker.internal` to Docker's host gateway; the agent is not public.
+   `host.docker.internal` to `DEPLOY_AGENT_HOST_GATEWAY`; the agent is not public.
 
 4. Install and start the service:
 

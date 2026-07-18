@@ -37,7 +37,7 @@ services:
     # The deploy agent remains host-private; this alias is required for the
     # Telegram promotion and rollback controls inside the Maru backend.
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "host.docker.internal:${DEPLOY_AGENT_HOST_GATEWAY:-host-gateway}"
     healthcheck:
       test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:8788/readyz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 30s
