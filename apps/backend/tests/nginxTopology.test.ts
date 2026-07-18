@@ -36,6 +36,7 @@ describe("production nginx topology", () => {
     expect(http).toContain("proxy_pass http://127.0.0.1:8789/");
     expect(maru).toContain("TRUSTED_CLIENT_IP_HEADER: x-real-ip");
     expect(maru).toContain('"127.0.0.1:8789:8788"');
+    expect(maru).toContain("host.docker.internal:host-gateway");
     expect(maru).toContain("healthcheck:");
     expect(workflow).toContain("/etc/nginx/stream-conf.d/shared443.conf");
     expect(workflow).toContain("/etc/nginx/sites-enabled/ialexey.ru-ssl");

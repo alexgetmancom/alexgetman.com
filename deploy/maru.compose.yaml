@@ -34,6 +34,10 @@ services:
       - ${MARU_BOT_API_DATA_DIR:-/home/deploy/alexgetman-runtime/bot-api-data}:/var/lib/telegram-bot-api:ro
     ports:
       - "127.0.0.1:8789:8788"
+    # The deploy agent remains host-private; this alias is required for the
+    # Telegram promotion and rollback controls inside the Maru backend.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:8788/readyz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 30s
