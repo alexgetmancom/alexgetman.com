@@ -102,6 +102,36 @@ describe("video publication queue", () => {
     expect(getSession(backendDb, 42)).toBeNull();
   });
 
+  it("advances the YouTube+Instagram wizard through every metadata step in FSM order", async () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    replaceVideoTargets(backendDb, draftId, ["youtube_shorts", "instagram_reels"]);
+    saveSession(backendDb, 42, { draftId, step: "youtube_title", selected: ["youtube_shorts", "instagram_reels"], data: {} });
+
+    await handleVideoMessage(videoContext({ text: "My Title" }).context, backendDb, videoConfig());
+    expect(getSession(backendDb, 42)).toMatchObject({ step: "youtube_description" });
+
+    await handleVideoMessage(videoContext({ text: "My Description" }).context, backendDb, videoConfig());
+    expect(getSession(backendDb, 42)).toMatchObject({ step: "youtube_game_url" });
+
+    await handleVideoMessage(videoContext({ text: "-" }).context, backendDb, videoConfig());
+    expect(getSession(backendDb, 42)).toMatchObject({ step: "youtube_tags" });
+
+    await handleVideoMessage(videoContext({ text: "a, b, c" }).context, backendDb, videoConfig());
+    expect(getSession(backendDb, 42)).toMatchObject({ step: "instagram_caption" });
+    expect(listVideoTargets(backendDb, draftId).find((row) => row.target === "youtube_shorts")?.metadataJson).toMatchObject({
+      title: "My Title",
+      description: "My Description",
+      tags: ["a", "b", "c"],
+    });
+
+    await handleVideoMessage(videoContext({ text: "Caption #tag" }).context, backendDb, videoConfig());
+    expect(getSession(backendDb, 42)).toMatchObject({ step: "schedule_choice" });
+    expect(listVideoTargets(backendDb, draftId).find((row) => row.target === "instagram_reels")?.metadataJson).toMatchObject({
+      caption: "Caption #tag",
+    });
+  });
+
   it("routes target selection callbacks and rejects an invalid target", async () => {
     backendDb = openBackendDb(":memory:");
     const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
@@ -128,6 +158,7 @@ describe("video publication queue", () => {
       draftId,
       { youtube_shorts: youtubeAt, instagram_reels: instagramAt },
       { prepareLeadMinutes: 15, reminderMinutes: 5 },
+      videoConfig(),
     );
 
     expect(listVideoTargets(backendDb, draftId).map((row) => ({ target: row.target, scheduledAt: row.scheduledAt }))).toEqual([
@@ -235,6 +266,7 @@ describe("video publication queue", () => {
       draftId,
       { youtube_shorts: initial, instagram_reels: new Date(initial.getTime() + 60 * 60_000) },
       { prepareLeadMinutes: 15, reminderMinutes: 5 },
+      videoConfig(),
     );
     backendDb.db
       .update(videoTargets)
@@ -243,7 +275,7 @@ describe("video publication queue", () => {
       .run();
 
     const instagramAt = new Date(Date.now() + 3 * 60 * 60_000);
-    scheduleVideo(backendDb, draftId, { instagram_reels: instagramAt }, { prepareLeadMinutes: 15, reminderMinutes: 5 });
+    scheduleVideo(backendDb, draftId, { instagram_reels: instagramAt }, { prepareLeadMinutes: 15, reminderMinutes: 5 }, videoConfig());
 
     expect(
       listVideoTargets(backendDb, draftId).map((target) => ({
@@ -266,11 +298,12 @@ describe("video publication queue", () => {
       draftId,
       { youtube_shorts: new Date(Date.now() + 60 * 60_000) },
       { prepareLeadMinutes: 15, reminderMinutes: 5 },
+      videoConfig(),
     );
     const database = backendDb;
     if (!database) throw new Error("database missing");
 
-    expect(() => replaceVideoTargets(database, draftId, ["instagram_reels"])).toThrow("only before scheduling");
+    expect(() => replaceVideoTargets(database, draftId, ["instagram_reels"])).toThrow("err.video-targets-locked");
     expect(listVideoTargets(database, draftId).map((target) => target.target)).toEqual(["youtube_shorts"]);
   });
 

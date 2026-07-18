@@ -43,12 +43,11 @@ export function updateVideoLabel(backendDb: BackendDb, id: number, label: string
 
 export function replaceVideoTargets(backendDb: BackendDb, videoDraftId: number, targets: VideoTarget[]): void {
   const allowed = targets.filter((target, index) => VIDEO_TARGETS.includes(target) && targets.indexOf(target) === index);
-  if (allowed.length === 0) throw new Error("Choose at least one video platform.");
+  if (allowed.length === 0) throw new StudioError("err.video-pick-platform");
   const now = new Date().toISOString();
   backendDb.db.transaction((tx) => {
     const existingTargets = tx.select().from(videoTargets).where(eq(videoTargets.videoDraftId, videoDraftId)).all();
-    if (existingTargets.some((target) => !isVideoTargetEditable(target.status)))
-      throw new Error("Video platforms can be replaced only before scheduling. Remove an editable platform instead.");
+    if (existingTargets.some((target) => !isVideoTargetEditable(target.status))) throw new StudioError("err.video-targets-locked");
     // Foreign keys cascade (PRAGMA foreign_keys=ON, migration 0008): deleting the
     // target rows removes their comments, metric snapshots and schedules. Reminder
     // jobs carry a null target, so the draft's jobs are cleared explicitly.
@@ -76,8 +75,8 @@ export function removeVideoTarget(backendDb: BackendDb, videoDraftId: number, ta
     .from(videoTargets)
     .where(and(eq(videoTargets.videoDraftId, videoDraftId), eq(videoTargets.target, targetName)))
     .get();
-  if (!target) throw new Error("Video platform was not found.");
-  if (!isVideoTargetEditable(target.status)) throw new Error("This video platform can no longer be removed.");
+  if (!target) throw new StudioError("err.video-target-missing");
+  if (!isVideoTargetEditable(target.status)) throw new StudioError("err.video-target-locked");
 
   const now = new Date().toISOString();
   const remaining = backendDb.db.transaction((tx) => {
@@ -116,17 +115,16 @@ export function scheduleVideo(
   videoDraftId: number,
   schedule: Partial<Record<VideoTarget, Date>>,
   timing: { prepareLeadMinutes: number; reminderMinutes: number },
-  config?: BackendConfig,
+  config: BackendConfig,
 ): void {
   const now = new Date();
   const targets = listVideoTargets(backendDb, videoDraftId);
-  if (targets.length === 0) throw new Error("Choose video platforms first.");
+  if (targets.length === 0) throw new StudioError("err.video-choose-platforms");
   const selectedTargets = targets.filter((target) => schedule[target.target as VideoTarget] != null);
-  if (selectedTargets.length === 0) throw new Error("Choose at least one video platform to schedule.");
+  if (selectedTargets.length === 0) throw new StudioError("err.video-pick-platform");
   for (const target of selectedTargets) {
     const date = schedule[target.target as VideoTarget];
-    if (!date || Number.isNaN(date.getTime()) || date.getTime() <= now.getTime())
-      throw new Error("Publication time must be in the future.");
+    if (!date || Number.isNaN(date.getTime()) || date.getTime() <= now.getTime()) throw new StudioError("err.schedule-time-past");
   }
   backendDb.db.transaction((tx) => {
     for (const target of selectedTargets) {
@@ -134,7 +132,7 @@ export function scheduleVideo(
       if (!targetSchedule) continue;
       const publishAt = targetSchedule.toISOString();
       const preparedAt = new Date(targetSchedule.getTime() - timing.prepareLeadMinutes * 60_000);
-      const route = config ? videoDeliveryRoute(config, target.target as VideoTarget) : { provider: "native" as const };
+      const route = videoDeliveryRoute(config, target.target as VideoTarget);
       tx.update(videoTargets)
         .set({
           scheduledAt: publishAt,
