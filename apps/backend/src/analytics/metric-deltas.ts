@@ -9,7 +9,8 @@ import { metricNumber } from "./snapshots/creator-store.js";
  * latest/baseline row per group instead of pulling the whole matched history
  * into JS and reducing it there. */
 
-export type VideoMetricRow = { platform: string; label: string; metrics: Record<string, unknown> };
+export type VideoMetricRow = { platform: string; label: string; publishedAt: string | null; metrics: Record<string, unknown> };
+type TextPostMetricRow = { platform: string; label: string; metrics: Record<string, unknown> };
 export type ContentMetrics = { views: number; likes: number; comments: number; shares: number; saves: number };
 
 /** NUL joins composite map keys so account display names (which can contain any
@@ -85,6 +86,48 @@ export function textContentMetricsByPlatform(backendDb: BackendDb, since: string
   return totals;
 }
 
+/** Individual published text posts, with live counts minus the checkpoint at
+ * the selected period's start. A row remains visible even before its first
+ * metric observation so the dashboard can show a clear zero rather than hide
+ * a newly published post. */
+export function latestTextPostMetrics(backendDb: BackendDb, since: string): TextPostMetricRow[] {
+  const rows = backendDb.sqlite
+    .prepare(
+      `WITH ranked_samples AS (
+         SELECT post_key, target, metric_name, value, sampled_at, id,
+                ROW_NUMBER() OVER (PARTITION BY post_key, target, metric_name ORDER BY sampled_at DESC, id DESC) AS rn
+         FROM metric_samples
+       )
+       SELECT p.post_key, COALESCE(NULLIF(p.text, ''), p.text_en, p.post_key) AS label,
+              t.target, sample.metric_name, sample.value AS latest,
+              (SELECT value FROM metric_samples baseline
+               WHERE baseline.post_key = t.post_key AND baseline.target = t.target
+                 AND baseline.metric_name = sample.metric_name AND baseline.sampled_at <= ?
+               ORDER BY baseline.sampled_at DESC, baseline.id DESC LIMIT 1) AS baseline
+       FROM posts p
+       JOIN post_targets t ON t.post_key = p.post_key
+       LEFT JOIN ranked_samples sample ON sample.post_key = t.post_key AND sample.target = t.target AND sample.rn = 1
+       WHERE t.status = 'published' AND t.published_at >= ? AND t.target NOT LIKE 'site_%'
+       ORDER BY t.published_at DESC, t.target ASC`,
+    )
+    .all(since, since) as Array<{
+    post_key: string;
+    label: string;
+    target: string;
+    metric_name: string | null;
+    latest: number | null;
+    baseline: number | null;
+  }>;
+  const grouped = new Map<string, TextPostMetricRow>();
+  for (const row of rows) {
+    const key = `${row.post_key}${KEY_SEP}${row.target}`;
+    const value = grouped.get(key) ?? { platform: row.target, label: row.label, metrics: {} };
+    if (row.metric_name) value.metrics[row.metric_name] = Math.max(0, metricNumber(row.latest) - metricNumber(row.baseline));
+    grouped.set(key, value);
+  }
+  return [...grouped.values()];
+}
+
 export function textTotals(backendDb: BackendDb, since: string): { views: number; interactions: number } {
   const totals = metricDeltasSince(backendDb, since, "target NOT LIKE 'site_%'");
   return {
@@ -121,26 +164,12 @@ export function latestVideoMetrics(backendDb: BackendDb, since: string): VideoMe
     const metrics = Object.fromEntries(
       Object.entries(latest).map(([key, value]) => [key, Math.max(0, metricNumber(value) - metricNumber(baseline?.[key]))]),
     );
-    return [{ platform: row.platform, label: row.label, metrics }];
+    return [{ platform: row.platform, label: row.label, publishedAt: row.published_at, metrics }];
   });
 }
 
 /** Per-platform video metrics for the selected period. `shares` is the Share
  * action (Instagram sends / YouTube share button), never a repost. */
-export function videoContentMetricsByPlatform(backendDb: BackendDb, since: string): Map<string, ContentMetrics> {
-  const totals = new Map<string, ContentMetrics>();
-  for (const row of latestVideoMetrics(backendDb, since)) {
-    const value = totals.get(row.platform) ?? { views: 0, likes: 0, comments: 0, shares: 0, saves: 0 };
-    value.views += metricNumber(row.metrics.views);
-    value.likes += metricNumber(row.metrics.likes);
-    value.comments += metricNumber(row.metrics.comments);
-    value.shares += metricNumber(row.metrics.shares);
-    value.saves += metricNumber(row.metrics.saves);
-    totals.set(row.platform, value);
-  }
-  return totals;
-}
-
 export function sum(rows: VideoMetricRow[], field: string): number {
   return rows.reduce((total, row) => total + metricNumber(row.metrics[field]), 0);
 }

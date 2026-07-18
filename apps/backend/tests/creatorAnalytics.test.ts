@@ -9,6 +9,8 @@ import {
   creatorProfileSnapshots,
   creatorProfiles,
   metricSamples,
+  posts,
+  postTargets,
   videoDrafts,
   videoMetricSchedule,
   videoMetricSnapshots,
@@ -404,6 +406,97 @@ describe("creator analytics", () => {
       expect(posts).toContain("| 📊 Все | +0 | 24 | 5 | 0 | 0 | 0 |");
       expect(studioAnalyticsDashboard(backendDb, config, "overview", 1, "ru").richHtml).toContain("<table bordered striped>");
       expect(posts).not.toContain("Видеопостинг");
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("separates account activity from videos published in the selected period", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      const draft = backendDb.db
+        .insert(videoDrafts)
+        .values({
+          adminId: 1,
+          assetKey: "asset",
+          label: "Симулятор фермы, который удивит",
+          status: "published",
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning({ id: videoDrafts.id })
+        .get();
+      if (!draft) throw new Error("video draft missing");
+      const target = backendDb.db
+        .insert(videoTargets)
+        .values({
+          videoDraftId: draft.id,
+          target: "instagram_reels",
+          metadataJson: {},
+          status: "published",
+          publishedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning({ id: videoTargets.id })
+        .get();
+      if (!target) throw new Error("video target missing");
+      backendDb.db
+        .insert(videoMetricSnapshots)
+        .values({
+          videoTargetId: target.id,
+          platform: "instagram_reels",
+          metricsJson: { views: 200, likes: 20, shares: 7, saves: 5 },
+          sampledAt: now,
+        })
+        .run();
+      backendDb.db
+        .insert(creatorProfiles)
+        .values({ platform: "instagram", dataJson: { followersCount: 306, views1d: 63_394, likes1d: 1_227 }, updatedAt: now })
+        .run();
+      const config = loadConfig({});
+      config.studio.modules.video_posting = true;
+      config.studio.modules.instagram = true;
+
+      const dashboard = studioAnalyticsDashboard(backendDb, config, "video", 1, "ru");
+      expect(dashboard.text).toContain("Аккаунт · сегодня");
+      expect(dashboard.text).toContain("| 📸 Instagram | +0 | 63394 | 1227");
+      expect(dashboard.text).toContain("Новые видео · сегодня");
+      expect(dashboard.text).toContain("| Симулятор… · 📸 | 200 | 20 | 0 | 7 | 5 |");
+      expect(dashboard.richHtml.match(/<table bordered striped>/g)?.length).toBe(2);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("renders newly published text posts below Alex's account table", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      backendDb.db
+        .insert(posts)
+        .values({ postKey: "post:1", channel: "telegram", messageId: 1, text: "Релиз новой функции", createdAt: now, updatedAt: now })
+        .run();
+      backendDb.db
+        .insert(postTargets)
+        .values({ postKey: "post:1", target: "telegram", status: "published", publishedAt: now, updatedAt: now })
+        .run();
+      backendDb.db
+        .insert(metricSamples)
+        .values([
+          { postKey: "post:1", target: "telegram", metricName: "views", value: 200, sampledAt: now },
+          { postKey: "post:1", target: "telegram", metricName: "likes", value: 20, sampledAt: now },
+          { postKey: "post:1", target: "telegram", metricName: "reposts", value: 7, sampledAt: now },
+        ])
+        .run();
+      const config = loadConfig({});
+      config.studio.modules.text_posting = true;
+
+      const dashboard = studioAnalyticsDashboard(backendDb, config, "posts", 1, "ru");
+      expect(dashboard.text).toContain("Новые посты · сегодня");
+      expect(dashboard.text).toContain("| Релиз нов… · ✈️ | 200 | 20 | 0 | 7 | — |");
+      expect(dashboard.richHtml.match(/<table bordered striped>/g)?.length).toBe(2);
     } finally {
       backendDb.close();
     }

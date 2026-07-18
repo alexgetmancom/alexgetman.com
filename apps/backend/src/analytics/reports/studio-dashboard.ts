@@ -6,8 +6,9 @@ import { t } from "../../interfaces/telegram/i18n/index.js";
 import {
   audienceGrowthByPlatform,
   type ContentMetrics,
+  latestTextPostMetrics,
+  latestVideoMetrics,
   textContentMetricsByPlatform,
-  videoContentMetricsByPlatform,
 } from "../metric-deltas.js";
 import { metricNumber } from "../snapshots/creator-store.js";
 
@@ -157,7 +158,7 @@ function unifiedAnalyticsTable(
     .all()
     .filter((row) => audiencePlatformsForSection(config, section).has(row.platform));
   const accountMetrics = new Map(profiles.map((row) => [row.platform, contentMetricsFromProfile(row.dataJson, days)]));
-  const content = contentMetricsForSection(backendDb, config, section, since, accountMetrics);
+  const content = accountContentMetricsForSection(backendDb, config, section, since, accountMetrics);
   const growth = audienceGrowthByPlatform(backendDb, since, days);
   const profileMap = new Map(profiles.map((profile) => [profile.platform, profile]));
   const platforms = new Set([...profileMap.keys(), ...content.keys()]);
@@ -198,6 +199,7 @@ function unifiedAnalyticsTable(
   const all = locale === "ru" ? "Все" : "All";
   return [
     `👥 ${locale === "ru" ? "Подписчики" : "Followers"} ${totalFollowers}${platformSummary ? ` · ${platformSummary}` : ""}`,
+    locale === "ru" ? `Аккаунт · ${periodLabel(days, locale)}` : `Account · ${periodLabel(days, locale)}`,
     `| ${locale === "ru" ? "Площадка" : "Platform"} | 👤 | 👁 | ♥ | 💬 | ↗ | 🔖 |`,
     "|:--|--:|--:|--:|--:|--:|--:|",
     ...[
@@ -207,10 +209,40 @@ function unifiedAnalyticsTable(
       (row) =>
         `| ${row.label} | ${row.growth == null ? "—" : signed(row.growth)} | ${row.value.views} | ${row.value.likes} | ${row.value.comments} | ${row.value.shares} | ${row.platform === "youtube" ? "—" : row.value.saves} |`,
     ),
+    ...(section === "posts"
+      ? publishedPostTable(backendDb, config, since, days, locale)
+      : publishedVideoTable(backendDb, config, section, since, days, locale)),
   ];
 }
 
-function contentMetricsForSection(
+function publishedPostTable(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  since: string,
+  days: AnalyticsPeriod,
+  locale: BotLocale,
+): string[] {
+  if (!config.studio.modules.text_posting) return [];
+  const rows = latestTextPostMetrics(backendDb, since).filter((row) => enabledAudiencePlatforms(config).has(row.platform));
+  if (!rows.length) return [];
+  const title = locale === "ru" ? `Новые посты · ${periodLabel(days, locale)}` : `New posts · ${periodLabel(days, locale)}`;
+  return [
+    title,
+    `| ${locale === "ru" ? "Пост · площадка" : "Post · platform"} | 👁 | ♥ | 💬 | ↗ | 🔖 |`,
+    "|:--|--:|--:|--:|--:|--:|",
+    ...rows.map((row) => {
+      const metrics = row.metrics;
+      const comments = metricNumber(metrics.comments) + metricNumber(metrics.replies);
+      const shares = metricNumber(metrics.reposts) + metricNumber(metrics.shares);
+      return `| ${shortLabel(row.label)} · ${platformIcon(row.platform)} | ${metricNumber(metrics.views)} | ${metricNumber(metrics.likes)} | ${comments} | ${shares || "—"} | ${metricNumber(metrics.saves) || "—"} |`;
+    }),
+  ];
+}
+
+/** Account insights describe all content viewed during the selected period.
+ * Never use per-video snapshots here: they describe only newly published
+ * videos and are rendered in their own table below. */
+function accountContentMetricsForSection(
   backendDb: BackendDb,
   config: BackendConfig,
   section: Exclude<AnalyticsSection, "audience">,
@@ -219,15 +251,50 @@ function contentMetricsForSection(
 ): Map<string, ContentMetrics> {
   const values = new Map<string, ContentMetrics>();
   if (section !== "posts" && config.studio.modules.video_posting) {
-    const snapshots = videoContentMetricsByPlatform(backendDb, since);
-    if (config.studio.modules.instagram)
-      values.set("instagram", preferLiveMetrics(accountMetrics.get("instagram"), snapshots.get("instagram_reels")) ?? emptyMetrics());
-    if (config.studio.modules.youtube)
-      values.set("youtube", preferLiveMetrics(accountMetrics.get("youtube"), snapshots.get("youtube_shorts")) ?? emptyMetrics());
+    if (config.studio.modules.instagram) values.set("instagram", accountMetrics.get("instagram") ?? emptyMetrics());
+    if (config.studio.modules.youtube) values.set("youtube", accountMetrics.get("youtube") ?? emptyMetrics());
   }
   if (section !== "video" && config.studio.modules.text_posting)
     for (const [platform, metrics] of textContentMetricsByPlatform(backendDb, since)) values.set(platform, metrics);
   return values;
+}
+
+/** Individual rows answer a different question from account insights: how are
+ * videos published in the selected period performing since they went live? */
+function publishedVideoTable(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  section: Exclude<AnalyticsSection, "audience">,
+  since: string,
+  days: AnalyticsPeriod,
+  locale: BotLocale,
+): string[] {
+  if (section === "posts" || !config.studio.modules.video_posting) return [];
+  const rows = latestVideoMetrics(backendDb, since)
+    .filter((row) => row.publishedAt != null && row.publishedAt >= since)
+    .filter((row) =>
+      row.platform === "instagram_reels"
+        ? config.studio.modules.instagram
+        : row.platform === "youtube_shorts" && config.studio.modules.youtube,
+    )
+    .sort((left, right) => (right.publishedAt ?? "").localeCompare(left.publishedAt ?? ""));
+  if (!rows.length) return [];
+  const title = locale === "ru" ? `Новые видео · ${periodLabel(days, locale)}` : `New videos · ${periodLabel(days, locale)}`;
+  return [
+    title,
+    `| ${locale === "ru" ? "Видео · площадка" : "Video · platform"} | 👁 | ♥ | 💬 | ↗ | 🔖 |`,
+    "|:--|--:|--:|--:|--:|--:|",
+    ...rows.map((row) => {
+      const platform = row.platform === "instagram_reels" ? "instagram" : "youtube";
+      const metrics = row.metrics;
+      return `| ${shortLabel(row.label)} · ${platformIcon(platform)} | ${metricNumber(metrics.views)} | ${metricNumber(metrics.likes)} | ${metricNumber(metrics.comments)} | ${metricNumber(metrics.shares) || "—"} | ${platform === "youtube" ? "—" : metricNumber(metrics.saves) || "—"} |`;
+    }),
+  ];
+}
+
+function shortLabel(value: string): string {
+  const compact = value.replace(/\s+/g, " ").trim();
+  return compact.length > 10 ? `${compact.slice(0, 9)}…` : compact || "—";
 }
 
 function audiencePlatformsForSection(config: BackendConfig, section: Exclude<AnalyticsSection, "audience">): Set<string> {
@@ -292,14 +359,6 @@ function contentMetricsFromProfile(
     shares: metricNumber(value("shares")),
     saves: metricNumber(value("saves")),
   };
-}
-
-/** YouTube Analytics can take a day to expose a just-published Short while
- * the Data API snapshot already has its live counts. Prefer the latter only
- * when the period aggregate is all zero. */
-function preferLiveMetrics(period: ContentMetrics | undefined, fallback: ContentMetrics | undefined): ContentMetrics | undefined {
-  if (period && (period.views > 0 || !fallback || fallback.views === 0)) return period;
-  return fallback ?? period;
 }
 
 function signed(value: number): string {
