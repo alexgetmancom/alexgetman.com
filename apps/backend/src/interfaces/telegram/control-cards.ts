@@ -4,7 +4,13 @@ import { interfaceBindings } from "../../db/schema.js";
 
 const TELEGRAM = "telegram";
 
-type AnalyticsDashboardCard = { chatId: number; messageId: number; section: "overview" | "posts" | "video"; days: 1 | 7 | 30 };
+type AnalyticsDashboardCard = {
+  chatId: number;
+  messageId: number;
+  section: "overview" | "posts" | "video";
+  days: 1 | 7 | 30;
+  anchorDay?: string;
+};
 
 /** Telegram-only message references. Studio aggregates never need chat/message ids. */
 export function setTelegramPostCard(backendDb: BackendDb, draftId: number, chatId: number, messageId: number): void {
@@ -124,6 +130,7 @@ export function setTelegramAnalyticsDashboard(
   messageId: number,
   section: AnalyticsDashboardCard["section"],
   days: AnalyticsDashboardCard["days"],
+  anchorDay?: string,
 ): void {
   const now = new Date().toISOString();
   backendDb.db
@@ -134,13 +141,18 @@ export function setTelegramAnalyticsDashboard(
       entityId: adminId,
       conversationId: String(chatId),
       messageId: String(messageId),
-      stateJson: { section, days },
+      stateJson: { section, days, ...(anchorDay ? { anchorDay } : {}) },
       createdAt: now,
       updatedAt: now,
     })
     .onConflictDoUpdate({
       target: [interfaceBindings.interfaceId, interfaceBindings.entityType, interfaceBindings.entityId],
-      set: { conversationId: String(chatId), messageId: String(messageId), stateJson: { section, days }, updatedAt: now },
+      set: {
+        conversationId: String(chatId),
+        messageId: String(messageId),
+        stateJson: { section, days, ...(anchorDay ? { anchorDay } : {}) },
+        updatedAt: now,
+      },
     })
     .run();
 }
@@ -154,8 +166,18 @@ export function telegramAnalyticsDashboards(backendDb: BackendDb): Array<Analyti
     .flatMap((binding) => {
       const section = binding.stateJson?.section;
       const days = binding.stateJson?.days;
+      const anchorDay = binding.stateJson?.anchorDay;
       if ((section !== "overview" && section !== "posts" && section !== "video") || (days !== 1 && days !== 7 && days !== 30)) return [];
-      return [{ adminId: binding.entityId, chatId: Number(binding.conversationId), messageId: Number(binding.messageId), section, days }];
+      return [
+        {
+          adminId: binding.entityId,
+          chatId: Number(binding.conversationId),
+          messageId: Number(binding.messageId),
+          section,
+          days,
+          ...(typeof anchorDay === "string" && /^\d{4}-\d{2}-\d{2}$/.test(anchorDay) ? { anchorDay } : {}),
+        },
+      ];
     });
 }
 

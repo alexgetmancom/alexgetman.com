@@ -15,8 +15,8 @@ type AnalyticsPeriod = 1 | 7 | 30;
  */
 export function analyticsService(backendDb: BackendDb, config: BackendConfig) {
   return {
-    dashboard(section: AnalyticsSection, days: AnalyticsPeriod, locale: BotLocale) {
-      return studioAnalyticsDashboard(backendDb, config, section, days, locale);
+    dashboard(section: AnalyticsSection, days: AnalyticsPeriod, locale: BotLocale, anchorDay?: string) {
+      return studioAnalyticsDashboard(backendDb, config, section, days, locale, anchorDay);
     },
     postArchive(offset: number, locale: BotLocale) {
       return creatorPostArchive(backendDb, offset, locale);

@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { runAnalyticsCycle } from "../src/analytics/collection/creator-cycle.js";
 import { audienceGrowthByPlatform } from "../src/analytics/metric-deltas.js";
 import { creatorDashboard } from "../src/analytics/reports/dashboard.js";
-import { studioAnalyticsDashboard } from "../src/analytics/reports/studio-dashboard.js";
+import { analyticsRange, studioAnalyticsDashboard } from "../src/analytics/reports/studio-dashboard.js";
 import { openBackendDb } from "../src/db/client.js";
 import {
   creatorProfileSnapshots,
@@ -19,6 +19,12 @@ import {
 import { loadConfig } from "../src/foundation/config.js";
 
 describe("creator analytics", () => {
+  it("uses Moscow calendar midnights rather than rolling 24-hour analytics windows", () => {
+    const now = new Date("2026-07-18T21:30:00.000Z"); // 00:30 Moscow, 19 July
+    expect(analyticsRange(1, undefined, now)).toEqual({ since: "2026-07-18T21:00:00.000Z", until: "2026-07-18T21:30:00.001Z" });
+    expect(analyticsRange(7, "2026-07-18", now)).toEqual({ since: "2026-07-11T21:00:00.000Z", until: "2026-07-18T21:00:00.000Z" });
+  });
+
   it("builds a compact video dashboard from cached platform data", () => {
     const backendDb = openBackendDb(":memory:");
     try {
@@ -403,8 +409,8 @@ describe("creator analytics", () => {
       const posts = studioAnalyticsDashboard(backendDb, config, "posts", 1, "ru").text;
 
       expect(overview).not.toContain("Общая статистика");
-      expect(overview).toContain("| ✈️ Telegram | — | 24 | 5 | 0 | 0 | 0 |");
-      expect(posts).toContain("| 📊 Все | +0 | 24 | 5 | 0 | 0 | 0 |");
+      expect(overview).toContain("| ✈️ Telegram | 0 | — | 24 | 5 | 0 | — | — |");
+      expect(posts).toContain("| 📊 Все | 0 | +0 | 24 | 5 | 0 | — | — |");
       expect(studioAnalyticsDashboard(backendDb, config, "overview", 1, "ru").richHtml).toContain("<table bordered striped>");
       expect(posts).not.toContain("Видеопостинг");
     } finally {
@@ -463,7 +469,7 @@ describe("creator analytics", () => {
 
       const dashboard = studioAnalyticsDashboard(backendDb, config, "video", 1, "ru");
       expect(dashboard.text).not.toContain("Аккаунт ·");
-      expect(dashboard.text).toContain("| 📸 Instagram | +0 | 63394 | 1227");
+      expect(dashboard.text).toContain("| 📸 Instagram | 306 | +0 | 63394 | 1227");
       expect(dashboard.text).toContain("| Видео | 👁 | ♥ | 💬 | ↗ | 🔖 |");
       expect(dashboard.text).toContain("| Все | 200 | 20 | 0 | 7 | 5 |");
       expect(dashboard.text).toContain("| Симулятор… · 📸 | 200 | 20 | 0 | 7 | 5 |");
@@ -533,7 +539,7 @@ describe("creator analytics", () => {
 
       const overview = studioAnalyticsDashboard(backendDb, config, "overview", 7, "ru").text;
       const audience = studioAnalyticsDashboard(backendDb, config, "audience", 7, "ru").text;
-      expect(overview).toContain("👥 Подписчики 426");
+      expect(overview).toContain("| 📊 Все | 426 | +0");
       expect(overview).not.toContain("556");
       expect(audience).toContain("Instagram");
       expect(audience).toContain("YouTube");

@@ -14,6 +14,7 @@ import { metricNumber } from "../snapshots/creator-store.js";
 
 type AnalyticsSection = "overview" | "audience" | "posts" | "video";
 type AnalyticsPeriod = 1 | 7 | 30;
+const MSK_OFFSET_MS = 3 * 60 * 60_000;
 
 type StudioAnalyticsDashboard = {
   text: string;
@@ -31,8 +32,9 @@ export function studioAnalyticsDashboard(
   section: AnalyticsSection,
   days: AnalyticsPeriod,
   locale: BotLocale,
+  anchorDay?: string,
 ): StudioAnalyticsDashboard {
-  const since = new Date(Date.now() - days * 24 * 60 * 60_000).toISOString();
+  const { since, until } = analyticsRange(days, anchorDay);
   const period = periodLabel(days, locale);
   const lines: string[] = [];
 
@@ -41,10 +43,32 @@ export function studioAnalyticsDashboard(
     const profiles = audienceProfiles(backendDb, config, since, days, period, locale);
     lines.push(...(profiles.length ? profiles : [t(locale, "sdash.no-audience")]));
   } else {
-    lines.push(...unifiedAnalyticsTable(backendDb, config, section, since, days, locale));
+    lines.push(...unifiedAnalyticsTable(backendDb, config, section, since, until, days, locale));
   }
   const text = lines.join("\n");
   return { text, richHtml: richMessageHtml(lines), hasComments: hasAudienceComments(backendDb) };
+}
+
+/** Calendar periods deliberately begin at 00:00 Moscow time. The optional
+ * anchor gives the date picker an immutable historical cut-off. */
+export function analyticsRange(days: AnalyticsPeriod, anchorDay?: string, now = new Date()): { since: string; until: string } {
+  const today = mskDay(now);
+  const candidate = anchorDay ?? "";
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(candidate) ? candidate : today;
+  const start = mskMidnight(day);
+  const since = new Date(start.getTime() - (days - 1) * 24 * 60 * 60_000);
+  // Include an observation stamped in the same millisecond as this render;
+  // historical ranges remain half-open at their next midnight.
+  const until = day === today ? new Date(now.getTime() + 1) : new Date(start.getTime() + 24 * 60 * 60_000);
+  return { since: since.toISOString(), until: until.toISOString() };
+}
+
+function mskDay(value: Date): string {
+  return new Date(value.getTime() + MSK_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+function mskMidnight(day: string): Date {
+  return new Date(`${day}T00:00:00.000+03:00`);
 }
 
 /** Telegram's new rich-message Markdown deliberately has no table syntax.
@@ -158,6 +182,7 @@ function unifiedAnalyticsTable(
   config: BackendConfig,
   section: Exclude<AnalyticsSection, "audience">,
   since: string,
+  until: string,
   days: AnalyticsPeriod,
   locale: BotLocale,
 ): string[] {
@@ -167,7 +192,7 @@ function unifiedAnalyticsTable(
     .all()
     .filter((row) => audiencePlatformsForSection(config, section).has(row.platform));
   const accountMetrics = new Map(profiles.map((row) => [row.platform, contentMetricsFromProfile(row.dataJson, days)]));
-  const content = accountContentMetricsForSection(backendDb, config, section, since, accountMetrics);
+  const content = accountContentMetricsForSection(backendDb, config, section, since, until, accountMetrics);
   const growth = audienceGrowthByPlatform(backendDb, since, days);
   const profileMap = new Map(profiles.map((profile) => [profile.platform, profile]));
   const platforms = new Set([...profileMap.keys(), ...content.keys()]);
@@ -193,39 +218,33 @@ function unifiedAnalyticsTable(
   );
   const totalFollowers = profiles.reduce((sum, row) => sum + metricNumber(row.dataJson.subscriberCount ?? row.dataJson.followersCount), 0);
   const totalGrowth = rows.reduce((sum, row) => sum + (row.growth ?? 0), 0);
-  const platformSummary = profiles
-    .filter((profile) => metricNumber(profile.dataJson.subscriberCount ?? profile.dataJson.followersCount) > 0)
-    .sort(
-      (left, right) =>
-        metricNumber(right.dataJson.subscriberCount ?? right.dataJson.followersCount) -
-        metricNumber(left.dataJson.subscriberCount ?? left.dataJson.followersCount),
-    )
-    .map(
-      (profile) =>
-        `${platformIcon(profile.platform)} ${platformLabel(profile.platform)} ${metricNumber(profile.dataJson.subscriberCount ?? profile.dataJson.followersCount)}`,
-    )
-    .join(" · ");
   const all = locale === "ru" ? "Все" : "All";
   return [
-    `👥 ${locale === "ru" ? "Подписчики" : "Followers"} ${totalFollowers}${platformSummary ? ` · ${platformSummary}` : ""}`,
-    `| ${locale === "ru" ? "Площадка" : "Platform"} | 👤 | 👁 | ♥ | 💬 | ↗ | 🔖 |`,
-    "|:--|--:|--:|--:|--:|--:|--:|",
+    `| ${locale === "ru" ? "Площадка" : "Platform"} | 👥 | 📈 | 👁 | ♥ | 💬 | ↗ | 🔖 |`,
+    "|:--|--:|--:|--:|--:|--:|--:|--:|",
     ...[
       { platform: "all", label: `📊 ${all}`, growth: totalGrowth, value: totalContent },
       ...rows.map((row) => ({ label: `${platformIcon(row.platform)} ${platformLabel(row.platform)}`, ...row })),
     ].map(
       (row) =>
-        `| ${row.label} | ${row.growth == null ? "—" : signed(row.growth)} | ${row.value.views} | ${row.value.likes} | ${row.value.comments} | ${row.value.shares} | ${row.platform === "youtube" ? "—" : row.value.saves} |`,
+        `| ${row.label} | ${row.platform === "all" ? totalFollowers : followerCount(profileMap.get(row.platform)?.dataJson)} | ${row.growth == null ? "—" : signed(row.growth)} | ${row.value.views} | ${row.value.likes} | ${row.value.comments} | ${dash(row.value.shares)} | ${row.platform === "youtube" ? "—" : dash(row.value.saves)} |`,
     ),
     ...(section === "posts"
-      ? publishedPostTable(backendDb, config, since, locale)
-      : publishedVideoTable(backendDb, config, section, since, locale)),
+      ? publishedPostTable(backendDb, config, since, until, days, locale)
+      : publishedVideoTable(backendDb, config, section, since, until, days, locale)),
   ];
 }
 
-function publishedPostTable(backendDb: BackendDb, config: BackendConfig, since: string, locale: BotLocale): string[] {
+function publishedPostTable(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  since: string,
+  until: string,
+  days: AnalyticsPeriod,
+  locale: BotLocale,
+): string[] {
   if (!config.studio.modules.text_posting) return [];
-  const rows = latestTextPostMetrics(backendDb, since).filter((row) => Object.keys(row.metrics).length > 0);
+  const rows = latestTextPostMetrics(backendDb, since, until).filter((row) => Object.keys(row.metrics).length > 0);
   if (!rows.length) return [];
   const values = rows.map(contentMetrics);
   const total = sumContentMetrics(values);
@@ -234,7 +253,9 @@ function publishedPostTable(backendDb: BackendDb, config: BackendConfig, since: 
     `| ${locale === "ru" ? "Пост" : "Post"} | 👁 | ♥ | 💬 | ↗ | 🔖 |`,
     "|:--|--:|--:|--:|--:|--:|",
     `| ${all} | ${total.views} | ${total.likes} | ${total.comments} | ${dash(total.shares)} | ${dash(total.saves)} |`,
-    ...rows.map((row) => contentRow(`${shortLabel(row.label)} · ${platformIcon(row.platform)}`, contentMetrics(row))),
+    ...sortDetailRows(rows, days)
+      .slice(0, 10)
+      .map((row) => contentRow(`${shortLabel(row.label)} · ${platformIcon(row.platform)}`, contentMetrics(row))),
   ];
 }
 
@@ -246,6 +267,7 @@ function accountContentMetricsForSection(
   config: BackendConfig,
   section: Exclude<AnalyticsSection, "audience">,
   since: string,
+  until: string,
   accountMetrics: Map<string, ContentMetrics | undefined>,
 ): Map<string, ContentMetrics> {
   const values = new Map<string, ContentMetrics>();
@@ -254,7 +276,7 @@ function accountContentMetricsForSection(
     if (config.studio.modules.youtube) values.set("youtube", accountMetrics.get("youtube") ?? emptyMetrics());
   }
   if (section !== "video" && config.studio.modules.text_posting)
-    for (const [platform, metrics] of textContentMetricsByPlatform(backendDb, since)) values.set(platform, metrics);
+    for (const [platform, metrics] of textContentMetricsByPlatform(backendDb, since, until)) values.set(platform, metrics);
   return values;
 }
 
@@ -265,11 +287,13 @@ function publishedVideoTable(
   config: BackendConfig,
   section: Exclude<AnalyticsSection, "audience">,
   since: string,
+  until: string,
+  days: AnalyticsPeriod,
   locale: BotLocale,
 ): string[] {
   if (section === "posts" || !config.studio.modules.video_posting) return [];
-  const rows = latestVideoMetrics(backendDb, since)
-    .filter((row) => row.publishedAt != null && row.publishedAt >= since)
+  const rows = latestVideoMetrics(backendDb, since, until)
+    .filter((row) => row.publishedAt != null && row.publishedAt >= since && row.publishedAt < until)
     .filter((row) =>
       row.platform === "instagram_reels"
         ? config.studio.modules.instagram
@@ -277,8 +301,7 @@ function publishedVideoTable(
     )
     // A target with no observed metric is normally a removed or rolled-back
     // publication; it must not look like a real zero-performance video.
-    .filter((row) => Object.values(contentMetrics(row)).some((value) => value > 0))
-    .sort((left, right) => (right.publishedAt ?? "").localeCompare(left.publishedAt ?? ""));
+    .filter((row) => Object.values(contentMetrics(row)).some((value) => value > 0));
   if (!rows.length) return [];
   const values = rows.map((row) => contentMetrics(row));
   const total = sumContentMetrics(values);
@@ -287,11 +310,23 @@ function publishedVideoTable(
     `| ${locale === "ru" ? "Видео" : "Video"} | 👁 | ♥ | 💬 | ↗ | 🔖 |`,
     "|:--|--:|--:|--:|--:|--:|",
     `| ${all} | ${total.views} | ${total.likes} | ${total.comments} | ${dash(total.shares)} | ${dash(total.saves)} |`,
-    ...rows.map((row) => {
-      const platform = row.platform === "instagram_reels" ? "instagram" : "youtube";
-      return contentRow(`${shortLabel(row.label)} · ${platformIcon(platform)}`, contentMetrics(row), platform === "youtube");
-    }),
+    ...sortDetailRows(rows, days)
+      .slice(0, 10)
+      .map((row) => {
+        const platform = row.platform === "instagram_reels" ? "instagram" : "youtube";
+        return contentRow(`${shortLabel(row.label)} · ${platformIcon(platform)}`, contentMetrics(row), platform === "youtube");
+      }),
   ];
+}
+
+function sortDetailRows<T extends { publishedAt?: string | null; metrics: Record<string, unknown> }>(
+  rows: T[],
+  days: AnalyticsPeriod,
+): T[] {
+  return [...rows].sort((left, right) => {
+    if (days !== 1) return metricNumber(right.metrics.views) - metricNumber(left.metrics.views);
+    return (right.publishedAt ?? "").localeCompare(left.publishedAt ?? "");
+  });
 }
 
 function contentMetrics(row: { metrics: Record<string, unknown> }): ContentMetrics {
@@ -339,6 +374,10 @@ function audiencePlatformsForSection(config: BackendConfig, section: Exclude<Ana
 
 function emptyMetrics(): ContentMetrics {
   return { views: 0, likes: 0, comments: 0, shares: 0, saves: 0 };
+}
+
+function followerCount(data: Record<string, unknown> | undefined): number {
+  return metricNumber(data?.subscriberCount ?? data?.followersCount);
 }
 
 function platformLabel(platform: string): string {
