@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { and, asc, count, desc, eq, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 import type { BackendDb } from "../db/client.js";
-import { postEvents, postMetrics, posts, postTargets, publicationSources, siteJobs } from "../db/schema.js";
+import { postEvents, postMetrics, postTargets, publicationSources, siteJobs } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { recordWorkerState } from "../foundation/runtime/worker-state.js";
 import { nextRetryAt } from "../publishing/errors.js";
@@ -72,7 +72,8 @@ function recoverStaleSiteJobs(config: BackendConfig, backendDb: BackendDb): numb
 }
 
 export async function renderFeedFiles(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch = fetch): Promise<void> {
-  const items = await Promise.all(sourceItems(backendDb).map((item) => prepareFeedItem(config, backendDb, item, fetchImpl)));
+  const targetUrls = siteTargetUrlsByPostKey(backendDb);
+  const items = await Promise.all(sourceItems(backendDb).map((item) => prepareFeedItem(config, backendDb, item, targetUrls, fetchImpl)));
   const views = viewsByPostKey(backendDb);
   for (const item of items.filter((value): value is Record<string, unknown> => value != null)) {
     item.views = views.get(String(item.id ?? "")) ?? Number(item.views ?? 0);
@@ -197,38 +198,31 @@ function sourceItems(backendDb: BackendDb): Record<string, unknown>[] {
     .from(publicationSources)
     .orderBy(desc(publicationSources.postId))
     .all();
-  if (rows.length > 0)
-    return rows.flatMap((row): Record<string, unknown>[] => {
-      const item = parseObject(row.itemJson);
-      return item ? [{ ...item, id: `post:${row.postId}`, post_id: row.postId }] : [];
-    });
-  return backendDb.db
-    .select({
-      rawJson: posts.rawJson,
-      postKey: posts.postKey,
-      messageId: posts.messageId,
-      dateUtc: posts.dateUtc,
-      text: posts.text,
-      textEn: posts.textEn,
-      mediaJson: posts.mediaJson,
-    })
-    .from(posts)
-    .orderBy(desc(posts.createdAt))
-    .all()
-    .map((row) => ({
-      id: row.postKey,
-      date: row.dateUtc,
-      text: row.text,
-      text_en: row.textEn,
-      media: parseObject(row.mediaJson),
-      ...(parseObject(row.rawJson) ?? {}),
-    }));
+  return rows.flatMap((row): Record<string, unknown>[] => {
+    const item = parseObject(row.itemJson);
+    return item ? [{ ...item, id: `post:${row.postId}`, post_id: row.postId }] : [];
+  });
+}
+
+function siteTargetUrlsByPostKey(backendDb: BackendDb): Map<string, Array<{ target: string; url: string | null }>> {
+  const rows = backendDb.db
+    .select({ postKey: postTargets.postKey, target: postTargets.target, url: postTargets.url })
+    .from(postTargets)
+    .all();
+  const byPostKey = new Map<string, Array<{ target: string; url: string | null }>>();
+  for (const row of rows) {
+    const values = byPostKey.get(row.postKey) ?? [];
+    values.push({ target: row.target, url: row.url });
+    byPostKey.set(row.postKey, values);
+  }
+  return byPostKey;
 }
 
 async function prepareFeedItem(
   config: BackendConfig,
   backendDb: BackendDb,
   source: Record<string, unknown>,
+  targetUrlsByPostKey: Map<string, Array<{ target: string; url: string | null }>>,
   fetchImpl: typeof fetch,
 ): Promise<Record<string, unknown> | null> {
   const postId = Number(source.post_id ?? 0);
@@ -241,11 +235,7 @@ async function prepareFeedItem(
   const mediaRu = hasRu ? await materializeSiteMedia(config, postId, "ru", source.media ?? source.media_ru, fetchImpl) : [];
   const mediaEnSource = source.media_en ?? source.media ?? source.media_ru;
   const mediaEn = hasEn ? await materializeSiteMedia(config, postId, "en", mediaEnSource, fetchImpl) : [];
-  const targetUrls = backendDb.db
-    .select({ target: postTargets.target, url: postTargets.url })
-    .from(postTargets)
-    .where(eq(postTargets.postKey, `post:${postId}`))
-    .all();
+  const targetUrls = targetUrlsByPostKey.get(`post:${postId}`) ?? [];
   const url =
     targetUrls.find((target) => target.target === "site_en" || target.target === "site_ru")?.url ??
     targetUrls.find((target) => target.url)?.url;
