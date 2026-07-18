@@ -334,16 +334,11 @@ export function reconcilePublication(backendDb: BackendDb, postId: number): void
   });
 }
 
-export function enqueuePublishJob(backendDb: BackendDb, input: EnqueuePublishJobInput): number {
-  return enqueuePublishJobTx(backendDb.db, input);
-}
-
 export function enqueuePublishJobTx(db: BackendDb["db"], input: EnqueuePublishJobInput): number {
   const now = new Date().toISOString();
-  const postKey = input.postKey ?? (input.postId != null ? `post:${input.postId}` : `telegram:alexgetmancom:${input.messageId}`);
   const inputRecord = {
-    postId: input.postId ?? null,
-    postKey,
+    postId: input.postId,
+    postKey: input.postKey,
     messageId: input.messageId,
     target: input.target,
     status: "queued",
@@ -362,8 +357,8 @@ type EnqueuePublishJobInput = {
   messageId: number;
   target: string;
   payload: JsonObject;
-  postId?: number | null;
-  postKey?: string | null;
+  postId: number;
+  postKey: string;
   publishAt?: string | null;
 };
 
@@ -391,8 +386,10 @@ function externalIds(result: PublishResult): string[] {
   return result.id == null ? [] : [String(result.id)];
 }
 
-function jobPostKey(job: Pick<typeof publishJobs.$inferSelect, "postKey" | "postId" | "messageId">): string {
-  return job.postKey ?? (job.postId != null ? `post:${job.postId}` : `telegram:alexgetmancom:${job.messageId}`);
+/** Every current write sets postKey directly (see enqueuePublishJobTx); this
+ * fallback only covers pre-existing rows from before that was mandatory. */
+function jobPostKey(job: Pick<typeof publishJobs.$inferSelect, "postKey" | "postId">): string {
+  return job.postKey ?? `post:${job.postId}`;
 }
 
 /** Keeps target state updates consistent across claim, completion, and recovery paths. */

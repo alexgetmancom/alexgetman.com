@@ -76,30 +76,37 @@ export async function runDeliveryPublishCycle(
   }
   const postIds = [...new Set(jobs.map((job) => job.postId).filter((id): id is number => id != null))];
   for (const postId of postIds) {
-    recordDomainEvent(backendDb, {
-      ref: `post:${postId}`,
-      type: "delivery.post.settled",
-      severity: "info",
-      message: `Delivery cycle settled post #${postId}`,
-      details: { post_id: postId },
-      cooldownSeconds: 10,
-    });
-    const finalJobs = backendDb.db.select({ status: publishJobs.status }).from(publishJobs).where(eq(publishJobs.postId, postId)).all();
-    if (finalJobs.length > 0 && finalJobs.every((job) => ["published", "failed", "cancelled", "skipped"].includes(job.status))) {
-      const failed = finalJobs.filter((job) => job.status === "failed").length;
+    try {
       recordDomainEvent(backendDb, {
         ref: `post:${postId}`,
-        type: "delivery.post.completed",
-        severity: failed ? "warn" : "info",
-        message: failed ? `Post #${postId} completed with ${failed} failed target(s)` : `Post #${postId} published successfully`,
-        details: {
-          post_id: postId,
-          total: finalJobs.length,
-          failed,
-          published: finalJobs.filter((job) => job.status === "published").length,
-        },
-        cooldownSeconds: 60 * 60,
+        type: "delivery.post.settled",
+        severity: "info",
+        message: `Delivery cycle settled post #${postId}`,
+        details: { post_id: postId },
+        cooldownSeconds: 10,
       });
+      const finalJobs = backendDb.db.select({ status: publishJobs.status }).from(publishJobs).where(eq(publishJobs.postId, postId)).all();
+      if (finalJobs.length > 0 && finalJobs.every((job) => ["published", "failed", "cancelled", "skipped"].includes(job.status))) {
+        const failed = finalJobs.filter((job) => job.status === "failed").length;
+        recordDomainEvent(backendDb, {
+          ref: `post:${postId}`,
+          type: "delivery.post.completed",
+          severity: failed ? "warn" : "info",
+          message: failed ? `Post #${postId} completed with ${failed} failed target(s)` : `Post #${postId} published successfully`,
+          details: {
+            post_id: postId,
+            total: finalJobs.length,
+            failed,
+            published: finalJobs.filter((job) => job.status === "published").length,
+          },
+          cooldownSeconds: 60 * 60,
+        });
+      }
+    } catch (eventError) {
+      // A domain-event write failure here must not stop the loop from settling
+      // the remaining posts in this cycle; see the finalization-failure event
+      // above, which is defensive for the same reason.
+      log("warn", "delivery post-settlement event journal failed", { postId, error: String(eventError) });
     }
   }
   recordWorkerState(backendDb, "queue", { claimed: jobs.length });

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, like, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { TARGETS } from "../botTargets.js";
 import type { BackendDb } from "../db/client.js";
@@ -91,22 +91,22 @@ export function pipelineStatusPayload(config: BackendConfig, backendDb: BackendD
     })
     .from(metricSchedule)
     .all();
-  const legacyPosts = legacyPipelinePosts(backendDb, config, weekOffset);
+  const pipelinePostRows = pipelinePosts(backendDb, config, weekOffset);
   const feed = readFeedSummary(config, backendDb);
   const socialState = readWorkerState(backendDb, "crosspost_worker") ?? readWorkerState(backendDb, "queue") ?? {};
-  const currentTargetFailures = backendDb.db
-    .select({ postKey: postTargets.postKey })
+  const [targetFailureCount] = backendDb.db
+    .select({ count: sql<number>`count(*)` })
     .from(postTargets)
     .where(eq(postTargets.status, "failed"))
-    .all().length;
-  const currentSiteFailures = backendDb.db
-    .select({ jobId: siteJobs.jobId })
+    .all();
+  const [siteFailureCount] = backendDb.db
+    .select({ count: sql<number>`count(*)` })
     .from(siteJobs)
     .where(eq(siteJobs.status, "failed"))
-    .all().length;
+    .all();
 
   return {
-    ok: currentTargetFailures === 0 && currentSiteFailures === 0 && workers.every((worker) => worker.ok),
+    ok: Number(targetFailureCount?.count ?? 0) === 0 && Number(siteFailureCount?.count ?? 0) === 0 && workers.every((worker) => worker.ok),
     generatedAt: new Date().toISOString(),
     gitRevision: gitRevision(),
     pipelineDb: {
@@ -134,13 +134,13 @@ export function pipelineStatusPayload(config: BackendConfig, backendDb: BackendD
         ? socialState.processed_message_ids.length
         : Number(socialState.claimed ?? 0),
     },
-    posts: legacyPosts,
+    posts: pipelinePostRows,
   };
 }
 
-function legacyPipelinePosts(backendDb: BackendDb, config: BackendConfig, weekOffset: number): Record<string, unknown>[] {
+function pipelinePosts(backendDb: BackendDb, config: BackendConfig, weekOffset: number): Record<string, unknown>[] {
   const [start, end] = zonedWeekBounds(weekOffset, config.TIMEZONE);
-  const rows = fetchLegacyPostRows(backendDb, start, end);
+  const rows = fetchPostRows(backendDb, start, end);
   const postKeys = rows.map((row) => String(row.post_key ?? "")).filter(Boolean);
   const targetRows = postKeys.length
     ? backendDb.db.select().from(postTargets).where(inArray(postTargets.postKey, postKeys)).orderBy(asc(postTargets.target)).all()
@@ -153,10 +153,10 @@ function legacyPipelinePosts(backendDb: BackendDb, config: BackendConfig, weekOf
         .orderBy(asc(postMetrics.target), asc(postMetrics.metricName))
         .all()
     : [];
-  return formatLegacyPipelinePosts(backendDb, config, rows, targetRows, metricRows);
+  return formatPipelinePosts(config, rows, targetRows, metricRows);
 }
 
-function fetchLegacyPostRows(backendDb: BackendDb, start: string, end: string) {
+function fetchPostRows(backendDb: BackendDb, start: string, end: string) {
   const ru = alias(postLocales, "pipeline_ru");
   const en = alias(postLocales, "pipeline_en");
   const publicationRows = backendDb.db
@@ -184,13 +184,8 @@ function fetchLegacyPostRows(backendDb: BackendDb, start: string, end: string) {
     ? backendDb.db.select().from(posts).where(inArray(posts.postKey, publicationKeys)).all()
     : [];
   const postByKey = new Map(publicationPosts.map((post) => [post.postKey, post]));
-  const telegramRows = backendDb.db
-    .select()
-    .from(posts)
-    .where(and(like(posts.postKey, "telegram:%"), sql`${posts.dateUtc} >= ${start}`, sql`${posts.dateUtc} <= ${end}`))
-    .all();
-  return [
-    ...publicationRows.map((row) => {
+  return publicationRows
+    .map((row) => {
       const post = postByKey.get(`post:${row.postId}`);
       return {
         post_key: `post:${row.postId}`,
@@ -210,34 +205,14 @@ function fetchLegacyPostRows(backendDb: BackendDb, start: string, end: string) {
         date_msk: post?.dateMsk,
         telegram_url: post?.telegramUrl,
       };
-    }),
-    ...telegramRows.map((post) => ({
-      post_key: post.postKey,
-      post_id: null,
-      telegram_message_id: post.messageId,
-      created_at: post.dateUtc,
-      updated_at: post.updatedAt,
-      text_ru: post.text,
-      media_ru_json: post.mediaJson,
-      site_ru: 0,
-      slug_ru: null,
-      text_en: post.textEn,
-      media_en_json: post.mediaJson,
-      site_en: 0,
-      slug_en: null,
-      message_id: post.messageId,
-      date_msk: post.dateMsk,
-      telegram_url: post.telegramUrl,
-    })),
-  ]
+    })
     .sort((left, right) => String(right.created_at ?? "").localeCompare(String(left.created_at ?? "")))
     .slice(0, 100);
 }
 
-function formatLegacyPipelinePosts(
-  backendDb: BackendDb,
+function formatPipelinePosts(
   config: BackendConfig,
-  rows: ReturnType<typeof fetchLegacyPostRows>,
+  rows: ReturnType<typeof fetchPostRows>,
   targetRows: Array<typeof postTargets.$inferSelect>,
   metricRows: Array<typeof postMetrics.$inferSelect>,
 ): Record<string, unknown>[] {
@@ -294,7 +269,7 @@ function formatLegacyPipelinePosts(
       typeof row.telegram_url === "string" && row.telegram_url
         ? row.telegram_url
         : telegramMessageId
-          ? `https://t.me/${configlessChannel(backendDb)}/${telegramMessageId}`
+          ? `https://t.me/${config.CHANNEL_USERNAME.replace(/^@/, "")}/${telegramMessageId}`
           : null;
     const localesMap = { ru: { site_enabled: Number(row.site_ru ?? 0) }, en: { site_enabled: Number(row.site_en ?? 0) } };
     const result: Record<string, unknown> = {
@@ -354,9 +329,4 @@ function readWorkerState(backendDb: BackendDb, name: string): Record<string, unk
 function shortText(value: string): string {
   const words = value.replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
   return words.length <= 7 ? words.join(" ") : `${words.slice(0, 7).join(" ")}...`;
-}
-
-function configlessChannel(backendDb: BackendDb): string {
-  const row = backendDb.db.select({ channel: posts.channel }).from(posts).where(ne(posts.channel, "")).orderBy(desc(posts.updatedAt)).get();
-  return row?.channel.replace(/^@/, "") || "alexgetmancom";
 }

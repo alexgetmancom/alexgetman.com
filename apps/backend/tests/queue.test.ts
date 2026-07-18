@@ -4,13 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { eq } from "drizzle-orm";
 import { openBackendDb } from "../src/db/client.js";
-import { postTargets, publishJobs } from "../src/db/schema.js";
+import { type JsonObject, postTargets, publishJobs } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { HttpPublishError } from "../src/publishing/errors.js";
 import {
   claimDuePublishJobs,
   completePublishJob,
-  enqueuePublishJob,
+  enqueuePublishJobTx,
   failPublishJob,
   recoverStalePublishJobs,
 } from "../src/publishing/queue.js";
@@ -19,6 +19,19 @@ import { runPublishCycle, runPublishWatchdog } from "../src/runtime/workers.js";
 function tempDb() {
   const dir = mkdtempSync(join(tmpdir(), "alexgetman-queue-"));
   return openBackendDb(join(dir, "pipeline.db"), 5000);
+}
+
+/** Test-only convenience over enqueuePublishJobTx: derives a postId/postKey from
+ * messageId so queue-mechanics tests don't need a real publication behind each job. */
+function enqueuePublishJob(
+  backendDb: ReturnType<typeof openBackendDb>,
+  input: { messageId: number; target: string; payload: JsonObject; publishAt?: string | null },
+): number {
+  return enqueuePublishJobTx(backendDb.db, {
+    ...input,
+    postId: input.messageId,
+    postKey: `post:${input.messageId}`,
+  });
 }
 
 describe("publish queue", () => {

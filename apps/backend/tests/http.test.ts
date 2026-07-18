@@ -7,7 +7,7 @@ import { createDraftFromMessage } from "../src/content/drafts.js";
 import { openBackendDb } from "../src/db/client.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
-import { enqueuePublishJob } from "../src/publishing/queue.js";
+import { enqueuePublishJobTx } from "../src/publishing/queue.js";
 
 function tempDb() {
   const dir = mkdtempSync(join(tmpdir(), "alexgetman-http-"));
@@ -22,8 +22,7 @@ function createApiApp(
   const handler = createApiHandler({ config, backendDb, bot });
   return {
     request(path: string, init?: RequestInit) {
-      const request = new Request(`http://localhost${path}`, init);
-      return handler(request, new URL(request.url).pathname);
+      return handler(new Request(`http://localhost${path}`, init));
     },
   };
 }
@@ -44,17 +43,18 @@ describe("Astro endpoint controller", () => {
   it("returns post debug payload for queued publication refs", async () => {
     const backendDb = tempDb();
     try {
-      enqueuePublishJob(backendDb, {
+      enqueuePublishJobTx(backendDb.db, {
+        postId: 123,
+        postKey: "post:123",
         messageId: 123,
         target: "devto",
-        postKey: "telegram:alexgetmancom:123",
         payload: { title: "Debug", bodyMarkdown: "Body" },
       });
       const app = createApiApp(loadConfig({ COMMAND_CENTER_TOKEN: "secret" }), backendDb);
       const response = await app.request("/api/post-debug?ref=123", { headers: { "X-Admin-Token": "secret" } });
       expect(response.status).toBe(200);
       const payload = (await response.json()) as { ref: { postKey: string }; jobs: unknown[] };
-      expect(payload.ref.postKey).toBe("telegram:alexgetmancom:123");
+      expect(payload.ref.postKey).toBe("post:123");
       expect(payload.jobs).toHaveLength(1);
     } finally {
       backendDb.close();

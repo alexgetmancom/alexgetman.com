@@ -4,7 +4,7 @@ import { openBackendDb } from "../src/db/client.js";
 import { posts, postTargets, publicationSources, publications, publishJobs, siteSourceItems } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { runOperationCommand } from "../src/operations/commands.js";
-import { enqueuePublishJob } from "../src/publishing/queue.js";
+import { enqueuePublishJobTx } from "../src/publishing/queue.js";
 
 describe("command center actions", () => {
   it("rebuilds retried jobs from the source using the target locale", async () => {
@@ -41,7 +41,7 @@ describe("command center actions", () => {
         .run();
 
       for (const target of ["threads_ru", "threads_en"]) {
-        const id = enqueuePublishJob(backendDb, {
+        const id = enqueuePublishJobTx(backendDb.db, {
           postId: 52,
           postKey: "post:52",
           messageId: 52,
