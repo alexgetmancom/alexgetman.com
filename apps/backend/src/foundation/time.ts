@@ -4,15 +4,31 @@
 
 /** UTC-minus-local offset in ms for `date` in `timeZone`, read from the actual
  * civil-time offset rather than a fixed constant so it holds for zones that
- * observe daylight saving too. */
+ * observe daylight saving too. Computed by reading the zone's wall-clock digits
+ * and comparing them to the instant directly, rather than parsing Intl's
+ * locale-formatted offset string (ICU renders e.g. "UTC" inconsistently
+ * across platforms, which broke a string-parsing version of this in CI). */
 export function timezoneOffsetMs(date: Date, timeZone: string): number {
-  const zone = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "longOffset" })
-    .formatToParts(date)
-    .find((part) => part.type === "timeZoneName")?.value;
-  const match = zone?.match(/^GMT([+-])(\d{2}):(\d{2})$/);
-  if (!match) throw new Error(`Cannot resolve ${timeZone} offset`);
-  const offset = (Number(match[2]) * 60 + Number(match[3])) * 60_000;
-  return match[1] === "+" ? offset : -offset;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const value = Object.fromEntries(parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
+  const wallClockAsUtc = Date.UTC(
+    Number(value.year),
+    Number(value.month) - 1,
+    Number(value.day),
+    Number(value.hour),
+    Number(value.minute),
+    Number(value.second),
+  );
+  return wallClockAsUtc - date.getTime();
 }
 
 /** Calendar date `date` reads as in `timeZone`. */
