@@ -88,7 +88,17 @@
 }
 
 .story-visual__link video {
-  object-fit: cover;
+  /*
+   * Keep the browser's video surface below the progress strip. Some browsers
+   * render video in a composited layer that can otherwise cover a higher-z
+   * index progress indicator. `contain` also preserves landscape clips in
+   * the portrait story frame instead of cropping their sides.
+   */
+  inset: 4px 0 0;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  background: #000;
 }
 
 .story-visual__link img[hidden],

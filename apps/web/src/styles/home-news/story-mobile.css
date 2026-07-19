@@ -236,10 +236,12 @@
   .story-context {
     position: fixed;
     z-index: 10;
-    top: calc(1.2rem + env(safe-area-inset-top, 0));
+    /* Keep the reading sheet between the audio control and Read/Back. */
+    top: calc(4.5rem + env(safe-area-inset-top, 0));
     right: 0.8rem;
-    bottom: calc(5.65rem + env(safe-area-inset-bottom, 0));
+    bottom: calc(10.25rem + env(safe-area-inset-bottom, 0));
     left: 0.8rem;
+    box-sizing: border-box;
     display: block;
     width: auto;
     min-height: 0;
@@ -249,7 +251,9 @@
     border: 1px solid rgba(255, 255, 255, 0.16);
     border-radius: 18px;
     background: rgba(8, 11, 16, 0.74);
+    overflow-x: hidden;
     overflow-y: auto;
+    overscroll-behavior: contain;
     opacity: 0;
     pointer-events: none;
     transform: translateY(1.2rem) scale(0.98);
@@ -258,6 +262,12 @@
       opacity 0.2s ease;
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
+  }
+
+  /* The server renders the article text for search engines. On a phone it
+     must still remain unavailable until the reader explicitly opens it. */
+  .story-context[aria-hidden="true"] {
+    display: none;
   }
 
   .story-player.is-reading .story-context {
@@ -374,9 +384,19 @@
   }
 
   .story-context .story-copy {
+    min-width: 0;
     overflow: visible;
+    overflow-wrap: anywhere;
+    word-break: break-word;
     font-size: 1.02rem;
     line-height: 1.42;
+  }
+
+  .story-context .story-copy p,
+  .story-context .story-copy a {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
 
   .rail-control {
