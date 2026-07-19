@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, inArray, notInArray, or } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, notInArray, or } from "drizzle-orm";
 import { type TargetLocale, targetLocale } from "../botTargets.js";
 import type { BackendDb } from "../db/client.js";
 import {
@@ -32,12 +32,12 @@ export function nextPublishingSlot(backendDb: BackendDb, locale: TargetLocale, n
       ? backendDb.db
           .select({ value: drafts.scheduledAt })
           .from(drafts)
-          .where(and(eq(drafts.status, "scheduled"), gte(drafts.scheduledAt, "")))
+          .where(and(eq(drafts.status, "scheduled"), isNotNull(drafts.scheduledAt)))
           .all()
       : backendDb.db
           .select({ value: drafts.scheduledEnAt })
           .from(drafts)
-          .where(and(eq(drafts.status, "scheduled"), gte(drafts.scheduledEnAt, "")))
+          .where(and(eq(drafts.status, "scheduled"), isNotNull(drafts.scheduledEnAt)))
           .all();
   const occupied = new Set(values.flatMap((row) => (row.value ? [row.value] : [])));
   for (let offset = 0; offset < 366; offset += 1) {
@@ -204,6 +204,11 @@ function hasLocaleTarget(targets: Record<string, boolean>, locale: TargetLocale)
   return Object.entries(targets).some(([target, enabled]) => enabled && targetLocale(target) === locale);
 }
 
+/** `drafts.scheduledAt`/`scheduledEnAt` is the canonical publication time; every
+ * value this function writes (posts, postLocales, and the JSON schedule fields
+ * inside publicationPlans/publicationSources/siteSourceItems) is a read-optimized
+ * projection of it. Do not add another one — extend `updateSchedulePayload`
+ * or read straight from `drafts` instead. */
 function syncPublicationSchedule(
   db: BackendDb["db"],
   postId: number,

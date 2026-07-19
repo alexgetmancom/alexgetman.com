@@ -130,12 +130,15 @@ async function getTelegramFileUrl(
 }
 
 async function normalizeVideoForPublicUpload(config: BackendConfig, inputPath: string, cacheKey: string, target?: string): Promise<string> {
-  const outputPath = path.join(config.MEDIA_CACHE_DIR, `${cacheKey}.normalized.mp4`);
-  if (await Bun.file(outputPath).exists()) return outputPath;
   const { width, height } = await probeVideoDimensions(inputPath);
   const bounds = target ? videoBounds(target, width, height) : null;
   if (!bounds) return inputPath;
   const { maxWidth, maxHeight } = bounds;
+  // Different targets can have different bounds for the same source video, so the
+  // bounds must be part of the cache key: otherwise a file normalized for one
+  // target's smaller limit would be silently reused (under-scaled) by another.
+  const outputPath = path.join(config.MEDIA_CACHE_DIR, `${cacheKey}.${maxWidth}x${maxHeight}.normalized.mp4`);
+  if (await Bun.file(outputPath).exists()) return outputPath;
   const args =
     width <= maxWidth && height <= maxHeight
       ? ["-y", "-i", inputPath, "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy", "-movflags", "+faststart", outputPath]

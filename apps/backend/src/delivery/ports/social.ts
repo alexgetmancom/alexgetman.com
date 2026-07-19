@@ -32,45 +32,25 @@ export function createPlatformPorts(config: BackendConfig, backendDb: BackendDb,
   // SSH tunnel.  Keep that resource explicit and share the finished render
   // between Telegram and Instagram targets of the same locale.
   const storyMediaCache = new Map<string, Promise<ReturnType<typeof payloadMedia>>>();
-  let mediaPreparationTail: Promise<void> = Promise.resolve();
-  let storyPreparationTail: Promise<void> = Promise.resolve();
+  const enqueueMediaPreparation = serialQueue();
+  const enqueueStoryPreparation = serialQueue();
   const prepare = (
     job: ClaimedPublishJob,
     publisherConfig: BackendConfig,
     publish: (payload: Record<string, unknown>) => Promise<PublishResult>,
   ) =>
-    withPreparedMedia(
-      job,
-      publisherConfig,
-      fetchImpl,
-      publish,
-      mediaCache,
-      (work) => {
-        const next = mediaPreparationTail.then(work, work);
-        mediaPreparationTail = next.then(
-          () => undefined,
-          () => undefined,
-        );
-        return next;
-      },
-      (job, media) => {
-        const key = storyMediaCacheKey(job, media);
-        let rendered = storyMediaCache.get(key);
-        if (!rendered) {
-          const next = storyPreparationTail.then(() => createStoryMedia(job, media, publisherConfig));
-          storyPreparationTail = next.then(
-            () => undefined,
-            () => undefined,
-          );
-          rendered = next;
-          storyMediaCache.set(key, rendered);
-        }
-        return rendered.catch((error) => {
-          storyMediaCache.delete(key);
-          throw error;
-        });
-      },
-    );
+    withPreparedMedia(job, publisherConfig, fetchImpl, publish, mediaCache, enqueueMediaPreparation, (job, media) => {
+      const key = storyMediaCacheKey(job, media);
+      let rendered = storyMediaCache.get(key);
+      if (!rendered) {
+        rendered = enqueueStoryPreparation(() => createStoryMedia(job, media, publisherConfig));
+        storyMediaCache.set(key, rendered);
+      }
+      return rendered.catch((error) => {
+        storyMediaCache.delete(key);
+        throw error;
+      });
+    });
   const threadsEnConfig = { ...config, THREADS_ACCESS_TOKEN: config.THREADS_EN_ACCESS_TOKEN ?? config.THREADS_ACCESS_TOKEN };
   const facebookRuConfig = {
     ...config,
@@ -125,6 +105,19 @@ export function createPlatformPorts(config: BackendConfig, backendDb: BackendDb,
       deliveryAdapter(publish, { validate: async () => validatePlatformTarget(target, config) }),
     ]),
   ) as DeliveryPorts;
+}
+
+/** A FIFO queue of async jobs that runs one at a time, regardless of success or failure. */
+function serialQueue(): <T>(work: () => Promise<T>) => Promise<T> {
+  let tail: Promise<void> = Promise.resolve();
+  return (work) => {
+    const next = tail.then(work, work);
+    tail = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  };
 }
 
 /** Fail before a provider request when the declarative target profile is not ready. */
