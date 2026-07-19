@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
 import { runAnalyticsCycle } from "../src/analytics/collection/creator-cycle.js";
+import { runVideoMetricSchedule } from "../src/analytics/collection/video-metrics.js";
 import { audienceGrowthByPlatform } from "../src/analytics/metric-deltas.js";
 import { creatorDashboard } from "../src/analytics/reports/dashboard.js";
 import { studioAnalyticsDashboard } from "../src/analytics/reports/studio-dashboard.js";
@@ -195,6 +196,85 @@ describe("creator analytics", () => {
       const nextCheck = new Date(schedule?.nextCheckAt ?? 0).getTime();
       expect(nextCheck).toBeGreaterThan(Date.now() + 50 * 60 * 1000);
       expect(nextCheck).toBeLessThan(Date.now() + 70 * 60 * 1000);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("refreshes YouTube OAuth once and freezes a failed batch without a request burst", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const publishedAt = new Date(Date.now() - 2 * 60 * 60_000).toISOString();
+      const now = new Date().toISOString();
+      const drafts = backendDb.db
+        .insert(videoDrafts)
+        .values([
+          { adminId: 1, assetKey: "asset-a", label: "YouTube batch A", status: "published", createdAt: publishedAt, updatedAt: now },
+          { adminId: 1, assetKey: "asset-b", label: "YouTube batch B", status: "published", createdAt: publishedAt, updatedAt: now },
+        ])
+        .returning({ id: videoDrafts.id })
+        .all();
+      const [firstDraft, secondDraft] = drafts;
+      if (!firstDraft || !secondDraft) throw new Error("video drafts missing");
+      const targets = backendDb.db
+        .insert(videoTargets)
+        .values([
+          {
+            videoDraftId: firstDraft.id,
+            target: "youtube_shorts",
+            metadataJson: {},
+            status: "published",
+            externalId: "youtube-a",
+            publishedAt,
+            createdAt: publishedAt,
+            updatedAt: now,
+          },
+          {
+            videoDraftId: secondDraft.id,
+            target: "youtube_shorts",
+            metadataJson: {},
+            status: "published",
+            externalId: "youtube-b",
+            publishedAt,
+            createdAt: publishedAt,
+            updatedAt: now,
+          },
+        ])
+        .returning({ id: videoTargets.id })
+        .all();
+      backendDb.db
+        .insert(videoMetricSchedule)
+        .values(
+          targets.map((target) => ({ videoTargetId: target.id, nextCheckAt: new Date(Date.now() - 1_000).toISOString(), updatedAt: now })),
+        )
+        .run();
+      const config = loadConfig({ YOUTUBE_CLIENT_ID: "client", YOUTUBE_CLIENT_SECRET: "secret", YOUTUBE_REFRESH_TOKEN: "revoked" });
+      config.studio.modules.video_posting = true;
+      let refreshRequests = 0;
+      const fetchMock = (async (input: URL | RequestInfo) => {
+        if (String(input) === "https://oauth2.googleapis.com/token") {
+          refreshRequests += 1;
+          return new Response(JSON.stringify({ error: "invalid_grant", error_description: "Token has been expired or revoked." }), {
+            status: 400,
+          });
+        }
+        throw new Error(`Unexpected request: ${input}`);
+      }) as typeof fetch;
+
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = fetchMock;
+      try {
+        await runVideoMetricSchedule(config, backendDb, fetchMock);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+
+      expect(refreshRequests).toBe(1);
+      for (const target of targets) {
+        const schedule = backendDb.db.select().from(videoMetricSchedule).where(eq(videoMetricSchedule.videoTargetId, target.id)).get();
+        expect(schedule?.frozenAt).not.toBeNull();
+        expect(schedule?.lastError).toContain("invalid_grant");
+      }
     } finally {
       backendDb.close();
     }

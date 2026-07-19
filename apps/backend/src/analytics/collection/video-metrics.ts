@@ -75,10 +75,38 @@ type ZernioPostAnalytics = {
 export async function runVideoMetricSchedule(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<number> {
   ensureVideoMetricSchedule(backendDb);
   const tasks = dueVideoMetricTasks(backendDb, config.MAX_METRIC_TASKS_PER_CYCLE);
+  const youtubeTasks = tasks.filter((task) => task.target === "youtube_shorts");
+  let youtubeToken: string | null = null;
+  if (youtubeTasks.length > 0) {
+    try {
+      // One fresh access token is enough for every Data API request in this
+      // cycle. Refreshing once per historical target turns a revoked token
+      // into a noisy burst of identical OAuth failures.
+      youtubeToken = await youtubeAccessToken(config);
+    } catch (error) {
+      const normalized = terminalIfMissingRemoteObject(error);
+      const message = normalized instanceof Error ? normalized.message : String(normalized);
+      const terminal = isTerminalMetricError(normalized);
+      for (const task of youtubeTasks) finishVideoMetricTask(backendDb, task, message, terminal);
+      if (terminal)
+        recordDomainEvent(backendDb, {
+          ref: "analytics:youtube",
+          target: "youtube_shorts",
+          type: "analytics.video_metrics.frozen",
+          severity: "warn",
+          message,
+          details: { video_target_ids: youtubeTasks.map((task) => task.id), reason: message },
+          cooldownSeconds: 60 * 60,
+        });
+    }
+  }
   for (const task of tasks) {
     try {
-      if (task.target === "youtube_shorts") await collectYouTubeVideoMetrics(config, backendDb, task, fetchImpl);
-      else if (task.deliveryProvider === "zernio") await collectZernioInstagramVideoMetrics(config, backendDb, task, fetchImpl);
+      if (task.target === "youtube_shorts") {
+        const token = youtubeToken;
+        if (!token) continue;
+        await collectYouTubeVideoMetrics(backendDb, task, token, fetchImpl);
+      } else if (task.deliveryProvider === "zernio") await collectZernioInstagramVideoMetrics(config, backendDb, task, fetchImpl);
       else await collectInstagramVideoMetrics(config, backendDb, task, fetchImpl);
       finishVideoMetricTask(backendDb, task, null);
     } catch (error) {
@@ -249,12 +277,11 @@ function finishVideoMetricTask(backendDb: BackendDb, task: VideoMetricTask, erro
 }
 
 async function collectYouTubeVideoMetrics(
-  config: BackendConfig,
   backendDb: BackendDb,
   target: VideoMetricTask,
+  token: string,
   fetchImpl: typeof fetch,
 ): Promise<void> {
-  const token = await youtubeAccessToken(config);
   const auth = { Authorization: `Bearer ${token}` };
   const video = await requestJson<YouTubeVideo>(
     fetchImpl,
