@@ -68,6 +68,7 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
   let readingVisible = false;
   let manualPausedBeforeReading = isManualPaused;
   let videoAutoplayMuted = false;
+  let pendingDesktopSoundRestore = false;
   const opensDiscussionFromUrl = new URLSearchParams(window.location.search).get("discussion") === "1";
   const debugPanel = new URLSearchParams(window.location.search).has("debug") ? document.createElement("pre") : null;
 
@@ -95,6 +96,7 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
   function setMuted(nextMuted: boolean, persist = true): void {
     muted = nextMuted;
     videoAutoplayMuted = false;
+    pendingDesktopSoundRestore = false;
     if (persist) {
       try {
         localStorage.setItem("story-player-muted", String(muted));
@@ -117,26 +119,24 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
       // Mobile browsers already preserve this path, so keep their behavior
       // untouched.
       const restoreDesktopSound = !muted && window.matchMedia("(min-width: 761px)").matches;
-      if (restoreDesktopSound) video.muted = true;
-      video
-        .play?.()
-        .then(() => {
-          if (restoreDesktopSound && !isManualPaused && posts[active]?.mediaType === "video") {
-            video.muted = false;
-            videoAutoplayMuted = false;
-            syncMutedUi();
-          }
-        })
-        .catch(() => {
-          // Automatic navigation is not a user gesture. Retry muted when the
-          // browser rejects playback with the persisted sound preference.
-          if (!video.muted) {
-            video.muted = true;
-            videoAutoplayMuted = true;
-            syncMutedUi();
-            video.play?.().catch(() => {});
-          }
-        });
+      if (restoreDesktopSound) {
+        video.muted = true;
+        pendingDesktopSoundRestore = true;
+      }
+      video.play?.().catch(() => {
+        pendingDesktopSoundRestore = false;
+        // Automatic navigation is not a user gesture. Retry muted when the
+        // browser rejects playback with the persisted sound preference.
+        if (!video.muted) {
+          video.muted = true;
+          videoAutoplayMuted = true;
+          syncMutedUi();
+          video.play?.().catch(() => {});
+        } else if (restoreDesktopSound) {
+          videoAutoplayMuted = true;
+          syncMutedUi();
+        }
+      });
     };
     if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) video.addEventListener("canplay", play, { once: true });
     else play();
@@ -198,6 +198,7 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
     if (!post) return;
     expanded = false;
     videoAutoplayMuted = false;
+    pendingDesktopSoundRestore = false;
     if (readingVisible) setReadingVisible(false);
     setDiscussionVisible(false);
     const panel = root.querySelector(".story-panel");
@@ -239,7 +240,20 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
     image.removeAttribute("srcset");
   });
   video?.addEventListener("playing", () => progress.handleVideoPlaying());
-  video?.addEventListener("timeupdate", () => progress.handleVideoTimeUpdate());
+  video?.addEventListener("timeupdate", () => {
+    progress.handleVideoTimeUpdate();
+    if (!pendingDesktopSoundRestore || muted || isManualPaused || !window.matchMedia("(min-width: 761px)").matches) return;
+    // `timeupdate` proves that at least one real frame has played. Restoring
+    // sound here avoids Chrome interrupting a source while it is still
+    // entering autoplay, which previously froze both media and progress.
+    pendingDesktopSoundRestore = false;
+    window.requestAnimationFrame(() => {
+      if (!video || muted || isManualPaused || posts[active]?.mediaType !== "video") return;
+      video.muted = false;
+      videoAutoplayMuted = false;
+      syncMutedUi();
+    });
+  });
   video?.addEventListener("ended", () => progress.handleVideoEnded());
   video?.addEventListener("waiting", () => progress.handleVideoWaiting());
 
@@ -357,6 +371,7 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
   audioToggle?.addEventListener("click", () => {
     if (videoAutoplayMuted && video) {
       videoAutoplayMuted = false;
+      pendingDesktopSoundRestore = false;
       video.muted = false;
       syncMutedUi();
       video.play?.().catch(() => {});
