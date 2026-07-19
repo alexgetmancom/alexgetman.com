@@ -33,6 +33,8 @@ export interface StoryUi {
   discuss: string;
   share: string;
   readMore: string;
+  read: string;
+  back: string;
   collapse: string;
   mute: string;
   muted: string;

@@ -54,6 +54,15 @@ const gallery = activePost.gallery || [];
       <span aria-hidden="true">♪</span>
       <span data-audio-label>{ui.muted}</span>
     </button>
+    <button class="story-read-trigger" type="button" data-story-read aria-expanded="false">
+      <svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+        <path d="M14 2v6h6"></path>
+        <path d="M8 13h8"></path>
+        <path d="M8 17h6"></path>
+      </svg>
+      <span>{ui.read}</span>
+    </button>
     <div class="story-mobile-caption" aria-hidden="true">
       <span data-story-mobile-kicker>{activePost.category}</span>
       <strong data-story-mobile-title>{activePost.title}</strong>

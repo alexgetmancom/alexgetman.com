@@ -195,13 +195,7 @@
   }
 
   .story-mobile-caption {
-    position: absolute;
-    z-index: 8;
-    left: 1rem;
-    right: 1rem;
-    bottom: calc(5rem + env(safe-area-inset-bottom, 0));
-    display: grid;
-    gap: 0.45rem;
+    display: none;
     pointer-events: none;
   }
 
@@ -240,18 +234,36 @@
   }
 
   .story-context {
-    order: 2;
-    width: 100%;
-    max-width: none;
-    min-height: 100svh;
+    position: fixed;
+    z-index: 10;
+    top: calc(1.2rem + env(safe-area-inset-top, 0));
+    right: 0.8rem;
+    bottom: calc(5.65rem + env(safe-area-inset-bottom, 0));
+    left: 0.8rem;
+    display: block;
+    width: auto;
+    min-height: 0;
     height: auto;
+    max-width: none;
     max-height: none;
-    border: 0;
-    border-radius: 0;
-    background: var(--bg-deep);
-    overflow: visible;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 18px;
+    background: rgba(8, 11, 16, 0.74);
+    overflow-y: auto;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(1.2rem) scale(0.98);
+    transition:
+      transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+      opacity 0.2s ease;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+
+  .story-player.is-reading .story-context {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0) scale(1);
   }
 
   .story-panel {
@@ -315,10 +327,56 @@
   }
 
   .story-rail-container {
-    order: 3;
-    width: 100%;
-    padding: 0 0.85rem 1.1rem;
-    background: var(--bg-deep);
+    display: none;
+  }
+
+  .story-read-trigger {
+    position: absolute;
+    z-index: 14;
+    right: 1rem;
+    bottom: calc(5.15rem + env(safe-area-inset-bottom, 0));
+    width: 4.25rem;
+    height: 4.25rem;
+    display: grid;
+    place-items: center;
+    gap: 0.04rem;
+    padding: 0.25rem;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    box-shadow: 0 12px 30px rgba(220, 38, 38, 0.42);
+    font: 800 0.68rem / 1 var(--font-sans);
+    cursor: pointer;
+    transition:
+      transform 0.18s ease,
+      background 0.18s ease;
+  }
+
+  .story-read-trigger.is-open {
+    background: rgba(220, 38, 38, 0.94);
+    transform: scale(1.06);
+  }
+
+  .story-read-trigger svg {
+    margin-top: 0.12rem;
+  }
+
+  .story-panel {
+    min-height: 0;
+    height: auto;
+    padding: 1.15rem 1rem 1.25rem;
+  }
+
+  .story-context [data-story-title],
+  .story-context .story-actions {
+    display: none;
+  }
+
+  .story-context .story-copy {
+    overflow: visible;
+    font-size: 1.02rem;
+    line-height: 1.42;
   }
 
   .rail-control {

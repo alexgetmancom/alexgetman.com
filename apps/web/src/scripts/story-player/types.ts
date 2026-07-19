@@ -53,7 +53,9 @@ export type StoryPlayerElements = {
   feedModeMenu: HTMLElement | null;
   shareButtons: HTMLButtonElement[];
   discussButtons: HTMLButtonElement[];
+  readButtons: HTMLButtonElement[];
   discussLabels: HTMLSpanElement[];
+  context: HTMLElement | null;
   postPanel: HTMLElement | null;
   discussionPanel: HTMLElement | null;
   discussionFrame: HTMLElement | null;

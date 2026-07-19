@@ -43,7 +43,9 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
     feedModeMenu,
     shareButtons,
     discussButtons,
+    readButtons,
     discussLabels,
+    context,
     postPanel,
     discussionPanel,
     discussionFrame,
@@ -63,6 +65,8 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
   let discussionTerm = "";
   let discussionVisible = false;
   let manualPausedBeforeDiscussion = isManualPaused;
+  let readingVisible = false;
+  let manualPausedBeforeReading = isManualPaused;
   const debugPanel = new URLSearchParams(window.location.search).has("debug") ? document.createElement("pre") : null;
 
   const feedMode = createFeedModeController({ posts, ui, railCards, feedModeButtons, feedModeLabel, activeIndex: () => active });
@@ -107,11 +111,32 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
     updatePlayState();
   }
 
+  function setReadingVisible(isVisible: boolean): void {
+    if (!context) return;
+    readingVisible = isVisible;
+    root.classList.toggle("is-reading", isVisible);
+    context.setAttribute("aria-hidden", String(!isVisible));
+    readButtons.forEach((button) => {
+      button.setAttribute("aria-expanded", String(isVisible));
+      button.classList.toggle("is-open", isVisible);
+      const label = button.querySelector("span");
+      if (label) label.textContent = isVisible ? ui.back || "Back" : ui.read || "Read";
+    });
+    if (isVisible) {
+      manualPausedBeforeReading = isManualPaused;
+      isManualPaused = true;
+    } else {
+      isManualPaused = manualPausedBeforeReading;
+    }
+    updatePlayState();
+  }
+
   function render(index: number, options: { keepProgressIdle?: boolean } = {}): void {
     active = (index + posts.length) % posts.length;
     const post = posts[active];
     if (!post) return;
     expanded = false;
+    if (readingVisible) setReadingVisible(false);
     setDiscussionVisible(false);
     const panel = root.querySelector(".story-panel");
     panel?.classList.add("is-updating");
@@ -230,11 +255,15 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
     expanded = !expanded;
     syncReadMore({ copy, readMore, post, expanded, ui });
   });
+  readButtons.forEach((button) => {
+    button.addEventListener("click", () => setReadingVisible(!readingVisible));
+  });
   discussButtons.forEach((button) => {
     button.addEventListener("click", () => {
       if (discussionVisible) return setDiscussionVisible(false);
       const post = posts[active];
       if (!post) return;
+      if (window.matchMedia("(max-width: 760px)").matches) setReadingVisible(true);
       discussionTerm = loadGiscusDiscussion({ post, discussionFrame, giscusConfig, ui, currentTerm: discussionTerm });
       setDiscussionVisible(true);
       if (window.matchMedia("(max-width: 760px)").matches) discussionPanel?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -288,6 +317,11 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
   );
   document.addEventListener("keydown", (event) => {
     if (event.defaultPrevented || isTypingTarget(document.activeElement)) return;
+    if (event.key === "Escape" && readingVisible) {
+      event.preventDefault();
+      setReadingVisible(false);
+      return;
+    }
     if (event.key === "ArrowDown" || event.key === "PageDown") {
       event.preventDefault();
       navigate(1);

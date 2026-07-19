@@ -290,6 +290,10 @@
   display: none;
 }
 
+.story-read-trigger {
+  display: none;
+}
+
 .story-context {
   align-self: center;
   height: 100%;

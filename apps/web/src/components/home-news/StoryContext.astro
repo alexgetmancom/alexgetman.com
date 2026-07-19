@@ -13,7 +13,7 @@ const wordsCount = paragraphs.join(" ").split(/\s+/).length;
 const readingTimeMin = Math.max(1, Math.ceil(wordsCount / 180));
 ---
 
-<aside class="story-context" data-story-context>
+<aside class="story-context" data-story-context aria-hidden="true">
   <div class="story-panel is-active" data-panel="post">
     <div class="story-category-wrap">
       <span class="story-category-badge" data-story-kicker>{activePost.category}</span>
