@@ -94,9 +94,9 @@
    * index progress indicator. `contain` also preserves landscape clips in
    * the portrait story frame instead of cropping their sides.
    */
-  inset: 4px 0 0;
-  width: auto;
-  height: auto;
+  /* Preserve the element's box; auto dimensions let intrinsic video size
+     escape the portrait player on iOS. */
+  clip-path: inset(4px 0 0);
   object-fit: contain;
   background: #000;
 }

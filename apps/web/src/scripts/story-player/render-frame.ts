@@ -75,9 +75,6 @@ export function renderStoryFrame(options: {
         video.load();
       }
       video.muted = muted;
-      if (!paused) {
-        video.play?.().catch(() => {});
-      }
     } else {
       video.pause?.();
       video.removeAttribute("src");

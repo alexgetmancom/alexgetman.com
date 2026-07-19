@@ -82,12 +82,50 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
     onAdvance: () => render(feedMode.nextVisibleStoryIndex(1)),
   });
 
+  function syncMutedUi(): void {
+    audioToggle?.setAttribute("aria-pressed", String(muted));
+    audioToggle?.classList.toggle("is-on", !muted);
+    if (audioLabel) audioLabel.textContent = muted ? ui.muted || "Muted" : ui.mute || "Audio";
+  }
+
+  function setMuted(nextMuted: boolean, persist = true): void {
+    muted = nextMuted;
+    if (persist) {
+      try {
+        localStorage.setItem("story-player-muted", String(muted));
+      } catch {}
+    }
+    syncMutedUi();
+    if (audio) {
+      audio.muted = muted;
+      if (!muted && audio.getAttribute("src") && posts[active]?.mediaType !== "video") audio.play?.().catch(() => {});
+      else audio.pause?.();
+    }
+    if (video) video.muted = muted;
+  }
+
+  function playActiveVideo(): void {
+    if (!video || posts[active]?.mediaType !== "video") return;
+    const play = () => {
+      video.play?.().catch(() => {
+        // Automatic navigation is not a user gesture. Retry muted when the
+        // browser rejects playback with the persisted sound preference.
+        if (!video.muted) {
+          setMuted(true);
+          video.play?.().catch(() => {});
+        }
+      });
+    };
+    if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) video.addEventListener("canplay", play, { once: true });
+    else play();
+  }
+
   function updatePlayState(): void {
     paused = isManualPaused;
     progress.update(paused);
     if (video && posts[active]?.mediaType === "video") {
       if (paused) video.pause?.();
-      else video.play?.().catch(() => {});
+      else playActiveVideo();
     }
     renderDebugState(debugPanel, { active, posts, paused, isManualPaused, ...progress.debugState() });
   }
@@ -290,19 +328,7 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
     });
   });
   audioToggle?.addEventListener("click", () => {
-    muted = !muted;
-    try {
-      localStorage.setItem("story-player-muted", String(muted));
-    } catch {}
-    audioToggle.setAttribute("aria-pressed", String(muted));
-    audioToggle.classList.toggle("is-on", !muted);
-    if (audioLabel) audioLabel.textContent = muted ? ui.muted || "Muted" : ui.mute || "Audio";
-    if (audio) {
-      audio.muted = muted;
-      if (!muted && audio.getAttribute("src") && posts[active]?.mediaType !== "video") audio.play?.().catch(() => {});
-      else audio.pause?.();
-    }
-    if (video) video.muted = muted;
+    setMuted(!muted);
   });
 
   let startX = 0;
@@ -335,9 +361,7 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
     }
   });
 
-  audioToggle?.setAttribute("aria-pressed", String(muted));
-  audioToggle?.classList.toggle("is-on", !muted);
-  if (audioLabel) audioLabel.textContent = muted ? ui.muted || "Muted" : ui.mute || "Audio";
+  syncMutedUi();
   feedMode.syncFeedModeControls();
   if (debugPanel) {
     debugPanel.className = "story-debug-panel";
