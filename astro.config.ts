@@ -21,7 +21,11 @@ export default defineConfig({
   integrations: [
     sitemap({
       lastmod: new Date(),
-      filter: (page) => !["/posts/", "/en/posts/", "/ru/posts/"].some((legacyPrefix) => new URL(page).pathname.startsWith(legacyPrefix)),
+      // Only canonical content URLs belong in the sitemap. The application also
+      // exposes compatibility and utility routes, many of which deliberately
+      // carry noindex; advertising those URLs to Google creates needless
+      // canonical and video-indexing noise.
+      filter: (page) => /^(?:\/$|\/ru\/$|\/(?:ru\/)?\d+\/[^/]+\/$)/.test(new URL(page).pathname),
     }),
   ],
 });

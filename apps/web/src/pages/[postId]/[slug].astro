@@ -3,7 +3,7 @@ import HomeNewsPage from "../../components/HomeNewsPage.astro";
 import Layout from "../../layouts/Layout.astro";
 import { loadFeedItems } from "../../server/public-site";
 import { sortedHomePosts } from "../../utils/home-posts";
-import { postOgImagePath } from "../../utils/media";
+import { postOgImagePath, postVisualMedia } from "../../utils/media";
 import { getFirstSentence, truncateText } from "../../utils/text";
 
 export const prerender = false;
@@ -11,35 +11,62 @@ export const prerender = false;
 const { postId, slug } = Astro.params;
 const feedItems = loadFeedItems();
 const item = feedItems.find((entry) => String(entry.post_id) === String(postId) && entry.slug_en === slug);
+if (!item) {
+  const canonicalItem = feedItems.find((entry) => String(entry.post_id) === String(postId) && entry.has_en && entry.slug_en);
+  if (canonicalItem?.slug_en) return Astro.redirect(`/${canonicalItem.post_id}/${canonicalItem.slug_en}/`, 301);
+  return new Response("Not found\n", { status: 404 });
+}
 const englishPosts = sortedHomePosts(feedItems, "en");
 const selectedPost = englishPosts.find((post) => String(post.id) === String(postId));
 const siteAuthor = "Alex Getman";
-const postText = item?.text_en || item?.text || "";
+const postText = item.text_en || item.text || "";
 const pageTitle = selectedPost?.title || getFirstSentence(postText) || `Post ${postId}`;
 const postDescription =
   truncateText(postText.replace(/\s+/g, " "), 158) || "AI news, automation notes and developer updates by Alex Getman on alexgetman.com.";
 const localUrl = `https://alexgetman.com/${postId}/${slug}/`;
-const ogImage = item ? postOgImagePath(item, "en") : "/social-image.jpg";
+const ogImage = postOgImagePath(item, "en");
+const visualMedia = postVisualMedia(item, "en");
+const primaryVideo = visualMedia?.type === "video" ? visualMedia : null;
 const schema = JSON.stringify({
   "@context": "https://schema.org",
-  "@type": "Article",
-  headline: pageTitle,
-  description: postDescription,
-  url: localUrl,
-  ...(item ? { datePublished: item.date, dateModified: item.date } : {}),
-  inLanguage: "en-US",
-  author: {
-    "@type": "Person",
-    name: siteAuthor,
-    url: "https://alexgetman.com/",
-  },
-  publisher: {
-    "@type": "Person",
-    name: siteAuthor,
-    url: "https://alexgetman.com/",
-  },
-  mainEntityOfPage: localUrl,
-  image: [`https://alexgetman.com${ogImage}`],
+  "@graph": [
+    {
+      "@type": "Article",
+      headline: pageTitle,
+      description: postDescription,
+      url: localUrl,
+      datePublished: item.date,
+      dateModified: item.date,
+      inLanguage: "en-US",
+      author: {
+        "@type": "Person",
+        name: siteAuthor,
+        url: "https://alexgetman.com/",
+      },
+      publisher: {
+        "@type": "Person",
+        name: siteAuthor,
+        url: "https://alexgetman.com/",
+      },
+      mainEntityOfPage: localUrl,
+      image: [`https://alexgetman.com${ogImage}`],
+    },
+    ...(primaryVideo
+      ? [
+          {
+            "@type": "VideoObject",
+            name: pageTitle,
+            description: postDescription,
+            thumbnailUrl: [`https://alexgetman.com/${primaryVideo.poster || ogImage.replace(/^\//, "")}`],
+            uploadDate: item.date,
+            contentUrl: `https://alexgetman.com/${primaryVideo.path}`,
+            embedUrl: localUrl,
+            mainEntityOfPage: localUrl,
+            inLanguage: "en-US",
+          },
+        ]
+      : []),
+  ],
 });
 
 const labels = {
@@ -61,7 +88,7 @@ const labels = {
   ogType="article"
   alternateLinks={[
     { hreflang: 'en', href: localUrl },
-    ...(item?.has_ru ? [{ hreflang: 'ru', href: `https://alexgetman.com/ru/${postId}/${item.slug_ru}/` }] : []),
+    ...(item.has_ru ? [{ hreflang: 'ru', href: `https://alexgetman.com/ru/${postId}/${item.slug_ru}/` }] : []),
     { hreflang: 'x-default', href: localUrl }
   ]}
   immersiveHome
