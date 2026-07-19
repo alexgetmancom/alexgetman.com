@@ -1,16 +1,14 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+// deploy/media-processor is a separately built Docker image (see its Dockerfile),
+// not a workspace package, but it lives in this same repo: import its ffmpeg
+// recipe directly rather than keeping a second copy that can drift out of sync.
+import { storyFfmpegArgs } from "../../../../deploy/media-processor/story-encode.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { log } from "../foundation/logger.js";
 import { runFfmpeg } from "../foundation/runtime/ffmpeg.js";
 import type { PublishMediaItem } from "./social/payload.js";
-
-// Keep one second of headroom below the 60-second story limit used by the
-// supported publishing targets. Stories have one shared high-quality master:
-// 1080x1920, 50 FPS, HEVC video and AAC 320k audio. Its video rate is capped
-// to leave a safe margin below Telegram's 30 MB upload limit.
-const STORY_MAX_DURATION_SECONDS = 59;
 
 export async function generateStoryMedia(
   raw: unknown,
@@ -35,51 +33,7 @@ export async function generateStoryMedia(
   );
   log("info", "story media source resolved", { draftId, locale, source });
   const output = path.join(directory, `draft-${draftId}-${locale}-story-${Date.now()}.${video ? "mp4" : "jpg"}`);
-  const filter = "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black";
-  const args = video
-    ? [
-        "-y",
-        "-i",
-        source,
-        "-t",
-        String(STORY_MAX_DURATION_SECONDS),
-        "-vf",
-        filter,
-        "-r",
-        "50",
-        "-map",
-        "0:v:0",
-        "-map",
-        "0:a?",
-        "-c:v",
-        "libx265",
-        "-preset",
-        "medium",
-        "-b:v",
-        "3150k",
-        "-maxrate",
-        "3300k",
-        "-bufsize",
-        "6600k",
-        "-g",
-        "50",
-        "-pix_fmt",
-        "yuv420p",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "320k",
-        "-ar",
-        "48000",
-        "-ac",
-        "2",
-        "-tag:v",
-        "hvc1",
-        "-movflags",
-        "+faststart",
-        output,
-      ]
-    : ["-y", "-i", source, "-vf", filter, "-frames:v", "1", "-q:v", "2", output];
+  const args = storyFfmpegArgs(source, output, video ? "video" : "image");
   log("info", "story media transform started", { draftId, locale, provider: config.MEDIA_PROCESSOR_PROVIDER });
   if (config.MEDIA_PROCESSOR_PROVIDER === "remote_http") await transformRemotely(source, output, video, config);
   else

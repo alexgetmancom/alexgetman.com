@@ -188,7 +188,7 @@ async function handleScheduleStart({ ctx, backendDb, config, adminId, locale, da
   if (targets.length > 1) keyboard.row().text(t(locale, "video.different-time"), `video_individual:${id}`);
   const session = { draftId: id, step: "schedule_choice", selected: targets, data: { controlMessageId: callbackMessageId(ctx) } };
   saveSession(backendDb, adminId, session);
-  setControlFromSession(backendDb, config, adminId, id, ctx, session);
+  setControlFromSession(backendDb, id, ctx, session);
   await updateVideoControl(ctx, session, t(locale, "video.schedule-time-msk"), keyboard, locale);
 }
 
@@ -301,7 +301,7 @@ async function handleTime({ ctx, backendDb, config, adminId, locale, data }: Vid
     data: { controlMessageId: callbackMessageId(ctx) },
   };
   saveSession(backendDb, adminId, session);
-  setControlFromSession(backendDb, config, adminId, id, ctx, session);
+  setControlFromSession(backendDb, id, ctx, session);
   await replyVideoPrompt(ctx, t(locale, "video.schedule-target-prompt", { target: videoTargetLabel(target) }));
 }
 
@@ -354,7 +354,7 @@ async function handleEditField({ ctx, backendDb, config, adminId, locale, data }
     data: { controlMessageId: callbackMessageId(ctx), is_single_edit: true },
   };
   saveSession(backendDb, adminId, session);
-  setControlFromSession(backendDb, config, adminId, id, ctx, session);
+  setControlFromSession(backendDb, id, ctx, session);
   await replyVideoPrompt(ctx, t(locale, EDIT_FIELD_PROMPTS[field] ?? "video.edit-generic-prompt"));
 }
 
@@ -368,6 +368,6 @@ async function handleEdit({ ctx, backendDb, config, adminId, locale, data }: Vid
     data: { controlMessageId: callbackMessageId(ctx) },
   };
   saveSession(backendDb, adminId, session);
-  setControlFromSession(backendDb, config, adminId, id, ctx, session);
+  setControlFromSession(backendDb, id, ctx, session);
   await replyVideoPrompt(ctx, t(locale, "video.edit-label-prompt"));
 }

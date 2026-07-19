@@ -113,19 +113,6 @@ function audienceProfiles(
   period: string,
   locale: BotLocale,
 ): string[] {
-  const labels: Record<string, string> = {
-    bluesky: "Bluesky",
-    devto: "Dev.to",
-    facebook_en: "Facebook EN",
-    facebook_ru: "Facebook RU",
-    github: "GitHub",
-    instagram: "Instagram",
-    mastodon: "Mastodon",
-    telegram: "Telegram",
-    threads: "Threads",
-    x: "X",
-    youtube: "YouTube",
-  };
   const growth = audienceGrowthByPlatform(backendDb, since, days);
   return backendDb.db
     .select()
@@ -135,9 +122,7 @@ function audienceProfiles(
     .sort((left, right) => {
       const rightFollowers = metricNumber(right.dataJson.subscriberCount ?? right.dataJson.followersCount);
       const leftFollowers = metricNumber(left.dataJson.subscriberCount ?? left.dataJson.followersCount);
-      return (
-        rightFollowers - leftFollowers || (labels[left.platform] ?? left.platform).localeCompare(labels[right.platform] ?? right.platform)
-      );
+      return rightFollowers - leftFollowers || platformLabel(left.platform).localeCompare(platformLabel(right.platform));
     })
     .map((row) => {
       const data = row.dataJson as Record<string, unknown>;
@@ -149,7 +134,7 @@ function audienceProfiles(
       if (data.stars != null) values.push(`Stars: *${metricNumber(data.stars)}*`);
       if (data.averageViewsPerPost != null) values.push(`${t(locale, "sdash.avg-views")}: ${metricNumber(data.averageViewsPerPost)}`);
       if (!values.length) values.push(t(locale, "sdash.no-follower-count"));
-      return `• *${labels[row.platform] ?? row.platform}* — ${values.join(" · ")}`;
+      return `• *${platformLabel(row.platform)}* — ${values.join(" · ")}`;
     });
 }
 

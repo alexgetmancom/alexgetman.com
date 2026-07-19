@@ -15,8 +15,8 @@ describe("command center actions", () => {
         text: "Русский текст",
         text_ru: "Русский текст",
         text_en: "English text",
-        media: [{ file_id: "ru-photo" }],
-        media_en: [{ file_id: "en-photo" }],
+        media: [{ type: "photo", file_id: "ru-photo" }],
+        media_en: [{ type: "photo", file_id: "en-photo" }],
         slug_ru: "russian",
         slug_en: "english",
       };
@@ -70,13 +70,13 @@ describe("command center actions", () => {
         locale: "ru",
         text: "Русский текст",
         text_en: "",
-        media: [{ file_id: "ru-photo" }],
+        media: [{ type: "IMAGE", fileId: "ru-photo" }],
       });
       expect(payloads.threads_en).toMatchObject({
         locale: "en",
         text: "English text",
         text_en: "English text",
-        media: [{ file_id: "en-photo" }],
+        media: [{ type: "IMAGE", fileId: "en-photo" }],
       });
       expect(backendDb.db.select({ count: count() }).from(publishJobs).where(eq(publishJobs.postId, 52)).get()?.count).toBe(2);
     } finally {
@@ -108,8 +108,8 @@ describe("command center actions", () => {
           itemJson: {
             text_ru: "Русский",
             text_en: "English",
-            media: [{ file_id: "ru" }],
-            media_en: [{ file_id: "en" }],
+            media: [{ type: "photo", file_id: "ru" }],
+            media_en: [{ type: "photo", file_id: "en" }],
           },
           createdAt: now,
           updatedAt: now,
@@ -128,7 +128,7 @@ describe("command center actions", () => {
       expect(backendDb.db.select().from(publishJobs).where(eq(publishJobs.target, "threads_en")).get()?.payloadJson).toMatchObject({
         locale: "en",
         text: "English",
-        media: [{ file_id: "en" }],
+        media: [{ type: "IMAGE", fileId: "en" }],
       });
     } finally {
       backendDb.close();

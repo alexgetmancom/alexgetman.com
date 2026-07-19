@@ -47,45 +47,19 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
         .all();
     },
     async schedule(actorId: number, videoDraftId: number, schedule: Partial<Record<VideoTarget, Date>>) {
-      const draft = requireOwnedVideo(backendDb, actorId, videoDraftId);
-      const technical = await validateVideoDraft(config, backendDb, videoDraftId);
-      scheduleVideo(
-        backendDb,
-        videoDraftId,
-        schedule,
-        {
-          prepareLeadMinutes: config.VIDEO_PREPARE_LEAD_MINUTES,
-          reminderMinutes: config.VIDEO_REMINDER_MINUTES,
-        },
-        config,
-      );
-      scheduleVideoReminders(backendDb, actorId, videoDraftId, draft.label, schedule);
-      return technical;
+      return scheduleOwnedVideo(backendDb, config, actorId, videoDraftId, schedule);
     },
     async validate(actorId: number, videoDraftId: number) {
       requireOwnedVideo(backendDb, actorId, videoDraftId);
       return validateVideoDraft(config, backendDb, videoDraftId);
     },
     async publish(actorId: number, videoDraftId: number) {
-      const draft = requireOwnedVideo(backendDb, actorId, videoDraftId);
       const targets = listVideoTargets(backendDb, videoDraftId).map((row) => row.target as VideoTarget);
       if (!targets.length) throw new StudioError("err.video-choose-platforms");
-      const technical = await validateVideoDraft(config, backendDb, videoDraftId);
       const schedule = Object.fromEntries(targets.map((target) => [target, new Date(Date.now() + 60_000)])) as Partial<
         Record<VideoTarget, Date>
       >;
-      scheduleVideo(
-        backendDb,
-        videoDraftId,
-        schedule,
-        {
-          prepareLeadMinutes: config.VIDEO_PREPARE_LEAD_MINUTES,
-          reminderMinutes: config.VIDEO_REMINDER_MINUTES,
-        },
-        config,
-      );
-      scheduleVideoReminders(backendDb, actorId, videoDraftId, draft.label, schedule);
-      return technical;
+      return scheduleOwnedVideo(backendDb, config, actorId, videoDraftId, schedule);
     },
     retry(actorId: number, videoDraftId: number, target: VideoTarget): void {
       requireOwnedVideo(backendDb, actorId, videoDraftId);
@@ -171,6 +145,28 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
       return parseManualSchedule(value);
     },
   };
+}
+
+/** Shared by `schedule` (explicit times) and `publish` (schedule ~now): both
+ * validate the source, write the schedule and arm reminders identically. */
+async function scheduleOwnedVideo(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  actorId: number,
+  videoDraftId: number,
+  schedule: Partial<Record<VideoTarget, Date>>,
+) {
+  const draft = requireOwnedVideo(backendDb, actorId, videoDraftId);
+  const technical = await validateVideoDraft(config, backendDb, videoDraftId);
+  scheduleVideo(
+    backendDb,
+    videoDraftId,
+    schedule,
+    { prepareLeadMinutes: config.VIDEO_PREPARE_LEAD_MINUTES, reminderMinutes: config.VIDEO_REMINDER_MINUTES },
+    config,
+  );
+  scheduleVideoReminders(backendDb, actorId, videoDraftId, draft.label, schedule);
+  return technical;
 }
 
 function scheduleVideoReminders(

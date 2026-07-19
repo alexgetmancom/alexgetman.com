@@ -5,7 +5,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY server.ts /app/server.ts
+COPY server.ts serial-queue.ts story-encode.ts /app/
 
 EXPOSE 8787
 CMD ["bun", "run", "/app/server.ts"]

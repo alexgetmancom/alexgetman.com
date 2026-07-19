@@ -1,3 +1,5 @@
+import { zonedDateParts } from "../../foundation/time.js";
+import { platformGroupLabel } from "../../publishing/platform-profiles.js";
 import { ORDERED_TARGETS, PLATFORM_ICONS, platformKey } from "./assets.js";
 import { formatDayHeaderRu, formatTimeMsk, shortPipelineText } from "./format.js";
 import { escapeHtml } from "./html.js";
@@ -15,6 +17,11 @@ import {
 import type { DashboardMetricName, PipelinePost } from "./types.js";
 
 type DayBucket = { dayTitle: string; posts: PipelinePost[] };
+
+// The weekly pipeline table buckets by Moscow calendar day regardless of the
+// Studio's configured display timezone; this is a business-cadence choice,
+// not a display preference (see schedule.ts's SCHEDULE_TIMEZONE).
+const PIPELINE_TIMEZONE = "Europe/Moscow";
 
 export function renderPipelineTable(posts: PipelinePost[]): string {
   const compactPlatforms = new Set(
@@ -65,7 +72,7 @@ function renderTargetHeaders(compactPlatforms: Set<string>): { row1: string; row
     const compactClass = compactPlatforms.has(pkey) ? " secondary-target" : "";
     const nextTarget = index + 1 < ORDERED_TARGETS.length ? ORDERED_TARGETS[index + 1] : null;
     if (nextTarget && platformKey(nextTarget.id) === pkey) {
-      const label = { x: "X (Twitter)", github: "GitHub", devto: "dev.to" }[pkey] || pkey.charAt(0).toUpperCase() + pkey.slice(1);
+      const label = platformGroupLabel(pkey);
       row1Headers.push(`<th colspan="2" class="text-center secondary-group${compactClass}" title="${label}">${icon}</th>`);
       row2Headers.push(`<th class="text-center${compactClass}">${target.locale.toUpperCase()}</th>`);
       row2Headers.push(`<th class="text-center${compactClass}">${nextTarget.locale.toUpperCase()}</th>`);
@@ -95,9 +102,9 @@ function groupPostsByMskDay(posts: PipelinePost[]): Record<string, DayBucket> {
   for (const post of posts) {
     const date = new Date(post.date ?? "");
     if (Number.isNaN(date.getTime())) continue;
-    const msk = new Date(date.getTime() + 3 * 3_600_000);
-    const dayStr = msk.toISOString().slice(0, 10);
-    days[dayStr] ??= { dayTitle: formatDayHeaderRu(msk), posts: [] };
+    const { year, month, day } = zonedDateParts(date, PIPELINE_TIMEZONE);
+    const dayStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    days[dayStr] ??= { dayTitle: formatDayHeaderRu(new Date(Date.UTC(year, month - 1, day))), posts: [] };
     days[dayStr].posts.push(post);
   }
   return days;

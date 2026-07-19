@@ -82,8 +82,9 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
       studioServices(backendDb, config).videos.rename(adminId, session.draftId, text);
       if (session.data.is_single_edit) {
         clearSession(backendDb, adminId);
-        const preview = videoPreview(backendDb, session.draftId, botLocale(backendDb, adminId));
-        await updateVideoControl(ctx, session, preview.text, preview.keyboard);
+        const locale = botLocale(backendDb, adminId);
+        const preview = videoPreview(backendDb, session.draftId, locale);
+        await updateVideoControl(ctx, session, preview.text, preview.keyboard, locale);
         return true;
       }
       const next = { ...session, step: "targets" };
@@ -305,6 +306,7 @@ async function finishSingleVideoEdit(
   change(metadata, session.draftId);
   studioServices(backendDb, config).videos.updateMetadata(adminId, session.draftId, target, metadata as VideoMetadata);
   clearSession(backendDb, adminId);
-  const preview = videoPreview(backendDb, session.draftId, botLocale(backendDb, adminId));
-  await updateVideoControl(ctx, session, preview.text, preview.keyboard);
+  const locale = botLocale(backendDb, adminId);
+  const preview = videoPreview(backendDb, session.draftId, locale);
+  await updateVideoControl(ctx, session, preview.text, preview.keyboard, locale);
 }

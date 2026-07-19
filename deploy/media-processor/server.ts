@@ -1,12 +1,14 @@
 import { existsSync, readdirSync, rmSync, statSync } from "node:fs";
 import { mkdir, rename } from "node:fs/promises";
+import { createSerialQueue } from "./serial-queue.ts";
+import { storyFfmpegArgs } from "./story-encode.ts";
 
 const token = Bun.env.MEDIA_PROCESSOR_TOKEN;
 if (!token || token.length < 16) throw new Error("MEDIA_PROCESSOR_TOKEN must contain at least 16 characters");
 const maxBytes = Number(Bun.env.MEDIA_PROCESSOR_MAX_BYTES ?? 1_073_741_824);
 const timeoutSeconds = Number(Bun.env.MEDIA_PROCESSOR_TIMEOUT_SECONDS ?? 900);
 const cacheTtlSeconds = Number(Bun.env.MEDIA_PROCESSOR_CACHE_TTL_SECONDS ?? 86_400);
-let tail: Promise<void> = Promise.resolve();
+const enqueue = createSerialQueue();
 let queued = 0;
 let active = 0;
 
@@ -16,7 +18,7 @@ function authorized(request: Request): boolean {
 
 function queue<T>(work: () => Promise<T>): Promise<T> {
   queued += 1;
-  const run = async () => {
+  return enqueue(async () => {
     queued -= 1;
     active += 1;
     try {
@@ -24,13 +26,7 @@ function queue<T>(work: () => Promise<T>): Promise<T> {
     } finally {
       active -= 1;
     }
-  };
-  const next = tail.then(run, run);
-  tail = next.then(
-    () => undefined,
-    () => undefined,
-  );
-  return next;
+  });
 }
 
 // The VM disk is finite: aged cache entries and orphaned per-request folders
@@ -117,54 +113,8 @@ async function transcode(
   // Keep the incoming asset streaming to the VM disk; only ffmpeg owns the
   // media bytes after this point.
   await streamToFile(source, input);
-  const filter = "scale=1080:1920:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black";
-  const args =
-    mediaKind === "video"
-      ? [
-          "-y",
-          "-i",
-          input,
-          "-t",
-          "59",
-          "-vf",
-          filter,
-          "-r",
-          "50",
-          "-map",
-          "0:v:0",
-          "-map",
-          "0:a?",
-          "-c:v",
-          "libx265",
-          "-preset",
-          "medium",
-          "-b:v",
-          "3150k",
-          "-maxrate",
-          "3300k",
-          "-bufsize",
-          "6600k",
-          "-g",
-          "50",
-          "-pix_fmt",
-          "yuv420p",
-          "-c:a",
-          "aac",
-          "-b:a",
-          "320k",
-          "-ar",
-          "48000",
-          "-ac",
-          "2",
-          "-tag:v",
-          "hvc1",
-          "-movflags",
-          "+faststart",
-          "-threads",
-          "2",
-          partial,
-        ]
-      : ["-y", "-i", input, "-vf", filter, "-frames:v", "1", "-q:v", "2", partial];
+  // This VM's compose.yml caps the container at 2 CPUs; keep ffmpeg inside that budget.
+  const args = storyFfmpegArgs(input, partial, mediaKind, mediaKind === "video" ? ["-threads", "2"] : []);
   try {
     const child = Bun.spawn(["ffmpeg", ...args], { stdout: "ignore", stderr: "pipe" });
     let timedOut = false;

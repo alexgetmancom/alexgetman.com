@@ -1,6 +1,7 @@
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { log } from "../../foundation/logger.js";
+import { createSerialQueue } from "../../foundation/serial-queue.js";
 import { isCapabilityReady } from "../../observability/capabilities.js";
 import type { PublishResult } from "../../publishing/errors.js";
 import { platformProfile } from "../../publishing/platform-profiles.js";
@@ -32,8 +33,8 @@ export function createPlatformPorts(config: BackendConfig, backendDb: BackendDb,
   // SSH tunnel.  Keep that resource explicit and share the finished render
   // between Telegram and Instagram targets of the same locale.
   const storyMediaCache = new Map<string, Promise<ReturnType<typeof payloadMedia>>>();
-  const enqueueMediaPreparation = serialQueue();
-  const enqueueStoryPreparation = serialQueue();
+  const enqueueMediaPreparation = createSerialQueue();
+  const enqueueStoryPreparation = createSerialQueue();
   const prepare = (
     job: ClaimedPublishJob,
     publisherConfig: BackendConfig,
@@ -105,19 +106,6 @@ export function createPlatformPorts(config: BackendConfig, backendDb: BackendDb,
       deliveryAdapter(publish, { validate: async () => validatePlatformTarget(target, config) }),
     ]),
   ) as DeliveryPorts;
-}
-
-/** A FIFO queue of async jobs that runs one at a time, regardless of success or failure. */
-function serialQueue(): <T>(work: () => Promise<T>) => Promise<T> {
-  let tail: Promise<void> = Promise.resolve();
-  return (work) => {
-    const next = tail.then(work, work);
-    tail = next.then(
-      () => undefined,
-      () => undefined,
-    );
-    return next;
-  };
 }
 
 /** Fail before a provider request when the declarative target profile is not ready. */

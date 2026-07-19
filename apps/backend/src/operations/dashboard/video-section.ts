@@ -1,3 +1,4 @@
+import { metricNumber } from "../../analytics/snapshots/creator-store.js";
 import type { BackendDb } from "../../db/client.js";
 import { formatMetricValue } from "./format.js";
 import { escapeHtml } from "./html.js";
@@ -101,7 +102,7 @@ function renderTarget(target: VideoTarget | undefined): string {
 
 function targetMetrics(target: VideoTarget): { views: number; likes: number; comments: number } {
   const metrics = target.metricsJson ? (JSON.parse(target.metricsJson) as Record<string, unknown>) : {};
-  return { views: number(metrics.views), likes: number(metrics.likes), comments: number(metrics.comments) };
+  return { views: metricNumber(metrics.views), likes: metricNumber(metrics.likes), comments: metricNumber(metrics.comments) };
 }
 
 function videoAudience(backendDb: BackendDb): Array<{ label: string; followers: number; growth: number | null }> {
@@ -118,9 +119,9 @@ function videoAudience(backendDb: BackendDb): Array<{ label: string; followers: 
         "SELECT metrics_json AS metricsJson FROM creator_profile_snapshots WHERE platform=? AND sampled_at<=? ORDER BY sampled_at DESC, id DESC LIMIT 1",
       )
       .get(profile.platform, since) as { metricsJson: string } | null;
-    const followers = number(latest.subscriberCount ?? latest.followersCount);
+    const followers = metricNumber(latest.subscriberCount ?? latest.followersCount);
     const previousMetrics = baseline ? (JSON.parse(baseline.metricsJson) as Record<string, unknown>) : null;
-    const previous = previousMetrics ? number(previousMetrics.subscriberCount ?? previousMetrics.followersCount) : null;
+    const previous = previousMetrics ? metricNumber(previousMetrics.subscriberCount ?? previousMetrics.followersCount) : null;
     return {
       label: profile.platform === "youtube" ? "YouTube" : "Instagram",
       followers,
@@ -133,14 +134,27 @@ type VideoTrendPoint = { day: string; views: number; likes: number; comments: nu
 
 /** Retains the last snapshot of every video target for each observed day. This
  * makes the chart cumulative instead of dropping a Reel on days the API did not
- * return a fresh sample. */
+ * return a fresh sample.
+ *
+ * Bounded to a 30-day window: a `baseline` query seeds each target's latest
+ * value as of the window start, so the full snapshot history never needs a
+ * full-table scan on every render. */
 function videoTrend(backendDb: BackendDb): VideoTrendPoint[] {
+  const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60_000).toISOString();
+  const baseline = backendDb.sqlite
+    .prepare(
+      `SELECT video_target_id AS targetId, metrics_json AS metricsJson
+       FROM video_metric_snapshots
+       WHERE id IN (SELECT MAX(id) FROM video_metric_snapshots WHERE sampled_at < ? GROUP BY video_target_id)`,
+    )
+    .all(cutoff) as Array<{ targetId: number; metricsJson: string }>;
   const samples = backendDb.sqlite
     .prepare(
-      "SELECT video_target_id AS targetId, metrics_json AS metricsJson, sampled_at AS sampledAt FROM video_metric_snapshots ORDER BY sampled_at ASC, id ASC",
+      "SELECT video_target_id AS targetId, metrics_json AS metricsJson, sampled_at AS sampledAt FROM video_metric_snapshots WHERE sampled_at >= ? ORDER BY sampled_at ASC, id ASC",
     )
-    .all() as Array<{ targetId: number; metricsJson: string; sampledAt: string }>;
+    .all(cutoff) as Array<{ targetId: number; metricsJson: string; sampledAt: string }>;
   const latest = new Map<number, { views: number; likes: number; comments: number }>();
+  for (const row of baseline) latest.set(row.targetId, targetMetrics({ metricsJson: row.metricsJson } as VideoTarget));
   const points = new Map<string, VideoTrendPoint>();
   for (const sample of samples) {
     latest.set(sample.targetId, targetMetrics({ metricsJson: sample.metricsJson } as VideoTarget));
@@ -191,8 +205,4 @@ function formatDate(value: string | null): string {
         minute: "2-digit",
       })
     : "—";
-}
-function number(value: unknown): number {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : 0;
 }

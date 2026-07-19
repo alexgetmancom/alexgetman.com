@@ -13,9 +13,7 @@ export type VideoSession = { draftId: number | null; step: string; selected: Vid
 
 export function targetKeyboard(config: BackendConfig, selected: VideoTarget[], locale: BotLocale): InlineKeyboard {
   const keyboard = new InlineKeyboard();
-  for (const target of VIDEO_TARGETS) {
-    if (target === "youtube_shorts" && !config.studio.modules.youtube) continue;
-    if (target === "instagram_reels" && !config.studio.modules.instagram) continue;
+  for (const target of enabledVideoTargets(config)) {
     keyboard.text(`${selected.includes(target) ? "✓" : "○"} ${videoTargetLabel(target)}`, `video_toggle:${target}`).row();
   }
   return keyboard.text(t(locale, "video.next"), "video_targets_done").row().text(t(locale, "common.cancel"), "video_cancel_dialog");
@@ -81,8 +79,8 @@ export async function updateVideoControl(
   ctx: Context,
   session: VideoSession,
   text: string,
-  keyboard?: InlineKeyboard,
-  locale: BotLocale = "en",
+  keyboard: InlineKeyboard | undefined,
+  locale: BotLocale,
 ): Promise<void> {
   const messageId = Number(session.data.controlMessageId);
   const replyMarkup = keyboard ?? new InlineKeyboard().text(t(locale, "common.cancel"), "video_cancel_dialog");
@@ -169,14 +167,7 @@ export async function askSchedule(ctx: Context, backendDb: BackendDb, adminId: n
   await sendVideoControl(ctx, backendDb, adminId, next, t(locale, "video.saved-choose-schedule"), keyboard);
 }
 
-export function setControlFromSession(
-  backendDb: BackendDb,
-  _config: BackendConfig,
-  _adminId: number,
-  draftId: number,
-  ctx: Context,
-  session: VideoSession,
-): void {
+export function setControlFromSession(backendDb: BackendDb, draftId: number, ctx: Context, session: VideoSession): void {
   const messageId = Number(session.data.controlMessageId);
   if (messageId && ctx.chat?.id) setTelegramVideoCard(backendDb, draftId, Number(ctx.chat.id), messageId);
 }

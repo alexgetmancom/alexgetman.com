@@ -197,7 +197,7 @@ describe("Telegram controller flow", () => {
         text: "Русский текст",
         text_en: "",
         bodyMarkdown: "Русский текст",
-        media: [{ file_id: "ru-image" }],
+        media: [{ type: "IMAGE", fileId: "ru-image" }],
       });
       expect(payloads[target]).not.toHaveProperty("media_en");
     }
@@ -207,8 +207,8 @@ describe("Telegram controller flow", () => {
         text: "Edited English text",
         text_en: "Edited English text",
         bodyMarkdown: "Edited English text",
-        media: [{ file_id: "en-image" }],
-        media_en: [{ file_id: "en-image" }],
+        media: [{ type: "IMAGE", fileId: "en-image" }],
+        media_en: [{ type: "IMAGE", fileId: "en-image" }],
       });
     }
   });
@@ -234,7 +234,7 @@ describe("Telegram controller flow", () => {
       const locale = targetLocale(job.target);
       expect(payload.locale).toBe(locale);
       expect(payload.text).toBe(locale === "ru" ? "Русский текст" : "English text");
-      expect(payload.media).toEqual([{ type: "photo", file_id: locale === "ru" ? "ru-image" : "en-image" }]);
+      expect(payload.media).toEqual([{ type: "IMAGE", fileId: locale === "ru" ? "ru-image" : "en-image" }]);
     }
     expect(jobs).toHaveLength(TARGETS.filter(([id, , , kind]) => kind !== "site" && DEFAULT_TARGETS[id]).length);
   });
