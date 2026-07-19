@@ -4,46 +4,22 @@ import { openBackendDb } from "../src/db/client.js";
 import { recordDomainEvent } from "../src/domain/events.js";
 import { loadConfig } from "../src/foundation/config.js";
 
-const STUDIO_TOKEN = "a".repeat(16);
+const COMMAND_TOKEN = "b".repeat(16);
 
 function testConfig() {
-  return loadConfig({ ADMIN_IDS: "42", MCP_STUDIO_TOKEN: STUDIO_TOKEN, MCP_STUDIO_ACTOR_ID: "42", COMMAND_CENTER_TOKEN: "b".repeat(16) });
+  return loadConfig({ ADMIN_IDS: "42", MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "42", COMMAND_CENTER_TOKEN: COMMAND_TOKEN });
 }
 
-describe("Web Studio", () => {
-  it("gates the dashboard behind the Studio token and renders the shared read model once authorized", async () => {
+describe("Command Center Studio tab", () => {
+  it("gates the studio tab behind the Command Center token and renders the shared read model", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const config = testConfig();
       const app = createApiHandler({ config, backendDb, bot: null });
-      const origin = new URL(config.COMMAND_CENTER_URL).origin;
 
-      const anonymous = await app(new Request("http://localhost/studio"));
+      const anonymous = await app(new Request("http://localhost/command-center?tab=studio"));
       expect(anonymous.status).toBe(200);
-      expect(await anonymous.text()).toContain("Studio token");
-
-      const badLogin = await app(
-        new Request("http://localhost/studio", {
-          method: "POST",
-          headers: { origin, "content-type": "application/x-www-form-urlencoded" },
-          body: "token=wrong",
-        }),
-      );
-      expect(await badLogin.text()).toContain("Invalid token");
-
-      const crossOrigin = await app(
-        new Request("http://localhost/studio", {
-          method: "POST",
-          headers: { origin: "https://evil.example", "content-type": "application/x-www-form-urlencoded" },
-          body: `token=${STUDIO_TOKEN}`,
-        }),
-      );
-      expect(crossOrigin.status).toBe(403);
-
-      const tokenLogin = await app(new Request(`http://localhost/studio?token=${STUDIO_TOKEN}`));
-      expect(tokenLogin.status).toBe(303);
-      const cookie = tokenLogin.headers.get("set-cookie")?.split(";")[0];
-      expect(cookie).toContain("studio_token=");
+      expect(await anonymous.text()).toContain("Command Center token");
 
       recordDomainEvent(backendDb, {
         ref: null,
@@ -53,44 +29,65 @@ describe("Web Studio", () => {
         message: "Hello inbox",
       });
 
-      const dashboard = await app(new Request("http://localhost/studio", { headers: { cookie: cookie ?? "" } }));
-      expect(dashboard.status).toBe(200);
-      const dashboardText = await dashboard.text();
+      const authorized = await app(
+        new Request("http://localhost/command-center?tab=studio", { headers: { "X-Admin-Token": COMMAND_TOKEN } }),
+      );
+      expect(authorized.status).toBe(200);
+      const dashboardText = await authorized.text();
       expect(dashboardText).toContain("Hello inbox");
-      expect(dashboardText).toContain("Queue");
-      expect(dashboardText).toContain("Notifications");
+      expect(dashboardText).toContain("Очередь");
+      expect(dashboardText).toContain("Уведомления");
+      expect(dashboardText).toContain('href="/command-center?tab=studio"');
 
       const event = backendDb.sqlite.prepare("SELECT id FROM post_events WHERE message = ?").get("Hello inbox") as { id: number };
+      const origin = new URL(config.COMMAND_CENTER_URL).origin;
       const acknowledge = await app(
-        new Request("http://localhost/studio/acknowledge", {
+        new Request("http://localhost/command-center/studio/acknowledge", {
           method: "POST",
-          headers: { cookie: cookie ?? "", origin, "content-type": "application/x-www-form-urlencoded" },
+          headers: { "X-Admin-Token": COMMAND_TOKEN, origin, "content-type": "application/x-www-form-urlencoded" },
           body: `id=${event.id}`,
         }),
       );
       expect(acknowledge.status).toBe(303);
-      expect(acknowledge.headers.get("location")).toBe("/studio");
+      expect(acknowledge.headers.get("location")).toBe("/command-center?tab=studio");
 
-      const afterAck = await app(new Request("http://localhost/studio", { headers: { cookie: cookie ?? "" } }));
+      const afterAck = await app(
+        new Request("http://localhost/command-center?tab=studio", { headers: { "X-Admin-Token": COMMAND_TOKEN } }),
+      );
       expect(await afterAck.text()).not.toContain("Hello inbox");
     } finally {
       backendDb.close();
     }
   });
 
-  it("refuses to acknowledge notifications without a valid Studio session", async () => {
+  it("refuses to acknowledge notifications without a same-origin Command Center session", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const config = testConfig();
       const app = createApiHandler({ config, backendDb, bot: null });
       const denied = await app(
-        new Request("http://localhost/studio/acknowledge", {
+        new Request("http://localhost/command-center/studio/acknowledge", {
           method: "POST",
-          headers: { "content-type": "application/x-www-form-urlencoded" },
+          headers: { "X-Admin-Token": COMMAND_TOKEN, "content-type": "application/x-www-form-urlencoded" },
           body: "id=1",
         }),
       );
       expect(denied.status).toBe(403);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("hides the studio tab when no Studio actor is configured", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const config = loadConfig({ COMMAND_CENTER_TOKEN: COMMAND_TOKEN });
+      const app = createApiHandler({ config, backendDb, bot: null });
+      const response = await app(
+        new Request("http://localhost/command-center?tab=studio", { headers: { "X-Admin-Token": COMMAND_TOKEN } }),
+      );
+      expect(response.status).toBe(200);
+      expect(await response.text()).not.toContain('href="/command-center?tab=studio"');
     } finally {
       backendDb.close();
     }

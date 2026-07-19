@@ -1,5 +1,7 @@
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
+import type { StudioLocale } from "../foundation/locale.js";
+import { renderStudioSection } from "../interfaces/web/studio.js";
 import {
   renderAudienceSection,
   renderCredentialsSection,
@@ -12,7 +14,7 @@ import { renderDashboardShell } from "./dashboard/shell.js";
 import { renderVideoSection } from "./dashboard/video-section.js";
 import { operationsService } from "./service.js";
 
-type DashboardTab = "posts" | "video";
+type DashboardTab = "posts" | "video" | "studio";
 
 export function renderDashboard(
   config: BackendConfig,
@@ -21,18 +23,29 @@ export function renderDashboard(
   ref = "",
   messageId = "",
   requestedTab?: string,
+  requestedLocale?: string,
 ): string {
   const service = operationsService(backendDb, config);
   const ops = service.dashboard();
-  let tab: DashboardTab = requestedTab === "video" ? "video" : requestedTab === "posts" ? "posts" : config.studio.commandCenter.defaultMode;
+  const studioActorId = config.MCP_STUDIO_ACTOR_ID;
+  let tab: DashboardTab =
+    requestedTab === "video"
+      ? "video"
+      : requestedTab === "posts"
+        ? "posts"
+        : requestedTab === "studio" && studioActorId
+          ? "studio"
+          : config.studio.commandCenter.defaultMode;
   if (tab === "posts" && !config.studio.modules.text_posting) tab = "video";
   if (tab === "video" && !config.studio.modules.video_posting) tab = "posts";
   const showPosts = tab === "posts" && config.studio.modules.text_posting;
   const showVideo = tab === "video" && config.studio.modules.video_posting;
-  const activeTab = showVideo ? "video" : "posts";
+  const showStudio = tab === "studio" && Boolean(studioActorId);
+  const activeTab = showStudio ? "studio" : showVideo ? "video" : "posts";
+  const locale: StudioLocale = requestedLocale === "en" ? "en" : "ru";
   const body = `
-    <nav class="dashboard-tabs">${config.studio.modules.text_posting ? `<a class="${activeTab === "posts" ? "active" : ""}" href="/command-center?tab=posts">Обзор</a>` : ""}${config.studio.modules.video_posting ? `<a class="${activeTab === "video" ? "active" : ""}" href="/command-center?tab=video">Видео</a>` : ""}<a href="#queue">Очередь</a><a href="#health">Health</a></nav>
-    <section id="overview" class="overview">${showPosts ? `${renderAudienceSection(backendDb, config)}${renderPipelineSection(weekOffset, service.pipeline(weekOffset))}` : ""}${showVideo ? renderVideoSection(backendDb) : ""}</section>
+    <nav class="dashboard-tabs">${config.studio.modules.text_posting ? `<a class="${activeTab === "posts" ? "active" : ""}" href="/command-center?tab=posts">Обзор</a>` : ""}${config.studio.modules.video_posting ? `<a class="${activeTab === "video" ? "active" : ""}" href="/command-center?tab=video">Видео</a>` : ""}${studioActorId ? `<a class="${activeTab === "studio" ? "active" : ""}" href="/command-center?tab=studio">Студия</a>` : ""}<a href="#queue">Очередь</a><a href="#health">Health</a></nav>
+    <section id="overview" class="overview">${showPosts ? `${renderAudienceSection(backendDb, config)}${renderPipelineSection(weekOffset, service.pipeline(weekOffset))}` : ""}${showVideo ? renderVideoSection(backendDb) : ""}${showStudio && studioActorId ? renderStudioSection(config, backendDb, studioActorId, locale) : ""}</section>
     <details id="queue"><summary>Queue и черновики</summary>${renderQueueSection(ops)}</details>
     <details id="health"><summary>Health: credentials и diagnostics</summary>${renderCredentialsSection(ops)}${renderDiagnosticsSection(ops)}</details>
     <details id="repair"><summary>Emergency repair</summary>${renderRepairSection(ref, messageId)}</details>`;

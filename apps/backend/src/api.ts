@@ -6,10 +6,8 @@ import { videoPath } from "./content/video-assets.js";
 import type { BackendDb } from "./db/client.js";
 import { engagementService } from "./engagement/service.js";
 import type { BackendConfig } from "./foundation/config.js";
-import { commandAllowed, studioAllowed } from "./foundation/http-auth.js";
-import type { StudioLocale } from "./foundation/locale.js";
+import { commandAllowed } from "./foundation/http-auth.js";
 import { mcpResponse } from "./interfaces/mcp.js";
-import { renderStudioDashboard, renderStudioLogin } from "./interfaces/web/studio.js";
 import type { OperationsCommand } from "./operations/contracts.js";
 import { renderCommandCenterLogin, renderDashboard } from "./operations/dashboard.js";
 import { operationsService } from "./operations/service.js";
@@ -126,6 +124,7 @@ function buildApp({ config, backendDb, bot }: ApiContext): Hono {
         url.searchParams.get("ref") ?? "",
         url.searchParams.get("message_id") ?? "",
         url.searchParams.get("tab") ?? undefined,
+        url.searchParams.get("locale") ?? undefined,
       ),
     );
   });
@@ -139,34 +138,14 @@ function buildApp({ config, backendDb, bot }: ApiContext): Hono {
     return loginRedirect("/command-center", "command_token", token);
   });
 
-  app.get("/studio", (c) => {
+  app.post("/command-center/studio/acknowledge", async (c) => {
     const request = c.req.raw;
-    const url = new URL(request.url);
-    const queryToken = url.searchParams.get("token");
-    if (queryToken && studioAllowed(request, config)) return queryTokenRedirect(url, "studio_token", queryToken);
-    const actorId = studioAllowed(request, config);
-    if (!actorId) return html(renderStudioLogin());
-    const locale: StudioLocale = url.searchParams.get("locale") === "en" ? "en" : "ru";
-    return html(renderStudioDashboard(config, backendDb, actorId, locale));
-  });
-
-  app.post("/studio", async (c) => {
-    const request = c.req.raw;
-    if (!sameOriginCommandLogin(request, config)) return text("forbidden\n", 403);
-    const form = await request.formData().catch(() => new FormData());
-    const token = form.get("token");
-    if (typeof token !== "string" || !studioAllowed(request, config, token)) return html(renderStudioLogin(true));
-    return loginRedirect("/studio", "studio_token", token);
-  });
-
-  app.post("/studio/acknowledge", async (c) => {
-    const request = c.req.raw;
-    const actorId = studioAllowed(request, config);
-    if (!actorId || !sameOriginCommandLogin(request, config)) return text("forbidden\n", 403);
+    if (!commandAllowed(request, config) || !sameOriginCommandLogin(request, config)) return text("forbidden\n", 403);
+    const actorId = config.MCP_STUDIO_ACTOR_ID;
     const form = await request.formData().catch(() => new FormData());
     const id = Number(form.get("id"));
-    if (Number.isSafeInteger(id)) studioServices(backendDb, config).notifications.acknowledge(actorId, id);
-    return new Response(null, { status: 303, headers: { location: "/studio" } });
+    if (actorId && Number.isSafeInteger(id)) studioServices(backendDb, config).notifications.acknowledge(actorId, id);
+    return new Response(null, { status: 303, headers: { location: "/command-center?tab=studio" } });
   });
 
   app.get("/api/likes", (c) => {

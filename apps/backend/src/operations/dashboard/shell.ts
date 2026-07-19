@@ -99,7 +99,18 @@ export function renderDashboardShell(body: string): string {
     .video-chart-note { margin:0 0 10px; }
     .video-chart-labels { display:flex; justify-content:space-between; color:#8b949e; font-size:11px; }
     .danger { color:#ff7b72; font-weight:700; }
-    
+    .studio-locale { display:flex; justify-content:flex-end; gap:6px; margin:0 0 6px; }
+    .studio-locale a { border:1px solid #30363d; border-radius:14px; padding:3px 9px; font-size:13px; text-decoration:none; }
+    .studio-locale a.active { background:#1f6feb; border-color:#1f6feb; color:#fff; }
+    .studio-analytics { white-space:normal; line-height:1.6; }
+    .attention-list, .notification-list { list-style:none; margin:0; padding:0; }
+    .attention-list li { padding:6px 0; border-bottom:1px solid #21262d; }
+    .notification-list li { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid #21262d; }
+    .notification-list li:last-child { border-bottom:0; }
+    .notification-list span { flex:1; }
+    .notification-list time { color:#8b949e; font-size:12px; white-space:nowrap; }
+    .notification--warn span, .notification--error span { color:#ff7b72; }
+
     @media (max-width: 760px) {
       body { padding:10px; }
       main { max-width:none; }
