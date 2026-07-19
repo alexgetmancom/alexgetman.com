@@ -61,16 +61,11 @@ describe("story player browser behavior", () => {
 
   it("does not advance a buffering video until playback resumes", async () => {
     const window = installDom();
-    const root = window.document.createElement("div") as unknown as HTMLElement;
-    const progressBar = window.document.createElement("div") as unknown as HTMLElement;
-    progressBar.innerHTML = "<i></i>";
     const video = window.document.createElement("video") as unknown as HTMLVideoElement;
     const posts = [post({ image: "/media/posts/example.mp4", mediaType: "video" })];
     let advances = 0;
     const progress = createStoryProgressController({
-      root,
       video,
-      progressBars: [progressBar],
       currentProgressFill: null,
       posts,
       activeIndex: () => 0,
@@ -119,15 +114,10 @@ describe("story player browser behavior", () => {
   });
 
   it("holds auto-progress during manual navigation before restarting it", async () => {
-    const window = installDom();
-    const root = window.document.createElement("div") as unknown as HTMLElement;
-    const progressBar = window.document.createElement("div") as unknown as HTMLElement;
-    progressBar.innerHTML = "<i></i>";
+    installDom();
     let advances = 0;
     const progress = createStoryProgressController({
-      root,
       video: null,
-      progressBars: [progressBar],
       currentProgressFill: null,
       posts: [post()],
       activeIndex: () => 0,

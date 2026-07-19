@@ -1,9 +1,7 @@
 import type { StoryPost } from "./types";
 
 type StoryProgressControllerOptions = {
-  root: HTMLElement;
   video: HTMLVideoElement | null;
-  progressBars: HTMLElement[];
   currentProgressFill: HTMLElement | null;
   posts: StoryPost[];
   activeIndex: () => number;
@@ -13,9 +11,7 @@ type StoryProgressControllerOptions = {
 };
 
 export function createStoryProgressController({
-  root,
   video,
-  progressBars,
   currentProgressFill,
   posts,
   activeIndex,
@@ -49,13 +45,6 @@ export function createStoryProgressController({
   }
 
   function resetProgressFills(): void {
-    progressBars.forEach((bar) => {
-      const fill = bar.querySelector<HTMLElement>("i");
-      if (!fill) return;
-      fill.style.animation = "none";
-      fill.style.animationPlayState = "running";
-      fill.style.transform = "scaleY(0)";
-    });
     if (currentProgressFill) {
       currentProgressFill.style.animation = "none";
       currentProgressFill.style.animationPlayState = "running";
@@ -65,11 +54,6 @@ export function createStoryProgressController({
 
   function setProgress(fraction: number): void {
     const progress = Math.min(1, Math.max(0, fraction));
-    const fill = progressBars[activeIndex()]?.querySelector<HTMLElement>("i");
-    if (fill) {
-      fill.style.animation = "none";
-      fill.style.transform = `scaleY(${progress})`;
-    }
     if (currentProgressFill) {
       currentProgressFill.style.animation = "none";
       currentProgressFill.style.transform = `scaleX(${progress})`;
@@ -93,15 +77,9 @@ export function createStoryProgressController({
     clearAdvanceTimer();
   }
 
-  function startProgressAnimation(fill: HTMLElement | null, duration: number): void {
+  function startProgressAnimation(duration: number): void {
     progressActive = true;
     progressRemainingMs = duration;
-    if (fill) {
-      fill.style.animation = "none";
-      void fill.offsetHeight;
-      fill.style.animation = !reduceMotion ? `storyProgressVertical ${duration}ms linear forwards` : "none";
-      fill.style.animationPlayState = isPaused() ? "paused" : "running";
-    }
     if (currentProgressFill) {
       currentProgressFill.style.animation = "none";
       currentProgressFill.style.transform = "scaleX(0)";
@@ -115,18 +93,17 @@ export function createStoryProgressController({
   function scheduleCurrentProgress(delay = 380): void {
     if (progressRestartBlocked) return;
     const post = posts[activeIndex()];
-    const fill = progressBars[activeIndex()]?.querySelector<HTMLElement>("i");
-    if (!post || (!fill && !currentProgressFill)) return;
+    if (!post) return;
     if (post.mediaType === "video") {
       videoProgressFallbackTimer = window.setTimeout(
         () => {
-          if (posts[activeIndex()]?.mediaType === "video") startProgressAnimation(fill, intervalMs);
+          if (posts[activeIndex()]?.mediaType === "video") startProgressAnimation(intervalMs);
         },
         Math.max(delay, 700),
       );
       return;
     }
-    animationTimer = window.setTimeout(() => startProgressAnimation(fill, intervalMs), delay);
+    animationTimer = window.setTimeout(() => startProgressAnimation(intervalMs), delay);
   }
 
   function resetForStory(options: { keepProgressIdle?: boolean } = {}): void {
@@ -138,21 +115,10 @@ export function createStoryProgressController({
     videoDriven = false;
     progressRestartBlocked = Boolean(options.keepProgressIdle);
     resetProgressFills();
-    const active = activeIndex();
-    progressBars.forEach((bar, index) => {
-      const fill = bar.querySelector<HTMLElement>("i");
-      bar.classList.toggle("is-active", index === active);
-      bar.classList.toggle("is-done", index < active);
-      if (!fill) return;
-      void fill.offsetHeight;
-      fill.style.transform = index < active ? "scaleY(1)" : "scaleY(0)";
-    });
     if (!isPaused() && !options.keepProgressIdle) scheduleCurrentProgress();
   }
 
   function update(paused: boolean): void {
-    const fill = progressBars[activeIndex()]?.querySelector<HTMLElement>("i");
-    if (fill) fill.style.animationPlayState = paused ? "paused" : "running";
     if (currentProgressFill) currentProgressFill.style.animationPlayState = paused ? "paused" : "running";
     if (videoDriven) {
       return;
@@ -167,7 +133,6 @@ export function createStoryProgressController({
 
   function resumeAfterManualNavigation(): void {
     clearTimer(manualProgressTimer);
-    root.classList.add("is-manual-navigating");
     progressRestartBlocked = true;
     clearAdvanceTimer();
     clearTimer(animationTimer);
@@ -177,7 +142,6 @@ export function createStoryProgressController({
     resetProgressFills();
     manualProgressTimer = window.setTimeout(() => {
       manualProgressTimer = null;
-      root.classList.remove("is-manual-navigating");
       progressRestartBlocked = false;
       resetProgressFills();
       if (!isPaused()) scheduleCurrentProgress(260);
@@ -195,13 +159,12 @@ export function createStoryProgressController({
       handleVideoTimeUpdate();
       return;
     }
-    const fill = progressBars[activeIndex()]?.querySelector<HTMLElement>("i");
-    if (fill?.style.animation && fill.style.animation !== "none") {
-      fill.style.animationPlayState = isPaused() ? "paused" : "running";
+    if (currentProgressFill?.style.animation && currentProgressFill.style.animation !== "none") {
+      currentProgressFill.style.animationPlayState = isPaused() ? "paused" : "running";
       if (!isPaused() && !advanceTimer) scheduleAdvance(progressRemainingMs);
       return;
     }
-    startProgressAnimation(fill, intervalMs);
+    startProgressAnimation(intervalMs);
   }
 
   function handleVideoTimeUpdate(): void {
@@ -224,8 +187,6 @@ export function createStoryProgressController({
   function handleVideoWaiting(): void {
     if (posts[activeIndex()]?.mediaType !== "video") return;
     pauseAdvanceTimer();
-    const fill = progressBars[activeIndex()]?.querySelector<HTMLElement>("i");
-    if (fill) fill.style.animationPlayState = "paused";
     if (currentProgressFill) currentProgressFill.style.animationPlayState = "paused";
   }
 

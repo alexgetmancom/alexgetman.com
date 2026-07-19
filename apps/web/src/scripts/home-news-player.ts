@@ -43,7 +43,6 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
     copy,
     readMore,
     rail,
-    progressBars,
     currentProgressFill,
     railCards,
     feedModeButtons,
@@ -83,9 +82,7 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
   const feedMode = createFeedModeController({ posts, ui, railCards, feedModeButtons, feedModeLabel, activeIndex: () => active });
   const storyViewTracker = createStoryViewTracker({ activeIndex: () => active, normalizedPath });
   const progress = createStoryProgressController({
-    root,
     video,
-    progressBars,
     currentProgressFill,
     posts,
     activeIndex: () => active,

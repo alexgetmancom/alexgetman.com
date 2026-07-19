@@ -34,7 +34,6 @@ export function bindStoryPlayerElements(root: HTMLElement): StoryPlayerElements 
     copy: root.querySelector<HTMLElement>("[data-story-copy]"),
     readMore: root.querySelector<HTMLButtonElement>("[data-story-read-more]"),
     rail: root.querySelector<HTMLElement>(".story-rail"),
-    progressBars: Array.from(root.querySelectorAll<HTMLElement>("[data-story-progress-bar]")),
     currentProgressFill: root.querySelector<HTMLElement>("[data-story-current-progress]"),
     railCards: Array.from(root.querySelectorAll<HTMLElement>("[data-story-index]")),
     feedModeButtons: Array.from(root.querySelectorAll<HTMLButtonElement>("[data-feed-mode]")),

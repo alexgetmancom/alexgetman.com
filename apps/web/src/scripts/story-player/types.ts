@@ -44,7 +44,6 @@ export type StoryPlayerElements = {
   copy: HTMLElement | null;
   readMore: HTMLButtonElement | null;
   rail: HTMLElement | null;
-  progressBars: HTMLElement[];
   currentProgressFill: HTMLElement | null;
   railCards: HTMLElement[];
   feedModeButtons: HTMLButtonElement[];

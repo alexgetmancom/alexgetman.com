@@ -182,47 +182,6 @@
   object-fit: cover;
 }
 
-.rail-card__progress {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 3px;
-  height: 100%;
-  overflow: hidden;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-  z-index: 11;
-}
-
-.rail-card.is-active .rail-card__progress {
-  opacity: 0;
-}
-
-.story-player.is-manual-navigating .rail-card__progress {
-  opacity: 0;
-}
-
-.story-player.is-manual-navigating .rail-card__progress i {
-  animation: none;
-  transform: scaleY(0);
-}
-
-.rail-card__progress i {
-  display: block;
-  width: 100%;
-  height: 100%;
-  transform: scaleY(0);
-  transform-origin: top center;
-  background: var(--accent);
-  box-shadow: none;
-}
-
-.rail-card__progress.is-done i {
-  transform: scaleY(1);
-  box-shadow: none;
-}
-
 .story-visual__chrome {
   position: absolute;
   z-index: 3;
