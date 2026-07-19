@@ -96,7 +96,7 @@
    */
   /* Preserve the element's box; auto dimensions let intrinsic video size
      escape the portrait player on iOS. */
-  clip-path: inset(4px 0 0);
+  clip-path: inset(8px 0 0);
   object-fit: contain;
   background: #000;
 }
@@ -108,13 +108,13 @@
 
 .story-visual-progress {
   position: absolute;
-  z-index: 7;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
+  z-index: 30;
+  top: 2px;
+  left: 6px;
+  right: 6px;
+  height: 4px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.32);
   pointer-events: none;
 }
 

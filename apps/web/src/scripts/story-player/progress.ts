@@ -79,13 +79,15 @@ export function createStoryProgressController({
     clearAdvanceTimer();
   }
 
-  function startProgressAnimation(fill: HTMLElement, duration: number): void {
+  function startProgressAnimation(fill: HTMLElement | null, duration: number): void {
     progressActive = true;
     progressRemainingMs = duration;
-    fill.style.animation = "none";
-    void fill.offsetHeight;
-    fill.style.animation = !reduceMotion ? `storyProgressVertical ${duration}ms linear forwards` : "none";
-    fill.style.animationPlayState = isPaused() ? "paused" : "running";
+    if (fill) {
+      fill.style.animation = "none";
+      void fill.offsetHeight;
+      fill.style.animation = !reduceMotion ? `storyProgressVertical ${duration}ms linear forwards` : "none";
+      fill.style.animationPlayState = isPaused() ? "paused" : "running";
+    }
     if (currentProgressFill) {
       currentProgressFill.style.animation = "none";
       currentProgressFill.style.transform = "scaleX(0)";
@@ -100,7 +102,7 @@ export function createStoryProgressController({
     if (progressRestartBlocked) return;
     const post = posts[activeIndex()];
     const fill = progressBars[activeIndex()]?.querySelector<HTMLElement>("i");
-    if (!post || !fill) return;
+    if (!post || (!fill && !currentProgressFill)) return;
     if (post.mediaType === "video") {
       videoProgressFallbackTimer = window.setTimeout(
         () => {
@@ -169,8 +171,7 @@ export function createStoryProgressController({
     if (!video || !post || post.mediaType !== "video" || !video.currentSrc.endsWith(post.image ?? "")) return;
     clearVideoProgressFallback();
     const fill = progressBars[activeIndex()]?.querySelector<HTMLElement>("i");
-    if (!fill) return;
-    if (fill.style.animation && fill.style.animation !== "none") {
+    if (fill?.style.animation && fill.style.animation !== "none") {
       fill.style.animationPlayState = isPaused() ? "paused" : "running";
       if (!isPaused() && !advanceTimer) scheduleAdvance(progressRemainingMs);
       return;

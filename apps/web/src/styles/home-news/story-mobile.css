@@ -152,11 +152,14 @@
   }
 
   .story-rail,
-  .story-visual-wrap,
-  .story-context {
+  .story-visual-wrap {
     animation: none;
     opacity: 1;
     transform: none;
+  }
+
+  .story-context {
+    animation: none;
   }
 
   .story-visual {
@@ -180,7 +183,7 @@
 
   .story-visual-progress {
     height: 4px;
-    top: env(safe-area-inset-top, 0);
+    top: calc(env(safe-area-inset-top, 0) + 2px);
     left: 0.55rem;
     right: 0.55rem;
     border-radius: 999px;
@@ -264,16 +267,22 @@
     -webkit-backdrop-filter: blur(20px);
   }
 
-  /* The server renders the article text for search engines. On a phone it
-     must still remain unavailable until the reader explicitly opens it. */
-  .story-context[aria-hidden="true"] {
-    display: none;
-  }
-
-  .story-player.is-reading .story-context {
+  .story-player.is-reading .story-context,
+  .story-player.is-discussing .story-context {
     opacity: 1;
     pointer-events: auto;
     transform: translateY(0) scale(1);
+  }
+
+  .story-player.is-discussing .story-panel--discussion {
+    display: flex;
+    height: 100%;
+    padding: 0;
+  }
+
+  .story-player.is-discussing .story-discussion-frame {
+    height: 100%;
+    padding-right: 0;
   }
 
   .story-panel {

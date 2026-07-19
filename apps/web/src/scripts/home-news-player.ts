@@ -67,6 +67,8 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
   let manualPausedBeforeDiscussion = isManualPaused;
   let readingVisible = false;
   let manualPausedBeforeReading = isManualPaused;
+  let videoAutoplayMuted = false;
+  const opensDiscussionFromUrl = new URLSearchParams(window.location.search).get("discussion") === "1";
   const debugPanel = new URLSearchParams(window.location.search).has("debug") ? document.createElement("pre") : null;
 
   const feedMode = createFeedModeController({ posts, ui, railCards, feedModeButtons, feedModeLabel, activeIndex: () => active });
@@ -84,12 +86,15 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
 
   function syncMutedUi(): void {
     audioToggle?.setAttribute("aria-pressed", String(muted));
-    audioToggle?.classList.toggle("is-on", !muted);
-    if (audioLabel) audioLabel.textContent = muted ? ui.muted || "Muted" : ui.mute || "Audio";
+    audioToggle?.classList.toggle("is-on", !muted && !videoAutoplayMuted);
+    if (audioLabel) {
+      audioLabel.textContent = videoAutoplayMuted ? ui.tapForSound || "Tap for sound" : muted ? ui.muted || "Muted" : ui.mute || "Audio";
+    }
   }
 
   function setMuted(nextMuted: boolean, persist = true): void {
     muted = nextMuted;
+    videoAutoplayMuted = false;
     if (persist) {
       try {
         localStorage.setItem("story-player-muted", String(muted));
@@ -111,7 +116,9 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
         // Automatic navigation is not a user gesture. Retry muted when the
         // browser rejects playback with the persisted sound preference.
         if (!video.muted) {
-          setMuted(true);
+          video.muted = true;
+          videoAutoplayMuted = true;
+          syncMutedUi();
           video.play?.().catch(() => {});
         }
       });
@@ -138,6 +145,7 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
     manualPausedBeforeDiscussion = nextState.manualPausedBeforeDiscussion;
     discussionPanel.hidden = !isVisible;
     root.classList.toggle("is-discussing", isVisible);
+    if (context) context.setAttribute("aria-hidden", String(!isVisible && !readingVisible));
     if (categoryWrap) categoryWrap.hidden = isVisible;
     if (meta) meta.hidden = isVisible;
     if (title) title.hidden = isVisible;
@@ -153,7 +161,7 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
     if (!context) return;
     readingVisible = isVisible;
     root.classList.toggle("is-reading", isVisible);
-    context.setAttribute("aria-hidden", String(!isVisible));
+    context.setAttribute("aria-hidden", String(!isVisible && !discussionVisible));
     readButtons.forEach((button) => {
       button.setAttribute("aria-expanded", String(isVisible));
       button.classList.toggle("is-open", isVisible);
@@ -174,6 +182,7 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
     const post = posts[active];
     if (!post) return;
     expanded = false;
+    videoAutoplayMuted = false;
     if (readingVisible) setReadingVisible(false);
     setDiscussionVisible(false);
     const panel = root.querySelector(".story-panel");
@@ -301,10 +310,11 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
       if (discussionVisible) return setDiscussionVisible(false);
       const post = posts[active];
       if (!post) return;
-      if (window.matchMedia("(max-width: 760px)").matches) setReadingVisible(true);
+      const discussionUrl = new URL(post.url, window.location.origin);
+      discussionUrl.searchParams.set("discussion", "1");
+      window.history.replaceState(window.history.state, "", `${discussionUrl.pathname}${discussionUrl.search}${discussionUrl.hash}`);
       discussionTerm = loadGiscusDiscussion({ post, discussionFrame, giscusConfig, ui, currentTerm: discussionTerm });
       setDiscussionVisible(true);
-      if (window.matchMedia("(max-width: 760px)").matches) discussionPanel?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   });
   shareButtons.forEach((button) => {
@@ -328,6 +338,13 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
     });
   });
   audioToggle?.addEventListener("click", () => {
+    if (videoAutoplayMuted && video) {
+      videoAutoplayMuted = false;
+      video.muted = false;
+      syncMutedUi();
+      video.play?.().catch(() => {});
+      return;
+    }
     setMuted(!muted);
   });
 
@@ -368,4 +385,12 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
     root.appendChild(debugPanel);
   }
   render(0);
+  if (opensDiscussionFromUrl) {
+    window.setTimeout(() => {
+      const post = posts[active];
+      if (!post) return;
+      discussionTerm = loadGiscusDiscussion({ post, discussionFrame, giscusConfig, ui, currentTerm: discussionTerm });
+      setDiscussionVisible(true);
+    }, 0);
+  }
 })();
