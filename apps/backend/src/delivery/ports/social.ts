@@ -1,4 +1,3 @@
-import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { log } from "../../foundation/logger.js";
 import { createSerialQueue } from "../../foundation/serial-queue.js";
@@ -23,7 +22,7 @@ import { generateStoryMedia } from "../story-media.js";
 
 type PreparedMedia = Awaited<ReturnType<typeof prepareMediaItems>>;
 
-export function createPlatformPorts(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch = fetch): DeliveryPorts {
+export function createPlatformPorts(config: BackendConfig, fetchImpl: typeof fetch = fetch): DeliveryPorts {
   // Publisher instances own their preparation state. This prevents cache entries
   // from leaking between test runs or independently configured worker instances.
   const mediaCache = new Map<string, Promise<PreparedMedia>>();
@@ -92,13 +91,9 @@ export function createPlatformPorts(config: BackendConfig, backendDb: BackendDb,
     instagram_stories_ru: (job) =>
       prepare(job, instagramRuConfig, (payload) => publishInstagramStory(payload, instagramRuConfig, fetchImpl)),
     telegram_story: (job) =>
-      prepare(job, config, async (payload) =>
-        (await import("../social/telegramStories.js")).publishTelegramStory(payload, config, backendDb, fetchImpl),
-      ),
+      prepare(job, config, async (payload) => (await import("../social/telegramStories.js")).publishTelegramStory(payload, config)),
     telegram_stories: (job) =>
-      prepare(job, config, async (payload) =>
-        (await import("../social/telegramStories.js")).publishTelegramStory(payload, config, backendDb, fetchImpl),
-      ),
+      prepare(job, config, async (payload) => (await import("../social/telegramStories.js")).publishTelegramStory(payload, config)),
   };
   return Object.fromEntries(
     Object.entries(publishers).map(([target, publish]) => [

@@ -58,49 +58,35 @@ export type PipelineData = {
 export type DashboardQueueDraft = {
   id?: number | string | null;
   status?: string | null;
-  text_ru?: string | null;
-  scheduled_at?: string | null;
-  scheduled_en_at?: string | null;
-  channel_message_id?: string | number | null;
-  updated_at?: string | null;
+  textRu?: string | null;
+  scheduledAt?: string | null;
+  scheduledEnAt?: string | null;
+  channelMessageId?: string | number | null;
+  updatedAt?: string | null;
 };
 
 export type DashboardQueueJob = {
-  job_id?: string | number | null;
   jobId?: string | number | null;
-  post_id?: string | number | null;
   postId?: string | number | null;
-  message_id?: string | number | null;
   messageId?: string | number | null;
   target?: string | null;
   status?: string | null;
-  attempt_count?: number | null;
   attemptCount?: number | null;
-  publish_at?: string | null;
   publishAt?: string | null;
-  next_attempt_at?: string | null;
   nextAttemptAt?: string | null;
-  last_error?: string | null;
   lastError?: string | null;
-  updated_at?: string | null;
   updatedAt?: string | null;
 };
 
 export type DashboardCredential = {
   target?: string | null;
-  name?: string | null;
-  credential?: string | null;
   status?: string | null;
-  ok?: boolean;
-  missing_env_json?: string | null;
-  error?: string | null;
-  last_checked_at?: string | null;
-  checked_at?: string | null;
-  updated_at?: string | null;
+  missingEnvJson?: string | null;
+  lastError?: string | null;
+  lastCheckedAt?: string | null;
 };
 
 export type DashboardMetricIssue = {
-  message_id?: string | number | null;
   messageId?: string | number | null;
   target?: string | null;
   status?: string | null;
@@ -108,12 +94,10 @@ export type DashboardMetricIssue = {
 };
 
 export type DashboardLifecycleRow = {
-  post_key?: string | number | null;
-  post_id?: string | number | null;
+  postKey?: string | number | null;
   state?: string | null;
-  status?: string | null;
   reason?: string | null;
-  updated_at?: string | null;
+  updatedAt?: string | null;
 };
 
 export type OpsPayload = {

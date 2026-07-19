@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import * as z from "zod";
+import { SITE_MEDIA_URL_PREFIX, siteMediaFilename, siteMediaPosterFilename } from "../content/site-media-naming.js";
 import type { BackendDb } from "../db/client.js";
 import { postLocales, postMetrics, posts, publications } from "../db/schema.js";
 
@@ -33,18 +34,10 @@ export const feedItemSchema = z
     media_en: z.array(siteMediaSchema),
     image: z.string().nullable(),
     image_en: z.string().nullable(),
-    audio_url: z.string().nullable().optional(),
     audio_url_ru: z.string().nullable().optional(),
     audio_url_en: z.string().nullable().optional(),
-    audio_ru: z.string().nullable().optional(),
-    audio_en: z.string().nullable().optional(),
-    audio: z.string().nullable().optional(),
-    spotify_url: z.string().nullable().optional(),
     spotify_url_ru: z.string().nullable().optional(),
     spotify_url_en: z.string().nullable().optional(),
-    spotify_ru: z.string().nullable().optional(),
-    spotify_en: z.string().nullable().optional(),
-    spotify: z.string().nullable().optional(),
     views: z.number(),
   })
   .strict();
@@ -154,17 +147,20 @@ function firstImage(media: SiteMedia[]): string | null {
   return media.find((item) => item.type !== "video" && typeof item.path === "string")?.path ?? null;
 }
 
+/** Legacy rows stored before materialized media carried its own `path` fall back to
+ * the naming convention `materializeSiteMedia` writes files under (see site-media-naming.ts).
+ * This can only guess the jpg/mp4 default extension, not the true one a writer would have
+ * detected from the source file. */
 function publishedMedia(media: unknown, postId: number, locale: "ru" | "en"): SiteMedia[] {
   const items = z.array(siteMediaSchema).safeParse(media);
   return (items.success ? items.data : []).map((item, index) => {
     if (typeof item.path === "string" && item.path) return item;
     const type = String(item.type ?? "image").toLowerCase() === "video" ? "video" : "image";
-    const filename = `${postId}-${locale}-${index}`;
     return {
       ...item,
       type,
-      path: `media/posts/${filename}.${type === "video" ? "mp4" : "jpg"}`,
-      ...(type === "video" ? { poster: `media/posts/${filename}-poster.jpg` } : {}),
+      path: `${SITE_MEDIA_URL_PREFIX}/${siteMediaFilename(postId, locale, index, type === "video" ? "mp4" : "jpg")}`,
+      ...(type === "video" ? { poster: `${SITE_MEDIA_URL_PREFIX}/${siteMediaPosterFilename(postId, locale, index)}` } : {}),
     };
   });
 }

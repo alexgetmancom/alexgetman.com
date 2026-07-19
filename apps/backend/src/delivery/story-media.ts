@@ -8,6 +8,7 @@ import { storyFfmpegArgs } from "../../../../deploy/media-processor/story-encode
 import type { BackendConfig } from "../foundation/config.js";
 import { log } from "../foundation/logger.js";
 import { runFfmpeg } from "../foundation/runtime/ffmpeg.js";
+import { withTimeout } from "../foundation/runtime/timeout.js";
 import type { PublishMediaItem } from "./social/payload.js";
 
 export async function generateStoryMedia(
@@ -26,7 +27,7 @@ export async function generateStoryMedia(
   await fs.promises.mkdir(directory, { recursive: true });
   const video = type === "video";
   log("info", "story media source resolving", { draftId, locale, kind: video ? "video" : "image" });
-  const source = await withinStoryStageTimeout(
+  const source = await withTimeout(
     resolveSource(item, draftId, locale, directory, config, fetchImpl),
     30_000,
     "story_source_resolution_timeout",
@@ -36,9 +37,8 @@ export async function generateStoryMedia(
   const args = storyFfmpegArgs(source, output, video ? "video" : "image");
   log("info", "story media transform started", { draftId, locale, provider: config.MEDIA_PROCESSOR_PROVIDER });
   if (config.MEDIA_PROCESSOR_PROVIDER === "remote_http") await transformRemotely(source, output, video, config);
-  else
-    await withinStoryStageTimeout(runFfmpeg(args, config.FFMPEG_TIMEOUT_SECONDS), storyTransformTimeout(config), "story_transform_timeout");
-  await withinStoryStageTimeout(fs.promises.chmod(output, 0o664), 30_000, "story_output_finalize_timeout");
+  else await withTimeout(runFfmpeg(args, config.FFMPEG_TIMEOUT_SECONDS), storyTransformTimeout(config), "story_transform_timeout");
+  await withTimeout(fs.promises.chmod(output, 0o664), 30_000, "story_output_finalize_timeout");
   log("info", "story media transform completed", { draftId, locale, output });
   return [
     { ...(item as unknown as PublishMediaItem), story_local_path: output, storyLocalPath: output, story_width: 1080, story_height: 1920 },
@@ -60,7 +60,7 @@ async function transformRemotely(source: string, output: string, video: boolean,
   const timer = setTimeout(() => controller.abort(), timeoutSeconds * 1000);
   try {
     log("info", "story media remote upload started", { source, bytes: stat.size, timeoutSeconds });
-    const response = await withinStoryStageTimeout(
+    const response = await withTimeout(
       fetch(`${config.MEDIA_PROCESSOR_URL.replace(/\/$/, "")}/v1/transforms/ffmpeg`, {
         method: "POST",
         headers: {
@@ -89,8 +89,8 @@ async function transformRemotely(source: string, output: string, video: boolean,
     // that bounded response before writing it: piping a Response body straight
     // into Bun.write can leave the stream open behind the SSH+socat hop even
     // after the remote processor has returned HTTP 200.
-    const result = await withinStoryStageTimeout(response.arrayBuffer(), 30_000, "media_processor_result_read_timeout");
-    await withinStoryStageTimeout(Bun.write(output, result), 30_000, "media_processor_result_write_timeout");
+    const result = await withTimeout(response.arrayBuffer(), 30_000, "media_processor_result_read_timeout");
+    await withTimeout(Bun.write(output, result), 30_000, "media_processor_result_write_timeout");
     log("info", "story media remote result written", { output });
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError")
@@ -105,20 +105,6 @@ function storyTransformTimeout(config: BackendConfig): number {
   // Leave time for provider publication and durable finalization before the
   // queue-level deadline. The abort also stops the HTTP upload to VM-106.
   return Math.max(10_000, Math.min(config.MEDIA_PROCESSOR_TIMEOUT_SECONDS * 1000, (config.PUBLISH_JOB_TIMEOUT_SECONDS - 30) * 1000));
-}
-
-async function withinStoryStageTimeout<T>(work: Promise<T>, ms: number, code: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      work,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(code)), ms);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
 }
 
 async function resolveSource(

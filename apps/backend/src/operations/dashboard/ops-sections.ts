@@ -1,4 +1,5 @@
 import { audienceGrowthByAccount, KEY_SEP, metricSeriesSince } from "../../analytics/metric-deltas.js";
+import { metricNumber } from "../../analytics/snapshots/creator-store.js";
 import type { BackendDb } from "../../db/client.js";
 import { creatorProfiles } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
@@ -44,11 +45,11 @@ export function renderAudienceSection(backendDb: BackendDb, config: BackendConfi
   const metrics30 = targetPeriodMetrics(backendDb, 30);
   const rows = AUDIENCE_PLATFORMS.map((platform) => {
     const data = (profiles.get(platform.key) ?? {}) as Record<string, unknown>;
-    const followers = metric(data.subscriberCount ?? data.followersCount);
+    const followers = metricNumber(data.subscriberCount ?? data.followersCount);
     return {
       ...platform,
       followers,
-      stars: metric(data.stars),
+      stars: metricNumber(data.stars),
       growth7: followerGrowth7.get(platform.key),
       growth30: followerGrowth30.get(platform.key),
       metrics7: sumTargetMetrics(metrics7, platform.metricTargets),
@@ -79,14 +80,14 @@ export function renderQueueSection(ops: OpsPayload): string {
     (ops.drafts ?? [])
       .map(
         (row) =>
-          `<tr><td>${Number(row.id)}</td><td>${escapeHtml(row.status)}</td><td class="wide">${escapeHtml(shortPipelineText(row.text_ru, 20))}</td><td>${escapeHtml(row.scheduled_at)}</td><td>${escapeHtml(row.scheduled_en_at)}</td><td>${escapeHtml(row.channel_message_id)}</td><td>${escapeHtml(row.updated_at)}</td></tr>`,
+          `<tr><td>${Number(row.id)}</td><td>${escapeHtml(row.status)}</td><td class="wide">${escapeHtml(shortPipelineText(row.textRu, 20))}</td><td>${escapeHtml(row.scheduledAt)}</td><td>${escapeHtml(row.scheduledEnAt)}</td><td>${escapeHtml(row.channelMessageId)}</td><td>${escapeHtml(row.updatedAt)}</td></tr>`,
       )
       .join("\n") || "<tr><td colspan='7'>empty</td></tr>";
   const jobs =
     (ops.jobs ?? [])
       .map(
         (row) =>
-          `<tr><td>${escapeHtml(row.job_id ?? row.jobId)}</td><td>${escapeHtml(row.post_id ?? row.postId)}</td><td>${escapeHtml(row.message_id ?? row.messageId)}</td><td>${escapeHtml(row.target)}</td><td>${escapeHtml(row.status)}</td><td>${Number(row.attempt_count ?? row.attemptCount ?? 0)}</td><td>${escapeHtml(row.publish_at ?? row.publishAt)}</td><td>${escapeHtml(row.next_attempt_at ?? row.nextAttemptAt)}</td><td class="wide">${escapeHtml(row.last_error ?? row.lastError)}</td><td>${escapeHtml(row.updated_at ?? row.updatedAt)}</td></tr>`,
+          `<tr><td>${escapeHtml(row.jobId)}</td><td>${escapeHtml(row.postId)}</td><td>${escapeHtml(row.messageId)}</td><td>${escapeHtml(row.target)}</td><td>${escapeHtml(row.status)}</td><td>${Number(row.attemptCount ?? 0)}</td><td>${escapeHtml(row.publishAt)}</td><td>${escapeHtml(row.nextAttemptAt)}</td><td class="wide">${escapeHtml(row.lastError)}</td><td>${escapeHtml(row.updatedAt)}</td></tr>`,
       )
       .join("\n") || "<tr><td colspan='10'>empty</td></tr>";
   return `<section><h2>Drafts</h2><table><thead><tr><th>ID</th><th>Status</th><th>RU</th><th>RU slot</th><th>EN slot</th><th>Message</th><th>Updated</th></tr></thead><tbody>${drafts}</tbody></table></section><section><h2>Queue</h2><table><thead><tr><th>Job</th><th>Post</th><th>Telegram msg</th><th>Target</th><th>Status</th><th>Attempts</th><th>Publish at</th><th>Retry at</th><th>Error</th><th>Updated</th></tr></thead><tbody>${jobs}</tbody></table></section>`;
@@ -97,7 +98,7 @@ export function renderCredentialsSection(ops: OpsPayload): string {
     (ops.credentials ?? [])
       .map(
         (row) =>
-          `<tr><td>${escapeHtml(row.target ?? row.name ?? row.credential)}</td><td>${escapeHtml(row.status ?? (row.ok ? "ok" : "failed"))}</td><td>${escapeHtml(row.missing_env_json ?? row.error)}</td><td>${escapeHtml(row.last_checked_at ?? row.checked_at ?? row.updated_at)}</td></tr>`,
+          `<tr><td>${escapeHtml(row.target)}</td><td>${escapeHtml(row.status)}</td><td>${escapeHtml(row.missingEnvJson || row.lastError)}</td><td>${escapeHtml(row.lastCheckedAt)}</td></tr>`,
       )
       .join("\n") || "<tr><td colspan='4'>empty</td></tr>";
   return `<section><h2>Credentials</h2><table><thead><tr><th>Target</th><th>Status</th><th>Missing</th><th>Checked</th></tr></thead><tbody>${rows}</tbody></table></section>`;
@@ -110,7 +111,7 @@ export function renderDiagnosticsSection(ops: OpsPayload): string {
       .slice(0, 30)
       .map(
         (row) =>
-          `<tr><td>${escapeHtml(row.message_id ?? row.messageId)}</td><td>${escapeHtml(row.target)}</td><td>${escapeHtml(row.status ?? "failed")}</td><td class="wide">${escapeHtml(row.error)}</td></tr>`,
+          `<tr><td>${escapeHtml(row.messageId)}</td><td>${escapeHtml(row.target)}</td><td>${escapeHtml(row.status ?? "failed")}</td><td class="wide">${escapeHtml(row.error)}</td></tr>`,
       )
       .join("\n") || "<tr><td colspan='4'>empty</td></tr>";
   const lifecycle =
@@ -118,15 +119,10 @@ export function renderDiagnosticsSection(ops: OpsPayload): string {
       .slice(0, 30)
       .map(
         (row) =>
-          `<tr><td>${escapeHtml(row.post_key ?? row.post_id)}</td><td>${escapeHtml(row.state ?? row.status)}</td><td>${escapeHtml(row.reason)}</td><td>${escapeHtml(row.updated_at)}</td></tr>`,
+          `<tr><td>${escapeHtml(row.postKey)}</td><td>${escapeHtml(row.state)}</td><td>${escapeHtml(row.reason)}</td><td>${escapeHtml(row.updatedAt)}</td></tr>`,
       )
       .join("\n") || "<tr><td colspan='4'>empty</td></tr>";
   return `<section><h2>Errors</h2><table><thead><tr><th>Message</th><th>Target</th><th>Status</th><th>Error</th></tr></thead><tbody>${errors}</tbody></table></section><section><h2>Lifecycle</h2><table><thead><tr><th>Message</th><th>State</th><th>Reason</th><th>Updated</th></tr></thead><tbody>${lifecycle}</tbody></table></section>`;
-}
-
-function metric(value: unknown): number {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function followersLabel(item: { followers: number; stars: number }): string {

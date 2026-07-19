@@ -361,7 +361,7 @@ describe("publisher media routing", () => {
       if (url.includes("/file/bot")) return new Response(Buffer.from([0xff, 0xd8, 0xff, 0xd9]), { status: 200 });
       return new Response(JSON.stringify({ id: 1, url: "https://dev.to/me/post" }), { status: 201 });
     });
-    const publisher = createPlatformPorts(config, {} as never, fetchMock as unknown as typeof fetch).devto;
+    const publisher = createPlatformPorts(config, fetchMock as unknown as typeof fetch).devto;
     if (!publisher) throw new Error("missing Dev.to publisher");
     const result = await publisher({
       jobId: 1,

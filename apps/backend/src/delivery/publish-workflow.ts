@@ -14,7 +14,7 @@ import { type DeliveryPort, type DeliveryPorts, deliveryAdapter } from "./ports.
 export async function runDeliveryPublishCycle(
   config: BackendConfig,
   backendDb: BackendDb,
-  publishers: DeliveryPorts | Record<string, DeliveryPort> = createPlatformPorts(config, backendDb),
+  publishers: DeliveryPorts | Record<string, DeliveryPort> = createPlatformPorts(config),
 ): Promise<number> {
   recoverStalePublishJobs(backendDb, config);
   const jobs = claimDuePublishJobs(backendDb, config.PUBLISH_CLAIM_LIMIT);

@@ -18,7 +18,7 @@ import { recoverStalePublishJobs } from "../publishing/queue.js";
 export async function runPublishCycle(
   config: BackendConfig,
   backendDb: BackendDb,
-  publishers: DeliveryPorts | Record<string, DeliveryPort> = createPlatformPorts(config, backendDb),
+  publishers: DeliveryPorts | Record<string, DeliveryPort> = createPlatformPorts(config),
 ): Promise<number> {
   return runDeliveryPublishCycle(config, backendDb, publishers);
 }

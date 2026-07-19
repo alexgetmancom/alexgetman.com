@@ -36,15 +36,11 @@ export function responsiveSrcSetFor(publicPath: string | null | undefined) {
 }
 
 function audioUrlFor(item: FeedItem, locale: "en" | "ru") {
-  return locale === "ru"
-    ? item.audio_url_ru || item.audio_ru || item.audio_url || item.audio || null
-    : item.audio_url_en || item.audio_en || item.audio_url || item.audio || null;
+  return (locale === "ru" ? item.audio_url_ru : item.audio_url_en) || null;
 }
 
 function spotifyUrlFor(item: FeedItem, locale: "en" | "ru") {
-  return locale === "ru"
-    ? item.spotify_url_ru || item.spotify_ru || item.spotify_url || item.spotify || null
-    : item.spotify_url_en || item.spotify_en || item.spotify_url || item.spotify || null;
+  return (locale === "ru" ? item.spotify_url_ru : item.spotify_url_en) || null;
 }
 
 export function toHomePost(item: FeedItem, locale: "en" | "ru"): HomePost {

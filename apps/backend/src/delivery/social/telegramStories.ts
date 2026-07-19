@@ -1,10 +1,10 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { createChannelStoryClient } from "../../foundation/external/telegram-session.js";
 import { runFfmpeg } from "../../foundation/runtime/ffmpeg.js";
+import { withTimeout } from "../../foundation/runtime/timeout.js";
 import type { PublishResult } from "../../publishing/errors.js";
 import { type PublishMediaItem, payloadMedia, payloadText } from "./payload.js";
 
@@ -13,14 +13,7 @@ const URL_RE = /https?:\/\/[^\s<>)]*/g;
 // under Telegram's 30 MB limit without a second, quality-losing transcode.
 const STORY_MAX_BYTES = 28 * 1024 * 1024;
 
-export async function publishTelegramStory(
-  payload: Record<string, unknown>,
-  config: BackendConfig,
-  backendDb: BackendDb,
-  fetchImpl: typeof fetch = fetch,
-): Promise<PublishResult> {
-  void backendDb;
-  void fetchImpl;
+export async function publishTelegramStory(payload: Record<string, unknown>, config: BackendConfig): Promise<PublishResult> {
   const media = payloadMedia(payload).find((item) => item.storyLocalPath || item.localPath);
   if (!media) return { ok: false, skipped: true, reason: "missing_media" };
   // Stories should be a clean visual format: never append or preserve links
@@ -157,19 +150,5 @@ async function probeVideo(filePath: string, media: PublishMediaItem): Promise<{ 
     };
   } catch {
     return fallback;
-  }
-}
-
-async function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(message)), ms);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
   }
 }

@@ -124,7 +124,7 @@ async function main(): Promise<void> {
         ...(dateTo ? { dateTo } : {}),
       });
       const applied = args.flags.has("apply")
-        ? withMaintenanceLock(backendDb, () => applyMetricsBackfill(backendDb, plan, args.flags.has("reset-counts")))
+        ? withMaintenanceLock(backendDb, () => applyMetricsBackfill(backendDb, config, plan, args.flags.has("reset-counts")))
         : 0;
       console.log(JSON.stringify({ count: plan.length, applied, plan }, null, 2));
     } else if (args.command === "capabilities") {

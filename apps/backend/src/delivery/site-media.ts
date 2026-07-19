@@ -1,5 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
+import {
+  SITE_MEDIA_DIR_SEGMENTS,
+  SITE_MEDIA_URL_PREFIX,
+  siteMediaFilename,
+  siteMediaPosterFilename,
+} from "../content/site-media-naming.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { runFfmpeg } from "../foundation/runtime/ffmpeg.js";
 
@@ -21,24 +27,24 @@ export async function materializeSiteMedia(
   fetchImpl: typeof fetch = fetch,
 ): Promise<Record<string, unknown>[]> {
   const source = Array.isArray(raw) ? raw : raw && typeof raw === "object" ? [raw] : [];
-  const directory = path.join(config.SITE_PUBLIC_DIR, "media", "posts");
+  const directory = path.join(config.SITE_PUBLIC_DIR, ...SITE_MEDIA_DIR_SEGMENTS);
   await fs.promises.mkdir(directory, { recursive: true });
   const result: Record<string, unknown>[] = [];
   for (let index = 0; index < source.length; index += 1) {
     const item = source[index] as SiteMedia;
     const kind = String(item.type ?? "image").toLowerCase() === "video" ? "video" : "image";
     const extension = mediaExtension(item, kind);
-    const filename = `${postId}-${locale}-${index}.${extension}`;
+    const filename = siteMediaFilename(postId, locale, index, extension);
     const target = path.join(directory, filename);
     await copyOrDownload(config, item, target, fetchImpl);
     await fs.promises.chmod(target, 0o664);
-    const output: Record<string, unknown> = { ...item, type: kind, path: `media/posts/${filename}` };
+    const output: Record<string, unknown> = { ...item, type: kind, path: `${SITE_MEDIA_URL_PREFIX}/${filename}` };
     if (kind === "video") {
-      const posterName = `${postId}-${locale}-${index}-poster.jpg`;
+      const posterName = siteMediaPosterFilename(postId, locale, index);
       const poster = path.join(directory, posterName);
       await runFfmpeg(["-y", "-ss", "0.5", "-i", target, "-frames:v", "1", "-q:v", "2", poster]);
       await fs.promises.chmod(poster, 0o664);
-      output.poster = `media/posts/${posterName}`;
+      output.poster = `${SITE_MEDIA_URL_PREFIX}/${posterName}`;
     }
     result.push(output);
   }

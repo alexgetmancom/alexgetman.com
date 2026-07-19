@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openBackendDb } from "../src/db/client.js";
+import { loadConfig } from "../src/foundation/config.js";
 import { capabilitySummary, seedCapabilities } from "../src/operations/capabilities.js";
 import { applyMetricsBackfill, backupDatabase, buildMetricsBackfillPlan, withMaintenanceLock } from "../src/operations/maintenance.js";
 
@@ -48,7 +49,8 @@ describe("TypeScript operations tooling", () => {
         .run(now);
       const plan = buildMetricsBackfillPlan(backendDb, { targets: ["devto"] });
       expect(plan).toHaveLength(1);
-      expect(withMaintenanceLock(backendDb, () => applyMetricsBackfill(backendDb, plan, true))).toBe(1);
+      const config = loadConfig({ ADMIN_IDS: "42" });
+      expect(withMaintenanceLock(backendDb, () => applyMetricsBackfill(backendDb, config, plan, true))).toBe(1);
       expect(
         backendDb.sqlite.prepare("SELECT check_count,frozen_at FROM metric_schedule WHERE post_key='post:1' AND target='devto'").get(),
       ).toEqual({ check_count: 0, frozen_at: null });

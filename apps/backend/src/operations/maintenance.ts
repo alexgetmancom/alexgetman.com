@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { and, desc, eq, gte, inArray, isNotNull, lt, lte, sql } from "drizzle-orm";
+import { freezeDisabledMetricSchedules } from "../analytics/collection/metric-schedule.js";
 import type { BackendDb } from "../db/client.js";
 import {
   deploymentSnapshots,
@@ -14,6 +15,7 @@ import {
   videoDrafts,
   videoTargets,
 } from "../db/schema.js";
+import type { BackendConfig } from "../foundation/config.js";
 
 /** Explicitly invoked operational maintenance routines. */
 export async function backupDatabase(backendDb: BackendDb, sourcePath: string, destinationDirectory?: string): Promise<string> {
@@ -65,7 +67,12 @@ export function buildMetricsBackfillPlan(
     .all();
 }
 
-export function applyMetricsBackfill(backendDb: BackendDb, rows: Record<string, unknown>[], resetCounts = false): number {
+export function applyMetricsBackfill(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  rows: Record<string, unknown>[],
+  resetCounts = false,
+): number {
   const now = new Date().toISOString();
   backendDb.db.transaction((tx) => {
     for (const row of rows) {
@@ -80,11 +87,14 @@ export function applyMetricsBackfill(backendDb: BackendDb, rows: Record<string, 
         })
         .run();
     }
-    tx.update(metricSchedule)
-      .set({ frozenAt: now, nextCheckAt: null, updatedAt: now })
-      .where(inArray(metricSchedule.target, ["x", "linkedin"]))
-      .run();
   });
+  // A backfill must not resurrect targets this Studio has deliberately kept
+  // paid-metrics disabled for; follow the same config-driven list the regular
+  // metrics cycle uses instead of a hardcoded platform pair.
+  freezeDisabledMetricSchedules(backendDb, [
+    ...(config.ENABLE_X_METRICS ? [] : ["x", "twitter"]),
+    ...(config.ENABLE_LINKEDIN_METRICS ? [] : ["linkedin"]),
+  ]);
   return rows.length;
 }
 
