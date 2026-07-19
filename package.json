@@ -39,7 +39,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.3",
-    "happy-dom": "20.0.0",
+    "happy-dom": "20.11.0",
     "lefthook": "^2.1.10",
     "sharp": "^0.35.3",
     "taze": "^19.14.1",
