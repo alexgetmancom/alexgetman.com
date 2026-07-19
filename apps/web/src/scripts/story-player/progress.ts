@@ -32,6 +32,7 @@ export function createStoryProgressController({
   let progressRemainingMs = intervalMs;
   let progressActive = false;
   let progressRestartBlocked = false;
+  let videoDriven = false;
 
   function clearTimer(timer: number | null): void {
     if (timer) window.clearTimeout(timer);
@@ -59,6 +60,19 @@ export function createStoryProgressController({
       currentProgressFill.style.animation = "none";
       currentProgressFill.style.animationPlayState = "running";
       currentProgressFill.style.transform = "scaleX(0)";
+    }
+  }
+
+  function setProgress(fraction: number): void {
+    const progress = Math.min(1, Math.max(0, fraction));
+    const fill = progressBars[activeIndex()]?.querySelector<HTMLElement>("i");
+    if (fill) {
+      fill.style.animation = "none";
+      fill.style.transform = `scaleY(${progress})`;
+    }
+    if (currentProgressFill) {
+      currentProgressFill.style.animation = "none";
+      currentProgressFill.style.transform = `scaleX(${progress})`;
     }
   }
 
@@ -121,6 +135,7 @@ export function createStoryProgressController({
     clearVideoProgressFallback();
     clearAdvanceTimer();
     progressActive = false;
+    videoDriven = false;
     progressRestartBlocked = Boolean(options.keepProgressIdle);
     resetProgressFills();
     const active = activeIndex();
@@ -139,6 +154,9 @@ export function createStoryProgressController({
     const fill = progressBars[activeIndex()]?.querySelector<HTMLElement>("i");
     if (fill) fill.style.animationPlayState = paused ? "paused" : "running";
     if (currentProgressFill) currentProgressFill.style.animationPlayState = paused ? "paused" : "running";
+    if (videoDriven) {
+      return;
+    }
     if (progressActive) {
       if (paused) pauseAdvanceTimer();
       else if (!advanceTimer) scheduleAdvance(progressRemainingMs);
@@ -168,15 +186,39 @@ export function createStoryProgressController({
 
   function handleVideoPlaying(): void {
     const post = posts[activeIndex()];
-    if (!video || !post || post.mediaType !== "video" || !video.currentSrc.endsWith(post.image ?? "")) return;
+    if (!video || !post || post.mediaType !== "video") return;
     clearVideoProgressFallback();
+    if (Number.isFinite(video.duration) && video.duration > 0) {
+      clearAdvanceTimer();
+      videoDriven = true;
+      progressActive = true;
+      handleVideoTimeUpdate();
+      return;
+    }
     const fill = progressBars[activeIndex()]?.querySelector<HTMLElement>("i");
     if (fill?.style.animation && fill.style.animation !== "none") {
       fill.style.animationPlayState = isPaused() ? "paused" : "running";
       if (!isPaused() && !advanceTimer) scheduleAdvance(progressRemainingMs);
       return;
     }
-    startProgressAnimation(fill, video.duration ? Math.min(15000, video.duration * 1000) : intervalMs);
+    startProgressAnimation(fill, intervalMs);
+  }
+
+  function handleVideoTimeUpdate(): void {
+    const post = posts[activeIndex()];
+    if (!video || !post || post.mediaType !== "video" || !Number.isFinite(video.duration) || video.duration <= 0) return;
+    videoDriven = true;
+    progressActive = true;
+    clearAdvanceTimer();
+    setProgress(video.currentTime / video.duration);
+  }
+
+  function handleVideoEnded(): void {
+    if (!videoDriven || posts[activeIndex()]?.mediaType !== "video") return;
+    setProgress(1);
+    progressActive = false;
+    videoDriven = false;
+    onAdvance();
   }
 
   function handleVideoWaiting(): void {
@@ -192,6 +234,8 @@ export function createStoryProgressController({
     update,
     resumeAfterManualNavigation,
     handleVideoPlaying,
+    handleVideoTimeUpdate,
+    handleVideoEnded,
     handleVideoWaiting,
     debugState: () => ({ progressActive, progressRestartBlocked, advanceTimer }),
   };

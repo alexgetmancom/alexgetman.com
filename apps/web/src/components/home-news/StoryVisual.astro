@@ -33,7 +33,6 @@ const gallery = activePost.gallery || [];
         src={activePost.mediaType === 'video' ? publicSrc(activePost.image) : undefined}
         poster={publicSrc(activePost.fallbackImage)}
         muted
-        loop
         autoplay
         playsinline
         preload="metadata"

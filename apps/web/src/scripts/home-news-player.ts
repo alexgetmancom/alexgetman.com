@@ -224,6 +224,8 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
     image.removeAttribute("srcset");
   });
   video?.addEventListener("playing", () => progress.handleVideoPlaying());
+  video?.addEventListener("timeupdate", () => progress.handleVideoTimeUpdate());
+  video?.addEventListener("ended", () => progress.handleVideoEnded());
   video?.addEventListener("waiting", () => progress.handleVideoWaiting());
 
   railCards.forEach((card, index) => {
