@@ -73,7 +73,7 @@ function recoverStaleSiteJobs(config: BackendConfig, backendDb: BackendDb): numb
 
 export async function renderFeedFiles(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch = fetch): Promise<void> {
   const targetUrls = siteTargetUrlsByPostKey(backendDb);
-  const items = await Promise.all(sourceItems(backendDb).map((item) => prepareFeedItem(config, backendDb, item, targetUrls, fetchImpl)));
+  const items = await Promise.all(sourceItems(backendDb).map((item) => prepareFeedItem(config, item, targetUrls, fetchImpl)));
   const views = viewsByPostKey(backendDb);
   for (const item of items.filter((value): value is Record<string, unknown> => value != null)) {
     item.views = views.get(String(item.id ?? "")) ?? Number(item.views ?? 0);
@@ -220,7 +220,6 @@ function siteTargetUrlsByPostKey(backendDb: BackendDb): Map<string, Array<{ targ
 
 async function prepareFeedItem(
   config: BackendConfig,
-  backendDb: BackendDb,
   source: Record<string, unknown>,
   targetUrlsByPostKey: Map<string, Array<{ target: string; url: string | null }>>,
   fetchImpl: typeof fetch,
