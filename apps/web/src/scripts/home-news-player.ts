@@ -112,16 +112,31 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
   function playActiveVideo(): void {
     if (!video || posts[active]?.mediaType !== "video") return;
     const play = () => {
-      video.play?.().catch(() => {
-        // Automatic navigation is not a user gesture. Retry muted when the
-        // browser rejects playback with the persisted sound preference.
-        if (!video.muted) {
-          video.muted = true;
-          videoAutoplayMuted = true;
-          syncMutedUi();
-          video.play?.().catch(() => {});
-        }
-      });
+      // Chromium permits the automatic start only while muted. Once that
+      // succeeds, restore the sound preference the user explicitly chose.
+      // Mobile browsers already preserve this path, so keep their behavior
+      // untouched.
+      const restoreDesktopSound = !muted && window.matchMedia("(min-width: 761px)").matches;
+      if (restoreDesktopSound) video.muted = true;
+      video
+        .play?.()
+        .then(() => {
+          if (restoreDesktopSound && !isManualPaused && posts[active]?.mediaType === "video") {
+            video.muted = false;
+            videoAutoplayMuted = false;
+            syncMutedUi();
+          }
+        })
+        .catch(() => {
+          // Automatic navigation is not a user gesture. Retry muted when the
+          // browser rejects playback with the persisted sound preference.
+          if (!video.muted) {
+            video.muted = true;
+            videoAutoplayMuted = true;
+            syncMutedUi();
+            video.play?.().catch(() => {});
+          }
+        });
     };
     if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) video.addEventListener("canplay", play, { once: true });
     else play();
