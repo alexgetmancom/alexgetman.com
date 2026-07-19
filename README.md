@@ -30,9 +30,13 @@ apps/
   web/       Astro pages, components, feeds, and the server entry point
   backend/   bot, API controller, workers, publishing, metrics, and operations
 deploy/      Docker, nginx, deployment-agent, and production runbook material
-docs/        architecture and operations notes
 scripts/     repository checks and build helpers
 ```
+
+The main path is deliberately small: Telegram, MCP, and the private web Studio
+are adapters over the same Studio services; those services create durable SQLite
+publication jobs; workers deliver them to the site and social platforms. The
+Command Center and operations CLI only read or explicitly maintain that state.
 
 ## Local development
 
@@ -77,15 +81,10 @@ bun run --filter @alexgetman/backend ops audit --db ./data/pipeline.db
 bun run --filter @alexgetman/backend ops verify --ref post:123
 ```
 
-Production images contain the same bundled CLI. See [Operations](docs/operations.md) for the read-only production commands, backup scope, and log guidance.
-
-## Documentation
-
-- [Architecture](docs/architecture.md) — system boundaries, data flow, and state.
-- [Operations](docs/operations.md) — diagnostics, backups, deployment, and logs.
-- [Self-hosting plan](docs/self-hosting.md) — a future simple Docker deployment path.
-- [Social links](docs/social-links.md) — official profiles and publication targets.
-- [Plans](docs/plans.md) — historical discovery and future ideas; it is not a mandatory release checklist.
+Production images contain the same bundled CLI. The production deployment and
+read-only diagnostics are documented in [deploy/README.md](deploy/README.md).
+`AGENTS.md` is the working runbook for agents: follow it before inspecting or
+changing production state.
 
 ## Security and privacy
 
