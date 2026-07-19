@@ -22,6 +22,20 @@ type StudioAnalyticsDashboard = {
   hasComments: boolean;
 };
 
+/** A dashboard is built once as a list of blocks and rendered twice — as plain
+ * text (Markdown-flavored tables, for MCP/web) and as Telegram Rich Message
+ * HTML. Building the structure once avoids re-parsing the text form to
+ * produce the HTML form. */
+type Block = { kind: "text"; text: string } | { kind: "table"; headers: string[]; rows: string[][] };
+
+function textBlock(text: string): Block {
+  return { kind: "text", text };
+}
+
+function tableBlock(headers: string[], rows: string[][]): Block {
+  return { kind: "table", headers, rows };
+}
+
 /**
  * Transport-neutral creator analytics. Telegram renders `richHtml` through
  * its Rich Message API, while text remains useful to web and MCP callers.
@@ -35,67 +49,47 @@ export function studioAnalyticsDashboard(
 ): StudioAnalyticsDashboard {
   const since = new Date(Date.now() - days * 24 * 60 * 60_000).toISOString();
   const period = periodLabel(days, locale);
-  const lines: string[] = [];
+  const blocks: Block[] = [];
 
   if (section === "audience") {
-    lines.push(`👥 *${t(locale, "sdash.header-audience", { period })}*`);
+    blocks.push(textBlock(`👥 *${t(locale, "sdash.header-audience", { period })}*`));
     const profiles = audienceProfiles(backendDb, config, since, days, period, locale);
-    lines.push(...(profiles.length ? profiles : [t(locale, "sdash.no-audience")]));
+    blocks.push(...(profiles.length ? profiles : [textBlock(t(locale, "sdash.no-audience"))]));
   } else {
-    lines.push(...unifiedAnalyticsTable(backendDb, config, section, since, days, locale));
+    blocks.push(...unifiedAnalyticsTable(backendDb, config, section, since, days, locale));
   }
-  const text = lines.join("\n");
-  return { text, richHtml: richMessageHtml(lines), hasComments: hasAudienceComments(backendDb) };
+  return { text: blocksToText(blocks), richHtml: blocksToHtml(blocks), hasComments: hasAudienceComments(backendDb) };
+}
+
+function blocksToText(blocks: Block[]): string {
+  return blocks.map((block) => (block.kind === "table" ? tableText(block) : block.text)).join("\n");
+}
+
+function tableText(block: Extract<Block, { kind: "table" }>): string {
+  const divider = `|${block.headers.map((_, index) => (index === 0 ? ":--" : "--:")).join("|")}|`;
+  return [pipeLine(block.headers), divider, ...block.rows.map(pipeLine)].join("\n");
+}
+
+function pipeLine(cells: string[]): string {
+  return `| ${cells.join(" | ")} |`;
 }
 
 /** Telegram's new rich-message Markdown deliberately has no table syntax.
  * Use its supported HTML <table> block instead of sending pipe characters as
  * visible text. */
-function richMessageHtml(lines: string[]): string {
-  const blocks: string[] = [];
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index]?.trim() ?? "";
-    if (!line) continue;
-    if (line.startsWith("| ")) {
-      const headers = tableCells(line);
-      // Markdown table separator is only an intermediate text representation.
-      index += 1;
-      const rows: string[][] = [];
-      let rowIndex = index + 1;
-      while (rowIndex < lines.length && (lines[rowIndex]?.trimStart().startsWith("| ") ?? false)) {
-        // A divider immediately after a pipe line means that line is the
-        // header of the next adjacent table, not a row of this one.
-        if (isTableDivider(lines[rowIndex + 1] ?? "")) break;
-        rows.push(tableCells(lines[rowIndex] ?? ""));
-        rowIndex += 1;
-      }
-      index = rowIndex - 1;
-      blocks.push(
-        `<table bordered striped><tr>${headers.map((cell) => `<th>${escapeHtml(cell)}</th>`).join("")}</tr>${rows
-          .map(
-            (row) =>
-              `<tr>${row.map((cell, cellIndex) => `<td align="${cellIndex ? "right" : "left"}">${escapeHtml(cell)}</td>`).join("")}</tr>`,
-          )
-          .join("")}</table>`,
-      );
-      continue;
-    }
-    blocks.push(`<p>${richInlineHtml(line)}</p>`);
-  }
-  return blocks.join("\n");
+function blocksToHtml(blocks: Block[]): string {
+  return blocks
+    .filter((block) => block.kind === "table" || block.text)
+    .map((block) => (block.kind === "table" ? tableHtml(block) : `<p>${richInlineHtml(block.text)}</p>`))
+    .join("\n");
 }
 
-function isTableDivider(line: string): boolean {
-  return /^\|\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?$/.test(line.trim());
-}
-
-function tableCells(line: string): string[] {
-  return line
-    .trim()
-    .replace(/^\|\s?/, "")
-    .replace(/\s?\|$/, "")
-    .split("|")
-    .map((cell) => cell.trim());
+function tableHtml(block: Extract<Block, { kind: "table" }>): string {
+  const headerRow = `<tr>${block.headers.map((cell) => `<th>${escapeHtml(cell)}</th>`).join("")}</tr>`;
+  const dataRows = block.rows
+    .map((row) => `<tr>${row.map((cell, index) => `<td align="${index ? "right" : "left"}">${escapeHtml(cell)}</td>`).join("")}</tr>`)
+    .join("");
+  return `<table bordered striped>${headerRow}${dataRows}</table>`;
 }
 
 function richInlineHtml(value: string): string {
@@ -113,7 +107,7 @@ function audienceProfiles(
   days: AnalyticsPeriod,
   period: string,
   locale: BotLocale,
-): string[] {
+): Block[] {
   const growth = audienceGrowthByPlatform(backendDb, since, days);
   return backendDb.db
     .select()
@@ -135,7 +129,7 @@ function audienceProfiles(
       if (data.stars != null) values.push(`Stars: *${metricNumber(data.stars)}*`);
       if (data.averageViewsPerPost != null) values.push(`${t(locale, "sdash.avg-views")}: ${metricNumber(data.averageViewsPerPost)}`);
       if (!values.length) values.push(t(locale, "sdash.no-follower-count"));
-      return `• *${platformLabel(row.platform)}* — ${values.join(" · ")}`;
+      return textBlock(`• *${platformLabel(row.platform)}* — ${values.join(" · ")}`);
     });
 }
 
@@ -146,7 +140,7 @@ function unifiedAnalyticsTable(
   since: string,
   days: AnalyticsPeriod,
   locale: BotLocale,
-): string[] {
+): Block[] {
   const profiles = backendDb.db
     .select()
     .from(creatorProfiles)
@@ -203,41 +197,43 @@ function unifiedAnalyticsTable(
   const totalFollowers = profiles.reduce((sum, row) => sum + metricNumber(row.dataJson.subscriberCount ?? row.dataJson.followersCount), 0);
   const totalGrowth = rows.reduce((sum, row) => sum + (row.growth ?? 0), 0);
   const all = locale === "ru" ? "Все" : "All";
+  const headers = [locale === "ru" ? "Площадка" : "Platform", "👥", "📈", "👁", "♥", "💬", "↗", "🔖"];
+  const tableRows = [
+    { platform: "all", label: `📊 ${all}`, growth: totalGrowth, value: totalContent },
+    ...rows.map((row) => ({ label: `${platformIcon(row.platform)} ${platformLabel(row.platform)}`, ...row })),
+  ].map((row) => [
+    row.label,
+    String(row.platform === "all" ? totalFollowers : followerCount(profileMap.get(row.platform)?.dataJson)),
+    row.growth == null ? "—" : signed(row.growth),
+    String(row.value.views),
+    String(row.value.likes),
+    String(row.value.comments),
+    dash(row.value.shares),
+    row.platform === "youtube" ? "—" : dash(row.value.saves),
+  ]);
   return [
-    `| ${locale === "ru" ? "Площадка" : "Platform"} | 👥 | 📈 | 👁 | ♥ | 💬 | ↗ | 🔖 |`,
-    "|:--|--:|--:|--:|--:|--:|--:|--:|",
-    ...[
-      { platform: "all", label: `📊 ${all}`, growth: totalGrowth, value: totalContent },
-      ...rows.map((row) => ({ label: `${platformIcon(row.platform)} ${platformLabel(row.platform)}`, ...row })),
-    ].map(
-      (row) =>
-        `| ${row.label} | ${row.platform === "all" ? totalFollowers : followerCount(profileMap.get(row.platform)?.dataJson)} | ${row.growth == null ? "—" : signed(row.growth)} | ${row.value.views} | ${row.value.likes} | ${row.value.comments} | ${dash(row.value.shares)} | ${row.platform === "youtube" ? "—" : dash(row.value.saves)} |`,
-    ),
+    tableBlock(headers, tableRows),
     ...(section === "posts"
       ? publishedPostTable(backendDb, config, since, days, locale)
       : publishedVideoTable(backendDb, config, section, since, days, locale)),
   ];
 }
 
-function publishedPostTable(
-  backendDb: BackendDb,
-  config: BackendConfig,
-  since: string,
-  days: AnalyticsPeriod,
-  locale: BotLocale,
-): string[] {
+function publishedPostTable(backendDb: BackendDb, config: BackendConfig, since: string, days: AnalyticsPeriod, locale: BotLocale): Block[] {
   if (!config.studio.modules.text_posting) return [];
   const rows = latestTextPostMetrics(backendDb, since).filter((row) => Object.keys(row.metrics).length > 0);
   if (!rows.length) return [];
   const values = rows.map(contentMetrics);
   const total = sumContentMetrics(values);
   const all = locale === "ru" ? "Все" : "All";
-  return [
-    `| ${locale === "ru" ? "Пост" : "Post"} | 👁 | ♥ | 💬 | ↗ | 🔖 |`,
-    "|:--|--:|--:|--:|--:|--:|",
-    `| ${all} | ${total.views} | ${total.likes} | ${total.comments} | ${dash(total.shares)} | ${dash(total.saves)} |`,
-    ...topDetails(rows, days).map((row) => contentRow(`${shortLabel(row.label)} · ${platformIcon(row.platform)}`, contentMetrics(row))),
+  const headers = [locale === "ru" ? "Пост" : "Post", "👁", "♥", "💬", "↗", "🔖"];
+  const tableRows = [
+    [all, String(total.views), String(total.likes), String(total.comments), dash(total.shares), dash(total.saves)],
+    ...topDetails(rows, days).map((row) =>
+      contentRowCells(`${shortLabel(row.label)} · ${platformIcon(row.platform)}`, contentMetrics(row)),
+    ),
   ];
+  return [tableBlock(headers, tableRows)];
 }
 
 /** Account insights describe all content viewed during the selected period.
@@ -269,7 +265,7 @@ function publishedVideoTable(
   since: string,
   days: AnalyticsPeriod,
   locale: BotLocale,
-): string[] {
+): Block[] {
   if (section === "posts" || !config.studio.modules.video_posting) return [];
   const rows = latestVideoMetrics(backendDb, since)
     .filter((row) => row.publishedAt != null && row.publishedAt >= since)
@@ -286,15 +282,15 @@ function publishedVideoTable(
   const values = rows.map((row) => contentMetrics(row));
   const total = sumContentMetrics(values);
   const all = locale === "ru" ? "Все" : "All";
-  return [
-    `| ${locale === "ru" ? "Видео" : "Video"} | 👁 | ♥ | 💬 | ↗ | 🔖 |`,
-    "|:--|--:|--:|--:|--:|--:|",
-    `| ${all} | ${total.views} | ${total.likes} | ${total.comments} | ${dash(total.shares)} | ${dash(total.saves)} |`,
+  const headers = [locale === "ru" ? "Видео" : "Video", "👁", "♥", "💬", "↗", "🔖"];
+  const tableRows = [
+    [all, String(total.views), String(total.likes), String(total.comments), dash(total.shares), dash(total.saves)],
     ...topDetails(rows, days).map((row) => {
       const platform = row.platform === "instagram_reels" ? "instagram" : "youtube";
-      return contentRow(`${shortLabel(row.label)} · ${platformIcon(platform)}`, contentMetrics(row), platform === "youtube");
+      return contentRowCells(`${shortLabel(row.label)} · ${platformIcon(platform)}`, contentMetrics(row), platform === "youtube");
     }),
   ];
+  return [tableBlock(headers, tableRows)];
 }
 
 function topDetails<T extends { metrics: Record<string, unknown> }>(rows: T[], days: AnalyticsPeriod): T[] {
@@ -325,8 +321,15 @@ function sumContentMetrics(values: ContentMetrics[]): ContentMetrics {
   );
 }
 
-function contentRow(label: string, metrics: ContentMetrics, hidesSaves = false): string {
-  return `| ${label} | ${metrics.views} | ${metrics.likes} | ${metrics.comments} | ${dash(metrics.shares)} | ${hidesSaves ? "—" : dash(metrics.saves)} |`;
+function contentRowCells(label: string, metrics: ContentMetrics, hidesSaves = false): string[] {
+  return [
+    label,
+    String(metrics.views),
+    String(metrics.likes),
+    String(metrics.comments),
+    dash(metrics.shares),
+    hidesSaves ? "—" : dash(metrics.saves),
+  ];
 }
 
 function dash(value: number): string {
