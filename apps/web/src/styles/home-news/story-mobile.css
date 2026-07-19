@@ -287,12 +287,6 @@
     padding-right: 0;
   }
 
-  .story-panel {
-    min-height: 100svh;
-    padding: 1.05rem 1rem calc(5.8rem + env(safe-area-inset-bottom, 0));
-    overflow: visible;
-  }
-
   .story-category-wrap {
     margin-top: 0.25rem;
   }
@@ -387,6 +381,7 @@
     min-height: 0;
     height: auto;
     padding: 1.15rem 1rem 1.25rem;
+    overflow: visible;
   }
 
   .story-context [data-story-title],

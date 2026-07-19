@@ -1,4 +1,13 @@
 import { createStoryViewTracker } from "./story-player/analytics";
+import {
+  applyMutePreference,
+  autoplayRejected,
+  beginAutoplay,
+  clearAutoplayMute,
+  confirmFirstFrame,
+  initialVideoAudioState,
+  resetForNewStory,
+} from "./story-player/audio-state";
 import { storyPlayerBrowserUtils } from "./story-player/browser";
 import { renderDebugState } from "./story-player/debug";
 import { loadGiscusDiscussion } from "./story-player/discussion";
@@ -58,7 +67,7 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
   let active = 0;
   let isManualPaused = payload.initialPaused === true || root.dataset.initialPaused === "true";
   let paused = isManualPaused;
-  let muted = readMutedPreference();
+  let audioState = initialVideoAudioState(readMutedPreference());
   let expanded = false;
   let wheelGestureLocked = false;
   let wheelUnlockTimer: number | null = null;
@@ -67,8 +76,7 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
   let manualPausedBeforeDiscussion = isManualPaused;
   let readingVisible = false;
   let manualPausedBeforeReading = isManualPaused;
-  let videoAutoplayMuted = false;
-  let pendingDesktopSoundRestore = false;
+  const isDesktopViewport = () => window.matchMedia("(min-width: 761px)").matches;
   const opensDiscussionFromUrl = new URLSearchParams(window.location.search).get("discussion") === "1";
   const debugPanel = new URLSearchParams(window.location.search).has("debug") ? document.createElement("pre") : null;
 
@@ -86,29 +94,31 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
   });
 
   function syncMutedUi(): void {
-    audioToggle?.setAttribute("aria-pressed", String(muted));
-    audioToggle?.classList.toggle("is-on", !muted && !videoAutoplayMuted);
+    audioToggle?.setAttribute("aria-pressed", String(audioState.muted));
+    audioToggle?.classList.toggle("is-on", !audioState.muted && !audioState.videoAutoplayMuted);
     if (audioLabel) {
-      audioLabel.textContent = videoAutoplayMuted ? ui.tapForSound || "Tap for sound" : muted ? ui.muted || "Muted" : ui.mute || "Audio";
+      audioLabel.textContent = audioState.videoAutoplayMuted
+        ? ui.tapForSound || "Tap for sound"
+        : audioState.muted
+          ? ui.muted || "Muted"
+          : ui.mute || "Audio";
     }
   }
 
   function setMuted(nextMuted: boolean, persist = true): void {
-    muted = nextMuted;
-    videoAutoplayMuted = false;
-    pendingDesktopSoundRestore = false;
+    audioState = applyMutePreference(nextMuted);
     if (persist) {
       try {
-        localStorage.setItem("story-player-muted", String(muted));
+        localStorage.setItem("story-player-muted", String(audioState.muted));
       } catch {}
     }
     syncMutedUi();
     if (audio) {
-      audio.muted = muted;
-      if (!muted && audio.getAttribute("src") && posts[active]?.mediaType !== "video") audio.play?.().catch(() => {});
+      audio.muted = audioState.muted;
+      if (!audioState.muted && audio.getAttribute("src") && posts[active]?.mediaType !== "video") audio.play?.().catch(() => {});
       else audio.pause?.();
     }
-    if (video) video.muted = muted;
+    if (video) video.muted = audioState.muted;
   }
 
   function playActiveVideo(): void {
@@ -118,22 +128,20 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
       // succeeds, restore the sound preference the user explicitly chose.
       // Mobile browsers already preserve this path, so keep their behavior
       // untouched.
-      const restoreDesktopSound = !muted && window.matchMedia("(min-width: 761px)").matches;
-      if (restoreDesktopSound) {
-        video.muted = true;
-        pendingDesktopSoundRestore = true;
-      }
+      const intent = beginAutoplay(audioState, isDesktopViewport());
+      audioState = intent.state;
+      if (intent.muteBeforePlay) video.muted = true;
+      const mutedBeforePlay = video.muted;
       video.play?.().catch(() => {
-        pendingDesktopSoundRestore = false;
         // Automatic navigation is not a user gesture. Retry muted when the
         // browser rejects playback with the persisted sound preference.
-        if (!video.muted) {
+        const rejection = autoplayRejected(audioState, mutedBeforePlay);
+        audioState = rejection.state;
+        if (rejection.retryMuted) {
           video.muted = true;
-          videoAutoplayMuted = true;
           syncMutedUi();
           video.play?.().catch(() => {});
-        } else if (restoreDesktopSound) {
-          videoAutoplayMuted = true;
+        } else if (audioState.videoAutoplayMuted) {
           syncMutedUi();
         }
       });
@@ -197,13 +205,12 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
     const post = posts[active];
     if (!post) return;
     expanded = false;
-    videoAutoplayMuted = false;
-    pendingDesktopSoundRestore = false;
+    audioState = resetForNewStory(audioState);
     if (readingVisible) setReadingVisible(false);
     setDiscussionVisible(false);
     const panel = root.querySelector(".story-panel");
     panel?.classList.add("is-updating");
-    renderStoryFrame({ root, elements, post, muted, paused, expanded, ui, toPublicSrc });
+    renderStoryFrame({ root, elements, post, muted: audioState.muted, paused, expanded, ui, toPublicSrc });
     progress.resetForStory(options);
     railCards.forEach((card, cardIndex) => {
       const isCurrent = cardIndex === active;
@@ -242,15 +249,16 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
   video?.addEventListener("playing", () => progress.handleVideoPlaying());
   video?.addEventListener("timeupdate", () => {
     progress.handleVideoTimeUpdate();
-    if (!pendingDesktopSoundRestore || muted || isManualPaused || !window.matchMedia("(min-width: 761px)").matches) return;
     // `timeupdate` proves that at least one real frame has played. Restoring
     // sound here avoids Chrome interrupting a source while it is still
     // entering autoplay, which previously froze both media and progress.
-    pendingDesktopSoundRestore = false;
+    const confirmation = confirmFirstFrame(audioState, { isManualPaused, isDesktopViewport: isDesktopViewport() });
+    audioState = confirmation.state;
+    if (!confirmation.shouldRestoreSound) return;
     window.requestAnimationFrame(() => {
-      if (!video || muted || isManualPaused || posts[active]?.mediaType !== "video") return;
+      if (!video || audioState.muted || isManualPaused || posts[active]?.mediaType !== "video") return;
       video.muted = false;
-      videoAutoplayMuted = false;
+      audioState = clearAutoplayMute(audioState);
       syncMutedUi();
     });
   });
@@ -369,15 +377,14 @@ import { renderStoryFrame, syncReadMore } from "./story-player/render-frame";
     });
   });
   audioToggle?.addEventListener("click", () => {
-    if (videoAutoplayMuted && video) {
-      videoAutoplayMuted = false;
-      pendingDesktopSoundRestore = false;
+    if (audioState.videoAutoplayMuted && video) {
+      audioState = clearAutoplayMute(audioState);
       video.muted = false;
       syncMutedUi();
       video.play?.().catch(() => {});
       return;
     }
-    setMuted(!muted);
+    setMuted(!audioState.muted);
   });
 
   let startX = 0;
