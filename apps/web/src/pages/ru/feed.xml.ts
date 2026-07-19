@@ -11,8 +11,8 @@ export async function GET(context: any) {
     .slice(0, 50);
 
   return rss({
-    title: "RU — Алексей Гетманец | alexgetmancom",
-    description: "Новости ИИ, автоматизация, разработка и self-hosted системы от Алексея Гетманца.",
+    title: "RU — Алекс Гетман | alexgetmancom",
+    description: "Новости ИИ, автоматизация, разработка и self-hosted системы от Алекса Гетмана.",
     site: context.site || "https://alexgetman.com",
     items: sortedItems.map((item) => {
       const id = item.post_id;

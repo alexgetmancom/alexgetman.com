@@ -1,8 +1,0 @@
-{
-  "issuer": "https://alexgetman.com",
-  "scopes_supported": [
-    "read:feed"
-  ],
-  "response_types_supported": [],
-  "grant_types_supported": []
-}

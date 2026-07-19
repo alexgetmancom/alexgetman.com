@@ -10,8 +10,9 @@ const feedItems = loadFeedItems();
 
 const russianPosts = sortedHomePosts(feedItems, "ru");
 
-const title = "Алексей Гетманец | новости ИИ и developer tools";
-const description = "Новости ИИ, developer tools, автоматизация и изменения продуктов от Алексея Гетманца.";
+const title = "Алекс Гетман — новости ИИ, моделей и AI-продуктов";
+const description =
+  "Свежие новости ИИ: новые модели, продукты и обновления OpenAI, ChatGPT Codex, Claude, Gemini и других. Релизы, тесты, цены, лимиты и комментарии.";
 
 const schema = JSON.stringify({
   "@context": "https://schema.org",
@@ -19,7 +20,7 @@ const schema = JSON.stringify({
     {
       "@type": "Person",
       "@id": "https://alexgetman.com/#person",
-      name: "Алексей Гетманец",
+      name: "Алекс Гетман",
       alternateName: "Alex Getman",
       url: "https://alexgetman.com/ru/",
       image: "https://alexgetman.com/avatar.png",
@@ -39,7 +40,7 @@ const schema = JSON.stringify({
       "@type": "WebSite",
       "@id": "https://alexgetman.com/#website",
       url: "https://alexgetman.com/ru/",
-      name: "Алексей Гетманец",
+      name: "Алекс Гетман",
       description: description,
       inLanguage: "ru-RU",
       publisher: { "@id": "https://alexgetman.com/#person" },
@@ -67,7 +68,7 @@ const labels = {
   schema={schema}
   canonicalUrl="https://alexgetman.com/ru/"
   lang="ru"
-  siteName="Алексей Гетманец"
+  siteName="Алекс Гетман"
   rssHref="/ru/feed.xml"
   alternateLinks={[
     { hreflang: "en", href: "https://alexgetman.com/" },

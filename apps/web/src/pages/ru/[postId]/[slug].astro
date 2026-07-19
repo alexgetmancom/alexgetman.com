@@ -18,12 +18,12 @@ if (!item) {
 }
 const russianPosts = sortedHomePosts(feedItems, "ru");
 const selectedPost = russianPosts.find((post) => String(post.id) === String(postId));
-const siteAuthor = "Алексей Гетманец";
+const siteAuthor = "Алекс Гетман";
 const postText = item.text || "";
 const pageTitle = selectedPost?.title || getFirstSentence(postText) || `Публикация ${postId}`;
 const postDescription =
   truncateText(postText.replace(/\s+/g, " "), 158) ||
-  "Новости ИИ, заметки об автоматизации и разработке от Алексея Гетманца на alexgetman.com.";
+  "Новости ИИ, заметки об автоматизации и разработке от Алекса Гетмана на alexgetman.com.";
 const localUrl = `https://alexgetman.com/ru/${postId}/${slug}/`;
 const ogImage = postOgImagePath(item, "ru");
 const visualMedia = postVisualMedia(item, "ru");

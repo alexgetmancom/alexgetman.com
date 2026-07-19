@@ -13,7 +13,7 @@ export async function GET(context: any) {
   const siteUrl = siteUrlFromContext(context);
 
   const lines = [
-    "# Алексей Гетманец",
+    "# Алекс Гетман",
     "",
     "> Личный хаб alexgetmancom: ИИ, разработка, автоматизация, open-source и проекты.",
     "",
