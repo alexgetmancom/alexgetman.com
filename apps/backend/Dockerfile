@@ -27,6 +27,9 @@ COPY --chown=bun:bun apps/backend ./apps/backend
 COPY --chown=bun:bun apps/web ./apps/web
 COPY --chown=bun:bun scripts ./scripts
 COPY --chown=bun:bun tools/knip ./tools/knip
+# Backend shares the Story encoder with the isolated media-processor service.
+# Keep the single source in the in-Docker TypeScript build context as well.
+COPY --chown=bun:bun deploy/media-processor/story-encode.ts ./deploy/media-processor/story-encode.ts
 
 RUN bun run --filter @alexgetman/backend typecheck
 RUN DATA_DIR=/data bun run build
