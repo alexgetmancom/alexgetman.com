@@ -9,7 +9,13 @@ import { storeTelegramVideo } from "../interfaces/telegram/video-ingress.js";
 import { videoPreview } from "../interfaces/telegram/video-preview.js";
 import { type VideoMetadata, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import { studioServices } from "../studio/services/index.js";
-import { advanceVideoMetadata, advanceVideoTargetSchedule, commonVideoSchedule, firstVideoMetadataStep } from "../studio/video-fsm.js";
+import {
+  advanceVideoMetadata,
+  advanceVideoTargetSchedule,
+  commonVideoSchedule,
+  firstVideoMetadataStep,
+  type VideoWizardStep,
+} from "../studio/video-fsm.js";
 import { botLocale } from "./i18n.js";
 import {
   askInstagramOrSchedule,
@@ -64,6 +70,13 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
       return true;
     }
     if (!session.draftId) return false;
+    if (session.data.is_single_edit) {
+      const edit = singleEditChange(backendDb, config, adminId, session.step, text);
+      if (edit) {
+        await finishSingleVideoEdit(ctx, backendDb, config, adminId, session, edit.target, edit.apply);
+        return true;
+      }
+    }
     if (session.step.startsWith("youtube_")) return handleYouTubeMessage(ctx, backendDb, config, adminId, session, text);
     if (session.step === "label") {
       studioServices(backendDb, config).videos.rename(adminId, session.draftId, text);
@@ -86,13 +99,6 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
       return true;
     }
     if (session.step === "instagram_caption") {
-      if (session.data.is_single_edit) {
-        await finishSingleVideoEdit(ctx, backendDb, config, adminId, session, "instagram_reels", (metadata) => {
-          metadata.caption = text === "-" ? "" : text;
-          delete metadata.hashtags;
-        });
-        return true;
-      }
       const transition = advanceVideoMetadata("instagram_caption", text, session.data);
       const metadata = { caption: String(transition.data.instagram_caption ?? "") };
       studioServices(backendDb, config).videos.updateMetadata(adminId, session.draftId, "instagram_reels", metadata);
@@ -113,6 +119,11 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
   return false;
 }
 
+/** Steps where the FSM data key is the step name itself, so a single generic
+ * handler can drive them: advance → store the field under its own name →
+ * prompt whatever step the FSM says comes next. */
+const YOUTUBE_LINEAR_STEPS: VideoWizardStep[] = ["youtube_title", "youtube_description", "youtube_game_url"];
+
 async function handleYouTubeMessage(
   ctx: Context,
   backendDb: BackendDb,
@@ -122,59 +133,17 @@ async function handleYouTubeMessage(
   text: string,
 ): Promise<boolean> {
   if (session.draftId == null) return false;
-  if (session.step === "youtube_title") {
-    if (session.data.is_single_edit) {
-      await finishSingleVideoEdit(ctx, backendDb, config, adminId, session, "youtube_shorts", (metadata, draftId) => {
-        metadata.title = text;
-        studioServices(backendDb, config).videos.rename(adminId, draftId, text || "YouTube Shorts");
-      });
-      return true;
-    }
-    const transition = advanceVideoMetadata("youtube_title", text, session.data);
-    setData(backendDb, adminId, session, "youtube_title", text, transition.nextStep ?? "youtube_description");
-    await sendVideoMetadataPrompt(ctx, backendDb, adminId, "youtube_description", session.selected);
-    return true;
-  }
-  if (session.step === "youtube_description") {
-    if (session.data.is_single_edit) {
-      await finishSingleVideoEdit(ctx, backendDb, config, adminId, session, "youtube_shorts", (metadata) => {
-        metadata.description = text === "-" ? "" : text;
-      });
-      return true;
-    }
-    const transition = advanceVideoMetadata("youtube_description", text, session.data);
-    setData(
-      backendDb,
-      adminId,
-      session,
-      "youtube_description",
-      transition.data.youtube_description,
-      transition.nextStep ?? "youtube_game_url",
-    );
-    await sendVideoMetadataPrompt(ctx, backendDb, adminId, "youtube_game_url", session.selected);
-    return true;
-  }
-  if (session.step === "youtube_game_url") {
-    if (session.data.is_single_edit) {
-      await finishSingleVideoEdit(ctx, backendDb, config, adminId, session, "youtube_shorts", (metadata) => {
-        metadata.gameUrl = text === "-" ? undefined : fixUrlSlashes(text);
-      });
-      return true;
-    }
-    const transition = advanceVideoMetadata("youtube_game_url", text, session.data);
-    setData(backendDb, adminId, session, "youtube_game_url", transition.data.youtube_game_url, transition.nextStep ?? "youtube_tags");
-    await sendVideoMetadataPrompt(ctx, backendDb, adminId, "youtube_tags", session.selected);
+  if (YOUTUBE_LINEAR_STEPS.includes(session.step as VideoWizardStep)) {
+    const step = session.step as VideoWizardStep;
+    const transition = advanceVideoMetadata(step, text, session.data);
+    if (!transition.nextStep) throw new StudioError("err.video-restart");
+    setData(backendDb, adminId, session, step, transition.data[step], transition.nextStep);
+    await sendVideoMetadataPrompt(ctx, backendDb, adminId, transition.nextStep, session.selected);
     return true;
   }
   if (session.step !== "youtube_tags") return false;
   const transition = advanceVideoMetadata("youtube_tags", text, session.data);
   const tags = transition.data.youtube_tags as string[];
-  if (session.data.is_single_edit) {
-    await finishSingleVideoEdit(ctx, backendDb, config, adminId, session, "youtube_shorts", (metadata) => {
-      metadata.tags = tags;
-    });
-    return true;
-  }
   const metadata = {
     title: String(session.data.youtube_title ?? ""),
     description: String(session.data.youtube_description ?? ""),
@@ -187,6 +156,56 @@ async function handleYouTubeMessage(
   return true;
 }
 
+/** Table for editing one already-set metadata field outside the wizard order
+ * (reached via "✏️ Edit" on a finished draft). Kept separate from the wizard
+ * advance logic above so neither has to know about the other's entry point. */
+function singleEditChange(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  adminId: number,
+  step: string,
+  text: string,
+): { target: VideoTarget; apply: (metadata: Record<string, unknown>, draftId: number) => void } | null {
+  if (step === "youtube_title")
+    return {
+      target: "youtube_shorts",
+      apply: (metadata, draftId) => {
+        metadata.title = text;
+        studioServices(backendDb, config).videos.rename(adminId, draftId, text || "YouTube Shorts");
+      },
+    };
+  if (step === "youtube_description")
+    return {
+      target: "youtube_shorts",
+      apply: (metadata) => {
+        metadata.description = text === "-" ? "" : text;
+      },
+    };
+  if (step === "youtube_game_url")
+    return {
+      target: "youtube_shorts",
+      apply: (metadata) => {
+        metadata.gameUrl = text === "-" ? undefined : fixUrlSlashes(text);
+      },
+    };
+  if (step === "youtube_tags")
+    return {
+      target: "youtube_shorts",
+      apply: (metadata) => {
+        metadata.tags = advanceVideoMetadata("youtube_tags", text, {}).data.youtube_tags as string[];
+      },
+    };
+  if (step === "instagram_caption")
+    return {
+      target: "instagram_reels",
+      apply: (metadata) => {
+        metadata.caption = text === "-" ? "" : text;
+        delete metadata.hashtags;
+      },
+    };
+  return null;
+}
+
 async function handleScheduleMessage(
   ctx: Context,
   backendDb: BackendDb,
@@ -195,8 +214,10 @@ async function handleScheduleMessage(
   session: VideoSession,
   text: string,
 ): Promise<boolean> {
+  const draftId = session.draftId;
+  if (draftId == null) throw new StudioError("err.video-missing");
   if (session.step === "schedule_common") {
-    const date = studioServices(backendDb, config).videos.parseSchedule(adminId, session.draftId ?? 0, text);
+    const date = studioServices(backendDb, config).videos.parseSchedule(adminId, draftId, text);
     await confirmVideoSchedule(ctx, backendDb, config, adminId, session, commonVideoSchedule(session.selected, date));
     return true;
   }
@@ -205,7 +226,7 @@ async function handleScheduleMessage(
     session.selected,
     (session.data.schedule as Record<string, string> | undefined) ?? {},
     target,
-    studioServices(backendDb, config).videos.parseSchedule(adminId, session.draftId ?? 0, text),
+    studioServices(backendDb, config).videos.parseSchedule(adminId, draftId, text),
   );
   if (transition.nextTarget) {
     saveSession(backendDb, adminId, {
