@@ -112,9 +112,7 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
       return handleScheduleMessage(ctx, backendDb, config, adminId, session, text);
   } catch (error) {
     const locale = botLocale(backendDb, adminId);
-    if (session.step === "schedule_common" || session.step.startsWith("schedule_target:"))
-      await replyVideoPrompt(ctx, t(locale, "common.schedule-parse-error"));
-    else await replyVideoPrompt(ctx, `🔴 ${t(locale, "video.value-error")}: ${describeError(locale, error)}`);
+    await replyVideoPrompt(ctx, `🔴 ${t(locale, "video.value-error")}: ${describeError(locale, error)}`);
     return true;
   }
   return false;
@@ -207,6 +205,25 @@ function singleEditChange(
   return null;
 }
 
+/** Isolates the one step that legitimately fails on bad user input. Any other
+ * error in this flow (preview, delivery, storage) must reach the generic
+ * describeError path instead of being misreported as an unparsable date. */
+async function parseScheduleDate(
+  ctx: Context,
+  backendDb: BackendDb,
+  config: BackendConfig,
+  adminId: number,
+  draftId: number,
+  text: string,
+): Promise<Date | null> {
+  try {
+    return studioServices(backendDb, config).videos.parseSchedule(adminId, draftId, text);
+  } catch {
+    await replyVideoPrompt(ctx, t(botLocale(backendDb, adminId), "common.schedule-parse-error"));
+    return null;
+  }
+}
+
 async function handleScheduleMessage(
   ctx: Context,
   backendDb: BackendDb,
@@ -218,16 +235,19 @@ async function handleScheduleMessage(
   const draftId = session.draftId;
   if (draftId == null) throw new StudioError("err.video-missing");
   if (session.step === "schedule_common") {
-    const date = studioServices(backendDb, config).videos.parseSchedule(adminId, draftId, text);
+    const date = await parseScheduleDate(ctx, backendDb, config, adminId, draftId, text);
+    if (!date) return true;
     await confirmVideoSchedule(ctx, backendDb, config, adminId, session, commonVideoSchedule(session.selected, date));
     return true;
   }
   const target = session.step.slice("schedule_target:".length) as VideoTarget;
+  const date = await parseScheduleDate(ctx, backendDb, config, adminId, draftId, text);
+  if (!date) return true;
   const transition = advanceVideoTargetSchedule(
     session.selected,
     (session.data.schedule as Record<string, string> | undefined) ?? {},
     target,
-    studioServices(backendDb, config).videos.parseSchedule(adminId, draftId, text),
+    date,
   );
   if (transition.nextTarget) {
     saveSession(backendDb, adminId, {
