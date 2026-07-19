@@ -78,7 +78,9 @@ function recordFollowerMilestones(
       recordMilestone(backendDb, "total", threshold, `🏆 Всего: ${threshold} подписчиков на площадках!`, "audience");
 }
 
-/** Saves the current profile projection and a single UTC-day observation. */
+/** Saves the current profile projection and an observation bucket. Most
+ * platforms retain one durable daily sample; YouTube additionally retains an
+ * hourly bucket so its live channel-view delta can cover the last 24 hours. */
 export function recordProfileSnapshot(
   backendDb: BackendDb,
   input: {
@@ -89,16 +91,19 @@ export function recordProfileSnapshot(
     /** Exact Studio-owned platforms that count toward the combined milestone. */
     audiencePlatforms?: readonly string[];
     sampledAt?: Date;
+    /** "hour" is intentionally used only for the video analytics feed. */
+    resolution?: "day" | "hour";
   },
 ): void {
   const sampledAt = input.sampledAt ?? new Date();
   const timestamp = sampledAt.toISOString();
+  const sampledOn = input.resolution === "hour" ? timestamp.slice(0, 13) : timestamp.slice(0, 10);
   backendDb.db
     .insert(creatorProfileSnapshots)
     .values({
       platform: input.platform,
       account: input.account,
-      sampledOn: timestamp.slice(0, 10),
+      sampledOn,
       metricsJson: input.metrics,
       source: input.source,
       sampledAt: timestamp,

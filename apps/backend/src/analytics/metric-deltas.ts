@@ -169,6 +169,25 @@ export function latestVideoMetrics(backendDb: BackendDb, since: string): VideoMe
   });
 }
 
+/** A channel's public `viewCount` is available immediately from YouTube Data
+ * API. The hourly profile observations make its 24h delta complete even when
+ * the Analytics API has not closed the report yet. */
+export function youtubeChannelViewDeltaSince(backendDb: BackendDb, since: string): number | null {
+  const rows = backendDb.sqlite
+    .prepare(
+      `SELECT
+         (SELECT CAST(COALESCE(json_extract(metrics_json, '$.viewCount'), 0) AS INTEGER)
+          FROM creator_profile_snapshots WHERE platform = 'youtube'
+          ORDER BY sampled_at DESC, id DESC LIMIT 1) AS latest,
+         (SELECT CAST(COALESCE(json_extract(metrics_json, '$.viewCount'), 0) AS INTEGER)
+          FROM creator_profile_snapshots WHERE platform = 'youtube' AND sampled_at <= ?
+          ORDER BY sampled_at DESC, id DESC LIMIT 1) AS baseline`,
+    )
+    .get(since) as { latest?: number; baseline?: number } | null;
+  if (rows?.latest == null || rows.baseline == null) return null;
+  return Math.max(0, rows.latest - rows.baseline);
+}
+
 /** Per-platform video metrics for the selected period. `shares` is the Share
  * action (Instagram sends / YouTube share button), never a repost. */
 export function sum(rows: VideoMetricRow[], field: string): number {

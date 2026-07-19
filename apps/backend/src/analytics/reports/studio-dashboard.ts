@@ -9,6 +9,7 @@ import {
   latestTextPostMetrics,
   latestVideoMetrics,
   textContentMetricsByPlatform,
+  youtubeChannelViewDeltaSince,
 } from "../metric-deltas.js";
 import { metricNumber } from "../snapshots/creator-store.js";
 
@@ -153,6 +154,27 @@ function unifiedAnalyticsTable(
     .filter((row) => audiencePlatformsForSection(config, section).has(row.platform));
   const accountMetrics = new Map(profiles.map((row) => [row.platform, contentMetricsFromProfile(row.dataJson, days)]));
   const content = accountContentMetricsForSection(backendDb, config, section, since, accountMetrics);
+  if (days === 1 && section !== "posts" && config.studio.modules.youtube) {
+    const liveViews = youtubeChannelViewDeltaSince(backendDb, since);
+    const youtube = content.get("youtube");
+    const tracked = sumContentMetrics(
+      latestVideoMetrics(backendDb, since)
+        .filter((row) => row.platform === "youtube_shorts")
+        .map((row) => contentMetrics(row)),
+    );
+    // Until Analytics closes today's report, retain its delayed engagement
+    // fields but replace the misleading zero channel-view total with the live
+    // delta. A missing hourly baseline leaves the existing value untouched.
+    if (youtube && youtube.views === 0)
+      content.set("youtube", {
+        ...youtube,
+        views: liveViews ?? tracked.views,
+        likes: tracked.likes,
+        comments: tracked.comments,
+        shares: tracked.shares,
+        saves: tracked.saves,
+      });
+  }
   const growth = audienceGrowthByPlatform(backendDb, since, days);
   const profileMap = new Map(profiles.map((profile) => [profile.platform, profile]));
   const platforms = new Set([...profileMap.keys(), ...content.keys()]);

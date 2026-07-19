@@ -192,7 +192,9 @@ describe("creator analytics", () => {
       expect(backendDb.db.select().from(videoMetricSnapshots).all()).toHaveLength(1);
       const schedule = backendDb.db.select().from(videoMetricSchedule).where(eq(videoMetricSchedule.videoTargetId, target.id)).get();
       expect(schedule?.checkpointIndex).toBe(1);
-      expect(new Date(schedule?.nextCheckAt ?? 0).getTime()).toBe(new Date(publishedAt).getTime() + 3 * 60 * 60_000);
+      const nextCheck = new Date(schedule?.nextCheckAt ?? 0).getTime();
+      expect(nextCheck).toBeGreaterThan(Date.now() + 50 * 60 * 1000);
+      expect(nextCheck).toBeLessThan(Date.now() + 70 * 60 * 1000);
     } finally {
       backendDb.close();
     }
@@ -470,6 +472,82 @@ describe("creator analytics", () => {
       expect(dashboard.text).not.toContain("| Симулятор… · ▶️ |");
       expect(dashboard.richHtml.match(/<table bordered striped>/g)?.length).toBe(2);
       expect(dashboard.richHtml).not.toContain("|:--");
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("falls back to hourly YouTube and tracked-video deltas while the daily report is pending", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date();
+      const before = new Date(now.getTime() - 25 * 60 * 60_000).toISOString();
+      const current = now.toISOString();
+      const draft = backendDb.db
+        .insert(videoDrafts)
+        .values({ adminId: 1, assetKey: "asset", label: "Новый Short", status: "published", createdAt: current, updatedAt: current })
+        .returning({ id: videoDrafts.id })
+        .get();
+      if (!draft) throw new Error("video draft missing");
+      const target = backendDb.db
+        .insert(videoTargets)
+        .values({
+          videoDraftId: draft.id,
+          target: "youtube_shorts",
+          metadataJson: {},
+          status: "published",
+          externalId: "video-1",
+          publishedAt: current,
+          createdAt: current,
+          updatedAt: current,
+        })
+        .returning({ id: videoTargets.id })
+        .get();
+      if (!target) throw new Error("video target missing");
+      backendDb.db
+        .insert(videoMetricSnapshots)
+        .values({
+          videoTargetId: target.id,
+          platform: "youtube_shorts",
+          metricsJson: { views: 6, likes: 2, comments: 1 },
+          sampledAt: current,
+        })
+        .run();
+      backendDb.db
+        .insert(creatorProfileSnapshots)
+        .values([
+          {
+            platform: "youtube",
+            account: "marux",
+            sampledOn: "2026-07-18T10",
+            metricsJson: { viewCount: 100 },
+            source: "youtube_data_api",
+            sampledAt: before,
+          },
+          {
+            platform: "youtube",
+            account: "marux",
+            sampledOn: "2026-07-19T11",
+            metricsJson: { viewCount: 150 },
+            source: "youtube_data_api",
+            sampledAt: current,
+          },
+        ])
+        .run();
+      backendDb.db
+        .insert(creatorProfiles)
+        .values({
+          platform: "youtube",
+          dataJson: { subscriberCount: 124, views1d: 0, likes1d: 0, comments1d: 0, shares1d: 0 },
+          updatedAt: current,
+        })
+        .run();
+      const config = loadConfig({});
+      config.studio.modules.video_posting = true;
+      config.studio.modules.youtube = true;
+
+      const dashboard = studioAnalyticsDashboard(backendDb, config, "video", 1, "ru");
+      expect(dashboard.text).toContain("| ▶️ YouTube | 124 | +0 | 50 | 2 | 1 | — | — |");
     } finally {
       backendDb.close();
     }

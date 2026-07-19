@@ -7,7 +7,7 @@ import { youtubeAccessToken } from "../../foundation/external/youtube.js";
 import { requestJson } from "../../foundation/http.js";
 import { metricNumber, upsertComment, upsertVideoSnapshot } from "../snapshots/creator-store.js";
 import { isTerminalMetricError, terminalIfMissingRemoteObject } from "./collectors/errors.js";
-import { videoMetricCheckpointAt } from "./metric-checkpoints.js";
+import { nextVideoMetricCheckAt, videoMetricCheckpointAt } from "./metric-checkpoints.js";
 
 type VideoMetricTask = {
   id: number;
@@ -133,6 +133,33 @@ function ensureVideoMetricSchedule(backendDb: BackendDb): void {
       .onConflictDoNothing()
       .run();
   }
+  // Existing publications used the former sparse (1/3/6/12/24h) cadence.
+  // Bring them onto the new video-only cadence from their last observation,
+  // without backfilling missed calls or touching text-post schedules.
+  const scheduled = backendDb.db
+    .select({
+      id: videoTargets.id,
+      publishedAt: videoTargets.publishedAt,
+      lastCheckedAt: videoMetricSchedule.lastCheckedAt,
+      nextCheckAt: videoMetricSchedule.nextCheckAt,
+      frozenAt: videoMetricSchedule.frozenAt,
+    })
+    .from(videoMetricSchedule)
+    .innerJoin(videoTargets, eq(videoTargets.id, videoMetricSchedule.videoTargetId))
+    .where(
+      and(eq(videoTargets.status, "published"), or(eq(videoTargets.target, "youtube_shorts"), eq(videoTargets.target, "instagram_reels"))),
+    )
+    .all();
+  for (const task of scheduled) {
+    if (!task.lastCheckedAt || task.frozenAt) continue;
+    const desired = nextVideoMetricCheckAt(task.publishedAt, new Date(task.lastCheckedAt)).toISOString();
+    if (!task.nextCheckAt || task.nextCheckAt > desired)
+      backendDb.db
+        .update(videoMetricSchedule)
+        .set({ nextCheckAt: desired, updatedAt: now })
+        .where(eq(videoMetricSchedule.videoTargetId, task.id))
+        .run();
+  }
 }
 
 function dueVideoMetricTasks(backendDb: BackendDb, limit: number): VideoMetricTask[] {
@@ -204,11 +231,7 @@ async function collectZernioInstagramVideoMetrics(
 function finishVideoMetricTask(backendDb: BackendDb, task: VideoMetricTask, error: string | null, terminal = false): void {
   const now = new Date();
   const nextIndex = error ? task.checkpointIndex : task.checkpointIndex + 1;
-  const nextCheckAt = terminal
-    ? null
-    : error
-      ? new Date(now.getTime() + 15 * 60_000)
-      : videoMetricCheckpointAt(task.publishedAt, nextIndex, now);
+  const nextCheckAt = terminal ? null : error ? new Date(now.getTime() + 15 * 60_000) : nextVideoMetricCheckAt(task.publishedAt, now);
   backendDb.db
     .update(videoMetricSchedule)
     .set({

@@ -75,6 +75,10 @@ export async function syncYouTubeProfile(config: BackendConfig, backendDb: Backe
         ...periodMetrics(today, 1),
         ...periodMetrics(week, 7),
       },
+      // Keep the current channel total once per hour. Analytics reports lag;
+      // the durable channel counter lets the 24-hour dashboard calculate a
+      // live view delta without polling any text-post platforms.
+      resolution: "hour",
     });
   });
 }
@@ -84,8 +88,26 @@ function periodMetrics(metrics: Record<string, number>, days: 1 | 7): Record<str
 }
 
 async function youtubeReport(fetchImpl: typeof fetch, token: string, days = 30): Promise<Record<string, number>> {
-  const end = new Date().toISOString().slice(0, 10);
-  const start = new Date(Date.now() - days * 24 * 60 * 60_000).toISOString().slice(0, 10);
+  // YouTube Analytics defines report days in Pacific time and may omit the
+  // most recent days. Ask only for completed days; a currently-open calendar
+  // day otherwise produces an empty report that looks like a real zero.
+  const pacificDay = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+    .formatToParts(new Date())
+    .reduce<Record<string, string>>((result, part) => {
+      result[part.type] = part.value;
+      return result;
+    }, {});
+  const completedEnd = new Date(`${pacificDay.year}-${pacificDay.month}-${pacificDay.day}T12:00:00Z`);
+  completedEnd.setUTCDate(completedEnd.getUTCDate() - 1);
+  const end = completedEnd.toISOString().slice(0, 10);
+  const startDate = new Date(completedEnd);
+  startDate.setUTCDate(startDate.getUTCDate() - days + 1);
+  const start = startDate.toISOString().slice(0, 10);
   const url = new URL("https://youtubeanalytics.googleapis.com/v2/reports");
   url.searchParams.set("ids", "channel==MINE");
   url.searchParams.set("startDate", start);
