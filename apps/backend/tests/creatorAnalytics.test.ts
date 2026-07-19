@@ -465,7 +465,7 @@ describe("creator analytics", () => {
 
       const dashboard = studioAnalyticsDashboard(backendDb, config, "video", 1, "ru");
       expect(dashboard.text).not.toContain("Аккаунт ·");
-      expect(dashboard.text).toContain("| 📸 Instagram | 306 | +0 | 63394 | 1227");
+      expect(dashboard.text).toContain("| 📸 Instagram | 306 | — | 63394 | 1227");
       expect(dashboard.text).toContain("| Видео | 👁 | ♥ | 💬 | ↗ | 🔖 |");
       expect(dashboard.text).toContain("| Все | 200 | 20 | 0 | 7 | 5 |");
       expect(dashboard.text).toContain("| Симулятор… · 📸 | 200 | 20 | 0 | 7 | 5 |");
@@ -520,7 +520,7 @@ describe("creator analytics", () => {
             platform: "youtube",
             account: "marux",
             sampledOn: "2026-07-18T10",
-            metricsJson: { viewCount: 100 },
+            metricsJson: { viewCount: 100, subscriberCount: 122 },
             source: "youtube_data_api",
             sampledAt: before,
           },
@@ -528,7 +528,7 @@ describe("creator analytics", () => {
             platform: "youtube",
             account: "marux",
             sampledOn: "2026-07-19T11",
-            metricsJson: { viewCount: 150 },
+            metricsJson: { viewCount: 150, subscriberCount: 124 },
             source: "youtube_data_api",
             sampledAt: current,
           },
@@ -547,7 +547,7 @@ describe("creator analytics", () => {
       config.studio.modules.youtube = true;
 
       const dashboard = studioAnalyticsDashboard(backendDb, config, "video", 1, "ru");
-      expect(dashboard.text).toContain("| ▶️ YouTube | 124 | +0 | 50 | 2 | 1 | — | — |");
+      expect(dashboard.text).toContain("| ▶️ YouTube | 124 | +2 | 50 | 2 | 1 | — | — |");
     } finally {
       backendDb.close();
     }

@@ -239,7 +239,11 @@ export function audienceGrowthByPlatform(backendDb: BackendDb, since: string, da
   }
   for (const profile of backendDb.db.select().from(creatorProfiles).all()) {
     const direct = providerFollowerGrowth(profile.platform, profile.dataJson, days);
-    if (direct != null) totals.set(profile.platform, direct);
+    const observed = totals.get(profile.platform);
+    // The YouTube daily report is often absent while its response shape still
+    // contains zeroes. Preserve a real durable-snapshot delta in that case;
+    // a non-zero native report remains the authoritative aggregate.
+    if (direct != null && !(direct === 0 && observed != null && observed !== 0)) totals.set(profile.platform, direct);
   }
   return totals;
 }

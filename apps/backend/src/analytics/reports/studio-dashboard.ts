@@ -185,7 +185,9 @@ function unifiedAnalyticsTable(
     )
     .map((platform) => ({
       platform,
-      growth: profileMap.has(platform) ? (growth.get(platform) ?? 0) : null,
+      // A missing baseline is unknown, not zero growth. This is common during
+      // the first week after connecting a Zernio account.
+      growth: profileMap.has(platform) ? (growth.get(platform) ?? null) : null,
       value: content.get(platform) ?? emptyMetrics(),
     }));
   const totalContent = rows.reduce(
