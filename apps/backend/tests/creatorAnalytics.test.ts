@@ -5,7 +5,7 @@ import { runVideoMetricSchedule } from "../src/analytics/collection/video-metric
 import { audienceGrowthByPlatform } from "../src/analytics/metric-deltas.js";
 import { creatorDashboard } from "../src/analytics/reports/dashboard.js";
 import { studioAnalyticsDashboard } from "../src/analytics/reports/studio-dashboard.js";
-import { type BackendDb, openBackendDb } from "../src/db/client.js";
+import type { BackendDb } from "../src/db/client.js";
 import {
   creatorProfileSnapshots,
   creatorProfiles,
@@ -18,17 +18,7 @@ import {
   videoTargets,
 } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
-
-/** Opens an in-memory backend DB for the duration of `fn` and always closes it,
- * even when `fn` is async and rejects. */
-async function withDb<T>(fn: (backendDb: BackendDb) => T | Promise<T>): Promise<T> {
-  const backendDb = openBackendDb(":memory:");
-  try {
-    return await fn(backendDb);
-  } finally {
-    backendDb.close();
-  }
-}
+import { withDb } from "./helpers/db.js";
 
 type PublishedVideoOptions = {
   label?: string;
