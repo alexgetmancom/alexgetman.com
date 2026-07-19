@@ -5,7 +5,7 @@ import { runVideoMetricSchedule } from "../src/analytics/collection/video-metric
 import { audienceGrowthByPlatform } from "../src/analytics/metric-deltas.js";
 import { creatorDashboard } from "../src/analytics/reports/dashboard.js";
 import { studioAnalyticsDashboard } from "../src/analytics/reports/studio-dashboard.js";
-import { openBackendDb } from "../src/db/client.js";
+import { type BackendDb, openBackendDb } from "../src/db/client.js";
 import {
   creatorProfileSnapshots,
   creatorProfiles,
@@ -19,35 +19,75 @@ import {
 } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 
+/** Opens an in-memory backend DB for the duration of `fn` and always closes it,
+ * even when `fn` is async and rejects. */
+async function withDb<T>(fn: (backendDb: BackendDb) => T | Promise<T>): Promise<T> {
+  const backendDb = openBackendDb(":memory:");
+  try {
+    return await fn(backendDb);
+  } finally {
+    backendDb.close();
+  }
+}
+
+type PublishedVideoOptions = {
+  label?: string;
+  target: "youtube_shorts" | "instagram_reels";
+  publishedAt: string;
+  /** Defaults to publishedAt; pass explicitly when a test needs createdAt/updatedAt to diverge. */
+  updatedAt?: string;
+  externalId?: string;
+  deliveryProvider?: string;
+  providerAccountId?: string;
+  providerPostId?: string;
+};
+
+/** Inserts a published video draft with one target, the shape every analytics test needs. */
+function insertPublishedVideo(backendDb: BackendDb, options: PublishedVideoOptions): { draftId: number; targetId: number } {
+  const updatedAt = options.updatedAt ?? options.publishedAt;
+  const draft = backendDb.db
+    .insert(videoDrafts)
+    .values({
+      adminId: 1,
+      assetKey: "asset",
+      label: options.label ?? "Video",
+      status: "published",
+      createdAt: options.publishedAt,
+      updatedAt,
+    })
+    .returning({ id: videoDrafts.id })
+    .get();
+  if (!draft) throw new Error("video draft missing");
+  const target = backendDb.db
+    .insert(videoTargets)
+    .values({
+      videoDraftId: draft.id,
+      target: options.target,
+      metadataJson: {},
+      status: "published",
+      publishedAt: options.publishedAt,
+      createdAt: options.publishedAt,
+      updatedAt,
+      ...(options.externalId ? { externalId: options.externalId } : {}),
+      ...(options.deliveryProvider ? { deliveryProvider: options.deliveryProvider } : {}),
+      ...(options.providerAccountId ? { providerAccountId: options.providerAccountId } : {}),
+      ...(options.providerPostId ? { providerPostId: options.providerPostId } : {}),
+    })
+    .returning({ id: videoTargets.id })
+    .get();
+  if (!target) throw new Error("video target missing");
+  return { draftId: draft.id, targetId: target.id };
+}
+
 describe("creator analytics", () => {
-  it("builds a compact video dashboard from cached platform data", () => {
-    const backendDb = openBackendDb(":memory:");
-    try {
+  it("builds a compact video dashboard from cached platform data", async () => {
+    await withDb(async (backendDb) => {
       const now = new Date().toISOString();
-      const draft = backendDb.db
-        .insert(videoDrafts)
-        .values({ adminId: 1, assetKey: "asset", label: "Hades, часть 3", status: "published", createdAt: now, updatedAt: now })
-        .returning({ id: videoDrafts.id })
-        .get();
-      if (!draft) throw new Error("video draft missing");
-      const target = backendDb.db
-        .insert(videoTargets)
-        .values({
-          videoDraftId: draft.id,
-          target: "youtube_shorts",
-          metadataJson: {},
-          status: "published",
-          publishedAt: now,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .returning({ id: videoTargets.id })
-        .get();
-      if (!target) throw new Error("video target missing");
+      const { targetId } = insertPublishedVideo(backendDb, { label: "Hades, часть 3", target: "youtube_shorts", publishedAt: now });
       backendDb.db
         .insert(videoMetricSnapshots)
         .values({
-          videoTargetId: target.id,
+          videoTargetId: targetId,
           platform: "youtube_shorts",
           metricsJson: { views: 1200, likes: 87, comments: 9 },
           sampledAt: now,
@@ -65,69 +105,41 @@ describe("creator analytics", () => {
       expect(dashboard.text).toContain("Видео: 1200 просмотров · 96 взаимодействий");
       expect(dashboard.text).toContain("YouTube: 1200 просмотров · 87 лайков · 117 подписчиков");
       expect(dashboard.text).toContain("Hades, часть 3 — 1200 просмотров");
-    } finally {
-      backendDb.close();
-    }
+    });
   });
 
   it("does not call analytics collectors when Analytics itself is disabled", async () => {
-    const backendDb = openBackendDb(":memory:");
-    try {
+    await withDb(async (backendDb) => {
       const config = loadConfig({});
       config.studio.modules.analytics = false;
       expect(await runAnalyticsCycle(config, backendDb)).toBe(0);
-    } finally {
-      backendDb.close();
-    }
+    });
   });
 
-  it("reports a video delta instead of a lifetime total for an older publication", () => {
-    const backendDb = openBackendDb(":memory:");
-    try {
+  it("reports a video delta instead of a lifetime total for an older publication", async () => {
+    await withDb(async (backendDb) => {
       const publishedAt = new Date(Date.now() - 90 * 24 * 60 * 60_000).toISOString();
       const beforePeriod = new Date(Date.now() - 2 * 24 * 60 * 60_000).toISOString();
       const now = new Date().toISOString();
-      const draft = backendDb.db
-        .insert(videoDrafts)
-        .values({ adminId: 1, assetKey: "asset", label: "Older video", status: "published", createdAt: publishedAt, updatedAt: now })
-        .returning({ id: videoDrafts.id })
-        .get();
-      if (!draft) throw new Error("video draft missing");
-      const target = backendDb.db
-        .insert(videoTargets)
-        .values({
-          videoDraftId: draft.id,
-          target: "youtube_shorts",
-          metadataJson: {},
-          status: "published",
-          publishedAt,
-          createdAt: publishedAt,
-          updatedAt: now,
-        })
-        .returning({ id: videoTargets.id })
-        .get();
-      if (!target) throw new Error("video target missing");
+      const { targetId } = insertPublishedVideo(backendDb, { label: "Older video", target: "youtube_shorts", publishedAt, updatedAt: now });
       backendDb.db
         .insert(videoMetricSnapshots)
-        .values({ videoTargetId: target.id, platform: "youtube_shorts", metricsJson: { views: 100, likes: 5 }, sampledAt: beforePeriod })
+        .values({ videoTargetId: targetId, platform: "youtube_shorts", metricsJson: { views: 100, likes: 5 }, sampledAt: beforePeriod })
         .run();
       backendDb.db
         .insert(videoMetricSnapshots)
-        .values({ videoTargetId: target.id, platform: "youtube_shorts", metricsJson: { views: 180, likes: 8 }, sampledAt: now })
+        .values({ videoTargetId: targetId, platform: "youtube_shorts", metricsJson: { views: 180, likes: 8 }, sampledAt: now })
         .run();
       const config = loadConfig({});
       config.studio.modules.video_posting = true;
       config.studio.modules.youtube = true;
 
       expect(creatorDashboard(backendDb, config, 1).text).toContain("Видео: 80 просмотров · 3 взаимодействий");
-    } finally {
-      backendDb.close();
-    }
+    });
   });
 
-  it("uses metric sample deltas for text and site periods", () => {
-    const backendDb = openBackendDb(":memory:");
-    try {
+  it("uses metric sample deltas for text and site periods", async () => {
+    await withDb(async (backendDb) => {
       const before = new Date(Date.now() - 2 * 24 * 60 * 60_000).toISOString();
       const now = new Date().toISOString();
       backendDb.db
@@ -148,36 +160,18 @@ describe("creator analytics", () => {
       const text = creatorDashboard(backendDb, config, 1).text;
       expect(text).toContain("Сайт: 45 просмотров материалов");
       expect(text).toContain("Посты: 30 просмотров · 5 взаимодействий");
-    } finally {
-      backendDb.close();
-    }
+    });
   });
 
   it("uses fixed publication-time checkpoints for video metrics", async () => {
-    const backendDb = openBackendDb(":memory:");
-    try {
+    await withDb(async (backendDb) => {
       const publishedAt = new Date(Date.now() - 2 * 60 * 60_000).toISOString();
-      const draft = backendDb.db
-        .insert(videoDrafts)
-        .values({ adminId: 1, assetKey: "asset", label: "Hades", status: "published", createdAt: publishedAt, updatedAt: publishedAt })
-        .returning({ id: videoDrafts.id })
-        .get();
-      if (!draft) throw new Error("video draft missing");
-      const target = backendDb.db
-        .insert(videoTargets)
-        .values({
-          videoDraftId: draft.id,
-          target: "instagram_reels",
-          metadataJson: {},
-          status: "published",
-          externalId: "reel-1",
-          publishedAt,
-          createdAt: publishedAt,
-          updatedAt: publishedAt,
-        })
-        .returning({ id: videoTargets.id })
-        .get();
-      if (!target) throw new Error("video target missing");
+      const { targetId } = insertPublishedVideo(backendDb, {
+        label: "Hades",
+        target: "instagram_reels",
+        publishedAt,
+        externalId: "reel-1",
+      });
       const config = loadConfig({ INSTAGRAM_ACCESS_TOKEN: "token", INSTAGRAM_USER_ID: "user" });
       config.studio.modules.video_posting = true;
       config.studio.modules.instagram = true;
@@ -191,61 +185,38 @@ describe("creator analytics", () => {
       await runAnalyticsCycle(config, backendDb, fetchMock);
 
       expect(backendDb.db.select().from(videoMetricSnapshots).all()).toHaveLength(1);
-      const schedule = backendDb.db.select().from(videoMetricSchedule).where(eq(videoMetricSchedule.videoTargetId, target.id)).get();
+      const schedule = backendDb.db.select().from(videoMetricSchedule).where(eq(videoMetricSchedule.videoTargetId, targetId)).get();
       expect(schedule?.checkpointIndex).toBe(1);
       const nextCheck = new Date(schedule?.nextCheckAt ?? 0).getTime();
       expect(nextCheck).toBeGreaterThan(Date.now() + 50 * 60 * 1000);
       expect(nextCheck).toBeLessThan(Date.now() + 70 * 60 * 1000);
-    } finally {
-      backendDb.close();
-    }
+    });
   });
 
   it("refreshes YouTube OAuth once and freezes a failed batch without a request burst", async () => {
-    const backendDb = openBackendDb(":memory:");
-    try {
+    await withDb(async (backendDb) => {
       const publishedAt = new Date(Date.now() - 2 * 60 * 60_000).toISOString();
       const now = new Date().toISOString();
-      const drafts = backendDb.db
-        .insert(videoDrafts)
-        .values([
-          { adminId: 1, assetKey: "asset-a", label: "YouTube batch A", status: "published", createdAt: publishedAt, updatedAt: now },
-          { adminId: 1, assetKey: "asset-b", label: "YouTube batch B", status: "published", createdAt: publishedAt, updatedAt: now },
-        ])
-        .returning({ id: videoDrafts.id })
-        .all();
-      const [firstDraft, secondDraft] = drafts;
-      if (!firstDraft || !secondDraft) throw new Error("video drafts missing");
-      const targets = backendDb.db
-        .insert(videoTargets)
-        .values([
-          {
-            videoDraftId: firstDraft.id,
-            target: "youtube_shorts",
-            metadataJson: {},
-            status: "published",
-            externalId: "youtube-a",
-            publishedAt,
-            createdAt: publishedAt,
-            updatedAt: now,
-          },
-          {
-            videoDraftId: secondDraft.id,
-            target: "youtube_shorts",
-            metadataJson: {},
-            status: "published",
-            externalId: "youtube-b",
-            publishedAt,
-            createdAt: publishedAt,
-            updatedAt: now,
-          },
-        ])
-        .returning({ id: videoTargets.id })
-        .all();
+      const targetIds = [
+        insertPublishedVideo(backendDb, {
+          label: "YouTube batch A",
+          target: "youtube_shorts",
+          publishedAt,
+          updatedAt: now,
+          externalId: "youtube-a",
+        }).targetId,
+        insertPublishedVideo(backendDb, {
+          label: "YouTube batch B",
+          target: "youtube_shorts",
+          publishedAt,
+          updatedAt: now,
+          externalId: "youtube-b",
+        }).targetId,
+      ];
       backendDb.db
         .insert(videoMetricSchedule)
         .values(
-          targets.map((target) => ({ videoTargetId: target.id, nextCheckAt: new Date(Date.now() - 1_000).toISOString(), updatedAt: now })),
+          targetIds.map((videoTargetId) => ({ videoTargetId, nextCheckAt: new Date(Date.now() - 1_000).toISOString(), updatedAt: now })),
         )
         .run();
       const config = loadConfig({ YOUTUBE_CLIENT_ID: "client", YOUTUBE_CLIENT_SECRET: "secret", YOUTUBE_REFRESH_TOKEN: "revoked" });
@@ -270,43 +241,25 @@ describe("creator analytics", () => {
       }
 
       expect(refreshRequests).toBe(1);
-      for (const target of targets) {
-        const schedule = backendDb.db.select().from(videoMetricSchedule).where(eq(videoMetricSchedule.videoTargetId, target.id)).get();
+      for (const videoTargetId of targetIds) {
+        const schedule = backendDb.db.select().from(videoMetricSchedule).where(eq(videoMetricSchedule.videoTargetId, videoTargetId)).get();
         expect(schedule?.frozenAt).not.toBeNull();
         expect(schedule?.lastError).toContain("invalid_grant");
       }
-    } finally {
-      backendDb.close();
-    }
+    });
   });
 
   it("collects Zernio Reel and account analytics without Meta credentials", async () => {
-    const backendDb = openBackendDb(":memory:");
-    try {
+    await withDb(async (backendDb) => {
       const now = new Date(Date.now() - 2 * 60 * 60_000).toISOString();
-      const draft = backendDb.db
-        .insert(videoDrafts)
-        .values({ adminId: 1, assetKey: "asset", label: "Zernio Reel", status: "published", createdAt: now, updatedAt: now })
-        .returning({ id: videoDrafts.id })
-        .get();
-      if (!draft) throw new Error("video draft missing");
-      const target = backendDb.db
-        .insert(videoTargets)
-        .values({
-          videoDraftId: draft.id,
-          target: "instagram_reels",
-          metadataJson: {},
-          status: "published",
-          deliveryProvider: "zernio",
-          providerAccountId: "maru-account",
-          providerPostId: "zernio-post",
-          publishedAt: now,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .returning({ id: videoTargets.id })
-        .get();
-      if (!target) throw new Error("video target missing");
+      const { targetId } = insertPublishedVideo(backendDb, {
+        label: "Zernio Reel",
+        target: "instagram_reels",
+        publishedAt: now,
+        deliveryProvider: "zernio",
+        providerAccountId: "maru-account",
+        providerPostId: "zernio-post",
+      });
       const config = loadConfig({
         ZERNIO_API_KEY: "a".repeat(16),
         PUBLISH_PROVIDER_ROUTES_JSON: '{"instagram_reels":{"provider":"zernio","accountId":"maru-account"}}',
@@ -348,7 +301,7 @@ describe("creator analytics", () => {
       await runAnalyticsCycle(config, backendDb, fetchMock);
 
       expect(
-        backendDb.db.select().from(videoMetricSnapshots).where(eq(videoMetricSnapshots.videoTargetId, target.id)).get()?.metricsJson,
+        backendDb.db.select().from(videoMetricSnapshots).where(eq(videoMetricSnapshots.videoTargetId, targetId)).get()?.metricsJson,
       ).toMatchObject({
         views: 200,
         reach: 160,
@@ -360,14 +313,11 @@ describe("creator analytics", () => {
         reach30d: 100,
         followersGained30d: 8,
       });
-    } finally {
-      backendDb.close();
-    }
+    });
   });
 
   it("persists one daily profile observation while retaining the latest projection", async () => {
-    const backendDb = openBackendDb(":memory:");
-    try {
+    await withDb(async (backendDb) => {
       const config = loadConfig({ GITHUB_DISCUSSIONS_TOKEN: "token" });
       config.studio.modules.video_posting = false;
       const fetchMock = (async (input: URL | RequestInfo) => {
@@ -388,14 +338,11 @@ describe("creator analytics", () => {
         stars: 11,
       });
       expect(studioAnalyticsDashboard(backendDb, config, "audience", 7, "ru").text).toContain("Stars: *11*");
-    } finally {
-      backendDb.close();
-    }
+    });
   });
 
-  it("changes audience growth with the selected period instead of repeating lifetime totals", () => {
-    const backendDb = openBackendDb(":memory:");
-    try {
+  it("changes audience growth with the selected period instead of repeating lifetime totals", async () => {
+    await withDb(async (backendDb) => {
       const now = new Date().toISOString();
       const thirtyFiveDaysAgo = new Date(Date.now() - 35 * 24 * 60 * 60_000).toISOString();
       const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60_000).toISOString();
@@ -440,14 +387,11 @@ describe("creator analytics", () => {
       expect(week).toContain("прирост · 7 дней: *+30*");
       expect(month).toContain("Аудитория · 30 дней");
       expect(month).toContain("прирост · 30 дней: *+50*");
-    } finally {
-      backendDb.close();
-    }
+    });
   });
 
-  it("uses YouTube's native gained and lost subscriber reports for each selected period", () => {
-    const backendDb = openBackendDb(":memory:");
-    try {
+  it("uses YouTube's native gained and lost subscriber reports for each selected period", async () => {
+    await withDb(async (backendDb) => {
       const now = new Date().toISOString();
       backendDb.db
         .insert(creatorProfiles)
@@ -460,14 +404,11 @@ describe("creator analytics", () => {
       const since = new Date(Date.now() - 7 * 24 * 60 * 60_000).toISOString();
       expect(audienceGrowthByPlatform(backendDb, since, 1).get("youtube")).toBe(7);
       expect(audienceGrowthByPlatform(backendDb, since, 7).get("youtube")).toBe(23);
-    } finally {
-      backendDb.close();
-    }
+    });
   });
 
-  it("renders the compact Studio overview and keeps post and video analytics separate", () => {
-    const backendDb = openBackendDb(":memory:");
-    try {
+  it("renders the compact Studio overview and keeps post and video analytics separate", async () => {
+    await withDb(async (backendDb) => {
       const before = new Date(Date.now() - 2 * 24 * 60 * 60_000).toISOString();
       const now = new Date().toISOString();
       backendDb.db
@@ -489,46 +430,21 @@ describe("creator analytics", () => {
       expect(posts).toContain("| 📊 Все | 0 | +0 | 24 | 5 | 0 | — | — |");
       expect(studioAnalyticsDashboard(backendDb, config, "overview", 1, "ru").richHtml).toContain("<table bordered striped>");
       expect(posts).not.toContain("Видеопостинг");
-    } finally {
-      backendDb.close();
-    }
+    });
   });
 
-  it("separates account activity from videos published in the selected period", () => {
-    const backendDb = openBackendDb(":memory:");
-    try {
+  it("separates account activity from videos published in the selected period", async () => {
+    await withDb(async (backendDb) => {
       const now = new Date().toISOString();
-      const draft = backendDb.db
-        .insert(videoDrafts)
-        .values({
-          adminId: 1,
-          assetKey: "asset",
-          label: "Симулятор фермы, который удивит",
-          status: "published",
-          createdAt: now,
-          updatedAt: now,
-        })
-        .returning({ id: videoDrafts.id })
-        .get();
-      if (!draft) throw new Error("video draft missing");
-      const target = backendDb.db
-        .insert(videoTargets)
-        .values({
-          videoDraftId: draft.id,
-          target: "instagram_reels",
-          metadataJson: {},
-          status: "published",
-          publishedAt: now,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .returning({ id: videoTargets.id })
-        .get();
-      if (!target) throw new Error("video target missing");
+      const { targetId } = insertPublishedVideo(backendDb, {
+        label: "Симулятор фермы, который удивит",
+        target: "instagram_reels",
+        publishedAt: now,
+      });
       backendDb.db
         .insert(videoMetricSnapshots)
         .values({
-          videoTargetId: target.id,
+          videoTargetId: targetId,
           platform: "instagram_reels",
           metricsJson: { views: 200, likes: 20, shares: 7, saves: 5 },
           sampledAt: now,
@@ -552,42 +468,24 @@ describe("creator analytics", () => {
       expect(dashboard.text).not.toContain("| Симулятор… · ▶️ |");
       expect(dashboard.richHtml.match(/<table bordered striped>/g)?.length).toBe(2);
       expect(dashboard.richHtml).not.toContain("|:--");
-    } finally {
-      backendDb.close();
-    }
+    });
   });
 
-  it("falls back to hourly YouTube and tracked-video deltas while the daily report is pending", () => {
-    const backendDb = openBackendDb(":memory:");
-    try {
+  it("falls back to hourly YouTube and tracked-video deltas while the daily report is pending", async () => {
+    await withDb(async (backendDb) => {
       const now = new Date();
       const before = new Date(now.getTime() - 25 * 60 * 60_000).toISOString();
       const current = now.toISOString();
-      const draft = backendDb.db
-        .insert(videoDrafts)
-        .values({ adminId: 1, assetKey: "asset", label: "Новый Short", status: "published", createdAt: current, updatedAt: current })
-        .returning({ id: videoDrafts.id })
-        .get();
-      if (!draft) throw new Error("video draft missing");
-      const target = backendDb.db
-        .insert(videoTargets)
-        .values({
-          videoDraftId: draft.id,
-          target: "youtube_shorts",
-          metadataJson: {},
-          status: "published",
-          externalId: "video-1",
-          publishedAt: current,
-          createdAt: current,
-          updatedAt: current,
-        })
-        .returning({ id: videoTargets.id })
-        .get();
-      if (!target) throw new Error("video target missing");
+      const { targetId } = insertPublishedVideo(backendDb, {
+        label: "Новый Short",
+        target: "youtube_shorts",
+        publishedAt: current,
+        externalId: "video-1",
+      });
       backendDb.db
         .insert(videoMetricSnapshots)
         .values({
-          videoTargetId: target.id,
+          videoTargetId: targetId,
           platform: "youtube_shorts",
           metricsJson: { views: 6, likes: 2, comments: 1 },
           sampledAt: current,
@@ -628,14 +526,11 @@ describe("creator analytics", () => {
 
       const dashboard = studioAnalyticsDashboard(backendDb, config, "video", 1, "ru");
       expect(dashboard.text).toContain("| ▶️ YouTube | 124 | +2 | 50 | 2 | 1 | — | — |");
-    } finally {
-      backendDb.close();
-    }
+    });
   });
 
-  it("renders newly published text posts below Alex's account table", () => {
-    const backendDb = openBackendDb(":memory:");
-    try {
+  it("renders newly published text posts below Alex's account table", async () => {
+    await withDb(async (backendDb) => {
       const now = new Date().toISOString();
       backendDb.db
         .insert(posts)
@@ -666,14 +561,11 @@ describe("creator analytics", () => {
       expect(dashboard.text).toContain("| Все | 200 | 20 | 0 | 7 | — |");
       expect(dashboard.text).toContain("| Релиз нов… · ✈️ | 200 | 20 | 0 | 7 | — |");
       expect(dashboard.richHtml.match(/<table bordered striped>/g)?.length).toBe(2);
-    } finally {
-      backendDb.close();
-    }
+    });
   });
 
-  it("scopes a video-only Studio audience to its enabled video platforms", () => {
-    const backendDb = openBackendDb(":memory:");
-    try {
+  it("scopes a video-only Studio audience to its enabled video platforms", async () => {
+    await withDb(async (backendDb) => {
       const now = new Date().toISOString();
       backendDb.db
         .insert(creatorProfiles)
@@ -696,14 +588,11 @@ describe("creator analytics", () => {
       expect(audience).toContain("Instagram");
       expect(audience).toContain("YouTube");
       expect(audience).not.toContain("Telegram");
-    } finally {
-      backendDb.close();
-    }
+    });
   });
 
-  it("keeps the overview compact when a requested period predates collected history", () => {
-    const backendDb = openBackendDb(":memory:");
-    try {
+  it("keeps the overview compact when a requested period predates collected history", async () => {
+    await withDb(async (backendDb) => {
       const now = new Date().toISOString();
       backendDb.db
         .insert(metricSamples)
@@ -714,8 +603,6 @@ describe("creator analytics", () => {
 
       const dashboard = studioAnalyticsDashboard(backendDb, config, "posts", 30, "en").text;
       expect(dashboard).not.toContain("History has been collected since");
-    } finally {
-      backendDb.close();
-    }
+    });
   });
 });
