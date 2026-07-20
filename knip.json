@@ -2,9 +2,19 @@
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "workspaces": {
     ".": {
-      "entry": ["scripts/*.ts", "apps/web/server.ts", "apps/web/src/pages/**/*.astro", "apps/web/src/components/**/*.astro"],
-      "project": ["apps/web/src/**/*.ts", "apps/web/src/**/*.astro", "scripts/**/*.ts"],
-      "ignoreDependencies": ["@mtcute/bun"]
+      "entry": [
+        "scripts/*.ts",
+        "apps/web/server.ts",
+        "apps/web/src/pages/**/*.astro",
+        "apps/web/src/components/**/*.astro",
+        "apps/web/src/features/**/*.svelte"
+      ],
+      "project": ["apps/web/src/**/*.ts", "apps/web/src/**/*.astro", "apps/web/src/**/*.svelte", "scripts/**/*.ts"],
+      "ignoreDependencies": ["@mtcute/bun"],
+      "ignoreBinaries": ["tools/svelte-check.bin/svelte-check"]
+    },
+    "tools/svelte-check": {
+      "ignoreDependencies": ["svelte-check"]
     },
     "apps/backend": {
       "entry": ["tests/**/*.test.ts"],

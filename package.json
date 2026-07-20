@@ -22,6 +22,7 @@
     "lint": "biome lint .",
     "format": "biome format --write .",
     "knip": "bun tools/knip/node_modules/.bin/knip --config knip.json",
+    "check:svelte": "tools/svelte-check/node_modules/.bin/svelte-check --workspace . --threshold warning --fail-on-warnings",
     "deps:check": "taze",
     "check:web": "bun run build",
     "check:backend": "bun run --filter @alexgetman/backend check",

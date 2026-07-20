@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { Window } from "happy-dom";
-import { storyPlayerBrowserUtils } from "./browser.js";
 import { setDiscussionVisibility } from "./discussion-state.js";
 import { preloadAdjacentMedia } from "./media.js";
 import { readMutedPreference } from "./preferences.js";
@@ -96,7 +95,8 @@ describe("story player browser behavior", () => {
     preloadAdjacentMedia({
       active: 0,
       posts: [post(), post({ image: "media/posts/next.mp4", mediaType: "video" }), post({ image: "media/posts/later.jpg" })],
-      toPublicSrc: storyPlayerBrowserUtils().toPublicSrc,
+      // Payload заранее нормализует пути; воспроизводим то же преобразование.
+      toPublicSrc: (value) => (value ? (/^(https?:|data:|blob:|\/)/i.test(value) ? value : `/${value.replace(/^\/+/, "")}`) : ""),
     });
 
     expect(createdVideos).toHaveLength(1);

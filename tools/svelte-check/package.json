@@ -1,0 +1,9 @@
+{
+  "name": "svelte-check-runner",
+  "private": true,
+  "description": "Изолированная установка svelte-check: ему нужен TypeScript 5.x (JS API), а корень репозитория использует TypeScript 7 (tsgo). Запуск: bun run check:svelte из корня.",
+  "devDependencies": {
+    "svelte-check": "^4.7.3",
+    "typescript": "~5.9.0"
+  }
+}

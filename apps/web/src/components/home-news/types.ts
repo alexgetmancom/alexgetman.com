@@ -28,23 +28,3 @@ export interface HomeMedia {
 export interface HomeLabels {
   empty: string;
 }
-
-export interface StoryUi {
-  storyLabel: string;
-  discuss: string;
-  share: string;
-  readMore: string;
-  read: string;
-  back: string;
-  collapse: string;
-  mute: string;
-  muted: string;
-  storyRail: string;
-  feedMode: string;
-  feedLatest: string;
-  feedDeep: string;
-  feedWatched: string;
-  menu: string;
-  language: string;
-  telegram: string;
-}

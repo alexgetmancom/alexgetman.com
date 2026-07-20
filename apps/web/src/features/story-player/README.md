@@ -66,8 +66,13 @@ story-player/
   Исключение: media API (`video.play()`), таймеры прогресса, giscus-инъекция —
   они в контроллерах.
 
-## Старый плеер (до полной сверки)
+## Проверки
 
-`scripts/home-news-player.ts`, `scripts/story-player/dom.ts`,
-`render-frame.ts`, `components/home-news/*.astro` — прежняя vanilla-реализация.
-Не развивать. Удалить после сверки поведения (см. план в git history / PR).
+`bun run check:svelte` — svelte-check (типы в шаблонах, unused CSS, a11y);
+входит в pre-push. Инструмент живёт в `tools/svelte-check/` со своим
+TypeScript 5.x, потому что корень репозитория на TypeScript 7 (tsgo), чей
+JS-API svelte-check пока не понимает.
+
+Старый vanilla-плеер удалён (см. git history: `scripts/home-news-player.ts`,
+`dom.ts`, `render-frame.ts`, `components/home-news/Story*.astro`). Откат —
+git revert соответствующих коммитов.

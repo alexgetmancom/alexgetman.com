@@ -52,10 +52,14 @@
   }: { posts: PlayerPost[]; ui: StoryUi; locale: "en" | "ru"; initialPaused?: boolean } = $props();
 
   /* ------------------------------- Состояние ------------------------------- */
+  /* Проп initialPaused читается ровно один раз — это стартовое значение,
+     дальше паузой управляет пользователь, реактивность пропа не нужна. */
+  // svelte-ignore state_referenced_locally
+  const startPaused = initialPaused;
   let active = $state(0);
-  let manualPaused = $state(initialPaused);
-  let manualPausedBeforeDiscussion = $state(initialPaused);
-  let manualPausedBeforeReading = $state(initialPaused);
+  let manualPaused = $state(startPaused);
+  let manualPausedBeforeDiscussion = $state(startPaused);
+  let manualPausedBeforeReading = $state(startPaused);
   let readingVisible = $state(false);
   let discussionVisible = $state(false);
   let expanded = $state(false);

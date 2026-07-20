@@ -43,7 +43,7 @@ export interface PlayerPost {
 
 const publicSrc = (value?: string | null): string | null => (value ? `/${String(value).replace(/^\/+/, "")}` : null);
 
-export function fullTextFor(post: HomePost): string[] {
+function fullTextFor(post: HomePost): string[] {
   return (post.body || post.excerpt || post.title)
     .split(/\n+/)
     .map((line) => line.trim())
