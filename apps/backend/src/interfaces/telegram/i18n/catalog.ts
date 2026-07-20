@@ -99,7 +99,7 @@ const en = {
   "action.enter-datetime": "⌨ Send a date and time: `15.07 18:30` (MSK).",
   "action.unknown": "Unknown action",
   "action.scheduled-as": "Draft #{draftId} is scheduled as post #{postId}.",
-  "action.preflight": "Telegram with media: {actual}/{limit} characters. Shorten RU text or disable Telegram in Platforms.",
+  "action.preflight": "{label} with media: {actual}/{limit} characters. Shorten the text or disable {label} in Platforms.",
   // Post-card rendering + conversational post screen
   "post.confirm-schedule-btn": "✅ Confirm schedule",
   "post.dialog-prompt": "📝 Send text with optional photos or video for a new post.",
@@ -475,7 +475,7 @@ const ru = {
   "action.enter-datetime": "⌨ Введите дату и время: `15.07 18:30` (МСК).",
   "action.unknown": "Неизвестное действие",
   "action.scheduled-as": "Черновик #{draftId} запланирован как пост #{postId}.",
-  "action.preflight": "{message} Откройте «Выбрать площадки», чтобы выключить Telegram.",
+  "action.preflight": "{label} с медиа: {actual}/{limit} символов. Сократите текст или отключите {label} в Площадках.",
   // Post-card rendering + conversational post screen
   "post.confirm-schedule-btn": "✅ Подтвердить",
   "post.dialog-prompt": "📝 Пришлите текст с опциональным фото или видео для нового поста.",

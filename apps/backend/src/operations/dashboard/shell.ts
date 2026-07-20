@@ -160,6 +160,8 @@ export function renderDashboardShell(body: string): string {
       if (!response.ok) return;
       const payload = await response.json();
       const fingerprint = JSON.stringify([payload.pipeline?.updated_at, payload.jobs?.[0]?.updatedAt, payload.events?.[0]?.createdAt, payload.videoRevision?.value]);
+      const editingForm = document.activeElement instanceof Element && document.activeElement.closest('form');
+      if (editingForm) return;
       if (dashboardFingerprint && fingerprint !== dashboardFingerprint) window.location.reload();
       dashboardFingerprint = fingerprint;
     } catch { /* the current screen remains usable while the worker restarts */ }

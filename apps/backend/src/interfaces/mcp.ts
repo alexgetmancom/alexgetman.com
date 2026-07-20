@@ -486,7 +486,7 @@ export async function mcpResponse(
     };
   if (request.method === "tools/list")
     return { jsonrpc: "2.0", id, result: { tools: actorId ? [...publicTools, ...studioTools] : publicTools } };
-  if (request.method !== "tools/call") return { jsonrpc: "2.0", id, result: {} };
+  if (request.method !== "tools/call") return rpcError(id, -32601, `Unknown method: ${String(request.method)}`);
   const params = object(request.params);
   const name = typeof params.name === "string" ? params.name : "";
   const args = object(params.arguments);
@@ -568,5 +568,7 @@ function rateLimited(key: string): boolean {
   }
   hits.push(Date.now());
   feedbackHits.set(key, hits);
+  for (const [otherKey, otherHits] of feedbackHits)
+    if (otherHits.length === 0 || otherHits.every((value) => value < cutoff)) feedbackHits.delete(otherKey);
   return false;
 }

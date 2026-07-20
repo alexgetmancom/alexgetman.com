@@ -17,6 +17,7 @@ type PublicationPreflightIssue = {
   locale: "ru" | "en";
   limit: number;
   actual: number;
+  label: string;
   message: string;
 };
 
@@ -41,13 +42,15 @@ export function publicationPreflight(draft: DraftForPreflight): PublicationPrefl
     const value = content[locale];
     const limit = profile?.limits?.caption;
     if (!limit || value.media.length === 0 || value.text.length <= limit) return [];
+    const label = profile?.label ?? target;
     return [
       {
         target,
         locale,
         limit,
         actual: value.text.length,
-        message: `${profile?.label ?? target} с медиа: ${value.text.length}/${limit} символов. Сократите ${locale.toUpperCase()}-текст или отключите ${profile?.label ?? target}.`,
+        label,
+        message: `${label} с медиа: ${value.text.length}/${limit} символов. Сократите ${locale.toUpperCase()}-текст или отключите ${label}.`,
       },
     ];
   });

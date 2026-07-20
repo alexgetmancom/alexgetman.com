@@ -149,7 +149,7 @@ async function showPublicationPreflight(
   const issue = studioServices(backendDb, config).posts.validate(actorId, draftId)[0];
   if (!issue) return false;
   await ctx.answerCallbackQuery({
-    text: t(locale, "action.preflight", { message: issue.message, actual: issue.actual, limit: issue.limit }),
+    text: t(locale, "action.preflight", { label: issue.label, actual: issue.actual, limit: issue.limit }),
     show_alert: true,
   });
   return true;
