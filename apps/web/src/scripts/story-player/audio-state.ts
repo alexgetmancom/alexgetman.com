@@ -2,7 +2,7 @@
  * preference, plus the two transient workarounds autoplay policies force on
  * us. Kept as a pure state machine (mirrors discussion-state.ts) so the
  * autoplay/retry logic can be reasoned about — and tested — without a DOM. */
-export type VideoAudioState = {
+type VideoAudioState = {
   /** Persisted user preference; survives across stories. */
   muted: boolean;
   /** Video is forced muted after an autoplay attempt was rejected; needs a user tap to restore sound. */
