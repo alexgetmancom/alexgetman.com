@@ -11,13 +11,13 @@ function read(path: string): string {
 describe("production nginx topology", () => {
   it("keeps the client address trusted across the stream, TLS and HTTP hops", () => {
     const stream = read("deploy/nginx/production/shared443.conf");
-    const tls = read("deploy/nginx/production/ialexey.ru-ssl.conf");
-    const http = read("deploy/nginx/production/ialexey.ru.conf");
+    const tls = read("deploy/nginx/production/alexgetman.com-ssl.conf");
+    const http = read("deploy/nginx/production/alexgetman.com.conf");
     const headers = read("deploy/nginx/production/alexgetman-proxy-headers.conf");
 
     expect(stream).toContain("proxy_protocol on;");
-    expect(tls.match(/listen 127\.0\.0\.1:4443 ssl proxy_protocol;/g)).toHaveLength(3);
-    expect(tls.match(/real_ip_header proxy_protocol;/g)).toHaveLength(3);
+    expect(tls.match(/listen 127\.0\.0\.1:4443 ssl proxy_protocol;/g)).toHaveLength(2);
+    expect(tls.match(/real_ip_header proxy_protocol;/g)).toHaveLength(2);
     expect(tls).toContain("proxy_set_header X-Real-IP $remote_addr;");
     expect(http).toContain("listen 127.0.0.1:81;");
     expect(headers).toContain("proxy_set_header X-Real-IP $http_x_real_ip;");
@@ -25,7 +25,7 @@ describe("production nginx topology", () => {
   });
 
   it("keeps Maru media proxied and verifies both runtime services during deployment", () => {
-    const http = read("deploy/nginx/production/ialexey.ru.conf");
+    const http = read("deploy/nginx/production/alexgetman.com.conf");
     const maruHttp = read("deploy/nginx/production/marux.ru.conf");
     const maruTls = read("deploy/nginx/production/marux.ru-ssl.conf");
     const stream = read("deploy/nginx/production/shared443.conf");
@@ -39,8 +39,8 @@ describe("production nginx topology", () => {
     expect(maru).toContain("DEPLOY_AGENT_HOST_GATEWAY");
     expect(maru).toContain("healthcheck:");
     expect(workflow).toContain("/etc/nginx/stream-conf.d/shared443.conf");
-    expect(workflow).toContain("/etc/nginx/sites-enabled/ialexey.ru-ssl");
-    expect(workflow).toContain("/etc/nginx/sites-enabled/ialexey.ru");
+    expect(workflow).toContain("/etc/nginx/sites-enabled/alexgetman.com-ssl");
+    expect(workflow).toContain("/etc/nginx/sites-enabled/alexgetman.com");
     expect(workflow).toContain("sudo nginx -t; sudo systemctl reload nginx");
     expect(workflow).toContain("http://127.0.0.1:8789/readyz");
     expect(workflow).toContain("docker image prune --all --force");
