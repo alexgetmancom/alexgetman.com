@@ -1,6 +1,62 @@
-@import "./home-news/story-layout.css";
-@import "./home-news/story-rail.css";
-@import "./home-news/story-rail-interaction.css";
-@import "./home-news/story-context.css";
-@import "./home-news/story-mobile.css";
-@import "./home-news/story-effects.css";
+/* =============================================================================
+ * ГЛОБАЛЬНЫЕ ОСТАТКИ СТИЛЕЙ ГЛАВНОЙ (подключает HomeNewsPage.astro)
+ * -----------------------------------------------------------------------------
+ * Здесь ТОЛЬКО то, что нельзя заскоупить в Svelte-компоненты плеера:
+ *   - body.immersive-home — класс вешает layouts/Layout.astro на <body>
+ *   - .home-page / .empty — обёртка страницы в HomeNewsPage.astro
+ *   - .story-seo-content  — noscript-статья для поисковиков (Astro-слой)
+ * ВСЕ стили самого плеера живут в <style> компонентов:
+ * features/story-player/*.svelte. Сюда ничего про плеер не добавлять.
+ * ========================================================================== */
+
+.home-page {
+  width: 100%;
+  max-width: 1800px;
+  margin: 0 auto;
+  padding: 0;
+  min-width: 0;
+  height: 100%;
+}
+
+.empty {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.story-seo-content {
+  max-width: 760px;
+  margin: 2rem auto;
+  color: var(--text-main);
+}
+
+@media (min-width: 761px) {
+  body.immersive-home {
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+    color-scheme: dark;
+  }
+
+  body.immersive-home > .container {
+    max-width: none;
+    padding-left: 0;
+    padding-right: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  body.immersive-home {
+    overflow-x: hidden;
+  }
+
+  body.immersive-home > .container {
+    max-width: none;
+    padding: 0;
+  }
+
+  .home-page {
+    width: 100%;
+    max-width: none;
+    padding: 0;
+  }
+}

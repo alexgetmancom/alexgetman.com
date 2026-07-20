@@ -31,7 +31,7 @@
   },
   "overrides": [
     {
-      "includes": ["apps/web/src/**/*.astro"],
+      "includes": ["apps/web/src/**/*.astro", "apps/web/src/**/*.svelte"],
       "linter": {
         "rules": {
           "correctness": {

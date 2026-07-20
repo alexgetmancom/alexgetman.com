@@ -102,7 +102,7 @@ a:hover {
   position: fixed;
   left: 1rem;
   top: 1rem;
-  z-index: 2000;
+  z-index: var(--z-skip-link);
   transform: translateY(-200%);
   padding: 0.55rem 0.75rem;
   color: var(--text-header);

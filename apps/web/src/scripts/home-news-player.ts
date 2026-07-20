@@ -1,3 +1,5 @@
+/* УСТАРЕЛО: часть старого vanilla-плеера, больше не подключено. Новый плеер:
+ * features/story-player/ (см. README). Не развивать; удалить после сверки. */
 import { createStoryViewTracker } from "./story-player/analytics";
 import {
   applyMutePreference,
