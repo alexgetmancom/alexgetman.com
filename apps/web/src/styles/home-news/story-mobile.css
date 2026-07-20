@@ -49,10 +49,6 @@
     writing-mode: horizontal-tb;
   }
 
-  .story-rail-focus-overlay {
-    display: none;
-  }
-
   .story-rail {
     order: 2;
     width: 100%;
@@ -295,7 +291,7 @@
     padding: 0.8rem 0.8rem 0;
   }
 
-  .story-panel h1 {
+  .story-panel .story-title {
     font-size: clamp(1.7rem, 8vw, 2.35rem);
     line-height: 1.05;
   }

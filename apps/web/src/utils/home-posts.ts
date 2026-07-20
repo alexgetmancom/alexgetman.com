@@ -22,17 +22,25 @@ export function existingSiteImage(publicPath: string | null | undefined) {
   return candidates.some((candidate) => fs.existsSync(candidate)) ? normalizedPath : null;
 }
 
-export function responsiveSrcSetFor(publicPath: string | null | undefined) {
-  if (!publicPath || !/\.(png|jpe?g)$/i.test(publicPath)) return undefined;
-  const normalizedPath = String(publicPath).replace(/^\/+/, "");
-  const base = normalizedPath
+function responsiveBaseFor(publicPath: string | null | undefined): string | null {
+  if (!publicPath || !/\.(png|jpe?g)$/i.test(publicPath)) return null;
+  return String(publicPath)
     .replace(/^\/+/, "")
     .replace(/[\\/]/g, "-")
     .replace(/\.[a-z0-9]+$/i, "");
-  const candidates = [360, 640, 960].filter((width) =>
-    fs.existsSync(path.join(PUBLIC_ROOT, "generated/responsive", `${base}-${width}.webp`)),
-  );
-  return candidates.length ? candidates.map((width) => `/generated/responsive/${base}-${width}.webp ${width}w`).join(", ") : undefined;
+}
+
+/** Variants are produced on demand by pages/generated/responsive/[...file].ts,
+ * so the srcset is emitted unconditionally for any resizable source. */
+export function responsiveSrcSetFor(publicPath: string | null | undefined) {
+  const base = responsiveBaseFor(publicPath);
+  if (!base) return undefined;
+  return [360, 640, 960].map((width) => `/generated/responsive/${base}-${width}.webp ${width}w`).join(", ");
+}
+
+export function responsiveVariantFor(publicPath: string | null | undefined, width: 360 | 640 | 960) {
+  const base = responsiveBaseFor(publicPath);
+  return base ? `generated/responsive/${base}-${width}.webp` : undefined;
 }
 
 function audioUrlFor(item: FeedItem, locale: "en" | "ru") {
@@ -71,7 +79,11 @@ export function toHomePost(item: FeedItem, locale: "en" | "ru"): HomePost {
     gallery: postMediaGallery(item, locale).filter((media) => existingSiteImage(media.path)),
     audioUrl: audioUrlFor(item, locale),
     spotifyUrl: spotifyUrlFor(item, locale),
-    imageSrcSet: visualPath && mediaType === "image" ? responsiveSrcSetFor(postImagePath(item, locale)) : undefined,
+    imageSrcSet:
+      visualPath && mediaType === "image"
+        ? responsiveSrcSetFor(postImagePath(item, locale))
+        : responsiveSrcSetFor(posterPath || fallbackOgPath),
+    posterSrc: mediaType === "video" ? responsiveVariantFor(posterPath || fallbackOgPath, 960) : undefined,
     views: Number(item.views || 0),
     categorySlug,
     category: categoryLabel(categorySlug, locale),

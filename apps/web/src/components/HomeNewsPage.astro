@@ -115,6 +115,7 @@ const ui = {
           audioUrl: post.audioUrl || null,
           spotifyUrl: post.spotifyUrl || null,
           imageSrcSet: post.imageSrcSet || '',
+          posterSrc: publicSrc(post.posterSrc),
           views: metricValue(post.views),
           category: post.category,
           feedModes: feedModesFor(post),

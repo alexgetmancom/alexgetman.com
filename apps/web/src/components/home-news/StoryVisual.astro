@@ -12,6 +12,12 @@ const publicSrc = (value?: string | null) => (value ? `/${String(value).replace(
 const gallery = activePost.gallery || [];
 ---
 
+{activePost.mediaType !== 'video' && activePost.image && (
+  <link rel="preload" as="image" href={publicSrc(activePost.image)} imagesrcset={activePost.imageSrcSet} imagesizes="(max-width: 760px) min(100vw - 2rem, 390px), 320px" fetchpriority="high" />
+)}
+{activePost.mediaType === 'video' && (activePost.posterSrc || activePost.fallbackImage) && (
+  <link rel="preload" as="image" href={publicSrc(activePost.posterSrc || activePost.fallbackImage)} fetchpriority="high" />
+)}
 <div class="story-visual-wrap">
   <article class={`story-visual${activePost.image ? '' : ' story-visual--no-image'}`} data-story-visual>
     <span class="story-visual-progress" aria-hidden="true">
@@ -23,6 +29,7 @@ const gallery = activePost.gallery || [];
         srcset={activePost.mediaType === 'video' ? undefined : activePost.imageSrcSet}
         alt={activePost.title}
         loading="eager"
+        fetchpriority="high"
         decoding="async"
         sizes="(max-width: 760px) min(100vw - 2rem, 390px), 320px"
         hidden={!activePost.image || activePost.mediaType === 'video'}
@@ -31,7 +38,7 @@ const gallery = activePost.gallery || [];
       />
       <video
         src={activePost.mediaType === 'video' ? publicSrc(activePost.image) : undefined}
-        poster={publicSrc(activePost.fallbackImage)}
+        poster={publicSrc(activePost.posterSrc || activePost.fallbackImage)}
         muted
         autoplay
         playsinline

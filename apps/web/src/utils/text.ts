@@ -13,7 +13,12 @@ export function compactText(text: string): string {
 
 export function truncateText(value: string, limit: number): string {
   const text = compactText(value);
-  return text.length <= limit ? text : `${text.slice(0, Math.max(0, limit - 1)).trimEnd()}…`;
+  if (text.length <= limit) return text;
+  const cut = text.slice(0, Math.max(0, limit - 1));
+  const lastSpace = cut.lastIndexOf(" ");
+  // Cut on a word boundary unless that would drop most of the excerpt.
+  const truncated = lastSpace > (limit - 1) * 0.6 ? cut.slice(0, lastSpace) : cut;
+  return `${truncated.replace(/[\s,;:—–-]+$/, "")}…`;
 }
 
 export function excerptAfterTitle(text: string, title: string, limit: number): string {

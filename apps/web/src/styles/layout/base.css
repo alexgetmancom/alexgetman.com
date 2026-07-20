@@ -5,7 +5,7 @@ html[data-theme="dark"] {
   --card-bg: rgba(5, 6, 9, 0.74); /* Glass-like black panel */
   --text-main: #dde3ec; /* High comfort primary grey text */
   --text-secondary: #a3adbc; /* Softer secondary grey text */
-  --text-muted: #8b949e; /* Muted metadata/date grey (Contrast fix for Lighthouse) */
+  --text-muted: #98a2ad; /* Muted metadata/date grey (Contrast fix for Lighthouse) */
   --text-header: #f3f6fa; /* Soft pure-like white for major headers */
   --accent: #e2294e; /* Calm signature crimson red (WCAG contrast compliant) */
   --accent-glow: rgba(226, 41, 78, 0.15);

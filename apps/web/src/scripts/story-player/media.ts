@@ -27,7 +27,7 @@ export function hydrateRailMedia(options: {
     } else {
       const img = document.createElement("img");
       img.src = toPublicSrc(fallbackSrc || src);
-      if (srcset && type !== "video") img.srcset = srcset;
+      if (srcset) img.srcset = srcset;
       img.alt = "";
       img.loading = "lazy";
       img.decoding = "async";
@@ -58,7 +58,7 @@ export function preloadAdjacentMedia(options: {
   [-1, 1, 2].forEach((offset) => {
     const post = posts[(active + offset + posts.length) % posts.length];
     if (!post?.image) return;
-    const src = toPublicSrc(post.fallbackImage || post.image);
+    const src = toPublicSrc(post.posterSrc || post.fallbackImage || post.image);
     if (!src || post.__preloaded) return;
     post.__preloaded = true;
     if (post.mediaType === "video") {

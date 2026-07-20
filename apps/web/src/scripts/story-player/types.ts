@@ -4,6 +4,7 @@ export type StoryPost = {
   image?: string;
   fallbackImage?: string;
   imageSrcSet?: string;
+  posterSrc?: string;
   mediaType: "image" | "video";
   gallery?: Array<{ type: "image" | "video"; path: string; poster?: string }>;
   title: string;

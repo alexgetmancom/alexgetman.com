@@ -25,7 +25,9 @@ async function serveMedia(request: Request, params: { path?: string }, headOnly:
   const size = file.size;
   const headers = new Headers({
     "Accept-Ranges": "bytes",
-    "Cache-Control": "public, max-age=300",
+    // Materialized post media keeps its name for the life of the post; a day of
+    // client caching satisfies Lighthouse without pinning replaced files forever.
+    "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
   });
   if (file.type) headers.set("Content-Type", file.type);
 

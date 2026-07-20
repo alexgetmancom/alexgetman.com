@@ -4,7 +4,7 @@ import Layout from "../../layouts/Layout.astro";
 import { loadFeedItems } from "../../server/public-site";
 import { sortedHomePosts } from "../../utils/home-posts";
 import { postOgImagePath, postVisualMedia } from "../../utils/media";
-import { getFirstSentence, truncateText } from "../../utils/text";
+import { excerptAfterTitle, getFirstSentence } from "../../utils/text";
 
 export const prerender = false;
 
@@ -22,7 +22,7 @@ const siteAuthor = "Alex Getman";
 const postText = item.text_en || item.text || "";
 const pageTitle = selectedPost?.title || getFirstSentence(postText) || `Post ${postId}`;
 const postDescription =
-  truncateText(postText.replace(/\s+/g, " "), 158) || "AI news, automation notes and developer updates by Alex Getman on alexgetman.com.";
+  excerptAfterTitle(postText, pageTitle, 158) || "AI news, automation notes and developer updates by Alex Getman on alexgetman.com.";
 const localUrl = `https://alexgetman.com/${postId}/${slug}/`;
 const ogImage = postOgImagePath(item, "en");
 const visualMedia = postVisualMedia(item, "en");
@@ -31,7 +31,7 @@ const schema = JSON.stringify({
   "@context": "https://schema.org",
   "@graph": [
     {
-      "@type": "Article",
+      "@type": "NewsArticle",
       headline: pageTitle,
       description: postDescription,
       url: localUrl,

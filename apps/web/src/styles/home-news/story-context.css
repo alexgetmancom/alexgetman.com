@@ -18,7 +18,7 @@
   font-size: 0.7rem;
   font-weight: 900;
   text-transform: uppercase;
-  color: #f04461;
+  color: #ff5c77; /* ≥4.5:1 on the dark panel background (Lighthouse contrast) */
   background: rgba(220, 38, 38, 0.08);
   border: 1px solid rgba(220, 38, 38, 0.28);
   padding: 0.22rem 0.54rem;
@@ -50,7 +50,7 @@
   font-size: 0.9rem;
 }
 
-.story-panel h1,
+.story-panel .story-title,
 .story-panel h2 {
   margin: 0 0 0.62rem;
   color: var(--text-header);
@@ -58,8 +58,10 @@
   line-height: 1.14;
 }
 
-.story-panel h1 {
+.story-panel .story-title {
+  /* Rendered as <p> to keep the noscript article's <h1> unique; restore heading weight. */
   font-size: clamp(1.8rem, 2.3vw, 2.5rem);
+  font-weight: bold;
 }
 
 .story-panel h2 {
@@ -67,7 +69,7 @@
 }
 
 /* Transition for updates */
-.story-panel h1,
+.story-panel .story-title,
 .story-copy,
 .story-meta,
 .story-category-wrap {
@@ -78,7 +80,7 @@
   transform: translateY(0);
 }
 
-.story-panel.is-updating h1,
+.story-panel.is-updating .story-title,
 .story-panel.is-updating .story-copy,
 .story-panel.is-updating .story-meta,
 .story-panel.is-updating .story-category-wrap {
@@ -111,10 +113,6 @@
 .story-copy::-webkit-scrollbar-thumb {
   background-color: rgba(255, 255, 255, 0.16);
   border-radius: 999px;
-}
-
-.read-more-button {
-  display: none;
 }
 
 .story-copy p,

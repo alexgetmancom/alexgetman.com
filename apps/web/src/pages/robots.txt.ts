@@ -7,7 +7,7 @@ Allow: /
 Disallow: /stats
 Disallow: /stats/pageview
 
-Sitemap: ${siteUrl}/sitemap-index.xml
+Sitemap: ${siteUrl}/sitemap.xml
 Host: ${host}
 Content-Signal: ai-train=no, search=yes, ai-input=no
 `;

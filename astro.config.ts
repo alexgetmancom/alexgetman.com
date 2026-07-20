@@ -1,5 +1,4 @@
 import node from "@astrojs/node";
-import sitemap from "@astrojs/sitemap";
 import { defineConfig } from "astro/config";
 
 // https://astro.build/config
@@ -15,17 +14,11 @@ export default defineConfig({
   security: { checkOrigin: false },
   vite: {
     ssr: {
-      external: ["@mtcute/bun", "@mtcute/wasm"],
+      external: ["@mtcute/bun", "@mtcute/wasm", "sharp"],
     },
   },
-  integrations: [
-    sitemap({
-      lastmod: new Date(),
-      // Only canonical content URLs belong in the sitemap. The application also
-      // exposes compatibility and utility routes, many of which deliberately
-      // carry noindex; advertising those URLs to Google creates needless
-      // canonical and video-indexing noise.
-      filter: (page) => /^(?:\/$|\/ru\/$|\/(?:ru\/)?\d+\/[^/]+\/$)/.test(new URL(page).pathname),
-    }),
-  ],
+  // The sitemap is served by the dynamic route apps/web/src/pages/sitemap.xml.ts,
+  // which reads current slugs from the database. The @astrojs/sitemap integration
+  // was removed: it snapshotted slugs at build time, so renamed posts left the
+  // static sitemap full of URLs that 301 to their canonical form.
 });

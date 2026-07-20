@@ -28,6 +28,7 @@ const publicSrc = (value?: string | null) => (value ? `/${String(value).replace(
             post.fallbackImage ? (
               <img
                 src={publicSrc(post.fallbackImage)}
+                srcset={post.imageSrcSet}
                 alt={post.title}
                 loading={index < 4 ? 'eager' : 'lazy'}
                 decoding="async"

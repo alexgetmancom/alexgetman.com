@@ -4,7 +4,7 @@ import Layout from "../../../layouts/Layout.astro";
 import { loadFeedItems } from "../../../server/public-site";
 import { sortedHomePosts } from "../../../utils/home-posts";
 import { postOgImagePath, postVisualMedia } from "../../../utils/media";
-import { getFirstSentence, truncateText } from "../../../utils/text";
+import { excerptAfterTitle, getFirstSentence } from "../../../utils/text";
 
 export const prerender = false;
 
@@ -22,8 +22,7 @@ const siteAuthor = "Алекс Гетман";
 const postText = item.text || "";
 const pageTitle = selectedPost?.title || getFirstSentence(postText) || `Публикация ${postId}`;
 const postDescription =
-  truncateText(postText.replace(/\s+/g, " "), 158) ||
-  "Новости ИИ, заметки об автоматизации и разработке от Алекса Гетмана на alexgetman.com.";
+  excerptAfterTitle(postText, pageTitle, 158) || "Новости ИИ, заметки об автоматизации и разработке от Алекса Гетмана на alexgetman.com.";
 const localUrl = `https://alexgetman.com/ru/${postId}/${slug}/`;
 const ogImage = postOgImagePath(item, "ru");
 const visualMedia = postVisualMedia(item, "ru");
@@ -32,7 +31,7 @@ const schema = JSON.stringify({
   "@context": "https://schema.org",
   "@graph": [
     {
-      "@type": "Article",
+      "@type": "NewsArticle",
       headline: pageTitle,
       description: postDescription,
       url: localUrl,

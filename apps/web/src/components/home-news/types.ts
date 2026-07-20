@@ -13,6 +13,7 @@ export interface HomePost {
   audioUrl?: string | null;
   spotifyUrl?: string | null;
   imageSrcSet?: string;
+  posterSrc?: string;
   views: number;
   categorySlug: string;
   category: string;

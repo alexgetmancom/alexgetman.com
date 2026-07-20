@@ -67,7 +67,8 @@ export function renderStoryFrame(options: {
     if (post.fallbackImage) video.dataset.fallbackSrc = toPublicSrc(post.fallbackImage);
     else delete video.dataset.fallbackSrc;
     if (post.image && post.mediaType === "video") {
-      if (post.fallbackImage) video.setAttribute("poster", toPublicSrc(post.fallbackImage));
+      const poster = post.posterSrc || post.fallbackImage;
+      if (poster) video.setAttribute("poster", toPublicSrc(poster));
       else video.removeAttribute("poster");
       const videoSrc = toPublicSrc(post.image);
       if (video.getAttribute("src") !== videoSrc) {
