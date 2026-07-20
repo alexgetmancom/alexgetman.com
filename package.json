@@ -35,7 +35,7 @@
     "@astrojs/node": "^11.0.2",
     "@astrojs/rss": "^4.0.19",
     "@astrojs/svelte": "^9.0.1",
-    "@mtcute/bun": "^0.30.3",
+    "@mtcute/bun": "^0.31.0",
     "astro": "^7.0.7",
     "svelte": "^5.56.6"
   },

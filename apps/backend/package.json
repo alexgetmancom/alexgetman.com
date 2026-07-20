@@ -13,7 +13,7 @@
     "check": "bun run typecheck && bun run test"
   },
   "dependencies": {
-    "@mtcute/bun": "^0.30.3",
+    "@mtcute/bun": "^0.31.0",
     "drizzle-orm": "^0.45.2",
     "drizzle-zod": "^0.8.3",
     "grammy": "^1.44.0",
