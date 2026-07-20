@@ -52,6 +52,8 @@ const envSchema = z
     MCP_STUDIO_TOKEN: z.string().min(16).optional(),
     MCP_STUDIO_ACTOR_ID: z.coerce.number().int().positive().optional(),
     DEEPSEEK_API_KEY: z.string().optional(),
+    /** Moscow hour at which the editor receives one AI-generated opportunity inbox. */
+    EDITORIAL_INBOX_HOUR_MSK: z.coerce.number().int().min(0).max(23).default(10),
     ADMIN_IDS: z
       .string()
       .default("")
