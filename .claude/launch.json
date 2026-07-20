@@ -1,0 +1,15 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web-dev",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["--bun", "astro", "dev"],
+      "port": 4321,
+      "env": {
+        "PIPELINE_DB": "/private/tmp/claude-501/-Users-alex-projects-alexgetman-com/ed8ab981-9d79-4971-aafe-9af9417a476b/scratchpad/dev-pipeline.db",
+        "DISABLE_WORKERS": "1"
+      }
+    }
+  ]
+}

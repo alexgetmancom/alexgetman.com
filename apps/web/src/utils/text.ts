@@ -35,17 +35,9 @@ export function excerptAfterTitle(text: string, title: string, limit: number): s
   return truncateText(excerpt || source, limit);
 }
 
-export function removeLeadingEmoji(text: string): string {
-  if (!text) return "";
-  const cleaned = text.trim();
-  const flagMatch = cleaned.match(/^(\p{RI}{2})\s*/u);
-  if (flagMatch) return cleaned.slice(flagMatch[1].length).trim();
-  const baseEmojiPart = `(?:[^\\s\\w\\d.,!?;:()""''«»а-яА-ЯёЁa-zA-Z][\\ufe00-\\ufe0f\\u20e3]?|[\\ud83c][\\udffb-\\udfff]?)`;
-  const zwjRegex = new RegExp(`^(?:${baseEmojiPart}(?:\\u200d${baseEmojiPart})*)`, "u");
-  const match = cleaned.match(zwjRegex);
-  if (match?.[0] && /\p{Emoji}/u.test(match[0]) && !/^[#*0-9]$/.test(match[0][0])) return cleaned.slice(match[0].length).trim();
-  return cleaned;
-}
+// Canonical implementation lives in the backend (delivery/social/payload.ts) so a
+// headline strips identically whether it's rendered on the site or sent to socials.
+export { stripLeadingEmojis as removeLeadingEmoji } from "../../../backend/src/delivery/social/payload.js";
 
 export function getFirstSentence(text: string): string {
   if (!text) return "";

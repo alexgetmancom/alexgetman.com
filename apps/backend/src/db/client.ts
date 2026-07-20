@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import crypto from "node:crypto";
-import { mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
@@ -28,7 +28,12 @@ export function openBackendDb(path: string, timeout = 30_000): BackendDb {
   }
   const sqlite = new Database(path, { create: true, strict: true }) as SqliteCompat;
   sqlite.backup = async (target: string) => {
-    await Bun.write(target, sqlite.serialize());
+    // serialize() only snapshots the main .db file; in WAL mode, recently
+    // committed data can still be sitting in .db-wal and would be silently
+    // missing from the backup. VACUUM INTO merges the WAL first and writes
+    // a single consistent file — the target must not already exist.
+    if (existsSync(target)) unlinkSync(target);
+    sqlite.run("VACUUM INTO ?", [target]);
   };
   sqlite.run("PRAGMA journal_mode = WAL");
   sqlite.run(`PRAGMA busy_timeout = ${timeout}`);

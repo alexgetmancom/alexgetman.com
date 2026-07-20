@@ -1,8 +1,11 @@
-export function formatDate(value: string, locale = "en-GB"): string {
+// The default mirrors studio.yaml's factory timezone; callers on the server
+// should pass getRuntime().config.TIMEZONE so a config change doesn't leave
+// the site rendering dates in a stale zone (see foundation/config.ts).
+export function formatDate(value: string, locale = "en-GB", timeZone = "Europe/Moscow"): string {
   if (!value) return "";
   try {
     return new Intl.DateTimeFormat(locale, {
-      timeZone: "Europe/Moscow",
+      timeZone,
       day: "2-digit",
       month: locale === "ru-RU" ? "2-digit" : "short",
       year: "numeric",

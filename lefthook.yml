@@ -4,6 +4,8 @@ pre-commit:
       glob: "*.{ts,tsx,astro,json,yml,yaml}"
       run: bunx biome check --write --no-errors-on-unmatched {staged_files}
       stage_fixed: true
+    gitleaks:
+      run: gitleaks protect --staged --redact --no-banner
 
 pre-push:
   commands:

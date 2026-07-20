@@ -1,4 +1,5 @@
 import { loadFeedItems } from "../../server/public-site";
+import { getRuntime } from "../../server/runtime";
 import { formatDate } from "../../utils/dates";
 import { siteUrlFromContext } from "../../utils/site";
 import { truncateText } from "../../utils/text";
@@ -6,6 +7,7 @@ import { truncateText } from "../../utils/text";
 export const prerender = false;
 
 export async function GET(context: any) {
+  const timeZone = getRuntime().config.TIMEZONE;
   const sortedItems = loadFeedItems()
     .filter((item) => item.text_ru)
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -37,7 +39,7 @@ export async function GET(context: any) {
     for (const item of sortedItems.slice(0, 10)) {
       const id = item.post_id;
       const title = truncateText(item.text_ru || item.text || "", 86) || `Пост ${id}`;
-      const date = formatDate(item.date, "ru-RU");
+      const date = formatDate(item.date, "ru-RU", timeZone);
       if (!item.has_ru || !id) continue;
       lines.push(`### [${title}](${siteUrl}/ru/${id}/${item.slug_ru}/)`);
       lines.push(`*Опубликовано: ${date} MSK*`);

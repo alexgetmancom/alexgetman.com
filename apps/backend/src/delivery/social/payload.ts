@@ -139,8 +139,20 @@ export function splitText(text: string, limit: number): string[] {
   return parts.length > 0 ? parts : [normalized];
 }
 
+/** Canonical leading-emoji stripper, shared with the web app (apps/web/src/utils/text.ts
+ * re-exports this) so a post's headline strips identically for social payloads and
+ * the site. Handles flag pairs and ZWJ sequences; a bare "#"/digit is not treated as
+ * an emoji so hashtags and numbered lists survive. */
 export function stripLeadingEmojis(text: string): string {
-  return text.replace(/^[\s\p{Emoji_Presentation}\p{Extended_Pictographic}]+/u, "").trimStart();
+  if (!text) return "";
+  const cleaned = text.trim();
+  const flagGroup = cleaned.match(/^(\p{RI}{2})\s*/u)?.[1];
+  if (flagGroup) return cleaned.slice(flagGroup.length).trim();
+  const baseEmojiPart = `(?:[^\\s\\w\\d.,!?;:()""''«»а-яА-ЯёЁa-zA-Z][\\ufe00-\\ufe0f\\u20e3]?|[\\ud83c][\\udffb-\\udfff]?)`;
+  const zwjRegex = new RegExp(`^(?:${baseEmojiPart}(?:\\u200d${baseEmojiPart})*)`, "u");
+  const matched = cleaned.match(zwjRegex)?.[0];
+  if (matched && /\p{Emoji}/u.test(matched) && !/^[#*0-9]$/.test(matched[0] ?? "")) return cleaned.slice(matched.length).trim();
+  return cleaned;
 }
 
 export async function readFileBlob(filePath: string, contentType = guessContentType(filePath)): Promise<Blob> {
