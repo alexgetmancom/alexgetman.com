@@ -14,9 +14,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends upx-ucl \
 FROM oven/bun:1.3.14-debian AS build-in-docker
 WORKDIR /app
 # Сначала копируем только конфигурации и файлы package.json для кэширования
-COPY --chown=bun:bun package.json bun.lock tsconfig.json tsconfig.base.json astro.config.ts biome.json knip.json ./
+COPY --chown=bun:bun package.json bun.lock tsconfig.json tsconfig.base.json astro.config.ts svelte.config.ts biome.json knip.json ./
 COPY --chown=bun:bun apps/backend/package.json ./apps/backend/package.json
 COPY --chown=bun:bun tools/knip/package.json ./tools/knip/package.json
+COPY --chown=bun:bun tools/svelte-check/package.json ./tools/svelte-check/package.json
 
 RUN chown bun:bun /app
 USER bun
@@ -27,6 +28,7 @@ COPY --chown=bun:bun apps/backend ./apps/backend
 COPY --chown=bun:bun apps/web ./apps/web
 COPY --chown=bun:bun scripts ./scripts
 COPY --chown=bun:bun tools/knip ./tools/knip
+COPY --chown=bun:bun tools/svelte-check ./tools/svelte-check
 # Backend shares the Story encoder with the isolated media-processor service.
 # Keep the single source in the in-Docker TypeScript build context as well.
 COPY --chown=bun:bun deploy/media-processor/story-encode.ts ./deploy/media-processor/story-encode.ts
@@ -49,9 +51,10 @@ FROM build-${BUILD_SOURCE} AS build
 # --- СТАДИЯ ПРОД-ЗАВИСИМОСТЕЙ ---
 FROM oven/bun:1.3.14-debian AS prod-deps
 WORKDIR /app
-COPY --chown=bun:bun package.json bun.lock tsconfig.json tsconfig.base.json astro.config.ts biome.json knip.json ./
+COPY --chown=bun:bun package.json bun.lock tsconfig.json tsconfig.base.json astro.config.ts svelte.config.ts biome.json knip.json ./
 COPY --chown=bun:bun apps/backend/package.json ./apps/backend/package.json
 COPY --chown=bun:bun tools/knip/package.json ./tools/knip/package.json
+COPY --chown=bun:bun tools/svelte-check/package.json ./tools/svelte-check/package.json
 
 RUN chown bun:bun /app
 USER bun
