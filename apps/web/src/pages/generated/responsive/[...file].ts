@@ -45,6 +45,42 @@ async function findSource(base: string): Promise<string | null> {
   return null;
 }
 
+// A cache-empty deploy plus a burst of page loads used to fan out one ffmpeg/sharp
+// process per unique variant with no limit, which OOM-killed the box (512–768MiB
+// container next to the bot/video workers). Cap concurrent generations, dedupe
+// identical in-flight requests, and once the small queue is full stop generating
+// entirely — redirect to the original asset so the response stays cheap until a
+// slot frees up and the variant gets cached for everyone after.
+const MAX_CONCURRENT = 2;
+const MAX_QUEUED = 4;
+let active = 0;
+const waiters: Array<() => void> = [];
+const inFlight = new Map<string, Promise<Variant | null>>();
+
+const OVERLOADED = Symbol("overloaded");
+
+function acquireSlot(): Promise<void> | typeof OVERLOADED | null {
+  if (active < MAX_CONCURRENT) {
+    active++;
+    return null;
+  }
+  if (waiters.length >= MAX_QUEUED) return OVERLOADED;
+  return new Promise((resolve) => waiters.push(() => resolve()));
+}
+
+function releaseSlot(): void {
+  const next = waiters.shift();
+  if (next) next();
+  else active--;
+}
+
+function publicUrlFor(sourcePath: string): string | null {
+  for (const root of sourceRoots()) {
+    if (sourcePath.startsWith(`${root}${path.sep}`)) return `/${path.relative(root, sourcePath).split(path.sep).join("/")}`;
+  }
+  return null;
+}
+
 export const GET: APIRoute = async ({ params }) => {
   const requested = String(params.file ?? "");
   const match = /^([A-Za-z0-9._-]+)-(\d{3})\.webp$/.exec(requested);
@@ -65,7 +101,31 @@ export const GET: APIRoute = async ({ params }) => {
   const sourcePath = await findSource(base);
   if (!sourcePath) return new Response("not found\n", { status: 404 });
 
-  const variant = await generateVariant(sourcePath, Number(width));
+  // Piggyback on an identical in-flight generation without touching the semaphore at all.
+  let variantPromise = inFlight.get(requested);
+  if (!variantPromise) {
+    const gate = acquireSlot();
+    if (gate === OVERLOADED) {
+      const fallbackUrl = publicUrlFor(sourcePath);
+      if (!fallbackUrl) return new Response("busy\n", { status: 503 });
+      return new Response(null, { status: 302, headers: { Location: fallbackUrl, "Cache-Control": "no-store" } });
+    }
+    if (gate) await gate;
+    // Waiting for a slot yielded the event loop; another request may have started
+    // (and possibly already finished) the same generation in the meantime.
+    variantPromise = inFlight.get(requested);
+    if (variantPromise) {
+      releaseSlot();
+    } else {
+      variantPromise = generateVariant(sourcePath, Number(width)).finally(() => {
+        inFlight.delete(requested);
+        releaseSlot();
+      });
+      inFlight.set(requested, variantPromise);
+    }
+  }
+
+  const variant = await variantPromise;
   if (!variant) return new Response("unprocessable\n", { status: 404 });
   headers.set("Content-Type", variant.type);
 
