@@ -1,5 +1,6 @@
 import { and, asc, eq } from "drizzle-orm";
 import { requireDraft } from "../content/drafts.js";
+import { enrichPublishedPostEntities } from "../content/entity-enrichment.js";
 import type { BackendDb } from "../db/client.js";
 import { draftEntityCandidates, draftSources, knowledgeEntities, postEntityLinks, postSources, publications } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
@@ -23,6 +24,7 @@ export function publishDraftToQueue(backendDb: BackendDb, draftId: number, optio
   copyAcceptedEntities(backendDb, draftId, postId, now);
   const plan = createPublicationPlan(draft, draftId, postId, { mode, ruAt, enAt }, now);
   persistPublicationPlan(backendDb, plan);
+  enrichPublishedPostEntities(backendDb, postId);
   reconcilePublication(backendDb, postId);
   recordDomainEvent(backendDb, {
     ref: `post:${postId}`,

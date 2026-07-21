@@ -70,6 +70,7 @@ export const knowledgeEntities = sqliteTable(
   {
     id: autoId(),
     kind: text().notNull(), // company, model, person, product, topic
+    parentEntityId: integer(),
     slug: text().notNull(),
     titleRu: text().notNull(),
     titleEn: text(),
