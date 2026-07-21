@@ -1,5 +1,5 @@
 import type { BackendConfig } from "../../foundation/config.js";
-import { externalFetch, redactExternalSecrets } from "../../foundation/http.js";
+import { externalFetch, redactExternalSecrets, retryAfterSecondsFromHeaders } from "../../foundation/http.js";
 import { HttpPublishError, type PublishResult } from "../../publishing/errors.js";
 import { payloadCanonicalUrl, payloadMedia } from "./payload.js";
 
@@ -70,7 +70,12 @@ export async function publishToDevto(
   const body = await response.text();
   if (!response.ok) {
     const safeBody = redactExternalSecrets(body);
-    throw new HttpPublishError(`dev.to publish failed: ${response.status} ${safeBody}`, response.status, safeBody);
+    throw new HttpPublishError(
+      `dev.to publish failed: ${response.status} ${safeBody}`,
+      response.status,
+      safeBody,
+      retryAfterSecondsFromHeaders(response.headers),
+    );
   }
   const data = body ? (JSON.parse(body) as Record<string, unknown>) : {};
   const url = typeof data.url === "string" ? data.url : null;
@@ -103,7 +108,12 @@ export async function updateDevtoArticle(
   if (!response.ok) {
     const body = await response.text();
     const safeBody = redactExternalSecrets(body);
-    throw new HttpPublishError(`dev.to update failed: ${response.status} ${safeBody}`, response.status, safeBody);
+    throw new HttpPublishError(
+      `dev.to update failed: ${response.status} ${safeBody}`,
+      response.status,
+      safeBody,
+      retryAfterSecondsFromHeaders(response.headers),
+    );
   }
   return true;
 }

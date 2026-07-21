@@ -1,5 +1,5 @@
 import type { BackendConfig } from "../../foundation/config.js";
-import { externalFetch, redactExternalSecrets } from "../../foundation/http.js";
+import { externalFetch, redactExternalSecrets, retryAfterSecondsFromHeaders } from "../../foundation/http.js";
 import type { PublishResult } from "../../publishing/errors.js";
 import { HttpPublishError } from "../../publishing/errors.js";
 import { payloadMedia, payloadText } from "./payload.js";
@@ -107,7 +107,12 @@ async function graphRequest(config: BackendConfig, path: string, fetchImpl: type
   const body = await response.text();
   if (!response.ok) {
     const safeBody = redactExternalSecrets(body);
-    throw new HttpPublishError(`Instagram API ${response.status}: ${safeBody}`, response.status, safeBody);
+    throw new HttpPublishError(
+      `Instagram API ${response.status}: ${safeBody}`,
+      response.status,
+      safeBody,
+      retryAfterSecondsFromHeaders(response.headers),
+    );
   }
   return body ? (JSON.parse(body) as GraphResponse) : {};
 }

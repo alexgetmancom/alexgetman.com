@@ -1,4 +1,4 @@
-import { classifyPublishError, nextRetryAt, type PublishErrorClass } from "./errors.js";
+import { classifyPublishError, nextRetryAt, type PublishErrorClass, retryAfterSecondsFromError } from "./errors.js";
 
 type RetryPolicy = { maxAttempts: number; backoffBaseSeconds: number; backoffMaxSeconds: number };
 type FailedJobTransition = {
@@ -17,7 +17,9 @@ export function failedJobTransition(error: unknown, currentAttempt: number, poli
     attempt,
     errorClass,
     status: retry ? "queued" : "failed",
-    nextAttemptAt: retry ? nextRetryAt(attempt, policy.backoffBaseSeconds, policy.backoffMaxSeconds) : null,
+    nextAttemptAt: retry
+      ? nextRetryAt(attempt, policy.backoffBaseSeconds, policy.backoffMaxSeconds, undefined, retryAfterSecondsFromError(error))
+      : null,
   };
 }
 

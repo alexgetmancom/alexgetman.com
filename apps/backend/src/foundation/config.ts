@@ -80,7 +80,6 @@ const envSchema = z
     IDLE_POLL_INTERVAL_SECONDS: z.coerce.number().int().positive().default(5),
     CONTROLLER_ALBUM_SETTLE_SECONDS: z.coerce.number().positive().default(4),
     PUBLISH_CLAIM_LIMIT: z.coerce.number().int().positive().default(20),
-    PUBLISH_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(4),
     // A provider call must not hold the complete queue loop forever. Timeouts
     // are terminal and require an explicit retry, because the provider may
     // have accepted the request while its response was lost.
@@ -110,6 +109,12 @@ const envSchema = z
     STUDIO_MEDIA_MAX_BYTES: z.coerce.number().int().positive().max(2_000_000_000).default(1_000_000_000),
     VIDEO_MEDIA_DIR: z.string().default("/data/video-media"),
     VIDEO_MAX_BYTES: z.coerce.number().int().positive().max(2_000_000_000).default(1_000_000_000),
+    // Video jobs heartbeat (see video-worker.ts's withHeartbeat) while an upload
+    // is in flight, so unlike the social pipeline's PUBLISH_LOCK_TIMEOUT_SECONDS
+    // (which has to cover a whole worker-silence window with no heartbeat), this
+    // only has to be a few missed heartbeats wide to safely detect a crash.
+    VIDEO_LOCK_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(120),
+    VIDEO_HEARTBEAT_INTERVAL_SECONDS: z.coerce.number().int().positive().default(30),
     // VIDEO_PREPARE_LEAD_MINUTES / VIDEO_REMINDER_MINUTES / VIDEO_MEDIA_RETENTION_HOURS
     // are owned by studio.yaml (see loadConfig); they are not env-configurable.
     SITE_PUBLIC_DIR: z.string().default("/data/site"),

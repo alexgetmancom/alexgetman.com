@@ -173,27 +173,36 @@ describe("publish queue", () => {
     }
   });
 
-  it("bounds concurrent target publishing", async () => {
+  it("serializes jobs for the same target but never lets one target block another", async () => {
     const backendDb = tempDb();
     try {
-      for (let index = 0; index < 5; index += 1)
-        enqueuePublishJob(backendDb, { messageId: 600 + index, target: `target-${index}`, payload: { title: "Queued" } });
-      let active = 0;
-      let maximum = 0;
-      const publishers = Object.fromEntries(
-        Array.from({ length: 5 }, (_, index) => [
-          `target-${index}`,
-          async () => {
-            active += 1;
-            maximum = Math.max(maximum, active);
-            await Bun.sleep(10);
-            active -= 1;
-            return { ok: true, id: String(index) };
-          },
-        ]),
-      );
-      await runPublishCycle(loadConfig({ PUBLISH_MAX_CONCURRENCY: "2" }), backendDb, publishers);
-      expect(maximum).toBe(2);
+      enqueuePublishJob(backendDb, { messageId: 600, target: "slow-target", payload: { title: "Queued" } });
+      enqueuePublishJob(backendDb, { messageId: 601, target: "slow-target", payload: { title: "Queued" } });
+      enqueuePublishJob(backendDb, { messageId: 602, target: "fast-target", payload: { title: "Queued" } });
+
+      let activeSlow = 0;
+      let maxActiveSlow = 0;
+      let fastElapsedMs: number | null = null;
+      const start = Date.now();
+      const publishers = {
+        "slow-target": async () => {
+          activeSlow += 1;
+          maxActiveSlow = Math.max(maxActiveSlow, activeSlow);
+          await Bun.sleep(50);
+          activeSlow -= 1;
+          return { ok: true, id: "slow" };
+        },
+        "fast-target": async () => {
+          fastElapsedMs = Date.now() - start;
+          return { ok: true, id: "fast" };
+        },
+      };
+      await runPublishCycle(loadConfig({}), backendDb, publishers);
+      // Two jobs on the same target never overlap...
+      expect(maxActiveSlow).toBe(1);
+      // ...but a stuck/slow target doesn't hold up an unrelated one.
+      expect(fastElapsedMs).not.toBeNull();
+      expect(fastElapsedMs as unknown as number).toBeLessThan(50);
     } finally {
       backendDb.close();
     }

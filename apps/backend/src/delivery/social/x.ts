@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import type { BackendConfig } from "../../foundation/config.js";
 import { assertXCredentials, oauthAuthorization } from "../../foundation/external/x-oauth.js";
-import { externalFetch, redactExternalSecrets } from "../../foundation/http.js";
+import { externalFetch, redactExternalSecrets, retryAfterSecondsFromHeaders } from "../../foundation/http.js";
 import type { PublishResult } from "../../publishing/errors.js";
 import { HttpPublishError } from "../../publishing/errors.js";
 import { formatPlatformText } from "../../publishing/platform-profiles.js";
@@ -138,7 +138,12 @@ async function jsonResponse<T>(response: Response, label: string): Promise<T> {
   const body = await response.text();
   if (!response.ok) {
     const safeBody = redactExternalSecrets(body);
-    throw new HttpPublishError(`${label} ${response.status}: ${safeBody}`, response.status, safeBody);
+    throw new HttpPublishError(
+      `${label} ${response.status}: ${safeBody}`,
+      response.status,
+      safeBody,
+      retryAfterSecondsFromHeaders(response.headers),
+    );
   }
   return body ? (JSON.parse(body) as T) : ({} as T);
 }
@@ -146,7 +151,12 @@ async function jsonResponse<T>(response: Response, label: string): Promise<T> {
 async function responseError(response: Response, label: string): Promise<HttpPublishError> {
   const body = await response.text();
   const safeBody = redactExternalSecrets(body);
-  return new HttpPublishError(`${label} ${response.status}: ${safeBody}`, response.status, safeBody);
+  return new HttpPublishError(
+    `${label} ${response.status}: ${safeBody}`,
+    response.status,
+    safeBody,
+    retryAfterSecondsFromHeaders(response.headers),
+  );
 }
 
 function delay(ms: number): Promise<void> {

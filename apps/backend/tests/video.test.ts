@@ -57,7 +57,7 @@ function videoContext(input: { text?: string; callback?: string } = {}) {
 }
 
 describe("video publication queue", () => {
-  it("fails a stale video lock instead of requeueing an external publication", () => {
+  it("requeues a stale video lock through the normal retry budget, like the social pipeline", () => {
     backendDb = openBackendDb(":memory:");
     const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["instagram_reels"]);
@@ -79,13 +79,47 @@ describe("video publication queue", () => {
       })
       .run();
 
-    expect(recoverVideoLocks(backendDb, 60, 24)).toBe(1);
+    const config = { ...videoConfig(), VIDEO_LOCK_TIMEOUT_SECONDS: 60 };
+    expect(recoverVideoLocks(backendDb, config)).toBe(1);
     expect(backendDb.db.select().from(videoJobs).all()).toMatchObject([
-      { status: "failed", lockedBy: null, lockedAt: null, lastError: "stale video lock requires manual retry" },
+      { status: "queued", attemptCount: 1, lockedBy: null, lockedAt: null, lastError: "worker_lost: video lock expired before completion" },
+    ]);
+    expect(backendDb.db.select().from(videoTargets).where(eq(videoTargets.id, target.id)).get()).toMatchObject({
+      status: "scheduled",
+      lastError: "worker_lost: video lock expired before completion",
+    });
+  });
+
+  it("stops retrying a video lock once the safety-net retry budget is exhausted", () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    replaceVideoTargets(backendDb, draftId, ["instagram_reels"]);
+    const target = listVideoTargets(backendDb, draftId)[0];
+    if (!target) throw new Error("target missing");
+    const now = new Date().toISOString();
+    backendDb.db
+      .insert(videoJobs)
+      .values({
+        videoDraftId: draftId,
+        videoTargetId: target.id,
+        kind: "publish",
+        runAt: now,
+        status: "running",
+        attemptCount: 1,
+        lockedBy: "old-worker",
+        lockedAt: new Date(Date.now() - 2 * 60_000).toISOString(),
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+
+    expect(recoverVideoLocks(backendDb, { ...videoConfig(), VIDEO_LOCK_TIMEOUT_SECONDS: 60 })).toBe(1);
+    expect(backendDb.db.select().from(videoJobs).all()).toMatchObject([
+      { status: "failed", attemptCount: 2, lockedBy: null, lockedAt: null, lastError: "worker_lost: video lock expired before completion" },
     ]);
     expect(backendDb.db.select().from(videoTargets).where(eq(videoTargets.id, target.id)).get()).toMatchObject({
       status: "failed",
-      lastError: "stale video lock requires manual retry",
+      lastError: "worker_lost: video lock expired before completion",
     });
   });
 

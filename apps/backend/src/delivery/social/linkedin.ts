@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import type { BackendConfig } from "../../foundation/config.js";
-import { externalFetch, redactExternalSecrets } from "../../foundation/http.js";
+import { externalFetch, redactExternalSecrets, retryAfterSecondsFromHeaders } from "../../foundation/http.js";
 import type { PublishResult } from "../../publishing/errors.js";
 import { HttpPublishError } from "../../publishing/errors.js";
 import { type PublishMediaItem, payloadMedia, payloadText, stripLeadingEmojis } from "./payload.js";
@@ -117,7 +117,12 @@ async function uploadBinary(url: string, bytes: Buffer, fetchImpl: typeof fetch,
   const body = await response.text();
   if (!response.ok) {
     const safeBody = redactExternalSecrets(body);
-    throw new HttpPublishError(`LinkedIn upload ${response.status}: ${safeBody}`, response.status, safeBody);
+    throw new HttpPublishError(
+      `LinkedIn upload ${response.status}: ${safeBody}`,
+      response.status,
+      safeBody,
+      retryAfterSecondsFromHeaders(response.headers),
+    );
   }
   const etag = response.headers.get("etag") ?? "";
   if (requireEtag && !etag) throw new Error("ETag header not found in LinkedIn chunk upload response");
@@ -143,7 +148,12 @@ async function callLinkedIn(
   const body = await response.text();
   if (!response.ok) {
     const safeBody = redactExternalSecrets(body);
-    throw new HttpPublishError(`LinkedIn API ${response.status}: ${safeBody}`, response.status, safeBody);
+    throw new HttpPublishError(
+      `LinkedIn API ${response.status}: ${safeBody}`,
+      response.status,
+      safeBody,
+      retryAfterSecondsFromHeaders(response.headers),
+    );
   }
   const parsed = body ? (JSON.parse(body) as LinkedInResponse) : {};
   const restliId = response.headers.get("x-restli-id");

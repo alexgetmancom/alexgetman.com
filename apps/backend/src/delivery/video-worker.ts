@@ -6,6 +6,7 @@ import { botSettings, videoDrafts, videoJobs, videoTargets } from "../db/schema.
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { nextRetryAt } from "../publishing/errors.js";
+import { failedJobTransition } from "../publishing/job-policy.js";
 import { getVideoDraft, refreshVideoDraftStatus, type VideoJob } from "../publishing/video-data.js";
 import type { InstagramMetadata, VideoMetadata, YouTubeMetadata } from "../publishing/video-types.js";
 import {
@@ -21,11 +22,11 @@ import { publishZernioInstagramReel } from "./zernio.js";
 
 export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb): Promise<number> {
   if (!config.studio.modules.video_posting) return 0;
-  recoverVideoLocks(backendDb, config.PUBLISH_LOCK_TIMEOUT_SECONDS, config.VIDEO_MEDIA_RETENTION_HOURS);
+  recoverVideoLocks(backendDb, config);
   const jobs = claimVideoJobs(backendDb, config.PUBLISH_CLAIM_LIMIT);
   for (const job of jobs) {
     try {
-      await executeVideoJob(config, backendDb, job);
+      await withHeartbeat(backendDb, job.id, config.VIDEO_HEARTBEAT_INTERVAL_SECONDS, () => executeVideoJob(config, backendDb, job));
       if (completeVideoJob(backendDb, job)) {
         recordVideoProgressEvent(backendDb, job, "video.job.completed");
         recordVideoCompletionIfFinal(backendDb, job.videoDraftId);
@@ -39,6 +40,25 @@ export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb)
   }
   pruneExpiredVideos(config, backendDb);
   return jobs.length;
+}
+
+/** Keeps a claimed job's lock fresh while a long-running upload/poll is in
+ * flight, so recoverVideoLocks can use a short timeout without mistaking
+ * "still working" for "worker crashed". Silence (a real crash) still goes
+ * stale after VIDEO_LOCK_TIMEOUT_SECONDS with no heartbeat. */
+async function withHeartbeat<T>(backendDb: BackendDb, jobId: number, intervalSeconds: number, work: () => Promise<T>): Promise<T> {
+  const timer = setInterval(() => {
+    backendDb.db
+      .update(videoJobs)
+      .set({ lockedAt: new Date().toISOString() })
+      .where(and(eq(videoJobs.id, jobId), eq(videoJobs.status, "running")))
+      .run();
+  }, intervalSeconds * 1000);
+  try {
+    return await work();
+  } finally {
+    clearInterval(timer);
+  }
 }
 
 /** Keeps target state updates consistent across the prepare/publish/fail/recovery paths. */
@@ -349,8 +369,13 @@ function composeYouTubeDescription(backendDb: BackendDb, adminId: number, metada
   return [metadata.description.trim(), gameLine, signature].filter(Boolean).join("\n\n");
 }
 
-export function recoverVideoLocks(backendDb: BackendDb, timeoutSeconds: number, retentionHours: number): number {
-  const cutoff = new Date(Date.now() - timeoutSeconds * 1000).toISOString();
+/** Mirrors the social pipeline's recoverStalePublishJobs (publishing/queue.ts): a
+ * crashed/killed worker's job re-enters the normal retry/backoff budget instead
+ * of dead-ending in "failed" until an operator notices and retries by hand. The
+ * "unknown" error class this produces gets exactly one safety-net retry, same
+ * as the social pipeline, so a genuinely stuck target still terminates quickly. */
+export function recoverVideoLocks(backendDb: BackendDb, config: BackendConfig): number {
+  const cutoff = new Date(Date.now() - config.VIDEO_LOCK_TIMEOUT_SECONDS * 1000).toISOString();
   const now = new Date().toISOString();
   const stale = backendDb.db
     .select()
@@ -358,22 +383,54 @@ export function recoverVideoLocks(backendDb: BackendDb, timeoutSeconds: number, 
     .where(and(eq(videoJobs.status, "running"), lte(videoJobs.lockedAt, cutoff)))
     .all();
   let recovered = 0;
+  const terminalFailures: Array<{ job: VideoJob; error: string }> = [];
   backendDb.db.transaction((tx) => {
     for (const job of stale) {
       if (!job.lockedAt) continue;
+      const error = "worker_lost: video lock expired before completion";
+      const transition = failedJobTransition(new Error(error), job.attemptCount, {
+        maxAttempts: config.PUBLISH_MAX_ATTEMPTS,
+        backoffBaseSeconds: config.PUBLISH_BACKOFF_BASE_SECONDS,
+        backoffMaxSeconds: config.PUBLISH_BACKOFF_MAX_SECONDS,
+      });
+      const retry = transition.status === "queued";
       const updated = tx
         .update(videoJobs)
-        .set({ status: "failed", lockedAt: null, lockedBy: null, lastError: "stale video lock requires manual retry", updatedAt: now })
+        .set({
+          status: transition.status,
+          attemptCount: transition.attempt,
+          nextAttemptAt: transition.nextAttemptAt,
+          lockedAt: null,
+          lockedBy: null,
+          lastError: error,
+          updatedAt: now,
+        })
         .where(and(eq(videoJobs.id, job.id), eq(videoJobs.status, "running"), eq(videoJobs.lockedAt, job.lockedAt)))
         .returning({ id: videoJobs.id })
         .get();
       if (!updated) continue;
       recovered += 1;
-      if (job.videoTargetId)
-        updateVideoTarget(tx, job.videoTargetId, { status: "failed", lastError: "stale video lock requires manual retry" });
+      if (job.videoTargetId) updateVideoTarget(tx, job.videoTargetId, { status: retry ? "scheduled" : "failed", lastError: error });
+      if (!retry) terminalFailures.push({ job, error });
     }
   });
-  for (const job of stale) refreshVideoDraftStatus(backendDb, job.videoDraftId, retentionHours);
+  for (const job of stale) refreshVideoDraftStatus(backendDb, job.videoDraftId, config.VIDEO_MEDIA_RETENTION_HOURS);
+  for (const { job, error } of terminalFailures) {
+    const target =
+      job.videoTargetId == null
+        ? null
+        : backendDb.db.select({ target: videoTargets.target }).from(videoTargets).where(eq(videoTargets.id, job.videoTargetId)).get();
+    recordDomainEvent(backendDb, {
+      ref: `video:${job.videoDraftId}`,
+      type: "video.target.failed",
+      severity: "error",
+      target: target?.target ?? "video",
+      message: error,
+      details: { videoDraftId: job.videoDraftId, videoTargetId: job.videoTargetId, jobId: job.id, kind: job.kind },
+      cooldownSeconds: config.ALERT_COOLDOWN_SECONDS,
+    });
+    recordVideoCompletionIfFinal(backendDb, job.videoDraftId);
+  }
   return recovered;
 }
 

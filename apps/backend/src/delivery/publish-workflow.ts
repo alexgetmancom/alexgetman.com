@@ -6,6 +6,7 @@ import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { log } from "../foundation/logger.js";
 import { recordWorkerState } from "../foundation/runtime/worker-state.js";
+import { isTargetAuthBlocked } from "../observability/auth-circuit.js";
 import { claimDuePublishJobs, completePublishJob, failPublishJob, recoverStalePublishJobs } from "../publishing/queue.js";
 import { createPlatformPorts } from "./ports/social.js";
 import { type DeliveryPort, type DeliveryPorts, deliveryAdapter } from "./ports.js";
@@ -18,10 +19,24 @@ export async function runDeliveryPublishCycle(
 ): Promise<number> {
   recoverStalePublishJobs(backendDb, config);
   const jobs = claimDuePublishJobs(backendDb, config.PUBLISH_CLAIM_LIMIT);
-  const publishLimit = pLimit(config.PUBLISH_MAX_CONCURRENCY);
+  // One lane per target instead of one shared pool: a single global pLimit let a
+  // slow/hung target (e.g. Bluesky timing out) occupy every concurrency slot,
+  // so unrelated targets (Telegram, Threads, ...) sat waiting behind it even
+  // though they had nothing to do with the stuck call. Each target still runs
+  // its own jobs one at a time (platforms are sensitive to bursts anyway), but
+  // different targets never block each other.
+  const targetLimits = new Map<string, ReturnType<typeof pLimit>>();
+  const limitForTarget = (target: string) => {
+    let limit = targetLimits.get(target);
+    if (!limit) {
+      limit = pLimit(1);
+      targetLimits.set(target, limit);
+    }
+    return limit;
+  };
   const results = await Promise.allSettled(
     jobs.map((job) =>
-      publishLimit(async () => {
+      limitForTarget(job.target)(async () => {
         const port = publishers[job.target];
         if (!port) {
           completePublishJob(backendDb, config, job.jobId, { skipped: true, reason: `unsupported target: ${job.target}` }, job.lockId);
@@ -29,6 +44,13 @@ export async function runDeliveryPublishCycle(
         }
         const adapter = "publish" in port ? port : deliveryAdapter(port);
         try {
+          // A target with several consecutive 401/403s has a dead credential.
+          // Skip the provider call entirely instead of repeating the same
+          // rejected request, which is exactly the kind of traffic that gets
+          // flagged as abuse.
+          if (isTargetAuthBlocked(backendDb, job.target)) {
+            throw new Error(`auth_circuit_open: ${job.target} has a failing credential, publish paused until it recovers`);
+          }
           const result = await withinPublishTimeout(config, job.target, async () => {
             await adapter.validate(job);
             const published = await adapter.publish(job);

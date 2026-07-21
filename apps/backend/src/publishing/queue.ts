@@ -7,7 +7,8 @@ import type { BackendDb } from "../db/client.js";
 import { drafts, type JsonObject, postEvents, postTargets, publications, publishJobs, siteJobs } from "../db/schema.js";
 import { insertPublishJobSchema } from "../db/validation.js";
 import type { BackendConfig } from "../foundation/config.js";
-import { normalizePublishResult, type PublishResult } from "./errors.js";
+import { recordAuthFailure, recordAuthSuccess } from "../observability/auth-circuit.js";
+import { classifyPublishError, normalizePublishResult, type PublishResult } from "./errors.js";
 import { failedJobTransition, reconciliationTransition } from "./job-policy.js";
 import { publicationStatus } from "./state.js";
 
@@ -224,6 +225,8 @@ export function completePublishJob(
     );
     deleteSupersededJobs(tx, job, jobId, postKey);
   });
+  if (normalized.status === "published") recordAuthSuccess(backendDb, job.target);
+  else if (normalized.status === "failed" && classifyPublishError(normalized.error) === "auth") recordAuthFailure(backendDb, job.target);
   if (job.postId != null) reconcilePublication(backendDb, job.postId);
 }
 
@@ -308,6 +311,7 @@ export function failPublishJob(backendDb: BackendDb, config: BackendConfig, jobI
     );
     if (!shouldRetry) deleteSupersededJobs(tx, job, jobId, postKey);
   });
+  if (errorClass === "auth") recordAuthFailure(backendDb, job.target);
   if (!shouldRetry && job.postId != null) reconcilePublication(backendDb, job.postId);
 }
 

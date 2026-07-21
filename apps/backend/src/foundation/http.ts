@@ -1,11 +1,28 @@
-class ExternalHttpError extends Error {
+export class ExternalHttpError extends Error {
   constructor(
     message: string,
     readonly status: number,
     readonly body?: string,
+    readonly retryAfterSeconds: number | null = null,
   ) {
     super(message);
   }
+}
+
+/** Reads Retry-After (seconds or HTTP-date) or X-RateLimit-Reset (unix seconds),
+ * so a 429/503 retry waits exactly as long as the provider asked instead of
+ * guessing with a fixed exponential backoff. */
+export function retryAfterSecondsFromHeaders(headers: Headers): number | null {
+  const retryAfter = headers.get("retry-after");
+  if (retryAfter) {
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds)) return Math.max(0, seconds);
+    const dateMs = Date.parse(retryAfter);
+    if (!Number.isNaN(dateMs)) return Math.max(0, Math.round((dateMs - Date.now()) / 1000));
+  }
+  const resetEpochSeconds = Number(headers.get("x-ratelimit-reset"));
+  if (Number.isFinite(resetEpochSeconds) && resetEpochSeconds > 0) return Math.max(0, Math.round(resetEpochSeconds - Date.now() / 1000));
+  return null;
 }
 
 export async function requestJson<T = Record<string, unknown>>(fetchImpl: typeof fetch, url: string, init: RequestInit = {}): Promise<T> {
@@ -16,6 +33,7 @@ export async function requestJson<T = Record<string, unknown>>(fetchImpl: typeof
       `${init.method ?? "GET"} ${safeUrl(url)} failed: ${response.status} ${redactExternalSecrets(body)}`,
       response.status,
       redactExternalSecrets(body),
+      retryAfterSecondsFromHeaders(response.headers),
     );
   }
   if (!body) return {} as T;
@@ -30,6 +48,7 @@ export async function requestText(fetchImpl: typeof fetch, url: string, init: Re
       `${init.method ?? "GET"} ${safeUrl(url)} failed: ${response.status} ${redactExternalSecrets(body)}`,
       response.status,
       redactExternalSecrets(body),
+      retryAfterSecondsFromHeaders(response.headers),
     );
   }
   return body;

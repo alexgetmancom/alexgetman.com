@@ -14,7 +14,7 @@ export function healthReport(config: BackendConfig, backendDb: BackendDb) {
     .where(and(inArray(postEvents.severity, ["warn", "error"]), isNull(postEvents.ackedAt)))
     .all();
   const capabilities = capabilityReport(config);
-  const credentialsOk = credentials.every((check) => check.status === "ok");
+  const credentialsOk = credentials.every((check) => check.status === "ready");
   const workersOk = workers.every((worker) => worker.stateJson.ok !== false);
   const capabilitiesOk = capabilities.every((capability) => capability.status === "ready");
   return {
