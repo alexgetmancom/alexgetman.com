@@ -4,6 +4,6 @@
   "type": "module",
   "devDependencies": {
     "knip": "^6.27.0",
-    "typescript": "5.9.3"
+    "typescript": "7.0.2"
   }
 }
