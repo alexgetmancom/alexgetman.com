@@ -10,7 +10,8 @@ const allowedKinds = new Set(["company", "model", "person", "product", "topic"])
 if (!kind || !slug || !allowedKinds.has(kind)) return new Response("Not found\n", { status: 404 });
 const posts = loadFeedItems().filter((post) => post.entities.some((entity) => entity.kind === kind && entity.slug === slug));
 if (posts.length === 0) return new Response("Not found\n", { status: 404 });
-const entity = posts.flatMap((post) => post.entities).find((item) => item.kind === kind && item.slug === slug)!;
+const entity = posts.flatMap((post) => post.entities).find((item) => item.kind === kind && item.slug === slug);
+if (!entity) return new Response("Not found\n", { status: 404 });
 const title = entity.title_en || entity.title_ru;
 const url = `https://alexgetman.com/entities/${kind}/${slug}/`;
 const ruUrl = `https://alexgetman.com/ru/entities/${kind}/${slug}/`;
