@@ -38,7 +38,7 @@ describe("story publishers", () => {
     }
   });
 
-  it("letterboxes video into the shared 1080x1920 50 FPS HEVC Story master", async () => {
+  it("letterboxes video into the shared 1080x1920 50 FPS H.264 Story master", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-story-video-"));
     const source = path.join(dir, "source.mp4");
     fs.writeFileSync(source, "fake video");
@@ -50,7 +50,7 @@ describe("story publishers", () => {
       const ffmpegArgs = ffmpegCalls.at(-1) ?? [];
       expect(ffmpegArgs[ffmpegArgs.indexOf("-t") + 1]).toBe("59");
       expect(ffmpegArgs.slice(ffmpegArgs.indexOf("-r"), ffmpegArgs.indexOf("-r") + 2)).toEqual(["-r", "50"]);
-      expect(ffmpegArgs.slice(ffmpegArgs.indexOf("-c:v"), ffmpegArgs.indexOf("-c:v") + 2)).toEqual(["-c:v", "libx265"]);
+      expect(ffmpegArgs.slice(ffmpegArgs.indexOf("-c:v"), ffmpegArgs.indexOf("-c:v") + 2)).toEqual(["-c:v", "libx264"]);
       expect(ffmpegArgs.slice(ffmpegArgs.indexOf("-b:a"), ffmpegArgs.indexOf("-b:a") + 2)).toEqual(["-b:a", "320k"]);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });

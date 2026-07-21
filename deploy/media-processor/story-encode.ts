@@ -9,8 +9,10 @@
 // supported publishing target.
 export const STORY_MAX_DURATION_SECONDS = 59;
 
-// Shared high-quality master: 1080x1920, 50 FPS, HEVC video and AAC 320k audio.
-// force_divisible_by=2 keeps both dimensions even, which yuv420p/libx265 require.
+// Shared high-quality master: 1080x1920, 50 FPS, H.264 video and AAC 320k audio.
+// H.264/AVC is required, not HEVC: Telegram's story upload rejects HEVC-encoded
+// video with MEDIA_FILE_INVALID (400).
+// force_divisible_by=2 keeps both dimensions even, which yuv420p/libx264 require.
 const STORY_SCALE_FILTER =
   "scale=1080:1920:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black";
 
@@ -31,7 +33,7 @@ export function storyFfmpegArgs(input: string, output: string, kind: "video" | "
     "-map",
     "0:a?",
     "-c:v",
-    "libx265",
+    "libx264",
     "-preset",
     "medium",
     "-b:v",
@@ -53,7 +55,7 @@ export function storyFfmpegArgs(input: string, output: string, kind: "video" | "
     "-ac",
     "2",
     "-tag:v",
-    "hvc1",
+    "avc1",
     "-movflags",
     "+faststart",
     ...extraVideoArgs,
