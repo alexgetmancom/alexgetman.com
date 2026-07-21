@@ -44,6 +44,25 @@ export const draftSources = sqliteTable(
   ],
 );
 
+/** Model suggestions remain private until the editor accepts them. */
+export const draftEntityCandidates = sqliteTable(
+  "draft_entity_candidates",
+  {
+    id: autoId(),
+    draftId: integer().notNull(),
+    kind: text().notNull(),
+    slug: text().notNull(),
+    titleRu: text().notNull(),
+    titleEn: text(),
+    status: text().notNull().default("suggested"), // suggested, accepted, dismissed
+    ...timestamps(),
+  },
+  (table) => [
+    uniqueIndex("idx_draft_entity_candidates_unique").on(table.draftId, table.kind, table.slug),
+    index("idx_draft_entity_candidates_draft_status").on(table.draftId, table.status),
+  ],
+);
+
 /** Canonical, reusable objects for the site memory. Only entities with enough
  * human-reviewed material will later receive public hub pages. */
 export const knowledgeEntities = sqliteTable(

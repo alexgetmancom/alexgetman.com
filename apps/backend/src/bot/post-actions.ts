@@ -1,11 +1,12 @@
 import type { Context } from "grammy";
+import { InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import { withActionLock } from "../foundation/action-lock.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { setTelegramPostProgressCard } from "../interfaces/telegram/control-cards.js";
 import { sendTelegramDeliveryPreviews } from "../interfaces/telegram/delivery-previews.js";
-import { draftEntityHint } from "../interfaces/telegram/draft-enrichment.js";
+import { suggestDraftEntities } from "../interfaces/telegram/draft-enrichment.js";
 import { t } from "../interfaces/telegram/i18n/index.js";
 import { formatMsk } from "../interfaces/telegram/time.js";
 import { studioServices } from "../studio/services/index.js";
@@ -67,6 +68,11 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
         ? "Пришли ссылки на источники одним сообщением. Можно по одной на строку. Новое сообщение заменит текущий список."
         : "Send source links in one message, one per line. A new message replaces the current list.",
     );
+  }
+  if (action === "entities_accept") {
+    studioServices(backendDb, config).posts.acceptEntityCandidates(actorId, draftId);
+    await ctx.answerCallbackQuery({ text: locale === "ru" ? "Сущности приняты" : "Entities accepted" });
+    return editDraftPreview(ctx, backendDb, draftId, config);
   }
   if (action === "cancel") {
     return editDraftPreview(ctx, backendDb, draftId, config, "confirm_delete");
@@ -231,8 +237,17 @@ export async function applyAdminState(
     studioServices(backendDb, config).posts.replaceSources(Number(ctx.from?.id), draftId, urls);
     const draft = studioServices(backendDb, config).posts.get(Number(ctx.from?.id), draftId);
     try {
-      const hint = await draftEntityHint(config, String(draft.text_ru || draft.text_en_approved || ""), urls);
-      if (hint) await ctx.reply(hint);
+      const candidates = await suggestDraftEntities(config, String(draft.text_ru || draft.text_en_approved || ""), urls);
+      if (candidates.length) {
+        studioServices(backendDb, config).posts.replaceEntityCandidates(Number(ctx.from?.id), draftId, candidates);
+        const labels: Record<string, string> = { company: "Компания", model: "Модель", person: "Человек", topic: "Тема" };
+        await ctx.reply(
+          `ИИ предлагает сущности:\n${candidates.map((entity) => `• ${labels[entity.kind]}: ${entity.titleRu}`).join("\n")}`,
+          {
+            reply_markup: new InlineKeyboard().text("✓ Принять", `entities_accept:${draftId}`),
+          },
+        );
+      }
     } catch {}
   }
   clearPostAdminState(backendDb, Number(ctx.from?.id));

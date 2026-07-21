@@ -134,6 +134,13 @@
       "when": 1785103200000,
       "tag": "0018_draft_sources",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1785106800000,
+      "tag": "0019_draft_entity_candidates",
+      "breakpoints": true
     }
   ]
 }

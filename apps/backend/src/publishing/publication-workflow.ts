@@ -1,7 +1,7 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { requireDraft } from "../content/drafts.js";
 import type { BackendDb } from "../db/client.js";
-import { draftSources, postSources, publications } from "../db/schema.js";
+import { draftEntityCandidates, draftSources, knowledgeEntities, postEntityLinks, postSources, publications } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import { assertPublicationPreflight } from "./preflight.js";
 import { createPublicationPlan, type PublishMode } from "./publication-plan.js";
@@ -20,6 +20,7 @@ export function publishDraftToQueue(backendDb: BackendDb, draftId: number, optio
   const enAt = mode === "immediate" ? now : (options.enAt?.toISOString() ?? null);
   const postId = ensurePublication(backendDb, draftId, now);
   copyDraftSources(backendDb, draftId, postId, now);
+  copyAcceptedEntities(backendDb, draftId, postId, now);
   const plan = createPublicationPlan(draft, draftId, postId, { mode, ruAt, enAt }, now);
   persistPublicationPlan(backendDb, plan);
   reconcilePublication(backendDb, postId);
@@ -37,6 +38,34 @@ export function publishDraftToQueue(backendDb: BackendDb, draftId: number, optio
     },
   });
   return postId;
+}
+
+function copyAcceptedEntities(backendDb: BackendDb, draftId: number, postId: number, now: string): void {
+  const candidates = backendDb.db
+    .select()
+    .from(draftEntityCandidates)
+    .where(and(eq(draftEntityCandidates.draftId, draftId), eq(draftEntityCandidates.status, "accepted")))
+    .all();
+  for (const candidate of candidates) {
+    backendDb.db
+      .insert(knowledgeEntities)
+      .values({
+        kind: candidate.kind,
+        slug: candidate.slug,
+        titleRu: candidate.titleRu,
+        titleEn: candidate.titleEn,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoNothing()
+      .run();
+    const entity = backendDb.db
+      .select({ id: knowledgeEntities.id })
+      .from(knowledgeEntities)
+      .where(and(eq(knowledgeEntities.kind, candidate.kind), eq(knowledgeEntities.slug, candidate.slug)))
+      .get();
+    if (entity) backendDb.db.insert(postEntityLinks).values({ postId, entityId: entity.id, createdAt: now }).onConflictDoNothing().run();
+  }
 }
 
 function copyDraftSources(backendDb: BackendDb, draftId: number, postId: number, now: string): void {

@@ -4,7 +4,7 @@ import { listStudioMediaAssets, mediaItemsFromAssets, requireStudioMediaAssets }
 import { createDraftFromMessage, requireDraft } from "../../content/drafts.js";
 import type { DraftMessage } from "../../content/message.js";
 import type { BackendDb } from "../../db/client.js";
-import { draftSources, drafts, postEvents, studioNotificationSettings } from "../../db/schema.js";
+import { draftEntityCandidates, draftSources, drafts, postEvents, studioNotificationSettings } from "../../db/schema.js";
 import { recordDomainEvent } from "../../domain/events.js";
 import { StudioError } from "../../foundation/errors.js";
 import { cancelScheduledNotifications, scheduleReminder } from "../../notifications/jobs.js";
@@ -20,6 +20,7 @@ import { postProgressState } from "./post-progress.js";
 type ScheduleInput = { ruAt: Date | null; enAt: Date | null };
 type ScheduleScope = "ru" | "en" | "both";
 type EditInput = { locale: "ru" | "en"; text: string; entities: unknown[]; media: Record<string, unknown>[]; replaceMediaOnly?: boolean };
+type DraftEntityCandidate = { kind: "company" | "model" | "person" | "topic"; slug: string; titleRu: string; titleEn: string | null };
 
 /** Commands for post drafts. These are deliberately transport-free and become the
  * single entry point for Telegram, Web Studio and later MCP mutations. */
@@ -81,6 +82,24 @@ export function postService(backendDb: BackendDb) {
             updatedAt: now,
           })),
         )
+        .run();
+    },
+    replaceEntityCandidates(actorId: number, draftId: number, candidates: DraftEntityCandidate[]): void {
+      requireOwnedDraft(backendDb, actorId, draftId);
+      const now = new Date().toISOString();
+      backendDb.db.delete(draftEntityCandidates).where(eq(draftEntityCandidates.draftId, draftId)).run();
+      if (candidates.length)
+        backendDb.db
+          .insert(draftEntityCandidates)
+          .values(candidates.map((entity) => ({ ...entity, draftId, status: "suggested", createdAt: now, updatedAt: now })))
+          .run();
+    },
+    acceptEntityCandidates(actorId: number, draftId: number): void {
+      requireOwnedDraft(backendDb, actorId, draftId);
+      backendDb.db
+        .update(draftEntityCandidates)
+        .set({ status: "accepted", updatedAt: new Date().toISOString() })
+        .where(eq(draftEntityCandidates.draftId, draftId))
         .run();
     },
     publish(actorId: number, draftId: number): number {
