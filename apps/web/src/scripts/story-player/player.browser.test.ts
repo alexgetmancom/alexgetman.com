@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { Window } from "happy-dom";
+import { createStoryViewTracker } from "./analytics.js";
 import { setDiscussionVisibility } from "./discussion-state.js";
 import { preloadAdjacentMedia } from "./media.js";
 import { readMutedPreference } from "./preferences.js";
@@ -10,15 +11,17 @@ const originalGlobals = {
   window: globalThis.window,
   document: globalThis.document,
   Image: globalThis.Image,
+  navigator: globalThis.navigator,
 };
 const originalLocalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
 
-function installDom(): Window {
-  const window = new Window({ url: "https://example.test/stories/" });
+function installDom(url = "https://example.test/stories/"): Window {
+  const window = new Window({ url });
   Object.assign(globalThis, {
     window,
     document: window.document,
     Image: window.Image,
+    navigator: window.navigator,
   });
   return window;
 }
@@ -39,6 +42,25 @@ function post(overrides: Partial<StoryPost> = {}): StoryPost {
     relativeDate: "now",
     ...overrides,
   };
+}
+
+/** Mirrors StoryPlayer.svelte's normalizedPath — turns a post url into a comparable pathname. */
+function normalizedPath(value: string): string {
+  try {
+    const url = new URL(value, window.location.origin);
+    return url.pathname.endsWith("/") ? url.pathname : `${url.pathname}/`;
+  } catch {
+    return "/";
+  }
+}
+
+function stubSendBeacon(window: Window): string[] {
+  const calls: string[] = [];
+  (window.navigator as any).sendBeacon = (url: string) => {
+    calls.push(url);
+    return true;
+  };
+  return calls;
 }
 
 describe("story player browser behavior", () => {
@@ -164,5 +186,51 @@ describe("story player browser behavior", () => {
     expect(progress.debugState().progressRestartBlocked).toBe(false);
     await Bun.sleep(300);
     expect(advances).toBe(1);
+  });
+
+  it("does not record a story view when running on localhost", async () => {
+    const window = installDom("http://localhost:4321/");
+    const beacons = stubSendBeacon(window);
+    const tracker = createStoryViewTracker({ activeIndex: () => 0, normalizedPath });
+
+    tracker.scheduleStoryView(post({ url: "/stories/other/" }));
+    await Bun.sleep(2100);
+    expect(beacons).toHaveLength(0);
+  });
+
+  it("does not record a view for the post already being viewed", async () => {
+    const window = installDom("https://example.test/stories/example/");
+    const beacons = stubSendBeacon(window);
+    const tracker = createStoryViewTracker({ activeIndex: () => 0, normalizedPath });
+
+    tracker.scheduleStoryView(post({ url: "/stories/example/" }));
+    await Bun.sleep(2100);
+    expect(beacons).toHaveLength(0);
+  });
+
+  it("records a story view once via sendBeacon, deduped by sessionStorage on repeat", async () => {
+    const window = installDom("https://example.test/stories/");
+    const beacons = stubSendBeacon(window);
+    const tracker = createStoryViewTracker({ activeIndex: () => 0, normalizedPath });
+
+    tracker.scheduleStoryView(post({ url: "/stories/other/", id: "post-1" }));
+    await Bun.sleep(2100);
+    expect(beacons).toEqual(["/stats/pageview"]);
+
+    tracker.scheduleStoryView(post({ url: "/stories/other/", id: "post-1" }));
+    await Bun.sleep(2100);
+    expect(beacons).toHaveLength(1);
+  });
+
+  it("cancels the pending view if the active post changed before the 2s timer fires", async () => {
+    const window = installDom("https://example.test/stories/");
+    const beacons = stubSendBeacon(window);
+    let active = 0;
+    const tracker = createStoryViewTracker({ activeIndex: () => active, normalizedPath });
+
+    tracker.scheduleStoryView(post({ url: "/stories/other/" }));
+    active = 1;
+    await Bun.sleep(2100);
+    expect(beacons).toHaveLength(0);
   });
 });
