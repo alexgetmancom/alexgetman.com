@@ -5,6 +5,7 @@ import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { setTelegramPostProgressCard } from "../interfaces/telegram/control-cards.js";
 import { sendTelegramDeliveryPreviews } from "../interfaces/telegram/delivery-previews.js";
+import { draftEntityHint } from "../interfaces/telegram/draft-enrichment.js";
 import { t } from "../interfaces/telegram/i18n/index.js";
 import { formatMsk } from "../interfaces/telegram/time.js";
 import { studioServices } from "../studio/services/index.js";
@@ -228,6 +229,11 @@ export async function applyAdminState(
     const urls = extractUrls(message.text);
     if (urls.length === 0) throw new StudioError("Send at least one valid http(s) link.");
     studioServices(backendDb, config).posts.replaceSources(Number(ctx.from?.id), draftId, urls);
+    const draft = studioServices(backendDb, config).posts.get(Number(ctx.from?.id), draftId);
+    try {
+      const hint = await draftEntityHint(config, String(draft.text_ru || draft.text_en_approved || ""), urls);
+      if (hint) await ctx.reply(hint);
+    } catch {}
   }
   clearPostAdminState(backendDb, Number(ctx.from?.id));
   if (controlMessageId && ctx.chat?.id) {
