@@ -55,6 +55,18 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
       action.startsWith("edit") ? t(locale, "action.send-new-text") : t(locale, "action.send-new-media"),
     );
   }
+  if (action === "sources") {
+    setPostAdminState(backendDb, Number(ctx.from?.id), "edit_sources", draftId, callbackMessageId(ctx));
+    await ctx.answerCallbackQuery();
+    return editDraftPrompt(
+      ctx,
+      backendDb,
+      draftId,
+      locale === "ru"
+        ? "Пришли ссылки на источники одним сообщением. Можно по одной на строку. Новое сообщение заменит текущий список."
+        : "Send source links in one message, one per line. A new message replaces the current list.",
+    );
+  }
   if (action === "cancel") {
     return editDraftPreview(ctx, backendDb, draftId, config, "confirm_delete");
   }
@@ -212,12 +224,30 @@ export async function applyAdminState(
       media: message.media,
       replaceMediaOnly: true,
     });
+  } else if (action === "edit_sources") {
+    const urls = extractUrls(message.text);
+    if (urls.length === 0) throw new StudioError("Send at least one valid http(s) link.");
+    studioServices(backendDb, config).posts.replaceSources(Number(ctx.from?.id), draftId, urls);
   }
   clearPostAdminState(backendDb, Number(ctx.from?.id));
   if (controlMessageId && ctx.chat?.id) {
     const preview = draftPreview(backendDb, draftId, config);
     await ctx.api.editMessageText(ctx.chat.id, controlMessageId, preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
   } else await sendDraftPreview(ctx, backendDb, draftId, config);
+}
+
+function extractUrls(value: string): string[] {
+  return value
+    .split(/\s+/)
+    .map((item) => item.trim())
+    .filter((item) => {
+      try {
+        const url = new URL(item);
+        return url.protocol === "https:" || url.protocol === "http:";
+      } catch {
+        return false;
+      }
+    });
 }
 
 async function sendPostPreviews(

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import { baselineDrizzleMigrations, migrationStatus, openBackendDb } from "../src/db/client.js";
+import { draftSources, postSources } from "../src/db/schema.js";
 import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
 
 describe("openBackendDb", () => {
@@ -52,7 +53,8 @@ describe("openBackendDb", () => {
       expect(tables).toContain("knowledge_entities");
       expect(tables).toContain("knowledge_entity_aliases");
       expect(tables).toContain("post_entity_links");
-      expect(migrationStatus(backendDb.sqlite)).toHaveLength(18);
+      expect(tables).toContain("draft_sources");
+      expect(migrationStatus(backendDb.sqlite)).toHaveLength(19);
     } finally {
       backendDb.close();
     }
@@ -150,7 +152,7 @@ describe("openBackendDb", () => {
     const fixture = new Database(dbPath);
     fixture.exec("DROP TABLE __drizzle_migrations");
     fixture.exec(
-      "DROP TABLE post_entity_links; DROP TABLE knowledge_entity_aliases; DROP TABLE knowledge_entities; DROP TABLE post_sources; DROP TABLE site_pageviews; DROP TABLE video_bot_sessions; DROP TABLE video_jobs; DROP TABLE video_targets; DROP TABLE video_drafts; DROP TABLE analytics_sync; DROP TABLE creator_profiles; DROP TABLE creator_profile_snapshots; DROP TABLE video_metric_snapshots; DROP TABLE social_comments; DROP TABLE admin_state; CREATE TABLE admin_state (admin_id integer PRIMARY KEY NOT NULL, action text, draft_id integer, updated_at text NOT NULL)",
+      "DROP TABLE draft_sources; DROP TABLE post_entity_links; DROP TABLE knowledge_entity_aliases; DROP TABLE knowledge_entities; DROP TABLE post_sources; DROP TABLE site_pageviews; DROP TABLE video_bot_sessions; DROP TABLE video_jobs; DROP TABLE video_targets; DROP TABLE video_drafts; DROP TABLE analytics_sync; DROP TABLE creator_profiles; DROP TABLE creator_profile_snapshots; DROP TABLE video_metric_snapshots; DROP TABLE social_comments; DROP TABLE admin_state; CREATE TABLE admin_state (admin_id integer PRIMARY KEY NOT NULL, action text, draft_id integer, updated_at text NOT NULL)",
     );
     fixture.close();
 
@@ -160,6 +162,18 @@ describe("openBackendDb", () => {
     const backendDb = openBackendDb(dbPath);
     try {
       const draftId = createDraftFromMessage(backendDb, 42, { text: "Production fixture", entities: [], media: [] });
+      backendDb.db
+        .insert(draftSources)
+        .values({
+          draftId,
+          url: "https://example.com/announcement",
+          labelRu: "example.com",
+          labelEn: "example.com",
+          sortOrder: 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        })
+        .run();
       const postId = publishDraftToQueue(backendDb, draftId);
       expect(backendDb.sqlite.prepare("SELECT draft_id, status FROM publications WHERE post_id=?").get(postId)).toEqual({
         draft_id: draftId,
@@ -169,7 +183,8 @@ describe("openBackendDb", () => {
         { locale: "en", slug: "production-fixture" },
         { locale: "ru", slug: "production-fixture" },
       ]);
-      expect(migrationStatus(backendDb.sqlite)).toHaveLength(18);
+      expect(backendDb.db.select({ url: postSources.url }).from(postSources).all()).toEqual([{ url: "https://example.com/announcement" }]);
+      expect(migrationStatus(backendDb.sqlite)).toHaveLength(19);
     } finally {
       backendDb.close();
     }

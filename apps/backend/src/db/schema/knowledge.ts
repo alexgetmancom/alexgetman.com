@@ -23,6 +23,27 @@ export const postSources = sqliteTable(
   ],
 );
 
+/** Sources are collected while a story is still a draft, then copied to its
+ * durable post at publication time. This keeps the Telegram editor fast and
+ * makes scheduled posts reproducible. */
+export const draftSources = sqliteTable(
+  "draft_sources",
+  {
+    id: autoId(),
+    draftId: integer().notNull(),
+    url: text().notNull(),
+    labelRu: text().notNull(),
+    labelEn: text(),
+    displayKind: text(),
+    sortOrder: integer().notNull().default(0),
+    ...timestamps(),
+  },
+  (table) => [
+    uniqueIndex("idx_draft_sources_draft_url").on(table.draftId, table.url),
+    index("idx_draft_sources_draft_order").on(table.draftId, table.sortOrder),
+  ],
+);
+
 /** Canonical, reusable objects for the site memory. Only entities with enough
  * human-reviewed material will later receive public hub pages. */
 export const knowledgeEntities = sqliteTable(

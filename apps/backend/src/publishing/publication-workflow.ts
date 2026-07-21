@@ -1,7 +1,7 @@
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { requireDraft } from "../content/drafts.js";
 import type { BackendDb } from "../db/client.js";
-import { publications } from "../db/schema.js";
+import { draftSources, postSources, publications } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import { assertPublicationPreflight } from "./preflight.js";
 import { createPublicationPlan, type PublishMode } from "./publication-plan.js";
@@ -19,6 +19,7 @@ export function publishDraftToQueue(backendDb: BackendDb, draftId: number, optio
   const ruAt = mode === "immediate" ? now : (options.ruAt?.toISOString() ?? null);
   const enAt = mode === "immediate" ? now : (options.enAt?.toISOString() ?? null);
   const postId = ensurePublication(backendDb, draftId, now);
+  copyDraftSources(backendDb, draftId, postId, now);
   const plan = createPublicationPlan(draft, draftId, postId, { mode, ruAt, enAt }, now);
   persistPublicationPlan(backendDb, plan);
   reconcilePublication(backendDb, postId);
@@ -36,6 +37,31 @@ export function publishDraftToQueue(backendDb: BackendDb, draftId: number, optio
     },
   });
   return postId;
+}
+
+function copyDraftSources(backendDb: BackendDb, draftId: number, postId: number, now: string): void {
+  const sources = backendDb.db
+    .select()
+    .from(draftSources)
+    .where(eq(draftSources.draftId, draftId))
+    .orderBy(asc(draftSources.sortOrder))
+    .all();
+  for (const source of sources) {
+    backendDb.db
+      .insert(postSources)
+      .values({
+        postId,
+        url: source.url,
+        labelRu: source.labelRu,
+        labelEn: source.labelEn,
+        displayKind: source.displayKind,
+        sortOrder: source.sortOrder,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoNothing()
+      .run();
+  }
 }
 
 function ensurePublication(backendDb: BackendDb, draftId: number, now: string): number {

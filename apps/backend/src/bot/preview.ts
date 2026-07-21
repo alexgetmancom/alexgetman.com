@@ -1,7 +1,9 @@
+import { eq } from "drizzle-orm";
 import { InlineKeyboard } from "grammy";
 import { type PresetName, presetName, TARGETS } from "../botTargets.js";
 import { requireDraft } from "../content/drafts.js";
 import type { BackendDb } from "../db/client.js";
+import { draftSources } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { t } from "../interfaces/telegram/i18n/index.js";
 import { formatMsk } from "../interfaces/telegram/time.js";
@@ -19,6 +21,7 @@ export function draftPreview(
   const draft = requireDraft(backendDb, draftId);
   const locale = botLocale(backendDb, draft.admin_id);
   const targets = parseTargets(draft.targets_json);
+  const sourceCount = backendDb.db.select({ id: draftSources.id }).from(draftSources).where(eq(draftSources.draftId, draftId)).all().length;
   const keyboard = new InlineKeyboard();
   const mode = presetName(targets);
 
@@ -76,6 +79,7 @@ export function draftPreview(
   keyboard.text(`${modeEmoji} ${t(locale, "post.mode")}: ${modeLabel(mode, locale)}`, `cycle_mode:${draftId}`).row();
   keyboard.text(t(locale, "post.choose-platforms"), `platforms:${draftId}`).row();
   keyboard.text(t(locale, "post.edit-ru"), `edit_ru:${draftId}`).text(t(locale, "post.edit-en"), `edit_en:${draftId}`).row();
+  keyboard.text(`🔗 ${locale === "ru" ? "Источники" : "Sources"}: ${sourceCount}`, `sources:${draftId}`).row();
   keyboard.text(t(locale, "post.publish-btn"), `publish:${draftId}`).text(t(locale, "post.schedule-btn"), `schedule:${draftId}`).row();
   keyboard.text(t(locale, "post.delete-btn"), `cancel:${draftId}`);
 

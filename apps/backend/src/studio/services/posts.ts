@@ -4,7 +4,7 @@ import { listStudioMediaAssets, mediaItemsFromAssets, requireStudioMediaAssets }
 import { createDraftFromMessage, requireDraft } from "../../content/drafts.js";
 import type { DraftMessage } from "../../content/message.js";
 import type { BackendDb } from "../../db/client.js";
-import { drafts, postEvents, studioNotificationSettings } from "../../db/schema.js";
+import { draftSources, drafts, postEvents, studioNotificationSettings } from "../../db/schema.js";
 import { recordDomainEvent } from "../../domain/events.js";
 import { StudioError } from "../../foundation/errors.js";
 import { cancelScheduledNotifications, scheduleReminder } from "../../notifications/jobs.js";
@@ -55,11 +55,33 @@ export function postService(backendDb: BackendDb) {
           { locale: "en" as const, text: draft.text_en_approved, entities: [], media: enMedia },
         ],
         targets,
+        sources: backendDb.db.select().from(draftSources).where(eq(draftSources.draftId, draftId)).orderBy(draftSources.sortOrder).all(),
         mediaPolicy: Object.entries(targets)
           .filter(([, enabled]) => enabled)
           .map(([target]) => mediaPolicyForTarget(target, targetLocale(target) === "ru" ? ruMedia : enMedia)),
         delivery: postDeliveryProjections(draft),
       };
+    },
+    replaceSources(actorId: number, draftId: number, urls: string[]): void {
+      requireOwnedDraft(backendDb, actorId, draftId);
+      const now = new Date().toISOString();
+      backendDb.db.delete(draftSources).where(eq(draftSources.draftId, draftId)).run();
+      const uniqueUrls = [...new Set(urls)];
+      if (uniqueUrls.length === 0) return;
+      backendDb.db
+        .insert(draftSources)
+        .values(
+          uniqueUrls.map((url, sortOrder) => ({
+            draftId,
+            url,
+            labelRu: sourceLabel(url),
+            labelEn: sourceLabel(url),
+            sortOrder,
+            createdAt: now,
+            updatedAt: now,
+          })),
+        )
+        .run();
     },
     publish(actorId: number, draftId: number): number {
       requireOwnedDraft(backendDb, actorId, draftId);
@@ -206,6 +228,14 @@ export function postService(backendDb: BackendDb) {
       });
     },
   };
+}
+
+function sourceLabel(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
 }
 
 function notificationPreference(backendDb: BackendDb, actorId: number) {
