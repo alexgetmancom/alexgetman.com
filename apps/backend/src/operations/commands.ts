@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { BackendDb } from "../db/client.js";
 import { editPublishedTargets } from "../delivery/external-edits.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -7,16 +8,18 @@ import { requeuePublication } from "./commands/requeue.js";
 import { resolvePublicationRef } from "./publication-ref.js";
 
 /** Explicit maintenance command accepted by the Operations boundary. */
-export type CommandAction = {
-  action: string;
-  ref?: string;
-  message_id?: number;
-  target?: string;
-  text_en?: string;
-  media_en_json?: string;
-  token?: string;
-  actor_type?: string;
-};
+export const commandActionSchema = z.object({
+  action: z.string().default(""),
+  ref: z.string().optional(),
+  message_id: z.coerce.number().optional(),
+  target: z.string().optional(),
+  text_en: z.string().optional(),
+  media_en_json: z.string().optional(),
+  token: z.string().optional(),
+  actor_type: z.string().optional(),
+});
+
+export type CommandAction = z.infer<typeof commandActionSchema>;
 
 /** Dispatches authorised Operations commands; persistence lives in command modules. */
 export async function runOperationCommand(

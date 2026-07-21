@@ -6,8 +6,9 @@ import { videoPath } from "./content/video-assets.js";
 import type { BackendDb } from "./db/client.js";
 import { engagementService } from "./engagement/service.js";
 import type { BackendConfig } from "./foundation/config.js";
-import { commandAllowed } from "./foundation/http-auth.js";
+import { commandAllowed, safeEqual } from "./foundation/http-auth.js";
 import { mcpResponse } from "./interfaces/mcp.js";
+import { commandActionSchema } from "./operations/commands.js";
 import type { OperationsCommand } from "./operations/contracts.js";
 import { renderCommandCenterLogin, renderDashboard } from "./operations/dashboard.js";
 import { operationsService } from "./operations/service.js";
@@ -270,9 +271,11 @@ function loginRedirect(location: string, cookieName: string, token: string): Res
 }
 
 async function commandAction(request: Request): Promise<OperationsCommand> {
-  if (request.headers.get("content-type")?.includes("application/json")) return await request.json().catch(() => ({}) as OperationsCommand);
-  const form = await request.formData().catch(() => new FormData());
-  return Object.fromEntries(form.entries()) as unknown as OperationsCommand;
+  const raw = request.headers.get("content-type")?.includes("application/json")
+    ? await request.json().catch(() => ({}))
+    : Object.fromEntries((await request.formData().catch(() => new FormData())).entries());
+  const parsed = commandActionSchema.safeParse(raw);
+  return parsed.success ? parsed.data : commandActionSchema.parse({});
 }
 
 function json(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
@@ -322,13 +325,6 @@ function sse(start: (send: (event: string, data: unknown) => void) => ReturnType
       connection: "keep-alive",
     },
   });
-}
-
-function safeEqual(received: string, expected: string): boolean {
-  if (!received || !expected) return false;
-  const left = Buffer.from(received);
-  const right = Buffer.from(expected);
-  return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
 
 function mcpStudioActor(request: Request, config: BackendConfig): number | null {

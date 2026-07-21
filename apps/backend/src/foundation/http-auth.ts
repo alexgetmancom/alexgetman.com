@@ -22,7 +22,8 @@ function cookieValue(cookieHeader: string | undefined, name: string): string {
   return "";
 }
 
-function safeEqual(left: string, right: string): boolean {
+export function safeEqual(left: string, right: string): boolean {
+  if (!left || !right) return false;
   const leftBuffer = Buffer.from(left);
   const rightBuffer = Buffer.from(right);
   return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
