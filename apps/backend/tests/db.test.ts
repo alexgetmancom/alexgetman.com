@@ -3,7 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import { baselineDrizzleMigrations, migrationStatus, openBackendDb } from "../src/db/client.js";
 import { draftSources, knowledgeEntities, postEntityLinks, postSources } from "../src/db/schema.js";
@@ -56,7 +56,7 @@ describe("openBackendDb", () => {
       expect(tables).toContain("post_entity_links");
       expect(tables).toContain("draft_sources");
       expect(tables).toContain("draft_entity_candidates");
-      expect(migrationStatus(backendDb.sqlite)).toHaveLength(23);
+      expect(migrationStatus(backendDb.sqlite)).toHaveLength(24);
     } finally {
       backendDb.close();
     }
@@ -186,7 +186,7 @@ describe("openBackendDb", () => {
         { locale: "ru", slug: "production-fixture" },
       ]);
       expect(backendDb.db.select({ url: postSources.url }).from(postSources).all()).toEqual([{ url: "https://example.com/announcement" }]);
-      expect(migrationStatus(backendDb.sqlite)).toHaveLength(23);
+      expect(migrationStatus(backendDb.sqlite)).toHaveLength(24);
     } finally {
       backendDb.close();
     }
@@ -203,14 +203,76 @@ describe("openBackendDb", () => {
       });
       const postId = publishDraftToQueue(backendDb, draftId);
       const linked = backendDb.db
-        .select({ slug: knowledgeEntities.slug })
+        .select({ slug: knowledgeEntities.slug, role: postEntityLinks.linkRole })
         .from(postEntityLinks)
         .innerJoin(knowledgeEntities, eq(knowledgeEntities.id, postEntityLinks.entityId))
         .where(eq(postEntityLinks.postId, postId))
         .all()
-        .map((entity) => entity.slug)
-        .sort();
-      expect(linked).toEqual(["anthropic", "claude"]);
+        .sort((left, right) => left.slug.localeCompare(right.slug));
+      expect(linked).toEqual([
+        { slug: "anthropic", role: "mention" },
+        { slug: "claude", role: "focus" },
+      ]);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("keeps a comparison as a mention instead of making it a hub update", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const draftId = createDraftFromMessage(backendDb, 42, {
+        text: "Qwen announced a new flagship\n\nIt competes with Claude Fable.",
+        textEn: "Qwen announced a new flagship\n\nIt competes with Claude Fable.",
+        entities: [],
+        media: [],
+      });
+      const postId = publishDraftToQueue(backendDb, draftId);
+      const links = backendDb.db
+        .select({ slug: knowledgeEntities.slug, role: postEntityLinks.linkRole })
+        .from(postEntityLinks)
+        .innerJoin(knowledgeEntities, eq(knowledgeEntities.id, postEntityLinks.entityId))
+        .where(eq(postEntityLinks.postId, postId))
+        .all();
+      expect(links).toContainEqual({ slug: "claude", role: "mention" });
+      expect(links).toContainEqual({ slug: "fable-5", role: "mention" });
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("recognizes Codex as the focus only when it is the subject or the tool used", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const directDraft = createDraftFromMessage(backendDb, 42, {
+        text: "GPT ported RollerCoaster Tycoon to iPad\n\nThe developer built it with Codex.",
+        textEn: "GPT ported RollerCoaster Tycoon to iPad\n\nThe developer built it with Codex.",
+        entities: [],
+        media: [],
+      });
+      const directPostId = publishDraftToQueue(backendDb, directDraft);
+      const direct = backendDb.db
+        .select({ role: postEntityLinks.linkRole })
+        .from(postEntityLinks)
+        .innerJoin(knowledgeEntities, eq(knowledgeEntities.id, postEntityLinks.entityId))
+        .where(and(eq(postEntityLinks.postId, directPostId), eq(knowledgeEntities.slug, "codex")))
+        .get();
+      expect(direct).toEqual({ role: "focus" });
+
+      const asideDraft = createDraftFromMessage(backendDb, 42, {
+        text: "Claude reset limits\n\nI was too busy using Codex to notice.",
+        textEn: "Claude reset limits\n\nI was too busy using Codex to notice.",
+        entities: [],
+        media: [],
+      });
+      const asidePostId = publishDraftToQueue(backendDb, asideDraft);
+      const aside = backendDb.db
+        .select({ role: postEntityLinks.linkRole })
+        .from(postEntityLinks)
+        .innerJoin(knowledgeEntities, eq(knowledgeEntities.id, postEntityLinks.entityId))
+        .where(and(eq(postEntityLinks.postId, asidePostId), eq(knowledgeEntities.slug, "codex")))
+        .get();
+      expect(aside).toEqual({ role: "mention" });
     } finally {
       backendDb.close();
     }

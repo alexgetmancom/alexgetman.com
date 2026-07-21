@@ -7,20 +7,20 @@ export const prerender = false;
 const { hub } = Astro.params;
 const hubs = {
   codex: {
-    kind: "product",
-    slug: "codex",
+    entities: [{ kind: "topic", slug: "codex" }],
     title: "Codex",
     intro: "Агентская среда OpenAI для работы с кодом. Здесь собраны релизы, доступ, лимиты, сценарии и реальные изменения.",
   },
   claude: {
-    kind: "product",
-    slug: "claude",
+    entities: [
+      { kind: "model", slug: "claude" },
+      { kind: "model", slug: "fable-5" },
+    ],
     title: "Claude",
     intro: "Линейка моделей Anthropic. Здесь собраны релизы, доступ, лимиты, Claude Code, Cowork и важные изменения.",
   },
   kimi: {
-    kind: "model",
-    slug: "kimi-k3",
+    entities: [{ kind: "model", slug: "kimi-k3" }],
     title: "Kimi",
     intro: "Kimi K3 и линейка Moonshot AI: релизы, цены API, бенчмарки, доступ и реальная реакция рынка.",
   },
@@ -28,7 +28,13 @@ const hubs = {
 const definition = hub && hub in hubs ? hubs[hub as keyof typeof hubs] : null;
 if (!definition) return new Response("Not found\n", { status: 404 });
 const posts = loadFeedItems().filter(
-  (post) => post.has_ru && post.entities.some((entity) => entity.kind === definition.kind && entity.slug === definition.slug),
+  (post) =>
+    post.has_ru &&
+    post.entities.some(
+      (entity) =>
+        entity.link_role === "focus" &&
+        definition.entities.some((candidate) => candidate.kind === entity.kind && candidate.slug === entity.slug),
+    ),
 );
 if (posts.length === 0) return new Response("Not found\n", { status: 404 });
 const title = definition.title;

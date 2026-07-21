@@ -162,6 +162,13 @@
       "when": 1785117600000,
       "tag": "0022_backfill_core_knowledge_links",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1785121200000,
+      "tag": "0023_focus_hub_links",
+      "breakpoints": true
     }
   ]
 }

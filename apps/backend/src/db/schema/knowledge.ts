@@ -69,7 +69,7 @@ export const knowledgeEntities = sqliteTable(
   "knowledge_entities",
   {
     id: autoId(),
-    kind: text().notNull(), // company, model, person, product, topic
+    kind: text().notNull(), // company, model, person, topic; product is legacy only
     parentEntityId: integer(),
     slug: text().notNull(),
     titleRu: text().notNull(),
@@ -106,6 +106,9 @@ export const postEntityLinks = sqliteTable(
   {
     postId: integer().notNull(),
     entityId: integer().notNull(),
+    /** A focus drives a hub's main timeline; a mention remains available for
+     * related pages and editorial research without polluting that timeline. */
+    linkRole: text().notNull().default("mention"), // focus | mention
     createdAt: text().notNull(),
   },
   (table) => [

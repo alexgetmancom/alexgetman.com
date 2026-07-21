@@ -53,6 +53,7 @@ const feedItemSchema = z
         slug: z.string(),
         title_ru: z.string(),
         title_en: z.string().nullable(),
+        link_role: z.enum(["focus", "mention"]),
       }),
     ),
     views: z.number(),
@@ -133,6 +134,7 @@ export function loadPublicSiteFeed(backendDb: BackendDb): FeedItem[] {
         slug: knowledgeEntities.slug,
         titleRu: knowledgeEntities.titleRu,
         titleEn: knowledgeEntities.titleEn,
+        linkRole: postEntityLinks.linkRole,
       })
       .from(postEntityLinks)
       .innerJoin(knowledgeEntities, eq(knowledgeEntities.id, postEntityLinks.entityId))
@@ -142,7 +144,13 @@ export function loadPublicSiteFeed(backendDb: BackendDb): FeedItem[] {
     for (const entity of entityRows) {
       if (!isEntityKind(entity.kind)) continue;
       const list = entitiesByPost.get(entity.postId) ?? [];
-      list.push({ kind: entity.kind, slug: entity.slug, title_ru: entity.titleRu, title_en: entity.titleEn });
+      list.push({
+        kind: entity.kind,
+        slug: entity.slug,
+        title_ru: entity.titleRu,
+        title_en: entity.titleEn,
+        link_role: entity.linkRole === "focus" ? "focus" : "mention",
+      });
       entitiesByPost.set(entity.postId, list);
     }
   }
@@ -205,7 +213,13 @@ type FeedSource = {
   published_at: string | null;
 };
 
-type FeedEntity = { kind: "company" | "model" | "person" | "product" | "topic"; slug: string; title_ru: string; title_en: string | null };
+type FeedEntity = {
+  kind: "company" | "model" | "person" | "product" | "topic";
+  slug: string;
+  title_ru: string;
+  title_en: string | null;
+  link_role: "focus" | "mention";
+};
 
 function isEntityKind(value: string): value is FeedEntity["kind"] {
   return value === "company" || value === "model" || value === "person" || value === "product" || value === "topic";
