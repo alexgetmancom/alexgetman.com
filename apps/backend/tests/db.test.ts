@@ -56,7 +56,7 @@ describe("openBackendDb", () => {
       expect(tables).toContain("post_entity_links");
       expect(tables).toContain("draft_sources");
       expect(tables).toContain("draft_entity_candidates");
-      expect(migrationStatus(backendDb.sqlite)).toHaveLength(24);
+      expect(migrationStatus(backendDb.sqlite)).toHaveLength(25);
     } finally {
       backendDb.close();
     }
@@ -186,7 +186,7 @@ describe("openBackendDb", () => {
         { locale: "ru", slug: "production-fixture" },
       ]);
       expect(backendDb.db.select({ url: postSources.url }).from(postSources).all()).toEqual([{ url: "https://example.com/announcement" }]);
-      expect(migrationStatus(backendDb.sqlite)).toHaveLength(24);
+      expect(migrationStatus(backendDb.sqlite)).toHaveLength(25);
     } finally {
       backendDb.close();
     }
@@ -236,6 +236,28 @@ describe("openBackendDb", () => {
         .all();
       expect(links).toContainEqual({ slug: "claude", role: "mention" });
       expect(links).toContainEqual({ slug: "fable-5", role: "mention" });
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("does not treat a competitor headline as a Claude hub update", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const draftId = createDraftFromMessage(backendDb, 42, {
+        text: "Grok 4.5 is a new competitor to GPT and Claude\n\nThe release is now available.",
+        textEn: "Grok 4.5 is a new competitor to GPT and Claude\n\nThe release is now available.",
+        entities: [],
+        media: [],
+      });
+      const postId = publishDraftToQueue(backendDb, draftId);
+      const link = backendDb.db
+        .select({ role: postEntityLinks.linkRole })
+        .from(postEntityLinks)
+        .innerJoin(knowledgeEntities, eq(knowledgeEntities.id, postEntityLinks.entityId))
+        .where(and(eq(postEntityLinks.postId, postId), eq(knowledgeEntities.slug, "claude")))
+        .get();
+      expect(link).toEqual({ role: "mention" });
     } finally {
       backendDb.close();
     }

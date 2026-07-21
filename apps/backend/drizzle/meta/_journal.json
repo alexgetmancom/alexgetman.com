@@ -169,6 +169,13 @@
       "when": 1785121200000,
       "tag": "0023_focus_hub_links",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1785124800000,
+      "tag": "0024_downgrade_comparison_focus_links",
+      "breakpoints": true
     }
   ]
 }

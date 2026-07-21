@@ -81,7 +81,7 @@ function entityIsFocus(
     );
   }
   if (kind !== "model") return false;
-  return headlines.some((value) => entityMatches(value, slug, titleRu, titleEn, aliases));
+  return headlines.some((value) => !isComparisonHeadline(value) && entityMatches(value, slug, titleRu, titleEn, aliases));
 }
 
 function headline(value: string): string {
@@ -97,4 +97,8 @@ function entityMatches(text: string, slug: string, titleRu: string, titleEn: str
 
 function containsName(value: string, name: string): boolean {
   return new RegExp(`(^|[^a-z0-9])${name}($|[^a-z0-9])`, "i").test(value);
+}
+
+function isComparisonHeadline(value: string): boolean {
+  return /\b(?:vs|versus|competitor|competes)\b|конкурент|сравнен|против/.test(value);
 }
