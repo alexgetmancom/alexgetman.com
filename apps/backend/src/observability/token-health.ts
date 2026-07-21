@@ -4,6 +4,7 @@ import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { oauthAuthorization } from "../foundation/external/x-oauth.js";
 import { ExternalHttpError, externalFetch, requestJson, retryAfterSecondsFromHeaders } from "../foundation/http.js";
+import { log } from "../foundation/logger.js";
 import { recordAuthFailure, recordAuthSuccess, recordTokenPing, shouldPingToken } from "./auth-circuit.js";
 
 // A dead credential otherwise stays invisible until something tries to
@@ -30,23 +31,49 @@ function instagramHost(token: string): "graph.instagram.com" | "graph.facebook.c
 }
 
 /** Best-effort token expiry lookup; a failure here must not turn an otherwise
- * healthy probe into a reported auth failure. */
-async function debugTokenExpiry(host: string, version: string, token: string, fetchImpl: typeof fetch): Promise<string | null> {
+ * healthy probe into a reported auth failure. Meta reports a non-expiring
+ * token as expires_at: 0, which must not be treated the same as "lookup
+ * failed" (a plain falsy check on the number would conflate the two). */
+async function debugTokenExpiry(
+  target: string,
+  host: string,
+  version: string,
+  token: string,
+  fetchImpl: typeof fetch,
+): Promise<string | null> {
   try {
     const data = await requestJson<{ data?: { expires_at?: number } }>(
       fetchImpl,
       `https://${host}/${version}/debug_token?input_token=${encodeURIComponent(token)}&access_token=${encodeURIComponent(token)}`,
     );
     const expiresAtSeconds = data.data?.expires_at;
-    return expiresAtSeconds ? new Date(expiresAtSeconds * 1000).toISOString() : null;
-  } catch {
+    if (typeof expiresAtSeconds !== "number" || expiresAtSeconds <= 0) return null;
+    return new Date(expiresAtSeconds * 1000).toISOString();
+  } catch (error) {
+    // graph.instagram.com rejects debug_token for Instagram Login tokens with
+    // a 403 unless called with an app access token (needs an app id/secret we
+    // don't have configured) - expected and not worth alerting on, but still
+    // worth a breadcrumb so "why don't we know this token's expiry" is
+    // answerable from the logs instead of looking like silent data loss.
+    log("debug", "token expiry lookup failed", {
+      target,
+      host,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
 }
 
-async function graphMeCheck(host: string, version: string, id: string, token: string, fetchImpl: typeof fetch): Promise<string | null> {
+async function graphMeCheck(
+  target: string,
+  host: string,
+  version: string,
+  id: string,
+  token: string,
+  fetchImpl: typeof fetch,
+): Promise<string | null> {
   await requestJson(fetchImpl, `https://${host}/${version}/${id}?fields=id&access_token=${encodeURIComponent(token)}`);
-  return debugTokenExpiry(host, version, token, fetchImpl);
+  return debugTokenExpiry(target, host, version, token, fetchImpl);
 }
 
 /** GitHub echoes a PAT's expiry (if the token was created with one) back on
@@ -135,6 +162,7 @@ const probes: Probe[] = [
     configured: (c) => Boolean(c.FACEBOOK_PAGE_ID && c.FACEBOOK_PAGE_ACCESS_TOKEN),
     run: (config, fetchImpl) =>
       graphMeCheck(
+        "facebook",
         "graph.facebook.com",
         config.FACEBOOK_GRAPH_API_VERSION,
         config.FACEBOOK_PAGE_ID as string,
@@ -147,6 +175,7 @@ const probes: Probe[] = [
     configured: (c) => Boolean(c.FACEBOOK_RU_PAGE_ID && c.FACEBOOK_RU_PAGE_ACCESS_TOKEN),
     run: (config, fetchImpl) =>
       graphMeCheck(
+        "facebook_ru",
         "graph.facebook.com",
         config.FACEBOOK_GRAPH_API_VERSION,
         config.FACEBOOK_RU_PAGE_ID as string,
@@ -183,7 +212,7 @@ const probes: Probe[] = [
       const token = config.INSTAGRAM_ACCESS_TOKEN as string;
       const host = instagramHost(token);
       const version = host === "graph.instagram.com" ? config.INSTAGRAM_GRAPH_API_VERSION : config.FACEBOOK_GRAPH_API_VERSION;
-      return graphMeCheck(host, version, config.INSTAGRAM_USER_ID as string, token, fetchImpl);
+      return graphMeCheck("instagram_reels", host, version, config.INSTAGRAM_USER_ID as string, token, fetchImpl);
     },
   },
   {
@@ -193,7 +222,7 @@ const probes: Probe[] = [
       const token = config.INSTAGRAM_EN_ACCESS_TOKEN as string;
       const host = instagramHost(token);
       const version = host === "graph.instagram.com" ? config.INSTAGRAM_GRAPH_API_VERSION : config.FACEBOOK_GRAPH_API_VERSION;
-      return graphMeCheck(host, version, config.INSTAGRAM_EN_USER_ID as string, token, fetchImpl);
+      return graphMeCheck("instagram_stories", host, version, config.INSTAGRAM_EN_USER_ID as string, token, fetchImpl);
     },
   },
   {
@@ -203,7 +232,7 @@ const probes: Probe[] = [
       const token = config.INSTAGRAM_RU_ACCESS_TOKEN as string;
       const host = instagramHost(token);
       const version = host === "graph.instagram.com" ? config.INSTAGRAM_GRAPH_API_VERSION : config.FACEBOOK_GRAPH_API_VERSION;
-      return graphMeCheck(host, version, config.INSTAGRAM_RU_USER_ID as string, token, fetchImpl);
+      return graphMeCheck("instagram_stories_ru", host, version, config.INSTAGRAM_RU_USER_ID as string, token, fetchImpl);
     },
   },
 ];
