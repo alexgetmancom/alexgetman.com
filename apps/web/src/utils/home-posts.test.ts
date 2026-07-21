@@ -24,6 +24,8 @@ function feedItem(overrides: Partial<FeedItem> = {}): FeedItem {
     media_en: [],
     image: null,
     image_en: null,
+    sources: [],
+    entities: [],
     views: 12,
     ...overrides,
   };

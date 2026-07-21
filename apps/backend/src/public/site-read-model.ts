@@ -1,9 +1,9 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import * as z from "zod";
 import { SITE_MEDIA_URL_PREFIX, siteMediaFilename, siteMediaPosterFilename } from "../content/site-media-naming.js";
 import type { BackendDb } from "../db/client.js";
-import { postLocales, postMetrics, posts, publications } from "../db/schema.js";
+import { knowledgeEntities, postEntityLinks, postLocales, postMetrics, postSources, posts, publications } from "../db/schema.js";
 
 const siteMediaSchema = z
   .object({
@@ -38,6 +38,23 @@ const feedItemSchema = z
     audio_url_en: z.string().nullable().optional(),
     spotify_url_ru: z.string().nullable().optional(),
     spotify_url_en: z.string().nullable().optional(),
+    sources: z.array(
+      z.object({
+        url: z.string().url(),
+        label_ru: z.string(),
+        label_en: z.string().nullable(),
+        display_kind: z.enum(["official", "opinion"]).nullable(),
+        published_at: z.string().nullable(),
+      }),
+    ),
+    entities: z.array(
+      z.object({
+        kind: z.enum(["company", "model", "person", "topic"]),
+        slug: z.string(),
+        title_ru: z.string(),
+        title_en: z.string().nullable(),
+      }),
+    ),
     views: z.number(),
   })
   .strict();
@@ -81,6 +98,54 @@ export function loadPublicSiteFeed(backendDb: BackendDb): FeedItem[] {
     .orderBy(desc(posts.dateUtc), desc(publications.postId))
     .all();
 
+  const postIds = rows.flatMap((row) => (row.postId == null ? [] : [row.postId]));
+  const sourcesByPost = new Map<number, FeedSource[]>();
+  const entitiesByPost = new Map<number, FeedEntity[]>();
+  if (postIds.length > 0) {
+    const sourceRows = backendDb.db
+      .select({
+        postId: postSources.postId,
+        url: postSources.url,
+        labelRu: postSources.labelRu,
+        labelEn: postSources.labelEn,
+        displayKind: postSources.displayKind,
+        publishedAt: postSources.publishedAt,
+      })
+      .from(postSources)
+      .where(inArray(postSources.postId, postIds))
+      .orderBy(asc(postSources.postId), asc(postSources.sortOrder), asc(postSources.id))
+      .all();
+    for (const source of sourceRows) {
+      const list = sourcesByPost.get(source.postId) ?? [];
+      list.push({
+        url: source.url,
+        label_ru: source.labelRu,
+        label_en: source.labelEn,
+        display_kind: source.displayKind === "official" || source.displayKind === "opinion" ? source.displayKind : null,
+        published_at: source.publishedAt,
+      });
+      sourcesByPost.set(source.postId, list);
+    }
+    const entityRows = backendDb.db
+      .select({
+        postId: postEntityLinks.postId,
+        kind: knowledgeEntities.kind,
+        slug: knowledgeEntities.slug,
+        titleRu: knowledgeEntities.titleRu,
+        titleEn: knowledgeEntities.titleEn,
+      })
+      .from(postEntityLinks)
+      .innerJoin(knowledgeEntities, eq(knowledgeEntities.id, postEntityLinks.entityId))
+      .where(inArray(postEntityLinks.postId, postIds))
+      .orderBy(asc(postEntityLinks.postId), asc(knowledgeEntities.kind), asc(knowledgeEntities.titleRu))
+      .all();
+    for (const entity of entityRows) {
+      if (!isEntityKind(entity.kind)) continue;
+      const list = entitiesByPost.get(entity.postId) ?? [];
+      list.push({ kind: entity.kind, slug: entity.slug, title_ru: entity.titleRu, title_en: entity.titleEn });
+      entitiesByPost.set(entity.postId, list);
+    }
+  }
   const now = Date.now();
   return rows.flatMap((row): FeedItem[] => {
     if (row.postId == null || row.messageId == null || row.postKey == null) return [];
@@ -124,10 +189,26 @@ export function loadPublicSiteFeed(backendDb: BackendDb): FeedItem[] {
         media_en: mediaEn,
         image: firstImage(media),
         image_en: firstImage(mediaEn),
+        sources: sourcesByPost.get(row.postId) ?? [],
+        entities: entitiesByPost.get(row.postId) ?? [],
         views: row.views ?? 0,
       }),
     ];
   });
+}
+
+type FeedSource = {
+  url: string;
+  label_ru: string;
+  label_en: string | null;
+  display_kind: "official" | "opinion" | null;
+  published_at: string | null;
+};
+
+type FeedEntity = { kind: "company" | "model" | "person" | "topic"; slug: string; title_ru: string; title_en: string | null };
+
+function isEntityKind(value: string): value is FeedEntity["kind"] {
+  return value === "company" || value === "model" || value === "person" || value === "topic";
 }
 
 function locale(

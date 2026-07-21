@@ -2,6 +2,7 @@
 export type { JsonObject, JsonValue, MediaPayload } from "./schema/_shared.js";
 export * from "./schema/analytics.js";
 export * from "./schema/content.js";
+export * from "./schema/knowledge.js";
 export * from "./schema/ops.js";
 export * from "./schema/publishing.js";
 export * from "./schema/site.js";

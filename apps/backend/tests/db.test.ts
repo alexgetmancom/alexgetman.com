@@ -48,7 +48,11 @@ describe("openBackendDb", () => {
       expect(tables).toContain("video_metric_snapshots");
       expect(tables).toContain("social_comments");
       expect(tables).toContain("site_pageviews");
-      expect(migrationStatus(backendDb.sqlite)).toHaveLength(17);
+      expect(tables).toContain("post_sources");
+      expect(tables).toContain("knowledge_entities");
+      expect(tables).toContain("knowledge_entity_aliases");
+      expect(tables).toContain("post_entity_links");
+      expect(migrationStatus(backendDb.sqlite)).toHaveLength(18);
     } finally {
       backendDb.close();
     }
@@ -146,7 +150,7 @@ describe("openBackendDb", () => {
     const fixture = new Database(dbPath);
     fixture.exec("DROP TABLE __drizzle_migrations");
     fixture.exec(
-      "DROP TABLE site_pageviews; DROP TABLE video_bot_sessions; DROP TABLE video_jobs; DROP TABLE video_targets; DROP TABLE video_drafts; DROP TABLE analytics_sync; DROP TABLE creator_profiles; DROP TABLE creator_profile_snapshots; DROP TABLE video_metric_snapshots; DROP TABLE social_comments; DROP TABLE admin_state; CREATE TABLE admin_state (admin_id integer PRIMARY KEY NOT NULL, action text, draft_id integer, updated_at text NOT NULL)",
+      "DROP TABLE post_entity_links; DROP TABLE knowledge_entity_aliases; DROP TABLE knowledge_entities; DROP TABLE post_sources; DROP TABLE site_pageviews; DROP TABLE video_bot_sessions; DROP TABLE video_jobs; DROP TABLE video_targets; DROP TABLE video_drafts; DROP TABLE analytics_sync; DROP TABLE creator_profiles; DROP TABLE creator_profile_snapshots; DROP TABLE video_metric_snapshots; DROP TABLE social_comments; DROP TABLE admin_state; CREATE TABLE admin_state (admin_id integer PRIMARY KEY NOT NULL, action text, draft_id integer, updated_at text NOT NULL)",
     );
     fixture.close();
 
@@ -165,7 +169,7 @@ describe("openBackendDb", () => {
         { locale: "en", slug: "production-fixture" },
         { locale: "ru", slug: "production-fixture" },
       ]);
-      expect(migrationStatus(backendDb.sqlite)).toHaveLength(17);
+      expect(migrationStatus(backendDb.sqlite)).toHaveLength(18);
     } finally {
       backendDb.close();
     }
