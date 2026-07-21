@@ -173,6 +173,9 @@ export function latestVideoMetrics(backendDb: BackendDb, since: string): VideoMe
  * API. The hourly profile observations make its 24h delta complete even when
  * the Analytics API has not closed the report yet. */
 export function youtubeChannelViewDeltaSince(backendDb: BackendDb, since: string): number | null {
+  // A recovery after an outage must not label several days of channel growth
+  // as a 24-hour delta. Hourly collection normally allows a small delay.
+  const oldestUsableBaseline = new Date(new Date(since).getTime() - 2 * 60 * 60_000).toISOString();
   const rows = backendDb.sqlite
     .prepare(
       `SELECT
@@ -181,10 +184,13 @@ export function youtubeChannelViewDeltaSince(backendDb: BackendDb, since: string
           ORDER BY sampled_at DESC, id DESC LIMIT 1) AS latest,
          (SELECT CAST(COALESCE(json_extract(metrics_json, '$.viewCount'), 0) AS INTEGER)
           FROM creator_profile_snapshots WHERE platform = 'youtube' AND sampled_at <= ?
-          ORDER BY sampled_at DESC, id DESC LIMIT 1) AS baseline`,
+          ORDER BY sampled_at DESC, id DESC LIMIT 1) AS baseline,
+         (SELECT sampled_at FROM creator_profile_snapshots WHERE platform = 'youtube' AND sampled_at <= ?
+          ORDER BY sampled_at DESC, id DESC LIMIT 1) AS baseline_sampled_at`,
     )
-    .get(since) as { latest?: number; baseline?: number } | null;
-  if (rows?.latest == null || rows.baseline == null) return null;
+    .get(since, since) as { latest?: number; baseline?: number; baseline_sampled_at?: string } | null;
+  if (rows?.latest == null || rows.baseline == null || !rows.baseline_sampled_at || rows.baseline_sampled_at < oldestUsableBaseline)
+    return null;
   return Math.max(0, rows.latest - rows.baseline);
 }
 

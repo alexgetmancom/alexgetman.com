@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
 import { runAnalyticsCycle } from "../src/analytics/collection/creator-cycle.js";
 import { runVideoMetricSchedule } from "../src/analytics/collection/video-metrics.js";
-import { audienceGrowthByPlatform } from "../src/analytics/metric-deltas.js";
+import { audienceGrowthByPlatform, youtubeChannelViewDeltaSince } from "../src/analytics/metric-deltas.js";
 import { creatorDashboard } from "../src/analytics/reports/dashboard.js";
 import { studioAnalyticsDashboard } from "../src/analytics/reports/studio-dashboard.js";
 import type { BackendDb } from "../src/db/client.js";
@@ -557,6 +557,35 @@ describe("creator analytics", () => {
 
       const dashboard = studioAnalyticsDashboard(backendDb, config, "video", 1, "ru");
       expect(dashboard.text).toContain("| ▶️ YouTube | 124 | +2 | 50 | 2 | 1 | — | — |");
+    });
+  });
+
+  it("does not label a stale YouTube channel snapshot as a 24-hour delta", async () => {
+    await withDb(async (backendDb) => {
+      const now = new Date();
+      const stale = new Date(now.getTime() - 48 * 60 * 60_000).toISOString();
+      backendDb.db
+        .insert(creatorProfileSnapshots)
+        .values([
+          {
+            platform: "youtube",
+            account: "marux",
+            sampledOn: "stale",
+            metricsJson: { viewCount: 100 },
+            source: "youtube_data_api",
+            sampledAt: stale,
+          },
+          {
+            platform: "youtube",
+            account: "marux",
+            sampledOn: "current",
+            metricsJson: { viewCount: 300 },
+            source: "youtube_data_api",
+            sampledAt: now.toISOString(),
+          },
+        ])
+        .run();
+      expect(youtubeChannelViewDeltaSince(backendDb, new Date(now.getTime() - 24 * 60 * 60_000).toISOString())).toBeNull();
     });
   });
 
