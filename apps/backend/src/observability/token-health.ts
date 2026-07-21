@@ -22,7 +22,7 @@ type Probe = {
   target: string;
   configured: (config: BackendConfig) => boolean;
   /** Resolves to an ISO expiry timestamp when the provider can report one. */
-  run: (config: BackendConfig, fetchImpl: typeof fetch) => Promise<string | null | void>;
+  run: (config: BackendConfig, fetchImpl: typeof fetch) => Promise<string | null | undefined>;
 };
 
 function instagramHost(token: string): "graph.instagram.com" | "graph.facebook.com" {
