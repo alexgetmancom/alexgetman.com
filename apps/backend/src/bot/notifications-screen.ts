@@ -29,7 +29,6 @@ export function buildNotificationsMenu(config: BackendConfig, backendDb: Backend
   });
 
   const inbox = new Menu<Context>(NOTIFICATIONS_MENU_ID, { autoAnswer: true });
-  inbox.register(detail);
   inbox.dynamic((ctx, range) => {
     const actorId = Number(ctx.from?.id);
     const locale = botLocale(backendDb, actorId);
@@ -48,6 +47,7 @@ export function buildNotificationsMenu(config: BackendConfig, backendDb: Backend
     }
     range.back(t(locale, "common.menu"));
   });
+  inbox.register(detail);
   return inbox;
 }
 

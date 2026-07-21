@@ -97,9 +97,6 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
   });
 
   const settings = new Menu<Context>(SETTINGS_MENU_ID, { autoAnswer: false });
-  settings.register(notificationSettings);
-  settings.register(youtubeSignature);
-  settings.register(language);
   settings.dynamic((ctx, range) => {
     const adminId = Number(ctx.from?.id);
     const locale = botLocale(backendDb, adminId);
@@ -131,6 +128,9 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
         await ctx.editMessageText(t(locale, "menu.control-panel"));
       });
   });
+  settings.register(notificationSettings);
+  settings.register(youtubeSignature);
+  settings.register(language);
   return settings;
 
   async function switchLanguage(ctx: Context & MenuFlavor, locale: "en" | "ru"): Promise<void> {
