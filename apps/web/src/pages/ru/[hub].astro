@@ -1,0 +1,19 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import { loadFeedItems } from "../../server/public-site";
+import { getFirstSentence } from "../../utils/text";
+
+export const prerender = false;
+const { hub } = Astro.params;
+if (hub !== "codex" && hub !== "claude") return new Response("Not found\n", { status: 404 });
+const posts = loadFeedItems().filter(
+  (post) => post.has_ru && post.entities.some((entity) => entity.kind === "product" && entity.slug === hub),
+);
+if (posts.length === 0) return new Response("Not found\n", { status: 404 });
+const title = hub === "codex" ? "Codex" : "Claude";
+const url = `https://alexgetman.com/ru/${hub}/`;
+---
+<Layout title={`${title} | Алекс Гетман`} description={`Новости и контекст про ${title}.`} canonicalUrl={url} lang="ru" siteName="Алекс Гетман" alternateLinks={[{ hreflang: "ru", href: url }, { hreflang: "en", href: `https://alexgetman.com/${hub}/` }, { hreflang: "x-default", href: `https://alexgetman.com/${hub}/` }]}>
+  <main class="hub"><h1>{title}</h1><p>Новости и контекст.</p><ol>{posts.map((post) => <li><a href={`/ru/${post.post_id}/${post.slug_ru}/`}>{getFirstSentence(post.text) || `Пост ${post.post_id}`}</a></li>)}</ol></main>
+</Layout>
+<style>.hub { max-width: 720px; margin: 0 auto; padding: 5rem 1.5rem; } ol { padding-left: 1.2rem; line-height: 1.6; } a { color: inherit; }</style>

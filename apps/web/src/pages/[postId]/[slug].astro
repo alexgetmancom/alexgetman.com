@@ -2,6 +2,7 @@
 import HomeNewsPage from "../../components/HomeNewsPage.astro";
 import Layout from "../../layouts/Layout.astro";
 import { loadFeedItems } from "../../server/public-site";
+import { entityUrl } from "../../utils/entity-url";
 import { sortedHomePosts } from "../../utils/home-posts";
 import { postOgImagePath, postVisualMedia } from "../../utils/media";
 import { excerptAfterTitle, getFirstSentence } from "../../utils/text";
@@ -31,7 +32,7 @@ const sourceUrls = item.sources.map((source) => source.url);
 const about = item.entities.map((entity) => ({
   "@type": "Thing",
   name: entity.title_en || entity.title_ru,
-  url: `https://alexgetman.com/entities/${entity.kind}/${entity.slug}/`,
+  url: `https://alexgetman.com${entityUrl(entity.kind, entity.slug)}`,
 }));
 const schema = JSON.stringify({
   "@context": "https://schema.org",

@@ -6,6 +6,7 @@ import { getFirstSentence } from "../../../utils/text";
 export const prerender = false;
 
 const { kind, slug } = Astro.params;
+if (kind === "product" && (slug === "codex" || slug === "claude")) return Astro.redirect(`/${slug}/`, 301);
 const allowedKinds = new Set(["company", "model", "person", "product", "topic"]);
 if (!kind || !slug || !allowedKinds.has(kind)) return new Response("Not found\n", { status: 404 });
 const posts = loadFeedItems().filter((post) => post.entities.some((entity) => entity.kind === kind && entity.slug === slug));
