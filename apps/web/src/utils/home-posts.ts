@@ -87,6 +87,11 @@ export function toHomePost(item: FeedItem, locale: "en" | "ru"): HomePost {
     views: Number(item.views || 0),
     categorySlug,
     category: categoryLabel(categorySlug, locale),
+    sources: item.sources.map((source) => {
+      const label = locale === "ru" ? source.label_ru : source.label_en || source.label_ru;
+      const prefix = source.display_kind === "official" ? (locale === "ru" ? "Официально · " : "Official · ") : "";
+      return { url: source.url, label: `${prefix}${label}`, official: source.display_kind === "official" };
+    }),
   };
 }
 

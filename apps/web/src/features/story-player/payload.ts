@@ -13,7 +13,7 @@
  * ========================================================================== */
 
 import { metricValue, paragraphsFor } from "../../components/home-news/storyHelpers";
-import type { HomeMedia, HomePost } from "../../components/home-news/types";
+import type { HomeMedia, HomePost, HomeSource } from "../../components/home-news/types";
 
 export interface PlayerPost {
   id: string;
@@ -37,6 +37,7 @@ export interface PlayerPost {
   /** Отформатировано для показа: "1.2k". */
   views: string;
   category: string;
+  sources: Array<{ url: string; label: string; official: boolean }>;
   /** В каких режимах ленты пост виден: latest / deep / watched. */
   feedModes: string[];
 }
@@ -84,6 +85,7 @@ export function toPlayerPosts(posts: HomePost[]): PlayerPost[] {
     imageSrcSet: post.imageSrcSet || "",
     views: metricValue(post.views),
     category: post.category,
+    sources: (post.sources || []).map((source: HomeSource) => ({ ...source })),
     feedModes: feedModesFor(post, watchedCutoff),
   }));
 }

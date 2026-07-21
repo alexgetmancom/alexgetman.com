@@ -17,6 +17,13 @@ export interface HomePost {
   views: number;
   categorySlug: string;
   category: string;
+  sources?: HomeSource[];
+}
+
+export interface HomeSource {
+  url: string;
+  label: string;
+  official: boolean;
 }
 
 export interface HomeMedia {

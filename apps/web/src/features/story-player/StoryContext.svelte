@@ -68,6 +68,15 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
         <p>{paragraph}</p>
       {/each}
     </div>
+    {#if post.sources.length > 0 && !discussionVisible}
+      <div class="story-sources" aria-label="Sources">
+        {#each post.sources as source}
+          <a href={source.url} target="_blank" rel="noopener noreferrer" class="story-source-link">
+            {source.label} ↗
+          </a>
+        {/each}
+      </div>
+    {/if}
     <button class="read-more-button" type="button" hidden={!readMoreVisible || discussionVisible} onclick={ontogglereadmore}>
       {expanded ? ui.collapse : ui.readMore}
     </button>
@@ -264,6 +273,25 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
     padding-top: 0.72rem;
     border-top: 1px solid var(--border);
     flex-shrink: 0;
+  }
+
+  .story-sources {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.6rem;
+    margin-top: 0.65rem;
+    font-size: 0.72rem;
+    line-height: 1.25;
+  }
+
+  .story-source-link {
+    color: var(--muted);
+    text-decoration: none;
+  }
+
+  .story-source-link:hover {
+    color: var(--text);
+    text-decoration: underline;
   }
 
   .story-action {

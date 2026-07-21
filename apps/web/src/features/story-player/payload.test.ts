@@ -31,6 +31,7 @@ describe("toPlayerPosts", () => {
         spotifyUrl: "https://open.spotify.com/track/x",
         imageSrcSet: "/generated/responsive/x-360.webp 360w",
         posterSrc: "generated/responsive/x-960.webp",
+        sources: [{ url: "https://example.com/source", label: "example.com", official: true }],
       }),
     ]);
 
@@ -41,6 +42,7 @@ describe("toPlayerPosts", () => {
     expect(post.audioUrl).toBe("media/posts/1-en-0.mp3");
     expect(post.spotifyUrl).toBe("https://open.spotify.com/track/x");
     expect(post.posterSrc).toBe("/generated/responsive/x-960.webp");
+    expect(post.sources).toEqual([{ url: "https://example.com/source", label: "example.com", official: true }]);
   });
 
   it("marks a short single-paragraph post latest-only", () => {
