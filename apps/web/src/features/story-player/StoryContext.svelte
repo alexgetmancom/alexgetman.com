@@ -2,8 +2,9 @@
   ПРАВАЯ ПАНЕЛЬ: текст поста + кнопки + вкладка обсуждения.
   ─────────────────────────────────────────────────────────────────────────────
   Презентационный компонент: своего состояния нет. Показывает:
-    - категорию, заголовок (НЕ <h1> — единственный h1 живёт в noscript-SEO,
-      слой Astro), время чтения, дату, просмотры
+    - категорию, заголовок (единственный <h1> страницы — noscript-SEO в
+      Astro-слое дублирует его как <p>, во избежание двух h1 в разметке),
+      время чтения, дату, просмотры
     - параграфы поста + кнопку «Читать дальше» (видимость меряет корень)
     - контейнер giscus (в него корень инжектит скрипт через discussion.ts)
     - кнопки «Обсудить» / «Поделиться»
@@ -54,7 +55,7 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
     <div class="story-category-wrap" hidden={discussionVisible}>
       <span class="story-category-badge">{post.category}</span>
     </div>
-    <p class="story-title" data-story-title hidden={discussionVisible}>{post.title}</p>
+    <h1 class="story-title" data-story-title hidden={discussionVisible}>{post.title}</h1>
     <div class="story-meta" hidden={discussionVisible}>
       <span class="story-meta-item">⏱️ {readingTimeMin} min</span>
       <span class="story-meta-dot">•</span>
@@ -192,8 +193,6 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
     color: var(--text-header);
     letter-spacing: -0.015em;
     line-height: 1.14;
-    /* Рендерится как <p>, чтобы единственный <h1> остался в noscript-SEO;
-       возвращаем вес заголовка. */
     font-size: clamp(1.8rem, 2.3vw, 2.5rem);
     font-weight: bold;
   }
@@ -246,14 +245,13 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
     border-radius: 999px;
   }
 
-  .story-copy p,
-  .story-panel > p {
+  .story-copy p {
     margin: 0 0 1.1rem 0;
     max-width: 52ch;
   }
 
-  /* Заголовок — тоже <p> внутри панели: вернуть его отступ поверх правила выше. */
-  .story-panel > p.story-title {
+  /* Заголовок — h1 внутри панели: вернуть его отступ поверх правила выше. */
+  .story-panel > h1.story-title {
     margin: 0 0 0.62rem;
   }
 

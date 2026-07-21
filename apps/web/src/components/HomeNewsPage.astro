@@ -6,7 +6,9 @@ import { toPlayerPosts } from "../features/story-player/payload";
  * -----------------------------------------------------------------------------
  * Зона ответственности ЭТОГО файла (и только его):
  *   1. Порядок постов: выбранный пост (страница статьи) встаёт первым.
- *   2. SEO: noscript-статья с ЕДИНСТВЕННЫМ <h1> на странице + полным текстом.
+ *   2. SEO: noscript-фолбэк для клиентов без JS — заголовок (<p>, единственный
+ *      <h1> страницы рендерит гидрируемый StoryContext.svelte), медиа
+ *      активного поста и полный текст.
  *   3. Производительность: <link rel="preload"> первой картинки/постера.
  *   4. Монтирование Svelte-острова <StoryPlayer client:load> (SSR-first).
  *
@@ -46,7 +48,12 @@ const ui = storyUi(locale);
       <StoryPlayer client:load posts={playerPosts} ui={ui} locale={locale} initialPaused={initialPaused} />
       <noscript>
         <article class="story-seo-content">
-          <h1>{activePost.title}</h1>
+          <p class="story-seo-title">{activePost.title}</p>
+          {activePost.mediaType === 'video' && activePost.image ? (
+            <video src={activePost.image} poster={activePost.posterSrc || activePost.fallbackImage || undefined} controls muted playsinline></video>
+          ) : activePost.image ? (
+            <img src={activePost.image} alt={activePost.title} />
+          ) : null}
           {activePost.fullBody.map((paragraph) => (
             <p>{paragraph}</p>
           ))}

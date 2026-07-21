@@ -9,7 +9,7 @@ Disallow: /stats/pageview
 
 Sitemap: ${siteUrl}/sitemap.xml
 Host: ${host}
-Content-Signal: ai-train=no, search=yes, ai-input=no
+Content-Signal: ai-train=yes, search=yes, ai-input=yes
 `;
 
   return new Response(body, {
