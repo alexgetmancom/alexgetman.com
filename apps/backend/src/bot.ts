@@ -1,14 +1,14 @@
 import { Bot, InlineKeyboard } from "grammy";
 import { handleAnalyticsCallback } from "./bot/analytics-screen.js";
 import { botLocale } from "./bot/i18n.js";
-import { persistentKeyboard, showMainMenu, showSettings } from "./bot/navigation.js";
-import { handleNotificationsCallback } from "./bot/notifications-screen.js";
+import { buildMainMenu, persistentKeyboard, showMainMenu } from "./bot/navigation.js";
+import { buildNotificationsMenu } from "./bot/notifications-screen.js";
 import { handleOperationsCallback } from "./bot/operations-screen.js";
 import { handlePostAction } from "./bot/post-actions.js";
 import { handlePostMessage, handlePostScreenCallback, startPostScreen } from "./bot/post-screen.js";
 import { handleProgressCallback } from "./bot/progress-screen.js";
 import { showQueue } from "./bot/queue.js";
-import { handleSettingsCallback, handleSettingsMessage } from "./bot/settings-screen.js";
+import { buildSettingsMenu, handleSettingsMessage, showSettings } from "./bot/settings-screen.js";
 import { startVideoConversation } from "./bot/video-conversation.js";
 import { handleVideoCallback, handleVideoMessage } from "./bot/video-screen.js";
 import type { BackendDb } from "./db/client.js";
@@ -32,17 +32,33 @@ export function createBot(config: BackendConfig, backendDb: BackendDb): Bot | nu
 }
 
 function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb): void {
+  const notificationsMenu = buildNotificationsMenu(config, backendDb);
+  const settingsMenu = buildSettingsMenu(config, backendDb);
+  const mainMenu = buildMainMenu(config, backendDb, settingsMenu, notificationsMenu);
+  // The menu plugin installs its own callback_query:data middleware, so the
+  // admin gate that used to sit at the top of the single callback handler
+  // below must also run in front of it, or a non-admin's tap on a menu
+  // button would be processed before ever reaching that check.
+  bot.use(async (ctx, next) => {
+    if (ctx.callbackQuery?.data !== undefined && !isAdmin(config, ctx.from?.id)) {
+      await ctx.answerCallbackQuery({ text: t(botLocale(backendDb, Number(ctx.from?.id)), "bot.forbidden") });
+      return;
+    }
+    await next();
+  });
+  bot.use(mainMenu);
+
   bot.command("start", async (ctx) => {
     const locale = botLocale(backendDb, Number(ctx.from?.id));
     await ctx.reply(t(locale, "start.menu-hint"), {
       reply_markup: persistentKeyboard(locale),
     });
-    await showMainMenu(ctx, config, backendDb);
+    await showMainMenu(ctx, backendDb, mainMenu);
   });
-  bot.hears(["☰ Меню", "☰ Menu", "☰ Показать меню", "☰ Show menu"], (ctx) => showMainMenu(ctx, config, backendDb));
+  bot.hears(["☰ Меню", "☰ Menu", "☰ Показать меню", "☰ Show menu"], (ctx) => showMainMenu(ctx, backendDb, mainMenu));
   bot.hears("⚙️", async (ctx) => {
     if (!isAdmin(config, ctx.from?.id)) return;
-    await showSettings(ctx, config, backendDb);
+    await showSettings(ctx, backendDb, settingsMenu);
   });
   bot.hears(["🎬 Новое видео", "🎬 New video"], async (ctx) => {
     const locale = botLocale(backendDb, Number(ctx.from?.id));
@@ -69,14 +85,14 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
   });
   bot.on("message", async (ctx) => {
     if (!isAdmin(config, ctx.from?.id)) return void (await ctx.reply(t(botLocale(backendDb, Number(ctx.from?.id)), "bot.forbidden")));
-    if (await handleSettingsMessage(ctx, backendDb, config)) return;
+    if (await handleSettingsMessage(ctx, backendDb, config, settingsMenu)) return;
     if (await handleVideoMessage(ctx, backendDb, config)) return;
     await handlePostMessage(ctx, backendDb, config);
   });
   bot.on("callback_query:data", async (ctx) => {
     if (!isAdmin(config, ctx.from?.id))
       return void (await ctx.answerCallbackQuery({ text: t(botLocale(backendDb, Number(ctx.from?.id)), "bot.forbidden") }));
-    if (await handlePostScreenCallback(ctx, backendDb, config)) return;
+    if (await handlePostScreenCallback(ctx, backendDb, mainMenu)) return;
     if (ctx.callbackQuery.data === "queue_home") {
       await ctx.answerCallbackQuery();
       await showQueue(ctx, backendDb, config);
@@ -90,13 +106,11 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
     if (ctx.callbackQuery.data === "menu_home") {
       clearTelegramAnalyticsDashboard(backendDb, Number(ctx.from?.id));
       await ctx.answerCallbackQuery();
-      await showMainMenu(ctx, config, backendDb, true);
+      await showMainMenu(ctx, backendDb, mainMenu, true);
       return;
     }
     if (await handleProgressCallback(ctx, backendDb, config)) return;
     if (await handleTelegramDeliveryPreviewCallback(ctx, backendDb, config)) return;
-    if (await handleNotificationsCallback(ctx, backendDb, config)) return;
-    if (await handleSettingsCallback(ctx, backendDb, config)) return;
     if (await handleAnalyticsCallback(ctx, backendDb, config)) return;
     if (await handleVideoCallback(ctx, backendDb, config)) return;
     if (await handleOperationsCallback(ctx, config)) return;

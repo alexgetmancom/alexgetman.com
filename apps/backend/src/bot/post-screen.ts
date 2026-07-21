@@ -1,3 +1,4 @@
+import type { Menu } from "@grammyjs/menu";
 import { type Context, InlineKeyboard } from "grammy";
 import { translateToEnglish } from "../content/translation.js";
 import type { BackendDb } from "../db/client.js";
@@ -25,7 +26,7 @@ export async function startPostScreen(ctx: Context, backendDb: BackendDb): Promi
   });
 }
 
-async function openPostScreen(ctx: Context, backendDb: BackendDb): Promise<void> {
+export async function openPostScreen(ctx: Context, backendDb: BackendDb): Promise<void> {
   const adminId = Number(ctx.from?.id);
   startPostDialog(backendDb, adminId);
   const locale = botLocale(backendDb, adminId);
@@ -89,7 +90,7 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
   if (ctx.chat?.id) setTelegramPostCard(backendDb, draftId, Number(ctx.chat.id), control.message_id);
 }
 
-export async function handlePostScreenCallback(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<boolean> {
+export async function handlePostScreenCallback(ctx: Context, backendDb: BackendDb, mainMenu: Menu<Context>): Promise<boolean> {
   if (ctx.callbackQuery?.data === "menu_text") {
     await ctx.answerCallbackQuery();
     await openPostScreen(ctx, backendDb);
@@ -101,7 +102,7 @@ export async function handlePostScreenCallback(ctx: Context, backendDb: BackendD
     try {
       await ctx.deleteMessage();
     } catch {}
-    await showMainMenu(ctx, config, backendDb);
+    await showMainMenu(ctx, backendDb, mainMenu);
     return true;
   }
   return false;

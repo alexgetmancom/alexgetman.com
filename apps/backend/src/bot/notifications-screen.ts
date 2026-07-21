@@ -1,52 +1,66 @@
-import { type Context, InlineKeyboard } from "grammy";
+import { Menu } from "@grammyjs/menu";
+import type { Context } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { t } from "../interfaces/telegram/i18n/index.js";
 import { studioServices } from "../studio/services/index.js";
 import { botLocale } from "./i18n.js";
 
-export async function handleNotificationsCallback(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<boolean> {
-  const data = ctx.callbackQuery?.data ?? "";
-  if (
-    data !== "notifications_home" &&
-    data !== "notification_back" &&
-    !data.startsWith("notification_ack:") &&
-    !data.startsWith("notification_open:")
-  )
-    return false;
-  const actorId = Number(ctx.from?.id);
-  const locale = botLocale(backendDb, actorId);
-  const notifications = studioServices(backendDb, config).notifications;
-  if (data.startsWith("notification_open:")) {
-    const event = notifications.get(actorId, Number(data.slice("notification_open:".length)));
-    await ctx.answerCallbackQuery();
-    if (!event) return renderInbox(ctx, notifications.inbox(actorId, 10), locale);
-    const keyboard = new InlineKeyboard()
-      .text(t(locale, "notif.mark-read"), `notification_ack:${event.id}`)
+export const NOTIFICATIONS_MENU_ID = "notifications-menu";
+
+export function buildNotificationsMenu(config: BackendConfig, backendDb: BackendDb): Menu<Context> {
+  const detail = new Menu<Context>("notification-detail", { autoAnswer: true }).dynamic((ctx, range) => {
+    const actorId = Number(ctx.from?.id);
+    const locale = botLocale(backendDb, actorId);
+    const notifications = studioServices(backendDb, config).notifications;
+    const event = notifications.get(actorId, Number(ctx.match));
+    if (!event) {
+      range.back(t(locale, "notif.back"));
+      return;
+    }
+    range
+      .text({ text: t(locale, "notif.mark-read"), payload: String(event.id) }, async (ctx) => {
+        notifications.acknowledge(actorId, Number(ctx.match));
+        ctx.menu.nav(NOTIFICATIONS_MENU_ID);
+        await ctx.editMessageText(notificationsInboxText(backendDb, config, actorId, locale));
+      })
       .row()
-      .text(t(locale, "notif.back"), "notification_back");
-    await ctx.editMessageText(notificationText(event, locale), { reply_markup: keyboard });
-    return true;
-  }
-  if (data.startsWith("notification_ack:")) notifications.acknowledge(actorId, Number(data.slice("notification_ack:".length)));
-  await ctx.answerCallbackQuery();
-  return renderInbox(ctx, notifications.inbox(actorId, 10), locale);
+      .back(t(locale, "notif.back"));
+  });
+
+  const inbox = new Menu<Context>(NOTIFICATIONS_MENU_ID, { autoAnswer: true });
+  inbox.register(detail);
+  inbox.dynamic((ctx, range) => {
+    const actorId = Number(ctx.from?.id);
+    const locale = botLocale(backendDb, actorId);
+    const events = studioServices(backendDb, config).notifications.inbox(actorId, 10);
+    for (const event of events) {
+      range
+        .submenu({ text: notificationLabel(event, locale), payload: String(event.id) }, "notification-detail", async (ctx) => {
+          const found = studioServices(backendDb, config).notifications.get(actorId, Number(ctx.match));
+          if (found) await ctx.editMessageText(notificationText(found, locale));
+        })
+        .text({ text: "✓", payload: String(event.id) }, async (ctx) => {
+          studioServices(backendDb, config).notifications.acknowledge(actorId, Number(ctx.match));
+          await ctx.editMessageText(notificationsInboxText(backendDb, config, actorId, locale));
+        })
+        .row();
+    }
+    range.back(t(locale, "common.menu"));
+  });
+  return inbox;
 }
 
-async function renderInbox(
-  ctx: Context,
-  events: ReturnType<ReturnType<typeof studioServices>["notifications"]["inbox"]>,
+export function notificationsInboxText(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  actorId: number,
   locale: ReturnType<typeof botLocale>,
-): Promise<boolean> {
+): string {
+  const events = studioServices(backendDb, config).notifications.inbox(actorId, 10);
   const lines = [`🔔 ${t(locale, "notif.title")}`];
   if (!events.length) lines.push(`\n${t(locale, "notif.none")}`);
-  const keyboard = new InlineKeyboard();
-  for (const event of events) {
-    keyboard.text(notificationLabel(event, locale), `notification_open:${event.id}`).text("✓", `notification_ack:${event.id}`).row();
-  }
-  keyboard.text(t(locale, "common.menu"), "menu_home");
-  await ctx.editMessageText(lines.join("\n"), { reply_markup: keyboard });
-  return true;
+  return lines.join("\n");
 }
 
 function notificationLabel(

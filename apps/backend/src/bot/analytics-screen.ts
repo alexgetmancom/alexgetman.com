@@ -126,7 +126,7 @@ function analyticsPeriod(value: number): 1 | 7 | 30 {
   return value === 1 || value === 30 ? value : 7;
 }
 
-async function showAnalyticsDashboard(
+export async function showAnalyticsDashboard(
   ctx: Context,
   backendDb: BackendDb,
   config: BackendConfig,
@@ -202,7 +202,7 @@ function analyticsKeyboard(
   return keyboard;
 }
 
-function defaultAnalyticsSection(config: BackendConfig): AnalyticsSection {
+export function defaultAnalyticsSection(config: BackendConfig): AnalyticsSection {
   const preferred = config.studio.analytics.defaultTab;
   if (preferred === "posts" && config.studio.modules.text_posting) return preferred;
   if (preferred === "video" && config.studio.modules.video_posting) return preferred;

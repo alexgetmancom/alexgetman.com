@@ -25,6 +25,7 @@
       "name": "@alexgetman/backend",
       "version": "0.0.1",
       "dependencies": {
+        "@grammyjs/menu": "^1.3.1",
         "@mtcute/bun": "^0.31.0",
         "drizzle-orm": "^0.45.2",
         "drizzle-zod": "^0.8.3",
@@ -220,6 +221,8 @@
     "@fuman/net": ["@fuman/net@0.0.21", "", { "dependencies": { "@fuman/io": "^0.0.21", "@fuman/utils": "^0.0.21" } }, "sha512-4PbDA2f6SfR5CtOs7omZNrrRh1X23KQBI0XmpL/r1fVd726H6+IfhDRxm/fgNKlLgMwe6pGbI/hzt8JU0y0sgw=="],
 
     "@fuman/utils": ["@fuman/utils@0.0.21", "", {}, "sha512-2N5bPK18uGgZRans+ZQ33SE+xSGj4BZNnJbSUnGdH/i4ADTdz/ziC/16Qy3/Jqzbrwr21IpuKObnELp8DDfkDQ=="],
+
+    "@grammyjs/menu": ["@grammyjs/menu@1.3.1", "", { "peerDependencies": { "grammy": "^1.31.0" } }, "sha512-HJslY/n76T1Ar5qDDhNtjLs+PpcrlB9aGsXu3CJHLt147DC3K3lpiRvRW/Xh9/x9hqYVw7KKbnvsQXVgzoU81Q=="],
 
     "@grammyjs/types": ["@grammyjs/types@4.0.0", "", {}, "sha512-Z8lDLTvOlo12e5Vnly/vQh3JC9ppaitS1dGZ3w068gNitOd/y8tTSiib+Xm38aBGbtYGmUZwOc6afYrLs2CSTg=="],
 
