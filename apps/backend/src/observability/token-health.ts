@@ -55,6 +55,7 @@ const probes: Probe[] = [
     configured: (c) => Boolean(c.controllerBotToken),
     run: async (config, fetchImpl) => {
       await requestJson(fetchImpl, `${config.TELEGRAM_API_BASE_URL}/bot${config.controllerBotToken}/getMe`);
+      return null;
     },
   },
   {
@@ -63,6 +64,7 @@ const probes: Probe[] = [
     run: async (config, fetchImpl) => {
       const url = "https://api.twitter.com/2/users/me";
       await requestJson(fetchImpl, url, { headers: { Authorization: oauthAuthorization("GET", url, config) } });
+      return null;
     },
   },
   {
@@ -72,6 +74,7 @@ const probes: Probe[] = [
       await requestJson(fetchImpl, "https://api.github.com/user", {
         headers: { Authorization: `Bearer ${config.GITHUB_DISCUSSIONS_TOKEN}`, "User-Agent": "alexgetman-posting" },
       });
+      return null;
     },
   },
   {
@@ -83,6 +86,7 @@ const probes: Probe[] = [
       await requestJson(fetchImpl, "https://api.github.com/user", {
         headers: { Authorization: `Bearer ${config.GITHUB_DISCUSSIONS_TOKEN}`, "User-Agent": "alexgetman-posting" },
       });
+      return null;
     },
   },
   {
@@ -90,6 +94,7 @@ const probes: Probe[] = [
     configured: (c) => Boolean(c.DEVTO_API_KEY),
     run: async (config, fetchImpl) => {
       await requestJson(fetchImpl, "https://dev.to/api/users/me", { headers: { "api-key": config.DEVTO_API_KEY as string } });
+      return null;
     },
   },
   {
@@ -100,6 +105,7 @@ const probes: Probe[] = [
       await requestJson(fetchImpl, `${base}/api/v1/accounts/verify_credentials`, {
         headers: { Authorization: `Bearer ${config.MASTODON_ACCESS_TOKEN}` },
       });
+      return null;
     },
   },
   {
@@ -110,6 +116,7 @@ const probes: Probe[] = [
       // if the cache actually expired, so this doesn't reintroduce the
       // per-publish login the caching change removed.
       await getBlueskySession(config, fetchImpl);
+      return null;
     },
   },
   {
@@ -144,6 +151,7 @@ const probes: Probe[] = [
         fetchImpl,
         `https://graph.threads.net/v1.0/me?fields=id&access_token=${encodeURIComponent(config.THREADS_ACCESS_TOKEN as string)}`,
       );
+      return null;
     },
   },
   {
@@ -154,6 +162,7 @@ const probes: Probe[] = [
         fetchImpl,
         `https://graph.threads.net/v1.0/me?fields=id&access_token=${encodeURIComponent(config.THREADS_EN_ACCESS_TOKEN as string)}`,
       );
+      return null;
     },
   },
   {
