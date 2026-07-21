@@ -56,11 +56,12 @@ export async function syncYouTubeProfile(config: BackendConfig, backendDb: Backe
       { headers: auth },
     );
     const channelItem = channel.items?.[0];
-    const [today, week, period] = await Promise.all([
+    const reports = await Promise.allSettled([
       youtubeReport(fetchImpl, token, 1),
       youtubeReport(fetchImpl, token, 7),
       youtubeReport(fetchImpl, token, 30),
     ]);
+    const [today = {}, week = {}, period = {}] = reports.map((report) => (report.status === "fulfilled" ? report.value : {}));
     recordProfileSnapshot(backendDb, {
       platform: "youtube",
       account: channelItem?.snippet?.title ?? "channel",
@@ -80,6 +81,11 @@ export async function syncYouTubeProfile(config: BackendConfig, backendDb: Backe
       // live view delta without polling any text-post platforms.
       resolution: "hour",
     });
+    // The Data API and Analytics API are independently enabled Google
+    // services. Keep the live channel counter when Analytics is unavailable,
+    // then surface the failing report in analytics_sync for diagnosis.
+    const failed = reports.find((report): report is PromiseRejectedResult => report.status === "rejected");
+    if (failed) throw failed.reason;
   });
 }
 

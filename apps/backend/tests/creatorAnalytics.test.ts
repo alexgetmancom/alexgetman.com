@@ -7,6 +7,7 @@ import { creatorDashboard } from "../src/analytics/reports/dashboard.js";
 import { studioAnalyticsDashboard } from "../src/analytics/reports/studio-dashboard.js";
 import type { BackendDb } from "../src/db/client.js";
 import {
+  analyticsSync,
   creatorProfileSnapshots,
   creatorProfiles,
   metricSamples,
@@ -70,6 +71,46 @@ function insertPublishedVideo(backendDb: BackendDb, options: PublishedVideoOptio
 }
 
 describe("creator analytics", () => {
+  it("retains live YouTube channel counters when the Analytics API is unavailable", async () => {
+    await withDb(async (backendDb) => {
+      const config = loadConfig({ YOUTUBE_CLIENT_ID: "client", YOUTUBE_CLIENT_SECRET: "secret", YOUTUBE_REFRESH_TOKEN: "refresh" });
+      config.studio.modules.analytics = true;
+      config.studio.modules.video_posting = true;
+      config.studio.modules.youtube = true;
+      const fetchMock = (async (input: URL | RequestInfo) => {
+        const url = String(input);
+        if (url === "https://oauth2.googleapis.com/token") return new Response(JSON.stringify({ access_token: "access" }));
+        if (url.includes("youtube/v3/channels"))
+          return new Response(
+            JSON.stringify({
+              items: [{ snippet: { title: "Marux_play" }, statistics: { subscriberCount: "125", viewCount: "190783", videoCount: "119" } }],
+            }),
+          );
+        if (url.includes("youtubeanalytics.googleapis.com"))
+          return new Response(JSON.stringify({ error: { message: "service disabled" } }), { status: 403 });
+        throw new Error(`Unexpected request: ${url}`);
+      }) as typeof fetch;
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = fetchMock;
+      try {
+        await runAnalyticsCycle(config, backendDb, fetchMock);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+
+      expect(backendDb.db.select().from(creatorProfiles).where(eq(creatorProfiles.platform, "youtube")).get()?.dataJson).toMatchObject({
+        subscriberCount: 125,
+        viewCount: 190783,
+      });
+      expect(backendDb.db.select().from(creatorProfileSnapshots).where(eq(creatorProfileSnapshots.platform, "youtube")).all()).toHaveLength(
+        1,
+      );
+      expect(backendDb.db.select().from(analyticsSync).where(eq(analyticsSync.source, "youtube")).get()?.lastError).toContain(
+        "service disabled",
+      );
+    });
+  });
+
   it("builds a compact video dashboard from cached platform data", async () => {
     await withDb(async (backendDb) => {
       const now = new Date().toISOString();
