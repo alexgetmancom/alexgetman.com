@@ -58,13 +58,17 @@ describe("story publishers", () => {
   });
 
   it("uploads generated story paths as files, rather than treating them as Telegram file IDs", () => {
-    expect(telegramStoryUploadMedia("/data/story-media/draft-59-ru.jpg", "IMAGE")).toEqual({
+    expect(telegramStoryUploadMedia("/data/story-media/draft-59-ru.jpg", "IMAGE", { width: 0, height: 0, duration: 0 })).toEqual({
       type: "photo",
       file: "file:/data/story-media/draft-59-ru.jpg",
     });
-    expect(telegramStoryUploadMedia("/data/story-media/draft-59-en.mp4", "VIDEO")).toEqual({
+    expect(telegramStoryUploadMedia("/data/story-media/draft-59-en.mp4", "VIDEO", { width: 1080, height: 1920, duration: 59 })).toEqual({
       type: "video",
       file: "file:/data/story-media/draft-59-en.mp4",
+      width: 1080,
+      height: 1920,
+      duration: 59,
+      supportsStreaming: true,
     });
   });
 

@@ -88,7 +88,7 @@ async function publishChannelStory(media: PublishMediaItem, caption: string, con
         // A string is interpreted by mtcute as a Bot API/TDLib file ID, not a
         // filesystem path.  Keep the generated 1080x1920 file explicit so
         // Telegram uploads it verbatim (including its letterbox padding).
-        media: telegramStoryUploadMedia(uploadPath, media.type),
+        media: telegramStoryUploadMedia(uploadPath, media.type, metadata),
         caption,
         period: 86_400,
       }),
@@ -110,10 +110,21 @@ async function publishChannelStory(media: PublishMediaItem, caption: string, con
   }
 }
 
-export function telegramStoryUploadMedia(filePath: string, type: PublishMediaItem["type"]): { type: "photo" | "video"; file: string } {
+export function telegramStoryUploadMedia(
+  filePath: string,
+  type: PublishMediaItem["type"],
+  metadata: { width: number; height: number; duration: number },
+): { type: "photo" | "video"; file: string; width?: number; height?: number; duration?: number; supportsStreaming?: boolean } {
   // mtcute treats a bare string as a TDLib/Bot API file ID. The `file:`
   // prefix explicitly selects a local filesystem upload.
-  return { type: type === "VIDEO" ? "video" : "photo", file: `file:${filePath}` };
+  const file = `file:${filePath}`;
+  if (type !== "VIDEO") return { type: "photo", file };
+  // Without explicit width/height/duration, mtcute builds documentAttributeVideo
+  // with all three at 0. A regular chat video tolerates that, but Telegram's
+  // stories.sendStory validates them and rejects the upload with
+  // MEDIA_FILE_INVALID - this looked like the HEVC codec bug because both
+  // produce the same generic error text.
+  return { type: "video", file, width: metadata.width, height: metadata.height, duration: metadata.duration, supportsStreaming: true };
 }
 
 export function telegramStoryCaption(text: string): string {
