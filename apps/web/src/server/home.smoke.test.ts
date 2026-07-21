@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openBackendDb } from "../../../backend/src/db/client.js";
-import { postLocales, posts, publications } from "../../../backend/src/db/schema.js";
+import { knowledgeEntities, postEntityLinks, postLocales, postSources, posts, publications } from "../../../backend/src/db/schema.js";
 
 /**
  * A single end-to-end smoke test: it boots the real Astro dev server against
@@ -83,6 +83,24 @@ function seedDatabase(dbPath: string): void {
       },
     ])
     .run();
+  backendDb.db
+    .insert(postSources)
+    .values({
+      postId: 1,
+      url: "https://example.com/official-announcement",
+      labelRu: "Официально",
+      labelEn: "Official",
+      displayKind: "official",
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run();
+  const entity = backendDb.db
+    .insert(knowledgeEntities)
+    .values({ kind: "company", slug: "example-ai", titleRu: "Example AI", titleEn: "Example AI", createdAt: now, updatedAt: now })
+    .returning({ id: knowledgeEntities.id })
+    .get();
+  backendDb.db.insert(postEntityLinks).values({ postId: 1, entityId: entity.id, createdAt: now }).run();
   backendDb.close();
 }
 
@@ -159,6 +177,8 @@ describe("home page SSR smoke test", () => {
 
     expect(countRealTags(html, "h1")).toBe(1);
     expect(html).toContain('"@type":"NewsArticle"');
+    expect(html).toContain('"isBasedOn":["https://example.com/official-announcement"]');
+    expect(html).toContain('"url":"https://alexgetman.com/entities/company/example-ai/"');
   });
 
   it("serves the seeded post's image through the real media route", async () => {

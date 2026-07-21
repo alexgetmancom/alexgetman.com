@@ -27,6 +27,12 @@ const localUrl = `https://alexgetman.com/ru/${postId}/${slug}/`;
 const ogImage = postOgImagePath(item, "ru");
 const visualMedia = postVisualMedia(item, "ru");
 const primaryVideo = visualMedia?.type === "video" ? visualMedia : null;
+const sourceUrls = item.sources.map((source) => source.url);
+const about = item.entities.map((entity) => ({
+  "@type": "Thing",
+  name: entity.title_ru,
+  url: `https://alexgetman.com/entities/${entity.kind}/${entity.slug}/`,
+}));
 const schema = JSON.stringify({
   "@context": "https://schema.org",
   "@graph": [
@@ -50,6 +56,8 @@ const schema = JSON.stringify({
       },
       mainEntityOfPage: localUrl,
       image: [`https://alexgetman.com${ogImage}`],
+      ...(sourceUrls.length > 0 ? { isBasedOn: sourceUrls, citation: sourceUrls } : {}),
+      ...(about.length > 0 ? { about } : {}),
     },
     ...(primaryVideo
       ? [
