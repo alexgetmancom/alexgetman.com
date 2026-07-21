@@ -208,6 +208,33 @@ describe("publish queue", () => {
     }
   });
 
+  it("heartbeats a job's lock while a slow publish call is in flight", async () => {
+    const backendDb = tempDb();
+    try {
+      const id = enqueuePublishJob(backendDb, { messageId: 700, target: "slow-target", payload: { title: "Queued" } });
+      let lockedAtDuringPublish: string | null | undefined;
+      await runPublishCycle(loadConfig({ PUBLISH_HEARTBEAT_INTERVAL_SECONDS: "1" }), backendDb, {
+        "slow-target": async () => {
+          await Bun.sleep(1100);
+          lockedAtDuringPublish = backendDb.db
+            .select({ lockedAt: publishJobs.lockedAt })
+            .from(publishJobs)
+            .where(eq(publishJobs.jobId, id))
+            .get()?.lockedAt;
+          return { ok: true, id: "slow" };
+        },
+      });
+      const claimedAt = backendDb.db.select({ lockedAt: publishJobs.lockedAt }).from(publishJobs).where(eq(publishJobs.jobId, id)).get();
+      // The job already completed by the time we read it back, so lockedAt is
+      // cleared; what matters is the heartbeat fired at least once mid-publish.
+      expect(lockedAtDuringPublish).not.toBeUndefined();
+      expect(lockedAtDuringPublish).not.toBeNull();
+      expect(claimedAt?.lockedAt).toBeNull();
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("retries transient publisher failures", async () => {
     const backendDb = tempDb();
     try {

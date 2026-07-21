@@ -51,11 +51,13 @@ export async function runDeliveryPublishCycle(
           if (isTargetAuthBlocked(backendDb, job.target)) {
             throw new Error(`auth_circuit_open: ${job.target} has a failing credential, publish paused until it recovers`);
           }
-          const result = await withinPublishTimeout(config, job.target, async () => {
-            await adapter.validate(job);
-            const published = await adapter.publish(job);
-            return adapter.verify(job, published);
-          });
+          const result = await withHeartbeat(backendDb, job.jobId, config.PUBLISH_HEARTBEAT_INTERVAL_SECONDS, () =>
+            withinPublishTimeout(config, job.target, async () => {
+              await adapter.validate(job);
+              const published = await adapter.publish(job);
+              return adapter.verify(job, published);
+            }),
+          );
           completePublishJob(backendDb, config, job.jobId, result, job.lockId);
         } catch (error) {
           failPublishJob(backendDb, config, job.jobId, error, job.lockId);
@@ -133,6 +135,25 @@ export async function runDeliveryPublishCycle(
   }
   recordWorkerState(backendDb, "queue", { claimed: jobs.length });
   return jobs.length;
+}
+
+/** Keeps a claimed job's lock fresh while a slow provider call is in flight, so
+ * recoverStalePublishJobs doesn't reclaim it mid-publish and risk a duplicate
+ * post. Silence (a real crash) still goes stale after PUBLISH_LOCK_TIMEOUT_SECONDS
+ * with no heartbeat. Mirrors video-worker.ts's withHeartbeat for videoJobs. */
+async function withHeartbeat<T>(backendDb: BackendDb, jobId: number, intervalSeconds: number, work: () => Promise<T>): Promise<T> {
+  const timer = setInterval(() => {
+    backendDb.db
+      .update(publishJobs)
+      .set({ lockedAt: new Date().toISOString() })
+      .where(and(eq(publishJobs.jobId, jobId), eq(publishJobs.status, "publishing")))
+      .run();
+  }, intervalSeconds * 1000);
+  try {
+    return await work();
+  } finally {
+    clearInterval(timer);
+  }
 }
 
 /**

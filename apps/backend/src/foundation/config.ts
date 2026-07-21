@@ -85,6 +85,10 @@ const envSchema = z
     // have accepted the request while its response was lost.
     PUBLISH_JOB_TIMEOUT_SECONDS: z.coerce.number().int().min(1).max(3_600).default(240),
     PUBLISH_LOCK_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(900),
+    // Social publish jobs heartbeat (see publish-workflow.ts's withHeartbeat)
+    // while a slow provider call is in flight, touching lockedAt so
+    // recoverStalePublishJobs doesn't mistake "still working" for "worker crashed".
+    PUBLISH_HEARTBEAT_INTERVAL_SECONDS: z.coerce.number().int().positive().default(180),
     PUBLISH_MAX_ATTEMPTS: z.coerce.number().int().positive().default(4),
     PUBLISH_BACKOFF_BASE_SECONDS: z.coerce.number().int().positive().default(60),
     PUBLISH_BACKOFF_MAX_SECONDS: z.coerce.number().int().positive().default(3600),
@@ -109,10 +113,9 @@ const envSchema = z
     STUDIO_MEDIA_MAX_BYTES: z.coerce.number().int().positive().max(2_000_000_000).default(1_000_000_000),
     VIDEO_MEDIA_DIR: z.string().default("/data/video-media"),
     VIDEO_MAX_BYTES: z.coerce.number().int().positive().max(2_000_000_000).default(1_000_000_000),
-    // Video jobs heartbeat (see video-worker.ts's withHeartbeat) while an upload
-    // is in flight, so unlike the social pipeline's PUBLISH_LOCK_TIMEOUT_SECONDS
-    // (which has to cover a whole worker-silence window with no heartbeat), this
-    // only has to be a few missed heartbeats wide to safely detect a crash.
+    // Video jobs heartbeat (see video-worker.ts's withHeartbeat) at a tighter
+    // interval than the social pipeline, so this lock timeout only has to be a
+    // few missed heartbeats wide to safely detect a crash.
     VIDEO_LOCK_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(120),
     VIDEO_HEARTBEAT_INTERVAL_SECONDS: z.coerce.number().int().positive().default(30),
     // VIDEO_PREPARE_LEAD_MINUTES / VIDEO_REMINDER_MINUTES / VIDEO_MEDIA_RETENTION_HOURS

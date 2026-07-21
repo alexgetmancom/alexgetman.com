@@ -4,6 +4,8 @@ import { requestJson } from "../../foundation/http.js";
 import type { PublishResult } from "../../publishing/errors.js";
 import { payloadMedia, payloadText, payloadTitle } from "./payload.js";
 
+type GitHubGraphQLError = { message?: string; type?: string };
+
 type GitHubDiscussionResponse = {
   data?: {
     createDiscussion?: {
@@ -13,8 +15,15 @@ type GitHubDiscussionResponse = {
       };
     };
   };
-  errors?: unknown[];
+  errors?: GitHubGraphQLError[];
 };
+
+// GitHub's GraphQL endpoint always answers HTTP 200, even when the mutation
+// itself failed - errors ride inside the body instead of the status code, so
+// they never reach requestJson's throw path or the shared HTTP classifier.
+// Each error carries its own `type`; only genuinely transient ones should be
+// retried; https://docs.github.com/en/graphql/overview/handling-errors.
+const retryableGraphQLErrorTypes = new Set(["RATE_LIMITED", "INTERNAL", "SERVICE_UNAVAILABLE"]);
 
 export async function publishToGitHubDiscussion(
   payload: Record<string, unknown>,
@@ -65,7 +74,17 @@ export async function publishToGitHubDiscussion(
     }),
   });
   if (data.errors?.length) {
-    return { ok: false, error: JSON.stringify(data.errors), retryable: false };
+    // completePublishJob only re-queues a failed PublishResult when it carries
+    // external ids to reconcile against (see queue.ts); a discussion that never
+    // got created has none, so a returned `{ ok: false }` here would always be
+    // terminal regardless of `retryable`. Throwing instead routes through
+    // failPublishJob's normal retry/backoff policy for the transient types.
+    const retryable = data.errors.some((error) => error.type != null && retryableGraphQLErrorTypes.has(error.type));
+    // The "temporarily" marker steers classifyPublishError (errors.ts) to the
+    // "transient" class so this gets the normal backoff budget rather than the
+    // single fallback retry "unknown" errors get.
+    if (retryable) throw new Error(`GitHub GraphQL error, temporarily unavailable: ${JSON.stringify(data.errors)}`);
+    return { ok: false, error: `GitHub GraphQL error: ${JSON.stringify(data.errors)}`, retryable: false };
   }
   const discussion = data.data?.createDiscussion?.discussion;
   return {

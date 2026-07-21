@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import type { BackendConfig } from "../../foundation/config.js";
-import { requestJson } from "../../foundation/http.js";
+import { ExternalHttpError, requestJson } from "../../foundation/http.js";
 import type { PublishResult } from "../../publishing/errors.js";
 import { guessContentType, payloadMedia, payloadText, splitText } from "./payload.js";
 
@@ -8,6 +8,46 @@ type Session = {
   did: string;
   accessJwt: string;
 };
+
+// Every publish call used to log in fresh via createSession, which is an
+// extra request-and-a-half on the critical path and burns Bluesky's login
+// rate limit if a burst of posts go out together. Access JWTs are valid for
+// ~2h; cache well under that and force a refresh on any 401 so a revoked or
+// rotated app password is caught immediately instead of failing silently
+// until the TTL expires.
+const SESSION_TTL_MS = 50 * 60 * 1000;
+let cachedSession: { key: string; session: Session; expiresAt: number } | null = null;
+
+async function getBlueskySession(config: BackendConfig, fetchImpl: typeof fetch, forceRefresh = false): Promise<Session> {
+  const key = `${config.BLUESKY_HANDLE}:${config.BLUESKY_APP_PASSWORD}`;
+  if (!forceRefresh && cachedSession && cachedSession.key === key && cachedSession.expiresAt > Date.now()) {
+    return cachedSession.session;
+  }
+  const session = await requestJson<Session>(fetchImpl, "https://bsky.social/xrpc/com.atproto.server.createSession", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ identifier: config.BLUESKY_HANDLE, password: config.BLUESKY_APP_PASSWORD }),
+  });
+  cachedSession = { key, session, expiresAt: Date.now() + SESSION_TTL_MS };
+  return session;
+}
+
+/** Runs an authenticated Bluesky call with the cached session, refreshing once and
+ * retrying if the token was rejected (expired early, revoked, or rotated elsewhere). */
+async function withBlueskySession<T>(
+  config: BackendConfig,
+  fetchImpl: typeof fetch,
+  session: Session,
+  run: (session: Session) => Promise<T>,
+): Promise<{ result: T; session: Session }> {
+  try {
+    return { result: await run(session), session };
+  } catch (error) {
+    if (!(error instanceof ExternalHttpError) || error.status !== 401) throw error;
+    const refreshed = await getBlueskySession(config, fetchImpl, true);
+    return { result: await run(refreshed), session: refreshed };
+  }
+}
 
 type BlobResponse = {
   blob?: Record<string, unknown>;
@@ -55,25 +95,24 @@ export async function publishToBluesky(
           retryable: true,
         };
   }
-  const session = await requestJson<Session>(fetchImpl, "https://bsky.social/xrpc/com.atproto.server.createSession", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ identifier: config.BLUESKY_HANDLE, password: config.BLUESKY_APP_PASSWORD }),
-  });
+  let session = await getBlueskySession(config, fetchImpl);
 
   const images: Record<string, unknown>[] = [];
   for (const item of payloadMedia(payload)) {
     if (item.type !== "IMAGE" || !item.localPath) continue;
     const bytes = await fs.promises.readFile(item.localPath);
-    const uploaded = await requestJson<BlobResponse>(fetchImpl, "https://bsky.social/xrpc/com.atproto.repo.uploadBlob", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${session.accessJwt}`,
-        "Content-Type": guessContentType(item.localPath),
-      },
-      body: bytes,
-    });
-    if (uploaded.blob) images.push({ alt: "", image: uploaded.blob });
+    const uploadResult = await withBlueskySession(config, fetchImpl, session, (activeSession) =>
+      requestJson<BlobResponse>(fetchImpl, "https://bsky.social/xrpc/com.atproto.repo.uploadBlob", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${activeSession.accessJwt}`,
+          "Content-Type": guessContentType(item.localPath as string),
+        },
+        body: bytes,
+      }),
+    );
+    session = uploadResult.session;
+    if (uploadResult.result.blob) images.push({ alt: "", image: uploadResult.result.blob });
     if (images.length >= 4) break;
   }
 
@@ -91,14 +130,18 @@ export async function publishToBluesky(
     };
     if (index === 0 && images.length > 0) record.embed = { $type: "app.bsky.embed.images", images };
     if (root && parent) record.reply = { root, parent };
-    const created = await requestJson<CreateRecordResponse>(fetchImpl, "https://bsky.social/xrpc/com.atproto.repo.createRecord", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${session.accessJwt}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ repo: session.did, collection: "app.bsky.feed.post", record }),
-    });
+    const createResult = await withBlueskySession(config, fetchImpl, session, (activeSession) =>
+      requestJson<CreateRecordResponse>(fetchImpl, "https://bsky.social/xrpc/com.atproto.repo.createRecord", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${activeSession.accessJwt}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ repo: activeSession.did, collection: "app.bsky.feed.post", record }),
+      }),
+    );
+    session = createResult.session;
+    const created = createResult.result;
     if (!created.uri || !created.cid) continue;
     const ref = { uri: created.uri, cid: created.cid };
     if (!root) root = ref;
