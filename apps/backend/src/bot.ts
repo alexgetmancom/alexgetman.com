@@ -118,7 +118,7 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
   });
 }
 
-function isAdmin(config: BackendConfig, userId: number | undefined): boolean {
+export function isAdmin(config: BackendConfig, userId: number | undefined): boolean {
   if (!userId) return false;
   return config.ADMIN_IDS.includes(userId);
 }
