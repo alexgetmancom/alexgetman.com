@@ -25,6 +25,7 @@
     overlayTick,
     shareCopied,
     readingVisible,
+    gallerySubIndex = 0,
     video = $bindable(null),
     audio = $bindable(null),
     progressFill = $bindable(null),
@@ -38,6 +39,7 @@
     onvideotimeupdate,
     onvideoended,
     onvideowaiting,
+    onselectgallery,
   }: {
     post: PlayerPost;
     ui: StoryUi;
@@ -47,6 +49,7 @@
     overlayTick: number;
     shareCopied: boolean;
     readingVisible: boolean;
+    gallerySubIndex?: number;
     video?: HTMLVideoElement | null;
     audio?: HTMLAudioElement | null;
     progressFill?: HTMLElement | null;
@@ -60,11 +63,18 @@
     onvideotimeupdate: () => void;
     onvideoended: () => void;
     onvideowaiting: () => void;
+    onselectgallery?: (index: number) => void;
   } = $props();
 
   const isVideo = $derived(post.mediaType === "video");
   const audioLabel = $derived(autoplayMuted ? ui.tapForSound : muted ? ui.muted : ui.mute);
   let videoFailed = $state(false);
+
+  /* Несколько картинок в посте (пост целиком не видео) → листаем их по очереди,
+     как отдельные слайды, прежде чем перейти к следующему посту. */
+  const gallerySequence = $derived(isVideo ? [] : post.gallery || []);
+  const hasGallerySequence = $derived(gallerySequence.length >= 2);
+  const activeGalleryMedia = $derived(hasGallerySequence ? gallerySequence[Math.min(gallerySubIndex, gallerySequence.length - 1)] : null);
 
   /* Видео не загрузилось → показываем постер/фолбек-картинку вместо него. */
   function onVideoError(): void {
@@ -102,9 +112,9 @@
     >
       {#if post.image && (!isVideo || videoFailed)}
         <img
-          src={videoFailed ? post.fallbackImage : post.image}
-          srcset={videoFailed ? undefined : post.imageSrcSet || undefined}
-          alt={post.title}
+          src={activeGalleryMedia ? activeGalleryMedia.path || post.image : videoFailed ? post.fallbackImage : post.image}
+          srcset={activeGalleryMedia || videoFailed ? undefined : post.imageSrcSet || undefined}
+          alt={`${post.title}${hasGallerySequence ? ` — ${gallerySubIndex + 1}/${gallerySequence.length}` : ""}`}
           loading="eager"
           fetchpriority="high"
           decoding="async"
@@ -135,7 +145,17 @@
     {#if post.gallery.length >= 2}
       <div class="story-media-gallery" aria-label="Post media">
         {#each post.gallery as media, index}
-          <a href={media.path} target="_blank" rel="noopener noreferrer">
+          <a
+            href={media.path}
+            target="_blank"
+            rel="noopener noreferrer"
+            class:is-active={hasGallerySequence && index === gallerySubIndex}
+            onclick={(event) => {
+              if (!hasGallerySequence || media.type !== "image") return;
+              event.preventDefault();
+              onselectgallery?.(index);
+            }}
+          >
             <img
               src={media.type === "video" ? media.poster || media.path : media.path}
               alt={`${post.title} — ${index + 1}`}
@@ -331,6 +351,12 @@
     border: 1px solid rgba(255, 255, 255, 0.6);
     border-radius: 0.32rem;
     background: #000;
+    transition: border-color 0.16s ease, box-shadow 0.16s ease;
+  }
+
+  .story-media-gallery a.is-active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.35);
   }
 
   .story-media-gallery img {

@@ -1,7 +1,7 @@
 import type { StoryPost } from "./types";
 
 type StoryProgressControllerOptions = {
-  video: HTMLVideoElement | null;
+  getVideo: () => HTMLVideoElement | null;
   currentProgressFill: HTMLElement | null;
   posts: StoryPost[];
   activeIndex: () => number;
@@ -11,7 +11,7 @@ type StoryProgressControllerOptions = {
 };
 
 export function createStoryProgressController({
-  video,
+  getVideo,
   currentProgressFill,
   posts,
   activeIndex,
@@ -150,6 +150,7 @@ export function createStoryProgressController({
 
   function handleVideoPlaying(): void {
     const post = posts[activeIndex()];
+    const video = getVideo();
     if (!video || !post || post.mediaType !== "video") return;
     clearVideoProgressFallback();
     if (Number.isFinite(video.duration) && video.duration > 0) {
@@ -169,6 +170,7 @@ export function createStoryProgressController({
 
   function handleVideoTimeUpdate(): void {
     const post = posts[activeIndex()];
+    const video = getVideo();
     if (!video || !post || post.mediaType !== "video" || !Number.isFinite(video.duration) || video.duration <= 0) return;
     videoDriven = true;
     progressActive = true;

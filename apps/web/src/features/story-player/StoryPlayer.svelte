@@ -33,6 +33,7 @@
   import { createStoryViewTracker } from "../../scripts/story-player/analytics";
   import { loadGiscusDiscussion } from "../../scripts/story-player/discussion";
   import { setDiscussionVisibility } from "../../scripts/story-player/discussion-state";
+  import { advanceGallerySequence } from "../../scripts/story-player/gallery-state";
   import { preloadAdjacentMedia } from "../../scripts/story-player/media";
   import { readMutedPreference } from "../../scripts/story-player/preferences";
   import { createStoryProgressController } from "../../scripts/story-player/progress";
@@ -71,9 +72,13 @@
   let shareCopied = $state(false);
   let overlayTick = $state(0); // перезапускает анимацию play/pause-оверлея
   let debugEnabled = $state(false);
+  let gallerySubIndex = $state(0); // текущий слайд, если у поста несколько картинок
 
   const activePost = $derived(posts[active] ?? posts[0]);
   const paused = $derived(manualPaused);
+  /* Несколько картинок у поста-не-видео → листаем их по очереди перед
+     переходом к следующему посту (см. advanceStory). */
+  const gallerySequence = $derived(activePost?.mediaType === "video" ? [] : activePost?.gallery || []);
   const visibleIndexes = $derived.by(() => {
     const visible = posts
       .map((post, index) => ({ post, index }))
@@ -116,6 +121,7 @@
   function goTo(index: number, options: { keepProgressIdle?: boolean } = {}): void {
     active = ((index % posts.length) + posts.length) % posts.length;
     expanded = false;
+    gallerySubIndex = 0;
     audioState = resetForNewStory(audioState);
     if (readingVisible) setReading(false);
     setDiscussion(false);
@@ -130,6 +136,25 @@
 
   function navigate(direction: number): void {
     goTo(nextVisibleIndex(direction), { keepProgressIdle: true });
+    progress?.resumeAfterManualNavigation();
+  }
+
+  /** Таймер прогресса истёк: если у поста ещё есть непоказанные картинки —
+      листаем на следующую и просто перезапускаем полосу прогресса, иначе —
+      обычный переход к следующему посту. */
+  function advanceStory(): void {
+    const next = advanceGallerySequence(gallerySubIndex, gallerySequence.length);
+    if (next.advancePost) {
+      goTo(nextVisibleIndex(1));
+      return;
+    }
+    gallerySubIndex = next.subIndex;
+    progress?.resetForStory();
+  }
+
+  function selectGalleryImage(index: number): void {
+    if (index === gallerySubIndex || index < 0 || index >= gallerySequence.length) return;
+    gallerySubIndex = index;
     progress?.resumeAfterManualNavigation();
   }
 
@@ -357,12 +382,12 @@
     debugEnabled = new URLSearchParams(window.location.search).has("debug");
     audioState = initialVideoAudioState(readMutedPreference());
     progress = createStoryProgressController({
-      video,
+      getVideo: () => video,
       currentProgressFill: progressFill,
       posts: posts as unknown as StoryPost[],
       activeIndex: () => active,
       isPaused: () => paused,
-      onAdvance: () => goTo(nextVisibleIndex(1)),
+      onAdvance: () => advanceStory(),
       intervalMs: storyIntervalMs,
     });
     viewTracker = createStoryViewTracker({ activeIndex: () => active, normalizedPath });
@@ -443,6 +468,7 @@
       {overlayTick}
       {shareCopied}
       readingVisible={readingVisible}
+      {gallerySubIndex}
       bind:video
       bind:audio
       bind:progressFill
@@ -456,6 +482,7 @@
       onvideotimeupdate={onVideoTimeUpdate}
       onvideoended={() => progress?.handleVideoEnded()}
       onvideowaiting={() => progress?.handleVideoWaiting()}
+      onselectgallery={selectGalleryImage}
     />
     <StoryContext
       post={activePost}
@@ -478,7 +505,16 @@
   </div>
   {#if debugEnabled}
     <pre class="story-debug-panel">{JSON.stringify(
-        { active, postId: activePost?.id, paused, manualPaused, mediaType: activePost?.mediaType, url: activePost?.url },
+        {
+          active,
+          postId: activePost?.id,
+          paused,
+          manualPaused,
+          mediaType: activePost?.mediaType,
+          url: activePost?.url,
+          gallerySubIndex,
+          gallerySequenceLength: gallerySequence.length,
+        },
         null,
         2,
       )}</pre>

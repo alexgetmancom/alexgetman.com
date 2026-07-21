@@ -64,7 +64,7 @@ describe("story player browser behavior", () => {
     const posts = [post({ image: "/media/posts/example.mp4", mediaType: "video" })];
     let advances = 0;
     const progress = createStoryProgressController({
-      video,
+      getVideo: () => video,
       currentProgressFill: null,
       posts,
       activeIndex: () => 0,
@@ -80,6 +80,35 @@ describe("story player browser behavior", () => {
     expect(progress.debugState().advanceTimer).toBeNull();
     await Bun.sleep(400);
     expect(advances).toBe(0);
+  });
+
+  it("tracks video completion even when the <video> element mounts after the controller is created", async () => {
+    const window = installDom();
+    const posts = [post({ image: "/media/posts/example.mp4", mediaType: "video" })];
+    let currentVideo: HTMLVideoElement | null = null;
+    let advances = 0;
+    const progress = createStoryProgressController({
+      getVideo: () => currentVideo,
+      currentProgressFill: null,
+      posts,
+      activeIndex: () => 0,
+      isPaused: () => false,
+      onAdvance: () => advances++,
+      intervalMs: 250,
+    });
+
+    progress.resetForStory();
+    // Svelte's {#if isVideo} block mounts a fresh <video> node after the controller
+    // already exists — getVideo() must observe it, unlike a value captured once.
+    currentVideo = window.document.createElement("video") as unknown as HTMLVideoElement;
+    Object.defineProperty(currentVideo, "duration", { value: 10, configurable: true });
+    Object.defineProperty(currentVideo, "currentTime", { value: 0, configurable: true });
+
+    progress.handleVideoPlaying();
+    await Bun.sleep(400);
+    expect(advances).toBe(0);
+    progress.handleVideoEnded();
+    expect(advances).toBe(1);
   });
 
   it("preloads a relative video URL as a public absolute-path URL", () => {
@@ -117,7 +146,7 @@ describe("story player browser behavior", () => {
     installDom();
     let advances = 0;
     const progress = createStoryProgressController({
-      video: null,
+      getVideo: () => null,
       currentProgressFill: null,
       posts: [post()],
       activeIndex: () => 0,
