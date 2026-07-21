@@ -177,7 +177,7 @@ async function notify(text: string, deploymentTarget: DeploymentTarget, release?
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ chat_id: config.notificationChatId, text, ...(reply_markup ? { reply_markup } : {}) }),
     signal: AbortSignal.timeout(10_000),
-  }).catch(() => undefined);
+  }).catch((error) => console.error(JSON.stringify({ level: "error", message: "deploy notify failed", error: String(error) })));
 }
 
 async function withDeploymentLock<T>(operation: () => Promise<T>): Promise<T> {

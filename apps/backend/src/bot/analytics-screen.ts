@@ -146,28 +146,30 @@ export async function showAnalyticsDashboard(
 /** Refreshes only the currently open dashboard for each owner. The interface
  * binding prevents hourly analytics collection from creating chat noise. */
 export async function refreshTelegramAnalyticsDashboards(bot: Bot, backendDb: BackendDb, config: BackendConfig): Promise<number> {
-  let refreshed = 0;
-  for (const card of telegramAnalyticsDashboards(backendDb)) {
-    const section = card.section === "overview" && !showOverview(config) ? defaultAnalyticsSection(config) : card.section;
-    const locale = botLocale(backendDb, card.adminId);
-    const dashboard = studioServices(backendDb, config).analytics.dashboard(section, card.days, locale);
-    try {
-      await bot.api.editMessageText(
-        card.chatId,
-        card.messageId,
-        { html: dashboard.richHtml },
-        {
-          reply_markup: analyticsKeyboard(config, locale, section, card.days),
-        },
-      );
-      refreshed += 1;
-    } catch (error) {
-      // The screen may have been superseded or deleted. It is harmless: the
-      // next explicit Analytics click records a new binding.
-      if (!String(error).includes("message is not modified")) console.warn("Analytics dashboard refresh failed:", error);
-    }
-  }
-  return refreshed;
+  const results = await Promise.all(
+    telegramAnalyticsDashboards(backendDb).map(async (card) => {
+      const section = card.section === "overview" && !showOverview(config) ? defaultAnalyticsSection(config) : card.section;
+      const locale = botLocale(backendDb, card.adminId);
+      const dashboard = studioServices(backendDb, config).analytics.dashboard(section, card.days, locale);
+      try {
+        await bot.api.editMessageText(
+          card.chatId,
+          card.messageId,
+          { html: dashboard.richHtml },
+          {
+            reply_markup: analyticsKeyboard(config, locale, section, card.days),
+          },
+        );
+        return true;
+      } catch (error) {
+        // The screen may have been superseded or deleted. It is harmless: the
+        // next explicit Analytics click records a new binding.
+        if (!String(error).includes("message is not modified")) console.warn("Analytics dashboard refresh failed:", error);
+        return false;
+      }
+    }),
+  );
+  return results.filter(Boolean).length;
 }
 
 function analyticsKeyboard(

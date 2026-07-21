@@ -12,6 +12,7 @@ export function allowPublicRequest(
   const current = buckets.get(key);
   if (!current || current.resetAt <= now) {
     buckets.set(key, { count: 1, resetAt: now + windowSeconds * 1000 });
+    for (const [otherKey, bucket] of buckets) if (bucket.resetAt <= now) buckets.delete(otherKey);
     return { allowed: true, retryAfter: windowSeconds };
   }
   const retryAfter = Math.max(1, Math.ceil((current.resetAt - now) / 1000));
