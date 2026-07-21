@@ -30,7 +30,16 @@ const port = 4400 + Math.floor(Math.random() * 400);
 const host = "127.0.0.1";
 const baseUrl = `http://${host}:${port}`;
 
+/** Smallest valid 1x1 JPEG — enough for the media route to read real bytes off disk. */
+const FIXTURE_JPEG = Buffer.from(
+  "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAj/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k=",
+  "base64",
+);
+/** Deterministic filename `existingSiteImage`/`site-read-model` produce for post 1, locale en, media index 0. */
+const FIXTURE_IMAGE_PATH = "media/posts/1-en-0.jpg";
+
 let dbDir: string;
+let publicDir: string;
 let server: ReturnType<typeof Bun.spawn> | undefined;
 
 function seedDatabase(dbPath: string): void {
@@ -58,6 +67,7 @@ function seedDatabase(dbPath: string): void {
         locale: "en",
         slug: "smoke-test-post",
         text: "Smoke test post body.\nSecond paragraph.",
+        mediaJson: [{ type: "photo", file_id: "smoke-test-photo" }],
         siteEnabled: 1,
         publishedAt: now,
         updatedAt: now,
@@ -108,9 +118,13 @@ beforeAll(async () => {
   dbDir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-home-smoke-"));
   const dbPath = path.join(dbDir, "pipeline.db");
   seedDatabase(dbPath);
+  publicDir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-home-smoke-media-"));
+  const imagePath = path.join(publicDir, FIXTURE_IMAGE_PATH);
+  fs.mkdirSync(path.dirname(imagePath), { recursive: true });
+  fs.writeFileSync(imagePath, FIXTURE_JPEG);
   server = Bun.spawn(["bun", "--bun", astroBin, "dev", "--port", String(port), "--host", host], {
     cwd: projectRoot,
-    env: { ...process.env, PIPELINE_DB: dbPath, ENABLE_WORKERS: "0" },
+    env: { ...process.env, PIPELINE_DB: dbPath, SITE_PUBLIC_DIR: publicDir, ENABLE_WORKERS: "0" },
     stdout: "ignore",
     stderr: "ignore",
   });
@@ -121,6 +135,7 @@ afterAll(async () => {
   server?.kill();
   await stopAnyDaemon();
   fs.rmSync(dbDir, { recursive: true, force: true });
+  fs.rmSync(publicDir, { recursive: true, force: true });
 });
 
 describe("home page SSR smoke test", () => {
@@ -144,5 +159,15 @@ describe("home page SSR smoke test", () => {
 
     expect(countRealTags(html, "h1")).toBe(1);
     expect(html).toContain('"@type":"NewsArticle"');
+  });
+
+  it("serves the seeded post's image through the real media route", async () => {
+    const html = await (await fetch(baseUrl)).text();
+    expect(html).toContain(`/${FIXTURE_IMAGE_PATH}`);
+
+    const response = await fetch(`${baseUrl}/${FIXTURE_IMAGE_PATH}`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toStartWith("image/");
+    expect((await response.arrayBuffer()).byteLength).toBe(FIXTURE_JPEG.byteLength);
   });
 });
