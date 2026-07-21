@@ -1,8 +1,8 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import type { Bot } from "grammy";
 import { markSynced } from "../../analytics/snapshots/creator-store.js";
 import type { BackendDb } from "../../db/client.js";
-import { analyticsSync, posts } from "../../db/schema.js";
+import { analyticsSync, knowledgeEntities, postEntityLinks, posts } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { requestJson } from "../../foundation/http.js";
 import { log } from "../../foundation/logger.js";
@@ -41,6 +41,14 @@ export async function sendDailyEditorialInbox(
       return post.postId != null && text ? [{ id: post.postId, date: post.date, text: text.slice(0, 900) }] : [];
     });
   if (material.length === 0) return false;
+  const clusters = backendDb.db
+    .select({ slug: knowledgeEntities.slug, title: knowledgeEntities.titleRu, count: sql<number>`count(*)` })
+    .from(postEntityLinks)
+    .innerJoin(knowledgeEntities, eq(knowledgeEntities.id, postEntityLinks.entityId))
+    .groupBy(knowledgeEntities.id)
+    .orderBy(desc(sql<number>`count(*)`))
+    .limit(12)
+    .all();
 
   try {
     const response = await requestJson<ChatCompletion>(fetchImpl, "https://api.deepseek.com/v1/chat/completions", {
@@ -54,13 +62,14 @@ export async function sendDailyEditorialInbox(
             role: "system",
             content: [
               "You are an editorial research assistant for a solo AI news creator.",
-              "Using only the supplied published posts, propose at most three useful next pieces: a deep review, a practical guide, an official-data update, or a weekly roundup.",
+              "Using only the supplied published posts and entity clusters, propose at most three useful next pages: a hub update, a page that answers one real question, a comparison, a practical guide, an official-data update, or a weekly roundup.",
+              "Prefer one concrete query-shaped page over generic SEO. A cluster is not enough by itself: name the question the page would answer.",
               "Do not invent facts, demand a conclusion, write publication copy, or use generic SEO ideas.",
               "Each reason must name the concrete cluster or gap found in the supplied posts.",
               'Return strict JSON only: {"items":[{"kind":"review|guide|data|roundup","title":"...","reason":"...","posts":[1,2]}]}.',
             ].join("\n"),
           },
-          { role: "user", content: JSON.stringify({ posts: material }) },
+          { role: "user", content: JSON.stringify({ posts: material, clusters }) },
         ],
         response_format: { type: "json_object" },
         signal: AbortSignal.timeout(45_000),

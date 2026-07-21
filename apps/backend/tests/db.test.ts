@@ -3,9 +3,10 @@ import { describe, expect, it } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { eq } from "drizzle-orm";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import { baselineDrizzleMigrations, migrationStatus, openBackendDb } from "../src/db/client.js";
-import { draftSources, postSources } from "../src/db/schema.js";
+import { draftSources, knowledgeEntities, postEntityLinks, postSources } from "../src/db/schema.js";
 import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
 
 describe("openBackendDb", () => {
@@ -186,6 +187,30 @@ describe("openBackendDb", () => {
       ]);
       expect(backendDb.db.select({ url: postSources.url }).from(postSources).all()).toEqual([{ url: "https://example.com/announcement" }]);
       expect(migrationStatus(backendDb.sqlite)).toHaveLength(23);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("links a published model to its company without an editor confirmation", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const draftId = createDraftFromMessage(backendDb, 42, {
+        text: "Claude received a new update",
+        textEn: "Claude received a new update",
+        entities: [],
+        media: [],
+      });
+      const postId = publishDraftToQueue(backendDb, draftId);
+      const linked = backendDb.db
+        .select({ slug: knowledgeEntities.slug })
+        .from(postEntityLinks)
+        .innerJoin(knowledgeEntities, eq(knowledgeEntities.id, postEntityLinks.entityId))
+        .where(eq(postEntityLinks.postId, postId))
+        .all()
+        .map((entity) => entity.slug)
+        .sort();
+      expect(linked).toEqual(["anthropic", "claude"]);
     } finally {
       backendDb.close();
     }
