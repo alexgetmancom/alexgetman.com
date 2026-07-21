@@ -18,7 +18,7 @@ type Session = {
 const SESSION_TTL_MS = 50 * 60 * 1000;
 let cachedSession: { key: string; session: Session; expiresAt: number } | null = null;
 
-async function getBlueskySession(config: BackendConfig, fetchImpl: typeof fetch, forceRefresh = false): Promise<Session> {
+export async function getBlueskySession(config: BackendConfig, fetchImpl: typeof fetch, forceRefresh = false): Promise<Session> {
   const key = `${config.BLUESKY_HANDLE}:${config.BLUESKY_APP_PASSWORD}`;
   if (!forceRefresh && cachedSession && cachedSession.key === key && cachedSession.expiresAt > Date.now()) {
     return cachedSession.session;

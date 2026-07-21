@@ -5,6 +5,7 @@ import { recordWorkerState } from "../foundation/runtime/worker-state.js";
 import { type AlertPort, deliverPendingAlerts } from "./alerts.js";
 import { updateCredentialChecks } from "./credentials.js";
 import { recordPublicationFailures } from "./failures.js";
+import { checkTokenHealth } from "./token-health.js";
 
 const toMb = (bytes: number) => Math.round(bytes / 1024 / 1024);
 
@@ -28,6 +29,7 @@ export async function runObservabilityCycle(
 ): Promise<{ alerts: number; credentials: number }> {
   logMemoryUsage();
   const credentials = updateCredentialChecks(config, backendDb);
+  await checkTokenHealth(config, backendDb);
   recordPublicationFailures(config, backendDb);
   const alerts = await deliverPendingAlerts(config, backendDb, alertsPort);
   recordWorkerState(backendDb, "observability", { alerts, credentials });
