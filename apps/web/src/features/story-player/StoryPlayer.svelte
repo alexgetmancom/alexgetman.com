@@ -20,386 +20,386 @@
   СЮДА НЕЛЬЗЯ: SEO-разметку (h1/canonical/JSON-LD — слой Astro), запросы к БД.
 ============================================================================= -->
 <script lang="ts">
-  import { onMount, tick } from "svelte";
-  import {
-    applyMutePreference,
-    autoplayRejected,
-    beginAutoplay,
-    clearAutoplayMute,
-    confirmFirstFrame,
-    initialVideoAudioState,
-    resetForNewStory,
-  } from "../../scripts/story-player/audio-state";
-  import { createStoryViewTracker } from "../../scripts/story-player/analytics";
-  import { loadGiscusDiscussion } from "../../scripts/story-player/discussion";
-  import { setDiscussionVisibility } from "../../scripts/story-player/discussion-state";
-  import { advanceGallerySequence } from "../../scripts/story-player/gallery-state";
-  import { preloadAdjacentMedia } from "../../scripts/story-player/media";
-  import { readMutedPreference } from "../../scripts/story-player/preferences";
-  import { createStoryProgressController } from "../../scripts/story-player/progress";
-  import type { StoryPost } from "../../scripts/story-player/types";
-  import { desktopMediaQuery, giscusConfig, storyIntervalMs, swipeThresholdPx, wheelCooldownMs } from "./config";
-  import type { StoryUi } from "./i18n";
-  import type { PlayerPost } from "./payload";
-  import StoryContext from "./StoryContext.svelte";
-  import StoryRail from "./StoryRail.svelte";
-  import StoryVisual from "./StoryVisual.svelte";
+import { onMount, tick } from "svelte";
+import { createStoryViewTracker } from "../../scripts/story-player/analytics";
+import {
+  applyMutePreference,
+  autoplayRejected,
+  beginAutoplay,
+  clearAutoplayMute,
+  confirmFirstFrame,
+  initialVideoAudioState,
+  resetForNewStory,
+} from "../../scripts/story-player/audio-state";
+import { loadGiscusDiscussion } from "../../scripts/story-player/discussion";
+import { setDiscussionVisibility } from "../../scripts/story-player/discussion-state";
+import { advanceGallerySequence } from "../../scripts/story-player/gallery-state";
+import { preloadAdjacentMedia } from "../../scripts/story-player/media";
+import { readMutedPreference } from "../../scripts/story-player/preferences";
+import { createStoryProgressController } from "../../scripts/story-player/progress";
+import type { StoryPost } from "../../scripts/story-player/types";
+import { desktopMediaQuery, giscusConfig, storyIntervalMs, swipeThresholdPx, wheelCooldownMs } from "./config";
+import type { StoryUi } from "./i18n";
+import type { PlayerPost } from "./payload";
+import StoryContext from "./StoryContext.svelte";
+import StoryRail from "./StoryRail.svelte";
+import StoryVisual from "./StoryVisual.svelte";
 
-  let {
-    posts,
-    ui,
-    locale,
-    initialPaused = false,
-  }: { posts: PlayerPost[]; ui: StoryUi; locale: "en" | "ru"; initialPaused?: boolean } = $props();
+let {
+  posts,
+  ui,
+  locale,
+  initialPaused = false,
+}: { posts: PlayerPost[]; ui: StoryUi; locale: "en" | "ru"; initialPaused?: boolean } = $props();
 
-  /* ------------------------------- Состояние ------------------------------- */
-  /* Проп initialPaused читается ровно один раз — это стартовое значение,
+/* ------------------------------- Состояние ------------------------------- */
+/* Проп initialPaused читается ровно один раз — это стартовое значение,
      дальше паузой управляет пользователь, реактивность пропа не нужна. */
-  // svelte-ignore state_referenced_locally
-  const startPaused = initialPaused;
-  let active = $state(0);
-  let manualPaused = $state(startPaused);
-  let manualPausedBeforeDiscussion = $state(startPaused);
-  let manualPausedBeforeReading = $state(startPaused);
-  let readingVisible = $state(false);
-  let discussionVisible = $state(false);
-  let expanded = $state(false);
-  let feedMode = $state("latest");
-  let audioState = $state(initialVideoAudioState(true));
-  let updating = $state(false); // короткая анимация смены поста (.is-updating)
-  let readMoreVisible = $state(false);
-  let feedMenuOpen = $state(false);
-  let shareCopied = $state(false);
-  let overlayTick = $state(0); // перезапускает анимацию play/pause-оверлея
-  let debugEnabled = $state(false);
-  let gallerySubIndex = $state(0); // текущий слайд, если у поста несколько картинок
+// svelte-ignore state_referenced_locally
+const startPaused = initialPaused;
+let active = $state(0);
+let manualPaused = $state(startPaused);
+let manualPausedBeforeDiscussion = $state(startPaused);
+let manualPausedBeforeReading = $state(startPaused);
+let readingVisible = $state(false);
+let discussionVisible = $state(false);
+let expanded = $state(false);
+let feedMode = $state("latest");
+let audioState = $state(initialVideoAudioState(true));
+let updating = $state(false); // короткая анимация смены поста (.is-updating)
+let readMoreVisible = $state(false);
+let feedMenuOpen = $state(false);
+let shareCopied = $state(false);
+let overlayTick = $state(0); // перезапускает анимацию play/pause-оверлея
+let debugEnabled = $state(false);
+let gallerySubIndex = $state(0); // текущий слайд, если у поста несколько картинок
 
-  const activePost = $derived(posts[active] ?? posts[0]);
-  const paused = $derived(manualPaused);
-  /* Несколько картинок у поста-не-видео → листаем их по очереди перед
+const activePost = $derived(posts[active] ?? posts[0]);
+const paused = $derived(manualPaused);
+/* Несколько картинок у поста-не-видео → листаем их по очереди перед
      переходом к следующему посту (см. advanceStory). */
-  const gallerySequence = $derived(activePost?.mediaType === "video" ? [] : activePost?.gallery || []);
-  const visibleIndexes = $derived.by(() => {
-    const visible = posts
-      .map((post, index) => ({ post, index }))
-      .filter(({ post }) => feedMode === "latest" || post.feedModes.includes(feedMode))
-      .map(({ index }) => index);
-    return visible.length ? visible : posts.map((_, index) => index);
+const gallerySequence = $derived(activePost?.mediaType === "video" ? [] : activePost?.gallery || []);
+const visibleIndexes = $derived.by(() => {
+  const visible = posts
+    .map((post, index) => ({ post, index }))
+    .filter(({ post }) => feedMode === "latest" || post.feedModes.includes(feedMode))
+    .map(({ index }) => index);
+  return visible.length ? visible : posts.map((_, index) => index);
+});
+
+/* Элементы, которыми управляем императивно (media API, прогресс, giscus). */
+let root = $state<HTMLElement | null>(null);
+let video = $state<HTMLVideoElement | null>(null);
+let audio = $state<HTMLAudioElement | null>(null);
+let progressFill = $state<HTMLElement | null>(null);
+let discussionFrame = $state<HTMLElement | null>(null);
+let copyEl = $state<HTMLElement | null>(null);
+
+let progress: ReturnType<typeof createStoryProgressController> | null = null;
+let viewTracker: ReturnType<typeof createStoryViewTracker> | null = null;
+let discussionTerm = "";
+let mounted = false;
+
+const isDesktopViewport = () => window.matchMedia(desktopMediaQuery).matches;
+const normalizedPath = (value: string) => {
+  try {
+    const url = new URL(value, window.location.origin);
+    return url.pathname.endsWith("/") ? url.pathname : `${url.pathname}/`;
+  } catch {
+    return "/";
+  }
+};
+
+/* ------------------------- Навигация между постами ------------------------ */
+function nextVisibleIndex(direction: number): number {
+  const currentPosition = visibleIndexes.indexOf(active);
+  if (currentPosition === -1) return visibleIndexes[0] ?? active;
+  return visibleIndexes[(currentPosition + direction + visibleIndexes.length) % visibleIndexes.length] ?? active;
+}
+
+/** Аналог старого render(): смена активного поста + все сопутствующие сбросы. */
+function goTo(index: number, options: { keepProgressIdle?: boolean } = {}): void {
+  active = ((index % posts.length) + posts.length) % posts.length;
+  expanded = false;
+  gallerySubIndex = 0;
+  audioState = resetForNewStory(audioState);
+  if (readingVisible) setReading(false);
+  setDiscussion(false);
+  updating = true;
+  progress?.resetForStory(options);
+  viewTracker?.scheduleStoryView(activePost as unknown as StoryPost);
+  preloadAdjacentMedia({ active, posts: posts as unknown as StoryPost[], toPublicSrc: (value) => value ?? "" });
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => (updating = false));
   });
+}
 
-  /* Элементы, которыми управляем императивно (media API, прогресс, giscus). */
-  let root = $state<HTMLElement | null>(null);
-  let video = $state<HTMLVideoElement | null>(null);
-  let audio = $state<HTMLAudioElement | null>(null);
-  let progressFill = $state<HTMLElement | null>(null);
-  let discussionFrame = $state<HTMLElement | null>(null);
-  let copyEl = $state<HTMLElement | null>(null);
+function navigate(direction: number): void {
+  goTo(nextVisibleIndex(direction), { keepProgressIdle: true });
+  progress?.resumeAfterManualNavigation();
+}
 
-  let progress: ReturnType<typeof createStoryProgressController> | null = null;
-  let viewTracker: ReturnType<typeof createStoryViewTracker> | null = null;
-  let discussionTerm = "";
-  let mounted = false;
-
-  const isDesktopViewport = () => window.matchMedia(desktopMediaQuery).matches;
-  const normalizedPath = (value: string) => {
-    try {
-      const url = new URL(value, window.location.origin);
-      return url.pathname.endsWith("/") ? url.pathname : `${url.pathname}/`;
-    } catch {
-      return "/";
-    }
-  };
-
-  /* ------------------------- Навигация между постами ------------------------ */
-  function nextVisibleIndex(direction: number): number {
-    const currentPosition = visibleIndexes.indexOf(active);
-    if (currentPosition === -1) return visibleIndexes[0] ?? active;
-    return visibleIndexes[(currentPosition + direction + visibleIndexes.length) % visibleIndexes.length] ?? active;
-  }
-
-  /** Аналог старого render(): смена активного поста + все сопутствующие сбросы. */
-  function goTo(index: number, options: { keepProgressIdle?: boolean } = {}): void {
-    active = ((index % posts.length) + posts.length) % posts.length;
-    expanded = false;
-    gallerySubIndex = 0;
-    audioState = resetForNewStory(audioState);
-    if (readingVisible) setReading(false);
-    setDiscussion(false);
-    updating = true;
-    progress?.resetForStory(options);
-    viewTracker?.scheduleStoryView(activePost as unknown as StoryPost);
-    preloadAdjacentMedia({ active, posts: posts as unknown as StoryPost[], toPublicSrc: (value) => value ?? "" });
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => (updating = false));
-    });
-  }
-
-  function navigate(direction: number): void {
-    goTo(nextVisibleIndex(direction), { keepProgressIdle: true });
-    progress?.resumeAfterManualNavigation();
-  }
-
-  /** Таймер прогресса истёк: если у поста ещё есть непоказанные картинки —
+/** Таймер прогресса истёк: если у поста ещё есть непоказанные картинки —
       листаем на следующую и просто перезапускаем полосу прогресса, иначе —
       обычный переход к следующему посту. */
-  function advanceStory(): void {
-    const next = advanceGallerySequence(gallerySubIndex, gallerySequence.length);
-    if (next.advancePost) {
-      goTo(nextVisibleIndex(1));
-      return;
+function advanceStory(): void {
+  const next = advanceGallerySequence(gallerySubIndex, gallerySequence.length);
+  if (next.advancePost) {
+    goTo(nextVisibleIndex(1));
+    return;
+  }
+  gallerySubIndex = next.subIndex;
+  progress?.resetForStory();
+}
+
+function selectGalleryImage(index: number): void {
+  if (index === gallerySubIndex || index < 0 || index >= gallerySequence.length) return;
+  gallerySubIndex = index;
+  progress?.resumeAfterManualNavigation();
+}
+
+/* ------------------------------ Пауза и звук ------------------------------ */
+function togglePause(): void {
+  manualPaused = !manualPaused;
+  overlayTick += 1;
+  syncPlayback();
+}
+
+function syncPlayback(): void {
+  progress?.update(paused);
+  if (video && activePost?.mediaType === "video") {
+    if (paused) video.pause?.();
+    else playActiveVideo();
+  }
+}
+
+function setMuted(nextMuted: boolean, persist = true): void {
+  audioState = applyMutePreference(nextMuted);
+  if (persist) {
+    try {
+      localStorage.setItem("story-player-muted", String(audioState.muted));
+    } catch {}
+  }
+  if (audio) {
+    audio.muted = audioState.muted;
+    if (!audioState.muted && audio.getAttribute("src") && activePost?.mediaType !== "video") audio.play?.().catch(() => {});
+    else audio.pause?.();
+  }
+  if (video) video.muted = audioState.muted;
+}
+
+function onAudioToggle(): void {
+  if (audioState.videoAutoplayMuted && video) {
+    audioState = clearAutoplayMute(audioState);
+    video.muted = false;
+    video.play?.().catch(() => {});
+    return;
+  }
+  setMuted(!audioState.muted);
+}
+
+/* Autoplay-политики браузеров: вся логика переходов — в audio-state.ts. */
+function playActiveVideo(): void {
+  if (!video || activePost?.mediaType !== "video") return;
+  const el = video;
+  const play = () => {
+    const intent = beginAutoplay(audioState, isDesktopViewport());
+    audioState = intent.state;
+    if (intent.muteBeforePlay) el.muted = true;
+    const mutedBeforePlay = el.muted;
+    el.play?.().catch(() => {
+      const rejection = autoplayRejected(audioState, mutedBeforePlay);
+      audioState = rejection.state;
+      if (rejection.retryMuted) {
+        el.muted = true;
+        el.play?.().catch(() => {});
+      }
+    });
+  };
+  if (el.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) el.addEventListener("canplay", play, { once: true });
+  else play();
+}
+
+function onVideoTimeUpdate(): void {
+  progress?.handleVideoTimeUpdate();
+  const confirmation = confirmFirstFrame(audioState, { isManualPaused: manualPaused, isDesktopViewport: isDesktopViewport() });
+  audioState = confirmation.state;
+  if (!confirmation.shouldRestoreSound) return;
+  window.requestAnimationFrame(() => {
+    if (!video || audioState.muted || manualPaused || activePost?.mediaType !== "video") return;
+    video.muted = false;
+    audioState = clearAutoplayMute(audioState);
+  });
+}
+
+/* -------------------------- Чтение и обсуждение --------------------------- */
+function setReading(visible: boolean): void {
+  readingVisible = visible;
+  if (visible) {
+    manualPausedBeforeReading = manualPaused;
+    manualPaused = true;
+  } else {
+    manualPaused = manualPausedBeforeReading;
+  }
+  syncPlayback();
+}
+
+function setDiscussion(visible: boolean): void {
+  const nextState = setDiscussionVisibility(
+    { visible: discussionVisible, isManualPaused: manualPaused, manualPausedBeforeDiscussion },
+    visible,
+  );
+  discussionVisible = nextState.visible;
+  manualPaused = nextState.isManualPaused;
+  manualPausedBeforeDiscussion = nextState.manualPausedBeforeDiscussion;
+  syncPlayback();
+}
+
+function openDiscussion(): void {
+  if (discussionVisible) {
+    setDiscussion(false);
+    return;
+  }
+  const discussionUrl = new URL(activePost.url, window.location.origin);
+  discussionUrl.searchParams.set("discussion", "1");
+  window.history.replaceState(window.history.state, "", `${discussionUrl.pathname}${discussionUrl.search}${discussionUrl.hash}`);
+  discussionTerm = loadGiscusDiscussion({
+    post: activePost as unknown as StoryPost,
+    discussionFrame,
+    giscusConfig: { ...giscusConfig, lang: locale },
+    ui: ui as unknown as Record<string, string>,
+    currentTerm: discussionTerm,
+  });
+  setDiscussion(true);
+}
+
+async function share(): Promise<void> {
+  const url = new URL(activePost.url, window.location.origin).href;
+  try {
+    if (navigator.share) await navigator.share({ title: activePost.title, url });
+    else {
+      await navigator.clipboard.writeText(url);
+      shareCopied = true;
+      window.setTimeout(() => (shareCopied = false), 1400);
     }
-    gallerySubIndex = next.subIndex;
-    progress?.resetForStory();
+  } catch {
+    await navigator.clipboard?.writeText(url).catch(() => {});
   }
+}
 
-  function selectGalleryImage(index: number): void {
-    if (index === gallerySubIndex || index < 0 || index >= gallerySequence.length) return;
-    gallerySubIndex = index;
-    progress?.resumeAfterManualNavigation();
+/* ------------------------------ Режим ленты ------------------------------- */
+function selectFeedMode(mode: string): void {
+  feedMenuOpen = false;
+  if (mode === feedMode) return;
+  feedMode = mode;
+  goTo(visibleIndexes.includes(active) ? active : (visibleIndexes[0] ?? 0), { keepProgressIdle: true });
+  progress?.resumeAfterManualNavigation();
+}
+
+/* ------------------------- Жесты: колесо и свайпы ------------------------- */
+let lastWheelTime = 0;
+let wheelGestureLocked = false;
+let wheelUnlockTimer: number | null = null;
+function handleWheel(event: WheelEvent): void {
+  if (Math.abs(event.deltaY) < 10) return;
+  event.preventDefault();
+  const now = Date.now();
+  if (wheelGestureLocked || now - lastWheelTime < wheelCooldownMs) return;
+  lastWheelTime = now;
+  wheelGestureLocked = true;
+  if (wheelUnlockTimer) window.clearTimeout(wheelUnlockTimer);
+  wheelUnlockTimer = window.setTimeout(() => {
+    wheelGestureLocked = false;
+    wheelUnlockTimer = null;
+  }, wheelCooldownMs);
+  navigate(event.deltaY > 0 ? 1 : -1);
+}
+
+let touchStartX = 0;
+function onTouchStart(event: TouchEvent): void {
+  touchStartX = event.touches[0]?.clientX || 0;
+}
+function onTouchEnd(event: TouchEvent): void {
+  const delta = (event.changedTouches[0]?.clientX || 0) - touchStartX;
+  if (Math.abs(delta) > swipeThresholdPx) navigate(delta < 0 ? 1 : -1);
+}
+
+const isTypingTarget = (element: Element | null) => {
+  const tagName = element?.tagName;
+  return tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT";
+};
+function onKeydown(event: KeyboardEvent): void {
+  if (event.defaultPrevented || isTypingTarget(document.activeElement)) return;
+  if (event.key === "Escape" && readingVisible) {
+    event.preventDefault();
+    setReading(false);
+    return;
   }
-
-  /* ------------------------------ Пауза и звук ------------------------------ */
-  function togglePause(): void {
-    manualPaused = !manualPaused;
-    overlayTick += 1;
-    syncPlayback();
+  if (event.key === "ArrowDown" || event.key === "PageDown") {
+    event.preventDefault();
+    navigate(1);
+  } else if (event.key === "ArrowUp" || event.key === "PageUp") {
+    event.preventDefault();
+    navigate(-1);
+  } else if (event.key === " ") {
+    event.preventDefault();
+    togglePause();
   }
+}
 
-  function syncPlayback(): void {
-    progress?.update(paused);
+/* --------------------------- Эффекты и mount ------------------------------ */
+/* Смена поста или паузы → синхронизировать <video>/<audio> с состоянием.
+     Единственное место, где дозволен «ручной» DOM: media API и измерения. */
+$effect(() => {
+  void active;
+  if (!mounted) return;
+  tick().then(() => {
     if (video && activePost?.mediaType === "video") {
-      if (paused) video.pause?.();
-      else playActiveVideo();
-    }
-  }
-
-  function setMuted(nextMuted: boolean, persist = true): void {
-    audioState = applyMutePreference(nextMuted);
-    if (persist) {
-      try {
-        localStorage.setItem("story-player-muted", String(audioState.muted));
-      } catch {}
+      video.muted = audioState.muted;
+      video.load();
+      if (!paused) playActiveVideo();
     }
     if (audio) {
-      audio.muted = audioState.muted;
-      if (!audioState.muted && audio.getAttribute("src") && activePost?.mediaType !== "video") audio.play?.().catch(() => {});
-      else audio.pause?.();
-    }
-    if (video) video.muted = audioState.muted;
-  }
-
-  function onAudioToggle(): void {
-    if (audioState.videoAutoplayMuted && video) {
-      audioState = clearAutoplayMute(audioState);
-      video.muted = false;
-      video.play?.().catch(() => {});
-      return;
-    }
-    setMuted(!audioState.muted);
-  }
-
-  /* Autoplay-политики браузеров: вся логика переходов — в audio-state.ts. */
-  function playActiveVideo(): void {
-    if (!video || activePost?.mediaType !== "video") return;
-    const el = video;
-    const play = () => {
-      const intent = beginAutoplay(audioState, isDesktopViewport());
-      audioState = intent.state;
-      if (intent.muteBeforePlay) el.muted = true;
-      const mutedBeforePlay = el.muted;
-      el.play?.().catch(() => {
-        const rejection = autoplayRejected(audioState, mutedBeforePlay);
-        audioState = rejection.state;
-        if (rejection.retryMuted) {
-          el.muted = true;
-          el.play?.().catch(() => {});
-        }
-      });
-    };
-    if (el.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) el.addEventListener("canplay", play, { once: true });
-    else play();
-  }
-
-  function onVideoTimeUpdate(): void {
-    progress?.handleVideoTimeUpdate();
-    const confirmation = confirmFirstFrame(audioState, { isManualPaused: manualPaused, isDesktopViewport: isDesktopViewport() });
-    audioState = confirmation.state;
-    if (!confirmation.shouldRestoreSound) return;
-    window.requestAnimationFrame(() => {
-      if (!video || audioState.muted || manualPaused || activePost?.mediaType !== "video") return;
-      video.muted = false;
-      audioState = clearAutoplayMute(audioState);
-    });
-  }
-
-  /* -------------------------- Чтение и обсуждение --------------------------- */
-  function setReading(visible: boolean): void {
-    readingVisible = visible;
-    if (visible) {
-      manualPausedBeforeReading = manualPaused;
-      manualPaused = true;
-    } else {
-      manualPaused = manualPausedBeforeReading;
-    }
-    syncPlayback();
-  }
-
-  function setDiscussion(visible: boolean): void {
-    const nextState = setDiscussionVisibility(
-      { visible: discussionVisible, isManualPaused: manualPaused, manualPausedBeforeDiscussion },
-      visible,
-    );
-    discussionVisible = nextState.visible;
-    manualPaused = nextState.isManualPaused;
-    manualPausedBeforeDiscussion = nextState.manualPausedBeforeDiscussion;
-    syncPlayback();
-  }
-
-  function openDiscussion(): void {
-    if (discussionVisible) {
-      setDiscussion(false);
-      return;
-    }
-    const discussionUrl = new URL(activePost.url, window.location.origin);
-    discussionUrl.searchParams.set("discussion", "1");
-    window.history.replaceState(window.history.state, "", `${discussionUrl.pathname}${discussionUrl.search}${discussionUrl.hash}`);
-    discussionTerm = loadGiscusDiscussion({
-      post: activePost as unknown as StoryPost,
-      discussionFrame,
-      giscusConfig: { ...giscusConfig, lang: locale },
-      ui: ui as unknown as Record<string, string>,
-      currentTerm: discussionTerm,
-    });
-    setDiscussion(true);
-  }
-
-  async function share(): Promise<void> {
-    const url = new URL(activePost.url, window.location.origin).href;
-    try {
-      if (navigator.share) await navigator.share({ title: activePost.title, url });
-      else {
-        await navigator.clipboard.writeText(url);
-        shareCopied = true;
-        window.setTimeout(() => (shareCopied = false), 1400);
+      audio.pause?.();
+      if (activePost?.audioUrl && activePost.mediaType !== "video") {
+        audio.muted = audioState.muted;
+        if (!audioState.muted && !paused) audio.play?.().catch(() => {});
       }
-    } catch {
-      await navigator.clipboard?.writeText(url).catch(() => {});
     }
-  }
+    measureReadMore();
+  });
+});
 
-  /* ------------------------------ Режим ленты ------------------------------- */
-  function selectFeedMode(mode: string): void {
-    feedMenuOpen = false;
-    if (mode === feedMode) return;
-    feedMode = mode;
-    goTo(visibleIndexes.includes(active) ? active : (visibleIndexes[0] ?? 0), { keepProgressIdle: true });
-    progress?.resumeAfterManualNavigation();
-  }
+/* «Читать дальше» показывается, только если текст реально не влез. */
+function measureReadMore(): void {
+  window.requestAnimationFrame(() => {
+    if (!copyEl) return;
+    readMoreVisible = copyEl.scrollHeight > copyEl.clientHeight + 4 || expanded;
+  });
+}
 
-  /* ------------------------- Жесты: колесо и свайпы ------------------------- */
-  let lastWheelTime = 0;
-  let wheelGestureLocked = false;
-  let wheelUnlockTimer: number | null = null;
-  function handleWheel(event: WheelEvent): void {
-    if (Math.abs(event.deltaY) < 10) return;
-    event.preventDefault();
-    const now = Date.now();
-    if (wheelGestureLocked || now - lastWheelTime < wheelCooldownMs) return;
-    lastWheelTime = now;
-    wheelGestureLocked = true;
+onMount(() => {
+  debugEnabled = new URLSearchParams(window.location.search).has("debug");
+  audioState = initialVideoAudioState(readMutedPreference());
+  progress = createStoryProgressController({
+    getVideo: () => video,
+    currentProgressFill: progressFill,
+    posts: posts as unknown as StoryPost[],
+    activeIndex: () => active,
+    isPaused: () => paused,
+    onAdvance: () => advanceStory(),
+    intervalMs: storyIntervalMs,
+  });
+  viewTracker = createStoryViewTracker({ activeIndex: () => active, normalizedPath });
+  mounted = true;
+  goTo(0);
+  if (new URLSearchParams(window.location.search).get("discussion") === "1") {
+    window.setTimeout(() => openDiscussion(), 0);
+  }
+  return () => {
     if (wheelUnlockTimer) window.clearTimeout(wheelUnlockTimer);
-    wheelUnlockTimer = window.setTimeout(() => {
-      wheelGestureLocked = false;
-      wheelUnlockTimer = null;
-    }, wheelCooldownMs);
-    navigate(event.deltaY > 0 ? 1 : -1);
-  }
-
-  let touchStartX = 0;
-  function onTouchStart(event: TouchEvent): void {
-    touchStartX = event.touches[0]?.clientX || 0;
-  }
-  function onTouchEnd(event: TouchEvent): void {
-    const delta = (event.changedTouches[0]?.clientX || 0) - touchStartX;
-    if (Math.abs(delta) > swipeThresholdPx) navigate(delta < 0 ? 1 : -1);
-  }
-
-  const isTypingTarget = (element: Element | null) => {
-    const tagName = element?.tagName;
-    return tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT";
   };
-  function onKeydown(event: KeyboardEvent): void {
-    if (event.defaultPrevented || isTypingTarget(document.activeElement)) return;
-    if (event.key === "Escape" && readingVisible) {
-      event.preventDefault();
-      setReading(false);
-      return;
-    }
-    if (event.key === "ArrowDown" || event.key === "PageDown") {
-      event.preventDefault();
-      navigate(1);
-    } else if (event.key === "ArrowUp" || event.key === "PageUp") {
-      event.preventDefault();
-      navigate(-1);
-    } else if (event.key === " ") {
-      event.preventDefault();
-      togglePause();
-    }
-  }
-
-  /* --------------------------- Эффекты и mount ------------------------------ */
-  /* Смена поста или паузы → синхронизировать <video>/<audio> с состоянием.
-     Единственное место, где дозволен «ручной» DOM: media API и измерения. */
-  $effect(() => {
-    void active;
-    if (!mounted) return;
-    tick().then(() => {
-      if (video && activePost?.mediaType === "video") {
-        video.muted = audioState.muted;
-        video.load();
-        if (!paused) playActiveVideo();
-      }
-      if (audio) {
-        audio.pause?.();
-        if (activePost?.audioUrl && activePost.mediaType !== "video") {
-          audio.muted = audioState.muted;
-          if (!audioState.muted && !paused) audio.play?.().catch(() => {});
-        }
-      }
-      measureReadMore();
-    });
-  });
-
-  /* «Читать дальше» показывается, только если текст реально не влез. */
-  function measureReadMore(): void {
-    window.requestAnimationFrame(() => {
-      if (!copyEl) return;
-      readMoreVisible = copyEl.scrollHeight > copyEl.clientHeight + 4 || expanded;
-    });
-  }
-
-  onMount(() => {
-    debugEnabled = new URLSearchParams(window.location.search).has("debug");
-    audioState = initialVideoAudioState(readMutedPreference());
-    progress = createStoryProgressController({
-      getVideo: () => video,
-      currentProgressFill: progressFill,
-      posts: posts as unknown as StoryPost[],
-      activeIndex: () => active,
-      isPaused: () => paused,
-      onAdvance: () => advanceStory(),
-      intervalMs: storyIntervalMs,
-    });
-    viewTracker = createStoryViewTracker({ activeIndex: () => active, normalizedPath });
-    mounted = true;
-    goTo(0);
-    if (new URLSearchParams(window.location.search).get("discussion") === "1") {
-      window.setTimeout(() => openDiscussion(), 0);
-    }
-    return () => {
-      if (wheelUnlockTimer) window.clearTimeout(wheelUnlockTimer);
-    };
-  });
+});
 </script>
 
 <svelte:window onkeydown={onKeydown} />

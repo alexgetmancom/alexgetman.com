@@ -5,7 +5,7 @@ import { SITE_MEDIA_URL_PREFIX, siteMediaFilename, siteMediaPosterFilename } fro
 import type { BackendDb } from "../db/client.js";
 import { postLocales, postMetrics, posts, publications } from "../db/schema.js";
 
-export const siteMediaSchema = z
+const siteMediaSchema = z
   .object({
     type: z.string().optional(),
     path: z.string().optional(),
@@ -15,7 +15,7 @@ export const siteMediaSchema = z
 
 export type SiteMedia = z.infer<typeof siteMediaSchema>;
 
-export const feedItemSchema = z
+const feedItemSchema = z
   .object({
     id: z.string(),
     post_id: z.number().int().positive(),

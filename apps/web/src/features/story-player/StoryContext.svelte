@@ -13,40 +13,40 @@
   поэтому его селекторы тоже :global.
 ============================================================================= -->
 <script lang="ts">
-  import type { StoryUi } from "./i18n";
-  import type { PlayerPost } from "./payload";
+import type { StoryUi } from "./i18n";
+import type { PlayerPost } from "./payload";
 
-  let {
-    post,
-    ui,
-    updating,
-    expanded,
-    readMoreVisible,
-    discussionVisible,
-    readingVisible,
-    shareCopied,
-    copyEl = $bindable(null),
-    discussionFrame = $bindable(null),
-    ontogglereadmore,
-    onopendiscussion,
-    onshare,
-  }: {
-    post: PlayerPost;
-    ui: StoryUi;
-    updating: boolean;
-    expanded: boolean;
-    readMoreVisible: boolean;
-    discussionVisible: boolean;
-    readingVisible: boolean;
-    shareCopied: boolean;
-    copyEl?: HTMLElement | null;
-    discussionFrame?: HTMLElement | null;
-    ontogglereadmore: () => void;
-    onopendiscussion: () => void;
-    onshare: () => void;
-  } = $props();
+let {
+  post,
+  ui,
+  updating,
+  expanded,
+  readMoreVisible,
+  discussionVisible,
+  readingVisible,
+  shareCopied,
+  copyEl = $bindable(null),
+  discussionFrame = $bindable(null),
+  ontogglereadmore,
+  onopendiscussion,
+  onshare,
+}: {
+  post: PlayerPost;
+  ui: StoryUi;
+  updating: boolean;
+  expanded: boolean;
+  readMoreVisible: boolean;
+  discussionVisible: boolean;
+  readingVisible: boolean;
+  shareCopied: boolean;
+  copyEl?: HTMLElement | null;
+  discussionFrame?: HTMLElement | null;
+  ontogglereadmore: () => void;
+  onopendiscussion: () => void;
+  onshare: () => void;
+} = $props();
 
-  const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(/\s+/).length / 180)));
+const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(/\s+/).length / 180)));
 </script>
 
 <aside class="story-context" data-story-context aria-hidden={!readingVisible && !discussionVisible}>

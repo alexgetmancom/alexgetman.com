@@ -11,7 +11,7 @@ export type StudioQueueItem = {
   targets: number;
 };
 
-export type StudioAttentionItem = {
+type StudioAttentionItem = {
   id: number;
   label: string;
   kind: "post" | "video";

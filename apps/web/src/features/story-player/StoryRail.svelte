@@ -10,48 +10,48 @@
   переменными --rail-* на .story-rail-container в StoryPlayer.svelte.
 ============================================================================= -->
 <script lang="ts">
-  import { truncateText } from "../../utils/text";
-  import type { StoryUi } from "./i18n";
-  import type { PlayerPost } from "./payload";
+import { truncateText } from "../../utils/text";
+import type { StoryUi } from "./i18n";
+import type { PlayerPost } from "./payload";
 
-  let {
-    posts,
-    ui,
-    active,
-    visibleIndexes,
-    onselect,
-  }: {
-    posts: PlayerPost[];
-    ui: StoryUi;
-    active: number;
-    visibleIndexes: number[];
-    onselect: (index: number) => void;
-  } = $props();
+let {
+  posts,
+  ui,
+  active,
+  visibleIndexes,
+  onselect,
+}: {
+  posts: PlayerPost[];
+  ui: StoryUi;
+  active: number;
+  visibleIndexes: number[];
+  onselect: (index: number) => void;
+} = $props();
 
-  let rail = $state<HTMLElement | null>(null);
-  let cards: HTMLElement[] = [];
+let rail = $state<HTMLElement | null>(null);
+let cards: HTMLElement[] = [];
 
-  /* Активная карточка всегда докручивается в центр ленты. */
-  $effect(() => {
-    const card = cards[active];
-    if (!rail || !card) return;
-    const railEl = rail;
-    window.setTimeout(() => {
-      const left = card.offsetLeft - (railEl.clientWidth - card.offsetWidth) / 2;
-      const top = card.offsetTop - (railEl.clientHeight - card.offsetHeight) / 2;
-      railEl.scrollTo({ left: Math.max(0, left), top: Math.max(0, top), behavior: "smooth" });
-    }, 60);
-  });
+/* Активная карточка всегда докручивается в центр ленты. */
+$effect(() => {
+  const card = cards[active];
+  if (!rail || !card) return;
+  const railEl = rail;
+  window.setTimeout(() => {
+    const left = card.offsetLeft - (railEl.clientWidth - card.offsetWidth) / 2;
+    const top = card.offsetTop - (railEl.clientHeight - card.offsetHeight) / 2;
+    railEl.scrollTo({ left: Math.max(0, left), top: Math.max(0, top), behavior: "smooth" });
+  }, 60);
+});
 
-  function onImageError(event: Event, post: PlayerPost): void {
-    const img = event.currentTarget as HTMLImageElement;
-    if (post.fallbackImage && img.getAttribute("src") !== post.fallbackImage) {
-      img.setAttribute("src", post.fallbackImage);
-      img.removeAttribute("srcset");
-    } else {
-      img.style.display = "none";
-    }
+function onImageError(event: Event, post: PlayerPost): void {
+  const img = event.currentTarget as HTMLImageElement;
+  if (post.fallbackImage && img.getAttribute("src") !== post.fallbackImage) {
+    img.setAttribute("src", post.fallbackImage);
+    img.removeAttribute("srcset");
+  } else {
+    img.style.display = "none";
   }
+}
 </script>
 
 <nav class="story-rail" aria-label={ui.storyRail} bind:this={rail}>

@@ -105,7 +105,7 @@ function editorialItems(value: string): Required<Pick<Opportunity, "kind" | "tit
     .flatMap((item) => {
       const title = item.title?.trim().replace(/\s+/g, " ").slice(0, 180);
       const reason = item.reason?.trim().replace(/\s+/g, " ").slice(0, 360);
-      const kind = ["review", "guide", "data", "roundup"].includes(item.kind ?? "") ? item.kind! : "review";
+      const kind = ["review", "guide", "data", "roundup"].includes(item.kind ?? "") ? (item.kind ?? "review") : "review";
       const postIds = (item.posts ?? []).filter((id) => Number.isSafeInteger(id)).slice(0, 6);
       return title && reason ? [{ kind, title, reason, posts: postIds }] : [];
     })

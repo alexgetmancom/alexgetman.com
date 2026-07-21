@@ -3,7 +3,7 @@ import path from "node:path";
 import * as z from "zod";
 import type { BackendConfig } from "../../foundation/config.js";
 
-export type MediaKind = "IMAGE" | "VIDEO";
+type MediaKind = "IMAGE" | "VIDEO";
 
 export type PublishMediaItem = {
   type: MediaKind;

@@ -13,87 +13,87 @@
   (-global-), потому что его имя подставляет progress.ts из JS.
 ============================================================================= -->
 <script lang="ts">
-  import type { StoryUi } from "./i18n";
-  import type { PlayerPost } from "./payload";
+import type { StoryUi } from "./i18n";
+import type { PlayerPost } from "./payload";
 
-  let {
-    post,
-    ui,
-    paused,
-    muted,
-    autoplayMuted,
-    overlayTick,
-    shareCopied,
-    readingVisible,
-    gallerySubIndex = 0,
-    video = $bindable(null),
-    audio = $bindable(null),
-    progressFill = $bindable(null),
-    onwheel,
-    ontoggleplay,
-    onaudiotoggle,
-    ontoggleread,
-    onopendiscussion,
-    onshare,
-    onvideoplaying,
-    onvideotimeupdate,
-    onvideoended,
-    onvideowaiting,
-    onselectgallery,
-  }: {
-    post: PlayerPost;
-    ui: StoryUi;
-    paused: boolean;
-    muted: boolean;
-    autoplayMuted: boolean;
-    overlayTick: number;
-    shareCopied: boolean;
-    readingVisible: boolean;
-    gallerySubIndex?: number;
-    video?: HTMLVideoElement | null;
-    audio?: HTMLAudioElement | null;
-    progressFill?: HTMLElement | null;
-    onwheel: (event: WheelEvent) => void;
-    ontoggleplay: () => void;
-    onaudiotoggle: () => void;
-    ontoggleread: () => void;
-    onopendiscussion: () => void;
-    onshare: () => void;
-    onvideoplaying: () => void;
-    onvideotimeupdate: () => void;
-    onvideoended: () => void;
-    onvideowaiting: () => void;
-    onselectgallery?: (index: number) => void;
-  } = $props();
+let {
+  post,
+  ui,
+  paused,
+  muted,
+  autoplayMuted,
+  overlayTick,
+  shareCopied,
+  readingVisible,
+  gallerySubIndex = 0,
+  video = $bindable(null),
+  audio = $bindable(null),
+  progressFill = $bindable(null),
+  onwheel,
+  ontoggleplay,
+  onaudiotoggle,
+  ontoggleread,
+  onopendiscussion,
+  onshare,
+  onvideoplaying,
+  onvideotimeupdate,
+  onvideoended,
+  onvideowaiting,
+  onselectgallery,
+}: {
+  post: PlayerPost;
+  ui: StoryUi;
+  paused: boolean;
+  muted: boolean;
+  autoplayMuted: boolean;
+  overlayTick: number;
+  shareCopied: boolean;
+  readingVisible: boolean;
+  gallerySubIndex?: number;
+  video?: HTMLVideoElement | null;
+  audio?: HTMLAudioElement | null;
+  progressFill?: HTMLElement | null;
+  onwheel: (event: WheelEvent) => void;
+  ontoggleplay: () => void;
+  onaudiotoggle: () => void;
+  ontoggleread: () => void;
+  onopendiscussion: () => void;
+  onshare: () => void;
+  onvideoplaying: () => void;
+  onvideotimeupdate: () => void;
+  onvideoended: () => void;
+  onvideowaiting: () => void;
+  onselectgallery?: (index: number) => void;
+} = $props();
 
-  const isVideo = $derived(post.mediaType === "video");
-  const audioLabel = $derived(autoplayMuted ? ui.tapForSound : muted ? ui.muted : ui.mute);
-  let videoFailed = $state(false);
+const isVideo = $derived(post.mediaType === "video");
+const audioLabel = $derived(autoplayMuted ? ui.tapForSound : muted ? ui.muted : ui.mute);
+let videoFailed = $state(false);
 
-  /* Несколько картинок в посте (пост целиком не видео) → листаем их по очереди,
+/* Несколько картинок в посте (пост целиком не видео) → листаем их по очереди,
      как отдельные слайды, прежде чем перейти к следующему посту. */
-  const gallerySequence = $derived(isVideo ? [] : post.gallery || []);
-  const hasGallerySequence = $derived(gallerySequence.length >= 2);
-  const activeGalleryMedia = $derived(hasGallerySequence ? gallerySequence[Math.min(gallerySubIndex, gallerySequence.length - 1)] : null);
+const gallerySequence = $derived(isVideo ? [] : post.gallery || []);
+const hasGallerySequence = $derived(gallerySequence.length >= 2);
+const activeGalleryMedia = $derived(hasGallerySequence ? gallerySequence[Math.min(gallerySubIndex, gallerySequence.length - 1)] : null);
 
-  /* Видео не загрузилось → показываем постер/фолбек-картинку вместо него. */
-  function onVideoError(): void {
-    if (post.fallbackImage) videoFailed = true;
-  }
-  $effect(() => {
-    void post.id;
-    videoFailed = false;
-  });
+/* Видео не загрузилось → показываем постер/фолбек-картинку вместо него. */
+function onVideoError(): void {
+  if (post.fallbackImage) videoFailed = true;
+}
+$effect(() => {
+  void post.id;
+  videoFailed = false;
+});
 
-  function onImageError(event: Event): void {
-    const img = event.currentTarget as HTMLImageElement;
-    if (post.fallbackImage && img.getAttribute("src") !== post.fallbackImage) {
-      img.setAttribute("src", post.fallbackImage);
-      img.removeAttribute("srcset");
-    } else {
-      img.style.display = "none";
-    }
+function onImageError(event: Event): void {
+  const img = event.currentTarget as HTMLImageElement;
+  if (post.fallbackImage && img.getAttribute("src") !== post.fallbackImage) {
+    img.setAttribute("src", post.fallbackImage);
+    img.removeAttribute("srcset");
+  } else {
+    img.style.display = "none";
   }
+}
 </script>
 
 <div class="story-visual-wrap">

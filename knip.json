@@ -1,5 +1,5 @@
 {
-  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "$schema": "https://unpkg.com/knip@6/schema.json",
   "workspaces": {
     ".": {
       "entry": [
@@ -10,8 +10,7 @@
         "apps/web/src/features/**/*.svelte"
       ],
       "project": ["apps/web/src/**/*.ts", "apps/web/src/**/*.astro", "apps/web/src/**/*.svelte", "scripts/**/*.ts"],
-      "ignoreDependencies": ["@mtcute/bun"],
-      "ignoreBinaries": ["tools/svelte-check.bin/svelte-check"]
+      "ignoreDependencies": ["@mtcute/bun"]
     },
     "tools/svelte-check": {
       "ignoreDependencies": ["svelte-check"]
