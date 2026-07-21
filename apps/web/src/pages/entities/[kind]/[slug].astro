@@ -6,16 +6,17 @@ import { getFirstSentence } from "../../../utils/text";
 export const prerender = false;
 
 const { kind, slug } = Astro.params;
-const allowedKinds = new Set(["company", "model", "person", "topic"]);
+const allowedKinds = new Set(["company", "model", "person", "product", "topic"]);
 if (!kind || !slug || !allowedKinds.has(kind)) return new Response("Not found\n", { status: 404 });
 const posts = loadFeedItems().filter((post) => post.entities.some((entity) => entity.kind === kind && entity.slug === slug));
 if (posts.length === 0) return new Response("Not found\n", { status: 404 });
 const entity = posts.flatMap((post) => post.entities).find((item) => item.kind === kind && item.slug === slug)!;
 const title = entity.title_en || entity.title_ru;
 const url = `https://alexgetman.com/entities/${kind}/${slug}/`;
+const ruUrl = `https://alexgetman.com/ru/entities/${kind}/${slug}/`;
 ---
 
-<Layout title={`${title} | Alex Getman`} description={`Latest AI news and context about ${title}.`} canonicalUrl={url} lang="en" siteName="Alex Getman">
+<Layout title={`${title} | Alex Getman`} description={`Latest AI news and context about ${title}.`} canonicalUrl={url} lang="en" siteName="Alex Getman" alternateLinks={[{ hreflang: "en", href: url }, { hreflang: "ru", href: ruUrl }, { hreflang: "x-default", href: url }]}>
   <main class="entity-page">
     <h1>{title}</h1>
     <p>Latest posts and context.</p>

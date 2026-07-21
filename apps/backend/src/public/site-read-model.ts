@@ -49,7 +49,7 @@ const feedItemSchema = z
     ),
     entities: z.array(
       z.object({
-        kind: z.enum(["company", "model", "person", "topic"]),
+        kind: z.enum(["company", "model", "person", "product", "topic"]),
         slug: z.string(),
         title_ru: z.string(),
         title_en: z.string().nullable(),
@@ -205,10 +205,10 @@ type FeedSource = {
   published_at: string | null;
 };
 
-type FeedEntity = { kind: "company" | "model" | "person" | "topic"; slug: string; title_ru: string; title_en: string | null };
+type FeedEntity = { kind: "company" | "model" | "person" | "product" | "topic"; slug: string; title_ru: string; title_en: string | null };
 
 function isEntityKind(value: string): value is FeedEntity["kind"] {
-  return value === "company" || value === "model" || value === "person" || value === "topic";
+  return value === "company" || value === "model" || value === "person" || value === "product" || value === "topic";
 }
 
 function locale(

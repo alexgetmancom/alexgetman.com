@@ -55,7 +55,7 @@ describe("openBackendDb", () => {
       expect(tables).toContain("post_entity_links");
       expect(tables).toContain("draft_sources");
       expect(tables).toContain("draft_entity_candidates");
-      expect(migrationStatus(backendDb.sqlite)).toHaveLength(20);
+      expect(migrationStatus(backendDb.sqlite)).toHaveLength(21);
     } finally {
       backendDb.close();
     }
@@ -185,7 +185,7 @@ describe("openBackendDb", () => {
         { locale: "ru", slug: "production-fixture" },
       ]);
       expect(backendDb.db.select({ url: postSources.url }).from(postSources).all()).toEqual([{ url: "https://example.com/announcement" }]);
-      expect(migrationStatus(backendDb.sqlite)).toHaveLength(20);
+      expect(migrationStatus(backendDb.sqlite)).toHaveLength(21);
     } finally {
       backendDb.close();
     }
