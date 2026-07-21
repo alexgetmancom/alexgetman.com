@@ -5,15 +5,37 @@ import { getFirstSentence } from "../utils/text";
 
 export const prerender = false;
 const { hub } = Astro.params;
-if (hub !== "codex" && hub !== "claude") return new Response("Not found\n", { status: 404 });
+const hubs = {
+  codex: {
+    kind: "product",
+    slug: "codex",
+    title: "Codex",
+    intro: "OpenAI's agentic coding environment. Track launches, access, limits, workflows, and the way people actually use it.",
+  },
+  claude: {
+    kind: "product",
+    slug: "claude",
+    title: "Claude",
+    intro:
+      "Anthropic's model family. Track releases, access, limits, Claude Code, Cowork, and the events that change how the models are used.",
+  },
+  kimi: {
+    kind: "model",
+    slug: "kimi-k3",
+    title: "Kimi",
+    intro: "Kimi K3 and the Moonshot AI model line: releases, API pricing, benchmarks, access, and the real-world response.",
+  },
+} as const;
+const definition = hub && hub in hubs ? hubs[hub as keyof typeof hubs] : null;
+if (!definition) return new Response("Not found\n", { status: 404 });
 const posts = loadFeedItems().filter(
-  (post) => post.has_en && post.entities.some((entity) => entity.kind === "product" && entity.slug === hub),
+  (post) => post.has_en && post.entities.some((entity) => entity.kind === definition.kind && entity.slug === definition.slug),
 );
 if (posts.length === 0) return new Response("Not found\n", { status: 404 });
-const title = hub === "codex" ? "Codex" : "Claude";
+const title = definition.title;
 const url = `https://alexgetman.com/${hub}/`;
 ---
 <Layout title={`${title} | Alex Getman`} description={`Latest news and context about ${title}.`} canonicalUrl={url} lang="en" siteName="Alex Getman" alternateLinks={[{ hreflang: "en", href: url }, { hreflang: "ru", href: `https://alexgetman.com/ru/${hub}/` }, { hreflang: "x-default", href: url }]}>
-  <main class="hub"><h1>{title}</h1><p>Latest news and context.</p><ol>{posts.map((post) => <li><a href={`/${post.post_id}/${post.slug_en}/`}>{getFirstSentence(post.text_en) || `Post ${post.post_id}`}</a></li>)}</ol></main>
+  <main class="hub"><h1>{title}</h1><p>{definition.intro}</p><h2>Latest updates</h2><ol>{posts.map((post) => <li><a href={`/${post.post_id}/${post.slug_en}/`}>{getFirstSentence(post.text_en) || `Post ${post.post_id}`}</a></li>)}</ol></main>
 </Layout>
 <style>.hub { max-width: 720px; margin: 0 auto; padding: 5rem 1.5rem; } ol { padding-left: 1.2rem; line-height: 1.6; } a { color: inherit; }</style>
