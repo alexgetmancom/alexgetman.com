@@ -55,7 +55,7 @@ export function toHomePost(item: FeedItem, locale: "en" | "ru"): HomePost {
   const id = item.post_id;
   const text = locale === "ru" ? item.text || "" : item.text_en || item.text || "";
   const title = getFirstSentence(text) || (locale === "ru" ? `Пост ${id}` : `Post ${id}`);
-  const badge = getSmartBadge(locale === "ru" ? text : item.text || text);
+  const badge = getSmartBadge(text);
   const categorySlug = categorySlugFromBadge(badge);
   const visualMedia = postVisualMedia(item, locale);
   const visualPath = existingSiteImage(visualMedia?.path);
