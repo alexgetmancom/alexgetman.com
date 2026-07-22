@@ -31,7 +31,7 @@ export async function GET(context: any) {
     "- LinkedIn: https://www.linkedin.com/in/alexgetmancom",
     `- RSS: ${siteUrl}/feed.xml`,
     `- Russian RSS: ${siteUrl}/ru/feed.xml`,
-    `- Sitemap: ${siteUrl}/sitemap-index.xml`,
+    `- Sitemap: ${siteUrl}/sitemap.xml`,
     "",
     "## Latest English posts",
     "",

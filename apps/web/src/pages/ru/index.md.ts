@@ -27,7 +27,7 @@ export async function GET(context: any) {
     "- GitHub: https://github.com/alexgetmancom",
     `- RSS (EN): ${siteUrl}/feed.xml`,
     `- RSS (RU): ${siteUrl}/ru/feed.xml`,
-    `- Sitemap: ${siteUrl}/sitemap-index.xml`,
+    `- Sitemap: ${siteUrl}/sitemap.xml`,
     "",
     "## Последние русские посты",
     "",

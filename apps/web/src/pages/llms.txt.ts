@@ -26,7 +26,7 @@ export async function GET(context: any) {
     `- English RSS: ${siteUrl}/feed.xml`,
     `- Russian section: ${siteUrl}/ru/`,
     `- Russian RSS: ${siteUrl}/ru/feed.xml`,
-    `- Sitemap index: ${siteUrl}/sitemap-index.xml`,
+    `- Sitemap: ${siteUrl}/sitemap.xml`,
     `- Markdown overview: ${siteUrl}/index.md`,
     "",
     "## Social profiles",
