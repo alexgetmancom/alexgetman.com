@@ -25,8 +25,9 @@ export function fixUrlSlashes(text: string): string {
 
 export function slugify(text: string, postId: number): string {
   const slug = text
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
+    // NFC keeps Cyrillic letters such as "й" and "ё" intact. NFKD splits
+    // "й" into "и" plus a combining breve, which was then discarded below.
+    .normalize("NFC")
     .toLowerCase()
     .replace(/[^a-z0-9\u0400-\u04ff]+/g, "-")
     .replace(/^-+|-+$/g, "")
