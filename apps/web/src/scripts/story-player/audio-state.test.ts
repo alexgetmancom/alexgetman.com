@@ -10,30 +10,28 @@ import {
 } from "./audio-state.js";
 
 describe("video audio state", () => {
-  it("mutes proactively before autoplay on desktop when the user wants sound", () => {
+  it("mutes proactively before autoplay when the user wants sound", () => {
     const state = initialVideoAudioState(false);
-    const intent = beginAutoplay(state, true);
+    const intent = beginAutoplay(state);
     expect(intent.muteBeforePlay).toBe(true);
-    expect(intent.state.pendingDesktopSoundRestore).toBe(true);
+    expect(intent.state.pendingSoundRestore).toBe(true);
   });
 
-  it("does not mute proactively on mobile or when the user already muted", () => {
-    expect(beginAutoplay(initialVideoAudioState(false), false).muteBeforePlay).toBe(false);
-    expect(beginAutoplay(initialVideoAudioState(true), true).muteBeforePlay).toBe(false);
+  it("does not mute proactively when the user already muted", () => {
+    expect(beginAutoplay(initialVideoAudioState(true)).muteBeforePlay).toBe(false);
   });
 
   it("restores sound once the first frame confirms playback started", () => {
-    const muted = beginAutoplay(initialVideoAudioState(false), true).state;
-    const confirmation = confirmFirstFrame(muted, { isManualPaused: false, isDesktopViewport: true });
+    const muted = beginAutoplay(initialVideoAudioState(false)).state;
+    const confirmation = confirmFirstFrame(muted, { isManualPaused: false });
     expect(confirmation.shouldRestoreSound).toBe(true);
-    expect(confirmation.state.pendingDesktopSoundRestore).toBe(false);
+    expect(confirmation.state.pendingSoundRestore).toBe(false);
   });
 
-  it("does not restore sound while paused, muted, or off desktop", () => {
-    const muted = beginAutoplay(initialVideoAudioState(false), true).state;
-    expect(confirmFirstFrame(muted, { isManualPaused: true, isDesktopViewport: true }).shouldRestoreSound).toBe(false);
-    expect(confirmFirstFrame(muted, { isManualPaused: false, isDesktopViewport: false }).shouldRestoreSound).toBe(false);
-    expect(confirmFirstFrame(applyMutePreference(true), { isManualPaused: false, isDesktopViewport: true }).shouldRestoreSound).toBe(false);
+  it("does not restore sound while paused or muted", () => {
+    const muted = beginAutoplay(initialVideoAudioState(false)).state;
+    expect(confirmFirstFrame(muted, { isManualPaused: true }).shouldRestoreSound).toBe(false);
+    expect(confirmFirstFrame(applyMutePreference(true), { isManualPaused: false }).shouldRestoreSound).toBe(false);
   });
 
   it("retries muted and marks autoplay-blocked when unmuted playback is rejected outright", () => {
@@ -43,7 +41,7 @@ describe("video audio state", () => {
   });
 
   it("marks autoplay-blocked without retrying when even the proactive muted attempt is rejected", () => {
-    const muted = beginAutoplay(initialVideoAudioState(false), true).state;
+    const muted = beginAutoplay(initialVideoAudioState(false)).state;
     const rejection = autoplayRejected(muted, true);
     expect(rejection.retryMuted).toBe(false);
     expect(rejection.state.videoAutoplayMuted).toBe(true);
@@ -51,7 +49,7 @@ describe("video audio state", () => {
 
   it("clears the autoplay workaround on tap-to-unmute and on story change", () => {
     const blocked = autoplayRejected(initialVideoAudioState(false), false).state;
-    expect(clearAutoplayMute(blocked)).toEqual({ muted: false, videoAutoplayMuted: false, pendingDesktopSoundRestore: false });
+    expect(clearAutoplayMute(blocked)).toEqual({ muted: false, videoAutoplayMuted: false, pendingSoundRestore: false });
     expect(resetForNewStory(blocked).videoAutoplayMuted).toBe(false);
     expect(resetForNewStory(blocked).muted).toBe(false);
   });

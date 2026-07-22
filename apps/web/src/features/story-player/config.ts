@@ -14,9 +14,6 @@ export const giscusConfig = {
   categoryId: "DIC_kwDOSJwPnc4C-S2f",
 } as const;
 
-/** Медиа-запрос «десктоп»: должен совпадать с брейкпоинтом в story-CSS (760px). */
-export const desktopMediaQuery = "(min-width: 761px)";
-
 /** Сколько показывается пост без видео до автоперехода (мс). */
 export const storyIntervalMs = 8500;
 

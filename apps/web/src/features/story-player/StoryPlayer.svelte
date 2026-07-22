@@ -38,7 +38,7 @@ import { preloadAdjacentMedia } from "../../scripts/story-player/media";
 import { readMutedPreference } from "../../scripts/story-player/preferences";
 import { createStoryProgressController } from "../../scripts/story-player/progress";
 import type { StoryPost } from "../../scripts/story-player/types";
-import { desktopMediaQuery, giscusConfig, storyIntervalMs, swipeThresholdPx, wheelCooldownMs } from "./config";
+import { giscusConfig, storyIntervalMs, swipeThresholdPx, wheelCooldownMs } from "./config";
 import type { StoryUi } from "./i18n";
 import type { PlayerPost } from "./payload";
 import StoryContext from "./StoryContext.svelte";
@@ -100,7 +100,6 @@ let viewTracker: ReturnType<typeof createStoryViewTracker> | null = null;
 let discussionTerm = "";
 let mounted = false;
 
-const isDesktopViewport = () => window.matchMedia(desktopMediaQuery).matches;
 const normalizedPath = (value: string) => {
   try {
     const url = new URL(value, window.location.origin);
@@ -203,7 +202,7 @@ function playActiveVideo(): void {
   if (!video || activePost?.mediaType !== "video") return;
   const el = video;
   const play = () => {
-    const intent = beginAutoplay(audioState, isDesktopViewport());
+    const intent = beginAutoplay(audioState);
     audioState = intent.state;
     if (intent.muteBeforePlay) el.muted = true;
     const mutedBeforePlay = el.muted;
@@ -222,14 +221,20 @@ function playActiveVideo(): void {
 
 function onVideoTimeUpdate(): void {
   progress?.handleVideoTimeUpdate();
-  const confirmation = confirmFirstFrame(audioState, { isManualPaused: manualPaused, isDesktopViewport: isDesktopViewport() });
+}
+
+function onVideoPlaying(): void {
+  progress?.handleVideoPlaying();
+  const confirmation = confirmFirstFrame(audioState, { isManualPaused: manualPaused });
   audioState = confirmation.state;
   if (!confirmation.shouldRestoreSound) return;
-  window.requestAnimationFrame(() => {
-    if (!video || audioState.muted || manualPaused || activePost?.mediaType !== "video") return;
-    video.muted = false;
-    audioState = clearAutoplayMute(audioState);
-  });
+  const el = video;
+  if (!el || audioState.muted || manualPaused || activePost?.mediaType !== "video") return;
+  el.muted = false;
+  audioState = clearAutoplayMute(audioState);
+  // Some browsers silently pause playback when script unmutes without a
+  // fresh user gesture; retry once so the story doesn't freeze mid-video.
+  if (el.paused) el.play?.().catch(() => {});
 }
 
 /* -------------------------- Чтение и обсуждение --------------------------- */
@@ -478,7 +483,7 @@ onMount(() => {
       ontoggleread={() => setReading(!readingVisible)}
       onopendiscussion={openDiscussion}
       onshare={share}
-      onvideoplaying={() => progress?.handleVideoPlaying()}
+      onvideoplaying={onVideoPlaying}
       onvideotimeupdate={onVideoTimeUpdate}
       onvideoended={() => progress?.handleVideoEnded()}
       onvideowaiting={() => progress?.handleVideoWaiting()}
