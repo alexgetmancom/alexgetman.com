@@ -9,7 +9,7 @@ import { localizeTargetPayload } from "../../publishing/payload.js";
 import { type PublicationRef, sourcePayload } from "../publication-ref.js";
 
 /** Restores queued Delivery work from its durable publication source. */
-export function requeuePublication(backendDb: BackendDb, ref: PublicationRef, target?: string): Record<string, unknown> {
+function requeuePublication(backendDb: BackendDb, ref: PublicationRef, target?: string): Record<string, unknown> {
   const source = sourcePayload(backendDb, ref);
   const whereRef = ref.postId != null ? eq(publishJobs.postId, ref.postId) : eq(publishJobs.postKey, ref.postKey);
   const rows = backendDb.db

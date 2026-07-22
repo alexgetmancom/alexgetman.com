@@ -5,10 +5,6 @@ import { jsonObject } from "../../json.js";
 import type { PublicationRef } from "../publication-ref.js";
 
 /** Repairs durable English content before Delivery rebuilds the site or retries a target. */
-export function editEnglishContent(backendDb: BackendDb, ref: PublicationRef, text: string): Record<string, unknown> {
-  return editLocaleContent(backendDb, ref, "en", text);
-}
-
 export function editLocaleContent(backendDb: BackendDb, ref: PublicationRef, locale: "ru" | "en", text: string): Record<string, unknown> {
   const value = text.trim();
   if (!value) throw new Error(`text_${locale} is required`);
@@ -39,14 +35,6 @@ export function editLocaleContent(backendDb: BackendDb, ref: PublicationRef, loc
     text: true,
     ...(locale === "en" ? { text_en: true } : { text_ru: true }),
   };
-}
-
-export function replaceEnglishMedia(
-  backendDb: BackendDb,
-  ref: PublicationRef,
-  media: Record<string, unknown>[] | null,
-): Record<string, unknown> {
-  return replaceLocaleMedia(backendDb, ref, "en", media);
 }
 
 export function replaceLocaleMedia(
