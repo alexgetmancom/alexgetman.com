@@ -42,6 +42,17 @@ export function importXAnalyticsCsv(backendDb: BackendDb, sourcePath: string, sa
   const insert = backendDb.sqlite.prepare(
     "INSERT INTO metric_samples (post_key, target, metric_name, value, sampled_at, source, raw_json) VALUES (?, 'x', ?, ?, ?, 'x_csv_export', ?)",
   );
+  const updateCurrent = backendDb.sqlite.prepare(
+    `INSERT INTO post_metrics (post_key, target, metric_name, value, unit, source, sampled_at, error, raw_json)
+     VALUES (?, 'x', ?, ?, 'count', 'x_csv_export', ?, NULL, ?)
+     ON CONFLICT(post_key, target, metric_name) DO UPDATE SET
+       value=excluded.value,
+       unit=excluded.unit,
+       source=excluded.source,
+       sampled_at=excluded.sampled_at,
+       error=NULL,
+       raw_json=excluded.raw_json`,
+  );
   const result: XCsvImportResult = { rows: rows.length, matchedPosts: 0, insertedSamples: 0, skippedSamples: 0, unmatchedIds: [] };
   backendDb.sqlite.transaction(() => {
     for (const row of rows) {
@@ -54,18 +65,17 @@ export function importXAnalyticsCsv(backendDb: BackendDb, sourcePath: string, sa
       }
       result.matchedPosts += 1;
       for (const metric of METRICS) {
+        const value = integer(row[metric.column]);
+        const raw = JSON.stringify({ x_post_id: externalId, x_column: metric.column });
         if (imported.get(postKey, metric.name, sampledAt)) {
           result.skippedSamples += 1;
-          continue;
+        } else {
+          insert.run(postKey, metric.name, value, sampledAt, raw);
+          result.insertedSamples += 1;
         }
-        insert.run(
-          postKey,
-          metric.name,
-          integer(row[metric.column]),
-          sampledAt,
-          JSON.stringify({ x_post_id: externalId, x_column: metric.column }),
-        );
-        result.insertedSamples += 1;
+        // Command Center renders its current values from post_metrics, while
+        // reports consume the immutable metric_samples history above.
+        updateCurrent.run(postKey, metric.name, value, sampledAt, raw);
       }
     }
   })();
