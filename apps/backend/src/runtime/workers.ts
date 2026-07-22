@@ -35,6 +35,12 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
     log("warn", "Workers are disabled by ENABLE_WORKERS");
     return [];
   }
+  // Deployment/server restarts terminate the old process but leave its durable
+  // locks behind. Do not wait the ordinary 15-minute crash TTL before the new
+  // process can resume the same targets; the short grace still avoids racing a
+  // request that was only just interrupted at the provider boundary.
+  const recoveredAtStartup = recoverStalePublishJobs(backendDb, config, config.PUBLISH_RESTART_LOCK_GRACE_SECONDS);
+  if (recoveredAtStartup) log("warn", "recovered interrupted publishing locks on worker startup", { recovered: recoveredAtStartup });
   return [
     startLoop("queue", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
       const claimed = await runPublishCycle(config, backendDb);

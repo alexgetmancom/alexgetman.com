@@ -82,8 +82,12 @@ export function claimDuePublishJobs(
   return claimed;
 }
 
-export function recoverStalePublishJobs(backendDb: BackendDb, config: BackendConfig): number {
-  const cutoff = new Date(Date.now() - config.PUBLISH_LOCK_TIMEOUT_SECONDS * 1000).toISOString();
+export function recoverStalePublishJobs(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  maxLockAgeSeconds = config.PUBLISH_LOCK_TIMEOUT_SECONDS,
+): number {
+  const cutoff = new Date(Date.now() - maxLockAgeSeconds * 1000).toISOString();
   const now = new Date().toISOString();
   const stale = backendDb.db
     .select()
