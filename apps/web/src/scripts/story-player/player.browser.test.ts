@@ -87,7 +87,7 @@ describe("story player browser behavior", () => {
     let advances = 0;
     const progress = createStoryProgressController({
       getVideo: () => video,
-      currentProgressFill: null,
+      getProgressFill: () => null,
       posts,
       activeIndex: () => 0,
       isPaused: () => false,
@@ -111,7 +111,7 @@ describe("story player browser behavior", () => {
     let advances = 0;
     const progress = createStoryProgressController({
       getVideo: () => currentVideo,
-      currentProgressFill: null,
+      getProgressFill: () => null,
       posts,
       activeIndex: () => 0,
       isPaused: () => false,
@@ -169,7 +169,7 @@ describe("story player browser behavior", () => {
     let advances = 0;
     const progress = createStoryProgressController({
       getVideo: () => null,
-      currentProgressFill: null,
+      getProgressFill: () => null,
       posts: [post()],
       activeIndex: () => 0,
       isPaused: () => false,

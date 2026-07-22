@@ -2,7 +2,10 @@ import type { StoryPost } from "./types";
 
 type StoryProgressControllerOptions = {
   getVideo: () => HTMLVideoElement | null;
-  currentProgressFill: HTMLElement | null;
+  /** A getter, not a snapshot: the segmented gallery progress bar swaps in a
+   * fresh DOM node for each slide (only the active segment renders its fill),
+   * so the controller must re-read the current node on every call. */
+  getProgressFill: () => HTMLElement | null;
   posts: StoryPost[];
   activeIndex: () => number;
   isPaused: () => boolean;
@@ -12,7 +15,7 @@ type StoryProgressControllerOptions = {
 
 export function createStoryProgressController({
   getVideo,
-  currentProgressFill,
+  getProgressFill,
   posts,
   activeIndex,
   isPaused,
@@ -45,6 +48,7 @@ export function createStoryProgressController({
   }
 
   function resetProgressFills(): void {
+    const currentProgressFill = getProgressFill();
     if (currentProgressFill) {
       currentProgressFill.style.animation = "none";
       currentProgressFill.style.animationPlayState = "running";
@@ -54,6 +58,7 @@ export function createStoryProgressController({
 
   function setProgress(fraction: number): void {
     const progress = Math.min(1, Math.max(0, fraction));
+    const currentProgressFill = getProgressFill();
     if (currentProgressFill) {
       currentProgressFill.style.animation = "none";
       currentProgressFill.style.transform = `scaleX(${progress})`;
@@ -80,6 +85,7 @@ export function createStoryProgressController({
   function startProgressAnimation(duration: number): void {
     progressActive = true;
     progressRemainingMs = duration;
+    const currentProgressFill = getProgressFill();
     if (currentProgressFill) {
       currentProgressFill.style.animation = "none";
       currentProgressFill.style.transform = "scaleX(0)";
@@ -119,6 +125,7 @@ export function createStoryProgressController({
   }
 
   function update(paused: boolean): void {
+    const currentProgressFill = getProgressFill();
     if (currentProgressFill) currentProgressFill.style.animationPlayState = paused ? "paused" : "running";
     if (videoDriven) {
       return;
@@ -160,6 +167,7 @@ export function createStoryProgressController({
       handleVideoTimeUpdate();
       return;
     }
+    const currentProgressFill = getProgressFill();
     if (currentProgressFill?.style.animation && currentProgressFill.style.animation !== "none") {
       currentProgressFill.style.animationPlayState = isPaused() ? "paused" : "running";
       if (!isPaused() && !advanceTimer) scheduleAdvance(progressRemainingMs);
@@ -189,6 +197,7 @@ export function createStoryProgressController({
   function handleVideoWaiting(): void {
     if (posts[activeIndex()]?.mediaType !== "video") return;
     pauseAdvanceTimer();
+    const currentProgressFill = getProgressFill();
     if (currentProgressFill) currentProgressFill.style.animationPlayState = "paused";
   }
 

@@ -98,9 +98,34 @@ function onImageError(event: Event): void {
 
 <div class="story-visual-wrap">
   <article class="story-visual" class:story-visual--no-image={!post.image} data-story-visual {onwheel}>
-    <span class="story-visual-progress" aria-hidden="true">
-      <i bind:this={progressFill}></i>
-    </span>
+    {#if hasGallerySequence}
+      <div class="story-visual-progress story-visual-progress--segmented" role="tablist" aria-label={`${post.title} — slides`}>
+        {#each gallerySequence as media, index}
+          <button
+            type="button"
+            class="story-visual-progress__segment"
+            class:is-complete={index < gallerySubIndex}
+            class:is-clickable={media.type === "image"}
+            role="tab"
+            aria-selected={index === gallerySubIndex}
+            aria-label={`${index + 1}/${gallerySequence.length}`}
+            disabled={media.type !== "image"}
+            onclick={(event) => {
+              event.preventDefault();
+              onselectgallery?.(index);
+            }}
+          >
+            {#if index === gallerySubIndex}
+              <i bind:this={progressFill}></i>
+            {/if}
+          </button>
+        {/each}
+      </div>
+    {:else}
+      <span class="story-visual-progress" aria-hidden="true">
+        <i bind:this={progressFill}></i>
+      </span>
+    {/if}
     <a
       class="story-visual__link"
       href={post.url}
@@ -142,29 +167,6 @@ function onImageError(event: Event): void {
         <span class="story-visual__fallback">{post.title}</span>
       {/if}
     </a>
-    {#if post.gallery.length >= 2}
-      <div class="story-media-gallery" aria-label="Post media">
-        {#each post.gallery as media, index}
-          <a
-            href={media.path}
-            target="_blank"
-            rel="noopener noreferrer"
-            class:is-active={hasGallerySequence && index === gallerySubIndex}
-            onclick={(event) => {
-              if (!hasGallerySequence || media.type !== "image") return;
-              event.preventDefault();
-              onselectgallery?.(index);
-            }}
-          >
-            <img
-              src={media.type === "video" ? media.poster || media.path : media.path}
-              alt={`${post.title} — ${index + 1}`}
-              loading="lazy"
-            />
-          </a>
-        {/each}
-      </div>
-    {/if}
     <button
       class="audio-chip"
       class:is-on={!muted && !autoplayMuted}
@@ -312,6 +314,39 @@ function onImageError(event: Event): void {
     }
   }
 
+  /* Сегментированная полоса (2+ картинки в посте) — как в Instagram-сторис:
+     один сегмент на слайд, текущий заполняется анимацией, пройденные — сплошные. */
+  .story-visual-progress--segmented {
+    display: flex;
+    gap: 4px;
+    background: none;
+    pointer-events: auto;
+  }
+
+  .story-visual-progress__segment {
+    position: relative;
+    flex: 1 1 0;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.32);
+    cursor: default;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  .story-visual-progress__segment.is-complete {
+    background: var(--accent);
+  }
+
+  .story-visual-progress__segment.is-clickable {
+    cursor: pointer;
+    pointer-events: auto;
+  }
+
   /* Пост без картинки: крупный заголовок на градиенте. */
   .story-visual__fallback {
     display: grid;
@@ -325,45 +360,6 @@ function onImageError(event: Event): void {
     line-height: 1.04;
     padding: 1.2rem;
     overflow-wrap: anywhere;
-  }
-
-  /* --------------------- Галерея миниатюр (2+ медиа) ------------------------ */
-  .story-media-gallery {
-    position: absolute;
-    z-index: 8;
-    right: 0.55rem;
-    bottom: 0.55rem;
-    left: 0.55rem;
-    display: flex;
-    gap: 0.38rem;
-    overflow-x: auto;
-    padding: 0.3rem;
-    border-radius: 0.5rem;
-    background: rgba(0, 0, 0, 0.48);
-    scrollbar-width: thin;
-  }
-
-  .story-media-gallery a {
-    display: block;
-    flex: 0 0 3.2rem;
-    height: 3.2rem;
-    overflow: hidden;
-    border: 1px solid rgba(255, 255, 255, 0.6);
-    border-radius: 0.32rem;
-    background: #000;
-    transition: border-color 0.16s ease, box-shadow 0.16s ease;
-  }
-
-  .story-media-gallery a.is-active {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.35);
-  }
-
-  .story-media-gallery img {
-    width: 100%;
-    height: 100%;
-    display: block;
-    object-fit: cover;
   }
 
   /* ------------------------------ Кнопка звука ------------------------------ */

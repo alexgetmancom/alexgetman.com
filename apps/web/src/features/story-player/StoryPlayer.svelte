@@ -388,7 +388,7 @@ onMount(() => {
   audioState = initialVideoAudioState(readMutedPreference());
   progress = createStoryProgressController({
     getVideo: () => video,
-    currentProgressFill: progressFill,
+    getProgressFill: () => progressFill,
     posts: posts as unknown as StoryPost[],
     activeIndex: () => active,
     isPaused: () => paused,
