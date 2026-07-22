@@ -120,6 +120,20 @@ export function requeuePublicationScope(
   return { ok: true, locale, results: targets.map((value) => requeuePublication(backendDb, ref, value)) };
 }
 
+export function requeueAfterRemoval(
+  backendDb: BackendDb,
+  ref: PublicationRef,
+  removals: Array<Record<string, unknown>>,
+  target?: string,
+): Record<string, unknown> {
+  const succeeded = removals.filter((row) => row.ok === true && typeof row.target === "string").map((row) => row.target as string);
+  // An explicitly selected target with no durable remote row is already gone;
+  // it is safe to create its replacement. A failed deletion is never retried
+  // as a new post, preventing accidental duplicates.
+  const targets = succeeded.length > 0 ? succeeded : target ? [target] : [];
+  return { ok: true, results: targets.map((value) => requeuePublication(backendDb, ref, value)) };
+}
+
 export async function replaceTextFallbackTargets(
   backendDb: BackendDb,
   ref: PublicationRef,

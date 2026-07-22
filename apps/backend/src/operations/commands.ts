@@ -5,7 +5,7 @@ import { removePublishedTargets } from "../delivery/external-removals.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { recordOperationAction } from "./action-audit.js";
 import { editLocaleContent, parseEnglishMedia, replaceLocaleMedia } from "./commands/content-repair.js";
-import { replaceTextFallbackTargets, requeuePublicationScope } from "./commands/requeue.js";
+import { replaceTextFallbackTargets, requeueAfterRemoval, requeuePublicationScope } from "./commands/requeue.js";
 import { resolvePublicationRef } from "./publication-ref.js";
 
 /** Explicit maintenance command accepted by the Operations boundary. */
@@ -60,14 +60,15 @@ export async function runOperationCommand(
   } else if (input.action === "replace_media" || input.action === "replace_en_media") {
     const locale = input.locale ?? "en";
     result = replaceLocaleMedia(backendDb, publicationRef, locale, parseEnglishMedia(input.media_json ?? input.media_en_json));
-    if (config)
+    if (config) {
       result.removed = await removePublishedTargets(
         backendDb,
         config,
         { postKey: publicationRef.postKey, ...(input.target ? { target: input.target } : {}), locale },
         fetchImpl,
       );
-    result.republish = requeuePublicationScope(backendDb, publicationRef, input.target, locale);
+      result.republish = requeueAfterRemoval(backendDb, publicationRef, result.removed as Array<Record<string, unknown>>, input.target);
+    } else result.republish = requeuePublicationScope(backendDb, publicationRef, input.target, locale);
   } else if (input.action === "use_other_media" || input.action === "use_ru_media_for_en") {
     const locale = input.locale ?? "en";
     result = replaceLocaleMedia(backendDb, publicationRef, locale, null);
@@ -88,7 +89,7 @@ export async function runOperationCommand(
       ),
     };
     if (input.action === "delete_republish")
-      result.republish = requeuePublicationScope(backendDb, publicationRef, input.target, input.locale);
+      result.republish = requeueAfterRemoval(backendDb, publicationRef, result.removed as Array<Record<string, unknown>>, input.target);
   } else throw new Error(`unknown action: ${input.action}`);
   recordOperationAction(backendDb, input.action, publicationRef, input.target ?? null, result, input.actor_type ?? "command-center");
   return result;
