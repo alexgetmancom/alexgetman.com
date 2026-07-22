@@ -28,7 +28,12 @@ export async function runSiteJobCycle(config: BackendConfig, backendDb: BackendD
     return 0;
   }
   try {
-    await renderFeedFiles(config, backendDb);
+    await renderFeedFiles(
+      config,
+      backendDb,
+      fetch,
+      new Set(jobs.map((job) => job.post_id).filter((postId): postId is number => postId != null)),
+    );
     const completed = completeSiteJobs(backendDb, jobs);
     try {
       const urls = publishContentIndex(config, backendDb);
@@ -75,9 +80,21 @@ export function recoverStaleSiteJobs(
     .all().length;
 }
 
-export async function renderFeedFiles(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch = fetch): Promise<void> {
+export async function renderFeedFiles(
+  config: BackendConfig,
+  backendDb: BackendDb,
+  fetchImpl: typeof fetch = fetch,
+  materializePostIds?: ReadonlySet<number>,
+): Promise<void> {
   const targetUrls = siteTargetUrlsByPostKey(backendDb);
-  const items = await Promise.all(sourceItems(backendDb).map((item) => prepareFeedItem(config, item, targetUrls, fetchImpl)));
+  const previousItems = previousFeedItems(config);
+  const items = await Promise.all(
+    sourceItems(backendDb).map((item) => {
+      const postId = Number(item.post_id ?? 0);
+      const existing = materializePostIds && !materializePostIds.has(postId) ? previousItems.get(postId) : undefined;
+      return prepareFeedItem(config, item, targetUrls, fetchImpl, existing);
+    }),
+  );
   const views = viewsByPostKey(backendDb);
   for (const item of items.filter((value): value is Record<string, unknown> => value != null)) {
     item.views = views.get(String(item.id ?? "")) ?? Number(item.views ?? 0);
@@ -208,6 +225,23 @@ function sourceItems(backendDb: BackendDb): Record<string, unknown>[] {
   });
 }
 
+function previousFeedItems(config: BackendConfig): Map<number, Record<string, unknown>> {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(config.FEED_JSON, "utf8")) as { items?: unknown };
+    if (!Array.isArray(parsed.items)) return new Map();
+    return new Map(
+      parsed.items.flatMap((item) => {
+        if (!item || typeof item !== "object") return [];
+        const record = item as Record<string, unknown>;
+        const postId = Number(record.post_id ?? 0);
+        return postId ? [[postId, record] as const] : [];
+      }),
+    );
+  } catch {
+    return new Map();
+  }
+}
+
 function siteTargetUrlsByPostKey(backendDb: BackendDb): Map<string, Array<{ target: string; url: string | null }>> {
   const rows = backendDb.db
     .select({ postKey: postTargets.postKey, target: postTargets.target, url: postTargets.url })
@@ -227,6 +261,7 @@ async function prepareFeedItem(
   source: Record<string, unknown>,
   targetUrlsByPostKey: Map<string, Array<{ target: string; url: string | null }>>,
   fetchImpl: typeof fetch,
+  existing?: Record<string, unknown>,
 ): Promise<Record<string, unknown> | null> {
   const postId = Number(source.post_id ?? 0);
   if (!postId) return null;
@@ -235,9 +270,13 @@ async function prepareFeedItem(
   const hasRu = Boolean(source.has_ru ?? targets.site_ru) && isDue(source.publish_at_ru, now);
   const hasEn = Boolean(source.has_en ?? targets.site_en) && isDue(source.publish_at_en, now);
   if (!hasRu && !hasEn) return null;
-  const mediaRu = hasRu ? await materializeSiteMedia(config, postId, "ru", source.media ?? source.media_ru, fetchImpl) : [];
+  const mediaRu = hasRu
+    ? (existingMedia(existing, "media") ?? (await materializeSiteMedia(config, postId, "ru", source.media ?? source.media_ru, fetchImpl)))
+    : [];
   const mediaEnSource = source.media_en ?? source.media ?? source.media_ru;
-  const mediaEn = hasEn ? await materializeSiteMedia(config, postId, "en", mediaEnSource, fetchImpl) : [];
+  const mediaEn = hasEn
+    ? (existingMedia(existing, "media_en") ?? (await materializeSiteMedia(config, postId, "en", mediaEnSource, fetchImpl)))
+    : [];
   const targetUrls = targetUrlsByPostKey.get(`post:${postId}`) ?? [];
   const url =
     targetUrls.find((target) => target.target === "site_en" || target.target === "site_ru")?.url ??
@@ -258,6 +297,11 @@ async function prepareFeedItem(
     image: mediaRu.find((item) => item.type === "image")?.path ?? null,
     image_en: mediaEn.find((item) => item.type === "image")?.path ?? null,
   };
+}
+
+function existingMedia(existing: Record<string, unknown> | undefined, key: "media" | "media_en"): Record<string, unknown>[] | null {
+  const media = existing?.[key];
+  return Array.isArray(media) ? media.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object") : null;
 }
 
 function isDue(value: unknown, now: number): boolean {
