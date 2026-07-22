@@ -5,7 +5,7 @@ import { pruneMediaCache } from "../delivery/media-prepare.js";
 import { createPlatformPorts } from "../delivery/ports/social.js";
 import type { DeliveryPort, DeliveryPorts } from "../delivery/ports.js";
 import { runDeliveryPublishCycle } from "../delivery/publish-workflow.js";
-import { runSiteJobCycle } from "../delivery/site-jobs.js";
+import { recoverStaleSiteJobs, runSiteJobCycle } from "../delivery/site-jobs.js";
 import { runVideoCycle } from "../delivery/video-worker.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { log } from "../foundation/logger.js";
@@ -41,6 +41,9 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
   // request that was only just interrupted at the provider boundary.
   const recoveredAtStartup = recoverStalePublishJobs(backendDb, config, config.PUBLISH_RESTART_LOCK_GRACE_SECONDS);
   if (recoveredAtStartup) log("warn", "recovered interrupted publishing locks on worker startup", { recovered: recoveredAtStartup });
+  const recoveredSiteAtStartup = recoverStaleSiteJobs(config, backendDb, config.SITE_JOB_RESTART_LOCK_GRACE_SECONDS);
+  if (recoveredSiteAtStartup)
+    log("warn", "recovered interrupted site build locks on worker startup", { recovered: recoveredSiteAtStartup });
   return [
     startLoop("queue", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
       const claimed = await runPublishCycle(config, backendDb);

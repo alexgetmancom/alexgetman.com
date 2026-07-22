@@ -98,6 +98,7 @@ const envSchema = z
     PUBLISH_BACKOFF_MAX_SECONDS: z.coerce.number().int().positive().default(3600),
     SITE_JOB_CLAIM_LIMIT: z.coerce.number().int().positive().default(20),
     SITE_JOB_LOCK_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(900),
+    SITE_JOB_RESTART_LOCK_GRACE_SECONDS: z.coerce.number().int().positive().default(30),
     SITE_JOB_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
     SITE_JOB_BACKOFF_BASE_SECONDS: z.coerce.number().int().positive().default(60),
     SITE_JOB_BACKOFF_MAX_SECONDS: z.coerce.number().int().positive().default(900),

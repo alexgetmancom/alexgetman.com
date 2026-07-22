@@ -53,8 +53,12 @@ export async function runSiteJobCycle(config: BackendConfig, backendDb: BackendD
   return jobs.length;
 }
 
-function recoverStaleSiteJobs(config: BackendConfig, backendDb: BackendDb): number {
-  const cutoff = new Date(Date.now() - config.SITE_JOB_LOCK_TIMEOUT_SECONDS * 1000).toISOString();
+export function recoverStaleSiteJobs(
+  config: BackendConfig,
+  backendDb: BackendDb,
+  maxLockAgeSeconds = config.SITE_JOB_LOCK_TIMEOUT_SECONDS,
+): number {
+  const cutoff = new Date(Date.now() - maxLockAgeSeconds * 1000).toISOString();
   const now = new Date().toISOString();
   return backendDb.db
     .update(siteJobs)
