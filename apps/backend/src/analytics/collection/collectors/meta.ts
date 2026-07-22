@@ -5,7 +5,7 @@ import { errorMessage, terminalIfMissingRemoteObject } from "./errors.js";
 import type { MetricResult } from "./types.js";
 
 export async function collectFacebook(task: MetricTask, config: BackendConfig, fetchImpl: typeof fetch): Promise<MetricResult> {
-  const token = task.target === "facebook_ru" ? config.FACEBOOK_RU_PAGE_ACCESS_TOKEN : config.FACEBOOK_PAGE_ACCESS_TOKEN;
+  const token = config.FACEBOOK_PAGE_ACCESS_TOKEN;
   if (!token || !task.externalId) throw new Error("missing_facebook_token_or_id");
   const base = `https://graph.facebook.com/${config.FACEBOOK_GRAPH_API_VERSION}/${task.externalId}`;
   const metrics: Record<string, number> = {};

@@ -19,11 +19,7 @@ export async function runAnalyticsCycle(config: BackendConfig, backendDb: Backen
     profiles += 1;
   }
   if (config.FACEBOOK_PAGE_ID && config.FACEBOOK_PAGE_ACCESS_TOKEN && canSync(backendDb, "facebook_profile_en", profileInterval)) {
-    await syncFacebookProfile(config, backendDb, "en", fetchImpl);
-    profiles += 1;
-  }
-  if (config.FACEBOOK_RU_PAGE_ID && config.FACEBOOK_RU_PAGE_ACCESS_TOKEN && canSync(backendDb, "facebook_profile_ru", profileInterval)) {
-    await syncFacebookProfile(config, backendDb, "ru", fetchImpl);
+    await syncFacebookProfile(config, backendDb, fetchImpl);
     profiles += 1;
   }
   if (
@@ -39,11 +35,8 @@ export async function runAnalyticsCycle(config: BackendConfig, backendDb: Backen
   }
   const community = [
     ...(config.BLUESKY_HANDLE ? ["bluesky_profile"] : []),
-    ...(config.MASTODON_INSTANCE && config.MASTODON_ACCESS_TOKEN ? ["mastodon_profile"] : []),
-    ...(config.GITHUB_DISCUSSIONS_TOKEN ? ["github_profile"] : []),
     ...(config.controllerBotToken ? ["telegram_profile"] : []),
     ...(config.THREADS_ACCESS_TOKEN ? ["threads_profile"] : []),
-    ...(config.DEVTO_API_KEY ? ["devto_profile"] : []),
   ];
   if (community.some((source) => canSync(backendDb, source, profileInterval))) {
     await syncCommunityProfiles(config, backendDb, fetchImpl);

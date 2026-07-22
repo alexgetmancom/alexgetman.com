@@ -8,12 +8,8 @@ import type { ClaimedPublishJob } from "../../publishing/queue.js";
 import { prepareMediaItems } from "../media-prepare.js";
 import { type DeliveryPort, type DeliveryPorts, deliveryAdapter } from "../ports.js";
 import { publishToBluesky } from "../social/bluesky.js";
-import { devtoArticleFromPayload, publishToDevto } from "../social/devto.js";
 import { publishToFacebook } from "../social/facebook.js";
-import { publishToGitHubDiscussion } from "../social/github.js";
 import { publishInstagramStory } from "../social/instagram.js";
-import { publishToLinkedIn } from "../social/linkedin.js";
-import { publishToMastodon } from "../social/mastodon.js";
 import { payloadMedia } from "../social/payload.js";
 import { publishToTelegram } from "../social/telegram.js";
 import { publishToThreads } from "../social/threads.js";
@@ -52,11 +48,6 @@ export function createPlatformPorts(config: BackendConfig, fetchImpl: typeof fet
       });
     });
   const threadsEnConfig = { ...config, THREADS_ACCESS_TOKEN: config.THREADS_EN_ACCESS_TOKEN ?? config.THREADS_ACCESS_TOKEN };
-  const facebookRuConfig = {
-    ...config,
-    FACEBOOK_PAGE_ACCESS_TOKEN: config.FACEBOOK_RU_PAGE_ACCESS_TOKEN ?? config.FACEBOOK_PAGE_ACCESS_TOKEN,
-    FACEBOOK_PAGE_ID: config.FACEBOOK_RU_PAGE_ID ?? config.FACEBOOK_PAGE_ID,
-  };
   const instagramEnConfig = {
     ...config,
     INSTAGRAM_ACCESS_TOKEN: config.INSTAGRAM_EN_ACCESS_TOKEN ?? config.INSTAGRAM_ACCESS_TOKEN,
@@ -69,21 +60,13 @@ export function createPlatformPorts(config: BackendConfig, fetchImpl: typeof fet
   };
   const publishers: Record<string, DeliveryPort> = {
     // Every target that can use media goes through the same preparation step.
-    // It supplies both local files (Bluesky, Mastodon) and public URLs (Dev.to, GitHub).
-    devto: (job) => prepare(job, config, (payload) => publishToDevto(devtoArticleFromPayload(payload, config), config, fetchImpl)),
+    // Bluesky media is prepared locally before publishing.
     telegram: (job) => publishToTelegram(job.payload, config, fetchImpl),
-    mastodon: (job) => prepare(job, config, (payload) => publishToMastodon(payload, config, fetchImpl)),
     bluesky: (job) => prepare(job, config, (payload) => publishToBluesky(payload, config, fetchImpl)),
-    github: (job) => prepare(job, config, (payload) => publishToGitHubDiscussion(payload, config, fetchImpl)),
-    github_discussions: (job) => prepare(job, config, (payload) => publishToGitHubDiscussion(payload, config, fetchImpl)),
-    github_en: (job) => prepare(job, config, (payload) => publishToGitHubDiscussion(payload, config, fetchImpl)),
-    github_ru: (job) => prepare(job, config, (payload) => publishToGitHubDiscussion(payload, config, fetchImpl)),
     threads: (job) => prepare(job, config, (payload) => publishToThreads(payload, config, fetchImpl)),
     threads_ru: (job) => prepare(job, config, (payload) => publishToThreads(payload, config, fetchImpl)),
     threads_en: (job) => prepare(job, threadsEnConfig, (payload) => publishToThreads(payload, threadsEnConfig, fetchImpl)),
     facebook: (job) => prepare(job, config, (payload) => publishToFacebook(payload, config, fetchImpl)),
-    facebook_ru: (job) => prepare(job, facebookRuConfig, (payload) => publishToFacebook(payload, facebookRuConfig, fetchImpl)),
-    linkedin: (job) => prepare(job, config, (payload) => publishToLinkedIn(payload, config, fetchImpl)),
     x: (job) => prepare(job, config, (payload) => publishToX(payload, config, fetchImpl)),
     twitter: (job) => prepare(job, config, (payload) => publishToX(payload, config, fetchImpl)),
     instagram_story: (job) => prepare(job, config, (payload) => publishInstagramStory(payload, config, fetchImpl)),

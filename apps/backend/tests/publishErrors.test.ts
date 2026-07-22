@@ -11,7 +11,7 @@ describe("classifyPublishError", () => {
   });
 
   it("treats a tripped auth circuit breaker as transient so retries resume once it clears", () => {
-    expect(classifyPublishError(new Error("auth_circuit_open: mastodon has a failing credential"))).toBe("transient");
+    expect(classifyPublishError(new Error("auth_circuit_open: bluesky has a failing credential"))).toBe("transient");
   });
 });
 

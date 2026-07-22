@@ -112,7 +112,7 @@ async function main(): Promise<void> {
     else if (args.command === "metrics-backfill") {
       const targets = (
         args.values.get("targets") ??
-        "telegram,threads_ru,threads_en,facebook,facebook_ru,devto,bluesky,mastodon,github_en,github_ru,instagram_stories,instagram_stories_ru,telegram_stories"
+        "telegram,threads_ru,threads_en,facebook,bluesky,instagram_stories,instagram_stories_ru,telegram_stories"
       )
         .split(",")
         .filter(Boolean);

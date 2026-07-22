@@ -1,7 +1,5 @@
-import fs from "node:fs";
 import path from "node:path";
 import * as z from "zod";
-import type { BackendConfig } from "../../foundation/config.js";
 
 type MediaKind = "IMAGE" | "VIDEO";
 
@@ -76,22 +74,6 @@ export function payloadText(payload: Record<string, unknown>): string {
   return stringValue(parsed.text_en) || stringValue(parsed.text) || "";
 }
 
-export function payloadTitle(payload: Record<string, unknown>): string {
-  return stringValue(payload.title) || firstLine(payloadText(payload)) || "Alex Getman update";
-}
-
-export function payloadCanonicalUrl(payload: Record<string, unknown>, config: BackendConfig): string | null {
-  payload = parsePublishPayload(payload);
-  const direct = stringValue(payload.canonicalUrl) || stringValue(payload.canonical_url) || stringValue(payload.url);
-  if (direct) return direct;
-  const postId = payload.post_id ?? payload.postId;
-  const locale = stringValue(payload.locale).toLowerCase();
-  const slug = locale === "ru" ? (payload.slug_ru ?? payload.slug) : (payload.slug_en ?? payload.slugEn ?? payload.slug);
-  if (postId == null || !slug) return null;
-  const localePrefix = locale === "ru" ? "/ru" : "";
-  return `${config.PUBLIC_BASE_URL.replace(/\/$/, "")}${localePrefix}/${postId}/${String(slug).replace(/^\/+/, "")}/`;
-}
-
 export function payloadMedia(payload: Record<string, unknown>): PublishMediaItem[] {
   payload = parsePublishPayload(payload);
   const raw =
@@ -155,11 +137,6 @@ export function stripLeadingEmojis(text: string): string {
   return cleaned;
 }
 
-export async function readFileBlob(filePath: string, contentType = guessContentType(filePath)): Promise<Blob> {
-  const bytes = await fs.promises.readFile(filePath);
-  return new Blob([bytes], { type: contentType });
-}
-
 export function mediaExtension(item: PublishMediaItem): string {
   if (item.localPath) {
     const ext = path.extname(item.localPath);
@@ -180,10 +157,6 @@ export function guessContentType(filePath: string): string {
 
 function stringValue(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
-}
-
-function firstLine(value: string): string {
-  return value.split(/\r?\n/, 1)[0]?.trim() ?? "";
 }
 
 function normalizeMediaType(value: unknown): MediaKind | null {

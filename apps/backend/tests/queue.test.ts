@@ -38,7 +38,7 @@ describe("publish queue", () => {
   it("does not let a stale worker fail a job claimed by another worker", () => {
     const backendDb = tempDb();
     try {
-      const id = enqueuePublishJob(backendDb, { messageId: 90, target: "devto", payload: { title: "Queued", bodyMarkdown: "Body" } });
+      const id = enqueuePublishJob(backendDb, { messageId: 90, target: "bluesky", payload: { title: "Queued", bodyMarkdown: "Body" } });
       const [claimed] = claimDuePublishJobs(backendDb, 1, "active-worker");
       if (!claimed) throw new Error("job was not claimed");
 
@@ -62,10 +62,10 @@ describe("publish queue", () => {
   it("retries a transient failed job while preserving its published external id", () => {
     const backendDb = tempDb();
     try {
-      const id = enqueuePublishJob(backendDb, { messageId: 91, target: "devto", payload: { title: "Queued", bodyMarkdown: "Body" } });
+      const id = enqueuePublishJob(backendDb, { messageId: 91, target: "bluesky", payload: { title: "Queued", bodyMarkdown: "Body" } });
       const [claimed] = claimDuePublishJobs(backendDb, 1, "active-worker");
       if (!claimed) throw new Error("job was not claimed");
-      backendDb.db.update(postTargets).set({ externalId: "existing-id" }).where(eq(postTargets.target, "devto")).run();
+      backendDb.db.update(postTargets).set({ externalId: "existing-id" }).where(eq(postTargets.target, "bluesky")).run();
 
       failPublishJob(
         backendDb,
@@ -89,7 +89,7 @@ describe("publish queue", () => {
         backendDb.db
           .select({ status: postTargets.status, externalId: postTargets.externalId })
           .from(postTargets)
-          .where(eq(postTargets.target, "devto"))
+          .where(eq(postTargets.target, "bluesky"))
           .get(),
       ).toEqual({
         status: "queued",
@@ -105,18 +105,18 @@ describe("publish queue", () => {
     try {
       const id = enqueuePublishJob(backendDb, {
         messageId: 100,
-        target: "devto",
+        target: "bluesky",
         payload: { title: "Queued", bodyMarkdown: "Body" },
       });
       const [job] = claimDuePublishJobs(backendDb, 10, "test-worker");
-      expect(job).toMatchObject({ jobId: id, messageId: 100, target: "devto" });
+      expect(job).toMatchObject({ jobId: id, messageId: 100, target: "bluesky" });
       const row = backendDb.db
         .select({ status: publishJobs.status, lockedBy: publishJobs.lockedBy })
         .from(publishJobs)
         .where(eq(publishJobs.jobId, id))
         .get();
       expect(row).toEqual({ status: "publishing", lockedBy: "test-worker" });
-      const target = backendDb.db.select({ status: postTargets.status }).from(postTargets).where(eq(postTargets.target, "devto")).get();
+      const target = backendDb.db.select({ status: postTargets.status }).from(postTargets).where(eq(postTargets.target, "bluesky")).get();
       if (!target) throw new Error("expected post target");
       expect(target.status).toBe("publishing");
     } finally {
@@ -129,13 +129,13 @@ describe("publish queue", () => {
     try {
       const id = enqueuePublishJob(backendDb, {
         messageId: 99,
-        target: "devto",
+        target: "bluesky",
         publishAt: new Date(Date.now() + 60_000).toISOString(),
         payload: { title: "Scheduled", bodyMarkdown: "Body" },
       });
       expect(claimDuePublishJobs(backendDb, 10)).toEqual([]);
       backendDb.db.update(publishJobs).set({ publishAt: null }).where(eq(publishJobs.jobId, id)).run();
-      await runPublishCycle(loadConfig({ DEVTO_API_KEY: "secret" }), backendDb, { devto: async () => ({ ok: true, id: "due" }) });
+      await runPublishCycle(loadConfig({}), backendDb, { bluesky: async () => ({ ok: true, id: "due" }) });
       expect(backendDb.db.select({ status: publishJobs.status }).from(publishJobs).where(eq(publishJobs.jobId, id)).get()).toEqual({
         status: "published",
       });
@@ -144,16 +144,16 @@ describe("publish queue", () => {
     }
   });
 
-  it("runs a successful Dev.to publishing cycle", async () => {
+  it("runs a successful BlueSky publishing cycle", async () => {
     const backendDb = tempDb();
     try {
       const id = enqueuePublishJob(backendDb, {
         messageId: 101,
-        target: "devto",
+        target: "bluesky",
         payload: { title: "Queued", bodyMarkdown: "Body" },
       });
-      const claimed = await runPublishCycle(loadConfig({ DEVTO_API_KEY: "secret" }), backendDb, {
-        devto: async () => ({ ok: true, id: "devto-1", url: "https://dev.to/a/devto-1" }),
+      const claimed = await runPublishCycle(loadConfig({}), backendDb, {
+        bluesky: async () => ({ ok: true, id: "bluesky-1", url: "https://bsky.app/profile/alexgetman.com/post/bluesky-1" }),
       });
       expect(claimed).toBe(1);
       const job = backendDb.db
@@ -165,9 +165,13 @@ describe("publish queue", () => {
       const target = backendDb.db
         .select({ status: postTargets.status, externalId: postTargets.externalId, url: postTargets.url })
         .from(postTargets)
-        .where(eq(postTargets.target, "devto"))
+        .where(eq(postTargets.target, "bluesky"))
         .get();
-      expect(target).toEqual({ status: "published", externalId: "devto-1", url: "https://dev.to/a/devto-1" });
+      expect(target).toEqual({
+        status: "published",
+        externalId: "bluesky-1",
+        url: "https://bsky.app/profile/alexgetman.com/post/bluesky-1",
+      });
     } finally {
       backendDb.close();
     }
@@ -240,11 +244,11 @@ describe("publish queue", () => {
     try {
       const id = enqueuePublishJob(backendDb, {
         messageId: 102,
-        target: "devto",
+        target: "bluesky",
         payload: { title: "Queued", bodyMarkdown: "Body" },
       });
-      await runPublishCycle(loadConfig({ DEVTO_API_KEY: "secret", PUBLISH_BACKOFF_BASE_SECONDS: "1" }), backendDb, {
-        devto: async () => {
+      await runPublishCycle(loadConfig({ PUBLISH_BACKOFF_BASE_SECONDS: "1" }), backendDb, {
+        bluesky: async () => {
           throw new HttpPublishError("temporary", 503, "temporary");
         },
       });
@@ -273,15 +277,15 @@ describe("publish queue", () => {
     try {
       const id = enqueuePublishJob(backendDb, {
         messageId: 104,
-        target: "devto",
+        target: "bluesky",
         payload: { title: "Queued", bodyMarkdown: "Body" },
       });
       const publishers = {
-        devto: async () => {
+        bluesky: async () => {
           throw new Error("unclassified upstream response");
         },
       };
-      const config = loadConfig({ DEVTO_API_KEY: "secret", PUBLISH_BACKOFF_BASE_SECONDS: "1" });
+      const config = loadConfig({ PUBLISH_BACKOFF_BASE_SECONDS: "1" });
       await runPublishCycle(config, backendDb, publishers);
       expect(
         backendDb.db
@@ -337,7 +341,7 @@ describe("publish queue", () => {
     try {
       const id = enqueuePublishJob(backendDb, {
         messageId: 103,
-        target: "devto",
+        target: "bluesky",
         payload: { title: "Queued", bodyMarkdown: "Body" },
       });
       backendDb.db
@@ -354,7 +358,7 @@ describe("publish queue", () => {
         .where(eq(publishJobs.jobId, id))
         .get();
       expect(job).toEqual({ status: "queued", lockedBy: null });
-      expect(backendDb.db.select({ status: postTargets.status }).from(postTargets).where(eq(postTargets.target, "devto")).get()).toEqual({
+      expect(backendDb.db.select({ status: postTargets.status }).from(postTargets).where(eq(postTargets.target, "bluesky")).get()).toEqual({
         status: "queued",
       });
     } finally {
@@ -365,7 +369,7 @@ describe("publish queue", () => {
   it("keeps stale lock recovery available when the delivery loop is still awaiting a provider", () => {
     const backendDb = tempDb();
     try {
-      const id = enqueuePublishJob(backendDb, { messageId: 1031, target: "devto", payload: { title: "Queued", bodyMarkdown: "Body" } });
+      const id = enqueuePublishJob(backendDb, { messageId: 1031, target: "bluesky", payload: { title: "Queued", bodyMarkdown: "Body" } });
       backendDb.db
         .update(publishJobs)
         .set({
@@ -389,7 +393,7 @@ describe("publish queue", () => {
   it("does not let a stale worker overwrite a recovered job", () => {
     const backendDb = tempDb();
     try {
-      const id = enqueuePublishJob(backendDb, { messageId: 104, target: "devto", payload: { title: "Queued", bodyMarkdown: "Body" } });
+      const id = enqueuePublishJob(backendDb, { messageId: 104, target: "bluesky", payload: { title: "Queued", bodyMarkdown: "Body" } });
       const [claimed] = claimDuePublishJobs(backendDb, 1, "old-worker");
       if (!claimed) throw new Error("expected claimed job");
       backendDb.db.update(publishJobs).set({ lockedAt: "2000-01-01T00:00:00.000Z" }).where(eq(publishJobs.jobId, id)).run();
@@ -435,13 +439,13 @@ describe("publish queue", () => {
     try {
       const id = enqueuePublishJob(backendDb, {
         messageId: 105,
-        target: "devto",
+        target: "bluesky",
         payload: { title: "Queued", bodyMarkdown: "Body" },
       });
-      await runPublishCycle(loadConfig({ DEVTO_API_KEY: "secret" }), backendDb, {
-        devto: async () => {
+      await runPublishCycle(loadConfig({}), backendDb, {
+        bluesky: async () => {
           backendDb.sqlite.exec("DROP TABLE post_events; CREATE TABLE post_events (id INTEGER PRIMARY KEY)");
-          return { ok: true, id: "devto-1" };
+          return { ok: true, id: "bluesky-1" };
         },
       });
       const job = backendDb.db
@@ -461,8 +465,8 @@ describe("publish queue", () => {
   it("does not delete another legacy post while deduplicating a completed target", () => {
     const backendDb = tempDb();
     try {
-      const first = enqueuePublishJob(backendDb, { messageId: 201, target: "devto", payload: { title: "One" } });
-      const second = enqueuePublishJob(backendDb, { messageId: 202, target: "devto", payload: { title: "Two" } });
+      const first = enqueuePublishJob(backendDb, { messageId: 201, target: "bluesky", payload: { title: "One" } });
+      const second = enqueuePublishJob(backendDb, { messageId: 202, target: "bluesky", payload: { title: "Two" } });
       claimDuePublishJobs(backendDb, 1, "test-worker");
       completePublishJob(backendDb, loadConfig({}), first, { ok: true, id: "first" });
       expect(backendDb.db.select({ status: publishJobs.status }).from(publishJobs).where(eq(publishJobs.jobId, second)).get()).toEqual({

@@ -29,7 +29,7 @@ describe("TypeScript operations tooling", () => {
     try {
       seedCapabilities(backendDb);
       expect(capabilitySummary(backendDb)).toHaveLength(9);
-      expect((backendDb.sqlite.prepare("SELECT count(*) AS count FROM platform_capabilities").get() as { count: number }).count).toBe(153);
+      expect((backendDb.sqlite.prepare("SELECT count(*) AS count FROM platform_capabilities").get() as { count: number }).count).toBe(99);
     } finally {
       backendDb.close();
     }
@@ -45,14 +45,14 @@ describe("TypeScript operations tooling", () => {
         )
         .run(now, now, now);
       backendDb.sqlite
-        .prepare("INSERT INTO post_targets(post_key,target,status,updated_at) VALUES ('post:1','devto','published',?)")
+        .prepare("INSERT INTO post_targets(post_key,target,status,updated_at) VALUES ('post:1','bluesky','published',?)")
         .run(now);
-      const plan = buildMetricsBackfillPlan(backendDb, { targets: ["devto"] });
+      const plan = buildMetricsBackfillPlan(backendDb, { targets: ["bluesky"] });
       expect(plan).toHaveLength(1);
       const config = loadConfig({ ADMIN_IDS: "42" });
       expect(withMaintenanceLock(backendDb, () => applyMetricsBackfill(backendDb, config, plan, true))).toBe(1);
       expect(
-        backendDb.sqlite.prepare("SELECT check_count,frozen_at FROM metric_schedule WHERE post_key='post:1' AND target='devto'").get(),
+        backendDb.sqlite.prepare("SELECT check_count,frozen_at FROM metric_schedule WHERE post_key='post:1' AND target='bluesky'").get(),
       ).toEqual({ check_count: 0, frozen_at: null });
       expect((backendDb.sqlite.prepare("SELECT count(*) AS count FROM maintenance_locks").get() as { count: number }).count).toBe(0);
     } finally {

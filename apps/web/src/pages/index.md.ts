@@ -28,7 +28,6 @@ export async function GET(context: any) {
     "- Telegram: https://t.me/alexgetmancom",
     "- Threads: https://www.threads.net/@alexgetmanco",
     "- GitHub: https://github.com/alexgetmancom",
-    "- LinkedIn: https://www.linkedin.com/in/alexgetmancom",
     `- RSS: ${siteUrl}/feed.xml`,
     `- Russian RSS: ${siteUrl}/ru/feed.xml`,
     `- Sitemap: ${siteUrl}/sitemap.xml`,

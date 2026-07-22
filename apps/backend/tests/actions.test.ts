@@ -135,69 +135,6 @@ describe("command center actions", () => {
     }
   });
 
-  it("edits published external targets as a best-effort side effect", async () => {
-    const backendDb = openBackendDb(":memory:");
-    try {
-      const now = new Date().toISOString();
-      backendDb.db
-        .insert(publications)
-        .values({
-          postId: 7,
-          status: "published",
-          telegramMessageId: 707,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
-      backendDb.db
-        .insert(posts)
-        .values({
-          postKey: "post:7",
-          postId: 7,
-          channel: "controller",
-          chatId: "-1001",
-          messageId: 707,
-          text: "RU",
-          textEn: "EN",
-          status: "active",
-          mediaCount: 0,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
-      backendDb.db
-        .insert(postTargets)
-        .values({
-          postKey: "post:7",
-          target: "linkedin",
-          status: "published",
-          externalId: "urn:li:share:7",
-          updatedAt: now,
-        })
-        .run();
-      const calls: string[] = [];
-      const fetchImpl = (async (input: string | URL | Request) => {
-        calls.push(String(input));
-        return new Response("", { status: 204 });
-      }) as typeof fetch;
-      const result = await runOperationCommand(
-        backendDb,
-        { action: "edit_en", ref: "post:7", text_en: "Updated EN" },
-        loadConfig({
-          LINKEDIN_ACCESS_TOKEN: "token",
-          LINKEDIN_API_VERSION: "202606",
-          TELEGRAM_API_BASE_URL: "https://api.telegram.org",
-          CHANNEL_USERNAME: "alexgetmancom",
-        }),
-        fetchImpl,
-      );
-      expect(result.external).toEqual([{ target: "linkedin", ok: true, response: {} }]);
-      expect(calls).toEqual(["https://api.linkedin.com/rest/posts/urn%3Ali%3Ashare%3A7"]);
-    } finally {
-      backendDb.close();
-    }
-  });
-
   it("uses the Facebook token and reports a missing token without a network call", async () => {
     const backendDb = openBackendDb(":memory:");
     try {

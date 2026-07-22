@@ -15,7 +15,6 @@ describe("Command Center audience projection", () => {
         .values([
           { platform: "threads_ru", dataJson: { followersCount: 180, manual: true }, updatedAt: now },
           { platform: "threads_en", dataJson: { followersCount: 20, manual: true }, updatedAt: now },
-          { platform: "github", dataJson: { followersCount: 14, stars: 63 }, updatedAt: now },
         ])
         .run();
       backendDb.db
@@ -52,9 +51,6 @@ describe("Command Center audience projection", () => {
       const html = renderAudienceSection(backendDb, loadConfig({}));
       expect(html).toContain("Threads RU");
       expect(html).toContain("Threads EN");
-      expect(html).toContain("LinkedIn");
-      expect(html).toContain("GitHub");
-      expect(html).toContain("14 · ★63");
       expect(html).toContain("Δ 7д");
       expect(html).toContain("Просмотры 30д");
       expect(html).toContain("+10");

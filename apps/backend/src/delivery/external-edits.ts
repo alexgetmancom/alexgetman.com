@@ -53,33 +53,6 @@ export async function editPublishedTargets(
             "FACEBOOK_PAGE_ACCESS_TOKEN",
           );
         }
-        if (row.target === "facebook_ru" && edit.textRu) {
-          return await editFacebookTarget(
-            fetchImpl,
-            config,
-            row.target,
-            row.externalId,
-            edit.textRu,
-            config.FACEBOOK_RU_PAGE_ACCESS_TOKEN,
-            "FACEBOOK_RU_PAGE_ACCESS_TOKEN",
-          );
-        }
-        if (row.target === "linkedin" && edit.textEn) {
-          if (!config.LINKEDIN_ACCESS_TOKEN)
-            return { target: row.target, ok: false, skipped: true, error: "missing LINKEDIN_ACCESS_TOKEN" };
-          return await postJson(
-            fetchImpl,
-            `https://api.linkedin.com/rest/posts/${encodeURIComponent(row.externalId)}`,
-            row.target,
-            { patch: { $set: { commentary: edit.textEn } } },
-            {
-              Authorization: `Bearer ${config.LINKEDIN_ACCESS_TOKEN}`,
-              "Linkedin-Version": config.LINKEDIN_API_VERSION,
-              "X-Restli-Method": "PARTIAL_UPDATE",
-              "X-Restli-Protocol-Version": "2.0.0",
-            },
-          );
-        }
         return null;
       } catch (error) {
         return { target: row.target, ok: false, error: error instanceof Error ? error.message : String(error) };

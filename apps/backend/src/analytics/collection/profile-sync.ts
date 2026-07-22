@@ -242,16 +242,6 @@ type BlueskyProfile = {
   followsCount?: number;
   postsCount?: number;
 };
-type MastodonProfile = {
-  id?: string;
-  acct?: string;
-  display_name?: string;
-  followers_count?: number;
-  following_count?: number;
-  statuses_count?: number;
-};
-type GitHubProfile = { login?: string; followers?: number; following?: number };
-type GitHubRepo = { stargazers_count?: number };
 type TelegramCount = { ok?: boolean; result?: number };
 type TelegramBroadcastStats = {
   _?: string;
@@ -262,25 +252,19 @@ type TelegramBroadcastStats = {
   period?: { minDate?: number; maxDate?: number };
 };
 type ThreadsProfile = { id?: string; username?: string };
-type DevtoArticle = { user?: { username?: string; name?: string } };
 
-export async function syncFacebookProfile(
-  config: BackendConfig,
-  backendDb: BackendDb,
-  locale: "en" | "ru",
-  fetchImpl: typeof fetch,
-): Promise<void> {
-  const source = `facebook_profile_${locale}`;
+export async function syncFacebookProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
+  const source = "facebook_profile_en";
   await synced(backendDb, source, async () => {
-    const pageId = locale === "ru" ? config.FACEBOOK_RU_PAGE_ID : config.FACEBOOK_PAGE_ID;
-    const token = locale === "ru" ? config.FACEBOOK_RU_PAGE_ACCESS_TOKEN : config.FACEBOOK_PAGE_ACCESS_TOKEN;
+    const pageId = config.FACEBOOK_PAGE_ID;
+    const token = config.FACEBOOK_PAGE_ACCESS_TOKEN;
     if (!pageId || !token) throw new Error("Facebook Page credentials are missing");
     const page = await requestJson<FacebookPage>(
       fetchImpl,
       `https://graph.facebook.com/${config.FACEBOOK_GRAPH_API_VERSION}/${pageId}?fields=name,followers_count,fan_count,talking_about_count&access_token=${encodeURIComponent(token)}`,
     );
     recordProfileSnapshot(backendDb, {
-      platform: `facebook_${locale}`,
+      platform: "facebook_en",
       account: page.name ?? pageId,
       source: "facebook_graph_api",
       metrics: {
@@ -319,10 +303,6 @@ export async function syncCommunityProfiles(config: BackendConfig, backendDb: Ba
   const jobs: Promise<void>[] = [];
   const interval = config.CREATOR_PROFILE_REFRESH_INTERVAL_SECONDS;
   if (config.BLUESKY_HANDLE && canSync(backendDb, "bluesky_profile", interval)) jobs.push(syncBlueskyProfile(config, backendDb, fetchImpl));
-  if (config.MASTODON_INSTANCE && config.MASTODON_ACCESS_TOKEN && canSync(backendDb, "mastodon_profile", interval))
-    jobs.push(syncMastodonProfile(config, backendDb, fetchImpl));
-  if (config.GITHUB_DISCUSSIONS_TOKEN && canSync(backendDb, "github_profile", interval))
-    jobs.push(syncGitHubProfile(config, backendDb, fetchImpl));
   // A controller bot is not itself a Telegram publishing channel. In a
   // video-only Studio (such as Maru) CHANNEL_USERNAME may merely fall back to
   // the legacy default, so collecting it would leak another creator's audience
@@ -331,7 +311,6 @@ export async function syncCommunityProfiles(config: BackendConfig, backendDb: Ba
     jobs.push(syncTelegramProfile(config, backendDb, fetchImpl));
   if (config.THREADS_ACCESS_TOKEN && canSync(backendDb, "threads_profile", interval))
     jobs.push(syncThreadsProfile(config, backendDb, fetchImpl));
-  if (config.DEVTO_API_KEY && canSync(backendDb, "devto_profile", interval)) jobs.push(syncDevtoProfile(config, backendDb, fetchImpl));
   await Promise.all(jobs);
 }
 
@@ -352,59 +331,6 @@ async function syncBlueskyProfile(config: BackendConfig, backendDb: BackendDb, f
         followersCount: metricNumber(profile.followersCount),
         followingCount: metricNumber(profile.followsCount),
         postsCount: metricNumber(profile.postsCount),
-      },
-    });
-  });
-}
-
-async function syncMastodonProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
-  const instance = config.MASTODON_INSTANCE;
-  const accessToken = config.MASTODON_ACCESS_TOKEN;
-  if (!instance || !accessToken) return;
-  await synced(backendDb, "mastodon_profile", async () => {
-    const host = `${/^https?:\/\//i.test(instance) ? "" : "https://"}${instance}`.replace(/\/$/, "");
-    const profile = await requestJson<MastodonProfile>(fetchImpl, `${host}/api/v1/accounts/verify_credentials`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    recordProfileSnapshot(backendDb, {
-      platform: "mastodon",
-      account: profile.acct ?? profile.id ?? "mastodon",
-      source: "mastodon_api",
-      metrics: {
-        name: profile.display_name ?? profile.acct ?? "Mastodon",
-        followersCount: metricNumber(profile.followers_count),
-        followingCount: metricNumber(profile.following_count),
-        postsCount: metricNumber(profile.statuses_count),
-      },
-    });
-  });
-}
-
-async function syncGitHubProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
-  if (!config.GITHUB_DISCUSSIONS_TOKEN) return;
-  await synced(backendDb, "github_profile", async () => {
-    const headers = { Authorization: `Bearer ${config.GITHUB_DISCUSSIONS_TOKEN}`, "User-Agent": "alexgetman-backend/1.0" };
-    const profile = await requestJson<GitHubProfile>(fetchImpl, "https://api.github.com/user", { headers });
-    let stars = 0;
-    for (let page = 1; page <= 20; page += 1) {
-      const repositories = await requestJson<GitHubRepo[]>(
-        fetchImpl,
-        `https://api.github.com/user/repos?affiliation=owner&per_page=100&page=${page}`,
-        { headers },
-      );
-      stars += repositories.reduce((total, repository) => total + (metricNumber(repository.stargazers_count) ?? 0), 0);
-      if (repositories.length < 100) break;
-      if (page === 20) throw new Error("GitHub owned-repository list exceeds safe analytics page limit");
-    }
-    recordProfileSnapshot(backendDb, {
-      platform: "github",
-      account: profile.login ?? "github",
-      source: "github_api",
-      metrics: {
-        name: profile.login ?? "GitHub",
-        followersCount: metricNumber(profile.followers),
-        followingCount: metricNumber(profile.following),
-        stars,
       },
     });
   });
@@ -485,45 +411,4 @@ async function syncThreadsProfile(config: BackendConfig, backendDb: BackendDb, f
       metrics: { name: profile.username ?? profile.id },
     });
   });
-}
-
-async function syncDevtoProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
-  const apiKey = config.DEVTO_API_KEY;
-  if (!apiKey) return;
-  await synced(backendDb, "devto_profile", async () => {
-    const headers = { "api-key": apiKey, "User-Agent": "alexgetman-backend/1.0" };
-    // Dev.to accepts a publishing token for articles/me but may reject users/me.
-    // Derive the account from the authenticated article payload instead of requiring
-    // a broader token scope just to collect this optional profile projection.
-    const firstArticles = await requestJson<DevtoArticle[]>(fetchImpl, "https://dev.to/api/articles/me?per_page=1&page=1", { headers });
-    const user = firstArticles[0]?.user;
-    const posts = await countDevtoPages(fetchImpl, "https://dev.to/api/articles/me?per_page=1000", headers);
-    let followers: number | undefined;
-    try {
-      followers = await countDevtoPages(fetchImpl, "https://dev.to/api/followers/users?per_page=1000", headers);
-    } catch {
-      // The followers endpoint is optional and currently returns 5xx for some
-      // authenticated Dev.to accounts. Keep article analytics healthy instead.
-    }
-    recordProfileSnapshot(backendDb, {
-      platform: "devto",
-      account: user?.username ?? "devto",
-      source: "devto_api",
-      metrics: {
-        name: user?.name ?? user?.username ?? "Dev.to",
-        ...(followers == null ? {} : { followersCount: followers }),
-        postsCount: posts,
-      },
-    });
-  });
-}
-
-async function countDevtoPages(fetchImpl: typeof fetch, base: string, headers: Record<string, string>): Promise<number> {
-  let total = 0;
-  for (let page = 1; page <= 20; page += 1) {
-    const rows = await requestJson<unknown[]>(fetchImpl, `${base}&page=${page}`, { headers });
-    total += rows.length;
-    if (rows.length < 1000) return total;
-  }
-  throw new Error("Dev.to profile pagination exceeded the safe daily limit");
 }

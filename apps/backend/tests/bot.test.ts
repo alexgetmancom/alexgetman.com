@@ -66,14 +66,9 @@ describe("Telegram controller flow", () => {
     expect(draft).toMatchObject({ status: "scheduled", post_id: postId });
     expect(jobs.map((job) => job.target)).toEqual([
       "bluesky",
-      "devto",
       "facebook",
-      "facebook_ru",
-      "github_en",
-      "github_ru",
       "instagram_stories",
       "instagram_stories_ru",
-      "mastodon",
       "telegram",
       "telegram_stories",
       "threads_en",
@@ -188,7 +183,7 @@ describe("Telegram controller flow", () => {
 
     const jobs = backendDb.sqlite
       .prepare(
-        "SELECT target,payload_json FROM publish_jobs WHERE target IN ('telegram','threads_ru','facebook','github_en') ORDER BY target",
+        "SELECT target,payload_json FROM publish_jobs WHERE target IN ('telegram','threads_ru','facebook','threads_en') ORDER BY target",
       )
       .all() as Array<{ target: string; payload_json: string }>;
     const payloads = Object.fromEntries(jobs.map((job) => [job.target, JSON.parse(job.payload_json) as Record<string, unknown>]));
@@ -202,7 +197,7 @@ describe("Telegram controller flow", () => {
       });
       expect(payloads[target]).not.toHaveProperty("media_en");
     }
-    for (const target of ["facebook", "github_en"]) {
+    for (const target of ["facebook", "threads_en"]) {
       expect(payloads[target]).toMatchObject({
         locale: "en",
         text: "Edited English text",
@@ -270,7 +265,7 @@ describe("Telegram controller flow", () => {
       .run(postId);
 
     const progress = postProgress(backendDb, draftId, true);
-    expect(progress.text).toContain("Progress: *2 / 15*");
+    expect(progress.text).toContain("Progress: *2 / 10*");
     expect(progress.text).toContain("✅ Published: 1");
     expect(progress.text).toContain("🔄 Publishing: 1");
     expect(progress.text).toContain("❌ Failed: 1");

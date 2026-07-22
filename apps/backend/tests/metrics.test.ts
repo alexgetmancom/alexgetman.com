@@ -12,9 +12,9 @@ describe("metrics cycle", () => {
   it("schedules published targets and persists metric samples", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      seedPublishedPost(backendDb, "post:1", "devto");
+      seedPublishedPost(backendDb, "post:1", "bluesky");
       const checked = await runMetricsCycle(loadConfig({ MAX_METRIC_TASKS_PER_CYCLE: "10" }), backendDb, {
-        devto: async () => ({ metrics: { views: 120, likes: 9 }, source: "test_api", raw: { id: 1 } }),
+        bluesky: async () => ({ metrics: { views: 120, likes: 9 }, source: "test_api", raw: { id: 1 } }),
       });
       expect(checked).toBe(1);
       expect(
@@ -46,9 +46,9 @@ describe("metrics cycle", () => {
   it("stores collector errors and retries the same durable checkpoint", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      seedPublishedPost(backendDb, "post:2", "devto");
+      seedPublishedPost(backendDb, "post:2", "bluesky");
       await runMetricsCycle(loadConfig({}), backendDb, {
-        devto: async () => {
+        bluesky: async () => {
           throw new Error("upstream unavailable");
         },
       });
@@ -78,37 +78,12 @@ describe("metrics cycle", () => {
     }
   });
 
-  it("disables LinkedIn metrics by default and freezes an existing schedule", async () => {
-    const backendDb = openBackendDb(":memory:");
-    try {
-      seedPublishedPost(backendDb, "post:linkedin", "linkedin");
-      backendDb.db
-        .insert(metricSchedule)
-        .values({
-          postKey: "post:linkedin",
-          target: "linkedin",
-          nextCheckAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        })
-        .run();
-      const config = loadConfig({});
-      const collectors = createMetricCollectors(config);
-      expect(collectors.linkedin).toBeUndefined();
-      await runMetricsCycle(config, backendDb, collectors);
-      expect(
-        backendDb.db.select({ frozenAt: metricSchedule.frozenAt, lastError: metricSchedule.lastError }).from(metricSchedule).get(),
-      ).toEqual({ frozenAt: expect.any(String), lastError: null });
-    } finally {
-      backendDb.close();
-    }
-  });
-
   it("freezes a terminal collector error instead of retrying it", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      seedPublishedPost(backendDb, "post:terminal", "devto");
+      seedPublishedPost(backendDb, "post:terminal", "bluesky");
       await runMetricsCycle(loadConfig({}), backendDb, {
-        devto: async () => {
+        bluesky: async () => {
           throw new TerminalMetricError("post expired");
         },
       });
@@ -132,23 +107,6 @@ describe("Telegram public metrics", () => {
   });
 });
 
-describe("Mastodon metrics", () => {
-  it("normalizes an instance hostname without a protocol", async () => {
-    const fetchImpl = mock(
-      async () =>
-        new Response(JSON.stringify({ favourites_count: 2, replies_count: 1, reblogs_count: 3 }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }),
-    ) as unknown as typeof fetch;
-    const collector = createMetricCollectors(loadConfig({ MASTODON_INSTANCE: "mastodon.social" }), fetchImpl).mastodon;
-    if (!collector) throw new Error("Mastodon collector is missing");
-    const result = await collector({ ...task("mastodon"), externalId: "123", externalIds: ["123"] });
-    expect(fetchImpl).toHaveBeenCalledWith("https://mastodon.social/api/v1/statuses/123", expect.anything());
-    expect(result.metrics).toEqual({ likes: 2, replies: 1, reposts: 3 });
-  });
-});
-
 function seedPublishedPost(backendDb: ReturnType<typeof openBackendDb>, postKey: string, target: string): void {
   const date = new Date(Date.now() - 2 * 3_600_000).toISOString();
   backendDb.db
@@ -157,7 +115,7 @@ function seedPublishedPost(backendDb: ReturnType<typeof openBackendDb>, postKey:
     .run();
   backendDb.db
     .insert(postTargets)
-    .values({ postKey, target, status: "published", externalId: "external-1", url: "https://dev.to/alex/post", updatedAt: date })
+    .values({ postKey, target, status: "published", externalId: "external-1", url: "https://example.test/post", updatedAt: date })
     .run();
 }
 

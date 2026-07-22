@@ -6,18 +6,12 @@ const ORDERED_IDS = [
   "threads_en",
   "threads_ru",
   "facebook",
-  "facebook_ru",
   "instagram_stories",
   "instagram_stories_ru",
   "telegram",
-  "linkedin",
   "x",
   "telegram_stories",
   "bluesky",
-  "mastodon",
-  "devto",
-  "github_en",
-  "github_ru",
 ] as const;
 
 type TargetInfo = { id: string; label: string; locale: string; kind: string };
@@ -35,12 +29,8 @@ export const PLATFORM_ICONS: Record<string, string> = {
   telegram: `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="vertical-align: middle;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69.01-.03.01-.14-.07-.2-.08-.06-.19-.04-.27-.02-.11.02-1.93 1.23-5.46 3.62-.51.35-.98.53-1.39.51-.46-.01-1.35-.26-2.01-.48-.8-.27-1.44-.42-1.39-.89.03-.25.38-.51 1.06-.78 4.15-1.81 6.91-3 8.28-3.57 3.94-1.63 4.76-1.91 5.3-.13z"></path></svg>`,
   telegram_stories: `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="vertical-align: middle;"><path d="M12 2 14.9 8.3 22 9.1l-5.3 4.7 1.5 6.9L12 17.2 5.8 20.7l1.5-6.9L2 9.1l7.1-.8L12 2Z"></path></svg>`,
   instagram: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><rect x="3" y="3" width="18" height="18" rx="5"></rect><circle cx="12" cy="12" r="4"></circle><circle cx="17.5" cy="6.5" r="1.2" fill="currentColor" stroke="none"></circle></svg>`,
-  linkedin: `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="vertical-align: middle;"><path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.32 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.79M6.88 8.56a1.68 1.68 0 0 0 1.68-1.68c0-.93-.75-1.69-1.68-1.69a1.69 1.69 0 0 0-1.69 1.69c0 .93.76 1.68 1.69 1.68m1.39 9.94v-8.37H5.5v8.37h2.77z"></path></svg>`,
   x: `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="vertical-align: middle;"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"></path></svg>`,
   bluesky: `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="vertical-align: middle;"><path d="M12 12.7c-1.1-2.1-4.1-6-6.9-7.9C2.4 3 .7 3.3.2 4.2-.3 5.1.1 8.8.5 9.9c.8 2.7 3.7 3.6 6.3 3.2-4.5.7-8.5 2.5-3.2 8.4 5.9 6.1 8.1-1.3 8.4-5.1.3 3.8 2.5 11.2 8.4 5.1 5.3-5.9 1.3-7.7-3.2-8.4 2.6.4 5.5-.5 6.3-3.2.4-1.1.8-4.8.3-5.7-.5-.9-2.2-1.2-4.9.6-2.8 1.9-5.8 5.8-6.9 7.9Z"/></svg>`,
-  mastodon: `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="vertical-align: middle;"><path d="M20.9 8.1c0-4.2-2.8-5.4-2.8-5.4C16.7 2 14.3 2 12 2h-.1c-2.3 0-4.7 0-6.1.7 0 0-2.8 1.2-2.8 5.4 0 1 0 2.2.1 3.4.4 4.1 3 5.1 5.7 5.5 1.4.2 2.6.2 3.2.2 1.1-.1 1.8-.3 1.8-.3l-.1-1.9s-.8.3-1.7.4c-1.7.1-3.4-.2-3.7-2.1h8.4c.1 0 2.6-.1 3-3 .1-.6.2-1.3.2-2.2Zm-3.6 2.4h-2.4V7.7c0-.6-.3-1-1-1s-1.1.4-1.1 1v2.8h-2.4V7.7c0-.6-.3-1-1-1s-1.1.4-1.1 1v2.8H5.9V7.6c0-2.2 1.4-3.4 3-3.4 1 0 1.8.4 2.3 1.1L12 6l.8-.7c.5-.7 1.3-1.1 2.3-1.1 1.6 0 3 1.2 3 3.4v2.9Z"/></svg>`,
-  devto: `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="vertical-align: middle;"><path d="M7.8 7.5c-.3-.3-.7-.5-1.2-.5H4v10h2.6c.5 0 .9-.2 1.2-.5.3-.3.5-.8.5-1.3V8.8c0-.5-.2-1-.5-1.3ZM6.5 15H5.8V9h.7v6Zm6.7-6V7h-4v10h4v-2h-2.2v-2h1.7v-2h-1.7V9h2.2Zm4.7 8 2.1-10h-1.9l-1.1 6.2L15.9 7H14l2.1 10h1.8Z"/></svg>`,
-  github: `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="vertical-align: middle;"><path d="M12 .5a12 12 0 0 0-3.8 23.4c.6.1.8-.2.8-.6v-2.1c-3.3.7-4-1.4-4-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 .1.8 2.1 3.4 1.5.1-.8.4-1.4.7-1.7-2.6-.3-5.4-1.3-5.4-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.6.1-3.2 0 0 1-.3 3.3 1.2A11.5 11.5 0 0 1 12 6.8c1 0 2 .1 2.9.4 2.3-1.5 3.3-1.2 3.3-1.2.6 1.6.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.4 5.9.4.3.8 1 .8 2v3c0 .3.2.7.8.6A12 12 0 0 0 12 .5Z"/></svg>`,
 };
 
 export const TOOL_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>`;
@@ -51,6 +41,5 @@ export function platformKey(targetId: string): string {
   if (targetId.startsWith("facebook")) return "facebook";
   if (targetId.startsWith("instagram_stories")) return "instagram";
   if (targetId === "telegram_stories") return "telegram_stories";
-  if (targetId.startsWith("github_")) return "github";
   return targetId;
 }

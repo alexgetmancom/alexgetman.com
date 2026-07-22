@@ -66,9 +66,9 @@ async function removeTarget(target: string, ids: string[], config: BackendConfig
       });
     return;
   }
-  if (target === "facebook" || target === "facebook_ru") {
-    const token = target === "facebook" ? config.FACEBOOK_PAGE_ACCESS_TOKEN : config.FACEBOOK_RU_PAGE_ACCESS_TOKEN;
-    if (!token) throw new Error(`missing ${target === "facebook" ? "FACEBOOK_PAGE_ACCESS_TOKEN" : "FACEBOOK_RU_PAGE_ACCESS_TOKEN"}`);
+  if (target === "facebook") {
+    const token = config.FACEBOOK_PAGE_ACCESS_TOKEN;
+    if (!token) throw new Error("missing FACEBOOK_PAGE_ACCESS_TOKEN");
     for (const id of ids)
       await requestJson(
         fetchImpl,
@@ -99,39 +99,6 @@ async function removeTarget(target: string, ids: string[], config: BackendConfig
         body: JSON.stringify({ repo: session.did, collection: "app.bsky.feed.post", rkey }),
       });
     }
-    return;
-  }
-  if (target === "mastodon") {
-    if (!config.MASTODON_INSTANCE || !config.MASTODON_ACCESS_TOKEN) throw new Error("missing Mastodon credentials");
-    const base = `https://${config.MASTODON_INSTANCE.replace(/^https?:\/\//, "").replace(/\/$/, "")}`;
-    for (const id of ids)
-      await requestJson(fetchImpl, `${base}/api/v1/statuses/${encodeURIComponent(id.split("/").at(-1) ?? id)}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${config.MASTODON_ACCESS_TOKEN}` },
-      });
-    return;
-  }
-  if (target === "devto") {
-    if (!config.DEVTO_API_KEY) throw new Error("missing DEVTO_API_KEY");
-    for (const id of ids)
-      await requestJson(fetchImpl, `https://dev.to/api/articles/${encodeURIComponent(id)}`, {
-        method: "DELETE",
-        headers: { "api-key": config.DEVTO_API_KEY },
-      });
-    return;
-  }
-  if (target === "github_en" || target === "github_ru") {
-    if (!config.GITHUB_DISCUSSIONS_TOKEN) throw new Error("missing GITHUB_DISCUSSIONS_TOKEN");
-    for (const id of ids)
-      await requestJson(fetchImpl, "https://api.github.com/graphql", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${config.GITHUB_DISCUSSIONS_TOKEN}`,
-          "Content-Type": "application/json",
-          "User-Agent": "alexgetman-posting",
-        },
-        body: JSON.stringify({ query: "mutation($id:ID!){deleteDiscussion(input:{id:$id}){clientMutationId}}", variables: { id } }),
-      });
     return;
   }
   throw new Error(`remote deletion is not supported for ${target}`);

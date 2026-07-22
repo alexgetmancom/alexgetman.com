@@ -3,7 +3,7 @@ import { getBlueskySession } from "../delivery/social/bluesky.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { oauthAuthorization } from "../foundation/external/x-oauth.js";
-import { ExternalHttpError, externalFetch, requestJson, retryAfterSecondsFromHeaders } from "../foundation/http.js";
+import { ExternalHttpError, requestJson } from "../foundation/http.js";
 import { log } from "../foundation/logger.js";
 import { recordAuthFailure, recordAuthSuccess, recordTokenPing, shouldPingToken } from "./auth-circuit.js";
 
@@ -76,27 +76,6 @@ async function graphMeCheck(
   return debugTokenExpiry(target, host, version, token, fetchImpl);
 }
 
-/** GitHub echoes a PAT's expiry (if the token was created with one) back on
- * every authenticated request via this response header; classic non-expiring
- * PATs simply omit it, which is indistinguishable from "no expiry data". */
-async function githubTokenExpiry(token: string, fetchImpl: typeof fetch): Promise<string | null> {
-  const response = await externalFetch(fetchImpl, "https://api.github.com/user", {
-    headers: { Authorization: `Bearer ${token}`, "User-Agent": "alexgetman-posting" },
-  });
-  const body = await response.text();
-  if (!response.ok)
-    throw new ExternalHttpError(
-      `GET https://api.github.com/user failed: ${response.status}`,
-      response.status,
-      body,
-      retryAfterSecondsFromHeaders(response.headers),
-    );
-  const expiration = response.headers.get("github-authentication-token-expiration");
-  if (!expiration) return null;
-  const parsed = new Date(expiration);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
-}
-
 const probes: Probe[] = [
   {
     target: "controller_bot",
@@ -112,37 +91,6 @@ const probes: Probe[] = [
     run: async (config, fetchImpl) => {
       const url = "https://api.twitter.com/2/users/me";
       await requestJson(fetchImpl, url, { headers: { Authorization: oauthAuthorization("GET", url, config) } });
-      return null;
-    },
-  },
-  {
-    target: "github_en",
-    configured: (c) => Boolean(c.GITHUB_DISCUSSIONS_TOKEN),
-    run: (config, fetchImpl) => githubTokenExpiry(config.GITHUB_DISCUSSIONS_TOKEN as string, fetchImpl),
-  },
-  {
-    // Same PAT as github_en; probed and recorded separately so each
-    // discussion locale's status/circuit stays independently accurate.
-    target: "github_ru",
-    configured: (c) => Boolean(c.GITHUB_DISCUSSIONS_TOKEN),
-    run: (config, fetchImpl) => githubTokenExpiry(config.GITHUB_DISCUSSIONS_TOKEN as string, fetchImpl),
-  },
-  {
-    target: "devto",
-    configured: (c) => Boolean(c.DEVTO_API_KEY),
-    run: async (config, fetchImpl) => {
-      await requestJson(fetchImpl, "https://dev.to/api/users/me", { headers: { "api-key": config.DEVTO_API_KEY as string } });
-      return null;
-    },
-  },
-  {
-    target: "mastodon",
-    configured: (c) => Boolean(c.MASTODON_INSTANCE && c.MASTODON_ACCESS_TOKEN),
-    run: async (config, fetchImpl) => {
-      const base = `https://${(config.MASTODON_INSTANCE as string).replace(/^https?:\/\//, "").replace(/\/$/, "")}`;
-      await requestJson(fetchImpl, `${base}/api/v1/accounts/verify_credentials`, {
-        headers: { Authorization: `Bearer ${config.MASTODON_ACCESS_TOKEN}` },
-      });
       return null;
     },
   },
@@ -167,19 +115,6 @@ const probes: Probe[] = [
         config.FACEBOOK_GRAPH_API_VERSION,
         config.FACEBOOK_PAGE_ID as string,
         config.FACEBOOK_PAGE_ACCESS_TOKEN as string,
-        fetchImpl,
-      ),
-  },
-  {
-    target: "facebook_ru",
-    configured: (c) => Boolean(c.FACEBOOK_RU_PAGE_ID && c.FACEBOOK_RU_PAGE_ACCESS_TOKEN),
-    run: (config, fetchImpl) =>
-      graphMeCheck(
-        "facebook_ru",
-        "graph.facebook.com",
-        config.FACEBOOK_GRAPH_API_VERSION,
-        config.FACEBOOK_RU_PAGE_ID as string,
-        config.FACEBOOK_RU_PAGE_ACCESS_TOKEN as string,
         fetchImpl,
       ),
   },

@@ -24,14 +24,8 @@ const analyticsSources: Record<string, string> = {
   threads_ru: "threads_insights_api",
   threads_en: "threads_insights_api",
   facebook: "facebook_insights_api",
-  facebook_ru: "facebook_insights_api",
-  linkedin: "linkedin_metrics",
   x: "x_api",
   bluesky: "bluesky_public_api",
-  mastodon: "mastodon_public_api",
-  devto: "devto_api_authenticated",
-  github_en: "github_graphql",
-  github_ru: "github_graphql",
   telegram_stories: "telegram_story_api",
   instagram_stories: "instagram_graph_api",
   instagram_stories_ru: "instagram_graph_api",
@@ -42,14 +36,8 @@ const requirements: Record<string, readonly string[]> = {
   threads_ru: ["THREADS_ACCESS_TOKEN"],
   threads_en: ["THREADS_EN_ACCESS_TOKEN"],
   facebook: ["FACEBOOK_PAGE_ID", "FACEBOOK_PAGE_ACCESS_TOKEN"],
-  facebook_ru: ["FACEBOOK_RU_PAGE_ID", "FACEBOOK_RU_PAGE_ACCESS_TOKEN"],
-  linkedin: ["LINKEDIN_AUTHOR_URN", "LINKEDIN_ACCESS_TOKEN"],
   x: ["X_CONSUMER_KEY", "X_CONSUMER_SECRET", "X_ACCESS_TOKEN", "X_ACCESS_TOKEN_SECRET"],
   bluesky: ["BLUESKY_HANDLE", "BLUESKY_APP_PASSWORD"],
-  mastodon: ["MASTODON_INSTANCE", "MASTODON_ACCESS_TOKEN"],
-  devto: ["DEVTO_API_KEY"],
-  github_en: ["GITHUB_DISCUSSIONS_TOKEN"],
-  github_ru: ["GITHUB_DISCUSSIONS_TOKEN"],
   telegram_stories: ["TELEGRAM_CHANNEL_STORIES_API_ID", "TELEGRAM_CHANNEL_STORIES_API_HASH", "TELEGRAM_CHANNEL_STORIES_SESSION"],
   instagram_stories: ["INSTAGRAM_EN_USER_ID", "INSTAGRAM_EN_ACCESS_TOKEN"],
   instagram_stories_ru: ["INSTAGRAM_RU_USER_ID", "INSTAGRAM_RU_ACCESS_TOKEN"],
@@ -71,11 +59,6 @@ const platformOverrides: Record<PlatformId, Omit<PlatformProfile, "id" | "label"
   site_ru: { capabilities: { text: true, image: true, video: false }, media: { mode: "all" } },
   site_en: { capabilities: { text: true, image: true, video: false }, media: { mode: "all" } },
   threads_ru: { capabilities: { text: true, image: true, video: true }, media: { mode: "all" }, video: threadsVideo },
-  facebook_ru: {
-    capabilities: { text: true, image: true, video: true },
-    media: { mode: "all", whenVideo: { mode: "first", note: "Facebook publishes the first video when the selection contains video." } },
-  },
-  linkedin: { capabilities: { text: true, image: true, video: true }, media: { mode: "limited", limit: 20, label: "LinkedIn" } },
   facebook: {
     capabilities: { text: true, image: true, video: true },
     media: { mode: "all", whenVideo: { mode: "first", note: "Facebook publishes the first video when the selection contains video." } },
@@ -83,13 +66,6 @@ const platformOverrides: Record<PlatformId, Omit<PlatformProfile, "id" | "label"
   threads_en: { capabilities: { text: true, image: true, video: true }, media: { mode: "all" }, video: threadsVideo },
   x: { capabilities: { text: true, image: true, video: true }, text: { removeUrls: true }, media: { mode: "all" } },
   bluesky: { capabilities: { text: true, image: true, video: true }, media: { mode: "limited", limit: 4, label: "Bluesky" } },
-  mastodon: { capabilities: { text: true, image: true, video: true }, media: { mode: "limited", limit: 4, label: "Mastodon" } },
-  devto: {
-    capabilities: { text: true, image: true, video: false },
-    media: { mode: "first", note: "Dev.to uses the first image as its cover and inline image." },
-  },
-  github_en: { capabilities: { text: true, image: true, video: true }, media: { mode: "all" } },
-  github_ru: { capabilities: { text: true, image: true, video: true }, media: { mode: "all" } },
   telegram_stories: {
     capabilities: { text: true, image: true, video: true },
     media: { mode: "story-first", note: "Stories use a single rendered asset made from the first source item." },
@@ -125,13 +101,12 @@ export function platformProfile(target: string): PlatformProfile | null {
 }
 
 /** Display label for a platform group that combines several locale-specific
- * targets into one dashboard column (e.g. `github_en`/`github_ru` → "GitHub").
+ * targets into one dashboard column (e.g. `threads_en`/`threads_ru` → "Threads").
  * Grouping itself is dashboard presentation (see operations/dashboard's
  * platformKey); only the label text belongs in the platform catalogue. */
 const PLATFORM_GROUP_LABELS: Record<string, string> = {
   x: "X (Twitter)",
   github: "GitHub",
-  devto: "dev.to",
 };
 
 export function platformGroupLabel(key: string): string {

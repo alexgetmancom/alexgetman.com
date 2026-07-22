@@ -14,10 +14,7 @@ function targetPublicUrl(target: string, externalId: string | null = null, url: 
   if (target === "x") return `https://x.com/alexgetmancom/status/${externalId}`;
   if (target === "threads_ru") return `https://www.threads.com/@alexgetmanru/post/${externalId}`;
   if (target === "threads_en") return `https://www.threads.com/@alexgetmanco/post/${externalId}`;
-  if (target === "linkedin") return `https://www.linkedin.com/feed/update/${externalId}`;
-  if (target === "facebook" || target === "facebook_ru") return `https://www.facebook.com/${externalId}`;
-  if (target === "mastodon") return externalId.startsWith("https://") ? externalId : null;
-  if (target === "devto" || target === "github_en" || target === "github_ru") return /^https?:\/\//.test(externalId) ? externalId : null;
+  if (target === "facebook") return `https://www.facebook.com/${externalId}`;
   return null;
 }
 

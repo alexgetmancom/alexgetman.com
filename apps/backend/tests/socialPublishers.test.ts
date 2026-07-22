@@ -2,12 +2,7 @@ import { afterEach, describe, expect, it, mock } from "bun:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createPlatformPorts } from "../src/delivery/ports/social.js";
 import { publishToBluesky } from "../src/delivery/social/bluesky.js";
-import { updateDevtoArticle } from "../src/delivery/social/devto.js";
-import { publishToGitHubDiscussion } from "../src/delivery/social/github.js";
-import { publishToLinkedIn } from "../src/delivery/social/linkedin.js";
-import { publishToMastodon } from "../src/delivery/social/mastodon.js";
 import { payloadMedia, payloadText } from "../src/delivery/social/payload.js";
 import { publishToTelegram } from "../src/delivery/social/telegram.js";
 import { publishToThreads } from "../src/delivery/social/threads.js";
@@ -41,39 +36,6 @@ describe("publish payload validation", () => {
 
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
-});
-
-describe("LinkedIn publisher", () => {
-  it("initializes an image upload and creates a post", async () => {
-    const imagePath = tempImage();
-    const calls: Array<{ url: string; init?: RequestInit }> = [];
-    const fetchImpl = mock(async (input: string | URL | Request, init?: RequestInit) => {
-      const url = String(input);
-      calls.push({ url, ...(init ? { init } : {}) });
-      if (url.includes("images?action=initializeUpload")) {
-        return new Response(JSON.stringify({ value: { uploadUrl: "https://upload.linkedin.test/image", image: "urn:li:image:1" } }), {
-          status: 200,
-        });
-      }
-      if (url === "https://upload.linkedin.test/image") return new Response("", { status: 201 });
-      return new Response("", { status: 201, headers: { "x-restli-id": "urn:li:share:55" } });
-    }) as unknown as typeof fetch;
-    const config = loadConfig({ LINKEDIN_ACCESS_TOKEN: "token", LINKEDIN_AUTHOR_URN: "urn:li:person:1" });
-
-    const result = await publishToLinkedIn({ text_en: "🚀 Launch", media: [{ type: "IMAGE", local_path: imagePath }] }, config, fetchImpl);
-
-    expect(result).toMatchObject({ ok: true, id: "urn:li:share:55" });
-    expect(calls.map((call) => call.url)).toEqual([
-      "https://api.linkedin.com/rest/images?action=initializeUpload",
-      "https://upload.linkedin.test/image",
-      "https://api.linkedin.com/rest/posts",
-    ]);
-    const postCall = calls[2];
-    if (!postCall?.init) throw new Error("missing LinkedIn post request");
-    const postBody = JSON.parse(String(postCall.init.body)) as Record<string, unknown>;
-    expect(postBody).toMatchObject({ author: "urn:li:person:1", commentary: "Launch", content: { media: { id: "urn:li:image:1" } } });
-    expect((postCall.init.headers as Record<string, string>)["Linkedin-Version"]).toBe("202606");
-  });
 });
 
 describe("Telegram publisher", () => {
@@ -296,105 +258,6 @@ describe("Bluesky publisher", () => {
 
     expect(result).toMatchObject({ ok: true, id: "at://did/app.bsky.feed.post/root" });
     expect(calls.some((url) => url.includes("createSession") || url.includes("createRecord"))).toBe(false);
-  });
-});
-
-describe("Mastodon and GitHub publishers", () => {
-  it("uploads prepared local media to Mastodon", async () => {
-    const imagePath = tempImage();
-    const fetchMock = mock(async (input: string | URL | Request) =>
-      String(input).includes("/media")
-        ? new Response(JSON.stringify({ id: "media-1" }), { status: 200 })
-        : new Response(JSON.stringify({ id: "status-1", url: "https://mastodon.test/@me/1" }), { status: 200 }),
-    );
-    await publishToMastodon(
-      { text_en: "Post", media: [{ type: "IMAGE", local_path: imagePath }] },
-      loadConfig({ MASTODON_INSTANCE: "mastodon.test", MASTODON_ACCESS_TOKEN: "token" }),
-      fetchMock as unknown as typeof fetch,
-    );
-    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
-      "https://mastodon.test/api/v2/media",
-      "https://mastodon.test/api/v1/statuses",
-    ]);
-  });
-
-  it("embeds public media in GitHub without a forced site CTA", async () => {
-    const fetchMock = mock(
-      async (_input: string | URL | Request, _init?: RequestInit) =>
-        new Response(JSON.stringify({ data: { createDiscussion: { discussion: { id: "d1", url: "https://github.test/d/1" } } } }), {
-          status: 200,
-        }),
-    );
-    await publishToGitHubDiscussion(
-      {
-        title: "Title",
-        text_en: "Post",
-        media: [{ type: "IMAGE", vps_url: "https://alexgetman.com/media/post.jpg" }],
-        post_id: 1,
-        slug_en: "post",
-      },
-      loadConfig({ GITHUB_DISCUSSIONS_TOKEN: "token" }),
-      fetchMock as unknown as typeof fetch,
-    );
-    const body = String(fetchMock.mock.calls[0]?.[1]?.body);
-    expect(body).toContain("![Image](https://alexgetman.com/media/post.jpg)");
-    expect(body).not.toContain("Read the full post");
-  });
-});
-
-describe("publisher media routing", () => {
-  it("prepares a Telegram file before sending a Dev.to cover and inline image", async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-routing-"));
-    tempDirs.push(dir);
-    const config = loadConfig({
-      CONTROLLER_BOT_TOKEN: "bot-token",
-      DEVTO_API_KEY: "devto-key",
-      TELEGRAM_API_BASE_URL: "https://telegram.test",
-      MEDIA_CACHE_DIR: path.join(dir, "cache"),
-      REMOTE_MEDIA_PATH: path.join(dir, "public"),
-      PUBLIC_MEDIA_BASE_URL: "https://alexgetman.com/media",
-    });
-    const fetchMock = mock(async (input: string | URL | Request, _init?: RequestInit) => {
-      const url = String(input);
-      if (url.includes("getFile"))
-        return new Response(JSON.stringify({ ok: true, result: { file_path: "photos/source.jpg" } }), { status: 200 });
-      if (url.includes("/file/bot")) return new Response(Buffer.from([0xff, 0xd8, 0xff, 0xd9]), { status: 200 });
-      return new Response(JSON.stringify({ id: 1, url: "https://dev.to/me/post" }), { status: 201 });
-    });
-    const publisher = createPlatformPorts(config, fetchMock as unknown as typeof fetch).devto;
-    if (!publisher) throw new Error("missing Dev.to publisher");
-    const result = await publisher({
-      jobId: 1,
-      postKey: "post:1",
-      target: "devto",
-      payload: { title: "Title", text_en: "Body", media: [{ type: "photo", file_id: "telegram-image" }] },
-    } as never);
-
-    expect(result).toMatchObject({ ok: true });
-    const devtoCall = fetchMock.mock.calls.find(([url]) => String(url) === "https://dev.to/api/articles");
-    const article = JSON.parse(String(devtoCall?.[1]?.body)).article as Record<string, string>;
-    expect(article.main_image).toMatch(/^https:\/\/alexgetman\.com\/media\/cache-[a-f0-9]{24}\.jpg$/);
-    expect(article.body_markdown).toContain(`![Title](${article.main_image})`);
-  });
-});
-
-describe("dev.to publisher", () => {
-  it("updates an existing article", async () => {
-    const fetchMock = mock(
-      async (_input: string | URL | Request, _init?: RequestInit) => new Response(JSON.stringify({ ok: true }), { status: 200 }),
-    );
-    const fetchImpl = fetchMock as unknown as typeof fetch;
-    await expect(
-      updateDevtoArticle(
-        123,
-        { title: "New title", bodyMarkdown: "Body", tags: ["Dev Ops", "AI"] },
-        loadConfig({ DEVTO_API_KEY: "key" }),
-        fetchImpl,
-      ),
-    ).resolves.toBe(true);
-    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
-    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://dev.to/api/articles/123");
-    expect(JSON.parse(String(init?.body))).toEqual({ article: { title: "New title", body_markdown: "Body", tags: ["devops", "ai"] } });
   });
 });
 

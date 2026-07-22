@@ -34,7 +34,6 @@ export async function GET(context: any) {
     "- Telegram: https://t.me/alexgetmancom",
     "- Threads: https://www.threads.net/@alexgetmanco",
     "- GitHub: https://github.com/alexgetmancom",
-    "- LinkedIn: https://www.linkedin.com/in/alexgetmancom",
     "- YouTube: https://www.youtube.com/@alexgetmancom",
     "",
     "## Latest English posts",

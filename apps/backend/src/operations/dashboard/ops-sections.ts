@@ -18,15 +18,10 @@ const AUDIENCE_PLATFORMS: AudiencePlatform[] = [
   { key: "telegram", label: "Telegram", metricTargets: ["telegram"] },
   { key: "threads_ru", label: "Threads RU", metricTargets: ["threads_ru"] },
   { key: "threads_en", label: "Threads EN", metricTargets: ["threads_en"] },
-  { key: "facebook_ru", label: "Facebook RU", metricTargets: ["facebook_ru"] },
   { key: "facebook_en", label: "Facebook EN", metricTargets: ["facebook"] },
   { key: "instagram", label: "Instagram", metricTargets: ["instagram_stories_ru", "instagram_stories"] },
-  { key: "linkedin", label: "LinkedIn", metricTargets: ["linkedin"] },
   { key: "x", label: "X", metricTargets: ["x"] },
   { key: "bluesky", label: "Bluesky", metricTargets: ["bluesky"] },
-  { key: "mastodon", label: "Mastodon", metricTargets: ["mastodon"] },
-  { key: "devto", label: "Dev.to", metricTargets: ["devto"] },
-  { key: "github", label: "GitHub", metricTargets: ["github_ru", "github_en"] },
 ];
 
 /** Reuses Analytics projections and metric samples; Command Center only renders them. */

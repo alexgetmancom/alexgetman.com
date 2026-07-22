@@ -15,7 +15,7 @@ const MEDIA_TEST_CASES = [
   ["T09", "videos_pictures", "Videos + pictures", "Send mixed photo/video album with caption."],
 ] as const;
 
-const expectedTargets = ["telegram", "site_ru", "site_en", "threads_ru", "linkedin"];
+const expectedTargets = ["telegram", "site_ru", "site_en", "threads_ru"];
 
 /** Operations fixture registry for supported delivery capabilities. */
 export function seedCapabilities(backendDb: BackendDb): void {

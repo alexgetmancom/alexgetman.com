@@ -360,15 +360,9 @@ function platformLabel(platform: string): string {
   return (
     {
       bluesky: "Bluesky",
-      devto: "Dev.to",
       facebook: "Facebook EN",
       facebook_en: "Facebook EN",
-      facebook_ru: "Facebook RU",
-      github: "GitHub",
-      github_en: "GitHub EN",
-      github_ru: "GitHub RU",
       instagram: "Instagram",
-      mastodon: "Mastodon",
       telegram: "Telegram",
       threads: "Threads",
       threads_en: "Threads EN",
@@ -383,15 +377,9 @@ function platformIcon(platform: string): string {
   return (
     {
       bluesky: "🦋",
-      devto: "📝",
       facebook: "ⓕ",
       facebook_en: "ⓕ",
-      facebook_ru: "ⓕ",
-      github: "🐙",
-      github_en: "🐙",
-      github_ru: "🐙",
       instagram: "📸",
-      mastodon: "🐘",
       telegram: "✈️",
       threads: "@",
       threads_en: "@",
@@ -433,7 +421,7 @@ function periodLabel(days: AnalyticsPeriod, locale: BotLocale): string {
 function enabledAudiencePlatforms(config: BackendConfig): Set<string> {
   // Community profiles have their own explicit credentials. Only the three
   // Studio-owned platform projections need module gating here.
-  const platforms = new Set(["bluesky", "devto", "facebook_en", "facebook_ru", "github", "mastodon", "threads", "x"]);
+  const platforms = new Set(["bluesky", "facebook_en", "threads", "x"]);
   if (config.studio.modules.text_posting) platforms.add("telegram");
   if (config.studio.modules.video_posting && config.studio.modules.youtube) platforms.add("youtube");
   if (config.studio.modules.video_posting && config.studio.modules.instagram) platforms.add("instagram");

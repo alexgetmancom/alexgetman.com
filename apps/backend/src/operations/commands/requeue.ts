@@ -142,7 +142,7 @@ export async function replaceTextFallbackTargets(
   locale: "ru" | "en",
   fetchImpl: typeof fetch,
 ): Promise<Array<Record<string, unknown>>> {
-  const nativeEdit = new Set(["telegram", "facebook", "facebook_ru", "linkedin"]);
+  const nativeEdit = new Set(["telegram", "facebook"]);
   const targets = backendDb.db
     .select({ target: postTargets.target })
     .from(postTargets)

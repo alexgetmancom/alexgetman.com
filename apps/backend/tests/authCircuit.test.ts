@@ -36,7 +36,7 @@ describe("auth circuit breaker", () => {
       expect(isTargetAuthBlocked(backendDb, "bluesky")).toBe(true);
 
       recordAuthSuccess(backendDb, "bluesky");
-      expect(isTargetAuthBlocked(backendDb, "bluesky")).toBe(false);
+      expect(isTargetAuthBlocked(backendDb, "telegram")).toBe(false);
 
       const row = backendDb.db.select().from(credentialChecks).where(eq(credentialChecks.target, "bluesky")).get();
       expect(JSON.parse(row?.detailsJson ?? "{}")).toEqual({ authFailureStreak: 0, blockedUntil: null });
@@ -52,7 +52,7 @@ describe("auth circuit breaker", () => {
       recordAuthFailure(backendDb, "bluesky");
       recordAuthFailure(backendDb, "bluesky");
       expect(isTargetAuthBlocked(backendDb, "bluesky")).toBe(true);
-      expect(isTargetAuthBlocked(backendDb, "mastodon")).toBe(false);
+      expect(isTargetAuthBlocked(backendDb, "telegram")).toBe(false);
     } finally {
       backendDb.close();
     }
@@ -66,7 +66,7 @@ describe("auth circuit breaker", () => {
           messageId,
           postId: messageId,
           postKey: `post:${messageId}`,
-          target: "mastodon",
+          target: "bluesky",
           payload: { text: "hi" } as JsonObject,
         });
 
@@ -77,7 +77,7 @@ describe("auth circuit breaker", () => {
         failPublishJob(backendDb, loadConfig({}), id, new HttpPublishError("unauthorized", 401), claimed.lockId);
       }
 
-      expect(isTargetAuthBlocked(backendDb, "mastodon")).toBe(true);
+      expect(isTargetAuthBlocked(backendDb, "bluesky")).toBe(true);
     } finally {
       backendDb.close();
     }

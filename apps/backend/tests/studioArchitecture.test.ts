@@ -196,9 +196,8 @@ describe("Studio architecture boundaries", () => {
     const operations = readFileSync(`${root}operations/commands.ts`, "utf8");
     const gateway = readFileSync(`${root}delivery/external-edits.ts`, "utf8");
     expect(operations).toContain('from "../delivery/external-edits.js"');
-    for (const externalHost of ["api.linkedin.com", "graph.facebook.com", "editMessageText"])
+    for (const externalHost of ["graph.facebook.com", "editMessageText"])
       expect(operations, `Operations contains ${externalHost}`).not.toContain(externalHost);
-    expect(gateway).toContain("api.linkedin.com");
     expect(gateway).toContain("graph.facebook.com");
   });
 

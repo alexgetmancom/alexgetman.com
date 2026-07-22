@@ -1,7 +1,6 @@
 import type { BackendConfig } from "../../../foundation/config.js";
 import type { MetricTask } from "../metric-schedule.js";
-import { collectBluesky, collectDevto, collectGitHub, collectMastodon } from "./community.js";
-import { collectLinkedIn } from "./linkedin.js";
+import { collectBluesky } from "./community.js";
 import { collectFacebook, collectInstagramStory } from "./meta.js";
 import { collectTelegram, collectTelegramStory } from "./telegram.js";
 import { collectThreads } from "./threads.js";
@@ -18,20 +17,13 @@ export function createMetricCollectors(config: BackendConfig, fetchImpl: typeof 
     threads_ru: threads,
     threads_en: threads,
     facebook,
-    facebook_ru: facebook,
-    devto: (task) => collectDevto(task, config, fetchImpl),
     bluesky: (task) => collectBluesky(task, fetchImpl),
-    mastodon: (task) => collectMastodon(task, config, fetchImpl),
-    github: (task) => collectGitHub(task, config, fetchImpl),
-    github_en: (task) => collectGitHub(task, config, fetchImpl),
-    github_ru: (task) => collectGitHub(task, config, fetchImpl),
     instagram_story: instagram,
     instagram_stories: instagram,
     instagram_stories_ru: instagram,
     telegram_story: (task) => collectTelegramStory(task, config),
     telegram_stories: (task) => collectTelegramStory(task, config),
   };
-  if (config.ENABLE_LINKEDIN_METRICS) collectors.linkedin = (task) => collectLinkedIn(task, config, fetchImpl);
   if (config.ENABLE_X_METRICS) {
     collectors.x = (task) => collectX(task, config, fetchImpl);
     collectors.twitter = (task) => collectX(task, config, fetchImpl);

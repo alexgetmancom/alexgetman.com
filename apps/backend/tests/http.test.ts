@@ -47,7 +47,7 @@ describe("Astro endpoint controller", () => {
         postId: 123,
         postKey: "post:123",
         messageId: 123,
-        target: "devto",
+        target: "bluesky",
         payload: { title: "Debug", bodyMarkdown: "Body" },
       });
       const app = createApiApp(loadConfig({ COMMAND_CENTER_TOKEN: "secret" }), backendDb);
