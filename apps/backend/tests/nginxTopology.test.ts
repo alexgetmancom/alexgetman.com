@@ -20,6 +20,8 @@ describe("production nginx topology", () => {
     expect(tls.match(/real_ip_header proxy_protocol;/g)).toHaveLength(2);
     expect(tls).toContain("proxy_set_header X-Real-IP $remote_addr;");
     expect(http).toContain("listen 127.0.0.1:81;");
+    expect(http).toContain("location = /feed.json");
+    expect(http).toContain("location = /feed.xml");
     expect(headers).toContain("proxy_set_header X-Real-IP $http_x_real_ip;");
     expect(headers).toContain("proxy_set_header X-Forwarded-For $http_x_forwarded_for;");
   });
