@@ -81,7 +81,11 @@ async function materializeResponsiveVariants(config: BackendConfig, source: stri
 
   for (const width of RESPONSIVE_WIDTHS) {
     const output = path.join(outputDir, `${basename}-${width}.webp`);
-    if (await isCurrentCopy(source, output)) continue;
+    // A WebP derivative is intentionally a different size from its JPG/PNG
+    // source. Comparing sizes here made every site build regenerate every
+    // responsive image in the archive and blocked newly published posts behind
+    // that needless work. For a derivative, source mtime is the freshness key.
+    if (await isCurrentDerivative(source, output)) continue;
     const temporary = `${output}.tmp-${process.pid}-${Date.now()}.webp`;
     try {
       await runFfmpeg(["-y", "-i", source, "-vf", `scale='min(${width},iw)':-2`, "-c:v", "libwebp", "-quality", "80", temporary]);
@@ -144,6 +148,15 @@ async function isCurrentCopy(source: string, target: string): Promise<boolean> {
   try {
     const [sourceStat, targetStat] = await Promise.all([fs.promises.stat(source), fs.promises.stat(target)]);
     return sourceStat.size === targetStat.size && targetStat.mtimeMs >= sourceStat.mtimeMs;
+  } catch {
+    return false;
+  }
+}
+
+async function isCurrentDerivative(source: string, target: string): Promise<boolean> {
+  try {
+    const [sourceStat, targetStat] = await Promise.all([fs.promises.stat(source), fs.promises.stat(target)]);
+    return targetStat.mtimeMs >= sourceStat.mtimeMs;
   } catch {
     return false;
   }

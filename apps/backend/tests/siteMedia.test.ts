@@ -5,8 +5,10 @@ import path from "node:path";
 import { materializeSiteMedia } from "../src/delivery/site-media.js";
 import { loadConfig } from "../src/foundation/config.js";
 
+let ffmpegCalls = 0;
 mock.module("../src/foundation/runtime/ffmpeg.js", () => ({
   runFfmpeg: async (args: string[]) => {
+    ffmpegCalls += 1;
     const output = args.at(-1);
     if (!output) throw new Error("missing responsive output path");
     fs.writeFileSync(output, "webp");
@@ -18,6 +20,7 @@ let directory: string | null = null;
 afterEach(() => {
   if (directory) fs.rmSync(directory, { recursive: true, force: true });
   directory = null;
+  ffmpegCalls = 0;
 });
 
 describe("site media materialization", () => {
@@ -37,5 +40,17 @@ describe("site media materialization", () => {
     expect(fs.readFileSync(path.join(directory, "media", "posts", "1-ru-0.png"))).toEqual(image);
     for (const width of [360, 640, 960])
       expect(fs.existsSync(path.join(directory, "generated", "responsive", `media-posts-1-ru-0-${width}.webp`))).toBe(true);
+  });
+
+  it("does not regenerate unchanged responsive derivatives on every feed build", async () => {
+    directory = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-site-media-"));
+    const image = path.join(directory, "image.jpg");
+    fs.writeFileSync(image, "source");
+    const config = loadConfig({ SITE_PUBLIC_DIR: directory });
+
+    await materializeSiteMedia(config, 2, "en", [{ type: "image", local_path: image }]);
+    await materializeSiteMedia(config, 2, "en", [{ type: "image", local_path: image }]);
+
+    expect(ffmpegCalls).toBe(3);
   });
 });
