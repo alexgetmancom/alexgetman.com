@@ -17,7 +17,7 @@ import {
 } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { gitRevision } from "../foundation/runtime/git.js";
-import { formatZonedSortable, zonedWeekBounds } from "../foundation/time.js";
+import { formatZonedSortable, zonedRollingPeriodBounds } from "../foundation/time.js";
 import { jsonArray, jsonObject } from "../json.js";
 
 /** Operations read model over publication, delivery and worker state. */
@@ -145,11 +145,7 @@ function pipelinePosts(
   periodDays: number,
   comparisonOffset: number,
 ): Record<string, unknown>[] {
-  const [weekStart, weekEnd] = zonedWeekBounds(weekOffset, config.TIMEZONE);
-  const endDate = new Date(new Date(weekEnd).getTime() - comparisonOffset * periodDays * 86_400_000);
-  const start =
-    periodDays === 7 && comparisonOffset === 0 ? weekStart : new Date(endDate.getTime() - (periodDays - 1) * 86_400_000).toISOString();
-  const end = endDate.toISOString();
+  const [start, end] = zonedRollingPeriodBounds(weekOffset + comparisonOffset, periodDays, config.TIMEZONE);
   const rows = fetchPostRows(backendDb, start, end);
   const postKeys = rows.map((row) => String(row.post_key ?? "")).filter(Boolean);
   const targetRows = postKeys.length

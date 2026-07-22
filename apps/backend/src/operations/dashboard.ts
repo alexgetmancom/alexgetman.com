@@ -9,7 +9,7 @@ import {
   renderQueueSection,
   renderRepairSection,
 } from "./dashboard/ops-sections.js";
-import { renderPipelineSection } from "./dashboard/pipeline-section.js";
+import { renderPeriodControls, renderPipelineSection } from "./dashboard/pipeline-section.js";
 import { renderDashboardShell } from "./dashboard/shell.js";
 import { renderVideoSection } from "./dashboard/video-section.js";
 import { operationsService } from "./service.js";
@@ -50,6 +50,7 @@ export function renderDashboard(
     requestedPanel === "queue" || requestedPanel === "health" || requestedPanel === "repair" ? requestedPanel : "overview";
   const periodDays = [7, 30, 90, 365].includes(Number(requestedPeriod)) ? Number(requestedPeriod) : 7;
   const panelLink = (value: DashboardPanel) => `/command-center?tab=posts&panel=${value}${periodDays !== 7 ? `&period=${periodDays}` : ""}`;
+  const overviewControls = panel === "overview" && showPosts ? renderPeriodControls(weekOffset, periodDays, config.TIMEZONE) : "";
   const content =
     panel === "queue"
       ? renderQueueSection(ops)
@@ -64,6 +65,7 @@ export function renderDashboard(
                 service.pipeline(weekOffset, periodDays),
                 service.pipeline(weekOffset, periodDays, 1),
                 renderAudienceSection(backendDb, config),
+                config.TIMEZONE,
               )
             : showVideo
               ? renderVideoSection(backendDb)
@@ -71,7 +73,7 @@ export function renderDashboard(
                 ? renderStudioSection(config, backendDb, studioActorId, locale)
                 : "";
   const body = `
-    <nav class="dashboard-tabs">${config.studio.modules.text_posting ? `<a class="${panel === "overview" && activeTab === "posts" ? "active" : ""}" href="${panelLink("overview")}">Обзор</a>` : ""}<a class="${panel === "queue" ? "active" : ""}" href="${panelLink("queue")}">Очередь</a><a class="${panel === "health" ? "active" : ""}" href="${panelLink("health")}">Health</a><a class="${panel === "repair" ? "active" : ""}" href="${panelLink("repair")}">Repair</a>${config.studio.modules.video_posting ? `<a class="${panel === "overview" && activeTab === "video" ? "active" : ""}" href="/command-center?tab=video">Видео</a>` : ""}${studioActorId ? `<a class="${panel === "overview" && activeTab === "studio" ? "active" : ""}" href="/command-center?tab=studio">Студия</a>` : ""}</nav>
+    <nav class="dashboard-tabs">${config.studio.modules.text_posting ? `<a class="${panel === "overview" && activeTab === "posts" ? "active" : ""}" href="${panelLink("overview")}">Обзор</a>` : ""}<a class="${panel === "queue" ? "active" : ""}" href="${panelLink("queue")}">Очередь</a><a class="${panel === "health" ? "active" : ""}" href="${panelLink("health")}">Health</a><a class="${panel === "repair" ? "active" : ""}" href="${panelLink("repair")}">Repair</a>${config.studio.modules.video_posting ? `<a class="${panel === "overview" && activeTab === "video" ? "active" : ""}" href="/command-center?tab=video">Видео</a>` : ""}${studioActorId ? `<a class="${panel === "overview" && activeTab === "studio" ? "active" : ""}" href="/command-center?tab=studio">Студия</a>` : ""}${overviewControls}</nav>
     <section id="overview" class="overview">${content}</section>`;
   return renderDashboardShell(body);
 }

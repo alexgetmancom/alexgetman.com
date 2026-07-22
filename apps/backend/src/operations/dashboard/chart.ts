@@ -78,7 +78,7 @@ export function renderWeeklyChart(posts: PipelinePost[], rangeStart?: Date, rang
   const legend = metrics
     .map((metric) => {
       const sum = ordered.reduce((acc, [, bucket]) => acc + bucket[metric], 0);
-      return `<span><i style="background:${colors[metric]}"></i>${metric}: ${formatMetricValue(sum)}</span>`;
+      return `<span><i style="background:${colors[metric]}"></i>${labels[metric]}: ${formatMetricValue(sum)}</span>`;
     })
     .join("");
 

@@ -82,3 +82,15 @@ export function zonedWeekBounds(offset: number, timeZone: string, now = new Date
   const start = startWallUtc - offsetMs;
   return [new Date(start).toISOString(), new Date(start + 7 * 86_400_000 - 1).toISOString()];
 }
+
+/** ISO bounds for a rolling calendar period ending today in `timeZone`.
+ * `offset` moves back by whole periods, so a 7-day dashboard always compares
+ * like-for-like trailing windows instead of calendar weeks. */
+export function zonedRollingPeriodBounds(offset: number, days: number, timeZone: string, now = new Date()): [string, string] {
+  const shiftedNow = new Date(now.getTime() - offset * days * 86_400_000);
+  const offsetMs = timezoneOffsetMs(shiftedNow, timeZone);
+  const zoned = new Date(shiftedNow.getTime() + offsetMs);
+  const endWallUtc = Date.UTC(zoned.getUTCFullYear(), zoned.getUTCMonth(), zoned.getUTCDate() + 1);
+  const startWallUtc = endWallUtc - days * 86_400_000;
+  return [new Date(startWallUtc - offsetMs).toISOString(), new Date(endWallUtc - offsetMs - 1).toISOString()];
+}
