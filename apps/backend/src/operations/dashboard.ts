@@ -62,6 +62,7 @@ export function renderDashboard(
                 weekOffset,
                 periodDays,
                 service.pipeline(weekOffset, periodDays),
+                service.pipeline(weekOffset, periodDays, 1),
                 renderAudienceSection(backendDb, config),
               )
             : showVideo

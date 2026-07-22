@@ -2,7 +2,7 @@ import { metricNumber } from "../../analytics/snapshots/creator-store.js";
 import type { BackendDb } from "../../db/client.js";
 import { creatorProfiles } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
-import { ORDERED_TARGETS } from "./assets.js";
+import { ORDERED_TARGETS, PLATFORM_ICONS } from "./assets.js";
 import { formatMetricValue, shortPipelineText } from "./format.js";
 import { escapeHtml } from "./html.js";
 import type { OpsPayload } from "./types.js";
@@ -38,7 +38,7 @@ export function renderAudienceSection(backendDb: BackendDb, config: BackendConfi
       stars: metricNumber(data.stars),
     };
   });
-  return `<aside class="audience-panel"><div class="section-kicker">Аудитория</div><div class="audience-list">${rows.map((item) => `<div class="audience-line"><span>${escapeHtml(item.label)}</span><strong>${followersLabel(item)}</strong></div>`).join("")}</div></aside>`;
+  return `<aside class="audience-panel"><div class="section-kicker">Аудитория</div><div class="audience-list">${rows.map((item) => `<div class="audience-line"><span class="audience-line__label"><i>${PLATFORM_ICONS[item.key.startsWith("threads") ? "threads" : item.key] ?? ""}</i>${escapeHtml(item.label)}</span><strong>${followersLabel(item)}</strong></div>`).join("")}</div></aside>`;
 }
 
 export function renderRepairSection(ref: string, messageId: string): string {
