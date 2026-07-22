@@ -1,10 +1,11 @@
 import { eq } from "drizzle-orm";
+import { targetLocale } from "../botTargets.js";
 import type { BackendDb } from "../db/client.js";
 import { posts, postTargets } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { requestJson } from "../foundation/http.js";
 
-type PublishedTargetEdit = { postKey: string; textRu: string | null; textEn: string | null };
+type PublishedTargetEdit = { postKey: string; textRu: string | null; textEn: string | null; target?: string; locale?: "ru" | "en" };
 
 /** Delivery gateway for best-effort edits of content that has already left this system. */
 export async function editPublishedTargets(
@@ -23,7 +24,10 @@ export async function editPublishedTargets(
     .from(postTargets)
     .where(eq(postTargets.postKey, edit.postKey))
     .all();
-  const editable = rows.filter((row): row is typeof row & { externalId: string } => row.status === "published" && row.externalId != null);
+  const editable = rows
+    .filter((row): row is typeof row & { externalId: string } => row.status === "published" && row.externalId != null)
+    .filter((row) => !edit.target || row.target === edit.target)
+    .filter((row) => !edit.locale || targetLocale(row.target) === edit.locale);
   const results = await Promise.all(
     editable.map(async (row): Promise<Record<string, unknown> | null> => {
       try {

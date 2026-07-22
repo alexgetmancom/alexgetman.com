@@ -255,4 +255,50 @@ describe("command center actions", () => {
       backendDb.close();
     }
   });
+
+  it("deletes a selected locale target and queues its replacement", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      const source = { text_ru: "RU", text_en: "EN", media: [], media_en: [] };
+      backendDb.db.insert(publications).values({ postId: 9, status: "published", createdAt: now, updatedAt: now }).run();
+      backendDb.db
+        .insert(posts)
+        .values({
+          postKey: "post:9",
+          postId: 9,
+          channel: "studio",
+          messageId: 9,
+          text: "RU",
+          textEn: "EN",
+          status: "active",
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      backendDb.db.insert(publicationSources).values({ postId: 9, itemJson: source, createdAt: now, updatedAt: now }).run();
+      const jobId = enqueuePublishJobTx(backendDb.db, { postId: 9, postKey: "post:9", messageId: 9, target: "facebook", payload: source });
+      backendDb.db.update(publishJobs).set({ status: "published" }).where(eq(publishJobs.jobId, jobId)).run();
+      backendDb.db
+        .insert(postTargets)
+        .values({ postKey: "post:9", target: "facebook", status: "published", externalId: "page_post", updatedAt: now })
+        .run();
+      const requests: Array<{ url: string; method: string }> = [];
+      const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
+        requests.push({ url: String(input), method: init?.method ?? "GET" });
+        return new Response("{}", { status: 200 });
+      }) as typeof fetch;
+      const result = await runOperationCommand(
+        backendDb,
+        { action: "delete_republish", ref: "post:9", locale: "en" },
+        loadConfig({ FACEBOOK_PAGE_ACCESS_TOKEN: "token" }),
+        fetchImpl,
+      );
+      expect(requests).toEqual([{ url: "https://graph.facebook.com/v23.0/page_post?access_token=token", method: "DELETE" }]);
+      expect(result.removed).toEqual([{ target: "facebook", ok: true, deleted: 1 }]);
+      expect(backendDb.db.select().from(postTargets).where(eq(postTargets.target, "facebook")).get()?.status).toBe("queued");
+    } finally {
+      backendDb.close();
+    }
+  });
 });

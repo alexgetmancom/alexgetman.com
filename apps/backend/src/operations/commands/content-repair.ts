@@ -6,22 +6,39 @@ import type { PublicationRef } from "../publication-ref.js";
 
 /** Repairs durable English content before Delivery rebuilds the site or retries a target. */
 export function editEnglishContent(backendDb: BackendDb, ref: PublicationRef, text: string): Record<string, unknown> {
+  return editLocaleContent(backendDb, ref, "en", text);
+}
+
+export function editLocaleContent(backendDb: BackendDb, ref: PublicationRef, locale: "ru" | "en", text: string): Record<string, unknown> {
   const value = text.trim();
-  if (!value) throw new Error("text_en is required");
+  if (!value) throw new Error(`text_${locale} is required`);
   const now = new Date().toISOString();
   backendDb.db.transaction((tx) => {
     if (ref.postId != null) {
-      tx.update(drafts).set({ textEnApproved: value, updatedAt: now }).where(eq(drafts.postId, ref.postId)).run();
+      tx.update(drafts)
+        .set(locale === "en" ? { textEnApproved: value, updatedAt: now } : { textRu: value, updatedAt: now })
+        .where(eq(drafts.postId, ref.postId))
+        .run();
       tx.update(postLocales)
         .set({ text: value, updatedAt: now })
-        .where(and(eq(postLocales.postId, ref.postId), eq(postLocales.locale, "en")))
+        .where(and(eq(postLocales.postId, ref.postId), eq(postLocales.locale, locale)))
         .run();
     }
-    tx.update(posts).set({ textEn: value, updatedAt: now }).where(eq(posts.postKey, ref.postKey)).run();
-    updateSource(tx, ref, { text_en: value, bodyMarkdown: value }, now);
-    enqueueRepairSiteJob(tx, ref, "edit_en", now);
+    tx.update(posts)
+      .set(locale === "en" ? { textEn: value, updatedAt: now } : { text: value, updatedAt: now })
+      .where(eq(posts.postKey, ref.postKey))
+      .run();
+    updateSource(tx, ref, locale === "en" ? { text_en: value, bodyMarkdown: value } : { text_ru: value, text: value }, now);
+    enqueueRepairSiteJob(tx, ref, `edit_${locale}`, now);
   });
-  return { ok: true, post_id: ref.postId, post_key: ref.postKey, text_en: true };
+  return {
+    ok: true,
+    post_id: ref.postId,
+    post_key: ref.postKey,
+    locale,
+    text: true,
+    ...(locale === "en" ? { text_en: true } : { text_ru: true }),
+  };
 }
 
 export function replaceEnglishMedia(
@@ -29,27 +46,40 @@ export function replaceEnglishMedia(
   ref: PublicationRef,
   media: Record<string, unknown>[] | null,
 ): Record<string, unknown> {
+  return replaceLocaleMedia(backendDb, ref, "en", media);
+}
+
+export function replaceLocaleMedia(
+  backendDb: BackendDb,
+  ref: PublicationRef,
+  locale: "ru" | "en",
+  media: Record<string, unknown>[] | null,
+): Record<string, unknown> {
   const now = new Date().toISOString();
   backendDb.db.transaction((tx) => {
     if (ref.postId != null) {
       tx.update(drafts)
-        .set({ mediaEnJson: media == null ? null : JSON.stringify(media), updatedAt: now })
+        .set(
+          locale === "en"
+            ? { mediaEnJson: media == null ? null : JSON.stringify(media), updatedAt: now }
+            : { mediaRuJson: JSON.stringify(media ?? []), updatedAt: now },
+        )
         .where(eq(drafts.postId, ref.postId))
         .run();
-      const ru = tx
+      const other = tx
         .select({ mediaJson: postLocales.mediaJson })
         .from(postLocales)
-        .where(and(eq(postLocales.postId, ref.postId), eq(postLocales.locale, "ru")))
+        .where(and(eq(postLocales.postId, ref.postId), eq(postLocales.locale, locale === "en" ? "ru" : "en")))
         .get();
       tx.update(postLocales)
-        .set({ mediaJson: media == null ? (ru?.mediaJson ?? []) : media, updatedAt: now })
-        .where(and(eq(postLocales.postId, ref.postId), eq(postLocales.locale, "en")))
+        .set({ mediaJson: media == null ? (other?.mediaJson ?? []) : media, updatedAt: now })
+        .where(and(eq(postLocales.postId, ref.postId), eq(postLocales.locale, locale)))
         .run();
     }
-    updateSource(tx, ref, { media_en: media }, now);
-    enqueueRepairSiteJob(tx, ref, media == null ? "use_ru_media_for_en" : "replace_en_media", now);
+    updateSource(tx, ref, { [locale === "en" ? "media_en" : "media"]: media }, now);
+    enqueueRepairSiteJob(tx, ref, media == null ? `use_other_media_for_${locale}` : `replace_${locale}_media`, now);
   });
-  return { ok: true, post_id: ref.postId, post_key: ref.postKey, media_en: media != null };
+  return { ok: true, post_id: ref.postId, post_key: ref.postKey, locale, media: media != null };
 }
 
 export function parseEnglishMedia(raw: string | undefined): Record<string, unknown>[] | null {

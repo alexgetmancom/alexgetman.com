@@ -1,6 +1,9 @@
 import { and, desc, eq } from "drizzle-orm";
+import { targetLocale } from "../../botTargets.js";
 import type { BackendDb } from "../../db/client.js";
 import { postTargets, publications, publishJobs } from "../../db/schema.js";
+import { removePublishedTargets } from "../../delivery/external-removals.js";
+import type { BackendConfig } from "../../foundation/config.js";
 import { jsonObject } from "../../json.js";
 import { localizeTargetPayload } from "../../publishing/payload.js";
 import { type PublicationRef, sourcePayload } from "../publication-ref.js";
@@ -98,4 +101,45 @@ export function requeuePublication(backendDb: BackendDb, ref: PublicationRef, ta
       tx.update(publications).set({ status: "scheduled", updatedAt: now }).where(eq(publications.postId, ref.postId)).run();
   });
   return { ok: true, post_id: ref.postId, post_key: ref.postKey, message_id: ref.messageId, target: target ?? null, targets: queued };
+}
+
+export function requeuePublicationScope(
+  backendDb: BackendDb,
+  ref: PublicationRef,
+  target?: string,
+  locale?: "ru" | "en",
+): Record<string, unknown> {
+  if (target || !locale) return requeuePublication(backendDb, ref, target);
+  const targets = backendDb.db
+    .select({ target: postTargets.target })
+    .from(postTargets)
+    .where(eq(postTargets.postKey, ref.postKey))
+    .all()
+    .map((row) => row.target)
+    .filter((value) => targetLocale(value) === locale);
+  return { ok: true, locale, results: targets.map((value) => requeuePublication(backendDb, ref, value)) };
+}
+
+export async function replaceTextFallbackTargets(
+  backendDb: BackendDb,
+  ref: PublicationRef,
+  config: BackendConfig,
+  target: string | undefined,
+  locale: "ru" | "en",
+  fetchImpl: typeof fetch,
+): Promise<Array<Record<string, unknown>>> {
+  const nativeEdit = new Set(["telegram", "facebook", "facebook_ru", "linkedin"]);
+  const targets = backendDb.db
+    .select({ target: postTargets.target })
+    .from(postTargets)
+    .where(eq(postTargets.postKey, ref.postKey))
+    .all()
+    .map((row) => row.target)
+    .filter((value) => (!target || value === target) && targetLocale(value) === locale && !nativeEdit.has(value));
+  const results: Array<Record<string, unknown>> = [];
+  for (const value of targets) {
+    const removed = await removePublishedTargets(backendDb, config, { postKey: ref.postKey, target: value }, fetchImpl);
+    if (removed.some((item) => item.ok)) results.push({ target: value, removed, republish: requeuePublication(backendDb, ref, value) });
+  }
+  return results;
 }
