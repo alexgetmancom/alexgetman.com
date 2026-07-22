@@ -15,14 +15,14 @@ export type ContentMetrics = { views: number; likes: number; comments: number; s
 
 /** NUL joins composite map keys so account display names (which can contain any
  * printable character) never collide with the separator. */
-export const KEY_SEP = String.fromCharCode(0);
+const KEY_SEP = String.fromCharCode(0);
 
 type MetricSeries = { target: string; metric: string; firstAt: string; latest: number; baseline: number | null };
 
 /** One row per (post, target, metric) with its latest value and the last value
  * at or before `since`. This is the primitive every metric_samples projection
  * is built on, so the scan and baseline rule exist in exactly one place. */
-export function metricSeriesSince(backendDb: BackendDb, since: string, where = "1=1"): MetricSeries[] {
+function metricSeriesSince(backendDb: BackendDb, since: string, where = "1=1"): MetricSeries[] {
   const rows = backendDb.sqlite
     .prepare(
       `WITH matched AS (
@@ -203,7 +203,7 @@ export function sum(rows: VideoMetricRow[], field: string): number {
 /** Current projection minus the last observation at or before `since`, keyed by
  * `platform${KEY_SEP}account`. A profile with no baseline is omitted rather than
  * counting its lifetime follower number as growth. */
-export function audienceGrowthByAccount(backendDb: BackendDb, since: string): Map<string, number> {
+function audienceGrowthByAccount(backendDb: BackendDb, since: string): Map<string, number> {
   const rows = backendDb.sqlite
     .prepare(
       `WITH samples AS (

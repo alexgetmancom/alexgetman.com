@@ -100,19 +100,6 @@ export function platformProfile(target: string): PlatformProfile | null {
   return PLATFORM_PROFILES[target] ?? null;
 }
 
-/** Display label for a platform group that combines several locale-specific
- * targets into one dashboard column (e.g. `threads_en`/`threads_ru` → "Threads").
- * Grouping itself is dashboard presentation (see operations/dashboard's
- * platformKey); only the label text belongs in the platform catalogue. */
-const PLATFORM_GROUP_LABELS: Record<string, string> = {
-  x: "X (Twitter)",
-  github: "GitHub",
-};
-
-export function platformGroupLabel(key: string): string {
-  return PLATFORM_GROUP_LABELS[key] ?? key.charAt(0).toUpperCase() + key.slice(1);
-}
-
 /** One catalogue for publishing, validation and analytics capability. */
 export function platformAnalyticsProfile(target: string): { enabled: boolean; source: string } {
   return platformProfile(target)?.analytics ?? { enabled: false, source: "unsupported" };

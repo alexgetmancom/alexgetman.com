@@ -1,4 +1,3 @@
-import { audienceGrowthByAccount, KEY_SEP, metricSeriesSince } from "../../analytics/metric-deltas.js";
 import { metricNumber } from "../../analytics/snapshots/creator-store.js";
 import type { BackendDb } from "../../db/client.js";
 import { creatorProfiles } from "../../db/schema.js";
@@ -9,19 +8,15 @@ import { escapeHtml } from "./html.js";
 import type { OpsPayload } from "./types.js";
 
 type AudiencePlatform = { key: string; label: string; metricTargets: string[] };
-type PeriodMetrics = { views: number; interactions: number };
 
 /** The catalogue is a presentation projection over platform profiles and the
  * generic metric ledger. A missing value stays visible as —: it must never
  * erase a connected publishing target from the operator's view. */
 const AUDIENCE_PLATFORMS: AudiencePlatform[] = [
-  { key: "telegram", label: "Telegram", metricTargets: ["telegram"] },
   { key: "threads_ru", label: "Threads RU", metricTargets: ["threads_ru"] },
   { key: "threads_en", label: "Threads EN", metricTargets: ["threads_en"] },
-  { key: "facebook_en", label: "Facebook EN", metricTargets: ["facebook"] },
-  { key: "instagram", label: "Instagram", metricTargets: ["instagram_stories_ru", "instagram_stories"] },
+  { key: "telegram", label: "Telegram", metricTargets: ["telegram"] },
   { key: "x", label: "X", metricTargets: ["x"] },
-  { key: "bluesky", label: "Bluesky", metricTargets: ["bluesky"] },
 ];
 
 /** Reuses Analytics projections and metric samples; Command Center only renders them. */
@@ -34,10 +29,6 @@ export function renderAudienceSection(backendDb: BackendDb, config: BackendConfi
       .all()
       .map((profile) => [profile.platform, profile.dataJson]),
   );
-  const followerGrowth7 = followerGrowth(backendDb, 7);
-  const followerGrowth30 = followerGrowth(backendDb, 30);
-  const metrics7 = targetPeriodMetrics(backendDb, 7);
-  const metrics30 = targetPeriodMetrics(backendDb, 30);
   const rows = AUDIENCE_PLATFORMS.map((platform) => {
     const data = (profiles.get(platform.key) ?? {}) as Record<string, unknown>;
     const followers = metricNumber(data.subscriberCount ?? data.followersCount);
@@ -45,22 +36,9 @@ export function renderAudienceSection(backendDb: BackendDb, config: BackendConfi
       ...platform,
       followers,
       stars: metricNumber(data.stars),
-      growth7: followerGrowth7.get(platform.key),
-      growth30: followerGrowth30.get(platform.key),
-      metrics7: sumTargetMetrics(metrics7, platform.metricTargets),
-      metrics30: sumTargetMetrics(metrics30, platform.metricTargets),
     };
-  }).sort((left, right) => right.followers - left.followers || left.label.localeCompare(right.label));
-  const cards = rows
-    .map((item) => `<span class="audience-card"><strong>${escapeHtml(item.label)}</strong><b>${followersLabel(item)}</b></span>`)
-    .join("");
-  const details = rows
-    .map(
-      (item) =>
-        `<tr><td>${escapeHtml(item.label)}</td><td>${followersLabel(item)}</td><td>${delta(item.growth7)}</td><td>${delta(item.growth30)}</td><td>${metricCell(item.metrics7.views)}</td><td>${metricCell(item.metrics7.interactions)}</td><td>${metricCell(item.metrics30.views)}</td><td>${metricCell(item.metrics30.interactions)}</td></tr>`,
-    )
-    .join("");
-  return `<div class="audience-strip"><div class="audience-cards">${cards}</div><details><summary>Показать больше</summary><div class="table-wrap"><table><thead><tr><th>Площадка</th><th>Подписчики</th><th>Δ 7д</th><th>Δ 30д</th><th>Просмотры 7д</th><th>Реакции 7д</th><th>Просмотры 30д</th><th>Реакции 30д</th></tr></thead><tbody>${details}</tbody></table></div></details></div>`;
+  });
+  return `<aside class="audience-panel"><div class="section-kicker">Аудитория</div><div class="audience-list">${rows.map((item) => `<div class="audience-line"><span>${escapeHtml(item.label)}</span><strong>${followersLabel(item)}</strong></div>`).join("")}</div></aside>`;
 }
 
 export function renderRepairSection(ref: string, messageId: string): string {
@@ -123,49 +101,4 @@ export function renderDiagnosticsSection(ops: OpsPayload): string {
 function followersLabel(item: { followers: number; stars: number }): string {
   const followers = item.followers ? formatMetricValue(item.followers) : "—";
   return item.stars ? `${followers} · ★${formatMetricValue(item.stars)}` : followers;
-}
-
-function delta(value: number | undefined): string {
-  if (value == null) return "—";
-  return `${value >= 0 ? "+" : ""}${formatMetricValue(value)}`;
-}
-
-function metricCell(value: number): string {
-  return value ? formatMetricValue(value) : "—";
-}
-
-function sumTargetMetrics(values: Map<string, PeriodMetrics>, targets: string[]): PeriodMetrics {
-  return targets.reduce(
-    (total, target) => ({
-      views: total.views + (values.get(target)?.views ?? 0),
-      interactions: total.interactions + (values.get(target)?.interactions ?? 0),
-    }),
-    { views: 0, interactions: 0 },
-  );
-}
-
-/** Per-target views/interactions over the period, built on the shared metric series. */
-function targetPeriodMetrics(backendDb: BackendDb, days: number): Map<string, PeriodMetrics> {
-  const since = new Date(Date.now() - days * 24 * 60 * 60_000).toISOString();
-  const totals = new Map<string, PeriodMetrics>();
-  for (const entry of metricSeriesSince(backendDb, since)) {
-    if (entry.baseline == null && entry.firstAt < since) continue;
-    const row = totals.get(entry.target) ?? { views: 0, interactions: 0 };
-    const deltaValue = Math.max(0, entry.latest - (entry.baseline ?? 0));
-    if (entry.metric === "views" || entry.metric === "bot_views") row.views += deltaValue;
-    if (["likes", "replies", "reposts", "comments"].includes(entry.metric)) row.interactions += deltaValue;
-    totals.set(entry.target, row);
-  }
-  return totals;
-}
-
-/** Follower growth per platform, aggregating the shared per-account growth. */
-function followerGrowth(backendDb: BackendDb, days: number): Map<string, number> {
-  const since = new Date(Date.now() - days * 24 * 60 * 60_000).toISOString();
-  const totals = new Map<string, number>();
-  for (const [key, growth] of audienceGrowthByAccount(backendDb, since)) {
-    const platform = key.split(KEY_SEP)[0] ?? key;
-    totals.set(platform, (totals.get(platform) ?? 0) + growth);
-  }
-  return totals;
 }

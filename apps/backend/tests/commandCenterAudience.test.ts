@@ -5,7 +5,7 @@ import { loadConfig } from "../src/foundation/config.js";
 import { renderAudienceSection } from "../src/operations/dashboard/ops-sections.js";
 
 describe("Command Center audience projection", () => {
-  it("keeps every supported social platform visible and derives period columns from durable snapshots", () => {
+  it("keeps the four core audience accounts visible in the compact overview", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const now = new Date().toISOString();
@@ -51,12 +51,11 @@ describe("Command Center audience projection", () => {
       const html = renderAudienceSection(backendDb, loadConfig({}));
       expect(html).toContain("Threads RU");
       expect(html).toContain("Threads EN");
-      expect(html).toContain("Δ 7д");
-      expect(html).toContain("Просмотры 30д");
-      expect(html).toContain("+10");
-      expect(html).toContain(">25<");
-      expect(html).toContain(">3<");
-      expect(html).not.toContain("Аккаунт");
+      expect(html).toContain("Telegram");
+      expect(html).toContain(">180<");
+      expect(html).toContain(">20<");
+      expect(html).toContain('class="audience-panel"');
+      expect(html).not.toContain("Facebook EN");
     } finally {
       backendDb.close();
     }

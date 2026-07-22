@@ -126,6 +126,8 @@ function buildApp({ config, backendDb, bot }: ApiContext): Hono {
         url.searchParams.get("message_id") ?? "",
         url.searchParams.get("tab") ?? undefined,
         url.searchParams.get("locale") ?? undefined,
+        url.searchParams.get("panel") ?? undefined,
+        url.searchParams.get("period") ?? undefined,
       ),
     );
   });

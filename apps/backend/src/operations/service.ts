@@ -9,7 +9,7 @@ import { pipelineStatusPayload } from "./read-model.js";
 export function operationsService(backendDb: BackendDb, config: BackendConfig) {
   return {
     dashboard: () => commandCenterPayload(config, backendDb),
-    pipeline: (weekOffset = 0) => pipelineStatusPayload(config, backendDb, weekOffset),
+    pipeline: (weekOffset = 0, periodDays = 7) => pipelineStatusPayload(config, backendDb, weekOffset, periodDays),
     postDebug: (ref: string) => postDebugPayload(backendDb, ref),
     command: (input: OperationsCommand, fetchImpl?: typeof fetch) => runOperationCommand(backendDb, input, config, fetchImpl),
   };

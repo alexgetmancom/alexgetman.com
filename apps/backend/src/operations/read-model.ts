@@ -21,7 +21,7 @@ import { formatZonedSortable, zonedWeekBounds } from "../foundation/time.js";
 import { jsonArray, jsonObject } from "../json.js";
 
 /** Operations read model over publication, delivery and worker state. */
-export function pipelineStatusPayload(config: BackendConfig, backendDb: BackendDb, weekOffset = 0) {
+export function pipelineStatusPayload(config: BackendConfig, backendDb: BackendDb, weekOffset = 0, periodDays = 7) {
   const jobs = backendDb.db
     .select()
     .from(publishJobs)
@@ -91,7 +91,7 @@ export function pipelineStatusPayload(config: BackendConfig, backendDb: BackendD
     })
     .from(metricSchedule)
     .all();
-  const pipelinePostRows = pipelinePosts(backendDb, config, weekOffset);
+  const pipelinePostRows = pipelinePosts(backendDb, config, weekOffset, periodDays);
   const feed = readFeedSummary(config, backendDb);
   const socialState = readWorkerState(backendDb, "crosspost_worker") ?? readWorkerState(backendDb, "queue") ?? {};
   const [targetFailureCount] = backendDb.db
@@ -138,8 +138,11 @@ export function pipelineStatusPayload(config: BackendConfig, backendDb: BackendD
   };
 }
 
-function pipelinePosts(backendDb: BackendDb, config: BackendConfig, weekOffset: number): Record<string, unknown>[] {
-  const [start, end] = zonedWeekBounds(weekOffset, config.TIMEZONE);
+function pipelinePosts(backendDb: BackendDb, config: BackendConfig, weekOffset: number, periodDays: number): Record<string, unknown>[] {
+  const [weekStart, weekEnd] = zonedWeekBounds(weekOffset, config.TIMEZONE);
+  const endDate = new Date(weekEnd);
+  const start = periodDays === 7 ? weekStart : new Date(endDate.getTime() - (periodDays - 1) * 86_400_000).toISOString();
+  const end = weekEnd;
   const rows = fetchPostRows(backendDb, start, end);
   const postKeys = rows.map((row) => String(row.post_key ?? "")).filter(Boolean);
   const targetRows = postKeys.length

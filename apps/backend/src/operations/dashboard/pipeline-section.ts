@@ -1,50 +1,47 @@
+import { ORDERED_TARGETS } from "./assets.js";
 import { renderWeeklyChart } from "./chart.js";
-import { formatDayHeaderRu, getWeekBounds, shortPipelineText } from "./format.js";
-import { escapeHtml } from "./html.js";
-import { renderPipelineTable } from "./table.js";
+import { formatDayHeaderRu, formatMetricValue, getWeekBounds, shortPipelineText } from "./format.js";
+import { postMetricTotals } from "./metrics.js";
+import { renderPublicationColumns } from "./table.js";
 import type { PipelineData } from "./types.js";
 
 export { shortPipelineText };
 
-export function renderPipelineSection(weekOffset: number, data: PipelineData | null): string {
+const PERIODS = [7, 30, 90, 365] as const;
+
+export function renderPipelineSection(weekOffset: number, periodDays: number, data: PipelineData | null, audience = ""): string {
   const [startOfWeek, endOfWeek] = getWeekBounds(weekOffset);
   const weekStartStr = formatDayHeaderRu(startOfWeek);
   const weekEndStr = formatDayHeaderRu(endOfWeek);
   const posts = data?.posts ?? [];
-  const nextBtn =
+  const targetIds = ORDERED_TARGETS.map((target) => target.id);
+  const totals = posts.reduce(
+    (all, post) => {
+      const value = postMetricTotals(post, targetIds);
+      all.views += value.views;
+      all.likes += value.likes + value.reposts;
+      all.replies += value.replies;
+      return all;
+    },
+    { views: 0, likes: 0, replies: 0 },
+  );
+  const periodLabel = periodDays === 7 ? `${weekStartStr} – ${weekEndStr}` : `${periodDays} дней`;
+  const controls = PERIODS.map(
+    (days) =>
+      `<a class="period-btn${days === periodDays ? " active" : ""}" href="/command-center?period=${days}&week_offset=${weekOffset}">${days === 365 ? "Год" : `${days}д`}</a>`,
+  ).join("");
+  const previous = `<a class="period-nav" href="/command-center?period=${periodDays}&week_offset=${weekOffset + 1}" aria-label="Предыдущий период">‹</a>`;
+  const next =
     weekOffset > 0
-      ? `<a class="pag-btn" href="/command-center?week_offset=${weekOffset - 1}">Следующая неделя &rarr;</a>`
-      : '<span class="pag-btn disabled">Следующая неделя &rarr;</span>';
-  const currentBtn = weekOffset > 0 ? `<a class="pag-btn" href="/command-center?week_offset=0">Текущая неделя</a>` : "";
-  const prevBtn = `<a class="pag-btn" href="/command-center?week_offset=${weekOffset + 1}">&larr; Предыдущая неделя</a>`;
-  const processedCount = data?.social_worker?.processed_count ?? 0;
-  const lastUpdateId = data?.social_worker?.last_update_id ?? "n/a";
-  const updatedTime = data?.updated_at ?? new Date().toISOString();
+      ? `<a class="period-nav" href="/command-center?period=${periodDays}&week_offset=${weekOffset - 1}" aria-label="Следующий период">›</a>`
+      : '<span class="period-nav muted">›</span>';
 
   return `
-    <section style="margin-top: 0;">
-      <div class="pagination-bar">
-        ${prevBtn}
-        ${currentBtn}
-        <span class="pag-current">${weekStartStr} &ndash; ${weekEndStr}</span>
-        ${nextBtn}
-      </div>
-      <div class="metric-dashboard">
-        <div class="metric-toggle metric-toggle--vertical" id="metric-toggle">
-          <button class="mt-btn mt-active" type="button" data-m="mv">👁 Views</button>
-          <button class="mt-btn" type="button" data-m="ml">❤️ Likes</button>
-          <button class="mt-btn" type="button" data-m="mr">💬 Replies</button>
-        </div>
-        ${renderWeeklyChart(posts)}
-      </div>
-      ${renderPipelineTable(posts)}
-      <p class="note">
-        Feed: ${data?.feed?.items ?? 0} | 
-        Processed: ${processedCount} | 
-        Last update: ${escapeHtml(lastUpdateId)} | 
-        JSON: <a href="/api/pipeline-status?week_offset=${weekOffset}">/api/pipeline-status</a> | 
-        Updated: ${escapeHtml(updatedTime)}
-      </p>
+    <section class="pipeline-overview">
+      <header class="overview-toolbar"><div class="period-controls">${controls}</div><div class="period-range">${previous}<strong>${periodLabel}</strong>${next}</div></header>
+      <div class="kpi-row"><div><span>Просмотры</span><strong>${formatMetricValue(totals.views)}</strong></div><div><span>Реакции</span><strong>${formatMetricValue(totals.likes)}</strong></div><div><span>Ответы</span><strong>${formatMetricValue(totals.replies)}</strong></div><div><span>Публикации</span><strong>${posts.length}</strong></div></div>
+      <div class="insights-row">${audience}<div class="chart-panel"><div class="section-kicker">Динамика</div>${renderWeeklyChart(posts)}</div></div>
+      ${renderPublicationColumns(posts)}
     </section>
   `;
 }
