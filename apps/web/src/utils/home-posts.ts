@@ -13,18 +13,20 @@ const PUBLIC_ROOT = path.join(WEB_ROOT, "public");
 export function existingSiteImage(publicPath: string | null | undefined) {
   if (!publicPath) return null;
   const normalizedPath = String(publicPath).replace(/^\/+/, "");
+  const filePath = normalizedPath.split(/[?#]/, 1)[0] ?? "";
   const candidates = [
-    ...(process.env.SITE_PUBLIC_DIR ? [path.join(process.env.SITE_PUBLIC_DIR, normalizedPath)] : []),
-    path.join(PUBLIC_ROOT, normalizedPath),
-    path.resolve(process.cwd(), "public", normalizedPath),
-    path.resolve(process.cwd(), "apps/web/public", normalizedPath),
+    ...(process.env.SITE_PUBLIC_DIR ? [path.join(process.env.SITE_PUBLIC_DIR, filePath)] : []),
+    path.join(PUBLIC_ROOT, filePath),
+    path.resolve(process.cwd(), "public", filePath),
+    path.resolve(process.cwd(), "apps/web/public", filePath),
   ];
   return candidates.some((candidate) => fs.existsSync(candidate)) ? normalizedPath : null;
 }
 
 function responsiveBaseFor(publicPath: string | null | undefined): string | null {
-  if (!publicPath || !/\.(png|jpe?g)$/i.test(publicPath)) return null;
-  return String(publicPath)
+  const source = String(publicPath ?? "").split(/[?#]/, 1)[0] ?? "";
+  if (!source || !/\.(png|jpe?g)$/i.test(source)) return null;
+  return source
     .replace(/^\/+/, "")
     .replace(/[\\/]/g, "-")
     .replace(/\.[a-z0-9]+$/i, "");
@@ -35,12 +37,14 @@ function responsiveBaseFor(publicPath: string | null | undefined): string | null
 export function responsiveSrcSetFor(publicPath: string | null | undefined) {
   const base = responsiveBaseFor(publicPath);
   if (!base) return undefined;
-  return [360, 640, 960].map((width) => `/generated/responsive/${base}-${width}.webp ${width}w`).join(", ");
+  const suffix = String(publicPath ?? "").match(/[?#].*$/)?.[0] ?? "";
+  return [360, 640, 960].map((width) => `/generated/responsive/${base}-${width}.webp${suffix} ${width}w`).join(", ");
 }
 
 export function responsiveVariantFor(publicPath: string | null | undefined, width: 360 | 640 | 960) {
   const base = responsiveBaseFor(publicPath);
-  return base ? `generated/responsive/${base}-${width}.webp` : undefined;
+  const suffix = String(publicPath ?? "").match(/[?#].*$/)?.[0] ?? "";
+  return base ? `generated/responsive/${base}-${width}.webp${suffix}` : undefined;
 }
 
 function audioUrlFor(item: FeedItem, locale: "en" | "ru") {

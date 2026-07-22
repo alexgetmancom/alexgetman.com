@@ -4,7 +4,7 @@ import { editPublishedTargets } from "../delivery/external-edits.js";
 import { removePublishedTargets } from "../delivery/external-removals.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { recordOperationAction } from "./action-audit.js";
-import { editLocaleContent, parseEnglishMedia, replaceLocaleMedia } from "./commands/content-repair.js";
+import { editLocaleContent, parseEnglishMedia, refreshLocaleSite, replaceLocaleMedia } from "./commands/content-repair.js";
 import { replaceTextFallbackTargets, requeueAfterRemoval, requeuePublicationScope } from "./commands/requeue.js";
 import { resolvePublicationRef } from "./publication-ref.js";
 
@@ -39,7 +39,10 @@ export async function runOperationCommand(
   let result: Record<string, unknown>;
   if (input.action === "retry" || input.action === "republish")
     result = requeuePublicationScope(backendDb, publicationRef, input.target, input.locale);
-  else if (input.action === "edit" || input.action === "edit_en") {
+  else if (input.action === "refresh_site") {
+    const locale = input.locale ?? "en";
+    result = refreshLocaleSite(backendDb, publicationRef, locale);
+  } else if (input.action === "edit" || input.action === "edit_en") {
     const locale = input.locale ?? "en";
     const text = input.text ?? input.text_en ?? "";
     result = editLocaleContent(backendDb, publicationRef, locale, text);

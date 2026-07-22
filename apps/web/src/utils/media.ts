@@ -8,6 +8,15 @@ function normalizePublicPath(value: string | null | undefined): string {
   return String(value || "").replace(/^\/+/, "");
 }
 
+function filePath(publicPath: string): string {
+  return publicPath.split(/[?#]/, 1)[0] ?? "";
+}
+
+function cacheSuffix(publicPath: string): string {
+  const index = publicPath.search(/[?#]/);
+  return index === -1 ? "" : publicPath.slice(index);
+}
+
 function localizedMedia(item: FeedItem, locale: FeedLocale): SiteMedia[] {
   const primary = locale === "ru" ? item.media : item.media_en;
   const fallback = locale === "ru" ? item.media_en : item.media;
@@ -26,7 +35,7 @@ export function postVisualMedia(item: FeedItem, locale: FeedLocale = "en"): Post
   const media = localizedMedia(item, locale).find((entry) => entry.path);
   const path = normalizePublicPath(media?.path);
   if (!path) return null;
-  const type = String(media?.type || "").toLowerCase() === "video" || /\.(mp4|webm|mov)$/i.test(path) ? "video" : "image";
+  const type = String(media?.type || "").toLowerCase() === "video" || /\.(mp4|webm|mov)$/i.test(filePath(path)) ? "video" : "image";
   const poster = type === "video" ? normalizePublicPath(media?.poster) : "";
   return poster ? { type, path, poster } : { type, path };
 }
@@ -38,7 +47,7 @@ export function postMediaGallery(item: FeedItem, locale: FeedLocale = "en"): Pos
     ...(directImage ? [{ type: "image", path: directImage }] : []),
     ...localizedMedia(item, locale).map((media) => {
       const path = normalizePublicPath(media?.path);
-      const type = String(media?.type || "").toLowerCase() === "video" || /\.(mp4|webm|mov)$/i.test(path) ? "video" : "image";
+      const type = String(media?.type || "").toLowerCase() === "video" || /\.(mp4|webm|mov)$/i.test(filePath(path)) ? "video" : "image";
       const poster = type === "video" ? normalizePublicPath(media?.poster) : "";
       return poster ? { type, path, poster } : { type, path };
     }),
@@ -57,7 +66,9 @@ export function postOgImagePath(item: FeedItem, locale: FeedLocale = "en"): stri
 
 export function responsiveImageSrcSet(publicPath: string | null | undefined): string | undefined {
   const normalized = normalizePublicPath(publicPath);
-  if (!normalized || !/\.(png|jpe?g)$/i.test(normalized)) return undefined;
-  const base = normalized.replace(/[\\/]/g, "-").replace(/\.[a-z0-9]+$/i, "");
-  return [360, 640, 960].map((width) => `/generated/responsive/${base}-${width}.webp ${width}w`).join(", ");
+  const source = filePath(normalized);
+  if (!source || !/\.(png|jpe?g)$/i.test(source)) return undefined;
+  const base = source.replace(/[\\/]/g, "-").replace(/\.[a-z0-9]+$/i, "");
+  const suffix = cacheSuffix(normalized);
+  return [360, 640, 960].map((width) => `/generated/responsive/${base}-${width}.webp${suffix} ${width}w`).join(", ");
 }

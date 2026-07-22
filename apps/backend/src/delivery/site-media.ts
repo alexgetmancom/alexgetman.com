@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import {
@@ -40,20 +41,31 @@ export async function materializeSiteMedia(
     const target = path.join(directory, filename);
     await copyOrDownload(config, item, target, fetchImpl);
     await fs.promises.chmod(target, 0o664);
-    const output: Record<string, unknown> = { ...item, type: kind, path: `${SITE_MEDIA_URL_PREFIX}/${filename}` };
+    const output: Record<string, unknown> = {
+      ...item,
+      type: kind,
+      // Public media is intentionally long-lived in browser/CDN caches. A content
+      // version keeps a replacement from reusing the previous image URL.
+      path: versionedPublicPath(`${SITE_MEDIA_URL_PREFIX}/${filename}`, target),
+    };
     if (kind === "video") {
       const posterName = siteMediaPosterFilename(postId, locale, index);
       const poster = path.join(directory, posterName);
       await runFfmpeg(["-y", "-ss", "0.5", "-i", target, "-frames:v", "1", "-q:v", "2", poster]);
       await fs.promises.chmod(poster, 0o664);
       await materializeResponsiveVariants(config, poster);
-      output.poster = `${SITE_MEDIA_URL_PREFIX}/${posterName}`;
+      output.poster = versionedPublicPath(`${SITE_MEDIA_URL_PREFIX}/${posterName}`, poster);
     } else {
       await materializeResponsiveVariants(config, target);
     }
     result.push(output);
   }
   return result;
+}
+
+function versionedPublicPath(publicPath: string, filePath: string): string {
+  const content = fs.readFileSync(filePath);
+  return `${publicPath}?v=${crypto.createHash("sha256").update(content).digest("hex").slice(0, 12)}`;
 }
 
 /** Create the variants before a post is exposed in the public feed. The web

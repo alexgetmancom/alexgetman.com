@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { asc, count, eq } from "drizzle-orm";
 import { openBackendDb } from "../src/db/client.js";
-import { posts, postTargets, publicationSources, publications, publishJobs, siteSourceItems } from "../src/db/schema.js";
+import { posts, postTargets, publicationSources, publications, publishJobs, siteJobs, siteSourceItems } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { runOperationCommand } from "../src/operations/commands.js";
 import { enqueuePublishJobTx } from "../src/publishing/queue.js";
@@ -234,6 +234,20 @@ describe("command center actions", () => {
       expect(requests).toEqual([{ url: "https://graph.facebook.com/v23.0/page_post?access_token=token", method: "DELETE" }]);
       expect(result.removed).toEqual([{ target: "facebook", ok: true, deleted: 1 }]);
       expect(backendDb.db.select().from(postTargets).where(eq(postTargets.target, "facebook")).get()?.status).toBe("queued");
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("refreshes only the requested site locale without queuing social targets", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      backendDb.db.insert(publications).values({ postId: 10, status: "published", createdAt: now, updatedAt: now }).run();
+      const result = await runOperationCommand(backendDb, { action: "refresh_site", ref: "post:10", locale: "en" });
+      expect(result).toMatchObject({ ok: true, post_id: 10, locale: "en", site_refresh: true });
+      expect(backendDb.db.select().from(siteJobs).get()).toMatchObject({ postId: 10, reason: "refresh_en_site", status: "queued" });
+      expect(backendDb.db.select().from(publishJobs).all()).toHaveLength(0);
     } finally {
       backendDb.close();
     }

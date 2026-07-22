@@ -70,6 +70,13 @@ export function replaceLocaleMedia(
   return { ok: true, post_id: ref.postId, post_key: ref.postKey, locale, media: media != null };
 }
 
+/** Rebuilds one locale's public projection without touching social targets. */
+export function refreshLocaleSite(backendDb: BackendDb, ref: PublicationRef, locale: "ru" | "en"): Record<string, unknown> {
+  const now = new Date().toISOString();
+  backendDb.db.transaction((tx) => enqueueRepairSiteJob(tx, ref, `refresh_${locale}_site`, now));
+  return { ok: true, post_id: ref.postId, post_key: ref.postKey, locale, site_refresh: true };
+}
+
 export function parseEnglishMedia(raw: string | undefined): Record<string, unknown>[] | null {
   if (!raw || ["none", "null", "ru", "fallback"].includes(raw.trim().toLowerCase())) return null;
   const parsed = JSON.parse(raw) as unknown;
