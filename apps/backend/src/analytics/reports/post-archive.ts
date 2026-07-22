@@ -47,7 +47,13 @@ export function creatorPostMetrics(backendDb: BackendDb, postId: number, locale:
   const totals = [...metrics.values()].reduce<{ views: number; interactions: number }>(
     (total, values) => ({
       views: total.views + (values.views ?? 0),
-      interactions: total.interactions + (values.likes ?? 0) + (values.replies ?? 0) + (values.comments ?? 0) + (values.reposts ?? 0),
+      interactions:
+        total.interactions +
+        (values.likes ?? 0) +
+        (values.replies ?? 0) +
+        (values.comments ?? 0) +
+        (values.reposts ?? 0) +
+        (values.shares ?? 0),
     }),
     { views: 0, interactions: 0 },
   );

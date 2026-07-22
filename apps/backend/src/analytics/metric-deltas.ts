@@ -79,7 +79,7 @@ export function textContentMetricsByPlatform(backendDb: BackendDb, since: string
     if (entry.metric === "views") value.views += delta;
     else if (entry.metric === "likes") value.likes += delta;
     else if (entry.metric === "comments" || entry.metric === "replies") value.comments += delta;
-    else if (entry.metric === "reposts") value.shares += delta;
+    else if (entry.metric === "reposts" || entry.metric === "shares") value.shares += delta;
     else if (entry.metric === "saves") value.saves += delta;
     totals.set(entry.target, value);
   }
@@ -133,7 +133,7 @@ export function textTotals(backendDb: BackendDb, since: string): { views: number
   const totals = metricDeltasSince(backendDb, since, "target NOT LIKE 'site_%'");
   return {
     views: totals.views ?? 0,
-    interactions: (totals.likes ?? 0) + (totals.replies ?? 0) + (totals.reposts ?? 0) + (totals.comments ?? 0),
+    interactions: (totals.likes ?? 0) + (totals.replies ?? 0) + (totals.reposts ?? 0) + (totals.shares ?? 0) + (totals.comments ?? 0),
   };
 }
 

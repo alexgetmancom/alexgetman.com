@@ -1,3 +1,4 @@
+import { importXAnalyticsCsv } from "./analytics/import-x-csv.js";
 import { baselineDrizzleMigrations, migrationStatus, openBackendDb } from "./db/client.js";
 import { loadConfig } from "./foundation/config.js";
 import { capabilityReport } from "./observability/capabilities.js";
@@ -47,6 +48,7 @@ function printHelp(): void {
   restore --source PATH [--db PATH] --force
   audit [--db PATH]
   metrics-backfill [--targets a,b] [--refs post:1,post:2] [--from ISO] [--to ISO] [--apply] [--reset-counts]
+  import-x-analytics --file PATH --sampled-at ISO
   capabilities [--db PATH]
   doctor
   capability-record --test T01 --message-id 123 [--notes TEXT]
@@ -127,6 +129,8 @@ async function main(): Promise<void> {
         ? withMaintenanceLock(backendDb, () => applyMetricsBackfill(backendDb, config, plan, args.flags.has("reset-counts")))
         : 0;
       console.log(JSON.stringify({ count: plan.length, applied, plan }, null, 2));
+    } else if (args.command === "import-x-analytics") {
+      console.log(JSON.stringify(importXAnalyticsCsv(backendDb, required(args, "file"), required(args, "sampled-at")), null, 2));
     } else if (args.command === "capabilities") {
       console.log(JSON.stringify(capabilitySummary(backendDb), null, 2));
     } else if (args.command === "capability-record") {
