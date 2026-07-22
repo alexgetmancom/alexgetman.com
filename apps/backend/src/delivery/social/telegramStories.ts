@@ -9,9 +9,12 @@ import type { PublishResult } from "../../publishing/errors.js";
 import { type PublishMediaItem, payloadMedia, payloadText } from "./payload.js";
 
 const URL_RE = /https?:\/\/[^\s<>)]*/g;
-// The shared 1080x1920 Story master stays below 28 MiB, leaving headroom
-// under Telegram's 30 MB limit without a second, quality-losing transcode.
-const STORY_MAX_BYTES = 28 * 1024 * 1024;
+// mtcute (like the GramJS client this replaced) switches to its "big file"
+// upload path - upload.saveBigFilePart / inputFileBig, no checksum - above
+// 10 MiB (@mtcute/core's BIG_FILE_MIN_SIZE). stories.sendStory rejects files
+// uploaded that way with MEDIA_FILE_INVALID (400), so every video story must
+// stay under that threshold, not Telegram's much larger regular-video limit.
+const STORY_MAX_BYTES = Math.floor(9.5 * 1024 * 1024);
 
 export async function publishTelegramStory(payload: Record<string, unknown>, config: BackendConfig): Promise<PublishResult> {
   const media = payloadMedia(payload).find((item) => item.storyLocalPath || item.localPath);
@@ -42,8 +45,8 @@ async function publishChannelStory(media: PublishMediaItem, caption: string, con
     const metadata = await probeVideo(uploadPath, media);
     if (media.type === "VIDEO" && fs.statSync(uploadPath).size > STORY_MAX_BYTES) {
       cleanupPath = path.join(os.tmpdir(), `tg_story_${Date.now()}.mp4`);
-      const targetBytes = 27 * 1024 * 1024;
-      const audioBitrate = 320_000;
+      const targetBytes = 9 * 1024 * 1024;
+      const audioBitrate = 64_000;
       const videoBitrate = Math.max(150_000, Math.floor((targetBytes * 8) / Math.max(metadata.duration, 1) - audioBitrate));
       await runFfmpeg([
         "-y",
@@ -66,7 +69,7 @@ async function publishChannelStory(media: PublishMediaItem, caption: string, con
         "-c:a",
         "aac",
         "-b:a",
-        "320k",
+        "64k",
         "-ar",
         "48000",
         "-ac",
