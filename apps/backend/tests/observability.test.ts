@@ -72,6 +72,25 @@ describe("observability", () => {
       expect(backendDb.db.select().from(postEvents).where(eq(postEvents.eventType, "site.build.failed")).all()).toHaveLength(1);
       await runObservabilityCycle(config, backendDb);
       expect(backendDb.db.select().from(postEvents).where(eq(postEvents.eventType, "queue.stale")).all().length).toBe(1);
+
+      // A terminal social job emits publish.job.failed at its state transition.
+      // Observability must not generate a fresh target.failed alert every hour.
+      backendDb.db
+        .insert(publishJobs)
+        .values({
+          postKey: "post:terminal",
+          messageId: 8,
+          target: "telegram_stories",
+          status: "failed",
+          lastError: "MEDIA_FILE_INVALID",
+          payloadJson: {},
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      await runObservabilityCycle(config, backendDb);
+      await runObservabilityCycle(config, backendDb);
+      expect(backendDb.db.select().from(postEvents).where(eq(postEvents.eventType, "target.failed")).all()).toHaveLength(0);
     } finally {
       backendDb.close();
     }

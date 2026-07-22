@@ -12,13 +12,6 @@ export function recordPublicationFailures(config: BackendConfig, backendDb: Back
     .from(publishJobs)
     .where(and(eq(publishJobs.status, "publishing"), lt(publishJobs.lockedAt, staleBefore)))
     .all();
-  const failed = backendDb.db
-    .select()
-    .from(publishJobs)
-    .where(eq(publishJobs.status, "failed"))
-    .orderBy(desc(publishJobs.updatedAt))
-    .limit(100)
-    .all();
   const failedSite = backendDb.db
     .select()
     .from(siteJobs)
@@ -36,15 +29,10 @@ export function recordPublicationFailures(config: BackendConfig, backendDb: Back
       details: { jobId: job.jobId, lockedAt: job.lockedAt },
       cooldownSeconds: config.ALERT_COOLDOWN_SECONDS,
     });
-  for (const job of failed)
-    recordDomainEvent(backendDb, {
-      ref: job.postKey,
-      type: "target.failed",
-      severity: "error",
-      target: job.target,
-      message: job.lastError ?? `${job.target} failed`,
-      cooldownSeconds: config.ALERT_COOLDOWN_SECONDS,
-    });
+  // A social job records its own `publish.job.failed` event in the transaction
+  // that moves it to the terminal state. Do not rediscover terminal jobs here:
+  // that would turn one failed publication into a new Telegram alert every
+  // cooldown window forever.
   for (const job of failedSite)
     recordDomainEvent(backendDb, {
       ref: job.postId == null ? null : `post:${job.postId}`,

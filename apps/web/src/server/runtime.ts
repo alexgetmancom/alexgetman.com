@@ -11,7 +11,14 @@ type AppRuntime = { config: BackendConfig; backendDb: BackendDb; bot: ReturnType
 
 let runtime: AppRuntime | undefined;
 
+// Astro bundles API routes into a separate module graph from apps/web/server.ts.
+// A module-local singleton therefore starts the workers twice in one Bun
+// process. Keep the process singleton on globalThis so both graphs reuse it.
+type RuntimeGlobal = typeof globalThis & { __alexgetmanRuntime?: AppRuntime };
+const runtimeGlobal = globalThis as RuntimeGlobal;
+
 export function startRuntime(): AppRuntime {
+  runtime ??= runtimeGlobal.__alexgetmanRuntime;
   if (runtime) return runtime;
   const config = loadConfig(Bun.env);
   configureLogging(config.LOG_LEVEL);
@@ -20,6 +27,7 @@ export function startRuntime(): AppRuntime {
   const bot = createBot(config, backendDb);
   const loops = [...startCoreWorkers(config, backendDb), ...startTelegramWorkers(config, backendDb, bot)];
   runtime = { config, backendDb, bot, loops };
+  runtimeGlobal.__alexgetmanRuntime = runtime;
   if (!assertFfmpegAvailable()) log("warn", "ffmpeg is not available; video poster generation will fail until Docker/runtime installs it");
   return runtime;
 }
@@ -34,5 +42,6 @@ export async function stopRuntime(signal: string): Promise<void> {
   for (const loop of runtime.loops) loop.stop();
   if (runtime.bot?.isRunning()) await runtime.bot.stop();
   runtime.backendDb.close();
+  delete runtimeGlobal.__alexgetmanRuntime;
   runtime = undefined;
 }

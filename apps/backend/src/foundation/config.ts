@@ -89,6 +89,7 @@ const envSchema = z
     // while a slow provider call is in flight, touching lockedAt so
     // recoverStalePublishJobs doesn't mistake "still working" for "worker crashed".
     PUBLISH_HEARTBEAT_INTERVAL_SECONDS: z.coerce.number().int().positive().default(180),
+    // Initial delivery plus three exponential-backoff retries.
     PUBLISH_MAX_ATTEMPTS: z.coerce.number().int().positive().default(4),
     PUBLISH_BACKOFF_BASE_SECONDS: z.coerce.number().int().positive().default(60),
     PUBLISH_BACKOFF_MAX_SECONDS: z.coerce.number().int().positive().default(3600),

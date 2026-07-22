@@ -115,7 +115,10 @@ export async function runDeliveryPublishCycle(
         recordDomainEvent(backendDb, {
           ref: `post:${postId}`,
           type: "delivery.post.completed",
-          severity: failed ? "warn" : "info",
+          // The terminal target already emitted the single actionable
+          // `publish.job.failed` error alert. Keep this aggregate completion
+          // informational so a partially failed post does not notify twice.
+          severity: "info",
           message: failed ? `Post #${postId} completed with ${failed} failed target(s)` : `Post #${postId} published successfully`,
           details: {
             post_id: postId,

@@ -8,7 +8,9 @@ type FailedJobTransition = {
   nextAttemptAt: string | null;
 };
 
-/** Pure retry policy: transient errors use the configured budget, unknown errors get one safe retry. */
+/** Pure retry policy: transient errors use the configured budget (four total
+ * attempts by default: initial delivery plus three retries); unknown errors
+ * get one safe retry and permanent/auth errors never risk a duplicate post. */
 export function failedJobTransition(error: unknown, currentAttempt: number, policy: RetryPolicy): FailedJobTransition {
   const attempt = currentAttempt + 1;
   const errorClass = classifyPublishError(error);
