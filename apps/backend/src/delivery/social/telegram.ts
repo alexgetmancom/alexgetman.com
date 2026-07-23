@@ -21,72 +21,80 @@ export async function publishToTelegram(
   const chatId = String(payload.chat_id ?? payload.chatId ?? payload.channel ?? `@${config.CHANNEL_USERNAME.replace(/^@/, "")}`);
   const text = payloadText(payload);
   const media = payloadMedia(payload);
-  const entities = Array.isArray(payload.entities) ? payload.entities : undefined;
-  const caption = telegramCaption(text, entities);
+  const entities = Array.isArray(payload.entities) ? payload.entities : [];
 
-  if (media.length > 1) {
-    const attachments: TelegramAttachment[] = [];
-    const items = media.slice(0, 10).map((item, index) => ({
-      type: item.type === "VIDEO" ? "video" : "photo",
-      media: telegramMediaSource(item.fileId, item.vpsUrl, item.localPath, `media-${index}`, attachments),
-      caption: index === 0 ? caption.text : undefined,
-      caption_entities: index === 0 ? caption.entities : undefined,
-    }));
-    const request = attachments.length
-      ? await telegramForm({ chat_id: chatId, media: JSON.stringify(items) }, attachments)
-      : { chat_id: chatId, media: items };
-    const result = await telegramCall<TelegramResponse>(config, token, "sendMediaGroup", request, fetchImpl);
-    return reactToPublishedMessage(normalizeTelegramResult(result, chatId), config, token, chatId, fetchImpl);
+  const attachments: TelegramAttachment[] = [];
+  const blocks: Record<string, unknown>[] = [];
+  if (media.length > 0) {
+    const mediaBlocks = media.slice(0, 50).map((item, index) => {
+      const kind = item.type === "VIDEO" ? "video" : "photo";
+      const source = telegramMediaSource(item.fileId, item.vpsUrl, item.localPath, `media-${index}`, attachments);
+      return { type: kind, [kind]: { type: kind, media: source } };
+    });
+    blocks.push({ type: "slideshow", blocks: mediaBlocks });
   }
+  if (text) blocks.push({ type: "paragraph", text: richTextFromEntities(text, entities) });
 
-  const item = media[0];
-  if (item) {
-    const method = item.type === "VIDEO" ? "sendVideo" : "sendPhoto";
-    const mediaKey = item.type === "VIDEO" ? "video" : "photo";
-    const attachments: TelegramAttachment[] = [];
-    const mediaSource = telegramMediaSource(item.fileId, item.vpsUrl, item.localPath, `file-${mediaKey}`, attachments);
-    const request = attachments.length
-      ? await telegramForm(
-          {
-            chat_id: chatId,
-            [mediaKey]: mediaSource ?? "",
-            caption: caption.text,
-            caption_entities: JSON.stringify(caption.entities),
-          },
-          attachments,
-        )
-      : { chat_id: chatId, [mediaKey]: mediaSource, caption: caption.text, caption_entities: caption.entities };
-    const result = await telegramCall<TelegramResponse>(config, token, method, request, fetchImpl);
-    return reactToPublishedMessage(normalizeTelegramResult(result, chatId), config, token, chatId, fetchImpl);
-  }
-
-  const result = await telegramCall<TelegramResponse>(
-    config,
-    token,
-    "sendMessage",
-    { chat_id: chatId, text, entities, disable_web_page_preview: false },
-    fetchImpl,
-  );
+  const richMessage = { blocks };
+  const request = attachments.length
+    ? await telegramForm({ chat_id: chatId, rich_message: JSON.stringify(richMessage) }, attachments)
+    : { chat_id: chatId, rich_message: richMessage };
+  const result = await telegramCall<TelegramResponse>(config, token, "sendRichMessage", request, fetchImpl);
   return reactToPublishedMessage(normalizeTelegramResult(result, chatId), config, token, chatId, fetchImpl);
 }
 
-/** Defensive compatibility for pre-existing queued payloads. New drafts are blocked by Publishing preflight. */
-function telegramCaption(text: string, entities: unknown[] | undefined): { text: string; entities: Record<string, unknown>[] } {
-  const limit = 1024;
-  let caption = text.slice(0, limit);
-  // Do not split a surrogate pair; Telegram offsets are UTF-16 code units.
-  if (caption.length > 0 && /[\uD800-\uDBFF]/.test(caption.at(-1) ?? "")) caption = caption.slice(0, -1);
-  const length = caption.length;
-  const safeEntities = (entities ?? []).flatMap((entity) => {
+type RichText = string | RichTextNode | (string | RichTextNode)[];
+type RichTextKind = "bold" | "italic" | "underline" | "strikethrough" | "spoiler" | "code";
+type RichTextNode = { type: RichTextKind; text: RichText };
+type EntitySpan = { offset: number; length: number; kind: RichTextKind };
+
+const wrappableEntityTypes: Record<string, RichTextKind> = {
+  bold: "bold",
+  italic: "italic",
+  underline: "underline",
+  strikethrough: "strikethrough",
+  spoiler: "spoiler",
+  code: "code",
+};
+
+/** Converts Telegram MessageEntity offsets (UTF-16 code units, same as JS string indices)
+ * into the nested RichText shape sendRichMessage expects. Links are deliberately dropped —
+ * posts don't carry outbound hyperlinks — and entities Telegram already auto-detects from
+ * plain text (url, mention, hashtag, bot_command, ...) are left as-is. */
+function richTextFromEntities(text: string, entities: unknown[]): RichText {
+  const length = text.length;
+  const safeEntities: EntitySpan[] = entities.flatMap((entity): EntitySpan[] => {
     if (!entity || typeof entity !== "object" || Array.isArray(entity)) return [];
     const value = entity as Record<string, unknown>;
     const offset = Number(value.offset);
     const entityLength = Number(value.length);
     if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(entityLength) || offset < 0 || entityLength <= 0 || offset >= length)
       return [];
-    return [{ ...value, offset, length: Math.min(entityLength, length - offset) }];
+    const kind = wrappableEntityTypes[typeof value.type === "string" ? value.type : ""];
+    if (!kind) return [];
+    return [{ offset, length: Math.min(entityLength, length - offset), kind }];
   });
-  return { text: caption, entities: safeEntities };
+  if (!safeEntities.length) return text;
+
+  const boundaries = new Set([0, length]);
+  for (const entity of safeEntities) {
+    boundaries.add(entity.offset);
+    boundaries.add(entity.offset + entity.length);
+  }
+  const cuts = [...boundaries].sort((a, b) => a - b);
+
+  const segments: (string | RichTextNode)[] = [];
+  for (let i = 0; i < cuts.length - 1; i++) {
+    const start = cuts[i] as number;
+    const end = cuts[i + 1] as number;
+    const covering = safeEntities
+      .filter((entity) => entity.offset <= start && entity.offset + entity.length >= end)
+      .sort((a, b) => a.length - b.length);
+    let node: string | RichTextNode = text.slice(start, end);
+    for (const entity of covering) node = { type: entity.kind, text: node };
+    segments.push(node);
+  }
+  return segments.length === 1 && typeof segments[0] === "string" ? (segments[0] as string) : segments;
 }
 
 async function telegramCall<T>(
