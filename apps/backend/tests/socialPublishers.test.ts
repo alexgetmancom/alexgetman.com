@@ -57,7 +57,14 @@ describe("Telegram publisher", () => {
       fetchImpl,
     );
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as Record<string, unknown>;
-    expect(body).toMatchObject({ photo: "ru-image", caption: "Русский текст" });
+    expect(body).toMatchObject({
+      rich_message: {
+        blocks: [
+          { type: "slideshow", blocks: [{ type: "photo", photo: { type: "photo", media: "ru-image" } }] },
+          { type: "paragraph", text: "Русский текст" },
+        ],
+      },
+    });
   });
 
   it("sets a heart reaction after a successful channel publication", async () => {
@@ -68,7 +75,7 @@ describe("Telegram publisher", () => {
     }) as unknown as typeof fetch;
     await publishToTelegram({ text_en: "Post" }, loadConfig({ CONTROLLER_BOT_TOKEN: "bot-token" }), fetchImpl);
     expect(calls.map((call) => call.url)).toEqual([
-      expect.stringContaining("/sendMessage"),
+      expect.stringContaining("/sendRichMessage"),
       expect.stringContaining("/setMessageReaction"),
     ]);
     expect(JSON.parse(String(calls[1]?.init?.body))).toMatchObject({ message_id: 42, reaction: [{ type: "emoji", emoji: "❤" }] });
@@ -91,29 +98,36 @@ describe("Telegram publisher", () => {
     const form = calls[0]?.init?.body;
     expect(form).toBeInstanceOf(FormData);
     if (!(form instanceof FormData)) throw new Error("expected multipart Telegram request");
-    expect(form.get("photo")).toBe("attach://file-photo");
-    expect(form.get("caption")).toBe("Asset");
-    expect(form.get("file-photo")).toBeInstanceOf(File);
+    const richMessage = JSON.parse(String(form.get("rich_message"))) as Record<string, unknown>;
+    expect(richMessage).toMatchObject({
+      blocks: [
+        { type: "slideshow", blocks: [{ type: "photo", photo: { type: "photo", media: "attach://media-0" } }] },
+        { type: "paragraph", text: "Asset" },
+      ],
+    });
+    expect(form.get("media-0")).toBeInstanceOf(File);
   });
 
-  it("never sends caption entities beyond the Telegram media-caption limit", async () => {
+  it("drops entities that fall outside the text instead of sending a malformed request", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     const fetchImpl = mock(async (input: string | URL | Request, init?: RequestInit) => {
       calls.push({ url: String(input), ...(init ? { init } : {}) });
       return new Response(JSON.stringify({ ok: true, result: { message_id: 42 } }), { status: 200 });
     }) as unknown as typeof fetch;
+    const text = "А".repeat(1024) + "Б".repeat(30);
     await publishToTelegram(
       {
-        text: "А".repeat(1024) + "Б".repeat(30),
-        entities: [{ type: "bold", offset: 1025, length: 10 }],
+        text,
+        entities: [{ type: "bold", offset: text.length + 5, length: 10 }],
         media: [{ type: "photo", file_id: "image" }],
       },
       loadConfig({ CONTROLLER_BOT_TOKEN: "bot-token" }),
       fetchImpl,
     );
     const body = JSON.parse(String(calls[0]?.init?.body)) as Record<string, unknown>;
-    expect(String(body.caption)).toHaveLength(1024);
-    expect(body.caption_entities).toEqual([]);
+    const richMessage = body.rich_message as { blocks: Array<{ type: string; text?: unknown }> };
+    const paragraph = richMessage.blocks.find((block) => block.type === "paragraph");
+    expect(paragraph?.text).toBe(text);
   });
 });
 
