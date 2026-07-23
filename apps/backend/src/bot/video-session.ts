@@ -89,14 +89,18 @@ export async function updateVideoControl(
   await ctx.reply(text, { parse_mode: "Markdown", reply_markup: replyMarkup });
 }
 
-/** Sends the next question as a normal chat message, without moving an earlier control card. */
-export async function replyVideoPrompt(ctx: Context, text: string): Promise<void> {
-  await ctx.reply(text, { parse_mode: "Markdown" });
+/** Sends the next question as a normal chat message, without moving an earlier
+ * control card. Always offers Cancel so a free-text prompt is never a dead end. */
+export async function replyVideoPrompt(ctx: Context, locale: BotLocale, text: string): Promise<void> {
+  await ctx.reply(text, {
+    parse_mode: "Markdown",
+    reply_markup: new InlineKeyboard().text(t(locale, "common.cancel"), "video_cancel_dialog"),
+  });
 }
 
 /** Every metadata-step prompt goes through here so "← Back" (and, for the
- * game URL, "Skip") are always offered consistently, whether reached moving
- * forward through the wizard or by tapping Back from a later step. */
+ * game URL, "Skip") and Cancel are always offered consistently, whether
+ * reached moving forward through the wizard or by tapping Back from a later step. */
 export async function sendVideoMetadataPrompt(
   ctx: Context,
   backendDb: BackendDb,
@@ -106,18 +110,10 @@ export async function sendVideoMetadataPrompt(
 ): Promise<void> {
   const locale = botLocale(backendDb, adminId);
   const keyboard = new InlineKeyboard();
-  let hasButtons = false;
-  if (step === "youtube_game_url") {
-    keyboard.text(t(locale, "video.skip"), "video_game_skip");
-    hasButtons = true;
-  }
-  if (previousVideoMetadataStep(step, selected)) {
-    keyboard.text(t(locale, "common.back"), "video_meta_back");
-    hasButtons = true;
-  }
-  const text = videoPrompt(locale, step);
-  if (hasButtons) await ctx.reply(text, { reply_markup: keyboard });
-  else await replyVideoPrompt(ctx, text);
+  if (step === "youtube_game_url") keyboard.text(t(locale, "video.skip"), "video_game_skip");
+  if (previousVideoMetadataStep(step, selected)) keyboard.text(t(locale, "common.back"), "video_meta_back");
+  keyboard.text(t(locale, "common.cancel"), "video_cancel_dialog");
+  await ctx.reply(videoPrompt(locale, step), { reply_markup: keyboard });
 }
 
 function videoPrompt(locale: BotLocale, prompt: VideoPrompt): string {

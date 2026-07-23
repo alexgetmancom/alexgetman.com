@@ -1,9 +1,9 @@
-import type { Context } from "grammy";
+import { type Context, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import { withActionLock } from "../foundation/action-lock.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
-import { setTelegramPostProgressCard } from "../interfaces/telegram/control-cards.js";
+import { setTelegramPostCard, setTelegramPostProgressCard } from "../interfaces/telegram/control-cards.js";
 import { sendTelegramDeliveryPreviews } from "../interfaces/telegram/delivery-previews.js";
 import { t } from "../interfaces/telegram/i18n/index.js";
 import { formatMsk } from "../interfaces/telegram/time.js";
@@ -12,7 +12,7 @@ import { botLocale } from "./i18n.js";
 import { extractMessage } from "./message.js";
 import { editDraftPreview, editDraftPrompt, sendDraftPreview, showScheduleConfirmation } from "./post-card.js";
 import { clearPostAdminState, getPostAdminState, setPostAdminState } from "./post-state.js";
-import { type DraftView, draftPreview, modeLabel } from "./preview.js";
+import { draftPreview, isDraftView, modeLabel } from "./preview.js";
 import { renderPostProgress } from "./progress.js";
 
 /** Applies a command selected on a text-post card. Telegram rendering lives in post-card. */
@@ -40,7 +40,7 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
   if (action === "cancel_state") {
     clearPostAdminState(backendDb, Number(ctx.from?.id));
     await ctx.answerCallbackQuery();
-    return editDraftPreview(ctx, backendDb, draftId, config);
+    return editDraftPreview(ctx, backendDb, draftId, config, second && isDraftView(second) ? second : "overview");
   }
   if (["edit_ru", "edit_en", "replace_ru_media", "replace_en_media"].includes(action ?? "")) {
     if (!action) return;
@@ -76,7 +76,9 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
     });
     if (!result.ok) return void (await ctx.answerCallbackQuery());
     await ctx.answerCallbackQuery({ text: t(locale, "action.cancelled") });
-    return void (await ctx.editMessageText(t(locale, "action.draft-cancelled", { id: draftId })));
+    return void (await ctx.editMessageText(t(locale, "action.draft-cancelled", { id: draftId }), {
+      reply_markup: new InlineKeyboard().text(t(locale, "common.menu"), "menu_home"),
+    }));
   }
   if (action === "publish") {
     if (await showPublicationPreflight(ctx, backendDb, config, actorId, draftId, locale)) return;
@@ -108,7 +110,7 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
     if (first === "both") return editDraftPreview(ctx, backendDb, draftId, config, "schedule_ru");
     return void (await ctx.answerCallbackQuery({ text: t(locale, "action.unknown") }));
   }
-  if (action === "sched_view" && first && isScheduleView(first)) return editDraftPreview(ctx, backendDb, draftId, config, first);
+  if (action === "sched_view" && first && isDraftView(first)) return editDraftPreview(ctx, backendDb, draftId, config, first);
   if (action === "sched_pick" && first && second) {
     const value = studioServices(backendDb, config).posts.slotTime(`${second.slice(0, 2)}:${second.slice(2, 4)}`);
     return commitLocaleSchedule(ctx, backendDb, config, actorId, draftId, requireScheduleLocale(first), value);
@@ -142,21 +144,15 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
     const pickLocale = requireScheduleLocale(first);
     setPostAdminState(backendDb, Number(ctx.from?.id), `schedule_manual_${pickLocale}`, draftId, callbackMessageId(ctx));
     await ctx.answerCallbackQuery({ text: t(locale, "action.send-time") });
-    return editDraftPrompt(ctx, backendDb, draftId, t(locale, "action.enter-datetime"));
+    return editDraftPrompt(
+      ctx,
+      backendDb,
+      draftId,
+      t(locale, "action.enter-datetime"),
+      pickLocale === "ru" ? "schedule_ru" : "schedule_en",
+    );
   }
   await ctx.answerCallbackQuery({ text: t(locale, "action.unknown") });
-}
-
-const SCHEDULE_SLOT_VIEWS: readonly DraftView[] = [
-  "schedule_ru",
-  "schedule_ru_day",
-  "schedule_ru_evening",
-  "schedule_en",
-  "schedule_en_us",
-];
-
-function isScheduleView(value: string): value is DraftView {
-  return (SCHEDULE_SLOT_VIEWS as readonly string[]).includes(value);
 }
 
 /** Commits one locale's schedule immediately (button/auto pick, or "now"). If
@@ -181,7 +177,9 @@ async function commitLocaleSchedule(
     return editDraftPreview(ctx, backendDb, draftId, config, otherLocale === "ru" ? "schedule_ru" : "schedule_en");
   }
   await ctx.answerCallbackQuery({ text: t(uiLocale, "common.scheduled") });
-  await ctx.editMessageText(scheduledDraftText(uiLocale, draftId, postId, ruAt, enAt, config));
+  await ctx.editMessageText(scheduledDraftText(uiLocale, draftId, postId, ruAt, enAt, config), {
+    reply_markup: new InlineKeyboard().text(t(uiLocale, "common.menu"), "menu_home"),
+  });
 }
 
 async function showPublicationPreflight(
@@ -217,7 +215,16 @@ export async function applyAdminState(
     if (!value) throw new StudioError("err.no-pub-time");
     setPostAdminState(backendDb, Number(ctx.from?.id), `schedule_confirm_${scope}_${value.toISOString()}`, draftId, controlMessageId);
     await sendPostPreviews(ctx, backendDb, config, Number(ctx.from?.id), draftId);
-    return showScheduleConfirmation(ctx, backendDb, draftId, config, ruAt, enAt, `sched_manual_confirm:${draftId}`);
+    return showScheduleConfirmation(
+      ctx,
+      backendDb,
+      draftId,
+      config,
+      ruAt,
+      enAt,
+      `sched_manual_confirm:${draftId}`,
+      scope === "ru" ? "schedule_ru" : "schedule_en",
+    );
   } else if (action === "edit_ru" || action === "edit_en") {
     studioServices(backendDb, config).posts.edit(Number(ctx.from?.id), draftId, {
       locale: action === "edit_ru" ? "ru" : "en",
@@ -239,10 +246,11 @@ export async function applyAdminState(
     studioServices(backendDb, config).posts.replaceSources(Number(ctx.from?.id), draftId, urls);
   }
   clearPostAdminState(backendDb, Number(ctx.from?.id));
-  if (controlMessageId && ctx.chat?.id) {
-    const preview = draftPreview(backendDb, draftId, config);
-    await ctx.api.editMessageText(ctx.chat.id, controlMessageId, preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
-  } else await sendDraftPreview(ctx, backendDb, draftId, config);
+  // A completed edit gets a fresh card at the bottom, same as the album path
+  // in albums.ts: the previous card is history to scroll back to, never a
+  // moving prompt that erases what it looked like before the edit.
+  const control = await sendDraftPreview(ctx, backendDb, draftId, config);
+  if (ctx.chat?.id) setTelegramPostCard(backendDb, draftId, Number(ctx.chat.id), control.message_id);
 }
 
 function extractUrls(value: string): string[] {

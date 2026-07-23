@@ -99,10 +99,9 @@ export async function handlePostScreenCallback(ctx: Context, backendDb: BackendD
   if (ctx.callbackQuery?.data === "cancel_dialog") {
     await ctx.answerCallbackQuery();
     clearPostAdminState(backendDb, Number(ctx.from?.id));
-    try {
-      await ctx.deleteMessage();
-    } catch {}
-    await showMainMenu(ctx, backendDb, mainMenu);
+    // Cancelling is pure navigation, not a content change: turn this same
+    // message back into the main menu instead of deleting and sending a new one.
+    await showMainMenu(ctx, backendDb, mainMenu, true);
     return true;
   }
   return false;

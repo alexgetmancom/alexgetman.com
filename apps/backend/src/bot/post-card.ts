@@ -24,11 +24,17 @@ export async function editDraftPreview(
   await ctx.editMessageText(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
 }
 
-export async function editDraftPrompt(ctx: Context, backendDb: BackendDb, draftId: number, prompt: string): Promise<void> {
+export async function editDraftPrompt(
+  ctx: Context,
+  backendDb: BackendDb,
+  draftId: number,
+  prompt: string,
+  returnView: DraftView = "overview",
+): Promise<void> {
   const locale = botLocale(backendDb, Number(ctx.from?.id));
   await ctx.reply(prompt, {
     parse_mode: "Markdown",
-    reply_markup: new InlineKeyboard().text(t(locale, "common.cancel"), `cancel_state:${draftId}`),
+    reply_markup: new InlineKeyboard().text(t(locale, "common.cancel"), `cancel_state:${draftId}:${returnView}`),
   });
 }
 
@@ -40,12 +46,13 @@ export async function showScheduleConfirmation(
   ruAt: Date | null,
   enAt: Date | null,
   confirmCallback: string,
+  backView: DraftView = "schedule",
 ): Promise<void> {
   const locale = botLocale(backendDb, Number(ctx.from?.id));
   const preview = draftPreview(backendDb, draftId, config);
   const keyboard = new InlineKeyboard()
     .text(t(locale, "post.confirm-schedule-btn"), confirmCallback)
-    .text(t(locale, "common.back"), `schedule:${draftId}`);
+    .text(t(locale, "common.back"), `sched_view:${backView}:${draftId}`);
   const text = `${preview.text}\n\n📅 *${t(locale, "common.confirm-schedule")}*\nRU: ${formatMsk(ruAt, config)}\nEN: ${formatMsk(enAt, config)}`;
   await ctx.reply(text, { parse_mode: "Markdown", reply_markup: keyboard });
 }

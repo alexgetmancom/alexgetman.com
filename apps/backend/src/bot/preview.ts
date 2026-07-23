@@ -23,6 +23,24 @@ export type DraftView =
   | "confirm_delete"
   | "platforms";
 
+const DRAFT_VIEWS: readonly DraftView[] = [
+  "overview",
+  "modes",
+  "schedule",
+  "schedule_ru",
+  "schedule_ru_day",
+  "schedule_ru_evening",
+  "schedule_en",
+  "schedule_en_us",
+  "confirm_publish",
+  "confirm_delete",
+  "platforms",
+];
+
+export function isDraftView(value: string): value is DraftView {
+  return (DRAFT_VIEWS as readonly string[]).includes(value);
+}
+
 const RU_MAIN_SLOTS = ["08:00", "09:00", "10:00", "11:00"];
 const RU_DAY_SLOTS = ["12:00", "13:00", "14:00", "15:00", "16:00", "17:00"];
 const RU_EVENING_SLOTS = ["18:00", "19:00", "20:00", "21:00", "22:00"];

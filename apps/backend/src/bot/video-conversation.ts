@@ -3,6 +3,7 @@ import { fixUrlSlashes } from "../content/message.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
+import { setTelegramVideoCard } from "../interfaces/telegram/control-cards.js";
 import { sendTelegramDeliveryPreviews } from "../interfaces/telegram/delivery-previews.js";
 import { describeError, t } from "../interfaces/telegram/i18n/index.js";
 import { storeTelegramVideo } from "../interfaces/telegram/video-ingress.js";
@@ -30,7 +31,6 @@ import {
   sendVideoTimePrompt,
   setData,
   targetKeyboard,
-  updateVideoControl,
   type VideoSession,
 } from "./video-session.js";
 
@@ -38,9 +38,12 @@ import {
 export async function startVideoConversation(ctx: Context, backendDb: BackendDb): Promise<void> {
   const adminId = Number(ctx.from?.id);
   const locale = botLocale(backendDb, adminId);
-  await ctx.reply(t(locale, "video.dialog-prompt"), {
-    reply_markup: new InlineKeyboard().text(t(locale, "common.cancel"), "video_cancel_dialog"),
-  });
+  const text = t(locale, "video.dialog-prompt");
+  const keyboard = new InlineKeyboard().text(t(locale, "common.cancel"), "video_cancel_dialog");
+  // Reached via a menu button, this is pure navigation: turn that same
+  // message into the prompt instead of leaving it and adding a new one.
+  if (ctx.callbackQuery?.message) await ctx.editMessageText(text, { reply_markup: keyboard });
+  else await ctx.reply(text, { reply_markup: keyboard });
   saveSession(backendDb, adminId, { draftId: null, step: "asset", selected: [], data: {} });
 }
 
@@ -67,7 +70,7 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
     }
     const text = ctx.message && "text" in ctx.message ? (ctx.message.text?.trim() ?? "") : "";
     if (!text) {
-      await replyVideoPrompt(ctx, t(botLocale(backendDb, adminId), "video.await-text"));
+      await replyVideoPrompt(ctx, botLocale(backendDb, adminId), t(botLocale(backendDb, adminId), "video.await-text"));
       return true;
     }
     if (!session.draftId) return false;
@@ -85,7 +88,7 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
         clearSession(backendDb, adminId);
         const locale = botLocale(backendDb, adminId);
         const preview = videoPreview(backendDb, session.draftId, locale);
-        await updateVideoControl(ctx, session, preview.text, preview.keyboard, locale);
+        await sendFreshVideoCard(ctx, backendDb, session.draftId, preview);
         return true;
       }
       const next = { ...session, step: "targets" };
@@ -113,7 +116,7 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
       return handleScheduleMessage(ctx, backendDb, config, adminId, session, text);
   } catch (error) {
     const locale = botLocale(backendDb, adminId);
-    await replyVideoPrompt(ctx, `🔴 ${t(locale, "video.value-error")}: ${describeError(locale, error)}`);
+    await replyVideoPrompt(ctx, locale, `🔴 ${t(locale, "video.value-error")}: ${describeError(locale, error)}`);
     return true;
   }
   return false;
@@ -220,7 +223,7 @@ async function parseScheduleDate(
   try {
     return studioServices(backendDb, config).videos.parseSchedule(adminId, draftId, text);
   } catch {
-    await replyVideoPrompt(ctx, t(botLocale(backendDb, adminId), "common.schedule-parse-error"));
+    await replyVideoPrompt(ctx, botLocale(backendDb, adminId), t(botLocale(backendDb, adminId), "common.schedule-parse-error"));
     return null;
   }
 }
@@ -342,5 +345,17 @@ async function finishSingleVideoEdit(
   clearSession(backendDb, adminId);
   const locale = botLocale(backendDb, adminId);
   const preview = videoPreview(backendDb, session.draftId, locale);
-  await updateVideoControl(ctx, session, preview.text, preview.keyboard, locale);
+  await sendFreshVideoCard(ctx, backendDb, session.draftId, preview);
+}
+
+/** A completed edit gets a fresh card at the bottom, same as post edits: the
+ * previous card is history to scroll back to, never a moving prompt. */
+async function sendFreshVideoCard(
+  ctx: Context,
+  backendDb: BackendDb,
+  draftId: number,
+  preview: { text: string; keyboard: InlineKeyboard },
+): Promise<void> {
+  const message = await ctx.reply(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
+  if (ctx.chat?.id) setTelegramVideoCard(backendDb, draftId, Number(ctx.chat.id), message.message_id);
 }

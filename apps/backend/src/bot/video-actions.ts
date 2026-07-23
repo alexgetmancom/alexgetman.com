@@ -97,15 +97,19 @@ async function handleStart({ ctx, backendDb }: VideoActionArgs): Promise<VideoAc
 
 async function handleCancelDialog({ ctx, backendDb, config, adminId, locale }: VideoActionArgs): Promise<VideoActionResult> {
   clearSession(backendDb, adminId);
-  try {
-    await ctx.deleteMessage();
-  } catch {}
   const keyboard = new InlineKeyboard();
   if (config.studio.modules.text_posting) keyboard.text(t(locale, "menu.new-post"), "menu_text");
   if (config.studio.modules.video_posting) keyboard.text(t(locale, "menu.new-video"), "video_start");
   keyboard.row().text(t(locale, "menu.work-queue"), "queue_home");
   if (config.studio.modules.analytics) keyboard.text(t(locale, "menu.analytics"), "analytics_home");
-  await ctx.reply(`${t(locale, "menu.control-panel")}:`, { reply_markup: keyboard });
+  const text = `${t(locale, "menu.control-panel")}:`;
+  // Cancelling is pure navigation, not a content change: turn this same
+  // message into the control panel instead of deleting and sending a new one.
+  try {
+    await ctx.editMessageText(text, { reply_markup: keyboard });
+  } catch {
+    await ctx.reply(text, { reply_markup: keyboard });
+  }
 }
 
 async function handleToggle({ ctx, backendDb, config, adminId, locale, data }: VideoActionArgs): Promise<VideoActionResult> {
@@ -124,7 +128,7 @@ async function handleTargetsDone({ ctx, backendDb, config, adminId, locale }: Vi
   if (session.selected.includes("youtube_shorts")) {
     const next = { ...session, step: "youtube_title" };
     saveSession(backendDb, adminId, next);
-    await replyVideoPrompt(ctx, t(locale, "video.prompt-yt-title"));
+    await replyVideoPrompt(ctx, locale, t(locale, "video.prompt-yt-title"));
   } else await askInstagramOrSchedule(ctx, backendDb, adminId, session);
 }
 
@@ -291,6 +295,7 @@ async function handleCancel({ ctx, backendDb, config, adminId, locale, data }: V
   const attention = result.value.holdFailures.length ? `\n${t(locale, "video.hold-failed")}` : "";
   await ctx.editMessageText(
     `${t(locale, "video.cancelled-local", { hours: config.VIDEO_MEDIA_RETENTION_HOURS })}${heldPrivate}${attention}${manualRemoval ? `\n\n${t(locale, "video.already-published")}\n${manualRemoval}` : ""}`,
+    { reply_markup: new InlineKeyboard().text(t(locale, "common.menu"), "menu_home") },
   );
 }
 
@@ -331,7 +336,7 @@ async function handleScheduleManual({ ctx, backendDb, adminId, locale, data }: V
   const session = getSession(backendDb, adminId);
   if (!session || session.draftId !== id || !(session.step === "schedule_common" || session.step.startsWith("schedule_target:")))
     throw new StudioError("action.schedule-expired");
-  await replyVideoPrompt(ctx, t(locale, "video.enter-datetime"));
+  await replyVideoPrompt(ctx, locale, t(locale, "video.enter-datetime"));
 }
 
 async function handleRemove({ ctx, backendDb, config, adminId, locale, data }: VideoActionArgs): Promise<VideoActionResult> {
@@ -345,7 +350,9 @@ async function handleRemove({ ctx, backendDb, config, adminId, locale, data }: V
   const { cancelled } = result.value;
   if (cancelled) {
     clearSession(backendDb, adminId);
-    await ctx.editMessageText(t(locale, "video.all-removed"));
+    await ctx.editMessageText(t(locale, "video.all-removed"), {
+      reply_markup: new InlineKeyboard().text(t(locale, "common.menu"), "menu_home"),
+    });
     return;
   }
   const preview = videoPreview(backendDb, id, botLocale(backendDb, adminId));
@@ -384,7 +391,7 @@ async function handleEditField({ ctx, backendDb, config, adminId, locale, data }
   };
   saveSession(backendDb, adminId, session);
   setControlFromSession(backendDb, id, ctx, session);
-  await replyVideoPrompt(ctx, t(locale, EDIT_FIELD_PROMPTS[field] ?? "video.edit-generic-prompt"));
+  await replyVideoPrompt(ctx, locale, t(locale, EDIT_FIELD_PROMPTS[field] ?? "video.edit-generic-prompt"));
 }
 
 async function handleEdit({ ctx, backendDb, config, adminId, locale, data }: VideoActionArgs): Promise<VideoActionResult> {
@@ -398,5 +405,5 @@ async function handleEdit({ ctx, backendDb, config, adminId, locale, data }: Vid
   };
   saveSession(backendDb, adminId, session);
   setControlFromSession(backendDb, id, ctx, session);
-  await replyVideoPrompt(ctx, t(locale, "video.edit-label-prompt"));
+  await replyVideoPrompt(ctx, locale, t(locale, "video.edit-label-prompt"));
 }
