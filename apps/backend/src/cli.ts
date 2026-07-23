@@ -14,6 +14,8 @@ import {
 import { operationsService } from "./operations/service.js";
 import { verifyPostTargets } from "./operations/verify.js";
 
+const republishAliases = new Set(["republish", "retry"]);
+
 type Arguments = { command: string; values: Map<string, string>; flags: Set<string> };
 
 function parseArguments(argv: string[]): Arguments {
@@ -52,7 +54,9 @@ function printHelp(): void {
   capabilities [--db PATH]
   doctor
   capability-record --test T01 --message-id 123 [--notes TEXT]
-  verify --ref post:1`);
+  verify --ref post:1
+  republish --ref post:1 [--target x] [--locale ru|en]
+  retry --ref post:1 [--target x] [--locale ru|en]`);
 }
 
 async function main(): Promise<void> {
@@ -142,7 +146,21 @@ async function main(): Promise<void> {
       );
       console.log(JSON.stringify({ ok: true, status }, null, 2));
     } else if (args.command === "verify") console.log(JSON.stringify(await verifyPostTargets(backendDb, required(args, "ref")), null, 2));
-    else throw new Error(`unknown command: ${args.command}`);
+    else if (republishAliases.has(args.command)) {
+      const localeValue = args.values.get("locale");
+      if (localeValue && localeValue !== "ru" && localeValue !== "en") throw new Error("--locale must be ru or en");
+      const locale: "ru" | "en" | undefined = localeValue as "ru" | "en" | undefined;
+      const result = await operationsService(backendDb, config).command(
+        {
+          action: "republish",
+          ref: required(args, "ref"),
+          ...(args.values.has("target") ? { target: args.values.get("target") } : {}),
+          ...(locale ? { locale } : {}),
+        },
+        fetch,
+      );
+      console.log(JSON.stringify(result, null, 2));
+    } else throw new Error(`unknown command: ${args.command}`);
   } finally {
     backendDb.close();
   }

@@ -15,6 +15,7 @@
   - `bun run --filter @alexgetman/backend ops audit`
   - `bun run --filter @alexgetman/backend ops capabilities`
   - `bun run --filter @alexgetman/backend ops verify --ref post:<id>`
+  - `bun run --filter @alexgetman/backend ops republish --ref post:<id> [--target <target>] [--locale ru|en]` (alias: `retry`) — requeues a target's publish job from its durable source; if no job exists yet for that target, creates one. This is a mutation — see the "not without explicit request" rule below.
 - Сразу после этого, если нужен фактический production-state, выполнить те же команды на сервере через уже запущенный контейнер: `ssh tw-nl 'docker exec <alexgetman-backend|maru-backend> bun /app/ops/cli.js <command>'`. Начинать со `status`, `doctor`, `audit`; для конкретного поста — `verify --ref post:<id>`. Не искать состояние по исходникам, пока не получен CLI output.
 - **"Не публиковался ролик / пост" — начинать с `audit`.** Он уже возвращает и текстовый, и видео-пайплайн разом: `recentPostEvents`/`failedPublishJobs` (посты) и `recentVideoFailures` (последние 20 failed/cancelled `video_targets` с `lastError`, названием черновика, платформой и временем) — одна команда вместо ручных SQL-запросов по `video_targets`/`video_drafts`. Пример: `ssh tw-nl 'docker exec maru-backend bun /app/ops/cli.js audit'`.
 - Если `lastError` в `audit` не объясняет причину (например, ошибка внешнего API без деталей) — это уже root-cause на уровне кода, не порт диагностики; читать сам код и git-историю затронутого файла (`git log -- <path>`), не гадать по логам.
