@@ -12,7 +12,7 @@ import { cancelDraft, cancelRemainingPostJobs } from "../../publishing/draft-lif
 import { mediaPolicyForTarget } from "../../publishing/media-policy.js";
 import { publicationPreflight } from "../../publishing/preflight.js";
 import { publishDraftToQueue } from "../../publishing/publication-workflow.js";
-import { nextPublishingSlot, parseManualSchedule, rebalanceScheduledDrafts, schedulePreset } from "../../publishing/schedule.js";
+import { nextPublishingSlot, parseManualSchedule, rebalanceScheduledDrafts, scheduleClockToday } from "../../publishing/schedule.js";
 import { parseTargets } from "../../publishing/targets.js";
 import { postDeliveryProjections } from "../projections.js";
 import { postProgressState } from "./post-progress.js";
@@ -135,17 +135,17 @@ export function postService(backendDb: BackendDb) {
         });
       return postId;
     },
-    scheduleChoice(actorId: number, draftId: number, choice: string): ScheduleInput {
+    hasLocaleTargets(actorId: number, draftId: number, locale: "ru" | "en"): boolean {
       const draft = requireOwnedDraft(backendDb, actorId, draftId);
-      const targets = parseTargets(draft.targets_json);
-      if (choice === "auto") {
-        return {
-          ruAt: hasLocaleTarget(targets, "ru") ? nextPublishingSlot(backendDb, "ru") : null,
-          enAt: hasLocaleTarget(targets, "en") ? nextPublishingSlot(backendDb, "en") : null,
-        };
-      }
-      const value = schedulePreset(choice);
-      return { ruAt: value, enAt: value };
+      return hasLocaleTarget(parseTargets(draft.targets_json), locale);
+    },
+    autoSlot(actorId: number, draftId: number, locale: "ru" | "en"): Date {
+      requireOwnedDraft(backendDb, actorId, draftId);
+      return nextPublishingSlot(backendDb, locale);
+    },
+    /** Resolves a slot-button clock (`HH:MM` MSK) to its next occurrence. */
+    slotTime(clock: string): Date {
+      return scheduleClockToday(clock);
     },
     manualSchedule(actorId: number, draftId: number, scope: ScheduleScope, value: string): ScheduleInput {
       return scheduleAt(requireOwnedDraft(backendDb, actorId, draftId), scope, parseManualSchedule(value));

@@ -12,7 +12,7 @@ import { botLocale } from "./i18n.js";
 import { extractMessage } from "./message.js";
 import { editDraftPreview, editDraftPrompt, sendDraftPreview, showScheduleConfirmation } from "./post-card.js";
 import { clearPostAdminState, getPostAdminState, setPostAdminState } from "./post-state.js";
-import { draftPreview, modeLabel } from "./preview.js";
+import { type DraftView, draftPreview, modeLabel } from "./preview.js";
 import { renderPostProgress } from "./progress.js";
 
 /** Applies a command selected on a text-post card. Telegram rendering lives in post-card. */
@@ -102,52 +102,86 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
     if (await showPublicationPreflight(ctx, backendDb, config, actorId, draftId, locale)) return;
     return editDraftPreview(ctx, backendDb, draftId, config, "schedule");
   }
-  if (action === "sched_choose" && first) {
-    const { ruAt, enAt } = studioServices(backendDb, config).posts.scheduleChoice(actorId, draftId, first);
-    await ctx.answerCallbackQuery();
-    await sendPostPreviews(ctx, backendDb, config, actorId, draftId);
-    return showScheduleConfirmation(ctx, backendDb, draftId, config, ruAt, enAt, `sched_confirm:${first}:${draftId}`);
+  if (action === "sched_scope" && first) {
+    if (first === "ru_now") return commitLocaleSchedule(ctx, backendDb, config, actorId, draftId, "ru", new Date());
+    if (first === "en_now") return commitLocaleSchedule(ctx, backendDb, config, actorId, draftId, "en", new Date());
+    if (first === "both") return editDraftPreview(ctx, backendDb, draftId, config, "schedule_ru");
+    return void (await ctx.answerCallbackQuery({ text: t(locale, "action.unknown") }));
   }
-  if (action === "sched_confirm" && first) return confirmScheduleChoice(ctx, backendDb, config, actorId, draftId, first, locale, data);
+  if (action === "sched_view" && first && isScheduleView(first)) return editDraftPreview(ctx, backendDb, draftId, config, first);
+  if (action === "sched_pick" && first && second) {
+    const value = studioServices(backendDb, config).posts.slotTime(`${second.slice(0, 2)}:${second.slice(2, 4)}`);
+    return commitLocaleSchedule(ctx, backendDb, config, actorId, draftId, requireScheduleLocale(first), value);
+  }
+  if (action === "sched_auto" && first) {
+    const pickLocale = requireScheduleLocale(first);
+    const value = studioServices(backendDb, config).posts.autoSlot(actorId, draftId, pickLocale);
+    return commitLocaleSchedule(ctx, backendDb, config, actorId, draftId, pickLocale, value);
+  }
   if (action === "sched_manual_confirm") {
     const state = getPostAdminState(backendDb, Number(ctx.from?.id));
-    const match = state?.action?.match(/^schedule_confirm_(ru|en|both)_(.+)$/);
+    const match = state?.action?.match(/^schedule_confirm_(ru|en)_(.+)$/);
     if (!match || state?.draft_id !== draftId)
       return void (await ctx.answerCallbackQuery({
         text: t(locale, "action.schedule-expired"),
       }));
-    const scope = match[1];
-    const iso = match[2];
-    if (!scope || !iso)
-      return void (await ctx.answerCallbackQuery({
-        text: t(locale, "action.schedule-expired"),
-      }));
-    const value = new Date(iso);
+    const scope = requireScheduleLocale(match[1] ?? "");
+    const value = new Date(match[2] ?? "");
     if (Number.isNaN(value.getTime()))
       return void (await ctx.answerCallbackQuery({
         text: t(locale, "action.schedule-expired"),
       }));
-    const result = await withActionLock(`${actorId}:sched_manual_confirm:${draftId}`, async () => {
-      const { ruAt, enAt } = studioServices(backendDb, config).posts.scheduleAt(actorId, draftId, scheduleScope(scope), value);
-      return { postId: studioServices(backendDb, config).posts.schedule(actorId, draftId, { ruAt, enAt }), ruAt, enAt };
-    });
-    if (!result.ok) return void (await ctx.answerCallbackQuery());
     clearPostAdminState(backendDb, Number(ctx.from?.id));
-    await ctx.answerCallbackQuery({ text: t(locale, "common.scheduled") });
-    return void (await ctx.editMessageText(
-      scheduledDraftText(locale, draftId, result.value.postId, result.value.ruAt, result.value.enAt, config),
-    ));
+    const result = await withActionLock(`${actorId}:sched_manual_confirm:${draftId}`, () =>
+      commitLocaleSchedule(ctx, backendDb, config, actorId, draftId, scope, value),
+    );
+    if (!result.ok) return void (await ctx.answerCallbackQuery());
+    return;
   }
-  if (action === "sched_auto") return confirmScheduleChoice(ctx, backendDb, config, actorId, draftId, "auto", locale, data);
-  if (action === "sched_preset" && second && first)
-    return confirmScheduleChoice(ctx, backendDb, config, actorId, draftId, first, locale, data);
   if (action === "sched_manual" && first) {
-    setPostAdminState(backendDb, Number(ctx.from?.id), `schedule_manual_${first}`, draftId, callbackMessageId(ctx));
-    const locale = botLocale(backendDb, Number(ctx.from?.id));
+    const pickLocale = requireScheduleLocale(first);
+    setPostAdminState(backendDb, Number(ctx.from?.id), `schedule_manual_${pickLocale}`, draftId, callbackMessageId(ctx));
     await ctx.answerCallbackQuery({ text: t(locale, "action.send-time") });
     return editDraftPrompt(ctx, backendDb, draftId, t(locale, "action.enter-datetime"));
   }
   await ctx.answerCallbackQuery({ text: t(locale, "action.unknown") });
+}
+
+const SCHEDULE_SLOT_VIEWS: readonly DraftView[] = [
+  "schedule_ru",
+  "schedule_ru_day",
+  "schedule_ru_evening",
+  "schedule_en",
+  "schedule_en_us",
+];
+
+function isScheduleView(value: string): value is DraftView {
+  return (SCHEDULE_SLOT_VIEWS as readonly string[]).includes(value);
+}
+
+/** Commits one locale's schedule immediately (button/auto pick, or "now"). If
+ * the other locale still needs a time and has enabled targets, hands off to
+ * its slot screen instead of finishing; otherwise shows the final result. */
+async function commitLocaleSchedule(
+  ctx: Context,
+  backendDb: BackendDb,
+  config: BackendConfig,
+  actorId: number,
+  draftId: number,
+  scheduleLocale: "ru" | "en",
+  value: Date,
+): Promise<void> {
+  const posts = studioServices(backendDb, config).posts;
+  const { ruAt, enAt } = posts.scheduleAt(actorId, draftId, scheduleLocale, value);
+  const postId = posts.schedule(actorId, draftId, { ruAt, enAt });
+  const otherLocale = scheduleLocale === "ru" ? "en" : "ru";
+  const otherAt = otherLocale === "ru" ? ruAt : enAt;
+  const uiLocale = botLocale(backendDb, actorId);
+  if (!otherAt && posts.hasLocaleTargets(actorId, draftId, otherLocale)) {
+    return editDraftPreview(ctx, backendDb, draftId, config, otherLocale === "ru" ? "schedule_ru" : "schedule_en");
+  }
+  await ctx.answerCallbackQuery({ text: t(uiLocale, "common.scheduled") });
+  await ctx.editMessageText(scheduledDraftText(uiLocale, draftId, postId, ruAt, enAt, config));
 }
 
 async function showPublicationPreflight(
@@ -167,26 +201,6 @@ async function showPublicationPreflight(
   return true;
 }
 
-/** Shared by every "schedule with a preset choice" callback: sched_confirm, sched_auto, sched_preset. */
-async function confirmScheduleChoice(
-  ctx: Context,
-  backendDb: BackendDb,
-  config: BackendConfig,
-  actorId: number,
-  draftId: number,
-  choice: string,
-  locale: ReturnType<typeof botLocale>,
-  lockKey: string,
-): Promise<void> {
-  const result = await withActionLock(`${actorId}:${lockKey}`, async () => {
-    const { ruAt, enAt } = studioServices(backendDb, config).posts.scheduleChoice(actorId, draftId, choice);
-    return { postId: studioServices(backendDb, config).posts.schedule(actorId, draftId, { ruAt, enAt }), ruAt, enAt };
-  });
-  if (!result.ok) return void (await ctx.answerCallbackQuery());
-  await ctx.answerCallbackQuery({ text: t(locale, "common.scheduled") });
-  await ctx.editMessageText(scheduledDraftText(locale, draftId, result.value.postId, result.value.ruAt, result.value.enAt, config));
-}
-
 export async function applyAdminState(
   ctx: Context,
   backendDb: BackendDb,
@@ -197,14 +211,9 @@ export async function applyAdminState(
 ): Promise<void> {
   const message = extractMessage(ctx);
   if (action.startsWith("schedule_manual_")) {
-    const scope = action.slice("schedule_manual_".length);
-    const { ruAt, enAt } = studioServices(backendDb, config).posts.manualSchedule(
-      Number(ctx.from?.id),
-      draftId,
-      scheduleScope(scope),
-      message.text,
-    );
-    const value = ruAt ?? enAt;
+    const scope = requireScheduleLocale(action.slice("schedule_manual_".length));
+    const { ruAt, enAt } = studioServices(backendDb, config).posts.manualSchedule(Number(ctx.from?.id), draftId, scope, message.text);
+    const value = scope === "ru" ? ruAt : enAt;
     if (!value) throw new StudioError("err.no-pub-time");
     setPostAdminState(backendDb, Number(ctx.from?.id), `schedule_confirm_${scope}_${value.toISOString()}`, draftId, controlMessageId);
     await sendPostPreviews(ctx, backendDb, config, Number(ctx.from?.id), draftId);
@@ -277,7 +286,7 @@ function callbackMessageId(ctx: Context): number | null {
   return message && "message_id" in message ? message.message_id : null;
 }
 
-function scheduleScope(value: string): "ru" | "en" | "both" {
-  if (value === "ru" || value === "en" || value === "both") return value;
+function requireScheduleLocale(value: string): "ru" | "en" {
+  if (value === "ru" || value === "en") return value;
   throw new StudioError("err.unknown-scope");
 }

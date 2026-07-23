@@ -10,7 +10,32 @@ import { formatMsk } from "../interfaces/telegram/time.js";
 import { parseTargets } from "../publishing/targets.js";
 import { type BotLocale, botLocale } from "./i18n.js";
 
-export type DraftView = "overview" | "modes" | "schedule" | "confirm_publish" | "confirm_delete" | "platforms";
+export type DraftView =
+  | "overview"
+  | "modes"
+  | "schedule"
+  | "schedule_ru"
+  | "schedule_ru_day"
+  | "schedule_ru_evening"
+  | "schedule_en"
+  | "schedule_en_us"
+  | "confirm_publish"
+  | "confirm_delete"
+  | "platforms";
+
+const RU_MAIN_SLOTS = ["08:00", "09:00", "10:00", "11:00"];
+const RU_DAY_SLOTS = ["12:00", "13:00", "14:00", "15:00", "16:00", "17:00"];
+const RU_EVENING_SLOTS = ["18:00", "19:00", "20:00", "21:00", "22:00"];
+const EN_MAIN_SLOTS = ["18:00", "19:00", "20:00", "21:00", "22:00", "23:00"];
+const EN_US_SLOTS = ["00:00", "01:00", "02:00", "03:00", "04:00"];
+
+function addSlotButtons(keyboard: InlineKeyboard, target: "ru" | "en", clocks: readonly string[], draftId: number): InlineKeyboard {
+  for (let index = 0; index < clocks.length; index += 2) {
+    for (const clock of clocks.slice(index, index + 2)) keyboard.text(clock, `sched_pick:${target}:${clock.replace(":", "")}:${draftId}`);
+    keyboard.row();
+  }
+  return keyboard;
+}
 
 export function draftPreview(
   backendDb: BackendDb,
@@ -41,19 +66,58 @@ export function draftPreview(
 
   if (view === "schedule") {
     keyboard
-      .text(t(locale, "post.next-free-slot"), `sched_choose:auto:${draftId}`)
-      .text("+30 min", `sched_choose:plus30:${draftId}`)
+      .text(t(locale, "post.scope-ru-now"), `sched_scope:ru_now:${draftId}`)
       .row()
-      .text("+1 hour", `sched_choose:plus60:${draftId}`)
-      .text(t(locale, "post.today-2100"), `sched_choose:today2100:${draftId}`)
+      .text(t(locale, "post.scope-en-now"), `sched_scope:en_now:${draftId}`)
       .row()
-      .text(t(locale, "post.tomorrow-1000"), `sched_choose:tomorrow1000:${draftId}`)
-      .row()
-      .text(t(locale, "post.enter-time"), `sched_manual:both:${draftId}`)
+      .text(t(locale, "post.scope-both"), `sched_scope:both:${draftId}`)
       .row()
       .text(t(locale, "common.back"), `preview:${draftId}`);
     return {
       text: `${draftHeader(draftId, targets, locale)}\n\n📅 *${t(locale, "post.schedule-title")}*\n${t(locale, "post.schedule-hint")}`,
+      keyboard,
+    };
+  }
+
+  if (view === "schedule_ru" || view === "schedule_ru_day" || view === "schedule_ru_evening") {
+    const slots = view === "schedule_ru" ? RU_MAIN_SLOTS : view === "schedule_ru_day" ? RU_DAY_SLOTS : RU_EVENING_SLOTS;
+    addSlotButtons(keyboard, "ru", slots, draftId);
+    if (view === "schedule_ru") {
+      keyboard
+        .text(t(locale, "post.ru-day"), `sched_view:schedule_ru_day:${draftId}`)
+        .text(t(locale, "post.ru-evening"), `sched_view:schedule_ru_evening:${draftId}`)
+        .row()
+        .text(t(locale, "post.next-free-slot"), `sched_auto:ru:${draftId}`)
+        .row()
+        .text(t(locale, "post.enter-time"), `sched_manual:ru:${draftId}`)
+        .row()
+        .text(t(locale, "common.back"), `preview:${draftId}`);
+    } else {
+      keyboard.text(t(locale, "common.back"), `sched_view:schedule_ru:${draftId}`);
+    }
+    return {
+      text: `${draftHeader(draftId, targets, locale)}\n\n📅 *${t(locale, "post.schedule-ru-title")}*\n${t(locale, "post.pick-slot-hint")}`,
+      keyboard,
+    };
+  }
+
+  if (view === "schedule_en" || view === "schedule_en_us") {
+    const slots = view === "schedule_en" ? EN_MAIN_SLOTS : EN_US_SLOTS;
+    addSlotButtons(keyboard, "en", slots, draftId);
+    if (view === "schedule_en") {
+      keyboard
+        .text(t(locale, "post.en-us-night"), `sched_view:schedule_en_us:${draftId}`)
+        .row()
+        .text(t(locale, "post.next-free-slot"), `sched_auto:en:${draftId}`)
+        .row()
+        .text(t(locale, "post.enter-time"), `sched_manual:en:${draftId}`)
+        .row()
+        .text(t(locale, "common.back"), `preview:${draftId}`);
+    } else {
+      keyboard.text(t(locale, "common.back"), `sched_view:schedule_en:${draftId}`);
+    }
+    return {
+      text: `${draftHeader(draftId, targets, locale)}\n\n📅 *${t(locale, "post.schedule-en-title")}*\n${t(locale, "post.pick-slot-hint")}`,
       keyboard,
     };
   }

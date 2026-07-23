@@ -19,9 +19,29 @@ import { parseTargets } from "./targets.js";
 // choice independent of the display timezone configured in studio.yaml.
 const SCHEDULE_TIMEZONE = "Europe/Moscow";
 
+// RU covers the author's own waking hours; EN covers Europe's evening through
+// the US day, then hands off to hourly overnight slots timed for US evening
+// (America catch-up, listed first so a day's early hours sort before its
+// own 18:00+ block — see nextPublishingSlot/availableSlots day-by-day scan).
 const SLOTS: Record<TargetLocale, readonly string[]> = {
-  ru: ["10:37", "13:37", "17:37", "20:37", "23:37"],
-  en: ["00:37", "03:37", "06:37", "17:37", "20:37"],
+  ru: [
+    "08:00",
+    "09:00",
+    "10:00",
+    "11:00",
+    "12:00",
+    "13:00",
+    "14:00",
+    "15:00",
+    "16:00",
+    "17:00",
+    "18:00",
+    "19:00",
+    "20:00",
+    "21:00",
+    "22:00",
+  ],
+  en: ["00:00", "01:00", "02:00", "03:00", "04:00", "18:00", "19:00", "20:00", "21:00", "22:00", "23:00"],
 };
 
 const MAX_POSTS_PER_DAY = 5;
@@ -128,16 +148,13 @@ export function rebalanceScheduledDrafts(backendDb: BackendDb, now = new Date())
   return rows.length;
 }
 
-export function schedulePreset(kind: string, now = new Date()): Date {
-  if (kind === "plus30") return new Date(now.getTime() + 30 * 60_000);
-  if (kind === "plus60") return new Date(now.getTime() + 60 * 60_000);
+/** Resolves a slot-button clock (`HH:MM` MSK) to today's occurrence, or
+ * tomorrow's if today's has already passed. Used by the RU/EN preset
+ * scheduling buttons. */
+export function scheduleClockToday(clock: string, now = new Date()): Date {
   const today = mskDateParts(now);
-  if (kind === "today2100") {
-    const value = mskSlot(today.year, today.month, today.day, "21:00");
-    return value > now ? value : new Date(value.getTime() + 86_400_000);
-  }
-  if (kind === "tomorrow1000") return mskSlot(today.year, today.month, today.day + 1, "10:00");
-  throw new Error(`Unknown schedule preset: ${kind}`);
+  const value = mskSlot(today.year, today.month, today.day, clock);
+  return value > now ? value : new Date(value.getTime() + 86_400_000);
 }
 
 export function parseManualSchedule(value: string, now = new Date()): Date {

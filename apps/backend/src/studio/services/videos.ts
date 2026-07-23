@@ -7,7 +7,7 @@ import { recordDomainEvent } from "../../domain/events.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { StudioError } from "../../foundation/errors.js";
 import { cancelScheduledNotifications, scheduleReminder } from "../../notifications/jobs.js";
-import { parseManualSchedule } from "../../publishing/schedule.js";
+import { parseManualSchedule, scheduleClockToday } from "../../publishing/schedule.js";
 import { getVideoDraft, listVideoTargets } from "../../publishing/video-data.js";
 import {
   cancelVideo,
@@ -143,6 +143,10 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
     parseSchedule(actorId: number, videoDraftId: number, value: string): Date {
       requireOwnedVideo(backendDb, actorId, videoDraftId);
       return parseManualSchedule(value);
+    },
+    /** Resolves a slot-button clock (`HH:MM` MSK) to its next occurrence. */
+    slotTime(clock: string): Date {
+      return scheduleClockToday(clock);
     },
   };
 }

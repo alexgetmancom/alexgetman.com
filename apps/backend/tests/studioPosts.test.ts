@@ -22,7 +22,7 @@ describe("Studio post commands", () => {
     expect(() => posts.cancel(7, draftId)).toThrow("err.post-not-yours");
     expect(() => posts.cancelRemaining(7, draftId)).toThrow("err.post-not-yours");
     expect(() => posts.progress(7, draftId)).toThrow("err.post-not-yours");
-    expect(() => posts.scheduleChoice(7, draftId, "auto")).toThrow("err.post-not-yours");
+    expect(() => posts.autoSlot(7, draftId, "ru")).toThrow("err.post-not-yours");
     expect(() => posts.manualSchedule(7, draftId, "both", "21:15")).toThrow("err.post-not-yours");
 
     posts.toggleTarget(42, draftId, "telegram");
@@ -35,9 +35,8 @@ describe("Studio post commands", () => {
     const posts = postService(backendDb);
     const draftId = posts.create(42, { text: "Schedule", textEn: "Schedule", entities: [], media: [] });
 
-    const automatic = posts.scheduleChoice(42, draftId, "auto");
-    expect(automatic.ruAt).toBeInstanceOf(Date);
-    expect(automatic.enAt).toBeInstanceOf(Date);
+    expect(posts.autoSlot(42, draftId, "ru")).toBeInstanceOf(Date);
+    expect(posts.autoSlot(42, draftId, "en")).toBeInstanceOf(Date);
     const manual = posts.manualSchedule(42, draftId, "both", "23:15");
     expect(manual.ruAt?.getMinutes()).toBe(15);
     expect(manual.enAt?.getMinutes()).toBe(15);

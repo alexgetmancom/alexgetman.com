@@ -157,6 +157,32 @@ export async function askInstagramOrSchedule(ctx: Context, backendDb: BackendDb,
   await askSchedule(ctx, backendDb, adminId, session);
 }
 
+// A curated spread across the same posting hours as text-post scheduling
+// (morning through evening); video has no per-locale slot grid, so this is
+// one flat preset list rather than RU/EN-specific ones.
+const VIDEO_SLOT_PRESETS = ["08:00", "11:00", "13:00", "18:00", "20:00", "22:00"];
+
+/** Prompts for a schedule time with slot-button presets plus a manual-entry
+ * fallback, replacing a bare free-text-only prompt. */
+export async function sendVideoTimePrompt(
+  ctx: Context,
+  backendDb: BackendDb,
+  adminId: number,
+  session: VideoSession,
+  text: string,
+): Promise<VideoSession> {
+  const locale = botLocale(backendDb, adminId);
+  const keyboard = new InlineKeyboard();
+  for (let index = 0; index < VIDEO_SLOT_PRESETS.length; index += 2) {
+    for (const clock of VIDEO_SLOT_PRESETS.slice(index, index + 2))
+      keyboard.text(clock, `video_sched_pick:${clock.replace(":", "")}:${session.draftId}`);
+    keyboard.row();
+  }
+  keyboard.text(t(locale, "video.enter-time-btn"), `video_sched_manual:${session.draftId}`).row();
+  keyboard.text(t(locale, "common.cancel"), "video_cancel_dialog");
+  return sendVideoControl(ctx, backendDb, adminId, session, text, keyboard);
+}
+
 export async function askSchedule(ctx: Context, backendDb: BackendDb, adminId: number, session: VideoSession): Promise<void> {
   const next = { ...session, step: "schedule_choice" };
   saveSession(backendDb, adminId, next);

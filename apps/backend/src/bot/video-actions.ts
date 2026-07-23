@@ -10,7 +10,7 @@ import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing
 import { studioServices } from "../studio/services/index.js";
 import { previousVideoMetadataStep, type VideoWizardStep } from "../studio/video-fsm.js";
 import { type BotLocale, botLocale } from "./i18n.js";
-import { startVideoConversation } from "./video-conversation.js";
+import { applyVideoScheduleDate, startVideoConversation } from "./video-conversation.js";
 import { finishVideoNow, finishVideoSchedule } from "./video-scheduling.js";
 import {
   askInstagramOrSchedule,
@@ -20,6 +20,7 @@ import {
   replyVideoPrompt,
   saveSession,
   sendVideoMetadataPrompt,
+  sendVideoTimePrompt,
   setControlFromSession,
   setData,
   targetKeyboard,
@@ -60,6 +61,8 @@ const routes: Array<{ test: (data: string) => boolean; handle: VideoActionHandle
   { test: (data) => data.startsWith("video_remove_ask:"), handle: handleRemoveAsk },
   { test: (data) => data.startsWith("video_cancel:"), handle: handleCancel },
   { test: (data) => data.startsWith("video_time:"), handle: handleTime },
+  { test: (data) => data.startsWith("video_sched_pick:"), handle: handleSchedulePick },
+  { test: (data) => data.startsWith("video_sched_manual:"), handle: handleScheduleManual },
   { test: (data) => data.startsWith("video_remove:"), handle: handleRemove },
   { test: (data) => data.startsWith("video_edit_menu:"), handle: handleEditMenu },
   { test: (data) => data.startsWith("video_edit_field:"), handle: handleEditField },
@@ -200,20 +203,22 @@ async function handleScheduleMode({ ctx, backendDb, config, adminId, locale, dat
     .targets.map((row) => row.target as VideoTarget);
   if (!session || !targets.length) throw new StudioError("err.video-reopen-publish");
   if (data.startsWith("video_common:")) {
-    saveSession(backendDb, adminId, { ...session, draftId: id, selected: targets, step: "schedule_common" });
-    await replyVideoPrompt(ctx, t(locale, "video.enter-datetime"));
+    const next = { ...session, draftId: id, selected: targets, step: "schedule_common" };
+    saveSession(backendDb, adminId, next);
+    await sendVideoTimePrompt(ctx, backendDb, adminId, next, t(locale, "video.enter-datetime"));
     return;
   }
   const first = targets[0];
   if (!first) throw new StudioError("err.video-no-platforms");
-  saveSession(backendDb, adminId, {
+  const next = {
     ...session,
     draftId: id,
     selected: targets,
     step: `schedule_target:${first}`,
     data: { ...session.data, schedule: {} },
-  });
-  await replyVideoPrompt(ctx, t(locale, "video.schedule-target-prompt", { target: videoTargetLabel(first) }));
+  };
+  saveSession(backendDb, adminId, next);
+  await sendVideoTimePrompt(ctx, backendDb, adminId, next, t(locale, "video.schedule-target-prompt", { target: videoTargetLabel(first) }));
 }
 
 async function handleNowAsk({ ctx, backendDb, config, adminId, locale, data }: VideoActionArgs): Promise<VideoActionResult> {
@@ -302,7 +307,31 @@ async function handleTime({ ctx, backendDb, config, adminId, locale, data }: Vid
   };
   saveSession(backendDb, adminId, session);
   setControlFromSession(backendDb, id, ctx, session);
-  await replyVideoPrompt(ctx, t(locale, "video.schedule-target-prompt", { target: videoTargetLabel(target) }));
+  await sendVideoTimePrompt(
+    ctx,
+    backendDb,
+    adminId,
+    session,
+    t(locale, "video.schedule-target-prompt", { target: videoTargetLabel(target) }),
+  );
+}
+
+async function handleSchedulePick({ ctx, backendDb, config, adminId, data }: VideoActionArgs): Promise<VideoActionResult> {
+  const [, hhmm, idText] = data.split(":");
+  const id = Number(idText);
+  const session = getSession(backendDb, adminId);
+  if (!session || session.draftId !== id || !(session.step === "schedule_common" || session.step.startsWith("schedule_target:")))
+    throw new StudioError("action.schedule-expired");
+  const value = studioServices(backendDb, config).videos.slotTime(`${(hhmm ?? "").slice(0, 2)}:${(hhmm ?? "").slice(2, 4)}`);
+  await applyVideoScheduleDate(ctx, backendDb, config, adminId, session, value);
+}
+
+async function handleScheduleManual({ ctx, backendDb, adminId, locale, data }: VideoActionArgs): Promise<VideoActionResult> {
+  const id = Number(data.slice("video_sched_manual:".length));
+  const session = getSession(backendDb, adminId);
+  if (!session || session.draftId !== id || !(session.step === "schedule_common" || session.step.startsWith("schedule_target:")))
+    throw new StudioError("action.schedule-expired");
+  await replyVideoPrompt(ctx, t(locale, "video.enter-datetime"));
 }
 
 async function handleRemove({ ctx, backendDb, config, adminId, locale, data }: VideoActionArgs): Promise<VideoActionResult> {

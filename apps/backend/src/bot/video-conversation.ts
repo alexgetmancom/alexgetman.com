@@ -27,6 +27,7 @@ import {
   saveSession,
   sendVideoControl,
   sendVideoMetadataPrompt,
+  sendVideoTimePrompt,
   setData,
   targetKeyboard,
   updateVideoControl,
@@ -232,17 +233,31 @@ async function handleScheduleMessage(
   session: VideoSession,
   text: string,
 ): Promise<boolean> {
-  const draftId = session.draftId;
-  if (draftId == null) throw new StudioError("err.video-missing");
+  if (session.draftId == null) throw new StudioError("err.video-missing");
+  const date = await parseScheduleDate(ctx, backendDb, config, adminId, session.draftId, text);
+  if (!date) return true;
+  await applyVideoScheduleDate(ctx, backendDb, config, adminId, session, date);
+  return true;
+}
+
+/** Applies one parsed/picked date to the current schedule step, whether it
+ * came from free text or a slot button. Shared so the "different time per
+ * platform" chain (schedule_target:X → next target) behaves identically
+ * either way. */
+export async function applyVideoScheduleDate(
+  ctx: Context,
+  backendDb: BackendDb,
+  config: BackendConfig,
+  adminId: number,
+  session: VideoSession,
+  date: Date,
+): Promise<void> {
+  if (session.draftId == null) throw new StudioError("err.video-missing");
   if (session.step === "schedule_common") {
-    const date = await parseScheduleDate(ctx, backendDb, config, adminId, draftId, text);
-    if (!date) return true;
     await confirmVideoSchedule(ctx, backendDb, config, adminId, session, commonVideoSchedule(session.selected, date));
-    return true;
+    return;
   }
   const target = session.step.slice("schedule_target:".length) as VideoTarget;
-  const date = await parseScheduleDate(ctx, backendDb, config, adminId, draftId, text);
-  if (!date) return true;
   const transition = advanceVideoTargetSchedule(
     session.selected,
     (session.data.schedule as Record<string, string> | undefined) ?? {},
@@ -250,16 +265,16 @@ async function handleScheduleMessage(
     date,
   );
   if (transition.nextTarget) {
-    saveSession(backendDb, adminId, {
-      ...session,
-      step: `schedule_target:${transition.nextTarget}`,
-      data: { ...session.data, schedule: transition.schedule },
-    });
-    await replyVideoPrompt(
+    const next = { ...session, step: `schedule_target:${transition.nextTarget}`, data: { ...session.data, schedule: transition.schedule } };
+    saveSession(backendDb, adminId, next);
+    await sendVideoTimePrompt(
       ctx,
+      backendDb,
+      adminId,
+      next,
       t(botLocale(backendDb, adminId), "video.schedule-target-prompt", { target: videoTargetLabel(transition.nextTarget) }),
     );
-    return true;
+    return;
   }
   await confirmVideoSchedule(
     ctx,
@@ -271,7 +286,6 @@ async function handleScheduleMessage(
       Record<VideoTarget, Date>
     >,
   );
-  return true;
 }
 
 async function confirmVideoSchedule(
