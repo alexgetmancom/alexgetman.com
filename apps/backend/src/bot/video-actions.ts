@@ -96,7 +96,18 @@ async function handleStart({ ctx, backendDb }: VideoActionArgs): Promise<VideoAc
 }
 
 async function handleCancelDialog({ ctx, backendDb, config, adminId, locale }: VideoActionArgs): Promise<VideoActionResult> {
+  const session = getSession(backendDb, adminId);
   clearSession(backendDb, adminId);
+  // The draft already exists once a video file was uploaded (even mid-wizard):
+  // cancel returns to that draft's own card so nothing is lost or orphaned,
+  // rather than dropping into a menu with no way back to it.
+  if (session?.draftId != null) {
+    try {
+      const preview = videoPreview(backendDb, session.draftId, locale);
+      await ctx.editMessageText(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
+      return;
+    } catch {}
+  }
   const keyboard = new InlineKeyboard();
   if (config.studio.modules.text_posting) keyboard.text(t(locale, "menu.new-post"), "menu_text");
   if (config.studio.modules.video_posting) keyboard.text(t(locale, "menu.new-video"), "video_start");
@@ -295,7 +306,11 @@ async function handleCancel({ ctx, backendDb, config, adminId, locale, data }: V
   const attention = result.value.holdFailures.length ? `\n${t(locale, "video.hold-failed")}` : "";
   await ctx.editMessageText(
     `${t(locale, "video.cancelled-local", { hours: config.VIDEO_MEDIA_RETENTION_HOURS })}${heldPrivate}${attention}${manualRemoval ? `\n\n${t(locale, "video.already-published")}\n${manualRemoval}` : ""}`,
-    { reply_markup: new InlineKeyboard().text(t(locale, "common.menu"), "menu_home") },
+    {
+      reply_markup: new InlineKeyboard()
+        .text(t(locale, "action.back-to-drafts"), "queue_drafts")
+        .text(t(locale, "common.menu"), "menu_home"),
+    },
   );
 }
 
@@ -351,7 +366,9 @@ async function handleRemove({ ctx, backendDb, config, adminId, locale, data }: V
   if (cancelled) {
     clearSession(backendDb, adminId);
     await ctx.editMessageText(t(locale, "video.all-removed"), {
-      reply_markup: new InlineKeyboard().text(t(locale, "common.menu"), "menu_home"),
+      reply_markup: new InlineKeyboard()
+        .text(t(locale, "action.back-to-drafts"), "queue_drafts")
+        .text(t(locale, "common.menu"), "menu_home"),
     });
     return;
   }

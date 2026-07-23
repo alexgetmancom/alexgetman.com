@@ -77,7 +77,9 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
     if (!result.ok) return void (await ctx.answerCallbackQuery());
     await ctx.answerCallbackQuery({ text: t(locale, "action.cancelled") });
     return void (await ctx.editMessageText(t(locale, "action.draft-cancelled", { id: draftId }), {
-      reply_markup: new InlineKeyboard().text(t(locale, "common.menu"), "menu_home"),
+      reply_markup: new InlineKeyboard()
+        .text(t(locale, "action.back-to-drafts"), "queue_drafts")
+        .text(t(locale, "common.menu"), "menu_home"),
     }));
   }
   if (action === "publish") {
@@ -178,7 +180,7 @@ async function commitLocaleSchedule(
   }
   await ctx.answerCallbackQuery({ text: t(uiLocale, "common.scheduled") });
   await ctx.editMessageText(scheduledDraftText(uiLocale, draftId, postId, ruAt, enAt, config), {
-    reply_markup: new InlineKeyboard().text(t(uiLocale, "common.menu"), "menu_home"),
+    reply_markup: new InlineKeyboard().text(t(uiLocale, "queue.upcoming-btn"), "queue_home").text(t(uiLocale, "common.menu"), "menu_home"),
   });
 }
 
