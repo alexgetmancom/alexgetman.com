@@ -1,11 +1,22 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { and, eq } from "drizzle-orm";
 import { handleVideoCallback, handleVideoMessage } from "../src/bot/video-screen.js";
 import { getSession, saveSession } from "../src/bot/video-session.js";
 import type { BackendDb } from "../src/db/client.js";
 import { openBackendDb } from "../src/db/client.js";
-import { socialComments, videoJobs, videoMetricSchedule, videoMetricSnapshots, videoTargets } from "../src/db/schema.js";
-import { recoverVideoLocks } from "../src/delivery/video-worker.js";
+import {
+  socialComments,
+  studioMediaAssets,
+  videoDrafts,
+  videoJobs,
+  videoMetricSchedule,
+  videoMetricSnapshots,
+  videoTargets,
+} from "../src/db/schema.js";
+import { recoverVideoLocks, runVideoCycle } from "../src/delivery/video-worker.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { videoPreview } from "../src/interfaces/telegram/video-preview.js";
 import { listVideoTargets } from "../src/publishing/video-data.js";
@@ -57,6 +68,49 @@ function videoContext(input: { text?: string; callback?: string } = {}) {
 }
 
 describe("video publication queue", () => {
+  it("removes an expired Studio source after every draft using it is final", async () => {
+    backendDb = openBackendDb(":memory:");
+    const directory = mkdtempSync(path.join(os.tmpdir(), "studio-video-retention-"));
+    const source = path.join(directory, "source.mp4");
+    writeFileSync(source, "video");
+    try {
+      const now = new Date().toISOString();
+      const asset = backendDb.db
+        .insert(studioMediaAssets)
+        .values({
+          adminId: 42,
+          kind: "video",
+          mimeType: "video/mp4",
+          filename: "source.mp4",
+          localPath: source,
+          byteSize: 5,
+          sha256: "a".repeat(64),
+          source: "telegram",
+          createdAt: now,
+        })
+        .returning({ id: studioMediaAssets.id })
+        .get();
+      if (!asset) throw new Error("asset missing");
+      const draftId = createVideoDraft(backendDb, 42, { studioMediaAssetId: asset.id }, 24);
+      replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
+      const target = listVideoTargets(backendDb, draftId)[0];
+      if (!target) throw new Error("target missing");
+      backendDb.db.update(videoTargets).set({ status: "published", updatedAt: now }).where(eq(videoTargets.id, target.id)).run();
+      backendDb.db
+        .update(videoDrafts)
+        .set({ status: "published", retentionUntil: new Date(Date.now() - 1_000).toISOString(), updatedAt: now })
+        .where(eq(videoDrafts.id, draftId))
+        .run();
+
+      const config = { ...videoConfig(), STUDIO_MEDIA_DIR: directory, VIDEO_MEDIA_DIR: directory };
+      await runVideoCycle(config, backendDb);
+      expect(existsSync(source)).toBe(false);
+      expect(backendDb.db.select().from(studioMediaAssets).where(eq(studioMediaAssets.id, asset.id)).get()).toBeDefined();
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it("requeues a stale video lock through the normal retry budget, like the social pipeline", () => {
     backendDb = openBackendDb(":memory:");
     const draftId = createVideoDraft(backendDb, 42, "video-source", 24);

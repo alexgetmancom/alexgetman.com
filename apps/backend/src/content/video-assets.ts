@@ -5,7 +5,8 @@ import type { BackendDb } from "../db/client.js";
 import { studioMediaAssets } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 
-/** Content-owned persistence for raw video assets, independent of ingress UI. */
+/** Content-owned source files stay available through delivery, then the video
+ * worker prunes them after the configured final-publication retention window. */
 export function videoPath(config: BackendConfig, assetKey: string): string | null {
   if (!existsSync(config.VIDEO_MEDIA_DIR)) return null;
   const match = readdirSync(config.VIDEO_MEDIA_DIR).find((entry) => entry.startsWith(`${assetKey}.`));

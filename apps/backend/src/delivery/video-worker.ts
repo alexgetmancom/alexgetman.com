@@ -1,8 +1,10 @@
 import crypto from "node:crypto";
-import { and, asc, eq, isNull, lte, or, sql } from "drizzle-orm";
+import fs from "node:fs";
+import path from "node:path";
+import { and, asc, eq, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { deleteVideo, videoPublicUrl, videoSourcePath } from "../content/video-assets.js";
 import type { BackendDb } from "../db/client.js";
-import { botSettings, videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
+import { botSettings, studioMediaAssets, videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { nextRetryAt } from "../publishing/errors.js";
@@ -463,12 +465,22 @@ function pruneExpiredVideos(config: BackendConfig, backendDb: BackendDb): void {
             eq(videoDrafts.status, "editing"),
           ),
         ),
+        // Before Studio assets gained the same retention policy, final drafts
+        // had their deadline cleared while their source file lived forever.
+        // Pick those up once they have been final for a full retention window.
+        and(
+          isNotNull(videoDrafts.studioMediaAssetId),
+          isNull(videoDrafts.retentionUntil),
+          inArray(videoDrafts.status, ["published", "partial", "cancelled"]),
+          lte(videoDrafts.updatedAt, legacyDraftExpiresAt),
+        ),
         and(eq(videoDrafts.status, "editing"), isNull(videoDrafts.retentionUntil), lte(videoDrafts.createdAt, legacyDraftExpiresAt)),
       ),
     )
     .all();
   for (const row of rows) {
     if (row.studioMediaAssetId == null) deleteVideo(config, row.assetKey);
+    else pruneStudioAssetSource(config, backendDb, row.studioMediaAssetId, now);
     backendDb.db
       .update(videoDrafts)
       .set({
@@ -479,4 +491,37 @@ function pruneExpiredVideos(config: BackendConfig, backendDb: BackendDb): void {
       .where(eq(videoDrafts.id, row.id))
       .run();
   }
+}
+
+/** Studio metadata remains available for published-history and analytics, but
+ * the original upload is disposable after every draft using it is final. */
+function pruneStudioAssetSource(config: BackendConfig, backendDb: BackendDb, assetId: number, now: string): void {
+  const drafts = backendDb.db
+    .select({ status: videoDrafts.status, retentionUntil: videoDrafts.retentionUntil })
+    .from(videoDrafts)
+    .where(eq(videoDrafts.studioMediaAssetId, assetId))
+    .all();
+  if (
+    !drafts.length ||
+    !drafts.every(
+      (draft) =>
+        ["published", "partial", "cancelled"].includes(draft.status) && (draft.retentionUntil == null || draft.retentionUntil <= now),
+    )
+  )
+    return;
+  const asset = backendDb.db
+    .select({ localPath: studioMediaAssets.localPath })
+    .from(studioMediaAssets)
+    .where(eq(studioMediaAssets.id, assetId))
+    .get();
+  if (!asset || !isManagedVideoSource(config, asset.localPath)) return;
+  fs.rmSync(asset.localPath, { force: true });
+}
+
+function isManagedVideoSource(config: BackendConfig, source: string): boolean {
+  const resolved = path.resolve(source);
+  return [config.STUDIO_MEDIA_DIR, config.VIDEO_MEDIA_DIR].some((root) => {
+    const directory = path.resolve(root);
+    return resolved.startsWith(`${directory}${path.sep}`);
+  });
 }
