@@ -165,6 +165,12 @@ async function currentImage(deploymentTarget: DeploymentTarget): Promise<string 
   return immutableImage(repoDigest) ? repoDigest : undefined;
 }
 
+async function runningContainerImage(deploymentTarget: DeploymentTarget): Promise<string | undefined> {
+  if (deploymentTarget.remoteUrl) return undefined;
+  const repoDigest = await command(["image", "inspect", "--format", "{{index .RepoDigests 0}}", deploymentTarget.container], true);
+  return immutableImage(repoDigest) ? repoDigest : undefined;
+}
+
 async function writeImage(deploymentTarget: DeploymentTarget, image: string): Promise<void> {
   const temporary = `${deploymentTarget.imageEnvFile}.next`;
   const existing = await Bun.file(deploymentTarget.imageEnvFile)
@@ -291,10 +297,13 @@ async function withDeploymentLock<T>(operation: () => Promise<T>): Promise<T> {
 
 async function deploy(deploymentTarget: DeploymentTarget, image: string, release: string): Promise<DeploymentState> {
   return withDeploymentLock(async () => {
-    const previousImage = await currentImage(deploymentTarget);
+    const previousState = await state(deploymentTarget);
+    let previousImage = await currentImage(deploymentTarget);
+    // A failed first attempt may already have written the desired digest into
+    // the env file. That is not a deployed rollback release.
+    if (deploymentTarget.allowInitialSeed && !previousState.current) previousImage = await runningContainerImage(deploymentTarget);
     if (!previousImage && !deploymentTarget.allowInitialSeed)
       throw new HttpError(409, "Current release is not an immutable GHCR digest; seed DEPLOY_IMAGE_ENV_FILE before deploying.");
-    const previousState = await state(deploymentTarget);
     const previous: Release | undefined = previousImage
       ? (previousState.current ?? {
           image: previousImage,
