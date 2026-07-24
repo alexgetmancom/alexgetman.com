@@ -21,7 +21,11 @@ type SiteMedia = Record<string, unknown> & {
 };
 
 const RESPONSIVE_WIDTHS = [360, 640, 960] as const;
-export type SiteMediaMaterializeOptions = { maxUploadKbps?: number };
+export type SiteMediaMaterializeOptions = {
+  maxUploadKbps?: number;
+  /** Archive image backfills retain the source album indices while skipping videos. */
+  imageOnly?: boolean;
+};
 
 /** Delivery projection: copy publication media into the public site. */
 export async function materializeSiteMedia(
@@ -39,6 +43,7 @@ export async function materializeSiteMedia(
   for (let index = 0; index < source.length; index += 1) {
     const item = source[index] as SiteMedia;
     const kind = String(item.type ?? "image").toLowerCase() === "video" ? "video" : "image";
+    if (options.imageOnly && kind === "video") continue;
     const extension = mediaExtension(item, kind);
     const filename = siteMediaFilename(postId, locale, index, extension);
     const target = path.join(directory, filename);
