@@ -285,10 +285,11 @@ describe("Telegram controller flow", () => {
 
   it("renders every Threads segment together in the platform preview", () => {
     const text = `${"First segment. ".repeat(40)}\n\n${"Second segment. ".repeat(40)}`;
-    const preview = threadsPreviewText("threads_ru", text);
+    const preview = threadsPreviewText("threads_ru", text, [{ type: "text_link", offset: 0, length: 5, url: "https://example.com/guide" }]);
     expect(preview).toContain("🧵 Threads RU");
     expect(preview).toContain("①");
     expect(preview).toContain("②");
+    expect(preview).toContain("🔗 https://example.com/guide");
   });
 
   it("renders a live post progress card from publication job states", () => {

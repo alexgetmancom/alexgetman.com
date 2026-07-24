@@ -18,6 +18,7 @@ export function localizeTargetPayload(payload: Record<string, unknown>, target: 
       locale,
       title: firstLine(text),
       text,
+      text_ru: text,
       text_en: "",
       bodyMarkdown: text,
       media: payload.media,

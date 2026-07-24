@@ -43,7 +43,9 @@ describe("publish payload validation", () => {
       entities_en: [{ type: "text_link", offset: 5, length: 5, url: "https://example.com/guide" }],
     };
     expect(localizeTargetPayload(payload, "threads_ru").text).toBe("Читать гайд\n\n🔗 https://example.com/guide");
+    expect(payloadText(localizeTargetPayload(payload, "threads_ru"))).toBe("Читать гайд\n\n🔗 https://example.com/guide");
     expect(localizeTargetPayload(payload, "facebook").text).toBe("Read guide\n\n🔗 https://example.com/guide");
+    expect(payloadText(localizeTargetPayload(payload, "facebook"))).toBe("Read guide\n\n🔗 https://example.com/guide");
     expect(localizeTargetPayload(payload, "x").text).toBe("Read guide");
   });
 });

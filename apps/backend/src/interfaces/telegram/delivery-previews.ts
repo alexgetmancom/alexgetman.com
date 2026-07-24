@@ -1,5 +1,6 @@
 import { type Context, InlineKeyboard, InputFile } from "grammy";
 import { type BotLocale, botLocale } from "../../bot/i18n.js";
+import { appendTextLinkUrls } from "../../content/text.js";
 import type { BackendDb } from "../../db/client.js";
 import { splitText } from "../../delivery/social/payload.js";
 import type { BackendConfig } from "../../foundation/config.js";
@@ -115,7 +116,7 @@ export async function handleTelegramDeliveryPreviewCallback(ctx: Context, backen
   if (data.startsWith(threadsPrefix)) {
     const target = projection.targets.find((item) => item === "threads_ru" || item === "threads_en");
     if (!target) return true;
-    await ctx.editMessageText(threadsPreviewText(target, projection.text), {
+    await ctx.editMessageText(threadsPreviewText(target, projection.text, projection.entities), {
       reply_markup: new InlineKeyboard().text(t(locale, "preview.show-telegram"), `${telegramPrefix}${projection.id}`),
     });
     return true;
@@ -156,8 +157,8 @@ function deliveryHeader(
   ];
 }
 
-export function threadsPreviewText(target: "threads_ru" | "threads_en", text: string): string {
-  const parts = splitText(text, 480);
+export function threadsPreviewText(target: "threads_ru" | "threads_en", text: string, entities: Record<string, unknown>[] = []): string {
+  const parts = splitText(appendTextLinkUrls(text, entities), 480);
   const label = target === "threads_ru" ? "Threads RU" : "Threads EN";
   return `🧵 ${label} · ${parts.length}\n\n${parts.map((part, index) => `${threadMarker(index)} ${part}`).join("\n\n")}`;
 }
