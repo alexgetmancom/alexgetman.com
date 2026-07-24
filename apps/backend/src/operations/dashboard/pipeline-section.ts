@@ -8,7 +8,7 @@ import type { PipelineData } from "./types.js";
 
 export { shortPipelineText };
 
-const PERIODS = [7, 30, 90, 365] as const;
+const PERIODS = [1, 7, 30, 90, 365] as const;
 
 export function renderPipelineSection(
   weekOffset: number,
@@ -17,6 +17,7 @@ export function renderPipelineSection(
   previousData: PipelineData | null,
   audience = "",
   timeZone = "Europe/Moscow",
+  comparisonDays = periodDays,
 ): string {
   const [startOfPeriod, endOfPeriod] = rollingPeriodDates(weekOffset, periodDays, timeZone);
   const posts = data?.posts ?? [];
@@ -32,10 +33,11 @@ export function renderPipelineSection(
     },
     { views: 0, likes: 0, replies: 0 },
   );
-  const previousTotals = metricTotals(previousPosts, targetIds);
+  const previousTotals = averageTotals(metricTotals(previousPosts, targetIds), comparisonDays);
+  const comparisonLabel = comparisonDays === 30 ? "vs среднее за 30д" : "vs прошлый период";
   return `
     <section class="pipeline-overview">
-      <div class="kpi-row">${kpi("Просмотры", totals.views, previousTotals.views)}${kpi("Реакции", totals.likes, previousTotals.likes)}${kpi("Ответы", totals.replies, previousTotals.replies)}${kpi("Посты", posts.length, previousPosts.length)}</div>
+      <div class="kpi-row">${kpi("Просмотры", totals.views, previousTotals.views, comparisonLabel)}${kpi("Реакции", totals.likes, previousTotals.likes, comparisonLabel)}${kpi("Ответы", totals.replies, previousTotals.replies, comparisonLabel)}${kpi("Посты", posts.length, previousPosts.length / comparisonDays, comparisonLabel)}</div>
       <div class="insights-row">${audience}<div class="chart-panel"><div class="section-kicker">Динамика</div>${renderWeeklyChart(posts, startOfPeriod, endOfPeriod)}</div></div>
       ${renderPublicationColumns(posts)}
     </section>
@@ -69,15 +71,21 @@ function metricTotals(posts: NonNullable<PipelineData["posts"]>, targetIds: stri
   );
 }
 
-function kpi(label: string, value: number, previous: number): string {
+function averageTotals(totals: ReturnType<typeof metricTotals>, days: number) {
+  if (days <= 1) return totals;
+  return { views: totals.views / days, likes: totals.likes / days, replies: totals.replies / days };
+}
+
+function kpi(label: string, value: number, previous: number, comparisonLabel: string): string {
   const percent = previous > 0 ? Math.round(((value - previous) / previous) * 100) : value > 0 ? 100 : 0;
   const direction = percent >= 0 ? "up" : "down";
   const sign = percent >= 0 ? "↑" : "↓";
-  return `<div class="kpi"><strong>${formatMetricValue(value)}</strong><span>${label}</span><small class="kpi-delta kpi-delta--${direction}">${sign} ${Math.abs(percent)}% <i>vs прошлый период</i></small></div>`;
+  return `<div class="kpi"><strong>${formatMetricValue(value)}</strong><span>${label}</span><small class="kpi-delta kpi-delta--${direction}">${sign} ${Math.abs(percent)}% <i>${comparisonLabel}</i></small></div>`;
 }
 
 function shortDateRange(start: Date, end: Date): string {
   const months = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
+  if (start.getTime() === end.getTime()) return `${end.getUTCDate()} ${months[end.getUTCMonth()]}`;
   if (start.getUTCMonth() === end.getUTCMonth()) return `${start.getUTCDate()}–${end.getUTCDate()} ${months[end.getUTCMonth()]}`;
   return `${start.getUTCDate()} ${months[start.getUTCMonth()]} – ${end.getUTCDate()} ${months[end.getUTCMonth()]}`;
 }

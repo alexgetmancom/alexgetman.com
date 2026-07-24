@@ -48,8 +48,8 @@ export function renderDashboard(
   const locale: StudioLocale = requestedLocale === "en" ? "en" : "ru";
   const panel: DashboardPanel =
     requestedPanel === "queue" || requestedPanel === "health" || requestedPanel === "repair" ? requestedPanel : "overview";
-  const periodDays = [7, 30, 90, 365].includes(Number(requestedPeriod)) ? Number(requestedPeriod) : 7;
-  const panelLink = (value: DashboardPanel) => `/command-center?tab=posts&panel=${value}${periodDays !== 7 ? `&period=${periodDays}` : ""}`;
+  const periodDays = [1, 7, 30, 90, 365].includes(Number(requestedPeriod)) ? Number(requestedPeriod) : 1;
+  const panelLink = (value: DashboardPanel) => `/command-center?tab=posts&panel=${value}${periodDays !== 1 ? `&period=${periodDays}` : ""}`;
   const overviewControls = panel === "overview" && showPosts ? renderPeriodControls(weekOffset, periodDays, config.TIMEZONE) : "";
   const content =
     panel === "queue"
@@ -63,9 +63,10 @@ export function renderDashboard(
                 weekOffset,
                 periodDays,
                 service.pipeline(weekOffset, periodDays),
-                service.pipeline(weekOffset, periodDays, 1),
+                periodDays === 1 ? service.pipeline(0, 30, 0, weekOffset + 1) : service.pipeline(weekOffset, periodDays, 1),
                 renderAudienceSection(backendDb, config),
                 config.TIMEZONE,
+                periodDays === 1 ? 30 : periodDays,
               )
             : showVideo
               ? renderVideoSection(backendDb)

@@ -114,7 +114,7 @@ export function renderDashboardShell(body: string): string {
     /* Overview: quiet, information-first surface. Operational panels retain the shared controls above. */
     body { padding:24px; background:#050607; color:#aeb6c2; }
     main { max-width:1440px; }
-    .dashboard-tabs { display:flex; align-items:center; gap:22px; margin:0 0 28px; border-bottom:1px solid #20252d; }
+    .dashboard-tabs { display:flex; align-items:center; gap:22px; margin:0 0 16px; border-bottom:1px solid #20252d; }
     .dashboard-tabs a { padding:0 0 11px; border:0; border-radius:0; background:transparent; color:#697382; font-size:16px; font-weight:600; }
     .dashboard-tabs a:hover { color:#dce7f5; border:0; }
     .dashboard-tabs a.active { background:transparent; color:#f5f8fc; border:0; box-shadow:inset 0 -2px #4c98ff; }
@@ -126,7 +126,7 @@ export function renderDashboardShell(body: string): string {
     .period-range { display:flex; gap:11px; align-items:center; color:#8f9aaa; font-size:15px; }
     .period-range strong { color:#dce4ee; font-weight:600; min-width:138px; text-align:center; }
     .period-nav { color:#8e99a9; text-decoration:none; font-size:23px; line-height:20px; } .period-nav.muted { opacity:.28; }
-    .kpi-row { display:grid; grid-template-columns:repeat(4,1fr); margin:0 0 28px; border-top:1px solid #1c222a; border-bottom:1px solid #1c222a; }
+    .kpi-row { display:grid; grid-template-columns:repeat(4,1fr); margin:0 0 28px; border-bottom:1px solid #1c222a; }
     .kpi-row > div { padding:12px 26px 18px; min-width:0; } .kpi-row > div + div { border-left:1px solid #1c222a; }
     .kpi-row span,.section-kicker { display:block; color:#7f8b9b; font-size:14px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
     .kpi-row strong { display:block; color:#edf3fa; font-size:54px; line-height:1.05; font-weight:500; letter-spacing:-.055em; }
