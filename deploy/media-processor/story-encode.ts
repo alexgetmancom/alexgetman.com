@@ -18,9 +18,12 @@ export function needsVerticalBlur(width: number, height: number): boolean {
 
 function verticalVideoFilter(duration: number | null, blur: boolean, splitOutputs: number): string {
   const trim = duration == null ? "" : `trim=duration=${duration},`;
+  // 50 FPS is a Story requirement. The site keeps the source cadence: forcing
+  // it there doubles blur work without improving browser playback.
+  const fps = duration == null ? "" : "fps=50,";
   if (!blur)
-    return `[0:v:0]${trim}fps=50,${VERTICAL_SCALE_FILTER},format=nv12,hwupload,split=${splitOutputs}${Array.from({ length: splitOutputs }, (_, i) => `[out${i}]`).join("")}`;
-  return `[0:v:0]${trim}fps=50,split=2[background-source][foreground-source];[background-source]${VERTICAL_BACKGROUND_FILTER}[background];[foreground-source]${VERTICAL_FOREGROUND_FILTER}[foreground];[background][foreground]overlay=(W-w)/2:(H-h)/2,format=nv12,hwupload,split=${splitOutputs}${Array.from({ length: splitOutputs }, (_, i) => `[out${i}]`).join("")}`;
+    return `[0:v:0]${trim}${fps}${VERTICAL_SCALE_FILTER},format=nv12,hwupload,split=${splitOutputs}${Array.from({ length: splitOutputs }, (_, i) => `[out${i}]`).join("")}`;
+  return `[0:v:0]${trim}${fps}split=2[background-source][foreground-source];[background-source]${VERTICAL_BACKGROUND_FILTER}[background];[foreground-source]${VERTICAL_FOREGROUND_FILTER}[foreground];[background][foreground]overlay=(W-w)/2:(H-h)/2,format=nv12,hwupload,split=${splitOutputs}${Array.from({ length: splitOutputs }, (_, i) => `[out${i}]`).join("")}`;
 }
 
 function verticalImageFilter(blur: boolean): string {
