@@ -97,9 +97,10 @@ async function probeSource(input: string): Promise<{ duration: number; audioBitr
 }
 
 function telegramVideoKbps(duration: number, audioBitrate: number): number {
-  // 9 MiB keeps comfortable headroom below mtcute's 9.5 MiB upload boundary.
-  // Account for the original (copied) audio plus MP4 container overhead.
-  const targetBits = 9 * 1024 * 1024 * 8;
+  // VAAPI rate control can overshoot on very short clips. 8.5 MiB leaves a
+  // real margin below mtcute's 9.5 MiB upload boundary after MP4 overhead.
+  // Account for the original (copied) audio plus container overhead.
+  const targetBits = 8.5 * 1024 * 1024 * 8;
   return Math.max(150, Math.floor((targetBits / duration - audioBitrate - 24_000) / 1000));
 }
 
