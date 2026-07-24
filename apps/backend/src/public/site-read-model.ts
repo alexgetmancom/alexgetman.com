@@ -1,7 +1,14 @@
+import fs from "node:fs";
+import path from "node:path";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import * as z from "zod";
-import { SITE_MEDIA_URL_PREFIX, siteMediaPosterFilename, siteMediaVerticalFilename } from "../content/site-media-naming.js";
+import {
+  SITE_MEDIA_URL_PREFIX,
+  siteMediaFilename,
+  siteMediaPosterFilename,
+  siteMediaVerticalFilename,
+} from "../content/site-media-naming.js";
 import type { BackendDb } from "../db/client.js";
 import { knowledgeEntities, postEntityLinks, postLocales, postMetrics, postSources, posts, publications } from "../db/schema.js";
 
@@ -63,7 +70,7 @@ const feedItemSchema = z
 export type FeedItem = z.infer<typeof feedItemSchema>;
 
 /** Published-site read model. It reads only stable publication data. */
-export function loadPublicSiteFeed(backendDb: BackendDb): FeedItem[] {
+export function loadPublicSiteFeed(backendDb: BackendDb, sitePublicDir = process.env.SITE_PUBLIC_DIR ?? "/data/site"): FeedItem[] {
   const ruLocale = alias(postLocales, "site_locale_ru");
   const enLocale = alias(postLocales, "site_locale_en");
   const rows = backendDb.db
@@ -163,7 +170,7 @@ export function loadPublicSiteFeed(backendDb: BackendDb): FeedItem[] {
       row.ruText,
       row.ruSlug,
       row.ruHtml,
-      publishedMedia(row.ruMedia, row.postId, "ru"),
+      publishedMedia(row.ruMedia, row.postId, "ru", sitePublicDir),
       now,
     );
     const en = locale(
@@ -172,7 +179,7 @@ export function loadPublicSiteFeed(backendDb: BackendDb): FeedItem[] {
       row.enText,
       row.enSlug,
       row.enHtml,
-      publishedMedia(row.enMedia, row.postId, "en"),
+      publishedMedia(row.enMedia, row.postId, "en", sitePublicDir),
       now,
     );
     if (!ru.enabled && !en.enabled) return [];
@@ -242,19 +249,21 @@ function firstImage(media: SiteMedia[]): string | null {
   return media.find((item) => item.type !== "video" && typeof item.path === "string")?.path ?? null;
 }
 
-/** The public read model owns the final URL even though the source media remains
- * in the publication row. This must match the 9:16 composite produced by
- * `materializeSiteMedia`: otherwise the live API would point the viewer back at
- * the original landscape/square asset and reintroduce black letterboxing. */
-function publishedMedia(media: unknown, postId: number, locale: "ru" | "en"): SiteMedia[] {
+/** The final viewer URL is chosen only after its durable file exists. This is
+ * deliberate: the archive is backfilled asynchronously on VM-106, and a
+ * missing composite must never make an older card disappear. */
+function publishedMedia(media: unknown, postId: number, locale: "ru" | "en", sitePublicDir: string): SiteMedia[] {
   const items = z.array(siteMediaSchema).safeParse(media);
   return (items.success ? items.data : []).map((item, index) => {
     if (typeof item.path === "string" && item.path) return item;
     const type = String(item.type ?? "image").toLowerCase() === "video" ? "video" : "image";
+    const vertical = siteMediaVerticalFilename(postId, locale, index, type);
+    const original = siteMediaFilename(postId, locale, index, type === "video" ? "mp4" : "jpg");
+    const viewerPath = fs.existsSync(path.join(sitePublicDir, SITE_MEDIA_URL_PREFIX, vertical)) ? vertical : original;
     return {
       ...item,
       type,
-      path: `${SITE_MEDIA_URL_PREFIX}/${siteMediaVerticalFilename(postId, locale, index, type)}`,
+      path: `${SITE_MEDIA_URL_PREFIX}/${viewerPath}`,
       ...(type === "video" ? { poster: `${SITE_MEDIA_URL_PREFIX}/${siteMediaPosterFilename(postId, locale, index)}` } : {}),
     };
   });

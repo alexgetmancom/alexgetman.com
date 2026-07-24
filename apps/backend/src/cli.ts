@@ -12,6 +12,7 @@ import {
   withMaintenanceLock,
 } from "./operations/maintenance.js";
 import { operationsService } from "./operations/service.js";
+import { backfillSiteImageMedia } from "./operations/site-media-backfill.js";
 import { verifyPostTargets } from "./operations/verify.js";
 
 const republishAliases = new Set(["republish", "retry"]);
@@ -56,7 +57,8 @@ function printHelp(): void {
   capability-record --test T01 --message-id 123 [--notes TEXT]
   verify --ref post:1
   republish --ref post:1 [--target x] [--locale ru|en]
-  retry --ref post:1 [--target x] [--locale ru|en]`);
+  retry --ref post:1 [--target x] [--locale ru|en]
+  site-media-images [--apply]`);
 }
 
 async function main(): Promise<void> {
@@ -146,6 +148,8 @@ async function main(): Promise<void> {
       );
       console.log(JSON.stringify({ ok: true, status }, null, 2));
     } else if (args.command === "verify") console.log(JSON.stringify(await verifyPostTargets(backendDb, required(args, "ref")), null, 2));
+    else if (args.command === "site-media-images")
+      console.log(JSON.stringify(await backfillSiteImageMedia(backendDb, config, args.flags.has("apply")), null, 2));
     else if (republishAliases.has(args.command)) {
       const localeValue = args.values.get("locale");
       if (localeValue && localeValue !== "ru" && localeValue !== "en") throw new Error("--locale must be ru or en");

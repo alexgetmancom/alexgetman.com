@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { type BackendDb, openBackendDb } from "../../../backend/src/db/client.js";
 import {
   knowledgeEntities,
@@ -139,11 +142,22 @@ describe("Drizzle site feed", () => {
       })
       .run();
 
-    expect(loadPublicSiteFeed(backendDb)[0]).toEqual(
-      expect.objectContaining({
-        image_en: "media/posts/9-en-0-vertical.jpg",
-        media_en: [expect.objectContaining({ path: "media/posts/9-en-0-vertical.jpg" })],
-      }),
-    );
+    const siteDir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-site-read-model-"));
+    try {
+      const vertical = path.join(siteDir, "media/posts/9-en-0-vertical.jpg");
+      fs.mkdirSync(path.dirname(vertical), { recursive: true });
+      fs.writeFileSync(vertical, "ready");
+      expect(loadPublicSiteFeed(backendDb, siteDir)[0]).toEqual(
+        expect.objectContaining({
+          image_en: "media/posts/9-en-0-vertical.jpg",
+          media_en: [expect.objectContaining({ path: "media/posts/9-en-0-vertical.jpg" })],
+        }),
+      );
+      expect(loadPublicSiteFeed(backendDb, path.join(siteDir, "not-ready"))[0]).toEqual(
+        expect.objectContaining({ image_en: "media/posts/9-en-0.jpg" }),
+      );
+    } finally {
+      fs.rmSync(siteDir, { recursive: true, force: true });
+    }
   });
 });
