@@ -24,32 +24,43 @@ export async function publishToThreads(
   let firstContainer: string | null = null;
 
   if (ids.length === 0 && mediaItems.length > 1) {
-    const children: string[] = [];
-    for (const item of mediaItems) {
-      const child = await callThreadsWithRetry(
-        config,
-        "me/threads",
-        {
-          media_type: item.type,
-          is_carousel_item: true,
-          [item.type === "VIDEO" ? "video_url" : "image_url"]: item.vpsUrl,
-        },
-        fetchImpl,
-      );
-      if (child.id) {
-        await waitForThreadsContainer(config, child.id, fetchImpl);
-        children.push(child.id);
+    // Threads can report a child as FINISHED, then reject it while the carousel
+    // parent is being assembled (error 4279004). Those child IDs cannot be
+    // repaired, so build a fresh set once instead of failing the whole target.
+    for (let carouselAttempt = 0; carouselAttempt < 2 && !firstContainer; carouselAttempt += 1) {
+      try {
+        const children: string[] = [];
+        for (const item of mediaItems) {
+          const child = await callThreadsWithRetry(
+            config,
+            "me/threads",
+            {
+              media_type: item.type,
+              is_carousel_item: true,
+              [item.type === "VIDEO" ? "video_url" : "image_url"]: item.vpsUrl,
+            },
+            fetchImpl,
+          );
+          if (!child.id) throw new Error("threads_carousel_child_missing");
+          await waitForThreadsContainer(config, child.id, fetchImpl);
+          children.push(child.id);
+        }
+        const parent = await callThreadsWithRetry(
+          config,
+          "me/threads",
+          { media_type: "CAROUSEL", text: parts[0], children: children.join(",") },
+          fetchImpl,
+        );
+        if (!parent.id) throw new Error("threads_carousel_parent_missing");
+        await waitForThreadsContainer(config, parent.id, fetchImpl);
+        firstContainer = parent.id;
+      } catch (error) {
+        if (carouselAttempt === 0 && isInvalidCarouselError(error)) {
+          await Bun.sleep(config.THREADS_RETRY_DELAY_MS);
+          continue;
+        }
+        throw error;
       }
-    }
-    const parent = await callThreadsWithRetry(
-      config,
-      "me/threads",
-      { media_type: "CAROUSEL", text: parts[0], children: children.join(",") },
-      fetchImpl,
-    );
-    if (parent.id) {
-      await waitForThreadsContainer(config, parent.id, fetchImpl);
-      firstContainer = parent.id;
     }
   } else if (ids.length === 0 && mediaItems[0]) {
     const item = mediaItems[0];
@@ -135,6 +146,11 @@ function isRetryableThreadsError(error: unknown): boolean {
   }
   const message = String(error instanceof Error ? error.message : error).toLowerCase();
   return message.includes("media") || message.includes("4279009") || message.includes("timed out");
+}
+
+function isInvalidCarouselError(error: unknown): boolean {
+  const message = String(error instanceof Error ? error.message : error).toLowerCase();
+  return message.includes("4279004") || (message.includes("carousel") && message.includes("invalid"));
 }
 
 async function callThreads(

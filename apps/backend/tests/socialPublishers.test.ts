@@ -140,6 +140,43 @@ describe("Threads publisher", () => {
     expect(creates).toBe(2);
   });
 
+  it("recreates a carousel when Threads rejects otherwise finished child containers", async () => {
+    let carouselCreates = 0;
+    let childCreates = 0;
+    const fetchImpl = mock(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("fields=status")) return new Response(JSON.stringify({ status: "FINISHED" }), { status: 200 });
+      if (url.includes("fields=permalink"))
+        return new Response(JSON.stringify({ permalink: "https://threads.net/@a/post/1" }), { status: 200 });
+      if (url.includes("threads_publish")) return new Response(JSON.stringify({ id: "published-1" }), { status: 200 });
+      const body = String(init?.body);
+      if (body.includes("media_type=CAROUSEL")) {
+        carouselCreates += 1;
+        if (carouselCreates === 1)
+          return new Response(JSON.stringify({ error: { message: "Invalid carousel objects", error_subcode: 4279004 } }), { status: 400 });
+        return new Response(JSON.stringify({ id: "carousel-2" }), { status: 200 });
+      }
+      childCreates += 1;
+      return new Response(JSON.stringify({ id: `child-${childCreates}` }), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const result = await publishToThreads(
+      {
+        text_en: "Post",
+        media: [
+          { type: "IMAGE", vps_url: "https://example.com/one.jpg" },
+          { type: "IMAGE", vps_url: "https://example.com/two.jpg" },
+        ],
+      },
+      loadConfig({ THREADS_ACCESS_TOKEN: "token", THREADS_CONTAINER_TIMEOUT_SECONDS: "1", THREADS_RETRY_DELAY_MS: "1" }),
+      fetchImpl,
+    );
+
+    expect(result).toMatchObject({ ok: true, ids: ["published-1"] });
+    expect(carouselCreates).toBe(2);
+    expect(childCreates).toBe(4);
+  });
+
   it("resumes a partial thread after the last published reply", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     const fetchImpl = mock(async (input: string | URL | Request, init?: RequestInit) => {
