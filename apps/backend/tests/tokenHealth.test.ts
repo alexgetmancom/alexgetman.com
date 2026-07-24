@@ -41,4 +41,30 @@ describe("token health probes", () => {
       backendDb.close();
     }
   });
+
+  it("checks the YouTube refresh token against the authenticated channel before publishing is due", async () => {
+    const backendDb = tempDb();
+    try {
+      const calls: string[] = [];
+      const fetchMock = mock(async (url: string | URL | Request) => {
+        const href = String(url);
+        calls.push(href);
+        if (href === "https://oauth2.googleapis.com/token") return jsonResponse({ access_token: "youtube-access-token" });
+        if (href.startsWith("https://www.googleapis.com/youtube/v3/channels")) return jsonResponse({ items: [{ id: "channel-1" }] });
+        return jsonResponse({});
+      });
+      const config = loadConfig({
+        YOUTUBE_CLIENT_ID: "client-id",
+        YOUTUBE_CLIENT_SECRET: "client-secret",
+        YOUTUBE_REFRESH_TOKEN: "refresh-token",
+      });
+
+      await checkTokenHealth(config, backendDb, fetchMock as unknown as typeof fetch);
+
+      expect(calls).toEqual(["https://oauth2.googleapis.com/token", "https://www.googleapis.com/youtube/v3/channels?part=id&mine=true"]);
+      expect(backendDb.db.select().from(credentialChecks).where(eq(credentialChecks.target, "youtube_shorts")).get()).toBeDefined();
+    } finally {
+      backendDb.close();
+    }
+  });
 });

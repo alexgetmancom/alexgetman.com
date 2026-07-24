@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { publishToBluesky } from "../src/delivery/social/bluesky.js";
+import { publishToFacebook } from "../src/delivery/social/facebook.js";
 import { payloadMedia, payloadText } from "../src/delivery/social/payload.js";
 import { publishToTelegram } from "../src/delivery/social/telegram.js";
 import { publishToThreads } from "../src/delivery/social/threads.js";
@@ -197,6 +198,38 @@ describe("Threads publisher", () => {
     const creation = calls.find((call) => call.url.endsWith("/me/threads"));
     expect(String(creation?.init?.body)).toContain("reply_to_id=root-1");
     expect(calls.filter((call) => call.url.endsWith("/me/threads")).length).toBe(1);
+  });
+});
+
+describe("Facebook publisher", () => {
+  it("rebuilds a photo album when Facebook rejects its child photo IDs", async () => {
+    let firstAlbum = true;
+    let photoCreates = 0;
+    const fetchImpl = mock(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/photos")) return new Response(JSON.stringify({ id: `photo-${++photoCreates}` }), { status: 200 });
+      const body = String(init?.body);
+      if (firstAlbum && body.includes("photo-1") && body.includes("photo-2")) {
+        firstAlbum = false;
+        return new Response(JSON.stringify({ error: { message: "Invalid media_fbid photo" } }), { status: 400 });
+      }
+      return new Response(JSON.stringify({ id: "post-1" }), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const result = await publishToFacebook(
+      {
+        text_en: "Post",
+        media: [
+          { type: "IMAGE", vps_url: "https://example.com/one.jpg" },
+          { type: "IMAGE", vps_url: "https://example.com/two.jpg" },
+        ],
+      },
+      loadConfig({ FACEBOOK_PAGE_ID: "page", FACEBOOK_PAGE_ACCESS_TOKEN: "token" }),
+      fetchImpl,
+    );
+
+    expect(result).toMatchObject({ ok: true, id: "post-1", ids: ["photo-3", "photo-4"] });
+    expect(photoCreates).toBe(4);
   });
 });
 

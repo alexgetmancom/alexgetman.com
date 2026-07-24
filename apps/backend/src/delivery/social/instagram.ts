@@ -12,6 +12,8 @@ type GraphResponse = {
   error?: { code?: number; message?: string };
 };
 
+class InstagramStoryContainerInvalidError extends Error {}
+
 export async function publishInstagramStory(
   payload: Record<string, unknown>,
   config: BackendConfig,
@@ -25,21 +27,31 @@ export async function publishInstagramStory(
   if (!media) return { ok: false, skipped: true, reason: "missing_public_media_url" };
   const publicUrl = media.storyVpsUrl || media.vpsUrl;
   if (!publicUrl) return { ok: false, skipped: true, reason: "missing_public_media_url" };
-  const creation = await graphPost(
-    config,
-    `${config.INSTAGRAM_USER_ID}/media`,
-    {
-      media_type: "STORIES",
-      ...(media.type === "VIDEO" ? { video_url: publicUrl } : { image_url: publicUrl }),
-      ...(payloadText(payload) ? { caption: payloadText(payload).slice(0, 2200) } : {}),
-    },
-    fetchImpl,
-  );
-  if (!creation.id) return { ok: false, error: JSON.stringify(creation) };
-
-  await waitForContainer(config, creation.id, fetchImpl);
-  const published = await publishReadyContainer(config, creation.id, fetchImpl);
-  if (!published.id) return { ok: false, error: JSON.stringify(published) };
+  let published: GraphResponse | null = null;
+  for (let containerAttempt = 0; containerAttempt < 2 && !published; containerAttempt += 1) {
+    try {
+      const creation = await graphPost(
+        config,
+        `${config.INSTAGRAM_USER_ID}/media`,
+        {
+          media_type: "STORIES",
+          ...(media.type === "VIDEO" ? { video_url: publicUrl } : { image_url: publicUrl }),
+          ...(payloadText(payload) ? { caption: payloadText(payload).slice(0, 2200) } : {}),
+        },
+        fetchImpl,
+      );
+      if (!creation.id) return { ok: false, error: JSON.stringify(creation) };
+      await waitForContainer(config, creation.id, fetchImpl);
+      published = await publishReadyContainer(config, creation.id, fetchImpl);
+    } catch (error) {
+      if (containerAttempt === 0 && isInvalidContainerError(error)) {
+        await delay(5_000);
+        continue;
+      }
+      throw error;
+    }
+  }
+  if (!published?.id) return { ok: false, error: JSON.stringify(published) };
 
   let permalink: string | null = null;
   try {
@@ -55,7 +67,7 @@ async function waitForContainer(config: BackendConfig, creationId: string, fetch
     const status = await graphGet(config, creationId, { fields: "status_code,status" }, fetchImpl);
     const code = status.status_code ?? status.status;
     if (code === "FINISHED") return;
-    if (code === "ERROR") throw new Error(JSON.stringify(status));
+    if (code === "ERROR" || code === "EXPIRED") throw new InstagramStoryContainerInvalidError(JSON.stringify(status));
     await delay(5_000);
   }
   throw new Error(`instagram_container_timeout:${creationId}`);
@@ -71,10 +83,24 @@ async function publishReadyContainer(config: BackendConfig, creationId: string, 
         await delay(5_000);
         continue;
       }
+      if (isInvalidContainerError(error)) throw new InstagramStoryContainerInvalidError(message);
       throw error;
     }
   }
   throw new Error("failed_to_publish_instagram_story");
+}
+
+function isInvalidContainerError(error: unknown): boolean {
+  if (error instanceof InstagramStoryContainerInvalidError) return true;
+  const message = String(error instanceof Error ? error.message : error).toLowerCase();
+  return (
+    message.includes("2207027") ||
+    message.includes("media id is not available") ||
+    message.includes("invalid media id") ||
+    message.includes("invalid container") ||
+    message.includes("creation_id") ||
+    message.includes("container expired")
+  );
 }
 
 async function graphPost(

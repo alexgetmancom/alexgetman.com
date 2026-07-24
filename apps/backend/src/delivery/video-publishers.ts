@@ -1,6 +1,6 @@
 import type { BackendConfig } from "../foundation/config.js";
 import { youtubeAccessToken } from "../foundation/external/youtube.js";
-import { formBody, requestJson } from "../foundation/http.js";
+import { ExternalHttpError, formBody, requestJson } from "../foundation/http.js";
 import type { InstagramMetadata, YouTubeMetadata } from "../publishing/video-types.js";
 
 type YouTubeVideo = { id: string };
@@ -135,9 +135,32 @@ export async function instagramContainerReady(config: BackendConfig, containerId
 }
 
 export async function publishInstagramReel(config: BackendConfig, containerId: string): Promise<{ id: string; url: string }> {
-  const published = await requestJson<InstagramPublish>(fetch, `${instagramGraphBase(config)}/${config.INSTAGRAM_USER_ID}/media_publish`, {
-    method: "POST",
-    body: formBody({ creation_id: containerId, access_token: config.INSTAGRAM_ACCESS_TOKEN }),
-  });
+  let published: InstagramPublish;
+  try {
+    published = await requestJson<InstagramPublish>(fetch, `${instagramGraphBase(config)}/${config.INSTAGRAM_USER_ID}/media_publish`, {
+      method: "POST",
+      body: formBody({ creation_id: containerId, access_token: config.INSTAGRAM_ACCESS_TOKEN }),
+    });
+  } catch (error) {
+    // A 400 from media_publish can mean the creation_id died after its last
+    // successful status poll. The worker recognises this class and starts a
+    // fresh prepare cycle instead of retrying the dead container.
+    if (isInvalidInstagramContainerPublishError(error))
+      throw new InstagramContainerInvalidError(String(error instanceof Error ? error.message : error));
+    throw error;
+  }
   return { id: published.id, url: `https://www.instagram.com/reel/${published.id}/` };
+}
+
+function isInvalidInstagramContainerPublishError(error: unknown): boolean {
+  if (!(error instanceof ExternalHttpError) || error.status !== 400) return false;
+  const body = (error.body ?? error.message).toLowerCase();
+  return (
+    body.includes("2207027") ||
+    body.includes("media id is not available") ||
+    body.includes("invalid media id") ||
+    body.includes("invalid container") ||
+    body.includes("creation_id") ||
+    body.includes("container expired")
+  );
 }

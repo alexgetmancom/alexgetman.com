@@ -111,6 +111,32 @@ describe("story publishers", () => {
     expect(String(requests[0]?.init?.body)).toContain("image_url=https%3A%2F%2Fexample.com%2Fstory.jpg");
   });
 
+  it("recreates an Instagram Story container that reaches ERROR before publication", async () => {
+    const requests: string[] = [];
+    const responses = [
+      { id: "container-bad" },
+      { status_code: "ERROR", status: "upload failed" },
+      { id: "container-good" },
+      { status_code: "FINISHED" },
+      { id: "story-2" },
+      { permalink: "https://instagram.com/stories/a/2" },
+    ];
+    const fetchImpl = mock(async (input: string | URL | Request) => {
+      requests.push(String(input));
+      return new Response(JSON.stringify(responses.shift()), { status: 200 });
+    }) as unknown as typeof fetch;
+    const config = loadConfig({
+      ENABLE_INSTAGRAM_STORIES: "true",
+      INSTAGRAM_ACCESS_TOKEN: "IG-token",
+      INSTAGRAM_USER_ID: "ig-user",
+    });
+
+    const result = await publishInstagramStory({ media: [{ type: "IMAGE", vps_url: "https://example.com/story.jpg" }] }, config, fetchImpl);
+
+    expect(result).toMatchObject({ ok: true, id: "story-2" });
+    expect(requests.filter((url) => url.endsWith("/ig-user/media"))).toHaveLength(2);
+  }, 10_000);
+
   it("rejects a personal Telegram business story configuration before publishing", () => {
     expect(() =>
       loadConfig({

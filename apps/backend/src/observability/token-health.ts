@@ -3,6 +3,7 @@ import { getBlueskySession } from "../delivery/social/bluesky.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { oauthAuthorization } from "../foundation/external/x-oauth.js";
+import { youtubeAccessToken } from "../foundation/external/youtube.js";
 import { ExternalHttpError, requestJson } from "../foundation/http.js";
 import { log } from "../foundation/logger.js";
 import { recordAuthFailure, recordAuthSuccess, recordTokenPing, shouldPingToken } from "./auth-circuit.js";
@@ -82,6 +83,17 @@ const probes: Probe[] = [
     configured: (c) => Boolean(c.controllerBotToken),
     run: async (config, fetchImpl) => {
       await requestJson(fetchImpl, `${config.TELEGRAM_API_BASE_URL}/bot${config.controllerBotToken}/getMe`);
+      return null;
+    },
+  },
+  {
+    target: "youtube_shorts",
+    configured: (c) => Boolean(c.YOUTUBE_CLIENT_ID && c.YOUTUBE_CLIENT_SECRET && c.YOUTUBE_REFRESH_TOKEN),
+    run: async (config, fetchImpl) => {
+      const token = await youtubeAccessToken(config, fetchImpl);
+      await requestJson(fetchImpl, "https://www.googleapis.com/youtube/v3/channels?part=id&mine=true", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       return null;
     },
   },
