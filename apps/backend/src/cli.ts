@@ -58,7 +58,7 @@ function printHelp(): void {
   verify --ref post:1
   republish --ref post:1 [--target x] [--locale ru|en]
   retry --ref post:1 [--target x] [--locale ru|en]
-  site-media-images [--apply --max-upload-kbps 256]`);
+  site-media-images [--apply --max-upload-kbps 6250]`);
 }
 
 async function main(): Promise<void> {
@@ -151,8 +151,8 @@ async function main(): Promise<void> {
     else if (args.command === "site-media-images") {
       const rawLimit = args.values.get("max-upload-kbps");
       const maxUploadKbps = rawLimit == null ? undefined : Number(rawLimit);
-      if (maxUploadKbps != null && (!Number.isFinite(maxUploadKbps) || maxUploadKbps <= 0 || maxUploadKbps > 2_048))
-        throw new Error("--max-upload-kbps must be between 1 and 2048");
+      if (maxUploadKbps != null && (!Number.isFinite(maxUploadKbps) || maxUploadKbps <= 0 || maxUploadKbps > 6_250))
+        throw new Error("--max-upload-kbps must be between 1 and 6250");
       console.log(JSON.stringify(await backfillSiteImageMedia(backendDb, config, args.flags.has("apply"), maxUploadKbps), null, 2));
     } else if (republishAliases.has(args.command)) {
       const localeValue = args.values.get("locale");
