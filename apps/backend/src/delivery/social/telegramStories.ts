@@ -49,7 +49,11 @@ async function publishChannelStory(
     if (media.type === "VIDEO" && fs.statSync(uploadPath).size > STORY_MAX_BYTES) {
       cleanupPath = path.join(os.tmpdir(), `tg_story_${Date.now()}.mp4`);
       const targetBytes = 9 * 1024 * 1024;
-      const audioBitrate = 64_000;
+      // Compatibility only while an older single-output worker is still
+      // running during manual promotion. Current VM-106 emits the Telegram
+      // derivative before this publisher starts. Never turn a 128/320 kbps
+      // source track into 64 kbps here.
+      const audioBitrate = 128_000;
       const videoBitrate = Math.max(150_000, Math.floor((targetBytes * 8) / Math.max(metadata.duration, 1) - audioBitrate));
       await runFfmpeg([
         "-y",
@@ -70,13 +74,7 @@ async function publishChannelStory(
         "-pix_fmt",
         "yuv420p",
         "-c:a",
-        "aac",
-        "-b:a",
-        "64k",
-        "-ar",
-        "48000",
-        "-ac",
-        "2",
+        "copy",
         "-tag:v",
         "avc1",
         "-movflags",

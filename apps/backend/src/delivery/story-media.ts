@@ -33,27 +33,44 @@ export async function generateStoryMedia(
     "story_source_resolution_timeout",
   );
   log("info", "story media source resolved", { draftId, locale, source });
-  const output = path.join(directory, `draft-${draftId}-${locale}-story-${Date.now()}.${video ? "mp4" : "jpg"}`);
+  const stamp = Date.now();
+  const output = path.join(directory, `draft-${draftId}-${locale}-story-standard-${stamp}.${video ? "mp4" : "jpg"}`);
+  const telegramOutput = video ? path.join(directory, `draft-${draftId}-${locale}-story-telegram-${stamp}.mp4`) : undefined;
   const args = storyFfmpegArgs(source, output, video ? "video" : "image");
   log("info", "story media transform started", { draftId, locale, provider: config.MEDIA_PROCESSOR_PROVIDER });
-  if (config.MEDIA_PROCESSOR_PROVIDER === "remote_http") await transformRemotely(source, output, video, config);
+  if (config.MEDIA_PROCESSOR_PROVIDER === "remote_http") await transformRemotely(source, output, telegramOutput, video, config);
   else await withTimeout(runFfmpeg(args, config.FFMPEG_TIMEOUT_SECONDS), storyTransformTimeout(config), "story_transform_timeout");
   await withTimeout(fs.promises.chmod(output, 0o664), 30_000, "story_output_finalize_timeout");
   log("info", "story media transform completed", { draftId, locale, output });
   return [
-    { ...(item as unknown as PublishMediaItem), story_local_path: output, storyLocalPath: output, story_width: 1080, story_height: 1920 },
+    {
+      ...(item as unknown as PublishMediaItem),
+      story_local_path: output,
+      storyLocalPath: output,
+      ...(telegramOutput && fs.existsSync(telegramOutput)
+        ? { telegram_story_local_path: telegramOutput, telegramStoryLocalPath: telegramOutput }
+        : {}),
+      story_width: 1080,
+      story_height: 1920,
+    },
   ];
 }
 
 /** Media Processing Port. The delivery adapters only receive the finished
  * asset; a configured remote worker owns CPU/memory-heavy ffmpeg work. */
-async function transformRemotely(source: string, output: string, video: boolean, config: BackendConfig): Promise<void> {
+async function transformRemotely(
+  source: string,
+  output: string,
+  telegramOutput: string | undefined,
+  video: boolean,
+  config: BackendConfig,
+): Promise<void> {
   if (!config.MEDIA_PROCESSOR_URL || !config.MEDIA_PROCESSOR_TOKEN)
     throw new Error("media_processor_unavailable: remote_http requires MEDIA_PROCESSOR_URL and MEDIA_PROCESSOR_TOKEN");
   const stat = await fs.promises.stat(source);
   const idempotencyKey = crypto
     .createHash("sha256")
-    .update(`${source}:${stat.size}:${stat.mtimeMs}:${video ? "video" : "image"}`)
+    .update(`story-variants-v1:${source}:${stat.size}:${stat.mtimeMs}:${video ? "video" : "image"}`)
     .digest("hex");
   const controller = new AbortController();
   const timeoutSeconds = storyTransformTimeout(config) / 1000;
@@ -85,13 +102,21 @@ async function transformRemotely(source: string, output: string, video: boolean,
       const detail = (await response.text()).slice(0, 800);
       throw new Error(`media_processor_failed: ${response.status}${detail ? ` ${detail}` : ""}`);
     }
-    // The shared Story master is explicitly capped below 30 MB.  Materialize
-    // that bounded response before writing it: piping a Response body straight
-    // into Bun.write can leave the stream open behind the SSH+socat hop even
-    // after the remote processor has returned HTTP 200.
-    const result = await withTimeout(response.arrayBuffer(), 30_000, "media_processor_result_read_timeout");
-    await withTimeout(Bun.write(output, result), 30_000, "media_processor_result_write_timeout");
-    log("info", "story media remote result written", { output });
+    // New workers return a manifest, then both cached variants are fetched
+    // over the authenticated tunnel. Older single-output workers remain
+    // supported during the manual VM-106 promotion window.
+    if (response.headers.get("content-type")?.includes("application/json")) {
+      const result = (await response.json()) as { outputs?: Record<string, { bytes?: number }> };
+      if (!result.outputs?.standard || (video && (!result.outputs.telegram || !telegramOutput)))
+        throw new Error("media_processor_failed: incomplete story variants");
+      await downloadRemoteVariant(config, idempotencyKey, "standard", output);
+      if (video && telegramOutput) await downloadRemoteVariant(config, idempotencyKey, "telegram", telegramOutput);
+      log("info", "story media remote variants written", { output, telegramOutput });
+    } else {
+      const result = await withTimeout(response.arrayBuffer(), 30_000, "media_processor_result_read_timeout");
+      await withTimeout(Bun.write(output, result), 30_000, "media_processor_result_write_timeout");
+      log("info", "story media remote legacy result written", { output });
+    }
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError")
       throw new Error(`media_processor_timeout: remote worker exceeded ${timeoutSeconds}s`);
@@ -99,6 +124,25 @@ async function transformRemotely(source: string, output: string, video: boolean,
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function downloadRemoteVariant(
+  config: BackendConfig,
+  idempotencyKey: string,
+  variant: "standard" | "telegram",
+  output: string,
+): Promise<void> {
+  if (!config.MEDIA_PROCESSOR_URL || !config.MEDIA_PROCESSOR_TOKEN) throw new Error("media_processor_unavailable");
+  const response = await withTimeout(
+    fetch(`${config.MEDIA_PROCESSOR_URL.replace(/\/$/, "")}/v1/transforms/ffmpeg/${idempotencyKey}/${variant}`, {
+      headers: { authorization: `Bearer ${config.MEDIA_PROCESSOR_TOKEN}` },
+    }),
+    30_000,
+    "media_processor_variant_download_timeout",
+  );
+  if (!response.ok) throw new Error(`media_processor_variant_failed: ${variant} ${response.status}`);
+  await withTimeout(Bun.write(output, await response.arrayBuffer()), 30_000, "media_processor_variant_write_timeout");
+  await withTimeout(fs.promises.chmod(output, 0o664), 30_000, "story_output_finalize_timeout");
 }
 
 function storyTransformTimeout(config: BackendConfig): number {

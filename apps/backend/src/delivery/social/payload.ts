@@ -10,6 +10,7 @@ export type PublishMediaItem = {
   token?: string;
   vpsUrl?: string;
   storyLocalPath?: string;
+  telegramStoryLocalPath?: string;
   storyVpsUrl?: string;
   [key: string]: unknown;
 };
@@ -29,6 +30,8 @@ const mediaRecordSchema = z
     url: z.string().optional(),
     storyLocalPath: z.string().optional(),
     story_local_path: z.string().optional(),
+    telegramStoryLocalPath: z.string().optional(),
+    telegram_story_local_path: z.string().optional(),
     storyVpsUrl: z.string().optional(),
     story_vps_url: z.string().optional(),
   })
@@ -99,6 +102,8 @@ export function payloadMedia(payload: Record<string, unknown>): PublishMediaItem
     if (vpsUrl) item.vpsUrl = vpsUrl;
     const storyLocalPath = stringValue(record.storyLocalPath) || stringValue(record.story_local_path);
     if (storyLocalPath) item.storyLocalPath = storyLocalPath;
+    const telegramStoryLocalPath = stringValue(record.telegramStoryLocalPath) || stringValue(record.telegram_story_local_path);
+    if (telegramStoryLocalPath) item.telegramStoryLocalPath = telegramStoryLocalPath;
     const storyVpsUrl = stringValue(record.storyVpsUrl) || stringValue(record.story_vps_url);
     if (storyVpsUrl) item.storyVpsUrl = storyVpsUrl;
     return [item];

@@ -59,10 +59,12 @@ describe("story publishers", () => {
   });
 
   it("uses VAAPI only in the remote worker recipe", () => {
-    const args = remoteStoryFfmpegArgs("source.mp4", "story.mp4", "video");
+    const args = remoteStoryFfmpegArgs("source.mp4", "standard.mp4", "telegram.mp4", 1100);
     expect(args.slice(0, 4)).toEqual(["-init_hw_device", "vaapi=va:/dev/dri/renderD128", "-filter_hw_device", "va"]);
     expect(args.slice(args.indexOf("-c:v"), args.indexOf("-c:v") + 2)).toEqual(["-c:v", "h264_vaapi"]);
-    expect(args[args.indexOf("-vf") + 1]).toContain("format=nv12,hwupload");
+    expect(args[args.indexOf("-filter_complex") + 1]).toContain("format=nv12,hwupload,split=2");
+    expect(args.filter((arg) => arg === "h264_vaapi")).toHaveLength(2);
+    expect(args).toContain("telegram.mp4");
   });
 
   it("uploads generated story paths as files, rather than treating them as Telegram file IDs", () => {

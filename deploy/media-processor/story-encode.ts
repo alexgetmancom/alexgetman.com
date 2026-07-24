@@ -69,8 +69,10 @@ export function storyFfmpegArgs(input: string, output: string, kind: "video" | "
  * VAAPI device, and provider selection is explicit in MEDIA_PROCESSOR_PROVIDER
  * rather than an automatic fallback.
  */
-export function remoteStoryFfmpegArgs(input: string, output: string, kind: "video"): string[] {
-  if (kind !== "video") return storyFfmpegArgs(input, output, kind);
+export function remoteStoryFfmpegArgs(input: string, standardOutput: string, telegramOutput: string, telegramVideoKbps: number): string[] {
+  // One decode, one scale/hwupload and one VAAPI encoder session per output.
+  // split is intentional: rendering the Telegram derivative in a separate
+  // ffmpeg process doubles the expensive decode/scale work on the N100.
   return [
     "-init_hw_device",
     "vaapi=va:/dev/dri/renderD128",
@@ -79,14 +81,12 @@ export function remoteStoryFfmpegArgs(input: string, output: string, kind: "vide
     "-y",
     "-i",
     input,
-    "-t",
-    String(STORY_MAX_DURATION_SECONDS),
-    "-vf",
-    `${STORY_SCALE_FILTER},format=nv12,hwupload`,
+    "-filter_complex",
+    `[0:v:0]trim=duration=${STORY_MAX_DURATION_SECONDS},fps=50,${STORY_SCALE_FILTER},format=nv12,hwupload,split=2[standard][telegram]`,
     "-r",
     "50",
     "-map",
-    "0:v:0",
+    "[standard]",
     "-map",
     "0:a?",
     "-c:v",
@@ -99,18 +99,35 @@ export function remoteStoryFfmpegArgs(input: string, output: string, kind: "vide
     "6600k",
     "-g",
     "50",
+    // Copy preserves the submitted AAC track exactly (64…320 kbps stays as
+    // submitted), rather than needlessly re-encoding or upsampling it.
     "-c:a",
-    "aac",
-    "-b:a",
-    "320k",
-    "-ar",
-    "48000",
-    "-ac",
-    "2",
+    "copy",
     "-tag:v",
     "avc1",
     "-movflags",
     "+faststart",
-    output,
+    standardOutput,
+    "-map",
+    "[telegram]",
+    "-map",
+    "0:a?",
+    "-c:v",
+    "h264_vaapi",
+    "-b:v",
+    `${telegramVideoKbps}k`,
+    "-maxrate",
+    `${telegramVideoKbps}k`,
+    "-bufsize",
+    `${telegramVideoKbps * 2}k`,
+    "-g",
+    "50",
+    "-c:a",
+    "copy",
+    "-tag:v",
+    "avc1",
+    "-movflags",
+    "+faststart",
+    telegramOutput,
   ];
 }

@@ -41,17 +41,26 @@ export async function prepareMediaItems(
       localPath: uploadPath,
       vpsUrl: `${config.PUBLIC_MEDIA_BASE_URL.replace(/\/$/, "")}/${remoteFilename}`,
     };
-    if (item.storyLocalPath) {
-      const storyCacheKey = await mediaCacheKey({ ...item, localPath: item.storyLocalPath }, index);
-      const storyRemoteFilename = `cache-${storyCacheKey}-story${path.extname(item.storyLocalPath) || mediaExtension(item)}`;
+    // The worker produces two Story derivatives from a single VAAPI pass.
+    // Telegram receives its small-file variant; Instagram keeps the quality
+    // master. The selected file remains storyLocalPath for each publisher.
+    const storyPath = isTelegramStoryTarget(target) ? item.telegramStoryLocalPath || item.storyLocalPath : item.storyLocalPath;
+    if (storyPath) {
+      const storyCacheKey = await mediaCacheKey({ ...item, localPath: storyPath }, index);
+      const storyRemoteFilename = `cache-${storyCacheKey}-story${path.extname(storyPath) || mediaExtension(item)}`;
       const storyStagedPath = path.join(config.REMOTE_MEDIA_PATH, storyRemoteFilename);
-      await copyIfMissing(item.storyLocalPath, storyStagedPath);
+      await copyIfMissing(storyPath, storyStagedPath);
+      preparedItem.storyLocalPath = storyPath;
       preparedItem.storyVpsUrl = `${config.PUBLIC_MEDIA_BASE_URL.replace(/\/$/, "")}/${storyRemoteFilename}`;
     }
     prepared.push(preparedItem);
   }
 
   return prepared;
+}
+
+function isTelegramStoryTarget(target: string | undefined): boolean {
+  return target === "telegram_story" || target === "telegram_stories";
 }
 
 export async function pruneMediaCache(config: BackendConfig, now = Date.now()): Promise<number> {

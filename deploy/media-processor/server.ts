@@ -64,6 +64,45 @@ function processedAsset(file: string, mediaKind: string, job: string): Response 
   });
 }
 
+function manifest(idempotencyKey: string, mediaKind: string, job: string): Response {
+  const variants = mediaKind === "video" ? ["standard", "telegram"] : ["standard"];
+  return Response.json({
+    job,
+    outputs: Object.fromEntries(
+      variants.map((variant) => {
+        const file = `/work/cache/${idempotencyKey}.${variant}${mediaKind === "video" ? ".mp4" : ".jpg"}`;
+        return [variant, { bytes: statSync(file).size }];
+      }),
+    ),
+  });
+}
+
+async function probeSource(input: string): Promise<{ duration: number; audioBitrate: number }> {
+  const child = Bun.spawn(["ffprobe", "-v", "error", "-show_entries", "format=duration:stream=codec_type,bit_rate", "-of", "json", input], {
+    stdout: "pipe",
+    stderr: "ignore",
+  });
+  const [exitCode, stdout] = await Promise.all([child.exited, new Response(child.stdout).text()]);
+  if (exitCode !== 0) return { duration: 59, audioBitrate: 128_000 };
+  try {
+    const parsed = JSON.parse(stdout) as { format?: { duration?: string }; streams?: Array<{ codec_type?: string; bit_rate?: string }> };
+    const audio = parsed.streams?.find((stream) => stream.codec_type === "audio");
+    return {
+      duration: Math.min(59, Math.max(1, Number(parsed.format?.duration) || 59)),
+      audioBitrate: Math.max(0, Number(audio?.bit_rate) || 128_000),
+    };
+  } catch {
+    return { duration: 59, audioBitrate: 128_000 };
+  }
+}
+
+function telegramVideoKbps(duration: number, audioBitrate: number): number {
+  // 9 MiB keeps comfortable headroom below mtcute's 9.5 MiB upload boundary.
+  // Account for the original (copied) audio plus MP4 container overhead.
+  const targetBits = 9 * 1024 * 1024 * 8;
+  return Math.max(150, Math.floor((targetBits / duration - audioBitrate - 24_000) / 1000));
+}
+
 async function streamToFile(source: ReadableStream<Uint8Array>, output: string): Promise<void> {
   const sink = Bun.file(output).writer();
   const reader = source.getReader();
@@ -100,21 +139,33 @@ async function transcode(
   if (!Number.isFinite(sourceSize) || sourceSize <= 0 || sourceSize > maxBytes) return new Response("invalid_source_size", { status: 413 });
   if (!/^[a-f0-9]{64}$/.test(idempotencyKey)) return new Response("invalid_idempotency_key", { status: 400 });
   const ext = mediaKind === "video" ? ".mp4" : ".jpg";
-  const cached = `/work/cache/${idempotencyKey}${ext}`;
-  if (existsSync(cached)) return processedAsset(cached, mediaKind, `cached-${idempotencyKey.slice(0, 12)}`);
+  const standardCached = `/work/cache/${idempotencyKey}.standard${ext}`;
+  const telegramCached = `/work/cache/${idempotencyKey}.telegram${ext}`;
+  if (existsSync(standardCached) && (mediaKind !== "video" || existsSync(telegramCached)))
+    return manifest(idempotencyKey, mediaKind, `cached-${idempotencyKey.slice(0, 12)}`);
   const id = crypto.randomUUID();
   const folder = `/work/${id}`;
   const input = `${folder}/source${ext}`;
   // Keep the final media extension so ffmpeg selects the right muxer even
   // while the output is still an atomic temporary file.
-  const partial = `${cached}.${id}.part${ext}`;
+  const standardPartial = `${standardCached}.${id}.part${ext}`;
+  const telegramPartial = `${telegramCached}.${id}.part${ext}`;
   await mkdir(folder, { recursive: true });
   await mkdir("/work/cache", { recursive: true });
   // Keep the incoming asset streaming to the VM disk; only ffmpeg owns the
   // media bytes after this point.
   await streamToFile(source, input);
   // This VM's compose.yml caps the container at 2 CPUs; keep ffmpeg inside that budget.
-  const args = mediaKind === "video" ? remoteStoryFfmpegArgs(input, partial, mediaKind) : storyFfmpegArgs(input, partial, mediaKind);
+  const sourceMetadata = mediaKind === "video" ? await probeSource(input) : null;
+  const args =
+    mediaKind === "video"
+      ? remoteStoryFfmpegArgs(
+          input,
+          standardPartial,
+          telegramPartial,
+          telegramVideoKbps(sourceMetadata!.duration, sourceMetadata!.audioBitrate),
+        )
+      : storyFfmpegArgs(input, standardPartial, mediaKind);
   try {
     const child = Bun.spawn(["ffmpeg", ...args], { stdout: "ignore", stderr: "pipe" });
     let timedOut = false;
@@ -127,13 +178,15 @@ async function transcode(
     if (exitCode !== 0) {
       return new Response(ffmpegFailure(exitCode, stderr, timedOut), { status: 422 });
     }
-    await rename(partial, cached);
-    return processedAsset(cached, mediaKind, id);
+    await rename(standardPartial, standardCached);
+    if (mediaKind === "video") await rename(telegramPartial, telegramCached);
+    return manifest(idempotencyKey, mediaKind, id);
   } finally {
     // Only the atomically renamed cache entry survives a request; the source
     // folder and any partial output are always reclaimed.
     rmSync(folder, { recursive: true, force: true });
-    rmSync(partial, { force: true });
+    rmSync(standardPartial, { force: true });
+    rmSync(telegramPartial, { force: true });
   }
 }
 
@@ -143,8 +196,18 @@ Bun.serve({
   async fetch(request) {
     if (request.method === "GET" && new URL(request.url).pathname === "/health")
       return Response.json({ ok: true, queued, active, concurrency: 1 });
-    if (request.method !== "POST" || new URL(request.url).pathname !== "/v1/transforms/ffmpeg")
+    const pathname = new URL(request.url).pathname;
+    const download = pathname.match(/^\/v1\/transforms\/ffmpeg\/([a-f0-9]{64})\/(standard|telegram)$/);
+    if (request.method === "GET" && download) {
+      if (!authorized(request)) return new Response("unauthorized", { status: 401 });
+      const [, idempotencyKey, variant] = download;
+      const mp4 = `/work/cache/${idempotencyKey}.${variant}.mp4`;
+      const jpg = `/work/cache/${idempotencyKey}.${variant}.jpg`;
+      if (existsSync(mp4)) return processedAsset(mp4, "video", `cached-${idempotencyKey.slice(0, 12)}`);
+      if (variant === "standard" && existsSync(jpg)) return processedAsset(jpg, "image", `cached-${idempotencyKey.slice(0, 12)}`);
       return new Response("not_found", { status: 404 });
+    }
+    if (request.method !== "POST" || pathname !== "/v1/transforms/ffmpeg") return new Response("not_found", { status: 404 });
     if (!authorized(request)) return new Response("unauthorized", { status: 401 });
     const source = request.body;
     if (request.headers.get("x-studio-transform") !== "story_vertical" || !source)
