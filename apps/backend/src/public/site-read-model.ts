@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import * as z from "zod";
-import { SITE_MEDIA_URL_PREFIX, siteMediaFilename, siteMediaPosterFilename } from "../content/site-media-naming.js";
+import { SITE_MEDIA_URL_PREFIX, siteMediaPosterFilename, siteMediaVerticalFilename } from "../content/site-media-naming.js";
 import type { BackendDb } from "../db/client.js";
 import { knowledgeEntities, postEntityLinks, postLocales, postMetrics, postSources, posts, publications } from "../db/schema.js";
 
@@ -242,10 +242,10 @@ function firstImage(media: SiteMedia[]): string | null {
   return media.find((item) => item.type !== "video" && typeof item.path === "string")?.path ?? null;
 }
 
-/** Legacy rows stored before materialized media carried its own `path` fall back to
- * the naming convention `materializeSiteMedia` writes files under (see site-media-naming.ts).
- * This can only guess the jpg/mp4 default extension, not the true one a writer would have
- * detected from the source file. */
+/** The public read model owns the final URL even though the source media remains
+ * in the publication row. This must match the 9:16 composite produced by
+ * `materializeSiteMedia`: otherwise the live API would point the viewer back at
+ * the original landscape/square asset and reintroduce black letterboxing. */
 function publishedMedia(media: unknown, postId: number, locale: "ru" | "en"): SiteMedia[] {
   const items = z.array(siteMediaSchema).safeParse(media);
   return (items.success ? items.data : []).map((item, index) => {
@@ -254,7 +254,7 @@ function publishedMedia(media: unknown, postId: number, locale: "ru" | "en"): Si
     return {
       ...item,
       type,
-      path: `${SITE_MEDIA_URL_PREFIX}/${siteMediaFilename(postId, locale, index, type === "video" ? "mp4" : "jpg")}`,
+      path: `${SITE_MEDIA_URL_PREFIX}/${siteMediaVerticalFilename(postId, locale, index, type)}`,
       ...(type === "video" ? { poster: `${SITE_MEDIA_URL_PREFIX}/${siteMediaPosterFilename(postId, locale, index)}` } : {}),
     };
   });

@@ -141,8 +141,8 @@ describe("Drizzle site feed", () => {
 
     expect(loadPublicSiteFeed(backendDb)[0]).toEqual(
       expect.objectContaining({
-        image_en: "media/posts/9-en-0.jpg",
-        media_en: [expect.objectContaining({ path: "media/posts/9-en-0.jpg" })],
+        image_en: "media/posts/9-en-0-vertical.jpg",
+        media_en: [expect.objectContaining({ path: "media/posts/9-en-0-vertical.jpg" })],
       }),
     );
   });

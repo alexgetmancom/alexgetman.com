@@ -35,8 +35,10 @@ const FIXTURE_JPEG = Buffer.from(
   "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAj/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k=",
   "base64",
 );
-/** Deterministic filename `existingSiteImage`/`site-read-model` produce for post 1, locale en, media index 0. */
-const FIXTURE_IMAGE_PATH = "media/posts/1-en-0.jpg";
+/** Final viewer projection produced by the media worker and exposed by the
+ * live site read-model. Keeping this end-to-end catches a regression where
+ * the worker makes the vertical composite but the website links the source. */
+const FIXTURE_IMAGE_PATH = "media/posts/1-en-0-vertical.jpg";
 
 let dbDir: string;
 let publicDir: string;
