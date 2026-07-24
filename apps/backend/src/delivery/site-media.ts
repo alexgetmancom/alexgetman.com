@@ -21,6 +21,7 @@ type SiteMedia = Record<string, unknown> & {
 };
 
 const RESPONSIVE_WIDTHS = [360, 640, 960] as const;
+export type SiteMediaMaterializeOptions = { maxUploadKbps?: number };
 
 /** Delivery projection: copy publication media into the public site. */
 export async function materializeSiteMedia(
@@ -29,6 +30,7 @@ export async function materializeSiteMedia(
   locale: "ru" | "en",
   raw: unknown,
   fetchImpl: typeof fetch = fetch,
+  options: SiteMediaMaterializeOptions = {},
 ): Promise<Record<string, unknown>[]> {
   const source = Array.isArray(raw) ? raw : raw && typeof raw === "object" ? [raw] : [];
   const directory = path.join(config.SITE_PUBLIC_DIR, ...SITE_MEDIA_DIR_SEGMENTS);
@@ -44,7 +46,7 @@ export async function materializeSiteMedia(
     await fs.promises.chmod(target, 0o664);
     const verticalName = siteMediaVerticalFilename(postId, locale, index, kind);
     const vertical = path.join(directory, verticalName);
-    await materializeVerticalViewerMedia(config, target, vertical, kind);
+    await materializeVerticalViewerMedia(config, target, vertical, kind, options);
     const output: Record<string, unknown> = {
       ...item,
       type: kind,
@@ -74,6 +76,7 @@ async function materializeVerticalViewerMedia(
   source: string,
   output: string,
   kind: "image" | "video",
+  options: SiteMediaMaterializeOptions,
 ): Promise<void> {
   if (await isCurrentTransform(source, output)) return;
   if (config.MEDIA_PROCESSOR_PROVIDER !== "remote_http") {
@@ -109,7 +112,7 @@ async function materializeVerticalViewerMedia(
       "x-studio-media-kind": kind === "video" ? "video" : "image",
       "x-studio-idempotency-key": idempotencyKey,
     },
-    body: Bun.file(source),
+    body: options.maxUploadKbps ? throttledFileStream(source, options.maxUploadKbps) : Bun.file(source),
     signal: AbortSignal.timeout(config.MEDIA_PROCESSOR_TIMEOUT_SECONDS * 1000),
   });
   if (!response.ok) throw new Error(`site_vertical_media_failed: ${response.status} ${(await response.text()).slice(0, 800)}`);
@@ -122,6 +125,26 @@ async function materializeVerticalViewerMedia(
   if (!download.ok) throw new Error(`site_vertical_media_download_failed: ${download.status}`);
   await Bun.write(output, await download.arrayBuffer());
   await fs.promises.chmod(output, 0o664);
+}
+
+/** Bulk archive work crosses the VPS ↔ home-VM link. Throttle only that
+ * opt-in path so routine post delivery remains fast while a maintenance run
+ * cannot starve the home VPN/uplink. */
+function throttledFileStream(file: string, maxUploadKbps: number): ReadableStream<Uint8Array> {
+  const bytesPerSecond = Math.max(1, Math.floor(maxUploadKbps * 1024));
+  const reader = Bun.file(file).stream().getReader();
+  return new ReadableStream({
+    async pull(controller) {
+      const { done, value } = await reader.read();
+      if (done) {
+        controller.close();
+        return;
+      }
+      controller.enqueue(value);
+      await new Promise<void>((resolve) => setTimeout(resolve, Math.ceil((value.byteLength / bytesPerSecond) * 1000)));
+    },
+    cancel: () => reader.cancel(),
+  });
 }
 
 function versionedPublicPath(publicPath: string, filePath: string): string {

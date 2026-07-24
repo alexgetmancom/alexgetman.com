@@ -58,7 +58,7 @@ function printHelp(): void {
   verify --ref post:1
   republish --ref post:1 [--target x] [--locale ru|en]
   retry --ref post:1 [--target x] [--locale ru|en]
-  site-media-images [--apply]`);
+  site-media-images [--apply --max-upload-kbps 256]`);
 }
 
 async function main(): Promise<void> {
@@ -148,9 +148,13 @@ async function main(): Promise<void> {
       );
       console.log(JSON.stringify({ ok: true, status }, null, 2));
     } else if (args.command === "verify") console.log(JSON.stringify(await verifyPostTargets(backendDb, required(args, "ref")), null, 2));
-    else if (args.command === "site-media-images")
-      console.log(JSON.stringify(await backfillSiteImageMedia(backendDb, config, args.flags.has("apply")), null, 2));
-    else if (republishAliases.has(args.command)) {
+    else if (args.command === "site-media-images") {
+      const rawLimit = args.values.get("max-upload-kbps");
+      const maxUploadKbps = rawLimit == null ? undefined : Number(rawLimit);
+      if (maxUploadKbps != null && (!Number.isFinite(maxUploadKbps) || maxUploadKbps <= 0 || maxUploadKbps > 2_048))
+        throw new Error("--max-upload-kbps must be between 1 and 2048");
+      console.log(JSON.stringify(await backfillSiteImageMedia(backendDb, config, args.flags.has("apply"), maxUploadKbps), null, 2));
+    } else if (republishAliases.has(args.command)) {
       const localeValue = args.values.get("locale");
       if (localeValue && localeValue !== "ru" && localeValue !== "en") throw new Error("--locale must be ru or en");
       const locale: "ru" | "en" | undefined = localeValue as "ru" | "en" | undefined;

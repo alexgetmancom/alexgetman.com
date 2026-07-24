@@ -15,6 +15,7 @@ export async function backfillSiteImageMedia(
   backendDb: BackendDb,
   config: BackendConfig,
   apply: boolean,
+  maxUploadKbps?: number,
 ): Promise<Record<string, unknown>> {
   const rows = backendDb.db
     .select({ postId: publicationSources.postId, itemJson: publicationSources.itemJson, locale: postLocales.locale })
@@ -37,12 +38,13 @@ export async function backfillSiteImageMedia(
       locale_projections: work.length,
       images: work.reduce((total, item) => total + item.images.length, 0),
     };
+  if (!maxUploadKbps) throw new Error("site-media-images --apply requires --max-upload-kbps to protect the home VPN link");
 
   let images = 0;
   for (const item of work) {
     // VM-106 itself is single-lane; sequential submission prevents a long
     // queue from turning a large archive run into request timeouts.
-    await materializeSiteMedia(config, item.postId, item.locale, item.images);
+    await materializeSiteMedia(config, item.postId, item.locale, item.images, fetch, { maxUploadKbps });
     images += item.images.length;
   }
   return {
@@ -52,6 +54,7 @@ export async function backfillSiteImageMedia(
     locale_projections: work.length,
     images,
     videos_touched: 0,
+    max_upload_kbps: maxUploadKbps,
   };
 }
 
