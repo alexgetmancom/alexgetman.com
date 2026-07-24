@@ -1,6 +1,6 @@
 import { zonedDateParts } from "../../foundation/time.js";
 import { ORDERED_TARGETS } from "./assets.js";
-import { renderWeeklyChart } from "./chart.js";
+import { renderDailyComparisonChart, renderWeeklyChart } from "./chart.js";
 import { formatMetricValue, shortPipelineText } from "./format.js";
 import { postMetricTotals } from "./metrics.js";
 import { renderPublicationColumns } from "./table.js";
@@ -18,6 +18,7 @@ export function renderPipelineSection(
   audience = "",
   timeZone = "Europe/Moscow",
   comparisonDays = periodDays,
+  dayComparisonData: PipelineData | null = null,
 ): string {
   const [startOfPeriod, endOfPeriod] = rollingPeriodDates(weekOffset, periodDays, timeZone);
   const posts = data?.posts ?? [];
@@ -33,12 +34,21 @@ export function renderPipelineSection(
     },
     { views: 0, likes: 0, replies: 0 },
   );
-  const previousTotals = averageTotals(metricTotals(previousPosts, targetIds), comparisonDays);
-  const comparisonLabel = comparisonDays === 30 ? "vs среднее за 30д" : "vs прошлый период";
+  const previousTotals =
+    comparisonDays === 30
+      ? medianDailyTotals(previousPosts, targetIds, comparisonDays, timeZone)
+      : averageTotals(metricTotals(previousPosts, targetIds), comparisonDays);
+  const previousPostCount =
+    comparisonDays === 30 ? medianDailyPostCount(previousPosts, comparisonDays, timeZone) : previousPosts.length / comparisonDays;
+  const comparisonLabel = comparisonDays === 30 ? "vs медиана за 30д" : "vs прошлый период";
+  const chart =
+    periodDays === 1
+      ? renderDailyComparisonChart(posts, dayComparisonData?.posts ?? [], endOfPeriod, timeZone)
+      : renderWeeklyChart(posts, startOfPeriod, endOfPeriod);
   return `
     <section class="pipeline-overview">
-      <div class="kpi-row">${kpi("Просмотры", totals.views, previousTotals.views, comparisonLabel)}${kpi("Реакции", totals.likes, previousTotals.likes, comparisonLabel)}${kpi("Ответы", totals.replies, previousTotals.replies, comparisonLabel)}${kpi("Посты", posts.length, previousPosts.length / comparisonDays, comparisonLabel)}</div>
-      <div class="insights-row">${audience}<div class="chart-panel"><div class="section-kicker">Динамика</div>${renderWeeklyChart(posts, startOfPeriod, endOfPeriod)}</div></div>
+      <div class="kpi-row">${kpi("Просмотры", totals.views, previousTotals.views, comparisonLabel)}${kpi("Реакции", totals.likes, previousTotals.likes, comparisonLabel)}${kpi("Ответы", totals.replies, previousTotals.replies, comparisonLabel)}${kpi("Посты", posts.length, previousPostCount, comparisonLabel)}</div>
+      <div class="insights-row">${audience}<div class="chart-panel"><div class="section-kicker">${periodDays === 1 ? "Сегодня и вчера" : "Динамика"}</div>${chart}</div></div>
       ${renderPublicationColumns(posts)}
     </section>
   `;
@@ -74,6 +84,53 @@ function metricTotals(posts: NonNullable<PipelineData["posts"]>, targetIds: stri
 function averageTotals(totals: ReturnType<typeof metricTotals>, days: number) {
   if (days <= 1) return totals;
   return { views: totals.views / days, likes: totals.likes / days, replies: totals.replies / days };
+}
+
+function medianDailyTotals(posts: NonNullable<PipelineData["posts"]>, targetIds: string[], days: number, timeZone: string) {
+  const daily = new Map<string, ReturnType<typeof metricTotals>>();
+  for (const post of posts) {
+    const date = calendarKey(post.date, timeZone);
+    if (!date) return averageTotals(metricTotals(posts, targetIds), days);
+    const values = daily.get(date) ?? { views: 0, likes: 0, replies: 0 };
+    const value = postMetricTotals(post, targetIds);
+    values.views += value.views;
+    values.likes += value.likes + value.reposts;
+    values.replies += value.replies;
+    daily.set(date, values);
+  }
+  const values = [...daily.values()];
+  while (values.length < days) values.push({ views: 0, likes: 0, replies: 0 });
+  return {
+    views: median(values.map((value) => value.views)),
+    likes: median(values.map((value) => value.likes)),
+    replies: median(values.map((value) => value.replies)),
+  };
+}
+
+function medianDailyPostCount(posts: NonNullable<PipelineData["posts"]>, days: number, timeZone: string): number {
+  const daily = new Map<string, number>();
+  for (const post of posts) {
+    const date = calendarKey(post.date, timeZone);
+    if (!date) return posts.length / days;
+    daily.set(date, (daily.get(date) ?? 0) + 1);
+  }
+  const values = [...daily.values()];
+  while (values.length < days) values.push(0);
+  return median(values);
+}
+
+function median(values: number[]): number {
+  const ordered = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(ordered.length / 2);
+  return ordered.length % 2 ? ordered[middle]! : (ordered[middle - 1]! + ordered[middle]!) / 2;
+}
+
+function calendarKey(value: string | null | undefined, timeZone: string): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const parts = zonedDateParts(date, timeZone);
+  return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
 }
 
 function kpi(label: string, value: number, previous: number, comparisonLabel: string): string {

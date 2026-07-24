@@ -1,3 +1,4 @@
+import { zonedSlot } from "../../foundation/time.js";
 import { ORDERED_TARGETS } from "./assets.js";
 import { formatMetricValue, getMskDateString } from "./format.js";
 import { escapeHtml } from "./html.js";
@@ -89,6 +90,107 @@ export function renderWeeklyChart(posts: PipelinePost[], rangeStart?: Date, rang
       <div class="chart-tooltip" id="chart-tooltip" hidden></div>
     </div>
   `;
+}
+
+/**
+ * A one-day view uses immutable collection samples rather than pretending that
+ * we know the value for every hour. Both series are clipped to the same wall
+ * clock so "today" is directly comparable with "yesterday".
+ */
+export function renderDailyComparisonChart(
+  todayPosts: PipelinePost[],
+  yesterdayPosts: PipelinePost[],
+  day: Date,
+  timeZone: string,
+  now = new Date(),
+): string {
+  const dayStart = zonedSlot(day.getUTCFullYear(), day.getUTCMonth() + 1, day.getUTCDate(), "00:00", timeZone);
+  const dayEnd = new Date(dayStart.getTime() + 86_400_000);
+  const yesterdayStart = new Date(dayStart.getTime() - 86_400_000);
+  const isToday = now >= dayStart && now < dayEnd;
+  const cutoff = isToday ? now : dayEnd;
+  const current = sampledViewTimeline(todayPosts, dayStart, cutoff);
+  const previous = sampledViewTimeline(
+    yesterdayPosts,
+    yesterdayStart,
+    new Date(yesterdayStart.getTime() + (cutoff.getTime() - dayStart.getTime())),
+  );
+  if (current.length <= 1 && previous.length <= 1)
+    return `<div class="metric-chart metric-chart--empty"><div class="metric-chart__legend"><span>Замеры появятся через час после публикации</span></div></div>`;
+
+  const width = 980;
+  const height = 170;
+  const left = 18;
+  const right = 18;
+  const top = 20;
+  const bottom = 28;
+  const plotW = width - left - right;
+  const plotH = height - top - bottom;
+  const max = Math.max(1, ...current.map((point) => point.value), ...previous.map((point) => point.value));
+  const x = (at: Date, start: Date) => left + (plotW * (at.getTime() - start.getTime())) / 86_400_000;
+  const y = (value: number) => top + plotH - (plotH * value) / max;
+  let grid = "";
+  for (let i = 0; i < 4; i++) {
+    const gridY = top + (plotH * i) / 3;
+    grid += `<line x1="${left}" y1="${gridY.toFixed(1)}" x2="${width - right}" y2="${gridY.toFixed(1)}" class="chart-grid" />`;
+  }
+  const series = [
+    { name: "Сегодня", color: "#3b8dff", points: current, start: dayStart },
+    { name: "Вчера", color: "#aeb8c8", points: previous, start: yesterdayStart },
+  ];
+  const paths = series
+    .map(
+      ({ color, points, start }) =>
+        `<polyline class="chart-line" points="${points.map((point) => `${x(point.at, start).toFixed(1)},${y(point.value).toFixed(1)}`).join(" ")}" fill="none" stroke="${color}" stroke-width="2.4" />`,
+    )
+    .join("");
+  const points = series
+    .flatMap(({ name, color, points, start }) =>
+      points.slice(1).map((point) => {
+        const tooltip = `${name}, ${clockLabel(point.at, timeZone)} · ${formatMetricValue(point.value)} просмотров`;
+        return `<circle class="chart-point" cx="${x(point.at, start).toFixed(1)}" cy="${y(point.value).toFixed(1)}" r="3" fill="${color}" /><circle class="chart-hit" cx="${x(point.at, start).toFixed(1)}" cy="${y(point.value).toFixed(1)}" r="10" data-tooltip="${escapeHtml(tooltip)}" />`;
+      }),
+    )
+    .join("");
+  const labels = [0, 6, 12, 18, 24]
+    .map(
+      (hour) =>
+        `<text x="${(left + (plotW * hour) / 24).toFixed(1)}" y="${height - 7}" text-anchor="middle">${String(hour).padStart(2, "0")}:00</text>`,
+    )
+    .join("");
+  const currentTotal = current.at(-1)?.value ?? 0;
+  const previousTotal = previous.at(-1)?.value ?? 0;
+  return `<div class="metric-chart"><div class="metric-chart__legend"><span><i style="background:#3b8dff"></i>Сегодня: ${formatMetricValue(currentTotal)}</span><span><i style="background:#aeb8c8"></i>Вчера к этому времени: ${formatMetricValue(previousTotal)}</span><em>реальные замеры</em></div><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Сравнение просмотров сегодня и вчера по времени суток">${grid}${paths}${points}${labels}</svg><div class="chart-tooltip" id="chart-tooltip" hidden></div></div>`;
+}
+
+type TimelinePoint = { at: Date; value: number };
+
+function sampledViewTimeline(posts: PipelinePost[], start: Date, cutoff: Date): TimelinePoint[] {
+  const events: Array<{ at: Date; key: string; value: number }> = [];
+  for (const post of posts) {
+    for (const [target, metrics] of Object.entries(post.metrics ?? {})) {
+      for (const sample of metrics?.views?.samples ?? []) {
+        const at = sample.sampled_at ? new Date(sample.sampled_at) : null;
+        const value = Number(sample.value);
+        if (!at || Number.isNaN(at.getTime()) || !Number.isFinite(value) || at < start || at > cutoff) continue;
+        events.push({ at, key: `${post.post_key ?? post.post_id ?? post.date ?? "post"}:${target}`, value });
+      }
+    }
+  }
+  events.sort((left, right) => left.at.getTime() - right.at.getTime());
+  const latest = new Map<string, number>();
+  let total = 0;
+  const points: TimelinePoint[] = [{ at: start, value: 0 }];
+  for (const event of events) {
+    total += event.value - (latest.get(event.key) ?? 0);
+    latest.set(event.key, event.value);
+    points.push({ at: event.at, value: total });
+  }
+  return points;
+}
+
+function clockLabel(value: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("ru-RU", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(value);
 }
 
 function fillCalendarDays(days: Record<string, Record<ChartMetricName, number>>, start?: Date, end?: Date): void {

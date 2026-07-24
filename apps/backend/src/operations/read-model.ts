@@ -168,7 +168,15 @@ function pipelinePosts(
         .orderBy(asc(postMetrics.target), asc(postMetrics.metricName))
         .all()
     : [];
-  return formatPipelinePosts(config, rows, targetRows, metricRows);
+  const sampleRows = postKeys.length
+    ? backendDb.db
+        .select()
+        .from(metricSamples)
+        .where(inArray(metricSamples.postKey, postKeys))
+        .orderBy(asc(metricSamples.sampledAt), asc(metricSamples.id))
+        .all()
+    : [];
+  return formatPipelinePosts(config, rows, targetRows, metricRows, sampleRows);
 }
 
 function fetchPostRows(backendDb: BackendDb, start: string, end: string) {
@@ -230,6 +238,7 @@ function formatPipelinePosts(
   rows: ReturnType<typeof fetchPostRows>,
   targetRows: Array<typeof postTargets.$inferSelect>,
   metricRows: Array<typeof postMetrics.$inferSelect>,
+  sampleRows: Array<typeof metricSamples.$inferSelect>,
 ): Record<string, unknown>[] {
   const targetsByPost = new Map<string, (typeof targetRows)[number][]>();
   for (const target of targetRows) {
@@ -242,6 +251,13 @@ function formatPipelinePosts(
     const values = metricsByPost.get(metric.postKey) ?? [];
     values.push(metric);
     metricsByPost.set(metric.postKey, values);
+  }
+  const samplesByMetric = new Map<string, Array<(typeof sampleRows)[number]>>();
+  for (const sample of sampleRows) {
+    const key = `${sample.postKey}\u0000${sample.target}\u0000${sample.metricName}`;
+    const values = samplesByMetric.get(key) ?? [];
+    values.push(sample);
+    samplesByMetric.set(key, values);
   }
   return rows.map((row) => {
     const postId = row.post_id == null ? null : Number(row.post_id);
@@ -273,6 +289,10 @@ function formatPipelinePosts(
         source: metric.source,
         error: metric.error,
         raw: metric.rawJson ?? {},
+        samples: (samplesByMetric.get(`${postKey}\u0000${target}\u0000${metric.metricName}`) ?? []).map((sample) => ({
+          value: sample.value,
+          sampled_at: sample.sampledAt,
+        })),
       };
     }
     const mediaRu = jsonArray(row.media_ru_json);

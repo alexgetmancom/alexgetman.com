@@ -7,6 +7,13 @@ export type TargetMetric = {
   source?: string | null;
   error?: string | null;
   raw?: unknown;
+  samples?: MetricSample[];
+};
+
+/** Immutable observations, ordered by their actual collection time. */
+export type MetricSample = {
+  value?: unknown;
+  sampled_at?: string | null;
 };
 
 export type TargetRecord = {

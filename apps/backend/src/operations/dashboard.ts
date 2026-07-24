@@ -67,6 +67,7 @@ export function renderDashboard(
                 renderAudienceSection(backendDb, config),
                 config.TIMEZONE,
                 periodDays === 1 ? 30 : periodDays,
+                periodDays === 1 ? service.pipeline(0, 1, 0, weekOffset + 1) : null,
               )
             : showVideo
               ? renderVideoSection(backendDb)

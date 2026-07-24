@@ -14,7 +14,7 @@ export function renderPublicationColumns(posts: PipelinePost[]): string {
 
 function renderBestPost(post: PipelinePost, rank: number): string {
   const metrics = total(post);
-  return `<article class="best-post"><span class="post-rank">${rank}</span><span class="best-post__media">${mediaIcon(post)}</span><div class="best-post__copy"><div class="best-post__title">${escapeHtml(shortPipelineText(post.text_ru || post.text_en || "Без текста", 10))}</div></div><div class="best-post__stats"><strong>${formatMetricValue(metrics.views)}</strong><small>просмотры</small><em>♡ ${formatMetricValue(reactions(metrics))}</em></div></article>`;
+  return `<article class="best-post"><span class="post-rank">${rank}</span><div class="best-post__copy"><div class="best-post__title">${escapeHtml(shortPipelineText(post.text_ru || post.text_en || "Без текста", 10))}</div></div><div class="best-post__stats"><strong>${formatMetricValue(metrics.views)}</strong><small>просмотры</small><em>♡ ${formatMetricValue(reactions(metrics))}</em></div></article>`;
 }
 
 function renderRecentPost(post: PipelinePost): string {
@@ -74,10 +74,6 @@ function mediaLabel(post: PipelinePost): string {
   if (/(vid|video)/.test(media)) return "Видео";
   if (/(pic|photo|image)/.test(media)) return "Изображение";
   return "Текст";
-}
-
-function mediaIcon(post: PipelinePost): string {
-  return mediaLabel(post) === "Видео" ? "▻" : mediaLabel(post) === "Изображение" ? "▧" : "¶";
 }
 
 function total(post: PipelinePost) {

@@ -139,11 +139,11 @@ export function renderDashboardShell(body: string): string {
     .audience-line span { color:#c3cbd5; } .audience-line strong { color:#e4eaf2; font-size:18px; font-weight:600; }
     .metric-chart { margin-top:8px; padding:0; background:transparent; border:0; border-radius:0; }
     .metric-chart svg { height:188px; } .metric-chart text { font-size:13px; } .metric-chart__legend { margin:11px 0 0; font-size:15px; color:#b3bdca; }
-    .metric-chart__hint { display:none; } .chart-grid { stroke:#1e252d; } .chart-point { stroke:#050607; }
+    .metric-chart__hint { display:none; } .chart-grid { stroke:#1e252d; } .chart-point { stroke:#050607; } .metric-chart__legend em { margin-left:4px; color:#758194; font-size:12px; font-style:normal; }
     .publication-columns { display:grid; grid-template-columns:minmax(340px,.3fr) minmax(0,.7fr); gap:34px; padding-top:26px; }
     .best-posts,.recent-posts { min-width:0; padding:0; border:0; border-radius:0; background:transparent; } .recent-posts { padding-left:34px; border-left:1px solid #1c222a; }
-    .best-post { display:grid; grid-template-columns:39px 32px minmax(0,1fr) 92px; gap:13px; align-items:start; padding:18px 0; border-bottom:1px solid #171c22; }
-    .post-rank { color:#4c98ff; font-size:31px; line-height:1; font-weight:500; padding-top:1px; } .best-post__media { display:flex; align-items:center; justify-content:center; width:26px; height:26px; color:#b3bdca; border:1px solid #485260; border-radius:4px; font-size:17px; }
+    .best-post { display:grid; grid-template-columns:39px minmax(0,1fr) 92px; gap:13px; align-items:start; padding:18px 0; border-bottom:1px solid #171c22; }
+    .post-rank { color:#4c98ff; font-size:31px; line-height:1; font-weight:500; padding-top:1px; }
     .best-post__title { color:#d7dee8; font-size:16px; line-height:1.4; } .best-post__stats { text-align:right; white-space:nowrap; } .best-post__stats strong { display:block; color:#edf3fa; font-size:18px; font-weight:600; } .best-post__stats small { display:block; color:#8792a0; font-size:12px; } .best-post__stats em { display:block; margin-top:8px; color:#ff4e75; font-size:14px; font-style:normal; }
     .empty-state { color:#697483; font-size:14px; }
     .recent-posts__header,.post-detail__summary { display:grid; grid-template-columns:minmax(0,1fr) 170px repeat(3,120px); align-items:center; gap:14px; }
