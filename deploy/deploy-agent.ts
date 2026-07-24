@@ -3,7 +3,11 @@ import { mkdir, rename } from "node:fs/promises";
 import { dirname } from "node:path";
 
 type Release = { image: string; revision: string; deployedAt: string };
-type DeploymentState = { current?: Release; previous?: Release; lastFailure?: { revision: string; message: string; at: string } };
+type DeploymentState = {
+  current?: Release;
+  previous?: Release;
+  lastFailure?: { revision: string; message: string; at: string };
+};
 type DeploymentTarget = {
   name: string;
   composeFile: string;
@@ -17,6 +21,8 @@ type DeploymentTarget = {
   remoteToken?: string;
   artifactFile?: string;
   repository?: string;
+  /** First rollout has no trustworthy immutable image to roll back to. */
+  allowInitialSeed?: boolean;
 };
 
 const config = {
@@ -68,6 +74,7 @@ function deploymentTargets(): Map<string, DeploymentTarget> {
       container: Bun.env.DEPLOY_CONTAINER_NAME ?? "alexgetman-backend",
       service: Bun.env.DEPLOY_SERVICE_NAME ?? "backend",
       imageEnvKey: Bun.env.DEPLOY_IMAGE_ENV_KEY ?? "BACKEND_IMAGE",
+      allowInitialSeed: Bun.env.DEPLOY_ALLOW_INITIAL_SEED === "true",
     };
     return new Map([[target.name, target]]);
   }
@@ -87,13 +94,23 @@ function deploymentTargets(): Map<string, DeploymentTarget> {
         typeof value.repository !== "string"
       )
         throw new Error(`Remote deployment target ${name} requires remoteUrl, remoteToken, artifactFile and repository`);
-      targets.set(name, { ...value, name, service: value.service ?? "", imageEnvKey: value.imageEnvKey ?? "" });
+      targets.set(name, {
+        ...value,
+        name,
+        service: value.service ?? "",
+        imageEnvKey: value.imageEnvKey ?? "",
+      });
       continue;
     }
     for (const key of ["composeFile", "imageEnvFile", "healthUrl", "container"] as const) {
       if (typeof value[key] !== "string" || !value[key].trim()) throw new Error(`Deployment target ${name} is missing ${key}`);
     }
-    targets.set(name, { ...value, name, service: value.service ?? "backend", imageEnvKey: value.imageEnvKey ?? "BACKEND_IMAGE" });
+    targets.set(name, {
+      ...value,
+      name,
+      service: value.service ?? "backend",
+      imageEnvKey: value.imageEnvKey ?? "BACKEND_IMAGE",
+    });
   }
   if (targets.size === 0) throw new Error("DEPLOY_TARGETS_JSON must configure at least one target.");
   return targets;
@@ -108,7 +125,10 @@ function target(name: string | undefined): DeploymentTarget {
 }
 
 async function command(args: string[], allowFailure = false): Promise<string> {
-  const process = Bun.spawn(["docker", ...args], { stdout: "pipe", stderr: "pipe" });
+  const process = Bun.spawn(["docker", ...args], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   const [stdout, stderr, code] = await Promise.all([
     new Response(process.stdout).text(),
     new Response(process.stderr).text(),
@@ -168,7 +188,9 @@ async function waitForHealthy(deploymentTarget: DeploymentTarget): Promise<void>
     );
     if (health === "unhealthy" || health === "exited" || health === "dead") throw new Error(`container state is ${health}`);
     try {
-      const response = await fetch(deploymentTarget.healthUrl, { signal: AbortSignal.timeout(5_000) });
+      const response = await fetch(deploymentTarget.healthUrl, {
+        signal: AbortSignal.timeout(5_000),
+      });
       if (response.ok) return;
       last = `readyz returned ${response.status}`;
     } catch (error) {
@@ -183,7 +205,10 @@ async function activate(deploymentTarget: DeploymentTarget, image: string, relea
   if (deploymentTarget.remoteUrl) {
     const response = await fetch(`${deploymentTarget.remoteUrl.replace(/\/$/, "")}/v1/deploy`, {
       method: "POST",
-      headers: { authorization: `Bearer ${deploymentTarget.remoteToken}`, "content-type": "application/json" },
+      headers: {
+        authorization: `Bearer ${deploymentTarget.remoteToken}`,
+        "content-type": "application/json",
+      },
       body: JSON.stringify({ image, release }),
       signal: AbortSignal.timeout(150_000),
     });
@@ -196,22 +221,45 @@ async function activate(deploymentTarget: DeploymentTarget, image: string, relea
   await waitForHealthy(deploymentTarget);
 }
 
-async function notify(text: string, deploymentTarget: DeploymentTarget, release?: string, offerPromoteTo?: string): Promise<void> {
+async function notify(text: string, deploymentTarget: DeploymentTarget, release?: string, offerPromoteTo?: string[]): Promise<void> {
   if (!config.notificationToken || !config.notificationChatId) return;
   const buttons: { text: string; callback_data: string }[][] = [];
   // The bot asks for confirmation before actually acting, so these point at
   // the short "_ask" callbacks rather than the ones that execute directly.
   if (release)
-    buttons.push([{ text: `Откатить ${deploymentTarget.name}`, callback_data: `deploy_rb_ask:${deploymentTarget.name}:${release}` }]);
-  if (release && offerPromoteTo)
-    buttons.push([{ text: `Раскатить ${offerPromoteTo}`, callback_data: `deploy_pr_ask:${offerPromoteTo}:${release}` }]);
+    buttons.push([
+      {
+        text: `Откатить ${deploymentTarget.name}`,
+        callback_data: `deploy_rb_ask:${deploymentTarget.name}:${release}`,
+      },
+    ]);
+  if (release)
+    for (const promoteTarget of offerPromoteTo ?? [])
+      buttons.push([
+        {
+          text: `Раскатить ${promoteTarget}`,
+          callback_data: `deploy_pr_ask:${promoteTarget}:${release}`,
+        },
+      ]);
   const reply_markup = buttons.length > 0 ? { inline_keyboard: buttons } : undefined;
   await fetch(`${config.notificationApiBaseUrl.replace(/\/$/, "")}/bot${config.notificationToken}/sendMessage`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ chat_id: config.notificationChatId, text, ...(reply_markup ? { reply_markup } : {}) }),
+    body: JSON.stringify({
+      chat_id: config.notificationChatId,
+      text,
+      ...(reply_markup ? { reply_markup } : {}),
+    }),
     signal: AbortSignal.timeout(10_000),
-  }).catch((error) => console.error(JSON.stringify({ level: "error", message: "deploy notify failed", error: String(error) })));
+  }).catch((error) =>
+    console.error(
+      JSON.stringify({
+        level: "error",
+        message: "deploy notify failed",
+        error: String(error),
+      }),
+    ),
+  );
 }
 
 async function withDeploymentLock<T>(operation: () => Promise<T>): Promise<T> {
@@ -227,17 +275,26 @@ async function withDeploymentLock<T>(operation: () => Promise<T>): Promise<T> {
 async function deploy(deploymentTarget: DeploymentTarget, image: string, release: string): Promise<DeploymentState> {
   return withDeploymentLock(async () => {
     const previousImage = await currentImage(deploymentTarget);
-    if (!previousImage)
+    if (!previousImage && !deploymentTarget.allowInitialSeed)
       throw new HttpError(409, "Current release is not an immutable GHCR digest; seed DEPLOY_IMAGE_ENV_FILE before deploying.");
     const previousState = await state(deploymentTarget);
-    const previous: Release = previousState.current ?? {
-      image: previousImage,
-      revision: previousImage.slice(-12),
-      deployedAt: new Date().toISOString(),
-    };
+    const previous: Release | undefined = previousImage
+      ? (previousState.current ?? {
+          image: previousImage,
+          revision: previousImage.slice(-12),
+          deployedAt: new Date().toISOString(),
+        })
+      : undefined;
     try {
       await activate(deploymentTarget, image, release);
-      const next = { current: { image, revision: release, deployedAt: new Date().toISOString() }, previous };
+      const next = {
+        current: {
+          image,
+          revision: release,
+          deployedAt: new Date().toISOString(),
+        },
+        ...(previous ? { previous } : {}),
+      };
       await writeState(deploymentTarget, next);
       await notify(
         `Deploy ${deploymentTarget.name} ${release.slice(0, 12)} successful and healthy.`,
@@ -248,12 +305,32 @@ async function deploy(deploymentTarget: DeploymentTarget, image: string, release
       return next;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (!previous) {
+        const next = {
+          ...previousState,
+          lastFailure: {
+            revision: release,
+            message,
+            at: new Date().toISOString(),
+          },
+        };
+        await writeState(deploymentTarget, next);
+        throw new HttpError(502, `Initial deploy failed and has no prior immutable image to roll back to: ${message}`);
+      }
       try {
-        await activate(deploymentTarget, previousImage, previous.revision);
+        await activate(deploymentTarget, previous.image, previous.revision);
       } catch (rollbackError) {
         throw new HttpError(500, `Deploy failed (${message}); automatic rollback also failed: ${String(rollbackError)}`);
       }
-      const next = { ...previousState, current: previous, lastFailure: { revision: release, message, at: new Date().toISOString() } };
+      const next = {
+        ...previousState,
+        current: previous,
+        lastFailure: {
+          revision: release,
+          message,
+          at: new Date().toISOString(),
+        },
+      };
       await writeState(deploymentTarget, next);
       await notify(
         `Deploy ${deploymentTarget.name} ${release.slice(0, 12)} failed; automatic rollback to ${previous.revision.slice(0, 12)} succeeded.`,
@@ -266,9 +343,9 @@ async function deploy(deploymentTarget: DeploymentTarget, image: string, release
 
 /** Only "alex" is ever auto-deployed by CI; every other configured target is
  * deployed manually, by promoting the exact image alex just proved healthy. */
-function promotionCandidate(deploymentTarget: DeploymentTarget): string | undefined {
-  if (deploymentTarget.name !== config.defaultTarget) return undefined;
-  return [...targets.keys()].find((name) => name !== config.defaultTarget);
+function promotionCandidate(deploymentTarget: DeploymentTarget): string[] {
+  if (deploymentTarget.name !== config.defaultTarget) return [];
+  return [...targets.keys()].filter((name) => name !== config.defaultTarget);
 }
 
 async function promote(sourceTarget: DeploymentTarget, destTarget: DeploymentTarget, release: string): Promise<DeploymentState> {
@@ -293,7 +370,10 @@ async function rollback(deploymentTarget: DeploymentTarget, release: string): Pr
     } catch (error) {
       throw new HttpError(502, `Rollback failed: ${error instanceof Error ? error.message : String(error)}`);
     }
-    const next = { current: { ...before.previous, deployedAt: new Date().toISOString() }, previous: before.current };
+    const next = {
+      current: { ...before.previous, deployedAt: new Date().toISOString() },
+      previous: before.current,
+    };
     await writeState(deploymentTarget, next);
     await notify(
       `Manual rollback of ${deploymentTarget.name} to ${next.current.revision.slice(0, 12)} successful and healthy.`,
@@ -330,17 +410,32 @@ async function requestHandler(request: Request): Promise<Response> {
       if (!immutableImage(body?.image) || !revision(body?.release))
         throw new HttpError(400, "image must be an immutable configured GHCR digest and release must be a Git SHA.");
       const next = await deploy(deploymentTarget, body.image, body.release);
-      return json({ ok: true, target: deploymentTarget.name, release: next.current?.revision, currentRevision: next.current?.revision });
+      return json({
+        ok: true,
+        target: deploymentTarget.name,
+        release: next.current?.revision,
+        currentRevision: next.current?.revision,
+      });
     }
     if (request.method === "POST" && action === "rollback") {
       if (!revision(body?.release)) throw new HttpError(400, "release must be a Git SHA.");
       const next = await rollback(deploymentTarget, body.release);
-      return json({ ok: true, target: deploymentTarget.name, release: next.current?.revision, currentRevision: next.current?.revision });
+      return json({
+        ok: true,
+        target: deploymentTarget.name,
+        release: next.current?.revision,
+        currentRevision: next.current?.revision,
+      });
     }
     if (request.method === "POST" && action === "promote") {
       if (!revision(body?.release)) throw new HttpError(400, "release must be a Git SHA.");
       const next = await promote(target(config.defaultTarget), deploymentTarget, body.release);
-      return json({ ok: true, target: deploymentTarget.name, release: next.current?.revision, currentRevision: next.current?.revision });
+      return json({
+        ok: true,
+        target: deploymentTarget.name,
+        release: next.current?.revision,
+        currentRevision: next.current?.revision,
+      });
     }
     return json({ ok: false, message: "not found" }, 404);
   } catch (error) {
@@ -352,7 +447,14 @@ async function requestHandler(request: Request): Promise<Response> {
 
 function serve(hostname: string): void {
   Bun.serve({ hostname, port: config.port, fetch: requestHandler });
-  console.log(JSON.stringify({ level: "info", message: "deploy agent listening", host: hostname, port: config.port }));
+  console.log(
+    JSON.stringify({
+      level: "info",
+      message: "deploy agent listening",
+      host: hostname,
+      port: config.port,
+    }),
+  );
 }
 
 serve("127.0.0.1");

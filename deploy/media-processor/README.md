@@ -29,6 +29,12 @@ previous digest if that probe fails. Target names, image repository, compose
 path, service name, health URL, and deployment transport belong in deployment
 configuration; none are tied to a particular account or VM name.
 
+For a migration from a legacy hand-built process, the one-time
+`DEPLOY_ALLOW_INITIAL_SEED=true` setting permits the first immutable deployment
+without inventing a rollback revision. If it fails, it reports that fact and
+does not claim to have rolled back. Remove the setting after the first healthy
+image: every later deployment then has a genuine previous digest.
+
 The initial host bootstrap installs the compose file, a private deployment
 agent, and an outbound management tunnel. Afterwards the agent receives only
 immutable digests. Do not edit files in the worker directory or run `docker
