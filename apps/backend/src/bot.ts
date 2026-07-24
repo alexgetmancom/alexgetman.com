@@ -1,4 +1,4 @@
-import { Bot, InlineKeyboard } from "grammy";
+import { Bot, type Context } from "grammy";
 import { handleAnalyticsCallback } from "./bot/analytics-screen.js";
 import { botLocale } from "./bot/i18n.js";
 import { buildMainMenu, persistentKeyboard, showMainMenu } from "./bot/navigation.js";
@@ -17,8 +17,6 @@ import { log } from "./foundation/logger.js";
 import { clearTelegramAnalyticsDashboard } from "./interfaces/telegram/control-cards.js";
 import { handleTelegramDeliveryPreviewCallback } from "./interfaces/telegram/delivery-previews.js";
 import { t } from "./interfaces/telegram/i18n/index.js";
-import { formatMsk } from "./interfaces/telegram/time.js";
-import { studioServices } from "./studio/services/index.js";
 
 export function createBot(config: BackendConfig, backendDb: BackendDb): Bot | null {
   if (!config.controllerBotToken) {
@@ -27,6 +25,10 @@ export function createBot(config: BackendConfig, backendDb: BackendDb): Bot | nu
   }
   const bot = new Bot(config.controllerBotToken, { client: { apiRoot: config.TELEGRAM_API_BASE_URL } });
   bindBotHandlers(bot, config, backendDb);
+  void bot.api
+    .setMyCommands([{ command: "start", description: "Восстановить меню бота" }])
+    .then(() => log("info", "Telegram commands menu configured"))
+    .catch((error) => log("error", "Failed to configure Telegram commands menu", { error: String(error) }));
   bot.catch((error) => log("error", "grammY handler failed", { error: String(error.error) }));
   return bot;
 }
@@ -48,13 +50,15 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
   });
   bot.use(mainMenu);
 
-  bot.command("start", async (ctx) => {
+  const showBotMenu = async (ctx: Context) => {
     const locale = botLocale(backendDb, Number(ctx.from?.id));
+    if (!isAdmin(config, ctx.from?.id)) return void (await ctx.reply(t(locale, "bot.forbidden")));
     await ctx.reply(t(locale, "start.menu-hint"), {
       reply_markup: persistentKeyboard(locale),
     });
     await showMainMenu(ctx, backendDb, mainMenu);
-  });
+  };
+  bot.command("start", showBotMenu);
   bot.hears(["☰ Меню", "☰ Menu", "☰ Показать меню", "☰ Show menu"], (ctx) => showMainMenu(ctx, backendDb, mainMenu));
   bot.hears("⚙️", async (ctx) => {
     if (!isAdmin(config, ctx.from?.id)) return;
@@ -70,18 +74,6 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
     const locale = botLocale(backendDb, Number(ctx.from?.id));
     if (!isAdmin(config, ctx.from?.id)) return void (await ctx.reply(t(locale, "bot.forbidden")));
     await startPostScreen(ctx, backendDb);
-  });
-  bot.command("pipeline_status", (ctx) => ctx.reply(config.COMMAND_CENTER_URL));
-  bot.command("schedule", async (ctx) => {
-    const locale = botLocale(backendDb, Number(ctx.from?.id));
-    if (!isAdmin(config, ctx.from?.id)) return void (await ctx.reply(t(locale, "bot.forbidden")));
-    const rows = studioServices(backendDb, config)
-      .queue.snapshot(Number(ctx.from?.id))
-      .upcoming.filter((item) => item.kind === "post");
-    if (rows.length === 0) return void (await ctx.reply(t(locale, "bot.no-scheduled")));
-    const keyboard = new InlineKeyboard();
-    for (const draft of rows) keyboard.text(`#${draft.id} ${formatMsk(draft.time, config)}`, `schedule:${draft.id}`).row();
-    await ctx.reply(t(locale, "bot.scheduled-drafts"), { reply_markup: keyboard });
   });
   bot.on("message", async (ctx) => {
     if (!isAdmin(config, ctx.from?.id)) return void (await ctx.reply(t(botLocale(backendDb, Number(ctx.from?.id)), "bot.forbidden")));

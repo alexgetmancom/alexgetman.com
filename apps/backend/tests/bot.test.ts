@@ -5,7 +5,7 @@ import { getPostAdminState, setPostAdminState } from "../src/bot/post-state.js";
 import { draftPreview } from "../src/bot/preview.js";
 import { postProgress } from "../src/bot/progress.js";
 import { DEFAULT_TARGETS, TARGETS, targetLocale } from "../src/botTargets.js";
-import { createDraftFromMessage } from "../src/content/drafts.js";
+import { createDraftFromMessage, requireDraft } from "../src/content/drafts.js";
 import { entitiesToHtml } from "../src/content/text.js";
 import { type BackendDb, openBackendDb } from "../src/db/client.js";
 import { botUiSettings } from "../src/db/schema.js";
@@ -13,6 +13,7 @@ import { loadConfig } from "../src/foundation/config.js";
 import { cancelDraft, scheduledDrafts } from "../src/publishing/draft-lifecycle.js";
 import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
 import { reconcilePublication } from "../src/publishing/queue.js";
+import { postDeliveryProjections } from "../src/studio/projections.js";
 
 let backendDb: BackendDb | null = null;
 
@@ -252,6 +253,23 @@ describe("Telegram controller flow", () => {
     expect(backendDb.sqlite.prepare("SELECT html FROM post_locales WHERE locale='ru'").get()).toEqual({
       html: "<strong>Жирный</strong> и ссылка",
     });
+  });
+
+  it("retains source formatting entities in the Telegram delivery preview", () => {
+    backendDb = openBackendDb(":memory:");
+    const entities = [
+      { type: "bold", offset: 0, length: 6 },
+      { type: "text_link", offset: 9, length: 6, url: "https://example.com" },
+    ];
+    const draftId = createDraftFromMessage(backendDb, 42, {
+      text: "Жирный и ссылка",
+      textEn: "Bold and link",
+      entities,
+      media: [],
+    });
+
+    const preview = postDeliveryProjections(requireDraft(backendDb, draftId)).projections.find((item) => item.locale === "ru");
+    expect(preview?.entities).toEqual(entities);
   });
 
   it("renders a live post progress card from publication job states", () => {

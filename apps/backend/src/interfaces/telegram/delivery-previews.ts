@@ -27,27 +27,31 @@ export async function sendTelegramDeliveryPreviews(
 
 /** Reuses the same safe Telegram media rendering for a published archive item. */
 export async function sendTelegramArchiveMedia(ctx: Context, media: Record<string, unknown>[]): Promise<void> {
-  await sendProjectionContent(ctx, { id: "archive", label: "Archive", targets: [], text: "", media, notes: [] }, true);
+  await sendProjectionContent(ctx, { id: "archive", label: "Archive", targets: [], text: "", entities: [], media, notes: [] }, true);
 }
 
 async function sendProjectionContent(ctx: Context, projection: DeliveryProjection, includeVideo = true): Promise<void> {
   const metadata = projection.metadata ? formatMetadata(projection.metadata) : "";
   const text = [projection.text, metadata].filter(Boolean).join("\n\n");
+  // Metadata is preview-only and has no source entities; retain formatting only
+  // when the projection contains its original post text unchanged.
+  const entities = metadata ? [] : projection.entities;
   const mediaItems = includeVideo
     ? projection.media
     : projection.media.filter((item) => String(item.type ?? "photo").toLowerCase() !== "video");
   const first = mediaItems[0];
   if (!first) {
-    if (text) await ctx.reply(text);
+    if (text) await ctx.reply(text, entityOptions(entities));
     return;
   }
   const source = mediaSource(first);
   if (!source) {
-    if (text) await ctx.reply(text);
+    if (text) await ctx.reply(text, entityOptions(entities));
     return;
   }
   const type = String(first.type ?? "photo").toLowerCase();
-  const caption = text && text.length <= 1024 ? { caption: text } : {};
+  const hasCaption = Boolean(text && text.length <= 1024);
+  const caption = hasCaption ? { caption: text, ...captionEntityOptions(entities, text.length) } : {};
   if (mediaItems.length > 1) {
     const group = mediaItems.flatMap((item, index) => {
       const media = mediaSource(item);
@@ -62,13 +66,13 @@ async function sendProjectionContent(ctx: Context, projection: DeliveryProjectio
     });
     if (group.length > 1) {
       await ctx.replyWithMediaGroup(group as never);
-      if (text && !caption.caption) await ctx.reply(text);
+      if (text && !hasCaption) await ctx.reply(text, entityOptions(entities));
       return;
     }
   }
   if (type === "video") await ctx.replyWithVideo(source, caption);
   else await ctx.replyWithPhoto(source, caption);
-  if (text && !caption.caption) await ctx.reply(text);
+  if (text && !hasCaption) await ctx.reply(text, entityOptions(entities));
   for (const item of mediaItems.slice(1)) {
     const next = mediaSource(item);
     if (!next) continue;
@@ -103,12 +107,28 @@ export async function handleTelegramDeliveryPreviewCallback(ctx: Context, backen
       label: projection.label,
       targets: projection.targets,
       text: "",
+      entities: [],
       media: projection.media,
       notes: projection.notes,
     },
     true,
   );
   return true;
+}
+
+function entityOptions(entities: Record<string, unknown>[]) {
+  return entities.length ? { entities: entities as never } : {};
+}
+
+function captionEntityOptions(entities: Record<string, unknown>[], length: number) {
+  const safeEntities = entities.flatMap((entity) => {
+    const offset = Number(entity.offset);
+    const entityLength = Number(entity.length);
+    if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(entityLength) || offset < 0 || entityLength <= 0 || offset >= length)
+      return [];
+    return [{ ...entity, offset, length: Math.min(entityLength, length - offset) }];
+  });
+  return safeEntities.length ? { caption_entities: safeEntities as never } : {};
 }
 
 function mediaSource(media: Record<string, unknown>): InputFile | string | null {

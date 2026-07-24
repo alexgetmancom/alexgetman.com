@@ -14,6 +14,8 @@ export type DeliveryProjection = {
   targets: string[];
   locale?: "ru" | "en";
   text: string;
+  /** Native Telegram entities retained for a faithful delivery preview. */
+  entities: Record<string, unknown>[];
   media: Record<string, unknown>[];
   metadata?: Record<string, unknown>;
   notes: string[];
@@ -25,15 +27,18 @@ export function postDeliveryProjections(draft: {
   text_ru: string;
   text_en_approved: string | null;
   text_en_machine: string | null;
+  text_ru_entities_json: string | null;
+  text_en_entities_json: string | null;
   media_ru_json: string | null;
   media_en_json: string | null;
   targets_json: string;
 }) {
   const targets = Object.entries(parseTargets(draft.targets_json)).flatMap(([target, enabled]) => (enabled ? [target] : []));
   const content = {
-    ru: { text: draft.text_ru, media: parseArrayValue(draft.media_ru_json) },
+    ru: { text: draft.text_ru, entities: parseArrayValue(draft.text_ru_entities_json), media: parseArrayValue(draft.media_ru_json) },
     en: {
       text: draft.text_en_approved ?? draft.text_en_machine ?? draft.text_ru,
+      entities: parseArrayValue(draft.text_en_entities_json),
       media: (() => {
         const value = parseArrayValue(draft.media_en_json);
         return value.length ? value : parseArrayValue(draft.media_ru_json);
@@ -66,6 +71,7 @@ export function postDeliveryProjections(draft: {
         targets: selected,
         locale,
         text: content[locale].text,
+        entities: content[locale].entities,
         media: content[locale].media,
         notes: deviationNotes[locale],
       } satisfies DeliveryProjection,
@@ -88,6 +94,7 @@ export function videoDeliveryProjections(backendDb: BackendDb, videoDraftId: num
     label: target.target === "youtube_shorts" ? "Preview · YouTube Shorts" : "Preview · Instagram Reels",
     targets: [target.target],
     text: "",
+    entities: [],
     media,
     metadata: (target.metadataJson ?? {}) as Record<string, unknown>,
     notes: [],
