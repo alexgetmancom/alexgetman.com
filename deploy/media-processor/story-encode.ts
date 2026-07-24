@@ -1,23 +1,38 @@
-/** Canonical Story transcode recipe, shared by the in-process path
- * (apps/backend/src/delivery/story-media.ts) and this remote worker.
- * The two build contexts are isolated (this Docker image copies only its own
- * directory), so apps/backend imports this file directly across the repo tree
- * instead of duplicating the ffmpeg arguments. Keep both callers in sync by
- * changing only this file. */
+/** Canonical vertical-media recipes shared by the local and remote executors. */
 
-// One second of headroom below the 60-second story limit used by every
-// supported publishing target.
 export const STORY_MAX_DURATION_SECONDS = 59;
+export const VERTICAL_ASPECT_RATIO = 9 / 16;
+/** Within five percent of 9:16, preserve a plain contain render. */
+export const VERTICAL_ASPECT_TOLERANCE = 0.05;
 
-// Shared high-quality master: 1080x1920, 50 FPS, H.264 video and AAC 320k audio.
-// H.264/AVC is required, not HEVC: Telegram's story upload rejects HEVC-encoded
-// video with MEDIA_FILE_INVALID (400).
-// force_divisible_by=2 keeps both dimensions even, which yuv420p and VAAPI require.
-const STORY_SCALE_FILTER =
+const VERTICAL_SCALE_FILTER =
   "scale=1080:1920:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black";
+const VERTICAL_FOREGROUND_FILTER = "scale=1080:1920:force_original_aspect_ratio=decrease:force_divisible_by=2";
+const VERTICAL_BACKGROUND_FILTER =
+  "scale=1080:1920:force_original_aspect_ratio=increase:force_divisible_by=2,crop=1080:1920,boxblur=20:10,eq=brightness=-0.10:saturation=0.82";
 
-export function storyFfmpegArgs(input: string, output: string, kind: "video" | "image", extraVideoArgs: string[] = []): string[] {
-  if (kind === "image") return ["-y", "-i", input, "-vf", STORY_SCALE_FILTER, "-frames:v", "1", "-q:v", "2", output];
+export function needsVerticalBlur(width: number, height: number): boolean {
+  if (!(width > 0 && height > 0)) return false;
+  return Math.abs(width / height / VERTICAL_ASPECT_RATIO - 1) > VERTICAL_ASPECT_TOLERANCE;
+}
+
+function verticalVideoFilter(duration: number | null, blur: boolean, splitOutputs: number): string {
+  const trim = duration == null ? "" : `trim=duration=${duration},`;
+  if (!blur)
+    return `[0:v:0]${trim}fps=50,${VERTICAL_SCALE_FILTER},format=nv12,hwupload,split=${splitOutputs}${Array.from({ length: splitOutputs }, (_, i) => `[out${i}]`).join("")}`;
+  return `[0:v:0]${trim}fps=50,split=2[background-source][foreground-source];[background-source]${VERTICAL_BACKGROUND_FILTER}[background];[foreground-source]${VERTICAL_FOREGROUND_FILTER}[foreground];[background][foreground]overlay=(W-w)/2:(H-h)/2,format=nv12,hwupload,split=${splitOutputs}${Array.from({ length: splitOutputs }, (_, i) => `[out${i}]`).join("")}`;
+}
+
+function verticalImageFilter(blur: boolean): string {
+  if (!blur) return VERTICAL_SCALE_FILTER;
+  return `[0:v:0]split=2[background-source][foreground-source];[background-source]${VERTICAL_BACKGROUND_FILTER}[background];[foreground-source]${VERTICAL_FOREGROUND_FILTER}[foreground];[background][foreground]overlay=(W-w)/2:(H-h)/2`;
+}
+
+export function storyFfmpegArgs(input: string, output: string, kind: "video" | "image", blur = false): string[] {
+  if (kind === "image") {
+    const filter = verticalImageFilter(blur);
+    return ["-y", "-i", input, ...(blur ? ["-filter_complex", filter] : ["-vf", filter]), "-frames:v", "1", "-q:v", "2", output];
+  }
   return [
     "-y",
     "-i",
@@ -25,7 +40,7 @@ export function storyFfmpegArgs(input: string, output: string, kind: "video" | "
     "-t",
     String(STORY_MAX_DURATION_SECONDS),
     "-vf",
-    STORY_SCALE_FILTER,
+    VERTICAL_SCALE_FILTER,
     "-r",
     "50",
     "-map",
@@ -58,21 +73,17 @@ export function storyFfmpegArgs(input: string, output: string, kind: "video" | "
     "avc1",
     "-movflags",
     "+faststart",
-    ...extraVideoArgs,
     output,
   ];
 }
 
-/**
- * VM-106's Intel iGPU owns the remote executor.  This is deliberately a
- * separate command from storyFfmpegArgs(): the local executor may not have a
- * VAAPI device, and provider selection is explicit in MEDIA_PROCESSOR_PROVIDER
- * rather than an automatic fallback.
- */
-export function remoteStoryFfmpegArgs(input: string, standardOutput: string, telegramOutput: string, telegramVideoKbps: number): string[] {
-  // One decode, one scale/hwupload and one VAAPI encoder session per output.
-  // split is intentional: rendering the Telegram derivative in a separate
-  // ffmpeg process doubles the expensive decode/scale work on the N100.
+export function remoteStoryFfmpegArgs(
+  input: string,
+  standardOutput: string,
+  telegramOutput: string,
+  telegramVideoKbps: number,
+  blur: boolean,
+): string[] {
   return [
     "-init_hw_device",
     "vaapi=va:/dev/dri/renderD128",
@@ -82,11 +93,9 @@ export function remoteStoryFfmpegArgs(input: string, standardOutput: string, tel
     "-i",
     input,
     "-filter_complex",
-    `[0:v:0]trim=duration=${STORY_MAX_DURATION_SECONDS},fps=50,${STORY_SCALE_FILTER},format=nv12,hwupload,split=2[standard][telegram]`,
-    "-r",
-    "50",
+    verticalVideoFilter(STORY_MAX_DURATION_SECONDS, blur, 2),
     "-map",
-    "[standard]",
+    "[out0]",
     "-map",
     "0:a?",
     "-c:v",
@@ -99,8 +108,6 @@ export function remoteStoryFfmpegArgs(input: string, standardOutput: string, tel
     "6600k",
     "-g",
     "50",
-    // Copy preserves the submitted AAC track exactly (64…320 kbps stays as
-    // submitted), rather than needlessly re-encoding or upsampling it.
     "-c:a",
     "copy",
     "-tag:v",
@@ -109,7 +116,7 @@ export function remoteStoryFfmpegArgs(input: string, standardOutput: string, tel
     "+faststart",
     standardOutput,
     "-map",
-    "[telegram]",
+    "[out1]",
     "-map",
     "0:a?",
     "-c:v",
@@ -130,4 +137,42 @@ export function remoteStoryFfmpegArgs(input: string, standardOutput: string, tel
     "+faststart",
     telegramOutput,
   ];
+}
+
+export function remoteSiteVideoFfmpegArgs(input: string, output: string, blur: boolean): string[] {
+  return [
+    "-init_hw_device",
+    "vaapi=va:/dev/dri/renderD128",
+    "-filter_hw_device",
+    "va",
+    "-y",
+    "-i",
+    input,
+    "-filter_complex",
+    verticalVideoFilter(null, blur, 1),
+    "-map",
+    "[out0]",
+    "-map",
+    "0:a?",
+    "-c:v",
+    "h264_vaapi",
+    "-b:v",
+    "3150k",
+    "-maxrate",
+    "3300k",
+    "-bufsize",
+    "6600k",
+    "-c:a",
+    "copy",
+    "-tag:v",
+    "avc1",
+    "-movflags",
+    "+faststart",
+    output,
+  ];
+}
+
+export function verticalImageFfmpegArgs(input: string, output: string, blur: boolean): string[] {
+  const filter = verticalImageFilter(blur);
+  return ["-y", "-i", input, ...(blur ? ["-filter_complex", filter] : ["-vf", filter]), "-frames:v", "1", "-q:v", "2", output];
 }

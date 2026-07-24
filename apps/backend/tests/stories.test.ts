@@ -2,7 +2,7 @@ import { describe, expect, it, mock } from "bun:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { remoteStoryFfmpegArgs } from "../../../deploy/media-processor/story-encode.js";
+import { needsVerticalBlur, remoteStoryFfmpegArgs } from "../../../deploy/media-processor/story-encode.js";
 import { publishInstagramStory } from "../src/delivery/social/instagram.js";
 import { telegramStoryCaption, telegramStoryCaptionInput, telegramStoryUploadMedia } from "../src/delivery/social/telegramStories.js";
 import { generateStoryMedia } from "../src/delivery/story-media.js";
@@ -59,12 +59,19 @@ describe("story publishers", () => {
   });
 
   it("uses VAAPI only in the remote worker recipe", () => {
-    const args = remoteStoryFfmpegArgs("source.mp4", "standard.mp4", "telegram.mp4", 1100);
+    const args = remoteStoryFfmpegArgs("source.mp4", "standard.mp4", "telegram.mp4", 1100, true);
     expect(args.slice(0, 4)).toEqual(["-init_hw_device", "vaapi=va:/dev/dri/renderD128", "-filter_hw_device", "va"]);
     expect(args.slice(args.indexOf("-c:v"), args.indexOf("-c:v") + 2)).toEqual(["-c:v", "h264_vaapi"]);
     expect(args[args.indexOf("-filter_complex") + 1]).toContain("format=nv12,hwupload,split=2");
     expect(args.filter((arg) => arg === "h264_vaapi")).toHaveLength(2);
     expect(args).toContain("telegram.mp4");
+  });
+
+  it("keeps near-9:16 media plain and adds blur beyond the five-percent tolerance", () => {
+    expect(needsVerticalBlur(1080, 1920)).toBe(false);
+    expect(needsVerticalBlur(1080, 1830)).toBe(false);
+    expect(needsVerticalBlur(1080, 1600)).toBe(true);
+    expect(needsVerticalBlur(720, 1600)).toBe(true);
   });
 
   it("uploads generated story paths as files, rather than treating them as Telegram file IDs", () => {

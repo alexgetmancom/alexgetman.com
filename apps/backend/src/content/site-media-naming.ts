@@ -19,3 +19,8 @@ export function siteMediaFilename(postId: number, locale: "ru" | "en", index: nu
 export function siteMediaPosterFilename(postId: number, locale: "ru" | "en", index: number): string {
   return `${siteMediaBaseName(postId, locale, index)}-poster.jpg`;
 }
+
+/** Public 9:16 projection used only by the vertical web viewer. */
+export function siteMediaVerticalFilename(postId: number, locale: "ru" | "en", index: number, kind: "image" | "video"): string {
+  return `${siteMediaBaseName(postId, locale, index)}-vertical.${kind === "video" ? "mp4" : "jpg"}`;
+}

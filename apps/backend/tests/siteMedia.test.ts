@@ -36,10 +36,10 @@ describe("site media materialization", () => {
     const initial = await materializeSiteMedia(config, 1, "ru", [{ type: "image", local_path: first }]);
     await materializeSiteMedia(config, 1, "ru", [{ type: "image", local_path: second }]);
 
-    expect(initial[0]?.path).toMatch(/^media\/posts\/1-ru-0\.png\?v=[a-f0-9]{12}$/);
+    expect(initial[0]?.path).toMatch(/^media\/posts\/1-ru-0-vertical\.jpg\?v=[a-f0-9]{12}$/);
     expect(fs.readFileSync(path.join(directory, "media", "posts", "1-ru-0.png"))).toEqual(image);
     for (const width of [360, 640, 960])
-      expect(fs.existsSync(path.join(directory, "generated", "responsive", `media-posts-1-ru-0-${width}.webp`))).toBe(true);
+      expect(fs.existsSync(path.join(directory, "generated", "responsive", `media-posts-1-ru-0-vertical-${width}.webp`))).toBe(true);
   });
 
   it("does not regenerate unchanged responsive derivatives on every feed build", async () => {
@@ -51,6 +51,8 @@ describe("site media materialization", () => {
     await materializeSiteMedia(config, 2, "en", [{ type: "image", local_path: image }]);
     await materializeSiteMedia(config, 2, "en", [{ type: "image", local_path: image }]);
 
-    expect(ffmpegCalls).toBe(3);
+    // one vertical projection plus its three responsive derivatives; the
+    // unchanged second build must not add further work.
+    expect(ffmpegCalls).toBe(4);
   });
 });

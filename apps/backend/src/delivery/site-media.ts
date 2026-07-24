@@ -6,6 +6,7 @@ import {
   SITE_MEDIA_URL_PREFIX,
   siteMediaFilename,
   siteMediaPosterFilename,
+  siteMediaVerticalFilename,
 } from "../content/site-media-naming.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { runFfmpeg } from "../foundation/runtime/ffmpeg.js";
@@ -41,26 +42,86 @@ export async function materializeSiteMedia(
     const target = path.join(directory, filename);
     await copyOrDownload(config, item, target, fetchImpl);
     await fs.promises.chmod(target, 0o664);
+    const verticalName = siteMediaVerticalFilename(postId, locale, index, kind);
+    const vertical = path.join(directory, verticalName);
+    await materializeVerticalViewerMedia(config, target, vertical, kind);
     const output: Record<string, unknown> = {
       ...item,
       type: kind,
       // Public media is intentionally long-lived in browser/CDN caches. A content
       // version keeps a replacement from reusing the previous image URL.
-      path: versionedPublicPath(`${SITE_MEDIA_URL_PREFIX}/${filename}`, target),
+      // The web Story player always receives the pre-composited 9:16 file.
+      // `target` remains a durable original beside it, never a browser layer.
+      path: versionedPublicPath(`${SITE_MEDIA_URL_PREFIX}/${verticalName}`, vertical),
     };
     if (kind === "video") {
       const posterName = siteMediaPosterFilename(postId, locale, index);
       const poster = path.join(directory, posterName);
-      await runFfmpeg(["-y", "-ss", "0.5", "-i", target, "-frames:v", "1", "-q:v", "2", poster]);
+      await runFfmpeg(["-y", "-ss", "0.5", "-i", vertical, "-frames:v", "1", "-q:v", "2", poster]);
       await fs.promises.chmod(poster, 0o664);
       await materializeResponsiveVariants(config, poster);
       output.poster = versionedPublicPath(`${SITE_MEDIA_URL_PREFIX}/${posterName}`, poster);
     } else {
-      await materializeResponsiveVariants(config, target);
+      await materializeResponsiveVariants(config, vertical);
     }
     result.push(output);
   }
   return result;
+}
+
+async function materializeVerticalViewerMedia(
+  config: BackendConfig,
+  source: string,
+  output: string,
+  kind: "image" | "video",
+): Promise<void> {
+  if (await isCurrentTransform(source, output)) return;
+  if (config.MEDIA_PROCESSOR_PROVIDER !== "remote_http") {
+    // Explicit local mode remains usable for self-hosters without VM-106. The
+    // production route below owns the blurred composite; this CPU recipe keeps
+    // the same 9:16 no-crop contract.
+    await runFfmpeg([
+      "-y",
+      "-i",
+      source,
+      "-vf",
+      "scale=1080:1920:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black",
+      ...(kind === "video"
+        ? ["-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-preset", "medium", "-c:a", "copy"]
+        : ["-frames:v", "1", "-q:v", "2"]),
+      output,
+    ]);
+    return;
+  }
+  if (!config.MEDIA_PROCESSOR_URL || !config.MEDIA_PROCESSOR_TOKEN) throw new Error("site_vertical_media_requires_remote_processor");
+  const stat = await fs.promises.stat(source);
+  const idempotencyKey = crypto
+    .createHash("sha256")
+    .update(`site-vertical-v1:${source}:${stat.size}:${stat.mtimeMs}:${kind}`)
+    .digest("hex");
+  const base = config.MEDIA_PROCESSOR_URL.replace(/\/$/, "");
+  const response = await fetch(`${base}/v1/transforms/ffmpeg`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${config.MEDIA_PROCESSOR_TOKEN}`,
+      "content-length": String(stat.size),
+      "x-studio-transform": "site_vertical",
+      "x-studio-media-kind": kind === "video" ? "video" : "image",
+      "x-studio-idempotency-key": idempotencyKey,
+    },
+    body: Bun.file(source),
+    signal: AbortSignal.timeout(config.MEDIA_PROCESSOR_TIMEOUT_SECONDS * 1000),
+  });
+  if (!response.ok) throw new Error(`site_vertical_media_failed: ${response.status} ${(await response.text()).slice(0, 800)}`);
+  const manifest = (await response.json()) as { outputs?: { standard?: unknown } };
+  if (!manifest.outputs?.standard) throw new Error("site_vertical_media_failed: missing standard output");
+  const download = await fetch(`${base}/v1/transforms/ffmpeg/${idempotencyKey}/standard`, {
+    headers: { authorization: `Bearer ${config.MEDIA_PROCESSOR_TOKEN}` },
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!download.ok) throw new Error(`site_vertical_media_download_failed: ${download.status}`);
+  await Bun.write(output, await download.arrayBuffer());
+  await fs.promises.chmod(output, 0o664);
 }
 
 function versionedPublicPath(publicPath: string, filePath: string): string {
@@ -154,6 +215,15 @@ async function isCurrentCopy(source: string, target: string): Promise<boolean> {
 }
 
 async function isCurrentDerivative(source: string, target: string): Promise<boolean> {
+  try {
+    const [sourceStat, targetStat] = await Promise.all([fs.promises.stat(source), fs.promises.stat(target)]);
+    return targetStat.mtimeMs >= sourceStat.mtimeMs;
+  } catch {
+    return false;
+  }
+}
+
+async function isCurrentTransform(source: string, target: string): Promise<boolean> {
   try {
     const [sourceStat, targetStat] = await Promise.all([fs.promises.stat(source), fs.promises.stat(target)]);
     return targetStat.mtimeMs >= sourceStat.mtimeMs;
