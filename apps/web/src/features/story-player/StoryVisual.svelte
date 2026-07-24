@@ -148,17 +148,8 @@ function onImageError(event: Event): void {
         />
       {/if}
       {#if post.image && isVideo && !videoFailed}
-        {#if post.posterSrc || post.fallbackImage}
-          <img
-            class="story-visual__video-backdrop"
-            src={post.posterSrc || post.fallbackImage}
-            alt=""
-            aria-hidden="true"
-          />
-        {/if}
         <video
           bind:this={video}
-          class="story-visual__video-foreground"
           src={post.image}
           poster={post.posterSrc || post.fallbackImage || undefined}
           muted
@@ -281,20 +272,13 @@ function onImageError(event: Event): void {
     background: #000000;
   }
 
-  .story-visual__video-backdrop {
-    object-fit: cover;
-    filter: blur(28px) saturate(1.18) brightness(0.58);
-    transform: scale(1.14);
-    opacity: 0.92;
-  }
-
-  .story-visual__video-foreground {
+  .story-visual__link video {
     /* Держим видеоповерхность ниже полосы прогресса: некоторые браузеры
        рендерят видео в композитном слое поверх более высокого z-index.
        `contain` сохраняет горизонтальные ролики без обрезки боков. */
-    z-index: 1;
     clip-path: inset(8px 0 0);
     object-fit: contain;
+    background: #000;
   }
 
   /* -------------------- Полоса прогресса текущего поста --------------------- */
