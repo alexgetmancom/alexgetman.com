@@ -19,12 +19,14 @@ jobs:
     outputs:
       image_digest: ${{ steps.image.outputs.digest }}
       media_processor_digest: ${{ steps.media_processor.outputs.digest }}
-      media_processor_deploy_agent_digest: ${{ steps.media_processor_deploy_agent.outputs.digest }}
       release_sha: ${{ github.event.workflow_run.head_sha }}
     steps:
       - uses: actions/checkout@v5
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -55,16 +57,15 @@ jobs:
           tags: ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor:${{ github.event.workflow_run.head_sha }},ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - name: Build and publish media processor deploy-agent image
+      - name: Compile media processor deploy-agent
         id: media_processor_deploy_agent
-        uses: docker/build-push-action@v6
+        run: bun build --compile --target=bun-linux-x64 --outfile media-processor-deploy-agent deploy/deploy-agent.ts
+      - name: Upload media processor deploy-agent
+        uses: actions/upload-artifact@v4
         with:
-          context: .
-          file: ./deploy/media-processor/deploy-agent.Dockerfile
-          push: true
-          tags: ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor-deploy-agent:${{ github.event.workflow_run.head_sha }},ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor-deploy-agent:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          name: media-processor-deploy-agent-${{ github.event.workflow_run.head_sha }}
+          path: media-processor-deploy-agent
+          if-no-files-found: error
 
   deploy:
     name: Deploy immutable image
@@ -94,12 +95,11 @@ jobs:
           DEPLOY_AGENT_TOKEN: ${{ secrets.DEPLOY_AGENT_TOKEN }}
           IMAGE: ghcr.io/${{ github.repository_owner }}/alexgetman-backend@${{ needs.docker.outputs.image_digest }}
           MEDIA_PROCESSOR_IMAGE: ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor@${{ needs.docker.outputs.media_processor_digest }}
-          MEDIA_PROCESSOR_DEPLOY_AGENT_IMAGE: ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor-deploy-agent@${{ needs.docker.outputs.media_processor_deploy_agent_digest }}
           RELEASE: ${{ needs.docker.outputs.release_sha }}
           MARU_DEPLOY_ENABLED: ${{ vars.MARU_DEPLOY_ENABLED }}
         run: |
           test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER" && test -n "$DEPLOY_AGENT_TOKEN"
-          media_release=$(printf '{"release":"%s","image":"%s","deployAgentImage":"%s"}\n' "$RELEASE" "$MEDIA_PROCESSOR_IMAGE" "$MEDIA_PROCESSOR_DEPLOY_AGENT_IMAGE")
+          media_release=$(printf '{"release":"%s","image":"%s"}\n' "$RELEASE" "$MEDIA_PROCESSOR_IMAGE")
           ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "install -d -m 0700 /var/lib/alexgetman-deploy"
           ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "umask 077; printf '%s\\n' '$media_release' > /var/lib/alexgetman-deploy/media-processor-release.json"
           runtime=/home/deploy/alexgetman-runtime

@@ -1,27 +1,4 @@
 services:
-  media-processor-deploy-agent:
-    image: ${MEDIA_PROCESSOR_DEPLOY_AGENT_IMAGE:?set an immutable deploy-agent image digest}
-    pull_policy: always
-    container_name: media-processor-deploy-agent
-    restart: unless-stopped
-    env_file:
-      - ./deploy-agent.env
-    environment:
-      DEPLOY_DEFAULT_TARGET: worker
-      DEPLOY_COMPOSE_FILE: /runtime/compose.yml
-      DEPLOY_IMAGE_ENV_FILE: /runtime/deploy-image.env
-      DEPLOY_STATE_FILE: /state/state.json
-      DEPLOY_HEALTH_URL: http://media-processor:8787/health
-      DEPLOY_CONTAINER_NAME: studio-media-processor
-      DEPLOY_SERVICE_NAME: media-processor
-      DEPLOY_IMAGE_ENV_KEY: MEDIA_PROCESSOR_IMAGE
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ./:/runtime
-      - media_processor_deploy_state:/state
-    ports:
-      - "${MEDIA_PROCESSOR_DEPLOY_BIND_ADDRESS:-127.0.0.1}:9898:9898"
-
   media-processor:
     image: ${MEDIA_PROCESSOR_IMAGE:?set an immutable media-processor image digest}
     pull_policy: always
@@ -44,4 +21,3 @@ services:
 
 volumes:
   media_processor_jobs:
-  media_processor_deploy_state:
