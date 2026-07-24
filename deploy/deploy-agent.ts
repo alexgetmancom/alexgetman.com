@@ -221,6 +221,23 @@ async function activate(deploymentTarget: DeploymentTarget, image: string, relea
   await waitForHealthy(deploymentTarget);
 }
 
+/** Preserve a hand-managed predecessor during the one-time Compose cutover. */
+async function parkLegacyContainer(deploymentTarget: DeploymentTarget): Promise<string | undefined> {
+  if (deploymentTarget.remoteUrl) return undefined;
+  const id = await command(["container", "inspect", "--format", "{{.Id}}", deploymentTarget.container], true);
+  if (!id) return undefined;
+  const legacy = `${deploymentTarget.container}-legacy-${Date.now()}`;
+  await command(["stop", deploymentTarget.container]);
+  await command(["rename", deploymentTarget.container, legacy]);
+  return legacy;
+}
+
+async function restoreLegacyContainer(deploymentTarget: DeploymentTarget, legacy: string): Promise<void> {
+  await command(["rm", "-f", deploymentTarget.container], true);
+  await command(["rename", legacy, deploymentTarget.container]);
+  await command(["start", deploymentTarget.container]);
+}
+
 async function notify(text: string, deploymentTarget: DeploymentTarget, release?: string, offerPromoteTo?: string[]): Promise<void> {
   if (!config.notificationToken || !config.notificationChatId) return;
   const buttons: { text: string; callback_data: string }[][] = [];
@@ -285,7 +302,9 @@ async function deploy(deploymentTarget: DeploymentTarget, image: string, release
           deployedAt: new Date().toISOString(),
         })
       : undefined;
+    let legacyContainer: string | undefined;
     try {
+      if (!previous) legacyContainer = await parkLegacyContainer(deploymentTarget);
       await activate(deploymentTarget, image, release);
       const next = {
         current: {
@@ -315,6 +334,13 @@ async function deploy(deploymentTarget: DeploymentTarget, image: string, release
           },
         };
         await writeState(deploymentTarget, next);
+        if (legacyContainer) {
+          try {
+            await restoreLegacyContainer(deploymentTarget, legacyContainer);
+          } catch (restoreError) {
+            throw new HttpError(500, `Initial deploy failed (${message}); legacy restore also failed: ${String(restoreError)}`);
+          }
+        }
         throw new HttpError(502, `Initial deploy failed and has no prior immutable image to roll back to: ${message}`);
       }
       try {
