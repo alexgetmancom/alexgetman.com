@@ -1,6 +1,7 @@
 services:
   media-processor:
-    build: .
+    image: ${MEDIA_PROCESSOR_IMAGE:?set an immutable media-processor image digest}
+    pull_policy: always
     container_name: studio-media-processor
     restart: unless-stopped
     # Loopback-only: the reverse SSH tunnel is the sole path from PS529.
@@ -12,6 +13,8 @@ services:
       MEDIA_PROCESSOR_TIMEOUT_SECONDS: ${MEDIA_PROCESSOR_TIMEOUT_SECONDS:-900}
     volumes:
       - media_processor_jobs:/work
+    devices:
+      - /dev/dri/renderD128:/dev/dri/renderD128
     cpus: 2.0
     mem_limit: 2g
     pids_limit: 128

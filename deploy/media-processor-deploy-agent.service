@@ -1,0 +1,21 @@
+[Unit]
+Description=Media processor immutable image deploy agent
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=alex
+Group=alex
+WorkingDirectory=/opt/alexgetman-media-processor
+EnvironmentFile=/etc/alexgetman/media-processor-deploy-agent.env
+ExecStart=/usr/local/bin/bun /opt/alexgetman-media-processor/deploy-agent.ts
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/alexgetman-media-processor /opt/alexgetman-media-processor /var/run/docker.sock
+
+[Install]
+WantedBy=multi-user.target

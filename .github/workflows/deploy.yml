@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       image_digest: ${{ steps.image.outputs.digest }}
+      media_processor_digest: ${{ steps.media_processor.outputs.digest }}
       release_sha: ${{ github.event.workflow_run.head_sha }}
     steps:
       - uses: actions/checkout@v5
@@ -41,6 +42,16 @@ jobs:
             GIT_REVISION=${{ github.event.workflow_run.head_sha }}
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/alexgetman-backend:${{ github.event.workflow_run.head_sha }},ghcr.io/${{ github.repository_owner }}/alexgetman-backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Build and publish media processor image
+        id: media_processor
+        uses: docker/build-push-action@v6
+        with:
+          context: ./deploy/media-processor
+          file: ./deploy/media-processor/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor:${{ github.event.workflow_run.head_sha }},ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -71,10 +82,14 @@ jobs:
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_AGENT_TOKEN: ${{ secrets.DEPLOY_AGENT_TOKEN }}
           IMAGE: ghcr.io/${{ github.repository_owner }}/alexgetman-backend@${{ needs.docker.outputs.image_digest }}
+          MEDIA_PROCESSOR_IMAGE: ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor@${{ needs.docker.outputs.media_processor_digest }}
           RELEASE: ${{ needs.docker.outputs.release_sha }}
           MARU_DEPLOY_ENABLED: ${{ vars.MARU_DEPLOY_ENABLED }}
         run: |
           test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER" && test -n "$DEPLOY_AGENT_TOKEN"
+          media_release=$(printf '{"release":"%s","image":"%s"}\n' "$RELEASE" "$MEDIA_PROCESSOR_IMAGE")
+          ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "install -d -m 0700 /var/lib/alexgetman-deploy"
+          ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "umask 077; printf '%s\\n' '$media_release' > /var/lib/alexgetman-deploy/media-processor-release.json"
           runtime=/home/deploy/alexgetman-runtime
           scp -o BatchMode=yes apps/backend/compose.yaml "$DEPLOY_USER@$DEPLOY_HOST:$runtime/compose.yaml.next"
           ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "set -e; docker compose --env-file $runtime/deploy-image.env -f $runtime/compose.yaml.next config --quiet; mv $runtime/compose.yaml.next $runtime/compose.yaml"

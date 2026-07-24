@@ -2,6 +2,7 @@ import { describe, expect, it, mock } from "bun:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { remoteStoryFfmpegArgs } from "../../../deploy/media-processor/story-encode.js";
 import { publishInstagramStory } from "../src/delivery/social/instagram.js";
 import { telegramStoryCaption, telegramStoryUploadMedia } from "../src/delivery/social/telegramStories.js";
 import { generateStoryMedia } from "../src/delivery/story-media.js";
@@ -55,6 +56,13 @@ describe("story publishers", () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("uses VAAPI only in the remote worker recipe", () => {
+    const args = remoteStoryFfmpegArgs("source.mp4", "story.mp4", "video");
+    expect(args.slice(0, 4)).toEqual(["-init_hw_device", "vaapi=va:/dev/dri/renderD128", "-filter_hw_device", "va"]);
+    expect(args.slice(args.indexOf("-c:v"), args.indexOf("-c:v") + 2)).toEqual(["-c:v", "h264_vaapi"]);
+    expect(args[args.indexOf("-vf") + 1]).toContain("format=nv12,hwupload");
   });
 
   it("uploads generated story paths as files, rather than treating them as Telegram file IDs", () => {

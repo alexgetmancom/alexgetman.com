@@ -6,7 +6,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=alex
-ExecStart=/usr/bin/ssh -N -i /home/alex/.ssh/studio-media-processor_ed25519 -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=accept-new -R 127.0.0.1:9087:127.0.0.1:9087 deploy@5.129.238.194
+ExecStart=/usr/bin/ssh -N -i /home/alex/.ssh/studio-media-processor_ed25519 -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=accept-new -R 127.0.0.1:9087:127.0.0.1:9087 -R 127.0.0.1:9098:127.0.0.1:9898 deploy@5.129.238.194
 Restart=always
 RestartSec=5
 

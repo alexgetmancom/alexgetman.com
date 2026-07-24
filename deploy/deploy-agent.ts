@@ -11,6 +11,12 @@ type DeploymentTarget = {
   stateFile: string;
   healthUrl: string;
   container: string;
+  service: string;
+  imageEnvKey: string;
+  remoteUrl?: string;
+  remoteToken?: string;
+  artifactFile?: string;
+  repository?: string;
 };
 
 const config = {
@@ -18,6 +24,7 @@ const config = {
   port: Number(Bun.env.DEPLOY_AGENT_PORT ?? "9899"),
   token: required("DEPLOY_AGENT_TOKEN"),
   repository: Bun.env.DEPLOY_IMAGE_REPOSITORY ?? "ghcr.io/alexgetmancom/alexgetman-backend",
+  defaultTarget: Bun.env.DEPLOY_DEFAULT_TARGET ?? "alex",
   notificationToken: Bun.env.DEPLOY_NOTIFICATION_BOT_TOKEN ?? Bun.env.CONTROLLER_BOT_TOKEN ?? Bun.env.TELEGRAM_BOT_TOKEN,
   notificationChatId: Bun.env.DEPLOY_NOTIFICATION_CHAT_ID,
   notificationApiBaseUrl: Bun.env.DEPLOY_NOTIFICATION_API_BASE_URL ?? "http://127.0.0.1:8081",
@@ -37,10 +44,10 @@ function constantTimeEqual(left: string, right: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-function immutableImage(value: unknown): value is string {
+function immutableImage(value: unknown, repository = config.repository): value is string {
   return (
     typeof value === "string" &&
-    value.startsWith(`${config.repository}@sha256:`) &&
+    value.startsWith(`${repository}@sha256:`) &&
     /^[a-f0-9]{64}$/i.test(value.slice(value.lastIndexOf(":") + 1))
   );
 }
@@ -53,12 +60,14 @@ function deploymentTargets(): Map<string, DeploymentTarget> {
   const configured = Bun.env.DEPLOY_TARGETS_JSON?.trim();
   if (!configured) {
     const target: DeploymentTarget = {
-      name: "alex",
+      name: config.defaultTarget,
       composeFile: required("DEPLOY_COMPOSE_FILE"),
       imageEnvFile: required("DEPLOY_IMAGE_ENV_FILE"),
       stateFile: Bun.env.DEPLOY_STATE_FILE ?? "/var/lib/alexgetman-deploy/state.json",
       healthUrl: Bun.env.DEPLOY_HEALTH_URL ?? "http://127.0.0.1:8788/readyz",
       container: Bun.env.DEPLOY_CONTAINER_NAME ?? "alexgetman-backend",
+      service: Bun.env.DEPLOY_SERVICE_NAME ?? "backend",
+      imageEnvKey: Bun.env.DEPLOY_IMAGE_ENV_KEY ?? "BACKEND_IMAGE",
     };
     return new Map([[target.name, target]]);
   }
@@ -67,10 +76,24 @@ function deploymentTargets(): Map<string, DeploymentTarget> {
   for (const [name, value] of Object.entries(parsed)) {
     if (!/^[a-z][a-z0-9_-]{0,6}$/.test(name)) throw new Error(`Invalid deployment target name: ${name}`);
     if (!value || typeof value !== "object") throw new Error(`Invalid deployment target: ${name}`);
-    for (const key of ["composeFile", "imageEnvFile", "stateFile", "healthUrl", "container"] as const) {
+    for (const key of ["stateFile"] as const) {
       if (typeof value[key] !== "string" || !value[key].trim()) throw new Error(`Deployment target ${name} is missing ${key}`);
     }
-    targets.set(name, { name, ...value });
+    if (value.remoteUrl) {
+      if (
+        typeof value.remoteUrl !== "string" ||
+        typeof value.remoteToken !== "string" ||
+        typeof value.artifactFile !== "string" ||
+        typeof value.repository !== "string"
+      )
+        throw new Error(`Remote deployment target ${name} requires remoteUrl, remoteToken, artifactFile and repository`);
+      targets.set(name, { ...value, name, service: value.service ?? "", imageEnvKey: value.imageEnvKey ?? "" });
+      continue;
+    }
+    for (const key of ["composeFile", "imageEnvFile", "healthUrl", "container"] as const) {
+      if (typeof value[key] !== "string" || !value[key].trim()) throw new Error(`Deployment target ${name} is missing ${key}`);
+    }
+    targets.set(name, { ...value, name, service: value.service ?? "backend", imageEnvKey: value.imageEnvKey ?? "BACKEND_IMAGE" });
   }
   if (targets.size === 0) throw new Error("DEPLOY_TARGETS_JSON must configure at least one target.");
   return targets;
@@ -79,8 +102,8 @@ function deploymentTargets(): Map<string, DeploymentTarget> {
 const targets = deploymentTargets();
 
 function target(name: string | undefined): DeploymentTarget {
-  const selected = targets.get(name ?? "alex");
-  if (!selected) throw new HttpError(404, `Unknown deployment target: ${name ?? "alex"}`);
+  const selected = targets.get(name ?? config.defaultTarget);
+  if (!selected) throw new HttpError(404, `Unknown deployment target: ${name ?? config.defaultTarget}`);
   return selected;
 }
 
@@ -112,10 +135,11 @@ async function writeState(deploymentTarget: DeploymentTarget, value: DeploymentS
 }
 
 async function currentImage(deploymentTarget: DeploymentTarget): Promise<string | undefined> {
+  if (deploymentTarget.remoteUrl) return (await state(deploymentTarget)).current?.image;
   const env = await Bun.file(deploymentTarget.imageEnvFile)
     .text()
     .catch(() => "");
-  const declared = env.match(/^BACKEND_IMAGE=(.+)$/m)?.[1]?.trim();
+  const declared = env.match(new RegExp(`^${deploymentTarget.imageEnvKey}=(.+)$`, "m"))?.[1]?.trim();
   if (immutableImage(declared)) return declared;
   const repoDigest = await command(["image", "inspect", "--format", "{{index .RepoDigests 0}}", deploymentTarget.container], true);
   return immutableImage(repoDigest) ? repoDigest : undefined;
@@ -128,9 +152,9 @@ async function writeImage(deploymentTarget: DeploymentTarget, image: string): Pr
     .catch(() => "");
   const preserved = existing
     .split(/\r?\n/)
-    .filter((line) => !line.startsWith("BACKEND_IMAGE="))
+    .filter((line) => !line.startsWith(`${deploymentTarget.imageEnvKey}=`))
     .filter(Boolean);
-  await Bun.write(temporary, [`BACKEND_IMAGE=${image}`, ...preserved, ""].join("\n"));
+  await Bun.write(temporary, [`${deploymentTarget.imageEnvKey}=${image}`, ...preserved, ""].join("\n"));
   await rename(temporary, deploymentTarget.imageEnvFile);
 }
 
@@ -155,10 +179,20 @@ async function waitForHealthy(deploymentTarget: DeploymentTarget): Promise<void>
   throw new Error(`health check timeout: ${last}`);
 }
 
-async function activate(deploymentTarget: DeploymentTarget, image: string): Promise<void> {
+async function activate(deploymentTarget: DeploymentTarget, image: string, release: string): Promise<void> {
+  if (deploymentTarget.remoteUrl) {
+    const response = await fetch(`${deploymentTarget.remoteUrl.replace(/\/$/, "")}/v1/deploy`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${deploymentTarget.remoteToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ image, release }),
+      signal: AbortSignal.timeout(150_000),
+    });
+    if (!response.ok) throw new Error(`remote deploy failed (${response.status}): ${(await response.text()).slice(0, 400)}`);
+    return;
+  }
   await writeImage(deploymentTarget, image);
-  await command(composeArgs(deploymentTarget, "pull", "backend"));
-  await command(composeArgs(deploymentTarget, "up", "-d", "--no-deps", "--force-recreate", "backend"));
+  await command(composeArgs(deploymentTarget, "pull", deploymentTarget.service));
+  await command(composeArgs(deploymentTarget, "up", "-d", "--no-deps", "--force-recreate", deploymentTarget.service));
   await waitForHealthy(deploymentTarget);
 }
 
@@ -202,7 +236,7 @@ async function deploy(deploymentTarget: DeploymentTarget, image: string, release
       deployedAt: new Date().toISOString(),
     };
     try {
-      await activate(deploymentTarget, image);
+      await activate(deploymentTarget, image, release);
       const next = { current: { image, revision: release, deployedAt: new Date().toISOString() }, previous };
       await writeState(deploymentTarget, next);
       await notify(
@@ -215,7 +249,7 @@ async function deploy(deploymentTarget: DeploymentTarget, image: string, release
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       try {
-        await activate(deploymentTarget, previousImage);
+        await activate(deploymentTarget, previousImage, previous.revision);
       } catch (rollbackError) {
         throw new HttpError(500, `Deploy failed (${message}); automatic rollback also failed: ${String(rollbackError)}`);
       }
@@ -233,15 +267,20 @@ async function deploy(deploymentTarget: DeploymentTarget, image: string, release
 /** Only "alex" is ever auto-deployed by CI; every other configured target is
  * deployed manually, by promoting the exact image alex just proved healthy. */
 function promotionCandidate(deploymentTarget: DeploymentTarget): string | undefined {
-  if (deploymentTarget.name !== "alex") return undefined;
-  const others = [...targets.keys()].filter((name) => name !== "alex");
-  return others.length === 1 ? others[0] : undefined;
+  if (deploymentTarget.name !== config.defaultTarget) return undefined;
+  return [...targets.keys()].find((name) => name !== config.defaultTarget);
 }
 
 async function promote(sourceTarget: DeploymentTarget, destTarget: DeploymentTarget, release: string): Promise<DeploymentState> {
   const sourceState = await state(sourceTarget);
-  if (sourceState.current?.revision !== release) throw new HttpError(409, "This button belongs to an older alex release.");
-  return deploy(destTarget, sourceState.current.image, release);
+  if (sourceState.current?.revision !== release) throw new HttpError(409, "This button belongs to an older source release.");
+  if (!destTarget.remoteUrl) return deploy(destTarget, sourceState.current.image, release);
+  const artifact = (await Bun.file(destTarget.artifactFile as string)
+    .json()
+    .catch(() => null)) as { image?: unknown; release?: unknown } | null;
+  if (!artifact || artifact.release !== release || !immutableImage(artifact.image, destTarget.repository))
+    throw new HttpError(409, `No immutable remote artifact is registered for ${release}.`);
+  return deploy(destTarget, artifact.image, release);
 }
 
 async function rollback(deploymentTarget: DeploymentTarget, release: string): Promise<DeploymentState> {
@@ -250,7 +289,7 @@ async function rollback(deploymentTarget: DeploymentTarget, release: string): Pr
     if (!before.current || !before.previous) throw new HttpError(409, "No rollback release is available.");
     if (before.current.revision !== release) throw new HttpError(409, "This rollback button belongs to an older release.");
     try {
-      await activate(deploymentTarget, before.previous.image);
+      await activate(deploymentTarget, before.previous.image, before.previous.revision);
     } catch (error) {
       throw new HttpError(502, `Rollback failed: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -300,7 +339,7 @@ async function requestHandler(request: Request): Promise<Response> {
     }
     if (request.method === "POST" && action === "promote") {
       if (!revision(body?.release)) throw new HttpError(400, "release must be a Git SHA.");
-      const next = await promote(target("alex"), deploymentTarget, body.release);
+      const next = await promote(target(config.defaultTarget), deploymentTarget, body.release);
       return json({ ok: true, target: deploymentTarget.name, release: next.current?.revision, currentRevision: next.current?.revision });
     }
     return json({ ok: false, message: "not found" }, 404);

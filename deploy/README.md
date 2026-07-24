@@ -79,6 +79,20 @@ sends the controller bot a target-specific one-click rollback button. The callba
 is accepted only from `CONTROLLER_ADMIN_IDS` and is rejected after a newer release
 exists for that target.
 
+## Optional remote worker targets
+
+Remote workers run the same deploy-agent protocol with a different `service` and
+image environment key. Install `media-processor-deploy-agent.service` using
+`media-processor-deploy-agent.env.example` on the worker host; it remains bound
+to loopback and is reached through a reverse SSH tunnel.
+
+The VPS agent supports arbitrary remote target names in `DEPLOY_TARGETS_JSON`.
+A remote target specifies `remoteUrl`, `remoteToken`, `artifactFile`,
+`repository`, and its own `stateFile`. CI atomically writes the image digest for
+each Git revision to `artifactFile`; Telegram promotion forwards precisely that
+digest to the worker. The worker records current/previous digests after pull,
+recreate and health-check, so rollback always restores its own previous image.
+
 ## Read-only runtime diagnostics
 
 The production image includes the bundled backend operations CLI, so status can be

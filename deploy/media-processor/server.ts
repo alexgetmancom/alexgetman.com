@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, rmSync, statSync } from "node:fs";
 import { mkdir, rename } from "node:fs/promises";
 import { createSerialQueue } from "./serial-queue.ts";
-import { storyFfmpegArgs } from "./story-encode.ts";
+import { remoteStoryFfmpegArgs, storyFfmpegArgs } from "./story-encode.ts";
 
 const token = Bun.env.MEDIA_PROCESSOR_TOKEN;
 if (!token || token.length < 16) throw new Error("MEDIA_PROCESSOR_TOKEN must contain at least 16 characters");
@@ -114,7 +114,7 @@ async function transcode(
   // media bytes after this point.
   await streamToFile(source, input);
   // This VM's compose.yml caps the container at 2 CPUs; keep ffmpeg inside that budget.
-  const args = storyFfmpegArgs(input, partial, mediaKind, mediaKind === "video" ? ["-threads", "2"] : []);
+  const args = mediaKind === "video" ? remoteStoryFfmpegArgs(input, partial, mediaKind) : storyFfmpegArgs(input, partial, mediaKind);
   try {
     const child = Bun.spawn(["ffmpeg", ...args], { stdout: "ignore", stderr: "pipe" });
     let timedOut = false;
