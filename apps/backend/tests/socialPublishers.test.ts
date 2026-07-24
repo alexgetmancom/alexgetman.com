@@ -33,6 +33,19 @@ describe("publish payload validation", () => {
     expect(payloadText(payload)).toBe("Русский текст");
     expect(payloadMedia(payload)).toEqual([{ type: "IMAGE", fileId: "ru-image" }]);
   });
+
+  it("adds a hidden Telegram link as a visible URL for supported social targets only", async () => {
+    const { localizeTargetPayload } = await import("../src/publishing/payload.js");
+    const payload = {
+      text_ru: "Читать гайд",
+      text_en: "Read guide",
+      entities_ru: [{ type: "text_link", offset: 7, length: 4, url: "https://example.com/guide" }],
+      entities_en: [{ type: "text_link", offset: 5, length: 5, url: "https://example.com/guide" }],
+    };
+    expect(localizeTargetPayload(payload, "threads_ru").text).toBe("Читать гайд\n\n🔗 https://example.com/guide");
+    expect(localizeTargetPayload(payload, "facebook").text).toBe("Read guide\n\n🔗 https://example.com/guide");
+    expect(localizeTargetPayload(payload, "x").text).toBe("Read guide");
+  });
 });
 
 afterEach(() => {
@@ -73,6 +86,20 @@ describe("Telegram publisher", () => {
       expect.stringContaining("/setMessageReaction"),
     ]);
     expect(JSON.parse(String(calls[1]?.init?.body))).toMatchObject({ message_id: 42, reaction: [{ type: "emoji", emoji: "❤" }] });
+  });
+
+  it("requests a compact Telegram preview for a hidden link", async () => {
+    const fetchMock = mock(
+      async (_input: string | URL | Request, _init?: RequestInit) =>
+        new Response(JSON.stringify({ ok: true, result: { message_id: 42 } }), { status: 200 }),
+    );
+    await publishToTelegram(
+      { text: "Read guide", entities: [{ type: "text_link", offset: 5, length: 5, url: "https://example.com/guide" }] },
+      loadConfig({ CONTROLLER_BOT_TOKEN: "bot-token" }),
+      fetchMock as unknown as typeof fetch,
+    );
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as Record<string, unknown>;
+    expect(body.link_preview_options).toEqual({ url: "https://example.com/guide", prefer_small_media: true, show_above_text: false });
   });
 
   it("uploads a local Studio asset when it has no Telegram file id", async () => {

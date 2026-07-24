@@ -35,6 +35,18 @@ export function entitiesToHtml(text: string, entities: Record<string, unknown>[]
   return value;
 }
 
+/** Social platforms do not understand Telegram's hidden text_link entity. */
+export function appendTextLinkUrls(text: string, entities: Record<string, unknown>[]): string {
+  const urls = [
+    ...new Set(
+      entities.flatMap((entity) =>
+        entity.type === "text_link" && typeof entity.url === "string" && safeHttpUrl(entity.url) ? [entity.url] : [],
+      ),
+    ),
+  ];
+  return urls.length ? `${text.trim()}\n\n${urls.map((url) => `🔗 ${url}`).join("\n")}` : text;
+}
+
 function safeHttpUrl(value: string): boolean {
   try {
     return ["http:", "https:"].includes(new URL(value).protocol);

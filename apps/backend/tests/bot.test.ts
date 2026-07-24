@@ -10,6 +10,7 @@ import { entitiesToHtml } from "../src/content/text.js";
 import { type BackendDb, openBackendDb } from "../src/db/client.js";
 import { botUiSettings } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
+import { threadsPreviewText } from "../src/interfaces/telegram/delivery-previews.js";
 import { cancelDraft, scheduledDrafts } from "../src/publishing/draft-lifecycle.js";
 import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
 import { reconcilePublication } from "../src/publishing/queue.js";
@@ -280,6 +281,14 @@ describe("Telegram controller flow", () => {
 
     const preview = draftPreview(backendDb, draftId, loadConfig({}), "confirm_publish");
     expect(preview.text).toContain("Will not be sent (no media): Telegram Stories, Instagram Stories RU, Instagram Stories EN.");
+  });
+
+  it("renders every Threads segment together in the platform preview", () => {
+    const text = `${"First segment. ".repeat(40)}\n\n${"Second segment. ".repeat(40)}`;
+    const preview = threadsPreviewText("threads_ru", text);
+    expect(preview).toContain("🧵 Threads RU");
+    expect(preview).toContain("①");
+    expect(preview).toContain("②");
   });
 
   it("renders a live post progress card from publication job states", () => {

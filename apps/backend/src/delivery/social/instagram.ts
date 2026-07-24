@@ -2,7 +2,7 @@ import type { BackendConfig } from "../../foundation/config.js";
 import { externalFetch, redactExternalSecrets, retryAfterSecondsFromHeaders } from "../../foundation/http.js";
 import type { PublishResult } from "../../publishing/errors.js";
 import { HttpPublishError } from "../../publishing/errors.js";
-import { payloadMedia, payloadText } from "./payload.js";
+import { payloadMedia } from "./payload.js";
 
 type GraphResponse = {
   id?: string;
@@ -36,7 +36,6 @@ export async function publishInstagramStory(
         {
           media_type: "STORIES",
           ...(media.type === "VIDEO" ? { video_url: publicUrl } : { image_url: publicUrl }),
-          ...(payloadText(payload) ? { caption: payloadText(payload).slice(0, 2200) } : {}),
         },
         fetchImpl,
       );

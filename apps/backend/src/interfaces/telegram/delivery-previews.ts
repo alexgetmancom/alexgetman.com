@@ -1,6 +1,7 @@
 import { type Context, InlineKeyboard, InputFile } from "grammy";
-import type { BotLocale } from "../../bot/i18n.js";
+import { type BotLocale, botLocale } from "../../bot/i18n.js";
 import type { BackendDb } from "../../db/client.js";
+import { splitText } from "../../delivery/social/payload.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import type { DeliveryProjection } from "../../studio/projections.js";
 import { studioServices } from "../../studio/services/index.js";
@@ -13,8 +14,7 @@ export async function sendTelegramDeliveryPreviews(
   locale: BotLocale = "en",
 ): Promise<void> {
   for (const projection of projections) {
-    const targets = projection.targets.join(" · ") || "No compatible delivery target";
-    await ctx.reply(`👁 *${escapeMarkdown(projection.label)}*\n${escapeMarkdown(targets)}`, { parse_mode: "Markdown" });
+    await ctx.reply(...deliveryHeader(projection, locale));
     const hasVideo =
       projection.targets.length > 0 && projection.media.some((item) => String(item.type ?? "photo").toLowerCase() === "video");
     if (projection.targets.length) await sendProjectionContent(ctx, projection, !hasVideo);
@@ -90,8 +90,14 @@ async function sendProjectionContent(ctx: Context, projection: DeliveryProjectio
 export async function handleTelegramDeliveryPreviewCallback(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<boolean> {
   const data = ctx.callbackQuery?.data ?? "";
   const prefix = "delivery_preview_video:";
-  if (!data.startsWith(prefix)) return false;
-  const projectionId = data.slice(prefix.length);
+  const threadsPrefix = "delivery_preview_threads:";
+  const telegramPrefix = "delivery_preview_telegram:";
+  if (!data.startsWith(prefix) && !data.startsWith(threadsPrefix) && !data.startsWith(telegramPrefix)) return false;
+  const projectionId = data.startsWith(prefix)
+    ? data.slice(prefix.length)
+    : data.startsWith(threadsPrefix)
+      ? data.slice(threadsPrefix.length)
+      : data.slice(telegramPrefix.length);
   const actorId = Number(ctx.from?.id);
   const [kind, idText] = projectionId.split(":");
   const id = Number(idText);
@@ -105,6 +111,19 @@ export async function handleTelegramDeliveryPreviewCallback(ctx: Context, backen
   const projection = delivery?.projections.find((item) => item.id === projectionId);
   await ctx.answerCallbackQuery();
   if (!projection) return true;
+  const locale = botLocale(backendDb, actorId);
+  if (data.startsWith(threadsPrefix)) {
+    const target = projection.targets.find((item) => item === "threads_ru" || item === "threads_en");
+    if (!target) return true;
+    await ctx.editMessageText(threadsPreviewText(target, projection.text), {
+      reply_markup: new InlineKeyboard().text(t(locale, "preview.show-telegram"), `${telegramPrefix}${projection.id}`),
+    });
+    return true;
+  }
+  if (data.startsWith(telegramPrefix)) {
+    await ctx.editMessageText(...deliveryHeader(projection, locale));
+    return true;
+  }
   await sendProjectionContent(
     ctx,
     {
@@ -120,6 +139,31 @@ export async function handleTelegramDeliveryPreviewCallback(ctx: Context, backen
     true,
   );
   return true;
+}
+
+function deliveryHeader(
+  projection: DeliveryProjection,
+  locale: BotLocale,
+): [string, { parse_mode: "Markdown"; reply_markup?: InlineKeyboard }] {
+  const targets = projection.targets.join(" · ") || "No compatible delivery target";
+  const threadsTarget = projection.targets.find((item) => item === "threads_ru" || item === "threads_en");
+  const reply_markup = threadsTarget
+    ? new InlineKeyboard().text(t(locale, "preview.show-threads"), `delivery_preview_threads:${projection.id}`)
+    : undefined;
+  return [
+    `👁 *${escapeMarkdown(projection.label)}*\n${escapeMarkdown(targets)}`,
+    { parse_mode: "Markdown", ...(reply_markup ? { reply_markup } : {}) },
+  ];
+}
+
+export function threadsPreviewText(target: "threads_ru" | "threads_en", text: string): string {
+  const parts = splitText(text, 480);
+  const label = target === "threads_ru" ? "Threads RU" : "Threads EN";
+  return `🧵 ${label} · ${parts.length}\n\n${parts.map((part, index) => `${threadMarker(index)} ${part}`).join("\n\n")}`;
+}
+
+function threadMarker(index: number): string {
+  return ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"][index] ?? `${index + 1}.`;
 }
 
 function entityOptions(entities: Record<string, unknown>[]) {

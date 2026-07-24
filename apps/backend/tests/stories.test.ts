@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { remoteStoryFfmpegArgs } from "../../../deploy/media-processor/story-encode.js";
 import { publishInstagramStory } from "../src/delivery/social/instagram.js";
-import { telegramStoryCaption, telegramStoryUploadMedia } from "../src/delivery/social/telegramStories.js";
+import { telegramStoryCaption, telegramStoryCaptionInput, telegramStoryUploadMedia } from "../src/delivery/social/telegramStories.js";
 import { generateStoryMedia } from "../src/delivery/story-media.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { createChannelStoryClient } from "../src/foundation/external/telegram-session.js";
@@ -82,6 +82,15 @@ describe("story publishers", () => {
 
   it("removes links from Telegram Story captions", () => {
     expect(telegramStoryCaption("Read more: https://alexgetman.com/post/59\n\n\nThank you")).toBe("Read more:\n\nThank you");
+  });
+
+  it("keeps a hidden Telegram link clickable in a Story caption", () => {
+    expect(
+      telegramStoryCaptionInput("Read guide", [{ type: "text_link", offset: 5, length: 5, url: "https://example.com/guide" }]),
+    ).toEqual({
+      text: "Read guide",
+      entities: [{ _: "messageEntityTextUrl", offset: 5, length: 5, url: "https://example.com/guide" }],
+    });
   });
 
   it("creates, waits for and publishes an Instagram story", async () => {

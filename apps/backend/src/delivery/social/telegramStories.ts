@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import type { tl } from "@mtcute/core";
 import type { BackendConfig } from "../../foundation/config.js";
 import { createChannelStoryClient } from "../../foundation/external/telegram-session.js";
 import { runFfmpeg } from "../../foundation/runtime/ffmpeg.js";
@@ -19,9 +20,7 @@ const STORY_MAX_BYTES = Math.floor(9.5 * 1024 * 1024);
 export async function publishTelegramStory(payload: Record<string, unknown>, config: BackendConfig): Promise<PublishResult> {
   const media = payloadMedia(payload).find((item) => item.storyLocalPath || item.localPath);
   if (!media) return { ok: false, skipped: true, reason: "missing_media" };
-  // Stories should be a clean visual format: never append or preserve links
-  // in their caption. Links remain available on the regular post targets.
-  const caption = telegramStoryCaption(payloadText(payload));
+  const caption = telegramStoryCaptionInput(payloadText(payload), Array.isArray(payload.entities) ? payload.entities : []);
 
   if (!config.ENABLE_TELEGRAM_STORIES) return { ok: false, skipped: true, reason: "telegram_stories_disabled" };
   if (!config.TELEGRAM_CHANNEL_STORIES_API_ID || !config.TELEGRAM_CHANNEL_STORIES_API_HASH || !config.TELEGRAM_CHANNEL_STORIES_SESSION) {
@@ -31,7 +30,11 @@ export async function publishTelegramStory(payload: Record<string, unknown>, con
   return publishChannelStory(media, caption, config);
 }
 
-async function publishChannelStory(media: PublishMediaItem, caption: string, config: BackendConfig): Promise<PublishResult> {
+async function publishChannelStory(
+  media: PublishMediaItem,
+  caption: string | { text: string; entities: tl.TypeMessageEntity[] },
+  config: BackendConfig,
+): Promise<PublishResult> {
   let uploadPath = media.storyLocalPath || media.localPath;
   if (!uploadPath) return { ok: false, skipped: true, reason: "missing_media_path" };
   let cleanupPath: string | null = null;
@@ -137,6 +140,27 @@ export function telegramStoryCaption(text: string): string {
     .replace(/\n{3,}/g, "\n\n")
     .trim()
     .slice(0, 2048);
+}
+
+/** mtcute accepts InputText, so a Telegram text_link can stay clickable in a Story caption. */
+export function telegramStoryCaptionInput(text: string, entities: unknown[]): string | { text: string; entities: tl.TypeMessageEntity[] } {
+  const caption = telegramStoryCaption(text);
+  // URL removal changes offsets. Hidden links have no visible URL, which is the
+  // supported authoring flow here; preserve their native offsets exactly.
+  if (caption !== text.trim().slice(0, 2048)) return caption;
+  const storyEntities = entities.flatMap((entity) => {
+    if (!entity || typeof entity !== "object" || Array.isArray(entity)) return [];
+    const value = entity as Record<string, unknown>;
+    const offset = Number(value.offset);
+    const length = Number(value.length);
+    if (value.type !== "text_link" || typeof value.url !== "string" || !validRange(offset, length, caption.length)) return [];
+    return [{ _: "messageEntityTextUrl", offset, length, url: value.url } as tl.TypeMessageEntity];
+  });
+  return storyEntities.length ? { text: caption, entities: storyEntities } : caption;
+}
+
+function validRange(offset: number, length: number, textLength: number): boolean {
+  return Number.isSafeInteger(offset) && Number.isSafeInteger(length) && offset >= 0 && length > 0 && offset + length <= textLength;
 }
 
 async function probeVideo(filePath: string, media: PublishMediaItem): Promise<{ width: number; height: number; duration: number }> {

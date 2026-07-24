@@ -60,14 +60,36 @@ export async function publishToTelegram(
     return reactToPublishedMessage(normalizeTelegramResult(result, chatId), config, token, chatId, fetchImpl);
   }
 
+  const linkPreview = telegramLinkPreview(entities);
   const result = await telegramCall<TelegramResponse>(
     config,
     token,
     "sendMessage",
-    { chat_id: chatId, text, entities, disable_web_page_preview: false },
+    {
+      chat_id: chatId,
+      text,
+      entities,
+      ...(linkPreview ? { link_preview_options: linkPreview } : { disable_web_page_preview: false }),
+    },
     fetchImpl,
   );
   return reactToPublishedMessage(normalizeTelegramResult(result, chatId), config, token, chatId, fetchImpl);
+}
+
+function telegramLinkPreview(entities: unknown[] | undefined): { url: string; prefer_small_media: true; show_above_text: false } | null {
+  for (const entity of entities ?? []) {
+    if (!entity || typeof entity !== "object" || Array.isArray(entity)) continue;
+    const value = entity as Record<string, unknown>;
+    if (value.type !== "text_link" || typeof value.url !== "string") continue;
+    try {
+      const url = new URL(value.url);
+      if (url.protocol === "http:" || url.protocol === "https:")
+        return { url: value.url, prefer_small_media: true, show_above_text: false };
+    } catch {
+      // Ignore malformed links just as Telegram does for a plain message.
+    }
+  }
+  return null;
 }
 
 /** Defensive compatibility for pre-existing queued payloads. New drafts are blocked by Publishing preflight. */
