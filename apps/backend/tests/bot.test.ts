@@ -270,6 +270,16 @@ describe("Telegram controller flow", () => {
 
     const preview = postDeliveryProjections(requireDraft(backendDb, draftId)).projections.find((item) => item.locale === "ru");
     expect(preview?.entities).toEqual(entities);
+    expect(preview?.targets).not.toContain("telegram_stories");
+    expect(preview?.unavailableTargets).toContain("telegram_stories");
+  });
+
+  it("warns before publishing when selected Stories targets have no media", () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createDraftFromMessage(backendDb, 42, { text: "Text only", textEn: "Text only", entities: [], media: [] });
+
+    const preview = draftPreview(backendDb, draftId, loadConfig({}), "confirm_publish");
+    expect(preview.text).toContain("Will not be sent (no media): Telegram Stories, Instagram Stories RU, Instagram Stories EN.");
   });
 
   it("renders a live post progress card from publication job states", () => {

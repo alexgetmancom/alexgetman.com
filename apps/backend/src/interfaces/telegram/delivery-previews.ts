@@ -13,10 +13,11 @@ export async function sendTelegramDeliveryPreviews(
   locale: BotLocale = "en",
 ): Promise<void> {
   for (const projection of projections) {
-    const targets = projection.targets.join(" · ");
+    const targets = projection.targets.join(" · ") || "No compatible delivery target";
     await ctx.reply(`👁 *${escapeMarkdown(projection.label)}*\n${escapeMarkdown(targets)}`, { parse_mode: "Markdown" });
-    const hasVideo = projection.media.some((item) => String(item.type ?? "photo").toLowerCase() === "video");
-    await sendProjectionContent(ctx, projection, !hasVideo);
+    const hasVideo =
+      projection.targets.length > 0 && projection.media.some((item) => String(item.type ?? "photo").toLowerCase() === "video");
+    if (projection.targets.length) await sendProjectionContent(ctx, projection, !hasVideo);
     if (hasVideo)
       await ctx.reply(t(locale, "preview.video-ready"), {
         reply_markup: new InlineKeyboard().text(t(locale, "preview.show-video"), `delivery_preview_video:${projection.id}`),
@@ -27,7 +28,11 @@ export async function sendTelegramDeliveryPreviews(
 
 /** Reuses the same safe Telegram media rendering for a published archive item. */
 export async function sendTelegramArchiveMedia(ctx: Context, media: Record<string, unknown>[]): Promise<void> {
-  await sendProjectionContent(ctx, { id: "archive", label: "Archive", targets: [], text: "", entities: [], media, notes: [] }, true);
+  await sendProjectionContent(
+    ctx,
+    { id: "archive", label: "Archive", targets: [], text: "", entities: [], media, unavailableTargets: [], notes: [] },
+    true,
+  );
 }
 
 async function sendProjectionContent(ctx: Context, projection: DeliveryProjection, includeVideo = true): Promise<void> {
@@ -109,6 +114,7 @@ export async function handleTelegramDeliveryPreviewCallback(ctx: Context, backen
       text: "",
       entities: [],
       media: projection.media,
+      unavailableTargets: [],
       notes: projection.notes,
     },
     true,

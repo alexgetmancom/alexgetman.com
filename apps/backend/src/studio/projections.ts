@@ -17,6 +17,7 @@ export type DeliveryProjection = {
   /** Native Telegram entities retained for a faithful delivery preview. */
   entities: Record<string, unknown>[];
   media: Record<string, unknown>[];
+  unavailableTargets?: string[];
   metadata?: Record<string, unknown>;
   notes: string[];
 };
@@ -55,8 +56,10 @@ export function postDeliveryProjections(draft: {
     const profile = platformProfile(target);
     const text = formatPlatformText(target, content[locale].text);
     const mediaPolicy = mediaPolicyForTarget(target, content[locale].media);
+    const unavailable = mediaPolicy.mode === "story-first" && mediaPolicy.inputCount === 0;
     const notes = [
       ...(text !== content[locale].text ? ["text is shortened/transformed for this platform"] : []),
+      ...(unavailable ? ["requires media and will be skipped"] : []),
       ...(mediaPolicy.note ? [mediaPolicy.note] : []),
     ];
     if (notes.length) deviationNotes[locale].push(`${profile?.label ?? target}: ${notes.join("; ")}`);
@@ -64,15 +67,20 @@ export function postDeliveryProjections(draft: {
   const canonical = (["ru", "en"] as const).flatMap((locale) => {
     const selected = targets.filter((target) => targetLocale(target) === locale);
     if (!selected.length) return [];
+    const unavailableTargets = selected.filter((target) => {
+      const policy = mediaPolicyForTarget(target, content[locale].media);
+      return policy.mode === "story-first" && policy.inputCount === 0;
+    });
     return [
       {
         id: `post:${draft.id}:${locale}`,
         label: `Preview · ${locale.toUpperCase()}`,
-        targets: selected,
+        targets: selected.filter((target) => !unavailableTargets.includes(target)),
         locale,
         text: content[locale].text,
         entities: content[locale].entities,
         media: content[locale].media,
+        unavailableTargets,
         notes: deviationNotes[locale],
       } satisfies DeliveryProjection,
     ];
@@ -96,6 +104,7 @@ export function videoDeliveryProjections(backendDb: BackendDb, videoDraftId: num
     text: "",
     entities: [],
     media,
+    unavailableTargets: [],
     metadata: (target.metadataJson ?? {}) as Record<string, unknown>,
     notes: [],
   })) satisfies DeliveryProjection[];

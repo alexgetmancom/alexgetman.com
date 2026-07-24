@@ -7,6 +7,7 @@ import { draftSources } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { t } from "../interfaces/telegram/i18n/index.js";
 import { formatMsk } from "../interfaces/telegram/time.js";
+import { mediaPolicyForTarget } from "../publishing/media-policy.js";
 import { parseTargets } from "../publishing/targets.js";
 import { type BotLocale, botLocale } from "./i18n.js";
 
@@ -141,10 +142,13 @@ export function draftPreview(
   }
 
   if (view === "confirm_publish") {
-    const enabled = enabledTargetLabels(targets) || t(locale, "post.no-platforms");
+    const mediaRu = safeMediaCount(draft.media_ru_json);
+    const mediaEn = safeMediaCount(draft.media_en_json) || mediaRu;
+    const available = enabledTargetLabels(targets, mediaRu, mediaEn) || t(locale, "post.no-platforms");
+    const unavailable = unavailableTargetLabels(targets, mediaRu, mediaEn);
     keyboard.text(t(locale, "post.publish-now-btn"), `publish_confirm:${draftId}`).text(t(locale, "common.back"), `preview:${draftId}`);
     return {
-      text: `${draftHeader(draftId, targets, locale)}\n\n⚠️ *${t(locale, "post.publish-now-q")}*\n${t(locale, "post.will-send-to")}: ${enabled}.`,
+      text: `${draftHeader(draftId, targets, locale)}\n\n⚠️ *${t(locale, "post.publish-now-q")}*\n${t(locale, "post.will-send-to")}: ${available}.${unavailable ? `\n⚠️ ${t(locale, "post.will-skip-no-media", { targets: unavailable })}` : ""}`,
       keyboard,
     };
   }
@@ -192,10 +196,21 @@ function draftHeader(draftId: number, targets: Record<string, boolean>, locale: 
   return `📝 *${t(locale, "post.heading", { id: draftId })}*\n${t(locale, "post.mode")}: *${modeLabel(presetName(targets), locale)}* · ${t(locale, "post.platforms")}: *${Object.values(targets).filter(Boolean).length}*`;
 }
 
-function enabledTargetLabels(targets: Record<string, boolean>): string {
-  return TARGETS.filter(([id]) => targets[id])
+function enabledTargetLabels(targets: Record<string, boolean>, mediaRu = 1, mediaEn = 1): string {
+  return TARGETS.filter(([id, , locale]) => targets[id] && !isUnavailableForMedia(id, locale, mediaRu, mediaEn))
     .map(([, label]) => label)
     .join(", ");
+}
+
+function unavailableTargetLabels(targets: Record<string, boolean>, mediaRu: number, mediaEn: number): string {
+  return TARGETS.filter(([id, , locale]) => targets[id] && isUnavailableForMedia(id, locale, mediaRu, mediaEn))
+    .map(([, label]) => label)
+    .join(", ");
+}
+
+function isUnavailableForMedia(target: string, locale: "ru" | "en", mediaRu: number, mediaEn: number): boolean {
+  const policy = mediaPolicyForTarget(target, Array.from({ length: locale === "ru" ? mediaRu : mediaEn }));
+  return policy.mode === "story-first" && policy.inputCount === 0;
 }
 
 export function modeLabel(mode: PresetName, locale: BotLocale = "en"): string {
