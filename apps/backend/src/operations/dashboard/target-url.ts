@@ -1,20 +1,12 @@
 import type { PipelinePost } from "./types.js";
 
-function blueskyPublicUrlFromUri(uri: string | null, handle = "alexgetmancom.bsky.social"): string | null {
-  if (!uri?.includes("/app.bsky.feed.post/")) return null;
-  const rkey = uri.split("/").at(-1);
-  return rkey ? `https://bsky.app/profile/${handle}/post/${rkey}` : null;
-}
-
 function targetPublicUrl(target: string, externalId: string | null = null, url: string | null = null): string | null {
   if (url) return url.replace("threads.net", "threads.com");
   if (!externalId) return null;
   if (externalId.startsWith("http://") || externalId.startsWith("https://")) return externalId;
-  if (target === "bluesky") return blueskyPublicUrlFromUri(externalId);
   if (target === "x") return `https://x.com/alexgetmancom/status/${externalId}`;
   if (target === "threads_ru") return `https://www.threads.com/@alexgetmanru/post/${externalId}`;
   if (target === "threads_en") return `https://www.threads.com/@alexgetmanco/post/${externalId}`;
-  if (target === "facebook") return `https://www.facebook.com/${externalId}`;
   return null;
 }
 

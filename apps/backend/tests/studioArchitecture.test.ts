@@ -196,9 +196,8 @@ describe("Studio architecture boundaries", () => {
     const operations = readFileSync(`${root}operations/commands.ts`, "utf8");
     const gateway = readFileSync(`${root}delivery/external-edits.ts`, "utf8");
     expect(operations).toContain('from "../delivery/external-edits.js"');
-    for (const externalHost of ["graph.facebook.com", "editMessageText"])
-      expect(operations, `Operations contains ${externalHost}`).not.toContain(externalHost);
-    expect(gateway).toContain("graph.facebook.com");
+    for (const externalHost of ["editMessageText"]) expect(operations, `Operations contains ${externalHost}`).not.toContain(externalHost);
+    expect(gateway).toContain("editMessageCaption");
   });
 
   it("keeps Operations dispatch separate from publication lookup and audit persistence", () => {

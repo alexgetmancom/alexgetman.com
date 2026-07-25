@@ -218,7 +218,6 @@ function zernioPeriodMetrics(insights: ZernioInsights, days: 1 | 7): Record<stri
   return Object.fromEntries(Object.entries(insights.metrics ?? {}).map(([name, value]) => [`${name}${days}d`, metricNumber(value.total)]));
 }
 
-type FacebookPage = { name?: string; followers_count?: number; fan_count?: number; talking_about_count?: number };
 type XProfile = {
   data?: {
     id?: string;
@@ -226,14 +225,6 @@ type XProfile = {
     username?: string;
     public_metrics?: { followers_count?: number; following_count?: number; tweet_count?: number; listed_count?: number };
   };
-};
-type BlueskyProfile = {
-  did?: string;
-  handle?: string;
-  displayName?: string;
-  followersCount?: number;
-  followsCount?: number;
-  postsCount?: number;
 };
 type TelegramCount = { ok?: boolean; result?: number };
 type TelegramBroadcastStats = {
@@ -245,31 +236,6 @@ type TelegramBroadcastStats = {
   period?: { minDate?: number; maxDate?: number };
 };
 type ThreadsProfile = { id?: string; username?: string };
-
-export async function syncFacebookProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
-  const source = "facebook_profile_en";
-  await synced(backendDb, source, async () => {
-    const pageId = config.FACEBOOK_PAGE_ID;
-    const token = config.FACEBOOK_PAGE_ACCESS_TOKEN;
-    if (!pageId || !token) throw new Error("Facebook Page credentials are missing");
-    const page = await requestJson<FacebookPage>(
-      fetchImpl,
-      `https://graph.facebook.com/${config.FACEBOOK_GRAPH_API_VERSION}/${pageId}?fields=name,followers_count,fan_count,talking_about_count&access_token=${encodeURIComponent(token)}`,
-    );
-    recordProfileSnapshot(backendDb, {
-      platform: "facebook_en",
-      account: page.name ?? pageId,
-      source: "facebook_graph_api",
-      audiencePlatforms: studioAudiencePlatforms(config, "text"),
-      metrics: {
-        name: page.name ?? pageId,
-        followersCount: metricNumber(page.followers_count),
-        fanCount: metricNumber(page.fan_count),
-        talkingAboutCount: metricNumber(page.talking_about_count),
-      },
-    });
-  });
-}
 
 export async function syncXProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
   if (!config.ENABLE_X_PROFILE_METRICS) return;
@@ -297,7 +263,6 @@ export async function syncXProfile(config: BackendConfig, backendDb: BackendDb, 
 export async function syncCommunityProfiles(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
   const jobs: Promise<void>[] = [];
   const interval = config.CREATOR_PROFILE_REFRESH_INTERVAL_SECONDS;
-  if (config.BLUESKY_HANDLE && canSync(backendDb, "bluesky_profile", interval)) jobs.push(syncBlueskyProfile(config, backendDb, fetchImpl));
   // A controller bot is not itself a Telegram publishing channel. In a
   // video-only Studio (such as Maru) CHANNEL_USERNAME may merely fall back to
   // the legacy default, so collecting it would leak another creator's audience
@@ -307,29 +272,6 @@ export async function syncCommunityProfiles(config: BackendConfig, backendDb: Ba
   if (config.THREADS_ACCESS_TOKEN && canSync(backendDb, "threads_profile", interval))
     jobs.push(syncThreadsProfile(config, backendDb, fetchImpl));
   await Promise.all(jobs);
-}
-
-async function syncBlueskyProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
-  if (!config.BLUESKY_HANDLE) return;
-  const handle = config.BLUESKY_HANDLE;
-  await synced(backendDb, "bluesky_profile", async () => {
-    const profile = await requestJson<BlueskyProfile>(
-      fetchImpl,
-      `https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(handle)}`,
-    );
-    recordProfileSnapshot(backendDb, {
-      platform: "bluesky",
-      account: profile.handle ?? handle,
-      source: "bluesky_public_api",
-      audiencePlatforms: studioAudiencePlatforms(config, "text"),
-      metrics: {
-        name: profile.displayName ?? profile.handle ?? handle,
-        followersCount: metricNumber(profile.followersCount),
-        followingCount: metricNumber(profile.followsCount),
-        postsCount: metricNumber(profile.postsCount),
-      },
-    });
-  });
 }
 
 /** CHANNEL_USERNAME may or may not carry a leading "@" depending on how it was

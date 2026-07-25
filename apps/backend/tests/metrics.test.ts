@@ -12,9 +12,9 @@ describe("metrics cycle", () => {
   it("schedules published targets and persists metric samples", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      seedPublishedPost(backendDb, "post:1", "bluesky");
+      seedPublishedPost(backendDb, "post:1", "threads_ru");
       const checked = await runMetricsCycle(loadConfig({ MAX_METRIC_TASKS_PER_CYCLE: "10" }), backendDb, {
-        bluesky: async () => ({ metrics: { views: 120, likes: 9 }, source: "test_api", raw: { id: 1 } }),
+        threads_ru: async () => ({ metrics: { views: 120, likes: 9 }, source: "test_api", raw: { id: 1 } }),
       });
       expect(checked).toBe(1);
       expect(
@@ -46,9 +46,9 @@ describe("metrics cycle", () => {
   it("stores collector errors and retries the same durable checkpoint", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      seedPublishedPost(backendDb, "post:2", "bluesky");
+      seedPublishedPost(backendDb, "post:2", "threads_ru");
       await runMetricsCycle(loadConfig({}), backendDb, {
-        bluesky: async () => {
+        threads_ru: async () => {
           throw new Error("upstream unavailable");
         },
       });
@@ -81,9 +81,9 @@ describe("metrics cycle", () => {
   it("freezes a terminal collector error instead of retrying it", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      seedPublishedPost(backendDb, "post:terminal", "bluesky");
+      seedPublishedPost(backendDb, "post:terminal", "threads_ru");
       await runMetricsCycle(loadConfig({}), backendDb, {
-        bluesky: async () => {
+        threads_ru: async () => {
           throw new TerminalMetricError("post expired");
         },
       });

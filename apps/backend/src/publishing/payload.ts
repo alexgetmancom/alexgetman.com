@@ -51,7 +51,7 @@ export function localizeTargetPayload(payload: Record<string, unknown>, target: 
 }
 
 function needsVisibleUrl(target: string): boolean {
-  return target === "threads_ru" || target === "threads_en" || target === "facebook" || target === "bluesky";
+  return target === "threads_ru" || target === "threads_en";
 }
 
 function recordArray(value: unknown): Record<string, unknown>[] {

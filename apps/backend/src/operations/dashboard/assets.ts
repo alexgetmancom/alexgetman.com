@@ -5,13 +5,11 @@ const ORDERED_IDS = [
   "site_ru",
   "threads_en",
   "threads_ru",
-  "facebook",
   "instagram_stories",
   "instagram_stories_ru",
   "telegram",
   "x",
   "telegram_stories",
-  "bluesky",
 ] as const;
 
 type TargetInfo = { id: string; label: string; locale: string; kind: string };
@@ -38,7 +36,6 @@ export const TOOL_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" fill="
 export function platformKey(targetId: string): string {
   if (targetId.startsWith("site_")) return "site";
   if (targetId.startsWith("threads_")) return "threads";
-  if (targetId.startsWith("facebook")) return "facebook";
   if (targetId.startsWith("instagram_stories")) return "instagram";
   if (targetId === "telegram_stories") return "telegram_stories";
   return targetId;

@@ -135,7 +135,7 @@ describe("command center actions", () => {
     }
   });
 
-  it("uses the Facebook token and reports a missing token without a network call", async () => {
+  it("does not edit unsupported English targets", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const now = new Date().toISOString();
@@ -156,7 +156,7 @@ describe("command center actions", () => {
         .run();
       backendDb.db
         .insert(postTargets)
-        .values([{ postKey: "post:8", target: "facebook", status: "published", externalId: "en-post", updatedAt: now }])
+        .values([{ postKey: "post:8", target: "threads_en", status: "published", externalId: "en-post", updatedAt: now }])
         .run();
       const requests: Array<{ url: string; body: string }> = [];
       const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -167,27 +167,12 @@ describe("command center actions", () => {
       const result = await runOperationCommand(
         backendDb,
         { action: "edit_en", ref: "post:8", text_en: "Updated EN" },
-        loadConfig({ FACEBOOK_PAGE_ACCESS_TOKEN: "en-token" }),
-        fetchImpl,
-      );
-
-      expect(requests).toEqual([
-        {
-          url: "https://graph.facebook.com/v23.0/en-post",
-          body: JSON.stringify({ message: "Updated EN", description: "Updated EN", access_token: "en-token" }),
-        },
-      ]);
-      expect(result.external).toEqual([{ target: "facebook", ok: true, response: {} }]);
-      const missingToken = await runOperationCommand(
-        backendDb,
-        { action: "edit_en", ref: "post:8", text_en: "No token" },
         loadConfig({}),
         fetchImpl,
       );
-      expect(missingToken.external).toEqual([
-        { target: "facebook", ok: false, skipped: true, error: "missing FACEBOOK_PAGE_ACCESS_TOKEN" },
-      ]);
-      expect(requests).toHaveLength(1);
+
+      expect(requests).toEqual([]);
+      expect(result.external).toEqual([]);
     } finally {
       backendDb.close();
     }
@@ -214,11 +199,17 @@ describe("command center actions", () => {
         })
         .run();
       backendDb.db.insert(publicationSources).values({ postId: 9, itemJson: source, createdAt: now, updatedAt: now }).run();
-      const jobId = enqueuePublishJobTx(backendDb.db, { postId: 9, postKey: "post:9", messageId: 9, target: "facebook", payload: source });
+      const jobId = enqueuePublishJobTx(backendDb.db, {
+        postId: 9,
+        postKey: "post:9",
+        messageId: 9,
+        target: "threads_en",
+        payload: source,
+      });
       backendDb.db.update(publishJobs).set({ status: "published" }).where(eq(publishJobs.jobId, jobId)).run();
       backendDb.db
         .insert(postTargets)
-        .values({ postKey: "post:9", target: "facebook", status: "published", externalId: "page_post", updatedAt: now })
+        .values({ postKey: "post:9", target: "threads_en", status: "published", externalId: "page_post", updatedAt: now })
         .run();
       const requests: Array<{ url: string; method: string }> = [];
       const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -228,12 +219,12 @@ describe("command center actions", () => {
       const result = await runOperationCommand(
         backendDb,
         { action: "delete_republish", ref: "post:9", locale: "en" },
-        loadConfig({ FACEBOOK_PAGE_ACCESS_TOKEN: "token" }),
+        loadConfig({ THREADS_EN_ACCESS_TOKEN: "token" }),
         fetchImpl,
       );
-      expect(requests).toEqual([{ url: "https://graph.facebook.com/v23.0/page_post?access_token=token", method: "DELETE" }]);
-      expect(result.removed).toEqual([{ target: "facebook", ok: true, deleted: 1 }]);
-      expect(backendDb.db.select().from(postTargets).where(eq(postTargets.target, "facebook")).get()?.status).toBe("queued");
+      expect(requests).toEqual([{ url: "https://graph.threads.net/v1.0/page_post?access_token=token", method: "DELETE" }]);
+      expect(result.removed).toEqual([{ target: "threads_en", ok: true, deleted: 1 }]);
+      expect(backendDb.db.select().from(postTargets).where(eq(postTargets.target, "threads_en")).get()?.status).toBe("queued");
     } finally {
       backendDb.close();
     }

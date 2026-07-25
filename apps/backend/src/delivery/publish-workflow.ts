@@ -20,7 +20,7 @@ export async function runDeliveryPublishCycle(
   recoverStalePublishJobs(backendDb, config);
   const jobs = claimDuePublishJobs(backendDb, config.PUBLISH_CLAIM_LIMIT);
   // One lane per target instead of one shared pool: a single global pLimit let a
-  // slow/hung target (e.g. Bluesky timing out) occupy every concurrency slot,
+  // slow/hung target occupy every concurrency slot,
   // so unrelated targets (Telegram, Threads, ...) sat waiting behind it even
   // though they had nothing to do with the stuck call. Each target still runs
   // its own jobs one at a time (platforms are sensitive to bursts anyway), but

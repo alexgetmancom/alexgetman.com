@@ -127,7 +127,7 @@ async function graphGet(
 
 async function graphRequest(config: BackendConfig, path: string, fetchImpl: typeof fetch, init?: RequestInit): Promise<GraphResponse> {
   const host = config.INSTAGRAM_ACCESS_TOKEN?.startsWith("IG") ? "graph.instagram.com" : "graph.facebook.com";
-  const version = host === "graph.instagram.com" ? config.INSTAGRAM_GRAPH_API_VERSION : config.FACEBOOK_GRAPH_API_VERSION;
+  const version = config.INSTAGRAM_GRAPH_API_VERSION;
   const response = await externalFetch(fetchImpl, `https://${host}/${version}/${path.replace(/^\/+/, "")}`, init);
   const body = await response.text();
   if (!response.ok) {

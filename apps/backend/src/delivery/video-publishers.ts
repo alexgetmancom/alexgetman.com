@@ -24,7 +24,7 @@ export class InstagramContainerInvalidError extends Error {}
 
 function instagramGraphBase(config: BackendConfig): string {
   const host = config.INSTAGRAM_ACCESS_TOKEN?.startsWith("IG") ? "graph.instagram.com" : "graph.facebook.com";
-  const version = host === "graph.instagram.com" ? config.INSTAGRAM_GRAPH_API_VERSION : config.FACEBOOK_GRAPH_API_VERSION;
+  const version = config.INSTAGRAM_GRAPH_API_VERSION;
   return `https://${host}/${version}`;
 }
 

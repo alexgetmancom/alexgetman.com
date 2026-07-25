@@ -7,8 +7,6 @@ import type { BackendConfig } from "../foundation/config.js";
 export type AudienceGroup = "text" | "video";
 
 const AUDIENCE_GROUPS: Record<string, AudienceGroup> = {
-  bluesky: "text",
-  facebook_en: "text",
   telegram: "text",
   threads: "text",
   x: "text",
@@ -24,7 +22,7 @@ export function audienceGroup(platform: string): AudienceGroup | null {
  * of truth for both the combined follower milestone and the dashboard's
  * audience filtering, so the two can't disagree about what counts.
  *
- * Community platforms (Bluesky, Facebook, Threads, X) carry their own explicit
+ * Community platforms (Threads, X) carry their own explicit
  * credentials and need no module gating. Telegram does: a controller bot is not
  * itself a publishing channel, and in a video-only Studio CHANNEL_USERNAME may
  * merely fall back to the legacy default, which would pull another creator's

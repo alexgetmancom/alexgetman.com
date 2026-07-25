@@ -67,8 +67,6 @@ describe("Telegram controller flow", () => {
 
     expect(draft).toMatchObject({ status: "scheduled", post_id: postId });
     expect(jobs.map((job) => job.target)).toEqual([
-      "bluesky",
-      "facebook",
       "instagram_stories",
       "instagram_stories_ru",
       "telegram",
@@ -104,7 +102,7 @@ describe("Telegram controller flow", () => {
       publish_at: string;
     }>;
     expect(jobs.find((job) => job.target === "telegram")?.publish_at).toBe(ruAt.toISOString());
-    expect(jobs.find((job) => job.target === "facebook")?.publish_at).toBe(enAt.toISOString());
+    expect(jobs.find((job) => job.target === "threads_en")?.publish_at).toBe(enAt.toISOString());
     expect(backendDb.sqlite.prepare("SELECT reason, next_attempt_at FROM site_jobs WHERE post_id=? ORDER BY reason").all(postId)).toEqual([
       { reason: "publish_en", next_attempt_at: enAt.toISOString() },
       { reason: "publish_ru", next_attempt_at: ruAt.toISOString() },
@@ -144,7 +142,7 @@ describe("Telegram controller flow", () => {
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Failure", textEn: "Failure", entities: [], media: [] });
     const postId = publishDraftToQueue(backendDb, draftId);
     backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE post_id=?").run(postId);
-    backendDb.sqlite.prepare("UPDATE publish_jobs SET status='failed' WHERE post_id=? AND target='bluesky'").run(postId);
+    backendDb.sqlite.prepare("UPDATE publish_jobs SET status='failed' WHERE post_id=? AND target='threads_ru'").run(postId);
     backendDb.sqlite.prepare("UPDATE site_jobs SET status='published' WHERE post_id=?").run(postId);
     reconcilePublication(backendDb, postId);
     expect(backendDb.sqlite.prepare("SELECT status FROM publications WHERE post_id=?").get(postId)).toEqual({ status: "failed" });
@@ -184,9 +182,7 @@ describe("Telegram controller flow", () => {
     publishDraftToQueue(backendDb, draftId);
 
     const jobs = backendDb.sqlite
-      .prepare(
-        "SELECT target,payload_json FROM publish_jobs WHERE target IN ('telegram','threads_ru','facebook','threads_en') ORDER BY target",
-      )
+      .prepare("SELECT target,payload_json FROM publish_jobs WHERE target IN ('telegram','threads_ru','threads_en') ORDER BY target")
       .all() as Array<{ target: string; payload_json: string }>;
     const payloads = Object.fromEntries(jobs.map((job) => [job.target, JSON.parse(job.payload_json) as Record<string, unknown>]));
     for (const target of ["telegram", "threads_ru"]) {
@@ -199,7 +195,7 @@ describe("Telegram controller flow", () => {
       });
       expect(payloads[target]).not.toHaveProperty("media_en");
     }
-    for (const target of ["facebook", "threads_en"]) {
+    for (const target of ["threads_en"]) {
       expect(payloads[target]).toMatchObject({
         locale: "en",
         text: "Edited English text",
@@ -297,17 +293,17 @@ describe("Telegram controller flow", () => {
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Progress", textEn: "Progress", entities: [], media: [] });
     const postId = publishDraftToQueue(backendDb, draftId);
     backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE post_id=? AND target='telegram'").run(postId);
-    backendDb.sqlite.prepare("UPDATE publish_jobs SET status='publishing' WHERE post_id=? AND target='facebook'").run(postId);
+    backendDb.sqlite.prepare("UPDATE publish_jobs SET status='publishing' WHERE post_id=? AND target='threads_en'").run(postId);
     backendDb.sqlite
-      .prepare("UPDATE publish_jobs SET status='failed', last_error='rate limit' WHERE post_id=? AND target='bluesky'")
+      .prepare("UPDATE publish_jobs SET status='failed', last_error='rate limit' WHERE post_id=? AND target='threads_ru'")
       .run(postId);
 
     const progress = postProgress(backendDb, draftId, true);
-    expect(progress.text).toContain("Progress: *2 / 10*");
+    expect(progress.text).toContain("Progress: *2 / 8*");
     expect(progress.text).toContain("✅ Published: 1");
     expect(progress.text).toContain("🔄 Publishing: 1");
     expect(progress.text).toContain("❌ Failed: 1");
-    expect(progress.text).toContain("❌ Bluesky — rate limit");
+    expect(progress.text).toContain("❌ Threads RU — rate limit");
     expect(JSON.stringify(progress.keyboard)).toContain(`progress:${draftId}`);
   });
 

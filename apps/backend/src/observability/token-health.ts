@@ -1,5 +1,4 @@
 import type { BackendDb } from "../db/client.js";
-import { getBlueskySession } from "../delivery/social/bluesky.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { oauthAuthorization } from "../foundation/external/x-oauth.js";
@@ -107,30 +106,6 @@ const probes: Probe[] = [
     },
   },
   {
-    target: "bluesky",
-    configured: (c) => Boolean(c.BLUESKY_HANDLE && c.BLUESKY_APP_PASSWORD),
-    run: async (config, fetchImpl) => {
-      // Reuses the cached session (see bluesky.ts); only forces a fresh login
-      // if the cache actually expired, so this doesn't reintroduce the
-      // per-publish login the caching change removed.
-      await getBlueskySession(config, fetchImpl);
-      return null;
-    },
-  },
-  {
-    target: "facebook",
-    configured: (c) => Boolean(c.FACEBOOK_PAGE_ID && c.FACEBOOK_PAGE_ACCESS_TOKEN),
-    run: (config, fetchImpl) =>
-      graphMeCheck(
-        "facebook",
-        "graph.facebook.com",
-        config.FACEBOOK_GRAPH_API_VERSION,
-        config.FACEBOOK_PAGE_ID as string,
-        config.FACEBOOK_PAGE_ACCESS_TOKEN as string,
-        fetchImpl,
-      ),
-  },
-  {
     target: "threads_ru",
     configured: (c) => Boolean(c.THREADS_ACCESS_TOKEN),
     run: async (config, fetchImpl) => {
@@ -158,7 +133,7 @@ const probes: Probe[] = [
     run: (config, fetchImpl) => {
       const token = config.INSTAGRAM_ACCESS_TOKEN as string;
       const host = instagramHost(token);
-      const version = host === "graph.instagram.com" ? config.INSTAGRAM_GRAPH_API_VERSION : config.FACEBOOK_GRAPH_API_VERSION;
+      const version = config.INSTAGRAM_GRAPH_API_VERSION;
       return graphMeCheck("instagram_reels", host, version, config.INSTAGRAM_USER_ID as string, token, fetchImpl);
     },
   },
@@ -168,7 +143,7 @@ const probes: Probe[] = [
     run: (config, fetchImpl) => {
       const token = config.INSTAGRAM_EN_ACCESS_TOKEN as string;
       const host = instagramHost(token);
-      const version = host === "graph.instagram.com" ? config.INSTAGRAM_GRAPH_API_VERSION : config.FACEBOOK_GRAPH_API_VERSION;
+      const version = config.INSTAGRAM_GRAPH_API_VERSION;
       return graphMeCheck("instagram_stories", host, version, config.INSTAGRAM_EN_USER_ID as string, token, fetchImpl);
     },
   },
@@ -178,7 +153,7 @@ const probes: Probe[] = [
     run: (config, fetchImpl) => {
       const token = config.INSTAGRAM_RU_ACCESS_TOKEN as string;
       const host = instagramHost(token);
-      const version = host === "graph.instagram.com" ? config.INSTAGRAM_GRAPH_API_VERSION : config.FACEBOOK_GRAPH_API_VERSION;
+      const version = config.INSTAGRAM_GRAPH_API_VERSION;
       return graphMeCheck("instagram_stories_ru", host, version, config.INSTAGRAM_RU_USER_ID as string, token, fetchImpl);
     },
   },

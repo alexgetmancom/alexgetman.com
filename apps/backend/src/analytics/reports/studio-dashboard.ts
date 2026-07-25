@@ -352,9 +352,6 @@ function followerCount(data: Record<string, unknown> | undefined): number {
 }
 
 const PLATFORM_DISPLAY: Record<string, { label: string; icon: string }> = {
-  bluesky: { label: "Bluesky", icon: "🦋" },
-  facebook: { label: "Facebook EN", icon: "ⓕ" },
-  facebook_en: { label: "Facebook EN", icon: "ⓕ" },
   instagram: { label: "Instagram", icon: "📸" },
   telegram: { label: "Telegram", icon: "✈️" },
   threads: { label: "Threads", icon: "@" },

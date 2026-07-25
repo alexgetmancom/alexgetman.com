@@ -42,17 +42,6 @@ export async function editPublishedTargets(
             [field]: edit.textRu,
           });
         }
-        if (row.target === "facebook" && edit.textEn) {
-          return await editFacebookTarget(
-            fetchImpl,
-            config,
-            row.target,
-            row.externalId,
-            edit.textEn,
-            config.FACEBOOK_PAGE_ACCESS_TOKEN,
-            "FACEBOOK_PAGE_ACCESS_TOKEN",
-          );
-        }
         return null;
       } catch (error) {
         return { target: row.target, ok: false, error: error instanceof Error ? error.message : String(error) };
@@ -60,23 +49,6 @@ export async function editPublishedTargets(
     }),
   );
   return results.filter((result): result is Record<string, unknown> => result != null);
-}
-
-async function editFacebookTarget(
-  fetchImpl: typeof fetch,
-  config: BackendConfig,
-  target: string,
-  externalId: string,
-  text: string,
-  token: string | undefined,
-  tokenName: string,
-): Promise<Record<string, unknown>> {
-  if (!token) return { target, ok: false, skipped: true, error: `missing ${tokenName}` };
-  return postJson(fetchImpl, `https://graph.facebook.com/${config.FACEBOOK_GRAPH_API_VERSION}/${externalId}`, target, {
-    message: text,
-    description: text,
-    access_token: token,
-  });
 }
 
 async function postJson(

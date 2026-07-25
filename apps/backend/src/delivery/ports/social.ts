@@ -7,8 +7,6 @@ import { platformProfile } from "../../publishing/platform-profiles.js";
 import type { ClaimedPublishJob } from "../../publishing/queue.js";
 import { prepareMediaItems } from "../media-prepare.js";
 import { type DeliveryPort, type DeliveryPorts, deliveryAdapter } from "../ports.js";
-import { publishToBluesky } from "../social/bluesky.js";
-import { publishToFacebook } from "../social/facebook.js";
 import { publishInstagramStory } from "../social/instagram.js";
 import { payloadMedia } from "../social/payload.js";
 import { publishToTelegram } from "../social/telegram.js";
@@ -60,13 +58,10 @@ export function createPlatformPorts(config: BackendConfig, fetchImpl: typeof fet
   };
   const publishers: Record<string, DeliveryPort> = {
     // Every target that can use media goes through the same preparation step.
-    // Bluesky media is prepared locally before publishing.
     telegram: (job) => publishToTelegram(job.payload, config, fetchImpl),
-    bluesky: (job) => prepare(job, config, (payload) => publishToBluesky(payload, config, fetchImpl)),
     threads: (job) => prepare(job, config, (payload) => publishToThreads(payload, config, fetchImpl)),
     threads_ru: (job) => prepare(job, config, (payload) => publishToThreads(payload, config, fetchImpl)),
     threads_en: (job) => prepare(job, threadsEnConfig, (payload) => publishToThreads(payload, threadsEnConfig, fetchImpl)),
-    facebook: (job) => prepare(job, config, (payload) => publishToFacebook(payload, config, fetchImpl)),
     x: (job) => prepare(job, config, (payload) => publishToX(payload, config, fetchImpl)),
     twitter: (job) => prepare(job, config, (payload) => publishToX(payload, config, fetchImpl)),
     instagram_story: (job) => prepare(job, config, (payload) => publishInstagramStory(payload, config, fetchImpl)),

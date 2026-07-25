@@ -24,7 +24,7 @@ describe("observability", () => {
         .run();
       expect(await runObservabilityCycle(config, backendDb, alertsPort)).toMatchObject({ alerts: 1 });
       expect(sendMessage).toHaveBeenCalledTimes(1);
-      expect(backendDb.db.select().from(credentialChecks).all().length).toBeGreaterThan(10);
+      expect(backendDb.db.select().from(credentialChecks).all().length).toBeGreaterThan(8);
 
       backendDb.db
         .insert(postEvents)

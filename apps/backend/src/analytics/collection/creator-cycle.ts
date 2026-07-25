@@ -2,7 +2,7 @@ import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { isCapabilityReady } from "../../observability/capabilities.js";
 import { canSync } from "../snapshots/creator-store.js";
-import { syncCommunityProfiles, syncFacebookProfile, syncInstagramProfile, syncXProfile, syncYouTubeProfile } from "./profile-sync.js";
+import { syncCommunityProfiles, syncInstagramProfile, syncXProfile, syncYouTubeProfile } from "./profile-sync.js";
 import { runVideoMetricSchedule } from "./video-metrics.js";
 
 /** Runs the transport-neutral analytics collection cycle. */
@@ -18,10 +18,6 @@ export async function runAnalyticsCycle(config: BackendConfig, backendDb: Backen
     await syncInstagramProfile(config, backendDb, fetchImpl);
     profiles += 1;
   }
-  if (config.FACEBOOK_PAGE_ID && config.FACEBOOK_PAGE_ACCESS_TOKEN && canSync(backendDb, "facebook_profile_en", profileInterval)) {
-    await syncFacebookProfile(config, backendDb, fetchImpl);
-    profiles += 1;
-  }
   if (
     config.ENABLE_X_PROFILE_METRICS &&
     config.X_CONSUMER_KEY &&
@@ -34,7 +30,6 @@ export async function runAnalyticsCycle(config: BackendConfig, backendDb: Backen
     profiles += 1;
   }
   const community = [
-    ...(config.BLUESKY_HANDLE ? ["bluesky_profile"] : []),
     ...(config.controllerBotToken ? ["telegram_profile"] : []),
     ...(config.THREADS_ACCESS_TOKEN ? ["threads_profile"] : []),
   ];

@@ -131,8 +131,7 @@ async function main(): Promise<void> {
     else if (args.command === "audit") console.log(JSON.stringify(auditOperations(backendDb), null, 2));
     else if (args.command === "metrics-backfill") {
       const targets = (
-        args.values.get("targets") ??
-        "telegram,threads_ru,threads_en,facebook,bluesky,instagram_stories,instagram_stories_ru,telegram_stories"
+        args.values.get("targets") ?? "telegram,threads_ru,threads_en,instagram_stories,instagram_stories_ru,telegram_stories"
       )
         .split(",")
         .filter(Boolean);

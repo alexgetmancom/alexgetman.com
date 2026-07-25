@@ -126,16 +126,11 @@ const envSchema = z
     // VIDEO_PREPARE_LEAD_MINUTES / VIDEO_REMINDER_MINUTES / VIDEO_MEDIA_RETENTION_HOURS
     // are owned by studio.yaml (see loadConfig); they are not env-configurable.
     SITE_PUBLIC_DIR: z.string().default("/data/site"),
-    BLUESKY_HANDLE: z.string().optional(),
-    BLUESKY_APP_PASSWORD: z.string().optional(),
     THREADS_ACCESS_TOKEN: z.string().optional(),
     THREADS_EN_ACCESS_TOKEN: z.string().optional(),
     THREADS_METRICS: z.string().default("views,likes,replies,reposts,quotes"),
     THREADS_CONTAINER_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(180),
     THREADS_RETRY_DELAY_MS: z.coerce.number().int().min(1).max(30_000).default(2_000),
-    FACEBOOK_GRAPH_API_VERSION: z.string().default("v23.0"),
-    FACEBOOK_PAGE_ACCESS_TOKEN: z.string().optional(),
-    FACEBOOK_PAGE_ID: z.string().optional(),
     X_CONSUMER_KEY: z.string().optional(),
     X_CONSUMER_SECRET: z.string().optional(),
     X_ACCESS_TOKEN: z.string().optional(),

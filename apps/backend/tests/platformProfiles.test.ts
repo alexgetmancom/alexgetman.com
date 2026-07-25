@@ -24,11 +24,10 @@ describe("platform profiles", () => {
   });
 
   it("declares capabilities and media behaviour for every configured target", () => {
-    expect(Object.keys(PLATFORM_PROFILES)).toHaveLength(11);
+    expect(Object.keys(PLATFORM_PROFILES)).toHaveLength(9);
     expect(platformProfile("telegram")?.media).toMatchObject({ mode: "limited", limit: 10 });
     expect(platformProfile("site_ru")?.media).toMatchObject({ mode: "all" });
     expect(platformProfile("telegram_stories")?.media).toMatchObject({ mode: "story-first" });
-    expect(platformProfile("facebook")?.media?.whenVideo).toMatchObject({ mode: "first" });
   });
 
   it("declares analytics support beside publishing capabilities", () => {

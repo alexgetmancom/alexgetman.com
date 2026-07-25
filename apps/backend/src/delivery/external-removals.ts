@@ -4,7 +4,6 @@ import type { BackendDb } from "../db/client.js";
 import { postTargets } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { requestJson } from "../foundation/http.js";
-import { getBlueskySession } from "./social/bluesky.js";
 
 type RemovalOptions = { postKey: string; target?: string; locale?: "ru" | "en" };
 
@@ -66,19 +65,6 @@ async function removeTarget(target: string, ids: string[], config: BackendConfig
       });
     return;
   }
-  if (target === "facebook") {
-    const token = config.FACEBOOK_PAGE_ACCESS_TOKEN;
-    if (!token) throw new Error("missing FACEBOOK_PAGE_ACCESS_TOKEN");
-    for (const id of ids)
-      await requestJson(
-        fetchImpl,
-        `https://graph.facebook.com/${config.FACEBOOK_GRAPH_API_VERSION}/${encodeURIComponent(id)}?access_token=${encodeURIComponent(token)}`,
-        {
-          method: "DELETE",
-        },
-      );
-    return;
-  }
   if (target === "threads_en" || target === "threads_ru") {
     const token = target === "threads_en" ? config.THREADS_EN_ACCESS_TOKEN : config.THREADS_ACCESS_TOKEN;
     if (!token) throw new Error(`missing ${target === "threads_en" ? "THREADS_EN_ACCESS_TOKEN" : "THREADS_ACCESS_TOKEN"}`);
@@ -86,19 +72,6 @@ async function removeTarget(target: string, ids: string[], config: BackendConfig
       await requestJson(fetchImpl, `https://graph.threads.net/v1.0/${encodeURIComponent(id)}?access_token=${encodeURIComponent(token)}`, {
         method: "DELETE",
       });
-    return;
-  }
-  if (target === "bluesky") {
-    const session = await getBlueskySession(config, fetchImpl);
-    for (const uri of ids) {
-      const rkey = uri.split("/").at(-1);
-      if (!rkey) throw new Error("invalid Bluesky URI");
-      await requestJson(fetchImpl, "https://bsky.social/xrpc/com.atproto.repo.deleteRecord", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${session.accessJwt}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ repo: session.did, collection: "app.bsky.feed.post", rkey }),
-      });
-    }
     return;
   }
   throw new Error(`remote deletion is not supported for ${target}`);
