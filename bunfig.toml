@@ -1,0 +1,3 @@
+[test]
+# Fail on any network request a test forgot to stub. See the preload for why.
+preload = ["./apps/backend/tests/helpers/no-network.ts"]

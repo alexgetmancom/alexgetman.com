@@ -60,8 +60,16 @@ function jsonSchema(def: { schema: z.ZodType; list?: z.ZodType }): JsonObject {
 
 function parseArgs<T>(schema: z.ZodType<T>, args: unknown): T {
   const result = schema.safeParse(args);
-  if (!result.success) throw new McpToolError(-32602, result.error.issues[0]?.message ?? "invalid arguments");
+  if (!result.success) throw new McpToolError(-32602, describeIssue(result.error.issues[0]));
   return result.data;
+}
+
+/** An agent gets one shot at the message, so name the offending field: bare
+ * "Too small" leaves it guessing which of ten arguments to fix. */
+function describeIssue(issue: z.core.$ZodIssue | undefined): string {
+  if (!issue) return "invalid arguments";
+  const path = issue.path.join(".");
+  return path ? `${path}: ${issue.message}` : issue.message;
 }
 
 // --- Tool catalog: one zod schema per tool is both its validator and its client-facing schema ---
@@ -418,6 +426,11 @@ const studioToolDefs = {
       ...(await studio.videos.cancel(actorId, input.video_draft_id)),
     }),
   }),
+  /* Analytics tools below take no actorId: a Studio owns exactly one set of
+     platform accounts, so its metrics are deployment-wide rather than per-actor
+     (each account runs its own container and database). The `_actorId` these
+     handlers ignore is authorization already enforced in mcpResponse, not a
+     forgotten ownership check. */
   studio_analytics_dashboard: tool({
     description: "Read an analytics dashboard section for the authenticated Studio.",
     schema: z.object({
@@ -512,15 +525,22 @@ async function runStudioTool(
   const studio: StudioServices = studioServices(backendDb, config);
   const input = parseArgs(def.schema, args);
   const result = await def.handler(studio, actorId, input);
+  // The mutation already happened. Reporting a journal failure as a tool
+  // failure would invite the caller to retry it and publish twice, so the audit
+  // trail is best-effort and the caller still sees the success it earned.
   if (def.mutates)
-    recordDomainEvent(backendDb, {
-      ref: def.ref ? def.ref(input, result) : null,
-      type: "studio.mcp.command",
-      severity: "info",
-      target: "mcp",
-      message: `Studio MCP ${name} executed`,
-      details: { actorId, tool: name },
-    });
+    try {
+      recordDomainEvent(backendDb, {
+        ref: def.ref ? def.ref(input, result) : null,
+        type: "studio.mcp.command",
+        severity: "info",
+        target: "mcp",
+        message: `Studio MCP ${name} executed`,
+        details: { actorId, tool: name },
+      });
+    } catch (error) {
+      console.error(JSON.stringify({ level: "error", message: "studio MCP audit event failed", tool: name, error: String(error) }));
+    }
   return result;
 }
 

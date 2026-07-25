@@ -8,22 +8,34 @@ type DeploymentState = {
   previous?: Release;
   lastFailure?: { revision: string; message: string; at: string };
 };
-type DeploymentTarget = {
+type CommonTarget = {
   name: string;
+  stateFile: string;
+  /** First rollout has no trustworthy immutable image to roll back to. */
+  allowInitialSeed?: boolean;
+};
+/** Deployed here, by driving Compose on this host. */
+type ComposeTarget = CommonTarget & {
+  kind: "compose";
   composeFile: string;
   imageEnvFile: string;
-  stateFile: string;
   healthUrl: string;
   container: string;
   service: string;
   imageEnvKey: string;
-  remoteUrl?: string;
-  remoteToken?: string;
-  artifactFile?: string;
-  repository?: string;
-  /** First rollout has no trustworthy immutable image to roll back to. */
-  allowInitialSeed?: boolean;
 };
+/** Deployed by handing the release to an agent on another host. */
+type RemoteTarget = CommonTarget & {
+  kind: "remote";
+  remoteUrl: string;
+  remoteToken: string;
+  artifactFile: string;
+  repository: string;
+};
+/** The two shapes share no deployment mechanics, so `kind` discriminates
+ * them: narrowing on it is what lets the Compose paths below read composeFile
+ * and container as the required strings deploymentTargets() already validated. */
+type DeploymentTarget = ComposeTarget | RemoteTarget;
 
 const config = {
   host: Bun.env.DEPLOY_AGENT_HOST ?? "172.17.0.1",
@@ -66,6 +78,7 @@ function deploymentTargets(): Map<string, DeploymentTarget> {
   const configured = Bun.env.DEPLOY_TARGETS_JSON?.trim();
   if (!configured) {
     const target: DeploymentTarget = {
+      kind: "compose",
       name: config.defaultTarget,
       composeFile: required("DEPLOY_COMPOSE_FILE"),
       imageEnvFile: required("DEPLOY_IMAGE_ENV_FILE"),
@@ -78,38 +91,45 @@ function deploymentTargets(): Map<string, DeploymentTarget> {
     };
     return new Map([[target.name, target]]);
   }
-  const parsed = JSON.parse(configured) as Record<string, Omit<DeploymentTarget, "name">>;
+  const parsed = JSON.parse(configured) as Record<string, Record<string, unknown>>;
   const targets = new Map<string, DeploymentTarget>();
+  const text = (value: Record<string, unknown>, key: string): string | undefined => {
+    const found = value[key];
+    return typeof found === "string" && found.trim() ? found : undefined;
+  };
+  const requireText = (value: Record<string, unknown>, name: string, key: string): string => {
+    const found = text(value, key);
+    if (!found) throw new Error(`Deployment target ${name} is missing ${key}`);
+    return found;
+  };
   for (const [name, value] of Object.entries(parsed)) {
     if (!/^[a-z][a-z0-9_-]{0,6}$/.test(name)) throw new Error(`Invalid deployment target name: ${name}`);
     if (!value || typeof value !== "object") throw new Error(`Invalid deployment target: ${name}`);
-    for (const key of ["stateFile"] as const) {
-      if (typeof value[key] !== "string" || !value[key].trim()) throw new Error(`Deployment target ${name} is missing ${key}`);
-    }
-    if (value.remoteUrl) {
-      if (
-        typeof value.remoteUrl !== "string" ||
-        typeof value.remoteToken !== "string" ||
-        typeof value.artifactFile !== "string" ||
-        typeof value.repository !== "string"
-      )
-        throw new Error(`Remote deployment target ${name} requires remoteUrl, remoteToken, artifactFile and repository`);
+    const common = {
+      name,
+      stateFile: requireText(value, name, "stateFile"),
+      allowInitialSeed: value.allowInitialSeed === true,
+    };
+    if (value.remoteUrl != null) {
       targets.set(name, {
-        ...value,
-        name,
-        service: value.service ?? "",
-        imageEnvKey: value.imageEnvKey ?? "",
+        ...common,
+        kind: "remote",
+        remoteUrl: requireText(value, name, "remoteUrl"),
+        remoteToken: requireText(value, name, "remoteToken"),
+        artifactFile: requireText(value, name, "artifactFile"),
+        repository: requireText(value, name, "repository"),
       });
       continue;
     }
-    for (const key of ["composeFile", "imageEnvFile", "healthUrl", "container"] as const) {
-      if (typeof value[key] !== "string" || !value[key].trim()) throw new Error(`Deployment target ${name} is missing ${key}`);
-    }
     targets.set(name, {
-      ...value,
-      name,
-      service: value.service ?? "backend",
-      imageEnvKey: value.imageEnvKey ?? "BACKEND_IMAGE",
+      ...common,
+      kind: "compose",
+      composeFile: requireText(value, name, "composeFile"),
+      imageEnvFile: requireText(value, name, "imageEnvFile"),
+      healthUrl: requireText(value, name, "healthUrl"),
+      container: requireText(value, name, "container"),
+      service: text(value, "service") ?? "backend",
+      imageEnvKey: text(value, "imageEnvKey") ?? "BACKEND_IMAGE",
     });
   }
   if (targets.size === 0) throw new Error("DEPLOY_TARGETS_JSON must configure at least one target.");
@@ -134,7 +154,7 @@ async function command(args: string[], allowFailure = false): Promise<string> {
   return stdout.trim();
 }
 
-function composeArgs(deploymentTarget: DeploymentTarget, ...args: string[]): string[] {
+function composeArgs(deploymentTarget: ComposeTarget, ...args: string[]): string[] {
   return ["compose", "--env-file", deploymentTarget.imageEnvFile, "-f", deploymentTarget.composeFile, ...args];
 }
 
@@ -151,7 +171,7 @@ async function writeState(deploymentTarget: DeploymentTarget, value: DeploymentS
 }
 
 async function currentImage(deploymentTarget: DeploymentTarget): Promise<string | undefined> {
-  if (deploymentTarget.remoteUrl) return (await state(deploymentTarget)).current?.image;
+  if (deploymentTarget.kind === "remote") return (await state(deploymentTarget)).current?.image;
   const env = await Bun.file(deploymentTarget.imageEnvFile)
     .text()
     .catch(() => "");
@@ -162,12 +182,12 @@ async function currentImage(deploymentTarget: DeploymentTarget): Promise<string 
 }
 
 async function runningContainerImage(deploymentTarget: DeploymentTarget): Promise<string | undefined> {
-  if (deploymentTarget.remoteUrl) return undefined;
+  if (deploymentTarget.kind === "remote") return undefined;
   const repoDigest = await command(["image", "inspect", "--format", "{{index .RepoDigests 0}}", deploymentTarget.container], true);
   return immutableImage(repoDigest) ? repoDigest : undefined;
 }
 
-async function writeImage(deploymentTarget: DeploymentTarget, image: string): Promise<void> {
+async function writeImage(deploymentTarget: ComposeTarget, image: string): Promise<void> {
   const temporary = `${deploymentTarget.imageEnvFile}.next`;
   const existing = await Bun.file(deploymentTarget.imageEnvFile)
     .text()
@@ -180,7 +200,7 @@ async function writeImage(deploymentTarget: DeploymentTarget, image: string): Pr
   await rename(temporary, deploymentTarget.imageEnvFile);
 }
 
-async function waitForHealthy(deploymentTarget: DeploymentTarget): Promise<void> {
+async function waitForHealthy(deploymentTarget: ComposeTarget): Promise<void> {
   const deadline = Date.now() + 90_000;
   let last = "container did not become ready";
   while (Date.now() < deadline) {
@@ -204,7 +224,7 @@ async function waitForHealthy(deploymentTarget: DeploymentTarget): Promise<void>
 }
 
 async function activate(deploymentTarget: DeploymentTarget, image: string, release: string): Promise<void> {
-  if (deploymentTarget.remoteUrl) {
+  if (deploymentTarget.kind === "remote") {
     const response = await fetch(`${deploymentTarget.remoteUrl.replace(/\/$/, "")}/v1/deploy`, {
       method: "POST",
       headers: {
@@ -225,7 +245,7 @@ async function activate(deploymentTarget: DeploymentTarget, image: string, relea
 
 /** Preserve a hand-managed predecessor during the one-time Compose cutover. */
 async function parkLegacyContainer(deploymentTarget: DeploymentTarget): Promise<string | undefined> {
-  if (deploymentTarget.remoteUrl) return undefined;
+  if (deploymentTarget.kind === "remote") return undefined;
   const id = await command(["container", "inspect", "--format", "{{.Id}}", deploymentTarget.container], true);
   if (!id) return undefined;
   const legacy = `${deploymentTarget.container}-legacy-${Date.now()}`;
@@ -234,7 +254,7 @@ async function parkLegacyContainer(deploymentTarget: DeploymentTarget): Promise<
   return legacy;
 }
 
-async function restoreLegacyContainer(deploymentTarget: DeploymentTarget, legacy: string): Promise<void> {
+async function restoreLegacyContainer(deploymentTarget: ComposeTarget, legacy: string): Promise<void> {
   await command(["rm", "-f", deploymentTarget.container], true);
   await command(["rename", legacy, deploymentTarget.container]);
   await command(["start", deploymentTarget.container]);
@@ -339,7 +359,10 @@ async function deploy(deploymentTarget: DeploymentTarget, image: string, release
           },
         };
         await writeState(deploymentTarget, next);
-        if (legacyContainer) {
+        // parkLegacyContainer only ever parks a Compose target's container, so
+        // legacyContainer being set already implies this branch — the check is
+        // what proves it to the compiler.
+        if (legacyContainer && deploymentTarget.kind === "compose") {
           try {
             await restoreLegacyContainer(deploymentTarget, legacyContainer);
           } catch (restoreError) {
@@ -382,8 +405,8 @@ function promotionCandidate(deploymentTarget: DeploymentTarget): string[] {
 async function promote(sourceTarget: DeploymentTarget, destTarget: DeploymentTarget, release: string): Promise<DeploymentState> {
   const sourceState = await state(sourceTarget);
   if (sourceState.current?.revision !== release) throw new HttpError(409, "This button belongs to an older source release.");
-  if (!destTarget.remoteUrl) return deploy(destTarget, sourceState.current.image, release);
-  const artifact = (await Bun.file(destTarget.artifactFile as string)
+  if (destTarget.kind === "compose") return deploy(destTarget, sourceState.current.image, release);
+  const artifact = (await Bun.file(destTarget.artifactFile)
     .json()
     .catch(() => null)) as { image?: unknown; release?: unknown } | null;
   if (!artifact || artifact.release !== release || !immutableImage(artifact.image, destTarget.repository))
@@ -489,4 +512,11 @@ function serve(hostname: string): void {
 }
 
 serve("127.0.0.1");
+// Also on the Docker bridge by default: the agent drives Compose on the host,
+// so it cannot live inside the container that CI can reach — CI's runner calls
+// it through the bridge address instead. That exposes the port to every
+// container on this host, which is why the bearer token is required, compared
+// in constant time, and checked before the body is even parsed. Set
+// DEPLOY_AGENT_HOST=127.0.0.1 to bind loopback only where CI reaches the host
+// some other way (e.g. over SSH).
 if (config.host !== "127.0.0.1") serve(config.host);

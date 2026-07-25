@@ -1,0 +1,60 @@
+/* =============================================================================
+  Кнопки «Обсудить» / «Поделиться».
+  ─────────────────────────────────────────────────────────────────────────────
+  Пара таких кнопок есть и на сцене (StoryVisual, мобильный низ экрана), и в
+  правой панели (StoryContext). Раньше блок был дословно скопирован в оба
+  <style>; теперь он один и подключается из StoryPlayer.svelte, поэтому не
+  scoped — селекторы намеренно живут в пространстве имён .story-*.
+  Загружается только там, где смонтирован плеер.
+============================================================================= */
+.story-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0.44rem 0.52rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-header);
+  font-weight: 900;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.story-action:hover {
+  border-color: rgba(243, 246, 250, 0.25);
+  color: var(--text-header);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 12px rgba(255, 255, 255, 0.04);
+}
+
+.story-action--primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: white;
+}
+
+.story-action--primary:hover {
+  background: #e53e3e;
+  border-color: #e53e3e;
+  color: white;
+  box-shadow: 0 0 16px rgba(220, 38, 38, 0.5);
+  transform: translateY(-1px);
+}
+
+/* ---- Телефон (≤760px): крупнее и на затемнении сцены ---- */
+@media (max-width: 760px) {
+  .story-action {
+    min-height: 48px;
+    border-radius: 11px;
+    background: rgba(0, 0, 0, 0.58);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+
+  .story-action--primary {
+    background: var(--accent);
+  }
+}

@@ -94,16 +94,20 @@ function onImageError(event: Event): void {
 <div class="story-visual-wrap">
   <article class="story-visual" class:story-visual--no-image={!post.image} data-story-visual {onwheel}>
     {#if hasGallerySequence}
-      <div class="story-visual-progress story-visual-progress--segmented" role="tablist" aria-label={`${post.title} — slides`}>
+      <!-- Не tablist: панелей, которые переключались бы вкладками, здесь нет —
+           это индикатор слайдов, часть которых кликабельна. role="tab" без
+           tabpanel/aria-controls только вводил скринридер в заблуждение, а
+           неизображённые сегменты объявлялись вкладками, до которых нельзя
+           дойти клавиатурой. Текущий слайд помечается aria-current. -->
+      <div class="story-visual-progress story-visual-progress--segmented" role="group" aria-label={`${post.title} — slides`}>
         {#each gallerySequence as media, index}
           <button
             type="button"
             class="story-visual-progress__segment"
             class:is-complete={index < gallerySubIndex}
             class:is-clickable={media.type === "image"}
-            role="tab"
-            aria-selected={index === gallerySubIndex}
-            aria-label={`${index + 1}/${gallerySequence.length}`}
+            aria-current={index === gallerySubIndex ? "true" : undefined}
+            aria-label={`${index + 1} / ${gallerySequence.length}`}
             disabled={media.type !== "image"}
             onclick={(event) => {
               event.preventDefault();
@@ -126,6 +130,9 @@ function onImageError(event: Event): void {
       href={post.url}
       aria-label={post.title}
       onclick={(event) => {
+        /* href — настоящий адрес поста: modifier-клик и средняя кнопка должны
+           открывать его в новой вкладке, а не глотаться паузой. */
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
         event.preventDefault();
         ontoggleplay();
       }}
@@ -616,58 +623,8 @@ function onImageError(event: Event): void {
     }
   }
 
-  /* Кнопки Обсудить/Поделиться (мобильный низ сцены). Базовые стили
-     продублированы в StoryContext.svelte — там своя пара кнопок. */
-  .story-action {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 40px;
-    padding: 0.44rem 0.52rem;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.03);
-    color: var(--text-header);
-    font-weight: 900;
-    font-size: 0.82rem;
-    cursor: pointer;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  .story-action:hover {
-    border-color: rgba(243, 246, 250, 0.25);
-    color: var(--text-header);
-    background: rgba(255, 255, 255, 0.08);
-    box-shadow: 0 4px 12px rgba(255, 255, 255, 0.04);
-  }
-
-  .story-action--primary {
-    border-color: var(--accent);
-    background: var(--accent);
-    color: white;
-  }
-
-  .story-action--primary:hover {
-    background: #e53e3e;
-    border-color: #e53e3e;
-    color: white;
-    box-shadow: 0 0 16px rgba(220, 38, 38, 0.5);
-    transform: translateY(-1px);
-  }
-
-  @media (max-width: 760px) {
-    .story-action {
-      min-height: 48px;
-      border-radius: 11px;
-      background: rgba(0, 0, 0, 0.58);
-      backdrop-filter: blur(14px);
-      -webkit-backdrop-filter: blur(14px);
-    }
-
-    .story-action--primary {
-      background: var(--accent);
-    }
-  }
+  /* Кнопки Обсудить/Поделиться (мобильный низ сцены) стилизует общий
+     story-actions.css — его подключает StoryPlayer.svelte. */
 
   @media (max-width: 440px) {
     .audio-chip span:last-child {

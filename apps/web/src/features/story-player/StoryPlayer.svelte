@@ -38,6 +38,9 @@ import { preloadAdjacentMedia } from "../../scripts/story-player/media";
 import { readMutedPreference, writeMutedPreference } from "../../scripts/story-player/preferences";
 import { createStoryProgressController } from "../../scripts/story-player/progress";
 import { giscusConfig, storyIntervalMs, swipeThresholdPx, wheelCooldownMs } from "./config";
+/* Общие стили пары кнопок «Обсудить»/«Поделиться»: их рисуют и сцена, и правая
+   панель, поэтому блок вынесен из обоих scoped-блоков сюда (см. сам файл). */
+import "./story-actions.css";
 import type { StoryUi } from "./i18n";
 import type { PlayerPost } from "./payload";
 import StoryContext from "./StoryContext.svelte";
@@ -282,8 +285,13 @@ async function share(): Promise<void> {
       shareCopied = true;
       window.setTimeout(() => (shareCopied = false), 1400);
     }
-  } catch {
+  } catch (error) {
+    /* Закрыл системный лист — это отказ, а не сбой: копировать ссылку в буфер
+       за спиной пользователя нельзя. Копируем только если сам share сломался. */
+    if (error instanceof Error && error.name === "AbortError") return;
     await navigator.clipboard?.writeText(url).catch(() => {});
+    shareCopied = true;
+    window.setTimeout(() => (shareCopied = false), 1400);
   }
 }
 
@@ -368,6 +376,17 @@ $effect(() => {
     }
     measureReadMore();
   });
+});
+
+/* Влезает ли текст — зависит от высоты колонки, а она меняется и без смены
+   поста: поворот экрана, ресайз окна, схлопывание адресной строки на мобильном.
+   Без этого «Читать дальше» показывал состояние прошлого размера. */
+$effect(() => {
+  const element = copyEl;
+  if (!element) return;
+  const observer = new ResizeObserver(() => measureReadMore());
+  observer.observe(element);
+  return () => observer.disconnect();
 });
 
 /* «Читать дальше» показывается, только если текст реально не влез. */

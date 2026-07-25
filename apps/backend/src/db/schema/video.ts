@@ -14,6 +14,11 @@ export const videoDrafts = sqliteTable(
     scheduledAt: text(),
     reminderSentAt: text(),
     retentionUntil: text(),
+    /** Set once the source file has been reclaimed. Retention deadlines are
+     * recomputed on every target change, so they cannot say whether the file is
+     * already gone; without this marker the retention sweep keeps re-selecting
+     * long-finished drafts forever. */
+    sourcePrunedAt: text(),
     controlChatId: integer(),
     controlMessageId: integer(),
     ...timestamps(),

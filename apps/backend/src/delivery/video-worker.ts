@@ -26,6 +26,12 @@ export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb)
   if (!config.studio.modules.video_posting) return 0;
   recoverVideoLocks(backendDb, config);
   const jobs = claimVideoJobs(backendDb, config.PUBLISH_CLAIM_LIMIT);
+  // Deliberately serial, unlike the social pipeline's per-target lanes
+  // (delivery/publish-workflow.ts): every job here moves a video file of a few
+  // hundred MB, and two concurrent uploads share one uplink, so they finish no
+  // sooner together than one after the other — and risk timing each other out.
+  // The trade-off is accepted: a target's publish can slip a few minutes past
+  // its scheduled time while an upload ahead of it drains.
   for (const job of jobs) {
     try {
       await withHeartbeat(backendDb, job, config.VIDEO_HEARTBEAT_INTERVAL_SECONDS, () => executeVideoJob(config, backendDb, job));
@@ -50,7 +56,12 @@ export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb)
  * stale after VIDEO_LOCK_TIMEOUT_SECONDS with no heartbeat. */
 async function withHeartbeat<T>(backendDb: BackendDb, job: VideoJob, intervalSeconds: number, work: () => Promise<T>): Promise<T> {
   const timer = setInterval(() => {
-    backendDb.db.update(videoJobs).set({ lockedAt: new Date().toISOString() }).where(activeVideoJob(job)).run();
+    // A throw inside a timer callback has no caller to catch it and would take
+    // the whole process down, killing every other in-flight job. A missed beat
+    // is harmless on its own: the next one lands well inside the lock timeout.
+    try {
+      backendDb.db.update(videoJobs).set({ lockedAt: new Date().toISOString() }).where(activeVideoJob(job)).run();
+    } catch {}
   }, intervalSeconds * 1000);
   try {
     return await work();
@@ -451,26 +462,35 @@ function pruneExpiredVideos(config: BackendConfig, backendDb: BackendDb): void {
     .select()
     .from(videoDrafts)
     .where(
-      or(
-        and(
-          lte(videoDrafts.retentionUntil, now),
-          or(
-            eq(videoDrafts.status, "published"),
-            eq(videoDrafts.status, "partial"),
-            eq(videoDrafts.status, "cancelled"),
-            eq(videoDrafts.status, "editing"),
+      and(
+        // The source is reclaimed exactly once. retentionUntil cannot record
+        // that: it is recomputed from scratch on every target change, and the
+        // sweep itself used to clear it — so a long-finished draft matched the
+        // legacy branch again one retention window later, and every window
+        // after that, re-touching updatedAt (which orders the Studio video
+        // list) on a draft nobody had opened in months.
+        isNull(videoDrafts.sourcePrunedAt),
+        or(
+          and(
+            lte(videoDrafts.retentionUntil, now),
+            or(
+              eq(videoDrafts.status, "published"),
+              eq(videoDrafts.status, "partial"),
+              eq(videoDrafts.status, "cancelled"),
+              eq(videoDrafts.status, "editing"),
+            ),
           ),
+          // Before Studio assets gained the same retention policy, final drafts
+          // had their deadline cleared while their source file lived forever.
+          // Pick those up once they have been final for a full retention window.
+          and(
+            isNotNull(videoDrafts.studioMediaAssetId),
+            isNull(videoDrafts.retentionUntil),
+            inArray(videoDrafts.status, ["published", "partial", "cancelled"]),
+            lte(videoDrafts.updatedAt, legacyDraftExpiresAt),
+          ),
+          and(eq(videoDrafts.status, "editing"), isNull(videoDrafts.retentionUntil), lte(videoDrafts.createdAt, legacyDraftExpiresAt)),
         ),
-        // Before Studio assets gained the same retention policy, final drafts
-        // had their deadline cleared while their source file lived forever.
-        // Pick those up once they have been final for a full retention window.
-        and(
-          isNotNull(videoDrafts.studioMediaAssetId),
-          isNull(videoDrafts.retentionUntil),
-          inArray(videoDrafts.status, ["published", "partial", "cancelled"]),
-          lte(videoDrafts.updatedAt, legacyDraftExpiresAt),
-        ),
-        and(eq(videoDrafts.status, "editing"), isNull(videoDrafts.retentionUntil), lte(videoDrafts.createdAt, legacyDraftExpiresAt)),
       ),
     )
     .all();
@@ -482,6 +502,7 @@ function pruneExpiredVideos(config: BackendConfig, backendDb: BackendDb): void {
       .set({
         status: row.status === "editing" ? "cancelled" : row.status,
         retentionUntil: null,
+        sourcePrunedAt: now,
         updatedAt: now,
       })
       .where(eq(videoDrafts.id, row.id))

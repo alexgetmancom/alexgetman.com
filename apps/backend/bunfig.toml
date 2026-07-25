@@ -1,0 +1,3 @@
+[test]
+# Same guard as the root bunfig, for `bun test` run from this workspace.
+preload = ["./tests/helpers/no-network.ts"]

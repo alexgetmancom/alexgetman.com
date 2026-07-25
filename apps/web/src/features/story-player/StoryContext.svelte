@@ -50,7 +50,14 @@ let {
 const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(/\s+/).length / 180)));
 </script>
 
-<aside class="story-context" data-story-context aria-hidden={!readingVisible && !discussionVisible}>
+<!-- Скрытость панели описывает CSS, а не атрибут: на десктопе это постоянная
+     третья колонка, и только на ≤760px она — выезжающий лист. Прежний
+     aria-hidden={!readingVisible && !discussionVisible} был всегда истинным на
+     десктопе, то есть прятал от скринридеров единственный h1 страницы, весь
+     текст поста и две живые кнопки (axe: aria-hidden-focus). Мобильное
+     закрытое состояние получает visibility: hidden — он убирает панель и из
+     дерева доступности, и из Tab-порядка, ровно там, где она не видна. -->
+<aside class="story-context" data-story-context>
   <div class="story-panel is-active" class:is-updating={updating} data-panel="post">
     <div class="story-category-wrap" hidden={discussionVisible}>
       <span class="story-category-badge">{post.category}</span>
@@ -68,8 +75,10 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
         <p>{paragraph}</p>
       {/each}
     </div>
-    {#if post.sources.length > 0 && !discussionVisible}
-      <div class="story-sources" aria-label="Sources">
+    {#if post.sources.length > 0}
+      <!-- hidden, как у соседних блоков: скрытие на время обсуждения — одно
+           правило для всей карточки, а не два разных механизма. -->
+      <div class="story-sources" aria-label="Sources" hidden={discussionVisible}>
         {#each post.sources as source}
           <a href={source.url} target="_blank" rel="noopener noreferrer" class="story-source-link">
             {source.label} ↗
@@ -294,42 +303,8 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
     text-decoration: underline;
   }
 
-  .story-action {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 40px;
-    padding: 0.44rem 0.52rem;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.03);
-    color: var(--text-header);
-    font-weight: 900;
-    font-size: 0.82rem;
-    cursor: pointer;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  .story-action:hover {
-    border-color: rgba(243, 246, 250, 0.25);
-    color: var(--text-header);
-    background: rgba(255, 255, 255, 0.08);
-    box-shadow: 0 4px 12px rgba(255, 255, 255, 0.04);
-  }
-
-  .story-action--primary {
-    border-color: var(--accent);
-    background: var(--accent);
-    color: white;
-  }
-
-  .story-action--primary:hover {
-    background: #e53e3e;
-    border-color: #e53e3e;
-    color: white;
-    box-shadow: 0 0 16px rgba(220, 38, 38, 0.5);
-    transform: translateY(-1px);
-  }
+  /* Сами кнопки .story-action стилизует общий story-actions.css — его
+     подключает StoryPlayer.svelte (та же пара кнопок есть на сцене). */
 
   /* ---------------------- Вкладка обсуждения (giscus) ----------------------- */
   /* Корень вешает .is-discussing на .story-player — прячем контент поста. */
@@ -413,11 +388,16 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
       overflow-y: auto;
       overscroll-behavior: contain;
       opacity: 0;
+      /* visibility, а не только opacity: скрывает панель и от скринридеров, и
+         от Tab, пока лист закрыт. Переход по visibility задержан на время
+         затухания, иначе панель пропала бы мгновенно, без анимации. */
+      visibility: hidden;
       pointer-events: none;
       transform: translateY(1.2rem) scale(0.98);
       transition:
         transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
-        opacity 0.2s ease;
+        opacity 0.2s ease,
+        visibility 0s linear 0.28s;
       backdrop-filter: blur(20px);
       -webkit-backdrop-filter: blur(20px);
       animation: none;
@@ -426,8 +406,10 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
     :global(.story-player.is-reading) .story-context,
     :global(.story-player.is-discussing) .story-context {
       opacity: 1;
+      visibility: visible;
       pointer-events: auto;
       transform: translateY(0) scale(1);
+      transition-delay: 0s;
     }
 
     :global(.story-player.is-discussing) .story-panel--discussion {
