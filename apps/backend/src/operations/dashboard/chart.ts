@@ -31,18 +31,15 @@ export function renderWeeklyChart(posts: PipelinePost[], rangeStart?: Date, rang
   const bottom = 24;
   const plotW = width - left - right;
   const plotH = height - top - bottom;
-  const boundsByMetric = Object.fromEntries(
-    metrics.map((metric) => {
-      const values = ordered.map(([, bucket]) => bucket[metric]);
-      const min = Math.min(...values);
-      const max = Math.max(...values);
-      return [metric, { min, span: Math.max(max - min, 1) }];
-    }),
-  ) as Record<ChartMetricName, { min: number; span: number }>;
+  // One shared axis anchored at zero. Scaling each series to its own min/max
+  // put three incomparable lines in the same coordinate space (3 replies could
+  // sit above 50k views) and flattened a constant series onto the bottom edge
+  // as if it were zero. Exact per-day values for all series stay in the tooltip.
+  const axisMax = Math.max(1, ...ordered.flatMap(([, bucket]) => metrics.map((metric) => bucket[metric])));
 
-  const point = (index: number, metric: ChartMetricName, value: number): [number, number] => [
+  const point = (index: number, value: number): [number, number] => [
     left + (plotW * index) / Math.max(1, ordered.length - 1),
-    top + plotH - (plotH * (value - boundsByMetric[metric].min)) / boundsByMetric[metric].span,
+    top + plotH - (plotH * value) / axisMax,
   ];
 
   let grid = "";
@@ -56,7 +53,7 @@ export function renderWeeklyChart(posts: PipelinePost[], rangeStart?: Date, rang
   for (const metric of metrics) {
     const metricPoints: string[] = [];
     ordered.forEach(([day, bucket], index) => {
-      const [x, y] = point(index, metric, bucket[metric]);
+      const [x, y] = point(index, bucket[metric]);
       metricPoints.push(`${x.toFixed(1)},${y.toFixed(1)}`);
       const dayValues = metrics.map((item) => `${labels[item]}: ${formatMetricValue(bucket[item])}`).join(" · ");
       const tooltip = `${formatDateLabel(day)} · ${dayValues}`;
@@ -72,7 +69,7 @@ export function renderWeeklyChart(posts: PipelinePost[], rangeStart?: Date, rang
 
   const xLabels = ordered
     .map(([day], index) => {
-      const [x] = point(index, "views", 0);
+      const [x] = point(index, 0);
       return `<text x="${x.toFixed(1)}" y="${height - 7}" text-anchor="middle">${escapeHtml(formatDateLabel(day))}</text>`;
     })
     .join("");
@@ -167,16 +164,21 @@ type TimelinePoint = { at: Date; value: number };
 
 function sampledViewTimeline(posts: PipelinePost[], start: Date, cutoff: Date): TimelinePoint[] {
   const events: Array<{ at: Date; key: string; value: number }> = [];
-  for (const post of posts) {
+  posts.forEach((post, postIndex) => {
+    // The key identifies one (post, target) series so a later sample replaces
+    // the earlier one instead of being added to it. Falling back to the post
+    // date collapsed two same-day keyless posts into one series and corrupted
+    // the running total; the render-local index keeps them apart.
+    const postKey = post.post_key ?? post.post_id ?? `index:${postIndex}`;
     for (const [target, metrics] of Object.entries(post.metrics ?? {})) {
       for (const sample of metrics?.views?.samples ?? []) {
         const at = sample.sampled_at ? new Date(sample.sampled_at) : null;
         const value = Number(sample.value);
         if (!at || Number.isNaN(at.getTime()) || !Number.isFinite(value) || at < start || at > cutoff) continue;
-        events.push({ at, key: `${post.post_key ?? post.post_id ?? post.date ?? "post"}:${target}`, value });
+        events.push({ at, key: `${postKey}:${target}`, value });
       }
     }
-  }
+  });
   events.sort((left, right) => left.at.getTime() - right.at.getTime());
   const latest = new Map<string, number>();
   let total = 0;

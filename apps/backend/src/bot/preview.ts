@@ -5,26 +5,13 @@ import { requireDraft } from "../content/drafts.js";
 import type { BackendDb } from "../db/client.js";
 import { draftSources } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
-import { t } from "../interfaces/telegram/i18n/index.js";
+import { type MessageKey, t } from "../interfaces/telegram/i18n/index.js";
 import { formatMsk } from "../interfaces/telegram/time.js";
 import { mediaPolicyForTarget } from "../publishing/media-policy.js";
 import { parseTargets } from "../publishing/targets.js";
 import { type BotLocale, botLocale } from "./i18n.js";
 
-export type DraftView =
-  | "overview"
-  | "modes"
-  | "schedule"
-  | "schedule_ru"
-  | "schedule_ru_day"
-  | "schedule_ru_evening"
-  | "schedule_en"
-  | "schedule_en_us"
-  | "confirm_publish"
-  | "confirm_delete"
-  | "platforms";
-
-const DRAFT_VIEWS: readonly DraftView[] = [
+const DRAFT_VIEWS = [
   "overview",
   "modes",
   "schedule",
@@ -36,17 +23,51 @@ const DRAFT_VIEWS: readonly DraftView[] = [
   "confirm_publish",
   "confirm_delete",
   "platforms",
-];
+] as const;
+
+export type DraftView = (typeof DRAFT_VIEWS)[number];
 
 export function isDraftView(value: string): value is DraftView {
   return (DRAFT_VIEWS as readonly string[]).includes(value);
 }
 
-const RU_MAIN_SLOTS = ["08:00", "09:00", "10:00", "11:00"];
-const RU_DAY_SLOTS = ["12:00", "13:00", "14:00", "15:00", "16:00", "17:00"];
-const RU_EVENING_SLOTS = ["18:00", "19:00", "20:00", "21:00", "22:00"];
-const EN_MAIN_SLOTS = ["18:00", "19:00", "20:00", "21:00", "22:00", "23:00"];
-const EN_US_SLOTS = ["00:00", "01:00", "02:00", "03:00", "04:00"];
+/** RU and EN slot pickers differ only in their slot grids, title and the extra
+ * sub-views reachable from the main one, so they are described as data and
+ * rendered once. `slots` doubles as the lookup that maps a view to its grid. */
+type ScheduleGrid = {
+  target: "ru" | "en";
+  mainView: DraftView;
+  titleKey: MessageKey;
+  slots: Partial<Record<DraftView, readonly string[]>>;
+  extraViews: Array<{ labelKey: MessageKey; view: DraftView }>;
+};
+
+const SCHEDULE_GRIDS: readonly ScheduleGrid[] = [
+  {
+    target: "ru",
+    mainView: "schedule_ru",
+    titleKey: "post.schedule-ru-title",
+    slots: {
+      schedule_ru: ["08:00", "09:00", "10:00", "11:00"],
+      schedule_ru_day: ["12:00", "13:00", "14:00", "15:00", "16:00", "17:00"],
+      schedule_ru_evening: ["18:00", "19:00", "20:00", "21:00", "22:00"],
+    },
+    extraViews: [
+      { labelKey: "post.ru-day", view: "schedule_ru_day" },
+      { labelKey: "post.ru-evening", view: "schedule_ru_evening" },
+    ],
+  },
+  {
+    target: "en",
+    mainView: "schedule_en",
+    titleKey: "post.schedule-en-title",
+    slots: {
+      schedule_en: ["18:00", "19:00", "20:00", "21:00", "22:00", "23:00"],
+      schedule_en_us: ["00:00", "01:00", "02:00", "03:00", "04:00"],
+    },
+    extraViews: [{ labelKey: "post.en-us-night", view: "schedule_en_us" }],
+  },
+];
 
 function addSlotButtons(keyboard: InlineKeyboard, target: "ru" | "en", clocks: readonly string[], draftId: number): InlineKeyboard {
   for (let index = 0; index < clocks.length; index += 2) {
@@ -98,41 +119,22 @@ export function draftPreview(
     };
   }
 
-  if (view === "schedule_ru" || view === "schedule_ru_day" || view === "schedule_ru_evening") {
-    const slots = view === "schedule_ru" ? RU_MAIN_SLOTS : view === "schedule_ru_day" ? RU_DAY_SLOTS : RU_EVENING_SLOTS;
-    addSlotButtons(keyboard, "ru", slots, draftId);
-    if (view === "schedule_ru") {
+  const scheduleGrid = SCHEDULE_GRIDS.find((grid) => view in grid.slots);
+  if (scheduleGrid) {
+    const isMainView = view === scheduleGrid.mainView;
+    addSlotButtons(keyboard, scheduleGrid.target, scheduleGrid.slots[view] ?? [], draftId);
+    if (isMainView) {
+      for (const extra of scheduleGrid.extraViews) keyboard.text(t(locale, extra.labelKey), `sched_view:${extra.view}:${draftId}`);
       keyboard
-        .text(t(locale, "post.ru-day"), `sched_view:schedule_ru_day:${draftId}`)
-        .text(t(locale, "post.ru-evening"), `sched_view:schedule_ru_evening:${draftId}`)
         .row()
-        .text(t(locale, "post.enter-time"), `sched_manual:ru:${draftId}`)
+        .text(t(locale, "post.enter-time"), `sched_manual:${scheduleGrid.target}:${draftId}`)
         .row()
         .text(t(locale, "common.back"), `preview:${draftId}`);
     } else {
-      keyboard.text(t(locale, "common.back"), `sched_view:schedule_ru:${draftId}`);
+      keyboard.text(t(locale, "common.back"), `sched_view:${scheduleGrid.mainView}:${draftId}`);
     }
     return {
-      text: `${draftHeader(draftId, targets, locale)}\n\n📅 *${t(locale, "post.schedule-ru-title")}*\n${t(locale, "post.pick-slot-hint")}`,
-      keyboard,
-    };
-  }
-
-  if (view === "schedule_en" || view === "schedule_en_us") {
-    const slots = view === "schedule_en" ? EN_MAIN_SLOTS : EN_US_SLOTS;
-    addSlotButtons(keyboard, "en", slots, draftId);
-    if (view === "schedule_en") {
-      keyboard
-        .text(t(locale, "post.en-us-night"), `sched_view:schedule_en_us:${draftId}`)
-        .row()
-        .text(t(locale, "post.enter-time"), `sched_manual:en:${draftId}`)
-        .row()
-        .text(t(locale, "common.back"), `preview:${draftId}`);
-    } else {
-      keyboard.text(t(locale, "common.back"), `sched_view:schedule_en:${draftId}`);
-    }
-    return {
-      text: `${draftHeader(draftId, targets, locale)}\n\n📅 *${t(locale, "post.schedule-en-title")}*\n${t(locale, "post.pick-slot-hint")}`,
+      text: `${draftHeader(draftId, targets, locale)}\n\n📅 *${t(locale, scheduleGrid.titleKey)}*\n${t(locale, "post.pick-slot-hint")}`,
       keyboard,
     };
   }

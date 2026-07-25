@@ -8,6 +8,8 @@ import type { DeliveryProjection } from "../../studio/projections.js";
 import { studioServices } from "../../studio/services/index.js";
 import { t } from "./i18n/index.js";
 
+const TELEGRAM_MEDIA_GROUP_LIMIT = 10;
+
 /** Telegram renderer for Studio delivery projections. It owns no planning decisions. */
 export async function sendTelegramDeliveryPreviews(
   ctx: Context,
@@ -71,7 +73,13 @@ async function sendProjectionContent(ctx: Context, projection: DeliveryProjectio
       ];
     });
     if (group.length > 1) {
-      await ctx.replyWithMediaGroup(group as never);
+      // Telegram rejects an album larger than 10 outright, which would lose the
+      // whole preview; send the first ten as the album and the rest one by one.
+      await ctx.replyWithMediaGroup(group.slice(0, TELEGRAM_MEDIA_GROUP_LIMIT) as never);
+      for (const item of group.slice(TELEGRAM_MEDIA_GROUP_LIMIT)) {
+        if (item.type === "video") await ctx.replyWithVideo(item.media);
+        else await ctx.replyWithPhoto(item.media);
+      }
       if (text && !hasCaption) await ctx.reply(text, entityOptions(entities));
       return;
     }

@@ -14,6 +14,10 @@ import { recordAuthFailure, recordAuthSuccess, recordTokenPing, shouldPingToken 
 // breaker publish failures use, so a token that died between posts is caught
 // (and publishing paused) before the next real publish attempt.
 const PING_INTERVAL_SECONDS = 60 * 60;
+// Retry cadence after an inconclusive probe (network error, unrelated 5xx) —
+// short enough that a transient blip does not buy a dead token another hour of
+// invisibility, long enough not to hammer a provider that is already struggling.
+const PING_RETRY_SECONDS = 5 * 60;
 // Meta's debug_token tells us exactly when a Graph API token expires; warn
 // once it's inside this window so a human can rotate it ahead of the failure
 // instead of after a burst of dead publishes.
@@ -181,11 +185,19 @@ export async function checkTokenHealth(config: BackendConfig, backendDb: Backend
         });
       }
     } catch (error) {
-      recordTokenPing(backendDb, probe.target);
       const status = error instanceof ExternalHttpError ? error.status : null;
       // Only 401/403 mean the credential itself is dead; a network hiccup or
       // an unrelated 5xx must not trip the breaker and pause real publishes.
-      if (status === 401 || status === 403) recordAuthFailure(backendDb, probe.target);
+      const conclusive = status === 401 || status === 403;
+      // An inconclusive probe must not consume the whole hour: that is exactly
+      // the window in which a token that died between posts stays invisible.
+      recordTokenPing(
+        backendDb,
+        probe.target,
+        undefined,
+        conclusive ? {} : { backdateSeconds: PING_INTERVAL_SECONDS - PING_RETRY_SECONDS },
+      );
+      if (conclusive) recordAuthFailure(backendDb, probe.target);
     }
   }
   return checked;

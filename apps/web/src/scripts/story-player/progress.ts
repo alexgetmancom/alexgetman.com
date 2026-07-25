@@ -34,7 +34,7 @@ export function createStoryProgressController({
   let videoDriven = false;
 
   function clearTimer(timer: number | null): void {
-    if (timer) window.clearTimeout(timer);
+    if (timer !== null) window.clearTimeout(timer);
   }
 
   function clearVideoProgressFallback(): void {
@@ -100,16 +100,24 @@ export function createStoryProgressController({
     if (progressRestartBlocked) return;
     const post = posts[activeIndex()];
     if (!post) return;
+    // Both timers clear their own handle before doing anything: `update()`
+    // treats a non-null handle as "a restart is already pending", so a timer
+    // that fired without starting the animation would otherwise wedge the
+    // progress bar in a state it can never be scheduled out of.
     if (post.mediaType === "video") {
       videoProgressFallbackTimer = window.setTimeout(
         () => {
+          videoProgressFallbackTimer = null;
           if (posts[activeIndex()]?.mediaType === "video") startProgressAnimation(intervalMs);
         },
         Math.max(delay, 700),
       );
       return;
     }
-    animationTimer = window.setTimeout(() => startProgressAnimation(intervalMs), delay);
+    animationTimer = window.setTimeout(() => {
+      animationTimer = null;
+      startProgressAnimation(intervalMs);
+    }, delay);
   }
 
   function resetForStory(options: { keepProgressIdle?: boolean } = {}): void {
@@ -122,6 +130,22 @@ export function createStoryProgressController({
     progressRestartBlocked = Boolean(options.keepProgressIdle);
     resetProgressFills();
     if (!isPaused() && !options.keepProgressIdle) scheduleCurrentProgress();
+  }
+
+  /** Auto-advance to the next slide of the same post. Unlike a story change
+   * there is no scene to settle — only the image src swaps — so the bar starts
+   * immediately instead of freezing at zero for the story-transition delay. */
+  function resetForSlide(): void {
+    clearTimer(animationTimer);
+    animationTimer = null;
+    clearVideoProgressFallback();
+    clearAdvanceTimer();
+    progressActive = false;
+    videoDriven = false;
+    resetProgressFills();
+    // A macrotask, so Svelte has flushed the segment swap and getProgressFill()
+    // resolves to the new slide's node rather than the destroyed one.
+    if (!isPaused() && !progressRestartBlocked) scheduleCurrentProgress(0);
   }
 
   function update(paused: boolean): void {
@@ -203,6 +227,7 @@ export function createStoryProgressController({
 
   return {
     resetForStory,
+    resetForSlide,
     update,
     resumeAfterManualNavigation,
     handleVideoPlaying,

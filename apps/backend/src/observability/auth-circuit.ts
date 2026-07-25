@@ -106,12 +106,24 @@ export function shouldPingToken(backendDb: BackendDb, target: string, intervalSe
 }
 
 /** Records that a live token probe ran, and its discovered expiry if the
- * provider reported one (see credentialChecks.expiresAt). */
-export function recordTokenPing(backendDb: BackendDb, target: string, tokenExpiresAt?: string | null): void {
+ * provider reported one (see credentialChecks.expiresAt).
+ *
+ * `options.backdateSeconds` records the ping as having happened earlier than it
+ * did, so the next probe becomes due sooner than the normal interval. It exists
+ * for inconclusive probes (a network blip, an unrelated 5xx): those learned
+ * nothing about the credential, so charging them a full interval would hide a
+ * dead token for exactly as long as the probe was meant to prevent. */
+export function recordTokenPing(
+  backendDb: BackendDb,
+  target: string,
+  tokenExpiresAt?: string | null,
+  options: { backdateSeconds?: number } = {},
+): void {
   const now = new Date().toISOString();
   const row = backendDb.db.select().from(credentialChecks).where(eq(credentialChecks.target, target)).get();
   const details = parseDetails(row?.detailsJson);
-  const nextDetails: AuthCircuitDetails = { ...details, lastPingAt: now };
+  const lastPingAt = options.backdateSeconds ? new Date(Date.now() - options.backdateSeconds * 1000).toISOString() : now;
+  const nextDetails: AuthCircuitDetails = { ...details, lastPingAt };
   if (row) {
     backendDb.db
       .update(credentialChecks)

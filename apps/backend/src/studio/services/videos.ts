@@ -54,6 +54,9 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
       return validateVideoDraft(config, backendDb, videoDraftId);
     },
     async publish(actorId: number, videoDraftId: number) {
+      // Ownership first: otherwise a foreign draft answers "choose platforms"
+      // instead of "not yours", which leaks whether it exists and how it looks.
+      requireOwnedVideo(backendDb, actorId, videoDraftId);
       const targets = listVideoTargets(backendDb, videoDraftId).map((row) => row.target as VideoTarget);
       if (!targets.length) throw new StudioError("err.video-choose-platforms");
       const schedule = Object.fromEntries(targets.map((target) => [target, new Date(Date.now() + 60_000)])) as Partial<

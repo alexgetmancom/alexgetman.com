@@ -1,9 +1,18 @@
 import { metricNumber } from "../../analytics/snapshots/creator-store.js";
 import type { BackendDb } from "../../db/client.js";
+import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../../publishing/video-types.js";
 import { formatMetricValue } from "./format.js";
 import { escapeHtml } from "./html.js";
 
-type VideoTarget = {
+// Columns are derived from VIDEO_TARGETS rather than hardcoded, so a new video
+// platform appears in the dashboard instead of silently vanishing from it.
+const TARGET_ICONS: Partial<Record<VideoTarget, string>> = { youtube_shorts: "▶️", instagram_reels: "📸" };
+
+function targetColumnLabel(target: VideoTarget): string {
+  return `${TARGET_ICONS[target] ?? "🎬"} ${videoTargetLabel(target)}`;
+}
+
+type VideoTargetRow = {
   target: string;
   status: string;
   scheduledAt: string | null;
@@ -13,7 +22,7 @@ type VideoTarget = {
   metricsJson: string | null;
 };
 
-type VideoRow = { id: number; label: string; createdAt: string; scheduledAt: string | null; targets: VideoTarget[] };
+type VideoRow = { id: number; label: string; createdAt: string; scheduledAt: string | null; targets: VideoTargetRow[] };
 
 /** Operations read-model for the Video Studio. It uses only durable video and
  * analytics snapshots; the Telegram conversation is not part of this view. */
@@ -49,10 +58,12 @@ export function renderVideoSection(backendDb: BackendDb): string {
       ),
     ),
   ].join("");
+  const columnCount = VIDEO_TARGETS.length + 4;
   const tableRows = rows.length
     ? rows.map((row) => renderVideoRow(row)).join("")
-    : '<tr><td colspan="6" class="note">Роликов пока нет.</td></tr>';
-  return `<section id="video" class="video-dashboard"><div class="grid video-stats">${cards}</div>${renderVideoChart(trend)}<div class="table-wrap"><table><thead><tr><th>Видео</th><th>Создано</th><th>План</th><th>▶️ YouTube</th><th>📸 Instagram</th><th>Σ</th></tr></thead><tbody>${tableRows}</tbody></table></div><p class="note">Подписчики — снимки канала/профиля. Их прирост показан рядом с роликами по времени, но API не позволяет честно приписать конкретного подписчика одному ролику.</p></section>`;
+    : `<tr><td colspan="${columnCount}" class="note">Роликов пока нет.</td></tr>`;
+  const targetHeaders = VIDEO_TARGETS.map((target) => `<th>${escapeHtml(targetColumnLabel(target))}</th>`).join("");
+  return `<section id="video" class="video-dashboard"><div class="grid video-stats">${cards}</div>${renderVideoChart(trend)}<div class="table-wrap"><table><thead><tr><th>Видео</th><th>Создано</th><th>План</th>${targetHeaders}<th>Σ</th></tr></thead><tbody>${tableRows}</tbody></table></div><p class="note">Подписчики — снимки канала/профиля. Их прирост показан рядом с роликами по времени, но API не позволяет честно приписать конкретного подписчика одному ролику.</p></section>`;
 }
 
 function videoRows(backendDb: BackendDb): VideoRow[] {
@@ -68,8 +79,8 @@ function videoRows(backendDb: BackendDb): VideoRow[] {
        LEFT JOIN video_metric_snapshots s ON s.id=(SELECT id FROM video_metric_snapshots WHERE video_target_id=t.id ORDER BY sampled_at DESC, id DESC LIMIT 1)
        ORDER BY t.video_draft_id, t.id`,
     )
-    .all() as Array<VideoTarget & { videoDraftId: number }>;
-  const byDraft = new Map<number, VideoTarget[]>();
+    .all() as Array<VideoTargetRow & { videoDraftId: number }>;
+  const byDraft = new Map<number, VideoTargetRow[]>();
   for (const target of targets) {
     const list = byDraft.get(target.videoDraftId) ?? [];
     list.push(target);
@@ -79,15 +90,15 @@ function videoRows(backendDb: BackendDb): VideoRow[] {
 }
 
 function renderVideoRow(row: VideoRow): string {
-  const youtube = row.targets.find((target) => target.target === "youtube_shorts");
-  const instagram = row.targets.find((target) => target.target === "instagram_reels");
-  const total = [youtube, instagram]
-    .filter((target): target is VideoTarget => Boolean(target))
+  const cells = VIDEO_TARGETS.map((target) => row.targets.find((item) => item.target === target));
+  const total = cells
+    .filter((target): target is VideoTargetRow => Boolean(target))
     .reduce((value, target) => value + targetMetrics(target).views, 0);
-  return `<tr><td><b>#${row.id}</b> ${escapeHtml(row.label)}</td><td class="nowrap">${formatDate(row.createdAt)}</td><td class="nowrap">${formatDate(row.scheduledAt)}</td><td>${renderTarget(youtube)}</td><td>${renderTarget(instagram)}</td><td class="font-bold">${formatMetricValue(total)}</td></tr>`;
+  const targetCells = cells.map((target) => `<td>${renderTarget(target)}</td>`).join("");
+  return `<tr><td><b>#${row.id}</b> ${escapeHtml(row.label)}</td><td class="nowrap">${formatDate(row.createdAt)}</td><td class="nowrap">${formatDate(row.scheduledAt)}</td>${targetCells}<td class="font-bold">${formatMetricValue(total)}</td></tr>`;
 }
 
-function renderTarget(target: VideoTarget | undefined): string {
+function renderTarget(target: VideoTargetRow | undefined): string {
   if (!target) return "—";
   if (target.status === "failed") return `<span class="danger">Ошибка</span><br><small>${escapeHtml(target.lastError ?? "")}</small>`;
   if (target.status === "scheduled" || target.status === "prepared") return `⏳ ${formatDate(target.scheduledAt)}`;
@@ -100,30 +111,35 @@ function renderTarget(target: VideoTarget | undefined): string {
     : value;
 }
 
-function targetMetrics(target: VideoTarget): { views: number; likes: number; comments: number } {
+function targetMetrics(target: VideoTargetRow): { views: number; likes: number; comments: number } {
   const metrics = target.metricsJson ? (JSON.parse(target.metricsJson) as Record<string, unknown>) : {};
   return { views: metricNumber(metrics.views), likes: metricNumber(metrics.likes), comments: metricNumber(metrics.comments) };
 }
 
+/** Snapshots are per (platform, account) — two accounts publish through the same
+ * image — so the 7-day baseline has to be looked up for the same pair, and the
+ * card has to name the account. Matching on platform alone silently compared one
+ * account's today against the other's last week. */
 function videoAudience(backendDb: BackendDb): Array<{ label: string; followers: number; growth: number | null }> {
   const profiles = backendDb.sqlite
     .prepare(
-      "SELECT platform, metrics_json AS metricsJson FROM creator_profile_snapshots WHERE id IN (SELECT MAX(id) FROM creator_profile_snapshots WHERE platform IN ('youtube','instagram') GROUP BY platform, account)",
+      "SELECT platform, account, metrics_json AS metricsJson FROM creator_profile_snapshots WHERE id IN (SELECT MAX(id) FROM creator_profile_snapshots WHERE platform IN ('youtube','instagram') GROUP BY platform, account)",
     )
-    .all() as Array<{ platform: string; metricsJson: string }>;
+    .all() as Array<{ platform: string; account: string; metricsJson: string }>;
   const since = new Date(Date.now() - 7 * 24 * 60 * 60_000).toISOString();
   return profiles.map((profile) => {
     const latest = JSON.parse(profile.metricsJson) as Record<string, unknown>;
     const baseline = backendDb.sqlite
       .prepare(
-        "SELECT metrics_json AS metricsJson FROM creator_profile_snapshots WHERE platform=? AND sampled_at<=? ORDER BY sampled_at DESC, id DESC LIMIT 1",
+        "SELECT metrics_json AS metricsJson FROM creator_profile_snapshots WHERE platform=? AND account=? AND sampled_at<=? ORDER BY sampled_at DESC, id DESC LIMIT 1",
       )
-      .get(profile.platform, since) as { metricsJson: string } | null;
+      .get(profile.platform, profile.account, since) as { metricsJson: string } | null;
     const followers = metricNumber(latest.subscriberCount ?? latest.followersCount);
     const previousMetrics = baseline ? (JSON.parse(baseline.metricsJson) as Record<string, unknown>) : null;
     const previous = previousMetrics ? metricNumber(previousMetrics.subscriberCount ?? previousMetrics.followersCount) : null;
+    const platformLabel = profile.platform === "youtube" ? "YouTube" : "Instagram";
     return {
-      label: profile.platform === "youtube" ? "YouTube" : "Instagram",
+      label: profile.account ? `${platformLabel} · ${profile.account}` : platformLabel,
       followers,
       growth: previous == null ? null : followers - previous,
     };
@@ -154,10 +170,10 @@ function videoTrend(backendDb: BackendDb): VideoTrendPoint[] {
     )
     .all(cutoff) as Array<{ targetId: number; metricsJson: string; sampledAt: string }>;
   const latest = new Map<number, { views: number; likes: number; comments: number }>();
-  for (const row of baseline) latest.set(row.targetId, targetMetrics({ metricsJson: row.metricsJson } as VideoTarget));
+  for (const row of baseline) latest.set(row.targetId, targetMetrics({ metricsJson: row.metricsJson } as VideoTargetRow));
   const points = new Map<string, VideoTrendPoint>();
   for (const sample of samples) {
-    latest.set(sample.targetId, targetMetrics({ metricsJson: sample.metricsJson } as VideoTarget));
+    latest.set(sample.targetId, targetMetrics({ metricsJson: sample.metricsJson } as VideoTargetRow));
     const day = sample.sampledAt.slice(0, 10);
     points.set(day, {
       day,
