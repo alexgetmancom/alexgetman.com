@@ -19,9 +19,9 @@ describe("auth circuit breaker", () => {
   it("stays closed below the failure threshold", () => {
     const backendDb = tempDb();
     try {
-      recordAuthFailure(backendDb, "bluesky");
-      recordAuthFailure(backendDb, "bluesky");
-      expect(isTargetAuthBlocked(backendDb, "bluesky")).toBe(false);
+      recordAuthFailure(backendDb, "test_platform");
+      recordAuthFailure(backendDb, "test_platform");
+      expect(isTargetAuthBlocked(backendDb, "test_platform")).toBe(false);
     } finally {
       backendDb.close();
     }
@@ -30,15 +30,15 @@ describe("auth circuit breaker", () => {
   it("trips after consecutive auth failures and clears on success", () => {
     const backendDb = tempDb();
     try {
-      recordAuthFailure(backendDb, "bluesky");
-      recordAuthFailure(backendDb, "bluesky");
-      recordAuthFailure(backendDb, "bluesky");
-      expect(isTargetAuthBlocked(backendDb, "bluesky")).toBe(true);
+      recordAuthFailure(backendDb, "test_platform");
+      recordAuthFailure(backendDb, "test_platform");
+      recordAuthFailure(backendDb, "test_platform");
+      expect(isTargetAuthBlocked(backendDb, "test_platform")).toBe(true);
 
-      recordAuthSuccess(backendDb, "bluesky");
+      recordAuthSuccess(backendDb, "test_platform");
       expect(isTargetAuthBlocked(backendDb, "telegram")).toBe(false);
 
-      const row = backendDb.db.select().from(credentialChecks).where(eq(credentialChecks.target, "bluesky")).get();
+      const row = backendDb.db.select().from(credentialChecks).where(eq(credentialChecks.target, "test_platform")).get();
       expect(JSON.parse(row?.detailsJson ?? "{}")).toEqual({ authFailureStreak: 0, blockedUntil: null });
     } finally {
       backendDb.close();
@@ -48,10 +48,10 @@ describe("auth circuit breaker", () => {
   it("does not block a different target", () => {
     const backendDb = tempDb();
     try {
-      recordAuthFailure(backendDb, "bluesky");
-      recordAuthFailure(backendDb, "bluesky");
-      recordAuthFailure(backendDb, "bluesky");
-      expect(isTargetAuthBlocked(backendDb, "bluesky")).toBe(true);
+      recordAuthFailure(backendDb, "test_platform");
+      recordAuthFailure(backendDb, "test_platform");
+      recordAuthFailure(backendDb, "test_platform");
+      expect(isTargetAuthBlocked(backendDb, "test_platform")).toBe(true);
       expect(isTargetAuthBlocked(backendDb, "telegram")).toBe(false);
     } finally {
       backendDb.close();
@@ -66,7 +66,7 @@ describe("auth circuit breaker", () => {
           messageId,
           postId: messageId,
           postKey: `post:${messageId}`,
-          target: "bluesky",
+          target: "test_platform",
           payload: { text: "hi" } as JsonObject,
         });
 
@@ -77,7 +77,7 @@ describe("auth circuit breaker", () => {
         failPublishJob(backendDb, loadConfig({}), id, new HttpPublishError("unauthorized", 401), claimed.lockId);
       }
 
-      expect(isTargetAuthBlocked(backendDb, "bluesky")).toBe(true);
+      expect(isTargetAuthBlocked(backendDb, "test_platform")).toBe(true);
     } finally {
       backendDb.close();
     }
