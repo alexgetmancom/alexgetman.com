@@ -10,6 +10,7 @@
   переменными --rail-* на .story-rail-container в StoryPlayer.svelte.
 ============================================================================= -->
 <script lang="ts">
+import { onStoryImageError } from "../../scripts/story-player/media";
 import { truncateText } from "../../utils/text";
 import type { StoryUi } from "./i18n";
 import type { PlayerPost } from "./payload";
@@ -36,22 +37,13 @@ $effect(() => {
   const card = cards[active];
   if (!rail || !card) return;
   const railEl = rail;
-  window.setTimeout(() => {
+  const timer = window.setTimeout(() => {
     const left = card.offsetLeft - (railEl.clientWidth - card.offsetWidth) / 2;
     const top = card.offsetTop - (railEl.clientHeight - card.offsetHeight) / 2;
     railEl.scrollTo({ left: Math.max(0, left), top: Math.max(0, top), behavior: "smooth" });
   }, 60);
+  return () => window.clearTimeout(timer);
 });
-
-function onImageError(event: Event, post: PlayerPost): void {
-  const img = event.currentTarget as HTMLImageElement;
-  if (post.fallbackImage && img.getAttribute("src") !== post.fallbackImage) {
-    img.setAttribute("src", post.fallbackImage);
-    img.removeAttribute("srcset");
-  } else {
-    img.style.display = "none";
-  }
-}
 </script>
 
 <nav class="story-rail" aria-label={ui.storyRail} bind:this={rail}>
@@ -91,7 +83,7 @@ function onImageError(event: Event, post: PlayerPost): void {
               loading={index < 4 ? "eager" : "lazy"}
               decoding="async"
               sizes="(max-width: 760px) 38vw, 140px"
-              onerror={(event) => onImageError(event, post)}
+              onerror={(event) => onStoryImageError(event, post.fallbackImage)}
             />
           {/if}
         {:else}

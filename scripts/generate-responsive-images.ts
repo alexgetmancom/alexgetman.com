@@ -239,7 +239,6 @@ async function generatePostOgImages(feedItems: FeedItem[]): Promise<void> {
       if (!variant.enabled) continue;
       const title = truncateText(getFirstSentence(variant.text) || `Post ${postId}`, 132);
       const sourceImage = await resolvePublicImage(variant.image);
-      const lines = splitLines(title, variant.locale === "ru" ? 25 : 28, sourceImage ? 3 : 4);
       const badge = categoryLabel(variant.text, variant.locale);
       const sourceImageStamp = sourceImage ? (await fs.stat(sourceImage)).mtimeMs : "none";
       const key = `og:v5:${postId}:${variant.locale}:${compactText(title)}:${badge}:${sourceImageStamp}:${Boolean(avatarDataUri)}`;
@@ -248,11 +247,13 @@ async function generatePostOgImages(feedItems: FeedItem[]): Promise<void> {
 
       if (cache[key] && (await exists(outputPath))) continue;
 
-      const lineSvg = lines
-        .map(
-          (line, index) => `<text x="74" y="${sourceImage ? 340 + index * 72 : 255 + index * 76}" class="title">${escapeXml(line)}</text>`,
-        )
-        .join("");
+      // With a source photo, the corner brand overlay is enough — the title
+      // isn't drawn over the image. Without one, the title fills the card.
+      const lineSvg = sourceImage
+        ? ""
+        : splitLines(title, variant.locale === "ru" ? 25 : 28, 4)
+            .map((line, index) => `<text x="74" y="${255 + index * 76}" class="title">${escapeXml(line)}</text>`)
+            .join("");
 
       const svg = sourceImage
         ? `

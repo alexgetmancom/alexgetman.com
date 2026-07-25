@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, lte, or } from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull, lte, or } from "drizzle-orm";
 import type { BackendDb } from "../../db/client.js";
 import { videoDrafts, videoMetricSchedule, videoTargets } from "../../db/schema.js";
 import { recordDomainEvent } from "../../domain/events.js";
@@ -8,6 +8,10 @@ import { requestJson } from "../../foundation/http.js";
 import { metricNumber, upsertComment, upsertVideoSnapshot } from "../snapshots/creator-store.js";
 import { isTerminalMetricError, terminalIfMissingRemoteObject } from "./collectors/errors.js";
 import { nextVideoMetricCheckAt, videoMetricCheckpointAt } from "./metric-checkpoints.js";
+
+/** Matches the "common.untitled" i18n fallback shown for drafts without a label;
+ * this collector runs in the background with no locale, so it can't call `t()`. */
+const UNTITLED_VIDEO = "Без названия";
 
 type VideoMetricTask = {
   id: number;
@@ -20,6 +24,7 @@ type VideoMetricTask = {
   publishedAt: string;
   label: string | null;
   checkpointIndex: number;
+  errorCount: number;
 };
 type YouTubeVideo = {
   items?: Array<{
@@ -87,15 +92,15 @@ export async function runVideoMetricSchedule(config: BackendConfig, backendDb: B
       const normalized = terminalIfMissingRemoteObject(error);
       const message = normalized instanceof Error ? normalized.message : String(normalized);
       const terminal = isTerminalMetricError(normalized);
-      for (const task of youtubeTasks) finishVideoMetricTask(backendDb, task, message, terminal);
-      if (terminal)
+      const frozen = youtubeTasks.filter((task) => finishVideoMetricTask(backendDb, task, message, terminal));
+      if (frozen.length)
         recordDomainEvent(backendDb, {
           ref: "analytics:youtube",
           target: "youtube_shorts",
           type: "analytics.video_metrics.frozen",
           severity: "warn",
           message,
-          details: { video_target_ids: youtubeTasks.map((task) => task.id), reason: message },
+          details: { video_target_ids: frozen.map((task) => task.id), reason: message },
           cooldownSeconds: 60 * 60,
         });
     }
@@ -111,13 +116,13 @@ export async function runVideoMetricSchedule(config: BackendConfig, backendDb: B
       finishVideoMetricTask(backendDb, task, null);
     } catch (error) {
       const normalized = terminalIfMissingRemoteObject(error);
-      finishVideoMetricTask(
+      const frozen = finishVideoMetricTask(
         backendDb,
         task,
         normalized instanceof Error ? normalized.message : String(normalized),
         isTerminalMetricError(normalized),
       );
-      if (isTerminalMetricError(normalized))
+      if (frozen)
         recordDomainEvent(backendDb, {
           ref: `video:${task.videoDraftId}`,
           target: task.target,
@@ -164,22 +169,30 @@ function ensureVideoMetricSchedule(backendDb: BackendDb): void {
   // Existing publications used the former sparse (1/3/6/12/24h) cadence.
   // Bring them onto the new video-only cadence from their last observation,
   // without backfilling missed calls or touching text-post schedules.
+  // The filter (checked, not frozen) plus this cap keep the pass bounded per
+  // cycle: rows that already converged to the new cadence stop matching the
+  // "nextCheckAt > desired" correction below and drop out of future scans.
   const scheduled = backendDb.db
     .select({
       id: videoTargets.id,
       publishedAt: videoTargets.publishedAt,
       lastCheckedAt: videoMetricSchedule.lastCheckedAt,
       nextCheckAt: videoMetricSchedule.nextCheckAt,
-      frozenAt: videoMetricSchedule.frozenAt,
     })
     .from(videoMetricSchedule)
     .innerJoin(videoTargets, eq(videoTargets.id, videoMetricSchedule.videoTargetId))
     .where(
-      and(eq(videoTargets.status, "published"), or(eq(videoTargets.target, "youtube_shorts"), eq(videoTargets.target, "instagram_reels"))),
+      and(
+        eq(videoTargets.status, "published"),
+        or(eq(videoTargets.target, "youtube_shorts"), eq(videoTargets.target, "instagram_reels")),
+        isNotNull(videoMetricSchedule.lastCheckedAt),
+        isNull(videoMetricSchedule.frozenAt),
+      ),
     )
+    .limit(500)
     .all();
   for (const task of scheduled) {
-    if (!task.lastCheckedAt || task.frozenAt) continue;
+    if (!task.lastCheckedAt) continue;
     const desired = nextVideoMetricCheckAt(task.publishedAt, new Date(task.lastCheckedAt)).toISOString();
     if (!task.nextCheckAt || task.nextCheckAt > desired)
       backendDb.db
@@ -204,6 +217,7 @@ function dueVideoMetricTasks(backendDb: BackendDb, limit: number): VideoMetricTa
       publishedAt: videoTargets.publishedAt,
       label: videoDrafts.label,
       checkpointIndex: videoMetricSchedule.checkpointIndex,
+      errorCount: videoMetricSchedule.errorCount,
     })
     .from(videoMetricSchedule)
     .innerJoin(videoTargets, eq(videoTargets.id, videoMetricSchedule.videoTargetId))
@@ -239,7 +253,7 @@ async function collectZernioInstagramVideoMetrics(
   const platform = data.platforms?.find((item) => item.platform === "instagram");
   const metrics = platform?.analytics ?? data.analytics ?? {};
   upsertVideoSnapshot(backendDb, target.id, "instagram_reels", target.checkpointIndex, {
-    title: target.label ?? "Без названия",
+    title: target.label ?? UNTITLED_VIDEO,
     url: platform?.platformPostUrl ?? data.platformPostUrl ?? target.externalUrl,
     publishedAt: data.publishedAt ?? target.publishedAt,
     views: metricNumber(metrics.views),
@@ -256,14 +270,25 @@ async function collectZernioInstagramVideoMetrics(
   });
 }
 
-function finishVideoMetricTask(backendDb: BackendDb, task: VideoMetricTask, error: string | null, terminal = false): void {
+/** A non-terminal error (e.g. a transient timeout) retries every 15 minutes;
+ * this caps how many times that can happen before the row freezes like a
+ * terminal failure, so an error class isTerminalMetricError doesn't recognize
+ * can't retry forever. */
+const MAX_METRIC_ERROR_RETRIES = 20;
+
+/** Returns whether the row was frozen (terminal error or retry budget exhausted). */
+function finishVideoMetricTask(backendDb: BackendDb, task: VideoMetricTask, error: string | null, terminal = false): boolean {
   const now = new Date();
   const nextIndex = error ? task.checkpointIndex : task.checkpointIndex + 1;
-  const nextCheckAt = terminal ? null : error ? new Date(now.getTime() + 15 * 60_000) : nextVideoMetricCheckAt(task.publishedAt, now);
+  const errorCount = error ? task.errorCount + 1 : 0;
+  const exhausted = error != null && errorCount >= MAX_METRIC_ERROR_RETRIES;
+  const nextCheckAt =
+    terminal || exhausted ? null : error ? new Date(now.getTime() + 15 * 60_000) : nextVideoMetricCheckAt(task.publishedAt, now);
   backendDb.db
     .update(videoMetricSchedule)
     .set({
       checkpointIndex: nextIndex,
+      errorCount,
       // The schedule row keeps a non-null timestamp for legacy SQLite schema;
       // frozenAt is the authoritative terminal-state flag.
       nextCheckAt: (nextCheckAt ?? now).toISOString(),
@@ -274,6 +299,7 @@ function finishVideoMetricTask(backendDb: BackendDb, task: VideoMetricTask, erro
     })
     .where(eq(videoMetricSchedule.videoTargetId, task.id))
     .run();
+  return nextCheckAt == null;
 }
 
 async function collectYouTubeVideoMetrics(
@@ -290,7 +316,7 @@ async function collectYouTubeVideoMetrics(
   );
   const item = video.items?.[0];
   upsertVideoSnapshot(backendDb, target.id, "youtube_shorts", target.checkpointIndex, {
-    title: item?.snippet?.title ?? target.label ?? "Без названия",
+    title: item?.snippet?.title ?? target.label ?? UNTITLED_VIDEO,
     url: target.externalUrl,
     publishedAt: item?.snippet?.publishedAt ?? target.publishedAt,
     views: metricNumber(item?.statistics?.viewCount),
@@ -341,7 +367,7 @@ async function collectInstagramVideoMetrics(
   );
   const views = await instagramReelViews(fetchImpl, base, token);
   upsertVideoSnapshot(backendDb, target.id, "instagram_reels", target.checkpointIndex, {
-    title: target.label ?? "Без названия",
+    title: target.label ?? UNTITLED_VIDEO,
     url: media.permalink ?? target.externalUrl,
     publishedAt: media.timestamp ?? target.publishedAt,
     views,

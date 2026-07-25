@@ -336,13 +336,20 @@ async function syncBlueskyProfile(config: BackendConfig, backendDb: BackendDb, f
   });
 }
 
+/** CHANNEL_USERNAME may or may not carry a leading "@" depending on how it was
+ * configured; this normalizes to the bare handle for account labels and
+ * chat_id construction below. */
+function channelHandle(config: BackendConfig): string {
+  return config.CHANNEL_USERNAME.replace(/^@/, "");
+}
+
 async function syncTelegramProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
   await synced(backendDb, "telegram_profile", async () => {
     const mtprotoMetrics = await collectTelegramChannelStats(config);
     if (mtprotoMetrics) {
       recordProfileSnapshot(backendDb, {
         platform: "telegram",
-        account: config.CHANNEL_USERNAME.replace(/^@/, ""),
+        account: channelHandle(config),
         source: "telegram_mtproto_stats",
         metrics: mtprotoMetrics,
       });
@@ -355,13 +362,13 @@ async function syncTelegramProfile(config: BackendConfig, backendDb: BackendDb, 
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: `@${config.CHANNEL_USERNAME.replace(/^@/, "")}` }),
+        body: JSON.stringify({ chat_id: `@${channelHandle(config)}` }),
       },
     );
     if (!result.ok || result.result == null) throw new Error("Telegram channel member count is unavailable");
     recordProfileSnapshot(backendDb, {
       platform: "telegram",
-      account: config.CHANNEL_USERNAME.replace(/^@/, ""),
+      account: channelHandle(config),
       source: "telegram_bot_api",
       metrics: { followersCount: metricNumber(result.result) },
     });
@@ -374,7 +381,7 @@ async function collectTelegramChannelStats(config: BackendConfig): Promise<Recor
   const client = createChannelStoryClient(config);
   await client.connect();
   try {
-    const channel = await client.resolveChannel(`@${config.CHANNEL_USERNAME.replace(/^@/, "")}`, true);
+    const channel = await client.resolveChannel(`@${channelHandle(config)}`, true);
     const stats = (await client.call({ _: "stats.getBroadcastStats", channel })) as TelegramBroadcastStats;
     if (stats._ !== "stats.broadcastStats") throw new Error("Telegram returned an unexpected channel statistics response");
     return telegramChannelMetrics(stats);

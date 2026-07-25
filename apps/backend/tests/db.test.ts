@@ -56,7 +56,7 @@ describe("openBackendDb", () => {
       expect(tables).toContain("post_entity_links");
       expect(tables).toContain("draft_sources");
       expect(tables).toContain("draft_entity_candidates");
-      expect(migrationStatus(backendDb.sqlite)).toHaveLength(25);
+      expect(migrationStatus(backendDb.sqlite)).toHaveLength(26);
     } finally {
       backendDb.close();
     }
@@ -154,7 +154,7 @@ describe("openBackendDb", () => {
     const fixture = new Database(dbPath);
     fixture.exec("DROP TABLE __drizzle_migrations");
     fixture.exec(
-      "DROP TABLE draft_entity_candidates; DROP TABLE draft_sources; DROP TABLE post_entity_links; DROP TABLE knowledge_entity_aliases; DROP TABLE knowledge_entities; DROP TABLE post_sources; DROP TABLE site_pageviews; DROP TABLE video_bot_sessions; DROP TABLE video_jobs; DROP TABLE video_targets; DROP TABLE video_drafts; DROP TABLE analytics_sync; DROP TABLE creator_profiles; DROP TABLE creator_profile_snapshots; DROP TABLE video_metric_snapshots; DROP TABLE social_comments; DROP TABLE admin_state; CREATE TABLE admin_state (admin_id integer PRIMARY KEY NOT NULL, action text, draft_id integer, updated_at text NOT NULL)",
+      "DROP TABLE draft_entity_candidates; DROP TABLE draft_sources; DROP TABLE post_entity_links; DROP TABLE knowledge_entity_aliases; DROP TABLE knowledge_entities; DROP TABLE post_sources; DROP TABLE site_pageviews; DROP TABLE video_bot_sessions; DROP TABLE video_jobs; DROP TABLE video_targets; DROP TABLE video_drafts; DROP TABLE analytics_sync; DROP TABLE creator_profiles; DROP TABLE creator_profile_snapshots; DROP TABLE video_metric_snapshots; DROP TABLE video_metric_schedule; DROP TABLE social_comments; DROP TABLE admin_state; CREATE TABLE admin_state (admin_id integer PRIMARY KEY NOT NULL, action text, draft_id integer, updated_at text NOT NULL)",
     );
     fixture.close();
 
@@ -186,7 +186,7 @@ describe("openBackendDb", () => {
         { locale: "ru", slug: "production-fixture" },
       ]);
       expect(backendDb.db.select({ url: postSources.url }).from(postSources).all()).toEqual([{ url: "https://example.com/announcement" }]);
-      expect(migrationStatus(backendDb.sqlite)).toHaveLength(25);
+      expect(migrationStatus(backendDb.sqlite)).toHaveLength(26);
     } finally {
       backendDb.close();
     }

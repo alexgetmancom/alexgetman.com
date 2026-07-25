@@ -13,6 +13,7 @@
   (-global-), потому что его имя подставляет progress.ts из JS.
 ============================================================================= -->
 <script lang="ts">
+import { onStoryImageError } from "../../scripts/story-player/media";
 import type { StoryUi } from "./i18n";
 import type { PlayerPost } from "./payload";
 
@@ -86,13 +87,7 @@ $effect(() => {
 });
 
 function onImageError(event: Event): void {
-  const img = event.currentTarget as HTMLImageElement;
-  if (post.fallbackImage && img.getAttribute("src") !== post.fallbackImage) {
-    img.setAttribute("src", post.fallbackImage);
-    img.removeAttribute("srcset");
-  } else {
-    img.style.display = "none";
-  }
+  onStoryImageError(event, post.fallbackImage);
 }
 </script>
 

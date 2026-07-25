@@ -101,6 +101,8 @@ export const videoMetricSchedule = sqliteTable("video_metric_schedule", {
   nextCheckAt: text().notNull(),
   lastCheckedAt: text(),
   lastError: text(),
+  /** Consecutive non-terminal failures since the last successful check; reset to 0 on success. */
+  errorCount: integer().notNull().default(0),
   frozenAt: text(),
   updatedAt: text().notNull(),
 });

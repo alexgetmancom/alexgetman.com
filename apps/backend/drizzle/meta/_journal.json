@@ -176,6 +176,13 @@
       "when": 1785124800000,
       "tag": "0024_downgrade_comparison_focus_links",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1785128400000,
+      "tag": "0025_video_metric_error_count",
+      "breakpoints": true
     }
   ]
 }

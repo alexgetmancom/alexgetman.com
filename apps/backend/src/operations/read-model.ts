@@ -1,4 +1,5 @@
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import fs from "node:fs";
+import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { TARGETS } from "../botTargets.js";
 import type { BackendDb } from "../db/client.js";
@@ -112,19 +113,20 @@ export function pipelineStatusPayload(
     .where(eq(siteJobs.status, "failed"))
     .all();
 
+  const generatedAt = new Date().toISOString();
   return {
     ok: Number(targetFailureCount?.count ?? 0) === 0 && Number(siteFailureCount?.count ?? 0) === 0 && workers.every((worker) => worker.ok),
-    generatedAt: new Date().toISOString(),
+    generatedAt,
     gitRevision: gitRevision(),
     pipelineDb: {
       path: config.PIPELINE_DB,
-      exists: true,
+      exists: fs.existsSync(config.PIPELINE_DB),
     },
     jobs,
     siteJobs: latestSiteJobs,
     workers,
     metrics: {
-      generatedAt: new Date().toISOString(),
+      generatedAt,
       posts: Number(postCount?.count ?? 0),
       targets: Number(targetCount?.count ?? 0),
       metrics: Number(metricCount?.count ?? 0),
@@ -132,7 +134,7 @@ export function pipelineStatusPayload(
       schedule: metricScheduleSummary,
       recent: recentMetrics,
     },
-    updated_at: new Date().toISOString(),
+    updated_at: generatedAt,
     feed,
     social_worker: {
       pipeline_db: config.PIPELINE_DB,
@@ -200,37 +202,36 @@ function fetchPostRows(backendDb: BackendDb, start: string, end: string) {
     .from(publications)
     .leftJoin(ru, and(eq(ru.postId, publications.postId), eq(ru.locale, "ru")))
     .leftJoin(en, and(eq(en.postId, publications.postId), eq(en.locale, "en")))
-    .where(and(sql`${publications.createdAt} >= ${start}`, sql`${publications.createdAt} <= ${end}`))
+    .where(and(gte(publications.createdAt, start), lte(publications.createdAt, end)))
+    .orderBy(desc(publications.createdAt))
+    .limit(100)
     .all();
   const publicationKeys = publicationRows.map((row) => `post:${row.postId}`);
   const publicationPosts = publicationKeys.length
     ? backendDb.db.select().from(posts).where(inArray(posts.postKey, publicationKeys)).all()
     : [];
   const postByKey = new Map(publicationPosts.map((post) => [post.postKey, post]));
-  return publicationRows
-    .map((row) => {
-      const post = postByKey.get(`post:${row.postId}`);
-      return {
-        post_key: `post:${row.postId}`,
-        post_id: row.postId,
-        telegram_message_id: row.telegramMessageId,
-        created_at: row.createdAt,
-        updated_at: row.updatedAt,
-        text_ru: row.textRu,
-        media_ru_json: row.mediaRuJson,
-        site_ru: row.siteRu,
-        slug_ru: row.slugRu,
-        text_en: row.textEn,
-        media_en_json: row.mediaEnJson,
-        site_en: row.siteEn,
-        slug_en: row.slugEn,
-        message_id: post?.messageId ?? row.telegramMessageId,
-        date_msk: post?.dateMsk,
-        telegram_url: post?.telegramUrl,
-      };
-    })
-    .sort((left, right) => String(right.created_at ?? "").localeCompare(String(left.created_at ?? "")))
-    .slice(0, 100);
+  return publicationRows.map((row) => {
+    const post = postByKey.get(`post:${row.postId}`);
+    return {
+      post_key: `post:${row.postId}`,
+      post_id: row.postId,
+      telegram_message_id: row.telegramMessageId,
+      created_at: row.createdAt,
+      updated_at: row.updatedAt,
+      text_ru: row.textRu,
+      media_ru_json: row.mediaRuJson,
+      site_ru: row.siteRu,
+      slug_ru: row.slugRu,
+      text_en: row.textEn,
+      media_en_json: row.mediaEnJson,
+      site_en: row.siteEn,
+      slug_en: row.slugEn,
+      message_id: post?.messageId ?? row.telegramMessageId,
+      date_msk: post?.dateMsk,
+      telegram_url: post?.telegramUrl,
+    };
+  });
 }
 
 function formatPipelinePosts(
@@ -240,25 +241,9 @@ function formatPipelinePosts(
   metricRows: Array<typeof postMetrics.$inferSelect>,
   sampleRows: Array<typeof metricSamples.$inferSelect>,
 ): Record<string, unknown>[] {
-  const targetsByPost = new Map<string, (typeof targetRows)[number][]>();
-  for (const target of targetRows) {
-    const values = targetsByPost.get(target.postKey) ?? [];
-    values.push(target);
-    targetsByPost.set(target.postKey, values);
-  }
-  const metricsByPost = new Map<string, (typeof metricRows)[number][]>();
-  for (const metric of metricRows) {
-    const values = metricsByPost.get(metric.postKey) ?? [];
-    values.push(metric);
-    metricsByPost.set(metric.postKey, values);
-  }
-  const samplesByMetric = new Map<string, Array<(typeof sampleRows)[number]>>();
-  for (const sample of sampleRows) {
-    const key = `${sample.postKey}\u0000${sample.target}\u0000${sample.metricName}`;
-    const values = samplesByMetric.get(key) ?? [];
-    values.push(sample);
-    samplesByMetric.set(key, values);
-  }
+  const targetsByPost = groupBy(targetRows, (target) => target.postKey);
+  const metricsByPost = groupBy(metricRows, (metric) => metric.postKey);
+  const samplesByMetric = groupBy(sampleRows, (sample) => `${sample.postKey}\u0000${sample.target}\u0000${sample.metricName}`);
   return rows.map((row) => {
     const postId = row.post_id == null ? null : Number(row.post_id);
     const postKey = String(row.post_key ?? `post:${postId}`);
@@ -364,4 +349,15 @@ function readWorkerState(backendDb: BackendDb, name: string): Record<string, unk
 function shortText(value: string): string {
   const words = value.replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
   return words.length <= 7 ? words.join(" ") : `${words.slice(0, 7).join(" ")}...`;
+}
+
+function groupBy<T, K>(rows: T[], key: (row: T) => K): Map<K, T[]> {
+  const grouped = new Map<K, T[]>();
+  for (const row of rows) {
+    const groupKey = key(row);
+    const values = grouped.get(groupKey) ?? [];
+    values.push(row);
+    grouped.set(groupKey, values);
+  }
+  return grouped;
 }

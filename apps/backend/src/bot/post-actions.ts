@@ -233,6 +233,7 @@ export async function applyAdminState(
       text: message.text,
       entities: message.entities,
       media: message.media,
+      clearMedia: isClearMediaCommand(message.text),
     });
   } else if (action === "replace_ru_media" || action === "replace_en_media") {
     studioServices(backendDb, config).posts.edit(Number(ctx.from?.id), draftId, {
@@ -253,6 +254,12 @@ export async function applyAdminState(
   // moving prompt that erases what it looked like before the edit.
   const control = await sendDraftPreview(ctx, backendDb, draftId, config);
   if (ctx.chat?.id) setTelegramPostCard(backendDb, draftId, Number(ctx.chat.id), control.message_id);
+}
+
+/** Chat-only shorthand for clearing a post's media during a free-text edit reply. */
+function isClearMediaCommand(text: string): boolean {
+  const clean = text.trim().toLowerCase();
+  return clean === "/delmedia" || clean === "очистить" || clean === "без медиа" || clean === "clear media";
 }
 
 function extractUrls(value: string): string[] {

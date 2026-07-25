@@ -19,7 +19,15 @@ import { postProgressState } from "./post-progress.js";
 
 type ScheduleInput = { ruAt: Date | null; enAt: Date | null };
 type ScheduleScope = "ru" | "en" | "both";
-type EditInput = { locale: "ru" | "en"; text: string; entities: unknown[]; media: Record<string, unknown>[]; replaceMediaOnly?: boolean };
+type EditInput = {
+  locale: "ru" | "en";
+  text: string;
+  entities: unknown[];
+  media: Record<string, unknown>[];
+  replaceMediaOnly?: boolean;
+  /** Caller has already recognized an explicit "clear media" command in its own transport. */
+  clearMedia?: boolean;
+};
 type DraftEntityCandidate = { kind: "company" | "model" | "person" | "topic"; slug: string; titleRu: string; titleEn: string | null };
 
 /** Commands for post drafts. These are deliberately transport-free and become the
@@ -40,8 +48,8 @@ export function postService(backendDb: BackendDb) {
     },
     preview(actorId: number, draftId: number) {
       const draft = requireOwnedDraft(backendDb, actorId, draftId);
-      const ruMedia = JSON.parse(draft.media_ru_json ?? "[]") as unknown[];
-      const enMedia = JSON.parse(draft.media_en_json ?? "[]") as unknown[];
+      const ruMedia = draftMedia(draft, "ru");
+      const enMedia = draftMedia(draft, "en");
       const targets = parseTargets(draft.targets_json);
       return {
         id: draft.id,
@@ -211,7 +219,7 @@ export function postService(backendDb: BackendDb) {
       const draft = requireOwnedDraft(backendDb, actorId, draftId);
       const assets = mediaItemsFromAssets(requireStudioMediaAssets(backendDb, actorId, assetIds));
       const key = locale === "ru" ? "mediaRuJson" : "mediaEnJson";
-      const current = replace ? [] : JSON.parse(locale === "ru" ? (draft.media_ru_json ?? "[]") : (draft.media_en_json ?? "[]"));
+      const current = replace ? [] : draftMedia(draft, locale);
       backendDb.db
         .update(drafts)
         .set({ [key]: JSON.stringify([...current, ...assets]), updatedAt: new Date().toISOString() })
@@ -227,10 +235,7 @@ export function postService(backendDb: BackendDb) {
     },
     removeMedia(actorId: number, draftId: number, locale: "ru" | "en", assetIds: number[]): void {
       const draft = requireOwnedDraft(backendDb, actorId, draftId);
-      const current = JSON.parse(locale === "ru" ? (draft.media_ru_json ?? "[]") : (draft.media_en_json ?? "[]")) as Record<
-        string,
-        unknown
-      >[];
+      const current = draftMedia(draft, locale);
       const removed = new Set(assetIds);
       const media = current.filter((item) => !removed.has(Number(item.asset_id)));
       backendDb.db
@@ -274,8 +279,7 @@ function localeTargets(json: string, locale: "ru" | "en"): string[] {
 
 function editDraftContent(backendDb: BackendDb, actorId: number, draftId: number, input: EditInput): void {
   requireOwnedDraft(backendDb, actorId, draftId);
-  const cleanText = input.text.trim().toLowerCase();
-  const clearMedia = cleanText === "/delmedia" || cleanText === "очистить" || cleanText === "без медиа" || cleanText === "clear media";
+  const clearMedia = Boolean(input.clearMedia);
   const update: Record<string, unknown> = { updatedAt: new Date().toISOString() };
   const ru = input.locale === "ru";
   if (clearMedia) update[ru ? "mediaRuJson" : "mediaEnJson"] = null;
@@ -318,6 +322,10 @@ function requireOwnedDraft(backendDb: BackendDb, actorId: number, draftId: numbe
   const draft = requireDraft(backendDb, draftId);
   if (draft.admin_id !== actorId) throw new StudioError("err.post-not-yours");
   return draft;
+}
+
+function draftMedia(draft: ReturnType<typeof requireDraft>, locale: "ru" | "en"): Record<string, unknown>[] {
+  return JSON.parse((locale === "ru" ? draft.media_ru_json : draft.media_en_json) ?? "[]");
 }
 
 function saveTargets(backendDb: BackendDb, draftId: number, targets: Record<string, boolean>): void {

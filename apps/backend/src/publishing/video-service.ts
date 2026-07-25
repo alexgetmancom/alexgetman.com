@@ -247,9 +247,16 @@ async function probeVideo(source: string, size: number): Promise<VideoTechnicalC
     ],
     { stdout: "pipe" },
   );
-  const output = await new Response(child.stdout).text();
-  if ((await child.exited) !== 0) throw new StudioError("err.ffprobe-failed");
-  const data = JSON.parse(output) as {
+  const timeout = setTimeout(() => child.kill(), 30_000);
+  let output: string;
+  let exitCode: number;
+  try {
+    [output, exitCode] = await Promise.all([new Response(child.stdout).text(), child.exited]);
+  } finally {
+    clearTimeout(timeout);
+  }
+  if (exitCode !== 0) throw new StudioError("err.ffprobe-failed");
+  let data: {
     format?: { duration?: string };
     streams?: Array<{
       codec_type?: string;
@@ -259,6 +266,11 @@ async function probeVideo(source: string, size: number): Promise<VideoTechnicalC
       avg_frame_rate?: string;
     }>;
   };
+  try {
+    data = JSON.parse(output);
+  } catch {
+    throw new StudioError("err.ffprobe-failed");
+  }
   const video = data.streams?.find((stream) => stream.codec_type === "video");
   const audio = data.streams?.find((stream) => stream.codec_type === "audio");
   if (!video?.width || !video.height) throw new StudioError("err.no-video-stream");

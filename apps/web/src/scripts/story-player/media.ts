@@ -1,5 +1,17 @@
 import type { StoryPost } from "./types";
 
+/** Broken/missing image → swap to the post's fallback once, then hide the
+ * element entirely if even the fallback fails. */
+export function onStoryImageError(event: Event, fallbackImage: string | null | undefined): void {
+  const img = event.currentTarget as HTMLImageElement;
+  if (fallbackImage && img.getAttribute("src") !== fallbackImage) {
+    img.setAttribute("src", fallbackImage);
+    img.removeAttribute("srcset");
+  } else {
+    img.style.display = "none";
+  }
+}
+
 export function preloadAdjacentMedia(options: {
   active: number;
   posts: StoryPost[];

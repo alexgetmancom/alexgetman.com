@@ -40,10 +40,10 @@ export async function runSiteJobCycle(config: BackendConfig, backendDb: BackendD
       // IndexNow is an external notification, not a prerequisite for serving
       // the already materialized feed through SSR.
       void pingIndexNow(config, urls).catch((error) => {
-        insertSiteEvent(backendDb, "site.indexnow.failed", "warn", String(error instanceof Error ? error.message : error), { urls });
+        insertSiteEvent(backendDb.db, "site.indexnow.failed", "warn", String(error instanceof Error ? error.message : error), { urls });
       });
     } catch (error) {
-      insertSiteEvent(backendDb, "site.index.build.failed", "warn", String(error instanceof Error ? error.message : error), {});
+      insertSiteEvent(backendDb.db, "site.index.build.failed", "warn", String(error instanceof Error ? error.message : error), {});
     }
     recordWorkerState(backendDb, "site", { claimed: jobs.length, published: completed.length });
   } catch (error) {
@@ -146,7 +146,7 @@ function claimSiteJobs(config: BackendConfig, backendDb: BackendDb): SiteJob[] {
       }
     }
     if (claimed.length > 0) {
-      insertSiteEvent(backendDb, "site.build.claimed", "info", `claimed ${claimed.length} site build job(s)`, {
+      insertSiteEvent(tx, "site.build.claimed", "info", `claimed ${claimed.length} site build job(s)`, {
         job_ids: claimed.map((job) => job.job_id),
       });
     }
@@ -168,7 +168,7 @@ function completeSiteJobs(backendDb: BackendDb, jobs: SiteJob[]): SiteJob[] {
       if (updated) completed.push(job);
     }
     if (completed.length > 0)
-      insertSiteEvent(backendDb, "site.build.published", "info", `published ${completed.length} site build job(s)`, {
+      insertSiteEvent(tx, "site.build.published", "info", `published ${completed.length} site build job(s)`, {
         job_ids: completed.map((job) => job.job_id),
       });
   });
@@ -201,7 +201,7 @@ function failSiteJobs(config: BackendConfig, backendDb: BackendDb, jobs: SiteJob
         .get();
       if (updated) failed.push(job);
     }
-    if (failed.length > 0) insertSiteEvent(backendDb, "site.build.failed", "error", message, { job_ids: failed.map((job) => job.job_id) });
+    if (failed.length > 0) insertSiteEvent(tx, "site.build.failed", "error", message, { job_ids: failed.map((job) => job.job_id) });
   });
   for (const postId of new Set(
     failed
@@ -328,14 +328,13 @@ async function atomicWriteJson(filePath: string, value: unknown): Promise<void> 
 }
 
 function insertSiteEvent(
-  backendDb: BackendDb,
+  db: BackendDb["db"],
   eventType: string,
   severity: string,
   message: string,
   details: Record<string, unknown>,
 ): void {
-  backendDb.db
-    .insert(postEvents)
+  db.insert(postEvents)
     .values({ eventType, severity, message, detailsJson: JSON.stringify(details), createdAt: new Date().toISOString() })
     .run();
 }
