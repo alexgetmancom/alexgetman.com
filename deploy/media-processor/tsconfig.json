@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "types": ["bun"],
+    "typeRoots": ["../../apps/backend/node_modules/@types", "../../node_modules/@types"]
+  },
+  "include": ["*.ts"]
+}

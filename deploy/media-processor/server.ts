@@ -216,6 +216,7 @@ Bun.serve({
     if (request.method === "GET" && download) {
       if (!authorized(request)) return new Response("unauthorized", { status: 401 });
       const [, idempotencyKey, variant] = download;
+      if (!idempotencyKey || !variant) return new Response("invalid_download_path", { status: 400 });
       const mp4 = `/work/cache/${idempotencyKey}.${variant}.mp4`;
       const jpg = `/work/cache/${idempotencyKey}.${variant}.jpg`;
       if (existsSync(mp4)) return processedAsset(mp4, "video", `cached-${idempotencyKey.slice(0, 12)}`);
