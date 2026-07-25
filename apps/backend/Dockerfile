@@ -91,4 +91,4 @@ COPY --from=build /app/apps/backend/drizzle ./apps/backend/drizzle
 # volume, then drops privileges in-process before loading the server (see
 # apps/backend/src/runtime/docker-entrypoint.ts). The app itself never runs as
 # root — `docker exec` bypasses this entrypoint though, so pass `-u bun` there.
-ENTRYPOINT ["tini", "--", "bun", "/app/entrypoint/index.js"]
+ENTRYPOINT ["tini", "--", "bun", "/app/entrypoint/docker-entrypoint.js"]
