@@ -70,3 +70,6 @@ pnpm-debug.log*
 *.db-shm
 *.db-wal
 *.zip
+
+# Local dev fixture data (bun scripts/dev-seed.ts)
+/.dev-fixture/

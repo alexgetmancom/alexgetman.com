@@ -6,6 +6,16 @@
 
 ## Tatically after 2026-07-15. All other production deployments remain CI/CD-only.
 
+## Локальные данные для сайта и плеера
+
+- Пустая локальная БД — норма: главная отрендерит «English posts will appear here…», плеер не смонтируется. **Не сеять данные вручную и не писать INSERT'ы по месту** — есть фикстура.
+- `bun scripts/dev-seed.ts` — 3 опубликованных поста, у первого 2 картинки. Пишет БД и медиа в `.dev-fixture/` (в gitignore) и печатает готовую строку запуска:
+  - `PIPELINE_DB=<db> SITE_PUBLIC_DIR=<public-dir> bun run dev`
+  - Флаги: `--posts N`, `--gallery N` (картинок у первого поста), `--db`, `--public-dir`, `--reset` (пересоздать).
+- Почему по умолчанию именно так: на пустом или односоставном фиде не видны ни лента, ни фильтры режимов, ни сегментированная полоса прогресса — она появляется только при 2+ картинках в посте.
+- Источник данных — `apps/web/src/server/site-fixture.ts` (drizzle-схема + реальные байты картинок под продовым именованием из `site-media-naming.ts`). Оттуда же сеется SSR-смоук-тест, поэтому дев и CI смотрят на одну и ту же форму данных. Менять форму — там, а не в вызывающих местах.
+- Для логики плеера (таймеры, автоматы, прогресс) писать юнит-тесты рядом с `apps/web/src/scripts/story-player/*.test.ts` на happy-dom — быстро и детерминированно. Учитывать: **happy-dom не считает layout**, `offsetTop`/`clientHeight`/`scrollTop` там всегда 0, поэтому геометрия и прокрутка проверяются только живым браузером.
+
 ## Runtime diagnostics
 
 - Production SSH alias: `ssh tw-nl`. Two containers run the same image: `alexgetman-backend` (alex) and `maru-backend` (maru) — pick the one the incident is actually about, or check both if unsure which account is affected.

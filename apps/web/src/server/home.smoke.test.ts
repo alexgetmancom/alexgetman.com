@@ -2,8 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { openBackendDb } from "../../../backend/src/db/client.js";
-import { knowledgeEntities, postEntityLinks, postLocales, postSources, posts, publications } from "../../../backend/src/db/schema.js";
+import { FIXTURE_JPEG, seedSiteFixture } from "./site-fixture.js";
 
 /**
  * A single end-to-end smoke test: it boots the real Astro dev server against
@@ -30,11 +29,6 @@ const port = 4400 + Math.floor(Math.random() * 400);
 const host = "127.0.0.1";
 const baseUrl = `http://${host}:${port}`;
 
-/** Smallest valid 1x1 JPEG — enough for the media route to read real bytes off disk. */
-const FIXTURE_JPEG = Buffer.from(
-  "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAj/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k=",
-  "base64",
-);
 /** Final viewer projection produced by the media worker and exposed by the
  * live site read-model. Keeping this end-to-end catches a regression where
  * the worker makes the vertical composite but the website links the source. */
@@ -43,68 +37,6 @@ const FIXTURE_IMAGE_PATH = "media/posts/1-en-0-vertical.jpg";
 let dbDir: string;
 let publicDir: string;
 let server: ReturnType<typeof Bun.spawn> | undefined;
-
-function seedDatabase(dbPath: string): void {
-  const backendDb = openBackendDb(dbPath);
-  const now = new Date().toISOString();
-  backendDb.db.insert(publications).values({ postId: 1, status: "published", createdAt: now, updatedAt: now }).run();
-  backendDb.db
-    .insert(posts)
-    .values({
-      postKey: "post:1",
-      postId: 1,
-      source: "bot",
-      channel: "controller",
-      messageId: 1,
-      dateUtc: now,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .run();
-  backendDb.db
-    .insert(postLocales)
-    .values([
-      {
-        postId: 1,
-        locale: "en",
-        slug: "smoke-test-post",
-        text: "Smoke test post body.\nSecond paragraph.",
-        mediaJson: [{ type: "photo", file_id: "smoke-test-photo" }],
-        siteEnabled: 1,
-        publishedAt: now,
-        updatedAt: now,
-      },
-      {
-        postId: 1,
-        locale: "ru",
-        slug: "dymovoy-test-post",
-        text: "Тело дымового теста.\nВторой абзац.",
-        siteEnabled: 1,
-        publishedAt: now,
-        updatedAt: now,
-      },
-    ])
-    .run();
-  backendDb.db
-    .insert(postSources)
-    .values({
-      postId: 1,
-      url: "https://example.com/official-announcement",
-      labelRu: "Официально",
-      labelEn: "Official",
-      displayKind: "official",
-      createdAt: now,
-      updatedAt: now,
-    })
-    .run();
-  const entity = backendDb.db
-    .insert(knowledgeEntities)
-    .values({ kind: "company", slug: "example-ai", titleRu: "Example AI", titleEn: "Example AI", createdAt: now, updatedAt: now })
-    .returning({ id: knowledgeEntities.id })
-    .get();
-  backendDb.db.insert(postEntityLinks).values({ postId: 1, entityId: entity.id, createdAt: now }).run();
-  backendDb.close();
-}
 
 async function stopAnyDaemon(): Promise<void> {
   const stop = Bun.spawn([astroBin, "dev", "stop"], { cwd: projectRoot, stdout: "ignore", stderr: "ignore" });
@@ -137,11 +69,11 @@ beforeAll(async () => {
   await stopAnyDaemon();
   dbDir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-home-smoke-"));
   const dbPath = path.join(dbDir, "pipeline.db");
-  seedDatabase(dbPath);
   publicDir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-home-smoke-media-"));
-  const imagePath = path.join(publicDir, FIXTURE_IMAGE_PATH);
-  fs.mkdirSync(path.dirname(imagePath), { recursive: true });
-  fs.writeFileSync(imagePath, FIXTURE_JPEG);
+  const seeded = seedSiteFixture({ dbPath, publicDir });
+  // The fixture derives this name from the production naming helper; assert the
+  // literal the tests below fetch, so a convention change fails here loudly.
+  expect(seeded.imagePaths).toEqual([FIXTURE_IMAGE_PATH]);
   server = Bun.spawn(["bun", "--bun", astroBin, "dev", "--port", String(port), "--host", host], {
     cwd: projectRoot,
     env: { ...process.env, PIPELINE_DB: dbPath, SITE_PUBLIC_DIR: publicDir, ENABLE_WORKERS: "0" },
