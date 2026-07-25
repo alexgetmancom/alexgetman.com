@@ -12,6 +12,7 @@ Thumbs.db
 *.tmp
 *.swp
 *.swo
+.obsidian/
 
 # Runtime dynamic files and secrets
 /apps/web/feed/ialexey-feed.env
