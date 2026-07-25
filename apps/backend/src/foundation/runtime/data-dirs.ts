@@ -86,3 +86,19 @@ export function resolveUnixUser(username: string, passwdFile = "/etc/passwd"): {
   }
   throw new Error(`Unix user not found in ${passwdFile}: ${username}`);
 }
+
+/** The supplementary groups to keep when dropping privileges. Compose grants
+ * the container extra groups it needs to read other containers' data — the
+ * `group_add: ${BOT_API_GID}` entry for the telegram-bot-api download
+ * directory. Those gids exist only in the running container's group list, not
+ * in the image's /etc/group, so they can only be preserved from the live
+ * process; replacing the list with just the user's own gid is what silently
+ * broke reading downloaded videos. Group 0 is dropped deliberately: it is
+ * root's own membership and must not survive the drop. Root's remaining
+ * memberships (bin, daemon, disk, …) are kept rather than filtered by a
+ * heuristic: nothing in the image is group-restricted to them, and any rule
+ * clever enough to guess which gids "came from Docker" could just as well drop
+ * the one gid the app actually needs — which is the outage this replaced. */
+export function retainedSupplementaryGroups(gid: number, currentGroups: number[]): number[] {
+  return [gid, ...new Set(currentGroups.filter((group) => group !== 0 && group !== gid))];
+}

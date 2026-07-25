@@ -118,15 +118,15 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
   } catch (error) {
     const locale = botLocale(backendDb, adminId);
     // The original upload error is operationally important (disk, Telegram
-    // download, or media import). Log it before replying: raw paths can contain
-    // Markdown delimiters and must never be rendered as Telegram Markdown.
+    // download, or media import), and the admin reply can still be lost to a
+    // Telegram send failure — log it first so the cause survives regardless.
     log("error", "Video conversation asset step failed", {
       adminId,
       step: session.step,
       error: error instanceof Error ? error.message : String(error),
     });
-    await ctx.reply(`🔴 ${t(locale, "video.value-error")}: ${describeError(locale, error)}`, {
-      reply_markup: new InlineKeyboard().text(t(locale, "common.cancel"), "video_cancel_dialog"),
+    await replyVideoPrompt(ctx, locale, `🔴 ${t(locale, "video.value-error")}: ${describeError(locale, error)}`, {
+      plainText: true,
     });
     return true;
   }
@@ -235,7 +235,7 @@ async function parseScheduleDate(
     return studioServices(backendDb, config).videos.parseSchedule(adminId, draftId, text);
   } catch (error) {
     const locale = botLocale(backendDb, adminId);
-    await replyVideoPrompt(ctx, locale, describeError(locale, error));
+    await replyVideoPrompt(ctx, locale, describeError(locale, error), { plainText: true });
     return null;
   }
 }

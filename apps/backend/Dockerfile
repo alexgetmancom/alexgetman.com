@@ -91,4 +91,7 @@ COPY --from=build /app/apps/backend/drizzle ./apps/backend/drizzle
 # volume, then drops privileges in-process before loading the server (see
 # apps/backend/src/runtime/docker-entrypoint.ts). The app itself never runs as
 # root — `docker exec` bypasses this entrypoint though, so pass `-u bun` there.
-ENTRYPOINT ["tini", "--", "bun", "/app/entrypoint/docker-entrypoint.js"]
+# `--smol` belongs here, not in a compose `command:`: the entrypoint loads the
+# server into this same process, so anything after the script path would be
+# passed to it as an ignored argument instead of taking effect as a Bun flag.
+ENTRYPOINT ["tini", "--", "bun", "--smol", "/app/entrypoint/docker-entrypoint.js"]

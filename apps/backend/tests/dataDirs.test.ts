@@ -8,6 +8,7 @@ import {
   fixDataDirectoriesOwnership,
   requiredDataDirectories,
   resolveUnixUser,
+  retainedSupplementaryGroups,
 } from "../src/foundation/runtime/data-dirs.js";
 
 function tempRoot(): string {
@@ -126,5 +127,22 @@ describe("fixDataDirectoriesOwnership", () => {
     const [result] = fixDataDirectoriesOwnership([{ name: "TEST_DIR", path: target }], 65534, 65534);
     expect(result?.changed).toBe(false);
     expect(result?.error).toBeTruthy();
+  });
+});
+
+describe("retainedSupplementaryGroups", () => {
+  it("keeps the compose-granted group that lets the app read bot-api downloads", () => {
+    // Root's live group list inside the container: its own groups plus the
+    // `group_add: BOT_API_GID` entry. Losing 101 here is what broke reading
+    // /var/lib/telegram-bot-api after the drop.
+    expect(retainedSupplementaryGroups(1000, [0, 1, 101])).toEqual([1000, 1, 101]);
+  });
+
+  it("never carries root's group 0 across the privilege drop", () => {
+    expect(retainedSupplementaryGroups(1000, [0, 0])).toEqual([1000]);
+  });
+
+  it("lists the target gid once when it is already a supplementary group", () => {
+    expect(retainedSupplementaryGroups(1000, [1000, 101, 101])).toEqual([1000, 101]);
   });
 });

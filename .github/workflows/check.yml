@@ -60,6 +60,14 @@ jobs:
         run: bun build apps/web/server.ts --outdir runtime --target bun
       - name: Operations CLI bundle
         run: bun build apps/backend/src/cli.ts --outdir ops --target bun
+      - name: Container entrypoint bundle
+        # Bun names the output after the source basename, so a renamed source
+        # silently stops matching the path the image ENTRYPOINT executes — that
+        # mismatch crash-loops the container at boot. Assert both sides here.
+        run: |
+          bun build apps/backend/src/runtime/docker-entrypoint.ts --outdir entrypoint --target bun
+          test -f entrypoint/docker-entrypoint.js
+          grep -q '"/app/entrypoint/docker-entrypoint.js"' apps/backend/Dockerfile
 
   deployment-status-on-ci-failure:
     name: Production deployment status on CI failure

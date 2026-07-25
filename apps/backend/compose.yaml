@@ -23,8 +23,12 @@ services:
     image: ${BACKEND_IMAGE:-ghcr.io/alexgetmancom/alexgetman-backend:latest}
     pull_policy: always
     container_name: alexgetman-backend
-    command: ["bun", "--smol", "/app/runtime/server.js"]
+    # No `command:` — the image entrypoint starts the server itself (it fixes
+    # bind-mount ownership as root first, then drops to uid 1000). A command
+    # here would land as ignored arguments, not as Bun flags.
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     env_file:
       - path: ./secrets.env
       - path: ./site-feed.env

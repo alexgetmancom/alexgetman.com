@@ -5,8 +5,11 @@ services:
     image: ${BACKEND_IMAGE:-ghcr.io/alexgetmancom/alexgetman-backend:latest}
     pull_policy: always
     container_name: maru-backend
-    command: ["bun", "--smol", "/app/runtime/server.js"]
+    # No `command:` — see apps/backend/compose.yaml: the image entrypoint owns
+    # startup, and Bun flags such as --smol only work from the ENTRYPOINT.
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     env_file:
       - ./secrets.env
     group_add:

@@ -90,10 +90,13 @@ export async function updateVideoControl(
 }
 
 /** Sends the next question as a normal chat message, without moving an earlier
- * control card. Always offers Cancel so a free-text prompt is never a dead end. */
-export async function replyVideoPrompt(ctx: Context, locale: BotLocale, text: string): Promise<void> {
+ * control card. Always offers Cancel so a free-text prompt is never a dead end.
+ * Pass `plainText` for anything carrying an error message: those embed raw
+ * paths and API responses whose `_` and `*` make Telegram reject the whole
+ * send as unparsable Markdown, losing exactly the text worth reading. */
+export async function replyVideoPrompt(ctx: Context, locale: BotLocale, text: string, options?: { plainText?: boolean }): Promise<void> {
   await ctx.reply(text, {
-    parse_mode: "Markdown",
+    ...(options?.plainText ? {} : { parse_mode: "Markdown" }),
     reply_markup: new InlineKeyboard().text(t(locale, "common.cancel"), "video_cancel_dialog"),
   });
 }

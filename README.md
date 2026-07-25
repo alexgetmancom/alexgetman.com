@@ -86,6 +86,31 @@ read-only diagnostics are documented in [deploy/README.md](deploy/README.md).
 `AGENTS.md` is the working runbook for agents: follow it before inspecting or
 changing production state.
 
+## Container permissions
+
+The image starts as root and drops to the unprivileged `bun` user (uid/gid 1000)
+before the server loads — see
+[apps/backend/src/runtime/docker-entrypoint.ts](apps/backend/src/runtime/docker-entrypoint.ts).
+The root phase exists only to `chown` the configured data directories: Docker
+creates a bind-mount target that does not exist yet as root, and without this a
+fresh deployment fails much later with a permission error on the first upload
+rather than at boot. The drop is irreversible (`setuid` from root also replaces
+the saved uid), so the server cannot regain root. Two consequences when you
+deploy this yourself:
+
+- The directories listed in `DATA_DIR`, `MEDIA_CACHE_DIR`, `VIDEO_MEDIA_DIR` and
+  `SITE_PUBLIC_DIR` get their owner set to 1000:1000 at boot. Point them at
+  paths dedicated to this app, not at a directory shared with other services.
+- To read videos downloaded by the local Telegram Bot API server, the container
+  needs that server's data group: `group_add: ["${BOT_API_GID:-101}"]` in the
+  compose file. Set `BOT_API_GID` to the group owning your bot-api data
+  directory (`stat -c %g <bot-api-data>`). The entrypoint preserves every group
+  Docker grants the container; it cannot add one that was never granted.
+
+Do not add a `command:` override for the backend service — the entrypoint loads
+the server itself, and anything passed as a command becomes an ignored argument
+instead of a Bun flag.
+
 ## Security and privacy
 
 Runtime secrets, SQLite databases, Telegram sessions, generated media, logs, and production environment files are intentionally excluded from Git. The repository contains examples only; never commit a token, OAuth refresh token, session, or production data export.
