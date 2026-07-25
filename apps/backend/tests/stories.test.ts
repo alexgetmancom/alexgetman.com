@@ -39,7 +39,7 @@ describe("story publishers", () => {
     }
   });
 
-  it("letterboxes video into the shared 1080x1920 50 FPS H.264 Story master", async () => {
+  it("letterboxes video into a 1080x1920 H.264 Story master without changing source FPS", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-story-video-"));
     const source = path.join(dir, "source.mp4");
     fs.writeFileSync(source, "fake video");
@@ -50,7 +50,7 @@ describe("story publishers", () => {
       expect(fs.existsSync(String(generated[0]?.story_local_path))).toBe(true);
       const ffmpegArgs = ffmpegCalls.at(-1) ?? [];
       expect(ffmpegArgs[ffmpegArgs.indexOf("-t") + 1]).toBe("59");
-      expect(ffmpegArgs.slice(ffmpegArgs.indexOf("-r"), ffmpegArgs.indexOf("-r") + 2)).toEqual(["-r", "50"]);
+      expect(ffmpegArgs).not.toContain("-r");
       expect(ffmpegArgs.slice(ffmpegArgs.indexOf("-c:v"), ffmpegArgs.indexOf("-c:v") + 2)).toEqual(["-c:v", "libx264"]);
       expect(ffmpegArgs.slice(ffmpegArgs.indexOf("-b:a"), ffmpegArgs.indexOf("-b:a") + 2)).toEqual(["-b:a", "320k"]);
     } finally {
@@ -63,6 +63,7 @@ describe("story publishers", () => {
     expect(args.slice(0, 4)).toEqual(["-init_hw_device", "vaapi=va:/dev/dri/renderD128", "-filter_hw_device", "va"]);
     expect(args.slice(args.indexOf("-c:v"), args.indexOf("-c:v") + 2)).toEqual(["-c:v", "h264_vaapi"]);
     expect(args[args.indexOf("-filter_complex") + 1]).toContain("format=nv12,hwupload,split=2");
+    expect(args[args.indexOf("-filter_complex") + 1]).not.toContain("fps=50");
     expect(args.filter((arg) => arg === "h264_vaapi")).toHaveLength(2);
     expect(args).toContain("telegram.mp4");
   });

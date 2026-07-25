@@ -75,6 +75,19 @@ describe("site media materialization", () => {
     expect(fs.statSync(ru).ino).not.toBe(fs.statSync(en).ino);
   });
 
+  it("keeps only the vertical video master and poster in permanent site media", async () => {
+    directory = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-site-media-"));
+    const source = path.join(directory, "source.mp4");
+    fs.writeFileSync(source, "video-source");
+    const config = loadConfig({ SITE_PUBLIC_DIR: directory });
+    const [item] = await materializeSiteMedia(config, 4, "en", [{ type: "video", local_path: source }]);
+    const media = path.join(directory, "media", "posts");
+    expect(fs.existsSync(path.join(media, "4-en-0.mp4"))).toBe(false);
+    expect(fs.existsSync(path.join(media, "4-en-0-vertical.mp4"))).toBe(true);
+    expect(fs.existsSync(path.join(media, "4-en-0-poster.jpg"))).toBe(true);
+    expect(item?.path).toMatch(/^media\/posts\/4-en-0-vertical\.mp4\?v=/);
+  });
+
   it("migrates historical URLs without changing their paths or bytes", async () => {
     directory = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-site-media-"));
     const media = path.join(directory, "media");
@@ -90,5 +103,6 @@ describe("site media materialization", () => {
     expect(fs.readFileSync(legacy, "utf8")).toBe("historical-video");
     expect(fs.readFileSync(current, "utf8")).toBe("historical-video");
     expect(fs.statSync(legacy).ino).toBe(fs.statSync(current).ino);
+    expect(await deduplicateSiteMedia(config, false)).toMatchObject({ reclaimable_bytes: 0, logical_duplicate_bytes: 16 });
   });
 });

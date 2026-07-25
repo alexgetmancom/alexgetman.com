@@ -10,7 +10,13 @@ import {
 } from "../content/site-media-naming.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { runFfmpeg } from "../foundation/runtime/ffmpeg.js";
-import { copyFileAtomically, deduplicateSiteMediaFile, temporaryPath, writeFileAtomically } from "./site-media-storage.js";
+import {
+  copyFileAtomically,
+  deduplicateSiteMediaFile,
+  removeDeduplicatedSiteMediaFile,
+  temporaryPath,
+  writeFileAtomically,
+} from "./site-media-storage.js";
 
 type SiteMedia = Record<string, unknown> & {
   type?: string;
@@ -62,7 +68,6 @@ export async function materializeSiteMedia(
       // Public media is intentionally long-lived in browser/CDN caches. A content
       // version keeps a replacement from reusing the previous image URL.
       // The web Story player always receives the pre-composited 9:16 file.
-      // `target` remains a durable original beside it, never a browser layer.
       path: versionedPublicPath(`${SITE_MEDIA_URL_PREFIX}/${verticalName}`, vertical),
     };
     if (kind === "video") {
@@ -79,6 +84,10 @@ export async function materializeSiteMedia(
       await deduplicateSiteMediaFile(mediaRoot, poster);
       await materializeResponsiveVariants(config, poster);
       output.poster = versionedPublicPath(`${SITE_MEDIA_URL_PREFIX}/${posterName}`, poster);
+      // The source file has no public consumer after its vertical master and
+      // poster exist. Keep the original only in the bounded media cache, not
+      // indefinitely in site storage beside the browser-facing projection.
+      await removeDeduplicatedSiteMediaFile(mediaRoot, target);
     } else {
       await materializeResponsiveVariants(config, vertical);
     }
