@@ -34,4 +34,18 @@ export function preloadAdjacentMedia(options: {
       if (post.imageSrcSet) preloadImage.srcset = post.imageSrcSet;
     }
   });
+  preloadGallery(posts[active], toPublicSrc);
+}
+
+/** Slides 2..N of the *current* post are shown by swapping one <img>'s src, so
+ * an unfetched slide leaves the frame blank until it decodes. Only the cover was
+ * warmed above; warm the rest of the sequence too. */
+function preloadGallery(post: StoryPost | undefined, toPublicSrc: (value: string | undefined) => string): void {
+  if (!post?.gallery || post.gallery.length < 2 || post.__galleryPreloaded) return;
+  post.__galleryPreloaded = true;
+  for (const media of post.gallery) {
+    if (media.type === "video") continue;
+    const src = toPublicSrc(media.path ?? undefined);
+    if (src) new Image().src = src;
+  }
 }

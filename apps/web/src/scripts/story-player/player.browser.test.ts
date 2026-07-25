@@ -106,6 +106,44 @@ describe("story player browser behavior", () => {
     expect(advances).toBe(0);
   });
 
+  it("restarts the bar immediately on a gallery slide, but lets a story change settle first", async () => {
+    const window = installDom();
+    const posts = [
+      post({
+        gallery: [
+          { type: "image", path: "/a.jpg" },
+          { type: "image", path: "/b.jpg" },
+        ],
+      }),
+    ];
+    const fill = window.document.createElement("i") as unknown as HTMLElement;
+    const controller = () =>
+      createStoryProgressController({
+        getVideo: () => null,
+        getProgressFill: () => fill,
+        posts,
+        activeIndex: () => 0,
+        isPaused: () => false,
+        onAdvance: () => {},
+        intervalMs: 250,
+      });
+
+    // A slide swap only exchanges the <img> src, so the segment must start filling
+    // right away instead of sitting empty for the story-transition delay.
+    const slide = controller();
+    slide.resetForSlide();
+    await Bun.sleep(120);
+    expect(fill.style.animation).toContain("storyProgressHorizontal");
+
+    fill.style.animation = "none";
+    const story = controller();
+    story.resetForStory();
+    await Bun.sleep(120);
+    expect(fill.style.animation).toBe("none");
+    await Bun.sleep(400);
+    expect(fill.style.animation).toContain("storyProgressHorizontal");
+  });
+
   it("tracks video completion even when the <video> element mounts after the controller is created", async () => {
     const window = installDom();
     const posts = [post({ image: "/media/posts/example.mp4", mediaType: "video" })];

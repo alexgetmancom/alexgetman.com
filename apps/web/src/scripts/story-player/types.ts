@@ -22,4 +22,5 @@ export type StoryPost = {
   readMore?: string;
   feedModes?: string[];
   __preloaded?: boolean;
+  __galleryPreloaded?: boolean;
 };

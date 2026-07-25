@@ -30,19 +30,62 @@ let {
 } = $props();
 
 let rail = $state<HTMLElement | null>(null);
-let cards: HTMLElement[] = [];
+/* Ссылки на DOM карточек живут в Map, а не в массиве: при удалении поста из
+   keyed-{#each} Svelte вызывает bind:this с null, и запись уходит вместе с
+   карточкой. У массива на её месте осталась бы ссылка на detached-элемент. */
+const cards = new Map<number, HTMLElement>();
+
+/* includes() по массиву на каждую карточку давал O(n²) на перерисовку ленты. */
+const visible = $derived(new Set(visibleIndexes));
+
+/* Лента намеренно не прокручивается пользователем (overflow: hidden, скрытые
+   скроллбары) — её позицию задаёт только активная карточка. Побочный эффект:
+   браузер не анимирует scrollTo({behavior:"smooth"}) на таком контейнере и
+   молча оставляет scrollTop на месте, поэтому доводим позицию сами. */
+const SCROLL_MS = 380;
+
+function easeOutCubic(progress: number): number {
+  return 1 - (1 - progress) ** 3;
+}
+
+function glideTo(railEl: HTMLElement, left: number, top: number): () => void {
+  const fromLeft = railEl.scrollLeft;
+  const fromTop = railEl.scrollTop;
+  const deltaLeft = left - fromLeft;
+  const deltaTop = top - fromTop;
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    railEl.scrollLeft = left;
+    railEl.scrollTop = top;
+    return () => {};
+  }
+  let frame = 0;
+  const start = performance.now();
+  const step = (now: number) => {
+    const progress = Math.min(1, (now - start) / SCROLL_MS);
+    const eased = easeOutCubic(progress);
+    railEl.scrollLeft = fromLeft + deltaLeft * eased;
+    railEl.scrollTop = fromTop + deltaTop * eased;
+    if (progress < 1) frame = requestAnimationFrame(step);
+  };
+  frame = requestAnimationFrame(step);
+  return () => cancelAnimationFrame(frame);
+}
 
 /* Активная карточка всегда докручивается в центр ленты. */
 $effect(() => {
-  const card = cards[active];
+  const card = cards.get(active);
   if (!rail || !card) return;
   const railEl = rail;
+  let stopGlide: (() => void) | undefined;
   const timer = window.setTimeout(() => {
     const left = card.offsetLeft - (railEl.clientWidth - card.offsetWidth) / 2;
     const top = card.offsetTop - (railEl.clientHeight - card.offsetHeight) / 2;
-    railEl.scrollTo({ left: Math.max(0, left), top: Math.max(0, top), behavior: "smooth" });
+    stopGlide = glideTo(railEl, Math.max(0, left), Math.max(0, top));
   }, 60);
-  return () => window.clearTimeout(timer);
+  return () => {
+    window.clearTimeout(timer);
+    stopGlide?.();
+  };
 });
 </script>
 
@@ -53,8 +96,11 @@ $effect(() => {
       class="rail-card"
       class:is-active={index === active}
       class:rail-card--no-image={!post.image}
-      class:is-filtered-out={!visibleIndexes.includes(index)}
-      bind:this={cards[index]}
+      class:is-filtered-out={!visible.has(index)}
+      {@attach (node) => {
+        cards.set(index, node);
+        return () => cards.delete(index);
+      }}
       onclick={(event) => {
         event.preventDefault();
         onselect(index);

@@ -150,7 +150,7 @@ function advanceStory(): void {
     return;
   }
   gallerySubIndex = next.subIndex;
-  progress?.resetForStory();
+  progress?.resetForSlide();
 }
 
 function selectGalleryImage(index: number): void {
