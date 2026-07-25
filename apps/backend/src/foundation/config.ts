@@ -107,7 +107,7 @@ const envSchema = z
     /** Where optional heavy media transforms execute. Remote workers are
      * deliberately opt-in so a stock self-hosted Studio keeps working. */
     MEDIA_PROCESSOR_PROVIDER: z.enum(["local", "remote_http"]).default("local"),
-    MEDIA_PROCESSOR_URL: z.string().url().optional(),
+    MEDIA_PROCESSOR_URL: z.url().optional(),
     MEDIA_PROCESSOR_TOKEN: z.string().min(16).optional(),
     MEDIA_PROCESSOR_TIMEOUT_SECONDS: z.coerce.number().int().min(10).max(3600).default(900),
     MEDIA_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86_400),

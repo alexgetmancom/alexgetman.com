@@ -21,8 +21,8 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
   const parts = data.split(":");
   const [action, first, second] = parts;
   const draftId = Number(action === "preset" ? second : action?.startsWith("sched_") ? parts.at(-1) : first);
-  const locale = botLocale(backendDb, Number(ctx.from?.id));
   const actorId = Number(ctx.from?.id);
+  const locale = botLocale(backendDb, actorId);
   if (!Number.isSafeInteger(draftId)) return void (await ctx.answerCallbackQuery({ text: t(locale, "action.invalid-post") }));
   studioServices(backendDb, config).posts.get(actorId, draftId);
   if (action === "toggle" && second) {
@@ -38,13 +38,13 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
     return editDraftPreview(ctx, backendDb, draftId, config);
   }
   if (action === "cancel_state") {
-    clearPostAdminState(backendDb, Number(ctx.from?.id));
+    clearPostAdminState(backendDb, actorId);
     await ctx.answerCallbackQuery();
     return editDraftPreview(ctx, backendDb, draftId, config, second && isDraftView(second) ? second : "overview");
   }
   if (["edit_ru", "edit_en", "replace_ru_media", "replace_en_media"].includes(action ?? "")) {
     if (!action) return;
-    setPostAdminState(backendDb, Number(ctx.from?.id), action, draftId, callbackMessageId(ctx));
+    setPostAdminState(backendDb, actorId, action, draftId, callbackMessageId(ctx));
     await ctx.answerCallbackQuery({
       text: t(locale, "action.send-replacement"),
     });
@@ -56,16 +56,9 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
     );
   }
   if (action === "sources") {
-    setPostAdminState(backendDb, Number(ctx.from?.id), "edit_sources", draftId, callbackMessageId(ctx));
+    setPostAdminState(backendDb, actorId, "edit_sources", draftId, callbackMessageId(ctx));
     await ctx.answerCallbackQuery();
-    return editDraftPrompt(
-      ctx,
-      backendDb,
-      draftId,
-      locale === "ru"
-        ? "Пришли ссылки на источники одним сообщением. Можно по одной на строку. Новое сообщение заменит текущий список."
-        : "Send source links in one message, one per line. A new message replaces the current list.",
-    );
+    return editDraftPrompt(ctx, backendDb, draftId, t(locale, "post.sources-prompt"));
   }
   if (action === "cancel") {
     return editDraftPreview(ctx, backendDb, draftId, config, "confirm_delete");
@@ -117,13 +110,8 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
     const value = studioServices(backendDb, config).posts.slotTime(`${second.slice(0, 2)}:${second.slice(2, 4)}`);
     return commitLocaleSchedule(ctx, backendDb, config, actorId, draftId, requireScheduleLocale(first), value);
   }
-  if (action === "sched_auto" && first) {
-    const pickLocale = requireScheduleLocale(first);
-    const value = studioServices(backendDb, config).posts.autoSlot(actorId, draftId, pickLocale);
-    return commitLocaleSchedule(ctx, backendDb, config, actorId, draftId, pickLocale, value);
-  }
   if (action === "sched_manual_confirm") {
-    const state = getPostAdminState(backendDb, Number(ctx.from?.id));
+    const state = getPostAdminState(backendDb, actorId);
     const match = state?.action?.match(/^schedule_confirm_(ru|en)_(.+)$/);
     if (!match || state?.draft_id !== draftId)
       return void (await ctx.answerCallbackQuery({
@@ -135,7 +123,7 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
       return void (await ctx.answerCallbackQuery({
         text: t(locale, "action.schedule-expired"),
       }));
-    clearPostAdminState(backendDb, Number(ctx.from?.id));
+    clearPostAdminState(backendDb, actorId);
     const result = await withActionLock(`${actorId}:sched_manual_confirm:${draftId}`, () =>
       commitLocaleSchedule(ctx, backendDb, config, actorId, draftId, scope, value),
     );
@@ -144,7 +132,7 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
   }
   if (action === "sched_manual" && first) {
     const pickLocale = requireScheduleLocale(first);
-    setPostAdminState(backendDb, Number(ctx.from?.id), `schedule_manual_${pickLocale}`, draftId, callbackMessageId(ctx));
+    setPostAdminState(backendDb, actorId, `schedule_manual_${pickLocale}`, draftId, callbackMessageId(ctx));
     await ctx.answerCallbackQuery({ text: t(locale, "action.send-time") });
     return editDraftPrompt(
       ctx,
@@ -209,14 +197,15 @@ export async function applyAdminState(
   draftId: number,
   controlMessageId: number | null,
 ): Promise<void> {
+  const actorId = Number(ctx.from?.id);
   const message = extractMessage(ctx);
   if (action.startsWith("schedule_manual_")) {
     const scope = requireScheduleLocale(action.slice("schedule_manual_".length));
-    const { ruAt, enAt } = studioServices(backendDb, config).posts.manualSchedule(Number(ctx.from?.id), draftId, scope, message.text);
+    const { ruAt, enAt } = studioServices(backendDb, config).posts.manualSchedule(actorId, draftId, scope, message.text);
     const value = scope === "ru" ? ruAt : enAt;
     if (!value) throw new StudioError("err.no-pub-time");
-    setPostAdminState(backendDb, Number(ctx.from?.id), `schedule_confirm_${scope}_${value.toISOString()}`, draftId, controlMessageId);
-    await sendPostPreviews(ctx, backendDb, config, Number(ctx.from?.id), draftId);
+    setPostAdminState(backendDb, actorId, `schedule_confirm_${scope}_${value.toISOString()}`, draftId, controlMessageId);
+    await sendPostPreviews(ctx, backendDb, config, actorId, draftId);
     return showScheduleConfirmation(
       ctx,
       backendDb,
@@ -228,7 +217,7 @@ export async function applyAdminState(
       scope === "ru" ? "schedule_ru" : "schedule_en",
     );
   } else if (action === "edit_ru" || action === "edit_en") {
-    studioServices(backendDb, config).posts.edit(Number(ctx.from?.id), draftId, {
+    studioServices(backendDb, config).posts.edit(actorId, draftId, {
       locale: action === "edit_ru" ? "ru" : "en",
       text: message.text,
       entities: message.entities,
@@ -236,7 +225,7 @@ export async function applyAdminState(
       clearMedia: isClearMediaCommand(message.text),
     });
   } else if (action === "replace_ru_media" || action === "replace_en_media") {
-    studioServices(backendDb, config).posts.edit(Number(ctx.from?.id), draftId, {
+    studioServices(backendDb, config).posts.edit(actorId, draftId, {
       locale: action === "replace_ru_media" ? "ru" : "en",
       text: message.text,
       entities: message.entities,
@@ -245,10 +234,10 @@ export async function applyAdminState(
     });
   } else if (action === "edit_sources") {
     const urls = extractUrls(message.text);
-    if (urls.length === 0) throw new StudioError("Send at least one valid http(s) link.");
-    studioServices(backendDb, config).posts.replaceSources(Number(ctx.from?.id), draftId, urls);
+    if (urls.length === 0) throw new StudioError("err.no-valid-source-links");
+    studioServices(backendDb, config).posts.replaceSources(actorId, draftId, urls);
   }
-  clearPostAdminState(backendDb, Number(ctx.from?.id));
+  clearPostAdminState(backendDb, actorId);
   // A completed edit gets a fresh card at the bottom, same as the album path
   // in albums.ts: the previous card is history to scroll back to, never a
   // moving prompt that erases what it looked like before the edit.

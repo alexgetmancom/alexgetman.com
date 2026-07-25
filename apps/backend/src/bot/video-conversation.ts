@@ -222,8 +222,9 @@ async function parseScheduleDate(
 ): Promise<Date | null> {
   try {
     return studioServices(backendDb, config).videos.parseSchedule(adminId, draftId, text);
-  } catch {
-    await replyVideoPrompt(ctx, botLocale(backendDb, adminId), t(botLocale(backendDb, adminId), "common.schedule-parse-error"));
+  } catch (error) {
+    const locale = botLocale(backendDb, adminId);
+    await replyVideoPrompt(ctx, locale, describeError(locale, error));
     return null;
   }
 }

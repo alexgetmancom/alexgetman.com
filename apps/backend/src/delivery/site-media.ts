@@ -14,6 +14,7 @@ import {
   copyFileAtomically,
   deduplicateSiteMediaFile,
   removeDeduplicatedSiteMediaFile,
+  sha256File,
   temporaryPath,
   writeFileAtomically,
 } from "./site-media-storage.js";
@@ -68,7 +69,7 @@ export async function materializeSiteMedia(
       // Public media is intentionally long-lived in browser/CDN caches. A content
       // version keeps a replacement from reusing the previous image URL.
       // The web Story player always receives the pre-composited 9:16 file.
-      path: versionedPublicPath(`${SITE_MEDIA_URL_PREFIX}/${verticalName}`, vertical),
+      path: await versionedPublicPath(`${SITE_MEDIA_URL_PREFIX}/${verticalName}`, vertical),
     };
     if (kind === "video") {
       const posterName = siteMediaPosterFilename(postId, locale, index);
@@ -83,7 +84,7 @@ export async function materializeSiteMedia(
       await fs.promises.chmod(poster, 0o664);
       await deduplicateSiteMediaFile(mediaRoot, poster);
       await materializeResponsiveVariants(config, poster);
-      output.poster = versionedPublicPath(`${SITE_MEDIA_URL_PREFIX}/${posterName}`, poster);
+      output.poster = await versionedPublicPath(`${SITE_MEDIA_URL_PREFIX}/${posterName}`, poster);
       // The source file has no public consumer after its vertical master and
       // poster exist. Keep the original only in the bounded media cache, not
       // indefinitely in site storage beside the browser-facing projection.
@@ -103,7 +104,7 @@ async function materializeVerticalViewerMedia(
   kind: "image" | "video",
   options: SiteMediaMaterializeOptions,
 ): Promise<void> {
-  if (await isCurrentTransform(source, output)) return;
+  if (await isCurrentDerivative(source, output)) return;
   if (config.MEDIA_PROCESSOR_PROVIDER !== "remote_http") {
     // Explicit local mode remains usable for self-hosters without VM-106. The
     // production route below owns the blurred composite; this CPU recipe keeps
@@ -178,9 +179,8 @@ function throttledFileStream(file: string, maxUploadKbps: number): ReadableStrea
   });
 }
 
-function versionedPublicPath(publicPath: string, filePath: string): string {
-  const content = fs.readFileSync(filePath);
-  return `${publicPath}?v=${crypto.createHash("sha256").update(content).digest("hex").slice(0, 12)}`;
+async function versionedPublicPath(publicPath: string, filePath: string): Promise<string> {
+  return `${publicPath}?v=${(await sha256File(filePath)).slice(0, 12)}`;
 }
 
 /** Create the variants before a post is exposed in the public feed. The web
@@ -268,16 +268,9 @@ async function isCurrentCopy(source: string, target: string): Promise<boolean> {
   }
 }
 
+/** A derivative (responsive variant, vertical composite) is current when it is
+ * no older than its source; both callers only compare mtimes, never size. */
 async function isCurrentDerivative(source: string, target: string): Promise<boolean> {
-  try {
-    const [sourceStat, targetStat] = await Promise.all([fs.promises.stat(source), fs.promises.stat(target)]);
-    return targetStat.mtimeMs >= sourceStat.mtimeMs;
-  } catch {
-    return false;
-  }
-}
-
-async function isCurrentTransform(source: string, target: string): Promise<boolean> {
   try {
     const [sourceStat, targetStat] = await Promise.all([fs.promises.stat(source), fs.promises.stat(target)]);
     return targetStat.mtimeMs >= sourceStat.mtimeMs;

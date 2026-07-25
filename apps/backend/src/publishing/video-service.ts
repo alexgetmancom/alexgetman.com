@@ -6,6 +6,7 @@ import type { BackendDb } from "../db/client.js";
 import { videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
+import { runFfprobe } from "../foundation/runtime/ffmpeg.js";
 import { isZernioRouteReady, videoDeliveryRoute } from "./delivery-provider.js";
 import { isVideoTargetEditable } from "./state.js";
 import { getVideoDraft, insertVideoJob, listVideoTargets, refreshVideoDraftStatus } from "./video-data.js";
@@ -234,28 +235,6 @@ export async function validateVideoDraft(config: BackendConfig, backendDb: Backe
 }
 
 async function probeVideo(source: string, size: number): Promise<VideoTechnicalCheck> {
-  const child = Bun.spawn(
-    [
-      "ffprobe",
-      "-v",
-      "error",
-      "-show_entries",
-      "format=duration:stream=codec_type,codec_name,width,height,avg_frame_rate",
-      "-of",
-      "json",
-      source,
-    ],
-    { stdout: "pipe" },
-  );
-  const timeout = setTimeout(() => child.kill(), 30_000);
-  let output: string;
-  let exitCode: number;
-  try {
-    [output, exitCode] = await Promise.all([new Response(child.stdout).text(), child.exited]);
-  } finally {
-    clearTimeout(timeout);
-  }
-  if (exitCode !== 0) throw new StudioError("err.ffprobe-failed");
   let data: {
     format?: { duration?: string };
     streams?: Array<{
@@ -267,7 +246,15 @@ async function probeVideo(source: string, size: number): Promise<VideoTechnicalC
     }>;
   };
   try {
-    data = JSON.parse(output);
+    data = await runFfprobe([
+      "-v",
+      "error",
+      "-show_entries",
+      "format=duration:stream=codec_type,codec_name,width,height,avg_frame_rate",
+      "-of",
+      "json",
+      source,
+    ]);
   } catch {
     throw new StudioError("err.ffprobe-failed");
   }

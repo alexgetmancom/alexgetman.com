@@ -106,8 +106,6 @@ export function draftPreview(
         .text(t(locale, "post.ru-day"), `sched_view:schedule_ru_day:${draftId}`)
         .text(t(locale, "post.ru-evening"), `sched_view:schedule_ru_evening:${draftId}`)
         .row()
-        .text(t(locale, "post.next-free-slot"), `sched_auto:ru:${draftId}`)
-        .row()
         .text(t(locale, "post.enter-time"), `sched_manual:ru:${draftId}`)
         .row()
         .text(t(locale, "common.back"), `preview:${draftId}`);
@@ -126,8 +124,6 @@ export function draftPreview(
     if (view === "schedule_en") {
       keyboard
         .text(t(locale, "post.en-us-night"), `sched_view:schedule_en_us:${draftId}`)
-        .row()
-        .text(t(locale, "post.next-free-slot"), `sched_auto:en:${draftId}`)
         .row()
         .text(t(locale, "post.enter-time"), `sched_manual:en:${draftId}`)
         .row()

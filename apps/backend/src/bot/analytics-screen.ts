@@ -16,6 +16,9 @@ type AnalyticsSection = "overview" | "audience" | "posts" | "video";
 /** Telegram adapter for the Analytics Studio screen. The analytics read model itself stays transport-neutral. */
 export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<boolean> {
   const data = ctx.callbackQuery?.data ?? "";
+  const actorId = Number(ctx.from?.id);
+  const locale = botLocale(backendDb, actorId);
+  const analytics = studioServices(backendDb, config).analytics;
   if (data === "archive_noop") {
     await ctx.answerCallbackQuery();
     return true;
@@ -26,9 +29,8 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
     return true;
   }
   if (data === "archive_home") {
-    clearTelegramAnalyticsDashboard(backendDb, Number(ctx.from?.id));
-    const locale = botLocale(backendDb, Number(ctx.from?.id));
-    const summary = studioServices(backendDb, config).analytics.archiveSummary(locale);
+    clearTelegramAnalyticsDashboard(backendDb, actorId);
+    const summary = analytics.archiveSummary(locale);
     const keyboard = new InlineKeyboard().text(t(locale, "analytics.posts-btn", { count: summary.posts }), "analytics_post_archive:0");
     if (config.studio.modules.video_posting)
       keyboard.row().text(t(locale, "analytics.videos-btn", { count: summary.videos }), "analytics_archive:0");
@@ -54,8 +56,7 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
   }
   if (data.startsWith("analytics_archive:")) {
     const offset = Math.max(0, Number(data.slice("analytics_archive:".length)) || 0);
-    const locale = botLocale(backendDb, Number(ctx.from?.id));
-    const archive = studioServices(backendDb, config).analytics.videoArchive(offset, locale);
+    const archive = analytics.videoArchive(offset, locale);
     const keyboard = new InlineKeyboard();
     for (const item of archive.items) keyboard.text(item.label, `analytics_video:${item.id}`).row();
     archivePagination(keyboard, locale, "analytics_archive", offset, archive.items.length, archive.total);
@@ -66,9 +67,8 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
   }
   if (data.startsWith("analytics_video:")) {
     const id = Number(data.slice("analytics_video:".length));
-    const locale = botLocale(backendDb, Number(ctx.from?.id));
     await ctx.answerCallbackQuery();
-    await ctx.editMessageText(studioServices(backendDb, config).analytics.videoMetrics(id, locale), {
+    await ctx.editMessageText(analytics.videoMetrics(id, locale), {
       parse_mode: "Markdown",
       reply_markup: new InlineKeyboard()
         .text(t(locale, "analytics.back-archive"), "analytics_archive:0")
@@ -79,8 +79,7 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
   }
   if (data.startsWith("analytics_post_archive:")) {
     const offset = Math.max(0, Number(data.slice("analytics_post_archive:".length)) || 0);
-    const locale = botLocale(backendDb, Number(ctx.from?.id));
-    const archive = studioServices(backendDb, config).analytics.postArchive(offset, locale);
+    const archive = analytics.postArchive(offset, locale);
     const keyboard = new InlineKeyboard();
     for (const item of archive.items) keyboard.text(item.label, `analytics_post:${item.id}`).row();
     archivePagination(keyboard, locale, "analytics_post_archive", offset, archive.items.length, archive.total);
@@ -91,13 +90,12 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
   }
   if (data.startsWith("analytics_post:")) {
     const id = Number(data.slice("analytics_post:".length));
-    const locale = botLocale(backendDb, Number(ctx.from?.id));
-    const media = studioServices(backendDb, config).analytics.postMedia(id, locale);
+    const media = analytics.postMedia(id, locale);
     await ctx.answerCallbackQuery();
     const keyboard = new InlineKeyboard();
     if (media.length) keyboard.text(t(locale, "analytics.show-media"), `analytics_post_media:${id}`).row();
     keyboard.text(t(locale, "analytics.back-archive"), "analytics_post_archive:0").row().text(t(locale, "common.menu"), "menu_home");
-    await ctx.editMessageText(studioServices(backendDb, config).analytics.postMetrics(id, locale), {
+    await ctx.editMessageText(analytics.postMetrics(id, locale), {
       parse_mode: "Markdown",
       reply_markup: keyboard,
     });
@@ -105,16 +103,14 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
   }
   if (data.startsWith("analytics_post_media:")) {
     const id = Number(data.slice("analytics_post_media:".length));
-    const locale = botLocale(backendDb, Number(ctx.from?.id));
     await ctx.answerCallbackQuery();
-    if (Number.isSafeInteger(id)) await sendTelegramArchiveMedia(ctx, studioServices(backendDb, config).analytics.postMedia(id, locale));
+    if (Number.isSafeInteger(id)) await sendTelegramArchiveMedia(ctx, analytics.postMedia(id, locale));
     return true;
   }
   if (data !== "analytics_ai") return false;
-  clearTelegramAnalyticsDashboard(backendDb, Number(ctx.from?.id));
-  const locale = botLocale(backendDb, Number(ctx.from?.id));
+  clearTelegramAnalyticsDashboard(backendDb, actorId);
   await ctx.answerCallbackQuery({ text: t(locale, "analytics.preparing-report") });
-  const report = await studioServices(backendDb, config).analytics.audienceAnalysis(locale);
+  const report = await analytics.audienceAnalysis(locale);
   await ctx.editMessageText(report, {
     parse_mode: "Markdown",
     reply_markup: new InlineKeyboard().text(t(locale, "analytics.back-video"), "analytics_section:video:7"),
@@ -133,11 +129,11 @@ export async function showAnalyticsDashboard(
   section: AnalyticsSection,
   days: 1 | 7 | 30,
 ): Promise<void> {
-  const locale = botLocale(backendDb, Number(ctx.from?.id));
+  const adminId = Number(ctx.from?.id);
+  const locale = botLocale(backendDb, adminId);
   const dashboard = studioServices(backendDb, config).analytics.dashboard(section, days, locale);
   const keyboard = analyticsKeyboard(config, locale, section, days);
   await ctx.editMessageText({ html: dashboard.richHtml }, { reply_markup: keyboard });
-  const adminId = Number(ctx.from?.id);
   const messageId = ctx.callbackQuery?.message?.message_id;
   if (section !== "audience" && Number.isSafeInteger(adminId) && messageId && ctx.chat?.id)
     setTelegramAnalyticsDashboard(backendDb, adminId, Number(ctx.chat.id), messageId, section, days);

@@ -37,12 +37,14 @@ RUN bun run --filter @alexgetman/backend typecheck
 RUN DATA_DIR=/data bun run build
 RUN bun build apps/web/server.ts --outdir runtime --target bun --splitting --minify --sourcemap=external
 RUN bun build apps/backend/src/cli.ts --outdir ops --target bun --minify --sourcemap=external
+RUN bun build apps/backend/src/runtime/docker-entrypoint.ts --outdir entrypoint --target bun --minify --sourcemap=external
 
 # --- СТАДИЯ КОПИРОВАНИЯ ГОТОВОГО БИЛДА С ХОСТА (для сборки в GitHub Actions) ---
 FROM scratch AS build-on-host
 COPY dist /app/dist
 COPY runtime /app/runtime
 COPY ops /app/ops
+COPY entrypoint /app/entrypoint
 COPY apps/backend/drizzle /app/apps/backend/drizzle
 
 # --- ДИНАМИЧЕСКИЙ ВЫБОР СТАДИИ СБОРКИ НА ОСНОВЕ ПЕРЕМЕННОЙ ---
@@ -78,12 +80,15 @@ WORKDIR /app
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/runtime ./runtime
 COPY --from=build /app/ops ./ops
+COPY --from=build /app/entrypoint ./entrypoint
 # Bun emits mtcute's dynamically loaded WASM files beside the server bundle,
 # while mtcute resolves them relative to the process working directory.
 COPY --from=build /app/runtime/*.wasm ./
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/apps/backend/drizzle ./apps/backend/drizzle
 
-USER bun
-ENTRYPOINT ["tini", "--"]
-CMD ["bun", "--smol", "/app/runtime/server.js"]
+# Stays root by default: the entrypoint fixes bind-mount ownership on a fresh
+# volume, then drops privileges in-process before loading the server (see
+# apps/backend/src/runtime/docker-entrypoint.ts). The app itself never runs as
+# root — `docker exec` bypasses this entrypoint though, so pass `-u bun` there.
+ENTRYPOINT ["tini", "--", "bun", "/app/entrypoint/index.js"]

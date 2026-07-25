@@ -11,6 +11,7 @@ import {
 } from "../content/site-media-naming.js";
 import type { BackendDb } from "../db/client.js";
 import { knowledgeEntities, postEntityLinks, postLocales, postMetrics, postSources, posts, publications } from "../db/schema.js";
+import { recordDomainEvent } from "../domain/events.js";
 
 const siteMediaSchema = z
   .object({
@@ -185,30 +186,42 @@ export function loadPublicSiteFeed(backendDb: BackendDb, sitePublicDir = process
     if (!ru.enabled && !en.enabled) return [];
     const media = ru.media;
     const mediaEn = en.media.length > 0 ? en.media : media;
-    return [
-      feedItemSchema.parse({
-        id: row.postKey,
-        post_id: row.postId,
-        message_id: row.messageId,
-        date: row.date ?? row.createdAt,
-        text: ru.text,
-        text_ru: ru.text,
-        text_en: en.text,
-        html: ru.html,
-        html_en: en.html,
-        slug_ru: ru.slug,
-        slug_en: en.slug,
-        has_ru: ru.enabled,
-        has_en: en.enabled,
-        media,
-        media_en: mediaEn,
-        image: firstImage(media),
-        image_en: firstImage(mediaEn),
-        sources: sourcesByPost.get(row.postId) ?? [],
-        entities: entitiesByPost.get(row.postId) ?? [],
-        views: row.views ?? 0,
-      }),
-    ];
+    const parsed = feedItemSchema.safeParse({
+      id: row.postKey,
+      post_id: row.postId,
+      message_id: row.messageId,
+      date: row.date ?? row.createdAt,
+      text: ru.text,
+      text_ru: ru.text,
+      text_en: en.text,
+      html: ru.html,
+      html_en: en.html,
+      slug_ru: ru.slug,
+      slug_en: en.slug,
+      has_ru: ru.enabled,
+      has_en: en.enabled,
+      media,
+      media_en: mediaEn,
+      image: firstImage(media),
+      image_en: firstImage(mediaEn),
+      sources: sourcesByPost.get(row.postId) ?? [],
+      entities: entitiesByPost.get(row.postId) ?? [],
+      views: row.views ?? 0,
+    });
+    // A single malformed row (a legacy shape, an unexpected null) must never take
+    // down the whole public feed; drop it and keep every other post serving.
+    if (!parsed.success) {
+      recordDomainEvent(backendDb, {
+        ref: row.postKey,
+        type: "site.feed.item_invalid",
+        severity: "warn",
+        message: `Post ${row.postKey} dropped from the public feed: ${parsed.error.issues[0]?.message ?? "invalid shape"}`,
+        details: { post_key: row.postKey, issues: parsed.error.issues.slice(0, 5) },
+        cooldownSeconds: 60 * 60,
+      });
+      return [];
+    }
+    return [parsed.data];
   });
 }
 
@@ -249,6 +262,17 @@ function firstImage(media: SiteMedia[]): string | null {
   return media.find((item) => item.type !== "video" && typeof item.path === "string")?.path ?? null;
 }
 
+/** Once a composite exists it is never deleted, so a positive result is safe to
+ * remember for the life of the process; only "not yet backfilled" is re-checked
+ * on every call, so a completed backfill is still picked up without a restart. */
+const verticalMediaExistsCache = new Map<string, boolean>();
+function verticalMediaExists(fullPath: string): boolean {
+  if (verticalMediaExistsCache.get(fullPath)) return true;
+  const exists = fs.existsSync(fullPath);
+  if (exists) verticalMediaExistsCache.set(fullPath, true);
+  return exists;
+}
+
 /** The final viewer URL is chosen only after its durable file exists. This is
  * deliberate: the archive is backfilled asynchronously on VM-106, and a
  * missing composite must never make an older card disappear. */
@@ -259,7 +283,7 @@ function publishedMedia(media: unknown, postId: number, locale: "ru" | "en", sit
     const type = String(item.type ?? "image").toLowerCase() === "video" ? "video" : "image";
     const vertical = siteMediaVerticalFilename(postId, locale, index, type);
     const original = siteMediaFilename(postId, locale, index, type === "video" ? "mp4" : "jpg");
-    const viewerPath = fs.existsSync(path.join(sitePublicDir, SITE_MEDIA_URL_PREFIX, vertical)) ? vertical : original;
+    const viewerPath = verticalMediaExists(path.join(sitePublicDir, SITE_MEDIA_URL_PREFIX, vertical)) ? vertical : original;
     return {
       ...item,
       type,

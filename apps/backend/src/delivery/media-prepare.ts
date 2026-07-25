@@ -2,8 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 import type { BackendConfig } from "../foundation/config.js";
 import { requestJson } from "../foundation/http.js";
-import { runFfmpeg } from "../foundation/runtime/ffmpeg.js";
+import { runFfmpeg, runFfprobe } from "../foundation/runtime/ffmpeg.js";
 import { videoBounds } from "../publishing/platform-profiles.js";
+import { copyFileAtomically } from "./site-media-storage.js";
 import { mediaExtension, type PublishMediaItem } from "./social/payload.js";
 
 type TelegramFileResponse = {
@@ -186,21 +187,18 @@ async function normalizeVideoForPublicUpload(config: BackendConfig, inputPath: s
 }
 
 async function probeVideoDimensions(inputPath: string): Promise<{ width: number; height: number }> {
-  const child = Bun.spawn(
-    ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "json", inputPath],
-    {
-      stdout: "pipe",
-      stderr: "pipe",
-    },
-  );
-  const [exitCode, stdout, stderr] = await Promise.all([
-    child.exited,
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
+  const data = await runFfprobe<{ streams?: Array<{ width?: number; height?: number }> }>([
+    "-v",
+    "error",
+    "-select_streams",
+    "v:0",
+    "-show_entries",
+    "stream=width,height",
+    "-of",
+    "json",
+    inputPath,
   ]);
-  if (exitCode !== 0) throw new Error(`ffprobe failed: ${stderr.trim().slice(-2000) || `exit code ${exitCode}`}`);
-  const streams = (JSON.parse(stdout || "{}") as { streams?: Array<{ width?: number; height?: number }> }).streams ?? [];
-  const stream = streams[0];
+  const stream = data.streams?.[0];
   if (!stream?.width || !stream.height) throw new Error("ffprobe did not find a video stream");
   return { width: Number(stream.width), height: Number(stream.height) };
 }
@@ -223,6 +221,6 @@ async function mediaCacheKey(item: PublishMediaItem, index: number): Promise<str
 
 async function copyIfMissing(source: string, target: string): Promise<void> {
   if (await Bun.file(target).exists()) return;
-  await fs.promises.copyFile(source, target);
+  await copyFileAtomically(source, target);
   await fs.promises.chmod(target, 0o644);
 }

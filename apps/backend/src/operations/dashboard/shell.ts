@@ -14,8 +14,6 @@ export function renderDashboardShell(body: string): string {
     .dashboard-heading h1 { margin-bottom:4px; }
     .dashboard-tabs { display:flex; gap:6px; flex-wrap:wrap; margin:0 0 6px; }
     .dashboard-tabs a { border:1px solid #30363d; border-radius:14px; padding:4px 9px; font-size:14px; text-decoration:none; color:#c9d1d9; background:#161b22; }
-    .dashboard-tabs a:hover { border-color:#58a6ff; color:#58a6ff; }
-    .dashboard-tabs a.active { background:#1f6feb; border-color:#1f6feb; color:#fff; }
     .overview { padding:0; border:0; background:transparent; overflow:visible; }
     .audience-strip { margin:0 0 6px; padding:6px; border:1px solid #30363d; border-radius:8px; background:#161b22; }
     .audience-cards { display:flex; gap:6px; overflow-x:auto; padding-bottom:2px; }
@@ -111,7 +109,10 @@ export function renderDashboardShell(body: string): string {
     .notification-list time { color:#8b949e; font-size:12px; white-space:nowrap; }
     .notification--warn span, .notification--error span { color:#ff7b72; }
 
-    /* Overview: quiet, information-first surface. Operational panels retain the shared controls above. */
+    /* Overview: quiet, information-first surface. These rules reuse shared class
+       names (body, main, .dashboard-tabs, .metric-chart, ...) so they cascade
+       over every tab, not just Overview — do not assume the block above still
+       renders for those selectors. */
     body { padding:24px; background:#050607; color:#aeb6c2; }
     main { max-width:1440px; }
     .dashboard-tabs { display:flex; align-items:center; gap:22px; margin:0 0 16px; border-bottom:1px solid #20252d; }

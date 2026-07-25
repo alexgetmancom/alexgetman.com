@@ -68,7 +68,7 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
       const locale = botLocale(backendDb, adminId);
       const scheduleInput = state.action.startsWith("schedule_manual_");
       await ctx.reply(
-        scheduleInput ? t(locale, "common.schedule-parse-error") : t(locale, "post.value-error", { error: describeError(locale, error) }),
+        scheduleInput ? describeError(locale, error) : t(locale, "post.value-error", { error: describeError(locale, error) }),
       );
     }
     return;

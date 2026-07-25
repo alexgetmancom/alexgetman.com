@@ -31,6 +31,32 @@ export async function runFfmpeg(args: string[], timeoutSeconds = 600): Promise<v
   });
 }
 
+/** Shared by every ffprobe caller: a stuck or hostile input must not hang the
+ * request/job that triggered inspection, and a malformed response must not
+ * surface as an unrelated JSON.parse crash. */
+export async function runFfprobe<T = unknown>(args: string[], timeoutSeconds = 30): Promise<T> {
+  const child = Bun.spawn(["ffprobe", ...args], { stdout: "pipe", stderr: "pipe" });
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    child.kill("SIGKILL");
+  }, timeoutSeconds * 1000);
+  const [exitCode, stdout, stderr] = await Promise.all([
+    child.exited,
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+  ]);
+  clearTimeout(timer);
+  if (timedOut) throw new Error(`media_probe_timeout: ffprobe exceeded ${timeoutSeconds}s`);
+  if (exitCode !== 0)
+    throw new Error(`media_probe_failed: ffprobe exit ${exitCode}: ${stderr.trim().slice(-800) || "no diagnostic output"}`);
+  try {
+    return JSON.parse(stdout || "{}") as T;
+  } catch {
+    throw new Error("media_probe_failed: ffprobe returned invalid JSON");
+  }
+}
+
 /** Keep an actionable terminal reason instead of persisting megabytes of ffmpeg
  * progress frames. Exit 137 is the Linux OOM-kill convention. */
 export function formatFfmpegFailure(exitCode: number, stderr: string): string {

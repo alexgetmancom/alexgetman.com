@@ -9,6 +9,8 @@ import { metricNumber } from "./snapshots/creator-store.js";
  * latest/baseline row per group instead of pulling the whole matched history
  * into JS and reducing it there. */
 
+/** `metrics.shares` is the Share action (Instagram sends / YouTube share
+ * button), never a repost. */
 export type VideoMetricRow = { platform: string; label: string; publishedAt: string | null; metrics: Record<string, unknown> };
 type TextPostMetricRow = { platform: string; label: string; metrics: Record<string, unknown> };
 export type ContentMetrics = { views: number; likes: number; comments: number; shares: number; saves: number };
@@ -19,10 +21,20 @@ const KEY_SEP = String.fromCharCode(0);
 
 type MetricSeries = { target: string; metric: string; firstAt: string; latest: number; baseline: number | null };
 
+/** Closed set of target filters metric_samples queries can scope to — a plain
+ * string parameter here would otherwise invite building a `where` fragment
+ * from anything other than these two fixed, reviewed predicates. */
+type MetricScope = "text" | "site";
+const SCOPE_WHERE: Record<MetricScope, string> = {
+  text: "target NOT LIKE 'site_%'",
+  site: "target LIKE 'site_%'",
+};
+
 /** One row per (post, target, metric) with its latest value and the last value
  * at or before `since`. This is the primitive every metric_samples projection
  * is built on, so the scan and baseline rule exist in exactly one place. */
-function metricSeriesSince(backendDb: BackendDb, since: string, where = "1=1"): MetricSeries[] {
+function metricSeriesSince(backendDb: BackendDb, since: string, scope?: MetricScope): MetricSeries[] {
+  const where = scope ? SCOPE_WHERE[scope] : "1=1";
   const rows = backendDb.sqlite
     .prepare(
       `WITH matched AS (
@@ -58,10 +70,10 @@ function metricSeriesSince(backendDb: BackendDb, since: string, where = "1=1"): 
   }));
 }
 
-/** metric_samples delta summed per metric name, filtered by a raw target predicate. */
-function metricDeltasSince(backendDb: BackendDb, since: string, where: string): Record<string, number> {
+/** metric_samples delta summed per metric name, filtered by target scope. */
+function metricDeltasSince(backendDb: BackendDb, since: string, scope: MetricScope): Record<string, number> {
   const totals: Record<string, number> = {};
-  for (const entry of metricSeriesSince(backendDb, since, where)) {
+  for (const entry of metricSeriesSince(backendDb, since, scope)) {
     if (entry.baseline == null && entry.firstAt < since) continue;
     totals[entry.metric] = (totals[entry.metric] ?? 0) + Math.max(0, entry.latest - (entry.baseline ?? 0));
   }
@@ -72,7 +84,7 @@ function metricDeltasSince(backendDb: BackendDb, since: string, where: string): 
  * platform's share/forward action and is rendered as “пересылки” in UI. */
 export function textContentMetricsByPlatform(backendDb: BackendDb, since: string): Map<string, ContentMetrics> {
   const totals = new Map<string, ContentMetrics>();
-  for (const entry of metricSeriesSince(backendDb, since, "target NOT LIKE 'site_%'")) {
+  for (const entry of metricSeriesSince(backendDb, since, "text")) {
     if (entry.baseline == null && entry.firstAt < since) continue;
     const value = totals.get(entry.target) ?? { views: 0, likes: 0, comments: 0, shares: 0, saves: 0 };
     const delta = Math.max(0, entry.latest - (entry.baseline ?? 0));
@@ -130,7 +142,7 @@ export function latestTextPostMetrics(backendDb: BackendDb, since: string): Text
 }
 
 export function textTotals(backendDb: BackendDb, since: string): { views: number; interactions: number } {
-  const totals = metricDeltasSince(backendDb, since, "target NOT LIKE 'site_%'");
+  const totals = metricDeltasSince(backendDb, since, "text");
   return {
     views: totals.views ?? 0,
     interactions: (totals.likes ?? 0) + (totals.replies ?? 0) + (totals.reposts ?? 0) + (totals.shares ?? 0) + (totals.comments ?? 0),
@@ -138,7 +150,7 @@ export function textTotals(backendDb: BackendDb, since: string): { views: number
 }
 
 export function siteTotal(backendDb: BackendDb, since: string): number {
-  return metricDeltasSince(backendDb, since, "target LIKE 'site_%'").views ?? 0;
+  return metricDeltasSince(backendDb, since, "site").views ?? 0;
 }
 
 export function latestVideoMetrics(backendDb: BackendDb, since: string): VideoMetricRow[] {
@@ -194,8 +206,7 @@ export function youtubeChannelViewDeltaSince(backendDb: BackendDb, since: string
   return Math.max(0, rows.latest - rows.baseline);
 }
 
-/** Per-platform video metrics for the selected period. `shares` is the Share
- * action (Instagram sends / YouTube share button), never a repost. */
+/** Sums one metric field across a set of video rows (e.g. views across every published video). */
 export function sum(rows: VideoMetricRow[], field: string): number {
   return rows.reduce((total, row) => total + metricNumber(row.metrics[field]), 0);
 }

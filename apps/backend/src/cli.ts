@@ -1,6 +1,7 @@
 import { importXAnalyticsCsv } from "./analytics/import-x-csv.js";
 import { baselineDrizzleMigrations, migrationStatus, openBackendDb } from "./db/client.js";
 import { loadConfig } from "./foundation/config.js";
+import { checkDataDirectoriesWritable, requiredDataDirectories } from "./foundation/runtime/data-dirs.js";
 import { capabilityReport } from "./observability/capabilities.js";
 import { capabilitySummary, recordCapabilityPost } from "./operations/capabilities.js";
 import {
@@ -91,21 +92,32 @@ async function main(): Promise<void> {
       const enabled = Object.entries(config.studio.modules)
         .filter(([, value]) => value)
         .map(([key]) => key);
+      const dataDirectories = checkDataDirectoriesWritable(requiredDataDirectories(config));
+      // Required: a false value here means the deployment cannot function.
+      // Advisory (commandCenterToken*/webhookSecret below): informational
+      // hardening status, legitimately false for e.g. a polling-only deployment
+      // with no webhook secret configured — never a reason to report `ok: false`.
+      const requiredChecks = {
+        telegramBot: Boolean(config.controllerBotToken),
+        youtube: !config.studio.modules.youtube || Boolean(config.YOUTUBE_REFRESH_TOKEN),
+        instagram: !config.studio.modules.instagram || Boolean(config.INSTAGRAM_ACCESS_TOKEN && config.INSTAGRAM_USER_ID),
+        dataDirectoriesWritable: dataDirectories.every((check) => check.writable),
+      };
+      const checks = {
+        ...requiredChecks,
+        commandCenterTokenConfigured: Boolean(config.COMMAND_CENTER_TOKEN),
+        webhookSecretConfigured: Boolean(config.TELEGRAM_WEBHOOK_SECRET),
+        commandCenterTokenSeparated: Boolean(config.COMMAND_CENTER_TOKEN && config.TELEGRAM_WEBHOOK_SECRET),
+      };
       console.log(
         JSON.stringify(
           {
-            ok: true,
+            ok: Object.values(requiredChecks).every(Boolean),
             modules: enabled,
             video: config.studio.video,
             publicBaseUrl: config.PUBLIC_BASE_URL,
-            checks: {
-              telegramBot: Boolean(config.controllerBotToken),
-              youtube: !config.studio.modules.youtube || Boolean(config.YOUTUBE_REFRESH_TOKEN),
-              instagram: !config.studio.modules.instagram || Boolean(config.INSTAGRAM_ACCESS_TOKEN && config.INSTAGRAM_USER_ID),
-              commandCenterTokenConfigured: Boolean(config.COMMAND_CENTER_TOKEN),
-              webhookSecretConfigured: Boolean(config.TELEGRAM_WEBHOOK_SECRET),
-              commandCenterTokenSeparated: Boolean(config.COMMAND_CENTER_TOKEN && config.TELEGRAM_WEBHOOK_SECRET),
-            },
+            checks,
+            dataDirectories,
             capabilities: capabilityReport(config),
           },
           null,

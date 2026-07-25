@@ -71,8 +71,8 @@ describe("Astro endpoint controller", () => {
         media: [],
       });
       publishDraftToQueue(backendDb, draftId);
-      const app = createApiApp(loadConfig({}), backendDb);
-      const response = await app.request("/api/pipeline-status");
+      const app = createApiApp(loadConfig({ COMMAND_CENTER_TOKEN: "secret" }), backendDb);
+      const response = await app.request("/api/pipeline-status", { headers: { "X-Admin-Token": "secret" } });
       const payload = (await response.json()) as {
         ok: boolean;
         updated_at: string;
@@ -267,8 +267,8 @@ describe("Astro endpoint controller", () => {
   it("streams current pipeline snapshots as SSE", async () => {
     const backendDb = tempDb();
     try {
-      const app = createApiApp(loadConfig({}), backendDb);
-      const response = await app.request("/api/pipeline-status/stream");
+      const app = createApiApp(loadConfig({ COMMAND_CENTER_TOKEN: "secret" }), backendDb);
+      const response = await app.request("/api/pipeline-status/stream", { headers: { "X-Admin-Token": "secret" } });
       expect(response.status).toBe(200);
       expect(response.headers.get("content-type")).toContain("text/event-stream");
       const reader = response.body?.getReader();

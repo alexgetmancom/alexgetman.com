@@ -78,12 +78,12 @@ function buildApp({ config, backendDb, bot }: ApiContext): Hono {
   });
 
   app.get("/api/pipeline-status", (c) => {
-    if (config.commandCenterToken && !commandAllowed(c.req.raw, config)) return text("unauthorized\n", 401);
+    if (!commandAllowed(c.req.raw, config)) return text("unauthorized\n", 401);
     return json(operations.pipeline(Number(c.req.query("week_offset") ?? 0) || 0));
   });
 
   app.get("/api/pipeline-status/stream", (c) => {
-    if (config.commandCenterToken && !commandAllowed(c.req.raw, config)) return text("unauthorized\n", 401);
+    if (!commandAllowed(c.req.raw, config)) return text("unauthorized\n", 401);
     const weekOffset = Number(c.req.query("week_offset") ?? 0) || 0;
     return sse((send) => {
       send("pipeline", operations.pipeline(weekOffset));

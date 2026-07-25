@@ -12,7 +12,7 @@ import { cancelDraft, cancelRemainingPostJobs } from "../../publishing/draft-lif
 import { mediaPolicyForTarget } from "../../publishing/media-policy.js";
 import { publicationPreflight } from "../../publishing/preflight.js";
 import { publishDraftToQueue } from "../../publishing/publication-workflow.js";
-import { nextPublishingSlot, parseManualSchedule, rebalanceScheduledDrafts, scheduleClockToday } from "../../publishing/schedule.js";
+import { parseManualSchedule, scheduleClockToday } from "../../publishing/schedule.js";
 import { parseTargets } from "../../publishing/targets.js";
 import { postDeliveryProjections } from "../projections.js";
 import { postProgressState } from "./post-progress.js";
@@ -117,7 +117,6 @@ export function postService(backendDb: BackendDb) {
     schedule(actorId: number, draftId: number, input: ScheduleInput): number {
       const draft = requireOwnedDraft(backendDb, actorId, draftId);
       const postId = publishDraftToQueue(backendDb, draftId, { mode: "scheduled", ...input });
-      rebalanceScheduledDrafts(backendDb);
       const scheduled = requireOwnedDraft(backendDb, actorId, draftId);
       const preference = notificationPreference(backendDb, actorId);
       const title = draft.text_ru.trim().split("\n")[0]?.slice(0, 100) || `Post #${postId}`;
@@ -146,10 +145,6 @@ export function postService(backendDb: BackendDb) {
     hasLocaleTargets(actorId: number, draftId: number, locale: "ru" | "en"): boolean {
       const draft = requireOwnedDraft(backendDb, actorId, draftId);
       return hasLocaleTarget(parseTargets(draft.targets_json), locale);
-    },
-    autoSlot(actorId: number, draftId: number, locale: "ru" | "en"): Date {
-      requireOwnedDraft(backendDb, actorId, draftId);
-      return nextPublishingSlot(backendDb, locale);
     },
     /** Resolves a slot-button clock (`HH:MM` MSK) to its next occurrence. */
     slotTime(clock: string): Date {
