@@ -13,6 +13,7 @@ import {
 } from "./operations/maintenance.js";
 import { operationsService } from "./operations/service.js";
 import { backfillSiteImageMedia } from "./operations/site-media-backfill.js";
+import { deduplicateSiteMedia } from "./operations/site-media-deduplicate.js";
 import { verifyPostTargets } from "./operations/verify.js";
 
 const republishAliases = new Set(["republish", "retry"]);
@@ -58,7 +59,8 @@ function printHelp(): void {
   verify --ref post:1
   republish --ref post:1 [--target x] [--locale ru|en]
   retry --ref post:1 [--target x] [--locale ru|en]
-  site-media-images [--apply --max-upload-kbps 6250]`);
+  site-media-images [--apply --max-upload-kbps 6250]
+  site-media-deduplicate [--apply]`);
 }
 
 async function main(): Promise<void> {
@@ -154,6 +156,8 @@ async function main(): Promise<void> {
       if (maxUploadKbps != null && (!Number.isFinite(maxUploadKbps) || maxUploadKbps <= 0 || maxUploadKbps > 6_250))
         throw new Error("--max-upload-kbps must be between 1 and 6250");
       console.log(JSON.stringify(await backfillSiteImageMedia(backendDb, config, args.flags.has("apply"), maxUploadKbps), null, 2));
+    } else if (args.command === "site-media-deduplicate") {
+      console.log(JSON.stringify(await deduplicateSiteMedia(config, args.flags.has("apply")), null, 2));
     } else if (republishAliases.has(args.command)) {
       const localeValue = args.values.get("locale");
       if (localeValue && localeValue !== "ru" && localeValue !== "en") throw new Error("--locale must be ru or en");

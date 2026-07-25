@@ -10,6 +10,7 @@ import {
 } from "../content/site-media-naming.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { runFfmpeg } from "../foundation/runtime/ffmpeg.js";
+import { copyFileAtomically, deduplicateSiteMediaFile, temporaryPath, writeFileAtomically } from "./site-media-storage.js";
 
 type SiteMedia = Record<string, unknown> & {
   type?: string;
@@ -38,6 +39,7 @@ export async function materializeSiteMedia(
 ): Promise<Record<string, unknown>[]> {
   const source = Array.isArray(raw) ? raw : raw && typeof raw === "object" ? [raw] : [];
   const directory = path.join(config.SITE_PUBLIC_DIR, ...SITE_MEDIA_DIR_SEGMENTS);
+  const mediaRoot = path.join(config.SITE_PUBLIC_DIR, "media");
   await fs.promises.mkdir(directory, { recursive: true });
   const result: Record<string, unknown>[] = [];
   for (let index = 0; index < source.length; index += 1) {
@@ -49,9 +51,11 @@ export async function materializeSiteMedia(
     const target = path.join(directory, filename);
     await copyOrDownload(config, item, target, fetchImpl);
     await fs.promises.chmod(target, 0o664);
+    await deduplicateSiteMediaFile(mediaRoot, target);
     const verticalName = siteMediaVerticalFilename(postId, locale, index, kind);
     const vertical = path.join(directory, verticalName);
     await materializeVerticalViewerMedia(config, target, vertical, kind, options);
+    await deduplicateSiteMediaFile(mediaRoot, vertical);
     const output: Record<string, unknown> = {
       ...item,
       type: kind,
@@ -64,8 +68,15 @@ export async function materializeSiteMedia(
     if (kind === "video") {
       const posterName = siteMediaPosterFilename(postId, locale, index);
       const poster = path.join(directory, posterName);
-      await runFfmpeg(["-y", "-ss", "0.5", "-i", vertical, "-frames:v", "1", "-q:v", "2", poster]);
+      const temporary = temporaryPath(poster);
+      try {
+        await runFfmpeg(["-y", "-ss", "0.5", "-i", vertical, "-frames:v", "1", "-q:v", "2", temporary]);
+        await fs.promises.rename(temporary, poster);
+      } finally {
+        await fs.promises.rm(temporary, { force: true }).catch(() => {});
+      }
       await fs.promises.chmod(poster, 0o664);
+      await deduplicateSiteMediaFile(mediaRoot, poster);
       await materializeResponsiveVariants(config, poster);
       output.poster = versionedPublicPath(`${SITE_MEDIA_URL_PREFIX}/${posterName}`, poster);
     } else {
@@ -88,17 +99,23 @@ async function materializeVerticalViewerMedia(
     // Explicit local mode remains usable for self-hosters without VM-106. The
     // production route below owns the blurred composite; this CPU recipe keeps
     // the same 9:16 no-crop contract.
-    await runFfmpeg([
-      "-y",
-      "-i",
-      source,
-      "-vf",
-      "scale=1080:1920:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black",
-      ...(kind === "video"
-        ? ["-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-preset", "medium", "-c:a", "copy"]
-        : ["-frames:v", "1", "-q:v", "2"]),
-      output,
-    ]);
+    const temporary = temporaryPath(output);
+    try {
+      await runFfmpeg([
+        "-y",
+        "-i",
+        source,
+        "-vf",
+        "scale=1080:1920:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black",
+        ...(kind === "video"
+          ? ["-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-preset", "medium", "-c:a", "copy"]
+          : ["-frames:v", "1", "-q:v", "2"]),
+        temporary,
+      ]);
+      await fs.promises.rename(temporary, output);
+    } finally {
+      await fs.promises.rm(temporary, { force: true }).catch(() => {});
+    }
     return;
   }
   if (!config.MEDIA_PROCESSOR_URL || !config.MEDIA_PROCESSOR_TOKEN) throw new Error("site_vertical_media_requires_remote_processor");
@@ -128,7 +145,7 @@ async function materializeVerticalViewerMedia(
     signal: AbortSignal.timeout(30_000),
   });
   if (!download.ok) throw new Error(`site_vertical_media_download_failed: ${download.status}`);
-  await Bun.write(output, await download.arrayBuffer());
+  await writeFileAtomically(output, new Uint8Array(await download.arrayBuffer()));
   await fs.promises.chmod(output, 0o664);
 }
 
@@ -198,7 +215,7 @@ async function copyOrDownload(config: BackendConfig, item: SiteMedia, target: st
   const local = stringValue(item.local_path) || stringValue(item.localPath);
   if (local && fs.existsSync(local)) {
     if (await isCurrentCopy(local, target)) return;
-    await fs.promises.copyFile(local, target);
+    await copyFileAtomically(local, target);
     return;
   }
   const existingPath = stringValue(item.path);
@@ -206,7 +223,7 @@ async function copyOrDownload(config: BackendConfig, item: SiteMedia, target: st
     const absolute = path.isAbsolute(existingPath) ? existingPath : path.join(config.SITE_PUBLIC_DIR, existingPath.replace(/^\/+/, ""));
     if (fs.existsSync(absolute)) {
       if (await isCurrentCopy(absolute, target)) return;
-      await fs.promises.copyFile(absolute, target);
+      await copyFileAtomically(absolute, target);
       return;
     }
   }
@@ -224,12 +241,12 @@ async function copyOrDownload(config: BackendConfig, item: SiteMedia, target: st
   if (!infoResponse.ok || !info.ok || !info.result?.file_path) throw new Error(`Telegram getFile failed for ${fileId}`);
   const filePath = info.result.file_path;
   if (path.isAbsolute(filePath)) {
-    await fs.promises.copyFile(filePath, target);
+    await copyFileAtomically(filePath, target);
     return;
   }
   const response = await fetchImpl(`${base}/file/bot${token}/${filePath}`);
   if (!response.ok) throw new Error(`Telegram file download failed: ${response.status}`);
-  await fs.promises.writeFile(target, Buffer.from(await response.arrayBuffer()));
+  await writeFileAtomically(target, new Uint8Array(await response.arrayBuffer()));
 }
 
 async function isCurrentCopy(source: string, target: string): Promise<boolean> {
