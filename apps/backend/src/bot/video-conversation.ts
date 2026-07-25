@@ -3,6 +3,7 @@ import { fixUrlSlashes } from "../content/message.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
+import { log } from "../foundation/logger.js";
 import { setTelegramVideoCard } from "../interfaces/telegram/control-cards.js";
 import { sendTelegramDeliveryPreviews } from "../interfaces/telegram/delivery-previews.js";
 import { describeError, t } from "../interfaces/telegram/i18n/index.js";
@@ -116,7 +117,17 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
       return handleScheduleMessage(ctx, backendDb, config, adminId, session, text);
   } catch (error) {
     const locale = botLocale(backendDb, adminId);
-    await replyVideoPrompt(ctx, locale, `🔴 ${t(locale, "video.value-error")}: ${describeError(locale, error)}`);
+    // The original upload error is operationally important (disk, Telegram
+    // download, or media import). Log it before replying: raw paths can contain
+    // Markdown delimiters and must never be rendered as Telegram Markdown.
+    log("error", "Video conversation asset step failed", {
+      adminId,
+      step: session.step,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    await ctx.reply(`🔴 ${t(locale, "video.value-error")}: ${describeError(locale, error)}`, {
+      reply_markup: new InlineKeyboard().text(t(locale, "common.cancel"), "video_cancel_dialog"),
+    });
     return true;
   }
   return false;
