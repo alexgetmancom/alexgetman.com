@@ -163,15 +163,22 @@ describe("publish queue", () => {
         .get();
       expect(job).toEqual({ status: "published", lastError: null });
       const target = backendDb.db
-        .select({ status: postTargets.status, externalId: postTargets.externalId, url: postTargets.url })
+        .select({
+          status: postTargets.status,
+          externalId: postTargets.externalId,
+          url: postTargets.url,
+          publishedAt: postTargets.publishedAt,
+        })
         .from(postTargets)
         .where(eq(postTargets.target, "bluesky"))
         .get();
-      expect(target).toEqual({
+      expect(target).toMatchObject({
         status: "published",
         externalId: "bluesky-1",
         url: "https://bsky.app/profile/alexgetman.com/post/bluesky-1",
       });
+      // Analytics scopes and orders published targets by this column.
+      expect(target?.publishedAt).toBeString();
     } finally {
       backendDb.close();
     }

@@ -1,4 +1,4 @@
-import { and, asc, eq, isNotNull, isNull, lte, or } from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import type { BackendDb } from "../../db/client.js";
 import { videoDrafts, videoMetricSchedule, videoTargets } from "../../db/schema.js";
 import { recordDomainEvent } from "../../domain/events.js";
@@ -169,9 +169,13 @@ function ensureVideoMetricSchedule(backendDb: BackendDb): void {
   // Existing publications used the former sparse (1/3/6/12/24h) cadence.
   // Bring them onto the new video-only cadence from their last observation,
   // without backfilling missed calls or touching text-post schedules.
-  // The filter (checked, not frozen) plus this cap keep the pass bounded per
-  // cycle: rows that already converged to the new cadence stop matching the
-  // "nextCheckAt > desired" correction below and drop out of future scans.
+  //
+  // The new cadence never schedules further than 7 days past the last check, so
+  // any row inside that window is already converged. Expressing that bound in
+  // SQL is what makes the pass free once the correction has run its course:
+  // otherwise it re-reads 500 rows on every collection cycle forever. It is a
+  // deliberately coarse superset — the exact per-row decision below still
+  // belongs to nextVideoMetricCheckAt.
   const scheduled = backendDb.db
     .select({
       id: videoTargets.id,
@@ -187,6 +191,7 @@ function ensureVideoMetricSchedule(backendDb: BackendDb): void {
         or(eq(videoTargets.target, "youtube_shorts"), eq(videoTargets.target, "instagram_reels")),
         isNotNull(videoMetricSchedule.lastCheckedAt),
         isNull(videoMetricSchedule.frozenAt),
+        sql`julianday(${videoMetricSchedule.nextCheckAt}) > julianday(${videoMetricSchedule.lastCheckedAt}) + 7`,
       ),
     )
     .limit(500)

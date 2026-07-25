@@ -1,16 +1,19 @@
 import { describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
+import { studioAudiencePlatforms } from "../src/analytics/audience-groups.js";
 import { runAnalyticsCycle } from "../src/analytics/collection/creator-cycle.js";
 import { runVideoMetricSchedule } from "../src/analytics/collection/video-metrics.js";
 import { audienceGrowthByPlatform, youtubeChannelViewDeltaSince } from "../src/analytics/metric-deltas.js";
 import { creatorDashboard } from "../src/analytics/reports/dashboard.js";
 import { studioAnalyticsDashboard } from "../src/analytics/reports/studio-dashboard.js";
+import { recordProfileSnapshot } from "../src/analytics/snapshots/creator-store.js";
 import type { BackendDb } from "../src/db/client.js";
 import {
   analyticsSync,
   creatorProfileSnapshots,
   creatorProfiles,
   metricSamples,
+  postEvents,
   posts,
   postTargets,
   videoDrafts,
@@ -433,7 +436,9 @@ describe("creator analytics", () => {
 
       expect(overview).not.toContain("Общая статистика");
       expect(overview).toContain("| ✈️ Telegram | 0 | — | 24 | 5 | 0 | — | — |");
-      expect(posts).toContain("| 📊 Все | 0 | +0 | 24 | 5 | 0 | — | — |");
+      // No platform has a growth baseline here, so the total is unknown too —
+      // the same "—" the Telegram row shows, not a confident "+0".
+      expect(posts).toContain("| 📊 Все | 0 | — | 24 | 5 | 0 | — | — |");
       expect(studioAnalyticsDashboard(backendDb, config, "overview", 1, "ru").richHtml).toContain("<table bordered striped>");
       expect(posts).not.toContain("Видеопостинг");
     });
@@ -618,11 +623,47 @@ describe("creator analytics", () => {
 
       const overview = studioAnalyticsDashboard(backendDb, config, "overview", 7, "ru").text;
       const audience = studioAnalyticsDashboard(backendDb, config, "audience", 7, "ru").text;
-      expect(overview).toContain("| 📊 Все | 426 | +0");
+      expect(overview).toContain("| 📊 Все | 426 | —");
       expect(overview).not.toContain("556");
       expect(audience).toContain("Instagram");
       expect(audience).toContain("YouTube");
       expect(audience).not.toContain("Telegram");
+    });
+  });
+
+  it("counts text and video follower totals as two separate milestones", async () => {
+    await withDb(async (backendDb) => {
+      const config = loadConfig({});
+      config.studio.modules.text_posting = true;
+      config.studio.modules.video_posting = true;
+      config.studio.modules.youtube = true;
+      // A video platform already past the threshold must not push the text
+      // total over it, and vice versa.
+      recordProfileSnapshot(backendDb, {
+        platform: "youtube",
+        account: "channel",
+        source: "test",
+        audiencePlatforms: studioAudiencePlatforms(config, "video"),
+        metrics: { subscriberCount: 400 },
+      });
+      recordProfileSnapshot(backendDb, {
+        platform: "telegram",
+        account: "channel",
+        source: "test",
+        audiencePlatforms: studioAudiencePlatforms(config, "text"),
+        metrics: { followersCount: 120 },
+      });
+
+      const milestones = backendDb.db
+        .select({ message: postEvents.message })
+        .from(postEvents)
+        .where(eq(postEvents.eventType, "analytics.milestone.reached"))
+        .all()
+        .map((row) => row.message);
+      expect(milestones).toContain("🏆 Видео-площадки: 250 подписчиков!");
+      expect(milestones).toContain("🏆 Текстовые площадки: 100 подписчиков!");
+      // 400 + 120 would have crossed 500 under one combined total.
+      expect(milestones.some((message) => message.includes("500"))).toBe(false);
     });
   });
 

@@ -3,6 +3,7 @@ import { creatorProfiles, socialComments } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import type { StudioLocale as BotLocale } from "../../foundation/locale.js";
 import { t } from "../../interfaces/telegram/i18n/index.js";
+import { enabledAudiencePlatforms, studioAudiencePlatforms } from "../audience-groups.js";
 import {
   audienceGrowthByPlatform,
   type ContentMetrics,
@@ -186,7 +187,10 @@ function unifiedAnalyticsTable(
     }));
   const totalContent = sumContentMetrics(rows.map((row) => row.value));
   const totalFollowers = profiles.reduce((sum, row) => sum + metricNumber(row.dataJson.subscriberCount ?? row.dataJson.followersCount), 0);
-  const totalGrowth = rows.reduce((sum, row) => sum + (row.growth ?? 0), 0);
+  // With no baseline anywhere, the total is unknown too — the same "—" every
+  // individual row shows, not a confident "+0".
+  const measured = rows.filter((row) => row.growth != null);
+  const totalGrowth = measured.length ? measured.reduce((sum, row) => sum + (row.growth ?? 0), 0) : null;
   const all = t(locale, "sdash.all");
   const headers = [t(locale, "sdash.platform-col"), "👥", "📈", "👁", "♥", "💬", "↗", "🔖"];
   const tableRows = [
@@ -205,12 +209,12 @@ function unifiedAnalyticsTable(
   return [
     tableBlock(headers, tableRows),
     ...(section === "posts"
-      ? publishedPostTable(backendDb, config, since, days, locale)
-      : publishedVideoTable(backendDb, config, section, since, days, locale)),
+      ? publishedPostTable(backendDb, config, since, locale)
+      : publishedVideoTable(backendDb, config, section, since, locale)),
   ];
 }
 
-function publishedPostTable(backendDb: BackendDb, config: BackendConfig, since: string, days: AnalyticsPeriod, locale: BotLocale): Block[] {
+function publishedPostTable(backendDb: BackendDb, config: BackendConfig, since: string, locale: BotLocale): Block[] {
   if (!config.studio.modules.text_posting) return [];
   const rows = latestTextPostMetrics(backendDb, since).filter((row) => Object.keys(row.metrics).length > 0);
   if (!rows.length) return [];
@@ -220,9 +224,7 @@ function publishedPostTable(backendDb: BackendDb, config: BackendConfig, since: 
   const headers = [t(locale, "sdash.post-col"), "👁", "♥", "💬", "↗", "🔖"];
   const tableRows = [
     [all, String(total.views), String(total.likes), String(total.comments), dash(total.shares), dash(total.saves)],
-    ...topDetails(rows, days).map((row) =>
-      contentRowCells(`${shortLabel(row.label)} · ${platformIcon(row.platform)}`, contentMetrics(row)),
-    ),
+    ...topDetails(rows).map((row) => contentRowCells(`${shortLabel(row.label)} · ${platformIcon(row.platform)}`, contentMetrics(row))),
   ];
   return [tableBlock(headers, tableRows)];
 }
@@ -254,7 +256,6 @@ function publishedVideoTable(
   config: BackendConfig,
   section: Exclude<AnalyticsSection, "audience">,
   since: string,
-  days: AnalyticsPeriod,
   locale: BotLocale,
 ): Block[] {
   if (section === "posts" || !config.studio.modules.video_posting) return [];
@@ -276,7 +277,7 @@ function publishedVideoTable(
   const headers = [t(locale, "sdash.video-col"), "👁", "♥", "💬", "↗", "🔖"];
   const tableRows = [
     [all, String(total.views), String(total.likes), String(total.comments), dash(total.shares), dash(total.saves)],
-    ...topDetails(rows, days).map((row) => {
+    ...topDetails(rows).map((row) => {
       const platform = row.platform === "instagram_reels" ? "instagram" : "youtube";
       return contentRowCells(`${shortLabel(row.label)} · ${platformIcon(platform)}`, contentMetrics(row), platform === "youtube");
     }),
@@ -284,9 +285,13 @@ function publishedVideoTable(
   return [tableBlock(headers, tableRows)];
 }
 
-function topDetails<T extends { metrics: Record<string, unknown> }>(rows: T[], days: AnalyticsPeriod): T[] {
-  if (days === 1) return rows;
-  return [...rows].sort((left, right) => metricNumber(right.metrics.views) - metricNumber(left.metrics.views)).slice(0, 10);
+/** Every period shows the same bounded top slice. An unbounded "today" table
+ * looks fine on a quiet day and then exceeds Telegram's message limit on a busy
+ * one, which fails the whole dashboard rather than truncating it. */
+const MAX_DETAIL_ROWS = 10;
+
+function topDetails<T extends { metrics: Record<string, unknown> }>(rows: T[]): T[] {
+  return [...rows].sort((left, right) => metricNumber(right.metrics.views) - metricNumber(left.metrics.views)).slice(0, MAX_DETAIL_ROWS);
 }
 
 function contentMetrics(row: { metrics: Record<string, unknown> }): ContentMetrics {
@@ -333,10 +338,9 @@ function shortLabel(value: string): string {
 }
 
 function audiencePlatformsForSection(config: BackendConfig, section: Exclude<AnalyticsSection, "audience">): Set<string> {
-  const enabled = enabledAudiencePlatforms(config);
-  if (section === "video") return new Set(["instagram", "youtube"].filter((platform) => enabled.has(platform)));
-  if (section === "posts") return new Set([...enabled].filter((platform) => platform !== "instagram" && platform !== "youtube"));
-  return enabled;
+  if (section === "video") return new Set(studioAudiencePlatforms(config, "video"));
+  if (section === "posts") return new Set(studioAudiencePlatforms(config, "text"));
+  return enabledAudiencePlatforms(config);
 }
 
 function emptyMetrics(): ContentMetrics {
@@ -392,18 +396,6 @@ function signed(value: number): string {
 function periodLabel(days: AnalyticsPeriod, locale: BotLocale): string {
   if (days === 1) return t(locale, "report.period-today");
   return t(locale, "report.period-days", { days });
-}
-
-/** Audience is shown only for platforms this Studio actually publishes to.
- * A controller bot alone must never make its default Telegram channel appear. */
-function enabledAudiencePlatforms(config: BackendConfig): Set<string> {
-  // Community profiles have their own explicit credentials. Only the three
-  // Studio-owned platform projections need module gating here.
-  const platforms = new Set(["bluesky", "facebook_en", "threads", "x"]);
-  if (config.studio.modules.text_posting) platforms.add("telegram");
-  if (config.studio.modules.video_posting && config.studio.modules.youtube) platforms.add("youtube");
-  if (config.studio.modules.video_posting && config.studio.modules.instagram) platforms.add("instagram");
-  return platforms;
 }
 
 function hasAudienceComments(backendDb: BackendDb): boolean {

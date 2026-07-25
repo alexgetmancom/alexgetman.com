@@ -5,6 +5,7 @@ import { oauthAuthorization } from "../../foundation/external/x-oauth.js";
 import { youtubeAccessToken } from "../../foundation/external/youtube.js";
 import { requestJson } from "../../foundation/http.js";
 import { videoDeliveryRoute } from "../../publishing/delivery-provider.js";
+import { studioAudiencePlatforms } from "../audience-groups.js";
 import { canSync, markSynced, metricNumber, recordProfileSnapshot } from "../snapshots/creator-store.js";
 
 type YouTubeChannel = {
@@ -26,14 +27,6 @@ type InstagramProfile = {
 type ZernioAccount = { _id?: string; username?: string; displayName?: string; followersCount?: number };
 type ZernioAccounts = { accounts?: ZernioAccount[] } | ZernioAccount[];
 type ZernioInsights = { metrics?: Record<string, { total?: number }> };
-
-function studioAudiencePlatforms(config: BackendConfig): string[] {
-  return [
-    ...(config.studio.modules.text_posting ? ["telegram"] : []),
-    ...(config.studio.modules.video_posting && config.studio.modules.youtube ? ["youtube"] : []),
-    ...(config.studio.modules.video_posting && config.studio.modules.instagram ? ["instagram"] : []),
-  ];
-}
 
 /** Runs one platform sync and records its outcome; every platform below funnels through
  * this so a new integration can't forget the success/failure timestamp update. */
@@ -66,7 +59,7 @@ export async function syncYouTubeProfile(config: BackendConfig, backendDb: Backe
       platform: "youtube",
       account: channelItem?.snippet?.title ?? "channel",
       source: "youtube_data_api",
-      audiencePlatforms: studioAudiencePlatforms(config),
+      audiencePlatforms: studioAudiencePlatforms(config, "video"),
       metrics: {
         title: channelItem?.snippet?.title ?? "YouTube",
         subscriberCount: metricNumber(channelItem?.statistics?.subscriberCount),
@@ -147,7 +140,7 @@ export async function syncInstagramProfile(config: BackendConfig, backendDb: Bac
       platform: "instagram",
       account: profileData.username ?? "instagram",
       source: "instagram_graph_api",
-      audiencePlatforms: studioAudiencePlatforms(config),
+      audiencePlatforms: studioAudiencePlatforms(config, "video"),
       metrics: {
         username: profileData.username ?? "Instagram",
         biography: profileData.biography ?? "",
@@ -180,7 +173,7 @@ async function syncZernioInstagramProfile(config: BackendConfig, backendDb: Back
     platform: "instagram",
     account: account.username ?? route.accountId,
     source: "zernio",
-    audiencePlatforms: studioAudiencePlatforms(config),
+    audiencePlatforms: studioAudiencePlatforms(config, "video"),
     metrics: {
       username: account.username ?? account.displayName ?? "Instagram",
       // Zernio's follower-history series starts only after its daily snapshotter
@@ -267,6 +260,7 @@ export async function syncFacebookProfile(config: BackendConfig, backendDb: Back
       platform: "facebook_en",
       account: page.name ?? pageId,
       source: "facebook_graph_api",
+      audiencePlatforms: studioAudiencePlatforms(config, "text"),
       metrics: {
         name: page.name ?? pageId,
         followersCount: metricNumber(page.followers_count),
@@ -288,6 +282,7 @@ export async function syncXProfile(config: BackendConfig, backendDb: BackendDb, 
       platform: "x",
       account: user.username ?? user.id,
       source: "x_user_api",
+      audiencePlatforms: studioAudiencePlatforms(config, "text"),
       metrics: {
         name: user.name ?? user.username ?? user.id,
         followersCount: metricNumber(user.public_metrics?.followers_count),
@@ -326,6 +321,7 @@ async function syncBlueskyProfile(config: BackendConfig, backendDb: BackendDb, f
       platform: "bluesky",
       account: profile.handle ?? handle,
       source: "bluesky_public_api",
+      audiencePlatforms: studioAudiencePlatforms(config, "text"),
       metrics: {
         name: profile.displayName ?? profile.handle ?? handle,
         followersCount: metricNumber(profile.followersCount),
@@ -351,6 +347,7 @@ async function syncTelegramProfile(config: BackendConfig, backendDb: BackendDb, 
         platform: "telegram",
         account: channelHandle(config),
         source: "telegram_mtproto_stats",
+        audiencePlatforms: studioAudiencePlatforms(config, "text"),
         metrics: mtprotoMetrics,
       });
       return;
@@ -370,6 +367,7 @@ async function syncTelegramProfile(config: BackendConfig, backendDb: BackendDb, 
       platform: "telegram",
       account: channelHandle(config),
       source: "telegram_bot_api",
+      audiencePlatforms: studioAudiencePlatforms(config, "text"),
       metrics: { followersCount: metricNumber(result.result) },
     });
   });
@@ -415,6 +413,7 @@ async function syncThreadsProfile(config: BackendConfig, backendDb: BackendDb, f
       platform: "threads",
       account: profile.username ?? profile.id,
       source: "threads_api",
+      audiencePlatforms: studioAudiencePlatforms(config, "text"),
       metrics: { name: profile.username ?? profile.id },
     });
   });

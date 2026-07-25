@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import type { BackendDb } from "../../db/client.js";
 import { alertDedup, analyticsSync, creatorProfileSnapshots, creatorProfiles, postEvents, socialComments } from "../../db/schema.js";
+import { type AudienceGroup, audienceGroup } from "../audience-groups.js";
 
 const DAILY_SYNC_MS = 24 * 60 * 60_000;
 
@@ -50,11 +51,13 @@ function recordMilestone(backendDb: BackendDb, scope: string, threshold: number,
     .run();
 }
 
+const GROUP_LABEL: Record<AudienceGroup, string> = { text: "Текстовые площадки", video: "Видео-площадки" };
+
 function recordFollowerMilestones(
   backendDb: BackendDb,
   platform: string,
   next: Record<string, unknown>,
-  audiencePlatforms: readonly string[] | undefined,
+  audiencePlatforms: readonly string[],
 ): void {
   const previous = backendDb.db.select().from(creatorProfiles).where(eq(creatorProfiles.platform, platform)).get();
   const before = followerCount(previous?.dataJson);
@@ -64,7 +67,12 @@ function recordFollowerMilestones(
   for (const threshold of FOLLOWER_MILESTONES)
     if (before < threshold && after >= threshold)
       recordMilestone(backendDb, platform, threshold, `🎉 ${platformLabel}: ${threshold} подписчиков!`, platform);
-  const platforms = new Set(audiencePlatforms ?? []);
+  // Text and video audiences are counted as two separate totals. Narrowing the
+  // caller's list to this platform's own group keeps a mismatched list harmless
+  // instead of mixing a Shorts audience into the written-feed total.
+  const group = audienceGroup(platform);
+  if (!group) return;
+  const platforms = new Set(audiencePlatforms.filter((item) => audienceGroup(item) === group));
   if (!platforms.has(platform)) return;
   const totalBefore = backendDb.db
     .select()
@@ -75,7 +83,7 @@ function recordFollowerMilestones(
   const totalAfter = totalBefore - before + after;
   for (const threshold of FOLLOWER_MILESTONES)
     if (totalBefore < threshold && totalAfter >= threshold)
-      recordMilestone(backendDb, "total", threshold, `🏆 Всего: ${threshold} подписчиков на площадках!`, "audience");
+      recordMilestone(backendDb, `total_${group}`, threshold, `🏆 ${GROUP_LABEL[group]}: ${threshold} подписчиков!`, "audience");
 }
 
 /** Saves the current profile projection and an observation bucket. Most
@@ -88,8 +96,10 @@ export function recordProfileSnapshot(
     account: string;
     metrics: Record<string, unknown>;
     source: string;
-    /** Exact Studio-owned platforms that count toward the combined milestone. */
-    audiencePlatforms?: readonly string[];
+    /** Studio-owned platforms of this platform's own audience group (see
+     * studioAudiencePlatforms). Required: a sync that omitted it silently lost
+     * its group total, because the platform must appear in its own group set. */
+    audiencePlatforms: readonly string[];
     sampledAt?: Date;
     /** "hour" is intentionally used only for the video analytics feed. */
     resolution?: "day" | "hour";

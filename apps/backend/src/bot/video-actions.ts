@@ -76,6 +76,15 @@ function routeKey(data: string): string {
   return separator === -1 ? data : data.slice(0, separator);
 }
 
+/** Telegram rejects a callback answer longer than this, which would turn the
+ * error path itself into an unanswered callback: a spinner and no explanation.
+ * External API failures reach describeError as raw provider text of any length. */
+const MAX_TOAST_LENGTH = 200;
+
+function toast(text: string): string {
+  return text.length > MAX_TOAST_LENGTH ? `${text.slice(0, MAX_TOAST_LENGTH - 1)}…` : text;
+}
+
 /** Callback-only adapter: it changes a session or invokes a Studio command, never parses chat replies. */
 export async function handleVideoActionCallback(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<boolean> {
   const data = ctx.callbackQuery?.data;
@@ -85,10 +94,10 @@ export async function handleVideoActionCallback(ctx: Context, backendDb: Backend
   try {
     const route = routes[routeKey(data)];
     const result = route ? await route({ ctx, backendDb, config, adminId, locale, data }) : undefined;
-    if (result?.toast) await ctx.answerCallbackQuery({ text: result.toast });
+    if (result?.toast) await ctx.answerCallbackQuery({ text: toast(result.toast) });
     else await ctx.answerCallbackQuery();
   } catch (error) {
-    await ctx.answerCallbackQuery({ text: describeError(botLocale(backendDb, adminId), error) });
+    await ctx.answerCallbackQuery({ text: toast(describeError(locale, error)) });
   }
   return true;
 }
@@ -191,7 +200,7 @@ async function handleRetry({ ctx, backendDb, config, adminId, locale, data }: Vi
   const target = requireVideoTarget(targetText ?? "");
   const id = requireDraftId(idText);
   studioServices(backendDb, config).videos.retry(adminId, id, target);
-  await showVideoCard(ctx, backendDb, id, botLocale(backendDb, adminId));
+  await showVideoCard(ctx, backendDb, id, locale);
   return { toast: t(locale, "video.requeued", { label: videoTargetLabel(target) }) };
 }
 
@@ -389,7 +398,7 @@ async function handleRemove({ ctx, backendDb, config, adminId, locale, data }: V
     });
     return;
   }
-  await showVideoCard(ctx, backendDb, id, botLocale(backendDb, adminId));
+  await showVideoCard(ctx, backendDb, id, locale);
   return { toast: t(locale, "video.removed", { label: videoTargetLabel(target) }) };
 }
 
@@ -413,7 +422,8 @@ async function handleEditMenu({ ctx, backendDb, config, adminId, locale, data }:
 
 async function handleEditField({ ctx, backendDb, config, adminId, locale, data }: VideoActionArgs): Promise<VideoActionResult> {
   const [, field = "", idText] = data.split(":");
-  if (!Object.hasOwn(EDIT_FIELD_PROMPTS, field)) throw new StudioError("err.video-reopen-edit");
+  const prompt = EDIT_FIELD_PROMPTS[field];
+  if (!prompt) throw new StudioError("err.video-reopen-edit");
   const id = requireDraftId(idText);
   const targets = studioServices(backendDb, config).videos.get(adminId, id).targets;
   const session = {
@@ -424,7 +434,7 @@ async function handleEditField({ ctx, backendDb, config, adminId, locale, data }
   };
   saveSession(backendDb, adminId, session);
   setControlFromSession(backendDb, id, ctx, session);
-  await replyVideoPrompt(ctx, locale, t(locale, EDIT_FIELD_PROMPTS[field] ?? "video.edit-generic-prompt"));
+  await replyVideoPrompt(ctx, locale, t(locale, prompt));
 }
 
 async function handleEdit({ ctx, backendDb, config, adminId, locale, data }: VideoActionArgs): Promise<VideoActionResult> {

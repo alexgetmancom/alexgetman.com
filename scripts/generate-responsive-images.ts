@@ -364,13 +364,17 @@ async function generateResponsiveImages() {
     if (!inputPath) continue;
     const key = `responsive:${publicPath}`;
     const updated = await needsUpdate(inputPath, key);
-    const metadata = await sharp(inputPath).metadata();
-    if (!metadata.width) continue;
+    const outputs = widths.map((width) => ({ width, outputPath: path.join(outputDir, responsiveOutputName(publicPath, width)) }));
+    // Reading metadata costs an open+header parse per image. Only do it once we
+    // know at least one variant actually has to be produced, so an unchanged
+    // run touches nothing but the cache and the output stat calls.
+    const pending = [];
+    for (const output of outputs) if (updated || !(await exists(output.outputPath))) pending.push(output);
+    if (!pending.length) continue;
+    if (!(await sharp(inputPath).metadata()).width) continue;
 
     let allOk = true;
-    for (const width of widths) {
-      const outputPath = path.join(outputDir, responsiveOutputName(publicPath, width));
-      if (!updated && (await exists(outputPath))) continue;
+    for (const { width, outputPath } of pending) {
       try {
         await sharp(inputPath).resize({ width, withoutEnlargement: true }).webp({ quality: 78, effort: 5 }).toFile(outputPath);
       } catch (error) {

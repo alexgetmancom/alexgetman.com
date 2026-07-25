@@ -16,7 +16,11 @@ export const publishJobs = sqliteTable(
     ...timestamps(),
   },
   (table) => [
-    uniqueIndex("idx_publish_jobs_message_target_status").on(table.messageId, table.target, table.status),
+    // Deduplication key matches what every write path actually keys on. It was
+    // (message_id, target, status), which two posts sharing one Telegram
+    // message could collide on while neither cleanup path looked at message_id.
+    uniqueIndex("idx_publish_jobs_post_target_status").on(table.postKey, table.target, table.status),
+    index("idx_publish_jobs_message").on(table.messageId, table.target),
     index("idx_publish_jobs_due").on(table.status, table.publishAt, table.nextAttemptAt, table.createdAt),
     index("idx_publish_jobs_lock").on(table.lockedBy, table.lockedAt),
     index("idx_publish_jobs_post").on(table.postId, table.target, table.status),

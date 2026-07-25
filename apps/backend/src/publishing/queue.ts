@@ -66,7 +66,7 @@ export function claimDuePublishJobs(
         updatedAt: now,
         rawJson: JSON.stringify({ job_id: row.jobId, worker }),
       });
-      insertEvent(tx, postKey, row.target, "publish.job.claimed", "info", `Publishing ${row.target}`, { job_id: row.jobId, worker });
+      insertEvent(tx, postKey, row.target, "publish.job.claimed", "info", `Publishing ${row.target}`, { job_id: row.jobId, worker }, now);
       claimed.push({
         jobId: row.jobId,
         postId: row.postId,
@@ -100,6 +100,9 @@ export function recoverStalePublishJobs(
       if (!lockedAt) continue;
       const error = job.lastError || "worker_lost: publishing lock expired before completion";
       const transition = failedJobTransition(new Error(error), job.attemptCount, publishRetryPolicy(config));
+      // Same reason as failPublishJob: this row is about to take the queued (or
+      // failed) slot that is unique per (post_key, target).
+      deleteSupersededJobs(tx, job, job.jobId, jobPostKey(job));
       const updated = tx
         .update(publishJobs)
         .set({
@@ -217,6 +220,9 @@ export function completePublishJob(
         url: published ? normalized.url : null,
         error: normalized.error,
         skipped: normalized.skipped,
+        // The per-target delivery time, not the post's creation time: analytics
+        // reads this column to scope and order published targets.
+        publishedAt: published ? now : null,
         updatedAt: now,
         rawJson: normalized.rawJson,
       },
@@ -252,6 +258,10 @@ function settleRetryableIds(
   const error = String(result.error ?? fallbackError);
   const payload = { ...parsePayload(job.payloadJson), [payloadKey]: ids };
   backendDb.db.transaction((tx) => {
+    // A queued row is unique per (post_key, target); clear any competing one
+    // before this job re-enters the queue, and clear superseded rows once this
+    // one is terminal — exactly what failPublishJob does for the same states.
+    deleteSupersededJobs(tx, job, jobId, postKey);
     settleJob(
       tx,
       jobId,
@@ -276,6 +286,7 @@ function settleRetryableIds(
       },
     );
   });
+  if (!retry && classifyPublishError(error) === "auth") recordAuthFailure(backendDb, job.target);
   return retry;
 }
 
@@ -293,6 +304,10 @@ export function failPublishJob(backendDb: BackendDb, config: BackendConfig, jobI
   const shouldRetry = status === "queued";
   const errorText = String(error instanceof Error ? error.message : error);
   backendDb.db.transaction((tx) => {
+    // Before this job re-enters the queue (or becomes the terminal record for
+    // its target), no other queued/failed row for the same target may remain:
+    // a queued row is unique per (post_key, target).
+    deleteSupersededJobs(tx, job, jobId, postKey);
     settleJob(
       tx,
       jobId,
@@ -313,7 +328,6 @@ export function failPublishJob(backendDb: BackendDb, config: BackendConfig, jobI
         details: { job_id: jobId, error_class: errorClass, attempt, next_attempt_at: nextAttempt },
       },
     );
-    if (!shouldRetry) deleteSupersededJobs(tx, job, jobId, postKey);
   });
   if (errorClass === "auth") recordAuthFailure(backendDb, job.target);
   if (!shouldRetry && job.postId != null) reconcilePublication(backendDb, job.postId);
@@ -356,7 +370,18 @@ export function enqueuePublishJobTx(db: BackendDb["db"], input: EnqueuePublishJo
     updatedAt: now,
   } satisfies typeof publishJobs.$inferInsert;
   insertPublishJobSchema.parse(inputRecord);
-  const inserted = db.insert(publishJobs).values(inputRecord).returning({ jobId: publishJobs.jobId }).get();
+  // Re-queueing the same target of the same post is a refresh, not a second
+  // job: adopt the existing queued row and carry the new payload and time onto
+  // it. Throwing here would abort the whole publication transaction.
+  const inserted = db
+    .insert(publishJobs)
+    .values(inputRecord)
+    .onConflictDoUpdate({
+      target: [publishJobs.postKey, publishJobs.target, publishJobs.status],
+      set: { messageId: inputRecord.messageId, publishAt: inputRecord.publishAt, payloadJson: inputRecord.payloadJson, updatedAt: now },
+    })
+    .returning({ jobId: publishJobs.jobId })
+    .get();
   if (!inserted) throw new Error("publish job insert did not return an id");
   return inserted.jobId;
 }
@@ -417,24 +442,27 @@ function insertEvent(
   severity: string,
   message: string,
   details: Record<string, unknown>,
+  createdAt: string,
 ): void {
   tx.insert(postEvents)
-    .values({ postKey, eventType, severity, target, message, detailsJson: JSON.stringify(details), createdAt: new Date().toISOString() })
+    .values({ postKey, eventType, severity, target, message, detailsJson: JSON.stringify(details), createdAt })
     .run();
 }
 
 /** Every job-settling path (claim recovery, completion, failure, reconciliation) updates
- * the job row, mirrors the target's state, and logs the transition as one unit. */
+ * the job row, mirrors the target's state, and logs the transition as one unit.
+ * All three carry the caller's single timestamp so one settle can't be read back
+ * as three events happening at slightly different times. */
 function settleJob(
   tx: BackendDb["db"],
   jobId: number,
   jobPatch: Partial<typeof publishJobs.$inferInsert> | null,
   postKey: string,
   target: string,
-  targetPatch: Omit<typeof postTargets.$inferInsert, "postKey" | "target">,
+  targetPatch: Omit<typeof postTargets.$inferInsert, "postKey" | "target"> & { updatedAt: string },
   event: { type: string; severity: string; message: string; details: Record<string, unknown> },
 ): void {
   if (jobPatch) tx.update(publishJobs).set(jobPatch).where(eq(publishJobs.jobId, jobId)).run();
   upsertPostTarget(tx, { postKey, target, ...targetPatch });
-  insertEvent(tx, postKey, target, event.type, event.severity, event.message, event.details);
+  insertEvent(tx, postKey, target, event.type, event.severity, event.message, event.details, targetPatch.updatedAt);
 }

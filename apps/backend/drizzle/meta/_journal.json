@@ -183,6 +183,20 @@
       "when": 1785128400000,
       "tag": "0025_video_metric_error_count",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1785132000000,
+      "tag": "0026_video_source_pruned_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "6",
+      "when": 1785974400000,
+      "tag": "0027_publish_jobs_post_key_dedupe",
+      "breakpoints": true
     }
   ]
 }

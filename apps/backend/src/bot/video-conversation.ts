@@ -117,10 +117,11 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
       return handleScheduleMessage(ctx, backendDb, config, adminId, session, text);
   } catch (error) {
     const locale = botLocale(backendDb, adminId);
-    // The original upload error is operationally important (disk, Telegram
-    // download, or media import), and the admin reply can still be lost to a
-    // Telegram send failure — log it first so the cause survives regardless.
-    log("error", "Video conversation asset step failed", {
+    // The original error is operationally important (disk, Telegram download,
+    // media import, Studio validation), and the admin reply can still be lost to
+    // a Telegram send failure — log it first so the cause survives regardless.
+    // `step` is what says which part of the conversation this was.
+    log("error", "Video conversation step failed", {
       adminId,
       step: session.step,
       error: error instanceof Error ? error.message : String(error),
