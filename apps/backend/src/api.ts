@@ -100,7 +100,7 @@ function buildApp({ config, backendDb, bot }: ApiContext): Hono {
   app.get("/stats", () => {
     const summary = engagement.metrics();
     return html(
-      `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Alex Getman metrics</title></head><body><main><h1>Site metrics</h1><p>Total: ${summary.total}</p><p>Today: ${summary.today}</p><p>Last 7 days: ${summary.last7}</p><p>Updated: ${String(summary.updated_at ?? "-")}</p></main></body></html>`,
+      `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Alex Getman metrics</title></head><body><main><h1>Site metrics</h1><p>Total: ${escapeHtml(summary.total)}</p><p>Today: ${escapeHtml(summary.today)}</p><p>Last 7 days: ${escapeHtml(summary.last7)}</p><p>Updated: ${escapeHtml(summary.updated_at ?? "-")}</p></main></body></html>`,
     );
   });
 
@@ -176,12 +176,16 @@ function buildApp({ config, backendDb, bot }: ApiContext): Hono {
     return postId ? json(engagement.toggleLike(c.req.raw, postId)) : json({ error: "Missing post_id parameter" }, 400);
   });
 
-  app.get("/api/mcp", () =>
-    sse((send) => {
+  // The MCP transport is a privileged Studio surface, same as POST /api/mcp:
+  // an unauthenticated stream let any client pin an open connection and a
+  // recurring timer for free.
+  app.get("/api/mcp", (c) => {
+    if (!mcpStudioActor(c.req.raw, config) && !commandAllowed(c.req.raw, config)) return text("unauthorized\n", 401);
+    return sse((send) => {
       send("endpoint", `/api/mcp?connection_id=${crypto.randomUUID()}`);
       return setInterval(() => send("ping", new Date().toISOString()), 30_000);
-    }),
-  );
+    });
+  });
 
   app.post("/api/mcp", async (c) => {
     const body = await c.req.raw.json().catch(() => null);
@@ -300,6 +304,18 @@ function rateLimited(retryAfter: number): Response {
   });
 }
 
+/** These values are DB-derived counters and timestamps today, but this page
+ * interpolates them straight into markup — escape at the boundary rather than
+ * relying on every future field staying numeric. */
+function escapeHtml(value: unknown): string {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 function html(body: string): Response {
   return new Response(body, {
     headers: { "content-type": "text/html; charset=utf-8" },
@@ -310,10 +326,18 @@ function sse(start: (send: (event: string, data: unknown) => void) => ReturnType
   let timer: ReturnType<typeof setInterval> | undefined;
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
-      const send = (event: string, data: unknown) =>
-        controller.enqueue(
-          new TextEncoder().encode(`event: ${event}\ndata: ${typeof data === "string" ? data : JSON.stringify(data)}\n\n`),
-        );
+      // A disconnect that never delivers cancel() would otherwise leave the
+      // interval running forever, re-querying the pipeline for nobody. Enqueue
+      // on a dead controller throws, so that throw is what stops the timer.
+      const send = (event: string, data: unknown) => {
+        try {
+          controller.enqueue(
+            new TextEncoder().encode(`event: ${event}\ndata: ${typeof data === "string" ? data : JSON.stringify(data)}\n\n`),
+          );
+        } catch {
+          if (timer) clearInterval(timer);
+        }
+      };
       timer = start(send);
     },
     cancel() {

@@ -61,7 +61,7 @@ export async function materializeSiteMedia(
     await deduplicateSiteMediaFile(mediaRoot, target);
     const verticalName = siteMediaVerticalFilename(postId, locale, index, kind);
     const vertical = path.join(directory, verticalName);
-    await materializeVerticalViewerMedia(config, target, vertical, kind, options);
+    await materializeVerticalViewerMedia(config, target, vertical, kind, options, fetchImpl);
     await deduplicateSiteMediaFile(mediaRoot, vertical);
     const output: Record<string, unknown> = {
       ...item,
@@ -103,6 +103,7 @@ async function materializeVerticalViewerMedia(
   output: string,
   kind: "image" | "video",
   options: SiteMediaMaterializeOptions,
+  fetchImpl: typeof fetch = fetch,
 ): Promise<void> {
   if (await isCurrentDerivative(source, output)) return;
   if (config.MEDIA_PROCESSOR_PROVIDER !== "remote_http") {
@@ -135,7 +136,7 @@ async function materializeVerticalViewerMedia(
     .update(`site-vertical-v1:${source}:${stat.size}:${stat.mtimeMs}:${kind}`)
     .digest("hex");
   const base = config.MEDIA_PROCESSOR_URL.replace(/\/$/, "");
-  const response = await fetch(`${base}/v1/transforms/ffmpeg`, {
+  const response = await fetchImpl(`${base}/v1/transforms/ffmpeg`, {
     method: "POST",
     headers: {
       authorization: `Bearer ${config.MEDIA_PROCESSOR_TOKEN}`,
@@ -150,7 +151,7 @@ async function materializeVerticalViewerMedia(
   if (!response.ok) throw new Error(`site_vertical_media_failed: ${response.status} ${(await response.text()).slice(0, 800)}`);
   const manifest = (await response.json()) as { outputs?: { standard?: unknown } };
   if (!manifest.outputs?.standard) throw new Error("site_vertical_media_failed: missing standard output");
-  const download = await fetch(`${base}/v1/transforms/ffmpeg/${idempotencyKey}/standard`, {
+  const download = await fetchImpl(`${base}/v1/transforms/ffmpeg/${idempotencyKey}/standard`, {
     headers: { authorization: `Bearer ${config.MEDIA_PROCESSOR_TOKEN}` },
     signal: AbortSignal.timeout(30_000),
   });

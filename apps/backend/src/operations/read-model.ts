@@ -294,7 +294,9 @@ function formatPipelinePosts(
     const localesMap = { ru: { site_enabled: Number(row.site_ru ?? 0) }, en: { site_enabled: Number(row.site_en ?? 0) } };
     const result: Record<string, unknown> = {
       post_id: postId,
-      message_id: postId,
+      // The channel message id resolved in fetchPostRows, not the post id: the
+      // two are unrelated and a dashboard lookup by message_id needs the real one.
+      message_id: row.message_id == null ? telegramMessageId : Number(row.message_id),
       telegram_message_id: telegramMessageId,
       date: row.created_at,
       date_msk: row.date_msk ?? formatZonedSortable(String(row.created_at), config.TIMEZONE),

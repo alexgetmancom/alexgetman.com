@@ -77,7 +77,10 @@ function migrationsFolder(): string {
   return process.env.DRIZZLE_MIGRATIONS_DIR ?? join(dirname(fileURLToPath(import.meta.url)), "../../drizzle");
 }
 
-function drizzleMigrationMetadata(): MigrationStatus[] {
+/** Hash + timestamp of every migration on disk, in journal order. This is the
+ * expected end state of `__drizzle_migrations` once a database is fully
+ * migrated, so tests assert against it instead of a hand-maintained count. */
+export function drizzleMigrationMetadata(): MigrationStatus[] {
   const folder = migrationsFolder();
   const journal = JSON.parse(readFileSync(join(folder, "meta/_journal.json"), "utf8")) as { entries: Array<{ tag: string; when: number }> };
   return journal.entries.map((entry) => ({

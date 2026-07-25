@@ -299,9 +299,15 @@ async function prepareFeedItem(
   };
 }
 
+/** Reuses the previous feed's already materialized media for a post outside this
+ * cycle's job set. An empty result is deliberately treated as "nothing to reuse"
+ * rather than "no media": a post whose earlier build produced no files must be
+ * re-materialized on the next cycle, not pinned to empty forever. */
 function existingMedia(existing: Record<string, unknown> | undefined, key: "media" | "media_en"): Record<string, unknown>[] | null {
   const media = existing?.[key];
-  return Array.isArray(media) ? media.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object") : null;
+  if (!Array.isArray(media)) return null;
+  const items = media.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object");
+  return items.length > 0 ? items : null;
 }
 
 function isDue(value: unknown, now: number): boolean {

@@ -1,4 +1,4 @@
-import { statSync } from "node:fs";
+import fs from "node:fs";
 import path from "node:path";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { videoSourcePath } from "../content/video-assets.js";
@@ -214,7 +214,7 @@ export async function validateVideoDraft(config: BackendConfig, backendDb: Backe
   const source = videoSourcePath(backendDb, config, draft);
   if (!source) throw new StudioError("err.source-missing");
   if (path.extname(source).toLowerCase() !== ".mp4") throw new StudioError("err.need-mp4");
-  const size = statSync(source).size;
+  const size = (await fs.promises.stat(source)).size;
   if (size <= 0) throw new StudioError("err.video-empty");
   if (size > config.VIDEO_MAX_BYTES)
     throw new StudioError("err.video-too-big", {

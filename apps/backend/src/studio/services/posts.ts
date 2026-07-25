@@ -58,7 +58,7 @@ export function postService(backendDb: BackendDb) {
           {
             locale: "ru" as const,
             text: draft.text_ru,
-            entities: JSON.parse(draft.text_ru_entities_json ?? "[]"),
+            entities: parseJsonArray(draft.text_ru_entities_json),
             media: ruMedia,
           },
           { locale: "en" as const, text: draft.text_en_approved, entities: [], media: enMedia },
@@ -319,8 +319,21 @@ function requireOwnedDraft(backendDb: BackendDb, actorId: number, draftId: numbe
   return draft;
 }
 
+/** A legacy or truncated JSON column must surface as an empty list, not as a
+ * raw SyntaxError escaping a Studio verb: every transport (Telegram, MCP, Web)
+ * only knows how to render StudioError and would show a generic failure. */
+function parseJsonArray(value: string | null): Record<string, unknown>[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object") : [];
+  } catch {
+    return [];
+  }
+}
+
 function draftMedia(draft: ReturnType<typeof requireDraft>, locale: "ru" | "en"): Record<string, unknown>[] {
-  return JSON.parse((locale === "ru" ? draft.media_ru_json : draft.media_en_json) ?? "[]");
+  return parseJsonArray(locale === "ru" ? draft.media_ru_json : draft.media_en_json);
 }
 
 function saveTargets(backendDb: BackendDb, draftId: number, targets: Record<string, boolean>): void {

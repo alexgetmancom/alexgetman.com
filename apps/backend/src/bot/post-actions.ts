@@ -20,20 +20,23 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
   const data = ctx.callbackQuery?.data ?? "";
   const parts = data.split(":");
   const [action, first, second] = parts;
-  const draftId = Number(action === "preset" ? second : action?.startsWith("sched_") ? parts.at(-1) : first);
+  // `sched_*` callbacks carry their scope arguments first and the draft id last;
+  // every other callback puts the draft id immediately after the action name.
+  const draftId = Number(action?.startsWith("sched_") ? parts.at(-1) : first);
   const actorId = Number(ctx.from?.id);
   const locale = botLocale(backendDb, actorId);
   if (!Number.isSafeInteger(draftId)) return void (await ctx.answerCallbackQuery({ text: t(locale, "action.invalid-post") }));
-  studioServices(backendDb, config).posts.get(actorId, draftId);
+  const posts = studioServices(backendDb, config).posts;
+  posts.get(actorId, draftId);
   if (action === "toggle" && second) {
-    studioServices(backendDb, config).posts.toggleTarget(actorId, draftId, second);
+    posts.toggleTarget(actorId, draftId, second);
     await ctx.answerCallbackQuery({ text: t(locale, "action.target-updated", { target: second }) });
     return editDraftPreview(ctx, backendDb, draftId, config, "platforms");
   }
   if (action === "preview") return editDraftPreview(ctx, backendDb, draftId, config);
   if (action === "platforms") return editDraftPreview(ctx, backendDb, draftId, config, "platforms");
   if (action === "cycle_mode") {
-    const nextMode = studioServices(backendDb, config).posts.cycleMode(actorId, draftId);
+    const nextMode = posts.cycleMode(actorId, draftId);
     await ctx.answerCallbackQuery({ text: `${t(locale, "post.mode")}: ${modeLabel(nextMode, locale)}` });
     return editDraftPreview(ctx, backendDb, draftId, config);
   }
@@ -65,7 +68,7 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
   }
   if (action === "cancel_confirm") {
     const result = await withActionLock(`${actorId}:${data}`, async () => {
-      studioServices(backendDb, config).posts.cancel(actorId, draftId);
+      posts.cancel(actorId, draftId);
     });
     if (!result.ok) return void (await ctx.answerCallbackQuery());
     await ctx.answerCallbackQuery({ text: t(locale, "action.cancelled") });
@@ -77,7 +80,7 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
   }
   if (action === "publish") {
     if (await showPublicationPreflight(ctx, backendDb, config, actorId, draftId, locale)) return;
-    const delivery = studioServices(backendDb, config).posts.preview(actorId, draftId).delivery;
+    const delivery = posts.preview(actorId, draftId).delivery;
     await sendTelegramDeliveryPreviews(ctx, delivery.projections, botLocale(backendDb, actorId));
     const preview = draftPreview(backendDb, draftId, config, "confirm_publish");
     await ctx.reply(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
@@ -85,12 +88,12 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
   }
   if (action === "publish_confirm") {
     const result = await withActionLock(`${actorId}:${data}`, async () => {
-      studioServices(backendDb, config).posts.publish(actorId, draftId);
+      posts.publish(actorId, draftId);
     });
     if (!result.ok) return void (await ctx.answerCallbackQuery());
     await ctx.answerCallbackQuery({ text: t(locale, "action.queued") });
     await ctx.editMessageText(t(locale, "action.post-queued", { id: draftId }));
-    const progress = renderPostProgress(studioServices(backendDb, config).posts.progress(actorId, draftId), locale);
+    const progress = renderPostProgress(posts.progress(actorId, draftId), locale);
     const message = await ctx.reply(progress.text, { parse_mode: "Markdown", reply_markup: progress.keyboard });
     if (ctx.chat?.id) setTelegramPostProgressCard(backendDb, draftId, Number(ctx.chat.id), message.message_id);
     return;
@@ -107,7 +110,7 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
   }
   if (action === "sched_view" && first && isDraftView(first)) return editDraftPreview(ctx, backendDb, draftId, config, first);
   if (action === "sched_pick" && first && second) {
-    const value = studioServices(backendDb, config).posts.slotTime(`${second.slice(0, 2)}:${second.slice(2, 4)}`);
+    const value = posts.slotTime(`${second.slice(0, 2)}:${second.slice(2, 4)}`);
     return commitLocaleSchedule(ctx, backendDb, config, actorId, draftId, requireScheduleLocale(first), value);
   }
   if (action === "sched_manual_confirm") {
