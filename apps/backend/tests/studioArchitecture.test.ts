@@ -1,16 +1,42 @@
 import { describe, expect, it } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../src/", import.meta.url));
-const telegramCommandAdapters = [
-  "bot/post-actions.ts",
-  "bot/video-actions.ts",
-  "bot/video-conversation.ts",
-  "bot/queue.ts",
-  "bot/analytics-screen.ts",
-  "bot/notifications-screen.ts",
-];
+
+/** Boundary assertions must not be tripped by a module path that only appears in
+ * prose, so comments and string bodies are removed before anything is matched. */
+function sourceOf(relativePath: string): string {
+  return readFileSync(`${root}${relativePath}`, "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+}
+
+/** Module specifiers of every static and dynamic import, so a rule about
+ * dependencies cannot be satisfied or broken by unrelated text. */
+function importsOf(relativePath: string): string[] {
+  const source = sourceOf(relativePath);
+  const specifiers: string[] = [];
+  for (const match of source.matchAll(/(?:from|import|require)\s*\(?\s*["']([^"']+)["']/g)) if (match[1]) specifiers.push(match[1]);
+  return specifiers;
+}
+
+function expectNoImport(relativePath: string, forbidden: string): void {
+  const offending = importsOf(relativePath).filter((specifier) => specifier === forbidden || specifier.startsWith(forbidden));
+  expect(offending, `${relativePath} imports ${forbidden}`).toEqual([]);
+}
+
+function expectImport(relativePath: string, expected: string): void {
+  expect(importsOf(relativePath), `${relativePath} should import ${expected}`).toContain(expected);
+}
+
+/** Telegram screens, command handlers and conversations, discovered by naming
+ * convention rather than listed, so a newly added adapter is covered the moment
+ * it lands. Rendering helpers (albums, previews, i18n, session state) are not
+ * adapters and keep their own dependencies. */
+const telegramCommandAdapters = readdirSync(`${root}bot`)
+  .filter((name) => /-(screen|actions|conversation)\.ts$/.test(name) || name === "queue.ts")
+  .map((name) => `bot/${name}`);
 const forbiddenDomainImports = [
   "../db/schema.js",
   "../publishing/queue.js",
@@ -21,47 +47,43 @@ const forbiddenDomainImports = [
 
 describe("Studio architecture boundaries", () => {
   it("keeps Telegram command adapters out of database, worker and delivery implementations", () => {
-    for (const relativePath of telegramCommandAdapters) {
-      const source = readFileSync(`${root}${relativePath}`, "utf8");
-      for (const forbidden of forbiddenDomainImports) expect(source, `${relativePath} imports ${forbidden}`).not.toContain(forbidden);
-    }
+    for (const relativePath of telegramCommandAdapters)
+      for (const forbidden of forbiddenDomainImports) expectNoImport(relativePath, forbidden);
   });
 
   it("routes text-post scheduling through Studio instead of Publishing internals", () => {
     for (const relativePath of ["bot.ts", "bot/post-actions.ts"]) {
-      const source = readFileSync(`${root}${relativePath}`, "utf8");
-      expect(source, `${relativePath} imports Publishing directly`).not.toContain('from "../publishing/');
-      expect(source, `${relativePath} imports Publishing directly`).not.toContain('from "./publishing/');
+      expectNoImport(relativePath, "../publishing/");
+      expectNoImport(relativePath, "./publishing/");
     }
   });
 
   it("routes video schedule parsing through Studio instead of Publishing internals", () => {
-    const source = readFileSync(`${root}bot/video-conversation.ts`, "utf8");
     for (const forbidden of ["../publishing/video-data.js", "../publishing/video-service.js", "../publishing/schedule.js"])
-      expect(source, `video conversation imports ${forbidden}`).not.toContain(forbidden);
-    expect(source).toContain(".videos.parseSchedule(");
+      expectNoImport("bot/video-conversation.ts", forbidden);
+    expect(sourceOf("bot/video-conversation.ts")).toContain(".videos.parseSchedule(");
   });
 
   it("keeps HTTP controllers on the Operations and Engagement boundaries", () => {
-    const source = readFileSync(`${root}api.ts`, "utf8");
-    expect(source).toContain('from "./operations/service.js"');
-    expect(source).toContain('from "./engagement/service.js"');
-    expect(source).not.toContain('from "./operations/actions.js"');
-    expect(source).not.toContain('from "./operations/command-center.js"');
-    expect(source).not.toContain('from "./engagement/likes.js"');
-    expect(source).not.toContain('from "./engagement/pageviews.js"');
+    expectImport("api.ts", "./operations/service.js");
+    expectImport("api.ts", "./engagement/service.js");
+    for (const forbidden of [
+      "./operations/actions.js",
+      "./operations/command-center.js",
+      "./engagement/likes.js",
+      "./engagement/pageviews.js",
+    ])
+      expectNoImport("api.ts", forbidden);
   });
 
   it("keeps MCP as a Studio-services adapter rather than a database adapter", () => {
-    const source = readFileSync(`${root}interfaces/mcp.ts`, "utf8");
-    expect(source).toContain('from "../studio/services/index.js"');
+    expectImport("interfaces/mcp.ts", "../studio/services/index.js");
     for (const forbidden of ["../db/schema.js", "../publishing/", "../delivery/", "../analytics/", "../worker.js", "../bot/"])
-      expect(source, `MCP imports ${forbidden}`).not.toContain(`from "${forbidden}`);
+      expectNoImport("interfaces/mcp.ts", forbidden);
   });
 
   it("keeps Web Studio as a Studio-services adapter rather than a database or Operations adapter", () => {
-    const source = readFileSync(`${root}interfaces/web/studio.ts`, "utf8");
-    expect(source).toContain('from "../../studio/services/index.js"');
+    expectImport("interfaces/web/studio.ts", "../../studio/services/index.js");
     for (const forbidden of [
       "../../db/schema.js",
       "../../publishing/",
@@ -71,23 +93,17 @@ describe("Studio architecture boundaries", () => {
       "../../bot/",
       "../../operations/",
     ])
-      expect(source, `Web Studio imports ${forbidden}`).not.toContain(`from "${forbidden}`);
+      expectNoImport("interfaces/web/studio.ts", forbidden);
   });
 
   it("keeps Command Center as an operational read model, not a delivery or interface runtime", () => {
-    const source = readFileSync(`${root}operations/command-center.ts`, "utf8");
     for (const forbidden of ["../bot/", "../delivery/", "../analytics/", "../publishing/", "../worker.js", "grammy"])
-      expect(source, `Command Center imports ${forbidden}`).not.toContain(forbidden);
+      expectNoImport("operations/command-center.ts", forbidden);
   });
 
   it("keeps Content transport-neutral", () => {
-    for (const relativePath of ["content/drafts.ts", "content/message.ts", "content/text.ts", "content/translation.ts"]) {
-      const source = readFileSync(`${root}${relativePath}`, "utf8");
-      expect(source, `${relativePath} imports Telegram`).not.toContain('from "grammy"');
-      expect(source, `${relativePath} imports a Telegram adapter`).not.toContain('from "../bot/');
-      expect(source, `${relativePath} imports an interface adapter`).not.toContain('from "../interfaces/');
-      expect(source, `${relativePath} imports Delivery`).not.toContain('from "../delivery/');
-    }
+    for (const relativePath of ["content/drafts.ts", "content/message.ts", "content/text.ts", "content/translation.ts"])
+      for (const forbidden of ["grammy", "../bot/", "../interfaces/", "../delivery/"]) expectNoImport(relativePath, forbidden);
   });
 
   it("keeps Analytics transport-neutral", () => {
@@ -99,13 +115,8 @@ describe("Studio architecture boundaries", () => {
       "analytics/reports/post-archive.ts",
       "analytics/reports/video-archive.ts",
       "analytics/reports/audience.ts",
-    ]) {
-      const source = readFileSync(`${root}${relativePath}`, "utf8");
-      expect(source, `${relativePath} imports Telegram`).not.toContain('from "../bot/');
-      expect(source, `${relativePath} imports an interface adapter`).not.toContain('from "../interfaces/');
-      expect(source, `${relativePath} imports Delivery`).not.toContain('from "../../delivery/');
-      expect(source, `${relativePath} imports Studio`).not.toContain('from "../../studio/');
-    }
+    ])
+      for (const forbidden of ["../bot/", "../interfaces/", "../../delivery/", "../../studio/"]) expectNoImport(relativePath, forbidden);
   });
 
   it("keeps Delivery facades out of Telegram and Studio", () => {
@@ -115,58 +126,41 @@ describe("Studio architecture boundaries", () => {
       "delivery/ports/social.ts",
       "delivery/site-jobs.ts",
       "delivery/video-worker.ts",
-    ]) {
-      const source = readFileSync(`${root}${relativePath}`, "utf8");
-      expect(source, `${relativePath} imports Telegram`).not.toContain('from "grammy"');
-      expect(source, `${relativePath} imports a Telegram adapter`).not.toContain('from "../bot/');
-      expect(source, `${relativePath} imports Studio`).not.toContain('from "../studio/');
-      expect(source, `${relativePath} imports an interface adapter`).not.toContain('from "../interfaces/');
-    }
+    ])
+      for (const forbidden of ["grammy", "../bot/", "../studio/", "../interfaces/"]) expectNoImport(relativePath, forbidden);
   });
 
   it("keeps video delivery independent from Telegram rendering", () => {
-    const source = readFileSync(`${root}delivery/video-worker.ts`, "utf8");
-    for (const forbidden of ["grammy", "../interfaces/telegram/", "../studio/"])
-      expect(source, `video delivery imports ${forbidden}`).not.toContain(forbidden);
+    for (const forbidden of ["grammy", "../interfaces/telegram/", "../studio/"]) expectNoImport("delivery/video-worker.ts", forbidden);
   });
 
   it("keeps Delivery orchestration separate from platform ports without legacy facades", () => {
-    const workflow = readFileSync(`${root}delivery/publish-workflow.ts`, "utf8");
-    const ports = readFileSync(`${root}delivery/ports/social.ts`, "utf8");
-    expect(workflow).toContain('from "./ports/social.js"');
-    expect(workflow).toContain('from "./ports.js"');
-    expect(ports).not.toContain('from "grammy"');
+    expectImport("delivery/publish-workflow.ts", "./ports/social.js");
+    expectImport("delivery/publish-workflow.ts", "./ports.js");
+    expectNoImport("delivery/ports/social.ts", "grammy");
   });
 
   it("keeps Operations command dispatch, repairs and Observability physically separate", () => {
-    const dispatcher = readFileSync(`${root}operations/commands.ts`, "utf8");
-    const repair = readFileSync(`${root}operations/commands/content-repair.ts`, "utf8");
-    const requeue = readFileSync(`${root}operations/commands/requeue.ts`, "utf8");
-    const observability = readFileSync(`${root}observability/cycle.ts`, "utf8");
-    expect(dispatcher).toContain('from "./commands/content-repair.js"');
-    expect(dispatcher).toContain('from "./commands/requeue.js"');
-    expect(dispatcher).not.toContain('from "drizzle-orm"');
-    expect(repair).toContain('from "../../db/schema.js"');
-    expect(requeue).toContain('from "../../publishing/payload.js"');
-    expect(observability).toContain('from "./credentials.js"');
-    expect(observability).toContain('from "./failures.js"');
-    expect(observability).not.toContain('from "../bot/');
+    expectImport("operations/commands.ts", "./commands/content-repair.js");
+    expectImport("operations/commands.ts", "./commands/requeue.js");
+    expectNoImport("operations/commands.ts", "drizzle-orm");
+    expectImport("operations/commands/content-repair.ts", "../../db/schema.js");
+    expectImport("operations/commands/requeue.ts", "../../publishing/payload.js");
+    expectImport("observability/cycle.ts", "./credentials.js");
+    expectImport("observability/cycle.ts", "./failures.js");
+    expectNoImport("observability/cycle.ts", "../bot/");
   });
 
   it("keeps Operations as the external diagnostics contract", () => {
-    const api = readFileSync(`${root}api.ts`, "utf8");
-    const cli = readFileSync(`${root}cli.ts`, "utf8");
-    const service = readFileSync(`${root}operations/service.ts`, "utf8");
-    expect(api).not.toContain('from "./operations/read-model.js"');
-    expect(cli).not.toContain('from "./operations/read-model.js"');
-    expect(service).toContain('from "./read-model.js"');
-    expect(service).not.toContain('from "../observability/');
+    expectNoImport("api.ts", "./operations/read-model.js");
+    expectNoImport("cli.ts", "./operations/read-model.js");
+    expectImport("operations/service.ts", "./read-model.js");
+    expectNoImport("operations/service.ts", "../observability/");
   });
 
   it("keeps Observability behind its own service boundary", () => {
-    const workers = readFileSync(`${root}runtime/workers.ts`, "utf8");
-    const service = readFileSync(`${root}observability/service.ts`, "utf8");
-    expect(workers).toContain('from "../observability/service.js"');
+    expectImport("runtime/workers.ts", "../observability/service.js");
+    const service = sourceOf("observability/service.ts");
     expect(service).toContain("healthReport");
     expect(service).toContain("runObservabilityCycle");
   });
@@ -180,62 +174,52 @@ describe("Studio architecture boundaries", () => {
       "analytics/reports/dashboard.ts",
     ])
       expect(existsSync(`${root}${analyticsPath}`), `Analytics module ${analyticsPath} should exist`).toBe(true);
-    const translation = readFileSync(`${root}content/translation.ts`, "utf8");
-    expect(translation).not.toContain('from "../bot/');
+    expectNoImport("content/translation.ts", "../bot/");
   });
 
   it("keeps Operations, Engagement and Public Site independent from interface and Studio implementations", () => {
-    for (const relativePath of ["observability/cycle.ts", "operations/service.ts", "engagement/service.ts", "public/site-read-model.ts"]) {
-      const source = readFileSync(`${root}${relativePath}`, "utf8");
+    for (const relativePath of ["observability/cycle.ts", "operations/service.ts", "engagement/service.ts", "public/site-read-model.ts"])
       for (const forbidden of ["grammy", "../interfaces/", "../studio/", "../delivery/", "../bot/"])
-        expect(source, `${relativePath} imports ${forbidden}`).not.toContain(forbidden);
-    }
+        expectNoImport(relativePath, forbidden);
   });
 
   it("keeps external publication edits inside Delivery, not Operations", () => {
-    const operations = readFileSync(`${root}operations/commands.ts`, "utf8");
-    const gateway = readFileSync(`${root}delivery/external-edits.ts`, "utf8");
-    expect(operations).toContain('from "../delivery/external-edits.js"');
-    for (const externalHost of ["editMessageText"]) expect(operations, `Operations contains ${externalHost}`).not.toContain(externalHost);
-    expect(gateway).toContain("editMessageCaption");
+    expectImport("operations/commands.ts", "../delivery/external-edits.js");
+    expect(sourceOf("operations/commands.ts"), "Operations calls a Telegram edit API directly").not.toContain("editMessageText");
+    expect(sourceOf("delivery/external-edits.ts")).toContain("editMessageCaption");
   });
 
   it("keeps Operations dispatch separate from publication lookup and audit persistence", () => {
-    const source = readFileSync(`${root}operations/commands.ts`, "utf8");
-    expect(source).toContain('from "./action-audit.js"');
-    expect(source).toContain('from "./publication-ref.js"');
+    expectImport("operations/commands.ts", "./action-audit.js");
+    expectImport("operations/commands.ts", "./publication-ref.js");
+    const source = sourceOf("operations/commands.ts");
     expect(source).not.toContain("function resolvePublicationRef");
     expect(source).not.toContain("function recordOperationAction");
   });
 
   it("keeps Video scheduling decisions in the Studio FSM", () => {
-    const source = readFileSync(`${root}bot/video-conversation.ts`, "utf8");
-    expect(source).toContain('from "../studio/video-fsm.js"');
+    expectImport("bot/video-conversation.ts", "../studio/video-fsm.js");
+    const source = sourceOf("bot/video-conversation.ts");
     expect(source).toContain("advanceVideoTargetSchedule(");
     expect(source).toContain("commonVideoSchedule(");
   });
 
   it("keeps Telegram settings as a Studio command adapter", () => {
-    const source = readFileSync(`${root}bot/settings-screen.ts`, "utf8");
-    expect(source).toContain('from "../studio/services/index.js"');
-    expect(source).not.toContain('from "../db/schema.js"');
+    expectImport("bot/settings-screen.ts", "../studio/services/index.js");
+    expectNoImport("bot/settings-screen.ts", "../db/schema.js");
   });
 
   it("keeps core workers independent from Telegram and routes UI work through durable events", () => {
-    const core = readFileSync(`${root}runtime/workers.ts`, "utf8");
-    const telegram = readFileSync(`${root}interfaces/telegram/worker.ts`, "utf8");
-    const events = readFileSync(`${root}interfaces/telegram/event-consumer.ts`, "utf8");
-    for (const forbidden of ["grammy", "../bot/", "../interfaces/"])
-      expect(core, `core worker imports ${forbidden}`).not.toContain(forbidden);
-    expect(telegram).toContain('from "./event-consumer.js"');
+    for (const forbidden of ["grammy", "../bot/", "../interfaces/"]) expectNoImport("runtime/workers.ts", forbidden);
+    expectImport("interfaces/telegram/worker.ts", "./event-consumer.js");
+    const events = sourceOf("interfaces/telegram/event-consumer.ts");
     expect(events).toContain("delivery.post.settled");
     expect(events).toContain("video.target.failed");
   });
 
   it("keeps publication orchestration out of the draft lifecycle", () => {
-    const lifecycle = readFileSync(`${root}publishing/draft-lifecycle.ts`, "utf8");
-    const workflow = readFileSync(`${root}publishing/publication-workflow.ts`, "utf8");
-    expect(lifecycle).not.toContain("createPublicationPlan");
+    expect(sourceOf("publishing/draft-lifecycle.ts")).not.toContain("createPublicationPlan");
+    const workflow = sourceOf("publishing/publication-workflow.ts");
     expect(workflow).toContain("createPublicationPlan");
     expect(workflow).toContain("persistPublicationPlan");
     expect(workflow).toContain("reconcilePublication");

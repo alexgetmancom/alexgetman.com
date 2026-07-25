@@ -1,10 +1,14 @@
 import * as z from "zod";
 import { loadStudioConfig, type StudioConfig } from "../studio.js";
 
-const booleanFlag = z
-  .string()
-  .optional()
-  .transform((value) => value != null && !["0", "false", "no", "off"].includes(value.toLowerCase()));
+/** Env flags arrive as strings, so the default has to be a string too: a boolean
+ * default would be handed to the transform below on any Zod version that does
+ * not short-circuit `undefined`, and `true.toLowerCase()` throws at startup. */
+const booleanFlag = (fallback: boolean) =>
+  z
+    .string()
+    .default(fallback ? "1" : "0")
+    .transform((value) => !["0", "false", "no", "off"].includes(value.toLowerCase()));
 
 const providerRouteSchema = z.object({
   provider: z.enum(["native", "zernio"]),
@@ -135,8 +139,8 @@ const envSchema = z
     X_CONSUMER_SECRET: z.string().optional(),
     X_ACCESS_TOKEN: z.string().optional(),
     X_ACCESS_TOKEN_SECRET: z.string().optional(),
-    ENABLE_X_METRICS: booleanFlag.default(false),
-    ENABLE_X_PROFILE_METRICS: booleanFlag.default(true),
+    ENABLE_X_METRICS: booleanFlag(false),
+    ENABLE_X_PROFILE_METRICS: booleanFlag(true),
     INSTAGRAM_ACCESS_TOKEN: z.string().optional(),
     INSTAGRAM_USER_ID: z.string().optional(),
     INSTAGRAM_EN_ACCESS_TOKEN: z.string().optional(),
@@ -150,8 +154,8 @@ const envSchema = z
     YOUTUBE_CLIENT_ID: z.string().optional(),
     YOUTUBE_CLIENT_SECRET: z.string().optional(),
     YOUTUBE_REFRESH_TOKEN: z.string().optional(),
-    ENABLE_INSTAGRAM_STORIES: booleanFlag.default(false),
-    ENABLE_TELEGRAM_STORIES: booleanFlag.default(false),
+    ENABLE_INSTAGRAM_STORIES: booleanFlag(false),
+    ENABLE_TELEGRAM_STORIES: booleanFlag(false),
     TELEGRAM_STORIES_CHANNEL: z.string().optional(),
     TELEGRAM_CHANNEL_STORIES_API_ID: z.coerce.number().int().positive().optional(),
     TELEGRAM_CHANNEL_STORIES_API_HASH: z.string().optional(),
@@ -162,9 +166,9 @@ const envSchema = z
     PUBLIC_BASE_URL: z.string().default("https://alexgetman.com"),
     DEPLOY_AGENT_URL: z.url().optional(),
     DEPLOY_AGENT_TOKEN: z.string().min(16).optional(),
-    ENABLE_BOT_POLLING: booleanFlag.default(false),
-    ENABLE_WORKERS: booleanFlag.default(true),
-    INDEXNOW_ENABLED: booleanFlag.default(true),
+    ENABLE_BOT_POLLING: booleanFlag(false),
+    ENABLE_WORKERS: booleanFlag(true),
+    INDEXNOW_ENABLED: booleanFlag(true),
   })
   .superRefine((env, context) => {
     if (env.ENABLE_TELEGRAM_STORIES) {
@@ -221,7 +225,9 @@ export type BackendConfig = z.infer<typeof envSchema> & {
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): BackendConfig {
   const parsed = envSchema.parse({
     ...env,
-    ADMIN_IDS: env.ADMIN_IDS ?? env.CONTROLLER_ADMIN_IDS,
+    // An empty ADMIN_IDS must still fall back to the legacy variable, otherwise
+    // an unset-but-present env leaves the Studio with no administrators.
+    ADMIN_IDS: env.ADMIN_IDS || env.CONTROLLER_ADMIN_IDS,
   });
   if (parsed.NODE_ENV === "production") {
     if (!parsed.COMMAND_CENTER_TOKEN) throw new Error("COMMAND_CENTER_TOKEN is required in production");

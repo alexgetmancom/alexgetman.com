@@ -66,8 +66,9 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
     return true;
   }
   if (data.startsWith("analytics_video:")) {
-    const id = Number(data.slice("analytics_video:".length));
+    const id = archiveItemId(data, "analytics_video:");
     await ctx.answerCallbackQuery();
+    if (id == null) return true;
     await ctx.editMessageText(analytics.videoMetrics(id, locale), {
       parse_mode: "Markdown",
       reply_markup: new InlineKeyboard()
@@ -89,9 +90,10 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
     return true;
   }
   if (data.startsWith("analytics_post:")) {
-    const id = Number(data.slice("analytics_post:".length));
-    const media = analytics.postMedia(id, locale);
+    const id = archiveItemId(data, "analytics_post:");
     await ctx.answerCallbackQuery();
+    if (id == null) return true;
+    const media = analytics.postMedia(id, locale);
     const keyboard = new InlineKeyboard();
     if (media.length) keyboard.text(t(locale, "analytics.show-media"), `analytics_post_media:${id}`).row();
     keyboard.text(t(locale, "analytics.back-archive"), "analytics_post_archive:0").row().text(t(locale, "common.menu"), "menu_home");
@@ -102,9 +104,9 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
     return true;
   }
   if (data.startsWith("analytics_post_media:")) {
-    const id = Number(data.slice("analytics_post_media:".length));
+    const id = archiveItemId(data, "analytics_post_media:");
     await ctx.answerCallbackQuery();
-    if (Number.isSafeInteger(id)) await sendTelegramArchiveMedia(ctx, analytics.postMedia(id, locale));
+    if (id != null) await sendTelegramArchiveMedia(ctx, analytics.postMedia(id, locale));
     return true;
   }
   if (data !== "analytics_ai") return false;
@@ -116,6 +118,13 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
     reply_markup: new InlineKeyboard().text(t(locale, "analytics.back-video"), "analytics_section:video:7"),
   });
   return true;
+}
+
+/** Callback data is attacker-controlled text; an archive id is only usable once
+ * it is a real integer. */
+function archiveItemId(data: string, prefix: string): number | null {
+  const id = Number(data.slice(prefix.length));
+  return Number.isSafeInteger(id) ? id : null;
 }
 
 function analyticsPeriod(value: number): 1 | 7 | 30 {
@@ -142,11 +151,12 @@ export async function showAnalyticsDashboard(
 /** Refreshes only the currently open dashboard for each owner. The interface
  * binding prevents hourly analytics collection from creating chat noise. */
 export async function refreshTelegramAnalyticsDashboards(bot: Bot, backendDb: BackendDb, config: BackendConfig): Promise<number> {
+  const analytics = studioServices(backendDb, config).analytics;
   const results = await Promise.all(
     telegramAnalyticsDashboards(backendDb).map(async (card) => {
       const section = card.section === "overview" && !showOverview(config) ? defaultAnalyticsSection(config) : card.section;
       const locale = botLocale(backendDb, card.adminId);
-      const dashboard = studioServices(backendDb, config).analytics.dashboard(section, card.days, locale);
+      const dashboard = analytics.dashboard(section, card.days, locale);
       try {
         await bot.api.editMessageText(
           card.chatId,
@@ -211,20 +221,14 @@ function showOverview(config: BackendConfig): boolean {
   return config.studio.modules.text_posting && config.studio.modules.video_posting;
 }
 
+const PERIOD_LABELS: Record<1 | 7 | 30, { ru: string; en: string }> = {
+  1: { ru: "24 ч", en: "24 h" },
+  7: { ru: "7 д", en: "7 d" },
+  30: { ru: "30 д", en: "30 d" },
+};
+
 function periodButtonLabel(locale: ReturnType<typeof botLocale>, period: 1 | 7 | 30, selected: 1 | 7 | 30): string {
-  const label =
-    period === 1
-      ? locale === "ru"
-        ? "24 ч"
-        : "24 h"
-      : period === 7
-        ? locale === "ru"
-          ? "7 д"
-          : "7 d"
-        : locale === "ru"
-          ? "30 д"
-          : "30 d";
-  return `${period === selected ? "• " : ""}${label}`;
+  return `${period === selected ? "• " : ""}${PERIOD_LABELS[period][locale === "ru" ? "ru" : "en"]}`;
 }
 
 function archivePagination(

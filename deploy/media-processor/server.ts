@@ -113,13 +113,22 @@ function telegramVideoKbps(duration: number, audioBitrate: number): number {
   return Math.max(150, Math.floor((targetBits / duration - audioBitrate - 24_000) / 1000));
 }
 
-async function streamToFile(source: ReadableStream<Uint8Array>, output: string): Promise<void> {
+/** `content-length` is a client claim, so the cap is also enforced on the bytes
+ * that actually arrive — otherwise an understated header fills the VM disk that
+ * holds both /work and the cache. */
+async function streamToFile(source: ReadableStream<Uint8Array>, output: string, limitBytes: number): Promise<void> {
   const sink = Bun.file(output).writer();
   const reader = source.getReader();
+  let written = 0;
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
+      written += value.byteLength;
+      if (written > limitBytes) {
+        await reader.cancel();
+        throw new Error("source_exceeds_limit");
+      }
       sink.write(value);
     }
   } finally {
@@ -161,27 +170,31 @@ async function transcode(
   // while the output is still an atomic temporary file.
   const standardPartial = `${standardCached}.${id}.part${ext}`;
   const telegramPartial = `${telegramCached}.${id}.part${ext}`;
-  await mkdir(folder, { recursive: true });
-  await mkdir("/work/cache", { recursive: true });
-  // Keep the incoming asset streaming to the VM disk; only ffmpeg owns the
-  // media bytes after this point.
-  await streamToFile(source, input);
-  // This VM's compose.yml caps the container at 2 CPUs; keep ffmpeg inside that budget.
-  const sourceMetadata = await probeSource(input);
-  const blur = needsVerticalBlur(sourceMetadata.width, sourceMetadata.height);
-  const args =
-    mediaKind === "video"
-      ? transform === "story_vertical"
-        ? remoteStoryFfmpegArgs(
-            input,
-            standardPartial,
-            telegramPartial,
-            telegramVideoKbps(sourceMetadata.duration, sourceMetadata.audioBitrate),
-            blur,
-          )
-        : remoteSiteVideoFfmpegArgs(input, standardPartial, blur)
-      : verticalImageFfmpegArgs(input, standardPartial, blur);
   try {
+    await mkdir(folder, { recursive: true });
+    await mkdir("/work/cache", { recursive: true });
+    // Keep the incoming asset streaming to the VM disk; only ffmpeg owns the
+    // media bytes after this point.
+    try {
+      await streamToFile(source, input, maxBytes);
+    } catch {
+      return new Response("invalid_source_size", { status: 413 });
+    }
+    // This VM's compose.yml caps the container at 2 CPUs; keep ffmpeg inside that budget.
+    const sourceMetadata = await probeSource(input);
+    const blur = needsVerticalBlur(sourceMetadata.width, sourceMetadata.height);
+    const args =
+      mediaKind === "video"
+        ? transform === "story_vertical"
+          ? remoteStoryFfmpegArgs(
+              input,
+              standardPartial,
+              telegramPartial,
+              telegramVideoKbps(sourceMetadata.duration, sourceMetadata.audioBitrate),
+              blur,
+            )
+          : remoteSiteVideoFfmpegArgs(input, standardPartial, blur)
+        : verticalImageFfmpegArgs(input, standardPartial, blur);
     const child = Bun.spawn(["ffmpeg", ...args], { stdout: "ignore", stderr: "pipe" });
     let timedOut = false;
     const timer = setTimeout(() => {

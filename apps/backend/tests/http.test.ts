@@ -1,5 +1,5 @@
-import { describe, expect, it, mock } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { afterEach, describe, expect, it, mock } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApiHandler } from "../src/api.js";
@@ -9,9 +9,20 @@ import { loadConfig } from "../src/foundation/config.js";
 import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
 import { enqueuePublishJobTx } from "../src/publishing/queue.js";
 
+const tempDirs: string[] = [];
+
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
 function tempDb() {
-  const dir = mkdtempSync(join(tmpdir(), "alexgetman-http-"));
-  return openBackendDb(join(dir, "pipeline.db"), 5000);
+  return openBackendDb(join(tempDir("alexgetman-http-"), "pipeline.db"), 5000);
 }
 
 function createApiApp(
@@ -107,7 +118,7 @@ describe("Astro endpoint controller", () => {
 
   it("serves engagement, MCP and authenticated Telegram webhook routes", async () => {
     const backendDb = tempDb();
-    const dir = mkdtempSync(join(tmpdir(), "alexgetman-engagement-"));
+    const dir = tempDir("alexgetman-engagement-");
     try {
       const init = mock(async () => undefined);
       const handleUpdate = mock(async () => undefined);
@@ -213,7 +224,7 @@ describe("Astro endpoint controller", () => {
 
   it("renders the full command center through the framework-neutral controller", async () => {
     const backendDb = tempDb();
-    const dir = mkdtempSync(join(tmpdir(), "alexgetman-markdown-"));
+    const dir = tempDir("alexgetman-markdown-");
     try {
       backendDb.sqlite
         .prepare(

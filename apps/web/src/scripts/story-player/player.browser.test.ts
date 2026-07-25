@@ -14,6 +14,8 @@ const originalGlobals = {
   navigator: globalThis.navigator,
 };
 const originalLocalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+/** The tracker's real dwell is 2s; the rule under test is the timer, not its length. */
+const DWELL_MS = 120;
 
 function installDom(url = "https://example.test/stories/"): Window {
   const window = new Window({ url });
@@ -191,34 +193,34 @@ describe("story player browser behavior", () => {
   it("does not record a story view when running on localhost", async () => {
     const window = installDom("http://localhost:4321/");
     const beacons = stubSendBeacon(window);
-    const tracker = createStoryViewTracker({ activeIndex: () => 0, normalizedPath });
+    const tracker = createStoryViewTracker({ activeIndex: () => 0, normalizedPath, dwellMs: DWELL_MS });
 
     tracker.scheduleStoryView(post({ url: "/stories/other/" }));
-    await Bun.sleep(2100);
+    await Bun.sleep(DWELL_MS + 60);
     expect(beacons).toHaveLength(0);
   });
 
   it("does not record a view for the post already being viewed", async () => {
     const window = installDom("https://example.test/stories/example/");
     const beacons = stubSendBeacon(window);
-    const tracker = createStoryViewTracker({ activeIndex: () => 0, normalizedPath });
+    const tracker = createStoryViewTracker({ activeIndex: () => 0, normalizedPath, dwellMs: DWELL_MS });
 
     tracker.scheduleStoryView(post({ url: "/stories/example/" }));
-    await Bun.sleep(2100);
+    await Bun.sleep(DWELL_MS + 60);
     expect(beacons).toHaveLength(0);
   });
 
   it("records a story view once via sendBeacon, deduped by sessionStorage on repeat", async () => {
     const window = installDom("https://example.test/stories/");
     const beacons = stubSendBeacon(window);
-    const tracker = createStoryViewTracker({ activeIndex: () => 0, normalizedPath });
+    const tracker = createStoryViewTracker({ activeIndex: () => 0, normalizedPath, dwellMs: DWELL_MS });
 
     tracker.scheduleStoryView(post({ url: "/stories/other/", id: "post-1" }));
-    await Bun.sleep(2100);
+    await Bun.sleep(DWELL_MS + 60);
     expect(beacons).toEqual(["/stats/pageview"]);
 
     tracker.scheduleStoryView(post({ url: "/stories/other/", id: "post-1" }));
-    await Bun.sleep(2100);
+    await Bun.sleep(DWELL_MS + 60);
     expect(beacons).toHaveLength(1);
   });
 
@@ -226,11 +228,11 @@ describe("story player browser behavior", () => {
     const window = installDom("https://example.test/stories/");
     const beacons = stubSendBeacon(window);
     let active = 0;
-    const tracker = createStoryViewTracker({ activeIndex: () => active, normalizedPath });
+    const tracker = createStoryViewTracker({ activeIndex: () => active, normalizedPath, dwellMs: DWELL_MS });
 
     tracker.scheduleStoryView(post({ url: "/stories/other/" }));
     active = 1;
-    await Bun.sleep(2100);
+    await Bun.sleep(DWELL_MS + 60);
     expect(beacons).toHaveLength(0);
   });
 });

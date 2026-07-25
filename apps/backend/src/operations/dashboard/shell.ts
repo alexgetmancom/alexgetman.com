@@ -7,13 +7,15 @@ export function renderDashboardShell(body: string): string {
   <meta name="robots" content="noindex, nofollow">
   <title>Command Center</title>
   <style>
-    body { margin:0; padding:12px; background:#0d1117; color:#c9d1d9; font:16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
-    main { max-width:1680px; margin:0 auto; }
+    body { margin:0; padding:24px; background:#050607; color:#aeb6c2; font:16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    main { max-width:1440px; margin:0 auto; }
     h1,h2 { color:#fff; }
     .dashboard-heading { margin-bottom:12px; }
     .dashboard-heading h1 { margin-bottom:4px; }
-    .dashboard-tabs { display:flex; gap:6px; flex-wrap:wrap; margin:0 0 6px; }
-    .dashboard-tabs a { border:1px solid #30363d; border-radius:14px; padding:4px 9px; font-size:14px; text-decoration:none; color:#c9d1d9; background:#161b22; }
+    .dashboard-tabs { display:flex; align-items:center; flex-wrap:wrap; gap:22px; margin:0 0 16px; border-bottom:1px solid #20252d; }
+    .dashboard-tabs a { padding:0 0 11px; border:0; border-radius:0; background:transparent; color:#697382; font-size:16px; font-weight:600; text-decoration:none; }
+    .dashboard-tabs a:hover { color:#dce7f5; }
+    .dashboard-tabs a.active { color:#f5f8fc; box-shadow:inset 0 -2px #4c98ff; }
     .overview { padding:0; border:0; background:transparent; overflow:visible; }
     .audience-strip { margin:0 0 6px; padding:6px; border:1px solid #30363d; border-radius:8px; background:#161b22; }
     .audience-cards { display:flex; gap:6px; overflow-x:auto; padding-bottom:2px; }
@@ -76,16 +78,17 @@ export function renderDashboardShell(body: string): string {
     .pag-btn:hover:not(.disabled) { background: #21262d; border-color: #8b949e; }
     .pag-btn.disabled { color: #8b949e; border-color: #21262d; background: #0d1117; cursor: not-allowed; }
     .pag-current { font-weight: 700; color: #fff; font-size: 14px; }
-    .metric-chart { position:relative; margin:0; padding:7px 10px 4px; background:#0d1117; border:1px solid #30363d; border-radius:8px; }
-    .metric-chart svg { width:100%; height:166px; display:block; }
-    .metric-chart text { fill:#8b949e; font-size:11px; }
-    .chart-grid { stroke:#30363d; stroke-width:1; opacity:.75; }
+    .metric-chart { position:relative; margin:8px 0 0; padding:0; background:transparent; border:0; border-radius:0; }
+    .metric-chart svg { width:100%; height:188px; display:block; }
+    .metric-chart text { fill:#8b949e; font-size:13px; }
+    .chart-grid { stroke:#1e252d; stroke-width:1; opacity:.75; }
     .chart-line { vector-effect: non-scaling-stroke; }
-    .metric-chart__legend { display:flex; flex-wrap:wrap; gap:11px; margin:0 0 -1px; color:#c9d1d9; font-size:12px; }
+    .metric-chart__legend { display:flex; flex-wrap:wrap; gap:11px; margin:11px 0 0; color:#b3bdca; font-size:15px; }
+    .metric-chart__legend em { margin-left:4px; color:#758194; font-size:12px; font-style:normal; }
     .metric-chart__legend span { display:inline-flex; align-items:center; gap:5px; }
     .metric-chart__legend i { display:inline-block; width:9px; height:9px; border-radius:50%; }
-    .metric-chart__hint { color:#8b949e; font-size:11px; margin:0 0 2px; }
-    .chart-point { vector-effect: non-scaling-stroke; stroke:#0d1117; stroke-width:1.4; }
+    .metric-chart__hint { display:none; }
+    .chart-point { vector-effect: non-scaling-stroke; stroke:#050607; stroke-width:1.4; }
     .chart-hit { fill:transparent; cursor:crosshair; }
     .chart-tooltip { position:fixed; z-index:50; pointer-events:none; max-width:280px; padding:7px 9px; background:#161b22; border:1px solid #58a6ff; border-radius:6px; color:#f0f6fc; font-size:12px; box-shadow:0 8px 24px rgba(0,0,0,.35); white-space:nowrap; }
     
@@ -109,16 +112,9 @@ export function renderDashboardShell(body: string): string {
     .notification-list time { color:#8b949e; font-size:12px; white-space:nowrap; }
     .notification--warn span, .notification--error span { color:#ff7b72; }
 
-    /* Overview: quiet, information-first surface. These rules reuse shared class
-       names (body, main, .dashboard-tabs, .metric-chart, ...) so they cascade
-       over every tab, not just Overview — do not assume the block above still
-       renders for those selectors. */
-    body { padding:24px; background:#050607; color:#aeb6c2; }
-    main { max-width:1440px; }
-    .dashboard-tabs { display:flex; align-items:center; gap:22px; margin:0 0 16px; border-bottom:1px solid #20252d; }
-    .dashboard-tabs a { padding:0 0 11px; border:0; border-radius:0; background:transparent; color:#697382; font-size:16px; font-weight:600; }
-    .dashboard-tabs a:hover { color:#dce7f5; border:0; }
-    .dashboard-tabs a.active { background:transparent; color:#f5f8fc; border:0; box-shadow:inset 0 -2px #4c98ff; }
+    /* Overview-specific surface. Rules shared with the other tabs (body, main,
+       .dashboard-tabs, .metric-chart, ...) are declared once above; only
+       selectors unique to this screen belong here. */
     .pipeline-overview { padding:0; background:transparent; border:0; border-radius:0; overflow:visible; }
     .dashboard-nav__controls { display:flex; align-items:center; gap:18px; margin-left:auto; padding-bottom:10px; }
     .period-controls { display:flex; padding:3px; border:1px solid #252b34; border-radius:8px; background:rgba(255,255,255,.025); }
@@ -138,9 +134,6 @@ export function renderDashboardShell(body: string): string {
     .audience-list { margin-top:14px; } .audience-line { display:flex; align-items:baseline; justify-content:space-between; padding:12px 0; border-bottom:1px solid #151a20; font-size:17px; }
     .audience-line__label { display:inline-flex; align-items:center; gap:12px; } .audience-line__label i { display:inline-flex; width:24px; height:24px; align-items:center; justify-content:center; color:#e5eaf0; font-style:normal; } .audience-line__label svg { width:22px; height:22px; }
     .audience-line span { color:#c3cbd5; } .audience-line strong { color:#e4eaf2; font-size:18px; font-weight:600; }
-    .metric-chart { margin-top:8px; padding:0; background:transparent; border:0; border-radius:0; }
-    .metric-chart svg { height:188px; } .metric-chart text { font-size:13px; } .metric-chart__legend { margin:11px 0 0; font-size:15px; color:#b3bdca; }
-    .metric-chart__hint { display:none; } .chart-grid { stroke:#1e252d; } .chart-point { stroke:#050607; } .metric-chart__legend em { margin-left:4px; color:#758194; font-size:12px; font-style:normal; }
     .publication-columns { display:grid; grid-template-columns:minmax(340px,.3fr) minmax(0,.7fr); gap:34px; padding-top:26px; }
     .best-posts,.recent-posts { min-width:0; padding:0; border:0; border-radius:0; background:transparent; } .recent-posts { padding-left:34px; border-left:1px solid #1c222a; }
     .best-post { display:grid; grid-template-columns:39px minmax(0,1fr) 92px; gap:13px; align-items:start; padding:18px 0; border-bottom:1px solid #171c22; }

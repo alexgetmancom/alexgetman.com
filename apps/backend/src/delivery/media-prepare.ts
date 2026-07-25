@@ -33,7 +33,11 @@ export async function prepareMediaItems(
     if (item.type === "VIDEO") {
       uploadPath = await normalizeVideoForPublicUpload(config, localPath, cacheKey, target);
     }
-    const remoteFilename = `cache-${cacheKey}${path.extname(uploadPath) || mediaExtension(item)}`;
+    // The public filename must vary with the *normalized* file, not the source:
+    // two targets with different videoBounds produce different local files but
+    // would otherwise stage under one name, and copyIfMissing would silently
+    // serve the first target's resolution to the second.
+    const remoteFilename = `cache-${remoteVariantKey(cacheKey, localPath, uploadPath)}${path.extname(uploadPath) || mediaExtension(item)}`;
     const stagedPath = path.join(config.REMOTE_MEDIA_PATH, remoteFilename);
     await copyIfMissing(uploadPath, stagedPath);
 
@@ -58,6 +62,18 @@ export async function prepareMediaItems(
   }
 
   return prepared;
+}
+
+/** Source media stages under its own cache key; a normalized derivative gets the
+ * variant marker its local filename already carries (e.g. `1080x1920`), so each
+ * bounds variant owns a distinct public URL. */
+function remoteVariantKey(cacheKey: string, localPath: string, uploadPath: string): string {
+  if (uploadPath === localPath) return cacheKey;
+  const variant = path
+    .basename(uploadPath, path.extname(uploadPath))
+    .replace(`${cacheKey}.`, "")
+    .replace(/[^a-z0-9.]+/gi, "-");
+  return variant ? `${cacheKey}-${variant}` : cacheKey;
 }
 
 function isTelegramStoryTarget(target: string | undefined): boolean {

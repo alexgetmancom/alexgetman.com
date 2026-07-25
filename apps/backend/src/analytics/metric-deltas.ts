@@ -145,6 +145,9 @@ export function textTotals(backendDb: BackendDb, since: string): { views: number
   const totals = metricDeltasSince(backendDb, since, "text");
   return {
     views: totals.views ?? 0,
+    // `replies`/`comments` and `reposts`/`shares` are the same action under two
+    // provider names, and each provider emits only one of the pair — summing is
+    // what aggregates them across platforms.
     interactions: (totals.likes ?? 0) + (totals.replies ?? 0) + (totals.reposts ?? 0) + (totals.shares ?? 0) + (totals.comments ?? 0),
   };
 }
@@ -156,7 +159,18 @@ export function siteTotal(backendDb: BackendDb, since: string): number {
 export function latestVideoMetrics(backendDb: BackendDb, since: string): VideoMetricRow[] {
   const rows = backendDb.sqlite
     .prepare(
-      `SELECT target.target AS platform, draft.label, target.published_at, latest.metrics_json AS latest_metrics, baseline.metrics_json AS baseline_metrics FROM video_targets target JOIN video_drafts draft ON draft.id = target.video_draft_id JOIN video_metric_snapshots latest ON latest.id = (SELECT id FROM video_metric_snapshots WHERE video_target_id = target.id ORDER BY sampled_at DESC, id DESC LIMIT 1) LEFT JOIN video_metric_snapshots baseline ON baseline.id = (SELECT id FROM video_metric_snapshots WHERE video_target_id = target.id AND sampled_at <= ? ORDER BY sampled_at DESC, id DESC LIMIT 1) WHERE target.status = 'published' ORDER BY latest.id DESC`,
+      `SELECT target.target AS platform, draft.label, target.published_at,
+              latest.metrics_json AS latest_metrics, baseline.metrics_json AS baseline_metrics
+       FROM video_targets target
+       JOIN video_drafts draft ON draft.id = target.video_draft_id
+       JOIN video_metric_snapshots latest ON latest.id =
+         (SELECT id FROM video_metric_snapshots WHERE video_target_id = target.id
+          ORDER BY sampled_at DESC, id DESC LIMIT 1)
+       LEFT JOIN video_metric_snapshots baseline ON baseline.id =
+         (SELECT id FROM video_metric_snapshots WHERE video_target_id = target.id AND sampled_at <= ?
+          ORDER BY sampled_at DESC, id DESC LIMIT 1)
+       WHERE target.status = 'published'
+       ORDER BY latest.id DESC`,
     )
     .all(since) as Array<{
     platform: string;

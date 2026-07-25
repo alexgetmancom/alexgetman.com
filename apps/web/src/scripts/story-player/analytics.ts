@@ -3,9 +3,12 @@ import type { StoryPost } from "./types";
 type StoryViewOptions = {
   activeIndex: () => number;
   normalizedPath: (value: string) => string;
+  /** How long a story must stay on screen before it counts as viewed. Exposed so
+   * tests can exercise the dwell rule without sleeping for the real delay. */
+  dwellMs?: number;
 };
 
-export function createStoryViewTracker({ activeIndex, normalizedPath }: StoryViewOptions): {
+export function createStoryViewTracker({ activeIndex, normalizedPath, dwellMs = 2000 }: StoryViewOptions): {
   scheduleStoryView: (post: StoryPost) => void;
 } {
   let storyViewTimer: number | null = null;
@@ -46,7 +49,7 @@ export function createStoryViewTracker({ activeIndex, normalizedPath }: StoryVie
         if (scheduledIndex === activeIndex()) {
           recordStoryView(post);
         }
-      }, 2000);
+      }, dwellMs);
     },
   };
 }
