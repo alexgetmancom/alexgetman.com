@@ -60,7 +60,7 @@ function jsonSchema(def: { schema: z.ZodType; list?: z.ZodType }): JsonObject {
 
 function parseArgs<T>(schema: z.ZodType<T>, args: unknown): T {
   const result = schema.safeParse(args);
-  if (!result.success) throw new Error(result.error.issues[0]?.message ?? "invalid arguments");
+  if (!result.success) throw new McpToolError(-32602, result.error.issues[0]?.message ?? "invalid arguments");
   return result.data;
 }
 
@@ -496,7 +496,7 @@ export async function mcpResponse(
     return success(id, await runStudioTool(backendDb, config, actorId, name, args));
   } catch (error) {
     if (error instanceof McpToolError) return rpcError(id, error.code, error.message);
-    return rpcError(id, -32602, error instanceof Error ? error.message : String(error));
+    return rpcError(id, -32603, error instanceof Error ? error.message : String(error));
   }
 }
 
@@ -508,7 +508,7 @@ async function runStudioTool(
   args: JsonObject,
 ): Promise<unknown> {
   const def = (studioToolDefs as Record<string, ToolDef>)[name];
-  if (!def) throw new Error(`Unknown Studio tool: ${name}`);
+  if (!def) throw new McpToolError(-32601, `Unknown Studio tool: ${name}`);
   const studio: StudioServices = studioServices(backendDb, config);
   const input = parseArgs(def.schema, args);
   const result = await def.handler(studio, actorId, input);

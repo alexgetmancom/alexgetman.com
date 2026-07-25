@@ -35,9 +35,8 @@ import { loadGiscusDiscussion } from "../../scripts/story-player/discussion";
 import { setDiscussionVisibility } from "../../scripts/story-player/discussion-state";
 import { advanceGallerySequence } from "../../scripts/story-player/gallery-state";
 import { preloadAdjacentMedia } from "../../scripts/story-player/media";
-import { readMutedPreference } from "../../scripts/story-player/preferences";
+import { readMutedPreference, writeMutedPreference } from "../../scripts/story-player/preferences";
 import { createStoryProgressController } from "../../scripts/story-player/progress";
-import type { StoryPost } from "../../scripts/story-player/types";
 import { giscusConfig, storyIntervalMs, swipeThresholdPx, wheelCooldownMs } from "./config";
 import type { StoryUi } from "./i18n";
 import type { PlayerPost } from "./payload";
@@ -126,8 +125,8 @@ function goTo(index: number, options: { keepProgressIdle?: boolean } = {}): void
   setDiscussion(false);
   updating = true;
   progress?.resetForStory(options);
-  viewTracker?.scheduleStoryView(activePost as unknown as StoryPost);
-  preloadAdjacentMedia({ active, posts: posts as unknown as StoryPost[], toPublicSrc: (value) => value ?? "" });
+  viewTracker?.scheduleStoryView(activePost);
+  preloadAdjacentMedia({ active, posts, toPublicSrc: (value) => value ?? "" });
   window.requestAnimationFrame(() => {
     window.requestAnimationFrame(() => (updating = false));
   });
@@ -174,11 +173,7 @@ function syncPlayback(): void {
 
 function setMuted(nextMuted: boolean, persist = true): void {
   audioState = applyMutePreference(nextMuted);
-  if (persist) {
-    try {
-      localStorage.setItem("story-player-muted", String(audioState.muted));
-    } catch {}
-  }
+  if (persist) writeMutedPreference(audioState.muted);
   if (audio) {
     audio.muted = audioState.muted;
     if (!audioState.muted && audio.getAttribute("src") && activePost?.mediaType !== "video") audio.play?.().catch(() => {});
@@ -269,7 +264,7 @@ function openDiscussion(): void {
   discussionUrl.searchParams.set("discussion", "1");
   window.history.replaceState(window.history.state, "", `${discussionUrl.pathname}${discussionUrl.search}${discussionUrl.hash}`);
   discussionTerm = loadGiscusDiscussion({
-    post: activePost as unknown as StoryPost,
+    post: activePost,
     discussionFrame,
     giscusConfig: { ...giscusConfig, lang: locale },
     ui: ui as unknown as Record<string, string>,
@@ -389,7 +384,7 @@ onMount(() => {
   progress = createStoryProgressController({
     getVideo: () => video,
     getProgressFill: () => progressFill,
-    posts: posts as unknown as StoryPost[],
+    posts,
     activeIndex: () => active,
     isPaused: () => paused,
     onAdvance: () => advanceStory(),

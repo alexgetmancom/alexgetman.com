@@ -125,15 +125,11 @@ function target(name: string | undefined): DeploymentTarget {
 }
 
 async function command(args: string[], allowFailure = false): Promise<string> {
-  const process = Bun.spawn(["docker", ...args], {
+  const child = Bun.spawn(["docker", ...args], {
     stdout: "pipe",
     stderr: "pipe",
   });
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(process.stdout).text(),
-    new Response(process.stderr).text(),
-    process.exited,
-  ]);
+  const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
   if (code !== 0 && !allowFailure) throw new Error(stderr.trim() || `docker ${args.join(" ")} exited with ${code}`);
   return stdout.trim();
 }

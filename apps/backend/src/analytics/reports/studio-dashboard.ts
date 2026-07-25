@@ -1,5 +1,5 @@
 import type { BackendDb } from "../../db/client.js";
-import { creatorProfiles } from "../../db/schema.js";
+import { creatorProfiles, socialComments } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import type { StudioLocale as BotLocale } from "../../foundation/locale.js";
 import { t } from "../../interfaces/telegram/i18n/index.js";
@@ -184,20 +184,11 @@ function unifiedAnalyticsTable(
       growth: profileMap.has(platform) ? (growth.get(platform) ?? null) : null,
       value: content.get(platform) ?? emptyMetrics(),
     }));
-  const totalContent = rows.reduce(
-    (sum, row) => ({
-      views: sum.views + row.value.views,
-      likes: sum.likes + row.value.likes,
-      comments: sum.comments + row.value.comments,
-      shares: sum.shares + row.value.shares,
-      saves: sum.saves + row.value.saves,
-    }),
-    emptyMetrics(),
-  );
+  const totalContent = sumContentMetrics(rows.map((row) => row.value));
   const totalFollowers = profiles.reduce((sum, row) => sum + metricNumber(row.dataJson.subscriberCount ?? row.dataJson.followersCount), 0);
   const totalGrowth = rows.reduce((sum, row) => sum + (row.growth ?? 0), 0);
-  const all = locale === "ru" ? "Все" : "All";
-  const headers = [locale === "ru" ? "Площадка" : "Platform", "👥", "📈", "👁", "♥", "💬", "↗", "🔖"];
+  const all = t(locale, "sdash.all");
+  const headers = [t(locale, "sdash.platform-col"), "👥", "📈", "👁", "♥", "💬", "↗", "🔖"];
   const tableRows = [
     { platform: "all", label: `📊 ${all}`, growth: totalGrowth, value: totalContent },
     ...rows.map((row) => ({ label: `${platformIcon(row.platform)} ${platformLabel(row.platform)}`, ...row })),
@@ -225,8 +216,8 @@ function publishedPostTable(backendDb: BackendDb, config: BackendConfig, since: 
   if (!rows.length) return [];
   const values = rows.map(contentMetrics);
   const total = sumContentMetrics(values);
-  const all = locale === "ru" ? "Все" : "All";
-  const headers = [locale === "ru" ? "Пост" : "Post", "👁", "♥", "💬", "↗", "🔖"];
+  const all = t(locale, "sdash.all");
+  const headers = [t(locale, "sdash.post-col"), "👁", "♥", "💬", "↗", "🔖"];
   const tableRows = [
     [all, String(total.views), String(total.likes), String(total.comments), dash(total.shares), dash(total.saves)],
     ...topDetails(rows, days).map((row) =>
@@ -281,8 +272,8 @@ function publishedVideoTable(
   if (!rows.length) return [];
   const values = rows.map((row) => contentMetrics(row));
   const total = sumContentMetrics(values);
-  const all = locale === "ru" ? "Все" : "All";
-  const headers = [locale === "ru" ? "Видео" : "Video", "👁", "♥", "💬", "↗", "🔖"];
+  const all = t(locale, "sdash.all");
+  const headers = [t(locale, "sdash.video-col"), "👁", "♥", "💬", "↗", "🔖"];
   const tableRows = [
     [all, String(total.views), String(total.likes), String(total.comments), dash(total.shares), dash(total.saves)],
     ...topDetails(rows, days).map((row) => {
@@ -356,38 +347,25 @@ function followerCount(data: Record<string, unknown> | undefined): number {
   return metricNumber(data?.subscriberCount ?? data?.followersCount);
 }
 
+const PLATFORM_DISPLAY: Record<string, { label: string; icon: string }> = {
+  bluesky: { label: "Bluesky", icon: "🦋" },
+  facebook: { label: "Facebook EN", icon: "ⓕ" },
+  facebook_en: { label: "Facebook EN", icon: "ⓕ" },
+  instagram: { label: "Instagram", icon: "📸" },
+  telegram: { label: "Telegram", icon: "✈️" },
+  threads: { label: "Threads", icon: "@" },
+  threads_en: { label: "Threads EN", icon: "@" },
+  threads_ru: { label: "Threads RU", icon: "@" },
+  x: { label: "X", icon: "𝕏" },
+  youtube: { label: "YouTube", icon: "▶️" },
+};
+
 function platformLabel(platform: string): string {
-  return (
-    {
-      bluesky: "Bluesky",
-      facebook: "Facebook EN",
-      facebook_en: "Facebook EN",
-      instagram: "Instagram",
-      telegram: "Telegram",
-      threads: "Threads",
-      threads_en: "Threads EN",
-      threads_ru: "Threads RU",
-      x: "X",
-      youtube: "YouTube",
-    }[platform] ?? platform
-  );
+  return PLATFORM_DISPLAY[platform]?.label ?? platform;
 }
 
 function platformIcon(platform: string): string {
-  return (
-    {
-      bluesky: "🦋",
-      facebook: "ⓕ",
-      facebook_en: "ⓕ",
-      instagram: "📸",
-      telegram: "✈️",
-      threads: "@",
-      threads_en: "@",
-      threads_ru: "@",
-      x: "𝕏",
-      youtube: "▶️",
-    }[platform] ?? "•"
-  );
+  return PLATFORM_DISPLAY[platform]?.icon ?? "•";
 }
 
 function contentMetricsFromProfile(
@@ -429,5 +407,5 @@ function enabledAudiencePlatforms(config: BackendConfig): Set<string> {
 }
 
 function hasAudienceComments(backendDb: BackendDb): boolean {
-  return backendDb.sqlite.prepare("SELECT 1 FROM social_comments LIMIT 1").get() != null;
+  return backendDb.db.select({ platform: socialComments.platform }).from(socialComments).limit(1).get() != null;
 }

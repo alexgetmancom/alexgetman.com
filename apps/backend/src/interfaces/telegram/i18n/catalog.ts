@@ -321,6 +321,10 @@ const en = {
   "sdash.growth-lc": "growth · {period}",
   "sdash.avg-views": "avg. views/post",
   "sdash.no-follower-count": "profile connected; follower count unavailable",
+  "sdash.all": "All",
+  "sdash.platform-col": "Platform",
+  "sdash.post-col": "Post",
+  "sdash.video-col": "Video",
   // AI audience analysis + bot start
   "audience.unavailable": "AI analysis is unavailable: add DEEPSEEK_API_KEY to secrets.env.",
   "audience.no-comments": "There are no cached comments yet. They will appear after the next daily metrics collection.",
@@ -710,6 +714,10 @@ const ru = {
   "sdash.growth-lc": "прирост · {period}",
   "sdash.avg-views": "ср. просмотров/пост",
   "sdash.no-follower-count": "профиль подключён; число подписчиков недоступно",
+  "sdash.all": "Все",
+  "sdash.platform-col": "Площадка",
+  "sdash.post-col": "Пост",
+  "sdash.video-col": "Видео",
   // AI audience analysis + bot start
   "audience.unavailable": "ИИ-анализ недоступен: добавьте DEEPSEEK_API_KEY в secrets.env.",
   "audience.no-comments": "Пока нет закэшированных комментариев. Они появятся после следующего ежедневного сбора статистики.",

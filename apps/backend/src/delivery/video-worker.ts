@@ -28,7 +28,7 @@ export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb)
   const jobs = claimVideoJobs(backendDb, config.PUBLISH_CLAIM_LIMIT);
   for (const job of jobs) {
     try {
-      await withHeartbeat(backendDb, job.id, config.VIDEO_HEARTBEAT_INTERVAL_SECONDS, () => executeVideoJob(config, backendDb, job));
+      await withHeartbeat(backendDb, job, config.VIDEO_HEARTBEAT_INTERVAL_SECONDS, () => executeVideoJob(config, backendDb, job));
       if (completeVideoJob(backendDb, job)) {
         recordVideoProgressEvent(backendDb, job, "video.job.completed");
         recordVideoCompletionIfFinal(backendDb, job.videoDraftId);
@@ -48,13 +48,9 @@ export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb)
  * flight, so recoverVideoLocks can use a short timeout without mistaking
  * "still working" for "worker crashed". Silence (a real crash) still goes
  * stale after VIDEO_LOCK_TIMEOUT_SECONDS with no heartbeat. */
-async function withHeartbeat<T>(backendDb: BackendDb, jobId: number, intervalSeconds: number, work: () => Promise<T>): Promise<T> {
+async function withHeartbeat<T>(backendDb: BackendDb, job: VideoJob, intervalSeconds: number, work: () => Promise<T>): Promise<T> {
   const timer = setInterval(() => {
-    backendDb.db
-      .update(videoJobs)
-      .set({ lockedAt: new Date().toISOString() })
-      .where(and(eq(videoJobs.id, jobId), eq(videoJobs.status, "running")))
-      .run();
+    backendDb.db.update(videoJobs).set({ lockedAt: new Date().toISOString() }).where(activeVideoJob(job)).run();
   }, intervalSeconds * 1000);
   try {
     return await work();
