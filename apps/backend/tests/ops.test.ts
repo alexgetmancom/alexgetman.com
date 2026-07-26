@@ -3,9 +3,17 @@ import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openBackendDb } from "../src/db/client.js";
+import { metricSchedule } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { capabilitySummary, seedCapabilities } from "../src/operations/capabilities.js";
-import { applyMetricsBackfill, backupDatabase, buildMetricsBackfillPlan, withMaintenanceLock } from "../src/operations/maintenance.js";
+import {
+  applyMetricsBackfill,
+  auditOperations,
+  backupDatabase,
+  buildMetricsBackfillPlan,
+  withMaintenanceLock,
+} from "../src/operations/maintenance.js";
+import { pipelineStatusPayload } from "../src/operations/read-model.js";
 
 describe("TypeScript operations tooling", () => {
   it("creates a consistent SQLite backup", async () => {
@@ -55,6 +63,25 @@ describe("TypeScript operations tooling", () => {
         backendDb.sqlite.prepare("SELECT check_count,frozen_at FROM metric_schedule WHERE post_key='post:1' AND target='threads_ru'").get(),
       ).toEqual({ check_count: 0, frozen_at: null });
       expect((backendDb.sqlite.prepare("SELECT count(*) AS count FROM maintenance_locks").get() as { count: number }).count).toBe(0);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("keeps frozen terminal metric history out of current status and audit errors", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      backendDb.db
+        .insert(metricSchedule)
+        .values([
+          { postKey: "post:active", target: "telegram", lastError: "temporary", updatedAt: now },
+          { postKey: "post:frozen", target: "telegram", lastError: "terminal", frozenAt: now, updatedAt: now },
+        ])
+        .run();
+      const status = pipelineStatusPayload(loadConfig({ PIPELINE_DB: ":memory:" }), backendDb);
+      expect(status.metrics.schedule?.errors).toBe(1);
+      expect(auditOperations(backendDb).metricScheduleErrors).toEqual([{ target: "telegram", count: 1, latest: now }]);
     } finally {
       backendDb.close();
     }

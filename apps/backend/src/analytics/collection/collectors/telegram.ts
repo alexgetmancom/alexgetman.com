@@ -6,9 +6,9 @@ import { TerminalMetricError } from "./errors.js";
 import type { MetricResult } from "./types.js";
 
 export async function collectTelegram(task: MetricTask, config: BackendConfig, fetchImpl: typeof fetch): Promise<MetricResult> {
-  const messageId = task.externalId;
-  if (!messageId || !/^\d+$/.test(messageId)) throw new TerminalMetricError(`invalid_telegram_message_id:${messageId ?? "missing"}`);
   const channel = config.CHANNEL_USERNAME.replace(/^@/, "");
+  const messageId = task.externalId ?? telegramMessageIdFromUrl(task.url, channel);
+  if (!messageId || !/^\d+$/.test(messageId)) throw new TerminalMetricError(`invalid_telegram_message_id:${messageId ?? "missing"}`);
   const html = await requestText(fetchImpl, `https://t.me/${channel}/${messageId}?embed=1&mode=tme`, {
     headers: { "User-Agent": "Mozilla/5.0 (compatible; alexgetman-backend/1.0)" },
     signal: AbortSignal.timeout(config.TELEGRAM_METRICS_TIMEOUT_SECONDS * 1000),
@@ -74,4 +74,16 @@ function parseCompactCount(value: string | undefined): number | null {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function telegramMessageIdFromUrl(value: string | null, channel: string): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    if (url.hostname !== "t.me" && url.hostname !== "www.t.me") return null;
+    const match = url.pathname.match(new RegExp(`^/(?:s/)?${escapeRegExp(channel)}/(\\d+)/?$`));
+    return match?.[1] ?? null;
+  } catch {
+    return null;
+  }
 }

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { and, desc, eq, gte, inArray, isNotNull, lt, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, sql } from "drizzle-orm";
 import { freezeDisabledMetricSchedules } from "../analytics/collection/metric-schedule.js";
 import type { BackendDb } from "../db/client.js";
 import {
@@ -130,7 +130,7 @@ export function auditOperations(backendDb: BackendDb): Record<string, unknown> {
     metricScheduleErrors: backendDb.db
       .select({ target: metricSchedule.target, count: sql<number>`count(*)`, latest: sql<string | null>`max(${metricSchedule.updatedAt})` })
       .from(metricSchedule)
-      .where(and(isNotNull(metricSchedule.lastError), sql`${metricSchedule.lastError} != ''`))
+      .where(and(isNull(metricSchedule.frozenAt), isNotNull(metricSchedule.lastError), sql`${metricSchedule.lastError} != ''`))
       .groupBy(metricSchedule.target)
       .orderBy(metricSchedule.target)
       .all(),

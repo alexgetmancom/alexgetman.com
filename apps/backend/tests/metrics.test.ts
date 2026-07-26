@@ -117,6 +117,20 @@ describe("Telegram public metrics", () => {
     if (!collector) throw new Error("Telegram collector is missing");
     await expect(collector(task("telegram"))).rejects.toBeInstanceOf(TerminalMetricError);
   });
+
+  it("recovers a legacy message ID from the canonical Telegram URL", async () => {
+    const html = `<section><div data-post="alexgetmancom/436"><span class="tgme_widget_message_views">42</span></div></section>`;
+    let requestedUrl = "";
+    const fetchImpl = mock(async (input: string | URL | Request) => {
+      requestedUrl = String(input);
+      return new Response(html, { status: 200 });
+    }) as unknown as typeof fetch;
+    const collector = createMetricCollectors(loadConfig({}), fetchImpl).telegram;
+    if (!collector) throw new Error("Telegram collector is missing");
+    const legacyTask = { ...task("telegram"), externalId: null, url: "https://t.me/alexgetmancom/436" };
+    expect(await collector(legacyTask)).toMatchObject({ metrics: { views: 42 } });
+    expect(requestedUrl).toBe("https://t.me/alexgetmancom/436?embed=1&mode=tme");
+  });
 });
 
 function seedPublishedPost(backendDb: ReturnType<typeof openBackendDb>, postKey: string, target: string): void {

@@ -94,7 +94,7 @@ export function pipelineStatusPayload(
       total: sql<number>`count(*)`,
       frozen: sql<number>`sum(case when ${metricSchedule.frozenAt} is not null then 1 else 0 end)`,
       due: sql<number>`sum(case when ${metricSchedule.frozenAt} is null and (${metricSchedule.nextCheckAt} is null or ${metricSchedule.nextCheckAt} <= ${now}) then 1 else 0 end)`,
-      errors: sql<number>`sum(case when ${metricSchedule.lastError} is not null then 1 else 0 end)`,
+      errors: sql<number>`sum(case when ${metricSchedule.frozenAt} is null and ${metricSchedule.lastError} is not null then 1 else 0 end)`,
       lastCheckedAt: sql<string | null>`max(${metricSchedule.lastCheckedAt})`,
     })
     .from(metricSchedule)
