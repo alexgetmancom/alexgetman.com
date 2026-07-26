@@ -1,3 +1,4 @@
+import { autoRetry } from "@grammyjs/auto-retry";
 import { Bot, type Context } from "grammy";
 import { handleAnalyticsCallback } from "./bot/analytics-screen.js";
 import { botLocale } from "./bot/i18n.js";
@@ -24,6 +25,12 @@ export function createBot(config: BackendConfig, backendDb: BackendDb): Bot | nu
     return null;
   }
   const bot = new Bot(config.controllerBotToken, { client: { apiRoot: config.TELEGRAM_API_BASE_URL } });
+  // Telegram answers 429 with a `retry_after` whenever the admin taps through
+  // screens quickly or a media upload hits a flood limit. Without this the
+  // rejected call lands in `bot.catch` below and the admin's action is simply
+  // lost. Internal server errors are left alone: retrying a 500 blindly can
+  // send the same message twice.
+  bot.api.config.use(autoRetry({ maxRetryAttempts: 3, maxDelaySeconds: 30, rethrowInternalServerErrors: true }));
   bindBotHandlers(bot, config, backendDb);
   void bot.api
     .setMyCommands([{ command: "start", description: "Восстановить меню бота" }])

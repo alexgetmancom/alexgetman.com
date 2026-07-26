@@ -48,8 +48,10 @@ jobs:
         run: bun run lint
       - name: Dead-code report
         run: bun run knip
-      - name: Backend tests
-        run: bun run test
+      - name: Tests with coverage threshold
+        run: bun run test:coverage
+      - name: Dependency audit
+        run: bun run check:audit
       - name: Web production build
         run: bun run check:web
         env:

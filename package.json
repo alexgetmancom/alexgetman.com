@@ -19,6 +19,8 @@
     "astro": "astro",
     "typecheck": "tsc -p tsconfig.json --noEmit && bun run --filter @alexgetman/backend typecheck && tsc -p deploy/media-processor/tsconfig.json",
     "test": "bun test apps/backend/tests/*.test.ts apps/web/src/**/*.test.ts",
+    "test:coverage": "bun test --coverage apps/backend/tests/*.test.ts apps/web/src/**/*.test.ts",
+    "check:audit": "bun scripts/check-audit.ts",
     "lint": "biome lint .",
     "format": "biome format --write .",
     "knip": "bun tools/knip/node_modules/.bin/knip --config knip.json",
