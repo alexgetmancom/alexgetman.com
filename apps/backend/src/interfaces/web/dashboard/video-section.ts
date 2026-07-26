@@ -1,6 +1,6 @@
-import { metricNumber } from "../../analytics/snapshots/creator-store.js";
-import type { BackendDb } from "../../db/client.js";
-import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../../publishing/video-types.js";
+import { metricNumber } from "../../../analytics/snapshots/creator-store.js";
+import type { BackendDb } from "../../../db/client.js";
+import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../../../publishing/video-types.js";
 import { formatMetricValue } from "./format.js";
 import { escapeHtml } from "./html.js";
 

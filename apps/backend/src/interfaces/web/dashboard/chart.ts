@@ -1,4 +1,4 @@
-import { zonedSlot } from "../../foundation/time.js";
+import { zonedSlot } from "../../../foundation/time.js";
 import { ORDERED_TARGETS } from "./assets.js";
 import { formatMetricValue, getMskDateString } from "./format.js";
 import { escapeHtml } from "./html.js";

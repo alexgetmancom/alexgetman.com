@@ -1,7 +1,7 @@
-import type { BackendDb } from "../db/client.js";
-import type { BackendConfig } from "../foundation/config.js";
-import type { StudioLocale } from "../foundation/locale.js";
-import { renderStudioSection } from "../interfaces/web/studio.js";
+import type { BackendDb } from "../../db/client.js";
+import type { BackendConfig } from "../../foundation/config.js";
+import type { StudioLocale } from "../../foundation/locale.js";
+import { operationsService } from "../../operations/service.js";
 import {
   renderAudienceSection,
   renderCredentialsSection,
@@ -12,7 +12,7 @@ import {
 import { renderPeriodControls, renderPipelineSection } from "./dashboard/pipeline-section.js";
 import { renderDashboardShell } from "./dashboard/shell.js";
 import { renderVideoSection } from "./dashboard/video-section.js";
-import { operationsService } from "./service.js";
+import { renderStudioSection } from "./studio.js";
 
 type DashboardTab = "posts" | "video" | "studio";
 type DashboardPanel = "overview" | "queue" | "health" | "repair";

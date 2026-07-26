@@ -1,4 +1,4 @@
-import { zonedDateParts } from "../../foundation/time.js";
+import { zonedDateParts } from "../../../foundation/time.js";
 import { ORDERED_TARGETS } from "./assets.js";
 import { renderDailyComparisonChart, renderWeeklyChart } from "./chart.js";
 import { formatMetricValue, shortPipelineText } from "./format.js";

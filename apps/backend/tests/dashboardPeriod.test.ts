@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import { renderDailyComparisonChart } from "../src/operations/dashboard/chart.js";
-import { renderPeriodControls, renderPipelineSection } from "../src/operations/dashboard/pipeline-section.js";
-import type { PipelineData, PipelinePost } from "../src/operations/dashboard/types.js";
+import { renderDailyComparisonChart } from "../src/interfaces/web/dashboard/chart.js";
+import { renderPeriodControls, renderPipelineSection } from "../src/interfaces/web/dashboard/pipeline-section.js";
+import type { PipelineData, PipelinePost } from "../src/interfaces/web/dashboard/types.js";
 
 function post(views: number, date?: string): PipelinePost {
   return {

@@ -45,15 +45,9 @@ module.exports = {
     },
     {
       name: "no-interface-deps-in-core",
-      comment:
-        "Core layers must not depend on how their output is presented. The one exclusion is operations/dashboard, which is an HTML " +
-        "renderer filed under operations by history rather than by design — it belongs in interfaces/web/ and is excluded here so " +
-        "the rule can be enforced today rather than after that move.",
+      comment: "Core layers must not depend on how their output is presented.",
       severity: "error",
-      from: {
-        path: "^apps/backend/src/(delivery/|publishing/|analytics/|content/|operations/|engagement/|public/)",
-        pathNot: "^apps/backend/src/operations/dashboard",
-      },
+      from: { path: "^apps/backend/src/(delivery/|publishing/|analytics/|content/|operations/|engagement/|public/)" },
       to: { path: "^apps/backend/src/(bot/|interfaces/)" },
     },
   ],

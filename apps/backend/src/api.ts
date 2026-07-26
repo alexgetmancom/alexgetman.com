@@ -9,9 +9,9 @@ import { engagementService } from "./engagement/service.js";
 import type { BackendConfig } from "./foundation/config.js";
 import { commandAllowed, safeEqual } from "./foundation/http-auth.js";
 import { mcpResponse } from "./interfaces/mcp.js";
+import { renderCommandCenterLogin, renderDashboard } from "./interfaces/web/dashboard.js";
 import { commandActionSchema } from "./operations/commands.js";
 import type { OperationsCommand } from "./operations/contracts.js";
-import { renderCommandCenterLogin, renderDashboard } from "./operations/dashboard.js";
 import { operationsService } from "./operations/service.js";
 import { studioServices } from "./studio/services/index.js";
 

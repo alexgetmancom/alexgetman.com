@@ -1,4 +1,4 @@
-import { jsonArray } from "../../json.js";
+import { jsonArray } from "../../../json.js";
 import { formatMetricValue } from "./format.js";
 import { escapeHtml } from "./html.js";
 import { getTargetUrl } from "./target-url.js";

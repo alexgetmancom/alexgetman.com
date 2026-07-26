@@ -1,4 +1,4 @@
-import { TARGETS } from "../../botTargets.js";
+import { TARGETS } from "../../../botTargets.js";
 
 const ORDERED_IDS = [
   "site_en",

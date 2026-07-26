@@ -161,6 +161,10 @@ describe("Studio architecture boundaries", () => {
   it("keeps Operations as the external diagnostics contract", () => {
     expectNoImport("api.ts", "operations/read-model.js");
     expectNoImport("cli.ts", "operations/read-model.js");
+    // The Command Center renderer is an interface like the other two, now that
+    // it lives under interfaces/web/ rather than inside Operations itself.
+    expectImport("interfaces/web/dashboard.ts", "operations/service.js");
+    expectNoImport("interfaces/web/dashboard.ts", "operations/read-model.js");
     expectImport("operations/service.ts", "operations/read-model.js");
     expectNoImport("operations/service.ts", "observability/");
   });

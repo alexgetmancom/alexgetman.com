@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { openBackendDb } from "../src/db/client.js";
 import { creatorProfileSnapshots, creatorProfiles, metricSamples } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
-import { renderAudienceSection } from "../src/operations/dashboard/ops-sections.js";
+import { renderAudienceSection } from "../src/interfaces/web/dashboard/ops-sections.js";
 
 describe("Command Center audience projection", () => {
   it("keeps the four core audience accounts visible in the compact overview", () => {

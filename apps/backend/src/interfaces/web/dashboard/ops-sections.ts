@@ -1,7 +1,7 @@
-import { metricNumber } from "../../analytics/snapshots/creator-store.js";
-import type { BackendDb } from "../../db/client.js";
-import { creatorProfiles } from "../../db/schema.js";
-import type { BackendConfig } from "../../foundation/config.js";
+import { metricNumber } from "../../../analytics/snapshots/creator-store.js";
+import type { BackendDb } from "../../../db/client.js";
+import { creatorProfiles } from "../../../db/schema.js";
+import type { BackendConfig } from "../../../foundation/config.js";
 import { ORDERED_TARGETS, PLATFORM_ICONS } from "./assets.js";
 import { formatMetricValue, shortPipelineText } from "./format.js";
 import { escapeHtml } from "./html.js";
