@@ -20,7 +20,9 @@ function mediaAssetResponse(id: string | undefined, headOnly: boolean): Response
       "Content-Type": asset.mimeType || "video/mp4",
       "Content-Length": String(file.size),
       "Cache-Control": "public, max-age=300",
-      "Accept-Ranges": "bytes",
+      // No Accept-Ranges: this route always returns the whole file, and
+      // advertising range support to an importer that then sends `Range` and
+      // gets a 200 back is worse than not advertising it.
       "X-Robots-Tag": "noindex, nofollow",
     },
   });

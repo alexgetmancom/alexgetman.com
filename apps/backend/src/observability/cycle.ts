@@ -21,6 +21,18 @@ function logMemoryUsage(): void {
   });
 }
 
+/** The probes are independent by design, so run them that way: the loop runner
+ * only catches per tick, which meant a throwing token-health probe silently took
+ * failure recording and alert delivery with it on every tick — the observability
+ * cycle going blind exactly when something was wrong. */
+async function probe(name: string, run: () => void | Promise<void>): Promise<void> {
+  try {
+    await run();
+  } catch (error) {
+    log("error", "observability probe failed", { probe: name, error: String(error) });
+  }
+}
+
 /** Runs independent probes, turns durable events into alerts, and records health. */
 export async function runObservabilityCycle(
   config: BackendConfig,
@@ -28,10 +40,16 @@ export async function runObservabilityCycle(
   alertsPort: AlertPort = {},
 ): Promise<{ alerts: number; credentials: number }> {
   logMemoryUsage();
-  const credentials = updateCredentialChecks(config, backendDb);
-  await checkTokenHealth(config, backendDb);
-  recordPublicationFailures(config, backendDb);
-  const alerts = await deliverPendingAlerts(config, backendDb, alertsPort);
+  let credentials = 0;
+  let alerts = 0;
+  await probe("credentials", () => {
+    credentials = updateCredentialChecks(config, backendDb);
+  });
+  await probe("token-health", async () => void (await checkTokenHealth(config, backendDb)));
+  await probe("publication-failures", () => recordPublicationFailures(config, backendDb));
+  await probe("alerts", async () => {
+    alerts = await deliverPendingAlerts(config, backendDb, alertsPort);
+  });
   recordWorkerState(backendDb, "observability", { alerts, credentials });
   return { alerts, credentials };
 }

@@ -29,9 +29,15 @@ export function mediaPolicyForTarget(target: string, media: unknown[]): MediaPol
   const rule = platformProfile(target)?.media;
   if (!rule) return all(target, inputCount);
   const selected = rule.whenVideo && media.some(isVideo) ? rule.whenVideo : rule;
-  if (selected.mode === "limited" && selected.limit && selected.label) return limited(selected.limit, selected.label);
-  if ((selected.mode === "first" || selected.mode === "story-first") && selected.note) return first(selected.mode, selected.note);
-  return all(target, inputCount);
+  switch (selected.mode) {
+    case "limited":
+      return limited(selected.limit, selected.label);
+    case "first":
+    case "story-first":
+      return first(selected.mode, selected.note);
+    default:
+      return all(target, inputCount);
+  }
 }
 
 function all(target: string, inputCount: number): MediaPolicy {

@@ -1,15 +1,8 @@
 import { loadFeedItems } from "../server/public-site";
+import { keyEntities } from "../utils/key-entities";
 import { compactText, truncateText } from "../utils/text";
 
 export const prerender = false;
-
-function keyEntities(value: string): string[] {
-  const terms =
-    compactText(value).match(
-      /\b(?:AI|API|LLM|GPT-\d+|Claude(?:\s+Code)?|Codex|Gemini|OpenAI|Anthropic|Google|GitHub|Telegram|Docker|Bun|TypeScript|Astro)\b/gi,
-    ) ?? [];
-  return [...new Set(terms.map((term) => term.trim()))].slice(0, 12);
-}
 
 export async function GET() {
   const items = loadFeedItems()

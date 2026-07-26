@@ -1,9 +1,10 @@
+import type { APIContext } from "astro";
 import { loadFeedItems } from "../../server/public-site";
 import { siteUrlFromContext } from "../../utils/site";
 
 export const prerender = false;
 
-export async function GET(context: any) {
+export async function GET(context: APIContext) {
   const item = loadFeedItems().find(
     (entry) => String(entry.post_id) === String(context.params.postId) && entry.slug_en === context.params.slug,
   );

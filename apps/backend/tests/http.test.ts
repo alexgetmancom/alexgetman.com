@@ -46,6 +46,10 @@ describe("Astro endpoint controller", () => {
       expect((await app.request("/api/command-center")).status).toBe(403);
       expect((await app.request("/api/command-center", { headers: { "X-Command-Token": "secret" } })).status).toBe(200);
       expect((await app.request("/api/command-center?token=secret")).status).toBe(200);
+      // A URL token is readable in proxy logs and Referer headers, so it
+      // authorizes reads only: a mutation has to carry a header, form field or
+      // the HttpOnly cookie.
+      expect((await app.request("/command-center/studio/acknowledge?token=secret", { method: "POST" })).status).toBe(403);
     } finally {
       backendDb.close();
     }

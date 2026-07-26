@@ -1,16 +1,22 @@
 ---
 import Layout from "../../../layouts/Layout.astro";
+import { hubUrl } from "../../../server/hubs";
 import { loadFeedItems } from "../../../server/public-site";
 import { getFirstSentence } from "../../../utils/text";
 
 export const prerender = false;
 
 const { kind, slug } = Astro.params;
-if (((kind === "product" || kind === "topic") && (slug === "codex" || slug === "claude")) || (kind === "model" && slug === "kimi-k3"))
-  return Astro.redirect(`/${slug === "kimi-k3" ? "kimi" : slug}/`, 301);
+const hub = kind && slug ? hubUrl(kind, slug, "en") : null;
+if (hub) return Astro.redirect(hub, 301);
 const allowedKinds = new Set(["company", "model", "person", "product", "topic"]);
 if (!kind || !slug || !allowedKinds.has(kind)) return new Response("Not found\n", { status: 404 });
-const posts = loadFeedItems().filter((post) => post.entities.some((entity) => entity.kind === kind && entity.slug === slug));
+// `has_en`/`slug_en` are what make an English URL exist at all: without this
+// filter a Russian-only post linked to the entity was listed here and rendered
+// as `/<id>/null/`.
+const posts = loadFeedItems().filter(
+  (post) => post.has_en && post.slug_en && post.entities.some((entity) => entity.kind === kind && entity.slug === slug),
+);
 if (posts.length === 0) return new Response("Not found\n", { status: 404 });
 const entity = posts.flatMap((post) => post.entities).find((item) => item.kind === kind && item.slug === slug);
 if (!entity) return new Response("Not found\n", { status: 404 });
@@ -26,7 +32,7 @@ const ruUrl = `https://alexgetman.com/ru/entities/${kind}/${slug}/`;
     <ol>
       {posts.map((post) => (
         <li>
-          <a href={`/${post.post_id}/${post.slug_en}/`}>{getFirstSentence(post.text_en || post.text) || `Post ${post.post_id}`}</a>
+          <a href={`/${post.post_id}/${post.slug_en}/`}>{getFirstSentence(post.text_en) || `Post ${post.post_id}`}</a>
         </li>
       ))}
     </ol>

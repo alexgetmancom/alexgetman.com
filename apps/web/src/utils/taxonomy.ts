@@ -15,12 +15,23 @@ export function getSmartCategory(text: string): string {
   return getSmartBadge(text).label;
 }
 
+/** Exact lookup rather than substring matching: `value.includes("ai")` sent any
+ * future class or label that merely contained those letters ("badge--airdrop")
+ * into ai-models. A badge is a closed set, so treat it as one. */
+const SLUG_BY_BADGE: Record<string, string> = {
+  "badge--leaks": "leaks",
+  "badge--ai": "ai-models",
+  "badge--neural": "neural-networks",
+  "badge--news": "news",
+  Сливы: "leaks",
+  "ИИ-Модели": "ai-models",
+  Нейросети: "neural-networks",
+  Новости: "news",
+};
+
 export function categorySlugFromBadge(badge: { class?: string; label?: string } | string): string {
   const value = typeof badge === "string" ? badge : badge.class || badge.label || "";
-  if (value.includes("leak") || value === "Сливы") return "leaks";
-  if (value.includes("ai") || value === "ИИ-Модели") return "ai-models";
-  if (value.includes("neural") || value === "Нейросети") return "neural-networks";
-  return "news";
+  return SLUG_BY_BADGE[value.trim()] ?? "news";
 }
 
 const labels: Record<string, { en: string; ru: string }> = {

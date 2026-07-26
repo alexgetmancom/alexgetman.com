@@ -1,22 +1,8 @@
-export function formatDayHeaderRu(date: Date): string {
-  const ruMonths = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
-  return `${date.getUTCDate()} ${ruMonths[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
-}
-
 export function getMskDateString(dateStr: string | null | undefined): string {
   const date = new Date(dateStr ?? "");
   if (Number.isNaN(date.getTime())) return new Date().toISOString().slice(0, 10);
   const msk = new Date(date.getTime() + 3 * 3_600_000);
   return msk.toISOString().slice(0, 10);
-}
-
-export function formatTimeMsk(dateStr: string | null | undefined): string {
-  const date = new Date(dateStr ?? "");
-  if (Number.isNaN(date.getTime())) return "--:--";
-  const msk = new Date(date.getTime() + 3 * 3_600_000);
-  const hours = String(msk.getUTCHours()).padStart(2, "0");
-  const minutes = String(msk.getUTCMinutes()).padStart(2, "0");
-  return `${hours}:${minutes}`;
 }
 
 export function formatMetricValue(value: unknown): string {
@@ -28,12 +14,10 @@ export function formatMetricValue(value: unknown): string {
   return String(num);
 }
 
-export function getWeekBounds(weekOffset: number): [Date, Date] {
-  const nowMsk = new Date(Date.now() + 3 * 3_600_000);
-  const weekday = (nowMsk.getUTCDay() + 6) % 7;
-  const start = Date.UTC(nowMsk.getUTCFullYear(), nowMsk.getUTCMonth(), nowMsk.getUTCDate() - weekday - weekOffset * 7, -3, 0, 0);
-  return [new Date(start + 3 * 3_600_000), new Date(start + 7 * 86_400_000 - 1 + 3 * 3_600_000)];
-}
+// Week bounds live in foundation/time.ts (`zonedWeekBounds`): it honours the
+// configured IANA zone instead of a hardcoded +3h and is covered by tests. The
+// local copy here was unused and returned zone-shifted Date objects that were
+// only correct when read back through getUTC* — a trap for the next caller.
 
 export function shortPipelineText(value: string | null | undefined, wordLimit = 7): string {
   if (!value) return "";

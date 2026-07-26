@@ -5,6 +5,7 @@ import { markSynced } from "../../analytics/snapshots/creator-store.js";
 import type { BackendDb } from "../../db/client.js";
 import { analyticsSync } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
+import { log } from "../../foundation/logger.js";
 import { t } from "./i18n/index.js";
 
 /** Telegram-only weekly delivery of an already computed Analytics report. */
@@ -34,7 +35,17 @@ export async function sendWeeklyAnalyticsSummary(
   if (backendDb.db.select().from(analyticsSync).where(eq(analyticsSync.source, key)).get()) return false;
   const weekTitle = `📊 *${t("ru", "report.stats-for", { period: t("ru", "report.period-days", { days: 7 }) })}*`;
   const report = creatorDashboard(backendDb, config, 7).text.replace(weekTitle, `📊 *${t("ru", "weekly.digest")}*`);
-  for (const adminId of config.ADMIN_IDS) await bot.api.sendMessage(adminId, report, { parse_mode: "Markdown" });
+  // Claim the week before sending, and treat one unreachable admin as that
+  // admin's problem: an unguarded loop that marked the week only after the last
+  // send meant a single 403 (bot blocked) re-sent the digest to everyone who had
+  // already received it, once per tick, until the block was lifted.
   markSynced(backendDb, key);
+  for (const adminId of config.ADMIN_IDS) {
+    try {
+      await bot.api.sendMessage(adminId, report, { parse_mode: "Markdown" });
+    } catch (error) {
+      log("warn", "weekly analytics digest not delivered", { adminId, error: String(error) });
+    }
+  }
   return true;
 }

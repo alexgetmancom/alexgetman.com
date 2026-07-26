@@ -4,11 +4,15 @@ import { posts, postTargets } from "../db/schema.js";
 
 /** Read-only target verification for the Operations CLI and API. */
 export async function verifyPostTargets(backendDb: BackendDb, ref: string): Promise<Record<string, unknown>[]> {
-  const id = Number(ref.replace(/^post:/, ""));
+  const numeric = Number(ref.replace(/^post:/, ""));
+  // A non-numeric ref must not reach the query as NaN: bind it only when it is a
+  // usable id, and otherwise match on the post key alone.
+  const id = Number.isSafeInteger(numeric) ? numeric : null;
+  const byKey = eq(posts.postKey, ref);
   const post = backendDb.db
     .select({ postKey: posts.postKey })
     .from(posts)
-    .where(or(eq(posts.postKey, ref), eq(posts.postId, id), eq(posts.messageId, id)))
+    .where(id == null ? byKey : or(byKey, eq(posts.postId, id), eq(posts.messageId, id)))
     .get();
   if (!post) throw new Error(`post not found: ${ref}`);
   const targets = backendDb.db
@@ -27,7 +31,11 @@ export async function verifyPostTargets(backendDb: BackendDb, ref: string): Prom
           redirect: "follow",
           signal: AbortSignal.timeout(15_000),
         });
-        return { ...record, ok: response.status < 500, reason: `http_${response.status}` };
+        // The question this answers is "is the publication still there", so a 404
+        // or 410 is a failure, not a pass: a deleted post used to verify as ok.
+        // 5xx stays a failure too, but as a provider fault rather than a verdict
+        // about the post.
+        return { ...record, ok: response.status < 400, reason: `http_${response.status}` };
       } catch (error) {
         return { ...record, ok: false, reason: error instanceof Error ? error.message : String(error) };
       }

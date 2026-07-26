@@ -1,10 +1,11 @@
 import rss from "@astrojs/rss";
+import type { APIContext } from "astro";
 import { loadFeedItems } from "../server/public-site";
 import { truncateText } from "../utils/text";
 
 export const prerender = false;
 
-export async function GET(context: any) {
+export async function GET(context: APIContext) {
   const sortedItems = loadFeedItems()
     .filter((item) => item.has_en && item.text_en && item.post_id)
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())

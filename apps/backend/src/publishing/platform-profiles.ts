@@ -1,8 +1,11 @@
 import { TARGETS, type TargetLocale } from "../botTargets.js";
 
 type PlatformId = (typeof TARGETS)[number][0];
-type MediaMode = "all" | "limited" | "first" | "story-first";
-type MediaRule = { mode: MediaMode; limit?: number; label?: string; note?: string };
+/** A discriminated union on purpose: a `limited` rule without its limit/label, or
+ * a first/story-first rule without its note, used to type-check and then degrade
+ * silently into "deliver everything" inside mediaPolicyForTarget — the opposite
+ * of what the profile declared. Each mode now carries what it needs to be applied. */
+type MediaRule = { mode: "all" } | { mode: "limited"; limit: number; label: string } | { mode: "first" | "story-first"; note: string };
 
 type PlatformProfile = {
   id: string;

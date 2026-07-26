@@ -16,4 +16,11 @@ describe("publication state transitions", () => {
     expect(publicationStatus(["published", "failed"])).toBe("failed");
     expect(publicationStatus(["published", "queued"])).toBeNull();
   });
+
+  it("never reads an empty status list as success", () => {
+    // `every` on [] is vacuously true, so a draft with no targets — or one read
+    // before its jobs exist — used to report itself as fully published.
+    expect(videoDraftStatus([])).toBe("scheduled");
+    expect(publicationStatus([])).toBeNull();
+  });
 });
