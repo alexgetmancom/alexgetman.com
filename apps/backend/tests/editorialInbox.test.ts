@@ -47,6 +47,37 @@ describe("daily editorial inbox", () => {
     });
   });
 
+  it("sends only chat-completion fields to the provider, with the abort signal on the request", async () => {
+    await withDb(async (backendDb) => {
+      backendDb.db
+        .insert(posts)
+        .values({
+          postKey: "post:8",
+          postId: 8,
+          source: "studio",
+          channel: "studio",
+          messageId: 8,
+          status: "active",
+          text: "Something published",
+          createdAt: "2026-07-20T00:00:00.000Z",
+          updatedAt: "2026-07-20T00:00:00.000Z",
+        })
+        .run();
+      let init: RequestInit | undefined;
+      const fetchImpl = (async (_url: string, requestInit: RequestInit) => {
+        init = requestInit;
+        return new Response(JSON.stringify({ choices: [{ message: { content: '{"items":[]}' } }] }), { status: 200 });
+      }) as unknown as typeof fetch;
+      const bot = { api: { sendMessage: async () => undefined } } as any;
+      const config = loadConfig({ ADMIN_IDS: "42", DEEPSEEK_API_KEY: "key", EDITORIAL_INBOX_HOUR_MSK: "10" });
+
+      await sendDailyEditorialInbox(config, backendDb, bot, new Date("2026-07-20T07:30:00.000Z"), fetchImpl);
+
+      expect(JSON.parse(String(init?.body))).not.toHaveProperty("signal");
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
+    });
+  });
+
   it("waits for the configured Moscow delivery hour", async () => {
     await withDb(async (backendDb) => {
       const bot = { api: { sendMessage: async () => undefined } } as any;

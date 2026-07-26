@@ -38,7 +38,11 @@ export function recordAuthFailure(backendDb: BackendDb, target: string): void {
   const blockedUntil = tripped
     ? new Date(now.getTime() + AUTH_BLOCK_COOLDOWN_SECONDS * 1000).toISOString()
     : (details.blockedUntil ?? null);
-  const nextDetails: AuthCircuitDetails = { authFailureStreak: streak, blockedUntil, lastAuthFailureAt: now.toISOString() };
+  // Preserve unrelated fields the same way recordAuthSuccess does. Rebuilding
+  // the blob from scratch used to drop token-health.ts's lastPingAt, which
+  // un-throttled the live token probes for exactly the dead credential the
+  // breaker is meant to stop calling.
+  const nextDetails: AuthCircuitDetails = { ...details, authFailureStreak: streak, blockedUntil, lastAuthFailureAt: now.toISOString() };
   if (row) {
     backendDb.db
       .update(credentialChecks)
@@ -92,7 +96,11 @@ export function isTargetAuthBlocked(backendDb: BackendDb, target: string): boole
   const row = backendDb.db.select().from(credentialChecks).where(eq(credentialChecks.target, target)).get();
   if (!row) return false;
   const details = parseDetails(row.detailsJson);
-  return Boolean(details.blockedUntil && details.blockedUntil > new Date().toISOString());
+  if (!details.blockedUntil) return false;
+  // Compare instants, not ISO strings: string ordering only happens to work
+  // while every writer uses the same UTC `Z` format.
+  const blockedUntilMs = new Date(details.blockedUntil).getTime();
+  return Number.isFinite(blockedUntilMs) && blockedUntilMs > Date.now();
 }
 
 /** Throttles token-health.ts's live pings independently of the 5-minute

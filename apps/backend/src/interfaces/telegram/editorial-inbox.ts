@@ -54,6 +54,10 @@ export async function sendDailyEditorialInbox(
     const response = await requestJson<ChatCompletion>(fetchImpl, "https://api.deepseek.com/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${config.DEEPSEEK_API_KEY}`, "Content-Type": "application/json" },
+      // The signal belongs to the request, not to the chat-completion payload:
+      // nested inside the body it was both a no-op and an unknown `"signal":{}`
+      // field sent to the provider.
+      signal: AbortSignal.timeout(45_000),
       body: JSON.stringify({
         model: "deepseek-chat",
         temperature: 0.2,
@@ -72,7 +76,6 @@ export async function sendDailyEditorialInbox(
           { role: "user", content: JSON.stringify({ posts: material, clusters }) },
         ],
         response_format: { type: "json_object" },
-        signal: AbortSignal.timeout(45_000),
       }),
     });
     const generated = response.choices?.[0]?.message?.content ?? "";

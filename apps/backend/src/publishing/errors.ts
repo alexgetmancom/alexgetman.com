@@ -43,20 +43,24 @@ export function classifyPublishError(error: unknown): PublishErrorClass {
   // that as transient so the job keeps retrying on the normal backoff schedule
   // once the breaker clears, rather than burning its whole retry budget.
   if (text.includes("auth_circuit_open")) return "transient";
-  if (
-    ["timeout", "timed out", "temporarily", "connection reset", "network", "502", "503", "504", "429"].some((marker) =>
-      text.includes(marker),
-    )
-  ) {
+  if (matchesMarkers(text, ["timeout", "timed out", "temporarily", "connection reset", "network"], [502, 503, 504, 429])) {
     return "transient";
   }
-  if (["401", "403", "unauthorized", "forbidden", "invalid token"].some((marker) => text.includes(marker))) {
+  if (matchesMarkers(text, ["unauthorized", "forbidden", "invalid token"], [401, 403])) {
     return "auth";
   }
-  if (["permission", "unsupported", "validation", "400"].some((marker) => text.includes(marker))) {
+  if (matchesMarkers(text, ["permission", "unsupported", "validation"], [400])) {
     return "permanent";
   }
   return "unknown";
+}
+
+/** Phrases match anywhere, but bare status codes only as standalone numbers:
+ * an error message that happens to embed 429 in an id or timestamp must not
+ * reclassify the failure. */
+function matchesMarkers(text: string, phrases: readonly string[], statusCodes: readonly number[]): boolean {
+  if (phrases.some((phrase) => text.includes(phrase))) return true;
+  return statusCodes.some((code) => new RegExp(`(?<!\\d)${code}(?!\\d)`).test(text));
 }
 
 export function nextRetryAt(

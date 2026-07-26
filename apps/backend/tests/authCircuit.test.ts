@@ -6,7 +6,13 @@ import { eq } from "drizzle-orm";
 import { openBackendDb } from "../src/db/client.js";
 import { credentialChecks, type JsonObject } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
-import { isTargetAuthBlocked, recordAuthFailure, recordAuthSuccess } from "../src/observability/auth-circuit.js";
+import {
+  isTargetAuthBlocked,
+  recordAuthFailure,
+  recordAuthSuccess,
+  recordTokenPing,
+  shouldPingToken,
+} from "../src/observability/auth-circuit.js";
 import { HttpPublishError } from "../src/publishing/errors.js";
 import { claimDuePublishJobs, enqueuePublishJobTx, failPublishJob } from "../src/publishing/queue.js";
 
@@ -78,6 +84,21 @@ describe("auth circuit breaker", () => {
       }
 
       expect(isTargetAuthBlocked(backendDb, "test_platform")).toBe(true);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("keeps the token-ping throttle across auth failures", () => {
+    const backendDb = tempDb();
+    try {
+      recordTokenPing(backendDb, "test_platform");
+      expect(shouldPingToken(backendDb, "test_platform", 3600)).toBe(false);
+      // An auth failure used to rebuild the details blob from scratch, dropping
+      // lastPingAt and un-throttling live probes against the very credential the
+      // breaker exists to stop calling.
+      recordAuthFailure(backendDb, "test_platform");
+      expect(shouldPingToken(backendDb, "test_platform", 3600)).toBe(false);
     } finally {
       backendDb.close();
     }

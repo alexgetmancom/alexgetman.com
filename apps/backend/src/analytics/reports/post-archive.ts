@@ -1,28 +1,40 @@
+import { and, desc, eq, inArray, max, sql } from "drizzle-orm";
 import type { BackendDb } from "../../db/client.js";
+import { metricSamples, postLocales, posts, publications, videoTargets } from "../../db/schema.js";
 import type { StudioLocale as BotLocale } from "../../foundation/locale.js";
 import { t } from "../../interfaces/telegram/i18n/index.js";
 import { metricNumber } from "../snapshots/creator-store.js";
+
+const PAGE_SIZE = 10;
+
+/** One definition of "a post the creator actually published", shared by the
+ * archive listing and the archive summary so the two can never disagree. */
+function publishedPostCount(backendDb: BackendDb): number {
+  const row = backendDb.db
+    .select({ count: sql<number>`count(*)` })
+    .from(posts)
+    .innerJoin(publications, eq(publications.postId, posts.postId))
+    .where(eq(publications.status, "published"))
+    .get();
+  return Number(row?.count ?? 0);
+}
 
 export function creatorPostArchive(
   backendDb: BackendDb,
   offset = 0,
   locale: BotLocale = "en",
 ): { text: string; items: Array<{ id: number; label: string }>; total: number } {
-  const total = Number(
-    (
-      backendDb.sqlite
-        .prepare("SELECT COUNT(*) AS count FROM posts p JOIN publications pub ON pub.post_id=p.post_id WHERE pub.status='published'")
-        .get() as {
-        count: number;
-      }
-    ).count,
-  );
-  const rows = backendDb.sqlite
-    .prepare(
-      `SELECT p.post_id AS id, COALESCE(NULLIF(trim(p.text), ''), 'Media post') AS label FROM posts p JOIN publications pub ON pub.post_id=p.post_id WHERE pub.status='published' ORDER BY p.updated_at DESC LIMIT 11 OFFSET ?`,
-    )
-    .all(offset) as Array<{ id: number; label: string }>;
-  const items = rows.slice(0, 10).map((item) => ({ ...item, label: item.label.replace(/\s+/g, " ").slice(0, 42) }));
+  const total = publishedPostCount(backendDb);
+  const rows = backendDb.db
+    .select({ id: posts.postId, label: sql<string>`coalesce(nullif(trim(${posts.text}), ''), 'Media post')` })
+    .from(posts)
+    .innerJoin(publications, eq(publications.postId, posts.postId))
+    .where(eq(publications.status, "published"))
+    .orderBy(desc(posts.updatedAt))
+    .limit(PAGE_SIZE)
+    .offset(offset)
+    .all();
+  const items = rows.flatMap((item) => (item.id == null ? [] : [{ id: item.id, label: item.label.replace(/\s+/g, " ").slice(0, 42) }]));
   return {
     text: items.length ? `📚 ${t(locale, "report.post-archive-choose")}` : `📚 ${t(locale, "report.no-posts")}`,
     items,
@@ -31,19 +43,28 @@ export function creatorPostArchive(
 }
 
 export function creatorPostMetrics(backendDb: BackendDb, postId: number, locale: BotLocale = "en"): string {
-  const post = backendDb.sqlite.prepare("SELECT text, media_count, date_msk FROM posts WHERE post_id=?").get(postId) as {
-    text: string | null;
-    media_count: number;
-    date_msk: string | null;
-  } | null;
+  const postKey = `post:${postId}`;
+  const post = backendDb.db
+    .select({ text: posts.text, mediaCount: posts.mediaCount, dateMsk: posts.dateMsk })
+    .from(posts)
+    .where(eq(posts.postId, postId))
+    .get();
   if (!post) return t(locale, "report.post-not-found");
-  const rows = backendDb.sqlite
-    .prepare(
-      `SELECT target, metric_name, value FROM metric_samples WHERE post_key=? AND id IN (SELECT MAX(id) FROM metric_samples WHERE post_key=? GROUP BY target, metric_name) ORDER BY target, metric_name`,
-    )
-    .all(`post:${postId}`, `post:${postId}`) as Array<{ target: string; metric_name: string; value: number | null }>;
+  // Only the newest sample per (target, metric): metric_samples is an append-only
+  // history, so a plain select would sum every past observation.
+  const latestSampleIds = backendDb.db
+    .select({ id: max(metricSamples.id) })
+    .from(metricSamples)
+    .where(eq(metricSamples.postKey, postKey))
+    .groupBy(metricSamples.target, metricSamples.metricName);
+  const rows = backendDb.db
+    .select({ target: metricSamples.target, metricName: metricSamples.metricName, value: metricSamples.value })
+    .from(metricSamples)
+    .where(and(eq(metricSamples.postKey, postKey), inArray(metricSamples.id, latestSampleIds)))
+    .orderBy(metricSamples.target, metricSamples.metricName)
+    .all();
   const metrics = new Map<string, Record<string, number>>();
-  for (const row of rows) metrics.set(row.target, { ...(metrics.get(row.target) ?? {}), [row.metric_name]: metricNumber(row.value) });
+  for (const row of rows) metrics.set(row.target, { ...(metrics.get(row.target) ?? {}), [row.metricName]: metricNumber(row.value) });
   const totals = [...metrics.values()].reduce<{ views: number; interactions: number }>(
     (total, values) => ({
       views: total.views + (values.views ?? 0),
@@ -61,8 +82,8 @@ export function creatorPostMetrics(backendDb: BackendDb, postId: number, locale:
     `📝 *${t(locale, "post.heading", { id: postId })}*`,
     `👁 ${t(locale, "report.total-views")}: *${totals.views}*`,
     `💬 ${t(locale, "report.interactions")}: *${totals.interactions}*`,
-    `🖼 ${t(locale, "post.media")}: *${post.media_count}*`,
-    post.date_msk ? `🗓 ${post.date_msk}` : "",
+    `🖼 ${t(locale, "post.media")}: *${post.mediaCount}*`,
+    post.dateMsk ? `🗓 ${post.dateMsk}` : "",
     "",
     post.text?.slice(0, 600) || t(locale, "report.media-post"),
   ].filter(Boolean);
@@ -77,15 +98,13 @@ export function creatorPostMetrics(backendDb: BackendDb, postId: number, locale:
  * to render it, so archive previews do not leak transport details into Analytics. */
 export function creatorPostMedia(backendDb: BackendDb, postId: number, locale: BotLocale): Record<string, unknown>[] {
   const preferred = locale === "ru" ? "ru" : "en";
-  const row = backendDb.sqlite.prepare("SELECT media_json FROM post_locales WHERE post_id=? AND locale=?").get(postId, preferred) as {
-    media_json: string | null;
-  } | null;
-  try {
-    const media = row?.media_json ? JSON.parse(row.media_json) : [];
-    return Array.isArray(media) ? media.filter((item): item is Record<string, unknown> => item != null && typeof item === "object") : [];
-  } catch {
-    return [];
-  }
+  const row = backendDb.db
+    .select({ mediaJson: postLocales.mediaJson })
+    .from(postLocales)
+    .where(and(eq(postLocales.postId, postId), eq(postLocales.locale, preferred)))
+    .get();
+  const media = row?.mediaJson;
+  return Array.isArray(media) ? media.filter((item): item is Record<string, unknown> => item != null && typeof item === "object") : [];
 }
 
 export function creatorArchiveSummary(
@@ -97,22 +116,14 @@ export function creatorArchiveSummary(
   posts: number;
   videos: number;
 } {
-  const posts = Number(
-    (
-      backendDb.sqlite
-        .prepare("SELECT COUNT(*) AS count FROM posts p JOIN publications pub ON pub.post_id=p.post_id WHERE pub.status='published'")
-        .get() as {
-        count: number;
-      }
-    ).count,
-  );
+  const postCount = publishedPostCount(backendDb);
   const videos = hasVideo
     ? Number(
-        (
-          backendDb.sqlite.prepare("SELECT COUNT(DISTINCT video_draft_id) AS count FROM video_targets WHERE status='published'").get() as {
-            count: number;
-          }
-        ).count,
+        backendDb.db
+          .select({ count: sql<number>`count(distinct ${videoTargets.videoDraftId})` })
+          .from(videoTargets)
+          .where(eq(videoTargets.status, "published"))
+          .get()?.count ?? 0,
       )
     : 0;
   return {
@@ -120,12 +131,12 @@ export function creatorArchiveSummary(
       `📚 *${t(locale, "report.archive-title")}*`,
       "",
       t(locale, "report.archive-desc"),
-      `${t(locale, "report.posts")}: *${posts}*`,
+      `${t(locale, "report.posts")}: *${postCount}*`,
       hasVideo ? `${t(locale, "report.videos")}: *${videos}*` : "",
     ]
       .filter(Boolean)
       .join("\n"),
-    posts,
+    posts: postCount,
     videos,
   };
 }
