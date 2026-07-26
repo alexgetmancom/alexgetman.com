@@ -15,6 +15,9 @@
     "tools/svelte-check": {
       "ignoreDependencies": ["svelte-check"]
     },
+    "tools/dependency-cruiser": {
+      "ignoreDependencies": ["dependency-cruiser"]
+    },
     "apps/backend": {
       "entry": ["tests/**/*.test.ts"],
       "project": ["src/**/*.ts", "tests/**/*.ts"]

@@ -5,7 +5,7 @@ import { requireDraft } from "../content/drafts.js";
 import type { BackendDb } from "../db/client.js";
 import { draftSources } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
-import { type MessageKey, t } from "../interfaces/telegram/i18n/index.js";
+import { type MessageKey, t } from "../foundation/i18n/index.js";
 import { formatMsk } from "../interfaces/telegram/time.js";
 import { mediaPolicyForTarget } from "../publishing/media-policy.js";
 import { parseTargets } from "../publishing/targets.js";

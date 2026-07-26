@@ -2,11 +2,11 @@ import { InlineKeyboard } from "grammy";
 import type { BotLocale } from "../../bot/i18n.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
+import { t } from "../../foundation/i18n/index.js";
+import { escapeMarkdown } from "../../foundation/markdown.js";
 import { isVideoTargetEditable, isVideoTargetSchedulable } from "../../publishing/state.js";
 import { getVideoDraft, listVideoTargets } from "../../publishing/video-data.js";
 import type { InstagramMetadata, YouTubeMetadata } from "../../publishing/video-types.js";
-import { t } from "./i18n/index.js";
-import { escapeMarkdown } from "./markdown.js";
 import { formatVideoTime } from "./video-time.js";
 
 /** Telegram-only representation of a video draft. The video domain itself

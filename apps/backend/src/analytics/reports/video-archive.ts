@@ -1,7 +1,7 @@
 import type { BackendDb } from "../../db/client.js";
+import { t } from "../../foundation/i18n/index.js";
 import type { StudioLocale as BotLocale } from "../../foundation/locale.js";
-import { t } from "../../interfaces/telegram/i18n/index.js";
-import { escapeMarkdown } from "../../interfaces/telegram/markdown.js";
+import { escapeMarkdown } from "../../foundation/markdown.js";
 import { metricNumber } from "../snapshots/creator-store.js";
 
 export function creatorVideoArchive(

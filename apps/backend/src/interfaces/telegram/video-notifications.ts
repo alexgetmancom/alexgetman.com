@@ -4,11 +4,11 @@ import { botLocale } from "../../bot/i18n.js";
 import type { BackendDb } from "../../db/client.js";
 import { drafts, studioNotificationSettings, videoDrafts, videoTargets } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
+import { t } from "../../foundation/i18n/index.js";
 import { getVideoDraft } from "../../publishing/video-data.js";
 import type { VideoTarget } from "../../publishing/video-types.js";
 import { videoTargetLabel } from "../../publishing/video-types.js";
 import { telegramVideoCard } from "./control-cards.js";
-import { t } from "./i18n/index.js";
 import { videoPreview } from "./video-preview.js";
 import { formatVideoTime } from "./video-time.js";
 

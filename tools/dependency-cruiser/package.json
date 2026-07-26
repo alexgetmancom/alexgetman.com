@@ -1,0 +1,8 @@
+{
+  "name": "@alexgetman/dependency-cruiser-tools",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "dependency-cruiser": "^17.0.0"
+  }
+}

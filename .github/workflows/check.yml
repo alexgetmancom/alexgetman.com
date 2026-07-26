@@ -48,6 +48,8 @@ jobs:
         run: bun run lint
       - name: Dead-code report
         run: bun run knip
+      - name: Layer boundaries
+        run: bun run check:layers
       - name: Tests with coverage threshold
         run: bun run test:coverage
       - name: Dependency audit

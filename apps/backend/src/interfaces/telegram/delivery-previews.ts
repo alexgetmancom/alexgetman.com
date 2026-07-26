@@ -4,10 +4,10 @@ import { appendTextLinkUrls } from "../../content/text.js";
 import type { BackendDb } from "../../db/client.js";
 import { splitText } from "../../delivery/social/payload.js";
 import type { BackendConfig } from "../../foundation/config.js";
+import { t } from "../../foundation/i18n/index.js";
+import { escapeMarkdown } from "../../foundation/markdown.js";
 import type { DeliveryProjection } from "../../studio/projections.js";
 import { studioServices } from "../../studio/services/index.js";
-import { t } from "./i18n/index.js";
-import { escapeMarkdown } from "./markdown.js";
 
 const TELEGRAM_MEDIA_GROUP_LIMIT = 10;
 

@@ -1,13 +1,13 @@
 import { type Bot, type Context, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { t } from "../foundation/i18n/index.js";
 import {
   clearTelegramAnalyticsDashboard,
   setTelegramAnalyticsDashboard,
   telegramAnalyticsDashboards,
 } from "../interfaces/telegram/control-cards.js";
 import { sendTelegramArchiveMedia } from "../interfaces/telegram/delivery-previews.js";
-import { t } from "../interfaces/telegram/i18n/index.js";
 import { studioServices } from "../studio/services/index.js";
 import { botLocale } from "./i18n.js";
 

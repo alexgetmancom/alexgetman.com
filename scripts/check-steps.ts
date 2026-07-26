@@ -14,6 +14,7 @@ export const CHECK_GROUPS: CheckStep[][] = [
   [
     { name: "lint", args: ["lint"] },
     { name: "knip", args: ["knip"] },
+    { name: "layers", args: ["check:layers"] },
     { name: "typecheck", args: ["typecheck"] },
     { name: "svelte", args: ["check:svelte"] },
   ],

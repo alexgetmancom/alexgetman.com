@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { StudioError } from "../src/foundation/errors.js";
-import { catalog, describeError, plural, resolveUiLocale, t } from "../src/interfaces/telegram/i18n/index.js";
+import { catalog, describeError, plural, resolveUiLocale, t } from "../src/foundation/i18n/index.js";
 
 describe("telegram i18n", () => {
   it("translates keys and interpolates params per locale", () => {

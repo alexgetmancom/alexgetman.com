@@ -2,7 +2,8 @@ import { autoRetry } from "@grammyjs/auto-retry";
 import { Bot, type Context } from "grammy";
 import { handleAnalyticsCallback } from "./bot/analytics-screen.js";
 import { botLocale } from "./bot/i18n.js";
-import { buildMainMenu, persistentKeyboard, showMainMenu } from "./bot/navigation.js";
+import { persistentKeyboard, showMainMenu } from "./bot/menu-render.js";
+import { buildMainMenu } from "./bot/navigation.js";
 import { buildNotificationsMenu } from "./bot/notifications-screen.js";
 import { handleOperationsCallback } from "./bot/operations-screen.js";
 import { handlePostAction } from "./bot/post-actions.js";
@@ -14,10 +15,10 @@ import { startVideoConversation } from "./bot/video-conversation.js";
 import { handleVideoCallback, handleVideoMessage } from "./bot/video-screen.js";
 import type { BackendDb } from "./db/client.js";
 import type { BackendConfig } from "./foundation/config.js";
+import { t } from "./foundation/i18n/index.js";
 import { log } from "./foundation/logger.js";
 import { clearTelegramAnalyticsDashboard } from "./interfaces/telegram/control-cards.js";
 import { handleTelegramDeliveryPreviewCallback } from "./interfaces/telegram/delivery-previews.js";
-import { t } from "./interfaces/telegram/i18n/index.js";
 
 export function createBot(config: BackendConfig, backendDb: BackendDb): Bot | null {
   if (!config.controllerBotToken) {

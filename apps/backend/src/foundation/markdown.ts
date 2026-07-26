@@ -1,4 +1,9 @@
-/** Every Telegram sender in this codebase uses `parse_mode: "Markdown"` (legacy),
+/** Legacy Markdown is this application's one markup flavour: the Telegram
+ * senders emit it, and so do the analytics report builders, which is why the
+ * escaper lives in foundation rather than under an interface — an archive report
+ * had to reach into `interfaces/telegram/` just to escape a video's title.
+ *
+ * Every Telegram sender in this codebase uses `parse_mode: "Markdown"` (legacy),
  * whose only special characters are `_ * [ ] \``. Escaping the MarkdownV2 set
  * here instead would render literal backslashes in front of dots, hyphens and
  * parentheses — so there is exactly one escaper, and it matches the parse mode

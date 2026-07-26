@@ -1,8 +1,8 @@
 import type { BackendDb } from "../../db/client.js";
 import { creatorProfiles, socialComments } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
+import { t } from "../../foundation/i18n/index.js";
 import type { StudioLocale as BotLocale } from "../../foundation/locale.js";
-import { t } from "../../interfaces/telegram/i18n/index.js";
 import { enabledAudiencePlatforms, studioAudiencePlatforms } from "../audience-groups.js";
 import {
   audienceGrowthByPlatform,

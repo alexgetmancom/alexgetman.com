@@ -2,7 +2,7 @@ import { Menu } from "@grammyjs/menu";
 import type { Context } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
-import { t } from "../interfaces/telegram/i18n/index.js";
+import { t } from "../foundation/i18n/index.js";
 import { studioServices } from "../studio/services/index.js";
 import { botLocale } from "./i18n.js";
 

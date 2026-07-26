@@ -1,8 +1,8 @@
 import { type Bot, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
+import { t } from "../foundation/i18n/index.js";
+import { escapeMarkdown } from "../foundation/markdown.js";
 import { telegramPostCard, telegramPostProgressCard } from "../interfaces/telegram/control-cards.js";
-import { t } from "../interfaces/telegram/i18n/index.js";
-import { escapeMarkdown } from "../interfaces/telegram/markdown.js";
 
 import { type PostProgressState, type PostProgressStatus, postProgressState } from "../studio/services/post-progress.js";
 import { botLocale } from "./i18n.js";

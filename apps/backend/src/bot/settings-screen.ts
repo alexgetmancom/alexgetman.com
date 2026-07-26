@@ -2,11 +2,11 @@ import { Menu, type MenuFlavor } from "@grammyjs/menu";
 import type { Context } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
-import { t } from "../interfaces/telegram/i18n/index.js";
-import { escapeMarkdown } from "../interfaces/telegram/markdown.js";
+import { t } from "../foundation/i18n/index.js";
+import { escapeMarkdown } from "../foundation/markdown.js";
 import { studioServices } from "../studio/services/index.js";
 import { botLocale } from "./i18n.js";
-import { persistentKeyboard } from "./navigation.js";
+import { persistentKeyboard } from "./menu-render.js";
 import { NOTIFICATIONS_MENU_ID, notificationsInboxText } from "./notifications-screen.js";
 
 export const SETTINGS_MENU_ID = "settings-menu";

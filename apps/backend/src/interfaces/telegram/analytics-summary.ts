@@ -5,8 +5,8 @@ import { markSynced } from "../../analytics/snapshots/creator-store.js";
 import type { BackendDb } from "../../db/client.js";
 import { analyticsSync } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
+import { t } from "../../foundation/i18n/index.js";
 import { log } from "../../foundation/logger.js";
-import { t } from "./i18n/index.js";
 
 /** Telegram-only weekly delivery of an already computed Analytics report. */
 export async function sendWeeklyAnalyticsSummary(

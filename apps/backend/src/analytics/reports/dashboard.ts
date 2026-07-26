@@ -2,8 +2,8 @@ import { eq } from "drizzle-orm";
 import type { BackendDb } from "../../db/client.js";
 import { creatorProfiles, socialComments } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
+import { t } from "../../foundation/i18n/index.js";
 import type { StudioLocale as BotLocale } from "../../foundation/locale.js";
-import { t } from "../../interfaces/telegram/i18n/index.js";
 import { latestVideoMetrics, siteTotal, sum, textTotals, type VideoMetricRow } from "../metric-deltas.js";
 import { metricNumber } from "../snapshots/creator-store.js";
 

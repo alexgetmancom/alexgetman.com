@@ -1,11 +1,17 @@
-/** Telegram interface message catalog.
+/** User-facing message catalog.
+ *
+ * It lives in foundation rather than under a single interface because the
+ * analytics report builders render the same strings as the Telegram screens do;
+ * while it sat in `interfaces/telegram/`, every report was importing a transport
+ * adapter to say "Dashboard".
  *
  * English is the source of truth for the key set. Every other locale is typed
  * `satisfies Record<MessageKey, string>`, so the compiler rejects a missing or
  * misspelled key — this IS the locale-parity check, no runtime test needed.
- * Adding a language is one new object here plus the union member below. */
+ * Adding a language is one new object here plus a member of StudioLocale. */
+import type { StudioLocale } from "../locale.js";
 
-export type UiLocale = "en" | "ru";
+export type UiLocale = StudioLocale;
 
 const en = {
   // Common atoms (shared across screens)

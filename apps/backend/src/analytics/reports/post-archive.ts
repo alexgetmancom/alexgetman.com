@@ -1,8 +1,8 @@
 import { and, desc, eq, inArray, max, sql } from "drizzle-orm";
 import type { BackendDb } from "../../db/client.js";
 import { metricSamples, postLocales, posts, publications, videoTargets } from "../../db/schema.js";
+import { t } from "../../foundation/i18n/index.js";
 import type { StudioLocale as BotLocale } from "../../foundation/locale.js";
-import { t } from "../../interfaces/telegram/i18n/index.js";
 import { metricNumber } from "../snapshots/creator-store.js";
 
 const PAGE_SIZE = 10;
