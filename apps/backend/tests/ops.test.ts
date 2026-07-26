@@ -122,6 +122,22 @@ describe("TypeScript operations tooling", () => {
       const now = new Date().toISOString();
       backendDb.sqlite.run("PRAGMA foreign_keys=OFF");
       backendDb.sqlite.query("INSERT INTO metric_schedule(post_key,target,updated_at) VALUES ('post:orphan','telegram',?)").run(now);
+      backendDb.sqlite
+        .query(
+          "INSERT INTO video_targets(id,video_draft_id,target,metadata_json,status,created_at,updated_at) VALUES (1,999,'instagram_reels','{}','failed',?,?)",
+        )
+        .run(now, now);
+      backendDb.sqlite
+        .query(
+          "INSERT INTO video_jobs(id,video_draft_id,video_target_id,kind,run_at,status,created_at,updated_at) VALUES (1,999,1,'publish',?,'failed',?,?)",
+        )
+        .run(now, now, now);
+      backendDb.sqlite
+        .query("INSERT INTO video_metric_schedule(video_target_id,checkpoint_index,next_check_at,updated_at) VALUES (1,0,?,?)")
+        .run(now, now);
+      backendDb.sqlite
+        .query("INSERT INTO video_metric_snapshots(video_target_id,platform,metrics_json,sampled_at) VALUES (1,'instagram_reels','{}',?)")
+        .run(now);
       backendDb.sqlite.run("PRAGMA foreign_keys=ON");
       backendDb.sqlite.query("INSERT INTO publications(post_id,status,created_at,updated_at) VALUES (1,'failed',?,?)").run(now, now);
       backendDb.sqlite
@@ -144,8 +160,8 @@ describe("TypeScript operations tooling", () => {
         .run(now, now);
       expect(publicationConsistencyReport(backendDb).targetMismatches).toHaveLength(1);
       expect(repairPublicationConsistency(backendDb)).toMatchObject({
-        foreignKeyViolations: 0,
-        deletedOrphans: 1,
+        foreignKeyViolations: 2,
+        deletedOrphans: 5,
         repairedTargets: 1,
         repairedPublications: 1,
       });
@@ -156,6 +172,10 @@ describe("TypeScript operations tooling", () => {
       });
       expect(backendDb.sqlite.query("SELECT status FROM publications WHERE post_id=1").get()).toEqual({ status: "published" });
       expect(backendDb.sqlite.query("SELECT status FROM drafts WHERE id=1").get()).toEqual({ status: "published" });
+      expect(backendDb.sqlite.query("SELECT count(*) AS count FROM video_targets").get()).toEqual({ count: 0 });
+      expect(backendDb.sqlite.query("SELECT count(*) AS count FROM video_jobs").get()).toEqual({ count: 0 });
+      expect(backendDb.sqlite.query("SELECT count(*) AS count FROM video_metric_schedule").get()).toEqual({ count: 0 });
+      expect(backendDb.sqlite.query("SELECT count(*) AS count FROM video_metric_snapshots").get()).toEqual({ count: 0 });
     } finally {
       backendDb.close();
     }

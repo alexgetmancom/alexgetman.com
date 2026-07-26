@@ -211,6 +211,11 @@ export function repairPublicationConsistency(backendDb: BackendDb): Record<strin
   let repairedPublications = 0;
   backendDb.db.transaction(() => {
     for (const statement of [
+      "DELETE FROM social_comments WHERE video_target_id NOT IN (SELECT id FROM video_targets) OR video_target_id IN (SELECT id FROM video_targets WHERE video_draft_id NOT IN (SELECT id FROM video_drafts))",
+      "DELETE FROM video_metric_snapshots WHERE video_target_id NOT IN (SELECT id FROM video_targets) OR video_target_id IN (SELECT id FROM video_targets WHERE video_draft_id NOT IN (SELECT id FROM video_drafts))",
+      "DELETE FROM video_metric_schedule WHERE video_target_id NOT IN (SELECT id FROM video_targets) OR video_target_id IN (SELECT id FROM video_targets WHERE video_draft_id NOT IN (SELECT id FROM video_drafts))",
+      "DELETE FROM video_jobs WHERE video_draft_id NOT IN (SELECT id FROM video_drafts) OR (video_target_id IS NOT NULL AND video_target_id NOT IN (SELECT id FROM video_targets))",
+      "DELETE FROM video_targets WHERE video_draft_id NOT IN (SELECT id FROM video_drafts)",
       "DELETE FROM metric_schedule WHERE post_key NOT IN (SELECT post_key FROM posts)",
       "DELETE FROM post_targets WHERE post_key NOT IN (SELECT post_key FROM posts)",
       "DELETE FROM post_locales WHERE post_id NOT IN (SELECT post_id FROM publications)",
