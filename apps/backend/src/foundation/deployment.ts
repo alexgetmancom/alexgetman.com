@@ -41,6 +41,16 @@ export function parseDeploymentPromoteAskCallback(value: string): DeploymentRoll
   return parseDeploymentCallback(value, "deploy_pr_ask");
 }
 
+export function deploymentMenuCallback(revision: string): string {
+  if (!releasePattern.test(revision)) throw new Error("deployment revision must be a Git SHA");
+  return `deploy_menu:${revision}`;
+}
+
+export function parseDeploymentMenuCallback(value: string): string | null {
+  const [action, revision, extra] = value.split(":");
+  return action === "deploy_menu" && extra === undefined && revision && releasePattern.test(revision) ? revision : null;
+}
+
 function parseDeploymentCallback(value: string, action: string): DeploymentRollback | null {
   const [receivedAction, target, revision, extra] = value.split(":");
   if (receivedAction !== action || extra !== undefined || !target || !revision) return null;

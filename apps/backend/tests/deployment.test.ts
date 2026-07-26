@@ -1,8 +1,11 @@
 import { describe, expect, it, mock } from "bun:test";
+import { deploymentMenuKeyboard } from "../src/bot/operations-screen.js";
 import { loadConfig } from "../src/foundation/config.js";
 import {
+  deploymentMenuCallback,
   deploymentPromoteCallback,
   deploymentRollbackCallback,
+  parseDeploymentMenuCallback,
   parseDeploymentPromoteAskCallback,
   parseDeploymentPromoteCallback,
   parseDeploymentRollbackAskCallback,
@@ -85,5 +88,23 @@ describe("deployment promote protocol", () => {
         fetchImpl,
       ),
     ).resolves.toEqual({ ok: true, release: revision, currentRevision: revision });
+  });
+});
+
+describe("deployment action menu", () => {
+  const revision = "c".repeat(40);
+
+  it("returns from confirmation to the release controls", () => {
+    expect(deploymentMenuCallback(revision)).toBe(`deploy_menu:${revision}`);
+    expect(parseDeploymentMenuCallback(`deploy_menu:${revision}`)).toBe(revision);
+    expect(parseDeploymentMenuCallback("deploy_menu:latest")).toBeNull();
+  });
+
+  it("always keeps alex rollback, maru promote and worker promote together", () => {
+    expect(
+      deploymentMenuKeyboard(revision)
+        .inline_keyboard.flat()
+        .map((button) => button.text),
+    ).toEqual(["Откатить alex", "Раскатить maru", "Раскатить worker"]);
   });
 });
