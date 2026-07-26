@@ -112,8 +112,13 @@ function medianDailyPostCount(posts: NonNullable<PipelineData["posts"]>, days: n
 
 function median(values: number[]): number {
   const ordered = [...values].sort((left, right) => left - right);
+  if (ordered.length === 0) return 0;
   const middle = Math.floor(ordered.length / 2);
-  return ordered.length % 2 ? ordered[middle]! : (ordered[middle - 1]! + ordered[middle]!) / 2;
+  const upper = ordered[middle];
+  if (upper === undefined) return 0;
+  if (ordered.length % 2) return upper;
+  const lower = ordered[middle - 1];
+  return lower === undefined ? upper : (lower + upper) / 2;
 }
 
 function calendarKey(value: string | null | undefined, timeZone: string): string | null {

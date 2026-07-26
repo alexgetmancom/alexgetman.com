@@ -15,7 +15,7 @@ function xmlEscape(value: string): string {
 
 function videoBlockFor(item: ReturnType<typeof loadFeedItems>[number], locale: "en" | "ru", siteUrl: string): string {
   const media = postVisualMedia(item, locale);
-  if (!media || media.type !== "video") return "";
+  if (media?.type !== "video") return "";
   const text = locale === "ru" ? item.text || "" : item.text_en || item.text || "";
   const title = getFirstSentence(text) || `Post ${item.post_id}`;
   const description = excerptAfterTitle(text, title, 2048) || title;

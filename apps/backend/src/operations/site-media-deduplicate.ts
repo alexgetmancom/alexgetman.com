@@ -30,9 +30,11 @@ export async function deduplicateSiteMedia(config: BackendConfig, apply: boolean
   // Same-inode files already share data. This makes a post-migration dry run
   // accurately report zero physical bytes left to reclaim.
   const reclaimable = [...groups.values()].reduce((total, group) => {
+    const [first] = group;
+    if (!first) return total;
     const physicalBytes = new Map<string, number>();
     for (const entry of group) physicalBytes.set(entry.inode, entry.size);
-    return total + [...physicalBytes.values()].reduce((sum, size) => sum + size, 0) - group[0]!.size;
+    return total + [...physicalBytes.values()].reduce((sum, size) => sum + size, 0) - first.size;
   }, 0);
   if (apply) for (const entry of entries) await deduplicateSiteMediaFile(mediaRoot, entry.file);
   return {
