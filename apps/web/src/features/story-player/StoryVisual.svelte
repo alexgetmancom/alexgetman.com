@@ -1,21 +1,21 @@
 <!-- =============================================================================
   ЦЕНТРАЛЬНАЯ СЦЕНА: фото/видео активного поста.
   ─────────────────────────────────────────────────────────────────────────────
-  Презентационный компонент: своего состояния нет (кроме локального
-  play/pause-оверлея). Что здесь живёт:
+  Презентационный компонент: своё состояние — только фолбек упавшего видео.
+  Что здесь живёт:
     - <img>/<video>/<audio> активного поста (элементы отдаёт корню через bind:)
-    - горизонтальный прогресс-бар (заполнением управляет progress.ts из корня)
     - кнопка звука, кнопка «Читать», мобильная подпись и мобильные кнопки
-    - галерея-миниатюры, если у поста больше одного медиа
+  Полоса прогресса — StoryProgressBar.svelte (её `progressFill` проходит
+  насквозь к корню), вспышка play/pause — PlayPauseOverlay.svelte.
   Все клики уходят коллбеками в StoryPlayer.svelte.
   Стили — в <style> внизу (scoped), включая мобильный полноэкранный режим.
-  Особый случай: @keyframes storyProgressHorizontal объявлен глобальным
-  (-global-), потому что его имя подставляет progress.ts из JS.
 ============================================================================= -->
 <script lang="ts">
 import { onStoryImageError } from "../../scripts/story-player/media";
 import type { StoryUi } from "./i18n";
+import PlayPauseOverlay from "./PlayPauseOverlay.svelte";
 import type { PlayerPost } from "./payload";
+import StoryProgressBar from "./StoryProgressBar.svelte";
 
 let {
   post,
@@ -93,38 +93,13 @@ function onImageError(event: Event): void {
 
 <div class="story-visual-wrap">
   <article class="story-visual" class:story-visual--no-image={!post.image} data-story-visual {onwheel}>
-    {#if hasGallerySequence}
-      <!-- Не tablist: панелей, которые переключались бы вкладками, здесь нет —
-           это индикатор слайдов, часть которых кликабельна. role="tab" без
-           tabpanel/aria-controls только вводил скринридер в заблуждение, а
-           неизображённые сегменты объявлялись вкладками, до которых нельзя
-           дойти клавиатурой. Текущий слайд помечается aria-current. -->
-      <div class="story-visual-progress story-visual-progress--segmented" role="group" aria-label={`${post.title} — slides`}>
-        {#each gallerySequence as media, index}
-          <button
-            type="button"
-            class="story-visual-progress__segment"
-            class:is-complete={index < gallerySubIndex}
-            class:is-clickable={media.type === "image"}
-            aria-current={index === gallerySubIndex ? "true" : undefined}
-            aria-label={`${index + 1} / ${gallerySequence.length}`}
-            disabled={media.type !== "image"}
-            onclick={(event) => {
-              event.preventDefault();
-              onselectgallery?.(index);
-            }}
-          >
-            {#if index === gallerySubIndex}
-              <i bind:this={progressFill}></i>
-            {/if}
-          </button>
-        {/each}
-      </div>
-    {:else}
-      <span class="story-visual-progress" aria-hidden="true">
-        <i bind:this={progressFill}></i>
-      </span>
-    {/if}
+    <StoryProgressBar
+      title={post.title}
+      {gallerySequence}
+      {gallerySubIndex}
+      bind:progressFill
+      {onselectgallery}
+    />
     <a
       class="story-visual__link"
       href={post.url}
@@ -201,13 +176,7 @@ function onImageError(event: Event): void {
         <span>{shareCopied ? ui.copied : ui.share}</span>
       </button>
     </div>
-    {#key overlayTick}
-      {#if overlayTick > 0}
-        <div class="play-pause-overlay is-visible">
-          <div class={`play-pause-icon ${paused ? "is-paused" : "is-playing"}`}></div>
-        </div>
-      {/if}
-    {/key}
+    <PlayPauseOverlay {paused} {overlayTick} />
     <audio bind:this={audio} src={!isVideo ? post.audioUrl || undefined : undefined} preload="none"></audio>
   </article>
 </div>
@@ -283,71 +252,7 @@ function onImageError(event: Event): void {
     background: #000;
   }
 
-  /* -------------------- Полоса прогресса текущего поста --------------------- */
-  .story-visual-progress {
-    position: absolute;
-    z-index: var(--z-overlay);
-    top: 2px;
-    left: 6px;
-    right: 6px;
-    height: 4px;
-    overflow: hidden;
-    background: rgba(255, 255, 255, 0.32);
-    pointer-events: none;
-  }
-
-  .story-visual-progress i {
-    display: block;
-    width: 100%;
-    height: 100%;
-    transform: scaleX(0);
-    transform-origin: left center;
-    background: var(--accent);
-    box-shadow: 0 0 12px rgba(220, 38, 38, 0.62);
-  }
-
-  /* Имя keyframes глобальное (-global-): его подставляет progress.ts из JS. */
-  @keyframes -global-storyProgressHorizontal {
-    from {
-      transform: scaleX(0);
-    }
-    to {
-      transform: scaleX(1);
-    }
-  }
-
-  /* Сегментированная полоса (2+ картинки в посте) — как в Instagram-сторис:
-     один сегмент на слайд, текущий заполняется анимацией, пройденные — сплошные. */
-  .story-visual-progress--segmented {
-    display: flex;
-    gap: 4px;
-    background: none;
-    pointer-events: auto;
-  }
-
-  .story-visual-progress__segment {
-    position: relative;
-    flex: 1 1 0;
-    height: 100%;
-    margin: 0;
-    padding: 0;
-    border: 0;
-    overflow: hidden;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.32);
-    cursor: default;
-    -webkit-appearance: none;
-    appearance: none;
-  }
-
-  .story-visual-progress__segment.is-complete {
-    background: var(--accent);
-  }
-
-  .story-visual-progress__segment.is-clickable {
-    cursor: pointer;
-    pointer-events: auto;
-  }
+  /* Полоса прогресса (обычная и сегментированная) — в StoryProgressBar.svelte. */
 
   /* Пост без картинки: крупный заголовок на градиенте. */
   .story-visual__fallback {
@@ -411,86 +316,7 @@ function onImageError(event: Event): void {
     display: none;
   }
 
-  /* -------------------- Оверлей play/pause по клику ------------------------- */
-  .play-pause-overlay {
-    position: absolute;
-    inset: 0;
-    z-index: 5;
-    display: grid;
-    place-items: center;
-    background: rgba(0, 0, 0, 0.12);
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.3s ease;
-  }
-
-  .play-pause-overlay.is-visible {
-    animation: playPauseFlash 0.65s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  }
-
-  .play-pause-icon {
-    width: 64px;
-    height: 64px;
-    border-radius: 50%;
-    background: rgba(0, 0, 0, 0.72);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    display: grid;
-    place-items: center;
-    position: relative;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-  }
-
-  /* Пауза: две вертикальные полосы. */
-  .play-pause-icon.is-paused::before,
-  .play-pause-icon.is-paused::after {
-    content: "";
-    width: 6px;
-    height: 20px;
-    background: #ffffff;
-    border-radius: 2px;
-    position: absolute;
-    top: 22px;
-  }
-  .play-pause-icon.is-paused::before {
-    left: 23px;
-  }
-  .play-pause-icon.is-paused::after {
-    right: 23px;
-  }
-
-  /* Плей: треугольник. */
-  .play-pause-icon.is-playing::before {
-    content: "";
-    width: 0;
-    height: 0;
-    border-style: solid;
-    border-width: 10px 0 10px 18px;
-    border-color: transparent transparent transparent #ffffff;
-    position: absolute;
-    left: 25px;
-    top: 22px;
-  }
-
-  @keyframes playPauseFlash {
-    0% {
-      opacity: 0;
-      transform: scale(0.85);
-    }
-    15% {
-      opacity: 1;
-      transform: scale(1);
-    }
-    85% {
-      opacity: 1;
-      transform: scale(1);
-    }
-    100% {
-      opacity: 0;
-      transform: scale(1.08);
-    }
-  }
+  /* Оверлей play/pause по клику — в PlayPauseOverlay.svelte. */
 
   /* ---- Планшет (≤1120px): сцена встаёт первой в колонке ---- */
   @media (max-width: 1120px) {
@@ -532,15 +358,6 @@ function onImageError(event: Event): void {
       z-index: 3;
       background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.82));
       pointer-events: none;
-    }
-
-    .story-visual-progress {
-      height: 4px;
-      top: calc(env(safe-area-inset-top, 0) + 2px);
-      left: 0.55rem;
-      right: 0.55rem;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.24);
     }
 
     .audio-chip {
