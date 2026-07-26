@@ -29,6 +29,7 @@ if (!image) {
 }
 
 const container = `image-smoke-${process.pid}`;
+const volume = `image-smoke-${process.pid}`;
 const port = 18000 + (process.pid % 20000);
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "image-smoke-"));
 const dataDir = path.join(root, "data");
@@ -58,22 +59,36 @@ async function run(command: string[]): Promise<{ code: number; out: string }> {
 
 async function cleanup(): Promise<void> {
   await run(["docker", "rm", "-f", container]);
+  await run(["docker", "volume", "rm", "-f", volume]);
   fs.rmSync(root, { recursive: true, force: true });
 }
 
 try {
-  // Bind-mounting the fixture keeps the image itself untouched, and the
-  // entrypoint's ownership fixup is part of what gets exercised.
-  const started = await run([
+  /**
+   * The fixture goes into a docker volume rather than a bind mount, and the
+   * container is created, filled and only then started.
+   *
+   * A bind mount looks fine on macOS and breaks on Linux. Docker Desktop and
+   * OrbStack virtualise bind-mount ownership; a real Linux host does not. The
+   * entrypoint chowns /data itself and drops to uid 1000, but
+   * fixDataDirectoriesOwnership is deliberately non-recursive (see
+   * foundation/runtime/data-dirs.ts), so a seeded pipeline.db keeps the uid of
+   * whoever ran this script and the server dies on its first write with
+   * SQLITE_READONLY. The mirror image bites on the way out: files the
+   * container leaves behind as uid 1000 are not deletable by that same user.
+   *
+   * Inside a volume the chown is real on every platform, and teardown is
+   * `docker volume rm`, so no host uid is ever involved.
+   */
+  const created = await run([
     "docker",
-    "run",
-    "-d",
+    "create",
     "--name",
     container,
     "-p",
     `127.0.0.1:${port}:8788`,
     "-v",
-    `${dataDir}:/data`,
+    `${volume}:/data`,
     "-v",
     `${path.resolve("studio.yaml")}:/app/studio.yaml:ro`,
     "-e",
@@ -108,7 +123,32 @@ try {
     "CHANNEL_USERNAME=alexgetmancom",
     image,
   ]);
-  if (started.code !== 0) throw new Error(`docker run failed: ${started.out}`);
+  if (created.code !== 0) throw new Error(`docker create failed: ${created.out}`);
+
+  const copied = await run(["docker", "cp", `${dataDir}/.`, `${container}:/data`]);
+  if (copied.code !== 0) throw new Error(`docker cp failed: ${copied.out}`);
+
+  // `docker cp` writes as root; hand the whole tree to the runtime user before
+  // the entrypoint drops privileges.
+  const owned = await run([
+    "docker",
+    "run",
+    "--rm",
+    "--user",
+    "0",
+    "--entrypoint",
+    "chown",
+    "-v",
+    `${volume}:/data`,
+    image,
+    "-R",
+    "1000:1000",
+    "/data",
+  ]);
+  if (owned.code !== 0) throw new Error(`chown failed: ${owned.out}`);
+
+  const started = await run(["docker", "start", container]);
+  if (started.code !== 0) throw new Error(`docker start failed: ${started.out}`);
 
   const base = `http://127.0.0.1:${port}`;
   const deadline = Date.now() + 60_000;
@@ -137,17 +177,17 @@ try {
     ["/sitemap.xml", 300],
     ["/robots.txt", 50],
   ];
-  let home = "";
-  for (const [route, minimumBytes] of routes) {
-    const response = await fetch(base + route);
-    const body = await response.text();
-    if (route === "/") home = body;
-    check(
-      response.status === 200 && body.length >= minimumBytes,
-      `GET ${route}`,
-      `${response.status}, ${body.length}b (min ${minimumBytes})`,
-    );
+  const probed = await Promise.all(
+    routes.map(async ([route, minimumBytes]) => {
+      const response = await fetch(base + route);
+      const body = await response.text();
+      return { route, minimumBytes, status: response.status, body };
+    }),
+  );
+  for (const { route, minimumBytes, status, body } of probed) {
+    check(status === 200 && body.length >= minimumBytes, `GET ${route}`, `${status}, ${body.length}b (min ${minimumBytes})`);
   }
+  const home = probed.find((entry) => entry.route === "/")?.body ?? "";
 
   // The read model must link the vertical composite the media worker produces,
   // and that file must actually be served off the mounted public dir.
@@ -156,9 +196,14 @@ try {
   const media = await fetch(`${base}/${firstImage}`);
   check(media.status === 200, `GET /${firstImage}`, String(media.status));
 
-  for (const command of ["doctor", "status", "audit", "capabilities"]) {
-    const result = await run(["docker", "exec", "-u", "bun", container, "bun", "/app/ops/cli.js", command]);
-    check(result.code === 0, `ops ${command}`, `exit ${result.code}`);
+  // In parallel: each of these spawns a fresh bun in the container, and this
+  // step sits on the critical path between the image build and the deploy.
+  const opsCommands = ["doctor", "status", "audit", "capabilities"];
+  const opsResults = await Promise.all(
+    opsCommands.map((command) => run(["docker", "exec", "-u", "bun", container, "bun", "/app/ops/cli.js", command])),
+  );
+  for (const [index, result] of opsResults.entries()) {
+    check(result.code === 0, `ops ${opsCommands[index]}`, `exit ${result.code}`);
   }
 
   // Both binaries, and a real encode: a broken static build would still answer
