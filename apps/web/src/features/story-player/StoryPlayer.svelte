@@ -43,6 +43,7 @@ import { giscusConfig, storyIntervalMs, swipeThresholdPx, wheelCooldownMs } from
 import "./story-actions.css";
 import type { StoryUi } from "./i18n";
 import type { PlayerPost } from "./payload";
+import RailControl from "./RailControl.svelte";
 import StoryContext from "./StoryContext.svelte";
 import StoryRail from "./StoryRail.svelte";
 import StoryVisual from "./StoryVisual.svelte";
@@ -440,38 +441,14 @@ onMount(() => {
 >
   <div class="story-player__main">
     <div class="story-rail-container" onwheel={handleWheel}>
-      <div class="rail-control" aria-label={ui.feedMode}>
-        <div class="rail-avatar-menu">
-          <button class="rail-avatar-menu__button" type="button" aria-label={ui.menu}>
-            <img src="/brand-avatar-small-20260629.webp" alt="" width="34" height="34" />
-          </button>
-          <div class="rail-avatar-menu__panel">
-            <a href={locale === "ru" ? "/ru/" : "/"}>Alex Getman</a>
-            <a class="notranslate" href={locale === "ru" ? "/" : "/ru/"}>{ui.language}</a>
-            <a href="https://t.me/alexgetmancom" target="_blank" rel="noopener noreferrer">{ui.telegram}</a>
-          </div>
-        </div>
-        <div class="feed-mode-menu">
-          <button
-            class="feed-mode-menu__button is-active"
-            type="button"
-            aria-haspopup="true"
-            aria-expanded={feedMenuOpen}
-            onclick={(event) => {
-              event.stopPropagation();
-              feedMenuOpen = !feedMenuOpen;
-            }}
-          >
-            <span>{feedMode === "deep" ? ui.feedDeep : feedMode === "watched" ? ui.feedWatched : ui.feedLatest}</span>
-            <span aria-hidden="true">▾</span>
-          </button>
-          <div class="feed-mode-menu__panel" class:is-open={feedMenuOpen}>
-            <button class:is-active={feedMode === "latest"} type="button" onclick={() => selectFeedMode("latest")}>{ui.feedLatest}</button>
-            <button class:is-active={feedMode === "deep"} type="button" onclick={() => selectFeedMode("deep")}>{ui.feedDeep}</button>
-            <button class:is-active={feedMode === "watched"} type="button" onclick={() => selectFeedMode("watched")}>{ui.feedWatched}</button>
-          </div>
-        </div>
-      </div>
+      <RailControl
+        {ui}
+        {locale}
+        {feedMode}
+        {feedMenuOpen}
+        ontogglemenu={() => (feedMenuOpen = !feedMenuOpen)}
+        onselectmode={selectFeedMode}
+      />
       <StoryRail {posts} {ui} {active} {visibleIndexes} onselect={(index) => {
         if (!visibleIndexes.includes(index)) return;
         goTo(index, { keepProgressIdle: true });
@@ -583,159 +560,8 @@ onMount(() => {
     gap: 0;
   }
 
-  /* --------------- Боковая панель управления (аватар + режимы) -------------- */
-  .rail-control {
-    position: absolute;
-    z-index: var(--z-rail);
-    top: var(--rail-active-offset);
-    left: 0.05rem;
-    width: 50px;
-    height: var(--rail-card-height);
-    box-sizing: border-box;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.32rem;
-    padding: 0.38rem 0.32rem;
-    border: 1px solid rgba(220, 38, 38, 0.42);
-    border-right: 0;
-    border-radius: 8px 0 0 8px;
-    background: linear-gradient(180deg, rgba(220, 38, 38, 0.18), rgba(0, 0, 0, 0.64)), rgba(0, 0, 0, 0.78);
-    box-shadow:
-      inset -1px 0 0 rgba(220, 38, 38, 0.18),
-      0 12px 28px rgba(0, 0, 0, 0.36);
-    pointer-events: auto;
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-  }
-
-  .rail-avatar-menu,
-  .feed-mode-menu {
-    position: relative;
-  }
-
-  .rail-avatar-menu {
-    flex: 0 0 auto;
-  }
-
-  .feed-mode-menu {
-    flex: 1 1 auto;
-    display: flex;
-  }
-
-  .rail-avatar-menu__button,
-  .feed-mode-menu__button,
-  .feed-mode-menu__panel button {
-    min-height: 36px;
-    border: 1px solid var(--border);
-    background: rgba(0, 0, 0, 0.72);
-    color: var(--text-header);
-    cursor: pointer;
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
-    transition:
-      border-color 0.16s ease,
-      background 0.16s ease,
-      color 0.16s ease;
-  }
-
-  .rail-avatar-menu__button {
-    width: 34px;
-    height: 34px;
-    display: grid;
-    place-items: center;
-    padding: 0;
-    border-radius: 10px;
-    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.42);
-  }
-
-  .rail-avatar-menu__button img {
-    width: 28px;
-    height: 28px;
-    border-radius: 7px;
-    object-fit: cover;
-  }
-
-  .feed-mode-menu__button {
-    flex: 1 1 auto;
-    min-height: 0;
-    width: 34px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.36rem;
-    padding: 0.48rem 0.2rem;
-    border-radius: 7px;
-    font-size: 0.72rem;
-    font-weight: 900;
-    writing-mode: vertical-rl;
-    text-orientation: mixed;
-  }
-
-  .rail-avatar-menu__button:hover,
-  .feed-mode-menu__button:hover,
-  .feed-mode-menu__button.is-active {
-    border-color: rgba(220, 38, 38, 0.48);
-    background: rgba(220, 38, 38, 0.13);
-  }
-
-  .rail-avatar-menu__panel,
-  .feed-mode-menu__panel {
-    position: absolute;
-    left: calc(100% + 0.48rem);
-    top: 0;
-    min-width: 154px;
-    display: grid;
-    gap: 0.16rem;
-    padding: 0.38rem;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: rgba(0, 0, 0, 0.88);
-    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.56);
-    opacity: 0;
-    pointer-events: none;
-    transform: translateY(-4px);
-    transition:
-      opacity 0.16s ease,
-      transform 0.16s ease;
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-  }
-
-  .rail-avatar-menu:hover .rail-avatar-menu__panel,
-  .rail-avatar-menu:focus-within .rail-avatar-menu__panel,
-  .feed-mode-menu__panel.is-open,
-  .feed-mode-menu:focus-within .feed-mode-menu__panel {
-    opacity: 1;
-    pointer-events: auto;
-    transform: translateY(0);
-  }
-
-  .rail-avatar-menu__panel a,
-  .feed-mode-menu__panel button {
-    display: block;
-    width: 100%;
-    padding: 0.48rem 0.55rem;
-    border-radius: 6px;
-    color: var(--text-main);
-    font-size: 0.82rem;
-    font-weight: 850;
-    text-align: left;
-  }
-
-  .feed-mode-menu__panel button {
-    min-height: 0;
-    border: 0;
-    background: transparent;
-  }
-
-  .rail-avatar-menu__panel a:hover,
-  .feed-mode-menu__panel button:hover,
-  .feed-mode-menu__panel button.is-active {
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(243, 246, 250, 0.22);
-    color: var(--text-header);
-  }
+  /* Панель управления (аватар + режимы ленты) — в RailControl.svelte;
+     её геометрия выведена из --rail-* выше и наследуется туда. */
 
   /* ------------------------ Дебаг-панель (?debug=1) -------------------------- */
   .story-debug-panel {
@@ -783,24 +609,6 @@ onMount(() => {
       flex-wrap: wrap;
       padding-left: 0;
     }
-
-    .rail-control {
-      position: relative;
-      top: auto;
-      left: auto;
-      width: 100%;
-      height: auto;
-      flex-direction: row;
-      order: 1;
-      margin-bottom: 0.48rem;
-      border-radius: 8px;
-    }
-
-    .feed-mode-menu__button {
-      width: auto;
-      min-height: 36px;
-      writing-mode: horizontal-tb;
-    }
   }
 
   /* ---- Телефон (≤760px): плеер во весь экран, лента скрыта ---- */
@@ -821,37 +629,6 @@ onMount(() => {
 
     .story-rail-container {
       display: none;
-    }
-
-    .rail-control {
-      position: relative;
-      left: auto;
-      top: auto;
-      width: 100%;
-      height: auto;
-      flex-direction: row;
-      justify-content: flex-start;
-      margin: 0 0 0.55rem;
-      padding: 0.42rem;
-      border: 1px solid rgba(220, 38, 38, 0.35);
-      border-radius: 10px;
-    }
-
-    .rail-avatar-menu__panel,
-    .feed-mode-menu__panel {
-      left: 0;
-      top: calc(100% + 0.45rem);
-    }
-
-    .feed-mode-menu {
-      flex: 0 0 auto;
-    }
-
-    .feed-mode-menu__button {
-      width: auto;
-      min-height: 36px;
-      writing-mode: horizontal-tb;
-      padding: 0.34rem 0.68rem;
     }
   }
 </style>
