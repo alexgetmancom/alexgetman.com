@@ -37,9 +37,15 @@ export function openBackendDb(path: string, timeout = 30_000): BackendDb {
   };
   sqlite.run("PRAGMA journal_mode = WAL");
   sqlite.run(`PRAGMA busy_timeout = ${timeout}`);
-  sqlite.run("PRAGMA foreign_keys = ON");
   const db = drizzle(sqlite, { schema, casing: "snake_case" });
+  // Migrations run with foreign keys OFF and the pragma is turned on only after.
+  // The table-rebuild migrations (0008 and later) drop a parent table while the
+  // not-yet-rebuilt children still reference it; with enforcement on, that DROP
+  // runs an implicit DELETE and fails on the first child row. An empty database
+  // hides this — it only bites when migrating a restored dump that has data.
+  sqlite.run("PRAGMA foreign_keys = OFF");
   migrate(db, { migrationsFolder: migrationsFolder() });
+  sqlite.run("PRAGMA foreign_keys = ON");
   return {
     sqlite,
     db,

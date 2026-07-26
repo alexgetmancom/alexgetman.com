@@ -46,7 +46,7 @@ export async function runOperationCommand(
     const locale = input.locale ?? "en";
     const text = input.text ?? input.text_en ?? "";
     result = editLocaleContent(backendDb, publicationRef, locale, text);
-    if (config)
+    if (config) {
       result.external = await editPublishedTargets(
         backendDb,
         {
@@ -59,7 +59,8 @@ export async function runOperationCommand(
         config,
         fetchImpl,
       );
-    if (config) result.replaced = await replaceTextFallbackTargets(backendDb, publicationRef, config, input.target, locale, fetchImpl);
+      result.replaced = await replaceTextFallbackTargets(backendDb, publicationRef, config, input.target, locale, fetchImpl);
+    }
   } else if (input.action === "replace_media" || input.action === "replace_en_media") {
     const locale = input.locale ?? "en";
     result = replaceLocaleMedia(backendDb, publicationRef, locale, parseEnglishMedia(input.media_json ?? input.media_en_json));

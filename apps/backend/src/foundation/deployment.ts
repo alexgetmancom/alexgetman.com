@@ -9,10 +9,14 @@ type DeploymentRollbackResult = { ok: true; release: string; currentRevision: st
 type FetchImplementation = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 type DeploymentRollback = { target: string; revision: string };
 
-export function deploymentRollbackCallback(target: string, revision: string): string {
+function deploymentCallback(action: string, target: string, revision: string): string {
   if (!targetPattern.test(target)) throw new Error("deployment target must be a short lowercase identifier");
   if (!releasePattern.test(revision)) throw new Error("deployment revision must be a Git SHA");
-  return `deploy_rollback:${target}:${revision}`;
+  return `${action}:${target}:${revision}`;
+}
+
+export function deploymentRollbackCallback(target: string, revision: string): string {
+  return deploymentCallback("deploy_rollback", target, revision);
 }
 
 export function parseDeploymentRollbackCallback(value: string): DeploymentRollback | null {
@@ -20,9 +24,7 @@ export function parseDeploymentRollbackCallback(value: string): DeploymentRollba
 }
 
 export function deploymentPromoteCallback(target: string, revision: string): string {
-  if (!targetPattern.test(target)) throw new Error("deployment target must be a short lowercase identifier");
-  if (!releasePattern.test(revision)) throw new Error("deployment revision must be a Git SHA");
-  return `deploy_promote:${target}:${revision}`;
+  return deploymentCallback("deploy_promote", target, revision);
 }
 
 export function parseDeploymentPromoteCallback(value: string): DeploymentRollback | null {

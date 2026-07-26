@@ -16,33 +16,36 @@ import { sendDraftPreview } from "./post-card.js";
 import { clearPostAdminState, getPostAdminState, startPostDialog } from "./post-state.js";
 
 /** The conversational text-post screen. It owns user input and keeps the
- * root bot router limited to authorization and screen dispatch. */
-export async function startPostScreen(ctx: Context, backendDb: BackendDb): Promise<void> {
+ * root bot router limited to authorization and screen dispatch.
+ *
+ * `reply` opens the screen as a new message; `edit` turns the message the
+ * operator just tapped into it, which is what a callback should do. */
+async function renderPostScreen(ctx: Context, backendDb: BackendDb, mode: "reply" | "edit"): Promise<void> {
   const adminId = Number(ctx.from?.id);
   startPostDialog(backendDb, adminId);
   const locale = botLocale(backendDb, adminId);
-  await ctx.reply(t(locale, "post.dialog-prompt"), {
-    reply_markup: new InlineKeyboard().text(t(locale, "common.cancel"), "cancel_dialog"),
-  });
+  const prompt = t(locale, "post.dialog-prompt");
+  const options = { reply_markup: new InlineKeyboard().text(t(locale, "common.cancel"), "cancel_dialog") };
+  if (mode === "edit") await ctx.editMessageText(prompt, options);
+  else await ctx.reply(prompt, options);
+}
+
+export async function startPostScreen(ctx: Context, backendDb: BackendDb): Promise<void> {
+  await renderPostScreen(ctx, backendDb, "reply");
 }
 
 export async function openPostScreen(ctx: Context, backendDb: BackendDb): Promise<void> {
-  const adminId = Number(ctx.from?.id);
-  startPostDialog(backendDb, adminId);
-  const locale = botLocale(backendDb, adminId);
-  await ctx.editMessageText(t(locale, "post.dialog-prompt"), {
-    reply_markup: new InlineKeyboard().text(t(locale, "common.cancel"), "cancel_dialog"),
-  });
+  await renderPostScreen(ctx, backendDb, "edit");
 }
 
 export async function handlePostMessage(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<void> {
   const adminId = Number(ctx.from?.id);
+  const locale = botLocale(backendDb, adminId);
   const state = getPostAdminState(backendDb, adminId);
   const message = extractMessage(ctx);
   const mediaGroupId = ctx.message && "media_group_id" in ctx.message ? ctx.message.media_group_id : undefined;
   if (mediaGroupId && message.media.length > 0) {
     if (!state?.action || (state.action !== "new_post" && !state.draft_id)) {
-      const locale = botLocale(backendDb, adminId);
       await ctx.reply(t(locale, "post.album-need-action"), { reply_markup: persistentKeyboard(locale) });
       return;
     }
@@ -58,14 +61,13 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
       action: state.action,
       draftId: state.draft_id,
     });
-    if (isNew) await ctx.reply(t(botLocale(backendDb, adminId), "post.album-received"));
+    if (isNew) await ctx.reply(t(locale, "post.album-received"));
     return;
   }
   if (state?.action && state.action !== "new_post" && state.draft_id) {
     try {
       await applyAdminState(ctx, backendDb, config, state.action, state.draft_id, state.control_message_id);
     } catch (error) {
-      const locale = botLocale(backendDb, adminId);
       const scheduleInput = state.action.startsWith("schedule_manual_");
       await ctx.reply(
         scheduleInput ? describeError(locale, error) : t(locale, "post.value-error", { error: describeError(locale, error) }),
@@ -74,7 +76,6 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
     return;
   }
   if (state?.action !== "new_post") {
-    const locale = botLocale(backendDb, adminId);
     await ctx.reply(t(locale, "post.need-new-post"), { reply_markup: persistentKeyboard(locale) });
     return;
   }

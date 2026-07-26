@@ -10,9 +10,21 @@ import { excerptAfterTitle, getFirstSentence } from "./text";
 const WEB_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", "..");
 const PUBLIC_ROOT = path.join(WEB_ROOT, "public");
 
+/** Post pages render server-side on every request, and each post asks about its
+ * cover, poster and every gallery entry — four existsSync calls apiece. Results
+ * are cached per resolved file path: media filenames carry a `?v=<hash>` cache
+ * key, so a replaced file arrives under a path this map has never seen. Only
+ * hits are cached: media is materialized lazily, and a path that is missing now
+ * can legitimately exist on the next request. The key carries the resolution
+ * roots, because the same public path resolves to different files when
+ * SITE_PUBLIC_DIR or the working directory changes. */
+const siteImageCache = new Set<string>();
+
 export function existingSiteImage(publicPath: string | null | undefined) {
   if (!publicPath) return null;
   const normalizedPath = String(publicPath).replace(/^\/+/, "");
+  const cacheKey = `${process.env.SITE_PUBLIC_DIR ?? ""}\0${process.cwd()}\0${normalizedPath}`;
+  if (siteImageCache.has(cacheKey)) return normalizedPath;
   const filePath = normalizedPath.split(/[?#]/, 1)[0] ?? "";
   const candidates = [
     ...(process.env.SITE_PUBLIC_DIR ? [path.join(process.env.SITE_PUBLIC_DIR, filePath)] : []),
@@ -20,7 +32,9 @@ export function existingSiteImage(publicPath: string | null | undefined) {
     path.resolve(process.cwd(), "public", filePath),
     path.resolve(process.cwd(), "apps/web/public", filePath),
   ];
-  return candidates.some((candidate) => fs.existsSync(candidate)) ? normalizedPath : null;
+  if (!candidates.some((candidate) => fs.existsSync(candidate))) return null;
+  siteImageCache.add(cacheKey);
+  return normalizedPath;
 }
 
 function responsiveBaseFor(publicPath: string | null | undefined): string | null {

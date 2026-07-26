@@ -246,6 +246,12 @@ function buildApp({ config, backendDb, bot }: ApiContext): Hono {
   app.post("/api/command-center/action", async (c) => {
     const body = await commandAction(c.req.raw);
     if (!commandAllowed(c.req.raw, config, body.token)) return json({ detail: "forbidden" }, 403);
+    // This endpoint deletes external publications, so it gets the same same-origin
+    // check as /command-center/studio/acknowledge — cookie authority is ambient and
+    // a cross-site form can ride it. A caller that presents the token explicitly is
+    // a script, not a drive-by browser form, and keeps working.
+    const explicitToken = Boolean(body.token?.trim() || c.req.header("X-Command-Token") || c.req.header("X-Admin-Token"));
+    if (!explicitToken && !sameOriginCommandLogin(c.req.raw, config)) return json({ detail: "forbidden" }, 403);
     try {
       return json(await operations.command(body));
     } catch (error) {

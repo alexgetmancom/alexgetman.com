@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { BackendDb } from "../../db/client.js";
 import { drafts, publishJobs, siteJobs, videoDrafts, videoTargets } from "../../db/schema.js";
 import { parseTargets } from "../../publishing/targets.js";
@@ -60,12 +60,32 @@ export function queueService(backendDb: BackendDb) {
         }
       }
 
+      // One query for every draft's targets rather than one per draft: this
+      // snapshot backs a screen the operator opens constantly.
+      const targetsByDraft = new Map<number, (typeof videoTargets.$inferSelect)[]>();
+      if (videos.length) {
+        const rows = backendDb.db
+          .select()
+          .from(videoTargets)
+          .where(
+            inArray(
+              videoTargets.videoDraftId,
+              videos.map((video) => video.id),
+            ),
+          )
+          .all();
+        for (const row of rows) targetsByDraft.set(row.videoDraftId, [...(targetsByDraft.get(row.videoDraftId) ?? []), row]);
+      }
+
       for (const video of videos) {
-        const targets = backendDb.db.select().from(videoTargets).where(eq(videoTargets.videoDraftId, video.id)).all();
-        const scheduled = targets.filter((target) => target.status === "scheduled" && target.scheduledAt != null);
+        const targets = targetsByDraft.get(video.id) ?? [];
+        const scheduled = targets.filter(
+          (target): target is (typeof targets)[number] & { scheduledAt: string } =>
+            target.status === "scheduled" && target.scheduledAt != null,
+        );
         const label = shorten(video.label.trim() || `Video #${video.id}`);
         if (video.status === "scheduled" && scheduled.length) {
-          const time = new Date(Math.min(...scheduled.map((target) => new Date(target.scheduledAt ?? 0).getTime())));
+          const time = new Date(Math.min(...scheduled.map((target) => new Date(target.scheduledAt).getTime())));
           upcoming.push({ id: video.id, label, time, kind: "video", targets: scheduled.length });
         }
         if (video.status === "draft" || video.status === "editing")

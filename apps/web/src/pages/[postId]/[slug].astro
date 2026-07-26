@@ -2,9 +2,9 @@
 import HomeNewsPage from "../../components/HomeNewsPage.astro";
 import Layout from "../../layouts/Layout.astro";
 import { loadFeedItems } from "../../server/public-site";
-import { entityUrl } from "../../utils/entity-url";
 import { sortedHomePosts } from "../../utils/home-posts";
-import { postOgImagePath, postVisualMedia } from "../../utils/media";
+import { postOgImagePath } from "../../utils/media";
+import { buildPostSchema } from "../../utils/post-schema";
 import { excerptAfterTitle, getFirstSentence } from "../../utils/text";
 
 export const prerender = false;
@@ -26,57 +26,7 @@ const postDescription =
   excerptAfterTitle(postText, pageTitle, 158) || "AI news, automation notes and developer updates by Alex Getman on alexgetman.com.";
 const localUrl = `https://alexgetman.com/${postId}/${slug}/`;
 const ogImage = postOgImagePath(item, "en");
-const visualMedia = postVisualMedia(item, "en");
-const primaryVideo = visualMedia?.type === "video" ? visualMedia : null;
-const sourceUrls = item.sources.map((source) => source.url);
-const about = item.entities.map((entity) => ({
-  "@type": "Thing",
-  name: entity.title_en || entity.title_ru,
-  url: `https://alexgetman.com${entityUrl(entity.kind, entity.slug)}`,
-}));
-const schema = JSON.stringify({
-  "@context": "https://schema.org",
-  "@graph": [
-    {
-      "@type": "NewsArticle",
-      headline: pageTitle,
-      description: postDescription,
-      url: localUrl,
-      datePublished: item.date,
-      dateModified: item.date,
-      inLanguage: "en-US",
-      author: {
-        "@type": "Person",
-        name: siteAuthor,
-        url: "https://alexgetman.com/",
-      },
-      publisher: {
-        "@type": "Person",
-        name: siteAuthor,
-        url: "https://alexgetman.com/",
-      },
-      mainEntityOfPage: localUrl,
-      image: [`https://alexgetman.com${ogImage}`],
-      ...(sourceUrls.length > 0 ? { isBasedOn: sourceUrls, citation: sourceUrls } : {}),
-      ...(about.length > 0 ? { about } : {}),
-    },
-    ...(primaryVideo
-      ? [
-          {
-            "@type": "VideoObject",
-            name: pageTitle,
-            description: postDescription,
-            thumbnailUrl: [`https://alexgetman.com/${primaryVideo.poster || ogImage.replace(/^\//, "")}`],
-            uploadDate: item.date,
-            contentUrl: `https://alexgetman.com/${primaryVideo.path}`,
-            embedUrl: localUrl,
-            mainEntityOfPage: localUrl,
-            inLanguage: "en-US",
-          },
-        ]
-      : []),
-  ],
-});
+const schema = buildPostSchema({ item, locale: "en", pageTitle, description: postDescription, canonicalUrl: localUrl });
 
 const labels = {
   empty: "English posts will appear here after publication approval.",

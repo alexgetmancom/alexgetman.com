@@ -37,7 +37,7 @@ export function buildNotificationsMenu(config: BackendConfig, backendDb: Backend
       range
         .submenu({ text: notificationLabel(event, locale), payload: String(event.id) }, "notification-detail", async (ctx) => {
           const found = studioServices(backendDb, config).notifications.get(actorId, Number(ctx.match));
-          if (found) await ctx.editMessageText(notificationText(found, locale));
+          if (found) await ctx.editMessageText(notificationText(found, locale, config.TIMEZONE));
         })
         .text({ text: "✓", payload: String(event.id) }, async (ctx) => {
           studioServices(backendDb, config).notifications.acknowledge(actorId, Number(ctx.match));
@@ -75,6 +75,7 @@ function notificationLabel(
 function notificationText(
   event: { severity: string; target: string | null; eventType: string; message: string; postKey: string | null; createdAt: string },
   locale: ReturnType<typeof botLocale>,
+  timeZone: string,
 ): string {
   const status =
     event.severity === "error"
@@ -88,7 +89,7 @@ function notificationText(
     event.message,
     event.target ? `Target: ${event.target}` : "",
     event.postKey ? `Ref: ${event.postKey}` : "",
-    new Date(event.createdAt).toLocaleString(locale === "ru" ? "ru-RU" : "en-GB", { timeZone: "Europe/Moscow" }),
+    new Date(event.createdAt).toLocaleString(locale === "ru" ? "ru-RU" : "en-GB", { timeZone }),
   ]
     .filter(Boolean)
     .join("\n");

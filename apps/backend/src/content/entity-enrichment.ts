@@ -92,11 +92,24 @@ function entityMatches(text: string, slug: string, titleRu: string, titleEn: str
   const names = [slug.replaceAll("-", " "), titleRu, titleEn ?? "", ...aliases]
     .map((value) => value.trim().toLocaleLowerCase())
     .filter((value) => value.length >= 3);
-  return names.some((name) => text.includes(name));
+  return names.some((name) => containsName(text, name));
 }
 
+const namePatterns = new Map<string, RegExp>();
+
+/** Whole-name matching, never a substring: a plain `includes` linked "gpt" from
+ * inside "chatgpt" and "meta" from inside "метаданные", and those wrong links
+ * are public — they reach the article's JSON-LD `about` block. Boundaries are
+ * defined over Unicode letters/digits so Cyrillic titles behave like Latin. */
 function containsName(value: string, name: string): boolean {
-  return new RegExp(`(^|[^a-z0-9])${name}($|[^a-z0-9])`, "i").test(value);
+  const cached = namePatterns.get(name);
+  const pattern = cached ?? new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(name)}($|[^\\p{L}\\p{N}])`, "iu");
+  if (!cached) namePatterns.set(name, pattern);
+  return pattern.test(value);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function isComparisonHeadline(value: string): boolean {

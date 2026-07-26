@@ -19,13 +19,19 @@ export function publishDraftToQueue(backendDb: BackendDb, draftId: number, optio
   const mode = options.mode ?? "immediate";
   const ruAt = mode === "immediate" ? now : (options.ruAt?.toISOString() ?? null);
   const enAt = mode === "immediate" ? now : (options.enAt?.toISOString() ?? null);
-  const postId = ensurePublication(backendDb, draftId, now);
-  copyDraftSources(backendDb, draftId, postId, now);
-  copyAcceptedEntities(backendDb, draftId, postId, now);
-  const plan = createPublicationPlan(draft, draftId, postId, { mode, ruAt, enAt }, now);
-  persistPublicationPlan(backendDb, plan);
-  enrichPublishedPostEntities(backendDb, postId);
-  reconcilePublication(backendDb, postId);
+  // One transaction for the whole hand-off: a failure midway used to leave a
+  // publications row with no plan behind it, which no worker picks up and no
+  // retry path repairs. Every step below is synchronous, so this is free.
+  const { postId, plan } = backendDb.db.transaction(() => {
+    const publicationId = ensurePublication(backendDb, draftId, now);
+    copyDraftSources(backendDb, draftId, publicationId, now);
+    copyAcceptedEntities(backendDb, draftId, publicationId, now);
+    const publicationPlan = createPublicationPlan(draft, draftId, publicationId, { mode, ruAt, enAt }, now);
+    persistPublicationPlan(backendDb, publicationPlan);
+    enrichPublishedPostEntities(backendDb, publicationId);
+    reconcilePublication(backendDb, publicationId);
+    return { postId: publicationId, plan: publicationPlan };
+  });
   recordDomainEvent(backendDb, {
     ref: `post:${postId}`,
     type: "publishing.plan.created",

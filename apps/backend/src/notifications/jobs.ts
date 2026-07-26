@@ -21,6 +21,12 @@ export function scheduleReminder(
   const now = new Date();
   const runAt = new Date(Math.max(now.getTime(), input.publishAt.getTime() - input.preference.reminderMinutes * 60_000)).toISOString();
   const timestamp = now.toISOString();
+  const payloadJson = {
+    title: input.title,
+    targets: input.targets,
+    publish_at: input.publishAt.toISOString(),
+    minutes: input.preference.reminderMinutes,
+  };
   backendDb.db
     .insert(studioNotificationJobs)
     .values({
@@ -29,28 +35,13 @@ export function scheduleReminder(
       kind: input.kind,
       runAt,
       status: "queued",
-      payloadJson: {
-        title: input.title,
-        targets: input.targets,
-        publish_at: input.publishAt.toISOString(),
-        minutes: input.preference.reminderMinutes,
-      },
+      payloadJson,
       createdAt: timestamp,
       updatedAt: timestamp,
     })
     .onConflictDoUpdate({
       target: [studioNotificationJobs.ref, studioNotificationJobs.kind],
-      set: {
-        runAt,
-        status: "queued",
-        payloadJson: {
-          title: input.title,
-          targets: input.targets,
-          publish_at: input.publishAt.toISOString(),
-          minutes: input.preference.reminderMinutes,
-        },
-        updatedAt: timestamp,
-      },
+      set: { runAt, status: "queued", payloadJson, updatedAt: timestamp },
     })
     .run();
 }
@@ -75,22 +66,28 @@ export function runNotificationCycle(backendDb: BackendDb, limit = 50): number {
     .all();
   let delivered = 0;
   for (const job of jobs) {
-    const claimed = backendDb.db
-      .update(studioNotificationJobs)
-      .set({ status: "delivered", updatedAt: now })
-      .where(and(eq(studioNotificationJobs.id, job.id), eq(studioNotificationJobs.status, "queued")))
-      .returning({ id: studioNotificationJobs.id })
-      .get();
-    if (!claimed) continue;
-    const payload = job.payloadJson ?? {};
-    recordDomainEvent(backendDb, {
-      ref: job.ref,
-      type: "studio.notification.reminder.due",
-      severity: "info",
-      message: `Publication reminder: ${String(payload.title ?? job.ref)}`,
-      details: { admin_id: job.adminId, notification_job_id: job.id, kind: job.kind, ...payload },
+    // Claim and emit as one unit. Marking the job delivered first meant a
+    // failing recordDomainEvent silently swallowed the reminder: the job was
+    // terminal, and nothing left to retry.
+    const emitted = backendDb.db.transaction(() => {
+      const claimed = backendDb.db
+        .update(studioNotificationJobs)
+        .set({ status: "delivered", updatedAt: now })
+        .where(and(eq(studioNotificationJobs.id, job.id), eq(studioNotificationJobs.status, "queued")))
+        .returning({ id: studioNotificationJobs.id })
+        .get();
+      if (!claimed) return false;
+      const payload = job.payloadJson ?? {};
+      recordDomainEvent(backendDb, {
+        ref: job.ref,
+        type: "studio.notification.reminder.due",
+        severity: "info",
+        message: `Publication reminder: ${String(payload.title ?? job.ref)}`,
+        details: { admin_id: job.adminId, notification_job_id: job.id, kind: job.kind, ...payload },
+      });
+      return true;
     });
-    delivered += 1;
+    if (emitted) delivered += 1;
   }
   return delivered;
 }

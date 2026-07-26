@@ -73,7 +73,9 @@ export function formatZonedSortable(value: string, timeZone: string): string {
   }).format(date);
 }
 
-/** ISO `[start, end)` bounds of the Monday-start week `offset` weeks from `now`, in `timeZone`. */
+/** Inclusive ISO `[start, end]` bounds of the Monday-start week `offset` weeks
+ * from `now`, in `timeZone`. `end` is the last millisecond of the week, matching
+ * zonedRollingPeriodBounds — both feed `BETWEEN`-style range queries. */
 export function zonedWeekBounds(offset: number, timeZone: string, now = new Date()): [string, string] {
   const offsetMs = timezoneOffsetMs(now, timeZone);
   const zonedNow = new Date(now.getTime() + offsetMs);
@@ -83,7 +85,7 @@ export function zonedWeekBounds(offset: number, timeZone: string, now = new Date
   return [new Date(start).toISOString(), new Date(start + 7 * 86_400_000 - 1).toISOString()];
 }
 
-/** ISO bounds for a rolling calendar period ending today in `timeZone`.
+/** Inclusive ISO `[start, end]` bounds for a rolling calendar period ending today in `timeZone`.
  * `offset` moves back by whole periods, so a 7-day dashboard always compares
  * like-for-like trailing windows instead of calendar weeks. */
 export function zonedRollingPeriodBounds(offset: number, days: number, timeZone: string, now = new Date()): [string, string] {

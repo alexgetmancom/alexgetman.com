@@ -15,7 +15,15 @@ function getTargetStatus(post: PipelinePost, target: string): string | null {
   return null;
 }
 
-export function getTargetMetric(post: PipelinePost, target: string, metricName: string): number {
+/** Site targets carry an extra `bot_views` counter that no other target has and
+ * that the dashboard folds into the visible views figure. */
+type TargetMetricName = DashboardMetricName | "bot_views";
+
+function isSiteTarget(target: string): boolean {
+  return target === "site_ru" || target === "site_en";
+}
+
+export function getTargetMetric(post: PipelinePost, target: string, metricName: TargetMetricName): number {
   const status = getTargetStatus(post, target);
   if (status !== "published") return 0;
   const val = post.metrics?.[target]?.[metricName]?.value;
@@ -24,31 +32,13 @@ export function getTargetMetric(post: PipelinePost, target: string, metricName: 
   return Number.isNaN(num) ? 0 : num;
 }
 
-function hasTargetMetric(post: PipelinePost, target: string, metricName: string): boolean {
-  if ((target === "site_ru" || target === "site_en") && metricName === "views") {
+function hasTargetMetric(post: PipelinePost, target: string, metricName: TargetMetricName): boolean {
+  if (isSiteTarget(target) && metricName === "views") {
     const botViews = post.metrics?.[target]?.bot_views;
     if (botViews?.value !== undefined && botViews?.value !== null) return true;
   }
   const metric = post.metrics?.[target]?.[metricName];
   return metric?.value !== undefined && metric?.value !== null;
-}
-
-export function renderMetricSpan(val: number, className: string): string {
-  const text = val > 0 ? formatMetricValue(val) : className === "mv" ? "0" : "—";
-  return `<span class="${className}">${escapeHtml(text)}</span>`;
-}
-
-export function renderMetricSet(values: Record<DashboardMetricName, number>): string {
-  return (
-    renderMetricSpan(values.views, "mv") +
-    renderMetricSpan(values.likes, "ml") +
-    renderMetricSpan(values.replies, "mr") +
-    renderMetricSpan(values.reposts, "mp")
-  );
-}
-
-export function emptyTargetMetrics(): Record<DashboardMetricName, Record<string, number>> {
-  return { views: {}, likes: {}, replies: {}, reposts: {} };
 }
 
 export function emptyTotals(): Record<DashboardMetricName, number> {
@@ -72,9 +62,7 @@ export function targetCell(post: PipelinePost, target: string): string {
     return '<span class="mv">—</span><span class="ml">—</span><span class="mr">—</span><span class="mp">—</span>';
   }
 
-  const views =
-    getTargetMetric(post, target, "views") +
-    (target === "site_ru" || target === "site_en" ? getTargetMetric(post, target, "bot_views") : 0);
+  const views = getTargetMetric(post, target, "views") + (isSiteTarget(target) ? getTargetMetric(post, target, "bot_views") : 0);
   const values = {
     views,
     likes: getTargetMetric(post, target, "likes"),

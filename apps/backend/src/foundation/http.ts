@@ -37,7 +37,18 @@ export async function requestJson<T = Record<string, unknown>>(fetchImpl: typeof
     );
   }
   if (!body) return {} as T;
-  return JSON.parse(body) as T;
+  try {
+    return JSON.parse(body) as T;
+  } catch {
+    // A proxy error page reaches here as HTML. Raising the raw SyntaxError would
+    // put the unredacted body into logs, bypassing the redaction every other
+    // failure path in this module goes through.
+    throw new ExternalHttpError(
+      `${init.method ?? "GET"} ${safeUrl(url)} returned a non-JSON body: ${redactExternalSecrets(body).slice(0, 200)}`,
+      response.status,
+      redactExternalSecrets(body),
+    );
+  }
 }
 
 export async function requestText(fetchImpl: typeof fetch, url: string, init: RequestInit = {}): Promise<string> {
@@ -57,8 +68,12 @@ export async function requestText(fetchImpl: typeof fetch, url: string, init: Re
 export async function externalFetch(fetchImpl: typeof fetch, url: string, init: RequestInit = {}): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30_000);
+  // The 30s ceiling must hold even when the caller brings its own signal:
+  // passing `init.signal` straight through used to leave that request with no
+  // timeout at all while this timer aborted a controller nothing listened to.
+  const signal = init.signal ? AbortSignal.any([init.signal, controller.signal]) : controller.signal;
   try {
-    return await fetchImpl(url, { ...init, signal: init.signal ?? controller.signal });
+    return await fetchImpl(url, { ...init, signal });
   } catch (error) {
     if (controller.signal.aborted) throw new Error(`${init.method ?? "GET"} ${safeUrl(url)} timed out after 30s`, { cause: error });
     throw error;

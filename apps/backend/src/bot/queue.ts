@@ -20,14 +20,12 @@ export async function showQueue(
   // rather than becoming a wall of old cards whenever nothing is scheduled.
   const view = requestedView;
   const keyboard = new InlineKeyboard();
-  let text = upcomingText(snapshot, locale);
+  const text = view === "drafts" ? draftsText(snapshot, locale) : upcomingText(snapshot, locale, config.TIMEZONE);
 
-  if (view === "upcoming") {
-    text = upcomingText(snapshot, locale);
-    for (const item of snapshot.upcoming) keyboard.text(itemButton(item, locale), itemCallback(item)).row();
-  } else if (view === "drafts") {
-    text = draftsText(snapshot, locale);
+  if (view === "drafts") {
     for (const item of snapshot.drafts) keyboard.text(`${kindIcon(item.kind)} ${item.label}`, itemCallback(item)).row();
+  } else {
+    for (const item of snapshot.upcoming) keyboard.text(itemButton(item, locale, config.TIMEZONE), itemCallback(item)).row();
   }
 
   if (view !== "upcoming") keyboard.text(t(locale, "queue.upcoming-btn"), "queue_home");
@@ -36,12 +34,12 @@ export async function showQueue(
   await replaceQueueMessage(ctx, text, keyboard);
 }
 
-function upcomingText(snapshot: StudioQueueSnapshot, locale: BotLocale): string {
+function upcomingText(snapshot: StudioQueueSnapshot, locale: BotLocale, timeZone: string): string {
   const lines = [`📋 *${t(locale, "queue.title")}*`, "", `*${t(locale, "queue.upcoming-heading")}*`];
   if (!snapshot.upcoming.length) lines.push(t(locale, "queue.nothing-scheduled"));
   else
     for (const item of snapshot.upcoming.slice(0, 5))
-      lines.push(`• ${formatQueueTime(item.time, locale)} — ${kindIcon(item.kind)} ${item.label}`);
+      lines.push(`• ${formatQueueTime(item.time, locale, timeZone)} — ${kindIcon(item.kind)} ${item.label}`);
   lines.push("", `🟡 ${t(locale, "queue.drafts-label")}: ${snapshot.drafts.length}`);
   return lines.join("\n");
 }
@@ -53,9 +51,9 @@ function draftsText(snapshot: StudioQueueSnapshot, locale: BotLocale): string {
   return lines.join("\n");
 }
 
-function itemButton(item: StudioQueueItem, locale: BotLocale): string {
+function itemButton(item: StudioQueueItem, locale: BotLocale, timeZone: string): string {
   const targets = item.targets ? ` · ${item.targets} ${t(locale, "queue.platforms-suffix")}` : "";
-  return `${formatQueueTime(item.time, locale)} · ${kindIcon(item.kind)} ${item.label}${targets}`.slice(0, 60);
+  return `${formatQueueTime(item.time, locale, timeZone)} · ${kindIcon(item.kind)} ${item.label}${targets}`.slice(0, 60);
 }
 
 function kindIcon(kind: StudioQueueItem["kind"]): string {
@@ -73,23 +71,33 @@ async function replaceQueueMessage(ctx: Context, text: string, keyboard: InlineK
   else await ctx.reply(text, { parse_mode: "Markdown", reply_markup: keyboard });
 }
 
-function formatQueueTime(date: Date, locale: BotLocale): string {
+/** Intl.DateTimeFormat construction is expensive and this runs per queue row,
+ * so formatters are built once per (kind, locale, zone) and reused. */
+const formatterCache = new Map<string, Intl.DateTimeFormat>();
+
+function formatter(kind: "day-key" | "clock" | "day", locale: BotLocale, timeZone: string): Intl.DateTimeFormat {
+  const cacheKey = `${kind}:${locale}:${timeZone}`;
+  const cached = formatterCache.get(cacheKey);
+  if (cached) return cached;
+  const intlLocale = locale === "ru" ? "ru-RU" : "en-GB";
+  const created =
+    kind === "day-key"
+      ? new Intl.DateTimeFormat("en-CA", { timeZone })
+      : kind === "clock"
+        ? new Intl.DateTimeFormat(intlLocale, { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone })
+        : new Intl.DateTimeFormat(intlLocale, { day: "numeric", month: "short", timeZone });
+  formatterCache.set(cacheKey, created);
+  return created;
+}
+
+/** `timeZone` comes from studio.yaml via config, not a constant: the Studio runs
+ * for more than one account and every other schedule surface already reads it
+ * from there (see foundation/time.ts). */
+function formatQueueTime(date: Date, locale: BotLocale, timeZone: string): string {
   const now = new Date();
-  const dateKey = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(date);
-  const todayKey = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(now);
-  const tomorrowKey = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(new Date(now.getTime() + 24 * 60 * 60_000));
-  const time = new Intl.DateTimeFormat(locale === "ru" ? "ru-RU" : "en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-    timeZone: "Europe/Moscow",
-  }).format(date);
-  if (dateKey === todayKey) return `${t(locale, "common.today")}, ${time}`;
-  if (dateKey === tomorrowKey) return `${t(locale, "common.tomorrow")}, ${time}`;
-  const day = new Intl.DateTimeFormat(locale === "ru" ? "ru-RU" : "en-GB", {
-    day: "numeric",
-    month: "short",
-    timeZone: "Europe/Moscow",
-  }).format(date);
-  return `${day}, ${time}`;
+  const dayKey = formatter("day-key", locale, timeZone);
+  const time = formatter("clock", locale, timeZone).format(date);
+  if (dayKey.format(date) === dayKey.format(now)) return `${t(locale, "common.today")}, ${time}`;
+  if (dayKey.format(date) === dayKey.format(new Date(now.getTime() + 24 * 60 * 60_000))) return `${t(locale, "common.tomorrow")}, ${time}`;
+  return `${formatter("day", locale, timeZone).format(date)}, ${time}`;
 }

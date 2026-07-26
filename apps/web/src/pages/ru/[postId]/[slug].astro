@@ -2,9 +2,9 @@
 import HomeNewsPage from "../../../components/HomeNewsPage.astro";
 import Layout from "../../../layouts/Layout.astro";
 import { loadFeedItems } from "../../../server/public-site";
-import { entityUrl } from "../../../utils/entity-url";
 import { sortedHomePosts } from "../../../utils/home-posts";
-import { postOgImagePath, postVisualMedia } from "../../../utils/media";
+import { postOgImagePath } from "../../../utils/media";
+import { buildPostSchema } from "../../../utils/post-schema";
 import { excerptAfterTitle, getFirstSentence } from "../../../utils/text";
 
 export const prerender = false;
@@ -26,57 +26,7 @@ const postDescription =
   excerptAfterTitle(postText, pageTitle, 158) || "Новости ИИ, заметки об автоматизации и разработке от Алекса Гетмана на alexgetman.com.";
 const localUrl = `https://alexgetman.com/ru/${postId}/${slug}/`;
 const ogImage = postOgImagePath(item, "ru");
-const visualMedia = postVisualMedia(item, "ru");
-const primaryVideo = visualMedia?.type === "video" ? visualMedia : null;
-const sourceUrls = item.sources.map((source) => source.url);
-const about = item.entities.map((entity) => ({
-  "@type": "Thing",
-  name: entity.title_ru,
-  url: `https://alexgetman.com${entityUrl(entity.kind, entity.slug, "ru")}`,
-}));
-const schema = JSON.stringify({
-  "@context": "https://schema.org",
-  "@graph": [
-    {
-      "@type": "NewsArticle",
-      headline: pageTitle,
-      description: postDescription,
-      url: localUrl,
-      datePublished: item.date,
-      dateModified: item.date,
-      inLanguage: "ru-RU",
-      author: {
-        "@type": "Person",
-        name: siteAuthor,
-        url: "https://alexgetman.com/ru/",
-      },
-      publisher: {
-        "@type": "Person",
-        name: siteAuthor,
-        url: "https://alexgetman.com/ru/",
-      },
-      mainEntityOfPage: localUrl,
-      image: [`https://alexgetman.com${ogImage}`],
-      ...(sourceUrls.length > 0 ? { isBasedOn: sourceUrls, citation: sourceUrls } : {}),
-      ...(about.length > 0 ? { about } : {}),
-    },
-    ...(primaryVideo
-      ? [
-          {
-            "@type": "VideoObject",
-            name: pageTitle,
-            description: postDescription,
-            thumbnailUrl: [`https://alexgetman.com/${primaryVideo.poster || ogImage.replace(/^\//, "")}`],
-            uploadDate: item.date,
-            contentUrl: `https://alexgetman.com/${primaryVideo.path}`,
-            embedUrl: localUrl,
-            mainEntityOfPage: localUrl,
-            inLanguage: "ru-RU",
-          },
-        ]
-      : []),
-  ],
-});
+const schema = buildPostSchema({ item, locale: "ru", pageTitle, description: postDescription, canonicalUrl: localUrl });
 
 const labels = {
   empty: "Русские посты появятся здесь после публикации.",

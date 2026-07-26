@@ -41,11 +41,42 @@ export function renderAudienceSection(backendDb: BackendDb, config: BackendConfi
   return `<aside class="audience-panel"><div class="section-kicker">Аудитория</div><div class="audience-list">${rows.map((item) => `<div class="audience-line"><span class="audience-line__label"><i>${PLATFORM_ICONS[item.key.startsWith("threads") ? "threads" : item.key] ?? ""}</i>${escapeHtml(item.label)}</span><strong>${followersLabel(item)}</strong></div>`).join("")}</div></aside>`;
 }
 
+const REPAIR_ACTIONS: [value: string, label: string][] = [
+  ["republish", "Republish"],
+  ["refresh_site", "Refresh site only"],
+  ["edit", "Edit text"],
+  ["replace_media", "Replace image / video"],
+  ["use_other_media", "Use other locale media"],
+  ["delete", "Delete external publication"],
+  ["delete_republish", "Delete → republish"],
+];
+
+const REPAIR_NOTE =
+  "Все внешние действия журналируются. «Заменить медиа» удаляет старую внешнюю публикацию на поддерживаемых платформах и ставит новую в очередь; «Удалить → опубликовать» делает то же без изменения контента. «Обновить сайт» пересобирает только выбранную языковую версию сайта.";
+
+/** The form authenticates through the HttpOnly `command_token` cookie; the
+ * endpoint pairs that with a same-origin check, which is what actually stops a
+ * cross-site POST from riding the session. An empty hidden `token` field used to
+ * sit here and suggested a CSRF token that was never issued or verified. */
 export function renderRepairSection(ref: string, messageId: string): string {
   const options = ORDERED_TARGETS.map((target) => `<option value="${escapeHtml(target.id)}">${escapeHtml(target.label)}</option>`).join(
     "\n",
   );
-  return `<section><p class="note">Все внешние действия журналируются. «Заменить медиа» удаляет старую внешнюю публикацию на поддерживаемых платформах и ставит новую в очередь; «Удалить → опубликовать» делает то же без изменения контента. «Обновить сайт» пересобирает только выбранную языковую версию сайта.</p><form method="post" action="/api/command-center/action"><input name="token" type="hidden" value=""><select name="action"><option value="republish">Republish</option><option value="refresh_site">Refresh site only</option><option value="edit">Edit text</option><option value="replace_media">Replace image / video</option><option value="use_other_media">Use other locale media</option><option value="delete">Delete external publication</option><option value="delete_republish">Delete → republish</option></select><select name="locale"><option value="">both locales</option><option value="ru">RU</option><option value="en">EN</option></select><input name="ref" placeholder="post id / post:key / msg:id" value="${escapeHtml(ref)}"><input name="message_id" placeholder="telegram message id" value="${escapeHtml(messageId)}"><select name="target"><option value="">all selected targets</option>${options}</select><textarea name="text" placeholder="Replacement text for selected locale"></textarea><textarea name="media_json" placeholder='Media JSON, example: [{"type":"photo","file_id":"..."}]'></textarea><button type="submit">Apply</button></form></section>`;
+  const actions = REPAIR_ACTIONS.map(([value, label]) => `<option value="${value}">${escapeHtml(label)}</option>`).join("");
+  return [
+    "<section>",
+    `<p class="note">${escapeHtml(REPAIR_NOTE)}</p>`,
+    '<form method="post" action="/api/command-center/action">',
+    `<select name="action">${actions}</select>`,
+    '<select name="locale"><option value="">both locales</option><option value="ru">RU</option><option value="en">EN</option></select>',
+    `<input name="ref" placeholder="post id / post:key / msg:id" value="${escapeHtml(ref)}">`,
+    `<input name="message_id" placeholder="telegram message id" value="${escapeHtml(messageId)}">`,
+    `<select name="target"><option value="">all selected targets</option>${options}</select>`,
+    '<textarea name="text" placeholder="Replacement text for selected locale"></textarea>',
+    `<textarea name="media_json" placeholder='Media JSON, example: [{"type":"photo","file_id":"..."}]'></textarea>`,
+    '<button type="submit">Apply</button>',
+    "</form></section>",
+  ].join("");
 }
 
 export function renderQueueSection(ops: OpsPayload): string {
