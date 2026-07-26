@@ -1,10 +1,8 @@
 import crypto from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
-import { and, asc, eq, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
-import { deleteVideo, videoPublicUrl, videoSourcePath } from "../content/video-assets.js";
+import { and, asc, eq, isNull, lte, or, sql } from "drizzle-orm";
+import { videoPublicUrl, videoSourcePath } from "../content/video-assets.js";
 import type { BackendDb } from "../db/client.js";
-import { botSettings, studioMediaAssets, videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
+import { botSettings, videoJobs, videoTargets } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { nextRetryAt } from "../publishing/errors.js";
@@ -20,6 +18,7 @@ import {
   prepareYouTubeVideo,
   publishInstagramReel,
 } from "./video-publishers.js";
+import { pruneExpiredVideos } from "./video-retention.js";
 import { publishZernioInstagramReel } from "./zernio.js";
 
 export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb): Promise<number> {
@@ -453,92 +452,4 @@ function activeVideoJob(job: VideoJob) {
     eq(videoJobs.status, "running"),
     job.lockedBy == null ? sql`false` : eq(videoJobs.lockedBy, job.lockedBy),
   );
-}
-
-function pruneExpiredVideos(config: BackendConfig, backendDb: BackendDb): void {
-  const now = new Date().toISOString();
-  const legacyDraftExpiresAt = new Date(Date.now() - config.VIDEO_MEDIA_RETENTION_HOURS * 60 * 60_000).toISOString();
-  const rows = backendDb.db
-    .select()
-    .from(videoDrafts)
-    .where(
-      and(
-        // The source is reclaimed exactly once. retentionUntil cannot record
-        // that: it is recomputed from scratch on every target change, and the
-        // sweep itself used to clear it — so a long-finished draft matched the
-        // legacy branch again one retention window later, and every window
-        // after that, re-touching updatedAt (which orders the Studio video
-        // list) on a draft nobody had opened in months.
-        isNull(videoDrafts.sourcePrunedAt),
-        or(
-          and(
-            lte(videoDrafts.retentionUntil, now),
-            or(
-              eq(videoDrafts.status, "published"),
-              eq(videoDrafts.status, "partial"),
-              eq(videoDrafts.status, "cancelled"),
-              eq(videoDrafts.status, "editing"),
-            ),
-          ),
-          // Before Studio assets gained the same retention policy, final drafts
-          // had their deadline cleared while their source file lived forever.
-          // Pick those up once they have been final for a full retention window.
-          and(
-            isNotNull(videoDrafts.studioMediaAssetId),
-            isNull(videoDrafts.retentionUntil),
-            inArray(videoDrafts.status, ["published", "partial", "cancelled"]),
-            lte(videoDrafts.updatedAt, legacyDraftExpiresAt),
-          ),
-          and(eq(videoDrafts.status, "editing"), isNull(videoDrafts.retentionUntil), lte(videoDrafts.createdAt, legacyDraftExpiresAt)),
-        ),
-      ),
-    )
-    .all();
-  for (const row of rows) {
-    if (row.studioMediaAssetId == null) deleteVideo(config, row.assetKey);
-    else pruneStudioAssetSource(config, backendDb, row.studioMediaAssetId, now);
-    backendDb.db
-      .update(videoDrafts)
-      .set({
-        status: row.status === "editing" ? "cancelled" : row.status,
-        retentionUntil: null,
-        sourcePrunedAt: now,
-        updatedAt: now,
-      })
-      .where(eq(videoDrafts.id, row.id))
-      .run();
-  }
-}
-
-/** Studio metadata remains available for published-history and analytics, but
- * the original upload is disposable after every draft using it is final. */
-function pruneStudioAssetSource(config: BackendConfig, backendDb: BackendDb, assetId: number, now: string): void {
-  const drafts = backendDb.db
-    .select({ status: videoDrafts.status, retentionUntil: videoDrafts.retentionUntil })
-    .from(videoDrafts)
-    .where(eq(videoDrafts.studioMediaAssetId, assetId))
-    .all();
-  if (
-    !drafts.length ||
-    !drafts.every(
-      (draft) =>
-        ["published", "partial", "cancelled"].includes(draft.status) && (draft.retentionUntil == null || draft.retentionUntil <= now),
-    )
-  )
-    return;
-  const asset = backendDb.db
-    .select({ localPath: studioMediaAssets.localPath })
-    .from(studioMediaAssets)
-    .where(eq(studioMediaAssets.id, assetId))
-    .get();
-  if (!asset || !isManagedVideoSource(config, asset.localPath)) return;
-  fs.rmSync(asset.localPath, { force: true });
-}
-
-function isManagedVideoSource(config: BackendConfig, source: string): boolean {
-  const resolved = path.resolve(source);
-  return [config.STUDIO_MEDIA_DIR, config.VIDEO_MEDIA_DIR].some((root) => {
-    const directory = path.resolve(root);
-    return resolved.startsWith(`${directory}${path.sep}`);
-  });
 }
