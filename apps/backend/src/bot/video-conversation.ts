@@ -88,7 +88,7 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
       if (session.data.is_single_edit) {
         clearSession(backendDb, adminId);
         const locale = botLocale(backendDb, adminId);
-        const preview = videoPreview(backendDb, session.draftId, locale);
+        const preview = videoPreview(backendDb, config, session.draftId, locale);
         await sendFreshVideoCard(ctx, backendDb, session.draftId, preview);
         return true;
       }
@@ -357,7 +357,7 @@ async function finishSingleVideoEdit(
   studioServices(backendDb, config).videos.updateMetadata(adminId, session.draftId, target, metadata as VideoMetadata);
   clearSession(backendDb, adminId);
   const locale = botLocale(backendDb, adminId);
-  const preview = videoPreview(backendDb, session.draftId, locale);
+  const preview = videoPreview(backendDb, config, session.draftId, locale);
   await sendFreshVideoCard(ctx, backendDb, session.draftId, preview);
 }
 

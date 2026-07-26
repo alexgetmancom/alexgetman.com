@@ -11,8 +11,11 @@ export function paragraphsFor(post: HomePost) {
   return (withoutTitle.length ? withoutTitle : lines).slice(0, 7);
 }
 
+/** Compact counter for the story overlay, where the column is one glyph wide:
+ * one decimal only below the next tier's round number, then no decimals. */
 export function metricValue(value: number) {
   if (!value) return "0";
-  if (value >= 1000) return `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)}k`;
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}M`;
+  if (value >= 1000) return `${(value / 1000).toFixed(value >= 10_000 ? 0 : 1)}k`;
   return String(value);
 }

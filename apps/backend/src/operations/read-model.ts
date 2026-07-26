@@ -317,6 +317,9 @@ function formatPipelinePosts(
         ),
       ],
       slug_en: row.slug_en,
+      slug_ru: row.slug_ru,
+      // Locale-agnostic "the post's page" for payload consumers. Per-target links
+      // must not use it — it falls back across locales — see dashboard/target-url.ts.
       site_url: Number(row.site_ru) ? `/ru/${postId}/${row.slug_ru}/` : Number(row.site_en) ? `/${postId}/${row.slug_en}/` : null,
       telegram_url: telegramUrl,
       targets,

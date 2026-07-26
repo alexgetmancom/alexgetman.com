@@ -1,6 +1,7 @@
 import { InlineKeyboard } from "grammy";
 import type { BotLocale } from "../../bot/i18n.js";
 import type { BackendDb } from "../../db/client.js";
+import type { BackendConfig } from "../../foundation/config.js";
 import { isVideoTargetEditable, isVideoTargetSchedulable } from "../../publishing/state.js";
 import { getVideoDraft, listVideoTargets } from "../../publishing/video-data.js";
 import type { InstagramMetadata, YouTubeMetadata } from "../../publishing/video-types.js";
@@ -12,6 +13,7 @@ import { formatVideoTime } from "./video-time.js";
  * exposes data and operations, never grammY markup or interface language. */
 export function videoPreview(
   backendDb: BackendDb,
+  config: Pick<BackendConfig, "TIMEZONE" | "TIMEZONE_LABEL">,
   videoDraftId: number,
   locale: BotLocale = "ru",
 ): { text: string; keyboard: InlineKeyboard } {
@@ -29,7 +31,7 @@ export function videoPreview(
     if (metadata.gameUrl) lines.push(`${t(locale, "vpreview.game")}: ${escapeMarkdown(metadata.gameUrl)}`);
     if (metadata.tags?.length) lines.push(`${t(locale, "vpreview.tags")}: ${escapeMarkdown(metadata.tags.join(", "))}`);
     lines.push(
-      `${t(locale, "vpreview.state")}: ${videoStatusLabel(ytTarget.status, locale)}${ytTarget.scheduledAt ? ` · ${formatVideoTime(ytTarget.scheduledAt, locale)}` : ""}`,
+      `${t(locale, "vpreview.state")}: ${videoStatusLabel(ytTarget.status, locale)}${ytTarget.scheduledAt ? ` · ${formatVideoTime(ytTarget.scheduledAt, locale, config)}` : ""}`,
     );
     if (isVideoTargetSchedulable(ytTarget.status)) keyboard.text(t(locale, "vpreview.yt-time"), `video_time:youtube_shorts:${draft.id}`);
     if (isVideoTargetEditable(ytTarget.status))
@@ -39,7 +41,7 @@ export function videoPreview(
     const metadata = (igTarget.metadataJson ?? {}) as Partial<InstagramMetadata>;
     lines.push("", "📸 *Instagram Reels*", `${t(locale, "vpreview.description")}: ${escapeMarkdown(metadata.caption || "—")}`);
     lines.push(
-      `${t(locale, "vpreview.state")}: ${videoStatusLabel(igTarget.status, locale)}${igTarget.scheduledAt ? ` · ${formatVideoTime(igTarget.scheduledAt, locale)}` : ""}`,
+      `${t(locale, "vpreview.state")}: ${videoStatusLabel(igTarget.status, locale)}${igTarget.scheduledAt ? ` · ${formatVideoTime(igTarget.scheduledAt, locale, config)}` : ""}`,
     );
     if (isVideoTargetSchedulable(igTarget.status)) keyboard.text(t(locale, "vpreview.ig-time"), `video_time:instagram_reels:${draft.id}`);
     if (isVideoTargetEditable(igTarget.status))

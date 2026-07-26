@@ -44,22 +44,21 @@ export function hubDefinition(hub: string | undefined): HubDefinition | null {
   return hub && hub in HUBS ? HUBS[hub] : null;
 }
 
-/** The hub URL that replaces an entity's generic `/entities/<kind>/<slug>/`
- * listing, or null when the entity has no hub. Derived from `HUBS` rather than
- * restated: the entity routes and the link builder each carried their own copy
- * of the condition, and it had already drifted — `product:claude` redirected to
- * a hub that does not collect it, while `model:claude` (which the hub does
- * collect) got no redirect at all. */
-/** Entity paths that redirected to a hub before the condition was derived from
- * `HUBS`. They are indexed, so they keep their 301 even though the hub no longer
- * collects that exact kind — dropping them would turn live redirects into a
- * different page for no gain. */
+/** Entity paths that redirected to a hub back when the condition was written out
+ * by hand instead of derived from `HUBS`. They are indexed, so they keep their
+ * 301 even though the hub does not collect that exact kind — dropping them would
+ * change live redirect targets for no gain. */
 const LEGACY_HUB_PATHS: Record<string, string> = {
   "product:codex": "codex",
   "product:claude": "claude",
   "topic:claude": "claude",
 };
 
+/** The hub URL that replaces an entity's generic `/entities/<kind>/<slug>/`
+ * listing, or null when the entity has no hub. The entity routes and the link
+ * builder each used to carry their own copy of this condition, and it had already
+ * drifted: `product:claude` redirected to a hub that does not collect it, while
+ * `model:claude` (which the hub does collect) got no redirect at all. */
 export function hubUrl(kind: string, slug: string, locale: "en" | "ru" = "en"): string | null {
   const collected = Object.entries(HUBS).find(([, definition]) =>
     definition.entities.some((entity) => entity.kind === kind && entity.slug === slug),

@@ -1,6 +1,9 @@
-export async function GET(context: any) {
-  const siteUrl = context.site ? context.site.toString().replace(/\/$/, "") : "https://alexgetman.com";
-  const host = context.site ? context.site.host : "alexgetman.com";
+import type { APIRoute } from "astro";
+import { siteUrlFromContext } from "../utils/site";
+
+export const GET: APIRoute = (context) => {
+  const siteUrl = siteUrlFromContext(context);
+  const host = new URL(siteUrl).host;
 
   const body = `User-agent: *
 Allow: /
@@ -17,4 +20,4 @@ Content-Signal: ai-train=yes, search=yes, ai-input=yes
       "Content-Type": "text/plain; charset=utf-8",
     },
   });
-}
+};

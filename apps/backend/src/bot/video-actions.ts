@@ -115,8 +115,8 @@ function requireDraftId(value: string | undefined): number {
 
 /** Renders an owned video draft's card in place. Used by every action that ends
  * by returning to (or refreshing) the same card. */
-async function showVideoCard(ctx: Context, backendDb: BackendDb, id: number, locale: BotLocale): Promise<void> {
-  const preview = videoPreview(backendDb, id, locale);
+async function showVideoCard(ctx: Context, backendDb: BackendDb, config: BackendConfig, id: number, locale: BotLocale): Promise<void> {
+  const preview = videoPreview(backendDb, config, id, locale);
   await ctx.editMessageText(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
 }
 
@@ -132,7 +132,7 @@ async function handleCancelDialog({ ctx, backendDb, config, adminId, locale }: V
   // rather than dropping into a menu with no way back to it.
   if (session?.draftId != null) {
     try {
-      await showVideoCard(ctx, backendDb, session.draftId, locale);
+      await showVideoCard(ctx, backendDb, config, session.draftId, locale);
       return;
     } catch {}
   }
@@ -192,7 +192,7 @@ async function handleOpen({ ctx, backendDb, config, adminId, locale, data }: Vid
   studioServices(backendDb, config).videos.get(adminId, id);
   const messageId = callbackMessageId(ctx);
   if (messageId && ctx.chat?.id) setTelegramVideoCard(backendDb, id, Number(ctx.chat.id), messageId);
-  await showVideoCard(ctx, backendDb, id, locale);
+  await showVideoCard(ctx, backendDb, config, id, locale);
 }
 
 async function handleRetry({ ctx, backendDb, config, adminId, locale, data }: VideoActionArgs): Promise<VideoActionResult> {
@@ -200,7 +200,7 @@ async function handleRetry({ ctx, backendDb, config, adminId, locale, data }: Vi
   const target = requireVideoTarget(targetText ?? "");
   const id = requireDraftId(idText);
   studioServices(backendDb, config).videos.retry(adminId, id, target);
-  await showVideoCard(ctx, backendDb, id, locale);
+  await showVideoCard(ctx, backendDb, config, id, locale);
   return { toast: t(locale, "video.requeued", { label: videoTargetLabel(target) }) };
 }
 
@@ -265,7 +265,7 @@ async function handleScheduleMode({ ctx, backendDb, config, adminId, locale, dat
 async function handleNowAsk({ ctx, backendDb, config, adminId, locale, data }: VideoActionArgs): Promise<VideoActionResult> {
   const id = requireDraftId(data.slice("video_now:".length));
   studioServices(backendDb, config).videos.get(adminId, id);
-  const preview = videoPreview(backendDb, id, locale);
+  const preview = videoPreview(backendDb, config, id, locale);
   await ctx.editMessageText(`${preview.text}\n\n${t(locale, "video.publish-now-q")}`, {
     parse_mode: "Markdown",
     reply_markup: new InlineKeyboard()
@@ -289,7 +289,7 @@ async function handleNowConfirm({ ctx, backendDb, config, adminId, data }: Video
 async function handleCancelAsk({ ctx, backendDb, config, adminId, locale, data }: VideoActionArgs): Promise<VideoActionResult> {
   const id = requireDraftId(data.slice("video_cancel_ask:".length));
   studioServices(backendDb, config).videos.get(adminId, id);
-  const preview = videoPreview(backendDb, id, locale);
+  const preview = videoPreview(backendDb, config, id, locale);
   await ctx.editMessageText(
     `${preview.text}\n\n⚠️ *${t(locale, "vpreview.cancel-confirm-q")}*\n${t(locale, "vpreview.cancel-confirm-warn")}`,
     {
@@ -307,7 +307,7 @@ async function handleRemoveAsk({ ctx, backendDb, config, adminId, locale, data }
   const id = requireDraftId(idText);
   studioServices(backendDb, config).videos.get(adminId, id);
   const label = videoTargetLabel(target);
-  const preview = videoPreview(backendDb, id, locale);
+  const preview = videoPreview(backendDb, config, id, locale);
   await ctx.editMessageText(
     `${preview.text}\n\n⚠️ *${t(locale, "vpreview.remove-confirm-q", { target: label })}*\n${t(locale, "vpreview.remove-confirm-warn", { target: label })}`,
     {
@@ -398,7 +398,7 @@ async function handleRemove({ ctx, backendDb, config, adminId, locale, data }: V
     });
     return;
   }
-  await showVideoCard(ctx, backendDb, id, locale);
+  await showVideoCard(ctx, backendDb, config, id, locale);
   return { toast: t(locale, "video.removed", { label: videoTargetLabel(target) }) };
 }
 

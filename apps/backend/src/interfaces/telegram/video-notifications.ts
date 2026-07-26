@@ -3,6 +3,7 @@ import { type Bot, InlineKeyboard } from "grammy";
 import { botLocale } from "../../bot/i18n.js";
 import type { BackendDb } from "../../db/client.js";
 import { drafts, studioNotificationSettings, videoDrafts, videoTargets } from "../../db/schema.js";
+import type { BackendConfig } from "../../foundation/config.js";
 import { getVideoDraft } from "../../publishing/video-data.js";
 import type { VideoTarget } from "../../publishing/video-types.js";
 import { videoTargetLabel } from "../../publishing/video-types.js";
@@ -10,6 +11,9 @@ import { telegramVideoCard } from "./control-cards.js";
 import { t } from "./i18n/index.js";
 import { videoPreview } from "./video-preview.js";
 import { formatVideoTime } from "./video-time.js";
+
+/** These adapters render times, so they need the configured zone — nothing more. */
+type StudioTimeConfig = Pick<BackendConfig, "TIMEZONE" | "TIMEZONE_LABEL">;
 
 export async function notifyFinalVideoFailure(
   backendDb: BackendDb,
@@ -36,11 +40,16 @@ export async function notifyFinalVideoFailure(
   );
 }
 
-export async function refreshVideoControlCard(backendDb: BackendDb, bot: Bot | null, videoDraftId: number): Promise<void> {
+export async function refreshVideoControlCard(
+  backendDb: BackendDb,
+  bot: Bot | null,
+  config: StudioTimeConfig,
+  videoDraftId: number,
+): Promise<void> {
   if (!bot) return;
   const card = telegramVideoCard(backendDb, videoDraftId);
   if (!card || card.chatId == null || card.messageId == null) return;
-  const preview = videoPreview(backendDb, videoDraftId);
+  const preview = videoPreview(backendDb, config, videoDraftId);
   try {
     await bot.api.editMessageText(card.chatId, card.messageId, preview.text, {
       parse_mode: "Markdown",
@@ -54,16 +63,17 @@ export async function refreshVideoControlCard(backendDb: BackendDb, bot: Bot | n
 export async function sendVideoReminder(
   backendDb: BackendDb,
   bot: Bot | null,
+  config: StudioTimeConfig & Pick<BackendConfig, "VIDEO_REMINDER_MINUTES">,
   videoDraftId: number,
   videoTargetId: number | null,
-  reminderMinutes: number,
 ): Promise<void> {
+  const reminderMinutes = config.VIDEO_REMINDER_MINUTES;
   const draft = getVideoDraft(backendDb, videoDraftId);
   const target = videoTargetId == null ? null : backendDb.db.select().from(videoTargets).where(eq(videoTargets.id, videoTargetId)).get();
   if (!bot || !target || draft.status !== "scheduled") return;
   const locale = botLocale(backendDb, draft.adminId);
   const title = draft.label || t(locale, "common.untitled");
-  const text = `${t(locale, "notif.reminder-head", { minutes: reminderMinutes })}\n\n🎬 ${title}\n• ${videoTargetLabel(target.target as VideoTarget)}\n\n${formatVideoTime(target.scheduledAt, locale)}`;
+  const text = `${t(locale, "notif.reminder-head", { minutes: reminderMinutes })}\n\n🎬 ${title}\n• ${videoTargetLabel(target.target as VideoTarget)}\n\n${formatVideoTime(target.scheduledAt, locale, config)}`;
   await bot.api.sendMessage(draft.adminId, text, {
     reply_markup: new InlineKeyboard()
       .text(t(locale, "notif.open"), `video_open:${draft.id}`)
@@ -80,6 +90,7 @@ export async function sendVideoReminder(
 export async function sendStudioReminder(
   backendDb: BackendDb,
   bot: Bot | null,
+  config: StudioTimeConfig,
   event: { postKey: string | null; detailsJson: unknown },
 ): Promise<void> {
   if (!bot) return;
@@ -93,7 +104,7 @@ export async function sendStudioReminder(
   const publishAt = typeof details.publish_at === "string" ? details.publish_at : null;
   await bot.api.sendMessage(
     adminId,
-    `${t(locale, "notif.reminder-head", { minutes })}\n\n${title}\n${targets.length ? `• ${targets.join(", ")}` : ""}${publishAt ? `\n\n${formatVideoTime(publishAt, locale)}` : ""}`.trim(),
+    `${t(locale, "notif.reminder-head", { minutes })}\n\n${title}\n${targets.length ? `• ${targets.join(", ")}` : ""}${publishAt ? `\n\n${formatVideoTime(publishAt, locale, config)}` : ""}`.trim(),
     { reply_markup: new InlineKeyboard().text(t(locale, "settings.notifications"), "notifications_home") },
   );
 }

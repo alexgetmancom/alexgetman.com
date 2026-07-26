@@ -47,7 +47,11 @@ const envSchema = z
     TELEGRAM_WEBHOOK_SECRET: z.string().optional(),
     WEBHOOK_PATH: z.string().default("/tg-feed/webhook"),
     LIKES_SALT: z.string().optional(),
-    TRUSTED_CLIENT_IP_HEADER: z.enum(["x-real-ip", "cf-connecting-ip"]).optional(),
+    // Defaulted, not optional: every production nginx vhost sets X-Real-IP, and
+    // when this was unset the whole internet collapsed onto one visitor identity
+    // (see engagement/identity.ts) — one person's like locked out everyone, and
+    // the public rate limit became a single global budget.
+    TRUSTED_CLIENT_IP_HEADER: z.enum(["x-real-ip", "cf-connecting-ip"]).default("x-real-ip"),
     PUBLIC_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().min(1).max(3600).default(60),
     PUBLIC_RATE_LIMIT_PAGEVIEWS: z.coerce.number().int().min(1).max(10_000).default(240),
     PUBLIC_RATE_LIMIT_LIKES: z.coerce.number().int().min(1).max(10_000).default(30),

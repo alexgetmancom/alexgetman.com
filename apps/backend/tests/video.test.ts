@@ -468,7 +468,7 @@ describe("video publication queue", () => {
       caption: "Описание для Instagram\n#game #reels",
     });
 
-    const preview = videoPreview(backendDb, draftId);
+    const preview = videoPreview(backendDb, videoConfig(), draftId);
     expect(preview.text).toContain("▶️ *YouTube Shorts*");
     expect(preview.text).toContain("Название: Название ролика");
     expect(preview.text).toContain("Игра: https://store.steampowered.com/app/123");

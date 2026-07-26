@@ -94,7 +94,7 @@ async function deliverEvent(backendDb: BackendDb, bot: Bot, config: BackendConfi
   const videoDraftId = numberDetail(details, "videoDraftId");
   const videoTargetId = numberDetail(details, "videoTargetId");
   if (event.eventType === "studio.notification.reminder.due") {
-    await sendStudioReminder(backendDb, bot, { ...event, detailsJson: details });
+    await sendStudioReminder(backendDb, bot, config, { ...event, detailsJson: details });
   } else if (event.eventType === "delivery.post.completed" || event.eventType === "delivery.video.completed") {
     await sendStudioCompletion(backendDb, bot, { ...event, detailsJson: details });
   } else if (event.eventType === "analytics.milestone.reached") {
@@ -104,10 +104,10 @@ async function deliverEvent(backendDb: BackendDb, bot: Bot, config: BackendConfi
     const draft = postId == null ? null : backendDb.db.select({ id: drafts.id }).from(drafts).where(eq(drafts.postId, postId)).get();
     if (draft) await refreshPostControlCard(backendDb, bot, draft.id);
   } else if (event.eventType === "video.reminder.due" && videoDraftId != null)
-    await sendVideoReminder(backendDb, bot, videoDraftId, videoTargetId, config.VIDEO_REMINDER_MINUTES);
+    await sendVideoReminder(backendDb, bot, config, videoDraftId, videoTargetId);
   else if (event.eventType === "video.target.failed" && videoDraftId != null)
     await notifyFinalVideoFailure(backendDb, bot, videoDraftId, videoTargetId);
-  else if (videoDraftId != null) await refreshVideoControlCard(backendDb, bot, videoDraftId);
+  else if (videoDraftId != null) await refreshVideoControlCard(backendDb, bot, config, videoDraftId);
 }
 
 function postIdFromRef(value: string | null): number | null {

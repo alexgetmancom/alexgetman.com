@@ -64,7 +64,7 @@ async function showScheduledVideo(
   locale: BotLocale,
 ): Promise<void> {
   if (!session.draftId) throw new StudioError("err.video-missing");
-  const preview = videoPreview(backendDb, session.draftId, locale);
+  const preview = videoPreview(backendDb, config, session.draftId, locale);
   const warning = technical.aspectOk ? "" : `\n${t(locale, "video.aspect-warning")}`;
   const text = `${videoCheckSummary(technical, locale)}${warning}\n\n✅ ${t(locale, "common.scheduled")}. ${t(locale, "video.reminder", { minutes: config.VIDEO_REMINDER_MINUTES })}\n\n${preview.text}`;
   const controlMessageId = Number(session.data.controlMessageId);
