@@ -328,9 +328,7 @@ describe("publish queue", () => {
         .set({ status: "publishing", lockedBy: "old-worker", lockedAt: "2000-01-01T00:00:00.000Z", updatedAt: "2000-01-01T00:00:00.000Z" })
         .where(eq(publishJobs.jobId, id))
         .run();
-      expect(recoverStalePublishJobs(backendDb, loadConfig({ PUBLISH_LOCK_TIMEOUT_SECONDS: "1", PUBLISH_BACKOFF_BASE_SECONDS: "1" }))).toBe(
-        1,
-      );
+      expect(recoverStalePublishJobs(backendDb, loadConfig({ PUBLISH_BACKOFF_BASE_SECONDS: "1" }))).toBe(1);
       const job = backendDb.db
         .select({ status: publishJobs.status, lockedBy: publishJobs.lockedBy })
         .from(publishJobs)
@@ -362,7 +360,7 @@ describe("publish queue", () => {
         .where(eq(publishJobs.jobId, id))
         .run();
 
-      expect(runPublishWatchdog(loadConfig({ PUBLISH_LOCK_TIMEOUT_SECONDS: "1", PUBLISH_BACKOFF_BASE_SECONDS: "1" }), backendDb)).toBe(1);
+      expect(runPublishWatchdog(loadConfig({ PUBLISH_BACKOFF_BASE_SECONDS: "1" }), backendDb)).toBe(1);
       expect(backendDb.db.select({ status: publishJobs.status }).from(publishJobs).where(eq(publishJobs.jobId, id)).get()).toEqual({
         status: "queued",
       });
@@ -378,7 +376,7 @@ describe("publish queue", () => {
       const [claimed] = claimDuePublishJobs(backendDb, 1, "old-worker");
       if (!claimed) throw new Error("expected claimed job");
       backendDb.db.update(publishJobs).set({ lockedAt: "2000-01-01T00:00:00.000Z" }).where(eq(publishJobs.jobId, id)).run();
-      recoverStalePublishJobs(backendDb, loadConfig({ PUBLISH_LOCK_TIMEOUT_SECONDS: "1" }));
+      recoverStalePublishJobs(backendDb, loadConfig({}));
 
       completePublishJob(backendDb, loadConfig({}), id, { ok: true, id: "late" }, claimed.lockId);
 

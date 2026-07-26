@@ -85,6 +85,9 @@ const envSchema = z
     MAX_METRIC_TASKS_PER_CYCLE: z.coerce.number().int().positive().default(30),
     OBSERVABILITY_INTERVAL_SECONDS: z.coerce.number().int().positive().default(300),
     ALERT_COOLDOWN_SECONDS: z.coerce.number().int().positive().default(3600),
+    RUNTIME_RESTART_WINDOW_SECONDS: z.coerce.number().int().positive().default(1800),
+    RUNTIME_RESTART_ALERT_THRESHOLD: z.coerce.number().int().min(2).default(3),
+    MEMORY_ALERT_PERCENT: z.coerce.number().int().min(1).max(100).default(85),
     IDLE_POLL_INTERVAL_SECONDS: z.coerce.number().int().positive().default(5),
     CONTROLLER_ALBUM_SETTLE_SECONDS: z.coerce.number().positive().default(4),
     PUBLISH_CLAIM_LIMIT: z.coerce.number().int().positive().default(20),
@@ -204,6 +207,32 @@ const envSchema = z
         code: "custom",
         path: ["MCP_STUDIO_TOKEN"],
         message: "MCP_STUDIO_TOKEN and MCP_STUDIO_ACTOR_ID must be configured together",
+      });
+    }
+    // Heartbeat/lock/timeout values are only meaningful in relation to each
+    // other, and every field-level check above passes on a combination that
+    // makes the watchdog steal jobs from a worker that is still running.
+    for (const [heartbeatKey, lockKey] of [
+      ["PUBLISH_HEARTBEAT_INTERVAL_SECONDS", "PUBLISH_LOCK_TIMEOUT_SECONDS"],
+      ["VIDEO_HEARTBEAT_INTERVAL_SECONDS", "VIDEO_LOCK_TIMEOUT_SECONDS"],
+    ] as const) {
+      // Two missed heartbeats must still fit inside the lock window; at exactly
+      // one interval, ordinary scheduling jitter is enough to expire the lock.
+      if (env[heartbeatKey] * 2 >= env[lockKey]) {
+        context.addIssue({
+          code: "custom",
+          path: [heartbeatKey],
+          message: `${heartbeatKey} (${env[heartbeatKey]}s) must be less than half of ${lockKey} (${env[lockKey]}s), or the watchdog can reclaim a job that is still running`,
+        });
+      }
+    }
+    // A provider call may legitimately occupy a worker for the whole job
+    // timeout; the lock has to outlive it or the same job gets picked up twice.
+    if (env.PUBLISH_JOB_TIMEOUT_SECONDS >= env.PUBLISH_LOCK_TIMEOUT_SECONDS) {
+      context.addIssue({
+        code: "custom",
+        path: ["PUBLISH_JOB_TIMEOUT_SECONDS"],
+        message: `PUBLISH_JOB_TIMEOUT_SECONDS (${env.PUBLISH_JOB_TIMEOUT_SECONDS}s) must be shorter than PUBLISH_LOCK_TIMEOUT_SECONDS (${env.PUBLISH_LOCK_TIMEOUT_SECONDS}s)`,
       });
     }
     if (env.MCP_STUDIO_ACTOR_ID && !env.ADMIN_IDS.includes(env.MCP_STUDIO_ACTOR_ID)) {

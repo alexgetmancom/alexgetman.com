@@ -1,5 +1,6 @@
 import { runAnalyticsCycle } from "../analytics/collection/creator-cycle.js";
 import { runMetricsCycle } from "../analytics/collection/metrics-cycle.js";
+import { pruneMetricSamples } from "../analytics/snapshots/metric-repository.js";
 import type { BackendDb } from "../db/client.js";
 import { pruneMediaCache } from "../delivery/media-prepare.js";
 import { createPlatformPorts } from "../delivery/ports/social.js";
@@ -76,6 +77,16 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
           startLoop("creator-analytics", config.METRICS_REFRESH_INTERVAL_SECONDS * 1000, async () => {
             const creators = await runAnalyticsCycle(config, backendDb);
             log("debug", "creator analytics loop tick", { creators });
+          }),
+          // Retention is a housekeeping concern, not a collection one: it used
+          // to run on every metrics tick (10s by default), scanning
+          // metric_samples for a window that moves by a day at a time.
+          startLoop("metric-retention", 60 * 60 * 1000, async () => {
+            try {
+              pruneMetricSamples(backendDb);
+            } catch (error) {
+              log("error", "failed to prune old metric samples", { error: error instanceof Error ? error.message : String(error) });
+            }
           }),
         ]
       : []),

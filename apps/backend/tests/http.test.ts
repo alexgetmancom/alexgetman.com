@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApiHandler } from "../src/api.js";
@@ -39,6 +39,38 @@ function createApiApp(
 }
 
 describe("Astro endpoint controller", () => {
+  it("reports readiness from a real database query and writable data directory", async () => {
+    const dataDir = tempDir("alexgetman-ready-");
+    const backendDb = openBackendDb(join(dataDir, "pipeline.db"), 5000);
+    try {
+      const app = createApiApp(loadConfig({ DATA_DIR: dataDir }), backendDb);
+      const response = await app.request("/readyz");
+      const body = (await response.json()) as { ok: boolean; checks: Record<string, { ok: boolean }> };
+      expect(response.status).toBe(200);
+      expect(body.ok).toBe(true);
+      expect(body.checks.database?.ok).toBe(true);
+      expect(body.checks.data_dir_writable?.ok).toBe(true);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("fails readiness when the data directory is not writable", async () => {
+    const dataDir = tempDir("alexgetman-ready-ro-");
+    const backendDb = openBackendDb(join(dataDir, "pipeline.db"), 5000);
+    try {
+      // The deploy gate curls /readyz with --fail, so an unwritable volume has
+      // to surface as a non-2xx status, not as a green body field.
+      chmodSync(dataDir, 0o500);
+      const response = await createApiApp(loadConfig({ DATA_DIR: dataDir }), backendDb).request("/readyz");
+      expect(response.status).toBe(503);
+      expect(((await response.json()) as { checks: Record<string, { ok: boolean }> }).checks.data_dir_writable?.ok).toBe(false);
+    } finally {
+      chmodSync(dataDir, 0o700);
+      backendDb.close();
+    }
+  });
+
   it("protects command center JSON with legacy token sources", async () => {
     const backendDb = tempDb();
     try {

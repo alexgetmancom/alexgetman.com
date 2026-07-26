@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { creatorDashboard } from "../src/analytics/reports/dashboard.js";
 import { studioAnalyticsDashboard } from "../src/analytics/reports/studio-dashboard.js";
+import { pruneMetricSamples } from "../src/analytics/snapshots/metric-repository.js";
 import { creatorProfiles, metricSamples, posts, postTargets, videoMetricSnapshots } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { insertPublishedVideo } from "./helpers/analytics.js";
@@ -133,6 +134,46 @@ describe("creator analytics dashboards", () => {
       expect(dashboard.text).toContain("| Все | 200 | 20 | 0 | 7 | — |");
       expect(dashboard.text).toContain("| Релиз нов… · ✈️ | 200 | 20 | 0 | 7 | — |");
       expect(dashboard.richHtml.match(/<table bordered striped>/g)?.length).toBe(2);
+    });
+  });
+
+  it("keeps the 30-day baseline a 30-day report needs after retention runs", async () => {
+    await withDb(async (backendDb) => {
+      const now = new Date().toISOString();
+      const publishedAt = new Date(Date.now() - 40 * 24 * 60 * 60_000).toISOString();
+      // Before the 30-day window opens: this is the checkpoint the delta is
+      // measured from, and the sample retention used to delete after 7 days.
+      const beforePeriod = new Date(Date.now() - 33 * 24 * 60 * 60_000).toISOString();
+      backendDb.db
+        .insert(posts)
+        .values({
+          postKey: "post:1",
+          channel: "telegram",
+          messageId: 1,
+          text: "Старый пост",
+          dateUtc: publishedAt,
+          createdAt: publishedAt,
+          updatedAt: now,
+        })
+        .run();
+      backendDb.db
+        .insert(postTargets)
+        .values({ postKey: "post:1", target: "telegram", status: "published", publishedAt, updatedAt: now })
+        .run();
+      backendDb.db
+        .insert(metricSamples)
+        .values([
+          { postKey: "post:1", target: "telegram", metricName: "views", value: 900, sampledAt: beforePeriod },
+          { postKey: "post:1", target: "telegram", metricName: "views", value: 950, sampledAt: now },
+        ])
+        .run();
+      pruneMetricSamples(backendDb);
+      const config = loadConfig({});
+      config.studio.modules.text_posting = true;
+
+      // 50 views of growth, not 950 lifetime and not a dropped row: with the
+      // baseline pruned there is no third answer the report could give.
+      expect(studioAnalyticsDashboard(backendDb, config, "posts", 30, "ru").text).toContain("| ✈️ Telegram | 0 | — | 50 |");
     });
   });
 

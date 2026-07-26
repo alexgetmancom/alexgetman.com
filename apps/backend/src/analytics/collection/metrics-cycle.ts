@@ -4,7 +4,7 @@ import { type JsonValue, postTargets } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { recordWorkerState } from "../../foundation/runtime/worker-state.js";
 import { platformAnalyticsProfile } from "../../publishing/platform-profiles.js";
-import { pruneMetricSamples, upsertMetricError, upsertMetrics } from "../snapshots/metric-repository.js";
+import { upsertMetricError, upsertMetrics } from "../snapshots/metric-repository.js";
 import { isTerminalMetricError } from "./collectors/errors.js";
 import { createMetricCollectors } from "./collectors/index.js";
 import type { MetricCollector } from "./collectors/types.js";
@@ -44,12 +44,6 @@ export async function runMetricsCycle(
         finishMetricTask(backendDb, task, message, isTerminalMetricError(error));
       });
     }
-  }
-
-  try {
-    pruneMetricSamples(backendDb, 7);
-  } catch (error) {
-    console.error("Failed to prune old metric samples:", error);
   }
 
   recordWorkerState(backendDb, "metrics", { checked: tasks.length });

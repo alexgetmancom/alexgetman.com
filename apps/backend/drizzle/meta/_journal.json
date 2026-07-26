@@ -204,6 +204,13 @@
       "when": 1785974500000,
       "tag": "0028_album_attempts_and_media_dedupe",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "6",
+      "when": 1785974600000,
+      "tag": "0029_metric_samples_retention_index",
+      "breakpoints": true
     }
   ]
 }

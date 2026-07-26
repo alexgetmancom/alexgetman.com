@@ -29,7 +29,12 @@ export const metricSamples = sqliteTable(
     source: text(),
     rawJson: json<JsonValue | null>(),
   },
-  (table) => [index("idx_metric_samples_lookup").on(table.postKey, table.target, table.metricName, table.sampledAt)],
+  (table) => [
+    index("idx_metric_samples_lookup").on(table.postKey, table.target, table.metricName, table.sampledAt),
+    // Retention deletes by age alone. The lookup index above is useless for
+    // that predicate — post_key leads it — so the sweep read the whole table.
+    index("idx_metric_samples_sampled_at").on(table.sampledAt),
+  ],
 );
 
 export const metricSchedule = sqliteTable(
