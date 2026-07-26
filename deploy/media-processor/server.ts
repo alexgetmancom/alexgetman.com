@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, rmSync, statSync } from "node:fs";
+import { existsSync, readdirSync, rmSync, statfsSync, statSync } from "node:fs";
 import { mkdir, rename } from "node:fs/promises";
 import { createSerialQueue } from "./serial-queue.ts";
 import { needsVerticalBlur, remoteSiteVideoFfmpegArgs, remoteStoryFfmpegArgs, verticalImageFfmpegArgs } from "./story-encode.ts";
@@ -64,10 +64,14 @@ function processedAsset(file: string, mediaKind: string, job: string): Response 
   });
 }
 
-function manifest(idempotencyKey: string, mediaKind: string, transform: string, job: string): Response {
+type ProcessingTimings = { uploadMs: number; queueWaitMs: number; ffmpegMs: number; totalMs: number; cacheHit: boolean };
+
+function manifest(idempotencyKey: string, mediaKind: string, transform: string, job: string, timings: ProcessingTimings): Response {
   const variants = transform === "story_vertical" && mediaKind === "video" ? ["standard", "telegram"] : ["standard"];
   return Response.json({
     job,
+    requestId: job,
+    timings,
     outputs: Object.fromEntries(
       variants.map((variant) => {
         const file = `/work/cache/${idempotencyKey}.${variant}${mediaKind === "video" ? ".mp4" : ".jpg"}`;
@@ -155,14 +159,23 @@ async function transcode(
   mediaKind: string,
   transform: "story_vertical" | "site_vertical",
   idempotencyKey: string,
+  enqueuedAt: number,
 ): Promise<Response> {
+  const startedAt = Date.now();
+  const queueWaitMs = startedAt - enqueuedAt;
   if (!Number.isFinite(sourceSize) || sourceSize <= 0 || sourceSize > maxBytes) return new Response("invalid_source_size", { status: 413 });
   if (!/^[a-f0-9]{64}$/.test(idempotencyKey)) return new Response("invalid_idempotency_key", { status: 400 });
   const ext = mediaKind === "video" ? ".mp4" : ".jpg";
   const standardCached = `/work/cache/${idempotencyKey}.standard${ext}`;
   const telegramCached = `/work/cache/${idempotencyKey}.telegram${ext}`;
   if (existsSync(standardCached) && (transform !== "story_vertical" || mediaKind !== "video" || existsSync(telegramCached)))
-    return manifest(idempotencyKey, mediaKind, transform, `cached-${idempotencyKey.slice(0, 12)}`);
+    return manifest(idempotencyKey, mediaKind, transform, `cached-${idempotencyKey.slice(0, 12)}`, {
+      uploadMs: 0,
+      queueWaitMs,
+      ffmpegMs: 0,
+      totalMs: Date.now() - enqueuedAt,
+      cacheHit: true,
+    });
   const id = crypto.randomUUID();
   const folder = `/work/${id}`;
   const input = `${folder}/source${ext}`;
@@ -175,6 +188,7 @@ async function transcode(
     await mkdir("/work/cache", { recursive: true });
     // Keep the incoming asset streaming to the VM disk; only ffmpeg owns the
     // media bytes after this point.
+    const uploadStartedAt = Date.now();
     try {
       await streamToFile(source, input, maxBytes);
     } catch {
@@ -195,6 +209,8 @@ async function transcode(
             )
           : remoteSiteVideoFfmpegArgs(input, standardPartial, blur)
         : verticalImageFfmpegArgs(input, standardPartial, blur);
+    const uploadMs = Date.now() - uploadStartedAt;
+    const ffmpegStartedAt = Date.now();
     const child = Bun.spawn(["ffmpeg", ...args], { stdout: "ignore", stderr: "pipe" });
     let timedOut = false;
     const timer = setTimeout(() => {
@@ -202,13 +218,16 @@ async function transcode(
       child.kill("SIGKILL");
     }, timeoutSeconds * 1000);
     const [exitCode, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+    const ffmpegMs = Date.now() - ffmpegStartedAt;
     clearTimeout(timer);
     if (exitCode !== 0) {
       return new Response(ffmpegFailure(exitCode, stderr, timedOut), { status: 422 });
     }
     await rename(standardPartial, standardCached);
     if (transform === "story_vertical" && mediaKind === "video") await rename(telegramPartial, telegramCached);
-    return manifest(idempotencyKey, mediaKind, transform, id);
+    const timings = { uploadMs, queueWaitMs, ffmpegMs, totalMs: Date.now() - enqueuedAt, cacheHit: false };
+    console.log(JSON.stringify({ ts: new Date().toISOString(), level: "info", message: "media transform completed", job: id, timings }));
+    return manifest(idempotencyKey, mediaKind, transform, id, timings);
   } finally {
     // Only the atomically renamed cache entry survives a request; the source
     // folder and any partial output are always reclaimed.
@@ -222,8 +241,18 @@ Bun.serve({
   port: 8787,
   hostname: "0.0.0.0",
   async fetch(request) {
-    if (request.method === "GET" && new URL(request.url).pathname === "/health")
-      return Response.json({ ok: true, queued, active, concurrency: 1 });
+    if (request.method === "GET" && new URL(request.url).pathname === "/health") {
+      const disk = statfsSync("/work");
+      return Response.json({
+        ok: true,
+        queued,
+        active,
+        concurrency: 1,
+        version: Bun.env.MEDIA_PROCESSOR_REVISION ?? "unknown",
+        vaapi: existsSync("/dev/dri/renderD128"),
+        workDisk: { availableBytes: disk.bavail * disk.bsize, totalBytes: disk.blocks * disk.bsize },
+      });
+    }
     const pathname = new URL(request.url).pathname;
     const download = pathname.match(/^\/v1\/transforms\/ffmpeg\/([a-f0-9]{64})\/(standard|telegram)$/);
     if (request.method === "GET" && download) {
@@ -250,6 +279,9 @@ Bun.serve({
           : null;
     if (!mediaKind) return new Response("invalid_media_kind", { status: 400 });
     const sourceSize = Number(request.headers.get("content-length"));
-    return queue(() => transcode(source, sourceSize, mediaKind, transform, request.headers.get("x-studio-idempotency-key") ?? ""));
+    const enqueuedAt = Date.now();
+    return queue(() =>
+      transcode(source, sourceSize, mediaKind, transform, request.headers.get("x-studio-idempotency-key") ?? "", enqueuedAt),
+    );
   },
 });

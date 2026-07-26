@@ -39,3 +39,19 @@ The initial host bootstrap installs the compose file, a private deployment
 agent, and an outbound management tunnel. Afterwards the agent receives only
 immutable digests. Do not edit files in the worker directory or run `docker
 compose build` there: both create source drift from this directory.
+
+## Operations diagnostics
+
+The backend operations CLI reaches the processor over the same production
+tunnel used by publication:
+
+```sh
+bun run ops:prod media-status
+bun run ops:prod media-diagnose
+bun run ops:prod media-job --ref post:106
+bun run ops:prod media-reprocess --ref post:106
+```
+
+`media-diagnose` runs a fixed idempotent image fixture and never publishes.
+`media-reprocess` is a dry run unless `--apply` is present; applying it only
+creates or warms Story media variants and still never calls a social provider.

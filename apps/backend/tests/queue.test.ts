@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
 import type { openBackendDb } from "../src/db/client.js";
-import { type JsonObject, postTargets, publishJobs } from "../src/db/schema.js";
+import { type JsonObject, postEvents, postTargets, publishJobs } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { HttpPublishError } from "../src/publishing/errors.js";
 import {
@@ -150,6 +150,14 @@ describe("publish queue", () => {
         .where(eq(publishJobs.jobId, id))
         .get();
       expect(job).toEqual({ status: "published", lastError: null });
+      const phases = backendDb.db
+        .select({ details: postEvents.detailsJson })
+        .from(postEvents)
+        .where(eq(postEvents.eventType, "publish.job.phase"))
+        .all()
+        .map((row) => JSON.parse(row.details ?? "{}") as Record<string, unknown>);
+      expect(phases.map((phase) => phase.phase)).toEqual(["validate", "provider.publish", "provider.verify"]);
+      expect(phases.every((phase) => typeof phase.duration_ms === "number")).toBe(true);
       const target = backendDb.db
         .select({
           status: postTargets.status,

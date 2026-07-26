@@ -15,9 +15,71 @@ import {
   repairPublicationConsistency,
   withMaintenanceLock,
 } from "../src/operations/maintenance.js";
+import { diagnoseMediaProcessor, mediaProcessorStatus, reprocessPostMedia } from "../src/operations/media-processor.js";
 import { pipelineStatusPayload } from "../src/operations/read-model.js";
+import { publicationTimeline } from "../src/operations/timeline.js";
 
 describe("TypeScript operations tooling", () => {
+  it("builds a durable publication timeline with parsed details and durations", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      backendDb.sqlite
+        .query(
+          "INSERT INTO publish_jobs(post_id,post_key,message_id,target,status,locked_at,created_at,updated_at) VALUES (106,'post:106',106,'telegram','published',?,?,?)",
+        )
+        .run(now, now, new Date(Date.parse(now) + 25).toISOString());
+      backendDb.sqlite
+        .query("INSERT INTO post_targets(post_key,target,status,updated_at) VALUES ('post:106','telegram','published',?)")
+        .run(now);
+      backendDb.sqlite
+        .query(
+          "INSERT INTO post_events(post_key,event_type,severity,target,message,details_json,created_at) VALUES ('post:106','publish.job.phase','info','telegram','done','{\"phase\":\"provider.publish\",\"duration_ms\":25}',?)",
+        )
+        .run(now);
+      const timeline = publicationTimeline(backendDb, "post:106");
+      expect(timeline.jobs).toEqual([expect.objectContaining({ target: "telegram", durationMs: 25 })]);
+      expect(timeline.events).toEqual([expect.objectContaining({ details: { phase: "provider.publish", duration_ms: 25 } })]);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("diagnoses the remote media processor with an authenticated idempotent fixture", async () => {
+    const config = loadConfig({
+      MEDIA_PROCESSOR_PROVIDER: "remote_http",
+      MEDIA_PROCESSOR_URL: "http://127.0.0.1:9087",
+      MEDIA_PROCESSOR_TOKEN: "a".repeat(16),
+    });
+    const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/health")) return Response.json({ ok: true, queued: 0, active: 0, concurrency: 1, version: "test", vaapi: true });
+      expect(init?.headers).toMatchObject({ authorization: `Bearer ${"a".repeat(16)}` });
+      return Response.json({ job: "fixture", timings: { uploadMs: 1, queueWaitMs: 0, ffmpegMs: 2, totalMs: 3, cacheHit: true } });
+    }) as typeof fetch;
+    expect(await mediaProcessorStatus(config, fetchImpl)).toMatchObject({ ok: true, version: "test", vaapi: true });
+    expect(await diagnoseMediaProcessor(config, fetchImpl)).toMatchObject({
+      ok: true,
+      authenticatedFixture: { ok: true, status: 200, result: { job: "fixture" } },
+    });
+  });
+
+  it("keeps media reprocessing read-only unless apply is explicit", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      backendDb.sqlite
+        .query(
+          "INSERT INTO publish_jobs(post_id,post_key,message_id,target,status,payload_json,created_at,updated_at) VALUES (106,'post:106',106,'instagram_stories','published',?,?,?)",
+        )
+        .run(JSON.stringify({ locale: "en", media: [{ type: "IMAGE", localPath: "/tmp/source.jpg" }] }), now, now);
+      const plan = await reprocessPostMedia(backendDb, loadConfig({}), "post:106", false);
+      expect(plan).toMatchObject({ ok: true, apply: false, count: 1 });
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("creates a consistent SQLite backup", async () => {
     const directory = mkdtempSync(join(tmpdir(), "alexgetman-backup-"));
     const dbPath = join(directory, "pipeline.db");

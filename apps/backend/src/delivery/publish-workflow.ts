@@ -53,9 +53,9 @@ export async function runDeliveryPublishCycle(
           }
           const result = await withHeartbeat(backendDb, job.jobId, job.lockId, config.PUBLISH_HEARTBEAT_INTERVAL_SECONDS, () =>
             withinPublishTimeout(config, job.target, async () => {
-              await adapter.validate(job);
-              const published = await adapter.publish(job);
-              return adapter.verify(job, published);
+              await timedDeliveryPhase(backendDb, job, "validate", () => adapter.validate(job));
+              const published = await timedDeliveryPhase(backendDb, job, "provider.publish", () => adapter.publish(job));
+              return timedDeliveryPhase(backendDb, job, "provider.verify", () => adapter.verify(job, published), published);
             }),
           );
           completePublishJob(backendDb, config, job.jobId, result, job.lockId);
@@ -138,6 +138,65 @@ export async function runDeliveryPublishCycle(
   }
   recordWorkerState(backendDb, "queue", { claimed: jobs.length });
   return jobs.length;
+}
+
+async function timedDeliveryPhase<T>(
+  backendDb: BackendDb,
+  job: { jobId: number; postKey: string; target: string; attemptCount: number },
+  phase: string,
+  work: () => Promise<T>,
+  providerResult?: unknown,
+): Promise<T> {
+  const startedAt = Date.now();
+  try {
+    const result = await work();
+    const durationMs = Date.now() - startedAt;
+    recordDomainEvent(backendDb, {
+      ref: job.postKey,
+      target: job.target,
+      type: "publish.job.phase",
+      severity: "info",
+      message: `${job.target} ${phase} completed`,
+      details: {
+        job_id: job.jobId,
+        attempt: job.attemptCount,
+        phase,
+        status: "completed",
+        duration_ms: durationMs,
+        provider_request_id: providerRequestId(result) ?? providerRequestId(providerResult),
+      },
+    });
+    return result;
+  } catch (error) {
+    recordDomainEvent(backendDb, {
+      ref: job.postKey,
+      target: job.target,
+      type: "publish.job.phase",
+      severity: "error",
+      message: `${job.target} ${phase} failed`,
+      details: {
+        job_id: job.jobId,
+        attempt: job.attemptCount,
+        phase,
+        status: "failed",
+        duration_ms: Date.now() - startedAt,
+        provider_request_id: providerRequestId(providerResult),
+        error: String(error instanceof Error ? error.message : error),
+      },
+    });
+    throw error;
+  }
+}
+
+function providerRequestId(value: unknown): string | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  for (const key of ["providerRequestId", "requestId", "request_id", "xRequestId"]) {
+    const candidate = row[key];
+    if (typeof candidate === "string" && candidate) return candidate;
+  }
+  const raw = row.raw;
+  return raw && typeof raw === "object" ? providerRequestId(raw) : null;
 }
 
 /** Keeps a claimed job's lock fresh while a slow provider call is in flight, so

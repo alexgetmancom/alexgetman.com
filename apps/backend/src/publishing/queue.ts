@@ -230,7 +230,13 @@ export function completePublishJob(
         type: `publish.job.${normalized.status}`,
         severity: normalized.status === "failed" ? "error" : "info",
         message: `${job.target} ${normalized.status}`,
-        details: { job_id: jobId, result },
+        details: {
+          job_id: jobId,
+          attempt: job.attemptCount,
+          phase: "delivery.total",
+          duration_ms: durationSince(job.lockedAt, now),
+          result,
+        },
       },
     );
     deleteSupersededJobs(tx, job, jobId, postKey);
@@ -325,12 +331,25 @@ export function failPublishJob(backendDb: BackendDb, config: BackendConfig, jobI
         type: shouldRetry ? "publish.job.retry" : "publish.job.failed",
         severity: shouldRetry ? "warn" : "error",
         message: errorText,
-        details: { job_id: jobId, error_class: errorClass, attempt, next_attempt_at: nextAttempt },
+        details: {
+          job_id: jobId,
+          error_class: errorClass,
+          attempt,
+          next_attempt_at: nextAttempt,
+          phase: "delivery.total",
+          duration_ms: durationSince(job.lockedAt, now),
+        },
       },
     );
   });
   if (errorClass === "auth") recordAuthFailure(backendDb, job.target);
   if (!shouldRetry && job.postId != null) reconcilePublication(backendDb, job.postId);
+}
+
+function durationSince(startedAt: string | null, finishedAt: string): number | null {
+  if (!startedAt) return null;
+  const duration = Date.parse(finishedAt) - Date.parse(startedAt);
+  return Number.isFinite(duration) && duration >= 0 ? duration : null;
 }
 
 function publishRetryPolicy(config: BackendConfig) {

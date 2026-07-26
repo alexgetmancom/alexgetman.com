@@ -106,9 +106,20 @@ async function transformRemotely(
     // over the authenticated tunnel. Older single-output workers remain
     // supported during the manual VM-106 promotion window.
     if (response.headers.get("content-type")?.includes("application/json")) {
-      const result = (await response.json()) as { outputs?: Record<string, { bytes?: number }> };
+      const result = (await response.json()) as {
+        job?: string;
+        requestId?: string;
+        timings?: { uploadMs?: number; queueWaitMs?: number; ffmpegMs?: number; totalMs?: number; cacheHit?: boolean };
+        outputs?: Record<string, { bytes?: number }>;
+      };
       if (!result.outputs?.standard || (video && (!result.outputs.telegram || !telegramOutput)))
         throw new Error("media_processor_failed: incomplete story variants");
+      log("info", "story media remote processing completed", {
+        source,
+        phase: "media_processor.external",
+        providerRequestId: result.requestId ?? result.job,
+        ...result.timings,
+      });
       await downloadRemoteVariant(config, idempotencyKey, "standard", output);
       if (video && telegramOutput) await downloadRemoteVariant(config, idempotencyKey, "telegram", telegramOutput);
       log("info", "story media remote variants written", { output, telegramOutput });

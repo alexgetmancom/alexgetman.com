@@ -14,9 +14,11 @@ import {
   restoreDatabase,
   withMaintenanceLock,
 } from "./operations/maintenance.js";
+import { diagnoseMediaProcessor, mediaJobReport, mediaProcessorStatus, reprocessPostMedia } from "./operations/media-processor.js";
 import { operationsService } from "./operations/service.js";
 import { backfillSiteImageMedia } from "./operations/site-media-backfill.js";
 import { deduplicateSiteMedia } from "./operations/site-media-deduplicate.js";
+import { publicationTimeline } from "./operations/timeline.js";
 import { verifyPostTargets } from "./operations/verify.js";
 
 const republishAliases = new Set(["republish", "retry"]);
@@ -61,6 +63,11 @@ function printHelp(): void {
   doctor
   capability-record --test T01 --message-id 123 [--notes TEXT]
   verify --ref post:1
+  timeline --ref post:1
+  media-status
+  media-diagnose
+  media-job --ref post:1
+  media-reprocess --ref post:1 [--apply]
   republish --ref post:1 [--target x] [--locale ru|en]
   retry --ref post:1 [--target x] [--locale ru|en]
   site-media-images [--apply --max-upload-kbps 6250]
@@ -169,6 +176,12 @@ async function main(): Promise<void> {
       );
       console.log(JSON.stringify({ ok: true, status }, null, 2));
     } else if (args.command === "verify") console.log(JSON.stringify(await verifyPostTargets(backendDb, required(args, "ref")), null, 2));
+    else if (args.command === "timeline") console.log(JSON.stringify(publicationTimeline(backendDb, required(args, "ref")), null, 2));
+    else if (args.command === "media-status") console.log(JSON.stringify(await mediaProcessorStatus(config), null, 2));
+    else if (args.command === "media-diagnose") console.log(JSON.stringify(await diagnoseMediaProcessor(config), null, 2));
+    else if (args.command === "media-job") console.log(JSON.stringify(mediaJobReport(backendDb, required(args, "ref")), null, 2));
+    else if (args.command === "media-reprocess")
+      console.log(JSON.stringify(await reprocessPostMedia(backendDb, config, required(args, "ref"), args.flags.has("apply")), null, 2));
     else if (args.command === "site-media-images") {
       const rawLimit = args.values.get("max-upload-kbps");
       const maxUploadKbps = rawLimit == null ? undefined : Number(rawLimit);
