@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, notInArray, sql } from "drizzle-orm";
 import { freezeDisabledMetricSchedules } from "../analytics/collection/metric-schedule.js";
 import type { BackendDb } from "../db/client.js";
 import {
@@ -145,9 +145,8 @@ export function auditOperations(backendDb: BackendDb): Record<string, unknown> {
       .groupBy(metricSchedule.target)
       .orderBy(metricSchedule.target)
       .all(),
-    // Video (YouTube Shorts / Instagram Reels) failures live in a separate
-    // pipeline from text posts above; without this, "did the video publish"
-    // required a hand-written SQL query every time.
+    // Only actionable delivery failures belong here. Cancelled targets and
+    // unfinished/deleted drafts are lifecycle history, not production noise.
     recentVideoFailures: backendDb.db
       .select({
         videoDraftId: videoTargets.videoDraftId,
@@ -160,7 +159,7 @@ export function auditOperations(backendDb: BackendDb): Record<string, unknown> {
       })
       .from(videoTargets)
       .innerJoin(videoDrafts, eq(videoDrafts.id, videoTargets.videoDraftId))
-      .where(inArray(videoTargets.status, ["failed", "cancelled"]))
+      .where(and(eq(videoTargets.status, "failed"), notInArray(videoDrafts.status, ["draft", "editing", "cancelled"])))
       .orderBy(desc(videoTargets.updatedAt))
       .limit(20)
       .all(),

@@ -89,6 +89,33 @@ describe("TypeScript operations tooling", () => {
     }
   });
 
+  it("reports only actionable video failures, not draft or cancelled lifecycle history", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      for (const [id, status] of [
+        [1, "draft"],
+        [2, "cancelled"],
+        [3, "partial"],
+      ] as const) {
+        backendDb.sqlite
+          .query("INSERT INTO video_drafts(id,admin_id,label,asset_key,status,created_at,updated_at) VALUES (?,1,'test','asset',?,?,?)")
+          .run(id, status, now, now);
+        backendDb.sqlite
+          .query(
+            "INSERT INTO video_targets(video_draft_id,target,metadata_json,status,last_error,created_at,updated_at) VALUES (?,'instagram_reels','{}','failed','boom',?,?)",
+          )
+          .run(id, now, now);
+      }
+
+      expect(auditOperations(backendDb).recentVideoFailures).toEqual([
+        expect.objectContaining({ videoDraftId: 3, status: "failed", lastError: "boom" }),
+      ]);
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("repairs orphaned publication rows and canonical state mismatches", () => {
     const backendDb = openBackendDb(":memory:");
     try {
