@@ -1,0 +1,249 @@
+import { describe, expect, it } from "bun:test";
+import { eq } from "drizzle-orm";
+import { studioAudiencePlatforms } from "../src/analytics/audience-groups.js";
+import { audienceGrowthByPlatform, youtubeChannelViewDeltaSince } from "../src/analytics/metric-deltas.js";
+import { creatorDashboard } from "../src/analytics/reports/dashboard.js";
+import { studioAnalyticsDashboard } from "../src/analytics/reports/studio-dashboard.js";
+import { recordProfileSnapshot } from "../src/analytics/snapshots/creator-store.js";
+import { creatorProfileSnapshots, creatorProfiles, metricSamples, postEvents, videoMetricSnapshots } from "../src/db/schema.js";
+import { loadConfig } from "../src/foundation/config.js";
+import { insertPublishedVideo } from "./helpers/analytics.js";
+import { withDb } from "./helpers/db.js";
+
+describe("creator analytics deltas", () => {
+  it("reports a video delta instead of a lifetime total for an older publication", async () => {
+    await withDb(async (backendDb) => {
+      const publishedAt = new Date(Date.now() - 90 * 24 * 60 * 60_000).toISOString();
+      const beforePeriod = new Date(Date.now() - 2 * 24 * 60 * 60_000).toISOString();
+      const now = new Date().toISOString();
+      const { targetId } = insertPublishedVideo(backendDb, { label: "Older video", target: "youtube_shorts", publishedAt, updatedAt: now });
+      backendDb.db
+        .insert(videoMetricSnapshots)
+        .values({ videoTargetId: targetId, platform: "youtube_shorts", metricsJson: { views: 100, likes: 5 }, sampledAt: beforePeriod })
+        .run();
+      backendDb.db
+        .insert(videoMetricSnapshots)
+        .values({ videoTargetId: targetId, platform: "youtube_shorts", metricsJson: { views: 180, likes: 8 }, sampledAt: now })
+        .run();
+      const config = loadConfig({});
+      config.studio.modules.video_posting = true;
+      config.studio.modules.youtube = true;
+
+      expect(creatorDashboard(backendDb, config, 1).text).toContain("Видео: 80 просмотров · 3 взаимодействий");
+    });
+  });
+
+  it("uses metric sample deltas for text and site periods", async () => {
+    await withDb(async (backendDb) => {
+      const before = new Date(Date.now() - 2 * 24 * 60 * 60_000).toISOString();
+      const now = new Date().toISOString();
+      backendDb.db
+        .insert(metricSamples)
+        .values([
+          { postKey: "post:1", target: "site_ru", metricName: "views", value: 100, sampledAt: before },
+          { postKey: "post:1", target: "site_ru", metricName: "views", value: 145, sampledAt: now },
+          { postKey: "post:2", target: "telegram", metricName: "views", value: 20, sampledAt: before },
+          { postKey: "post:2", target: "telegram", metricName: "views", value: 50, sampledAt: now },
+          { postKey: "post:2", target: "telegram", metricName: "likes", value: 4, sampledAt: before },
+          { postKey: "post:2", target: "telegram", metricName: "likes", value: 9, sampledAt: now },
+        ])
+        .run();
+      const config = loadConfig({});
+      config.studio.modules.site = true;
+      config.studio.modules.text_posting = true;
+
+      const text = creatorDashboard(backendDb, config, 1).text;
+      expect(text).toContain("Сайт: 45 просмотров материалов");
+      expect(text).toContain("Посты: 30 просмотров · 5 взаимодействий");
+    });
+  });
+
+  it("changes audience growth with the selected period instead of repeating lifetime totals", async () => {
+    await withDb(async (backendDb) => {
+      const now = new Date().toISOString();
+      const thirtyFiveDaysAgo = new Date(Date.now() - 35 * 24 * 60 * 60_000).toISOString();
+      const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60_000).toISOString();
+      backendDb.db
+        .insert(creatorProfiles)
+        .values({ platform: "telegram", dataJson: { subscriberCount: 150 }, updatedAt: now })
+        .run();
+      backendDb.db
+        .insert(creatorProfileSnapshots)
+        .values([
+          {
+            platform: "telegram",
+            account: "channel",
+            sampledOn: "2026-06-11",
+            metricsJson: { subscriberCount: 100 },
+            source: "test",
+            sampledAt: thirtyFiveDaysAgo,
+          },
+          {
+            platform: "telegram",
+            account: "channel",
+            sampledOn: "2026-07-06",
+            metricsJson: { subscriberCount: 120 },
+            source: "test",
+            sampledAt: tenDaysAgo,
+          },
+          {
+            platform: "telegram",
+            account: "channel",
+            sampledOn: "2026-07-16",
+            metricsJson: { subscriberCount: 150 },
+            source: "test",
+            sampledAt: now,
+          },
+        ])
+        .run();
+      const config = loadConfig({});
+
+      const week = studioAnalyticsDashboard(backendDb, config, "audience", 7, "ru").text;
+      const month = studioAnalyticsDashboard(backendDb, config, "audience", 30, "ru").text;
+      expect(week).toContain("Аудитория · 7 дней");
+      expect(week).toContain("прирост · 7 дней: *+30*");
+      expect(month).toContain("Аудитория · 30 дней");
+      expect(month).toContain("прирост · 30 дней: *+50*");
+    });
+  });
+
+  it("uses YouTube's native gained and lost subscriber reports for each selected period", async () => {
+    await withDb(async (backendDb) => {
+      const now = new Date().toISOString();
+      backendDb.db
+        .insert(creatorProfiles)
+        .values({
+          platform: "youtube",
+          dataJson: { subscriberCount: 120, subscribersGained1d: 9, subscribersLost1d: 2, subscribersGained7d: 28, subscribersLost7d: 5 },
+          updatedAt: now,
+        })
+        .run();
+      const since = new Date(Date.now() - 7 * 24 * 60 * 60_000).toISOString();
+      expect(audienceGrowthByPlatform(backendDb, since, 1).get("youtube")).toBe(7);
+      expect(audienceGrowthByPlatform(backendDb, since, 7).get("youtube")).toBe(23);
+    });
+  });
+
+  it("falls back to hourly YouTube and tracked-video deltas while the daily report is pending", async () => {
+    await withDb(async (backendDb) => {
+      const now = new Date();
+      const before = new Date(now.getTime() - 25 * 60 * 60_000).toISOString();
+      const current = now.toISOString();
+      const { targetId } = insertPublishedVideo(backendDb, {
+        label: "Новый Short",
+        target: "youtube_shorts",
+        publishedAt: current,
+        externalId: "video-1",
+      });
+      backendDb.db
+        .insert(videoMetricSnapshots)
+        .values({
+          videoTargetId: targetId,
+          platform: "youtube_shorts",
+          metricsJson: { views: 6, likes: 2, comments: 1 },
+          sampledAt: current,
+        })
+        .run();
+      backendDb.db
+        .insert(creatorProfileSnapshots)
+        .values([
+          {
+            platform: "youtube",
+            account: "marux",
+            sampledOn: "2026-07-18T10",
+            metricsJson: { viewCount: 100, subscriberCount: 122 },
+            source: "youtube_data_api",
+            sampledAt: before,
+          },
+          {
+            platform: "youtube",
+            account: "marux",
+            sampledOn: "2026-07-19T11",
+            metricsJson: { viewCount: 150, subscriberCount: 124 },
+            source: "youtube_data_api",
+            sampledAt: current,
+          },
+        ])
+        .run();
+      backendDb.db
+        .insert(creatorProfiles)
+        .values({
+          platform: "youtube",
+          dataJson: { subscriberCount: 124, views1d: 0, likes1d: 0, comments1d: 0, shares1d: 0 },
+          updatedAt: current,
+        })
+        .run();
+      const config = loadConfig({});
+      config.studio.modules.video_posting = true;
+      config.studio.modules.youtube = true;
+
+      const dashboard = studioAnalyticsDashboard(backendDb, config, "video", 1, "ru");
+      expect(dashboard.text).toContain("| ▶️ YouTube | 124 | +2 | 50 | 2 | 1 | — | — |");
+    });
+  });
+
+  it("does not label a stale YouTube channel snapshot as a 24-hour delta", async () => {
+    await withDb(async (backendDb) => {
+      const now = new Date();
+      const stale = new Date(now.getTime() - 48 * 60 * 60_000).toISOString();
+      backendDb.db
+        .insert(creatorProfileSnapshots)
+        .values([
+          {
+            platform: "youtube",
+            account: "marux",
+            sampledOn: "stale",
+            metricsJson: { viewCount: 100 },
+            source: "youtube_data_api",
+            sampledAt: stale,
+          },
+          {
+            platform: "youtube",
+            account: "marux",
+            sampledOn: "current",
+            metricsJson: { viewCount: 300 },
+            source: "youtube_data_api",
+            sampledAt: now.toISOString(),
+          },
+        ])
+        .run();
+      expect(youtubeChannelViewDeltaSince(backendDb, new Date(now.getTime() - 24 * 60 * 60_000).toISOString())).toBeNull();
+    });
+  });
+
+  it("counts text and video follower totals as two separate milestones", async () => {
+    await withDb(async (backendDb) => {
+      const config = loadConfig({});
+      config.studio.modules.text_posting = true;
+      config.studio.modules.video_posting = true;
+      config.studio.modules.youtube = true;
+      // A video platform already past the threshold must not push the text
+      // total over it, and vice versa.
+      recordProfileSnapshot(backendDb, {
+        platform: "youtube",
+        account: "channel",
+        source: "test",
+        audiencePlatforms: studioAudiencePlatforms(config, "video"),
+        metrics: { subscriberCount: 400 },
+      });
+      recordProfileSnapshot(backendDb, {
+        platform: "telegram",
+        account: "channel",
+        source: "test",
+        audiencePlatforms: studioAudiencePlatforms(config, "text"),
+        metrics: { followersCount: 120 },
+      });
+
+      const milestones = backendDb.db
+        .select({ message: postEvents.message })
+        .from(postEvents)
+        .where(eq(postEvents.eventType, "analytics.milestone.reached"))
+        .all()
+        .map((row) => row.message);
+      expect(milestones).toContain("🏆 Видео-площадки: 250 подписчиков!");
+      expect(milestones).toContain("🏆 Текстовые площадки: 100 подписчиков!");
+      // 400 + 120 would have crossed 500 under one combined total.
+      expect(milestones.some((message) => message.includes("500"))).toBe(false);
+    });
+  });
+});

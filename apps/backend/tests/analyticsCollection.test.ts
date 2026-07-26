@@ -1,0 +1,211 @@
+import { describe, expect, it } from "bun:test";
+import { eq } from "drizzle-orm";
+import { runAnalyticsCycle } from "../src/analytics/collection/creator-cycle.js";
+import { runVideoMetricSchedule } from "../src/analytics/collection/video-metrics.js";
+import { analyticsSync, creatorProfileSnapshots, creatorProfiles, videoMetricSchedule, videoMetricSnapshots } from "../src/db/schema.js";
+import { loadConfig } from "../src/foundation/config.js";
+import { insertPublishedVideo } from "./helpers/analytics.js";
+import { withDb } from "./helpers/db.js";
+
+describe("creator analytics collection", () => {
+  it("retains live YouTube channel counters when the Analytics API is unavailable", async () => {
+    await withDb(async (backendDb) => {
+      const config = loadConfig({ YOUTUBE_CLIENT_ID: "client", YOUTUBE_CLIENT_SECRET: "secret", YOUTUBE_REFRESH_TOKEN: "refresh" });
+      config.studio.modules.analytics = true;
+      config.studio.modules.video_posting = true;
+      config.studio.modules.youtube = true;
+      const fetchMock = (async (input: URL | RequestInfo) => {
+        const url = String(input);
+        if (url === "https://oauth2.googleapis.com/token") return new Response(JSON.stringify({ access_token: "access" }));
+        if (url.includes("youtube/v3/channels"))
+          return new Response(
+            JSON.stringify({
+              items: [{ snippet: { title: "Marux_play" }, statistics: { subscriberCount: "125", viewCount: "190783", videoCount: "119" } }],
+            }),
+          );
+        if (url.includes("youtubeanalytics.googleapis.com"))
+          return new Response(JSON.stringify({ error: { message: "service disabled" } }), { status: 403 });
+        throw new Error(`Unexpected request: ${url}`);
+      }) as typeof fetch;
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = fetchMock;
+      try {
+        await runAnalyticsCycle(config, backendDb, fetchMock);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+
+      expect(backendDb.db.select().from(creatorProfiles).where(eq(creatorProfiles.platform, "youtube")).get()?.dataJson).toMatchObject({
+        subscriberCount: 125,
+        viewCount: 190783,
+      });
+      expect(backendDb.db.select().from(creatorProfileSnapshots).where(eq(creatorProfileSnapshots.platform, "youtube")).all()).toHaveLength(
+        1,
+      );
+      expect(backendDb.db.select().from(analyticsSync).where(eq(analyticsSync.source, "youtube")).get()?.lastError).toContain(
+        "service disabled",
+      );
+    });
+  });
+
+  it("does not call analytics collectors when Analytics itself is disabled", async () => {
+    await withDb(async (backendDb) => {
+      const config = loadConfig({});
+      config.studio.modules.analytics = false;
+      expect(await runAnalyticsCycle(config, backendDb)).toBe(0);
+    });
+  });
+
+  it("uses fixed publication-time checkpoints for video metrics", async () => {
+    await withDb(async (backendDb) => {
+      const publishedAt = new Date(Date.now() - 2 * 60 * 60_000).toISOString();
+      const { targetId } = insertPublishedVideo(backendDb, {
+        label: "Hades",
+        target: "instagram_reels",
+        publishedAt,
+        externalId: "reel-1",
+      });
+      const config = loadConfig({ INSTAGRAM_ACCESS_TOKEN: "token", INSTAGRAM_USER_ID: "user" });
+      config.studio.modules.video_posting = true;
+      config.studio.modules.instagram = true;
+      config.studio.modules.youtube = true;
+      const fetchMock = (async (input: URL | RequestInfo) => {
+        const url = String(input);
+        if (url.includes("/comments")) return new Response(JSON.stringify({ data: [] }));
+        if (url.includes("reel-1")) return new Response(JSON.stringify({ plays: 20, like_count: 2, comments_count: 1 }));
+        return new Response(JSON.stringify({ username: "maru", followers_count: 10, media_count: 1 }));
+      }) as typeof fetch;
+      await runAnalyticsCycle(config, backendDb, fetchMock);
+
+      expect(backendDb.db.select().from(videoMetricSnapshots).all()).toHaveLength(1);
+      const schedule = backendDb.db.select().from(videoMetricSchedule).where(eq(videoMetricSchedule.videoTargetId, targetId)).get();
+      expect(schedule?.checkpointIndex).toBe(1);
+      const nextCheck = new Date(schedule?.nextCheckAt ?? 0).getTime();
+      expect(nextCheck).toBeGreaterThan(Date.now() + 50 * 60 * 1000);
+      expect(nextCheck).toBeLessThan(Date.now() + 70 * 60 * 1000);
+    });
+  });
+
+  it("refreshes YouTube OAuth once and freezes a failed batch without a request burst", async () => {
+    await withDb(async (backendDb) => {
+      const publishedAt = new Date(Date.now() - 2 * 60 * 60_000).toISOString();
+      const now = new Date().toISOString();
+      const targetIds = [
+        insertPublishedVideo(backendDb, {
+          label: "YouTube batch A",
+          target: "youtube_shorts",
+          publishedAt,
+          updatedAt: now,
+          externalId: "youtube-a",
+        }).targetId,
+        insertPublishedVideo(backendDb, {
+          label: "YouTube batch B",
+          target: "youtube_shorts",
+          publishedAt,
+          updatedAt: now,
+          externalId: "youtube-b",
+        }).targetId,
+      ];
+      backendDb.db
+        .insert(videoMetricSchedule)
+        .values(
+          targetIds.map((videoTargetId) => ({ videoTargetId, nextCheckAt: new Date(Date.now() - 1_000).toISOString(), updatedAt: now })),
+        )
+        .run();
+      const config = loadConfig({ YOUTUBE_CLIENT_ID: "client", YOUTUBE_CLIENT_SECRET: "secret", YOUTUBE_REFRESH_TOKEN: "revoked" });
+      config.studio.modules.video_posting = true;
+      let refreshRequests = 0;
+      const fetchMock = (async (input: URL | RequestInfo) => {
+        if (String(input) === "https://oauth2.googleapis.com/token") {
+          refreshRequests += 1;
+          return new Response(JSON.stringify({ error: "invalid_grant", error_description: "Token has been expired or revoked." }), {
+            status: 400,
+          });
+        }
+        throw new Error(`Unexpected request: ${input}`);
+      }) as typeof fetch;
+
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = fetchMock;
+      try {
+        await runVideoMetricSchedule(config, backendDb, fetchMock);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+
+      expect(refreshRequests).toBe(1);
+      for (const videoTargetId of targetIds) {
+        const schedule = backendDb.db.select().from(videoMetricSchedule).where(eq(videoMetricSchedule.videoTargetId, videoTargetId)).get();
+        expect(schedule?.frozenAt).not.toBeNull();
+        expect(schedule?.lastError).toContain("invalid_grant");
+      }
+    });
+  });
+
+  it("collects Zernio Reel and account analytics without Meta credentials", async () => {
+    await withDb(async (backendDb) => {
+      const now = new Date(Date.now() - 2 * 60 * 60_000).toISOString();
+      const { targetId } = insertPublishedVideo(backendDb, {
+        label: "Zernio Reel",
+        target: "instagram_reels",
+        publishedAt: now,
+        deliveryProvider: "zernio",
+        providerAccountId: "maru-account",
+        providerPostId: "zernio-post",
+      });
+      const config = loadConfig({
+        ZERNIO_API_KEY: "a".repeat(16),
+        PUBLISH_PROVIDER_ROUTES_JSON: '{"instagram_reels":{"provider":"zernio","accountId":"maru-account"}}',
+      });
+      config.studio.modules.analytics = true;
+      config.studio.modules.video_posting = true;
+      config.studio.modules.instagram = true;
+      const fetchMock = (async (input: URL | RequestInfo) => {
+        const url = String(input);
+        if (url === "https://zernio.com/api/v1/accounts")
+          return new Response(JSON.stringify([{ _id: "maru-account", username: "marux_play", followersCount: 306 }]));
+        if (url.includes("account-insights"))
+          return new Response(
+            JSON.stringify({
+              metrics: {
+                reach: { total: 100 },
+                views: { total: 200 },
+                total_interactions: { total: 20 },
+                saves: { total: 5 },
+                shares: { total: 7 },
+              },
+            }),
+          );
+        if (url.includes("follower-history"))
+          return new Response(
+            JSON.stringify({ metrics: { follower_count: { total: 0 }, followers_gained: { total: 8 }, followers_lost: { total: 2 } } }),
+          );
+        if (url.includes("postId=zernio-post"))
+          return new Response(
+            JSON.stringify({
+              publishedAt: now,
+              platformPostUrl: "https://www.instagram.com/reel/example/",
+              analytics: { views: 200, likes: 20, comments: 3, reach: 160, shares: 7, saves: 5, follows: 2, igReelsAvgWatchTime: 7000 },
+            }),
+          );
+        throw new Error(`unexpected URL: ${url}`);
+      }) as typeof fetch;
+
+      await runAnalyticsCycle(config, backendDb, fetchMock);
+
+      expect(
+        backendDb.db.select().from(videoMetricSnapshots).where(eq(videoMetricSnapshots.videoTargetId, targetId)).get()?.metricsJson,
+      ).toMatchObject({
+        views: 200,
+        reach: 160,
+        saves: 5,
+        averageWatchTimeMs: 7000,
+      });
+      expect(backendDb.db.select().from(creatorProfiles).where(eq(creatorProfiles.platform, "instagram")).get()?.dataJson).toMatchObject({
+        followersCount: 306,
+        reach30d: 100,
+        followersGained30d: 8,
+      });
+    });
+  });
+});
