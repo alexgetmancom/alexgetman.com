@@ -50,6 +50,21 @@ jobs:
           tags: ghcr.io/${{ github.repository_owner }}/alexgetman-backend:${{ github.event.workflow_run.head_sha }},ghcr.io/${{ github.repository_owner }}/alexgetman-backend:latest
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
+      # Runs against the digest that was just pushed, so it tests the exact
+      # bytes the deploy job will activate. It gates deployment: `deploy` needs
+      # this job, so a failure here stops the rollout instead of turning every
+      # SSR route into a 500 in production. See scripts/image-smoke.ts for what
+      # the pruned node_modules in the image can silently break.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+          cache: true
+      - name: Install
+        run: bun install --frozen-lockfile
+      - name: Image smoke test
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/alexgetman-backend@${{ steps.image.outputs.digest }}
+        run: bun scripts/image-smoke.ts
 
   media-processor-image:
     name: Build media processor image
