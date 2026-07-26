@@ -1,9 +1,10 @@
 import { describe, expect, it, mock } from "bun:test";
 import { eq } from "drizzle-orm";
 import { openBackendDb } from "../src/db/client.js";
-import { alertDedup, credentialChecks, postEvents, publishJobs, siteJobs } from "../src/db/schema.js";
+import { alertDedup, credentialChecks, postEvents, publishJobs, siteJobs, workerState } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { runObservabilityCycle } from "../src/observability/cycle.js";
+import { recordMemoryPressure } from "../src/observability/runtime-health.js";
 
 function testHarness() {
   const backendDb = openBackendDb(":memory:");
@@ -124,6 +125,107 @@ describe("observability", () => {
       await runObservabilityCycle(config, backendDb);
       await runObservabilityCycle(config, backendDb);
       expect(countEvents(backendDb, "target.failed")).toBe(0);
+    } finally {
+      backendDb.close();
+    }
+  });
+});
+
+function seedPreviousBoot(backendDb: ReturnType<typeof openBackendDb>, restartsAt: string[]): void {
+  const now = new Date().toISOString();
+  backendDb.db
+    .insert(workerState)
+    .values({
+      name: "runtime",
+      stateJson: { bootId: "previous-process", bootedAt: new Date(Date.now() - 60_000).toISOString(), restartsAt },
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({ target: workerState.name, set: { updatedAt: now } })
+    .run();
+}
+
+describe("runtime health", () => {
+  it("adopts the runtime identity silently on a fresh database", async () => {
+    const { backendDb, config } = testHarness();
+    try {
+      await runObservabilityCycle(config, backendDb);
+      expect(countEvents(backendDb, "runtime.restarted")).toBe(0);
+      expect(backendDb.db.select().from(workerState).where(eq(workerState.name, "runtime")).get()).toBeTruthy();
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("records a single restart as info so a deploy does not page the owner", async () => {
+    const { backendDb, sendMessage, alertsPort, config } = testHarness();
+    try {
+      seedPreviousBoot(backendDb, []);
+      await runObservabilityCycle(config, backendDb, alertsPort);
+      expect(countEvents(backendDb, "runtime.restarted")).toBe(1);
+      // Alert delivery only picks up warn/error, so an ordinary restart must not
+      // reach the transport.
+      expect(sendMessage).not.toHaveBeenCalled();
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("reports the same process only once across repeated cycles", async () => {
+    const { backendDb, config } = testHarness();
+    try {
+      seedPreviousBoot(backendDb, []);
+      await runObservabilityCycle(config, backendDb);
+      await runObservabilityCycle(config, backendDb);
+      expect(countEvents(backendDb, "runtime.restarted")).toBe(1);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("escalates to an alert when restarts cluster inside the window", async () => {
+    const { backendDb, sendMessage, alertsPort, config } = testHarness();
+    try {
+      const recent = [new Date(Date.now() - 120_000).toISOString(), new Date(Date.now() - 60_000).toISOString()];
+      seedPreviousBoot(backendDb, recent);
+      await runObservabilityCycle(config, backendDb, alertsPort);
+      expect(countEvents(backendDb, "runtime.restart.looping")).toBe(1);
+      expect(sendMessage).toHaveBeenCalledTimes(1);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("ignores restarts that fell out of the window", async () => {
+    const { backendDb, config } = testHarness();
+    try {
+      const stale = [new Date(Date.now() - 5 * 3600_000).toISOString(), new Date(Date.now() - 4 * 3600_000).toISOString()];
+      seedPreviousBoot(backendDb, stale);
+      await runObservabilityCycle(config, backendDb);
+      expect(countEvents(backendDb, "runtime.restart.looping")).toBe(0);
+      expect(countEvents(backendDb, "runtime.restarted")).toBe(1);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("warns once when rss crosses the container limit threshold", () => {
+    const { backendDb, config } = testHarness();
+    try {
+      const tightLimit = Math.round(process.memoryUsage().rss / 0.99);
+      expect(recordMemoryPressure(config, backendDb, tightLimit)).toBe(true);
+      expect(recordMemoryPressure(config, backendDb, tightLimit)).toBe(false);
+      expect(countEvents(backendDb, "runtime.memory.pressure")).toBe(1);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("stays quiet below the threshold and when no cgroup limit applies", () => {
+    const { backendDb, config } = testHarness();
+    try {
+      expect(recordMemoryPressure(config, backendDb, process.memoryUsage().rss * 100)).toBe(false);
+      expect(recordMemoryPressure(config, backendDb, null)).toBe(false);
+      expect(countEvents(backendDb, "runtime.memory.pressure")).toBe(0);
     } finally {
       backendDb.close();
     }

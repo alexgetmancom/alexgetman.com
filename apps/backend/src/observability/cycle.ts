@@ -5,6 +5,7 @@ import { recordWorkerState } from "../foundation/runtime/worker-state.js";
 import { type AlertPort, deliverPendingAlerts } from "./alerts.js";
 import { updateCredentialChecks } from "./credentials.js";
 import { recordPublicationFailures } from "./failures.js";
+import { recordMemoryPressure, recordProcessRestart } from "./runtime-health.js";
 import { checkTokenHealth } from "./token-health.js";
 
 const toMb = (bytes: number) => Math.round(bytes / 1024 / 1024);
@@ -42,6 +43,11 @@ export async function runObservabilityCycle(
   logMemoryUsage();
   let credentials = 0;
   let alerts = 0;
+  // Ordered before the alert probe on purpose: both record durable events, so
+  // running them first lets this same cycle deliver what they found instead of
+  // waiting a full interval.
+  await probe("runtime-restart", () => void recordProcessRestart(config, backendDb));
+  await probe("memory-pressure", () => void recordMemoryPressure(config, backendDb));
   await probe("credentials", () => {
     credentials = updateCredentialChecks(config, backendDb);
   });
