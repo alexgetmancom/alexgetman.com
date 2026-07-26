@@ -1,5 +1,5 @@
-import { describe, expect, it, mock } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { afterAll, describe, expect, it, mock } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { eq } from "drizzle-orm";
@@ -8,8 +8,15 @@ import { credentialChecks, postEvents } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { checkTokenHealth } from "../src/observability/token-health.js";
 
+const tempDirectories: string[] = [];
+
+afterAll(() => {
+  for (const dir of tempDirectories) rmSync(dir, { recursive: true, force: true });
+});
+
 function tempDb() {
   const dir = mkdtempSync(join(tmpdir(), "alexgetman-token-health-"));
+  tempDirectories.push(dir);
   return openBackendDb(join(dir, "pipeline.db"), 5000);
 }
 

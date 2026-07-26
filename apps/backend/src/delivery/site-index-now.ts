@@ -14,10 +14,12 @@ export async function pingIndexNow(config: BackendConfig, urls: string[], fetchI
   const keyFile = path.join(config.DATA_DIR, "indexnow.key");
   const stateFile = path.join(config.DATA_DIR, "indexnow.json");
   const key = readOrCreateKey(keyFile);
-  fs.writeFileSync(path.join(config.SITE_PUBLIC_DIR, `${key}.txt`), `${key}\n`, { encoding: "utf8", mode: 0o664 });
   const digest = crypto.createHash("sha256").update(unique.join("\n")).digest("hex");
   const previous = readState(stateFile);
   if (previous.last_digest === digest) return;
+  // The key file only has to exist by the time IndexNow fetches it, so publish
+  // it on the path that actually pings rather than on every materialization.
+  fs.writeFileSync(path.join(config.SITE_PUBLIC_DIR, `${key}.txt`), `${key}\n`, { encoding: "utf8", mode: 0o664 });
   const state: IndexNowState = { ...previous, last_attempt_at: new Date().toISOString(), url_count: unique.length };
   writeState(stateFile, state);
   try {

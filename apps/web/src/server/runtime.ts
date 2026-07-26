@@ -20,7 +20,10 @@ type RuntimeGlobal = typeof globalThis & { __alexgetmanRuntime?: AppRuntime };
 const runtimeGlobal = globalThis as RuntimeGlobal;
 
 export function startRuntime(): AppRuntime {
-  runtime ??= runtimeGlobal.__alexgetmanRuntime;
+  // The global is authoritative, not the module-local cache: stopRuntime in one
+  // module graph cannot clear the other graph's copy, and a stale copy would
+  // hand out a closed database.
+  runtime = runtimeGlobal.__alexgetmanRuntime;
   if (runtime) return runtime;
   const config = loadConfig(Bun.env);
   configureLogging(config.LOG_LEVEL);

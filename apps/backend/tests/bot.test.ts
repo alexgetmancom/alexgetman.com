@@ -441,4 +441,32 @@ describe("Telegram entity HTML", () => {
       ]),
     ).toBe("<strong>bold</strong> <em>italic</em> <u>under</u> <s>strike</s> <code>code</code>");
   });
+
+  it("nests entities that share a range instead of tearing the markup", () => {
+    expect(
+      entitiesToHtml("click here", [
+        { type: "text_link", offset: 0, length: 10, url: "https://example.com/" },
+        { type: "bold", offset: 0, length: 5 },
+      ]),
+    ).toBe('<a href="https://example.com/" rel="noopener noreferrer"><strong>click</strong> here</a>');
+  });
+
+  it("nests an entity fully contained in a longer one", () => {
+    expect(
+      entitiesToHtml("alpha beta gamma", [
+        { type: "italic", offset: 0, length: 16 },
+        { type: "bold", offset: 6, length: 4 },
+      ]),
+    ).toBe("<em>alpha <strong>beta</strong> gamma</em>");
+  });
+
+  it("escapes the href of a bare url entity and keeps schemeless domains https", () => {
+    expect(entitiesToHtml("go example.com now", [{ type: "url", offset: 3, length: 11 }])).toBe(
+      'go <a href="https://example.com" rel="noopener noreferrer">example.com</a> now',
+    );
+  });
+
+  it("drops an entity whose range runs past the text", () => {
+    expect(entitiesToHtml("short", [{ type: "bold", offset: 2, length: 99 }])).toBe("short");
+  });
 });

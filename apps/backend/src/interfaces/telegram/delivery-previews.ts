@@ -7,6 +7,7 @@ import type { BackendConfig } from "../../foundation/config.js";
 import type { DeliveryProjection } from "../../studio/projections.js";
 import { studioServices } from "../../studio/services/index.js";
 import { t } from "./i18n/index.js";
+import { escapeMarkdown } from "./markdown.js";
 
 const TELEGRAM_MEDIA_GROUP_LIMIT = 10;
 
@@ -206,8 +207,4 @@ function formatMetadata(metadata: Record<string, unknown>): string {
   if (Array.isArray(metadata.tags) && metadata.tags.length) lines.push(`Tags: ${metadata.tags.join(", ")}`);
   if (metadata.gameUrl) lines.push(`Game: ${String(metadata.gameUrl)}`);
   return lines.join("\n");
-}
-
-function escapeMarkdown(value: string): string {
-  return value.replace(/([_*[\]`])/g, "\\$1");
 }

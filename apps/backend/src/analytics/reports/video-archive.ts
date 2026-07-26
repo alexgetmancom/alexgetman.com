@@ -1,6 +1,7 @@
 import type { BackendDb } from "../../db/client.js";
 import type { StudioLocale as BotLocale } from "../../foundation/locale.js";
 import { t } from "../../interfaces/telegram/i18n/index.js";
+import { escapeMarkdown } from "../../interfaces/telegram/markdown.js";
 import { metricNumber } from "../snapshots/creator-store.js";
 
 export function creatorVideoArchive(
@@ -21,16 +22,16 @@ export function creatorVideoArchive(
   );
   const rows = backendDb.sqlite
     .prepare(
-      `SELECT d.id, COALESCE(d.label, 'Без названия') AS label FROM video_drafts d WHERE EXISTS (SELECT 1 FROM video_targets t WHERE t.video_draft_id=d.id AND t.status='published') ORDER BY d.updated_at DESC LIMIT 11 OFFSET ?`,
+      `SELECT d.id, COALESCE(d.label, 'Без названия') AS label FROM video_drafts d WHERE EXISTS (SELECT 1 FROM video_targets t WHERE t.video_draft_id=d.id AND t.status='published') ORDER BY d.updated_at DESC LIMIT 10 OFFSET ?`,
     )
     .all(offset) as Array<{ id: number; label: string }>;
-  const items = rows.slice(0, 10);
   return {
-    text: items.length ? `📚 ${t(locale, "report.video-archive-choose")}` : `📚 ${t(locale, "report.no-videos")}`,
-    items,
+    text: rows.length ? `📚 ${t(locale, "report.video-archive-choose")}` : `📚 ${t(locale, "report.no-videos")}`,
+    items: rows,
     total,
   };
 }
+
 export function creatorVideoMetrics(backendDb: BackendDb, videoDraftId: number, locale: BotLocale = "en"): string {
   const draft = backendDb.sqlite
     .prepare("SELECT COALESCE(label, 'Без названия') AS label FROM video_drafts WHERE id=?")
@@ -61,7 +62,4 @@ export function creatorVideoMetrics(backendDb: BackendDb, videoDraftId: number, 
     );
   }
   return lines.join("\n");
-}
-function escapeMarkdown(value: string): string {
-  return value.replace(/([_*[\]()~`>#+\-=|{}.!])/g, "\\$1");
 }

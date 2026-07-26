@@ -48,11 +48,15 @@ export function metricsSummary(backendDb: BackendDb): { total: number; today: nu
   const rows = backendDb.sqlite
     .prepare("SELECT day, sum(count) AS total, max(updated_at) AS updated_at FROM site_pageviews GROUP BY day ORDER BY day DESC")
     .all() as Array<{ day: string; total: number; updated_at: string | null }>;
-  const today = mskDay(new Date());
+  const now = new Date();
+  const today = mskDay(now);
+  // Calendar window, not "the 7 most recent rows": days with no traffic have no
+  // row at all, and slicing would silently stretch the window across a gap.
+  const weekStart = mskDay(new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000));
   return {
     total: rows.reduce((sum, row) => sum + Number(row.total), 0),
     today: Number(rows.find((row) => row.day === today)?.total ?? 0),
-    last7: rows.slice(0, 7).reduce((sum, row) => sum + Number(row.total), 0),
+    last7: rows.filter((row) => row.day >= weekStart).reduce((sum, row) => sum + Number(row.total), 0),
     updated_at: rows[0]?.updated_at ?? null,
   };
 }

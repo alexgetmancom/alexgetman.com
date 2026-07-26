@@ -20,7 +20,7 @@ function telegramToSearchItems(item: FeedItem) {
       url: `/${postId}/${item.slug_en}/`,
       date: item.date,
       source: "alexgetman.com",
-      category: getSmartCategory(item.text || text),
+      category: getSmartCategory(text),
       image: postImagePath(item, "en"),
     });
   }

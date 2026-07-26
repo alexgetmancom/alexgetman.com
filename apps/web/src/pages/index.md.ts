@@ -9,7 +9,9 @@ export const prerender = false;
 export async function GET(context: any) {
   const timeZone = getRuntime().config.TIMEZONE;
   const sortedItems = loadFeedItems()
-    .filter((item) => item.text_en)
+    // Every condition the loop below relies on belongs here: filtering inside
+    // the loop would silently shrink the slice to fewer than 10 posts.
+    .filter((item) => item.text_en && item.has_en && item.post_id && item.slug_en)
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   const siteUrl = siteUrlFromContext(context);
@@ -43,7 +45,6 @@ export async function GET(context: any) {
       const id = item.post_id;
       const title = truncateText(item.text_en || item.text || "", 86) || `Post ${id}`;
       const date = formatDate(item.date, "en-GB", timeZone);
-      if (!item.has_en || !id) continue;
       lines.push(`### [${title}](${siteUrl}/${id}/${item.slug_en}/)`);
       lines.push(`*Published: ${date} MSK*`);
       lines.push("");

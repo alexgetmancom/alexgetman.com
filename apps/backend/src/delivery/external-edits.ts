@@ -42,7 +42,10 @@ export async function editPublishedTargets(
             [field]: edit.textRu,
           });
         }
-        return null;
+        // Every other platform's API is append-only for us. Say so instead of
+        // returning nothing, so a caller can tell "no edit port" apart from
+        // "edited successfully".
+        return { target: row.target, ok: false, skipped: true, error: "no_edit_port_for_target" };
       } catch (error) {
         return { target: row.target, ok: false, error: error instanceof Error ? error.message : String(error) };
       }

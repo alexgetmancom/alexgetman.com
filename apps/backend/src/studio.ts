@@ -14,30 +14,26 @@ const studioSchema = z.object({
       instagram: z.boolean().default(false),
       analytics: z.boolean().default(true),
     })
-    .partial()
-    .default({}),
+    .prefault({}),
   analytics: z
     .object({
       /** First analytics card to open. This is a Studio decision, not a UI guess. */
       default_tab: z.enum(["overview", "posts", "video"]).default("overview"),
     })
-    .partial()
-    .default({}),
+    .prefault({}),
   video: z
     .object({
       prepare_lead_minutes: z.number().int().min(1).max(120).default(15),
       reminder_minutes: z.number().int().min(1).max(60).default(5),
       retention_hours: z.number().int().min(24).max(720).default(24),
     })
-    .partial()
-    .default({}),
+    .prefault({}),
   command_center: z
     .object({
       /** The initial content view; the other view remains available as a tab. */
       default_mode: z.enum(["posts", "video"]).default("posts"),
     })
-    .partial()
-    .default({}),
+    .prefault({}),
 });
 
 export type StudioConfig = {
@@ -51,24 +47,15 @@ export type StudioConfig = {
 
 export function loadStudioConfig(path = process.env.STUDIO_CONFIG ?? "studio.yaml"): StudioConfig {
   const value = existsSync(path) ? parse(readFileSync(path, "utf8")) : {};
+  // The schema is the single source of every default; this function only
+  // renames snake_case config keys to the camelCase the app reads.
   const parsed = studioSchema.parse(value ?? {});
   return {
     timezone: parsed.timezone,
     timezoneLabel: parsed.timezone_label,
-    modules: {
-      site: parsed.modules.site ?? true,
-      text_posting: parsed.modules.text_posting ?? true,
-      video_posting: parsed.modules.video_posting ?? false,
-      youtube: parsed.modules.youtube ?? false,
-      instagram: parsed.modules.instagram ?? false,
-      analytics: parsed.modules.analytics ?? true,
-    },
-    analytics: { defaultTab: parsed.analytics.default_tab ?? "overview" },
-    video: {
-      prepare_lead_minutes: parsed.video.prepare_lead_minutes ?? 15,
-      reminder_minutes: parsed.video.reminder_minutes ?? 5,
-      retention_hours: parsed.video.retention_hours ?? 24,
-    },
-    commandCenter: { defaultMode: parsed.command_center.default_mode ?? "posts" },
+    modules: parsed.modules,
+    analytics: { defaultTab: parsed.analytics.default_tab },
+    video: parsed.video,
+    commandCenter: { defaultMode: parsed.command_center.default_mode },
   };
 }

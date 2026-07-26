@@ -172,7 +172,9 @@ describe("command center actions", () => {
       );
 
       expect(requests).toEqual([]);
-      expect(result.external).toEqual([]);
+      // Reported as an explicit skip, not silence: the caller must be able to
+      // tell "there is no edit port for this platform" from "the edit landed".
+      expect(result.external).toEqual([{ target: "threads_en", ok: false, skipped: true, error: "no_edit_port_for_target" }]);
     } finally {
       backendDb.close();
     }

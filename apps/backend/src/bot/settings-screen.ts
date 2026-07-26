@@ -3,6 +3,7 @@ import type { Context } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { t } from "../interfaces/telegram/i18n/index.js";
+import { escapeMarkdown } from "../interfaces/telegram/markdown.js";
 import { studioServices } from "../studio/services/index.js";
 import { botLocale } from "./i18n.js";
 import { persistentKeyboard } from "./navigation.js";
@@ -171,8 +172,4 @@ function youtubeSignatureText(backendDb: BackendDb, config: BackendConfig, admin
   return t(locale, "settings.youtube-body", {
     signature: signature ? escapeMarkdown(signature) : t(locale, "settings.youtube-not-set"),
   });
-}
-
-function escapeMarkdown(value: string): string {
-  return value.replace(/([_*[\]()~`>#+\-=|{}.!])/g, "\\$1");
 }

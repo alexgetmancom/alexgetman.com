@@ -5,6 +5,7 @@ import { isVideoTargetEditable, isVideoTargetSchedulable } from "../../publishin
 import { getVideoDraft, listVideoTargets } from "../../publishing/video-data.js";
 import type { InstagramMetadata, YouTubeMetadata } from "../../publishing/video-types.js";
 import { t } from "./i18n/index.js";
+import { escapeMarkdown } from "./markdown.js";
 import { formatVideoTime } from "./video-time.js";
 
 /** Telegram-only representation of a video draft. The video domain itself
@@ -67,8 +68,4 @@ function videoStatusLabel(status: string, locale: BotLocale): string {
     cancelled: t(locale, "vstatus.cancelled"),
   };
   return labels[status] ?? status;
-}
-
-function escapeMarkdown(value: string): string {
-  return value.replace(/([_*[\]`])/g, "\\$1");
 }

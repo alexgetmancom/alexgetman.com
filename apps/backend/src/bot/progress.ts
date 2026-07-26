@@ -2,6 +2,8 @@ import { type Bot, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import { telegramPostCard, telegramPostProgressCard } from "../interfaces/telegram/control-cards.js";
 import { t } from "../interfaces/telegram/i18n/index.js";
+import { escapeMarkdown } from "../interfaces/telegram/markdown.js";
+
 import { type PostProgressState, type PostProgressStatus, postProgressState } from "../studio/services/post-progress.js";
 import { botLocale } from "./i18n.js";
 
@@ -40,7 +42,7 @@ export function renderPostProgress(
       lines.push("", `*${group.toUpperCase()}*`);
       for (const item of items)
         lines.push(
-          `${statusIcon(item.status)} ${item.label}${item.error && item.status === "failed" ? ` — ${escapeMarkdown(item.error)}` : ""}`,
+          `${statusIcon(item.status)} ${item.label}${item.error && item.status === "failed" ? ` — ${shortError(item.error)}` : ""}`,
         );
     }
   const keyboard = new InlineKeyboard();
@@ -67,6 +69,7 @@ function statusIcon(status: PostProgressStatus): string {
   return { published: "✅", publishing: "🔄", waiting: "⏳", failed: "❌", cancelled: "⏹" }[status];
 }
 
-function escapeMarkdown(value: string): string {
-  return value.replace(/([_*[\]`])/g, "\\$1").slice(0, 180);
+/** A platform error can be arbitrarily long; the card must stay under Telegram's message limit. */
+function shortError(value: string): string {
+  return escapeMarkdown(value).slice(0, 180);
 }
