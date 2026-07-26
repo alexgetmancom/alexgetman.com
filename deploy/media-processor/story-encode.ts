@@ -30,21 +30,31 @@ function verticalImageFilter(blur: boolean): string {
   return `[0:v:0]split=2[background-source][foreground-source];[background-source]${VERTICAL_BACKGROUND_FILTER}[background];[foreground-source]${VERTICAL_FOREGROUND_FILTER}[foreground];[background][foreground]overlay=(W-w)/2:(H-h)/2`;
 }
 
+/** Software (no VAAPI) counterpart of verticalVideoFilter, for the local executor. */
+function verticalSoftwareVideoFilter(blur: boolean): string {
+  if (!blur) return VERTICAL_SCALE_FILTER;
+  return `[0:v:0]split=2[background-source][foreground-source];[background-source]${VERTICAL_BACKGROUND_FILTER}[background];[foreground-source]${VERTICAL_FOREGROUND_FILTER}[foreground];[background][foreground]overlay=(W-w)/2:(H-h)/2[out0]`;
+}
+
 export function storyFfmpegArgs(input: string, output: string, kind: "video" | "image", blur = false): string[] {
   if (kind === "image") {
     const filter = verticalImageFilter(blur);
     return ["-y", "-i", input, ...(blur ? ["-filter_complex", filter] : ["-vf", filter]), "-frames:v", "1", "-q:v", "2", output];
   }
+  // A blurred backdrop needs filter_complex (two branches out of one input), so
+  // the video mapping changes with it: the labeled overlay output instead of
+  // the raw stream. Leaving `blur` unhandled here silently produced a
+  // letterboxed render on the local executor while the remote one blurred.
+  const filter = verticalSoftwareVideoFilter(blur);
   return [
     "-y",
     "-i",
     input,
     "-t",
     String(STORY_MAX_DURATION_SECONDS),
-    "-vf",
-    VERTICAL_SCALE_FILTER,
+    ...(blur ? ["-filter_complex", filter] : ["-vf", filter]),
     "-map",
-    "0:v:0",
+    blur ? "[out0]" : "0:v:0",
     "-map",
     "0:a?",
     "-c:v",

@@ -52,8 +52,11 @@ async function publishChannelStory(
       // Compatibility only while an older single-output worker is still
       // running during manual promotion. Current VM-106 emits the Telegram
       // derivative before this publisher starts. Never turn a 128/320 kbps
-      // source track into 64 kbps here.
-      const audioBitrate = 128_000;
+      // source track into 64 kbps here: the audio is copied verbatim below, so
+      // its real bitrate — 320 kbps for our own story encode — has to come out
+      // of the budget. Assuming 128 kbps here overshot the 9.5 MiB ceiling by
+      // ~1.4 MB on a full-length story and reproduced MEDIA_FILE_INVALID.
+      const audioBitrate = metadata.audioBitrate;
       const videoBitrate = Math.max(150_000, Math.floor((targetBytes * 8) / Math.max(metadata.duration, 1) - audioBitrate));
       await runFfmpeg([
         "-y",
@@ -161,11 +164,16 @@ function validRange(offset: number, length: number, textLength: number): boolean
   return Number.isSafeInteger(offset) && Number.isSafeInteger(length) && offset >= 0 && length > 0 && offset + length <= textLength;
 }
 
-async function probeVideo(filePath: string, media: PublishMediaItem): Promise<{ width: number; height: number; duration: number }> {
+type StoryVideoMetadata = { width: number; height: number; duration: number; audioBitrate: number };
+
+async function probeVideo(filePath: string, media: PublishMediaItem): Promise<StoryVideoMetadata> {
   const fallback = {
     width: Number(media.width ?? 720),
     height: Number(media.height ?? 1280),
     duration: Math.round(Number(media.duration ?? 10)),
+    // Matches the canonical story encode (`-b:a 320k`). Guessing low here makes
+    // the size budget optimistic, which is exactly the failure mode to avoid.
+    audioBitrate: 320_000,
   };
   if (media.type !== "VIDEO") return fallback;
   const child = Bun.spawn(["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", filePath], {
@@ -179,10 +187,15 @@ async function probeVideo(filePath: string, media: PublishMediaItem): Promise<{ 
   try {
     const streams = (JSON.parse(stdout) as { streams?: Array<Record<string, unknown>> }).streams ?? [];
     const video = streams.find((stream) => stream.codec_type === "video") ?? {};
+    const audio = streams.find((stream) => stream.codec_type === "audio");
+    const audioBitrate = audio ? Number(audio.bit_rate) : 0;
     return {
       width: Number(video.width ?? fallback.width),
       height: Number(video.height ?? fallback.height),
       duration: Math.round(Number(video.duration ?? fallback.duration)),
+      // A silent source costs nothing; an unreported bitrate falls back to the
+      // pessimistic 320 kbps rather than to zero.
+      audioBitrate: audio ? (Number.isFinite(audioBitrate) && audioBitrate > 0 ? audioBitrate : fallback.audioBitrate) : 0,
     };
   } catch {
     return fallback;

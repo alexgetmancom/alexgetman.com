@@ -2,6 +2,7 @@ import fs from "node:fs";
 import type { BackendDb } from "../db/client.js";
 
 type CsvRow = Record<string, string>;
+type ParsedCsv = { headers: string[]; rows: CsvRow[] };
 
 const METRICS: Array<{ column: string; name: string }> = [
   { column: "Показы", name: "views" },
@@ -31,8 +32,14 @@ export type XCsvImportResult = {
 /** Imports an X Analytics content export as an immutable snapshot for posts already linked to X. */
 export function importXAnalyticsCsv(backendDb: BackendDb, sourcePath: string, sampledAt: string): XCsvImportResult {
   if (Number.isNaN(Date.parse(sampledAt))) throw new Error("--sampled-at must be an ISO timestamp");
-  const rows = parseCsv(fs.readFileSync(sourcePath, "utf8"));
+  const { headers, rows } = parseCsv(fs.readFileSync(sourcePath, "utf8"));
   if (!rows.length || !rows[0]?.["Идентификатор поста"]) throw new Error("Expected an X Analytics CSV with the column Идентификатор поста");
+  // A column this export does not carry is missing data, not a zero. Writing 0
+  // for it would overwrite the live post_metrics value — which is what an
+  // export in another interface language used to do to every metric at once.
+  const presentHeaders = new Set(headers);
+  const metrics = METRICS.filter((metric) => presentHeaders.has(metric.column));
+  if (!metrics.length) throw new Error("Expected an X Analytics CSV with at least one known metric column");
   const targets = backendDb.sqlite
     .prepare("SELECT post_key, external_id, external_ids_json FROM post_targets WHERE target='x'")
     .all() as Array<{ post_key: string; external_id: string | null; external_ids_json: string | null }>;
@@ -108,8 +115,14 @@ export function importXAnalyticsCsv(backendDb: BackendDb, sourcePath: string, sa
         continue;
       }
       result.matchedPosts += 1;
-      for (const metric of METRICS) {
+      for (const metric of metrics) {
         const value = integer(row[metric.column]);
+        // Same reasoning as the header filter above, per cell: a blank or
+        // unparseable value leaves the existing metric alone.
+        if (value == null) {
+          result.skippedSamples += 1;
+          continue;
+        }
         const raw = JSON.stringify({ x_post_id: externalId, x_column: metric.column });
         if (imported.get(postKey, metric.name, sampledAt)) {
           result.skippedSamples += 1;
@@ -153,13 +166,16 @@ function comparableText(value: string | undefined): string {
     .toLocaleLowerCase();
 }
 
-function integer(value: string | undefined): number {
-  const parsed = Number((value ?? "0").replace(/,/g, "").trim());
-  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : 0;
+/** null means "this export says nothing about the metric" — never zero. */
+function integer(value: string | undefined): number | null {
+  const text = (value ?? "").replace(/,/g, "").trim();
+  if (!text) return null;
+  const parsed = Number(text);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
 }
 
 /** Minimal RFC 4180 parser: X exports quote text fields with commas and newlines. */
-function parseCsv(input: string): CsvRow[] {
+function parseCsv(input: string): ParsedCsv {
   const records: string[][] = [];
   let record: string[] = [];
   let field = "";
@@ -188,9 +204,11 @@ function parseCsv(input: string): CsvRow[] {
     records.push(record);
   }
   const [headers, ...data] = records;
-  return headers
-    ? data
-        .filter((values) => values.some(Boolean))
-        .map((values) => Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""])))
-    : [];
+  if (!headers) return { headers: [], rows: [] };
+  return {
+    headers,
+    rows: data
+      .filter((values) => values.some(Boolean))
+      .map((values) => Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""]))),
+  };
 }
