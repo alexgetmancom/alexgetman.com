@@ -1,6 +1,7 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, ne } from "drizzle-orm";
 import type { BackendDb } from "../db/client.js";
 import { videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
+import { StudioError } from "../foundation/errors.js";
 import { isVideoTargetFinal, videoDraftStatus } from "./state.js";
 
 type VideoDraft = typeof videoDrafts.$inferSelect;
@@ -38,7 +39,12 @@ export function insertVideoJob(
     .get();
   const now = new Date().toISOString();
   if (exists) {
-    tx.update(videoJobs)
+    // Never clear lockedBy while a worker still holds it. The video worker
+    // fences every completion on (id, lockedBy); stealing the lock here would
+    // turn its completion write into a no-op while the target itself was
+    // already marked published, and the requeued job would publish twice.
+    const requeued = tx
+      .update(videoJobs)
       .set({
         runAt,
         status: "queued",
@@ -49,8 +55,10 @@ export function insertVideoJob(
         lastError: null,
         updatedAt: now,
       })
-      .where(eq(videoJobs.id, exists.id))
-      .run();
+      .where(and(eq(videoJobs.id, exists.id), ne(videoJobs.status, "running")))
+      .returning({ id: videoJobs.id })
+      .get();
+    if (!requeued) throw new StudioError("err.video-job-running");
   } else
     tx.insert(videoJobs)
       .values({

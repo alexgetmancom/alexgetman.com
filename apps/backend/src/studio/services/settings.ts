@@ -5,16 +5,22 @@ import { botSettings, botUiSettings, studioNotificationSettings } from "../../db
 import { StudioError } from "../../foundation/errors.js";
 import type { StudioActorId, StudioLocale } from "../contracts.js";
 
+/** Read as a plain function, not a method: the service is an object literal, so
+ * a method reading it through `this` breaks the moment it is destructured. */
+function readNotifications(backendDb: BackendDb, actorId: StudioActorId) {
+  const row = backendDb.db.select().from(studioNotificationSettings).where(eq(studioNotificationSettings.adminId, actorId)).get();
+  return {
+    remindersEnabled: row?.remindersEnabled !== 0,
+    reminderMinutes: row?.reminderMinutes ?? 5,
+    completionEnabled: row?.completionEnabled !== 0,
+  };
+}
+
 /** Owner settings commands used by Telegram today and any future Studio adapter. */
 export function settingsService(backendDb: BackendDb) {
   return {
     notifications(actorId: StudioActorId) {
-      const row = backendDb.db.select().from(studioNotificationSettings).where(eq(studioNotificationSettings.adminId, actorId)).get();
-      return {
-        remindersEnabled: row?.remindersEnabled !== 0,
-        reminderMinutes: row?.reminderMinutes ?? 5,
-        completionEnabled: row?.completionEnabled !== 0,
-      };
+      return readNotifications(backendDb, actorId);
     },
     setNotifications(
       actorId: StudioActorId,
@@ -25,7 +31,7 @@ export function settingsService(backendDb: BackendDb) {
         (!Number.isInteger(input.reminderMinutes) || input.reminderMinutes < 1 || input.reminderMinutes > 60)
       )
         throw new StudioError("err.reminder-range");
-      const current = this.notifications(actorId);
+      const current = readNotifications(backendDb, actorId);
       const now = new Date().toISOString();
       const next = {
         remindersEnabled: input.remindersEnabled ?? current.remindersEnabled,

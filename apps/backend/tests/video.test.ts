@@ -338,6 +338,39 @@ describe("video publication queue", () => {
     expect(listVideoTargets(backendDb, draftId).map((target) => target.target)).toEqual(["instagram_reels"]);
   });
 
+  it("refuses to reschedule a platform whose publish job a worker is still holding", () => {
+    const backendDb = testDb.open();
+    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    replaceVideoTargets(backendDb, draftId, ["instagram_reels"]);
+    const initial = new Date(Date.now() + 60 * 60_000);
+    scheduleVideo(backendDb, draftId, { instagram_reels: initial }, { prepareLeadMinutes: 15, reminderMinutes: 5 }, videoConfig());
+    backendDb.db
+      .update(videoJobs)
+      .set({ status: "running", lockedBy: "worker-1", lockedAt: new Date().toISOString() })
+      .where(and(eq(videoJobs.videoDraftId, draftId), eq(videoJobs.kind, "publish")))
+      .run();
+
+    // Clearing the lock here would break the worker's (id, lockedBy) fence and
+    // let the requeued job publish the same target a second time.
+    expect(() =>
+      scheduleVideo(
+        backendDb,
+        draftId,
+        { instagram_reels: new Date(Date.now() + 3 * 60 * 60_000) },
+        { prepareLeadMinutes: 15, reminderMinutes: 5 },
+        videoConfig(),
+      ),
+    ).toThrow("err.video-job-running");
+    expect(
+      backendDb.db
+        .select()
+        .from(videoJobs)
+        .where(and(eq(videoJobs.videoDraftId, draftId), eq(videoJobs.kind, "publish")))
+        .get(),
+    ).toMatchObject({ status: "running", lockedBy: "worker-1" });
+    expect(listVideoTargets(backendDb, draftId)[0]?.scheduledAt).toBe(initial.toISOString());
+  });
+
   it("reschedules only the selected platform and never requeues a published target", () => {
     const backendDb = testDb.open();
     const draftId = createVideoDraft(backendDb, 42, "video-source", 24);

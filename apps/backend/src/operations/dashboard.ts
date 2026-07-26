@@ -51,29 +51,45 @@ export function renderDashboard(
   const periodDays = [1, 7, 30, 90, 365].includes(Number(requestedPeriod)) ? Number(requestedPeriod) : 1;
   const panelLink = (value: DashboardPanel) => `/command-center?tab=posts&panel=${value}${periodDays !== 1 ? `&period=${periodDays}` : ""}`;
   const overviewControls = panel === "overview" && showPosts ? renderPeriodControls(weekOffset, periodDays, config.TIMEZONE) : "";
-  const content =
-    panel === "queue"
-      ? renderQueueSection(ops)
-      : panel === "health"
-        ? `${renderCredentialsSection(ops)}${renderDiagnosticsSection(ops)}`
-        : panel === "repair"
-          ? renderRepairSection(ref, messageId)
-          : showPosts
-            ? renderPipelineSection(
-                weekOffset,
-                periodDays,
-                service.pipeline(weekOffset, periodDays),
-                periodDays === 1 ? service.pipeline(0, 30, 0, weekOffset + 1) : service.pipeline(weekOffset, periodDays, 1),
-                renderAudienceSection(backendDb, config),
-                config.TIMEZONE,
-                periodDays === 1 ? 30 : periodDays,
-                periodDays === 1 ? service.pipeline(0, 1, 0, weekOffset + 1) : null,
-              )
-            : showVideo
-              ? renderVideoSection(backendDb)
-              : showStudio && studioActorId
-                ? renderStudioSection(config, backendDb, studioActorId, locale)
-                : "";
+  const content = renderPanel();
+
+  function renderPanel(): string {
+    switch (panel) {
+      case "queue":
+        return renderQueueSection(ops);
+      case "health":
+        return `${renderCredentialsSection(ops)}${renderDiagnosticsSection(ops)}`;
+      case "repair":
+        return renderRepairSection(ref, messageId);
+      default:
+        return renderOverview();
+    }
+  }
+
+  function renderOverview(): string {
+    if (showPosts) {
+      // A one-day period is shown against the preceding 30 days plus the
+      // preceding single day; every longer period compares against itself.
+      const comparison =
+        periodDays === 1
+          ? { baseline: service.pipeline(0, 30, 0, weekOffset + 1), days: 30, previousDay: service.pipeline(0, 1, 0, weekOffset + 1) }
+          : { baseline: service.pipeline(weekOffset, periodDays, 1), days: periodDays, previousDay: null };
+      return renderPipelineSection(
+        weekOffset,
+        periodDays,
+        service.pipeline(weekOffset, periodDays),
+        comparison.baseline,
+        renderAudienceSection(backendDb, config),
+        config.TIMEZONE,
+        comparison.days,
+        comparison.previousDay,
+      );
+    }
+    if (showVideo) return renderVideoSection(backendDb);
+    if (showStudio && studioActorId) return renderStudioSection(config, backendDb, studioActorId, locale);
+    return "";
+  }
+
   const body = `
     <nav class="dashboard-tabs">${config.studio.modules.text_posting ? `<a class="${panel === "overview" && activeTab === "posts" ? "active" : ""}" href="${panelLink("overview")}">Обзор</a>` : ""}<a class="${panel === "queue" ? "active" : ""}" href="${panelLink("queue")}">Очередь</a><a class="${panel === "health" ? "active" : ""}" href="${panelLink("health")}">Health</a><a class="${panel === "repair" ? "active" : ""}" href="${panelLink("repair")}">Repair</a>${config.studio.modules.video_posting ? `<a class="${panel === "overview" && activeTab === "video" ? "active" : ""}" href="/command-center?tab=video">Видео</a>` : ""}${studioActorId ? `<a class="${panel === "overview" && activeTab === "studio" ? "active" : ""}" href="/command-center?tab=studio">Студия</a>` : ""}${overviewControls}</nav>
     <section id="overview" class="overview">${content}</section>`;

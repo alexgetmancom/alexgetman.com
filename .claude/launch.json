@@ -7,7 +7,8 @@
       "runtimeArgs": ["--bun", "astro", "dev"],
       "port": 4321,
       "env": {
-        "PIPELINE_DB": "/private/tmp/claude-501/-Users-alex-projects-alexgetman-com/ed8ab981-9d79-4971-aafe-9af9417a476b/scratchpad/dev-pipeline.db",
+        "PIPELINE_DB": "/Users/alex/projects/alexgetman.com/.dev-fixture/pipeline.db",
+        "SITE_PUBLIC_DIR": "/Users/alex/projects/alexgetman.com/.dev-fixture/site",
         "DISABLE_WORKERS": "1"
       }
     }

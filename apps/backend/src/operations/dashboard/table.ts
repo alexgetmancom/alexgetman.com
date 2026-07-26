@@ -7,27 +7,81 @@ import type { PipelinePost } from "./types.js";
 
 const targetIds = ORDERED_TARGETS.map((target) => target.id);
 
+const NO_POSTS = "За выбранный период публикаций нет";
+
 export function renderPublicationColumns(posts: PipelinePost[]): string {
   const ranked = [...posts].sort((left, right) => total(right).views - total(left).views).slice(0, 3);
-  return `<div class="publication-columns"><section class="best-posts"><div class="section-kicker">Лучшие публикации</div>${ranked.length ? ranked.map((post, index) => renderBestPost(post, index + 1)).join("") : empty("За выбранный период публикаций нет")}</section><section class="recent-posts"><header class="recent-posts__header"><div class="section-kicker">Последние публикации</div><span>Тип медиа</span><span>Охват</span><span>Реакции</span><span>Ответы</span></header>${posts.length ? posts.slice(0, 5).map(renderRecentPost).join("") : empty("За выбранный период публикаций нет")}</section></div>`;
+  return [
+    '<div class="publication-columns">',
+    '<section class="best-posts">',
+    '<div class="section-kicker">Лучшие публикации</div>',
+    ranked.length ? ranked.map((post, index) => renderBestPost(post, index + 1)).join("") : empty(NO_POSTS),
+    "</section>",
+    '<section class="recent-posts">',
+    '<header class="recent-posts__header">',
+    '<div class="section-kicker">Последние публикации</div>',
+    "<span>Тип медиа</span><span>Охват</span><span>Реакции</span><span>Ответы</span>",
+    "</header>",
+    posts.length ? posts.slice(0, 5).map(renderRecentPost).join("") : empty(NO_POSTS),
+    "</section>",
+    "</div>",
+  ].join("");
 }
 
 function renderBestPost(post: PipelinePost, rank: number): string {
   const metrics = total(post);
-  return `<article class="best-post"><span class="post-rank">${rank}</span><div class="best-post__copy"><div class="best-post__title">${escapeHtml(shortPipelineText(post.text_ru || post.text_en || "Без текста", 10))}</div></div><div class="best-post__stats"><strong>${formatMetricValue(metrics.views)}</strong><small>просмотры</small><em>♡ ${formatMetricValue(reactions(metrics))}</em></div></article>`;
+  const title = escapeHtml(shortPipelineText(post.text_ru || post.text_en || "Без текста", 10));
+  return [
+    '<article class="best-post">',
+    `<span class="post-rank">${rank}</span>`,
+    `<div class="best-post__copy"><div class="best-post__title">${title}</div></div>`,
+    '<div class="best-post__stats">',
+    `<strong>${formatMetricValue(metrics.views)}</strong><small>просмотры</small>`,
+    `<em>♡ ${formatMetricValue(reactions(metrics))}</em>`,
+    "</div>",
+    "</article>",
+  ].join("");
 }
 
 function renderRecentPost(post: PipelinePost): string {
   const metrics = total(post);
   const english = post.full_text_en || post.text_en || "Без английского текста";
   const russian = post.full_text_ru || post.text_ru || "—";
-  return `<details class="post-detail"><summary><span class="post-detail__summary"><span class="post-detail__headline"><span class="post-detail__chevron">›</span><span class="post-detail__title">${escapeHtml(shortPipelineText(english, 11))}</span></span><span class="post-detail__media">${escapeHtml(mediaLabel(post))}</span><span>${formatMetricValue(metrics.views)}</span><span>${formatMetricValue(reactions(metrics))}</span><span>${formatMetricValue(metrics.replies)}</span></span></summary><div class="post-detail__body">${platformBreakdown(post)}<div class="post-detail__content"><div><span class="post-detail__label">ENGLISH</span><p>${escapeHtml(english)}</p><span class="post-detail__label">RU ORIGINAL</span><p>${escapeHtml(russian)}</p></div>${mediaPreview(post)}</div></div></details>`;
+  return [
+    '<details class="post-detail">',
+    '<summary><span class="post-detail__summary">',
+    '<span class="post-detail__headline">',
+    '<span class="post-detail__chevron">›</span>',
+    `<span class="post-detail__title">${escapeHtml(shortPipelineText(english, 11))}</span>`,
+    "</span>",
+    `<span class="post-detail__media">${escapeHtml(mediaLabel(post))}</span>`,
+    `<span>${formatMetricValue(metrics.views)}</span>`,
+    `<span>${formatMetricValue(reactions(metrics))}</span>`,
+    `<span>${formatMetricValue(metrics.replies)}</span>`,
+    "</span></summary>",
+    '<div class="post-detail__body">',
+    platformBreakdown(post),
+    '<div class="post-detail__content"><div>',
+    `<span class="post-detail__label">ENGLISH</span><p>${escapeHtml(english)}</p>`,
+    `<span class="post-detail__label">RU ORIGINAL</span><p>${escapeHtml(russian)}</p>`,
+    "</div>",
+    mediaPreview(post),
+    "</div></div>",
+    "</details>",
+  ].join("");
 }
 
 function platformBreakdown(post: PipelinePost): string {
   const published = ORDERED_TARGETS.filter((target) => targetStatus(post, target.id) === "published");
   if (!published.length) return "";
-  return `<section class="post-platforms" aria-label="Метрики по площадкам"><span class="post-detail__label">РЕЗУЛЬТАТ ПО ПЛОЩАДКАМ</span><div class="post-platforms__grid">${published.map((target) => platformMetrics(post, target.id, target.label)).join("")}</div></section>`;
+  return [
+    '<section class="post-platforms" aria-label="Метрики по площадкам">',
+    '<span class="post-detail__label">РЕЗУЛЬТАТ ПО ПЛОЩАДКАМ</span>',
+    '<div class="post-platforms__grid">',
+    published.map((target) => platformMetrics(post, target.id, target.label)).join(""),
+    "</div>",
+    "</section>",
+  ].join("");
 }
 
 function platformMetrics(post: PipelinePost, targetId: string, label: string): string {

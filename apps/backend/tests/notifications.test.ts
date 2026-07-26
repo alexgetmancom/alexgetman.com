@@ -63,6 +63,18 @@ describe("Studio notifications", () => {
     }
   });
 
+  it("does not fall open on a post ref whose id is not a number", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const notifications = notificationService(backendDb);
+      notifications.record({ ref: "post:abc", type: "delivery.post.completed", severity: "info", message: "Broken ref" });
+      expect(notifications.inbox(42)).toHaveLength(0);
+      expect(notifications.inbox(7)).toHaveLength(0);
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("creates durable interface-neutral reminders and honours cancellation", () => {
     const backendDb = openBackendDb(":memory:");
     try {

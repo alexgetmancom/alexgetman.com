@@ -51,41 +51,44 @@ function fullTextFor(post: HomePost): string[] {
     .filter(Boolean);
 }
 
-/** Deep = длинные посты; Watched = топ по просмотрам (верхние ~8). */
-function feedModesFor(post: HomePost, watchedCutoff: number): string[] {
-  const text = fullTextFor(post).join(" ");
+/** Deep = длинные посты; Watched = топ по просмотрам (верхние ~8).
+ * fullBody приходит уже посчитанным: это SSR на каждый запрос главной. */
+function feedModesFor(post: HomePost, fullBody: string[], watchedCutoff: number): string[] {
   const modes = ["latest"];
-  if (text.length >= 700 || fullTextFor(post).length >= 4) modes.push("deep");
+  if (fullBody.join(" ").length >= 700 || fullBody.length >= 4) modes.push("deep");
   if ((post.views || 0) >= watchedCutoff && watchedCutoff > 0) modes.push("watched");
   return modes;
 }
 
 export function toPlayerPosts(posts: HomePost[]): PlayerPost[] {
-  const watchedCutoff = [...posts].map((post) => post.views || 0).sort((a, b) => b - a)[Math.min(7, Math.max(0, posts.length - 1))] || 0;
-  return posts.map((post) => ({
-    id: String(post.id),
-    url: post.url,
-    title: post.title,
-    body: paragraphsFor(post),
-    fullBody: fullTextFor(post),
-    excerpt: post.excerpt,
-    date: post.date,
-    relativeDate: post.relativeDate,
-    image: publicSrc(post.image),
-    fallbackImage: publicSrc(post.fallbackImage),
-    posterSrc: publicSrc(post.posterSrc),
-    mediaType: post.mediaType || null,
-    gallery: (post.gallery || []).map((media: HomeMedia) => ({
-      type: media.type,
-      path: publicSrc(media.path),
-      poster: publicSrc(media.poster),
-    })),
-    audioUrl: post.audioUrl || null,
-    spotifyUrl: post.spotifyUrl || null,
-    imageSrcSet: post.imageSrcSet || "",
-    views: metricValue(post.views),
-    category: post.category,
-    sources: (post.sources || []).map((source: HomeSource) => ({ ...source })),
-    feedModes: feedModesFor(post, watchedCutoff),
-  }));
+  const watchedCutoff = posts.map((post) => post.views || 0).sort((a, b) => b - a)[Math.min(7, Math.max(0, posts.length - 1))] || 0;
+  return posts.map((post) => {
+    const fullBody = fullTextFor(post);
+    return {
+      id: String(post.id),
+      url: post.url,
+      title: post.title,
+      body: paragraphsFor(post),
+      fullBody,
+      excerpt: post.excerpt,
+      date: post.date,
+      relativeDate: post.relativeDate,
+      image: publicSrc(post.image),
+      fallbackImage: publicSrc(post.fallbackImage),
+      posterSrc: publicSrc(post.posterSrc),
+      mediaType: post.mediaType || null,
+      gallery: (post.gallery || []).map((media: HomeMedia) => ({
+        type: media.type,
+        path: publicSrc(media.path),
+        poster: publicSrc(media.poster),
+      })),
+      audioUrl: post.audioUrl || null,
+      spotifyUrl: post.spotifyUrl || null,
+      imageSrcSet: post.imageSrcSet || "",
+      views: metricValue(post.views),
+      category: post.category,
+      sources: (post.sources || []).map((source: HomeSource) => ({ ...source })),
+      feedModes: feedModesFor(post, fullBody, watchedCutoff),
+    };
+  });
 }

@@ -67,10 +67,15 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
       : []),
     ...(config.studio.modules.analytics
       ? [
+          // Two independent collectors on one schedule. They do not share a
+          // failure: a provider outage on one must not silently stop the other.
           startLoop("metrics", config.METRICS_REFRESH_INTERVAL_SECONDS * 1000, async () => {
             const checked = await runMetricsCycle(config, backendDb);
+            log("debug", "metrics loop tick", { checked });
+          }),
+          startLoop("creator-analytics", config.METRICS_REFRESH_INTERVAL_SECONDS * 1000, async () => {
             const creators = await runAnalyticsCycle(config, backendDb);
-            log("debug", "metrics loop tick", { checked, creators });
+            log("debug", "creator analytics loop tick", { creators });
           }),
         ]
       : []),

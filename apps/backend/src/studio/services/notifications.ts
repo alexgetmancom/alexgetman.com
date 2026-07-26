@@ -70,10 +70,18 @@ function isVisibleTo(backendDb: BackendDb, ref: string | null, actorId: number):
         .get() != null
     );
   }
-  const postId = ref.startsWith("post:")
-    ? Number(ref.slice("post:".length))
-    : backendDb.db.select({ postId: posts.postId }).from(posts).where(eq(posts.postKey, ref)).get()?.postId;
+  // A malformed id is a broken reference, not a shared operational event:
+  // only a ref with no recognised entity at all may stay visible to everyone.
+  if (ref.startsWith("post:")) {
+    const id = Number(ref.slice("post:".length));
+    return Number.isSafeInteger(id) && ownsPost(backendDb, id, actorId);
+  }
+  const postId = backendDb.db.select({ postId: posts.postId }).from(posts).where(eq(posts.postKey, ref)).get()?.postId;
   if (postId == null || !Number.isSafeInteger(postId)) return true;
+  return ownsPost(backendDb, postId, actorId);
+}
+
+function ownsPost(backendDb: BackendDb, postId: number, actorId: number): boolean {
   return (
     backendDb.db
       .select({ id: drafts.id })

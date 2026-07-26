@@ -46,9 +46,22 @@ const server = createServer((req, res) => {
   }
   const safePath = path.normalize(decodedPath).replace(/^(\.\.[/\\])+/, "");
   const filePath = path.join(CLIENT_DIR, safePath);
+  // normalize() already collapses ".." against the leading slash, but the
+  // containment invariant is what actually keeps this safe — assert it rather
+  // than leaving it implicit in a regex.
+  if (filePath !== CLIENT_DIR && !filePath.startsWith(CLIENT_DIR + path.sep)) {
+    res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("Forbidden\n");
+    return;
+  }
 
-  // Serve static client assets directly if they exist on disk
-  if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+  // Serve static client assets directly if they exist on disk. Every SSR route
+  // reaches this stat as a guaranteed miss, so it must not block the loop.
+  fs.stat(filePath, (error, stat) => {
+    if (error || !stat.isFile()) {
+      handler(req, res);
+      return;
+    }
     const ext = path.extname(filePath).toLowerCase();
     res.writeHead(200, {
       "Content-Type": MIME_TYPES[ext] || "application/octet-stream",
@@ -58,11 +71,7 @@ const server = createServer((req, res) => {
           : "public, max-age=3600",
     });
     fs.createReadStream(filePath).pipe(res);
-    return;
-  }
-
-  // Fallback to Astro SSR request handler
-  handler(req, res);
+  });
 });
 
 server.listen(runtime.config.PORT, runtime.config.BIND_HOST, () => {
