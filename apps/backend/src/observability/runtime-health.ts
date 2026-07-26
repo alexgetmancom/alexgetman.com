@@ -82,8 +82,11 @@ export function recordProcessRestart(config: BackendConfig, backendDb: BackendDb
 }
 
 /** Container memory ceiling in bytes, or null when not running under a cgroup
- * limit (a bare `bun run`, or a container started without `mem_limit`). */
-export function cgroupMemoryLimitBytes(): number | null {
+ * limit (a bare `bun run`, or a container started without `mem_limit`).
+ *
+ * Deliberately not exported: the seam for tests is recordMemoryPressure's
+ * `limitBytes` parameter, which defaults to this. */
+function cgroupMemoryLimitBytes(): number | null {
   for (const path of ["/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"]) {
     let raw: string;
     try {

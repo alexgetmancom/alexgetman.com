@@ -24,7 +24,7 @@
     "lint": "biome lint .",
     "format": "biome format --write .",
     "knip": "bun tools/knip/node_modules/.bin/knip --config knip.json",
-    "check:layers": "tools/dependency-cruiser/node_modules/.bin/depcruise --config .dependency-cruiser.cjs \"apps/backend/src/**/*.ts\" \"apps/web/src/**/*.ts\" \"scripts/**/*.ts\" \"deploy/media-processor/**/*.ts\"",
+    "check:layers": "tools/dependency-cruiser/node_modules/.bin/depcruise --config .dependency-cruiser.jsonc \"apps/backend/src/**/*.ts\" \"apps/web/src/**/*.ts\" \"scripts/**/*.ts\" \"deploy/media-processor/**/*.ts\"",
     "check:svelte": "tools/svelte-check/node_modules/.bin/svelte-check --workspace . --threshold warning --fail-on-warnings",
     "deps:check": "taze",
     "check:web": "bun run build",
