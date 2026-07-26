@@ -28,7 +28,44 @@ type SiteMedia = Record<string, unknown> & {
   localPath?: string;
 };
 
-const RESPONSIVE_WIDTHS = [360, 640, 960] as const;
+export const RESPONSIVE_WIDTHS = [360, 640, 960] as const;
+
+/**
+ * The three ffmpeg recipes this module runs *inside the backend container*,
+ * as pure argument builders.
+ *
+ * They are exported so scripts/image-smoke.ts can execute the real arguments
+ * against the ffmpeg the image actually ships. That coverage exists nowhere
+ * else: tests/stories.test.ts mocks the whole ffmpeg module and only inspects
+ * argument lists, and the binary comes from a pinned external image
+ * (mwader/static-ffmpeg), so a bump could drop an encoder — libwebp below is
+ * the fragile one — without a single test noticing.
+ *
+ * Note that only the vertical composite honours MEDIA_PROCESSOR_PROVIDER; the
+ * poster frame and the responsive variants run locally on every publication
+ * with media, whatever VM-106 is doing.
+ */
+export function sitePosterFfmpegArgs(vertical: string, output: string): string[] {
+  return ["-y", "-ss", "0.5", "-i", vertical, "-frames:v", "1", "-q:v", "2", output];
+}
+
+export function siteVerticalFfmpegArgs(source: string, output: string, kind: "image" | "video"): string[] {
+  return [
+    "-y",
+    "-i",
+    source,
+    "-vf",
+    "scale=1080:1920:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black",
+    ...(kind === "video"
+      ? ["-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-preset", "medium", "-c:a", "copy"]
+      : ["-frames:v", "1", "-q:v", "2"]),
+    output,
+  ];
+}
+
+export function responsiveWebpFfmpegArgs(source: string, output: string, width: number): string[] {
+  return ["-y", "-i", source, "-vf", `scale='min(${width},iw)':-2`, "-c:v", "libwebp", "-quality", "80", output];
+}
 export type SiteMediaMaterializeOptions = {
   maxUploadKbps?: number;
   /** Archive image backfills retain the source album indices while skipping videos. */
@@ -76,7 +113,7 @@ export async function materializeSiteMedia(
       const poster = path.join(directory, posterName);
       const temporary = temporaryPath(poster);
       try {
-        await runFfmpeg(["-y", "-ss", "0.5", "-i", vertical, "-frames:v", "1", "-q:v", "2", temporary]);
+        await runFfmpeg(sitePosterFfmpegArgs(vertical, temporary));
         await fs.promises.rename(temporary, poster);
       } finally {
         await fs.promises.rm(temporary, { force: true }).catch(() => {});
@@ -112,17 +149,7 @@ async function materializeVerticalViewerMedia(
     // the same 9:16 no-crop contract.
     const temporary = temporaryPath(output);
     try {
-      await runFfmpeg([
-        "-y",
-        "-i",
-        source,
-        "-vf",
-        "scale=1080:1920:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black",
-        ...(kind === "video"
-          ? ["-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-preset", "medium", "-c:a", "copy"]
-          : ["-frames:v", "1", "-q:v", "2"]),
-        temporary,
-      ]);
+      await runFfmpeg(siteVerticalFfmpegArgs(source, temporary, kind));
       await fs.promises.rename(temporary, output);
     } finally {
       await fs.promises.rm(temporary, { force: true }).catch(() => {});
@@ -204,7 +231,7 @@ async function materializeResponsiveVariants(config: BackendConfig, source: stri
     if (await isCurrentDerivative(source, output)) continue;
     const temporary = `${output}.tmp-${process.pid}-${Date.now()}.webp`;
     try {
-      await runFfmpeg(["-y", "-i", source, "-vf", `scale='min(${width},iw)':-2`, "-c:v", "libwebp", "-quality", "80", temporary]);
+      await runFfmpeg(responsiveWebpFfmpegArgs(source, temporary, width));
       await fs.promises.chmod(temporary, 0o664);
       await fs.promises.rename(temporary, output);
     } finally {

@@ -1,7 +1,14 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import {
+  RESPONSIVE_WIDTHS,
+  responsiveWebpFfmpegArgs,
+  sitePosterFfmpegArgs,
+  siteVerticalFfmpegArgs,
+} from "../apps/backend/src/delivery/site-media.js";
 import { devFixture, seedSiteFixture } from "../apps/web/src/server/site-fixture.js";
+import { storyFfmpegArgs } from "../deploy/media-processor/story-encode.js";
 
 /**
  * Boots the built backend image against a throwaway seeded database and walks
@@ -206,20 +213,87 @@ try {
     check(result.code === 0, `ops ${opsCommands[index]}`, `exit ${result.code}`);
   }
 
-  // Both binaries, and a real encode: a broken static build would still answer
-  // -version.
-  const ffmpeg = await run([
-    "docker",
-    "exec",
-    "-u",
-    "bun",
-    container,
+  /**
+   * The ffmpeg work the backend container really does, driven by the very
+   * argument builders production calls — not by a hand-written command that
+   * would drift from them.
+   *
+   * `-version` is not enough and neither is a plain h264 encode: these recipes
+   * reach for specific encoders and filters (libwebp above all) that a bump of
+   * the pinned mwader/static-ffmpeg image could quietly drop. The story recipe
+   * is the local executor's, the one maru falls back to when
+   * MEDIA_PROCESSOR_PROVIDER is unset; VM-106's VAAPI path cannot run on a
+   * runner and is covered by `ops media-diagnose` instead.
+   */
+  const inContainer = (args: string[]) => run(["docker", "exec", "-u", "bun", container, ...args]);
+  const dimensions = async (file: string): Promise<string> => {
+    const probe = await inContainer([
+      "ffprobe",
+      "-v",
+      "error",
+      "-select_streams",
+      "v:0",
+      "-show_entries",
+      "stream=width,height",
+      "-of",
+      "csv=p=0:s=x",
+      file,
+    ]);
+    return probe.out.trim();
+  };
+
+  const sources = await inContainer([
     "sh",
     "-c",
-    "ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc=size=64x64:rate=5 -t 1 -y /tmp/smoke.mp4 " +
-      "&& ffprobe -v error -show_entries format=duration -of csv=p=0 /tmp/smoke.mp4",
+    "ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc=size=640x480:rate=10 -t 2 -pix_fmt yuv420p -y /tmp/src.mp4 " +
+      "&& ffmpeg -hide_banner -loglevel error -i /tmp/src.mp4 -frames:v 1 -y /tmp/src.jpg",
   ]);
-  check(ffmpeg.code === 0 && ffmpeg.out.trim().startsWith("1"), "ffmpeg encode + ffprobe read", ffmpeg.out.trim());
+  check(sources.code === 0, "ffmpeg builds the smoke sources", sources.out.trim().slice(0, 200));
+
+  /** Each entry runs prod's real arguments and states what the output must be. */
+  const encodes: { name: string; args: string[]; output: string; expect?: string }[] = [
+    {
+      name: "story video (local executor)",
+      args: storyFfmpegArgs("/tmp/src.mp4", "/tmp/story.mp4", "video"),
+      output: "/tmp/story.mp4",
+      expect: "1080x1920",
+    },
+    {
+      name: "story image (local executor)",
+      args: storyFfmpegArgs("/tmp/src.jpg", "/tmp/story.jpg", "image"),
+      output: "/tmp/story.jpg",
+      expect: "1080x1920",
+    },
+    {
+      name: "site vertical composite",
+      args: siteVerticalFfmpegArgs("/tmp/src.mp4", "/tmp/vertical.mp4", "video"),
+      output: "/tmp/vertical.mp4",
+      expect: "1080x1920",
+    },
+    {
+      name: "site poster frame",
+      args: sitePosterFfmpegArgs("/tmp/vertical.mp4", "/tmp/poster.jpg"),
+      output: "/tmp/poster.jpg",
+      expect: "1080x1920",
+    },
+    // libwebp is the encoder most likely to go missing in a rebuilt static
+    // ffmpeg, and every responsive image on the site depends on it.
+    {
+      name: `responsive webp ${RESPONSIVE_WIDTHS[0]}px`,
+      args: responsiveWebpFfmpegArgs("/tmp/src.jpg", `/tmp/responsive-${RESPONSIVE_WIDTHS[0]}.webp`, RESPONSIVE_WIDTHS[0]),
+      output: `/tmp/responsive-${RESPONSIVE_WIDTHS[0]}.webp`,
+      expect: `${RESPONSIVE_WIDTHS[0]}x270`,
+    },
+  ];
+  for (const { name, args, output, expect } of encodes) {
+    const encoded = await inContainer(["ffmpeg", "-hide_banner", "-loglevel", "error", ...args]);
+    if (encoded.code !== 0) {
+      check(false, `ffmpeg: ${name}`, `exit ${encoded.code}: ${encoded.out.trim().slice(0, 200)}`);
+      continue;
+    }
+    const size = await dimensions(output);
+    check(size === expect, `ffmpeg: ${name}`, `${size} (expected ${expect})`);
+  }
 
   const logs = await run(["docker", "logs", container]);
   const errors = logs.out.split("\n").filter((line) => line.includes('"level":"error"') || line.includes("Cannot find module"));
