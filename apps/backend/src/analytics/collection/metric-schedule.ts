@@ -66,7 +66,9 @@ export function dueMetricTasks(backendDb: BackendDb, config: BackendConfig): Met
         or(isNull(metricSchedule.nextCheckAt), lte(metricSchedule.nextCheckAt, new Date().toISOString())),
       ),
     )
-    .orderBy(sql`${posts.dateUtc} DESC`, asc(metricSchedule.checkCount))
+    // Oldest due work must win. Ordering by the post date starved historical
+    // checkpoints indefinitely whenever newer posts kept becoming due.
+    .orderBy(asc(metricSchedule.nextCheckAt), asc(metricSchedule.checkCount), asc(posts.dateUtc))
     .limit(config.MAX_METRIC_TASKS_PER_CYCLE)
     .all();
   return rows.map((row) => ({

@@ -2,7 +2,7 @@ import { describe, expect, it, mock } from "bun:test";
 import { asc, eq } from "drizzle-orm";
 import { TerminalMetricError } from "../src/analytics/collection/collectors/errors.js";
 import { createMetricCollectors } from "../src/analytics/collection/collectors/index.js";
-import type { MetricTask } from "../src/analytics/collection/metric-schedule.js";
+import { dueMetricTasks, type MetricTask } from "../src/analytics/collection/metric-schedule.js";
 import { runMetricsCycle } from "../src/analytics/collection/metrics-cycle.js";
 import { openBackendDb } from "../src/db/client.js";
 import { metricSamples, metricSchedule, postMetrics, posts, postTargets, workerState } from "../src/db/schema.js";
@@ -90,6 +90,35 @@ describe("metrics cycle", () => {
       expect(
         backendDb.db.select({ frozenAt: metricSchedule.frozenAt, lastError: metricSchedule.lastError }).from(metricSchedule).get(),
       ).toEqual({ frozenAt: expect.any(String), lastError: "post expired" });
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("claims the oldest due metric checkpoint before newer posts", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      seedPublishedPost(backendDb, "post:old", "threads_ru");
+      seedPublishedPost(backendDb, "post:new", "threads_ru");
+      const now = Date.now();
+      backendDb.db
+        .insert(metricSchedule)
+        .values([
+          {
+            postKey: "post:old",
+            target: "threads_ru",
+            nextCheckAt: new Date(now - 60_000).toISOString(),
+            updatedAt: new Date(now - 60_000).toISOString(),
+          },
+          {
+            postKey: "post:new",
+            target: "threads_ru",
+            nextCheckAt: new Date(now - 1_000).toISOString(),
+            updatedAt: new Date(now - 1_000).toISOString(),
+          },
+        ])
+        .run();
+      expect(dueMetricTasks(backendDb, loadConfig({ MAX_METRIC_TASKS_PER_CYCLE: "1" }))[0]?.postKey).toBe("post:old");
     } finally {
       backendDb.close();
     }

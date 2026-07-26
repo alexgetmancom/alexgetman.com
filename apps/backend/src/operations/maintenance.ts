@@ -6,16 +6,19 @@ import { freezeDisabledMetricSchedules } from "../analytics/collection/metric-sc
 import type { BackendDb } from "../db/client.js";
 import {
   deploymentSnapshots,
+  drafts,
   maintenanceLocks,
   metricSchedule,
   postEvents,
   posts,
   postTargets,
+  publications,
   publishJobs,
   videoDrafts,
   videoTargets,
 } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { publicationStatus } from "../publishing/state.js";
 
 /** Explicitly invoked operational maintenance routines. */
 export async function backupDatabase(backendDb: BackendDb, sourcePath: string, destinationDirectory?: string): Promise<string> {
@@ -127,6 +130,14 @@ export function auditOperations(backendDb: BackendDb): Record<string, unknown> {
       .groupBy(publishJobs.target)
       .orderBy(publishJobs.target)
       .all(),
+    failedTargets: backendDb.db
+      .select({ target: postTargets.target, count: sql<number>`count(*)`, latest: sql<string | null>`max(${postTargets.updatedAt})` })
+      .from(postTargets)
+      .where(eq(postTargets.status, "failed"))
+      .groupBy(postTargets.target)
+      .orderBy(postTargets.target)
+      .all(),
+    publicationConsistency: publicationConsistencyReport(backendDb),
     metricScheduleErrors: backendDb.db
       .select({ target: metricSchedule.target, count: sql<number>`count(*)`, latest: sql<string | null>`max(${metricSchedule.updatedAt})` })
       .from(metricSchedule)
@@ -154,6 +165,136 @@ export function auditOperations(backendDb: BackendDb): Record<string, unknown> {
       .limit(20)
       .all(),
   };
+}
+
+type LatestPublishJob = {
+  post_key: string;
+  target: string;
+  status: string;
+  last_error: string | null;
+};
+
+export function publicationConsistencyReport(backendDb: BackendDb): Record<string, unknown> {
+  const foreignKeyViolations = backendDb.sqlite.query("PRAGMA foreign_key_check").all();
+  const staleTargets = backendDb.sqlite
+    .query(
+      `SELECT t.post_key,t.target,t.status,t.error,t.updated_at
+       FROM post_targets t
+       WHERE t.status IN ('queued','publishing')
+         AND NOT EXISTS (
+           SELECT 1 FROM publish_jobs j
+           WHERE j.post_key=t.post_key AND j.target=t.target AND j.status IN ('queued','publishing')
+         )
+       ORDER BY t.updated_at`,
+    )
+    .all();
+  const targetMismatches = targetStateMismatches(backendDb);
+  const publicationMismatches = publicationStateMismatches(backendDb);
+  const videoDraftMismatches = backendDb.sqlite
+    .query(
+      `SELECT d.id,d.status,group_concat(t.status) AS target_statuses
+       FROM video_drafts d JOIN video_targets t ON t.video_draft_id=d.id
+       GROUP BY d.id
+       HAVING (d.status='published' AND sum(t.status!='published')>0)
+          OR (d.status='partial' AND sum(t.status IN ('failed','cancelled'))=0)
+          OR (d.status='scheduled' AND sum(t.status NOT IN ('published','failed','cancelled'))=0)
+       ORDER BY d.id`,
+    )
+    .all();
+  return { foreignKeyViolations, staleTargets, targetMismatches, publicationMismatches, videoDraftMismatches };
+}
+
+export function repairPublicationConsistency(backendDb: BackendDb): Record<string, number> {
+  const before = publicationConsistencyReport(backendDb);
+  const now = new Date().toISOString();
+  let deletedOrphans = 0;
+  let repairedTargets = 0;
+  let repairedPublications = 0;
+  backendDb.db.transaction(() => {
+    for (const statement of [
+      "DELETE FROM metric_schedule WHERE post_key NOT IN (SELECT post_key FROM posts)",
+      "DELETE FROM post_targets WHERE post_key NOT IN (SELECT post_key FROM posts)",
+      "DELETE FROM post_locales WHERE post_id NOT IN (SELECT post_id FROM publications)",
+      "DELETE FROM publication_sources WHERE post_id NOT IN (SELECT post_id FROM publications)",
+      "DELETE FROM publication_plans WHERE post_id NOT IN (SELECT post_id FROM publications)",
+    ])
+      deletedOrphans += backendDb.sqlite.run(statement).changes;
+
+    for (const mismatch of targetStateMismatches(backendDb)) {
+      const normalized = normalizeArchivedJobStatus(mismatch.job_status);
+      const error = normalized === "failed" ? mismatch.last_error : null;
+      backendDb.sqlite
+        .query(
+          `UPDATE post_targets
+           SET status=?, error=?, skipped=?, updated_at=?
+           WHERE post_key=? AND target=?`,
+        )
+        .run(normalized, error, normalized === "skipped" || normalized === "cancelled" ? 1 : 0, now, mismatch.post_key, mismatch.target);
+      repairedTargets += 1;
+    }
+
+    for (const mismatch of publicationStateMismatches(backendDb)) {
+      backendDb.db
+        .update(publications)
+        .set({ status: mismatch.expected, updatedAt: now })
+        .where(eq(publications.postId, mismatch.post_id))
+        .run();
+      backendDb.db.update(drafts).set({ status: mismatch.expected, updatedAt: now }).where(eq(drafts.postId, mismatch.post_id)).run();
+      repairedPublications += 1;
+    }
+  });
+  return {
+    foreignKeyViolations: Array.isArray(before.foreignKeyViolations) ? before.foreignKeyViolations.length : 0,
+    deletedOrphans,
+    repairedTargets,
+    repairedPublications,
+  };
+}
+
+function targetStateMismatches(backendDb: BackendDb): Array<LatestPublishJob & { target_status: string; job_status: string }> {
+  const rows = backendDb.sqlite
+    .query(
+      `WITH latest AS (
+         SELECT p.post_key,p.target,p.status,p.last_error
+         FROM publish_jobs p
+         JOIN (
+           SELECT post_key,target,max(job_id) AS job_id
+           FROM publish_jobs WHERE post_key IS NOT NULL GROUP BY post_key,target
+         ) x ON x.job_id=p.job_id
+       )
+       SELECT t.post_key,t.target,t.status AS target_status,l.status AS job_status,l.last_error
+       FROM post_targets t JOIN latest l ON l.post_key=t.post_key AND l.target=t.target
+       WHERE t.target NOT IN ('site_ru','site_en')
+       ORDER BY t.post_key,t.target`,
+    )
+    .all() as Array<LatestPublishJob & { target_status: string; job_status: string }>;
+  return rows.filter((row) => row.target_status !== normalizeArchivedJobStatus(row.job_status));
+}
+
+function publicationStateMismatches(backendDb: BackendDb): Array<{ post_id: number; status: string; expected: "published" | "failed" }> {
+  const rows = backendDb.sqlite
+    .query(
+      `SELECT p.post_id,p.status,
+              group_concat(x.status) AS statuses
+       FROM publications p
+       LEFT JOIN (
+         SELECT post_id,status FROM publish_jobs
+         UNION ALL
+         SELECT post_id,status FROM site_jobs
+       ) x ON x.post_id=p.post_id
+       GROUP BY p.post_id
+       ORDER BY p.post_id`,
+    )
+    .all() as Array<{ post_id: number; status: string; statuses: string | null }>;
+  return rows.flatMap((row) => {
+    if (row.status === "cancelled") return [];
+    const expected = publicationStatus((row.statuses ?? "").split(",").filter(Boolean).map(normalizeArchivedJobStatus));
+    return expected && expected !== row.status ? [{ post_id: row.post_id, status: row.status, expected }] : [];
+  });
+}
+
+function normalizeArchivedJobStatus(status: string): string {
+  return status === "failed_archived" ? "cancelled" : status;
 }
 
 export function withMaintenanceLock<T>(backendDb: BackendDb, operation: () => T): T {

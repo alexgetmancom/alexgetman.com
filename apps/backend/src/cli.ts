@@ -9,6 +9,8 @@ import {
   auditOperations,
   backupDatabase,
   buildMetricsBackfillPlan,
+  publicationConsistencyReport,
+  repairPublicationConsistency,
   restoreDatabase,
   withMaintenanceLock,
 } from "./operations/maintenance.js";
@@ -53,6 +55,7 @@ function printHelp(): void {
   restore --source PATH [--db PATH] --force
   audit [--db PATH]
   metrics-backfill [--targets a,b] [--refs post:1,post:2] [--from ISO] [--to ISO] [--apply] [--reset-counts]
+  publication-repair [--apply]
   import-x-analytics --file PATH --sampled-at ISO
   capabilities [--db PATH]
   doctor
@@ -129,7 +132,12 @@ async function main(): Promise<void> {
     else if (args.command === "backup")
       console.log(JSON.stringify({ ok: true, path: await backupDatabase(backendDb, dbPath, args.values.get("output")) }, null, 2));
     else if (args.command === "audit") console.log(JSON.stringify(auditOperations(backendDb), null, 2));
-    else if (args.command === "metrics-backfill") {
+    else if (args.command === "publication-repair") {
+      const before = publicationConsistencyReport(backendDb);
+      const repaired = args.flags.has("apply") ? repairPublicationConsistency(backendDb) : null;
+      const after = repaired ? publicationConsistencyReport(backendDb) : null;
+      console.log(JSON.stringify({ before, repaired, after }, null, 2));
+    } else if (args.command === "metrics-backfill") {
       const targets = (
         args.values.get("targets") ?? "telegram,threads_ru,threads_en,instagram_stories,instagram_stories_ru,telegram_stories"
       )
