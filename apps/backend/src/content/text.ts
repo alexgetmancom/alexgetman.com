@@ -88,3 +88,22 @@ function escapeHtml(value: string): string {
   const entities: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
   return value.replace(/[&<>"']/g, (char) => entities[char] ?? char);
 }
+
+/** Canonical leading-emoji stripper, shared by the social payload builder and the
+ * web app (apps/web/src/utils/text.ts re-exports it) so a post's headline strips
+ * identically in both. It lives in Content rather than in delivery/social because
+ * the site is its only other caller and presentation code must not reach into a
+ * delivery adapter for a string helper. Handles flag pairs and ZWJ sequences; a
+ * bare "#"/digit is not treated as an emoji so hashtags and numbered lists
+ * survive. */
+export function stripLeadingEmojis(text: string): string {
+  if (!text) return "";
+  const cleaned = text.trim();
+  const flagGroup = cleaned.match(/^(\p{RI}{2})\s*/u)?.[1];
+  if (flagGroup) return cleaned.slice(flagGroup.length).trim();
+  const baseEmojiPart = `(?:[^\\s\\w\\d.,!?;:()""''«»а-яА-ЯёЁa-zA-Z][\\ufe00-\\ufe0f\\u20e3]?|[\\ud83c][\\udffb-\\udfff]?)`;
+  const zwjRegex = new RegExp(`^(?:${baseEmojiPart}(?:\\u200d${baseEmojiPart})*)`, "u");
+  const matched = cleaned.match(zwjRegex)?.[0];
+  if (matched && /\p{Emoji}/u.test(matched) && !/^[#*0-9]$/.test(matched[0] ?? "")) return cleaned.slice(matched.length).trim();
+  return cleaned;
+}

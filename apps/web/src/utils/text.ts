@@ -35,9 +35,9 @@ export function excerptAfterTitle(text: string, title: string, limit: number): s
   return truncateText(excerpt || source, limit);
 }
 
-// Canonical implementation lives in the backend (delivery/social/payload.ts) so a
-// headline strips identically whether it's rendered on the site or sent to socials.
-export { stripLeadingEmojis as removeLeadingEmoji } from "../../../backend/src/delivery/social/payload.js";
+// Canonical implementation lives in the backend (content/text.ts) so a headline
+// strips identically whether it's rendered on the site or sent to socials.
+export { stripLeadingEmojis as removeLeadingEmoji } from "../../../backend/src/content/text.js";
 
 export function getFirstSentence(text: string): string {
   if (!text) return "";
