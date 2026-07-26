@@ -3,7 +3,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const ignoredDirectories = new Set([".git", ".astro", "node_modules", "dist", "coverage"]);
+// runtime, ops and entrypoint hold bundles built from TypeScript sources. CI
+// only builds them after this gate runs, so it never saw them; a local image
+// build does, and the gate then fails on generated JavaScript.
+const ignoredDirectories = new Set([".git", ".astro", "node_modules", "dist", "coverage", "runtime", "ops", "entrypoint"]);
 const forbiddenExtensions = new Set([".py", ".pyi", ".js", ".jsx", ".mjs", ".cjs"]);
 const shellNames = new Set(["sh", "bash", "zsh"]);
 const violations: string[] = [];

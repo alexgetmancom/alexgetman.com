@@ -44,6 +44,12 @@ Thumbs.db
 # Astro and Node.js
 node_modules/
 dist/
+# The bundles CI builds from apps/web/server.ts and the backend entry points.
+# Reproducing the image build locally creates them here too; untracked minified
+# bundles are one `git add -A` away from being committed.
+/runtime/
+/ops/
+/entrypoint/
 .astro/
 *.tsbuildinfo
 npm-debug.log*

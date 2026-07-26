@@ -21,6 +21,7 @@
     "test": "bun test apps/backend/tests/*.test.ts apps/web/src/**/*.test.ts",
     "test:coverage": "bun test --coverage apps/backend/tests/*.test.ts apps/web/src/**/*.test.ts",
     "check:audit": "bun scripts/check-audit.ts",
+    "check:docker": "bun scripts/check-docker-workspaces.ts",
     "lint": "biome lint .",
     "format": "biome format --write .",
     "knip": "bun tools/knip/node_modules/.bin/knip --config knip.json",

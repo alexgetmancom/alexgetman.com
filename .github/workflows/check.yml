@@ -50,6 +50,8 @@ jobs:
         run: bun run knip
       - name: Layer boundaries
         run: bun run check:layers
+      - name: Dockerfile workspace manifests
+        run: bun run check:docker
       - name: Tests with coverage threshold
         run: bun run test:coverage
       - name: Dependency audit
