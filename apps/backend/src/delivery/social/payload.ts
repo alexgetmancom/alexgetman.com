@@ -1,4 +1,3 @@
-import path from "node:path";
 import * as z from "zod";
 
 type MediaKind = "IMAGE" | "VIDEO";
@@ -144,14 +143,14 @@ export function stripLeadingEmojis(text: string): string {
 
 export function mediaExtension(item: PublishMediaItem): string {
   if (item.localPath) {
-    const ext = path.extname(item.localPath);
+    const ext = fileExtension(item.localPath);
     if (ext) return ext;
   }
   return item.type === "VIDEO" ? ".mp4" : ".jpg";
 }
 
 export function guessContentType(filePath: string): string {
-  const ext = path.extname(filePath).toLowerCase();
+  const ext = fileExtension(filePath).toLowerCase();
   if (ext === ".png") return "image/png";
   if (ext === ".webp") return "image/webp";
   if (ext === ".gif") return "image/gif";
@@ -169,4 +168,10 @@ function normalizeMediaType(value: unknown): MediaKind | null {
   if (text === "image" || text === "photo") return "IMAGE";
   if (text === "video") return "VIDEO";
   return null;
+}
+
+function fileExtension(filePath: string): string {
+  const name = filePath.slice(Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\")) + 1);
+  const dot = name.lastIndexOf(".");
+  return dot > 0 ? name.slice(dot) : "";
 }
