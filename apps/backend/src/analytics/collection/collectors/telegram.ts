@@ -9,7 +9,7 @@ export async function collectTelegram(task: MetricTask, config: BackendConfig, f
   const messageId = task.externalId;
   if (!messageId || !/^\d+$/.test(messageId)) throw new TerminalMetricError(`invalid_telegram_message_id:${messageId ?? "missing"}`);
   const channel = config.CHANNEL_USERNAME.replace(/^@/, "");
-  const html = await requestText(fetchImpl, `https://t.me/s/${channel}`, {
+  const html = await requestText(fetchImpl, `https://t.me/${channel}/${messageId}?embed=1&mode=tme`, {
     headers: { "User-Agent": "Mozilla/5.0 (compatible; alexgetman-backend/1.0)" },
     signal: AbortSignal.timeout(config.TELEGRAM_METRICS_TIMEOUT_SECONDS * 1000),
   });
@@ -19,7 +19,7 @@ export async function collectTelegram(task: MetricTask, config: BackendConfig, f
   const section = html.match(
     new RegExp(`data-post=["']${escaped}["'][\\s\\S]*?(?=data-post=["']${escapeRegExp(channel)}\\/|<\\/section>|$)`),
   )?.[0];
-  if (!section) throw new Error("telegram_post_not_found");
+  if (!section) throw new TerminalMetricError("telegram_post_not_found");
   const views = parseCompactCount(section.match(/tgme_widget_message_views[^>]*>([^<]+)</)?.[1]);
   const reactions = [...section.matchAll(/class=["']tgme_reaction["'][^>]*>[\s\S]*?<\/i>([^<]+)/g)]
     .map((match) => parseCompactCount(match[1]) ?? 0)

@@ -97,13 +97,25 @@ describe("metrics cycle", () => {
 });
 
 describe("Telegram public metrics", () => {
-  it("parses compact views and sums reactions", async () => {
+  it("loads the target post directly, parses compact views, and sums reactions", async () => {
     const html = `<section><div data-post="alexgetmancom/523"><span class="tgme_widget_message_views">1.2K</span><span class="tgme_reaction"><i></i>3</span><span class="tgme_reaction"><i></i>2</span></div></section>`;
-    const fetchImpl = mock(async () => new Response(html, { status: 200 })) as unknown as typeof fetch;
+    let requestedUrl = "";
+    const fetchImpl = mock(async (input: string | URL | Request) => {
+      requestedUrl = String(input);
+      return new Response(html, { status: 200 });
+    }) as unknown as typeof fetch;
     const collector = createMetricCollectors(loadConfig({}), fetchImpl).telegram;
     if (!collector) throw new Error("Telegram collector is missing");
     const result = await collector(task("telegram"));
+    expect(requestedUrl).toBe("https://t.me/alexgetmancom/523?embed=1&mode=tme");
     expect(result).toMatchObject({ metrics: { views: 1200, likes: 5 }, source: "t_me_public" });
+  });
+
+  it("treats a missing target post as terminal", async () => {
+    const fetchImpl = mock(async () => new Response("<html></html>", { status: 200 })) as unknown as typeof fetch;
+    const collector = createMetricCollectors(loadConfig({}), fetchImpl).telegram;
+    if (!collector) throw new Error("Telegram collector is missing");
+    await expect(collector(task("telegram"))).rejects.toBeInstanceOf(TerminalMetricError);
   });
 });
 
