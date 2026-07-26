@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterEach, describe, expect, it } from "bun:test";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../src/foundation/config.js";
@@ -11,9 +11,19 @@ import {
   retainedSupplementaryGroups,
 } from "../src/foundation/runtime/data-dirs.js";
 
+const tempRoots: string[] = [];
+
 function tempRoot(): string {
-  return mkdtempSync(join(tmpdir(), "alexgetman-data-dirs-"));
+  const root = mkdtempSync(join(tmpdir(), "alexgetman-data-dirs-"));
+  tempRoots.push(root);
+  return root;
 }
+
+// Some of these tests deliberately chmod a directory to 0o500; force the removal
+// so a failed test cannot leave an undeletable tree behind in tmpdir.
+afterEach(() => {
+  for (const root of tempRoots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
 
 describe("requiredDataDirectories", () => {
   it("excludes video/site directories when their module is disabled", () => {

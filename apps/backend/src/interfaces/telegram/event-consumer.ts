@@ -4,6 +4,7 @@ import { refreshPostControlCard } from "../../bot/progress.js";
 import type { BackendDb } from "../../db/client.js";
 import { alertDedup, drafts, postEvents } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
+import { log } from "../../foundation/logger.js";
 import {
   notifyFinalVideoFailure,
   refreshVideoControlCard,
@@ -72,28 +73,41 @@ export async function consumeTelegramEvents(backendDb: BackendDb, bot: Bot | nul
   let handled = 0;
   for (const event of events) {
     if (wasDelivered(backendDb, event.id)) continue;
-    const details = eventDetails(event.detailsJson);
-    const videoDraftId = numberDetail(details, "videoDraftId");
-    const videoTargetId = numberDetail(details, "videoTargetId");
-    if (event.eventType === "studio.notification.reminder.due") {
-      await sendStudioReminder(backendDb, bot, { ...event, detailsJson: details });
-    } else if (event.eventType === "delivery.post.completed" || event.eventType === "delivery.video.completed") {
-      await sendStudioCompletion(backendDb, bot, { ...event, detailsJson: details });
-    } else if (event.eventType === "analytics.milestone.reached") {
-      for (const adminId of config.ADMIN_IDS) await bot.api.sendMessage(adminId, event.message);
-    } else if (event.eventType === "delivery.post.settled" || event.eventType.startsWith("publish.job.")) {
-      const postId = numberDetail(details, "post_id") ?? postIdFromRef(event.postKey);
-      const draft = postId == null ? null : backendDb.db.select({ id: drafts.id }).from(drafts).where(eq(drafts.postId, postId)).get();
-      if (draft) await refreshPostControlCard(backendDb, bot, draft.id);
-    } else if (event.eventType === "video.reminder.due" && videoDraftId != null)
-      await sendVideoReminder(backendDb, bot, videoDraftId, videoTargetId, config.VIDEO_REMINDER_MINUTES);
-    else if (event.eventType === "video.target.failed" && videoDraftId != null)
-      await notifyFinalVideoFailure(backendDb, bot, videoDraftId, videoTargetId);
-    else if (videoDraftId != null) await refreshVideoControlCard(backendDb, bot, videoDraftId);
-    markDelivered(backendDb, event.id);
-    handled += 1;
+    // Delivery is at-most-once by design (see alertDedup below), so a failed
+    // send is dropped, never retried. Letting it propagate instead would leave
+    // the event unmarked and permanently stuck at the head of the queue — one
+    // blocked chat (403) would then starve every reminder behind it.
+    try {
+      await deliverEvent(backendDb, bot, config, event);
+      handled += 1;
+    } catch (error) {
+      log("error", "telegram event delivery failed", { event: event.id, type: event.eventType, error: String(error) });
+    } finally {
+      markDelivered(backendDb, event.id);
+    }
   }
   return handled;
+}
+
+async function deliverEvent(backendDb: BackendDb, bot: Bot, config: BackendConfig, event: typeof postEvents.$inferSelect): Promise<void> {
+  const details = eventDetails(event.detailsJson);
+  const videoDraftId = numberDetail(details, "videoDraftId");
+  const videoTargetId = numberDetail(details, "videoTargetId");
+  if (event.eventType === "studio.notification.reminder.due") {
+    await sendStudioReminder(backendDb, bot, { ...event, detailsJson: details });
+  } else if (event.eventType === "delivery.post.completed" || event.eventType === "delivery.video.completed") {
+    await sendStudioCompletion(backendDb, bot, { ...event, detailsJson: details });
+  } else if (event.eventType === "analytics.milestone.reached") {
+    for (const adminId of config.ADMIN_IDS) await bot.api.sendMessage(adminId, event.message);
+  } else if (event.eventType === "delivery.post.settled" || event.eventType.startsWith("publish.job.")) {
+    const postId = numberDetail(details, "post_id") ?? postIdFromRef(event.postKey);
+    const draft = postId == null ? null : backendDb.db.select({ id: drafts.id }).from(drafts).where(eq(drafts.postId, postId)).get();
+    if (draft) await refreshPostControlCard(backendDb, bot, draft.id);
+  } else if (event.eventType === "video.reminder.due" && videoDraftId != null)
+    await sendVideoReminder(backendDb, bot, videoDraftId, videoTargetId, config.VIDEO_REMINDER_MINUTES);
+  else if (event.eventType === "video.target.failed" && videoDraftId != null)
+    await notifyFinalVideoFailure(backendDb, bot, videoDraftId, videoTargetId);
+  else if (videoDraftId != null) await refreshVideoControlCard(backendDb, bot, videoDraftId);
 }
 
 function postIdFromRef(value: string | null): number | null {

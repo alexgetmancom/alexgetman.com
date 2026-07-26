@@ -24,16 +24,7 @@ export function renderPipelineSection(
   const posts = data?.posts ?? [];
   const previousPosts = previousData?.posts ?? [];
   const targetIds = ORDERED_TARGETS.map((target) => target.id);
-  const totals = posts.reduce(
-    (all, post) => {
-      const value = postMetricTotals(post, targetIds);
-      all.views += value.views;
-      all.likes += value.likes + value.reposts;
-      all.replies += value.replies;
-      return all;
-    },
-    { views: 0, likes: 0, replies: 0 },
-  );
+  const totals = metricTotals(posts, targetIds);
   const previousTotals =
     comparisonDays === 30
       ? medianDailyTotals(previousPosts, targetIds, comparisonDays, timeZone)
@@ -133,13 +124,25 @@ function calendarKey(value: string | null | undefined, timeZone: string): string
   return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
 }
 
+// Convention in this module: every interpolated *text* value is escaped here,
+// at the point of interpolation. Only parameters documented as pre-rendered
+// markup (`audience`, the chart) are trusted, and they are trusted explicitly.
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => HTML_ENTITIES[char] ?? char);
+}
+
+const HTML_ENTITIES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+
 function kpi(label: string, value: number, previous: number, comparisonLabel: string): string {
   const percent = previous > 0 ? Math.round(((value - previous) / previous) * 100) : value > 0 ? 100 : 0;
   const direction = percent >= 0 ? "up" : "down";
   const sign = percent >= 0 ? "↑" : "↓";
-  return `<div class="kpi"><strong>${formatMetricValue(value)}</strong><span>${label}</span><small class="kpi-delta kpi-delta--${direction}">${sign} ${Math.abs(percent)}% <i>${comparisonLabel}</i></small></div>`;
+  return `<div class="kpi"><strong>${formatMetricValue(value)}</strong><span>${escapeHtml(label)}</span><small class="kpi-delta kpi-delta--${direction}">${sign} ${Math.abs(percent)}% <i>${escapeHtml(comparisonLabel)}</i></small></div>`;
 }
 
+/** Formats with getUTC* on purpose: `rollingPeriodDates` builds these Dates from
+ * already zone-resolved parts via Date.UTC, so UTC *is* the display calendar
+ * here. Switching to local getters would silently shift the printed range. */
 function shortDateRange(start: Date, end: Date): string {
   const months = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
   if (start.getTime() === end.getTime()) return `${end.getUTCDate()} ${months[end.getUTCMonth()]}`;
@@ -147,6 +150,8 @@ function shortDateRange(start: Date, end: Date): string {
   return `${start.getUTCDate()} ${months[start.getUTCMonth()]} – ${end.getUTCDate()} ${months[end.getUTCMonth()]}`;
 }
 
+/** Returns the period bounds as UTC-midnight Dates whose calendar fields already
+ * carry `timeZone`'s date. Read them back with getUTC*, never local getters. */
 function rollingPeriodDates(offset: number, days: number, timeZone: string): [Date, Date] {
   const shiftedNow = new Date(Date.now() - offset * days * 86_400_000);
   const endParts = zonedDateParts(shiftedNow, timeZone);

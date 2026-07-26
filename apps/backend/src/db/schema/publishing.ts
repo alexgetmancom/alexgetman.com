@@ -90,6 +90,7 @@ export const pendingAlbums = sqliteTable("pending_albums", {
   textEntitiesJson: text(),
   mediaJson: text().notNull(),
   notified: integer().notNull().default(0),
+  attemptCount: integer().notNull().default(0),
   updatedAt: text().notNull(),
 });
 

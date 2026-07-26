@@ -49,7 +49,10 @@ function requeuePublication(backendDb: BackendDb, ref: PublicationRef, target?: 
   }
   if (latest.size === 0) throw new Error("no publish jobs found");
   const now = new Date().toISOString();
-  const queued: string[] = [];
+  // Per-target outcome, not a flat name list: a target that already had a queued
+  // job keeps its existing payload, so reporting it as "requeued" would tell the
+  // operator the payload was regenerated from the durable source when it wasn't.
+  const results: Array<{ target: string; outcome: "requeued" | "already_queued" }> = [];
   backendDb.db.transaction((tx) => {
     for (const [targetId, row] of latest) {
       const existing = tx
@@ -95,12 +98,20 @@ function requeuePublication(backendDb: BackendDb, ref: PublicationRef, target?: 
           set: { status: "queued", error: null, skipped: 0, updatedAt: now, rawJson: JSON.stringify({ requeued: true }) },
         })
         .run();
-      queued.push(targetId);
+      results.push({ target: targetId, outcome: existing ? "already_queued" : "requeued" });
     }
     if (ref.postId != null)
       tx.update(publications).set({ status: "scheduled", updatedAt: now }).where(eq(publications.postId, ref.postId)).run();
   });
-  return { ok: true, post_id: ref.postId, post_key: ref.postKey, message_id: ref.messageId, target: target ?? null, targets: queued };
+  return {
+    ok: true,
+    post_id: ref.postId,
+    post_key: ref.postKey,
+    message_id: ref.messageId,
+    target: target ?? null,
+    targets: results.map((row) => row.target),
+    results,
+  };
 }
 
 export function requeuePublicationScope(
@@ -117,6 +128,9 @@ export function requeuePublicationScope(
     .all()
     .map((row) => row.target)
     .filter((value) => targetLocale(value) === locale);
+  // A mutation that matched nothing is not a success. Silently returning an
+  // empty result set reads as "done" to an operator running `ops republish`.
+  if (targets.length === 0) throw new Error(`no ${locale} targets found for ${ref.postKey}`);
   return { ok: true, locale, results: targets.map((value) => requeuePublication(backendDb, ref, value)) };
 }
 
@@ -131,7 +145,7 @@ export function requeueAfterRemoval(
   // it is safe to create its replacement. A failed deletion is never retried
   // as a new post, preventing accidental duplicates.
   const targets = succeeded.length > 0 ? succeeded : target ? [target] : [];
-  return { ok: true, results: targets.map((value) => requeuePublication(backendDb, ref, value)) };
+  return { ok: targets.length > 0, results: targets.map((value) => requeuePublication(backendDb, ref, value)) };
 }
 
 export async function replaceTextFallbackTargets(

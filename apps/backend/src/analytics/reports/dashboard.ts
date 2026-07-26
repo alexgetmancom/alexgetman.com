@@ -76,9 +76,14 @@ function overallDashboard(
       if (profileData.mediaCount != null) lines.push(t(locale, "dash.total-reels", { n: metricNumber(profileData.mediaCount) }));
       if (profileData.reach30d != null)
         lines.push(
-          locale === "ru"
-            ? `• 30 дней: охват ${metricNumber(profileData.reach30d)} · просмотры ${metricNumber(profileData.views30d)} · взаимодействия ${metricNumber(profileData.interactions30d)} · сохранения ${metricNumber(profileData.saves30d)} · пересылки ${metricNumber(profileData.shares30d)} · репосты ${metricNumber(profileData.reposts30d)}`
-            : `• 30 days: reach ${metricNumber(profileData.reach30d)} · views ${metricNumber(profileData.views30d)} · interactions ${metricNumber(profileData.interactions30d)} · saves ${metricNumber(profileData.saves30d)} · shares ${metricNumber(profileData.shares30d)}`,
+          t(locale, "dash.ig-30d", {
+            reach: metricNumber(profileData.reach30d),
+            views: metricNumber(profileData.views30d),
+            interactions: metricNumber(profileData.interactions30d),
+            saves: metricNumber(profileData.saves30d),
+            shares: metricNumber(profileData.shares30d),
+            reposts: metricNumber(profileData.reposts30d),
+          }),
         );
     }
   }
@@ -133,6 +138,28 @@ function appendVideoDashboard(
   }
 }
 
-function profile(backendDb: BackendDb, platform: string): Record<string, unknown> | null {
-  return backendDb.db.select().from(creatorProfiles).where(eq(creatorProfiles.platform, platform)).get()?.dataJson ?? null;
+/** The metric fields this report reads out of a creator profile snapshot. Every
+ * one is optional and passes through `metricNumber`, so a snapshot written by an
+ * older collector renders as zeroes rather than `undefined` or a crash. */
+type CreatorProfileMetrics = {
+  subscriberCount?: unknown;
+  viewCount?: unknown;
+  videoCount?: unknown;
+  views?: unknown;
+  estimatedMinutesWatched?: unknown;
+  subscribersGained?: unknown;
+  subscribersLost?: unknown;
+  followersCount?: unknown;
+  mediaCount?: unknown;
+  reach30d?: unknown;
+  views30d?: unknown;
+  interactions30d?: unknown;
+  saves30d?: unknown;
+  shares30d?: unknown;
+  reposts30d?: unknown;
+};
+
+function profile(backendDb: BackendDb, platform: string): CreatorProfileMetrics | null {
+  const data = backendDb.db.select().from(creatorProfiles).where(eq(creatorProfiles.platform, platform)).get()?.dataJson;
+  return data != null && typeof data === "object" && !Array.isArray(data) ? (data as CreatorProfileMetrics) : null;
 }

@@ -91,6 +91,11 @@ export function persistPublicationPlan(backendDb: BackendDb, plan: PublicationPl
     tx.delete(siteJobs)
       .where(and(eq(siteJobs.postId, plan.postId), inArray(siteJobs.status, ["queued", "failed"])))
       .run();
+    // Targets whose delivery is settled or actively in flight are not replanned.
+    // "publishing" counts as final on purpose: a worker already holds that job
+    // and may have hit the platform, so rewriting its payload risks a duplicate
+    // post. Re-planning a publication mid-delivery therefore leaves those
+    // targets on the previous plan — visible to the user, and intended.
     const finalTargets = new Set(
       tx
         .select({ target: publishJobs.target })

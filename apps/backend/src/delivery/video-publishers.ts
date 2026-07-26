@@ -1,26 +1,37 @@
+import { InstagramContainerInvalidError, isExpiredInstagramContainer } from "../delivery/social/instagram-container.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { youtubeAccessToken } from "../foundation/external/youtube.js";
-import { ExternalHttpError, formBody, requestJson } from "../foundation/http.js";
+import { formBody, requestJson } from "../foundation/http.js";
 import type { InstagramMetadata, YouTubeMetadata } from "../publishing/video-types.js";
 
 type YouTubeVideo = { id: string };
-type YouTubeVideoStatus = {
-  items?: Array<{
-    status?: {
-      license?: "youtube" | "creativeCommon";
-      embeddable?: boolean;
-      publicStatsViewable?: boolean;
-      selfDeclaredMadeForKids?: boolean;
-      containsSyntheticMedia?: boolean;
-    };
-  }>;
+
+/** Every mutable field of `videos.status` this project ever sets. `videos.update`
+ * clears any field of the selected part that the request omits, so a status edit
+ * has to read these back and resend them verbatim. Adding a field to the type
+ * without adding it here silently resets it on the next schedule cancellation. */
+const PRESERVED_YOUTUBE_STATUS_FIELDS = [
+  "license",
+  "embeddable",
+  "publicStatsViewable",
+  "selfDeclaredMadeForKids",
+  "containsSyntheticMedia",
+] as const;
+
+type YouTubeStatus = {
+  license?: "youtube" | "creativeCommon";
+  embeddable?: boolean;
+  publicStatsViewable?: boolean;
+  selfDeclaredMadeForKids?: boolean;
+  containsSyntheticMedia?: boolean;
 };
+type YouTubeVideoStatus = { items?: Array<{ status?: YouTubeStatus }> };
 type InstagramContainer = { id: string };
 type InstagramStatus = { status_code?: string; status?: string };
 type InstagramPublish = { id: string };
 
 export class InstagramContainerProcessingError extends Error {}
-export class InstagramContainerInvalidError extends Error {}
+export { InstagramContainerInvalidError };
 
 function instagramGraphBase(config: BackendConfig): string {
   const host = config.INSTAGRAM_ACCESS_TOKEN?.startsWith("IG") ? "graph.instagram.com" : "graph.facebook.com";
@@ -92,18 +103,14 @@ export async function keepYouTubeUploadPrivate(config: BackendConfig, videoId: s
     headers: { ...headers, "Content-Type": "application/json; charset=utf-8" },
     // videos.update clears omitted mutable fields in the selected part. Keep
     // the existing status settings and intentionally omit publishAt.
-    body: JSON.stringify({
-      id: videoId,
-      status: {
-        privacyStatus: "private",
-        ...(status.license == null ? {} : { license: status.license }),
-        ...(status.embeddable == null ? {} : { embeddable: status.embeddable }),
-        ...(status.publicStatsViewable == null ? {} : { publicStatsViewable: status.publicStatsViewable }),
-        ...(status.selfDeclaredMadeForKids == null ? {} : { selfDeclaredMadeForKids: status.selfDeclaredMadeForKids }),
-        ...(status.containsSyntheticMedia == null ? {} : { containsSyntheticMedia: status.containsSyntheticMedia }),
-      },
-    }),
+    body: JSON.stringify({ id: videoId, status: { privacyStatus: "private", ...preservedStatusFields(status) } }),
   });
+}
+
+function preservedStatusFields(status: YouTubeStatus): Partial<YouTubeStatus> {
+  return Object.fromEntries(
+    PRESERVED_YOUTUBE_STATUS_FIELDS.filter((field) => status[field] != null).map((field) => [field, status[field]]),
+  );
 }
 
 export async function prepareInstagramReel(config: BackendConfig, publicUrl: string, metadata: InstagramMetadata): Promise<{ id: string }> {
@@ -145,22 +152,9 @@ export async function publishInstagramReel(config: BackendConfig, containerId: s
     // A 400 from media_publish can mean the creation_id died after its last
     // successful status poll. The worker recognises this class and starts a
     // fresh prepare cycle instead of retrying the dead container.
-    if (isInvalidInstagramContainerPublishError(error))
+    if (isExpiredInstagramContainer(error, 400))
       throw new InstagramContainerInvalidError(String(error instanceof Error ? error.message : error));
     throw error;
   }
   return { id: published.id, url: `https://www.instagram.com/reel/${published.id}/` };
-}
-
-function isInvalidInstagramContainerPublishError(error: unknown): boolean {
-  if (!(error instanceof ExternalHttpError) || error.status !== 400) return false;
-  const body = (error.body ?? error.message).toLowerCase();
-  return (
-    body.includes("2207027") ||
-    body.includes("media id is not available") ||
-    body.includes("invalid media id") ||
-    body.includes("invalid container") ||
-    body.includes("creation_id") ||
-    body.includes("container expired")
-  );
 }

@@ -2,6 +2,7 @@ import type { BackendConfig } from "../../foundation/config.js";
 import { externalFetch, redactExternalSecrets, retryAfterSecondsFromHeaders } from "../../foundation/http.js";
 import type { PublishResult } from "../../publishing/errors.js";
 import { HttpPublishError } from "../../publishing/errors.js";
+import { InstagramContainerInvalidError, isExpiredInstagramContainer } from "./instagram-container.js";
 import { payloadMedia } from "./payload.js";
 
 type GraphResponse = {
@@ -12,7 +13,13 @@ type GraphResponse = {
   error?: { code?: number; message?: string };
 };
 
-class InstagramStoryContainerInvalidError extends Error {}
+// Worst-case wall time for one story, spent inside a single worker slot:
+// CONTAINER_ATTEMPTS × (READY_POLLS + PUBLISH_ATTEMPTS) × POLL_DELAY_MS.
+// Keep the product bounded — these loops block every other delivery behind them.
+const POLL_DELAY_MS = 5_000;
+const READY_POLLS = 30;
+const PUBLISH_ATTEMPTS = 5;
+const CONTAINER_ATTEMPTS = 2;
 
 export async function publishInstagramStory(
   payload: Record<string, unknown>,
@@ -28,7 +35,7 @@ export async function publishInstagramStory(
   const publicUrl = media.storyVpsUrl || media.vpsUrl;
   if (!publicUrl) return { ok: false, skipped: true, reason: "missing_public_media_url" };
   let published: GraphResponse | null = null;
-  for (let containerAttempt = 0; containerAttempt < 2 && !published; containerAttempt += 1) {
+  for (let containerAttempt = 0; containerAttempt < CONTAINER_ATTEMPTS && !published; containerAttempt += 1) {
     try {
       const creation = await graphPost(
         config,
@@ -43,8 +50,8 @@ export async function publishInstagramStory(
       await waitForContainer(config, creation.id, fetchImpl);
       published = await publishReadyContainer(config, creation.id, fetchImpl);
     } catch (error) {
-      if (containerAttempt === 0 && isInvalidContainerError(error)) {
-        await delay(5_000);
+      if (containerAttempt < CONTAINER_ATTEMPTS - 1 && isExpiredInstagramContainer(error)) {
+        await delay(POLL_DELAY_MS);
         continue;
       }
       throw error;
@@ -62,44 +69,34 @@ export async function publishInstagramStory(
 }
 
 async function waitForContainer(config: BackendConfig, creationId: string, fetchImpl: typeof fetch): Promise<void> {
-  for (let attempt = 0; attempt < 30; attempt += 1) {
+  for (let attempt = 0; attempt < READY_POLLS; attempt += 1) {
     const status = await graphGet(config, creationId, { fields: "status_code,status" }, fetchImpl);
     const code = status.status_code ?? status.status;
     if (code === "FINISHED") return;
-    if (code === "ERROR" || code === "EXPIRED") throw new InstagramStoryContainerInvalidError(JSON.stringify(status));
-    await delay(5_000);
+    if (code === "ERROR" || code === "EXPIRED") throw new InstagramContainerInvalidError(JSON.stringify(status));
+    await delay(POLL_DELAY_MS);
   }
   throw new Error(`instagram_container_timeout:${creationId}`);
 }
 
 async function publishReadyContainer(config: BackendConfig, creationId: string, fetchImpl: typeof fetch): Promise<GraphResponse> {
-  for (let attempt = 1; attempt <= 5; attempt += 1) {
+  for (let attempt = 1; attempt <= PUBLISH_ATTEMPTS; attempt += 1) {
     try {
       return await graphPost(config, `${config.INSTAGRAM_USER_ID}/media_publish`, { creation_id: creationId }, fetchImpl);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (attempt < 5 && (message.includes("2207027") || message.includes("Media ID is not available"))) {
-        await delay(5_000);
+      // A container that looks dead right after FINISHED is usually Meta's read
+      // replica lagging, so retry in place first; only the last attempt escalates
+      // to the caller's rebuild-the-container path.
+      if (attempt < PUBLISH_ATTEMPTS && isExpiredInstagramContainer(error)) {
+        await delay(POLL_DELAY_MS);
         continue;
       }
-      if (isInvalidContainerError(error)) throw new InstagramStoryContainerInvalidError(message);
+      if (isExpiredInstagramContainer(error)) throw new InstagramContainerInvalidError(message);
       throw error;
     }
   }
   throw new Error("failed_to_publish_instagram_story");
-}
-
-function isInvalidContainerError(error: unknown): boolean {
-  if (error instanceof InstagramStoryContainerInvalidError) return true;
-  const message = String(error instanceof Error ? error.message : error).toLowerCase();
-  return (
-    message.includes("2207027") ||
-    message.includes("media id is not available") ||
-    message.includes("invalid media id") ||
-    message.includes("invalid container") ||
-    message.includes("creation_id") ||
-    message.includes("container expired")
-  );
 }
 
 async function graphPost(

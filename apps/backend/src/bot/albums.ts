@@ -7,8 +7,10 @@ import { pendingAlbums } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { log } from "../foundation/logger.js";
 import { setTelegramPostCard } from "../interfaces/telegram/control-cards.js";
+import { t } from "../interfaces/telegram/i18n/index.js";
 import { importTelegramAlbumMedia } from "../interfaces/telegram/media-ingress.js";
 import { studioServices } from "../studio/services/index.js";
+import { botLocale } from "./i18n.js";
 import { clearPostAdminStateIfCurrent } from "./post-state.js";
 import { draftPreview } from "./preview.js";
 
@@ -16,6 +18,11 @@ import { draftPreview } from "./preview.js";
 // media are collected, then CLAIMED by exactly one worker before finalization.
 const ALBUM_SETTLED = 1;
 const ALBUM_CLAIMED = 2;
+// A failed finalization goes back to SETTLED and is retried once per settle
+// window. Deterministic failures (an expired file_id, a draft deleted mid-flight)
+// would loop forever, so give up after a few tries and tell the sender instead
+// of retrying silently at ~1 Hz.
+const ALBUM_MAX_ATTEMPTS = 5;
 
 type PendingAlbumInput = {
   adminId: number;
@@ -78,6 +85,7 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
       chatId: pendingAlbums.chatId,
       action: pendingAlbums.action,
       draftId: pendingAlbums.draftId,
+      attemptCount: pendingAlbums.attemptCount,
       textRu: pendingAlbums.textRu,
       textEntitiesJson: pendingAlbums.textEntitiesJson,
       mediaJson: pendingAlbums.mediaJson,
@@ -132,15 +140,37 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
         .get();
       if (removed) completed += 1;
     } catch (error) {
-      backendDb.db
-        .update(pendingAlbums)
-        .set({ notified: ALBUM_SETTLED, updatedAt: new Date().toISOString() })
-        .where(and(eq(pendingAlbums.id, row.id), eq(pendingAlbums.notified, ALBUM_CLAIMED)))
-        .run();
-      log("error", "album finalization failed", { album: row.id, error: String(error) });
+      const attempts = row.attemptCount + 1;
+      const exhausted = attempts >= ALBUM_MAX_ATTEMPTS;
+      if (exhausted) {
+        backendDb.db.delete(pendingAlbums).where(eq(pendingAlbums.id, row.id)).run();
+        await notifyAlbumGaveUp(bot, backendDb, row.adminId, row.chatId);
+      } else {
+        backendDb.db
+          .update(pendingAlbums)
+          .set({ notified: ALBUM_SETTLED, attemptCount: attempts, updatedAt: new Date().toISOString() })
+          .where(and(eq(pendingAlbums.id, row.id), eq(pendingAlbums.notified, ALBUM_CLAIMED)))
+          .run();
+      }
+      log(exhausted ? "error" : "warn", "album finalization failed", {
+        album: row.id,
+        attempts,
+        exhausted,
+        error: String(error),
+      });
     }
   }
   return completed;
+}
+
+/** Last word on an album that will never become a draft. Best-effort: a failed
+ * notification must not resurrect the row we just dropped. */
+async function notifyAlbumGaveUp(bot: Bot, backendDb: BackendDb, adminId: number, chatId: number): Promise<void> {
+  try {
+    await bot.api.sendMessage(chatId, t(botLocale(backendDb, adminId), "post.album-failed"));
+  } catch (error) {
+    log("warn", "album give-up notice failed", { chat: chatId, error: String(error) });
+  }
 }
 
 async function refreshDraftControlCard(

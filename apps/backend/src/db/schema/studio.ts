@@ -47,6 +47,9 @@ export const studioMediaAssets = sqliteTable(
   (table) => [
     index("idx_studio_media_assets_owner").on(table.adminId, table.createdAt),
     index("idx_studio_media_assets_hash").on(table.sha256),
+    // Media is content-addressed per owner. The uniqueness is what makes the
+    // import path's "reuse the existing row" lookup safe under concurrency.
+    uniqueIndex("idx_studio_media_assets_owner_hash").on(table.adminId, table.sha256),
   ],
 );
 

@@ -47,6 +47,9 @@ export async function importStudioMediaFile(backendDb: BackendDb, config: Backen
   const localPath = path.join(directory, filename);
   await fs.promises.mkdir(directory, { recursive: true });
   if (!fs.existsSync(localPath)) {
+    // Copy rather than link/rename: callers keep ownership of `input.localPath`
+    // (a bot-api download, a caller temp file), and the chmod below would
+    // otherwise reach through a shared inode into a file that is not ours.
     await fs.promises.copyFile(input.localPath, localPath);
     await fs.promises.chmod(localPath, 0o640);
   }
@@ -56,25 +59,39 @@ export async function importStudioMediaFile(backendDb: BackendDb, config: Backen
     .from(studioMediaAssets)
     .where(and(eq(studioMediaAssets.adminId, adminId), eq(studioMediaAssets.sha256, sha256)))
     .get();
+  // The insert is guarded by the unique (admin_id, sha256) index rather than by
+  // the lookup above: two concurrent imports of one file both miss the select.
+  // `onConflictDoNothing` + re-read makes the loser adopt the winner's row.
+  const inserted = existing
+    ? undefined
+    : backendDb.db
+        .insert(studioMediaAssets)
+        .values({
+          adminId,
+          kind,
+          mimeType: input.contentType || (kind === "video" ? "video/mp4" : "image/jpeg"),
+          filename: safeFilename(input.filename) || filename,
+          localPath,
+          byteSize,
+          sha256,
+          source: input.source,
+          createdAt: now,
+        })
+        .onConflictDoNothing({ target: [studioMediaAssets.adminId, studioMediaAssets.sha256] })
+        .returning()
+        .get();
   const asset =
     existing ??
+    inserted ??
     backendDb.db
-      .insert(studioMediaAssets)
-      .values({
-        adminId,
-        kind,
-        mimeType: input.contentType || (kind === "video" ? "video/mp4" : "image/jpeg"),
-        filename: safeFilename(input.filename) || filename,
-        localPath,
-        byteSize,
-        sha256,
-        source: input.source,
-        createdAt: now,
-      })
-      .returning()
+      .select()
+      .from(studioMediaAssets)
+      .where(and(eq(studioMediaAssets.adminId, adminId), eq(studioMediaAssets.sha256, sha256)))
       .get();
   if (!asset) throw new Error("Media asset could not be stored.");
-  if (!existing)
+  // Only the import that actually created the row announces it: a lost race and
+  // a plain re-upload are both "this asset already exists", not a new import.
+  if (inserted)
     recordDomainEvent(backendDb, {
       ref: `asset:${asset.id}`,
       type: "content.media.imported",

@@ -75,7 +75,10 @@ async function uploadVideo(filePath: string, config: BackendConfig, fetchImpl: t
       form.set("command", "APPEND");
       form.set("media_id", mediaId);
       form.set("segment_index", String(segmentIndex));
-      form.set("media", new Blob([chunk.subarray(0, bytesRead)], { type: "application/octet-stream" }), `segment-${segmentIndex}`);
+      // Copy out of the reusable read buffer: the next iteration overwrites it,
+      // and nothing here guarantees the Blob has finished reading by then.
+      const segment = Buffer.from(chunk.subarray(0, bytesRead));
+      form.set("media", new Blob([segment], { type: "application/octet-stream" }), `segment-${segmentIndex}`);
       const response = await oauthFetch(UPLOAD_URL, config, fetchImpl, { method: "POST", body: form });
       if (!response.ok) throw await responseError(response, `X media APPEND ${segmentIndex}`);
       position += bytesRead;

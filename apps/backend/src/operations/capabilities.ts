@@ -15,10 +15,17 @@ const MEDIA_TEST_CASES = [
   ["T09", "videos_pictures", "Videos + pictures", "Send mixed photo/video album with caption."],
 ] as const;
 
+// The curated subset a media-format test is graded against — deliberately not
+// every target in TARGETS (stories and X are hand-driven and would keep every
+// case "pending"). Validated against TARGETS at seed time so a renamed or
+// removed target fails loudly here instead of quietly narrowing the grade.
 const expectedTargets = ["telegram", "site_ru", "site_en", "threads_ru"];
 
 /** Operations fixture registry for supported delivery capabilities. */
 export function seedCapabilities(backendDb: BackendDb): void {
+  const known = new Set(TARGETS.map(([target]) => target as string));
+  const unknown = expectedTargets.filter((target) => !known.has(target));
+  if (unknown.length) throw new Error(`capability fixture references unknown targets: ${unknown.join(", ")}`);
   const now = new Date().toISOString();
   backendDb.db.transaction((tx) => {
     for (const [testId, formatKey, title, recipe] of MEDIA_TEST_CASES) {

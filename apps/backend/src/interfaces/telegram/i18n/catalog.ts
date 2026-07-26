@@ -114,6 +114,7 @@ const en = {
   "post.dialog-prompt": "📝 Send text with optional photos or video for a new post.",
   "post.album-need-action": "Choose 📝 New post or an edit action before sending an album.",
   "post.album-received": "Album received. I will create or update the draft in a few seconds.",
+  "post.album-failed": "I could not build a draft from that album. Please send it again.",
   "post.value-error": "I couldn't use that value: {error}\n\nPlease try again or tap Cancel.",
   "post.need-new-post": "Choose 📝 New post from the menu before sending a new publication.",
   // Video conversation + scheduling
@@ -291,6 +292,8 @@ const en = {
   "dash.profile-not-synced": "• Profile data has not synced yet.",
   "dash.followers-line": "• Followers: {n}",
   "dash.total-reels": "• Total Reels/posts: {n}",
+  "dash.ig-30d":
+    "• 30 days: reach {reach} · views {views} · interactions {interactions} · saves {saves} · shares {shares} · reposts {reposts}",
   "dash.yt-summary": "YouTube: {views} views · {likes} likes",
   "dash.ig-summary": "Instagram: {views} views · {likes} likes · {comments} comments",
   "dash.subs-suffix": " · {n} subscribers",
@@ -487,6 +490,7 @@ const ru = {
   "post.dialog-prompt": "📝 Пришлите текст с опциональным фото или видео для нового поста.",
   "post.album-need-action": "Сначала выберите «📝 Новый пост» или действие редактирования.",
   "post.album-received": "Альбом получен. Создам или обновлю черновик через несколько секунд.",
+  "post.album-failed": "Не удалось собрать черновик из этого альбома. Пришлите его ещё раз.",
   "post.value-error": "Не удалось обработать значение: {error}\n\nПопробуйте ещё раз или нажмите «Отмена».",
   "post.need-new-post": "Сначала выберите «📝 Новый пост» в меню.",
   // Video conversation + scheduling
@@ -665,6 +669,8 @@ const ru = {
   "dash.profile-not-synced": "• Данные профиля еще не синхронизированы.",
   "dash.followers-line": "• Подписчиков: {n}",
   "dash.total-reels": "• Всего Reels/публикаций: {n}",
+  "dash.ig-30d":
+    "• 30 дней: охват {reach} · просмотры {views} · взаимодействия {interactions} · сохранения {saves} · пересылки {shares} · репосты {reposts}",
   "dash.yt-summary": "YouTube: {views} просмотров · {likes} лайков",
   "dash.ig-summary": "Instagram: {views} просмотров · {likes} лайков · {comments} комментариев",
   "dash.subs-suffix": " · {n} подписчиков",

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -14,13 +14,17 @@ import {
 } from "../../../backend/src/db/schema.js";
 import { loadPublicSiteFeed } from "../../../backend/src/public/site-read-model.js";
 
-let backendDb: BackendDb | undefined;
+let backendDb: BackendDb;
 
-afterEach(() => backendDb?.close());
+// Opened per test rather than inside each `it`: a failure before the assignment
+// used to leave the previous test's handle in place and close it twice.
+beforeEach(() => {
+  backendDb = openBackendDb(":memory:");
+});
+afterEach(() => backendDb.close());
 
 describe("Drizzle site feed", () => {
   it("reads published localized posts and Telegram views from SQLite without feed.json", () => {
-    backendDb = openBackendDb(":memory:");
     const now = new Date().toISOString();
     backendDb.db.insert(publications).values({ postId: 7, status: "published", createdAt: now, updatedAt: now }).run();
     backendDb.db
@@ -106,7 +110,6 @@ describe("Drizzle site feed", () => {
   });
 
   it("does not expose scheduled or disabled locales", () => {
-    backendDb = openBackendDb(":memory:");
     const now = new Date().toISOString();
     backendDb.db.insert(publications).values({ postId: 8, status: "scheduled", createdAt: now, updatedAt: now }).run();
     backendDb.db
@@ -121,7 +124,6 @@ describe("Drizzle site feed", () => {
   });
 
   it("maps published Telegram media IDs to the deterministic site media manifest", () => {
-    backendDb = openBackendDb(":memory:");
     const now = new Date().toISOString();
     backendDb.db.insert(publications).values({ postId: 9, status: "published", createdAt: now, updatedAt: now }).run();
     backendDb.db

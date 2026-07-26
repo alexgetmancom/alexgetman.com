@@ -395,6 +395,31 @@ describe("Telegram controller flow", () => {
     expect(backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM drafts").get()).toEqual({ count: 1 });
     expect((backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM pending_albums").get() as { count: number }).count).toBe(0);
   });
+
+  it("gives up on an album that keeps failing instead of retrying it forever", async () => {
+    const db = openBackendDb(":memory:");
+    backendDb = db;
+    db.sqlite
+      .prepare(`INSERT INTO pending_albums(id,admin_id,chat_id,media_group_id,action,draft_id,text_ru,text_entities_json,media_json,notified,attempt_count,updated_at)
+      VALUES ('doomed',42,42,'group','edit_ru',4242,'Caption','[]',?,1,0,'2000-01-01T00:00:00.000Z')`)
+      .run(JSON.stringify([{ type: "photo", file_id: "one" }]));
+    const sendMessage = mock(async () => ({ message_id: 1, date: 1, chat: { id: 42, type: "private" as const } }));
+    const fakeBot = { api: { sendMessage } } as unknown as Bot;
+    const config = loadConfig({ CONTROLLER_ALBUM_SETTLE_SECONDS: "1" });
+    const attempts = () =>
+      (db.sqlite.prepare("SELECT attempt_count AS n FROM pending_albums WHERE id='doomed'").get() as { n: number } | null)?.n ?? null;
+
+    // The draft id does not exist, so finalization fails deterministically.
+    for (let run = 1; run <= 4; run += 1) {
+      expect(await finalizePendingAlbums(fakeBot, db, config)).toBe(0);
+      expect(attempts()).toBe(run);
+      db.sqlite.prepare("UPDATE pending_albums SET updated_at='2000-01-01T00:00:00.000Z'").run();
+    }
+    expect(await finalizePendingAlbums(fakeBot, db, config)).toBe(0);
+    expect(attempts()).toBeNull();
+    expect((db.sqlite.prepare("SELECT COUNT(*) AS count FROM pending_albums").get() as { count: number }).count).toBe(0);
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("Telegram entity HTML", () => {
