@@ -68,6 +68,26 @@ jobs:
           bun build apps/backend/src/runtime/docker-entrypoint.ts --outdir entrypoint --target bun
           test -f entrypoint/docker-entrypoint.js
           grep -q '"/app/entrypoint/docker-entrypoint.js"' apps/backend/Dockerfile
+      - name: Build immutable backend artifacts
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          DATA_DIR=/data bun run build
+          bun build apps/web/server.ts --outdir runtime --target bun --splitting --minify --sourcemap=external
+          bun build apps/backend/src/cli.ts --outdir ops --target bun --minify --sourcemap=external
+          bun build apps/backend/src/runtime/docker-entrypoint.ts --outdir entrypoint --target bun --minify --sourcemap=external
+      - name: Upload immutable backend artifacts
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-build-${{ github.sha }}
+          path: |
+            dist
+            runtime
+            ops
+            entrypoint
+            apps/backend/drizzle
+          if-no-files-found: error
+          retention-days: 1
 
   deployment-status-on-ci-failure:
     name: Production deployment status on CI failure
