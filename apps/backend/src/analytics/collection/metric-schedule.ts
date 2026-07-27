@@ -43,7 +43,8 @@ export function ensureMetricSchedule(backendDb: BackendDb, targets: readonly str
   });
 }
 
-export function dueMetricTasks(backendDb: BackendDb, config: BackendConfig): MetricTask[] {
+export function dueMetricTasks(backendDb: BackendDb, config: BackendConfig, targets: readonly string[]): MetricTask[] {
+  if (targets.length === 0) return [];
   const rows = backendDb.db
     .select({
       postKey: metricSchedule.postKey,
@@ -62,6 +63,7 @@ export function dueMetricTasks(backendDb: BackendDb, config: BackendConfig): Met
       and(
         isNull(metricSchedule.frozenAt),
         eq(postTargets.status, "published"),
+        inArray(metricSchedule.target, [...targets]),
         ...(config.ENABLE_X_METRICS ? [] : [notInArray(metricSchedule.target, [...PAID_METRIC_TARGETS])]),
         or(isNull(metricSchedule.nextCheckAt), lte(metricSchedule.nextCheckAt, new Date().toISOString())),
       ),

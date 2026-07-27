@@ -118,7 +118,47 @@ describe("metrics cycle", () => {
           },
         ])
         .run();
-      expect(dueMetricTasks(backendDb, loadConfig({ MAX_METRIC_TASKS_PER_CYCLE: "1" }))[0]?.postKey).toBe("post:old");
+      expect(dueMetricTasks(backendDb, loadConfig({ MAX_METRIC_TASKS_PER_CYCLE: "1" }), ["threads_ru"])[0]?.postKey).toBe("post:old");
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("does not let schedules without collectors block supported targets", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      seedPublishedPost(backendDb, "post:stale", "site_en");
+      seedPublishedPost(backendDb, "post:current", "threads_ru");
+      const now = Date.now();
+      backendDb.db
+        .insert(metricSchedule)
+        .values({
+          postKey: "post:stale",
+          target: "site_en",
+          nextCheckAt: new Date(now - 60_000).toISOString(),
+          updatedAt: new Date(now - 60_000).toISOString(),
+        })
+        .run();
+
+      const checked = await runMetricsCycle(loadConfig({ MAX_METRIC_TASKS_PER_CYCLE: "1" }), backendDb, {
+        threads_ru: async () => ({ metrics: { views: 42 }, source: "test_api", raw: null }),
+      });
+
+      expect(checked).toBe(1);
+      expect(
+        backendDb.db
+          .select({ postKey: postMetrics.postKey, value: postMetrics.value })
+          .from(postMetrics)
+          .where(eq(postMetrics.postKey, "post:current"))
+          .get(),
+      ).toEqual({ postKey: "post:current", value: 42 });
+      expect(
+        backendDb.db
+          .select({ checkCount: metricSchedule.checkCount })
+          .from(metricSchedule)
+          .where(eq(metricSchedule.postKey, "post:stale"))
+          .get(),
+      ).toEqual({ checkCount: 0 });
     } finally {
       backendDb.close();
     }
