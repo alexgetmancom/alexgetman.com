@@ -17,7 +17,7 @@ function videoAssetId(db: BackendDb): number {
   const [row] = db.db
     .insert(studioMediaAssets)
     .values({
-      adminId: 42,
+      actorId: 42,
       kind: "video",
       mimeType: "video/mp4",
       filename: "clip.mp4",

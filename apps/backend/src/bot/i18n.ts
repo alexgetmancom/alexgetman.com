@@ -5,8 +5,8 @@ import type { StudioLocale } from "../foundation/locale.js";
 
 export type BotLocale = StudioLocale;
 
-export function botLocale(backendDb: BackendDb, adminId: number): BotLocale {
-  return backendDb.db.select({ value: botUiSettings.locale }).from(botUiSettings).where(eq(botUiSettings.adminId, adminId)).get()?.value ===
+export function botLocale(backendDb: BackendDb, actorId: number): BotLocale {
+  return backendDb.db.select({ value: botUiSettings.locale }).from(botUiSettings).where(eq(botUiSettings.actorId, actorId)).get()?.value ===
     "ru"
     ? "ru"
     : "en";

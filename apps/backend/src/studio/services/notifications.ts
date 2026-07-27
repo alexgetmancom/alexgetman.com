@@ -55,7 +55,7 @@ function isVisibleTo(backendDb: BackendDb, ref: string | null, actorId: number):
       backendDb.db
         .select({ id: drafts.id })
         .from(drafts)
-        .where(and(eq(drafts.id, id), eq(drafts.adminId, actorId)))
+        .where(and(eq(drafts.id, id), eq(drafts.actorId, actorId)))
         .get() != null
     );
   }
@@ -66,7 +66,7 @@ function isVisibleTo(backendDb: BackendDb, ref: string | null, actorId: number):
       backendDb.db
         .select({ id: videoDrafts.id })
         .from(videoDrafts)
-        .where(and(eq(videoDrafts.id, id), eq(videoDrafts.adminId, actorId)))
+        .where(and(eq(videoDrafts.id, id), eq(videoDrafts.actorId, actorId)))
         .get() != null
     );
   }
@@ -86,7 +86,7 @@ function ownsPost(backendDb: BackendDb, postId: number, actorId: number): boolea
     backendDb.db
       .select({ id: drafts.id })
       .from(drafts)
-      .where(and(eq(drafts.postId, postId), eq(drafts.adminId, actorId)))
+      .where(and(eq(drafts.postId, postId), eq(drafts.actorId, actorId)))
       .get() != null
   );
 }

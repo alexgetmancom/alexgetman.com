@@ -72,7 +72,7 @@ describe("video publication queue", () => {
       const asset = backendDb.db
         .insert(studioMediaAssets)
         .values({
-          adminId: 42,
+          actorId: 42,
           kind: "video",
           mimeType: "video/mp4",
           filename: "source.mp4",

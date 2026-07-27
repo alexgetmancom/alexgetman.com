@@ -92,7 +92,7 @@ describe("openBackendDb", () => {
     try {
       const now = new Date().toISOString();
       backendDb.sqlite
-        .prepare("INSERT INTO video_drafts (admin_id, label, asset_key, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+        .prepare("INSERT INTO video_drafts (actor_id, label, asset_key, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
         .run(1, "", "asset", "draft", now, now);
       backendDb.sqlite
         .prepare(
@@ -133,6 +133,20 @@ describe("openBackendDb", () => {
     fixture.exec(
       "DROP TABLE draft_entity_candidates; DROP TABLE draft_sources; DROP TABLE post_entity_links; DROP TABLE knowledge_entity_aliases; DROP TABLE knowledge_entities; DROP TABLE post_sources; DROP TABLE site_pageviews; DROP TABLE video_bot_sessions; DROP TABLE video_jobs; DROP TABLE video_targets; DROP TABLE video_drafts; DROP TABLE analytics_sync; DROP TABLE creator_profiles; DROP TABLE creator_profile_snapshots; DROP TABLE video_metric_snapshots; DROP TABLE video_metric_schedule; DROP TABLE social_comments; DROP TABLE admin_state; CREATE TABLE admin_state (admin_id integer PRIMARY KEY NOT NULL, action text, draft_id integer, updated_at text NOT NULL)",
     );
+    // The fixture is built by the current migration chain and then replayed from
+    // the baseline, so every column 0030 renames has to be put back to its
+    // pre-0030 spelling first. That is also what a restored production dump
+    // looks like, which is the whole point of this test.
+    for (const table of [
+      "drafts",
+      "pending_albums",
+      "studio_notification_settings",
+      "studio_notification_jobs",
+      "studio_media_assets",
+      "bot_settings",
+      "bot_ui_settings",
+    ])
+      fixture.exec(`ALTER TABLE ${table} RENAME COLUMN actor_id TO admin_id`);
     fixture.close();
 
     const legacy = new Database(dbPath) as unknown as Parameters<typeof baselineDrizzleMigrations>[0];

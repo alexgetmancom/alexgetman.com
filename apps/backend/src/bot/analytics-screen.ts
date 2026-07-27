@@ -138,14 +138,14 @@ export async function showAnalyticsDashboard(
   section: AnalyticsSection,
   days: 1 | 7 | 30,
 ): Promise<void> {
-  const adminId = Number(ctx.from?.id);
-  const locale = botLocale(backendDb, adminId);
+  const actorId = Number(ctx.from?.id);
+  const locale = botLocale(backendDb, actorId);
   const dashboard = studioServices(backendDb, config).analytics.dashboard(section, days, locale);
   const keyboard = analyticsKeyboard(config, locale, section, days);
   await ctx.editMessageText({ html: dashboard.richHtml }, { reply_markup: keyboard });
   const messageId = ctx.callbackQuery?.message?.message_id;
-  if (section !== "audience" && Number.isSafeInteger(adminId) && messageId && ctx.chat?.id)
-    setTelegramAnalyticsDashboard(backendDb, adminId, Number(ctx.chat.id), messageId, section, days);
+  if (section !== "audience" && Number.isSafeInteger(actorId) && messageId && ctx.chat?.id)
+    setTelegramAnalyticsDashboard(backendDb, actorId, Number(ctx.chat.id), messageId, section, days);
 }
 
 /** Refreshes only the currently open dashboard for each owner. The interface
@@ -155,7 +155,7 @@ export async function refreshTelegramAnalyticsDashboards(bot: Bot, backendDb: Ba
   const results = await Promise.all(
     telegramAnalyticsDashboards(backendDb).map(async (card) => {
       const section = card.section === "overview" && !showOverview(config) ? defaultAnalyticsSection(config) : card.section;
-      const locale = botLocale(backendDb, card.adminId);
+      const locale = botLocale(backendDb, card.actorId);
       const dashboard = analytics.dashboard(section, card.days, locale);
       try {
         await bot.api.editMessageText(

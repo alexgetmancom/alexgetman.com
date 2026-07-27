@@ -41,7 +41,7 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
       return backendDb.db
         .select()
         .from(videoDrafts)
-        .where(eq(videoDrafts.adminId, actorId))
+        .where(eq(videoDrafts.actorId, actorId))
         .orderBy(desc(videoDrafts.updatedAt))
         .limit(limit)
         .all();
@@ -183,7 +183,7 @@ function scheduleVideoReminders(
   label: string,
   schedule: Partial<Record<VideoTarget, Date>>,
 ): void {
-  const row = backendDb.db.select().from(studioNotificationSettings).where(eq(studioNotificationSettings.adminId, actorId)).get();
+  const row = backendDb.db.select().from(studioNotificationSettings).where(eq(studioNotificationSettings.actorId, actorId)).get();
   const preference = {
     remindersEnabled: row?.remindersEnabled !== 0,
     reminderMinutes: row?.reminderMinutes ?? 5,
@@ -192,7 +192,7 @@ function scheduleVideoReminders(
   for (const [target, publishAt] of Object.entries(schedule) as Array<[VideoTarget, Date | undefined]>) {
     if (publishAt)
       scheduleReminder(backendDb, {
-        adminId: actorId,
+        actorId: actorId,
         ref: `video:${videoDraftId}`,
         kind: `video.${target}`,
         publishAt,
@@ -205,6 +205,6 @@ function scheduleVideoReminders(
 
 function requireOwnedVideo(backendDb: BackendDb, actorId: number, videoDraftId: number) {
   const draft = getVideoDraft(backendDb, videoDraftId);
-  if (draft.adminId !== actorId) throw new StudioError("err.video-not-yours");
+  if (draft.actorId !== actorId) throw new StudioError("err.video-not-yours");
   return draft;
 }

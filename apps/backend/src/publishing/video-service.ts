@@ -15,7 +15,7 @@ import { VIDEO_TARGETS } from "./video-types.js";
 
 export function createVideoDraft(
   backendDb: BackendDb,
-  adminId: number,
+  actorId: number,
   source: string | { studioMediaAssetId: number },
   retentionHours: number,
 ): number {
@@ -24,7 +24,7 @@ export function createVideoDraft(
   const row = backendDb.db
     .insert(videoDrafts)
     .values({
-      adminId,
+      actorId,
       assetKey: typeof source === "string" ? source : `studio-asset-${source.studioMediaAssetId}`,
       ...(typeof source === "string" ? {} : { studioMediaAssetId: source.studioMediaAssetId }),
       status: "editing",

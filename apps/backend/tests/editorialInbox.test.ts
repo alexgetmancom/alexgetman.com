@@ -22,7 +22,7 @@ describe("daily editorial inbox", () => {
         })
         .run();
       const sent: string[] = [];
-      const bot = { api: { sendMessage: async (_adminId: number, text: string) => void sent.push(text) } } as any;
+      const bot = { api: { sendMessage: async (_actorId: number, text: string) => void sent.push(text) } } as any;
       const fetchImpl = async () =>
         new Response(
           JSON.stringify({

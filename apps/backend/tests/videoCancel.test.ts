@@ -167,8 +167,8 @@ describe("videoService.cancel", () => {
     backendDb.db
       .insert(studioNotificationJobs)
       .values([
-        { adminId: 42, ref: `video:${draftId}`, kind: "video.reminder", runAt: now, status: "queued", createdAt: now, updatedAt: now },
-        { adminId: 42, ref: "video:999", kind: "video.reminder", runAt: now, status: "queued", createdAt: now, updatedAt: now },
+        { actorId: 42, ref: `video:${draftId}`, kind: "video.reminder", runAt: now, status: "queued", createdAt: now, updatedAt: now },
+        { actorId: 42, ref: "video:999", kind: "video.reminder", runAt: now, status: "queued", createdAt: now, updatedAt: now },
       ])
       .run();
 

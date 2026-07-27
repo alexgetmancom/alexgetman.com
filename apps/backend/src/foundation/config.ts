@@ -72,6 +72,19 @@ const envSchema = z
           .filter((value) => Number.isSafeInteger(value) && value > 0),
       ),
     CONTROLLER_ADMIN_IDS: z.string().optional(),
+    /** The Studio roster proper. ADMIN_IDS predates it and means "Telegram user
+     * ids the bot answers to"; leaving this unset keeps that list as the roster,
+     * which is what every existing deployment relies on. Setting it lets a
+     * deployment own work without granting anyone Telegram access. */
+    STUDIO_ACTOR_IDS: z
+      .string()
+      .default("")
+      .transform((value) =>
+        value
+          .split(",")
+          .map((part) => Number(part.trim()))
+          .filter((value) => Number.isSafeInteger(value) && value > 0),
+      ),
     CHANNEL_USERNAME: z.string().default("alexgetmancom"),
     PIPELINE_BASELINE_MESSAGE_ID: z.coerce.number().int().default(422),
     METRICS_REFRESH_INTERVAL_SECONDS: z.coerce.number().int().positive().default(10),
@@ -235,11 +248,15 @@ const envSchema = z
         message: `PUBLISH_JOB_TIMEOUT_SECONDS (${env.PUBLISH_JOB_TIMEOUT_SECONDS}s) must be shorter than PUBLISH_LOCK_TIMEOUT_SECONDS (${env.PUBLISH_LOCK_TIMEOUT_SECONDS}s)`,
       });
     }
-    if (env.MCP_STUDIO_ACTOR_ID && !env.ADMIN_IDS.includes(env.MCP_STUDIO_ACTOR_ID)) {
+    // The MCP token authorizes an actor, so that actor has to be on the roster.
+    // It is not required to be a Telegram admin: a deployment that lists
+    // STUDIO_ACTOR_IDS can run the Studio with the bot switched off entirely.
+    const roster = env.STUDIO_ACTOR_IDS.length > 0 ? env.STUDIO_ACTOR_IDS : env.ADMIN_IDS;
+    if (env.MCP_STUDIO_ACTOR_ID && !roster.includes(env.MCP_STUDIO_ACTOR_ID)) {
       context.addIssue({
         code: "custom",
         path: ["MCP_STUDIO_ACTOR_ID"],
-        message: "MCP_STUDIO_ACTOR_ID must belong to ADMIN_IDS",
+        message: "MCP_STUDIO_ACTOR_ID must belong to STUDIO_ACTOR_IDS (or ADMIN_IDS when that is the roster)",
       });
     }
   });

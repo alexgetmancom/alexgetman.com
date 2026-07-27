@@ -31,8 +31,8 @@ export function queueService(backendDb: BackendDb) {
       const upcoming: StudioQueueItem[] = [];
       const draftItems: StudioQueueItem[] = [];
       const attention: StudioAttentionItem[] = [];
-      const postDrafts = backendDb.db.select().from(drafts).where(eq(drafts.adminId, actorId)).all();
-      const videos = backendDb.db.select().from(videoDrafts).where(eq(videoDrafts.adminId, actorId)).all();
+      const postDrafts = backendDb.db.select().from(drafts).where(eq(drafts.actorId, actorId)).all();
+      const videos = backendDb.db.select().from(videoDrafts).where(eq(videoDrafts.actorId, actorId)).all();
 
       for (const draft of postDrafts) {
         const label = shorten(draft.textRu.split("\n")[0]?.trim() || `Post #${draft.id}`);

@@ -20,9 +20,9 @@ export function startTelegramWorkers(config: BackendConfig, backendDb: BackendDb
     }),
     startLoop("telegram-events", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
       const events = await consumeTelegramEvents(backendDb, bot, config);
-      const adminId = config.ADMIN_IDS[0];
+      const actorId = config.ADMIN_IDS[0];
       const alerts = await deliverPendingAlerts(config, backendDb, {
-        ...(adminId === undefined ? {} : { sendAlert: async (text) => void (await bot.api.sendMessage(adminId, text)) }),
+        ...(actorId === undefined ? {} : { sendAlert: async (text) => void (await bot.api.sendMessage(actorId, text)) }),
       });
       const weeklySummary = await sendWeeklyAnalyticsSummary(config, backendDb, bot);
       const editorialInbox = await sendDailyEditorialInbox(config, backendDb, bot);

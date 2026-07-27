@@ -10,7 +10,7 @@ import { botLocale } from "./i18n.js";
 /** Telegram renderer over the transport-free Studio progress state. */
 export function postProgress(backendDb: BackendDb, draftId: number, details = false): { text: string; keyboard: InlineKeyboard } {
   const state = postProgressState(backendDb, draftId);
-  return renderPostProgress(state, botLocale(backendDb, state.adminId), details);
+  return renderPostProgress(state, botLocale(backendDb, state.actorId), details);
 }
 
 export function renderPostProgress(

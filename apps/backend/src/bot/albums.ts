@@ -25,7 +25,7 @@ const ALBUM_CLAIMED = 2;
 const ALBUM_MAX_ATTEMPTS = 5;
 
 type PendingAlbumInput = {
-  adminId: number;
+  actorId: number;
   chatId: number;
   mediaGroupId: string;
   text: string;
@@ -36,7 +36,7 @@ type PendingAlbumInput = {
 };
 
 export function appendPendingAlbum(backendDb: BackendDb, input: PendingAlbumInput): boolean {
-  const id = `${input.adminId}:${input.chatId}:${input.mediaGroupId}:${input.action ?? "draft"}:${input.draftId ?? ""}`;
+  const id = `${input.actorId}:${input.chatId}:${input.mediaGroupId}:${input.action ?? "draft"}:${input.draftId ?? ""}`;
   const row = backendDb.db
     .select({ mediaJson: pendingAlbums.mediaJson, textRu: pendingAlbums.textRu, textEntitiesJson: pendingAlbums.textEntitiesJson })
     .from(pendingAlbums)
@@ -47,7 +47,7 @@ export function appendPendingAlbum(backendDb: BackendDb, input: PendingAlbumInpu
   const now = new Date().toISOString();
   const values = {
     id,
-    adminId: input.adminId,
+    actorId: input.actorId,
     chatId: input.chatId,
     mediaGroupId: input.mediaGroupId,
     action: input.action,
@@ -81,7 +81,7 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
   const rows = backendDb.db
     .select({
       id: pendingAlbums.id,
-      adminId: pendingAlbums.adminId,
+      actorId: pendingAlbums.actorId,
       chatId: pendingAlbums.chatId,
       action: pendingAlbums.action,
       draftId: pendingAlbums.draftId,
@@ -104,20 +104,20 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
       .get();
     if (!claim) continue;
     try {
-      const media = await importTelegramAlbumMedia(bot, backendDb, config, row.adminId, parseArrayValue(row.mediaJson));
+      const media = await importTelegramAlbumMedia(bot, backendDb, config, row.actorId, parseArrayValue(row.mediaJson));
       const draftId = row.draftId;
       const isEdit = row.action === "edit_ru" || row.action === "edit_en";
       const isMediaReplacement = row.action === "replace_ru_media" || row.action === "replace_en_media";
       if ((isEdit || isMediaReplacement) && draftId) {
-        studioServices(backendDb, config).posts.edit(row.adminId, draftId, {
+        studioServices(backendDb, config).posts.edit(row.actorId, draftId, {
           locale: row.action === "edit_ru" || row.action === "replace_ru_media" ? "ru" : "en",
           text: isMediaReplacement ? "" : row.textRu,
           entities: isMediaReplacement ? [] : parseArrayValue(row.textEntitiesJson),
           media,
           ...(isMediaReplacement ? { replaceMediaOnly: true } : {}),
         });
-        clearPostAdminStateIfCurrent(backendDb, row.adminId, row.action, draftId);
-        await refreshDraftControlCard(bot, backendDb, config, row.adminId, draftId, row.chatId);
+        clearPostAdminStateIfCurrent(backendDb, row.actorId, row.action, draftId);
+        await refreshDraftControlCard(bot, backendDb, config, row.actorId, draftId, row.chatId);
       } else {
         const text = row.textRu;
         let textEn = text;
@@ -126,12 +126,12 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
         } catch {
           textEn = "";
         }
-        const created = studioServices(backendDb, config).publications.create(row.adminId, {
+        const created = studioServices(backendDb, config).publications.create(row.actorId, {
           kind: "post",
           message: { text, textEn, media, entities: parseArrayValue(row.textEntitiesJson) },
         }).id;
-        await refreshDraftControlCard(bot, backendDb, config, row.adminId, created, row.chatId);
-        clearPostAdminStateIfCurrent(backendDb, row.adminId, row.action, row.draftId);
+        await refreshDraftControlCard(bot, backendDb, config, row.actorId, created, row.chatId);
+        clearPostAdminStateIfCurrent(backendDb, row.actorId, row.action, row.draftId);
       }
       const removed = backendDb.db
         .delete(pendingAlbums)
@@ -144,7 +144,7 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
       const exhausted = attempts >= ALBUM_MAX_ATTEMPTS;
       if (exhausted) {
         backendDb.db.delete(pendingAlbums).where(eq(pendingAlbums.id, row.id)).run();
-        await notifyAlbumGaveUp(bot, backendDb, row.adminId, row.chatId);
+        await notifyAlbumGaveUp(bot, backendDb, row.actorId, row.chatId);
       } else {
         backendDb.db
           .update(pendingAlbums)
@@ -165,9 +165,9 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
 
 /** Last word on an album that will never become a draft. Best-effort: a failed
  * notification must not resurrect the row we just dropped. */
-async function notifyAlbumGaveUp(bot: Bot, backendDb: BackendDb, adminId: number, chatId: number): Promise<void> {
+async function notifyAlbumGaveUp(bot: Bot, backendDb: BackendDb, actorId: number, chatId: number): Promise<void> {
   try {
-    await bot.api.sendMessage(chatId, t(botLocale(backendDb, adminId), "post.album-failed"));
+    await bot.api.sendMessage(chatId, t(botLocale(backendDb, actorId), "post.album-failed"));
   } catch (error) {
     log("warn", "album give-up notice failed", { chat: chatId, error: String(error) });
   }
@@ -177,7 +177,7 @@ async function refreshDraftControlCard(
   bot: Bot,
   backendDb: BackendDb,
   config: BackendConfig,
-  _adminId: number,
+  _actorId: number,
   draftId: number,
   chatId: number,
 ): Promise<void> {

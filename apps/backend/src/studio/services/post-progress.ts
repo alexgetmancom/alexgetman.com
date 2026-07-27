@@ -7,7 +7,7 @@ import { parseTargets } from "../../publishing/targets.js";
 export type PostProgressStatus = "published" | "publishing" | "failed" | "waiting" | "cancelled";
 export type PostProgressState = {
   draftId: number;
-  adminId: number;
+  actorId: number;
   targets: Array<{ target: string; label: string; locale: "ru" | "en"; status: PostProgressStatus; error: string | null }>;
   counts: Record<PostProgressStatus, number>;
 };
@@ -30,7 +30,7 @@ export function postProgressState(backendDb: BackendDb, draftId: number): PostPr
   });
   const counts: Record<PostProgressStatus, number> = { published: 0, publishing: 0, failed: 0, waiting: 0, cancelled: 0 };
   for (const item of items) counts[item.status] += 1;
-  return { draftId, adminId: draft.adminId, targets: items, counts };
+  return { draftId, actorId: draft.actorId, targets: items, counts };
 }
 
 function normalize(status: string, error?: string | null): { status: PostProgressStatus; error: string | null } {

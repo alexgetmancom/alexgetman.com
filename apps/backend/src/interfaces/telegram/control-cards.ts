@@ -92,16 +92,16 @@ export function telegramVideoCard(backendDb: BackendDb, videoDraftId: number): B
  * can refresh it without sending the owner a new message every hour. */
 export function setTelegramAnalyticsDashboard(
   backendDb: BackendDb,
-  adminId: number,
+  actorId: number,
   chatId: number,
   messageId: number,
   section: AnalyticsDashboardCard["section"],
   days: AnalyticsDashboardCard["days"],
 ): void {
-  setBinding(backendDb, "analytics_dashboard", adminId, chatId, messageId, { section, days });
+  setBinding(backendDb, "analytics_dashboard", actorId, chatId, messageId, { section, days });
 }
 
-export function telegramAnalyticsDashboards(backendDb: BackendDb): Array<AnalyticsDashboardCard & { adminId: number }> {
+export function telegramAnalyticsDashboards(backendDb: BackendDb): Array<AnalyticsDashboardCard & { actorId: number }> {
   return backendDb.db
     .select()
     .from(interfaceBindings)
@@ -111,18 +111,18 @@ export function telegramAnalyticsDashboards(backendDb: BackendDb): Array<Analyti
       const section = binding.stateJson?.section;
       const days = binding.stateJson?.days;
       if ((section !== "overview" && section !== "posts" && section !== "video") || (days !== 1 && days !== 7 && days !== 30)) return [];
-      return [{ adminId: binding.entityId, chatId: Number(binding.conversationId), messageId: Number(binding.messageId), section, days }];
+      return [{ actorId: binding.entityId, chatId: Number(binding.conversationId), messageId: Number(binding.messageId), section, days }];
     });
 }
 
-export function clearTelegramAnalyticsDashboard(backendDb: BackendDb, adminId: number): void {
+export function clearTelegramAnalyticsDashboard(backendDb: BackendDb, actorId: number): void {
   backendDb.db
     .delete(interfaceBindings)
     .where(
       and(
         eq(interfaceBindings.interfaceId, TELEGRAM),
         eq(interfaceBindings.entityType, "analytics_dashboard"),
-        eq(interfaceBindings.entityId, adminId),
+        eq(interfaceBindings.entityId, actorId),
       ),
     )
     .run();

@@ -4,19 +4,19 @@ import { adminState } from "../db/schema.js";
 
 type PostAdminState = { action: string | null; draft_id: number | null; control_message_id: number | null };
 
-export function getPostAdminState(backendDb: BackendDb, adminId: number): PostAdminState | null {
+export function getPostAdminState(backendDb: BackendDb, actorId: number): PostAdminState | null {
   return (
     backendDb.db
       .select({ action: adminState.action, draft_id: adminState.draftId, control_message_id: adminState.controlMessageId })
       .from(adminState)
-      .where(eq(adminState.adminId, adminId))
+      .where(eq(adminState.actorId, actorId))
       .get() ?? null
   );
 }
 
 export function setPostAdminState(
   backendDb: BackendDb,
-  adminId: number,
+  actorId: number,
   action: string | null = null,
   draftId: number | null = null,
   controlMessageId: number | null = null,
@@ -24,19 +24,19 @@ export function setPostAdminState(
   const updatedAt = new Date().toISOString();
   backendDb.db
     .insert(adminState)
-    .values({ adminId, action, draftId, controlMessageId, updatedAt })
-    .onConflictDoUpdate({ target: adminState.adminId, set: { action, draftId, controlMessageId, updatedAt } })
+    .values({ actorId, action, draftId, controlMessageId, updatedAt })
+    .onConflictDoUpdate({ target: adminState.actorId, set: { action, draftId, controlMessageId, updatedAt } })
     .run();
 }
 
-export function clearPostAdminState(backendDb: BackendDb, adminId: number): void {
-  setPostAdminState(backendDb, adminId);
+export function clearPostAdminState(backendDb: BackendDb, actorId: number): void {
+  setPostAdminState(backendDb, actorId);
 }
 
 /** Do not erase a newer user action while an older asynchronous album completes. */
 export function clearPostAdminStateIfCurrent(
   backendDb: BackendDb,
-  adminId: number,
+  actorId: number,
   action: string | null,
   draftId: number | null,
 ): boolean {
@@ -46,16 +46,16 @@ export function clearPostAdminStateIfCurrent(
     .set({ action: null, draftId: null, controlMessageId: null, updatedAt: new Date().toISOString() })
     .where(
       and(
-        eq(adminState.adminId, adminId),
+        eq(adminState.actorId, actorId),
         eq(adminState.action, action),
         draftId == null ? isNull(adminState.draftId) : eq(adminState.draftId, draftId),
       ),
     )
-    .returning({ adminId: adminState.adminId })
+    .returning({ actorId: adminState.actorId })
     .get();
   return result != null;
 }
 
-export function startPostDialog(backendDb: BackendDb, adminId: number): void {
-  setPostAdminState(backendDb, adminId, "new_post");
+export function startPostDialog(backendDb: BackendDb, actorId: number): void {
+  setPostAdminState(backendDb, actorId, "new_post");
 }

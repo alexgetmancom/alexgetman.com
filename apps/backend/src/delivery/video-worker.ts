@@ -155,7 +155,7 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
         filePath,
         {
           ...(metadata as YouTubeMetadata),
-          description: composeYouTubeDescription(backendDb, draft.adminId, metadata as YouTubeMetadata),
+          description: composeYouTubeDescription(backendDb, draft.actorId, metadata as YouTubeMetadata),
         },
         target.scheduledAt ?? new Date().toISOString(),
       );
@@ -366,11 +366,11 @@ function requeueInstagramPreparation(tx: BackendDb["db"], job: VideoJob, error: 
     .run();
 }
 
-function composeYouTubeDescription(backendDb: BackendDb, adminId: number, metadata: YouTubeMetadata): string {
+function composeYouTubeDescription(backendDb: BackendDb, actorId: number, metadata: YouTubeMetadata): string {
   const signature = backendDb.db
     .select({ value: botSettings.youtubeSignature })
     .from(botSettings)
-    .where(eq(botSettings.adminId, adminId))
+    .where(eq(botSettings.actorId, actorId))
     .get()
     ?.value.trim();
   const gameLine = metadata.gameUrl ? `📀 Steam: ${metadata.gameUrl}` : "";

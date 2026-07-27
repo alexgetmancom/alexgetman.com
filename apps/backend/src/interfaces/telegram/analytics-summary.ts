@@ -40,11 +40,11 @@ export async function sendWeeklyAnalyticsSummary(
   // send meant a single 403 (bot blocked) re-sent the digest to everyone who had
   // already received it, once per tick, until the block was lifted.
   markSynced(backendDb, key);
-  for (const adminId of config.ADMIN_IDS) {
+  for (const actorId of config.ADMIN_IDS) {
     try {
-      await bot.api.sendMessage(adminId, report, { parse_mode: "Markdown" });
+      await bot.api.sendMessage(actorId, report, { parse_mode: "Markdown" });
     } catch (error) {
-      log("warn", "weekly analytics digest not delivered", { adminId, error: String(error) });
+      log("warn", "weekly analytics digest not delivered", { actorId, error: String(error) });
     }
   }
   return true;

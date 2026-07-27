@@ -19,7 +19,7 @@ export function insertPublishedVideo(backendDb: BackendDb, options: PublishedVid
   const draft = backendDb.db
     .insert(videoDrafts)
     .values({
-      adminId: 1,
+      actorId: 1,
       assetKey: "asset",
       label: options.label ?? "Video",
       status: "published",

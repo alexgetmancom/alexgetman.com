@@ -6,7 +6,7 @@ export const videoDrafts = sqliteTable(
   "video_drafts",
   {
     id: autoId(),
-    adminId: integer().notNull(),
+    actorId: integer().notNull(),
     label: text().notNull().default(""),
     assetKey: text().notNull(),
     studioMediaAssetId: integer().references(() => studioMediaAssets.id),
@@ -75,7 +75,7 @@ export const videoJobs = sqliteTable(
 );
 
 export const videoBotSessions = sqliteTable("video_bot_sessions", {
-  adminId: integer().primaryKey(),
+  actorId: integer().primaryKey(),
   videoDraftId: integer(),
   step: text().notNull(),
   selectedTargetsJson: json<string[]>().notNull().default([]),

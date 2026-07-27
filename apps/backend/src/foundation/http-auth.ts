@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import { actorFromStudioToken, type StudioActorId } from "./actors.js";
 import type { BackendConfig } from "./config.js";
 
 export function commandAllowed(request: Request, config: BackendConfig, payloadToken?: string | null): boolean {
@@ -52,11 +53,10 @@ export function sameOriginCommandLogin(request: Request, config: BackendConfig):
 
 /** Resolves the bearer token on a Studio request to the actor it authorizes, or
  * null when Studio access is unconfigured or the token does not match. */
-export function mcpStudioActor(request: Request, config: BackendConfig): number | null {
-  if (!config.MCP_STUDIO_TOKEN || !config.MCP_STUDIO_ACTOR_ID) return null;
+export function mcpStudioActor(request: Request, config: BackendConfig): StudioActorId | null {
   const authorization = request.headers.get("authorization") ?? "";
   const token = authorization.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : "";
-  return safeEqual(token, config.MCP_STUDIO_TOKEN) ? config.MCP_STUDIO_ACTOR_ID : null;
+  return actorFromStudioToken(config, token, safeEqual);
 }
 
 export function safeEqual(left: string, right: string): boolean {

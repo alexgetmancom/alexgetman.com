@@ -22,12 +22,12 @@ export async function handleSettingsMessage(
   config: BackendConfig,
   settingsMenu: Menu<Context>,
 ): Promise<boolean> {
-  const adminId = Number(ctx.from?.id);
+  const actorId = Number(ctx.from?.id);
   const text = ctx.message && "text" in ctx.message ? (ctx.message.text?.trim() ?? "") : "";
-  if (!studioServices(backendDb, config).settings.saveYoutubeSignature(adminId, text)) return false;
-  const locale = botLocale(backendDb, adminId);
+  if (!studioServices(backendDb, config).settings.saveYoutubeSignature(actorId, text)) return false;
+  const locale = botLocale(backendDb, actorId);
   await ctx.reply(t(locale, "settings.youtube-saved"));
-  await ctx.reply(youtubeSignatureText(backendDb, config, adminId, locale), {
+  await ctx.reply(youtubeSignatureText(backendDb, config, actorId, locale), {
     parse_mode: "Markdown",
     reply_markup: settingsMenu.at(YOUTUBE_SIGNATURE_MENU_ID),
   });
@@ -36,26 +36,26 @@ export async function handleSettingsMessage(
 
 export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): Menu<Context> {
   const notificationSettings = new Menu<Context>(NOTIFICATION_SETTINGS_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
-    const adminId = Number(ctx.from?.id);
-    const settings = studioServices(backendDb, config).settings.notifications(adminId);
-    const locale = botLocale(backendDb, adminId);
+    const actorId = Number(ctx.from?.id);
+    const settings = studioServices(backendDb, config).settings.notifications(actorId);
+    const locale = botLocale(backendDb, actorId);
     range
       .text(`${settings.remindersEnabled ? "✅" : "◻️"} ${t(locale, "settings.reminder-label")}`, async (ctx) => {
-        studioServices(backendDb, config).settings.setNotifications(adminId, { remindersEnabled: !settings.remindersEnabled });
+        studioServices(backendDb, config).settings.setNotifications(actorId, { remindersEnabled: !settings.remindersEnabled });
         await ctx.answerCallbackQuery();
-        await ctx.editMessageText(notificationSettingsText(backendDb, config, adminId, locale), { parse_mode: "Markdown" });
+        await ctx.editMessageText(notificationSettingsText(backendDb, config, actorId, locale), { parse_mode: "Markdown" });
       })
       .text(`${settings.completionEnabled ? "✅" : "◻️"} ${t(locale, "settings.completion-label")}`, async (ctx) => {
-        studioServices(backendDb, config).settings.setNotifications(adminId, { completionEnabled: !settings.completionEnabled });
+        studioServices(backendDb, config).settings.setNotifications(actorId, { completionEnabled: !settings.completionEnabled });
         await ctx.answerCallbackQuery();
-        await ctx.editMessageText(notificationSettingsText(backendDb, config, adminId, locale), { parse_mode: "Markdown" });
+        await ctx.editMessageText(notificationSettingsText(backendDb, config, actorId, locale), { parse_mode: "Markdown" });
       })
       .row();
     for (const minutes of [1, 5, 10, 15, 30] as const) {
       range.text(String(minutes), async (ctx) => {
-        studioServices(backendDb, config).settings.setNotifications(adminId, { reminderMinutes: minutes });
+        studioServices(backendDb, config).settings.setNotifications(actorId, { reminderMinutes: minutes });
         await ctx.answerCallbackQuery({ text: t(locale, "settings.minutes-toast", { minutes }) });
-        await ctx.editMessageText(notificationSettingsText(backendDb, config, adminId, locale), { parse_mode: "Markdown" });
+        await ctx.editMessageText(notificationSettingsText(backendDb, config, actorId, locale), { parse_mode: "Markdown" });
       });
     }
     range.row().back(t(locale, "settings.back-to-settings"), async (ctx) => {
@@ -65,18 +65,18 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
   });
 
   const youtubeSignature = new Menu<Context>(YOUTUBE_SIGNATURE_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
-    const adminId = Number(ctx.from?.id);
-    const locale = botLocale(backendDb, adminId);
+    const actorId = Number(ctx.from?.id);
+    const locale = botLocale(backendDb, actorId);
     range
       .text(t(locale, "settings.edit"), async (ctx) => {
-        studioServices(backendDb, config).settings.beginYoutubeSignatureEdit(adminId);
+        studioServices(backendDb, config).settings.beginYoutubeSignatureEdit(actorId);
         await ctx.answerCallbackQuery();
         await ctx.reply(t(locale, "settings.youtube-edit-prompt"));
       })
       .text(t(locale, "settings.clear"), async (ctx) => {
-        studioServices(backendDb, config).settings.clearYoutubeSignature(adminId);
+        studioServices(backendDb, config).settings.clearYoutubeSignature(actorId);
         await ctx.answerCallbackQuery({ text: t(locale, "settings.cleared") });
-        await ctx.editMessageText(youtubeSignatureText(backendDb, config, adminId, locale), { parse_mode: "Markdown" });
+        await ctx.editMessageText(youtubeSignatureText(backendDb, config, actorId, locale), { parse_mode: "Markdown" });
       })
       .row()
       .back(t(locale, "settings.back-to-settings"), async (ctx) => {
@@ -99,24 +99,24 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
 
   const settings = new Menu<Context>(SETTINGS_MENU_ID, { autoAnswer: false });
   settings.dynamic((ctx, range) => {
-    const adminId = Number(ctx.from?.id);
-    const locale = botLocale(backendDb, adminId);
+    const actorId = Number(ctx.from?.id);
+    const locale = botLocale(backendDb, actorId);
     if (config.studio.modules.youtube)
       range
         .submenu(t(locale, "settings.youtube-signature"), YOUTUBE_SIGNATURE_MENU_ID, async (ctx) => {
           await ctx.answerCallbackQuery();
-          await ctx.editMessageText(youtubeSignatureText(backendDb, config, adminId, locale), { parse_mode: "Markdown" });
+          await ctx.editMessageText(youtubeSignatureText(backendDb, config, actorId, locale), { parse_mode: "Markdown" });
         })
         .row();
     range
       .submenu(t(locale, "settings.notifications"), NOTIFICATIONS_MENU_ID, async (ctx) => {
         await ctx.answerCallbackQuery();
-        await ctx.editMessageText(notificationsInboxText(backendDb, config, adminId, locale));
+        await ctx.editMessageText(notificationsInboxText(backendDb, config, actorId, locale));
       })
       .row()
       .submenu(t(locale, "settings.publication-notifications"), NOTIFICATION_SETTINGS_MENU_ID, async (ctx) => {
         await ctx.answerCallbackQuery();
-        await ctx.editMessageText(notificationSettingsText(backendDb, config, adminId, locale), { parse_mode: "Markdown" });
+        await ctx.editMessageText(notificationSettingsText(backendDb, config, actorId, locale), { parse_mode: "Markdown" });
       })
       .row()
       .submenu(t(locale, "settings.language"), LANGUAGE_MENU_ID, async (ctx) => {
@@ -135,8 +135,8 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
   return settings;
 
   async function switchLanguage(ctx: Context & MenuFlavor, locale: "en" | "ru"): Promise<void> {
-    const adminId = Number(ctx.from?.id);
-    studioServices(backendDb, config).settings.setLocale(adminId, locale);
+    const actorId = Number(ctx.from?.id);
+    studioServices(backendDb, config).settings.setLocale(actorId, locale);
     await ctx.answerCallbackQuery({ text: t(locale, "settings.language-set") });
     ctx.menu.nav(SETTINGS_MENU_ID);
     await ctx.editMessageText(t(locale, "settings.title"));
@@ -155,10 +155,10 @@ export async function showSettings(ctx: Context, backendDb: BackendDb, settingsM
 function notificationSettingsText(
   backendDb: BackendDb,
   config: BackendConfig,
-  adminId: number,
+  actorId: number,
   locale: ReturnType<typeof botLocale>,
 ): string {
-  const settings = studioServices(backendDb, config).settings.notifications(adminId);
+  const settings = studioServices(backendDb, config).settings.notifications(actorId);
   const on = (value: boolean) => (value ? t(locale, "settings.on") : t(locale, "settings.off"));
   return t(locale, "settings.notif-body", {
     reminders: on(settings.remindersEnabled),
@@ -167,8 +167,8 @@ function notificationSettingsText(
   });
 }
 
-function youtubeSignatureText(backendDb: BackendDb, config: BackendConfig, adminId: number, locale: ReturnType<typeof botLocale>): string {
-  const signature = studioServices(backendDb, config).settings.youtubeSignature(adminId);
+function youtubeSignatureText(backendDb: BackendDb, config: BackendConfig, actorId: number, locale: ReturnType<typeof botLocale>): string {
+  const signature = studioServices(backendDb, config).settings.youtubeSignature(actorId);
   return t(locale, "settings.youtube-body", {
     signature: signature ? escapeMarkdown(signature) : t(locale, "settings.youtube-not-set"),
   });

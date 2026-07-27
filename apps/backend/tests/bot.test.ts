@@ -37,7 +37,7 @@ describe("Telegram controller flow", () => {
 
   it("renders post preview and confirmation controls in the selected interface language", () => {
     backendDb = openBackendDb(":memory:");
-    backendDb.db.insert(botUiSettings).values({ adminId: 42, locale: "ru", updatedAt: new Date().toISOString() }).run();
+    backendDb.db.insert(botUiSettings).values({ actorId: 42, locale: "ru", updatedAt: new Date().toISOString() }).run();
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Карточка", textEn: "Card", entities: [], media: [] });
     const preview = draftPreview(backendDb, draftId, loadConfig({}));
 
@@ -310,7 +310,7 @@ describe("Telegram controller flow", () => {
   it("finalizes a durable Telegram media album into one draft", async () => {
     backendDb = openBackendDb(":memory:");
     backendDb.sqlite
-      .prepare(`INSERT INTO pending_albums(id,admin_id,chat_id,media_group_id,text_ru,text_entities_json,media_json,notified,updated_at)
+      .prepare(`INSERT INTO pending_albums(id,actor_id,chat_id,media_group_id,text_ru,text_entities_json,media_json,notified,updated_at)
       VALUES ('album',42,42,'group','Album caption','[]',?,1,'2000-01-01T00:00:00.000Z')`)
       .run(
         JSON.stringify([
@@ -339,7 +339,7 @@ describe("Telegram controller flow", () => {
     });
     setPostAdminState(backendDb, 42, "edit_en", draftId, 99);
     backendDb.sqlite
-      .prepare(`INSERT INTO pending_albums(id,admin_id,chat_id,media_group_id,action,draft_id,text_ru,text_entities_json,media_json,notified,updated_at)
+      .prepare(`INSERT INTO pending_albums(id,actor_id,chat_id,media_group_id,action,draft_id,text_ru,text_entities_json,media_json,notified,updated_at)
       VALUES ('en-edit',42,42,'group','edit_en',?,'English replacement','[]',?,1,'2000-01-01T00:00:00.000Z')`)
       .run(
         draftId,
@@ -375,7 +375,7 @@ describe("Telegram controller flow", () => {
   it("claims one pending album only once when Telegram workers overlap", async () => {
     backendDb = openBackendDb(":memory:");
     backendDb.sqlite
-      .prepare(`INSERT INTO pending_albums(id,admin_id,chat_id,media_group_id,action,text_ru,text_entities_json,media_json,notified,updated_at)
+      .prepare(`INSERT INTO pending_albums(id,actor_id,chat_id,media_group_id,action,text_ru,text_entities_json,media_json,notified,updated_at)
       VALUES ('once',42,42,'group','new_post','Album caption','[]',?,1,'2000-01-01T00:00:00.000Z')`)
       .run(
         JSON.stringify([
@@ -400,7 +400,7 @@ describe("Telegram controller flow", () => {
     const db = openBackendDb(":memory:");
     backendDb = db;
     db.sqlite
-      .prepare(`INSERT INTO pending_albums(id,admin_id,chat_id,media_group_id,action,draft_id,text_ru,text_entities_json,media_json,notified,attempt_count,updated_at)
+      .prepare(`INSERT INTO pending_albums(id,actor_id,chat_id,media_group_id,action,draft_id,text_ru,text_entities_json,media_json,notified,attempt_count,updated_at)
       VALUES ('doomed',42,42,'group','edit_ru',4242,'Caption','[]',?,1,0,'2000-01-01T00:00:00.000Z')`)
       .run(JSON.stringify([{ type: "photo", file_id: "one" }]));
     const sendMessage = mock(async () => ({ message_id: 1, date: 1, chat: { id: 42, type: "private" as const } }));

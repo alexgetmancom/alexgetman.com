@@ -61,7 +61,7 @@ export const publications = sqliteTable("publications", {
 
 export const drafts = sqliteTable("drafts", {
   id: autoId(),
-  adminId: integer().notNull(),
+  actorId: integer().notNull(),
   status: text().notNull(),
   textRu: text().notNull(),
   textEnMachine: text(),
@@ -81,7 +81,7 @@ export const drafts = sqliteTable("drafts", {
 
 export const pendingAlbums = sqliteTable("pending_albums", {
   id: text().primaryKey(),
-  adminId: integer().notNull(),
+  actorId: integer().notNull(),
   chatId: integer().notNull(),
   mediaGroupId: text().notNull(),
   action: text(),

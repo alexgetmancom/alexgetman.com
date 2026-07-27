@@ -15,14 +15,14 @@ export async function finishVideoSchedule(
   ctx: Context,
   backendDb: BackendDb,
   config: BackendConfig,
-  adminId: number,
+  actorId: number,
   session: VideoSession,
   schedule: Partial<Record<VideoTarget, Date>>,
 ): Promise<void> {
   if (!session.draftId) throw new StudioError("err.video-missing");
-  const locale = botLocale(backendDb, adminId);
-  const technical = await studioServices(backendDb, config).videos.schedule(adminId, session.draftId, schedule);
-  await showScheduledVideo(ctx, backendDb, config, adminId, session, technical, locale);
+  const locale = botLocale(backendDb, actorId);
+  const technical = await studioServices(backendDb, config).videos.schedule(actorId, session.draftId, schedule);
+  await showScheduledVideo(ctx, backendDb, config, actorId, session, technical, locale);
 }
 
 /** Telegram only renders the result; the immediate scheduling policy lives in Video Studio. */
@@ -30,13 +30,13 @@ export async function finishVideoNow(
   ctx: Context,
   backendDb: BackendDb,
   config: BackendConfig,
-  adminId: number,
+  actorId: number,
   session: VideoSession,
 ): Promise<void> {
   if (!session.draftId) throw new StudioError("err.video-missing");
-  const locale = botLocale(backendDb, adminId);
-  const technical = await studioServices(backendDb, config).videos.publish(adminId, session.draftId);
-  await showScheduledVideo(ctx, backendDb, config, adminId, session, technical, locale);
+  const locale = botLocale(backendDb, actorId);
+  const technical = await studioServices(backendDb, config).videos.publish(actorId, session.draftId);
+  await showScheduledVideo(ctx, backendDb, config, actorId, session, technical, locale);
 }
 
 /** Formats the transport-neutral technical check into a Telegram summary line. */
@@ -58,7 +58,7 @@ async function showScheduledVideo(
   ctx: Context,
   backendDb: BackendDb,
   config: BackendConfig,
-  adminId: number,
+  actorId: number,
   session: VideoSession,
   technical: VideoTechnicalCheck,
   locale: BotLocale,
@@ -68,7 +68,7 @@ async function showScheduledVideo(
   const warning = technical.aspectOk ? "" : `\n${t(locale, "video.aspect-warning")}`;
   const text = `${videoCheckSummary(technical, locale)}${warning}\n\n✅ ${t(locale, "common.scheduled")}. ${t(locale, "video.reminder", { minutes: config.VIDEO_REMINDER_MINUTES })}\n\n${preview.text}`;
   const controlMessageId = Number(session.data.controlMessageId);
-  clearSession(backendDb, adminId);
+  clearSession(backendDb, actorId);
   if (controlMessageId && ctx.chat?.id) {
     await ctx.api.editMessageText(ctx.chat.id, controlMessageId, `✅ ${t(locale, "video.confirmed-card")}`);
   }

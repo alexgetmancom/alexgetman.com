@@ -80,7 +80,7 @@ describe("Studio notifications", () => {
     try {
       const videoId = createVideoDraft(backendDb, 42, "owner-video", 24);
       scheduleReminder(backendDb, {
-        adminId: 42,
+        actorId: 42,
         ref: `video:${videoId}`,
         kind: "video.youtube_shorts",
         publishAt: new Date(Date.now() + 30_000),
@@ -96,7 +96,7 @@ describe("Studio notifications", () => {
       ).toBe(true);
 
       scheduleReminder(backendDb, {
-        adminId: 42,
+        actorId: 42,
         ref: `video:${videoId}`,
         kind: "video.instagram_reels",
         publishAt: new Date(Date.now() + 60 * 60_000),

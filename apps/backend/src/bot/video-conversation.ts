@@ -37,92 +37,92 @@ import {
 
 /** Starts and advances the MP4 → metadata → schedule conversation. */
 export async function startVideoConversation(ctx: Context, backendDb: BackendDb): Promise<void> {
-  const adminId = Number(ctx.from?.id);
-  const locale = botLocale(backendDb, adminId);
+  const actorId = Number(ctx.from?.id);
+  const locale = botLocale(backendDb, actorId);
   const text = t(locale, "video.dialog-prompt");
   const keyboard = new InlineKeyboard().text(t(locale, "common.cancel"), "video_cancel_dialog");
   // Reached via a menu button, this is pure navigation: turn that same
   // message into the prompt instead of leaving it and adding a new one.
   if (ctx.callbackQuery?.message) await ctx.editMessageText(text, { reply_markup: keyboard });
   else await ctx.reply(text, { reply_markup: keyboard });
-  saveSession(backendDb, adminId, { draftId: null, step: "asset", selected: [], data: {} });
+  saveSession(backendDb, actorId, { draftId: null, step: "asset", selected: [], data: {} });
 }
 
 export async function handleVideoConversationMessage(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<boolean> {
   if (!config.studio.modules.video_posting) return false;
-  const adminId = Number(ctx.from?.id);
-  const session = getSession(backendDb, adminId);
+  const actorId = Number(ctx.from?.id);
+  const session = getSession(backendDb, actorId);
   if (!session) return false;
   try {
     if (session.step === "asset") {
-      const stored = await storeTelegramVideo(ctx, backendDb, config, adminId);
-      const draftId = studioServices(backendDb, config).publications.create(adminId, {
+      const stored = await storeTelegramVideo(ctx, backendDb, config, actorId);
+      const draftId = studioServices(backendDb, config).publications.create(actorId, {
         kind: "video",
         studioMediaAssetId: stored.assetId,
       }).id;
       const selected = enabledVideoTargets(config);
       if (!selected.length) throw new StudioError("err.no-video-platforms-config");
-      studioServices(backendDb, config).videos.replaceTargets(adminId, draftId, selected);
+      studioServices(backendDb, config).videos.replaceTargets(actorId, draftId, selected);
       const first = firstVideoMetadataStep(selected);
       const next = { ...session, draftId, step: first.step, selected };
-      saveSession(backendDb, adminId, next);
-      await sendVideoMetadataPrompt(ctx, backendDb, adminId, first.step, selected);
+      saveSession(backendDb, actorId, next);
+      await sendVideoMetadataPrompt(ctx, backendDb, actorId, first.step, selected);
       return true;
     }
     const text = ctx.message && "text" in ctx.message ? (ctx.message.text?.trim() ?? "") : "";
     if (!text) {
-      await replyVideoPrompt(ctx, botLocale(backendDb, adminId), t(botLocale(backendDb, adminId), "video.await-text"));
+      await replyVideoPrompt(ctx, botLocale(backendDb, actorId), t(botLocale(backendDb, actorId), "video.await-text"));
       return true;
     }
     if (!session.draftId) return false;
     if (session.data.is_single_edit) {
-      const edit = singleEditChange(backendDb, config, adminId, session.step, text);
+      const edit = singleEditChange(backendDb, config, actorId, session.step, text);
       if (edit) {
-        await finishSingleVideoEdit(ctx, backendDb, config, adminId, session, edit.target, edit.apply);
+        await finishSingleVideoEdit(ctx, backendDb, config, actorId, session, edit.target, edit.apply);
         return true;
       }
     }
-    if (session.step.startsWith("youtube_")) return handleYouTubeMessage(ctx, backendDb, config, adminId, session, text);
+    if (session.step.startsWith("youtube_")) return handleYouTubeMessage(ctx, backendDb, config, actorId, session, text);
     if (session.step === "label") {
-      studioServices(backendDb, config).videos.rename(adminId, session.draftId, text);
+      studioServices(backendDb, config).videos.rename(actorId, session.draftId, text);
       if (session.data.is_single_edit) {
-        clearSession(backendDb, adminId);
-        const locale = botLocale(backendDb, adminId);
+        clearSession(backendDb, actorId);
+        const locale = botLocale(backendDb, actorId);
         const preview = videoPreview(backendDb, config, session.draftId, locale);
         await sendFreshVideoCard(ctx, backendDb, session.draftId, preview);
         return true;
       }
       const next = { ...session, step: "targets" };
-      saveSession(backendDb, adminId, next);
+      saveSession(backendDb, actorId, next);
       await sendVideoControl(
         ctx,
         backendDb,
-        adminId,
+        actorId,
         next,
-        t(botLocale(backendDb, adminId), "video.choose-platforms-next"),
-        targetKeyboard(config, session.selected, botLocale(backendDb, adminId)),
+        t(botLocale(backendDb, actorId), "video.choose-platforms-next"),
+        targetKeyboard(config, session.selected, botLocale(backendDb, actorId)),
       );
       return true;
     }
     if (session.step === "instagram_caption") {
       const transition = advanceVideoMetadata("instagram_caption", text, session.data);
       const metadata = { caption: String(transition.data.instagram_caption ?? "") };
-      studioServices(backendDb, config).videos.updateMetadata(adminId, session.draftId, "instagram_reels", metadata);
+      studioServices(backendDb, config).videos.updateMetadata(actorId, session.draftId, "instagram_reels", metadata);
       if (!session.selected.includes("youtube_shorts"))
-        studioServices(backendDb, config).videos.rename(adminId, session.draftId, metadata.caption || "Instagram Reels");
-      await askSchedule(ctx, backendDb, adminId, session);
+        studioServices(backendDb, config).videos.rename(actorId, session.draftId, metadata.caption || "Instagram Reels");
+      await askSchedule(ctx, backendDb, actorId, session);
       return true;
     }
     if (session.step === "schedule_common" || session.step.startsWith("schedule_target:"))
-      return handleScheduleMessage(ctx, backendDb, config, adminId, session, text);
+      return handleScheduleMessage(ctx, backendDb, config, actorId, session, text);
   } catch (error) {
-    const locale = botLocale(backendDb, adminId);
+    const locale = botLocale(backendDb, actorId);
     // The original error is operationally important (disk, Telegram download,
     // media import, Studio validation), and the admin reply can still be lost to
     // a Telegram send failure — log it first so the cause survives regardless.
     // `step` is what says which part of the conversation this was.
     log("error", "Video conversation step failed", {
-      adminId,
+      actorId,
       step: session.step,
       error: error instanceof Error ? error.message : String(error),
     });
@@ -143,7 +143,7 @@ async function handleYouTubeMessage(
   ctx: Context,
   backendDb: BackendDb,
   config: BackendConfig,
-  adminId: number,
+  actorId: number,
   session: VideoSession,
   text: string,
 ): Promise<boolean> {
@@ -152,8 +152,8 @@ async function handleYouTubeMessage(
     const step = session.step as VideoWizardStep;
     const transition = advanceVideoMetadata(step, text, session.data);
     if (!transition.nextStep) throw new StudioError("err.video-restart");
-    setData(backendDb, adminId, session, step, transition.data[step], transition.nextStep);
-    await sendVideoMetadataPrompt(ctx, backendDb, adminId, transition.nextStep, session.selected);
+    setData(backendDb, actorId, session, step, transition.data[step], transition.nextStep);
+    await sendVideoMetadataPrompt(ctx, backendDb, actorId, transition.nextStep, session.selected);
     return true;
   }
   if (session.step !== "youtube_tags") return false;
@@ -165,9 +165,9 @@ async function handleYouTubeMessage(
     ...(String(session.data.youtube_game_url ?? "") ? { gameUrl: String(session.data.youtube_game_url) } : {}),
     tags,
   };
-  studioServices(backendDb, config).videos.updateMetadata(adminId, session.draftId, "youtube_shorts", metadata);
-  studioServices(backendDb, config).videos.rename(adminId, session.draftId, metadata.title || "YouTube Shorts");
-  await askInstagramOrSchedule(ctx, backendDb, adminId, session);
+  studioServices(backendDb, config).videos.updateMetadata(actorId, session.draftId, "youtube_shorts", metadata);
+  studioServices(backendDb, config).videos.rename(actorId, session.draftId, metadata.title || "YouTube Shorts");
+  await askInstagramOrSchedule(ctx, backendDb, actorId, session);
   return true;
 }
 
@@ -177,7 +177,7 @@ async function handleYouTubeMessage(
 function singleEditChange(
   backendDb: BackendDb,
   config: BackendConfig,
-  adminId: number,
+  actorId: number,
   step: string,
   text: string,
 ): { target: VideoTarget; apply: (metadata: Record<string, unknown>, draftId: number) => void } | null {
@@ -186,7 +186,7 @@ function singleEditChange(
       target: "youtube_shorts",
       apply: (metadata, draftId) => {
         metadata.title = text;
-        studioServices(backendDb, config).videos.rename(adminId, draftId, text || "YouTube Shorts");
+        studioServices(backendDb, config).videos.rename(actorId, draftId, text || "YouTube Shorts");
       },
     };
   if (step === "youtube_description")
@@ -228,14 +228,14 @@ async function parseScheduleDate(
   ctx: Context,
   backendDb: BackendDb,
   config: BackendConfig,
-  adminId: number,
+  actorId: number,
   draftId: number,
   text: string,
 ): Promise<Date | null> {
   try {
-    return studioServices(backendDb, config).videos.parseSchedule(adminId, draftId, text);
+    return studioServices(backendDb, config).videos.parseSchedule(actorId, draftId, text);
   } catch (error) {
-    const locale = botLocale(backendDb, adminId);
+    const locale = botLocale(backendDb, actorId);
     await replyVideoPrompt(ctx, locale, describeError(locale, error), { plainText: true });
     return null;
   }
@@ -245,14 +245,14 @@ async function handleScheduleMessage(
   ctx: Context,
   backendDb: BackendDb,
   config: BackendConfig,
-  adminId: number,
+  actorId: number,
   session: VideoSession,
   text: string,
 ): Promise<boolean> {
   if (session.draftId == null) throw new StudioError("err.video-missing");
-  const date = await parseScheduleDate(ctx, backendDb, config, adminId, session.draftId, text);
+  const date = await parseScheduleDate(ctx, backendDb, config, actorId, session.draftId, text);
   if (!date) return true;
-  await applyVideoScheduleDate(ctx, backendDb, config, adminId, session, date);
+  await applyVideoScheduleDate(ctx, backendDb, config, actorId, session, date);
   return true;
 }
 
@@ -264,13 +264,13 @@ export async function applyVideoScheduleDate(
   ctx: Context,
   backendDb: BackendDb,
   config: BackendConfig,
-  adminId: number,
+  actorId: number,
   session: VideoSession,
   date: Date,
 ): Promise<void> {
   if (session.draftId == null) throw new StudioError("err.video-missing");
   if (session.step === "schedule_common") {
-    await confirmVideoSchedule(ctx, backendDb, config, adminId, session, commonVideoSchedule(session.selected, date));
+    await confirmVideoSchedule(ctx, backendDb, config, actorId, session, commonVideoSchedule(session.selected, date));
     return;
   }
   const target = session.step.slice("schedule_target:".length) as VideoTarget;
@@ -282,13 +282,13 @@ export async function applyVideoScheduleDate(
   );
   if (transition.nextTarget) {
     const next = { ...session, step: `schedule_target:${transition.nextTarget}`, data: { ...session.data, schedule: transition.schedule } };
-    saveSession(backendDb, adminId, next);
+    saveSession(backendDb, actorId, next);
     await sendVideoTimePrompt(
       ctx,
       backendDb,
-      adminId,
+      actorId,
       next,
-      t(botLocale(backendDb, adminId), "video.schedule-target-prompt", { target: videoTargetLabel(transition.nextTarget) }),
+      t(botLocale(backendDb, actorId), "video.schedule-target-prompt", { target: videoTargetLabel(transition.nextTarget) }),
     );
     return;
   }
@@ -296,7 +296,7 @@ export async function applyVideoScheduleDate(
     ctx,
     backendDb,
     config,
-    adminId,
+    actorId,
     session,
     Object.fromEntries(Object.entries(transition.schedule).map(([key, value]) => [key, new Date(value)])) as Partial<
       Record<VideoTarget, Date>
@@ -308,12 +308,12 @@ async function confirmVideoSchedule(
   ctx: Context,
   backendDb: BackendDb,
   config: BackendConfig,
-  adminId: number,
+  actorId: number,
   session: VideoSession,
   schedule: Partial<Record<VideoTarget, Date>>,
 ): Promise<void> {
   if (!session.draftId) throw new StudioError("err.video-missing");
-  const locale = botLocale(backendDb, adminId);
+  const locale = botLocale(backendDb, actorId);
   const next = {
     ...session,
     step: "schedule_confirm",
@@ -322,9 +322,9 @@ async function confirmVideoSchedule(
       schedule: Object.fromEntries(Object.entries(schedule).map(([target, value]) => [target, value?.toISOString()])),
     },
   };
-  saveSession(backendDb, adminId, next);
-  const delivery = studioServices(backendDb, config).videos.preview(adminId, session.draftId).delivery;
-  await sendTelegramDeliveryPreviews(ctx, delivery.projections, botLocale(backendDb, adminId));
+  saveSession(backendDb, actorId, next);
+  const delivery = studioServices(backendDb, config).videos.preview(actorId, session.draftId).delivery;
+  await sendTelegramDeliveryPreviews(ctx, delivery.projections, botLocale(backendDb, actorId));
   const lines = [`🎬 *${t(locale, "common.confirm-schedule")}*`];
   for (const target of next.selected) {
     const value = schedule[target];
@@ -336,27 +336,27 @@ async function confirmVideoSchedule(
   const keyboard = new InlineKeyboard()
     .text(t(locale, "common.confirm"), `video_schedule_confirm:${session.draftId}`)
     .text(t(locale, "common.back"), `video_schedule:${session.draftId}`);
-  await sendVideoControl(ctx, backendDb, adminId, next, lines.join("\n"), keyboard);
+  await sendVideoControl(ctx, backendDb, actorId, next, lines.join("\n"), keyboard);
 }
 
 async function finishSingleVideoEdit(
   ctx: Context,
   backendDb: BackendDb,
   config: BackendConfig,
-  adminId: number,
+  actorId: number,
   session: VideoSession,
   target: VideoTarget,
   change: (metadata: Record<string, unknown>, draftId: number) => void,
 ): Promise<void> {
   if (session.draftId == null) throw new StudioError("err.video-reopen-edit");
   const row = studioServices(backendDb, config)
-    .videos.get(adminId, session.draftId)
+    .videos.get(actorId, session.draftId)
     .targets.find((item) => item.target === target);
   const metadata = { ...(row?.metadataJson as Record<string, unknown> | undefined) };
   change(metadata, session.draftId);
-  studioServices(backendDb, config).videos.updateMetadata(adminId, session.draftId, target, metadata as VideoMetadata);
-  clearSession(backendDb, adminId);
-  const locale = botLocale(backendDb, adminId);
+  studioServices(backendDb, config).videos.updateMetadata(actorId, session.draftId, target, metadata as VideoMetadata);
+  clearSession(backendDb, actorId);
+  const locale = botLocale(backendDb, actorId);
   const preview = videoPreview(backendDb, config, session.draftId, locale);
   await sendFreshVideoCard(ctx, backendDb, session.draftId, preview);
 }

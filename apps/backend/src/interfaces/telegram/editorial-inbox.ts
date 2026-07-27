@@ -82,7 +82,7 @@ export async function sendDailyEditorialInbox(
     const items = editorialItems(generated);
     if (items.length === 0) throw new Error("editorial inbox returned no usable opportunities");
     const message = renderInbox(items);
-    for (const adminId of config.ADMIN_IDS) await bot.api.sendMessage(adminId, message);
+    for (const actorId of config.ADMIN_IDS) await bot.api.sendMessage(actorId, message);
     markSynced(backendDb, key);
     return true;
   } catch (error) {

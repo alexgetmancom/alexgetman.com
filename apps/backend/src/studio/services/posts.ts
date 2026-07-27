@@ -41,7 +41,7 @@ export function postService(backendDb: BackendDb) {
       return requireOwnedDraft(backendDb, actorId, draftId);
     },
     list(actorId: number, limit = 50) {
-      return backendDb.db.select().from(drafts).where(eq(drafts.adminId, actorId)).orderBy(desc(drafts.updatedAt)).limit(limit).all();
+      return backendDb.db.select().from(drafts).where(eq(drafts.actorId, actorId)).orderBy(desc(drafts.updatedAt)).limit(limit).all();
     },
     validate(actorId: number, draftId: number) {
       return publicationPreflight(requireOwnedDraft(backendDb, actorId, draftId));
@@ -122,7 +122,7 @@ export function postService(backendDb: BackendDb) {
       const title = draft.text_ru.trim().split("\n")[0]?.slice(0, 100) || `Post #${postId}`;
       if (scheduled.scheduled_at)
         scheduleReminder(backendDb, {
-          adminId: actorId,
+          actorId: actorId,
           ref: `post:${postId}`,
           kind: "post.ru",
           publishAt: new Date(scheduled.scheduled_at),
@@ -132,7 +132,7 @@ export function postService(backendDb: BackendDb) {
         });
       if (scheduled.scheduled_en_at)
         scheduleReminder(backendDb, {
-          adminId: actorId,
+          actorId: actorId,
           ref: `post:${postId}`,
           kind: "post.en",
           publishAt: new Date(scheduled.scheduled_en_at),
@@ -258,7 +258,7 @@ function sourceLabel(url: string): string {
 }
 
 function notificationPreference(backendDb: BackendDb, actorId: number) {
-  const row = backendDb.db.select().from(studioNotificationSettings).where(eq(studioNotificationSettings.adminId, actorId)).get();
+  const row = backendDb.db.select().from(studioNotificationSettings).where(eq(studioNotificationSettings.actorId, actorId)).get();
   return {
     remindersEnabled: row?.remindersEnabled !== 0,
     reminderMinutes: row?.reminderMinutes ?? 5,
@@ -315,7 +315,7 @@ function dateOrNull(value: string | null): Date | null {
 
 function requireOwnedDraft(backendDb: BackendDb, actorId: number, draftId: number) {
   const draft = requireDraft(backendDb, draftId);
-  if (draft.admin_id !== actorId) throw new StudioError("err.post-not-yours");
+  if (draft.actor_id !== actorId) throw new StudioError("err.post-not-yours");
   return draft;
 }
 

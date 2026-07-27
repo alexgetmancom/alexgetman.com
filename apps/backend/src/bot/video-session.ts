@@ -26,19 +26,19 @@ export function enabledVideoTargets(config: BackendConfig): VideoTarget[] {
   );
 }
 
-export function getSession(backendDb: BackendDb, adminId: number): VideoSession | null {
-  const row = backendDb.db.select().from(videoBotSessions).where(eq(videoBotSessions.adminId, adminId)).get();
+export function getSession(backendDb: BackendDb, actorId: number): VideoSession | null {
+  const row = backendDb.db.select().from(videoBotSessions).where(eq(videoBotSessions.actorId, actorId)).get();
   return row
     ? { draftId: row.videoDraftId, step: row.step, selected: row.selectedTargetsJson as VideoTarget[], data: row.dataJson ?? {} }
     : null;
 }
 
-export function saveSession(backendDb: BackendDb, adminId: number, session: VideoSession): void {
+export function saveSession(backendDb: BackendDb, actorId: number, session: VideoSession): void {
   const now = new Date().toISOString();
   backendDb.db
     .insert(videoBotSessions)
     .values({
-      adminId,
+      actorId,
       videoDraftId: session.draftId,
       step: session.step,
       selectedTargetsJson: session.selected,
@@ -46,7 +46,7 @@ export function saveSession(backendDb: BackendDb, adminId: number, session: Vide
       updatedAt: now,
     })
     .onConflictDoUpdate({
-      target: videoBotSessions.adminId,
+      target: videoBotSessions.actorId,
       set: {
         videoDraftId: session.draftId,
         step: session.step,
@@ -60,19 +60,19 @@ export function saveSession(backendDb: BackendDb, adminId: number, session: Vide
 
 export function setData(
   backendDb: BackendDb,
-  adminId: number,
+  actorId: number,
   session: VideoSession,
   key: string,
   value: unknown,
   nextStep: string,
 ): VideoSession {
   const next = { ...session, step: nextStep, data: { ...session.data, [key]: value } };
-  saveSession(backendDb, adminId, next);
+  saveSession(backendDb, actorId, next);
   return next;
 }
 
-export function clearSession(backendDb: BackendDb, adminId: number): void {
-  backendDb.db.delete(videoBotSessions).where(eq(videoBotSessions.adminId, adminId)).run();
+export function clearSession(backendDb: BackendDb, actorId: number): void {
+  backendDb.db.delete(videoBotSessions).where(eq(videoBotSessions.actorId, actorId)).run();
 }
 
 export async function updateVideoControl(
@@ -107,11 +107,11 @@ export async function replyVideoPrompt(ctx: Context, locale: BotLocale, text: st
 export async function sendVideoMetadataPrompt(
   ctx: Context,
   backendDb: BackendDb,
-  adminId: number,
+  actorId: number,
   step: VideoWizardStep,
   selected: VideoTarget[],
 ): Promise<void> {
-  const locale = botLocale(backendDb, adminId);
+  const locale = botLocale(backendDb, actorId);
   const keyboard = new InlineKeyboard();
   if (step === "youtube_game_url") keyboard.text(t(locale, "video.skip"), "video_game_skip");
   if (previousVideoMetadataStep(step, selected)) keyboard.text(t(locale, "common.back"), "video_meta_back");
@@ -135,25 +135,25 @@ function videoPrompt(locale: BotLocale, prompt: VideoPrompt): string {
 export async function sendVideoControl(
   ctx: Context,
   backendDb: BackendDb,
-  adminId: number,
+  actorId: number,
   session: VideoSession,
   text: string,
   keyboard: InlineKeyboard,
 ): Promise<VideoSession> {
   const message = await ctx.reply(text, { parse_mode: "Markdown", reply_markup: keyboard });
   const next = { ...session, data: { ...session.data, controlMessageId: message.message_id } };
-  saveSession(backendDb, adminId, next);
+  saveSession(backendDb, actorId, next);
   return next;
 }
 
-export async function askInstagramOrSchedule(ctx: Context, backendDb: BackendDb, adminId: number, session: VideoSession): Promise<void> {
+export async function askInstagramOrSchedule(ctx: Context, backendDb: BackendDb, actorId: number, session: VideoSession): Promise<void> {
   if (nextVideoFlowStep(session.selected) === "instagram_caption") {
     const next = { ...session, step: "instagram_caption" };
-    saveSession(backendDb, adminId, next);
-    await sendVideoMetadataPrompt(ctx, backendDb, adminId, "instagram_caption", session.selected);
+    saveSession(backendDb, actorId, next);
+    await sendVideoMetadataPrompt(ctx, backendDb, actorId, "instagram_caption", session.selected);
     return;
   }
-  await askSchedule(ctx, backendDb, adminId, session);
+  await askSchedule(ctx, backendDb, actorId, session);
 }
 
 // A curated spread across the same posting hours as text-post scheduling
@@ -166,11 +166,11 @@ const VIDEO_SLOT_PRESETS = ["08:00", "11:00", "13:00", "18:00", "20:00", "22:00"
 export async function sendVideoTimePrompt(
   ctx: Context,
   backendDb: BackendDb,
-  adminId: number,
+  actorId: number,
   session: VideoSession,
   text: string,
 ): Promise<VideoSession> {
-  const locale = botLocale(backendDb, adminId);
+  const locale = botLocale(backendDb, actorId);
   const keyboard = new InlineKeyboard();
   for (let index = 0; index < VIDEO_SLOT_PRESETS.length; index += 2) {
     for (const clock of VIDEO_SLOT_PRESETS.slice(index, index + 2))
@@ -179,17 +179,17 @@ export async function sendVideoTimePrompt(
   }
   keyboard.text(t(locale, "video.enter-time-btn"), `video_sched_manual:${session.draftId}`).row();
   keyboard.text(t(locale, "common.cancel"), "video_cancel_dialog");
-  return sendVideoControl(ctx, backendDb, adminId, session, text, keyboard);
+  return sendVideoControl(ctx, backendDb, actorId, session, text, keyboard);
 }
 
-export async function askSchedule(ctx: Context, backendDb: BackendDb, adminId: number, session: VideoSession): Promise<void> {
+export async function askSchedule(ctx: Context, backendDb: BackendDb, actorId: number, session: VideoSession): Promise<void> {
   const next = { ...session, step: "schedule_choice" };
-  saveSession(backendDb, adminId, next);
-  const locale = botLocale(backendDb, adminId);
+  saveSession(backendDb, actorId, next);
+  const locale = botLocale(backendDb, actorId);
   const keyboard = new InlineKeyboard().text(t(locale, "video.same-time"), `video_common:${session.draftId}`);
   if (session.selected.length > 1) keyboard.row().text(t(locale, "video.different-time"), `video_individual:${session.draftId}`);
   keyboard.row().text(t(locale, "common.cancel"), "video_cancel_dialog");
-  await sendVideoControl(ctx, backendDb, adminId, next, t(locale, "video.saved-choose-schedule"), keyboard);
+  await sendVideoControl(ctx, backendDb, actorId, next, t(locale, "video.saved-choose-schedule"), keyboard);
 }
 
 export function setControlFromSession(backendDb: BackendDb, draftId: number, ctx: Context, session: VideoSession): void {

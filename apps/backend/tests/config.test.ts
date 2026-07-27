@@ -40,9 +40,20 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ MCP_STUDIO_TOKEN: "a".repeat(16) })).toThrow("MCP_STUDIO_TOKEN and MCP_STUDIO_ACTOR_ID");
     expect(() => loadConfig({ MCP_STUDIO_ACTOR_ID: "42" })).toThrow("MCP_STUDIO_TOKEN and MCP_STUDIO_ACTOR_ID");
     expect(() => loadConfig({ MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "42" })).toThrow(
-      "MCP_STUDIO_ACTOR_ID must belong to ADMIN_IDS",
+      "MCP_STUDIO_ACTOR_ID must belong to STUDIO_ACTOR_IDS",
     );
     expect(loadConfig({ ADMIN_IDS: "42", MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "42" }).MCP_STUDIO_ACTOR_ID).toBe(42);
+  });
+
+  it("accepts a Studio actor that is not a Telegram admin", () => {
+    // The point of the roster: an MCP-only deployment has an owner without
+    // granting anyone bot access.
+    const config = loadConfig({ STUDIO_ACTOR_IDS: "7", MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "7" });
+    expect(config.MCP_STUDIO_ACTOR_ID).toBe(7);
+    expect(config.ADMIN_IDS).toEqual([]);
+    expect(() => loadConfig({ STUDIO_ACTOR_IDS: "7", MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "8" })).toThrow(
+      "MCP_STUDIO_ACTOR_ID must belong to STUDIO_ACTOR_IDS",
+    );
   });
 
   it("parses a durable Zernio route for Instagram Reels", () => {

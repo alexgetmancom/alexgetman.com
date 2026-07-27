@@ -8,7 +8,7 @@ type NotificationPreference = { remindersEnabled: boolean; reminderMinutes: numb
 export function scheduleReminder(
   backendDb: BackendDb,
   input: {
-    adminId: number;
+    actorId: number;
     ref: string;
     kind: string;
     publishAt: Date;
@@ -30,7 +30,7 @@ export function scheduleReminder(
   backendDb.db
     .insert(studioNotificationJobs)
     .values({
-      adminId: input.adminId,
+      actorId: input.actorId,
       ref: input.ref,
       kind: input.kind,
       runAt,
@@ -83,7 +83,7 @@ export function runNotificationCycle(backendDb: BackendDb, limit = 50): number {
         type: "studio.notification.reminder.due",
         severity: "info",
         message: `Publication reminder: ${String(payload.title ?? job.ref)}`,
-        details: { admin_id: job.adminId, notification_job_id: job.id, kind: job.kind, ...payload },
+        details: { actor_id: job.actorId, notification_job_id: job.id, kind: job.kind, ...payload },
       });
       return true;
     });

@@ -21,9 +21,9 @@ import { clearPostAdminState, getPostAdminState, startPostDialog } from "./post-
  * `reply` opens the screen as a new message; `edit` turns the message the
  * operator just tapped into it, which is what a callback should do. */
 async function renderPostScreen(ctx: Context, backendDb: BackendDb, mode: "reply" | "edit"): Promise<void> {
-  const adminId = Number(ctx.from?.id);
-  startPostDialog(backendDb, adminId);
-  const locale = botLocale(backendDb, adminId);
+  const actorId = Number(ctx.from?.id);
+  startPostDialog(backendDb, actorId);
+  const locale = botLocale(backendDb, actorId);
   const prompt = t(locale, "post.dialog-prompt");
   const options = { reply_markup: new InlineKeyboard().text(t(locale, "common.cancel"), "cancel_dialog") };
   if (mode === "edit") await ctx.editMessageText(prompt, options);
@@ -39,9 +39,9 @@ export async function openPostScreen(ctx: Context, backendDb: BackendDb): Promis
 }
 
 export async function handlePostMessage(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<void> {
-  const adminId = Number(ctx.from?.id);
-  const locale = botLocale(backendDb, adminId);
-  const state = getPostAdminState(backendDb, adminId);
+  const actorId = Number(ctx.from?.id);
+  const locale = botLocale(backendDb, actorId);
+  const state = getPostAdminState(backendDb, actorId);
   const message = extractMessage(ctx);
   const mediaGroupId = ctx.message && "media_group_id" in ctx.message ? ctx.message.media_group_id : undefined;
   if (mediaGroupId && message.media.length > 0) {
@@ -52,7 +52,7 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
     const media = message.media[0];
     if (!media) return;
     const isNew = appendPendingAlbum(backendDb, {
-      adminId,
+      actorId,
       chatId: Number(ctx.chat?.id),
       mediaGroupId,
       text: message.text,
@@ -85,8 +85,8 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
   } catch (error) {
     log("warn", "draft translation failed", { error: String(error) });
   }
-  const draftId = studioServices(backendDb, config).publications.create(adminId, { kind: "post", message: { ...message, textEn } }).id;
-  clearPostAdminState(backendDb, adminId);
+  const draftId = studioServices(backendDb, config).publications.create(actorId, { kind: "post", message: { ...message, textEn } }).id;
+  clearPostAdminState(backendDb, actorId);
   const control = await sendDraftPreview(ctx, backendDb, draftId, config);
   if (ctx.chat?.id) setTelegramPostCard(backendDb, draftId, Number(ctx.chat.id), control.message_id);
 }

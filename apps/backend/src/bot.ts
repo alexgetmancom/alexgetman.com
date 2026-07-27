@@ -14,6 +14,7 @@ import { buildSettingsMenu, handleSettingsMessage, showSettings } from "./bot/se
 import { startVideoConversation } from "./bot/video-conversation.js";
 import { handleVideoCallback, handleVideoMessage } from "./bot/video-screen.js";
 import type { BackendDb } from "./db/client.js";
+import { actorFromTelegramUser } from "./foundation/actors.js";
 import type { BackendConfig } from "./foundation/config.js";
 import { t } from "./foundation/i18n/index.js";
 import { log } from "./foundation/logger.js";
@@ -118,7 +119,9 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
   });
 }
 
+/** Telegram-side gate: does this chat's user resolve to a Studio actor? The bot
+ * asks the resolver rather than reading ADMIN_IDS itself, so the credential
+ * mapping stays in one place as other interfaces are added. */
 export function isAdmin(config: BackendConfig, userId: number | undefined): boolean {
-  if (!userId) return false;
-  return config.ADMIN_IDS.includes(userId);
+  return actorFromTelegramUser(config, userId) !== null;
 }

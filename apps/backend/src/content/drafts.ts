@@ -6,12 +6,12 @@ import { recordDomainEvent } from "../domain/events.js";
 import type { DraftMessage } from "./message.js";
 
 /** Content aggregate for a draft before it enters a publication plan. */
-export function createDraftFromMessage(backendDb: BackendDb, adminId: number, message: DraftMessage): number {
+export function createDraftFromMessage(backendDb: BackendDb, actorId: number, message: DraftMessage): number {
   const now = new Date().toISOString();
   const created = backendDb.db
     .insert(drafts)
     .values({
-      adminId,
+      actorId,
       status: "needs_review",
       textRu: message.text,
       textEnMachine: message.textEn ?? message.text,
@@ -30,7 +30,7 @@ export function createDraftFromMessage(backendDb: BackendDb, adminId: number, me
     type: "content.draft.created",
     severity: "info",
     message: `Draft #${created.id} created`,
-    details: { owner_id: adminId, media_count: message.media.length },
+    details: { owner_id: actorId, media_count: message.media.length },
   });
   return created.id;
 }
@@ -39,7 +39,7 @@ export function requireDraft(backendDb: BackendDb, draftId: number) {
   const draft = backendDb.db
     .select({
       id: drafts.id,
-      admin_id: drafts.adminId,
+      actor_id: drafts.actorId,
       status: drafts.status,
       text_ru: drafts.textRu,
       text_en_machine: drafts.textEnMachine,

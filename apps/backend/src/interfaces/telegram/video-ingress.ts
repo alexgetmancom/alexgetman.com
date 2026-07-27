@@ -10,7 +10,7 @@ import { StudioError } from "../../foundation/errors.js";
 type StoredVideo = { assetId: number };
 
 /** Telegram-only adapter that receives an uploaded video into Content storage. */
-export async function storeTelegramVideo(ctx: Context, backendDb: BackendDb, config: BackendConfig, adminId: number): Promise<StoredVideo> {
+export async function storeTelegramVideo(ctx: Context, backendDb: BackendDb, config: BackendConfig, actorId: number): Promise<StoredVideo> {
   if (!config.controllerBotToken) throw new Error("Telegram bot token is not configured.");
   const video = ctx.message && "video" in ctx.message ? ctx.message.video : undefined;
   const document = ctx.message && "document" in ctx.message ? ctx.message.document : undefined;
@@ -35,7 +35,7 @@ export async function storeTelegramVideo(ctx: Context, backendDb: BackendDb, con
   }
   let asset: Awaited<ReturnType<typeof importStudioMediaFile>>;
   try {
-    asset = await importStudioMediaFile(backendDb, config, adminId, {
+    asset = await importStudioMediaFile(backendDb, config, actorId, {
       filename: name || `telegram-video${extension.toLowerCase()}`,
       contentType: mime || "video/mp4",
       localPath,

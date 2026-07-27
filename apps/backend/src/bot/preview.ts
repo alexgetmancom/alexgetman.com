@@ -84,7 +84,7 @@ export function draftPreview(
   view: DraftView = "overview",
 ): { text: string; keyboard: InlineKeyboard } {
   const draft = requireDraft(backendDb, draftId);
-  const locale = botLocale(backendDb, draft.admin_id);
+  const locale = botLocale(backendDb, draft.actor_id);
   const targets = parseTargets(draft.targets_json);
   const sourceCount = backendDb.db.select({ id: draftSources.id }).from(draftSources).where(eq(draftSources.draftId, draftId)).all().length;
   const keyboard = new InlineKeyboard();

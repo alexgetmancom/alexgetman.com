@@ -42,7 +42,7 @@ describe("Studio MCP", () => {
         `Bearer ${"a".repeat(16)}`,
       );
       expect(await created.json()).toMatchObject({ result: { content: [{ type: "text" }] } });
-      expect(backendDb.sqlite.prepare("SELECT admin_id FROM drafts").get()).toEqual({ admin_id: 42 });
+      expect(backendDb.sqlite.prepare("SELECT actor_id FROM drafts").get()).toEqual({ actor_id: 42 });
       const preview = await request(
         app,
         { jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "studio_post_preview", arguments: { draft_id: 1 } } },
@@ -90,7 +90,7 @@ describe("Studio MCP", () => {
       backendDb.db
         .insert(studioMediaAssets)
         .values({
-          adminId: 42,
+          actorId: 42,
           kind: "video",
           mimeType: "video/mp4",
           filename: "uploaded.mp4",
@@ -125,8 +125,8 @@ describe("Studio MCP", () => {
         },
         authorization,
       );
-      expect(backendDb.sqlite.prepare("SELECT admin_id, asset_key, studio_media_asset_id FROM video_drafts WHERE id=1").get()).toEqual({
-        admin_id: 42,
+      expect(backendDb.sqlite.prepare("SELECT actor_id, asset_key, studio_media_asset_id FROM video_drafts WHERE id=1").get()).toEqual({
+        actor_id: 42,
         asset_key: "studio-asset-1",
         studio_media_asset_id: 1,
       });

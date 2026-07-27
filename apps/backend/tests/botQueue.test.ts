@@ -14,7 +14,7 @@ describe("Telegram work queue", () => {
         .values([
           {
             id: 1,
-            adminId: 7,
+            actorId: 7,
             status: "scheduled",
             textRu: "Запланированный пост",
             targetsJson: JSON.stringify({ telegram_ru: true, telegram_en: true }),
@@ -25,7 +25,7 @@ describe("Telegram work queue", () => {
           },
           {
             id: 2,
-            adminId: 7,
+            actorId: 7,
             status: "needs_review",
             textRu: "Черновик поста",
             targetsJson: "{}",
@@ -34,7 +34,7 @@ describe("Telegram work queue", () => {
           },
           {
             id: 3,
-            adminId: 8,
+            actorId: 8,
             status: "needs_review",
             textRu: "Чужой черновик",
             targetsJson: "{}",
@@ -57,7 +57,7 @@ describe("Telegram work queue", () => {
         .run();
       const video = backendDb.db
         .insert(videoDrafts)
-        .values({ adminId: 7, assetKey: "video", label: "Черновик видео", status: "editing", createdAt: now, updatedAt: now })
+        .values({ actorId: 7, assetKey: "video", label: "Черновик видео", status: "editing", createdAt: now, updatedAt: now })
         .returning({ id: videoDrafts.id })
         .get();
       if (!video) throw new Error("video draft missing");

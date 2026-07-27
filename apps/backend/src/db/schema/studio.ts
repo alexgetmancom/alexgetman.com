@@ -3,7 +3,7 @@ import { autoId, type JsonObject, type JsonValue, json, timestamps } from "./_sh
 
 /** Owner-level notification policy. It belongs to Studio, not to any interface. */
 export const studioNotificationSettings = sqliteTable("studio_notification_settings", {
-  adminId: integer().primaryKey(),
+  actorId: integer().primaryKey(),
   remindersEnabled: integer().notNull().default(1),
   reminderMinutes: integer().notNull().default(5),
   completionEnabled: integer().notNull().default(1),
@@ -15,7 +15,7 @@ export const studioNotificationJobs = sqliteTable(
   "studio_notification_jobs",
   {
     id: autoId(),
-    adminId: integer().notNull(),
+    actorId: integer().notNull(),
     ref: text().notNull(),
     kind: text().notNull(),
     runAt: text().notNull(),
@@ -34,7 +34,7 @@ export const studioMediaAssets = sqliteTable(
   "studio_media_assets",
   {
     id: autoId(),
-    adminId: integer().notNull(),
+    actorId: integer().notNull(),
     kind: text().notNull(),
     mimeType: text().notNull(),
     filename: text().notNull(),
@@ -45,16 +45,16 @@ export const studioMediaAssets = sqliteTable(
     createdAt: text().notNull(),
   },
   (table) => [
-    index("idx_studio_media_assets_owner").on(table.adminId, table.createdAt),
+    index("idx_studio_media_assets_owner").on(table.actorId, table.createdAt),
     index("idx_studio_media_assets_hash").on(table.sha256),
     // Media is content-addressed per owner. The uniqueness is what makes the
     // import path's "reuse the existing row" lookup safe under concurrency.
-    uniqueIndex("idx_studio_media_assets_owner_hash").on(table.adminId, table.sha256),
+    uniqueIndex("idx_studio_media_assets_owner_hash").on(table.actorId, table.sha256),
   ],
 );
 
 export const adminState = sqliteTable("admin_state", {
-  adminId: integer().primaryKey(),
+  actorId: integer().primaryKey(),
   action: text(),
   draftId: integer(),
   controlMessageId: integer(),
@@ -62,14 +62,14 @@ export const adminState = sqliteTable("admin_state", {
 });
 
 export const botSettings = sqliteTable("bot_settings", {
-  adminId: integer().primaryKey(),
+  actorId: integer().primaryKey(),
   youtubeSignature: text().notNull().default(""),
   pendingAction: text(),
   updatedAt: text().notNull(),
 });
 
 export const botUiSettings = sqliteTable("bot_ui_settings", {
-  adminId: integer().primaryKey(),
+  actorId: integer().primaryKey(),
   locale: text().notNull().default("en"),
   updatedAt: text().notNull(),
 });

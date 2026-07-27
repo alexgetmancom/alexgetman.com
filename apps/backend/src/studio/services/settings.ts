@@ -8,7 +8,7 @@ import type { StudioActorId, StudioLocale } from "../contracts.js";
 /** Read as a plain function, not a method: the service is an object literal, so
  * a method reading it through `this` breaks the moment it is destructured. */
 function readNotifications(backendDb: BackendDb, actorId: StudioActorId) {
-  const row = backendDb.db.select().from(studioNotificationSettings).where(eq(studioNotificationSettings.adminId, actorId)).get();
+  const row = backendDb.db.select().from(studioNotificationSettings).where(eq(studioNotificationSettings.actorId, actorId)).get();
   return {
     remindersEnabled: row?.remindersEnabled !== 0,
     reminderMinutes: row?.reminderMinutes ?? 5,
@@ -41,14 +41,14 @@ export function settingsService(backendDb: BackendDb) {
       backendDb.db
         .insert(studioNotificationSettings)
         .values({
-          adminId: actorId,
+          actorId: actorId,
           remindersEnabled: Number(next.remindersEnabled),
           reminderMinutes: next.reminderMinutes,
           completionEnabled: Number(next.completionEnabled),
           updatedAt: now,
         })
         .onConflictDoUpdate({
-          target: studioNotificationSettings.adminId,
+          target: studioNotificationSettings.actorId,
           set: {
             remindersEnabled: Number(next.remindersEnabled),
             reminderMinutes: next.reminderMinutes,
@@ -60,23 +60,23 @@ export function settingsService(backendDb: BackendDb) {
       return next;
     },
     youtubeSignature(actorId: StudioActorId): string {
-      return backendDb.db.select().from(botSettings).where(eq(botSettings.adminId, actorId)).get()?.youtubeSignature.trim() ?? "";
+      return backendDb.db.select().from(botSettings).where(eq(botSettings.actorId, actorId)).get()?.youtubeSignature.trim() ?? "";
     },
     beginYoutubeSignatureEdit(actorId: StudioActorId): void {
       const now = new Date().toISOString();
       backendDb.db
         .insert(botSettings)
-        .values({ adminId: actorId, youtubeSignature: "", pendingAction: "youtube_signature", updatedAt: now })
-        .onConflictDoUpdate({ target: botSettings.adminId, set: { pendingAction: "youtube_signature", updatedAt: now } })
+        .values({ actorId: actorId, youtubeSignature: "", pendingAction: "youtube_signature", updatedAt: now })
+        .onConflictDoUpdate({ target: botSettings.actorId, set: { pendingAction: "youtube_signature", updatedAt: now } })
         .run();
     },
     saveYoutubeSignature(actorId: StudioActorId, value: string): boolean {
-      const setting = backendDb.db.select().from(botSettings).where(eq(botSettings.adminId, actorId)).get();
+      const setting = backendDb.db.select().from(botSettings).where(eq(botSettings.actorId, actorId)).get();
       if (setting?.pendingAction !== "youtube_signature") return false;
       backendDb.db
         .update(botSettings)
         .set({ youtubeSignature: value === "-" ? "" : fixUrlSlashes(value), pendingAction: null, updatedAt: new Date().toISOString() })
-        .where(eq(botSettings.adminId, actorId))
+        .where(eq(botSettings.actorId, actorId))
         .run();
       return true;
     },
@@ -84,15 +84,15 @@ export function settingsService(backendDb: BackendDb) {
       const now = new Date().toISOString();
       backendDb.db
         .insert(botSettings)
-        .values({ adminId: actorId, youtubeSignature: "", pendingAction: null, updatedAt: now })
-        .onConflictDoUpdate({ target: botSettings.adminId, set: { youtubeSignature: "", pendingAction: null, updatedAt: now } })
+        .values({ actorId: actorId, youtubeSignature: "", pendingAction: null, updatedAt: now })
+        .onConflictDoUpdate({ target: botSettings.actorId, set: { youtubeSignature: "", pendingAction: null, updatedAt: now } })
         .run();
     },
     setLocale(actorId: StudioActorId, locale: StudioLocale): void {
       backendDb.db
         .insert(botUiSettings)
-        .values({ adminId: actorId, locale, updatedAt: new Date().toISOString() })
-        .onConflictDoUpdate({ target: botUiSettings.adminId, set: { locale, updatedAt: new Date().toISOString() } })
+        .values({ actorId: actorId, locale, updatedAt: new Date().toISOString() })
+        .onConflictDoUpdate({ target: botUiSettings.actorId, set: { locale, updatedAt: new Date().toISOString() } })
         .run();
     },
   };

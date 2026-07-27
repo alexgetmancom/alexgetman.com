@@ -161,7 +161,7 @@ describe("TypeScript operations tooling", () => {
         [3, "partial"],
       ] as const) {
         backendDb.sqlite
-          .query("INSERT INTO video_drafts(id,admin_id,label,asset_key,status,created_at,updated_at) VALUES (?,1,'test','asset',?,?,?)")
+          .query("INSERT INTO video_drafts(id,actor_id,label,asset_key,status,created_at,updated_at) VALUES (?,1,'test','asset',?,?,?)")
           .run(id, status, now, now);
         backendDb.sqlite
           .query(
@@ -204,7 +204,7 @@ describe("TypeScript operations tooling", () => {
       backendDb.sqlite.query("INSERT INTO publications(post_id,status,created_at,updated_at) VALUES (1,'failed',?,?)").run(now, now);
       backendDb.sqlite
         .query(
-          "INSERT INTO drafts(id,admin_id,status,text_ru,targets_json,post_id,created_at,updated_at) VALUES (1,1,'failed','text','{}',1,?,?)",
+          "INSERT INTO drafts(id,actor_id,status,text_ru,targets_json,post_id,created_at,updated_at) VALUES (1,1,'failed','text','{}',1,?,?)",
         )
         .run(now, now);
       backendDb.sqlite

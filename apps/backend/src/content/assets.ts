@@ -19,21 +19,21 @@ type ImportedStudioMedia = {
 type ImportedStudioMediaFile = Omit<ImportedStudioMedia, "bytes"> & { localPath: string; byteSize?: number };
 
 /** Content-owned file storage. Interfaces hand it bytes; delivery later decides how to upload them. */
-export async function importStudioMediaAsset(backendDb: BackendDb, config: BackendConfig, adminId: number, input: ImportedStudioMedia) {
+export async function importStudioMediaAsset(backendDb: BackendDb, config: BackendConfig, actorId: number, input: ImportedStudioMedia) {
   if (input.bytes.byteLength === 0) throw new Error("Media file is empty.");
   assertStudioMediaSize(input.bytes.byteLength, config.STUDIO_MEDIA_MAX_BYTES);
   const temporary = path.join(config.STUDIO_MEDIA_DIR, ".incoming", `${crypto.randomUUID()}`);
   await fs.promises.mkdir(path.dirname(temporary), { recursive: true });
   await fs.promises.writeFile(temporary, input.bytes);
   try {
-    return await importStudioMediaFile(backendDb, config, adminId, { ...input, localPath: temporary, byteSize: input.bytes.byteLength });
+    return await importStudioMediaFile(backendDb, config, actorId, { ...input, localPath: temporary, byteSize: input.bytes.byteLength });
   } finally {
     await fs.promises.rm(temporary, { force: true });
   }
 }
 
 /** Streams/copies an already downloaded file into Content storage without loading it into application memory. */
-export async function importStudioMediaFile(backendDb: BackendDb, config: BackendConfig, adminId: number, input: ImportedStudioMediaFile) {
+export async function importStudioMediaFile(backendDb: BackendDb, config: BackendConfig, actorId: number, input: ImportedStudioMediaFile) {
   const stat = await fs.promises.stat(input.localPath);
   const byteSize = input.byteSize ?? stat.size;
   if (byteSize === 0) throw new Error("Media file is empty.");
@@ -43,7 +43,7 @@ export async function importStudioMediaFile(backendDb: BackendDb, config: Backen
   const extension = mediaExtension(kind, input.contentType, input.filename);
   const sha256 = await fileSha256(input.localPath);
   const filename = `${sha256.slice(0, 24)}${extension}`;
-  const directory = path.join(config.STUDIO_MEDIA_DIR, String(adminId));
+  const directory = path.join(config.STUDIO_MEDIA_DIR, String(actorId));
   const localPath = path.join(directory, filename);
   await fs.promises.mkdir(directory, { recursive: true });
   if (!fs.existsSync(localPath)) {
@@ -57,9 +57,9 @@ export async function importStudioMediaFile(backendDb: BackendDb, config: Backen
   const existing = backendDb.db
     .select()
     .from(studioMediaAssets)
-    .where(and(eq(studioMediaAssets.adminId, adminId), eq(studioMediaAssets.sha256, sha256)))
+    .where(and(eq(studioMediaAssets.actorId, actorId), eq(studioMediaAssets.sha256, sha256)))
     .get();
-  // The insert is guarded by the unique (admin_id, sha256) index rather than by
+  // The insert is guarded by the unique (actor_id, sha256) index rather than by
   // the lookup above: two concurrent imports of one file both miss the select.
   // `onConflictDoNothing` + re-read makes the loser adopt the winner's row.
   const inserted = existing
@@ -67,7 +67,7 @@ export async function importStudioMediaFile(backendDb: BackendDb, config: Backen
     : backendDb.db
         .insert(studioMediaAssets)
         .values({
-          adminId,
+          actorId,
           kind,
           mimeType: input.contentType || (kind === "video" ? "video/mp4" : "image/jpeg"),
           filename: safeFilename(input.filename) || filename,
@@ -77,7 +77,7 @@ export async function importStudioMediaFile(backendDb: BackendDb, config: Backen
           source: input.source,
           createdAt: now,
         })
-        .onConflictDoNothing({ target: [studioMediaAssets.adminId, studioMediaAssets.sha256] })
+        .onConflictDoNothing({ target: [studioMediaAssets.actorId, studioMediaAssets.sha256] })
         .returning()
         .get();
   const asset =
@@ -86,7 +86,7 @@ export async function importStudioMediaFile(backendDb: BackendDb, config: Backen
     backendDb.db
       .select()
       .from(studioMediaAssets)
-      .where(and(eq(studioMediaAssets.adminId, adminId), eq(studioMediaAssets.sha256, sha256)))
+      .where(and(eq(studioMediaAssets.actorId, actorId), eq(studioMediaAssets.sha256, sha256)))
       .get();
   if (!asset) throw new Error("Media asset could not be stored.");
   // Only the import that actually created the row announces it: a lost race and
@@ -97,28 +97,28 @@ export async function importStudioMediaFile(backendDb: BackendDb, config: Backen
       type: "content.media.imported",
       severity: "info",
       message: `Studio media asset #${asset.id} imported`,
-      details: { owner_id: adminId, kind, byte_size: byteSize, source: input.source },
+      details: { owner_id: actorId, kind, byte_size: byteSize, source: input.source },
     });
   return asset;
 }
 
-export function listStudioMediaAssets(backendDb: BackendDb, adminId: number, limit = 50) {
+export function listStudioMediaAssets(backendDb: BackendDb, actorId: number, limit = 50) {
   return backendDb.db
     .select()
     .from(studioMediaAssets)
-    .where(eq(studioMediaAssets.adminId, adminId))
+    .where(eq(studioMediaAssets.actorId, actorId))
     .orderBy(studioMediaAssets.id)
     .limit(limit)
     .all();
 }
 
-export function requireStudioMediaAssets(backendDb: BackendDb, adminId: number, assetIds: number[]) {
+export function requireStudioMediaAssets(backendDb: BackendDb, actorId: number, assetIds: number[]) {
   const ids = [...new Set(assetIds)];
   if (ids.length === 0) return [];
   const assets = backendDb.db
     .select()
     .from(studioMediaAssets)
-    .where(and(eq(studioMediaAssets.adminId, adminId), inArray(studioMediaAssets.id, ids)))
+    .where(and(eq(studioMediaAssets.actorId, actorId), inArray(studioMediaAssets.id, ids)))
     .all();
   if (assets.length !== ids.length) throw new Error("One or more media assets are not available to this owner.");
   const byId = new Map(assets.map((asset) => [asset.id, asset]));

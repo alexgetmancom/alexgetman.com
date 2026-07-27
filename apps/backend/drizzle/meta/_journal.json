@@ -211,6 +211,13 @@
       "when": 1785974600000,
       "tag": "0029_metric_samples_retention_index",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1785974700000,
+      "tag": "0030_actor_id_rename",
+      "breakpoints": true
     }
   ]
 }
