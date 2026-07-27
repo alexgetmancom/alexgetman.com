@@ -33,6 +33,32 @@ function cookieValue(cookieHeader: string | undefined, name: string): string {
   return "";
 }
 
+/** Cookie authority is ambient: a cross-site form can ride it. Routes that act
+ * on a cookie alone pair `commandAllowed` with this check, so a POST has to come
+ * from the Command Center's own origin. A caller presenting the token explicitly
+ * is a script, not a drive-by browser form, and is exempt. */
+export function sameOriginCommandLogin(request: Request, config: BackendConfig): boolean {
+  const expectedOrigin = new URL(config.COMMAND_CENTER_URL).origin;
+  const origin = request.headers.get("origin");
+  if (origin) return origin === expectedOrigin;
+  const referer = request.headers.get("referer");
+  if (!referer) return false;
+  try {
+    return new URL(referer).origin === expectedOrigin;
+  } catch {
+    return false;
+  }
+}
+
+/** Resolves the bearer token on a Studio request to the actor it authorizes, or
+ * null when Studio access is unconfigured or the token does not match. */
+export function mcpStudioActor(request: Request, config: BackendConfig): number | null {
+  if (!config.MCP_STUDIO_TOKEN || !config.MCP_STUDIO_ACTOR_ID) return null;
+  const authorization = request.headers.get("authorization") ?? "";
+  const token = authorization.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : "";
+  return safeEqual(token, config.MCP_STUDIO_TOKEN) ? config.MCP_STUDIO_ACTOR_ID : null;
+}
+
 export function safeEqual(left: string, right: string): boolean {
   if (!left || !right) return false;
   const leftBuffer = Buffer.from(left);

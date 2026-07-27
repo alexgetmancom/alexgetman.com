@@ -1,0 +1,112 @@
+import { commandAllowed, sameOriginCommandLogin } from "../../foundation/http-auth.js";
+import { html, json, loginRedirect, queryTokenRedirect, sse, text } from "../../foundation/http-response.js";
+import { commandActionSchema } from "../../operations/commands.js";
+import type { OperationsCommand } from "../../operations/contracts.js";
+import { studioServices } from "../../studio/services/index.js";
+import { renderCommandCenterLogin, renderDashboard } from "../web/dashboard.js";
+import type { RouteModule } from "./context.js";
+
+export const commandCenterRoutes: RouteModule = (app, { config, backendDb, operations }) => {
+  app.get("/api/pipeline-status", (c) => {
+    if (!commandAllowed(c.req.raw, config)) return text("unauthorized\n", 401);
+    return json(operations.pipeline(Number(c.req.query("week_offset") ?? 0) || 0));
+  });
+
+  app.get("/api/pipeline-status/stream", (c) => {
+    if (!commandAllowed(c.req.raw, config)) return text("unauthorized\n", 401);
+    const weekOffset = Number(c.req.query("week_offset") ?? 0) || 0;
+    return sse((send) => {
+      send("pipeline", operations.pipeline(weekOffset));
+      return setInterval(() => send("pipeline", operations.pipeline(weekOffset)), 10_000);
+    });
+  });
+
+  app.get("/pipeline-status", (c) => {
+    const target = new URL("/command-center", c.req.url);
+    const weekOffset = c.req.query("week_offset");
+    if (weekOffset) target.searchParams.set("week_offset", weekOffset);
+    return Response.redirect(target, 308);
+  });
+
+  app.get("/command-center", (c) => {
+    const request = c.req.raw;
+    const url = new URL(request.url);
+    const queryToken = url.searchParams.get("token");
+    if (queryToken && commandAllowed(request, config)) return queryTokenRedirect(url, "command_token", queryToken);
+    if (!commandAllowed(request, config)) return html(renderCommandCenterLogin());
+    return html(
+      renderDashboard(
+        config,
+        backendDb,
+        Number(url.searchParams.get("week_offset") ?? 0) || 0,
+        url.searchParams.get("ref") ?? "",
+        url.searchParams.get("message_id") ?? "",
+        url.searchParams.get("tab") ?? undefined,
+        url.searchParams.get("locale") ?? undefined,
+        url.searchParams.get("panel") ?? undefined,
+        url.searchParams.get("period") ?? undefined,
+      ),
+    );
+  });
+
+  app.post("/command-center", async (c) => {
+    const request = c.req.raw;
+    if (!sameOriginCommandLogin(request, config)) return text("forbidden\n", 403);
+    const form = await request.formData().catch(() => new FormData());
+    const token = form.get("token");
+    if (typeof token !== "string" || !commandAllowed(request, config, token)) return html(renderCommandCenterLogin(true));
+    return loginRedirect("/command-center", "command_token", token);
+  });
+
+  app.post("/command-center/studio/acknowledge", async (c) => {
+    const request = c.req.raw;
+    if (!commandAllowed(request, config) || !sameOriginCommandLogin(request, config)) return text("forbidden\n", 403);
+    const actorId = config.MCP_STUDIO_ACTOR_ID;
+    const form = await request.formData().catch(() => new FormData());
+    const id = Number(form.get("id"));
+    if (actorId && Number.isSafeInteger(id)) studioServices(backendDb, config).notifications.acknowledge(actorId, id);
+    return new Response(null, { status: 303, headers: { location: "/command-center?tab=studio" } });
+  });
+
+  app.get("/api/command-center", (c) =>
+    commandAllowed(c.req.raw, config) ? json(operations.dashboard()) : json({ detail: "forbidden" }, 403),
+  );
+
+  app.get("/api/ops-dashboard", (c) =>
+    commandAllowed(c.req.raw, config)
+      ? json({ pipeline: operations.pipeline(), ops: operations.dashboard() })
+      : json({ detail: "forbidden" }, 403),
+  );
+
+  app.get("/api/post-debug", (c) => {
+    if (!commandAllowed(c.req.raw, config)) return json({ detail: "forbidden" }, 403);
+    const ref = c.req.query("ref");
+    if (!ref) return json({ detail: "missing ref" }, 400);
+    const payload = operations.postDebug(ref);
+    return payload ? json(payload) : json({ detail: "not found" }, 404);
+  });
+
+  app.post("/api/command-center/action", async (c) => {
+    const body = await commandAction(c.req.raw);
+    if (!commandAllowed(c.req.raw, config, body.token)) return json({ detail: "forbidden" }, 403);
+    // This endpoint deletes external publications, so it gets the same same-origin
+    // check as /command-center/studio/acknowledge — cookie authority is ambient and
+    // a cross-site form can ride it. A caller that presents the token explicitly is
+    // a script, not a drive-by browser form, and keeps working.
+    const explicitToken = Boolean(body.token?.trim() || c.req.header("X-Command-Token") || c.req.header("X-Admin-Token"));
+    if (!explicitToken && !sameOriginCommandLogin(c.req.raw, config)) return json({ detail: "forbidden" }, 403);
+    try {
+      return json(await operations.command(body));
+    } catch (error) {
+      return json({ detail: error instanceof Error ? error.message : String(error) }, 400);
+    }
+  });
+};
+
+async function commandAction(request: Request): Promise<OperationsCommand> {
+  const raw = request.headers.get("content-type")?.includes("application/json")
+    ? await request.json().catch(() => ({}))
+    : Object.fromEntries((await request.formData().catch(() => new FormData())).entries());
+  const parsed = commandActionSchema.safeParse(raw);
+  return parsed.success ? parsed.data : commandActionSchema.parse({});
+}
