@@ -4,6 +4,7 @@ import { openBackendDb } from "../src/db/client.js";
 import { alertDedup, credentialChecks, postEvents, publishJobs, siteJobs, workerState } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { runObservabilityCycle } from "../src/observability/cycle.js";
+import { healthReport } from "../src/observability/health.js";
 import { recordMemoryPressure } from "../src/observability/runtime-health.js";
 
 function testHarness() {
@@ -226,6 +227,157 @@ describe("runtime health", () => {
       expect(recordMemoryPressure(config, backendDb, process.memoryUsage().rss * 100)).toBe(false);
       expect(recordMemoryPressure(config, backendDb, null)).toBe(false);
       expect(countEvents(backendDb, "runtime.memory.pressure")).toBe(0);
+    } finally {
+      backendDb.close();
+    }
+  });
+});
+
+/** Every capability requirement satisfied, so `ok` reflects credentials and
+ * workers alone rather than being pinned false by a missing integration. */
+const READY_ENV = {
+  ADMIN_IDS: "42",
+  CONTROLLER_BOT_TOKEN: "token",
+  YOUTUBE_CLIENT_ID: "id",
+  YOUTUBE_CLIENT_SECRET: "secret",
+  YOUTUBE_REFRESH_TOKEN: "refresh",
+  INSTAGRAM_ACCESS_TOKEN: "token",
+  INSTAGRAM_USER_ID: "user",
+  THREADS_ACCESS_TOKEN: "token",
+  THREADS_EN_ACCESS_TOKEN: "token",
+  X_CONSUMER_KEY: "key",
+  X_CONSUMER_SECRET: "secret",
+  X_ACCESS_TOKEN: "token",
+  X_ACCESS_TOKEN_SECRET: "secret",
+  TELEGRAM_CHANNEL_STORIES_API_ID: "1",
+  TELEGRAM_CHANNEL_STORIES_API_HASH: "hash",
+  TELEGRAM_CHANNEL_STORIES_SESSION: "session",
+  INSTAGRAM_RU_USER_ID: "ru",
+  INSTAGRAM_RU_ACCESS_TOKEN: "token",
+  INSTAGRAM_EN_USER_ID: "en",
+  INSTAGRAM_EN_ACCESS_TOKEN: "token",
+};
+
+const checkedAt = "2026-07-27T10:00:00.000Z";
+
+function insertCredential(backendDb: ReturnType<typeof openBackendDb>, target: string, status: string): void {
+  backendDb.db
+    .insert(credentialChecks)
+    .values({ target, status, requiredEnvJson: "[]", missingEnvJson: "[]", lastCheckedAt: checkedAt })
+    .run();
+}
+
+function insertWorker(backendDb: ReturnType<typeof openBackendDb>, name: string, state: Record<string, boolean | string>): void {
+  backendDb.db.insert(workerState).values({ name, stateJson: state, updatedAt: checkedAt }).run();
+}
+
+function insertAlertEvent(backendDb: ReturnType<typeof openBackendDb>, severity: string, ackedAt: string | null): void {
+  backendDb.db
+    .insert(postEvents)
+    .values({ eventType: "publish.failed", severity, target: "x", message: "m", ackedAt, createdAt: checkedAt })
+    .run();
+}
+
+describe("healthReport", () => {
+  it("reports ok with an ISO timestamp when credentials, workers and capabilities are all ready", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      insertCredential(backendDb, "x", "ready");
+      insertWorker(backendDb, "publisher", { ok: true });
+      const report = healthReport(loadConfig(READY_ENV), backendDb);
+
+      expect(report.ok).toBe(true);
+      expect(report.pendingAlerts).toBe(0);
+      expect(new Date(report.generatedAt).toISOString()).toBe(report.generatedAt);
+      expect(report.capabilities.every((capability) => capability.status === "ready")).toBe(true);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("goes not-ok when any credential check is not ready", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      insertCredential(backendDb, "x", "ready");
+      insertCredential(backendDb, "threads_ru", "expired");
+      insertWorker(backendDb, "publisher", { ok: true });
+
+      expect(healthReport(loadConfig(READY_ENV), backendDb).ok).toBe(false);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("goes not-ok when a worker reports ok:false, and stays ok when it reports no verdict", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      insertCredential(backendDb, "x", "ready");
+      insertWorker(backendDb, "publisher", { ok: false, lastError: "stalled" });
+      expect(healthReport(loadConfig(READY_ENV), backendDb).ok).toBe(false);
+    } finally {
+      backendDb.close();
+    }
+
+    const clean = openBackendDb(":memory:");
+    try {
+      insertCredential(clean, "x", "ready");
+      insertWorker(clean, "collector", { phase: "idle" });
+      expect(healthReport(loadConfig(READY_ENV), clean).ok).toBe(true);
+    } finally {
+      clean.close();
+    }
+  });
+
+  it("goes not-ok and names the missing env when a capability is unconfigured", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      insertCredential(backendDb, "x", "ready");
+      insertWorker(backendDb, "publisher", { ok: true });
+      const { ADMIN_IDS, CONTROLLER_BOT_TOKEN } = READY_ENV;
+      const report = healthReport(loadConfig({ ADMIN_IDS, CONTROLLER_BOT_TOKEN }), backendDb);
+
+      expect(report.ok).toBe(false);
+      expect(report.capabilities.find((capability) => capability.target === "x")).toMatchObject({
+        status: "missing",
+        missing: ["X_CONSUMER_KEY", "X_CONSUMER_SECRET", "X_ACCESS_TOKEN", "X_ACCESS_TOKEN_SECRET"],
+      });
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("counts only unacknowledged warn and error events as pending alerts", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      insertAlertEvent(backendDb, "error", null);
+      insertAlertEvent(backendDb, "warn", null);
+      insertAlertEvent(backendDb, "error", checkedAt);
+      insertAlertEvent(backendDb, "info", null);
+
+      expect(healthReport(loadConfig(READY_ENV), backendDb).pendingAlerts).toBe(2);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("projects workers down to name, state and updatedAt", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      insertWorker(backendDb, "publisher", { ok: true, phase: "idle" });
+
+      expect(healthReport(loadConfig(READY_ENV), backendDb).workers).toEqual([
+        { name: "publisher", state: { ok: true, phase: "idle" }, updatedAt: checkedAt },
+      ]);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("treats an empty database as ok rather than throwing on a missing count row", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const report = healthReport(loadConfig(READY_ENV), backendDb);
+      expect(report).toMatchObject({ ok: true, pendingAlerts: 0, credentials: [], workers: [] });
     } finally {
       backendDb.close();
     }
