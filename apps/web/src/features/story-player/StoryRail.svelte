@@ -200,7 +200,7 @@ $effect(() => {
     border: 1px solid var(--border);
     border-radius: 8px;
     overflow: hidden;
-    background: var(--bg-deep);
+    background: var(--player-surface);
     color: var(--text-header);
     isolation: isolate;
     padding: 0;
@@ -219,17 +219,20 @@ $effect(() => {
   .rail-card:not(.is-active):hover {
     filter: grayscale(35%);
     opacity: 0.75;
-    border-color: rgba(255, 255, 255, 0.2);
+    border-color: var(--border-hover);
   }
 
   .rail-card.is-active {
-    border-color: rgba(220, 38, 38, 0.5);
+    border-color: var(--accent);
     box-shadow:
-      0 0 0 1px rgba(220, 38, 38, 0.18),
+      0 0 0 1px var(--accent-glow),
       0 18px 42px rgba(0, 0, 0, 0.32);
     filter: none;
     opacity: 1;
-    background: linear-gradient(90deg, rgba(220, 38, 38, 0.07), rgba(0, 0, 0, 0.7) 36%, rgba(220, 38, 38, 0.045)), var(--bg-deep);
+    /* No tint. A crimson wash at 4-7% is invisible on a black card and turns
+       the same card pink on a white one; the accent border and the removed
+       grayscale already say "active" on both themes. */
+    background: var(--player-surface);
   }
 
   /* Пост скрыт текущим режимом ленты (Deep/Watched). */
@@ -251,7 +254,7 @@ $effect(() => {
 
   .rail-card.is-active .rail-card__media {
     order: 2;
-    border-left: 1px solid rgba(255, 255, 255, 0.08);
+    border-left: 1px solid var(--border-soft);
   }
 
   .rail-card__media img,
@@ -288,7 +291,7 @@ $effect(() => {
   }
 
   .rail-card.is-active .rail-card__shade {
-    background: linear-gradient(90deg, rgba(220, 38, 38, 0.035), transparent 42%, rgba(220, 38, 38, 0.055));
+    background: none;
   }
 
   .rail-card__text {

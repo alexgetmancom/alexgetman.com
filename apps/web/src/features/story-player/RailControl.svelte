@@ -73,13 +73,11 @@ let {
     align-items: center;
     gap: 0.32rem;
     padding: 0.38rem 0.32rem;
-    border: 1px solid rgba(220, 38, 38, 0.42);
+    border: 1px solid var(--accent);
     border-right: 0;
     border-radius: 8px 0 0 8px;
-    background: linear-gradient(180deg, rgba(220, 38, 38, 0.18), rgba(0, 0, 0, 0.64)), var(--bg-deep);
-    box-shadow:
-      inset -1px 0 0 rgba(220, 38, 38, 0.18),
-      0 12px 28px rgba(0, 0, 0, 0.36);
+    background: var(--player-surface);
+    box-shadow: 0 12px 28px var(--scrim-shadow);
     pointer-events: auto;
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
@@ -104,7 +102,7 @@ let {
   .feed-mode-menu__panel button {
     min-height: 36px;
     border: 1px solid var(--border);
-    background: var(--bg-deep);
+    background: var(--player-surface);
     color: var(--text-header);
     cursor: pointer;
     backdrop-filter: blur(14px);
@@ -151,8 +149,8 @@ let {
   .rail-avatar-menu__button:hover,
   .feed-mode-menu__button:hover,
   .feed-mode-menu__button.is-active {
-    border-color: rgba(220, 38, 38, 0.48);
-    background: rgba(220, 38, 38, 0.13);
+    border-color: var(--accent);
+    background: var(--accent-glow);
   }
 
   .rail-avatar-menu__panel,
@@ -166,7 +164,7 @@ let {
     padding: 0.38rem;
     border: 1px solid var(--border);
     border-radius: 8px;
-    background: var(--bg-deep);
+    background: var(--player-surface);
     box-shadow: 0 18px 44px rgba(0, 0, 0, 0.56);
     opacity: 0;
     pointer-events: none;
@@ -208,8 +206,8 @@ let {
   .rail-avatar-menu__panel a:hover,
   .feed-mode-menu__panel button:hover,
   .feed-mode-menu__panel button.is-active {
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(243, 246, 250, 0.22);
+    background: var(--scrim-soft);
+    border-color: var(--border-hover);
     color: var(--text-header);
   }
 

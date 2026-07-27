@@ -104,6 +104,12 @@ function onImageError(event: Event): void {
 
 <div class="story-visual-wrap">
   <article class="story-visual" class:story-visual--no-image={!post.image} data-story-visual {onwheel}>
+    <!-- A soft darkening band under the top overlay. The progress bar is white,
+         which is right over most photos and invisible over a light one — and
+         plenty of posts are screenshots of white pages. A scrim fixes it for
+         every image at once, instead of trying to pick a bar colour that works
+         on all of them. -->
+    <span class="story-visual__top-scrim" aria-hidden="true"></span>
     <StoryProgressBar
       title={post.title}
       {gallerySequence}
@@ -336,6 +342,15 @@ function onImageError(event: Event): void {
     line-height: 1.04;
     padding: 1.2rem;
     overflow-wrap: anywhere;
+  }
+
+  .story-visual__top-scrim {
+    position: absolute;
+    z-index: var(--z-above);
+    inset: 0 0 auto;
+    height: 4.5rem;
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0));
+    pointer-events: none;
   }
 
   /* Sits just above the action bar, centred: the one thing to tap before the

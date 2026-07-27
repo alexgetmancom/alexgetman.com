@@ -84,10 +84,8 @@ a:hover {
  * Only one of the two icons is shown: the one for the theme a click would
  * switch you TO, which is what the aria-pressed state also describes.
  *
- * It is deliberately quiet. A filled --surface circle reads as solid white in
- * the light theme, and on the home page it sits over the black player stage —
- * a bright disc competing with the content for attention. It stays a thin
- * outline until hovered or focused. */
+ * It is deliberately quiet: a themed surface with a secondary-colour icon,
+ * never a bright disc. */
 .theme-toggle {
   position: fixed;
   /* Left, not right: the player's mute chip owns the top-right corner
@@ -103,34 +101,28 @@ a:hover {
   padding: 0;
   border: 1px solid var(--border);
   border-radius: 50%;
-  background: transparent;
-  color: var(--text-muted);
-  opacity: 0.65;
+  /* A real surface rather than a transparent outline at 65% opacity. That
+     version was invisible on the light theme, where --border is barely there;
+     and a solid white disc — the first attempt — was too loud on the dark
+     stage. A themed surface with secondary-colour icon is quiet on both. */
+  background: var(--surface);
+  color: var(--text-secondary);
   cursor: pointer;
 }
 
 .theme-toggle:hover,
 .theme-toggle:focus-visible {
   border-color: var(--border-hover);
-  background: var(--scrim-soft);
   color: var(--text-header);
-  opacity: 1;
 }
 
-/* The home page is the player: the control floats over a dark stage in both
- * themes, so it takes the stage's colours rather than the page's. */
+/* The home page is the player, so the control floats over the page gutter next
+ * to it. It used to hardcode light-on-dark here, which made it invisible once
+ * the gutter went light — it takes the ordinary themed tokens instead. */
 body.immersive-home .theme-toggle {
   /* Clears the notch and lines up with the mute chip on the opposite corner. */
   top: calc(env(safe-area-inset-top, 0) + 0.72rem);
   left: 0.72rem;
-  border-color: rgba(243, 246, 250, 0.18);
-  color: #dde3ec;
-}
-
-body.immersive-home .theme-toggle:hover,
-body.immersive-home .theme-toggle:focus-visible {
-  background: rgba(255, 255, 255, 0.1);
-  color: #f3f6fa;
 }
 
 .theme-toggle__icon {

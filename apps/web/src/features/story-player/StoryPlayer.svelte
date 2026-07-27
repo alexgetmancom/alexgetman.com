@@ -584,7 +584,7 @@ onMount(() => {
      * through and the cards turned into grey slabs with white text on them.
      * Opacity cannot be fixed by the card's own background; the backdrop has to
      * sit underneath. */
-    background: var(--bg-deep);
+    background: var(--player-backdrop);
     position: relative;
     grid-column: 1;
     height: 100%;

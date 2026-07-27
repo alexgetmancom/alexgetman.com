@@ -100,13 +100,31 @@ html[data-theme="light"] {
   --browser-chrome: #f3f5f8;
 }
 
-/* The player stage is a media viewer: it stays dark in both themes, the way a
- * black video frame does inside a light YouTube. The page chrome around it goes
- * light, the canvas holding the image does not — so restore the dark values of
- * the interface tokens inside it. The stage's own opaque base lives in
- * features/story-player/StoryVisual.svelte. */
-html[data-theme="light"] .story-player,
-html[data-theme="light"] .story-player * {
+/* Player surfaces that are NOT media: the article panel and the rail of
+ * upcoming stories. They hold text, so they follow the theme like any other
+ * reading surface. Only the stage below is exempt.
+ *
+ * `--player-surface` is the panel/card fill and `--player-backdrop` is what
+ * sits behind the rail. The rail dims inactive cards with opacity, which fades
+ * them toward whatever is behind — so the backdrop has to be a real colour on
+ * both themes, not transparency. */
+:root,
+html[data-theme="dark"] {
+  --player-surface: #050505;
+  --player-backdrop: #050505;
+}
+
+html[data-theme="light"] {
+  --player-surface: #ffffff;
+  --player-backdrop: #eef1f5;
+}
+
+/* The stage is the exception: a media viewer stays dark in both themes, the way
+ * a black video frame does inside a light YouTube. Its overlays — progress bar,
+ * action bar, sound control — sit on the image itself and are covered by the
+ * --overlay-* palette below rather than by these tokens. */
+html[data-theme="light"] .story-visual,
+html[data-theme="light"] .story-visual * {
   color-scheme: dark;
   --text-header: #f3f6fa;
   --text-main: #dde3ec;

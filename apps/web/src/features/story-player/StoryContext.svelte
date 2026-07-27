@@ -123,7 +123,7 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
     flex-direction: column;
     border: 1px solid var(--border);
     border-radius: 10px;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.042), rgba(255, 255, 255, 0.012)), var(--bg-deep);
+    background: var(--player-surface);
     overflow: hidden;
     min-width: 0;
     backdrop-filter: blur(18px);
@@ -173,9 +173,12 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
     font-size: 0.7rem;
     font-weight: 900;
     text-transform: uppercase;
-    color: #ff5c77; /* ≥4.5:1 на тёмной панели (контраст Lighthouse) */
-    background: rgba(220, 38, 38, 0.08);
-    border: 1px solid rgba(220, 38, 38, 0.28);
+    /* --accent is tuned per theme for contrast against that theme's surface;
+       the old hardcoded #ff5c77 was picked for a dark panel only and drops
+       below 4.5:1 once the panel is white. */
+    color: var(--accent);
+    background: var(--accent-glow);
+    border: 1px solid var(--border-hover);
     padding: 0.22rem 0.54rem;
     border-radius: 6px;
     letter-spacing: 0.05em;
@@ -200,7 +203,7 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
   }
 
   .story-meta-dot {
-    color: rgba(255, 255, 255, 0.16);
+    color: var(--meta-dot);
     font-weight: bold;
     font-size: 0.9rem;
   }
@@ -239,7 +242,7 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
   /* ----------------------------- Текст поста -------------------------------- */
   .story-copy {
     display: block;
-    color: #e2e8f0;
+    color: var(--text-main);
     font-size: clamp(1.16rem, 1.28vw, 1.48rem);
     line-height: 1.32;
     flex-grow: 1;
@@ -247,7 +250,7 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
     position: relative;
     padding-right: 0.45rem;
     scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+    scrollbar-color: var(--border-dashed) transparent;
   }
 
   .story-copy::-webkit-scrollbar {
@@ -259,7 +262,7 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
   }
 
   .story-copy::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.16);
+    background-color: var(--border-dashed);
     border-radius: 999px;
   }
 
@@ -383,9 +386,9 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
       height: calc(100dvh - 14.75rem - env(safe-area-inset-top, 0) - env(safe-area-inset-bottom, 0));
       max-width: none;
       max-height: calc(100dvh - 14.75rem - env(safe-area-inset-top, 0) - env(safe-area-inset-bottom, 0));
-      border: 1px solid rgba(255, 255, 255, 0.16);
+      border: 1px solid var(--border);
       border-radius: 18px;
-      background: rgba(8, 11, 16, 0.74);
+      background: var(--player-surface);
       overflow-x: hidden;
       overflow-y: auto;
       overscroll-behavior: contain;
