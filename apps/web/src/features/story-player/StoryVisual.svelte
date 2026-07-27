@@ -23,6 +23,7 @@ let {
   paused,
   muted,
   autoplayMuted,
+  soundPrompt,
   overlayTick,
   shareCopied,
   readingVisible,
@@ -32,6 +33,7 @@ let {
   progressFill = $bindable(null),
   onwheel,
   ontoggleplay,
+  ongrantsound,
   onaudiotoggle,
   ontoggleread,
   onopendiscussion,
@@ -47,6 +49,7 @@ let {
   paused: boolean;
   muted: boolean;
   autoplayMuted: boolean;
+  soundPrompt: boolean;
   overlayTick: number;
   shareCopied: boolean;
   readingVisible: boolean;
@@ -56,6 +59,7 @@ let {
   progressFill?: HTMLElement | null;
   onwheel: (event: WheelEvent) => void;
   ontoggleplay: () => void;
+  ongrantsound: () => void;
   onaudiotoggle: () => void;
   ontoggleread: () => void;
   onopendiscussion: () => void;
@@ -70,6 +74,13 @@ let {
 const isVideo = $derived(post.mediaType === "video");
 const audioLabel = $derived(autoplayMuted ? ui.tapForSound : muted ? ui.muted : ui.mute);
 let videoFailed = $state(false);
+/* A video carries its own soundtrack; a still only has sound if the post ships
+ * an audio track. Anything else has nothing to mute. */
+const hasAudio = $derived(isVideo ? !videoFailed : Boolean(post.audioUrl));
+/* Ask for sound while it is off and the visitor has not answered yet — either
+ * because the browser refused an unmuted autoplay, or simply because muted is
+ * the default nobody has overridden. Both look identical from here. */
+const showSoundPrompt = $derived(soundPrompt && (muted || autoplayMuted));
 
 /* Несколько картинок в посте (пост целиком не видео) → листаем их по очереди,
      как отдельные слайды, прежде чем перейти к следующему посту. */
@@ -144,36 +155,90 @@ function onImageError(event: Event): void {
         <span class="story-visual__fallback">{post.title}</span>
       {/if}
     </a>
-    <button
-      class="audio-chip"
-      class:is-on={!muted && !autoplayMuted}
-      type="button"
-      aria-pressed={muted}
-      aria-label={audioLabel}
-      onclick={onaudiotoggle}
-    >
-      <span aria-hidden="true">♪</span>
-      <span>{audioLabel}</span>
-    </button>
-    <button class="story-read-trigger" class:is-open={readingVisible} type="button" aria-expanded={readingVisible} onclick={ontoggleread}>
-      <svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-        <path d="M14 2v6h6"></path>
-        <path d="M8 13h8"></path>
-        <path d="M8 17h6"></path>
-      </svg>
-      <span>{readingVisible ? ui.back : ui.read}</span>
-    </button>
+    <!-- Only rendered when this post can actually make a sound. A video always
+         can; a still needs its own audio track. Without the guard every plain
+         image story showed a mute control that toggled silence. -->
+    <!-- Autoplay policy: browsers refuse to start a video with sound until the
+         user has interacted with the page, so the clip always begins muted and
+         the state machine flags it (videoAutoplayMuted). That flag is a call to
+         action, not a status — the voice-over is the story. It gets a plate on
+         the stage until sound is granted; after that the quiet corner chip is
+         enough, and the choice is remembered for the session. -->
+    {#if hasAudio && showSoundPrompt}
+      <button class="sound-cta" type="button" onclick={ongrantsound}>
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M11 5 6 9H3v6h3l5 4z"></path>
+          <path d="M15.5 8.5a5 5 0 0 1 0 7"></path>
+          <path d="M18.5 5.5a9 9 0 0 1 0 13"></path>
+        </svg>
+        <span>{ui.tapForSound}</span>
+      </button>
+    {/if}
+    {#if hasAudio && !showSoundPrompt}
+      <button
+        class="audio-chip"
+        class:is-on={!muted && !autoplayMuted}
+        type="button"
+        aria-pressed={muted}
+        aria-label={audioLabel}
+        onclick={onaudiotoggle}
+      >
+        <svg class="audio-chip__icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M11 5 6 9H3v6h3l5 4z"></path>
+          {#if muted || autoplayMuted}
+            <line x1="17" y1="9" x2="22" y2="15"></line>
+            <line x1="22" y1="9" x2="17" y2="15"></line>
+          {:else}
+            <path d="M15.5 8.5a5 5 0 0 1 0 7"></path>
+            <path d="M18.5 5.5a9 9 0 0 1 0 13"></path>
+          {/if}
+        </svg>
+        <span>{audioLabel}</span>
+      </button>
+    {/if}
     <div class="story-mobile-caption" aria-hidden="true">
       <span>{post.category}</span>
       <strong>{post.title}</strong>
     </div>
-    <div class="story-mobile-actions" aria-label={ui.storyLabel}>
-      <button class="story-action story-action--primary" type="button" onclick={onopendiscussion}>
-        <span>{ui.discuss}</span>
+    <!-- Three equal items in one floating bar; see story-actions.css for why
+         there is no accent-filled primary here. -->
+    <div class="story-action-bar" aria-label={ui.storyLabel}>
+      <button
+        class="story-action story-action--primary"
+        class:is-open={readingVisible}
+        type="button"
+        aria-expanded={readingVisible}
+        onclick={ontoggleread}
+      >
+        <svg class="story-action-icon" viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <path d="M14 2v6h6"></path>
+          <path d="M8 13h8"></path>
+          <path d="M8 17h6"></path>
+        </svg>
+        <span class="story-action__label">{readingVisible ? ui.back : ui.read}</span>
+      </button>
+      <button class="story-action" type="button" onclick={onopendiscussion}>
+        <svg class="story-action-icon" viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+        </svg>
+        <span class="story-action__label">{ui.discuss}</span>
       </button>
       <button class="story-action" type="button" onclick={onshare}>
-        <span>{shareCopied ? ui.copied : ui.share}</span>
+        {#if shareCopied}
+          <svg class="story-action-icon" viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M20 6 9 17l-5-5"></path>
+          </svg>
+        {:else}
+          <svg class="story-action-icon" viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="18" cy="5" r="3"></circle>
+            <circle cx="6" cy="12" r="3"></circle>
+            <circle cx="18" cy="19" r="3"></circle>
+            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+            <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+          </svg>
+        {/if}
+        <span class="story-action__label">{shareCopied ? ui.copied : ui.share}</span>
       </button>
     </div>
     <PlayPauseOverlay {paused} {overlayTick} />
@@ -215,7 +280,11 @@ function onImageError(event: Event): void {
     aspect-ratio: 9 / 16;
     border: 1px solid var(--border-hover);
     border-radius: 10px;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.012)), rgba(0, 0, 0, 0.58);
+    /* The base layer is opaque on purpose. It used to be rgba(0, 0, 0, 0.58),
+     * which looked black only because the page behind it was black; on the
+     * light theme the same value composites to grey and the stage stops
+     * reading as a media frame. The sheen gradient stays on top. */
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.012)), var(--bg-deep);
     overflow: hidden;
     isolation: isolate;
     box-shadow: 0 22px 70px rgba(0, 0, 0, 0.85);
@@ -269,7 +338,40 @@ function onImageError(event: Event): void {
     overflow-wrap: anywhere;
   }
 
-  /* ------------------------------ Кнопка звука ------------------------------ */
+  /* Sits just above the action bar, centred: the one thing to tap before the
+   * story makes sense. It disappears for good once sound is granted. */
+  .sound-cta {
+    position: absolute;
+    z-index: 13;
+    left: 50%;
+    bottom: calc(4.2rem + env(safe-area-inset-bottom, 0));
+    transform: translateX(-50%);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 44px;
+    padding: 0.5rem 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 14px;
+    background: rgba(0, 0, 0, 0.62);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    color: #f3f6fa;
+    font-size: 0.85rem;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .sound-cta:hover {
+    background: rgba(0, 0, 0, 0.75);
+    border-color: rgba(255, 255, 255, 0.34);
+  }
+
+  /* ------------------------------ Sound control ----------------------------- */
+  /* Same pill language as the action bar (story-actions.css): translucent dark
+   * fill, hairline border, icon plus label. It is a stage overlay rather than a
+   * bar item, so the geometry lives here while the vocabulary is shared. */
   .audio-chip {
     position: absolute;
     z-index: 4;
@@ -277,24 +379,46 @@ function onImageError(event: Event): void {
     top: 2.05rem;
     display: inline-flex;
     align-items: center;
-    gap: 0.32rem;
+    gap: 0.35rem;
     min-height: 34px;
-    padding: 0.25rem 0.58rem;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 0.25rem 0.62rem;
+    border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 999px;
-    background: rgba(0, 0, 0, 0.42);
+    background: rgba(0, 0, 0, 0.5);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     color: var(--text-main);
     font-size: 0.76rem;
-    font-weight: 800;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition:
+      background 0.18s ease,
+      border-color 0.18s ease,
+      color 0.18s ease;
+  }
+
+  .audio-chip__icon {
+    flex: 0 0 auto;
+    opacity: 0.85;
+  }
+
+  /* Sound is on: the control is the only cue for that, so it brightens instead
+   * of staying uniform with its muted state. */
+  .audio-chip.is-on {
+    border-color: rgba(255, 255, 255, 0.24);
+    color: #f3f6fa;
+  }
+
+  .audio-chip.is-on .audio-chip__icon {
+    opacity: 1;
   }
 
   .audio-chip:hover {
-    background: rgba(0, 0, 0, 0.6);
-    border-color: rgba(255, 255, 255, 0.18);
+    background: rgba(0, 0, 0, 0.65);
+    border-color: rgba(255, 255, 255, 0.24);
+    color: #f3f6fa;
   }
 
   .audio-chip.is-on {
@@ -308,11 +432,10 @@ function onImageError(event: Event): void {
     display: none;
   }
 
-  .story-mobile-actions {
-    display: none;
-  }
-
-  .story-read-trigger {
+  /* The bar is the phone layout's bottom strip. On desktop the same three
+   * actions live at the foot of the context panel (StoryContext), styled by the
+   * same .story-action rules, so there is one button language rather than two. */
+  .story-action-bar {
     display: none;
   }
 
@@ -394,56 +517,35 @@ function onImageError(event: Event): void {
       text-shadow: 0 4px 24px rgba(0, 0, 0, 0.75);
     }
 
-    .story-mobile-actions {
+    /* Geometry only — the bar's surface, blur and items are in
+     * story-actions.css, shared with the desktop panel. It floats clear of the
+     * screen edges instead of spanning them, which is what makes it read as a
+     * control layer sitting on the story rather than a strip cut out of it.
+     *
+     * The read action used to be a separate 4.25rem crimson circle above this
+     * row, with its own radius, shadow and font: a fourth visual language on a
+     * screen that already had three. */
+    .story-action-bar {
+      /* Scoped, so it beats the display:flex in story-actions.css — the base
+         rule up top hides the bar on desktop and this is what brings it back. */
+      display: flex;
       position: absolute;
       z-index: 12;
-      left: 0.8rem;
-      right: 0.8rem;
-      bottom: calc(0.8rem + env(safe-area-inset-bottom, 0));
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 0.55rem;
+      left: 0.7rem;
+      right: 0.7rem;
+      bottom: calc(0.7rem + env(safe-area-inset-bottom, 0));
       pointer-events: auto;
-    }
-
-    /* Круглая кнопка «Читать». */
-    .story-read-trigger {
-      position: absolute;
-      z-index: 14;
-      right: 1rem;
-      bottom: calc(5.15rem + env(safe-area-inset-bottom, 0));
-      width: 4.25rem;
-      height: 4.25rem;
-      display: grid;
-      place-items: center;
-      gap: 0.04rem;
-      padding: 0.25rem;
-      border: 1px solid rgba(255, 255, 255, 0.18);
-      border-radius: 50%;
-      background: var(--accent);
-      color: #fff;
-      box-shadow: 0 12px 30px rgba(220, 38, 38, 0.42);
-      font: 800 0.68rem / 1 var(--font-sans);
-      cursor: pointer;
-      transition:
-        transform 0.18s ease,
-        background 0.18s ease;
-    }
-
-    .story-read-trigger.is-open {
-      background: rgba(220, 38, 38, 0.94);
-      transform: scale(1.06);
-    }
-
-    .story-read-trigger svg {
-      margin-top: 0.12rem;
     }
   }
 
-  /* Кнопки Обсудить/Поделиться (мобильный низ сцены) стилизует общий
-     story-actions.css — его подключает StoryPlayer.svelte. */
+  /* The buttons themselves are styled by the shared story-actions.css, loaded
+     once from StoryPlayer.svelte, so the bar and the desktop context panel
+     cannot drift apart. */
 
-  @media (max-width: 440px) {
+  /* Same cut-off as the action bar's labels: with a real speaker icon the state
+     is readable without the word, but only drop it once the row is genuinely
+     out of room. */
+  @media (max-width: 359px) {
     .audio-chip span:last-child {
       display: none;
     }

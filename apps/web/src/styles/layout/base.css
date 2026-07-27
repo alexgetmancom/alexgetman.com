@@ -1,40 +1,6 @@
-:root,
-html[data-theme="dark"] {
-  --bg-color: #000000; /* Pure black media background */
-  --bg-deep: #050505;
-  --card-bg: rgba(5, 6, 9, 0.74); /* Glass-like black panel */
-  --text-main: #dde3ec; /* High comfort primary grey text */
-  --text-secondary: #a3adbc; /* Softer secondary grey text */
-  --text-muted: #98a2ad; /* Muted metadata/date grey (Contrast fix for Lighthouse) */
-  --text-header: #f3f6fa; /* Soft pure-like white for major headers */
-  --accent: #e2294e; /* Calm signature crimson red (WCAG contrast compliant) */
-  --accent-glow: rgba(226, 41, 78, 0.15);
-  --border: rgba(243, 246, 250, 0.11); /* Subtle glass border */
-  --border-hover: rgba(240, 68, 101, 0.35);
-  --border-soft: rgba(243, 246, 250, 0.08);
-  --border-dashed: rgba(111, 120, 136, 0.25);
-  --meta-dot: #8b949e;
-  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-  --font-heading: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-}
-
-html[data-theme="light"] {
-  --bg-color: #f3f5f8; /* Clean light grey background */
-  --card-bg: #ffffff; /* Pure white card background */
-  --text-main: #263241; /* High contrast dark grey text */
-  --text-secondary: #4a5565; /* Medium contrast secondary grey text */
-  --text-muted: #647084; /* Muted grey for metadata/dates */
-  --text-header: #111827; /* Rich black header text */
-  --accent: #d82246; /* Keeps calmer signature crimson (WCAG contrast compliant) */
-  --accent-glow: rgba(216, 34, 70, 0.08);
-  --border: rgba(17, 24, 39, 0.1);
-  --border-hover: rgba(240, 68, 101, 0.35);
-  --border-soft: rgba(17, 24, 39, 0.08);
-  --border-dashed: rgba(17, 24, 39, 0.18);
-  --meta-dot: rgba(17, 24, 39, 0.22);
-  --bg-deep: #050505;
-}
+/* Colours and fonts are not declared here — they live in
+ * shared/styles/tokens.css, which styles/layout.css imports first. This file is
+ * the base element layer: it only consumes var(--*). */
 
 *,
 *::before,
@@ -112,6 +78,79 @@ a:hover {
 
 .skip-link:focus {
   transform: translateY(0);
+}
+
+/* The site has no header, so the theme switch is a standalone fixed control.
+ * Only one of the two icons is shown: the one for the theme a click would
+ * switch you TO, which is what the aria-pressed state also describes.
+ *
+ * It is deliberately quiet. A filled --surface circle reads as solid white in
+ * the light theme, and on the home page it sits over the black player stage —
+ * a bright disc competing with the content for attention. It stays a thin
+ * outline until hovered or focused. */
+.theme-toggle {
+  position: fixed;
+  /* Left, not right: the player's mute chip owns the top-right corner
+     (.audio-chip in StoryVisual.svelte). A control placed there covers it. */
+  left: 1rem;
+  top: 1rem;
+  z-index: var(--z-theme-toggle);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  opacity: 0.65;
+  cursor: pointer;
+}
+
+.theme-toggle:hover,
+.theme-toggle:focus-visible {
+  border-color: var(--border-hover);
+  background: var(--scrim-soft);
+  color: var(--text-header);
+  opacity: 1;
+}
+
+/* The home page is the player: the control floats over a dark stage in both
+ * themes, so it takes the stage's colours rather than the page's. */
+body.immersive-home .theme-toggle {
+  /* Clears the notch and lines up with the mute chip on the opposite corner. */
+  top: calc(env(safe-area-inset-top, 0) + 0.72rem);
+  left: 0.72rem;
+  border-color: rgba(243, 246, 250, 0.18);
+  color: #dde3ec;
+}
+
+body.immersive-home .theme-toggle:hover,
+body.immersive-home .theme-toggle:focus-visible {
+  background: rgba(255, 255, 255, 0.1);
+  color: #f3f6fa;
+}
+
+.theme-toggle__icon {
+  display: none;
+}
+
+html[data-theme="dark"] .theme-toggle__icon--sun,
+html[data-theme="light"] .theme-toggle__icon--moon {
+  display: block;
+}
+
+/* No manual switch on phones. Mobile OSes all ship a reliable system-wide dark
+ * mode and people set it once, so the control would spend its life unused while
+ * occupying a corner of a full-screen story. The theme still follows the system
+ * setting there — only the override is desktop-only, where the OS preference is
+ * more often out of step with what someone wants in a browser window. */
+@media (max-width: 760px) {
+  .theme-toggle {
+    display: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,60 +1,115 @@
 /* =============================================================================
-  Кнопки «Обсудить» / «Поделиться».
-  ─────────────────────────────────────────────────────────────────────────────
-  Пара таких кнопок есть и на сцене (StoryVisual, мобильный низ экрана), и в
-  правой панели (StoryContext). Раньше блок был дословно скопирован в оба
-  <style>; теперь он один и подключается из StoryPlayer.svelte, поэтому не
-  scoped — селекторы намеренно живут в пространстве имён .story-*.
-  Загружается только там, где смонтирован плеер.
+  Story actions: Read / Discuss / Share.
+  -----------------------------------------------------------------------------
+  One floating bar rather than a row of separate chips: a single blurred dark
+  surface holding three equal items, icon above label — the shape a mobile tab
+  bar has. Loaded once from StoryPlayer.svelte and therefore not scoped; the
+  selectors deliberately live in the .story-* namespace.
+
+  Used in both placements: pinned over the stage on phones (StoryVisual) and at
+  the foot of the context panel on desktop (StoryContext).
+
+  Why no filled accent button: the bar sits on top of a photo or a video. A
+  solid crimson slab there competes with the frame behind it and reads as a
+  warning rather than as "the main thing to do". Emphasis is carried by a
+  slightly lighter fill on the primary item instead, which is enough when
+  everything around it is translucent.
+
+  All three items are equal and labelled. That also means the layout needs no
+  variant for a video-first feed — only the third label changes meaning, from
+  "read the post" to "read the transcript".
 ============================================================================= */
+.story-action-bar,
+.story-actions {
+  display: flex;
+  align-items: stretch;
+  gap: 0.25rem;
+  padding: 0.3rem;
+  border: 1px solid var(--overlay-border);
+  border-radius: 22px;
+  background: var(--overlay-surface);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+}
+
 .story-action {
+  flex: 1 1 0;
+  min-width: 0;
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 40px;
-  padding: 0.44rem 0.52rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--text-header);
-  font-weight: 900;
-  font-size: 0.82rem;
+  gap: 0.18rem;
+  min-height: 52px;
+  padding: 0.4rem 0.3rem;
+  border: 0;
+  border-radius: 18px;
+  background: transparent;
+  color: var(--overlay-text);
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 0.68rem;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  white-space: nowrap;
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    background 0.18s ease,
+    color 0.18s ease;
 }
 
 .story-action:hover {
-  border-color: rgba(243, 246, 250, 0.25);
-  color: var(--text-header);
-  background: rgba(255, 255, 255, 0.08);
-  box-shadow: 0 4px 12px rgba(255, 255, 255, 0.04);
+  background: var(--overlay-fill);
+  color: var(--overlay-text-strong);
 }
 
+.story-action-icon {
+  flex: 0 0 auto;
+}
+
+.story-action__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* The primary action gets the lighter fill, the way an active tab does — no
+   hue, just more presence than its neighbours. */
 .story-action--primary {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: white;
+  background: var(--overlay-fill);
+  color: var(--overlay-text-strong);
 }
 
 .story-action--primary:hover {
-  background: #e53e3e;
-  border-color: #e53e3e;
-  color: white;
-  box-shadow: 0 0 16px rgba(220, 38, 38, 0.5);
-  transform: translateY(-1px);
+  background: var(--overlay-fill-hover);
 }
 
-/* ---- Телефон (≤760px): крупнее и на затемнении сцены ---- */
+/* Reading is open, so the button now means "back": it drops the emphasis
+   rather than staying lit while its label says the opposite. */
+.story-action--primary.is-open {
+  background: transparent;
+  color: var(--overlay-text);
+}
+
+/* ---- Phone (<=760px): the bar floats clear of the screen edges ---- */
 @media (max-width: 760px) {
-  .story-action {
-    min-height: 48px;
-    border-radius: 11px;
-    background: rgba(0, 0, 0, 0.58);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
+  .story-action-bar {
+    border-radius: 26px;
+    padding: 0.35rem;
   }
 
-  .story-action--primary {
-    background: var(--accent);
+  .story-action {
+    min-height: 56px;
+    border-radius: 21px;
+    font-size: 0.7rem;
+  }
+}
+
+/* Very narrow phones: three labels still fit at this size, so only the type
+   tightens. Dropping the words would make the icons guesswork. */
+@media (max-width: 359px) {
+  .story-action {
+    font-size: 0.64rem;
+    padding: 0.4rem 0.15rem;
   }
 }

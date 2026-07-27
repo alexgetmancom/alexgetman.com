@@ -35,7 +35,7 @@ import { loadGiscusDiscussion } from "../../scripts/story-player/discussion";
 import { setDiscussionVisibility } from "../../scripts/story-player/discussion-state";
 import { advanceGallerySequence } from "../../scripts/story-player/gallery-state";
 import { preloadAdjacentMedia } from "../../scripts/story-player/media";
-import { readMutedPreference, writeMutedPreference } from "../../scripts/story-player/preferences";
+import { hasMutedPreference, readMutedPreference, writeMutedPreference } from "../../scripts/story-player/preferences";
 import { createStoryProgressController } from "../../scripts/story-player/progress";
 import { giscusConfig, storyIntervalMs, swipeThresholdPx, wheelCooldownMs } from "./config";
 /* Общие стили пары кнопок «Обсудить»/«Поделиться»: их рисуют и сцена, и правая
@@ -69,6 +69,9 @@ let discussionVisible = $state(false);
 let expanded = $state(false);
 let feedMode = $state("latest");
 let audioState = $state(initialVideoAudioState(true));
+/* Starts false during SSR and is set from storage on mount, so the prompt is
+ * only ever shown to someone who has genuinely not answered yet. */
+let soundChoiceMade = $state(true);
 let updating = $state(false); // короткая анимация смены поста (.is-updating)
 let readMoreVisible = $state(false);
 let feedMenuOpen = $state(false);
@@ -186,7 +189,23 @@ function setMuted(nextMuted: boolean, persist = true): void {
   if (video) video.muted = audioState.muted;
 }
 
+/* The sound prompt is shown while this post has audio, sound is off, and the
+ * visitor has never answered the question. Any answer — the plate, the corner
+ * chip, or a tap on the stage — retires it for good. */
+function grantSound(): void {
+  soundChoiceMade = true;
+  if (audioState.videoAutoplayMuted && video) {
+    audioState = clearAutoplayMute(audioState);
+    video.muted = false;
+    video.play?.().catch(() => {});
+    writeMutedPreference(false);
+    return;
+  }
+  setMuted(false);
+}
+
 function onAudioToggle(): void {
+  soundChoiceMade = true;
   if (audioState.videoAutoplayMuted && video) {
     audioState = clearAutoplayMute(audioState);
     video.muted = false;
@@ -401,6 +420,7 @@ function measureReadMore(): void {
 onMount(() => {
   debugEnabled = new URLSearchParams(window.location.search).has("debug");
   audioState = initialVideoAudioState(readMutedPreference());
+  soundChoiceMade = hasMutedPreference();
   progress = createStoryProgressController({
     getVideo: () => video,
     getProgressFill: () => progressFill,
@@ -469,8 +489,17 @@ onMount(() => {
       bind:audio
       bind:progressFill
       onwheel={handleWheel}
-      ontoggleplay={togglePause}
+      soundPrompt={!soundChoiceMade && !readingVisible}
+      ontoggleplay={() => {
+        // The first tap on a stage that is still asking for sound answers that
+        // question instead of pausing: on a video feed the tap is how people
+        // unmute everywhere else, and pausing a silent clip is not what they
+        // meant.
+        if (!soundChoiceMade && activePost?.mediaType === "video") grantSound();
+        else togglePause();
+      }}
       onaudiotoggle={onAudioToggle}
+      ongrantsound={grantSound}
       ontoggleread={() => setReading(!readingVisible)}
       onopendiscussion={openDiscussion}
       onshare={share}
@@ -549,6 +578,13 @@ onMount(() => {
     --rail-gap: 0.55rem;
     --rail-card-height: calc((100% - (var(--rail-cards) - 1) * var(--rail-gap)) / var(--rail-cards));
     --rail-active-offset: calc(2 * (var(--rail-card-height) + var(--rail-gap)));
+    /* An opaque dark backdrop, not decoration. Inactive rail cards are dimmed
+     * with opacity: 0.38 (StoryRail.svelte), which only reads as "dimmed" when
+     * something dark is behind them — on the light theme the page showed
+     * through and the cards turned into grey slabs with white text on them.
+     * Opacity cannot be fixed by the card's own background; the backdrop has to
+     * sit underneath. */
+    background: var(--bg-deep);
     position: relative;
     grid-column: 1;
     height: 100%;

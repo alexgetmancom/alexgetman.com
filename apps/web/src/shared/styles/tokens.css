@@ -1,27 +1,160 @@
 /* =============================================================================
- * ДИЗАЙН-ТОКЕНЫ (единственный источник правды для «слоёв» интерфейса)
+ * SITE DESIGN TOKENS (single source of truth)
  * -----------------------------------------------------------------------------
- * Что здесь: z-index-шкала для всего сайта.
- * Цвета/шрифты живут в styles/layout/base.css (:root) — исторически; новые
- *   токены (отступы, радиусы, тени) добавляй СЮДА, а не в компоненты.
+ * Holds both theme palettes, the fonts and the z-index scale. Colours used to
+ * live in styles/layout/base.css; they moved here so that "the light theme" is
+ * one file to read rather than a grep across components.
  *
- * Правило для z-index: НИКОГДА не пиши в CSS число руками — только var(--z-*).
- * Если нужен новый слой — добавь переменную здесь, между существующими,
- * с комментарием зачем. Так слои видно в одном месте и они не «наслаиваются».
+ * NAME CONTRACT. The dashboard implements the same set of names in
+ * apps/backend/src/interfaces/web/dashboard/theme.ts. Its values differ — the
+ * dashboard is a dense ops tool and needs more contrast than an editorial site
+ * — but the names and the switching mechanism are shared. The overlap is
+ * enforced by apps/backend/tests/themeContract.test.ts: add a token here and
+ * you must add it there too, or that test fails.
+ *
+ * SWITCHING. The theme is the data-theme attribute on <html> ("dark" | "light").
+ * An inline script in layouts/Layout.astro sets it BEFORE first paint, otherwise
+ * the wrong theme flashes. The system preference is only the starting point; an
+ * explicit user choice overrides it and is kept in localStorage.
+ *
+ * Z-INDEX RULE: never write a raw number in CSS, only var(--z-*). If you need a
+ * new layer, add it here between the existing ones with a comment saying why.
+ * That keeps every layer visible in one place instead of stacking up ad hoc.
  * ========================================================================== */
 
+:root,
+html[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Surfaces */
+  --bg-color: #000000; /* Pure black media background */
+  --bg-deep: #050505; /* Player stage — stays dark in both themes, see below */
+  --surface: rgba(5, 6, 9, 0.74); /* Glass-like black panel */
+  --surface-raised: rgba(18, 21, 27, 0.82); /* Layer lifted above --surface */
+  --card-bg: var(--surface); /* Legacy name, kept for existing components */
+
+  /* Text */
+  --text-header: #f3f6fa; /* Soft pure-like white for major headers */
+  --text-main: #dde3ec; /* High comfort primary grey text */
+  --text-secondary: #a3adbc; /* Softer secondary grey text */
+  --text-muted: #98a2ad; /* Muted metadata/date grey (contrast fix for Lighthouse) */
+
+  /* Accent */
+  --accent: #e2294e; /* Calm signature crimson red (WCAG contrast compliant) */
+  --accent-strong: #e53e3e; /* Hover/active state of accent buttons */
+  --accent-contrast: #ffffff; /* Text on top of an --accent fill */
+  --accent-glow: rgba(226, 41, 78, 0.15);
+
+  /* Borders */
+  --border: rgba(243, 246, 250, 0.11); /* Subtle glass border */
+  --border-hover: rgba(240, 68, 101, 0.35);
+  --border-soft: rgba(243, 246, 250, 0.08);
+  --border-dashed: rgba(111, 120, 136, 0.25);
+  --meta-dot: #8b949e;
+
+  /* Status */
+  --danger: #ff7b72;
+  --link: #60a5fa;
+
+  /* Translucent scrims over media — inverted in the light theme */
+  --scrim-soft: rgba(255, 255, 255, 0.08);
+  --scrim-shadow: rgba(255, 255, 255, 0.04);
+  --scrim-border: rgba(243, 246, 250, 0.25);
+
+  /* Browser UI colour (meta[name=theme-color]) */
+  --browser-chrome: #080b10;
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
+
+  --bg-color: #f3f5f8; /* Clean light grey background */
+  --bg-deep: #050505; /* Player stage stays dark in the light theme too */
+  --surface: #ffffff; /* Pure white card background */
+  --surface-raised: #ffffff;
+  --card-bg: var(--surface);
+
+  --text-header: #111827; /* Rich black header text */
+  --text-main: #263241; /* High contrast dark grey text */
+  --text-secondary: #4a5565; /* Medium contrast secondary grey text */
+  --text-muted: #647084; /* Muted grey for metadata/dates */
+
+  --accent: #d82246; /* Keeps calmer signature crimson (WCAG contrast compliant) */
+  --accent-strong: #b81a38;
+  --accent-contrast: #ffffff;
+  --accent-glow: rgba(216, 34, 70, 0.08);
+
+  --border: rgba(17, 24, 39, 0.1);
+  --border-hover: rgba(240, 68, 101, 0.35);
+  --border-soft: rgba(17, 24, 39, 0.08);
+  --border-dashed: rgba(17, 24, 39, 0.18);
+  --meta-dot: rgba(17, 24, 39, 0.22);
+
+  --danger: #b91c1c;
+  --link: #1d4ed8;
+
+  --scrim-soft: rgba(17, 24, 39, 0.06);
+  --scrim-shadow: rgba(17, 24, 39, 0.06);
+  --scrim-border: rgba(17, 24, 39, 0.2);
+
+  --browser-chrome: #f3f5f8;
+}
+
+/* The player stage is a media viewer: it stays dark in both themes, the way a
+ * black video frame does inside a light YouTube. The page chrome around it goes
+ * light, the canvas holding the image does not — so restore the dark values of
+ * the interface tokens inside it. The stage's own opaque base lives in
+ * features/story-player/StoryVisual.svelte. */
+html[data-theme="light"] .story-player,
+html[data-theme="light"] .story-player * {
+  color-scheme: dark;
+  --text-header: #f3f6fa;
+  --text-main: #dde3ec;
+  --text-secondary: #a3adbc;
+  --text-muted: #98a2ad;
+  --border: rgba(243, 246, 250, 0.11);
+  --border-soft: rgba(243, 246, 250, 0.08);
+  --scrim-soft: rgba(255, 255, 255, 0.08);
+  --scrim-shadow: rgba(255, 255, 255, 0.04);
+  --scrim-border: rgba(243, 246, 250, 0.25);
+}
+
+/* Chrome drawn on top of media. Not themed: the surface underneath is a photo
+ * or a video frame, not the page — the same reason the progress bar is white
+ * rather than crimson.
+ *
+ * No large colour fills here. Hue is fine as a small mark (a category badge, a
+ * link) where it reads as brand; spread across a big slab over a dark frame it
+ * reads as an alarm and outshouts the image. So the overlay is neutral: a
+ * blurred dark surface, white text, and emphasis carried by a slightly lighter
+ * fill rather than by colour. */
 :root {
-  /* Внутри одной карточки/блока: картинка → затемнение → текст */
-  --z-base: 1; /* фон, media внутри карточки */
-  --z-above: 2; /* текст/градиент поверх media */
-  --z-controls: 10; /* кнопки и элементы управления внутри блока */
+  --overlay-surface: rgba(28, 28, 30, 0.72);
+  --overlay-border: rgba(255, 255, 255, 0.09);
+  --overlay-fill: rgba(255, 255, 255, 0.13);
+  --overlay-fill-hover: rgba(255, 255, 255, 0.19);
+  --overlay-text: rgba(255, 255, 255, 0.62);
+  --overlay-text-strong: #ffffff;
+  --overlay-track: rgba(255, 255, 255, 0.3);
+}
 
-  /* Поверх контента страницы */
-  --z-sticky: 20; /* прилипшие панели, мобильные подписи */
-  --z-rail: 24; /* лента карточек (rail) поверх фоновых эффектов */
-  --z-overlay: 30; /* оверлеи внутри плеера (play/pause, меню режимов) */
+:root {
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-heading: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
 
-  /* Глобальные слои — поверх всего сайта */
-  --z-skip-link: 2000; /* «к содержанию» при фокусе */
-  --z-debug: 9999; /* дебаг-панель (?debug=1) — всегда сверху */
+  /* Inside a single card or block: image → scrim → text */
+  --z-base: 1; /* background, media inside a card */
+  --z-above: 2; /* text/gradient on top of media */
+  --z-controls: 10; /* buttons and controls inside a block */
+
+  /* Above the page content */
+  --z-sticky: 20; /* stuck panels, mobile captions */
+  --z-rail: 24; /* card rail above the background effects */
+  --z-overlay: 30; /* overlays inside the player (play/pause, mode menu) */
+
+  /* Global layers — above the whole site */
+  --z-theme-toggle: 1900; /* theme switch — below the skip link, above content */
+  --z-skip-link: 2000; /* "skip to content" when focused */
+  --z-debug: 9999; /* debug panel (?debug=1) — always on top */
 }

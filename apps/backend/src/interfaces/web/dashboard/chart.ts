@@ -7,7 +7,7 @@ import type { ChartMetricName, PipelinePost } from "./types.js";
 
 export function renderWeeklyChart(posts: PipelinePost[], rangeStart?: Date, rangeEnd?: Date): string {
   const metrics = ["views", "likes", "replies"] as const satisfies readonly ChartMetricName[];
-  const colors = { views: "#3b8dff", likes: "#ff4e75", replies: "#b7bec9" };
+  const colors = { views: "var(--series-views)", likes: "var(--series-likes)", replies: "var(--series-replies)" };
   const labels = { views: "Просмотры", likes: "Реакции", replies: "Ответы" };
 
   const days: Record<string, Record<ChartMetricName, number>> = {};
@@ -132,8 +132,8 @@ export function renderDailyComparisonChart(
     grid += `<line x1="${left}" y1="${gridY.toFixed(1)}" x2="${width - right}" y2="${gridY.toFixed(1)}" class="chart-grid" />`;
   }
   const series = [
-    { name: "Сегодня", color: "#3b8dff", points: current, start: dayStart },
-    { name: "Вчера", color: "#aeb8c8", points: previous, start: yesterdayStart },
+    { name: "Сегодня", color: "var(--series-views)", points: current, start: dayStart },
+    { name: "Вчера", color: "var(--series-previous)", points: previous, start: yesterdayStart },
   ];
   const paths = series
     .map(
@@ -157,7 +157,7 @@ export function renderDailyComparisonChart(
     .join("");
   const currentTotal = current.at(-1)?.value ?? 0;
   const previousTotal = previous.at(-1)?.value ?? 0;
-  return `<div class="metric-chart"><div class="metric-chart__legend"><span><i style="background:#3b8dff"></i>Сегодня: ${formatMetricValue(currentTotal)}</span><span><i style="background:#aeb8c8"></i>Вчера к этому времени: ${formatMetricValue(previousTotal)}</span><em>реальные замеры</em></div><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Сравнение просмотров сегодня и вчера по времени суток">${grid}${paths}${points}${labels}</svg><div class="chart-tooltip" id="chart-tooltip" hidden></div></div>`;
+  return `<div class="metric-chart"><div class="metric-chart__legend"><span><i style="background:var(--series-views)"></i>Сегодня: ${formatMetricValue(currentTotal)}</span><span><i style="background:var(--series-previous)"></i>Вчера к этому времени: ${formatMetricValue(previousTotal)}</span><em>реальные замеры</em></div><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Сравнение просмотров сегодня и вчера по времени суток">${grid}${paths}${points}${labels}</svg><div class="chart-tooltip" id="chart-tooltip" hidden></div></div>`;
 }
 
 type TimelinePoint = { at: Date; value: number };

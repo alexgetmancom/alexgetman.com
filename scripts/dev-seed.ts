@@ -1,10 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
+import { seedDashboardFixture } from "../apps/web/src/server/dashboard-fixture.js";
 import { devFixture, seedSiteFixture } from "../apps/web/src/server/site-fixture.js";
 
 /**
  * Fills a local pipeline database and public media directory with published
- * posts, so `bun run dev` shows a real story player instead of an empty feed.
+ * posts, so `bun run dev` shows a real story player instead of an empty feed,
+ * and /command-center shows a populated dashboard instead of zeroes.
  *
  * The story player only becomes interesting with more than one post and with a
  * post that has several images: the rail, the feed-mode filters and the
@@ -14,9 +16,14 @@ import { devFixture, seedSiteFixture } from "../apps/web/src/server/site-fixture
  *   bun scripts/dev-seed.ts                       # 3 posts, first with 2 images
  *   bun scripts/dev-seed.ts --posts 5 --gallery 3
  *   bun scripts/dev-seed.ts --db /tmp/x.db --public-dir /tmp/site
+ *   bun scripts/dev-seed.ts --no-dashboard        # site rows only
  *
  * Then point the dev server at the same paths:
  *   PIPELINE_DB=<db> SITE_PUBLIC_DIR=<public-dir> bun run dev
+ *
+ * The dashboard sits behind a token. Any value works locally as long as the
+ * server and the browser agree, so the launch config sets COMMAND_CENTER_TOKEN=dev
+ * and the seed prints the URL that logs you straight in.
  */
 
 function flag(name: string, fallback: string): string {
@@ -30,6 +37,7 @@ const publicDir = path.resolve(flag("public-dir", path.join(defaultRoot, "site")
 const count = Math.max(1, Number(flag("posts", "3")) || 3);
 const galleryImages = Math.max(1, Number(flag("gallery", "2")) || 2);
 const reset = process.argv.includes("--reset");
+const withDashboard = !process.argv.includes("--no-dashboard");
 
 if (reset) {
   fs.rmSync(dbPath, { force: true });
@@ -46,7 +54,16 @@ if (fs.existsSync(dbPath)) {
 fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 fs.mkdirSync(publicDir, { recursive: true });
 
-const { imagePaths } = seedSiteFixture({ dbPath, publicDir, posts: devFixture(count, galleryImages) });
+const posts = devFixture(count, galleryImages);
+const { imagePaths } = seedSiteFixture({ dbPath, publicDir, posts });
 
 console.log(`Seeded ${count} post(s), first with ${galleryImages} image(s); ${imagePaths.length} media file(s) written.`);
-console.log(`\nPIPELINE_DB=${dbPath} SITE_PUBLIC_DIR=${publicDir} bun run dev`);
+
+if (withDashboard) {
+  const { targetRows, sampleRows } = seedDashboardFixture({ dbPath, postIds: posts.map((post) => post.postId) });
+  console.log(`Dashboard: ${targetRows} target row(s), ${sampleRows} metric sample(s).`);
+}
+
+console.log(`\nPIPELINE_DB=${dbPath} SITE_PUBLIC_DIR=${publicDir} COMMAND_CENTER_TOKEN=dev bun run dev`);
+console.log("  site       http://localhost:4321/");
+if (withDashboard) console.log("  dashboard  http://localhost:4321/command-center?token=dev");

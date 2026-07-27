@@ -200,7 +200,7 @@ $effect(() => {
     border: 1px solid var(--border);
     border-radius: 8px;
     overflow: hidden;
-    background: rgba(0, 0, 0, 0.65);
+    background: var(--bg-deep);
     color: var(--text-header);
     isolation: isolate;
     padding: 0;
@@ -229,7 +229,7 @@ $effect(() => {
       0 18px 42px rgba(0, 0, 0, 0.32);
     filter: none;
     opacity: 1;
-    background: linear-gradient(90deg, rgba(220, 38, 38, 0.07), rgba(0, 0, 0, 0.7) 36%, rgba(220, 38, 38, 0.045)), rgba(0, 0, 0, 0.74);
+    background: linear-gradient(90deg, rgba(220, 38, 38, 0.07), rgba(0, 0, 0, 0.7) 36%, rgba(220, 38, 38, 0.045)), var(--bg-deep);
   }
 
   /* Пост скрыт текущим режимом ленты (Deep/Watched). */

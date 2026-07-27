@@ -60,26 +60,34 @@ const segmented = $derived(gallerySequence.length >= 2);
 {/if}
 
 <style>
+  /* A translucent white track with a white fill, thin and rounded — the shape a
+   * story timer has everywhere. It is a status layer over the media, so it
+   * carries no brand colour: a crimson bar along the top edge reads as a page
+   * loading indicator and fights the frame it is drawn on. */
   .story-visual-progress {
     position: absolute;
     z-index: var(--z-overlay);
-    top: 2px;
-    left: 6px;
-    right: 6px;
-    height: 4px;
+    top: 6px;
+    left: 8px;
+    right: 8px;
+    height: 3px;
     overflow: hidden;
-    background: rgba(255, 255, 255, 0.32);
+    border-radius: 999px;
+    background: var(--overlay-track);
     pointer-events: none;
   }
 
+  /* White, not the brand crimson, and with no glow. The bar sits on top of the
+   * media as a timer, the way it does in stories elsewhere; a coloured, glowing
+   * strip along the top edge reads as a page-loading indicator instead, and it
+   * competes with the image it is drawn over. */
   .story-visual-progress i {
     display: block;
     width: 100%;
     height: 100%;
     transform: scaleX(0);
     transform-origin: left center;
-    background: var(--accent);
-    box-shadow: 0 0 12px rgba(220, 38, 38, 0.62);
+    background: var(--overlay-text-strong);
   }
 
   /* Имя keyframes глобальное (-global-): его подставляет progress.ts из JS. */
@@ -96,7 +104,7 @@ const segmented = $derived(gallerySequence.length >= 2);
      один сегмент на слайд, текущий заполняется анимацией, пройденные — сплошные. */
   .story-visual-progress--segmented {
     display: flex;
-    gap: 4px;
+    gap: 3px;
     background: none;
     pointer-events: auto;
   }
@@ -110,14 +118,14 @@ const segmented = $derived(gallerySequence.length >= 2);
     border: 0;
     overflow: hidden;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.32);
+    background: var(--overlay-track);
     cursor: default;
     -webkit-appearance: none;
     appearance: none;
   }
 
   .story-visual-progress__segment.is-complete {
-    background: var(--accent);
+    background: var(--overlay-text-strong);
   }
 
   .story-visual-progress__segment.is-clickable {
@@ -128,12 +136,10 @@ const segmented = $derived(gallerySequence.length >= 2);
   /* ---- Телефон (≤760px): полоса уходит под вырез, края скругляются ---- */
   @media (max-width: 760px) {
     .story-visual-progress {
-      height: 4px;
-      top: calc(env(safe-area-inset-top, 0) + 2px);
+      height: 3px;
+      top: calc(env(safe-area-inset-top, 0) + 6px);
       left: 0.55rem;
       right: 0.55rem;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.24);
     }
   }
 </style>

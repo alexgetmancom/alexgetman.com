@@ -9,7 +9,9 @@
       "env": {
         "PIPELINE_DB": "/Users/alex/projects/alexgetman.com/.dev-fixture/pipeline.db",
         "SITE_PUBLIC_DIR": "/Users/alex/projects/alexgetman.com/.dev-fixture/site",
-        "DISABLE_WORKERS": "1"
+        "DISABLE_WORKERS": "1",
+        "COMMAND_CENTER_TOKEN": "dev",
+        "COMMAND_CENTER_URL": "http://localhost:4321/command-center"
       }
     }
   ]

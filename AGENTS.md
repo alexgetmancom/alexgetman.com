@@ -1,3 +1,20 @@
+# Language
+
+**The repository is English-only. The product is bilingual; the codebase is not.**
+
+- English is required in: code comments, identifiers, commit messages, test names,
+  log and error messages, `README.md`, and every other doc or design note.
+- Russian belongs only in *product content* — user-facing UI strings, locale
+  files, bot copy, post text. Those are data, not code.
+- Why: the product ships RU and EN, so Russian in source blurs the line between
+  "text the reader sees" and "text explaining the code". A reviewer must be able
+  to tell them apart at a glance, and translation tooling must never pick up a
+  comment.
+- Translated docs get an explicit suffix: `README.md` is the source of truth,
+  `README.ru.md` is a translation of it (not yet written).
+- When you touch a file that still has Russian comments, convert the lines you
+  are already editing. Do not open unrelated files just to translate them.
+
 # Workflow
 
 - Work only on `main`; do not create branches or PRs.
@@ -15,6 +32,25 @@
 - Почему по умолчанию именно так: на пустом или односоставном фиде не видны ни лента, ни фильтры режимов, ни сегментированная полоса прогресса — она появляется только при 2+ картинках в посте.
 - Источник данных — `apps/web/src/server/site-fixture.ts` (drizzle-схема + реальные байты картинок под продовым именованием из `site-media-naming.ts`). Оттуда же сеется SSR-смоук-тест, поэтому дев и CI смотрят на одну и ту же форму данных. Менять форму — там, а не в вызывающих местах.
 - Для логики плеера (таймеры, автоматы, прогресс) писать юнит-тесты рядом с `apps/web/src/scripts/story-player/*.test.ts` на happy-dom — быстро и детерминированно. Учитывать: **happy-dom не считает layout**, `offsetTop`/`clientHeight`/`scrollTop` там всегда 0, поэтому геометрия и прокрутка проверяются только живым браузером.
+
+## Running the dashboard locally
+
+- The same `bun scripts/dev-seed.ts` also fills Command Center. It prints both URLs; the dashboard one carries the token:
+  - site — `http://localhost:4321/`
+  - dashboard — `http://localhost:4321/command-center?token=dev`
+- The dashboard needs `COMMAND_CENTER_TOKEN` to be set or every request renders the login screen. Locally any value works as long as the server and the URL agree; `.claude/launch.json` sets `dev`. `?token=` is traded for an HttpOnly cookie on the first GET.
+- `--no-dashboard` seeds site rows only. Use it when you are working on the player and do not want ~4k metric sample rows.
+- Fixture layering: `apps/web/src/server/site-fixture.ts` writes what the public read model needs, `apps/web/src/server/dashboard-fixture.ts` adds what only Command Center reads (per-target publish state, metric history, queue and worker rows). Change the shape there, not in the seed script.
+- The dashboard fixture is deliberately not all-green: one target fails with an error, one job stays queued, and metric samples are spread every two hours across 14 days. A fixture with one sample per day makes the overview chart draw a vertical spike instead of a curve, and an all-published fixture hides every error style.
+- **No audience numbers locally.** Audience counts come from live platform APIs, not from the database, so that panel shows `—` against a fixture. That is expected, not a bug to chase.
+
+## Theming
+
+- Two skins, one vocabulary. Site tokens: `apps/web/src/shared/styles/tokens.css`. Dashboard tokens: `apps/backend/src/interfaces/web/dashboard/theme.ts`. The names match, the values deliberately do not — the site is editorial (crimson accent), the dashboard is a dense ops tool (blue accent, higher contrast).
+- `apps/backend/tests/themeContract.test.ts` parses both files and fails if a shared token is missing from either, in either theme. Add a token to `SHARED_THEME_TOKENS` and you must add it to both stylesheets.
+- The theme is `data-theme` on `<html>`, applied by an inline script before first paint (otherwise the wrong theme flashes). System preference is the default; an explicit click is stored in `localStorage` and wins from then on.
+- **Never write a raw colour in CSS** — only `var(--*)`. The dashboard used to hold 143 literal hexes across three files, roughly twenty of which were near-identical greys nobody could tell apart.
+- The story player is dark in both themes; see "Story player chrome" below for why and for what that costs.
 
 ## Runtime diagnostics
 
@@ -38,3 +74,12 @@
 - Если локальная команда завершается `EROFS`, `ENOENT` или из-за отсутствующих локальных `/data`/secrets, не исправлять это ради диагностики: за production-ответом идти к read-only CLI в контейнере.
 - Для авторизованной диагностики конкретного поста использовать JSON endpoint `/api/post-debug?ref=post:<id>`; он показывает post, targets и publish jobs.
 - Не запускать `backup`, `restore`, `metrics-backfill --apply`, `media-reprocess --apply`, `capability-record`, retry/republish, ручные `UPDATE` в БД или другие мутации без явного запроса пользователя.
+
+## Story player chrome
+
+- The player is a dark surface in both themes, the way a video app is. The page around it follows the theme; every surface inside it does not. This is not a shortcut — the stage, the context panel and the rail are all media chrome, and a light player would mean recolouring a photo viewer.
+- **Translucency inside the player assumes something dark behind it.** Several surfaces were `rgba(0, 0, 0, 0.5–0.8)` and inactive rail cards use `opacity: 0.38` with `grayscale(1)`. Over a light page those composite to grey slabs. Opaque bases (`var(--bg-deep)`) are therefore load-bearing, and for `opacity` the backdrop has to sit on an ancestor — `.story-rail-container` — because an element cannot opt its own background out of its own opacity.
+- The bottom actions are one floating blurred bar holding three equal labelled items, not a row of separate chips — the shape a mobile tab bar has. The same bar is reused at the foot of the desktop context panel, so there is one component in two positions. Because the items are equal and labelled, a video-first feed needs no layout variant; only the third label changes meaning, from "read the post" to "read the transcript".
+- **No large colour fills over media.** Emphasis on the primary item is a slightly lighter translucent fill, not the brand crimson. Hue works as a small mark (category badge, link) where it reads as brand; spread across a slab on top of a photo it reads as an alarm and outshouts the frame. Same reason the progress bar is white on a translucent track rather than crimson. The overlay palette lives in `--overlay-*` in tokens.css and is deliberately not themed — the surface underneath is media, not the page.
+- **Autoplay with sound is impossible on a first visit** — browsers refuse it until the user has interacted with the page. The clip therefore always starts muted, and the prompt to enable sound is the required gesture. `hasMutedPreference()` separates "chose silence" from "never asked"; only the second is prompted, and any answer is persisted.
+- No theme switch below 760px: mobile OSes have a reliable system dark mode, so the override only earns its place on desktop.

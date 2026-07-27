@@ -94,20 +94,20 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
     </div>
     <div class="story-actions">
       <button class="story-action story-action--primary" type="button" onclick={onopendiscussion}>
-        <svg class="story-action-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;">
+        <svg class="story-action-icon" viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
         </svg>
-        <span>{discussionVisible ? ui.backToPost : ui.discuss}</span>
+        <span class="story-action__label">{discussionVisible ? ui.backToPost : ui.discuss}</span>
       </button>
       <button class="story-action" type="button" onclick={onshare}>
-        <svg class="story-action-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;">
+        <svg class="story-action-icon" viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="18" cy="5" r="3"></circle>
           <circle cx="6" cy="12" r="3"></circle>
           <circle cx="18" cy="19" r="3"></circle>
           <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
           <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
         </svg>
-        <span>{shareCopied ? ui.copied : ui.share}</span>
+        <span class="story-action__label">{shareCopied ? ui.copied : ui.share}</span>
       </button>
     </div>
   </div>
@@ -123,7 +123,7 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
     flex-direction: column;
     border: 1px solid var(--border);
     border-radius: 10px;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.042), rgba(255, 255, 255, 0.012)), rgba(0, 0, 0, 0.56);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.042), rgba(255, 255, 255, 0.012)), var(--bg-deep);
     overflow: hidden;
     min-width: 0;
     backdrop-filter: blur(18px);
@@ -273,14 +273,16 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
     margin: 0 0 0.62rem;
   }
 
-  /* ------------------------------- Кнопки ----------------------------------- */
+  /* ------------------------------- Actions ---------------------------------- */
+  /* The desktop counterpart of the phone's .story-action-bar. Same buttons,
+   * same shared story-actions.css; only the placement differs — here they sit
+   * at the foot of the context panel instead of over the stage. Read is absent
+   * on purpose: on desktop the text is already on screen next to them. */
+  /* Placement only. The bar's surface, blur and items come from the shared
+   * story-actions.css, so this row and the phone's floating bar are one
+   * component with two positions. */
   .story-actions {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.52rem;
     margin-top: auto;
-    padding-top: 0.72rem;
-    border-top: 1px solid var(--border);
     flex-shrink: 0;
   }
 
@@ -294,12 +296,12 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
   }
 
   .story-source-link {
-    color: var(--muted);
+    color: var(--text-muted);
     text-decoration: none;
   }
 
   .story-source-link:hover {
-    color: var(--text);
+    color: var(--text-main);
     text-decoration: underline;
   }
 
@@ -463,15 +465,13 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
 
     /* Кнопки скрыты на мобильном (см. display:none выше), но геометрия
        сохранена как в исходном CSS на случай возврата. */
+    /* Hidden on phones (rule above) — the stage's own floating bar covers
+       these actions there. Geometry kept for the sheet if it ever shows them. */
     .story-actions {
       position: sticky;
       z-index: var(--z-sticky);
       bottom: calc(0.8rem + env(safe-area-inset-bottom, 0));
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 0.55rem;
       margin-top: 1.1rem;
-      padding: 0;
-      border: 0;
       pointer-events: auto;
     }
 

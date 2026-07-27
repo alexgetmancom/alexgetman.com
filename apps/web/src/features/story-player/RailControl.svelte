@@ -76,7 +76,7 @@ let {
     border: 1px solid rgba(220, 38, 38, 0.42);
     border-right: 0;
     border-radius: 8px 0 0 8px;
-    background: linear-gradient(180deg, rgba(220, 38, 38, 0.18), rgba(0, 0, 0, 0.64)), rgba(0, 0, 0, 0.78);
+    background: linear-gradient(180deg, rgba(220, 38, 38, 0.18), rgba(0, 0, 0, 0.64)), var(--bg-deep);
     box-shadow:
       inset -1px 0 0 rgba(220, 38, 38, 0.18),
       0 12px 28px rgba(0, 0, 0, 0.36);
@@ -104,7 +104,7 @@ let {
   .feed-mode-menu__panel button {
     min-height: 36px;
     border: 1px solid var(--border);
-    background: rgba(0, 0, 0, 0.72);
+    background: var(--bg-deep);
     color: var(--text-header);
     cursor: pointer;
     backdrop-filter: blur(14px);
@@ -166,7 +166,7 @@ let {
     padding: 0.38rem;
     border: 1px solid var(--border);
     border-radius: 8px;
-    background: rgba(0, 0, 0, 0.88);
+    background: var(--bg-deep);
     box-shadow: 0 18px 44px rgba(0, 0, 0, 0.56);
     opacity: 0;
     pointer-events: none;

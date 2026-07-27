@@ -56,6 +56,20 @@ const safeSchema = schema?.replace(/</g, "\\u003c").replace(/>/g, "\\u003e").rep
     <meta name="description" content={cleanDescription} />
     <meta name="robots" content={robots} />
     <meta name="theme-color" content="#080B10" />
+    <script is:inline>
+      // Runs before first paint: without it the document renders in the default
+      // dark theme and then flips, which reads as a flash. Must stay inline and
+      // un-deferred for that reason.
+      (() => {
+        try {
+          const stored = localStorage.getItem("theme");
+          const theme = stored === "light" || stored === "dark" ? stored : matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+          document.documentElement.setAttribute("data-theme", theme);
+        } catch {
+          document.documentElement.setAttribute("data-theme", "dark");
+        }
+      })();
+    </script>
     <link rel="icon" type="image/png" href="/brand-favicon-20260629.png" />
     <link rel="apple-touch-icon" href="/brand-favicon-20260629.png" />
     <link rel="icon" type="image/svg+xml" href={`/favicon.svg?v=${brandAssetVersion}`} />
@@ -110,7 +124,25 @@ const safeSchema = schema?.replace(/</g, "\\u003c").replace(/>/g, "\\u003e").rep
   </head>
   <body class={immersiveHome ? "immersive-home" : undefined}>
     <a class="skip-link" href="#main-content">{lang === "ru" ? "К содержанию" : "Skip to content"}</a>
+    <button
+      type="button"
+      class="theme-toggle"
+      data-theme-toggle
+      aria-label={lang === "ru" ? "Переключить тему" : "Toggle theme"}
+      aria-pressed="false"
+    >
+      <svg class="theme-toggle__icon theme-toggle__icon--sun" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <circle cx="12" cy="12" r="4"></circle>
+        <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path>
+      </svg>
+      <svg class="theme-toggle__icon theme-toggle__icon--moon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path>
+      </svg>
+    </button>
     <main class="container" id="main-content" tabindex="-1"><slot /></main>
-    <script>import "../scripts/site-interactions.ts";</script>
+    <script>
+      import "../scripts/site-interactions.ts";
+      import "../scripts/theme-toggle.ts";
+    </script>
   </body>
 </html>
