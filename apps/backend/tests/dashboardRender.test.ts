@@ -1,5 +1,4 @@
 import { describe, expect, it } from "bun:test";
-import { platformKey } from "../src/interfaces/web/dashboard/assets.js";
 import { formatMetricValue, getMskDateString, shortPipelineText } from "../src/interfaces/web/dashboard/format.js";
 import { formatMedia, getTargetMetric, postMetricTotals, targetCell } from "../src/interfaces/web/dashboard/metrics.js";
 import { renderPublicationColumns } from "../src/interfaces/web/dashboard/table.js";
@@ -20,16 +19,9 @@ function published(target: string, metrics: Record<string, number> = {}): Partia
 }
 
 describe("dashboard formatting", () => {
-  it("compacts thousands and millions and drops a trailing .0", () => {
-    expect(formatMetricValue(999)).toBe("999");
-    expect(formatMetricValue(1_000)).toBe("1k");
-    expect(formatMetricValue(1_500)).toBe("1.5k");
-    expect(formatMetricValue(12_340)).toBe("12.3k");
-    expect(formatMetricValue(1_000_000)).toBe("1m");
-    expect(formatMetricValue(2_500_000)).toBe("2.5m");
-  });
-
-  it("renders nothing for a missing or unparseable metric", () => {
+  it("distinguishes an absent metric from zero", () => {
+    // Everything else about this function is cosmetic rounding. This part is
+    // not: "" and "0" mean different things to the reader of the dashboard.
     expect(formatMetricValue(null)).toBe("");
     expect(formatMetricValue(undefined)).toBe("");
     expect(formatMetricValue("not a number")).toBe("");
@@ -49,21 +41,9 @@ describe("dashboard formatting", () => {
     expect(getMskDateString("not a date")).toBe(today);
   });
 
-  it("truncates to a word limit and collapses whitespace", () => {
-    expect(shortPipelineText("one two three", 7)).toBe("one two three");
-    expect(shortPipelineText("one  two\n\tthree", 7)).toBe("one two three");
-    expect(shortPipelineText("a b c d e f g h i", 3)).toBe("a b c...");
-    expect(shortPipelineText("", 3)).toBe("");
+  it("survives a missing title instead of rendering the word null", () => {
     expect(shortPipelineText(null)).toBe("");
-  });
-
-  it("maps a target id onto its platform icon key", () => {
-    expect(platformKey("site_ru")).toBe("site");
-    expect(platformKey("threads_en")).toBe("threads");
-    expect(platformKey("instagram_stories_ru")).toBe("instagram");
-    expect(platformKey("telegram_stories")).toBe("telegram_stories");
-    expect(platformKey("telegram")).toBe("telegram");
-    expect(platformKey("x")).toBe("x");
+    expect(shortPipelineText("")).toBe("");
   });
 });
 

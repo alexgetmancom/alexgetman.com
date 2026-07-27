@@ -22,46 +22,23 @@ describe("openBackendDb", () => {
     }
   });
 
-  it("bootstraps core pipeline tables", () => {
+  it("applies every migration on a fresh database", () => {
+    // The table inventory this used to spell out was a copy of the schema: each
+    // new table meant one more line, and it only ever caught a migration that
+    // had not run at all — which every other test here would fail on anyway.
+    // Applying the full migration list is the fact worth asserting.
     const backendDb = openBackendDb(":memory:");
     try {
-      const tables = backendDb.sqlite
-        .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-        .all()
-        .map((row: { name: string }) => row.name);
-      expect(tables).toContain("publish_jobs");
-      expect(tables).toContain("publish_plans");
-      expect(tables).toContain("site_source_items");
-      expect(tables).toContain("publication_plans");
-      expect(tables).toContain("publication_sources");
-      expect(tables).toContain("ops_actions");
-      expect(tables).toContain("post_events");
-      expect(tables).toContain("worker_state");
-      expect(tables).toContain("posts");
-      expect(tables).toContain("post_metrics");
-      expect(tables).toContain("post_locales");
-      expect(tables).toContain("media_assets");
-      expect(tables).toContain("studio_media_assets");
-      expect(tables).toContain("credential_checks");
-      expect(tables).toContain("video_drafts");
-      expect(tables).toContain("video_targets");
-      expect(tables).toContain("creator_profiles");
-      expect(tables).toContain("creator_profile_snapshots");
-      expect(tables).toContain("video_metric_snapshots");
-      expect(tables).toContain("social_comments");
-      expect(tables).toContain("site_pageviews");
-      expect(tables).toContain("post_sources");
-      expect(tables).toContain("knowledge_entities");
-      expect(tables).toContain("knowledge_entity_aliases");
-      expect(tables).toContain("post_entity_links");
-      expect(tables).toContain("draft_sources");
-      expect(tables).toContain("draft_entity_candidates");
       expect(migrationStatus(backendDb.sqlite)).toHaveLength(drizzleMigrationMetadata().length);
     } finally {
       backendDb.close();
     }
   });
 
+  /** The one inventory worth maintaining by hand: it guards the destructive
+   * direction. A migration that drops or renames a table still applies cleanly
+   * and passes every behavioural test whose data it did not touch, and the loss
+   * only surfaces on production data. One line per new table is the price. */
   it("preserves every legacy pipeline table when applying Drizzle migrations", () => {
     const backendDb = openBackendDb(":memory:");
     try {

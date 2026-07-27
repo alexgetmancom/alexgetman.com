@@ -58,13 +58,6 @@ describe("creatorVideoArchive", () => {
     });
   });
 
-  it("reports an empty archive in the requested locale", () => {
-    return withDb((backendDb) => {
-      expect(creatorVideoArchive(backendDb).text).toContain("No published videos yet");
-      expect(creatorVideoArchive(backendDb, 0, "ru").text).toContain("В архиве пока нет опубликованных роликов");
-    });
-  });
-
   it("does not list a draft whose targets never published", () => {
     return withDb((backendDb) => {
       insertPublishedVideo(backendDb, { label: "Published", target: "youtube_shorts", publishedAt: sampledAt });

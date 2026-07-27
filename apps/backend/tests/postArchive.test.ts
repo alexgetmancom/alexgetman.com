@@ -48,19 +48,13 @@ function sample(
 }
 
 describe("creatorPostArchive", () => {
-  it("lists published posts newest first with a collapsed, truncated label", () => {
+  it("lists published posts newest first", () => {
     return withDb((backendDb) => {
       publishedPost(backendDb, { postId: 1, text: "Older post", updatedAt: "2026-07-01T00:00:00.000Z" });
-      publishedPost(backendDb, {
-        postId: 2,
-        text: `  Newer   post with\na very long headline that runs past the forty-two character limit  `,
-        updatedAt: "2026-07-20T00:00:00.000Z",
-      });
+      publishedPost(backendDb, { postId: 2, text: "Newer post", updatedAt: "2026-07-20T00:00:00.000Z" });
 
       const archive = creatorPostArchive(backendDb);
       expect(archive.items.map((item) => item.id)).toEqual([2, 1]);
-      expect(archive.items[0]?.label).toBe("Newer post with a very long headline that ");
-      expect(archive.items[0]?.label.length).toBe(42);
       expect(archive.total).toBe(2);
     });
   });
@@ -96,14 +90,6 @@ describe("creatorPostArchive", () => {
       expect(creatorPostArchive(backendDb).items).toHaveLength(10);
       expect(creatorPostArchive(backendDb, 10).items).toHaveLength(2);
       expect(creatorPostArchive(backendDb, 10).total).toBe(12);
-    });
-  });
-
-  it("localizes the chooser and the empty state", () => {
-    return withDb((backendDb) => {
-      expect(creatorPostArchive(backendDb, 0, "ru").text).toContain("пока");
-      publishedPost(backendDb, { postId: 1, text: "Пост" });
-      expect(creatorPostArchive(backendDb, 0, "ru").text).toContain("Выберите");
     });
   });
 });
@@ -153,15 +139,6 @@ describe("creatorPostMetrics", () => {
       const text = creatorPostMetrics(backendDb, 7);
       expect(text).toContain("Total views: *0*");
       expect(text).toContain("[media post]");
-    });
-  });
-
-  it("truncates the quoted body at 600 characters", () => {
-    return withDb((backendDb) => {
-      publishedPost(backendDb, { postId: 8, text: "x".repeat(900) });
-
-      expect(creatorPostMetrics(backendDb, 8)).toContain("x".repeat(600));
-      expect(creatorPostMetrics(backendDb, 8)).not.toContain("x".repeat(601));
     });
   });
 

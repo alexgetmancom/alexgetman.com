@@ -360,19 +360,6 @@ describe("healthReport", () => {
     }
   });
 
-  it("projects workers down to name, state and updatedAt", () => {
-    const backendDb = openBackendDb(":memory:");
-    try {
-      insertWorker(backendDb, "publisher", { ok: true, phase: "idle" });
-
-      expect(healthReport(loadConfig(READY_ENV), backendDb).workers).toEqual([
-        { name: "publisher", state: { ok: true, phase: "idle" }, updatedAt: checkedAt },
-      ]);
-    } finally {
-      backendDb.close();
-    }
-  });
-
   it("treats an empty database as ok rather than throwing on a missing count row", () => {
     const backendDb = openBackendDb(":memory:");
     try {

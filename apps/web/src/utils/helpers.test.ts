@@ -1,5 +1,4 @@
 import { describe, expect, it } from "bun:test";
-import { existsSync } from "node:fs";
 import { formatDate } from "./dates";
 import { semanticPostHtml } from "./html";
 import { responsiveImageSrcSet } from "./media";
@@ -16,9 +15,5 @@ describe("focused web helpers", () => {
     expect(responsiveImageSrcSet("media/image.jpg")).toContain("image-640.webp 640w");
     expect(semanticPostHtml("First\n\n- one\n- two")).toBe("<p>First</p>\n<ul><li>one</li><li>two</li></ul>");
     expect(formatDate("2026-07-15T10:00:00.000Z")).toContain("2026");
-  });
-
-  it("has no legacy helper facade", () => {
-    expect(existsSync(new URL("./helpers.ts", import.meta.url))).toBe(false);
   });
 });

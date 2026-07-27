@@ -104,7 +104,7 @@ async function finishDeployAction(
   }
 }
 
-export function deploymentMenuKeyboard(revision: string): InlineKeyboard {
+function deploymentMenuKeyboard(revision: string): InlineKeyboard {
   return new InlineKeyboard()
     .text("Откатить alex", `deploy_rb_ask:alex:${revision}`)
     .row()

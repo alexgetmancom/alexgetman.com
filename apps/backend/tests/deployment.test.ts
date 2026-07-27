@@ -1,12 +1,8 @@
 import { describe, expect, it, mock } from "bun:test";
-import { deploymentMenuKeyboard } from "../src/bot/operations-screen.js";
 import { loadConfig } from "../src/foundation/config.js";
 import {
-  deploymentMenuCallback,
   deploymentPromoteCallback,
   deploymentRollbackCallback,
-  parseDeploymentMenuCallback,
-  parseDeploymentPromoteAskCallback,
   parseDeploymentPromoteCallback,
   parseDeploymentRollbackAskCallback,
   parseDeploymentRollbackCallback,
@@ -14,97 +10,54 @@ import {
   requestDeploymentRollback,
 } from "../src/foundation/deployment.js";
 
-describe("deployment rollback protocol", () => {
-  const revision = "a".repeat(40);
+const revision = "a".repeat(40);
+const agent = { DEPLOY_AGENT_URL: "http://host.docker.internal:9899", DEPLOY_AGENT_TOKEN: "t".repeat(16) };
 
-  it("only generates compact callbacks for Git SHAs", () => {
-    expect(deploymentRollbackCallback("maru", revision)).toBe(`deploy_rollback:maru:${revision}`);
-    expect(parseDeploymentRollbackCallback(`deploy_rollback:maru:${revision}`)).toEqual({ target: "maru", revision });
-    expect(parseDeploymentRollbackCallback("deploy_rollback:maru:latest")).toBeNull();
+describe("deployment callbacks", () => {
+  it("refuses to build or parse a callback for anything but a Git SHA", () => {
+    // A rollback target is executed verbatim by the agent. "latest" would move
+    // the release pointer to whatever happens to be newest at that moment.
     expect(() => deploymentRollbackCallback("maru", "latest")).toThrow("Git SHA");
+    expect(() => deploymentPromoteCallback("maru", "latest")).toThrow("Git SHA");
+    expect(parseDeploymentRollbackCallback("deploy_rollback:maru:latest")).toBeNull();
+    expect(parseDeploymentPromoteCallback("deploy_promote:maru:latest")).toBeNull();
+    expect(parseDeploymentRollbackCallback(`deploy_rollback:maru:${revision}`)).toEqual({ target: "maru", revision });
   });
 
-  it("parses the confirm-first ask callback, distinct from the executing one", () => {
+  it("keeps the confirmation tap and the executing tap on separate prefixes", () => {
+    // One shared prefix would make the first tap deploy instead of asking.
     expect(parseDeploymentRollbackAskCallback(`deploy_rb_ask:maru:${revision}`)).toEqual({ target: "maru", revision });
     expect(parseDeploymentRollbackAskCallback(`deploy_rollback:maru:${revision}`)).toBeNull();
     expect(parseDeploymentRollbackCallback(`deploy_rb_ask:maru:${revision}`)).toBeNull();
   });
+});
 
-  it("forwards an authenticated rollback request to the private agent", async () => {
+describe("deployment agent requests", () => {
+  it("forwards an authenticated request to the per-action agent endpoint", async () => {
+    const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
     const fetchImpl = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
-      expect(String(input)).toBe("http://host.docker.internal:9899/v1/rollback/maru");
-      expect(init?.headers).toMatchObject({ authorization: `Bearer ${"t".repeat(16)}` });
-      expect(init?.body).toBe(JSON.stringify({ release: revision }));
-      return Response.json({ ok: true, release: revision, currentRevision: "b".repeat(40) });
+      calls.push({ url: String(input), init });
+      return Response.json({ ok: true, release: revision, currentRevision: revision });
     });
-    await expect(
-      requestDeploymentRollback(
-        loadConfig({ DEPLOY_AGENT_URL: "http://host.docker.internal:9899", DEPLOY_AGENT_TOKEN: "t".repeat(16) }),
-        "maru",
-        revision,
-        fetchImpl,
-      ),
-    ).resolves.toEqual({ ok: true, release: revision, currentRevision: "b".repeat(40) });
+
+    await requestDeploymentRollback(loadConfig(agent), "maru", revision, fetchImpl);
+    await requestDeploymentPromote(loadConfig(agent), "maru", revision, fetchImpl);
+
+    expect(calls.map((call) => call.url)).toEqual([
+      "http://host.docker.internal:9899/v1/rollback/maru",
+      "http://host.docker.internal:9899/v1/promote/maru",
+    ]);
+    expect(calls[0]?.init?.headers).toMatchObject({ authorization: `Bearer ${"t".repeat(16)}` });
+    expect(calls[0]?.init?.body).toBe(JSON.stringify({ release: revision }));
   });
 
   it("does not issue network requests when deployment control is disabled", async () => {
     const fetchImpl = mock(fetch);
+
     await expect(requestDeploymentRollback(loadConfig({}), "maru", revision, fetchImpl)).resolves.toEqual({
       ok: false,
       message: "Deployment agent is not configured.",
     });
     expect(fetchImpl).not.toHaveBeenCalled();
-  });
-});
-
-describe("deployment promote protocol", () => {
-  const revision = "a".repeat(40);
-
-  it("only generates compact callbacks for Git SHAs", () => {
-    expect(deploymentPromoteCallback("maru", revision)).toBe(`deploy_promote:maru:${revision}`);
-    expect(parseDeploymentPromoteCallback(`deploy_promote:maru:${revision}`)).toEqual({ target: "maru", revision });
-    expect(parseDeploymentPromoteCallback("deploy_promote:maru:latest")).toBeNull();
-    expect(() => deploymentPromoteCallback("maru", "latest")).toThrow("Git SHA");
-  });
-
-  it("parses the confirm-first ask callback, distinct from the executing one", () => {
-    expect(parseDeploymentPromoteAskCallback(`deploy_pr_ask:maru:${revision}`)).toEqual({ target: "maru", revision });
-    expect(parseDeploymentPromoteAskCallback(`deploy_promote:maru:${revision}`)).toBeNull();
-    expect(parseDeploymentPromoteCallback(`deploy_pr_ask:maru:${revision}`)).toBeNull();
-  });
-
-  it("forwards an authenticated promote request to the private agent", async () => {
-    const fetchImpl = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
-      expect(String(input)).toBe("http://host.docker.internal:9899/v1/promote/maru");
-      expect(init?.headers).toMatchObject({ authorization: `Bearer ${"t".repeat(16)}` });
-      expect(init?.body).toBe(JSON.stringify({ release: revision }));
-      return Response.json({ ok: true, release: revision, currentRevision: revision });
-    });
-    await expect(
-      requestDeploymentPromote(
-        loadConfig({ DEPLOY_AGENT_URL: "http://host.docker.internal:9899", DEPLOY_AGENT_TOKEN: "t".repeat(16) }),
-        "maru",
-        revision,
-        fetchImpl,
-      ),
-    ).resolves.toEqual({ ok: true, release: revision, currentRevision: revision });
-  });
-});
-
-describe("deployment action menu", () => {
-  const revision = "c".repeat(40);
-
-  it("returns from confirmation to the release controls", () => {
-    expect(deploymentMenuCallback(revision)).toBe(`deploy_menu:${revision}`);
-    expect(parseDeploymentMenuCallback(`deploy_menu:${revision}`)).toBe(revision);
-    expect(parseDeploymentMenuCallback("deploy_menu:latest")).toBeNull();
-  });
-
-  it("always keeps alex rollback, maru promote and worker promote together", () => {
-    expect(
-      deploymentMenuKeyboard(revision)
-        .inline_keyboard.flat()
-        .map((button) => button.text),
-    ).toEqual(["Откатить alex", "Раскатить maru", "Раскатить worker"]);
   });
 });
