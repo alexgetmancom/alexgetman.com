@@ -6,6 +6,26 @@ import { collectThreads } from "./threads.js";
 import type { MetricCollector } from "./types.js";
 import { collectX } from "./x.js";
 
+/**
+ * Every target this build knows how to collect, including the paid ones and the legacy
+ * aliases still present in durable schedules. Deliberately static: `createMetricCollectors`
+ * drops targets when a flag or credential is absent, and callers that retire schedules must
+ * not confuse "off right now" with "gone from the product".
+ */
+export const SUPPORTED_METRIC_TARGETS = [
+  "telegram",
+  "threads",
+  "threads_ru",
+  "threads_en",
+  "instagram_story",
+  "instagram_stories",
+  "instagram_stories_ru",
+  "telegram_story",
+  "telegram_stories",
+  "x",
+  "twitter",
+] as const;
+
 export function createMetricCollectors(config: BackendConfig, fetchImpl: typeof fetch = fetch): Record<string, MetricCollector> {
   const threads = (task: MetricTask) => collectThreads(task, config, fetchImpl);
   const instagram = (task: MetricTask) => collectInstagramStory(task, config, fetchImpl);

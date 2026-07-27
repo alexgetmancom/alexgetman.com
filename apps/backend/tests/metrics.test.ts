@@ -1,7 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import { asc, eq } from "drizzle-orm";
 import { TerminalMetricError } from "../src/analytics/collection/collectors/errors.js";
-import { createMetricCollectors } from "../src/analytics/collection/collectors/index.js";
+import { createMetricCollectors, SUPPORTED_METRIC_TARGETS } from "../src/analytics/collection/collectors/index.js";
 import { dueMetricTasks, type MetricTask } from "../src/analytics/collection/metric-schedule.js";
 import { runMetricsCycle } from "../src/analytics/collection/metrics-cycle.js";
 import { openBackendDb } from "../src/db/client.js";
@@ -162,6 +162,45 @@ describe("metrics cycle", () => {
     } finally {
       backendDb.close();
     }
+  });
+
+  it("retires schedules for targets the product no longer collects", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      seedPublishedPost(backendDb, "post:retired", "bluesky");
+      seedPublishedPost(backendDb, "post:paid", "x");
+      const overdue = new Date(Date.now() - 60_000).toISOString();
+      backendDb.db
+        .insert(metricSchedule)
+        .values([
+          { postKey: "post:retired", target: "bluesky", nextCheckAt: overdue, updatedAt: overdue },
+          { postKey: "post:paid", target: "x", nextCheckAt: overdue, updatedAt: overdue },
+        ])
+        .run();
+
+      await runMetricsCycle(loadConfig({ ENABLE_X_METRICS: "1" }), backendDb, {});
+
+      expect(
+        backendDb.db
+          .select({ target: metricSchedule.target, frozenAt: metricSchedule.frozenAt, nextCheckAt: metricSchedule.nextCheckAt })
+          .from(metricSchedule)
+          .orderBy(asc(metricSchedule.target))
+          .all(),
+      ).toEqual([
+        { target: "bluesky", frozenAt: expect.any(String), nextCheckAt: null },
+        // Paid targets are switched by a flag, not retired: freezing them would
+        // silently drop a live schedule the next time X metrics are turned on.
+        { target: "x", frozenAt: null, nextCheckAt: overdue },
+      ]);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("keeps the static supported list in step with the collectors it guards", () => {
+    expect([...(SUPPORTED_METRIC_TARGETS as readonly string[])].sort()).toEqual(
+      Object.keys(createMetricCollectors(loadConfig({ ENABLE_X_METRICS: "1" }))).sort(),
+    );
   });
 });
 

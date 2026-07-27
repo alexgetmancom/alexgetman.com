@@ -6,21 +6,28 @@ import { recordWorkerState } from "../../foundation/runtime/worker-state.js";
 import { platformAnalyticsProfile } from "../../publishing/platform-profiles.js";
 import { upsertMetricError, upsertMetrics } from "../snapshots/metric-repository.js";
 import { isTerminalMetricError } from "./collectors/errors.js";
-import { createMetricCollectors } from "./collectors/index.js";
+import { createMetricCollectors, SUPPORTED_METRIC_TARGETS } from "./collectors/index.js";
 import type { MetricCollector } from "./collectors/types.js";
-import { dueMetricTasks, ensureMetricSchedule, finishMetricTask, freezeDisabledMetricSchedules } from "./metric-schedule.js";
+import {
+  dueMetricTasks,
+  ensureMetricSchedule,
+  finishMetricTask,
+  freezeDisabledMetricSchedules,
+  freezeUnsupportedMetricSchedules,
+} from "./metric-schedule.js";
 
 export async function runMetricsCycle(
   config: BackendConfig,
   backendDb: BackendDb,
   collectors: Record<string, MetricCollector> = createMetricCollectors(config),
 ): Promise<number> {
-  ensureMetricSchedule(
-    backendDb,
-    Object.keys(collectors).filter((target) => platformAnalyticsProfile(target).enabled),
-  );
+  // One list drives creation, retirement and claiming. Deriving them separately let a
+  // target be collected but never scheduled, or scheduled but never collected.
+  const collectableTargets = Object.keys(collectors).filter((target) => platformAnalyticsProfile(target).enabled);
+  ensureMetricSchedule(backendDb, collectableTargets);
+  freezeUnsupportedMetricSchedules(backendDb, SUPPORTED_METRIC_TARGETS);
   freezeDisabledMetricSchedules(backendDb, [...(config.ENABLE_X_METRICS ? [] : ["x", "twitter"])]);
-  const tasks = dueMetricTasks(backendDb, config, Object.keys(collectors));
+  const tasks = dueMetricTasks(backendDb, config, collectableTargets);
   for (const task of tasks) {
     const collector = collectors[task.target];
     if (!collector) continue;

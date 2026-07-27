@@ -103,6 +103,24 @@ export function finishMetricTask(backendDb: BackendDb, task: MetricTask, error: 
     .run();
 }
 
+/**
+ * Retires schedules whose target no longer has a collector at all — targets removed
+ * from the catalogue keep rows that can never be checked, and before they were frozen
+ * they stayed permanently overdue and counted as backlog. Paid targets are exempt:
+ * they are switched by `ENABLE_X_METRICS`, so freezing them here would retire a target
+ * that is merely turned off today. Pass the statically supported set, never the
+ * credential-dependent one, so a missing token cannot retire a live schedule.
+ */
+export function freezeUnsupportedMetricSchedules(backendDb: BackendDb, supported: readonly string[]): void {
+  if (supported.length === 0) return;
+  const now = new Date().toISOString();
+  backendDb.db
+    .update(metricSchedule)
+    .set({ frozenAt: now, nextCheckAt: null, lastError: null, updatedAt: now })
+    .where(and(isNull(metricSchedule.frozenAt), notInArray(metricSchedule.target, [...supported, ...PAID_METRIC_TARGETS])))
+    .run();
+}
+
 export function freezeDisabledMetricSchedules(backendDb: BackendDb, targets: readonly string[]): void {
   if (targets.length === 0) return;
   const now = new Date().toISOString();
