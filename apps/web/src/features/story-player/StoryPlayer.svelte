@@ -34,6 +34,7 @@ import {
 import { loadGiscusDiscussion } from "../../scripts/story-player/discussion";
 import { setDiscussionVisibility } from "../../scripts/story-player/discussion-state";
 import { advanceGallerySequence } from "../../scripts/story-player/gallery-state";
+import { readSwipe } from "../../scripts/story-player/gestures";
 import { preloadAdjacentMedia } from "../../scripts/story-player/media";
 import { hasMutedPreference, readMutedPreference, writeMutedPreference } from "../../scripts/story-player/preferences";
 import { createStoryProgressController } from "../../scripts/story-player/progress";
@@ -344,12 +345,20 @@ function handleWheel(event: WheelEvent): void {
 }
 
 let touchStartX = 0;
+let touchStartY = 0;
 function onTouchStart(event: TouchEvent): void {
-  touchStartX = event.touches[0]?.clientX || 0;
+  const touch = event.touches[0];
+  touchStartX = touch?.clientX || 0;
+  touchStartY = touch?.clientY || 0;
 }
 function onTouchEnd(event: TouchEvent): void {
-  const delta = (event.changedTouches[0]?.clientX || 0) - touchStartX;
-  if (Math.abs(delta) > swipeThresholdPx) navigate(delta < 0 ? 1 : -1);
+  /* The reading sheet is fixed on phones but still a DOM descendant, so its
+     touches bubble up here. While it is open the gesture belongs to the text
+     the finger is scrolling, not to the feed. */
+  if (readingVisible || discussionVisible) return;
+  const touch = event.changedTouches[0];
+  const intent = readSwipe((touch?.clientX || 0) - touchStartX, (touch?.clientY || 0) - touchStartY, swipeThresholdPx);
+  if (intent !== "none") navigate(intent === "next" ? 1 : -1);
 }
 
 const isTypingTarget = (element: Element | null) => {

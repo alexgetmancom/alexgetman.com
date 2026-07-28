@@ -17,6 +17,7 @@ export const giscusConfig = {
 /** Сколько показывается пост без видео до автоперехода (мс). */
 export const storyIntervalMs = 8500;
 
-/** Порог свайпа на мобильном (px) и «остывание» колеса мыши (мс). */
+/** Vertical swipe distance that counts as "next post" (px), and the mouse
+ * wheel cooldown (ms). Both navigate along the same axis as the rail. */
 export const swipeThresholdPx = 55;
 export const wheelCooldownMs = 140;

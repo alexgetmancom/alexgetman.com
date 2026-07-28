@@ -11,6 +11,7 @@
   Стили — в <style> внизу (scoped), включая мобильный полноэкранный режим.
 ============================================================================= -->
 <script lang="ts">
+import { readTapIntent } from "../../scripts/story-player/gestures";
 import { onStoryImageError } from "../../scripts/story-player/media";
 import type { StoryUi } from "./i18n";
 import PlayPauseOverlay from "./PlayPauseOverlay.svelte";
@@ -100,6 +101,30 @@ $effect(() => {
 function onImageError(event: Event): void {
   onStoryImageError(event, post.fallbackImage);
 }
+
+/* How much of each side pages the gallery. Wide enough to hit with a thumb
+   without looking, narrow enough to leave the picture itself a play/pause
+   target — the same proportion the stories apps use. */
+const TAP_EDGE_RATIO = 0.28;
+
+function onStageClick(event: MouseEvent & { currentTarget: HTMLElement }): void {
+  /* detail is 0 for a click the keyboard synthesised on the focused link, and
+     such an event carries clientX 0 — which the zones would read as a tap on
+     the far left. Enter on the stage means play/pause, as it always did. */
+  const rect = event.currentTarget.getBoundingClientRect();
+  const intent =
+    event.detail > 0 && rect.width > 0
+      ? readTapIntent((event.clientX - rect.left) / rect.width, hasGallerySequence, TAP_EDGE_RATIO)
+      : "toggle-play";
+  if (intent === "toggle-play") {
+    ontoggleplay();
+    return;
+  }
+  /* Clamped, not wrapped: paging past either end of the gallery does nothing
+     rather than jumping to a neighbouring post. The edges of the stage answer
+     for the pictures inside this post; moving between posts is the swipe. */
+  onselectgallery?.(gallerySubIndex + (intent === "next-image" ? 1 : -1));
+}
 </script>
 
 <div class="story-visual-wrap">
@@ -126,7 +151,7 @@ function onImageError(event: Event): void {
            открывать его в новой вкладке, а не глотаться паузой. */
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
         event.preventDefault();
-        ontoggleplay();
+        onStageClick(event);
       }}
     >
       {#if post.image && (!isVideo || videoFailed)}
