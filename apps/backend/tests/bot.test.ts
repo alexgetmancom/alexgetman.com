@@ -299,6 +299,15 @@ describe("Telegram controller flow", () => {
     expect(preview).toContain("ссылка влезла");
   });
 
+  it("draws the link boundary at the same character the publisher does", () => {
+    const link = [{ type: "text_link", offset: 0, length: 5, url: "https://example.com/guide" }];
+    // The publisher is asserted on the same 470/471 pair in threadsPublisher.test.ts.
+    // These two must never disagree: the preview is the only place the decision
+    // is visible before it happens.
+    expect(threadsPreviewText("threads_ru", "a".repeat(470), link, false, "ru")).toContain("ссылка влезла");
+    expect(threadsPreviewText("threads_ru", "a".repeat(471), link, false, "ru")).toContain("ссылка убрана");
+  });
+
   it("drops the link when it does not fit and reports how many characters were missing", () => {
     const link = [{ type: "text_link", offset: 0, length: 5, url: "https://example.com/guide" }];
     const preview = threadsPreviewText("threads_ru", "А".repeat(490), link, false, "ru");

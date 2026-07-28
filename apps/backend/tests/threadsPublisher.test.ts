@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { splitText } from "../src/delivery/social/payload.js";
 import { publishToThreads } from "../src/delivery/social/threads.js";
 import { loadConfig } from "../src/foundation/config.js";
 
@@ -150,6 +151,33 @@ describe("publishToThreads", () => {
     ).rejects.toThrow();
   });
 
+  it("publishes exactly the limit, and refuses one character more", async () => {
+    const exact = transport({ publishIds: ["p1"], containerIds: ["c1"] });
+    const atLimit = await publishToThreads({ text: "a".repeat(500) }, config, exact.fetchImpl);
+    expect(atLimit.ok).toBe(true);
+    expect(exact.creations()[0]?.text).toHaveLength(500);
+
+    // The publisher enforces the limit itself, not only preflight: a payload can
+    // reach delivery from a queue written before the rule existed.
+    const over = transport({ publishIds: ["p1"], containerIds: ["c1"] });
+    const result = await publishToThreads({ text: "a".repeat(501) }, config, over.fetchImpl);
+    expect(over.creations()).toHaveLength(0);
+    expect(result.error).toBe("threads_text_too_long:501/500");
+  });
+
+  it("keeps or drops a boundary link exactly as preflight and the preview decided", async () => {
+    const url = "https://example.com/guide";
+    const entities = [{ type: "text_link", offset: 0, length: 5, url }];
+    // "\n\n🔗 " is 5 UTF-16 units, the url 25: 470 fits, 471 does not.
+    const fits = transport({ publishIds: ["p1"], containerIds: ["c1"] });
+    await publishToThreads({ text: "a".repeat(470), entities }, config, fits.fetchImpl);
+    expect(fits.creations()[0]?.text).toContain(`🔗 ${url}`);
+
+    const doesNot = transport({ publishIds: ["p1"], containerIds: ["c1"] });
+    await publishToThreads({ text: "a".repeat(471), entities }, config, doesNot.fetchImpl);
+    expect(doesNot.creations()[0]?.text).not.toContain(url);
+  });
+
   it("refuses text that does not fit one post instead of chaining a reply", async () => {
     const { fetchImpl, creations } = transport({ publishIds: ["p1"], containerIds: ["c1"] });
     const result = await publishToThreads({ text: `${"a".repeat(500)} tail` }, config, fetchImpl);
@@ -217,5 +245,17 @@ describe("publishToThreads", () => {
     const result = await publishToThreads({ text: "hello" }, config, throttledOnce);
     expect(attempts).toBe(2);
     expect(result.ok).toBe(true);
+  });
+});
+
+describe("splitText", () => {
+  it("never cuts a surrogate pair in half", () => {
+    // No spaces, so there is no word boundary to fall back on and the cut lands
+    // on the limit itself — with the emoji straddling it.
+    const parts = splitText(`${"a".repeat(9)}👨🏽‍🚀${"b".repeat(9)}`, 10);
+    for (const part of parts) expect(part).toBe(part.normalize());
+    expect(parts.join("")).not.toContain("�");
+    expect(parts.some((part) => /[\ud800-\udbff]$/.test(part))).toBe(false);
+    expect(parts.join("")).toContain("👨🏽‍🚀");
   });
 });
