@@ -8,7 +8,9 @@ export const VERTICAL_ASPECT_TOLERANCE = 0.05;
 const VERTICAL_SCALE_FILTER =
   "scale=1080:1920:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black";
 const VERTICAL_FOREGROUND_FILTER = "scale=1080:1920:force_original_aspect_ratio=decrease:force_divisible_by=2";
-const VERTICAL_BACKGROUND_FILTER =
+const VERTICAL_VIDEO_BACKGROUND_FILTER =
+  "scale=540:960:force_original_aspect_ratio=increase:force_divisible_by=2,crop=540:960,boxblur=10:4,eq=brightness=-0.10:saturation=0.82,scale=1080:1920";
+const VERTICAL_IMAGE_BACKGROUND_FILTER =
   "scale=1080:1920:force_original_aspect_ratio=increase:force_divisible_by=2,crop=1080:1920,boxblur=20:10,eq=brightness=-0.10:saturation=0.82";
 
 export function needsVerticalBlur(width: number, height: number): boolean {
@@ -22,18 +24,18 @@ function verticalVideoFilter(duration: number | null, blur: boolean, splitOutput
   // input into duplicate frames, and do not discard real 60 FPS motion.
   if (!blur)
     return `[0:v:0]${trim}${VERTICAL_SCALE_FILTER},format=nv12,hwupload,split=${splitOutputs}${Array.from({ length: splitOutputs }, (_, i) => `[out${i}]`).join("")}`;
-  return `[0:v:0]${trim}split=2[background-source][foreground-source];[background-source]${VERTICAL_BACKGROUND_FILTER}[background];[foreground-source]${VERTICAL_FOREGROUND_FILTER}[foreground];[background][foreground]overlay=(W-w)/2:(H-h)/2,format=nv12,hwupload,split=${splitOutputs}${Array.from({ length: splitOutputs }, (_, i) => `[out${i}]`).join("")}`;
+  return `[0:v:0]${trim}split=2[background-source][foreground-source];[background-source]${VERTICAL_VIDEO_BACKGROUND_FILTER}[background];[foreground-source]${VERTICAL_FOREGROUND_FILTER}[foreground];[background][foreground]overlay=(W-w)/2:(H-h)/2,format=nv12,hwupload,split=${splitOutputs}${Array.from({ length: splitOutputs }, (_, i) => `[out${i}]`).join("")}`;
 }
 
 function verticalImageFilter(blur: boolean): string {
   if (!blur) return VERTICAL_SCALE_FILTER;
-  return `[0:v:0]split=2[background-source][foreground-source];[background-source]${VERTICAL_BACKGROUND_FILTER}[background];[foreground-source]${VERTICAL_FOREGROUND_FILTER}[foreground];[background][foreground]overlay=(W-w)/2:(H-h)/2`;
+  return `[0:v:0]split=2[background-source][foreground-source];[background-source]${VERTICAL_IMAGE_BACKGROUND_FILTER}[background];[foreground-source]${VERTICAL_FOREGROUND_FILTER}[foreground];[background][foreground]overlay=(W-w)/2:(H-h)/2`;
 }
 
 /** Software (no VAAPI) counterpart of verticalVideoFilter, for the local executor. */
 function verticalSoftwareVideoFilter(blur: boolean): string {
   if (!blur) return VERTICAL_SCALE_FILTER;
-  return `[0:v:0]split=2[background-source][foreground-source];[background-source]${VERTICAL_BACKGROUND_FILTER}[background];[foreground-source]${VERTICAL_FOREGROUND_FILTER}[foreground];[background][foreground]overlay=(W-w)/2:(H-h)/2[out0]`;
+  return `[0:v:0]split=2[background-source][foreground-source];[background-source]${VERTICAL_VIDEO_BACKGROUND_FILTER}[background];[foreground-source]${VERTICAL_FOREGROUND_FILTER}[foreground];[background][foreground]overlay=(W-w)/2:(H-h)/2[out0]`;
 }
 
 export function storyFfmpegArgs(input: string, output: string, kind: "video" | "image", blur = false): string[] {

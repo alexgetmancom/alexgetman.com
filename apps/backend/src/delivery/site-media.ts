@@ -158,7 +158,7 @@ async function materializeVerticalViewerMedia(
   }
   if (!config.MEDIA_PROCESSOR_URL || !config.MEDIA_PROCESSOR_TOKEN) throw new Error("site_vertical_media_requires_remote_processor");
   const stat = await fs.promises.stat(source);
-  const idempotencyKey = await mediaTransformKey(source, `site-vertical-v2:${kind}`);
+  const idempotencyKey = await mediaTransformKey(source, `site-vertical-v3:${kind}`);
   const base = config.MEDIA_PROCESSOR_URL.replace(/\/$/, "");
   const response = await fetchImpl(`${base}/v1/transforms/ffmpeg`, {
     method: "POST",

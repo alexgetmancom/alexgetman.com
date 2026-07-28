@@ -70,7 +70,7 @@ async function transformRemotely(
   if (!config.MEDIA_PROCESSOR_URL || !config.MEDIA_PROCESSOR_TOKEN)
     throw new Error("media_processor_unavailable: remote_http requires MEDIA_PROCESSOR_URL and MEDIA_PROCESSOR_TOKEN");
   const stat = await fs.promises.stat(source);
-  const idempotencyKey = await mediaTransformKey(source, `story-variants-v2:${video ? "video" : "image"}`);
+  const idempotencyKey = await mediaTransformKey(source, `story-variants-v3:${video ? "video" : "image"}`);
   const controller = new AbortController();
   const timeoutSeconds = storyTransformTimeout(config) / 1000;
   const timer = setTimeout(() => controller.abort(), timeoutSeconds * 1000);

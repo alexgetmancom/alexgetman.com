@@ -62,3 +62,9 @@ slot is occupied returns `429 media_processor_busy` with `Retry-After`; the
 durable site or publish queue retries it later. `/health` reports `status:
 "busy"` and `ok: false` while the slot is occupied, so a shallow HTTP response
 cannot hide exhausted processing capacity.
+
+Wide media builds its blurred backdrop at 540×960 before scaling that already
+soft image to 1080×1920. Keep the foreground at full output resolution. A
+production-source VM-106 benchmark measured the two-output 53-second Story at
+about 69 seconds with this recipe, down from about 275 seconds when the
+ten-pass blur ran over every full-resolution frame.

@@ -176,7 +176,13 @@ describe("createMediaProcessor", () => {
     const wide = fakeSpawn({ probe: { format: { duration: "10" }, streams: [{ codec_type: "video", width: 1920, height: 1080 }] } });
     await withProcessor({ spawn: wide.spawn }, async ({ processor }) => {
       await processor.handle(transformRequest("video-bytes"));
-      expect(wide.ffmpegArgs().join(" ")).toContain("overlay");
+      const args = wide.ffmpegArgs().join(" ");
+      expect(args).toContain("scale=540:960");
+      expect(args).toContain("crop=540:960");
+      expect(args).toContain("boxblur=10:4");
+      expect(args).toContain("scale=1080:1920");
+      expect(args).toContain("overlay");
+      expect(args).not.toContain("boxblur=20:10");
     });
   });
 
