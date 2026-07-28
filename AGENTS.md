@@ -50,7 +50,7 @@
 - `apps/backend/tests/themeContract.test.ts` parses both files and fails if a shared token is missing from either, in either theme. Add a token to `SHARED_THEME_TOKENS` and you must add it to both stylesheets.
 - The theme is `data-theme` on `<html>`, applied by an inline script before first paint (otherwise the wrong theme flashes). System preference is the default; an explicit click is stored in `localStorage` and wins from then on.
 - **Never write a raw colour in CSS** — only `var(--*)`. The dashboard used to hold 143 literal hexes across three files, roughly twenty of which were near-identical greys nobody could tell apart.
-- Only the media stage is dark in both themes. The article panel and the rail hold text, so they follow the theme via `--player-surface` / `--player-backdrop`; see "Story player chrome" below.
+- Only the picture itself is exempt from the theme. Everything around it — stage background, letterbox, rail, panels — follows it via `--player-*`; see "Story player chrome" below.
 
 ## Runtime diagnostics
 
@@ -77,7 +77,8 @@
 
 ## Story player chrome
 
-- **Only the stage is dark in both themes.** It shows a photo or a video, so it is a viewer, like the black frame inside a light YouTube. Everything else in the player — the article panel, the rail, their controls — is a reading surface and follows the theme through `--player-surface` (panel and card fill) and `--player-backdrop` (what sits behind the rail).
+- **Only the picture is exempt from the theme.** The frame around it is page, not media: the stage background, the letterbox bands, the strip under the story and the black band beside a rail thumbnail all follow the theme through `--player-surface` / `--player-backdrop`. A slab of black around a story on a white page is just a slab of black. The same goes for shadows — the player carried 0.85-alpha black drops sized for a black page, which over white read as a halo drawn around the frame; they come from `--player-lift` / `--player-lift-soft` now.
+- **`--player-text` / `--player-fill` exist because custom properties inherit.** The dark override rewrites `--text-*`, `--border` and `--scrim-*` for everything inside `.story-visual`, which is right for chrome sitting on the picture and wrong for chrome sitting on the themed strip beside it — and a descendant cannot opt out of an inherited value by selector. These are names the override does not touch.
 - **Translucency inside the player used to assume something dark behind it.** Several surfaces were `rgba(0, 0, 0, 0.5–0.8)` and inactive rail cards are dimmed with `opacity: 0.38` and `grayscale(1)`. Over a light page the translucent ones composited to grey slabs, so they are opaque themed fills now. The opacity case is different: it fades toward whatever is behind, so `--player-backdrop` has to be a real colour on both themes and has to sit on an ancestor (`.story-rail-container`) — an element cannot opt its own background out of its own opacity.
 - The token override in tokens.css is scoped to `.story-visual`, not `.story-player`. Widening it back would drag the panel and the rail into dark-only again.
 - **Colours picked against one background do not survive the other.** The article body was `#e2e8f0` and the category badge `#ff5c77` — both chosen for a dark panel, both unreadable on a white one. The same applied to a 4-7% crimson wash on the active rail card: invisible on black, distinctly pink on white. Use tokens, and prefer a border over a tint for state.

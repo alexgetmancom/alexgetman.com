@@ -212,7 +212,7 @@ function onStageClick(event: MouseEvent & { currentTarget: HTMLElement }): void 
         aria-label={audioLabel}
         onclick={onaudiotoggle}
       >
-        <svg class="audio-chip__icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <svg class="audio-chip__icon" viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M11 5 6 9H3v6h3l5 4z"></path>
           {#if muted || autoplayMuted}
             <line x1="17" y1="9" x2="22" y2="15"></line>
@@ -222,7 +222,6 @@ function onStageClick(event: MouseEvent & { currentTarget: HTMLElement }): void 
             <path d="M18.5 5.5a9 9 0 0 1 0 13"></path>
           {/if}
         </svg>
-        <span>{audioLabel}</span>
       </button>
     {/if}
     <div class="story-mobile-caption" aria-hidden="true">
@@ -306,14 +305,13 @@ function onStageClick(event: MouseEvent & { currentTarget: HTMLElement }): void 
        media as if it were an alert. */
     border: 1px solid var(--border);
     border-radius: 10px;
-    /* The base layer is opaque on purpose. It used to be rgba(0, 0, 0, 0.58),
-     * which looked black only because the page behind it was black; on the
-     * light theme the same value composites to grey and the stage stops
-     * reading as a media frame. The sheen gradient stays on top. */
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.012)), var(--bg-deep);
+    /* The surround follows the theme. Only the picture is exempt from the
+     * theme — the frame around it is page, and a black slab behind a story on
+     * a light page is just a black slab. */
+    background: var(--player-backdrop);
     overflow: hidden;
     isolation: isolate;
-    box-shadow: 0 22px 70px rgba(0, 0, 0, 0.85);
+    box-shadow: var(--player-lift);
     backdrop-filter: blur(18px);
     -webkit-backdrop-filter: blur(18px);
   }
@@ -335,7 +333,10 @@ function onStageClick(event: MouseEvent & { currentTarget: HTMLElement }): void 
 
   .story-visual__link img {
     object-fit: contain;
-    background: #000000;
+    /* Transparent, not black: with `contain` the element's own background is
+       what fills the letterbox, so an opaque colour here would punch a dark
+       rectangle through the themed surround. */
+    background: transparent;
   }
 
   .story-visual__link video {
@@ -344,7 +345,7 @@ function onStageClick(event: MouseEvent & { currentTarget: HTMLElement }): void 
        `contain` сохраняет горизонтальные ролики без обрезки боков. */
     clip-path: inset(8px 0 0);
     object-fit: contain;
-    background: #000;
+    background: transparent;
   }
 
   /* Полоса прогресса (обычная и сегментированная) — в StoryProgressBar.svelte. */
@@ -404,9 +405,11 @@ function onStageClick(event: MouseEvent & { currentTarget: HTMLElement }): void 
   }
 
   /* ------------------------------ Sound control ----------------------------- */
-  /* Same pill language as the action bar (story-actions.css): translucent dark
-   * fill, hairline border, icon plus label. It is a stage overlay rather than a
-   * bar item, so the geometry lives here while the vocabulary is shared. */
+  /* A round icon button, not a labelled pill. It sits on the picture, so it
+   * keeps the un-themed --overlay-* palette, and it is the one control every
+   * video app puts in this corner — the word next to the speaker was doing no
+   * work the icon was not already doing, while making the control wide enough
+   * to read as a banner. State is the icon itself: crossed out or not. */
   .audio-chip {
     position: absolute;
     z-index: 4;
@@ -414,19 +417,16 @@ function onStageClick(event: MouseEvent & { currentTarget: HTMLElement }): void 
     top: 2.05rem;
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
-    min-height: 34px;
-    padding: 0.25rem 0.62rem;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 999px;
-    background: rgba(0, 0, 0, 0.5);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    color: var(--text-main);
-    font-size: 0.76rem;
-    font-weight: 600;
-    letter-spacing: -0.01em;
-    white-space: nowrap;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    border: 1px solid var(--overlay-border);
+    border-radius: 50%;
+    background: var(--overlay-surface);
+    backdrop-filter: blur(20px) saturate(150%);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
+    color: var(--overlay-text-strong);
     cursor: pointer;
     transition:
       background 0.18s ease,
@@ -436,32 +436,11 @@ function onStageClick(event: MouseEvent & { currentTarget: HTMLElement }): void 
 
   .audio-chip__icon {
     flex: 0 0 auto;
-    opacity: 0.85;
   }
 
-  /* Sound is on: the control is the only cue for that, so it brightens instead
-   * of staying uniform with its muted state. */
+  .audio-chip:hover,
   .audio-chip.is-on {
-    border-color: rgba(255, 255, 255, 0.24);
-    color: #f3f6fa;
-  }
-
-  .audio-chip.is-on .audio-chip__icon {
-    opacity: 1;
-  }
-
-  .audio-chip:hover {
-    background: rgba(0, 0, 0, 0.65);
-    border-color: rgba(255, 255, 255, 0.24);
-    color: #f3f6fa;
-  }
-
-  /* Sound on is a lighter chip, not a red one. Everything over the stage uses
-     the un-themed --overlay-* palette; crimson here read as a warning. */
-  .audio-chip.is-on {
-    border-color: var(--overlay-border);
-    color: var(--overlay-text-strong);
-    background: var(--overlay-fill);
+    background: var(--overlay-fill-hover);
   }
 
   /* Мобильные элементы: на десктопе скрыты. */
@@ -494,7 +473,7 @@ function onStageClick(event: MouseEvent & { currentTarget: HTMLElement }): void 
       min-height: 560px;
       max-height: none;
       place-items: stretch;
-      background: #000;
+      background: var(--player-backdrop);
       animation: none;
       opacity: 1;
       transform: none;
@@ -543,7 +522,6 @@ function onStageClick(event: MouseEvent & { currentTarget: HTMLElement }): void 
       top: calc(env(safe-area-inset-top, 0) + 0.72rem);
       right: 0.72rem;
       z-index: 12;
-      background: rgba(0, 0, 0, 0.52);
     }
 
     .story-mobile-caption {
@@ -591,10 +569,16 @@ function onStageClick(event: MouseEvent & { currentTarget: HTMLElement }): void 
       right: 0.7rem;
       bottom: calc(0.7rem + env(safe-area-inset-bottom, 0));
       pointer-events: auto;
-      /* It now sits below the picture rather than on top of it, so it no longer
-         needs to hold its own against a photo: the blur and the translucent
-         fill from story-actions.css would just be a smudge over a flat dark
-         strip. */
+      /* It sits below the picture now, on the themed strip rather than on a
+         photo — so it drops the blurred dark slab and takes the page's own
+         colours. The --player-* names are used because the stage's dark
+         override rewrites --text-* and --scrim-* for everything inside it,
+         which is right for chrome on the picture and wrong for this. */
+      --bar-fill: var(--player-fill);
+      --bar-fill-hover: var(--player-fill-hover);
+      --bar-text: var(--player-text);
+      --bar-text-strong: var(--player-text-strong);
+
       backdrop-filter: none;
       -webkit-backdrop-filter: none;
       background: transparent;
@@ -606,12 +590,4 @@ function onStageClick(event: MouseEvent & { currentTarget: HTMLElement }): void 
      once from StoryPlayer.svelte, so the bar and the desktop context panel
      cannot drift apart. */
 
-  /* Same cut-off as the action bar's labels: with a real speaker icon the state
-     is readable without the word, but only drop it once the row is genuinely
-     out of room. */
-  @media (max-width: 359px) {
-    .audio-chip span:last-child {
-      display: none;
-    }
-  }
 </style>

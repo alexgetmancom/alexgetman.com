@@ -111,18 +111,40 @@ html[data-theme="light"] {
  *
  * `--player-active-border` marks the card the stage is currently showing. It is
  * a neutral high-contrast hairline, not the brand crimson: the rail is a strip
- * of thumbnails, and a red frame around one of them reads as an error state. */
+ * of thumbnails, and a red frame around one of them reads as an error state.
+ *
+ * `--player-text` / `--player-fill` exist because the dark override below
+ * rewrites `--text-*`, `--border` and `--scrim-*` for everything inside the
+ * stage. Chrome that sits on the *picture* wants exactly that; chrome that sits
+ * on the themed surround next to it does not, and cannot opt out by selector —
+ * custom properties inherit. These names are simply ones the override does not
+ * touch, so they keep their themed values anywhere in the player. */
 :root,
 html[data-theme="dark"] {
   --player-surface: #050505;
   --player-backdrop: #050505;
   --player-active-border: rgba(243, 246, 250, 0.42);
+  --player-text: #a3adbc;
+  --player-text-strong: #f3f6fa;
+  --player-fill: rgba(255, 255, 255, 0.1);
+  --player-fill-hover: rgba(255, 255, 255, 0.16);
+  --player-lift: 0 18px 42px rgba(0, 0, 0, 0.55);
+  --player-lift-soft: 0 8px 20px rgba(0, 0, 0, 0.4);
 }
 
 html[data-theme="light"] {
   --player-surface: #ffffff;
   --player-backdrop: #eef1f5;
   --player-active-border: rgba(17, 24, 39, 0.38);
+  --player-text: #4a5565;
+  --player-text-strong: #111827;
+  --player-fill: rgba(17, 24, 39, 0.07);
+  --player-fill-hover: rgba(17, 24, 39, 0.12);
+  /* A shadow is light that failed to arrive, so on a light page it has to be
+     faint. The player carried 0.85-alpha black drops sized for a black page;
+     over white they read as a black halo drawn around the frame. */
+  --player-lift: 0 10px 30px rgba(17, 24, 39, 0.1);
+  --player-lift-soft: 0 4px 14px rgba(17, 24, 39, 0.07);
 }
 
 /* The stage is the exception: a media viewer stays dark in both themes, the way

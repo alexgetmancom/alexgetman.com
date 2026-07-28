@@ -328,55 +328,81 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
 
   /* ---- Телефон (≤760px): панель = выезжающий «лист» поверх сцены ---- */
   @media (max-width: 760px) {
+    /* A bottom sheet, the way every mobile OS does one: pinned to the bottom
+       edge, full width, rounded only at the top, sliding up from below.
+   
+       It used to be a floating card inset from all four sides whose height
+       followed its content, which meant it appeared in a different place and
+       at a different size for every post — there was no "where the text is",
+       and a short post left it hovering mid-screen. A sheet trades that for
+       one fixed shape: it always arrives from the bottom, always the same
+       height, and the reader's eye already knows where to go. Empty space at
+       the foot of a bottom-anchored sheet reads as padding; the same emptiness
+       inside a floating card read as a bug. */
     .story-context {
       position: fixed;
       z-index: var(--z-controls);
-      /* Держим лист между кнопкой звука и Read/Back. */
-      top: calc(4.5rem + env(safe-area-inset-top, 0));
-      right: 0.8rem;
-      bottom: auto;
-      left: 0.8rem;
+      top: auto;
+      right: 0;
+      left: 0;
+      /* Stops at the action strip so Read/Back stays visible and keeps working
+         as the way out of the sheet. */
+      bottom: var(--stage-actions-strip);
       box-sizing: border-box;
       display: block;
-      width: auto;
+      /* Explicit, not `auto` with left/right 0: the tablet rule above sets a
+         width and the sheet inherited it, arriving 243px wide on a 375px
+         screen — a card, not a sheet. */
+      width: 100vw;
       min-height: 0;
-      /* Sized by its content, capped by the room between the sheet's top edge
-         and the action strip. It used to be a fixed 576px tall on a 812px
-         screen — the same box whether the post ran to six paragraphs or to a
-         single headline, which left most of them as one line of text stranded
-         in an empty panel. The cap uses --stage-actions-strip so the sheet
-         cannot drift away from the bar again; the previous hard-coded 14.75rem
-         was tuned for an older stage layout and stopped 70px short of it. */
-      height: auto;
+      height: min(58dvh, calc(100dvh - 7rem - var(--stage-actions-strip) - env(safe-area-inset-top, 0)));
       max-width: none;
-      max-height: calc(100dvh - 5.5rem - var(--stage-actions-strip) - env(safe-area-inset-top, 0));
-      border: 1px solid var(--border);
-      border-radius: 18px;
+      max-height: none;
+      border: 0;
+      border-top: 1px solid var(--border);
+      border-radius: 20px 20px 0 0;
       background: var(--player-surface);
+      box-shadow: var(--player-lift);
       overflow-x: hidden;
       overflow-y: auto;
       overscroll-behavior: contain;
-      opacity: 0;
       /* visibility, а не только opacity: скрывает панель и от скринридеров, и
          от Tab, пока лист закрыт. Переход по visibility задержан на время
-         затухания, иначе панель пропала бы мгновенно, без анимации. */
+         ухода вниз, иначе панель пропала бы мгновенно, без анимации. */
       visibility: hidden;
       pointer-events: none;
-      transform: translateY(1.2rem) scale(0.98);
+      transform: translateY(100%);
+      /* The easing sheets use: quick to leave, long settle. The old animation
+         was a 1.2rem nudge with a 2% scale — technically a transition, not
+         enough movement to read as the panel arriving from anywhere. */
       transition:
-        transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
-        opacity 0.2s ease,
-        visibility 0s linear 0.28s;
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
+        transform 0.36s cubic-bezier(0.32, 0.72, 0, 1),
+        visibility 0s linear 0.36s;
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
       animation: none;
+    }
+
+    /* The grab handle every sheet has. Purely a signal of what this surface is
+       and which way it goes; dragging it is not wired up, Back closes. */
+    .story-context::before {
+      content: "";
+      position: sticky;
+      top: 0.5rem;
+      z-index: var(--z-sticky);
+      display: block;
+      width: 2.25rem;
+      height: 0.25rem;
+      margin: 0.5rem auto -0.25rem;
+      border-radius: 999px;
+      background: var(--border-dashed);
     }
 
     :global(.story-player.is-reading) .story-context {
       opacity: 1;
       visibility: visible;
       pointer-events: auto;
-      transform: translateY(0) scale(1);
+      transform: translateY(0);
       transition-delay: 0s;
     }
 
@@ -394,13 +420,12 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
       margin-bottom: 0.9rem;
     }
 
-    /* auto, not 100%: a full-height panel would stretch the sheet back to the
-       cap no matter how little it holds. */
+    /* The sheet owns the height now, so the panel fills it and the copy scrolls
+       inside rather than the whole sheet moving under the reader. */
     .story-panel {
       min-height: 0;
-      height: auto;
-      max-height: 100%;
-      padding: 1.15rem 1rem 1.25rem;
+      height: 100%;
+      padding: 0.9rem 1.15rem 1.25rem;
       overflow: hidden;
     }
 
@@ -410,10 +435,8 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
       display: none;
     }
 
-    /* Shrink to the text, scroll only once it outgrows the cap. `1 1 auto`
-       stretched a two-line post to the full panel height. */
     .story-copy {
-      flex: 0 1 auto;
+      flex: 1 1 auto;
       min-width: 0;
       overflow-y: auto;
       overflow-wrap: anywhere;

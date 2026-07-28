@@ -259,7 +259,7 @@ $effect(() => {
        no longer needs to shout. No tint either — a crimson wash at 4-7% is
        invisible on a black card and turns the same card pink on a white one. */
     border-color: var(--player-active-border);
-    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.32);
+    box-shadow: var(--player-lift-soft);
     filter: none;
     opacity: 1;
     background: var(--player-surface);
@@ -278,7 +278,9 @@ $effect(() => {
     max-width: 42%;
     flex-shrink: 0;
     overflow: hidden;
-    background: #000;
+    /* The letterbox beside a thumbnail follows the theme. Hard black was a
+       stripe of night down the side of every card on a white page. */
+    background: var(--player-backdrop);
     border-left: 1px solid var(--border);
   }
 

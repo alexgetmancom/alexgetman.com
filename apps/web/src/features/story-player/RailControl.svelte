@@ -79,7 +79,7 @@ let {
     border-right: 0;
     border-radius: 8px 0 0 8px;
     background: var(--player-surface);
-    box-shadow: 0 12px 28px var(--scrim-shadow);
+    box-shadow: var(--player-lift-soft);
     pointer-events: auto;
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
@@ -122,7 +122,7 @@ let {
     place-items: center;
     padding: 0;
     border-radius: 10px;
-    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.42);
+    box-shadow: var(--player-lift-soft);
   }
 
   .rail-avatar-menu__button img {
@@ -167,7 +167,7 @@ let {
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--player-surface);
-    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.56);
+    box-shadow: var(--player-lift);
     opacity: 0;
     pointer-events: none;
     transform: translateY(-4px);
