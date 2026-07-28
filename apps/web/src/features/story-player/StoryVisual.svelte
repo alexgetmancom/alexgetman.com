@@ -515,17 +515,39 @@ function onStageClick(event: MouseEvent & { currentTarget: HTMLElement }): void 
       border: 0;
       border-radius: 0;
       box-shadow: none;
+      /* A strip along the bottom that belongs to the controls, not to the
+         picture. Reserved rather than left over: a phone screen is taller than
+         9:16, so contain-fitting a 9:16 story leaves a margin — but on a narrow
+         handset (an SE is 375x667, almost exactly 9:16) that margin is nearly
+         zero and the bar would land back on the image. Reserving it keeps one
+         layout on every phone; only the picture's height changes.
+
+         Height: the bar's own 52px items plus its padding come to ~69px, and it
+         floats 0.7rem above the bottom edge, so anything under ~5.4rem puts the
+         bar back over the picture. */
+      --stage-actions-strip: calc(5.5rem + env(safe-area-inset-bottom, 0));
     }
 
-    /* Затемнение снизу под подпись/кнопки. */
-    .story-visual::after {
-      content: "";
-      position: absolute;
-      inset: auto 0 0;
-      height: 42%;
-      z-index: 3;
-      background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.82));
-      pointer-events: none;
+    /* The media box stops above the strip, and the picture sits at the top of
+       it. The stage used to centre the media, which split the leftover height
+       into two bands — one of them between the progress bar and the story, so
+       the story appeared to start well down the screen. All of the slack now
+       collects underneath, where the controls are. */
+    /* Sized, not inset. An absolutely positioned replaced element resolves
+       `height: auto` from its intrinsic size, not from a bottom offset, so
+       `inset: 0 0 <strip>` left the picture at its own height and ignored the
+       strip entirely — measured 375px tall in a 738px box. An explicit height
+       is the only form that holds for <img> and <video> alike. */
+    .story-visual__link img,
+    .story-visual__link video,
+    .story-visual__fallback {
+      inset: 0 0 auto;
+      height: calc(100% - var(--stage-actions-strip));
+    }
+
+    .story-visual__link img,
+    .story-visual__link video {
+      object-position: top center;
     }
 
     .audio-chip {
@@ -580,6 +602,14 @@ function onStageClick(event: MouseEvent & { currentTarget: HTMLElement }): void 
       right: 0.7rem;
       bottom: calc(0.7rem + env(safe-area-inset-bottom, 0));
       pointer-events: auto;
+      /* It now sits below the picture rather than on top of it, so it no longer
+         needs to hold its own against a photo: the blur and the translucent
+         fill from story-actions.css would just be a smudge over a flat dark
+         strip. */
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      background: transparent;
+      border-color: transparent;
     }
   }
 
