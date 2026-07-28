@@ -1,3 +1,5 @@
+import { redactExternalSecrets } from "./redact.js";
+
 type LogLevel = "debug" | "info" | "warn" | "error";
 
 const rank: Record<LogLevel, number> = { debug: 10, info: 20, warn: 30, error: 40 };
@@ -15,7 +17,11 @@ export function log(level: LogLevel, message: string, details?: unknown): void {
     message,
     ...(details === undefined ? {} : { details }),
   };
-  const output = JSON.stringify(line);
+  // Redaction runs over the serialized line, not over `details` field by field:
+  // callers pass arbitrary shapes (error bodies, nested API payloads, plain
+  // strings), and a secret can sit at any depth or inside a message. One pass
+  // over the finished JSON is total by construction.
+  const output = redactExternalSecrets(JSON.stringify(line));
   if (level === "error") {
     console.error(output);
   } else if (level === "warn") {

@@ -82,6 +82,8 @@ export async function externalFetch(fetchImpl: typeof fetch, url: string, init: 
   }
 }
 
+import { redactExternalSecrets } from "./redact.js";
+
 function safeUrl(value: string): string {
   try {
     const url = new URL(value);
@@ -93,13 +95,6 @@ function safeUrl(value: string): string {
   } catch {
     return redactExternalSecrets(value);
   }
-}
-
-export function redactExternalSecrets(value: string): string {
-  return value
-    .replace(/(access_token|api[_-]?key|password|token)=([^\s&"']+)/gi, "$1=[REDACTED]")
-    .replace(/\/bot\d{6,}:[A-Za-z0-9_-]+/g, "/bot[REDACTED]")
-    .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, "Bearer [REDACTED]");
 }
 
 export function formBody(fields: Record<string, string | number | boolean | null | undefined>): URLSearchParams {

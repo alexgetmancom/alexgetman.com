@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import type { BackendConfig } from "../../foundation/config.js";
 import { assertXCredentials, oauthAuthorization } from "../../foundation/external/x-oauth.js";
-import { externalFetch, redactExternalSecrets, retryAfterSecondsFromHeaders } from "../../foundation/http.js";
+import { externalFetch, retryAfterSecondsFromHeaders } from "../../foundation/http.js";
+import { redactExternalSecrets } from "../../foundation/redact.js";
 import type { PublishResult } from "../../publishing/errors.js";
 import { HttpPublishError } from "../../publishing/errors.js";
 import { formatPlatformText } from "../../publishing/platform-profiles.js";

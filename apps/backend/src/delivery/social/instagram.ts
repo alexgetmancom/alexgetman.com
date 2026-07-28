@@ -1,5 +1,6 @@
 import type { BackendConfig } from "../../foundation/config.js";
-import { externalFetch, redactExternalSecrets, retryAfterSecondsFromHeaders } from "../../foundation/http.js";
+import { externalFetch, retryAfterSecondsFromHeaders } from "../../foundation/http.js";
+import { redactExternalSecrets } from "../../foundation/redact.js";
 import type { PublishResult } from "../../publishing/errors.js";
 import { HttpPublishError } from "../../publishing/errors.js";
 import { InstagramContainerInvalidError, isExpiredInstagramContainer } from "./instagram-container.js";

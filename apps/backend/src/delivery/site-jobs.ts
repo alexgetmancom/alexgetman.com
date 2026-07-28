@@ -1,11 +1,11 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
-import path from "node:path";
 import { and, asc, count, desc, eq, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 import type { BackendDb } from "../db/client.js";
 import { postEvents, postMetrics, postTargets, publicationSources, siteJobs } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { recordWorkerState } from "../foundation/runtime/worker-state.js";
+import { atomicWriteJson } from "../fsUtils.js";
 import { nextRetryAt } from "../publishing/errors.js";
 import { reconcilePublication, workerId } from "../publishing/queue.js";
 import { publishContentIndex } from "./site-content-index.js";
@@ -323,14 +323,6 @@ function viewsByPostKey(backendDb: BackendDb): Map<string, number> {
     .where(and(eq(postMetrics.target, "telegram"), eq(postMetrics.metricName, "views")))
     .all();
   return new Map(rows.map((row) => [row.postKey, Number(row.value ?? 0)]));
-}
-
-async function atomicWriteJson(filePath: string, value: unknown): Promise<void> {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  const temp = `${filePath}.${process.pid}.tmp`;
-  await Bun.write(temp, `${JSON.stringify(value, null, 2)}\n`);
-  fs.chmodSync(temp, 0o664);
-  fs.renameSync(temp, filePath);
 }
 
 function insertSiteEvent(

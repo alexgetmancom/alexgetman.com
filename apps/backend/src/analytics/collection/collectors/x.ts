@@ -1,6 +1,7 @@
 import type { BackendConfig } from "../../../foundation/config.js";
 import { oauthAuthorization } from "../../../foundation/external/x-oauth.js";
-import { externalFetch, redactExternalSecrets } from "../../../foundation/http.js";
+import { externalFetch } from "../../../foundation/http.js";
+import { redactExternalSecrets } from "../../../foundation/redact.js";
 import type { MetricTask } from "../metric-schedule.js";
 import type { MetricResult } from "./types.js";
 
