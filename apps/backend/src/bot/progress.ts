@@ -1,11 +1,13 @@
 import { type Bot, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import { t } from "../foundation/i18n/index.js";
+import { log } from "../foundation/logger.js";
 import { escapeMarkdown } from "../foundation/markdown.js";
 import { telegramPostCard, telegramPostProgressCard } from "../interfaces/telegram/control-cards.js";
 
 import { type PostProgressState, type PostProgressStatus, postProgressState } from "../studio/services/post-progress.js";
 import { botLocale } from "./i18n.js";
+import { isUnchangedMessageEdit } from "./telegram-errors.js";
 
 /** Telegram renderer over the transport-free Studio progress state. */
 export function postProgress(backendDb: BackendDb, draftId: number, details = false): { text: string; keyboard: InlineKeyboard } {
@@ -62,7 +64,13 @@ export async function refreshPostControlCard(backendDb: BackendDb, bot: Bot | nu
   const card = postProgress(backendDb, draftId, "details" in control && control.details === true);
   try {
     await bot.api.editMessageText(control.chatId, control.messageId, card.text, { parse_mode: "Markdown", reply_markup: card.keyboard });
-  } catch {}
+  } catch (error) {
+    // A card refreshed on every publish step is usually identical to what is
+    // already on screen, which Telegram rejects; that is the normal path and
+    // stays silent. Anything else means the card has quietly stopped tracking
+    // the publish it is supposed to show, so it must not be swallowed.
+    if (!isUnchangedMessageEdit(error)) log("warn", "post control card refresh failed", { draftId, error });
+  }
 }
 
 function statusIcon(status: PostProgressStatus): string {

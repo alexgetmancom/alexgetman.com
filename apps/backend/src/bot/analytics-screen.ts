@@ -2,6 +2,7 @@ import { type Bot, type Context, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { t } from "../foundation/i18n/index.js";
+import { log } from "../foundation/logger.js";
 import {
   clearTelegramAnalyticsDashboard,
   setTelegramAnalyticsDashboard,
@@ -10,6 +11,7 @@ import {
 import { sendTelegramArchiveMedia } from "../interfaces/telegram/delivery-previews.js";
 import { studioServices } from "../studio/services/index.js";
 import { botLocale } from "./i18n.js";
+import { isUnchangedMessageEdit } from "./telegram-errors.js";
 
 type AnalyticsSection = "overview" | "audience" | "posts" | "video";
 
@@ -170,7 +172,7 @@ export async function refreshTelegramAnalyticsDashboards(bot: Bot, backendDb: Ba
       } catch (error) {
         // The screen may have been superseded or deleted. It is harmless: the
         // next explicit Analytics click records a new binding.
-        if (!String(error).includes("message is not modified")) console.warn("Analytics dashboard refresh failed:", error);
+        if (!isUnchangedMessageEdit(error)) log("warn", "analytics dashboard refresh failed", { actorId: card.actorId, section, error });
         return false;
       }
     }),

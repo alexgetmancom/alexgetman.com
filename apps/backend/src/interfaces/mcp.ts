@@ -2,6 +2,7 @@ import * as z from "zod";
 import type { BackendDb } from "../db/client.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { log } from "../foundation/logger.js";
 import { type StudioServices, studioServices } from "../studio/services/index.js";
 
 const feedbackHits = new Map<string, number[]>();
@@ -543,7 +544,7 @@ async function runStudioTool(
         details: { actorId, tool: name },
       });
     } catch (error) {
-      console.error(JSON.stringify({ level: "error", message: "studio MCP audit event failed", tool: name, error: String(error) }));
+      log("error", "studio MCP audit event failed", { actorId, tool: name, error });
     }
   return result;
 }
