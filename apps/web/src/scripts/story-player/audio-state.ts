@@ -1,6 +1,6 @@
 /** Tracks the story video's sound relative to the user's persisted mute
  * preference, plus the two transient workarounds autoplay policies force on
- * us. Kept as a pure state machine (mirrors discussion-state.ts) so the
+ * us. Kept as a pure state machine so the
  * autoplay/retry logic can be reasoned about — and tested — without a DOM. */
 type VideoAudioState = {
   /** Persisted user preference; survives across stories. */

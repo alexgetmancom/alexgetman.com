@@ -1,9 +1,9 @@
 /* =============================================================================
-  Story actions: Read / Discuss / Share.
+  Story actions: Read / Share.
   -----------------------------------------------------------------------------
   One floating bar rather than a row of separate chips: a single blurred dark
-  surface holding three equal items, icon above label — the shape a mobile tab
-  bar has. Loaded once from StoryPlayer.svelte and therefore not scoped; the
+  surface holding equal items, icon above label — the shape a mobile tab bar
+  has. Loaded once from StoryPlayer.svelte and therefore not scoped; the
   selectors deliberately live in the .story-* namespace.
 
   Used in both placements: pinned over the stage on phones (StoryVisual) and at
@@ -11,13 +11,12 @@
 
   Why no filled accent button: the bar sits on top of a photo or a video. A
   solid crimson slab there competes with the frame behind it and reads as a
-  warning rather than as "the main thing to do". Emphasis is carried by a
-  slightly lighter fill on the primary item instead, which is enough when
-  everything around it is translucent.
+  warning rather than as "the main thing to do". Emphasis is a slightly lighter
+  fill, and only on a panel that is actually open.
 
-  All three items are equal and labelled. That also means the layout needs no
-  variant for a video-first feed — only the third label changes meaning, from
-  "read the post" to "read the transcript".
+  The items are equal and labelled, so the layout needs no variant for a
+  video-first feed — only Read changes meaning, from "read the post" to "read
+  the transcript".
 ============================================================================= */
 /* The two placements sit on different things, so the palette is a local
    variable rather than a fixed one. Over the stage the bar lies on a photo and
@@ -126,7 +125,7 @@
   }
 }
 
-/* Very narrow phones: three labels still fit at this size, so only the type
+/* Very narrow phones: the labels still fit at this size, so only the type
    tightens. Dropping the words would make the icons guesswork. */
 @media (max-width: 359px) {
   .story-action {

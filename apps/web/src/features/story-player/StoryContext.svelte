@@ -1,17 +1,15 @@
 <!-- =============================================================================
-  ПРАВАЯ ПАНЕЛЬ: текст поста + кнопки + вкладка обсуждения.
+  ПРАВАЯ ПАНЕЛЬ: текст поста + кнопка «Поделиться».
   ─────────────────────────────────────────────────────────────────────────────
   Презентационный компонент: своего состояния нет. Показывает:
     - категорию, заголовок (единственный <h1> страницы — noscript-SEO в
       Astro-слое дублирует его как <p>, во избежание двух h1 в разметке),
       время чтения, дату, просмотры
     - параграфы поста + кнопку «Читать дальше» (видимость меряет корень)
-    - контейнер giscus (в него корень инжектит скрипт через discussion.ts)
-    - кнопки «Обсудить» / «Поделиться»
+    - кнопка «Поделиться»
   Стили — в <style> внизу (scoped). Правила, зависящие от состояния корня
-  (.story-player.is-discussing / .is-reading), написаны через :global(...) —
-  корневой класс живёт в StoryPlayer.svelte. Контент giscus инжектится JS,
-  поэтому его селекторы тоже :global.
+  (.story-player.is-reading), написаны через :global(...) — корневой класс
+  живёт в StoryPlayer.svelte.
 ============================================================================= -->
 <script lang="ts">
 import type { StoryUi } from "./i18n";
@@ -23,13 +21,10 @@ let {
   updating,
   expanded,
   readMoreVisible,
-  discussionVisible,
   readingVisible,
   shareCopied,
   copyEl = $bindable(null),
-  discussionFrame = $bindable(null),
   ontogglereadmore,
-  onopendiscussion,
   onshare,
 }: {
   post: PlayerPost;
@@ -37,13 +32,10 @@ let {
   updating: boolean;
   expanded: boolean;
   readMoreVisible: boolean;
-  discussionVisible: boolean;
   readingVisible: boolean;
   shareCopied: boolean;
   copyEl?: HTMLElement | null;
-  discussionFrame?: HTMLElement | null;
   ontogglereadmore: () => void;
-  onopendiscussion: () => void;
   onshare: () => void;
 } = $props();
 
@@ -52,33 +44,31 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
 
 <!-- Скрытость панели описывает CSS, а не атрибут: на десктопе это постоянная
      третья колонка, и только на ≤760px она — выезжающий лист. Прежний
-     aria-hidden={!readingVisible && !discussionVisible} был всегда истинным на
-     десктопе, то есть прятал от скринридеров единственный h1 страницы, весь
-     текст поста и две живые кнопки (axe: aria-hidden-focus). Мобильное
+     aria-hidden={!readingVisible} был всегда истинным на десктопе, то есть
+     прятал от скринридеров единственный h1 страницы, весь текст поста и живые
+     кнопки (axe: aria-hidden-focus). Мобильное
      закрытое состояние получает visibility: hidden — он убирает панель и из
      дерева доступности, и из Tab-порядка, ровно там, где она не видна. -->
 <aside class="story-context" data-story-context>
   <div class="story-panel is-active" class:is-updating={updating} data-panel="post">
-    <div class="story-category-wrap" hidden={discussionVisible}>
+    <div class="story-category-wrap">
       <span class="story-category-badge">{post.category}</span>
     </div>
-    <h1 class="story-title" data-story-title hidden={discussionVisible}>{post.title}</h1>
-    <div class="story-meta" hidden={discussionVisible}>
+    <h1 class="story-title" data-story-title>{post.title}</h1>
+    <div class="story-meta">
       <span class="story-meta-item">⏱️ {readingTimeMin} min</span>
       <span class="story-meta-dot">•</span>
       <span class="story-meta-item">{post.relativeDate}</span>
       <span class="story-meta-dot">•</span>
       <span class="story-meta-item">👁️ <span>{post.views}</span></span>
     </div>
-    <div class="story-copy" class:is-expanded={expanded} data-story-copy hidden={discussionVisible} bind:this={copyEl}>
+    <div class="story-copy" class:is-expanded={expanded} data-story-copy bind:this={copyEl}>
       {#each post.body as paragraph}
         <p>{paragraph}</p>
       {/each}
     </div>
     {#if post.sources.length > 0}
-      <!-- hidden, как у соседних блоков: скрытие на время обсуждения — одно
-           правило для всей карточки, а не два разных механизма. -->
-      <div class="story-sources" aria-label="Sources" hidden={discussionVisible}>
+      <div class="story-sources" aria-label="Sources">
         {#each post.sources as source}
           <a href={source.url} target="_blank" rel="noopener noreferrer" class="story-source-link">
             {source.label} ↗
@@ -86,19 +76,10 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
         {/each}
       </div>
     {/if}
-    <button class="read-more-button" type="button" hidden={!readMoreVisible || discussionVisible} onclick={ontogglereadmore}>
+    <button class="read-more-button" type="button" hidden={!readMoreVisible} onclick={ontogglereadmore}>
       {expanded ? ui.collapse : ui.readMore}
     </button>
-    <div class="story-panel story-panel--discussion" data-panel="discussion" hidden={!discussionVisible}>
-      <div class="story-discussion-frame" bind:this={discussionFrame}></div>
-    </div>
     <div class="story-actions">
-      <button class="story-action" class:is-open={discussionVisible} type="button" aria-expanded={discussionVisible} onclick={onopendiscussion}>
-        <svg class="story-action-icon" viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-        </svg>
-        <span class="story-action__label">{discussionVisible ? ui.backToPost : ui.discuss}</span>
-      </button>
       <button class="story-action" type="button" onclick={onshare}>
         <svg class="story-action-icon" viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="18" cy="5" r="3"></circle>
@@ -150,10 +131,6 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
     flex-direction: column;
     padding: clamp(1rem, 1.35vw, 1.25rem);
     overflow: hidden;
-  }
-
-  .story-panel[hidden] {
-    display: none;
   }
 
   .story-context [hidden] {
@@ -327,45 +304,9 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
   /* Сами кнопки .story-action стилизует общий story-actions.css — его
      подключает StoryPlayer.svelte (та же пара кнопок есть на сцене). */
 
-  /* ---------------------- Вкладка обсуждения (giscus) ----------------------- */
-  /* Корень вешает .is-discussing на .story-player — прячем контент поста. */
-  :global(.story-player.is-discussing) .story-category-wrap,
-  :global(.story-player.is-discussing) .story-meta,
-  :global(.story-player.is-discussing) [data-story-title],
-  :global(.story-player.is-discussing) [data-story-copy],
-  :global(.story-player.is-discussing) .read-more-button {
-    display: none;
-  }
 
-  .story-panel--discussion {
-    height: auto;
-    min-height: 0;
-    flex: 1 1 auto;
-    gap: 0.85rem;
-    padding: 0;
-    overflow: hidden;
-  }
 
-  .story-discussion-frame {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    padding-right: 0.2rem;
-  }
 
-  /* Внутрь фрейма giscus инжектит свой iframe из JS — поэтому :global. */
-  .story-discussion-frame :global(.giscus),
-  .story-discussion-frame :global(iframe) {
-    width: 100%;
-  }
-
-  .story-discussion-frame :global(.story-discussion-loading) {
-    min-height: 120px;
-    display: grid;
-    place-items: center;
-    color: var(--text-secondary);
-    font-weight: 800;
-  }
 
   /* Примечание: в старом CSS был блок «компактный десктоп»
      (max-height: 800px) с уменьшенной типографикой панели, но он никогда
@@ -431,24 +372,12 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
       animation: none;
     }
 
-    :global(.story-player.is-reading) .story-context,
-    :global(.story-player.is-discussing) .story-context {
+    :global(.story-player.is-reading) .story-context {
       opacity: 1;
       visibility: visible;
       pointer-events: auto;
       transform: translateY(0) scale(1);
       transition-delay: 0s;
-    }
-
-    :global(.story-player.is-discussing) .story-panel--discussion {
-      display: flex;
-      height: 100%;
-      padding: 0;
-    }
-
-    :global(.story-player.is-discussing) .story-discussion-frame {
-      height: 100%;
-      padding-right: 0;
     }
 
     .story-category-wrap {

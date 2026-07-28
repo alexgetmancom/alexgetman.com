@@ -9,8 +9,6 @@
 
 export interface StoryUi {
   storyLabel: string;
-  discuss: string;
-  backToPost: string;
   share: string;
   copied: string;
   readMore: string;
@@ -28,13 +26,10 @@ export interface StoryUi {
   menu: string;
   language: string;
   telegram: string;
-  discussionTab: string;
 }
 
 const en: StoryUi = {
   storyLabel: "AI news player",
-  discuss: "Discuss",
-  backToPost: "Back to post",
   share: "Share",
   copied: "Copied",
   readMore: "Read more",
@@ -52,13 +47,10 @@ const en: StoryUi = {
   menu: "Menu",
   language: "Русский",
   telegram: "Telegram",
-  discussionTab: "Discussion",
 };
 
 const ru: StoryUi = {
   storyLabel: "Новостной плеер",
-  discuss: "Обсудить",
-  backToPost: "К посту",
   share: "Поделиться",
   copied: "Скопировано",
   readMore: "Читать дальше",
@@ -76,7 +68,6 @@ const ru: StoryUi = {
   menu: "Меню",
   language: "English",
   telegram: "Telegram",
-  discussionTab: "Обсуждение",
 };
 
 export function storyUi(locale: "en" | "ru"): StoryUi {

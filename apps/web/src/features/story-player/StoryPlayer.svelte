@@ -5,7 +5,6 @@
     active            — индекс активного поста
     manualPaused      — пользователь нажал паузу (пробел / клик по видео)
     readingVisible    — открыт режим «Читать» (текстовая панель на мобильном)
-    discussionVisible — открыта вкладка обсуждения (giscus)
     expanded          — «Читать дальше» развёрнут
     feedMode          — режим ленты: latest / deep / watched
     audioState        — звук + обходы autoplay (чистая машина audio-state.ts)
@@ -31,16 +30,14 @@ import {
   initialVideoAudioState,
   resetForNewStory,
 } from "../../scripts/story-player/audio-state";
-import { loadGiscusDiscussion } from "../../scripts/story-player/discussion";
-import { setDiscussionVisibility } from "../../scripts/story-player/discussion-state";
 import { advanceGallerySequence } from "../../scripts/story-player/gallery-state";
 import { readSwipe } from "../../scripts/story-player/gestures";
 import { preloadAdjacentMedia } from "../../scripts/story-player/media";
 import { hasMutedPreference, readMutedPreference, writeMutedPreference } from "../../scripts/story-player/preferences";
 import { createStoryProgressController } from "../../scripts/story-player/progress";
-import { giscusConfig, storyIntervalMs, swipeThresholdPx, wheelCooldownMs } from "./config";
-/* Общие стили пары кнопок «Обсудить»/«Поделиться»: их рисуют и сцена, и правая
-   панель, поэтому блок вынесен из обоих scoped-блоков сюда (см. сам файл). */
+import { storyIntervalMs, swipeThresholdPx, wheelCooldownMs } from "./config";
+/* Shared styles for the action bar: both the stage and the context panel draw
+   it, so the block lives outside either scoped style (see the file itself). */
 import "./story-actions.css";
 import type { StoryUi } from "./i18n";
 import type { PlayerPost } from "./payload";
@@ -63,10 +60,8 @@ let {
 const startPaused = initialPaused;
 let active = $state(0);
 let manualPaused = $state(startPaused);
-let manualPausedBeforeDiscussion = $state(startPaused);
 let manualPausedBeforeReading = $state(startPaused);
 let readingVisible = $state(false);
-let discussionVisible = $state(false);
 let expanded = $state(false);
 let feedMode = $state("latest");
 let audioState = $state(initialVideoAudioState(true));
@@ -94,17 +89,15 @@ const visibleIndexes = $derived.by(() => {
   return visible.length ? visible : posts.map((_, index) => index);
 });
 
-/* Элементы, которыми управляем императивно (media API, прогресс, giscus). */
+/* Элементы, которыми управляем императивно (media API, прогресс). */
 let root = $state<HTMLElement | null>(null);
 let video = $state<HTMLVideoElement | null>(null);
 let audio = $state<HTMLAudioElement | null>(null);
 let progressFill = $state<HTMLElement | null>(null);
-let discussionFrame = $state<HTMLElement | null>(null);
 let copyEl = $state<HTMLElement | null>(null);
 
 let progress: ReturnType<typeof createStoryProgressController> | null = null;
 let viewTracker: ReturnType<typeof createStoryViewTracker> | null = null;
-let discussionTerm = "";
 let mounted = false;
 
 const normalizedPath = (value: string) => {
@@ -130,7 +123,6 @@ function goTo(index: number, options: { keepProgressIdle?: boolean } = {}): void
   gallerySubIndex = 0;
   audioState = resetForNewStory(audioState);
   if (readingVisible) setReading(false);
-  setDiscussion(false);
   updating = true;
   progress?.resetForStory(options);
   viewTracker?.scheduleStoryView(activePost);
@@ -268,35 +260,6 @@ function setReading(visible: boolean): void {
   syncPlayback();
 }
 
-function setDiscussion(visible: boolean): void {
-  const nextState = setDiscussionVisibility(
-    { visible: discussionVisible, isManualPaused: manualPaused, manualPausedBeforeDiscussion },
-    visible,
-  );
-  discussionVisible = nextState.visible;
-  manualPaused = nextState.isManualPaused;
-  manualPausedBeforeDiscussion = nextState.manualPausedBeforeDiscussion;
-  syncPlayback();
-}
-
-function openDiscussion(): void {
-  if (discussionVisible) {
-    setDiscussion(false);
-    return;
-  }
-  const discussionUrl = new URL(activePost.url, window.location.origin);
-  discussionUrl.searchParams.set("discussion", "1");
-  window.history.replaceState(window.history.state, "", `${discussionUrl.pathname}${discussionUrl.search}${discussionUrl.hash}`);
-  discussionTerm = loadGiscusDiscussion({
-    post: activePost,
-    discussionFrame,
-    giscusConfig: { ...giscusConfig, lang: locale },
-    ui: ui as unknown as Record<string, string>,
-    currentTerm: discussionTerm,
-  });
-  setDiscussion(true);
-}
-
 async function share(): Promise<void> {
   const url = new URL(activePost.url, window.location.origin).href;
   try {
@@ -355,7 +318,7 @@ function onTouchEnd(event: TouchEvent): void {
   /* The reading sheet is fixed on phones but still a DOM descendant, so its
      touches bubble up here. While it is open the gesture belongs to the text
      the finger is scrolling, not to the feed. */
-  if (readingVisible || discussionVisible) return;
+  if (readingVisible) return;
   const touch = event.changedTouches[0];
   const intent = readSwipe((touch?.clientX || 0) - touchStartX, (touch?.clientY || 0) - touchStartY, swipeThresholdPx);
   if (intent !== "none") navigate(intent === "next" ? 1 : -1);
@@ -442,9 +405,6 @@ onMount(() => {
   viewTracker = createStoryViewTracker({ activeIndex: () => active, normalizedPath });
   mounted = true;
   goTo(0);
-  if (new URLSearchParams(window.location.search).get("discussion") === "1") {
-    window.setTimeout(() => openDiscussion(), 0);
-  }
   return () => {
     if (wheelUnlockTimer) window.clearTimeout(wheelUnlockTimer);
   };
@@ -461,7 +421,6 @@ onMount(() => {
 <section
   bind:this={root}
   class="story-player"
-  class:is-discussing={discussionVisible}
   class:is-reading={readingVisible}
   aria-label={ui.storyLabel}
   data-story-player
@@ -493,7 +452,6 @@ onMount(() => {
       {overlayTick}
       {shareCopied}
       readingVisible={readingVisible}
-      {discussionVisible}
       {gallerySubIndex}
       bind:video
       bind:audio
@@ -511,7 +469,6 @@ onMount(() => {
       onaudiotoggle={onAudioToggle}
       ongrantsound={grantSound}
       ontoggleread={() => setReading(!readingVisible)}
-      onopendiscussion={openDiscussion}
       onshare={share}
       onvideoplaying={onVideoPlaying}
       onvideotimeupdate={onVideoTimeUpdate}
@@ -525,16 +482,13 @@ onMount(() => {
       {updating}
       {expanded}
       {readMoreVisible}
-      {discussionVisible}
       {readingVisible}
       {shareCopied}
       bind:copyEl
-      bind:discussionFrame
       ontogglereadmore={() => {
         expanded = !expanded;
         measureReadMore();
       }}
-      onopendiscussion={openDiscussion}
       onshare={share}
     />
   </div>

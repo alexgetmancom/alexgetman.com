@@ -28,7 +28,6 @@ let {
   overlayTick,
   shareCopied,
   readingVisible,
-  discussionVisible,
   gallerySubIndex = 0,
   video = $bindable(null),
   audio = $bindable(null),
@@ -38,7 +37,6 @@ let {
   ongrantsound,
   onaudiotoggle,
   ontoggleread,
-  onopendiscussion,
   onshare,
   onvideoplaying,
   onvideotimeupdate,
@@ -55,7 +53,6 @@ let {
   overlayTick: number;
   shareCopied: boolean;
   readingVisible: boolean;
-  discussionVisible: boolean;
   gallerySubIndex?: number;
   video?: HTMLVideoElement | null;
   audio?: HTMLAudioElement | null;
@@ -65,7 +62,6 @@ let {
   ongrantsound: () => void;
   onaudiotoggle: () => void;
   ontoggleread: () => void;
-  onopendiscussion: () => void;
   onshare: () => void;
   onvideoplaying: () => void;
   onvideotimeupdate: () => void;
@@ -233,7 +229,7 @@ function onStageClick(event: MouseEvent & { currentTarget: HTMLElement }): void 
       <span>{post.category}</span>
       <strong>{post.title}</strong>
     </div>
-    <!-- Three equal items in one floating bar. Nothing is lit until a panel is
+    <!-- Two equal items in one floating bar. Nothing is lit until a panel is
          actually open — see story-actions.css. -->
     <div class="story-action-bar" aria-label={ui.storyLabel}>
       <button
@@ -250,18 +246,6 @@ function onStageClick(event: MouseEvent & { currentTarget: HTMLElement }): void 
           <path d="M8 17h6"></path>
         </svg>
         <span class="story-action__label">{readingVisible ? ui.back : ui.read}</span>
-      </button>
-      <button
-        class="story-action"
-        class:is-open={discussionVisible}
-        type="button"
-        aria-expanded={discussionVisible}
-        onclick={onopendiscussion}
-      >
-        <svg class="story-action-icon" viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-        </svg>
-        <span class="story-action__label">{ui.discuss}</span>
       </button>
       <button class="story-action" type="button" onclick={onshare}>
         {#if shareCopied}

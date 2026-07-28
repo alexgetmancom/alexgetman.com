@@ -1,6 +1,6 @@
 /** Посты с несколькими картинками (пост целиком не видео) листаются как
  * отдельные слайды перед переходом к следующему посту. Чистая функция
- * (мирроит audio-state.ts/discussion-state.ts) — сама смена индекса и решение
+ * (мирроит audio-state.ts) — сама смена индекса и решение
  * «остаться в посте или перейти дальше» вынесены из progress.ts/StoryPlayer.svelte,
  * чтобы их можно было проверить без DOM. */
 export function advanceGallerySequence(subIndex: number, sequenceLength: number): { subIndex: number; advancePost: boolean } {

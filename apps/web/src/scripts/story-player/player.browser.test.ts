@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { Window } from "happy-dom";
 import { createStoryViewTracker } from "./analytics.js";
-import { setDiscussionVisibility } from "./discussion-state.js";
 import { preloadAdjacentMedia } from "./media.js";
 import { readMutedPreference } from "./preferences.js";
 import { createStoryProgressController } from "./progress.js";
@@ -66,22 +65,6 @@ function stubSendBeacon(window: Window): string[] {
 }
 
 describe("story player browser behavior", () => {
-  it("pauses for discussion and restores the preceding manual pause state", () => {
-    expect(setDiscussionVisibility({ visible: false, isManualPaused: false, manualPausedBeforeDiscussion: false }, true)).toEqual({
-      visible: true,
-      isManualPaused: true,
-      manualPausedBeforeDiscussion: false,
-    });
-    expect(setDiscussionVisibility({ visible: true, isManualPaused: true, manualPausedBeforeDiscussion: false }, false)).toEqual({
-      visible: false,
-      isManualPaused: false,
-      manualPausedBeforeDiscussion: false,
-    });
-    expect(setDiscussionVisibility({ visible: true, isManualPaused: true, manualPausedBeforeDiscussion: true }, false).isManualPaused).toBe(
-      true,
-    );
-  });
-
   it("does not advance a buffering video until playback resumes", async () => {
     const window = installDom();
     const video = window.document.createElement("video") as unknown as HTMLVideoElement;

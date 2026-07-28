@@ -1,5 +1,5 @@
 /* Тип поста, который понимают чистые контроллеры плеера (progress, analytics,
- * media, discussion). Плеер (features/story-player) передаёт сюда PlayerPost
+ * media). Плеер (features/story-player) передаёт сюда PlayerPost
  * напрямую — поля объявлены `| null` там, где PlayerPost допускает null,
  * чтобы это был реальный подтип без приведения через `unknown`. */
 export type StoryPost = {
