@@ -208,10 +208,23 @@ function onAudioToggle(): void {
   setMuted(!audioState.muted);
 }
 
+/* Armed when the current clip is not ready yet and playback has to wait for
+ * `canplay`. Kept so the next post can cancel it: scrolling faster than the
+ * network armed one waiter per post, all of them on the same element and none
+ * of them ever removed, so a single `canplay` fired the whole backlog and every
+ * stale closure ran beginAutoplay() against state that had since moved on. */
+let pendingPlay: (() => void) | null = null;
+function cancelPendingPlay(): void {
+  if (!pendingPlay || !video) return;
+  video.removeEventListener("canplay", pendingPlay);
+  pendingPlay = null;
+}
+
 /* Autoplay-политики браузеров: вся логика переходов — в audio-state.ts. */
 function playActiveVideo(): void {
   if (!video || activePost?.mediaType !== "video") return;
   const el = video;
+  cancelPendingPlay();
   const play = () => {
     const intent = beginAutoplay(audioState);
     audioState = intent.state;
@@ -226,8 +239,14 @@ function playActiveVideo(): void {
       }
     });
   };
-  if (el.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) el.addEventListener("canplay", play, { once: true });
-  else play();
+  if (el.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+    const waiter = () => {
+      pendingPlay = null;
+      play();
+    };
+    pendingPlay = waiter;
+    el.addEventListener("canplay", waiter, { once: true });
+  } else play();
 }
 
 function onVideoTimeUpdate(): void {
@@ -353,6 +372,7 @@ function onKeydown(event: KeyboardEvent): void {
 $effect(() => {
   void active;
   if (!mounted) return;
+  cancelPendingPlay();
   tick().then(() => {
     if (video && activePost?.mediaType === "video") {
       video.muted = audioState.muted;

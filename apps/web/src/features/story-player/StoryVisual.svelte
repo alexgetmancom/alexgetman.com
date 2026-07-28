@@ -123,6 +123,24 @@ function onStageClick(event: MouseEvent & { currentTarget: HTMLElement }): void 
      for the pictures inside this post; moving between posts is the swipe. */
   onselectgallery?.(gallerySubIndex + (intent === "next-image" ? 1 : -1));
 }
+
+/* Removing a <video> from the DOM does not stop it. The element keeps its
+ * decoder and keeps playing to the speakers until it is garbage collected, and
+ * nothing here holds a reference by then.
+ *
+ * That happens on every scroll from a video post to a still one: the {#if}
+ * below unmounts the element mid-playback while the next post mounts its own.
+ * Scroll fast enough and two clips are audible at once — the one you can see
+ * and one you cannot. Pausing and dropping the source on destroy releases it. */
+function releaseOnDestroy(el: HTMLVideoElement) {
+  return {
+    destroy() {
+      el.pause();
+      el.removeAttribute("src");
+      el.load();
+    },
+  };
+}
 </script>
 
 <div class="story-visual-wrap">
@@ -167,6 +185,7 @@ function onStageClick(event: MouseEvent & { currentTarget: HTMLElement }): void 
       {#if post.image && isVideo && !videoFailed}
         <video
           bind:this={video}
+          use:releaseOnDestroy
           src={post.image}
           poster={post.posterSrc || post.fallbackImage || undefined}
           muted
@@ -473,7 +492,13 @@ function onStageClick(event: MouseEvent & { currentTarget: HTMLElement }): void 
       min-height: 560px;
       max-height: none;
       place-items: stretch;
-      background: var(--player-backdrop);
+      /* Fixed dark on a phone, in both themes. Here the stage is the whole
+         screen rather than a framed object on a page, so whatever sits beside
+         the picture is the inside of a media viewer — and a white band down the
+         side of a photo, fullscreen, reads as a broken image rather than as a
+         light theme. Desktop keeps the themed surround: there the frame really
+         is page. */
+      background: var(--bg-deep);
       animation: none;
       opacity: 1;
       transform: none;
@@ -486,36 +511,26 @@ function onStageClick(event: MouseEvent & { currentTarget: HTMLElement }): void 
       border: 0;
       border-radius: 0;
       box-shadow: none;
-      /* The bottom strip belongs to the controls, not to the picture, and its
-         height is --stage-actions-strip in tokens.css — the reading sheet has
-         to hang off the same number. Reserved rather than left over: a phone
-         screen is taller than 9:16, so contain-fitting a 9:16 story leaves a
-         margin, but on a narrow handset (an SE is 375x667, almost exactly 9:16)
-         that margin is nearly zero and the bar would land back on the image.
-         Reserving it keeps one layout on every phone; only the picture's height
-         changes. */
+      background: var(--bg-deep);
     }
 
-    /* The media box stops above the strip, and the picture sits at the top of
-       it. The stage used to centre the media, which split the leftover height
-       into two bands — one of them between the progress bar and the story, so
-       the story appeared to start well down the screen. All of the slack now
-       collects underneath, where the controls are. */
-    /* Sized, not inset. An absolutely positioned replaced element resolves
-       `height: auto` from its intrinsic size, not from a bottom offset, so
-       `inset: 0 0 <strip>` left the picture at its own height and ignored the
-       strip entirely — measured 375px tall in a 738px box. An explicit height
-       is the only form that holds for <img> and <video> alike. */
+    /* The picture gets the whole screen and the controls float on top of it.
+       It used to stop above a reserved --stage-actions-strip, which was the
+       right call when a story could be any shape: contain-fitting left a
+       margin, and on a handset close to 9:16 the bar would have landed back on
+       the image. The pipeline now composes every story to 9:16 with a blurred
+       backdrop baked into the file, so the picture is already the shape of the
+       screen — and reserving 88px turned a width-filling photo into a
+       height-limited one with white gutters down both sides. On a browser with
+       a persistent bottom bar there was little height to spare, which is why
+       the story looked shrunk on a real phone and full-bleed in a simulator.
+       --stage-actions-strip stays: the reading sheet still hangs off it, and it
+       still measures the room the floating bar needs. */
     .story-visual__link img,
     .story-visual__link video,
     .story-visual__fallback {
-      inset: 0 0 auto;
-      height: calc(100% - var(--stage-actions-strip));
-    }
-
-    .story-visual__link img,
-    .story-visual__link video {
-      object-position: top center;
+      inset: 0;
+      height: 100%;
     }
 
     .audio-chip {
@@ -569,20 +584,11 @@ function onStageClick(event: MouseEvent & { currentTarget: HTMLElement }): void 
       right: 0.7rem;
       bottom: calc(0.7rem + env(safe-area-inset-bottom, 0));
       pointer-events: auto;
-      /* It sits below the picture now, on the themed strip rather than on a
-         photo — so it drops the blurred dark slab and takes the page's own
-         colours. The --player-* names are used because the stage's dark
-         override rewrites --text-* and --scrim-* for everything inside it,
-         which is right for chrome on the picture and wrong for this. */
-      --bar-fill: var(--player-fill);
-      --bar-fill-hover: var(--player-fill-hover);
-      --bar-text: var(--player-text);
-      --bar-text-strong: var(--player-text-strong);
-
-      backdrop-filter: none;
-      -webkit-backdrop-filter: none;
-      background: transparent;
-      border-color: transparent;
+      /* Back on the picture, so back to the blurred dark slab from
+         story-actions.css and the un-themed --overlay-* palette. The themed,
+         transparent version here was correct only while the bar stood on a
+         strip of page below the story; floating over media it would have been
+         unreadable type on a photograph. */
     }
   }
 
