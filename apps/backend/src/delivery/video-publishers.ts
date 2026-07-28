@@ -1,6 +1,6 @@
 import { InstagramContainerInvalidError, isExpiredInstagramContainer } from "../delivery/social/instagram-container.js";
 import type { BackendConfig } from "../foundation/config.js";
-import { youtubeAccessToken } from "../foundation/external/youtube.js";
+import { type VideoLocale, youtubeAccessToken } from "../foundation/external/youtube.js";
 import { formBody, requestJson } from "../foundation/http.js";
 import type { InstagramMetadata, YouTubeMetadata } from "../publishing/video-types.js";
 
@@ -44,8 +44,9 @@ export async function prepareYouTubeVideo(
   filePath: string,
   metadata: YouTubeMetadata,
   publishAt: string,
+  locale: VideoLocale = "ru",
 ): Promise<{ id: string; url: string }> {
-  const token = await youtubeAccessToken(config);
+  const token = await youtubeAccessToken(config, fetch, locale);
   const file = Bun.file(filePath);
   const init = await fetch(
     "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status,recordingDetails",
@@ -63,8 +64,8 @@ export async function prepareYouTubeVideo(
           description: metadata.description,
           tags: metadata.tags,
           categoryId: "20",
-          defaultLanguage: "ru",
-          defaultAudioLanguage: "ru",
+          defaultLanguage: locale,
+          defaultAudioLanguage: locale,
         },
         status: { privacyStatus: "private", publishAt, selfDeclaredMadeForKids: false },
         recordingDetails: {
@@ -88,8 +89,8 @@ export async function prepareYouTubeVideo(
 
 /** Stops a future YouTube release but deliberately retains the private upload.
  * Do not call for a target that may already have been published. */
-export async function keepYouTubeUploadPrivate(config: BackendConfig, videoId: string): Promise<void> {
-  const token = await youtubeAccessToken(config);
+export async function keepYouTubeUploadPrivate(config: BackendConfig, videoId: string, locale: VideoLocale = "ru"): Promise<void> {
+  const token = await youtubeAccessToken(config, fetch, locale);
   const headers = { Authorization: `Bearer ${token}` };
   const current = await requestJson<YouTubeVideoStatus>(
     fetch,

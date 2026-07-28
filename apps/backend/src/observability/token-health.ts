@@ -101,6 +101,17 @@ const probes: Probe[] = [
     },
   },
   {
+    target: "youtube_shorts_en",
+    configured: (c) => Boolean(c.YOUTUBE_EN_CLIENT_ID && c.YOUTUBE_EN_CLIENT_SECRET && c.YOUTUBE_EN_REFRESH_TOKEN),
+    run: async (config, fetchImpl) => {
+      const token = await youtubeAccessToken(config, fetchImpl, "en");
+      await requestJson(fetchImpl, "https://www.googleapis.com/youtube/v3/channels?part=id&mine=true", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return null;
+    },
+  },
+  {
     target: "x",
     configured: (c) => Boolean(c.X_CONSUMER_KEY && c.X_CONSUMER_SECRET && c.X_ACCESS_TOKEN && c.X_ACCESS_TOKEN_SECRET),
     run: async (config, fetchImpl) => {

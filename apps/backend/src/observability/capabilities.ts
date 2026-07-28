@@ -14,7 +14,10 @@ const serviceRequirements: Record<string, readonly string[]> = {
 /** Read-only readiness report shared by diagnostics, observability and future agents. */
 export function capabilityReport(config: BackendConfig): CapabilityReportEntry[] {
   const requirements = new Map<string, readonly string[]>(Object.entries(serviceRequirements));
+  if (config.YOUTUBE_EN_CLIENT_ID || config.YOUTUBE_EN_CLIENT_SECRET || config.YOUTUBE_EN_REFRESH_TOKEN)
+    requirements.set("youtube_shorts_en", ["YOUTUBE_EN_CLIENT_ID", "YOUTUBE_EN_CLIENT_SECRET", "YOUTUBE_EN_REFRESH_TOKEN"]);
   if (videoDeliveryRoute(config, "instagram_reels").provider === "zernio") requirements.set("instagram_reels", ["ZERNIO_API_KEY"]);
+  if (videoDeliveryRoute(config, "instagram_reels", "en").provider === "zernio") requirements.set("instagram_reels_en", ["ZERNIO_API_KEY"]);
   if (config.MEDIA_PROCESSOR_PROVIDER === "remote_http")
     requirements.set("media_processor", ["MEDIA_PROCESSOR_URL", "MEDIA_PROCESSOR_TOKEN"]);
   for (const profile of Object.values(PLATFORM_PROFILES))

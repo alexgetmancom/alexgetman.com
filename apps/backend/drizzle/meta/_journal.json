@@ -225,6 +225,13 @@
       "when": 1785974800000,
       "tag": "0031_threads_chain_approved",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1785974900000,
+      "tag": "0032_video_locale",
+      "breakpoints": true
     }
   ]
 }

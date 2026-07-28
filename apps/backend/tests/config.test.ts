@@ -63,4 +63,12 @@ describe("loadConfig", () => {
     });
     expect(config.PUBLISH_PROVIDER_ROUTES_JSON.instagram_reels).toEqual({ provider: "zernio", accountId: "maru-account" });
   });
+
+  it("parses independent RU and EN Zernio video routes", () => {
+    const config = loadConfig({
+      PUBLISH_PROVIDER_ROUTES_JSON:
+        '{"instagram_reels":{"provider":"zernio","accountId":"ru-account"},"instagram_reels_en":{"provider":"zernio","accountId":"en-account"}}',
+    });
+    expect(config.PUBLISH_PROVIDER_ROUTES_JSON.instagram_reels_en).toEqual({ provider: "zernio", accountId: "en-account" });
+  });
 });

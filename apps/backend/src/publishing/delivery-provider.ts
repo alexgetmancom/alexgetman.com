@@ -1,13 +1,14 @@
 import type { BackendConfig } from "../foundation/config.js";
+import type { VideoLocale } from "../foundation/external/youtube.js";
 import type { VideoTarget } from "./video-types.js";
 
 type DeliveryProvider = "native" | "zernio";
 type VideoDeliveryRoute = { provider: DeliveryProvider; accountId?: string };
 
 /** Resolves a route before a target is scheduled; the resolved provider is then persisted on the target. */
-export function videoDeliveryRoute(config: BackendConfig, target: VideoTarget): VideoDeliveryRoute {
+export function videoDeliveryRoute(config: BackendConfig, target: VideoTarget, locale: VideoLocale = "ru"): VideoDeliveryRoute {
   if (target !== "instagram_reels") return { provider: "native" };
-  const route = config.PUBLISH_PROVIDER_ROUTES_JSON.instagram_reels;
+  const route = config.PUBLISH_PROVIDER_ROUTES_JSON[locale === "en" ? "instagram_reels_en" : "instagram_reels"];
   return route?.provider === "zernio"
     ? { provider: "zernio", ...(route.accountId ? { accountId: route.accountId } : {}) }
     : { provider: "native" };

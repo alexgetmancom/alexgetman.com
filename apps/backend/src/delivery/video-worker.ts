@@ -158,13 +158,14 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
           description: composeYouTubeDescription(backendDb, draft.actorId, metadata as YouTubeMetadata),
         },
         target.scheduledAt ?? new Date().toISOString(),
+        draft.locale === "en" ? "en" : "ru",
       );
       if (!ownsVideoJob(backendDb, job)) {
         // Cancellation can happen while the resumable upload is in flight. The
         // ID exists only in this response, so fence its future public release
         // before discarding it from local state.
         try {
-          await keepYouTubeUploadPrivate(config, result.id);
+          await keepYouTubeUploadPrivate(config, result.id, draft.locale === "en" ? "en" : "ru");
         } catch (error) {
           recordDomainEvent(backendDb, {
             ref: `video:${job.videoDraftId}`,

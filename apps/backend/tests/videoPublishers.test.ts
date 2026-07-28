@@ -28,6 +28,9 @@ const config = loadConfig({
   YOUTUBE_CLIENT_ID: "client",
   YOUTUBE_CLIENT_SECRET: "secret",
   YOUTUBE_REFRESH_TOKEN: "refresh",
+  YOUTUBE_EN_CLIENT_ID: "client-en",
+  YOUTUBE_EN_CLIENT_SECRET: "secret-en",
+  YOUTUBE_EN_REFRESH_TOKEN: "refresh-en",
   INSTAGRAM_ACCESS_TOKEN: "EAAB-facebook-token",
   INSTAGRAM_USER_ID: "ig-user",
 });
@@ -65,6 +68,28 @@ const json = (value: unknown, status = 200) =>
   new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
 
 describe("prepareYouTubeVideo", () => {
+  it("uses English channel credentials and language metadata for an EN video", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "youtube-upload-en-"));
+    try {
+      const file = path.join(dir, "clip.mp4");
+      fs.writeFileSync(file, Buffer.alloc(16));
+      install((call) =>
+        call.url.includes("uploadType=resumable")
+          ? new Response("", { status: 200, headers: { location: "https://upload.googleapis.com/session/en" } })
+          : json({ id: "vid-en" }),
+      );
+
+      await prepareYouTubeVideo(config, file, { title: "Title", description: "Body", tags: [] }, "2026-08-01T10:00:00Z", "en");
+
+      const oauth = recorded.find((call) => call.url.includes("oauth2.googleapis.com/token"));
+      expect(String(oauth?.body)).toContain("refresh_token=refresh-en");
+      const session = recorded.find((call) => call.url.includes("uploadType=resumable"));
+      expect(JSON.parse(String(session?.body)).snippet).toMatchObject({ defaultLanguage: "en", defaultAudioLanguage: "en" });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("opens a resumable session, uploads the file and returns the watch URL", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "youtube-upload-"));
     try {

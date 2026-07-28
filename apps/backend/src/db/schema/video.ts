@@ -7,6 +7,7 @@ export const videoDrafts = sqliteTable(
   {
     id: autoId(),
     actorId: integer().notNull(),
+    locale: text().notNull().default("ru"),
     label: text().notNull().default(""),
     assetKey: text().notNull(),
     studioMediaAssetId: integer().references(() => studioMediaAssets.id),

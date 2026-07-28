@@ -134,6 +134,10 @@ const en = {
   "post.need-new-post": "Choose 📝 New post from the menu before sending a new publication.",
   // Video conversation + scheduling
   "video.dialog-prompt": "🎬 Send an MP4 video up to 1 GB. I will ask only for the details that are needed.",
+  "video.choose-language": "Which audience is this video for?",
+  "video.language-ru": "🇷🇺 RU video",
+  "video.language-en": "🇬🇧 EN video",
+  "vpreview.language": "Language",
   "video.await-text": "⌨ I'm waiting for a text reply now. Tap «☰ Menu» to start a different flow.",
   "video.choose-platforms-next": "Choose platforms, then tap Next.",
   "video.prompt-yt-title": "⌨ Title for YouTube Shorts?",
@@ -520,6 +524,10 @@ const ru = {
   "post.need-new-post": "Сначала выберите «📝 Новый пост» в меню.",
   // Video conversation + scheduling
   "video.dialog-prompt": "🎬 Пришлите видео MP4 до 1 ГБ. Затем я задам только нужные вопросы.",
+  "video.choose-language": "Для какой аудитории это видео?",
+  "video.language-ru": "🇷🇺 RU-видео",
+  "video.language-en": "🇬🇧 EN-видео",
+  "vpreview.language": "Язык",
   "video.await-text": "⌨ Сейчас жду текстовый ответ. Нажмите «☰ Показать меню», чтобы начать другой сценарий.",
   "video.choose-platforms-next": "Выберите платформы, затем нажмите «Далее».",
   "video.prompt-yt-title": "⌨ Название для YouTube Shorts?",

@@ -25,6 +25,7 @@ type VideoMetricTask = {
   label: string | null;
   checkpointIndex: number;
   errorCount: number;
+  locale: "ru" | "en";
 };
 type YouTubeVideo = {
   items?: Array<{
@@ -81,21 +82,23 @@ export async function runVideoMetricSchedule(config: BackendConfig, backendDb: B
   ensureVideoMetricSchedule(backendDb);
   const tasks = dueVideoMetricTasks(backendDb, config.MAX_METRIC_TASKS_PER_CYCLE);
   const youtubeTasks = tasks.filter((task) => task.target === "youtube_shorts");
-  let youtubeToken: string | null = null;
-  if (youtubeTasks.length > 0) {
+  const youtubeTokens = new Map<"ru" | "en", string>();
+  for (const locale of ["ru", "en"] as const) {
+    const localizedTasks = youtubeTasks.filter((task) => task.locale === locale);
+    if (!localizedTasks.length) continue;
     try {
       // One fresh access token is enough for every Data API request in this
       // cycle. Refreshing once per historical target turns a revoked token
       // into a noisy burst of identical OAuth failures.
-      youtubeToken = await youtubeAccessToken(config);
+      youtubeTokens.set(locale, await youtubeAccessToken(config, fetchImpl, locale));
     } catch (error) {
       const normalized = terminalIfMissingRemoteObject(error);
       const message = normalized instanceof Error ? normalized.message : String(normalized);
       const terminal = isTerminalMetricError(normalized);
-      const frozen = youtubeTasks.filter((task) => finishVideoMetricTask(backendDb, task, message, terminal));
+      const frozen = localizedTasks.filter((task) => finishVideoMetricTask(backendDb, task, message, terminal));
       if (frozen.length)
         recordDomainEvent(backendDb, {
-          ref: "analytics:youtube",
+          ref: `analytics:youtube:${locale}`,
           target: "youtube_shorts",
           type: "analytics.video_metrics.frozen",
           severity: "warn",
@@ -108,7 +111,7 @@ export async function runVideoMetricSchedule(config: BackendConfig, backendDb: B
   for (const task of tasks) {
     try {
       if (task.target === "youtube_shorts") {
-        const token = youtubeToken;
+        const token = youtubeTokens.get(task.locale);
         if (!token) continue;
         await collectYouTubeVideoMetrics(backendDb, task, token, fetchImpl);
       } else if (task.deliveryProvider === "zernio") await collectZernioInstagramVideoMetrics(config, backendDb, task, fetchImpl);
@@ -223,6 +226,7 @@ function dueVideoMetricTasks(backendDb: BackendDb, limit: number): VideoMetricTa
       label: videoDrafts.label,
       checkpointIndex: videoMetricSchedule.checkpointIndex,
       errorCount: videoMetricSchedule.errorCount,
+      locale: videoDrafts.locale,
     })
     .from(videoMetricSchedule)
     .innerJoin(videoTargets, eq(videoTargets.id, videoMetricSchedule.videoTargetId))

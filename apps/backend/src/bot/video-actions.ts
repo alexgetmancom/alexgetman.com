@@ -46,6 +46,7 @@ const EDIT_FIELD_PROMPTS: Record<string, MessageKey> = {
  * entry can accidentally shadow another and their declaration order is free. */
 const routes: Record<string, VideoActionHandler> = {
   video_start: handleStart,
+  video_locale: handleLocale,
   video_cancel_dialog: handleCancelDialog,
   video_toggle: handleToggle,
   video_targets_done: handleTargetsDone,
@@ -122,6 +123,16 @@ async function showVideoCard(ctx: Context, backendDb: BackendDb, config: Backend
 
 async function handleStart({ ctx, backendDb }: VideoActionArgs): Promise<VideoActionResult> {
   await startVideoConversation(ctx, backendDb);
+}
+
+async function handleLocale({ ctx, backendDb, actorId, locale, data }: VideoActionArgs): Promise<VideoActionResult> {
+  const videoLocale = data.slice("video_locale:".length);
+  const session = getSession(backendDb, actorId);
+  if (session?.step !== "locale" || !["ru", "en"].includes(videoLocale)) throw new StudioError("err.video-restart");
+  saveSession(backendDb, actorId, { ...session, step: "asset", data: { ...session.data, videoLocale } });
+  await ctx.editMessageText(t(locale, "video.dialog-prompt"), {
+    reply_markup: new InlineKeyboard().text(t(locale, "common.cancel"), "video_cancel_dialog"),
+  });
 }
 
 async function handleCancelDialog({ ctx, backendDb, config, actorId, locale }: VideoActionArgs): Promise<VideoActionResult> {

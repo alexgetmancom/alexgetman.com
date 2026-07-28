@@ -6,11 +6,12 @@ import type { BackendDb } from "../db/client.js";
 import { videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
+import { youtubeCredentials } from "../foundation/external/youtube.js";
 import { runFfprobe } from "../foundation/runtime/ffmpeg.js";
 import { isZernioRouteReady, videoDeliveryRoute } from "./delivery-provider.js";
 import { isVideoTargetEditable } from "./state.js";
 import { getVideoDraft, insertVideoJob, listVideoTargets, refreshVideoDraftStatus } from "./video-data.js";
-import type { VideoMetadata, VideoTarget } from "./video-types.js";
+import type { VideoLocale, VideoMetadata, VideoTarget } from "./video-types.js";
 import { VIDEO_TARGETS } from "./video-types.js";
 
 export function createVideoDraft(
@@ -18,6 +19,7 @@ export function createVideoDraft(
   actorId: number,
   source: string | { studioMediaAssetId: number },
   retentionHours: number,
+  locale: VideoLocale = "ru",
 ): number {
   const now = new Date().toISOString();
   const retentionUntil = new Date(Date.now() + retentionHours * 60 * 60_000).toISOString();
@@ -25,6 +27,7 @@ export function createVideoDraft(
     .insert(videoDrafts)
     .values({
       actorId,
+      locale,
       assetKey: typeof source === "string" ? source : `studio-asset-${source.studioMediaAssetId}`,
       ...(typeof source === "string" ? {} : { studioMediaAssetId: source.studioMediaAssetId }),
       status: "editing",
@@ -133,7 +136,8 @@ export function scheduleVideo(
       if (!targetSchedule) continue;
       const publishAt = targetSchedule.toISOString();
       const preparedAt = new Date(targetSchedule.getTime() - timing.prepareLeadMinutes * 60_000);
-      const route = videoDeliveryRoute(config, target.target as VideoTarget);
+      const draft = getVideoDraft(backendDb, videoDraftId);
+      const route = videoDeliveryRoute(config, target.target as VideoTarget, draft.locale === "en" ? "en" : "ru");
       tx.update(videoTargets)
         .set({
           scheduledAt: publishAt,
@@ -211,6 +215,7 @@ export type VideoTechnicalCheck = {
 
 export async function validateVideoDraft(config: BackendConfig, backendDb: BackendDb, videoDraftId: number): Promise<VideoTechnicalCheck> {
   const draft = getVideoDraft(backendDb, videoDraftId);
+  const locale = draft.locale === "en" ? "en" : "ru";
   const source = videoSourcePath(backendDb, config, draft);
   if (!source) throw new StudioError("err.source-missing");
   if (path.extname(source).toLowerCase() !== ".mp4") throw new StudioError("err.need-mp4");
@@ -222,10 +227,13 @@ export async function validateVideoDraft(config: BackendConfig, backendDb: Backe
       limit: Math.floor(config.VIDEO_MAX_BYTES / 1024 / 1024),
     });
   for (const target of listVideoTargets(backendDb, videoDraftId)) {
-    if (target.target === "youtube_shorts" && (!config.YOUTUBE_CLIENT_ID || !config.YOUTUBE_CLIENT_SECRET || !config.YOUTUBE_REFRESH_TOKEN))
-      throw new StudioError("err.youtube-not-configured");
+    if (target.target === "youtube_shorts") {
+      const credentials = youtubeCredentials(config, locale);
+      if (!credentials.clientId || !credentials.clientSecret || !credentials.refreshToken)
+        throw new StudioError("err.youtube-not-configured");
+    }
     if (target.target === "instagram_reels") {
-      const route = videoDeliveryRoute(config, "instagram_reels");
+      const route = videoDeliveryRoute(config, "instagram_reels", locale);
       if (!isZernioRouteReady(config, route) && route.provider === "zernio") throw new StudioError("err.instagram-not-configured");
       if (route.provider === "native" && (!config.INSTAGRAM_ACCESS_TOKEN || !config.INSTAGRAM_USER_ID))
         throw new StudioError("err.instagram-not-configured");

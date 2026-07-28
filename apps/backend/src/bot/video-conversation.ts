@@ -39,13 +39,17 @@ import {
 export async function startVideoConversation(ctx: Context, backendDb: BackendDb): Promise<void> {
   const actorId = Number(ctx.from?.id);
   const locale = botLocale(backendDb, actorId);
-  const text = t(locale, "video.dialog-prompt");
-  const keyboard = new InlineKeyboard().text(t(locale, "common.cancel"), "video_cancel_dialog");
+  const text = t(locale, "video.choose-language");
+  const keyboard = new InlineKeyboard()
+    .text(t(locale, "video.language-ru"), "video_locale:ru")
+    .text(t(locale, "video.language-en"), "video_locale:en")
+    .row()
+    .text(t(locale, "common.cancel"), "video_cancel_dialog");
   // Reached via a menu button, this is pure navigation: turn that same
   // message into the prompt instead of leaving it and adding a new one.
   if (ctx.callbackQuery?.message) await ctx.editMessageText(text, { reply_markup: keyboard });
   else await ctx.reply(text, { reply_markup: keyboard });
-  saveSession(backendDb, actorId, { draftId: null, step: "asset", selected: [], data: {} });
+  saveSession(backendDb, actorId, { draftId: null, step: "locale", selected: [], data: {} });
 }
 
 export async function handleVideoConversationMessage(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<boolean> {
@@ -59,6 +63,7 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
       const draftId = studioServices(backendDb, config).publications.create(actorId, {
         kind: "video",
         studioMediaAssetId: stored.assetId,
+        locale: session.data.videoLocale === "en" ? "en" : "ru",
       }).id;
       const selected = enabledVideoTargets(config);
       if (!selected.length) throw new StudioError("err.no-video-platforms-config");

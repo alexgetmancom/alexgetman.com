@@ -174,6 +174,9 @@ const envSchema = z
     YOUTUBE_CLIENT_ID: z.string().optional(),
     YOUTUBE_CLIENT_SECRET: z.string().optional(),
     YOUTUBE_REFRESH_TOKEN: z.string().optional(),
+    YOUTUBE_EN_CLIENT_ID: z.string().optional(),
+    YOUTUBE_EN_CLIENT_SECRET: z.string().optional(),
+    YOUTUBE_EN_REFRESH_TOKEN: z.string().optional(),
     ENABLE_INSTAGRAM_STORIES: booleanFlag(false),
     ENABLE_TELEGRAM_STORIES: booleanFlag(false),
     TELEGRAM_STORIES_CHANNEL: z.string().optional(),
@@ -191,6 +194,14 @@ const envSchema = z
     INDEXNOW_ENABLED: booleanFlag(true),
   })
   .superRefine((env, context) => {
+    const englishYouTube = [env.YOUTUBE_EN_CLIENT_ID, env.YOUTUBE_EN_CLIENT_SECRET, env.YOUTUBE_EN_REFRESH_TOKEN];
+    if (englishYouTube.some(Boolean) && !englishYouTube.every(Boolean)) {
+      context.addIssue({
+        code: "custom",
+        path: ["YOUTUBE_EN_CLIENT_ID"],
+        message: "YOUTUBE_EN_CLIENT_ID, YOUTUBE_EN_CLIENT_SECRET and YOUTUBE_EN_REFRESH_TOKEN must be configured together",
+      });
+    }
     if (env.ENABLE_TELEGRAM_STORIES) {
       for (const key of [
         "TELEGRAM_STORIES_CHANNEL",

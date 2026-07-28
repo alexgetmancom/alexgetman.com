@@ -62,6 +62,35 @@ function videoContext(input: { text?: string; callback?: string } = {}) {
 }
 
 describe("video publication queue", () => {
+  it("selects the video locale before asking for the MP4", async () => {
+    const backendDb = testDb.open();
+    saveSession(backendDb, 42, { draftId: null, step: "locale", selected: [], data: {} });
+
+    expect(await handleVideoCallback(videoContext({ callback: "video_locale:en" }).context, backendDb, videoConfig())).toBe(true);
+    expect(getSession(backendDb, 42)).toMatchObject({ step: "asset", data: { videoLocale: "en" } });
+  });
+
+  it("persists the selected locale and resolves the matching Zernio account", () => {
+    const backendDb = testDb.open();
+    const draftId = createVideoDraft(backendDb, 42, "video-source", 24, "en");
+    replaceVideoTargets(backendDb, draftId, ["instagram_reels"]);
+    const config = loadConfig({
+      PUBLISH_PROVIDER_ROUTES_JSON:
+        '{"instagram_reels":{"provider":"zernio","accountId":"ru-account"},"instagram_reels_en":{"provider":"zernio","accountId":"en-account"}}',
+      ZERNIO_API_KEY: "z".repeat(16),
+    });
+    scheduleVideo(
+      backendDb,
+      draftId,
+      { instagram_reels: new Date(Date.now() + 60 * 60_000) },
+      { prepareLeadMinutes: 15, reminderMinutes: 5 },
+      config,
+    );
+
+    expect(backendDb.db.select().from(videoDrafts).where(eq(videoDrafts.id, draftId)).get()?.locale).toBe("en");
+    expect(listVideoTargets(backendDb, draftId)[0]).toMatchObject({ deliveryProvider: "zernio", providerAccountId: "en-account" });
+  });
+
   it("removes an expired Studio source after every draft using it is final", async () => {
     const backendDb = testDb.open();
     const directory = mkdtempSync(path.join(os.tmpdir(), "studio-video-retention-"));

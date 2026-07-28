@@ -20,7 +20,7 @@ import {
   updateVideoLabel,
   validateVideoDraft,
 } from "../../publishing/video-service.js";
-import type { VideoMetadata, VideoTarget } from "../../publishing/video-types.js";
+import type { VideoLocale, VideoMetadata, VideoTarget } from "../../publishing/video-types.js";
 import { videoDeliveryProjections } from "../projections.js";
 
 type VideoEditInput = { label?: string; target?: VideoTarget; metadata?: VideoMetadata };
@@ -28,10 +28,10 @@ type VideoEditInput = { label?: string; target?: VideoTarget; metadata?: VideoMe
 /** Video publication command boundary for Telegram Studio, Web Studio and MCP. */
 export function videoService(backendDb: BackendDb, config: BackendConfig) {
   return {
-    create(actorId: number, studioMediaAssetId: number): number {
+    create(actorId: number, studioMediaAssetId: number, locale: VideoLocale = "ru"): number {
       const [asset] = requireStudioMediaAssets(backendDb, actorId, [studioMediaAssetId]);
       if (asset?.kind !== "video") throw new StudioError("err.video-needs-asset");
-      return createVideoDraft(backendDb, actorId, { studioMediaAssetId }, config.VIDEO_MEDIA_RETENTION_HOURS);
+      return createVideoDraft(backendDb, actorId, { studioMediaAssetId }, config.VIDEO_MEDIA_RETENTION_HOURS, locale);
     },
     get(actorId: number, videoDraftId: number) {
       const draft = requireOwnedVideo(backendDb, actorId, videoDraftId);
@@ -69,14 +69,14 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
       retryFailedVideoTarget(backendDb, videoDraftId, target);
     },
     async cancel(actorId: number, videoDraftId: number) {
-      requireOwnedVideo(backendDb, actorId, videoDraftId);
+      const draft = requireOwnedVideo(backendDb, actorId, videoDraftId);
       const cancellation = cancelVideo(backendDb, videoDraftId, config.VIDEO_MEDIA_RETENTION_HOURS);
       cancelScheduledNotifications(backendDb, `video:${videoDraftId}`);
       const heldPrivateYouTubeIds: string[] = [];
       const holdFailures: string[] = [];
       for (const videoId of cancellation.holdPrivateYouTubeIds) {
         try {
-          await keepYouTubeUploadPrivate(config, videoId);
+          await keepYouTubeUploadPrivate(config, videoId, draft.locale === "en" ? "en" : "ru");
           heldPrivateYouTubeIds.push(videoId);
         } catch (error) {
           holdFailures.push(error instanceof Error ? error.message : String(error));

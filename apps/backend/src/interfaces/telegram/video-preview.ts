@@ -20,7 +20,11 @@ export function videoPreview(
   const draft = getVideoDraft(backendDb, videoDraftId);
   const targets = listVideoTargets(backendDb, videoDraftId);
   const title = draft.label || t(locale, "vpreview.title-fallback");
-  const lines = [`🎬 *${escapeMarkdown(title)}*`, `${t(locale, "vpreview.status")}: *${videoStatusLabel(draft.status, locale)}*`];
+  const lines = [
+    `🎬 *${escapeMarkdown(title)}*`,
+    `${t(locale, "vpreview.language")}: *${draft.locale.toUpperCase()}*`,
+    `${t(locale, "vpreview.status")}: *${videoStatusLabel(draft.status, locale)}*`,
+  ];
   const keyboard = new InlineKeyboard();
   const ytTarget = targets.find((target) => target.target === "youtube_shorts");
   const igTarget = targets.find((target) => target.target === "instagram_reels");
