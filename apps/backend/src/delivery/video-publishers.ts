@@ -1,11 +1,12 @@
 import { InstagramContainerInvalidError, isExpiredInstagramContainer } from "../delivery/social/instagram-container.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { type VideoLocale, youtubeAccessToken } from "../foundation/external/youtube.js";
-import { formBody, requestJson } from "../foundation/http.js";
+import { ExternalTransportError, externalFetch, formBody, requestJson } from "../foundation/http.js";
 import type { InstagramMetadata, YouTubeMetadata } from "../publishing/video-types.js";
 import { ambiguousExternalMutation } from "./ambiguous-publication.js";
 
 type YouTubeVideo = { id: string };
+type YouTubeVideoList = { items?: Array<{ id?: string }> };
 
 /** Every mutable field of `videos.status` this project ever sets. `videos.update`
  * clears any field of the selected part that the request omits, so a status edit
@@ -78,16 +79,40 @@ export async function prepareYouTubeVideo(
   if (!init.ok) throw new Error(`YouTube upload session failed: ${init.status} ${await init.text()}`);
   const location = init.headers.get("location");
   if (!location) throw new Error("YouTube did not return an upload location.");
-  const uploaded = await ambiguousExternalMutation("youtube_upload", () =>
-    fetch(location, {
-      method: "PUT",
-      headers: { "Content-Type": "video/mp4", "Content-Length": String(file.size) },
-      body: file,
-    }),
-  );
-  if (!uploaded.ok) throw new Error(`YouTube upload failed: ${uploaded.status} ${await uploaded.text()}`);
-  const video = (await uploaded.json()) as YouTubeVideo;
+  const video = await uploadYouTubeResumable(location, file);
   return { id: video.id, url: `https://www.youtube.com/watch?v=${video.id}` };
+}
+
+async function uploadYouTubeResumable(location: string, file: Bun.BunFile): Promise<YouTubeVideo> {
+  try {
+    return await putYouTubeBytes(location, file, 0, file.size);
+  } catch (error) {
+    if (!(error instanceof ExternalTransportError)) throw error;
+  }
+  // The resumable protocol exposes the committed byte range after a lost
+  // response, so this provider does not need a manual verification state.
+  const status = await externalFetch(fetch, location, {
+    method: "PUT",
+    headers: { "Content-Length": "0", "Content-Range": `bytes */${file.size}` },
+  });
+  if (status.ok) return (await status.json()) as YouTubeVideo;
+  if (status.status !== 308) throw new Error(`YouTube upload status failed: ${status.status} ${await status.text()}`);
+  const committed = Number(status.headers.get("range")?.match(/bytes=0-(\d+)/)?.[1] ?? -1) + 1;
+  return ambiguousExternalMutation("youtube_upload", () => putYouTubeBytes(location, file.slice(committed), committed, file.size));
+}
+
+async function putYouTubeBytes(location: string, body: Blob, start: number, total: number): Promise<YouTubeVideo> {
+  const response = await externalFetch(fetch, location, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "video/mp4",
+      "Content-Length": String(body.size),
+      "Content-Range": `bytes ${start}-${total - 1}/${total}`,
+    },
+    body,
+  });
+  if (!response.ok) throw new Error(`YouTube upload failed: ${response.status} ${await response.text()}`);
+  return (await response.json()) as YouTubeVideo;
 }
 
 /** Stops a future YouTube release but deliberately retains the private upload.
@@ -109,6 +134,21 @@ export async function keepYouTubeUploadPrivate(config: BackendConfig, videoId: s
     // the existing status settings and intentionally omit publishAt.
     body: JSON.stringify({ id: videoId, status: { privacyStatus: "private", ...preservedStatusFields(status) } }),
   });
+}
+
+export async function verifyYouTubeVideo(
+  config: BackendConfig,
+  videoId: string,
+  locale: VideoLocale = "ru",
+): Promise<{ id: string; url: string }> {
+  const token = await youtubeAccessToken(config, fetch, locale);
+  const response = await requestJson<YouTubeVideoList>(
+    fetch,
+    `https://www.googleapis.com/youtube/v3/videos?part=id&id=${encodeURIComponent(videoId)}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (response.items?.[0]?.id !== videoId) throw new Error("YouTube verification did not find the expected video");
+  return { id: videoId, url: `https://www.youtube.com/watch?v=${videoId}` };
 }
 
 function preservedStatusFields(status: YouTubeStatus): Partial<YouTubeStatus> {
@@ -163,4 +203,13 @@ export async function publishInstagramReel(config: BackendConfig, containerId: s
     throw error;
   }
   return { id: published.id, url: `https://www.instagram.com/reel/${published.id}/` };
+}
+
+export async function verifyInstagramReel(config: BackendConfig, id: string): Promise<{ id: string; url: string | null }> {
+  const media = await requestJson<{ id?: string; permalink?: string }>(
+    fetch,
+    `${instagramGraphBase(config)}/${encodeURIComponent(id)}?fields=id,permalink&access_token=${encodeURIComponent(config.INSTAGRAM_ACCESS_TOKEN ?? "")}`,
+  );
+  if (media.id !== id) throw new Error("Instagram verification did not find the expected Reel");
+  return { id, url: media.permalink ?? null };
 }

@@ -1,13 +1,13 @@
-export class AmbiguousPublicationError extends Error {
-  readonly cause: unknown;
+import { ExternalTransportError } from "../foundation/http.js";
+import { OperationTimeoutError } from "../foundation/runtime/timeout.js";
 
+export class AmbiguousPublicationError extends Error {
   constructor(
     readonly provider: string,
     cause: unknown,
   ) {
     const detail = cause instanceof Error ? cause.message : String(cause);
-    super(`verification_required: ${provider} may have published before confirmation was lost: ${detail}`);
-    this.cause = cause;
+    super(`verification_required: ${provider} may have published before confirmation was lost: ${detail}`, { cause });
   }
 }
 
@@ -15,21 +15,7 @@ export class AmbiguousPublicationError extends Error {
  * Provider HTTP responses are authoritative failures unless a provider adapter
  * explicitly recognizes them as an idempotent success. */
 export function isAmbiguousTransportFailure(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  if ("status" in error && typeof error.status === "number") return false;
-  const text = error.message.toLowerCase();
-  return [
-    "timed out",
-    "timeout",
-    "network",
-    "connection reset",
-    "connection closed",
-    "socket",
-    "fetch failed",
-    "unable to connect",
-    "econnreset",
-    "etimedout",
-  ].some((marker) => text.includes(marker));
+  return error instanceof ExternalTransportError || error instanceof OperationTimeoutError;
 }
 
 export async function ambiguousExternalMutation<T>(provider: string, mutation: () => Promise<T>): Promise<T> {

@@ -45,6 +45,8 @@ export const videoTargets = sqliteTable(
     externalUrl: text(),
     preparedAt: text(),
     publishedAt: text(),
+    confirmationSource: text(),
+    verifiedAt: text(),
     lastError: text(),
     ...timestamps(),
   },

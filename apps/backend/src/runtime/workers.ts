@@ -5,6 +5,7 @@ import type { BackendDb } from "../db/client.js";
 import { pruneMediaCache } from "../delivery/media-prepare.js";
 import { createPlatformPorts } from "../delivery/ports/social.js";
 import type { DeliveryPort, DeliveryPorts } from "../delivery/ports.js";
+import { runPublicationReconciliation } from "../delivery/publication-reconciliation.js";
 import { runDeliveryPublishCycle } from "../delivery/publish-workflow.js";
 import { recoverStaleSiteJobs, runSiteJobCycle } from "../delivery/site-jobs.js";
 import { runVideoCycle } from "../delivery/video-worker.js";
@@ -53,6 +54,10 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
     startLoop("publish-watchdog", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
       const recovered = runPublishWatchdog(config, backendDb);
       if (recovered) log("warn", "recovered stale publishing locks", { recovered });
+    }),
+    startLoop("publication-reconciliation", Math.max(60, config.IDLE_POLL_INTERVAL_SECONDS) * 1000, async () => {
+      const result = await runPublicationReconciliation(backendDb, config);
+      log("debug", "publication reconciliation loop tick", result);
     }),
     startLoop("notifications", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
       const delivered = runNotificationCycle(backendDb);

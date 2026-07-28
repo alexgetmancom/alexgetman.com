@@ -59,9 +59,10 @@ export async function runDeliveryPublishCycle(
             throw new Error(`auth_circuit_open: ${job.target} has a failing credential, publish paused until it recovers`);
           }
           const result = await withHeartbeat(backendDb, job.jobId, job.lockId, config.PUBLISH_HEARTBEAT_INTERVAL_SECONDS, () =>
-            withinPublishTimeout(config, job.target, async () => {
+            withinPublishTimeout(config, backendDb, job, async () => {
               await timedDeliveryPhase(backendDb, job, "validate", () => adapter.validate(job));
-              const published = await timedDeliveryPhase(backendDb, job, "provider.publish", () => adapter.publish(job));
+              const prepared = await timedDeliveryPhase(backendDb, job, "prepare", () => adapter.prepare(job));
+              const published = await timedDeliveryPhase(backendDb, job, "provider.publish", () => adapter.publish(prepared));
               return timedDeliveryPhase(backendDb, job, "provider.verify", () => adapter.verify(job, published), published);
             }),
           );
@@ -153,12 +154,23 @@ export async function runDeliveryPublishCycle(
 
 async function timedDeliveryPhase<T>(
   backendDb: BackendDb,
-  job: { jobId: number; postKey: string; target: string; attemptCount: number },
+  job: { jobId: number; postKey: string; target: string; attemptCount: number; lockId: string },
   phase: string,
   work: () => Promise<T>,
   providerResult?: unknown,
 ): Promise<T> {
   const startedAt = Date.now();
+  const owned = backendDb.db
+    .select({ jobId: publishJobs.jobId })
+    .from(publishJobs)
+    .where(and(eq(publishJobs.jobId, job.jobId), eq(publishJobs.status, "publishing"), eq(publishJobs.lockedBy, job.lockId)))
+    .get();
+  if (!owned) throw new Error(`delivery_job_no_longer_owned:${job.jobId}`);
+  backendDb.db
+    .update(publishJobs)
+    .set({ currentPhase: phase, updatedAt: new Date().toISOString() })
+    .where(and(eq(publishJobs.jobId, job.jobId), eq(publishJobs.status, "publishing")))
+    .run();
   try {
     const result = await work();
     const durationMs = Date.now() - startedAt;
@@ -240,26 +252,32 @@ async function withHeartbeat<T>(
 
 /**
  * A stuck provider promise must release the queue loop. The delayed provider
- * call is intentionally not retried automatically: it may still settle at the
- * provider after our deadline, so a human/Operations retry is the only safe
- * continuation.
+ * call releases the worker. Ambiguity is assigned only by the provider adapter
+ * around its public mutation; preparation and verification timeouts remain
+ * ordinary retryable failures.
  */
-async function withinPublishTimeout<T>(config: BackendConfig, target: string, work: () => Promise<T>): Promise<T> {
+async function withinPublishTimeout<T>(
+  config: BackendConfig,
+  backendDb: BackendDb,
+  job: { jobId: number; target: string },
+  work: () => Promise<T>,
+): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
       work(),
       new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () =>
-            reject(
-              new AmbiguousPublicationError(
-                target,
-                new Error(`delivery_execution_timeout: ${target} exceeded ${config.PUBLISH_JOB_TIMEOUT_SECONDS}s`),
-              ),
-            ),
-          config.PUBLISH_JOB_TIMEOUT_SECONDS * 1000,
-        );
+        timer = setTimeout(() => {
+          const phase = backendDb.db
+            .select({ currentPhase: publishJobs.currentPhase })
+            .from(publishJobs)
+            .where(eq(publishJobs.jobId, job.jobId))
+            .get()?.currentPhase;
+          const timeout = new Error(
+            `delivery_execution_timeout: ${job.target} exceeded ${config.PUBLISH_JOB_TIMEOUT_SECONDS}s during ${phase ?? "unknown"}`,
+          );
+          reject(phase === "provider.publish" ? new AmbiguousPublicationError(job.target, timeout) : timeout);
+        }, config.PUBLISH_JOB_TIMEOUT_SECONDS * 1000);
       }),
     ]);
   } finally {

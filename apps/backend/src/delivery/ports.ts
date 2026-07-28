@@ -11,14 +11,21 @@ export type DeliveryPort = (job: ClaimedPublishJob) => Promise<PublishResult>;
  */
 export type DeliveryAdapter = DeliveryPort & {
   validate: (job: ClaimedPublishJob) => Promise<void>;
+  prepare: (job: ClaimedPublishJob) => Promise<ClaimedPublishJob>;
   publish: DeliveryPort;
   verify: (job: ClaimedPublishJob, result: PublishResult) => Promise<PublishResult>;
 };
 
 /** Wrap a publisher in the uniform Delivery contract while remaining callable for legacy consumers. */
-export function deliveryAdapter(publish: DeliveryPort, hooks: Partial<Pick<DeliveryAdapter, "validate" | "verify">> = {}): DeliveryAdapter {
-  return Object.assign(publish, {
+export function deliveryAdapter(
+  publish: DeliveryPort,
+  hooks: Partial<Pick<DeliveryAdapter, "validate" | "prepare" | "verify">> = {},
+): DeliveryAdapter {
+  const prepare = hooks.prepare ?? (async (job: ClaimedPublishJob) => job);
+  const callable: DeliveryPort = async (job) => publish(await prepare(job));
+  return Object.assign(callable, {
     publish,
+    prepare,
     validate: hooks.validate ?? (async () => undefined),
     verify: hooks.verify ?? (async (_job, result) => result),
   });

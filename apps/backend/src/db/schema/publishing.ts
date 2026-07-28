@@ -10,6 +10,7 @@ export const publishJobs = sqliteTable(
     messageId: integer().notNull(),
     target: text().notNull(),
     status: text().notNull().default("queued"),
+    currentPhase: text(),
     publishAt: text(),
     payloadJson: json<JsonObject | null>(),
     ...queueAttempts(),

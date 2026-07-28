@@ -3,7 +3,7 @@ import { externalFetch, retryAfterSecondsFromHeaders } from "../../foundation/ht
 import { redactExternalSecrets } from "../../foundation/redact.js";
 import type { PublishResult } from "../../publishing/errors.js";
 import { HttpPublishError } from "../../publishing/errors.js";
-import { ambiguousExternalMutation } from "../ambiguous-publication.js";
+import { ambiguousExternalMutation, isAmbiguousPublicationError } from "../ambiguous-publication.js";
 import { InstagramContainerInvalidError, isExpiredInstagramContainer } from "./instagram-container.js";
 import { payloadMedia } from "./payload.js";
 
@@ -98,6 +98,7 @@ async function publishReadyContainer(config: BackendConfig, creationId: string, 
         graphPost(config, `${config.INSTAGRAM_USER_ID}/media_publish`, { creation_id: creationId }, fetchImpl),
       );
     } catch (error) {
+      if (isAmbiguousPublicationError(error)) throw error;
       const message = error instanceof Error ? error.message : String(error);
       // A container that looks dead right after FINISHED is usually Meta's read
       // replica lagging, so retry in place first; only the last attempt escalates

@@ -144,10 +144,10 @@ describe("createPlatformPorts", () => {
   it("hands each locale target its own credentials rather than the shared ones", async () => {
     reset();
     const ports = createPlatformPorts(config);
-    await ports.threads_en?.publish(job("threads_en", { text: "en" }));
-    await ports.threads_ru?.publish(job("threads_ru", { text: "ru" }));
-    await ports.instagram_stories?.publish(job("instagram_stories", { text: "en", media: [image("a")] }));
-    await ports.instagram_stories_ru?.publish(job("instagram_stories_ru", { text: "ru", media: [image("b")] }));
+    await ports.threads_en?.(job("threads_en", { text: "en" }));
+    await ports.threads_ru?.(job("threads_ru", { text: "ru" }));
+    await ports.instagram_stories?.(job("instagram_stories", { text: "en", media: [image("a")] }));
+    await ports.instagram_stories_ru?.(job("instagram_stories_ru", { text: "ru", media: [image("b")] }));
 
     expect(calls.find((call) => call.payload.text === "en" && call.target === "threads")?.token).toBe("threads-en");
     // The RU target has no dedicated token and must fall back to the shared one.
@@ -160,7 +160,7 @@ describe("createPlatformPorts", () => {
   it("publishes Telegram directly, without the media staging step", async () => {
     reset();
     const ports = createPlatformPorts(config);
-    await ports.telegram?.publish(job("telegram", { text: "hi", media: [image("a")] }));
+    await ports.telegram?.(job("telegram", { text: "hi", media: [image("a")] }));
     // Telegram resolves file ids itself; staging would download and re-upload
     // bytes it already has.
     expect(prepareCount).toBe(0);
@@ -170,14 +170,14 @@ describe("createPlatformPorts", () => {
   it("skips preparation entirely for a payload without media", async () => {
     reset();
     const ports = createPlatformPorts(config);
-    await ports.threads_ru?.publish(job("threads_ru", { text: "text only" }));
+    await ports.threads_ru?.(job("threads_ru", { text: "text only" }));
     expect(prepareCount).toBe(0);
   });
 
   it("passes a reconciliation payload straight through", async () => {
     reset();
     const ports = createPlatformPorts(config);
-    await ports.threads_ru?.publish(job("threads_ru", { text: "x", media: [image("a")], _reconcile_ids: ["1"] }));
+    await ports.threads_ru?.(job("threads_ru", { text: "x", media: [image("a")], _reconcile_ids: ["1"] }));
     expect(prepareCount).toBe(0);
     expect(calls[0]?.payload._reconcile_ids).toEqual(["1"]);
   });
@@ -186,8 +186,8 @@ describe("createPlatformPorts", () => {
     reset();
     const ports = createPlatformPorts(config);
     const payload = { text: "hi", media: [image("a")] };
-    await ports.threads_ru?.publish(job("threads_ru", payload));
-    await ports.threads_ru?.publish(job("threads_ru", payload));
+    await ports.threads_ru?.(job("threads_ru", payload));
+    await ports.threads_ru?.(job("threads_ru", payload));
     expect(prepareCount).toBe(1);
     expect(calls[1]?.payload.media).toEqual([{ type: "IMAGE", fileId: "a", localPath: "/prepared/a" }]);
   });
@@ -197,17 +197,17 @@ describe("createPlatformPorts", () => {
     const ports = createPlatformPorts(config);
     const payload = { text: "hi", media: [image("a")] };
     failPreparation = true;
-    await expect(ports.threads_ru?.publish(job("threads_ru", payload))).rejects.toThrow("staging failed");
+    await expect(ports.threads_ru?.(job("threads_ru", payload))).rejects.toThrow("staging failed");
     failPreparation = false;
     // A cached rejected promise here would make every retry fail forever.
-    await expect(ports.threads_ru?.publish(job("threads_ru", payload))).resolves.toMatchObject({ ok: true });
+    await expect(ports.threads_ru?.(job("threads_ru", payload))).resolves.toMatchObject({ ok: true });
     expect(prepareCount).toBe(2);
   });
 
   it("renders a Story from the first album image only", async () => {
     reset();
     const ports = createPlatformPorts(config);
-    await ports.telegram_stories?.publish(job("telegram_stories", { text: "hi", media: [image("a"), image("b"), image("c")] }));
+    await ports.telegram_stories?.(job("telegram_stories", { text: "hi", media: [image("a"), image("b"), image("c")] }));
     // The remaining images belong to feed targets; sending them would burn
     // VM-106 capacity on renders nobody publishes.
     expect(calls[0]?.payload.media).toEqual([{ type: "IMAGE", fileId: "a", storyLocalPath: "/story/a.mp4", localPath: "/prepared/a" }]);
@@ -218,8 +218,8 @@ describe("createPlatformPorts", () => {
     const ports = createPlatformPorts(config);
     const payload = { text: "hi", locale: "ru", draft_id: 7, media: [image("a")] };
     await Promise.all([
-      ports.telegram_stories?.publish(job("telegram_stories", payload)),
-      ports.instagram_stories_ru?.publish(job("instagram_stories_ru", payload)),
+      ports.telegram_stories?.(job("telegram_stories", payload)),
+      ports.instagram_stories_ru?.(job("instagram_stories_ru", payload)),
     ]);
     expect(storyRenderCount).toBe(1);
   });
@@ -228,8 +228,8 @@ describe("createPlatformPorts", () => {
     reset();
     const ports = createPlatformPorts(config);
     const payload = { text: "hi", locale: "ru", draft_id: 7, media: [image("a")] };
-    await ports.telegram_stories?.publish(job("telegram_stories", payload));
-    await ports.threads_ru?.publish(job("threads_ru", payload));
+    await ports.telegram_stories?.(job("telegram_stories", payload));
+    await ports.threads_ru?.(job("threads_ru", payload));
     // Same post and same source image, but a 9:16 render must never be served
     // to a feed target.
     expect(prepareCount).toBe(2);
@@ -239,7 +239,7 @@ describe("createPlatformPorts", () => {
     reset();
     const ports = createPlatformPorts(config);
     const payload = { text: "hi", media: [{ type: "IMAGE", fileId: "a", storyLocalPath: "/story/existing.mp4" }] };
-    await ports.telegram_stories?.publish(job("telegram_stories", payload));
+    await ports.telegram_stories?.(job("telegram_stories", payload));
     expect(storyRenderCount).toBe(0);
     expect(calls[0]?.payload.media).toEqual([
       { type: "IMAGE", fileId: "a", storyLocalPath: "/story/existing.mp4", localPath: "/prepared/a" },

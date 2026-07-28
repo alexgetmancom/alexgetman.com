@@ -150,6 +150,9 @@ describe("openBackendDb", () => {
     // Same reason, one migration later: 0031 adds a column to a table this
     // fixture keeps, and SQLite has no ADD COLUMN IF NOT EXISTS.
     fixture.exec("ALTER TABLE drafts DROP COLUMN threads_chain_approved");
+    fixture.exec("ALTER TABLE publish_jobs DROP COLUMN current_phase");
+    fixture.exec("ALTER TABLE post_targets DROP COLUMN confirmation_source");
+    fixture.exec("ALTER TABLE post_targets DROP COLUMN verified_at");
     fixture.close();
 
     const legacy = new Database(dbPath) as unknown as Parameters<typeof baselineDrizzleMigrations>[0];

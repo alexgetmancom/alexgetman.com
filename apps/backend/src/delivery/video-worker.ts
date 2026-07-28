@@ -189,6 +189,7 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
         externalId: result.id,
         externalUrl: result.url,
         preparedAt: new Date().toISOString(),
+        confirmationSource: "publish_response",
       });
     } else if (target.deliveryProvider === "zernio") {
       // Zernio accepts the public video at its publish time, so prepare is a
@@ -205,7 +206,11 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
   if (target.target === "youtube_shorts") {
     if (!target.externalId) throw new Error("YouTube upload has not completed yet.");
     if (!ownsVideoJob(backendDb, job)) return;
-    updateVideoTarget(backendDb.db, target.id, { status: "published", publishedAt: new Date().toISOString() });
+    updateVideoTarget(backendDb.db, target.id, {
+      status: "published",
+      publishedAt: new Date().toISOString(),
+      confirmationSource: target.confirmationSource ?? "publish_response",
+    });
   } else if (target.deliveryProvider === "zernio") {
     const accountId = target.providerAccountId;
     if (!accountId) throw new Error("Zernio Instagram account is missing");
@@ -222,6 +227,8 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
       externalId: result.externalId,
       externalUrl: result.url,
       publishedAt: new Date().toISOString(),
+      confirmationSource: result.externalId || result.url ? "provider_verify" : "idempotency_replay",
+      verifiedAt: result.externalId || result.url ? new Date().toISOString() : null,
     });
   } else {
     if (!target.externalId) throw new Error("Instagram upload has not completed yet.");
@@ -230,8 +237,10 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
     const result = await publishInstagramReel(config, target.externalId);
     if (!ownsVideoJob(backendDb, job)) return;
     let externalUrl = result.url;
+    let verifiedAt: string | null = null;
     try {
       externalUrl = (await verifyInstagramPublication(result.id, config)).url ?? externalUrl;
+      verifiedAt = new Date().toISOString();
     } catch {
       // The publish response already returned the media ID. Verification
       // failure is diagnostic and must not replay media_publish.
@@ -241,6 +250,8 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
       externalId: result.id,
       externalUrl,
       publishedAt: new Date().toISOString(),
+      confirmationSource: verifiedAt ? "provider_verify" : "publish_response",
+      verifiedAt,
     });
   }
   refreshVideoDraftStatus(backendDb, draft.id, config.VIDEO_MEDIA_RETENTION_HOURS);

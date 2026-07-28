@@ -57,34 +57,52 @@ export async function publishZernioInstagramReel(
         publishNow: true,
       }),
     });
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      return zernioPublishResult(await create());
-    } catch (error) {
-      const existingPostId = matchingDuplicatePostId(error, input.accountId);
-      if (existingPostId) {
-        // Zernio returns this conflict after an earlier request reached the
-        // provider but its response was lost or the durable job was retried.
-        try {
-          const existing = await requestJson<ZernioPost>(fetchImpl, api(`posts/${encodeURIComponent(existingPostId)}`), {
-            headers: { Authorization: `Bearer ${config.ZERNIO_API_KEY}` },
-          });
-          return zernioPublishResult(existing, existingPostId);
-        } catch {
-          // The conflict itself is authoritative proof that the exact post
-          // exists. The lookup only enriches the result with platform fields.
-          return { providerPostId: existingPostId, externalId: null, url: null };
-        }
-      }
-      if (!isAmbiguousTransportFailure(error)) throw error;
-      // The same request ID is Zernio's documented idempotency key. One
-      // immediate replay is a read/reconciliation operation in effect: it
-      // returns `existingPost` rather than creating another post.
-      if (attempt === 0) continue;
-      throw new AmbiguousPublicationError("zernio", error);
-    }
+  try {
+    return zernioPublishResult(await create());
+  } catch (error) {
+    const reconciled = await reconcileZernioFailure(config, input.accountId, error, fetchImpl);
+    if (reconciled) return reconciled;
+    if (!isAmbiguousTransportFailure(error)) throw error;
   }
-  throw new Error("Zernio publication loop exhausted unexpectedly");
+  // The same request ID makes this a safe replay: Zernio returns existingPost
+  // rather than creating another publication for the logical target.
+  try {
+    return zernioPublishResult(await create());
+  } catch (error) {
+    const reconciled = await reconcileZernioFailure(config, input.accountId, error, fetchImpl);
+    if (reconciled) return reconciled;
+    if (isAmbiguousTransportFailure(error)) throw new AmbiguousPublicationError("zernio", error);
+    throw error;
+  }
+}
+
+export async function verifyZernioPost(
+  config: BackendConfig,
+  providerPostId: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ providerPostId: string; externalId: string | null; url: string | null }> {
+  if (!config.ZERNIO_API_KEY) throw new Error("ZERNIO_API_KEY is missing");
+  const post = await requestJson<ZernioPost>(fetchImpl, api(`posts/${encodeURIComponent(providerPostId)}`), {
+    headers: { Authorization: `Bearer ${config.ZERNIO_API_KEY}` },
+  });
+  return zernioPublishResult(post, providerPostId);
+}
+
+async function reconcileZernioFailure(
+  config: BackendConfig,
+  accountId: string,
+  error: unknown,
+  fetchImpl: typeof fetch,
+): Promise<{ providerPostId: string; externalId: string | null; url: string | null } | null> {
+  const existingPostId = matchingDuplicatePostId(error, accountId);
+  if (!existingPostId) return null;
+  try {
+    return await verifyZernioPost(config, existingPostId, fetchImpl);
+  } catch {
+    // The exact-account conflict is authoritative evidence. The lookup only
+    // enriches it with the platform ID and URL, which may lag behind creation.
+    return { providerPostId: existingPostId, externalId: null, url: null };
+  }
 }
 
 function zernioPublishResult(

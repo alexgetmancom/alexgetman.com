@@ -54,6 +54,8 @@ export const postTargets = sqliteTable(
     error: text(),
     skipped: integer().notNull().default(0),
     publishedAt: text(),
+    confirmationSource: text(),
+    verifiedAt: text(),
     updatedAt: text().notNull(),
     rawJson: text(),
   },

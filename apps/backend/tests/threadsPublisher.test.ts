@@ -60,8 +60,9 @@ describe("publishToThreads", () => {
 
     expect(creations()[0]).toMatchObject({ media_type: "TEXT", text: "hello" });
     expect(result.ok).toBe(true);
-    // The canonical host changed; a stored threads.net link would 404 later.
-    expect(result.url).toBe("https://www.threads.com/@alex/post/abc");
+    // Permalink enrichment belongs to the adapter verification phase so the
+    // public mutation itself performs no duplicate GET.
+    expect(result.url).toBeNull();
   });
 
   it("attaches a single image to the first container rather than posting it separately", async () => {

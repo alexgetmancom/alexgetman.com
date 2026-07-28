@@ -121,23 +121,12 @@ export async function publishToThreads(
       return { partial: true, ids, error: String(error instanceof Error ? error.message : error), retryable: true };
     }
   }
-  let permalink: string | null = null;
-  if (ids[0]) {
-    try {
-      permalink =
-        (await callThreads(config, ids[0], { fields: "permalink" }, fetchImpl, "GET")).permalink?.replace("threads.net", "threads.com") ??
-        null;
-    } catch {
-      // The returned post ID is durable proof of publication. A permalink
-      // lookup failure must never repeat the public mutation.
-    }
-  }
   return {
     ok: ids.length > 0,
     id: ids[0] ?? null,
     ids,
-    url: permalink ?? null,
-    urls: permalink ? [permalink] : [],
+    url: null,
+    urls: [],
     partial: ids.length < parts.length,
   };
 }

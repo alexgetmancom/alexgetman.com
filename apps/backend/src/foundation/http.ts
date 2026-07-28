@@ -9,6 +9,13 @@ export class ExternalHttpError extends Error {
   }
 }
 
+/** A request was sent but no authoritative HTTP response was received. */
+export class ExternalTransportError extends Error {
+  constructor(message: string, cause?: unknown) {
+    super(message, { cause });
+  }
+}
+
 /** Reads Retry-After (seconds or HTTP-date) or X-RateLimit-Reset (unix seconds),
  * so a 429/503 retry waits exactly as long as the provider asked instead of
  * guessing with a fixed exponential backoff. */
@@ -75,8 +82,8 @@ export async function externalFetch(fetchImpl: typeof fetch, url: string, init: 
   try {
     return await fetchImpl(url, { ...init, signal });
   } catch (error) {
-    if (controller.signal.aborted) throw new Error(`${init.method ?? "GET"} ${safeUrl(url)} timed out after 30s`, { cause: error });
-    throw error;
+    if (controller.signal.aborted) throw new ExternalTransportError(`${init.method ?? "GET"} ${safeUrl(url)} timed out after 30s`, error);
+    throw new ExternalTransportError(`${init.method ?? "GET"} ${safeUrl(url)} failed before receiving an HTTP response`, error);
   } finally {
     clearTimeout(timeout);
   }

@@ -11,7 +11,7 @@ import { publishInstagramStory, verifyInstagramPublication } from "../social/ins
 import { payloadMedia } from "../social/payload.js";
 import { publishToTelegram } from "../social/telegram.js";
 import { publishToThreads, verifyThreadsPost } from "../social/threads.js";
-import { publishToX, verifyXPost } from "../social/x.js";
+import { publishToX } from "../social/x.js";
 import { generateStoryMedia } from "../story-media.js";
 
 type PreparedMedia = Awaited<ReturnType<typeof prepareMediaItems>>;
@@ -28,12 +28,8 @@ export function createPlatformPorts(config: BackendConfig, fetchImpl: typeof fet
   const storyMediaCache = new Map<string, Promise<ReturnType<typeof payloadMedia>>>();
   const enqueueMediaPreparation = createSerialQueue();
   const enqueueStoryPreparation = createSerialQueue();
-  const prepare = (
-    job: ClaimedPublishJob,
-    publisherConfig: BackendConfig,
-    publish: (payload: Record<string, unknown>) => Promise<PublishResult>,
-  ) =>
-    withPreparedMedia(job, publisherConfig, fetchImpl, publish, mediaCache, enqueueMediaPreparation, (job, media) => {
+  const prepare = (job: ClaimedPublishJob, publisherConfig: BackendConfig) =>
+    withPreparedMedia(job, publisherConfig, fetchImpl, mediaCache, enqueueMediaPreparation, (job, media) => {
       const key = storyMediaCacheKey(job, media);
       let rendered = storyMediaCache.get(key);
       if (!rendered) {
@@ -45,82 +41,82 @@ export function createPlatformPorts(config: BackendConfig, fetchImpl: typeof fet
         throw error;
       });
     });
-  const threadsEnConfig = { ...config, THREADS_ACCESS_TOKEN: config.THREADS_EN_ACCESS_TOKEN ?? config.THREADS_ACCESS_TOKEN };
-  const instagramEnConfig = {
-    ...config,
-    INSTAGRAM_ACCESS_TOKEN: config.INSTAGRAM_EN_ACCESS_TOKEN ?? config.INSTAGRAM_ACCESS_TOKEN,
-    INSTAGRAM_USER_ID: config.INSTAGRAM_EN_USER_ID ?? config.INSTAGRAM_USER_ID,
-  };
-  const instagramRuConfig = {
-    ...config,
-    INSTAGRAM_ACCESS_TOKEN: config.INSTAGRAM_RU_ACCESS_TOKEN ?? config.INSTAGRAM_ACCESS_TOKEN,
-    INSTAGRAM_USER_ID: config.INSTAGRAM_RU_USER_ID ?? config.INSTAGRAM_USER_ID,
+  const threadsEnConfig = platformConfig("threads_en", config);
+  const instagramEnConfig = platformConfig("instagram_stories", config);
+  const instagramRuConfig = platformConfig("instagram_stories_ru", config);
+  const targetConfigs: Record<string, BackendConfig> = {
+    telegram: config,
+    threads: config,
+    threads_ru: config,
+    threads_en: threadsEnConfig,
+    x: config,
+    twitter: config,
+    instagram_story: config,
+    instagram_stories: instagramEnConfig,
+    instagram_stories_ru: instagramRuConfig,
+    telegram_story: config,
+    telegram_stories: config,
   };
   const publishers: Record<string, DeliveryPort> = {
     // Every target that can use media goes through the same preparation step.
     telegram: (job) => publishToTelegram(job.payload, config, fetchImpl),
-    threads: (job) => prepare(job, config, (payload) => publishToThreads(payload, config, fetchImpl)),
-    threads_ru: (job) => prepare(job, config, (payload) => publishToThreads(payload, config, fetchImpl)),
-    threads_en: (job) => prepare(job, threadsEnConfig, (payload) => publishToThreads(payload, threadsEnConfig, fetchImpl, "threads_en")),
-    x: (job) => prepare(job, config, (payload) => publishToX(payload, config, fetchImpl)),
-    twitter: (job) => prepare(job, config, (payload) => publishToX(payload, config, fetchImpl)),
-    instagram_story: (job) => prepare(job, config, (payload) => publishInstagramStory(payload, config, fetchImpl)),
-    instagram_stories: (job) => prepare(job, instagramEnConfig, (payload) => publishInstagramStory(payload, instagramEnConfig, fetchImpl)),
-    instagram_stories_ru: (job) =>
-      prepare(job, instagramRuConfig, (payload) => publishInstagramStory(payload, instagramRuConfig, fetchImpl)),
+    threads: (job) => publishToThreads(job.payload, config, fetchImpl),
+    threads_ru: (job) => publishToThreads(job.payload, config, fetchImpl),
+    threads_en: (job) => publishToThreads(job.payload, threadsEnConfig, fetchImpl, "threads_en"),
+    x: (job) => publishToX(job.payload, config, fetchImpl),
+    twitter: (job) => publishToX(job.payload, config, fetchImpl),
+    instagram_story: (job) => publishInstagramStory(job.payload, config, fetchImpl),
+    instagram_stories: (job) => publishInstagramStory(job.payload, instagramEnConfig, fetchImpl),
+    instagram_stories_ru: (job) => publishInstagramStory(job.payload, instagramRuConfig, fetchImpl),
     telegram_story: (job) =>
-      prepare(job, config, async (payload) => (await import("../social/telegramStories.js")).publishTelegramStory(payload, config)),
+      import("../social/telegramStories.js").then(({ publishTelegramStory }) => publishTelegramStory(job.payload, config)),
     telegram_stories: (job) =>
-      prepare(job, config, async (payload) => (await import("../social/telegramStories.js")).publishTelegramStory(payload, config)),
+      import("../social/telegramStories.js").then(({ publishTelegramStory }) => publishTelegramStory(job.payload, config)),
   };
   return Object.fromEntries(
     Object.entries(publishers).map(([target, publish]) => [
       target,
       deliveryAdapter(publish, {
         validate: async () => validatePlatformTarget(target, config),
-        verify: async (_job, result) => verifyProviderResult(target, result, config, fetchImpl),
+        prepare: async (job) => (target === "telegram" ? job : prepare(job, targetConfigs[target] ?? config)),
+        verify: async (_job, result) => verifyPlatformPublication(target, result, targetConfigs[target] ?? config, fetchImpl),
       }),
     ]),
   ) as DeliveryPorts;
 }
 
-async function verifyProviderResult(
+export function platformConfig(target: string, config: BackendConfig): BackendConfig {
+  if (target === "threads_en") return { ...config, THREADS_ACCESS_TOKEN: config.THREADS_EN_ACCESS_TOKEN ?? config.THREADS_ACCESS_TOKEN };
+  if (target === "instagram_stories")
+    return {
+      ...config,
+      INSTAGRAM_ACCESS_TOKEN: config.INSTAGRAM_EN_ACCESS_TOKEN ?? config.INSTAGRAM_ACCESS_TOKEN,
+      INSTAGRAM_USER_ID: config.INSTAGRAM_EN_USER_ID ?? config.INSTAGRAM_USER_ID,
+    };
+  if (target === "instagram_stories_ru")
+    return {
+      ...config,
+      INSTAGRAM_ACCESS_TOKEN: config.INSTAGRAM_RU_ACCESS_TOKEN ?? config.INSTAGRAM_ACCESS_TOKEN,
+      INSTAGRAM_USER_ID: config.INSTAGRAM_RU_USER_ID ?? config.INSTAGRAM_USER_ID,
+    };
+  return config;
+}
+
+export async function verifyPlatformPublication(
   target: string,
   result: PublishResult,
   config: BackendConfig,
-  fetchImpl: typeof fetch,
+  fetchImpl: typeof fetch = fetch,
 ): Promise<PublishResult> {
   if (!result.ok || result.id == null) return result;
   const id = String(result.id);
   try {
     if (target === "threads" || target === "threads_ru" || target === "threads_en") {
-      const verified = await verifyThreadsPost(
-        id,
-        target === "threads_en"
-          ? { ...config, THREADS_ACCESS_TOKEN: config.THREADS_EN_ACCESS_TOKEN ?? config.THREADS_ACCESS_TOKEN }
-          : config,
-        fetchImpl,
-      );
+      const verified = await verifyThreadsPost(id, config, fetchImpl);
       return { ...result, url: result.url ?? verified.url, verification: { status: "verified", providerId: verified.id } };
     }
-    if (target === "x" || target === "twitter") {
-      const verified = await verifyXPost(id, config, fetchImpl);
-      return { ...result, verification: { status: "verified", providerId: verified.id } };
-    }
     if (target === "instagram_story" || target === "instagram_stories" || target === "instagram_stories_ru") {
-      const instagramConfig =
-        target === "instagram_stories_ru"
-          ? {
-              ...config,
-              INSTAGRAM_ACCESS_TOKEN: config.INSTAGRAM_RU_ACCESS_TOKEN ?? config.INSTAGRAM_ACCESS_TOKEN,
-              INSTAGRAM_USER_ID: config.INSTAGRAM_RU_USER_ID ?? config.INSTAGRAM_USER_ID,
-            }
-          : {
-              ...config,
-              INSTAGRAM_ACCESS_TOKEN: config.INSTAGRAM_EN_ACCESS_TOKEN ?? config.INSTAGRAM_ACCESS_TOKEN,
-              INSTAGRAM_USER_ID: config.INSTAGRAM_EN_USER_ID ?? config.INSTAGRAM_USER_ID,
-            };
-      const verified = await verifyInstagramPublication(id, instagramConfig, fetchImpl);
+      const verified = await verifyInstagramPublication(id, config, fetchImpl);
       return { ...result, url: result.url ?? verified.url, verification: { status: "verified", providerId: verified.id } };
     }
     return { ...result, verification: { status: "unsupported" } };
@@ -147,14 +143,13 @@ async function withPreparedMedia(
   job: ClaimedPublishJob,
   config: BackendConfig,
   fetchImpl: typeof fetch,
-  publish: (payload: Record<string, unknown>) => Promise<PublishResult>,
   mediaCache: Map<string, Promise<PreparedMedia>>,
   enqueue: <T>(prepare: () => Promise<T>) => Promise<T>,
   renderStory: (job: ClaimedPublishJob, media: ReturnType<typeof payloadMedia>) => Promise<ReturnType<typeof payloadMedia>>,
-): Promise<PublishResult> {
-  if (Array.isArray(job.payload._reconcile_ids)) return publish(job.payload);
+): Promise<ClaimedPublishJob> {
+  if (Array.isArray(job.payload._reconcile_ids)) return job;
   const media = payloadMedia(job.payload);
-  if (media.length === 0) return publish(job.payload);
+  if (media.length === 0) return job;
   // A Story is one vertical visual. Select the locale's first item before any
   // transformation: remaining album images belong only to feed targets and
   // must not consume Story-processing capacity. The Studio source is already
@@ -180,7 +175,7 @@ async function withPreparedMedia(
     mediaCache.delete(key);
     throw error;
   }
-  return publish({ ...job.payload, media: items, media_en: items });
+  return { ...job, payload: { ...job.payload, media: items, media_en: items } };
 }
 
 function isStoryTarget(target: string): boolean {

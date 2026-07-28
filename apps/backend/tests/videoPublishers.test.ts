@@ -119,6 +119,33 @@ describe("prepareYouTubeVideo", () => {
     }
   });
 
+  it("queries the resumable session after a lost upload response instead of creating another video", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "youtube-upload-reconcile-"));
+    try {
+      const file = path.join(dir, "clip.mp4");
+      fs.writeFileSync(file, Buffer.alloc(32, 4));
+      let sessionCalls = 0;
+      install((call) => {
+        if (call.url.includes("uploadType=resumable"))
+          return new Response("", { status: 200, headers: { location: "https://upload.googleapis.com/session/reconcile" } });
+        sessionCalls += 1;
+        if (sessionCalls === 1) throw new TypeError("connection closed");
+        expect(call.headers.get("content-range")).toBe("bytes */32");
+        return json({ id: "vid-reconciled" });
+      });
+
+      await expect(
+        prepareYouTubeVideo(config, file, { title: "Title", description: "Body", tags: [] }, "2026-08-01T10:00:00Z"),
+      ).resolves.toEqual({
+        id: "vid-reconciled",
+        url: "https://www.youtube.com/watch?v=vid-reconciled",
+      });
+      expect(recorded.filter((call) => call.url.includes("uploadType=resumable"))).toHaveLength(1);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("fails clearly when YouTube accepts the session but returns no upload location", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "youtube-upload-"));
     try {

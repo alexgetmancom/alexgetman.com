@@ -99,18 +99,18 @@ export function recoverStalePublishJobs(
       const lockedAt = job.lockedAt;
       if (!lockedAt) continue;
       const error = job.lastError || "worker_lost: publishing lock expired before completion";
-      // A dead worker cannot tell us whether it stopped before or after the
-      // provider accepted its public mutation. Never turn that uncertainty
-      // into an automatic duplicate.
+      const publicMutationMayHaveRun = job.currentPhase === "provider.publish";
+      const recoveredStatus = publicMutationMayHaveRun ? "verification_required" : "queued";
       deleteSupersededJobs(tx, job, job.jobId, jobPostKey(job));
       const updated = tx
         .update(publishJobs)
         .set({
-          status: "verification_required",
+          status: recoveredStatus,
           attemptCount: job.attemptCount + 1,
           lockedBy: null,
           lockedAt: null,
-          nextAttemptAt: null,
+          nextAttemptAt: publicMutationMayHaveRun ? null : now,
+          currentPhase: null,
           updatedAt: now,
           lastError: error,
         })
@@ -126,22 +126,23 @@ export function recoverStalePublishJobs(
         postKey,
         job.target,
         {
-          status: "verification_required",
+          status: recoveredStatus,
           error,
           skipped: 0,
           updatedAt: now,
-          rawJson: JSON.stringify({ job_id: job.jobId, recovered_stale_lock: true }),
+          rawJson: JSON.stringify({ job_id: job.jobId, recovered_stale_lock: true, phase: job.currentPhase }),
         },
         {
-          type: "publish.job.verification_required",
+          type: publicMutationMayHaveRun ? "publish.job.verification_required" : "publish.job.recovered",
           severity: "warn",
           message: error,
           details: {
             job_id: job.jobId,
             recovered_stale_lock: true,
-            error_class: "ambiguous",
+            error_class: publicMutationMayHaveRun ? "ambiguous" : "interrupted",
+            phase: job.currentPhase,
             attempt: job.attemptCount + 1,
-            next_attempt_at: null,
+            next_attempt_at: publicMutationMayHaveRun ? null : now,
           },
         },
       );
@@ -210,7 +211,14 @@ export function completePublishJob(
     settleJob(
       tx,
       jobId,
-      { status: normalized.status, lockedBy: null, lockedAt: null, lastError: normalized.error, updatedAt: now },
+      {
+        status: normalized.status,
+        currentPhase: null,
+        lockedBy: null,
+        lockedAt: null,
+        lastError: normalized.error,
+        updatedAt: now,
+      },
       postKey,
       job.target,
       {
@@ -223,6 +231,8 @@ export function completePublishJob(
         // The per-target delivery time, not the post's creation time: analytics
         // reads this column to scope and order published targets.
         publishedAt: published ? now : null,
+        confirmationSource: published ? publicationConfirmationSource(result) : null,
+        verifiedAt: published && verificationStatus(result) === "verified" ? now : null,
         updatedAt: now,
         rawJson: normalized.rawJson,
       },
@@ -273,6 +283,7 @@ function settleRetryableIds(
       jobId,
       {
         status,
+        currentPhase: null,
         attemptCount: attempt,
         nextAttemptAt,
         lockedBy: null,
@@ -317,7 +328,16 @@ export function failPublishJob(backendDb: BackendDb, config: BackendConfig, jobI
     settleJob(
       tx,
       jobId,
-      { status, attemptCount: attempt, nextAttemptAt: nextAttempt, lockedBy: null, lockedAt: null, lastError: errorText, updatedAt: now },
+      {
+        status,
+        currentPhase: null,
+        attemptCount: attempt,
+        nextAttemptAt: nextAttempt,
+        lockedBy: null,
+        lockedAt: null,
+        lastError: errorText,
+        updatedAt: now,
+      },
       postKey,
       job.target,
       {
@@ -362,6 +382,7 @@ export function requirePublishVerification(backendDb: BackendDb, jobId: number, 
         status: "verification_required",
         attemptCount: job.attemptCount + 1,
         nextAttemptAt: null,
+        currentPhase: null,
         lockedBy: null,
         lockedAt: null,
         lastError: errorText,
@@ -386,6 +407,20 @@ export function requirePublishVerification(backendDb: BackendDb, jobId: number, 
   });
   if (updated && job.postId != null) reconcilePublication(backendDb, job.postId);
   return updated;
+}
+
+function publicationConfirmationSource(result: PublishResult): string {
+  if (verificationStatus(result) === "verified") return "provider_verify";
+  const raw = result.raw && typeof result.raw === "object" ? (result.raw as Record<string, unknown>) : null;
+  if (raw && "existingPost" in raw) return "idempotency_replay";
+  return "publish_response";
+}
+
+function verificationStatus(result: PublishResult): string | null {
+  const verification = result.verification;
+  if (!verification || typeof verification !== "object") return null;
+  const status = (verification as Record<string, unknown>).status;
+  return typeof status === "string" ? status : null;
 }
 
 function durationSince(startedAt: string | null, finishedAt: string): number | null {

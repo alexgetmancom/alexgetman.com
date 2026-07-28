@@ -246,6 +246,13 @@
       "when": 1785975100000,
       "tag": "0034_channel_connection_targets",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "6",
+      "when": 1785975200000,
+      "tag": "0035_publication_reconciliation",
+      "breakpoints": true
     }
   ]
 }

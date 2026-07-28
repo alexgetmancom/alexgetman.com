@@ -90,6 +90,8 @@ async function publishChannelStory(
 
     const storyChannel = config.TELEGRAM_STORIES_CHANNEL?.replace(/^@/, "");
     if (!storyChannel) throw new Error("telegram_story_channel_missing");
+    // Preserve TypeScript's post-validation narrowing across the mutation
+    // closure; uploadPath may have been replaced by the compatibility render.
     const finalUploadPath = uploadPath;
     const story = await ambiguousExternalMutation("telegram_stories", () =>
       withTimeout(

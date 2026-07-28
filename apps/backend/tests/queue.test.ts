@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import type { openBackendDb } from "../src/db/client.js";
 import { type JsonObject, postEvents, postTargets, publishJobs } from "../src/db/schema.js";
 import { AmbiguousPublicationError } from "../src/delivery/ambiguous-publication.js";
+import { deliveryAdapter } from "../src/delivery/ports.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { HttpPublishError } from "../src/publishing/errors.js";
 import {
@@ -157,7 +158,7 @@ describe("publish queue", () => {
         .where(eq(postEvents.eventType, "publish.job.phase"))
         .all()
         .map((row) => JSON.parse(row.details ?? "{}") as Record<string, unknown>);
-      expect(phases.map((phase) => phase.phase)).toEqual(["validate", "provider.publish", "provider.verify"]);
+      expect(phases.map((phase) => phase.phase)).toEqual(["validate", "prepare", "provider.publish", "provider.verify"]);
       expect(phases.every((phase) => typeof phase.duration_ms === "number")).toBe(true);
       const target = backendDb.db
         .select({
@@ -318,7 +319,7 @@ describe("publish queue", () => {
       ).toEqual({ status: "failed", attemptCount: 2 });
     }));
 
-  it("releases the queue after a bounded provider timeout without automatic duplicate retry", () =>
+  it("keeps a whole-job timeout retryable because preparation may not have reached the provider", () =>
     withDb(async (backendDb) => {
       const id = enqueuePublishJob(backendDb, {
         messageId: 105,
@@ -326,7 +327,9 @@ describe("publish queue", () => {
         payload: { title: "Queued" },
       });
       await runPublishCycle(loadConfig({ PUBLISH_JOB_TIMEOUT_SECONDS: "1" }), backendDb, {
-        "slow-provider": async () => await new Promise<never>(() => undefined),
+        "slow-provider": deliveryAdapter(async () => ({ ok: true }), {
+          prepare: async () => await new Promise<never>(() => undefined),
+        }),
       });
       expect(
         backendDb.db
@@ -335,10 +338,44 @@ describe("publish queue", () => {
           .where(eq(publishJobs.jobId, id))
           .get(),
       ).toEqual({
-        status: "verification_required",
+        status: "failed",
         attemptCount: 1,
-        lastError:
-          "verification_required: slow-provider may have published before confirmation was lost: delivery_execution_timeout: slow-provider exceeded 1s",
+        lastError: "delivery_execution_timeout: slow-provider exceeded 1s during prepare",
+      });
+    }));
+
+  it("fences delayed preparation from publishing after its worker timed out", () =>
+    withDb(async (backendDb) => {
+      const id = enqueuePublishJob(backendDb, {
+        messageId: 1051,
+        target: "slow-prepare",
+        payload: { title: "Queued" },
+      });
+      let releasePreparation: (() => void) | undefined;
+      let publishCalls = 0;
+      const preparation = new Promise<void>((resolve) => {
+        releasePreparation = resolve;
+      });
+      await runPublishCycle(loadConfig({ PUBLISH_JOB_TIMEOUT_SECONDS: "1" }), backendDb, {
+        "slow-prepare": deliveryAdapter(
+          async () => {
+            publishCalls += 1;
+            return { ok: true };
+          },
+          {
+            prepare: async (job) => {
+              await preparation;
+              return job;
+            },
+          },
+        ),
+      });
+      releasePreparation?.();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(publishCalls).toBe(0);
+      expect(backendDb.db.select({ status: publishJobs.status }).from(publishJobs).where(eq(publishJobs.jobId, id)).get()).toEqual({
+        status: "failed",
       });
     }));
 
@@ -351,7 +388,13 @@ describe("publish queue", () => {
       });
       backendDb.db
         .update(publishJobs)
-        .set({ status: "publishing", lockedBy: "old-worker", lockedAt: "2000-01-01T00:00:00.000Z", updatedAt: "2000-01-01T00:00:00.000Z" })
+        .set({
+          status: "publishing",
+          currentPhase: "provider.publish",
+          lockedBy: "old-worker",
+          lockedAt: "2000-01-01T00:00:00.000Z",
+          updatedAt: "2000-01-01T00:00:00.000Z",
+        })
         .where(eq(publishJobs.jobId, id))
         .run();
       expect(recoverStalePublishJobs(backendDb, loadConfig({ PUBLISH_BACKOFF_BASE_SECONDS: "1" }))).toBe(1);
@@ -368,6 +411,35 @@ describe("publish queue", () => {
       });
     }));
 
+  it("requeues a stale preparation lock because no public mutation started", () =>
+    withDb((backendDb) => {
+      const id = enqueuePublishJob(backendDb, {
+        messageId: 1032,
+        target: "test_platform",
+        payload: { title: "Queued" },
+      });
+      backendDb.db
+        .update(publishJobs)
+        .set({
+          status: "publishing",
+          currentPhase: "prepare",
+          lockedBy: "old-worker",
+          lockedAt: "2000-01-01T00:00:00.000Z",
+          updatedAt: "2000-01-01T00:00:00.000Z",
+        })
+        .where(eq(publishJobs.jobId, id))
+        .run();
+
+      expect(recoverStalePublishJobs(backendDb, loadConfig({}))).toBe(1);
+      expect(
+        backendDb.db
+          .select({ status: publishJobs.status, currentPhase: publishJobs.currentPhase })
+          .from(publishJobs)
+          .where(eq(publishJobs.jobId, id))
+          .get(),
+      ).toEqual({ status: "queued", currentPhase: null });
+    }));
+
   it("keeps stale lock recovery available when the delivery loop is still awaiting a provider", () =>
     withDb((backendDb) => {
       const id = enqueuePublishJob(backendDb, {
@@ -379,6 +451,7 @@ describe("publish queue", () => {
         .update(publishJobs)
         .set({
           status: "publishing",
+          currentPhase: "provider.publish",
           lockedBy: "hung-provider",
           lockedAt: "2000-01-01T00:00:00.000Z",
           updatedAt: "2000-01-01T00:00:00.000Z",
@@ -401,7 +474,11 @@ describe("publish queue", () => {
       });
       const [claimed] = claimDuePublishJobs(backendDb, 1, "old-worker");
       if (!claimed) throw new Error("expected claimed job");
-      backendDb.db.update(publishJobs).set({ lockedAt: "2000-01-01T00:00:00.000Z" }).where(eq(publishJobs.jobId, id)).run();
+      backendDb.db
+        .update(publishJobs)
+        .set({ currentPhase: "provider.publish", lockedAt: "2000-01-01T00:00:00.000Z" })
+        .where(eq(publishJobs.jobId, id))
+        .run();
       recoverStalePublishJobs(backendDb, loadConfig({}));
 
       completePublishJob(backendDb, loadConfig({}), id, { ok: true, id: "late" }, claimed.lockId);
