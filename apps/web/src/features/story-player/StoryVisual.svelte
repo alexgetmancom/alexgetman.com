@@ -284,7 +284,10 @@ function onImageError(event: Event): void {
     height: auto;
     max-height: 100%;
     aspect-ratio: 9 / 16;
-    border: 1px solid var(--border-hover);
+    /* Neutral hairline. --border-hover is crimson-tinted, so the stage wore a
+       red outline on both themes — glaring on the light one, and it framed the
+       media as if it were an alert. */
+    border: 1px solid var(--border);
     border-radius: 10px;
     /* The base layer is opaque on purpose. It used to be rgba(0, 0, 0, 0.58),
      * which looked black only because the page behind it was black; on the
@@ -436,10 +439,12 @@ function onImageError(event: Event): void {
     color: #f3f6fa;
   }
 
+  /* Sound on is a lighter chip, not a red one. Everything over the stage uses
+     the un-themed --overlay-* palette; crimson here read as a warning. */
   .audio-chip.is-on {
-    border-color: rgba(220, 38, 38, 0.45);
-    color: var(--accent);
-    background: rgba(220, 38, 38, 0.06);
+    border-color: var(--overlay-border);
+    color: var(--overlay-text-strong);
+    background: var(--overlay-fill);
   }
 
   /* Мобильные элементы: на десктопе скрыты. */

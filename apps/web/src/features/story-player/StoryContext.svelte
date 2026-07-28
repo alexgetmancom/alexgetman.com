@@ -188,10 +188,12 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
     display: flex;
     align-items: center;
     gap: 0.45rem;
-    margin-top: -0.2rem;
-    margin-bottom: 1rem;
+    margin-top: -0.1rem;
+    /* The gap between the headline block and the body is the one place the
+       hierarchy is allowed to be loud, now that the type sizes are not. */
+    margin-bottom: 1.5rem;
     font-family: var(--font-sans);
-    font-size: 0.8rem;
+    font-size: 0.76rem;
     color: var(--text-muted);
     flex-shrink: 0;
   }
@@ -213,9 +215,13 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
     margin: 0 0 0.62rem;
     color: var(--text-header);
     letter-spacing: -0.015em;
-    line-height: 1.14;
-    font-size: clamp(1.8rem, 2.3vw, 2.5rem);
-    font-weight: bold;
+    line-height: 1.16;
+    /* Down from clamp(1.8rem, 2.3vw, 2.5rem). The panel is a reading column,
+       not a poster: at the old size a three-word headline filled two lines and
+       pushed the body out of view. Hierarchy now comes from weight and the
+       space around the block, not from raw size. */
+    font-size: clamp(1.45rem, 1.65vw, 1.9rem);
+    font-weight: 800;
   }
 
   /* Плавная смена поста (.is-updating ставит корень на время перерисовки). */
@@ -243,8 +249,12 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
   .story-copy {
     display: block;
     color: var(--text-main);
-    font-size: clamp(1.16rem, 1.28vw, 1.48rem);
-    line-height: 1.32;
+    /* Body copy sized for reading, not for a slide. It was up at 1.16-1.48rem
+       with 1.32 leading — display proportions applied to running text, which
+       is why a two-sentence post looked like a pull quote. Comfortable body
+       size with generous leading is what carries a text column. */
+    font-size: clamp(0.95rem, 0.95vw, 1.05rem);
+    line-height: 1.62;
     flex-grow: 1;
     overflow-y: auto;
     position: relative;
@@ -266,9 +276,15 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
     border-radius: 999px;
   }
 
+  /* One measure for the column: ~68 characters is the usual comfortable line,
+     and the paragraph gap is tied to the leading rather than a round number. */
   .story-copy p {
-    margin: 0 0 1.1rem 0;
-    max-width: 52ch;
+    margin: 0 0 1.05em 0;
+    max-width: 68ch;
+  }
+
+  .story-copy p:last-child {
+    margin-bottom: 0;
   }
 
   /* Заголовок — h1 внутри панели: вернуть его отступ поверх правила выше. */
@@ -462,8 +478,8 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
       overflow-wrap: anywhere;
       word-break: break-word;
       padding-right: 0;
-      font-size: 1.02rem;
-      line-height: 1.42;
+      font-size: 1rem;
+      line-height: 1.6;
     }
 
     /* Кнопки скрыты на мобильном (см. display:none выше), но геометрия

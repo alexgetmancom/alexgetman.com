@@ -73,7 +73,9 @@ let {
     align-items: center;
     gap: 0.32rem;
     padding: 0.38rem 0.32rem;
-    border: 1px solid var(--accent);
+    /* Neutral, like every other frame in the rail. This panel is chrome, not
+       content — an accent outline made it compete with the story cards. */
+    border: 1px solid var(--border);
     border-right: 0;
     border-radius: 8px 0 0 8px;
     background: var(--player-surface);
@@ -149,8 +151,8 @@ let {
   .rail-avatar-menu__button:hover,
   .feed-mode-menu__button:hover,
   .feed-mode-menu__button.is-active {
-    border-color: var(--accent);
-    background: var(--accent-glow);
+    border-color: var(--player-active-border);
+    background: var(--scrim-soft);
   }
 
   .rail-avatar-menu__panel,
@@ -244,7 +246,7 @@ let {
       justify-content: flex-start;
       margin: 0 0 0.55rem;
       padding: 0.42rem;
-      border: 1px solid rgba(220, 38, 38, 0.35);
+      border: 1px solid var(--border);
       border-radius: 10px;
     }
 

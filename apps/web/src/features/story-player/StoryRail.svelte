@@ -38,6 +38,21 @@ const cards = new Map<number, HTMLElement>();
 /* includes() по массиву на каждую карточку давал O(n²) на перерисовку ленты. */
 const visible = $derived(new Set(visibleIndexes));
 
+/* How far a card sits from the active one, counted in cards the reader can
+   actually see. Filtered-out cards are display:none, so post index distance
+   would lie: with a mode filter on, index+1 can be three slots down the strip.
+   The rail is a scroll affordance — the neighbours have to stay legible so it
+   is obvious there is more above and below — so the dimming is a falloff over
+   this distance, not one flat "inactive" state. */
+const positions = $derived(new Map(visibleIndexes.map((postIndex, slot) => [postIndex, slot])));
+
+function distanceFromActive(index: number): number {
+  const from = positions.get(active);
+  const to = positions.get(index);
+  if (from === undefined || to === undefined) return 9;
+  return Math.abs(to - from);
+}
+
 /* Лента намеренно не прокручивается пользователем (overflow: hidden, скрытые
    скроллбары) — её позицию задаёт только активная карточка. Побочный эффект:
    браузер не анимирует scrollTo({behavior:"smooth"}) на таком контейнере и
@@ -97,6 +112,7 @@ $effect(() => {
       class:is-active={index === active}
       class:rail-card--no-image={!post.image}
       class:is-filtered-out={!visible.has(index)}
+      data-distance={Math.min(3, distanceFromActive(index))}
       {@attach (node) => {
         cards.set(index, node);
         return () => cards.delete(index);
@@ -211,27 +227,41 @@ $effect(() => {
       box-shadow 0.3s ease;
   }
 
-  .rail-card:not(.is-active) {
-    filter: grayscale(100%);
-    opacity: 0.38;
+  /* Neighbours stay readable. The rail used to drop every inactive card to
+     opacity 0.38 with full grayscale, which erased the titles either side of
+     the active one — the strip stopped looking scrollable at all. Now the fade
+     runs over the two nearest neighbours and only bottoms out beyond them, so
+     "there is a story above and below this one" is visible at a glance. */
+  .rail-card[data-distance="1"] {
+    opacity: 0.86;
+    filter: grayscale(25%);
+  }
+
+  .rail-card[data-distance="2"] {
+    opacity: 0.66;
+    filter: grayscale(55%);
+  }
+
+  .rail-card[data-distance="3"] {
+    opacity: 0.44;
+    filter: grayscale(85%);
   }
 
   .rail-card:not(.is-active):hover {
-    filter: grayscale(35%);
-    opacity: 0.75;
-    border-color: var(--border-hover);
+    filter: none;
+    opacity: 1;
+    border-color: var(--player-active-border);
   }
 
   .rail-card.is-active {
-    border-color: var(--accent);
-    box-shadow:
-      0 0 0 1px var(--accent-glow),
-      0 18px 42px rgba(0, 0, 0, 0.32);
+    /* Neutral hairline, not the brand crimson: a red frame on a thumbnail
+       reads as an error, and with the neighbours now legible the active card
+       no longer needs to shout. No tint either — a crimson wash at 4-7% is
+       invisible on a black card and turns the same card pink on a white one. */
+    border-color: var(--player-active-border);
+    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.32);
     filter: none;
     opacity: 1;
-    /* No tint. A crimson wash at 4-7% is invisible on a black card and turns
-       the same card pink on a white one; the accent border and the removed
-       grayscale already say "active" on both themes. */
     background: var(--player-surface);
   }
 
@@ -277,21 +307,16 @@ $effect(() => {
     font-family: var(--font-mono);
     font-weight: 800;
     text-align: center;
-    background:
-      radial-gradient(circle at 35% 18%, rgba(240, 68, 101, 0.16), transparent 34%),
-      linear-gradient(135deg, rgba(240, 68, 101, 0.1), rgba(255, 255, 255, 0.03));
+    background: var(--scrim-soft);
   }
 
+  /* Desktop keeps the shade empty — it only earns its place over the tablet
+     layout, where the title sits on top of the thumbnail. */
   .rail-card__shade {
     position: absolute;
     inset: 0;
     z-index: var(--z-base);
-    background: linear-gradient(90deg, rgba(0, 0, 0, 0), rgba(240, 68, 101, 0.035));
     pointer-events: none;
-  }
-
-  .rail-card.is-active .rail-card__shade {
-    background: none;
   }
 
   .rail-card__text {
@@ -402,7 +427,7 @@ $effect(() => {
 
     .rail-card.is-active {
       padding-left: 0;
-      border-color: rgba(220, 38, 38, 0.5);
+      border-color: var(--player-active-border);
     }
 
     .rail-card.is-active .rail-card__media {

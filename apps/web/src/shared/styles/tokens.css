@@ -107,16 +107,22 @@ html[data-theme="light"] {
  * `--player-surface` is the panel/card fill and `--player-backdrop` is what
  * sits behind the rail. The rail dims inactive cards with opacity, which fades
  * them toward whatever is behind — so the backdrop has to be a real colour on
- * both themes, not transparency. */
+ * both themes, not transparency.
+ *
+ * `--player-active-border` marks the card the stage is currently showing. It is
+ * a neutral high-contrast hairline, not the brand crimson: the rail is a strip
+ * of thumbnails, and a red frame around one of them reads as an error state. */
 :root,
 html[data-theme="dark"] {
   --player-surface: #050505;
   --player-backdrop: #050505;
+  --player-active-border: rgba(243, 246, 250, 0.42);
 }
 
 html[data-theme="light"] {
   --player-surface: #ffffff;
   --player-backdrop: #eef1f5;
+  --player-active-border: rgba(17, 24, 39, 0.38);
 }
 
 /* The stage is the exception: a media viewer stays dark in both themes, the way
