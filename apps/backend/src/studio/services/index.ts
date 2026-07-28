@@ -33,7 +33,7 @@ export function studioServices(backendDb: BackendDb, config: BackendConfig) {
     queue: queueService(backendDb, config),
     notifications: notificationService(backendDb, config),
     analytics: analyticsService(backendDb, config),
-    capabilities: studioCapabilityService(config),
+    capabilities: studioCapabilityService(config, backendDb),
     settings: settingsService(backendDb),
     dashboard: (actorId: StudioActorId, locale: StudioLocale) => studioDashboard(backendDb, config, actorId, locale),
   };

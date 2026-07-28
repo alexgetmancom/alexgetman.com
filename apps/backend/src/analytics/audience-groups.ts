@@ -17,6 +17,7 @@ const AUDIENCE_GROUPS: Record<string, AudienceGroup> = {
 export function audienceGroup(platform: string): AudienceGroup | null {
   return (
     AUDIENCE_GROUPS[platform] ??
+    (platform.startsWith("threads_") ? "text" : null) ??
     (platform.startsWith("youtube_") || platform.startsWith("instagram_") || platform.startsWith("tiktok_") ? "video" : null)
   );
 }

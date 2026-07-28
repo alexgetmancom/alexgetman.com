@@ -2,6 +2,7 @@ import { bootstrapConfiguredChannels } from "../../channels/registry.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { log } from "../../foundation/logger.js";
+import { evaluateAudienceMilestones } from "../audience-milestones.js";
 import { canSync } from "../snapshots/creator-store.js";
 import { syncCommunityProfiles, syncInstagramProfile, syncXProfile, syncYouTubeProfile, syncZernioChannelProfile } from "./profile-sync.js";
 import { runVideoMetricSchedule } from "./video-metrics.js";
@@ -49,6 +50,7 @@ export async function runAnalyticsCycle(config: BackendConfig, backendDb: Backen
   ];
   if (community.some((source) => canSync(backendDb, source, profileInterval)))
     profiles += await step("community", () => syncCommunityProfiles(config, backendDb, fetchImpl));
+  evaluateAudienceMilestones(backendDb);
   let metrics = 0;
   if (config.studio.modules.video_posting)
     await step("video_metrics", async () => {

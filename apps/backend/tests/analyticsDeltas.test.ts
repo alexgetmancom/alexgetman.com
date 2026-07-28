@@ -1,10 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
 import { studioAudiencePlatforms } from "../src/analytics/audience-groups.js";
+import { evaluateAudienceMilestones } from "../src/analytics/audience-milestones.js";
 import { audienceGrowthByPlatform, youtubeChannelViewDeltaSince } from "../src/analytics/metric-deltas.js";
 import { creatorDashboard } from "../src/analytics/reports/dashboard.js";
 import { studioAnalyticsDashboard } from "../src/analytics/reports/studio-dashboard.js";
 import { recordProfileSnapshot } from "../src/analytics/snapshots/creator-store.js";
+import { registerChannel } from "../src/channels/registry.js";
 import { creatorProfileSnapshots, creatorProfiles, metricSamples, postEvents, videoMetricSnapshots } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { insertPublishedVideo } from "./helpers/analytics.js";
@@ -211,28 +213,48 @@ describe("creator analytics deltas", () => {
     });
   });
 
-  it("counts text and video follower totals as two separate milestones", async () => {
+  it("baselines new channels and evaluates channel, language, group and project milestones after the cycle", async () => {
     await withDb(async (backendDb) => {
       const config = loadConfig({});
-      config.studio.modules.text_posting = true;
-      config.studio.modules.video_posting = true;
-      config.studio.modules.youtube = true;
-      // A video platform already past the threshold must not push the text
-      // total over it, and vice versa.
+      registerChannel(backendDb, { platform: "youtube", locale: "ru", provider: "native", label: "YouTube RU" });
+      registerChannel(backendDb, {
+        platform: "telegram",
+        locale: "ru",
+        provider: "native",
+        targetId: "telegram",
+        label: "Telegram RU",
+      });
       recordProfileSnapshot(backendDb, {
-        platform: "youtube",
+        platform: "youtube_ru",
         account: "channel",
         source: "test",
         audiencePlatforms: studioAudiencePlatforms(config, "video"),
-        metrics: { subscriberCount: 400 },
+        metrics: { subscriberCount: 493 },
       });
       recordProfileSnapshot(backendDb, {
         platform: "telegram",
         account: "channel",
         source: "test",
         audiencePlatforms: studioAudiencePlatforms(config, "text"),
-        metrics: { followersCount: 120 },
+        metrics: { followersCount: 0 },
       });
+      expect(evaluateAudienceMilestones(backendDb)).toBe(0);
+
+      recordProfileSnapshot(backendDb, {
+        platform: "youtube_ru",
+        account: "channel",
+        source: "test",
+        audiencePlatforms: studioAudiencePlatforms(config, "video"),
+        metrics: { subscriberCount: 500 },
+      });
+      recordProfileSnapshot(backendDb, {
+        platform: "telegram",
+        account: "channel",
+        source: "test",
+        audiencePlatforms: studioAudiencePlatforms(config, "text"),
+        metrics: { followersCount: 100 },
+      });
+      expect(evaluateAudienceMilestones(backendDb)).toBe(6);
 
       const milestones = backendDb.db
         .select({ message: postEvents.message })
@@ -240,10 +262,23 @@ describe("creator analytics deltas", () => {
         .where(eq(postEvents.eventType, "analytics.milestone.reached"))
         .all()
         .map((row) => row.message);
-      expect(milestones).toContain("🏆 Видео-площадки: 250 подписчиков!");
-      expect(milestones).toContain("🏆 Текстовые площадки: 100 подписчиков!");
-      // 400 + 120 would have crossed 500 under one combined total.
-      expect(milestones.some((message) => message.includes("500"))).toBe(false);
+      expect(milestones).toContain("🎉 YouTube RU: 500 подписчиков!");
+      expect(milestones).toContain("🏆 🇷🇺 Видео RU-каналы: 500 подписчиков!");
+      expect(milestones).toContain("🎉 Telegram RU: 100 подписчиков!");
+      expect(milestones).toContain("🏆 🇷🇺 Текстовые RU-каналы: 100 подписчиков!");
+      expect(milestones).toContain("🏆 🇷🇺 Все RU-каналы: 500 подписчиков!");
+      expect(milestones).toContain("🏆 Все площадки: 500 подписчиков!");
+      expect(evaluateAudienceMilestones(backendDb)).toBe(0);
+
+      registerChannel(backendDb, { platform: "instagram", locale: "en", provider: "native", label: "Instagram EN" });
+      recordProfileSnapshot(backendDb, {
+        platform: "instagram_en",
+        account: "new-channel",
+        source: "test",
+        audiencePlatforms: studioAudiencePlatforms(config, "video"),
+        metrics: { followersCount: 600 },
+      });
+      expect(evaluateAudienceMilestones(backendDb)).toBe(0);
     });
   });
 });

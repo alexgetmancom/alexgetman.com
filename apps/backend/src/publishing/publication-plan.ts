@@ -14,6 +14,7 @@ export function createPublicationPlan(
   postId: number,
   schedule: PublicationSchedule,
   now: string,
+  availableTargets?: ReadonlySet<string>,
 ) {
   const messageId = Number(draft.channel_message_id ?? postId);
   const postKey = `post:${postId}`;
@@ -22,7 +23,12 @@ export function createPublicationPlan(
   const mediaEn = parsedMediaEn.length > 0 ? parsedMediaEn : mediaRu;
   const entitiesRu = parseArrayValue(draft.text_ru_entities_json);
   const entitiesEn = parseArrayValue(draft.text_en_entities_json);
-  const targets = parseTargets(draft.targets_json);
+  const targets = Object.fromEntries(
+    Object.entries(parseTargets(draft.targets_json)).map(([target, enabled]) => [
+      target,
+      enabled && (!availableTargets || availableTargets.has(target)),
+    ]),
+  );
   const textRu = String(draft.text_ru ?? "");
   const textEn = String(draft.text_en_approved ?? draft.text_en_machine ?? draft.text_ru ?? "");
   const slugRu = slugify(firstLine(textRu), postId);

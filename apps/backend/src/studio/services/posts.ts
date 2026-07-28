@@ -1,5 +1,6 @@
 import { desc, eq, inArray, or } from "drizzle-orm";
 import { PRESETS, presetName, TARGETS, targetLocale } from "../../botTargets.js";
+import { effectivePostTargets, registeredPostTargetIds } from "../../channels/registry.js";
 import { listStudioMediaAssets, mediaItemsFromAssets, requireStudioMediaAssets } from "../../content/assets.js";
 import { createDraftFromMessage, requireDraft } from "../../content/drafts.js";
 import type { DraftMessage } from "../../content/message.js";
@@ -52,13 +53,17 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
         .all();
     },
     validate(actorId: number, draftId: number) {
-      return publicationPreflight(requireOwnedDraft(backendDb, config, actorId, draftId));
+      const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
+      return publicationPreflight({
+        ...draft,
+        targets_json: JSON.stringify(effectivePostTargets(backendDb, parseTargets(draft.targets_json))),
+      });
     },
     preview(actorId: number, draftId: number) {
       const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
       const ruMedia = draftMedia(draft, "ru");
       const enMedia = draftMedia(draft, "en");
-      const targets = parseTargets(draft.targets_json);
+      const targets = effectivePostTargets(backendDb, parseTargets(draft.targets_json));
       return {
         id: draft.id,
         status: draft.status,
@@ -149,7 +154,7 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
           kind: "post.ru",
           publishAt: new Date(scheduled.scheduled_at),
           title,
-          targets: localeTargets(draft.targets_json, "ru"),
+          targets: localeTargets(backendDb, draft.targets_json, "ru"),
           preference,
         });
       if (scheduled.scheduled_en_at)
@@ -159,14 +164,14 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
           kind: "post.en",
           publishAt: new Date(scheduled.scheduled_en_at),
           title,
-          targets: localeTargets(draft.targets_json, "en"),
+          targets: localeTargets(backendDb, draft.targets_json, "en"),
           preference,
         });
       return postId;
     },
     hasLocaleTargets(actorId: number, draftId: number, locale: "ru" | "en"): boolean {
       const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
-      return hasLocaleTarget(parseTargets(draft.targets_json), locale);
+      return hasLocaleTarget(effectivePostTargets(backendDb, parseTargets(draft.targets_json)), locale);
     },
     /** Resolves a slot-button clock (`HH:MM` MSK) to its next occurrence. */
     slotTime(clock: string): Date {
@@ -212,6 +217,8 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
     toggleTarget(actorId: number, draftId: number, target: string): void {
       const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
       if (!TARGETS.some(([id]) => id === target)) throw new StudioError("err.unknown-target");
+      const registered = registeredPostTargetIds(backendDb);
+      if (registered.size && !registered.has(target)) throw new StudioError("err.unknown-target");
       const targets = parseTargets(draft.targets_json);
       targets[target] = !targets[target];
       saveTargets(backendDb, draftId, targets);
@@ -221,7 +228,7 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       const targets = parseTargets(draft.targets_json);
       const current = presetName(targets);
       const next = current === "full" ? "ru" : current === "ru" ? "en" : current === "en" ? "tg" : "full";
-      const preset = PRESETS[next];
+      const preset = effectivePostTargets(backendDb, PRESETS[next] ?? {});
       if (!preset) throw new StudioError("err.post-mode");
       saveTargets(backendDb, draftId, preset);
       return next;
@@ -294,8 +301,8 @@ function workspaceNotificationPreference(backendDb: BackendDb, config: BackendCo
   };
 }
 
-function localeTargets(json: string, locale: "ru" | "en"): string[] {
-  return Object.entries(parseTargets(json))
+function localeTargets(backendDb: BackendDb, json: string, locale: "ru" | "en"): string[] {
+  return Object.entries(effectivePostTargets(backendDb, parseTargets(json)))
     .filter(([target, enabled]) => enabled && targetLocale(target) === locale)
     .map(([target]) => target);
 }

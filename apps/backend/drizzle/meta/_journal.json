@@ -239,6 +239,13 @@
       "when": 1785975000000,
       "tag": "0033_channel_connections",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "6",
+      "when": 1785975100000,
+      "tag": "0034_channel_connection_targets",
+      "breakpoints": true
     }
   ]
 }

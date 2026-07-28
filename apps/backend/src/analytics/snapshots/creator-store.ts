@@ -1,7 +1,6 @@
 import { eq } from "drizzle-orm";
 import type { BackendDb } from "../../db/client.js";
-import { alertDedup, analyticsSync, creatorProfileSnapshots, creatorProfiles, postEvents, socialComments } from "../../db/schema.js";
-import { type AudienceGroup, audienceGroup } from "../audience-groups.js";
+import { analyticsSync, creatorProfileSnapshots, creatorProfiles, socialComments } from "../../db/schema.js";
 
 const DAILY_SYNC_MS = 24 * 60 * 60_000;
 
@@ -34,58 +33,6 @@ function upsertProfile(backendDb: BackendDb, platform: string, data: Record<stri
     .run();
 }
 
-const FOLLOWER_MILESTONES = [100, 250, 500, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10_000];
-
-function followerCount(data: Record<string, unknown> | undefined): number {
-  return metricNumber(data?.subscriberCount ?? data?.followersCount);
-}
-
-function recordMilestone(backendDb: BackendDb, scope: string, threshold: number, message: string, target: string): void {
-  const key = `analytics:milestone:${scope}:${threshold}`;
-  if (backendDb.db.select().from(alertDedup).where(eq(alertDedup.alertKey, key)).get()) return;
-  const now = new Date().toISOString();
-  backendDb.db.insert(alertDedup).values({ alertKey: key, lastSentAt: now, suppressedCount: 0 }).run();
-  backendDb.db
-    .insert(postEvents)
-    .values({ eventType: "analytics.milestone.reached", severity: "info", target, message, createdAt: now })
-    .run();
-}
-
-const GROUP_LABEL: Record<AudienceGroup, string> = { text: "Текстовые площадки", video: "Видео-площадки" };
-
-function recordFollowerMilestones(
-  backendDb: BackendDb,
-  platform: string,
-  next: Record<string, unknown>,
-  audiencePlatforms: readonly string[],
-): void {
-  const previous = backendDb.db.select().from(creatorProfiles).where(eq(creatorProfiles.platform, platform)).get();
-  const before = followerCount(previous?.dataJson);
-  const after = followerCount(next);
-  if (after <= before) return;
-  const platformLabel = platform === "youtube" ? "YouTube" : platform === "instagram" ? "Instagram" : platform;
-  for (const threshold of FOLLOWER_MILESTONES)
-    if (before < threshold && after >= threshold)
-      recordMilestone(backendDb, platform, threshold, `🎉 ${platformLabel}: ${threshold} подписчиков!`, platform);
-  // Text and video audiences are counted as two separate totals. Narrowing the
-  // caller's list to this platform's own group keeps a mismatched list harmless
-  // instead of mixing a Shorts audience into the written-feed total.
-  const group = audienceGroup(platform);
-  if (!group) return;
-  const platforms = new Set(audiencePlatforms.filter((item) => audienceGroup(item) === group));
-  if (!platforms.has(platform)) return;
-  const totalBefore = backendDb.db
-    .select()
-    .from(creatorProfiles)
-    .all()
-    .filter((row) => platforms.has(row.platform))
-    .reduce((sum, row) => sum + followerCount(row.dataJson), 0);
-  const totalAfter = totalBefore - before + after;
-  for (const threshold of FOLLOWER_MILESTONES)
-    if (totalBefore < threshold && totalAfter >= threshold)
-      recordMilestone(backendDb, `total_${group}`, threshold, `🏆 ${GROUP_LABEL[group]}: ${threshold} подписчиков!`, "audience");
-}
-
 /** Saves the current profile projection and an observation bucket. Most
  * platforms retain one durable daily sample; YouTube additionally retains an
  * hourly bucket so its live channel-view delta can cover the last 24 hours. */
@@ -96,9 +43,8 @@ export function recordProfileSnapshot(
     account: string;
     metrics: Record<string, unknown>;
     source: string;
-    /** Studio-owned platforms of this platform's own audience group (see
-     * studioAudiencePlatforms). Required: a sync that omitted it silently lost
-     * its group total, because the platform must appear in its own group set. */
+    /** Retained in the collector contract for compatibility. Milestone grouping
+     * now comes from the durable channel registry after the complete cycle. */
     audiencePlatforms: readonly string[];
     sampledAt?: Date;
     /** "hour" is intentionally used only for the video analytics feed. */
@@ -123,7 +69,6 @@ export function recordProfileSnapshot(
       set: { metricsJson: input.metrics, source: input.source, sampledAt: timestamp },
     })
     .run();
-  recordFollowerMilestones(backendDb, input.platform, input.metrics, input.audiencePlatforms);
   upsertProfile(backendDb, input.platform, input.metrics);
 }
 

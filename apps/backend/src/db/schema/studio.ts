@@ -84,6 +84,8 @@ export const channelConnections = sqliteTable(
     locale: text().notNull(),
     provider: text().notNull(),
     providerAccountId: text(),
+    /** Publishing target id for channels handled by the text-post pipeline. */
+    targetId: text(),
     label: text().notNull(),
     enabled: integer().notNull().default(1),
     source: text().notNull().default("config"),
@@ -92,6 +94,7 @@ export const channelConnections = sqliteTable(
   (table) => [
     index("idx_channel_connections_enabled").on(table.enabled, table.platform),
     uniqueIndex("idx_channel_connections_route").on(table.platform, table.locale, table.provider, table.providerAccountId),
+    uniqueIndex("idx_channel_connections_target").on(table.targetId),
   ],
 );
 

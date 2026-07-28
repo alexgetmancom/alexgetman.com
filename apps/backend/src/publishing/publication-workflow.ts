@@ -1,4 +1,5 @@
 import { and, asc, eq } from "drizzle-orm";
+import { effectivePostTargets, registeredPostTargetIds } from "../channels/registry.js";
 import { requireDraft } from "../content/drafts.js";
 import { enrichPublishedPostEntities } from "../content/entity-enrichment.js";
 import type { BackendDb } from "../db/client.js";
@@ -8,13 +9,18 @@ import { assertPublicationPreflight } from "./preflight.js";
 import { createPublicationPlan, type PublishMode } from "./publication-plan.js";
 import { persistPublicationPlan } from "./publication-writer.js";
 import { reconcilePublication } from "./queue.js";
+import { parseTargets } from "./targets.js";
 
 type PublishDraftOptions = { mode?: PublishMode; ruAt?: Date | null; enAt?: Date | null };
 
 /** Coordinates validated content, durable plan persistence and initial queue reconciliation. */
 export function publishDraftToQueue(backendDb: BackendDb, draftId: number, options: PublishDraftOptions = {}): number {
   const draft = requireDraft(backendDb, draftId);
-  assertPublicationPreflight(draft);
+  const effectiveDraft = {
+    ...draft,
+    targets_json: JSON.stringify(effectivePostTargets(backendDb, parseTargets(draft.targets_json))),
+  };
+  assertPublicationPreflight(effectiveDraft);
   const now = new Date().toISOString();
   const mode = options.mode ?? "immediate";
   const ruAt = mode === "immediate" ? now : (options.ruAt?.toISOString() ?? null);
@@ -26,7 +32,15 @@ export function publishDraftToQueue(backendDb: BackendDb, draftId: number, optio
     const publicationId = ensurePublication(backendDb, draftId, now);
     copyDraftSources(backendDb, draftId, publicationId, now);
     copyAcceptedEntities(backendDb, draftId, publicationId, now);
-    const publicationPlan = createPublicationPlan(draft, draftId, publicationId, { mode, ruAt, enAt }, now);
+    const registeredTargets = registeredPostTargetIds(backendDb);
+    const publicationPlan = createPublicationPlan(
+      effectiveDraft,
+      draftId,
+      publicationId,
+      { mode, ruAt, enAt },
+      now,
+      registeredTargets.size ? registeredTargets : undefined,
+    );
     persistPublicationPlan(backendDb, publicationPlan);
     enrichPublishedPostEntities(backendDb, publicationId);
     reconcilePublication(backendDb, publicationId);

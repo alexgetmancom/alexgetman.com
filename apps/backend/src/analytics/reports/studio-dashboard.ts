@@ -4,7 +4,7 @@ import { creatorProfiles, socialComments } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { t } from "../../foundation/i18n/index.js";
 import type { StudioLocale as BotLocale } from "../../foundation/locale.js";
-import { enabledAudiencePlatforms, studioAudiencePlatforms } from "../audience-groups.js";
+import { audienceGroup, enabledAudiencePlatforms, studioAudiencePlatforms } from "../audience-groups.js";
 import {
   audienceGrowthByPlatform,
   type ContentMetrics,
@@ -367,7 +367,11 @@ function dashboardVideoPlatforms(backendDb: BackendDb, config: BackendConfig): S
 }
 
 function dashboardAudiencePlatforms(backendDb: BackendDb, config: BackendConfig): Set<string> {
-  return new Set([...enabledAudiencePlatforms(config), ...dashboardVideoPlatforms(backendDb, config)]);
+  const registered = listChannels(backendDb);
+  const registeredText = registered.filter((channel) => channel.targetId && audienceGroup(channel.platform) === "text");
+  const legacy = enabledAudiencePlatforms(config);
+  if (registeredText.length) for (const platform of studioAudiencePlatforms(config, "text")) legacy.delete(platform);
+  return new Set([...legacy, ...registeredText.map((channel) => channel.platform), ...dashboardVideoPlatforms(backendDb, config)]);
 }
 
 function emptyMetrics(): ContentMetrics {

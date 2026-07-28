@@ -1,4 +1,5 @@
 import { and, eq, inArray } from "drizzle-orm";
+import { effectivePostTargets } from "../../channels/registry.js";
 import type { BackendDb } from "../../db/client.js";
 import { drafts, publishJobs, siteJobs, videoDrafts, videoTargets } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
@@ -42,7 +43,13 @@ export function queueService(backendDb: BackendDb, config: BackendConfig) {
         if (draft.status === "scheduled") {
           const scheduledAt = earliestDate(draft.scheduledAt, draft.scheduledEnAt);
           if (scheduledAt)
-            upcoming.push({ id: draft.id, label, time: scheduledAt, kind: "post", targets: enabledPostTargets(draft.targetsJson) });
+            upcoming.push({
+              id: draft.id,
+              label,
+              time: scheduledAt,
+              kind: "post",
+              targets: enabledPostTargets(backendDb, draft.targetsJson),
+            });
         }
         if (draft.status === "needs_review")
           draftItems.push({ id: draft.id, label, time: new Date(draft.updatedAt), kind: "post", targets: 0 });
@@ -103,8 +110,8 @@ export function queueService(backendDb: BackendDb, config: BackendConfig) {
   };
 }
 
-function enabledPostTargets(value: string): number {
-  return Object.values(parseTargets(value)).filter(Boolean).length;
+function enabledPostTargets(backendDb: BackendDb, value: string): number {
+  return Object.values(effectivePostTargets(backendDb, parseTargets(value))).filter(Boolean).length;
 }
 
 function earliestDate(...values: Array<string | null>): Date | null {

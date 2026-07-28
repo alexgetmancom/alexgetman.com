@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { InlineKeyboard } from "grammy";
 import { type PresetName, presetName, TARGETS } from "../botTargets.js";
+import { effectivePostTargets, registeredPostTargetIds } from "../channels/registry.js";
 import { requireDraft } from "../content/drafts.js";
 import type { BackendDb } from "../db/client.js";
 import { draftSources } from "../db/schema.js";
@@ -85,14 +86,16 @@ export function draftPreview(
 ): { text: string; keyboard: InlineKeyboard } {
   const draft = requireDraft(backendDb, draftId);
   const locale = botLocale(backendDb, draft.actor_id);
-  const targets = parseTargets(draft.targets_json);
+  const targets = effectivePostTargets(backendDb, parseTargets(draft.targets_json));
+  const registered = registeredPostTargetIds(backendDb);
+  const targetRows = registered.size ? TARGETS.filter(([target]) => registered.has(target)) : TARGETS;
   const sourceCount = backendDb.db.select({ id: draftSources.id }).from(draftSources).where(eq(draftSources.draftId, draftId)).all().length;
   const keyboard = new InlineKeyboard();
   const mode = presetName(targets);
 
   if (view === "platforms") {
-    for (let index = 0; index < TARGETS.length; index += 2) {
-      for (const [target, label] of TARGETS.slice(index, index + 2))
+    for (let index = 0; index < targetRows.length; index += 2) {
+      for (const [target, label] of targetRows.slice(index, index + 2))
         keyboard.text(`${targets[target] ? "✓" : "□"} ${label}`, `toggle:${draftId}:${target}`);
       keyboard.row();
     }

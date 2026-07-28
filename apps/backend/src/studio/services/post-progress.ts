@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { TARGETS } from "../../botTargets.js";
+import { effectivePostTargets } from "../../channels/registry.js";
 import type { BackendDb } from "../../db/client.js";
 import { drafts, publishJobs, siteJobs } from "../../db/schema.js";
 import { parseTargets } from "../../publishing/targets.js";
@@ -23,7 +24,7 @@ export function postProgressState(backendDb: BackendDb, draftId: number): PostPr
     for (const job of backendDb.db.select().from(siteJobs).where(eq(siteJobs.postId, draft.postId)).all())
       statuses.set(job.reason === "publish_ru" ? "site_ru" : "site_en", normalize(job.status, job.lastError));
   }
-  const targets = parseTargets(draft.targetsJson);
+  const targets = effectivePostTargets(backendDb, parseTargets(draft.targetsJson));
   const items = TARGETS.filter(([target]) => targets[target]).map(([target, label, locale]) => {
     const current = statuses.get(target) ?? { status: "waiting" as const, error: null };
     return { target, label, locale, ...current };

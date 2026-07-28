@@ -13,7 +13,7 @@ function channelId(platform: string, locale: VideoLocale): string {
 }
 
 export function configuredChannels(config: BackendConfig): ChannelSeed[] {
-  const seeds: ChannelSeed[] = [];
+  const seeds: ChannelSeed[] = configuredPostChannels(config);
   if (config.studio.modules.youtube) {
     if (config.YOUTUBE_CLIENT_ID && config.YOUTUBE_CLIENT_SECRET && config.YOUTUBE_REFRESH_TOKEN)
       seeds.push(seed("youtube", "ru", "native"));
@@ -38,15 +38,56 @@ function seed(platform: string, locale: VideoLocale, provider: string, providerA
     locale,
     provider,
     providerAccountId: providerAccountId ?? null,
+    targetId: null,
     label: `${displayPlatform(platform)} ${locale.toUpperCase()}`,
     enabled: 1,
     source: "config",
   };
 }
 
+function configuredPostChannels(config: BackendConfig): ChannelSeed[] {
+  if (!config.studio.modules.text_posting) return [];
+  const seeds: ChannelSeed[] = [];
+  const add = (targetId: string, platform: string, locale: VideoLocale, label: string, provider: string, providerAccountId?: string) =>
+    seeds.push({
+      id: targetId,
+      targetId,
+      platform,
+      locale,
+      provider,
+      providerAccountId: providerAccountId ?? null,
+      label,
+      enabled: 1,
+      source: "config",
+    });
+  if (config.controllerBotToken) add("telegram", "telegram", "ru", "Telegram RU", "native", config.CHANNEL_USERNAME);
+  if (config.studio.modules.site) {
+    add("site_ru", "site", "ru", "Site RU", "internal");
+    add("site_en", "site", "en", "Site EN", "internal");
+  }
+  if (config.THREADS_ACCESS_TOKEN) add("threads_ru", "threads", "ru", "Threads RU", "native");
+  if (config.THREADS_EN_ACCESS_TOKEN) add("threads_en", "threads_en", "en", "Threads EN", "native");
+  if (config.X_CONSUMER_KEY && config.X_CONSUMER_SECRET && config.X_ACCESS_TOKEN && config.X_ACCESS_TOKEN_SECRET)
+    add("x", "x", "en", "X EN", "native");
+  if (config.ENABLE_TELEGRAM_STORIES)
+    add("telegram_stories", "telegram_stories", "ru", "Telegram Stories RU", "native", config.TELEGRAM_STORIES_CHANNEL);
+  if (config.ENABLE_INSTAGRAM_STORIES) {
+    if (config.INSTAGRAM_RU_ACCESS_TOKEN && config.INSTAGRAM_RU_USER_ID)
+      add("instagram_stories_ru", "instagram_stories", "ru", "Instagram Stories RU", "native", config.INSTAGRAM_RU_USER_ID);
+    if (config.INSTAGRAM_EN_ACCESS_TOKEN && config.INSTAGRAM_EN_USER_ID)
+      add("instagram_stories", "instagram_stories", "en", "Instagram Stories EN", "native", config.INSTAGRAM_EN_USER_ID);
+  }
+  return seeds;
+}
+
 export function bootstrapConfiguredChannels(backendDb: BackendDb, config: BackendConfig): ChannelConnection[] {
   const now = new Date().toISOString();
-  for (const connection of configuredChannels(config)) {
+  const configured = configuredChannels(config);
+  const configuredIds = new Set(configured.map((connection) => connection.id));
+  for (const existing of listChannels(backendDb, false))
+    if (existing.source === "config" && !configuredIds.has(existing.id))
+      backendDb.db.update(channelConnections).set({ enabled: 0, updatedAt: now }).where(eq(channelConnections.id, existing.id)).run();
+  for (const connection of configured) {
     const existing = backendDb.db.select().from(channelConnections).where(eq(channelConnections.id, connection.id)).get();
     // An account explicitly selected in an interface overrides the bootstrap
     // route until that connection is disabled or replaced there.
@@ -61,6 +102,7 @@ export function bootstrapConfiguredChannels(backendDb: BackendDb, config: Backen
           locale: connection.locale,
           provider: connection.provider,
           providerAccountId: connection.providerAccountId,
+          targetId: connection.targetId,
           enabled: 1,
           updatedAt: now,
         },
@@ -84,6 +126,7 @@ export function registerChannel(
     locale: VideoLocale;
     provider: string;
     providerAccountId?: string;
+    targetId?: string;
     label?: string;
     source?: string;
   },
@@ -98,6 +141,7 @@ export function registerChannel(
       locale: input.locale,
       provider: input.provider,
       providerAccountId: input.providerAccountId ?? null,
+      targetId: input.targetId ?? null,
       label: input.label ?? `${displayPlatform(input.platform)} ${input.locale.toUpperCase()}`,
       enabled: 1,
       source: input.source ?? "interface",
@@ -109,6 +153,7 @@ export function registerChannel(
       set: {
         provider: input.provider,
         providerAccountId: input.providerAccountId ?? null,
+        targetId: input.targetId ?? null,
         label: input.label ?? `${displayPlatform(input.platform)} ${input.locale.toUpperCase()}`,
         enabled: 1,
         source: input.source ?? "interface",
@@ -119,6 +164,22 @@ export function registerChannel(
   const connection = backendDb.db.select().from(channelConnections).where(eq(channelConnections.id, id)).get();
   if (!connection) throw new Error(`Channel registration did not persist: ${id}`);
   return connection;
+}
+
+export function registeredPostTargetIds(backendDb: BackendDb): Set<string> {
+  return new Set(
+    listChannels(backendDb)
+      .map((connection) => connection.targetId)
+      .filter((target): target is string => Boolean(target)),
+  );
+}
+
+/** Filters a persisted target map only when this installation has bootstrapped
+ * post channels. Empty registries keep legacy and fixture databases compatible. */
+export function effectivePostTargets(backendDb: BackendDb, targets: Record<string, boolean>): Record<string, boolean> {
+  const registered = registeredPostTargetIds(backendDb);
+  if (!registered.size) return { ...targets };
+  return Object.fromEntries(Object.entries(targets).map(([target, enabled]) => [target, enabled && registered.has(target)]));
 }
 
 export function channelForVideo(backendDb: BackendDb, target: VideoTarget, locale: VideoLocale): ChannelConnection | undefined {
