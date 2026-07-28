@@ -28,6 +28,7 @@ let {
   overlayTick,
   shareCopied,
   readingVisible,
+  discussionVisible,
   gallerySubIndex = 0,
   video = $bindable(null),
   audio = $bindable(null),
@@ -54,6 +55,7 @@ let {
   overlayTick: number;
   shareCopied: boolean;
   readingVisible: boolean;
+  discussionVisible: boolean;
   gallerySubIndex?: number;
   video?: HTMLVideoElement | null;
   audio?: HTMLAudioElement | null;
@@ -231,11 +233,11 @@ function onStageClick(event: MouseEvent & { currentTarget: HTMLElement }): void 
       <span>{post.category}</span>
       <strong>{post.title}</strong>
     </div>
-    <!-- Three equal items in one floating bar; see story-actions.css for why
-         there is no accent-filled primary here. -->
+    <!-- Three equal items in one floating bar. Nothing is lit until a panel is
+         actually open — see story-actions.css. -->
     <div class="story-action-bar" aria-label={ui.storyLabel}>
       <button
-        class="story-action story-action--primary"
+        class="story-action"
         class:is-open={readingVisible}
         type="button"
         aria-expanded={readingVisible}
@@ -249,7 +251,13 @@ function onStageClick(event: MouseEvent & { currentTarget: HTMLElement }): void 
         </svg>
         <span class="story-action__label">{readingVisible ? ui.back : ui.read}</span>
       </button>
-      <button class="story-action" type="button" onclick={onopendiscussion}>
+      <button
+        class="story-action"
+        class:is-open={discussionVisible}
+        type="button"
+        aria-expanded={discussionVisible}
+        onclick={onopendiscussion}
+      >
         <svg class="story-action-icon" viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
         </svg>
@@ -515,17 +523,14 @@ function onStageClick(event: MouseEvent & { currentTarget: HTMLElement }): void 
       border: 0;
       border-radius: 0;
       box-shadow: none;
-      /* A strip along the bottom that belongs to the controls, not to the
-         picture. Reserved rather than left over: a phone screen is taller than
-         9:16, so contain-fitting a 9:16 story leaves a margin — but on a narrow
-         handset (an SE is 375x667, almost exactly 9:16) that margin is nearly
-         zero and the bar would land back on the image. Reserving it keeps one
-         layout on every phone; only the picture's height changes.
-
-         Height: the bar's own 52px items plus its padding come to ~69px, and it
-         floats 0.7rem above the bottom edge, so anything under ~5.4rem puts the
-         bar back over the picture. */
-      --stage-actions-strip: calc(5.5rem + env(safe-area-inset-bottom, 0));
+      /* The bottom strip belongs to the controls, not to the picture, and its
+         height is --stage-actions-strip in tokens.css — the reading sheet has
+         to hang off the same number. Reserved rather than left over: a phone
+         screen is taller than 9:16, so contain-fitting a 9:16 story leaves a
+         margin, but on a narrow handset (an SE is 375x667, almost exactly 9:16)
+         that margin is nearly zero and the bar would land back on the image.
+         Reserving it keeps one layout on every phone; only the picture's height
+         changes. */
     }
 
     /* The media box stops above the strip, and the picture sits at the top of

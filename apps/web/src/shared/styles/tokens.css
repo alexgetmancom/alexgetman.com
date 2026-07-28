@@ -162,6 +162,23 @@ html[data-theme="light"] .story-visual * {
   --overlay-track: rgba(255, 255, 255, 0.3);
 }
 
+/* Height of the strip the phone stage keeps clear at the bottom for the action
+ * bar. It lives here, not in a component, because two siblings need to agree on
+ * it: StoryVisual sizes the picture above it, and StoryContext hangs the
+ * reading sheet off it. They used to carry separate magic numbers, and the
+ * sheet's stopped 70px short of the bar when the stage layout changed. */
+:root {
+  --stage-actions-strip: 0px;
+}
+
+@media (max-width: 760px) {
+  :root {
+    /* The bar's 52px items plus its padding come to ~69px, and it floats
+       0.7rem above the bottom edge. */
+    --stage-actions-strip: calc(5.5rem + env(safe-area-inset-bottom, 0));
+  }
+}
+
 :root {
   --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;

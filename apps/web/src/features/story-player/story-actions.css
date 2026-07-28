@@ -96,22 +96,20 @@
   max-width: 100%;
 }
 
-/* The primary action gets the lighter fill, the way an active tab does — no
-   hue, just more presence than its neighbours. */
-.story-action--primary {
+/* The fill means "this panel is open", nothing else.
+ *
+ * It used to mark the primary item instead, so Read arrived already lit on a
+ * page nobody had touched — in a bar shaped like a tab bar, a filled item reads
+ * as the tab you are on. Worse, opening the panel cleared the fill, so the one
+ * moment it was genuinely active was the one moment it looked idle. Emphasis on
+ * a resting bar is not worth that: the labels already say what the items do. */
+.story-action.is-open {
   background: var(--bar-fill);
   color: var(--bar-text-strong);
 }
 
-.story-action--primary:hover {
+.story-action.is-open:hover {
   background: var(--bar-fill-hover);
-}
-
-/* Reading is open, so the button now means "back": it drops the emphasis
-   rather than staying lit while its label says the opposite. */
-.story-action--primary.is-open {
-  background: transparent;
-  color: var(--bar-text);
 }
 
 /* ---- Phone (<=760px): the bar floats clear of the screen edges ---- */

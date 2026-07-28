@@ -93,7 +93,7 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
       <div class="story-discussion-frame" bind:this={discussionFrame}></div>
     </div>
     <div class="story-actions">
-      <button class="story-action story-action--primary" type="button" onclick={onopendiscussion}>
+      <button class="story-action" class:is-open={discussionVisible} type="button" aria-expanded={discussionVisible} onclick={onopendiscussion}>
         <svg class="story-action-icon" viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
         </svg>
@@ -399,9 +399,16 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
       display: block;
       width: auto;
       min-height: 0;
-      height: calc(100dvh - 14.75rem - env(safe-area-inset-top, 0) - env(safe-area-inset-bottom, 0));
+      /* Sized by its content, capped by the room between the sheet's top edge
+         and the action strip. It used to be a fixed 576px tall on a 812px
+         screen — the same box whether the post ran to six paragraphs or to a
+         single headline, which left most of them as one line of text stranded
+         in an empty panel. The cap uses --stage-actions-strip so the sheet
+         cannot drift away from the bar again; the previous hard-coded 14.75rem
+         was tuned for an older stage layout and stopped 70px short of it. */
+      height: auto;
       max-width: none;
-      max-height: calc(100dvh - 14.75rem - env(safe-area-inset-top, 0) - env(safe-area-inset-bottom, 0));
+      max-height: calc(100dvh - 5.5rem - var(--stage-actions-strip) - env(safe-area-inset-top, 0));
       border: 1px solid var(--border);
       border-radius: 18px;
       background: var(--player-surface);
@@ -458,9 +465,12 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
       margin-bottom: 0.9rem;
     }
 
+    /* auto, not 100%: a full-height panel would stretch the sheet back to the
+       cap no matter how little it holds. */
     .story-panel {
       min-height: 0;
-      height: 100%;
+      height: auto;
+      max-height: 100%;
       padding: 1.15rem 1rem 1.25rem;
       overflow: hidden;
     }
@@ -471,8 +481,10 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
       display: none;
     }
 
+    /* Shrink to the text, scroll only once it outgrows the cap. `1 1 auto`
+       stretched a two-line post to the full panel height. */
     .story-copy {
-      flex: 1 1 auto;
+      flex: 0 1 auto;
       min-width: 0;
       overflow-y: auto;
       overflow-wrap: anywhere;

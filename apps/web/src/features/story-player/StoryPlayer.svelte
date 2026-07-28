@@ -493,6 +493,7 @@ onMount(() => {
       {overlayTick}
       {shareCopied}
       readingVisible={readingVisible}
+      {discussionVisible}
       {gallerySubIndex}
       bind:video
       bind:audio
