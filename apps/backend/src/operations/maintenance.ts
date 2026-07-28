@@ -200,7 +200,25 @@ export function publicationConsistencyReport(backendDb: BackendDb): Record<strin
        ORDER BY d.id`,
     )
     .all();
-  return { foreignKeyViolations, staleTargets, targetMismatches, publicationMismatches, videoDraftMismatches };
+  const videoTargetJobMismatches = backendDb.sqlite
+    .query(
+      `SELECT t.video_draft_id,t.id AS video_target_id,t.target,t.status AS target_status,
+              j.id AS publish_job_id,j.status AS job_status,j.last_error
+       FROM video_targets t
+       JOIN video_jobs j ON j.video_target_id=t.id AND j.kind='publish'
+       WHERE (t.status='published' AND j.status NOT IN ('completed','cancelled'))
+          OR (t.status='failed' AND j.status='completed')
+       ORDER BY t.video_draft_id,t.id`,
+    )
+    .all();
+  return {
+    foreignKeyViolations,
+    staleTargets,
+    targetMismatches,
+    publicationMismatches,
+    videoDraftMismatches,
+    videoTargetJobMismatches,
+  };
 }
 
 export function repairPublicationConsistency(backendDb: BackendDb): Record<string, number> {

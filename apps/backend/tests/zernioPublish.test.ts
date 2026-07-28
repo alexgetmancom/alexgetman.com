@@ -115,6 +115,44 @@ describe("publishZernioInstagramReel", () => {
     expect(await publishZernioInstagramReel(config, input, impl)).toEqual({ providerPostId: "zernio-6", externalId: null, url: null });
   });
 
+  it("reconciles an exact-content conflict for the requested Instagram account", async () => {
+    const { fetch: impl } = recordingFetch(() =>
+      json(
+        {
+          error: "This exact content is already scheduled, publishing, or was posted to this account within the last 24 hours.",
+          details: { accountId: "acct-1", platform: "instagram", existingPostId: "zernio-existing" },
+        },
+        409,
+      ),
+    );
+
+    expect(await publishZernioInstagramReel(config, input, impl)).toEqual({
+      providerPostId: "zernio-existing",
+      externalId: null,
+      url: null,
+    });
+  });
+
+  it("does not reconcile a conflict for another account, platform, or reason", async () => {
+    for (const body of [
+      {
+        error: "This exact content is already scheduled, publishing, or was posted to this account within the last 24 hours.",
+        details: { accountId: "another-account", platform: "instagram", existingPostId: "zernio-existing" },
+      },
+      {
+        error: "This exact content is already scheduled, publishing, or was posted to this account within the last 24 hours.",
+        details: { accountId: "acct-1", platform: "tiktok", existingPostId: "zernio-existing" },
+      },
+      {
+        error: "A different conflict",
+        details: { accountId: "acct-1", platform: "instagram", existingPostId: "zernio-existing" },
+      },
+    ]) {
+      const { fetch: impl } = recordingFetch(() => json(body, 409));
+      await expect(publishZernioInstagramReel(config, input, impl)).rejects.toThrow("409");
+    }
+  });
+
   it("fails loudly when the response carries no post id", async () => {
     const { fetch: impl } = recordingFetch(() => json({ platforms: [{ platform: "instagram", platformPostId: "ig-7" }] }));
 

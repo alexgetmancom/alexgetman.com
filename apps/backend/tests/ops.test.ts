@@ -178,6 +178,39 @@ describe("TypeScript operations tooling", () => {
     }
   });
 
+  it("reports a published video target whose publish job still says failed", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      backendDb.sqlite
+        .query(
+          "INSERT INTO video_drafts(id,actor_id,label,asset_key,status,created_at,updated_at) VALUES (1,1,'test','asset','published',?,?)",
+        )
+        .run(now, now);
+      backendDb.sqlite
+        .query(
+          "INSERT INTO video_targets(id,video_draft_id,target,metadata_json,status,provider_post_id,created_at,updated_at) VALUES (1,1,'instagram_reels','{}','published','zernio-1',?,?)",
+        )
+        .run(now, now);
+      backendDb.sqlite
+        .query(
+          "INSERT INTO video_jobs(video_draft_id,video_target_id,kind,run_at,status,last_error,created_at,updated_at) VALUES (1,1,'publish',?,'failed','stale failure',?,?)",
+        )
+        .run(now, now, now);
+
+      expect(publicationConsistencyReport(backendDb).videoTargetJobMismatches).toEqual([
+        expect.objectContaining({
+          video_draft_id: 1,
+          video_target_id: 1,
+          target_status: "published",
+          job_status: "failed",
+        }),
+      ]);
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("repairs orphaned publication rows and canonical state mismatches", () => {
     const backendDb = openBackendDb(":memory:");
     try {
