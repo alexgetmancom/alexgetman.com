@@ -121,14 +121,17 @@ describe("Studio MCP", () => {
           jsonrpc: "2.0",
           id: 2,
           method: "tools/call",
-          params: { name: "studio_video_create", arguments: { asset_id: 1 } },
+          params: { name: "studio_video_create", arguments: { asset_id: 1, locale: "en" } },
         },
         authorization,
       );
-      expect(backendDb.sqlite.prepare("SELECT actor_id, asset_key, studio_media_asset_id FROM video_drafts WHERE id=1").get()).toEqual({
+      expect(
+        backendDb.sqlite.prepare("SELECT actor_id, asset_key, studio_media_asset_id, locale FROM video_drafts WHERE id=1").get(),
+      ).toEqual({
         actor_id: 42,
         asset_key: "studio-asset-1",
         studio_media_asset_id: 1,
+        locale: "en",
       });
 
       await request(

@@ -274,11 +274,15 @@ const studioToolDefs = {
   }),
   studio_video_create: tool({
     description: "Create an owned video draft from an already-uploaded Studio video asset.",
-    schema: z.object({ asset_id: positiveInt }),
+    schema: z.object({ asset_id: positiveInt, locale: localeSchema.optional() }),
     mutates: true,
     ref: (_input, result) => `video:${(result as { video_draft_id: number }).video_draft_id}`,
     handler: (studio, actorId, input) => {
-      const videoDraftId = studio.publications.create(actorId, { kind: "video", studioMediaAssetId: input.asset_id }).id;
+      const videoDraftId = studio.publications.create(actorId, {
+        kind: "video",
+        studioMediaAssetId: input.asset_id,
+        ...(input.locale ? { locale: input.locale } : {}),
+      }).id;
       return { video_draft_id: videoDraftId };
     },
   }),
