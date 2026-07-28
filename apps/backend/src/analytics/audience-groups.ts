@@ -15,7 +15,10 @@ const AUDIENCE_GROUPS: Record<string, AudienceGroup> = {
 };
 
 export function audienceGroup(platform: string): AudienceGroup | null {
-  return AUDIENCE_GROUPS[platform] ?? null;
+  return (
+    AUDIENCE_GROUPS[platform] ??
+    (platform.startsWith("youtube_") || platform.startsWith("instagram_") || platform.startsWith("tiktok_") ? "video" : null)
+  );
 }
 
 /** Platforms of one group that this Studio actually publishes to. Single source

@@ -1,3 +1,4 @@
+import { listChannels } from "../../channels/registry.js";
 import type { BackendDb } from "../../db/client.js";
 import { creatorProfiles, socialComments } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
@@ -114,7 +115,7 @@ function audienceProfiles(
     .select()
     .from(creatorProfiles)
     .all()
-    .filter((row) => enabledAudiencePlatforms(config).has(row.platform))
+    .filter((row) => dashboardAudiencePlatforms(backendDb, config).has(row.platform))
     .sort((left, right) => {
       const rightFollowers = metricNumber(right.dataJson.subscriberCount ?? right.dataJson.followersCount);
       const leftFollowers = metricNumber(left.dataJson.subscriberCount ?? left.dataJson.followersCount);
@@ -146,29 +147,32 @@ function unifiedAnalyticsTable(
     .select()
     .from(creatorProfiles)
     .all()
-    .filter((row) => audiencePlatformsForSection(config, section).has(row.platform));
+    .filter((row) => audiencePlatformsForSection(backendDb, config, section).has(row.platform));
   const accountMetrics = new Map(profiles.map((row) => [row.platform, contentMetricsFromProfile(row.dataJson, days)]));
   const content = accountContentMetricsForSection(backendDb, config, section, since, accountMetrics);
   if (days === 1 && section !== "posts" && config.studio.modules.youtube) {
-    const liveViews = youtubeChannelViewDeltaSince(backendDb, since);
-    const youtube = content.get("youtube");
-    const tracked = sumContentMetrics(
-      latestVideoMetrics(backendDb, since)
-        .filter((row) => row.platform === "youtube_shorts")
-        .map((row) => contentMetrics(row)),
-    );
-    // Until Analytics closes today's report, retain its delayed engagement
-    // fields but replace the misleading zero channel-view total with the live
-    // delta. A missing hourly baseline leaves the existing value untouched.
-    if (youtube && youtube.views === 0)
-      content.set("youtube", {
-        ...youtube,
-        views: liveViews ?? tracked.views,
-        likes: tracked.likes,
-        comments: tracked.comments,
-        shares: tracked.shares,
-        saves: tracked.saves,
-      });
+    for (const platform of [...content.keys()].filter((key) => key === "youtube" || key.startsWith("youtube_"))) {
+      const liveViews = youtubeChannelViewDeltaSince(backendDb, since, platform);
+      const youtube = content.get(platform);
+      const channelLocale = platform.endsWith("_en") ? "en" : "ru";
+      const tracked = sumContentMetrics(
+        latestVideoMetrics(backendDb, since)
+          .filter((row) => row.platform === "youtube_shorts" && row.locale === channelLocale)
+          .map((row) => contentMetrics(row)),
+      );
+      // Until Analytics closes today's report, retain its delayed engagement
+      // fields but replace the misleading zero channel-view total with the live
+      // delta. A missing hourly baseline leaves the existing value untouched.
+      if (youtube && youtube.views === 0)
+        content.set(platform, {
+          ...youtube,
+          views: liveViews ?? tracked.views,
+          likes: tracked.likes,
+          comments: tracked.comments,
+          shares: tracked.shares,
+          saves: tracked.saves,
+        });
+    }
   }
   const growth = audienceGrowthByPlatform(backendDb, since, days);
   const profileMap = new Map(profiles.map((profile) => [profile.platform, profile]));
@@ -204,7 +208,7 @@ function unifiedAnalyticsTable(
     String(row.value.likes),
     String(row.value.comments),
     dash(row.value.shares),
-    row.platform === "youtube" ? "—" : dash(row.value.saves),
+    row.platform === "youtube" || row.platform.startsWith("youtube_") ? "—" : dash(row.value.saves),
   ]);
   return [
     tableBlock(headers, tableRows),
@@ -240,10 +244,16 @@ function accountContentMetricsForSection(
   accountMetrics: Map<string, ContentMetrics | undefined>,
 ): Map<string, ContentMetrics> {
   const values = new Map<string, ContentMetrics>();
-  if (section !== "posts" && config.studio.modules.video_posting) {
-    if (config.studio.modules.instagram) values.set("instagram", accountMetrics.get("instagram") ?? emptyMetrics());
-    if (config.studio.modules.youtube) values.set("youtube", accountMetrics.get("youtube") ?? emptyMetrics());
-  }
+  if (section !== "posts" && config.studio.modules.video_posting)
+    for (const [platform, metrics] of accountMetrics)
+      if (
+        platform === "instagram" ||
+        platform === "youtube" ||
+        platform.startsWith("instagram_") ||
+        platform.startsWith("youtube_") ||
+        platform.startsWith("tiktok_")
+      )
+        values.set(platform, metrics ?? emptyMetrics());
   if (section !== "video" && config.studio.modules.text_posting)
     for (const [platform, metrics] of textContentMetricsByPlatform(backendDb, since)) values.set(platform, metrics);
   return values;
@@ -279,7 +289,11 @@ function publishedVideoTable(
     [all, String(total.views), String(total.likes), String(total.comments), dash(total.shares), dash(total.saves)],
     ...topDetails(rows).map((row) => {
       const platform = row.platform === "instagram_reels" ? "instagram" : "youtube";
-      return contentRowCells(`${shortLabel(row.label)} · ${platformIcon(platform)}`, contentMetrics(row), platform === "youtube");
+      return contentRowCells(
+        `${shortLabel(row.label)} · ${platformIcon(platform)} ${row.locale.toUpperCase()}`,
+        contentMetrics(row),
+        platform === "youtube",
+      );
     }),
   ];
   return [tableBlock(headers, tableRows)];
@@ -337,10 +351,23 @@ function shortLabel(value: string): string {
   return compact.length > 10 ? `${compact.slice(0, 9)}…` : compact || "—";
 }
 
-function audiencePlatformsForSection(config: BackendConfig, section: Exclude<AnalyticsSection, "audience">): Set<string> {
-  if (section === "video") return new Set(studioAudiencePlatforms(config, "video"));
+function audiencePlatformsForSection(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  section: Exclude<AnalyticsSection, "audience">,
+): Set<string> {
+  if (section === "video") return dashboardVideoPlatforms(backendDb, config);
   if (section === "posts") return new Set(studioAudiencePlatforms(config, "text"));
-  return enabledAudiencePlatforms(config);
+  return dashboardAudiencePlatforms(backendDb, config);
+}
+
+function dashboardVideoPlatforms(backendDb: BackendDb, config: BackendConfig): Set<string> {
+  const registered = listChannels(backendDb).map((channel) => channel.id);
+  return new Set(registered.length ? registered : studioAudiencePlatforms(config, "video"));
+}
+
+function dashboardAudiencePlatforms(backendDb: BackendDb, config: BackendConfig): Set<string> {
+  return new Set([...enabledAudiencePlatforms(config), ...dashboardVideoPlatforms(backendDb, config)]);
 }
 
 function emptyMetrics(): ContentMetrics {
@@ -359,6 +386,12 @@ const PLATFORM_DISPLAY: Record<string, { label: string; icon: string }> = {
   threads_ru: { label: "Threads RU", icon: "@" },
   x: { label: "X", icon: "𝕏" },
   youtube: { label: "YouTube", icon: "▶️" },
+  instagram_ru: { label: "Instagram RU", icon: "📸" },
+  instagram_en: { label: "Instagram EN", icon: "📸" },
+  youtube_ru: { label: "YouTube RU", icon: "▶️" },
+  youtube_en: { label: "YouTube EN", icon: "▶️" },
+  tiktok_ru: { label: "TikTok RU", icon: "🎵" },
+  tiktok_en: { label: "TikTok EN", icon: "🎵" },
 };
 
 function platformLabel(platform: string): string {

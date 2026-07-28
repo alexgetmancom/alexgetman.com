@@ -39,6 +39,7 @@ const en = {
   "settings.notifications": "🔔 Notifications",
   "settings.publication-notifications": "🔔 Publication notifications",
   "settings.language": "🌐 Language",
+  "settings.channels": "🔌 Channels",
   // Post modes
   "mode.full": "Full",
   "mode.ru": "RU only",
@@ -203,6 +204,12 @@ const en = {
   "settings.youtube-not-set": "Not set",
   "settings.edit": "✏️ Edit",
   "settings.clear": "🗑 Clear",
+  "settings.channels-title": "🔌 Connected channels",
+  "settings.channels-none": "No channels connected.",
+  "settings.channels-found": "Found: {count}",
+  "settings.channels-pick": "Choose an account for this language ({count} found).",
+  "settings.channels-error": "Could not load Zernio accounts.",
+  "settings.channel-connected": "Channel connected",
   // Notifications inbox
   "notif.mark-read": "✓ Mark read",
   "notif.back": "← Notifications",
@@ -429,6 +436,7 @@ const ru = {
   "settings.notifications": "🔔 Уведомления",
   "settings.publication-notifications": "🔔 Уведомления о публикациях",
   "settings.language": "🌐 Язык",
+  "settings.channels": "🔌 Каналы",
   // Post modes
   "mode.full": "Полный",
   "mode.ru": "Только RU",
@@ -594,6 +602,12 @@ const ru = {
   "settings.youtube-not-set": "Не задана",
   "settings.edit": "✏️ Изменить",
   "settings.clear": "🗑 Очистить",
+  "settings.channels-title": "🔌 Подключённые каналы",
+  "settings.channels-none": "Каналы не подключены.",
+  "settings.channels-found": "Найдено: {count}",
+  "settings.channels-pick": "Выберите аккаунт для этого языка (найдено: {count}).",
+  "settings.channels-error": "Не удалось загрузить аккаунты Zernio.",
+  "settings.channel-connected": "Канал подключён",
   // Notifications inbox
   "notif.mark-read": "✓ Прочитано",
   "notif.back": "← Уведомления",

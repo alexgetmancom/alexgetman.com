@@ -1,4 +1,5 @@
 import { createBot } from "../../../backend/src/bot.js";
+import { bootstrapConfiguredChannels } from "../../../backend/src/channels/registry.js";
 import { type BackendDb, openBackendDb } from "../../../backend/src/db/client.js";
 import { recordDomainEvent } from "../../../backend/src/domain/events.js";
 import { type BackendConfig, loadConfig } from "../../../backend/src/foundation/config.js";
@@ -29,6 +30,7 @@ export function startRuntime(): AppRuntime {
   configureLogging(config.LOG_LEVEL);
   configureFfmpegConcurrency(config.FFMPEG_MAX_CONCURRENCY);
   const backendDb = openBackendDb(config.PIPELINE_DB);
+  bootstrapConfiguredChannels(backendDb, config);
   const bot = createBot(config, backendDb);
   const loops = [...startCoreWorkers(config, backendDb), ...startTelegramWorkers(config, backendDb, bot)];
   runtime = { config, backendDb, bot, loops };

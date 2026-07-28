@@ -1,7 +1,9 @@
 import { Menu, type MenuFlavor } from "@grammyjs/menu";
 import type { Context } from "grammy";
+import { listChannels, registerChannel } from "../channels/registry.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { requestJson } from "../foundation/http.js";
 import { t } from "../foundation/i18n/index.js";
 import { escapeMarkdown } from "../foundation/markdown.js";
 import { studioServices } from "../studio/services/index.js";
@@ -13,6 +15,11 @@ export const SETTINGS_MENU_ID = "settings-menu";
 const NOTIFICATION_SETTINGS_MENU_ID = "settings-notifications";
 const YOUTUBE_SIGNATURE_MENU_ID = "settings-youtube";
 const LANGUAGE_MENU_ID = "settings-language";
+const CHANNELS_MENU_ID = "settings-channels";
+
+type ZernioAccount = { _id?: string; username?: string; displayName?: string; platform?: string };
+type ZernioAccounts = { accounts?: ZernioAccount[] } | ZernioAccount[];
+const discoveredAccounts = new Map<number, { locale: "ru" | "en"; accounts: ZernioAccount[] }>();
 
 /** Settings is an interface screen: it owns its callbacks and the small
  * transient input state, keeping the root Telegram router transport-only. */
@@ -35,6 +42,46 @@ export async function handleSettingsMessage(
 }
 
 export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): Menu<Context> {
+  const channels = new Menu<Context>(CHANNELS_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
+    const actorId = Number(ctx.from?.id);
+    const locale = botLocale(backendDb, actorId);
+    const discovered = discoveredAccounts.get(actorId);
+    if (discovered) {
+      for (const account of discovered.accounts) {
+        if (!account._id) continue;
+        const platform = zernioPlatform(account);
+        range
+          .text(
+            `${channelPlatformLabel(platform)} ${discovered.locale.toUpperCase()} · @${account.username ?? account.displayName ?? account._id}`,
+            async (ctx) => {
+              registerChannel(backendDb, {
+                platform,
+                locale: discovered.locale,
+                provider: "zernio",
+                ...(account._id ? { providerAccountId: account._id } : {}),
+                label: `${channelPlatformLabel(platform)} ${discovered.locale.toUpperCase()} · @${account.username ?? account.displayName ?? account._id}`,
+                source: "telegram",
+              });
+              discoveredAccounts.delete(actorId);
+              await ctx.answerCallbackQuery({ text: t(locale, "settings.channel-connected") });
+              await ctx.editMessageText(channelsText(backendDb, locale));
+            },
+          )
+          .row();
+      }
+    }
+    if (config.ZERNIO_API_KEY)
+      range
+        .text("➕ Zernio · RU", (ctx) => discoverZernio(ctx, actorId, "ru", locale))
+        .text("➕ Zernio · EN", (ctx) => discoverZernio(ctx, actorId, "en", locale))
+        .row();
+    range.back(t(locale, "settings.back-to-settings"), async (ctx) => {
+      discoveredAccounts.delete(actorId);
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(t(locale, "settings.title"));
+    });
+  });
+
   const notificationSettings = new Menu<Context>(NOTIFICATION_SETTINGS_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
     const actorId = Number(ctx.from?.id);
     const settings = studioServices(backendDb, config).settings.notifications(actorId);
@@ -109,6 +156,11 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
         })
         .row();
     range
+      .submenu(t(locale, "settings.channels"), CHANNELS_MENU_ID, async (ctx) => {
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(channelsText(backendDb, locale));
+      })
+      .row()
       .submenu(t(locale, "settings.notifications"), NOTIFICATIONS_MENU_ID, async (ctx) => {
         await ctx.answerCallbackQuery();
         await ctx.editMessageText(notificationsInboxText(backendDb, config, actorId, locale));
@@ -132,7 +184,27 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
   settings.register(notificationSettings);
   settings.register(youtubeSignature);
   settings.register(language);
+  settings.register(channels);
   return settings;
+
+  async function discoverZernio(
+    ctx: Context & MenuFlavor,
+    actorId: number,
+    channelLocale: "ru" | "en",
+    locale: ReturnType<typeof botLocale>,
+  ) {
+    try {
+      const headers = { Authorization: `Bearer ${config.ZERNIO_API_KEY}` };
+      const response = await requestJson<ZernioAccounts>(fetch, "https://zernio.com/api/v1/accounts", { headers });
+      const accounts = Array.isArray(response) ? response : (response.accounts ?? []);
+      discoveredAccounts.set(actorId, { locale: channelLocale, accounts });
+      await ctx.answerCallbackQuery({ text: t(locale, "settings.channels-found", { count: accounts.length }) });
+      await ctx.editMessageText(channelsText(backendDb, locale, accounts.length));
+      await ctx.menu.update();
+    } catch {
+      await ctx.answerCallbackQuery({ text: t(locale, "settings.channels-error"), show_alert: true });
+    }
+  }
 
   async function switchLanguage(ctx: Context & MenuFlavor, locale: "en" | "ru"): Promise<void> {
     const actorId = Number(ctx.from?.id);
@@ -142,6 +214,25 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
     await ctx.editMessageText(t(locale, "settings.title"));
     await ctx.reply(t(locale, "settings.keyboard-updated"), { reply_markup: persistentKeyboard(locale) });
   }
+}
+
+function zernioPlatform(account: ZernioAccount): string {
+  const value = account.platform?.trim().toLowerCase();
+  if (value?.includes("tiktok")) return "tiktok";
+  if (value?.includes("youtube")) return "youtube";
+  return "instagram";
+}
+
+function channelPlatformLabel(platform: string): string {
+  return platform === "tiktok" ? "TikTok" : platform === "youtube" ? "YouTube" : "Instagram";
+}
+
+function channelsText(backendDb: BackendDb, locale: ReturnType<typeof botLocale>, discoveredCount?: number): string {
+  const rows = listChannels(backendDb).map(
+    (channel) => `• ${channel.label} — ${channel.provider}${channel.providerAccountId ? ` · ${channel.providerAccountId}` : ""}`,
+  );
+  const suffix = discoveredCount == null ? "" : `\n\n${t(locale, "settings.channels-pick", { count: discoveredCount })}`;
+  return `${t(locale, "settings.channels-title")}\n\n${rows.join("\n") || t(locale, "settings.channels-none")}${suffix}`;
 }
 
 export async function showSettings(ctx: Context, backendDb: BackendDb, settingsMenu: Menu<Context>, edit = false): Promise<void> {

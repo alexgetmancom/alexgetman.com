@@ -8,7 +8,7 @@ import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { youtubeCredentials } from "../foundation/external/youtube.js";
 import { runFfprobe } from "../foundation/runtime/ffmpeg.js";
-import { isZernioRouteReady, videoDeliveryRoute } from "./delivery-provider.js";
+import { isZernioRouteReady, registeredVideoDeliveryRoute } from "./delivery-provider.js";
 import { isVideoTargetEditable } from "./state.js";
 import { getVideoDraft, insertVideoJob, listVideoTargets, refreshVideoDraftStatus } from "./video-data.js";
 import type { VideoLocale, VideoMetadata, VideoTarget } from "./video-types.js";
@@ -137,7 +137,7 @@ export function scheduleVideo(
       const publishAt = targetSchedule.toISOString();
       const preparedAt = new Date(targetSchedule.getTime() - timing.prepareLeadMinutes * 60_000);
       const draft = getVideoDraft(backendDb, videoDraftId);
-      const route = videoDeliveryRoute(config, target.target as VideoTarget, draft.locale === "en" ? "en" : "ru");
+      const route = registeredVideoDeliveryRoute(backendDb, config, target.target as VideoTarget, draft.locale === "en" ? "en" : "ru");
       tx.update(videoTargets)
         .set({
           scheduledAt: publishAt,
@@ -233,7 +233,7 @@ export async function validateVideoDraft(config: BackendConfig, backendDb: Backe
         throw new StudioError("err.youtube-not-configured");
     }
     if (target.target === "instagram_reels") {
-      const route = videoDeliveryRoute(config, "instagram_reels", locale);
+      const route = registeredVideoDeliveryRoute(backendDb, config, "instagram_reels", locale);
       if (!isZernioRouteReady(config, route) && route.provider === "zernio") throw new StudioError("err.instagram-not-configured");
       if (route.provider === "native" && (!config.INSTAGRAM_ACCESS_TOKEN || !config.INSTAGRAM_USER_ID))
         throw new StudioError("err.instagram-not-configured");

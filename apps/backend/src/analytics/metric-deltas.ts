@@ -11,7 +11,13 @@ import { metricNumber } from "./snapshots/creator-store.js";
 
 /** `metrics.shares` is the Share action (Instagram sends / YouTube share
  * button), never a repost. */
-export type VideoMetricRow = { platform: string; label: string; publishedAt: string | null; metrics: Record<string, unknown> };
+export type VideoMetricRow = {
+  platform: string;
+  locale: "ru" | "en";
+  label: string;
+  publishedAt: string | null;
+  metrics: Record<string, unknown>;
+};
 type TextPostMetricRow = { platform: string; label: string; metrics: Record<string, unknown> };
 export type ContentMetrics = { views: number; likes: number; comments: number; shares: number; saves: number };
 
@@ -159,7 +165,7 @@ export function siteTotal(backendDb: BackendDb, since: string): number {
 export function latestVideoMetrics(backendDb: BackendDb, since: string): VideoMetricRow[] {
   const rows = backendDb.sqlite
     .prepare(
-      `SELECT target.target AS platform, draft.label, target.published_at,
+      `SELECT target.target AS platform, draft.locale, draft.label, target.published_at,
               latest.metrics_json AS latest_metrics, baseline.metrics_json AS baseline_metrics
        FROM video_targets target
        JOIN video_drafts draft ON draft.id = target.video_draft_id
@@ -174,6 +180,7 @@ export function latestVideoMetrics(backendDb: BackendDb, since: string): VideoMe
     )
     .all(since) as Array<{
     platform: string;
+    locale: string;
     label: string;
     published_at: string | null;
     latest_metrics: string;
@@ -191,14 +198,16 @@ export function latestVideoMetrics(backendDb: BackendDb, since: string): VideoMe
     const metrics = Object.fromEntries(
       Object.entries(latest).map(([key, value]) => [key, Math.max(0, metricNumber(value) - metricNumber(baseline?.[key]))]),
     );
-    return [{ platform: row.platform, label: row.label, publishedAt: row.published_at, metrics }];
+    return [
+      { platform: row.platform, locale: row.locale === "en" ? "en" : "ru", label: row.label, publishedAt: row.published_at, metrics },
+    ];
   });
 }
 
 /** A channel's public `viewCount` is available immediately from YouTube Data
  * API. The hourly profile observations make its 24h delta complete even when
  * the Analytics API has not closed the report yet. */
-export function youtubeChannelViewDeltaSince(backendDb: BackendDb, since: string): number | null {
+export function youtubeChannelViewDeltaSince(backendDb: BackendDb, since: string, platform = "youtube"): number | null {
   // A recovery after an outage must not label several days of channel growth
   // as a 24-hour delta. Hourly collection normally allows a small delay.
   const oldestUsableBaseline = new Date(new Date(since).getTime() - 2 * 60 * 60_000).toISOString();
@@ -206,15 +215,15 @@ export function youtubeChannelViewDeltaSince(backendDb: BackendDb, since: string
     .prepare(
       `SELECT
          (SELECT CAST(COALESCE(json_extract(metrics_json, '$.viewCount'), 0) AS INTEGER)
-          FROM creator_profile_snapshots WHERE platform = 'youtube'
+          FROM creator_profile_snapshots WHERE platform = ?
           ORDER BY sampled_at DESC, id DESC LIMIT 1) AS latest,
          (SELECT CAST(COALESCE(json_extract(metrics_json, '$.viewCount'), 0) AS INTEGER)
-          FROM creator_profile_snapshots WHERE platform = 'youtube' AND sampled_at <= ?
+          FROM creator_profile_snapshots WHERE platform = ? AND sampled_at <= ?
           ORDER BY sampled_at DESC, id DESC LIMIT 1) AS baseline,
-         (SELECT sampled_at FROM creator_profile_snapshots WHERE platform = 'youtube' AND sampled_at <= ?
+         (SELECT sampled_at FROM creator_profile_snapshots WHERE platform = ? AND sampled_at <= ?
           ORDER BY sampled_at DESC, id DESC LIMIT 1) AS baseline_sampled_at`,
     )
-    .get(since, since) as { latest?: number; baseline?: number; baseline_sampled_at?: string } | null;
+    .get(platform, platform, since, platform, since) as { latest?: number; baseline?: number; baseline_sampled_at?: string } | null;
   if (rows?.latest == null || rows.baseline == null || !rows.baseline_sampled_at || rows.baseline_sampled_at < oldestUsableBaseline)
     return null;
   return Math.max(0, rows.latest - rows.baseline);
@@ -280,13 +289,13 @@ export function audienceGrowthByPlatform(backendDb: BackendDb, since: string, da
 }
 
 function providerFollowerGrowth(platform: string, data: Record<string, unknown>, days: 1 | 7 | 30): number | null {
-  if (platform === "youtube") {
+  if (platform === "youtube" || platform.startsWith("youtube_")) {
     const suffix = days === 30 ? "" : `${days}d`;
     const gained = data[`subscribersGained${suffix}`];
     const lost = data[`subscribersLost${suffix}`];
     if (gained != null || lost != null) return metricNumber(gained) - metricNumber(lost);
   }
-  if (platform === "instagram" && days === 30) {
+  if ((platform === "instagram" || platform.startsWith("instagram_")) && days === 30) {
     const gained = data.followersGained30d;
     const lost = data.followersLost30d;
     if (gained != null || lost != null) return metricNumber(gained) - metricNumber(lost);

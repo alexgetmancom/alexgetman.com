@@ -74,6 +74,27 @@ export const botUiSettings = sqliteTable("bot_ui_settings", {
   updatedAt: text().notNull(),
 });
 
+/** Canonical registry of publishing channels. Configuration bootstraps rows,
+ * while interfaces may add provider accounts without changing application code. */
+export const channelConnections = sqliteTable(
+  "channel_connections",
+  {
+    id: text().primaryKey(),
+    platform: text().notNull(),
+    locale: text().notNull(),
+    provider: text().notNull(),
+    providerAccountId: text(),
+    label: text().notNull(),
+    enabled: integer().notNull().default(1),
+    source: text().notNull().default("config"),
+    ...timestamps(),
+  },
+  (table) => [
+    index("idx_channel_connections_enabled").on(table.enabled, table.platform),
+    uniqueIndex("idx_channel_connections_route").on(table.platform, table.locale, table.provider, table.providerAccountId),
+  ],
+);
+
 /** Interface-owned presentation references. Domain aggregates never store UI message ids. */
 export const interfaceBindings = sqliteTable(
   "interface_bindings",

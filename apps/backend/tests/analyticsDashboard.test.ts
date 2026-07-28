@@ -95,7 +95,7 @@ describe("creator analytics dashboards", () => {
       expect(dashboard.text).toContain("| 📸 Instagram | 306 | — | 63394 | 1227");
       expect(dashboard.text).toContain("| Видео | 👁 | ♥ | 💬 | ↗ | 🔖 |");
       expect(dashboard.text).toContain("| Все | 200 | 20 | 0 | 7 | 5 |");
-      expect(dashboard.text).toContain("| Симулятор… · 📸 | 200 | 20 | 0 | 7 | 5 |");
+      expect(dashboard.text).toContain("| Симулятор… · 📸 RU | 200 | 20 | 0 | 7 | 5 |");
       expect(dashboard.text).not.toContain("| Симулятор… · ▶️ |");
       expect(dashboard.richHtml.match(/<table bordered striped>/g)?.length).toBe(2);
       expect(dashboard.richHtml).not.toContain("|:--");

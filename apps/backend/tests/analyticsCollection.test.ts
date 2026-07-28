@@ -35,14 +35,14 @@ describe("creator analytics collection", () => {
         globalThis.fetch = originalFetch;
       }
 
-      expect(backendDb.db.select().from(creatorProfiles).where(eq(creatorProfiles.platform, "youtube")).get()?.dataJson).toMatchObject({
+      expect(backendDb.db.select().from(creatorProfiles).where(eq(creatorProfiles.platform, "youtube_ru")).get()?.dataJson).toMatchObject({
         subscriberCount: 125,
         viewCount: 190783,
       });
-      expect(backendDb.db.select().from(creatorProfileSnapshots).where(eq(creatorProfileSnapshots.platform, "youtube")).all()).toHaveLength(
-        1,
-      );
-      expect(backendDb.db.select().from(analyticsSync).where(eq(analyticsSync.source, "youtube")).get()?.lastError).toContain(
+      expect(
+        backendDb.db.select().from(creatorProfileSnapshots).where(eq(creatorProfileSnapshots.platform, "youtube_ru")).all(),
+      ).toHaveLength(1);
+      expect(backendDb.db.select().from(analyticsSync).where(eq(analyticsSync.source, "youtube_ru")).get()?.lastError).toContain(
         "service disabled",
       );
     });
@@ -201,11 +201,13 @@ describe("creator analytics collection", () => {
         saves: 5,
         averageWatchTimeMs: 7000,
       });
-      expect(backendDb.db.select().from(creatorProfiles).where(eq(creatorProfiles.platform, "instagram")).get()?.dataJson).toMatchObject({
-        followersCount: 306,
-        reach30d: 100,
-        followersGained30d: 8,
-      });
+      expect(backendDb.db.select().from(creatorProfiles).where(eq(creatorProfiles.platform, "instagram_ru")).get()?.dataJson).toMatchObject(
+        {
+          followersCount: 306,
+          reach30d: 100,
+          followersGained30d: 8,
+        },
+      );
     });
   });
 });
