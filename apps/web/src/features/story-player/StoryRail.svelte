@@ -253,13 +253,10 @@ $effect(() => {
     border-color: var(--player-active-border);
   }
 
+  /* No frame of its own: the viewfinder in StoryPlayer.svelte draws the one
+     around this slot, and a second border inside it just doubled the line.
+     Being undimmed and in the frame is what marks this card as the active one. */
   .rail-card.is-active {
-    /* Neutral hairline, not the brand crimson: a red frame on a thumbnail
-       reads as an error, and with the neighbours now legible the active card
-       no longer needs to shout. No tint either — a crimson wash at 4-7% is
-       invisible on a black card and turns the same card pink on a white one. */
-    border-color: var(--player-active-border);
-    box-shadow: var(--player-lift-soft);
     filter: none;
     opacity: 1;
     background: var(--player-surface);

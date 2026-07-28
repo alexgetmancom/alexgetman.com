@@ -429,6 +429,9 @@ onMount(() => {
 >
   <div class="story-player__main">
     <div class="story-rail-container" onwheel={handleWheel}>
+      <!-- The viewfinder: a frame that never moves, marking the slot the stage
+           is showing. The cards travel through it. -->
+      <span class="story-rail-viewfinder" aria-hidden="true"></span>
       <RailControl
         {ui}
         {locale}
@@ -560,6 +563,31 @@ onMount(() => {
     gap: 0;
   }
 
+  /* The viewfinder. The rail's active slot is already fixed — the control is
+   * pinned to it and the cards glide until the chosen one lands there — but
+   * nothing said so, and the only cue that a card was the active one travelled
+   * with the card. A frame that stays put turns the strip into a picker: this
+   * is the slot, whatever is in it is what the stage is showing.
+   *
+   * It spans the control and the card as one shape, because they are one
+   * shape: the control's right border is open so the two read as a single
+   * bracket around the current story. Purely decorative, so it is inert and
+   * takes no part in hit-testing. */
+  .story-rail-viewfinder {
+    position: absolute;
+    z-index: var(--z-above);
+    top: var(--rail-active-offset);
+    /* Starts where the card does — the container reserves 50px on the left for
+       the control, whose own border carries the bracket that far. */
+    left: calc(50px + 0.05rem);
+    right: 0.05rem;
+    height: var(--rail-card-height);
+    border: 1px solid var(--player-active-border);
+    border-radius: 10px;
+    box-shadow: var(--player-lift-soft);
+    pointer-events: none;
+  }
+
   /* Панель управления (аватар + режимы ленты) — в RailControl.svelte;
      её геометрия выведена из --rail-* выше и наследуется туда. */
 
@@ -597,6 +625,12 @@ onMount(() => {
       min-height: 0;
       max-height: none;
       gap: 1rem;
+    }
+
+    /* No viewfinder once the rail turns horizontal: there is no fixed slot to
+       point at, the control sits above the strip rather than beside it. */
+    .story-rail-viewfinder {
+      display: none;
     }
 
     .story-rail-container {
