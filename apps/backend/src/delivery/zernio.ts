@@ -1,11 +1,13 @@
 import type { BackendConfig } from "../foundation/config.js";
 import { ExternalHttpError, requestJson } from "../foundation/http.js";
 import type { InstagramMetadata } from "../publishing/video-types.js";
+import { AmbiguousPublicationError, isAmbiguousTransportFailure } from "./ambiguous-publication.js";
 
 type ZernioPost = {
   _id?: string;
   id?: string;
   post?: ZernioPost;
+  existingPost?: ZernioPost;
   platforms?: Array<{ platform?: string; platformPostId?: string; platformPostUrl?: string }>;
   platformAnalytics?: Array<{ platform?: string; platformPostId?: string; platformPostUrl?: string }>;
 };
@@ -24,7 +26,7 @@ function api(path: string): string {
 }
 
 function postId(post: ZernioPost): string | null {
-  return post._id ?? post.id ?? post.post?._id ?? post.post?.id ?? null;
+  return post._id ?? post.id ?? post.post?._id ?? post.post?.id ?? post.existingPost?._id ?? post.existingPost?.id ?? null;
 }
 
 /** Zernio publishes at the durable publish job time. The request ID fences retries of this logical target. */
@@ -34,9 +36,8 @@ export async function publishZernioInstagramReel(
   fetchImpl: typeof fetch = fetch,
 ): Promise<{ providerPostId: string; externalId: string | null; url: string | null }> {
   if (!config.ZERNIO_API_KEY) throw new Error("ZERNIO_API_KEY is missing");
-  let post: ZernioPost;
-  try {
-    post = await requestJson<ZernioPost>(fetchImpl, api("posts"), {
+  const create = () =>
+    requestJson<ZernioPost>(fetchImpl, api("posts"), {
       method: "POST",
       headers: {
         Authorization: `Bearer ${config.ZERNIO_API_KEY}`,
@@ -56,18 +57,45 @@ export async function publishZernioInstagramReel(
         publishNow: true,
       }),
     });
-  } catch (error) {
-    const existingPostId = matchingDuplicatePostId(error, input.accountId);
-    if (!existingPostId) throw error;
-    // Zernio returns this conflict after an earlier request reached the
-    // provider but its response was lost or the durable job was retried. The
-    // provider's existing post is the successful result of this logical target.
-    return { providerPostId: existingPostId, externalId: null, url: null };
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return zernioPublishResult(await create());
+    } catch (error) {
+      const existingPostId = matchingDuplicatePostId(error, input.accountId);
+      if (existingPostId) {
+        // Zernio returns this conflict after an earlier request reached the
+        // provider but its response was lost or the durable job was retried.
+        try {
+          const existing = await requestJson<ZernioPost>(fetchImpl, api(`posts/${encodeURIComponent(existingPostId)}`), {
+            headers: { Authorization: `Bearer ${config.ZERNIO_API_KEY}` },
+          });
+          return zernioPublishResult(existing, existingPostId);
+        } catch {
+          // The conflict itself is authoritative proof that the exact post
+          // exists. The lookup only enriches the result with platform fields.
+          return { providerPostId: existingPostId, externalId: null, url: null };
+        }
+      }
+      if (!isAmbiguousTransportFailure(error)) throw error;
+      // The same request ID is Zernio's documented idempotency key. One
+      // immediate replay is a read/reconciliation operation in effect: it
+      // returns `existingPost` rather than creating another post.
+      if (attempt === 0) continue;
+      throw new AmbiguousPublicationError("zernio", error);
+    }
   }
-  const resolved = post.post ?? post;
+  throw new Error("Zernio publication loop exhausted unexpectedly");
+}
+
+function zernioPublishResult(
+  post: ZernioPost,
+  expectedPostId?: string,
+): { providerPostId: string; externalId: string | null; url: string | null } {
+  const resolved = post.post ?? post.existingPost ?? post;
   const platform = [...(resolved.platforms ?? []), ...(resolved.platformAnalytics ?? [])].find((item) => item.platform === "instagram");
   const id = postId(post);
   if (!id) throw new Error("Zernio did not return a post ID");
+  if (expectedPostId && id !== expectedPostId) throw new Error("Zernio returned a different post during reconciliation");
   return { providerPostId: id, externalId: platform?.platformPostId ?? null, url: platform?.platformPostUrl ?? null };
 }
 

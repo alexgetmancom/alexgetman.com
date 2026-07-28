@@ -7,7 +7,14 @@ import type { BackendConfig } from "../foundation/config.js";
 import { log } from "../foundation/logger.js";
 import { recordWorkerState } from "../foundation/runtime/worker-state.js";
 import { isTargetAuthBlocked } from "../observability/auth-circuit.js";
-import { claimDuePublishJobs, completePublishJob, failPublishJob, recoverStalePublishJobs } from "../publishing/queue.js";
+import {
+  claimDuePublishJobs,
+  completePublishJob,
+  failPublishJob,
+  recoverStalePublishJobs,
+  requirePublishVerification,
+} from "../publishing/queue.js";
+import { AmbiguousPublicationError, isAmbiguousPublicationError } from "./ambiguous-publication.js";
 import { createPlatformPorts } from "./ports/social.js";
 import { type DeliveryPort, type DeliveryPorts, deliveryAdapter } from "./ports.js";
 
@@ -60,7 +67,8 @@ export async function runDeliveryPublishCycle(
           );
           completePublishJob(backendDb, config, job.jobId, result, job.lockId);
         } catch (error) {
-          failPublishJob(backendDb, config, job.jobId, error, job.lockId);
+          if (isAmbiguousPublicationError(error)) requirePublishVerification(backendDb, job.jobId, error, job.lockId);
+          else failPublishJob(backendDb, config, job.jobId, error, job.lockId);
         }
       }),
     ),
@@ -110,8 +118,11 @@ export async function runDeliveryPublishCycle(
         cooldownSeconds: 10,
       });
       const finalJobs = backendDb.db.select({ status: publishJobs.status }).from(publishJobs).where(eq(publishJobs.postId, postId)).all();
-      if (finalJobs.length > 0 && finalJobs.every((job) => ["published", "failed", "cancelled", "skipped"].includes(job.status))) {
-        const failed = finalJobs.filter((job) => job.status === "failed").length;
+      if (
+        finalJobs.length > 0 &&
+        finalJobs.every((job) => ["published", "failed", "cancelled", "skipped", "verification_required"].includes(job.status))
+      ) {
+        const failed = finalJobs.filter((job) => job.status === "failed" || job.status === "verification_required").length;
         recordDomainEvent(backendDb, {
           ref: `post:${postId}`,
           type: "delivery.post.completed",
@@ -242,8 +253,9 @@ async function withinPublishTimeout<T>(config: BackendConfig, target: string, wo
         timer = setTimeout(
           () =>
             reject(
-              new Error(
-                `delivery_execution_timeout: ${target} exceeded ${config.PUBLISH_JOB_TIMEOUT_SECONDS}s; verify externally before retry`,
+              new AmbiguousPublicationError(
+                target,
+                new Error(`delivery_execution_timeout: ${target} exceeded ${config.PUBLISH_JOB_TIMEOUT_SECONDS}s`),
               ),
             ),
           config.PUBLISH_JOB_TIMEOUT_SECONDS * 1000,

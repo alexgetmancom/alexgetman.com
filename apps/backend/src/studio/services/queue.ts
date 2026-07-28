@@ -57,7 +57,7 @@ export function queueService(backendDb: BackendDb, config: BackendConfig) {
           const failed = backendDb.db
             .select({ jobId: publishJobs.jobId })
             .from(publishJobs)
-            .where(and(eq(publishJobs.postId, draft.postId), eq(publishJobs.status, "failed")))
+            .where(and(eq(publishJobs.postId, draft.postId), inArray(publishJobs.status, ["failed", "verification_required"])))
             .limit(1)
             .get();
           const failedSite = backendDb.db
@@ -100,7 +100,8 @@ export function queueService(backendDb: BackendDb, config: BackendConfig) {
         }
         if (video.status === "draft" || video.status === "editing")
           draftItems.push({ id: video.id, label, time: new Date(video.updatedAt), kind: "video", targets: 0 });
-        if (targets.some((target) => target.status === "failed")) attention.push({ id: video.id, label, kind: "video" });
+        if (targets.some((target) => target.status === "failed" || target.status === "verification_required"))
+          attention.push({ id: video.id, label, kind: "video" });
       }
 
       upcoming.sort((left, right) => left.time.getTime() - right.time.getTime());

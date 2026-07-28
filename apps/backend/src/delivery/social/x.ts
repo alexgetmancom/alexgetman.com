@@ -6,6 +6,7 @@ import { redactExternalSecrets } from "../../foundation/redact.js";
 import type { PublishResult } from "../../publishing/errors.js";
 import { HttpPublishError } from "../../publishing/errors.js";
 import { formatPlatformText } from "../../publishing/platform-profiles.js";
+import { ambiguousExternalMutation } from "../ambiguous-publication.js";
 import { guessContentType, payloadMedia, payloadText } from "./payload.js";
 
 const UPLOAD_URL = "https://upload.twitter.com/1.1/media/upload.json";
@@ -27,14 +28,23 @@ export async function publishToX(
     text: formatPlatformText("x", payloadText(payload)),
     ...(mediaIds.length ? { media: { media_ids: mediaIds } } : {}),
   });
-  const response = await oauthFetch("https://api.twitter.com/2/tweets", config, fetchImpl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body,
-  });
+  const response = await ambiguousExternalMutation("x", () =>
+    oauthFetch("https://api.twitter.com/2/tweets", config, fetchImpl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+    }),
+  );
   const result = await jsonResponse<{ data?: { id?: string } }>(response, "X tweet create");
   const id = result.data?.id;
   return { ok: Boolean(id), id: id ?? null, url: id ? `https://x.com/i/web/status/${id}` : null, raw: result };
+}
+
+export async function verifyXPost(id: string, config: BackendConfig, fetchImpl: typeof fetch = fetch): Promise<{ id: string }> {
+  const response = await oauthFetch(`https://api.twitter.com/2/tweets/${encodeURIComponent(id)}`, config, fetchImpl, { method: "GET" });
+  const result = await jsonResponse<{ data?: { id?: string } }>(response, "X post verify");
+  if (result.data?.id !== id) throw new Error("X verification did not return the expected post");
+  return { id };
 }
 
 async function uploadImage(filePath: string, config: BackendConfig, fetchImpl: typeof fetch): Promise<string> {

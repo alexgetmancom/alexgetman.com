@@ -1,4 +1,4 @@
-const VIDEO_FINAL_TARGET_STATUSES = new Set(["published", "failed", "cancelled"]);
+const VIDEO_FINAL_TARGET_STATUSES = new Set(["published", "failed", "cancelled", "verification_required"]);
 const VIDEO_EDITABLE_TARGET_STATUSES = new Set(["editing", "draft"]);
 const VIDEO_SCHEDULABLE_TARGET_STATUSES = new Set(["editing", "draft", "scheduled"]);
 const ACTIVE_PUBLICATION_JOB_STATUSES = new Set(["queued", "publishing", "rendering"]);
@@ -27,5 +27,5 @@ export function videoDraftStatus(targetStatuses: string[]): "scheduled" | "publi
 export function publicationStatus(jobStatuses: string[]): "published" | "failed" | null {
   if (jobStatuses.length === 0) return null;
   if (jobStatuses.some((status) => ACTIVE_PUBLICATION_JOB_STATUSES.has(status))) return null;
-  return jobStatuses.some((status) => status === "failed") ? "failed" : "published";
+  return jobStatuses.some((status) => status === "failed" || status === "verification_required") ? "failed" : "published";
 }

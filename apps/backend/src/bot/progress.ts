@@ -21,13 +21,14 @@ export function renderPostProgress(
   details = false,
 ): { text: string; keyboard: InlineKeyboard } {
   const { counts } = state;
-  const completed = counts.published + counts.failed + counts.cancelled;
+  const completed = counts.published + counts.failed + counts.verification_required + counts.cancelled;
   const total = state.targets.length;
-  const title = counts.failed
-    ? t(locale, "progress.issues-title")
-    : completed === total && total > 0
-      ? t(locale, "progress.complete-title")
-      : t(locale, "progress.publishing-title");
+  const title =
+    counts.failed + counts.verification_required
+      ? t(locale, "progress.issues-title")
+      : completed === total && total > 0
+        ? t(locale, "progress.complete-title")
+        : t(locale, "progress.publishing-title");
   const lines = [
     `${title} · *Post #${state.draftId}*`,
     "",
@@ -36,6 +37,7 @@ export function renderPostProgress(
     `🔄 ${t(locale, "progress.publishing")}: ${counts.publishing}`,
     `⏳ ${t(locale, "progress.waiting")}: ${counts.waiting}`,
     `❌ ${t(locale, "progress.failed")}: ${counts.failed}`,
+    `⚠️ ${t(locale, "progress.verification-required")}: ${counts.verification_required}`,
   ];
   if (details)
     for (const group of ["ru", "en"] as const) {
@@ -44,7 +46,9 @@ export function renderPostProgress(
       lines.push("", `*${group.toUpperCase()}*`);
       for (const item of items)
         lines.push(
-          `${statusIcon(item.status)} ${item.label}${item.error && item.status === "failed" ? ` — ${shortError(item.error)}` : ""}`,
+          `${statusIcon(item.status)} ${item.label}${
+            item.error && (item.status === "failed" || item.status === "verification_required") ? ` — ${shortError(item.error)}` : ""
+          }`,
         );
     }
   const keyboard = new InlineKeyboard();
@@ -74,7 +78,7 @@ export async function refreshPostControlCard(backendDb: BackendDb, bot: Bot | nu
 }
 
 function statusIcon(status: PostProgressStatus): string {
-  return { published: "✅", publishing: "🔄", waiting: "⏳", failed: "❌", cancelled: "⏹" }[status];
+  return { published: "✅", publishing: "🔄", waiting: "⏳", failed: "❌", verification_required: "⚠️", cancelled: "⏹" }[status];
 }
 
 /** A platform error can be arbitrarily long; the card must stay under Telegram's message limit. */

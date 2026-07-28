@@ -186,7 +186,7 @@ function scheduleVideoReminders(backendDb: BackendDb, config: BackendConfig, own
   };
   const grouped = new Map<string, VideoTarget[]>();
   for (const target of listVideoTargets(backendDb, videoDraftId)) {
-    if (!target.scheduledAt || ["published", "cancelled", "failed"].includes(target.status)) continue;
+    if (!target.scheduledAt || ["published", "cancelled", "failed", "verification_required"].includes(target.status)) continue;
     const targets = grouped.get(target.scheduledAt) ?? [];
     targets.push(target.target as VideoTarget);
     grouped.set(target.scheduledAt, targets);

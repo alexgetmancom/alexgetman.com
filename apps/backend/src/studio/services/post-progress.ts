@@ -5,7 +5,7 @@ import type { BackendDb } from "../../db/client.js";
 import { drafts, publishJobs, siteJobs } from "../../db/schema.js";
 import { parseTargets } from "../../publishing/targets.js";
 
-export type PostProgressStatus = "published" | "publishing" | "failed" | "waiting" | "cancelled";
+export type PostProgressStatus = "published" | "publishing" | "failed" | "verification_required" | "waiting" | "cancelled";
 export type PostProgressState = {
   draftId: number;
   actorId: number;
@@ -29,7 +29,14 @@ export function postProgressState(backendDb: BackendDb, draftId: number): PostPr
     const current = statuses.get(target) ?? { status: "waiting" as const, error: null };
     return { target, label, locale, ...current };
   });
-  const counts: Record<PostProgressStatus, number> = { published: 0, publishing: 0, failed: 0, waiting: 0, cancelled: 0 };
+  const counts: Record<PostProgressStatus, number> = {
+    published: 0,
+    publishing: 0,
+    failed: 0,
+    verification_required: 0,
+    waiting: 0,
+    cancelled: 0,
+  };
   for (const item of items) counts[item.status] += 1;
   return { draftId, actorId: draft.actorId, targets: items, counts };
 }
@@ -38,6 +45,7 @@ function normalize(status: string, error?: string | null): { status: PostProgres
   if (status === "published" || status === "skipped") return { status: "published", error: null };
   if (status === "publishing") return { status: "publishing", error: null };
   if (status === "failed") return { status: "failed", error: error ?? null };
+  if (status === "verification_required") return { status: "verification_required", error: error ?? null };
   if (status === "cancelled") return { status: "cancelled", error: null };
   return { status: "waiting", error: null };
 }

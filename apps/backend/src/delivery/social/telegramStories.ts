@@ -7,6 +7,7 @@ import { createChannelStoryClient } from "../../foundation/external/telegram-ses
 import { runFfmpeg } from "../../foundation/runtime/ffmpeg.js";
 import { withTimeout } from "../../foundation/runtime/timeout.js";
 import type { PublishResult } from "../../publishing/errors.js";
+import { ambiguousExternalMutation } from "../ambiguous-publication.js";
 import { type PublishMediaItem, payloadMedia, payloadText } from "./payload.js";
 
 const URL_RE = /https?:\/\/[^\s<>)]*/g;
@@ -89,18 +90,21 @@ async function publishChannelStory(
 
     const storyChannel = config.TELEGRAM_STORIES_CHANNEL?.replace(/^@/, "");
     if (!storyChannel) throw new Error("telegram_story_channel_missing");
-    const story = await withTimeout(
-      clientInstance.sendStory({
-        peer: storyChannel,
-        // A string is interpreted by mtcute as a Bot API/TDLib file ID, not a
-        // filesystem path.  Keep the generated 1080x1920 file explicit so
-        // Telegram uploads it verbatim (including its letterbox padding).
-        media: telegramStoryUploadMedia(uploadPath, media.type, metadata),
-        caption,
-        period: 86_400,
-      }),
-      120_000,
-      "telegram_channel_story_timeout",
+    const finalUploadPath = uploadPath;
+    const story = await ambiguousExternalMutation("telegram_stories", () =>
+      withTimeout(
+        clientInstance.sendStory({
+          peer: storyChannel,
+          // A string is interpreted by mtcute as a Bot API/TDLib file ID, not a
+          // filesystem path. Keep the generated 1080x1920 file explicit so
+          // Telegram uploads it verbatim (including its letterbox padding).
+          media: telegramStoryUploadMedia(finalUploadPath, media.type, metadata),
+          caption,
+          period: 86_400,
+        }),
+        120_000,
+        "telegram_channel_story_timeout",
+      ),
     );
     const storyId = story.id;
     return { ok: true, id: storyId, url: `https://t.me/${storyChannel}/s/${storyId}`, raw: { source: "mtproto_stories.sendStory" } };

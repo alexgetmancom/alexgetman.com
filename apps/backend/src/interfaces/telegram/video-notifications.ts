@@ -216,13 +216,26 @@ function friendlyTarget(target: string): string {
 function statusIcon(status: string): string {
   if (["published", "completed"].includes(status)) return "✅";
   if (status === "failed") return "❌";
+  if (status === "verification_required") return "⚠️";
   if (status === "cancelled") return "🚫";
   return "⏳";
 }
 
 function friendlyStatus(status: string, locale: "ru" | "en"): string {
-  const ru: Record<string, string> = { published: "опубликовано", completed: "опубликовано", failed: "ошибка", cancelled: "отменено" };
-  const en: Record<string, string> = { published: "published", completed: "published", failed: "failed", cancelled: "cancelled" };
+  const ru: Record<string, string> = {
+    published: "опубликовано",
+    completed: "опубликовано",
+    failed: "ошибка",
+    verification_required: "нужна проверка",
+    cancelled: "отменено",
+  };
+  const en: Record<string, string> = {
+    published: "published",
+    completed: "published",
+    failed: "failed",
+    verification_required: "verification required",
+    cancelled: "cancelled",
+  };
   return (locale === "ru" ? ru : en)[status] ?? (locale === "ru" ? "ожидает" : "pending");
 }
 

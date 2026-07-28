@@ -2,6 +2,7 @@ import type { BackendConfig } from "../../foundation/config.js";
 import { formBody, requestJson } from "../../foundation/http.js";
 import type { PublishResult } from "../../publishing/errors.js";
 import { threadsBody, threadsTextLimit } from "../../publishing/threads-text.js";
+import { ambiguousExternalMutation } from "../ambiguous-publication.js";
 import { payloadMedia, payloadText, splitText } from "./payload.js";
 
 type ThreadsResponse = {
@@ -97,7 +98,9 @@ export async function publishToThreads(
   }
 
   if (firstContainer) {
-    const published = await callThreadsWithRetry(config, "me/threads_publish", { creation_id: firstContainer }, fetchImpl);
+    const published = await ambiguousExternalMutation("threads", () =>
+      callThreadsWithRetry(config, "me/threads_publish", { creation_id: firstContainer }, fetchImpl),
+    );
     if (!published.id) return { ok: false, error: "threads_publish_missing" };
     ids.push(published.id);
   }
@@ -108,7 +111,9 @@ export async function publishToThreads(
       const reply = await callThreadsWithRetry(config, "me/threads", { media_type: "TEXT", text: part, reply_to_id: parentId }, fetchImpl);
       if (!reply.id) return { partial: true, ids, error: "threads_reply_container_missing", retryable: true };
       await waitForThreadsContainer(config, reply.id, fetchImpl);
-      const replyPublish = await callThreadsWithRetry(config, "me/threads_publish", { creation_id: reply.id }, fetchImpl);
+      const replyPublish = await ambiguousExternalMutation("threads", () =>
+        callThreadsWithRetry(config, "me/threads_publish", { creation_id: reply.id }, fetchImpl),
+      );
       if (!replyPublish.id) return { partial: true, ids, error: "threads_reply_publish_missing", retryable: true };
       ids.push(replyPublish.id);
       parentId = replyPublish.id;
@@ -116,9 +121,17 @@ export async function publishToThreads(
       return { partial: true, ids, error: String(error instanceof Error ? error.message : error), retryable: true };
     }
   }
-  const permalink = ids[0]
-    ? (await callThreads(config, ids[0], { fields: "permalink" }, fetchImpl, "GET")).permalink?.replace("threads.net", "threads.com")
-    : null;
+  let permalink: string | null = null;
+  if (ids[0]) {
+    try {
+      permalink =
+        (await callThreads(config, ids[0], { fields: "permalink" }, fetchImpl, "GET")).permalink?.replace("threads.net", "threads.com") ??
+        null;
+    } catch {
+      // The returned post ID is durable proof of publication. A permalink
+      // lookup failure must never repeat the public mutation.
+    }
+  }
   return {
     ok: ids.length > 0,
     id: ids[0] ?? null,
@@ -127,6 +140,16 @@ export async function publishToThreads(
     urls: permalink ? [permalink] : [],
     partial: ids.length < parts.length,
   };
+}
+
+export async function verifyThreadsPost(
+  id: string,
+  config: BackendConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ id: string; url: string | null }> {
+  const post = await callThreads(config, id, { fields: "id,permalink" }, fetchImpl, "GET");
+  if (post.id !== id) throw new Error("Threads verification returned a different post");
+  return { id, url: post.permalink?.replace("threads.net", "threads.com") ?? null };
 }
 
 async function callThreadsWithRetry(

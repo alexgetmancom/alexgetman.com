@@ -11,11 +11,14 @@ const input = {
   requestId: "job-77",
 };
 
-function recordingFetch(handler: () => Response): { fetch: typeof fetch; calls: Array<{ url: string; init: RequestInit | undefined }> } {
+function recordingFetch(handler: (url: string, init: RequestInit | undefined) => Response): {
+  fetch: typeof fetch;
+  calls: Array<{ url: string; init: RequestInit | undefined }>;
+} {
   const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
   const impl = async (target: URL | RequestInfo, init?: RequestInit) => {
     calls.push({ url: target instanceof Request ? target.url : String(target), init });
-    return handler();
+    return handler(calls.at(-1)?.url ?? "", init);
   };
   return { fetch: impl as unknown as typeof fetch, calls };
 }
@@ -59,6 +62,26 @@ describe("publishZernioInstagramReel", () => {
     expect(headers.Authorization).toBe("Bearer zernio-placeholder-not-a-secret");
   });
 
+  it("replays one lost response with the same request id and accepts `existingPost`", async () => {
+    let attempt = 0;
+    const { fetch: impl, calls } = recordingFetch(() => {
+      attempt += 1;
+      if (attempt === 1) throw new Error("fetch failed: connection reset");
+      return json({ existingPost: { _id: "zernio-after-timeout" } });
+    });
+
+    expect(await publishZernioInstagramReel(config, input, impl)).toMatchObject({ providerPostId: "zernio-after-timeout" });
+    expect(calls.map((call) => ((call.init?.headers ?? {}) as Record<string, string>)["x-request-id"])).toEqual(["job-77", "job-77"]);
+  });
+
+  it("requires verification when both idempotent attempts lose their response", async () => {
+    const { fetch: impl } = recordingFetch(() => {
+      throw new Error("fetch failed: connection reset");
+    });
+
+    await expect(publishZernioInstagramReel(config, input, impl)).rejects.toThrow("verification_required: zernio may have published");
+  });
+
   it("trims the caption and requests a feed-shared reel for the given account", async () => {
     const { fetch: impl, calls } = recordingFetch(() => json({ _id: "zernio-1" }));
     await publishZernioInstagramReel(config, input, impl);
@@ -80,6 +103,17 @@ describe("publishZernioInstagramReel", () => {
 
     const flat = recordingFetch(() => json({ id: "zernio-3" }));
     expect(await publishZernioInstagramReel(config, input, flat.fetch)).toMatchObject({ providerPostId: "zernio-3" });
+  });
+
+  it("accepts Zernio's same-request idempotency response under `existingPost`", async () => {
+    const { fetch: impl } = recordingFetch(() =>
+      json({ existingPost: { _id: "zernio-existing", platforms: [{ platform: "instagram", platformPostId: "ig-existing" }] } }),
+    );
+
+    expect(await publishZernioInstagramReel(config, input, impl)).toMatchObject({
+      providerPostId: "zernio-existing",
+      externalId: "ig-existing",
+    });
   });
 
   it("reads the permalink from platformAnalytics when platforms has not filled in yet", async () => {
@@ -116,21 +150,29 @@ describe("publishZernioInstagramReel", () => {
   });
 
   it("reconciles an exact-content conflict for the requested Instagram account", async () => {
-    const { fetch: impl } = recordingFetch(() =>
-      json(
-        {
-          error: "This exact content is already scheduled, publishing, or was posted to this account within the last 24 hours.",
-          details: { accountId: "acct-1", platform: "instagram", existingPostId: "zernio-existing" },
-        },
-        409,
-      ),
+    const { fetch: impl, calls } = recordingFetch((url) =>
+      url.endsWith("/zernio-existing")
+        ? json({
+            post: {
+              _id: "zernio-existing",
+              platforms: [{ platform: "instagram", platformPostId: "ig-existing", platformPostUrl: "https://instagram.test/ig-existing" }],
+            },
+          })
+        : json(
+            {
+              error: "This exact content is already scheduled, publishing, or was posted to this account within the last 24 hours.",
+              details: { accountId: "acct-1", platform: "instagram", existingPostId: "zernio-existing" },
+            },
+            409,
+          ),
     );
 
     expect(await publishZernioInstagramReel(config, input, impl)).toEqual({
       providerPostId: "zernio-existing",
-      externalId: null,
-      url: null,
+      externalId: "ig-existing",
+      url: "https://instagram.test/ig-existing",
     });
+    expect(calls.map((call) => call.url)).toEqual(["https://zernio.com/api/v1/posts", "https://zernio.com/api/v1/posts/zernio-existing"]);
   });
 
   it("does not reconcile a conflict for another account, platform, or reason", async () => {

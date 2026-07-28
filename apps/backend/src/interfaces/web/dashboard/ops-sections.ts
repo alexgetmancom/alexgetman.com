@@ -111,7 +111,7 @@ export function renderCredentialsSection(ops: OpsPayload): string {
 export function renderDiagnosticsSection(ops: OpsPayload): string {
   const errors =
     (ops.pipeline?.metrics?.recent ?? [])
-      .filter((row) => row.error || row.status === "failed")
+      .filter((row) => row.error || row.status === "failed" || row.status === "verification_required")
       .slice(0, 30)
       .map(
         (row) =>

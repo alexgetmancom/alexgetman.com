@@ -100,7 +100,12 @@ export function persistPublicationPlan(backendDb: BackendDb, plan: PublicationPl
       tx
         .select({ target: publishJobs.target })
         .from(publishJobs)
-        .where(and(eq(publishJobs.postId, plan.postId), inArray(publishJobs.status, ["publishing", "published", "skipped"])))
+        .where(
+          and(
+            eq(publishJobs.postId, plan.postId),
+            inArray(publishJobs.status, ["publishing", "published", "skipped", "verification_required"]),
+          ),
+        )
         .all()
         .map((row) => row.target),
     );

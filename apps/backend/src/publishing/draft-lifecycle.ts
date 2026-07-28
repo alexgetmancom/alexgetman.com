@@ -27,7 +27,9 @@ export function cancelDraft(backendDb: BackendDb, draftId: number): void {
       tx
         .select({ count: count() })
         .from(publishJobs)
-        .where(and(eq(publishJobs.postId, postId), inArray(publishJobs.status, ["publishing", "published", "skipped"])))
+        .where(
+          and(eq(publishJobs.postId, postId), inArray(publishJobs.status, ["publishing", "published", "skipped", "verification_required"])),
+        )
         .get()?.count ?? 0;
     if (finalCount > 0) {
       tx.update(publishJobs)

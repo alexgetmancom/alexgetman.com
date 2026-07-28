@@ -7,11 +7,11 @@ import { platformProfile } from "../../publishing/platform-profiles.js";
 import type { ClaimedPublishJob } from "../../publishing/queue.js";
 import { prepareMediaItems } from "../media-prepare.js";
 import { type DeliveryPort, type DeliveryPorts, deliveryAdapter } from "../ports.js";
-import { publishInstagramStory } from "../social/instagram.js";
+import { publishInstagramStory, verifyInstagramPublication } from "../social/instagram.js";
 import { payloadMedia } from "../social/payload.js";
 import { publishToTelegram } from "../social/telegram.js";
-import { publishToThreads } from "../social/threads.js";
-import { publishToX } from "../social/x.js";
+import { publishToThreads, verifyThreadsPost } from "../social/threads.js";
+import { publishToX, verifyXPost } from "../social/x.js";
 import { generateStoryMedia } from "../story-media.js";
 
 type PreparedMedia = Awaited<ReturnType<typeof prepareMediaItems>>;
@@ -76,9 +76,62 @@ export function createPlatformPorts(config: BackendConfig, fetchImpl: typeof fet
   return Object.fromEntries(
     Object.entries(publishers).map(([target, publish]) => [
       target,
-      deliveryAdapter(publish, { validate: async () => validatePlatformTarget(target, config) }),
+      deliveryAdapter(publish, {
+        validate: async () => validatePlatformTarget(target, config),
+        verify: async (_job, result) => verifyProviderResult(target, result, config, fetchImpl),
+      }),
     ]),
   ) as DeliveryPorts;
+}
+
+async function verifyProviderResult(
+  target: string,
+  result: PublishResult,
+  config: BackendConfig,
+  fetchImpl: typeof fetch,
+): Promise<PublishResult> {
+  if (!result.ok || result.id == null) return result;
+  const id = String(result.id);
+  try {
+    if (target === "threads" || target === "threads_ru" || target === "threads_en") {
+      const verified = await verifyThreadsPost(
+        id,
+        target === "threads_en"
+          ? { ...config, THREADS_ACCESS_TOKEN: config.THREADS_EN_ACCESS_TOKEN ?? config.THREADS_ACCESS_TOKEN }
+          : config,
+        fetchImpl,
+      );
+      return { ...result, url: result.url ?? verified.url, verification: { status: "verified", providerId: verified.id } };
+    }
+    if (target === "x" || target === "twitter") {
+      const verified = await verifyXPost(id, config, fetchImpl);
+      return { ...result, verification: { status: "verified", providerId: verified.id } };
+    }
+    if (target === "instagram_story" || target === "instagram_stories" || target === "instagram_stories_ru") {
+      const instagramConfig =
+        target === "instagram_stories_ru"
+          ? {
+              ...config,
+              INSTAGRAM_ACCESS_TOKEN: config.INSTAGRAM_RU_ACCESS_TOKEN ?? config.INSTAGRAM_ACCESS_TOKEN,
+              INSTAGRAM_USER_ID: config.INSTAGRAM_RU_USER_ID ?? config.INSTAGRAM_USER_ID,
+            }
+          : {
+              ...config,
+              INSTAGRAM_ACCESS_TOKEN: config.INSTAGRAM_EN_ACCESS_TOKEN ?? config.INSTAGRAM_ACCESS_TOKEN,
+              INSTAGRAM_USER_ID: config.INSTAGRAM_EN_USER_ID ?? config.INSTAGRAM_USER_ID,
+            };
+      const verified = await verifyInstagramPublication(id, instagramConfig, fetchImpl);
+      return { ...result, url: result.url ?? verified.url, verification: { status: "verified", providerId: verified.id } };
+    }
+    return { ...result, verification: { status: "unsupported" } };
+  } catch (error) {
+    // The provider already returned an external ID. Verification is an
+    // observation layer and must never replay the public mutation.
+    return {
+      ...result,
+      verification: { status: "unavailable", error: error instanceof Error ? error.message : String(error) },
+    };
+  }
 }
 
 /** Fail before a provider request when the declarative target profile is not ready. */

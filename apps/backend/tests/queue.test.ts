@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
 import type { openBackendDb } from "../src/db/client.js";
 import { type JsonObject, postEvents, postTargets, publishJobs } from "../src/db/schema.js";
+import { AmbiguousPublicationError } from "../src/delivery/ambiguous-publication.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { HttpPublishError } from "../src/publishing/errors.js";
 import {
@@ -260,6 +261,30 @@ describe("publish queue", () => {
       expect(job.lastError).toContain("temporary");
     }));
 
+  it("requires verification when a provider may have published before transport failed", () =>
+    withDb(async (backendDb) => {
+      const id = enqueuePublishJob(backendDb, {
+        messageId: 1011,
+        target: "ambiguous-provider",
+        payload: { title: "Queued" },
+      });
+      await runPublishCycle(loadConfig({}), backendDb, {
+        "ambiguous-provider": async () => {
+          throw new AmbiguousPublicationError("ambiguous-provider", new Error("socket closed"));
+        },
+      });
+      expect(
+        backendDb.db
+          .select({ status: publishJobs.status, nextAttemptAt: publishJobs.nextAttemptAt })
+          .from(publishJobs)
+          .where(eq(publishJobs.jobId, id))
+          .get(),
+      ).toEqual({ status: "verification_required", nextAttemptAt: null });
+      expect(
+        backendDb.db.select({ status: postTargets.status }).from(postTargets).where(eq(postTargets.target, "ambiguous-provider")).get(),
+      ).toEqual({ status: "verification_required" });
+    }));
+
   it("retries an unknown failure once and then fails it", () =>
     withDb(async (backendDb) => {
       const id = enqueuePublishJob(backendDb, {
@@ -310,13 +335,14 @@ describe("publish queue", () => {
           .where(eq(publishJobs.jobId, id))
           .get(),
       ).toEqual({
-        status: "failed",
+        status: "verification_required",
         attemptCount: 1,
-        lastError: "delivery_execution_timeout: slow-provider exceeded 1s; verify externally before retry",
+        lastError:
+          "verification_required: slow-provider may have published before confirmation was lost: delivery_execution_timeout: slow-provider exceeded 1s",
       });
     }));
 
-  it("recovers a stale publishing lock into its bounded retry policy", () =>
+  it("holds a stale publishing lock for verification instead of risking a duplicate", () =>
     withDb((backendDb) => {
       const id = enqueuePublishJob(backendDb, {
         messageId: 103,
@@ -334,11 +360,11 @@ describe("publish queue", () => {
         .from(publishJobs)
         .where(eq(publishJobs.jobId, id))
         .get();
-      expect(job).toEqual({ status: "queued", lockedBy: null });
+      expect(job).toEqual({ status: "verification_required", lockedBy: null });
       expect(
         backendDb.db.select({ status: postTargets.status }).from(postTargets).where(eq(postTargets.target, "test_platform")).get(),
       ).toEqual({
-        status: "queued",
+        status: "verification_required",
       });
     }));
 
@@ -362,7 +388,7 @@ describe("publish queue", () => {
 
       expect(runPublishWatchdog(loadConfig({ PUBLISH_BACKOFF_BASE_SECONDS: "1" }), backendDb)).toBe(1);
       expect(backendDb.db.select({ status: publishJobs.status }).from(publishJobs).where(eq(publishJobs.jobId, id)).get()).toEqual({
-        status: "queued",
+        status: "verification_required",
       });
     }));
 
@@ -381,7 +407,7 @@ describe("publish queue", () => {
       completePublishJob(backendDb, loadConfig({}), id, { ok: true, id: "late" }, claimed.lockId);
 
       expect(backendDb.db.select({ status: publishJobs.status }).from(publishJobs).where(eq(publishJobs.jobId, id)).get()).toEqual({
-        status: "queued",
+        status: "verification_required",
       });
     }));
 

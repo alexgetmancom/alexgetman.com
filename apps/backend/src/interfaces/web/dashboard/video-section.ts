@@ -37,7 +37,7 @@ export function renderVideoSection(backendDb: BackendDb): string {
         total.likes += metrics.likes;
         total.comments += metrics.comments;
         if (target.status === "scheduled" || target.status === "prepared") total.scheduled += 1;
-        if (target.status === "failed") total.failed += 1;
+        if (target.status === "failed" || target.status === "verification_required") total.failed += 1;
       }
       return total;
     },
@@ -101,6 +101,8 @@ function renderVideoRow(row: VideoRow): string {
 function renderTarget(target: VideoTargetRow | undefined): string {
   if (!target) return "—";
   if (target.status === "failed") return `<span class="danger">Ошибка</span><br><small>${escapeHtml(target.lastError ?? "")}</small>`;
+  if (target.status === "verification_required")
+    return `<span class="warning">Нужна проверка</span><br><small>${escapeHtml(target.lastError ?? "")}</small>`;
   if (target.status === "scheduled" || target.status === "prepared") return `⏳ ${formatDate(target.scheduledAt)}`;
   if (target.status !== "published") return escapeHtml(target.status);
   const metrics = targetMetrics(target);

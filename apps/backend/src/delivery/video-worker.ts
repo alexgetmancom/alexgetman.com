@@ -9,6 +9,8 @@ import { nextRetryAt } from "../publishing/errors.js";
 import { failedJobTransition } from "../publishing/job-policy.js";
 import { getVideoDraft, refreshVideoDraftStatus, type VideoJob } from "../publishing/video-data.js";
 import type { InstagramMetadata, VideoMetadata, YouTubeMetadata } from "../publishing/video-types.js";
+import { isAmbiguousPublicationError } from "./ambiguous-publication.js";
+import { verifyInstagramPublication } from "./social/instagram.js";
 import {
   InstagramContainerInvalidError,
   InstagramContainerProcessingError,
@@ -39,7 +41,10 @@ export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb)
         recordVideoCompletionIfFinal(backendDb, job.videoDraftId);
       }
     } catch (error) {
-      if (failVideoJob(backendDb, job, error, config)) {
+      const settled = isAmbiguousPublicationError(error)
+        ? requireVideoVerification(backendDb, job, error, config)
+        : failVideoJob(backendDb, job, error, config);
+      if (settled) {
         recordVideoProgressEvent(backendDb, job, "video.job.failed");
         recordVideoCompletionIfFinal(backendDb, job.videoDraftId);
       }
@@ -83,8 +88,9 @@ function recordVideoCompletionIfFinal(backendDb: BackendDb, videoDraftId: number
     .from(videoTargets)
     .where(eq(videoTargets.videoDraftId, videoDraftId))
     .all();
-  if (!targets.length || !targets.every((target) => ["published", "failed", "cancelled"].includes(target.status))) return;
-  const failed = targets.filter((target) => target.status === "failed").length;
+  if (!targets.length || !targets.every((target) => ["published", "failed", "cancelled", "verification_required"].includes(target.status)))
+    return;
+  const failed = targets.filter((target) => target.status === "failed" || target.status === "verification_required").length;
   recordDomainEvent(backendDb, {
     ref: `video:${videoDraftId}`,
     type: "delivery.video.completed",
@@ -223,10 +229,17 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
     if (!ownsVideoJob(backendDb, job)) return;
     const result = await publishInstagramReel(config, target.externalId);
     if (!ownsVideoJob(backendDb, job)) return;
+    let externalUrl = result.url;
+    try {
+      externalUrl = (await verifyInstagramPublication(result.id, config)).url ?? externalUrl;
+    } catch {
+      // The publish response already returned the media ID. Verification
+      // failure is diagnostic and must not replay media_publish.
+    }
     updateVideoTarget(backendDb.db, target.id, {
       status: "published",
       externalId: result.id,
-      externalUrl: result.url,
+      externalUrl,
       publishedAt: new Date().toISOString(),
     });
   }
@@ -329,6 +342,47 @@ function failVideoJob(backendDb: BackendDb, job: VideoJob, cause: unknown, confi
   return true;
 }
 
+function requireVideoVerification(backendDb: BackendDb, job: VideoJob, cause: unknown, config: BackendConfig): boolean {
+  const error = cause instanceof Error ? cause.message : String(cause);
+  const now = new Date().toISOString();
+  let settled = false;
+  backendDb.db.transaction((tx) => {
+    const updated = tx
+      .update(videoJobs)
+      .set({
+        status: "verification_required",
+        attemptCount: job.attemptCount + 1,
+        nextAttemptAt: null,
+        lockedAt: null,
+        lockedBy: null,
+        lastError: error,
+        updatedAt: now,
+      })
+      .where(activeVideoJob(job))
+      .returning({ id: videoJobs.id })
+      .get();
+    if (!updated) return;
+    settled = true;
+    if (job.videoTargetId) updateVideoTarget(tx, job.videoTargetId, { status: "verification_required", lastError: error });
+  });
+  if (!settled) return false;
+  refreshVideoDraftStatus(backendDb, job.videoDraftId, config.VIDEO_MEDIA_RETENTION_HOURS);
+  const target =
+    job.videoTargetId == null
+      ? null
+      : backendDb.db.select({ target: videoTargets.target }).from(videoTargets).where(eq(videoTargets.id, job.videoTargetId)).get();
+  recordDomainEvent(backendDb, {
+    ref: `video:${job.videoDraftId}`,
+    type: "video.target.verification_required",
+    severity: "warn",
+    target: target?.target ?? "video",
+    message: error,
+    details: { videoDraftId: job.videoDraftId, videoTargetId: job.videoTargetId, jobId: job.id, kind: job.kind },
+    cooldownSeconds: config.ALERT_COOLDOWN_SECONDS,
+  });
+  return true;
+}
+
 /** Instagram containers can go stale between prepare and publish; re-run prepare
  * from scratch instead of retrying the publish call against a dead container. */
 function requeueInstagramPreparation(tx: BackendDb["db"], job: VideoJob, error: string, now: string, attempts: number): void {
@@ -392,21 +446,24 @@ export function recoverVideoLocks(backendDb: BackendDb, config: BackendConfig): 
     .where(and(eq(videoJobs.status, "running"), lte(videoJobs.lockedAt, cutoff)))
     .all();
   let recovered = 0;
-  const terminalFailures: Array<{ job: VideoJob; error: string }> = [];
+  const terminalFailures: Array<{ job: VideoJob; error: string; verificationRequired: boolean }> = [];
   backendDb.db.transaction((tx) => {
     for (const job of stale) {
       if (!job.lockedAt) continue;
       const error = "worker_lost: video lock expired before completion";
+      const target = job.videoTargetId == null ? null : tx.select().from(videoTargets).where(eq(videoTargets.id, job.videoTargetId)).get();
+      const ambiguous = job.kind === "publish" || (job.kind === "prepare" && target?.target === "youtube_shorts");
       const transition = failedJobTransition(new Error(error), job.attemptCount, {
         maxAttempts: config.PUBLISH_MAX_ATTEMPTS,
         backoffBaseSeconds: config.PUBLISH_BACKOFF_BASE_SECONDS,
         backoffMaxSeconds: config.PUBLISH_BACKOFF_MAX_SECONDS,
       });
-      const retry = transition.status === "queued";
+      const retry = !ambiguous && transition.status === "queued";
+      const status = ambiguous ? "verification_required" : transition.status;
       const updated = tx
         .update(videoJobs)
         .set({
-          status: transition.status,
+          status,
           attemptCount: transition.attempt,
           nextAttemptAt: transition.nextAttemptAt,
           lockedAt: null,
@@ -419,20 +476,24 @@ export function recoverVideoLocks(backendDb: BackendDb, config: BackendConfig): 
         .get();
       if (!updated) continue;
       recovered += 1;
-      if (job.videoTargetId) updateVideoTarget(tx, job.videoTargetId, { status: retry ? "scheduled" : "failed", lastError: error });
-      if (!retry) terminalFailures.push({ job, error });
+      if (job.videoTargetId)
+        updateVideoTarget(tx, job.videoTargetId, {
+          status: ambiguous ? "verification_required" : retry ? "scheduled" : "failed",
+          lastError: error,
+        });
+      if (!retry) terminalFailures.push({ job, error, verificationRequired: ambiguous });
     }
   });
   for (const job of stale) refreshVideoDraftStatus(backendDb, job.videoDraftId, config.VIDEO_MEDIA_RETENTION_HOURS);
-  for (const { job, error } of terminalFailures) {
+  for (const { job, error, verificationRequired } of terminalFailures) {
     const target =
       job.videoTargetId == null
         ? null
         : backendDb.db.select({ target: videoTargets.target }).from(videoTargets).where(eq(videoTargets.id, job.videoTargetId)).get();
     recordDomainEvent(backendDb, {
       ref: `video:${job.videoDraftId}`,
-      type: "video.target.failed",
-      severity: "error",
+      type: verificationRequired ? "video.target.verification_required" : "video.target.failed",
+      severity: verificationRequired ? "warn" : "error",
       target: target?.target ?? "video",
       message: error,
       details: { videoDraftId: job.videoDraftId, videoTargetId: job.videoTargetId, jobId: job.id, kind: job.kind },

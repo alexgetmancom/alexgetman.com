@@ -3,6 +3,7 @@ import { externalFetch, retryAfterSecondsFromHeaders } from "../../foundation/ht
 import { redactExternalSecrets } from "../../foundation/redact.js";
 import type { PublishResult } from "../../publishing/errors.js";
 import { HttpPublishError } from "../../publishing/errors.js";
+import { ambiguousExternalMutation } from "../ambiguous-publication.js";
 import { InstagramContainerInvalidError, isExpiredInstagramContainer } from "./instagram-container.js";
 import { payloadMedia } from "./payload.js";
 
@@ -69,6 +70,16 @@ export async function publishInstagramStory(
   return { ok: true, id: published.id, url: permalink, raw: published };
 }
 
+export async function verifyInstagramPublication(
+  id: string,
+  config: BackendConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ id: string; url: string | null }> {
+  const media = await graphGet(config, id, { fields: "id,permalink" }, fetchImpl);
+  if (media.id !== id) throw new Error("Instagram verification did not return the expected media");
+  return { id, url: media.permalink ?? null };
+}
+
 async function waitForContainer(config: BackendConfig, creationId: string, fetchImpl: typeof fetch): Promise<void> {
   for (let attempt = 0; attempt < READY_POLLS; attempt += 1) {
     const status = await graphGet(config, creationId, { fields: "status_code,status" }, fetchImpl);
@@ -83,7 +94,9 @@ async function waitForContainer(config: BackendConfig, creationId: string, fetch
 async function publishReadyContainer(config: BackendConfig, creationId: string, fetchImpl: typeof fetch): Promise<GraphResponse> {
   for (let attempt = 1; attempt <= PUBLISH_ATTEMPTS; attempt += 1) {
     try {
-      return await graphPost(config, `${config.INSTAGRAM_USER_ID}/media_publish`, { creation_id: creationId }, fetchImpl);
+      return await ambiguousExternalMutation("instagram_stories", () =>
+        graphPost(config, `${config.INSTAGRAM_USER_ID}/media_publish`, { creation_id: creationId }, fetchImpl),
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       // A container that looks dead right after FINISHED is usually Meta's read

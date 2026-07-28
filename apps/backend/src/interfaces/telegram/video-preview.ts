@@ -50,9 +50,11 @@ export function videoPreview(
     if (isVideoTargetSchedulable(igTarget.status)) keyboard.text(t(locale, "vpreview.ig-time"), `video_time:instagram_reels:${draft.id}`);
     if (isVideoTargetEditable(igTarget.status))
       keyboard.text(t(locale, "vpreview.ig-remove"), `video_remove_ask:instagram_reels:${draft.id}`).row();
-    if (igTarget.status === "failed") keyboard.text(t(locale, "vpreview.ig-retry"), `video_retry:instagram_reels:${draft.id}`).row();
+    if (igTarget.status === "failed" || igTarget.status === "verification_required")
+      keyboard.text(t(locale, "vpreview.ig-retry"), `video_retry:instagram_reels:${draft.id}`).row();
   }
-  if (ytTarget?.status === "failed") keyboard.text(t(locale, "vpreview.yt-retry"), `video_retry:youtube_shorts:${draft.id}`).row();
+  if (ytTarget?.status === "failed" || ytTarget?.status === "verification_required")
+    keyboard.text(t(locale, "vpreview.yt-retry"), `video_retry:youtube_shorts:${draft.id}`).row();
   if (targets.length > 0 && (draft.status === "draft" || draft.status === "editing"))
     keyboard.text(t(locale, "post.schedule-btn"), `video_schedule:${draft.id}`).row();
   keyboard.text(t(locale, "vpreview.edit-details"), `video_edit_menu:${draft.id}`).row();

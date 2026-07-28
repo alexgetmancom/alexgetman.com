@@ -137,6 +137,28 @@ export function auditOperations(backendDb: BackendDb): Record<string, unknown> {
       .groupBy(postTargets.target)
       .orderBy(postTargets.target)
       .all(),
+    verificationRequiredPublishJobs: backendDb.db
+      .select({
+        target: publishJobs.target,
+        count: sql<number>`count(*)`,
+        latest: sql<string | null>`max(${publishJobs.updatedAt})`,
+      })
+      .from(publishJobs)
+      .where(eq(publishJobs.status, "verification_required"))
+      .groupBy(publishJobs.target)
+      .orderBy(publishJobs.target)
+      .all(),
+    verificationRequiredTargets: backendDb.db
+      .select({
+        target: postTargets.target,
+        count: sql<number>`count(*)`,
+        latest: sql<string | null>`max(${postTargets.updatedAt})`,
+      })
+      .from(postTargets)
+      .where(eq(postTargets.status, "verification_required"))
+      .groupBy(postTargets.target)
+      .orderBy(postTargets.target)
+      .all(),
     publicationConsistency: publicationConsistencyReport(backendDb),
     metricScheduleErrors: backendDb.db
       .select({ target: metricSchedule.target, count: sql<number>`count(*)`, latest: sql<string | null>`max(${metricSchedule.updatedAt})` })
@@ -160,6 +182,23 @@ export function auditOperations(backendDb: BackendDb): Record<string, unknown> {
       .from(videoTargets)
       .innerJoin(videoDrafts, eq(videoDrafts.id, videoTargets.videoDraftId))
       .where(and(eq(videoTargets.status, "failed"), notInArray(videoDrafts.status, ["draft", "editing", "cancelled"])))
+      .orderBy(desc(videoTargets.updatedAt))
+      .limit(20)
+      .all(),
+    recentVideoVerificationRequired: backendDb.db
+      .select({
+        videoDraftId: videoTargets.videoDraftId,
+        label: videoDrafts.label,
+        target: videoTargets.target,
+        lastError: videoTargets.lastError,
+        providerPostId: videoTargets.providerPostId,
+        externalId: videoTargets.externalId,
+        scheduledAt: videoTargets.scheduledAt,
+        updatedAt: videoTargets.updatedAt,
+      })
+      .from(videoTargets)
+      .innerJoin(videoDrafts, eq(videoDrafts.id, videoTargets.videoDraftId))
+      .where(and(eq(videoTargets.status, "verification_required"), notInArray(videoDrafts.status, ["draft", "editing", "cancelled"])))
       .orderBy(desc(videoTargets.updatedAt))
       .limit(20)
       .all(),
@@ -196,7 +235,7 @@ export function publicationConsistencyReport(backendDb: BackendDb): Record<strin
        GROUP BY d.id
        HAVING (d.status='published' AND sum(t.status!='published')>0)
           OR (d.status='partial' AND sum(t.status IN ('failed','cancelled'))=0)
-          OR (d.status='scheduled' AND sum(t.status NOT IN ('published','failed','cancelled'))=0)
+          OR (d.status='scheduled' AND sum(t.status NOT IN ('published','failed','cancelled','verification_required'))=0)
        ORDER BY d.id`,
     )
     .all();

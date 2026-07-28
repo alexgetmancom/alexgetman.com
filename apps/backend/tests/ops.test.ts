@@ -211,6 +211,42 @@ describe("TypeScript operations tooling", () => {
     }
   });
 
+  it("surfaces unresolved ordinary and video publications separately from failures", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      backendDb.sqlite
+        .query(
+          "INSERT INTO publish_jobs(post_id,post_key,message_id,target,status,last_error,created_at,updated_at) VALUES (1,'post:1',1,'x','verification_required','socket closed',?,?)",
+        )
+        .run(now, now);
+      backendDb.sqlite
+        .query(
+          "INSERT INTO post_targets(post_key,target,status,error,updated_at) VALUES ('post:1','x','verification_required','socket closed',?)",
+        )
+        .run(now);
+      backendDb.sqlite
+        .query(
+          "INSERT INTO video_drafts(id,actor_id,label,asset_key,status,created_at,updated_at) VALUES (1,1,'video','asset','partial',?,?)",
+        )
+        .run(now, now);
+      backendDb.sqlite
+        .query(
+          "INSERT INTO video_targets(video_draft_id,target,metadata_json,status,last_error,created_at,updated_at) VALUES (1,'instagram_reels','{}','verification_required','timeout',?,?)",
+        )
+        .run(now, now);
+
+      const audit = auditOperations(backendDb);
+      expect(audit.verificationRequiredPublishJobs).toEqual([{ target: "x", count: 1, latest: now }]);
+      expect(audit.verificationRequiredTargets).toEqual([{ target: "x", count: 1, latest: now }]);
+      expect(audit.recentVideoVerificationRequired).toEqual([
+        expect.objectContaining({ videoDraftId: 1, target: "instagram_reels", lastError: "timeout" }),
+      ]);
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("repairs orphaned publication rows and canonical state mismatches", () => {
     const backendDb = openBackendDb(":memory:");
     try {

@@ -172,14 +172,15 @@ export function scheduleVideo(
   });
 }
 
-/** Requeues only the failed platform; the other platform and its media stay untouched. */
+/** Requeues only an explicitly selected failed or externally verified platform;
+ * the other platform and its media stay untouched. */
 export function retryFailedVideoTarget(backendDb: BackendDb, videoDraftId: number, targetName: VideoTarget): void {
   const target = backendDb.db
     .select()
     .from(videoTargets)
     .where(and(eq(videoTargets.videoDraftId, videoDraftId), eq(videoTargets.target, targetName)))
     .get();
-  if (target?.status !== "failed") throw new StudioError("err.retry-only-failed");
+  if (!target || !["failed", "verification_required"].includes(target.status)) throw new StudioError("err.retry-only-failed");
   const now = new Date();
   const nowIso = now.toISOString();
   backendDb.db.transaction((tx) => {

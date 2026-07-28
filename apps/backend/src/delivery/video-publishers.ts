@@ -3,6 +3,7 @@ import type { BackendConfig } from "../foundation/config.js";
 import { type VideoLocale, youtubeAccessToken } from "../foundation/external/youtube.js";
 import { formBody, requestJson } from "../foundation/http.js";
 import type { InstagramMetadata, YouTubeMetadata } from "../publishing/video-types.js";
+import { ambiguousExternalMutation } from "./ambiguous-publication.js";
 
 type YouTubeVideo = { id: string };
 
@@ -77,11 +78,13 @@ export async function prepareYouTubeVideo(
   if (!init.ok) throw new Error(`YouTube upload session failed: ${init.status} ${await init.text()}`);
   const location = init.headers.get("location");
   if (!location) throw new Error("YouTube did not return an upload location.");
-  const uploaded = await fetch(location, {
-    method: "PUT",
-    headers: { "Content-Type": "video/mp4", "Content-Length": String(file.size) },
-    body: file,
-  });
+  const uploaded = await ambiguousExternalMutation("youtube_upload", () =>
+    fetch(location, {
+      method: "PUT",
+      headers: { "Content-Type": "video/mp4", "Content-Length": String(file.size) },
+      body: file,
+    }),
+  );
   if (!uploaded.ok) throw new Error(`YouTube upload failed: ${uploaded.status} ${await uploaded.text()}`);
   const video = (await uploaded.json()) as YouTubeVideo;
   return { id: video.id, url: `https://www.youtube.com/watch?v=${video.id}` };
@@ -145,10 +148,12 @@ export async function instagramContainerReady(config: BackendConfig, containerId
 export async function publishInstagramReel(config: BackendConfig, containerId: string): Promise<{ id: string; url: string }> {
   let published: InstagramPublish;
   try {
-    published = await requestJson<InstagramPublish>(fetch, `${instagramGraphBase(config)}/${config.INSTAGRAM_USER_ID}/media_publish`, {
-      method: "POST",
-      body: formBody({ creation_id: containerId, access_token: config.INSTAGRAM_ACCESS_TOKEN }),
-    });
+    published = await ambiguousExternalMutation("instagram_reels", () =>
+      requestJson<InstagramPublish>(fetch, `${instagramGraphBase(config)}/${config.INSTAGRAM_USER_ID}/media_publish`, {
+        method: "POST",
+        body: formBody({ creation_id: containerId, access_token: config.INSTAGRAM_ACCESS_TOKEN }),
+      }),
+    );
   } catch (error) {
     // A 400 from media_publish can mean the creation_id died after its last
     // successful status poll. The worker recognises this class and starts a

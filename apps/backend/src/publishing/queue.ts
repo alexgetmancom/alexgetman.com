@@ -99,18 +99,18 @@ export function recoverStalePublishJobs(
       const lockedAt = job.lockedAt;
       if (!lockedAt) continue;
       const error = job.lastError || "worker_lost: publishing lock expired before completion";
-      const transition = failedJobTransition(new Error(error), job.attemptCount, publishRetryPolicy(config));
-      // Same reason as failPublishJob: this row is about to take the queued (or
-      // failed) slot that is unique per (post_key, target).
+      // A dead worker cannot tell us whether it stopped before or after the
+      // provider accepted its public mutation. Never turn that uncertainty
+      // into an automatic duplicate.
       deleteSupersededJobs(tx, job, job.jobId, jobPostKey(job));
       const updated = tx
         .update(publishJobs)
         .set({
-          status: transition.status,
-          attemptCount: transition.attempt,
+          status: "verification_required",
+          attemptCount: job.attemptCount + 1,
           lockedBy: null,
           lockedAt: null,
-          nextAttemptAt: transition.nextAttemptAt,
+          nextAttemptAt: null,
           updatedAt: now,
           lastError: error,
         })
@@ -126,22 +126,22 @@ export function recoverStalePublishJobs(
         postKey,
         job.target,
         {
-          status: transition.status,
+          status: "verification_required",
           error,
           skipped: 0,
           updatedAt: now,
           rawJson: JSON.stringify({ job_id: job.jobId, recovered_stale_lock: true }),
         },
         {
-          type: transition.status === "queued" ? "publish.job.retry" : "publish.job.failed",
-          severity: transition.status === "queued" ? "warn" : "error",
+          type: "publish.job.verification_required",
+          severity: "warn",
           message: error,
           details: {
             job_id: job.jobId,
             recovered_stale_lock: true,
-            error_class: transition.errorClass,
-            attempt: transition.attempt,
-            next_attempt_at: transition.nextAttemptAt,
+            error_class: "ambiguous",
+            attempt: job.attemptCount + 1,
+            next_attempt_at: null,
           },
         },
       );
@@ -346,6 +346,48 @@ export function failPublishJob(backendDb: BackendDb, config: BackendConfig, jobI
   if (!shouldRetry && job.postId != null) reconcilePublication(backendDb, job.postId);
 }
 
+export function requirePublishVerification(backendDb: BackendDb, jobId: number, error: unknown, lockId?: string): boolean {
+  const now = new Date().toISOString();
+  const job = backendDb.db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get();
+  if (!job || (lockId != null && (job.status !== "publishing" || job.lockedBy !== lockId))) return false;
+  const postKey = jobPostKey(job);
+  const errorText = error instanceof Error ? error.message : String(error);
+  let updated = false;
+  backendDb.db.transaction((tx) => {
+    deleteSupersededJobs(tx, job, jobId, postKey);
+    settleJob(
+      tx,
+      jobId,
+      {
+        status: "verification_required",
+        attemptCount: job.attemptCount + 1,
+        nextAttemptAt: null,
+        lockedBy: null,
+        lockedAt: null,
+        lastError: errorText,
+        updatedAt: now,
+      },
+      postKey,
+      job.target,
+      { status: "verification_required", error: errorText, skipped: 0, updatedAt: now },
+      {
+        type: "publish.job.verification_required",
+        severity: "warn",
+        message: errorText,
+        details: {
+          job_id: jobId,
+          attempt: job.attemptCount + 1,
+          phase: "provider.publish",
+          duration_ms: durationSince(job.lockedAt, now),
+        },
+      },
+    );
+    updated = true;
+  });
+  if (updated && job.postId != null) reconcilePublication(backendDb, job.postId);
+  return updated;
+}
+
 function durationSince(startedAt: string | null, finishedAt: string): number | null {
   if (!startedAt) return null;
   const duration = Date.parse(finishedAt) - Date.parse(startedAt);
@@ -420,7 +462,7 @@ function deleteSupersededJobs(tx: BackendDb["db"], job: typeof publishJobs.$infe
       and(
         eq(publishJobs.target, job.target),
         ne(publishJobs.jobId, jobId),
-        inArray(publishJobs.status, ["queued", "failed"]),
+        inArray(publishJobs.status, ["queued", "failed", "verification_required"]),
         or(eq(publishJobs.postKey, postKey), and(isNull(publishJobs.postKey), eq(publishJobs.messageId, job.messageId))),
       ),
     )

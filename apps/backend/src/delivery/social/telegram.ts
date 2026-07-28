@@ -3,6 +3,7 @@ import path from "node:path";
 import type { BackendConfig } from "../../foundation/config.js";
 import { requestJson } from "../../foundation/http.js";
 import type { PublishResult } from "../../publishing/errors.js";
+import { ambiguousExternalMutation } from "../ambiguous-publication.js";
 import { payloadMedia, payloadText } from "./payload.js";
 
 type TelegramResponse = {
@@ -35,7 +36,9 @@ export async function publishToTelegram(
     const request = attachments.length
       ? await telegramForm({ chat_id: chatId, media: JSON.stringify(items) }, attachments)
       : { chat_id: chatId, media: items };
-    const result = await telegramCall<TelegramResponse>(config, token, "sendMediaGroup", request, fetchImpl);
+    const result = await ambiguousExternalMutation("telegram", () =>
+      telegramCall<TelegramResponse>(config, token, "sendMediaGroup", request, fetchImpl),
+    );
     return reactToPublishedMessage(normalizeTelegramResult(result, chatId), config, token, chatId, fetchImpl);
   }
 
@@ -56,22 +59,26 @@ export async function publishToTelegram(
           attachments,
         )
       : { chat_id: chatId, [mediaKey]: mediaSource, caption: caption.text, caption_entities: caption.entities };
-    const result = await telegramCall<TelegramResponse>(config, token, method, request, fetchImpl);
+    const result = await ambiguousExternalMutation("telegram", () =>
+      telegramCall<TelegramResponse>(config, token, method, request, fetchImpl),
+    );
     return reactToPublishedMessage(normalizeTelegramResult(result, chatId), config, token, chatId, fetchImpl);
   }
 
   const linkPreview = telegramLinkPreview(entities);
-  const result = await telegramCall<TelegramResponse>(
-    config,
-    token,
-    "sendMessage",
-    {
-      chat_id: chatId,
-      text,
-      entities,
-      ...(linkPreview ? { link_preview_options: linkPreview } : { disable_web_page_preview: false }),
-    },
-    fetchImpl,
+  const result = await ambiguousExternalMutation("telegram", () =>
+    telegramCall<TelegramResponse>(
+      config,
+      token,
+      "sendMessage",
+      {
+        chat_id: chatId,
+        text,
+        entities,
+        ...(linkPreview ? { link_preview_options: linkPreview } : { disable_web_page_preview: false }),
+      },
+      fetchImpl,
+    ),
   );
   return reactToPublishedMessage(normalizeTelegramResult(result, chatId), config, token, chatId, fetchImpl);
 }
