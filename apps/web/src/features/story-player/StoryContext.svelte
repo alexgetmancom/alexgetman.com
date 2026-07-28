@@ -2,11 +2,12 @@
   ПРАВАЯ ПАНЕЛЬ: текст поста + кнопка «Поделиться».
   ─────────────────────────────────────────────────────────────────────────────
   Презентационный компонент: своего состояния нет. Показывает:
-    - категорию, заголовок (единственный <h1> страницы — noscript-SEO в
-      Astro-слое дублирует его как <p>, во избежание двух h1 в разметке),
-      время чтения, дату, просмотры
+    - строку рубрики: категория · дата · время чтения
+    - заголовок (единственный <h1> страницы — noscript-SEO в Astro-слое
+      дублирует его как <p>, во избежание двух h1 в разметке)
     - параграфы поста + кнопку «Читать дальше» (видимость меряет корень)
-    - кнопка «Поделиться»
+    - строку сноски: источники + «Поделиться» ссылкой (на телефоне скрыта —
+      там та же кнопка живёт на плавающей панели сцены)
   Стили — в <style> внизу (scoped). Правила, зависящие от состояния корня
   (.story-player.is-reading), написаны через :global(...) — корневой класс
   живёт в StoryPlayer.svelte.
@@ -51,64 +52,74 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
      дерева доступности, и из Tab-порядка, ровно там, где она не видна. -->
 <aside class="story-context" data-story-context>
   <div class="story-panel is-active" class:is-updating={updating} data-panel="post">
-    <div class="story-category-wrap">
-      <span class="story-category-badge">{post.category}</span>
-    </div>
+    <!-- One line above the headline, the way a rubric works in print: what
+         section this is, when it ran, how long it takes. It used to be two
+         separate blocks — a bordered, tinted category pill and a meta row
+         under the title — which put three framed objects in a column whose
+         main content, the text, has no frame at all. View count is gone from
+         here: it is a number for the author, and Command Center already
+         reports it. -->
+    <p class="story-eyebrow">
+      <span class="story-eyebrow__rubric">{post.category}</span>
+      <span class="story-eyebrow__dot" aria-hidden="true">·</span>
+      <span>{post.relativeDate}</span>
+      <span class="story-eyebrow__dot" aria-hidden="true">·</span>
+      <span>{readingTimeMin} min</span>
+    </p>
     <h1 class="story-title" data-story-title>{post.title}</h1>
-    <div class="story-meta">
-      <span class="story-meta-item">⏱️ {readingTimeMin} min</span>
-      <span class="story-meta-dot">•</span>
-      <span class="story-meta-item">{post.relativeDate}</span>
-      <span class="story-meta-dot">•</span>
-      <span class="story-meta-item">👁️ <span>{post.views}</span></span>
-    </div>
     <div class="story-copy" class:is-expanded={expanded} data-story-copy bind:this={copyEl}>
       {#each post.body as paragraph}
         <p>{paragraph}</p>
       {/each}
     </div>
-    {#if post.sources.length > 0}
-      <div class="story-sources" aria-label="Sources">
-        {#each post.sources as source}
-          <a href={source.url} target="_blank" rel="noopener noreferrer" class="story-source-link">
-            {source.label} ↗
-          </a>
-        {/each}
-      </div>
-    {/if}
     <button class="read-more-button" type="button" hidden={!readMoreVisible} onclick={ontogglereadmore}>
       {expanded ? ui.collapse : ui.readMore}
     </button>
-    <div class="story-actions">
-      <button class="story-action" type="button" onclick={onshare}>
-        <svg class="story-action-icon" viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="18" cy="5" r="3"></circle>
-          <circle cx="6" cy="12" r="3"></circle>
-          <circle cx="18" cy="19" r="3"></circle>
-          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
-          <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
-        </svg>
-        <span class="story-action__label">{shareCopied ? ui.copied : ui.share}</span>
+    <!-- The footnote line: where this came from, and the one action the column
+         offers. Sharing used to be a full-width bordered button pinned to the
+         bottom of a full-height panel — the loudest object in the column, for
+         something the desktop address bar already does, with a gap above it
+         wherever the post was short. As a link at the same size and colour as
+         the source it stays available and stops competing. Phones keep the
+         real button: it lives on the stage's floating bar (StoryVisual), where
+         no URL is visible to copy. -->
+    <footer class="story-footnote">
+      {#each post.sources as source}
+        <a href={source.url} target="_blank" rel="noopener noreferrer" class="story-footnote__link">
+          {source.label} ↗
+        </a>
+      {/each}
+      <button class="story-footnote__link story-footnote__action" type="button" onclick={onshare}>
+        {shareCopied ? ui.copied : ui.share}
       </button>
-    </div>
+    </footer>
   </div>
 </aside>
 
 <style>
   /* --------------------- Панель контекста (правая колонка) ------------------ */
   .story-context {
+    /* A caption to the frame, so it is as tall as its own text and sits level
+       with the middle of the stage. Stretched to the full column height it had
+       to distribute that height somehow, and every short post turned into a
+       line of text at the top and a button at the bottom with a void between.
+       The cap keeps a long post inside the viewport, where the copy scrolls. */
     align-self: center;
-    height: 100%;
+    height: auto;
+    max-height: 100%;
     min-height: 0;
     display: flex;
     flex-direction: column;
-    border: 1px solid var(--border);
+    /* A reading column, not a card. Framed and filled it was a white rectangle
+       on a white sheet, outlined for no reason — the type and the space around
+       it already say where the column is. The stage keeps its frame because it
+       holds media; this holds text. On phones the same element becomes a bottom
+       sheet and takes its fill and border back below. */
+    border: 0;
     border-radius: 10px;
-    background: var(--player-surface);
+    background: transparent;
     overflow: hidden;
     min-width: 0;
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
     animation: appReveal 0.68s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     animation-delay: 0.36s;
     opacity: 0;
@@ -126,7 +137,9 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
   }
 
   .story-panel {
-    height: 100%;
+    height: auto;
+    max-height: 100%;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     padding: clamp(1rem, 1.35vw, 1.25rem);
@@ -137,59 +150,41 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
     display: none;
   }
 
-  /* --------------------------- Категория и мета ----------------------------- */
-  .story-category-wrap {
-    margin-bottom: 0.44rem;
-    flex-shrink: 0;
-  }
-
-  .story-category-badge {
-    display: inline-flex;
-    align-items: center;
+  /* ------------------------------- Рубрика ---------------------------------- */
+  .story-eyebrow {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0 0 0.7rem;
     font-family: var(--font-mono);
     font-size: 0.7rem;
-    font-weight: 900;
-    text-transform: uppercase;
-    /* --accent is tuned per theme for contrast against that theme's surface;
-       the old hardcoded #ff5c77 was picked for a dark panel only and drops
-       below 4.5:1 once the panel is white. */
-    color: var(--accent);
-    background: var(--accent-glow);
-    border: 1px solid var(--border-hover);
-    padding: 0.22rem 0.54rem;
-    border-radius: 6px;
     letter-spacing: 0.05em;
-  }
-
-  .story-meta {
-    display: flex;
-    align-items: center;
-    gap: 0.45rem;
-    margin-top: -0.1rem;
-    /* The gap between the headline block and the body is the one place the
-       hierarchy is allowed to be loud, now that the type sizes are not. */
-    margin-bottom: 1.5rem;
-    font-family: var(--font-sans);
-    font-size: 0.76rem;
     color: var(--text-muted);
     flex-shrink: 0;
   }
 
-  .story-meta-item {
-    display: inline-flex;
-    align-items: center;
-    font-weight: 500;
+  /* The only colour in the column, and it is a word rather than a fill. As a
+     tinted pill with its own border it was a fourth framed object competing
+     with the headline; hue reads as brand at this size and as an alert at
+     badge size. --accent is tuned per theme, so it clears 4.5:1 on both. */
+  .story-eyebrow__rubric {
+    color: var(--accent);
+    font-weight: 700;
+    text-transform: uppercase;
   }
 
-  .story-meta-dot {
+  .story-eyebrow__dot {
     color: var(--meta-dot);
-    font-weight: bold;
-    font-size: 0.9rem;
   }
 
   /* ------------------------------- Заголовок -------------------------------- */
   .story-title {
-    margin: 0 0 0.62rem;
+    /* The gap between the headline block and the body is the one place the
+       hierarchy is allowed to be loud, now that the type sizes are not. It
+       used to be carried by the meta row's own bottom margin; with the meta
+       moved above the title, the space has to live here. */
+    margin: 0 0 1.15rem;
     color: var(--text-header);
     letter-spacing: -0.015em;
     line-height: 1.16;
@@ -204,8 +199,7 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
   /* Плавная смена поста (.is-updating ставит корень на время перерисовки). */
   .story-title,
   .story-copy,
-  .story-meta,
-  .story-category-wrap {
+  .story-eyebrow {
     transition:
       opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1),
       transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
@@ -215,8 +209,7 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
 
   .story-panel.is-updating .story-title,
   .story-panel.is-updating .story-copy,
-  .story-panel.is-updating .story-meta,
-  .story-panel.is-updating .story-category-wrap {
+  .story-panel.is-updating .story-eyebrow {
     opacity: 0;
     transform: translateY(8px);
     transition: none;
@@ -232,7 +225,11 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
        size with generous leading is what carries a text column. */
     font-size: clamp(0.95rem, 0.95vw, 1.05rem);
     line-height: 1.62;
-    flex-grow: 1;
+    /* Shrink, do not grow: the column is sized by its content now, and the
+       only reason this box is a flex item with a floor of zero is so a long
+       post scrolls inside it instead of pushing the footnote off-screen. */
+    flex: 0 1 auto;
+    min-height: 0;
     overflow-y: auto;
     position: relative;
     padding-right: 0.45rem;
@@ -266,46 +263,50 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
 
   /* Заголовок — h1 внутри панели: вернуть его отступ поверх правила выше. */
   .story-panel > h1.story-title {
-    margin: 0 0 0.62rem;
+    /* The gap between the headline block and the body is the one place the
+       hierarchy is allowed to be loud, now that the type sizes are not. It
+       used to be carried by the meta row's own bottom margin; with the meta
+       moved above the title, the space has to live here. */
+    margin: 0 0 1.15rem;
   }
 
-  /* ------------------------------- Actions ---------------------------------- */
-  /* The desktop counterpart of the phone's .story-action-bar. Same buttons,
-   * same shared story-actions.css; only the placement differs — here they sit
-   * at the foot of the context panel instead of over the stage. Read is absent
-   * on purpose: on desktop the text is already on screen next to them. */
-  /* Placement only. The bar's surface, blur and items come from the shared
-   * story-actions.css, so this row and the phone's floating bar are one
-   * component with two positions. */
-  .story-actions {
-    margin-top: auto;
-    flex-shrink: 0;
-  }
-
-  .story-sources {
+  /* ------------------------------- Footnote --------------------------------- */
+  /* Sits right under the text, not at the bottom of the viewport. The old
+     actions row was pushed down with `margin-top: auto` inside a full-height
+     panel, so a two-sentence post left several hundred pixels of nothing
+     between the copy and the button — a gap that reads as a loading failure
+     rather than as air. */
+  .story-footnote {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.35rem 0.6rem;
-    margin-top: 0.65rem;
+    align-items: baseline;
+    gap: 0.35rem 0.85rem;
+    margin-top: 1.1rem;
+    flex-shrink: 0;
     font-size: 0.72rem;
     line-height: 1.25;
   }
 
-  .story-source-link {
+  /* A link and a button that look identical on purpose: at this weight neither
+     is an object, they are just the last line of the column. */
+  .story-footnote__link {
     color: var(--text-muted);
     text-decoration: none;
+    transition: color 0.16s ease;
   }
 
-  .story-source-link:hover {
+  .story-footnote__link:hover {
     color: var(--text-main);
     text-decoration: underline;
   }
 
-  /* Сами кнопки .story-action стилизует общий story-actions.css — его
-     подключает StoryPlayer.svelte (та же пара кнопок есть на сцене). */
-
-
-
+  .story-footnote__action {
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    cursor: pointer;
+  }
 
 
   /* Примечание: в старом CSS был блок «компактный десктоп»
@@ -406,18 +407,14 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
       transition-delay: 0s;
     }
 
-    .story-category-wrap {
+    .story-eyebrow {
       margin-top: 0.25rem;
+      margin-bottom: 0.9rem;
     }
 
     .story-title {
       font-size: clamp(1.7rem, 8vw, 2.35rem);
       line-height: 1.05;
-    }
-
-    .story-meta {
-      flex-wrap: wrap;
-      margin-bottom: 0.9rem;
     }
 
     /* The sheet owns the height now, so the panel fills it and the copy scrolls
@@ -430,8 +427,14 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
     }
 
     /* На мобильном заголовок уже показан на сцене — в листе прячем. */
-    .story-context [data-story-title],
-    .story-context .story-actions {
+    .story-context [data-story-title] {
+      display: none;
+    }
+
+    /* Sharing on a phone is the stage's floating bar, next to Read — the sheet
+       covers the picture, so an action down here would be a second Share two
+       taps apart. The source stays: it is information, not an action. */
+    .story-footnote__action {
       display: none;
     }
 
@@ -446,16 +449,8 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
       line-height: 1.6;
     }
 
-    /* Кнопки скрыты на мобильном (см. display:none выше), но геометрия
-       сохранена как в исходном CSS на случай возврата. */
-    /* Hidden on phones (rule above) — the stage's own floating bar covers
-       these actions there. Geometry kept for the sheet if it ever shows them. */
-    .story-actions {
-      position: sticky;
-      z-index: var(--z-sticky);
-      bottom: calc(0.8rem + env(safe-area-inset-bottom, 0));
-      margin-top: 1.1rem;
-      pointer-events: auto;
+    .story-footnote {
+      padding-bottom: env(safe-area-inset-bottom, 0);
     }
 
     .story-copy p {

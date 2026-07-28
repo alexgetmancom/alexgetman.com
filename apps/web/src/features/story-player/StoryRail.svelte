@@ -218,6 +218,10 @@ $effect(() => {
     overflow: hidden;
     background: var(--player-surface);
     color: var(--text-header);
+    /* On a white sheet the hairline alone is not enough to say "card" — the
+       fill matches the backdrop now, so the lift is what gives the strip its
+       objects. */
+    box-shadow: var(--player-lift-soft);
     isolation: isolate;
     padding: 0;
     transition:
