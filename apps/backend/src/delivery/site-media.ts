@@ -18,6 +18,7 @@ import {
   temporaryPath,
   writeFileAtomically,
 } from "./site-media-storage.js";
+import { VERTICAL_MEDIA_TRANSFORM, verticalMediaRecipe } from "./vertical-media-recipe.js";
 
 type SiteMedia = Record<string, unknown> & {
   type?: string;
@@ -158,14 +159,17 @@ async function materializeVerticalViewerMedia(
   }
   if (!config.MEDIA_PROCESSOR_URL || !config.MEDIA_PROCESSOR_TOKEN) throw new Error("site_vertical_media_requires_remote_processor");
   const stat = await fs.promises.stat(source);
-  const idempotencyKey = await mediaTransformKey(source, `site-vertical-v3:${kind}`);
+  // Production site media shares the exact short-form render with Instagram
+  // Stories. The processor also emits Telegram's size-budgeted variant from
+  // the same prepared frames, so equal source bytes trigger one ffmpeg run.
+  const idempotencyKey = await mediaTransformKey(source, verticalMediaRecipe(kind));
   const base = config.MEDIA_PROCESSOR_URL.replace(/\/$/, "");
   const response = await fetchImpl(`${base}/v1/transforms/ffmpeg`, {
     method: "POST",
     headers: {
       authorization: `Bearer ${config.MEDIA_PROCESSOR_TOKEN}`,
       "content-length": String(stat.size),
-      "x-studio-transform": "site_vertical",
+      "x-studio-transform": VERTICAL_MEDIA_TRANSFORM,
       "x-studio-media-kind": kind === "video" ? "video" : "image",
       "x-studio-idempotency-key": idempotencyKey,
     },

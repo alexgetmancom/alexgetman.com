@@ -88,6 +88,32 @@ describe("site media materialization", () => {
     expect(item?.path).toMatch(/^media\/posts\/4-en-0-vertical\.mp4\?v=/);
   });
 
+  it("uses the shared Story transform for the remote site derivative", async () => {
+    directory = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-site-media-"));
+    const source = path.join(directory, "source.mp4");
+    fs.writeFileSync(source, "video-source");
+    const requests: Request[] = [];
+    const fetchImpl = (async (input: URL | RequestInfo, init?: RequestInit) => {
+      const request = new Request(input, init);
+      requests.push(request);
+      if (request.method === "POST") return Response.json({ outputs: { standard: { bytes: 8 }, telegram: { bytes: 4 } } });
+      return new Response("standard");
+    }) as unknown as typeof fetch;
+    const config = loadConfig({
+      SITE_PUBLIC_DIR: directory,
+      MEDIA_PROCESSOR_PROVIDER: "remote_http",
+      MEDIA_PROCESSOR_URL: "http://processor",
+      MEDIA_PROCESSOR_TOKEN: "x".repeat(16),
+    });
+
+    await materializeSiteMedia(config, 5, "en", [{ type: "video", local_path: source }], fetchImpl);
+
+    expect(requests[0]?.headers.get("x-studio-transform")).toBe("story_vertical");
+    expect(requests[0]?.headers.get("x-studio-idempotency-key")).toMatch(/^[a-f0-9]{64}$/);
+    expect(requests[1]?.url).toEndWith(`/standard`);
+    expect(requests.some((request) => request.url.endsWith("/telegram"))).toBe(false);
+  });
+
   it("migrates historical URLs without changing their paths or bytes", async () => {
     directory = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-site-media-"));
     const media = path.join(directory, "media");

@@ -68,3 +68,17 @@ soft image to 1080×1920. Keep the foreground at full output resolution. A
 production-source VM-106 benchmark measured the two-output 53-second Story at
 about 69 seconds with this recipe, down from about 275 seconds when the
 ten-pass blur ran over every full-resolution frame.
+
+## Shared short-form output
+
+Site video and Instagram Stories use the same `standard` H.264 derivative,
+limited to 59 seconds. Telegram Stories use the companion `telegram`
+derivative, whose bitrate is reduced to stay safely below the upload boundary.
+Both outputs come from one ffmpeg filter graph: decode, backdrop blur, foreground
+scale, and overlay happen once before the prepared frames split into the two
+hardware encoders.
+
+The backend derives the processor idempotency key from the source bytes and one
+shared recipe identity. Site and social jobs therefore converge on the same
+cache entry even when they run independently or in a different order. The
+first request performs the work; later and concurrent requests reuse it.

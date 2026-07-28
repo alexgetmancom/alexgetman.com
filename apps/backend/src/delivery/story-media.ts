@@ -11,6 +11,7 @@ import { withTimeout } from "../foundation/runtime/timeout.js";
 import { HttpPublishError } from "../publishing/errors.js";
 import { mediaTransformKey } from "./media-idempotency.js";
 import type { PublishMediaItem } from "./social/payload.js";
+import { VERTICAL_MEDIA_TRANSFORM, verticalMediaRecipe } from "./vertical-media-recipe.js";
 
 export async function generateStoryMedia(
   raw: unknown,
@@ -70,7 +71,7 @@ async function transformRemotely(
   if (!config.MEDIA_PROCESSOR_URL || !config.MEDIA_PROCESSOR_TOKEN)
     throw new Error("media_processor_unavailable: remote_http requires MEDIA_PROCESSOR_URL and MEDIA_PROCESSOR_TOKEN");
   const stat = await fs.promises.stat(source);
-  const idempotencyKey = await mediaTransformKey(source, `story-variants-v3:${video ? "video" : "image"}`);
+  const idempotencyKey = await mediaTransformKey(source, verticalMediaRecipe(video ? "video" : "image"));
   const controller = new AbortController();
   const timeoutSeconds = storyTransformTimeout(config) / 1000;
   const timer = setTimeout(() => controller.abort(), timeoutSeconds * 1000);
@@ -83,7 +84,7 @@ async function transformRemotely(
           authorization: `Bearer ${config.MEDIA_PROCESSOR_TOKEN}`,
           "content-length": String(stat.size),
           "content-type": video ? "video/mp4" : "image/jpeg",
-          "x-studio-transform": "story_vertical",
+          "x-studio-transform": VERTICAL_MEDIA_TRANSFORM,
           "x-studio-media-kind": video ? "video" : "image",
           "x-studio-output-name": path.basename(output),
           "x-studio-idempotency-key": idempotencyKey,
