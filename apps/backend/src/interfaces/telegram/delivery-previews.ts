@@ -1,11 +1,11 @@
 import { type Context, InlineKeyboard, InputFile } from "grammy";
 import { type BotLocale, botLocale } from "../../bot/i18n.js";
-import { appendTextLinkUrls } from "../../content/text.js";
 import type { BackendDb } from "../../db/client.js";
 import { splitText } from "../../delivery/social/payload.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { t } from "../../foundation/i18n/index.js";
 import { escapeMarkdown } from "../../foundation/markdown.js";
+import { threadsBody, threadsTextLimit } from "../../publishing/threads-text.js";
 import type { DeliveryProjection } from "../../studio/projections.js";
 import { studioServices } from "../../studio/services/index.js";
 
@@ -125,9 +125,18 @@ export async function handleTelegramDeliveryPreviewCallback(ctx: Context, backen
   if (data.startsWith(threadsPrefix)) {
     const target = projection.targets.find((item) => item === "threads_ru" || item === "threads_en");
     if (!target) return true;
-    await ctx.editMessageText(threadsPreviewText(target, projection.text, projection.entities), {
-      reply_markup: new InlineKeyboard().text(t(locale, "preview.show-telegram"), `${telegramPrefix}${projection.id}`),
-    });
+    await ctx.editMessageText(
+      threadsPreviewText(
+        target,
+        projection.text,
+        projection.entities,
+        Boolean("threadsChain" in projection && projection.threadsChain),
+        locale,
+      ),
+      {
+        reply_markup: new InlineKeyboard().text(t(locale, "preview.show-telegram"), `${telegramPrefix}${projection.id}`),
+      },
+    );
     return true;
   }
   if (data.startsWith(telegramPrefix)) {
@@ -166,10 +175,32 @@ function deliveryHeader(
   ];
 }
 
-export function threadsPreviewText(target: "threads_ru" | "threads_en", text: string, entities: Record<string, unknown>[] = []): string {
-  const parts = splitText(appendTextLinkUrls(text, entities), 480);
+export function threadsPreviewText(
+  target: "threads_ru" | "threads_en",
+  text: string,
+  entities: Record<string, unknown>[] = [],
+  chain = false,
+  locale: BotLocale = "en",
+): string {
+  // Threads takes one post, so the preview is a character budget rather than a
+  // numbered chain. The numbered form comes back only for a draft whose author
+  // waived the rule — there the chain is the thing they need to proofread.
+  const limit = threadsTextLimit(target);
+  const decision = threadsBody(target, text, entities, { chain });
   const label = target === "threads_ru" ? "Threads RU" : "Threads EN";
-  return `🧵 ${label} · ${parts.length}\n\n${parts.map((part, index) => `${threadMarker(index)} ${part}`).join("\n\n")}`;
+  // The link's fate is stated on the counter line, with how many characters it
+  // was short. Without that number a dropped link is just something the bot ate.
+  const linkNote = decision.droppedUrl
+    ? ` · ${t(locale, "preview.threads-link-dropped", { shortfall: decision.shortfall })}`
+    : decision.url
+      ? ` · ${t(locale, "preview.threads-link-kept")}`
+      : "";
+  if (!chain) {
+    const budget = `${decision.text.length}/${limit}${decision.text.length > limit ? " ⚠️" : ""}`;
+    return `🧵 ${label} · ${budget}${linkNote}\n\n${decision.text}`;
+  }
+  const parts = splitText(decision.text, limit);
+  return `🧵 ${label} · ${parts.length}${linkNote}\n\n${parts.map((part, index) => `${threadMarker(index)} ${part}`).join("\n\n")}`;
 }
 
 function threadMarker(index: number): string {

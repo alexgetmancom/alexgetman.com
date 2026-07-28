@@ -147,6 +147,9 @@ describe("openBackendDb", () => {
       "bot_ui_settings",
     ])
       fixture.exec(`ALTER TABLE ${table} RENAME COLUMN actor_id TO admin_id`);
+    // Same reason, one migration later: 0031 adds a column to a table this
+    // fixture keeps, and SQLite has no ADD COLUMN IF NOT EXISTS.
+    fixture.exec("ALTER TABLE drafts DROP COLUMN threads_chain_approved");
     fixture.close();
 
     const legacy = new Database(dbPath) as unknown as Parameters<typeof baselineDrizzleMigrations>[0];

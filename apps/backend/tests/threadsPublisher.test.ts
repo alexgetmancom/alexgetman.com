@@ -150,42 +150,47 @@ describe("publishToThreads", () => {
     ).rejects.toThrow();
   });
 
-  it("splits long text into a reply chain and reports every published id", async () => {
-    const { fetchImpl, creations } = transport({ publishIds: ["p1", "p2"], containerIds: ["c1", "c2"] });
+  it("refuses text that does not fit one post instead of chaining a reply", async () => {
+    const { fetchImpl, creations } = transport({ publishIds: ["p1"], containerIds: ["c1"] });
     const result = await publishToThreads({ text: `${"a".repeat(500)} tail` }, config, fetchImpl);
 
+    // Nothing is published: a truncated first half live on Threads is worse than
+    // a failed target the author can fix in the draft.
+    expect(creations()).toHaveLength(0);
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("threads_text_too_long");
+  });
+
+  it("builds the reply chain when the draft carries the author's waiver", async () => {
+    const { fetchImpl, creations } = transport({ publishIds: ["p1", "p2"], containerIds: ["c1", "c2"] });
+    const result = await publishToThreads({ text: `${"a".repeat(500)} tail`, threads_chain_approved: true }, config, fetchImpl);
+
     expect(creations()).toHaveLength(2);
-    // The continuation must be a reply to what was just published, not a
-    // second independent post.
+    // The continuation is a reply to what was just published, not a second
+    // independent post.
     expect(creations()[1]).toMatchObject({ media_type: "TEXT", reply_to_id: "p1" });
     expect(result.ids).toEqual(["p1", "p2"]);
   });
 
-  it("resumes from already published ids instead of duplicating the first post", async () => {
-    const { fetchImpl, creations } = transport({ publishIds: ["p2"], containerIds: ["c2"] });
-    const result = await publishToThreads({ text: `${"a".repeat(500)} tail`, _threadsPublishedIds: ["p1"] }, config, fetchImpl);
+  it("publishes text that fits as a single post, keeping a typed url and one hidden link", async () => {
+    const { fetchImpl, creations } = transport({ publishIds: ["p1"], containerIds: ["c1"] });
+    const payload = {
+      text: "Short post https://example.com/typed",
+      entities: [
+        { type: "text_link", offset: 0, length: 5, url: "https://example.com/first" },
+        { type: "text_link", offset: 6, length: 4, url: "https://example.com/second" },
+      ],
+    };
+    const result = await publishToThreads(payload, config, fetchImpl);
 
     expect(creations()).toHaveLength(1);
-    expect(creations()[0]).toMatchObject({ reply_to_id: "p1" });
-    expect(result.ids).toEqual(["p1", "p2"]);
-  });
-
-  it("returns a retryable partial result when a continuation fails mid-thread", async () => {
-    let creationCount = 0;
-    const { fetchImpl } = transport({ publishIds: ["p1"], containerIds: ["c1"] });
-    const failingSecondCreation = (async (input: URL | RequestInfo, init?: RequestInit) => {
-      const isCreation = init?.body instanceof URLSearchParams && String(input).endsWith("me/threads");
-      if (isCreation) {
-        creationCount += 1;
-        if (creationCount === 2) return new Response("boom", { status: 400 });
-      }
-      return fetchImpl(input, init);
-    }) as unknown as typeof fetch;
-
-    const result = await publishToThreads({ text: `${"a".repeat(500)} tail` }, config, failingSecondCreation);
-    // The first part is live: reporting a plain failure would republish it.
-    expect(result.partial).toBe(true);
-    expect(result.retryable).toBe(true);
+    // Exactly one hidden link is appended — the first — and the typed url stays
+    // where the author put it.
+    expect(creations()[0]).toMatchObject({
+      media_type: "TEXT",
+      text: "Short post https://example.com/typed\n\n🔗 https://example.com/first",
+    });
+    expect(creations()[0]).not.toHaveProperty("reply_to_id");
     expect(result.ids).toEqual(["p1"]);
   });
 

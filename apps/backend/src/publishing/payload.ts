@@ -1,5 +1,4 @@
 import { targetLocale } from "../botTargets.js";
-import { appendTextLinkUrls } from "../content/text.js";
 import { payloadMedia } from "../delivery/social/payload.js";
 
 /** Resolves a draft's dual-locale payload to one target's locale, and
@@ -10,9 +9,8 @@ import { payloadMedia } from "../delivery/social/payload.js";
 export function localizeTargetPayload(payload: Record<string, unknown>, target: string): Record<string, unknown> {
   const locale = targetLocale(target) ?? "en";
   if (locale === "ru") {
-    const sourceText = String(payload.text_ru ?? payload.text ?? "");
+    const text = String(payload.text_ru ?? payload.text ?? "");
     const entities = recordArray(payload.entities_ru ?? payload.entities);
-    const text = needsVisibleUrl(target) ? appendTextLinkUrls(sourceText, entities) : sourceText;
     const localized = {
       ...payload,
       locale,
@@ -30,9 +28,8 @@ export function localizeTargetPayload(payload: Record<string, unknown>, target: 
     return { ...localized, media: payloadMedia(localized), media_en: undefined };
   }
 
-  const sourceText = String(payload.text_en ?? payload.text ?? "");
+  const text = String(payload.text_en ?? payload.text ?? "");
   const entities = recordArray(payload.entities_en ?? payload.entities);
-  const text = needsVisibleUrl(target) ? appendTextLinkUrls(sourceText, entities) : sourceText;
   const rawMedia = payload.media_en ?? payload.media;
   const localized = {
     ...payload,
@@ -48,10 +45,6 @@ export function localizeTargetPayload(payload: Record<string, unknown>, target: 
   };
   const media = payloadMedia(localized);
   return { ...localized, media, media_en: media };
-}
-
-function needsVisibleUrl(target: string): boolean {
-  return target === "threads_ru" || target === "threads_en";
 }
 
 function recordArray(value: unknown): Record<string, unknown>[] {

@@ -53,6 +53,7 @@ export function requireDraft(backendDb: BackendDb, draftId: number) {
       post_id: drafts.postId,
       text_ru_entities_json: drafts.textRuEntitiesJson,
       text_en_entities_json: drafts.textEnEntitiesJson,
+      threads_chain_approved: drafts.threadsChainApproved,
     })
     .from(drafts)
     .where(eq(drafts.id, draftId))

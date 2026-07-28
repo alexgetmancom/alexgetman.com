@@ -3,7 +3,7 @@ import type { BackendDb } from "../db/client.js";
 import { withActionLock } from "../foundation/action-lock.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
-import { t } from "../foundation/i18n/index.js";
+import { plural, t } from "../foundation/i18n/index.js";
 import { setTelegramPostCard, setTelegramPostProgressCard } from "../interfaces/telegram/control-cards.js";
 import { sendTelegramDeliveryPreviews } from "../interfaces/telegram/delivery-previews.js";
 import { formatMsk } from "../interfaces/telegram/time.js";
@@ -80,11 +80,15 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
   }
   if (action === "publish") {
     if (await showPublicationPreflight(ctx, backendDb, config, actorId, draftId, locale)) return;
-    const delivery = posts.preview(actorId, draftId).delivery;
-    await sendTelegramDeliveryPreviews(ctx, delivery.projections, botLocale(backendDb, actorId));
-    const preview = draftPreview(backendDb, draftId, config, "confirm_publish");
-    await ctx.reply(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
-    return;
+    return sendPublishConfirmation(ctx, backendDb, config, actorId, draftId);
+  }
+  if (action === "threads_chain") {
+    posts.approveThreadsChain(actorId, draftId);
+    await ctx.answerCallbackQuery({ text: t(locale, "action.preflight-chain-approved") });
+    // The waiver only clears the Threads rule. Anything else preflight refuses —
+    // a Telegram caption, say — must still stop the publication here.
+    if (await showPublicationPreflight(ctx, backendDb, config, actorId, draftId, locale)) return;
+    return sendPublishConfirmation(ctx, backendDb, config, actorId, draftId);
   }
   if (action === "publish_confirm") {
     const result = await withActionLock(`${actorId}:${data}`, async () => {
@@ -175,6 +179,19 @@ async function commitLocaleSchedule(
   });
 }
 
+async function sendPublishConfirmation(
+  ctx: Context,
+  backendDb: BackendDb,
+  config: BackendConfig,
+  actorId: number,
+  draftId: number,
+): Promise<void> {
+  const delivery = studioServices(backendDb, config).posts.preview(actorId, draftId).delivery;
+  await sendTelegramDeliveryPreviews(ctx, delivery.projections, botLocale(backendDb, actorId));
+  const preview = draftPreview(backendDb, draftId, config, "confirm_publish");
+  await ctx.reply(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
+}
+
 async function showPublicationPreflight(
   ctx: Context,
   backendDb: BackendDb,
@@ -183,8 +200,25 @@ async function showPublicationPreflight(
   draftId: number,
   locale: ReturnType<typeof botLocale>,
 ): Promise<boolean> {
-  const issue = studioServices(backendDb, config).posts.validate(actorId, draftId)[0];
+  const issues = studioServices(backendDb, config).posts.validate(actorId, draftId);
+  const issue = issues[0];
   if (!issue) return false;
+  // A waivable issue needs a message, not an alert: an alert cannot carry a
+  // button, and the whole point is to offer the chain right where it is refused.
+  // Only offer it when every issue is waivable — a Telegram caption stays fatal.
+  const parts = issues.every((item) => item.chainParts) ? Math.max(...issues.map((item) => item.chainParts ?? 0)) : 0;
+  if (parts > 1) {
+    await ctx.answerCallbackQuery();
+    const label = plural(locale, parts, {
+      one: t(locale, "action.parts-one"),
+      few: t(locale, "action.parts-few"),
+      many: t(locale, "action.parts-many"),
+    });
+    await ctx.reply(t(locale, "action.preflight-chain", { label: issue.label, actual: issue.actual, limit: issue.limit, parts: label }), {
+      reply_markup: new InlineKeyboard().text(t(locale, "action.preflight-chain-button", { parts: label }), `threads_chain:${draftId}`),
+    });
+    return true;
+  }
   await ctx.answerCallbackQuery({
     text: t(locale, "action.preflight", { label: issue.label, actual: issue.actual, limit: issue.limit }),
     show_alert: true,

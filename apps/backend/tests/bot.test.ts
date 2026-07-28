@@ -279,13 +279,33 @@ describe("Telegram controller flow", () => {
     expect(preview.text).toContain("Will not be sent (no media): Telegram Stories, Instagram Stories RU, Instagram Stories EN.");
   });
 
-  it("renders every Threads segment together in the platform preview", () => {
-    const text = `${"First segment. ".repeat(40)}\n\n${"Second segment. ".repeat(40)}`;
-    const preview = threadsPreviewText("threads_ru", text, [{ type: "text_link", offset: 0, length: 5, url: "https://example.com/guide" }]);
+  it("shows the Threads character budget instead of a reply chain", () => {
+    const preview = threadsPreviewText("threads_ru", "Short enough.");
     expect(preview).toContain("🧵 Threads RU");
-    expect(preview).toContain("①");
-    expect(preview).toContain("②");
+    expect(preview).toContain("/500");
+    expect(preview).not.toContain("⚠️");
+  });
+
+  it("flags a Threads preview that no longer fits one post", () => {
+    const preview = threadsPreviewText("threads_ru", "First segment. ".repeat(40));
+    expect(preview).toContain("⚠️");
+    expect(preview).not.toContain("①");
+  });
+
+  it("appends one hidden link to a Threads post that has room, and says so", () => {
+    const link = [{ type: "text_link", offset: 0, length: 5, url: "https://example.com/guide" }];
+    const preview = threadsPreviewText("threads_ru", "Short post", link, false, "ru");
     expect(preview).toContain("🔗 https://example.com/guide");
+    expect(preview).toContain("ссылка влезла");
+  });
+
+  it("drops the link when it does not fit and reports how many characters were missing", () => {
+    const link = [{ type: "text_link", offset: 0, length: 5, url: "https://example.com/guide" }];
+    const preview = threadsPreviewText("threads_ru", "А".repeat(490), link, false, "ru");
+    expect(preview).not.toContain("https://example.com/guide");
+    // 490 text + 5 for the "\n\n🔗 " prefix (🔗 is a surrogate pair) + 25 for the
+    // url = 520, i.e. 20 over the 500 budget.
+    expect(preview).toContain("не хватило 20");
   });
 
   it("renders a live post progress card from publication job states", () => {

@@ -42,7 +42,7 @@ describe("publication preflight", () => {
     const issues = publicationPreflight({
       text_ru: "А".repeat(1025),
       media_ru_json: JSON.stringify([{ type: "photo" }]),
-      targets_json: JSON.stringify({ telegram: true, site_ru: true }),
+      targets_json: JSON.stringify({ telegram: true, site_ru: true, threads_ru: false, threads_en: false }),
     });
     expect(issues).toEqual([
       expect.objectContaining({ target: "telegram", actual: 1025, limit: 1024, message: expect.stringContaining("отключите Telegram") }),
@@ -51,7 +51,59 @@ describe("publication preflight", () => {
 
   it("does not block a long Telegram text post without media", () => {
     expect(
-      publicationPreflight({ text_ru: "А".repeat(4096), media_ru_json: null, targets_json: JSON.stringify({ telegram: true }) }),
+      publicationPreflight({
+        text_ru: "А".repeat(4096),
+        media_ru_json: null,
+        targets_json: JSON.stringify({ telegram: true, threads_ru: false, threads_en: false }),
+      }),
     ).toEqual([]);
+  });
+
+  it("blocks a Threads post over 500 characters with or without media", () => {
+    const targets_json = JSON.stringify({ telegram: false, threads_ru: true, threads_en: false });
+    const issues = publicationPreflight({ text_ru: "А".repeat(501), media_ru_json: null, targets_json });
+    expect(issues).toEqual([expect.objectContaining({ target: "threads_ru", actual: 501, limit: 500 })]);
+  });
+
+  it("counts an appended link against the Threads budget, and stops counting it once it is dropped", () => {
+    const targets_json = JSON.stringify({ telegram: false, threads_ru: true, threads_en: false });
+    const text_ru_entities_json = JSON.stringify([{ type: "text_link", offset: 0, length: 5, url: "https://example.com/guide" }]);
+    // Text plus link is over the limit, so the link is dropped and the post fits.
+    expect(publicationPreflight({ text_ru: "А".repeat(490), media_ru_json: null, text_ru_entities_json, targets_json })).toEqual([]);
+    // Text alone is over the limit: dropping the link cannot save it.
+    expect(publicationPreflight({ text_ru: "А".repeat(501), media_ru_json: null, text_ru_entities_json, targets_json })).toEqual([
+      expect.objectContaining({ target: "threads_ru", actual: 501 }),
+    ]);
+  });
+
+  it("waives the Threads rule only for the draft that asked, and says how long the chain is", () => {
+    const draft = {
+      text_ru: "А".repeat(900),
+      media_ru_json: null,
+      targets_json: JSON.stringify({ telegram: false, threads_ru: true, threads_en: false }),
+    };
+    expect(publicationPreflight(draft)).toEqual([expect.objectContaining({ target: "threads_ru", chainParts: 2 })]);
+    expect(publicationPreflight({ ...draft, threads_chain_approved: 1 })).toEqual([]);
+  });
+
+  it("never waives a Telegram caption: there is no chain to continue into", () => {
+    const issues = publicationPreflight({
+      text_ru: "А".repeat(1025),
+      media_ru_json: JSON.stringify([{ type: "photo" }]),
+      targets_json: JSON.stringify({ telegram: true, threads_ru: false, threads_en: false }),
+      threads_chain_approved: 1,
+    });
+    expect(issues).toEqual([expect.objectContaining({ target: "telegram", limit: 1024 })]);
+    expect(issues[0]).not.toHaveProperty("chainParts");
+  });
+
+  it("holds EN to the same 500 characters as RU", () => {
+    const issues = publicationPreflight({
+      text_ru: "Коротко",
+      text_en_machine: "E".repeat(501),
+      media_ru_json: null,
+      targets_json: JSON.stringify({ telegram: false, threads_ru: true, threads_en: true }),
+    });
+    expect(issues).toEqual([expect.objectContaining({ target: "threads_en", locale: "en", actual: 501, limit: 500 })]);
   });
 });

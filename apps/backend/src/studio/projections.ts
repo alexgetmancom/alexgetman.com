@@ -18,6 +18,8 @@ export type DeliveryProjection = {
   entities: Record<string, unknown>[];
   media: Record<string, unknown>[];
   unavailableTargets?: string[];
+  /** The author waived the single-post Threads rule for this draft. */
+  threadsChain?: boolean;
   metadata?: Record<string, unknown>;
   notes: string[];
 };
@@ -33,6 +35,7 @@ export function postDeliveryProjections(draft: {
   media_ru_json: string | null;
   media_en_json: string | null;
   targets_json: string;
+  threads_chain_approved?: number | boolean | null;
 }) {
   const targets = Object.entries(parseTargets(draft.targets_json)).flatMap(([target, enabled]) => (enabled ? [target] : []));
   const content = {
@@ -77,6 +80,7 @@ export function postDeliveryProjections(draft: {
         label: `Preview · ${locale.toUpperCase()}`,
         targets: selected.filter((target) => !unavailableTargets.includes(target)),
         locale,
+        threadsChain: Boolean(draft.threads_chain_approved),
         text: content[locale].text,
         entities: content[locale].entities,
         media: content[locale].media,

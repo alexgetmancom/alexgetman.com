@@ -218,6 +218,13 @@
       "when": 1785974700000,
       "tag": "0030_actor_id_rename",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1785974800000,
+      "tag": "0031_threads_chain_approved",
+      "breakpoints": true
     }
   ]
 }

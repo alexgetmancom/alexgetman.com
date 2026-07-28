@@ -115,6 +115,15 @@ const en = {
   "action.unknown": "Unknown action",
   "action.scheduled-as": "Draft #{draftId} is scheduled as post #{postId}.",
   "action.preflight": "{label} with media: {actual}/{limit} characters. Shorten the text or disable {label} in Platforms.",
+  "action.preflight-chain":
+    "⚠️ {label}: {actual}/{limit} characters.\n\nA Threads post holds {limit}. Shorten the text, or post it as a chain of {parts} — the reader gets several posts instead of one.",
+  "action.preflight-chain-button": "🧵 Post as {parts} anyway",
+  "action.preflight-chain-approved": "Chain allowed for this draft",
+  "preview.threads-link-kept": "🔗 link kept",
+  "preview.threads-link-dropped": "🔗 link dropped ({shortfall} short)",
+  "action.parts-one": "{n} post",
+  "action.parts-few": "{n} posts",
+  "action.parts-many": "{n} posts",
   // Post-card rendering + conversational post screen
   "post.confirm-schedule-btn": "✅ Confirm schedule",
   "post.dialog-prompt": "📝 Send text with optional photos or video for a new post.",
@@ -492,6 +501,15 @@ const ru = {
   "action.unknown": "Неизвестное действие",
   "action.scheduled-as": "Черновик #{draftId} запланирован как пост #{postId}.",
   "action.preflight": "{label} с медиа: {actual}/{limit} символов. Сократите текст или отключите {label} в Площадках.",
+  "action.preflight-chain":
+    "⚠️ {label}: {actual}/{limit} символов.\n\nВ один пост Threads влезает {limit}. Сократите текст — или отправьте цепочкой из {parts}, тогда читатель получит несколько постов вместо одного.",
+  "action.preflight-chain-button": "🧵 Всё равно — {parts}",
+  "action.preflight-chain-approved": "Цепочка разрешена для этого черновика",
+  "preview.threads-link-kept": "🔗 ссылка влезла",
+  "preview.threads-link-dropped": "🔗 ссылка убрана (не хватило {shortfall})",
+  "action.parts-one": "{n} пост",
+  "action.parts-few": "{n} поста",
+  "action.parts-many": "{n} постов",
   // Post-card rendering + conversational post screen
   "post.confirm-schedule-btn": "✅ Подтвердить",
   "post.dialog-prompt": "📝 Пришлите текст с опциональным фото или видео для нового поста.",

@@ -1,6 +1,7 @@
 import type { BackendConfig } from "../../foundation/config.js";
 import { formBody, requestJson } from "../../foundation/http.js";
 import type { PublishResult } from "../../publishing/errors.js";
+import { threadsBody, threadsTextLimit } from "../../publishing/threads-text.js";
 import { payloadMedia, payloadText, splitText } from "./payload.js";
 
 type ThreadsResponse = {
@@ -14,9 +15,18 @@ export async function publishToThreads(
   payload: Record<string, unknown>,
   config: BackendConfig,
   fetchImpl: typeof fetch = fetch,
+  target: "threads_ru" | "threads_en" = "threads_ru",
 ): Promise<PublishResult> {
   if (!config.THREADS_ACCESS_TOKEN) return { skipped: true, reason: "missing THREADS_ACCESS_TOKEN" };
-  const parts = splitText(payloadText(payload), 480);
+  // One post by default: the text is written to fit 500 characters and preflight
+  // refuses the draft otherwise, so there is nothing to continue into. A chain is
+  // only built when the author waived the rule for this draft and saw the cost.
+  const chainApproved = payload.threads_chain_approved === true;
+  const entities = Array.isArray(payload.entities) ? (payload.entities as Record<string, unknown>[]) : [];
+  const text = threadsBody(target, payloadText(payload), entities, { chain: chainApproved }).text;
+  const limit = threadsTextLimit(target);
+  if (text.length > limit && !chainApproved) return { ok: false, error: `threads_text_too_long:${text.length}/${limit}` };
+  const parts = chainApproved ? splitText(text, limit) : [text];
   const mediaItems = payloadMedia(payload).filter((item) => item.vpsUrl);
   const ids = Array.isArray(payload._threadsPublishedIds)
     ? payload._threadsPublishedIds.filter((id): id is string => typeof id === "string" && id.length > 0)

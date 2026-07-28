@@ -61,7 +61,7 @@ export function createPlatformPorts(config: BackendConfig, fetchImpl: typeof fet
     telegram: (job) => publishToTelegram(job.payload, config, fetchImpl),
     threads: (job) => prepare(job, config, (payload) => publishToThreads(payload, config, fetchImpl)),
     threads_ru: (job) => prepare(job, config, (payload) => publishToThreads(payload, config, fetchImpl)),
-    threads_en: (job) => prepare(job, threadsEnConfig, (payload) => publishToThreads(payload, threadsEnConfig, fetchImpl)),
+    threads_en: (job) => prepare(job, threadsEnConfig, (payload) => publishToThreads(payload, threadsEnConfig, fetchImpl, "threads_en")),
     x: (job) => prepare(job, config, (payload) => publishToX(payload, config, fetchImpl)),
     twitter: (job) => prepare(job, config, (payload) => publishToX(payload, config, fetchImpl)),
     instagram_story: (job) => prepare(job, config, (payload) => publishInstagramStory(payload, config, fetchImpl)),

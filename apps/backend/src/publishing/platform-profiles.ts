@@ -57,8 +57,22 @@ const platformOverrides: Record<PlatformId, Omit<PlatformProfile, "id" | "label"
   },
   site_ru: { capabilities: { text: true, image: true, video: false }, media: { mode: "all" } },
   site_en: { capabilities: { text: true, image: true, video: false }, media: { mode: "all" } },
-  threads_ru: { capabilities: { text: true, image: true, video: true }, media: { mode: "all" }, video: threadsVideo },
-  threads_en: { capabilities: { text: true, image: true, video: true }, media: { mode: "all" }, video: threadsVideo },
+  // 500 is the Threads API's own hard cap on a single post. A draft that exceeds
+  // it is rejected in preflight rather than chained into a reply thread: one post
+  // per target, both locales prepared to the same budget. URLs are not stripped
+  // the way X strips them — threads-text.ts decides what a Threads post carries.
+  threads_ru: {
+    capabilities: { text: true, image: true, video: true },
+    limits: { text: 500 },
+    media: { mode: "all" },
+    video: threadsVideo,
+  },
+  threads_en: {
+    capabilities: { text: true, image: true, video: true },
+    limits: { text: 500 },
+    media: { mode: "all" },
+    video: threadsVideo,
+  },
   x: { capabilities: { text: true, image: true, video: true }, text: { removeUrls: true }, media: { mode: "all" } },
   telegram_stories: {
     capabilities: { text: true, image: true, video: true },

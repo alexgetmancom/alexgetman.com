@@ -47,6 +47,10 @@ export function createPublicationPlan(
     slug_en: slugEn,
     has_ru: Boolean(targets.site_ru),
     has_en: Boolean(targets.site_en),
+    // Copied into the durable payload rather than read from the draft at delivery
+    // time: the draft can be edited or deleted while the job waits in the queue,
+    // and the waiver has to describe the text that was actually planned.
+    threads_chain_approved: Boolean(draft.threads_chain_approved),
   };
   const locale = (
     localeName: "ru" | "en",

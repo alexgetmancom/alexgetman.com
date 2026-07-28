@@ -64,16 +64,16 @@ function renderText(value: string): string {
   return escapeHtml(value).replace(/\n/g, "<br>");
 }
 
-/** Social platforms do not understand Telegram's hidden text_link entity. */
-export function appendTextLinkUrls(text: string, entities: Record<string, unknown>[]): string {
-  const urls = [
-    ...new Set(
-      entities.flatMap((entity) =>
-        entity.type === "text_link" && typeof entity.url === "string" && safeHttpUrl(entity.url) ? [entity.url] : [],
-      ),
-    ),
-  ];
-  return urls.length ? `${text.trim()}\n\n${urls.map((url) => `🔗 ${url}`).join("\n")}` : text;
+/** The first hidden link in reading order, for platforms that append at most one.
+ * Telegram sends entities in offset order, but a payload can be re-serialized on
+ * the way here, so the order is established rather than assumed. */
+export function firstTextLinkUrl(entities: Record<string, unknown>[]): string | null {
+  return (
+    [...entities]
+      .sort((left, right) => Number(left.offset ?? 0) - Number(right.offset ?? 0))
+      .flatMap((entity) => (entity.type === "text_link" && typeof entity.url === "string" && safeHttpUrl(entity.url) ? [entity.url] : []))
+      .at(0) ?? null
+  );
 }
 
 function safeHttpUrl(value: string): boolean {

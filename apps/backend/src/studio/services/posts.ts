@@ -110,6 +110,20 @@ export function postService(backendDb: BackendDb) {
         .where(eq(draftEntityCandidates.draftId, draftId))
         .run();
     },
+    /** Waives the 500-character Threads rule for this draft: the overflow becomes
+     * a reply chain. Deliberately has no "off" command — editing the text resets
+     * it, and a draft nobody waived is the normal state. */
+    approveThreadsChain(actorId: number, draftId: number): void {
+      requireOwnedDraft(backendDb, actorId, draftId);
+      backendDb.db.update(drafts).set({ threadsChainApproved: 1, updatedAt: new Date().toISOString() }).where(eq(drafts.id, draftId)).run();
+      recordDomainEvent(backendDb, {
+        ref: `draft:${draftId}`,
+        type: "content.draft.threads-chain-approved",
+        severity: "info",
+        message: `Draft #${draftId} waived the Threads single-post rule`,
+        details: {},
+      });
+    },
     publish(actorId: number, draftId: number): number {
       requireOwnedDraft(backendDb, actorId, draftId);
       return publishDraftToQueue(backendDb, draftId);
@@ -283,6 +297,9 @@ function editDraftContent(backendDb: BackendDb, actorId: number, draftId: number
     if (!input.replaceMediaOnly && input.text) {
       update[ru ? "textRu" : "textEnApproved"] = input.text;
       update[ru ? "textRuEntitiesJson" : "textEnEntitiesJson"] = JSON.stringify(input.entities);
+      // The waiver was given for a specific text the author had read. New text is
+      // a new decision, so the 500-character rule applies again until waived anew.
+      update.threadsChainApproved = 0;
     }
   }
   if (Object.keys(update).length === 1) throw new StudioError("err.post-no-edit");
