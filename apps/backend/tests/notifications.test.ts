@@ -1,11 +1,32 @@
 import { describe, expect, it } from "bun:test";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import { openBackendDb } from "../src/db/client.js";
+import { loadConfig } from "../src/foundation/config.js";
 import { cancelScheduledNotifications, runNotificationCycle, scheduleReminder } from "../src/notifications/jobs.js";
 import { createVideoDraft } from "../src/publishing/video-service.js";
 import { notificationService } from "../src/studio/services/notifications.js";
 
 describe("Studio notifications", () => {
+  it("shares the durable inbox across configured administrators", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const notifications = notificationService(backendDb, loadConfig({ ADMIN_IDS: "42,7" }));
+      const videoId = createVideoDraft(backendDb, 42, "shared-video", 24);
+      notifications.record({
+        ref: `video:${videoId}`,
+        type: "delivery.video.completed",
+        severity: "info",
+        message: "Shared completion",
+      });
+      const event = notifications.inbox(7)[0];
+      expect(event?.message).toBe("Shared completion");
+      expect(event && notifications.acknowledge(7, event.id)).toBe(true);
+      expect(notifications.inbox(42)).toHaveLength(0);
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("keeps a durable inbox, suppresses cooled-down duplicates and acknowledges events", () => {
     const backendDb = openBackendDb(":memory:");
     try {

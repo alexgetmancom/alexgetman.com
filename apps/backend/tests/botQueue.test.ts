@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { openBackendDb } from "../src/db/client.js";
 import { drafts, publishJobs, videoDrafts, videoTargets } from "../src/db/schema.js";
+import { loadConfig } from "../src/foundation/config.js";
 import { queueService } from "../src/studio/services/queue.js";
 
 describe("Telegram work queue", () => {
@@ -66,10 +67,10 @@ describe("Telegram work queue", () => {
         .values({ videoDraftId: video.id, target: "youtube_shorts", metadataJson: {}, status: "draft", createdAt: now, updatedAt: now })
         .run();
 
-      const snapshot = queueService(backendDb).snapshot(7);
+      const snapshot = queueService(backendDb, loadConfig({ ADMIN_IDS: "7,8" })).snapshot(7);
       expect(snapshot.upcoming).toHaveLength(1);
       expect(snapshot.upcoming[0]?.label).toBe("Запланированный пост");
-      expect(snapshot.drafts.map((item) => item.label)).toEqual(["Черновик поста", "Черновик видео"]);
+      expect(snapshot.drafts.map((item) => item.label)).toEqual(["Черновик поста", "Чужой черновик", "Черновик видео"]);
       expect(snapshot.attention).toEqual([{ id: 1, label: "Запланированный пост", kind: "post" }]);
     } finally {
       backendDb.close();

@@ -102,23 +102,23 @@ export async function importStudioMediaFile(backendDb: BackendDb, config: Backen
   return asset;
 }
 
-export function listStudioMediaAssets(backendDb: BackendDb, actorId: number, limit = 50) {
+export function listStudioMediaAssets(backendDb: BackendDb, actorId: number, limit = 50, actorIds: number[] = [actorId]) {
   return backendDb.db
     .select()
     .from(studioMediaAssets)
-    .where(eq(studioMediaAssets.actorId, actorId))
+    .where(inArray(studioMediaAssets.actorId, actorIds))
     .orderBy(studioMediaAssets.id)
     .limit(limit)
     .all();
 }
 
-export function requireStudioMediaAssets(backendDb: BackendDb, actorId: number, assetIds: number[]) {
+export function requireStudioMediaAssets(backendDb: BackendDb, actorId: number, assetIds: number[], actorIds: number[] = [actorId]) {
   const ids = [...new Set(assetIds)];
   if (ids.length === 0) return [];
   const assets = backendDb.db
     .select()
     .from(studioMediaAssets)
-    .where(and(eq(studioMediaAssets.actorId, actorId), inArray(studioMediaAssets.id, ids)))
+    .where(and(inArray(studioMediaAssets.actorId, actorIds), inArray(studioMediaAssets.id, ids)))
     .all();
   if (assets.length !== ids.length) throw new Error("One or more media assets are not available to this owner.");
   const byId = new Map(assets.map((asset) => [asset.id, asset]));

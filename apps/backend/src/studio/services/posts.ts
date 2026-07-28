@@ -1,4 +1,4 @@
-import { desc, eq, or } from "drizzle-orm";
+import { desc, eq, inArray, or } from "drizzle-orm";
 import { PRESETS, presetName, TARGETS, targetLocale } from "../../botTargets.js";
 import { listStudioMediaAssets, mediaItemsFromAssets, requireStudioMediaAssets } from "../../content/assets.js";
 import { createDraftFromMessage, requireDraft } from "../../content/drafts.js";
@@ -6,6 +6,7 @@ import type { DraftMessage } from "../../content/message.js";
 import type { BackendDb } from "../../db/client.js";
 import { draftEntityCandidates, draftSources, drafts, postEvents, studioNotificationSettings } from "../../db/schema.js";
 import { recordDomainEvent } from "../../domain/events.js";
+import type { BackendConfig } from "../../foundation/config.js";
 import { StudioError } from "../../foundation/errors.js";
 import { cancelScheduledNotifications, scheduleReminder } from "../../notifications/jobs.js";
 import { cancelDraft, cancelRemainingPostJobs } from "../../publishing/draft-lifecycle.js";
@@ -14,6 +15,7 @@ import { publicationPreflight } from "../../publishing/preflight.js";
 import { publishDraftToQueue } from "../../publishing/publication-workflow.js";
 import { parseManualSchedule, scheduleClockToday } from "../../publishing/schedule.js";
 import { parseTargets } from "../../publishing/targets.js";
+import { accessibleStudioActorIds, canAccessStudioOwner, studioActorIds } from "../access.js";
 import { postDeliveryProjections } from "../projections.js";
 import { postProgressState } from "./post-progress.js";
 
@@ -32,22 +34,28 @@ type DraftEntityCandidate = { kind: "company" | "model" | "person" | "topic"; sl
 
 /** Commands for post drafts. These are deliberately transport-free and become the
  * single entry point for Telegram, Web Studio and later MCP mutations. */
-export function postService(backendDb: BackendDb) {
+export function postService(backendDb: BackendDb, config: BackendConfig) {
   return {
     create(actorId: number, message: DraftMessage): number {
       return createDraftFromMessage(backendDb, actorId, message);
     },
     get(actorId: number, draftId: number) {
-      return requireOwnedDraft(backendDb, actorId, draftId);
+      return requireOwnedDraft(backendDb, config, actorId, draftId);
     },
     list(actorId: number, limit = 50) {
-      return backendDb.db.select().from(drafts).where(eq(drafts.actorId, actorId)).orderBy(desc(drafts.updatedAt)).limit(limit).all();
+      return backendDb.db
+        .select()
+        .from(drafts)
+        .where(inArray(drafts.actorId, accessibleStudioActorIds(config, actorId)))
+        .orderBy(desc(drafts.updatedAt))
+        .limit(limit)
+        .all();
     },
     validate(actorId: number, draftId: number) {
-      return publicationPreflight(requireOwnedDraft(backendDb, actorId, draftId));
+      return publicationPreflight(requireOwnedDraft(backendDb, config, actorId, draftId));
     },
     preview(actorId: number, draftId: number) {
-      const draft = requireOwnedDraft(backendDb, actorId, draftId);
+      const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
       const ruMedia = draftMedia(draft, "ru");
       const enMedia = draftMedia(draft, "en");
       const targets = parseTargets(draft.targets_json);
@@ -72,7 +80,7 @@ export function postService(backendDb: BackendDb) {
       };
     },
     replaceSources(actorId: number, draftId: number, urls: string[]): void {
-      requireOwnedDraft(backendDb, actorId, draftId);
+      requireOwnedDraft(backendDb, config, actorId, draftId);
       const now = new Date().toISOString();
       backendDb.db.delete(draftSources).where(eq(draftSources.draftId, draftId)).run();
       const uniqueUrls = [...new Set(urls)];
@@ -93,7 +101,7 @@ export function postService(backendDb: BackendDb) {
         .run();
     },
     replaceEntityCandidates(actorId: number, draftId: number, candidates: DraftEntityCandidate[]): void {
-      requireOwnedDraft(backendDb, actorId, draftId);
+      requireOwnedDraft(backendDb, config, actorId, draftId);
       const now = new Date().toISOString();
       backendDb.db.delete(draftEntityCandidates).where(eq(draftEntityCandidates.draftId, draftId)).run();
       if (candidates.length)
@@ -103,7 +111,7 @@ export function postService(backendDb: BackendDb) {
           .run();
     },
     acceptEntityCandidates(actorId: number, draftId: number): void {
-      requireOwnedDraft(backendDb, actorId, draftId);
+      requireOwnedDraft(backendDb, config, actorId, draftId);
       backendDb.db
         .update(draftEntityCandidates)
         .set({ status: "accepted", updatedAt: new Date().toISOString() })
@@ -114,7 +122,7 @@ export function postService(backendDb: BackendDb) {
      * a reply chain. Deliberately has no "off" command — editing the text resets
      * it, and a draft nobody waived is the normal state. */
     approveThreadsChain(actorId: number, draftId: number): void {
-      requireOwnedDraft(backendDb, actorId, draftId);
+      requireOwnedDraft(backendDb, config, actorId, draftId);
       backendDb.db.update(drafts).set({ threadsChainApproved: 1, updatedAt: new Date().toISOString() }).where(eq(drafts.id, draftId)).run();
       recordDomainEvent(backendDb, {
         ref: `draft:${draftId}`,
@@ -125,14 +133,14 @@ export function postService(backendDb: BackendDb) {
       });
     },
     publish(actorId: number, draftId: number): number {
-      requireOwnedDraft(backendDb, actorId, draftId);
+      requireOwnedDraft(backendDb, config, actorId, draftId);
       return publishDraftToQueue(backendDb, draftId);
     },
     schedule(actorId: number, draftId: number, input: ScheduleInput): number {
-      const draft = requireOwnedDraft(backendDb, actorId, draftId);
+      const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
       const postId = publishDraftToQueue(backendDb, draftId, { mode: "scheduled", ...input });
-      const scheduled = requireOwnedDraft(backendDb, actorId, draftId);
-      const preference = notificationPreference(backendDb, actorId);
+      const scheduled = requireOwnedDraft(backendDb, config, actorId, draftId);
+      const preference = workspaceNotificationPreference(backendDb, config);
       const title = draft.text_ru.trim().split("\n")[0]?.slice(0, 100) || `Post #${postId}`;
       if (scheduled.scheduled_at)
         scheduleReminder(backendDb, {
@@ -157,7 +165,7 @@ export function postService(backendDb: BackendDb) {
       return postId;
     },
     hasLocaleTargets(actorId: number, draftId: number, locale: "ru" | "en"): boolean {
-      const draft = requireOwnedDraft(backendDb, actorId, draftId);
+      const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
       return hasLocaleTarget(parseTargets(draft.targets_json), locale);
     },
     /** Resolves a slot-button clock (`HH:MM` MSK) to its next occurrence. */
@@ -165,30 +173,30 @@ export function postService(backendDb: BackendDb) {
       return scheduleClockToday(clock);
     },
     manualSchedule(actorId: number, draftId: number, scope: ScheduleScope, value: string): ScheduleInput {
-      return scheduleAt(requireOwnedDraft(backendDb, actorId, draftId), scope, parseManualSchedule(value));
+      return scheduleAt(requireOwnedDraft(backendDb, config, actorId, draftId), scope, parseManualSchedule(value));
     },
     scheduleAt(actorId: number, draftId: number, scope: ScheduleScope, value: Date): ScheduleInput {
-      return scheduleAt(requireOwnedDraft(backendDb, actorId, draftId), scope, value);
+      return scheduleAt(requireOwnedDraft(backendDb, config, actorId, draftId), scope, value);
     },
     cancel(actorId: number, draftId: number): void {
-      const draft = requireOwnedDraft(backendDb, actorId, draftId);
+      const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
       cancelDraft(backendDb, draftId);
       if (draft.post_id != null) cancelScheduledNotifications(backendDb, `post:${draft.post_id}`);
     },
     cancelRemaining(actorId: number, draftId: number): void {
-      const draft = requireOwnedDraft(backendDb, actorId, draftId);
+      const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
       cancelRemainingPostJobs(backendDb, draftId);
       if (draft.post_id != null) cancelScheduledNotifications(backendDb, `post:${draft.post_id}`);
     },
     progress(actorId: number, draftId: number) {
-      requireOwnedDraft(backendDb, actorId, draftId);
+      requireOwnedDraft(backendDb, config, actorId, draftId);
       return postProgressState(backendDb, draftId);
     },
     status(actorId: number, draftId: number) {
-      return postProgressState(backendDb, requireOwnedDraft(backendDb, actorId, draftId).id);
+      return postProgressState(backendDb, requireOwnedDraft(backendDb, config, actorId, draftId).id);
     },
     history(actorId: number, draftId: number, limit = 50) {
-      const draft = requireOwnedDraft(backendDb, actorId, draftId);
+      const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
       const scope =
         draft.post_id == null
           ? eq(postEvents.postKey, `draft:${draft.id}`)
@@ -202,14 +210,14 @@ export function postService(backendDb: BackendDb) {
         .all();
     },
     toggleTarget(actorId: number, draftId: number, target: string): void {
-      const draft = requireOwnedDraft(backendDb, actorId, draftId);
+      const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
       if (!TARGETS.some(([id]) => id === target)) throw new StudioError("err.unknown-target");
       const targets = parseTargets(draft.targets_json);
       targets[target] = !targets[target];
       saveTargets(backendDb, draftId, targets);
     },
     cycleMode(actorId: number, draftId: number): keyof typeof PRESETS {
-      const draft = requireOwnedDraft(backendDb, actorId, draftId);
+      const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
       const targets = parseTargets(draft.targets_json);
       const current = presetName(targets);
       const next = current === "full" ? "ru" : current === "ru" ? "en" : current === "en" ? "tg" : "full";
@@ -219,14 +227,16 @@ export function postService(backendDb: BackendDb) {
       return next;
     },
     edit(actorId: number, draftId: number, input: EditInput): void {
-      editDraftContent(backendDb, actorId, draftId, input);
+      editDraftContent(backendDb, config, actorId, draftId, input);
     },
     mediaAssets(actorId: number, limit = 50) {
-      return listStudioMediaAssets(backendDb, actorId, limit);
+      return listStudioMediaAssets(backendDb, actorId, limit, accessibleStudioActorIds(config, actorId));
     },
     attachMediaAssets(actorId: number, draftId: number, locale: "ru" | "en", assetIds: number[], replace = false): void {
-      const draft = requireOwnedDraft(backendDb, actorId, draftId);
-      const assets = mediaItemsFromAssets(requireStudioMediaAssets(backendDb, actorId, assetIds));
+      const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
+      const assets = mediaItemsFromAssets(
+        requireStudioMediaAssets(backendDb, actorId, assetIds, accessibleStudioActorIds(config, actorId)),
+      );
       const key = locale === "ru" ? "mediaRuJson" : "mediaEnJson";
       const current = replace ? [] : draftMedia(draft, locale);
       backendDb.db
@@ -243,7 +253,7 @@ export function postService(backendDb: BackendDb) {
       });
     },
     removeMedia(actorId: number, draftId: number, locale: "ru" | "en", assetIds: number[]): void {
-      const draft = requireOwnedDraft(backendDb, actorId, draftId);
+      const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
       const current = draftMedia(draft, locale);
       const removed = new Set(assetIds);
       const media = current.filter((item) => !removed.has(Number(item.asset_id)));
@@ -271,12 +281,16 @@ function sourceLabel(url: string): string {
   }
 }
 
-function notificationPreference(backendDb: BackendDb, actorId: number) {
-  const row = backendDb.db.select().from(studioNotificationSettings).where(eq(studioNotificationSettings.actorId, actorId)).get();
+function workspaceNotificationPreference(backendDb: BackendDb, config: BackendConfig) {
+  const actorIds = studioActorIds(config);
+  const rows = actorIds.length
+    ? backendDb.db.select().from(studioNotificationSettings).where(inArray(studioNotificationSettings.actorId, actorIds)).all()
+    : [];
+  const byActor = new Map(rows.map((row) => [row.actorId, row]));
   return {
-    remindersEnabled: row?.remindersEnabled !== 0,
-    reminderMinutes: row?.reminderMinutes ?? 5,
-    completionEnabled: row?.completionEnabled !== 0,
+    remindersEnabled: actorIds.some((actorId) => byActor.get(actorId)?.remindersEnabled !== 0),
+    reminderMinutes: config.VIDEO_REMINDER_MINUTES,
+    completionEnabled: true,
   };
 }
 
@@ -286,8 +300,8 @@ function localeTargets(json: string, locale: "ru" | "en"): string[] {
     .map(([target]) => target);
 }
 
-function editDraftContent(backendDb: BackendDb, actorId: number, draftId: number, input: EditInput): void {
-  requireOwnedDraft(backendDb, actorId, draftId);
+function editDraftContent(backendDb: BackendDb, config: BackendConfig, actorId: number, draftId: number, input: EditInput): void {
+  requireOwnedDraft(backendDb, config, actorId, draftId);
   const clearMedia = Boolean(input.clearMedia);
   const update: Record<string, unknown> = { updatedAt: new Date().toISOString() };
   const ru = input.locale === "ru";
@@ -330,9 +344,9 @@ function dateOrNull(value: string | null): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function requireOwnedDraft(backendDb: BackendDb, actorId: number, draftId: number) {
+function requireOwnedDraft(backendDb: BackendDb, config: BackendConfig, actorId: number, draftId: number) {
   const draft = requireDraft(backendDb, draftId);
-  if (draft.actor_id !== actorId) throw new StudioError("err.post-not-yours");
+  if (!canAccessStudioOwner(config, actorId, draft.actor_id)) throw new StudioError("err.post-not-yours");
   return draft;
 }
 

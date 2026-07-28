@@ -23,7 +23,7 @@ type PublicationHandle = { kind: "post" | "video"; id: number };
  * covers the verbs that are actually uniform: create, then read/cancel.
  */
 export function publicationService(backendDb: BackendDb, config: BackendConfig) {
-  const posts = postService(backendDb);
+  const posts = postService(backendDb, config);
   const videos = videoService(backendDb, config);
 
   function entity(kind: PublicationHandle["kind"]) {

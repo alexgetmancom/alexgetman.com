@@ -1,7 +1,7 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { requireStudioMediaAssets } from "../../content/assets.js";
 import type { BackendDb } from "../../db/client.js";
-import { postEvents, studioNotificationSettings, videoDrafts, videoJobs } from "../../db/schema.js";
+import { postEvents, videoDrafts, videoJobs } from "../../db/schema.js";
 import { keepYouTubeUploadPrivate } from "../../delivery/video-publishers.js";
 import { recordDomainEvent } from "../../domain/events.js";
 import type { BackendConfig } from "../../foundation/config.js";
@@ -21,6 +21,7 @@ import {
   validateVideoDraft,
 } from "../../publishing/video-service.js";
 import type { VideoLocale, VideoMetadata, VideoTarget } from "../../publishing/video-types.js";
+import { accessibleStudioActorIds, canAccessStudioOwner } from "../access.js";
 import { videoDeliveryProjections } from "../projections.js";
 
 type VideoEditInput = { label?: string; target?: VideoTarget; metadata?: VideoMetadata };
@@ -29,19 +30,19 @@ type VideoEditInput = { label?: string; target?: VideoTarget; metadata?: VideoMe
 export function videoService(backendDb: BackendDb, config: BackendConfig) {
   return {
     create(actorId: number, studioMediaAssetId: number, locale: VideoLocale = "ru"): number {
-      const [asset] = requireStudioMediaAssets(backendDb, actorId, [studioMediaAssetId]);
+      const [asset] = requireStudioMediaAssets(backendDb, actorId, [studioMediaAssetId], accessibleStudioActorIds(config, actorId));
       if (asset?.kind !== "video") throw new StudioError("err.video-needs-asset");
       return createVideoDraft(backendDb, actorId, { studioMediaAssetId }, config.VIDEO_MEDIA_RETENTION_HOURS, locale);
     },
     get(actorId: number, videoDraftId: number) {
-      const draft = requireOwnedVideo(backendDb, actorId, videoDraftId);
+      const draft = requireOwnedVideo(backendDb, config, actorId, videoDraftId);
       return { draft, targets: listVideoTargets(backendDb, videoDraftId) };
     },
     list(actorId: number, limit = 50) {
       return backendDb.db
         .select()
         .from(videoDrafts)
-        .where(eq(videoDrafts.actorId, actorId))
+        .where(inArray(videoDrafts.actorId, accessibleStudioActorIds(config, actorId)))
         .orderBy(desc(videoDrafts.updatedAt))
         .limit(limit)
         .all();
@@ -50,13 +51,13 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
       return scheduleOwnedVideo(backendDb, config, actorId, videoDraftId, schedule);
     },
     async validate(actorId: number, videoDraftId: number) {
-      requireOwnedVideo(backendDb, actorId, videoDraftId);
+      requireOwnedVideo(backendDb, config, actorId, videoDraftId);
       return validateVideoDraft(config, backendDb, videoDraftId);
     },
     async publish(actorId: number, videoDraftId: number) {
-      // Ownership first: otherwise a foreign draft answers "choose platforms"
+      // Access first: otherwise an outsider's draft answers "choose platforms"
       // instead of "not yours", which leaks whether it exists and how it looks.
-      requireOwnedVideo(backendDb, actorId, videoDraftId);
+      requireOwnedVideo(backendDb, config, actorId, videoDraftId);
       const targets = listVideoTargets(backendDb, videoDraftId).map((row) => row.target as VideoTarget);
       if (!targets.length) throw new StudioError("err.video-choose-platforms");
       const schedule = Object.fromEntries(targets.map((target) => [target, new Date(Date.now() + 60_000)])) as Partial<
@@ -65,11 +66,11 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
       return scheduleOwnedVideo(backendDb, config, actorId, videoDraftId, schedule);
     },
     retry(actorId: number, videoDraftId: number, target: VideoTarget): void {
-      requireOwnedVideo(backendDb, actorId, videoDraftId);
+      requireOwnedVideo(backendDb, config, actorId, videoDraftId);
       retryFailedVideoTarget(backendDb, videoDraftId, target);
     },
     async cancel(actorId: number, videoDraftId: number) {
-      const draft = requireOwnedVideo(backendDb, actorId, videoDraftId);
+      const draft = requireOwnedVideo(backendDb, config, actorId, videoDraftId);
       const cancellation = cancelVideo(backendDb, videoDraftId, config.VIDEO_MEDIA_RETENTION_HOURS);
       cancelScheduledNotifications(backendDb, `video:${videoDraftId}`);
       const heldPrivateYouTubeIds: string[] = [];
@@ -100,11 +101,11 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
       return { ...cancellation, heldPrivateYouTubeIds, holdFailures };
     },
     preview(actorId: number, videoDraftId: number) {
-      const draft = requireOwnedVideo(backendDb, actorId, videoDraftId);
+      const draft = requireOwnedVideo(backendDb, config, actorId, videoDraftId);
       return { draft, targets: listVideoTargets(backendDb, videoDraftId), delivery: videoDeliveryProjections(backendDb, videoDraftId) };
     },
     status(actorId: number, videoDraftId: number) {
-      const draft = requireOwnedVideo(backendDb, actorId, videoDraftId);
+      const draft = requireOwnedVideo(backendDb, config, actorId, videoDraftId);
       return {
         draft,
         targets: listVideoTargets(backendDb, videoDraftId),
@@ -112,7 +113,7 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
       };
     },
     history(actorId: number, videoDraftId: number, limit = 50) {
-      requireOwnedVideo(backendDb, actorId, videoDraftId);
+      requireOwnedVideo(backendDb, config, actorId, videoDraftId);
       return backendDb.db
         .select()
         .from(postEvents)
@@ -122,29 +123,29 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
         .all();
     },
     updateMetadata(actorId: number, videoDraftId: number, target: VideoTarget, metadata: VideoMetadata): void {
-      requireOwnedVideo(backendDb, actorId, videoDraftId);
+      requireOwnedVideo(backendDb, config, actorId, videoDraftId);
       saveVideoMetadata(backendDb, videoDraftId, target, metadata);
     },
     edit(actorId: number, videoDraftId: number, input: VideoEditInput): void {
-      requireOwnedVideo(backendDb, actorId, videoDraftId);
+      requireOwnedVideo(backendDb, config, actorId, videoDraftId);
       if (input.label != null) updateVideoLabel(backendDb, videoDraftId, input.label);
       if (input.target && input.metadata) saveVideoMetadata(backendDb, videoDraftId, input.target, input.metadata);
       if (input.label == null && (!input.target || !input.metadata)) throw new StudioError("err.video-no-edit-fields");
     },
     rename(actorId: number, videoDraftId: number, label: string): void {
-      requireOwnedVideo(backendDb, actorId, videoDraftId);
+      requireOwnedVideo(backendDb, config, actorId, videoDraftId);
       updateVideoLabel(backendDb, videoDraftId, label);
     },
     replaceTargets(actorId: number, videoDraftId: number, targets: VideoTarget[]): void {
-      requireOwnedVideo(backendDb, actorId, videoDraftId);
+      requireOwnedVideo(backendDb, config, actorId, videoDraftId);
       replaceVideoTargets(backendDb, videoDraftId, targets);
     },
     removeTarget(actorId: number, videoDraftId: number, target: VideoTarget): { cancelled: boolean } {
-      requireOwnedVideo(backendDb, actorId, videoDraftId);
+      requireOwnedVideo(backendDb, config, actorId, videoDraftId);
       return { cancelled: removeVideoTarget(backendDb, videoDraftId, target, config.VIDEO_MEDIA_RETENTION_HOURS) };
     },
     parseSchedule(actorId: number, videoDraftId: number, value: string): Date {
-      requireOwnedVideo(backendDb, actorId, videoDraftId);
+      requireOwnedVideo(backendDb, config, actorId, videoDraftId);
       return parseManualSchedule(value);
     },
     /** Resolves a slot-button clock (`HH:MM` MSK) to its next occurrence. */
@@ -163,7 +164,7 @@ async function scheduleOwnedVideo(
   videoDraftId: number,
   schedule: Partial<Record<VideoTarget, Date>>,
 ) {
-  const draft = requireOwnedVideo(backendDb, actorId, videoDraftId);
+  const draft = requireOwnedVideo(backendDb, config, actorId, videoDraftId);
   const technical = await validateVideoDraft(config, backendDb, videoDraftId);
   scheduleVideo(
     backendDb,
@@ -172,39 +173,39 @@ async function scheduleOwnedVideo(
     { prepareLeadMinutes: config.VIDEO_PREPARE_LEAD_MINUTES, reminderMinutes: config.VIDEO_REMINDER_MINUTES },
     config,
   );
-  scheduleVideoReminders(backendDb, actorId, videoDraftId, draft.label, schedule);
+  scheduleVideoReminders(backendDb, config, draft.actorId, videoDraftId, draft.label);
   return technical;
 }
 
-function scheduleVideoReminders(
-  backendDb: BackendDb,
-  actorId: number,
-  videoDraftId: number,
-  label: string,
-  schedule: Partial<Record<VideoTarget, Date>>,
-): void {
-  const row = backendDb.db.select().from(studioNotificationSettings).where(eq(studioNotificationSettings.actorId, actorId)).get();
+function scheduleVideoReminders(backendDb: BackendDb, config: BackendConfig, ownerId: number, videoDraftId: number, label: string): void {
+  cancelScheduledNotifications(backendDb, `video:${videoDraftId}`);
   const preference = {
-    remindersEnabled: row?.remindersEnabled !== 0,
-    reminderMinutes: row?.reminderMinutes ?? 5,
-    completionEnabled: row?.completionEnabled !== 0,
+    remindersEnabled: config.ADMIN_IDS.length > 0,
+    reminderMinutes: config.VIDEO_REMINDER_MINUTES,
+    completionEnabled: true,
   };
-  for (const [target, publishAt] of Object.entries(schedule) as Array<[VideoTarget, Date | undefined]>) {
-    if (publishAt)
-      scheduleReminder(backendDb, {
-        actorId: actorId,
-        ref: `video:${videoDraftId}`,
-        kind: `video.${target}`,
-        publishAt,
-        title: label || `Video #${videoDraftId}`,
-        targets: [target],
-        preference,
-      });
+  const grouped = new Map<string, VideoTarget[]>();
+  for (const target of listVideoTargets(backendDb, videoDraftId)) {
+    if (!target.scheduledAt || ["published", "cancelled", "failed"].includes(target.status)) continue;
+    const targets = grouped.get(target.scheduledAt) ?? [];
+    targets.push(target.target as VideoTarget);
+    grouped.set(target.scheduledAt, targets);
+  }
+  for (const [publishAt, targets] of grouped) {
+    scheduleReminder(backendDb, {
+      actorId: ownerId,
+      ref: `video:${videoDraftId}`,
+      kind: `video.${publishAt}`,
+      publishAt: new Date(publishAt),
+      title: label || `Video #${videoDraftId}`,
+      targets,
+      preference,
+    });
   }
 }
 
-function requireOwnedVideo(backendDb: BackendDb, actorId: number, videoDraftId: number) {
+function requireOwnedVideo(backendDb: BackendDb, config: BackendConfig, actorId: number, videoDraftId: number) {
   const draft = getVideoDraft(backendDb, videoDraftId);
-  if (draft.actorId !== actorId) throw new StudioError("err.video-not-yours");
+  if (!canAccessStudioOwner(config, actorId, draft.actorId)) throw new StudioError("err.video-not-yours");
   return draft;
 }

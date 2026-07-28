@@ -46,17 +46,21 @@ describe("Studio publication facade", () => {
     expect(video).toEqual({ kind: "video", id: 1 });
   });
 
-  it("routes read and cancel verbs through the same owner check as the underlying service", () => {
+  it("shares read and cancel verbs with configured admins while rejecting outsiders", () => {
     backendDb = openBackendDb(":memory:");
-    const publications = publicationService(backendDb, loadConfig({ ADMIN_IDS: "42" }));
+    const publications = publicationService(backendDb, loadConfig({ ADMIN_IDS: "42,7" }));
     const post = publications.create(42, { kind: "post", message: { text: "Owned", textEn: "Owned", entities: [], media: [] } });
 
     const draft = publications.get(42, post) as { id: number; status: string };
     expect(draft.id).toBe(post.id);
-    expect(() => publications.get(7, post)).toThrow("err.post-not-yours");
-    expect(() => publications.cancel(7, post)).toThrow("err.post-not-yours");
+    expect((publications.get(7, post) as { id: number }).id).toBe(post.id);
+    const video = publications.create(42, { kind: "video", studioMediaAssetId: videoAssetId(backendDb) });
+    expect((publications.get(7, video) as { draft: { id: number } }).draft.id).toBe(video.id);
+    expect(() => publications.get(9, post)).toThrow("err.post-not-yours");
+    expect(() => publications.get(9, video)).toThrow("err.video-not-yours");
+    expect(() => publications.cancel(9, post)).toThrow("err.post-not-yours");
 
-    publications.cancel(42, post);
+    publications.cancel(7, post);
     expect((publications.get(42, post) as { status: string }).status).toBe("cancelled");
   });
 });

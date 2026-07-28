@@ -18,7 +18,7 @@ import { videoService } from "./videos.js";
  * only rendering and transport live outside this boundary.
  */
 export function studioServices(backendDb: BackendDb, config: BackendConfig) {
-  const posts = postService(backendDb);
+  const posts = postService(backendDb, config);
   const videos = videoService(backendDb, config);
   assertEntityContract(posts);
   assertEntityContract(videos);
@@ -30,8 +30,8 @@ export function studioServices(backendDb: BackendDb, config: BackendConfig) {
         importStudioMediaAsset(backendDb, config, actorId, input),
     },
     videos,
-    queue: queueService(backendDb),
-    notifications: notificationService(backendDb),
+    queue: queueService(backendDb, config),
+    notifications: notificationService(backendDb, config),
     analytics: analyticsService(backendDb, config),
     capabilities: studioCapabilityService(config),
     settings: settingsService(backendDb),

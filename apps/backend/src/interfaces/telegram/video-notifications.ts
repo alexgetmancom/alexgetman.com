@@ -1,10 +1,11 @@
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { type Bot, InlineKeyboard } from "grammy";
 import { botLocale } from "../../bot/i18n.js";
 import type { BackendDb } from "../../db/client.js";
-import { drafts, studioNotificationSettings, videoDrafts, videoTargets } from "../../db/schema.js";
+import { drafts, publishJobs, studioNotificationSettings, videoDrafts, videoTargets } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { t } from "../../foundation/i18n/index.js";
+import { log } from "../../foundation/logger.js";
 import { getVideoDraft } from "../../publishing/video-data.js";
 import type { VideoTarget } from "../../publishing/video-types.js";
 import { videoTargetLabel } from "../../publishing/video-types.js";
@@ -18,6 +19,7 @@ type StudioTimeConfig = Pick<BackendConfig, "TIMEZONE" | "TIMEZONE_LABEL">;
 export async function notifyFinalVideoFailure(
   backendDb: BackendDb,
   bot: Bot | null,
+  config: Pick<BackendConfig, "ADMIN_IDS">,
   videoDraftId: number,
   videoTargetId: number | null,
 ): Promise<void> {
@@ -26,18 +28,20 @@ export async function notifyFinalVideoFailure(
   if (target?.status !== "failed") return;
   const draft = getVideoDraft(backendDb, videoDraftId);
   const targetName = target.target as VideoTarget;
-  const locale = botLocale(backendDb, draft.actorId);
-  const title = draft.label || t(locale, "common.untitled");
-  await bot.api.sendMessage(
-    draft.actorId,
-    `${t(locale, "notif.video-failed", { label: videoTargetLabel(targetName), title })}\n\n${target.lastError || t(locale, "notif.unknown-error")}`,
-    {
-      reply_markup: new InlineKeyboard().text(
-        t(locale, "notif.retry", { platform: targetName === "youtube_shorts" ? "YouTube" : "Instagram" }),
-        `video_retry:${targetName}:${draft.id}`,
-      ),
-    },
-  );
+  await forEachAdmin(config.ADMIN_IDS, async (actorId) => {
+    const locale = botLocale(backendDb, actorId);
+    const title = draft.label || t(locale, "common.untitled");
+    await bot.api.sendMessage(
+      actorId,
+      `${t(locale, "notif.video-failed", { label: videoTargetLabel(targetName), title })}\n\n${target.lastError || t(locale, "notif.unknown-error")}`,
+      {
+        reply_markup: new InlineKeyboard().text(
+          t(locale, "notif.retry", { platform: targetName === "youtube_shorts" ? "YouTube" : "Instagram" }),
+          `video_retry:${targetName}:${draft.id}`,
+        ),
+      },
+    );
+  });
 }
 
 export async function refreshVideoControlCard(
@@ -63,7 +67,7 @@ export async function refreshVideoControlCard(
 export async function sendVideoReminder(
   backendDb: BackendDb,
   bot: Bot | null,
-  config: StudioTimeConfig & Pick<BackendConfig, "VIDEO_REMINDER_MINUTES">,
+  config: StudioTimeConfig & Pick<BackendConfig, "VIDEO_REMINDER_MINUTES" | "ADMIN_IDS">,
   videoDraftId: number,
   videoTargetId: number | null,
 ): Promise<void> {
@@ -71,13 +75,16 @@ export async function sendVideoReminder(
   const draft = getVideoDraft(backendDb, videoDraftId);
   const target = videoTargetId == null ? null : backendDb.db.select().from(videoTargets).where(eq(videoTargets.id, videoTargetId)).get();
   if (!bot || !target || draft.status !== "scheduled") return;
-  const locale = botLocale(backendDb, draft.actorId);
-  const title = draft.label || t(locale, "common.untitled");
-  const text = `${t(locale, "notif.reminder-head", { minutes: reminderMinutes })}\n\n🎬 ${title}\n• ${videoTargetLabel(target.target as VideoTarget)}\n\n${formatVideoTime(target.scheduledAt, locale, config)}`;
-  await bot.api.sendMessage(draft.actorId, text, {
-    reply_markup: new InlineKeyboard()
-      .text(t(locale, "notif.open"), `video_open:${draft.id}`)
-      .text(t(locale, "notif.cancel-btn"), `video_cancel:${draft.id}`),
+  await forEachAdmin(config.ADMIN_IDS, async (actorId) => {
+    if (!notificationPreference(backendDb, actorId).remindersEnabled) return;
+    const locale = botLocale(backendDb, actorId);
+    const title = draft.label || t(locale, "common.untitled");
+    const text = `${t(locale, "notif.reminder-head", { minutes: reminderMinutes })}\n\n🎬 ${title}\n${draft.locale === "en" ? "🇬🇧 EN" : "🇷🇺 RU"}\n\n• ${videoTargetLabel(target.target as VideoTarget)}\n\n${formatVideoTime(target.scheduledAt, locale, config)}`;
+    await bot.api.sendMessage(actorId, text, {
+      reply_markup: new InlineKeyboard()
+        .text(t(locale, "notif.open"), `video_open:${draft.id}`)
+        .text(t(locale, "notif.cancel-btn"), `video_cancel:${draft.id}`),
+    });
   });
   backendDb.db
     .update(videoDrafts)
@@ -90,47 +97,133 @@ export async function sendVideoReminder(
 export async function sendStudioReminder(
   backendDb: BackendDb,
   bot: Bot | null,
-  config: StudioTimeConfig,
+  config: StudioTimeConfig & Pick<BackendConfig, "ADMIN_IDS">,
   event: { postKey: string | null; detailsJson: unknown },
 ): Promise<void> {
   if (!bot) return;
   const details = object(event.detailsJson);
   // `admin_id` is the pre-rename spelling. Domain events are durable, so rows
   // written before 0030 are still queued here and must resolve to the same owner.
-  const actorId = number(details.actor_id) ?? number(details.admin_id) ?? ownerForRef(backendDb, event.postKey);
-  if (actorId == null || !notificationPreference(backendDb, actorId).remindersEnabled) return;
-  const locale = botLocale(backendDb, actorId);
-  const title = typeof details.title === "string" ? details.title : (event.postKey ?? t(locale, "notif.publication"));
+  const ownerId = number(details.actor_id) ?? number(details.admin_id) ?? ownerForRef(backendDb, event.postKey);
+  if (ownerId == null) return;
   const targets = Array.isArray(details.targets) ? details.targets.filter((value): value is string => typeof value === "string") : [];
   const minutes = number(details.minutes) ?? 5;
   const publishAt = typeof details.publish_at === "string" ? details.publish_at : null;
-  await bot.api.sendMessage(
-    actorId,
-    `${t(locale, "notif.reminder-head", { minutes })}\n\n${title}\n${targets.length ? `• ${targets.join(", ")}` : ""}${publishAt ? `\n\n${formatVideoTime(publishAt, locale, config)}` : ""}`.trim(),
-    { reply_markup: new InlineKeyboard().text(t(locale, "settings.notifications"), "notifications_home") },
-  );
+  const videoLocale = videoLocaleForRef(backendDb, event.postKey);
+  await forEachAdmin(config.ADMIN_IDS, async (actorId) => {
+    if (!notificationPreference(backendDb, actorId).remindersEnabled) return;
+    const locale = botLocale(backendDb, actorId);
+    const title = typeof details.title === "string" ? details.title : (event.postKey ?? t(locale, "notif.publication"));
+    const lines = targets.map((target) => `• ${friendlyTarget(target)}${videoLocale ? ` · ${videoLocale.toUpperCase()}` : ""}`);
+    await bot.api.sendMessage(
+      actorId,
+      `${t(locale, "notif.reminder-head", { minutes })}\n\n🎬 ${title}${videoLocale ? `\n${videoLocale === "en" ? "🇬🇧 EN" : "🇷🇺 RU"}` : ""}\n\n${lines.join("\n")}${publishAt ? `\n\n${formatVideoTime(publishAt, locale, config)}` : ""}`.trim(),
+      { reply_markup: new InlineKeyboard().text(t(locale, "settings.notifications"), "notifications_home") },
+    );
+  });
 }
 
 export async function sendStudioCompletion(
   backendDb: BackendDb,
   bot: Bot | null,
+  config: Pick<BackendConfig, "ADMIN_IDS">,
   event: { postKey: string | null; detailsJson: unknown },
 ): Promise<void> {
   if (!bot) return;
-  const actorId = ownerForRef(backendDb, event.postKey);
-  if (actorId == null || !notificationPreference(backendDb, actorId).completionEnabled) return;
+  const ownerId = ownerForRef(backendDb, event.postKey);
+  if (ownerId == null) return;
   const details = object(event.detailsJson);
   const total = number(details.total) ?? 0;
   const published = number(details.published) ?? 0;
   const failed = number(details.failed) ?? 0;
-  const locale = botLocale(backendDb, actorId);
-  const label = event.postKey?.startsWith("video:") ? t(locale, "notif.label-video") : t(locale, "notif.label-post");
-  const text = failed
-    ? t(locale, "notif.completion-failed", { label, published, total, failed })
-    : t(locale, "notif.completion-ok", { label, done: published || total, total });
-  await bot.api.sendMessage(actorId, text, {
-    reply_markup: new InlineKeyboard().text(t(locale, "settings.notifications"), "notifications_home"),
+  const results = completionTargets(backendDb, event.postKey);
+  const videoLocale = videoLocaleForRef(backendDb, event.postKey);
+  await forEachAdmin(config.ADMIN_IDS, async (actorId) => {
+    if (!notificationPreference(backendDb, actorId).completionEnabled) return;
+    const locale = botLocale(backendDb, actorId);
+    const label = event.postKey?.startsWith("video:") ? t(locale, "notif.label-video") : t(locale, "notif.label-post");
+    const headline = failed
+      ? t(locale, "notif.completion-failed", { label, published, total, failed })
+      : t(locale, "notif.completion-ok", { label, done: published || total, total });
+    const lines = results.map(
+      (result) => `${statusIcon(result.status)} ${friendlyTarget(result.target)} — ${friendlyStatus(result.status, locale)}`,
+    );
+    const text = `${headline}${videoLocale ? `\n${videoLocale === "en" ? "🇬🇧 EN" : "🇷🇺 RU"}` : ""}${lines.length ? `\n\n${lines.join("\n")}` : ""}`;
+    await bot.api.sendMessage(actorId, text, {
+      reply_markup: new InlineKeyboard().text(t(locale, "settings.notifications"), "notifications_home"),
+    });
   });
+}
+
+async function forEachAdmin(actorIds: number[], deliver: (actorId: number) => Promise<void>): Promise<void> {
+  for (const actorId of actorIds) {
+    try {
+      await deliver(actorId);
+    } catch (error) {
+      // One administrator blocking the bot must not prevent the remaining
+      // trusted operators from receiving the shared publication update.
+      log("warn", "shared Studio notification was not delivered", { actorId, error: String(error) });
+    }
+  }
+}
+
+function completionTargets(backendDb: BackendDb, ref: string | null): Array<{ target: string; status: string }> {
+  const match = ref?.match(/^(post|video):(\d+)$/);
+  if (!match) return [];
+  if (match[1] === "video")
+    return backendDb.db
+      .select({ target: videoTargets.target, status: videoTargets.status })
+      .from(videoTargets)
+      .where(eq(videoTargets.videoDraftId, Number(match[2])))
+      .all();
+  const jobs = backendDb.db
+    .select({ target: publishJobs.target, status: publishJobs.status })
+    .from(publishJobs)
+    .where(eq(publishJobs.postId, Number(match[2])))
+    .orderBy(desc(publishJobs.jobId))
+    .all();
+  return [...new Map(jobs.map((job) => [job.target, job])).values()];
+}
+
+function videoLocaleForRef(backendDb: BackendDb, ref: string | null): "ru" | "en" | null {
+  const match = ref?.match(/^video:(\d+)$/);
+  if (!match) return null;
+  const locale = backendDb.db
+    .select({ locale: videoDrafts.locale })
+    .from(videoDrafts)
+    .where(eq(videoDrafts.id, Number(match[1])))
+    .get()?.locale;
+  return locale === "en" ? "en" : locale === "ru" ? "ru" : null;
+}
+
+function friendlyTarget(target: string): string {
+  const labels: Record<string, string> = {
+    youtube_shorts: "YouTube Shorts",
+    instagram_reels: "Instagram Reels",
+    telegram: "Telegram",
+    site_ru: "Site RU",
+    site_en: "Site EN",
+    threads_ru: "Threads RU",
+    threads_en: "Threads EN",
+    x: "X",
+    telegram_stories: "Telegram Stories",
+    instagram_stories_ru: "Instagram Stories RU",
+    instagram_stories: "Instagram Stories EN",
+  };
+  return labels[target] ?? target;
+}
+
+function statusIcon(status: string): string {
+  if (["published", "completed"].includes(status)) return "✅";
+  if (status === "failed") return "❌";
+  if (status === "cancelled") return "🚫";
+  return "⏳";
+}
+
+function friendlyStatus(status: string, locale: "ru" | "en"): string {
+  const ru: Record<string, string> = { published: "опубликовано", completed: "опубликовано", failed: "ошибка", cancelled: "отменено" };
+  const en: Record<string, string> = { published: "published", completed: "published", failed: "failed", cancelled: "cancelled" };
+  return (locale === "ru" ? ru : en)[status] ?? (locale === "ru" ? "ожидает" : "pending");
 }
 
 function notificationPreference(backendDb: BackendDb, actorId: number) {

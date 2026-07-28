@@ -8,8 +8,8 @@ import { queueService } from "./queue.js";
 /** Read model for Web Studio, Command Center and MCP. */
 export function studioDashboard(backendDb: BackendDb, config: BackendConfig, actorId: number, locale: BotLocale) {
   return {
-    queue: queueService(backendDb).snapshot(actorId),
-    notifications: notificationService(backendDb).inbox(actorId, 20),
+    queue: queueService(backendDb, config).snapshot(actorId),
+    notifications: notificationService(backendDb, config).inbox(actorId, 20),
     analytics: analyticsService(backendDb, config).dashboard("overview", 7, locale),
   };
 }

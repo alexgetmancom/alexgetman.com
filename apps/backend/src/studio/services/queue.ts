@@ -1,7 +1,9 @@
 import { and, eq, inArray } from "drizzle-orm";
 import type { BackendDb } from "../../db/client.js";
 import { drafts, publishJobs, siteJobs, videoDrafts, videoTargets } from "../../db/schema.js";
+import type { BackendConfig } from "../../foundation/config.js";
 import { parseTargets } from "../../publishing/targets.js";
+import { accessibleStudioActorIds } from "../access.js";
 
 export type StudioQueueItem = {
   id: number;
@@ -25,14 +27,15 @@ export type StudioQueueSnapshot = {
 
 /** Read-only work inbox for every Studio interface. It deliberately returns
  * entity references, not Telegram callbacks or display markup. */
-export function queueService(backendDb: BackendDb) {
+export function queueService(backendDb: BackendDb, config: BackendConfig) {
   return {
     snapshot(actorId: number): StudioQueueSnapshot {
       const upcoming: StudioQueueItem[] = [];
       const draftItems: StudioQueueItem[] = [];
       const attention: StudioAttentionItem[] = [];
-      const postDrafts = backendDb.db.select().from(drafts).where(eq(drafts.actorId, actorId)).all();
-      const videos = backendDb.db.select().from(videoDrafts).where(eq(videoDrafts.actorId, actorId)).all();
+      const actorIds = accessibleStudioActorIds(config, actorId);
+      const postDrafts = backendDb.db.select().from(drafts).where(inArray(drafts.actorId, actorIds)).all();
+      const videos = backendDb.db.select().from(videoDrafts).where(inArray(videoDrafts.actorId, actorIds)).all();
 
       for (const draft of postDrafts) {
         const label = shorten(draft.textRu.split("\n")[0]?.trim() || `Post #${draft.id}`);

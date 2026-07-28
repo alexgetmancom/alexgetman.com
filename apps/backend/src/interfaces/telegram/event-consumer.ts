@@ -96,7 +96,7 @@ async function deliverEvent(backendDb: BackendDb, bot: Bot, config: BackendConfi
   if (event.eventType === "studio.notification.reminder.due") {
     await sendStudioReminder(backendDb, bot, config, { ...event, detailsJson: details });
   } else if (event.eventType === "delivery.post.completed" || event.eventType === "delivery.video.completed") {
-    await sendStudioCompletion(backendDb, bot, { ...event, detailsJson: details });
+    await sendStudioCompletion(backendDb, bot, config, { ...event, detailsJson: details });
   } else if (event.eventType === "analytics.milestone.reached") {
     for (const actorId of config.ADMIN_IDS) await bot.api.sendMessage(actorId, event.message);
   } else if (event.eventType === "delivery.post.settled" || event.eventType.startsWith("publish.job.")) {
@@ -106,7 +106,7 @@ async function deliverEvent(backendDb: BackendDb, bot: Bot, config: BackendConfi
   } else if (event.eventType === "video.reminder.due" && videoDraftId != null)
     await sendVideoReminder(backendDb, bot, config, videoDraftId, videoTargetId);
   else if (event.eventType === "video.target.failed" && videoDraftId != null)
-    await notifyFinalVideoFailure(backendDb, bot, videoDraftId, videoTargetId);
+    await notifyFinalVideoFailure(backendDb, bot, config, videoDraftId, videoTargetId);
   else if (videoDraftId != null) await refreshVideoControlCard(backendDb, bot, config, videoDraftId);
 }
 

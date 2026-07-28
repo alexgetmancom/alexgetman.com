@@ -104,17 +104,17 @@ const studioToolDefs = {
     handler: (studio) => studio.capabilities.report(),
   }),
   studio_queue: tool({
-    description: "Read the authenticated owner's upcoming work, drafts and failures.",
+    description: "Read upcoming work, drafts and failures for the authenticated Studio.",
     schema: z.object({}),
     handler: (studio, actorId) => studio.queue.snapshot(actorId),
   }),
   studio_post_list: tool({
-    description: "List the authenticated owner's post drafts.",
+    description: "List post drafts visible to the authenticated Studio operator.",
     schema: z.object({ limit: positiveInt.max(100).optional() }),
     handler: (studio, actorId, input) => studio.posts.list(actorId, input.limit ?? 50),
   }),
   studio_notifications: tool({
-    description: "Read the authenticated owner's durable Studio notification inbox.",
+    description: "Read the shared durable Studio notification inbox.",
     schema: z.object({ limit: positiveInt.max(100).optional() }),
     handler: (studio, actorId, input) => studio.notifications.inbox(actorId, input.limit ?? 50),
   }),
@@ -138,7 +138,7 @@ const studioToolDefs = {
       }),
   }),
   studio_media_list: tool({
-    description: "List the authenticated owner's reusable Studio media assets.",
+    description: "List reusable media assets visible to the authenticated Studio operator.",
     schema: z.object({ limit: positiveInt.max(100).optional() }),
     handler: (studio, actorId, input) => studio.posts.mediaAssets(actorId, input.limit ?? 50),
   }),
@@ -287,7 +287,7 @@ const studioToolDefs = {
     },
   }),
   studio_video_list: tool({
-    description: "List the authenticated owner's video drafts.",
+    description: "List video drafts visible to the authenticated Studio operator.",
     schema: z.object({ limit: positiveInt.max(100).optional() }),
     handler: (studio, actorId, input) => studio.videos.list(actorId, input.limit ?? 50),
   }),

@@ -1,8 +1,10 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { Bot } from "grammy";
+import { videoDrafts, videoTargets } from "../src/db/schema.js";
 import { recordDomainEvent } from "../src/domain/events.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { consumeTelegramEvents } from "../src/interfaces/telegram/event-consumer.js";
+import { sendStudioCompletion, sendStudioReminder } from "../src/interfaces/telegram/video-notifications.js";
 import { withDb } from "./helpers/db.js";
 
 const config = loadConfig({ ADMIN_IDS: "42" });
@@ -41,5 +43,64 @@ describe("Telegram event consumer", () => {
       expect(await consumeTelegramEvents(backendDb, bot, config)).toBe(1);
       expect(await consumeTelegramEvents(backendDb, bot, config)).toBe(0);
       expect(sendMessage).toHaveBeenCalledTimes(1);
+    }));
+
+  it("fans one aggregated video reminder and detailed completion out to every admin", async () =>
+    withDb(async (backendDb) => {
+      const now = new Date().toISOString();
+      backendDb.db
+        .insert(videoDrafts)
+        .values({
+          id: 10,
+          actorId: 42,
+          locale: "en",
+          label: "Shared launch",
+          assetKey: "asset",
+          status: "published",
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      backendDb.db
+        .insert(videoTargets)
+        .values([
+          { videoDraftId: 10, target: "youtube_shorts", metadataJson: {}, status: "published", createdAt: now, updatedAt: now },
+          { videoDraftId: 10, target: "instagram_reels", metadataJson: {}, status: "published", createdAt: now, updatedAt: now },
+        ])
+        .run();
+      const sendMessage = mock(async (chatId: number, text: string) => ({
+        message_id: 1,
+        date: 1,
+        chat: { id: chatId, type: "private" as const },
+        text,
+      }));
+      const bot = { api: { sendMessage } } as unknown as Bot;
+      const sharedConfig = loadConfig({ ADMIN_IDS: "42,7" });
+
+      await sendStudioReminder(backendDb, bot, sharedConfig, {
+        postKey: "video:10",
+        detailsJson: {
+          actor_id: 42,
+          title: "Shared launch",
+          targets: ["youtube_shorts", "instagram_reels"],
+          minutes: 5,
+          publish_at: new Date(Date.now() + 5 * 60_000).toISOString(),
+        },
+      });
+      await sendStudioCompletion(backendDb, bot, sharedConfig, {
+        postKey: "video:10",
+        detailsJson: { total: 2, published: 2, failed: 0 },
+      });
+
+      expect(sendMessage.mock.calls.map(([chatId]) => chatId)).toEqual([42, 7, 42, 7]);
+      for (const call of sendMessage.mock.calls.slice(0, 2)) {
+        expect(call[1]).toContain("YouTube Shorts");
+        expect(call[1]).toContain("Instagram Reels");
+        expect(call[1]).toContain("🇬🇧 EN");
+      }
+      for (const call of sendMessage.mock.calls.slice(2)) {
+        expect(call[1]).toContain("✅ YouTube Shorts");
+        expect(call[1]).toContain("✅ Instagram Reels");
+      }
     }));
 });
