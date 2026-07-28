@@ -167,4 +167,28 @@ describe("generateStoryMedia remote provider", () => {
       "media_processor_unavailable",
     );
   });
+
+  it("preserves processor backpressure as a retryable HTTP error", async () => {
+    const root = tempRoot();
+    const source = path.join(root, "source.jpg");
+    fs.writeFileSync(source, JPEG);
+    const remote = {
+      ...config(root),
+      MEDIA_PROCESSOR_PROVIDER: "remote_http",
+      MEDIA_PROCESSOR_URL: "http://processor",
+      MEDIA_PROCESSOR_TOKEN: "x".repeat(16),
+    } as ReturnType<typeof loadConfig>;
+    const fetchImpl = (async () =>
+      new Response("media_processor_busy", {
+        status: 429,
+        headers: { "retry-after": "75" },
+      })) as unknown as typeof fetch;
+
+    try {
+      await generateStoryMedia([{ type: "photo", local_path: source }], 1, "ru", remote, fetchImpl);
+      throw new Error("expected processor backpressure");
+    } catch (error) {
+      expect(error).toMatchObject({ status: 429, retryAfterSeconds: 75 });
+    }
+  });
 });

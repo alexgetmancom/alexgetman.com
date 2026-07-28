@@ -26,6 +26,7 @@ export type MediaProcessorOptions = {
   /** Present on VM-106 only; a runner has no /dev/dri. */
   vaapiDevice?: string | undefined;
   spawn?: typeof Bun.spawn | undefined;
+  retryAfterSeconds?: number | undefined;
 };
 
 export type MediaProcessor = {
@@ -88,8 +89,12 @@ export function createMediaProcessor(options: MediaProcessorOptions): MediaProce
   const spawn = options.spawn ?? Bun.spawn;
   const cacheDir = `${workDir}/cache`;
   const enqueue = createSerialQueue();
+  const inFlight = new Map<string, Promise<Response>>();
+  const retryAfterSeconds = options.retryAfterSeconds ?? 60;
   let queued = 0;
   let active = 0;
+  let rejected = 0;
+  let shared = 0;
 
   const authorized = (request: Request) => request.headers.get("authorization") === `Bearer ${token}`;
 
@@ -155,6 +160,27 @@ export function createMediaProcessor(options: MediaProcessorOptions): MediaProce
     });
   }
 
+  function cachedManifest(
+    idempotencyKey: string,
+    mediaKind: string,
+    transform: string,
+    enqueuedAt: number,
+    job = `cached-${idempotencyKey.slice(0, 12)}`,
+  ): Response | null {
+    const ext = mediaKind === "video" ? ".mp4" : ".jpg";
+    const standardCached = `${cacheDir}/${idempotencyKey}.standard${ext}`;
+    const telegramCached = `${cacheDir}/${idempotencyKey}.telegram${ext}`;
+    if (!existsSync(standardCached) || (transform === "story_vertical" && mediaKind === "video" && !existsSync(telegramCached)))
+      return null;
+    return manifest(idempotencyKey, mediaKind, transform, job, {
+      uploadMs: 0,
+      queueWaitMs: 0,
+      ffmpegMs: 0,
+      totalMs: Date.now() - enqueuedAt,
+      cacheHit: true,
+    });
+  }
+
   async function probeSource(input: string): Promise<{ duration: number; audioBitrate: number; width: number; height: number }> {
     const fallback = { duration: 59, audioBitrate: 128_000, width: 0, height: 0 };
     const child = spawn(
@@ -197,14 +223,8 @@ export function createMediaProcessor(options: MediaProcessorOptions): MediaProce
     const ext = mediaKind === "video" ? ".mp4" : ".jpg";
     const standardCached = `${cacheDir}/${idempotencyKey}.standard${ext}`;
     const telegramCached = `${cacheDir}/${idempotencyKey}.telegram${ext}`;
-    if (existsSync(standardCached) && (transform !== "story_vertical" || mediaKind !== "video" || existsSync(telegramCached)))
-      return manifest(idempotencyKey, mediaKind, transform, `cached-${idempotencyKey.slice(0, 12)}`, {
-        uploadMs: 0,
-        queueWaitMs,
-        ffmpegMs: 0,
-        totalMs: Date.now() - enqueuedAt,
-        cacheHit: true,
-      });
+    const cached = cachedManifest(idempotencyKey, mediaKind, transform, enqueuedAt);
+    if (cached) return cached;
     const id = crypto.randomUUID();
     const folder = `${workDir}/${id}`;
     const input = `${folder}/source${ext}`;
@@ -269,10 +289,14 @@ export function createMediaProcessor(options: MediaProcessorOptions): MediaProce
     if (request.method === "GET" && pathname === "/health") {
       const disk = statfsSync(workDir);
       return Response.json({
-        ok: true,
+        ok: active === 0 && queued === 0,
+        status: active > 0 || queued > 0 ? "busy" : "ready",
         queued,
         active,
         concurrency: 1,
+        inFlight: inFlight.size,
+        rejected,
+        shared,
         version: options.revision ?? "unknown",
         vaapi: existsSync(options.vaapiDevice ?? "/dev/dri/renderD128"),
         workDisk: { availableBytes: disk.bavail * disk.bsize, totalBytes: disk.blocks * disk.bsize },
@@ -303,10 +327,43 @@ export function createMediaProcessor(options: MediaProcessorOptions): MediaProce
           : null;
     if (!mediaKind) return new Response("invalid_media_kind", { status: 400 });
     const sourceSize = Number(request.headers.get("content-length"));
+    const idempotencyKey = request.headers.get("x-studio-idempotency-key") ?? "";
+    if (!/^[a-f0-9]{64}$/.test(idempotencyKey)) return new Response("invalid_idempotency_key", { status: 400 });
     const enqueuedAt = Date.now();
-    return queue(() =>
-      transcode(source, sourceSize, mediaKind, transform, request.headers.get("x-studio-idempotency-key") ?? "", enqueuedAt),
+    const cached = cachedManifest(idempotencyKey, mediaKind, transform, enqueuedAt);
+    if (cached) {
+      await source.cancel().catch(() => {});
+      return cached;
+    }
+    const existing = inFlight.get(idempotencyKey);
+    if (existing) {
+      shared += 1;
+      await source.cancel().catch(() => {});
+      await existing;
+      return (
+        cachedManifest(idempotencyKey, mediaKind, transform, enqueuedAt, `shared-${idempotencyKey.slice(0, 12)}`) ??
+        new Response("media_processing_shared_job_failed", { status: 503 })
+      );
+    }
+    // A queued HTTP request cannot make progress while the only ffmpeg slot is
+    // occupied, yet its caller's deadline keeps ticking. Reject distinct work
+    // immediately so the durable publish/site queues retry it later instead of
+    // timing out and leaving an orphaned encode behind.
+    if (active > 0 || queued > 0) {
+      rejected += 1;
+      await source.cancel().catch(() => {});
+      return new Response("media_processor_busy", {
+        status: 429,
+        headers: { "retry-after": String(retryAfterSeconds) },
+      });
+    }
+    const work = queue(() => transcode(source, sourceSize, mediaKind, transform, idempotencyKey, enqueuedAt));
+    inFlight.set(idempotencyKey, work);
+    void work.then(
+      () => inFlight.delete(idempotencyKey),
+      () => inFlight.delete(idempotencyKey),
     );
+    return work;
   }
 
   return { handle, pruneWorkDir };

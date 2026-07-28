@@ -107,7 +107,7 @@ const envSchema = z
     // A provider call must not hold the complete queue loop forever. Timeouts
     // are terminal and require an explicit retry, because the provider may
     // have accepted the request while its response was lost.
-    PUBLISH_JOB_TIMEOUT_SECONDS: z.coerce.number().int().min(1).max(3_600).default(240),
+    PUBLISH_JOB_TIMEOUT_SECONDS: z.coerce.number().int().min(1).max(3_600).default(600),
     PUBLISH_LOCK_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(900),
     // A newly started worker may safely reclaim locks older than this short
     // grace period: the process that held them is already gone after restart.

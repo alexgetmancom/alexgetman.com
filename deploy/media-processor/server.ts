@@ -10,6 +10,7 @@ const processor = createMediaProcessor({
   maxBytes: Number(Bun.env.MEDIA_PROCESSOR_MAX_BYTES ?? 1_073_741_824),
   timeoutSeconds: Number(Bun.env.MEDIA_PROCESSOR_TIMEOUT_SECONDS ?? 900),
   cacheTtlSeconds: Number(Bun.env.MEDIA_PROCESSOR_CACHE_TTL_SECONDS ?? 86_400),
+  retryAfterSeconds: Number(Bun.env.MEDIA_PROCESSOR_RETRY_AFTER_SECONDS ?? 60),
   revision: Bun.env.MEDIA_PROCESSOR_REVISION,
 });
 

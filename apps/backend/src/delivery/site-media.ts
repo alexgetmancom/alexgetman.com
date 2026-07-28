@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import {
@@ -10,6 +9,7 @@ import {
 } from "../content/site-media-naming.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { runFfmpeg } from "../foundation/runtime/ffmpeg.js";
+import { mediaTransformKey } from "./media-idempotency.js";
 import {
   copyFileAtomically,
   deduplicateSiteMediaFile,
@@ -158,10 +158,7 @@ async function materializeVerticalViewerMedia(
   }
   if (!config.MEDIA_PROCESSOR_URL || !config.MEDIA_PROCESSOR_TOKEN) throw new Error("site_vertical_media_requires_remote_processor");
   const stat = await fs.promises.stat(source);
-  const idempotencyKey = crypto
-    .createHash("sha256")
-    .update(`site-vertical-v1:${source}:${stat.size}:${stat.mtimeMs}:${kind}`)
-    .digest("hex");
+  const idempotencyKey = await mediaTransformKey(source, `site-vertical-v2:${kind}`);
   const base = config.MEDIA_PROCESSOR_URL.replace(/\/$/, "");
   const response = await fetchImpl(`${base}/v1/transforms/ffmpeg`, {
     method: "POST",

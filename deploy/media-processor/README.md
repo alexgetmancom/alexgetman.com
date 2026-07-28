@@ -55,3 +55,10 @@ bun run ops:prod media-reprocess --ref post:106
 `media-diagnose` runs a fixed idempotent image fixture and never publishes.
 `media-reprocess` is a dry run unless `--apply` is present; applying it only
 creates or warms Story media variants and still never calls a social provider.
+
+The worker owns one hardware encoder slot. Identical in-flight requests share
+that work by content-derived idempotency key. Distinct work received while the
+slot is occupied returns `429 media_processor_busy` with `Retry-After`; the
+durable site or publish queue retries it later. `/health` reports `status:
+"busy"` and `ok: false` while the slot is occupied, so a shallow HTTP response
+cannot hide exhausted processing capacity.

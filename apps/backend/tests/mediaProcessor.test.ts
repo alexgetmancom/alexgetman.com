@@ -33,6 +33,7 @@ function fakeSpawn(options: {
   ffmpegStderr?: string;
   writeOutputs?: boolean;
   onSpawn?: (command: string[]) => void;
+  ffmpegGate?: Promise<void>;
 }) {
   const commands: string[][] = [];
   const spawn = ((command: string[]) => {
@@ -48,7 +49,7 @@ function fakeSpawn(options: {
       };
     if (options.writeOutputs !== false) for (const arg of command) if (arg.includes(".part")) fs.writeFileSync(arg, Buffer.alloc(64, 1));
     return {
-      exited: Promise.resolve(options.ffmpegExit ?? 0),
+      exited: options.ffmpegGate?.then(() => options.ffmpegExit ?? 0) ?? Promise.resolve(options.ffmpegExit ?? 0),
       stdout: stream(""),
       stderr: stream(options.ffmpegStderr ?? ""),
       kill: () => {},
@@ -288,6 +289,54 @@ describe("createMediaProcessor", () => {
       ]);
       // VM-106 has one VAAPI device and a 2-CPU budget.
       expect(peak).toBe(1);
+    });
+  });
+
+  it("rejects distinct work immediately while the only encoder slot is busy", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const spawner = fakeSpawn({
+      probe: { format: { duration: "10" }, streams: [{ codec_type: "video", width: 1080, height: 1920 }] },
+      ffmpegGate: gate,
+    });
+    await withProcessor({ spawn: spawner.spawn, retryAfterSeconds: 75 }, async ({ processor }) => {
+      const first = processor.handle(transformRequest("first", { "x-studio-idempotency-key": "b".repeat(64) }));
+      await Bun.sleep(1);
+      const health = await processor.handle(new Request("http://processor/health"));
+      expect(await health.json()).toMatchObject({ ok: false, status: "busy", active: 1, inFlight: 1 });
+
+      const rejected = await processor.handle(transformRequest("second", { "x-studio-idempotency-key": "c".repeat(64) }));
+      expect(rejected.status).toBe(429);
+      expect(rejected.headers.get("retry-after")).toBe("75");
+      expect(await rejected.text()).toBe("media_processor_busy");
+
+      release();
+      expect((await first).status).toBe(200);
+    });
+  });
+
+  it("shares one in-flight render between requests with the same content key", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const spawner = fakeSpawn({
+      probe: { format: { duration: "10" }, streams: [{ codec_type: "video", width: 1080, height: 1920 }] },
+      ffmpegGate: gate,
+    });
+    await withProcessor({ spawn: spawner.spawn }, async ({ processor }) => {
+      const first = processor.handle(transformRequest("first"));
+      await Bun.sleep(1);
+      const shared = processor.handle(transformRequest("duplicate"));
+      release();
+
+      expect((await first).status).toBe(200);
+      const sharedResponse = await shared;
+      expect(sharedResponse.status).toBe(200);
+      expect(((await sharedResponse.json()) as { job: string }).job).toStartWith("shared-");
+      expect(spawner.commands.filter((command) => command[0] === "ffmpeg")).toHaveLength(1);
     });
   });
 

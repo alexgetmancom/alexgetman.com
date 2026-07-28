@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 // deploy/media-processor is a separately built Docker image (see its Dockerfile),
@@ -9,6 +8,8 @@ import type { BackendConfig } from "../foundation/config.js";
 import { log } from "../foundation/logger.js";
 import { runFfmpeg } from "../foundation/runtime/ffmpeg.js";
 import { withTimeout } from "../foundation/runtime/timeout.js";
+import { HttpPublishError } from "../publishing/errors.js";
+import { mediaTransformKey } from "./media-idempotency.js";
 import type { PublishMediaItem } from "./social/payload.js";
 
 export async function generateStoryMedia(
@@ -38,7 +39,7 @@ export async function generateStoryMedia(
   const telegramOutput = video ? path.join(directory, `draft-${draftId}-${locale}-story-telegram-${stamp}.mp4`) : undefined;
   const args = storyFfmpegArgs(source, output, video ? "video" : "image");
   log("info", "story media transform started", { draftId, locale, provider: config.MEDIA_PROCESSOR_PROVIDER });
-  if (config.MEDIA_PROCESSOR_PROVIDER === "remote_http") await transformRemotely(source, output, telegramOutput, video, config);
+  if (config.MEDIA_PROCESSOR_PROVIDER === "remote_http") await transformRemotely(source, output, telegramOutput, video, config, fetchImpl);
   else await withTimeout(runFfmpeg(args, config.FFMPEG_TIMEOUT_SECONDS), storyTransformTimeout(config), "story_transform_timeout");
   await withTimeout(fs.promises.chmod(output, 0o664), 30_000, "story_output_finalize_timeout");
   log("info", "story media transform completed", { draftId, locale, output });
@@ -64,21 +65,19 @@ async function transformRemotely(
   telegramOutput: string | undefined,
   video: boolean,
   config: BackendConfig,
+  fetchImpl: typeof fetch,
 ): Promise<void> {
   if (!config.MEDIA_PROCESSOR_URL || !config.MEDIA_PROCESSOR_TOKEN)
     throw new Error("media_processor_unavailable: remote_http requires MEDIA_PROCESSOR_URL and MEDIA_PROCESSOR_TOKEN");
   const stat = await fs.promises.stat(source);
-  const idempotencyKey = crypto
-    .createHash("sha256")
-    .update(`story-variants-v1:${source}:${stat.size}:${stat.mtimeMs}:${video ? "video" : "image"}`)
-    .digest("hex");
+  const idempotencyKey = await mediaTransformKey(source, `story-variants-v2:${video ? "video" : "image"}`);
   const controller = new AbortController();
   const timeoutSeconds = storyTransformTimeout(config) / 1000;
   const timer = setTimeout(() => controller.abort(), timeoutSeconds * 1000);
   try {
     log("info", "story media remote upload started", { source, bytes: stat.size, timeoutSeconds });
     const response = await withTimeout(
-      fetch(`${config.MEDIA_PROCESSOR_URL.replace(/\/$/, "")}/v1/transforms/ffmpeg`, {
+      fetchImpl(`${config.MEDIA_PROCESSOR_URL.replace(/\/$/, "")}/v1/transforms/ffmpeg`, {
         method: "POST",
         headers: {
           authorization: `Bearer ${config.MEDIA_PROCESSOR_TOKEN}`,
@@ -100,7 +99,14 @@ async function transformRemotely(
     log("info", "story media remote response received", { source, status: response.status });
     if (!response.ok || !response.body) {
       const detail = (await response.text()).slice(0, 800);
-      throw new Error(`media_processor_failed: ${response.status}${detail ? ` ${detail}` : ""}`);
+      const retryAfterHeader = response.headers.get("retry-after");
+      const retryAfter = retryAfterHeader == null ? Number.NaN : Number(retryAfterHeader);
+      throw new HttpPublishError(
+        `media_processor_failed: ${response.status}${detail ? ` ${detail}` : ""}`,
+        response.status,
+        detail,
+        Number.isFinite(retryAfter) ? retryAfter : null,
+      );
     }
     // New workers return a manifest, then both cached variants are fetched
     // over the authenticated tunnel. Older single-output workers remain
@@ -120,8 +126,8 @@ async function transformRemotely(
         providerRequestId: result.requestId ?? result.job,
         ...result.timings,
       });
-      await downloadRemoteVariant(config, idempotencyKey, "standard", output);
-      if (video && telegramOutput) await downloadRemoteVariant(config, idempotencyKey, "telegram", telegramOutput);
+      await downloadRemoteVariant(config, idempotencyKey, "standard", output, fetchImpl);
+      if (video && telegramOutput) await downloadRemoteVariant(config, idempotencyKey, "telegram", telegramOutput, fetchImpl);
       log("info", "story media remote variants written", { output, telegramOutput });
     } else {
       const result = await withTimeout(response.arrayBuffer(), 30_000, "media_processor_result_read_timeout");
@@ -142,10 +148,11 @@ async function downloadRemoteVariant(
   idempotencyKey: string,
   variant: "standard" | "telegram",
   output: string,
+  fetchImpl: typeof fetch,
 ): Promise<void> {
   if (!config.MEDIA_PROCESSOR_URL || !config.MEDIA_PROCESSOR_TOKEN) throw new Error("media_processor_unavailable");
   const response = await withTimeout(
-    fetch(`${config.MEDIA_PROCESSOR_URL.replace(/\/$/, "")}/v1/transforms/ffmpeg/${idempotencyKey}/${variant}`, {
+    fetchImpl(`${config.MEDIA_PROCESSOR_URL.replace(/\/$/, "")}/v1/transforms/ffmpeg/${idempotencyKey}/${variant}`, {
       headers: { authorization: `Bearer ${config.MEDIA_PROCESSOR_TOKEN}` },
     }),
     30_000,
