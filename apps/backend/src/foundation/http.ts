@@ -72,17 +72,18 @@ export async function requestText(fetchImpl: typeof fetch, url: string, init: Re
   return body;
 }
 
-export async function externalFetch(fetchImpl: typeof fetch, url: string, init: RequestInit = {}): Promise<Response> {
+export async function externalFetch(fetchImpl: typeof fetch, url: string, init: RequestInit = {}, timeoutMs = 30_000): Promise<Response> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30_000);
-  // The 30s ceiling must hold even when the caller brings its own signal:
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  // The transport ceiling must hold even when the caller brings its own signal:
   // passing `init.signal` straight through used to leave that request with no
   // timeout at all while this timer aborted a controller nothing listened to.
   const signal = init.signal ? AbortSignal.any([init.signal, controller.signal]) : controller.signal;
   try {
     return await fetchImpl(url, { ...init, signal });
   } catch (error) {
-    if (controller.signal.aborted) throw new ExternalTransportError(`${init.method ?? "GET"} ${safeUrl(url)} timed out after 30s`, error);
+    if (controller.signal.aborted)
+      throw new ExternalTransportError(`${init.method ?? "GET"} ${safeUrl(url)} timed out after ${Math.ceil(timeoutMs / 1000)}s`, error);
     throw new ExternalTransportError(`${init.method ?? "GET"} ${safeUrl(url)} failed before receiving an HTTP response`, error);
   } finally {
     clearTimeout(timeout);

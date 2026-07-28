@@ -10,6 +10,7 @@ import {
   prepareInstagramReel,
   prepareYouTubeVideo,
   publishInstagramReel,
+  verifyInstagramReel,
 } from "../src/delivery/video-publishers.js";
 import { loadConfig } from "../src/foundation/config.js";
 
@@ -146,6 +147,31 @@ describe("prepareYouTubeVideo", () => {
     }
   });
 
+  it("queries again when every byte committed instead of sending an empty invalid range", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "youtube-upload-complete-"));
+    try {
+      const file = path.join(dir, "clip.mp4");
+      fs.writeFileSync(file, Buffer.alloc(32, 5));
+      let sessionCalls = 0;
+      install((call) => {
+        if (call.url.includes("uploadType=resumable"))
+          return new Response("", { status: 200, headers: { location: "https://upload.googleapis.com/session/complete" } });
+        sessionCalls += 1;
+        if (sessionCalls === 1) throw new TypeError("response lost");
+        if (sessionCalls === 2) return new Response("", { status: 308, headers: { range: "bytes=0-31" } });
+        expect(call.headers.get("content-range")).toBe("bytes */32");
+        return json({ id: "vid-complete" });
+      });
+
+      await expect(
+        prepareYouTubeVideo(config, file, { title: "Title", description: "Body", tags: [] }, "2026-08-01T10:00:00Z"),
+      ).resolves.toMatchObject({ id: "vid-complete" });
+      expect(recorded.some((call) => call.headers.get("content-range") === "bytes 32-31/32")).toBe(false);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("fails clearly when YouTube accepts the session but returns no upload location", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "youtube-upload-"));
     try {
@@ -271,6 +297,14 @@ describe("Instagram Reels", () => {
     await expect(publishInstagramReel(config, "container-1")).resolves.toEqual({
       id: "reel-9",
       url: "https://www.instagram.com/reel/reel-9/",
+    });
+  });
+
+  it("verifies a published Reel by media id and permalink", async () => {
+    install(() => json({ id: "reel-verified", permalink: "https://www.instagram.com/reel/reel-verified/" }));
+    await expect(verifyInstagramReel(config, "reel-verified")).resolves.toEqual({
+      id: "reel-verified",
+      url: "https://www.instagram.com/reel/reel-verified/",
     });
   });
 

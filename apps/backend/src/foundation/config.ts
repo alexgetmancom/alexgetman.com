@@ -146,6 +146,7 @@ const envSchema = z
     // interval than the social pipeline, so this lock timeout only has to be a
     // few missed heartbeats wide to safely detect a crash.
     VIDEO_LOCK_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(120),
+    VIDEO_UPLOAD_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(1800),
     VIDEO_HEARTBEAT_INTERVAL_SECONDS: z.coerce.number().int().positive().default(30),
     // VIDEO_PREPARE_LEAD_MINUTES / VIDEO_REMINDER_MINUTES / VIDEO_MEDIA_RETENTION_HOURS
     // are owned by studio.yaml (see loadConfig); they are not env-configurable.

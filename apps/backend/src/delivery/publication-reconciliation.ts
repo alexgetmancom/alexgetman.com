@@ -1,12 +1,14 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, lt, lte, or } from "drizzle-orm";
 import type { BackendDb } from "../db/client.js";
 import { postTargets, publishJobs, videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { isTargetAuthBlocked } from "../observability/auth-circuit.js";
+import { nextRetryAt } from "../publishing/errors.js";
 import { reconcilePublication } from "../publishing/queue.js";
 import { refreshVideoDraftStatus } from "../publishing/video-data.js";
 import { platformConfig, verifyPlatformPublication } from "./ports/social.js";
-import { verifyYouTubeVideo } from "./video-publishers.js";
+import { verifyInstagramReel, verifyYouTubeVideo } from "./video-publishers.js";
 import { verifyZernioPost } from "./zernio.js";
 
 type ReconciliationResult = { checked: number; resolved: number; unresolved: number; oldestAt: string | null };
@@ -14,26 +16,45 @@ type ReconciliationResult = { checked: number; resolved: number; unresolved: num
 /** Resolves only cases backed by a durable provider ID. A missing ID remains
  * visible for an operator; guessing by title or timestamp is not safe enough
  * for a reusable self-hosted default. */
-export async function runPublicationReconciliation(backendDb: BackendDb, config: BackendConfig): Promise<ReconciliationResult> {
+export async function runPublicationReconciliation(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<ReconciliationResult> {
   let checked = 0;
   let resolved = 0;
+  const nowIso = new Date().toISOString();
   const ordinary = backendDb.db
     .select({ job: publishJobs, target: postTargets })
     .from(publishJobs)
     .innerJoin(postTargets, and(eq(postTargets.postKey, publishJobs.postKey), eq(postTargets.target, publishJobs.target)))
-    .where(eq(publishJobs.status, "verification_required"))
+    .where(
+      and(
+        eq(publishJobs.status, "verification_required"),
+        lt(publishJobs.attemptCount, config.PUBLISH_MAX_ATTEMPTS),
+        or(isNull(publishJobs.nextAttemptAt), lte(publishJobs.nextAttemptAt, nowIso)),
+      ),
+    )
+    .limit(config.PUBLISH_CLAIM_LIMIT)
     .all();
   for (const row of ordinary) {
     checked += 1;
     const externalId = row.target.externalId;
-    if (!externalId) continue;
+    if (!externalId || isTargetAuthBlocked(backendDb, row.job.target)) {
+      deferOrdinaryReconciliation(backendDb, config, row.job);
+      continue;
+    }
     const result = await verifyPlatformPublication(
       row.job.target,
       { ok: true, id: externalId, url: row.target.url },
       platformConfig(row.job.target, config),
+      fetchImpl,
     );
     const verification = result.verification as { status?: string } | undefined;
-    if (verification?.status === "unavailable") continue;
+    if (verification?.status !== "verified") {
+      deferOrdinaryReconciliation(backendDb, config, row.job);
+      continue;
+    }
     const now = new Date().toISOString();
     backendDb.db.transaction((tx) => {
       tx.update(publishJobs)
@@ -46,8 +67,8 @@ export async function runPublicationReconciliation(backendDb: BackendDb, config:
           error: null,
           url: typeof result.url === "string" ? result.url : row.target.url,
           publishedAt: row.target.publishedAt ?? now,
-          confirmationSource: verification?.status === "verified" ? "provider_verify" : "publish_response",
-          verifiedAt: verification?.status === "verified" ? now : row.target.verifiedAt,
+          confirmationSource: "provider_verify",
+          verifiedAt: now,
           updatedAt: now,
         })
         .where(and(eq(postTargets.postKey, row.target.postKey), eq(postTargets.target, row.target.target)))
@@ -66,13 +87,26 @@ export async function runPublicationReconciliation(backendDb: BackendDb, config:
   }
 
   const videos = backendDb.db
-    .select({ target: videoTargets, draft: videoDrafts })
+    .select({ target: videoTargets, draft: videoDrafts, job: videoJobs })
     .from(videoTargets)
     .innerJoin(videoDrafts, eq(videoDrafts.id, videoTargets.videoDraftId))
-    .where(eq(videoTargets.status, "verification_required"))
+    .innerJoin(videoJobs, eq(videoJobs.videoTargetId, videoTargets.id))
+    .where(
+      and(
+        eq(videoTargets.status, "verification_required"),
+        eq(videoJobs.status, "verification_required"),
+        lt(videoJobs.attemptCount, config.PUBLISH_MAX_ATTEMPTS),
+        or(isNull(videoJobs.nextAttemptAt), lte(videoJobs.nextAttemptAt, nowIso)),
+      ),
+    )
+    .limit(config.PUBLISH_CLAIM_LIMIT)
     .all();
   for (const row of videos) {
     checked += 1;
+    if (isTargetAuthBlocked(backendDb, row.target.target)) {
+      deferVideoReconciliation(backendDb, config, row.job);
+      continue;
+    }
     let confirmation: { externalId?: string | null; url?: string | null } | null = null;
     try {
       if (row.target.deliveryProvider === "zernio" && row.target.providerPostId) {
@@ -81,11 +115,18 @@ export async function runPublicationReconciliation(backendDb: BackendDb, config:
       } else if (row.target.target === "youtube_shorts" && row.target.externalId) {
         const verified = await verifyYouTubeVideo(config, row.target.externalId, row.draft.locale === "en" ? "en" : "ru");
         confirmation = { externalId: verified.id, url: verified.url };
+      } else if (row.target.deliveryProvider === "native" && row.target.confirmationSource && row.target.externalId) {
+        const verified = await verifyInstagramReel(config, row.target.externalId);
+        confirmation = { externalId: verified.id, url: verified.url };
       }
     } catch {
+      deferVideoReconciliation(backendDb, config, row.job);
       continue;
     }
-    if (!confirmation) continue;
+    if (!confirmation) {
+      deferVideoReconciliation(backendDb, config, row.job);
+      continue;
+    }
     const now = new Date().toISOString();
     backendDb.db.transaction((tx) => {
       tx.update(videoTargets)
@@ -120,9 +161,9 @@ export async function runPublicationReconciliation(backendDb: BackendDb, config:
 
   const unresolvedTimes = [
     ...backendDb.db
-      .select({ updatedAt: publishJobs.updatedAt })
-      .from(publishJobs)
-      .where(eq(publishJobs.status, "verification_required"))
+      .select({ updatedAt: postTargets.updatedAt })
+      .from(postTargets)
+      .where(eq(postTargets.status, "verification_required"))
       .all(),
     ...backendDb.db
       .select({ updatedAt: videoTargets.updatedAt })
@@ -143,4 +184,35 @@ export async function runPublicationReconciliation(backendDb: BackendDb, config:
     });
   }
   return { checked, resolved, unresolved: unresolvedTimes.length, oldestAt: unresolvedTimes[0] ?? null };
+}
+
+function deferOrdinaryReconciliation(backendDb: BackendDb, config: BackendConfig, job: typeof publishJobs.$inferSelect): void {
+  const attempt = job.attemptCount + 1;
+  backendDb.db
+    .update(publishJobs)
+    .set({
+      attemptCount: attempt,
+      nextAttemptAt: reconciliationNextAttempt(config, attempt),
+      updatedAt: new Date().toISOString(),
+    })
+    .where(and(eq(publishJobs.jobId, job.jobId), eq(publishJobs.status, "verification_required")))
+    .run();
+}
+
+function deferVideoReconciliation(backendDb: BackendDb, config: BackendConfig, job: typeof videoJobs.$inferSelect): void {
+  const attempt = job.attemptCount + 1;
+  backendDb.db
+    .update(videoJobs)
+    .set({
+      attemptCount: attempt,
+      nextAttemptAt: reconciliationNextAttempt(config, attempt),
+      updatedAt: new Date().toISOString(),
+    })
+    .where(and(eq(videoJobs.id, job.id), eq(videoJobs.status, "verification_required")))
+    .run();
+}
+
+function reconciliationNextAttempt(config: BackendConfig, attempt: number): string | null {
+  if (attempt >= config.PUBLISH_MAX_ATTEMPTS) return null;
+  return nextRetryAt(attempt, config.PUBLISH_BACKOFF_BASE_SECONDS, config.PUBLISH_BACKOFF_MAX_SECONDS);
 }

@@ -3,7 +3,7 @@ import type { BackendConfig } from "../foundation/config.js";
 import { type VideoLocale, youtubeAccessToken } from "../foundation/external/youtube.js";
 import { ExternalTransportError, externalFetch, formBody, requestJson } from "../foundation/http.js";
 import type { InstagramMetadata, YouTubeMetadata } from "../publishing/video-types.js";
-import { ambiguousExternalMutation } from "./ambiguous-publication.js";
+import { AmbiguousPublicationError, ambiguousExternalMutation } from "./ambiguous-publication.js";
 
 type YouTubeVideo = { id: string };
 type YouTubeVideoList = { items?: Array<{ id?: string }> };
@@ -79,38 +79,56 @@ export async function prepareYouTubeVideo(
   if (!init.ok) throw new Error(`YouTube upload session failed: ${init.status} ${await init.text()}`);
   const location = init.headers.get("location");
   if (!location) throw new Error("YouTube did not return an upload location.");
-  const video = await uploadYouTubeResumable(location, file);
+  const video = await uploadYouTubeResumable(location, file, config.VIDEO_UPLOAD_TIMEOUT_SECONDS * 1000);
   return { id: video.id, url: `https://www.youtube.com/watch?v=${video.id}` };
 }
 
-async function uploadYouTubeResumable(location: string, file: Bun.BunFile): Promise<YouTubeVideo> {
+async function uploadYouTubeResumable(location: string, file: Bun.BunFile, uploadTimeoutMs: number): Promise<YouTubeVideo> {
   try {
-    return await putYouTubeBytes(location, file, 0, file.size);
+    return await putYouTubeBytes(location, file, 0, file.size, uploadTimeoutMs);
   } catch (error) {
     if (!(error instanceof ExternalTransportError)) throw error;
   }
   // The resumable protocol exposes the committed byte range after a lost
   // response, so this provider does not need a manual verification state.
-  const status = await externalFetch(fetch, location, {
-    method: "PUT",
-    headers: { "Content-Length": "0", "Content-Range": `bytes */${file.size}` },
-  });
+  const status = await queryYouTubeUploadStatus(location, file.size);
   if (status.ok) return (await status.json()) as YouTubeVideo;
   if (status.status !== 308) throw new Error(`YouTube upload status failed: ${status.status} ${await status.text()}`);
   const committed = Number(status.headers.get("range")?.match(/bytes=0-(\d+)/)?.[1] ?? -1) + 1;
-  return ambiguousExternalMutation("youtube_upload", () => putYouTubeBytes(location, file.slice(committed), committed, file.size));
+  if (committed >= file.size) {
+    // Every byte arrived but the final representation is still converging.
+    // Never send an empty, invalid N-(N-1) range; ask the session again.
+    const confirmed = await queryYouTubeUploadStatus(location, file.size);
+    if (confirmed.ok) return (await confirmed.json()) as YouTubeVideo;
+    throw new AmbiguousPublicationError("youtube_upload", new Error("YouTube received every byte but did not return the video resource"));
+  }
+  return ambiguousExternalMutation("youtube_upload", () =>
+    putYouTubeBytes(location, file.slice(committed), committed, file.size, uploadTimeoutMs),
+  );
 }
 
-async function putYouTubeBytes(location: string, body: Blob, start: number, total: number): Promise<YouTubeVideo> {
-  const response = await externalFetch(fetch, location, {
+async function queryYouTubeUploadStatus(location: string, total: number): Promise<Response> {
+  return externalFetch(fetch, location, {
     method: "PUT",
-    headers: {
-      "Content-Type": "video/mp4",
-      "Content-Length": String(body.size),
-      "Content-Range": `bytes ${start}-${total - 1}/${total}`,
-    },
-    body,
+    headers: { "Content-Length": "0", "Content-Range": `bytes */${total}` },
   });
+}
+
+async function putYouTubeBytes(location: string, body: Blob, start: number, total: number, uploadTimeoutMs: number): Promise<YouTubeVideo> {
+  const response = await externalFetch(
+    fetch,
+    location,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "video/mp4",
+        "Content-Length": String(body.size),
+        "Content-Range": `bytes ${start}-${total - 1}/${total}`,
+      },
+      body,
+    },
+    uploadTimeoutMs,
+  );
   if (!response.ok) throw new Error(`YouTube upload failed: ${response.status} ${await response.text()}`);
   return (await response.json()) as YouTubeVideo;
 }
