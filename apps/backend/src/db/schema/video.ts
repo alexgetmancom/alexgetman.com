@@ -67,6 +67,9 @@ export const videoJobs = sqliteTable(
     kind: text().notNull(),
     runAt: text().notNull(),
     status: text().notNull().default("queued"),
+    // See publish_jobs.reconcile_attempt_count: verification polls have their
+    // own budget, separate from publish retries.
+    reconcileAttemptCount: integer().notNull().default(0),
     ...queueAttempts(),
     ...timestamps(),
   },

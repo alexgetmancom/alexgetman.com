@@ -8,7 +8,7 @@ import { nextRetryAt } from "../publishing/errors.js";
 import { reconcilePublication } from "../publishing/queue.js";
 import { refreshVideoDraftStatus } from "../publishing/video-data.js";
 import { platformConfig, verifyPlatformPublication } from "./ports/social.js";
-import { verifyInstagramReel, verifyYouTubeVideo } from "./video-publishers.js";
+import { verifyYouTubeVideo } from "./video-publishers.js";
 import { verifyZernioPost } from "./zernio.js";
 
 type ReconciliationResult = { checked: number; resolved: number; unresolved: number; oldestAt: string | null };
@@ -31,7 +31,7 @@ export async function runPublicationReconciliation(
     .where(
       and(
         eq(publishJobs.status, "verification_required"),
-        lt(publishJobs.attemptCount, config.PUBLISH_MAX_ATTEMPTS),
+        lt(publishJobs.reconcileAttemptCount, config.RECONCILE_MAX_ATTEMPTS),
         or(isNull(publishJobs.nextAttemptAt), lte(publishJobs.nextAttemptAt, nowIso)),
       ),
     )
@@ -95,7 +95,7 @@ export async function runPublicationReconciliation(
       and(
         eq(videoTargets.status, "verification_required"),
         eq(videoJobs.status, "verification_required"),
-        lt(videoJobs.attemptCount, config.PUBLISH_MAX_ATTEMPTS),
+        lt(videoJobs.reconcileAttemptCount, config.RECONCILE_MAX_ATTEMPTS),
         or(isNull(videoJobs.nextAttemptAt), lte(videoJobs.nextAttemptAt, nowIso)),
       ),
     )
@@ -107,6 +107,10 @@ export async function runPublicationReconciliation(
       deferVideoReconciliation(backendDb, config, row.job);
       continue;
     }
+    // Native Instagram Reels are deliberately absent below. Before media_publish
+    // returns, the only durable handle on the target is a *container* ID, and
+    // Graph offers no way to find the media a container became. Asking about the
+    // container as if it were media would 404 at best. These close via operator.
     let confirmation: { externalId?: string | null; url?: string | null } | null = null;
     try {
       if (row.target.deliveryProvider === "zernio" && row.target.providerPostId) {
@@ -114,9 +118,6 @@ export async function runPublicationReconciliation(
         confirmation = { externalId: verified.externalId, url: verified.url };
       } else if (row.target.target === "youtube_shorts" && row.target.externalId) {
         const verified = await verifyYouTubeVideo(config, row.target.externalId, row.draft.locale === "en" ? "en" : "ru");
-        confirmation = { externalId: verified.id, url: verified.url };
-      } else if (row.target.deliveryProvider === "native" && row.target.confirmationSource && row.target.externalId) {
-        const verified = await verifyInstagramReel(config, row.target.externalId);
         confirmation = { externalId: verified.id, url: verified.url };
       }
     } catch {
@@ -159,6 +160,9 @@ export async function runPublicationReconciliation(
     resolved += 1;
   }
 
+  // Age is read from the *targets*, never from the jobs. Deferring a poll
+  // touches the job row, so measuring there would reset the incident's age on
+  // every tick and an inbox that never ages is an inbox nobody escalates.
   const unresolvedTimes = [
     ...backendDb.db
       .select({ updatedAt: postTargets.updatedAt })
@@ -187,11 +191,11 @@ export async function runPublicationReconciliation(
 }
 
 function deferOrdinaryReconciliation(backendDb: BackendDb, config: BackendConfig, job: typeof publishJobs.$inferSelect): void {
-  const attempt = job.attemptCount + 1;
+  const attempt = job.reconcileAttemptCount + 1;
   backendDb.db
     .update(publishJobs)
     .set({
-      attemptCount: attempt,
+      reconcileAttemptCount: attempt,
       nextAttemptAt: reconciliationNextAttempt(config, attempt),
       updatedAt: new Date().toISOString(),
     })
@@ -200,11 +204,11 @@ function deferOrdinaryReconciliation(backendDb: BackendDb, config: BackendConfig
 }
 
 function deferVideoReconciliation(backendDb: BackendDb, config: BackendConfig, job: typeof videoJobs.$inferSelect): void {
-  const attempt = job.attemptCount + 1;
+  const attempt = job.reconcileAttemptCount + 1;
   backendDb.db
     .update(videoJobs)
     .set({
-      attemptCount: attempt,
+      reconcileAttemptCount: attempt,
       nextAttemptAt: reconciliationNextAttempt(config, attempt),
       updatedAt: new Date().toISOString(),
     })
@@ -213,6 +217,6 @@ function deferVideoReconciliation(backendDb: BackendDb, config: BackendConfig, j
 }
 
 function reconciliationNextAttempt(config: BackendConfig, attempt: number): string | null {
-  if (attempt >= config.PUBLISH_MAX_ATTEMPTS) return null;
+  if (attempt >= config.RECONCILE_MAX_ATTEMPTS) return null;
   return nextRetryAt(attempt, config.PUBLISH_BACKOFF_BASE_SECONDS, config.PUBLISH_BACKOFF_MAX_SECONDS);
 }

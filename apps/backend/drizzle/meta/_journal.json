@@ -253,6 +253,13 @@
       "when": 1785975200000,
       "tag": "0035_publication_reconciliation",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "6",
+      "when": 1785975260000,
+      "tag": "0036_reconcile_attempt_budget",
+      "breakpoints": true
     }
   ]
 }

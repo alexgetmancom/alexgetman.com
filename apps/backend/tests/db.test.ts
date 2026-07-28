@@ -153,6 +153,7 @@ describe("openBackendDb", () => {
     fixture.exec("ALTER TABLE publish_jobs DROP COLUMN current_phase");
     fixture.exec("ALTER TABLE post_targets DROP COLUMN confirmation_source");
     fixture.exec("ALTER TABLE post_targets DROP COLUMN verified_at");
+    fixture.exec("ALTER TABLE publish_jobs DROP COLUMN reconcile_attempt_count");
     fixture.close();
 
     const legacy = new Database(dbPath) as unknown as Parameters<typeof baselineDrizzleMigrations>[0];

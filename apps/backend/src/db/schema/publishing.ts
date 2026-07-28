@@ -11,6 +11,10 @@ export const publishJobs = sqliteTable(
     target: text().notNull(),
     status: text().notNull().default("queued"),
     currentPhase: text(),
+    // Reconciliation asks "did this actually publish?", which is a different
+    // budget from "publish it again": a job that burned its publish attempts
+    // before turning ambiguous still deserves a full set of verification polls.
+    reconcileAttemptCount: integer().notNull().default(0),
     publishAt: text(),
     payloadJson: json<JsonObject | null>(),
     ...queueAttempts(),

@@ -10,7 +10,6 @@ import {
   prepareInstagramReel,
   prepareYouTubeVideo,
   publishInstagramReel,
-  verifyInstagramReel,
 } from "../src/delivery/video-publishers.js";
 import { loadConfig } from "../src/foundation/config.js";
 
@@ -297,14 +296,6 @@ describe("Instagram Reels", () => {
     await expect(publishInstagramReel(config, "container-1")).resolves.toEqual({
       id: "reel-9",
       url: "https://www.instagram.com/reel/reel-9/",
-    });
-  });
-
-  it("verifies a published Reel by media id and permalink", async () => {
-    install(() => json({ id: "reel-verified", permalink: "https://www.instagram.com/reel/reel-verified/" }));
-    await expect(verifyInstagramReel(config, "reel-verified")).resolves.toEqual({
-      id: "reel-verified",
-      url: "https://www.instagram.com/reel/reel-verified/",
     });
   });
 

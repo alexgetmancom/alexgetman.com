@@ -222,12 +222,3 @@ export async function publishInstagramReel(config: BackendConfig, containerId: s
   }
   return { id: published.id, url: `https://www.instagram.com/reel/${published.id}/` };
 }
-
-export async function verifyInstagramReel(config: BackendConfig, id: string): Promise<{ id: string; url: string | null }> {
-  const media = await requestJson<{ id?: string; permalink?: string }>(
-    fetch,
-    `${instagramGraphBase(config)}/${encodeURIComponent(id)}?fields=id,permalink&access_token=${encodeURIComponent(config.INSTAGRAM_ACCESS_TOKEN ?? "")}`,
-  );
-  if (media.id !== id) throw new Error("Instagram verification did not find the expected Reel");
-  return { id, url: media.permalink ?? null };
-}

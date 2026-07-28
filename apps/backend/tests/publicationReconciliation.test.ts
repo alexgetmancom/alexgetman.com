@@ -44,6 +44,43 @@ describe("publication reconciliation", () => {
       ).toEqual({ status: "published", confirmationSource: "provider_verify" });
     }));
 
+  it("polls a job that already spent its publish attempts", () =>
+    withDb(async (backendDb) => {
+      const jobId = enqueuePublishJobTx(backendDb.db, {
+        postId: 83,
+        postKey: "post:83",
+        messageId: 83,
+        target: "threads",
+        payload: { text: "retried before it turned ambiguous" },
+      });
+      const now = new Date().toISOString();
+      const config = loadConfig({ PUBLISH_MAX_ATTEMPTS: "3" });
+      backendDb.db
+        .update(publishJobs)
+        // Two failed publishes, then a lost confirmation: the publish budget is
+        // nearly gone but nothing has ever asked the provider what happened.
+        .set({ status: "verification_required", attemptCount: 3, updatedAt: now })
+        .where(eq(publishJobs.jobId, jobId))
+        .run();
+      backendDb.db
+        .insert(postTargets)
+        .values({ postKey: "post:83", target: "threads", status: "verification_required", externalId: "thread-83", updatedAt: now })
+        .run();
+
+      const fetchImpl = (async () =>
+        new Response(JSON.stringify({ id: "thread-83", permalink: "https://www.threads.net/@owner/post/83" }), {
+          status: 200,
+        })) as unknown as typeof fetch;
+      expect(await runPublicationReconciliation(backendDb, config, fetchImpl)).toMatchObject({ checked: 1, resolved: 1 });
+      expect(
+        backendDb.db
+          .select({ status: postTargets.status })
+          .from(postTargets)
+          .where(and(eq(postTargets.postKey, "post:83"), eq(postTargets.target, "threads")))
+          .get(),
+      ).toEqual({ status: "published" });
+    }));
+
   it("keeps an id-less result unresolved and emits one owner-visible summary", () =>
     withDb(async (backendDb) => {
       const jobId = enqueuePublishJobTx(backendDb.db, {
@@ -60,15 +97,15 @@ describe("publication reconciliation", () => {
         .values({ postKey: "post:82", target: "telegram", status: "verification_required", updatedAt: now })
         .run();
 
-      const config = loadConfig({ PUBLISH_MAX_ATTEMPTS: "1" });
+      const config = loadConfig({ RECONCILE_MAX_ATTEMPTS: "1" });
       expect(await runPublicationReconciliation(backendDb, config)).toMatchObject({ checked: 1, resolved: 0, unresolved: 1 });
       expect(
         backendDb.db
-          .select({ attemptCount: publishJobs.attemptCount, nextAttemptAt: publishJobs.nextAttemptAt })
+          .select({ reconcileAttemptCount: publishJobs.reconcileAttemptCount, nextAttemptAt: publishJobs.nextAttemptAt })
           .from(publishJobs)
           .where(eq(publishJobs.jobId, jobId))
           .get(),
-      ).toEqual({ attemptCount: 1, nextAttemptAt: null });
+      ).toEqual({ reconcileAttemptCount: 1, nextAttemptAt: null });
       expect(
         backendDb.db
           .select({ eventType: postEvents.eventType })

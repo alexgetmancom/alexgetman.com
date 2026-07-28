@@ -147,6 +147,11 @@ const envSchema = z
     // few missed heartbeats wide to safely detect a crash.
     VIDEO_LOCK_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(120),
     VIDEO_UPLOAD_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(1800),
+    // How many times reconciliation may ask a provider whether an ambiguous
+    // publication exists before it stops polling and waits for an operator.
+    // Higher than the publish budget on purpose: these are reads, and a
+    // platform can take a while to expose a freshly created object.
+    RECONCILE_MAX_ATTEMPTS: z.coerce.number().int().positive().default(8),
     VIDEO_HEARTBEAT_INTERVAL_SECONDS: z.coerce.number().int().positive().default(30),
     // VIDEO_PREPARE_LEAD_MINUTES / VIDEO_REMINDER_MINUTES / VIDEO_MEDIA_RETENTION_HOURS
     // are owned by studio.yaml (see loadConfig); they are not env-configurable.
