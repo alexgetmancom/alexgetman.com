@@ -17,6 +17,7 @@ import {
 } from "../src/operations/maintenance.js";
 import { diagnoseMediaProcessor, mediaProcessorStatus, reprocessPostMedia } from "../src/operations/media-processor.js";
 import { pipelineStatusPayload } from "../src/operations/read-model.js";
+import { compactOperationsStatus } from "../src/operations/status.js";
 import { publicationTimeline } from "../src/operations/timeline.js";
 
 describe("TypeScript operations tooling", () => {
@@ -146,6 +147,79 @@ describe("TypeScript operations tooling", () => {
       const status = pipelineStatusPayload(loadConfig({ PIPELINE_DB: ":memory:" }), backendDb);
       expect(status.metrics.schedule?.errors).toBe(1);
       expect(auditOperations(backendDb).metricScheduleErrors).toEqual([{ target: "telegram", count: 1, latest: now }]);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("keeps text Studio status compact while reporting publication health", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      backendDb.sqlite
+        .prepare(
+          "INSERT INTO posts(post_key,post_id,channel,message_id,date_utc,status,created_at,updated_at) VALUES ('post:1',1,'test',1,?,'active',?,?)",
+        )
+        .run(now, now, now);
+      backendDb.sqlite
+        .prepare("INSERT INTO post_targets(post_key,target,status,updated_at) VALUES ('post:1','telegram','published',?)")
+        .run(now);
+      backendDb.sqlite
+        .prepare(
+          "INSERT INTO publish_jobs(post_id,post_key,message_id,target,status,created_at,updated_at) VALUES (1,'post:1',1,'telegram','published',?,?)",
+        )
+        .run(now, now);
+      backendDb.sqlite
+        .prepare('INSERT INTO worker_state(name,state_json,updated_at) VALUES (\'queue\',\'{"ok":true,"last_run_at":"2026-01-01"}\',?)')
+        .run(now);
+
+      const status = compactOperationsStatus(loadConfig({ PIPELINE_DB: ":memory:" }), backendDb);
+
+      expect(status.ok).toBe(true);
+      expect(status.posts).toEqual({
+        total: 1,
+        targets: { total: 1, byStatus: { published: 1 } },
+        jobs: { total: 1, byStatus: { published: 1 } },
+      });
+      expect(status.videos.drafts.total).toBe(0);
+      expect(status.workers).toEqual([{ name: "queue", ok: true, lastRunAt: "2026-01-01", lastError: null }]);
+      expect(JSON.stringify(status).length).toBeLessThan(2_000);
+      expect(status).not.toHaveProperty("jobs");
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("reports actionable video failures in video Studio status", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      backendDb.sqlite
+        .prepare(
+          "INSERT INTO video_drafts(id,actor_id,label,asset_key,status,created_at,updated_at) VALUES (1,1,'video','asset','partial',?,?)",
+        )
+        .run(now, now);
+      backendDb.sqlite
+        .prepare(
+          "INSERT INTO video_targets(video_draft_id,target,metadata_json,status,last_error,created_at,updated_at) VALUES (1,'instagram_reels','{}','failed','boom',?,?)",
+        )
+        .run(now, now);
+      backendDb.sqlite
+        .prepare("INSERT INTO video_jobs(video_draft_id,kind,run_at,status,created_at,updated_at) VALUES (1,'publish',?,'failed',?,?)")
+        .run(now, now, now);
+      const config = loadConfig({ PIPELINE_DB: ":memory:" });
+      config.studio.modules.video_posting = true;
+
+      const status = compactOperationsStatus(config, backendDb);
+
+      expect(status.ok).toBe(false);
+      expect(status.modules).toContain("video_posting");
+      expect(status.videos).toEqual({
+        drafts: { total: 1, byStatus: { partial: 1 } },
+        targets: { total: 1, byStatus: { failed: 1 }, actionableFailures: 1 },
+        jobs: { total: 1, byStatus: { failed: 1 } },
+      });
+      expect(status.posts.total).toBe(0);
     } finally {
       backendDb.close();
     }

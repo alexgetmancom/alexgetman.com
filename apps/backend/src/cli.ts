@@ -19,6 +19,7 @@ import { diagnoseMediaProcessor, mediaJobReport, mediaProcessorStatus, reprocess
 import { operationsService } from "./operations/service.js";
 import { backfillSiteImageMedia } from "./operations/site-media-backfill.js";
 import { deduplicateSiteMedia } from "./operations/site-media-deduplicate.js";
+import { compactOperationsStatus } from "./operations/status.js";
 import { publicationTimeline } from "./operations/timeline.js";
 import { verifyPostTargets } from "./operations/verify.js";
 
@@ -136,7 +137,7 @@ async function main(): Promise<void> {
           2,
         ),
       );
-    } else if (args.command === "status") console.log(JSON.stringify(operationsService(backendDb, config).pipeline(), null, 2));
+    } else if (args.command === "status") console.log(JSON.stringify(compactOperationsStatus(config, backendDb), null, 2));
     else if (args.command === "migrations") console.log(JSON.stringify({ migrations: migrationStatus(backendDb.sqlite) }, null, 2));
     else if (args.command === "backup")
       console.log(JSON.stringify({ ok: true, path: await backupDatabase(backendDb, dbPath, args.values.get("output")) }, null, 2));
