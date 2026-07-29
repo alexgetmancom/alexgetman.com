@@ -20,6 +20,7 @@ import { operationsService } from "./operations/service.js";
 import { backfillSiteImageMedia } from "./operations/site-media-backfill.js";
 import { deduplicateSiteMedia } from "./operations/site-media-deduplicate.js";
 import { compactOperationsStatus } from "./operations/status.js";
+import { backfillTextStoryCards } from "./operations/story-card-backfill.js";
 import { publicationTimeline } from "./operations/timeline.js";
 import { verifyPostTargets } from "./operations/verify.js";
 
@@ -74,7 +75,8 @@ function printHelp(): void {
   republish --ref post:1 [--target x] [--locale ru|en]
   retry --ref post:1 [--target x] [--locale ru|en]
   site-media-images [--apply --max-upload-kbps 6250]
-  site-media-deduplicate [--apply]`);
+  site-media-deduplicate [--apply]
+  story-card-backfill --ref post:1 [--apply]`);
 }
 
 async function main(): Promise<void> {
@@ -209,6 +211,8 @@ async function main(): Promise<void> {
       console.log(JSON.stringify(await backfillSiteImageMedia(backendDb, config, args.flags.has("apply"), maxUploadKbps), null, 2));
     } else if (args.command === "site-media-deduplicate") {
       console.log(JSON.stringify(await deduplicateSiteMedia(config, args.flags.has("apply")), null, 2));
+    } else if (args.command === "story-card-backfill") {
+      console.log(JSON.stringify(await backfillTextStoryCards(backendDb, config, required(args, "ref"), args.flags.has("apply")), null, 2));
     } else if (republishAliases.has(args.command)) {
       const localeValue = args.values.get("locale");
       if (localeValue && localeValue !== "ru" && localeValue !== "en") throw new Error("--locale must be ru or en");

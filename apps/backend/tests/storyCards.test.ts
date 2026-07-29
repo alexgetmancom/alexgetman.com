@@ -6,12 +6,14 @@ import { eq } from "drizzle-orm";
 import sharp from "sharp";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import { type BackendDb, openBackendDb } from "../src/db/client.js";
-import { drafts } from "../src/db/schema.js";
+import { drafts, postLocales, publishJobs, siteJobs } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
+import { backfillTextStoryCards } from "../src/operations/story-card-backfill.js";
 import { localizeTargetPayload } from "../src/publishing/payload.js";
 import { createPublicationPlan } from "../src/publishing/publication-plan.js";
+import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
 import { buildStoryCardCopy } from "../src/story-cards/copy.js";
-import { readyStoryCardMedia, setStoryPublishMode, storyCardsForDraft } from "../src/story-cards/store.js";
+import { discardDraftStoryCards, readyStoryCardMedia, setStoryPublishMode, storyCardsForDraft } from "../src/story-cards/store.js";
 import { runStoryCardCycle } from "../src/story-cards/worker.js";
 
 let backendDb: BackendDb | null = null;
@@ -128,4 +130,37 @@ describe("text Story cards", () => {
     setStoryPublishMode(backendDb, draftId, "all");
     expect(backendDb.db.select().from(drafts).where(eq(drafts.id, draftId)).get()?.storyPublishMode).toBe("all");
   });
+
+  it("backfills a published site's empty media without requeueing social delivery", async () => {
+    backendDb = openBackendDb(":memory:");
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "story-card-backfill-test-"));
+    temporaryDirectories.push(directory);
+    const config = loadConfig({
+      DATA_DIR: directory,
+      STORY_CARD_DIR: directory,
+      STORY_CARD_ASSETS_DIR: path.resolve("apps/backend/assets/story-card"),
+      STORY_CARD_RENDERER_ENTRY: path.resolve("apps/backend/src/story-cards/renderer-process.ts"),
+    });
+    const draftId = createDraftFromMessage(backendDb, 42, {
+      text: "🚨 СЛИВ: Две модели OpenAI появились в DesignArena.",
+      textEn: "🚨 LEAK: Two OpenAI models appeared in DesignArena.",
+      entities: [],
+      media: [],
+    });
+    discardDraftStoryCards(backendDb, draftId);
+    const postId = publishDraftToQueue(backendDb, draftId);
+    const socialJobsBefore = backendDb.db.select().from(publishJobs).all().length;
+
+    const dryRun = await backfillTextStoryCards(backendDb, config, `post:${postId}`, false);
+    expect(dryRun).toMatchObject({ applied: false, count: 2 });
+    expect(storyCardsForDraft(backendDb, draftId)).toHaveLength(0);
+
+    const applied = await backfillTextStoryCards(backendDb, config, `post:${postId}`, true);
+    expect(applied).toMatchObject({ applied: true, count: 2 });
+    expect(backendDb.db.select().from(postLocales).where(eq(postLocales.postId, postId)).all()).toSatisfy((locales) =>
+      locales.every((locale) => Array.isArray(locale.mediaJson) && locale.mediaJson.length === 1),
+    );
+    expect(backendDb.db.select().from(publishJobs).all()).toHaveLength(socialJobsBefore);
+    expect(backendDb.db.select().from(siteJobs).where(eq(siteJobs.postId, postId)).all().at(-1)?.reason).toBe("text_story_card_backfill");
+  }, 20_000);
 });
