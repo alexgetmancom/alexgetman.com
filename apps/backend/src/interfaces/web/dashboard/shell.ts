@@ -149,8 +149,8 @@ export function renderDashboardShell(body: string): string {
     .audience-line span { color:var(--text-main); } .audience-line strong { color:var(--text-main); font-size:18px; font-weight:600; }
     .audience-line--interactive { color:inherit; text-decoration:none; transition:background .14s ease,box-shadow .14s ease; }
     .audience-line--interactive:hover { background:var(--surface-raised); }
-    .audience-line--active { box-shadow:inset 3px 0 0 var(--accent); background:var(--surface-sunken); padding-left:10px; padding-right:10px; }
-    .audience-line--total { margin-top:8px; border-top:1px solid var(--border); font-weight:650; }
+    .audience-line--active { box-shadow:inset 3px 0 0 var(--accent); background:var(--surface-sunken); }
+    .audience-line--total { border-top:1px solid var(--border); }
     .audience-all-icon { font-size:18px; font-weight:700; }
     .publication-columns { display:grid; grid-template-columns:minmax(340px,.3fr) minmax(0,.7fr); gap:30px; padding-top:20px; }
     .best-posts,.recent-posts { min-width:0; padding:0; border:0; border-radius:0; background:transparent; } .recent-posts { padding-left:34px; border-left:1px solid var(--border-soft); }
