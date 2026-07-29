@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
@@ -273,6 +274,18 @@ function verticalMediaExists(fullPath: string): boolean {
   return exists;
 }
 
+const mediaVersionCache = new Map<string, { signature: string; version: string }>();
+function versionedMediaPath(publicPath: string, fullPath: string): string {
+  const stat = fs.statSync(fullPath, { throwIfNoEntry: false });
+  if (!stat?.isFile()) return publicPath;
+  const signature = `${stat.size}:${stat.mtimeMs}`;
+  const cached = mediaVersionCache.get(fullPath);
+  if (cached?.signature === signature) return `${publicPath}?v=${cached.version}`;
+  const version = crypto.createHash("sha256").update(fs.readFileSync(fullPath)).digest("hex").slice(0, 12);
+  mediaVersionCache.set(fullPath, { signature, version });
+  return `${publicPath}?v=${version}`;
+}
+
 /** The final viewer URL is chosen only after its durable file exists. This is
  * deliberate: the archive is backfilled asynchronously on VM-106, and a
  * missing composite must never make an older card disappear. */
@@ -283,11 +296,16 @@ function publishedMedia(media: unknown, postId: number, locale: "ru" | "en", sit
     const type = String(item.type ?? "image").toLowerCase() === "video" ? "video" : "image";
     const vertical = siteMediaVerticalFilename(postId, locale, index, type);
     const original = siteMediaFilename(postId, locale, index, type === "video" ? "mp4" : "jpg");
-    const viewerPath = verticalMediaExists(path.join(sitePublicDir, SITE_MEDIA_URL_PREFIX, vertical)) ? vertical : original;
+    const verticalPath = path.join(sitePublicDir, SITE_MEDIA_URL_PREFIX, vertical);
+    const viewerPath = verticalMediaExists(verticalPath) ? vertical : original;
+    const viewerFullPath = path.join(sitePublicDir, SITE_MEDIA_URL_PREFIX, viewerPath);
     return {
       ...item,
       type,
-      path: `${SITE_MEDIA_URL_PREFIX}/${viewerPath}`,
+      // Source-only legacy rows do not carry the materializer's public path.
+      // Version the inferred projection too, otherwise a replaced stable file
+      // leaves different srcset widths cached for up to a week.
+      path: versionedMediaPath(`${SITE_MEDIA_URL_PREFIX}/${viewerPath}`, viewerFullPath),
       ...(type === "video" ? { poster: `${SITE_MEDIA_URL_PREFIX}/${siteMediaPosterFilename(postId, locale, index)}` } : {}),
     };
   });

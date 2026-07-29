@@ -151,8 +151,8 @@ describe("Drizzle site feed", () => {
       fs.writeFileSync(vertical, "ready");
       expect(loadPublicSiteFeed(backendDb, siteDir)[0]).toEqual(
         expect.objectContaining({
-          image_en: "media/posts/9-en-0-vertical.jpg",
-          media_en: [expect.objectContaining({ path: "media/posts/9-en-0-vertical.jpg" })],
+          image_en: expect.stringMatching(/^media\/posts\/9-en-0-vertical\.jpg\?v=[a-f0-9]{12}$/),
+          media_en: [expect.objectContaining({ path: expect.stringMatching(/^media\/posts\/9-en-0-vertical\.jpg\?v=[a-f0-9]{12}$/) })],
         }),
       );
       expect(loadPublicSiteFeed(backendDb, path.join(siteDir, "not-ready"))[0]).toEqual(
