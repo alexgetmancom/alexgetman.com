@@ -15,6 +15,13 @@ type GraphResponse = {
   error?: { code?: number; message?: string };
 };
 
+type MediaProbe = {
+  status: number | "unreachable";
+  contentType: string | null;
+  contentLength: string | null;
+  error?: string;
+};
+
 // Worst-case wall time for one story, spent inside a single worker slot:
 // CONTAINER_ATTEMPTS × (READY_POLLS + PUBLISH_ATTEMPTS) × POLL_DELAY_MS.
 // Keep the product bounded — these loops block every other delivery behind them.
@@ -49,7 +56,7 @@ export async function publishInstagramStory(
         fetchImpl,
       );
       if (!creation.id) return { ok: false, error: JSON.stringify(creation) };
-      await waitForContainer(config, creation.id, fetchImpl);
+      await waitForContainer(config, creation.id, publicUrl, media.type, fetchImpl);
       published = await publishReadyContainer(config, creation.id, fetchImpl);
     } catch (error) {
       if (containerAttempt < CONTAINER_ATTEMPTS - 1 && isExpiredInstagramContainer(error)) {
@@ -80,15 +87,52 @@ export async function verifyInstagramPublication(
   return { id, url: media.permalink ?? null };
 }
 
-async function waitForContainer(config: BackendConfig, creationId: string, fetchImpl: typeof fetch): Promise<void> {
+async function waitForContainer(
+  config: BackendConfig,
+  creationId: string,
+  publicUrl: string,
+  mediaType: string,
+  fetchImpl: typeof fetch,
+): Promise<void> {
   for (let attempt = 0; attempt < READY_POLLS; attempt += 1) {
     const status = await graphGet(config, creationId, { fields: "status_code,status" }, fetchImpl);
     const code = status.status_code ?? status.status;
     if (code === "FINISHED") return;
-    if (code === "ERROR" || code === "EXPIRED") throw new InstagramContainerInvalidError(JSON.stringify(status));
+    if (code === "ERROR" || code === "EXPIRED") {
+      const mediaProbe = await probePublicMedia(publicUrl, fetchImpl);
+      throw new InstagramContainerInvalidError(
+        `Instagram container rejected media: ${JSON.stringify({
+          containerId: creationId,
+          statusCode: code,
+          providerStatus: status.status ?? null,
+          providerError: status.error ?? null,
+          mediaType,
+          publicUrl,
+          mediaProbe,
+        })}`,
+      );
+    }
     await delay(POLL_DELAY_MS);
   }
   throw new Error(`instagram_container_timeout:${creationId}`);
+}
+
+async function probePublicMedia(publicUrl: string, fetchImpl: typeof fetch): Promise<MediaProbe> {
+  try {
+    const response = await externalFetch(fetchImpl, publicUrl, { method: "HEAD" });
+    return {
+      status: response.status,
+      contentType: response.headers.get("content-type"),
+      contentLength: response.headers.get("content-length"),
+    };
+  } catch (error) {
+    return {
+      status: "unreachable",
+      contentType: null,
+      contentLength: null,
+      error: redactExternalSecrets(error instanceof Error ? error.message : String(error)),
+    };
+  }
 }
 
 async function publishReadyContainer(config: BackendConfig, creationId: string, fetchImpl: typeof fetch): Promise<GraphResponse> {

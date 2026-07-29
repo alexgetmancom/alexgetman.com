@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { needsVerticalBlur, remoteStoryFfmpegArgs } from "../../../deploy/media-processor/story-encode.js";
 import { publishInstagramStory } from "../src/delivery/social/instagram.js";
+import { InstagramContainerInvalidError } from "../src/delivery/social/instagram-container.js";
 import { telegramStoryCaption, telegramStoryCaptionInput, telegramStoryUploadMedia } from "../src/delivery/social/telegramStories.js";
 import { generateStoryMedia } from "../src/delivery/story-media.js";
 import { loadConfig } from "../src/foundation/config.js";
@@ -143,13 +144,21 @@ describe("story publishers", () => {
     const responses = [
       { id: "container-bad" },
       { status_code: "ERROR", status: "upload failed" },
+      null,
       { id: "container-good" },
       { status_code: "FINISHED" },
       { id: "story-2" },
       { permalink: "https://instagram.com/stories/a/2" },
     ];
-    const fetchImpl = mock(async (input: string | URL | Request) => {
+    const fetchImpl = mock(async (input: string | URL | Request, init?: RequestInit) => {
       requests.push(String(input));
+      if (init?.method === "HEAD") {
+        responses.shift();
+        return new Response(null, {
+          status: 200,
+          headers: { "Content-Type": "image/jpeg", "Content-Length": "1234" },
+        });
+      }
       return new Response(JSON.stringify(responses.shift()), { status: 200 });
     }) as unknown as typeof fetch;
     const config = loadConfig({
@@ -162,6 +171,42 @@ describe("story publishers", () => {
 
     expect(result).toMatchObject({ ok: true, id: "story-2" });
     expect(requests.filter((url) => url.endsWith("/ig-user/media"))).toHaveLength(2);
+    expect(requests).toContain("https://example.com/story.jpg");
+  }, 10_000);
+
+  it("includes public media diagnostics when Instagram rejects both containers", async () => {
+    const responses = [
+      { id: "container-1" },
+      { status_code: "ERROR", status: "upload failed" },
+      { id: "container-2" },
+      { status_code: "ERROR", status: "upload failed again" },
+    ];
+    const fetchImpl = mock(async (_input: string | URL | Request, init?: RequestInit) => {
+      if (init?.method === "HEAD") {
+        return new Response(null, {
+          status: 200,
+          headers: { "Content-Type": "image/jpeg", "Content-Length": "4321" },
+        });
+      }
+      return new Response(JSON.stringify(responses.shift()), { status: 200 });
+    }) as unknown as typeof fetch;
+    const config = loadConfig({
+      ENABLE_INSTAGRAM_STORIES: "true",
+      INSTAGRAM_ACCESS_TOKEN: "IG-token",
+      INSTAGRAM_USER_ID: "ig-user",
+    });
+
+    const failure = await publishInstagramStory(
+      { media: [{ type: "IMAGE", vps_url: "https://example.com/story.jpg" }] },
+      config,
+      fetchImpl,
+    ).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(InstagramContainerInvalidError);
+    expect(String(failure)).toContain('"containerId":"container-2"');
+    expect(String(failure)).toContain('"providerStatus":"upload failed again"');
+    expect(String(failure)).toContain('"contentType":"image/jpeg"');
+    expect(String(failure)).toContain('"contentLength":"4321"');
   }, 10_000);
 
   it("rejects a personal Telegram business story configuration before publishing", () => {
