@@ -5,7 +5,12 @@ import { escapeHtml } from "./html.js";
 import { getTargetMetric } from "./metrics.js";
 import type { ChartMetricName, PipelinePost } from "./types.js";
 
-export function renderWeeklyChart(posts: PipelinePost[], rangeStart?: Date, rangeEnd?: Date): string {
+export function renderWeeklyChart(
+  posts: PipelinePost[],
+  rangeStart?: Date,
+  rangeEnd?: Date,
+  targetIds: string[] = ORDERED_TARGETS.map((target) => target.id),
+): string {
   const metrics = ["views", "likes", "replies"] as const satisfies readonly ChartMetricName[];
   const colors = { views: "var(--series-views)", likes: "var(--series-likes)", replies: "var(--series-replies)" };
   const labels = { views: "Просмотры", likes: "Реакции", replies: "Ответы" };
@@ -14,7 +19,7 @@ export function renderWeeklyChart(posts: PipelinePost[], rangeStart?: Date, rang
   for (const post of posts) {
     const day = getMskDateString(post.date);
     days[day] ??= { views: 0, likes: 0, replies: 0 };
-    for (const target of ORDERED_TARGETS) {
+    for (const target of ORDERED_TARGETS.filter((candidate) => targetIds.includes(candidate.id))) {
       for (const metric of metrics) days[day][metric] += getTargetMetric(post, target.id, metric);
     }
   }
@@ -67,8 +72,10 @@ export function renderWeeklyChart(posts: PipelinePost[], rangeStart?: Date, rang
     );
   }
 
+  const labelStep = Math.max(1, Math.ceil((ordered.length - 1) / 6));
   const xLabels = ordered
     .map(([day], index) => {
+      if (index !== 0 && index !== ordered.length - 1 && index % labelStep !== 0) return "";
       const [x] = point(index, 0);
       return `<text x="${x.toFixed(1)}" y="${height - 7}" text-anchor="middle">${escapeHtml(formatDateLabel(day))}</text>`;
     })
@@ -100,17 +107,19 @@ export function renderDailyComparisonChart(
   day: Date,
   timeZone: string,
   now = new Date(),
+  targetIds?: string[],
 ): string {
   const dayStart = zonedSlot(day.getUTCFullYear(), day.getUTCMonth() + 1, day.getUTCDate(), "00:00", timeZone);
   const dayEnd = new Date(dayStart.getTime() + 86_400_000);
   const yesterdayStart = new Date(dayStart.getTime() - 86_400_000);
   const isToday = now >= dayStart && now < dayEnd;
   const cutoff = isToday ? now : dayEnd;
-  const current = sampledViewTimeline(todayPosts, dayStart, cutoff);
+  const current = sampledViewTimeline(todayPosts, dayStart, cutoff, targetIds);
   const previous = sampledViewTimeline(
     yesterdayPosts,
     yesterdayStart,
     new Date(yesterdayStart.getTime() + (cutoff.getTime() - dayStart.getTime())),
+    targetIds,
   );
   if (current.length <= 1 && previous.length <= 1)
     return `<div class="metric-chart metric-chart--empty"><div class="metric-chart__legend"><span>Замеры появятся через час после публикации</span></div></div>`;
@@ -162,7 +171,7 @@ export function renderDailyComparisonChart(
 
 type TimelinePoint = { at: Date; value: number };
 
-function sampledViewTimeline(posts: PipelinePost[], start: Date, cutoff: Date): TimelinePoint[] {
+function sampledViewTimeline(posts: PipelinePost[], start: Date, cutoff: Date, targetIds?: string[]): TimelinePoint[] {
   const events: Array<{ at: Date; key: string; value: number }> = [];
   posts.forEach((post, postIndex) => {
     // The key identifies one (post, target) series so a later sample replaces
@@ -171,6 +180,7 @@ function sampledViewTimeline(posts: PipelinePost[], start: Date, cutoff: Date): 
     // the running total; the render-local index keeps them apart.
     const postKey = post.post_key ?? post.post_id ?? `index:${postIndex}`;
     for (const [target, metrics] of Object.entries(post.metrics ?? {})) {
+      if (targetIds && !targetIds.includes(target)) continue;
       for (const sample of metrics?.views?.samples ?? []) {
         const at = sample.sampled_at ? new Date(sample.sampled_at) : null;
         const value = Number(sample.value);

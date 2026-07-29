@@ -19,11 +19,12 @@ export function renderPipelineSection(
   timeZone = "Europe/Moscow",
   comparisonDays = periodDays,
   dayComparisonData: PipelineData | null = null,
+  options: { targetIds?: string[]; title?: string } = {},
 ): string {
   const [startOfPeriod, endOfPeriod] = rollingPeriodDates(weekOffset, periodDays, timeZone);
   const posts = data?.posts ?? [];
   const previousPosts = previousData?.posts ?? [];
-  const targetIds = ORDERED_TARGETS.map((target) => target.id);
+  const targetIds = options.targetIds ?? ORDERED_TARGETS.map((target) => target.id);
   const totals = metricTotals(posts, targetIds);
   const previousTotals =
     comparisonDays === 30
@@ -34,13 +35,13 @@ export function renderPipelineSection(
   const comparisonLabel = comparisonDays === 30 ? "vs медиана за 30д" : "vs прошлый период";
   const chart =
     periodDays === 1
-      ? renderDailyComparisonChart(posts, dayComparisonData?.posts ?? [], endOfPeriod, timeZone)
-      : renderWeeklyChart(posts, startOfPeriod, endOfPeriod);
+      ? renderDailyComparisonChart(posts, dayComparisonData?.posts ?? [], endOfPeriod, timeZone, new Date(), targetIds)
+      : renderWeeklyChart(posts, startOfPeriod, endOfPeriod, targetIds);
   return `
     <section class="pipeline-overview">
       <div class="kpi-row">${kpi("Просмотры", totals.views, previousTotals.views, comparisonLabel)}${kpi("Реакции", totals.likes, previousTotals.likes, comparisonLabel)}${kpi("Ответы", totals.replies, previousTotals.replies, comparisonLabel)}${kpi("Посты", posts.length, previousPostCount, comparisonLabel)}</div>
-      <div class="insights-row">${audience}<div class="chart-panel"><div class="section-kicker">${periodDays === 1 ? "Сегодня и вчера" : "Динамика"}</div>${chart}</div></div>
-      ${renderPublicationColumns(posts)}
+      <div class="insights-row">${audience}<div class="chart-panel"><div class="section-kicker">${options.title ?? (periodDays === 1 ? "Сегодня и вчера" : "Динамика")}</div>${chart}</div></div>
+      ${renderPublicationColumns(posts, targetIds)}
     </section>
   `;
 }

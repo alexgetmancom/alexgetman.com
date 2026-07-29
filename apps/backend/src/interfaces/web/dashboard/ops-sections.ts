@@ -44,12 +44,11 @@ export function renderAudienceSection(
       stars: metricNumber(data.stars),
     };
   });
-  return `<aside class="audience-panel"><div class="section-kicker">Аудитория</div><div class="audience-list">${rows
+  const allContent = `<span class="audience-line__label"><i class="audience-all-icon">∑</i>Все платформы</span><strong>Обзор</strong>`;
+  return `<aside class="audience-panel"><div class="section-kicker">Аудитория</div><div class="audience-list"><a class="audience-line audience-line--interactive${activePlatform ? "" : " audience-line--active"}" href="/command-center?period=${periodDays}&week_offset=${weekOffset}">${allContent}</a>${rows
     .map((item) => {
       const content = `<span class="audience-line__label"><i>${PLATFORM_ICONS[item.key.startsWith("threads") ? "threads" : item.key] ?? ""}</i>${escapeHtml(item.label)}</span><strong>${followersLabel(item)}</strong>`;
-      return item.key === "x"
-        ? `<a class="audience-line audience-line--interactive${activePlatform === "x" ? " audience-line--active" : ""}" href="/command-center?period=${periodDays}&week_offset=${weekOffset}&view=x">${content}</a>`
-        : `<div class="audience-line">${content}</div>`;
+      return `<a class="audience-line audience-line--interactive${activePlatform === item.key ? " audience-line--active" : ""}" href="/command-center?period=${periodDays}&week_offset=${weekOffset}&view=${item.key}">${content}</a>`;
     })
     .join("")}</div></aside>`;
 }

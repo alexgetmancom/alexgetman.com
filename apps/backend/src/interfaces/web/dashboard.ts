@@ -3,6 +3,7 @@ import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import type { StudioLocale } from "../../foundation/locale.js";
 import { operationsService } from "../../operations/service.js";
+import { renderCombinedSection } from "./dashboard/combined-section.js";
 import {
   renderAudienceSection,
   renderCredentialsSection,
@@ -13,12 +14,26 @@ import {
 import { renderPeriodControls, renderPipelineSection, rollingPeriodDates } from "./dashboard/pipeline-section.js";
 import { renderDashboardShell } from "./dashboard/shell.js";
 import { DASHBOARD_THEME_TOGGLE_HTML } from "./dashboard/theme.js";
+import type { PipelineData, PipelinePost } from "./dashboard/types.js";
 import { renderVideoSection } from "./dashboard/video-section.js";
 import { renderXSection } from "./dashboard/x-section.js";
 import { renderStudioSection } from "./studio.js";
 
 type DashboardTab = "posts" | "video" | "studio";
 type DashboardPanel = "overview" | "queue" | "health" | "repair";
+type AudienceView = "threads_ru" | "threads_en" | "telegram" | "x";
+
+const AUDIENCE_VIEWS: AudienceView[] = ["threads_ru", "threads_en", "telegram", "x"];
+const VIEW_TARGETS: Record<Exclude<AudienceView, "x">, string[]> = {
+  threads_ru: ["threads_ru"],
+  threads_en: ["threads_en"],
+  telegram: ["telegram"],
+};
+const VIEW_TITLES: Record<Exclude<AudienceView, "x">, string> = {
+  threads_ru: "Динамика Threads RU",
+  threads_en: "Динамика Threads EN",
+  telegram: "Динамика Telegram",
+};
 
 export function renderDashboard(
   config: BackendConfig,
@@ -53,7 +68,7 @@ export function renderDashboard(
   const panel: DashboardPanel =
     requestedPanel === "queue" || requestedPanel === "health" || requestedPanel === "repair" ? requestedPanel : "overview";
   const periodDays = [1, 7, 30, 90, 365].includes(Number(requestedPeriod)) ? Number(requestedPeriod) : 1;
-  const activeView = requestedView === "x" && showPosts ? "x" : undefined;
+  const activeView = showPosts && AUDIENCE_VIEWS.includes(requestedView as AudienceView) ? (requestedView as AudienceView) : undefined;
   const panelLink = (value: DashboardPanel) => `/command-center?tab=posts&panel=${value}${periodDays !== 1 ? `&period=${periodDays}` : ""}`;
   const overviewControls =
     panel === "overview" && showPosts ? renderPeriodControls(weekOffset, periodDays, config.TIMEZONE, activeView) : "";
@@ -84,6 +99,21 @@ export function renderDashboard(
           end,
         );
       }
+      if (!activeView) {
+        const [start, end] = rollingPeriodDates(weekOffset, periodDays, config.TIMEZONE);
+        return renderCombinedSection(
+          service.pipeline(weekOffset, periodDays),
+          service.pipeline(weekOffset + 1, periodDays),
+          xActivityDashboard(backendDb, weekOffset, periodDays, config.TIMEZONE),
+          xActivityDashboard(backendDb, weekOffset + 1, periodDays, config.TIMEZONE),
+          renderAudienceSection(backendDb, config, undefined, periodDays, weekOffset),
+          start,
+          end,
+          periodDays,
+          weekOffset,
+        );
+      }
+      const targetIds = VIEW_TARGETS[activeView];
       // A one-day period is shown against the preceding 30 days plus the
       // preceding single day; every longer period compares against itself.
       const comparison =
@@ -93,12 +123,13 @@ export function renderDashboard(
       return renderPipelineSection(
         weekOffset,
         periodDays,
-        service.pipeline(weekOffset, periodDays),
-        comparison.baseline,
-        renderAudienceSection(backendDb, config, undefined, periodDays, weekOffset),
+        filterPipeline(service.pipeline(weekOffset, periodDays), targetIds),
+        filterPipeline(comparison.baseline, targetIds),
+        renderAudienceSection(backendDb, config, activeView, periodDays, weekOffset),
         config.TIMEZONE,
         comparison.days,
-        comparison.previousDay,
+        filterPipeline(comparison.previousDay, targetIds),
+        { targetIds, title: VIEW_TITLES[activeView] },
       );
     }
     if (showVideo) return renderVideoSection(backendDb);
@@ -110,6 +141,17 @@ export function renderDashboard(
     <nav class="dashboard-tabs">${config.studio.modules.text_posting ? `<a class="${panel === "overview" && activeTab === "posts" ? "active" : ""}" href="${panelLink("overview")}">Обзор</a>` : ""}<a class="${panel === "queue" ? "active" : ""}" href="${panelLink("queue")}">Очередь</a><a class="${panel === "health" ? "active" : ""}" href="${panelLink("health")}">Health</a><a class="${panel === "repair" ? "active" : ""}" href="${panelLink("repair")}">Repair</a>${config.studio.modules.video_posting ? `<a class="${panel === "overview" && activeTab === "video" ? "active" : ""}" href="/command-center?tab=video">Видео</a>` : ""}${studioActorId ? `<a class="${panel === "overview" && activeTab === "studio" ? "active" : ""}" href="/command-center?tab=studio">Студия</a>` : ""}<span class="dashboard-tabs__end">${overviewControls}${DASHBOARD_THEME_TOGGLE_HTML}</span></nav>
     <section id="overview" class="overview">${content}</section>`;
   return renderDashboardShell(body);
+}
+
+function filterPipeline(data: PipelineData | null, targetIds: string[]): PipelineData | null {
+  if (!data) return null;
+  return { ...data, posts: (data.posts ?? []).filter((post) => targetIds.some((target) => postHasTarget(post, target))) };
+}
+
+function postHasTarget(post: PipelinePost, target: string): boolean {
+  if (post.targets?.[target]?.status === "published") return true;
+  if (target === "telegram" && post.telegram_url) return true;
+  return Boolean(post.metrics?.[target]);
 }
 
 export function renderCommandCenterLogin(error = false): string {

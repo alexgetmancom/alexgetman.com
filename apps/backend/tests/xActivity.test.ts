@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { importXAnalyticsCsv } from "../src/analytics/import-x-csv.js";
 import { openBackendDb } from "../src/db/client.js";
 import { xActivityItems, xActivityMetricSnapshots } from "../src/db/schema.js";
+import { renderCombinedSection } from "../src/interfaces/web/dashboard/combined-section.js";
 import { renderXSection } from "../src/interfaces/web/dashboard/x-section.js";
 
 const HEADERS = [
@@ -91,5 +92,73 @@ describe("X Activity", () => {
     expect(html).toContain("Последние публикации");
     expect(html).toContain("Ответ");
     expect(html).toContain("Открыть в X");
+  });
+
+  it("adds only X activity that is not already represented in the editorial totals", () => {
+    const editorial = {
+      posts: [
+        {
+          post_key: "post:1",
+          date: "2026-07-29T10:00:00.000Z",
+          text_en: "Editorial post",
+          targets: {
+            telegram: { status: "published" },
+            x: { status: "published" },
+          },
+          metrics: {
+            telegram: {
+              views: { value: 100 },
+              likes: { value: 4 },
+              replies: { value: 2 },
+              reposts: { value: 1 },
+            },
+            x: {
+              views: { value: 50 },
+              likes: { value: 2 },
+              replies: { value: 1 },
+              reposts: { value: 1 },
+            },
+          },
+        },
+      ],
+    };
+    const items = [
+      {
+        xPostId: "100",
+        kind: "standalone" as const,
+        publishedAt: "2026-07-29T10:00:00.000Z",
+        text: "Editorial post",
+        url: "https://x.com/test/status/100",
+        linkedPostKey: "post:1",
+        metrics: { views: 50, interactions: 8, replies: 1 },
+      },
+      {
+        xPostId: "101",
+        kind: "reply" as const,
+        publishedAt: "2026-07-29T11:00:00.000Z",
+        text: "@friend Useful answer",
+        url: "https://x.com/test/status/101",
+        linkedPostKey: null,
+        metrics: { views: 500, interactions: 40, replies: 3 },
+      },
+    ];
+
+    const html = renderCombinedSection(
+      editorial,
+      { posts: [] },
+      items,
+      [],
+      "<aside>Audience</aside>",
+      new Date("2026-07-29"),
+      new Date("2026-07-29"),
+      1,
+      0,
+    );
+
+    expect(html).toContain("<strong>650</strong>");
+    expect(html).toContain("150 основные · +500 X Activity");
+    expect(html).toContain("1 основных · +1 в X");
+    expect(html).toContain("Лучшее в X");
+    expect(html).toContain("Смотреть всё в X");
   });
 });
