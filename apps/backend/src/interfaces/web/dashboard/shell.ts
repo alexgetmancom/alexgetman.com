@@ -144,8 +144,8 @@ export function renderDashboardShell(body: string): string {
     .kpi-delta { display:block; margin-top:8px; color:var(--accent); font-size:15px; font-style:normal; font-weight:650; } .kpi-delta--down { color:var(--danger-strong); } .kpi-delta i { margin-left:7px; color:var(--text-muted); font-style:normal; font-weight:400; }
     .insights-row { display:grid; grid-template-columns:minmax(210px,.31fr) minmax(0,.69fr); gap:34px; padding-bottom:22px; border-bottom:1px solid var(--border-soft); }
     .audience-panel,.chart-panel { padding:0; background:transparent; border:0; }
-    .audience-list { margin-top:10px; } .audience-line { display:flex; align-items:center; justify-content:space-between; padding:9px 0; border-bottom:1px solid var(--border-soft); font-size:17px; }
-    .audience-line__label { display:inline-flex; align-items:center; gap:12px; } .audience-line__label i { display:inline-flex; width:24px; height:24px; align-items:center; justify-content:center; color:var(--text-main); font-style:normal; } .audience-line__label svg { width:22px; height:22px; }
+    .audience-list { margin-top:10px; } .audience-line { display:flex; align-items:center; justify-content:space-between; padding:9px 10px; border-bottom:1px solid var(--border-soft); font-size:17px; }
+    .audience-line__label { display:inline-flex; align-items:center; gap:12px; } .audience-line__label i { display:inline-flex; width:24px; height:24px; flex:0 0 24px; align-items:center; justify-content:center; color:var(--text-main); font-style:normal; } .audience-line__label svg { display:block; width:24px; height:24px; }
     .audience-line span { color:var(--text-main); } .audience-line strong { color:var(--text-main); font-size:18px; font-weight:600; }
     .audience-line--interactive { color:inherit; text-decoration:none; transition:background .14s ease,box-shadow .14s ease; }
     .audience-line--interactive:hover { background:var(--surface-raised); }
