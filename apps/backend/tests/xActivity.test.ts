@@ -152,13 +152,15 @@ describe("X Activity", () => {
       new Date("2026-07-29"),
       new Date("2026-07-29"),
       1,
-      0,
+      "Europe/Moscow",
+      { posts: [] },
     );
 
     expect(html).toContain("<strong>650</strong>");
     expect(html).toContain("150 основные · +500 X Activity");
     expect(html).toContain("1 основных · +1 в X");
-    expect(html).toContain("Лучшее в X");
-    expect(html).toContain("Смотреть всё в X");
+    expect(html).toContain("Последние публикации");
+    expect(html).toContain("Сегодня и вчера");
+    expect(html).toContain("vs медиана за 30д");
   });
 });

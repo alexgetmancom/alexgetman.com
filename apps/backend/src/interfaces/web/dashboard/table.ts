@@ -31,11 +31,6 @@ export function renderPublicationColumns(posts: PipelinePost[], targetIds: strin
   ].join("");
 }
 
-export function renderCompactBestPosts(posts: PipelinePost[], targetIds: string[] = ORDERED_TARGETS.map((target) => target.id)): string {
-  const ranked = [...posts].sort((left, right) => total(right, targetIds).views - total(left, targetIds).views).slice(0, 3);
-  return ranked.length ? ranked.map((post, index) => renderBestPost(post, index + 1, targetIds)).join("") : empty(NO_POSTS);
-}
-
 function renderBestPost(post: PipelinePost, rank: number, targetIds: string[]): string {
   const metrics = total(post, targetIds);
   const title = escapeHtml(shortPipelineText(post.text_ru || post.text_en || "Без текста", 10));

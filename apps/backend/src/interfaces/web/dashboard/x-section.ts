@@ -33,11 +33,6 @@ export function renderXSection(
   </section>`;
 }
 
-export function renderCompactXBest(items: XActivityDashboardItem[]): string {
-  const ranked = [...items].sort((left, right) => metric(right, "views") - metric(left, "views")).slice(0, 3);
-  return ranked.length ? ranked.map(renderBest).join("") : empty();
-}
-
 function renderXPublicationColumns(items: XActivityDashboardItem[]): string {
   const ranked = [...items].sort((left, right) => metric(right, "views") - metric(left, "views")).slice(0, 3);
   return `<div class="publication-columns">

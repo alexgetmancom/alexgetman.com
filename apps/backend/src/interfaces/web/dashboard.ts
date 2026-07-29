@@ -101,16 +101,23 @@ export function renderDashboard(
       }
       if (!activeView) {
         const [start, end] = rollingPeriodDates(weekOffset, periodDays, config.TIMEZONE);
+        const comparisonPipeline =
+          periodDays === 1 ? service.pipeline(0, 30, 0, weekOffset + 1) : service.pipeline(weekOffset + 1, periodDays);
+        const comparisonX =
+          periodDays === 1
+            ? xActivityDashboard(backendDb, (weekOffset + 1) / 30, 30, config.TIMEZONE)
+            : xActivityDashboard(backendDb, weekOffset + 1, periodDays, config.TIMEZONE);
         return renderCombinedSection(
           service.pipeline(weekOffset, periodDays),
-          service.pipeline(weekOffset + 1, periodDays),
+          comparisonPipeline,
           xActivityDashboard(backendDb, weekOffset, periodDays, config.TIMEZONE),
-          xActivityDashboard(backendDb, weekOffset + 1, periodDays, config.TIMEZONE),
+          comparisonX,
           renderAudienceSection(backendDb, config, undefined, periodDays, weekOffset),
           start,
           end,
           periodDays,
-          weekOffset,
+          config.TIMEZONE,
+          periodDays === 1 ? service.pipeline(0, 1, 0, weekOffset + 1) : null,
         );
       }
       const targetIds = VIEW_TARGETS[activeView];

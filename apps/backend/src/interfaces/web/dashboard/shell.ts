@@ -152,13 +152,9 @@ export function renderDashboardShell(body: string): string {
     .audience-line--active { box-shadow:inset 3px 0 0 var(--accent); background:var(--surface-sunken); padding-left:10px; padding-right:10px; }
     .audience-all-icon { font-size:18px; font-weight:700; }
     .publication-columns { display:grid; grid-template-columns:minmax(340px,.3fr) minmax(0,.7fr); gap:30px; padding-top:20px; }
-    .compact-rankings { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:42px; padding-top:20px; }
-    .compact-rankings__x { padding-left:42px; border-left:1px solid var(--border-soft); }
-    .section-more { display:block; padding-top:14px; color:var(--accent); font-size:14px; font-weight:650; text-align:center; text-decoration:none; }
     .best-posts,.recent-posts { min-width:0; padding:0; border:0; border-radius:0; background:transparent; } .recent-posts { padding-left:34px; border-left:1px solid var(--border-soft); }
     .best-post { display:grid; grid-template-columns:39px minmax(0,1fr) 92px; gap:13px; align-items:start; padding:14px 0; border-bottom:1px solid var(--border-soft); color:inherit; text-decoration:none; transition:background .14s ease; }
     a.best-post:hover { background:var(--surface-raised); }
-    .compact-rankings .best-post { margin:0; padding-left:8px; padding-right:8px; border-bottom:0; border-radius:6px; }
     .post-rank { color:var(--accent); font-size:31px; line-height:1; font-weight:500; padding-top:1px; }
     .best-post__title { color:var(--text-main); font-size:16px; line-height:1.4; } .best-post__stats { text-align:right; white-space:nowrap; } .best-post__stats strong { display:block; color:var(--text-header); font-size:18px; font-weight:600; } .best-post__stats small { display:block; color:var(--text-muted); font-size:12px; } .best-post__stats em { display:block; margin-top:8px; color:var(--danger-strong); font-size:14px; font-style:normal; }
     .empty-state { color:var(--text-muted); font-size:14px; }
@@ -190,8 +186,6 @@ export function renderDashboardShell(body: string): string {
      * than letting the list overflow. */
     @media (max-width: 1180px) {
       .insights-row,.publication-columns { grid-template-columns:1fr; gap:28px; }
-      .compact-rankings { gap:28px; }
-      .compact-rankings__x { padding-left:28px; }
       .recent-posts { padding-left:0; border-left:0; }
     }
 
@@ -205,7 +199,7 @@ export function renderDashboardShell(body: string): string {
       .dashboard-tabs { gap:10px; } .dashboard-tabs__end { width:100%; margin-left:0; align-items:flex-start; justify-content:space-between; gap:10px; padding-top:2px; } .dashboard-nav__controls { width:calc(100% - 32px); flex-wrap:wrap; gap:8px; padding-top:2px; } .period-range { width:100%; justify-content:center; } .kpi-row { grid-template-columns:repeat(2,1fr); }
       .kpi-row > div { padding-left:16px; padding-right:16px; } .kpi-breakdown { white-space:normal; }
       .kpi-row > div:nth-child(3) { border-left:0; border-top:1px solid var(--border-soft); } .kpi-row > div:nth-child(4) { border-top:1px solid var(--border-soft); }
-      .insights-row,.publication-columns,.compact-rankings { grid-template-columns:1fr; gap:28px; } .compact-rankings__x { padding-left:0; border-left:0; } .recent-posts { padding-left:0; border-left:0; } .recent-posts__header { grid-template-columns:minmax(0,1fr) auto; } .recent-posts__header > span:nth-last-child(-n+2) { display:none; } .post-detail__summary { grid-template-columns:minmax(0,1fr) auto; } .post-detail__summary > span:nth-last-child(-n+2) { display:none; } .post-detail__media { display:none; } .post-platforms,.post-detail__content { padding-left:0; } .post-platforms__grid { grid-template-columns:1fr; } .post-detail__content { grid-template-columns:1fr; } .post-preview { display:none; }
+      .insights-row,.publication-columns { grid-template-columns:1fr; gap:28px; } .recent-posts { padding-left:0; border-left:0; } .recent-posts__header { grid-template-columns:minmax(0,1fr) auto; } .recent-posts__header > span:nth-last-child(-n+2) { display:none; } .post-detail__summary { grid-template-columns:minmax(0,1fr) auto; } .post-detail__summary > span:nth-last-child(-n+2) { display:none; } .post-detail__media { display:none; } .post-platforms,.post-detail__content { padding-left:0; } .post-platforms__grid { grid-template-columns:1fr; } .post-detail__content { grid-template-columns:1fr; } .post-preview { display:none; }
     }
   </style>
 </head>
