@@ -16,6 +16,7 @@ export async function backfillTextStoryCards(
   config: BackendConfig,
   input: string,
   apply: boolean,
+  force = false,
 ): Promise<Record<string, unknown>> {
   const ref = resolvePublicationRef(backendDb, input);
   if (!ref?.postId) throw new Error(`publication not found: ${input}`);
@@ -41,7 +42,11 @@ export async function backfillTextStoryCards(
     .where(and(eq(postLocales.postId, ref.postId), eq(postLocales.siteEnabled, 1)))
     .all();
   const plan = locales
-    .filter((locale) => mediaCount(locale.mediaJson) === 0 && (locale.locale === "ru" || locale.locale === "en"))
+    .filter(
+      (locale) =>
+        (mediaCount(locale.mediaJson) === 0 || (force && generatedMediaOnly(locale.mediaJson))) &&
+        (locale.locale === "ru" || locale.locale === "en"),
+    )
     .map(
       (locale): LocalePlan => ({
         locale: locale.locale as "ru" | "en",
@@ -54,6 +59,7 @@ export async function backfillTextStoryCards(
     post_key: ref.postKey,
     draft_id: publication.draftId,
     count: plan.length,
+    force,
     plan,
   };
   if (!apply || plan.length === 0) return { ok: true, applied: false, ...base };
@@ -132,6 +138,15 @@ function mediaCount(value: unknown): number {
     return Array.isArray(parsed) ? parsed.length : 0;
   } catch {
     return 0;
+  }
+}
+
+function generatedMediaOnly(value: unknown): boolean {
+  try {
+    const parsed = typeof value === "string" ? JSON.parse(value) : value;
+    return Array.isArray(parsed) && parsed.length > 0 && parsed.every((item) => jsonObject(item).role === "text_story_card");
+  } catch {
+    return false;
   }
 }
 

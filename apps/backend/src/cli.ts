@@ -76,7 +76,7 @@ function printHelp(): void {
   retry --ref post:1 [--target x] [--locale ru|en]
   site-media-images [--apply --max-upload-kbps 6250]
   site-media-deduplicate [--apply]
-  story-card-backfill --ref post:1 [--apply]`);
+  story-card-backfill --ref post:1 [--apply] [--force]`);
 }
 
 async function main(): Promise<void> {
@@ -212,7 +212,13 @@ async function main(): Promise<void> {
     } else if (args.command === "site-media-deduplicate") {
       console.log(JSON.stringify(await deduplicateSiteMedia(config, args.flags.has("apply")), null, 2));
     } else if (args.command === "story-card-backfill") {
-      console.log(JSON.stringify(await backfillTextStoryCards(backendDb, config, required(args, "ref"), args.flags.has("apply")), null, 2));
+      console.log(
+        JSON.stringify(
+          await backfillTextStoryCards(backendDb, config, required(args, "ref"), args.flags.has("apply"), args.flags.has("force")),
+          null,
+          2,
+        ),
+      );
     } else if (republishAliases.has(args.command)) {
       const localeValue = args.values.get("locale");
       if (localeValue && localeValue !== "ru" && localeValue !== "en") throw new Error("--locale must be ru or en");

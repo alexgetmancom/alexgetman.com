@@ -2,12 +2,19 @@ import type { StoryCardCopy } from "./copy.js";
 
 export const STORY_CARD_WIDTH = 1080;
 export const STORY_CARD_HEIGHT = 1920;
+export const STORY_CARD_EMOJI_LEFT = 108;
+export const STORY_CARD_EMOJI_SIZE = 58;
+
+export function storyCardFirstBaseline(copy: StoryCardCopy): number {
+  const fontSize = 74;
+  const lineHeight = 94;
+  return 1020 - ((copy.lines.length - 1) * lineHeight) / 2 + fontSize * 0.25;
+}
 
 export function storyCardOverlaySvg(copy: StoryCardCopy): string {
   const fontSize = 74;
   const lineHeight = 94;
-  const blockCenter = 1020;
-  const firstBaseline = blockCenter - ((copy.lines.length - 1) * lineHeight) / 2 + fontSize * 0.25;
+  const firstBaseline = storyCardFirstBaseline(copy);
   const text = copy.lines
     .map(
       (line, index) =>
@@ -16,7 +23,6 @@ export function storyCardOverlaySvg(copy: StoryCardCopy): string {
         }">${escapeXml(line)}</text>`,
     )
     .join("");
-  const emoji = copy.emoji ? `<text x="104" y="${firstBaseline - 1}" class="emoji" font-size="62">${escapeXml(copy.emoji)}</text>` : "";
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${STORY_CARD_WIDTH}" height="${STORY_CARD_HEIGHT}">
   <defs>
     <filter id="glow" x="-15%" y="-25%" width="130%" height="150%">
@@ -28,12 +34,10 @@ export function storyCardOverlaySvg(copy: StoryCardCopy): string {
     <style>
       text { font-family: Manrope, sans-serif; fill: #f3eee4; }
       .copy { font-size: ${fontSize}px; letter-spacing: -1.15px; }
-      .emoji { font-family: "Noto Color Emoji"; }
     </style>
   </defs>
   <text x="540" y="150" text-anchor="middle" font-size="29" font-weight="430"
         letter-spacing="10" fill-opacity=".8" filter="url(#glow)">alex getman</text>
-  ${emoji}
   <g filter="url(#glow)">${text}</g>
 </svg>`;
 }

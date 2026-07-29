@@ -63,6 +63,8 @@ describe("text Story cards", () => {
     expect(media?.ru.role).toBe("text_story_card");
     const metadata = await sharp(String(media?.ru.localPath)).metadata();
     expect(metadata).toMatchObject({ width: 1080, height: 1920, format: "jpeg" });
+    const emojiStats = await sharp(String(media?.ru.localPath)).extract({ left: 108, top: 979, width: 58, height: 58 }).stats();
+    expect(emojiStats.channels[0]?.max).toBeGreaterThan(emojiStats.channels[1]?.max ?? 255);
   }, 20_000);
 
   it("keeps generated cards out of ordinary targets and gates all Story targets with one decision", () => {
@@ -162,5 +164,8 @@ describe("text Story cards", () => {
     );
     expect(backendDb.db.select().from(publishJobs).all()).toHaveLength(socialJobsBefore);
     expect(backendDb.db.select().from(siteJobs).where(eq(siteJobs.postId, postId)).all().at(-1)?.reason).toBe("text_story_card_backfill");
+
+    const forced = await backfillTextStoryCards(backendDb, config, `post:${postId}`, false, true);
+    expect(forced).toMatchObject({ applied: false, count: 2, force: true });
   }, 20_000);
 });

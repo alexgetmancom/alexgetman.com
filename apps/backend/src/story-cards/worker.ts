@@ -117,6 +117,7 @@ async function renderStoryCard(config: BackendConfig, card: ClaimedCard, output:
     stdin: Buffer.from(
       JSON.stringify({
         backgroundPath: path.join(config.STORY_CARD_ASSETS_DIR, "strata-master-background.png"),
+        assetsDir: config.STORY_CARD_ASSETS_DIR,
         outputPath: output,
         copy,
       }),
