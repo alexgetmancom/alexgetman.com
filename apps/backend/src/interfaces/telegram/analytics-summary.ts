@@ -7,6 +7,9 @@ import { analyticsSync } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { t } from "../../foundation/i18n/index.js";
 import { log } from "../../foundation/logger.js";
+import { settingsService } from "../../studio/services/settings.js";
+
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
 /** Telegram-only weekly delivery of an already computed Analytics report. */
 export async function sendWeeklyAnalyticsSummary(
@@ -15,7 +18,7 @@ export async function sendWeeklyAnalyticsSummary(
   bot: Bot | null,
   now = new Date(),
 ): Promise<boolean> {
-  if (!bot || !config.studio.modules.analytics || !config.studio.modules.video_posting) return false;
+  if (!bot || !config.studio.modules.analytics) return false;
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat("en-CA", {
       timeZone: "Europe/Moscow",
@@ -30,15 +33,17 @@ export async function sendWeeklyAnalyticsSummary(
       .filter((part) => part.type !== "literal")
       .map((part) => [part.type, part.value]),
   ) as Record<string, string>;
-  if (parts.weekday !== "Sun" || Number(parts.hour) < 21) return false;
+  if (Number(parts.hour) < 21) return false;
+  const weekday = WEEKDAYS.indexOf(parts.weekday as (typeof WEEKDAYS)[number]);
+  if (weekday < 0) return false;
+  const settings = settingsService(backendDb).weeklyDigest();
+  if (!settings.enabled || settings.weekday !== weekday) return false;
   const key = `weekly_summary:${parts.year}-${parts.month}-${parts.day}`;
   if (backendDb.db.select().from(analyticsSync).where(eq(analyticsSync.source, key)).get()) return false;
   const weekTitle = `📊 *${t("ru", "report.stats-for", { period: t("ru", "report.period-days", { days: 7 }) })}*`;
   const report = creatorDashboard(backendDb, config, 7).text.replace(weekTitle, `📊 *${t("ru", "weekly.digest")}*`);
-  // Claim the week before sending, and treat one unreachable admin as that
-  // admin's problem: an unguarded loop that marked the week only after the last
-  // send meant a single 403 (bot blocked) re-sent the digest to everyone who had
-  // already received it, once per tick, until the block was lifted.
+  // Claim this Studio before sending so one unreachable chat cannot cause
+  // repeated delivery attempts to the other administrators on every worker tick.
   markSynced(backendDb, key);
   for (const actorId of config.ADMIN_IDS) {
     try {

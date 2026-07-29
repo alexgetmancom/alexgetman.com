@@ -260,6 +260,13 @@
       "when": 1785975260000,
       "tag": "0036_reconcile_attempt_budget",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "6",
+      "when": 1785975320000,
+      "tag": "0037_weekly_digest_settings",
+      "breakpoints": true
     }
   ]
 }

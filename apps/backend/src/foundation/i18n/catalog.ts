@@ -38,6 +38,7 @@ const en = {
   "settings.youtube-signature": "▶️ YouTube signature",
   "settings.notifications": "🔔 Notifications",
   "settings.publication-notifications": "🔔 Publication notifications",
+  "settings.weekly-digest": "📊 Weekly digest",
   "settings.language": "🌐 Language",
   "settings.channels": "🔌 Channels",
   // Post modes
@@ -200,6 +201,10 @@ const en = {
     "🔔 *Publication notifications*\n\nReminder before scheduled publishing: *{reminders}* · *{minutes} min*\nCompletion notification: *{completion}*\n\nThese are Studio settings. Telegram only delivers them.",
   "settings.reminder-label": "Reminder",
   "settings.completion-label": "Completion",
+  "settings.weekly-digest-enabled": "Weekly digest",
+  "settings.weekly-digest-day-set": "Digest day: {day}",
+  "settings.weekly-digest-body":
+    "📊 *Weekly digest*\n\nStatus: *{status}*\nDelivery: *{day}, after 21:00*\n\nThe report covers the previous 7 days and follows the modules enabled for this Studio.",
   "settings.back-to-settings": "← Settings",
   "settings.youtube-body": "▶️ *YouTube signature*\n\nThis text is appended to every YouTube description.\n\n*Current:*\n{signature}",
   "settings.youtube-not-set": "Not set",
@@ -407,6 +412,7 @@ const en = {
   "video.no-audio": "no audio",
   "video.fps-unknown": "FPS unknown",
   "err.reminder-range": "Reminder interval must be between 1 and 60 minutes.",
+  "err.weekday-range": "Digest weekday must be between 0 and 6.",
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -436,6 +442,7 @@ const ru = {
   "settings.youtube-signature": "▶️ Подпись YouTube",
   "settings.notifications": "🔔 Уведомления",
   "settings.publication-notifications": "🔔 Уведомления о публикациях",
+  "settings.weekly-digest": "📊 Недельный дайджест",
   "settings.language": "🌐 Язык",
   "settings.channels": "🔌 Каналы",
   // Post modes
@@ -598,6 +605,10 @@ const ru = {
     "🔔 *Уведомления о публикациях*\n\nНапоминание перед отложенной публикацией: *{reminders}* · *{minutes} мин.*\nУведомление о завершении: *{completion}*\n\nЭто настройки Studio. Telegram только доставляет их.",
   "settings.reminder-label": "Напоминание",
   "settings.completion-label": "Завершение",
+  "settings.weekly-digest-enabled": "Недельный дайджест",
+  "settings.weekly-digest-day-set": "День дайджеста: {day}",
+  "settings.weekly-digest-body":
+    "📊 *Недельный дайджест*\n\nСтатус: *{status}*\nОтправка: *{day}, после 21:00*\n\nОтчёт охватывает последние 7 дней и учитывает модули, включённые в этой Studio.",
   "settings.back-to-settings": "← К настройкам",
   "settings.youtube-body":
     "▶️ *Подпись YouTube*\n\nЭтот текст автоматически добавляется в конец каждого YouTube-описания.\n\n*Сейчас:*\n{signature}",
@@ -806,6 +817,7 @@ const ru = {
   "video.no-audio": "без звука",
   "video.fps-unknown": "FPS неизвестен",
   "err.reminder-range": "Интервал напоминания должен быть от 1 до 60 минут.",
+  "err.weekday-range": "День дайджеста должен быть числом от 0 до 6.",
 } satisfies Record<MessageKey, string>;
 
 export const catalog: Record<UiLocale, Record<MessageKey, string>> = { en, ru };

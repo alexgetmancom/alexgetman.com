@@ -10,6 +10,14 @@ export const studioNotificationSettings = sqliteTable("studio_notification_setti
   updatedAt: text().notNull(),
 });
 
+/** One weekly digest policy per Studio instance, shared by every administrator. */
+export const studioWeeklyDigestSettings = sqliteTable("studio_weekly_digest_settings", {
+  id: integer().primaryKey().default(1),
+  enabled: integer().notNull().default(1),
+  weekday: integer().notNull().default(0),
+  updatedAt: text().notNull(),
+});
+
 /** Durable, interface-neutral scheduled notification work. */
 export const studioNotificationJobs = sqliteTable(
   "studio_notification_jobs",

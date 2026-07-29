@@ -1,3 +1,4 @@
+import { importManualAnalytics } from "./analytics/import-manual-analytics.js";
 import { importXAnalyticsCsv } from "./analytics/import-x-csv.js";
 import { baselineDrizzleMigrations, migrationStatus, openBackendDb } from "./db/client.js";
 import { loadConfig } from "./foundation/config.js";
@@ -59,6 +60,7 @@ function printHelp(): void {
   metrics-backfill [--targets a,b] [--refs post:1,post:2] [--from ISO] [--to ISO] [--apply] [--reset-counts]
   publication-repair [--apply]
   import-x-analytics --file PATH --sampled-at ISO
+  import-manual-analytics [--x-file PATH] [--threads-ru-followers N] [--threads-en-followers N] [--sampled-at ISO]
   capabilities [--db PATH]
   doctor
   capability-record --test T01 --message-id 123 [--notes TEXT]
@@ -165,6 +167,22 @@ async function main(): Promise<void> {
       console.log(JSON.stringify({ count: plan.length, applied, plan }, null, 2));
     } else if (args.command === "import-x-analytics") {
       console.log(JSON.stringify(importXAnalyticsCsv(backendDb, required(args, "file"), required(args, "sampled-at")), null, 2));
+    } else if (args.command === "import-manual-analytics") {
+      const xFile = args.values.get("x-file");
+      const threadsRuFollowers = args.values.get("threads-ru-followers");
+      const threadsEnFollowers = args.values.get("threads-en-followers");
+      console.log(
+        JSON.stringify(
+          importManualAnalytics(backendDb, {
+            sampledAt: args.values.get("sampled-at") ?? new Date().toISOString(),
+            ...(xFile ? { xFile } : {}),
+            ...(threadsRuFollowers == null ? {} : { threadsRuFollowers: Number(threadsRuFollowers) }),
+            ...(threadsEnFollowers == null ? {} : { threadsEnFollowers: Number(threadsEnFollowers) }),
+          }),
+          null,
+          2,
+        ),
+      );
     } else if (args.command === "capabilities") {
       console.log(JSON.stringify(capabilitySummary(backendDb), null, 2));
     } else if (args.command === "capability-record") {

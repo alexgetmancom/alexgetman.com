@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { fixUrlSlashes } from "../../content/message.js";
 import type { BackendDb } from "../../db/client.js";
-import { botSettings, botUiSettings, studioNotificationSettings } from "../../db/schema.js";
+import { botSettings, botUiSettings, studioNotificationSettings, studioWeeklyDigestSettings } from "../../db/schema.js";
 import { StudioError } from "../../foundation/errors.js";
 import type { StudioActorId, StudioLocale } from "../contracts.js";
 
@@ -16,11 +16,35 @@ function readNotifications(backendDb: BackendDb, actorId: StudioActorId) {
   };
 }
 
+function readWeeklyDigest(backendDb: BackendDb) {
+  const row = backendDb.db.select().from(studioWeeklyDigestSettings).where(eq(studioWeeklyDigestSettings.id, 1)).get();
+  return { enabled: row?.enabled !== 0, weekday: row?.weekday ?? 0 };
+}
+
 /** Owner settings commands used by Telegram today and any future Studio adapter. */
 export function settingsService(backendDb: BackendDb) {
   return {
     notifications(actorId: StudioActorId) {
       return readNotifications(backendDb, actorId);
+    },
+    weeklyDigest() {
+      return readWeeklyDigest(backendDb);
+    },
+    setWeeklyDigest(input: Partial<{ enabled: boolean; weekday: number }>) {
+      if (input.weekday != null && (!Number.isInteger(input.weekday) || input.weekday < 0 || input.weekday > 6))
+        throw new StudioError("err.weekday-range");
+      const current = readWeeklyDigest(backendDb);
+      const next = { enabled: input.enabled ?? current.enabled, weekday: input.weekday ?? current.weekday };
+      const now = new Date().toISOString();
+      backendDb.db
+        .insert(studioWeeklyDigestSettings)
+        .values({ id: 1, enabled: Number(next.enabled), weekday: next.weekday, updatedAt: now })
+        .onConflictDoUpdate({
+          target: studioWeeklyDigestSettings.id,
+          set: { enabled: Number(next.enabled), weekday: next.weekday, updatedAt: now },
+        })
+        .run();
+      return next;
     },
     setNotifications(
       actorId: StudioActorId,

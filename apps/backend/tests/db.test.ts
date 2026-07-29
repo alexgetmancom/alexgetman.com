@@ -79,6 +79,7 @@ describe("openBackendDb", () => {
         "site_jobs",
         "site_source_items",
         "studio_media_assets",
+        "studio_weekly_digest_settings",
         "worker_state",
       ])
         expect(tables, table).toContain(table);
@@ -154,6 +155,7 @@ describe("openBackendDb", () => {
     fixture.exec("ALTER TABLE post_targets DROP COLUMN confirmation_source");
     fixture.exec("ALTER TABLE post_targets DROP COLUMN verified_at");
     fixture.exec("ALTER TABLE publish_jobs DROP COLUMN reconcile_attempt_count");
+    fixture.exec("DROP TABLE studio_weekly_digest_settings");
     fixture.close();
 
     const legacy = new Database(dbPath) as unknown as Parameters<typeof baselineDrizzleMigrations>[0];

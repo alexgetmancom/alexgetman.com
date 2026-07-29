@@ -13,6 +13,7 @@ import { NOTIFICATIONS_MENU_ID, notificationsInboxText } from "./notifications-s
 
 export const SETTINGS_MENU_ID = "settings-menu";
 const NOTIFICATION_SETTINGS_MENU_ID = "settings-notifications";
+const WEEKLY_DIGEST_MENU_ID = "settings-weekly-digest";
 const YOUTUBE_SIGNATURE_MENU_ID = "settings-youtube";
 const LANGUAGE_MENU_ID = "settings-language";
 const CHANNELS_MENU_ID = "settings-channels";
@@ -111,6 +112,31 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
     });
   });
 
+  const weeklyDigest = new Menu<Context>(WEEKLY_DIGEST_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
+    const actorId = Number(ctx.from?.id);
+    const settings = studioServices(backendDb, config).settings.weeklyDigest();
+    const locale = botLocale(backendDb, actorId);
+    range
+      .text(`${settings.enabled ? "✅" : "◻️"} ${t(locale, "settings.weekly-digest-enabled")}`, async (ctx) => {
+        studioServices(backendDb, config).settings.setWeeklyDigest({ enabled: !settings.enabled });
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(weeklyDigestText(backendDb, config, locale), { parse_mode: "Markdown" });
+      })
+      .row();
+    for (const weekday of [1, 2, 3, 4, 5, 6, 0] as const) {
+      range.text(`${settings.weekday === weekday ? "● " : ""}${weekdayLabel(locale, weekday)}`, async (ctx) => {
+        studioServices(backendDb, config).settings.setWeeklyDigest({ weekday });
+        await ctx.answerCallbackQuery({ text: t(locale, "settings.weekly-digest-day-set", { day: weekdayLabel(locale, weekday) }) });
+        await ctx.editMessageText(weeklyDigestText(backendDb, config, locale), { parse_mode: "Markdown" });
+      });
+      if (weekday === 4) range.row();
+    }
+    range.row().back(t(locale, "settings.back-to-settings"), async (ctx) => {
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(t(locale, "settings.title"));
+    });
+  });
+
   const youtubeSignature = new Menu<Context>(YOUTUBE_SIGNATURE_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
     const actorId = Number(ctx.from?.id);
     const locale = botLocale(backendDb, actorId);
@@ -171,6 +197,11 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
         await ctx.editMessageText(notificationSettingsText(backendDb, config, actorId, locale), { parse_mode: "Markdown" });
       })
       .row()
+      .submenu(t(locale, "settings.weekly-digest"), WEEKLY_DIGEST_MENU_ID, async (ctx) => {
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(weeklyDigestText(backendDb, config, locale), { parse_mode: "Markdown" });
+      })
+      .row()
       .submenu(t(locale, "settings.language"), LANGUAGE_MENU_ID, async (ctx) => {
         await ctx.answerCallbackQuery();
         await ctx.editMessageText(t(locale, "settings.language-title"));
@@ -182,6 +213,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
       });
   });
   settings.register(notificationSettings);
+  settings.register(weeklyDigest);
   settings.register(youtubeSignature);
   settings.register(language);
   settings.register(channels);
@@ -214,6 +246,19 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
     await ctx.editMessageText(t(locale, "settings.title"));
     await ctx.reply(t(locale, "settings.keyboard-updated"), { reply_markup: persistentKeyboard(locale) });
   }
+}
+
+function weekdayLabel(locale: ReturnType<typeof botLocale>, weekday: number): string {
+  const labels = locale === "ru" ? ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"] : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  return labels[weekday] ?? labels[0] ?? "";
+}
+
+function weeklyDigestText(backendDb: BackendDb, config: BackendConfig, locale: ReturnType<typeof botLocale>): string {
+  const settings = studioServices(backendDb, config).settings.weeklyDigest();
+  return t(locale, "settings.weekly-digest-body", {
+    status: settings.enabled ? t(locale, "settings.on") : t(locale, "settings.off"),
+    day: weekdayLabel(locale, settings.weekday),
+  });
 }
 
 function zernioPlatform(account: ZernioAccount): string {
