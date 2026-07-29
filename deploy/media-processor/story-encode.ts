@@ -1,6 +1,9 @@
 /** Canonical vertical-media recipes shared by the local and remote executors. */
 
-export const STORY_MAX_DURATION_SECONDS = 59;
+// AAC packets can extend the muxed duration a few milliseconds past the
+// requested cutoff. Keep enough margin for the finished MP4 itself to remain
+// at or below the 59-second Story delivery contract.
+export const STORY_MAX_DURATION_SECONDS = 58.9;
 export const VERTICAL_ASPECT_RATIO = 9 / 16;
 /** Within five percent of 9:16, preserve a plain contain render. */
 export const VERTICAL_ASPECT_TOLERANCE = 0.05;

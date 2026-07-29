@@ -50,7 +50,7 @@ describe("story publishers", () => {
       expect(String(generated[0]?.story_local_path)).toEndWith(".mp4");
       expect(fs.existsSync(String(generated[0]?.story_local_path))).toBe(true);
       const ffmpegArgs = ffmpegCalls.at(-1) ?? [];
-      expect(ffmpegArgs[ffmpegArgs.indexOf("-t") + 1]).toBe("59");
+      expect(ffmpegArgs[ffmpegArgs.indexOf("-t") + 1]).toBe("58.9");
       expect(ffmpegArgs).not.toContain("-r");
       expect(ffmpegArgs.slice(ffmpegArgs.indexOf("-c:v"), ffmpegArgs.indexOf("-c:v") + 2)).toEqual(["-c:v", "libx264"]);
       expect(ffmpegArgs.slice(ffmpegArgs.indexOf("-b:a"), ffmpegArgs.indexOf("-b:a") + 2)).toEqual(["-b:a", "320k"]);
@@ -68,9 +68,9 @@ describe("story publishers", () => {
     expect(args.filter((arg) => arg === "h264_vaapi")).toHaveLength(2);
     expect(args.filter((arg) => arg === "-t")).toHaveLength(2);
     expect(args[args.indexOf("standard.mp4") - 2]).toBe("-t");
-    expect(args[args.indexOf("standard.mp4") - 1]).toBe("59");
+    expect(args[args.indexOf("standard.mp4") - 1]).toBe("58.9");
     expect(args[args.indexOf("telegram.mp4") - 2]).toBe("-t");
-    expect(args[args.indexOf("telegram.mp4") - 1]).toBe("59");
+    expect(args[args.indexOf("telegram.mp4") - 1]).toBe("58.9");
     expect(args).toContain("telegram.mp4");
   });
 
