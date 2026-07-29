@@ -44,13 +44,17 @@ export function renderAudienceSection(
       stars: metricNumber(data.stars),
     };
   });
-  const allContent = `<span class="audience-line__label"><i class="audience-all-icon">∑</i>Все платформы</span><strong>Обзор</strong>`;
-  return `<aside class="audience-panel"><div class="section-kicker">Аудитория</div><div class="audience-list"><a class="audience-line audience-line--interactive${activePlatform ? "" : " audience-line--active"}" href="/command-center?period=${periodDays}&week_offset=${weekOffset}">${allContent}</a>${rows
+  const totalFollowers = rows.reduce((total, item) => total + (item.followers ?? 0), 0);
+  const hasFollowers = rows.some((item) => item.followers > 0);
+  const allContent = `<span class="audience-line__label"><i class="audience-all-icon">∑</i>Все платформы</span><strong>${hasFollowers ? formatMetricValue(totalFollowers) : "—"}</strong>`;
+  return `<aside class="audience-panel"><div class="section-kicker">Аудитория</div><div class="audience-list">${rows
     .map((item) => {
       const content = `<span class="audience-line__label"><i>${PLATFORM_ICONS[item.key.startsWith("threads") ? "threads" : item.key] ?? ""}</i>${escapeHtml(item.label)}</span><strong>${followersLabel(item)}</strong>`;
       return `<a class="audience-line audience-line--interactive${activePlatform === item.key ? " audience-line--active" : ""}" href="/command-center?period=${periodDays}&week_offset=${weekOffset}&view=${item.key}">${content}</a>`;
     })
-    .join("")}</div></aside>`;
+    .join(
+      "",
+    )}<a class="audience-line audience-line--total audience-line--interactive${activePlatform ? "" : " audience-line--active"}" href="/command-center?period=${periodDays}&week_offset=${weekOffset}">${allContent}</a></div></aside>`;
 }
 
 const REPAIR_ACTIONS: [value: string, label: string][] = [

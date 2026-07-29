@@ -56,6 +56,9 @@ describe("Command Center audience projection", () => {
       expect(html).toContain(">20<");
       expect(html).toContain('class="audience-panel"');
       expect(html).toContain("Все платформы");
+      expect(html).toContain(">200<");
+      expect(html.indexOf("Все платформы")).toBeGreaterThan(html.indexOf(">X<"));
+      expect(html).toContain("audience-line--total");
       expect(html).toContain("view=threads_ru");
       expect(html).toContain("view=threads_en");
       expect(html).toContain("view=telegram");

@@ -20,12 +20,8 @@ export function renderPublicationColumns(posts: PipelinePost[], targetIds: strin
     '<div class="section-kicker">Последние публикации</div>',
     "<span>Тип медиа</span><span>Охват</span><span>Реакции</span><span>Ответы</span>",
     "</header>",
-    posts.length
-      ? posts
-          .slice(0, 5)
-          .map((post) => renderRecentPost(post, targetIds))
-          .join("")
-      : empty(NO_POSTS),
+    posts.length ? posts.map((post, index) => renderRecentPost(post, targetIds, index >= 5)).join("") : empty(NO_POSTS),
+    posts.length > 5 ? `<button class="show-more-posts" type="button">Показать ещё <span>${posts.length - 5}</span></button>` : "",
     "</section>",
     "</div>",
   ].join("");
@@ -59,12 +55,12 @@ function bestPostUrl(post: PipelinePost, targetIds: string[]): string | null {
   return null;
 }
 
-function renderRecentPost(post: PipelinePost, targetIds: string[]): string {
+function renderRecentPost(post: PipelinePost, targetIds: string[], hidden: boolean): string {
   const metrics = total(post, targetIds);
   const english = post.full_text_en || post.text_en || "Без английского текста";
   const russian = post.full_text_ru || post.text_ru || "—";
   return [
-    '<details class="post-detail">',
+    `<details class="post-detail${hidden ? " post-detail--more" : ""}">`,
     '<summary><span class="post-detail__summary">',
     '<span class="post-detail__headline">',
     '<span class="post-detail__chevron">›</span>',

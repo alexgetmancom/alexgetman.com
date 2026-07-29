@@ -41,7 +41,8 @@ function renderXPublicationColumns(items: XActivityDashboardItem[]): string {
     }</section>
     <section class="recent-posts">
       <header class="recent-posts__header"><div class="section-kicker">Последние публикации</div><span>Тип</span><span>Охват</span><span>Реакции</span><span>Ответы</span></header>
-      ${items.length ? items.slice(0, 5).map(renderRecent).join("") : empty()}
+      ${items.length ? items.map((item, index) => renderRecent(item, index >= 5)).join("") : empty()}
+      ${items.length > 5 ? `<button class="show-more-posts" type="button">Показать ещё <span>${items.length - 5}</span></button>` : ""}
     </section>
   </div>`;
 }
@@ -54,8 +55,8 @@ function renderBest(item: XActivityDashboardItem, index: number): string {
   </a>`;
 }
 
-function renderRecent(item: XActivityDashboardItem): string {
-  return `<details class="post-detail">
+function renderRecent(item: XActivityDashboardItem, hidden: boolean): string {
+  return `<details class="post-detail${hidden ? " post-detail--more" : ""}">
     <summary><span class="post-detail__summary">
       <span class="post-detail__headline"><span class="post-detail__chevron">›</span><span class="post-detail__title">${escapeHtml(
         shortPipelineText(item.text || "Без текста", 11),

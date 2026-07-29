@@ -150,6 +150,7 @@ export function renderDashboardShell(body: string): string {
     .audience-line--interactive { color:inherit; text-decoration:none; transition:background .14s ease,box-shadow .14s ease; }
     .audience-line--interactive:hover { background:var(--surface-raised); }
     .audience-line--active { box-shadow:inset 3px 0 0 var(--accent); background:var(--surface-sunken); padding-left:10px; padding-right:10px; }
+    .audience-line--total { margin-top:8px; border-top:1px solid var(--border); font-weight:650; }
     .audience-all-icon { font-size:18px; font-weight:700; }
     .publication-columns { display:grid; grid-template-columns:minmax(340px,.3fr) minmax(0,.7fr); gap:30px; padding-top:20px; }
     .best-posts,.recent-posts { min-width:0; padding:0; border:0; border-radius:0; background:transparent; } .recent-posts { padding-left:34px; border-left:1px solid var(--border-soft); }
@@ -165,6 +166,11 @@ export function renderDashboardShell(body: string): string {
     .recent-posts__header,.post-detail__summary { display:grid; grid-template-columns:minmax(150px,1fr) 170px repeat(3,120px); align-items:center; gap:14px; }
     .recent-posts__header { padding:0 0 14px; border-bottom:1px solid var(--border-soft); color:var(--text-secondary); font-size:14px; } .recent-posts__header > span { text-align:right; }
     .post-detail { margin:0; border:0; border-bottom:1px solid var(--border-soft); border-radius:0; background:transparent; }
+    .post-detail--more { display:none; }
+    .recent-posts--expanded .post-detail--more { display:block; }
+    .show-more-posts { display:block; margin:14px auto 0; padding:7px 14px; border:1px solid var(--border-soft); border-radius:6px; background:transparent; color:var(--accent-soft-text); font:inherit; font-size:14px; font-weight:650; cursor:pointer; }
+    .show-more-posts:hover { background:var(--surface-raised); border-color:var(--accent); }
+    .show-more-posts span { color:var(--text-muted); font-weight:500; }
     .post-detail > summary { padding:13px 0; color:inherit; font-size:inherit; font-weight:400; list-style:none; cursor:pointer; } .post-detail > summary::-webkit-details-marker { display:none; }
     .post-detail__summary { font-size:16px; }
     .post-detail__headline { display:grid; grid-template-columns:24px minmax(0,1fr); align-items:center; gap:14px; min-width:0; }
@@ -219,6 +225,12 @@ ${DASHBOARD_THEME_TOGGLE_SCRIPT}
     const button = event.target instanceof Element ? event.target.closest('.mt-btn') : null;
     const metric = button?.dataset?.m;
     if (metric) setMetric(metric);
+  });
+  document.querySelectorAll('.show-more-posts').forEach((button) => {
+    button.addEventListener('click', () => {
+      button.closest('.recent-posts')?.classList.add('recent-posts--expanded');
+      button.remove();
+    });
   });
   const chartTooltip = document.getElementById('chart-tooltip');
   document.querySelectorAll('.chart-hit').forEach((point) => {

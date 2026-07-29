@@ -173,9 +173,11 @@ describe("renderPublicationColumns", () => {
     expect(ranks).toEqual(["three hundred", "two hundred", "ten"]);
   });
 
-  it("caps the recent list at five posts", () => {
+  it("keeps the first five posts compact and exposes the rest on demand", () => {
     const html = renderPublicationColumns(Array.from({ length: 9 }, (_, index) => viewed(index, `post ${index}`)));
     expect(html.match(/<details class="post-detail">/g)?.length).toBe(5);
+    expect(html.match(/post-detail--more/g)?.length).toBe(4);
+    expect(html).toContain("Показать ещё <span>4</span>");
   });
 
   it("shows the empty state in both columns when there are no posts", () => {
