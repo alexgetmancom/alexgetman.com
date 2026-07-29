@@ -1,4 +1,6 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
+import path from "node:path";
 import type { BackendDb } from "../db/client.js";
 
 type CsvRow = Record<string, string>;
@@ -27,6 +29,10 @@ export type XCsvImportResult = {
   insertedSamples: number;
   skippedSamples: number;
   unmatchedIds: string[];
+  activityItems: number;
+  activitySamples: number;
+  importId: number;
+  duplicateImport: boolean;
 };
 
 /** Imports an X Analytics content export as an immutable snapshot for posts already linked to X. */
@@ -40,6 +46,34 @@ export function importXAnalyticsCsv(backendDb: BackendDb, sourcePath: string, sa
   const presentHeaders = new Set(headers);
   const metrics = METRICS.filter((metric) => presentHeaders.has(metric.column));
   if (!metrics.length) throw new Error("Expected an X Analytics CSV with at least one known metric column");
+  const sourceBytes = fs.readFileSync(sourcePath);
+  const checksum = crypto.createHash("sha256").update(sourceBytes).digest("hex");
+  const existingImport = backendDb.sqlite.prepare("SELECT id FROM x_activity_imports WHERE checksum=?").get(checksum) as {
+    id: number;
+  } | null;
+  if (existingImport)
+    return {
+      rows: rows.length,
+      matchedPosts: 0,
+      linkedByText: 0,
+      insertedSamples: 0,
+      skippedSamples: 0,
+      unmatchedIds: [],
+      activityItems: 0,
+      activitySamples: 0,
+      importId: existingImport.id,
+      duplicateImport: true,
+    };
+  const [periodStart, periodEnd] = exportPeriod(sourcePath);
+  const importedAt = new Date().toISOString();
+  backendDb.sqlite
+    .prepare(
+      `INSERT OR IGNORE INTO x_activity_imports
+       (checksum,source_file,period_start,period_end,sampled_at,imported_at,row_count)
+       VALUES (?,?,?,?,?,?,?)`,
+    )
+    .run(checksum, path.basename(sourcePath), periodStart, periodEnd, sampledAt, importedAt, rows.length);
+  const importRow = backendDb.sqlite.prepare("SELECT id FROM x_activity_imports WHERE checksum=?").get(checksum) as { id: number };
   const targets = backendDb.sqlite
     .prepare("SELECT post_key, external_id, external_ids_json FROM post_targets WHERE target='x'")
     .all() as Array<{ post_key: string; external_id: string | null; external_ids_json: string | null }>;
@@ -78,6 +112,24 @@ export function importXAnalyticsCsv(backendDb: BackendDb, sourcePath: string, sa
        status='published', external_id=excluded.external_id, external_ids_json=excluded.external_ids_json,
        url=excluded.url, error=NULL, skipped=0, updated_at=excluded.updated_at, raw_json=excluded.raw_json`,
   );
+  const upsertActivity = backendDb.sqlite.prepare(
+    `INSERT INTO x_activity_items
+     (x_post_id,kind,published_at,text,url,linked_post_key,first_seen_at,last_seen_at,raw_json)
+     VALUES (?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(x_post_id) DO UPDATE SET
+       kind=excluded.kind,
+       published_at=coalesce(excluded.published_at,x_activity_items.published_at),
+       text=excluded.text,
+       url=excluded.url,
+       linked_post_key=coalesce(excluded.linked_post_key,x_activity_items.linked_post_key),
+       last_seen_at=excluded.last_seen_at,
+       raw_json=excluded.raw_json`,
+  );
+  const insertActivitySample = backendDb.sqlite.prepare(
+    `INSERT OR IGNORE INTO x_activity_metric_snapshots
+     (x_post_id,metric_name,value,sampled_at,import_id,raw_json)
+     VALUES (?,?,?,?,?,?)`,
+  );
   const result: XCsvImportResult = {
     rows: rows.length,
     matchedPosts: 0,
@@ -85,6 +137,10 @@ export function importXAnalyticsCsv(backendDb: BackendDb, sourcePath: string, sa
     insertedSamples: 0,
     skippedSamples: 0,
     unmatchedIds: [],
+    activityItems: 0,
+    activitySamples: 0,
+    importId: importRow.id,
+    duplicateImport: false,
   };
   backendDb.sqlite.transaction(() => {
     for (const row of rows) {
@@ -109,6 +165,33 @@ export function importXAnalyticsCsv(backendDb: BackendDb, sourcePath: string, sa
           postByExternalId.set(externalId, postKey);
           result.linkedByText += 1;
         }
+      }
+      const text = row["Текст поста"]?.trim() ?? "";
+      const url = row["Ссылка на пост"]?.trim() || `https://x.com/i/web/status/${externalId}`;
+      upsertActivity.run(
+        externalId,
+        activityKind(text),
+        xPublishedAt(row.Дата),
+        text,
+        url,
+        postKey ?? null,
+        sampledAt,
+        sampledAt,
+        JSON.stringify({ source: "x_csv_export", import_id: importRow.id }),
+      );
+      result.activityItems += 1;
+      for (const metric of metrics) {
+        const value = integer(row[metric.column]);
+        if (value == null) continue;
+        const inserted = insertActivitySample.run(
+          externalId,
+          metric.name,
+          value,
+          sampledAt,
+          importRow.id,
+          JSON.stringify({ x_column: metric.column }),
+        );
+        result.activitySamples += Number(inserted.changes);
       }
       if (!postKey) {
         result.unmatchedIds.push(externalId);
@@ -137,6 +220,21 @@ export function importXAnalyticsCsv(backendDb: BackendDb, sourcePath: string, sa
     }
   })();
   return result;
+}
+
+function activityKind(text: string): "reply" | "repost" | "standalone" {
+  if (/^RT\s+@/iu.test(text)) return "repost";
+  return /^@[\p{L}\p{N}_]+/u.test(text) ? "reply" : "standalone";
+}
+
+function xPublishedAt(value: string | undefined): string | null {
+  const parsed = new Date(value ?? "");
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+function exportPeriod(sourcePath: string): [string | null, string | null] {
+  const match = path.basename(sourcePath).match(/(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})\.csv$/u);
+  return [match?.[1] ?? null, match?.[2] ?? null];
 }
 
 function jsonStrings(value: string | null): string[] {

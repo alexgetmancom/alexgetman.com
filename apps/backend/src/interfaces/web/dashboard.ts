@@ -1,3 +1,4 @@
+import { xActivityDashboard } from "../../analytics/x-activity-dashboard.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import type { StudioLocale } from "../../foundation/locale.js";
@@ -9,10 +10,11 @@ import {
   renderQueueSection,
   renderRepairSection,
 } from "./dashboard/ops-sections.js";
-import { renderPeriodControls, renderPipelineSection } from "./dashboard/pipeline-section.js";
+import { renderPeriodControls, renderPipelineSection, rollingPeriodDates } from "./dashboard/pipeline-section.js";
 import { renderDashboardShell } from "./dashboard/shell.js";
 import { DASHBOARD_THEME_TOGGLE_HTML } from "./dashboard/theme.js";
 import { renderVideoSection } from "./dashboard/video-section.js";
+import { renderXSection } from "./dashboard/x-section.js";
 import { renderStudioSection } from "./studio.js";
 
 type DashboardTab = "posts" | "video" | "studio";
@@ -28,6 +30,7 @@ export function renderDashboard(
   requestedLocale?: string,
   requestedPanel?: string,
   requestedPeriod?: string,
+  requestedView?: string,
 ): string {
   const service = operationsService(backendDb, config);
   const ops = service.dashboard();
@@ -50,8 +53,10 @@ export function renderDashboard(
   const panel: DashboardPanel =
     requestedPanel === "queue" || requestedPanel === "health" || requestedPanel === "repair" ? requestedPanel : "overview";
   const periodDays = [1, 7, 30, 90, 365].includes(Number(requestedPeriod)) ? Number(requestedPeriod) : 1;
+  const activeView = requestedView === "x" && showPosts ? "x" : undefined;
   const panelLink = (value: DashboardPanel) => `/command-center?tab=posts&panel=${value}${periodDays !== 1 ? `&period=${periodDays}` : ""}`;
-  const overviewControls = panel === "overview" && showPosts ? renderPeriodControls(weekOffset, periodDays, config.TIMEZONE) : "";
+  const overviewControls =
+    panel === "overview" && showPosts ? renderPeriodControls(weekOffset, periodDays, config.TIMEZONE, activeView) : "";
   const content = renderPanel();
 
   function renderPanel(): string {
@@ -69,6 +74,16 @@ export function renderDashboard(
 
   function renderOverview(): string {
     if (showPosts) {
+      if (activeView === "x") {
+        const [start, end] = rollingPeriodDates(weekOffset, periodDays, config.TIMEZONE);
+        return renderXSection(
+          xActivityDashboard(backendDb, weekOffset, periodDays, config.TIMEZONE),
+          xActivityDashboard(backendDb, weekOffset + 1, periodDays, config.TIMEZONE),
+          renderAudienceSection(backendDb, config, "x", periodDays, weekOffset),
+          start,
+          end,
+        );
+      }
       // A one-day period is shown against the preceding 30 days plus the
       // preceding single day; every longer period compares against itself.
       const comparison =
@@ -80,7 +95,7 @@ export function renderDashboard(
         periodDays,
         service.pipeline(weekOffset, periodDays),
         comparison.baseline,
-        renderAudienceSection(backendDb, config),
+        renderAudienceSection(backendDb, config, undefined, periodDays, weekOffset),
         config.TIMEZONE,
         comparison.days,
         comparison.previousDay,

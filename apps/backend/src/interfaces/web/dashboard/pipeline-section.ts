@@ -45,16 +45,17 @@ export function renderPipelineSection(
   `;
 }
 
-export function renderPeriodControls(weekOffset: number, periodDays: number, timeZone = "Europe/Moscow"): string {
+export function renderPeriodControls(weekOffset: number, periodDays: number, timeZone = "Europe/Moscow", view?: string): string {
   const [start, end] = rollingPeriodDates(weekOffset, periodDays, timeZone);
+  const viewParam = view ? `&view=${encodeURIComponent(view)}` : "";
   const controls = PERIODS.map(
     (days) =>
-      `<a class="period-btn${days === periodDays ? " active" : ""}" href="/command-center?period=${days}&week_offset=${weekOffset}">${days === 365 ? "Год" : `${days}д`}</a>`,
+      `<a class="period-btn${days === periodDays ? " active" : ""}" href="/command-center?period=${days}&week_offset=${weekOffset}${viewParam}">${days === 365 ? "Год" : `${days}д`}</a>`,
   ).join("");
-  const previous = `<a class="period-nav" href="/command-center?period=${periodDays}&week_offset=${weekOffset + 1}" aria-label="Предыдущий период">‹</a>`;
+  const previous = `<a class="period-nav" href="/command-center?period=${periodDays}&week_offset=${weekOffset + 1}${viewParam}" aria-label="Предыдущий период">‹</a>`;
   const next =
     weekOffset > 0
-      ? `<a class="period-nav" href="/command-center?period=${periodDays}&week_offset=${weekOffset - 1}" aria-label="Следующий период">›</a>`
+      ? `<a class="period-nav" href="/command-center?period=${periodDays}&week_offset=${weekOffset - 1}${viewParam}" aria-label="Следующий период">›</a>`
       : '<span class="period-nav muted">›</span>';
   return `<div class="dashboard-nav__controls"><div class="period-controls">${controls}</div><div class="period-range">${previous}<strong>${shortDateRange(start, end)}</strong>${next}</div></div>`;
 }
@@ -157,7 +158,7 @@ function shortDateRange(start: Date, end: Date): string {
 
 /** Returns the period bounds as UTC-midnight Dates whose calendar fields already
  * carry `timeZone`'s date. Read them back with getUTC*, never local getters. */
-function rollingPeriodDates(offset: number, days: number, timeZone: string): [Date, Date] {
+export function rollingPeriodDates(offset: number, days: number, timeZone: string): [Date, Date] {
   const shiftedNow = new Date(Date.now() - offset * days * 86_400_000);
   const endParts = zonedDateParts(shiftedNow, timeZone);
   const end = new Date(Date.UTC(endParts.year, endParts.month - 1, endParts.day));

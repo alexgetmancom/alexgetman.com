@@ -91,3 +91,57 @@ export const creatorProfileSnapshots = sqliteTable(
     index("idx_creator_profile_snapshots_history").on(table.platform, table.account, table.sampledAt),
   ],
 );
+
+export const xActivityImports = sqliteTable(
+  "x_activity_imports",
+  {
+    id: autoId(),
+    checksum: text().notNull(),
+    sourceFile: text().notNull(),
+    periodStart: text(),
+    periodEnd: text(),
+    sampledAt: text().notNull(),
+    importedAt: text().notNull(),
+    rowCount: integer().notNull(),
+  },
+  (table) => [uniqueIndex("idx_x_activity_imports_checksum").on(table.checksum)],
+);
+
+/** Account-wide X activity is deliberately separate from editorial posts.
+ * linkedPostKey is optional: replies and posts written directly in X remain
+ * analytics-only, while Studio publications can still share one identity. */
+export const xActivityItems = sqliteTable(
+  "x_activity_items",
+  {
+    xPostId: text().primaryKey(),
+    kind: text().notNull(),
+    publishedAt: text(),
+    text: text().notNull(),
+    url: text().notNull(),
+    linkedPostKey: text(),
+    firstSeenAt: text().notNull(),
+    lastSeenAt: text().notNull(),
+    rawJson: json<JsonValue | null>(),
+  },
+  (table) => [
+    index("idx_x_activity_items_published").on(table.publishedAt),
+    index("idx_x_activity_items_linked_post").on(table.linkedPostKey),
+  ],
+);
+
+export const xActivityMetricSnapshots = sqliteTable(
+  "x_activity_metric_snapshots",
+  {
+    id: autoId(),
+    xPostId: text().notNull(),
+    metricName: text().notNull(),
+    value: integer().notNull(),
+    sampledAt: text().notNull(),
+    importId: integer(),
+    rawJson: json<JsonValue | null>(),
+  },
+  (table) => [
+    uniqueIndex("idx_x_activity_metric_snapshot").on(table.xPostId, table.metricName, table.sampledAt),
+    index("idx_x_activity_metric_history").on(table.xPostId, table.sampledAt),
+  ],
+);

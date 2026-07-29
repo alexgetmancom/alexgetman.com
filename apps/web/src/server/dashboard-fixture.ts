@@ -7,6 +7,8 @@ import {
   publishJobs,
   siteJobs,
   workerState,
+  xActivityItems,
+  xActivityMetricSnapshots,
 } from "../../../backend/src/db/schema.js";
 
 /**
@@ -196,6 +198,35 @@ export function seedDashboardFixture(options: { dbPath: string; postIds: number[
       .insert(workerState)
       .values({ name: "metrics", stateJson: { lastRunAt: nowIso, status: "idle" }, updatedAt: nowIso })
       .run();
+
+    for (let index = 0; index < 8; index += 1) {
+      const xPostId = `fixture-x-${index + 1}`;
+      const reply = index % 3 === 1;
+      const publishedAt = iso(hoursAgo(index * 8));
+      backendDb.db
+        .insert(xActivityItems)
+        .values({
+          xPostId,
+          kind: reply ? "reply" : "standalone",
+          publishedAt,
+          text: reply ? `@researcher Fixture reply number ${index + 1}` : `Fixture X publication number ${index + 1}`,
+          url: `https://x.com/alexgetmancom/status/${xPostId}`,
+          linkedPostKey: !reply && options.postIds[index] ? `post:${options.postIds[index]}` : null,
+          firstSeenAt: nowIso,
+          lastSeenAt: nowIso,
+          rawJson: { source: "fixture" },
+        })
+        .run();
+      for (const [metricName, value] of [
+        ["views", 5_000 - index * 430],
+        ["interactions", 120 - index * 8],
+        ["replies", reply ? 18 - index : 4 + index],
+      ] as const)
+        backendDb.db
+          .insert(xActivityMetricSnapshots)
+          .values({ xPostId, metricName, value, sampledAt: nowIso, rawJson: { source: "fixture" } })
+          .run();
+    }
   } finally {
     backendDb.close();
   }

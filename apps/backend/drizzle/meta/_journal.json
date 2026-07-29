@@ -267,6 +267,13 @@
       "when": 1785975320000,
       "tag": "0037_weekly_digest_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "6",
+      "when": 1785975380000,
+      "tag": "0038_x_activity",
+      "breakpoints": true
     }
   ]
 }

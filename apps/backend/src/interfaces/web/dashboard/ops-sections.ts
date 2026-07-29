@@ -20,7 +20,13 @@ const AUDIENCE_PLATFORMS: AudiencePlatform[] = [
 ];
 
 /** Reuses Analytics projections and metric samples; Command Center only renders them. */
-export function renderAudienceSection(backendDb: BackendDb, config: BackendConfig): string {
+export function renderAudienceSection(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  activePlatform?: string,
+  periodDays = 1,
+  weekOffset = 0,
+): string {
   if (!config.studio.modules.analytics) return "";
   const profiles = new Map(
     backendDb.db
@@ -38,7 +44,14 @@ export function renderAudienceSection(backendDb: BackendDb, config: BackendConfi
       stars: metricNumber(data.stars),
     };
   });
-  return `<aside class="audience-panel"><div class="section-kicker">Аудитория</div><div class="audience-list">${rows.map((item) => `<div class="audience-line"><span class="audience-line__label"><i>${PLATFORM_ICONS[item.key.startsWith("threads") ? "threads" : item.key] ?? ""}</i>${escapeHtml(item.label)}</span><strong>${followersLabel(item)}</strong></div>`).join("")}</div></aside>`;
+  return `<aside class="audience-panel"><div class="section-kicker">Аудитория</div><div class="audience-list">${rows
+    .map((item) => {
+      const content = `<span class="audience-line__label"><i>${PLATFORM_ICONS[item.key.startsWith("threads") ? "threads" : item.key] ?? ""}</i>${escapeHtml(item.label)}</span><strong>${followersLabel(item)}</strong>`;
+      return item.key === "x"
+        ? `<a class="audience-line audience-line--interactive${activePlatform === "x" ? " audience-line--active" : ""}" href="/command-center?period=${periodDays}&week_offset=${weekOffset}&view=x">${content}</a>`
+        : `<div class="audience-line">${content}</div>`;
+    })
+    .join("")}</div></aside>`;
 }
 
 const REPAIR_ACTIONS: [value: string, label: string][] = [

@@ -55,7 +55,12 @@ describe("Command Center audience projection", () => {
       expect(html).toContain(">180<");
       expect(html).toContain(">20<");
       expect(html).toContain('class="audience-panel"');
+      expect(html).toContain("view=x");
       expect(html).not.toContain("Facebook EN");
+
+      const active = renderAudienceSection(backendDb, loadConfig({}), "x", 30, 2);
+      expect(active).toContain("audience-line--active");
+      expect(active).toContain("period=30&week_offset=2");
     } finally {
       backendDb.close();
     }

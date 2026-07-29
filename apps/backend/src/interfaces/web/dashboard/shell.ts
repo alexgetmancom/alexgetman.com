@@ -145,6 +145,9 @@ export function renderDashboardShell(body: string): string {
     .audience-list { margin-top:14px; } .audience-line { display:flex; align-items:baseline; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--border-soft); font-size:17px; }
     .audience-line__label { display:inline-flex; align-items:center; gap:12px; } .audience-line__label i { display:inline-flex; width:24px; height:24px; align-items:center; justify-content:center; color:var(--text-main); font-style:normal; } .audience-line__label svg { width:22px; height:22px; }
     .audience-line span { color:var(--text-main); } .audience-line strong { color:var(--text-main); font-size:18px; font-weight:600; }
+    .audience-line--interactive { color:inherit; text-decoration:none; transition:background .14s ease,box-shadow .14s ease; }
+    .audience-line--interactive:hover { background:var(--surface-raised); }
+    .audience-line--active { box-shadow:inset 3px 0 0 var(--accent); background:var(--surface-sunken); padding-left:10px; padding-right:10px; }
     .publication-columns { display:grid; grid-template-columns:minmax(340px,.3fr) minmax(0,.7fr); gap:34px; padding-top:26px; }
     .best-posts,.recent-posts { min-width:0; padding:0; border:0; border-radius:0; background:transparent; } .recent-posts { padding-left:34px; border-left:1px solid var(--border-soft); }
     .best-post { display:grid; grid-template-columns:39px minmax(0,1fr) 92px; gap:13px; align-items:start; padding:18px 0; border-bottom:1px solid var(--border-soft); }

@@ -3,6 +3,7 @@ import os from "node:os";
 import process from "node:process";
 import { and, eq, inArray, isNull, lt, lte, ne, or } from "drizzle-orm";
 import * as z from "zod";
+import { recordPublishedXActivity } from "../analytics/x-activity-store.js";
 import type { BackendDb } from "../db/client.js";
 import { drafts, type JsonObject, postEvents, postTargets, publications, publishJobs, siteJobs } from "../db/schema.js";
 import { insertPublishJobSchema } from "../db/validation.js";
@@ -253,6 +254,13 @@ export function completePublishJob(
   });
   if (normalized.status === "published") recordAuthSuccess(backendDb, job.target);
   else if (normalized.status === "failed" && classifyPublishError(normalized.error) === "auth") recordAuthFailure(backendDb, job.target);
+  if (normalized.status === "published" && job.target === "x" && normalized.externalId)
+    recordPublishedXActivity(backendDb, {
+      postKey,
+      xPostId: String(normalized.externalId),
+      url: normalized.url,
+      publishedAt: now,
+    });
   if (job.postId != null) reconcilePublication(backendDb, job.postId);
 }
 
