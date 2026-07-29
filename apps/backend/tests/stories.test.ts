@@ -66,6 +66,11 @@ describe("story publishers", () => {
     expect(args[args.indexOf("-filter_complex") + 1]).toContain("format=nv12,hwupload,split=2");
     expect(args[args.indexOf("-filter_complex") + 1]).not.toContain("fps=50");
     expect(args.filter((arg) => arg === "h264_vaapi")).toHaveLength(2);
+    expect(args.filter((arg) => arg === "-t")).toHaveLength(2);
+    expect(args[args.indexOf("standard.mp4") - 2]).toBe("-t");
+    expect(args[args.indexOf("standard.mp4") - 1]).toBe("59");
+    expect(args[args.indexOf("telegram.mp4") - 2]).toBe("-t");
+    expect(args[args.indexOf("telegram.mp4") - 1]).toBe("59");
     expect(args).toContain("telegram.mp4");
   });
 

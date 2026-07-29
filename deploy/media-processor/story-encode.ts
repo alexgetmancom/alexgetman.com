@@ -126,6 +126,8 @@ export function remoteStoryFfmpegArgs(
     "avc1",
     "-movflags",
     "+faststart",
+    "-t",
+    String(STORY_MAX_DURATION_SECONDS),
     standardOutput,
     "-map",
     "[out1]",
@@ -147,6 +149,8 @@ export function remoteStoryFfmpegArgs(
     "avc1",
     "-movflags",
     "+faststart",
+    "-t",
+    String(STORY_MAX_DURATION_SECONDS),
     telegramOutput,
   ];
 }
