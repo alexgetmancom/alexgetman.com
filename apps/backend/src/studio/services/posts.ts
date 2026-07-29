@@ -16,6 +16,7 @@ import { publicationPreflight } from "../../publishing/preflight.js";
 import { publishDraftToQueue } from "../../publishing/publication-workflow.js";
 import { parseManualSchedule, scheduleClockToday } from "../../publishing/schedule.js";
 import { parseTargets } from "../../publishing/targets.js";
+import { queueDraftStoryCards, type StoryPublishMode, setStoryPublishMode, storyCardsForDraft } from "../../story-cards/store.js";
 import { accessibleStudioActorIds, canAccessStudioOwner, studioActorIds } from "../access.js";
 import { postDeliveryProjections } from "../projections.js";
 import { postProgressState } from "./post-progress.js";
@@ -63,6 +64,10 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
       const ruMedia = draftMedia(draft, "ru");
       const enMedia = draftMedia(draft, "en");
+      const storyCards = storyCardsForDraft(backendDb, draftId);
+      const storyCardsReady = ["ru", "en"].every((locale) =>
+        storyCards.some((card) => card.locale === locale && card.status === "ready" && card.localPath),
+      );
       const targets = effectivePostTargets(backendDb, parseTargets(draft.targets_json));
       return {
         id: draft.id,
@@ -81,8 +86,13 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
         mediaPolicy: Object.entries(targets)
           .filter(([, enabled]) => enabled)
           .map(([target]) => mediaPolicyForTarget(target, targetLocale(target) === "ru" ? ruMedia : enMedia)),
-        delivery: postDeliveryProjections(draft),
+        delivery: postDeliveryProjections(draft, storyCardsReady),
+        storyCards,
       };
+    },
+    setStoryPublishMode(actorId: number, draftId: number, mode: StoryPublishMode): void {
+      requireOwnedDraft(backendDb, config, actorId, draftId);
+      setStoryPublishMode(backendDb, draftId, mode);
     },
     replaceSources(actorId: number, draftId: number, urls: string[]): void {
       requireOwnedDraft(backendDb, config, actorId, draftId);
@@ -251,6 +261,7 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
         .set({ [key]: JSON.stringify([...current, ...assets]), updatedAt: new Date().toISOString() })
         .where(eq(drafts.id, draftId))
         .run();
+      queueDraftStoryCards(backendDb, draftId);
       recordDomainEvent(backendDb, {
         ref: `draft:${draftId}`,
         type: "content.draft.media_attached",
@@ -269,6 +280,7 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
         .set({ [locale === "ru" ? "mediaRuJson" : "mediaEnJson"]: JSON.stringify(media), updatedAt: new Date().toISOString() })
         .where(eq(drafts.id, draftId))
         .run();
+      queueDraftStoryCards(backendDb, draftId);
       recordDomainEvent(backendDb, {
         ref: `draft:${draftId}`,
         type: "content.draft.media_removed",
@@ -325,6 +337,7 @@ function editDraftContent(backendDb: BackendDb, config: BackendConfig, actorId: 
   }
   if (Object.keys(update).length === 1) throw new StudioError("err.post-no-edit");
   backendDb.db.update(drafts).set(update).where(eq(drafts.id, draftId)).run();
+  queueDraftStoryCards(backendDb, draftId);
   recordDomainEvent(backendDb, {
     ref: `draft:${draftId}`,
     type: "content.draft.edited",

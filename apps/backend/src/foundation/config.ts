@@ -136,6 +136,11 @@ const envSchema = z
     MEDIA_PROCESSOR_TIMEOUT_SECONDS: z.coerce.number().int().min(10).max(3600).default(900),
     MEDIA_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86_400),
     MEDIA_CACHE_DIR: z.string().default("/data/media-cache"),
+    STORY_CARD_DIR: z.string().default("/data/story-cards"),
+    STORY_CARD_ASSETS_DIR: z.string().default("/app/apps/backend/assets/story-card"),
+    STORY_CARD_RENDERER_ENTRY: z.string().default("/app/story-renderer/renderer-process.js"),
+    STORY_CARD_TIMEOUT_SECONDS: z.coerce.number().int().min(1).max(60).default(15),
+    STORY_CARD_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
     // Dedicated mounted media volume; never place large Studio assets on the
     // pipeline/database disk mounted at /data.
     STUDIO_MEDIA_DIR: z.string().default("/data/video-media"),

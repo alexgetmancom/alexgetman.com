@@ -15,6 +15,7 @@ import { type ScheduledLoop, startLoop } from "../foundation/scheduler.js";
 import { runNotificationCycle } from "../notifications/jobs.js";
 import { observabilityService } from "../observability/service.js";
 import { recoverStalePublishJobs } from "../publishing/queue.js";
+import { recoverStoryCardJobs, runStoryCardCycle } from "../story-cards/worker.js";
 
 /** Delivery-only publish cycle. Interfaces learn about settled work through durable events. */
 export async function runPublishCycle(
@@ -46,7 +47,14 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
   const recoveredSiteAtStartup = recoverStaleSiteJobs(config, backendDb, config.SITE_JOB_RESTART_LOCK_GRACE_SECONDS);
   if (recoveredSiteAtStartup)
     log("warn", "recovered interrupted site build locks on worker startup", { recovered: recoveredSiteAtStartup });
+  const recoveredStoryCardsAtStartup = recoverStoryCardJobs(backendDb);
+  if (recoveredStoryCardsAtStartup)
+    log("warn", "recovered interrupted Story card locks on worker startup", { recovered: recoveredStoryCardsAtStartup });
   return [
+    startLoop("story-cards", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
+      const claimed = await runStoryCardCycle(config, backendDb);
+      log("debug", "Story card loop tick", { claimed });
+    }),
     startLoop("queue", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
       const claimed = await runPublishCycle(config, backendDb);
       log("debug", "queue loop tick", { claimed });

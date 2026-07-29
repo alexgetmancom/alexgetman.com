@@ -1,4 +1,4 @@
-import { type Context, InlineKeyboard } from "grammy";
+import { type Context, InlineKeyboard, InputFile } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import { withActionLock } from "../foundation/action-lock.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -7,6 +7,7 @@ import { plural, t } from "../foundation/i18n/index.js";
 import { setTelegramPostCard, setTelegramPostProgressCard } from "../interfaces/telegram/control-cards.js";
 import { sendTelegramDeliveryPreviews } from "../interfaces/telegram/delivery-previews.js";
 import { formatMsk } from "../interfaces/telegram/time.js";
+import { runStoryCardCycle } from "../story-cards/worker.js";
 import { studioServices } from "../studio/services/index.js";
 import { botLocale } from "./i18n.js";
 import { extractMessage } from "./message.js";
@@ -80,7 +81,17 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
   }
   if (action === "publish") {
     if (await showPublicationPreflight(ctx, backendDb, config, actorId, draftId, locale)) return;
+    if (await showStoryCardChoice(ctx, backendDb, config, actorId, draftId, "publish")) return;
     return sendPublishConfirmation(ctx, backendDb, config, actorId, draftId);
+  }
+  if (action === "story_publish_all" || action === "story_publish_site") {
+    posts.setStoryPublishMode(actorId, draftId, action === "story_publish_all" ? "all" : "site_only");
+    return queuePostNow(ctx, backendDb, config, actorId, draftId, data, locale);
+  }
+  if (action === "story_schedule_all" || action === "story_schedule_site") {
+    posts.setStoryPublishMode(actorId, draftId, action === "story_schedule_all" ? "all" : "site_only");
+    await ctx.answerCallbackQuery();
+    return editDraftPreview(ctx, backendDb, draftId, config, "schedule");
   }
   if (action === "threads_chain") {
     posts.approveThreadsChain(actorId, draftId);
@@ -88,22 +99,15 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
     // The waiver only clears the Threads rule. Anything else preflight refuses —
     // a Telegram caption, say — must still stop the publication here.
     if (await showPublicationPreflight(ctx, backendDb, config, actorId, draftId, locale)) return;
+    if (await showStoryCardChoice(ctx, backendDb, config, actorId, draftId, "publish")) return;
     return sendPublishConfirmation(ctx, backendDb, config, actorId, draftId);
   }
   if (action === "publish_confirm") {
-    const result = await withActionLock(`${actorId}:${data}`, async () => {
-      posts.publish(actorId, draftId);
-    });
-    if (!result.ok) return void (await ctx.answerCallbackQuery());
-    await ctx.answerCallbackQuery({ text: t(locale, "action.queued") });
-    await ctx.editMessageText(t(locale, "action.post-queued", { id: draftId }));
-    const progress = renderPostProgress(posts.progress(actorId, draftId), locale);
-    const message = await ctx.reply(progress.text, { parse_mode: "Markdown", reply_markup: progress.keyboard });
-    if (ctx.chat?.id) setTelegramPostProgressCard(backendDb, draftId, Number(ctx.chat.id), message.message_id);
-    return;
+    return queuePostNow(ctx, backendDb, config, actorId, draftId, data, locale);
   }
   if (action === "schedule") {
     if (await showPublicationPreflight(ctx, backendDb, config, actorId, draftId, locale)) return;
+    if (await showStoryCardChoice(ctx, backendDb, config, actorId, draftId, "schedule")) return;
     return editDraftPreview(ctx, backendDb, draftId, config, "schedule");
   }
   if (action === "sched_scope" && first) {
@@ -150,6 +154,76 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
     );
   }
   await ctx.answerCallbackQuery({ text: t(locale, "action.unknown") });
+}
+
+async function queuePostNow(
+  ctx: Context,
+  backendDb: BackendDb,
+  config: BackendConfig,
+  actorId: number,
+  draftId: number,
+  actionKey: string,
+  locale: ReturnType<typeof botLocale>,
+): Promise<void> {
+  const posts = studioServices(backendDb, config).posts;
+  const result = await withActionLock(`${actorId}:${actionKey}`, async () => {
+    posts.publish(actorId, draftId);
+  });
+  if (!result.ok) return void (await ctx.answerCallbackQuery());
+  await ctx.answerCallbackQuery({ text: t(locale, "action.queued") });
+  await ctx.editMessageText(t(locale, "action.post-queued", { id: draftId }));
+  const progress = renderPostProgress(posts.progress(actorId, draftId), locale);
+  const message = await ctx.reply(progress.text, { parse_mode: "Markdown", reply_markup: progress.keyboard });
+  if (ctx.chat?.id) setTelegramPostProgressCard(backendDb, draftId, Number(ctx.chat.id), message.message_id);
+}
+
+async function showStoryCardChoice(
+  ctx: Context,
+  backendDb: BackendDb,
+  config: BackendConfig,
+  actorId: number,
+  draftId: number,
+  intent: "publish" | "schedule",
+): Promise<boolean> {
+  const posts = studioServices(backendDb, config).posts;
+  let cards = posts.preview(actorId, draftId).storyCards;
+  if (cards.length === 0) return false;
+  const deadline = Date.now() + 4_000;
+  while (!cardsReady(cards) && Date.now() < deadline) {
+    await runStoryCardCycle(config, backendDb);
+    cards = posts.preview(actorId, draftId).storyCards;
+    if (!cardsReady(cards)) await Bun.sleep(100);
+  }
+  const locale = botLocale(backendDb, actorId);
+  if (!cardsReady(cards)) {
+    await ctx.answerCallbackQuery({ text: t(locale, "post.story-cards-generating"), show_alert: true });
+    return true;
+  }
+  await ctx.answerCallbackQuery();
+  for (const cardLocale of ["ru", "en"] as const) {
+    const card = cards.find((item) => item.locale === cardLocale);
+    if (card?.localPath) await ctx.replyWithPhoto(new InputFile(card.localPath), { caption: `Story · ${cardLocale.toUpperCase()}` });
+  }
+  const keyboard =
+    intent === "publish"
+      ? new InlineKeyboard()
+          .text(t(locale, "post.story-cards-all"), `story_publish_all:${draftId}`)
+          .row()
+          .text(t(locale, "post.story-cards-site-only"), `story_publish_site:${draftId}`)
+          .row()
+          .text(t(locale, "common.back"), `preview:${draftId}`)
+      : new InlineKeyboard()
+          .text(t(locale, "post.story-cards-all-schedule"), `story_schedule_all:${draftId}`)
+          .row()
+          .text(t(locale, "post.story-cards-site-only-schedule"), `story_schedule_site:${draftId}`)
+          .row()
+          .text(t(locale, "common.back"), `preview:${draftId}`);
+  await ctx.reply(t(locale, "post.story-cards-question"), { parse_mode: "Markdown", reply_markup: keyboard });
+  return true;
+}
+
+function cardsReady(cards: Array<{ locale: string; status: string; localPath: string | null }>): boolean {
+  return ["ru", "en"].every((locale) => cards.some((card) => card.locale === locale && card.status === "ready" && card.localPath));
 }
 
 /** Commits one locale's schedule immediately (button/auto pick, or "now"). If

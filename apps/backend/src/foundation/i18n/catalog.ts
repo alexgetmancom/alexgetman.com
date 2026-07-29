@@ -88,6 +88,13 @@ const en = {
   "post.en-uses-ru-media": "EN uses RU media",
   "post.media-only": "[media only]",
   "post.not-translated": "[not translated]",
+  "post.story-cards-generating": "Story cards are still being generated. Please try again in a moment.",
+  "post.story-cards-question":
+    "🖼 *Text Story cards are ready.*\n\nThe cards always go to the RU and EN site. Publish them to Telegram Stories RU, Instagram Stories RU and Instagram Stories EN as well?",
+  "post.story-cards-all": "✅ Publish with Stories",
+  "post.story-cards-site-only": "✅ Publish without Stories",
+  "post.story-cards-all-schedule": "✅ Schedule with Stories",
+  "post.story-cards-site-only-schedule": "✅ Schedule without Stories",
   // Live publication progress
   "progress.issues-title": "⚠️ Publication has issues",
   "progress.complete-title": "✅ Publication complete",
@@ -492,6 +499,13 @@ const ru = {
   "post.en-uses-ru-media": "EN использует RU-медиа",
   "post.media-only": "[только медиа]",
   "post.not-translated": "[не переведено]",
+  "post.story-cards-generating": "Карточки для Stories ещё создаются. Попробуйте снова через несколько секунд.",
+  "post.story-cards-question":
+    "🖼 *Карточки текстового поста готовы.*\n\nНа сайты RU и EN они пойдут всегда. Опубликовать их также в Telegram Stories RU, Instagram Stories RU и Instagram Stories EN?",
+  "post.story-cards-all": "✅ Опубликовать со Stories",
+  "post.story-cards-site-only": "✅ Опубликовать без Stories",
+  "post.story-cards-all-schedule": "✅ Запланировать со Stories",
+  "post.story-cards-site-only-schedule": "✅ Запланировать без Stories",
   // Live publication progress
   "progress.issues-title": "⚠️ Публикация с ошибками",
   "progress.complete-title": "✅ Публикация завершена",

@@ -158,6 +158,8 @@ describe("openBackendDb", () => {
     fixture.exec("ALTER TABLE post_targets DROP COLUMN confirmation_source");
     fixture.exec("ALTER TABLE post_targets DROP COLUMN verified_at");
     fixture.exec("ALTER TABLE publish_jobs DROP COLUMN reconcile_attempt_count");
+    fixture.exec("ALTER TABLE drafts DROP COLUMN story_publish_mode");
+    fixture.exec("DROP TABLE draft_story_cards");
     fixture.exec("DROP TABLE studio_weekly_digest_settings");
     fixture.exec("DROP TABLE x_activity_imports");
     fixture.exec("DROP TABLE x_activity_items");

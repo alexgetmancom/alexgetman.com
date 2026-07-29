@@ -5,6 +5,7 @@ import { enrichPublishedPostEntities } from "../content/entity-enrichment.js";
 import type { BackendDb } from "../db/client.js";
 import { draftEntityCandidates, draftSources, knowledgeEntities, postEntityLinks, postSources, publications } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
+import { readyStoryCardMedia } from "../story-cards/store.js";
 import { assertPublicationPreflight } from "./preflight.js";
 import { createPublicationPlan, type PublishMode } from "./publication-plan.js";
 import { persistPublicationPlan } from "./publication-writer.js";
@@ -33,6 +34,9 @@ export function publishDraftToQueue(backendDb: BackendDb, draftId: number, optio
     copyDraftSources(backendDb, draftId, publicationId, now);
     copyAcceptedEntities(backendDb, draftId, publicationId, now);
     const registeredTargets = registeredPostTargetIds(backendDb);
+    const storyCards = readyStoryCardMedia(backendDb, draftId);
+    if (storyCards && draft.story_publish_mode !== "all" && draft.story_publish_mode !== "site_only")
+      throw new Error("Story delivery decision is required for a text-only post");
     const publicationPlan = createPublicationPlan(
       effectiveDraft,
       draftId,
@@ -40,6 +44,7 @@ export function publishDraftToQueue(backendDb: BackendDb, draftId: number, optio
       { mode, ruAt, enAt },
       now,
       registeredTargets.size ? registeredTargets : undefined,
+      storyCards ?? undefined,
     );
     persistPublicationPlan(backendDb, publicationPlan);
     enrichPublishedPostEntities(backendDb, publicationId);

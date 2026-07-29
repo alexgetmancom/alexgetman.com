@@ -25,18 +25,21 @@ export type DeliveryProjection = {
 };
 
 /** Pure delivery-facing view shared by Telegram previews, MCP and future CLI. */
-export function postDeliveryProjections(draft: {
-  id: number;
-  text_ru: string;
-  text_en_approved: string | null;
-  text_en_machine: string | null;
-  text_ru_entities_json: string | null;
-  text_en_entities_json: string | null;
-  media_ru_json: string | null;
-  media_en_json: string | null;
-  targets_json: string;
-  threads_chain_approved?: number | boolean | null;
-}) {
+export function postDeliveryProjections(
+  draft: {
+    id: number;
+    text_ru: string;
+    text_en_approved: string | null;
+    text_en_machine: string | null;
+    text_ru_entities_json: string | null;
+    text_en_entities_json: string | null;
+    media_ru_json: string | null;
+    media_en_json: string | null;
+    targets_json: string;
+    threads_chain_approved?: number | boolean | null;
+  },
+  storyCardsReady = false,
+) {
   const targets = Object.entries(parseTargets(draft.targets_json)).flatMap(([target, enabled]) => (enabled ? [target] : []));
   const content = {
     ru: { text: draft.text_ru, entities: parseArrayValue(draft.text_ru_entities_json), media: parseArrayValue(draft.media_ru_json) },
@@ -58,7 +61,8 @@ export function postDeliveryProjections(draft: {
     const locale = targetLocale(target) ?? "en";
     const profile = platformProfile(target);
     const text = formatPlatformText(target, content[locale].text);
-    const mediaPolicy = mediaPolicyForTarget(target, content[locale].media);
+    const targetMedia = storyCardsReady && isStoryTarget(target) ? [{}] : content[locale].media;
+    const mediaPolicy = mediaPolicyForTarget(target, targetMedia);
     const unavailable = mediaPolicy.mode === "story-first" && mediaPolicy.inputCount === 0;
     const notes = [
       ...(text !== content[locale].text ? ["text is shortened/transformed for this platform"] : []),
@@ -71,7 +75,8 @@ export function postDeliveryProjections(draft: {
     const selected = targets.filter((target) => targetLocale(target) === locale);
     if (!selected.length) return [];
     const unavailableTargets = selected.filter((target) => {
-      const policy = mediaPolicyForTarget(target, content[locale].media);
+      const targetMedia = storyCardsReady && isStoryTarget(target) ? [{}] : content[locale].media;
+      const policy = mediaPolicyForTarget(target, targetMedia);
       return policy.mode === "story-first" && policy.inputCount === 0;
     });
     return [
@@ -90,6 +95,10 @@ export function postDeliveryProjections(draft: {
     ];
   });
   return { kind: "post" as const, draftId: draft.id, projections: canonical };
+}
+
+function isStoryTarget(target: string): boolean {
+  return target === "telegram_stories" || target === "instagram_stories_ru" || target === "instagram_stories";
 }
 
 export function videoDeliveryProjections(backendDb: BackendDb, videoDraftId: number) {

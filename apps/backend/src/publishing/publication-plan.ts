@@ -6,6 +6,7 @@ import { parseTargets } from "./targets.js";
 
 export type PublishMode = "immediate" | "scheduled";
 type PublicationSchedule = { mode: PublishMode; ruAt: string | null; enAt: string | null };
+type StoryCardMedia = Record<"ru" | "en", Record<string, unknown>>;
 
 /** Pure publishing decision: draft content plus a schedule becomes a complete publication plan. */
 export function createPublicationPlan(
@@ -15,6 +16,7 @@ export function createPublicationPlan(
   schedule: PublicationSchedule,
   now: string,
   availableTargets?: ReadonlySet<string>,
+  storyCards?: StoryCardMedia,
 ) {
   const messageId = Number(draft.channel_message_id ?? postId);
   const postKey = `post:${postId}`;
@@ -26,7 +28,8 @@ export function createPublicationPlan(
   const targets = Object.fromEntries(
     Object.entries(parseTargets(draft.targets_json)).map(([target, enabled]) => [
       target,
-      enabled && (!availableTargets || availableTargets.has(target)),
+      (storyCards && isStoryTarget(target) ? draft.story_publish_mode === "all" : enabled) &&
+        (!availableTargets || availableTargets.has(target)),
     ]),
   );
   const textRu = String(draft.text_ru ?? "");
@@ -43,6 +46,10 @@ export function createPublicationPlan(
     bodyMarkdown: textEn,
     media: mediaRu,
     media_en: mediaEn,
+    story_media_ru: storyCards ? [storyCards.ru] : undefined,
+    story_media_en: storyCards ? [storyCards.en] : undefined,
+    site_media_ru: mediaRu.length ? mediaRu : storyCards ? [storyCards.ru] : [],
+    site_media_en: mediaEn.length ? mediaEn : storyCards ? [storyCards.en] : [],
     entities_ru: entitiesRu,
     entities_en: entitiesEn,
     date: schedule.ruAt ?? schedule.enAt ?? now,
@@ -94,10 +101,32 @@ export function createPublicationPlan(
     textEn,
     payload,
     locales: [
-      locale("ru", textRu, slugRu, mediaRu, entitiesRu, draft.text_ru_entities_json, Boolean(targets.site_ru), schedule.ruAt),
-      locale("en", textEn, slugEn, mediaEn, entitiesEn, draft.text_en_entities_json, Boolean(targets.site_en), schedule.enAt),
+      locale(
+        "ru",
+        textRu,
+        slugRu,
+        mediaRu.length ? mediaRu : storyCards ? [storyCards.ru] : [],
+        entitiesRu,
+        draft.text_ru_entities_json,
+        Boolean(targets.site_ru),
+        schedule.ruAt,
+      ),
+      locale(
+        "en",
+        textEn,
+        slugEn,
+        mediaEn.length ? mediaEn : storyCards ? [storyCards.en] : [],
+        entitiesEn,
+        draft.text_en_entities_json,
+        Boolean(targets.site_en),
+        schedule.enAt,
+      ),
     ],
   };
+}
+
+function isStoryTarget(target: string): boolean {
+  return target === "telegram_stories" || target === "instagram_stories_ru" || target === "instagram_stories";
 }
 
 export type PublicationPlan = ReturnType<typeof createPublicationPlan>;

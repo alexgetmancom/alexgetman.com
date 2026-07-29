@@ -19,7 +19,7 @@
       "ignoreDependencies": ["dependency-cruiser"]
     },
     "apps/backend": {
-      "entry": ["tests/**/*.test.ts"],
+      "entry": ["tests/**/*.test.ts", "src/story-cards/renderer-process.ts"],
       "project": ["src/**/*.ts", "tests/**/*.ts"]
     }
   },

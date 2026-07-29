@@ -2,6 +2,7 @@ import { and, asc, count, eq, inArray, sql } from "drizzle-orm";
 import type { BackendDb } from "../db/client.js";
 import { drafts, postLocales, posts, publicationPlans, publicationSources, publications, publishJobs, siteJobs } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
+import { discardDraftStoryCards } from "../story-cards/store.js";
 
 export function scheduledDrafts(backendDb: BackendDb): Array<{ id: number; scheduledAt: string | null; scheduledEnAt: string | null }> {
   return backendDb.db
@@ -51,6 +52,7 @@ export function cancelDraft(backendDb: BackendDb, draftId: number): void {
     tx.delete(publications).where(eq(publications.postId, postId)).run();
     tx.update(drafts).set({ postId: null, updatedAt: now }).where(eq(drafts.id, draftId)).run();
   });
+  discardDraftStoryCards(backendDb, draftId);
   recordDomainEvent(backendDb, {
     ref: `draft:${draftId}`,
     type: "publishing.draft.cancelled",

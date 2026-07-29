@@ -242,6 +242,32 @@ try {
     return probe.out.trim();
   };
 
+  // Exercise the isolated renderer exactly as the durable worker does. This
+  // catches missing Sharp native bindings, omitted brand assets and broken
+  // font discovery in the pruned production image before deployment.
+  const storyCard = await inContainer([
+    "sh",
+    "-c",
+    `printf '%s' '<?xml version="1.0"?><fontconfig><dir>/app/apps/backend/assets/story-card</dir><cachedir>/tmp/story-card-font-cache</cachedir></fontconfig>' > /tmp/story-card-fontconfig.xml && printf '%s' '${JSON.stringify(
+      {
+        backgroundPath: "/app/apps/backend/assets/story-card/strata-master-background.png",
+        outputPath: "/tmp/text-story-card.jpg",
+        copy: {
+          headline: "ChatGPT reached one billion weekly active users.",
+          emoji: "⚡",
+          lines: ["ChatGPT reached one billion", "weekly active users."],
+          boldLineCount: 1,
+          templateVersion: "strata-v1",
+        },
+      },
+    )}' | FONTCONFIG_FILE=/tmp/story-card-fontconfig.xml bun /app/story-renderer/renderer-process.js`,
+  ]);
+  check(storyCard.code === 0, "text Story card renderer", storyCard.out.trim().slice(0, 200));
+  if (storyCard.code === 0) {
+    const storyCardSize = await dimensions("/tmp/text-story-card.jpg");
+    check(storyCardSize === "1080x1920", "text Story card dimensions", storyCardSize);
+  }
+
   const sources = await inContainer([
     "sh",
     "-c",

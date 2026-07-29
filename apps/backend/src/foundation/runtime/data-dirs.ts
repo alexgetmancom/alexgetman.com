@@ -19,6 +19,7 @@ export function requiredDataDirectories(config: BackendConfig): { name: string; 
         ]
       : []),
     { name: "MEDIA_CACHE_DIR", path: config.MEDIA_CACHE_DIR },
+    { name: "STORY_CARD_DIR", path: config.STORY_CARD_DIR },
     ...(config.studio.modules.site ? [{ name: "SITE_PUBLIC_DIR", path: config.SITE_PUBLIC_DIR }] : []),
   ];
   const seen = new Set<string>();

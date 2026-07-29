@@ -3,6 +3,7 @@ import { DEFAULT_TARGETS } from "../botTargets.js";
 import type { BackendDb } from "../db/client.js";
 import { drafts } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
+import { queueDraftStoryCards } from "../story-cards/store.js";
 import type { DraftMessage } from "./message.js";
 
 /** Content aggregate for a draft before it enters a publication plan. */
@@ -32,6 +33,7 @@ export function createDraftFromMessage(backendDb: BackendDb, actorId: number, me
     message: `Draft #${created.id} created`,
     details: { owner_id: actorId, media_count: message.media.length },
   });
+  queueDraftStoryCards(backendDb, created.id);
   return created.id;
 }
 
@@ -54,6 +56,7 @@ export function requireDraft(backendDb: BackendDb, draftId: number) {
       text_ru_entities_json: drafts.textRuEntitiesJson,
       text_en_entities_json: drafts.textEnEntitiesJson,
       threads_chain_approved: drafts.threadsChainApproved,
+      story_publish_mode: drafts.storyPublishMode,
     })
     .from(drafts)
     .where(eq(drafts.id, draftId))

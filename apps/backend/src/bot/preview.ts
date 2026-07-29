@@ -4,7 +4,7 @@ import { type PresetName, presetName, TARGETS } from "../botTargets.js";
 import { effectivePostTargets, registeredPostTargetIds } from "../channels/registry.js";
 import { requireDraft } from "../content/drafts.js";
 import type { BackendDb } from "../db/client.js";
-import { draftSources } from "../db/schema.js";
+import { draftSources, draftStoryCards } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { type MessageKey, t } from "../foundation/i18n/index.js";
 import { formatMsk } from "../interfaces/telegram/time.js";
@@ -176,10 +176,17 @@ export function draftPreview(
       : "";
   const mediaRu = safeMediaCount(draft.media_ru_json);
   const mediaEn = safeMediaCount(draft.media_en_json);
+  const storyCards = backendDb.db.select().from(draftStoryCards).where(eq(draftStoryCards.draftId, draftId)).all();
+  const storyCardStatus =
+    storyCards.length === 0
+      ? ""
+      : storyCards.every((card) => card.status === "ready")
+        ? "\nStory cards: ✓ RU · ✓ EN"
+        : `\nStory cards: ${storyCards.map((card) => `${card.locale.toUpperCase()} ${card.status}`).join(" · ")}`;
   const media = mediaRu || mediaEn ? `\n${t(locale, "post.media")}: ${mediaRu || 0} RU · ${mediaEn || mediaRu || 0} EN` : "";
   const enMediaWarning = mediaRu > 0 && mediaEn === 0 ? `\n⚠️ ${t(locale, "post.en-uses-ru-media")}` : "";
   return {
-    text: `${draftHeader(draftId, targets, locale)}${media}${enMediaWarning}\n\nRU:\n${String(draft.text_ru || t(locale, "post.media-only")).slice(0, 1000)}\n\nEN:\n${String(draft.text_en_approved || draft.text_en_machine || t(locale, "post.not-translated")).slice(0, 1000)}${schedule}`,
+    text: `${draftHeader(draftId, targets, locale)}${media}${storyCardStatus}${enMediaWarning}\n\nRU:\n${String(draft.text_ru || t(locale, "post.media-only")).slice(0, 1000)}\n\nEN:\n${String(draft.text_en_approved || draft.text_en_machine || t(locale, "post.not-translated")).slice(0, 1000)}${schedule}`,
     keyboard,
   };
 }

@@ -1,4 +1,4 @@
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { autoId, type JsonObject, json, queueAttempts, timestamps } from "./_shared.js";
 
 export const publishJobs = sqliteTable(
@@ -85,8 +85,38 @@ export const drafts = sqliteTable("drafts", {
    * the author saw how many posts the chain would take and accepted it. Lives
    * and dies with the draft on purpose — a remembered waiver stops being a rule. */
   threadsChainApproved: integer().notNull().default(0),
+  /** Text-only posts always get site cards. This field records only the
+   * author's final decision about the three Story delivery targets. */
+  storyPublishMode: text(),
   ...timestamps(),
 });
+
+/** A text-only draft owns one deterministic rendered card per locale. The row
+ * is both the durable asset record and its single-concurrency work item. */
+export const draftStoryCards = sqliteTable(
+  "draft_story_cards",
+  {
+    draftId: integer().notNull(),
+    locale: text().notNull(),
+    sourceHash: text().notNull(),
+    headline: text().notNull(),
+    emoji: text(),
+    status: text().notNull().default("queued"),
+    localPath: text(),
+    attemptCount: integer().notNull().default(0),
+    nextAttemptAt: text(),
+    lockedBy: text(),
+    lockedAt: text(),
+    lastError: text(),
+    templateVersion: text().notNull(),
+    ...timestamps(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.draftId, table.locale] }),
+    index("idx_draft_story_cards_due").on(table.status, table.nextAttemptAt, table.createdAt),
+    index("idx_draft_story_cards_lock").on(table.lockedBy, table.lockedAt),
+  ],
+);
 
 export const pendingAlbums = sqliteTable("pending_albums", {
   id: text().primaryKey(),

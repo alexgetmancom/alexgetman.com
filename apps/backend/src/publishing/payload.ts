@@ -8,6 +8,7 @@ import { payloadMedia } from "../delivery/social/payload.js";
  * instead of re-running alias resolution on each read. */
 export function localizeTargetPayload(payload: Record<string, unknown>, target: string): Record<string, unknown> {
   const locale = targetLocale(target) ?? "en";
+  const storyMedia = isStoryTarget(target) ? payload[locale === "ru" ? "story_media_ru" : "story_media_en"] : undefined;
   if (locale === "ru") {
     const text = String(payload.text_ru ?? payload.text ?? "");
     const entities = recordArray(payload.entities_ru ?? payload.entities);
@@ -19,7 +20,7 @@ export function localizeTargetPayload(payload: Record<string, unknown>, target: 
       text_ru: text,
       text_en: "",
       bodyMarkdown: text,
-      media: payload.media,
+      media: storyMedia ?? payload.media,
       media_en: undefined,
       entities,
       slug: payload.slug_ru,
@@ -30,7 +31,7 @@ export function localizeTargetPayload(payload: Record<string, unknown>, target: 
 
   const text = String(payload.text_en ?? payload.text ?? "");
   const entities = recordArray(payload.entities_en ?? payload.entities);
-  const rawMedia = payload.media_en ?? payload.media;
+  const rawMedia = storyMedia ?? payload.media_en ?? payload.media;
   const localized = {
     ...payload,
     locale,
@@ -45,6 +46,10 @@ export function localizeTargetPayload(payload: Record<string, unknown>, target: 
   };
   const media = payloadMedia(localized);
   return { ...localized, media, media_en: media };
+}
+
+function isStoryTarget(target: string): boolean {
+  return target === "telegram_stories" || target === "instagram_stories_ru" || target === "instagram_stories";
 }
 
 function recordArray(value: unknown): Record<string, unknown>[] {

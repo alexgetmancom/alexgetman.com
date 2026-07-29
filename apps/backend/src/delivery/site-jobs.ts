@@ -270,10 +270,11 @@ async function prepareFeedItem(
   const hasRu = Boolean(source.has_ru ?? targets.site_ru) && isDue(source.publish_at_ru, now);
   const hasEn = Boolean(source.has_en ?? targets.site_en) && isDue(source.publish_at_en, now);
   if (!hasRu && !hasEn) return null;
+  const mediaRuSource = nonEmptyMedia(source.media ?? source.media_ru) ?? source.site_media_ru;
   const mediaRu = hasRu
-    ? (existingMedia(existing, "media") ?? (await materializeSiteMedia(config, postId, "ru", source.media ?? source.media_ru, fetchImpl)))
+    ? (existingMedia(existing, "media") ?? (await materializeSiteMedia(config, postId, "ru", mediaRuSource, fetchImpl)))
     : [];
-  const mediaEnSource = source.media_en ?? source.media ?? source.media_ru;
+  const mediaEnSource = nonEmptyMedia(source.media_en ?? source.media ?? source.media_ru) ?? source.site_media_en ?? mediaRuSource;
   const mediaEn = hasEn
     ? (existingMedia(existing, "media_en") ?? (await materializeSiteMedia(config, postId, "en", mediaEnSource, fetchImpl)))
     : [];
@@ -297,6 +298,10 @@ async function prepareFeedItem(
     image: mediaRu.find((item) => item.type === "image")?.path ?? null,
     image_en: mediaEn.find((item) => item.type === "image")?.path ?? null,
   };
+}
+
+function nonEmptyMedia(value: unknown): unknown[] | null {
+  return Array.isArray(value) && value.length > 0 ? value : null;
 }
 
 /** Reuses the previous feed's already materialized media for a post outside this

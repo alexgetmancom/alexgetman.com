@@ -99,7 +99,8 @@ export async function materializeSiteMedia(
     await deduplicateSiteMediaFile(mediaRoot, target);
     const verticalName = siteMediaVerticalFilename(postId, locale, index, kind);
     const vertical = path.join(directory, verticalName);
-    await materializeVerticalViewerMedia(config, target, vertical, kind, options, fetchImpl);
+    if (item.role === "text_story_card") await copyFileAtomically(target, vertical);
+    else await materializeVerticalViewerMedia(config, target, vertical, kind, options, fetchImpl);
     await deduplicateSiteMediaFile(mediaRoot, vertical);
     const output: Record<string, unknown> = {
       ...item,

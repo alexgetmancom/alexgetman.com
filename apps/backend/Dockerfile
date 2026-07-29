@@ -44,6 +44,7 @@ RUN DATA_DIR=/data bun run build
 RUN bun build apps/web/server.ts --outdir runtime --target bun --splitting --minify --sourcemap=external
 RUN bun build apps/backend/src/cli.ts --outdir ops --target bun --minify --sourcemap=external
 RUN bun build apps/backend/src/runtime/docker-entrypoint.ts --outdir entrypoint --target bun --minify --sourcemap=external
+RUN bun build apps/backend/src/story-cards/renderer-process.ts --outdir story-renderer --target bun --minify --sourcemap=external
 
 # --- СТАДИЯ КОПИРОВАНИЯ ГОТОВОГО БИЛДА С ХОСТА (для сборки в GitHub Actions) ---
 FROM scratch AS build-on-host
@@ -51,16 +52,18 @@ COPY dist /app/dist
 COPY runtime /app/runtime
 COPY ops /app/ops
 COPY entrypoint /app/entrypoint
+COPY story-renderer /app/story-renderer
 COPY apps/backend/drizzle /app/apps/backend/drizzle
+COPY apps/backend/assets /app/apps/backend/assets
 
 # --- ДИНАМИЧЕСКИЙ ВЫБОР СТАДИИ СБОРКИ НА ОСНОВЕ ПЕРЕМЕННОЙ ---
 FROM build-${BUILD_SOURCE} AS build
 
 # --- СТАДИЯ ПРОД-ЗАВИСИМОСТЕЙ ---
-# Alpine, а не debian: финальный образ musl-ный, и на debian bun ставил ОБА
-# варианта каждого нативного пакета — и gnu, и musl, — из которых gnu-половина
-# в alpine нерабочая. Стадии обязаны совпадать по libc.
-FROM oven/bun:1.3.14-alpine AS prod-deps
+# Keep dependency installation and runtime on the same glibc base. Bun's musl
+# runtime does not currently expose every N-API symbol Sharp needs, so an
+# Alpine image can contain the correct native package and still fail on import.
+FROM oven/bun:1.3.14-debian AS prod-deps
 WORKDIR /app
 COPY --chown=bun:bun package.json bun.lock tsconfig.json tsconfig.base.json astro.config.ts svelte.config.ts biome.json knip.json ./
 COPY --chown=bun:bun apps/backend/package.json ./apps/backend/package.json
@@ -83,25 +86,25 @@ USER bun
 # Список держит честным `Image smoke test` в .github/workflows/deploy.yml: он
 # поднимает собранный образ и ходит по SSR-роутам. Если новый импорт в
 # apps/web попадёт в один из удалённых пакетов, смоук упадёт до деплоя.
-RUN --mount=type=cache,target=/home/bun/.bun,uid=1000,gid=1000 bun install --production --frozen-lockfile --ignore-scripts \
+RUN --mount=type=cache,target=/home/bun/.bun,uid=1000,gid=1000 bun install --production --frozen-lockfile --ignore-scripts --linker hoisted \
   && rm -rf \
     node_modules/.bun/@typescript+typescript-* \
     node_modules/.bun/@rolldown+binding-* \
     node_modules/.bun/@esbuild+* \
     node_modules/.bun/lightningcss-linux-* \
     node_modules/.bun/@astrojs+compiler-binding-* \
-    node_modules/.bun/@shikijs+langs@* \
-    node_modules/.bun/@img+sharp-libvips-* \
-    node_modules/.bun/@img+sharp-linux*
+    node_modules/.bun/@shikijs+langs@*
 
 # --- ФИНАЛЬНЫЙ МИНИМАЛЬНЫЙ ОБРАЗ ---
-FROM oven/bun:1.3.14-alpine AS app
+FROM oven/bun:1.3.14-debian AS app
 
 ARG GIT_REVISION=unknown
 ENV GIT_REVISION=${GIT_REVISION}
 ENV DRIZZLE_MIGRATIONS_DIR=/app/apps/backend/drizzle
 
-RUN apk add --no-cache ca-certificates tini
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates tini \
+  && rm -rf /var/lib/apt/lists/*
 
 # Копируем сжатые бинарники из изолированной стадии ffmpeg-bin
 COPY --from=ffmpeg-bin /tmp/ffmpeg /usr/local/bin/
@@ -112,11 +115,13 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/runtime ./runtime
 COPY --from=build /app/ops ./ops
 COPY --from=build /app/entrypoint ./entrypoint
+COPY --from=build /app/story-renderer ./story-renderer
 # Bun emits mtcute's dynamically loaded WASM files beside the server bundle,
 # while mtcute resolves them relative to the process working directory.
 COPY --from=build /app/runtime/*.wasm ./
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/apps/backend/drizzle ./apps/backend/drizzle
+COPY --from=build /app/apps/backend/assets ./apps/backend/assets
 
 # Stays root by default: the entrypoint fixes bind-mount ownership on a fresh
 # volume, then drops privileges in-process before loading the server (see
