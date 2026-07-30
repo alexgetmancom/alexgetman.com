@@ -1,6 +1,6 @@
 const TEMPLATE_VERSION = "strata-v2";
 const MAX_HEADLINE_CHARACTERS = 150;
-const MAX_LINES = 6;
+const MAX_LINES = 8;
 const MAX_LINE_UNITS = 10.6;
 
 export type StoryCardCopy = {
