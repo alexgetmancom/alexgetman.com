@@ -18,8 +18,8 @@ const inputSchema = z.object({
   copy: z.object({
     headline: z.string(),
     emoji: z.string().nullable(),
-    lines: z.array(z.string()).min(1).max(6),
-    boldLineCount: z.number().int().min(0).max(6),
+    lines: z.array(z.string()).min(1).max(8),
+    boldLineCount: z.number().int().min(0).max(8),
     templateVersion: z.literal("strata-v2"),
   }),
 });
