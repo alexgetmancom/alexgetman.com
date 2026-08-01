@@ -12,8 +12,9 @@ import { backfillTextStoryCards } from "../src/operations/story-card-backfill.js
 import { localizeTargetPayload } from "../src/publishing/payload.js";
 import { createPublicationPlan } from "../src/publishing/publication-plan.js";
 import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
-import { buildStoryCardCopy } from "../src/story-cards/copy.js";
+import { buildStoryCardCopy, lineUnits, MAX_LINE_UNITS, MAX_LINES, TEMPLATE_VERSION } from "../src/story-cards/copy.js";
 import { discardDraftStoryCards, readyStoryCardMedia, setStoryPublishMode, storyCardsForDraft } from "../src/story-cards/store.js";
+import { emojiAssetFile, STORY_CARD_EMOJI_LEFT, STORY_CARD_EMOJI_SIZE, storyCardEmojiTop } from "../src/story-cards/svg.js";
 import { runStoryCardCycle } from "../src/story-cards/worker.js";
 
 let backendDb: BackendDb | null = null;
@@ -26,15 +27,41 @@ afterEach(() => {
 });
 
 describe("text Story cards", () => {
-  it("extracts a leading emoji and wraps a stable six-line headline", () => {
+  it("extracts a leading emoji and wraps the headline within the line budget", () => {
     const copy = buildStoryCardCopy(
       "🚨 СЛИВ: Две модели OpenAI с кодовыми именами Zinc и Magnesium были замечены в DesignArena. Остальной пост не нужен.",
     );
     expect(copy.emoji).toBe("🚨");
     expect(copy.headline).toEndWith("DesignArena.");
     expect(copy.lines.length).toBeGreaterThan(2);
-    expect(copy.lines.length).toBeLessThanOrEqual(6);
+    expect(copy.lines.length).toBeLessThanOrEqual(MAX_LINES);
     expect(copy.boldLineCount).toBe(2);
+  });
+
+  // A word wider than the line box used to be accepted whole, and SVG text does
+  // not clip: the tail was drawn past the 1080px edge instead of being wrapped.
+  it("breaks a word that is wider than one line instead of overflowing the card", () => {
+    const copy = buildStoryCardCopy(`Ссылка ${"a".repeat(120)} внутри поста.`);
+    expect(copy.lines.length).toBeGreaterThan(1);
+    for (const line of copy.lines) expect(lineUnits(line.replace(/…$/, ""))).toBeLessThanOrEqual(MAX_LINE_UNITS);
+  });
+
+  // The renderer's schema and the copy rules must agree by construction: they were
+  // two hand-kept literals, and raising one shipped a prod failure on the other.
+  it("keeps every generated headline inside the renderer's accepted shape", () => {
+    for (const text of ["Одно слово", "🔥 ".concat("длинное слово ".repeat(40)), "a".repeat(400)]) {
+      const copy = buildStoryCardCopy(text);
+      expect(copy.lines.length).toBeLessThanOrEqual(MAX_LINES);
+      expect(copy.boldLineCount).toBeLessThanOrEqual(MAX_LINES);
+      expect(copy.templateVersion).toBe(TEMPLATE_VERSION);
+    }
+  });
+
+  it("names the Twemoji asset for an emoji whether or not it ships today", () => {
+    expect(emojiAssetFile("🚨")).toBe("1f6a8.svg");
+    expect(emojiAssetFile("⚡️")).toBe("26a1.svg");
+    expect(emojiAssetFile("🔥")).toBe("1f525.svg");
+    expect(emojiAssetFile(null)).toBeNull();
   });
 
   it("queues RU and EN automatically and renders both through the isolated process", async () => {
@@ -63,7 +90,16 @@ describe("text Story cards", () => {
     expect(media?.ru.role).toBe("text_story_card");
     const metadata = await sharp(String(media?.ru.localPath)).metadata();
     expect(metadata).toMatchObject({ width: 1080, height: 1920, format: "jpeg" });
-    const emojiStats = await sharp(String(media?.ru.localPath)).extract({ left: 108, top: 979, width: 58, height: 58 }).stats();
+    // The probe follows the layout helpers rather than a copied constant: the
+    // emoji is composited against the same baseline the copy is drawn on, so a
+    // hard-coded box silently starts sampling background after a layout tweak.
+    const box = {
+      left: STORY_CARD_EMOJI_LEFT,
+      top: storyCardEmojiTop(buildStoryCardCopy("⚡ ChatGPT достиг примерно миллиарда еженедельно активных пользователей.")),
+      width: STORY_CARD_EMOJI_SIZE,
+      height: STORY_CARD_EMOJI_SIZE,
+    };
+    const emojiStats = await sharp(String(media?.ru.localPath)).extract(box).stats();
     expect(emojiStats.channels[0]?.max).toBeGreaterThan(emojiStats.channels[1]?.max ?? 255);
   }, 20_000);
 
@@ -121,6 +157,25 @@ describe("text Story cards", () => {
       storyCards,
     );
     expect(withStories.targets.telegram_stories).toBe(true);
+
+    // "Publish everywhere" narrows the editor's selection; it must not switch a
+    // Story target back on that the editor had deliberately switched off.
+    const disabled = createPublicationPlan(
+      {
+        ...draft,
+        story_publish_mode: "all",
+        targets_json: JSON.stringify({ ...JSON.parse(draft.targets_json), telegram_stories: false }),
+      } as never,
+      1,
+      2,
+      { mode: "immediate", ruAt: "2026-07-29T10:00:00.000Z", enAt: "2026-07-29T10:00:00.000Z" },
+      "2026-07-29T10:00:00.000Z",
+      undefined,
+      storyCards,
+    );
+    expect(disabled.targets.telegram_stories).toBe(false);
+    expect(disabled.targets.instagram_stories_ru).toBe(true);
+
     expect(localizeTargetPayload(withStories.payload, "telegram_stories").media).toEqual([
       expect.objectContaining({ localPath: "/cards/ru.jpg", storyLocalPath: "/cards/ru.jpg" }),
     ]);

@@ -1,3 +1,4 @@
+import { isStoryTarget } from "../botTargets.js";
 import type { requireDraft } from "../content/drafts.js";
 import { firstLine, parseArrayValue, slugify } from "../content/message.js";
 import { entitiesToHtml } from "../content/text.js";
@@ -28,7 +29,11 @@ export function createPublicationPlan(
   const targets = Object.fromEntries(
     Object.entries(parseTargets(draft.targets_json)).map(([target, enabled]) => [
       target,
-      (storyCards && isStoryTarget(target) ? draft.story_publish_mode === "all" : enabled) &&
+      // A generated card gates a Story target behind the editor's explicit
+      // choice, but it never revives a target the editor switched off: the
+      // choice narrows the selection, it does not replace it.
+      enabled &&
+        (storyCards && isStoryTarget(target) ? draft.story_publish_mode === "all" : true) &&
         (!availableTargets || availableTargets.has(target)),
     ]),
   );
@@ -123,10 +128,6 @@ export function createPublicationPlan(
       ),
     ],
   };
-}
-
-function isStoryTarget(target: string): boolean {
-  return target === "telegram_stories" || target === "instagram_stories_ru" || target === "instagram_stories";
 }
 
 export type PublicationPlan = ReturnType<typeof createPublicationPlan>;

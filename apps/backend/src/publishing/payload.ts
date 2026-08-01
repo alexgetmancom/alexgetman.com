@@ -1,4 +1,4 @@
-import { targetLocale } from "../botTargets.js";
+import { isStoryTarget, targetLocale } from "../botTargets.js";
 import { payloadMedia } from "../delivery/social/payload.js";
 
 /** Resolves a draft's dual-locale payload to one target's locale, and
@@ -46,10 +46,6 @@ export function localizeTargetPayload(payload: Record<string, unknown>, target: 
   };
   const media = payloadMedia(localized);
   return { ...localized, media, media_en: media };
-}
-
-function isStoryTarget(target: string): boolean {
-  return target === "telegram_stories" || target === "instagram_stories_ru" || target === "instagram_stories";
 }
 
 function recordArray(value: unknown): Record<string, unknown>[] {

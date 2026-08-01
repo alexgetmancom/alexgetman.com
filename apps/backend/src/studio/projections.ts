@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { targetLocale } from "../botTargets.js";
+import { isStoryTarget, targetLocale } from "../botTargets.js";
 import { parseArrayValue } from "../content/message.js";
 import type { BackendDb } from "../db/client.js";
 import { studioMediaAssets } from "../db/schema.js";
@@ -95,10 +95,6 @@ export function postDeliveryProjections(
     ];
   });
   return { kind: "post" as const, draftId: draft.id, projections: canonical };
-}
-
-function isStoryTarget(target: string): boolean {
-  return target === "telegram_stories" || target === "instagram_stories_ru" || target === "instagram_stories";
 }
 
 export function videoDeliveryProjections(backendDb: BackendDb, videoDraftId: number) {

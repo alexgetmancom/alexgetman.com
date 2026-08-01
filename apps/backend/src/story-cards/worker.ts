@@ -9,9 +9,13 @@ import { buildStoryCardCopy } from "./copy.js";
 
 type ClaimedCard = typeof draftStoryCards.$inferSelect & { lockedBy: string; lockedAt: string };
 
-export async function runStoryCardCycle(config: BackendConfig, backendDb: BackendDb): Promise<number> {
+/** Renders at most one queued card. `preferDraftId` puts that draft's cards at the
+ * head of the queue: the bot drives this loop synchronously while an editor waits
+ * on the Story choice screen, and spending that budget on an unrelated draft's
+ * card is what makes the screen time out. */
+export async function runStoryCardCycle(config: BackendConfig, backendDb: BackendDb, preferDraftId?: number): Promise<number> {
   recoverStoryCardJobs(backendDb);
-  const card = claimStoryCard(backendDb);
+  const card = claimStoryCard(backendDb, preferDraftId);
   if (!card) {
     recordWorkerState(backendDb, "story-cards", { claimed: 0 });
     return 0;
@@ -73,22 +77,40 @@ export async function runStoryCardCycle(config: BackendConfig, backendDb: Backen
 export function recoverStoryCardJobs(backendDb: BackendDb, staleAfterMs = 60_000): number {
   const cutoff = new Date(Date.now() - staleAfterMs).toISOString();
   const now = new Date().toISOString();
-  return backendDb.db
-    .update(draftStoryCards)
-    .set({ status: "queued", lockedBy: null, lockedAt: null, nextAttemptAt: now, updatedAt: now })
-    .where(and(eq(draftStoryCards.status, "rendering"), lt(draftStoryCards.lockedAt, cutoff)))
-    .returning({ draftId: draftStoryCards.draftId })
-    .all().length;
+  return (
+    backendDb.db
+      .update(draftStoryCards)
+      .set({ status: "queued", lockedBy: null, lockedAt: null, nextAttemptAt: now, updatedAt: now })
+      // A row left "rendering" with no lock timestamp cannot age out of a `<
+      // cutoff` comparison, so it would stay claimed forever. It is already
+      // unowned, so recover it on sight.
+      .where(and(eq(draftStoryCards.status, "rendering"), or(isNull(draftStoryCards.lockedAt), lt(draftStoryCards.lockedAt, cutoff))))
+      .returning({ draftId: draftStoryCards.draftId })
+      .all().length
+  );
 }
 
-function claimStoryCard(backendDb: BackendDb): ClaimedCard | null {
+function claimStoryCard(backendDb: BackendDb, preferDraftId?: number): ClaimedCard | null {
   const now = new Date().toISOString();
-  const candidate = backendDb.db
-    .select()
-    .from(draftStoryCards)
-    .where(and(eq(draftStoryCards.status, "queued"), or(isNull(draftStoryCards.nextAttemptAt), lte(draftStoryCards.nextAttemptAt, now))))
-    .orderBy(asc(draftStoryCards.createdAt), asc(draftStoryCards.draftId), asc(draftStoryCards.locale))
-    .get();
+  const due = and(eq(draftStoryCards.status, "queued"), or(isNull(draftStoryCards.nextAttemptAt), lte(draftStoryCards.nextAttemptAt, now)));
+  const order = [asc(draftStoryCards.createdAt), asc(draftStoryCards.draftId), asc(draftStoryCards.locale)] as const;
+  const preferred =
+    preferDraftId === undefined
+      ? undefined
+      : backendDb.db
+          .select()
+          .from(draftStoryCards)
+          .where(and(due, eq(draftStoryCards.draftId, preferDraftId)))
+          .orderBy(...order)
+          .get();
+  const candidate =
+    preferred ??
+    backendDb.db
+      .select()
+      .from(draftStoryCards)
+      .where(due)
+      .orderBy(...order)
+      .get();
   if (!candidate) return null;
   const lockId = `story-card:${process.pid}:${crypto.randomUUID()}`;
   const claimed = backendDb.db
@@ -126,9 +148,17 @@ async function renderStoryCard(config: BackendConfig, card: ClaimedCard, output:
     stderr: "pipe",
     env: { ...process.env, FONTCONFIG_FILE: fontConfig },
   });
-  const timer = setTimeout(() => child.kill(), config.STORY_CARD_TIMEOUT_SECONDS * 1000);
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    child.kill("SIGKILL");
+  }, config.STORY_CARD_TIMEOUT_SECONDS * 1000);
   try {
-    const [exitCode, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+    // stdout is drained alongside stderr rather than left unread: an unread pipe
+    // that fills stalls the child on write, and the kill above would then read as
+    // a render timeout instead of a stuck reader.
+    const [exitCode, stderr] = await Promise.all([child.exited, new Response(child.stderr).text(), new Response(child.stdout).text()]);
+    if (timedOut) throw new Error(`story_card_renderer_failed: timed out after ${config.STORY_CARD_TIMEOUT_SECONDS}s`);
     if (exitCode !== 0) throw new Error(`story_card_renderer_failed: ${stderr.slice(0, 800) || `exit ${exitCode}`}`);
     if (!fs.existsSync(output)) throw new Error("story_card_renderer_failed: output missing");
   } finally {

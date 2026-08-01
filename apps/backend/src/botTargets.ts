@@ -39,6 +39,15 @@ export function isSiteTarget(target: string): boolean {
   return targetById[target as TargetId]?.kind === "site";
 }
 
+const STORY_TARGETS = new Set<string>(["telegram_stories", "instagram_stories_ru", "instagram_stories"]);
+
+/** Story targets take one media item and publish it full-bleed, which is why
+ * generated text cards, Story-sized variants and the publish-mode gate all key
+ * off this. Kept beside TARGETS so a fourth Story platform is one edit, not four. */
+export function isStoryTarget(target: string): boolean {
+  return STORY_TARGETS.has(target);
+}
+
 export type PresetName = keyof typeof PRESETS | "manual";
 
 /** Names the preset a target selection matches, or "manual" when it matches none. */

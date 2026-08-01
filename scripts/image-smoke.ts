@@ -258,7 +258,7 @@ try {
           emoji: "⚡",
           lines: ["ChatGPT reached one billion", "weekly active users."],
           boldLineCount: 1,
-          templateVersion: "strata-v2",
+          templateVersion: "strata-v3",
         },
       },
     )}' | FONTCONFIG_FILE=/tmp/story-card-fontconfig.xml bun /app/story-renderer/renderer-process.js`,

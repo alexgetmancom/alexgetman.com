@@ -1,7 +1,14 @@
-const TEMPLATE_VERSION = "strata-v2";
-const MAX_HEADLINE_CHARACTERS = 150;
-const MAX_LINES = 8;
-const MAX_LINE_UNITS = 10.6;
+/** Part of every card's source hash, so bumping it re-renders each stored card.
+ * Any change to the copy rules or to the drawn layout has to bump it — otherwise
+ * cards rendered under the old rules keep their hash and are never rebuilt. */
+export const TEMPLATE_VERSION = "strata-v3";
+/** Safety net only. The line budget below is what normally decides the cut: at
+ * MAX_LINE_UNITS per line eight lines hold roughly 155 characters, so a lower
+ * cap here would truncate the headline before wrapping ever got a say. */
+const MAX_HEADLINE_CHARACTERS = 210;
+export const MAX_LINES = 8;
+export const MAX_LINE_UNITS = 10.6;
+const ELLIPSIS = "…";
 
 export type StoryCardCopy = {
   headline: string;
@@ -55,23 +62,56 @@ function wrapHeadline(headline: string): string[] {
   const words = headline.split(/\s+/).filter(Boolean);
   const lines: string[] = [];
   let current = "";
-  for (const word of words) {
+  let index = 0;
+  for (; index < words.length; index++) {
+    const word = words[index] ?? "";
     const candidate = current ? `${current} ${word}` : word;
-    if (!current || textUnits(candidate) <= MAX_LINE_UNITS) {
+    if (textUnits(candidate) <= MAX_LINE_UNITS) {
       current = candidate;
       continue;
     }
-    lines.push(current);
-    current = word;
-    if (lines.length === MAX_LINES) break;
+    if (current) lines.push(current);
+    current = "";
+    if (lines.length >= MAX_LINES) break;
+    // A single word can be wider than the line box — a URL, a long compound.
+    // SVG text does not clip, so an unbroken word would be drawn past the card
+    // edge; break it by width instead of letting it overflow.
+    let rest = word;
+    while (textUnits(rest) > MAX_LINE_UNITS && lines.length < MAX_LINES) {
+      const head = takeUnits(rest, MAX_LINE_UNITS);
+      lines.push(head);
+      rest = rest.slice(head.length);
+    }
+    if (lines.length >= MAX_LINES) break;
+    current = rest;
   }
+  const overflowed = index < words.length || (Boolean(current) && lines.length >= MAX_LINES);
   if (current && lines.length < MAX_LINES) lines.push(current);
-  const consumed = lines.join(" ").replace(/…$/, "");
-  if (consumed.length < headline.replace(/…$/, "").length && lines.length) {
-    const last = lines.length - 1;
-    lines[last] = `${truncateAtWord(lines[last] ?? "", Math.max(1, (lines[last]?.length ?? 1) - 1)).replace(/…$/, "")}…`;
-  }
+  const last = lines.length - 1;
+  if (overflowed && last >= 0) lines[last] = ellipsize(lines[last] ?? "");
   return lines.length ? lines : ["Update"];
+}
+
+/** Longest prefix of `value` that still fits `limit` text units, at least one character. */
+function takeUnits(value: string, limit: number): string {
+  let taken = "";
+  for (const char of value) {
+    if (taken && textUnits(taken + char) > limit) break;
+    taken += char;
+  }
+  return taken || value.slice(0, 1);
+}
+
+function ellipsize(line: string): string {
+  const base = line.replace(/…$/, "");
+  return `${takeUnits(base, MAX_LINE_UNITS - textUnits(ELLIPSIS)).trimEnd()}${ELLIPSIS}`;
+}
+
+/** Estimated drawn width of a line, in multiples of the line box. Manrope is not
+ * measured here — the renderer runs in another process — so the weights are
+ * per-character approximations calibrated against the rendered card. */
+export function lineUnits(value: string): number {
+  return textUnits(value);
 }
 
 function textUnits(value: string): number {

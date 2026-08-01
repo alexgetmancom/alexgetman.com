@@ -5,20 +5,41 @@ export const STORY_CARD_HEIGHT = 1920;
 export const STORY_CARD_EMOJI_LEFT = 108;
 export const STORY_CARD_EMOJI_SIZE = 58;
 
-export function storyCardFirstBaseline(copy: StoryCardCopy): number {
-  const fontSize = 74;
-  const lineHeight = 94;
-  return 1020 - ((copy.lines.length - 1) * lineHeight) / 2 + fontSize * 0.25;
+// One source for the text block's metrics: the emoji is composited by the
+// renderer against the same baseline the SVG draws the copy on, so a layout
+// tweak made in one of the two places would silently pull them apart.
+const FONT_SIZE = 74;
+const LINE_HEIGHT = 94;
+const BLOCK_CENTER = 1020;
+const TEXT_LEFT = 190;
+/** Nudges the emoji's box off the text baseline onto its optical centre. */
+const EMOJI_BASELINE_OFFSET = 7;
+
+function storyCardFirstBaseline(copy: StoryCardCopy): number {
+  return BLOCK_CENTER - ((copy.lines.length - 1) * LINE_HEIGHT) / 2 + FONT_SIZE * 0.25;
+}
+
+export function storyCardEmojiTop(copy: StoryCardCopy): number {
+  return Math.round(storyCardFirstBaseline(copy) - STORY_CARD_EMOJI_SIZE + EMOJI_BASELINE_OFFSET);
+}
+
+/** Twemoji asset filename for a leading emoji: codepoints in lowercase hex joined
+ * by "-", with the FE0F variation selector dropped. Returns a name whether or not
+ * the file exists — the renderer checks the assets directory, so widening emoji
+ * coverage is a matter of dropping an SVG in, with no code change here. */
+export function emojiAssetFile(emoji: string | null): string | null {
+  if (!emoji) return null;
+  const codePoints = [...emoji].map((character) => character.codePointAt(0) ?? 0).filter((point) => point !== 0xfe0f);
+  if (codePoints.length === 0) return null;
+  return `${codePoints.map((point) => point.toString(16)).join("-")}.svg`;
 }
 
 export function storyCardOverlaySvg(copy: StoryCardCopy): string {
-  const fontSize = 74;
-  const lineHeight = 94;
   const firstBaseline = storyCardFirstBaseline(copy);
   const text = copy.lines
     .map(
       (line, index) =>
-        `<text x="190" y="${firstBaseline + index * lineHeight}" class="copy" font-weight="${
+        `<text x="${TEXT_LEFT}" y="${firstBaseline + index * LINE_HEIGHT}" class="copy" font-weight="${
           index < copy.boldLineCount ? 680 : 440
         }">${escapeXml(line)}</text>`,
     )
@@ -33,7 +54,7 @@ export function storyCardOverlaySvg(copy: StoryCardCopy): string {
     </filter>
     <style>
       text { font-family: Manrope, sans-serif; fill: #f3eee4; }
-      .copy { font-size: ${fontSize}px; letter-spacing: -1.15px; }
+      .copy { font-size: ${FONT_SIZE}px; letter-spacing: -1.15px; }
     </style>
   </defs>
   <text x="540" y="150" text-anchor="middle" font-size="29" font-weight="430"

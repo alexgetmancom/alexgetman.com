@@ -190,7 +190,7 @@ async function showStoryCardChoice(
   if (cards.length === 0) return false;
   const deadline = Date.now() + 4_000;
   while (!cardsReady(cards) && Date.now() < deadline) {
-    await runStoryCardCycle(config, backendDb);
+    await runStoryCardCycle(config, backendDb, draftId);
     cards = posts.preview(actorId, draftId).storyCards;
     if (!cardsReady(cards)) await Bun.sleep(100);
   }

@@ -1,16 +1,22 @@
+import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import type { OverlayOptions } from "sharp";
 import * as z from "zod";
+import { MAX_LINES, TEMPLATE_VERSION } from "./copy.js";
 import {
+  emojiAssetFile,
   STORY_CARD_EMOJI_LEFT,
   STORY_CARD_EMOJI_SIZE,
   STORY_CARD_HEIGHT,
   STORY_CARD_WIDTH,
-  storyCardFirstBaseline,
+  storyCardEmojiTop,
   storyCardOverlaySvg,
 } from "./svg.js";
 
+// The limits come from copy.ts rather than being restated here: when they were
+// two independent literals, raising the line budget passed review and then
+// failed at render time against a schema nobody remembered to widen.
 const inputSchema = z.object({
   backgroundPath: z.string().min(1),
   assetsDir: z.string().min(1),
@@ -18,9 +24,9 @@ const inputSchema = z.object({
   copy: z.object({
     headline: z.string(),
     emoji: z.string().nullable(),
-    lines: z.array(z.string()).min(1).max(8),
-    boldLineCount: z.number().int().min(0).max(8),
-    templateVersion: z.literal("strata-v2"),
+    lines: z.array(z.string()).min(1).max(MAX_LINES),
+    boldLineCount: z.number().int().min(0).max(MAX_LINES),
+    templateVersion: z.literal(TEMPLATE_VERSION),
   }),
 });
 
@@ -31,14 +37,12 @@ sharp.cache(false);
 sharp.concurrency(1);
 const composites: OverlayOptions[] = [{ input: Buffer.from(storyCardOverlaySvg(input.copy)) }];
 const emojiFile = emojiAssetFile(input.copy.emoji);
-if (emojiFile) {
+const emojiPath = emojiFile ? path.join(input.assetsDir, "emoji", emojiFile) : null;
+if (emojiPath && existsSync(emojiPath)) {
   composites.push({
-    input: await sharp(path.join(input.assetsDir, "emoji", emojiFile))
-      .resize(STORY_CARD_EMOJI_SIZE, STORY_CARD_EMOJI_SIZE, { fit: "contain" })
-      .png()
-      .toBuffer(),
+    input: await sharp(emojiPath).resize(STORY_CARD_EMOJI_SIZE, STORY_CARD_EMOJI_SIZE, { fit: "contain" }).png().toBuffer(),
     left: STORY_CARD_EMOJI_LEFT,
-    top: Math.round(storyCardFirstBaseline(input.copy) - STORY_CARD_EMOJI_SIZE + 7),
+    top: storyCardEmojiTop(input.copy),
   });
 }
 const result = await sharp(input.backgroundPath)
@@ -46,11 +50,4 @@ const result = await sharp(input.backgroundPath)
   .composite(composites)
   .jpeg({ quality: 92, chromaSubsampling: "4:4:4" })
   .toFile(input.outputPath);
-process.stdout.write(JSON.stringify({ outputPath: input.outputPath, bytes: result.size }));
-
-function emojiAssetFile(emoji: string | null): string | null {
-  if (emoji === "🚨") return "1f6a8.svg";
-  if (emoji === "⚡" || emoji === "⚡️") return "26a1.svg";
-  if (emoji === "🔴") return "1f534.svg";
-  return null;
-}
+process.stdout.write(JSON.stringify({ outputPath: input.outputPath, bytes: result.size, emoji: emojiPath && existsSync(emojiPath) }));

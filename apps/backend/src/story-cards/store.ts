@@ -23,6 +23,7 @@ export function queueDraftStoryCards(backendDb: BackendDb, draftId: number): voi
     en: draft.textEnApproved ?? draft.textEnMachine ?? draft.textRu,
   } as const;
   backendDb.db.transaction((tx) => {
+    let requeued = false;
     for (const locale of ["ru", "en"] as const) {
       const copy = buildStoryCardCopy(content[locale]);
       const sourceHash = crypto
@@ -37,6 +38,7 @@ export function queueDraftStoryCards(backendDb: BackendDb, draftId: number): voi
       if (current?.sourceHash === sourceHash && current.status === "ready" && current.localPath && fs.existsSync(current.localPath))
         continue;
       if (current?.localPath) stalePaths.push(current.localPath);
+      requeued = true;
       tx.insert(draftStoryCards)
         .values({
           draftId,
@@ -74,7 +76,10 @@ export function queueDraftStoryCards(backendDb: BackendDb, draftId: number): voi
         })
         .run();
     }
-    tx.update(drafts).set({ storyPublishMode: null, updatedAt: now }).where(eq(drafts.id, draftId)).run();
+    // Only a card that actually changed invalidates the editor's Story choice.
+    // This runs on every draft save, so resetting unconditionally threw away the
+    // "publish everywhere" decision each time an unrelated field was edited.
+    if (requeued) tx.update(drafts).set({ storyPublishMode: null, updatedAt: now }).where(eq(drafts.id, draftId)).run();
   });
   removeFiles(stalePaths);
 }
