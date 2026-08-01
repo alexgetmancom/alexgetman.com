@@ -11,7 +11,9 @@ export const commandCenterRoutes: RouteModule = (app, { config, backendDb, opera
   app.get("/api/pipeline-status", (c) => {
     if (!commandAllowed(c.req.raw, config)) return text("unauthorized\n", 401);
     return json(
-      trackUsageSync(backendDb, "command_center.pipeline.view", () => operations.pipeline(Number(c.req.query("week_offset") ?? 0) || 0)),
+      trackUsageSync(backendDb, "command_center.pipeline.view", () =>
+        operations.pipeline(Number(c.req.query("week_offset") ?? 0) || 0, 7, 0, undefined, { includeSamples: true }),
+      ),
     );
   });
 
@@ -21,13 +23,17 @@ export const commandCenterRoutes: RouteModule = (app, { config, backendDb, opera
     return sse((send) => {
       send(
         "pipeline",
-        trackUsageSync(backendDb, "command_center.pipeline.view", () => operations.pipeline(weekOffset)),
+        trackUsageSync(backendDb, "command_center.pipeline.view", () =>
+          operations.pipeline(weekOffset, 7, 0, undefined, { includeSamples: true }),
+        ),
       );
       return setInterval(
         () =>
           send(
             "pipeline",
-            trackUsageSync(backendDb, "command_center.pipeline.view", () => operations.pipeline(weekOffset)),
+            trackUsageSync(backendDb, "command_center.pipeline.view", () =>
+              operations.pipeline(weekOffset, 7, 0, undefined, { includeSamples: true }),
+            ),
           ),
         10_000,
       );
@@ -89,6 +95,12 @@ export const commandCenterRoutes: RouteModule = (app, { config, backendDb, opera
   app.get("/api/command-center", (c) =>
     commandAllowed(c.req.raw, config)
       ? json(trackUsageSync(backendDb, "command_center.dashboard.view", () => operations.dashboard()))
+      : json({ detail: "forbidden" }, 403),
+  );
+
+  app.get("/api/command-center/fingerprint", (c) =>
+    commandAllowed(c.req.raw, config)
+      ? json(trackUsageSync(backendDb, "command_center.dashboard.view", () => operations.fingerprint()))
       : json({ detail: "forbidden" }, 403),
   );
 

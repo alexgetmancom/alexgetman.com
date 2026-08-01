@@ -1,8 +1,8 @@
 import type { XActivityDashboardItem } from "../../../analytics/x-activity-dashboard.js";
 import { targetLocale } from "../../../botTargets.js";
-import { zonedDateParts } from "../../../foundation/time.js";
+import { zonedDateParts, zonedSlot } from "../../../foundation/time.js";
 import { ORDERED_TARGETS, PLATFORM_ICONS, platformKey, VIDEO_PLATFORM_ICON_KEYS } from "./assets.js";
-import { postViewEvents, renderUnifiedDailyChart, renderUnifiedRangeChart } from "./chart.js";
+import { currentPostViewEvents, postViewEvents, renderUnifiedDailyChart, renderUnifiedRangeChart } from "./chart.js";
 import { formatMetricValue, getMskDateString } from "./format.js";
 import { escapeHtml } from "./html.js";
 import { getTargetMetric, postMetricTotals } from "./metrics.js";
@@ -63,31 +63,27 @@ export function renderCombinedSection(input: CombinedSectionInput): string {
   const text = combinedTotals(posts, extraX);
   const video = { views: input.video.totals.views, reactions: input.video.totals.reactions, replies: input.video.totals.replies };
   const previousText =
-    periodDays === 1
-      ? medianDailyTextTotals(previousPosts, previousExtraX, 30, timeZone)
-      : perPeriod(combinedTotals(previousPosts, previousExtraX), periodDays);
+    periodDays === 1 ? medianDailyTextTotals(previousPosts, previousExtraX, 30, timeZone) : combinedTotals(previousPosts, previousExtraX);
   const previousVideoTotals =
     periodDays === 1
-      ? medianDailyVideoTotals(input.previousVideo, 30, timeZone)
-      : perPeriod(
-          {
-            views: input.previousVideo.totals.views,
-            reactions: input.previousVideo.totals.reactions,
-            replies: input.previousVideo.totals.replies,
-          },
-          periodDays,
-        );
+      ? medianDailyVideoTotals(input.previousVideo, 30)
+      : {
+          views: input.previousVideo.totals.views,
+          reactions: input.previousVideo.totals.reactions,
+          replies: input.previousVideo.totals.replies,
+        };
+  const comparisonLabel = periodDays === 1 ? "vs медиана за 30д" : "vs прошлый период";
   const halves = [
     ...(showText ? [{ totals: text, previous: previousText }] : []),
     ...(showVideo ? [{ totals: video, previous: previousVideoTotals }] : []),
   ];
 
   return `<section class="pipeline-overview">
-    ${renderKpiTable(halves)}
+    ${renderKpiTable(halves, comparisonLabel)}
     <div class="insights-row">
       ${renderPlatformPanel(input, posts, showText, showVideo)}
       <div class="chart-panel">
-        <div class="section-kicker">${periodDays === 1 ? "Сегодня и вчера" : "Динамика просмотров"}</div>
+        <div class="section-kicker">${periodDays === 1 ? "Сегодня и медиана за 30 дней" : "Динамика просмотров"}</div>
         ${renderChart(input, posts, extraX, showText, showVideo)}
       </div>
     </div>
@@ -144,7 +140,7 @@ type Half = { totals: Totals; previous: Totals };
  * The metric name occupies the first of three tracks, so the column rule falls
  * at the same third as the panel and publication splits below it.
  */
-function renderKpiTable(halves: Half[]): string {
+function renderKpiTable(halves: Half[], comparisonLabel: string): string {
   const metrics: Array<[keyof Totals, string]> = [
     ["views", "Просмотры"],
     ["reactions", "Реакции"],
@@ -158,7 +154,7 @@ function renderKpiTable(halves: Half[]): string {
           const previous = half.previous[metric];
           const percent = previous > 0 ? Math.round(((value - previous) / previous) * 100) : value > 0 ? 100 : 0;
           const direction = percent >= 0 ? "up" : "down";
-          return `<span class="kpi-cell"><strong>${formatMetricValue(value)}</strong><small class="kpi-delta kpi-delta--${direction}">${percent >= 0 ? "↑" : "↓"} ${Math.abs(percent)}%</small></span>`;
+          return `<span class="kpi-cell"><strong>${formatMetricValue(value)}</strong><small class="kpi-delta kpi-delta--${direction}">${percent >= 0 ? "↑" : "↓"} ${Math.abs(percent)}% <i>${escapeHtml(comparisonLabel)}</i></small></span>`;
         })
         .join("");
       return `<div class="kpi-table__row"><span class="kpi-table__metric">${escapeHtml(label)}</span>${cells}</div>`;
@@ -296,15 +292,22 @@ function renderChart(
   // A single series has nothing to be dwarfed by, so it keeps the absolute axis.
   const scale = showText && showVideo ? "relative" : "absolute";
   if (input.periodDays === 1) {
-    const previousPosts = input.dayComparisonData?.posts ?? [];
+    const previousPosts = input.previousData?.posts ?? [];
+    const previousExtraX = additionalXItems(previousPosts, input.previousXItems);
+    const medianText = medianDailyTextTotals(previousPosts, previousExtraX, 30, input.timeZone);
+    const medianVideo = medianDailyVideoTotals(input.previousVideo, 30);
+    const comparisonDay = input.rangeEnd;
+    const comparisonNow = new Date();
+    const currentPostSet = [...posts, ...extraX.map(xChartPost)];
+    const currentCutoff = dailyCutoff(comparisonDay, input.timeZone, comparisonNow);
     const series = [
       ...(showText
         ? [
             {
               name: "Текст",
               color: TEXT_COLOR,
-              today: postViewEvents([...posts, ...extraX.map(xChartPost)]),
-              yesterday: postViewEvents(previousPosts),
+              today: [...postViewEvents(currentPostSet), ...currentPostViewEvents(currentPostSet, currentCutoff)],
+              comparison: benchmarkEvents(medianText.views, comparisonDay, input.timeZone, comparisonNow),
             },
           ]
         : []),
@@ -314,12 +317,12 @@ function renderChart(
               name: "Видео",
               color: VIDEO_COLOR,
               today: input.video.viewEvents as MetricEvent[],
-              yesterday: (input.dayComparisonVideo?.viewEvents ?? []) as MetricEvent[],
+              comparison: benchmarkEvents(medianVideo.views, comparisonDay, input.timeZone, comparisonNow),
             },
           ]
         : []),
     ];
-    return renderUnifiedDailyChart(series, input.rangeEnd, input.timeZone, new Date(), scale);
+    return renderUnifiedDailyChart(series, comparisonDay, input.timeZone, comparisonNow, scale);
   }
   const series = [
     ...(showText ? [{ name: "Текст", color: TEXT_COLOR, byDay: textViewsByDay([...posts, ...extraX.map(xChartPost)]) }] : []),
@@ -339,12 +342,7 @@ function textViewsByDay(posts: PipelinePost[]): Record<string, number> {
 }
 
 function videoViewsByDay(video: VideoOverview): Record<string, number> {
-  const days: Record<string, number> = {};
-  for (const item of video.items) {
-    const day = getMskDateString(item.publishedAt);
-    days[day] = (days[day] ?? 0) + item.views;
-  }
-  return days;
+  return Object.fromEntries(Object.entries(video.dailyByDay).map(([day, values]) => [day, values.views]));
 }
 
 /** A target declares one locale; a video platform can carry several. Both end
@@ -380,11 +378,6 @@ function hasTextTargetData(posts: PipelinePost[], target: string): boolean {
   });
 }
 
-function perPeriod(totals: Totals, days: number): Totals {
-  if (days <= 1) return totals;
-  return { views: totals.views / days, reactions: totals.reactions / days, replies: totals.replies / days };
-}
-
 function medianDailyTextTotals(posts: PipelinePost[], extraX: XActivityDashboardItem[], days: number, timeZone: string): Totals {
   const daily = new Map<string, Totals>();
   const add = (key: string | null, values: Totals) => {
@@ -400,18 +393,33 @@ function medianDailyTextTotals(posts: PipelinePost[], extraX: XActivityDashboard
   return medianOfDays([...daily.values()], days);
 }
 
-function medianDailyVideoTotals(video: VideoOverview, days: number, timeZone: string): Totals {
+function medianDailyVideoTotals(video: VideoOverview, days: number): Totals {
   const daily = new Map<string, Totals>();
-  for (const item of video.items) {
-    const key = calendarKey(item.publishedAt, timeZone);
-    if (!key) continue;
+  for (const [key, values] of Object.entries(video.dailyByDay)) {
     const bucket = daily.get(key) ?? emptyTotals();
-    bucket.views += item.views;
-    bucket.reactions += item.reactions;
-    bucket.replies += item.replies;
+    bucket.views += values.views;
+    bucket.reactions += values.reactions;
+    bucket.replies += values.replies;
     daily.set(key, bucket);
   }
   return medianOfDays([...daily.values()], days);
+}
+
+function benchmarkEvents(total: number, day: Date, timeZone: string, now: Date): MetricEvent[] {
+  const parts = zonedDateParts(day, timeZone);
+  const start = zonedSlot(parts.year, parts.month, parts.day, "00:00", timeZone);
+  const cutoff = dailyCutoff(day, timeZone, now);
+  return [
+    { at: start, key: "benchmark:start", value: 0 },
+    { at: cutoff, key: "benchmark:end", value: Math.max(0, total) },
+  ];
+}
+
+function dailyCutoff(day: Date, timeZone: string, now: Date): Date {
+  const parts = zonedDateParts(day, timeZone);
+  const start = zonedSlot(parts.year, parts.month, parts.day, "00:00", timeZone);
+  const end = new Date(start.getTime() + 86_400_000);
+  return now >= start && now < end ? now : end;
 }
 
 /** Days with no publication are real zeros, not missing data: padding to the

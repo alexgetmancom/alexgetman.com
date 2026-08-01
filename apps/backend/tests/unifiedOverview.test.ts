@@ -92,6 +92,52 @@ function seedLocalizedVideoProfiles(backendDb: ReturnType<typeof openBackendDb>)
       .run();
 }
 
+function seedHistoricalVideo(backendDb: ReturnType<typeof openBackendDb>): void {
+  const publishedAt = "2026-07-30T08:00:00.000Z";
+  const draft = backendDb.db
+    .insert(videoDrafts)
+    .values({
+      actorId: 1,
+      locale: "ru",
+      label: "Historical clip",
+      assetKey: "historical-asset",
+      status: "published",
+      createdAt: publishedAt,
+      updatedAt: publishedAt,
+    })
+    .returning({ id: videoDrafts.id })
+    .get();
+  const target = backendDb.db
+    .insert(videoTargets)
+    .values({
+      videoDraftId: draft.id,
+      target: "youtube_shorts",
+      metadataJson: { title: "Historical clip", description: "", tags: [] },
+      status: "published",
+      publishedAt,
+      externalUrl: "https://youtube.com/shorts/historical",
+      createdAt: publishedAt,
+      updatedAt: publishedAt,
+    })
+    .returning({ id: videoTargets.id })
+    .get();
+  for (const [sampledAt, views] of [
+    ["2026-07-30T12:00:00.000Z", 100],
+    ["2026-07-30T20:00:00.000Z", 800],
+    ["2026-07-31T20:00:00.000Z", 1_500],
+    ["2026-08-01T20:00:00.000Z", 2_300],
+  ] as const)
+    backendDb.db
+      .insert(videoMetricSnapshots)
+      .values({
+        videoTargetId: target.id,
+        platform: "youtube_shorts",
+        metricsJson: { views, likes: views / 10, comments: 2 },
+        sampledAt,
+      })
+      .run();
+}
+
 describe("unified overview video read model", () => {
   it("reports the latest sample per publication and names the destination", () => {
     const backendDb = openBackendDb(":memory:");
@@ -149,6 +195,38 @@ describe("unified overview video read model", () => {
       backendDb.close();
     }
   });
+
+  it("freezes a historical period and exposes later lifetime growth separately", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      seedHistoricalVideo(backendDb);
+      const overview = videoOverview(backendDb, new Date("2026-07-29T21:00:00.000Z"), new Date("2026-07-30T20:59:59.999Z"));
+
+      expect(overview.totals.views).toBe(800);
+      expect(overview.items[0]?.views).toBe(800);
+      expect(overview.items[0]?.lifetimeViews).toBe(2_300);
+      expect(overview.items[0]?.afterPeriodViews).toBe(1_500);
+      expect(overview.dailyByDay["2026-07-30"]?.views).toBe(800);
+      expect(overview.viewEvents.map((event) => event.value)).toEqual([100, 800]);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("sums daily increments for a multi-day period instead of lifetime totals", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      seedHistoricalVideo(backendDb);
+      const overview = videoOverview(backendDb, new Date("2026-07-29T21:00:00.000Z"), new Date("2026-07-31T20:59:59.999Z"));
+
+      expect(overview.totals.views).toBe(1_500);
+      expect(overview.dailyByDay["2026-07-30"]?.views).toBe(800);
+      expect(overview.dailyByDay["2026-07-31"]?.views).toBe(700);
+      expect(overview.items[0]?.afterPeriodViews).toBe(800);
+    } finally {
+      backendDb.close();
+    }
+  });
 });
 
 describe("unified overview rendering", () => {
@@ -181,12 +259,64 @@ describe("unified overview rendering", () => {
       expect(html).toContain("Текст");
       expect(html).toContain("Видео");
       expect(html).not.toContain("kpi-table__row--head");
-      expect(html).not.toContain("vs медиана за 30д");
+      expect(html).toContain("vs медиана за 30д");
+      expect(html).toContain("пунктир — медиана за 30 дней");
+      expect(html).not.toContain("вчера к этому времени");
       // The scale toggle only earns its place when two series share the axis.
       expect(html).toContain('class="chart-scale"');
     } finally {
       backendDb.close();
     }
+  });
+
+  it("compares multi-day totals with the previous multi-day totals", () => {
+    const post = (views: number): PipelinePost => ({
+      targets: { telegram: { status: "published" } },
+      metrics: { telegram: { views: { value: views } } },
+    });
+    const currentVideo = {
+      ...emptyVideoOverview(),
+      totals: { views: 300, reactions: 0, replies: 0, posts: 0 },
+    };
+    const previousVideo = {
+      ...emptyVideoOverview(),
+      totals: { views: 100, reactions: 0, replies: 0, posts: 0 },
+    };
+    const html = renderCombinedSection({
+      ...baseInput,
+      periodDays: 30,
+      data: { posts: [post(300)] },
+      previousData: { posts: [post(100)] },
+      video: currentVideo,
+      previousVideo,
+      mode: "all",
+    });
+
+    expect(html).toContain("↑ 200%");
+    expect(html).toContain("vs прошлый период");
+    expect(html).not.toContain("↑ 2900%");
+  });
+
+  it("compares one-day totals with the previous 30-day median", () => {
+    const post = (views: number, date: string): PipelinePost => ({
+      date,
+      targets: { telegram: { status: "published" } },
+      metrics: { telegram: { views: { value: views } } },
+    });
+    const previousPosts = Array.from({ length: 30 }, (_, index) =>
+      post(100, `2026-07-${String(index + 1).padStart(2, "0")}T12:00:00.000Z`),
+    );
+    const html = renderCombinedSection({
+      ...baseInput,
+      data: { posts: [post(200, "2026-08-01T12:00:00.000Z")] },
+      previousData: { posts: previousPosts },
+      video: emptyVideoOverview(),
+      mode: "text",
+    });
+
+    expect(html).toContain("↑ 100%");
+    expect(html).toContain("vs медиана за 30д");
+    expect(html).toContain("Текст: 200");
   });
 
   it("derives the locale badge from the data rather than from the platform name", () => {

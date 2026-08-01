@@ -126,7 +126,9 @@ export function renderDashboard(
       if (!activeView) {
         const [start, end] = rollingPeriodDates(weekOffset, periodDays, config.TIMEZONE);
         const comparisonPipeline =
-          periodDays === 1 ? service.pipeline(0, 30, 0, weekOffset + 1) : service.pipeline(weekOffset + 1, periodDays);
+          periodDays === 1
+            ? service.pipeline(0, 30, 0, weekOffset + 1, { includeSamples: false })
+            : service.pipeline(weekOffset + 1, periodDays, 0, undefined, { includeSamples: false });
         const comparisonX =
           periodDays === 1
             ? xActivityDashboard(backendDb, (weekOffset + 1) / 30, 30, config.TIMEZONE)
@@ -144,17 +146,19 @@ export function renderDashboard(
           periodDays === 1 ? shiftDays(yesterdayEnd, -29) : rollingPeriodDates(weekOffset + 1, periodDays, config.TIMEZONE)[0];
         const videoEnabled = config.studio.modules.video_posting;
         return renderCombinedSection({
-          data: service.pipeline(weekOffset, periodDays),
+          data: service.pipeline(weekOffset, periodDays, 0, undefined, { includeSamples: periodDays === 1 }),
           previousData: comparisonPipeline,
           xItems: xActivityDashboard(backendDb, weekOffset, periodDays, config.TIMEZONE),
           previousXItems: comparisonX,
-          dayComparisonData: periodDays === 1 ? service.pipeline(0, 1, 0, weekOffset + 1) : null,
-          video: videoEnabled ? videoOverview(backendDb, dayBounds(start), dayBounds(end, true)) : emptyVideoOverview(),
+          dayComparisonData: periodDays === 1 ? service.pipeline(0, 1, 0, weekOffset + 1, { includeSamples: true }) : null,
+          video: videoEnabled ? videoOverview(backendDb, dayBounds(start), dayBounds(end, true), config.TIMEZONE) : emptyVideoOverview(),
           previousVideo: videoEnabled
-            ? videoOverview(backendDb, dayBounds(previousStart), dayBounds(previousEnd, true))
+            ? videoOverview(backendDb, dayBounds(previousStart), dayBounds(previousEnd, true), config.TIMEZONE)
             : emptyVideoOverview(),
           dayComparisonVideo:
-            videoEnabled && periodDays === 1 ? videoOverview(backendDb, dayBounds(yesterdayStart), dayBounds(yesterdayEnd, true)) : null,
+            videoEnabled && periodDays === 1
+              ? videoOverview(backendDb, dayBounds(yesterdayStart), dayBounds(yesterdayEnd, true), config.TIMEZONE)
+              : null,
           followers: audiencePlatformFollowers(backendDb),
           rangeStart: start,
           rangeEnd: end,
@@ -170,12 +174,20 @@ export function renderDashboard(
       // preceding single day; every longer period compares against itself.
       const comparison =
         periodDays === 1
-          ? { baseline: service.pipeline(0, 30, 0, weekOffset + 1), days: 30, previousDay: service.pipeline(0, 1, 0, weekOffset + 1) }
-          : { baseline: service.pipeline(weekOffset, periodDays, 1), days: periodDays, previousDay: null };
+          ? {
+              baseline: service.pipeline(0, 30, 0, weekOffset + 1, { includeSamples: false }),
+              days: 30,
+              previousDay: service.pipeline(0, 1, 0, weekOffset + 1, { includeSamples: true }),
+            }
+          : {
+              baseline: service.pipeline(weekOffset, periodDays, 1, undefined, { includeSamples: false }),
+              days: periodDays,
+              previousDay: null,
+            };
       return renderPipelineSection(
         weekOffset,
         periodDays,
-        filterPipeline(service.pipeline(weekOffset, periodDays), targetIds),
+        filterPipeline(service.pipeline(weekOffset, periodDays, 0, undefined, { includeSamples: periodDays === 1 }), targetIds),
         filterPipeline(comparison.baseline, targetIds),
         renderAudienceSection(backendDb, config, activeView, periodDays, weekOffset),
         config.TIMEZONE,

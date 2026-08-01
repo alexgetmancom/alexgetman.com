@@ -268,7 +268,7 @@ export function renderDashboardShell(body: string): string {
     .best-post { display:grid; grid-template-columns:39px minmax(0,1fr) 92px; gap:13px; align-items:start; padding:14px 0; border-bottom:1px solid var(--border-soft); color:inherit; text-decoration:none; transition:background .14s ease; }
     a.best-post:hover { background:var(--surface-raised); }
     .post-rank { color:var(--accent); font-size:31px; line-height:1; font-weight:500; padding-top:1px; }
-    .best-post__title { color:var(--text-main); font-size:16px; line-height:1.4; } .best-post__stats { text-align:right; white-space:nowrap; } .best-post__stats strong { display:block; color:var(--text-header); font-size:18px; font-weight:600; } .best-post__stats small { display:block; color:var(--text-muted); font-size:12px; } .best-post__stats em { display:block; margin-top:8px; color:var(--danger-strong); font-size:14px; font-style:normal; }
+    .best-post__title { color:var(--text-main); font-size:16px; line-height:1.4; } .best-post__stats { text-align:right; white-space:nowrap; } .best-post__stats strong { display:block; color:var(--text-header); font-size:18px; font-weight:600; } .best-post__stats small { display:block; color:var(--text-muted); font-size:12px; } .best-post__stats em { display:block; margin-top:8px; color:var(--danger-strong); font-size:14px; font-style:normal; } .post-after-period { display:block; color:var(--text-muted); font-size:11px; line-height:1.25; }
     .empty-state { color:var(--text-muted); font-size:14px; }
     /* The title column carries a floor rather than minmax(0,1fr). With a zero
      * minimum the four fixed columns (170 + 3x120 + gaps) can consume the whole
@@ -393,18 +393,32 @@ ${DASHBOARD_THEME_TOGGLE_SCRIPT}
     });
   });
   let dashboardFingerprint = '';
-  setInterval(async () => {
-    try {
-      const response = await fetch('/api/command-center', { credentials: 'same-origin' });
-      if (!response.ok) return;
-      const payload = await response.json();
-      const fingerprint = JSON.stringify([payload.pipeline?.updated_at, payload.jobs?.[0]?.updatedAt, payload.events?.[0]?.createdAt, payload.videoRevision?.value]);
-      const editingForm = document.activeElement instanceof Element && document.activeElement.closest('form');
-      if (editingForm) return;
-      if (dashboardFingerprint && fingerprint !== dashboardFingerprint) window.location.reload();
-      dashboardFingerprint = fingerprint;
-    } catch { /* the current screen remains usable while the worker restarts */ }
-  }, 15000);
+  let fingerprintRequest = null;
+  const checkDashboardFingerprint = async () => {
+    if (fingerprintRequest) return fingerprintRequest;
+    fingerprintRequest = (async () => {
+      try {
+        const response = await fetch('/api/command-center/fingerprint', { credentials: 'same-origin' });
+        if (!response.ok) return;
+        const payload = await response.json();
+        const fingerprint = JSON.stringify([
+          payload.pipelineUpdatedAt,
+          payload.latestJobUpdatedAt,
+          payload.latestEventAt,
+          payload.videoRevision,
+        ]);
+        const editingForm = document.activeElement instanceof Element && document.activeElement.closest('form');
+        if (editingForm) return;
+        if (dashboardFingerprint && fingerprint !== dashboardFingerprint) window.location.reload();
+        dashboardFingerprint = fingerprint;
+      } catch { /* the current screen remains usable while the worker restarts */ }
+    })().finally(() => {
+      fingerprintRequest = null;
+    });
+    return fingerprintRequest;
+  };
+  void checkDashboardFingerprint();
+  window.setInterval(() => void checkDashboardFingerprint(), 60000);
 </script>
 </body>
 </html>`;

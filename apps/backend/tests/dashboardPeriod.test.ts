@@ -25,6 +25,7 @@ describe("command center periods", () => {
     expect(renderPeriodControls(0, 1)).toContain(">1д<");
     expect(html).toContain("vs медиана за 30д");
     expect(html).toContain("↑ 100%");
+    expect(html).toContain("Медиана за 30 дней");
   });
 
   it("renders a daily comparison from actual metric sample times", () => {
@@ -52,6 +53,22 @@ describe("command center periods", () => {
     expect(html).toContain("Сегодня: 90");
     expect(html).toContain("13:00");
     expect(html).toContain("реальные замеры");
+  });
+
+  it("compares multi-day totals with the previous period total", () => {
+    const html = renderPipelineSection(
+      0,
+      30,
+      { posts: [post(600, "2026-07-24T12:00:00.000Z")] },
+      { posts: [post(300, "2026-06-24T12:00:00.000Z")] },
+      "",
+      "Europe/Moscow",
+      30,
+    );
+
+    expect(html).toContain("↑ 100%");
+    expect(html).toContain("vs прошлый период");
+    expect(html).not.toContain("↑ 5900%");
   });
 
   it("links a platform ranking to that platform and excludes other target metrics", () => {

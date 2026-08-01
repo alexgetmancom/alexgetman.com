@@ -1,6 +1,7 @@
 import { metricNumber } from "../../../analytics/snapshots/creator-store.js";
 import { videoDestinations } from "../../../channels/destinations.js";
 import type { BackendDb } from "../../../db/client.js";
+import { zonedDateParts, zonedSlot } from "../../../foundation/time.js";
 import {
   legacyVideoProfile,
   VIDEO_TARGETS,
@@ -35,9 +36,13 @@ export type VideoContentItem = {
   title: string;
   url: string | null;
   publishedAt: string | null;
+  /** Views gained during the selected period, not the current lifetime total. */
   views: number;
   reactions: number;
   replies: number;
+  /** Current lifetime views which arrived after the selected period ended. */
+  afterPeriodViews: number;
+  lifetimeViews: number;
 };
 
 /**
@@ -63,6 +68,8 @@ export type VideoOverview = {
   items: VideoContentItem[];
   totals: { views: number; reactions: number; replies: number; posts: number };
   platforms: VideoPlatformTotal[];
+  /** Period increments keyed by the studio calendar date. */
+  dailyByDay: Record<string, { views: number; reactions: number; replies: number }>;
   viewEvents: MetricEvent[];
 };
 
@@ -74,11 +81,21 @@ type TargetRow = {
   locale: string | null;
   publishedAt: string | null;
   externalUrl: string | null;
-  metricsJson: string | null;
 };
 
+type VideoMetrics = { views: number; likes: number; comments: number };
+type VideoSnapshot = { at: Date; metrics: VideoMetrics };
+type DailyMetrics = { views: number; reactions: number; replies: number };
+type PeriodDay = { key: string; start: Date; end: Date };
+
 export function emptyVideoOverview(): VideoOverview {
-  return { items: [], totals: { views: 0, reactions: 0, replies: 0, posts: 0 }, platforms: [], viewEvents: [] };
+  return {
+    items: [],
+    totals: { views: 0, reactions: 0, replies: 0, posts: 0 },
+    platforms: [],
+    dailyByDay: {},
+    viewEvents: [],
+  };
 }
 
 /**
@@ -102,13 +119,18 @@ function legacyFollowers(
   return followers.get(legacyVideoProfile(target as VideoTarget)) ?? null;
 }
 
-export function videoOverview(backendDb: BackendDb, start: Date, end: Date): VideoOverview {
+export function videoOverview(backendDb: BackendDb, start: Date, end: Date, timeZone = "Europe/Moscow"): VideoOverview {
   const catalogue = videoDestinations(backendDb);
   const rows = publishedTargets(backendDb, start.toISOString(), end.toISOString());
+  const snapshots = videoSnapshots(backendDb, rows);
+  const periodDays = calendarDays(start, end, timeZone);
   const historicalDestinations = publishedDestinationKeys(backendDb, catalogue);
   const items = rows
     .map((row) => {
-      const metrics = parseMetrics(row.metricsJson);
+      const history = snapshots.get(row.id) ?? [];
+      const period = periodMetrics(history, periodDays);
+      const periodEnd = latestAtOrBefore(history, end)?.metrics ?? emptyMetrics();
+      const lifetime = history.at(-1)?.metrics ?? emptyMetrics();
       const destination = destinationFor(catalogue, row);
       return {
         key: `video:${row.id}`,
@@ -119,9 +141,11 @@ export function videoOverview(backendDb: BackendDb, start: Date, end: Date): Vid
         title: row.label || "Без названия",
         url: row.externalUrl,
         publishedAt: row.publishedAt,
-        views: metrics.views,
-        reactions: metrics.likes,
-        replies: metrics.comments,
+        views: period.totals.views,
+        reactions: period.totals.reactions,
+        replies: period.totals.replies,
+        afterPeriodViews: Math.max(0, lifetime.views - periodEnd.views),
+        lifetimeViews: lifetime.views,
       };
     })
     .sort((left, right) => (right.publishedAt ?? "").localeCompare(left.publishedAt ?? ""));
@@ -163,22 +187,48 @@ export function videoOverview(backendDb: BackendDb, start: Date, end: Date): Vid
     .filter((row) => row.active)
     .map(({ active: _active, ...row }) => row);
 
-  return { items, totals, platforms, viewEvents: viewEvents(backendDb, rows, start, end) };
+  return {
+    items,
+    totals,
+    platforms,
+    dailyByDay: aggregateDailyMetrics(rows, snapshots, periodDays),
+    viewEvents: viewEvents(rows, snapshots, start, end),
+  };
 }
 
 function publishedTargets(backendDb: BackendDb, startIso: string, endIso: string): TargetRow[] {
   return backendDb.sqlite
     .prepare(
       `SELECT t.id AS id, t.target AS target, COALESCE(d.label, '') AS label, d.locale AS locale, t.published_at AS publishedAt,
-              t.provider_account_id AS providerAccountId, t.external_url AS externalUrl, s.metrics_json AS metricsJson
+              t.provider_account_id AS providerAccountId, t.external_url AS externalUrl
          FROM video_targets t
          JOIN video_drafts d ON d.id = t.video_draft_id
-         LEFT JOIN video_metric_snapshots s
-                ON s.id = (SELECT id FROM video_metric_snapshots WHERE video_target_id = t.id ORDER BY sampled_at DESC, id DESC LIMIT 1)
         WHERE t.status = 'published' AND t.published_at IS NOT NULL AND t.published_at >= ? AND t.published_at <= ?
         ORDER BY t.published_at DESC`,
     )
     .all(startIso, endIso) as TargetRow[];
+}
+
+function videoSnapshots(backendDb: BackendDb, rows: TargetRow[]): Map<number, VideoSnapshot[]> {
+  const snapshots = new Map<number, VideoSnapshot[]>();
+  if (!rows.length) return snapshots;
+  const placeholders = rows.map(() => "?").join(",");
+  const samples = backendDb.sqlite
+    .prepare(
+      `SELECT video_target_id AS targetId, metrics_json AS metricsJson, sampled_at AS sampledAt
+         FROM video_metric_snapshots
+        WHERE video_target_id IN (${placeholders})
+        ORDER BY video_target_id ASC, sampled_at ASC, id ASC`,
+    )
+    .all(...rows.map((row) => row.id)) as Array<{ targetId: number; metricsJson: string; sampledAt: string }>;
+  for (const sample of samples) {
+    const at = new Date(sample.sampledAt);
+    if (Number.isNaN(at.getTime())) continue;
+    const list = snapshots.get(sample.targetId) ?? [];
+    list.push({ at, metrics: parseMetrics(sample.metricsJson) });
+    snapshots.set(sample.targetId, list);
+  }
+  return snapshots;
 }
 
 function publishedDestinationKeys(backendDb: BackendDb, catalogue: readonly VideoDestination[]): Set<string> {
@@ -198,30 +248,88 @@ function publishedDestinationKeys(backendDb: BackendDb, catalogue: readonly Vide
   );
 }
 
-/** Samples for the clips of this period, inside this period. Mirrors the text
- * side, where the daily chart plots the posts the period selected. */
-function viewEvents(backendDb: BackendDb, rows: TargetRow[], start: Date, end: Date): MetricEvent[] {
+/** Samples for the clips of this period, converted to cumulative period deltas. */
+function viewEvents(rows: TargetRow[], snapshots: Map<number, VideoSnapshot[]>, start: Date, end: Date): MetricEvent[] {
   if (!rows.length) return [];
-  const placeholders = rows.map(() => "?").join(",");
-  const samples = backendDb.sqlite
-    .prepare(
-      `SELECT video_target_id AS targetId, metrics_json AS metricsJson, sampled_at AS sampledAt
-         FROM video_metric_snapshots
-        WHERE video_target_id IN (${placeholders}) AND sampled_at >= ? AND sampled_at <= ?
-        ORDER BY sampled_at ASC, id ASC`,
-    )
-    .all(...rows.map((row) => row.id), start.toISOString(), end.toISOString()) as Array<{
-    targetId: number;
-    metricsJson: string;
-    sampledAt: string;
-  }>;
-  return samples
-    .map((sample) => ({
-      at: new Date(sample.sampledAt),
-      key: `video:${sample.targetId}`,
-      value: parseMetrics(sample.metricsJson).views,
-    }))
-    .filter((event) => !Number.isNaN(event.at.getTime()));
+  return rows
+    .flatMap((row) => {
+      const history = snapshots.get(row.id) ?? [];
+      const baseline = latestAtOrBefore(history, start)?.metrics.views ?? 0;
+      return history
+        .filter((sample) => sample.at >= start && sample.at <= end)
+        .map((sample) => ({ at: sample.at, key: `video:${row.id}`, value: Math.max(0, sample.metrics.views - baseline) }));
+    })
+    .sort((left, right) => left.at.getTime() - right.at.getTime());
+}
+
+function aggregateDailyMetrics(
+  rows: TargetRow[],
+  snapshots: Map<number, VideoSnapshot[]>,
+  days: PeriodDay[],
+): Record<string, DailyMetrics> {
+  const result: Record<string, DailyMetrics> = {};
+  for (const day of days) result[day.key] = emptyDailyMetrics();
+  for (const row of rows) {
+    const history = snapshots.get(row.id) ?? [];
+    for (const day of days) {
+      const before = latestAtOrBefore(history, day.start)?.metrics ?? emptyMetrics();
+      const atEnd = latestAtOrBefore(history, day.end)?.metrics ?? before;
+      const bucket = result[day.key] ?? emptyDailyMetrics();
+      bucket.views += Math.max(0, atEnd.views - before.views);
+      bucket.reactions += Math.max(0, atEnd.likes - before.likes);
+      bucket.replies += Math.max(0, atEnd.comments - before.comments);
+      result[day.key] = bucket;
+    }
+  }
+  return result;
+}
+
+function periodMetrics(history: VideoSnapshot[], days: PeriodDay[]): { totals: DailyMetrics } {
+  const totals = emptyDailyMetrics();
+  for (const day of days) {
+    const before = latestAtOrBefore(history, day.start)?.metrics ?? emptyMetrics();
+    const atEnd = latestAtOrBefore(history, day.end)?.metrics ?? before;
+    totals.views += Math.max(0, atEnd.views - before.views);
+    totals.reactions += Math.max(0, atEnd.likes - before.likes);
+    totals.replies += Math.max(0, atEnd.comments - before.comments);
+  }
+  return { totals };
+}
+
+function latestAtOrBefore(history: VideoSnapshot[], cutoff: Date): VideoSnapshot | undefined {
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const sample = history[index];
+    if (sample && sample.at <= cutoff) return sample;
+  }
+  return undefined;
+}
+
+function calendarDays(start: Date, end: Date, timeZone: string): PeriodDay[] {
+  if (end < start) return [];
+  const days: PeriodDay[] = [];
+  let cursor = new Date(start);
+  while (cursor <= end) {
+    const parts = zonedDateParts(cursor, timeZone);
+    const nextDay = zonedSlot(parts.year, parts.month, parts.day + 1, "00:00", timeZone);
+    const dayEnd = new Date(Math.min(end.getTime(), nextDay.getTime() - 1));
+    days.push({ key: calendarKey(cursor, timeZone), start: new Date(cursor), end: dayEnd });
+    if (dayEnd >= end) break;
+    cursor = nextDay;
+  }
+  return days;
+}
+
+function calendarKey(value: Date, timeZone: string): string {
+  const parts = zonedDateParts(value, timeZone);
+  return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
+}
+
+function emptyMetrics(): VideoMetrics {
+  return { views: 0, likes: 0, comments: 0 };
+}
+
+function emptyDailyMetrics(): DailyMetrics {
+  return { views: 0, reactions: 0, replies: 0 };
 }
 
 function followerCounts(backendDb: BackendDb): Map<string, number> {
@@ -255,7 +363,7 @@ function videoLocale(value: string | null): VideoLocale | null {
   return value === "ru" || value === "en" ? value : null;
 }
 
-function parseMetrics(value: string | null): { views: number; likes: number; comments: number } {
+function parseMetrics(value: string | null): VideoMetrics {
   const metrics = parseJson(value);
   return { views: metricNumber(metrics.views), likes: metricNumber(metrics.likes), comments: metricNumber(metrics.comments) };
 }

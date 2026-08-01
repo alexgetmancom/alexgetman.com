@@ -87,6 +87,31 @@ describe("Astro endpoint controller", () => {
     }
   });
 
+  it("serves a stable compact command-center fingerprint", async () => {
+    const backendDb = tempDb();
+    try {
+      const app = createApiApp(loadConfig({ COMMAND_CENTER_TOKEN: "secret" }), backendDb);
+      const firstResponse = await app.request("/api/command-center/fingerprint", { headers: { "X-Command-Token": "secret" } });
+      const secondResponse = await app.request("/api/command-center/fingerprint", { headers: { "X-Command-Token": "secret" } });
+      const first = await firstResponse.json();
+      const second = await secondResponse.json();
+
+      expect(firstResponse.status).toBe(200);
+      expect(secondResponse.status).toBe(200);
+      expect(first).toEqual({
+        pipelineUpdatedAt: null,
+        latestJobUpdatedAt: null,
+        latestEventAt: null,
+        videoRevision: null,
+      });
+      expect(second).toEqual(first);
+      expect(JSON.stringify(first).length).toBeLessThan(200);
+      expect((await app.request("/api/command-center/fingerprint")).status).toBe(403);
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("returns post debug payload for queued publication refs", async () => {
     const backendDb = tempDb();
     try {

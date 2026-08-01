@@ -26,21 +26,29 @@ export function renderPipelineSection(
   const previousPosts = previousData?.posts ?? [];
   const targetIds = options.targetIds ?? ORDERED_TARGETS.map((target) => target.id);
   const totals = metricTotals(posts, targetIds);
-  const previousTotals =
-    comparisonDays === 30
-      ? medianDailyTotals(previousPosts, targetIds, comparisonDays, timeZone)
-      : averageTotals(metricTotals(previousPosts, targetIds), comparisonDays);
-  const previousPostCount =
-    comparisonDays === 30 ? medianDailyPostCount(previousPosts, comparisonDays, timeZone) : previousPosts.length / comparisonDays;
-  const comparisonLabel = comparisonDays === 30 ? "vs медиана за 30д" : "vs прошлый период";
+  const useMedianBaseline = periodDays === 1;
+  const medianDays = useMedianBaseline ? 30 : comparisonDays;
+  const previousTotals = useMedianBaseline
+    ? medianDailyTotals(previousPosts, targetIds, medianDays, timeZone)
+    : metricTotals(previousPosts, targetIds);
+  const previousPostCount = useMedianBaseline ? medianDailyPostCount(previousPosts, medianDays, timeZone) : previousPosts.length;
+  const comparisonLabel = useMedianBaseline ? "vs медиана за 30д" : "vs прошлый период";
   const chart =
     periodDays === 1
-      ? renderDailyComparisonChart(posts, dayComparisonData?.posts ?? [], endOfPeriod, timeZone, new Date(), targetIds)
+      ? renderDailyComparisonChart(
+          posts,
+          dayComparisonData?.posts ?? [],
+          endOfPeriod,
+          timeZone,
+          new Date(),
+          targetIds,
+          previousTotals.views,
+        )
       : renderWeeklyChart(posts, startOfPeriod, endOfPeriod, targetIds);
   return `
     <section class="pipeline-overview">
       <div class="kpi-row">${kpi("Просмотры", totals.views, previousTotals.views, comparisonLabel)}${kpi("Реакции", totals.likes, previousTotals.likes, comparisonLabel)}${kpi("Ответы", totals.replies, previousTotals.replies, comparisonLabel)}${kpi("Посты", posts.length, previousPostCount, comparisonLabel)}</div>
-      <div class="insights-row">${audience}<div class="chart-panel"><div class="section-kicker">${options.title ?? (periodDays === 1 ? "Сегодня и вчера" : "Динамика")}</div>${chart}</div></div>
+      <div class="insights-row">${audience}<div class="chart-panel"><div class="section-kicker">${options.title ?? (periodDays === 1 ? "Сегодня и медиана за 30 дней" : "Динамика")}</div>${chart}</div></div>
       ${renderPublicationColumns(posts, targetIds)}
     </section>
   `;
@@ -91,16 +99,11 @@ function metricTotals(posts: NonNullable<PipelineData["posts"]>, targetIds: stri
   );
 }
 
-function averageTotals(totals: ReturnType<typeof metricTotals>, days: number) {
-  if (days <= 1) return totals;
-  return { views: totals.views / days, likes: totals.likes / days, replies: totals.replies / days };
-}
-
 function medianDailyTotals(posts: NonNullable<PipelineData["posts"]>, targetIds: string[], days: number, timeZone: string) {
   const daily = new Map<string, ReturnType<typeof metricTotals>>();
   for (const post of posts) {
     const date = calendarKey(post.date, timeZone);
-    if (!date) return averageTotals(metricTotals(posts, targetIds), days);
+    if (!date) return fallbackDailyAverageTotals(metricTotals(posts, targetIds), days);
     const values = daily.get(date) ?? { views: 0, likes: 0, replies: 0 };
     const value = postMetricTotals(post, targetIds);
     values.views += value.views;
@@ -115,6 +118,11 @@ function medianDailyTotals(posts: NonNullable<PipelineData["posts"]>, targetIds:
     likes: median(values.map((value) => value.likes)),
     replies: median(values.map((value) => value.replies)),
   };
+}
+
+function fallbackDailyAverageTotals(totals: ReturnType<typeof metricTotals>, days: number) {
+  if (days <= 1) return totals;
+  return { views: totals.views / days, likes: totals.likes / days, replies: totals.replies / days };
 }
 
 function medianDailyPostCount(posts: NonNullable<PipelineData["posts"]>, days: number, timeZone: string): number {

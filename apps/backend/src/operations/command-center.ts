@@ -13,9 +13,8 @@ import {
   publishJobs,
 } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
-import { parseJsonValue } from "../json.js";
 import { capabilityReport } from "../observability/capabilities.js";
-import { pipelineStatusPayload } from "./read-model.js";
+import { pipelineUpdatedAt } from "./read-model.js";
 
 export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb) {
   const queue = backendDb.db
@@ -34,22 +33,116 @@ export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb
     .groupBy(postTargets.target, postTargets.status)
     .orderBy(asc(postTargets.target), asc(postTargets.status))
     .all();
-  const events = backendDb.db.select().from(postEvents).orderBy(desc(postEvents.createdAt), desc(postEvents.id)).limit(50).all();
-  const jobs = backendDb.db.select().from(publishJobs).orderBy(desc(publishJobs.updatedAt), desc(publishJobs.jobId)).limit(100).all();
-  const draftRows = backendDb.db.select().from(drafts).orderBy(desc(drafts.updatedAt), desc(drafts.id)).limit(50).all();
+  const events = backendDb.db
+    .select({
+      id: postEvents.id,
+      postKey: postEvents.postKey,
+      eventType: postEvents.eventType,
+      severity: postEvents.severity,
+      target: postEvents.target,
+      message: postEvents.message,
+      createdAt: postEvents.createdAt,
+      ackedAt: postEvents.ackedAt,
+    })
+    .from(postEvents)
+    .orderBy(desc(postEvents.createdAt), desc(postEvents.id))
+    .limit(50)
+    .all();
+  const jobs = backendDb.db
+    .select({
+      jobId: publishJobs.jobId,
+      postId: publishJobs.postId,
+      messageId: publishJobs.messageId,
+      target: publishJobs.target,
+      status: publishJobs.status,
+      attemptCount: publishJobs.attemptCount,
+      publishAt: publishJobs.publishAt,
+      nextAttemptAt: publishJobs.nextAttemptAt,
+      lastError: publishJobs.lastError,
+      updatedAt: publishJobs.updatedAt,
+    })
+    .from(publishJobs)
+    .orderBy(desc(publishJobs.updatedAt), desc(publishJobs.jobId))
+    .limit(100)
+    .all();
+  const draftRows = backendDb.db
+    .select({
+      id: drafts.id,
+      status: drafts.status,
+      textRu: drafts.textRu,
+      scheduledAt: drafts.scheduledAt,
+      scheduledEnAt: drafts.scheduledEnAt,
+      channelMessageId: drafts.channelMessageId,
+      updatedAt: drafts.updatedAt,
+    })
+    .from(drafts)
+    .orderBy(desc(drafts.updatedAt), desc(drafts.id))
+    .limit(50)
+    .all();
   const activeCapabilityTargets = new Set(capabilityReport(config, backendDb).map((capability) => capability.target));
   const credentials = backendDb.db
-    .select()
+    .select({
+      target: credentialChecks.target,
+      status: credentialChecks.status,
+      missingEnvJson: credentialChecks.missingEnvJson,
+      lastError: credentialChecks.lastError,
+      lastCheckedAt: credentialChecks.lastCheckedAt,
+    })
     .from(credentialChecks)
     .orderBy(desc(credentialChecks.lastCheckedAt))
     .all()
     .filter((credential) => activeCapabilityTargets.has(credential.target))
     .slice(0, 100);
-  const lifecycle = backendDb.db.select().from(postLifecycle).orderBy(desc(postLifecycle.updatedAt)).limit(100).all();
-  const actions = backendDb.db.select().from(opsActions).orderBy(desc(opsActions.createdAt), desc(opsActions.actionId)).limit(100).all();
+  const lifecycle = backendDb.db
+    .select({
+      postKey: postLifecycle.postKey,
+      state: postLifecycle.state,
+      reason: postLifecycle.reason,
+      updatedAt: postLifecycle.updatedAt,
+    })
+    .from(postLifecycle)
+    .orderBy(desc(postLifecycle.updatedAt))
+    .limit(100)
+    .all();
+  const actions = backendDb.db
+    .select({
+      actionId: opsActions.actionId,
+      actorType: opsActions.actorType,
+      action: opsActions.action,
+      messageId: opsActions.messageId,
+      target: opsActions.target,
+      status: opsActions.status,
+      createdAt: opsActions.createdAt,
+      completedAt: opsActions.completedAt,
+    })
+    .from(opsActions)
+    .orderBy(desc(opsActions.createdAt), desc(opsActions.actionId))
+    .limit(100)
+    .all();
+  const recentMetrics = backendDb.db
+    .select({
+      postKey: postMetrics.postKey,
+      target: postMetrics.target,
+      metricName: postMetrics.metricName,
+      value: postMetrics.value,
+      source: postMetrics.source,
+      sampledAt: postMetrics.sampledAt,
+      error: postMetrics.error,
+      messageId: posts.messageId,
+      postUrl: sql<string | null>`coalesce(${posts.siteEnPath}, ${posts.siteRuPath}, ${posts.telegramUrl})`,
+    })
+    .from(postMetrics)
+    .leftJoin(posts, eq(posts.postKey, postMetrics.postKey))
+    .orderBy(desc(postMetrics.sampledAt), asc(postMetrics.postKey), asc(postMetrics.target), asc(postMetrics.metricName))
+    .limit(100)
+    .all();
+  const fingerprint = commandCenterFingerprint(backendDb);
   return {
     generatedAt: new Date().toISOString(),
-    pipeline: pipelineStatusPayload(config, backendDb),
+    // The dashboard only needs current metric issues here. Full post history,
+    // samples and provider raw payloads belong to the period read model and
+    // /api/post-debug, not to this always-on operations payload.
+    pipeline: { updated_at: fingerprint.pipelineUpdatedAt, metrics: { recent: recentMetrics } },
     queue,
     targets,
     jobs,
@@ -64,16 +157,33 @@ export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb
       severity: event.severity,
       target: event.target,
       message: event.message,
-      details: parseJsonValue(event.detailsJson),
       createdAt: event.createdAt,
       ackedAt: event.ackedAt,
     })),
-    videoRevision: backendDb.sqlite
-      .prepare(
-        "SELECT MAX(value) AS value FROM (SELECT MAX(updated_at) AS value FROM video_drafts UNION ALL SELECT MAX(sampled_at) AS value FROM video_metric_snapshots)",
-      )
-      .get() as { value: string | null },
+    videoRevision: { value: fingerprint.videoRevision },
   };
+}
+
+export type CommandCenterFingerprint = {
+  pipelineUpdatedAt: string | null;
+  latestJobUpdatedAt: string | null;
+  latestEventAt: string | null;
+  videoRevision: string | null;
+};
+
+export function commandCenterFingerprint(backendDb: BackendDb): CommandCenterFingerprint {
+  const revisions = backendDb.sqlite
+    .prepare(
+      `SELECT
+         (SELECT MAX(updated_at) FROM publish_jobs) AS latestJobUpdatedAt,
+         (SELECT MAX(created_at) FROM post_events) AS latestEventAt,
+         (SELECT MAX(value) FROM (
+           SELECT MAX(updated_at) AS value FROM video_drafts
+           UNION ALL SELECT MAX(sampled_at) FROM video_metric_snapshots
+         )) AS videoRevision`,
+    )
+    .get() as Omit<CommandCenterFingerprint, "pipelineUpdatedAt">;
+  return { pipelineUpdatedAt: pipelineUpdatedAt(backendDb), ...revisions };
 }
 
 export function postDebugPayload(backendDb: BackendDb, ref: string) {

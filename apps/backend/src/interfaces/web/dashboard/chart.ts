@@ -100,7 +100,8 @@ export function renderWeeklyChart(
 /**
  * A one-day view uses immutable collection samples rather than pretending that
  * we know the value for every hour. Both series are clipped to the same wall
- * clock so "today" is directly comparable with "yesterday".
+ * clock when the caller supplies real comparison samples; the dashboard uses
+ * the same shape for its median benchmark.
  */
 export function renderDailyComparisonChart(
   todayPosts: PipelinePost[],
@@ -109,6 +110,7 @@ export function renderDailyComparisonChart(
   timeZone: string,
   now = new Date(),
   targetIds?: string[],
+  benchmarkTotal?: number,
 ): string {
   const dayStart = zonedSlot(day.getUTCFullYear(), day.getUTCMonth() + 1, day.getUTCDate(), "00:00", timeZone);
   const dayEnd = new Date(dayStart.getTime() + 86_400_000);
@@ -116,12 +118,15 @@ export function renderDailyComparisonChart(
   const isToday = now >= dayStart && now < dayEnd;
   const cutoff = isToday ? now : dayEnd;
   const current = sampledViewTimeline(todayPosts, dayStart, cutoff, targetIds);
-  const previous = sampledViewTimeline(
-    yesterdayPosts,
-    yesterdayStart,
-    new Date(yesterdayStart.getTime() + (cutoff.getTime() - dayStart.getTime())),
-    targetIds,
-  );
+  const previous =
+    benchmarkTotal === undefined
+      ? sampledViewTimeline(
+          yesterdayPosts,
+          yesterdayStart,
+          new Date(yesterdayStart.getTime() + (cutoff.getTime() - dayStart.getTime())),
+          targetIds,
+        )
+      : benchmarkTimeline(benchmarkTotal, dayStart, cutoff);
   if (current.length <= 1 && previous.length <= 1)
     return `<div class="metric-chart metric-chart--empty"><div class="metric-chart__legend"><span>Замеры появятся через час после публикации</span></div></div>`;
 
@@ -143,7 +148,12 @@ export function renderDailyComparisonChart(
   }
   const series = [
     { name: "Сегодня", color: "var(--series-views)", points: current, start: dayStart },
-    { name: "Вчера", color: "var(--series-previous)", points: previous, start: yesterdayStart },
+    {
+      name: benchmarkTotal === undefined ? "Вчера" : "Медиана за 30 дней",
+      color: "var(--series-previous)",
+      points: previous,
+      start: benchmarkTotal === undefined ? yesterdayStart : dayStart,
+    },
   ];
   const paths = series
     .map(
@@ -167,11 +177,12 @@ export function renderDailyComparisonChart(
     .join("");
   const currentTotal = current.at(-1)?.value ?? 0;
   const previousTotal = previous.at(-1)?.value ?? 0;
-  return `<div class="metric-chart"><div class="metric-chart__legend"><span><i style="background:var(--series-views)"></i>Сегодня: ${formatMetricValue(currentTotal)}</span><span><i style="background:var(--series-previous)"></i>Вчера к этому времени: ${formatMetricValue(previousTotal)}</span><em>реальные замеры</em></div><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Сравнение просмотров сегодня и вчера по времени суток">${grid}${paths}${points}${labels}</svg><div class="chart-tooltip" id="chart-tooltip" hidden></div></div>`;
+  const comparisonLabel = benchmarkTotal === undefined ? "Вчера к этому времени" : "Медиана за 30 дней";
+  return `<div class="metric-chart"><div class="metric-chart__legend"><span><i style="background:var(--series-views)"></i>Сегодня: ${formatMetricValue(currentTotal)}</span><span><i style="background:var(--series-previous)"></i>${comparisonLabel}: ${formatMetricValue(previousTotal)}</span><em>${benchmarkTotal === undefined ? "реальные замеры" : "ориентир по дневной медиане"}</em></div><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Сравнение просмотров сегодня и медианы за 30 дней по времени суток">${grid}${paths}${points}${labels}</svg><div class="chart-tooltip" id="chart-tooltip" hidden></div></div>`;
 }
 
-/** One half of the unified overview: text or video, today against yesterday. */
-export type UnifiedSeries = { name: string; color: string; today: MetricEvent[]; yesterday: MetricEvent[] };
+/** One half of the unified overview: current period against one benchmark. */
+export type UnifiedSeries = { name: string; color: string; today: MetricEvent[]; comparison: MetricEvent[] };
 
 /**
  * Text and video on one time axis.
@@ -180,9 +191,9 @@ export type UnifiedSeries = { name: string; color: string; today: MetricEvent[];
  * visible. This is not a convenience: video views outrun text views by more
  * than an order of magnitude, so on a shared absolute axis the text line lies
  * flat on the floor and the chart silently says "text is nothing". In the
- * relative scaling each series is normalised against its own peak across both
- * days, so the shapes — when the day got going, whether it is ahead of
- * yesterday — become comparable while the legend keeps the real totals.
+ * relative scaling each series is normalised against its own peak across the
+ * current and benchmark curves, so the shapes remain comparable while the
+ * legend keeps the real totals.
  */
 export function renderUnifiedDailyChart(
   series: UnifiedSeries[],
@@ -193,17 +204,15 @@ export function renderUnifiedDailyChart(
 ): string {
   const dayStart = zonedSlot(day.getUTCFullYear(), day.getUTCMonth() + 1, day.getUTCDate(), "00:00", timeZone);
   const dayEnd = new Date(dayStart.getTime() + 86_400_000);
-  const yesterdayStart = new Date(dayStart.getTime() - 86_400_000);
   const isToday = now >= dayStart && now < dayEnd;
   const cutoff = isToday ? now : dayEnd;
-  const elapsed = cutoff.getTime() - dayStart.getTime();
 
   const resolved = series.map((item) => ({
     ...item,
     todayPoints: cumulativeTimeline(item.today, dayStart, cutoff),
-    yesterdayPoints: cumulativeTimeline(item.yesterday, yesterdayStart, new Date(yesterdayStart.getTime() + elapsed)),
+    comparisonPoints: cumulativeTimeline(item.comparison, dayStart, cutoff),
   }));
-  const hasData = resolved.some((item) => item.todayPoints.length > 1 || item.yesterdayPoints.length > 1);
+  const hasData = resolved.some((item) => item.todayPoints.length > 1 || item.comparisonPoints.length > 1);
   if (!hasData)
     return `<div class="metric-chart metric-chart--empty"><div class="metric-chart__legend"><span>Замеры появятся через час после публикации</span></div></div>`;
 
@@ -216,7 +225,7 @@ export function renderUnifiedDailyChart(
   const plotW = width - left - right;
   const plotH = height - top - bottom;
   const seriesMax = resolved.map((item) =>
-    Math.max(1, ...item.todayPoints.map((point) => point.value), ...item.yesterdayPoints.map((point) => point.value)),
+    Math.max(1, ...item.todayPoints.map((point) => point.value), ...item.comparisonPoints.map((point) => point.value)),
   );
   const sharedMax = Math.max(1, ...seriesMax);
 
@@ -252,23 +261,23 @@ export function renderUnifiedDailyChart(
             return `<circle class="chart-point" cx="${cx}" cy="${cy}" r="3" fill="${item.color}" /><circle class="chart-hit" cx="${cx}" cy="${cy}" r="10" data-tooltip="${escapeHtml(tooltip)}" />`;
           })
           .join("");
-        return `${line(item.yesterdayPoints, yesterdayStart, true)}${line(item.todayPoints, dayStart, false)}${dots}`;
+        return `${line(item.comparisonPoints, dayStart, true)}${line(item.todayPoints, dayStart, false)}${dots}`;
       })
       .join("");
-    return `<svg class="chart-view chart-view--${scale}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Просмотры текста и видео за сегодня против вчера">${grid}${shapes}${hourLabels}</svg>`;
+    return `<svg class="chart-view chart-view--${scale}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Просмотры текста и видео за сегодня против медианы за 30 дней">${grid}${shapes}${hourLabels}</svg>`;
   };
 
   const legend = resolved
     .map((item) => {
       const today = item.todayPoints.at(-1)?.value ?? 0;
-      const yesterday = item.yesterdayPoints.at(-1)?.value ?? 0;
-      return `<span><i style="background:${item.color}"></i>${escapeHtml(item.name)}: ${formatMetricValue(today)} <em>вчера ${formatMetricValue(yesterday)}</em></span>`;
+      const comparison = item.comparisonPoints.at(-1)?.value ?? 0;
+      return `<span><i style="background:${item.color}"></i>${escapeHtml(item.name)}: ${formatMetricValue(today)} <em>медиана ${formatMetricValue(comparison)}</em></span>`;
     })
     .join("");
 
   return `<div class="metric-chart metric-chart--dual" data-scale="${defaultScale}">
       <div class="metric-chart__head">
-        <div class="metric-chart__legend">${legend}<em>пунктир — вчера к этому времени</em></div>
+        <div class="metric-chart__legend">${legend}<em>пунктир — медиана за 30 дней</em></div>
         ${scaleToggle(defaultScale)}
       </div>
       ${plot("absolute")}${plot("relative")}
@@ -373,7 +382,7 @@ export function postViewEvents(posts: PipelinePost[], targetIds?: string[]): Met
     // the earlier one instead of being added to it. Falling back to the post
     // date collapsed two same-day keyless posts into one series and corrupted
     // the running total; the render-local index keeps them apart.
-    const postKey = post.post_key ?? post.post_id ?? `index:${postIndex}`;
+    const postKey = pipelinePostKey(post, postIndex);
     for (const [target, metrics] of Object.entries(post.metrics ?? {})) {
       if (targetIds && !targetIds.includes(target)) continue;
       for (const sample of metrics?.views?.samples ?? []) {
@@ -385,6 +394,26 @@ export function postViewEvents(posts: PipelinePost[], targetIds?: string[]): Met
     }
   });
   return events;
+}
+
+/** Adds the current read-model value so a chart does not end below its KPI
+ * when a post has a current metric but no sample in the selected window. */
+export function currentPostViewEvents(posts: PipelinePost[], at: Date, targetIds?: string[]): MetricEvent[] {
+  const events: MetricEvent[] = [];
+  posts.forEach((post, postIndex) => {
+    const postKey = pipelinePostKey(post, postIndex);
+    for (const [target, metrics] of Object.entries(post.metrics ?? {})) {
+      if (targetIds && !targetIds.includes(target)) continue;
+      const value = Number(metrics?.views?.value);
+      if (!Number.isFinite(value)) continue;
+      events.push({ at, key: `${postKey}:${target}`, value });
+    }
+  });
+  return events;
+}
+
+function pipelinePostKey(post: PipelinePost, postIndex: number): string | number {
+  return post.post_key ?? post.post_id ?? `index:${postIndex}`;
 }
 
 /** Folds immutable observations into a running total: a later sample of the
@@ -406,6 +435,13 @@ export function cumulativeTimeline(events: MetricEvent[], start: Date, cutoff: D
 
 function sampledViewTimeline(posts: PipelinePost[], start: Date, cutoff: Date, targetIds?: string[]): TimelinePoint[] {
   return cumulativeTimeline(postViewEvents(posts, targetIds), start, cutoff);
+}
+
+function benchmarkTimeline(total: number, start: Date, cutoff: Date): TimelinePoint[] {
+  return [
+    { at: start, value: 0 },
+    { at: cutoff, value: Math.max(0, total) },
+  ];
 }
 
 function clockLabel(value: Date, timeZone: string): string {

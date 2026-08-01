@@ -69,10 +69,26 @@ function renderBestPost(post: PipelinePost, targetIds: string[], rank: number): 
 }
 
 function renderBestVideo(video: VideoContentItem, rank: number): string {
-  return bestBody(rank, escapeHtml(shortPipelineText(video.title, 10)), videoIcon(video.target), video.views, video.reactions, video.url);
+  return bestBody(
+    rank,
+    escapeHtml(shortPipelineText(video.title, 10)),
+    videoIcon(video.target),
+    video.views,
+    video.reactions,
+    video.url,
+    video.afterPeriodViews,
+  );
 }
 
-function bestBody(rank: number, title: string, icons: string, views: number, likes: number, url: string | null): string {
+function bestBody(
+  rank: number,
+  title: string,
+  icons: string,
+  views: number,
+  likes: number,
+  url: string | null,
+  afterPeriodViews = 0,
+): string {
   const opening = url
     ? `<a class="best-post" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">`
     : '<article class="best-post">';
@@ -82,6 +98,7 @@ function bestBody(rank: number, title: string, icons: string, views: number, lik
     `<div class="best-post__copy"><div class="best-post__title">${title}</div><div class="best-post__icons">${icons}</div></div>`,
     '<div class="best-post__stats">',
     `<strong>${formatMetricValue(views)}</strong><small>просмотры</small>`,
+    afterPeriodViews > 0 ? `<small class="post-after-period">+${formatMetricValue(afterPeriodViews)} после периода</small>` : "",
     `<em>♡ ${formatMetricValue(likes)}</em>`,
     "</div>",
     url ? "</a>" : "</article>",
@@ -109,7 +126,11 @@ function renderRecentVideo(video: VideoContentItem, hidden: boolean): string {
     '<span class="post-detail__headline"><span class="post-detail__chevron post-detail__chevron--link">↗</span>',
     `<span class="post-detail__title">${escapeHtml(shortPipelineText(video.title, 11))}</span></span>`,
     `<span class="post-detail__media">${videoIcon(video.target)}</span>`,
-    `<span>${formatMetricValue(video.views)}</span>`,
+    `<span class="post-detail__views"><span>${formatMetricValue(video.views)}</span>${
+      video.afterPeriodViews > 0
+        ? `<small class="post-after-period">+${formatMetricValue(video.afterPeriodViews)} после периода</small>`
+        : ""
+    }</span>`,
     `<span>${formatMetricValue(video.reactions)}</span>`,
     `<span>${formatMetricValue(video.replies)}</span>`,
     "</span>",

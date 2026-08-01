@@ -1,0 +1,68 @@
+import { describe, expect, it } from "bun:test";
+import { openBackendDb } from "../src/db/client.js";
+import { loadConfig } from "../src/foundation/config.js";
+import { zonedRollingPeriodBounds } from "../src/foundation/time.js";
+import { pipelineStatusPayload } from "../src/operations/read-model.js";
+
+describe("dashboard read model bounds", () => {
+  it("filters samples by period, caps each series, and omits provider raw payloads", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const [periodStart] = zonedRollingPeriodBounds(0, 1, "Europe/Moscow");
+      const periodStartMs = Date.parse(periodStart);
+      const postAt = new Date(periodStartMs + 1_000).toISOString();
+      const raw = JSON.stringify({ provider: "fixture", response: "x".repeat(2_000) });
+
+      backendDb.sqlite
+        .prepare(
+          "INSERT INTO posts(post_key,post_id,channel,message_id,date_utc,status,created_at,updated_at) VALUES ('post:1',1,'test',1,?,'active',?,?)",
+        )
+        .run(postAt, postAt, postAt);
+      backendDb.sqlite
+        .prepare("INSERT INTO publications(post_id,status,telegram_message_id,created_at,updated_at) VALUES (1,'published',1,?,?)")
+        .run(postAt, postAt);
+      backendDb.sqlite
+        .prepare(
+          "INSERT INTO post_locales(post_id,locale,slug,text,media_json,site_enabled,updated_at) VALUES (1,'ru','post-1','Fixture','[]',1,?)",
+        )
+        .run(postAt);
+      backendDb.sqlite
+        .prepare("INSERT INTO post_targets(post_key,target,status,updated_at,raw_json) VALUES ('post:1','telegram','published',?,?)")
+        .run(postAt, raw);
+      backendDb.sqlite
+        .prepare(
+          "INSERT INTO post_metrics(post_key,target,metric_name,value,unit,source,sampled_at,raw_json) VALUES ('post:1','telegram','views',250,'count','fixture',?,?)",
+        )
+        .run(postAt, raw);
+
+      const sampleInsert = backendDb.sqlite.prepare(
+        "INSERT INTO metric_samples(post_key,target,metric_name,value,sampled_at,source,raw_json) VALUES ('post:1','telegram','views',?,?,?,?)",
+      );
+      sampleInsert.run(999, new Date(periodStartMs - 1_000).toISOString(), "fixture", raw);
+      for (let index = 0; index < 250; index += 1) {
+        sampleInsert.run(index, new Date(periodStartMs + (index + 2) * 1_000).toISOString(), "fixture", raw);
+      }
+
+      type TestPost = {
+        metrics: { telegram: { views: { raw?: unknown; samples: Array<{ value: number; sampled_at: string }> } } };
+        targets: { telegram: Record<string, unknown> };
+      };
+      const payload = pipelineStatusPayload(loadConfig({ PIPELINE_DB: ":memory:" }), backendDb, 0, 1, 0, undefined, {
+        includeSamples: true,
+        sampleLimitPerSeries: 200,
+      }) as unknown as { posts: TestPost[] };
+      const post = payload.posts[0];
+      if (!post) throw new Error("Expected one pipeline post");
+      const metric = post.metrics.telegram.views;
+      const target = post.targets.telegram;
+
+      expect(metric.samples).toHaveLength(200);
+      expect(metric.samples[0]).toEqual({ value: 0, sampled_at: new Date(periodStartMs + 2_000).toISOString() });
+      expect(metric.samples.some((sample: { value: number }) => sample.value === 999)).toBe(false);
+      expect(metric).not.toHaveProperty("raw");
+      expect(target).not.toHaveProperty("raw");
+    } finally {
+      backendDb.close();
+    }
+  });
+});
