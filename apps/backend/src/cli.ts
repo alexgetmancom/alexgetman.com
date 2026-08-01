@@ -5,6 +5,7 @@ import { loadConfig } from "./foundation/config.js";
 import { checkDataDirectoriesWritable, requiredDataDirectories } from "./foundation/runtime/data-dirs.js";
 import { capabilityReport } from "./observability/capabilities.js";
 import { capabilitySummary, recordCapabilityPost } from "./operations/capabilities.js";
+import { channelReport, connectChannel, disableChannel } from "./operations/channels.js";
 import {
   applyMetricsBackfill,
   auditOperations,
@@ -26,28 +27,44 @@ import { verifyPostTargets } from "./operations/verify.js";
 
 const republishAliases = new Set(["republish", "retry"]);
 
-type Arguments = { command: string; values: Map<string, string>; flags: Set<string> };
+type Arguments = { command: string; values: Map<string, string>; repeated: Map<string, string[]>; flags: Set<string> };
 
 function parseArguments(argv: string[]): Arguments {
   const command = argv[0] ?? "help";
   const values = new Map<string, string>();
+  // Options that may appear more than once, such as one --credential per value.
+  const repeated = new Map<string, string[]>();
   const flags = new Set<string>();
   for (let index = 1; index < argv.length; index += 1) {
     const token = argv[index];
     if (!token?.startsWith("--")) continue;
     const next = argv[index + 1];
     if (next && !next.startsWith("--")) {
-      values.set(token.slice(2), next);
+      const name = token.slice(2);
+      values.set(name, next);
+      repeated.set(name, [...(repeated.get(name) ?? []), next]);
       index += 1;
     } else flags.add(token.slice(2));
   }
-  return { command, values, flags };
+  return { command, values, repeated, flags };
 }
 
 function required(args: Arguments, name: string): string {
   const value = args.values.get(name);
   if (!value) throw new Error(`missing --${name}`);
   return value;
+}
+
+/** `name=value` pairs. Values reach the process through its arguments, so this
+ * is meant for a shell inside the deployment, not for a shared terminal. */
+function parseCredentials(pairs: string[]): Record<string, string> {
+  return Object.fromEntries(
+    pairs.map((pair) => {
+      const separator = pair.indexOf("=");
+      if (separator <= 0) throw new Error(`--credential expects name=value, received: ${pair}`);
+      return [pair.slice(0, separator), pair.slice(separator + 1)];
+    }),
+  );
 }
 
 function printHelp(): void {
@@ -76,7 +93,11 @@ function printHelp(): void {
   retry --ref post:1 [--target x] [--locale ru|en]
   site-media-images [--apply --max-upload-kbps 6250]
   site-media-deduplicate [--apply]
-  story-card-backfill --ref post:1 [--apply] [--force]`);
+  story-card-backfill --ref post:1 [--apply] [--force]
+  channels
+  channel-connect --platform youtube|instagram --locale ru|en [--provider native|zernio]
+                  [--account-id ID] [--label TEXT] [--credential name=value ...]
+  channel-disable --channel youtube_ru [--forget-credentials]`);
 }
 
 async function main(): Promise<void> {
@@ -186,6 +207,27 @@ async function main(): Promise<void> {
           2,
         ),
       );
+    } else if (args.command === "channels") {
+      console.log(JSON.stringify(channelReport(backendDb, config), null, 2));
+    } else if (args.command === "channel-connect") {
+      const locale = required(args, "locale");
+      if (locale !== "ru" && locale !== "en") throw new Error("--locale must be ru or en");
+      console.log(
+        JSON.stringify(
+          connectChannel(backendDb, config, {
+            platform: required(args, "platform"),
+            locale,
+            provider: args.values.get("provider") ?? "native",
+            ...(args.values.has("account-id") ? { accountId: args.values.get("account-id") as string } : {}),
+            ...(args.values.has("label") ? { label: args.values.get("label") as string } : {}),
+            credentials: parseCredentials(args.repeated.get("credential") ?? []),
+          }),
+          null,
+          2,
+        ),
+      );
+    } else if (args.command === "channel-disable") {
+      console.log(JSON.stringify(disableChannel(backendDb, required(args, "channel"), args.flags.has("forget-credentials")), null, 2));
     } else if (args.command === "capabilities") {
       console.log(JSON.stringify(capabilitySummary(backendDb), null, 2));
     } else if (args.command === "capability-record") {

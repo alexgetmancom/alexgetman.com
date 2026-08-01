@@ -60,6 +60,7 @@
   - `bun run --filter @alexgetman/backend ops doctor`
   - `bun run --filter @alexgetman/backend ops audit`
   - `bun run --filter @alexgetman/backend ops capabilities`
+  - `bun run --filter @alexgetman/backend ops channels` — реестр каналов: платформа, язык, провайдер, источник строки и какие креды у канала свои, а каких не хватает. Значения не печатаются, только имена. Подключение и отключение — `channel-connect` / `channel-disable`, это мутации.
   - `bun run --filter @alexgetman/backend ops verify --ref post:<id>`
   - `bun run --filter @alexgetman/backend ops timeline --ref post:<id>` — полная durable-хронология jobs, targets и событий с фазами и `durationMs`.
   - `bun run --filter @alexgetman/backend ops media-status` — health, очередь, VAAPI, версия и диск удалённого media processor на VM-106.
@@ -73,7 +74,7 @@
 - Если `lastError` в `audit` не объясняет причину (например, ошибка внешнего API без деталей) — это уже root-cause на уровне кода, не порт диагностики; читать сам код и git-историю затронутого файла (`git log -- <path>`), не гадать по логам.
 - Если локальная команда завершается `EROFS`, `ENOENT` или из-за отсутствующих локальных `/data`/secrets, не исправлять это ради диагностики: за production-ответом идти к read-only CLI в контейнере.
 - Для авторизованной диагностики конкретного поста использовать JSON endpoint `/api/post-debug?ref=post:<id>`; он показывает post, targets и publish jobs.
-- Не запускать `backup`, `restore`, `metrics-backfill --apply`, `media-reprocess --apply`, `capability-record`, retry/republish, ручные `UPDATE` в БД или другие мутации без явного запроса пользователя.
+- Не запускать `backup`, `restore`, `metrics-backfill --apply`, `media-reprocess --apply`, `capability-record`, `channel-connect`, `channel-disable`, retry/republish, ручные `UPDATE` в БД или другие мутации без явного запроса пользователя.
 
 ## Story player chrome
 

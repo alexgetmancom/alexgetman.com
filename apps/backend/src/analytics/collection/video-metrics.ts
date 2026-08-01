@@ -1,4 +1,5 @@
 import { and, asc, eq, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import { videoChannelConfig } from "../../channels/channel-config.js";
 import type { BackendDb } from "../../db/client.js";
 import { videoDrafts, videoMetricSchedule, videoTargets } from "../../db/schema.js";
 import { recordDomainEvent } from "../../domain/events.js";
@@ -91,7 +92,10 @@ export async function runVideoMetricSchedule(config: BackendConfig, backendDb: B
       // One fresh access token is enough for every Data API request in this
       // cycle. Refreshing once per historical target turns a revoked token
       // into a noisy burst of identical OAuth failures.
-      youtubeTokens.set(locale, await youtubeAccessToken(config, fetchImpl, locale));
+      youtubeTokens.set(
+        locale,
+        await youtubeAccessToken(videoChannelConfig(backendDb, config, "youtube_shorts", locale), fetchImpl, locale),
+      );
     } catch (error) {
       const normalized = terminalIfMissingRemoteObject(error);
       const message = normalized instanceof Error ? normalized.message : String(normalized);
@@ -368,7 +372,7 @@ async function collectInstagramVideoMetrics(
   target: VideoMetricTask,
   fetchImpl: typeof fetch,
 ): Promise<void> {
-  const instagramConfig = instagramConfigForLocale(config, target.locale);
+  const instagramConfig = instagramConfigForLocale(videoChannelConfig(backendDb, config, "instagram_reels", target.locale), target.locale);
   const token = instagramConfig.INSTAGRAM_ACCESS_TOKEN;
   if (!token) throw new Error("Instagram credentials are missing");
   const host = instagramGraphHost(token);

@@ -281,6 +281,13 @@
       "when": 1785975440000,
       "tag": "0039_text_story_cards",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "6",
+      "when": 1785975500000,
+      "tag": "0040_channel_credentials",
+      "breakpoints": true
     }
   ]
 }

@@ -183,8 +183,29 @@ export function effectivePostTargets(backendDb: BackendDb, targets: Record<strin
   return Object.fromEntries(Object.entries(targets).map(([target, enabled]) => [target, enabled && registered.has(target)]));
 }
 
+/** Whether this installation has a registry at all. An empty table means the
+ * bootstrap has not run — a fresh database or a fixture — and is the only case
+ * in which configuration still answers routing questions directly. */
+export function hasChannelRegistry(backendDb: BackendDb): boolean {
+  return Boolean(backendDb.db.select({ id: channelConnections.id }).from(channelConnections).limit(1).get());
+}
+
+/** The platform a video target is delivered through. Kept next to the registry
+ * because the registry stores platforms, while publishing speaks in targets. */
+export function videoPlatform(target: VideoTarget): string {
+  return target === "youtube_shorts" ? "youtube" : "instagram";
+}
+
+export function channelFor(backendDb: BackendDb, platform: string, locale: VideoLocale): ChannelConnection | undefined {
+  return backendDb.db
+    .select()
+    .from(channelConnections)
+    .where(and(eq(channelConnections.platform, platform), eq(channelConnections.locale, locale), eq(channelConnections.enabled, 1)))
+    .get();
+}
+
 export function channelForVideo(backendDb: BackendDb, target: VideoTarget, locale: VideoLocale): ChannelConnection | undefined {
-  const platform = target === "youtube_shorts" ? "youtube" : "instagram";
+  const platform = videoPlatform(target);
   return backendDb.db
     .select()
     .from(channelConnections)

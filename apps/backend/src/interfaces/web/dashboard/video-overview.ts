@@ -1,8 +1,8 @@
 import { metricNumber } from "../../../analytics/snapshots/creator-store.js";
+import { videoDestinations } from "../../../channels/destinations.js";
 import type { BackendDb } from "../../../db/client.js";
 import {
   legacyVideoProfile,
-  VIDEO_DESTINATIONS,
   VIDEO_TARGETS,
   type VideoDestination,
   type VideoLocale,
@@ -43,7 +43,7 @@ export type VideoContentItem = {
 /**
  * One row of the platform panel: a destination, not a platform.
  *
- * `locale` is declared by VIDEO_DESTINATIONS rather than inferred from the
+ * `locale` is declared by the channel registry rather than inferred from the
  * clips of this period — a Russian channel is Russian on a week it published
  * nothing — and `followers` come from that destination's own profile key, so
  * the RU and EN channels stop sharing one legacy count.
@@ -103,12 +103,13 @@ function legacyFollowers(
 }
 
 export function videoOverview(backendDb: BackendDb, start: Date, end: Date): VideoOverview {
+  const catalogue = videoDestinations(backendDb);
   const rows = publishedTargets(backendDb, start.toISOString(), end.toISOString());
-  const historicalDestinations = publishedDestinationKeys(backendDb);
+  const historicalDestinations = publishedDestinationKeys(backendDb, catalogue);
   const items = rows
     .map((row) => {
       const metrics = parseMetrics(row.metricsJson);
-      const destination = destinationFor(row);
+      const destination = destinationFor(catalogue, row);
       return {
         key: `video:${row.id}`,
         target: row.target,
@@ -141,7 +142,7 @@ export function videoOverview(backendDb: BackendDb, start: Date, end: Date): Vid
   // has: publications in the period, or an audience snapshot. Listing the whole
   // catalogue would put an English channel on a Studio that has never had one;
   // listing only what published would drop a real channel on a quiet week.
-  const counted = VIDEO_DESTINATIONS.map((destination) => {
+  const counted = catalogue.map((destination) => {
     const published = items.filter((item) => item.target === destination.target && item.locale === destination.locale.toUpperCase());
     return {
       destination,
@@ -180,7 +181,7 @@ function publishedTargets(backendDb: BackendDb, startIso: string, endIso: string
     .all(startIso, endIso) as TargetRow[];
 }
 
-function publishedDestinationKeys(backendDb: BackendDb): Set<string> {
+function publishedDestinationKeys(backendDb: BackendDb, catalogue: readonly VideoDestination[]): Set<string> {
   const rows = backendDb.sqlite
     .prepare(
       `SELECT t.target AS target, d.locale AS locale
@@ -191,7 +192,7 @@ function publishedDestinationKeys(backendDb: BackendDb): Set<string> {
     .all() as Array<{ target: string; locale: string | null }>;
   return new Set(
     rows
-      .map(destinationFor)
+      .map((row) => destinationFor(catalogue, row))
       .filter((destination): destination is VideoDestination => destination !== null)
       .map(destinationKey),
   );
@@ -241,9 +242,9 @@ function followerCounts(backendDb: BackendDb): Map<string, number> {
   return counts;
 }
 
-function destinationFor(row: { target: string; locale: string | null }): VideoDestination | null {
+function destinationFor(catalogue: readonly VideoDestination[], row: { target: string; locale: string | null }): VideoDestination | null {
   const locale = videoLocale(row.locale);
-  return locale ? videoDestination(row.target, locale) : null;
+  return locale ? videoDestination(catalogue, row.target, locale) : null;
 }
 
 function destinationKey(destination: VideoDestination): string {

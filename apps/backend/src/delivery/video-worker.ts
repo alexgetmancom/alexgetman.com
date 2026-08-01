@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { and, asc, eq, isNull, lte, or, sql } from "drizzle-orm";
+import { videoChannelConfig } from "../channels/channel-config.js";
 import { videoPublicUrl, videoSourcePath } from "../content/video-assets.js";
 import type { BackendDb } from "../db/client.js";
 import { botSettings, videoJobs, videoTargets } from "../db/schema.js";
@@ -156,11 +157,14 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
   if (!filePath) throw new Error("Video source was removed before publication completed.");
   const metadata = target.metadataJson as VideoMetadata;
   const locale = draft.locale === "en" ? "en" : "ru";
-  const instagramConfig = instagramConfigForLocale(config, locale);
+  // The channel's own credentials, when it has them, stand in for the
+  // deployment's before any publisher sees the configuration.
+  const youtubeConfig = videoChannelConfig(backendDb, config, "youtube_shorts", locale);
+  const instagramConfig = instagramConfigForLocale(videoChannelConfig(backendDb, config, "instagram_reels", locale), locale);
   if (job.kind === "prepare") {
     if (target.target === "youtube_shorts") {
       const result = await prepareYouTubeVideo(
-        config,
+        youtubeConfig,
         filePath,
         {
           ...(metadata as YouTubeMetadata),
@@ -174,7 +178,7 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
         // ID exists only in this response, so fence its future public release
         // before discarding it from local state.
         try {
-          await keepYouTubeUploadPrivate(config, result.id, locale);
+          await keepYouTubeUploadPrivate(youtubeConfig, result.id, locale);
         } catch (error) {
           recordDomainEvent(backendDb, {
             ref: `video:${job.videoDraftId}`,
@@ -217,7 +221,7 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
   } else if (target.deliveryProvider === "zernio") {
     const accountId = target.providerAccountId;
     if (!accountId) throw new Error("Zernio Instagram account is missing");
-    const result = await publishZernioInstagramReel(config, {
+    const result = await publishZernioInstagramReel(instagramConfig, {
       accountId,
       publicUrl: videoPublicUrl(backendDb, config, draft),
       metadata: metadata as InstagramMetadata,

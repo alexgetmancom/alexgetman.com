@@ -1,12 +1,7 @@
 import { metricNumber } from "../../../analytics/snapshots/creator-store.js";
+import { videoDestinations } from "../../../channels/destinations.js";
 import type { BackendDb } from "../../../db/client.js";
-import {
-  VIDEO_PROFILE_KEYS,
-  VIDEO_TARGETS,
-  type VideoTarget,
-  videoProfileLabel,
-  videoTargetLabel,
-} from "../../../publishing/video-types.js";
+import { VIDEO_TARGETS, type VideoTarget, videoProfileKeys, videoProfileLabel, videoTargetLabel } from "../../../publishing/video-types.js";
 import { formatMetricValue } from "./format.js";
 import { escapeHtml } from "./html.js";
 
@@ -129,12 +124,14 @@ function targetMetrics(target: VideoTargetRow): { views: number; likes: number; 
  * card has to name the account. Matching on platform alone silently compared one
  * account's today against the other's last week. */
 function videoAudience(backendDb: BackendDb): Array<{ label: string; followers: number; growth: number | null }> {
-  const placeholders = VIDEO_PROFILE_KEYS.map(() => "?").join(",");
+  const catalogue = videoDestinations(backendDb);
+  const profileKeys = videoProfileKeys(catalogue);
+  const placeholders = profileKeys.map(() => "?").join(",");
   const profiles = backendDb.sqlite
     .prepare(
       `SELECT platform, account, metrics_json AS metricsJson FROM creator_profile_snapshots WHERE id IN (SELECT MAX(id) FROM creator_profile_snapshots WHERE platform IN (${placeholders}) GROUP BY platform, account)`,
     )
-    .all(...VIDEO_PROFILE_KEYS) as Array<{ platform: string; account: string; metricsJson: string }>;
+    .all(...profileKeys) as Array<{ platform: string; account: string; metricsJson: string }>;
   const since = new Date(Date.now() - 7 * 24 * 60 * 60_000).toISOString();
   return profiles.map((profile) => {
     const latest = JSON.parse(profile.metricsJson) as Record<string, unknown>;
@@ -146,7 +143,7 @@ function videoAudience(backendDb: BackendDb): Array<{ label: string; followers: 
     const followers = metricNumber(latest.subscriberCount ?? latest.followersCount);
     const previousMetrics = baseline ? (JSON.parse(baseline.metricsJson) as Record<string, unknown>) : null;
     const previous = previousMetrics ? metricNumber(previousMetrics.subscriberCount ?? previousMetrics.followersCount) : null;
-    const platformLabel = videoProfileLabel(profile.platform);
+    const platformLabel = videoProfileLabel(catalogue, profile.platform);
     return {
       label: profile.account ? `${platformLabel} · ${profile.account}` : platformLabel,
       followers,

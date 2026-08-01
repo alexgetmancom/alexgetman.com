@@ -106,6 +106,26 @@ export const channelConnections = sqliteTable(
   ],
 );
 
+/**
+ * Per-channel secrets, so a connection carries what it takes to reach its
+ * account instead of relying on a variable baked into the deployment.
+ *
+ * Values are encrypted with CHANNEL_SECRET_KEY; the column never holds a
+ * readable token. Without this table a natively connected account could only be
+ * added by a redeploy, which is why interfaces could offer Zernio (one shared
+ * key, account chosen by id) and nothing else.
+ */
+export const channelCredentials = sqliteTable(
+  "channel_credentials",
+  {
+    channelId: text().notNull(),
+    name: text().notNull(),
+    valueEncrypted: text().notNull(),
+    updatedAt: text().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.channelId, table.name] })],
+);
+
 /** Interface-owned presentation references. Domain aggregates never store UI message ids. */
 export const interfaceBindings = sqliteTable(
   "interface_bindings",

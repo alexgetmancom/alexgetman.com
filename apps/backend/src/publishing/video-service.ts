@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { and, eq, inArray, ne } from "drizzle-orm";
+import { videoChannelConfig } from "../channels/channel-config.js";
 import { videoSourcePath } from "../content/video-assets.js";
 import type { BackendDb } from "../db/client.js";
 import { videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
@@ -230,14 +231,14 @@ export async function validateVideoDraft(config: BackendConfig, backendDb: Backe
     });
   for (const target of listVideoTargets(backendDb, videoDraftId)) {
     if (target.target === "youtube_shorts") {
-      const credentials = youtubeCredentials(config, locale);
+      const credentials = youtubeCredentials(videoChannelConfig(backendDb, config, "youtube_shorts", locale), locale);
       if (!credentials.clientId || !credentials.clientSecret || !credentials.refreshToken)
         throw new StudioError("err.youtube-not-configured");
     }
     if (target.target === "instagram_reels") {
       const route = registeredVideoDeliveryRoute(backendDb, config, "instagram_reels", locale);
       if (!isZernioRouteReady(config, route) && route.provider === "zernio") throw new StudioError("err.instagram-not-configured");
-      const instagramCredentials = instagramCredentialsForLocale(config, locale);
+      const instagramCredentials = instagramCredentialsForLocale(videoChannelConfig(backendDb, config, "instagram_reels", locale), locale);
       if (route.provider === "native" && (!instagramCredentials.accessToken || !instagramCredentials.userId))
         throw new StudioError("err.instagram-not-configured");
     }

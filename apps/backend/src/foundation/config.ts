@@ -195,6 +195,10 @@ const envSchema = z
     /** Per durable target route, e.g. {"instagram_reels":{"provider":"zernio","accountId":"..."}}. */
     PUBLISH_PROVIDER_ROUTES_JSON: providerRoutes,
     ZERNIO_API_KEY: z.string().min(16).optional(),
+    /** Encrypts channel credentials at rest. Required only to connect an
+     * account from an interface; environment-configured channels never touch
+     * the store. Any passphrase works — it is hashed to key length. */
+    CHANNEL_SECRET_KEY: z.string().min(16).optional(),
     YOUTUBE_CLIENT_ID: z.string().optional(),
     YOUTUBE_CLIENT_SECRET: z.string().optional(),
     YOUTUBE_REFRESH_TOKEN: z.string().optional(),

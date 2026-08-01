@@ -164,6 +164,7 @@ describe("openBackendDb", () => {
     fixture.exec("DROP TABLE x_activity_imports");
     fixture.exec("DROP TABLE x_activity_items");
     fixture.exec("DROP TABLE x_activity_metric_snapshots");
+    fixture.exec("DROP TABLE channel_credentials");
     fixture.close();
 
     const legacy = new Database(dbPath) as unknown as Parameters<typeof baselineDrizzleMigrations>[0];

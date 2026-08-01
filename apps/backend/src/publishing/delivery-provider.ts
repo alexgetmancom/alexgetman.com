@@ -1,4 +1,4 @@
-import { channelForVideo } from "../channels/registry.js";
+import { channelForVideo, hasChannelRegistry } from "../channels/registry.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import type { VideoLocale } from "../foundation/external/youtube.js";
@@ -16,8 +16,15 @@ export function videoDeliveryRoute(config: BackendConfig, target: VideoTarget, l
     : { provider: "native" };
 }
 
-/** Registry-aware route used by runtime workflows. The environment remains a
- * bootstrap/fallback so existing self-hosted installations migrate in place. */
+/**
+ * The route a runtime workflow uses. The registry answers it.
+ *
+ * The environment is consulted only while the registry is empty — a database
+ * that has not been bootstrapped yet, or a fixture. Once channels exist, a
+ * missing connection means "this Studio does not publish there", not "look the
+ * answer up somewhere else": two authoritative sources for the same question is
+ * how a channel disabled in an interface keeps publishing from a stale variable.
+ */
 export function registeredVideoDeliveryRoute(
   backendDb: BackendDb,
   config: BackendConfig,
@@ -25,7 +32,7 @@ export function registeredVideoDeliveryRoute(
   locale: VideoLocale = "ru",
 ): VideoDeliveryRoute {
   const connection = channelForVideo(backendDb, target, locale);
-  if (!connection) return videoDeliveryRoute(config, target, locale);
+  if (!connection) return hasChannelRegistry(backendDb) ? { provider: "native" } : videoDeliveryRoute(config, target, locale);
   return {
     provider: connection.provider === "zernio" ? "zernio" : "native",
     ...(connection.providerAccountId ? { accountId: connection.providerAccountId } : {}),

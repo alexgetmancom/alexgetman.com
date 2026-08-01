@@ -24,19 +24,20 @@ export function videoTargetLabel(target: VideoTarget): string {
  * destination, count its followers, or badge its language had to guess from the
  * drafts that happened to go out, which says nothing on a quiet week.
  *
- * This is the video counterpart of TARGETS in botTargets.ts, which has always
- * carried a locale per text target. It is a catalogue, not a per-account
- * setting: which of these a Studio actually uses is answered by its data and by
- * its module flags, not by a second copy of this list in every studio.yaml.
+ * This list is the *bootstrap* catalogue, not the truth. The truth is the
+ * channel registry: one row per account a Studio actually connected, which is
+ * what lets a new destination appear by connecting it rather than by editing
+ * this file. These four are what an installation has before it has a registry —
+ * a fresh database or a fixture. See channels/destinations.ts.
  */
-export const VIDEO_DESTINATIONS = [
+export const BOOTSTRAP_VIDEO_DESTINATIONS = [
   { target: "youtube_shorts", locale: "ru", label: "YouTube RU", profile: "youtube_ru" },
   { target: "youtube_shorts", locale: "en", label: "YouTube EN", profile: "youtube_en" },
   { target: "instagram_reels", locale: "ru", label: "Instagram RU", profile: "instagram_ru" },
   { target: "instagram_reels", locale: "en", label: "Instagram EN", profile: "instagram_en" },
 ] as const satisfies ReadonlyArray<{ target: VideoTarget; locale: VideoLocale; label: string; profile: string }>;
 
-export type VideoDestination = (typeof VIDEO_DESTINATIONS)[number];
+export type VideoDestination = { target: VideoTarget; locale: VideoLocale; label: string; profile: string };
 
 /** Profile keys predating the locale split. They still receive snapshots, so a
  * destination falls back to them when its own key has none yet. */
@@ -49,22 +50,25 @@ export function legacyVideoProfile(target: VideoTarget): string {
   return LEGACY_PROFILE[target];
 }
 
-/** Every profile key the audience snapshots may carry, newest naming first. The
+/** Every profile key the audience snapshots may carry for this catalogue. The
  * legacy keys stay in the list because old snapshots are never rewritten. */
-export const VIDEO_PROFILE_KEYS: readonly string[] = [
-  ...VIDEO_DESTINATIONS.map((destination) => destination.profile),
-  ...VIDEO_TARGETS.map((target) => LEGACY_PROFILE[target]),
-];
+export function videoProfileKeys(catalogue: readonly VideoDestination[]): string[] {
+  return [...catalogue.map((destination) => destination.profile), ...VIDEO_TARGETS.map((target) => LEGACY_PROFILE[target])];
+}
 
-/** Names a profile key for display, so a new destination is added to the
- * catalogue alone rather than to every panel that renders one. */
-export function videoProfileLabel(profile: string): string {
-  const destination = VIDEO_DESTINATIONS.find((entry) => entry.profile === profile);
+/** Names a profile key for display, so a new destination is named once — where
+ * it is declared — rather than in every panel that renders one. */
+export function videoProfileLabel(catalogue: readonly VideoDestination[], profile: string): string {
+  const destination = catalogue.find((entry) => entry.profile === profile);
   if (destination) return destination.label;
   const legacy = VIDEO_TARGETS.find((target) => LEGACY_PROFILE[target] === profile);
   return legacy ? LEGACY_PROFILE_LABEL[legacy] : profile;
 }
 
-export function videoDestination(target: string, locale: string | null | undefined): VideoDestination | null {
-  return VIDEO_DESTINATIONS.find((entry) => entry.target === target && entry.locale === locale) ?? null;
+export function videoDestination(
+  catalogue: readonly VideoDestination[],
+  target: string,
+  locale: string | null | undefined,
+): VideoDestination | null {
+  return catalogue.find((entry) => entry.target === target && entry.locale === locale) ?? null;
 }

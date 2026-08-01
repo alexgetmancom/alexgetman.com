@@ -1,3 +1,4 @@
+import { channelConfig } from "../../channels/channel-config.js";
 import type { ChannelConnection } from "../../channels/registry.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
@@ -50,7 +51,7 @@ export async function syncYouTubeProfile(
   const profileKey = connection?.id ?? "youtube";
   const locale = connection?.locale === "en" ? "en" : "ru";
   await synced(backendDb, profileKey, async () => {
-    const token = await youtubeAccessToken(config, fetchImpl, locale);
+    const token = await youtubeAccessToken(channelConfig(backendDb, config, "youtube", locale), fetchImpl, locale);
     const auth = { Authorization: `Bearer ${token}` };
     const channel = await requestJson<YouTubeChannel>(
       fetchImpl,
@@ -144,7 +145,10 @@ export async function syncInstagramProfile(
       await syncZernioInstagramProfile(config, backendDb, fetchImpl, connection);
       return;
     }
-    const instagramConfig = connection ? instagramConfigForLocale(config, connection.locale === "en" ? "en" : "ru") : config;
+    const instagramLocale = connection?.locale === "en" ? "en" : "ru";
+    const instagramConfig = connection
+      ? instagramConfigForLocale(channelConfig(backendDb, config, "instagram", instagramLocale), instagramLocale)
+      : config;
     const token = instagramConfig.INSTAGRAM_ACCESS_TOKEN;
     const userId = instagramConfig.INSTAGRAM_USER_ID;
     if (!token || !userId) throw new Error("Instagram credentials are missing");
