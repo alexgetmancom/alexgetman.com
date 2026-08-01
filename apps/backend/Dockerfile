@@ -98,13 +98,15 @@ RUN --mount=type=cache,target=/home/bun/.bun,uid=1000,gid=1000 bun install --pro
 # --- ФИНАЛЬНЫЙ МИНИМАЛЬНЫЙ ОБРАЗ ---
 FROM oven/bun:1.3.14-debian AS app
 
-ARG GIT_REVISION=unknown
-ENV GIT_REVISION=${GIT_REVISION}
-ENV DRIZZLE_MIGRATIONS_DIR=/app/apps/backend/drizzle
-
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates tini \
   && rm -rf /var/lib/apt/lists/*
+
+# Keep commit-specific metadata after invariant OS packages so every revision
+# can reuse the apt layer.
+ARG GIT_REVISION=unknown
+ENV GIT_REVISION=${GIT_REVISION}
+ENV DRIZZLE_MIGRATIONS_DIR=/app/apps/backend/drizzle
 
 # Копируем сжатые бинарники из изолированной стадии ffmpeg-bin
 COPY --from=ffmpeg-bin /tmp/ffmpeg /usr/local/bin/
