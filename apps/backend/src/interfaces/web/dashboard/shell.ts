@@ -19,10 +19,26 @@ export function renderDashboardShell(body: string): string {
     .theme-toggle:hover { border-color:var(--border-hover); color:var(--text-header); }
     .dashboard-heading { margin-bottom:12px; }
     .dashboard-heading h1 { margin-bottom:4px; }
-    .dashboard-tabs { display:flex; align-items:center; flex-wrap:wrap; gap:22px; margin:0 0 16px; border-bottom:1px solid var(--border-soft); }
-    .dashboard-tabs a { padding:0 0 11px; border:0; border-radius:0; background:transparent; color:var(--text-muted); font-size:16px; font-weight:600; text-decoration:none; }
-    .dashboard-tabs a:hover { color:var(--text-main); }
-    .dashboard-tabs a.active { color:var(--text-header); box-shadow:inset 0 -2px var(--accent); }
+    .dashboard-tabs { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:16px; margin:0 0 14px; border-bottom:1px solid var(--border-soft); }
+    .dashboard-tabs__start > a { padding:0 0 9px; border:0; border-radius:0; background:transparent; color:var(--text-muted); font-size:16px; font-weight:600; text-decoration:none; }
+    .dashboard-tabs__start > a:hover { color:var(--text-main); }
+    .dashboard-tabs__start > a.active { color:var(--text-header); box-shadow:inset 0 -2px var(--accent); }
+
+    /* The rarely-opened sections collapse into one control. A native <details>
+       carries the open state without script; only closing it on an outside
+       click needs JS. */
+    .nav-more { position:relative; margin:0 0 9px; border:0; border-radius:0; background:transparent; }
+    .nav-more__toggle { display:inline-flex; align-items:center; gap:6px; padding:2px 9px; border:1px solid transparent; border-radius:7px; color:var(--text-muted); font-size:16px; font-weight:600; line-height:1.25; list-style:none; cursor:pointer; }
+    .nav-more__toggle::-webkit-details-marker { display:none; }
+    .nav-more__toggle:hover { border-color:var(--border); color:var(--text-main); }
+    .nav-more__toggle.active { color:var(--text-header); }
+    /* Health is behind the menu, so its state has to reach the closed control. */
+    .nav-more__toggle--attention::after { content:""; width:7px; height:7px; border-radius:50%; background:var(--danger); }
+    .nav-more__menu { position:absolute; z-index:20; top:calc(100% + 6px); left:0; display:flex; flex-direction:column; min-width:172px; padding:5px; border:1px solid var(--border); border-radius:9px; background:var(--surface); box-shadow:0 10px 30px var(--tooltip-shadow); }
+    .nav-more__menu a { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:7px 10px; border-radius:6px; color:var(--text-main); font-size:15px; font-weight:500; text-decoration:none; }
+    .nav-more__menu a:hover { background:var(--surface-raised); }
+    .nav-more__menu a.active { background:var(--accent-glow); color:var(--accent-soft-text); font-weight:650; }
+    .nav-dot { width:7px; height:7px; border-radius:50%; background:var(--danger); }
     .overview { padding:0; border:0; background:transparent; overflow:visible; }
     .audience-strip { margin:0 0 6px; padding:6px; border:1px solid var(--border); border-radius:8px; background:var(--surface); }
     .audience-cards { display:flex; gap:6px; overflow-x:auto; padding-bottom:2px; }
@@ -126,15 +142,96 @@ export function renderDashboardShell(body: string): string {
     /* Trailing cluster of the tab bar: period controls (overview only) plus the
      * theme switch. It owns the margin-left:auto so that the switch stays on
      * the right edge on tabs that render no period controls. */
-    .dashboard-tabs__end { display:flex; align-items:center; gap:18px; margin-left:auto; padding-bottom:10px; }
-    .dashboard-nav__controls { display:flex; align-items:center; gap:18px; padding-bottom:10px; }
-    .period-controls { display:flex; padding:3px; border:1px solid var(--border-soft); border-radius:8px; background:var(--scrim-soft); }
-    .dashboard-tabs .period-btn { padding:6px 11px; border-radius:5px; color:var(--text-secondary); text-decoration:none; font-size:14px; font-weight:650; }
-    .period-btn.active { background:var(--accent-glow); color:var(--accent-soft-text); }
-    .period-range { display:flex; gap:11px; align-items:center; color:var(--text-secondary); font-size:15px; }
-    .period-range strong { color:var(--text-main); font-weight:600; min-width:138px; text-align:center; }
-    .period-nav { color:var(--text-secondary); text-decoration:none; font-size:23px; line-height:20px; } .period-nav.muted { opacity:.28; }
+    /* Three clusters: sections left, the content filter centred on the page,
+       period and date pinned right. The centre track is what keeps the filter
+       on the page axis rather than wherever the left cluster happens to end. */
+    .dashboard-tabs__start { display:flex; align-items:center; gap:16px; }
+    .dashboard-tabs__center { display:flex; justify-content:center; padding-bottom:8px; }
+    .dashboard-tabs__end { display:flex; align-items:center; justify-content:flex-end; gap:12px; padding-bottom:8px; }
+    .dashboard-nav__controls { display:flex; align-items:center; gap:12px; padding-bottom:0; }
+    .period-menu { position:relative; margin:0; border:0; border-radius:0; background:transparent; }
+    .period-menu__toggle { display:inline-flex; align-items:center; gap:5px; padding:4px 9px; border:1px solid var(--border-soft); border-radius:7px; color:var(--text-secondary); font-size:14px; font-weight:650; line-height:1.3; list-style:none; cursor:pointer; }
+    .period-menu__toggle::-webkit-details-marker { display:none; }
+    .period-menu__toggle:hover { border-color:var(--border); color:var(--text-main); }
+    .period-menu__toggle .caret { font-size:9px; font-style:normal; opacity:.6; }
+    .period-menu__list { position:absolute; z-index:20; top:calc(100% + 6px); right:0; display:flex; flex-direction:column; min-width:96px; padding:5px; border:1px solid var(--border); border-radius:9px; background:var(--surface); box-shadow:0 10px 30px var(--tooltip-shadow); }
+    .period-menu__list a { padding:6px 10px; border-radius:6px; color:var(--text-main); font-size:14px; font-weight:500; text-decoration:none; }
+    .period-menu__list a:hover { background:var(--surface-raised); }
+    .period-menu__list a.active { background:var(--accent-glow); color:var(--accent-soft-text); font-weight:650; }
+    .period-range { display:flex; gap:8px; align-items:center; color:var(--text-secondary); font-size:14px; }
+    .period-range span { min-width:104px; text-align:center; }
+    .period-nav { color:var(--text-muted); text-decoration:none; font-size:18px; line-height:16px; } .period-nav:hover { color:var(--text-main); } .period-nav.muted { opacity:.28; }
+    /* Unified overview: one filter, one period, both feeds.
+       The mode switch reuses the period-control shape so the two read as one
+       row of filters rather than as two unrelated widgets. */
+    .mode-filter { display:inline-flex; gap:3px; padding:3px; border:1px solid var(--border-soft); border-radius:8px; background:var(--scrim-soft); }
+    .dashboard-tabs .mode-btn { padding:6px 13px; border-radius:5px; color:var(--text-secondary); text-decoration:none; font-size:14px; font-weight:650; }
+    .dashboard-tabs .mode-btn:hover { color:var(--text-main); }
+    .mode-btn--active { background:var(--accent-glow); color:var(--accent-soft-text); }
+
+    /* Metrics down the rows, halves across the columns — the two words "Текст"
+       and "Видео" are written once instead of once per card. Never a sum: a
+       Shorts view and a Threads view are different units, so each column keeps
+       its own figure and its own comparison. The first track holds the metric
+       name, which puts the column rule on the same third as every row below. */
+    .kpi-table { margin:0 0 18px; border-bottom:1px solid var(--border-soft); }
+    .kpi-table__row { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); align-items:baseline; }
+    .kpi-table--single .kpi-table__row { grid-template-columns:minmax(0,1fr) minmax(0,2fr); }
+    .kpi-table__row + .kpi-table__row { border-top:1px solid var(--border-soft); }
+    .kpi-table__row > * + * { padding-left:26px; border-left:1px solid var(--border-soft); }
+    .kpi-table__row--head { padding-bottom:9px; }
+    .kpi-table__head { display:inline-flex; align-items:center; gap:8px; color:var(--text-secondary); font-size:13px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+    .kpi-table__head i { width:8px; height:8px; border-radius:50%; }
+    .kpi-table__legend { color:var(--text-muted); font-size:12px; font-weight:500; }
+    .kpi-table__metric { padding:14px 0; color:var(--text-main); font-size:16px; font-weight:600; }
+    .kpi-cell { display:flex; align-items:baseline; gap:14px; padding:9px 0 12px; }
+    .kpi-cell strong { color:var(--text-header); font-size:38px; line-height:1.05; font-weight:500; letter-spacing:-.05em; }
+    .kpi-table--single .kpi-cell strong { font-size:46px; }
+    .kpi-cell .kpi-delta { margin:0; font-size:14px; }
+
+    .platform-panel .section-kicker em { color:var(--text-muted); font-size:12px; font-style:normal; font-weight:500; letter-spacing:0; text-transform:none; }
+    /* The two columns rarely hold the same number of platforms, so the totals
+       are pinned to the bottom instead of floating at whatever row each column
+       happens to end on. */
+    .platform-columns { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; margin-top:12px; align-items:stretch; }
+    .platform-column { display:flex; flex-direction:column; }
+    .platform-column__foot { margin-top:auto; }
+    .platform-column__head { display:flex; align-items:center; gap:7px; padding-bottom:4px; color:var(--text-secondary); font-size:13px; font-weight:650; }
+    .platform-column__head i { width:8px; height:8px; border-radius:50%; }
+    /* A mark and a number. Names are gone, so the row is as narrow as the
+       figure allows and the chart keeps the rest of the line. */
+    .platform-line { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:7px 2px; border-bottom:1px solid var(--border-soft); color:var(--text-main); text-decoration:none; }
+    .platform-line__mark { display:inline-flex; align-items:center; gap:6px; color:var(--text-main); }
+    .platform-line__mark svg { width:19px; height:19px; display:block; }
+    .platform-locale { padding:1px 5px; border:1px solid var(--border); border-radius:4px; color:var(--text-muted); font-size:10px; font-weight:700; letter-spacing:.04em; }
+    .platform-line strong { color:var(--text-header); font-size:17px; font-weight:600; }
+    .platform-line--interactive:hover { background:var(--surface-raised); }
+    .platform-column__foot { padding-top:8px; color:var(--text-muted); font-size:12px; }
+    .platform-column__foot b { color:var(--text-secondary); font-weight:650; }
+    .platform-line__values { display:flex; align-items:baseline; gap:8px; }
+    .platform-line__values strong { color:var(--text-header); font-size:17px; font-weight:600; }
+    .platform-line__values small { color:var(--text-muted); font-size:12px; }
+
+    /* Both scalings are in the DOM; the toggle picks which one is painted. */
+    .metric-chart__head { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; }
+    .chart-scale { display:inline-flex; gap:2px; padding:2px; border:1px solid var(--border-soft); border-radius:7px; background:var(--scrim-soft); }
+    .chart-scale__btn { padding:3px 10px; border:0; border-radius:5px; background:transparent; color:var(--text-muted); font:inherit; font-size:13px; font-weight:650; cursor:pointer; }
+    .chart-scale__btn--active { background:var(--accent-glow); color:var(--accent-soft-text); }
+    .metric-chart--dual .chart-view { display:none; }
+    .metric-chart--dual[data-scale="absolute"] .chart-view--absolute,
+    .metric-chart--dual[data-scale="relative"] .chart-view--relative { display:block; }
+
+    .best-post__icons { display:flex; gap:7px; margin-top:7px; }
+    .platform-mark { display:inline-flex; color:var(--text-muted); }
+    .platform-mark svg { width:15px; height:15px; }
+    .post-detail__media { display:flex; gap:8px; justify-content:flex-end; }
+    .post-detail--flat { display:block; color:inherit; text-decoration:none; }
+    a.post-detail--flat:hover .post-detail__title { color:var(--accent); }
+    .post-detail--flat .post-detail__summary { padding:13px 0; }
+    .post-detail__chevron--link { font-size:17px; line-height:1; }
+
     .kpi-row { display:grid; grid-template-columns:repeat(4,1fr); margin:0 0 20px; border-bottom:1px solid var(--border-soft); }
+    .kpi-row--split { grid-template-columns:repeat(3,1fr); }
     .kpi-row > div { padding:10px 26px 15px; min-width:0; } .kpi-row > div + div { border-left:1px solid var(--border-soft); }
     .kpi-row span,.section-kicker { display:block; color:var(--text-muted); font-size:14px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
     .kpi-row strong { display:block; color:var(--text-header); font-size:54px; line-height:1.05; font-weight:500; letter-spacing:-.055em; }
@@ -142,7 +239,14 @@ export function renderDashboardShell(body: string): string {
     .kpi-breakdown { display:block; margin-top:8px; color:var(--text-secondary); font-size:13px; font-style:normal; font-weight:500; white-space:nowrap; }
     .kpi-breakdown + .kpi-delta { margin-top:4px; }
     .kpi-delta { display:block; margin-top:8px; color:var(--accent); font-size:15px; font-style:normal; font-weight:650; } .kpi-delta--down { color:var(--danger-strong); } .kpi-delta i { margin-left:7px; color:var(--text-muted); font-style:normal; font-weight:400; }
-    .insights-row { display:grid; grid-template-columns:minmax(210px,.31fr) minmax(0,.69fr); gap:34px; padding-bottom:22px; border-bottom:1px solid var(--border-soft); }
+    /* One vertical rule down the whole overview. The KPI table, the platform
+       panel and the publication lists share the same three tracks, so the split
+       between the narrow left column and the wide right one falls at exactly
+       the same third in all three bands instead of drifting a few pixels per
+       row. The rule is a border on the right column, not a gap. */
+    .insights-row { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); padding-bottom:22px; border-bottom:1px solid var(--border-soft); }
+    .insights-row > :first-child { padding-right:26px; }
+    .insights-row > :last-child { grid-column:span 2; padding-left:26px; border-left:1px solid var(--border-soft); }
     .audience-panel,.chart-panel { padding:0; background:transparent; border:0; }
     .audience-list { margin-top:10px; } .audience-line { display:flex; align-items:center; justify-content:space-between; padding:9px 10px; border-bottom:1px solid var(--border-soft); font-size:17px; }
     .audience-line__label { display:inline-flex; align-items:center; gap:12px; } .audience-line__label i { display:inline-flex; width:24px; height:24px; flex:0 0 24px; align-items:center; justify-content:center; color:var(--text-main); font-style:normal; } .audience-line__label svg { display:block; width:24px; height:24px; }
@@ -152,8 +256,10 @@ export function renderDashboardShell(body: string): string {
     .audience-line--active { box-shadow:inset 3px 0 0 var(--accent); background:var(--surface-sunken); }
     .audience-line--total { border-top:1px solid var(--border); }
     .audience-all-icon { font-size:18px; font-weight:700; }
-    .publication-columns { display:grid; grid-template-columns:minmax(340px,.3fr) minmax(0,.7fr); gap:30px; padding-top:20px; }
-    .best-posts,.recent-posts { min-width:0; padding:0; border:0; border-radius:0; background:transparent; } .recent-posts { padding-left:34px; border-left:1px solid var(--border-soft); }
+    .publication-columns { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); padding-top:20px; }
+    .best-posts,.recent-posts { min-width:0; padding:0; border:0; border-radius:0; background:transparent; }
+    .best-posts { padding-right:26px; }
+    .recent-posts { grid-column:span 2; padding-left:26px; border-left:1px solid var(--border-soft); }
     .best-post { display:grid; grid-template-columns:39px minmax(0,1fr) 92px; gap:13px; align-items:start; padding:14px 0; border-bottom:1px solid var(--border-soft); color:inherit; text-decoration:none; transition:background .14s ease; }
     a.best-post:hover { background:var(--surface-raised); }
     .post-rank { color:var(--accent); font-size:31px; line-height:1; font-weight:500; padding-top:1px; }
@@ -192,7 +298,8 @@ export function renderDashboardShell(body: string): string {
      * than letting the list overflow. */
     @media (max-width: 1180px) {
       .insights-row,.publication-columns { grid-template-columns:1fr; gap:28px; }
-      .recent-posts { padding-left:0; border-left:0; }
+      .insights-row > :first-child,.best-posts { padding-right:0; }
+      .insights-row > :last-child,.recent-posts { grid-column:auto; padding-left:0; border-left:0; }
     }
 
     @media (max-width: 760px) {
@@ -202,7 +309,19 @@ export function renderDashboardShell(body: string): string {
       .metric-toggle--vertical { flex-direction:row; justify-content:flex-start; }
       .pagination-bar { align-items:stretch; flex-wrap:wrap; justify-content:center; }
       .pag-current { flex:1 1 100%; text-align:center; }
-      .dashboard-tabs { gap:10px; } .dashboard-tabs__end { width:100%; margin-left:0; align-items:flex-start; justify-content:space-between; gap:10px; padding-top:2px; } .dashboard-nav__controls { width:calc(100% - 32px); flex-wrap:wrap; gap:8px; padding-top:2px; } .period-range { width:100%; justify-content:center; } .kpi-row { grid-template-columns:repeat(2,1fr); }
+      /* The metric name column costs a third of a phone screen, so the table
+         folds: the name becomes a caption over the two figures. */
+      .kpi-table__row { grid-template-columns:repeat(2,minmax(0,1fr)); }
+      .kpi-table--single .kpi-table__row { grid-template-columns:minmax(0,1fr); }
+      .kpi-table__metric { grid-column:1 / -1; padding:12px 0 0; font-size:14px; }
+      .kpi-table__row > * + * { padding-left:14px; }
+      .kpi-table__metric + * { padding-left:0; border-left:0; }
+      .kpi-table__row--head .kpi-table__legend { display:none; }
+      .kpi-cell strong { font-size:32px; }
+      .platform-columns { grid-template-columns:1fr; gap:14px; }
+      .metric-chart__head { flex-direction:column; }
+      .dashboard-tabs { grid-template-columns:1fr; gap:10px; }
+      .dashboard-tabs__center { justify-content:flex-start; padding-bottom:0; } .dashboard-tabs__end { width:100%; margin-left:0; align-items:flex-start; justify-content:space-between; gap:10px; padding-top:2px; } .dashboard-nav__controls { width:calc(100% - 32px); flex-wrap:wrap; gap:8px; padding-top:2px; } .period-range { width:100%; justify-content:center; } .kpi-row { grid-template-columns:repeat(2,1fr); }
       .kpi-row > div { padding-left:16px; padding-right:16px; } .kpi-breakdown { white-space:normal; }
       .kpi-row > div:nth-child(3) { border-left:0; border-top:1px solid var(--border-soft); } .kpi-row > div:nth-child(4) { border-top:1px solid var(--border-soft); }
       .insights-row,.publication-columns { grid-template-columns:1fr; gap:28px; } .recent-posts { padding-left:0; border-left:0; } .recent-posts__header { grid-template-columns:minmax(0,1fr) auto; } .recent-posts__header > span:nth-last-child(-n+2) { display:none; } .post-detail__summary { grid-template-columns:minmax(0,1fr) auto; } .post-detail__summary > span:nth-last-child(-n+2) { display:none; } .post-detail__media { display:none; } .post-platforms,.post-detail__content { padding-left:0; } .post-platforms__grid { grid-template-columns:1fr; } .post-detail__content { grid-template-columns:1fr; } .post-preview { display:none; }
@@ -230,6 +349,26 @@ ${DASHBOARD_THEME_TOGGLE_SCRIPT}
     button.addEventListener('click', () => {
       button.closest('.recent-posts')?.classList.add('recent-posts--expanded');
       button.remove();
+    });
+  });
+  const navMenus = () => document.querySelectorAll('.nav-more[open], .period-menu[open]');
+  document.addEventListener('click', (event) => {
+    navMenus().forEach((menu) => {
+      if (event.target instanceof Node && !menu.contains(event.target)) menu.removeAttribute('open');
+    });
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') navMenus().forEach((menu) => menu.removeAttribute('open'));
+  });
+  document.querySelectorAll('.chart-scale').forEach((group) => {
+    group.addEventListener('click', (event) => {
+      const button = event.target instanceof Element ? event.target.closest('.chart-scale__btn') : null;
+      const scale = button?.dataset?.scale;
+      if (!scale) return;
+      group.closest('.metric-chart')?.setAttribute('data-scale', scale);
+      group.querySelectorAll('.chart-scale__btn').forEach((item) => {
+        item.classList.toggle('chart-scale__btn--active', item.dataset.scale === scale);
+      });
     });
   });
   const chartTooltip = document.getElementById('chart-tooltip');

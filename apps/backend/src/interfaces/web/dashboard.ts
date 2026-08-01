@@ -2,9 +2,11 @@ import { xActivityDashboard } from "../../analytics/x-activity-dashboard.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import type { StudioLocale } from "../../foundation/locale.js";
+import { zonedSlot } from "../../foundation/time.js";
 import { operationsService } from "../../operations/service.js";
-import { renderCombinedSection } from "./dashboard/combined-section.js";
+import { type OverviewMode, renderCombinedSection, renderModeFilter } from "./dashboard/combined-section.js";
 import {
+  audiencePlatformFollowers,
   renderAudienceSection,
   renderCredentialsSection,
   renderDiagnosticsSection,
@@ -14,7 +16,8 @@ import {
 import { renderPeriodControls, renderPipelineSection, rollingPeriodDates } from "./dashboard/pipeline-section.js";
 import { renderDashboardShell } from "./dashboard/shell.js";
 import { DASHBOARD_THEME_TOGGLE_HTML } from "./dashboard/theme.js";
-import type { PipelineData, PipelinePost } from "./dashboard/types.js";
+import type { OpsPayload, PipelineData, PipelinePost } from "./dashboard/types.js";
+import { emptyVideoOverview, videoOverview } from "./dashboard/video-overview.js";
 import { renderVideoSection } from "./dashboard/video-section.js";
 import { renderXSection } from "./dashboard/x-section.js";
 import { renderStudioSection } from "./studio.js";
@@ -46,6 +49,7 @@ export function renderDashboard(
   requestedPanel?: string,
   requestedPeriod?: string,
   requestedView?: string,
+  requestedMode?: string,
 ): string {
   const service = operationsService(backendDb, config);
   const ops = service.dashboard();
@@ -69,10 +73,29 @@ export function renderDashboard(
     requestedPanel === "queue" || requestedPanel === "health" || requestedPanel === "repair" ? requestedPanel : "overview";
   const periodDays = [1, 7, 30, 90, 365].includes(Number(requestedPeriod)) ? Number(requestedPeriod) : 1;
   const activeView = showPosts && AUDIENCE_VIEWS.includes(requestedView as AudienceView) ? (requestedView as AudienceView) : undefined;
+  // Video-only publishing has no text feed to fall back to, so the unified
+  // overview opens on the half that exists rather than on an empty "Все".
+  const mode: OverviewMode =
+    requestedMode === "text" || requestedMode === "video"
+      ? requestedMode
+      : config.studio.modules.video_posting
+        ? config.studio.modules.text_posting
+          ? "all"
+          : "video"
+        : "text";
   const panelLink = (value: DashboardPanel) => `/command-center?tab=posts&panel=${value}${periodDays !== 1 ? `&period=${periodDays}` : ""}`;
   const overviewControls =
     panel === "overview" && showPosts ? renderPeriodControls(weekOffset, periodDays, config.TIMEZONE, activeView) : "";
   const content = renderPanel();
+
+  /** rollingPeriodDates hands back UTC-midnight Dates whose calendar fields
+   * carry the configured zone's date. Video publications are stored as real
+   * instants, so the window has to be resolved back into instants before it can
+   * be compared against published_at. */
+  function dayBounds(date: Date, endOfDay = false): Date {
+    const start = zonedSlot(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate(), "00:00", config.TIMEZONE);
+    return endOfDay ? new Date(start.getTime() + 86_400_000 - 1) : start;
+  }
 
   function renderPanel(): string {
     switch (panel) {
@@ -107,18 +130,38 @@ export function renderDashboard(
           periodDays === 1
             ? xActivityDashboard(backendDb, (weekOffset + 1) / 30, 30, config.TIMEZONE)
             : xActivityDashboard(backendDb, weekOffset + 1, periodDays, config.TIMEZONE);
-        return renderCombinedSection(
-          service.pipeline(weekOffset, periodDays),
-          comparisonPipeline,
-          xActivityDashboard(backendDb, weekOffset, periodDays, config.TIMEZONE),
-          comparisonX,
-          renderAudienceSection(backendDb, config, undefined, periodDays, weekOffset),
-          start,
-          end,
+        // The video read model is period-scoped the same way the pipeline is:
+        // this period, the comparison baseline, and — for a single day — the
+        // day before, so both halves of the chart answer to one clock.
+        const [yesterdayStart, yesterdayEnd] = rollingPeriodDates(weekOffset + 1, 1, config.TIMEZONE);
+        // A single day is judged against the 30 days ending yesterday, matching
+        // the text baseline. rollingPeriodDates shifts by offset*days, so that
+        // window cannot be asked for as (weekOffset + 1, 30) — that lands a
+        // month earlier.
+        const previousEnd = periodDays === 1 ? yesterdayEnd : rollingPeriodDates(weekOffset + 1, periodDays, config.TIMEZONE)[1];
+        const previousStart =
+          periodDays === 1 ? shiftDays(yesterdayEnd, -29) : rollingPeriodDates(weekOffset + 1, periodDays, config.TIMEZONE)[0];
+        const videoEnabled = config.studio.modules.video_posting;
+        return renderCombinedSection({
+          data: service.pipeline(weekOffset, periodDays),
+          previousData: comparisonPipeline,
+          xItems: xActivityDashboard(backendDb, weekOffset, periodDays, config.TIMEZONE),
+          previousXItems: comparisonX,
+          dayComparisonData: periodDays === 1 ? service.pipeline(0, 1, 0, weekOffset + 1) : null,
+          video: videoEnabled ? videoOverview(backendDb, dayBounds(start), dayBounds(end, true)) : emptyVideoOverview(),
+          previousVideo: videoEnabled
+            ? videoOverview(backendDb, dayBounds(previousStart), dayBounds(previousEnd, true))
+            : emptyVideoOverview(),
+          dayComparisonVideo:
+            videoEnabled && periodDays === 1 ? videoOverview(backendDb, dayBounds(yesterdayStart), dayBounds(yesterdayEnd, true)) : null,
+          followers: audiencePlatformFollowers(backendDb),
+          rangeStart: start,
+          rangeEnd: end,
           periodDays,
-          config.TIMEZONE,
-          periodDays === 1 ? service.pipeline(0, 1, 0, weekOffset + 1) : null,
-        );
+          weekOffset,
+          timeZone: config.TIMEZONE,
+          mode,
+        });
       }
       const targetIds = VIEW_TARGETS[activeView];
       // A one-day period is shown against the preceding 30 days plus the
@@ -144,10 +187,64 @@ export function renderDashboard(
     return "";
   }
 
+  // Everything except the overview lives behind the overflow menu: the operator
+  // opens Queue, Health, Repair and Video rarely, and spelled out they cost the
+  // widest, tallest row on the screen. The one thing that must not be hidden is
+  // a problem, so the menu carries a dot when Health has something to say.
+  const secondaryTabs = [
+    { label: "Очередь", href: panelLink("queue"), active: panel === "queue" },
+    { label: "Health", href: panelLink("health"), active: panel === "health", attention: opsNeedsAttention(ops) },
+    { label: "Repair", href: panelLink("repair"), active: panel === "repair" },
+    ...(config.studio.modules.video_posting
+      ? [{ label: "Видео", href: "/command-center?tab=video", active: panel === "overview" && activeTab === "video" }]
+      : []),
+    ...(studioActorId
+      ? [{ label: "Студия", href: "/command-center?tab=studio", active: panel === "overview" && activeTab === "studio" }]
+      : []),
+  ];
+  const activeSecondary = secondaryTabs.find((tab) => tab.active);
+  const attention = secondaryTabs.some((tab) => tab.attention);
+  const overviewTab = config.studio.modules.text_posting
+    ? `<a class="${panel === "overview" && activeTab === "posts" ? "active" : ""}" href="${panelLink("overview")}">Обзор</a>`
+    : "";
+  // Not open on arrival even when one of its entries is the current section:
+  // the panel would drop over the content the operator just navigated to. The
+  // control names the section instead.
+  const menu = `<details class="nav-more">
+    <summary class="nav-more__toggle${activeSecondary ? " active" : ""}${attention ? " nav-more__toggle--attention" : ""}" aria-label="Другие разделы">${activeSecondary ? escapeHtml(activeSecondary.label) : "···"}</summary>
+    <div class="nav-more__menu">${secondaryTabs
+      .map(
+        (tab) =>
+          `<a class="${tab.active ? "active" : ""}" href="${tab.href}">${escapeHtml(tab.label)}${tab.attention ? '<i class="nav-dot"></i>' : ""}</a>`,
+      )
+      .join("")}</div>
+  </details>`;
+  const modeFilter = panel === "overview" && showPosts && !activeView ? renderModeFilter(mode, periodDays, weekOffset) : "";
   const body = `
-    <nav class="dashboard-tabs">${config.studio.modules.text_posting ? `<a class="${panel === "overview" && activeTab === "posts" ? "active" : ""}" href="${panelLink("overview")}">Обзор</a>` : ""}<a class="${panel === "queue" ? "active" : ""}" href="${panelLink("queue")}">Очередь</a><a class="${panel === "health" ? "active" : ""}" href="${panelLink("health")}">Health</a><a class="${panel === "repair" ? "active" : ""}" href="${panelLink("repair")}">Repair</a>${config.studio.modules.video_posting ? `<a class="${panel === "overview" && activeTab === "video" ? "active" : ""}" href="/command-center?tab=video">Видео</a>` : ""}${studioActorId ? `<a class="${panel === "overview" && activeTab === "studio" ? "active" : ""}" href="/command-center?tab=studio">Студия</a>` : ""}<span class="dashboard-tabs__end">${overviewControls}${DASHBOARD_THEME_TOGGLE_HTML}</span></nav>
+    <nav class="dashboard-tabs"><span class="dashboard-tabs__start">${overviewTab}${menu}</span><span class="dashboard-tabs__center">${modeFilter}</span><span class="dashboard-tabs__end">${overviewControls}${DASHBOARD_THEME_TOGGLE_HTML}</span></nav>
     <section id="overview" class="overview">${content}</section>`;
   return renderDashboardShell(body);
+}
+
+/** Health is the one hidden tab whose state the operator must see without
+ * opening it: a failed publish job, a broken credential, or a metric target
+ * that stopped reporting. */
+function opsNeedsAttention(ops: OpsPayload): boolean {
+  if (ops.jobs?.some((job) => job.status === "failed")) return true;
+  if (ops.credentials?.some((credential) => credential.status && credential.status !== "ok")) return true;
+  return Boolean(ops.pipeline?.metrics?.recent?.some((issue) => issue.error || issue.status === "failed"));
+}
+
+const HTML_ENTITIES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => HTML_ENTITIES[char] ?? char);
+}
+
+function shiftDays(date: Date, days: number): Date {
+  const shifted = new Date(date);
+  shifted.setUTCDate(shifted.getUTCDate() + days);
+  return shifted;
 }
 
 function filterPipeline(data: PipelineData | null, targetIds: string[]): PipelineData | null {

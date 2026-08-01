@@ -6,6 +6,7 @@ import { importXAnalyticsCsv } from "../src/analytics/import-x-csv.js";
 import { openBackendDb } from "../src/db/client.js";
 import { xActivityItems, xActivityMetricSnapshots } from "../src/db/schema.js";
 import { renderCombinedSection } from "../src/interfaces/web/dashboard/combined-section.js";
+import { emptyVideoOverview } from "../src/interfaces/web/dashboard/video-overview.js";
 import { renderXSection } from "../src/interfaces/web/dashboard/x-section.js";
 
 const HEADERS = [
@@ -143,24 +144,34 @@ describe("X Activity", () => {
       },
     ];
 
-    const html = renderCombinedSection(
-      editorial,
-      { posts: [] },
-      items,
-      [],
-      "<aside>Audience</aside>",
-      new Date("2026-07-29"),
-      new Date("2026-07-29"),
-      1,
-      "Europe/Moscow",
-      { posts: [] },
-    );
+    const html = renderCombinedSection({
+      data: editorial,
+      previousData: { posts: [] },
+      xItems: items,
+      previousXItems: [],
+      dayComparisonData: { posts: [] },
+      video: emptyVideoOverview(),
+      previousVideo: emptyVideoOverview(),
+      dayComparisonVideo: emptyVideoOverview(),
+      followers: [{ key: "x", label: "X", followers: 83 }],
+      rangeStart: new Date("2026-07-29"),
+      rangeEnd: new Date("2026-07-29"),
+      periodDays: 1,
+      weekOffset: 0,
+      timeZone: "Europe/Moscow",
+      mode: "all",
+    });
 
+    // Standalone X activity is folded into the text half: 150 from the post's
+    // targets plus 500 from the unlinked reply.
     expect(html).toContain("<strong>650</strong>");
-    expect(html).toContain("150 основные · +500 X Activity");
-    expect(html).toContain("1 основных · +1 в X");
     expect(html).toContain("Последние публикации");
     expect(html).toContain("Сегодня и вчера");
     expect(html).toContain("vs медиана за 30д");
+    // The two halves are reported separately and never added together.
+    expect(html).toContain("Текст");
+    expect(html).toContain("Видео");
+    // The mode switch itself lives in the tab bar, not in this section.
+    expect(html).not.toContain('class="mode-filter"');
   });
 });

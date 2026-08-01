@@ -27,6 +27,19 @@ export const PLATFORM_ICONS: Record<string, string> = {
   telegram_stories: `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="vertical-align: middle;"><path d="M12 2 14.9 8.3 22 9.1l-5.3 4.7 1.5 6.9L12 17.2 5.8 20.7l1.5-6.9L2 9.1l7.1-.8L12 2Z"></path></svg>`,
   instagram: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><rect x="3" y="3" width="18" height="18" rx="5"></rect><circle cx="12" cy="12" r="4"></circle><circle cx="17.5" cy="6.5" r="1.2" fill="currentColor" stroke="none"></circle></svg>`,
   x: `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="vertical-align: middle;"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"></path></svg>`,
+  // Video platforms are drawn in the same monochrome 16px stroke idiom as the
+  // text ones. Brand-coloured logos here would be the loudest thing on a screen
+  // whose whole point is that the numbers are what you read first.
+  youtube: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><rect x="2" y="5" width="20" height="14" rx="4"></rect><path d="M10.2 9.3v5.4l4.6-2.7z" fill="currentColor" stroke="none"></path></svg>`,
+  tiktok: `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="vertical-align: middle;"><path d="M14.1 2h2.6c.2 1.4.9 2.6 2 3.4.7.5 1.6.8 2.5.9v2.7c-1.7 0-3.3-.5-4.6-1.5v6.6c0 3.4-2.7 6.1-6.1 6.1S4.4 17.5 4.4 14.1 7.1 8 10.5 8c.3 0 .6 0 .9.1v2.8c-.3-.1-.6-.2-.9-.2-1.9 0-3.4 1.5-3.4 3.4s1.5 3.4 3.4 3.4 3.4-1.5 3.4-3.4V2z"></path></svg>`,
+};
+
+/** Video targets map onto the same monochrome icon set. Keyed by the values of
+ * VIDEO_TARGETS so a newly added platform shows an icon instead of a gap. */
+export const VIDEO_PLATFORM_ICON_KEYS: Record<string, string> = {
+  youtube_shorts: "youtube",
+  instagram_reels: "instagram",
+  tiktok: "tiktok",
 };
 
 export const TOOL_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>`;

@@ -1,11 +1,15 @@
 import { openBackendDb } from "../../../backend/src/db/client.js";
 import {
+  creatorProfileSnapshots,
   metricSamples,
   metricSchedule,
   postMetrics,
   postTargets,
   publishJobs,
   siteJobs,
+  videoDrafts,
+  videoMetricSnapshots,
+  videoTargets,
   workerState,
   xActivityItems,
   xActivityMetricSnapshots,
@@ -51,6 +55,40 @@ const iso = (date: Date): string => date.toISOString();
 const hoursAgo = (hours: number): Date => new Date(Date.now() - hours * 3_600_000);
 
 const daysAgo = (days: number): Date => hoursAgo(days * 24);
+
+/**
+ * Clips for the video half of the unified overview. Deliberately lopsided
+ * against the text plan above: video reach is an order of magnitude larger than
+ * text reach in production, and a fixture where the two are comparable hides
+ * the whole reason the overview chart carries a scale toggle.
+ *
+ * The locales are mixed on purpose. The overview reads a video platform's
+ * language off the drafts published there, so a single-locale fixture would
+ * make the badges look hardcoded and hide the bilingual case entirely.
+ */
+const VIDEO_PLAN = [
+  {
+    label: "ByteDance выпустила Seedance 2.5",
+    locale: "ru",
+    hoursAgo: 6,
+    targets: [{ target: "youtube_shorts", views: 46_800, likes: 2_010, comments: 180 }],
+  },
+  {
+    label: "Seedance 2.5 is AGI for video",
+    locale: "en",
+    hoursAgo: 20,
+    targets: [{ target: "instagram_reels", views: 31_700, likes: 1_240, comments: 96 }],
+  },
+  {
+    label: "Gemini 3.5 Pro на Arena",
+    locale: "ru",
+    hoursAgo: 34,
+    targets: [
+      { target: "youtube_shorts", views: 20_200, likes: 780, comments: 41 },
+      { target: "instagram_reels", views: 9_400, likes: 310, comments: 18 },
+    ],
+  },
+] as const;
 
 export type SeededDashboard = {
   targetRows: number;
@@ -227,6 +265,86 @@ export function seedDashboardFixture(options: { dbPath: string; postIds: number[
           .values({ xPostId, metricName, value, sampledAt: nowIso, rawJson: { source: "fixture" } })
           .run();
     }
+    for (const [index, plan] of VIDEO_PLAN.entries()) {
+      const publishedAt = iso(hoursAgo(plan.hoursAgo));
+      const draft = backendDb.db
+        .insert(videoDrafts)
+        .values({
+          actorId: 1,
+          locale: plan.locale,
+          label: plan.label,
+          assetKey: `fixture-video-${index + 1}`,
+          status: "published",
+          scheduledAt: publishedAt,
+          createdAt: publishedAt,
+          updatedAt: nowIso,
+        })
+        .returning({ id: videoDrafts.id })
+        .get();
+
+      for (const target of plan.targets) {
+        const inserted = backendDb.db
+          .insert(videoTargets)
+          .values({
+            videoDraftId: draft.id,
+            target: target.target,
+            metadataJson: { title: plan.label, description: "fixture", tags: [] },
+            status: "published",
+            scheduledAt: publishedAt,
+            publishedAt,
+            externalId: `${target.target}-${draft.id}`,
+            externalUrl: `https://example.com/${target.target}/${draft.id}`,
+            createdAt: publishedAt,
+            updatedAt: nowIso,
+          })
+          .returning({ id: videoTargets.id })
+          .get();
+        targetRows += 1;
+
+        // Same two-hourly cadence as the text samples, so both lines on the
+        // overview chart are drawn from observations on the same clock.
+        const slots = Math.max(1, Math.round(plan.hoursAgo / HOURS_PER_SAMPLE));
+        for (let slot = slots; slot >= 0; slot -= 1) {
+          const progress = (slots - slot) / slots;
+          backendDb.db
+            .insert(videoMetricSnapshots)
+            .values({
+              videoTargetId: inserted.id,
+              platform: target.target,
+              metricsJson: {
+                views: Math.round(target.views * progress),
+                likes: Math.round(target.likes * progress),
+                comments: Math.round(target.comments * progress),
+              },
+              sampledAt: iso(hoursAgo(slot * HOURS_PER_SAMPLE)),
+            })
+            .run();
+          sampleRows += 1;
+        }
+      }
+    }
+
+    // Follower counts for the video column of the platforms panel, keyed per
+    // destination the way production has recorded them since the RU/EN channels
+    // were split. The text platforms read theirs from creator_profiles, which
+    // site-fixture seeds.
+    for (const [platform, followers] of [
+      ["youtube_ru", 8_400],
+      ["youtube_en", 1_260],
+      ["instagram_ru", 5_120],
+      ["instagram_en", 940],
+    ] as const)
+      backendDb.db
+        .insert(creatorProfileSnapshots)
+        .values({
+          platform,
+          account: "alexgetman",
+          sampledOn: nowIso.slice(0, 10),
+          metricsJson: { subscriberCount: followers },
+          source: "fixture",
+          sampledAt: nowIso,
+        })
+        .run();
   } finally {
     backendDb.close();
   }

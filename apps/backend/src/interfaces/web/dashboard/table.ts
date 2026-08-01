@@ -1,49 +1,123 @@
-import { ORDERED_TARGETS, PLATFORM_ICONS, platformKey } from "./assets.js";
+import { ORDERED_TARGETS, PLATFORM_ICONS, platformKey, VIDEO_PLATFORM_ICON_KEYS } from "./assets.js";
 import { formatMetricValue, shortPipelineText } from "./format.js";
 import { escapeHtml } from "./html.js";
 import { formatMedia, getTargetMetric, postMetricTotals } from "./metrics.js";
 import { getTargetUrl } from "./target-url.js";
 import type { PipelinePost } from "./types.js";
+import type { VideoContentItem } from "./video-overview.js";
 
 const NO_POSTS = "За выбранный период публикаций нет";
+const VISIBLE_RECENT = 5;
 
-export function renderPublicationColumns(posts: PipelinePost[], targetIds: string[] = ORDERED_TARGETS.map((target) => target.id)): string {
-  const ranked = [...posts].sort((left, right) => total(right, targetIds).views - total(left, targetIds).views).slice(0, 3);
+/**
+ * The two content columns, over both halves of the feed.
+ *
+ * Text and video are ranked and listed in one sequence rather than in two
+ * lists: they compete for the same attention, and a split makes "what worked
+ * this week" a question the operator has to answer by eye. Video rows are not
+ * expandable — there is no second locale and no post body to reveal — so they
+ * render as a plain row in the same grid.
+ */
+export function renderPublicationColumns(
+  posts: PipelinePost[],
+  targetIds: string[] = ORDERED_TARGETS.map((target) => target.id),
+  videos: VideoContentItem[] = [],
+): string {
+  const entries = [
+    ...posts.map((post) => ({
+      date: post.date ?? "",
+      views: total(post, targetIds).views,
+      reactions: reactions(total(post, targetIds)),
+      best: (rank: number) => renderBestPost(post, targetIds, rank),
+      recent: (hidden: boolean) => renderRecentPost(post, targetIds, hidden),
+    })),
+    ...videos.map((video) => ({
+      date: video.publishedAt ?? "",
+      views: video.views,
+      reactions: video.reactions,
+      best: (rank: number) => renderBestVideo(video, rank),
+      recent: (hidden: boolean) => renderRecentVideo(video, hidden),
+    })),
+  ];
+  const ranked = [...entries].sort((left, right) => right.views - left.views).slice(0, 3);
+  const recent = [...entries].sort((left, right) => right.date.localeCompare(left.date));
   return [
     '<div class="publication-columns">',
     '<section class="best-posts">',
     '<div class="section-kicker">Лучшие публикации</div>',
-    ranked.length ? ranked.map((post, index) => renderBestPost(post, index + 1, targetIds)).join("") : empty(NO_POSTS),
+    ranked.length ? ranked.map((entry, index) => entry.best(index + 1)).join("") : empty(NO_POSTS),
     "</section>",
     '<section class="recent-posts">',
     '<header class="recent-posts__header">',
     '<div class="section-kicker">Последние публикации</div>',
-    "<span>Тип медиа</span><span>Охват</span><span>Реакции</span><span>Ответы</span>",
+    "<span>Площадки</span><span>Охват</span><span>Реакции</span><span>Ответы</span>",
     "</header>",
-    posts.length ? posts.map((post, index) => renderRecentPost(post, targetIds, index >= 5)).join("") : empty(NO_POSTS),
-    posts.length > 5 ? `<button class="show-more-posts" type="button">Показать ещё <span>${posts.length - 5}</span></button>` : "",
+    recent.length ? recent.map((entry, index) => entry.recent(index >= VISIBLE_RECENT)).join("") : empty(NO_POSTS),
+    recent.length > VISIBLE_RECENT
+      ? `<button class="show-more-posts" type="button">Показать ещё <span>${recent.length - VISIBLE_RECENT}</span></button>`
+      : "",
     "</section>",
     "</div>",
   ].join("");
 }
 
-function renderBestPost(post: PipelinePost, rank: number, targetIds: string[]): string {
+function renderBestPost(post: PipelinePost, targetIds: string[], rank: number): string {
   const metrics = total(post, targetIds);
   const title = escapeHtml(shortPipelineText(post.text_ru || post.text_en || "Без текста", 10));
   const url = bestPostUrl(post, targetIds);
+  return bestBody(rank, title, platformIcons(post, targetIds), metrics.views, reactions(metrics), url);
+}
+
+function renderBestVideo(video: VideoContentItem, rank: number): string {
+  return bestBody(rank, escapeHtml(shortPipelineText(video.title, 10)), videoIcon(video.target), video.views, video.reactions, video.url);
+}
+
+function bestBody(rank: number, title: string, icons: string, views: number, likes: number, url: string | null): string {
   const opening = url
     ? `<a class="best-post" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">`
     : '<article class="best-post">';
   return [
     opening,
     `<span class="post-rank">${rank}</span>`,
-    `<div class="best-post__copy"><div class="best-post__title">${title}</div></div>`,
+    `<div class="best-post__copy"><div class="best-post__title">${title}</div><div class="best-post__icons">${icons}</div></div>`,
     '<div class="best-post__stats">',
-    `<strong>${formatMetricValue(metrics.views)}</strong><small>просмотры</small>`,
-    `<em>♡ ${formatMetricValue(reactions(metrics))}</em>`,
+    `<strong>${formatMetricValue(views)}</strong><small>просмотры</small>`,
+    `<em>♡ ${formatMetricValue(likes)}</em>`,
     "</div>",
     url ? "</a>" : "</article>",
   ].join("");
+}
+
+/** The platform column is icons, not words: the same four or five marks repeat
+ * on every row, and spelled out they were the widest thing in the list. */
+function platformIcons(post: PipelinePost, targetIds: string[]): string {
+  const keys = new Set(
+    ORDERED_TARGETS.filter((target) => targetIds.includes(target.id) && targetStatus(post, target.id) === "published").map((target) =>
+      platformKey(target.id),
+    ),
+  );
+  return [...keys].map((key) => `<i class="platform-mark">${PLATFORM_ICONS[key] ?? ""}</i>`).join("");
+}
+
+function videoIcon(target: string): string {
+  return `<i class="platform-mark">${PLATFORM_ICONS[VIDEO_PLATFORM_ICON_KEYS[target] ?? ""] ?? ""}</i>`;
+}
+
+function renderRecentVideo(video: VideoContentItem, hidden: boolean): string {
+  const body = [
+    '<span class="post-detail__summary">',
+    '<span class="post-detail__headline"><span class="post-detail__chevron post-detail__chevron--link">↗</span>',
+    `<span class="post-detail__title">${escapeHtml(shortPipelineText(video.title, 11))}</span></span>`,
+    `<span class="post-detail__media">${videoIcon(video.target)}</span>`,
+    `<span>${formatMetricValue(video.views)}</span>`,
+    `<span>${formatMetricValue(video.reactions)}</span>`,
+    `<span>${formatMetricValue(video.replies)}</span>`,
+    "</span>",
+  ].join("");
+  const className = `post-detail post-detail--flat${hidden ? " post-detail--more" : ""}`;
+  return video.url
+    ? `<a class="${className}" href="${escapeHtml(video.url)}" target="_blank" rel="noopener noreferrer">${body}</a>`
+    : `<div class="${className}">${body}</div>`;
 }
 
 function bestPostUrl(post: PipelinePost, targetIds: string[]): string | null {
@@ -66,7 +140,7 @@ function renderRecentPost(post: PipelinePost, targetIds: string[], hidden: boole
     '<span class="post-detail__chevron">›</span>',
     `<span class="post-detail__title">${escapeHtml(shortPipelineText(english, 11))}</span>`,
     "</span>",
-    `<span class="post-detail__media">${escapeHtml(mediaLabel(post))}</span>`,
+    `<span class="post-detail__media">${platformIcons(post, targetIds)}</span>`,
     `<span>${formatMetricValue(metrics.views)}</span>`,
     `<span>${formatMetricValue(reactions(metrics))}</span>`,
     `<span>${formatMetricValue(metrics.replies)}</span>`,

@@ -46,6 +46,7 @@ export const commandCenterRoutes: RouteModule = (app, { config, backendDb, opera
         url.searchParams.get("panel") ?? undefined,
         url.searchParams.get("period") ?? undefined,
         url.searchParams.get("view") ?? undefined,
+        url.searchParams.get("mode") ?? undefined,
       ),
     );
   });

@@ -90,6 +90,13 @@ html[data-theme="dark"] {
   --series-comments: #a5d6ff;
   --series-replies: #b7bec9;
   --series-previous: #aeb8c8;
+
+  /* Text and video are the two halves of the unified overview, so they need one
+   * hue each, held apart from status colour. Red is not available: it already
+   * means "fell" in a delta and "failed" on a target, and the KPI cards put a
+   * delta directly beside the series figure. */
+  --series-text: #3b8dff;
+  --series-video: #b083ff;
 }
 
 html[data-theme="light"] {
@@ -131,6 +138,9 @@ html[data-theme="light"] {
   --series-comments: #2a9d8f;
   --series-replies: #6b7683;
   --series-previous: #98a2b0;
+
+  --series-text: #1668d6;
+  --series-video: #7b3fe4;
 }
 `;
 

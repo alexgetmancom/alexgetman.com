@@ -19,6 +19,23 @@ const AUDIENCE_PLATFORMS: AudiencePlatform[] = [
   { key: "x", label: "X", metricTargets: ["x"] },
 ];
 
+/** The follower counts alone, for callers that lay the platforms out
+ * themselves — the unified overview pairs them with this period's reach. */
+export function audiencePlatformFollowers(backendDb: BackendDb): Array<{ key: string; label: string; followers: number | null }> {
+  const profiles = new Map(
+    backendDb.db
+      .select()
+      .from(creatorProfiles)
+      .all()
+      .map((profile) => [profile.platform, profile.dataJson]),
+  );
+  return AUDIENCE_PLATFORMS.map((platform) => {
+    const data = (profiles.get(platform.key) ?? {}) as Record<string, unknown>;
+    const followers = metricNumber(data.subscriberCount ?? data.followersCount);
+    return { key: platform.key, label: platform.label, followers: followers > 0 ? followers : null };
+  });
+}
+
 /** Reuses Analytics projections and metric samples; Command Center only renders them. */
 export function renderAudienceSection(
   backendDb: BackendDb,

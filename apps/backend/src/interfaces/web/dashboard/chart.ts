@@ -4,6 +4,7 @@ import { formatMetricValue, getMskDateString } from "./format.js";
 import { escapeHtml } from "./html.js";
 import { getTargetMetric } from "./metrics.js";
 import type { ChartMetricName, PipelinePost } from "./types.js";
+import type { MetricEvent } from "./video-overview.js";
 
 export function renderWeeklyChart(
   posts: PipelinePost[],
@@ -169,10 +170,204 @@ export function renderDailyComparisonChart(
   return `<div class="metric-chart"><div class="metric-chart__legend"><span><i style="background:var(--series-views)"></i>Сегодня: ${formatMetricValue(currentTotal)}</span><span><i style="background:var(--series-previous)"></i>Вчера к этому времени: ${formatMetricValue(previousTotal)}</span><em>реальные замеры</em></div><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Сравнение просмотров сегодня и вчера по времени суток">${grid}${paths}${points}${labels}</svg><div class="chart-tooltip" id="chart-tooltip" hidden></div></div>`;
 }
 
+/** One half of the unified overview: text or video, today against yesterday. */
+export type UnifiedSeries = { name: string; color: string; today: MetricEvent[]; yesterday: MetricEvent[] };
+
+/**
+ * Text and video on one time axis.
+ *
+ * Two scalings are rendered, and the toggle in the header swaps which one is
+ * visible. This is not a convenience: video views outrun text views by more
+ * than an order of magnitude, so on a shared absolute axis the text line lies
+ * flat on the floor and the chart silently says "text is nothing". In the
+ * relative scaling each series is normalised against its own peak across both
+ * days, so the shapes — when the day got going, whether it is ahead of
+ * yesterday — become comparable while the legend keeps the real totals.
+ */
+export function renderUnifiedDailyChart(
+  series: UnifiedSeries[],
+  day: Date,
+  timeZone: string,
+  now = new Date(),
+  defaultScale: "absolute" | "relative" = "relative",
+): string {
+  const dayStart = zonedSlot(day.getUTCFullYear(), day.getUTCMonth() + 1, day.getUTCDate(), "00:00", timeZone);
+  const dayEnd = new Date(dayStart.getTime() + 86_400_000);
+  const yesterdayStart = new Date(dayStart.getTime() - 86_400_000);
+  const isToday = now >= dayStart && now < dayEnd;
+  const cutoff = isToday ? now : dayEnd;
+  const elapsed = cutoff.getTime() - dayStart.getTime();
+
+  const resolved = series.map((item) => ({
+    ...item,
+    todayPoints: cumulativeTimeline(item.today, dayStart, cutoff),
+    yesterdayPoints: cumulativeTimeline(item.yesterday, yesterdayStart, new Date(yesterdayStart.getTime() + elapsed)),
+  }));
+  const hasData = resolved.some((item) => item.todayPoints.length > 1 || item.yesterdayPoints.length > 1);
+  if (!hasData)
+    return `<div class="metric-chart metric-chart--empty"><div class="metric-chart__legend"><span>Замеры появятся через час после публикации</span></div></div>`;
+
+  const width = 980;
+  const height = 170;
+  const left = 18;
+  const right = 18;
+  const top = 20;
+  const bottom = 28;
+  const plotW = width - left - right;
+  const plotH = height - top - bottom;
+  const seriesMax = resolved.map((item) =>
+    Math.max(1, ...item.todayPoints.map((point) => point.value), ...item.yesterdayPoints.map((point) => point.value)),
+  );
+  const sharedMax = Math.max(1, ...seriesMax);
+
+  const x = (at: Date, start: Date) => left + (plotW * (at.getTime() - start.getTime())) / 86_400_000;
+  const y = (value: number, max: number) => top + plotH - (plotH * value) / max;
+
+  let grid = "";
+  for (let index = 0; index < 4; index += 1) {
+    const gridY = top + (plotH * index) / 3;
+    grid += `<line x1="${left}" y1="${gridY.toFixed(1)}" x2="${width - right}" y2="${gridY.toFixed(1)}" class="chart-grid" />`;
+  }
+  const hourLabels = [0, 6, 12, 18, 24]
+    .map(
+      (hour) =>
+        `<text x="${(left + (plotW * hour) / 24).toFixed(1)}" y="${height - 7}" text-anchor="middle">${String(hour).padStart(2, "0")}:00</text>`,
+    )
+    .join("");
+
+  const plot = (scale: "absolute" | "relative"): string => {
+    const shapes = resolved
+      .map((item, index) => {
+        const max = scale === "relative" ? (seriesMax[index] ?? 1) : sharedMax;
+        const line = (points: TimelinePoint[], start: Date, dashed: boolean) =>
+          points.length
+            ? `<polyline class="chart-line" points="${points.map((point) => `${x(point.at, start).toFixed(1)},${y(point.value, max).toFixed(1)}`).join(" ")}" fill="none" stroke="${item.color}" stroke-width="2.4"${dashed ? ' stroke-dasharray="5 5" opacity=".55"' : ""} />`
+            : "";
+        const dots = item.todayPoints
+          .slice(1)
+          .map((point) => {
+            const tooltip = `${item.name}, ${clockLabel(point.at, timeZone)} · ${formatMetricValue(point.value)} просмотров`;
+            const cx = x(point.at, dayStart).toFixed(1);
+            const cy = y(point.value, max).toFixed(1);
+            return `<circle class="chart-point" cx="${cx}" cy="${cy}" r="3" fill="${item.color}" /><circle class="chart-hit" cx="${cx}" cy="${cy}" r="10" data-tooltip="${escapeHtml(tooltip)}" />`;
+          })
+          .join("");
+        return `${line(item.yesterdayPoints, yesterdayStart, true)}${line(item.todayPoints, dayStart, false)}${dots}`;
+      })
+      .join("");
+    return `<svg class="chart-view chart-view--${scale}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Просмотры текста и видео за сегодня против вчера">${grid}${shapes}${hourLabels}</svg>`;
+  };
+
+  const legend = resolved
+    .map((item) => {
+      const today = item.todayPoints.at(-1)?.value ?? 0;
+      const yesterday = item.yesterdayPoints.at(-1)?.value ?? 0;
+      return `<span><i style="background:${item.color}"></i>${escapeHtml(item.name)}: ${formatMetricValue(today)} <em>вчера ${formatMetricValue(yesterday)}</em></span>`;
+    })
+    .join("");
+
+  return `<div class="metric-chart metric-chart--dual" data-scale="${defaultScale}">
+      <div class="metric-chart__head">
+        <div class="metric-chart__legend">${legend}<em>пунктир — вчера к этому времени</em></div>
+        ${scaleToggle(defaultScale)}
+      </div>
+      ${plot("absolute")}${plot("relative")}
+      <div class="chart-tooltip" id="chart-tooltip" hidden></div>
+    </div>`;
+}
+
+/** The multi-day counterpart: one point per calendar day, per series. */
+export function renderUnifiedRangeChart(
+  series: Array<{ name: string; color: string; byDay: Record<string, number> }>,
+  rangeStart: Date,
+  rangeEnd: Date,
+  defaultScale: "absolute" | "relative" = "relative",
+): string {
+  const days: string[] = [];
+  const cursor = new Date(Date.UTC(rangeStart.getUTCFullYear(), rangeStart.getUTCMonth(), rangeStart.getUTCDate()));
+  const last = Date.UTC(rangeEnd.getUTCFullYear(), rangeEnd.getUTCMonth(), rangeEnd.getUTCDate());
+  while (cursor.getTime() <= last) {
+    days.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  if (days.length < 2) return "";
+
+  const width = 980;
+  const height = 170;
+  const left = 42;
+  const right = 18;
+  const top = 16;
+  const bottom = 26;
+  const plotW = width - left - right;
+  const plotH = height - top - bottom;
+  const seriesMax = series.map((item) => Math.max(1, ...days.map((day) => item.byDay[day] ?? 0)));
+  const sharedMax = Math.max(1, ...seriesMax);
+  const x = (index: number) => left + (plotW * index) / Math.max(1, days.length - 1);
+  const y = (value: number, max: number) => top + plotH - (plotH * value) / max;
+
+  let grid = "";
+  for (let index = 0; index < 5; index += 1) {
+    const gridY = top + (plotH * index) / 4;
+    grid += `<line x1="${left}" y1="${gridY.toFixed(1)}" x2="${width - right}" y2="${gridY.toFixed(1)}" class="chart-grid" />`;
+  }
+  const labelStep = Math.max(1, Math.ceil((days.length - 1) / 6));
+  const xLabels = days
+    .map((day, index) =>
+      index !== 0 && index !== days.length - 1 && index % labelStep !== 0
+        ? ""
+        : `<text x="${x(index).toFixed(1)}" y="${height - 7}" text-anchor="middle">${escapeHtml(formatDateLabel(day))}</text>`,
+    )
+    .join("");
+
+  const plot = (scale: "absolute" | "relative"): string => {
+    const shapes = series
+      .map((item, seriesIndex) => {
+        const max = scale === "relative" ? (seriesMax[seriesIndex] ?? 1) : sharedMax;
+        const points = days.map((day, index) => `${x(index).toFixed(1)},${y(item.byDay[day] ?? 0, max).toFixed(1)}`).join(" ");
+        const dots = days
+          .map((day, index) => {
+            const value = item.byDay[day] ?? 0;
+            const tooltip = `${formatDateLabel(day)} · ${item.name}: ${formatMetricValue(value)}`;
+            const cx = x(index).toFixed(1);
+            const cy = y(value, max).toFixed(1);
+            return `<circle class="chart-point" cx="${cx}" cy="${cy}" r="2.8" fill="${item.color}" /><circle class="chart-hit" cx="${cx}" cy="${cy}" r="10" data-tooltip="${escapeHtml(tooltip)}" />`;
+          })
+          .join("");
+        return `<polyline class="chart-line" points="${points}" fill="none" stroke="${item.color}" stroke-width="2.2" />${dots}`;
+      })
+      .join("");
+    return `<svg class="chart-view chart-view--${scale}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Просмотры текста и видео по дням">${grid}${shapes}${xLabels}</svg>`;
+  };
+
+  const legend = series
+    .map((item) => {
+      const sum = days.reduce((total, day) => total + (item.byDay[day] ?? 0), 0);
+      return `<span><i style="background:${item.color}"></i>${escapeHtml(item.name)}: ${formatMetricValue(sum)}</span>`;
+    })
+    .join("");
+
+  return `<div class="metric-chart metric-chart--dual" data-scale="${defaultScale}">
+      <div class="metric-chart__head">
+        <div class="metric-chart__legend">${legend}</div>
+        ${scaleToggle(defaultScale)}
+      </div>
+      ${plot("absolute")}${plot("relative")}
+      <div class="chart-tooltip" id="chart-tooltip" hidden></div>
+    </div>`;
+}
+
+function scaleToggle(active: "absolute" | "relative"): string {
+  const button = (scale: "absolute" | "relative", label: string, title: string) =>
+    `<button type="button" class="chart-scale__btn${scale === active ? " chart-scale__btn--active" : ""}" data-scale="${scale}" title="${escapeHtml(title)}">${label}</button>`;
+  return `<div class="chart-scale" role="group" aria-label="Масштаб графика">${button("absolute", "abs", "Общая ось: видно реальное соотношение")}${button("relative", "%", "Каждая линия к своему пику: видно форму дня")}</div>`;
+}
+
 type TimelinePoint = { at: Date; value: number };
 
-function sampledViewTimeline(posts: PipelinePost[], start: Date, cutoff: Date, targetIds?: string[]): TimelinePoint[] {
-  const events: Array<{ at: Date; key: string; value: number }> = [];
+/** Raw view samples of a post set, in the shape the video read model also
+ * produces, so both halves of the overview fold through one code path. */
+export function postViewEvents(posts: PipelinePost[], targetIds?: string[]): MetricEvent[] {
+  const events: MetricEvent[] = [];
   posts.forEach((post, postIndex) => {
     // The key identifies one (post, target) series so a later sample replaces
     // the earlier one instead of being added to it. Falling back to the post
@@ -184,21 +379,33 @@ function sampledViewTimeline(posts: PipelinePost[], start: Date, cutoff: Date, t
       for (const sample of metrics?.views?.samples ?? []) {
         const at = sample.sampled_at ? new Date(sample.sampled_at) : null;
         const value = Number(sample.value);
-        if (!at || Number.isNaN(at.getTime()) || !Number.isFinite(value) || at < start || at > cutoff) continue;
+        if (!at || Number.isNaN(at.getTime()) || !Number.isFinite(value)) continue;
         events.push({ at, key: `${postKey}:${target}`, value });
       }
     }
   });
-  events.sort((left, right) => left.at.getTime() - right.at.getTime());
+  return events;
+}
+
+/** Folds immutable observations into a running total: a later sample of the
+ * same key replaces the earlier one rather than adding to it. */
+export function cumulativeTimeline(events: MetricEvent[], start: Date, cutoff: Date): TimelinePoint[] {
+  const windowed = events
+    .filter((event) => event.at >= start && event.at <= cutoff)
+    .sort((left, right) => left.at.getTime() - right.at.getTime());
   const latest = new Map<string, number>();
   let total = 0;
   const points: TimelinePoint[] = [{ at: start, value: 0 }];
-  for (const event of events) {
+  for (const event of windowed) {
     total += event.value - (latest.get(event.key) ?? 0);
     latest.set(event.key, event.value);
     points.push({ at: event.at, value: total });
   }
   return points;
+}
+
+function sampledViewTimeline(posts: PipelinePost[], start: Date, cutoff: Date, targetIds?: string[]): TimelinePoint[] {
+  return cumulativeTimeline(postViewEvents(posts, targetIds), start, cutoff);
 }
 
 function clockLabel(value: Date, timeZone: string): string {

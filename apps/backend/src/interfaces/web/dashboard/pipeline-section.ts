@@ -46,19 +46,29 @@ export function renderPipelineSection(
   `;
 }
 
+/**
+ * Period and date, as one quiet cluster on the right edge.
+ *
+ * The five periods used to sit out as a permanent segmented control, which made
+ * a filter that changes maybe twice a day the second-heaviest thing in the
+ * header. It collapses to the current choice; the rest are one click away in
+ * the menu. The date beside it is a label, not a heading, so it is set at the
+ * same weight as the arrows around it.
+ */
 export function renderPeriodControls(weekOffset: number, periodDays: number, timeZone = "Europe/Moscow", view?: string): string {
   const [start, end] = rollingPeriodDates(weekOffset, periodDays, timeZone);
   const viewParam = view ? `&view=${encodeURIComponent(view)}` : "";
-  const controls = PERIODS.map(
+  const periodLabel = (days: number) => (days === 365 ? "Год" : `${days}д`);
+  const options = PERIODS.map(
     (days) =>
-      `<a class="period-btn${days === periodDays ? " active" : ""}" href="/command-center?period=${days}&week_offset=${weekOffset}${viewParam}">${days === 365 ? "Год" : `${days}д`}</a>`,
+      `<a class="${days === periodDays ? "active" : ""}" href="/command-center?period=${days}&week_offset=${weekOffset}${viewParam}">${periodLabel(days)}</a>`,
   ).join("");
   const previous = `<a class="period-nav" href="/command-center?period=${periodDays}&week_offset=${weekOffset + 1}${viewParam}" aria-label="Предыдущий период">‹</a>`;
   const next =
     weekOffset > 0
       ? `<a class="period-nav" href="/command-center?period=${periodDays}&week_offset=${weekOffset - 1}${viewParam}" aria-label="Следующий период">›</a>`
       : '<span class="period-nav muted">›</span>';
-  return `<div class="dashboard-nav__controls"><div class="period-controls">${controls}</div><div class="period-range">${previous}<strong>${shortDateRange(start, end)}</strong>${next}</div></div>`;
+  return `<div class="dashboard-nav__controls"><details class="period-menu"><summary class="period-menu__toggle" aria-label="Период">${periodLabel(periodDays)}<i class="caret">▾</i></summary><div class="period-menu__list">${options}</div></details><div class="period-range">${previous}<span>${shortDateRange(start, end)}</span>${next}</div></div>`;
 }
 
 function metricTotals(posts: NonNullable<PipelineData["posts"]>, targetIds: string[]) {
