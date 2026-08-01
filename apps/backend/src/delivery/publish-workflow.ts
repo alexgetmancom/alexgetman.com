@@ -7,6 +7,7 @@ import type { BackendConfig } from "../foundation/config.js";
 import { log } from "../foundation/logger.js";
 import { recordWorkerState } from "../foundation/runtime/worker-state.js";
 import { isTargetAuthBlocked } from "../observability/auth-circuit.js";
+import { trackUsageAsync } from "../observability/usage.js";
 import {
   claimDuePublishJobs,
   completePublishJob,
@@ -51,22 +52,24 @@ export async function runDeliveryPublishCycle(
         }
         const adapter = "publish" in port ? port : deliveryAdapter(port);
         try {
-          // A target with several consecutive 401/403s has a dead credential.
-          // Skip the provider call entirely instead of repeating the same
-          // rejected request, which is exactly the kind of traffic that gets
-          // flagged as abuse.
-          if (isTargetAuthBlocked(backendDb, job.target)) {
-            throw new Error(`auth_circuit_open: ${job.target} has a failing credential, publish paused until it recovers`);
-          }
-          const result = await withHeartbeat(backendDb, job.jobId, job.lockId, config.PUBLISH_HEARTBEAT_INTERVAL_SECONDS, () =>
-            withinPublishTimeout(config, backendDb, job, async () => {
-              await timedDeliveryPhase(backendDb, job, "validate", () => adapter.validate(job));
-              const prepared = await timedDeliveryPhase(backendDb, job, "prepare", () => adapter.prepare(job));
-              const published = await timedDeliveryPhase(backendDb, job, "provider.publish", () => adapter.publish(prepared));
-              return timedDeliveryPhase(backendDb, job, "provider.verify", () => adapter.verify(job, published), published);
-            }),
-          );
-          completePublishJob(backendDb, config, job.jobId, result, job.lockId);
+          await trackUsageAsync(backendDb, "publishing.social.job", async () => {
+            // A target with several consecutive 401/403s has a dead credential.
+            // Skip the provider call entirely instead of repeating the same
+            // rejected request, which is exactly the kind of traffic that gets
+            // flagged as abuse.
+            if (isTargetAuthBlocked(backendDb, job.target)) {
+              throw new Error(`auth_circuit_open: ${job.target} has a failing credential, publish paused until it recovers`);
+            }
+            const result = await withHeartbeat(backendDb, job.jobId, job.lockId, config.PUBLISH_HEARTBEAT_INTERVAL_SECONDS, () =>
+              withinPublishTimeout(config, backendDb, job, async () => {
+                await timedDeliveryPhase(backendDb, job, "validate", () => adapter.validate(job));
+                const prepared = await timedDeliveryPhase(backendDb, job, "prepare", () => adapter.prepare(job));
+                const published = await timedDeliveryPhase(backendDb, job, "provider.publish", () => adapter.publish(prepared));
+                return timedDeliveryPhase(backendDb, job, "provider.verify", () => adapter.verify(job, published), published);
+              }),
+            );
+            completePublishJob(backendDb, config, job.jobId, result, job.lockId);
+          });
         } catch (error) {
           if (isAmbiguousPublicationError(error)) requirePublishVerification(backendDb, job.jobId, error, job.lockId);
           else failPublishJob(backendDb, config, job.jobId, error, job.lockId);

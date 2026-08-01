@@ -6,6 +6,7 @@ import { postEvents, postMetrics, postTargets, publicationSources, siteJobs } fr
 import type { BackendConfig } from "../foundation/config.js";
 import { recordWorkerState } from "../foundation/runtime/worker-state.js";
 import { atomicWriteJson } from "../fsUtils.js";
+import { trackUsageAsync } from "../observability/usage.js";
 import { invalidatePublicSiteFeed } from "../public/site-read-model.js";
 import { nextRetryAt } from "../publishing/errors.js";
 import { reconcilePublication, workerId } from "../publishing/queue.js";
@@ -29,11 +30,13 @@ export async function runSiteJobCycle(config: BackendConfig, backendDb: BackendD
     return 0;
   }
   try {
-    await renderFeedFiles(
-      config,
-      backendDb,
-      fetch,
-      new Set(jobs.map((job) => job.post_id).filter((postId): postId is number => postId != null)),
+    await trackUsageAsync(backendDb, "publishing.site.materialize", () =>
+      renderFeedFiles(
+        config,
+        backendDb,
+        fetch,
+        new Set(jobs.map((job) => job.post_id).filter((postId): postId is number => postId != null)),
+      ),
     );
     const completed = completeSiteJobs(backendDb, jobs);
     // A materialization is the one moment this process knows the published site

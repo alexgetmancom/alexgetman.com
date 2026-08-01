@@ -136,6 +136,7 @@ and defaults to root, so always pass `-u bun` for diagnostics:
 docker exec -u bun alexgetman-backend bun /app/ops/cli.js status
 docker exec -u bun alexgetman-backend bun /app/ops/cli.js doctor
 docker exec -u bun alexgetman-backend bun /app/ops/cli.js audit
+docker exec -u bun alexgetman-backend bun /app/ops/cli.js usage --days 30 --unused-days 90
 ```
 
 Use only the read-only commands above for routine diagnostics. Commands such as

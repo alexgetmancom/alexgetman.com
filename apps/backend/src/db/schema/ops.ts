@@ -35,6 +35,28 @@ export const workerState = sqliteTable("worker_state", {
   updatedAt: text().notNull(),
 });
 
+/** Daily aggregates for product and runtime operations. The key is deliberately
+ * a curated operation boundary, not an individual function, so this table can
+ * answer usage questions without producing a row for every invocation. */
+export const runtimeUsage = sqliteTable(
+  "runtime_usage",
+  {
+    featureKey: text().notNull(),
+    bucketDay: text().notNull(),
+    calls: integer().notNull().default(0),
+    successes: integer().notNull().default(0),
+    failures: integer().notNull().default(0),
+    totalDurationMs: integer().notNull().default(0),
+    firstSeenAt: text().notNull(),
+    lastSeenAt: text().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.featureKey, table.bucketDay] }),
+    index("idx_runtime_usage_bucket_day").on(table.bucketDay),
+    index("idx_runtime_usage_feature_last_seen").on(table.featureKey, table.lastSeenAt),
+  ],
+);
+
 export const deploymentSnapshots = sqliteTable("deployment_snapshots", {
   id: autoId(),
   gitSha: text(),

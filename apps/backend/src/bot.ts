@@ -20,6 +20,7 @@ import { t } from "./foundation/i18n/index.js";
 import { log } from "./foundation/logger.js";
 import { clearTelegramAnalyticsDashboard } from "./interfaces/telegram/control-cards.js";
 import { handleTelegramDeliveryPreviewCallback } from "./interfaces/telegram/delivery-previews.js";
+import { trackUsageAsync } from "./observability/usage.js";
 
 export function createBot(config: BackendConfig, backendDb: BackendDb): Bot | null {
   if (!config.controllerBotToken) {
@@ -46,6 +47,7 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
   const notificationsMenu = buildNotificationsMenu(config, backendDb);
   const settingsMenu = buildSettingsMenu(config, backendDb);
   const mainMenu = buildMainMenu(config, backendDb, settingsMenu, notificationsMenu);
+  bot.use((_ctx, next) => trackUsageAsync(backendDb, "telegram.update.handle", next));
   // The menu plugin installs its own callback_query:data middleware, so the
   // admin gate that used to sit at the top of the single callback handler
   // below must also run in front of it, or a non-admin's tap on a menu

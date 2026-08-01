@@ -1,5 +1,6 @@
 import { commandAllowed, sameOriginCommandLogin } from "../../foundation/http-auth.js";
 import { html, json, loginRedirect, queryTokenRedirect, sse, text } from "../../foundation/http-response.js";
+import { trackUsageAsync, trackUsageSync } from "../../observability/usage.js";
 import { commandActionSchema } from "../../operations/commands.js";
 import type { OperationsCommand } from "../../operations/contracts.js";
 import { studioServices } from "../../studio/services/index.js";
@@ -9,15 +10,27 @@ import type { RouteModule } from "./context.js";
 export const commandCenterRoutes: RouteModule = (app, { config, backendDb, operations }) => {
   app.get("/api/pipeline-status", (c) => {
     if (!commandAllowed(c.req.raw, config)) return text("unauthorized\n", 401);
-    return json(operations.pipeline(Number(c.req.query("week_offset") ?? 0) || 0));
+    return json(
+      trackUsageSync(backendDb, "command_center.pipeline.view", () => operations.pipeline(Number(c.req.query("week_offset") ?? 0) || 0)),
+    );
   });
 
   app.get("/api/pipeline-status/stream", (c) => {
     if (!commandAllowed(c.req.raw, config)) return text("unauthorized\n", 401);
     const weekOffset = Number(c.req.query("week_offset") ?? 0) || 0;
     return sse((send) => {
-      send("pipeline", operations.pipeline(weekOffset));
-      return setInterval(() => send("pipeline", operations.pipeline(weekOffset)), 10_000);
+      send(
+        "pipeline",
+        trackUsageSync(backendDb, "command_center.pipeline.view", () => operations.pipeline(weekOffset)),
+      );
+      return setInterval(
+        () =>
+          send(
+            "pipeline",
+            trackUsageSync(backendDb, "command_center.pipeline.view", () => operations.pipeline(weekOffset)),
+          ),
+        10_000,
+      );
     });
   });
 
@@ -35,19 +48,21 @@ export const commandCenterRoutes: RouteModule = (app, { config, backendDb, opera
     if (queryToken && commandAllowed(request, config)) return queryTokenRedirect(url, "command_token", queryToken);
     if (!commandAllowed(request, config)) return html(renderCommandCenterLogin());
     return html(
-      renderDashboard(
-        config,
-        backendDb,
-        Number(url.searchParams.get("week_offset") ?? 0) || 0,
-        url.searchParams.get("ref") ?? "",
-        url.searchParams.get("message_id") ?? "",
-        url.searchParams.get("tab") ?? undefined,
-        url.searchParams.get("locale") ?? undefined,
-        url.searchParams.get("panel") ?? undefined,
-        url.searchParams.get("period") ?? undefined,
-        url.searchParams.get("view") ?? undefined,
-        url.searchParams.get("mode") ?? undefined,
-        url.searchParams.get("metric") ?? undefined,
+      trackUsageSync(backendDb, "command_center.dashboard.view", () =>
+        renderDashboard(
+          config,
+          backendDb,
+          Number(url.searchParams.get("week_offset") ?? 0) || 0,
+          url.searchParams.get("ref") ?? "",
+          url.searchParams.get("message_id") ?? "",
+          url.searchParams.get("tab") ?? undefined,
+          url.searchParams.get("locale") ?? undefined,
+          url.searchParams.get("panel") ?? undefined,
+          url.searchParams.get("period") ?? undefined,
+          url.searchParams.get("view") ?? undefined,
+          url.searchParams.get("mode") ?? undefined,
+          url.searchParams.get("metric") ?? undefined,
+        ),
       ),
     );
   });
@@ -72,12 +87,17 @@ export const commandCenterRoutes: RouteModule = (app, { config, backendDb, opera
   });
 
   app.get("/api/command-center", (c) =>
-    commandAllowed(c.req.raw, config) ? json(operations.dashboard()) : json({ detail: "forbidden" }, 403),
+    commandAllowed(c.req.raw, config)
+      ? json(trackUsageSync(backendDb, "command_center.dashboard.view", () => operations.dashboard()))
+      : json({ detail: "forbidden" }, 403),
   );
 
   app.get("/api/ops-dashboard", (c) =>
     commandAllowed(c.req.raw, config)
-      ? json({ pipeline: operations.pipeline(), ops: operations.dashboard() })
+      ? json({
+          pipeline: trackUsageSync(backendDb, "command_center.pipeline.view", () => operations.pipeline()),
+          ops: trackUsageSync(backendDb, "command_center.dashboard.view", () => operations.dashboard()),
+        })
       : json({ detail: "forbidden" }, 403),
   );
 
@@ -85,7 +105,7 @@ export const commandCenterRoutes: RouteModule = (app, { config, backendDb, opera
     if (!commandAllowed(c.req.raw, config)) return json({ detail: "forbidden" }, 403);
     const ref = c.req.query("ref");
     if (!ref) return json({ detail: "missing ref" }, 400);
-    const payload = operations.postDebug(ref);
+    const payload = trackUsageSync(backendDb, "command_center.post_debug.view", () => operations.postDebug(ref));
     return payload ? json(payload) : json({ detail: "not found" }, 404);
   });
 
@@ -99,7 +119,7 @@ export const commandCenterRoutes: RouteModule = (app, { config, backendDb, opera
     const explicitToken = Boolean(body.token?.trim() || c.req.header("X-Command-Token") || c.req.header("X-Admin-Token"));
     if (!explicitToken && !sameOriginCommandLogin(c.req.raw, config)) return json({ detail: "forbidden" }, 403);
     try {
-      return json(await operations.command(body));
+      return json(await trackUsageAsync(backendDb, "command_center.action.execute", () => operations.command(body)));
     } catch (error) {
       return json({ detail: error instanceof Error ? error.message : String(error) }, 400);
     }

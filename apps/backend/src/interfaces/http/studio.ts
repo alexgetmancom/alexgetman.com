@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { commandAllowed, mcpStudioActor } from "../../foundation/http-auth.js";
 import { json, sse, text } from "../../foundation/http-response.js";
+import { trackUsageAsync } from "../../observability/usage.js";
 import { studioServices } from "../../studio/services/index.js";
 import { mcpResponse } from "../mcp.js";
 import type { RouteModule } from "./context.js";
@@ -20,7 +21,11 @@ export const studioRoutes: RouteModule = (app, { config, backendDb, engagement }
   app.post("/api/mcp", async (c) => {
     const body = await c.req.raw.json().catch(() => null);
     if (body == null) return json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Invalid JSON" } });
-    return json(await mcpResponse(backendDb, config, body, engagement.clientKey(c.req.raw), mcpStudioActor(c.req.raw, config)));
+    return json(
+      await trackUsageAsync(backendDb, "studio.mcp.request", () =>
+        mcpResponse(backendDb, config, body, engagement.clientKey(c.req.raw), mcpStudioActor(c.req.raw, config)),
+      ),
+    );
   });
 
   app.post("/api/studio/media", async (c) => {

@@ -5,6 +5,7 @@ import type { BackendDb } from "../db/client.js";
 import { draftStoryCards } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { recordWorkerState } from "../foundation/runtime/worker-state.js";
+import { trackUsageAsync } from "../observability/usage.js";
 import { buildStoryCardCopy } from "./copy.js";
 
 type ClaimedCard = typeof draftStoryCards.$inferSelect & { lockedBy: string; lockedAt: string };
@@ -22,7 +23,7 @@ export async function runStoryCardCycle(config: BackendConfig, backendDb: Backen
   }
   try {
     const output = outputPath(config, card);
-    await renderStoryCard(config, card, output);
+    await trackUsageAsync(backendDb, "content.story_card.render", () => renderStoryCard(config, card, output));
     const now = new Date().toISOString();
     backendDb.db
       .update(draftStoryCards)

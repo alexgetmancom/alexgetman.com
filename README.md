@@ -78,6 +78,7 @@ The backend CLI is intentionally split between read-only diagnostics and explici
 bun run --filter @alexgetman/backend ops status --db ./data/pipeline.db
 bun run --filter @alexgetman/backend ops doctor
 bun run --filter @alexgetman/backend ops audit --db ./data/pipeline.db
+bun run --filter @alexgetman/backend ops usage --days 30 --unused-days 90 --db ./data/pipeline.db
 bun run --filter @alexgetman/backend ops verify --ref post:123
 ```
 

@@ -3,6 +3,7 @@ import type { BackendDb } from "../../db/client.js";
 import { type JsonValue, postTargets } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { recordWorkerState } from "../../foundation/runtime/worker-state.js";
+import { trackUsageAsync } from "../../observability/usage.js";
 import { platformAnalyticsProfile } from "../../publishing/platform-profiles.js";
 import { upsertMetricError, upsertMetrics } from "../snapshots/metric-repository.js";
 import { isTerminalMetricError } from "./collectors/errors.js";
@@ -32,15 +33,17 @@ export async function runMetricsCycle(
     const collector = collectors[task.target];
     if (!collector) continue;
     try {
-      const result = await collector(task);
-      backendDb.db.transaction((tx) => {
-        upsertMetrics(backendDb, task.postKey, task.target, result.metrics, result.source, result.raw);
-        if (result.url)
-          tx.update(postTargets)
-            .set({ url: result.url, updatedAt: new Date().toISOString() })
-            .where(and(eq(postTargets.postKey, task.postKey), eq(postTargets.target, task.target)))
-            .run();
-        finishMetricTask(backendDb, task, null);
+      await trackUsageAsync(backendDb, "analytics.metrics.collect", async () => {
+        const result = await collector(task);
+        backendDb.db.transaction((tx) => {
+          upsertMetrics(backendDb, task.postKey, task.target, result.metrics, result.source, result.raw);
+          if (result.url)
+            tx.update(postTargets)
+              .set({ url: result.url, updatedAt: new Date().toISOString() })
+              .where(and(eq(postTargets.postKey, task.postKey), eq(postTargets.target, task.target)))
+              .run();
+          finishMetricTask(backendDb, task, null);
+        });
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

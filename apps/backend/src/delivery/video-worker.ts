@@ -7,6 +7,7 @@ import { botSettings, videoJobs, videoTargets } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { instagramConfigForLocale } from "../foundation/external/instagram.js";
+import { trackUsageAsync } from "../observability/usage.js";
 import { nextRetryAt } from "../publishing/errors.js";
 import { failedJobTransition } from "../publishing/job-policy.js";
 import { getVideoDraft, refreshVideoDraftStatus, type VideoJob } from "../publishing/video-data.js";
@@ -37,11 +38,13 @@ export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb)
   // its scheduled time while an upload ahead of it drains.
   for (const job of jobs) {
     try {
-      await withHeartbeat(backendDb, job, config.VIDEO_HEARTBEAT_INTERVAL_SECONDS, () => executeVideoJob(config, backendDb, job));
-      if (completeVideoJob(backendDb, job)) {
-        recordVideoProgressEvent(backendDb, job, "video.job.completed");
-        recordVideoCompletionIfFinal(backendDb, job.videoDraftId);
-      }
+      await trackUsageAsync(backendDb, "publishing.video.job", async () => {
+        await withHeartbeat(backendDb, job, config.VIDEO_HEARTBEAT_INTERVAL_SECONDS, () => executeVideoJob(config, backendDb, job));
+        if (completeVideoJob(backendDb, job)) {
+          recordVideoProgressEvent(backendDb, job, "video.job.completed");
+          recordVideoCompletionIfFinal(backendDb, job.videoDraftId);
+        }
+      });
     } catch (error) {
       const settled = isAmbiguousPublicationError(error)
         ? requireVideoVerification(backendDb, job, error, config)

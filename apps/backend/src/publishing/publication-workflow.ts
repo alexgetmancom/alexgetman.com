@@ -5,6 +5,7 @@ import { enrichPublishedPostEntities } from "../content/entity-enrichment.js";
 import type { BackendDb } from "../db/client.js";
 import { draftEntityCandidates, draftSources, knowledgeEntities, postEntityLinks, postSources, publications } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
+import { trackUsageSync } from "../observability/usage.js";
 import { readyStoryCardMedia } from "../story-cards/store.js";
 import { assertPublicationPreflight } from "./preflight.js";
 import { createPublicationPlan, type PublishMode } from "./publication-plan.js";
@@ -16,6 +17,10 @@ type PublishDraftOptions = { mode?: PublishMode; ruAt?: Date | null; enAt?: Date
 
 /** Coordinates validated content, durable plan persistence and initial queue reconciliation. */
 export function publishDraftToQueue(backendDb: BackendDb, draftId: number, options: PublishDraftOptions = {}): number {
+  return trackUsageSync(backendDb, "publishing.plan.create", () => publishDraftToQueueInternal(backendDb, draftId, options));
+}
+
+function publishDraftToQueueInternal(backendDb: BackendDb, draftId: number, options: PublishDraftOptions = {}): number {
   const draft = requireDraft(backendDb, draftId);
   const effectiveDraft = {
     ...draft,

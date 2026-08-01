@@ -4,6 +4,7 @@ import { baselineDrizzleMigrations, migrationStatus, openBackendDb } from "./db/
 import { loadConfig } from "./foundation/config.js";
 import { checkDataDirectoriesWritable, requiredDataDirectories } from "./foundation/runtime/data-dirs.js";
 import { capabilityReport } from "./observability/capabilities.js";
+import { usageReport } from "./observability/usage.js";
 import { capabilitySummary, recordCapabilityPost } from "./operations/capabilities.js";
 import { channelReport, connectChannel, disableChannel } from "./operations/channels.js";
 import {
@@ -81,6 +82,7 @@ function printHelp(): void {
   import-x-analytics --file PATH --sampled-at ISO
   import-manual-analytics [--x-file PATH] [--threads-ru-followers N] [--threads-en-followers N] [--sampled-at ISO]
   capabilities [--db PATH]
+  usage [--days N] [--unused-days N] [--db PATH]
   doctor
   capability-record --test T01 --message-id 123 [--notes TEXT]
   verify --ref post:1
@@ -230,6 +232,21 @@ async function main(): Promise<void> {
       console.log(JSON.stringify(disableChannel(backendDb, required(args, "channel"), args.flags.has("forget-credentials")), null, 2));
     } else if (args.command === "capabilities") {
       console.log(JSON.stringify(capabilitySummary(backendDb), null, 2));
+    } else if (args.command === "usage") {
+      const rawDays = args.values.get("days");
+      const rawUnusedDays = args.values.get("unused-days");
+      const days = rawDays == null ? undefined : Number(rawDays);
+      const unusedDays = rawUnusedDays == null ? undefined : Number(rawUnusedDays);
+      console.log(
+        JSON.stringify(
+          usageReport(backendDb, {
+            ...(days === undefined ? {} : { days }),
+            ...(unusedDays === undefined ? {} : { unusedDays }),
+          }),
+          null,
+          2,
+        ),
+      );
     } else if (args.command === "capability-record") {
       const status = recordCapabilityPost(
         backendDb,
