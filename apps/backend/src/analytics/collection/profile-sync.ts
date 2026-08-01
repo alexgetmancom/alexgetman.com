@@ -1,7 +1,7 @@
 import type { ChannelConnection } from "../../channels/registry.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
-import { instagramConfigForLocale } from "../../foundation/external/instagram.js";
+import { instagramConfigForLocale, instagramGraphHost } from "../../foundation/external/instagram.js";
 import { createChannelStoryClient } from "../../foundation/external/telegram-session.js";
 import { oauthAuthorization } from "../../foundation/external/x-oauth.js";
 import { youtubeAccessToken } from "../../foundation/external/youtube.js";
@@ -148,7 +148,7 @@ export async function syncInstagramProfile(
     const token = instagramConfig.INSTAGRAM_ACCESS_TOKEN;
     const userId = instagramConfig.INSTAGRAM_USER_ID;
     if (!token || !userId) throw new Error("Instagram credentials are missing");
-    const host = token.startsWith("IG") ? "graph.instagram.com" : "graph.facebook.com";
+    const host = instagramGraphHost(token);
     const profileData = await requestJson<InstagramProfile>(
       fetchImpl,
       `https://${host}/${instagramConfig.INSTAGRAM_GRAPH_API_VERSION}/${userId}?fields=username,biography,followers_count,media_count&access_token=${encodeURIComponent(token)}`,

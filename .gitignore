@@ -79,3 +79,7 @@ pnpm-debug.log*
 
 # Local dev fixture data (bun scripts/dev-seed.ts)
 /.dev-fixture/
+
+# Scratch output from local tooling
+/tmp/
+/output/

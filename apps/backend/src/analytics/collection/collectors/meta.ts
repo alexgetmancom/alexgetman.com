@@ -1,16 +1,14 @@
 import type { BackendConfig } from "../../../foundation/config.js";
+import { instagramCredentialsForLocale, instagramGraphHost } from "../../../foundation/external/instagram.js";
 import { requestJson } from "../../../foundation/http.js";
 import type { MetricTask } from "../metric-schedule.js";
 import { terminalIfMissingRemoteObject } from "./errors.js";
 import type { MetricResult } from "./types.js";
 
 export async function collectInstagramStory(task: MetricTask, config: BackendConfig, fetchImpl: typeof fetch): Promise<MetricResult> {
-  const token =
-    task.target === "instagram_stories_ru"
-      ? (config.INSTAGRAM_RU_ACCESS_TOKEN ?? config.INSTAGRAM_ACCESS_TOKEN)
-      : (config.INSTAGRAM_EN_ACCESS_TOKEN ?? config.INSTAGRAM_ACCESS_TOKEN);
+  const { accessToken: token } = instagramCredentialsForLocale(config, task.target === "instagram_stories_ru" ? "ru" : "en", "shared");
   if (!token || !task.externalId) throw new Error("missing_instagram_story_token_or_id");
-  const host = token.startsWith("IG") ? "graph.instagram.com" : "graph.facebook.com";
+  const host = instagramGraphHost(token);
   const version = config.INSTAGRAM_GRAPH_API_VERSION;
   let insights: { data?: Array<{ name?: string; values?: Array<{ value?: number }> }> };
   try {

@@ -41,9 +41,28 @@ export type VideoDestination = (typeof VIDEO_DESTINATIONS)[number];
 /** Profile keys predating the locale split. They still receive snapshots, so a
  * destination falls back to them when its own key has none yet. */
 const LEGACY_PROFILE: Record<VideoTarget, string> = { youtube_shorts: "youtube", instagram_reels: "instagram" };
+/** A pre-split key names the platform without a language, because it is the
+ * account of a Studio that only ever had one. */
+const LEGACY_PROFILE_LABEL: Record<VideoTarget, string> = { youtube_shorts: "YouTube", instagram_reels: "Instagram" };
 
 export function legacyVideoProfile(target: VideoTarget): string {
   return LEGACY_PROFILE[target];
+}
+
+/** Every profile key the audience snapshots may carry, newest naming first. The
+ * legacy keys stay in the list because old snapshots are never rewritten. */
+export const VIDEO_PROFILE_KEYS: readonly string[] = [
+  ...VIDEO_DESTINATIONS.map((destination) => destination.profile),
+  ...VIDEO_TARGETS.map((target) => LEGACY_PROFILE[target]),
+];
+
+/** Names a profile key for display, so a new destination is added to the
+ * catalogue alone rather than to every panel that renders one. */
+export function videoProfileLabel(profile: string): string {
+  const destination = VIDEO_DESTINATIONS.find((entry) => entry.profile === profile);
+  if (destination) return destination.label;
+  const legacy = VIDEO_TARGETS.find((target) => LEGACY_PROFILE[target] === profile);
+  return legacy ? LEGACY_PROFILE_LABEL[legacy] : profile;
 }
 
 export function videoDestination(target: string, locale: string | null | undefined): VideoDestination | null {

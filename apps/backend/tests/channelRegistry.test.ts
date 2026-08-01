@@ -13,6 +13,19 @@ import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
 import { withDb } from "./helpers/db.js";
 
 describe("channel registry", () => {
+  it("keeps one shared Instagram account as a single Russian channel", () => {
+    // The unprefixed pair is the Russian account of a Studio that never split.
+    // Seeding an English channel from it would snapshot the same account under
+    // two profile keys and double its audience in the overview.
+    const config = loadConfig({ INSTAGRAM_ACCESS_TOKEN: "shared-token", INSTAGRAM_USER_ID: "shared-user" });
+    config.studio.modules.video_posting = true;
+    config.studio.modules.instagram = true;
+
+    expect(configuredChannels(config).filter((channel) => channel.platform === "instagram")).toEqual([
+      expect.objectContaining({ id: "instagram_ru", locale: "ru", provider: "native", providerAccountId: "shared-user" }),
+    ]);
+  });
+
   it("discovers native Instagram accounts independently for RU and EN video drafts", () => {
     const config = loadConfig({
       INSTAGRAM_ACCESS_TOKEN: "shared-token",

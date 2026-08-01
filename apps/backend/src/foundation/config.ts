@@ -333,12 +333,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BackendConfig 
           throw new Error(
             `ZERNIO_API_KEY and ${locale === "en" ? "instagram_reels_en" : "instagram_reels"}.accountId are required when Zernio Instagram publishing is enabled`,
           );
+      } else if (locale === "en") {
+        // An English Reels account is optional — a Studio publishing in Russian
+        // only has none, and the shared pair is the Russian account, not a
+        // second destination. Half a pair is a typo rather than a choice.
+        if (Boolean(parsed.INSTAGRAM_EN_ACCESS_TOKEN) !== Boolean(parsed.INSTAGRAM_EN_USER_ID))
+          throw new Error("INSTAGRAM_EN_ACCESS_TOKEN and INSTAGRAM_EN_USER_ID must be set together");
       } else {
         const credentials = instagramCredentialsForLocale(parsed, locale);
-        if (!credentials.accessToken || !credentials.userId) {
-          const account = locale === "en" ? "English Instagram" : "Instagram";
-          throw new Error(`${account} access token and user ID are required when Instagram video publishing is enabled`);
-        }
+        if (!credentials.accessToken || !credentials.userId)
+          throw new Error("INSTAGRAM_ACCESS_TOKEN and INSTAGRAM_USER_ID are required when Instagram video publishing is enabled");
       }
     }
   }

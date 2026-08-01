@@ -88,7 +88,8 @@ export function createPlatformPorts(config: BackendConfig, fetchImpl: typeof fet
 
 export function platformConfig(target: string, config: BackendConfig): BackendConfig {
   if (target === "threads_en") return { ...config, THREADS_ACCESS_TOKEN: config.THREADS_EN_ACCESS_TOKEN ?? config.THREADS_ACCESS_TOKEN };
-  if (target === "instagram_stories") return instagramConfigForLocale(config, "en");
+  // Stories carry the shared fallback for English; Reels deliberately do not.
+  if (target === "instagram_stories") return instagramConfigForLocale(config, "en", "shared");
   if (target === "instagram_stories_ru") return instagramConfigForLocale(config, "ru");
   return config;
 }
