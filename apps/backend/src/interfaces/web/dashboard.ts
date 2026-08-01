@@ -55,17 +55,14 @@ export function renderDashboard(
   const service = operationsService(backendDb, config);
   const ops = service.dashboard();
   const studioActorId = config.MCP_STUDIO_ACTOR_ID;
-  let tab: DashboardTab =
-    requestedTab === "video"
-      ? "video"
-      : requestedTab === "posts"
-        ? "posts"
-        : requestedTab === "studio" && studioActorId
-          ? "studio"
-          : config.studio.commandCenter.defaultMode;
-  if (tab === "posts" && !config.studio.modules.text_posting) tab = "video";
+  // The unified overview is the landing screen of every Studio, whichever
+  // halves it publishes. A video-only Studio used to be sent to the per-draft
+  // Video table instead, which is an operations view — it answers "what is the
+  // state of this clip", not "how is the account doing". "Видео" in the overflow
+  // menu still opens it.
+  let tab: DashboardTab = requestedTab === "video" ? "video" : requestedTab === "studio" && studioActorId ? "studio" : "posts";
   if (tab === "video" && !config.studio.modules.video_posting) tab = "posts";
-  const showPosts = tab === "posts" && config.studio.modules.text_posting;
+  const showPosts = tab === "posts";
   const showVideo = tab === "video" && config.studio.modules.video_posting;
   const showStudio = tab === "studio" && Boolean(studioActorId);
   const activeTab = showStudio ? "studio" : showVideo ? "video" : "posts";
@@ -73,17 +70,23 @@ export function renderDashboard(
   const panel: DashboardPanel =
     requestedPanel === "queue" || requestedPanel === "health" || requestedPanel === "repair" ? requestedPanel : "overview";
   const periodDays = [1, 7, 30, 90, 365].includes(Number(requestedPeriod)) ? Number(requestedPeriod) : 1;
-  const activeView = showPosts && AUDIENCE_VIEWS.includes(requestedView as AudienceView) ? (requestedView as AudienceView) : undefined;
-  // Video-only publishing has no text feed to fall back to, so the unified
-  // overview opens on the half that exists rather than on an empty "Все".
+  const activeView =
+    showPosts && config.studio.modules.text_posting && AUDIENCE_VIEWS.includes(requestedView as AudienceView)
+      ? (requestedView as AudienceView)
+      : undefined;
+  // Publishing one half only leaves nothing to combine, so the overview opens
+  // on the half that exists rather than on an empty "Все". A Studio that
+  // publishes both picks its landing half in studio.yaml.
   const mode: OverviewMode =
     requestedMode === "text" || requestedMode === "video"
       ? requestedMode
-      : config.studio.modules.video_posting
-        ? config.studio.modules.text_posting
-          ? "all"
-          : "video"
-        : "text";
+      : !config.studio.modules.video_posting
+        ? "text"
+        : !config.studio.modules.text_posting
+          ? "video"
+          : config.studio.commandCenter.defaultMode === "video"
+            ? "video"
+            : "all";
   const platformMetric: PlatformMetric = requestedMetric === "followers" ? "followers" : "reach";
   const panelLink = (value: DashboardPanel) => `/command-center?tab=posts&panel=${value}${periodDays !== 1 ? `&period=${periodDays}` : ""}`;
   const overviewFilterQuery = !activeView
@@ -210,9 +213,7 @@ export function renderDashboard(
   ];
   const activeSecondary = secondaryTabs.find((tab) => tab.active);
   const attention = secondaryTabs.some((tab) => tab.attention);
-  const overviewTab = config.studio.modules.text_posting
-    ? `<a class="${panel === "overview" && activeTab === "posts" ? "active" : ""}" href="${panelLink("overview")}">Обзор</a>`
-    : "";
+  const overviewTab = `<a class="${panel === "overview" && activeTab === "posts" ? "active" : ""}" href="${panelLink("overview")}">Обзор</a>`;
   // Not open on arrival even when one of its entries is the current section:
   // the panel would drop over the content the operator just navigated to. The
   // control names the section instead.
@@ -225,7 +226,10 @@ export function renderDashboard(
       )
       .join("")}</div>
   </details>`;
-  const modeFilter = panel === "overview" && showPosts && !activeView ? renderModeFilter(mode, periodDays, weekOffset, platformMetric) : "";
+  // Nothing to filter when the Studio publishes one half only.
+  const bothHalves = config.studio.modules.text_posting && config.studio.modules.video_posting;
+  const modeFilter =
+    panel === "overview" && showPosts && !activeView && bothHalves ? renderModeFilter(mode, periodDays, weekOffset, platformMetric) : "";
   const body = `
     <nav class="dashboard-tabs"><span class="dashboard-tabs__start">${overviewTab}${menu}</span><span class="dashboard-tabs__center">${modeFilter}</span><span class="dashboard-tabs__end">${overviewControls}${DASHBOARD_THEME_TOGGLE_HTML}</span></nav>
     <section id="overview" class="overview">${content}</section>`;

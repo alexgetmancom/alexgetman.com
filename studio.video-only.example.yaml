@@ -2,8 +2,11 @@ modules:
   site: false
   text_posting: false
   video_posting: true
-  youtube: true
-  instagram: true
+  # Publishing modules demand real credentials at startup, so the example that
+  # is also a local launch target leaves them off: the dashboard reads durable
+  # snapshots, not platform APIs.
+  youtube: false
+  instagram: false
   analytics: true
 
 video:

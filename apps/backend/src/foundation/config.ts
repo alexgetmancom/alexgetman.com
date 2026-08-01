@@ -324,6 +324,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BackendConfig 
       throw new Error("COMMAND_CENTER_TOKEN must be separate from TELEGRAM_WEBHOOK_SECRET in production");
   }
   const studio = loadStudioConfig(parsed.STUDIO_CONFIG);
+  // The channel default exists for the first deployment and is a hazard for
+  // every one after it: a second Studio that enables text posting without
+  // naming its own channel would publish into the first Studio's, because the
+  // default is a real, live username. Development keeps the convenience.
+  if (parsed.NODE_ENV === "production" && studio.modules.text_posting && !env.CHANNEL_USERNAME)
+    throw new Error("CHANNEL_USERNAME must be set explicitly when text posting is enabled");
   if (studio.modules.youtube && studio.modules.video_posting) {
     for (const key of ["YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "YOUTUBE_REFRESH_TOKEN"] as const) {
       if (!parsed[key]) throw new Error(`${key} is required when YouTube video publishing is enabled`);
