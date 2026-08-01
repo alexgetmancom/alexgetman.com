@@ -5,6 +5,7 @@ import type { BackendDb } from "../db/client.js";
 import { botSettings, videoJobs, videoTargets } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { instagramConfigForLocale } from "../foundation/external/instagram.js";
 import { nextRetryAt } from "../publishing/errors.js";
 import { failedJobTransition } from "../publishing/job-policy.js";
 import { getVideoDraft, refreshVideoDraftStatus, type VideoJob } from "../publishing/video-data.js";
@@ -154,6 +155,8 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
   const filePath = videoSourcePath(backendDb, config, draft);
   if (!filePath) throw new Error("Video source was removed before publication completed.");
   const metadata = target.metadataJson as VideoMetadata;
+  const locale = draft.locale === "en" ? "en" : "ru";
+  const instagramConfig = instagramConfigForLocale(config, locale);
   if (job.kind === "prepare") {
     if (target.target === "youtube_shorts") {
       const result = await prepareYouTubeVideo(
@@ -164,14 +167,14 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
           description: composeYouTubeDescription(backendDb, draft.actorId, metadata as YouTubeMetadata),
         },
         target.scheduledAt ?? new Date().toISOString(),
-        draft.locale === "en" ? "en" : "ru",
+        locale,
       );
       if (!ownsVideoJob(backendDb, job)) {
         // Cancellation can happen while the resumable upload is in flight. The
         // ID exists only in this response, so fence its future public release
         // before discarding it from local state.
         try {
-          await keepYouTubeUploadPrivate(config, result.id, draft.locale === "en" ? "en" : "ru");
+          await keepYouTubeUploadPrivate(config, result.id, locale);
         } catch (error) {
           recordDomainEvent(backendDb, {
             ref: `video:${job.videoDraftId}`,
@@ -197,7 +200,7 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
       if (!target.providerAccountId) throw new Error("Zernio Instagram account is missing");
       updateVideoTarget(backendDb.db, target.id, { status: "prepared", preparedAt: new Date().toISOString() });
     } else {
-      const result = await prepareInstagramReel(config, videoPublicUrl(backendDb, config, draft), metadata as InstagramMetadata);
+      const result = await prepareInstagramReel(instagramConfig, videoPublicUrl(backendDb, config, draft), metadata as InstagramMetadata);
       if (!ownsVideoJob(backendDb, job)) return;
       updateVideoTarget(backendDb.db, target.id, { status: "prepared", externalId: result.id, preparedAt: new Date().toISOString() });
     }
@@ -232,14 +235,14 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
     });
   } else {
     if (!target.externalId) throw new Error("Instagram upload has not completed yet.");
-    await instagramContainerReady(config, target.externalId);
+    await instagramContainerReady(instagramConfig, target.externalId);
     if (!ownsVideoJob(backendDb, job)) return;
-    const result = await publishInstagramReel(config, target.externalId);
+    const result = await publishInstagramReel(instagramConfig, target.externalId);
     if (!ownsVideoJob(backendDb, job)) return;
     let externalUrl = result.url;
     let verifiedAt: string | null = null;
     try {
-      externalUrl = (await verifyInstagramPublication(result.id, config)).url ?? externalUrl;
+      externalUrl = (await verifyInstagramPublication(result.id, instagramConfig)).url ?? externalUrl;
       verifiedAt = new Date().toISOString();
     } catch {
       // The publish response already returned the media ID. Verification

@@ -125,7 +125,7 @@ function targetMetrics(target: VideoTargetRow): { views: number; likes: number; 
 function videoAudience(backendDb: BackendDb): Array<{ label: string; followers: number; growth: number | null }> {
   const profiles = backendDb.sqlite
     .prepare(
-      "SELECT platform, account, metrics_json AS metricsJson FROM creator_profile_snapshots WHERE id IN (SELECT MAX(id) FROM creator_profile_snapshots WHERE platform IN ('youtube','instagram') GROUP BY platform, account)",
+      "SELECT platform, account, metrics_json AS metricsJson FROM creator_profile_snapshots WHERE id IN (SELECT MAX(id) FROM creator_profile_snapshots WHERE platform IN ('youtube','youtube_ru','youtube_en','instagram','instagram_ru','instagram_en') GROUP BY platform, account)",
     )
     .all() as Array<{ platform: string; account: string; metricsJson: string }>;
   const since = new Date(Date.now() - 7 * 24 * 60 * 60_000).toISOString();
@@ -139,7 +139,18 @@ function videoAudience(backendDb: BackendDb): Array<{ label: string; followers: 
     const followers = metricNumber(latest.subscriberCount ?? latest.followersCount);
     const previousMetrics = baseline ? (JSON.parse(baseline.metricsJson) as Record<string, unknown>) : null;
     const previous = previousMetrics ? metricNumber(previousMetrics.subscriberCount ?? previousMetrics.followersCount) : null;
-    const platformLabel = profile.platform === "youtube" ? "YouTube" : "Instagram";
+    const platformLabel =
+      profile.platform === "youtube_ru"
+        ? "YouTube RU"
+        : profile.platform === "youtube_en"
+          ? "YouTube EN"
+          : profile.platform === "instagram_ru"
+            ? "Instagram RU"
+            : profile.platform === "instagram_en"
+              ? "Instagram EN"
+              : profile.platform === "youtube"
+                ? "YouTube"
+                : "Instagram";
     return {
       label: profile.account ? `${platformLabel} · ${profile.account}` : platformLabel,
       followers,

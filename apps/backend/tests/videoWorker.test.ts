@@ -32,6 +32,7 @@ const real = {
 };
 
 const seen: string[] = [];
+const instagramCredentialsSeen: Array<{ token: string | undefined; userId: string | undefined }> = [];
 let containerReadyError: Error | null = null;
 /** Runs while a platform call is in flight, so a test can cancel the draft
  * exactly where a real cancellation would land. */
@@ -52,17 +53,20 @@ mock.module("../src/delivery/video-publishers.js", () => ({
   prepareInstagramReel: async (...args: Parameters<typeof real.prepareInstagramReel>) => {
     if (!intercepting) return real.prepareInstagramReel(...args);
     seen.push("prepareInstagramReel");
+    instagramCredentialsSeen.push({ token: args[0].INSTAGRAM_ACCESS_TOKEN, userId: args[0].INSTAGRAM_USER_ID });
     duringUpload?.();
     return { id: "ig-container" };
   },
   instagramContainerReady: async (...args: Parameters<typeof real.instagramContainerReady>) => {
     if (!intercepting) return real.instagramContainerReady(...args);
     seen.push("instagramContainerReady");
+    instagramCredentialsSeen.push({ token: args[0].INSTAGRAM_ACCESS_TOKEN, userId: args[0].INSTAGRAM_USER_ID });
     if (containerReadyError) throw containerReadyError;
   },
   publishInstagramReel: async (...args: Parameters<typeof real.publishInstagramReel>) => {
     if (!intercepting) return real.publishInstagramReel(...args);
     seen.push("publishInstagramReel");
+    instagramCredentialsSeen.push({ token: args[0].INSTAGRAM_ACCESS_TOKEN, userId: args[0].INSTAGRAM_USER_ID });
     return { id: "ig-reel", url: "https://www.instagram.com/reel/ig-reel/" };
   },
 }));
@@ -109,12 +113,13 @@ function dueDraft(
   directory: string,
   targets: string[],
   config: ReturnType<typeof videoConfig>,
+  locale: "ru" | "en" = "ru",
 ): number {
   // A draft references its source by asset key; videoPath resolves it as
   // `<key>.<ext>` inside VIDEO_MEDIA_DIR.
   const assetKey = `clip-${targets.join("-")}`;
   writeFileSync(path.join(directory, `${assetKey}.mp4`), "video-bytes");
-  const draftId = createVideoDraft(backendDb, 42, assetKey, 24);
+  const draftId = createVideoDraft(backendDb, 42, assetKey, 24, locale);
   replaceVideoTargets(backendDb, draftId, targets as never);
   if (targets.includes("youtube_shorts")) {
     saveVideoMetadata(backendDb, draftId, "youtube_shorts", {
@@ -152,6 +157,7 @@ function withDirectory<T>(fn: (directory: string) => Promise<T>): Promise<T> {
 
 function reset(): void {
   seen.length = 0;
+  instagramCredentialsSeen.length = 0;
   containerReadyError = null;
   duringUpload = null;
 }
@@ -206,6 +212,27 @@ describe("video job execution", () => {
         externalId: "ig-reel",
         externalUrl: "https://www.instagram.com/reel/ig-reel/",
       });
+    });
+  });
+
+  it("uses the draft locale's native Instagram credentials for an English Reel", async () => {
+    reset();
+    await withDirectory(async (directory) => {
+      const backendDb = testDb.open();
+      const config = videoConfig(directory, {
+        INSTAGRAM_EN_ACCESS_TOKEN: "en-token",
+        INSTAGRAM_EN_USER_ID: "en-user",
+      });
+      const draftId = dueDraft(backendDb, directory, ["instagram_reels"], config, "en");
+
+      await runVideoCycle(config, backendDb);
+
+      expect(targetRow(backendDb, draftId)?.status).toBe("published");
+      expect(instagramCredentialsSeen).toEqual([
+        { token: "en-token", userId: "en-user" },
+        { token: "en-token", userId: "en-user" },
+        { token: "en-token", userId: "en-user" },
+      ]);
     });
   });
 

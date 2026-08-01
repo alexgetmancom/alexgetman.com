@@ -3,6 +3,7 @@ import type { BackendDb } from "../../db/client.js";
 import { videoDrafts, videoMetricSchedule, videoTargets } from "../../db/schema.js";
 import { recordDomainEvent } from "../../domain/events.js";
 import type { BackendConfig } from "../../foundation/config.js";
+import { instagramConfigForLocale } from "../../foundation/external/instagram.js";
 import { youtubeAccessToken } from "../../foundation/external/youtube.js";
 import { requestJson } from "../../foundation/http.js";
 import { metricNumber, upsertComment, upsertVideoSnapshot } from "../snapshots/creator-store.js";
@@ -367,9 +368,11 @@ async function collectInstagramVideoMetrics(
   target: VideoMetricTask,
   fetchImpl: typeof fetch,
 ): Promise<void> {
-  const token = config.INSTAGRAM_ACCESS_TOKEN;
+  const instagramConfig = instagramConfigForLocale(config, target.locale);
+  const token = instagramConfig.INSTAGRAM_ACCESS_TOKEN;
   if (!token) throw new Error("Instagram credentials are missing");
-  const base = `https://graph.facebook.com/${config.INSTAGRAM_GRAPH_API_VERSION}/${target.externalId}`;
+  const host = token.startsWith("IG") ? "graph.instagram.com" : "graph.facebook.com";
+  const base = `https://${host}/${instagramConfig.INSTAGRAM_GRAPH_API_VERSION}/${target.externalId}`;
   const media = await requestJson<InstagramMedia>(
     fetchImpl,
     `${base}?fields=like_count,comments_count,permalink,timestamp,caption&access_token=${encodeURIComponent(token)}`,

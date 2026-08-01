@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import type { BackendDb } from "../db/client.js";
 import { channelConnections } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { instagramCredentialsForLocale } from "../foundation/external/instagram.js";
 import type { VideoLocale } from "../foundation/external/youtube.js";
 import type { VideoTarget } from "../publishing/video-types.js";
 
@@ -23,9 +24,9 @@ export function configuredChannels(config: BackendConfig): ChannelSeed[] {
   if (config.studio.modules.instagram) {
     for (const locale of ["ru", "en"] as const) {
       const route = config.PUBLISH_PROVIDER_ROUTES_JSON[locale === "en" ? "instagram_reels_en" : "instagram_reels"];
+      const credentials = instagramCredentialsForLocale(config, locale);
       if (route?.provider === "zernio" && route.accountId) seeds.push(seed("instagram", locale, "zernio", route.accountId));
-      else if (locale === "ru" && config.INSTAGRAM_ACCESS_TOKEN && config.INSTAGRAM_USER_ID)
-        seeds.push(seed("instagram", locale, "native", config.INSTAGRAM_USER_ID));
+      else if (credentials.accessToken && credentials.userId) seeds.push(seed("instagram", locale, "native", credentials.userId));
     }
   }
   return seeds;

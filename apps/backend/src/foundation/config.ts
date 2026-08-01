@@ -1,5 +1,6 @@
 import * as z from "zod";
 import { loadStudioConfig, type StudioConfig } from "../studio.js";
+import { instagramCredentialsForLocale } from "./external/instagram.js";
 
 /** Env flags arrive as strings, so the default has to be a string too: a boolean
  * default would be handed to the transform below on any Zod version that does
@@ -324,13 +325,21 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BackendConfig 
       if (!parsed[key]) throw new Error(`${key} is required when YouTube video publishing is enabled`);
     }
   }
-  const instagramRoute = parsed.PUBLISH_PROVIDER_ROUTES_JSON.instagram_reels;
   if (studio.modules.instagram && studio.modules.video_posting) {
-    if (instagramRoute?.provider === "zernio") {
-      if (!parsed.ZERNIO_API_KEY || !instagramRoute.accountId)
-        throw new Error("ZERNIO_API_KEY and instagram_reels.accountId are required when Zernio Instagram publishing is enabled");
-    } else if (!parsed.INSTAGRAM_ACCESS_TOKEN || !parsed.INSTAGRAM_USER_ID) {
-      throw new Error("INSTAGRAM_ACCESS_TOKEN and INSTAGRAM_USER_ID are required when Instagram video publishing is enabled");
+    for (const locale of ["ru", "en"] as const) {
+      const route = parsed.PUBLISH_PROVIDER_ROUTES_JSON[locale === "en" ? "instagram_reels_en" : "instagram_reels"];
+      if (route?.provider === "zernio") {
+        if (!parsed.ZERNIO_API_KEY || !route.accountId)
+          throw new Error(
+            `ZERNIO_API_KEY and ${locale === "en" ? "instagram_reels_en" : "instagram_reels"}.accountId are required when Zernio Instagram publishing is enabled`,
+          );
+      } else {
+        const credentials = instagramCredentialsForLocale(parsed, locale);
+        if (!credentials.accessToken || !credentials.userId) {
+          const account = locale === "en" ? "English Instagram" : "Instagram";
+          throw new Error(`${account} access token and user ID are required when Instagram video publishing is enabled`);
+        }
+      }
     }
   }
   if (parsed.MEDIA_PROCESSOR_PROVIDER === "remote_http" && (!parsed.MEDIA_PROCESSOR_URL || !parsed.MEDIA_PROCESSOR_TOKEN)) {

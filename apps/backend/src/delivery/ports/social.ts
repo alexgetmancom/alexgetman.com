@@ -1,4 +1,5 @@
 import type { BackendConfig } from "../../foundation/config.js";
+import { instagramConfigForLocale } from "../../foundation/external/instagram.js";
 import { log } from "../../foundation/logger.js";
 import { createSerialQueue } from "../../foundation/serial-queue.js";
 import { isCapabilityReady } from "../../observability/capabilities.js";
@@ -87,18 +88,8 @@ export function createPlatformPorts(config: BackendConfig, fetchImpl: typeof fet
 
 export function platformConfig(target: string, config: BackendConfig): BackendConfig {
   if (target === "threads_en") return { ...config, THREADS_ACCESS_TOKEN: config.THREADS_EN_ACCESS_TOKEN ?? config.THREADS_ACCESS_TOKEN };
-  if (target === "instagram_stories")
-    return {
-      ...config,
-      INSTAGRAM_ACCESS_TOKEN: config.INSTAGRAM_EN_ACCESS_TOKEN ?? config.INSTAGRAM_ACCESS_TOKEN,
-      INSTAGRAM_USER_ID: config.INSTAGRAM_EN_USER_ID ?? config.INSTAGRAM_USER_ID,
-    };
-  if (target === "instagram_stories_ru")
-    return {
-      ...config,
-      INSTAGRAM_ACCESS_TOKEN: config.INSTAGRAM_RU_ACCESS_TOKEN ?? config.INSTAGRAM_ACCESS_TOKEN,
-      INSTAGRAM_USER_ID: config.INSTAGRAM_RU_USER_ID ?? config.INSTAGRAM_USER_ID,
-    };
+  if (target === "instagram_stories") return instagramConfigForLocale(config, "en");
+  if (target === "instagram_stories_ru") return instagramConfigForLocale(config, "ru");
   return config;
 }
 

@@ -11,6 +11,7 @@ export type PublishedVideoOptions = {
   deliveryProvider?: string;
   providerAccountId?: string;
   providerPostId?: string;
+  locale?: "ru" | "en";
 };
 
 /** Inserts a published video draft with one target, the shape every analytics test needs. */
@@ -20,6 +21,7 @@ export function insertPublishedVideo(backendDb: BackendDb, options: PublishedVid
     .insert(videoDrafts)
     .values({
       actorId: 1,
+      locale: options.locale ?? "ru",
       assetKey: "asset",
       label: options.label ?? "Video",
       status: "published",

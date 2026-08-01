@@ -6,6 +6,7 @@ import type { BackendDb } from "../db/client.js";
 import { videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
+import { instagramCredentialsForLocale } from "../foundation/external/instagram.js";
 import { youtubeCredentials } from "../foundation/external/youtube.js";
 import { runFfprobe } from "../foundation/runtime/ffmpeg.js";
 import { isZernioRouteReady, registeredVideoDeliveryRoute } from "./delivery-provider.js";
@@ -236,7 +237,8 @@ export async function validateVideoDraft(config: BackendConfig, backendDb: Backe
     if (target.target === "instagram_reels") {
       const route = registeredVideoDeliveryRoute(backendDb, config, "instagram_reels", locale);
       if (!isZernioRouteReady(config, route) && route.provider === "zernio") throw new StudioError("err.instagram-not-configured");
-      if (route.provider === "native" && (!config.INSTAGRAM_ACCESS_TOKEN || !config.INSTAGRAM_USER_ID))
+      const instagramCredentials = instagramCredentialsForLocale(config, locale);
+      if (route.provider === "native" && (!instagramCredentials.accessToken || !instagramCredentials.userId))
         throw new StudioError("err.instagram-not-configured");
     }
   }

@@ -56,6 +56,47 @@ describe("creator analytics collection", () => {
     });
   });
 
+  it("syncs native Instagram profile snapshots with the matching locale credentials", async () => {
+    await withDb(async (backendDb) => {
+      const config = loadConfig({
+        INSTAGRAM_ACCESS_TOKEN: "shared-token",
+        INSTAGRAM_USER_ID: "shared-user",
+        INSTAGRAM_RU_ACCESS_TOKEN: "ru-token",
+        INSTAGRAM_RU_USER_ID: "ru-user",
+        INSTAGRAM_EN_ACCESS_TOKEN: "en-token",
+        INSTAGRAM_EN_USER_ID: "en-user",
+      });
+      config.studio.modules.text_posting = false;
+      config.studio.modules.video_posting = true;
+      config.studio.modules.instagram = true;
+      const requested: string[] = [];
+      const fetchMock = (async (input: URL | RequestInfo) => {
+        const url = String(input);
+        requested.push(url);
+        const account = url.includes("ru-user") ? "marux_play" : "marux_plays";
+        return new Response(JSON.stringify({ username: account, followers_count: account === "marux_play" ? 170 : 3, media_count: 1 }));
+      }) as typeof fetch;
+
+      await runAnalyticsCycle(config, backendDb, fetchMock);
+
+      expect(requested).toHaveLength(2);
+      const ruRequest = requested.find((url) => url.includes("ru-user"));
+      const enRequest = requested.find((url) => url.includes("en-user"));
+      expect(ruRequest).toContain("access_token=ru-token");
+      expect(enRequest).toContain("access_token=en-token");
+      expect(backendDb.db.select().from(creatorProfiles).where(eq(creatorProfiles.platform, "instagram_ru")).get()?.dataJson).toMatchObject(
+        {
+          followersCount: 170,
+        },
+      );
+      expect(backendDb.db.select().from(creatorProfiles).where(eq(creatorProfiles.platform, "instagram_en")).get()?.dataJson).toMatchObject(
+        {
+          followersCount: 3,
+        },
+      );
+    });
+  });
+
   it("uses fixed publication-time checkpoints for video metrics", async () => {
     await withDb(async (backendDb) => {
       const publishedAt = new Date(Date.now() - 2 * 60 * 60_000).toISOString();
@@ -64,15 +105,24 @@ describe("creator analytics collection", () => {
         target: "instagram_reels",
         publishedAt,
         externalId: "reel-1",
+        locale: "en",
       });
-      const config = loadConfig({ INSTAGRAM_ACCESS_TOKEN: "token", INSTAGRAM_USER_ID: "user" });
+      const config = loadConfig({
+        INSTAGRAM_ACCESS_TOKEN: "token",
+        INSTAGRAM_USER_ID: "user",
+        INSTAGRAM_EN_ACCESS_TOKEN: "en-token",
+        INSTAGRAM_EN_USER_ID: "en-user",
+      });
       config.studio.modules.video_posting = true;
       config.studio.modules.instagram = true;
       config.studio.modules.youtube = true;
       const fetchMock = (async (input: URL | RequestInfo) => {
         const url = String(input);
         if (url.includes("/comments")) return new Response(JSON.stringify({ data: [] }));
-        if (url.includes("reel-1")) return new Response(JSON.stringify({ plays: 20, like_count: 2, comments_count: 1 }));
+        if (url.includes("reel-1")) {
+          if (!url.includes("access_token=en-token")) throw new Error(`Expected the English Instagram token: ${url}`);
+          return new Response(JSON.stringify({ plays: 20, like_count: 2, comments_count: 1 }));
+        }
         return new Response(JSON.stringify({ username: "maru", followers_count: 10, media_count: 1 }));
       }) as typeof fetch;
       await runAnalyticsCycle(config, backendDb, fetchMock);
