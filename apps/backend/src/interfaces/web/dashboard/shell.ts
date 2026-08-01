@@ -373,6 +373,7 @@ ${DASHBOARD_THEME_TOGGLE_SCRIPT}
       group.closest('.metric-chart')?.setAttribute('data-scale', scale);
       group.querySelectorAll('.chart-scale__btn').forEach((item) => {
         item.classList.toggle('chart-scale__btn--active', item.dataset.scale === scale);
+        item.setAttribute('aria-pressed', String(item.dataset.scale === scale));
       });
     });
   });

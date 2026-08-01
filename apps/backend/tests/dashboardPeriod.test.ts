@@ -23,7 +23,7 @@ describe("command center periods", () => {
     const html = renderPipelineSection(0, 1, current, benchmark, "", "Europe/Moscow", 30);
 
     expect(renderPeriodControls(0, 1)).toContain(">1д<");
-    expect(html).toContain("vs медиана за 30д");
+    expect(html).not.toContain("vs медиана за 30д");
     expect(html).toContain("↑ 100%");
     expect(html).toContain("Медиана за 30 дней");
   });
@@ -67,7 +67,7 @@ describe("command center periods", () => {
     );
 
     expect(html).toContain("↑ 100%");
-    expect(html).toContain("vs прошлый период");
+    expect(html).not.toContain("vs прошлый период");
     expect(html).not.toContain("↑ 5900%");
   });
 

@@ -98,7 +98,7 @@ function kindLabel(kind: XActivityDashboardItem["kind"]): string {
 function kpi(label: string, value: number, previous: number): string {
   const percent = previous > 0 ? Math.round(((value - previous) / previous) * 100) : value > 0 ? 100 : 0;
   const direction = percent >= 0 ? "up" : "down";
-  return `<div class="kpi"><strong>${formatMetricValue(value)}</strong><span>${escapeHtml(label)}</span><small class="kpi-delta kpi-delta--${direction}">${percent >= 0 ? "↑" : "↓"} ${Math.abs(percent)}% <i>vs прошлый период</i></small></div>`;
+  return `<div class="kpi"><strong>${formatMetricValue(value)}</strong><span>${escapeHtml(label)}</span><small class="kpi-delta kpi-delta--${direction}">${percent >= 0 ? "↑" : "↓"} ${Math.abs(percent)}%</small></div>`;
 }
 
 function empty(): string {

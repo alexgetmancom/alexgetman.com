@@ -259,11 +259,15 @@ describe("unified overview rendering", () => {
       expect(html).toContain("Текст");
       expect(html).toContain("Видео");
       expect(html).not.toContain("kpi-table__row--head");
-      expect(html).toContain("vs медиана за 30д");
+      expect(html).not.toContain("vs медиана за 30д");
       expect(html).toContain("пунктир — медиана за 30 дней");
       expect(html).not.toContain("вчера к этому времени");
       // The scale toggle only earns its place when two series share the axis.
       expect(html).toContain('class="chart-scale"');
+      expect(html).toContain('data-scale="absolute" aria-pressed="false"');
+      expect(html).toContain('data-scale="relative" aria-pressed="true"');
+      expect(html).toContain('class="chart-view chart-view--absolute"');
+      expect(html).toContain('class="chart-view chart-view--relative"');
     } finally {
       backendDb.close();
     }
@@ -293,7 +297,7 @@ describe("unified overview rendering", () => {
     });
 
     expect(html).toContain("↑ 200%");
-    expect(html).toContain("vs прошлый период");
+    expect(html).not.toContain("vs прошлый период");
     expect(html).not.toContain("↑ 2900%");
   });
 
@@ -315,7 +319,7 @@ describe("unified overview rendering", () => {
     });
 
     expect(html).toContain("↑ 100%");
-    expect(html).toContain("vs медиана за 30д");
+    expect(html).not.toContain("vs медиана за 30д");
     expect(html).toContain("Текст: 200");
   });
 
@@ -381,11 +385,13 @@ describe("unified overview rendering", () => {
       targets: {
         telegram: { status: "published" },
         threads_ru: { status: "published" },
+        site_ru: { status: "published" },
         x: { status: "published" },
       },
       metrics: {
         telegram: { views: { value: 100 } },
         threads_ru: { views: { value: 50 } },
+        site_ru: { views: { value: 28 } },
         x: { views: { value: 20 } },
       },
     };
@@ -427,7 +433,7 @@ describe("unified overview rendering", () => {
     );
     const reachText = column(reachHtml, 0);
     const reachVideo = column(reachHtml, reachHtml.indexOf('<div class="platform-column">') + 1);
-    assertOrder(reachText, ["Telegram", "Threads RU", "X"]);
+    assertOrder(reachText, ["Telegram", "Threads RU", "Site RU", "X"]);
     assertOrder(reachVideo, ["Instagram RU", "Instagram EN", "YouTube RU"]);
 
     const followerHtml = panel(

@@ -32,7 +32,6 @@ export function renderPipelineSection(
     ? medianDailyTotals(previousPosts, targetIds, medianDays, timeZone)
     : metricTotals(previousPosts, targetIds);
   const previousPostCount = useMedianBaseline ? medianDailyPostCount(previousPosts, medianDays, timeZone) : previousPosts.length;
-  const comparisonLabel = useMedianBaseline ? "vs медиана за 30д" : "vs прошлый период";
   const chart =
     periodDays === 1
       ? renderDailyComparisonChart(
@@ -47,7 +46,7 @@ export function renderPipelineSection(
       : renderWeeklyChart(posts, startOfPeriod, endOfPeriod, targetIds);
   return `
     <section class="pipeline-overview">
-      <div class="kpi-row">${kpi("Просмотры", totals.views, previousTotals.views, comparisonLabel)}${kpi("Реакции", totals.likes, previousTotals.likes, comparisonLabel)}${kpi("Ответы", totals.replies, previousTotals.replies, comparisonLabel)}${kpi("Посты", posts.length, previousPostCount, comparisonLabel)}</div>
+      <div class="kpi-row">${kpi("Просмотры", totals.views, previousTotals.views)}${kpi("Реакции", totals.likes, previousTotals.likes)}${kpi("Ответы", totals.replies, previousTotals.replies)}${kpi("Посты", posts.length, previousPostCount)}</div>
       <div class="insights-row">${audience}<div class="chart-panel"><div class="section-kicker">${options.title ?? (periodDays === 1 ? "Сегодня и медиана за 30 дней" : "Динамика")}</div>${chart}</div></div>
       ${renderPublicationColumns(posts, targetIds)}
     </section>
@@ -165,11 +164,11 @@ function escapeHtml(value: string): string {
 
 const HTML_ENTITIES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 
-function kpi(label: string, value: number, previous: number, comparisonLabel: string): string {
+function kpi(label: string, value: number, previous: number): string {
   const percent = previous > 0 ? Math.round(((value - previous) / previous) * 100) : value > 0 ? 100 : 0;
   const direction = percent >= 0 ? "up" : "down";
   const sign = percent >= 0 ? "↑" : "↓";
-  return `<div class="kpi"><strong>${formatMetricValue(value)}</strong><span>${escapeHtml(label)}</span><small class="kpi-delta kpi-delta--${direction}">${sign} ${Math.abs(percent)}% <i>${escapeHtml(comparisonLabel)}</i></small></div>`;
+  return `<div class="kpi"><strong>${formatMetricValue(value)}</strong><span>${escapeHtml(label)}</span><small class="kpi-delta kpi-delta--${direction}">${sign} ${Math.abs(percent)}%</small></div>`;
 }
 
 /** Formats with getUTC* on purpose: `rollingPeriodDates` builds these Dates from

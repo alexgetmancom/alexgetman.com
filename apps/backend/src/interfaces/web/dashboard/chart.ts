@@ -367,7 +367,7 @@ export function renderUnifiedRangeChart(
 
 function scaleToggle(active: "absolute" | "relative"): string {
   const button = (scale: "absolute" | "relative", label: string, title: string) =>
-    `<button type="button" class="chart-scale__btn${scale === active ? " chart-scale__btn--active" : ""}" data-scale="${scale}" title="${escapeHtml(title)}">${label}</button>`;
+    `<button type="button" class="chart-scale__btn${scale === active ? " chart-scale__btn--active" : ""}" data-scale="${scale}" aria-pressed="${scale === active}" title="${escapeHtml(title)}">${label}</button>`;
   return `<div class="chart-scale" role="group" aria-label="Масштаб графика">${button("absolute", "abs", "Общая ось: видно реальное соотношение")}${button("relative", "%", "Каждая линия к своему пику: видно форму дня")}</div>`;
 }
 

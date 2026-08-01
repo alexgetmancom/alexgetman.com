@@ -168,7 +168,7 @@ describe("X Activity", () => {
     expect(html).toContain("<strong>650</strong>");
     expect(html).toContain("Последние публикации");
     expect(html).toContain("Сегодня и медиана за 30 дней");
-    expect(html).toContain("vs медиана за 30д");
+    expect(html).not.toContain("vs медиана за 30д");
     // The two halves are reported separately and never added together.
     expect(html).toContain("Текст");
     expect(html).toContain("Видео");

@@ -72,14 +72,13 @@ export function renderCombinedSection(input: CombinedSectionInput): string {
           reactions: input.previousVideo.totals.reactions,
           replies: input.previousVideo.totals.replies,
         };
-  const comparisonLabel = periodDays === 1 ? "vs медиана за 30д" : "vs прошлый период";
   const halves = [
     ...(showText ? [{ totals: text, previous: previousText }] : []),
     ...(showVideo ? [{ totals: video, previous: previousVideoTotals }] : []),
   ];
 
   return `<section class="pipeline-overview">
-    ${renderKpiTable(halves, comparisonLabel)}
+    ${renderKpiTable(halves)}
     <div class="insights-row">
       ${renderPlatformPanel(input, posts, showText, showVideo)}
       <div class="chart-panel">
@@ -140,7 +139,7 @@ type Half = { totals: Totals; previous: Totals };
  * The metric name occupies the first of three tracks, so the column rule falls
  * at the same third as the panel and publication splits below it.
  */
-function renderKpiTable(halves: Half[], comparisonLabel: string): string {
+function renderKpiTable(halves: Half[]): string {
   const metrics: Array<[keyof Totals, string]> = [
     ["views", "Просмотры"],
     ["reactions", "Реакции"],
@@ -154,7 +153,7 @@ function renderKpiTable(halves: Half[], comparisonLabel: string): string {
           const previous = half.previous[metric];
           const percent = previous > 0 ? Math.round(((value - previous) / previous) * 100) : value > 0 ? 100 : 0;
           const direction = percent >= 0 ? "up" : "down";
-          return `<span class="kpi-cell"><strong>${formatMetricValue(value)}</strong><small class="kpi-delta kpi-delta--${direction}">${percent >= 0 ? "↑" : "↓"} ${Math.abs(percent)}% <i>${escapeHtml(comparisonLabel)}</i></small></span>`;
+          return `<span class="kpi-cell"><strong>${formatMetricValue(value)}</strong><small class="kpi-delta kpi-delta--${direction}">${percent >= 0 ? "↑" : "↓"} ${Math.abs(percent)}%</small></span>`;
         })
         .join("");
       return `<div class="kpi-table__row"><span class="kpi-table__metric">${escapeHtml(label)}</span>${cells}</div>`;
@@ -242,15 +241,17 @@ function renderPlatformPanel(input: CombinedSectionInput, posts: PipelinePost[],
   const column = (title: string, color: string, rows: PlatformRow[], secondaryRows: PlatformRow[] = []) => {
     const visibleSecondary = input.platformMetric === "reach" ? secondaryRows.filter((row) => row.views >= 10) : [];
     const hiddenSecondary = input.platformMetric === "reach" ? secondaryRows.filter((row) => row.views < 10) : [];
-    const values = rows.map((row) => (input.platformMetric === "reach" ? row.views : row.followers));
+    const visibleRows = input.platformMetric === "reach" ? [...rows, ...visibleSecondary] : rows;
+    const allRows = input.platformMetric === "reach" ? [...rows, ...secondaryRows] : rows;
+    const values = allRows.map((row) => (input.platformMetric === "reach" ? row.views : row.followers));
     const total = values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
     const hasTotal = values.some((value) => value !== null);
     const label = input.platformMetric === "reach" ? "охват" : "подписчики";
     const more =
       hiddenSecondary.length > 0
-        ? `<details class="platform-more"><summary>+ Ещё <span>${hiddenSecondary.length}</span></summary><div class="platform-more__list">${renderRows(hiddenSecondary)}</div></details>`
+        ? `<details class="platform-more"><summary>+ Ещё <span>${hiddenSecondary.length}</span></summary><div class="platform-more__list">${renderRows(sortRows(hiddenSecondary))}</div></details>`
         : "";
-    return `<div class="platform-column"><div class="platform-column__head"><i style="background:${color}"></i>${escapeHtml(title)}</div>${renderRows(sortRows(rows))}${renderRows(sortRows(visibleSecondary))}${more}<div class="platform-column__foot">${label} <b>${hasTotal ? formatMetricValue(total) : "—"}</b></div></div>`;
+    return `<div class="platform-column"><div class="platform-column__head"><i style="background:${color}"></i>${escapeHtml(title)}</div>${renderRows(sortRows(visibleRows))}${more}<div class="platform-column__foot">${label} <b>${hasTotal ? formatMetricValue(total) : "—"}</b></div></div>`;
   };
   return `<aside class="audience-panel platform-panel">
     <div class="platform-panel__head"><div class="section-kicker">Платформы <em>${input.platformMetric === "reach" ? "охват" : "подписчики"}</em></div>${renderPlatformMetricFilter(input.platformMetric, input.periodDays, input.weekOffset, input.mode)}</div>
