@@ -9,7 +9,7 @@ import { PLATFORM_PROFILES } from "../../publishing/platform-profiles.js";
 export function studioCapabilityService(config: BackendConfig, backendDb?: BackendDb) {
   return {
     report() {
-      const readiness = new Map(capabilityReport(config).map((entry) => [entry.target, entry]));
+      const readiness = new Map(capabilityReport(config, backendDb).map((entry) => [entry.target, entry]));
       return {
         modules: { ...config.studio.modules },
         platforms: Object.values(PLATFORM_PROFILES)

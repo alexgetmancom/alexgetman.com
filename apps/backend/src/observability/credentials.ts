@@ -6,7 +6,7 @@ import { capabilityReport } from "./capabilities.js";
 /** Persists the current deployment capability probe independently from alerting. */
 export function updateCredentialChecks(config: BackendConfig, backendDb: BackendDb): number {
   const now = new Date().toISOString();
-  const report = capabilityReport(config);
+  const report = capabilityReport(config, backendDb);
   for (const { target, required, missing, status } of report) {
     const nextCheckAt = new Date(Date.now() + 3_600_000).toISOString();
     backendDb.db

@@ -14,6 +14,7 @@ import {
 } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { parseJsonValue } from "../json.js";
+import { capabilityReport } from "../observability/capabilities.js";
 import { pipelineStatusPayload } from "./read-model.js";
 
 export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb) {
@@ -36,7 +37,14 @@ export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb
   const events = backendDb.db.select().from(postEvents).orderBy(desc(postEvents.createdAt), desc(postEvents.id)).limit(50).all();
   const jobs = backendDb.db.select().from(publishJobs).orderBy(desc(publishJobs.updatedAt), desc(publishJobs.jobId)).limit(100).all();
   const draftRows = backendDb.db.select().from(drafts).orderBy(desc(drafts.updatedAt), desc(drafts.id)).limit(50).all();
-  const credentials = backendDb.db.select().from(credentialChecks).orderBy(desc(credentialChecks.lastCheckedAt)).limit(100).all();
+  const activeCapabilityTargets = new Set(capabilityReport(config, backendDb).map((capability) => capability.target));
+  const credentials = backendDb.db
+    .select()
+    .from(credentialChecks)
+    .orderBy(desc(credentialChecks.lastCheckedAt))
+    .all()
+    .filter((credential) => activeCapabilityTargets.has(credential.target))
+    .slice(0, 100);
   const lifecycle = backendDb.db.select().from(postLifecycle).orderBy(desc(postLifecycle.updatedAt)).limit(100).all();
   const actions = backendDb.db.select().from(opsActions).orderBy(desc(opsActions.createdAt), desc(opsActions.actionId)).limit(100).all();
   return {

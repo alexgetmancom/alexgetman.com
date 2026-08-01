@@ -246,6 +246,76 @@ describe("unified overview rendering", () => {
     expect(followerHtml).toContain('href="/command-center?period=1&week_offset=0&mode=text"');
   });
 
+  it("sorts text and video platform rows by the selected metric", () => {
+    const post: PipelinePost = {
+      targets: {
+        telegram: { status: "published" },
+        threads_ru: { status: "published" },
+        x: { status: "published" },
+      },
+      metrics: {
+        telegram: { views: { value: 100 } },
+        threads_ru: { views: { value: 50 } },
+        x: { views: { value: 20 } },
+      },
+    };
+    const video = {
+      ...emptyVideoOverview(),
+      platforms: [
+        { target: "instagram_reels", label: "Instagram EN", locales: ["EN"], views: 20, followers: 2 },
+        { target: "youtube_shorts", label: "YouTube RU", locales: ["RU"], views: 10, followers: 500 },
+        { target: "instagram_reels", label: "Instagram RU", locales: ["RU"], views: 30, followers: 250 },
+      ],
+    };
+    const followers = [
+      { key: "telegram", label: "Telegram", followers: 10 },
+      { key: "threads_ru", label: "Threads RU", followers: 200 },
+      { key: "x", label: "X", followers: 400 },
+    ];
+    const panel = (html: string): string =>
+      html.slice(html.indexOf('<aside class="audience-panel platform-panel">'), html.indexOf('<div class="chart-panel">'));
+    const column = (html: string, index: number): string => {
+      const start = html.indexOf('<div class="platform-column">', index);
+      const end = html.indexOf('<div class="platform-column">', start + 1);
+      return html.slice(start, end < 0 ? undefined : end);
+    };
+    const assertOrder = (html: string, labels: string[]): void => {
+      const positions = labels.map((label) => html.indexOf(`title="${label}"`));
+      expect(positions.every((position) => position >= 0)).toBe(true);
+      for (let index = 1; index < positions.length; index += 1) expect(positions[index - 1] ?? -1).toBeLessThan(positions[index] ?? -1);
+    };
+
+    const reachHtml = panel(
+      renderCombinedSection({
+        ...baseInput,
+        data: { posts: [post] },
+        followers,
+        video,
+        mode: "all",
+        platformMetric: "reach",
+      }),
+    );
+    const reachText = column(reachHtml, 0);
+    const reachVideo = column(reachHtml, reachHtml.indexOf('<div class="platform-column">') + 1);
+    assertOrder(reachText, ["Telegram", "Threads RU", "X"]);
+    assertOrder(reachVideo, ["Instagram RU", "Instagram EN", "YouTube RU"]);
+
+    const followerHtml = panel(
+      renderCombinedSection({
+        ...baseInput,
+        data: { posts: [post] },
+        followers,
+        video,
+        mode: "all",
+        platformMetric: "followers",
+      }),
+    );
+    const followerText = column(followerHtml, 0);
+    const followerVideo = column(followerHtml, followerHtml.indexOf('<div class="platform-column">') + 1);
+    assertOrder(followerText, ["X", "Threads RU", "Telegram"]);
+    assertOrder(followerVideo, ["YouTube RU", "Instagram RU", "Instagram EN"]);
+  });
+
   it("keeps low-volume site and story targets behind the extra platforms control", () => {
     const post: PipelinePost = {
       post_key: "post:1",

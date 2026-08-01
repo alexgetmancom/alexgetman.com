@@ -222,6 +222,14 @@ function renderPlatformPanel(input: CombinedSectionInput, posts: PipelinePost[],
     followers: number | null;
     href: string | null;
   };
+  const sortRows = (rows: PlatformRow[]): PlatformRow[] =>
+    [...rows].sort((left, right) => {
+      const leftValue = input.platformMetric === "reach" ? left.views : left.followers;
+      const rightValue = input.platformMetric === "reach" ? right.views : right.followers;
+      const normalizedLeft = leftValue ?? -1;
+      const normalizedRight = rightValue ?? -1;
+      return normalizedRight - normalizedLeft || left.label.localeCompare(right.label);
+    });
   const renderRows = (rows: PlatformRow[]) =>
     rows
       .map((row) => {
@@ -246,7 +254,7 @@ function renderPlatformPanel(input: CombinedSectionInput, posts: PipelinePost[],
       hiddenSecondary.length > 0
         ? `<details class="platform-more"><summary>+ Ещё <span>${hiddenSecondary.length}</span></summary><div class="platform-more__list">${renderRows(hiddenSecondary)}</div></details>`
         : "";
-    return `<div class="platform-column"><div class="platform-column__head"><i style="background:${color}"></i>${escapeHtml(title)}</div>${renderRows(rows)}${renderRows(visibleSecondary)}${more}<div class="platform-column__foot">${label} <b>${hasTotal ? formatMetricValue(total) : "—"}</b></div></div>`;
+    return `<div class="platform-column"><div class="platform-column__head"><i style="background:${color}"></i>${escapeHtml(title)}</div>${renderRows(sortRows(rows))}${renderRows(sortRows(visibleSecondary))}${more}<div class="platform-column__foot">${label} <b>${hasTotal ? formatMetricValue(total) : "—"}</b></div></div>`;
   };
   return `<aside class="audience-panel platform-panel">
     <div class="platform-panel__head"><div class="section-kicker">Платформы <em>${input.platformMetric === "reach" ? "охват" : "подписчики"}</em></div>${renderPlatformMetricFilter(input.platformMetric, input.periodDays, input.weekOffset, input.mode)}</div>

@@ -1,4 +1,5 @@
 import { metricNumber } from "../../../analytics/snapshots/creator-store.js";
+import { hasChannelRegistry, listChannels } from "../../../channels/registry.js";
 import type { BackendDb } from "../../../db/client.js";
 import { creatorProfiles } from "../../../db/schema.js";
 import type { BackendConfig } from "../../../foundation/config.js";
@@ -22,6 +23,7 @@ const AUDIENCE_PLATFORMS: AudiencePlatform[] = [
 /** The follower counts alone, for callers that lay the platforms out
  * themselves — the unified overview pairs them with this period's reach. */
 export function audiencePlatformFollowers(backendDb: BackendDb): Array<{ key: string; label: string; followers: number | null }> {
+  const platforms = activeAudiencePlatforms(backendDb);
   const profiles = new Map(
     backendDb.db
       .select()
@@ -29,7 +31,7 @@ export function audiencePlatformFollowers(backendDb: BackendDb): Array<{ key: st
       .all()
       .map((profile) => [profile.platform, profile.dataJson]),
   );
-  return AUDIENCE_PLATFORMS.map((platform) => {
+  return platforms.map((platform) => {
     const data = (profiles.get(platform.key) ?? {}) as Record<string, unknown>;
     const followers = metricNumber(data.subscriberCount ?? data.followersCount);
     return { key: platform.key, label: platform.label, followers: followers > 0 ? followers : null };
@@ -52,7 +54,7 @@ export function renderAudienceSection(
       .all()
       .map((profile) => [profile.platform, profile.dataJson]),
   );
-  const rows = AUDIENCE_PLATFORMS.map((platform) => {
+  const rows = activeAudiencePlatforms(backendDb).map((platform) => {
     const data = (profiles.get(platform.key) ?? {}) as Record<string, unknown>;
     const followers = metricNumber(data.subscriberCount ?? data.followersCount);
     return {
@@ -72,6 +74,16 @@ export function renderAudienceSection(
     .join(
       "",
     )}<a class="audience-line audience-line--total audience-line--interactive${activePlatform ? "" : " audience-line--active"}" href="/command-center?period=${periodDays}&week_offset=${weekOffset}">${allContent}</a></div></aside>`;
+}
+
+function activeAudiencePlatforms(backendDb: BackendDb): AudiencePlatform[] {
+  if (!hasChannelRegistry(backendDb)) return AUDIENCE_PLATFORMS;
+  const registeredTargets = new Set(
+    listChannels(backendDb)
+      .map((channel) => channel.targetId)
+      .filter(Boolean),
+  );
+  return AUDIENCE_PLATFORMS.filter((platform) => platform.metricTargets.some((target) => registeredTargets.has(target)));
 }
 
 const REPAIR_ACTIONS: [value: string, label: string][] = [

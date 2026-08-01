@@ -154,7 +154,7 @@ async function main(): Promise<void> {
             publicBaseUrl: config.PUBLIC_BASE_URL,
             checks,
             dataDirectories,
-            capabilities: capabilityReport(config),
+            capabilities: capabilityReport(config, backendDb),
           },
           null,
           2,

@@ -11,7 +11,7 @@ import { healthReport } from "./health.js";
 export function observabilityService(backendDb: BackendDb, config: BackendConfig) {
   return {
     health: () => healthReport(config, backendDb),
-    capabilities: () => capabilityReport(config),
+    capabilities: () => capabilityReport(config, backendDb),
     run: () => runObservabilityCycle(config, backendDb),
   };
 }

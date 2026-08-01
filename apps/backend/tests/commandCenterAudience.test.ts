@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { registerChannel } from "../src/channels/registry.js";
 import { openBackendDb } from "../src/db/client.js";
 import { creatorProfileSnapshots, creatorProfiles, metricSamples } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
@@ -69,6 +70,27 @@ describe("Command Center audience projection", () => {
       expect(active).toContain("audience-line--active");
       expect(active).toContain("view=threads_en");
       expect(active).toContain("period=30&week_offset=2");
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("shows only registered text channels once the registry is populated", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      registerChannel(backendDb, {
+        platform: "telegram",
+        locale: "ru",
+        provider: "native",
+        targetId: "telegram",
+        source: "test",
+      });
+
+      const html = renderAudienceSection(backendDb, loadConfig({}));
+      expect(html).toContain("Telegram");
+      expect(html).not.toContain("Threads RU");
+      expect(html).not.toContain("Threads EN");
+      expect(html).not.toContain(">X<");
     } finally {
       backendDb.close();
     }

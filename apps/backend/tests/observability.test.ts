@@ -1,11 +1,14 @@
 import { describe, expect, it, mock } from "bun:test";
 import { eq } from "drizzle-orm";
+import { registerChannel } from "../src/channels/registry.js";
 import { openBackendDb } from "../src/db/client.js";
 import { alertDedup, credentialChecks, postEvents, publishJobs, siteJobs, workerState } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
+import { renderDashboard } from "../src/interfaces/web/dashboard.js";
 import { runObservabilityCycle } from "../src/observability/cycle.js";
 import { healthReport } from "../src/observability/health.js";
 import { recordMemoryPressure } from "../src/observability/runtime-health.js";
+import { commandCenterPayload } from "../src/operations/command-center.js";
 
 function testHarness() {
   const backendDb = openBackendDb(":memory:");
@@ -279,6 +282,36 @@ function insertAlertEvent(backendDb: ReturnType<typeof openBackendDb>, severity:
 }
 
 describe("healthReport", () => {
+  it("scopes health and dashboard credentials to registered channels", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const config = loadConfig(READY_ENV);
+      registerChannel(backendDb, {
+        platform: "telegram",
+        locale: "ru",
+        provider: "native",
+        targetId: "telegram",
+        source: "test",
+      });
+      insertCredential(backendDb, "telegram", "ready");
+      insertCredential(backendDb, "threads_ru", "missing");
+      insertWorker(backendDb, "publisher", { ok: true });
+
+      const report = healthReport(config, backendDb);
+      expect(report.ok).toBe(true);
+      expect(report.credentials.map((credential) => credential.target)).toEqual(["telegram"]);
+      expect(report.capabilities.map((capability) => capability.target)).toEqual(["controller_bot", "telegram"]);
+
+      const dashboard = commandCenterPayload(config, backendDb);
+      expect(dashboard.credentials.map((credential) => credential.target)).toEqual(["telegram"]);
+      const html = renderDashboard(config, backendDb, 0);
+      expect(html).not.toContain('class="nav-more__toggle nav-more__toggle--attention"');
+      expect(html).not.toContain('<i class="nav-dot"></i>');
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("reports ok with an ISO timestamp when credentials, workers and capabilities are all ready", () => {
     const backendDb = openBackendDb(":memory:");
     try {

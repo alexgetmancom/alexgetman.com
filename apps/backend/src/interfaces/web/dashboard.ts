@@ -230,7 +230,7 @@ export function renderDashboard(
  * that stopped reporting. */
 function opsNeedsAttention(ops: OpsPayload): boolean {
   if (ops.jobs?.some((job) => job.status === "failed")) return true;
-  if (ops.credentials?.some((credential) => credential.status && credential.status !== "ok")) return true;
+  if (ops.credentials?.some((credential) => credential.status && !["ok", "ready"].includes(credential.status))) return true;
   return Boolean(ops.pipeline?.metrics?.recent?.some((issue) => issue.error || issue.status === "failed"));
 }
 
