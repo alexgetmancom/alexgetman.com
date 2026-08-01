@@ -160,6 +160,7 @@ describe("X Activity", () => {
       weekOffset: 0,
       timeZone: "Europe/Moscow",
       mode: "all",
+      platformMetric: "reach",
     });
 
     // Standalone X activity is folded into the text half: 150 from the post's
@@ -167,7 +168,7 @@ describe("X Activity", () => {
     expect(html).toContain("<strong>650</strong>");
     expect(html).toContain("Последние публикации");
     expect(html).toContain("Сегодня и вчера");
-    expect(html).toContain("vs медиана за 30д");
+    expect(html).not.toContain("vs медиана за 30д");
     // The two halves are reported separately and never added together.
     expect(html).toContain("Текст");
     expect(html).toContain("Видео");

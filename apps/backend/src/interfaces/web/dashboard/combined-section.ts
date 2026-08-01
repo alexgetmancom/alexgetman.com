@@ -1,7 +1,7 @@
 import type { XActivityDashboardItem } from "../../../analytics/x-activity-dashboard.js";
 import { targetLocale } from "../../../botTargets.js";
 import { zonedDateParts } from "../../../foundation/time.js";
-import { ORDERED_TARGETS, PLATFORM_ICONS, VIDEO_PLATFORM_ICON_KEYS } from "./assets.js";
+import { ORDERED_TARGETS, PLATFORM_ICONS, platformKey, VIDEO_PLATFORM_ICON_KEYS } from "./assets.js";
 import { postViewEvents, renderUnifiedDailyChart, renderUnifiedRangeChart } from "./chart.js";
 import { formatMetricValue, getMskDateString } from "./format.js";
 import { escapeHtml } from "./html.js";
@@ -22,6 +22,7 @@ import type { MetricEvent, VideoOverview } from "./video-overview.js";
  */
 
 export type OverviewMode = "all" | "text" | "video";
+export type PlatformMetric = "reach" | "followers";
 
 type Totals = { views: number; reactions: number; replies: number };
 
@@ -43,6 +44,7 @@ export type CombinedSectionInput = {
   weekOffset: number;
   timeZone: string;
   mode: OverviewMode;
+  platformMetric: PlatformMetric;
 };
 
 const TEXT_COLOR = "var(--series-text)";
@@ -75,17 +77,15 @@ export function renderCombinedSection(input: CombinedSectionInput): string {
           },
           periodDays,
         );
-  const comparisonLabel = periodDays === 1 ? "vs медиана за 30д" : "vs прошлый период";
-
   const halves = [
-    ...(showText ? [{ name: "Текст", color: TEXT_COLOR, totals: text, previous: previousText }] : []),
-    ...(showVideo ? [{ name: "Видео", color: VIDEO_COLOR, totals: video, previous: previousVideoTotals }] : []),
+    ...(showText ? [{ totals: text, previous: previousText }] : []),
+    ...(showVideo ? [{ totals: video, previous: previousVideoTotals }] : []),
   ];
 
   return `<section class="pipeline-overview">
-    ${renderKpiTable(halves, comparisonLabel)}
+    ${renderKpiTable(halves)}
     <div class="insights-row">
-      ${renderPlatformPanel(input, posts, extraX, showText, showVideo)}
+      ${renderPlatformPanel(input, posts, showText, showVideo)}
       <div class="chart-panel">
         <div class="section-kicker">${periodDays === 1 ? "Сегодня и вчера" : "Динамика просмотров"}</div>
         ${renderChart(input, posts, extraX, showText, showVideo)}
@@ -109,13 +109,18 @@ export function renderCombinedSection(input: CombinedSectionInput): string {
  * three words, and it belongs with the other filters rather than above the
  * numbers it filters.
  */
-export function renderModeFilter(mode: OverviewMode, periodDays: number, weekOffset: number): string {
+export function renderModeFilter(
+  mode: OverviewMode,
+  periodDays: number,
+  weekOffset: number,
+  platformMetric: PlatformMetric = "reach",
+): string {
   const modes: Array<[OverviewMode, string]> = [
     ["all", "Все"],
     ["text", "Текст"],
     ["video", "Видео"],
   ];
-  const base = `/command-center?period=${periodDays}&week_offset=${weekOffset}`;
+  const base = `/command-center?period=${periodDays}&week_offset=${weekOffset}${platformMetric === "followers" ? "&metric=followers" : ""}`;
   return `<div class="mode-filter" role="group" aria-label="Тип контента">${modes
     .map(
       ([value, label]) =>
@@ -124,31 +129,27 @@ export function renderModeFilter(mode: OverviewMode, periodDays: number, weekOff
     .join("")}</div>`;
 }
 
-type Half = { name: string; color: string; totals: Totals; previous: Totals };
+type Half = { totals: Totals; previous: Totals };
 
 /**
  * The three headline metrics as a small table: one row per metric, one column
  * per half, growth beside each figure.
  *
- * The previous shape was three cards, each repeating "ТЕКСТ / ВИДЕО" under its
- * own pair of numbers — the same two words printed six times on one band. In a
- * table the heading is written once, the columns line up so text and video can
- * actually be read against each other down the page, and the delta gets its own
- * slot instead of hanging off the figure. The numbers stay display-sized: this
- * is still the headline, not a report.
+ * The two feeds are already selected in the global mode control, so this band
+ * only needs the metric labels and the figures. The columns line up so text
+ * and video can be read against each other down the page, and the delta gets
+ * its own slot instead of hanging off the figure. The numbers stay display-
+ * sized: this is still the headline, not a report.
  *
  * The metric name occupies the first of three tracks, so the column rule falls
  * at the same third as the panel and publication splits below it.
  */
-function renderKpiTable(halves: Half[], comparisonLabel: string): string {
+function renderKpiTable(halves: Half[]): string {
   const metrics: Array<[keyof Totals, string]> = [
     ["views", "Просмотры"],
     ["reactions", "Реакции"],
     ["replies", "Ответы"],
   ];
-  const head = halves
-    .map((half) => `<span class="kpi-table__head"><i style="background:${half.color}"></i>${escapeHtml(half.name)}</span>`)
-    .join("");
   const rows = metrics
     .map(([metric, label]) => {
       const cells = halves
@@ -164,7 +165,6 @@ function renderKpiTable(halves: Half[], comparisonLabel: string): string {
     })
     .join("");
   return `<div class="kpi-table${halves.length === 1 ? " kpi-table--single" : ""}">
-    <div class="kpi-table__row kpi-table__row--head"><span class="kpi-table__metric kpi-table__legend">${escapeHtml(comparisonLabel)}</span>${head}</div>
     ${rows}
   </div>`;
 }
@@ -184,13 +184,7 @@ function renderKpiTable(halves: Half[], comparisonLabel: string): string {
  * second unlabelled number next to reach and read as noise; as a column total
  * they still answer "how big is the room" in a single glance.
  */
-function renderPlatformPanel(
-  input: CombinedSectionInput,
-  posts: PipelinePost[],
-  extraX: XActivityDashboardItem[],
-  showText: boolean,
-  showVideo: boolean,
-): string {
+function renderPlatformPanel(input: CombinedSectionInput, posts: PipelinePost[], showText: boolean, showVideo: boolean): string {
   const textRows = input.followers.map((platform) => ({
     icon: PLATFORM_ICONS[platform.key.startsWith("threads") ? "threads" : platform.key] ?? "",
     label: platform.label,
@@ -198,10 +192,20 @@ function renderPlatformPanel(
     // and Telegram is RU without either saying so in its name, and a bilingual
     // account that adds a platform gets its badge for free.
     locales: localeBadges(targetLocale(platform.key)),
-    views: platformViews(platform.key, posts, extraX),
+    views: platformViews(platform.key, posts, input.xItems),
     followers: platform.followers,
     href: `/command-center?period=${input.periodDays}&week_offset=${input.weekOffset}&view=${platform.key}`,
   }));
+  const secondaryTextRows = ORDERED_TARGETS.filter((target) => SECONDARY_TEXT_TARGETS.has(target.id))
+    .filter((target) => hasTextTargetData(posts, target.id))
+    .map((target) => ({
+      icon: PLATFORM_ICONS[platformKey(target.id)] ?? "",
+      label: target.label,
+      locales: localeBadges(targetLocale(target.id)),
+      views: platformViews(target.id, posts, input.xItems),
+      followers: null,
+      href: null,
+    }));
   const videoRows = input.video.platforms.map((platform) => ({
     icon: PLATFORM_ICONS[VIDEO_PLATFORM_ICON_KEYS[platform.target] ?? ""] ?? "",
     label: platform.label,
@@ -218,27 +222,60 @@ function renderPlatformPanel(
     followers: number | null;
     href: string | null;
   };
-  const column = (title: string, color: string, rows: PlatformRow[]) => {
-    const followers = rows.reduce((total, row) => total + (row.followers ?? 0), 0);
-    const lines = rows
+  const renderRows = (rows: PlatformRow[]) =>
+    rows
       .map((row) => {
         const name = escapeHtml(row.label);
         const badges = row.locales.map((locale) => `<b class="platform-locale">${escapeHtml(locale)}</b>`).join("");
-        const body = `<span class="platform-line__mark"><i>${row.icon}</i>${badges}</span><strong>${formatMetricValue(row.views)}</strong>`;
+        const value = input.platformMetric === "reach" ? row.views : row.followers;
+        const formattedValue = value === null ? "—" : formatMetricValue(value);
+        const body = `<span class="platform-line__mark"><i>${row.icon}</i>${badges}</span><strong>${formattedValue}</strong>`;
         return row.href
           ? `<a class="platform-line platform-line--interactive" href="${row.href}" title="${name}" aria-label="${name}">${body}</a>`
           : `<div class="platform-line" title="${name}" aria-label="${name}">${body}</div>`;
       })
       .join("");
-    return `<div class="platform-column"><div class="platform-column__head"><i style="background:${color}"></i>${escapeHtml(title)}</div>${lines}<div class="platform-column__foot">подписчики <b>${followers ? formatMetricValue(followers) : "—"}</b></div></div>`;
+  const column = (title: string, color: string, rows: PlatformRow[], secondaryRows: PlatformRow[] = []) => {
+    const visibleSecondary = input.platformMetric === "reach" ? secondaryRows.filter((row) => row.views >= 10) : [];
+    const hiddenSecondary = input.platformMetric === "reach" ? secondaryRows.filter((row) => row.views < 10) : [];
+    const values = rows.map((row) => (input.platformMetric === "reach" ? row.views : row.followers));
+    const total = values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
+    const hasTotal = values.some((value) => value !== null);
+    const label = input.platformMetric === "reach" ? "охват" : "подписчики";
+    const more =
+      hiddenSecondary.length > 0
+        ? `<details class="platform-more"><summary>+ Ещё <span>${hiddenSecondary.length}</span></summary><div class="platform-more__list">${renderRows(hiddenSecondary)}</div></details>`
+        : "";
+    return `<div class="platform-column"><div class="platform-column__head"><i style="background:${color}"></i>${escapeHtml(title)}</div>${renderRows(rows)}${renderRows(visibleSecondary)}${more}<div class="platform-column__foot">${label} <b>${hasTotal ? formatMetricValue(total) : "—"}</b></div></div>`;
   };
   return `<aside class="audience-panel platform-panel">
-    <div class="section-kicker">Платформы <em>охват</em></div>
+    <div class="platform-panel__head"><div class="section-kicker">Платформы <em>${input.platformMetric === "reach" ? "охват" : "подписчики"}</em></div>${renderPlatformMetricFilter(input.platformMetric, input.periodDays, input.weekOffset, input.mode)}</div>
     <div class="platform-columns">
-      ${showText ? column("Текст", TEXT_COLOR, textRows) : ""}
+      ${showText ? column("Текст", TEXT_COLOR, textRows, secondaryTextRows) : ""}
       ${showVideo ? column("Видео", VIDEO_COLOR, videoRows) : ""}
     </div>
   </aside>`;
+}
+
+const SECONDARY_TEXT_TARGETS = new Set(["site_ru", "site_en", "telegram_stories", "instagram_stories_ru", "instagram_stories"]);
+
+export function renderPlatformMetricFilter(
+  platformMetric: PlatformMetric,
+  periodDays: number,
+  weekOffset: number,
+  mode: OverviewMode = "all",
+): string {
+  const base = `/command-center?period=${periodDays}&week_offset=${weekOffset}${mode === "all" ? "" : `&mode=${mode}`}`;
+  const options: Array<[PlatformMetric, string]> = [
+    ["reach", "Охват"],
+    ["followers", "Подписчики"],
+  ];
+  return `<div class="platform-metric-filter" role="group" aria-label="Метрика платформ">${options
+    .map(
+      ([value, label]) =>
+        `<a class="platform-metric-btn${value === platformMetric ? " platform-metric-btn--active" : ""}" href="${base}${value === "followers" ? "&metric=followers" : ""}" aria-pressed="${value === platformMetric}">${label}</a>`,
+    )
+    .join("")}</div>`;
 }
 
 function renderChart(
@@ -308,9 +345,31 @@ function localeBadges(locale: string | null): string[] {
   return locale ? [locale.toUpperCase()] : [];
 }
 
-function platformViews(key: string, posts: PipelinePost[], extraX: XActivityDashboardItem[]): number {
-  const fromPosts = posts.reduce((total, post) => total + getTargetMetric(post, key, "views"), 0);
-  return key === "x" ? fromPosts + extraX.reduce((total, item) => total + metric(item, "views"), 0) : fromPosts;
+function platformViews(key: string, posts: PipelinePost[], xItems: XActivityDashboardItem[]): number {
+  const fromPosts = posts.reduce((total, post) => total + targetViews(post, key), 0);
+  if (key !== "x") return fromPosts;
+  const postsByKey = new Map(posts.map((post) => [post.post_key, post]));
+  const activityViews = xItems.reduce((total, item) => {
+    const linkedPost = item.linkedPostKey ? postsByKey.get(item.linkedPostKey) : undefined;
+    if (!linkedPost) return total + metric(item, "views");
+    return total + Math.max(0, metric(item, "views") - targetViews(linkedPost, "x"));
+  }, 0);
+  return fromPosts + activityViews;
+}
+
+function targetViews(post: PipelinePost, target: string): number {
+  return (
+    getTargetMetric(post, target, "views") + (target === "site_ru" || target === "site_en" ? getTargetMetric(post, target, "bot_views") : 0)
+  );
+}
+
+function hasTextTargetData(posts: PipelinePost[], target: string): boolean {
+  return posts.some((post) => {
+    if (post.targets?.[target]?.status === "published") return true;
+    if (target === "site_ru" && post.site_ru) return true;
+    if (target === "site_en" && post.site_en) return true;
+    return Boolean(post.metrics?.[target]);
+  });
 }
 
 function perPeriod(totals: Totals, days: number): Totals {

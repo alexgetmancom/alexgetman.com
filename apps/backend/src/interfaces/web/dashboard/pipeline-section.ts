@@ -55,18 +55,25 @@ export function renderPipelineSection(
  * the menu. The date beside it is a label, not a heading, so it is set at the
  * same weight as the arrows around it.
  */
-export function renderPeriodControls(weekOffset: number, periodDays: number, timeZone = "Europe/Moscow", view?: string): string {
+export function renderPeriodControls(
+  weekOffset: number,
+  periodDays: number,
+  timeZone = "Europe/Moscow",
+  view?: string,
+  extraQuery = "",
+): string {
   const [start, end] = rollingPeriodDates(weekOffset, periodDays, timeZone);
   const viewParam = view ? `&view=${encodeURIComponent(view)}` : "";
+  const filterParam = `${viewParam}${extraQuery}`;
   const periodLabel = (days: number) => (days === 365 ? "Год" : `${days}д`);
   const options = PERIODS.map(
     (days) =>
-      `<a class="${days === periodDays ? "active" : ""}" href="/command-center?period=${days}&week_offset=${weekOffset}${viewParam}">${periodLabel(days)}</a>`,
+      `<a class="${days === periodDays ? "active" : ""}" href="/command-center?period=${days}&week_offset=${weekOffset}${filterParam}">${periodLabel(days)}</a>`,
   ).join("");
-  const previous = `<a class="period-nav" href="/command-center?period=${periodDays}&week_offset=${weekOffset + 1}${viewParam}" aria-label="Предыдущий период">‹</a>`;
+  const previous = `<a class="period-nav" href="/command-center?period=${periodDays}&week_offset=${weekOffset + 1}${filterParam}" aria-label="Предыдущий период">‹</a>`;
   const next =
     weekOffset > 0
-      ? `<a class="period-nav" href="/command-center?period=${periodDays}&week_offset=${weekOffset - 1}${viewParam}" aria-label="Следующий период">›</a>`
+      ? `<a class="period-nav" href="/command-center?period=${periodDays}&week_offset=${weekOffset - 1}${filterParam}" aria-label="Следующий период">›</a>`
       : '<span class="period-nav muted">›</span>';
   return `<div class="dashboard-nav__controls"><details class="period-menu"><summary class="period-menu__toggle" aria-label="Период">${periodLabel(periodDays)}<i class="caret">▾</i></summary><div class="period-menu__list">${options}</div></details><div class="period-range">${previous}<span>${shortDateRange(start, end)}</span>${next}</div></div>`;
 }

@@ -4,7 +4,7 @@ import type { BackendConfig } from "../../foundation/config.js";
 import type { StudioLocale } from "../../foundation/locale.js";
 import { zonedSlot } from "../../foundation/time.js";
 import { operationsService } from "../../operations/service.js";
-import { type OverviewMode, renderCombinedSection, renderModeFilter } from "./dashboard/combined-section.js";
+import { type OverviewMode, type PlatformMetric, renderCombinedSection, renderModeFilter } from "./dashboard/combined-section.js";
 import {
   audiencePlatformFollowers,
   renderAudienceSection,
@@ -50,6 +50,7 @@ export function renderDashboard(
   requestedPeriod?: string,
   requestedView?: string,
   requestedMode?: string,
+  requestedMetric?: string,
 ): string {
   const service = operationsService(backendDb, config);
   const ops = service.dashboard();
@@ -83,9 +84,13 @@ export function renderDashboard(
           ? "all"
           : "video"
         : "text";
+  const platformMetric: PlatformMetric = requestedMetric === "followers" ? "followers" : "reach";
   const panelLink = (value: DashboardPanel) => `/command-center?tab=posts&panel=${value}${periodDays !== 1 ? `&period=${periodDays}` : ""}`;
+  const overviewFilterQuery = !activeView
+    ? `${mode === "all" ? "" : `&mode=${mode}`}${platformMetric === "followers" ? "&metric=followers" : ""}`
+    : "";
   const overviewControls =
-    panel === "overview" && showPosts ? renderPeriodControls(weekOffset, periodDays, config.TIMEZONE, activeView) : "";
+    panel === "overview" && showPosts ? renderPeriodControls(weekOffset, periodDays, config.TIMEZONE, activeView, overviewFilterQuery) : "";
   const content = renderPanel();
 
   /** rollingPeriodDates hands back UTC-midnight Dates whose calendar fields
@@ -161,6 +166,7 @@ export function renderDashboard(
           weekOffset,
           timeZone: config.TIMEZONE,
           mode,
+          platformMetric,
         });
       }
       const targetIds = VIEW_TARGETS[activeView];
@@ -219,7 +225,7 @@ export function renderDashboard(
       )
       .join("")}</div>
   </details>`;
-  const modeFilter = panel === "overview" && showPosts && !activeView ? renderModeFilter(mode, periodDays, weekOffset) : "";
+  const modeFilter = panel === "overview" && showPosts && !activeView ? renderModeFilter(mode, periodDays, weekOffset, platformMetric) : "";
   const body = `
     <nav class="dashboard-tabs"><span class="dashboard-tabs__start">${overviewTab}${menu}</span><span class="dashboard-tabs__center">${modeFilter}</span><span class="dashboard-tabs__end">${overviewControls}${DASHBOARD_THEME_TOGGLE_HTML}</span></nav>
     <section id="overview" class="overview">${content}</section>`;

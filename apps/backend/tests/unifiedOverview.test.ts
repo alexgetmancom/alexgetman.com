@@ -1,7 +1,9 @@
 import { describe, expect, it } from "bun:test";
+import type { XActivityDashboardItem } from "../src/analytics/x-activity-dashboard.js";
 import { openBackendDb } from "../src/db/client.js";
 import { creatorProfileSnapshots, videoDrafts, videoMetricSnapshots, videoTargets } from "../src/db/schema.js";
 import { renderCombinedSection, renderModeFilter } from "../src/interfaces/web/dashboard/combined-section.js";
+import type { PipelinePost } from "../src/interfaces/web/dashboard/types.js";
 import { emptyVideoOverview, videoOverview } from "../src/interfaces/web/dashboard/video-overview.js";
 
 const hoursAgo = (hours: number): string => new Date(Date.now() - hours * 3_600_000).toISOString();
@@ -165,6 +167,7 @@ describe("unified overview rendering", () => {
     periodDays: 1,
     weekOffset: 0,
     timeZone: "Europe/Moscow",
+    platformMetric: "reach" as const,
   };
 
   it("shows both halves separately and never their sum", () => {
@@ -177,6 +180,8 @@ describe("unified overview rendering", () => {
       expect(html).toContain("<strong>1k</strong>");
       expect(html).toContain("Текст");
       expect(html).toContain("Видео");
+      expect(html).not.toContain("kpi-table__row--head");
+      expect(html).not.toContain("vs медиана за 30д");
       // The scale toggle only earns its place when two series share the axis.
       expect(html).toContain('class="chart-scale"');
     } finally {
@@ -218,6 +223,104 @@ describe("unified overview rendering", () => {
     expect(html).toContain('href="/command-center?period=7&week_offset=2"');
     expect(html).toContain('href="/command-center?period=7&week_offset=2&mode=video"');
     expect(html).toContain("mode-btn--active");
+  });
+
+  it("switches platform rows between reach and followers while preserving the mode", () => {
+    const followers = [
+      { key: "telegram", label: "Telegram", followers: 135 },
+      { key: "x", label: "X", followers: 85 },
+    ];
+    const reachHtml = renderCombinedSection({ ...baseInput, followers, video: emptyVideoOverview(), mode: "text" });
+    const followerHtml = renderCombinedSection({
+      ...baseInput,
+      followers,
+      video: emptyVideoOverview(),
+      mode: "text",
+      platformMetric: "followers",
+    });
+
+    expect(reachHtml).toContain('href="/command-center?period=1&week_offset=0&mode=text&metric=followers"');
+    expect(reachHtml).toContain('class="platform-metric-btn platform-metric-btn--active"');
+    expect(followerHtml).toContain(">135</strong>");
+    expect(followerHtml).toContain("подписчики");
+    expect(followerHtml).toContain('href="/command-center?period=1&week_offset=0&mode=text"');
+  });
+
+  it("keeps low-volume site and story targets behind the extra platforms control", () => {
+    const post: PipelinePost = {
+      post_key: "post:1",
+      targets: {
+        site_ru: { status: "published" },
+        telegram_stories: { status: "published" },
+        instagram_stories: { status: "published" },
+      },
+      metrics: {
+        site_ru: { views: { value: 4 }, bot_views: { value: 0 } },
+        telegram_stories: { views: { value: 12 } },
+        instagram_stories: { views: { value: 3 } },
+      },
+    };
+    const html = renderCombinedSection({
+      ...baseInput,
+      data: { posts: [post] },
+      video: emptyVideoOverview(),
+      mode: "text",
+    });
+    const platformHtml = html.slice(
+      html.indexOf('<aside class="audience-panel platform-panel">'),
+      html.indexOf('<div class="chart-panel">'),
+    );
+    const moreIndex = platformHtml.indexOf('<details class="platform-more">');
+
+    expect(moreIndex).toBeGreaterThan(0);
+    expect(platformHtml.slice(0, moreIndex)).toContain("Telegram Stories");
+    expect(platformHtml.slice(0, moreIndex)).not.toContain("Site RU");
+    expect(platformHtml.slice(moreIndex)).toContain("Site RU");
+    expect(platformHtml.slice(moreIndex)).toContain("Instagram Stories EN");
+    expect(platformHtml).toContain("+ Ещё <span>2</span>");
+
+    const followersHtml = renderCombinedSection({
+      ...baseInput,
+      data: { posts: [post] },
+      video: emptyVideoOverview(),
+      mode: "text",
+      platformMetric: "followers",
+    });
+    const followersPlatformHtml = followersHtml.slice(
+      followersHtml.indexOf('<aside class="audience-panel platform-panel">'),
+      followersHtml.indexOf('<div class="chart-panel">'),
+    );
+    expect(followersPlatformHtml).not.toContain("Telegram Stories");
+    expect(followersPlatformHtml).not.toContain("platform-more");
+  });
+
+  it("uses linked X activity when the pipeline row has no X metric", () => {
+    const xItems: XActivityDashboardItem[] = [
+      {
+        xPostId: "x-1",
+        kind: "standalone",
+        publishedAt: new Date().toISOString(),
+        text: "An X post",
+        url: "https://x.com/example/status/x-1",
+        linkedPostKey: "post:1",
+        metrics: { views: 42 },
+      },
+    ];
+    const post: PipelinePost = {
+      post_key: "post:1",
+      targets: { x: { status: "published" } },
+      metrics: { x: { views: { value: 0 } } },
+    };
+    const html = renderCombinedSection({
+      ...baseInput,
+      data: { posts: [post] },
+      xItems,
+      followers: [{ key: "x", label: "X", followers: 85 }],
+      video: emptyVideoOverview(),
+      mode: "text",
+    });
+
+    expect(html).toContain("<strong>42</strong>");
   });
 
   it("drops the other half entirely when the mode selects one", () => {

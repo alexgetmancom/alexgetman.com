@@ -169,27 +169,28 @@ export function renderDashboardShell(body: string): string {
     .dashboard-tabs .mode-btn:hover { color:var(--text-main); }
     .mode-btn--active { background:var(--accent-glow); color:var(--accent-soft-text); }
 
-    /* Metrics down the rows, halves across the columns — the two words "Текст"
-       and "Видео" are written once instead of once per card. Never a sum: a
-       Shorts view and a Threads view are different units, so each column keeps
-       its own figure and its own comparison. The first track holds the metric
-       name, which puts the column rule on the same third as every row below. */
+    /* Metrics down the rows, halves across the columns. Never a sum: a Shorts
+       view and a Threads view are different units, so each column keeps its own
+       figure and its own comparison. The first track holds the metric name,
+       which puts the column rule on the same third as every row below. */
     .kpi-table { margin:0 0 18px; border-bottom:1px solid var(--border-soft); }
     .kpi-table__row { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); align-items:baseline; }
     .kpi-table--single .kpi-table__row { grid-template-columns:minmax(0,1fr) minmax(0,2fr); }
     .kpi-table__row + .kpi-table__row { border-top:1px solid var(--border-soft); }
     .kpi-table__row > * + * { padding-left:26px; border-left:1px solid var(--border-soft); }
-    .kpi-table__row--head { padding-bottom:9px; }
-    .kpi-table__head { display:inline-flex; align-items:center; gap:8px; color:var(--text-secondary); font-size:13px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
-    .kpi-table__head i { width:8px; height:8px; border-radius:50%; }
-    .kpi-table__legend { color:var(--text-muted); font-size:12px; font-weight:500; }
     .kpi-table__metric { padding:14px 0; color:var(--text-main); font-size:16px; font-weight:600; }
     .kpi-cell { display:flex; align-items:baseline; gap:14px; padding:9px 0 12px; }
     .kpi-cell strong { color:var(--text-header); font-size:38px; line-height:1.05; font-weight:500; letter-spacing:-.05em; }
     .kpi-table--single .kpi-cell strong { font-size:46px; }
     .kpi-cell .kpi-delta { margin:0; font-size:14px; }
 
+    .platform-panel__head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    .platform-panel__head .section-kicker { min-width:0; }
     .platform-panel .section-kicker em { color:var(--text-muted); font-size:12px; font-style:normal; font-weight:500; letter-spacing:0; text-transform:none; }
+    .platform-metric-filter { display:inline-flex; flex:0 0 auto; gap:2px; padding:2px; border:1px solid var(--border-soft); border-radius:7px; background:var(--scrim-soft); }
+    .platform-metric-btn { padding:4px 8px; border-radius:5px; color:var(--text-muted); font-size:12px; font-weight:650; text-decoration:none; }
+    .platform-metric-btn:hover { color:var(--text-main); }
+    .platform-metric-btn--active { background:var(--accent-glow); color:var(--accent-soft-text); }
     /* The two columns rarely hold the same number of platforms, so the totals
        are pinned to the bottom instead of floating at whatever row each column
        happens to end on. */
@@ -208,6 +209,10 @@ export function renderDashboardShell(body: string): string {
     .platform-line--interactive:hover { background:var(--surface-raised); }
     .platform-column__foot { padding-top:8px; color:var(--text-muted); font-size:12px; }
     .platform-column__foot b { color:var(--text-secondary); font-weight:650; }
+    .platform-more { margin:3px 0 0; border:0; border-radius:0; background:transparent; }
+    .platform-more > summary { padding:5px 2px; color:var(--accent); font-size:12px; font-weight:650; list-style:none; }
+    .platform-more > summary::-webkit-details-marker { display:none; }
+    .platform-more__list .platform-line { padding-top:6px; padding-bottom:6px; }
     .platform-line__values { display:flex; align-items:baseline; gap:8px; }
     .platform-line__values strong { color:var(--text-header); font-size:17px; font-weight:600; }
     .platform-line__values small { color:var(--text-muted); font-size:12px; }
@@ -316,9 +321,9 @@ export function renderDashboardShell(body: string): string {
       .kpi-table__metric { grid-column:1 / -1; padding:12px 0 0; font-size:14px; }
       .kpi-table__row > * + * { padding-left:14px; }
       .kpi-table__metric + * { padding-left:0; border-left:0; }
-      .kpi-table__row--head .kpi-table__legend { display:none; }
       .kpi-cell strong { font-size:32px; }
       .platform-columns { grid-template-columns:1fr; gap:14px; }
+      .platform-panel__head { align-items:flex-start; flex-wrap:wrap; }
       .metric-chart__head { flex-direction:column; }
       .dashboard-tabs { grid-template-columns:1fr; gap:10px; }
       .dashboard-tabs__center { justify-content:flex-start; padding-bottom:0; } .dashboard-tabs__end { width:100%; margin-left:0; align-items:flex-start; justify-content:space-between; gap:10px; padding-top:2px; } .dashboard-nav__controls { width:calc(100% - 32px); flex-wrap:wrap; gap:8px; padding-top:2px; } .period-range { width:100%; justify-content:center; } .kpi-row { grid-template-columns:repeat(2,1fr); }
