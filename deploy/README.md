@@ -79,6 +79,37 @@ sends the controller bot a target-specific one-click rollback button. The callba
 is accepted only from `CONTROLLER_ADMIN_IDS` and is rejected after a newer release
 exists for that target.
 
+## Enabling text posting for a second Studio
+
+Text posting is off for Maru because a Studio publishes to its own channel, and
+until that channel is named there is nothing safe to publish to. `CHANNEL_USERNAME`
+carries a default that is a real, live username — the first Studio's — so a
+second Studio that enables `text_posting` without setting it would publish into
+someone else's channel. The application now refuses to start in production in
+exactly that state rather than doing it silently.
+
+To enable it, both files change together:
+
+```dotenv
+# /home/deploy/maru/secrets.env
+CHANNEL_USERNAME=marux_play
+```
+
+```yaml
+# /home/deploy/maru/studio.yaml
+modules:
+  text_posting: true
+```
+
+Then recreate the container. Nothing else is required: the channel registry adds
+the `telegram` channel as soon as a bot token and a channel name exist, and the
+Command Center gains the `Все / Текст / Видео` filter because the Studio now has
+two halves to compare. Verify with `ops channels`, which must list
+`telegram · ru · native` with the new account.
+
+The site module stays off: a Studio can publish text to Telegram without
+publishing a website.
+
 ## Optional remote worker targets
 
 Remote workers run the same deploy-agent protocol with a different `service` and

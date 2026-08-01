@@ -18,11 +18,10 @@ import { renderDashboardShell } from "./dashboard/shell.js";
 import { DASHBOARD_THEME_TOGGLE_HTML } from "./dashboard/theme.js";
 import type { OpsPayload, PipelineData, PipelinePost } from "./dashboard/types.js";
 import { emptyVideoOverview, videoOverview } from "./dashboard/video-overview.js";
-import { renderVideoSection } from "./dashboard/video-section.js";
 import { renderXSection } from "./dashboard/x-section.js";
 import { renderStudioSection } from "./studio.js";
 
-type DashboardTab = "posts" | "video" | "studio";
+type DashboardTab = "posts" | "studio";
 type DashboardPanel = "overview" | "queue" | "health" | "repair";
 type AudienceView = "threads_ru" | "threads_en" | "telegram" | "x";
 
@@ -56,16 +55,11 @@ export function renderDashboard(
   const ops = service.dashboard();
   const studioActorId = config.MCP_STUDIO_ACTOR_ID;
   // The unified overview is the landing screen of every Studio, whichever
-  // halves it publishes. A video-only Studio used to be sent to the per-draft
-  // Video table instead, which is an operations view — it answers "what is the
-  // state of this clip", not "how is the account doing". "Видео" in the overflow
-  // menu still opens it.
-  let tab: DashboardTab = requestedTab === "video" ? "video" : requestedTab === "studio" && studioActorId ? "studio" : "posts";
-  if (tab === "video" && !config.studio.modules.video_posting) tab = "posts";
+  // halves it publishes.
+  const tab: DashboardTab = requestedTab === "studio" && studioActorId ? "studio" : "posts";
   const showPosts = tab === "posts";
-  const showVideo = tab === "video" && config.studio.modules.video_posting;
   const showStudio = tab === "studio" && Boolean(studioActorId);
-  const activeTab = showStudio ? "studio" : showVideo ? "video" : "posts";
+  const activeTab = showStudio ? "studio" : "posts";
   const locale: StudioLocale = requestedLocale === "en" ? "en" : "ru";
   const panel: DashboardPanel =
     requestedPanel === "queue" || requestedPanel === "health" || requestedPanel === "repair" ? requestedPanel : "overview";
@@ -191,7 +185,6 @@ export function renderDashboard(
         { targetIds, title: VIEW_TITLES[activeView] },
       );
     }
-    if (showVideo) return renderVideoSection(backendDb);
     if (showStudio && studioActorId) return renderStudioSection(config, backendDb, studioActorId, locale);
     return "";
   }
@@ -204,9 +197,6 @@ export function renderDashboard(
     { label: "Очередь", href: panelLink("queue"), active: panel === "queue" },
     { label: "Health", href: panelLink("health"), active: panel === "health", attention: opsNeedsAttention(ops) },
     { label: "Repair", href: panelLink("repair"), active: panel === "repair" },
-    ...(config.studio.modules.video_posting
-      ? [{ label: "Видео", href: "/command-center?tab=video", active: panel === "overview" && activeTab === "video" }]
-      : []),
     ...(studioActorId
       ? [{ label: "Студия", href: "/command-center?tab=studio", active: panel === "overview" && activeTab === "studio" }]
       : []),
