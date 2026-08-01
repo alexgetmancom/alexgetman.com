@@ -28,12 +28,6 @@ const studioSchema = z.object({
       retention_hours: z.number().int().min(24).max(720).default(24),
     })
     .prefault({}),
-  command_center: z
-    .object({
-      /** The initial content view; the other view remains available as a tab. */
-      default_mode: z.enum(["posts", "video"]).default("posts"),
-    })
-    .prefault({}),
 });
 
 export type StudioConfig = {
@@ -42,7 +36,6 @@ export type StudioConfig = {
   modules: { site: boolean; text_posting: boolean; video_posting: boolean; youtube: boolean; instagram: boolean; analytics: boolean };
   analytics: { defaultTab: "overview" | "posts" | "video" };
   video: { prepare_lead_minutes: number; reminder_minutes: number; retention_hours: number };
-  commandCenter: { defaultMode: "posts" | "video" };
 };
 
 export function loadStudioConfig(path = process.env.STUDIO_CONFIG ?? "studio.yaml"): StudioConfig {
@@ -56,6 +49,5 @@ export function loadStudioConfig(path = process.env.STUDIO_CONFIG ?? "studio.yam
     modules: parsed.modules,
     analytics: { defaultTab: parsed.analytics.default_tab },
     video: parsed.video,
-    commandCenter: { defaultMode: parsed.command_center.default_mode },
   };
 }

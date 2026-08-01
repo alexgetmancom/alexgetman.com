@@ -68,19 +68,18 @@ export function renderDashboard(
     showPosts && config.studio.modules.text_posting && AUDIENCE_VIEWS.includes(requestedView as AudienceView)
       ? (requestedView as AudienceView)
       : undefined;
-  // Publishing one half only leaves nothing to combine, so the overview opens
-  // on the half that exists rather than on an empty "Все". A Studio that
-  // publishes both picks its landing half in studio.yaml.
+  // "Все" is the landing view of every Studio that publishes both halves — the
+  // whole point of the unified overview is that the account is one thing.
+  // Publishing one half only leaves nothing to combine, so those open on the
+  // half that exists rather than on a view half of which is permanently empty.
   const mode: OverviewMode =
     requestedMode === "text" || requestedMode === "video"
       ? requestedMode
       : !config.studio.modules.video_posting
         ? "text"
-        : !config.studio.modules.text_posting
-          ? "video"
-          : config.studio.commandCenter.defaultMode === "video"
-            ? "video"
-            : "all";
+        : config.studio.modules.text_posting
+          ? "all"
+          : "video";
   const platformMetric: PlatformMetric = requestedMetric === "followers" ? "followers" : "reach";
   const panelLink = (value: DashboardPanel) => `/command-center?tab=posts&panel=${value}${periodDays !== 1 ? `&period=${periodDays}` : ""}`;
   const overviewFilterQuery = !activeView
