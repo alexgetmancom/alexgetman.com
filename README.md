@@ -21,7 +21,7 @@ It is designed for a small editorial workflow rather than as a multi-tenant CMS 
 - Zod for runtime configuration and untrusted payload validation
 - Docker Compose, nginx, GitHub Actions, and immutable image deployment
 
-The HTTP layer uses standard `Request` and `Response` objects. There is no Hono, Express, Redis, RabbitMQ, or separate database server.
+The HTTP layer speaks standard `Request` and `Response` objects; Hono is used only as the router that assembles the backend API (`apps/backend/src/api.ts`). There is no Express, Redis, RabbitMQ, or separate database server.
 
 ## Repository layout
 

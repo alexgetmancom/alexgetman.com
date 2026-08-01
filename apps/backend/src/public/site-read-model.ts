@@ -71,8 +71,54 @@ const feedItemSchema = z
 
 export type FeedItem = z.infer<typeof feedItemSchema>;
 
+/** The whole published site, indexed the way the routes actually ask for it. */
+export type PublicSiteSnapshot = {
+  items: FeedItem[];
+  byPostId: Map<number, FeedItem>;
+};
+
+/** Rebuilding the feed costs five queries plus a Zod parse per post, and a
+ * single page render asks for it more than once (a post page needs the item and
+ * the surrounding feed). Twenty-six routes share one build instead.
+ *
+ * The TTL is what makes this safe without a change feed. A publish from the
+ * ops CLI happens in a separate `docker exec` process, so no in-process hook
+ * can see it, and `publishedAt` gating means an untouched database still turns
+ * a scheduled post visible on its own. Both are bounded by the TTL. */
+const FEED_CACHE_TTL_MS = 3_000;
+
+type CachedFeed = { snapshot: PublicSiteSnapshot; builtAt: number };
+// Keyed by the database handle so a test's `:memory:` database and the closed
+// handle of a previous runtime never hand their feed to anyone else.
+const feedCache = new WeakMap<BackendDb, Map<string, CachedFeed>>();
+
 /** Published-site read model. It reads only stable publication data. */
 export function loadPublicSiteFeed(backendDb: BackendDb, sitePublicDir = process.env.SITE_PUBLIC_DIR ?? "/data/site"): FeedItem[] {
+  return loadPublicSiteSnapshot(backendDb, sitePublicDir).items;
+}
+
+export function loadPublicSiteSnapshot(
+  backendDb: BackendDb,
+  sitePublicDir = process.env.SITE_PUBLIC_DIR ?? "/data/site",
+): PublicSiteSnapshot {
+  const byDir = feedCache.get(backendDb) ?? new Map<string, CachedFeed>();
+  const cached = byDir.get(sitePublicDir);
+  if (cached && Date.now() - cached.builtAt < FEED_CACHE_TTL_MS) return cached.snapshot;
+  const items = buildPublicSiteFeed(backendDb, sitePublicDir);
+  const snapshot: PublicSiteSnapshot = { items, byPostId: new Map(items.map((item) => [item.post_id, item])) };
+  byDir.set(sitePublicDir, { snapshot, builtAt: Date.now() });
+  feedCache.set(backendDb, byDir);
+  return snapshot;
+}
+
+/** Drops the cached feed so the next read rebuilds it. Call this from anything
+ * in this process that just changed what the site publishes; the TTL is only
+ * the fallback for changes made elsewhere. */
+export function invalidatePublicSiteFeed(backendDb: BackendDb): void {
+  feedCache.delete(backendDb);
+}
+
+function buildPublicSiteFeed(backendDb: BackendDb, sitePublicDir: string): FeedItem[] {
   const ruLocale = alias(postLocales, "site_locale_ru");
   const enLocale = alias(postLocales, "site_locale_en");
   const rows = backendDb.db

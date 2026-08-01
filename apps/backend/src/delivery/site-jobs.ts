@@ -6,6 +6,7 @@ import { postEvents, postMetrics, postTargets, publicationSources, siteJobs } fr
 import type { BackendConfig } from "../foundation/config.js";
 import { recordWorkerState } from "../foundation/runtime/worker-state.js";
 import { atomicWriteJson } from "../fsUtils.js";
+import { invalidatePublicSiteFeed } from "../public/site-read-model.js";
 import { nextRetryAt } from "../publishing/errors.js";
 import { reconcilePublication, workerId } from "../publishing/queue.js";
 import { publishContentIndex } from "./site-content-index.js";
@@ -35,6 +36,9 @@ export async function runSiteJobCycle(config: BackendConfig, backendDb: BackendD
       new Set(jobs.map((job) => job.post_id).filter((postId): postId is number => postId != null)),
     );
     const completed = completeSiteJobs(backendDb, jobs);
+    // A materialization is the one moment this process knows the published site
+    // changed, so serve the new shape immediately instead of waiting out the TTL.
+    invalidatePublicSiteFeed(backendDb);
     try {
       const urls = publishContentIndex(config, backendDb);
       // IndexNow is an external notification, not a prerequisite for serving

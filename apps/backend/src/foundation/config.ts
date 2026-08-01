@@ -102,6 +102,18 @@ const envSchema = z
     RUNTIME_RESTART_ALERT_THRESHOLD: z.coerce.number().int().min(2).default(3),
     MEMORY_ALERT_PERCENT: z.coerce.number().int().min(1).max(100).default(85),
     IDLE_POLL_INTERVAL_SECONDS: z.coerce.number().int().positive().default(5),
+    /** Stale publish locks are recovered on the watchdog's own clock, not the
+     * queue's. A lock lives for PUBLISH_LOCK_TIMEOUT_SECONDS (900 by default)
+     * with a 180s heartbeat, so probing for one every idle tick spent 12 SQLite
+     * scans a minute to find something that cannot appear that fast. */
+    WATCHDOG_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
+    /** Site materialization is its own subsystem; it was on the metrics clock
+     * only because both happened to want a short interval. */
+    SITE_JOB_POLL_INTERVAL_SECONDS: z.coerce.number().int().positive().default(10),
+    /** Every profile is separately rate-limited by
+     * CREATOR_PROFILE_REFRESH_INTERVAL_SECONDS, so a faster loop only re-runs
+     * channel bootstrap and canSync checks to decide it has nothing to do. */
+    PROFILE_POLL_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
     CONTROLLER_ALBUM_SETTLE_SECONDS: z.coerce.number().positive().default(4),
     PUBLISH_CLAIM_LIMIT: z.coerce.number().int().positive().default(20),
     // A provider call must not hold the complete queue loop forever. Timeouts

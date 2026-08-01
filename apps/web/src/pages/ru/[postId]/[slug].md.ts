@@ -1,13 +1,12 @@
 import type { APIContext } from "astro";
-import { loadFeedItems } from "../../../server/public-site";
+import { findFeedItem } from "../../../server/public-site";
 import { siteUrlFromContext } from "../../../utils/site";
 
 export const prerender = false;
 
 export async function GET(context: APIContext) {
-  const item = loadFeedItems().find(
-    (entry) => String(entry.post_id) === String(context.params.postId) && entry.slug_ru === context.params.slug,
-  );
+  const found = findFeedItem(context.params.postId);
+  const item = found?.slug_ru === context.params.slug ? found : undefined;
   if (!item) return new Response("Markdown file not found\n", { status: 404 });
   const siteUrl = siteUrlFromContext(context);
 

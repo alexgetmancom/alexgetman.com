@@ -59,7 +59,7 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
       const claimed = await runPublishCycle(config, backendDb);
       log("debug", "queue loop tick", { claimed });
     }),
-    startLoop("publish-watchdog", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
+    startLoop("publish-watchdog", config.WATCHDOG_INTERVAL_SECONDS * 1000, async () => {
       const recovered = runPublishWatchdog(config, backendDb);
       if (recovered) log("warn", "recovered stale publishing locks", { recovered });
     }),
@@ -87,7 +87,7 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
             const checked = await runMetricsCycle(config, backendDb);
             log("debug", "metrics loop tick", { checked });
           }),
-          startLoop("creator-analytics", config.METRICS_REFRESH_INTERVAL_SECONDS * 1000, async () => {
+          startLoop("creator-analytics", config.PROFILE_POLL_INTERVAL_SECONDS * 1000, async () => {
             const creators = await runAnalyticsCycle(config, backendDb);
             log("debug", "creator analytics loop tick", { creators });
           }),
@@ -105,7 +105,7 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
       : []),
     ...(config.studio.modules.site
       ? [
-          startLoop("site", config.METRICS_REFRESH_INTERVAL_SECONDS * 1000, async () => {
+          startLoop("site", config.SITE_JOB_POLL_INTERVAL_SECONDS * 1000, async () => {
             const claimed = await runSiteJobCycle(config, backendDb);
             log("debug", "site materialization loop tick", { claimed });
           }),

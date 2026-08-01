@@ -1,7 +1,7 @@
 ---
 import HomeNewsPage from "../../../components/HomeNewsPage.astro";
 import Layout from "../../../layouts/Layout.astro";
-import { loadFeedItems } from "../../../server/public-site";
+import { loadFeedSnapshot } from "../../../server/public-site";
 import { sortedHomePosts } from "../../../utils/home-posts";
 import { postOgImagePath } from "../../../utils/media";
 import { buildPostSchema } from "../../../utils/post-schema";
@@ -10,11 +10,12 @@ import { excerptAfterTitle, getFirstSentence } from "../../../utils/text";
 export const prerender = false;
 
 const { postId, slug } = Astro.params;
-const feedItems = loadFeedItems();
-const item = feedItems.find((entry) => String(entry.post_id) === String(postId) && entry.slug_ru === slug);
+const { items: feedItems, byPostId } = loadFeedSnapshot();
+const found = byPostId.get(Number(postId));
+const item = found?.slug_ru === slug ? found : undefined;
 if (!item) {
-  const canonicalItem = feedItems.find((entry) => String(entry.post_id) === String(postId) && entry.has_ru && entry.slug_ru);
-  if (canonicalItem?.slug_ru) return Astro.redirect(`/ru/${canonicalItem.post_id}/${canonicalItem.slug_ru}/`, 301);
+  // Same id, different slug: the post was renamed, so send the reader on.
+  if (found?.has_ru && found.slug_ru) return Astro.redirect(`/ru/${found.post_id}/${found.slug_ru}/`, 301);
   return new Response("Not found\n", { status: 404 });
 }
 const russianPosts = sortedHomePosts(feedItems, "ru");
