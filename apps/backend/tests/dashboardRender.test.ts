@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { formatMetricValue, getMskDateString, shortPipelineText } from "../src/interfaces/web/dashboard/format.js";
 import { formatMedia, getTargetMetric, postMetricTotals, targetCell } from "../src/interfaces/web/dashboard/metrics.js";
-import { renderPublicationColumns } from "../src/interfaces/web/dashboard/table.js";
+import { renderPublicationColumns, renderPublicationDetails } from "../src/interfaces/web/dashboard/table.js";
 import { getTargetUrl } from "../src/interfaces/web/dashboard/target-url.js";
 import type { PipelinePost } from "../src/interfaces/web/dashboard/types.js";
 
@@ -178,6 +178,36 @@ describe("renderPublicationColumns", () => {
     expect(html.match(/<details class="post-detail">/g)?.length).toBe(5);
     expect(html.match(/post-detail--more/g)?.length).toBe(4);
     expect(html).toContain("Показать ещё <span>4</span>");
+  });
+
+  it("renders only visible rows when a lazy detail URL is supplied", () => {
+    const html = renderPublicationColumns(
+      Array.from({ length: 9 }, (_, index) => viewed(index, `post ${index}`)),
+      undefined,
+      [],
+      {
+        moreUrl: "/api/command-center/publication-details?period=1",
+      },
+    );
+    expect(html.match(/<details class="post-detail">/g)?.length).toBe(5);
+    expect(html).not.toContain("post-detail--more");
+    expect(html).toContain('data-more-url="/api/command-center/publication-details?period=1"');
+    expect(html).toContain('data-more-offset="5"');
+  });
+
+  it("renders bounded detail fragments for the lazy loader", () => {
+    const result = renderPublicationDetails(
+      Array.from({ length: 9 }, (_, index) => viewed(index, `post ${index}`)),
+      undefined,
+      [],
+      5,
+      2,
+    );
+    expect(result.total).toBe(9);
+    expect(result.loaded).toBe(2);
+    expect(result.remaining).toBe(2);
+    expect(result.html.match(/<details class="post-detail">/g)?.length).toBe(2);
+    expect(result.html).toContain("post 5");
   });
 
   it("shows the empty state in both columns when there are no posts", () => {

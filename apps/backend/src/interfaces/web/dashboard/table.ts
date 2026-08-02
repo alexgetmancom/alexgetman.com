@@ -8,6 +8,19 @@ import type { VideoContentItem } from "./video-overview.js";
 
 const NO_POSTS = "За выбранный период публикаций нет";
 const VISIBLE_RECENT = 5;
+const DETAIL_BATCH_SIZE = 10;
+
+export type PublicationColumnsOptions = {
+  /** Read-only endpoint used to fetch the non-visible detail rows on demand. */
+  moreUrl?: string | undefined;
+};
+
+export type PublicationDetailsResult = {
+  html: string;
+  total: number;
+  loaded: number;
+  remaining: number;
+};
 
 /**
  * The two content columns, over both halves of the feed.
@@ -22,8 +35,72 @@ export function renderPublicationColumns(
   posts: PipelinePost[],
   targetIds: string[] = ORDERED_TARGETS.map((target) => target.id),
   videos: VideoContentItem[] = [],
+  options: PublicationColumnsOptions = {},
 ): string {
-  const entries = [
+  const entries = publicationEntries(posts, targetIds, videos);
+  const ranked = [...entries].sort((left, right) => right.views - left.views).slice(0, 3);
+  const recent = [...entries].sort((left, right) => right.date.localeCompare(left.date));
+  const lazy = Boolean(options.moreUrl);
+  const recentHtml = lazy
+    ? recent
+        .slice(0, VISIBLE_RECENT)
+        .map((entry) => entry.recent(false))
+        .join("")
+    : recent.map((entry, index) => entry.recent(index >= VISIBLE_RECENT)).join("");
+  const moreButton =
+    recent.length > VISIBLE_RECENT
+      ? lazy
+        ? `<button class="show-more-posts" type="button" data-more-url="${escapeHtml(options.moreUrl ?? "")}" data-more-offset="${VISIBLE_RECENT}">Показать ещё <span>${recent.length - VISIBLE_RECENT}</span></button>`
+        : `<button class="show-more-posts" type="button">Показать ещё <span>${recent.length - VISIBLE_RECENT}</span></button>`
+      : "";
+  return [
+    '<div class="publication-columns">',
+    '<section class="best-posts">',
+    '<div class="section-kicker">Лучшие публикации</div>',
+    ranked.length ? ranked.map((entry, index) => entry.best(index + 1)).join("") : empty(NO_POSTS),
+    "</section>",
+    '<section class="recent-posts">',
+    '<header class="recent-posts__header">',
+    '<div class="section-kicker">Последние публикации</div>',
+    "<span>Площадки</span><span>Охват</span><span>Реакции</span><span>Ответы</span>",
+    "</header>",
+    recent.length ? recentHtml : empty(NO_POSTS),
+    moreButton,
+    "</section>",
+    "</div>",
+  ].join("");
+}
+
+/** Renders only a bounded fragment for the dashboard's read-only detail loader. */
+export function renderPublicationDetails(
+  posts: PipelinePost[],
+  targetIds: string[] = ORDERED_TARGETS.map((target) => target.id),
+  videos: VideoContentItem[] = [],
+  offset = 0,
+  limit = DETAIL_BATCH_SIZE,
+): PublicationDetailsResult {
+  const entries = publicationEntries(posts, targetIds, videos).sort((left, right) => right.date.localeCompare(left.date));
+  const safeOffset = Math.max(0, Math.floor(offset));
+  const safeLimit = Math.max(1, Math.min(DETAIL_BATCH_SIZE, Math.floor(limit)));
+  const selected = entries.slice(safeOffset, safeOffset + safeLimit);
+  return {
+    html: selected.map((entry) => entry.recent(false)).join(""),
+    total: entries.length,
+    loaded: selected.length,
+    remaining: Math.max(0, entries.length - safeOffset - selected.length),
+  };
+}
+
+type PublicationEntry = {
+  date: string;
+  views: number;
+  reactions: number;
+  best: (rank: number) => string;
+  recent: (hidden: boolean) => string;
+};
+
+function publicationEntries(posts: PipelinePost[], targetIds: string[], videos: VideoContentItem[]): PublicationEntry[] {
+  return [
     ...posts.map((post) => ({
       date: post.date ?? "",
       views: total(post, targetIds).views,
@@ -39,26 +116,6 @@ export function renderPublicationColumns(
       recent: (hidden: boolean) => renderRecentVideo(video, hidden),
     })),
   ];
-  const ranked = [...entries].sort((left, right) => right.views - left.views).slice(0, 3);
-  const recent = [...entries].sort((left, right) => right.date.localeCompare(left.date));
-  return [
-    '<div class="publication-columns">',
-    '<section class="best-posts">',
-    '<div class="section-kicker">Лучшие публикации</div>',
-    ranked.length ? ranked.map((entry, index) => entry.best(index + 1)).join("") : empty(NO_POSTS),
-    "</section>",
-    '<section class="recent-posts">',
-    '<header class="recent-posts__header">',
-    '<div class="section-kicker">Последние публикации</div>',
-    "<span>Площадки</span><span>Охват</span><span>Реакции</span><span>Ответы</span>",
-    "</header>",
-    recent.length ? recent.map((entry, index) => entry.recent(index >= VISIBLE_RECENT)).join("") : empty(NO_POSTS),
-    recent.length > VISIBLE_RECENT
-      ? `<button class="show-more-posts" type="button">Показать ещё <span>${recent.length - VISIBLE_RECENT}</span></button>`
-      : "",
-    "</section>",
-    "</div>",
-  ].join("");
 }
 
 function renderBestPost(post: PipelinePost, targetIds: string[], rank: number): string {

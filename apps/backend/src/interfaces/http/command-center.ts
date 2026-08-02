@@ -5,7 +5,12 @@ import { trackUsageAsync, trackUsageSync } from "../../observability/usage.js";
 import { commandActionSchema } from "../../operations/commands.js";
 import type { OperationsCommand } from "../../operations/contracts.js";
 import { studioServices } from "../../studio/services/index.js";
-import { invalidateDashboardRenderCache, renderCommandCenterLogin, renderDashboard } from "../web/dashboard.js";
+import {
+  invalidateDashboardRenderCache,
+  renderCommandCenterLogin,
+  renderDashboard,
+  renderDashboardPublicationDetails,
+} from "../web/dashboard.js";
 import type { RouteModule } from "./context.js";
 
 export const commandCenterRoutes: RouteModule = (app, { config, backendDb, operations }) => {
@@ -118,6 +123,32 @@ export const commandCenterRoutes: RouteModule = (app, { config, backendDb, opera
       ? json(trackUsageSync(backendDb, "command_center.dashboard.view", () => operations.fingerprint()))
       : json({ detail: "forbidden" }, 403),
   );
+
+  app.get("/api/command-center/publication-details", (c) => {
+    if (!commandAllowed(c.req.raw, config)) return json({ detail: "forbidden" }, 403);
+    const requestedPeriod = Number(c.req.query("period") ?? 1);
+    const periodDays = [1, 7, 30, 90, 365].includes(requestedPeriod) ? requestedPeriod : 1;
+    const weekOffset = Number(c.req.query("week_offset") ?? 0) || 0;
+    const offset = Math.max(0, Number(c.req.query("offset") ?? 0) || 0);
+    const limit = Math.max(1, Number(c.req.query("limit") ?? 10) || 10);
+    return json(
+      measureMemorySync(
+        "command_center.dashboard.publication_details",
+        { route: "/api/command-center/publication-details", period: periodDays, weekOffset, offset, limit },
+        () =>
+          renderDashboardPublicationDetails(
+            config,
+            backendDb,
+            weekOffset,
+            periodDays,
+            c.req.query("view") ?? undefined,
+            c.req.query("mode") ?? undefined,
+            offset,
+            limit,
+          ),
+      ),
+    );
+  });
 
   app.get("/api/ops-dashboard", (c) =>
     commandAllowed(c.req.raw, config)

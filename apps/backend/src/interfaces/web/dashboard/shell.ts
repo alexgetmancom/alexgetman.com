@@ -350,11 +350,41 @@ ${DASHBOARD_THEME_TOGGLE_SCRIPT}
     const metric = button?.dataset?.m;
     if (metric) setMetric(metric);
   });
-  document.querySelectorAll('.show-more-posts').forEach((button) => {
-    button.addEventListener('click', () => {
+  const loadMorePosts = async (button) => {
+    const moreUrl = button.dataset.moreUrl;
+    if (!moreUrl) {
       button.closest('.recent-posts')?.classList.add('recent-posts--expanded');
       button.remove();
-    });
+      return;
+    }
+    if (button.dataset.loading === 'true') return;
+    button.dataset.loading = 'true';
+    button.disabled = true;
+    try {
+      const offset = Number(button.dataset.moreOffset || '0');
+      const separator = moreUrl.includes('?') ? '&' : '?';
+      const response = await fetch(moreUrl + separator + 'offset=' + encodeURIComponent(String(offset)) + '&limit=10', { credentials: 'same-origin' });
+      const payload = await response.json();
+      if (!response.ok || typeof payload.html !== 'string') throw new Error('publication details request failed');
+      button.insertAdjacentHTML('beforebegin', payload.html);
+      const loaded = Number(payload.loaded) || 0;
+      const remaining = Number(payload.remaining) || 0;
+      if (loaded === 0 || remaining === 0) {
+        button.remove();
+        return;
+      }
+      button.dataset.moreOffset = String(offset + loaded);
+      const count = button.querySelector('span');
+      if (count) count.textContent = String(remaining);
+      button.disabled = false;
+      delete button.dataset.loading;
+    } catch {
+      button.disabled = false;
+      delete button.dataset.loading;
+    }
+  };
+  document.querySelectorAll('.show-more-posts').forEach((button) => {
+    button.addEventListener('click', () => void loadMorePosts(button));
   });
   const navMenus = () => document.querySelectorAll('.nav-more[open], .period-menu[open]');
   document.addEventListener('click', (event) => {

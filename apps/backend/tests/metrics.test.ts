@@ -19,15 +19,23 @@ describe("metrics cycle", () => {
       expect(checked).toBe(1);
       expect(
         backendDb.db
-          .select({ metricName: postMetrics.metricName, value: postMetrics.value, source: postMetrics.source })
+          .select({
+            metricName: postMetrics.metricName,
+            value: postMetrics.value,
+            source: postMetrics.source,
+            rawJson: postMetrics.rawJson,
+          })
           .from(postMetrics)
           .orderBy(asc(postMetrics.metricName))
           .all(),
       ).toEqual([
-        { metricName: "likes", value: 9, source: "test_api" },
-        { metricName: "views", value: 120, source: "test_api" },
+        { metricName: "likes", value: 9, source: "test_api", rawJson: { id: 1 } },
+        { metricName: "views", value: 120, source: "test_api", rawJson: { id: 1 } },
       ]);
-      expect(backendDb.db.select().from(metricSamples).all()).toHaveLength(2);
+      expect(backendDb.db.select({ rawJson: metricSamples.rawJson }).from(metricSamples).all()).toEqual([
+        { rawJson: null },
+        { rawJson: null },
+      ]);
       expect(
         backendDb.db.select({ checkCount: metricSchedule.checkCount, lastError: metricSchedule.lastError }).from(metricSchedule).get(),
       ).toEqual({ checkCount: 1, lastError: null });

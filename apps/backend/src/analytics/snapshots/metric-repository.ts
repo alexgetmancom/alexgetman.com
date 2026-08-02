@@ -23,10 +23,7 @@ export function upsertMetrics(
           set: { value: normalized, source, sampledAt, error: null, rawJson: raw },
         })
         .run();
-      backendDb.db
-        .insert(metricSamples)
-        .values({ postKey, target, metricName: name, value: normalized, sampledAt, source, rawJson: raw })
-        .run();
+      backendDb.db.insert(metricSamples).values({ postKey, target, metricName: name, value: normalized, sampledAt, source }).run();
     }
   })();
 }

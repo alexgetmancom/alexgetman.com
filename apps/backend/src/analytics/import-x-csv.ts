@@ -92,7 +92,7 @@ export function importXAnalyticsCsv(backendDb: BackendDb, sourcePath: string, sa
     "SELECT 1 FROM metric_samples WHERE post_key=? AND target='x' AND metric_name=? AND sampled_at=? AND source='x_csv_export' LIMIT 1",
   );
   const insert = backendDb.sqlite.prepare(
-    "INSERT INTO metric_samples (post_key, target, metric_name, value, sampled_at, source, raw_json) VALUES (?, 'x', ?, ?, ?, 'x_csv_export', ?)",
+    "INSERT INTO metric_samples (post_key, target, metric_name, value, sampled_at, source) VALUES (?, 'x', ?, ?, ?, 'x_csv_export')",
   );
   const updateCurrent = backendDb.sqlite.prepare(
     `INSERT INTO post_metrics (post_key, target, metric_name, value, unit, source, sampled_at, error, raw_json)
@@ -210,7 +210,7 @@ export function importXAnalyticsCsv(backendDb: BackendDb, sourcePath: string, sa
         if (imported.get(postKey, metric.name, sampledAt)) {
           result.skippedSamples += 1;
         } else {
-          insert.run(postKey, metric.name, value, sampledAt, raw);
+          insert.run(postKey, metric.name, value, sampledAt);
           result.insertedSamples += 1;
         }
         // Command Center renders its current values from post_metrics, while

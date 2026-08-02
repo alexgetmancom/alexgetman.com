@@ -112,6 +112,22 @@ describe("Astro endpoint controller", () => {
     }
   });
 
+  it("loads publication details in bounded authenticated batches", async () => {
+    const backendDb = tempDb();
+    try {
+      const app = createApiApp(loadConfig({ COMMAND_CENTER_TOKEN: "secret" }), backendDb);
+      expect((await app.request("/api/command-center/publication-details")).status).toBe(403);
+      const response = await app.request("/api/command-center/publication-details?period=1&offset=0&limit=50", {
+        headers: { "X-Command-Token": "secret" },
+      });
+      const payload = (await response.json()) as { html: string; total: number; loaded: number; remaining: number };
+      expect(response.status).toBe(200);
+      expect(payload).toEqual({ html: "", total: 0, loaded: 0, remaining: 0 });
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("returns post debug payload for queued publication refs", async () => {
     const backendDb = tempDb();
     try {

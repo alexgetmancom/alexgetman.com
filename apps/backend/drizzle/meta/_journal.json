@@ -302,6 +302,13 @@
       "when": 1785975700000,
       "tag": "0042_remove_legacy_video_profiles",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "6",
+      "when": 1785975800000,
+      "tag": "0043_drop_metric_sample_raw_payloads",
+      "breakpoints": true
     }
   ]
 }

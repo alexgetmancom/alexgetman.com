@@ -24,12 +24,15 @@ import { jsonArray } from "../json.js";
 export type PipelineReadModelOptions = {
   /** Dashboard charts are the only consumers that need immutable samples. */
   includeSamples?: boolean;
+  /** Comparison read models only need dates, statuses and metrics, not copy or media. */
+  includeContent?: boolean;
   /** Hard cap per (post, target, metric) series after time bucketing. */
   sampleLimitPerSeries?: number;
 };
 
 type ResolvedPipelineReadModelOptions = {
   includeSamples: boolean;
+  includeContent: boolean;
   sampleLimitPerSeries: number;
 };
 
@@ -210,7 +213,7 @@ function pipelinePosts(
 ): Record<string, unknown>[] {
   const periodOffsetDays = offsetDays ?? (weekOffset + comparisonOffset) * periodDays;
   const [start, end] = zonedRollingPeriodBounds(periodOffsetDays / periodDays, periodDays, config.TIMEZONE);
-  const rows = fetchPostRows(backendDb, start, end);
+  const rows = fetchPostRows(backendDb, start, end, options.includeContent);
   const postKeys = rows.map((row) => String(row.post_key ?? "")).filter(Boolean);
   const targetRows = postKeys.length
     ? backendDb.db
@@ -249,34 +252,83 @@ function pipelinePosts(
   const sampleRows = options.includeSamples
     ? fetchMetricSamples(backendDb, postKeys, start, end, periodDays, options.sampleLimitPerSeries)
     : [];
-  return formatPipelinePosts(config, rows, targetRows, metricRows, sampleRows);
+  return formatPipelinePosts(config, rows, targetRows, metricRows, sampleRows, options.includeContent);
 }
 
-function fetchPostRows(backendDb: BackendDb, start: string, end: string) {
+type PublicationQueryRow = {
+  postId: number;
+  telegramMessageId: number | null;
+  createdAt: string;
+  updatedAt: string;
+  textRu?: string | null;
+  mediaRuJson?: unknown;
+  siteRu?: number | null;
+  slugRu?: string | null;
+  textEn?: string | null;
+  mediaEnJson?: unknown;
+  siteEn?: number | null;
+  slugEn?: string | null;
+};
+
+type PipelinePostRow = {
+  post_key: string;
+  post_id: number;
+  telegram_message_id: number | null;
+  created_at: string;
+  updated_at: string;
+  text_ru: string | null | undefined;
+  media_ru_json: unknown;
+  site_ru: number | null | undefined;
+  slug_ru: string | null | undefined;
+  text_en: string | null | undefined;
+  media_en_json: unknown;
+  site_en: number | null | undefined;
+  slug_en: string | null | undefined;
+  message_id: number | null | undefined;
+  date_msk: string | null | undefined;
+  telegram_url: string | null | undefined;
+};
+
+function fetchPostRows(backendDb: BackendDb, start: string, end: string, includeContent: boolean): PipelinePostRow[] {
   const ru = alias(postLocales, "pipeline_ru");
   const en = alias(postLocales, "pipeline_en");
-  const publicationRows = backendDb.db
-    .select({
-      postId: publications.postId,
-      telegramMessageId: publications.telegramMessageId,
-      createdAt: publications.createdAt,
-      updatedAt: publications.updatedAt,
-      textRu: ru.text,
-      mediaRuJson: ru.mediaJson,
-      siteRu: ru.siteEnabled,
-      slugRu: ru.slug,
-      textEn: en.text,
-      mediaEnJson: en.mediaJson,
-      siteEn: en.siteEnabled,
-      slugEn: en.slug,
-    })
-    .from(publications)
-    .leftJoin(ru, and(eq(ru.postId, publications.postId), eq(ru.locale, "ru")))
-    .leftJoin(en, and(eq(en.postId, publications.postId), eq(en.locale, "en")))
-    .where(and(gte(publications.createdAt, start), lte(publications.createdAt, end)))
-    .orderBy(desc(publications.createdAt))
-    .limit(100)
-    .all();
+  const publicationRows = (
+    includeContent
+      ? backendDb.db
+          .select({
+            postId: publications.postId,
+            telegramMessageId: publications.telegramMessageId,
+            createdAt: publications.createdAt,
+            updatedAt: publications.updatedAt,
+            textRu: ru.text,
+            mediaRuJson: ru.mediaJson,
+            siteRu: ru.siteEnabled,
+            slugRu: ru.slug,
+            textEn: en.text,
+            mediaEnJson: en.mediaJson,
+            siteEn: en.siteEnabled,
+            slugEn: en.slug,
+          })
+          .from(publications)
+          .leftJoin(ru, and(eq(ru.postId, publications.postId), eq(ru.locale, "ru")))
+          .leftJoin(en, and(eq(en.postId, publications.postId), eq(en.locale, "en")))
+          .where(and(gte(publications.createdAt, start), lte(publications.createdAt, end)))
+          .orderBy(desc(publications.createdAt))
+          .limit(100)
+          .all()
+      : backendDb.db
+          .select({
+            postId: publications.postId,
+            telegramMessageId: publications.telegramMessageId,
+            createdAt: publications.createdAt,
+            updatedAt: publications.updatedAt,
+          })
+          .from(publications)
+          .where(and(gte(publications.createdAt, start), lte(publications.createdAt, end)))
+          .orderBy(desc(publications.createdAt))
+          .limit(100)
+          .all()
+  ) as PublicationQueryRow[];
   const publicationKeys = publicationRows.map((row) => `post:${row.postId}`);
   const publicationPosts = publicationKeys.length
     ? backendDb.db
@@ -311,10 +363,11 @@ function fetchPostRows(backendDb: BackendDb, start: string, end: string) {
 
 function formatPipelinePosts(
   config: BackendConfig,
-  rows: ReturnType<typeof fetchPostRows>,
+  rows: PipelinePostRow[],
   targetRows: PipelineTargetRow[],
   metricRows: PipelineMetricRow[],
   sampleRows: PipelineSampleRow[],
+  includeContent: boolean,
 ): Record<string, unknown>[] {
   const targetsByPost = groupBy(targetRows, (target) => target.postKey);
   const metricsByPost = groupBy(metricRows, (metric) => metric.postKey);
@@ -373,14 +426,18 @@ function formatPipelinePosts(
       telegram_message_id: telegramMessageId,
       date: row.created_at,
       date_msk: row.date_msk ?? formatZonedSortable(String(row.created_at), config.TIMEZONE),
-      text_ru: shortText(textRu),
-      text_en: shortText(textEn),
-      full_text_ru: textRu,
-      full_text_en: textEn,
-      text: shortText(textRu),
-      // Dashboard rendering needs the raw arrays, not just their summary.
-      media_ru_json: row.media_ru_json,
-      media_en_json: row.media_en_json,
+      ...(includeContent
+        ? {
+            text_ru: shortText(textRu),
+            text_en: shortText(textEn),
+            full_text_ru: textRu,
+            full_text_en: textEn,
+            text: shortText(textRu),
+            // Dashboard rendering needs the raw arrays, not just their summary.
+            media_ru_json: row.media_ru_json,
+            media_en_json: row.media_en_json,
+          }
+        : {}),
       media_count: (mediaEn.length ? mediaEn : mediaRu).length,
       media_types: [
         ...new Set(
@@ -389,15 +446,19 @@ function formatPipelinePosts(
             .filter(Boolean),
         ),
       ],
-      slug_en: row.slug_en,
-      slug_ru: row.slug_ru,
-      // Locale-agnostic "the post's page" for payload consumers. Per-target links
-      // must not use it — it falls back across locales — see dashboard/target-url.ts.
-      site_url: Number(row.site_ru) ? `/ru/${postId}/${row.slug_ru}/` : Number(row.site_en) ? `/${postId}/${row.slug_en}/` : null,
+      ...(includeContent
+        ? {
+            slug_en: row.slug_en,
+            slug_ru: row.slug_ru,
+            // Locale-agnostic "the post's page" for payload consumers. Per-target links
+            // must not use it — it falls back across locales — see dashboard/target-url.ts.
+            site_url: Number(row.site_ru) ? `/ru/${postId}/${row.slug_ru}/` : Number(row.site_en) ? `/${postId}/${row.slug_en}/` : null,
+          }
+        : {}),
       telegram_url: telegramUrl,
       targets,
       metrics,
-      locales_map: localesMap,
+      ...(includeContent ? { locales_map: localesMap } : {}),
     };
     for (const [target] of TARGETS) {
       const record = targets[target] as { status?: unknown } | undefined;
@@ -414,6 +475,7 @@ function formatPipelinePosts(
 function resolvePipelineReadModelOptions(options: PipelineReadModelOptions): ResolvedPipelineReadModelOptions {
   return {
     includeSamples: options.includeSamples === true,
+    includeContent: options.includeContent !== false,
     sampleLimitPerSeries: Math.max(
       1,
       Math.min(MAX_SAMPLE_LIMIT_PER_SERIES, Math.floor(options.sampleLimitPerSeries ?? MAX_SAMPLE_LIMIT_PER_SERIES)),

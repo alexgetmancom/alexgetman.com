@@ -19,7 +19,7 @@ export function renderPipelineSection(
   timeZone = "Europe/Moscow",
   comparisonDays = periodDays,
   dayComparisonData: PipelineData | null = null,
-  options: { targetIds?: string[]; title?: string } = {},
+  options: { targetIds?: string[]; title?: string; publicationDetailsUrl?: string } = {},
 ): string {
   const [startOfPeriod, endOfPeriod] = rollingPeriodDates(weekOffset, periodDays, timeZone);
   const posts = data?.posts ?? [];
@@ -48,7 +48,7 @@ export function renderPipelineSection(
     <section class="pipeline-overview">
       <div class="kpi-row">${kpi("Просмотры", totals.views, previousTotals.views)}${kpi("Реакции", totals.likes, previousTotals.likes)}${kpi("Ответы", totals.replies, previousTotals.replies)}${kpi("Посты", posts.length, previousPostCount)}</div>
       <div class="insights-row">${audience}<div class="chart-panel"><div class="section-kicker">${options.title ?? (periodDays === 1 ? "Сегодня и медиана за 30 дней" : "Динамика")}</div>${chart}</div></div>
-      ${renderPublicationColumns(posts, targetIds)}
+      ${renderPublicationColumns(posts, targetIds, [], { moreUrl: options.publicationDetailsUrl })}
     </section>
   `;
 }

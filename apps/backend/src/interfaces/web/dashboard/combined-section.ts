@@ -45,6 +45,7 @@ export type CombinedSectionInput = {
   timeZone: string;
   mode: OverviewMode;
   platformMetric: PlatformMetric;
+  publicationDetailsUrl?: string;
 };
 
 const TEXT_COLOR = "var(--series-text)";
@@ -90,6 +91,7 @@ export function renderCombinedSection(input: CombinedSectionInput): string {
       showText ? posts : [],
       ORDERED_TARGETS.map((target) => target.id),
       showVideo ? input.video.items : [],
+      { moreUrl: input.publicationDetailsUrl },
     )}
   </section>`;
 }

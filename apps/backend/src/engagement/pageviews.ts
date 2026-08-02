@@ -37,9 +37,9 @@ export function recordPageview(backendDb: BackendDb, rawPath: string): string {
       .get(row.postKey, row.target, sampledAt, JSON.stringify({ path })) as { value: number } | null;
     backendDb.sqlite
       .prepare(
-        "INSERT INTO metric_samples (post_key, target, metric_name, value, sampled_at, source, raw_json) VALUES (?, ?, 'views', ?, ?, 'site_pageview_endpoint', ?)",
+        "INSERT INTO metric_samples (post_key, target, metric_name, value, sampled_at, source) VALUES (?, ?, 'views', ?, ?, 'site_pageview_endpoint')",
       )
-      .run(row.postKey, row.target, Number(incremented?.value ?? 0), sampledAt, JSON.stringify({ path }));
+      .run(row.postKey, row.target, Number(incremented?.value ?? 0), sampledAt);
   })();
   return path;
 }

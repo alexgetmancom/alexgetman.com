@@ -164,6 +164,38 @@ export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb
   };
 }
 
+export type CommandCenterAttention = {
+  hasFailedJob: boolean;
+  hasCredentialIssue: boolean;
+  hasMetricIssue: boolean;
+};
+
+/** Small overview-only projection. Full queue and diagnostic rows stay behind their panels. */
+export function commandCenterAttention(config: BackendConfig, backendDb: BackendDb): CommandCenterAttention {
+  const failedJob = backendDb.db
+    .select({ status: publishJobs.status })
+    .from(publishJobs)
+    .orderBy(desc(publishJobs.updatedAt), desc(publishJobs.jobId))
+    .limit(100)
+    .all()
+    .some((job) => job.status === "failed");
+  const activeCapabilityTargets = new Set(capabilityReport(config, backendDb).map((capability) => capability.target));
+  const credentialIssue = backendDb.db
+    .select({ target: credentialChecks.target, status: credentialChecks.status })
+    .from(credentialChecks)
+    .orderBy(desc(credentialChecks.lastCheckedAt))
+    .all()
+    .some((credential) => activeCapabilityTargets.has(credential.target) && credential.status !== "ok" && credential.status !== "ready");
+  const metricIssue = backendDb.db
+    .select({ error: postMetrics.error })
+    .from(postMetrics)
+    .orderBy(desc(postMetrics.sampledAt))
+    .limit(100)
+    .all()
+    .some((metric) => Boolean(metric.error));
+  return { hasFailedJob: failedJob, hasCredentialIssue: credentialIssue, hasMetricIssue: metricIssue };
+}
+
 export type CommandCenterFingerprint = {
   pipelineUpdatedAt: string | null;
   latestJobUpdatedAt: string | null;

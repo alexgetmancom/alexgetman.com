@@ -4,6 +4,15 @@ import { formatMetricValue, shortPipelineText } from "./format.js";
 import { escapeHtml } from "./html.js";
 
 type Totals = { views: number; interactions: number; replies: number };
+const VISIBLE_RECENT = 5;
+const DETAIL_BATCH_SIZE = 10;
+
+export type XPublicationDetailsResult = {
+  html: string;
+  total: number;
+  loaded: number;
+  remaining: number;
+};
 
 export function renderXSection(
   items: XActivityDashboardItem[],
@@ -11,6 +20,7 @@ export function renderXSection(
   audience: string,
   rangeStart: Date,
   rangeEnd: Date,
+  options: { moreUrl?: string } = {},
 ): string {
   const totals = xTotals(items);
   const previous = xTotals(previousItems);
@@ -29,22 +39,53 @@ export function renderXSection(
   return `<section class="pipeline-overview">
     <div class="kpi-row">${kpi("Просмотры", totals.views, previous.views)}${kpi("Реакции", totals.interactions, previous.interactions)}${kpi("Ответы", totals.replies, previous.replies)}${kpi("Посты", items.length, previousItems.length)}</div>
     <div class="insights-row">${audience}<div class="chart-panel"><div class="section-kicker">Динамика X</div>${renderWeeklyChart(chartPosts, rangeStart, rangeEnd)}</div></div>
-    ${renderXPublicationColumns(items)}
+    ${renderXPublicationColumns(items, options)}
   </section>`;
 }
 
-function renderXPublicationColumns(items: XActivityDashboardItem[]): string {
+function renderXPublicationColumns(items: XActivityDashboardItem[], options: { moreUrl?: string }): string {
   const ranked = [...items].sort((left, right) => metric(right, "views") - metric(left, "views")).slice(0, 3);
+  const recent = [...items].sort((left, right) => right.publishedAt.localeCompare(left.publishedAt));
+  const lazy = Boolean(options.moreUrl);
+  const recentHtml = lazy
+    ? recent
+        .slice(0, VISIBLE_RECENT)
+        .map((item) => renderRecent(item, false))
+        .join("")
+    : recent.map((item, index) => renderRecent(item, index >= VISIBLE_RECENT)).join("");
+  const moreButton =
+    recent.length > VISIBLE_RECENT
+      ? lazy
+        ? `<button class="show-more-posts" type="button" data-more-url="${escapeHtml(options.moreUrl ?? "")}" data-more-offset="${VISIBLE_RECENT}">Показать ещё <span>${recent.length - VISIBLE_RECENT}</span></button>`
+        : `<button class="show-more-posts" type="button">Показать ещё <span>${recent.length - VISIBLE_RECENT}</span></button>`
+      : "";
   return `<div class="publication-columns">
     <section class="best-posts"><div class="section-kicker">Лучшие публикации</div>${
       ranked.length ? ranked.map(renderBest).join("") : empty()
     }</section>
     <section class="recent-posts">
       <header class="recent-posts__header"><div class="section-kicker">Последние публикации</div><span>Тип</span><span>Охват</span><span>Реакции</span><span>Ответы</span></header>
-      ${items.length ? items.map((item, index) => renderRecent(item, index >= 5)).join("") : empty()}
-      ${items.length > 5 ? `<button class="show-more-posts" type="button">Показать ещё <span>${items.length - 5}</span></button>` : ""}
+      ${recent.length ? recentHtml : empty()}
+      ${moreButton}
     </section>
   </div>`;
+}
+
+export function renderXPublicationDetails(
+  items: XActivityDashboardItem[],
+  offset = 0,
+  limit = DETAIL_BATCH_SIZE,
+): XPublicationDetailsResult {
+  const recent = [...items].sort((left, right) => right.publishedAt.localeCompare(left.publishedAt));
+  const safeOffset = Math.max(0, Math.floor(offset));
+  const safeLimit = Math.max(1, Math.min(DETAIL_BATCH_SIZE, Math.floor(limit)));
+  const selected = recent.slice(safeOffset, safeOffset + safeLimit);
+  return {
+    html: selected.map((item) => renderRecent(item, false)).join(""),
+    total: recent.length,
+    loaded: selected.length,
+    remaining: Math.max(0, recent.length - safeOffset - selected.length),
+  };
 }
 
 function renderBest(item: XActivityDashboardItem, index: number): string {

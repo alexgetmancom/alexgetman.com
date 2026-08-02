@@ -3,6 +3,7 @@ import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import type { StudioLocale } from "../../foundation/locale.js";
 import { zonedSlot } from "../../foundation/time.js";
+import type { CommandCenterAttention } from "../../operations/command-center.js";
 import { operationsService } from "../../operations/service.js";
 import { type OverviewMode, type PlatformMetric, renderCombinedSection, renderModeFilter } from "./dashboard/combined-section.js";
 import {
@@ -15,10 +16,11 @@ import {
 } from "./dashboard/ops-sections.js";
 import { renderPeriodControls, renderPipelineSection, rollingPeriodDates } from "./dashboard/pipeline-section.js";
 import { renderDashboardShell } from "./dashboard/shell.js";
+import { type PublicationDetailsResult, renderPublicationDetails } from "./dashboard/table.js";
 import { DASHBOARD_THEME_TOGGLE_HTML } from "./dashboard/theme.js";
 import type { OpsPayload, PipelineData, PipelinePost } from "./dashboard/types.js";
 import { emptyVideoOverview, videoOverview } from "./dashboard/video-overview.js";
-import { renderXSection } from "./dashboard/x-section.js";
+import { renderXPublicationDetails, renderXSection } from "./dashboard/x-section.js";
 import { renderStudioSection } from "./studio.js";
 
 type DashboardTab = "posts" | "studio";
@@ -38,7 +40,7 @@ const VIEW_TITLES: Record<Exclude<AudienceView, "x">, string> = {
 };
 
 const DASHBOARD_CACHE_TTL_MS = 3_000;
-const MAX_DASHBOARD_CACHE_ENTRIES = 4;
+const MAX_DASHBOARD_CACHE_ENTRIES = 2;
 type DashboardCacheEntry = { expiresAt: number; html: string };
 const dashboardCaches = new WeakMap<BackendDb, Map<string, DashboardCacheEntry>>();
 
@@ -137,7 +139,6 @@ export function renderDashboard(
     cache.delete(cacheKey);
   }
   const service = operationsService(backendDb, config);
-  const ops = service.dashboard();
   const studioActorId = config.MCP_STUDIO_ACTOR_ID;
   // The unified overview is the landing screen of every Studio, whichever
   // halves it publishes.
@@ -148,6 +149,8 @@ export function renderDashboard(
   const locale: StudioLocale = requestedLocale === "en" ? "en" : "ru";
   const panel: DashboardPanel =
     requestedPanel === "queue" || requestedPanel === "health" || requestedPanel === "repair" ? requestedPanel : "overview";
+  const ops = panel === "queue" || panel === "health" ? service.dashboard() : null;
+  const hasAttention = ops ? opsNeedsAttention(ops) : commandCenterAttentionState(service.attention());
   const periodDays = [1, 7, 30, 90, 365].includes(Number(requestedPeriod)) ? Number(requestedPeriod) : 1;
   const activeView =
     showPosts && config.studio.modules.text_posting && AUDIENCE_VIEWS.includes(requestedView as AudienceView)
@@ -157,14 +160,7 @@ export function renderDashboard(
   // whole point of the unified overview is that the account is one thing.
   // Publishing one half only leaves nothing to combine, so those open on the
   // half that exists rather than on a view half of which is permanently empty.
-  const mode: OverviewMode =
-    requestedMode === "text" || requestedMode === "video"
-      ? requestedMode
-      : !config.studio.modules.video_posting
-        ? "text"
-        : config.studio.modules.text_posting
-          ? "all"
-          : "video";
+  const mode = resolveOverviewMode(config, requestedMode);
   const platformMetric: PlatformMetric = requestedMetric === "followers" ? "followers" : "reach";
   const panelLink = (value: DashboardPanel) => `/command-center?tab=posts&panel=${value}${periodDays !== 1 ? `&period=${periodDays}` : ""}`;
   const overviewFilterQuery = !activeView
@@ -186,9 +182,9 @@ export function renderDashboard(
   function renderPanel(): string {
     switch (panel) {
       case "queue":
-        return renderQueueSection(ops);
+        return renderQueueSection(ops ?? {});
       case "health":
-        return `${renderCredentialsSection(ops)}${renderDiagnosticsSection(ops)}`;
+        return `${renderCredentialsSection(ops ?? {})}${renderDiagnosticsSection(ops ?? {})}`;
       case "repair":
         return renderRepairSection(ref, messageId);
       default:
@@ -206,14 +202,15 @@ export function renderDashboard(
           renderAudienceSection(backendDb, config, "x", periodDays, weekOffset),
           start,
           end,
+          { moreUrl: publicationDetailsUrl(periodDays, weekOffset, "x", mode, platformMetric) },
         );
       }
       if (!activeView) {
         const [start, end] = rollingPeriodDates(weekOffset, periodDays, config.TIMEZONE);
         const comparisonPipeline =
           periodDays === 1
-            ? service.pipeline(0, 30, 0, weekOffset + 1, { includeSamples: false })
-            : service.pipeline(weekOffset + 1, periodDays, 0, undefined, { includeSamples: false });
+            ? service.pipeline(0, 30, 0, weekOffset + 1, { includeSamples: false, includeContent: false })
+            : service.pipeline(weekOffset + 1, periodDays, 0, undefined, { includeSamples: false, includeContent: false });
         const comparisonX =
           periodDays === 1
             ? xActivityDashboard(backendDb, (weekOffset + 1) / 30, 30, config.TIMEZONE)
@@ -235,7 +232,8 @@ export function renderDashboard(
           previousData: comparisonPipeline,
           xItems: xActivityDashboard(backendDb, weekOffset, periodDays, config.TIMEZONE),
           previousXItems: comparisonX,
-          dayComparisonData: periodDays === 1 ? service.pipeline(0, 1, 0, weekOffset + 1, { includeSamples: true }) : null,
+          dayComparisonData:
+            periodDays === 1 ? service.pipeline(0, 1, 0, weekOffset + 1, { includeSamples: true, includeContent: false }) : null,
           video: videoEnabled ? videoOverview(backendDb, dayBounds(start), dayBounds(end, true), config.TIMEZONE) : emptyVideoOverview(),
           previousVideo: videoEnabled
             ? videoOverview(backendDb, dayBounds(previousStart), dayBounds(previousEnd, true), config.TIMEZONE)
@@ -252,6 +250,7 @@ export function renderDashboard(
           timeZone: config.TIMEZONE,
           mode,
           platformMetric,
+          publicationDetailsUrl: publicationDetailsUrl(periodDays, weekOffset, undefined, mode, platformMetric),
         });
       }
       const targetIds = VIEW_TARGETS[activeView];
@@ -260,12 +259,12 @@ export function renderDashboard(
       const comparison =
         periodDays === 1
           ? {
-              baseline: service.pipeline(0, 30, 0, weekOffset + 1, { includeSamples: false }),
+              baseline: service.pipeline(0, 30, 0, weekOffset + 1, { includeSamples: false, includeContent: false }),
               days: 30,
-              previousDay: service.pipeline(0, 1, 0, weekOffset + 1, { includeSamples: true }),
+              previousDay: service.pipeline(0, 1, 0, weekOffset + 1, { includeSamples: true, includeContent: false }),
             }
           : {
-              baseline: service.pipeline(weekOffset, periodDays, 1, undefined, { includeSamples: false }),
+              baseline: service.pipeline(weekOffset, periodDays, 1, undefined, { includeSamples: false, includeContent: false }),
               days: periodDays,
               previousDay: null,
             };
@@ -278,7 +277,11 @@ export function renderDashboard(
         config.TIMEZONE,
         comparison.days,
         filterPipeline(comparison.previousDay, targetIds),
-        { targetIds, title: VIEW_TITLES[activeView] },
+        {
+          targetIds,
+          title: VIEW_TITLES[activeView],
+          publicationDetailsUrl: publicationDetailsUrl(periodDays, weekOffset, activeView, mode, platformMetric),
+        },
       );
     }
     if (showStudio && studioActorId) return renderStudioSection(config, backendDb, studioActorId, locale);
@@ -291,20 +294,20 @@ export function renderDashboard(
   // a problem, so the menu carries a dot when Health has something to say.
   const secondaryTabs = [
     { label: "Очередь", href: panelLink("queue"), active: panel === "queue" },
-    { label: "Health", href: panelLink("health"), active: panel === "health", attention: opsNeedsAttention(ops) },
+    { label: "Health", href: panelLink("health"), active: panel === "health", attention: hasAttention },
     { label: "Repair", href: panelLink("repair"), active: panel === "repair" },
     ...(studioActorId
       ? [{ label: "Студия", href: "/command-center?tab=studio", active: panel === "overview" && activeTab === "studio" }]
       : []),
   ];
   const activeSecondary = secondaryTabs.find((tab) => tab.active);
-  const attention = secondaryTabs.some((tab) => tab.attention);
+  const menuAttention = secondaryTabs.some((tab) => tab.attention);
   const overviewTab = `<a class="${panel === "overview" && activeTab === "posts" ? "active" : ""}" href="${panelLink("overview")}">Обзор</a>`;
   // Not open on arrival even when one of its entries is the current section:
   // the panel would drop over the content the operator just navigated to. The
   // control names the section instead.
   const menu = `<details class="nav-more">
-    <summary class="nav-more__toggle${activeSecondary ? " active" : ""}${attention ? " nav-more__toggle--attention" : ""}" aria-label="Другие разделы">${activeSecondary ? escapeHtml(activeSecondary.label) : "···"}</summary>
+    <summary class="nav-more__toggle${activeSecondary ? " active" : ""}${menuAttention ? " nav-more__toggle--attention" : ""}" aria-label="Другие разделы">${activeSecondary ? escapeHtml(activeSecondary.label) : "···"}</summary>
     <div class="nav-more__menu">${secondaryTabs
       .map(
         (tab) =>
@@ -324,6 +327,35 @@ export function renderDashboard(
   return html;
 }
 
+/** Builds only the bounded read-only fragment requested by the dashboard list. */
+export function renderDashboardPublicationDetails(
+  config: BackendConfig,
+  backendDb: BackendDb,
+  weekOffset: number,
+  periodDays: number,
+  requestedView: string | undefined,
+  requestedMode: string | undefined,
+  offset: number,
+  limit: number,
+): PublicationDetailsResult {
+  if (requestedView === "x") {
+    return renderXPublicationDetails(xActivityDashboard(backendDb, weekOffset, periodDays, config.TIMEZONE), offset, limit);
+  }
+  const mode = resolveOverviewMode(config, requestedMode);
+  const targetIds = dashboardTargetIds(requestedView);
+  const data =
+    mode === "video"
+      ? null
+      : operationsService(backendDb, config).pipeline(weekOffset, periodDays, 0, undefined, {
+          includeSamples: false,
+          includeContent: true,
+        });
+  const posts = targetIds ? (filterPipeline(data, targetIds)?.posts ?? []) : (data?.posts ?? []);
+  const videos =
+    mode === "text" || !config.studio.modules.video_posting ? [] : videoOverviewForPeriod(backendDb, weekOffset, periodDays, config).items;
+  return renderPublicationDetails(posts, targetIds, videos, offset, limit);
+}
+
 /** Health is the one hidden tab whose state the operator must see without
  * opening it: a failed publish job, a broken credential, or a metric target
  * that stopped reporting. */
@@ -331,6 +363,50 @@ function opsNeedsAttention(ops: OpsPayload): boolean {
   if (ops.jobs?.some((job) => job.status === "failed")) return true;
   if (ops.credentials?.some((credential) => credential.status && !["ok", "ready"].includes(credential.status))) return true;
   return Boolean(ops.pipeline?.metrics?.recent?.some((issue) => issue.error || issue.status === "failed"));
+}
+
+function commandCenterAttentionState(attention: CommandCenterAttention): boolean {
+  return attention.hasFailedJob || attention.hasCredentialIssue || attention.hasMetricIssue;
+}
+
+function resolveOverviewMode(config: BackendConfig, requestedMode: string | undefined): OverviewMode {
+  if (requestedMode === "text" || requestedMode === "video") return requestedMode;
+  if (!config.studio.modules.video_posting) return "text";
+  return config.studio.modules.text_posting ? "all" : "video";
+}
+
+function dashboardTargetIds(requestedView: string | undefined): string[] | undefined {
+  if (requestedView === "threads_ru" || requestedView === "threads_en" || requestedView === "telegram") return VIEW_TARGETS[requestedView];
+  return undefined;
+}
+
+function publicationDetailsUrl(
+  periodDays: number,
+  weekOffset: number,
+  requestedView: string | undefined,
+  mode: OverviewMode,
+  platformMetric: PlatformMetric,
+): string {
+  const params = new URLSearchParams({ period: String(periodDays), week_offset: String(weekOffset) });
+  if (requestedView) params.set("view", requestedView);
+  if (mode !== "all") params.set("mode", mode);
+  if (platformMetric === "followers") params.set("metric", platformMetric);
+  return `/api/command-center/publication-details?${params.toString()}`;
+}
+
+function videoOverviewForPeriod(backendDb: BackendDb, weekOffset: number, periodDays: number, config: BackendConfig) {
+  const [start, end] = rollingPeriodDates(weekOffset, periodDays, config.TIMEZONE);
+  return videoOverview(
+    backendDb,
+    videoDayBounds(start, false, config.TIMEZONE),
+    videoDayBounds(end, true, config.TIMEZONE),
+    config.TIMEZONE,
+  );
+}
+
+function videoDayBounds(date: Date, endOfDay: boolean, timeZone: string): Date {
+  const start = zonedSlot(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate(), "00:00", timeZone);
+  return endOfDay ? new Date(start.getTime() + 86_400_000 - 1) : start;
 }
 
 const HTML_ENTITIES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };

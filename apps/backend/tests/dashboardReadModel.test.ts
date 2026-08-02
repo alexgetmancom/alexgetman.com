@@ -75,6 +75,14 @@ describe("dashboard read model bounds", () => {
       expect(longPeriod.posts[0]?.metrics.telegram.views.samples[0]?.sampled_at).toBe(
         new Date(Math.floor(periodStart30Ms / 1_000) * 1_000).toISOString(),
       );
+
+      const compact = pipelineStatusPayload(loadConfig({ PIPELINE_DB: ":memory:" }), backendDb, 0, 1, 0, undefined, {
+        includeSamples: false,
+        includeContent: false,
+      }) as unknown as { posts: Array<Record<string, unknown>> };
+      expect(compact.posts[0]).not.toHaveProperty("full_text_en");
+      expect(compact.posts[0]).not.toHaveProperty("media_en_json");
+      expect(compact.posts[0]).toMatchObject({ post_id: 1, telegram_url: expect.anything() });
     } finally {
       backendDb.close();
     }
