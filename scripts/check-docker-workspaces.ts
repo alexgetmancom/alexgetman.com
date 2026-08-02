@@ -7,7 +7,7 @@ import { Glob } from "bun";
  * one COPY line at a time. Adding a workspace therefore breaks the image while
  * CI stays green — CI installs from a full checkout, so nothing there notices.
  * The failure surfaces only in Deploy, after main is already merged, which is
- * how tools/dependency-cruiser broke it.
+ * how a missing layer-checker manifest would break it.
  */
 const root = new URL("../", import.meta.url).pathname;
 const dockerfile = await Bun.file(`${root}apps/backend/Dockerfile`).text();

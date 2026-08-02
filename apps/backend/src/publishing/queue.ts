@@ -1,16 +1,28 @@
 import crypto from "node:crypto";
 import os from "node:os";
 import process from "node:process";
-import { and, eq, inArray, isNull, lt, lte, ne, or } from "drizzle-orm";
-import * as z from "zod";
+import { and, eq, isNull, lt, lte, or } from "drizzle-orm";
 import { recordPublishedXActivity } from "../analytics/x-activity-store.js";
 import type { BackendDb } from "../db/client.js";
-import { drafts, type JsonObject, postEvents, postTargets, publications, publishJobs, siteJobs } from "../db/schema.js";
+import { drafts, type JsonObject, publications, publishJobs, siteJobs } from "../db/schema.js";
 import { insertPublishJobSchema } from "../db/validation.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { recordAuthFailure, recordAuthSuccess } from "../observability/auth-circuit.js";
 import { classifyPublishError, normalizePublishResult, type PublishResult } from "./errors.js";
 import { failedJobTransition, reconciliationTransition } from "./job-policy.js";
+import {
+  deleteSupersededJobs,
+  durationSince,
+  externalIds,
+  insertEvent,
+  jobPostKey,
+  parsePayload,
+  publicationConfirmationSource,
+  publishRetryPolicy,
+  settleJob,
+  upsertPostTarget,
+  verificationStatus,
+} from "./queue-state.js";
 import { publicationStatus } from "./state.js";
 
 export type ClaimedPublishJob = {
@@ -417,34 +429,6 @@ export function requirePublishVerification(backendDb: BackendDb, jobId: number, 
   return updated;
 }
 
-function publicationConfirmationSource(result: PublishResult): string {
-  if (verificationStatus(result) === "verified") return "provider_verify";
-  const raw = result.raw && typeof result.raw === "object" ? (result.raw as Record<string, unknown>) : null;
-  if (raw && "existingPost" in raw) return "idempotency_replay";
-  return "publish_response";
-}
-
-function verificationStatus(result: PublishResult): string | null {
-  const verification = result.verification;
-  if (!verification || typeof verification !== "object") return null;
-  const status = (verification as Record<string, unknown>).status;
-  return typeof status === "string" ? status : null;
-}
-
-function durationSince(startedAt: string | null, finishedAt: string): number | null {
-  if (!startedAt) return null;
-  const duration = Date.parse(finishedAt) - Date.parse(startedAt);
-  return Number.isFinite(duration) && duration >= 0 ? duration : null;
-}
-
-function publishRetryPolicy(config: BackendConfig) {
-  return {
-    maxAttempts: config.PUBLISH_MAX_ATTEMPTS,
-    backoffBaseSeconds: config.PUBLISH_BACKOFF_BASE_SECONDS,
-    backoffMaxSeconds: config.PUBLISH_BACKOFF_MAX_SECONDS,
-  };
-}
-
 export function reconcilePublication(backendDb: BackendDb, postId: number): void {
   const existing = backendDb.db.select({ status: publications.status }).from(publications).where(eq(publications.postId, postId)).get();
   if (existing?.status === "cancelled") return;
@@ -498,75 +482,3 @@ type EnqueuePublishJobInput = {
   postKey: string;
   publishAt?: string | null;
 };
-
-function deleteSupersededJobs(tx: BackendDb["db"], job: typeof publishJobs.$inferSelect, jobId: number, postKey: string): void {
-  tx.delete(publishJobs)
-    .where(
-      and(
-        eq(publishJobs.target, job.target),
-        ne(publishJobs.jobId, jobId),
-        inArray(publishJobs.status, ["queued", "failed", "verification_required"]),
-        or(eq(publishJobs.postKey, postKey), and(isNull(publishJobs.postKey), eq(publishJobs.messageId, job.messageId))),
-      ),
-    )
-    .run();
-}
-
-function parsePayload(value: JsonObject | null): JsonObject {
-  const parsed = z.record(z.string(), z.json()).safeParse(value);
-  return parsed.success ? parsed.data : {};
-}
-
-function externalIds(result: PublishResult): string[] {
-  const ids = Array.isArray(result.ids) ? result.ids.map(String).filter(Boolean) : [];
-  if (ids.length > 0) return [...new Set(ids)];
-  return result.id == null ? [] : [String(result.id)];
-}
-
-/** Every current write sets postKey directly (see enqueuePublishJobTx); this
- * fallback only covers pre-existing rows from before that was mandatory. */
-function jobPostKey(job: Pick<typeof publishJobs.$inferSelect, "postKey" | "postId">): string {
-  return job.postKey ?? `post:${job.postId}`;
-}
-
-/** Keeps target state updates consistent across claim, completion, and recovery paths. */
-function upsertPostTarget(db: BackendDb["db"], value: typeof postTargets.$inferInsert): void {
-  const { postKey, target, ...patch } = value;
-  db.insert(postTargets)
-    .values(value)
-    .onConflictDoUpdate({ target: [postTargets.postKey, postTargets.target], set: patch })
-    .run();
-}
-
-function insertEvent(
-  tx: BackendDb["db"],
-  postKey: string | null,
-  target: string | null,
-  eventType: string,
-  severity: string,
-  message: string,
-  details: Record<string, unknown>,
-  createdAt: string,
-): void {
-  tx.insert(postEvents)
-    .values({ postKey, eventType, severity, target, message, detailsJson: JSON.stringify(details), createdAt })
-    .run();
-}
-
-/** Every job-settling path (claim recovery, completion, failure, reconciliation) updates
- * the job row, mirrors the target's state, and logs the transition as one unit.
- * All three carry the caller's single timestamp so one settle can't be read back
- * as three events happening at slightly different times. */
-function settleJob(
-  tx: BackendDb["db"],
-  jobId: number,
-  jobPatch: Partial<typeof publishJobs.$inferInsert> | null,
-  postKey: string,
-  target: string,
-  targetPatch: Omit<typeof postTargets.$inferInsert, "postKey" | "target"> & { updatedAt: string },
-  event: { type: string; severity: string; message: string; details: Record<string, unknown> },
-): void {
-  if (jobPatch) tx.update(publishJobs).set(jobPatch).where(eq(publishJobs.jobId, jobId)).run();
-  upsertPostTarget(tx, { postKey, target, ...targetPatch });
-  insertEvent(tx, postKey, target, event.type, event.severity, event.message, event.details, targetPatch.updatedAt);
-}

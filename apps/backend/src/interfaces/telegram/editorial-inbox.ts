@@ -1,5 +1,4 @@
 import { desc, eq, sql } from "drizzle-orm";
-import type { Bot } from "grammy";
 import { markSynced } from "../../analytics/snapshots/creator-store.js";
 import type { BackendDb } from "../../db/client.js";
 import { analyticsSync, knowledgeEntities, postEntityLinks, posts } from "../../db/schema.js";
@@ -11,6 +10,12 @@ type ChatCompletion = { choices?: Array<{ message?: { content?: string } }> };
 type Opportunity = { kind?: string; title?: string; reason?: string; posts?: number[] };
 type EditorialResponse = { items?: Opportunity[] };
 
+export type EditorialInboxBot = {
+  api: {
+    sendMessage: (actorId: number, text: string) => Promise<unknown>;
+  };
+};
+
 /**
  * One small daily inbox, not an autonomous editorial system. It turns the
  * accumulated post archive into a few review, guide, data and roundup ideas;
@@ -19,7 +24,7 @@ type EditorialResponse = { items?: Opportunity[] };
 export async function sendDailyEditorialInbox(
   config: BackendConfig,
   backendDb: BackendDb,
-  bot: Bot | null,
+  bot: EditorialInboxBot | null,
   now = new Date(),
   fetchImpl: typeof fetch = fetch,
 ): Promise<boolean> {

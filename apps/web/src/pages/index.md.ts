@@ -1,3 +1,4 @@
+import type { APIContext } from "astro";
 import { loadFeedItems } from "../server/public-site";
 import { getRuntime } from "../server/runtime";
 import { formatDate } from "../utils/dates";
@@ -6,7 +7,7 @@ import { truncateText } from "../utils/text";
 
 export const prerender = false;
 
-export async function GET(context: any) {
+export async function GET(context: APIContext) {
   const timeZone = getRuntime().config.TIMEZONE;
   const sortedItems = loadFeedItems()
     // Every condition the loop below relies on belongs here: filtering inside

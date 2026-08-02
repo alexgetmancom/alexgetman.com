@@ -1,11 +1,9 @@
 /* Layer boundaries, checked on the resolved module graph.
  *
- * This is the only place layer rules live. A hand-rolled equivalent used to sit
- * in apps/backend/tests/studioArchitecture.test.ts, with its own import parser
- * and its own `../` resolver, and with file lists written by hand — so a module
- * added to delivery/ tomorrow was unguarded until someone remembered to list it.
- * The rules here are globs over the whole graph, they cover a layer by shape,
- * and they also catch cycles.
+ * This is the only place layer rules live. scripts/check-layers.ts reads this
+ * file with a pinned TypeScript compiler API, so the graph does not depend on
+ * dependency-cruiser's TypeScript version range. The rules cover layers by
+ * shape and catch cycles.
  *
  * .jsonc rather than the tool's usual .cjs config: the repo's language gate
  * (scripts/enforce-typescript.ts) forbids JavaScript source. dependency-cruiser
@@ -70,8 +68,7 @@
     },
     {
       "name": "media-processor-stays-isolated",
-      "comment":
-        "deploy/media-processor is built and deployed on its own to VM-106 from its own Dockerfile, with only story-encode.ts shared back. An import from apps/ would typecheck and pass CI here, then fail when that service is built alone.",
+      "comment": "deploy/media-processor is built and deployed on its own to VM-106 from its own Dockerfile, with only story-encode.ts shared back. An import from apps/ would typecheck and pass CI here, then fail when that service is built alone.",
       "severity": "error",
       "from": { "path": "^deploy/media-processor/" },
       "to": { "path": "^apps/" }
@@ -92,8 +89,7 @@
     },
     {
       "name": "site-presentation-off-the-backend",
-      "comment":
-        "Components, features and utils render what the read model already produced. apps/web/src/server/ is exempt: runtime.ts is the composition root that boots the backend inside the Astro server, and site-fixture.ts seeds the dev and smoke database.",
+      "comment": "Components, features and utils render what the read model already produced. apps/web/src/server/ is exempt: runtime.ts is the composition root that boots the backend inside the Astro server, and site-fixture.ts seeds the dev and smoke database.",
       "severity": "error",
       "from": { "path": "^apps/web/src/(components|features|utils|scripts|layouts)/", "pathNot": "\\.test\\.ts$" },
       "to": {
@@ -110,8 +106,7 @@
     },
     {
       "name": "telegram-adapters-off-persistence",
-      "comment":
-        "A screen, action handler or conversation drives Studio and Operations services; it does not open the database, enqueue publish jobs or call a delivery adapter itself. Rendering helpers under bot/ (albums, previews, cards, i18n, session state) are presentation and keep their own dependencies.",
+      "comment": "A screen, action handler or conversation drives Studio and Operations services; it does not open the database, enqueue publish jobs or call a delivery adapter itself. Rendering helpers under bot/ (albums, previews, cards, i18n, session state) are presentation and keep their own dependencies.",
       "severity": "error",
       "from": { "path": "^apps/backend/src/(bot\\.ts|bot/.*-(screen|actions|conversation)\\.ts|bot/queue\\.ts)" },
       "to": {
@@ -124,8 +119,7 @@
     },
     {
       "name": "interfaces-go-through-studio-services",
-      "comment":
-        "MCP and Web Studio are adapters over studio/services. Reaching past it into the schema or into publishing/delivery/analytics duplicates the command model in a second place.",
+      "comment": "MCP and Web Studio are adapters over studio/services. Reaching past it into the schema or into publishing/delivery/analytics duplicates the command model in a second place.",
       "severity": "error",
       "from": { "path": "^apps/backend/src/interfaces/(mcp\\.ts|web/studio\\.ts)" },
       "to": { "path": "^apps/backend/src/(db/schema|publishing/|delivery/|analytics/|bot/)" }

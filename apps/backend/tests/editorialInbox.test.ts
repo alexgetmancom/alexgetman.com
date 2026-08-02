@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { posts } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
-import { sendDailyEditorialInbox } from "../src/interfaces/telegram/editorial-inbox.js";
+import { type EditorialInboxBot, sendDailyEditorialInbox } from "../src/interfaces/telegram/editorial-inbox.js";
 import { withDb } from "./helpers/db.js";
 
 describe("daily editorial inbox", () => {
@@ -22,7 +22,7 @@ describe("daily editorial inbox", () => {
         })
         .run();
       const sent: string[] = [];
-      const bot = { api: { sendMessage: async (_actorId: number, text: string) => void sent.push(text) } } as any;
+      const bot: EditorialInboxBot = { api: { sendMessage: async (_actorId, text) => void sent.push(text) } };
       const fetchImpl = async () =>
         new Response(
           JSON.stringify({
@@ -68,7 +68,7 @@ describe("daily editorial inbox", () => {
         init = requestInit;
         return new Response(JSON.stringify({ choices: [{ message: { content: '{"items":[]}' } }] }), { status: 200 });
       }) as unknown as typeof fetch;
-      const bot = { api: { sendMessage: async () => undefined } } as any;
+      const bot: EditorialInboxBot = { api: { sendMessage: async () => undefined } };
       const config = loadConfig({ ADMIN_IDS: "42", DEEPSEEK_API_KEY: "key", EDITORIAL_INBOX_HOUR_MSK: "10" });
 
       await sendDailyEditorialInbox(config, backendDb, bot, new Date("2026-07-20T07:30:00.000Z"), fetchImpl);
@@ -80,7 +80,7 @@ describe("daily editorial inbox", () => {
 
   it("waits for the configured Moscow delivery hour", async () => {
     await withDb(async (backendDb) => {
-      const bot = { api: { sendMessage: async () => undefined } } as any;
+      const bot: EditorialInboxBot = { api: { sendMessage: async () => undefined } };
       const config = loadConfig({ ADMIN_IDS: "42", DEEPSEEK_API_KEY: "key", EDITORIAL_INBOX_HOUR_MSK: "10" });
       expect(await sendDailyEditorialInbox(config, backendDb, bot, new Date("2026-07-20T06:30:00.000Z"))).toBe(false);
     });

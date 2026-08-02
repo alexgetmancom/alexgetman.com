@@ -142,10 +142,6 @@ function publicationEntries(posts: PipelinePost[], targetIds: string[], videos: 
   ];
 }
 
-function videoIcon(target: string): string {
-  return `<i class="platform-mark">${PLATFORM_ICONS[VIDEO_PLATFORM_ICON_KEYS[target] ?? ""] ?? ""}</i>`;
-}
-
 type PublicationPlatform = {
   names: string[];
   locales: string[];

@@ -1,8 +1,25 @@
 import type { XActivityDashboardItem } from "../../../analytics/x-activity-dashboard.js";
 import { targetLocale } from "../../../botTargets.js";
-import { zonedDateParts, zonedSlot } from "../../../foundation/time.js";
 import { ORDERED_TARGETS, PLATFORM_ICONS, platformKey, VIDEO_PLATFORM_ICON_KEYS } from "./assets.js";
 import { renderOverviewSparkline } from "./chart.js";
+import {
+  calendarKey,
+  emptyTotals,
+  formatPlatformDelta,
+  medianDetails,
+  medianOfDays,
+  metricProgress,
+  percentDelta,
+  periodContextLabel,
+  periodCountLabel,
+  periodNormLabel,
+  periodPaceLabel,
+  periodProjection,
+  scaleTextDetails,
+  scaleTotals,
+  type TextDetails,
+  type Totals,
+} from "./combined-math.js";
 import { formatMetricValue } from "./format.js";
 import { renderHeroCard, renderHeroMicroMetrics, type TextHeroMetrics, type VideoHeroMetrics } from "./hero-section.js";
 import { escapeHtml } from "./html.js";
@@ -24,8 +41,6 @@ import type { VideoOverview } from "./video-overview.js";
 
 export type OverviewMode = "all" | "text" | "video";
 export type PlatformMetric = "reach" | "followers";
-
-type Totals = { views: number; reactions: number; replies: number };
 
 export type TextPlatformFollowers = { key: string; label: string; followers: number | null };
 
@@ -324,16 +339,6 @@ function overviewPlatformRows(
   );
 }
 
-function formatPlatformDelta(value: number | null): string {
-  if (value === null) return "";
-  return `${value >= 0 ? "+" : "−"}${Math.abs(value)}%`;
-}
-
-function percentDelta(value: number, previous: number): number | null {
-  if (previous <= 0) return null;
-  return Math.round(((value - previous) / previous) * 100);
-}
-
 function selectedTextTargetIds(input: CombinedSectionInput): string[] {
   return input.textTargetIds ? [...input.textTargetIds] : ORDERED_TARGETS.map((target) => target.id);
 }
@@ -448,64 +453,9 @@ function videoHeroMetrics(input: CombinedSectionInput, periodDays: number, fallb
   };
 }
 
-function metricProgress(value: number, norm: number | null): number | null {
-  if (norm === null || norm <= 0) return null;
-  return Math.round((value / norm) * 100);
-}
-
-function periodCountLabel(value: number, singular: string, periodDays: number): string {
-  const remainder = value % 100;
-  const word =
-    remainder >= 11 && remainder <= 14
-      ? `${singular}ов`
-      : value % 10 === 1
-        ? singular
-        : value % 10 >= 2 && value % 10 <= 4
-          ? `${singular}а`
-          : `${singular}ов`;
-  return periodDays === 1 ? `${formatMetricValue(value)} ${word} сегодня` : `${formatMetricValue(value)} ${word} за ${periodDays}д`;
-}
-
-function periodNormLabel(periodDays: number): string {
-  return periodDays === 1 ? "норма дня" : `норма за ${periodDays}д`;
-}
-
-function periodContextLabel(day: Date, periodDays: number, timeZone: string): string {
-  if (periodDays !== 1) return `ОХВАТ · ПОСЛЕДНИЕ ${periodDays} ДН.`;
-  const parts = zonedDateParts(day, timeZone);
-  const months = ["ЯНВ", "ФЕВ", "МАР", "АПР", "МАЙ", "ИЮН", "ИЮЛ", "АВГ", "СЕН", "ОКТ", "НОЯ", "ДЕК"];
-  return `ОХВАТ · ${parts.day} ${months[parts.month - 1] ?? ""}`;
-}
-
-function periodPaceLabel(value: number, norm: number | null, day: Date, periodDays: number, timeZone: string): string | null {
-  if (norm === null || norm <= 0) return null;
-  const remaining = Math.max(0, Math.round(norm - value));
-  const projection = periodProjection(value, day, periodDays, timeZone);
-  if (value >= norm) return projection === null ? "норма побита" : `норма побита · прогноз ${formatMetricValue(projection)}`;
-  return projection === null
-    ? `до нормы ${formatMetricValue(remaining)}`
-    : `до нормы ${formatMetricValue(remaining)} · прогноз ${formatMetricValue(projection)}`;
-}
-
-function periodProjection(value: number, day: Date, periodDays: number, timeZone: string): number | null {
-  if (periodDays !== 1 || !isCurrentCalendarDay(day, timeZone)) return null;
-  const startParts = zonedDateParts(day, timeZone);
-  const start = zonedSlot(startParts.year, startParts.month, startParts.day, "00:00", timeZone);
-  const share = Math.max(0.02, Math.min(1, (Date.now() - start.getTime()) / 86_400_000));
-  return Math.round(value / share);
-}
-
-function isCurrentCalendarDay(day: Date, timeZone: string): boolean {
-  const left = zonedDateParts(day, timeZone);
-  const right = zonedDateParts(new Date(), timeZone);
-  return left.year === right.year && left.month === right.month && left.day === right.day;
-}
-
 function hasVideoHistory(video: VideoOverview | null | undefined): video is VideoOverview {
   return Boolean(video && (video.items.length > 0 || Object.keys(video.dailyByDay).length > 0));
 }
-
-type TextDetails = { views: number; reactions: number; replies: number; reposts: number };
 
 function textDetails(
   posts: PipelinePost[],
@@ -562,30 +512,6 @@ function medianVideoViews(video: VideoOverview, periodDays: number): Totals {
   }));
   const median = medianOfDays(daily, 30);
   return periodDays === 1 ? median : scaleTotals(median, periodDays);
-}
-
-function medianDetails(values: TextDetails[], days: number): TextDetails {
-  const padded = [...values];
-  while (padded.length < days) padded.push({ views: 0, reactions: 0, replies: 0, reposts: 0 });
-  return {
-    views: median(padded.map((value) => value.views)),
-    reactions: median(padded.map((value) => value.reactions)),
-    replies: median(padded.map((value) => value.replies)),
-    reposts: median(padded.map((value) => value.reposts)),
-  };
-}
-
-function scaleTextDetails(value: TextDetails, factor: number): TextDetails {
-  return {
-    views: value.views * factor,
-    reactions: value.reactions * factor,
-    replies: value.replies * factor,
-    reposts: value.reposts * factor,
-  };
-}
-
-function scaleTotals(value: Totals, factor: number): Totals {
-  return { views: value.views * factor, reactions: value.reactions * factor, replies: value.replies * factor };
 }
 
 /** Fixed number of platform rows per track — see renderOverviewPlatforms. */
@@ -669,39 +595,6 @@ function medianDailyVideoTotals(video: VideoOverview, days: number): Totals {
     daily.set(key, bucket);
   }
   return medianOfDays([...daily.values()], days);
-}
-
-/** Days with no publication are real zeros, not missing data: padding to the
- * full window is what keeps a single loud day from becoming the baseline. */
-function medianOfDays(values: Totals[], days: number): Totals {
-  const padded = [...values];
-  while (padded.length < days) padded.push(emptyTotals());
-  return {
-    views: median(padded.map((value) => value.views)),
-    reactions: median(padded.map((value) => value.reactions)),
-    replies: median(padded.map((value) => value.replies)),
-  };
-}
-
-function emptyTotals(): Totals {
-  return { views: 0, reactions: 0, replies: 0 };
-}
-
-function calendarKey(value: string | null | undefined, timeZone: string): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  const parts = zonedDateParts(date, timeZone);
-  return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
-}
-
-function median(values: number[]): number {
-  const ordered = [...values].sort((left, right) => left - right);
-  if (!ordered.length) return 0;
-  const middle = Math.floor(ordered.length / 2);
-  const upper = ordered[middle] ?? 0;
-  if (ordered.length % 2) return upper;
-  return ((ordered[middle - 1] ?? upper) + upper) / 2;
 }
 
 function additionalXItems(posts: PipelinePost[], items: XActivityDashboardItem[]): XActivityDashboardItem[] {

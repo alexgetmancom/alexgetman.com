@@ -21,7 +21,7 @@ COPY --chown=bun:bun package.json bun.lock tsconfig.json tsconfig.base.json astr
 COPY --chown=bun:bun apps/backend/package.json ./apps/backend/package.json
 COPY --chown=bun:bun tools/knip/package.json ./tools/knip/package.json
 COPY --chown=bun:bun tools/svelte-check/package.json ./tools/svelte-check/package.json
-COPY --chown=bun:bun tools/dependency-cruiser/package.json ./tools/dependency-cruiser/package.json
+COPY --chown=bun:bun tools/layer-checker/package.json ./tools/layer-checker/package.json
 
 RUN chown bun:bun /app
 USER bun
@@ -33,6 +33,7 @@ COPY --chown=bun:bun apps/web ./apps/web
 COPY --chown=bun:bun scripts ./scripts
 COPY --chown=bun:bun tools/knip ./tools/knip
 COPY --chown=bun:bun tools/svelte-check ./tools/svelte-check
+COPY --chown=bun:bun tools/layer-checker ./tools/layer-checker
 # Backend shares the Story encoder with the isolated media-processor service.
 # Keep the single source in the in-Docker TypeScript build context as well.
 # The whole directory, not just story-encode.ts: the backend's own tests import
@@ -69,7 +70,7 @@ COPY --chown=bun:bun package.json bun.lock tsconfig.json tsconfig.base.json astr
 COPY --chown=bun:bun apps/backend/package.json ./apps/backend/package.json
 COPY --chown=bun:bun tools/knip/package.json ./tools/knip/package.json
 COPY --chown=bun:bun tools/svelte-check/package.json ./tools/svelte-check/package.json
-COPY --chown=bun:bun tools/dependency-cruiser/package.json ./tools/dependency-cruiser/package.json
+COPY --chown=bun:bun tools/layer-checker/package.json ./tools/layer-checker/package.json
 
 RUN chown bun:bun /app
 USER bun

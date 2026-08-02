@@ -57,10 +57,13 @@ function normalizedPath(value: string): string {
 
 function stubSendBeacon(window: Window): string[] {
   const calls: string[] = [];
-  (window.navigator as any).sendBeacon = (url: string) => {
-    calls.push(url);
-    return true;
-  };
+  Object.defineProperty(window.navigator, "sendBeacon", {
+    configurable: true,
+    value: (url: string) => {
+      calls.push(url);
+      return true;
+    },
+  });
   return calls;
 }
 
@@ -169,7 +172,7 @@ describe("story player browser behavior", () => {
     preloadAdjacentMedia({
       active: 0,
       posts: [post(), post({ image: "media/posts/next.mp4", mediaType: "video" }), post({ image: "media/posts/later.jpg" })],
-      // Payload заранее нормализует пути; воспроизводим то же преобразование.
+      // Payload normalizes paths before the component receives them; mirror that transformation here.
       toPublicSrc: (value) => (value ? (/^(https?:|data:|blob:|\/)/i.test(value) ? value : `/${value.replace(/^\/+/, "")}`) : ""),
     });
 

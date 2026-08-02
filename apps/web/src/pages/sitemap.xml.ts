@@ -1,3 +1,4 @@
+import type { APIContext } from "astro";
 import { loadFeedItems } from "../server/public-site";
 import { postOgImagePath, postVisualMedia } from "../utils/media";
 import { excerptAfterTitle, getFirstSentence } from "../utils/text";
@@ -24,7 +25,7 @@ function videoBlockFor(item: ReturnType<typeof loadFeedItems>[number], locale: "
   return `\n    <video:video>\n      <video:thumbnail_loc>${xmlEscape(thumbnail)}</video:thumbnail_loc>\n      <video:title>${xmlEscape(title)}</video:title>\n      <video:description>${xmlEscape(description)}</video:description>\n      <video:content_loc>${xmlEscape(contentLoc)}</video:content_loc>\n      <video:publication_date>${lastmod(item.date)}</video:publication_date>\n    </video:video>`;
 }
 
-export async function GET(context: any) {
+export async function GET(context: APIContext) {
   const siteUrl = context.site ? context.site.toString().replace(/\/$/, "") : "https://alexgetman.com";
   const items = loadFeedItems();
   const entries = items.flatMap((item) => {
