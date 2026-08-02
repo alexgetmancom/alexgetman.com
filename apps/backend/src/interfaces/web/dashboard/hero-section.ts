@@ -83,7 +83,7 @@ export function renderHeroMicroMetrics(kind: "text" | "video", metrics: TextHero
           { value: formatRate((metrics as TextHeroMetrics).engagementRate), label: "ER" },
         ]
       : [
-          { value: formatMetricValue((metrics as VideoHeroMetrics).completionRate), label: "досмотры" },
+          { value: formatCompletionRate((metrics as VideoHeroMetrics).completionRate), label: "досмотры" },
           { value: formatSeconds((metrics as VideoHeroMetrics).averageWatchTimeMs), label: "ср. время" },
           { value: formatSigned((metrics as VideoHeroMetrics).subscribers), label: "подп." },
         ];
@@ -96,6 +96,10 @@ function formatOptionalMetric(value: number | null): string {
 
 function formatRate(value: number | null): string {
   return value === null ? "—" : `${value.toFixed(2)}%`;
+}
+
+function formatCompletionRate(value: number | null): string {
+  return value === null ? "—" : `${value.toFixed(1)}%`;
 }
 
 function formatSeconds(value: number | null): string {

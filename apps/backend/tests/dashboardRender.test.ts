@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { OVERVIEW_SPARK_MAX, renderOverviewSparkline } from "../src/interfaces/web/dashboard/chart.js";
 import { formatMetricValue, getMskDateString, shortPipelineText } from "../src/interfaces/web/dashboard/format.js";
+import { renderHeroMicroMetrics } from "../src/interfaces/web/dashboard/hero-section.js";
 import { formatMedia, getTargetMetric, postMetricTotals, targetCell } from "../src/interfaces/web/dashboard/metrics.js";
 import { renderDashboardShell } from "../src/interfaces/web/dashboard/shell.js";
 import {
@@ -25,6 +26,26 @@ function published(target: string, metrics: Record<string, number> = {}): Partia
 }
 
 describe("dashboard formatting", () => {
+  it("formats video completion as a percentage with one decimal place", () => {
+    const html = renderHeroMicroMetrics("video", {
+      videoCount: 1,
+      views: 100,
+      medianViews: null,
+      completionRate: 24.91925664721141,
+      averageWatchTimeMs: 11_500,
+      subscribers: 15,
+      countLabel: "1 ролик",
+      normLabel: "норма дня",
+      contextLabel: "ОХВАТ",
+      paceLabel: null,
+      projectionViews: null,
+      progressPercent: null,
+    });
+
+    expect(html).toContain("<b>24.9%</b> досмотры");
+    expect(html).not.toContain("24.91925664721141");
+  });
+
   it("distinguishes an absent metric from zero", () => {
     // Everything else about this function is cosmetic rounding. This part is
     // not: "" and "0" mean different things to the reader of the dashboard.
