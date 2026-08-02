@@ -234,7 +234,7 @@ function renderOverviewPlatforms(
     const value = metricValue(row);
     const formatted = value === null ? "—" : formatMetricValue(value);
     const delta = input.platformMetric === "reach" ? formatPlatformDelta(row.delta) : "";
-    const body = `<span class="overview-platform__icon" style="color:${color}">${row.icon}</span><span class="overview-platform__name"><span class="overview-platform__label">${escapeHtml(row.label)}</span>${row.locale ? `<b>${escapeHtml(row.locale.toUpperCase())}</b>` : ""}</span><strong>${formatted}</strong><span class="overview-platform__delta ${row.delta !== null && row.delta >= 0 ? "overview-platform__delta--up" : "overview-platform__delta--down"}">${delta || "\u00a0"}</span>`;
+    const body = `<span class="overview-platform__icon" style="color:${color}">${row.icon}</span><span class="overview-platform__name">${row.locale ? `<b>${escapeHtml(row.locale.toUpperCase())}</b>` : ""}</span><strong>${formatted}</strong><span class="overview-platform__delta ${row.delta !== null && row.delta >= 0 ? "overview-platform__delta--up" : "overview-platform__delta--down"}">${delta || "\u00a0"}</span>`;
     return row.href
       ? `<a class="overview-platform" href="${escapeHtml(row.href)}" title="${escapeHtml(row.label)}" aria-label="${escapeHtml(row.label)}">${body}</a>`
       : `<div class="overview-platform" title="${escapeHtml(row.label)}" aria-label="${escapeHtml(row.label)}">${body}</div>`;

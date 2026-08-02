@@ -391,8 +391,9 @@ describe("unified overview rendering", () => {
       });
       // The source name and locale badge must come from the data, not from a
       // guessed suffix in the target id.
-      expect(html).toContain('class="overview-platform__name"><span class="overview-platform__label">Telegram</span><b>RU</b>');
-      expect(html).toContain('class="overview-platform__name"><span class="overview-platform__label">X</span><b>EN</b>');
+      expect(html).toContain('class="overview-platform__name"><b>RU</b>');
+      expect(html).toContain('class="overview-platform__name"><b>EN</b>');
+      expect(html).not.toContain('class="overview-platform__label"');
     } finally {
       backendDb.close();
     }

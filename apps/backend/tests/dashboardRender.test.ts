@@ -326,4 +326,57 @@ describe("renderOverviewPublicationList", () => {
     expect(html).toContain('<img src="/media/post.jpg"');
     expect(html).not.toContain('class="track-publication"');
   });
+
+  it("keeps publication rows compact with one platform mark or a counted platform summary", () => {
+    const textPost: PipelinePost = {
+      post_id: 2,
+      date: "2026-08-02T12:00:00.000Z",
+      full_text_en: "One two three four five six seven",
+      targets: {
+        telegram: { status: "published" },
+        x: { status: "published" },
+      },
+      metrics: {
+        telegram: { views: { value: 42 }, likes: { value: 4 }, replies: { value: 2 } },
+        x: { views: { value: 18 }, likes: { value: 2 }, replies: { value: 1 } },
+      },
+    };
+    const html = renderOverviewPublicationList([textPost], ["telegram", "x"]);
+
+    expect(html).toContain("One two three four five...");
+    expect(html).toContain('<b class="post-detail__platform-count">2</b>');
+    expect(html).toContain('data-tooltip="Telegram RU, X (Twitter) EN"');
+    expect(html.match(/class="post-detail__metric/g)?.length).toBe(3);
+    expect(html).toContain("post-detail__metric--separated");
+  });
+
+  it("renders a video row as icon plus locale without a source label", () => {
+    const html = renderOverviewPublicationList(
+      [],
+      [],
+      [
+        {
+          key: "video:2",
+          target: "instagram_reels",
+          providerAccountId: null,
+          label: "Instagram RU",
+          locale: "RU",
+          title: "First second third fourth fifth sixth",
+          url: null,
+          publishedAt: "2026-08-02T12:00:00.000Z",
+          views: 100,
+          reactions: 8,
+          replies: 1,
+          afterPeriodViews: 0,
+          lifetimeViews: 100,
+          subscribers: null,
+        },
+      ],
+    );
+
+    expect(html).toContain("First second third fourth fifth...");
+    expect(html).toContain('data-tooltip="Instagram RU"');
+    expect(html).toContain('<b class="post-detail__platform-locale">RU</b>');
+    expect(html).not.toContain("post-detail__source");
+  });
 });
