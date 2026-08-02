@@ -7,13 +7,7 @@ import type { PipelinePost } from "./types.js";
 import type { VideoContentItem } from "./video-overview.js";
 
 const NO_POSTS = "За выбранный период публикаций нет";
-const VISIBLE_RECENT = 5;
 const DETAIL_BATCH_SIZE = 10;
-
-export type PublicationColumnsOptions = {
-  /** Read-only endpoint used to fetch the non-visible detail rows on demand. */
-  moreUrl?: string | undefined;
-};
 
 export type PublicationDetailsResult = {
   html: string;
@@ -22,51 +16,13 @@ export type PublicationDetailsResult = {
   remaining: number;
 };
 
-/**
- * The two content columns, over both halves of the feed.
- *
- * Text and video are ranked and listed in one sequence rather than in two
- * lists: they compete for the same attention, and a split makes "what worked
- * this week" a question the operator has to answer by eye. Video rows are not
- * expandable — there is no second locale and no post body to reveal — so they
- * render as a plain row in the same grid.
- */
-export function renderPublicationColumns(
-  posts: PipelinePost[],
-  targetIds: string[] = ORDERED_TARGETS.map((target) => target.id),
-  videos: VideoContentItem[] = [],
-  options: PublicationColumnsOptions = {},
-): string {
-  const entries = publicationEntries(posts, targetIds, videos);
-  const ranked = [...entries].sort((left, right) => right.views - left.views).slice(0, 3);
-  const recent = [...entries].sort((left, right) => right.date.localeCompare(left.date));
-  const recentMarkup = renderRecentPublicationList(recent, VISIBLE_RECENT, options.moreUrl);
-  return [
-    '<div class="publication-columns">',
-    '<section class="best-posts">',
-    '<div class="section-kicker">Лучшие публикации</div>',
-    ranked.length ? ranked.map((entry, index) => entry.best(index + 1)).join("") : empty(NO_POSTS),
-    "</section>",
-    '<section class="recent-posts">',
-    '<header class="recent-posts__header">',
-    '<div class="section-kicker">Последние публикации</div>',
-    "<span>Площадки</span><span>Охват</span><span>Реакции</span><span>Ответы</span>",
-    "</header>",
-    recent.length ? recentMarkup : empty(NO_POSTS),
-    "</section>",
-    "</div>",
-  ].join("");
-}
-
 export type TrackPublicationListOptions = {
   limit?: number;
   /** Where "показать все N" goes. Omitted, the footer is not rendered at all. */
   moreUrl?: string | undefined;
 };
 
-/** Small ranked rows used by the split overview. The detailed expandable table
- * remains available below the fold; the landing screen only needs the first
- * few winners in the same visual language as the platform rows. */
+/** Small ranked rows used by the split overview. */
 export function renderTrackPublicationList(
   posts: PipelinePost[],
   targetIds: string[] = ORDERED_TARGETS.map((target) => target.id),
@@ -121,9 +77,7 @@ export function renderTrackPublicationList(
     .join("")}${more}`;
 }
 
-/** Thin, recent rows for the overview. Text rows keep the same inline details
- * as the lower publication table, while video rows remain direct links because
- * their provider-specific detail has no second locale or post body. */
+/** Thin, recent rows for the overview. */
 export function renderOverviewPublicationList(
   posts: PipelinePost[],
   targetIds: string[] = ORDERED_TARGETS.map((target) => target.id),
@@ -172,9 +126,6 @@ export function renderPublicationDetails(
 
 type PublicationEntry = {
   date: string;
-  views: number;
-  reactions: number;
-  best: (rank: number) => string;
   recent: (hidden: boolean) => string;
 };
 
@@ -182,77 +133,13 @@ function publicationEntries(posts: PipelinePost[], targetIds: string[], videos: 
   return [
     ...posts.map((post) => ({
       date: post.date ?? "",
-      views: total(post, targetIds).views,
-      reactions: reactions(total(post, targetIds)),
-      best: (rank: number) => renderBestPost(post, targetIds, rank),
       recent: (hidden: boolean) => renderRecentPost(post, targetIds, hidden),
     })),
     ...videos.map((video) => ({
       date: video.publishedAt ?? "",
-      views: video.views,
-      reactions: video.reactions,
-      best: (rank: number) => renderBestVideo(video, rank),
       recent: (hidden: boolean) => renderRecentVideo(video, hidden),
     })),
   ];
-}
-
-function renderBestPost(post: PipelinePost, targetIds: string[], rank: number): string {
-  const metrics = total(post, targetIds);
-  const title = escapeHtml(shortPipelineText(post.text_ru || post.text_en || "Без текста", 10));
-  const url = bestPostUrl(post, targetIds);
-  return bestBody(rank, title, platformIcons(post, targetIds), metrics.views, reactions(metrics), url);
-}
-
-function renderBestVideo(video: VideoContentItem, rank: number): string {
-  return bestBody(
-    rank,
-    escapeHtml(shortPipelineText(video.title, 10)),
-    videoIcon(video.target),
-    video.views,
-    video.reactions,
-    video.url,
-    video.afterPeriodViews,
-    video.subscribers,
-  );
-}
-
-function bestBody(
-  rank: number,
-  title: string,
-  icons: string,
-  views: number,
-  likes: number,
-  url: string | null,
-  afterPeriodViews = 0,
-  subscribers: number | null = null,
-): string {
-  const opening = url
-    ? `<a class="best-post" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">`
-    : '<article class="best-post">';
-  return [
-    opening,
-    `<span class="post-rank">${rank}</span>`,
-    `<div class="best-post__copy"><div class="best-post__title">${title}</div><div class="best-post__icons">${icons}</div></div>`,
-    '<div class="best-post__stats">',
-    `<strong>${formatMetricValue(views)}</strong><small>просмотры</small>`,
-    afterPeriodViews > 0 ? `<small class="post-after-period">+${formatMetricValue(afterPeriodViews)} после периода</small>` : "",
-    videoSubscribersLine(subscribers),
-    `<em>♡ ${formatMetricValue(likes)}</em>`,
-    "</div>",
-    url ? "</a>" : "</article>",
-  ].join("");
-}
-
-/** The platform column is icons, not words: the same four or five marks repeat
- * on every row, and spelled out they were the widest thing in the list. */
-function platformIcons(post: PipelinePost, targetIds: string[]): string {
-  const keys = new Set(
-    ORDERED_TARGETS.filter((target) => targetIds.includes(target.id) && targetStatus(post, target.id) === "published").map((target) =>
-      platformKey(target.id),
-    ),
-  );
-  return [...keys].map((key) => `<i class="platform-mark">${PLATFORM_ICONS[key] ?? ""}</i>`).join("");
 }
 
 function videoIcon(target: string): string {
@@ -330,11 +217,6 @@ function renderRecentVideo(video: VideoContentItem, hidden: boolean): string {
   return video.url
     ? `<a class="${className}" href="${escapeHtml(video.url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(rowTitle)}">${body}</a>`
     : `<div class="${className}" title="${escapeHtml(rowTitle)}">${body}</div>`;
-}
-
-function videoSubscribersLine(value: number | null): string {
-  if (value === null || value === 0) return "";
-  return `<small class="post-video-subscribers">${value > 0 ? "+" : ""}${formatMetricValue(value)} подписки</small>`;
 }
 
 function bestPostUrl(post: PipelinePost, targetIds: string[]): string | null {

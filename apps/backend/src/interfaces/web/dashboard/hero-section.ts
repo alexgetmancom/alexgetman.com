@@ -34,21 +34,6 @@ export type VideoHeroMetrics = {
   progressPercent: number | null;
 };
 
-export type HeroSectionInput = {
-  text: TextHeroMetrics;
-  video: VideoHeroMetrics;
-  showText: boolean;
-  showVideo: boolean;
-};
-
-/** Renders the legacy two-card wrapper for callers that still need it. */
-export function renderHeroSection(input: HeroSectionInput): string {
-  return `<section class="hero-metrics">
-    ${input.showText ? renderHeroCard("text", input.text) : ""}
-    ${input.showVideo ? renderHeroCard("video", input.video) : ""}
-  </section>`;
-}
-
 export function renderHeroCard(kind: "text", metrics: TextHeroMetrics): string;
 export function renderHeroCard(kind: "video", metrics: VideoHeroMetrics): string;
 export function renderHeroCard(kind: "text" | "video", metrics: TextHeroMetrics | VideoHeroMetrics): string {

@@ -1,3 +1,4 @@
+import type { XActivityDashboardItem } from "../../analytics/x-activity-dashboard.js";
 import { xActivityDashboard } from "../../analytics/x-activity-dashboard.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
@@ -8,19 +9,17 @@ import { operationsService } from "../../operations/service.js";
 import { type OverviewMode, type PlatformMetric, renderCombinedSection } from "./dashboard/combined-section.js";
 import {
   audiencePlatformFollowers,
-  renderAudienceSection,
   renderCredentialsSection,
   renderDiagnosticsSection,
   renderQueueSection,
   renderRepairSection,
 } from "./dashboard/ops-sections.js";
-import { renderPeriodControls, renderPipelineSection, rollingPeriodDates } from "./dashboard/pipeline-section.js";
+import { renderPeriodControls, rollingPeriodDates } from "./dashboard/period-controls.js";
 import { renderDashboardShell } from "./dashboard/shell.js";
 import { type PublicationDetailsResult, renderPublicationDetails } from "./dashboard/table.js";
 import { DASHBOARD_THEME_TOGGLE_HTML } from "./dashboard/theme.js";
 import type { OpsPayload, PipelineData, PipelinePost } from "./dashboard/types.js";
 import { createVideoOverviewCache, emptyVideoOverview, videoOverview } from "./dashboard/video-overview.js";
-import { renderXPublicationDetails, renderXSection } from "./dashboard/x-section.js";
 import { renderStudioSection } from "./studio.js";
 
 type DashboardTab = "posts" | "studio";
@@ -28,17 +27,12 @@ type DashboardPanel = "overview" | "queue" | "health" | "repair";
 type AudienceView = "threads_ru" | "threads_en" | "telegram" | "x";
 
 const AUDIENCE_VIEWS: AudienceView[] = ["threads_ru", "threads_en", "telegram", "x"];
-const VIEW_TARGETS: Record<Exclude<AudienceView, "x">, string[]> = {
+const VIEW_TARGETS: Record<AudienceView, string[]> = {
   threads_ru: ["threads_ru"],
   threads_en: ["threads_en"],
   telegram: ["telegram"],
+  x: ["x"],
 };
-const VIEW_TITLES: Record<Exclude<AudienceView, "x">, string> = {
-  threads_ru: "Динамика Threads RU",
-  threads_en: "Динамика Threads EN",
-  telegram: "Динамика Telegram",
-};
-
 const DASHBOARD_CACHE_TTL_MS = 3_000;
 const MAX_DASHBOARD_CACHE_ENTRIES = 2;
 type DashboardCacheEntry = { expiresAt: number; html: string };
@@ -162,11 +156,10 @@ export function renderDashboard(
   // Publishing one half only leaves nothing to combine, so those open on the
   // half that exists rather than on a view half of which is permanently empty.
   const mode = resolveOverviewMode(config, requestedMode);
+  const overviewMode = activeView ? "text" : mode;
   const platformMetric: PlatformMetric = requestedMetric === "followers" ? "followers" : "reach";
   const panelLink = (value: DashboardPanel) => `/command-center?tab=posts&panel=${value}${periodDays !== 1 ? `&period=${periodDays}` : ""}`;
-  const overviewFilterQuery = !activeView
-    ? `${mode === "all" ? "" : `&mode=${mode}`}${platformMetric === "followers" ? "&metric=followers" : ""}`
-    : "";
+  const overviewFilterQuery = `${activeView ? "" : overviewMode === "all" ? "" : `&mode=${overviewMode}`}${platformMetric === "followers" ? "&metric=followers" : ""}`;
   const overviewControls =
     panel === "overview" && showPosts ? renderPeriodControls(weekOffset, periodDays, config.TIMEZONE, activeView, overviewFilterQuery) : "";
   const content = renderPanel();
@@ -195,105 +188,67 @@ export function renderDashboard(
 
   function renderOverview(): string {
     if (showPosts) {
-      if (activeView === "x") {
-        const [start, end] = rollingPeriodDates(weekOffset, periodDays, config.TIMEZONE);
-        return renderXSection(
-          xActivityDashboard(backendDb, weekOffset, periodDays, config.TIMEZONE),
-          xActivityDashboard(backendDb, weekOffset + 1, periodDays, config.TIMEZONE),
-          renderAudienceSection(backendDb, config, "x", periodDays, weekOffset),
-          start,
-          end,
-          { moreUrl: publicationDetailsUrl(periodDays, weekOffset, "x", mode, platformMetric) },
-        );
-      }
-      if (!activeView) {
-        const [start, end] = rollingPeriodDates(weekOffset, periodDays, config.TIMEZONE);
-        const comparisonPipeline =
-          periodDays === 1
-            ? service.pipeline(0, 30, 0, weekOffset + 1, { includeSamples: false, includeContent: false })
-            : service.pipeline(weekOffset + 1, periodDays, 0, undefined, { includeSamples: false, includeContent: false });
-        const comparisonX =
-          periodDays === 1
-            ? xActivityDashboard(backendDb, (weekOffset + 1) / 30, 30, config.TIMEZONE)
-            : xActivityDashboard(backendDb, weekOffset + 1, periodDays, config.TIMEZONE);
-        // The video read model is period-scoped the same way the pipeline is:
-        // this period, the comparison baseline, and — for a single day — the
-        // day before, so both halves of the chart answer to one clock.
-        const [yesterdayStart, yesterdayEnd] = rollingPeriodDates(weekOffset + 1, 1, config.TIMEZONE);
-        // A single day is judged against the 30 days ending yesterday, matching
-        // the text baseline. rollingPeriodDates shifts by offset*days, so that
-        // window cannot be asked for as (weekOffset + 1, 30) — that lands a
-        // month earlier.
-        const previousEnd = periodDays === 1 ? yesterdayEnd : rollingPeriodDates(weekOffset + 1, periodDays, config.TIMEZONE)[1];
-        const previousStart =
-          periodDays === 1 ? shiftDays(yesterdayEnd, -29) : rollingPeriodDates(weekOffset + 1, periodDays, config.TIMEZONE)[0];
-        const videoEnabled = config.studio.modules.video_posting;
-        const medianOffsetDays = weekOffset * periodDays + periodDays;
-        const medianPeriodOffset = medianOffsetDays / 30;
-        const [medianStart, medianEnd] = rollingPeriodDates(medianPeriodOffset, 30, config.TIMEZONE);
-        return renderCombinedSection({
-          data: service.pipeline(weekOffset, periodDays, 0, undefined, { includeSamples: periodDays === 1 }),
-          previousData: comparisonPipeline,
-          xItems: xActivityDashboard(backendDb, weekOffset, periodDays, config.TIMEZONE),
-          previousXItems: comparisonX,
-          dayComparisonData:
-            periodDays === 1 ? service.pipeline(0, 1, 0, weekOffset + 1, { includeSamples: true, includeContent: false }) : null,
-          video: videoEnabled
-            ? videoOverview(backendDb, dayBounds(start), dayBounds(end, true), config.TIMEZONE, videoCache)
-            : emptyVideoOverview(),
-          previousVideo: videoEnabled
-            ? videoOverview(backendDb, dayBounds(previousStart), dayBounds(previousEnd, true), config.TIMEZONE, videoCache)
-            : emptyVideoOverview(),
-          dayComparisonVideo:
-            videoEnabled && periodDays === 1
-              ? videoOverview(backendDb, dayBounds(yesterdayStart), dayBounds(yesterdayEnd, true), config.TIMEZONE, videoCache)
-              : null,
-          medianData: service.pipeline(0, 30, 0, medianOffsetDays, { includeSamples: false, includeContent: false }),
-          medianXItems: xActivityDashboard(backendDb, medianPeriodOffset, 30, config.TIMEZONE),
-          medianVideo: videoEnabled
-            ? videoOverview(backendDb, dayBounds(medianStart), dayBounds(medianEnd, true), config.TIMEZONE, videoCache)
-            : emptyVideoOverview(),
-          followers: audiencePlatformFollowers(backendDb),
-          rangeStart: start,
-          rangeEnd: end,
-          periodDays,
-          weekOffset,
-          timeZone: config.TIMEZONE,
-          mode,
-          platformMetric,
-          publicationDetailsUrl: publicationDetailsUrl(periodDays, weekOffset, undefined, mode, platformMetric),
-        });
-      }
-      const targetIds = VIEW_TARGETS[activeView];
-      // A one-day period is shown against the preceding 30 days plus the
-      // preceding single day; every longer period compares against itself.
-      const comparison =
+      const [start, end] = rollingPeriodDates(weekOffset, periodDays, config.TIMEZONE);
+      const selectedTargetIds = activeView ? VIEW_TARGETS[activeView] : undefined;
+      const selectPipeline = (data: PipelineData | null): PipelineData | null =>
+        selectedTargetIds ? filterPipeline(data, selectedTargetIds) : data;
+      const selectX = (items: XActivityDashboardItem[]): XActivityDashboardItem[] =>
+        !activeView ? items : activeView === "x" ? items : [];
+      const comparisonPipeline =
         periodDays === 1
-          ? {
-              baseline: service.pipeline(0, 30, 0, weekOffset + 1, { includeSamples: false, includeContent: false }),
-              days: 30,
-              previousDay: service.pipeline(0, 1, 0, weekOffset + 1, { includeSamples: true, includeContent: false }),
-            }
-          : {
-              baseline: service.pipeline(weekOffset, periodDays, 1, undefined, { includeSamples: false, includeContent: false }),
-              days: periodDays,
-              previousDay: null,
-            };
-      return renderPipelineSection(
-        weekOffset,
+          ? selectPipeline(service.pipeline(0, 30, 0, weekOffset + 1, { includeSamples: false, includeContent: false }))
+          : selectPipeline(service.pipeline(weekOffset + 1, periodDays, 0, undefined, { includeSamples: false, includeContent: false }));
+      const comparisonX =
+        periodDays === 1
+          ? selectX(xActivityDashboard(backendDb, (weekOffset + 1) / 30, 30, config.TIMEZONE))
+          : selectX(xActivityDashboard(backendDb, weekOffset + 1, periodDays, config.TIMEZONE));
+      // The video read model is period-scoped the same way the pipeline is:
+      // this period, the comparison baseline, and — for a single day — the
+      // day before, so both halves of the overview answer to one clock.
+      const [yesterdayStart, yesterdayEnd] = rollingPeriodDates(weekOffset + 1, 1, config.TIMEZONE);
+      const previousEnd = periodDays === 1 ? yesterdayEnd : rollingPeriodDates(weekOffset + 1, periodDays, config.TIMEZONE)[1];
+      const previousStart =
+        periodDays === 1 ? shiftDays(yesterdayEnd, -29) : rollingPeriodDates(weekOffset + 1, periodDays, config.TIMEZONE)[0];
+      const videoEnabled = config.studio.modules.video_posting && !activeView;
+      const medianOffsetDays = weekOffset * periodDays + periodDays;
+      const medianPeriodOffset = medianOffsetDays / 30;
+      const [medianStart, medianEnd] = rollingPeriodDates(medianPeriodOffset, 30, config.TIMEZONE);
+      return renderCombinedSection({
+        data: selectPipeline(service.pipeline(weekOffset, periodDays, 0, undefined, { includeSamples: periodDays === 1 })),
+        previousData: comparisonPipeline,
+        xItems: selectX(xActivityDashboard(backendDb, weekOffset, periodDays, config.TIMEZONE)),
+        previousXItems: comparisonX,
+        dayComparisonData:
+          periodDays === 1
+            ? selectPipeline(service.pipeline(0, 1, 0, weekOffset + 1, { includeSamples: true, includeContent: false }))
+            : null,
+        video: videoEnabled
+          ? videoOverview(backendDb, dayBounds(start), dayBounds(end, true), config.TIMEZONE, videoCache)
+          : emptyVideoOverview(),
+        previousVideo: videoEnabled
+          ? videoOverview(backendDb, dayBounds(previousStart), dayBounds(previousEnd, true), config.TIMEZONE, videoCache)
+          : emptyVideoOverview(),
+        dayComparisonVideo:
+          videoEnabled && periodDays === 1
+            ? videoOverview(backendDb, dayBounds(yesterdayStart), dayBounds(yesterdayEnd, true), config.TIMEZONE, videoCache)
+            : null,
+        medianData: selectPipeline(service.pipeline(0, 30, 0, medianOffsetDays, { includeSamples: false, includeContent: false })),
+        medianXItems: selectX(xActivityDashboard(backendDb, medianPeriodOffset, 30, config.TIMEZONE)),
+        medianVideo: videoEnabled
+          ? videoOverview(backendDb, dayBounds(medianStart), dayBounds(medianEnd, true), config.TIMEZONE, videoCache)
+          : emptyVideoOverview(),
+        followers: audiencePlatformFollowers(backendDb),
+        rangeStart: start,
+        rangeEnd: end,
         periodDays,
-        filterPipeline(service.pipeline(weekOffset, periodDays, 0, undefined, { includeSamples: periodDays === 1 }), targetIds),
-        filterPipeline(comparison.baseline, targetIds),
-        renderAudienceSection(backendDb, config, activeView, periodDays, weekOffset),
-        config.TIMEZONE,
-        comparison.days,
-        filterPipeline(comparison.previousDay, targetIds),
-        {
-          targetIds,
-          title: VIEW_TITLES[activeView],
-          publicationDetailsUrl: publicationDetailsUrl(periodDays, weekOffset, activeView, mode, platformMetric),
-        },
-      );
+        weekOffset,
+        timeZone: config.TIMEZONE,
+        mode: overviewMode,
+        platformMetric,
+        textTargetIds: selectedTargetIds,
+        textView: activeView,
+        publicationDetailsUrl: publicationDetailsUrl(periodDays, weekOffset, activeView, overviewMode, platformMetric),
+      });
     }
     if (showStudio && studioActorId) return renderStudioSection(config, backendDb, studioActorId, locale);
     return "";
@@ -348,9 +303,6 @@ export function renderDashboardPublicationDetails(
   offset: number,
   limit: number,
 ): PublicationDetailsResult {
-  if (requestedView === "x") {
-    return renderXPublicationDetails(xActivityDashboard(backendDb, weekOffset, periodDays, config.TIMEZONE), offset, limit);
-  }
   const mode = resolveOverviewMode(config, requestedMode);
   const targetIds = dashboardTargetIds(requestedView);
   const data =
@@ -361,9 +313,12 @@ export function renderDashboardPublicationDetails(
           includeContent: true,
         });
   const posts = targetIds ? (filterPipeline(data, targetIds)?.posts ?? []) : (data?.posts ?? []);
+  const xItems = requestedView === "x" ? xActivityDashboard(backendDb, weekOffset, periodDays, config.TIMEZONE) : [];
+  const representedPostKeys = new Set(posts.map((post) => post.post_key).filter((key): key is string => Boolean(key)));
+  const xPosts = xItems.filter((item) => !item.linkedPostKey || !representedPostKeys.has(item.linkedPostKey)).map(xActivityPipelinePost);
   const videos =
     mode === "text" || !config.studio.modules.video_posting ? [] : videoOverviewForPeriod(backendDb, weekOffset, periodDays, config).items;
-  return renderPublicationDetails(posts, targetIds, videos, offset, limit);
+  return renderPublicationDetails([...posts, ...xPosts], targetIds ?? (requestedView === "x" ? ["x"] : undefined), videos, offset, limit);
 }
 
 /** Health is the one hidden tab whose state the operator must see without
@@ -386,7 +341,7 @@ function resolveOverviewMode(config: BackendConfig, requestedMode: string | unde
 }
 
 function dashboardTargetIds(requestedView: string | undefined): string[] | undefined {
-  if (requestedView === "threads_ru" || requestedView === "threads_en" || requestedView === "telegram") return VIEW_TARGETS[requestedView];
+  if (requestedView && AUDIENCE_VIEWS.includes(requestedView as AudienceView)) return VIEW_TARGETS[requestedView as AudienceView];
   return undefined;
 }
 
@@ -417,6 +372,22 @@ function videoOverviewForPeriod(backendDb: BackendDb, weekOffset: number, period
 function videoDayBounds(date: Date, endOfDay: boolean, timeZone: string): Date {
   const start = zonedSlot(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate(), "00:00", timeZone);
   return endOfDay ? new Date(start.getTime() + 86_400_000 - 1) : start;
+}
+
+function xActivityPipelinePost(item: XActivityDashboardItem): PipelinePost {
+  return {
+    post_key: `x-activity:${item.xPostId}`,
+    date: item.publishedAt,
+    text_en: item.text,
+    targets: { x: { status: "published", url: item.url } },
+    metrics: {
+      x: {
+        views: { value: Number(item.metrics.views ?? 0) },
+        likes: { value: Number(item.metrics.interactions ?? 0) },
+        replies: { value: Number(item.metrics.replies ?? 0) },
+      },
+    },
+  };
 }
 
 const HTML_ENTITIES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };

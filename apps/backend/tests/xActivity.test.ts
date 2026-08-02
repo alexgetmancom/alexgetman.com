@@ -7,7 +7,6 @@ import { openBackendDb } from "../src/db/client.js";
 import { xActivityItems, xActivityMetricSnapshots } from "../src/db/schema.js";
 import { renderCombinedSection } from "../src/interfaces/web/dashboard/combined-section.js";
 import { emptyVideoOverview } from "../src/interfaces/web/dashboard/video-overview.js";
-import { renderXSection } from "../src/interfaces/web/dashboard/x-section.js";
 
 const HEADERS = [
   "Идентификатор поста",
@@ -72,27 +71,6 @@ describe("X Activity", () => {
     } finally {
       backendDb.close();
     }
-  });
-
-  it("renders X activity in the existing overview composition", () => {
-    const items = [
-      {
-        xPostId: "101",
-        kind: "reply" as const,
-        publishedAt: "2026-07-29T10:00:00.000Z",
-        text: "@friend Useful answer",
-        url: "https://x.com/test/status/101",
-        linkedPostKey: null,
-        metrics: { views: 500, interactions: 40, replies: 3 },
-      },
-    ];
-    const html = renderXSection(items, [], "<aside>Audience</aside>", new Date("2026-07-29"), new Date("2026-07-29"));
-
-    expect(html).toContain("<strong>500</strong>");
-    expect(html).toContain("Лучшие публикации");
-    expect(html).toContain("Последние публикации");
-    expect(html).toContain("Ответ");
-    expect(html).toContain("Открыть в X");
   });
 
   it("adds only X activity that is not already represented in the editorial totals", () => {
@@ -166,9 +144,8 @@ describe("X Activity", () => {
     // Standalone X activity is folded into the text half: 150 from the post's
     // targets plus 500 from the unlinked reply.
     expect(html).toContain("<strong>650</strong>");
-    expect(html).toContain("Последние публикации");
-    expect(html).toContain("Сегодня и медиана за 30 дней");
-    expect(html).not.toContain("vs медиана за 30д");
+    expect(html).toContain("ПУБЛИКАЦИИ");
+    expect(html).not.toContain("Детальная динамика и публикации");
     // The two halves are reported separately and never added together.
     expect(html).toContain("Текст");
     expect(html).toContain("Видео");

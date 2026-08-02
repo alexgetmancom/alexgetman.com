@@ -304,14 +304,10 @@ describe("unified overview rendering", () => {
       expect(html).not.toContain('class="kpi-table');
       expect(html).not.toContain("kpi-table__row--head");
       expect(html).not.toContain("vs медиана за 30д");
-      expect(html).toContain("пунктир — медиана за 30 дней");
       expect(html).not.toContain("вчера к этому времени");
-      // The scale toggle only earns its place when two series share the axis.
-      expect(html).toContain('class="chart-scale"');
-      expect(html).toContain('data-scale="absolute" aria-pressed="false"');
-      expect(html).toContain('data-scale="relative" aria-pressed="true"');
-      expect(html).toContain('class="chart-view chart-view--absolute"');
-      expect(html).toContain('class="chart-view chart-view--relative"');
+      expect(html).not.toContain("Детальная динамика и публикации");
+      expect(html).not.toContain('class="overview-details"');
+      expect(html).not.toContain('class="metric-chart--dual"');
     } finally {
       backendDb.close();
     }
@@ -364,7 +360,7 @@ describe("unified overview rendering", () => {
 
     expect(html).toContain("+100%");
     expect(html).not.toContain("vs медиана за 30д");
-    expect(html).toContain("Текст: 200");
+    expect(html).toContain("<strong>200</strong>");
   });
 
   it("derives the locale badge from the data rather than from the platform name", () => {
@@ -420,6 +416,40 @@ describe("unified overview rendering", () => {
     // separate heading repeating it.
     expect(followerHtml).toContain('aria-pressed="true">Подписчики</a>');
     expect(followerHtml).toContain('href="/command-center?period=1&week_offset=0&mode=text"');
+  });
+
+  it("scopes the new overview to the selected text platform", () => {
+    const post: PipelinePost = {
+      post_key: "scoped-post",
+      date: hoursAgo(2),
+      text_en: "Threads EN publication",
+      targets: {
+        threads_en: { status: "published" },
+        telegram: { status: "published" },
+      },
+      metrics: {
+        threads_en: { views: { value: 5_000 }, likes: { value: 20 }, replies: { value: 3 } },
+        telegram: { views: { value: 200 }, likes: { value: 9 }, replies: { value: 1 } },
+      },
+    };
+    const html = renderCombinedSection({
+      ...baseInput,
+      data: { posts: [post] },
+      video: emptyVideoOverview(),
+      followers: [
+        { key: "threads_en", label: "Threads EN", followers: 100 },
+        { key: "telegram", label: "Telegram", followers: 200 },
+      ],
+      mode: "text",
+      textTargetIds: ["threads_en"],
+      textView: "threads_en",
+    });
+
+    expect(html).toContain("<strong>5k</strong>");
+    expect(html).toContain('class="overview-platform" title="Threads EN"');
+    expect(html).not.toContain("Telegram");
+    expect(html).toContain("Threads EN publication");
+    expect(html).not.toContain("Детальная динамика и публикации");
   });
 
   it("offers the full list only when the column actually hides rows", () => {

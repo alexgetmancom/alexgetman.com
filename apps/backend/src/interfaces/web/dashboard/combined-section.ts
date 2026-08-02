@@ -2,20 +2,14 @@ import type { XActivityDashboardItem } from "../../../analytics/x-activity-dashb
 import { targetLocale } from "../../../botTargets.js";
 import { zonedDateParts, zonedSlot } from "../../../foundation/time.js";
 import { ORDERED_TARGETS, PLATFORM_ICONS, platformKey, VIDEO_PLATFORM_ICON_KEYS } from "./assets.js";
-import {
-  currentPostViewEvents,
-  postViewEvents,
-  renderOverviewSparkline,
-  renderUnifiedDailyChart,
-  renderUnifiedRangeChart,
-} from "./chart.js";
+import { renderOverviewSparkline } from "./chart.js";
 import { formatMetricValue } from "./format.js";
 import { renderHeroCard, renderHeroMicroMetrics, type TextHeroMetrics, type VideoHeroMetrics } from "./hero-section.js";
 import { escapeHtml } from "./html.js";
 import { getTargetMetric, postMetricTotals } from "./metrics.js";
-import { renderOverviewPublicationList, renderPublicationColumns } from "./table.js";
+import { renderOverviewPublicationList } from "./table.js";
 import type { PipelineData, PipelinePost } from "./types.js";
-import type { MetricEvent, VideoOverview } from "./video-overview.js";
+import type { VideoOverview } from "./video-overview.js";
 
 /**
  * The unified overview: text and video on one screen, under one period.
@@ -57,6 +51,10 @@ export type CombinedSectionInput = {
   timeZone: string;
   mode: OverviewMode;
   platformMetric: PlatformMetric;
+  /** Restricts the text half when a platform row is selected. */
+  textTargetIds?: readonly string[] | undefined;
+  /** The selected text platform, if this is a scoped overview. */
+  textView?: string | undefined;
   publicationDetailsUrl?: string;
 };
 
@@ -65,6 +63,7 @@ const VIDEO_COLOR = "var(--series-video)";
 
 export function renderCombinedSection(input: CombinedSectionInput): string {
   const { mode, periodDays, timeZone } = input;
+  const textTargetIds = selectedTextTargetIds(input);
   const posts = input.data?.posts ?? [];
   const previousPosts = input.previousData?.posts ?? [];
   const extraX = additionalXItems(posts, input.xItems);
@@ -73,9 +72,11 @@ export function renderCombinedSection(input: CombinedSectionInput): string {
   const showText = mode !== "video";
   const showVideo = mode !== "text";
 
-  const text = combinedTotals(posts, extraX);
+  const text = combinedTotals(posts, extraX, textTargetIds);
   const previousText =
-    periodDays === 1 ? medianDailyTextTotals(previousPosts, previousExtraX, 30, timeZone) : combinedTotals(previousPosts, previousExtraX);
+    periodDays === 1
+      ? medianDailyTextDetails(previousPosts, previousExtraX, 30, timeZone, textTargetIds)
+      : combinedTotals(previousPosts, previousExtraX, textTargetIds);
   const previousVideoTotals =
     periodDays === 1
       ? medianDailyVideoTotals(input.previousVideo, 30)
@@ -84,7 +85,18 @@ export function renderCombinedSection(input: CombinedSectionInput): string {
           reactions: input.previousVideo.totals.reactions,
           replies: input.previousVideo.totals.replies,
         };
-  const textHero = textHeroMetrics(input, posts, extraX, previousPosts, previousExtraX, periodDays, timeZone, text, previousText);
+  const textHero = textHeroMetrics(
+    input,
+    posts,
+    extraX,
+    previousPosts,
+    previousExtraX,
+    periodDays,
+    timeZone,
+    text,
+    previousText,
+    textTargetIds,
+  );
   const videoHero = videoHeroMetrics(input, periodDays, previousVideoTotals);
   const comparisonPosts = periodDays === 1 ? (input.dayComparisonData?.posts ?? previousPosts) : previousPosts;
   const comparisonX = periodDays === 1 ? input.previousXItems : previousExtraX;
@@ -98,19 +110,6 @@ export function renderCombinedSection(input: CombinedSectionInput): string {
       ${textColumn}
       ${videoColumn}
     </div>
-    <details class="overview-details">
-      <summary>Детальная динамика и публикации</summary>
-      <div class="overview-details__body">
-        <div class="section-kicker">${periodDays === 1 ? "Сегодня и медиана за 30 дней" : "Динамика просмотров"}</div>
-        ${renderChart(input, posts, extraX, showText, showVideo)}
-        ${renderPublicationColumns(
-          showText ? posts : [],
-          ORDERED_TARGETS.map((target) => target.id),
-          showVideo ? input.video.items : [],
-          { moreUrl: input.publicationDetailsUrl },
-        )}
-      </div>
-    </details>
     <div class="chart-tooltip overview-chart-tooltip" hidden></div>
   </section>`;
 }
@@ -161,6 +160,7 @@ function renderOverviewColumn(
   const color = kind === "text" ? TEXT_COLOR : VIDEO_COLOR;
   const currentPosts = kind === "text" ? posts : [];
   const currentX = kind === "text" ? extraX : [];
+  const textTargetIds = selectedTextTargetIds(input);
   const history = overviewHistory(input, kind, currentPosts, currentX);
   const platformRows = overviewPlatformRows(
     input,
@@ -173,12 +173,10 @@ function renderOverviewColumn(
   const showMetricFilter = single || kind === "text";
   const publicationMarkup =
     kind === "text"
-      ? renderOverviewPublicationList(
-          posts,
-          ORDERED_TARGETS.map((target) => target.id),
-          [],
-          { limit: 4, moreUrl: input.publicationDetailsUrl },
-        )
+      ? renderOverviewPublicationList(input.textView === "x" ? [...posts, ...currentX.map(xChartPost)] : posts, textTargetIds, [], {
+          limit: 4,
+          moreUrl: input.publicationDetailsUrl,
+        })
       : renderOverviewPublicationList([], [], input.video.items, { limit: 4, moreUrl: input.publicationDetailsUrl });
   const heroMarkup = kind === "text" ? renderHeroCard("text", hero as TextHeroMetrics) : renderHeroCard("video", hero as VideoHeroMetrics);
   const microMarkup =
@@ -243,7 +241,9 @@ function renderOverviewPlatforms(
   const more = hiddenRows.length
     ? `<details class="overview-platforms__more platform-more"><summary>Ещё <span>${hiddenRows.length}</span></summary><div class="platform-more__list">${hiddenRows.map(renderRow).join("")}</div></details>`
     : `<a class="overview-platforms__more overview-platforms__more--jump" href="#overview-publications-${kind}">Публикации</a>`;
-  const filter = showMetricFilter ? renderPlatformMetricFilter(input.platformMetric, input.periodDays, input.weekOffset, input.mode) : "";
+  const filter = showMetricFilter
+    ? renderPlatformMetricFilter(input.platformMetric, input.periodDays, input.weekOffset, input.mode, input.textView)
+    : "";
   // No kicker over the bar: the RU/EN labels already name the row, and a second
   // heading only pushed the first number further down. The metric switch stays —
   // it is a real filter, not decoration — but as a bare pair of links on the
@@ -289,31 +289,36 @@ function overviewPlatformRows(
       );
   }
 
-  const rows = input.followers.map((platform) => ({
-    key: platform.key,
-    label: platform.label,
-    locale: targetLocale(platform.key),
-    icon: PLATFORM_ICONS[platform.key.startsWith("threads") ? "threads" : platformKey(platform.key)] ?? "",
-    views: platformViews(platform.key, currentPosts, currentX),
-    followers: platform.followers,
-    delta: percentDelta(platformViews(platform.key, currentPosts, currentX), platformViews(platform.key, comparisonPosts, comparisonX)),
-    href: `/command-center?period=${input.periodDays}&week_offset=${input.weekOffset}${input.mode === "all" ? "" : `&mode=${input.mode}`}&view=${encodeURIComponent(platform.key)}`,
-    secondary: SECONDARY_TEXT_TARGETS.has(platform.key),
-  }));
+  const textTargetIds = selectedTextTargetIds(input);
+  const rows = input.followers
+    .filter((platform) => textTargetIds.includes(platform.key))
+    .map((platform) => ({
+      key: platform.key,
+      label: platform.label,
+      locale: targetLocale(platform.key),
+      icon: PLATFORM_ICONS[platform.key.startsWith("threads") ? "threads" : platformKey(platform.key)] ?? "",
+      views: platformViews(platform.key, currentPosts, currentX),
+      followers: platform.followers,
+      delta: percentDelta(platformViews(platform.key, currentPosts, currentX), platformViews(platform.key, comparisonPosts, comparisonX)),
+      href: input.textView
+        ? null
+        : `/command-center?period=${input.periodDays}&week_offset=${input.weekOffset}${input.mode === "all" ? "" : `&mode=${input.mode}`}&view=${encodeURIComponent(platform.key)}`,
+      secondary: SECONDARY_TEXT_TARGETS.has(platform.key),
+    }));
   const known = new Set(rows.map((row) => row.key));
-  const publishedTargets = ORDERED_TARGETS.filter((target) => !known.has(target.id) && hasTextTargetData(currentPosts, target.id)).map(
-    (target) => ({
-      key: target.id,
-      label: target.label,
-      locale: target.locale,
-      icon: PLATFORM_ICONS[platformKey(target.id)] ?? "",
-      views: platformViews(target.id, currentPosts, currentX),
-      followers: null,
-      delta: percentDelta(platformViews(target.id, currentPosts, currentX), platformViews(target.id, comparisonPosts, comparisonX)),
-      href: null,
-      secondary: SECONDARY_TEXT_TARGETS.has(target.id),
-    }),
-  );
+  const publishedTargets = ORDERED_TARGETS.filter(
+    (target) => textTargetIds.includes(target.id) && !known.has(target.id) && hasTextTargetData(currentPosts, target.id),
+  ).map((target) => ({
+    key: target.id,
+    label: target.label,
+    locale: target.locale,
+    icon: PLATFORM_ICONS[platformKey(target.id)] ?? "",
+    views: platformViews(target.id, currentPosts, currentX),
+    followers: null,
+    delta: percentDelta(platformViews(target.id, currentPosts, currentX), platformViews(target.id, comparisonPosts, comparisonX)),
+    href: null,
+    secondary: SECONDARY_TEXT_TARGETS.has(target.id),
+  }));
   return [...rows, ...publishedTargets].sort((left, right) =>
     input.platformMetric === "reach" ? right.views - left.views : (right.followers ?? -1) - (left.followers ?? -1),
   );
@@ -329,14 +334,21 @@ function percentDelta(value: number, previous: number): number | null {
   return Math.round(((value - previous) / previous) * 100);
 }
 
+function selectedTextTargetIds(input: CombinedSectionInput): string[] {
+  return input.textTargetIds ? [...input.textTargetIds] : ORDERED_TARGETS.map((target) => target.id);
+}
+
 function overviewHistory(
   input: CombinedSectionInput,
   kind: OverviewKind,
   currentPosts: PipelinePost[],
   currentX: XActivityDashboardItem[],
 ): Array<{ label: string; value: number }> {
+  const textTargetIds = selectedTextTargetIds(input);
   const current =
-    kind === "text" ? textViewsByDay([...currentPosts, ...currentX.map(xChartPost)], input.timeZone) : videoViewsByDay(input.video);
+    kind === "text"
+      ? textViewsByDay([...currentPosts, ...currentX.map(xChartPost)], input.timeZone, textTargetIds)
+      : videoViewsByDay(input.video);
   if (input.periodDays === 1) {
     const previous =
       kind === "text"
@@ -346,6 +358,7 @@ function overviewHistory(
               ...additionalXItems(input.previousData?.posts ?? [], input.previousXItems).map(xChartPost),
             ],
             input.timeZone,
+            textTargetIds,
           )
         : videoViewsByDay(input.previousVideo);
     const points: Array<{ label: string; value: number }> = [];
@@ -378,17 +391,18 @@ function textHeroMetrics(
   timeZone: string,
   current: Totals,
   fallbackMedian: Totals,
+  textTargetIds: readonly string[],
 ): TextHeroMetrics {
-  const currentDetails = textDetails(posts, extraX);
+  const currentDetails = textDetails(posts, extraX, textTargetIds);
   const hasMedianData = Boolean(input.medianData && ((input.medianData.posts?.length ?? 0) > 0 || input.medianXItems?.length));
   const medianSource = hasMedianData ? (input.medianData?.posts ?? []) : previousPosts;
   const medianExtraX = hasMedianData ? (input.medianXItems ?? []) : previousExtraX;
   const medianDetails =
     hasMedianData && periodDays > 1
-      ? scaleTextDetails(medianDailyTextDetails(medianSource, medianExtraX, 30, timeZone), periodDays)
+      ? scaleTextDetails(medianDailyTextDetails(medianSource, medianExtraX, 30, timeZone, textTargetIds), periodDays)
       : periodDays === 1
-        ? medianDailyTextDetails(medianSource, medianExtraX, 30, timeZone)
-        : textDetails(previousPosts, previousExtraX);
+        ? medianDailyTextDetails(medianSource, medianExtraX, 30, timeZone, textTargetIds)
+        : textDetails(previousPosts, previousExtraX, textTargetIds);
   const median = hasMedianData || periodDays === 1 ? medianDetails : fallbackMedian;
   const views = current.views;
   const progressPercent = metricProgress(views, median.views);
@@ -493,13 +507,14 @@ function hasVideoHistory(video: VideoOverview | null | undefined): video is Vide
 
 type TextDetails = { views: number; reactions: number; replies: number; reposts: number };
 
-function textDetails(posts: PipelinePost[], extraX: XActivityDashboardItem[]): TextDetails {
+function textDetails(
+  posts: PipelinePost[],
+  extraX: XActivityDashboardItem[],
+  targetIds: readonly string[] = ORDERED_TARGETS.map((target) => target.id),
+): TextDetails {
   const details = posts.reduce(
     (totals, post) => {
-      const metrics = postMetricTotals(
-        post,
-        ORDERED_TARGETS.map((target) => target.id),
-      );
+      const metrics = postMetricTotals(post, [...targetIds]);
       totals.views += metrics.views;
       totals.reactions += metrics.likes + metrics.reposts;
       totals.replies += metrics.replies;
@@ -517,7 +532,13 @@ function textDetails(posts: PipelinePost[], extraX: XActivityDashboardItem[]): T
   return details;
 }
 
-function medianDailyTextDetails(posts: PipelinePost[], extraX: XActivityDashboardItem[], days: number, timeZone: string): TextDetails {
+function medianDailyTextDetails(
+  posts: PipelinePost[],
+  extraX: XActivityDashboardItem[],
+  days: number,
+  timeZone: string,
+  targetIds: readonly string[] = ORDERED_TARGETS.map((target) => target.id),
+): TextDetails {
   const daily = new Map<string, TextDetails>();
   const add = (key: string | null, values: TextDetails) => {
     if (!key) return;
@@ -528,8 +549,8 @@ function medianDailyTextDetails(posts: PipelinePost[], extraX: XActivityDashboar
     bucket.reposts += values.reposts;
     daily.set(key, bucket);
   };
-  for (const post of posts) add(calendarKey(post.date, timeZone), textDetails([post], []));
-  for (const item of extraX) add(calendarKey(item.publishedAt, timeZone), textDetails([], [item]));
+  for (const post of posts) add(calendarKey(post.date, timeZone), textDetails([post], [], targetIds));
+  for (const item of extraX) add(calendarKey(item.publishedAt, timeZone), textDetails([], [item], targetIds));
   return medianDetails([...daily.values()], days);
 }
 
@@ -567,104 +588,6 @@ function scaleTotals(value: Totals, factor: number): Totals {
   return { views: value.views * factor, reactions: value.reactions * factor, replies: value.replies * factor };
 }
 
-/**
- * Platforms, in two columns inside one card.
- *
- * The row is a mark and a number, with no platform name. The marks are the
- * same six or seven every day and the operator already knows them; spelled out,
- * "Instagram Reels" was the widest thing in the panel and it pushed the card to
- * half the row, which is space the chart needs. What a name cannot carry and an
- * icon cannot either is the locale — Threads publishes RU and EN through one
- * logo — so only that is written, as a badge. The full name stays in the title
- * attribute and in the accessible label, so nothing is actually lost.
- *
- * Followers move to one summed line under each column. Per platform they were a
- * second unlabelled number next to reach and read as noise; as a column total
- * they still answer "how big is the room" in a single glance.
- */
-function renderPlatformPanel(input: CombinedSectionInput, posts: PipelinePost[], showText: boolean, showVideo: boolean): string {
-  const textRows = input.followers.map((platform) => ({
-    icon: PLATFORM_ICONS[platform.key.startsWith("threads") ? "threads" : platform.key] ?? "",
-    label: platform.label,
-    // From the same table the publishing presets read, not from the id: X is EN
-    // and Telegram is RU without either saying so in its name, and a bilingual
-    // account that adds a platform gets its badge for free.
-    locales: localeBadges(targetLocale(platform.key)),
-    views: platformViews(platform.key, posts, input.xItems),
-    followers: platform.followers,
-    href: `/command-center?period=${input.periodDays}&week_offset=${input.weekOffset}&view=${platform.key}`,
-  }));
-  const secondaryTextRows = ORDERED_TARGETS.filter((target) => SECONDARY_TEXT_TARGETS.has(target.id))
-    .filter((target) => hasTextTargetData(posts, target.id))
-    .map((target) => ({
-      icon: PLATFORM_ICONS[platformKey(target.id)] ?? "",
-      label: target.label,
-      locales: localeBadges(targetLocale(target.id)),
-      views: platformViews(target.id, posts, input.xItems),
-      followers: null,
-      href: null,
-    }));
-  const videoRows = input.video.platforms.map((platform) => ({
-    icon: PLATFORM_ICONS[VIDEO_PLATFORM_ICON_KEYS[platform.target] ?? ""] ?? "",
-    label: platform.label,
-    locales: platform.locales,
-    views: platform.views,
-    followers: platform.followers,
-    href: null,
-  }));
-  type PlatformRow = {
-    icon: string;
-    label: string;
-    locales: string[];
-    views: number;
-    followers: number | null;
-    href: string | null;
-  };
-  const sortRows = (rows: PlatformRow[]): PlatformRow[] =>
-    [...rows].sort((left, right) => {
-      const leftValue = input.platformMetric === "reach" ? left.views : left.followers;
-      const rightValue = input.platformMetric === "reach" ? right.views : right.followers;
-      const normalizedLeft = leftValue ?? -1;
-      const normalizedRight = rightValue ?? -1;
-      return normalizedRight - normalizedLeft || left.label.localeCompare(right.label);
-    });
-  const renderRows = (rows: PlatformRow[]) =>
-    rows
-      .map((row) => {
-        const name = escapeHtml(row.label);
-        const badges = row.locales.map((locale) => `<b class="platform-locale">${escapeHtml(locale)}</b>`).join("");
-        const value = input.platformMetric === "reach" ? row.views : row.followers;
-        const formattedValue = value === null ? "—" : formatMetricValue(value);
-        const body = `<span class="platform-line__mark"><i>${row.icon}</i>${badges}</span><strong>${formattedValue}</strong>`;
-        return row.href
-          ? `<a class="platform-line platform-line--interactive" href="${row.href}" title="${name}" aria-label="${name}">${body}</a>`
-          : `<div class="platform-line" title="${name}" aria-label="${name}">${body}</div>`;
-      })
-      .join("");
-  const column = (title: string, color: string, rows: PlatformRow[], secondaryRows: PlatformRow[] = []) => {
-    const visibleSecondary = input.platformMetric === "reach" ? secondaryRows.filter((row) => row.views >= 10) : [];
-    const hiddenSecondary = input.platformMetric === "reach" ? secondaryRows.filter((row) => row.views < 10) : [];
-    const visibleRows = input.platformMetric === "reach" ? [...rows, ...visibleSecondary] : rows;
-    const allRows = input.platformMetric === "reach" ? [...rows, ...secondaryRows] : rows;
-    const values = allRows.map((row) => (input.platformMetric === "reach" ? row.views : row.followers));
-    const total = values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
-    const hasTotal = values.some((value) => value !== null);
-    const label = input.platformMetric === "reach" ? "охват" : "подписчики";
-    const more =
-      hiddenSecondary.length > 0
-        ? `<details class="platform-more"><summary>+ Ещё <span>${hiddenSecondary.length}</span></summary><div class="platform-more__list">${renderRows(sortRows(hiddenSecondary))}</div></details>`
-        : "";
-    return `<div class="platform-column"><div class="platform-column__head"><i style="background:${color}"></i>${escapeHtml(title)}</div>${renderRows(sortRows(visibleRows))}${more}<div class="platform-column__foot">${label} <b>${hasTotal ? formatMetricValue(total) : "—"}</b></div></div>`;
-  };
-  return `<aside class="audience-panel platform-panel">
-    <div class="platform-panel__head"><div class="section-kicker">Платформы <em>${input.platformMetric === "reach" ? "охват" : "подписчики"}</em></div>${renderPlatformMetricFilter(input.platformMetric, input.periodDays, input.weekOffset, input.mode)}</div>
-    <div class="platform-columns">
-      ${showText ? column("Текст", TEXT_COLOR, textRows, secondaryTextRows) : ""}
-      ${showVideo ? column("Видео", VIDEO_COLOR, videoRows) : ""}
-    </div>
-  </aside>`;
-}
-
 /** Fixed number of platform rows per track — see renderOverviewPlatforms. */
 const PLATFORM_SLOTS = 4;
 
@@ -675,8 +598,10 @@ export function renderPlatformMetricFilter(
   periodDays: number,
   weekOffset: number,
   mode: OverviewMode = "all",
+  view?: string,
 ): string {
-  const base = `/command-center?period=${periodDays}&week_offset=${weekOffset}${mode === "all" ? "" : `&mode=${mode}`}`;
+  const viewParam = view ? `&view=${encodeURIComponent(view)}` : "";
+  const base = `/command-center?period=${periodDays}&week_offset=${weekOffset}${mode === "all" ? "" : `&mode=${mode}`}${viewParam}`;
   const options: Array<[PlatformMetric, string]> = [
     ["reach", "Охват"],
     ["followers", "Подписчики"],
@@ -689,74 +614,22 @@ export function renderPlatformMetricFilter(
     .join("")}</div>`;
 }
 
-function renderChart(
-  input: CombinedSectionInput,
+function textViewsByDay(
   posts: PipelinePost[],
-  extraX: XActivityDashboardItem[],
-  showText: boolean,
-  showVideo: boolean,
-): string {
-  // A single series has nothing to be dwarfed by, so it keeps the absolute axis.
-  const scale = showText && showVideo ? "relative" : "absolute";
-  if (input.periodDays === 1) {
-    const previousPosts = input.previousData?.posts ?? [];
-    const previousExtraX = additionalXItems(previousPosts, input.previousXItems);
-    const medianText = medianDailyTextTotals(previousPosts, previousExtraX, 30, input.timeZone);
-    const medianVideo = medianDailyVideoTotals(input.previousVideo, 30);
-    const comparisonDay = input.rangeEnd;
-    const comparisonNow = new Date();
-    const currentPostSet = [...posts, ...extraX.map(xChartPost)];
-    const currentCutoff = dailyCutoff(comparisonDay, input.timeZone, comparisonNow);
-    const series = [
-      ...(showText
-        ? [
-            {
-              name: "Текст",
-              color: TEXT_COLOR,
-              today: [...postViewEvents(currentPostSet), ...currentPostViewEvents(currentPostSet, currentCutoff)],
-              comparison: benchmarkEvents(medianText.views, comparisonDay, input.timeZone, comparisonNow),
-            },
-          ]
-        : []),
-      ...(showVideo
-        ? [
-            {
-              name: "Видео",
-              color: VIDEO_COLOR,
-              today: input.video.viewEvents as MetricEvent[],
-              comparison: benchmarkEvents(medianVideo.views, comparisonDay, input.timeZone, comparisonNow),
-            },
-          ]
-        : []),
-    ];
-    return renderUnifiedDailyChart(series, comparisonDay, input.timeZone, comparisonNow, scale);
-  }
-  const series = [
-    ...(showText ? [{ name: "Текст", color: TEXT_COLOR, byDay: textViewsByDay([...posts, ...extraX.map(xChartPost)]) }] : []),
-    ...(showVideo ? [{ name: "Видео", color: VIDEO_COLOR, byDay: videoViewsByDay(input.video) }] : []),
-  ];
-  return renderUnifiedRangeChart(series, input.rangeStart, input.rangeEnd, scale);
-}
-
-function textViewsByDay(posts: PipelinePost[], timeZone = "Europe/Moscow"): Record<string, number> {
-  const targetIds = ORDERED_TARGETS.map((target) => target.id);
+  timeZone = "Europe/Moscow",
+  targetIds: readonly string[] = ORDERED_TARGETS.map((target) => target.id),
+): Record<string, number> {
   const days: Record<string, number> = {};
   for (const post of posts) {
     const day = calendarKey(post.date, timeZone);
     if (!day) continue;
-    days[day] = (days[day] ?? 0) + postMetricTotals(post, targetIds).views;
+    days[day] = (days[day] ?? 0) + postMetricTotals(post, [...targetIds]).views;
   }
   return days;
 }
 
 function videoViewsByDay(video: VideoOverview): Record<string, number> {
   return Object.fromEntries(Object.entries(video.dailyByDay).map(([day, values]) => [day, values.views]));
-}
-
-/** A target declares one locale; a video platform can carry several. Both end
- * up as the same list of badges so the two columns read alike. */
-function localeBadges(locale: string | null): string[] {
-  return locale ? [locale.toUpperCase()] : [];
 }
 
 function platformViews(key: string, posts: PipelinePost[], xItems: XActivityDashboardItem[]): number {
@@ -786,21 +659,6 @@ function hasTextTargetData(posts: PipelinePost[], target: string): boolean {
   });
 }
 
-function medianDailyTextTotals(posts: PipelinePost[], extraX: XActivityDashboardItem[], days: number, timeZone: string): Totals {
-  const daily = new Map<string, Totals>();
-  const add = (key: string | null, values: Totals) => {
-    if (!key) return;
-    const bucket = daily.get(key) ?? emptyTotals();
-    bucket.views += values.views;
-    bucket.reactions += values.reactions;
-    bucket.replies += values.replies;
-    daily.set(key, bucket);
-  };
-  for (const post of posts) add(calendarKey(post.date, timeZone), pipelineTotals([post]));
-  for (const item of extraX) add(calendarKey(item.publishedAt, timeZone), xTotals([item]));
-  return medianOfDays([...daily.values()], days);
-}
-
 function medianDailyVideoTotals(video: VideoOverview, days: number): Totals {
   const daily = new Map<string, Totals>();
   for (const [key, values] of Object.entries(video.dailyByDay)) {
@@ -811,23 +669,6 @@ function medianDailyVideoTotals(video: VideoOverview, days: number): Totals {
     daily.set(key, bucket);
   }
   return medianOfDays([...daily.values()], days);
-}
-
-function benchmarkEvents(total: number, day: Date, timeZone: string, now: Date): MetricEvent[] {
-  const parts = zonedDateParts(day, timeZone);
-  const start = zonedSlot(parts.year, parts.month, parts.day, "00:00", timeZone);
-  const cutoff = dailyCutoff(day, timeZone, now);
-  return [
-    { at: start, key: "benchmark:start", value: 0 },
-    { at: cutoff, key: "benchmark:end", value: Math.max(0, total) },
-  ];
-}
-
-function dailyCutoff(day: Date, timeZone: string, now: Date): Date {
-  const parts = zonedDateParts(day, timeZone);
-  const start = zonedSlot(parts.year, parts.month, parts.day, "00:00", timeZone);
-  const end = new Date(start.getTime() + 86_400_000);
-  return now >= start && now < end ? now : end;
 }
 
 /** Days with no publication are real zeros, not missing data: padding to the
@@ -868,8 +709,7 @@ function additionalXItems(posts: PipelinePost[], items: XActivityDashboardItem[]
   return items.filter((item) => !item.linkedPostKey || !representedPostKeys.has(item.linkedPostKey));
 }
 
-function pipelineTotals(posts: PipelinePost[]): Totals {
-  const targetIds = ORDERED_TARGETS.map((target) => target.id);
+function pipelineTotals(posts: PipelinePost[], targetIds = ORDERED_TARGETS.map((target) => target.id)): Totals {
   return posts.reduce((totals, post) => {
     const metrics = postMetricTotals(post, targetIds);
     totals.views += metrics.views;
@@ -888,8 +728,12 @@ function xTotals(items: XActivityDashboardItem[]): Totals {
   }, emptyTotals());
 }
 
-function combinedTotals(posts: PipelinePost[], extraX: XActivityDashboardItem[]): Totals {
-  const core = pipelineTotals(posts);
+function combinedTotals(
+  posts: PipelinePost[],
+  extraX: XActivityDashboardItem[],
+  targetIds = ORDERED_TARGETS.map((target) => target.id),
+): Totals {
+  const core = pipelineTotals(posts, targetIds);
   const x = xTotals(extraX);
   return { views: core.views + x.views, reactions: core.reactions + x.reactions, replies: core.replies + x.replies };
 }
@@ -898,7 +742,8 @@ function xChartPost(item: XActivityDashboardItem): PipelinePost {
   return {
     post_key: `x-activity:${item.xPostId}`,
     date: item.publishedAt,
-    targets: { x: { status: "published" } },
+    text_en: item.text,
+    targets: { x: { status: "published", url: item.url } },
     metrics: {
       x: {
         views: { value: metric(item, "views") },

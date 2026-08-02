@@ -1,0 +1,62 @@
+import { zonedDateParts } from "../../../foundation/time.js";
+
+const PERIODS = [1, 7, 30, 90, 365] as const;
+
+/**
+ * Period and date, as one quiet cluster on the right edge.
+ *
+ * The five periods used to sit out as a permanent segmented control, which
+ * made a filter that changes maybe twice a day the second-heaviest thing in
+ * the header. It collapses to the current choice; the rest are one click away
+ * in the menu.
+ */
+export function renderPeriodControls(
+  weekOffset: number,
+  periodDays: number,
+  timeZone = "Europe/Moscow",
+  view?: string,
+  extraQuery = "",
+): string {
+  const [start, end] = rollingPeriodDates(weekOffset, periodDays, timeZone);
+  const viewParam = view ? `&view=${encodeURIComponent(view)}` : "";
+  const filterParam = `${viewParam}${extraQuery}`;
+  const periodLabel = (days: number) => (days === 365 ? "Год" : `${days}д`);
+  const quickOptions = PERIODS.filter((days) => days <= 30)
+    .map(
+      (days) =>
+        `<a class="period-quick-link${days === periodDays ? " active" : ""}" href="/command-center?period=${days}&week_offset=${weekOffset}${filterParam}">${periodLabel(days)}</a>`,
+    )
+    .join("");
+  const longOptions = PERIODS.filter((days) => days > 30)
+    .map(
+      (days) =>
+        `<a class="${days === periodDays ? "active" : ""}" href="/command-center?period=${days}&week_offset=${weekOffset}${filterParam}">${periodLabel(days)}</a>`,
+    )
+    .join("");
+  const previous = `<a class="period-nav" href="/command-center?period=${periodDays}&week_offset=${weekOffset + 1}${filterParam}" aria-label="Предыдущий период">‹</a>`;
+  const next =
+    weekOffset > 0
+      ? `<a class="period-nav" href="/command-center?period=${periodDays}&week_offset=${weekOffset - 1}${filterParam}" aria-label="Следующий период">›</a>`
+      : '<span class="period-nav muted">›</span>';
+  const longMenu = longOptions
+    ? `<details class="period-menu"><summary class="period-menu__toggle" aria-label="Другие периоды">${periodDays > 30 ? periodLabel(periodDays) : "Ещё"}<i class="caret">▾</i></summary><div class="period-menu__list">${longOptions}</div></details>`
+    : "";
+  return `<div class="dashboard-nav__controls"><div class="period-quick" role="group" aria-label="Период">${quickOptions}</div>${longMenu}<div class="period-range">${previous}<span>${shortDateRange(start, end)}</span>${next}</div></div>`;
+}
+
+/** Returns UTC-midnight dates whose calendar fields carry the configured zone. */
+export function rollingPeriodDates(offset: number, days: number, timeZone: string): [Date, Date] {
+  const shiftedNow = new Date(Date.now() - offset * days * 86_400_000);
+  const endParts = zonedDateParts(shiftedNow, timeZone);
+  const end = new Date(Date.UTC(endParts.year, endParts.month - 1, endParts.day));
+  const start = new Date(end);
+  start.setUTCDate(start.getUTCDate() - (days - 1));
+  return [start, end];
+}
+
+function shortDateRange(start: Date, end: Date): string {
+  const months = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
+  if (start.getTime() === end.getTime()) return `${end.getUTCDate()} ${months[end.getUTCMonth()]}`;
+  if (start.getUTCMonth() === end.getUTCMonth()) return `${start.getUTCDate()}–${end.getUTCDate()} ${months[end.getUTCMonth()]}`;
+  return `${start.getUTCDate()} ${months[start.getUTCMonth()]} – ${end.getUTCDate()} ${months[end.getUTCMonth()]}`;
+}

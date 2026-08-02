@@ -4,11 +4,7 @@ import { formatMetricValue, getMskDateString, shortPipelineText } from "../src/i
 import { renderHeroMicroMetrics } from "../src/interfaces/web/dashboard/hero-section.js";
 import { formatMedia, getTargetMetric, postMetricTotals, targetCell } from "../src/interfaces/web/dashboard/metrics.js";
 import { renderDashboardShell } from "../src/interfaces/web/dashboard/shell.js";
-import {
-  renderOverviewPublicationList,
-  renderPublicationColumns,
-  renderPublicationDetails,
-} from "../src/interfaces/web/dashboard/table.js";
+import { renderOverviewPublicationList, renderPublicationDetails } from "../src/interfaces/web/dashboard/table.js";
 import { getTargetUrl } from "../src/interfaces/web/dashboard/target-url.js";
 import type { PipelinePost } from "../src/interfaces/web/dashboard/types.js";
 
@@ -78,7 +74,8 @@ describe("dashboard shell", () => {
   it("keeps a hidden overview tooltip hidden after the pointer leaves a chart", () => {
     const html = renderDashboardShell("");
     expect(html).toContain(".overview-chart-tooltip[hidden] { display:none; }");
-    expect(html).toContain("group.closest('.metric-chart')");
+    expect(html).toContain("const chartTooltip = root.querySelector('.overview-chart-tooltip')");
+    expect(html).not.toContain("chart-scale");
   });
 
   it("clips overview bars at the fixed cap while keeping exact values in tooltips", () => {
@@ -215,39 +212,11 @@ describe("dashboard metrics", () => {
   });
 });
 
-describe("renderPublicationColumns", () => {
+describe("publication detail fragments", () => {
   const viewed = (views: number, text: string): PipelinePost => ({
     post_id: views,
     text_en: text,
     ...published("x", { views }),
-  });
-
-  it("ranks the best posts by total views and caps the list at three", () => {
-    const html = renderPublicationColumns([viewed(10, "ten"), viewed(300, "three hundred"), viewed(200, "two hundred"), viewed(5, "five")]);
-    const ranks = [...html.matchAll(/best-post__title">([^<]+)</g)].map((match) => match[1]);
-    expect(ranks).toEqual(["three hundred", "two hundred", "ten"]);
-  });
-
-  it("keeps the first five posts compact and exposes the rest on demand", () => {
-    const html = renderPublicationColumns(Array.from({ length: 9 }, (_, index) => viewed(index, `post ${index}`)));
-    expect(html.match(/<details class="post-detail">/g)?.length).toBe(5);
-    expect(html.match(/post-detail--more/g)?.length).toBe(4);
-    expect(html).toContain("Показать ещё <span>4</span>");
-  });
-
-  it("renders only visible rows when a lazy detail URL is supplied", () => {
-    const html = renderPublicationColumns(
-      Array.from({ length: 9 }, (_, index) => viewed(index, `post ${index}`)),
-      undefined,
-      [],
-      {
-        moreUrl: "/api/command-center/publication-details?period=1",
-      },
-    );
-    expect(html.match(/<details class="post-detail">/g)?.length).toBe(5);
-    expect(html).not.toContain("post-detail--more");
-    expect(html).toContain('data-more-url="/api/command-center/publication-details?period=1"');
-    expect(html).toContain('data-more-offset="5"');
   });
 
   it("renders bounded detail fragments for the lazy loader", () => {
@@ -263,59 +232,6 @@ describe("renderPublicationColumns", () => {
     expect(result.remaining).toBe(2);
     expect(result.html.match(/<details class="post-detail">/g)?.length).toBe(2);
     expect(result.html).toContain("post 5");
-  });
-
-  it("shows the empty state in both columns when there are no posts", () => {
-    const html = renderPublicationColumns([]);
-    expect(html.match(/За выбранный период публикаций нет/g)?.length).toBe(2);
-    expect(html).not.toContain("<details");
-  });
-
-  it("escapes post text so a title cannot inject markup", () => {
-    const html = renderPublicationColumns([viewed(10, '<img src=x onerror="alert(1)">')]);
-    expect(html).not.toContain("<img src=x");
-    expect(html).toContain("&lt;img");
-  });
-
-  it("omits the platform breakdown when nothing published", () => {
-    const html = renderPublicationColumns([{ post_id: 1, text_en: "queued", targets: { x: { status: "queued" } } }]);
-    expect(html).not.toContain("post-platforms");
-  });
-
-  it("falls back to the Russian text and then to a placeholder title", () => {
-    expect(renderPublicationColumns([{ post_id: 1, text_ru: "Русский заголовок" }])).toContain("Русский заголовок");
-    expect(renderPublicationColumns([{ post_id: 1 }])).toContain("Без текста");
-  });
-
-  it("renders a media preview only for an http or site-relative URL", () => {
-    const withPreview = renderPublicationColumns([{ post_id: 1, media_en_json: [{ url: "/media/a.jpg" }] }]);
-    expect(withPreview).toContain('<img src="/media/a.jpg"');
-
-    const untrusted = renderPublicationColumns([{ post_id: 1, media_en_json: [{ url: "javascript:alert(1)" }] }]);
-    expect(untrusted).not.toContain("javascript:");
-    expect(untrusted).toContain("post-preview--empty");
-  });
-
-  it("shows per-video subscriber attribution when it is available", () => {
-    const html = renderPublicationColumns([], undefined, [
-      {
-        key: "video:1",
-        target: "youtube_shorts",
-        providerAccountId: null,
-        label: "YouTube RU",
-        locale: "RU",
-        title: "A Short",
-        url: "https://youtube.com/shorts/a",
-        publishedAt: "2026-08-01T12:00:00.000Z",
-        views: 100,
-        reactions: 8,
-        replies: 1,
-        afterPeriodViews: 0,
-        lifetimeViews: 100,
-        subscribers: 4,
-      },
-    ]);
-    expect(html).toContain("+4 подписки");
   });
 });
 

@@ -48,14 +48,6 @@ export function renderDashboardShell(body: string): string {
     .nav-more__menu a.active { background:var(--accent-glow); color:var(--accent-soft-text); font-weight:650; }
     .nav-dot { width:7px; height:7px; border-radius:50%; background:var(--danger); }
     .overview { padding:0; border:0; background:transparent; overflow:visible; }
-    .audience-strip { margin:0 0 6px; padding:6px; border:1px solid var(--border); border-radius:8px; background:var(--surface); }
-    .audience-cards { display:flex; gap:6px; overflow-x:auto; padding-bottom:2px; }
-    .audience-card { flex:0 0 auto; min-width:86px; padding:5px 8px; border:1px solid var(--border); border-radius:6px; background:var(--surface-sunken); }
-    .audience-card strong,.audience-card b { display:block; }
-    .audience-card strong { color:var(--text-muted); font-size:12px; }
-    .audience-card b { color:var(--accent); font-size:16px; margin-top:2px; }
-    .audience-strip details { margin:5px 0 0; }
-    .audience-strip details > summary { font-size:13px; padding:5px 7px; }
     .command-login { max-width:560px; margin:12vh auto; padding:24px; }
     .login-error { color:var(--danger); }
     .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin:12px 0 18px; }
@@ -89,47 +81,13 @@ export function renderDashboardShell(body: string): string {
     .day-separator td { padding: 4px 12px 2px; background: transparent; border-top: 1px solid var(--border); border-bottom: 0; }
     .day-label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
     
-    .mv,.ml,.mr,.mp { display:none; }
-    #pipeline-table.show-mv .mv { display:inline; }
-    #pipeline-table.show-ml .ml { display:inline; }
-    #pipeline-table.show-mr .mr { display:inline; }
-    #pipeline-table.show-mp .mp { display:inline; }
-    
-    .metric-dashboard { display:grid; grid-template-columns:112px minmax(0,1fr); gap:8px; align-items:stretch; margin:0 0 8px; }
-    .metric-toggle { display:flex; gap:6px; margin:0; }
-    .metric-toggle--vertical { flex-direction:column; justify-content:center; }
-    .mt-btn { background:var(--surface); color:var(--text-muted); border:1px solid var(--border); border-radius:18px; padding:5px 10px; font-size:13px; cursor:pointer; transition:all 0.15s; text-align:left; }
-    .mt-btn:hover { background:var(--surface-raised); color:var(--text-main); }
-    .mt-btn.mt-active { background:var(--accent-strong); color:var(--accent-contrast); border-color:var(--accent-strong); font-weight:600; }
     .day-stat td { border-top: 1px solid var(--border); border-bottom: 2px double var(--border); background: var(--surface); color: var(--text-main); }
     .day-stat-label { text-align: right; color: var(--text-muted); font-weight: normal; }
     .font-bold { font-weight: bold; }
-    .pagination-bar { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 0 0 8px; padding: 5px 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
-    .pag-btn { color: var(--accent); border: 1px solid var(--border); padding: 4px 9px; border-radius: 6px; text-decoration: none; font-size: 12px; background: var(--surface-sunken); transition: background 0.2s, border-color 0.2s; }
-    .pag-btn:hover:not(.disabled) { background: var(--surface-raised); border-color: var(--text-muted); }
-    .pag-btn.disabled { color: var(--text-muted); border-color: var(--surface-raised); background: var(--surface-sunken); cursor: not-allowed; }
-    .pag-current { font-weight: 700; color: var(--text-header); font-size: 14px; }
-    .metric-chart { position:relative; margin:8px 0 0; padding:0; background:transparent; border:0; border-radius:0; }
-    .metric-chart svg { width:100%; height:188px; display:block; }
-    .metric-chart text { fill:var(--text-muted); font-size:13px; }
-    .chart-grid { stroke:var(--border-soft); stroke-width:1; opacity:.75; }
-    .chart-line { vector-effect: non-scaling-stroke; }
-    .metric-chart__legend { display:flex; flex-wrap:wrap; gap:11px; margin:11px 0 0; color:var(--text-main); font-size:15px; }
-    .metric-chart__legend em { margin-left:4px; color:var(--text-muted); font-size:12px; font-style:normal; }
-    .metric-chart__legend span { display:inline-flex; align-items:center; gap:5px; }
-    .metric-chart__legend i { display:inline-block; width:9px; height:9px; border-radius:50%; }
-    .metric-chart__hint { display:none; }
-    .chart-point { vector-effect: non-scaling-stroke; stroke:var(--bg-color); stroke-width:1.4; }
     .chart-hit { fill:transparent; cursor:crosshair; }
     .chart-tooltip { position:fixed; z-index:50; pointer-events:none; max-width:280px; padding:7px 9px; background:var(--surface); border:1px solid var(--accent); border-radius:6px; color:var(--text-header); font-size:12px; box-shadow:0 8px 24px var(--tooltip-shadow); white-space:nowrap; }
     
     .metric-link { text-decoration: none; }
-    .video-dashboard { padding:10px; }
-    .video-stats { margin:0 0 10px; }
-    .video-dashboard small { color:var(--text-muted); }
-    .video-chart { margin:0 0 10px; }
-    .video-chart-note { margin:0 0 10px; }
-    .video-chart-labels { display:flex; justify-content:space-between; color:var(--text-muted); font-size:11px; }
     .danger { color:var(--danger); font-weight:700; }
     .studio-locale { display:flex; justify-content:flex-end; gap:6px; margin:0 0 6px; }
     .studio-locale a { border:1px solid var(--border); border-radius:14px; padding:3px 9px; font-size:13px; text-decoration:none; }
@@ -144,7 +102,7 @@ export function renderDashboardShell(body: string): string {
     .notification--warn span, .notification--error span { color:var(--danger); }
 
     /* Overview-specific surface. Rules shared with the other tabs (body, main,
-       .dashboard-tabs, .metric-chart, ...) are declared once above; only
+       and .dashboard-tabs) are declared once above; only
        selectors unique to this screen belong here. */
     .pipeline-overview { padding:0; background:transparent; border:0; border-radius:0; overflow:visible; }
     /* Trailing cluster of the tab bar: period controls (overview only) plus the
@@ -203,49 +161,10 @@ export function renderDashboardShell(body: string): string {
     .hero-card__metric + .hero-card__metric { padding-left:12px; border-left:1px solid var(--border-soft); }
     .hero-card__metric strong { display:block; margin-top:5px; color:var(--text-header); font-size:23px; line-height:1; font-weight:550; white-space:nowrap; }
 
-    .platform-panel__head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
-    .platform-panel__head .section-kicker { min-width:0; }
-    .platform-panel .section-kicker em { color:var(--text-muted); font-size:12px; font-style:normal; font-weight:500; letter-spacing:0; text-transform:none; }
     .platform-metric-filter { display:inline-flex; flex:0 0 auto; gap:2px; padding:2px; border:1px solid var(--border-soft); border-radius:7px; background:var(--scrim-soft); }
     .platform-metric-btn { padding:4px 8px; border-radius:5px; color:var(--text-muted); font-size:12px; font-weight:650; text-decoration:none; }
     .platform-metric-btn:hover { color:var(--text-main); }
     .platform-metric-btn--active { background:var(--accent-glow); color:var(--accent-soft-text); }
-    /* The two columns rarely hold the same number of platforms, so the totals
-       are pinned to the bottom instead of floating at whatever row each column
-       happens to end on. */
-    .platform-columns { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; margin-top:12px; align-items:stretch; }
-    .platform-column { display:flex; flex-direction:column; }
-    .platform-column__foot { margin-top:auto; }
-    .platform-column__head { display:flex; align-items:center; gap:7px; padding-bottom:4px; color:var(--text-secondary); font-size:13px; font-weight:650; }
-    .platform-column__head i { width:8px; height:8px; border-radius:50%; }
-    /* A mark and a number. Names are gone, so the row is as narrow as the
-       figure allows and the chart keeps the rest of the line. */
-    .platform-line { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:7px 2px; border-bottom:1px solid var(--border-soft); color:var(--text-main); text-decoration:none; }
-    .platform-line__mark { display:inline-flex; align-items:center; gap:6px; color:var(--text-main); }
-    .platform-line__mark svg { width:19px; height:19px; display:block; }
-    .platform-locale { padding:1px 5px; border:1px solid var(--border); border-radius:4px; color:var(--text-muted); font-size:10px; font-weight:700; letter-spacing:.04em; }
-    .platform-line strong { color:var(--text-header); font-size:17px; font-weight:600; }
-    .platform-line--interactive:hover { background:var(--surface-raised); }
-    .platform-column__foot { padding-top:8px; color:var(--text-muted); font-size:12px; }
-    .platform-column__foot b { color:var(--text-secondary); font-weight:650; }
-    .platform-more { margin:3px 0 0; border:0; border-radius:0; background:transparent; }
-    .platform-more > summary { padding:5px 2px; color:var(--accent); font-size:12px; font-weight:650; list-style:none; }
-    .platform-more > summary::-webkit-details-marker { display:none; }
-    .platform-more__list .platform-line { padding-top:6px; padding-bottom:6px; }
-    .platform-line__values { display:flex; align-items:baseline; gap:8px; }
-    .platform-line__values strong { color:var(--text-header); font-size:17px; font-weight:600; }
-    .platform-line__values small { color:var(--text-muted); font-size:12px; }
-
-    /* Both scalings are in the DOM; the toggle picks which one is painted. */
-    .metric-chart__head { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; }
-    .chart-scale { display:inline-flex; gap:2px; padding:2px; border:1px solid var(--border-soft); border-radius:7px; background:var(--scrim-soft); }
-    .chart-scale__btn { padding:3px 10px; border:0; border-radius:5px; background:transparent; color:var(--text-muted); font:inherit; font-size:13px; font-weight:650; cursor:pointer; }
-    .chart-scale__btn--active { background:var(--accent-glow); color:var(--accent-soft-text); }
-    .metric-chart--dual .chart-view { display:none; }
-    .metric-chart--dual[data-scale="absolute"] .chart-view--absolute,
-    .metric-chart--dual[data-scale="relative"] .chart-view--relative { display:block; }
-
-    .best-post__icons { display:flex; gap:7px; margin-top:7px; }
     .platform-mark { display:inline-flex; color:var(--text-muted); }
     .platform-mark svg { width:15px; height:15px; }
     .post-detail__media { display:flex; gap:8px; justify-content:flex-end; }
@@ -254,50 +173,14 @@ export function renderDashboardShell(body: string): string {
     .post-detail--flat .post-detail__summary { padding:13px 0; }
     .post-detail__chevron--link { font-size:17px; line-height:1; }
 
-    .kpi-row { display:grid; grid-template-columns:repeat(4,1fr); margin:0 0 20px; border-bottom:1px solid var(--border-soft); }
-    .kpi-row--split { grid-template-columns:repeat(3,1fr); }
-    .kpi-row > div { padding:10px 26px 15px; min-width:0; } .kpi-row > div + div { border-left:1px solid var(--border-soft); }
-    .kpi-row span,.section-kicker { display:block; color:var(--text-muted); font-size:14px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
-    .kpi-row strong { display:block; color:var(--text-header); font-size:54px; line-height:1.05; font-weight:500; letter-spacing:-.055em; }
-    .kpi-row .kpi > span { margin-top:7px; color:var(--text-main); font-size:17px; font-weight:500; letter-spacing:0; text-transform:none; }
-    .kpi-breakdown { display:block; margin-top:8px; color:var(--text-secondary); font-size:13px; font-style:normal; font-weight:500; white-space:nowrap; }
-    .kpi-breakdown + .kpi-delta { margin-top:4px; }
-    .kpi-delta { display:block; margin-top:8px; color:var(--accent); font-size:15px; font-style:normal; font-weight:650; } .kpi-delta--down { color:var(--danger-strong); } .kpi-delta i { margin-left:7px; color:var(--text-muted); font-style:normal; font-weight:400; }
-    /* One vertical rule down the whole overview. The KPI table, the platform
-       panel and the publication lists share the same three tracks, so the split
-       between the narrow left column and the wide right one falls at exactly
-       the same third in all three bands instead of drifting a few pixels per
-       row. The rule is a border on the right column, not a gap. */
-    .insights-row { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); padding-bottom:22px; border-bottom:1px solid var(--border-soft); }
-    .insights-row > :first-child { padding-right:26px; }
-    .insights-row > :last-child { grid-column:span 2; padding-left:26px; border-left:1px solid var(--border-soft); }
-    .audience-panel,.chart-panel { padding:0; background:transparent; border:0; }
-    .audience-list { margin-top:10px; } .audience-line { display:flex; align-items:center; justify-content:space-between; padding:9px 10px; border-bottom:1px solid var(--border-soft); font-size:17px; }
-    .audience-line__label { display:inline-flex; align-items:center; gap:12px; } .audience-line__label i { display:inline-flex; width:24px; height:24px; flex:0 0 24px; align-items:center; justify-content:center; color:var(--text-main); font-style:normal; } .audience-line__label svg { display:block; width:24px; height:24px; }
-    .audience-line span { color:var(--text-main); } .audience-line strong { color:var(--text-main); font-size:18px; font-weight:600; }
-    .audience-line--interactive { color:inherit; text-decoration:none; transition:background .14s ease,box-shadow .14s ease; }
-    .audience-line--interactive:hover { background:var(--surface-raised); }
-    .audience-line--active { box-shadow:inset 3px 0 0 var(--accent); background:var(--surface-sunken); }
-    .audience-line--total { border-top:1px solid var(--border); }
-    .audience-all-icon { font-size:18px; font-weight:700; }
-    .publication-columns { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); padding-top:20px; }
-    .best-posts,.recent-posts { min-width:0; padding:0; border:0; border-radius:0; background:transparent; }
-    .best-posts { padding-right:26px; }
-    .recent-posts { grid-column:span 2; padding-left:26px; border-left:1px solid var(--border-soft); }
-    .best-post { display:grid; grid-template-columns:39px minmax(0,1fr) 92px; gap:13px; align-items:start; padding:14px 0; border-bottom:1px solid var(--border-soft); color:inherit; text-decoration:none; transition:background .14s ease; }
-    a.best-post:hover { background:var(--surface-raised); }
-    .post-rank { color:var(--accent); font-size:31px; line-height:1; font-weight:500; padding-top:1px; }
-    .best-post__title { color:var(--text-main); font-size:16px; line-height:1.4; } .best-post__stats { text-align:right; white-space:nowrap; } .best-post__stats strong { display:block; color:var(--text-header); font-size:18px; font-weight:600; } .best-post__stats small { display:block; color:var(--text-muted); font-size:12px; } .best-post__stats em { display:block; margin-top:8px; color:var(--danger-strong); font-size:14px; font-style:normal; } .post-after-period { display:block; color:var(--text-muted); font-size:11px; line-height:1.25; }
     .empty-state { color:var(--text-muted); font-size:14px; }
     /* The title column carries a floor rather than minmax(0,1fr). With a zero
      * minimum the four fixed columns (170 + 3x120 + gaps) can consume the whole
      * row, the first track resolves to 0px, and every post title in the list
      * renders at zero width — invisible, with no overflow to hint at it. */
-    .recent-posts__header,.post-detail__summary { display:grid; grid-template-columns:minmax(150px,1fr) 170px repeat(3,120px); align-items:center; gap:14px; }
-    .recent-posts__header { padding:0 0 14px; border-bottom:1px solid var(--border-soft); color:var(--text-secondary); font-size:14px; } .recent-posts__header > span { text-align:right; }
+    .post-detail__summary { display:grid; grid-template-columns:minmax(150px,1fr) 170px repeat(3,120px); align-items:center; gap:14px; }
     .post-detail { margin:0; border:0; border-bottom:1px solid var(--border-soft); border-radius:0; background:transparent; }
     .post-detail--more { display:none; }
-    .recent-posts--expanded .post-detail--more { display:block; }
     .show-more-posts { display:block; margin:14px auto 0; padding:7px 14px; border:1px solid var(--border-soft); border-radius:6px; background:transparent; color:var(--accent-soft-text); font:inherit; font-size:14px; font-weight:650; cursor:pointer; }
     .show-more-posts:hover { background:var(--surface-raised); border-color:var(--accent); }
     .show-more-posts span { color:var(--text-muted); font-weight:500; }
@@ -316,37 +199,17 @@ export function renderDashboardShell(body: string): string {
     .post-preview { display:flex; width:132px; height:108px; align-items:center; justify-content:center; overflow:hidden; background:var(--surface-sunken); color:var(--text-secondary); text-decoration:none; font-size:13px; } .post-preview img { width:100%; height:100%; object-fit:cover; }
     .post-preview--empty { border:1px solid var(--border-soft); }
 
-    /* Between the phone breakpoint and a wide desktop the two-column split is
-     * what starved the title column: .publication-columns holds the left side
-     * at a 340px minimum, so on a ~900px window the right side has less room
-     * than its own fixed columns need. Stack them before that happens rather
-     * than letting the list overflow. */
-    @media (max-width: 1180px) {
-      .insights-row,.publication-columns { grid-template-columns:1fr; gap:28px; }
-      .insights-row > :first-child,.best-posts { padding-right:0; }
-      .insights-row > :last-child,.recent-posts { grid-column:auto; padding-left:0; border-left:0; }
-    }
-
     @media (max-width: 760px) {
       body { padding:10px; }
       main { max-width:none; }
-      .metric-dashboard { grid-template-columns:1fr; }
-      .metric-toggle--vertical { flex-direction:row; justify-content:flex-start; }
-      .pagination-bar { align-items:stretch; flex-wrap:wrap; justify-content:center; }
-      .pag-current { flex:1 1 100%; text-align:center; }
       .hero-metrics { grid-template-columns:1fr; }
       .hero-card:first-child { padding-right:0; }
       .hero-card + .hero-card { padding-left:0; border-left:0; border-top:1px solid var(--border-soft); }
       .hero-card__primary { grid-template-columns:minmax(0,1fr) minmax(86px,.6fr) auto; gap:12px; }
       .hero-card__views strong { font-size:36px; }
-      .platform-columns { grid-template-columns:1fr; gap:14px; }
-      .platform-panel__head { align-items:flex-start; flex-wrap:wrap; }
-      .metric-chart__head { flex-direction:column; }
       .dashboard-tabs { grid-template-columns:1fr; gap:10px; }
-      .dashboard-tabs__end { width:100%; margin-left:0; align-items:flex-start; justify-content:space-between; gap:10px; padding-top:2px; } .dashboard-nav__controls { width:calc(100% - 32px); flex-wrap:wrap; gap:8px; padding-top:2px; } .period-range { width:100%; justify-content:center; } .kpi-row { grid-template-columns:repeat(2,1fr); }
-      .kpi-row > div { padding-left:16px; padding-right:16px; } .kpi-breakdown { white-space:normal; }
-      .kpi-row > div:nth-child(3) { border-left:0; border-top:1px solid var(--border-soft); } .kpi-row > div:nth-child(4) { border-top:1px solid var(--border-soft); }
-      .insights-row,.publication-columns { grid-template-columns:1fr; gap:28px; } .recent-posts { padding-left:0; border-left:0; } .recent-posts__header { grid-template-columns:minmax(0,1fr) auto; } .recent-posts__header > span:nth-last-child(-n+2) { display:none; } .post-detail__summary { grid-template-columns:minmax(0,1fr) auto; } .post-detail__summary > span:nth-last-child(-n+2) { display:none; } .post-detail__media { display:none; } .post-platforms,.post-detail__content { padding-left:0; } .post-platforms__grid { grid-template-columns:1fr; } .post-detail__content { grid-template-columns:1fr; } .post-preview { display:none; }
+      .dashboard-tabs__end { width:100%; margin-left:0; align-items:flex-start; justify-content:space-between; gap:10px; padding-top:2px; } .dashboard-nav__controls { width:calc(100% - 32px); flex-wrap:wrap; gap:8px; padding-top:2px; } .period-range { width:100%; justify-content:center; }
+      .post-detail__summary { grid-template-columns:minmax(0,1fr) auto; } .post-detail__summary > span:nth-last-child(-n+2) { display:none; } .post-detail__media { display:none; } .post-platforms,.post-detail__content { padding-left:0; } .post-platforms__grid { grid-template-columns:1fr; } .post-detail__content { grid-template-columns:1fr; } .post-preview { display:none; }
     }
 
     /* Split overview skin. The data remains server-rendered and the operations
@@ -462,13 +325,6 @@ export function renderDashboardShell(body: string): string {
     .track-publication__meta { grid-column:2 / 3; color:var(--text-secondary); font-size:13px; }
     .track-publication__more { display:block; padding-top:16px; color:var(--text-secondary); font-size:14px; text-decoration:none; }
     .track-publication__more:hover { color:var(--text-main); }
-    .overview-details { margin-top:34px; border:0; border-top:1px solid var(--border-soft); border-radius:0; background:transparent; }
-    .overview-details > summary { padding:14px 0; color:var(--text-secondary); font-size:13px; font-weight:600; letter-spacing:.08em; list-style:none; text-transform:uppercase; }
-    .overview-details > summary::-webkit-details-marker { display:none; }
-    .overview-details > summary::after { content:"+"; float:right; color:var(--text-muted); font-size:16px; font-weight:400; }
-    .overview-details[open] > summary::after { content:"−"; }
-    .overview-details__body { padding-top:10px; }
-    .overview-details .publication-columns { padding-top:24px; }
     .overview-chart-tooltip { display:block; }
     .overview-chart-tooltip[hidden] { display:none; }
     /* Compact controls, sized to the reference bar: 2px between the period
@@ -524,7 +380,6 @@ ${DASHBOARD_THEME_TOGGLE_SCRIPT}
   const loadMorePosts = async (button) => {
     const moreUrl = button.dataset.moreUrl;
     if (!moreUrl) {
-      button.closest('.recent-posts')?.classList.add('recent-posts--expanded');
       button.closest('.overview-publications')?.classList.add('overview-publications--expanded');
       button.remove();
       return;
@@ -557,48 +412,15 @@ ${DASHBOARD_THEME_TOGGLE_SCRIPT}
   };
   const bindDashboardInteractions = (root) => {
     if (!root) return;
-    root.querySelectorAll('.metric-toggle').forEach((toggle) => {
-      if (toggle.dataset.bound === 'true') return;
-      toggle.dataset.bound = 'true';
-      toggle.addEventListener('click', (event) => {
-        const button = event.target instanceof Element ? event.target.closest('.mt-btn') : null;
-        const metric = button?.dataset?.m;
-        const table = root.querySelector('#pipeline-table');
-        if (!metric || !table) return;
-        table.className = table.className.replace(/show-m\\w/g, '') + ' show-' + metric;
-        root.querySelectorAll('.mt-btn').forEach((item) => item.classList.toggle('mt-active', item.dataset.m === metric));
-      });
-    });
     root.querySelectorAll('.show-more-posts').forEach((button) => {
       if (button.dataset.bound === 'true') return;
       button.dataset.bound = 'true';
       button.addEventListener('click', () => void loadMorePosts(button));
     });
-    root.querySelectorAll('.chart-scale').forEach((group) => {
-      if (group.dataset.bound === 'true') return;
-      group.dataset.bound = 'true';
-      group.addEventListener('click', (event) => {
-        const button = event.target instanceof Element ? event.target.closest('.chart-scale__btn') : null;
-        const scale = button?.dataset?.scale;
-        if (!scale) return;
-        group.closest('.metric-chart')?.setAttribute('data-scale', scale);
-        group.querySelectorAll('.chart-scale__btn').forEach((item) => {
-          item.classList.toggle('chart-scale__btn--active', item.dataset.scale === scale);
-          item.setAttribute('aria-pressed', String(item.dataset.scale === scale));
-        });
-      });
-    });
-    // Each hit resolves its own tooltip. Reading one for the whole root put the
-    // overview's own hits on '#chart-tooltip', which lives inside the collapsed
-    // details below — the text was written to a node nobody could see.
-    const tooltipFor = (node) => {
-      const chart = node.closest('.metric-chart');
-      return chart ? chart.querySelector('.chart-tooltip') : root.querySelector('.overview-chart-tooltip');
-    };
+    const chartTooltip = root.querySelector('.overview-chart-tooltip');
     root.querySelectorAll('.chart-hit, [data-tooltip]').forEach((point) => {
       if (point.dataset.bound === 'true') return;
       point.dataset.bound = 'true';
-      const chartTooltip = tooltipFor(point);
       point.addEventListener('mouseenter', () => {
         if (!chartTooltip) return;
         chartTooltip.textContent = point.dataset.tooltip || '';

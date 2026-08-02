@@ -2,9 +2,8 @@ import { metricNumber } from "../../../analytics/snapshots/creator-store.js";
 import { hasChannelRegistry, listChannels } from "../../../channels/registry.js";
 import type { BackendDb } from "../../../db/client.js";
 import { creatorProfiles } from "../../../db/schema.js";
-import type { BackendConfig } from "../../../foundation/config.js";
-import { ORDERED_TARGETS, PLATFORM_ICONS } from "./assets.js";
-import { formatMetricValue, shortPipelineText } from "./format.js";
+import { ORDERED_TARGETS } from "./assets.js";
+import { shortPipelineText } from "./format.js";
 import { escapeHtml } from "./html.js";
 import type { OpsPayload } from "./types.js";
 
@@ -38,44 +37,6 @@ export function audiencePlatformFollowers(backendDb: BackendDb): Array<{ key: st
   });
 }
 
-/** Reuses Analytics projections and metric samples; Command Center only renders them. */
-export function renderAudienceSection(
-  backendDb: BackendDb,
-  config: BackendConfig,
-  activePlatform?: string,
-  periodDays = 1,
-  weekOffset = 0,
-): string {
-  if (!config.studio.modules.analytics) return "";
-  const profiles = new Map(
-    backendDb.db
-      .select()
-      .from(creatorProfiles)
-      .all()
-      .map((profile) => [profile.platform, profile.dataJson]),
-  );
-  const rows = activeAudiencePlatforms(backendDb).map((platform) => {
-    const data = (profiles.get(platform.key) ?? {}) as Record<string, unknown>;
-    const followers = metricNumber(data.subscriberCount ?? data.followersCount);
-    return {
-      ...platform,
-      followers,
-      stars: metricNumber(data.stars),
-    };
-  });
-  const totalFollowers = rows.reduce((total, item) => total + (item.followers ?? 0), 0);
-  const hasFollowers = rows.some((item) => item.followers > 0);
-  const allContent = `<span class="audience-line__label"><i class="audience-all-icon">∑</i>Все платформы</span><strong>${hasFollowers ? formatMetricValue(totalFollowers) : "—"}</strong>`;
-  return `<aside class="audience-panel"><div class="section-kicker">Аудитория</div><div class="audience-list">${rows
-    .map((item) => {
-      const content = `<span class="audience-line__label"><i>${PLATFORM_ICONS[item.key.startsWith("threads") ? "threads" : item.key] ?? ""}</i>${escapeHtml(item.label)}</span><strong>${followersLabel(item)}</strong>`;
-      return `<a class="audience-line audience-line--interactive${activePlatform === item.key ? " audience-line--active" : ""}" href="/command-center?period=${periodDays}&week_offset=${weekOffset}&view=${item.key}">${content}</a>`;
-    })
-    .join(
-      "",
-    )}<a class="audience-line audience-line--total audience-line--interactive${activePlatform ? "" : " audience-line--active"}" href="/command-center?period=${periodDays}&week_offset=${weekOffset}">${allContent}</a></div></aside>`;
-}
-
 function activeAudiencePlatforms(backendDb: BackendDb): AudiencePlatform[] {
   if (!hasChannelRegistry(backendDb)) return AUDIENCE_PLATFORMS;
   const registeredTargets = new Set(
@@ -101,8 +62,7 @@ const REPAIR_NOTE =
 
 /** The form authenticates through the HttpOnly `command_token` cookie; the
  * endpoint pairs that with a same-origin check, which is what actually stops a
- * cross-site POST from riding the session. An empty hidden `token` field used to
- * sit here and suggested a CSRF token that was never issued or verified. */
+ * cross-site POST from riding the session. */
 export function renderRepairSection(ref: string, messageId: string): string {
   const options = ORDERED_TARGETS.map((target) => `<option value="${escapeHtml(target.id)}">${escapeHtml(target.label)}</option>`).join(
     "\n",
@@ -172,9 +132,4 @@ export function renderDiagnosticsSection(ops: OpsPayload): string {
       )
       .join("\n") || "<tr><td colspan='4'>empty</td></tr>";
   return `<section><h2>Errors</h2><table><thead><tr><th>Message</th><th>Target</th><th>Status</th><th>Error</th></tr></thead><tbody>${errors}</tbody></table></section><section><h2>Lifecycle</h2><table><thead><tr><th>Message</th><th>State</th><th>Reason</th><th>Updated</th></tr></thead><tbody>${lifecycle}</tbody></table></section>`;
-}
-
-function followersLabel(item: { followers: number; stars: number }): string {
-  const followers = item.followers ? formatMetricValue(item.followers) : "—";
-  return item.stars ? `${followers} · ★${formatMetricValue(item.stars)}` : followers;
 }
