@@ -39,14 +39,6 @@ export const BOOTSTRAP_VIDEO_DESTINATIONS = [
 
 export type VideoDestination = { target: VideoTarget; locale: VideoLocale; label: string; profile: string };
 
-/** Profile keys predating the locale split. They still receive snapshots, so a
- * destination falls back to them when its own key has none yet. */
-const LEGACY_PROFILE: Record<VideoTarget, string> = { youtube_shorts: "youtube", instagram_reels: "instagram" };
-
-export function legacyVideoProfile(target: VideoTarget): string {
-  return LEGACY_PROFILE[target];
-}
-
 export function videoDestination(
   catalogue: readonly VideoDestination[],
   target: string,

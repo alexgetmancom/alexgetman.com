@@ -3,11 +3,9 @@ import { videoDestinations } from "../../../channels/destinations.js";
 import type { BackendDb } from "../../../db/client.js";
 import { zonedDateParts, zonedSlot } from "../../../foundation/time.js";
 import {
-  legacyVideoProfile,
   VIDEO_TARGETS,
   type VideoDestination,
   type VideoLocale,
-  type VideoTarget,
   videoDestination,
   videoTargetLabel,
 } from "../../../publishing/video-types.js";
@@ -98,27 +96,6 @@ export function emptyVideoOverview(): VideoOverview {
   };
 }
 
-/**
- * The pre-split `youtube` / `instagram` snapshot, when it can be attributed to
- * exactly one channel.
- *
- * A Studio that never split its profiles has one live destination per target;
- * the legacy count is that channel's, and dropping it would blank a number the
- * dashboard used to show. As soon as any locale-scoped snapshot exists for the
- * target, or a second language is publishing, the legacy row is ambiguous and
- * is not used — showing it on both rows would count the same audience twice.
- */
-function legacyFollowers(
-  target: string,
-  counted: Array<{ destination: VideoDestination; published: VideoContentItem[]; hasPublication: boolean; own: number | null }>,
-  followers: Map<string, number>,
-): number | null {
-  const siblings = counted.filter((entry) => entry.destination.target === target);
-  if (siblings.some((entry) => entry.own !== null)) return null;
-  if (siblings.filter((entry) => entry.hasPublication).length !== 1) return null;
-  return followers.get(legacyVideoProfile(target as VideoTarget)) ?? null;
-}
-
 export function videoOverview(backendDb: BackendDb, start: Date, end: Date, timeZone = "Europe/Moscow"): VideoOverview {
   const catalogue = videoDestinations(backendDb);
   const rows = publishedTargets(backendDb, start.toISOString(), end.toISOString());
@@ -181,7 +158,7 @@ export function videoOverview(backendDb: BackendDb, start: Date, end: Date, time
       label: destination.label,
       locales: [destination.locale.toUpperCase()],
       views: published.reduce((sum, item) => sum + item.views, 0),
-      followers: own ?? legacyFollowers(destination.target, counted, followers),
+      followers: own,
       active: hasPublication || own !== null,
     }))
     .filter((row) => row.active)

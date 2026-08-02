@@ -7,7 +7,6 @@ import { createChannelStoryClient } from "../../foundation/external/telegram-ses
 import { oauthAuthorization } from "../../foundation/external/x-oauth.js";
 import { youtubeAccessToken } from "../../foundation/external/youtube.js";
 import { requestJson } from "../../foundation/http.js";
-import { videoDeliveryRoute } from "../../publishing/delivery-provider.js";
 import { studioAudiencePlatforms } from "../audience-groups.js";
 import { canSync, markSynced, metricNumber, recordProfileSnapshot } from "../snapshots/creator-store.js";
 
@@ -46,10 +45,10 @@ export async function syncYouTubeProfile(
   config: BackendConfig,
   backendDb: BackendDb,
   fetchImpl: typeof fetch,
-  connection?: ChannelConnection,
+  connection: ChannelConnection,
 ): Promise<void> {
-  const profileKey = connection?.id ?? "youtube";
-  const locale = connection?.locale === "en" ? "en" : "ru";
+  const profileKey = connection.id;
+  const locale = connection.locale === "en" ? "en" : "ru";
   await synced(backendDb, profileKey, async () => {
     const token = await youtubeAccessToken(channelConfig(backendDb, config, "youtube", locale), fetchImpl, locale);
     const auth = { Authorization: `Bearer ${token}` };
@@ -69,7 +68,7 @@ export async function syncYouTubeProfile(
       platform: profileKey,
       account: channelItem?.snippet?.title ?? "channel",
       source: "youtube_data_api",
-      audiencePlatforms: connection ? [profileKey] : studioAudiencePlatforms(config, "video"),
+      audiencePlatforms: [profileKey],
       metrics: {
         title: channelItem?.snippet?.title ?? "YouTube",
         subscriberCount: metricNumber(channelItem?.statistics?.subscriberCount),
@@ -137,18 +136,16 @@ export async function syncInstagramProfile(
   config: BackendConfig,
   backendDb: BackendDb,
   fetchImpl: typeof fetch,
-  connection?: ChannelConnection,
+  connection: ChannelConnection,
 ): Promise<void> {
-  const profileKey = connection?.id ?? "instagram";
+  const profileKey = connection.id;
   await synced(backendDb, profileKey, async () => {
-    if (connection?.provider === "zernio" || (!connection && videoDeliveryRoute(config, "instagram_reels").provider === "zernio")) {
+    if (connection.provider === "zernio") {
       await syncZernioInstagramProfile(config, backendDb, fetchImpl, connection);
       return;
     }
-    const instagramLocale = connection?.locale === "en" ? "en" : "ru";
-    const instagramConfig = connection
-      ? instagramConfigForLocale(channelConfig(backendDb, config, "instagram", instagramLocale), instagramLocale)
-      : config;
+    const instagramLocale = connection.locale === "en" ? "en" : "ru";
+    const instagramConfig = instagramConfigForLocale(channelConfig(backendDb, config, "instagram", instagramLocale), instagramLocale);
     const token = instagramConfig.INSTAGRAM_ACCESS_TOKEN;
     const userId = instagramConfig.INSTAGRAM_USER_ID;
     if (!token || !userId) throw new Error("Instagram credentials are missing");
@@ -161,7 +158,7 @@ export async function syncInstagramProfile(
       platform: profileKey,
       account: profileData.username ?? "instagram",
       source: "instagram_graph_api",
-      audiencePlatforms: connection ? [profileKey] : studioAudiencePlatforms(config, "video"),
+      audiencePlatforms: [profileKey],
       metrics: {
         username: profileData.username ?? "Instagram",
         biography: profileData.biography ?? "",
@@ -205,11 +202,9 @@ async function syncZernioInstagramProfile(
   config: BackendConfig,
   backendDb: BackendDb,
   fetchImpl: typeof fetch,
-  connection?: ChannelConnection,
+  connection: ChannelConnection,
 ): Promise<void> {
-  const route = connection
-    ? { provider: "zernio" as const, accountId: connection.providerAccountId ?? undefined }
-    : videoDeliveryRoute(config, "instagram_reels");
+  const route = { provider: "zernio" as const, accountId: connection.providerAccountId ?? undefined };
   if (!config.ZERNIO_API_KEY || !route.accountId) throw new Error("Zernio Instagram credentials are missing");
   const headers = { Authorization: `Bearer ${config.ZERNIO_API_KEY}` };
   const accounts = await requestJson<ZernioAccounts>(fetchImpl, "https://zernio.com/api/v1/accounts", { headers });
@@ -227,10 +222,10 @@ async function syncZernioInstagramProfile(
   );
   const metric = (name: string) => metricNumber(insights.metrics?.[name]?.total);
   recordProfileSnapshot(backendDb, {
-    platform: connection?.id ?? "instagram",
+    platform: connection.id,
     account: account.username ?? route.accountId,
     source: "zernio",
-    audiencePlatforms: connection ? [connection.id] : studioAudiencePlatforms(config, "video"),
+    audiencePlatforms: [connection.id],
     metrics: {
       username: account.username ?? account.displayName ?? "Instagram",
       // Zernio's follower-history series starts only after its daily snapshotter

@@ -115,14 +115,14 @@ describe("creator analytics deltas", () => {
       backendDb.db
         .insert(creatorProfiles)
         .values({
-          platform: "youtube",
+          platform: "youtube_ru",
           dataJson: { subscriberCount: 120, subscribersGained1d: 9, subscribersLost1d: 2, subscribersGained7d: 28, subscribersLost7d: 5 },
           updatedAt: now,
         })
         .run();
       const since = new Date(Date.now() - 7 * 24 * 60 * 60_000).toISOString();
-      expect(audienceGrowthByPlatform(backendDb, since, 1).get("youtube")).toBe(7);
-      expect(audienceGrowthByPlatform(backendDb, since, 7).get("youtube")).toBe(23);
+      expect(audienceGrowthByPlatform(backendDb, since, 1).get("youtube_ru")).toBe(7);
+      expect(audienceGrowthByPlatform(backendDb, since, 7).get("youtube_ru")).toBe(23);
     });
   });
 
@@ -150,7 +150,7 @@ describe("creator analytics deltas", () => {
         .insert(creatorProfileSnapshots)
         .values([
           {
-            platform: "youtube",
+            platform: "youtube_ru",
             account: "marux",
             sampledOn: "2026-07-18T10",
             metricsJson: { viewCount: 100, subscriberCount: 122 },
@@ -158,7 +158,7 @@ describe("creator analytics deltas", () => {
             sampledAt: before,
           },
           {
-            platform: "youtube",
+            platform: "youtube_ru",
             account: "marux",
             sampledOn: "2026-07-19T11",
             metricsJson: { viewCount: 150, subscriberCount: 124 },
@@ -170,7 +170,7 @@ describe("creator analytics deltas", () => {
       backendDb.db
         .insert(creatorProfiles)
         .values({
-          platform: "youtube",
+          platform: "youtube_ru",
           dataJson: { subscriberCount: 124, views1d: 0, likes1d: 0, comments1d: 0, shares1d: 0 },
           updatedAt: current,
         })
@@ -178,9 +178,10 @@ describe("creator analytics deltas", () => {
       const config = loadConfig({});
       config.studio.modules.video_posting = true;
       config.studio.modules.youtube = true;
+      registerChannel(backendDb, { platform: "youtube", locale: "ru", provider: "native", label: "YouTube RU" });
 
       const dashboard = studioAnalyticsDashboard(backendDb, config, "video", 1, "ru");
-      expect(dashboard.text).toContain("| ▶️ YouTube | 124 | +2 | 50 | 2 | 1 | — | — |");
+      expect(dashboard.text).toContain("| ▶️ YouTube RU | 124 | +2 | 50 | 2 | 1 | — | — |");
     });
   });
 
@@ -192,7 +193,7 @@ describe("creator analytics deltas", () => {
         .insert(creatorProfileSnapshots)
         .values([
           {
-            platform: "youtube",
+            platform: "youtube_ru",
             account: "marux",
             sampledOn: "stale",
             metricsJson: { viewCount: 100 },
@@ -200,7 +201,7 @@ describe("creator analytics deltas", () => {
             sampledAt: stale,
           },
           {
-            platform: "youtube",
+            platform: "youtube_ru",
             account: "marux",
             sampledOn: "current",
             metricsJson: { viewCount: 300 },
@@ -209,7 +210,7 @@ describe("creator analytics deltas", () => {
           },
         ])
         .run();
-      expect(youtubeChannelViewDeltaSince(backendDb, new Date(now.getTime() - 24 * 60 * 60_000).toISOString())).toBeNull();
+      expect(youtubeChannelViewDeltaSince(backendDb, new Date(now.getTime() - 24 * 60 * 60_000).toISOString(), "youtube_ru")).toBeNull();
     });
   });
 

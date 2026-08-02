@@ -207,7 +207,7 @@ export function latestVideoMetrics(backendDb: BackendDb, since: string): VideoMe
 /** A channel's public `viewCount` is available immediately from YouTube Data
  * API. The hourly profile observations make its 24h delta complete even when
  * the Analytics API has not closed the report yet. */
-export function youtubeChannelViewDeltaSince(backendDb: BackendDb, since: string, platform = "youtube"): number | null {
+export function youtubeChannelViewDeltaSince(backendDb: BackendDb, since: string, platform: string): number | null {
   // A recovery after an outage must not label several days of channel growth
   // as a 24-hour delta. Hourly collection normally allows a small delay.
   const oldestUsableBaseline = new Date(new Date(since).getTime() - 2 * 60 * 60_000).toISOString();

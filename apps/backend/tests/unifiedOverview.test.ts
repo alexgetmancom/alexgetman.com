@@ -62,7 +62,7 @@ function seedVideo(backendDb: ReturnType<typeof openBackendDb>): void {
   backendDb.db
     .insert(creatorProfileSnapshots)
     .values({
-      platform: "youtube",
+      platform: "youtube_ru",
       account: "alexgetman",
       sampledOn: new Date().toISOString().slice(0, 10),
       metricsJson: { subscriberCount: 8_400 },
@@ -157,8 +157,7 @@ describe("unified overview video read model", () => {
 
       expect(overview.platforms.map((platform) => platform.label)).toEqual(["YouTube RU"]);
       expect(overview.platforms[0]?.views).toBe(1_000);
-      // No locale-scoped snapshot exists and only one channel published, so the
-      // pre-split count is unambiguous and stands in.
+      // The Russian destination has its own audience snapshot.
       expect(overview.platforms[0]?.followers).toBe(8_400);
     } finally {
       backendDb.close();
@@ -173,7 +172,7 @@ describe("unified overview video read model", () => {
       const overview = videoOverview(backendDb, new Date(Date.now() - 86_400_000), new Date());
 
       expect(overview.platforms.map((platform) => platform.label)).toEqual(["YouTube RU", "YouTube EN", "Instagram RU", "Instagram EN"]);
-      expect(overview.platforms.map((platform) => platform.followers)).toEqual([8_400, 1_260, 5_120, 940]);
+      expect(overview.platforms.map((platform) => platform.followers)).toEqual([16_800, 1_260, 5_120, 940]);
       expect(overview.platforms.map((platform) => platform.views)).toEqual([1_000, 0, 0, 0]);
 
       const quiet = videoOverview(backendDb, new Date(Date.now() - 10 * 86_400_000), new Date(Date.now() - 5 * 86_400_000));

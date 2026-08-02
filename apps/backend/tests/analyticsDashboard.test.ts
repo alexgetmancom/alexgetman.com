@@ -23,7 +23,10 @@ describe("creator analytics dashboards", () => {
         .run();
       backendDb.db
         .insert(creatorProfiles)
-        .values({ platform: "youtube", dataJson: { subscriberCount: 117 }, updatedAt: now })
+        .values([
+          { platform: "youtube_ru", dataJson: { subscriberCount: 117 }, updatedAt: now },
+          { platform: "youtube_en", dataJson: { subscriberCount: 13 }, updatedAt: now },
+        ])
         .run();
 
       const config = loadConfig({});
@@ -31,7 +34,7 @@ describe("creator analytics dashboards", () => {
       config.studio.modules.youtube = true;
       const dashboard = creatorDashboard(backendDb, config, 7);
       expect(dashboard.text).toContain("Видео: 1200 просмотров · 96 взаимодействий");
-      expect(dashboard.text).toContain("YouTube: 1200 просмотров · 87 лайков · 117 подписчиков");
+      expect(dashboard.text).toContain("YouTube: 1200 просмотров · 87 лайков · 130 подписчиков");
       expect(dashboard.text).toContain("Hades, часть 3 — 1200 просмотров");
     });
   });

@@ -160,6 +160,37 @@ type CreatorProfileMetrics = {
 };
 
 function profile(backendDb: BackendDb, platform: string): CreatorProfileMetrics | null {
-  const data = backendDb.db.select().from(creatorProfiles).where(eq(creatorProfiles.platform, platform)).get()?.dataJson;
-  return data != null && typeof data === "object" && !Array.isArray(data) ? (data as CreatorProfileMetrics) : null;
+  const profiles = ["ru", "en"]
+    .map(
+      (locale) =>
+        backendDb.db
+          .select()
+          .from(creatorProfiles)
+          .where(eq(creatorProfiles.platform, `${platform}_${locale}`))
+          .get()?.dataJson,
+    )
+    .filter((data): data is Record<string, unknown> => data != null && typeof data === "object" && !Array.isArray(data));
+  if (!profiles.length) return null;
+
+  const numericFields: Array<keyof CreatorProfileMetrics> = [
+    "subscriberCount",
+    "viewCount",
+    "videoCount",
+    "views",
+    "estimatedMinutesWatched",
+    "subscribersGained",
+    "subscribersLost",
+    "followersCount",
+    "mediaCount",
+    "reach30d",
+    "views30d",
+    "interactions30d",
+    "saves30d",
+    "shares30d",
+    "reposts30d",
+  ];
+  const total: CreatorProfileMetrics = {};
+  for (const data of profiles)
+    for (const field of numericFields) if (data[field] != null) total[field] = metricNumber(total[field]) + metricNumber(data[field]);
+  return total;
 }
