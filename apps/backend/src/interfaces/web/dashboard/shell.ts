@@ -306,7 +306,7 @@ export function renderDashboardShell(body: string): string {
     .post-detail__headline { display:grid; grid-template-columns:24px minmax(0,1fr); align-items:center; gap:14px; min-width:0; }
     .post-detail__chevron { color:var(--text-main); font-size:22px; line-height:12px; transform:rotate(0deg); transition:transform .15s; } .post-detail[open] .post-detail__chevron { transform:rotate(90deg); }
     .post-detail__title { color:var(--text-main); font-size:17px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .post-detail__media { display:flex; align-items:center; justify-content:flex-end; gap:6px; color:var(--text-secondary); text-align:right; } .post-detail__platform-summary { display:inline-flex; align-items:center; justify-content:flex-end; gap:6px; min-width:0; color:var(--text-secondary); cursor:help; } .post-detail__platform-locale { padding:1px 4px; border:1px solid var(--border-soft); border-radius:4px; color:var(--text-muted); font-size:10px; font-weight:700; letter-spacing:.04em; white-space:nowrap; } .post-detail__platform-count { display:inline-flex; width:20px; height:20px; align-items:center; justify-content:center; border:1px solid var(--border-soft); border-radius:4px; color:var(--text-main); font-size:12px; font-weight:650; line-height:1; }
-    .post-detail__metric { display:flex; min-width:0; align-items:center; justify-content:flex-end; color:var(--text-main); font-variant-numeric:tabular-nums; text-align:right; } .post-detail__metric--separated::before { content:"•"; margin-right:8px; color:var(--text-muted); font-size:12px; }
+    .post-detail__metric { display:flex; min-width:0; align-items:center; justify-content:flex-end; color:var(--text-main); font-variant-numeric:tabular-nums; text-align:right; }
     .post-detail__summary > span:nth-last-child(-n+4) { color:var(--text-main); text-align:right; } .post-detail__body { padding:0 0 22px; }
     .post-platforms { padding:12px 0 17px 38px; border-bottom:1px solid var(--border-soft); } .post-platforms__grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(214px,1fr)); gap:8px; margin-top:10px; }
     .post-platform { display:flex; align-items:center; justify-content:space-between; gap:10px; min-width:0; padding:8px 10px; border:1px solid var(--border-soft); border-radius:6px; background:var(--scrim-soft); color:var(--text-main); font-size:13px; text-decoration:none; } a.post-platform:hover { border-color:var(--accent); }
@@ -415,7 +415,9 @@ export function renderDashboardShell(body: string): string {
     .overview-platforms__bar i:hover { filter:brightness(1.08); }
     .overview-platforms__legend { display:flex; justify-content:space-between; gap:12px; margin-top:9px; color:var(--text-secondary); font-size:14px; font-variant-numeric:tabular-nums; }
     .overview-platforms__legend b { color:var(--text-main); font-weight:500; }
-    .overview-platforms__rows { margin-top:17px; }
+    /* Keep the control below the platform legend on the same baseline in both
+       columns, even when one content type has fewer than four destinations. */
+    .overview-platforms__rows { min-height:160px; margin-top:17px; }
     /* No rule between rows: this block is a legend for the bar above it, and
        ruled rows turned it into a table competing with the publication list. */
     /* The source name and locale stay together so the bar can be reconciled
@@ -496,6 +498,7 @@ export function renderDashboardShell(body: string): string {
       .overview-split { grid-template-columns:1fr; gap:44px; }
       .overview-track--text,.overview-track--video { padding-left:0; padding-right:0; border-left:0; }
       .overview-track--video { border-top:1px solid var(--border-soft); padding-top:44px; }
+      .overview-platforms__rows { min-height:0; }
     }
     @media (max-width: 760px) {
       body { padding:16px 14px 48px; }

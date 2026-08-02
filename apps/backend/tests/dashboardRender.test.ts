@@ -331,7 +331,7 @@ describe("renderOverviewPublicationList", () => {
     const textPost: PipelinePost = {
       post_id: 2,
       date: "2026-08-02T12:00:00.000Z",
-      full_text_en: "One two three four five six seven",
+      full_text_en: "One two three four five six seven eight nine",
       targets: {
         telegram: { status: "published" },
         x: { status: "published" },
@@ -343,11 +343,11 @@ describe("renderOverviewPublicationList", () => {
     };
     const html = renderOverviewPublicationList([textPost], ["telegram", "x"]);
 
-    expect(html).toContain("One two three four five...");
+    expect(html).toContain("One two three four five six seven...");
     expect(html).toContain('<b class="post-detail__platform-count">2</b>');
     expect(html).toContain('data-tooltip="Telegram RU, X (Twitter) EN"');
     expect(html.match(/class="post-detail__metric/g)?.length).toBe(3);
-    expect(html).toContain("post-detail__metric--separated");
+    expect(html).not.toContain("post-detail__metric--separated");
   });
 
   it("renders a video row as icon plus locale without a source label", () => {
@@ -361,7 +361,7 @@ describe("renderOverviewPublicationList", () => {
           providerAccountId: null,
           label: "Instagram RU",
           locale: "RU",
-          title: "First second third fourth fifth sixth",
+          title: "First second third fourth fifth sixth seventh eighth",
           url: null,
           publishedAt: "2026-08-02T12:00:00.000Z",
           views: 100,
@@ -374,7 +374,7 @@ describe("renderOverviewPublicationList", () => {
       ],
     );
 
-    expect(html).toContain("First second third fourth fifth...");
+    expect(html).toContain("First second third fourth fifth sixth seventh...");
     expect(html).toContain('data-tooltip="Instagram RU"');
     expect(html).toContain('<b class="post-detail__platform-locale">RU</b>');
     expect(html).not.toContain("post-detail__source");
