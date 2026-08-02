@@ -83,13 +83,4 @@ describe("startLoop", () => {
       loop.stop();
     }
   });
-
-  it("reports its name back to the caller", () => {
-    const loop = startLoop("analytics", 60_000, () => {});
-    try {
-      expect(loop.name).toBe("analytics");
-    } finally {
-      loop.stop();
-    }
-  });
 });

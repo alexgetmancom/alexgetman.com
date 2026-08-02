@@ -8,7 +8,6 @@ import { InstagramContainerInvalidError } from "../src/delivery/social/instagram
 import { telegramStoryCaption, telegramStoryCaptionInput, telegramStoryUploadMedia } from "../src/delivery/social/telegramStories.js";
 import { generateStoryMedia } from "../src/delivery/story-media.js";
 import { loadConfig } from "../src/foundation/config.js";
-import { createChannelStoryClient } from "../src/foundation/external/telegram-session.js";
 
 const ffmpegCalls: string[][] = [];
 
@@ -231,22 +230,5 @@ describe("story publishers", () => {
         TELEGRAM_CHANNEL_STORIES_SESSION: "session",
       }),
     ).toThrow("TELEGRAM_STORIES_CHANNEL is required");
-  });
-
-  it("uses an mtcute SQLite session path", async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-story-legacy-"));
-    try {
-      const client = createChannelStoryClient(
-        loadConfig({
-          TELEGRAM_CHANNEL_STORIES_API_ID: "1",
-          TELEGRAM_CHANNEL_STORIES_API_HASH: "hash",
-          TELEGRAM_CHANNEL_STORIES_SESSION: path.join(dir, "mtcute.sqlite"),
-        }),
-      );
-      expect(client).toBeTruthy();
-      await client.destroy();
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
   });
 });

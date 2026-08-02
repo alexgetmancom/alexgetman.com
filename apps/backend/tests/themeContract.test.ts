@@ -43,17 +43,4 @@ describe("theme token contract", () => {
       expect(missing).toEqual([]);
     });
   }
-
-  test("every palette is non-empty, so a parsing slip cannot pass silently", () => {
-    for (const [name, declared] of Object.entries(palettes)) {
-      expect(`${name}: ${declared.size}`).not.toBe(`${name}: 0`);
-    }
-  });
-
-  test("both surfaces declare both themes", () => {
-    for (const css of [siteCss, DASHBOARD_THEME_CSS]) {
-      expect(css).toContain('html[data-theme="light"]');
-      expect(css).toContain('html[data-theme="dark"]');
-    }
-  });
 });

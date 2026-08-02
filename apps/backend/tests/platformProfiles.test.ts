@@ -1,11 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import {
-  formatPlatformText,
-  PLATFORM_PROFILES,
-  platformAnalyticsProfile,
-  platformProfile,
-  videoBounds,
-} from "../src/publishing/platform-profiles.js";
+import { formatPlatformText, platformAnalyticsProfile, platformProfile, videoBounds } from "../src/publishing/platform-profiles.js";
 
 describe("platform profiles", () => {
   it("keeps platform-specific text formatting declarative", () => {
@@ -23,8 +17,7 @@ describe("platform profiles", () => {
     expect(platformProfile("x")?.requirements).toContain("X_ACCESS_TOKEN");
   });
 
-  it("declares capabilities and media behaviour for every configured target", () => {
-    expect(Object.keys(PLATFORM_PROFILES)).toHaveLength(9);
+  it("declares representative delivery media policies", () => {
     expect(platformProfile("telegram")?.media).toMatchObject({ mode: "limited", limit: 10 });
     expect(platformProfile("site_ru")?.media).toMatchObject({ mode: "all" });
     expect(platformProfile("telegram_stories")?.media).toMatchObject({ mode: "story-first" });

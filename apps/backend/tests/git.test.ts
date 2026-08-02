@@ -13,4 +13,12 @@ describe("gitRevision", () => {
     process.env.GIT_REVISION = "63c3e60";
     expect(gitRevision("/missing-worktree")).toBe("63c3e60");
   });
+
+  it("returns no revision when neither the environment nor git can provide one", () => {
+    delete process.env.GIT_REVISION;
+    expect(gitRevision("/missing-worktree")).toBeNull();
+
+    process.env.GIT_REVISION = "unknown";
+    expect(gitRevision("/missing-worktree")).toBeNull();
+  });
 });
