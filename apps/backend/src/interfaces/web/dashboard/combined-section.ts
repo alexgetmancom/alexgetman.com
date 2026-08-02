@@ -2,12 +2,18 @@ import type { XActivityDashboardItem } from "../../../analytics/x-activity-dashb
 import { targetLocale } from "../../../botTargets.js";
 import { zonedDateParts, zonedSlot } from "../../../foundation/time.js";
 import { ORDERED_TARGETS, PLATFORM_ICONS, platformKey, VIDEO_PLATFORM_ICON_KEYS } from "./assets.js";
-import { currentPostViewEvents, postViewEvents, renderUnifiedDailyChart, renderUnifiedRangeChart } from "./chart.js";
-import { formatMetricValue, getMskDateString } from "./format.js";
-import { renderHeroSection, type TextHeroMetrics, type VideoHeroMetrics } from "./hero-section.js";
+import {
+  currentPostViewEvents,
+  postViewEvents,
+  renderOverviewSparkline,
+  renderUnifiedDailyChart,
+  renderUnifiedRangeChart,
+} from "./chart.js";
+import { formatMetricValue } from "./format.js";
+import { renderHeroCard, renderHeroMicroMetrics, type TextHeroMetrics, type VideoHeroMetrics } from "./hero-section.js";
 import { escapeHtml } from "./html.js";
 import { getTargetMetric, postMetricTotals } from "./metrics.js";
-import { renderPublicationColumns } from "./table.js";
+import { renderPublicationColumns, renderTrackPublicationList } from "./table.js";
 import type { PipelineData, PipelinePost } from "./types.js";
 import type { MetricEvent, VideoOverview } from "./video-overview.js";
 
@@ -80,22 +86,32 @@ export function renderCombinedSection(input: CombinedSectionInput): string {
         };
   const textHero = textHeroMetrics(input, posts, extraX, previousPosts, previousExtraX, periodDays, timeZone, text, previousText);
   const videoHero = videoHeroMetrics(input, periodDays, previousVideoTotals);
+  const comparisonPosts = periodDays === 1 ? (input.dayComparisonData?.posts ?? previousPosts) : previousPosts;
+  const comparisonX = periodDays === 1 ? input.previousXItems : previousExtraX;
+  const textColumn = showText
+    ? renderOverviewColumn("text", input, textHero, posts, extraX, comparisonPosts, comparisonX, showText && !showVideo)
+    : "";
+  const videoColumn = showVideo ? renderOverviewColumn("video", input, videoHero, [], [], [], [], showVideo && !showText) : "";
 
   return `<section class="pipeline-overview">
-    ${renderHeroSection({ text: textHero, video: videoHero, showText, showVideo })}
-    <div class="insights-row">
-      ${renderPlatformPanel(input, posts, showText, showVideo)}
-      <div class="chart-panel">
+    <div class="overview-split${showText && showVideo ? "" : " overview-split--single"}">
+      ${textColumn}
+      ${videoColumn}
+    </div>
+    <details class="overview-details">
+      <summary>Детальная динамика и публикации</summary>
+      <div class="overview-details__body">
         <div class="section-kicker">${periodDays === 1 ? "Сегодня и медиана за 30 дней" : "Динамика просмотров"}</div>
         ${renderChart(input, posts, extraX, showText, showVideo)}
+        ${renderPublicationColumns(
+          showText ? posts : [],
+          ORDERED_TARGETS.map((target) => target.id),
+          showVideo ? input.video.items : [],
+          { moreUrl: input.publicationDetailsUrl },
+        )}
       </div>
-    </div>
-    ${renderPublicationColumns(
-      showText ? posts : [],
-      ORDERED_TARGETS.map((target) => target.id),
-      showVideo ? input.video.items : [],
-      { moreUrl: input.publicationDetailsUrl },
-    )}
+    </details>
+    <div class="chart-tooltip overview-chart-tooltip" hidden></div>
   </section>`;
 }
 
@@ -129,6 +145,248 @@ export function renderModeFilter(
     .join("")}</div>`;
 }
 
+type OverviewKind = "text" | "video";
+type OverviewPlatformRow = {
+  key: string;
+  label: string;
+  locale: string | null;
+  views: number;
+  followers: number | null;
+  delta: number | null;
+  href: string | null;
+  secondary?: boolean;
+};
+
+function renderOverviewColumn(
+  kind: "text",
+  input: CombinedSectionInput,
+  hero: TextHeroMetrics,
+  posts: PipelinePost[],
+  extraX: XActivityDashboardItem[],
+  comparisonPosts: PipelinePost[],
+  comparisonX: XActivityDashboardItem[],
+  single: boolean,
+): string;
+function renderOverviewColumn(
+  kind: "video",
+  input: CombinedSectionInput,
+  hero: VideoHeroMetrics,
+  posts: PipelinePost[],
+  extraX: XActivityDashboardItem[],
+  comparisonPosts: PipelinePost[],
+  comparisonX: XActivityDashboardItem[],
+  single: boolean,
+): string;
+function renderOverviewColumn(
+  kind: OverviewKind,
+  input: CombinedSectionInput,
+  hero: TextHeroMetrics | VideoHeroMetrics,
+  posts: PipelinePost[],
+  extraX: XActivityDashboardItem[],
+  comparisonPosts: PipelinePost[],
+  comparisonX: XActivityDashboardItem[],
+  single: boolean,
+): string {
+  const color = kind === "text" ? TEXT_COLOR : VIDEO_COLOR;
+  const currentPosts = kind === "text" ? posts : [];
+  const currentX = kind === "text" ? extraX : [];
+  const history = overviewHistory(input, kind, currentPosts, currentX);
+  const platformRows = overviewPlatformRows(
+    input,
+    kind,
+    currentPosts,
+    kind === "text" ? input.xItems : currentX,
+    comparisonPosts,
+    comparisonX,
+  );
+  const showMetricFilter = single || kind === "text";
+  const publicationMarkup =
+    kind === "text"
+      ? renderTrackPublicationList(
+          posts,
+          ORDERED_TARGETS.map((target) => target.id),
+          [],
+          { limit: 4 },
+        )
+      : renderTrackPublicationList([], [], input.video.items, { limit: 4 });
+  const heroMarkup = kind === "text" ? renderHeroCard("text", hero as TextHeroMetrics) : renderHeroCard("video", hero as VideoHeroMetrics);
+  const microMarkup =
+    kind === "text" ? renderHeroMicroMetrics("text", hero as TextHeroMetrics) : renderHeroMicroMetrics("video", hero as VideoHeroMetrics);
+  const title = kind === "text" ? "Текст" : "Видео";
+  const historyLabel = input.periodDays === 1 ? "30 дней назад" : "начало периода";
+  const historyRightLabel = input.periodDays === 1 ? "сегодня" : "конец периода";
+  return `<section class="overview-track overview-track--${kind}${single ? " overview-track--single" : ""}">
+    ${heroMarkup}
+    ${renderOverviewSparkline(history, color, `Динамика просмотров: ${title}`, historyLabel, historyRightLabel)}
+    ${microMarkup}
+    ${renderOverviewPlatforms(input, kind, platformRows, showMetricFilter)}
+    <div class="overview-publications">
+      <div class="overview-kicker">ПУБЛИКАЦИИ</div>
+      ${publicationMarkup}
+    </div>
+  </section>`;
+}
+
+function renderOverviewPlatforms(
+  input: CombinedSectionInput,
+  kind: OverviewKind,
+  rows: OverviewPlatformRow[],
+  showMetricFilter: boolean,
+): string {
+  const color = kind === "text" ? TEXT_COLOR : VIDEO_COLOR;
+  const metricLabel = input.platformMetric === "reach" ? "охват" : "подписчики";
+  const metricValue = (row: OverviewPlatformRow): number | null => (input.platformMetric === "reach" ? row.views : row.followers);
+  const total = rows.reduce((sum, row) => sum + (metricValue(row) ?? 0), 0);
+  const localeTotal = (locale: string) =>
+    rows.reduce((sum, row) => sum + (row.locale?.toLowerCase() === locale ? (metricValue(row) ?? 0) : 0), 0);
+  const ru = localeTotal("ru");
+  const en = localeTotal("en");
+  const segments =
+    total > 0
+      ? rows
+          .map((row, index) => {
+            const value = metricValue(row) ?? 0;
+            if (value <= 0) return "";
+            const opacity = Math.max(0.2, 1 - index * 0.2);
+            return `<i style="width:${((value / total) * 100).toFixed(3)}%;background:${color};opacity:${opacity.toFixed(2)}"></i>`;
+          })
+          .join("")
+      : `<i class="overview-platforms__empty-segment" style="width:100%;background:${color}"></i>`;
+  const visibleRows =
+    input.platformMetric === "reach" ? rows.filter((row) => !row.secondary || row.views >= 10) : rows.filter((row) => !row.secondary);
+  const hiddenRows = input.platformMetric === "reach" ? rows.filter((row) => row.secondary && row.views < 10) : [];
+  const renderRow = (row: OverviewPlatformRow): string => {
+    const value = metricValue(row);
+    const formatted = value === null ? "—" : formatMetricValue(value);
+    const delta = input.platformMetric === "reach" ? formatPlatformDelta(row.delta) : "";
+    const body = `<span class="overview-platform__swatch" style="background:${color}"></span><span class="overview-platform__name">${escapeHtml(row.label)}${row.locale ? `<b>${escapeHtml(row.locale.toUpperCase())}</b>` : ""}</span><strong>${formatted}</strong><span class="overview-platform__delta ${row.delta !== null && row.delta >= 0 ? "overview-platform__delta--up" : "overview-platform__delta--down"}">${delta || "\u00a0"}</span>`;
+    return row.href
+      ? `<a class="overview-platform" href="${escapeHtml(row.href)}" title="${escapeHtml(row.label)}" aria-label="${escapeHtml(row.label)}">${body}</a>`
+      : `<div class="overview-platform" title="${escapeHtml(row.label)}" aria-label="${escapeHtml(row.label)}">${body}</div>`;
+  };
+  const platformRows = visibleRows.map(renderRow).join("");
+  const more = hiddenRows.length
+    ? `<details class="overview-platforms__more platform-more"><summary>+ Ещё <span>${hiddenRows.length}</span></summary><div class="platform-more__list">${hiddenRows.map(renderRow).join("")}</div></details>`
+    : "";
+  const filter = showMetricFilter ? renderPlatformMetricFilter(input.platformMetric, input.periodDays, input.weekOffset, input.mode) : "";
+  return `<div class="overview-platforms">
+    <div class="overview-platforms__header"><div class="overview-kicker">ПЛАТФОРМЫ <em>${metricLabel}</em></div>${filter}</div>
+    <div class="overview-platforms__bar-labels"><span>RU</span><span>EN</span></div>
+    <div class="overview-platforms__bar">${segments}</div>
+    <div class="overview-platforms__legend"><span><b>${formatMetricValue(ru)}</b> · ${total > 0 ? Math.round((ru / total) * 100) : 0}%</span><span>${total > 0 ? Math.round((en / total) * 100) : 0}% · <b>${formatMetricValue(en)}</b></span></div>
+    <div class="overview-platforms__rows">${platformRows || '<p class="empty-state">Нет данных по площадкам</p>'}</div>
+    ${more}
+  </div>`;
+}
+
+function overviewPlatformRows(
+  input: CombinedSectionInput,
+  kind: OverviewKind,
+  currentPosts: PipelinePost[],
+  currentX: XActivityDashboardItem[],
+  comparisonPosts: PipelinePost[],
+  comparisonX: XActivityDashboardItem[],
+): OverviewPlatformRow[] {
+  if (kind === "video") {
+    return input.video.platforms
+      .map((platform) => {
+        const previous = input.periodDays === 1 ? (input.dayComparisonVideo?.platforms ?? []) : input.previousVideo.platforms;
+        const previousRow = previous.find(
+          (item) => item.target === platform.target && item.locales.join(",") === platform.locales.join(","),
+        );
+        return {
+          key: `${platform.target}:${platform.locales.join(",")}`,
+          label: platform.label,
+          locale: platform.locales[0] ?? null,
+          views: platform.views,
+          followers: platform.followers,
+          delta: previousRow ? percentDelta(platform.views, previousRow.views) : null,
+          href: null,
+          secondary: false,
+        };
+      })
+      .sort((left, right) =>
+        input.platformMetric === "reach" ? right.views - left.views : (right.followers ?? -1) - (left.followers ?? -1),
+      );
+  }
+
+  const rows = input.followers.map((platform) => ({
+    key: platform.key,
+    label: platform.label,
+    locale: targetLocale(platform.key),
+    views: platformViews(platform.key, currentPosts, currentX),
+    followers: platform.followers,
+    delta: percentDelta(platformViews(platform.key, currentPosts, currentX), platformViews(platform.key, comparisonPosts, comparisonX)),
+    href: `/command-center?period=${input.periodDays}&week_offset=${input.weekOffset}${input.mode === "all" ? "" : `&mode=${input.mode}`}&view=${encodeURIComponent(platform.key)}`,
+    secondary: SECONDARY_TEXT_TARGETS.has(platform.key),
+  }));
+  const known = new Set(rows.map((row) => row.key));
+  const secondary = ORDERED_TARGETS.filter((target) => SECONDARY_TEXT_TARGETS.has(target.id) && !known.has(target.id))
+    .filter((target) => hasTextTargetData(currentPosts, target.id))
+    .map((target) => ({
+      key: target.id,
+      label: target.label,
+      locale: target.locale,
+      views: platformViews(target.id, currentPosts, currentX),
+      followers: null,
+      delta: percentDelta(platformViews(target.id, currentPosts, currentX), platformViews(target.id, comparisonPosts, comparisonX)),
+      href: null,
+      secondary: true,
+    }));
+  return [...rows, ...secondary].sort((left, right) =>
+    input.platformMetric === "reach" ? right.views - left.views : (right.followers ?? -1) - (left.followers ?? -1),
+  );
+}
+
+function formatPlatformDelta(value: number | null): string {
+  if (value === null) return "";
+  return `${value >= 0 ? "+" : "−"}${Math.abs(value)}%`;
+}
+
+function percentDelta(value: number, previous: number): number | null {
+  if (previous <= 0) return null;
+  return Math.round(((value - previous) / previous) * 100);
+}
+
+function overviewHistory(
+  input: CombinedSectionInput,
+  kind: OverviewKind,
+  currentPosts: PipelinePost[],
+  currentX: XActivityDashboardItem[],
+): Array<{ label: string; value: number }> {
+  const current =
+    kind === "text" ? textViewsByDay([...currentPosts, ...currentX.map(xChartPost)], input.timeZone) : videoViewsByDay(input.video);
+  if (input.periodDays === 1) {
+    const previous =
+      kind === "text"
+        ? textViewsByDay(
+            [
+              ...(input.previousData?.posts ?? []),
+              ...additionalXItems(input.previousData?.posts ?? [], input.previousXItems).map(xChartPost),
+            ],
+            input.timeZone,
+          )
+        : videoViewsByDay(input.previousVideo);
+    const points: Array<{ label: string; value: number }> = [];
+    for (let index = -29; index <= 0; index += 1) {
+      const day = new Date(input.rangeEnd);
+      day.setUTCDate(day.getUTCDate() + index);
+      const key = day.toISOString().slice(0, 10);
+      points.push({ label: key, value: current[key] ?? previous[key] ?? 0 });
+    }
+    return points;
+  }
+
+  const points: Array<{ label: string; value: number }> = [];
+  for (let index = 0; index < input.periodDays; index += 1) {
+    const day = new Date(input.rangeStart);
+    day.setUTCDate(day.getUTCDate() + index);
+    const key = day.toISOString().slice(0, 10);
+    points.push({ label: key, value: current[key] ?? 0 });
+  }
+  return points;
+}
+
 function textHeroMetrics(
   input: CombinedSectionInput,
   posts: PipelinePost[],
@@ -152,6 +410,7 @@ function textHeroMetrics(
         : textDetails(previousPosts, previousExtraX);
   const median = hasMedianData || periodDays === 1 ? medianDetails : fallbackMedian;
   const views = current.views;
+  const progressPercent = metricProgress(views, median.views);
   return {
     postCount: posts.length,
     views,
@@ -160,6 +419,12 @@ function textHeroMetrics(
     replies: currentDetails.replies,
     reposts: currentDetails.reposts,
     engagementRate: views > 0 ? (currentDetails.reactions / views) * 100 : null,
+    countLabel: periodCountLabel(posts.length, "пост", periodDays),
+    normLabel: periodNormLabel(periodDays),
+    contextLabel: periodContextLabel(input.rangeEnd, periodDays, timeZone),
+    paceLabel: periodPaceLabel(views, median.views, input.rangeEnd, periodDays, timeZone),
+    projectionViews: periodProjection(views, input.rangeEnd, periodDays, timeZone),
+    progressPercent,
   };
 }
 
@@ -171,6 +436,7 @@ function videoHeroMetrics(input: CombinedSectionInput, periodDays: number, fallb
       : hasVideoHistory(input.previousVideo)
         ? fallbackMedian
         : null;
+  const progressPercent = metricProgress(input.video.totals.views, median?.views ?? null);
   return {
     videoCount: input.video.totals.posts,
     views: input.video.totals.views,
@@ -178,7 +444,66 @@ function videoHeroMetrics(input: CombinedSectionInput, periodDays: number, fallb
     completionRate: input.video.summary.completionRate,
     averageWatchTimeMs: input.video.summary.averageWatchTimeMs,
     subscribers: input.video.summary.subscribers,
+    countLabel: periodCountLabel(input.video.totals.posts, "ролик", periodDays),
+    normLabel: periodNormLabel(periodDays),
+    contextLabel: periodContextLabel(input.rangeEnd, periodDays, input.timeZone),
+    paceLabel: periodPaceLabel(input.video.totals.views, median?.views ?? null, input.rangeEnd, periodDays, input.timeZone),
+    projectionViews: periodProjection(input.video.totals.views, input.rangeEnd, periodDays, input.timeZone),
+    progressPercent,
   };
+}
+
+function metricProgress(value: number, norm: number | null): number | null {
+  if (norm === null || norm <= 0) return null;
+  return Math.round((value / norm) * 100);
+}
+
+function periodCountLabel(value: number, singular: string, periodDays: number): string {
+  const remainder = value % 100;
+  const word =
+    remainder >= 11 && remainder <= 14
+      ? `${singular}ов`
+      : value % 10 === 1
+        ? singular
+        : value % 10 >= 2 && value % 10 <= 4
+          ? `${singular}а`
+          : `${singular}ов`;
+  return periodDays === 1 ? `${formatMetricValue(value)} ${word} сегодня` : `${formatMetricValue(value)} ${word} за ${periodDays}д`;
+}
+
+function periodNormLabel(periodDays: number): string {
+  return periodDays === 1 ? "норма дня" : `норма за ${periodDays}д`;
+}
+
+function periodContextLabel(day: Date, periodDays: number, timeZone: string): string {
+  if (periodDays !== 1) return `ОХВАТ · ПОСЛЕДНИЕ ${periodDays} ДН.`;
+  const parts = zonedDateParts(day, timeZone);
+  const months = ["ЯНВ", "ФЕВ", "МАР", "АПР", "МАЙ", "ИЮН", "ИЮЛ", "АВГ", "СЕН", "ОКТ", "НОЯ", "ДЕК"];
+  return `ОХВАТ · ${parts.day} ${months[parts.month - 1] ?? ""}`;
+}
+
+function periodPaceLabel(value: number, norm: number | null, day: Date, periodDays: number, timeZone: string): string | null {
+  if (norm === null || norm <= 0) return null;
+  const remaining = Math.max(0, Math.round(norm - value));
+  const projection = periodProjection(value, day, periodDays, timeZone);
+  if (value >= norm) return projection === null ? "норма побита" : `норма побита · прогноз ${formatMetricValue(projection)}`;
+  return projection === null
+    ? `до нормы ${formatMetricValue(remaining)}`
+    : `до нормы ${formatMetricValue(remaining)} · прогноз ${formatMetricValue(projection)}`;
+}
+
+function periodProjection(value: number, day: Date, periodDays: number, timeZone: string): number | null {
+  if (periodDays !== 1 || !isCurrentCalendarDay(day, timeZone)) return null;
+  const startParts = zonedDateParts(day, timeZone);
+  const start = zonedSlot(startParts.year, startParts.month, startParts.day, "00:00", timeZone);
+  const share = Math.max(0.02, Math.min(1, (Date.now() - start.getTime()) / 86_400_000));
+  return Math.round(value / share);
+}
+
+function isCurrentCalendarDay(day: Date, timeZone: string): boolean {
+  const left = zonedDateParts(day, timeZone);
+  const right = zonedDateParts(new Date(), timeZone);
+  return left.year === right.year && left.month === right.month && left.day === right.day;
 }
 
 function hasVideoHistory(video: VideoOverview | null | undefined): video is VideoOverview {
@@ -429,11 +754,12 @@ function renderChart(
   return renderUnifiedRangeChart(series, input.rangeStart, input.rangeEnd, scale);
 }
 
-function textViewsByDay(posts: PipelinePost[]): Record<string, number> {
+function textViewsByDay(posts: PipelinePost[], timeZone = "Europe/Moscow"): Record<string, number> {
   const targetIds = ORDERED_TARGETS.map((target) => target.id);
   const days: Record<string, number> = {};
   for (const post of posts) {
-    const day = getMskDateString(post.date);
+    const day = calendarKey(post.date, timeZone);
+    if (!day) continue;
     days[day] = (days[day] ?? 0) + postMetricTotals(post, targetIds).views;
   }
   return days;

@@ -73,16 +73,27 @@ export function renderPeriodControls(
   const viewParam = view ? `&view=${encodeURIComponent(view)}` : "";
   const filterParam = `${viewParam}${extraQuery}`;
   const periodLabel = (days: number) => (days === 365 ? "Год" : `${days}д`);
-  const options = PERIODS.map(
-    (days) =>
-      `<a class="${days === periodDays ? "active" : ""}" href="/command-center?period=${days}&week_offset=${weekOffset}${filterParam}">${periodLabel(days)}</a>`,
-  ).join("");
+  const quickOptions = PERIODS.filter((days) => days <= 30)
+    .map(
+      (days) =>
+        `<a class="period-quick-link${days === periodDays ? " active" : ""}" href="/command-center?period=${days}&week_offset=${weekOffset}${filterParam}">${periodLabel(days)}</a>`,
+    )
+    .join("");
+  const longOptions = PERIODS.filter((days) => days > 30)
+    .map(
+      (days) =>
+        `<a class="${days === periodDays ? "active" : ""}" href="/command-center?period=${days}&week_offset=${weekOffset}${filterParam}">${periodLabel(days)}</a>`,
+    )
+    .join("");
   const previous = `<a class="period-nav" href="/command-center?period=${periodDays}&week_offset=${weekOffset + 1}${filterParam}" aria-label="Предыдущий период">‹</a>`;
   const next =
     weekOffset > 0
       ? `<a class="period-nav" href="/command-center?period=${periodDays}&week_offset=${weekOffset - 1}${filterParam}" aria-label="Следующий период">›</a>`
       : '<span class="period-nav muted">›</span>';
-  return `<div class="dashboard-nav__controls"><details class="period-menu"><summary class="period-menu__toggle" aria-label="Период">${periodLabel(periodDays)}<i class="caret">▾</i></summary><div class="period-menu__list">${options}</div></details><div class="period-range">${previous}<span>${shortDateRange(start, end)}</span>${next}</div></div>`;
+  const longMenu = longOptions
+    ? `<details class="period-menu"><summary class="period-menu__toggle" aria-label="Другие периоды">${periodDays > 30 ? periodLabel(periodDays) : "Ещё"}<i class="caret">▾</i></summary><div class="period-menu__list">${longOptions}</div></details>`
+    : "";
+  return `<div class="dashboard-nav__controls"><div class="period-quick" role="group" aria-label="Период">${quickOptions}</div>${longMenu}<div class="period-range">${previous}<span>${shortDateRange(start, end)}</span>${next}</div></div>`;
 }
 
 function metricTotals(posts: NonNullable<PipelineData["posts"]>, targetIds: string[]) {

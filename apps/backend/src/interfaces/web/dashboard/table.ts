@@ -71,6 +71,59 @@ export function renderPublicationColumns(
   ].join("");
 }
 
+export type TrackPublicationListOptions = { limit?: number };
+
+/** Small ranked rows used by the split overview. The detailed expandable table
+ * remains available below the fold; the landing screen only needs the first
+ * few winners in the same visual language as the platform rows. */
+export function renderTrackPublicationList(
+  posts: PipelinePost[],
+  targetIds: string[] = ORDERED_TARGETS.map((target) => target.id),
+  videos: VideoContentItem[] = [],
+  options: TrackPublicationListOptions = {},
+): string {
+  const limit = Math.max(1, options.limit ?? 4);
+  const rows = [
+    ...posts.map((post) => {
+      const metrics = total(post, targetIds);
+      const target = primaryTarget(post, targetIds);
+      return {
+        date: post.date ?? "",
+        views: metrics.views,
+        reactions: reactions(metrics),
+        replies: metrics.replies,
+        title: shortPipelineText(post.text_ru || post.text_en || "Без текста", 14),
+        tag: publicationTag(target?.id ?? "", target?.locale ?? null),
+        afterPeriodViews: 0,
+        url: bestPostUrl(post, targetIds),
+      };
+    }),
+    ...videos.map((video) => ({
+      date: video.publishedAt ?? "",
+      views: video.views,
+      reactions: video.reactions,
+      replies: video.replies,
+      title: shortPipelineText(video.title, 14),
+      tag: publicationTag(video.target, video.locale),
+      afterPeriodViews: video.afterPeriodViews,
+      url: video.url,
+    })),
+  ]
+    .sort((left, right) => right.views - left.views || right.date.localeCompare(left.date))
+    .slice(0, limit);
+
+  if (!rows.length) return '<p class="empty-state">За выбранный период публикаций нет</p>';
+
+  return rows
+    .map((row) => {
+      const content = `<span class="track-publication__tag">${escapeHtml(row.tag)}</span><span class="track-publication__title">${escapeHtml(row.title)}</span><span class="track-publication__stats"><b>${formatMetricValue(row.views)}</b>${row.afterPeriodViews > 0 ? `<small>+${formatMetricValue(row.afterPeriodViews)} после</small>` : ""}</span><span class="track-publication__meta">${formatMetricValue(row.reactions)} реакц. · ${formatMetricValue(row.replies)} отв.</span>`;
+      return row.url
+        ? `<a class="track-publication" href="${escapeHtml(row.url)}" target="_blank" rel="noopener noreferrer">${content}</a>`
+        : `<div class="track-publication">${content}</div>`;
+    })
+    .join("");
+}
+
 /** Renders only a bounded fragment for the dashboard's read-only detail loader. */
 export function renderPublicationDetails(
   posts: PipelinePost[],
@@ -213,6 +266,29 @@ function bestPostUrl(post: PipelinePost, targetIds: string[]): string | null {
     if (url) return url;
   }
   return null;
+}
+
+function primaryTarget(post: PipelinePost, targetIds: string[]) {
+  return ORDERED_TARGETS.filter((target) => targetIds.includes(target.id) && targetStatus(post, target.id) === "published").sort(
+    (left, right) => getTargetMetric(post, right.id, "views") - getTargetMetric(post, left.id, "views"),
+  )[0];
+}
+
+function publicationTag(target: string, locale: string | null): string {
+  const short = target.startsWith("youtube")
+    ? "YT"
+    : target.startsWith("instagram")
+      ? "IG"
+      : target.startsWith("telegram")
+        ? "TG"
+        : target.startsWith("threads")
+          ? "TH"
+          : target.startsWith("site")
+            ? "SITE"
+            : target === "x"
+              ? "X"
+              : target.toUpperCase();
+  return `${short}${locale ? ` ${locale.toUpperCase()}` : ""}`;
 }
 
 function renderRecentPost(post: PipelinePost, targetIds: string[], hidden: boolean): string {

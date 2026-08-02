@@ -1,6 +1,8 @@
 import { formatMetricValue } from "./format.js";
 import { escapeHtml } from "./html.js";
 
+export type HeroMetric = { value: string; label: string };
+
 export type TextHeroMetrics = {
   postCount: number;
   views: number;
@@ -9,6 +11,12 @@ export type TextHeroMetrics = {
   replies: number;
   reposts: number;
   engagementRate: number | null;
+  countLabel: string;
+  normLabel: string;
+  contextLabel: string;
+  paceLabel: string | null;
+  projectionViews: number | null;
+  progressPercent: number | null;
 };
 
 export type VideoHeroMetrics = {
@@ -18,6 +26,12 @@ export type VideoHeroMetrics = {
   completionRate: number | null;
   averageWatchTimeMs: number | null;
   subscribers: number | null;
+  countLabel: string;
+  normLabel: string;
+  contextLabel: string;
+  paceLabel: string | null;
+  projectionViews: number | null;
+  progressPercent: number | null;
 };
 
 export type HeroSectionInput = {
@@ -27,58 +41,50 @@ export type HeroSectionInput = {
   showVideo: boolean;
 };
 
+/** Renders the legacy two-card wrapper for callers that still need it. */
 export function renderHeroSection(input: HeroSectionInput): string {
   return `<section class="hero-metrics">
-    ${input.showText ? renderTextCard(input.text) : ""}
-    ${input.showVideo ? renderVideoCard(input.video) : ""}
+    ${input.showText ? renderHeroCard("text", input.text) : ""}
+    ${input.showVideo ? renderHeroCard("video", input.video) : ""}
   </section>`;
 }
 
-function renderTextCard(metrics: TextHeroMetrics): string {
-  return `<article class="hero-card hero-card--text" aria-label="Текстовые метрики">
-    ${renderCardHeading("ТЕКСТ", formatCount(metrics.postCount, "пост", "поста", "постов"), "var(--series-text)")}
-    ${renderPrimaryMetric(metrics.views, metrics.medianViews)}
-    <div class="hero-card__secondary">
-      ${renderSecondaryMetric("Реакции", formatMetricValue(metrics.reactions))}
-      ${renderSecondaryMetric("Ответы", formatMetricValue(metrics.replies))}
-      ${renderSecondaryMetric("Репосты", formatMetricValue(metrics.reposts))}
-      ${renderSecondaryMetric("ER", formatRate(metrics.engagementRate))}
+export function renderHeroCard(kind: "text", metrics: TextHeroMetrics): string;
+export function renderHeroCard(kind: "video", metrics: VideoHeroMetrics): string;
+export function renderHeroCard(kind: "text" | "video", metrics: TextHeroMetrics | VideoHeroMetrics): string {
+  const isText = kind === "text";
+  const count = metrics.countLabel;
+  const label = isText ? "ТЕКСТ" : "ВИДЕО";
+  const color = isText ? "var(--series-text)" : "var(--series-video)";
+  const ariaLabel = isText ? "Текстовые метрики" : "Видео-метрики";
+  const progress = metrics.progressPercent === null ? 0 : Math.min(100, Math.max(0, metrics.progressPercent)) / 100;
+  return `<article class="hero-card overview-hero-card hero-card--${kind}" style="--hero-progress:${progress.toFixed(3)}" aria-label="${ariaLabel}">
+    <div class="hero-card__heading overview-hero-card__heading"><i style="background:${color}"></i><strong>${label}</strong><span>· ${escapeHtml(count)}</span></div>
+    <div class="hero-card__primary overview-hero-card__primary">
+      <div class="hero-card__views overview-hero-card__views"><span>Просмотры</span><strong>${formatMetricValue(metrics.views)}</strong><em class="hero-card__delta ${deltaClass(metrics.views, metrics.medianViews)}">${formatDelta(metrics.views, metrics.medianViews)}</em></div>
+      <div class="hero-card__median overview-hero-card__median"><span>${escapeHtml(metrics.normLabel)}</span><strong>${formatOptionalMetric(metrics.medianViews)}</strong></div>
     </div>
+    <div class="overview-hero-card__context"><span>${escapeHtml(metrics.contextLabel)}</span>${metrics.paceLabel ? `<span class="overview-hero-card__pace ${metrics.progressPercent !== null && metrics.progressPercent >= 100 ? "overview-hero-card__pace--positive" : ""}">${escapeHtml(metrics.paceLabel)}</span>` : ""}</div>
   </article>`;
 }
 
-function renderVideoCard(metrics: VideoHeroMetrics): string {
-  return `<article class="hero-card hero-card--video" aria-label="Видео-метрики">
-    ${renderCardHeading("ВИДЕО", formatCount(metrics.videoCount, "ролик", "ролика", "роликов"), "var(--series-video)")}
-    ${renderPrimaryMetric(metrics.views, metrics.medianViews)}
-    <div class="hero-card__secondary">
-      ${renderSecondaryMetric("Досмотры", formatPercent(metrics.completionRate))}
-      ${renderSecondaryMetric("Ср. время", formatSeconds(metrics.averageWatchTimeMs))}
-      ${renderSecondaryMetric("Подписки", formatSigned(metrics.subscribers))}
-    </div>
-  </article>`;
-}
-
-function renderCardHeading(label: string, count: string, color: string): string {
-  return `<div class="hero-card__heading"><i style="background:${color}"></i><strong>${escapeHtml(label)}</strong><span>· ${escapeHtml(count)}</span></div>`;
-}
-
-function renderPrimaryMetric(value: number, median: number | null): string {
-  return `<div class="hero-card__primary">
-    <div class="hero-card__views"><span>Просмотры</span><strong>${formatMetricValue(value)}</strong></div>
-    <div class="hero-card__median"><span>медиана 30д</span><strong>${formatOptionalMetric(median)}</strong></div>
-    <span class="hero-card__delta ${deltaClass(value, median)}">${formatDelta(value, median)}</span>
-  </div>`;
-}
-
-function renderSecondaryMetric(label: string, value: string): string {
-  return `<div class="hero-card__metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
-}
-
-function formatCount(value: number, one: string, few: string, many: string): string {
-  const remainder = value % 100;
-  const word = remainder >= 11 && remainder <= 14 ? many : value % 10 === 1 ? one : value % 10 >= 2 && value % 10 <= 4 ? few : many;
-  return `${formatMetricValue(value)} ${word}`;
+export function renderHeroMicroMetrics(kind: "text", metrics: TextHeroMetrics): string;
+export function renderHeroMicroMetrics(kind: "video", metrics: VideoHeroMetrics): string;
+export function renderHeroMicroMetrics(kind: "text" | "video", metrics: TextHeroMetrics | VideoHeroMetrics): string {
+  const values: HeroMetric[] =
+    kind === "text"
+      ? [
+          { value: formatMetricValue((metrics as TextHeroMetrics).reactions), label: "реакц." },
+          { value: formatMetricValue((metrics as TextHeroMetrics).replies), label: "отв." },
+          { value: formatMetricValue((metrics as TextHeroMetrics).reposts), label: "репост." },
+          { value: formatRate((metrics as TextHeroMetrics).engagementRate), label: "ER" },
+        ]
+      : [
+          { value: formatMetricValue((metrics as VideoHeroMetrics).completionRate), label: "досмотры" },
+          { value: formatSeconds((metrics as VideoHeroMetrics).averageWatchTimeMs), label: "ср. время" },
+          { value: formatSigned((metrics as VideoHeroMetrics).subscribers), label: "подп." },
+        ];
+  return `<div class="overview-micro">${values.map((item, index) => `${index ? '<span class="overview-micro__separator">·</span>' : ""}<span><b>${escapeHtml(item.value)}</b> ${escapeHtml(item.label)}</span>`).join("")}</div>`;
 }
 
 function formatOptionalMetric(value: number | null): string {
@@ -89,12 +95,8 @@ function formatRate(value: number | null): string {
   return value === null ? "—" : `${value.toFixed(2)}%`;
 }
 
-function formatPercent(value: number | null): string {
-  return value === null ? "—" : `${Math.round(value)}%`;
-}
-
 function formatSeconds(value: number | null): string {
-  return value === null ? "—" : `${(value / 1_000).toFixed(1)} с`;
+  return value === null ? "—" : `${(value / 1_000).toFixed(1)}с`;
 }
 
 function formatSigned(value: number | null): string {
@@ -111,5 +113,6 @@ function formatDelta(value: number, median: number | null): string {
 }
 
 function deltaClass(value: number, median: number | null): string {
-  return median === null || value >= median ? "hero-card__delta--up" : "hero-card__delta--down";
+  if (median === null) return "hero-card__delta--flat";
+  return value >= median ? "hero-card__delta--up" : "hero-card__delta--down";
 }

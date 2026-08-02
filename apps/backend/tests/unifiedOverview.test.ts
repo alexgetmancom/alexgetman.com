@@ -289,9 +289,12 @@ describe("unified overview rendering", () => {
       expect(html).toContain("<strong>1k</strong>");
       expect(html).toContain("Текст");
       expect(html).toContain("Видео");
-      expect(html).toContain('class="hero-metrics"');
-      expect(html).toContain("медиана 30д");
-      expect(html).toContain("Досмотры");
+      expect(html).toContain('class="overview-split"');
+      expect(html).toContain('class="overview-track overview-track--text"');
+      expect(html).toContain('class="overview-track overview-track--video"');
+      expect(html).toContain('class="overview-spark"');
+      expect(html).toContain("норма дня");
+      expect(html).toContain("досмотры");
       expect(html).not.toContain('class="kpi-table');
       expect(html).not.toContain("kpi-table__row--head");
       expect(html).not.toContain("vs медиана за 30д");
@@ -380,8 +383,8 @@ describe("unified overview rendering", () => {
         ],
         mode: "all",
       });
-      expect(html).toContain('<b class="platform-locale">RU</b>');
-      expect(html).toContain('<b class="platform-locale">EN</b>');
+      expect(html).toContain('class="overview-platform__name">Telegram<b>RU</b>');
+      expect(html).toContain('class="overview-platform__name">X<b>EN</b>');
     } finally {
       backendDb.close();
     }
@@ -443,11 +446,9 @@ describe("unified overview rendering", () => {
       { key: "threads_ru", label: "Threads RU", followers: 200 },
       { key: "x", label: "X", followers: 400 },
     ];
-    const panel = (html: string): string =>
-      html.slice(html.indexOf('<aside class="audience-panel platform-panel">'), html.indexOf('<div class="chart-panel">'));
-    const column = (html: string, index: number): string => {
-      const start = html.indexOf('<div class="platform-column">', index);
-      const end = html.indexOf('<div class="platform-column">', start + 1);
+    const column = (html: string, kind: "text" | "video"): string => {
+      const start = html.indexOf(`class="overview-track overview-track--${kind}`);
+      const end = html.indexOf('<div class="overview-publications">', start);
       return html.slice(start, end < 0 ? undefined : end);
     };
     const assertOrder = (html: string, labels: string[]): void => {
@@ -456,33 +457,29 @@ describe("unified overview rendering", () => {
       for (let index = 1; index < positions.length; index += 1) expect(positions[index - 1] ?? -1).toBeLessThan(positions[index] ?? -1);
     };
 
-    const reachHtml = panel(
-      renderCombinedSection({
-        ...baseInput,
-        data: { posts: [post] },
-        followers,
-        video,
-        mode: "all",
-        platformMetric: "reach",
-      }),
-    );
-    const reachText = column(reachHtml, 0);
-    const reachVideo = column(reachHtml, reachHtml.indexOf('<div class="platform-column">') + 1);
+    const reachHtml = renderCombinedSection({
+      ...baseInput,
+      data: { posts: [post] },
+      followers,
+      video,
+      mode: "all",
+      platformMetric: "reach",
+    });
+    const reachText = column(reachHtml, "text");
+    const reachVideo = column(reachHtml, "video");
     assertOrder(reachText, ["Telegram", "Threads RU", "Site RU", "X"]);
     assertOrder(reachVideo, ["Instagram RU", "Instagram EN", "YouTube RU"]);
 
-    const followerHtml = panel(
-      renderCombinedSection({
-        ...baseInput,
-        data: { posts: [post] },
-        followers,
-        video,
-        mode: "all",
-        platformMetric: "followers",
-      }),
-    );
-    const followerText = column(followerHtml, 0);
-    const followerVideo = column(followerHtml, followerHtml.indexOf('<div class="platform-column">') + 1);
+    const followerHtml = renderCombinedSection({
+      ...baseInput,
+      data: { posts: [post] },
+      followers,
+      video,
+      mode: "all",
+      platformMetric: "followers",
+    });
+    const followerText = column(followerHtml, "text");
+    const followerVideo = column(followerHtml, "video");
     assertOrder(followerText, ["X", "Threads RU", "Telegram"]);
     assertOrder(followerVideo, ["YouTube RU", "Instagram RU", "Instagram EN"]);
   });
@@ -507,11 +504,8 @@ describe("unified overview rendering", () => {
       video: emptyVideoOverview(),
       mode: "text",
     });
-    const platformHtml = html.slice(
-      html.indexOf('<aside class="audience-panel platform-panel">'),
-      html.indexOf('<div class="chart-panel">'),
-    );
-    const moreIndex = platformHtml.indexOf('<details class="platform-more">');
+    const platformHtml = html.slice(html.indexOf('<div class="overview-platforms">'), html.indexOf('<div class="overview-publications">'));
+    const moreIndex = platformHtml.indexOf('<details class="overview-platforms__more platform-more">');
 
     expect(moreIndex).toBeGreaterThan(0);
     expect(platformHtml.slice(0, moreIndex)).toContain("Telegram Stories");
@@ -528,8 +522,8 @@ describe("unified overview rendering", () => {
       platformMetric: "followers",
     });
     const followersPlatformHtml = followersHtml.slice(
-      followersHtml.indexOf('<aside class="audience-panel platform-panel">'),
-      followersHtml.indexOf('<div class="chart-panel">'),
+      followersHtml.indexOf('<div class="overview-platforms">'),
+      followersHtml.indexOf('<div class="overview-publications">'),
     );
     expect(followersPlatformHtml).not.toContain("Telegram Stories");
     expect(followersPlatformHtml).not.toContain("platform-more");
