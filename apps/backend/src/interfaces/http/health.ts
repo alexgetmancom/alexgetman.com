@@ -30,7 +30,7 @@ export const healthRoutes: RouteModule = (app, { config, backendDb }) => {
   });
 };
 
-/** Readiness for the deploy gate (`/readyz` in .github/workflows/deploy.yml).
+/** Readiness for the deploy gate (`/readyz` in .github/workflows/check.yml).
  *
  * Existence of the database file proves almost nothing: the old check stayed
  * green on a read-only volume, a corrupt database and an unwritable media

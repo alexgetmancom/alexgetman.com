@@ -7,13 +7,42 @@ on:
   pull_request:
     paths-ignore:
       - "docs/**"
+  schedule:
+    - cron: "17 3 * * 1"
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
+  actions: read
   packages: write
   statuses: write
 
 jobs:
+  scope:
+    name: Determine changed areas
+    runs-on: ubuntu-latest
+    outputs:
+      media_changed: ${{ steps.filter.outputs.media }}
+      dependencies_changed: ${{ steps.filter.outputs.dependencies }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Detect relevant changes
+        id: filter
+        if: github.event_name != 'schedule'
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            media:
+              - 'deploy/media-processor/**'
+            dependencies:
+              - 'bun.lock'
+              - '**/package.json'
+
   deployment-status-pending:
     name: Production deployment
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -31,13 +60,21 @@ jobs:
             -f description='Waiting for CI and production deployment' \
             -f target_url="$TARGET_URL"
 
-  quality:
+  quality-static:
+    name: Static checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
+      - name: Cache Bun packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
       - name: Install
         run: bun install --frozen-lockfile
       - name: TypeScript-only language gate
@@ -46,45 +83,101 @@ jobs:
         run: bun run typecheck
       - name: Lint
         run: bun run lint
+      - name: Svelte check
+        run: bun run check:svelte
+
+  quality-analysis:
+    name: Repository analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Cache Bun packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+      - name: Install
+        run: bun install --frozen-lockfile
       - name: Dead-code report
         run: bun run knip
       - name: Layer boundaries
         run: bun run check:layers
       - name: Dockerfile workspace manifests
         run: bun run check:docker
+
+  quality-tests:
+    name: Tests with coverage threshold
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Cache Bun packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+      - name: Install
+        run: bun install --frozen-lockfile
       - name: Tests with coverage threshold
         run: bun run test:coverage
-      - name: Dependency audit
-        run: bun run check:audit
-      - name: Web production build
-        run: bun run check:web
+
+  build:
+    name: Build web and backend artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Cache Bun packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+      - name: Install
+        run: bun install --frozen-lockfile
+      - name: Build checked web
+        if: github.event_name != 'push' || github.ref != 'refs/heads/main'
         env:
           CI: "true"
           DATA_DIR: apps/web/src/data
-      - name: Astro SSR bundle
-        run: bun build apps/web/server.ts --outdir runtime --target bun
-      - name: Operations CLI bundle
-        run: bun build apps/backend/src/cli.ts --outdir ops --target bun
-      - name: Container entrypoint bundle
-        # Bun names the output after the source basename, so a renamed source
-        # silently stops matching the path the image ENTRYPOINT executes — that
-        # mismatch crash-loops the container at boot. Assert both sides here.
         run: |
+          bun run check:web
+          bun build apps/web/server.ts --outdir runtime --target bun
+          bun build apps/backend/src/cli.ts --outdir ops --target bun
           bun build apps/backend/src/runtime/docker-entrypoint.ts --outdir entrypoint --target bun
           test -f entrypoint/docker-entrypoint.js
           grep -q '"/app/entrypoint/docker-entrypoint.js"' apps/backend/Dockerfile
-      - name: Story card renderer bundle
-        run: |
           bun build apps/backend/src/story-cards/renderer-process.ts --outdir story-renderer --target bun
           test -f story-renderer/renderer-process.js
-      - name: Build immutable backend artifacts
+      - name: Build immutable production artifacts
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          CI: "true"
+          DATA_DIR: /data
         run: |
-          DATA_DIR=/data bun run build
+          bun run build
           bun build apps/web/server.ts --outdir runtime --target bun --splitting --minify --sourcemap=external
           bun build apps/backend/src/cli.ts --outdir ops --target bun --minify --sourcemap=external
           bun build apps/backend/src/runtime/docker-entrypoint.ts --outdir entrypoint --target bun --minify --sourcemap=external
+          test -f entrypoint/docker-entrypoint.js
+          grep -q '"/app/entrypoint/docker-entrypoint.js"' apps/backend/Dockerfile
           bun build apps/backend/src/story-cards/renderer-process.ts --outdir story-renderer --target bun --minify --sourcemap=external
+          test -f story-renderer/renderer-process.js
+          test -n "$(find dist -type f -print -quit)"
+          test -n "$(find runtime -type f -print -quit)"
+          test -n "$(find ops -type f -print -quit)"
       - name: Upload immutable backend artifacts
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v7
@@ -101,10 +194,244 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  dependency-audit:
+    name: Dependency audit
+    needs: scope
+    if: needs.scope.outputs.dependencies_changed == 'true' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Cache Bun packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+      - name: Install
+        run: bun install --frozen-lockfile
+      - name: Dependency audit
+        run: bun run check:audit
+
+  quality-gate:
+    name: Quality gate
+    needs: [scope, quality-static, quality-analysis, quality-tests, build, dependency-audit]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all applicable quality jobs to pass
+        env:
+          SCOPE_RESULT: ${{ needs.scope.result }}
+          STATIC_RESULT: ${{ needs.quality-static.result }}
+          ANALYSIS_RESULT: ${{ needs.quality-analysis.result }}
+          TESTS_RESULT: ${{ needs.quality-tests.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          AUDIT_RESULT: ${{ needs.dependency-audit.result }}
+        run: |
+          for result in "$SCOPE_RESULT" "$STATIC_RESULT" "$ANALYSIS_RESULT" "$TESTS_RESULT" "$BUILD_RESULT" "$AUDIT_RESULT"; do
+            if [ "$result" != success ] && [ "$result" != skipped ]; then
+              echo "Quality gate failed: $result"
+              exit 1
+            fi
+          done
+
+  backend-image:
+    name: Build backend image
+    needs: quality-gate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.quality-gate.result == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      image_digest: ${{ steps.image.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download checked backend artifacts
+        uses: actions/download-artifact@v7
+        with:
+          name: backend-build-${{ github.sha }}
+          path: .
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish backend image
+        id: image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/backend/Dockerfile
+          target: app
+          build-args: |
+            BUILD_SOURCE=on-host
+            GIT_REVISION=${{ github.sha }}
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/alexgetman-backend:${{ github.sha }},ghcr.io/${{ github.repository_owner }}/alexgetman-backend:latest
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Cache Bun packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+      - name: Install
+        run: bun install --frozen-lockfile
+      - name: Image smoke test
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/alexgetman-backend@${{ steps.image.outputs.digest }}
+        run: bun scripts/image-smoke.ts
+
+  media-processor-image:
+    name: Build media processor image
+    needs: [scope, quality-gate]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.quality-gate.result == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      image_digest: ${{ steps.media_processor.outputs.digest || steps.reuse.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve existing media processor image
+        id: reuse
+        if: needs.scope.outputs.media_changed != 'true'
+        run: |
+          image="ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor:latest"
+          digest=$(docker buildx imagetools inspect "$image" 2>/dev/null | awk '/^Digest:/ { print $2; exit }')
+          if [[ "$digest" =~ ^sha256:[0-9a-fA-F]{64}$ ]]; then
+            echo "digest=$digest" >> "$GITHUB_OUTPUT"
+            echo "Reusing existing media processor image $digest"
+          else
+            echo "No reusable media processor image found; building one"
+          fi
+      - name: Build and publish media processor image
+        id: media_processor
+        if: steps.reuse.outputs.digest == ''
+        uses: docker/build-push-action@v7
+        with:
+          context: ./deploy/media-processor
+          file: ./deploy/media-processor/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor:${{ github.sha }},ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor:latest
+          cache-from: type=gha,scope=media-processor
+          cache-to: type=gha,mode=max,scope=media-processor
+      - name: Smoke test published media processor image
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor@${{ steps.media_processor.outputs.digest || steps.reuse.outputs.digest }}
+        run: |
+          container="media-processor-smoke-${GITHUB_RUN_ID}"
+          port=$((18000 + RANDOM % 1000))
+          cleanup() {
+            docker rm -f "$container" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          docker run --pull always --detach --name "$container" --publish "127.0.0.1:${port}:8787" \
+            --env MEDIA_PROCESSOR_TOKEN=ci-media-processor-smoke-token \
+            --env MEDIA_PROCESSOR_WORK_DIR=/tmp "$IMAGE"
+          response=$(curl --fail --silent --show-error --retry 30 --retry-delay 1 --retry-all-errors "http://127.0.0.1:${port}/health")
+          printf '%s\n' "$response"
+          printf '%s\n' "$response" | grep -q '"status":"ready"'
+      - name: Compile media processor deploy-agent
+        run: bun build --compile --target=bun-linux-x64 --outfile media-processor-deploy-agent deploy/deploy-agent.ts
+      - name: Upload media processor deploy-agent
+        uses: actions/upload-artifact@v7
+        with:
+          name: media-processor-deploy-agent-${{ github.sha }}
+          path: media-processor-deploy-agent
+          if-no-files-found: error
+
+  deploy:
+    name: Deploy immutable image
+    needs: [backend-image, media-processor-image]
+    if: vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+      - uses: webfactory/ssh-agent@v0.10.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+      - name: Configure known hosts
+        env:
+          DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Activate image and verify readiness
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_AGENT_TOKEN: ${{ secrets.DEPLOY_AGENT_TOKEN }}
+          IMAGE: ghcr.io/${{ github.repository_owner }}/alexgetman-backend@${{ needs.backend-image.outputs.image_digest }}
+          MEDIA_PROCESSOR_IMAGE: ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor@${{ needs.media-processor-image.outputs.image_digest }}
+          RELEASE: ${{ github.sha }}
+          MARU_DEPLOY_ENABLED: ${{ vars.MARU_DEPLOY_ENABLED }}
+        run: |
+          phase_started=$SECONDS
+          phase() {
+            now=$SECONDS
+            printf '::notice::deploy timing: %s=%ss\n' "$1" "$((now - phase_started))"
+            phase_started=$now
+          }
+          test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER" && test -n "$DEPLOY_AGENT_TOKEN"
+          ssh_control="$RUNNER_TEMP/deploy-ssh-%C"
+          ssh_opts=(-o BatchMode=yes -o ControlMaster=auto -o ControlPersist=60 -o "ControlPath=$ssh_control")
+          remote="$DEPLOY_USER@$DEPLOY_HOST"
+          media_release=$(printf '{"release":"%s","image":"%s"}\n' "$RELEASE" "$MEDIA_PROCESSOR_IMAGE")
+          ssh "${ssh_opts[@]}" "$remote" "install -d -m 0700 /var/lib/alexgetman-deploy"
+          ssh "${ssh_opts[@]}" "$remote" "umask 077; printf '%s\\n' '$media_release' > /var/lib/alexgetman-deploy/media-processor-release.json"
+          runtime=/home/deploy/alexgetman-runtime
+          release_files="$runtime/release-files/$RELEASE"
+          ssh "${ssh_opts[@]}" "$remote" "install -d -m 0700 '$release_files'"
+          tar -cf - \
+            apps/backend/compose.yaml \
+            deploy/maru.compose.yaml \
+            deploy/nginx/production/*.conf \
+            | ssh "${ssh_opts[@]}" "$remote" "tar -xf - -C '$release_files'"
+          ssh "${ssh_opts[@]}" "$remote" "set -e; cp '$release_files/apps/backend/compose.yaml' $runtime/compose.yaml.next; docker compose --env-file $runtime/deploy-image.env -f $runtime/compose.yaml.next config --quiet; mv $runtime/compose.yaml.next $runtime/compose.yaml"
+          ssh "${ssh_opts[@]}" "$remote" "set -e; runtime=$runtime; image=\$(bun -e 'const state=JSON.parse(await Bun.file(\"/var/lib/alexgetman-deploy/state.json\").text()); process.stdout.write(state.current?.image ?? \"\")'); printf '%s\\n' \"\$image\" | grep -Eq '^ghcr.io/alexgetmancom/alexgetman-backend@sha256:[0-9a-fA-F]{64}\$' || exit 1; if ! grep -Eq '^BACKEND_IMAGE=ghcr.io/alexgetmancom/alexgetman-backend@sha256:[0-9a-fA-F]{64}\$' \"\$runtime/deploy-image.env\"; then tmp=\"\$runtime/deploy-image.env.next\"; { grep -v '^BACKEND_IMAGE=' \"\$runtime/deploy-image.env\" || true; printf 'BACKEND_IMAGE=%s\\n' \"\$image\"; } > \"\$tmp\"; mv \"\$tmp\" \"\$runtime/deploy-image.env\"; fi"
+          if [ "$MARU_DEPLOY_ENABLED" = "true" ]; then
+            maru_runtime=/home/deploy/maru
+            ssh "${ssh_opts[@]}" "$remote" "set -e; runtime=$maru_runtime; image_id=\$(docker inspect --format '{{.Image}}' maru-backend); image=\$(docker image inspect --format '{{index .RepoDigests 0}}' \"\$image_id\"); printf '%s\\n' \"\$image\" | grep -Eq '^ghcr.io/alexgetmancom/alexgetman-backend@sha256:[0-9a-fA-F]{64}\$' || exit 1; if ! grep -Eq '^BACKEND_IMAGE=ghcr.io/alexgetmancom/alexgetman-backend@sha256:[0-9a-fA-F]{64}\$' \"\$runtime/deploy-image.env\" 2>/dev/null; then tmp=\"\$runtime/deploy-image.env.next\"; { grep -v '^BACKEND_IMAGE=' \"\$runtime/deploy-image.env\" 2>/dev/null || true; printf 'BACKEND_IMAGE=%s\\n' \"\$image\"; } > \"\$tmp\"; mv \"\$tmp\" \"\$runtime/deploy-image.env\"; fi"
+            ssh "${ssh_opts[@]}" "$remote" "set -e; runtime=$maru_runtime; cp '$release_files/deploy/maru.compose.yaml' \$runtime/maru.compose.yaml.next; docker compose --env-file \$runtime/deploy-image.env -f \$runtime/maru.compose.yaml.next config --quiet; mv \$runtime/maru.compose.yaml.next \$runtime/maru.compose.yaml"
+          fi
+          phase runtime-config
+          nginx_files="$release_files/deploy/nginx/production"
+          ssh "${ssh_opts[@]}" "$remote" "set -e; sudo install -d -m 0755 /etc/nginx/snippets; sudo install -m 0644 '$nginx_files/shared443.conf' /etc/nginx/stream-conf.d/shared443.conf; sudo install -m 0644 '$nginx_files/marux.ru-ssl.conf' /etc/nginx/sites-enabled/marux.ru-ssl; sudo install -m 0644 '$nginx_files/marux.ru.conf' /etc/nginx/sites-enabled/marux.ru; sudo rm -f /etc/nginx/sites-enabled/marux.ru-bootstrap; sudo install -m 0644 '$nginx_files/alexgetman.com-ssl.conf' /etc/nginx/sites-enabled/alexgetman.com-ssl; sudo install -m 0644 '$nginx_files/alexgetman.com.conf' /etc/nginx/sites-enabled/alexgetman.com; sudo rm -f /etc/nginx/sites-enabled/ialexey.ru-ssl /etc/nginx/sites-enabled/ialexey.ru; sudo install -m 0644 '$nginx_files/alexgetman-proxy-headers.conf' /etc/nginx/snippets/alexgetman-proxy-headers.conf; sudo install -m 0644 '$nginx_files/alexgetman-cache.conf' /etc/nginx/snippets/alexgetman-cache.conf; sudo install -m 0644 '$nginx_files/alexgetman-command-center.conf' /etc/nginx/snippets/alexgetman-command-center.conf; sudo nginx -t; sudo systemctl reload nginx"
+          phase nginx-config
+          payload=$(printf '{"image":"%s","release":"%s"}' "$IMAGE" "$RELEASE")
+          ssh "${ssh_opts[@]}" "$remote" "curl --fail-with-body --silent --show-error --retry 3 --retry-all-errors --retry-delay 5 --retry-max-time 420 --max-time 180 -H 'Authorization: Bearer $DEPLOY_AGENT_TOKEN' -H 'Content-Type: application/json' --data '$payload' http://127.0.0.1:9899/v1/deploy"
+          phase backend-activation
+          curl --fail --silent --show-error --retry 3 --retry-all-errors https://alexgetman.com/readyz
+          ssh "${ssh_opts[@]}" "$remote" "curl --fail --silent --show-error --retry 3 --retry-all-errors http://127.0.0.1:8789/readyz"
+          phase readiness
+          # Release files are safe to remove after readiness. Docker cache cleanup
+          # is intentionally handled outside the deployment critical path.
+          ssh "${ssh_opts[@]}" "$remote" "rm -rf '$release_files'"
+          phase cleanup
+          ssh "${ssh_opts[@]}" -O exit "$remote" || true
+
   deployment-status-on-ci-failure:
     name: Production deployment status on CI failure
-    needs: [quality, deployment-status-pending]
-    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.quality.result != 'success'
+    needs: [quality-gate, deployment-status-pending]
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.quality-gate.result != 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Mark production deployment as blocked
@@ -117,4 +444,32 @@ jobs:
             -f state=failure \
             -f context='production deployment' \
             -f description='CI failed; production deployment was not started' \
+            -f target_url="$TARGET_URL"
+
+  deployment-status:
+    name: Production deployment status
+    needs: [quality-gate, backend-image, media-processor-image, deploy]
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.quality-gate.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish final production status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+          TARGET_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BACKEND_IMAGE_RESULT: ${{ needs.backend-image.result }}
+          MEDIA_PROCESSOR_IMAGE_RESULT: ${{ needs.media-processor-image.result }}
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
+        run: |
+          if [ "$BACKEND_IMAGE_RESULT" = "success" ] && [ "$MEDIA_PROCESSOR_IMAGE_RESULT" = "success" ] && [ "$DEPLOY_RESULT" = "success" ]; then
+            state=success
+            description='Image activated and production readiness passed'
+          else
+            state=failure
+            description='Docker build or production deployment failed'
+          fi
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$SHA" \
+            -f state="$state" \
+            -f context='production deployment' \
+            -f description="$description" \
             -f target_url="$TARGET_URL"
