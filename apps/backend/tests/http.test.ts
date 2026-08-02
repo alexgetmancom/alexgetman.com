@@ -346,7 +346,7 @@ describe("Astro endpoint controller", () => {
       expect(html).toContain("history.pushState");
       expect(html).not.toContain("window.location.reload");
       expect(html).not.toContain("Health: credentials и diagnostics");
-      expect(html).toContain("font:16px -apple-system");
+      expect(html).toContain('font:400 16px ui-sans-serif,-apple-system,"Inter"');
       expect(html).not.toContain("width: 22px; text-align: center; font-family: monospace");
       const payload = (await (await app.request("/api/command-center?token=secret")).json()) as { credentials: Array<{ target: string }> };
       expect(payload.credentials).toEqual([expect.objectContaining({ target: "telegram" })]);

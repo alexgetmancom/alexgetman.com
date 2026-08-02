@@ -5,7 +5,7 @@ import type { StudioLocale } from "../../foundation/locale.js";
 import { zonedSlot } from "../../foundation/time.js";
 import type { CommandCenterAttention } from "../../operations/command-center.js";
 import { operationsService } from "../../operations/service.js";
-import { type OverviewMode, type PlatformMetric, renderCombinedSection, renderModeFilter } from "./dashboard/combined-section.js";
+import { type OverviewMode, type PlatformMetric, renderCombinedSection } from "./dashboard/combined-section.js";
 import {
   audiencePlatformFollowers,
   renderAudienceSection,
@@ -326,12 +326,11 @@ export function renderDashboard(
       )
       .join("")}</div>
   </details>`;
-  // Nothing to filter when the Studio publishes one half only.
-  const bothHalves = config.studio.modules.text_posting && config.studio.modules.video_posting;
-  const modeFilter =
-    panel === "overview" && showPosts && !activeView && bothHalves ? renderModeFilter(mode, periodDays, weekOffset, platformMetric) : "";
+  // No content-type switch in the bar. The overview shows both halves side by
+  // side, which is the answer the filter existed to give; ?mode= still works for
+  // a direct link, it just has no control of its own.
   const body = `
-    <nav class="dashboard-tabs"><span class="dashboard-tabs__start">${overviewTab}${menu}</span><span class="dashboard-tabs__center">${modeFilter}</span><span class="dashboard-tabs__end">${overviewControls}${DASHBOARD_THEME_TOGGLE_HTML}</span></nav>
+    <nav class="dashboard-tabs"><span class="dashboard-tabs__start">${overviewTab}${menu}</span><span class="dashboard-tabs__end">${overviewControls}${DASHBOARD_THEME_TOGGLE_HTML}</span></nav>
     <section id="overview" class="overview">${content}</section>`;
   const html = renderDashboardShell(body);
   rememberDashboard(cache, cacheKey, html, now);

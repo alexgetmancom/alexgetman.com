@@ -115,41 +115,12 @@ export function renderCombinedSection(input: CombinedSectionInput): string {
   </section>`;
 }
 
-/**
- * The one global switch. It is a link set rather than a control with state,
- * because every other filter on this screen (period, date, platform) is already
- * a URL — a mode that lived only in the DOM could not be shared or reloaded.
- *
- * Rendered by the shell into the tab bar, next to the period controls, not by
- * the section below it: on its own line it cost a whole row of height to say
- * three words, and it belongs with the other filters rather than above the
- * numbers it filters.
- */
-export function renderModeFilter(
-  mode: OverviewMode,
-  periodDays: number,
-  weekOffset: number,
-  platformMetric: PlatformMetric = "reach",
-): string {
-  const modes: Array<[OverviewMode, string]> = [
-    ["all", "Все"],
-    ["text", "Текст"],
-    ["video", "Видео"],
-  ];
-  const base = `/command-center?period=${periodDays}&week_offset=${weekOffset}${platformMetric === "followers" ? "&metric=followers" : ""}`;
-  return `<div class="mode-filter" role="group" aria-label="Тип контента">${modes
-    .map(
-      ([value, label]) =>
-        `<a class="mode-btn${value === mode ? " mode-btn--active" : ""}" href="${base}${value === "all" ? "" : `&mode=${value}`}">${label}</a>`,
-    )
-    .join("")}</div>`;
-}
-
 type OverviewKind = "text" | "video";
 type OverviewPlatformRow = {
   key: string;
   label: string;
   locale: string | null;
+  icon: string;
   views: number;
   followers: number | null;
   delta: number | null;
@@ -206,9 +177,9 @@ function renderOverviewColumn(
           posts,
           ORDERED_TARGETS.map((target) => target.id),
           [],
-          { limit: 4 },
+          { limit: 4, moreUrl: input.publicationDetailsUrl },
         )
-      : renderTrackPublicationList([], [], input.video.items, { limit: 4 });
+      : renderTrackPublicationList([], [], input.video.items, { limit: 4, moreUrl: input.publicationDetailsUrl });
   const heroMarkup = kind === "text" ? renderHeroCard("text", hero as TextHeroMetrics) : renderHeroCard("video", hero as VideoHeroMetrics);
   const microMarkup =
     kind === "text" ? renderHeroMicroMetrics("text", hero as TextHeroMetrics) : renderHeroMicroMetrics("video", hero as VideoHeroMetrics);
@@ -234,7 +205,6 @@ function renderOverviewPlatforms(
   showMetricFilter: boolean,
 ): string {
   const color = kind === "text" ? TEXT_COLOR : VIDEO_COLOR;
-  const metricLabel = input.platformMetric === "reach" ? "охват" : "подписчики";
   const metricValue = (row: OverviewPlatformRow): number | null => (input.platformMetric === "reach" ? row.views : row.followers);
   const total = rows.reduce((sum, row) => sum + (metricValue(row) ?? 0), 0);
   const localeTotal = (locale: string) =>
@@ -248,33 +218,56 @@ function renderOverviewPlatforms(
             const value = metricValue(row) ?? 0;
             if (value <= 0) return "";
             const opacity = Math.max(0.2, 1 - index * 0.2);
-            return `<i style="width:${((value / total) * 100).toFixed(3)}%;background:${color};opacity:${opacity.toFixed(2)}"></i>`;
+            const share = (value / total) * 100;
+            const tooltip = `${row.label}${row.locale ? ` ${row.locale.toUpperCase()}` : ""} · ${formatMetricValue(value)} · ${share.toFixed(1)}%${row.delta === null ? "" : ` · ${formatPlatformDelta(row.delta)}`}`;
+            return `<i data-tooltip="${escapeHtml(tooltip)}" style="width:${share.toFixed(3)}%;background:${color};opacity:${opacity.toFixed(2)}"></i>`;
           })
           .join("")
       : `<i class="overview-platforms__empty-segment" style="width:100%;background:${color}"></i>`;
-  const visibleRows =
+  // Always the same four slots per track. The list is a fixed legend for the bar
+  // above it, so a quiet day must not shorten it — the two columns would stop
+  // lining up and the publication lists below them would sit at different
+  // heights. Rows beyond the fourth stay in the "+ Ещё" drawer.
+  const ranked =
     input.platformMetric === "reach" ? rows.filter((row) => !row.secondary || row.views >= 10) : rows.filter((row) => !row.secondary);
-  const hiddenRows = input.platformMetric === "reach" ? rows.filter((row) => row.secondary && row.views < 10) : [];
+  const visibleRows = ranked.slice(0, PLATFORM_SLOTS);
+  const hiddenRows = [
+    ...ranked.slice(PLATFORM_SLOTS),
+    ...(input.platformMetric === "reach" ? rows.filter((row) => row.secondary && row.views < 10) : []),
+  ];
   const renderRow = (row: OverviewPlatformRow): string => {
     const value = metricValue(row);
     const formatted = value === null ? "—" : formatMetricValue(value);
     const delta = input.platformMetric === "reach" ? formatPlatformDelta(row.delta) : "";
-    const body = `<span class="overview-platform__swatch" style="background:${color}"></span><span class="overview-platform__name">${escapeHtml(row.label)}${row.locale ? `<b>${escapeHtml(row.locale.toUpperCase())}</b>` : ""}</span><strong>${formatted}</strong><span class="overview-platform__delta ${row.delta !== null && row.delta >= 0 ? "overview-platform__delta--up" : "overview-platform__delta--down"}">${delta || "\u00a0"}</span>`;
+    // The icon already says which platform; the locale badge already says which
+    // audience. A spelled-out name next to both was the same fact stated three
+    // times in one row.
+    const body = `<span class="overview-platform__icon" style="color:${color}">${row.icon}</span><span class="overview-platform__name">${row.locale ? `<b>${escapeHtml(row.locale.toUpperCase())}</b>` : ""}</span><strong>${formatted}</strong><span class="overview-platform__delta ${row.delta !== null && row.delta >= 0 ? "overview-platform__delta--up" : "overview-platform__delta--down"}">${delta || "\u00a0"}</span>`;
     return row.href
       ? `<a class="overview-platform" href="${escapeHtml(row.href)}" title="${escapeHtml(row.label)}" aria-label="${escapeHtml(row.label)}">${body}</a>`
       : `<div class="overview-platform" title="${escapeHtml(row.label)}" aria-label="${escapeHtml(row.label)}">${body}</div>`;
   };
-  const platformRows = visibleRows.map(renderRow).join("");
+  // Short of four, the remaining slots are held open rather than collapsed, for
+  // the same alignment reason.
+  const platformRows = Array.from({ length: Math.max(PLATFORM_SLOTS, visibleRows.length) }, (_, index) => {
+    const row = visibleRows[index];
+    return row
+      ? renderRow(row)
+      : '<div class="overview-platform overview-platform--empty" aria-hidden="true"><span></span><span></span><span></span><span></span></div>';
+  }).join("");
   const more = hiddenRows.length
     ? `<details class="overview-platforms__more platform-more"><summary>+ Ещё <span>${hiddenRows.length}</span></summary><div class="platform-more__list">${hiddenRows.map(renderRow).join("")}</div></details>`
     : "";
   const filter = showMetricFilter ? renderPlatformMetricFilter(input.platformMetric, input.periodDays, input.weekOffset, input.mode) : "";
+  // No kicker over the bar: the RU/EN labels already name the row, and a second
+  // heading only pushed the first number further down. The metric switch stays —
+  // it is a real filter, not decoration — but as a bare pair of links on the
+  // same line as the labels rather than a bordered control of its own.
   return `<div class="overview-platforms">
-    <div class="overview-platforms__header"><div class="overview-kicker">ПЛАТФОРМЫ <em>${metricLabel}</em></div>${filter}</div>
-    <div class="overview-platforms__bar-labels"><span>RU</span><span>EN</span></div>
+    <div class="overview-platforms__bar-labels"><span>RU</span>${filter}<span>EN</span></div>
     <div class="overview-platforms__bar">${segments}</div>
     <div class="overview-platforms__legend"><span><b>${formatMetricValue(ru)}</b> · ${total > 0 ? Math.round((ru / total) * 100) : 0}%</span><span>${total > 0 ? Math.round((en / total) * 100) : 0}% · <b>${formatMetricValue(en)}</b></span></div>
-    <div class="overview-platforms__rows">${platformRows || '<p class="empty-state">Нет данных по площадкам</p>'}</div>
+    <div class="overview-platforms__rows">${platformRows}</div>
     ${more}
   </div>`;
 }
@@ -298,6 +291,7 @@ function overviewPlatformRows(
           key: `${platform.target}:${platform.locales.join(",")}`,
           label: platform.label,
           locale: platform.locales[0] ?? null,
+          icon: PLATFORM_ICONS[VIDEO_PLATFORM_ICON_KEYS[platform.target] ?? ""] ?? "",
           views: platform.views,
           followers: platform.followers,
           delta: previousRow ? percentDelta(platform.views, previousRow.views) : null,
@@ -314,6 +308,7 @@ function overviewPlatformRows(
     key: platform.key,
     label: platform.label,
     locale: targetLocale(platform.key),
+    icon: PLATFORM_ICONS[platform.key.startsWith("threads") ? "threads" : platformKey(platform.key)] ?? "",
     views: platformViews(platform.key, currentPosts, currentX),
     followers: platform.followers,
     delta: percentDelta(platformViews(platform.key, currentPosts, currentX), platformViews(platform.key, comparisonPosts, comparisonX)),
@@ -327,6 +322,7 @@ function overviewPlatformRows(
       key: target.id,
       label: target.label,
       locale: target.locale,
+      icon: PLATFORM_ICONS[platformKey(target.id)] ?? "",
       views: platformViews(target.id, currentPosts, currentX),
       followers: null,
       delta: percentDelta(platformViews(target.id, currentPosts, currentX), platformViews(target.id, comparisonPosts, comparisonX)),
@@ -683,6 +679,9 @@ function renderPlatformPanel(input: CombinedSectionInput, posts: PipelinePost[],
     </div>
   </aside>`;
 }
+
+/** Fixed number of platform rows per track — see renderOverviewPlatforms. */
+const PLATFORM_SLOTS = 4;
 
 const SECONDARY_TEXT_TARGETS = new Set(["site_ru", "site_en", "telegram_stories", "instagram_stories_ru", "instagram_stories"]);
 

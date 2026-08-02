@@ -71,7 +71,11 @@ export function renderPublicationColumns(
   ].join("");
 }
 
-export type TrackPublicationListOptions = { limit?: number };
+export type TrackPublicationListOptions = {
+  limit?: number;
+  /** Where "показать все N" goes. Omitted, the footer is not rendered at all. */
+  moreUrl?: string | undefined;
+};
 
 /** Small ranked rows used by the split overview. The detailed expandable table
  * remains available below the fold; the landing screen only needs the first
@@ -83,7 +87,7 @@ export function renderTrackPublicationList(
   options: TrackPublicationListOptions = {},
 ): string {
   const limit = Math.max(1, options.limit ?? 4);
-  const rows = [
+  const all = [
     ...posts.map((post) => {
       const metrics = total(post, targetIds);
       const target = primaryTarget(post, targetIds);
@@ -94,6 +98,7 @@ export function renderTrackPublicationList(
         replies: metrics.replies,
         title: shortPipelineText(post.text_ru || post.text_en || "Без текста", 14),
         tag: publicationTag(target?.id ?? "", target?.locale ?? null),
+        icon: PLATFORM_ICONS[platformKey(target?.id ?? "")] ?? "",
         afterPeriodViews: 0,
         url: bestPostUrl(post, targetIds),
       };
@@ -105,23 +110,28 @@ export function renderTrackPublicationList(
       replies: video.replies,
       title: shortPipelineText(video.title, 14),
       tag: publicationTag(video.target, video.locale),
+      icon: PLATFORM_ICONS[VIDEO_PLATFORM_ICON_KEYS[video.target] ?? ""] ?? "",
       afterPeriodViews: video.afterPeriodViews,
       url: video.url,
     })),
-  ]
-    .sort((left, right) => right.views - left.views || right.date.localeCompare(left.date))
-    .slice(0, limit);
+  ].sort((left, right) => right.views - left.views || right.date.localeCompare(left.date));
+  const rows = all.slice(0, limit);
 
   if (!rows.length) return '<p class="empty-state">За выбранный период публикаций нет</p>';
 
-  return rows
+  const more =
+    options.moreUrl && all.length > rows.length
+      ? `<a class="track-publication__more" href="${escapeHtml(options.moreUrl)}">показать все ${all.length}</a>`
+      : "";
+
+  return `${rows
     .map((row) => {
-      const content = `<span class="track-publication__tag">${escapeHtml(row.tag)}</span><span class="track-publication__title">${escapeHtml(row.title)}</span><span class="track-publication__stats"><b>${formatMetricValue(row.views)}</b>${row.afterPeriodViews > 0 ? `<small>+${formatMetricValue(row.afterPeriodViews)} после</small>` : ""}</span><span class="track-publication__meta">${formatMetricValue(row.reactions)} реакц. · ${formatMetricValue(row.replies)} отв.</span>`;
+      const content = `<span class="track-publication__tag" title="${escapeHtml(row.tag)}">${row.icon}</span><span class="track-publication__title">${escapeHtml(row.title)}</span><span class="track-publication__stats"><b>${formatMetricValue(row.views)}</b>${row.afterPeriodViews > 0 ? `<small>+${formatMetricValue(row.afterPeriodViews)} после</small>` : ""}</span><span class="track-publication__meta">${formatMetricValue(row.reactions)} реакц. · ${formatMetricValue(row.replies)} отв.</span>`;
       return row.url
         ? `<a class="track-publication" href="${escapeHtml(row.url)}" target="_blank" rel="noopener noreferrer">${content}</a>`
         : `<div class="track-publication">${content}</div>`;
     })
-    .join("");
+    .join("")}${more}`;
 }
 
 /** Renders only a bounded fragment for the dashboard's read-only detail loader. */

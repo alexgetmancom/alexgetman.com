@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { seedDashboardFixture } from "../apps/web/src/server/dashboard-fixture.js";
-import { devFixture, seedSiteFixture } from "../apps/web/src/server/site-fixture.js";
+import { seedDashboardFixture, seedOverviewParityFixture } from "../apps/web/src/server/dashboard-fixture.js";
+import { devFixture, overviewParityFixture, seedSiteFixture } from "../apps/web/src/server/site-fixture.js";
 
 /**
  * Fills a local pipeline database and public media directory with published
@@ -17,6 +17,7 @@ import { devFixture, seedSiteFixture } from "../apps/web/src/server/site-fixture
  *   bun scripts/dev-seed.ts --posts 5 --gallery 3
  *   bun scripts/dev-seed.ts --db /tmp/x.db --public-dir /tmp/site
  *   bun scripts/dev-seed.ts --no-dashboard        # site rows only
+ *   bun scripts/dev-seed.ts --mock                # reference-layout parity data
  *
  * Then point the dev server at the same paths:
  *   PIPELINE_DB=<db> SITE_PUBLIC_DIR=<public-dir> bun run dev
@@ -38,6 +39,9 @@ const count = Math.max(1, Number(flag("posts", "3")) || 3);
 const galleryImages = Math.max(1, Number(flag("gallery", "2")) || 2);
 const reset = process.argv.includes("--reset");
 const withDashboard = !process.argv.includes("--no-dashboard");
+// Opt-in: the parity dataset is 36 posts, which is the wrong shape for working
+// on the story player, so it must not become the default seed.
+const parity = process.argv.includes("--mock");
 
 if (reset) {
   fs.rmSync(dbPath, { force: true });
@@ -54,13 +58,14 @@ if (fs.existsSync(dbPath)) {
 fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 fs.mkdirSync(publicDir, { recursive: true });
 
-const posts = devFixture(count, galleryImages);
+const posts = parity ? overviewParityFixture() : devFixture(count, galleryImages);
 const { imagePaths } = seedSiteFixture({ dbPath, publicDir, posts });
 
-console.log(`Seeded ${count} post(s), first with ${galleryImages} image(s); ${imagePaths.length} media file(s) written.`);
+console.log(`Seeded ${posts.length} post(s), first with ${galleryImages} image(s); ${imagePaths.length} media file(s) written.`);
 
 if (withDashboard) {
-  const { targetRows, sampleRows } = seedDashboardFixture({ dbPath, postIds: posts.map((post) => post.postId) });
+  const seed = parity ? seedOverviewParityFixture : seedDashboardFixture;
+  const { targetRows, sampleRows } = seed({ dbPath, postIds: posts.map((post) => post.postId) });
   console.log(`Dashboard: ${targetRows} target row(s), ${sampleRows} metric sample(s).`);
 }
 

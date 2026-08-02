@@ -2,7 +2,9 @@ import { describe, expect, it } from "bun:test";
 import type { XActivityDashboardItem } from "../src/analytics/x-activity-dashboard.js";
 import { openBackendDb } from "../src/db/client.js";
 import { creatorProfileSnapshots, videoDrafts, videoMetricSnapshots, videoTargets } from "../src/db/schema.js";
-import { renderCombinedSection, renderModeFilter } from "../src/interfaces/web/dashboard/combined-section.js";
+import { renderCombinedSection } from "../src/interfaces/web/dashboard/combined-section.js";
+import { renderHeroCard } from "../src/interfaces/web/dashboard/hero-section.js";
+import { renderTrackPublicationList } from "../src/interfaces/web/dashboard/table.js";
 import type { PipelinePost } from "../src/interfaces/web/dashboard/types.js";
 import { emptyVideoOverview, videoOverview } from "../src/interfaces/web/dashboard/video-overview.js";
 
@@ -383,18 +385,13 @@ describe("unified overview rendering", () => {
         ],
         mode: "all",
       });
-      expect(html).toContain('class="overview-platform__name">Telegram<b>RU</b>');
-      expect(html).toContain('class="overview-platform__name">X<b>EN</b>');
+      // The row no longer spells out the platform name — the icon does that —
+      // but the locale badge must still come from the data, not the target id.
+      expect(html).toContain('class="overview-platform__name"><b>RU</b>');
+      expect(html).toContain('class="overview-platform__name"><b>EN</b>');
     } finally {
       backendDb.close();
     }
-  });
-
-  it("keeps the mode switch a set of links so the choice survives a reload", () => {
-    const html = renderModeFilter("video", 7, 2);
-    expect(html).toContain('href="/command-center?period=7&week_offset=2"');
-    expect(html).toContain('href="/command-center?period=7&week_offset=2&mode=video"');
-    expect(html).toContain("mode-btn--active");
   });
 
   it("switches platform rows between reach and followers while preserving the mode", () => {
@@ -414,8 +411,59 @@ describe("unified overview rendering", () => {
     expect(reachHtml).toContain('href="/command-center?period=1&week_offset=0&mode=text&metric=followers"');
     expect(reachHtml).toContain('class="platform-metric-btn platform-metric-btn--active"');
     expect(followerHtml).toContain(">135</strong>");
-    expect(followerHtml).toContain("подписчики");
+    // The metric is named by the active switch itself; the panel carries no
+    // separate heading repeating it.
+    expect(followerHtml).toContain('aria-pressed="true">Подписчики</a>');
     expect(followerHtml).toContain('href="/command-center?period=1&week_offset=0&mode=text"');
+  });
+
+  it("offers the full list only when the column actually hides rows", () => {
+    const post = (index: number, views: number): PipelinePost => ({
+      post_key: `post-${index}`,
+      date: hoursAgo(index + 1),
+      text_ru: `Пост ${index}`,
+      targets: { telegram: { status: "published" } },
+      metrics: { telegram: { views: { value: views } } },
+    });
+    const many = renderTrackPublicationList(
+      [1, 2, 3, 4, 5, 6].map((index) => post(index, index * 100)),
+      ["telegram"],
+      [],
+      {
+        limit: 4,
+        moreUrl: "/api/publication-details",
+      },
+    );
+    const few = renderTrackPublicationList([post(1, 100)], ["telegram"], [], { limit: 4, moreUrl: "/api/publication-details" });
+
+    expect(many).toContain('<a class="track-publication__more" href="/api/publication-details">показать все 6</a>');
+    expect(few).not.toContain("track-publication__more");
+  });
+
+  it("turns the heading gauge green once the norm is beaten", () => {
+    const metrics = {
+      postCount: 3,
+      views: 4_128,
+      medianViews: 3_600,
+      reactions: 147,
+      replies: 23,
+      reposts: 9,
+      engagementRate: 3.6,
+      countLabel: "3 поста сегодня",
+      normLabel: "норма дня",
+      contextLabel: "ОХВАТ · 2 АВГ",
+      paceLabel: "норма побита · прогноз 9.3k",
+      projectionViews: 9_300,
+      progressPercent: 114,
+    };
+    const won = renderHeroCard("text", metrics);
+    const behind = renderHeroCard("text", { ...metrics, views: 1_200, paceLabel: "до нормы 2.4k", progressPercent: 33 });
+
+    expect(won).toContain("overview-hero-card__heading--win");
+    // The norm is an aside on the number's line, not a stacked second KPI.
+    expect(won).toContain("норма дня · <b>3.6k</b>");
+    expect(won).not.toContain("Просмотры");
+    expect(behind).not.toContain("overview-hero-card__heading--win");
   });
 
   it("sorts text and video platform rows by the selected metric", () => {
@@ -504,7 +552,13 @@ describe("unified overview rendering", () => {
       video: emptyVideoOverview(),
       mode: "text",
     });
-    const platformHtml = html.slice(html.indexOf('<div class="overview-platforms">'), html.indexOf('<div class="overview-publications">'));
+    // Scoped to the row list, not the whole block: the bar above it segments
+    // every platform and names them in its tooltips, which is the point of the
+    // bar — the drawer is about which platforms get a row of their own.
+    const platformHtml = html.slice(
+      html.indexOf('<div class="overview-platforms__rows">'),
+      html.indexOf('<div class="overview-publications">'),
+    );
     const moreIndex = platformHtml.indexOf('<details class="overview-platforms__more platform-more">');
 
     expect(moreIndex).toBeGreaterThan(0);
@@ -522,7 +576,7 @@ describe("unified overview rendering", () => {
       platformMetric: "followers",
     });
     const followersPlatformHtml = followersHtml.slice(
-      followersHtml.indexOf('<div class="overview-platforms">'),
+      followersHtml.indexOf('<div class="overview-platforms__rows">'),
       followersHtml.indexOf('<div class="overview-publications">'),
     );
     expect(followersPlatformHtml).not.toContain("Telegram Stories");

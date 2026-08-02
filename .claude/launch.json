@@ -41,6 +41,27 @@
         "COMMAND_CENTER_URL": "http://localhost:4321/command-center",
         "STUDIO_CONFIG": "studio.video-only.example.yaml"
       }
+    },
+    {
+      "name": "web-dev-mock",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["--bun", "astro", "dev", "--port", "4322", "--force"],
+      "port": 4322,
+      "env": {
+        "PIPELINE_DB": "/Users/alex/projects/alexgetman.com/.dev-fixture-mock/pipeline.db",
+        "SITE_PUBLIC_DIR": "/Users/alex/projects/alexgetman.com/.dev-fixture-mock/site",
+        "DISABLE_WORKERS": "1",
+        "COMMAND_CENTER_TOKEN": "dev",
+        "COMMAND_CENTER_URL": "http://localhost:4322/command-center",
+        "STUDIO_CONFIG": "studio.unified.example.yaml",
+        "CONTROLLER_BOT_TOKEN": "mock",
+        "THREADS_ACCESS_TOKEN": "mock",
+        "THREADS_EN_ACCESS_TOKEN": "mock",
+        "X_CONSUMER_KEY": "mock",
+        "X_CONSUMER_SECRET": "mock",
+        "X_ACCESS_TOKEN": "mock",
+        "X_ACCESS_TOKEN_SECRET": "mock"
+      }
     }
   ]
 }
