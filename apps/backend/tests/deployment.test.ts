@@ -60,4 +60,40 @@ describe("deployment agent requests", () => {
     });
     expect(fetchImpl).not.toHaveBeenCalled();
   });
+
+  it("retries a transient agent failure before reporting deployment failure", async () => {
+    let attempts = 0;
+    const sleeps: number[] = [];
+    const fetchImpl = mock(async () => {
+      attempts += 1;
+      if (attempts === 1) return Response.json({ ok: false, message: "Deploy failed and was rolled back" }, { status: 502 });
+      return Response.json({ ok: true, release: revision, currentRevision: revision });
+    });
+
+    await expect(
+      requestDeploymentPromote(loadConfig(agent), "worker", revision, fetchImpl, async (milliseconds) => {
+        sleeps.push(milliseconds);
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      release: revision,
+      currentRevision: revision,
+    });
+    expect(attempts).toBe(2);
+    expect(sleeps).toEqual([5_000]);
+  });
+
+  it("does not retry a stale deployment request", async () => {
+    let attempts = 0;
+    const fetchImpl = mock(async () => {
+      attempts += 1;
+      return Response.json({ ok: false, message: "This button belongs to an older source release." }, { status: 409 });
+    });
+
+    await expect(requestDeploymentPromote(loadConfig(agent), "worker", revision, fetchImpl, async () => {})).resolves.toEqual({
+      ok: false,
+      message: "This button belongs to an older source release.",
+    });
+    expect(attempts).toBe(1);
+  });
 });

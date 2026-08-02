@@ -94,6 +94,22 @@ jobs:
           tags: ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor:${{ github.event.workflow_run.head_sha }},ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor:latest
           cache-from: type=gha,scope=media-processor
           cache-to: type=gha,mode=max,scope=media-processor
+      - name: Smoke test published media processor image
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor@${{ steps.media_processor.outputs.digest }}
+        run: |
+          container="media-processor-smoke-${GITHUB_RUN_ID}"
+          port=$((18000 + RANDOM % 1000))
+          cleanup() {
+            docker rm -f "$container" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          docker run --pull always --detach --name "$container" --publish "127.0.0.1:${port}:8787" \
+            --env MEDIA_PROCESSOR_TOKEN=ci-media-processor-smoke-token \
+            --env MEDIA_PROCESSOR_WORK_DIR=/tmp "$IMAGE"
+          response=$(curl --fail --silent --show-error --retry 30 --retry-delay 1 --retry-all-errors "http://127.0.0.1:${port}/health")
+          printf '%s\n' "$response"
+          printf '%s\n' "$response" | grep -q '"status":"ready"'
       - name: Compile media processor deploy-agent
         id: media_processor_deploy_agent
         run: bun build --compile --target=bun-linux-x64 --outfile media-processor-deploy-agent deploy/deploy-agent.ts
@@ -174,7 +190,10 @@ jobs:
           # promoted manually from Telegram, via the button the deploy agent
           # attaches to this success notification, once alex is proven healthy.
           payload=$(printf '{"image":"%s","release":"%s"}' "$IMAGE" "$RELEASE")
-          ssh "${ssh_opts[@]}" "$remote" "curl --fail-with-body --silent --show-error --retry 2 --retry-all-errors -H 'Authorization: Bearer $DEPLOY_AGENT_TOKEN' -H 'Content-Type: application/json' --data '$payload' http://127.0.0.1:9899/v1/deploy"
+          # The deploy agent retries transient registry failures internally. Keep
+          # a second bounded retry here for a lost controller response or a
+          # transient SSH-side network failure.
+          ssh "${ssh_opts[@]}" "$remote" "curl --fail-with-body --silent --show-error --retry 3 --retry-all-errors --retry-delay 5 --retry-max-time 420 --max-time 180 -H 'Authorization: Bearer $DEPLOY_AGENT_TOKEN' -H 'Content-Type: application/json' --data '$payload' http://127.0.0.1:9899/v1/deploy"
           phase backend-activation
           curl --fail --silent --show-error --retry 3 --retry-all-errors https://alexgetman.com/readyz
           # Maru isn't redeployed here, but it shares the nginx config just

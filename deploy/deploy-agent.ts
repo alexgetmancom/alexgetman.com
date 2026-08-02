@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { mkdir, rename } from "node:fs/promises";
 import { dirname } from "node:path";
+import { isTransientDeploymentError, withRetry } from "./retry.ts";
 
 type Release = { image: string; revision: string; deployedAt: string };
 type DeploymentState = {
@@ -46,6 +47,11 @@ const config = {
   notificationToken: Bun.env.DEPLOY_NOTIFICATION_BOT_TOKEN ?? Bun.env.CONTROLLER_BOT_TOKEN ?? Bun.env.TELEGRAM_BOT_TOKEN,
   notificationChatId: Bun.env.DEPLOY_NOTIFICATION_CHAT_ID,
   notificationApiBaseUrl: Bun.env.DEPLOY_NOTIFICATION_API_BASE_URL ?? "http://127.0.0.1:8081",
+  retry: {
+    attempts: integerEnv("DEPLOY_RETRY_ATTEMPTS", 3, 1),
+    initialDelayMs: integerEnv("DEPLOY_RETRY_BACKOFF_MS", 5_000, 0),
+    maxDelayMs: integerEnv("DEPLOY_RETRY_MAX_BACKOFF_MS", 30_000, 0),
+  },
 };
 
 let deploying = false;
@@ -54,6 +60,11 @@ function required(name: string): string {
   const value = Bun.env[name]?.trim();
   if (!value) throw new Error(`${name} is required`);
   return value;
+}
+
+function integerEnv(name: string, fallback: number, minimum: number): number {
+  const value = Number(Bun.env[name]);
+  return Number.isInteger(value) && value >= minimum ? value : fallback;
 }
 
 function constantTimeEqual(left: string, right: string): boolean {
@@ -223,22 +234,68 @@ async function waitForHealthy(deploymentTarget: ComposeTarget): Promise<void> {
   throw new Error(`health check timeout: ${last}`);
 }
 
+async function retryDeployment<T>(operation: string, run: () => Promise<T>, shouldRetry = isTransientDeploymentError): Promise<T> {
+  return withRetry(run, {
+    ...config.retry,
+    shouldRetry,
+    onRetry: (error, failedAttempt, delayMs) =>
+      console.error(
+        JSON.stringify({
+          level: "warn",
+          message: "deployment operation failed; retrying",
+          operation,
+          failedAttempt,
+          nextAttempt: failedAttempt + 1,
+          maxAttempts: config.retry.attempts,
+          delayMs,
+          error: String(error).slice(0, 400),
+        }),
+      ),
+  });
+}
+
+class RemoteDeployError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+function shouldRetryRemoteDeploy(error: unknown): boolean {
+  if (error instanceof RemoteDeployError) return [408, 425, 429, 502, 503, 504].includes(error.status);
+  return isTransientDeploymentError(error);
+}
+
 async function activate(deploymentTarget: DeploymentTarget, image: string, release: string): Promise<void> {
   if (deploymentTarget.kind === "remote") {
-    const response = await fetch(`${deploymentTarget.remoteUrl.replace(/\/$/, "")}/v1/deploy`, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${deploymentTarget.remoteToken}`,
-        "content-type": "application/json",
+    await retryDeployment(
+      `remote deploy ${deploymentTarget.name}`,
+      async () => {
+        const response = await fetch(`${deploymentTarget.remoteUrl.replace(/\/$/, "")}/v1/deploy`, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${deploymentTarget.remoteToken}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ image, release }),
+          signal: AbortSignal.timeout(150_000),
+        });
+        if (!response.ok)
+          throw new RemoteDeployError(
+            response.status,
+            `remote deploy failed (${response.status}): ${(await response.text()).slice(0, 400)}`,
+          );
       },
-      body: JSON.stringify({ image, release }),
-      signal: AbortSignal.timeout(150_000),
-    });
-    if (!response.ok) throw new Error(`remote deploy failed (${response.status}): ${(await response.text()).slice(0, 400)}`);
+      shouldRetryRemoteDeploy,
+    );
     return;
   }
   await writeImage(deploymentTarget, image);
-  await command(composeArgs(deploymentTarget, "pull", deploymentTarget.service));
+  await retryDeployment(`image pull ${deploymentTarget.name}`, () =>
+    command(composeArgs(deploymentTarget, "pull", deploymentTarget.service)),
+  );
   await command(composeArgs(deploymentTarget, "up", "-d", "--no-deps", "--force-recreate", deploymentTarget.service));
   await waitForHealthy(deploymentTarget);
 }

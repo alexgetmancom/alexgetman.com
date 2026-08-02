@@ -79,6 +79,12 @@ sends the controller bot a target-specific one-click rollback button. The callba
 is accepted only from `CONTROLLER_ADMIN_IDS` and is rejected after a newer release
 exists for that target.
 
+Registry and remote-agent failures that look transient are retried before rollback.
+The default policy is three attempts with 5, 10 and 20 second delays; override it
+with `DEPLOY_RETRY_ATTEMPTS`, `DEPLOY_RETRY_BACKOFF_MS` and
+`DEPLOY_RETRY_MAX_BACKOFF_MS` in the host environment. Permanent image errors such
+as an unknown digest are not retried.
+
 ## Enabling text posting for a second Studio
 
 Text posting is off for Maru because a Studio publishes to its own channel, and

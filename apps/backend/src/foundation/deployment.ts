@@ -4,10 +4,16 @@ import type { BackendConfig } from "./config.js";
 // seven-character profile name leaves room for a normal 40-character Git SHA.
 const releasePattern = /^[a-f0-9]{7,40}$/i;
 const targetPattern = /^[a-z][a-z0-9_-]{0,6}$/;
+const deploymentRetryAttempts = 3;
+const deploymentRetryBackoffMs = 5_000;
+const retryableDeploymentStatuses = new Set([408, 425, 429, 502, 503, 504]);
 
 type DeploymentRollbackResult = { ok: true; release: string; currentRevision: string } | { ok: false; message: string };
 type FetchImplementation = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+type SleepImplementation = (milliseconds: number) => Promise<void>;
 type DeploymentRollback = { target: string; revision: string };
+
+const defaultSleep: SleepImplementation = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 function deploymentCallback(action: string, target: string, revision: string): string {
   if (!targetPattern.test(target)) throw new Error("deployment target must be a short lowercase identifier");
@@ -62,8 +68,9 @@ export async function requestDeploymentRollback(
   target: string,
   revision: string,
   fetchImpl: FetchImplementation = fetch,
+  sleepImpl: SleepImplementation = defaultSleep,
 ): Promise<DeploymentRollbackResult> {
-  return requestDeploymentAgent(config, "rollback", target, revision, fetchImpl);
+  return requestDeploymentAgent(config, "rollback", target, revision, fetchImpl, sleepImpl);
 }
 
 /** Deploys to `target` the exact release already proven healthy on alex.
@@ -74,8 +81,9 @@ export async function requestDeploymentPromote(
   target: string,
   revision: string,
   fetchImpl: FetchImplementation = fetch,
+  sleepImpl: SleepImplementation = defaultSleep,
 ): Promise<DeploymentRollbackResult> {
-  return requestDeploymentAgent(config, "promote", target, revision, fetchImpl);
+  return requestDeploymentAgent(config, "promote", target, revision, fetchImpl, sleepImpl);
 }
 
 async function requestDeploymentAgent(
@@ -84,30 +92,36 @@ async function requestDeploymentAgent(
   target: string,
   revision: string,
   fetchImpl: FetchImplementation,
+  sleepImpl: SleepImplementation,
 ): Promise<DeploymentRollbackResult> {
   if (!config.DEPLOY_AGENT_URL || !config.DEPLOY_AGENT_TOKEN) return { ok: false, message: "Deployment agent is not configured." };
   if (!targetPattern.test(target) || !releasePattern.test(revision)) return { ok: false, message: "Invalid deployment request." };
-  try {
-    const response = await fetchImpl(`${config.DEPLOY_AGENT_URL.replace(/\/$/, "")}/v1/${action}/${target}`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${config.DEPLOY_AGENT_TOKEN}`, "content-type": "application/json" },
-      body: JSON.stringify({ release: revision }),
-      // The agent's own healthcheck loop alone runs up to 90s; leave enough
-      // margin for the image pull and container recreate around it so a slow
-      // deploy reports its real outcome instead of a false "unavailable".
-      signal: AbortSignal.timeout(150_000),
-    });
-    const body = (await response.json().catch(() => null)) as {
-      ok?: unknown;
-      release?: unknown;
-      currentRevision?: unknown;
-      message?: unknown;
-    } | null;
-    if (!response.ok || body?.ok !== true || typeof body.release !== "string" || typeof body.currentRevision !== "string") {
-      return { ok: false, message: typeof body?.message === "string" ? body.message : `Request failed (${response.status}).` };
+  for (let attempt = 1; attempt <= deploymentRetryAttempts; attempt += 1) {
+    try {
+      const response = await fetchImpl(`${config.DEPLOY_AGENT_URL.replace(/\/$/, "")}/v1/${action}/${target}`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${config.DEPLOY_AGENT_TOKEN}`, "content-type": "application/json" },
+        body: JSON.stringify({ release: revision }),
+        // The agent's own healthcheck loop alone runs up to 90s; leave enough
+        // margin for the image pull and container recreate around it so a slow
+        // deploy reports its real outcome instead of a false "unavailable".
+        signal: AbortSignal.timeout(150_000),
+      });
+      const body = (await response.json().catch(() => null)) as {
+        ok?: unknown;
+        release?: unknown;
+        currentRevision?: unknown;
+        message?: unknown;
+      } | null;
+      if (response.ok && body?.ok === true && typeof body.release === "string" && typeof body.currentRevision === "string") {
+        return { ok: true, release: body.release, currentRevision: body.currentRevision };
+      }
+      const message = typeof body?.message === "string" ? body.message : `Request failed (${response.status}).`;
+      if (attempt === deploymentRetryAttempts || !retryableDeploymentStatuses.has(response.status)) return { ok: false, message };
+    } catch {
+      if (attempt === deploymentRetryAttempts) return { ok: false, message: "Deployment agent is unavailable." };
     }
-    return { ok: true, release: body.release, currentRevision: body.currentRevision };
-  } catch {
-    return { ok: false, message: "Deployment agent is unavailable." };
+    await sleepImpl(deploymentRetryBackoffMs * 2 ** (attempt - 1));
   }
+  return { ok: false, message: "Deployment agent is unavailable." };
 }
