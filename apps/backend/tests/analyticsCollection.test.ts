@@ -136,6 +136,51 @@ describe("creator analytics collection", () => {
     });
   });
 
+  it("keeps YouTube video metrics healthy when comment access is unavailable", async () => {
+    await withDb(async (backendDb) => {
+      const publishedAt = new Date(Date.now() - 2 * 60 * 60_000).toISOString();
+      const { targetId } = insertPublishedVideo(backendDb, {
+        label: "YouTube scope test",
+        target: "youtube_shorts",
+        publishedAt,
+        externalId: "youtube-scope-test",
+      });
+      const config = loadConfig({ YOUTUBE_CLIENT_ID: "client", YOUTUBE_CLIENT_SECRET: "secret", YOUTUBE_REFRESH_TOKEN: "refresh" });
+      config.studio.modules.video_posting = true;
+      const fetchMock = (async (input: URL | RequestInfo) => {
+        const url = String(input);
+        if (url === "https://oauth2.googleapis.com/token") return new Response(JSON.stringify({ access_token: "access" }));
+        if (url.includes("youtube/v3/videos"))
+          return new Response(
+            JSON.stringify({
+              items: [
+                {
+                  snippet: { title: "YouTube scope test", publishedAt },
+                  statistics: { viewCount: "1200", likeCount: "80", commentCount: "9" },
+                  contentDetails: { duration: "PT24S" },
+                },
+              ],
+            }),
+          );
+        if (url.includes("youtube/v3/commentThreads"))
+          return new Response(JSON.stringify({ error: { message: "Request had insufficient authentication scopes." } }), { status: 403 });
+        throw new Error(`Unexpected request: ${url}`);
+      }) as typeof fetch;
+
+      await runVideoMetricSchedule(config, backendDb, fetchMock);
+
+      expect(
+        backendDb.db.select().from(videoMetricSnapshots).where(eq(videoMetricSnapshots.videoTargetId, targetId)).get()?.metricsJson,
+      ).toMatchObject({
+        views: 1_200,
+        videoDurationMs: 24_000,
+      });
+      const schedule = backendDb.db.select().from(videoMetricSchedule).where(eq(videoMetricSchedule.videoTargetId, targetId)).get();
+      expect(schedule?.frozenAt).toBeNull();
+      expect(schedule?.lastError).toBeNull();
+    });
+  });
+
   it("refreshes YouTube OAuth once and freezes a failed batch without a request burst", async () => {
     await withDb(async (backendDb) => {
       const publishedAt = new Date(Date.now() - 2 * 60 * 60_000).toISOString();
@@ -235,7 +280,17 @@ describe("creator analytics collection", () => {
             JSON.stringify({
               publishedAt: now,
               platformPostUrl: "https://www.instagram.com/reel/example/",
-              analytics: { views: 200, likes: 20, comments: 3, reach: 160, shares: 7, saves: 5, follows: 2, igReelsAvgWatchTime: 7000 },
+              analytics: {
+                views: 200,
+                likes: 20,
+                comments: 3,
+                reach: 160,
+                shares: 7,
+                saves: 5,
+                follows: 2,
+                igReelsAvgWatchTime: 7000,
+                igReelsVideoDuration: 12,
+              },
             }),
           );
         throw new Error(`unexpected URL: ${url}`);
@@ -250,6 +305,7 @@ describe("creator analytics collection", () => {
         reach: 160,
         saves: 5,
         averageWatchTimeMs: 7000,
+        videoDurationMs: 12_000,
       });
       expect(backendDb.db.select().from(creatorProfiles).where(eq(creatorProfiles.platform, "instagram_ru")).get()?.dataJson).toMatchObject(
         {

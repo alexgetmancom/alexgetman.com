@@ -35,7 +35,7 @@ function seedVideo(backendDb: ReturnType<typeof openBackendDb>): void {
     .values({
       videoDraftId: draft.id,
       target: "youtube_shorts",
-      metadataJson: { title: "Seedance 2.5", description: "", tags: [] },
+      metadataJson: { title: "Seedance 2.5", description: "", tags: [], videoDurationMs: 24_000 },
       status: "published",
       publishedAt,
       externalUrl: "https://youtube.com/shorts/abc",
@@ -55,7 +55,12 @@ function seedVideo(backendDb: ReturnType<typeof openBackendDb>): void {
       .values({
         videoTargetId: target.id,
         platform: "youtube_shorts",
-        metricsJson: { views, likes: views / 10, comments: 4 },
+        metricsJson: {
+          views,
+          likes: views / 10,
+          comments: 4,
+          ...(hours === 1 ? { totalWatchTimeMs: 12_000_000 } : {}),
+        },
         sampledAt: hoursAgo(hours),
       })
       .run();
@@ -159,6 +164,8 @@ describe("unified overview video read model", () => {
       expect(overview.platforms[0]?.views).toBe(1_000);
       // The Russian destination has its own audience snapshot.
       expect(overview.platforms[0]?.followers).toBe(8_400);
+      expect(overview.summary.completionRate).toBe(50);
+      expect(overview.summary.subscribers).toBeNull();
     } finally {
       backendDb.close();
     }

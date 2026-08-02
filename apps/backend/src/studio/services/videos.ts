@@ -172,6 +172,7 @@ async function scheduleOwnedVideo(
     schedule,
     { prepareLeadMinutes: config.VIDEO_PREPARE_LEAD_MINUTES, reminderMinutes: config.VIDEO_REMINDER_MINUTES },
     config,
+    technical.seconds,
   );
   scheduleVideoReminders(backendDb, config, draft.actorId, videoDraftId, draft.label);
   return technical;

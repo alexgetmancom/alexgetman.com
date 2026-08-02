@@ -33,6 +33,7 @@ type YouTubeVideo = {
   items?: Array<{
     snippet?: { title?: string; publishedAt?: string };
     statistics?: Record<string, string>;
+    contentDetails?: { duration?: string };
   }>;
 };
 type YouTubeComments = {
@@ -266,6 +267,7 @@ async function collectZernioInstagramVideoMetrics(
   });
   const platform = data.platforms?.find((item) => item.platform === "instagram");
   const metrics = platform?.analytics ?? data.analytics ?? {};
+  const follows = optionalProviderMetric(metrics.follows);
   upsertVideoSnapshot(backendDb, target.id, "instagram_reels", target.checkpointIndex, {
     title: target.label ?? UNTITLED_VIDEO,
     url: platform?.platformPostUrl ?? data.platformPostUrl ?? target.externalUrl,
@@ -277,10 +279,11 @@ async function collectZernioInstagramVideoMetrics(
     impressions: metricNumber(metrics.impressions),
     shares: metricNumber(metrics.shares),
     saves: metricNumber(metrics.saves),
-    follows: metricNumber(metrics.follows),
+    ...(follows === null ? {} : { follows }),
     engagementRate: metricNumber(metrics.engagementRate),
     averageWatchTimeMs: metricNumber(metrics.igReelsAvgWatchTime),
     totalWatchTimeMs: metricNumber(metrics.igReelsVideoViewTotalTime),
+    videoDurationMs: analyticsVideoDurationMs(metrics),
   });
 }
 
@@ -325,7 +328,7 @@ async function collectYouTubeVideoMetrics(
   const auth = { Authorization: `Bearer ${token}` };
   const video = await requestJson<YouTubeVideo>(
     fetchImpl,
-    `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics&id=${encodeURIComponent(target.externalId)}`,
+    `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails&id=${encodeURIComponent(target.externalId)}`,
     { headers: auth },
   );
   const item = video.items?.[0];
@@ -336,6 +339,7 @@ async function collectYouTubeVideoMetrics(
     views: metricNumber(item?.statistics?.viewCount),
     likes: metricNumber(item?.statistics?.likeCount),
     comments: metricNumber(item?.statistics?.commentCount),
+    videoDurationMs: parseYouTubeDurationMs(item?.contentDetails?.duration),
   });
   // The basic video read works with the publishing token. Comment threads
   // additionally require youtube.force-ssl; comments are enrichment and must
@@ -364,6 +368,40 @@ async function collectYouTubeVideoMetrics(
         details.publishedAt,
       );
   }
+}
+
+function analyticsVideoDurationMs(metrics: Record<string, number | string | null>): number | null {
+  const milliseconds = firstMetric(metrics, ["videoDurationMs", "durationMs", "igReelsVideoDurationMs"]);
+  if (milliseconds !== null && milliseconds > 0) return milliseconds;
+  const seconds = firstMetric(metrics, ["videoDuration", "duration", "igReelsVideoDuration"]);
+  return seconds !== null && seconds > 0 ? seconds * 1_000 : null;
+}
+
+function firstMetric(metrics: Record<string, number | string | null>, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = metrics[key];
+    const parsed = optionalProviderMetric(value);
+    if (parsed !== null) return parsed;
+  }
+  return null;
+}
+
+function optionalProviderMetric(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseYouTubeDurationMs(value: string | undefined): number | null {
+  if (!value) return null;
+  const match = value.match(/^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$/);
+  if (!match) return null;
+  const days = Number(match[1] ?? 0);
+  const hours = Number(match[2] ?? 0);
+  const minutes = Number(match[3] ?? 0);
+  const seconds = Number(match[4] ?? 0);
+  const totalSeconds = days * 86_400 + hours * 3_600 + minutes * 60 + seconds;
+  return Number.isFinite(totalSeconds) && totalSeconds > 0 ? Math.round(totalSeconds * 1_000) : null;
 }
 
 async function collectInstagramVideoMetrics(

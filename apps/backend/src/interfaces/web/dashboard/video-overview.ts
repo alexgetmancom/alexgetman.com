@@ -90,6 +90,7 @@ type TargetRow = {
   locale: string | null;
   publishedAt: string | null;
   externalUrl: string | null;
+  metadataJson: string | null;
 };
 
 type VideoMetrics = {
@@ -122,7 +123,7 @@ export function videoOverview(backendDb: BackendDb, start: Date, end: Date, time
   const rows = publishedTargets(backendDb, start.toISOString(), end.toISOString());
   const snapshots = videoSnapshots(backendDb, rows);
   const periodDays = calendarDays(start, end, timeZone);
-  const summary = videoSummaryMetrics(backendDb, rows, snapshots, periodDays, end);
+  const summary = videoSummaryMetrics(backendDb, rows, snapshots, periodDays, end, timeZone);
   const historicalDestinations = publishedDestinationKeys(backendDb, catalogue);
   const items = rows
     .map((row) => {
@@ -200,7 +201,7 @@ function publishedTargets(backendDb: BackendDb, startIso: string, endIso: string
   return backendDb.sqlite
     .prepare(
       `SELECT t.id AS id, t.target AS target, COALESCE(d.label, '') AS label, d.locale AS locale, t.published_at AS publishedAt,
-              t.provider_account_id AS providerAccountId, t.external_url AS externalUrl
+              t.provider_account_id AS providerAccountId, t.external_url AS externalUrl, t.metadata_json AS metadataJson
          FROM video_targets t
          JOIN video_drafts d ON d.id = t.video_draft_id
         WHERE t.status = 'published' AND t.published_at IS NOT NULL AND t.published_at >= ? AND t.published_at <= ?
@@ -394,11 +395,12 @@ function videoSummaryMetrics(
   snapshots: Map<number, VideoSnapshot[]>,
   periodDays: PeriodDay[],
   end: Date,
+  timeZone: string,
 ): VideoSummaryMetrics {
   const watchSamples: Array<{ value: number; weight: number }> = [];
   const completionSamples: Array<{ value: number; weight: number }> = [];
-  let subscribers = 0;
-  let hasSubscribers = false;
+  let attributedSubscribers = 0;
+  let hasAttributedSubscribers = false;
 
   for (const row of rows) {
     const history = snapshots.get(row.id) ?? [];
@@ -408,71 +410,125 @@ function videoSummaryMetrics(
     if (latest.averageWatchTimeMs !== null && latest.averageWatchTimeMs > 0)
       watchSamples.push({ value: latest.averageWatchTimeMs, weight });
     if (latest.completionRate !== null && latest.completionRate >= 0) completionSamples.push({ value: latest.completionRate, weight });
-    if (latest.follows !== null) {
-      subscribers += latest.follows;
-      hasSubscribers = true;
-    }
-    if (latest.totalWatchTimeMs !== null && latest.videoDurationMs !== null && latest.views > 0 && latest.videoDurationMs > 0) {
+    const durationMs = latest.videoDurationMs !== null && latest.videoDurationMs > 0 ? latest.videoDurationMs : targetDurationMs(row);
+    if (latest.totalWatchTimeMs !== null && latest.views > 0 && durationMs !== null && durationMs > 0) {
       completionSamples.push({
-        value: Math.min(100, (latest.totalWatchTimeMs / (latest.views * latest.videoDurationMs)) * 100),
+        value: Math.min(100, (latest.totalWatchTimeMs / (latest.views * durationMs)) * 100),
         weight,
       });
     }
   }
 
-  // YouTube Analytics stores account-level retention and subscriber deltas in
-  // creator profiles. Historical dashboard windows must not silently reuse
-  // today's profile values.
-  if (end.getTime() >= Date.now() - 2 * 86_400_000) {
-    const profileMetrics = youtubeProfileMetrics(backendDb, periodDays.length);
+  // Account reports are the fallback for subscriber attribution. They are only
+  // valid for the current calendar day; reusing today's 1d/7d report for a
+  // historical dashboard window would make an old date move when the account
+  // sync runs again.
+  let profileSubscribers = 0;
+  let hasProfileSubscribers = false;
+  let accountProfileKeys = new Set<string>();
+  if (isCurrentCalendarDay(end, timeZone)) {
+    const profileMetrics = profileSummaryMetrics(backendDb, rows, periodDays.length);
     if (profileMetrics.averageWatchTimeMs !== null)
       watchSamples.push({ value: profileMetrics.averageWatchTimeMs, weight: Math.max(1, profileMetrics.views) });
-    if (profileMetrics.subscribers !== null) {
-      subscribers += profileMetrics.subscribers;
-      hasSubscribers = true;
+    profileSubscribers = profileMetrics.subscribers;
+    hasProfileSubscribers = profileMetrics.hasSubscribers;
+    accountProfileKeys = profileMetrics.accountProfileKeys;
+  }
+
+  // Do not add a per-video number for a channel whose account report already
+  // covers it — that would double-count the same subscriber change.
+  for (const row of rows) {
+    const profileKey = profileKeyForRow(row);
+    if (profileKey !== null && accountProfileKeys.has(profileKey)) continue;
+    const latest = latestAtOrBefore(snapshots.get(row.id) ?? [], end)?.metrics;
+    if (latest?.follows !== null && latest?.follows !== undefined && latest.follows !== 0) {
+      attributedSubscribers += latest.follows;
+      hasAttributedSubscribers = true;
     }
   }
 
   return {
     completionRate: weightedAverage(completionSamples),
     averageWatchTimeMs: weightedAverage(watchSamples),
-    subscribers: hasSubscribers ? subscribers : null,
+    subscribers: hasProfileSubscribers || hasAttributedSubscribers ? profileSubscribers + attributedSubscribers : null,
   };
 }
 
-function youtubeProfileMetrics(
-  backendDb: BackendDb,
-  days: number,
-): { averageWatchTimeMs: number | null; subscribers: number | null; views: number } {
-  const suffix = days === 30 ? "" : `${days}d`;
+type ProfileSummaryMetrics = {
+  averageWatchTimeMs: number | null;
+  subscribers: number;
+  hasSubscribers: boolean;
+  accountProfileKeys: Set<string>;
+  views: number;
+};
+
+function profileSummaryMetrics(backendDb: BackendDb, rows: TargetRow[], days: number): ProfileSummaryMetrics {
+  const reportDays = days === 1 ? 1 : days === 7 ? 7 : 30;
+  const suffix = reportDays === 30 ? "" : `${reportDays}d`;
+  const accountKeys = new Set(rows.map(profileKeyForRow).filter((key): key is string => key !== null));
   let averageWatchTotal = 0;
   let averageWatchWeight = 0;
   let subscribers = 0;
   let hasSubscribers = false;
   let views = 0;
+  const accountProfileKeys = new Set<string>();
   for (const profile of backendDb.db.select().from(creatorProfiles).all()) {
-    if (!profile.platform.startsWith("youtube")) continue;
+    if (!accountKeys.has(profile.platform)) continue;
     const data = profile.dataJson as Record<string, unknown>;
     const periodViews = optionalMetric(data[`views${suffix}`] ?? data.views ?? data.viewCount) ?? 0;
-    const averageViewDuration = optionalMetric(data[`averageViewDuration${suffix}`] ?? data.averageViewDuration);
-    if (averageViewDuration !== null && averageViewDuration > 0) {
-      const weight = Math.max(1, periodViews);
-      averageWatchTotal += averageViewDuration * 1_000 * weight;
-      averageWatchWeight += weight;
-    }
-    const gained = optionalMetric(data[`subscribersGained${suffix}`] ?? data.subscribersGained);
-    const lost = optionalMetric(data[`subscribersLost${suffix}`] ?? data.subscribersLost);
-    if (gained !== null || lost !== null) {
+    if (profile.platform.startsWith("youtube")) {
+      const gained = optionalMetric(data[`subscribersGained${suffix}`] ?? data.subscribersGained);
+      const lost = optionalMetric(data[`subscribersLost${suffix}`] ?? data.subscribersLost);
+      const reportHasData = periodViews > 0 || (gained !== null && gained !== 0) || (lost !== null && lost !== 0);
+      if (!reportHasData) continue;
+      const averageViewDuration = optionalMetric(data[`averageViewDuration${suffix}`] ?? data.averageViewDuration);
+      if (averageViewDuration !== null && averageViewDuration > 0) {
+        const weight = Math.max(1, periodViews);
+        averageWatchTotal += averageViewDuration * 1_000 * weight;
+        averageWatchWeight += weight;
+      }
+      if (gained !== null || lost !== null) {
+        subscribers += (gained ?? 0) - (lost ?? 0);
+        hasSubscribers = true;
+        accountProfileKeys.add(profile.platform);
+      }
+    } else if (profile.platform.startsWith("instagram")) {
+      const gained = optionalMetric(data.followersGained30d ?? data.followersGained);
+      const lost = optionalMetric(data.followersLost30d ?? data.followersLost);
+      if (reportDays !== 30 || (gained === null && lost === null)) continue;
       subscribers += (gained ?? 0) - (lost ?? 0);
       hasSubscribers = true;
+      accountProfileKeys.add(profile.platform);
     }
     views += periodViews;
   }
   return {
     averageWatchTimeMs: averageWatchWeight > 0 ? averageWatchTotal / averageWatchWeight : null,
-    subscribers: hasSubscribers ? subscribers : null,
+    subscribers,
+    hasSubscribers,
+    accountProfileKeys,
     views,
   };
+}
+
+function profileKeyForRow(row: TargetRow): string | null {
+  if (row.target !== "youtube_shorts" && row.target !== "instagram_reels") return null;
+  if (row.locale !== "ru" && row.locale !== "en") return null;
+  return `${row.target === "youtube_shorts" ? "youtube" : "instagram"}_${row.locale}`;
+}
+
+function targetDurationMs(row: TargetRow): number | null {
+  const metadata = parseJson(row.metadataJson);
+  const milliseconds = optionalMetric(metadata.videoDurationMs ?? metadata.durationMs);
+  if (milliseconds !== null && milliseconds > 0) return milliseconds;
+  const seconds = optionalMetric(metadata.videoDuration ?? metadata.duration);
+  return seconds !== null && seconds > 0 ? seconds * 1_000 : null;
+}
+
+function isCurrentCalendarDay(value: Date, timeZone: string): boolean {
+  const current = zonedDateParts(new Date(), timeZone);
+  const target = zonedDateParts(value, timeZone);
+  return current.year === target.year && current.month === target.month && current.day === target.day;
 }
 
 function optionalMetric(value: unknown): number | null {

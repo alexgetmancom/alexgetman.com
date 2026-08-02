@@ -276,12 +276,23 @@ describe("video publication queue", () => {
       { youtube_shorts: youtubeAt, instagram_reels: instagramAt },
       { prepareLeadMinutes: 15, reminderMinutes: 5 },
       videoConfig(),
+      24,
     );
 
-    expect(listVideoTargets(backendDb, draftId).map((row) => ({ target: row.target, scheduledAt: row.scheduledAt }))).toEqual([
-      { target: "youtube_shorts", scheduledAt: youtubeAt.toISOString() },
-      { target: "instagram_reels", scheduledAt: instagramAt.toISOString() },
-    ]);
+    expect(listVideoTargets(backendDb, draftId)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          target: "youtube_shorts",
+          scheduledAt: youtubeAt.toISOString(),
+          metadataJson: expect.objectContaining({ videoDurationMs: 24_000 }),
+        }),
+        expect.objectContaining({
+          target: "instagram_reels",
+          scheduledAt: instagramAt.toISOString(),
+          metadataJson: expect.objectContaining({ videoDurationMs: 24_000 }),
+        }),
+      ]),
+    );
     expect(backendDb.sqlite.prepare("SELECT kind, count(*) AS count FROM video_jobs GROUP BY kind ORDER BY kind").all()).toEqual([
       { kind: "prepare", count: 2 },
       { kind: "publish", count: 2 },

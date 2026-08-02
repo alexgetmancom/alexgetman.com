@@ -122,6 +122,7 @@ export function scheduleVideo(
   schedule: Partial<Record<VideoTarget, Date>>,
   timing: { prepareLeadMinutes: number; reminderMinutes: number },
   config: BackendConfig,
+  durationSeconds?: number,
 ): void {
   const now = new Date();
   const targets = listVideoTargets(backendDb, videoDraftId);
@@ -140,10 +141,16 @@ export function scheduleVideo(
       const preparedAt = new Date(targetSchedule.getTime() - timing.prepareLeadMinutes * 60_000);
       const draft = getVideoDraft(backendDb, videoDraftId);
       const route = registeredVideoDeliveryRoute(backendDb, config, target.target as VideoTarget, draft.locale === "en" ? "en" : "ru");
+      const metadata = target.metadataJson as Record<string, unknown>;
+      const metadataJson =
+        durationSeconds != null && durationSeconds > 0 && metadata.videoDurationMs == null
+          ? { ...metadata, videoDurationMs: Math.round(durationSeconds * 1_000) }
+          : metadata;
       tx.update(videoTargets)
         .set({
           scheduledAt: publishAt,
           status: "scheduled",
+          metadataJson,
           lastError: null,
           deliveryProvider: route.provider,
           providerAccountId: route.accountId ?? null,
