@@ -10,6 +10,9 @@ export type MemorySnapshot = {
   externalBytes: number;
   cgroupCurrentBytes: number | null;
   cgroupPeakBytes: number | null;
+  cgroupLimitBytes: number | null;
+  cgroupAnonBytes: number | null;
+  cgroupFileBytes: number | null;
 };
 
 export type MemoryMeasurementOptions = {
@@ -22,6 +25,7 @@ type MemoryContext = Record<string, string | number | boolean | null | undefined
 
 const cgroupCurrentPaths = ["/sys/fs/cgroup/memory.current", "/sys/fs/cgroup/memory/memory.usage_in_bytes"];
 const cgroupPeakPaths = ["/sys/fs/cgroup/memory.peak", "/sys/fs/cgroup/memory/memory.max_usage_in_bytes"];
+const cgroupLimitPaths = ["/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"];
 
 function readCgroupBytes(paths: readonly string[]): number | null {
   for (const path of paths) {
@@ -37,8 +41,33 @@ function readCgroupBytes(paths: readonly string[]): number | null {
   return null;
 }
 
-function readMemorySnapshot(): MemorySnapshot {
+function readCgroupStatBytes(): { anonBytes: number | null; fileBytes: number | null } {
+  for (const path of ["/sys/fs/cgroup/memory.stat", "/sys/fs/cgroup/memory/memory.stat"]) {
+    try {
+      const values = new Map(
+        readFileSync(path, "utf8")
+          .trim()
+          .split("\n")
+          .map((line) => line.trim().split(/\s+/, 2) as [string, string]),
+      );
+      const bytes = (keys: readonly string[]) => {
+        for (const key of keys) {
+          const value = Number(values.get(key));
+          if (Number.isSafeInteger(value) && value >= 0) return value;
+        }
+        return null;
+      };
+      return { anonBytes: bytes(["anon", "total_rss", "rss"]), fileBytes: bytes(["file", "total_cache", "cache"]) };
+    } catch {
+      // Bare-metal and test processes may not expose cgroup memory statistics.
+    }
+  }
+  return { anonBytes: null, fileBytes: null };
+}
+
+export function readMemorySnapshot(): MemorySnapshot {
   const memory = process.memoryUsage();
+  const cgroupStat = readCgroupStatBytes();
   return {
     rssBytes: memory.rss,
     heapUsedBytes: memory.heapUsed,
@@ -46,6 +75,9 @@ function readMemorySnapshot(): MemorySnapshot {
     externalBytes: memory.external,
     cgroupCurrentBytes: readCgroupBytes(cgroupCurrentPaths),
     cgroupPeakBytes: readCgroupBytes(cgroupPeakPaths),
+    cgroupLimitBytes: readCgroupBytes(cgroupLimitPaths),
+    cgroupAnonBytes: cgroupStat.anonBytes,
+    cgroupFileBytes: cgroupStat.fileBytes,
   };
 }
 

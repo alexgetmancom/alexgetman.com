@@ -77,6 +77,7 @@ describe("openBackendDb", () => {
         "publish_jobs",
         "publish_plans",
         "runtime_usage",
+        "runtime_memory_samples",
         "site_jobs",
         "site_source_items",
         "studio_media_assets",
@@ -136,7 +137,7 @@ describe("openBackendDb", () => {
     const fixture = new Database(dbPath);
     fixture.exec("DROP TABLE __drizzle_migrations");
     fixture.exec(
-      "DROP TABLE channel_connections; DROP TABLE draft_entity_candidates; DROP TABLE draft_sources; DROP TABLE post_entity_links; DROP TABLE knowledge_entity_aliases; DROP TABLE knowledge_entities; DROP TABLE post_sources; DROP TABLE site_pageviews; DROP TABLE video_bot_sessions; DROP TABLE video_jobs; DROP TABLE video_targets; DROP TABLE video_drafts; DROP TABLE analytics_sync; DROP TABLE creator_profiles; DROP TABLE creator_profile_snapshots; DROP TABLE video_metric_snapshots; DROP TABLE video_metric_schedule; DROP TABLE social_comments; DROP TABLE admin_state; CREATE TABLE admin_state (admin_id integer PRIMARY KEY NOT NULL, action text, draft_id integer, updated_at text NOT NULL)",
+      "DROP TABLE channel_connections; DROP TABLE draft_entity_candidates; DROP TABLE draft_sources; DROP TABLE post_entity_links; DROP TABLE knowledge_entity_aliases; DROP TABLE knowledge_entities; DROP TABLE post_sources; DROP TABLE site_pageviews; DROP TABLE video_bot_sessions; DROP TABLE video_jobs; DROP TABLE video_targets; DROP TABLE video_drafts; DROP TABLE analytics_sync; DROP TABLE creator_profiles; DROP TABLE creator_profile_snapshots; DROP TABLE video_metric_snapshots; DROP TABLE video_metric_schedule; DROP TABLE social_comments; DROP TABLE runtime_memory_samples; DROP TABLE admin_state; CREATE TABLE admin_state (admin_id integer PRIMARY KEY NOT NULL, action text, draft_id integer, updated_at text NOT NULL)",
     );
     // The fixture is built by the current migration chain and then replayed from
     // the baseline, so every column 0030 renames has to be put back to its

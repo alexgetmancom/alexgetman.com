@@ -57,6 +57,27 @@ export const runtimeUsage = sqliteTable(
   ],
 );
 
+/** Low-frequency process and cgroup samples retained across container recreates. */
+export const runtimeMemorySamples = sqliteTable(
+  "runtime_memory_samples",
+  {
+    id: autoId(),
+    observedAt: text().notNull(),
+    processStartedAt: text().notNull(),
+    revision: text(),
+    rssBytes: integer().notNull(),
+    heapUsedBytes: integer().notNull(),
+    heapTotalBytes: integer().notNull(),
+    externalBytes: integer().notNull(),
+    cgroupCurrentBytes: integer(),
+    cgroupPeakBytes: integer(),
+    cgroupLimitBytes: integer(),
+    cgroupAnonBytes: integer(),
+    cgroupFileBytes: integer(),
+  },
+  (table) => [index("idx_runtime_memory_samples_observed_at").on(table.observedAt)],
+);
+
 export const deploymentSnapshots = sqliteTable("deployment_snapshots", {
   id: autoId(),
   gitSha: text(),

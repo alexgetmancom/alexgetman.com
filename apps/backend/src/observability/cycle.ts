@@ -5,6 +5,8 @@ import { recordWorkerState } from "../foundation/runtime/worker-state.js";
 import { type AlertPort, deliverPendingAlerts } from "./alerts.js";
 import { updateCredentialChecks } from "./credentials.js";
 import { recordPublicationFailures } from "./failures.js";
+import { type MemorySnapshot, readMemorySnapshot } from "./memory.js";
+import { recordMemorySample } from "./memory-history.js";
 import { recordMemoryPressure, recordProcessRestart } from "./runtime-health.js";
 import { checkTokenHealth } from "./token-health.js";
 
@@ -12,13 +14,12 @@ const toMb = (bytes: number) => Math.round(bytes / 1024 / 1024);
 
 /** A steady climb in rss/heapUsed across cycles (rather than the usual GC
  * sawtooth) is the signal to reach for `bun --inspect` and a heap snapshot. */
-function logMemoryUsage(): void {
-  const memory = process.memoryUsage();
+function logMemoryUsage(memory: MemorySnapshot): void {
   log("info", "process memory usage", {
-    rssMb: toMb(memory.rss),
-    heapUsedMb: toMb(memory.heapUsed),
-    heapTotalMb: toMb(memory.heapTotal),
-    externalMb: toMb(memory.external),
+    rssMb: toMb(memory.rssBytes),
+    heapUsedMb: toMb(memory.heapUsedBytes),
+    heapTotalMb: toMb(memory.heapTotalBytes),
+    externalMb: toMb(memory.externalBytes),
   });
 }
 
@@ -40,7 +41,9 @@ export async function runObservabilityCycle(
   backendDb: BackendDb,
   alertsPort: AlertPort = {},
 ): Promise<{ alerts: number; credentials: number }> {
-  logMemoryUsage();
+  const memory = readMemorySnapshot();
+  logMemoryUsage(memory);
+  await probe("memory-sample", () => recordMemorySample(backendDb, memory));
   let credentials = 0;
   let alerts = 0;
   // Ordered before the alert probe on purpose: both record durable events, so
