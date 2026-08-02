@@ -19,7 +19,7 @@ import { renderDashboardShell } from "./dashboard/shell.js";
 import { type PublicationDetailsResult, renderPublicationDetails } from "./dashboard/table.js";
 import { DASHBOARD_THEME_TOGGLE_HTML } from "./dashboard/theme.js";
 import type { OpsPayload, PipelineData, PipelinePost } from "./dashboard/types.js";
-import { emptyVideoOverview, videoOverview } from "./dashboard/video-overview.js";
+import { createVideoOverviewCache, emptyVideoOverview, videoOverview } from "./dashboard/video-overview.js";
 import { renderXPublicationDetails, renderXSection } from "./dashboard/x-section.js";
 import { renderStudioSection } from "./studio.js";
 
@@ -139,6 +139,7 @@ export function renderDashboard(
     cache.delete(cacheKey);
   }
   const service = operationsService(backendDb, config);
+  const videoCache = createVideoOverviewCache();
   const studioActorId = config.MCP_STUDIO_ACTOR_ID;
   // The unified overview is the landing screen of every Studio, whichever
   // halves it publishes.
@@ -237,18 +238,20 @@ export function renderDashboard(
           previousXItems: comparisonX,
           dayComparisonData:
             periodDays === 1 ? service.pipeline(0, 1, 0, weekOffset + 1, { includeSamples: true, includeContent: false }) : null,
-          video: videoEnabled ? videoOverview(backendDb, dayBounds(start), dayBounds(end, true), config.TIMEZONE) : emptyVideoOverview(),
+          video: videoEnabled
+            ? videoOverview(backendDb, dayBounds(start), dayBounds(end, true), config.TIMEZONE, videoCache)
+            : emptyVideoOverview(),
           previousVideo: videoEnabled
-            ? videoOverview(backendDb, dayBounds(previousStart), dayBounds(previousEnd, true), config.TIMEZONE)
+            ? videoOverview(backendDb, dayBounds(previousStart), dayBounds(previousEnd, true), config.TIMEZONE, videoCache)
             : emptyVideoOverview(),
           dayComparisonVideo:
             videoEnabled && periodDays === 1
-              ? videoOverview(backendDb, dayBounds(yesterdayStart), dayBounds(yesterdayEnd, true), config.TIMEZONE)
+              ? videoOverview(backendDb, dayBounds(yesterdayStart), dayBounds(yesterdayEnd, true), config.TIMEZONE, videoCache)
               : null,
           medianData: service.pipeline(0, 30, 0, medianOffsetDays, { includeSamples: false, includeContent: false }),
           medianXItems: xActivityDashboard(backendDb, medianPeriodOffset, 30, config.TIMEZONE),
           medianVideo: videoEnabled
-            ? videoOverview(backendDb, dayBounds(medianStart), dayBounds(medianEnd, true), config.TIMEZONE)
+            ? videoOverview(backendDb, dayBounds(medianStart), dayBounds(medianEnd, true), config.TIMEZONE, videoCache)
             : emptyVideoOverview(),
           followers: audiencePlatformFollowers(backendDb),
           rangeStart: start,

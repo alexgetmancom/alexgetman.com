@@ -342,6 +342,9 @@ describe("Astro endpoint controller", () => {
       expect(html).not.toContain("Аудитория и profile metrics");
       expect(html).toContain('href="/command-center?tab=posts&panel=health"');
       expect(html).toContain("Repair");
+      expect(html).toContain("const navigateDashboard = async");
+      expect(html).toContain("history.pushState");
+      expect(html).not.toContain("window.location.reload");
       expect(html).not.toContain("Health: credentials и diagnostics");
       expect(html).toContain("font:16px -apple-system");
       expect(html).not.toContain("width: 22px; text-align: center; font-family: monospace");

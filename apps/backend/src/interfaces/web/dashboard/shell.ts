@@ -14,6 +14,7 @@ export function renderDashboardShell(body: string): string {
 
     body { margin:0; padding:24px; background:var(--bg-color); color:var(--text-main); font:16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
     main { max-width:1440px; margin:0 auto; }
+    main.dashboard-loading { opacity:.62; transition:opacity .12s ease; }
     h1,h2 { color:var(--text-header); }
     .theme-toggle { width:30px; height:30px; padding:0; border:1px solid var(--border); border-radius:50%; background:var(--surface); color:var(--text-secondary); font-size:14px; line-height:1; cursor:pointer; }
     .theme-toggle:hover { border-color:var(--border-hover); color:var(--text-header); }
@@ -347,17 +348,6 @@ export function renderDashboardShell(body: string): string {
 </main>
 <script>
 ${DASHBOARD_THEME_TOGGLE_SCRIPT}
-  function setMetric(m) {
-    const tbl = document.getElementById('pipeline-table');
-    if (!tbl) return;
-    tbl.className = tbl.className.replace(/show-m\\w/g, '') + ' show-' + m;
-    document.querySelectorAll('.mt-btn').forEach(b => b.classList.toggle('mt-active', b.dataset.m === m));
-  }
-  document.getElementById('metric-toggle')?.addEventListener('click', (event) => {
-    const button = event.target instanceof Element ? event.target.closest('.mt-btn') : null;
-    const metric = button?.dataset?.m;
-    if (metric) setMetric(metric);
-  });
   const loadMorePosts = async (button) => {
     const moreUrl = button.dataset.moreUrl;
     if (!moreUrl) {
@@ -391,9 +381,59 @@ ${DASHBOARD_THEME_TOGGLE_SCRIPT}
       delete button.dataset.loading;
     }
   };
-  document.querySelectorAll('.show-more-posts').forEach((button) => {
-    button.addEventListener('click', () => void loadMorePosts(button));
-  });
+  const bindDashboardInteractions = (root) => {
+    if (!root) return;
+    root.querySelectorAll('.metric-toggle').forEach((toggle) => {
+      if (toggle.dataset.bound === 'true') return;
+      toggle.dataset.bound = 'true';
+      toggle.addEventListener('click', (event) => {
+        const button = event.target instanceof Element ? event.target.closest('.mt-btn') : null;
+        const metric = button?.dataset?.m;
+        const table = root.querySelector('#pipeline-table');
+        if (!metric || !table) return;
+        table.className = table.className.replace(/show-m\\w/g, '') + ' show-' + metric;
+        root.querySelectorAll('.mt-btn').forEach((item) => item.classList.toggle('mt-active', item.dataset.m === metric));
+      });
+    });
+    root.querySelectorAll('.show-more-posts').forEach((button) => {
+      if (button.dataset.bound === 'true') return;
+      button.dataset.bound = 'true';
+      button.addEventListener('click', () => void loadMorePosts(button));
+    });
+    root.querySelectorAll('.chart-scale').forEach((group) => {
+      if (group.dataset.bound === 'true') return;
+      group.dataset.bound = 'true';
+      group.addEventListener('click', (event) => {
+        const button = event.target instanceof Element ? event.target.closest('.chart-scale__btn') : null;
+        const scale = button?.dataset?.scale;
+        if (!scale) return;
+        group.closest('.metric-chart')?.setAttribute('data-scale', scale);
+        group.querySelectorAll('.chart-scale__btn').forEach((item) => {
+          item.classList.toggle('chart-scale__btn--active', item.dataset.scale === scale);
+          item.setAttribute('aria-pressed', String(item.dataset.scale === scale));
+        });
+      });
+    });
+    const chartTooltip = root.querySelector('#chart-tooltip');
+    root.querySelectorAll('.chart-hit').forEach((point) => {
+      if (point.dataset.bound === 'true') return;
+      point.dataset.bound = 'true';
+      point.addEventListener('mouseenter', () => {
+        if (!chartTooltip) return;
+        chartTooltip.textContent = point.dataset.tooltip || '';
+        chartTooltip.hidden = false;
+      });
+      point.addEventListener('mousemove', (event) => {
+        if (!chartTooltip) return;
+        chartTooltip.style.left = (event.clientX + 12) + 'px';
+        chartTooltip.style.top = (event.clientY + 12) + 'px';
+      });
+      point.addEventListener('mouseleave', () => {
+        if (chartTooltip) chartTooltip.hidden = true;
+      });
+    });
+  };
+  bindDashboardInteractions(document.querySelector('main'));
   const navMenus = () => document.querySelectorAll('.nav-more[open], .period-menu[open]');
   document.addEventListener('click', (event) => {
     navMenus().forEach((menu) => {
@@ -403,34 +443,81 @@ ${DASHBOARD_THEME_TOGGLE_SCRIPT}
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') navMenus().forEach((menu) => menu.removeAttribute('open'));
   });
-  document.querySelectorAll('.chart-scale').forEach((group) => {
-    group.addEventListener('click', (event) => {
-      const button = event.target instanceof Element ? event.target.closest('.chart-scale__btn') : null;
-      const scale = button?.dataset?.scale;
-      if (!scale) return;
-      group.closest('.metric-chart')?.setAttribute('data-scale', scale);
-      group.querySelectorAll('.chart-scale__btn').forEach((item) => {
-        item.classList.toggle('chart-scale__btn--active', item.dataset.scale === scale);
-        item.setAttribute('aria-pressed', String(item.dataset.scale === scale));
-      });
-    });
+  const fragmentCache = new Map();
+  const fragmentRequests = new Map();
+  const MAX_FRAGMENT_CACHE_ENTRIES = 5;
+  const fragmentKey = (url) => url.pathname + url.search;
+  const rememberFragment = (key, html) => {
+    fragmentCache.delete(key);
+    fragmentCache.set(key, html);
+    while (fragmentCache.size > MAX_FRAGMENT_CACHE_ENTRIES) fragmentCache.delete(fragmentCache.keys().next().value);
+  };
+  const initialMain = document.querySelector('main');
+  if (initialMain) rememberFragment(fragmentKey(new URL(window.location.href)), initialMain.innerHTML);
+  const loadFragment = async (target, key) => {
+    const cached = fragmentCache.get(key);
+    if (cached !== undefined) return cached;
+    const pending = fragmentRequests.get(key);
+    if (pending) return pending;
+    const request = (async () => {
+      const response = await fetch(target.href, { credentials: 'same-origin' });
+      if (!response.ok) throw new Error('dashboard navigation failed');
+      const page = new DOMParser().parseFromString(await response.text(), 'text/html');
+      const nextMain = page.querySelector('main');
+      if (!nextMain) throw new Error('dashboard response has no main element');
+      const fragment = nextMain.innerHTML;
+      rememberFragment(key, fragment);
+      return fragment;
+    })();
+    fragmentRequests.set(key, request);
+    try {
+      return await request;
+    } finally {
+      if (fragmentRequests.get(key) === request) fragmentRequests.delete(key);
+    }
+  };
+  let navigationSerial = 0;
+  const navigateDashboard = async (target, replace = false) => {
+    const main = document.querySelector('main');
+    if (!main) return;
+    const serial = ++navigationSerial;
+    const key = fragmentKey(target);
+    main.classList.add('dashboard-loading');
+    main.setAttribute('aria-busy', 'true');
+    try {
+      let fragment = fragmentCache.get(key);
+      if (fragment === undefined) {
+        fragment = await loadFragment(target, key);
+      } else {
+        rememberFragment(key, fragment);
+      }
+      if (serial !== navigationSerial) return;
+      main.innerHTML = fragment;
+      if (replace) history.replaceState({}, '', target.href);
+      else history.pushState({}, '', target.href);
+      applyTheme(themeOf());
+      bindDashboardInteractions(main);
+      window.scrollTo(0, 0);
+    } catch {
+      if (serial === navigationSerial) window.location.assign(target.href);
+    } finally {
+      if (serial === navigationSerial) {
+        main.classList.remove('dashboard-loading');
+        main.removeAttribute('aria-busy');
+      }
+    }
+  };
+  document.addEventListener('click', (event) => {
+    if (!(event.target instanceof Element) || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+      return;
+    const link = event.target.closest('a[href]');
+    if (!link || link.target === '_blank' || link.hasAttribute('download')) return;
+    const target = new URL(link.href, window.location.href);
+    if (target.origin !== window.location.origin || target.pathname !== '/command-center') return;
+    event.preventDefault();
+    void navigateDashboard(target);
   });
-  const chartTooltip = document.getElementById('chart-tooltip');
-  document.querySelectorAll('.chart-hit').forEach((point) => {
-    point.addEventListener('mouseenter', () => {
-      if (!chartTooltip) return;
-      chartTooltip.textContent = point.dataset.tooltip || '';
-      chartTooltip.hidden = false;
-    });
-    point.addEventListener('mousemove', (event) => {
-      if (!chartTooltip) return;
-      chartTooltip.style.left = \`\${event.clientX + 12}px\`;
-      chartTooltip.style.top = \`\${event.clientY + 12}px\`;
-    });
-    point.addEventListener('mouseleave', () => {
-      if (chartTooltip) chartTooltip.hidden = true;
-    });
-  });
+  window.addEventListener('popstate', () => void navigateDashboard(new URL(window.location.href), true));
   let dashboardFingerprint = '';
   let fingerprintRequest = null;
   const checkDashboardFingerprint = async () => {
@@ -448,7 +535,10 @@ ${DASHBOARD_THEME_TOGGLE_SCRIPT}
         ]);
         const editingForm = document.activeElement instanceof Element && document.activeElement.closest('form');
         if (editingForm) return;
-        if (dashboardFingerprint && fingerprint !== dashboardFingerprint) window.location.reload();
+        if (dashboardFingerprint && fingerprint !== dashboardFingerprint) {
+          fragmentCache.clear();
+          void navigateDashboard(new URL(window.location.href), true);
+        }
         dashboardFingerprint = fingerprint;
       } catch { /* the current screen remains usable while the worker restarts */ }
     })().finally(() => {

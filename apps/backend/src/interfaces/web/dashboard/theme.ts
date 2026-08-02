@@ -183,12 +183,12 @@ export const DASHBOARD_THEME_TOGGLE_SCRIPT = `
     });
   };
   applyTheme(themeOf());
-  document.querySelectorAll('[data-theme-toggle]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const next = themeOf() === 'light' ? 'dark' : 'light';
-      try { localStorage.setItem('theme', next); } catch {}
-      applyTheme(next);
-    });
+  document.addEventListener('click', (event) => {
+    const button = event.target instanceof Element ? event.target.closest('[data-theme-toggle]') : null;
+    if (!button) return;
+    const next = themeOf() === 'light' ? 'dark' : 'light';
+    try { localStorage.setItem('theme', next); } catch {}
+    applyTheme(next);
   });
   matchMedia('(prefers-color-scheme: light)').addEventListener('change', (event) => {
     if (storedTheme()) return;

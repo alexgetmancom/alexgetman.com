@@ -85,6 +85,16 @@ export type VideoOverview = {
   viewEvents: MetricEvent[];
 };
 
+/** Request-scoped cache shared by the period comparisons on one dashboard. */
+export type VideoOverviewCache = {
+  loadedTargetIds: Set<number>;
+  snapshots: Map<number, VideoSnapshot[]>;
+};
+
+export function createVideoOverviewCache(): VideoOverviewCache {
+  return { loadedTargetIds: new Set(), snapshots: new Map() };
+}
+
 type TargetRow = {
   id: number;
   target: string;
@@ -122,10 +132,16 @@ export function emptyVideoOverview(): VideoOverview {
   };
 }
 
-export function videoOverview(backendDb: BackendDb, start: Date, end: Date, timeZone = "Europe/Moscow"): VideoOverview {
+export function videoOverview(
+  backendDb: BackendDb,
+  start: Date,
+  end: Date,
+  timeZone = "Europe/Moscow",
+  cache?: VideoOverviewCache,
+): VideoOverview {
   const catalogue = videoDestinations(backendDb);
   const rows = publishedTargets(backendDb, start.toISOString(), end.toISOString());
-  const snapshots = videoSnapshots(backendDb, rows);
+  const snapshots = videoSnapshots(backendDb, rows, cache);
   const periodDays = calendarDays(start, end, timeZone);
   const summary = videoSummaryMetrics(backendDb, rows, snapshots, periodDays, end, timeZone);
   const historicalDestinations = publishedDestinationKeys(backendDb, catalogue);
@@ -215,24 +231,33 @@ function publishedTargets(backendDb: BackendDb, startIso: string, endIso: string
     .all(startIso, endIso) as TargetRow[];
 }
 
-function videoSnapshots(backendDb: BackendDb, rows: TargetRow[]): Map<number, VideoSnapshot[]> {
+function videoSnapshots(backendDb: BackendDb, rows: TargetRow[], cache?: VideoOverviewCache): Map<number, VideoSnapshot[]> {
   const snapshots = new Map<number, VideoSnapshot[]>();
   if (!rows.length) return snapshots;
-  const placeholders = rows.map(() => "?").join(",");
-  const samples = backendDb.sqlite
-    .prepare(
-      `SELECT video_target_id AS targetId, metrics_json AS metricsJson, sampled_at AS sampledAt
-         FROM video_metric_snapshots
-        WHERE video_target_id IN (${placeholders})
-        ORDER BY video_target_id ASC, sampled_at ASC, id ASC`,
-    )
-    .all(...rows.map((row) => row.id)) as Array<{ targetId: number; metricsJson: string; sampledAt: string }>;
-  for (const sample of samples) {
-    const at = new Date(sample.sampledAt);
-    if (Number.isNaN(at.getTime())) continue;
-    const list = snapshots.get(sample.targetId) ?? [];
-    list.push({ at, metrics: parseMetrics(sample.metricsJson) });
-    snapshots.set(sample.targetId, list);
+  const missingRows = cache ? rows.filter((row) => !cache.loadedTargetIds.has(row.id)) : rows;
+  if (missingRows.length) {
+    const placeholders = missingRows.map(() => "?").join(",");
+    const samples = backendDb.sqlite
+      .prepare(
+        `SELECT video_target_id AS targetId, metrics_json AS metricsJson, sampled_at AS sampledAt
+           FROM video_metric_snapshots
+          WHERE video_target_id IN (${placeholders})
+          ORDER BY video_target_id ASC, sampled_at ASC, id ASC`,
+      )
+      .all(...missingRows.map((row) => row.id)) as Array<{ targetId: number; metricsJson: string; sampledAt: string }>;
+    for (const sample of samples) {
+      const at = new Date(sample.sampledAt);
+      if (Number.isNaN(at.getTime())) continue;
+      const list = cache?.snapshots.get(sample.targetId) ?? snapshots.get(sample.targetId) ?? [];
+      list.push({ at, metrics: parseMetrics(sample.metricsJson) });
+      if (cache) cache.snapshots.set(sample.targetId, list);
+      else snapshots.set(sample.targetId, list);
+    }
+    if (cache) for (const row of missingRows) cache.loadedTargetIds.add(row.id);
+  }
+  for (const row of rows) {
+    const history = cache?.snapshots.get(row.id) ?? snapshots.get(row.id) ?? [];
+    snapshots.set(row.id, history);
   }
   return snapshots;
 }
@@ -289,14 +314,70 @@ function aggregateDailyMetrics(
     }
   }
   const profileKeys = new Set(rows.map(profileKeyForRow).filter((key): key is string => key !== null));
+  const growthByDay = audienceGrowthByDay(backendDb, days, profileKeys);
   for (const day of days) {
-    const growth = audienceGrowthByPlatform(backendDb, day.start.toISOString(), 1, day.end.toISOString(), false);
-    const values = [...profileKeys].filter((key) => growth.has(key)).map((key) => growth.get(key) ?? 0);
+    const growth = growthByDay.get(day.key);
+    const values = [...profileKeys].filter((key) => growth?.has(key)).map((key) => growth?.get(key) ?? 0);
     const bucket = result[day.key] ?? emptyDailyVideoMetrics();
     bucket.subscribers = values.length ? values.reduce((total, value) => total + value, 0) : null;
     result[day.key] = bucket;
   }
   return result;
+}
+
+/** Loads audience history once for the whole chart instead of rerunning the
+ * same window query once per calendar day. */
+function audienceGrowthByDay(backendDb: BackendDb, days: PeriodDay[], profileKeys: Set<string>): Map<string, Map<string, number>> {
+  const lastDay = days.at(-1);
+  if (!days.length || !lastDay || profileKeys.size === 0) return new Map();
+
+  const platformNames = [...profileKeys];
+  const placeholders = platformNames.map(() => "?").join(",");
+  const rows = backendDb.sqlite
+    .prepare(
+      `SELECT platform, account, sampled_at AS sampledAt,
+              CAST(COALESCE(json_extract(metrics_json, '$.subscriberCount'), json_extract(metrics_json, '$.followersCount'), 0) AS INTEGER) AS value
+         FROM creator_profile_snapshots
+        WHERE platform IN (${placeholders}) AND sampled_at <= ?
+        ORDER BY platform ASC, account ASC, sampled_at ASC, id ASC`,
+    )
+    .all(...platformNames, lastDay.end.toISOString()) as Array<{
+    platform: string;
+    account: string;
+    sampledAt: string;
+    value: number;
+  }>;
+  const histories = new Map<string, Array<{ sampledAt: string; value: number }>>();
+  for (const row of rows) {
+    const key = `${row.platform}\u0000${row.account}`;
+    const history = histories.get(key) ?? [];
+    history.push({ sampledAt: row.sampledAt, value: row.value });
+    histories.set(key, history);
+  }
+
+  const totals = new Map<string, Map<string, number>>();
+  for (const [accountKey, history] of histories) {
+    const separator = accountKey.indexOf("\u0000");
+    const platform = separator < 0 ? accountKey : accountKey.slice(0, separator);
+    let cursor = 0;
+    let baseline: { sampledAt: string; value: number } | undefined;
+    for (const day of days) {
+      while (cursor < history.length && (history[cursor]?.sampledAt ?? "") <= day.start.toISOString()) {
+        baseline = history[cursor];
+        cursor += 1;
+      }
+      let current = baseline;
+      while (cursor < history.length && (history[cursor]?.sampledAt ?? "") <= day.end.toISOString()) {
+        current = history[cursor];
+        cursor += 1;
+      }
+      if (!baseline || !current) continue;
+      const dayTotals = totals.get(day.key) ?? new Map<string, number>();
+      dayTotals.set(platform, (dayTotals.get(platform) ?? 0) + current.value - baseline.value);
+      totals.set(day.key, dayTotals);
+    }
+  }
+  return totals;
 }
 
 function periodMetrics(history: VideoSnapshot[], days: PeriodDay[]): { totals: DailyMetrics } {
@@ -325,11 +406,21 @@ function periodSubscriberDelta(history: VideoSnapshot[], days: PeriodDay[]): num
 }
 
 function latestAtOrBefore(history: VideoSnapshot[], cutoff: Date): VideoSnapshot | undefined {
-  for (let index = history.length - 1; index >= 0; index -= 1) {
-    const sample = history[index];
-    if (sample && sample.at <= cutoff) return sample;
+  let low = 0;
+  let high = history.length - 1;
+  let latest: VideoSnapshot | undefined;
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    const sample = history[middle];
+    if (!sample) break;
+    if (sample.at <= cutoff) {
+      latest = sample;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
   }
-  return undefined;
+  return latest;
 }
 
 function calendarDays(start: Date, end: Date, timeZone: string): PeriodDay[] {
