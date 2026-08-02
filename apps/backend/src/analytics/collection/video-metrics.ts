@@ -412,7 +412,10 @@ async function collectYouTubeVideoMetrics(
       { headers: auth },
     );
   } catch (error) {
-    if (!isInsufficientYouTubeCommentScope(error)) throw error;
+    // Comments are optional enrichment. A token without youtube.force-ssl,
+    // a disabled comments endpoint, or a deleted video must not discard the
+    // Data API snapshot that was already collected above.
+    if (!isOptionalYouTubeCommentError(error)) throw error;
   }
   for (const comment of comments?.items ?? []) {
     const details = comment.snippet?.topLevelComment?.snippet;
@@ -588,7 +591,11 @@ async function instagramReelViews(fetchImpl: typeof fetch, base: string, token: 
   }
 }
 
-function isInsufficientYouTubeCommentScope(error: unknown): boolean {
+function isOptionalYouTubeCommentError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return /insufficient (authentication )?scopes?|insufficientpermissions|access_token_scope_insufficient/i.test(message);
+  return (
+    /(?:commentThreads|comment thread)/i.test(message) &&
+    (/(?:\b403\b|\b404\b)/.test(message) ||
+      /insufficient(?: authentication)? permissions?|insufficientpermissions|access_token_scope_insufficient/i.test(message))
+  );
 }
