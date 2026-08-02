@@ -78,7 +78,7 @@ const PARITY_TITLES = [
 
 /** How many days of quiet history back the norm and the sparkline. */
 export const PARITY_HISTORY_DAYS = 30;
-export const PARITY_TODAY_POSTS = PARITY_TITLES.length;
+const PARITY_TODAY_POSTS = PARITY_TITLES.length;
 
 /**
  * The dataset behind `dev-seed --mock`: six titled publications for today plus
