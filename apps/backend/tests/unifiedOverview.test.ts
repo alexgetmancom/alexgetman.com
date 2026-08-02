@@ -257,6 +257,10 @@ describe("unified overview rendering", () => {
       expect(html).toContain("<strong>1k</strong>");
       expect(html).toContain("Текст");
       expect(html).toContain("Видео");
+      expect(html).toContain('class="hero-metrics"');
+      expect(html).toContain("медиана 30д");
+      expect(html).toContain("Досмотры");
+      expect(html).not.toContain('class="kpi-table');
       expect(html).not.toContain("kpi-table__row--head");
       expect(html).not.toContain("vs медиана за 30д");
       expect(html).toContain("пунктир — медиана за 30 дней");
@@ -295,7 +299,7 @@ describe("unified overview rendering", () => {
       mode: "all",
     });
 
-    expect(html).toContain("↑ 200%");
+    expect(html).toContain("+200%");
     expect(html).not.toContain("vs прошлый период");
     expect(html).not.toContain("↑ 2900%");
   });
@@ -317,7 +321,7 @@ describe("unified overview rendering", () => {
       mode: "text",
     });
 
-    expect(html).toContain("↑ 100%");
+    expect(html).toContain("+100%");
     expect(html).not.toContain("vs медиана за 30д");
     expect(html).toContain("Текст: 200");
   });

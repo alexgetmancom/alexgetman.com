@@ -1,6 +1,7 @@
 import { metricNumber } from "../../../analytics/snapshots/creator-store.js";
 import { videoDestinations } from "../../../channels/destinations.js";
 import type { BackendDb } from "../../../db/client.js";
+import { creatorProfiles } from "../../../db/schema.js";
 import { zonedDateParts, zonedSlot } from "../../../foundation/time.js";
 import {
   VIDEO_TARGETS,
@@ -62,9 +63,19 @@ export type VideoPlatformTotal = {
 /** A raw metric observation, before it is folded into a cumulative curve. */
 export type MetricEvent = { at: Date; key: string; value: number };
 
+export type VideoSummaryMetrics = {
+  /** A provider-native completion percentage, when a collector supplies one. */
+  completionRate: number | null;
+  /** Weighted average watch duration across the available video sources. */
+  averageWatchTimeMs: number | null;
+  /** Net subscribers/follows attributed to the selected video period. */
+  subscribers: number | null;
+};
+
 export type VideoOverview = {
   items: VideoContentItem[];
   totals: { views: number; reactions: number; replies: number; posts: number };
+  summary: VideoSummaryMetrics;
   platforms: VideoPlatformTotal[];
   /** Period increments keyed by the studio calendar date. */
   dailyByDay: Record<string, { views: number; reactions: number; replies: number }>;
@@ -81,7 +92,16 @@ type TargetRow = {
   externalUrl: string | null;
 };
 
-type VideoMetrics = { views: number; likes: number; comments: number };
+type VideoMetrics = {
+  views: number;
+  likes: number;
+  comments: number;
+  averageWatchTimeMs: number | null;
+  totalWatchTimeMs: number | null;
+  follows: number | null;
+  completionRate: number | null;
+  videoDurationMs: number | null;
+};
 type VideoSnapshot = { at: Date; metrics: VideoMetrics };
 type DailyMetrics = { views: number; reactions: number; replies: number };
 type PeriodDay = { key: string; start: Date; end: Date };
@@ -90,6 +110,7 @@ export function emptyVideoOverview(): VideoOverview {
   return {
     items: [],
     totals: { views: 0, reactions: 0, replies: 0, posts: 0 },
+    summary: { completionRate: null, averageWatchTimeMs: null, subscribers: null },
     platforms: [],
     dailyByDay: {},
     viewEvents: [],
@@ -101,6 +122,7 @@ export function videoOverview(backendDb: BackendDb, start: Date, end: Date, time
   const rows = publishedTargets(backendDb, start.toISOString(), end.toISOString());
   const snapshots = videoSnapshots(backendDb, rows);
   const periodDays = calendarDays(start, end, timeZone);
+  const summary = videoSummaryMetrics(backendDb, rows, snapshots, periodDays, end);
   const historicalDestinations = publishedDestinationKeys(backendDb, catalogue);
   const items = rows
     .map((row) => {
@@ -167,6 +189,7 @@ export function videoOverview(backendDb: BackendDb, start: Date, end: Date, time
   return {
     items,
     totals,
+    summary,
     platforms,
     dailyByDay: aggregateDailyMetrics(rows, snapshots, periodDays),
     viewEvents: viewEvents(rows, snapshots, start, end),
@@ -302,7 +325,16 @@ function calendarKey(value: Date, timeZone: string): string {
 }
 
 function emptyMetrics(): VideoMetrics {
-  return { views: 0, likes: 0, comments: 0 };
+  return {
+    views: 0,
+    likes: 0,
+    comments: 0,
+    averageWatchTimeMs: null,
+    totalWatchTimeMs: null,
+    follows: null,
+    completionRate: null,
+    videoDurationMs: null,
+  };
 }
 
 function emptyDailyMetrics(): DailyMetrics {
@@ -342,7 +374,117 @@ function videoLocale(value: string | null): VideoLocale | null {
 
 function parseMetrics(value: string | null): VideoMetrics {
   const metrics = parseJson(value);
-  return { views: metricNumber(metrics.views), likes: metricNumber(metrics.likes), comments: metricNumber(metrics.comments) };
+  return {
+    views: metricNumber(metrics.views),
+    likes: metricNumber(metrics.likes),
+    comments: metricNumber(metrics.comments),
+    averageWatchTimeMs: optionalMetric(metrics.averageWatchTimeMs ?? metrics.averageWatchTime),
+    totalWatchTimeMs: optionalMetric(metrics.totalWatchTimeMs ?? metrics.totalWatchTime),
+    follows: optionalMetric(metrics.follows ?? metrics.subscribersGained),
+    completionRate: optionalMetric(
+      metrics.completionRate ?? metrics.completion_rate ?? metrics.completionPercentage ?? metrics.completion_percentage,
+    ),
+    videoDurationMs: optionalMetric(metrics.videoDurationMs ?? metrics.durationMs),
+  };
+}
+
+function videoSummaryMetrics(
+  backendDb: BackendDb,
+  rows: TargetRow[],
+  snapshots: Map<number, VideoSnapshot[]>,
+  periodDays: PeriodDay[],
+  end: Date,
+): VideoSummaryMetrics {
+  const watchSamples: Array<{ value: number; weight: number }> = [];
+  const completionSamples: Array<{ value: number; weight: number }> = [];
+  let subscribers = 0;
+  let hasSubscribers = false;
+
+  for (const row of rows) {
+    const history = snapshots.get(row.id) ?? [];
+    const latest = latestAtOrBefore(history, end)?.metrics;
+    if (!latest) continue;
+    const weight = Math.max(1, periodMetrics(history, periodDays).totals.views || latest.views);
+    if (latest.averageWatchTimeMs !== null && latest.averageWatchTimeMs > 0)
+      watchSamples.push({ value: latest.averageWatchTimeMs, weight });
+    if (latest.completionRate !== null && latest.completionRate >= 0) completionSamples.push({ value: latest.completionRate, weight });
+    if (latest.follows !== null) {
+      subscribers += latest.follows;
+      hasSubscribers = true;
+    }
+    if (latest.totalWatchTimeMs !== null && latest.videoDurationMs !== null && latest.views > 0 && latest.videoDurationMs > 0) {
+      completionSamples.push({
+        value: Math.min(100, (latest.totalWatchTimeMs / (latest.views * latest.videoDurationMs)) * 100),
+        weight,
+      });
+    }
+  }
+
+  // YouTube Analytics stores account-level retention and subscriber deltas in
+  // creator profiles. Historical dashboard windows must not silently reuse
+  // today's profile values.
+  if (end.getTime() >= Date.now() - 2 * 86_400_000) {
+    const profileMetrics = youtubeProfileMetrics(backendDb, periodDays.length);
+    if (profileMetrics.averageWatchTimeMs !== null)
+      watchSamples.push({ value: profileMetrics.averageWatchTimeMs, weight: Math.max(1, profileMetrics.views) });
+    if (profileMetrics.subscribers !== null) {
+      subscribers += profileMetrics.subscribers;
+      hasSubscribers = true;
+    }
+  }
+
+  return {
+    completionRate: weightedAverage(completionSamples),
+    averageWatchTimeMs: weightedAverage(watchSamples),
+    subscribers: hasSubscribers ? subscribers : null,
+  };
+}
+
+function youtubeProfileMetrics(
+  backendDb: BackendDb,
+  days: number,
+): { averageWatchTimeMs: number | null; subscribers: number | null; views: number } {
+  const suffix = days === 30 ? "" : `${days}d`;
+  let averageWatchTotal = 0;
+  let averageWatchWeight = 0;
+  let subscribers = 0;
+  let hasSubscribers = false;
+  let views = 0;
+  for (const profile of backendDb.db.select().from(creatorProfiles).all()) {
+    if (!profile.platform.startsWith("youtube")) continue;
+    const data = profile.dataJson as Record<string, unknown>;
+    const periodViews = optionalMetric(data[`views${suffix}`] ?? data.views ?? data.viewCount) ?? 0;
+    const averageViewDuration = optionalMetric(data[`averageViewDuration${suffix}`] ?? data.averageViewDuration);
+    if (averageViewDuration !== null && averageViewDuration > 0) {
+      const weight = Math.max(1, periodViews);
+      averageWatchTotal += averageViewDuration * 1_000 * weight;
+      averageWatchWeight += weight;
+    }
+    const gained = optionalMetric(data[`subscribersGained${suffix}`] ?? data.subscribersGained);
+    const lost = optionalMetric(data[`subscribersLost${suffix}`] ?? data.subscribersLost);
+    if (gained !== null || lost !== null) {
+      subscribers += (gained ?? 0) - (lost ?? 0);
+      hasSubscribers = true;
+    }
+    views += periodViews;
+  }
+  return {
+    averageWatchTimeMs: averageWatchWeight > 0 ? averageWatchTotal / averageWatchWeight : null,
+    subscribers: hasSubscribers ? subscribers : null,
+    views,
+  };
+}
+
+function optionalMetric(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function weightedAverage(samples: Array<{ value: number; weight: number }>): number | null {
+  if (!samples.length) return null;
+  const weight = samples.reduce((sum, sample) => sum + sample.weight, 0);
+  return weight > 0 ? samples.reduce((sum, sample) => sum + sample.value * sample.weight, 0) / weight : null;
 }
 
 function parseJson(value: string | null): Record<string, unknown> {

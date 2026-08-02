@@ -227,6 +227,9 @@ export function renderDashboard(
         const previousStart =
           periodDays === 1 ? shiftDays(yesterdayEnd, -29) : rollingPeriodDates(weekOffset + 1, periodDays, config.TIMEZONE)[0];
         const videoEnabled = config.studio.modules.video_posting;
+        const medianOffsetDays = weekOffset * periodDays + periodDays;
+        const medianPeriodOffset = medianOffsetDays / 30;
+        const [medianStart, medianEnd] = rollingPeriodDates(medianPeriodOffset, 30, config.TIMEZONE);
         return renderCombinedSection({
           data: service.pipeline(weekOffset, periodDays, 0, undefined, { includeSamples: periodDays === 1 }),
           previousData: comparisonPipeline,
@@ -242,6 +245,11 @@ export function renderDashboard(
             videoEnabled && periodDays === 1
               ? videoOverview(backendDb, dayBounds(yesterdayStart), dayBounds(yesterdayEnd, true), config.TIMEZONE)
               : null,
+          medianData: service.pipeline(0, 30, 0, medianOffsetDays, { includeSamples: false, includeContent: false }),
+          medianXItems: xActivityDashboard(backendDb, medianPeriodOffset, 30, config.TIMEZONE),
+          medianVideo: videoEnabled
+            ? videoOverview(backendDb, dayBounds(medianStart), dayBounds(medianEnd, true), config.TIMEZONE)
+            : emptyVideoOverview(),
           followers: audiencePlatformFollowers(backendDb),
           rangeStart: start,
           rangeEnd: end,

@@ -4,6 +4,7 @@ import { zonedDateParts, zonedSlot } from "../../../foundation/time.js";
 import { ORDERED_TARGETS, PLATFORM_ICONS, platformKey, VIDEO_PLATFORM_ICON_KEYS } from "./assets.js";
 import { currentPostViewEvents, postViewEvents, renderUnifiedDailyChart, renderUnifiedRangeChart } from "./chart.js";
 import { formatMetricValue, getMskDateString } from "./format.js";
+import { renderHeroSection, type TextHeroMetrics, type VideoHeroMetrics } from "./hero-section.js";
 import { escapeHtml } from "./html.js";
 import { getTargetMetric, postMetricTotals } from "./metrics.js";
 import { renderPublicationColumns } from "./table.js";
@@ -37,6 +38,11 @@ export type CombinedSectionInput = {
   video: VideoOverview;
   previousVideo: VideoOverview;
   dayComparisonVideo?: VideoOverview | null;
+  /** Thirty-day history immediately before the selected period, used by the
+   * hero cards as a comparable median baseline. */
+  medianData?: PipelineData | null;
+  medianXItems?: XActivityDashboardItem[];
+  medianVideo?: VideoOverview | null;
   followers: TextPlatformFollowers[];
   rangeStart: Date;
   rangeEnd: Date;
@@ -62,7 +68,6 @@ export function renderCombinedSection(input: CombinedSectionInput): string {
   const showVideo = mode !== "text";
 
   const text = combinedTotals(posts, extraX);
-  const video = { views: input.video.totals.views, reactions: input.video.totals.reactions, replies: input.video.totals.replies };
   const previousText =
     periodDays === 1 ? medianDailyTextTotals(previousPosts, previousExtraX, 30, timeZone) : combinedTotals(previousPosts, previousExtraX);
   const previousVideoTotals =
@@ -73,13 +78,11 @@ export function renderCombinedSection(input: CombinedSectionInput): string {
           reactions: input.previousVideo.totals.reactions,
           replies: input.previousVideo.totals.replies,
         };
-  const halves = [
-    ...(showText ? [{ totals: text, previous: previousText }] : []),
-    ...(showVideo ? [{ totals: video, previous: previousVideoTotals }] : []),
-  ];
+  const textHero = textHeroMetrics(input, posts, extraX, previousPosts, previousExtraX, periodDays, timeZone, text, previousText);
+  const videoHero = videoHeroMetrics(input, periodDays, previousVideoTotals);
 
   return `<section class="pipeline-overview">
-    ${renderKpiTable(halves)}
+    ${renderHeroSection({ text: textHero, video: videoHero, showText, showVideo })}
     <div class="insights-row">
       ${renderPlatformPanel(input, posts, showText, showVideo)}
       <div class="chart-panel">
@@ -126,44 +129,136 @@ export function renderModeFilter(
     .join("")}</div>`;
 }
 
-type Half = { totals: Totals; previous: Totals };
+function textHeroMetrics(
+  input: CombinedSectionInput,
+  posts: PipelinePost[],
+  extraX: XActivityDashboardItem[],
+  previousPosts: PipelinePost[],
+  previousExtraX: XActivityDashboardItem[],
+  periodDays: number,
+  timeZone: string,
+  current: Totals,
+  fallbackMedian: Totals,
+): TextHeroMetrics {
+  const currentDetails = textDetails(posts, extraX);
+  const hasMedianData = Boolean(input.medianData && ((input.medianData.posts?.length ?? 0) > 0 || input.medianXItems?.length));
+  const medianSource = hasMedianData ? (input.medianData?.posts ?? []) : previousPosts;
+  const medianExtraX = hasMedianData ? (input.medianXItems ?? []) : previousExtraX;
+  const medianDetails =
+    hasMedianData && periodDays > 1
+      ? scaleTextDetails(medianDailyTextDetails(medianSource, medianExtraX, 30, timeZone), periodDays)
+      : periodDays === 1
+        ? medianDailyTextDetails(medianSource, medianExtraX, 30, timeZone)
+        : textDetails(previousPosts, previousExtraX);
+  const median = hasMedianData || periodDays === 1 ? medianDetails : fallbackMedian;
+  const views = current.views;
+  return {
+    postCount: posts.length,
+    views,
+    medianViews: median.views,
+    reactions: currentDetails.reactions,
+    replies: currentDetails.replies,
+    reposts: currentDetails.reposts,
+    engagementRate: views > 0 ? (currentDetails.reactions / views) * 100 : null,
+  };
+}
 
-/**
- * The three headline metrics as a small table: one row per metric, one column
- * per half, growth beside each figure.
- *
- * The two feeds are already selected in the global mode control, so this band
- * only needs the metric labels and the figures. The columns line up so text
- * and video can be read against each other down the page, and the delta gets
- * its own slot instead of hanging off the figure. The numbers stay display-
- * sized: this is still the headline, not a report.
- *
- * The metric name occupies the first of three tracks, so the column rule falls
- * at the same third as the panel and publication splits below it.
- */
-function renderKpiTable(halves: Half[]): string {
-  const metrics: Array<[keyof Totals, string]> = [
-    ["views", "Просмотры"],
-    ["reactions", "Реакции"],
-    ["replies", "Ответы"],
-  ];
-  const rows = metrics
-    .map(([metric, label]) => {
-      const cells = halves
-        .map((half) => {
-          const value = half.totals[metric];
-          const previous = half.previous[metric];
-          const percent = previous > 0 ? Math.round(((value - previous) / previous) * 100) : value > 0 ? 100 : 0;
-          const direction = percent >= 0 ? "up" : "down";
-          return `<span class="kpi-cell"><strong>${formatMetricValue(value)}</strong><small class="kpi-delta kpi-delta--${direction}">${percent >= 0 ? "↑" : "↓"} ${Math.abs(percent)}%</small></span>`;
-        })
-        .join("");
-      return `<div class="kpi-table__row"><span class="kpi-table__metric">${escapeHtml(label)}</span>${cells}</div>`;
-    })
-    .join("");
-  return `<div class="kpi-table${halves.length === 1 ? " kpi-table--single" : ""}">
-    ${rows}
-  </div>`;
+function videoHeroMetrics(input: CombinedSectionInput, periodDays: number, fallbackMedian: Totals): VideoHeroMetrics {
+  const median = hasVideoHistory(input.medianVideo)
+    ? medianVideoViews(input.medianVideo, periodDays)
+    : hasVideoHistory(input.previousVideo) && periodDays === 1
+      ? medianDailyVideoTotals(input.previousVideo, 30)
+      : hasVideoHistory(input.previousVideo)
+        ? fallbackMedian
+        : null;
+  return {
+    videoCount: input.video.totals.posts,
+    views: input.video.totals.views,
+    medianViews: median?.views ?? null,
+    completionRate: input.video.summary.completionRate,
+    averageWatchTimeMs: input.video.summary.averageWatchTimeMs,
+    subscribers: input.video.summary.subscribers,
+  };
+}
+
+function hasVideoHistory(video: VideoOverview | null | undefined): video is VideoOverview {
+  return Boolean(video && (video.items.length > 0 || Object.keys(video.dailyByDay).length > 0));
+}
+
+type TextDetails = { views: number; reactions: number; replies: number; reposts: number };
+
+function textDetails(posts: PipelinePost[], extraX: XActivityDashboardItem[]): TextDetails {
+  const details = posts.reduce(
+    (totals, post) => {
+      const metrics = postMetricTotals(
+        post,
+        ORDERED_TARGETS.map((target) => target.id),
+      );
+      totals.views += metrics.views;
+      totals.reactions += metrics.likes + metrics.reposts;
+      totals.replies += metrics.replies;
+      totals.reposts += metrics.reposts;
+      return totals;
+    },
+    { views: 0, reactions: 0, replies: 0, reposts: 0 },
+  );
+  for (const item of extraX) {
+    details.views += metric(item, "views");
+    details.reactions += metric(item, "interactions");
+    details.replies += metric(item, "replies");
+    details.reposts += metric(item, "reposts");
+  }
+  return details;
+}
+
+function medianDailyTextDetails(posts: PipelinePost[], extraX: XActivityDashboardItem[], days: number, timeZone: string): TextDetails {
+  const daily = new Map<string, TextDetails>();
+  const add = (key: string | null, values: TextDetails) => {
+    if (!key) return;
+    const bucket = daily.get(key) ?? { views: 0, reactions: 0, replies: 0, reposts: 0 };
+    bucket.views += values.views;
+    bucket.reactions += values.reactions;
+    bucket.replies += values.replies;
+    bucket.reposts += values.reposts;
+    daily.set(key, bucket);
+  };
+  for (const post of posts) add(calendarKey(post.date, timeZone), textDetails([post], []));
+  for (const item of extraX) add(calendarKey(item.publishedAt, timeZone), textDetails([], [item]));
+  return medianDetails([...daily.values()], days);
+}
+
+function medianVideoViews(video: VideoOverview, periodDays: number): Totals {
+  const daily = Object.values(video.dailyByDay).map((values) => ({
+    views: values.views,
+    reactions: values.reactions,
+    replies: values.replies,
+  }));
+  const median = medianOfDays(daily, 30);
+  return periodDays === 1 ? median : scaleTotals(median, periodDays);
+}
+
+function medianDetails(values: TextDetails[], days: number): TextDetails {
+  const padded = [...values];
+  while (padded.length < days) padded.push({ views: 0, reactions: 0, replies: 0, reposts: 0 });
+  return {
+    views: median(padded.map((value) => value.views)),
+    reactions: median(padded.map((value) => value.reactions)),
+    replies: median(padded.map((value) => value.replies)),
+    reposts: median(padded.map((value) => value.reposts)),
+  };
+}
+
+function scaleTextDetails(value: TextDetails, factor: number): TextDetails {
+  return {
+    views: value.views * factor,
+    reactions: value.reactions * factor,
+    replies: value.replies * factor,
+    reposts: value.reposts * factor,
+  };
+}
+
+function scaleTotals(value: Totals, factor: number): Totals {
+  return { views: value.views * factor, reactions: value.reactions * factor, replies: value.replies * factor };
 }
 
 /**

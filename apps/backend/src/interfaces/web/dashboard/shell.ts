@@ -169,20 +169,28 @@ export function renderDashboardShell(body: string): string {
     .dashboard-tabs .mode-btn:hover { color:var(--text-main); }
     .mode-btn--active { background:var(--accent-glow); color:var(--accent-soft-text); }
 
-    /* Metrics down the rows, halves across the columns. Never a sum: a Shorts
-       view and a Threads view are different units, so each column keeps its own
-       figure and its own comparison. The first track holds the metric name,
-       which puts the column rule on the same third as every row below. */
-    .kpi-table { margin:0 0 18px; border-bottom:1px solid var(--border-soft); }
-    .kpi-table__row { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); align-items:baseline; }
-    .kpi-table--single .kpi-table__row { grid-template-columns:minmax(0,1fr) minmax(0,2fr); }
-    .kpi-table__row + .kpi-table__row { border-top:1px solid var(--border-soft); }
-    .kpi-table__row > * + * { padding-left:26px; border-left:1px solid var(--border-soft); }
-    .kpi-table__metric { padding:14px 0; color:var(--text-main); font-size:16px; font-weight:600; }
-    .kpi-cell { display:flex; align-items:baseline; gap:14px; padding:9px 0 12px; }
-    .kpi-cell strong { color:var(--text-header); font-size:38px; line-height:1.05; font-weight:500; letter-spacing:-.05em; }
-    .kpi-table--single .kpi-cell strong { font-size:46px; }
-    .kpi-cell .kpi-delta { margin:0; font-size:14px; }
+    /* The landing hero separates content types before the rest of the overview
+       explains platforms and publications. The cards are deliberately equal in
+       width: neither a text post nor a video is the implicit default. */
+    .hero-metrics { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; margin:0 0 18px; }
+    .hero-card { min-width:0; padding:14px 16px 12px; border:1px solid var(--border-soft); border-radius:8px; background:var(--surface); }
+    .hero-card__heading { display:flex; align-items:center; gap:8px; color:var(--text-secondary); font-size:14px; }
+    .hero-card__heading i { width:10px; height:10px; border-radius:50%; flex:0 0 auto; }
+    .hero-card__heading strong { color:var(--text-main); font-size:16px; letter-spacing:.04em; }
+    .hero-card__heading span { color:var(--text-secondary); }
+    .hero-card__primary { display:grid; grid-template-columns:minmax(0,1fr) minmax(94px,.5fr) auto; align-items:end; gap:18px; padding:17px 0 11px; border-bottom:1px solid var(--border-soft); }
+    .hero-card__views span,.hero-card__median span,.hero-card__metric span { display:block; color:var(--text-secondary); font-size:13px; }
+    .hero-card__views strong { display:block; margin-top:2px; color:var(--text-header); font-size:42px; line-height:1; font-weight:500; letter-spacing:-.055em; }
+    .hero-card__median { align-self:center; }
+    .hero-card__median strong { display:block; margin-top:7px; color:var(--text-main); font-size:22px; line-height:1; font-weight:500; }
+    .hero-card__delta { align-self:center; color:var(--text-muted); font-size:14px; font-weight:650; white-space:nowrap; }
+    .hero-card__delta--up { color:var(--accent); }
+    .hero-card__delta--down { color:var(--danger-strong); }
+    .hero-card__secondary { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); }
+    .hero-card--video .hero-card__secondary { grid-template-columns:repeat(3,minmax(0,1fr)); }
+    .hero-card__metric { min-width:0; padding:10px 12px 0 0; }
+    .hero-card__metric + .hero-card__metric { padding-left:12px; border-left:1px solid var(--border-soft); }
+    .hero-card__metric strong { display:block; margin-top:5px; color:var(--text-header); font-size:23px; line-height:1; font-weight:550; white-space:nowrap; }
 
     .platform-panel__head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
     .platform-panel__head .section-kicker { min-width:0; }
@@ -314,14 +322,9 @@ export function renderDashboardShell(body: string): string {
       .metric-toggle--vertical { flex-direction:row; justify-content:flex-start; }
       .pagination-bar { align-items:stretch; flex-wrap:wrap; justify-content:center; }
       .pag-current { flex:1 1 100%; text-align:center; }
-      /* The metric name column costs a third of a phone screen, so the table
-         folds: the name becomes a caption over the two figures. */
-      .kpi-table__row { grid-template-columns:repeat(2,minmax(0,1fr)); }
-      .kpi-table--single .kpi-table__row { grid-template-columns:minmax(0,1fr); }
-      .kpi-table__metric { grid-column:1 / -1; padding:12px 0 0; font-size:14px; }
-      .kpi-table__row > * + * { padding-left:14px; }
-      .kpi-table__metric + * { padding-left:0; border-left:0; }
-      .kpi-cell strong { font-size:32px; }
+      .hero-metrics { grid-template-columns:1fr; }
+      .hero-card__primary { grid-template-columns:minmax(0,1fr) minmax(86px,.6fr) auto; gap:12px; }
+      .hero-card__views strong { font-size:36px; }
       .platform-columns { grid-template-columns:1fr; gap:14px; }
       .platform-panel__head { align-items:flex-start; flex-wrap:wrap; }
       .metric-chart__head { flex-direction:column; }
