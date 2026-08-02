@@ -37,6 +37,67 @@ const VIEW_TITLES: Record<Exclude<AudienceView, "x">, string> = {
   telegram: "Динамика Telegram",
 };
 
+const DASHBOARD_CACHE_TTL_MS = 3_000;
+const MAX_DASHBOARD_CACHE_ENTRIES = 4;
+type DashboardCacheEntry = { expiresAt: number; html: string };
+const dashboardCaches = new WeakMap<BackendDb, Map<string, DashboardCacheEntry>>();
+
+function dashboardCacheFor(backendDb: BackendDb): Map<string, DashboardCacheEntry> {
+  const existing = dashboardCaches.get(backendDb);
+  if (existing) return existing;
+  const created = new Map<string, DashboardCacheEntry>();
+  dashboardCaches.set(backendDb, created);
+  return created;
+}
+
+function dashboardCacheKey(
+  config: BackendConfig,
+  weekOffset: number,
+  ref: string,
+  messageId: string,
+  requestedTab: string | undefined,
+  requestedLocale: string | undefined,
+  requestedPanel: string | undefined,
+  requestedPeriod: string | undefined,
+  requestedView: string | undefined,
+  requestedMode: string | undefined,
+  requestedMetric: string | undefined,
+): string {
+  return JSON.stringify({
+    timezone: config.TIMEZONE,
+    textPosting: config.studio.modules.text_posting,
+    videoPosting: config.studio.modules.video_posting,
+    studioActorId: config.MCP_STUDIO_ACTOR_ID ?? null,
+    request: [
+      weekOffset,
+      ref,
+      messageId,
+      requestedTab ?? null,
+      requestedLocale ?? null,
+      requestedPanel ?? null,
+      requestedPeriod ?? null,
+      requestedView ?? null,
+      requestedMode ?? null,
+      requestedMetric ?? null,
+    ],
+  });
+}
+
+function rememberDashboard(cache: Map<string, DashboardCacheEntry>, key: string, html: string, now: number): void {
+  cache.delete(key);
+  cache.set(key, { expiresAt: now + DASHBOARD_CACHE_TTL_MS, html });
+  while (cache.size > MAX_DASHBOARD_CACHE_ENTRIES) {
+    const oldest = cache.keys().next().value;
+    if (typeof oldest !== "string") break;
+    cache.delete(oldest);
+  }
+}
+
+/** Clears the short-lived HTML cache after an authenticated dashboard mutation. */
+export function invalidateDashboardRenderCache(backendDb: BackendDb): void {
+  dashboardCaches.delete(backendDb);
+}
+
 export function renderDashboard(
   config: BackendConfig,
   backendDb: BackendDb,
@@ -51,6 +112,30 @@ export function renderDashboard(
   requestedMode?: string,
   requestedMetric?: string,
 ): string {
+  const cache = dashboardCacheFor(backendDb);
+  const cacheKey = dashboardCacheKey(
+    config,
+    weekOffset,
+    ref,
+    messageId,
+    requestedTab,
+    requestedLocale,
+    requestedPanel,
+    requestedPeriod,
+    requestedView,
+    requestedMode,
+    requestedMetric,
+  );
+  const now = Date.now();
+  const cached = cache.get(cacheKey);
+  if (cached) {
+    if (cached.expiresAt > now) {
+      cache.delete(cacheKey);
+      cache.set(cacheKey, cached);
+      return cached.html;
+    }
+    cache.delete(cacheKey);
+  }
   const service = operationsService(backendDb, config);
   const ops = service.dashboard();
   const studioActorId = config.MCP_STUDIO_ACTOR_ID;
@@ -234,7 +319,9 @@ export function renderDashboard(
   const body = `
     <nav class="dashboard-tabs"><span class="dashboard-tabs__start">${overviewTab}${menu}</span><span class="dashboard-tabs__center">${modeFilter}</span><span class="dashboard-tabs__end">${overviewControls}${DASHBOARD_THEME_TOGGLE_HTML}</span></nav>
     <section id="overview" class="overview">${content}</section>`;
-  return renderDashboardShell(body);
+  const html = renderDashboardShell(body);
+  rememberDashboard(cache, cacheKey, html, now);
+  return html;
 }
 
 /** Health is the one hidden tab whose state the operator must see without

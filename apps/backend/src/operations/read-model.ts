@@ -22,9 +22,9 @@ import { formatZonedSortable, zonedRollingPeriodBounds } from "../foundation/tim
 import { jsonArray } from "../json.js";
 
 export type PipelineReadModelOptions = {
-  /** The daily chart is the only dashboard consumer that needs immutable samples. */
+  /** Dashboard charts are the only consumers that need immutable samples. */
   includeSamples?: boolean;
-  /** Hard cap per (post, target, metric) series. */
+  /** Hard cap per (post, target, metric) series after time bucketing. */
   sampleLimitPerSeries?: number;
 };
 
@@ -50,6 +50,7 @@ type PipelineSampleRow = {
   metricName: string;
   value: number | null;
   sampledAt: string;
+  bucket: number;
 };
 
 const MAX_SAMPLE_LIMIT_PER_SERIES = 200;
@@ -245,7 +246,9 @@ function pipelinePosts(
         .orderBy(asc(postMetrics.target), asc(postMetrics.metricName))
         .all()
     : [];
-  const sampleRows = options.includeSamples ? fetchMetricSamples(backendDb, postKeys, start, end, options.sampleLimitPerSeries) : [];
+  const sampleRows = options.includeSamples
+    ? fetchMetricSamples(backendDb, postKeys, start, end, periodDays, options.sampleLimitPerSeries)
+    : [];
   return formatPipelinePosts(config, rows, targetRows, metricRows, sampleRows);
 }
 
@@ -423,26 +426,49 @@ function fetchMetricSamples(
   postKeys: string[],
   start: string,
   end: string,
+  periodDays: number,
   limitPerSeries: number,
 ): PipelineSampleRow[] {
   if (postKeys.length === 0) return [];
   const placeholders = postKeys.map(() => "?").join(",");
-  return backendDb.sqlite
+  const bucketSeconds = periodDays <= 7 ? 60 * 60 : 24 * 60 * 60;
+  const rows = backendDb.sqlite
     .prepare(
-      `SELECT id, post_key AS postKey, target, metric_name AS metricName, value, sampled_at AS sampledAt
-         FROM (
-           SELECT id, post_key, target, metric_name, value, sampled_at,
-                  ROW_NUMBER() OVER (
-                    PARTITION BY post_key, target, metric_name
-                    ORDER BY sampled_at ASC, id ASC
-                  ) AS sampleRank
-             FROM metric_samples
-            WHERE post_key IN (${placeholders}) AND sampled_at >= ? AND sampled_at <= ?
-         )
-        WHERE sampleRank <= ?
-        ORDER BY sampledAt ASC, id ASC`,
+      `WITH bucketed AS (
+         SELECT id, post_key, target, metric_name, value, sampled_at,
+                CAST((unixepoch(sampled_at) - unixepoch(?)) / ? AS INTEGER) AS bucket
+           FROM metric_samples
+          WHERE post_key IN (${placeholders}) AND sampled_at >= ? AND sampled_at <= ?
+       ),
+       bucketedRanks AS (
+         SELECT id, post_key, target, metric_name, value, sampled_at, bucket,
+                ROW_NUMBER() OVER (
+                  PARTITION BY post_key, target, metric_name, bucket
+                  ORDER BY sampled_at DESC, id DESC
+                ) AS bucketRank
+           FROM bucketed
+       ),
+       latestBuckets AS (
+         SELECT id, post_key, target, metric_name, value, sampled_at, bucket
+           FROM bucketedRanks
+          WHERE bucketRank = 1
+       ),
+       seriesRanks AS (
+         SELECT id, post_key, target, metric_name, value, sampled_at, bucket,
+                ROW_NUMBER() OVER (
+                  PARTITION BY post_key, target, metric_name
+                  ORDER BY bucket ASC
+                ) AS seriesRank
+           FROM latestBuckets
+       )
+       SELECT id, post_key AS postKey, target, metric_name AS metricName, value, sampled_at AS sampledAt, bucket
+         FROM seriesRanks
+        WHERE seriesRank <= ?
+        ORDER BY postKey ASC, target ASC, metricName ASC, bucket ASC`,
     )
-    .all(...postKeys, start, end, limitPerSeries) as PipelineSampleRow[];
+    .all(start, bucketSeconds, ...postKeys, start, end, limitPerSeries) as PipelineSampleRow[];
+  const startMs = Math.floor(Date.parse(start) / 1_000) * 1_000;
+  return rows.map((row) => ({ ...row, sampledAt: new Date(startMs + row.bucket * bucketSeconds * 1000).toISOString() }));
 }
 
 /** Stable revision for the pipeline read model. It must not be request time. */

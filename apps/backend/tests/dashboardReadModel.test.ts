@@ -5,11 +5,13 @@ import { zonedRollingPeriodBounds } from "../src/foundation/time.js";
 import { pipelineStatusPayload } from "../src/operations/read-model.js";
 
 describe("dashboard read model bounds", () => {
-  it("filters samples by period, caps each series, and omits provider raw payloads", () => {
+  it("filters samples, aggregates them into time buckets, and omits provider raw payloads", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const [periodStart] = zonedRollingPeriodBounds(0, 1, "Europe/Moscow");
       const periodStartMs = Date.parse(periodStart);
+      const [periodStart30] = zonedRollingPeriodBounds(0, 30, "Europe/Moscow");
+      const periodStart30Ms = Date.parse(periodStart30);
       const postAt = new Date(periodStartMs + 1_000).toISOString();
       const raw = JSON.stringify({ provider: "fixture", response: "x".repeat(2_000) });
 
@@ -39,8 +41,11 @@ describe("dashboard read model bounds", () => {
         "INSERT INTO metric_samples(post_key,target,metric_name,value,sampled_at,source,raw_json) VALUES ('post:1','telegram','views',?,?,?,?)",
       );
       sampleInsert.run(999, new Date(periodStartMs - 1_000).toISOString(), "fixture", raw);
-      for (let index = 0; index < 250; index += 1) {
-        sampleInsert.run(index, new Date(periodStartMs + (index + 2) * 1_000).toISOString(), "fixture", raw);
+      for (let index = 0; index < 30 * 24; index += 1) {
+        sampleInsert.run(index, new Date(periodStart30Ms + index * 60 * 60 * 1_000 + 2_000).toISOString(), "fixture", raw);
+      }
+      for (let index = 0; index < 24 * 12; index += 1) {
+        sampleInsert.run(1_000 + index, new Date(periodStartMs + index * 5 * 60 * 1_000 + 2_000).toISOString(), "fixture", raw);
       }
 
       type TestPost = {
@@ -56,11 +61,20 @@ describe("dashboard read model bounds", () => {
       const metric = post.metrics.telegram.views;
       const target = post.targets.telegram;
 
-      expect(metric.samples).toHaveLength(200);
-      expect(metric.samples[0]).toEqual({ value: 0, sampled_at: new Date(periodStartMs + 2_000).toISOString() });
+      expect(metric.samples).toHaveLength(24);
+      expect(metric.samples[0]).toEqual({ value: 1_011, sampled_at: new Date(Math.floor(periodStartMs / 1_000) * 1_000).toISOString() });
       expect(metric.samples.some((sample: { value: number }) => sample.value === 999)).toBe(false);
       expect(metric).not.toHaveProperty("raw");
       expect(target).not.toHaveProperty("raw");
+
+      const longPeriod = pipelineStatusPayload(loadConfig({ PIPELINE_DB: ":memory:" }), backendDb, 0, 30, 0, undefined, {
+        includeSamples: true,
+        sampleLimitPerSeries: 200,
+      }) as unknown as { posts: TestPost[] };
+      expect(longPeriod.posts[0]?.metrics.telegram.views.samples).toHaveLength(30);
+      expect(longPeriod.posts[0]?.metrics.telegram.views.samples[0]?.sampled_at).toBe(
+        new Date(Math.floor(periodStart30Ms / 1_000) * 1_000).toISOString(),
+      );
     } finally {
       backendDb.close();
     }
