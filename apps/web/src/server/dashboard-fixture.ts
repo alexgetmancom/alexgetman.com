@@ -14,7 +14,8 @@ import {
   xActivityItems,
   xActivityMetricSnapshots,
 } from "../../../backend/src/db/schema.js";
-import { fixtureDayStart, fullFixtureDayCounts, PARITY_HISTORY_DAYS } from "./site-fixture.js";
+import { daysAgo, fixtureDayWindow, fixtureSampleAt, fixtureSampleSlots, HOUR_MS, hoursAgo, iso } from "./fixture-utils.js";
+import { fullFixtureDayCounts, PARITY_HISTORY_DAYS } from "./site-fixture.js";
 
 /**
  * Adds the operational layer on top of a database already seeded by
@@ -50,13 +51,6 @@ const DAYS_OF_HISTORY = 14;
 /** Two-hourly samples: enough to draw a readable curve, few enough to seed fast. */
 const HOURS_PER_SAMPLE = 2;
 const SAMPLES_PER_DAY = 24 / HOURS_PER_SAMPLE;
-const HOUR_MS = 3_600_000;
-
-const iso = (date: Date): string => date.toISOString();
-
-const hoursAgo = (hours: number): Date => new Date(Date.now() - hours * 3_600_000);
-
-const daysAgo = (days: number): Date => hoursAgo(days * 24);
 
 /**
  * Clips for the video half of the unified overview. Deliberately lopsided
@@ -152,17 +146,6 @@ function fullMetricValue(base: number, index: number, target: string, metricName
   return Math.max(0, Math.round(base * fullPostReachMultiplier(index) * fullTargetReachMultiplier(target, index) * metricFactor));
 }
 
-function fixtureSampleSlots(publishedAt: string, now: Date, historyDays: number): number {
-  const ageHours = Math.max(HOURS_PER_SAMPLE, (now.getTime() - new Date(publishedAt).getTime()) / HOUR_MS);
-  return Math.max(1, Math.min(historyDays * SAMPLES_PER_DAY, Math.ceil(ageHours / HOURS_PER_SAMPLE)));
-}
-
-function fixtureSampleAt(publishedAt: string, now: Date, slot: number): string {
-  const publishedTime = new Date(publishedAt).getTime();
-  const candidate = now.getTime() - slot * HOURS_PER_SAMPLE * HOUR_MS;
-  return new Date(Math.max(publishedTime, candidate)).toISOString();
-}
-
 const FULL_VIDEO_TOPICS = [
   ["Новая модель за минуту", "The new model in one minute"],
   ["Почему этот апдейт важен", "Why this update matters"],
@@ -182,9 +165,7 @@ function fullVideoPlans(options: FullDashboardFixtureOptions, now: Date): VideoF
   let serial = 1;
 
   counts.forEach((count, day) => {
-    const start = fixtureDayStart(day);
-    const end =
-      day === 0 ? new Date(Math.max(start.getTime() + 60_000, now.getTime() - 60_000)) : new Date(start.getTime() + 86_400_000 - 60_000);
+    const [start, end] = fixtureDayWindow(day, now);
     const available = Math.max(60_000, end.getTime() - start.getTime());
     for (let index = 0; index < count; index += 1) {
       const publishedAt = new Date(Math.min(end.getTime(), start.getTime() + Math.round((available * (index + 1)) / (count + 1))));
@@ -272,7 +253,9 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
           // today against yesterday by time of day; with a single timestamp per
           // day every point lands on one x and the line renders as a vertical
           // spike instead of a curve.
-          const slots = options.full ? fixtureSampleSlots(publishedAt, now, options.full.days) : DAYS_OF_HISTORY * SAMPLES_PER_DAY;
+          const slots = options.full
+            ? fixtureSampleSlots(publishedAt, now, options.full.days, HOURS_PER_SAMPLE)
+            : DAYS_OF_HISTORY * SAMPLES_PER_DAY;
           for (let slot = slots; slot >= 0; slot -= 1) {
             const progress = (slots - slot) / slots;
             backendDb.db
@@ -282,7 +265,9 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
                 target: plan.target,
                 metricName,
                 value: Math.round(value * progress),
-                sampledAt: options.full ? fixtureSampleAt(publishedAt, now, slot) : iso(hoursAgo(slot * HOURS_PER_SAMPLE)),
+                sampledAt: options.full
+                  ? fixtureSampleAt(publishedAt, now, slot, HOURS_PER_SAMPLE)
+                  : iso(hoursAgo(slot * HOURS_PER_SAMPLE, now)),
                 source: "fixture",
               })
               .run();
@@ -434,7 +419,7 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
         // Same two-hourly cadence as the text samples, so both lines on the
         // overview chart are drawn from observations on the same clock.
         const slots = options.full
-          ? fixtureSampleSlots(publishedAt, now, options.full.days)
+          ? fixtureSampleSlots(publishedAt, now, options.full.days, HOURS_PER_SAMPLE)
           : Math.max(1, Math.round((Date.now() - new Date(publishedAt).getTime()) / HOUR_MS / HOURS_PER_SAMPLE));
         for (let slot = slots; slot >= 0; slot -= 1) {
           const progress = (slots - slot) / slots;
@@ -448,7 +433,9 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
                 likes: Math.round(target.likes * progress),
                 comments: Math.round(target.comments * progress),
               },
-              sampledAt: options.full ? fixtureSampleAt(publishedAt, now, slot) : iso(hoursAgo(slot * HOURS_PER_SAMPLE)),
+              sampledAt: options.full
+                ? fixtureSampleAt(publishedAt, now, slot, HOURS_PER_SAMPLE)
+                : iso(hoursAgo(slot * HOURS_PER_SAMPLE, now)),
             })
             .run();
           sampleRows += 1;

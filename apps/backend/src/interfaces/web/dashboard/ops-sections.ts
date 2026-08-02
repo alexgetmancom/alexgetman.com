@@ -1,4 +1,5 @@
 import { metricNumber } from "../../../analytics/snapshots/creator-store.js";
+import { AUDIENCE_VIEWS, targetDefinition } from "../../../botTargets.js";
 import { hasChannelRegistry, listChannels } from "../../../channels/registry.js";
 import type { BackendDb } from "../../../db/client.js";
 import { creatorProfiles } from "../../../db/schema.js";
@@ -7,17 +8,16 @@ import { shortPipelineText } from "./format.js";
 import { escapeHtml } from "./html.js";
 import type { OpsPayload } from "./types.js";
 
-type AudiencePlatform = { key: string; label: string; metricTargets: string[] };
+type AudiencePlatform = { key: string; label: string; metricTarget: string };
 
 /** The catalogue is a presentation projection over platform profiles and the
  * generic metric ledger. A missing value stays visible as —: it must never
  * erase a connected publishing target from the operator's view. */
-const AUDIENCE_PLATFORMS: AudiencePlatform[] = [
-  { key: "threads_ru", label: "Threads RU", metricTargets: ["threads_ru"] },
-  { key: "threads_en", label: "Threads EN", metricTargets: ["threads_en"] },
-  { key: "telegram", label: "Telegram", metricTargets: ["telegram"] },
-  { key: "x", label: "X", metricTargets: ["x"] },
-];
+const AUDIENCE_PLATFORMS: AudiencePlatform[] = AUDIENCE_VIEWS.map((key) => ({
+  key,
+  label: key === "x" ? "X" : (targetDefinition(key)?.label ?? key),
+  metricTarget: key,
+}));
 
 /** The follower counts alone, for callers that lay the platforms out
  * themselves — the unified overview pairs them with this period's reach. */
@@ -44,7 +44,7 @@ function activeAudiencePlatforms(backendDb: BackendDb): AudiencePlatform[] {
       .map((channel) => channel.targetId)
       .filter(Boolean),
   );
-  return AUDIENCE_PLATFORMS.filter((platform) => platform.metricTargets.some((target) => registeredTargets.has(target)));
+  return AUDIENCE_PLATFORMS.filter((platform) => registeredTargets.has(platform.metricTarget));
 }
 
 const REPAIR_ACTIONS: [value: string, label: string][] = [

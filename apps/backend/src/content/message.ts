@@ -12,8 +12,17 @@ export function parseArrayValue(value: unknown): Record<string, unknown>[] {
   return jsonRecordArray(value);
 }
 
-export function firstLine(text: string): string {
-  return text.split(/\r?\n/, 1)[0]?.trim() || "Alex Getman update";
+export function firstLine(text: string | null | undefined, fallback = "Alex Getman update"): string {
+  return text?.split(/\r?\n/, 1)[0]?.trim() || fallback;
+}
+
+export function firstNonEmptyLine(text: string | null | undefined, fallback = ""): string {
+  return (
+    text
+      ?.split(/\r?\n/)
+      .find((line) => line.trim())
+      ?.trim() || fallback
+  );
 }
 
 /** Mobile keyboards occasionally autocorrect "/" to "\" inside a pasted URL.

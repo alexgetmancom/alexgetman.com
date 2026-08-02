@@ -1,3 +1,4 @@
+import { isStoryTarget, TARGET_GROUPS, targetInGroup } from "../../botTargets.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { instagramConfigForLocale } from "../../foundation/external/instagram.js";
 import { log } from "../../foundation/logger.js";
@@ -47,33 +48,34 @@ export function createPlatformPorts(config: BackendConfig, fetchImpl: typeof fet
   const instagramRuConfig = platformConfig("instagram_stories_ru", config);
   const targetConfigs: Record<string, BackendConfig> = {
     telegram: config,
-    threads: config,
-    threads_ru: config,
-    threads_en: threadsEnConfig,
-    x: config,
-    twitter: config,
-    instagram_story: config,
-    instagram_stories: instagramEnConfig,
-    instagram_stories_ru: instagramRuConfig,
-    telegram_story: config,
-    telegram_stories: config,
+    ...Object.fromEntries(TARGET_GROUPS.threads.map((target) => [target, target === "threads_en" ? threadsEnConfig : config])),
+    ...Object.fromEntries(TARGET_GROUPS.x.map((target) => [target, config])),
+    ...Object.fromEntries(
+      TARGET_GROUPS.instagramStory.map((target) => [
+        target,
+        target === "instagram_stories" ? instagramEnConfig : target === "instagram_stories_ru" ? instagramRuConfig : config,
+      ]),
+    ),
+    ...Object.fromEntries(TARGET_GROUPS.telegramStory.map((target) => [target, config])),
   };
   const publishers: Record<string, DeliveryPort> = {
     // Every target that can use media goes through the same preparation step.
     telegram: (job) => publishToTelegram(job.payload, config, fetchImpl),
-    threads: (job) => publishToThreads(job.payload, config, fetchImpl),
-    threads_ru: (job) => publishToThreads(job.payload, config, fetchImpl),
-    threads_en: (job) => publishToThreads(job.payload, threadsEnConfig, fetchImpl, "threads_en"),
-    x: (job) => publishToX(job.payload, config, fetchImpl),
-    twitter: (job) => publishToX(job.payload, config, fetchImpl),
-    instagram_story: (job) => publishInstagramStory(job.payload, config, fetchImpl),
-    instagram_stories: (job) => publishInstagramStory(job.payload, instagramEnConfig, fetchImpl),
-    instagram_stories_ru: (job) => publishInstagramStory(job.payload, instagramRuConfig, fetchImpl),
-    telegram_story: (job) =>
-      import("../social/telegramStories.js").then(({ publishTelegramStory }) => publishTelegramStory(job.payload, config)),
-    telegram_stories: (job) =>
-      import("../social/telegramStories.js").then(({ publishTelegramStory }) => publishTelegramStory(job.payload, config)),
   };
+  for (const target of TARGET_GROUPS.threads)
+    publishers[target] = (job) =>
+      publishToThreads(
+        job.payload,
+        target === "threads_en" ? threadsEnConfig : config,
+        fetchImpl,
+        target === "threads_en" ? target : undefined,
+      );
+  for (const target of TARGET_GROUPS.x) publishers[target] = (job) => publishToX(job.payload, config, fetchImpl);
+  for (const target of TARGET_GROUPS.instagramStory)
+    publishers[target] = (job) => publishInstagramStory(job.payload, targetConfigs[target] ?? config, fetchImpl);
+  for (const target of TARGET_GROUPS.telegramStory)
+    publishers[target] = (job) =>
+      import("../social/telegramStories.js").then(({ publishTelegramStory }) => publishTelegramStory(job.payload, config));
   return Object.fromEntries(
     Object.entries(publishers).map(([target, publish]) => [
       target,
@@ -103,11 +105,11 @@ export async function verifyPlatformPublication(
   if (!result.ok || result.id == null) return result;
   const id = String(result.id);
   try {
-    if (target === "threads" || target === "threads_ru" || target === "threads_en") {
+    if (targetInGroup(TARGET_GROUPS.threads, target)) {
       const verified = await verifyThreadsPost(id, config, fetchImpl);
       return { ...result, url: result.url ?? verified.url, verification: { status: "verified", providerId: verified.id } };
     }
-    if (target === "instagram_story" || target === "instagram_stories" || target === "instagram_stories_ru") {
+    if (targetInGroup(TARGET_GROUPS.instagramStory, target)) {
       const verified = await verifyInstagramPublication(id, config, fetchImpl);
       return { ...result, url: result.url ?? verified.url, verification: { status: "verified", providerId: verified.id } };
     }
@@ -168,12 +170,6 @@ async function withPreparedMedia(
     throw error;
   }
   return { ...job, payload: { ...job.payload, media: items, media_en: items } };
-}
-
-function isStoryTarget(target: string): boolean {
-  return (
-    target === "telegram_story" || target === "telegram_stories" || target === "instagram_story" || target.startsWith("instagram_stories")
-  );
 }
 
 async function createStoryMedia(job: ClaimedPublishJob, media: ReturnType<typeof payloadMedia>, config: BackendConfig) {

@@ -3,7 +3,7 @@ import path from "node:path";
 import { SITE_MEDIA_URL_PREFIX, siteMediaVerticalFilename } from "../../../backend/src/content/site-media-naming.js";
 import { openBackendDb } from "../../../backend/src/db/client.js";
 import { knowledgeEntities, postEntityLinks, postLocales, postSources, posts, publications } from "../../../backend/src/db/schema.js";
-import { zonedDateParts, zonedSlot } from "../../../backend/src/foundation/time.js";
+import { fixtureDayWindow } from "./fixture-utils.js";
 
 /**
  * Builds a throwaway published site: a pipeline database plus the media files
@@ -83,13 +83,6 @@ export function fullFixtureDayCounts(days: number, minPostsPerDay = 1, maxPostsP
   return Array.from({ length: safeDays }, () => min + Math.floor(random() * (max - min + 1)));
 }
 
-/** Calendar midnight in the fixture's display zone, moved back by days. */
-export function fixtureDayStart(dayOffset: number, timeZone = "Europe/Moscow"): Date {
-  const current = zonedDateParts(new Date(), timeZone);
-  const calendar = new Date(Date.UTC(current.year, current.month - 1, current.day - Math.max(0, Math.floor(dayOffset))));
-  return zonedSlot(calendar.getUTCFullYear(), calendar.getUTCMonth() + 1, calendar.getUTCDate(), "00:00", timeZone);
-}
-
 /** Full local content history: one to five text posts per day for a month. */
 export function fullDevFixture(galleryImages: number, options: FullDevFixtureOptions = {}): FixturePost[] {
   const days = Math.max(1, Math.floor(options.days ?? FULL_DEV_HISTORY_DAYS));
@@ -106,9 +99,7 @@ export function fullDevFixture(galleryImages: number, options: FullDevFixtureOpt
   const posts: FixturePost[] = [];
 
   counts.forEach((count, day) => {
-    const start = fixtureDayStart(day);
-    const end =
-      day === 0 ? new Date(Math.max(start.getTime() + 60_000, Date.now() - 60_000)) : new Date(start.getTime() + 86_400_000 - 60_000);
+    const [start, end] = fixtureDayWindow(day);
     const available = Math.max(60_000, end.getTime() - start.getTime());
     for (let index = 0; index < count; index += 1) {
       const [englishTopic, russianTopic] = topics[(postId - 1) % topics.length] ?? topics[0];

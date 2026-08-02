@@ -25,7 +25,7 @@ export function postProgressState(backendDb: BackendDb, draftId: number): PostPr
       statuses.set(job.reason === "publish_ru" ? "site_ru" : "site_en", normalize(job.status, job.lastError));
   }
   const targets = effectivePostTargets(backendDb, parseTargets(draft.targetsJson));
-  const items = TARGETS.filter(([target]) => targets[target]).map(([target, label, locale]) => {
+  const items = TARGETS.filter(({ id }) => targets[id]).map(({ id: target, label, locale }) => {
     const current = statuses.get(target) ?? { status: "waiting" as const, error: null };
     return { target, label, locale, ...current };
   });

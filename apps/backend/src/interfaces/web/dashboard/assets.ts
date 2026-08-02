@@ -16,8 +16,8 @@ type TargetInfo = { id: string; label: string; locale: string; kind: string };
 
 /** Static presentation metadata for the Operations dashboard. */
 export const ORDERED_TARGETS: TargetInfo[] = ORDERED_IDS.map((id) => {
-  const found = TARGETS.find((target) => target[0] === id);
-  return found ? { id: found[0] as string, label: found[1] as string, locale: found[2] as string, kind: found[3] as string } : null;
+  const found = TARGETS.find((target) => target.id === id);
+  return found ? { id: found.id, label: found.label, locale: found.locale, kind: found.kind } : null;
 }).filter((target) => target !== null) as TargetInfo[];
 
 export const PLATFORM_ICONS: Record<string, string> = {

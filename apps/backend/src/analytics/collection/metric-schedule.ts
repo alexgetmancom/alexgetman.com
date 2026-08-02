@@ -1,4 +1,5 @@
 import { and, asc, eq, inArray, isNull, lte, notInArray, or, sql } from "drizzle-orm";
+import { TARGET_GROUPS } from "../../botTargets.js";
 import type { BackendDb } from "../../db/client.js";
 import { metricSchedule, posts, postTargets } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
@@ -15,7 +16,7 @@ export type MetricTask = {
   url: string | null;
 };
 
-const PAID_METRIC_TARGETS = ["x", "twitter"] as const;
+const PAID_METRIC_TARGETS = TARGET_GROUPS.x;
 
 export function ensureMetricSchedule(backendDb: BackendDb, targets: readonly string[]): void {
   if (targets.length === 0) return;

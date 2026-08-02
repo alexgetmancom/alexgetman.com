@@ -1,3 +1,4 @@
+import { TARGET_GROUPS } from "../../../botTargets.js";
 import type { BackendConfig } from "../../../foundation/config.js";
 import type { MetricTask } from "../metric-schedule.js";
 import { collectInstagramStory } from "./meta.js";
@@ -14,35 +15,25 @@ import { collectX } from "./x.js";
  */
 export const SUPPORTED_METRIC_TARGETS = [
   "telegram",
-  "threads",
-  "threads_ru",
-  "threads_en",
-  "instagram_story",
-  "instagram_stories",
-  "instagram_stories_ru",
-  "telegram_story",
-  "telegram_stories",
-  "x",
-  "twitter",
+  ...TARGET_GROUPS.threads,
+  ...TARGET_GROUPS.instagramStory,
+  ...TARGET_GROUPS.telegramStory,
+  ...TARGET_GROUPS.x,
 ] as const;
 
 export function createMetricCollectors(config: BackendConfig, fetchImpl: typeof fetch = fetch): Record<string, MetricCollector> {
   const threads = (task: MetricTask) => collectThreads(task, config, fetchImpl);
   const instagram = (task: MetricTask) => collectInstagramStory(task, config, fetchImpl);
+  const telegramStory = (task: MetricTask) => collectTelegramStory(task, config);
+  const x = (task: MetricTask) => collectX(task, config, fetchImpl);
   const collectors: Record<string, MetricCollector> = {
     telegram: (task) => collectTelegram(task, config, fetchImpl),
-    threads,
-    threads_ru: threads,
-    threads_en: threads,
-    instagram_story: instagram,
-    instagram_stories: instagram,
-    instagram_stories_ru: instagram,
-    telegram_story: (task) => collectTelegramStory(task, config),
-    telegram_stories: (task) => collectTelegramStory(task, config),
   };
+  for (const target of TARGET_GROUPS.threads) collectors[target] = threads;
+  for (const target of TARGET_GROUPS.instagramStory) collectors[target] = instagram;
+  for (const target of TARGET_GROUPS.telegramStory) collectors[target] = telegramStory;
   if (config.ENABLE_X_METRICS) {
-    collectors.x = (task) => collectX(task, config, fetchImpl);
-    collectors.twitter = (task) => collectX(task, config, fetchImpl);
+    for (const target of TARGET_GROUPS.x) collectors[target] = x;
   }
   return collectors;
 }

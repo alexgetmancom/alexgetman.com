@@ -88,14 +88,14 @@ export function draftPreview(
   const locale = botLocale(backendDb, draft.actor_id);
   const targets = effectivePostTargets(backendDb, parseTargets(draft.targets_json));
   const registered = registeredPostTargetIds(backendDb);
-  const targetRows = registered.size ? TARGETS.filter(([target]) => registered.has(target)) : TARGETS;
+  const targetRows = registered.size ? TARGETS.filter(({ id }) => registered.has(id)) : TARGETS;
   const sourceCount = backendDb.db.select({ id: draftSources.id }).from(draftSources).where(eq(draftSources.draftId, draftId)).all().length;
   const keyboard = new InlineKeyboard();
   const mode = presetName(targets);
 
   if (view === "platforms") {
     for (let index = 0; index < targetRows.length; index += 2) {
-      for (const [target, label] of targetRows.slice(index, index + 2))
+      for (const { id: target, label } of targetRows.slice(index, index + 2))
         keyboard.text(`${targets[target] ? "✓" : "□"} ${label}`, `toggle:${draftId}:${target}`);
       keyboard.row();
     }
@@ -205,14 +205,14 @@ function draftHeader(draftId: number, targets: Record<string, boolean>, locale: 
 }
 
 function enabledTargetLabels(targets: Record<string, boolean>, mediaRu = 1, mediaEn = 1): string {
-  return TARGETS.filter(([id, , locale]) => targets[id] && !isUnavailableForMedia(id, locale, mediaRu, mediaEn))
-    .map(([, label]) => label)
+  return TARGETS.filter(({ id, locale }) => targets[id] && !isUnavailableForMedia(id, locale, mediaRu, mediaEn))
+    .map(({ label }) => label)
     .join(", ");
 }
 
 function unavailableTargetLabels(targets: Record<string, boolean>, mediaRu: number, mediaEn: number): string {
-  return TARGETS.filter(([id, , locale]) => targets[id] && isUnavailableForMedia(id, locale, mediaRu, mediaEn))
-    .map(([, label]) => label)
+  return TARGETS.filter(({ id, locale }) => targets[id] && isUnavailableForMedia(id, locale, mediaRu, mediaEn))
+    .map(({ label }) => label)
     .join(", ");
 }
 

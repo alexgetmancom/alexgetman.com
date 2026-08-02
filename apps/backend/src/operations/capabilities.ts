@@ -23,7 +23,7 @@ const expectedTargets = ["telegram", "site_ru", "site_en", "threads_ru"];
 
 /** Operations fixture registry for supported delivery capabilities. */
 export function seedCapabilities(backendDb: BackendDb): void {
-  const known = new Set(TARGETS.map(([target]) => target as string));
+  const known = new Set<string>(TARGETS.map(({ id }) => id));
   const unknown = expectedTargets.filter((target) => !known.has(target));
   if (unknown.length) throw new Error(`capability fixture references unknown targets: ${unknown.join(", ")}`);
   const now = new Date().toISOString();
@@ -44,7 +44,7 @@ export function seedCapabilities(backendDb: BackendDb): void {
           set: { formatKey, title, inputRecipe: recipe, expectedTargetsJson: JSON.stringify(expectedTargets), updatedAt: now },
         })
         .run();
-      for (const [target] of TARGETS)
+      for (const { id: target } of TARGETS)
         tx.insert(platformCapabilities).values({ target, formatKey, status: "unknown", updatedAt: now }).onConflictDoNothing().run();
     }
   });
@@ -62,7 +62,7 @@ export function recordCapabilityPost(backendDb: BackendDb, testId: string, messa
   const statuses: string[] = [];
   const now = new Date().toISOString();
   backendDb.db.transaction((tx) => {
-    for (const [target] of TARGETS) {
+    for (const { id: target } of TARGETS) {
       const row = byTarget.get(target);
       const status = row?.status === "published" ? "supported" : row?.skipped ? "blocked" : row?.status === "failed" ? "failed" : "unknown";
       if (expected.includes(target)) statuses.push(status);

@@ -460,7 +460,7 @@ function formatPipelinePosts(
       metrics,
       ...(includeContent ? { locales_map: localesMap } : {}),
     };
-    for (const [target] of TARGETS) {
+    for (const { id: target } of TARGETS) {
       const record = targets[target] as { status?: unknown } | undefined;
       result[target] =
         record?.status === "published" ||

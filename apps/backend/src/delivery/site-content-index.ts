@@ -1,10 +1,11 @@
-import fs from "node:fs";
 import path from "node:path";
 import { and, desc, eq } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
+import { firstLine } from "../content/message.js";
 import type { BackendDb } from "../db/client.js";
 import { postLocales, publications } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { atomicWriteText } from "../fsUtils.js";
 
 /** Delivery projection used to materialize the public-site content index. */
 export function publishContentIndex(config: BackendConfig, backendDb: BackendDb): string[] {
@@ -31,13 +32,13 @@ export function publishContentIndex(config: BackendConfig, backendDb: BackendDb)
   const base = config.PUBLIC_BASE_URL.replace(/\/$/, "");
   const items = rows.map((row) => ({
     post_id: row.postId,
-    title: firstLine(row.textEn || row.textRu || "Post"),
+    title: firstLine(row.textEn || row.textRu, "Post"),
     url_ru: row.hasRu && row.slugRu ? `${base}/ru/${row.postId}/${row.slugRu}/` : null,
     url_en: row.hasEn && row.slugEn ? `${base}/${row.postId}/${row.slugEn}/` : null,
     updated_at: row.updatedAt,
   }));
   const updatedAt = new Date().toISOString();
-  atomicWrite(
+  atomicWriteText(
     path.join(config.SITE_PUBLIC_DIR, "content-index.json"),
     `${JSON.stringify({ updated_at: updatedAt, brand: "alexgetmancom", site: base, items }, null, 2)}\n`,
   );
@@ -48,7 +49,7 @@ export function publishContentIndex(config: BackendConfig, backendDb: BackendDb)
     if (item.url_en) lines.push(`EN: ${item.url_en}`);
     lines.push("");
   }
-  atomicWrite(path.join(config.SITE_PUBLIC_DIR, "content-memory.md"), `${lines.join("\n").trimEnd()}\n`);
+  atomicWriteText(path.join(config.SITE_PUBLIC_DIR, "content-memory.md"), `${lines.join("\n").trimEnd()}\n`);
   return [
     `${base}/`,
     `${base}/feed.xml`,
@@ -57,15 +58,4 @@ export function publishContentIndex(config: BackendConfig, backendDb: BackendDb)
     `${base}/content-memory.md`,
     ...items.flatMap((item) => [item.url_en, item.url_ru]).filter((url): url is string => Boolean(url)),
   ];
-}
-
-function firstLine(value: string): string {
-  return value.split(/\r?\n/, 1)[0]?.trim() || "Post";
-}
-
-function atomicWrite(filePath: string, content: string): void {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  const temp = `${filePath}.${process.pid}.tmp`;
-  fs.writeFileSync(temp, content, { encoding: "utf8", mode: 0o664 });
-  fs.renameSync(temp, filePath);
 }

@@ -230,7 +230,7 @@ describe("Telegram controller flow", () => {
       expect(payload.text).toBe(locale === "ru" ? "Русский текст" : "English text");
       expect(payload.media).toEqual([{ type: "IMAGE", fileId: locale === "ru" ? "ru-image" : "en-image" }]);
     }
-    expect(jobs).toHaveLength(TARGETS.filter(([id, , , kind]) => kind !== "site" && DEFAULT_TARGETS[id]).length);
+    expect(jobs).toHaveLength(TARGETS.filter(({ id, kind }) => kind !== "site" && DEFAULT_TARGETS[id]).length);
   });
 
   it("preserves Telegram entities in target payloads and site HTML", () => {

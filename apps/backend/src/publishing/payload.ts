@@ -1,4 +1,5 @@
 import { isStoryTarget, targetLocale } from "../botTargets.js";
+import { firstLine } from "../content/message.js";
 import { payloadMedia } from "../delivery/social/payload.js";
 
 /** Resolves a draft's dual-locale payload to one target's locale, and
@@ -52,8 +53,4 @@ function recordArray(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value)
     ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item))
     : [];
-}
-
-function firstLine(text: string): string {
-  return text.split(/\r?\n/, 1)[0]?.trim() || "Alex Getman update";
 }

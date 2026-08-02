@@ -1,6 +1,6 @@
 import { TARGETS, type TargetLocale } from "../botTargets.js";
 
-type PlatformId = (typeof TARGETS)[number][0];
+type PlatformId = (typeof TARGETS)[number]["id"];
 /** A discriminated union on purpose: a `limited` rule without its limit/label, or
  * a first/story-first rule without its note, used to type-check and then degrade
  * silently into "deliver everything" inside mediaPolicyForTarget — the opposite
@@ -90,7 +90,7 @@ const platformOverrides: Record<PlatformId, Omit<PlatformProfile, "id" | "label"
 
 /** The single publishing-facing catalogue of a target's capabilities and runtime requirements. */
 export const PLATFORM_PROFILES: Record<string, PlatformProfile> = Object.fromEntries(
-  TARGETS.map(([id, label, locale, kind]) => [
+  TARGETS.map(({ id, label, locale, kind }) => [
     id,
     {
       id,

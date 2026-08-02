@@ -1,4 +1,5 @@
 import { and, eq } from "drizzle-orm";
+import { firstNonEmptyLine } from "../content/message.js";
 import type { BackendDb } from "../db/client.js";
 import { drafts, postLocales, publicationSources, publications, siteJobs, siteSourceItems } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -51,7 +52,7 @@ export async function backfillTextStoryCards(
       (locale): LocalePlan => ({
         locale: locale.locale as "ru" | "en",
         slug: locale.slug,
-        headline: firstLine(locale.text),
+        headline: firstNonEmptyLine(locale.text),
       }),
     );
   const base = {
@@ -148,13 +149,4 @@ function generatedMediaOnly(value: unknown): boolean {
   } catch {
     return false;
   }
-}
-
-function firstLine(value: string | null): string {
-  return (
-    String(value ?? "")
-      .split("\n")
-      .find((line) => line.trim())
-      ?.trim() ?? ""
-  );
 }

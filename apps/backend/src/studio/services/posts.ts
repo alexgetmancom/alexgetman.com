@@ -226,7 +226,7 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
     },
     toggleTarget(actorId: number, draftId: number, target: string): void {
       const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
-      if (!TARGETS.some(([id]) => id === target)) throw new StudioError("err.unknown-target");
+      if (!TARGETS.some(({ id }) => id === target)) throw new StudioError("err.unknown-target");
       const registered = registeredPostTargetIds(backendDb);
       if (registered.size && !registered.has(target)) throw new StudioError("err.unknown-target");
       const targets = parseTargets(draft.targets_json);
