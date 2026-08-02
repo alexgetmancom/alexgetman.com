@@ -295,6 +295,10 @@ describe("unified overview rendering", () => {
       expect(html).toContain('class="overview-track overview-track--text"');
       expect(html).toContain('class="overview-track overview-track--video"');
       expect(html).toContain('class="overview-spark"');
+      expect(html).toContain('class="overview-spark__cap"');
+      expect(html).not.toContain('class="overview-spark__head"');
+      expect(html).not.toContain('class="overview-spark__view');
+      expect(html).not.toContain("логарифмическая");
       expect(html).toContain("норма дня");
       expect(html).toContain("досмотры");
       expect(html).not.toContain('class="kpi-table');
@@ -385,10 +389,10 @@ describe("unified overview rendering", () => {
         ],
         mode: "all",
       });
-      // The row no longer spells out the platform name — the icon does that —
-      // but the locale badge must still come from the data, not the target id.
-      expect(html).toContain('class="overview-platform__name"><b>RU</b>');
-      expect(html).toContain('class="overview-platform__name"><b>EN</b>');
+      // The source name and locale badge must come from the data, not from a
+      // guessed suffix in the target id.
+      expect(html).toContain('class="overview-platform__name"><span class="overview-platform__label">Telegram</span><b>RU</b>');
+      expect(html).toContain('class="overview-platform__name"><span class="overview-platform__label">X</span><b>EN</b>');
     } finally {
       backendDb.close();
     }
@@ -496,7 +500,7 @@ describe("unified overview rendering", () => {
     ];
     const column = (html: string, kind: "text" | "video"): string => {
       const start = html.indexOf(`class="overview-track overview-track--${kind}`);
-      const end = html.indexOf('<div class="overview-publications">', start);
+      const end = html.indexOf(`<div class="overview-publications" id="overview-publications-${kind}">`, start);
       return html.slice(start, end < 0 ? undefined : end);
     };
     const assertOrder = (html: string, labels: string[]): void => {
@@ -532,16 +536,18 @@ describe("unified overview rendering", () => {
     assertOrder(followerVideo, ["YouTube RU", "Instagram RU", "Instagram EN"]);
   });
 
-  it("keeps low-volume site and story targets behind the extra platforms control", () => {
+  it("shows the four largest text destinations and keeps the rest behind a compact drawer", () => {
     const post: PipelinePost = {
       post_key: "post:1",
       targets: {
         site_ru: { status: "published" },
+        site_en: { status: "published" },
         telegram_stories: { status: "published" },
         instagram_stories: { status: "published" },
       },
       metrics: {
         site_ru: { views: { value: 4 }, bot_views: { value: 0 } },
+        site_en: { views: { value: 8 }, bot_views: { value: 0 } },
         telegram_stories: { views: { value: 12 } },
         instagram_stories: { views: { value: 3 } },
       },
@@ -552,21 +558,21 @@ describe("unified overview rendering", () => {
       video: emptyVideoOverview(),
       mode: "text",
     });
-    // Scoped to the row list, not the whole block: the bar above it segments
-    // every platform and names them in its tooltips, which is the point of the
-    // bar — the drawer is about which platforms get a row of their own.
+    // Scoped to the row list, not the whole block: the bar still names every
+    // source in its tooltip, while the rows keep only the first four visible.
     const platformHtml = html.slice(
       html.indexOf('<div class="overview-platforms__rows">'),
-      html.indexOf('<div class="overview-publications">'),
+      html.indexOf('<div class="overview-publications" id="overview-publications-text">'),
     );
     const moreIndex = platformHtml.indexOf('<details class="overview-platforms__more platform-more">');
-
     expect(moreIndex).toBeGreaterThan(0);
     expect(platformHtml.slice(0, moreIndex)).toContain("Telegram Stories");
-    expect(platformHtml.slice(0, moreIndex)).not.toContain("Site RU");
-    expect(platformHtml.slice(moreIndex)).toContain("Site RU");
-    expect(platformHtml.slice(moreIndex)).toContain("Instagram Stories EN");
-    expect(platformHtml).toContain("+ Ещё <span>2</span>");
+    expect(platformHtml.slice(0, moreIndex)).toContain("Site EN");
+    expect(platformHtml.slice(0, moreIndex)).toContain("Site RU");
+    expect(platformHtml.slice(0, moreIndex)).toContain("Instagram Stories EN");
+    expect(platformHtml.slice(0, moreIndex)).not.toContain('title="Telegram"');
+    expect(platformHtml.slice(moreIndex)).toContain('title="Telegram"');
+    expect(platformHtml).toContain("Ещё <span>1</span>");
 
     const followersHtml = renderCombinedSection({
       ...baseInput,
@@ -577,10 +583,32 @@ describe("unified overview rendering", () => {
     });
     const followersPlatformHtml = followersHtml.slice(
       followersHtml.indexOf('<div class="overview-platforms__rows">'),
-      followersHtml.indexOf('<div class="overview-publications">'),
+      followersHtml.indexOf('<div class="overview-publications" id="overview-publications-text">'),
     );
     expect(followersPlatformHtml).not.toContain("Telegram Stories");
     expect(followersPlatformHtml).not.toContain("platform-more");
+  });
+
+  it("keeps a compact publication control under a full four-row video legend", () => {
+    const video = {
+      ...emptyVideoOverview(),
+      platforms: [
+        { target: "instagram_reels", label: "Instagram RU", locales: ["RU"], views: 48_000, followers: null },
+        { target: "instagram_reels", label: "Instagram EN", locales: ["EN"], views: 34_000, followers: null },
+        { target: "youtube_shorts", label: "YouTube EN", locales: ["EN"], views: 15_000, followers: null },
+        { target: "youtube_shorts", label: "YouTube RU", locales: ["RU"], views: 9_000, followers: null },
+      ],
+    };
+    const html = renderCombinedSection({ ...baseInput, video, mode: "video" });
+    const videoStart = html.indexOf('<section class="overview-track overview-track--video');
+    const videoEnd = html.indexOf('<div class="overview-publications" id="overview-publications-video">', videoStart);
+    const videoPlatformHtml = html.slice(videoStart, videoEnd);
+
+    expect(videoPlatformHtml).toContain(
+      '<a class="overview-platforms__more overview-platforms__more--jump" href="#overview-publications-video">Публикации</a>',
+    );
+    expect(videoPlatformHtml).not.toContain("overview-platform--empty");
+    expect(html).toContain('id="overview-publications-video"');
   });
 
   it("uses linked X activity when the pipeline row has no X metric", () => {

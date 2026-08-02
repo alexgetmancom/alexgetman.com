@@ -14,7 +14,7 @@ import {
   xActivityItems,
   xActivityMetricSnapshots,
 } from "../../../backend/src/db/schema.js";
-import { PARITY_HISTORY_DAYS } from "./site-fixture.js";
+import { fixtureDayStart, fullFixtureDayCounts, PARITY_HISTORY_DAYS } from "./site-fixture.js";
 
 /**
  * Adds the operational layer on top of a database already seeded by
@@ -43,13 +43,14 @@ const TARGET_PLAN = [
   { target: "site_ru", status: "published", views: 980, likes: 24 },
   { target: "site_en", status: "published", views: 1240, likes: 31 },
   { target: "threads_en", status: "published", views: 420, likes: 12 },
-  { target: "x", status: "failed", views: 0, likes: 0, error: "X API 401: token expired" },
+  { target: "x", status: "failed", views: 760, likes: 28, error: "X API 401: token expired" },
 ] as const;
 
 const DAYS_OF_HISTORY = 14;
 /** Two-hourly samples: enough to draw a readable curve, few enough to seed fast. */
 const HOURS_PER_SAMPLE = 2;
 const SAMPLES_PER_DAY = 24 / HOURS_PER_SAMPLE;
+const HOUR_MS = 3_600_000;
 
 const iso = (date: Date): string => date.toISOString();
 
@@ -60,8 +61,8 @@ const daysAgo = (days: number): Date => hoursAgo(days * 24);
 /**
  * Clips for the video half of the unified overview. Deliberately lopsided
  * against the text plan above: video reach is an order of magnitude larger than
- * text reach in production, and a fixture where the two are comparable hides
- * the whole reason the overview chart carries a scale toggle.
+ * text reach in production, so the fixed overview cap has a meaningful over-cap
+ * case to render.
  *
  * The locales are mixed on purpose. The overview reads a video platform's
  * language off the drafts published there, so a single-locale fixture would
@@ -96,7 +97,126 @@ export type SeededDashboard = {
   sampleRows: number;
 };
 
-export function seedDashboardFixture(options: { dbPath: string; postIds: number[] }): SeededDashboard {
+type FullDashboardFixtureOptions = {
+  days: number;
+  minPostsPerDay: number;
+  maxPostsPerDay: number;
+};
+
+export type DashboardFixtureOptions = {
+  dbPath: string;
+  postIds: number[];
+  postDates?: Array<string | undefined>;
+  full?: FullDashboardFixtureOptions;
+};
+
+type VideoFixtureTarget = {
+  target: "youtube_shorts" | "instagram_reels";
+  views: number;
+  likes: number;
+  comments: number;
+};
+
+type VideoFixturePlan = {
+  label: string;
+  locale: "ru" | "en";
+  publishedAt: string;
+  targets: VideoFixtureTarget[];
+};
+
+function deterministicUnit(seed: number): number {
+  let state = seed >>> 0;
+  state = (state * 1_664_525 + 1_013_904_223) >>> 0;
+  return state / 4_294_967_296;
+}
+
+function fullPostReachMultiplier(index: number): number {
+  const baseline = 0.7 + deterministicUnit(0x12340000 + index) * 1.7;
+  const breakout =
+    index % 13 === 0
+      ? 8 + deterministicUnit(0x56780000 + index) * 8
+      : deterministicUnit(0x9abc0000 + index) > 0.9
+        ? 2.5 + deterministicUnit(0xdef00000 + index) * 3
+        : 1;
+  return baseline * breakout;
+}
+
+function fullTargetReachMultiplier(target: string, index: number): number {
+  const platform =
+    target === "telegram" ? 1 : target === "site_en" ? 0.3 : target === "site_ru" ? 0.22 : target === "threads_en" ? 0.12 : 0.18;
+  return platform * (0.82 + deterministicUnit(0x24680000 + index + target.length) * 0.36);
+}
+
+function fullMetricValue(base: number, index: number, target: string, metricName: "views" | "likes"): number {
+  const metricFactor = metricName === "likes" ? 0.82 : 1;
+  return Math.max(0, Math.round(base * fullPostReachMultiplier(index) * fullTargetReachMultiplier(target, index) * metricFactor));
+}
+
+function fixtureSampleSlots(publishedAt: string, now: Date, historyDays: number): number {
+  const ageHours = Math.max(HOURS_PER_SAMPLE, (now.getTime() - new Date(publishedAt).getTime()) / HOUR_MS);
+  return Math.max(1, Math.min(historyDays * SAMPLES_PER_DAY, Math.ceil(ageHours / HOURS_PER_SAMPLE)));
+}
+
+function fixtureSampleAt(publishedAt: string, now: Date, slot: number): string {
+  const publishedTime = new Date(publishedAt).getTime();
+  const candidate = now.getTime() - slot * HOURS_PER_SAMPLE * HOUR_MS;
+  return new Date(Math.max(publishedTime, candidate)).toISOString();
+}
+
+const FULL_VIDEO_TOPICS = [
+  ["Новая модель за минуту", "The new model in one minute"],
+  ["Почему этот апдейт важен", "Why this update matters"],
+  ["Три детали, которые легко пропустить", "Three details everyone misses"],
+  ["Эксперимент с неожиданным результатом", "An experiment with a surprising result"],
+  ["Разбор инструмента в коротком формате", "A short-form tool breakdown"],
+] as const;
+
+function fullVideoPlans(options: FullDashboardFixtureOptions, now: Date): VideoFixturePlan[] {
+  const counts = fullFixtureDayCounts(options.days, options.minPostsPerDay, options.maxPostsPerDay);
+  let state = 0x13579bdf;
+  const random = (): number => {
+    state = (state * 1_664_525 + 1_013_904_223) >>> 0;
+    return state / 4_294_967_296;
+  };
+  const plans: VideoFixturePlan[] = [];
+  let serial = 1;
+
+  counts.forEach((count, day) => {
+    const start = fixtureDayStart(day);
+    const end =
+      day === 0 ? new Date(Math.max(start.getTime() + 60_000, now.getTime() - 60_000)) : new Date(start.getTime() + 86_400_000 - 60_000);
+    const available = Math.max(60_000, end.getTime() - start.getTime());
+    for (let index = 0; index < count; index += 1) {
+      const publishedAt = new Date(Math.min(end.getTime(), start.getTime() + Math.round((available * (index + 1)) / (count + 1))));
+      const locale: "ru" | "en" = random() > 0.52 ? "ru" : "en";
+      const topic = FULL_VIDEO_TOPICS[(serial - 1) % FULL_VIDEO_TOPICS.length] ?? FULL_VIDEO_TOPICS[0];
+      const label = locale === "ru" ? topic[0] : topic[1];
+      const breakout = serial % 11 === 0 || random() > 0.86;
+      const baseViews = 7_000 + random() * 18_000;
+      const multiplier = breakout ? 4.5 + random() * 5.5 : 0.75 + random() * 1.8;
+      const totalViews = Math.round(baseViews * multiplier);
+      const primary: VideoFixtureTarget["target"] = random() > 0.5 ? "youtube_shorts" : "instagram_reels";
+      const secondary: VideoFixtureTarget["target"] = primary === "youtube_shorts" ? "instagram_reels" : "youtube_shorts";
+      const makeTarget = (target: VideoFixtureTarget["target"], reachFactor: number): VideoFixtureTarget => {
+        const views = Math.max(1, Math.round(totalViews * reachFactor));
+        return {
+          target,
+          views,
+          likes: Math.max(1, Math.round(views * (0.035 + random() * 0.025))),
+          comments: Math.max(0, Math.round(views * (0.0015 + random() * 0.003))),
+        };
+      };
+      const targets = [makeTarget(primary, 1)];
+      if (random() > 0.63) targets.push(makeTarget(secondary, 0.32 + random() * 0.3));
+      plans.push({ label, locale, publishedAt: publishedAt.toISOString(), targets });
+      serial += 1;
+    }
+  });
+
+  return plans;
+}
+
+export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDashboard {
   const backendDb = openBackendDb(options.dbPath);
   const now = new Date();
   const nowIso = iso(now);
@@ -108,19 +228,19 @@ export function seedDashboardFixture(options: { dbPath: string; postIds: number[
       const postKey = `post:${postId}`;
       // Spread the posts across recent days so the period filters (day, week,
       // month) each select a different slice instead of all showing everything.
-      const publishedAt = iso(daysAgo(index));
+      const publishedAt = options.postDates?.[index] ?? iso(daysAgo(index));
 
       for (const plan of TARGET_PLAN) {
-        const failed = plan.status === "failed";
+        const failed = options.full ? plan.target === "x" && index === 0 : plan.status === "failed";
         backendDb.db
           .insert(postTargets)
           .values({
             postKey,
             target: plan.target,
-            status: plan.status,
+            status: failed ? "failed" : "published",
             externalId: failed ? null : `${plan.target}-${postId}`,
             url: failed ? null : `https://example.com/${plan.target}/${postId}`,
-            error: failed ? (plan.error ?? null) : null,
+            error: failed ? ("error" in plan ? plan.error : null) : null,
             skipped: 0,
             publishedAt: failed ? null : publishedAt,
             updatedAt: nowIso,
@@ -132,12 +252,13 @@ export function seedDashboardFixture(options: { dbPath: string; postIds: number[
 
         // Later posts are younger, so scale their totals down: a flat number
         // across every post makes the "best posts" ranking meaningless.
-        const decay = 1 - index * 0.18;
         for (const [metricName, base] of [
           ["views", plan.views],
           ["likes", plan.likes],
         ] as const) {
-          const value = Math.max(0, Math.round(base * decay));
+          const value = options.full
+            ? fullMetricValue(base, index, plan.target, metricName)
+            : Math.max(0, Math.round(base * (1 - index * 0.18)));
           backendDb.db
             .insert(postMetrics)
             .values({ postKey, target: plan.target, metricName, value, unit: "count", source: "fixture", sampledAt: nowIso })
@@ -151,7 +272,7 @@ export function seedDashboardFixture(options: { dbPath: string; postIds: number[
           // today against yesterday by time of day; with a single timestamp per
           // day every point lands on one x and the line renders as a vertical
           // spike instead of a curve.
-          const slots = DAYS_OF_HISTORY * SAMPLES_PER_DAY;
+          const slots = options.full ? fixtureSampleSlots(publishedAt, now, options.full.days) : DAYS_OF_HISTORY * SAMPLES_PER_DAY;
           for (let slot = slots; slot >= 0; slot -= 1) {
             const progress = (slots - slot) / slots;
             backendDb.db
@@ -161,7 +282,7 @@ export function seedDashboardFixture(options: { dbPath: string; postIds: number[
                 target: plan.target,
                 metricName,
                 value: Math.round(value * progress),
-                sampledAt: iso(hoursAgo(slot * HOURS_PER_SAMPLE)),
+                sampledAt: options.full ? fixtureSampleAt(publishedAt, now, slot) : iso(hoursAgo(slot * HOURS_PER_SAMPLE)),
                 source: "fixture",
               })
               .run();
@@ -266,8 +387,16 @@ export function seedDashboardFixture(options: { dbPath: string; postIds: number[
           .values({ xPostId, metricName, value, sampledAt: nowIso, rawJson: { source: "fixture" } })
           .run();
     }
-    for (const [index, plan] of VIDEO_PLAN.entries()) {
-      const publishedAt = iso(hoursAgo(plan.hoursAgo));
+    const videoPlans: VideoFixturePlan[] = options.full
+      ? fullVideoPlans(options.full, now)
+      : VIDEO_PLAN.map((plan) => ({
+          label: plan.label,
+          locale: plan.locale,
+          publishedAt: iso(hoursAgo(plan.hoursAgo)),
+          targets: plan.targets.map((target) => ({ ...target })),
+        }));
+    for (const [index, plan] of videoPlans.entries()) {
+      const publishedAt = plan.publishedAt;
       const draft = backendDb.db
         .insert(videoDrafts)
         .values({
@@ -304,7 +433,9 @@ export function seedDashboardFixture(options: { dbPath: string; postIds: number[
 
         // Same two-hourly cadence as the text samples, so both lines on the
         // overview chart are drawn from observations on the same clock.
-        const slots = Math.max(1, Math.round(plan.hoursAgo / HOURS_PER_SAMPLE));
+        const slots = options.full
+          ? fixtureSampleSlots(publishedAt, now, options.full.days)
+          : Math.max(1, Math.round((Date.now() - new Date(publishedAt).getTime()) / HOUR_MS / HOURS_PER_SAMPLE));
         for (let slot = slots; slot >= 0; slot -= 1) {
           const progress = (slots - slot) / slots;
           backendDb.db
@@ -317,7 +448,7 @@ export function seedDashboardFixture(options: { dbPath: string; postIds: number[
                 likes: Math.round(target.likes * progress),
                 comments: Math.round(target.comments * progress),
               },
-              sampledAt: iso(hoursAgo(slot * HOURS_PER_SAMPLE)),
+              sampledAt: options.full ? fixtureSampleAt(publishedAt, now, slot) : iso(hoursAgo(slot * HOURS_PER_SAMPLE)),
             })
             .run();
           sampleRows += 1;

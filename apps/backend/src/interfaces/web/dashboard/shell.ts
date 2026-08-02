@@ -305,7 +305,7 @@ export function renderDashboardShell(body: string): string {
     .post-detail__summary { font-size:16px; }
     .post-detail__headline { display:grid; grid-template-columns:24px minmax(0,1fr); align-items:center; gap:14px; min-width:0; }
     .post-detail__chevron { color:var(--text-main); font-size:22px; line-height:12px; transform:rotate(0deg); transition:transform .15s; } .post-detail[open] .post-detail__chevron { transform:rotate(90deg); }
-    .post-detail__title { color:var(--text-main); font-size:17px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .post-detail__media { color:var(--text-secondary); text-align:right; }
+    .post-detail__title { color:var(--text-main); font-size:17px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .post-detail__inline-meta { color:var(--text-muted); font-size:11px; font-weight:500; } .post-detail__media { display:flex; align-items:center; justify-content:flex-end; gap:6px; color:var(--text-secondary); text-align:right; } .post-detail__source { padding:1px 4px; border:1px solid var(--border-soft); border-radius:4px; color:var(--text-muted); font-size:10px; font-weight:700; letter-spacing:.04em; white-space:nowrap; }
     .post-detail__summary > span:nth-last-child(-n+4) { color:var(--text-main); text-align:right; } .post-detail__body { padding:0 0 22px; }
     .post-platforms { padding:12px 0 17px 38px; border-bottom:1px solid var(--border-soft); } .post-platforms__grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(214px,1fr)); gap:8px; margin-top:10px; }
     .post-platform { display:flex; align-items:center; justify-content:space-between; gap:10px; min-width:0; padding:8px 10px; border:1px solid var(--border-soft); border-radius:6px; background:var(--scrim-soft); color:var(--text-main); font-size:13px; text-decoration:none; } a.post-platform:hover { border-color:var(--accent); }
@@ -394,7 +394,10 @@ export function renderDashboardShell(body: string): string {
     .hero-card__delta--flat { color:var(--text-muted); }
     .overview-spark { margin:0 0 25px; }
     .overview-spark svg { display:block; width:100%; height:52px; overflow:visible; }
+    .overview-spark__cap { stroke:var(--text-muted); stroke-dasharray:2 4; stroke-width:1; opacity:.72; }
+    .overview-spark__cap-label { fill:var(--text-muted); font-size:10px; font-variant-numeric:tabular-nums; }
     .overview-spark__average { stroke:var(--text-muted); stroke-dasharray:3 5; stroke-width:1; opacity:.72; }
+    .overview-spark__bar--over-cap { filter:brightness(1.25); }
     .overview-spark__footer { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-top:8px; color:var(--text-secondary); font-size:13px; font-variant-numeric:tabular-nums; }
     .overview-spark__footer span:nth-child(2) { color:var(--text-secondary); }
     .overview-spark__footer b { color:var(--text-main); font-weight:600; }
@@ -414,16 +417,13 @@ export function renderDashboardShell(body: string): string {
     .overview-platforms__rows { margin-top:17px; }
     /* No rule between rows: this block is a legend for the bar above it, and
        ruled rows turned it into a table competing with the publication list. */
-    /* The name column carries only the locale badge now — the icon already
-       names the platform — so it no longer needs to flex-grow, just hold its
-       one small badge and let the number sit close behind it. */
+    /* The source name and locale stay together so the bar can be reconciled
+       without opening another panel. */
     .overview-platform { display:grid; grid-template-columns:16px auto 1fr 56px; gap:10px; align-items:center; padding:8px 0; color:var(--text-main); text-decoration:none; font-variant-numeric:tabular-nums; }
     .overview-platform:hover { background:var(--surface-raised); }
-    /* A held-open slot. 24px of content plus the row's own 16px of padding is
-       exactly the 40px a filled row occupies. */
-    .overview-platform--empty { min-height:24px; pointer-events:none; }
     .overview-platform__icon { display:inline-flex; flex:none; width:16px; height:16px; }
-    .overview-platform__name { display:flex; align-items:center; gap:9px; min-width:0; font-size:15px; }
+    .overview-platform__name { display:flex; align-items:center; gap:9px; min-width:0; color:var(--text-secondary); font-size:15px; }
+    .overview-platform__label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .overview-platform__name b { flex:none; padding:1px 5px; border:1px solid var(--border-soft); border-radius:4px; color:var(--text-muted); font-size:11px; font-weight:500; letter-spacing:.08em; }
     /* An icon, not a text badge — same slot the publication tag held before,
        drawn in the muted colour of the row so it reads as chrome, not brand. */
@@ -441,8 +441,16 @@ export function renderDashboardShell(body: string): string {
     .overview-platforms__bar-labels .platform-metric-filter { gap:8px; padding:0; border:0; border-radius:0; background:transparent; }
     .overview-platforms__bar-labels .platform-metric-btn { padding:0; border-radius:0; font-size:12px; font-weight:500; letter-spacing:0; text-transform:none; }
     .overview-platforms__bar-labels .platform-metric-btn--active { background:transparent; color:var(--text-main); font-weight:650; }
+    .overview-platforms__more { margin-top:8px; }
+    .overview-platforms__more > summary,
+    .overview-platforms__more--jump { display:inline-flex; align-items:center; gap:5px; padding:5px 9px; border:1px solid var(--border-soft); border-radius:6px; background:transparent; color:var(--accent); font-size:12px; font-weight:650; list-style:none; cursor:pointer; text-decoration:none; }
+    .overview-platforms__more > summary::-webkit-details-marker { display:none; }
+    .overview-platforms__more > summary span { color:var(--text-muted); font-weight:500; }
     .overview-publications { margin-top:2px; }
     .overview-publications .overview-kicker { margin-bottom:9px; }
+    .overview-publications__list .post-detail__summary { grid-template-columns:minmax(0,1fr) auto auto auto auto; gap:10px; }
+    .overview-publications__list .post-detail__title { font-size:15px; }
+    .overview-publications--expanded .post-detail--more { display:block; }
     .track-publication { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:4px 12px; align-items:baseline; padding:14px 0; border-bottom:1px solid var(--border-soft); color:var(--text-main); text-decoration:none; }
     .track-publication:hover { background:var(--surface-raised); }
     .track-publication__title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:16px; }
@@ -460,6 +468,7 @@ export function renderDashboardShell(body: string): string {
     .overview-details__body { padding-top:10px; }
     .overview-details .publication-columns { padding-top:24px; }
     .overview-chart-tooltip { display:block; }
+    .overview-chart-tooltip[hidden] { display:none; }
     /* Compact controls, sized to the reference bar: 2px between the period
        pills, 20px between the three control groups, and a date block that does
        not reserve a column wider than the longest label it shows. */
@@ -499,6 +508,7 @@ export function renderDashboardShell(body: string): string {
       .track-publication { grid-template-columns:auto minmax(0,1fr); }
       .track-publication__stats { grid-column:2; grid-row:1 / span 2; }
       .track-publication__meta { grid-column:2; }
+      .overview-publications__list .post-detail__summary { grid-template-columns:minmax(0,1fr) auto; }
     }
   </style>
 </head>
@@ -512,6 +522,7 @@ ${DASHBOARD_THEME_TOGGLE_SCRIPT}
     const moreUrl = button.dataset.moreUrl;
     if (!moreUrl) {
       button.closest('.recent-posts')?.classList.add('recent-posts--expanded');
+      button.closest('.overview-publications')?.classList.add('overview-publications--expanded');
       button.remove();
       return;
     }

@@ -1,7 +1,13 @@
 import { describe, expect, it } from "bun:test";
+import { OVERVIEW_SPARK_MAX, renderOverviewSparkline } from "../src/interfaces/web/dashboard/chart.js";
 import { formatMetricValue, getMskDateString, shortPipelineText } from "../src/interfaces/web/dashboard/format.js";
 import { formatMedia, getTargetMetric, postMetricTotals, targetCell } from "../src/interfaces/web/dashboard/metrics.js";
-import { renderPublicationColumns, renderPublicationDetails } from "../src/interfaces/web/dashboard/table.js";
+import { renderDashboardShell } from "../src/interfaces/web/dashboard/shell.js";
+import {
+  renderOverviewPublicationList,
+  renderPublicationColumns,
+  renderPublicationDetails,
+} from "../src/interfaces/web/dashboard/table.js";
 import { getTargetUrl } from "../src/interfaces/web/dashboard/target-url.js";
 import type { PipelinePost } from "../src/interfaces/web/dashboard/types.js";
 
@@ -44,6 +50,34 @@ describe("dashboard formatting", () => {
   it("survives a missing title instead of rendering the word null", () => {
     expect(shortPipelineText(null)).toBe("");
     expect(shortPipelineText("")).toBe("");
+  });
+});
+
+describe("dashboard shell", () => {
+  it("keeps a hidden overview tooltip hidden after the pointer leaves a chart", () => {
+    const html = renderDashboardShell("");
+    expect(html).toContain(".overview-chart-tooltip[hidden] { display:none; }");
+    expect(html).toContain("group.closest('.metric-chart')");
+  });
+
+  it("clips overview bars at the fixed cap while keeping exact values in tooltips", () => {
+    const html = renderOverviewSparkline(
+      [
+        { label: "normal", value: 10_000 },
+        { label: "viral", value: 75_000 },
+      ],
+      "var(--series-views)",
+      "Просмотры",
+      "30 дней назад",
+      "сегодня",
+    );
+
+    expect(html).toContain(`class="overview-spark__cap"`);
+    expect(html).toContain('class="overview-spark__bar overview-spark__bar--over-cap"');
+    expect(html).toContain('data-tooltip="viral · 75k"');
+    expect(html).toContain("50k");
+    expect(html).not.toContain("логарифмическая");
+    expect(OVERVIEW_SPARK_MAX).toBe(50_000);
   });
 });
 
@@ -261,5 +295,35 @@ describe("renderPublicationColumns", () => {
       },
     ]);
     expect(html).toContain("+4 подписки");
+  });
+});
+
+describe("renderOverviewPublicationList", () => {
+  it("uses thin expandable rows and keeps the lower detail contract", () => {
+    const html = renderOverviewPublicationList(
+      [
+        {
+          post_id: 1,
+          date: "2026-08-01T12:00:00.000Z",
+          text_en: "English copy",
+          full_text_en: "Full English copy",
+          text_ru: "Русский текст",
+          targets: { x: { status: "published", external_id: "123" } },
+          metrics: { x: { views: { value: 42 }, likes: { value: 4 }, replies: { value: 2 } } },
+          media_en_json: [{ url: "/media/post.jpg" }],
+        },
+      ],
+      ["x"],
+      [],
+      { limit: 4, moreUrl: "/api/publication-details" },
+    );
+
+    expect(html).toContain('<div class="overview-publications__list">');
+    expect(html).toContain('<details class="post-detail">');
+    expect(html).toContain("Full English copy");
+    expect(html).toContain("Русский текст");
+    expect(html).toContain('class="post-platforms"');
+    expect(html).toContain('<img src="/media/post.jpg"');
+    expect(html).not.toContain('class="track-publication"');
   });
 });

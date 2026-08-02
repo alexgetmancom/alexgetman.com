@@ -3,6 +3,7 @@ import path from "node:path";
 import { SITE_MEDIA_URL_PREFIX, siteMediaVerticalFilename } from "../../../backend/src/content/site-media-naming.js";
 import { openBackendDb } from "../../../backend/src/db/client.js";
 import { knowledgeEntities, postEntityLinks, postLocales, postSources, posts, publications } from "../../../backend/src/db/schema.js";
+import { zonedDateParts, zonedSlot } from "../../../backend/src/foundation/time.js";
 
 /**
  * Builds a throwaway published site: a pipeline database plus the media files
@@ -36,6 +37,14 @@ export type FixturePost = {
   entities?: Array<{ kind: "company" | "model" | "person" | "product" | "topic"; slug: string; titleRu: string; titleEn: string }>;
 };
 
+export const FULL_DEV_HISTORY_DAYS = 30;
+
+export type FullDevFixtureOptions = {
+  days?: number;
+  minPostsPerDay?: number;
+  maxPostsPerDay?: number;
+};
+
 /** The exact dataset the SSR smoke test asserts against. Changing it means
  * changing that test's expectations, so it lives here rather than inline. */
 const SMOKE_FIXTURE: FixturePost[] = [
@@ -62,6 +71,78 @@ export function devFixture(count: number, galleryImages: number): FixturePost[] 
       sources: [{ url: `https://example.com/post-${postId}`, labelRu: "Источник", labelEn: "Source", displayKind: "official" as const }],
     };
   });
+}
+
+/** Stable day counts make the fixture feel random without making screenshots
+ * and regression checks change on every seed. */
+export function fullFixtureDayCounts(days: number, minPostsPerDay = 1, maxPostsPerDay = 5): number[] {
+  const safeDays = Math.max(1, Math.floor(days));
+  const min = Math.max(1, Math.floor(minPostsPerDay));
+  const max = Math.max(min, Math.floor(maxPostsPerDay));
+  const random = fixtureRandom(0x51f15e);
+  return Array.from({ length: safeDays }, () => min + Math.floor(random() * (max - min + 1)));
+}
+
+/** Calendar midnight in the fixture's display zone, moved back by days. */
+export function fixtureDayStart(dayOffset: number, timeZone = "Europe/Moscow"): Date {
+  const current = zonedDateParts(new Date(), timeZone);
+  const calendar = new Date(Date.UTC(current.year, current.month - 1, current.day - Math.max(0, Math.floor(dayOffset))));
+  return zonedSlot(calendar.getUTCFullYear(), calendar.getUTCMonth() + 1, calendar.getUTCDate(), "00:00", timeZone);
+}
+
+/** Full local content history: one to five text posts per day for a month. */
+export function fullDevFixture(galleryImages: number, options: FullDevFixtureOptions = {}): FixturePost[] {
+  const days = Math.max(1, Math.floor(options.days ?? FULL_DEV_HISTORY_DAYS));
+  const counts = fullFixtureDayCounts(days, options.minPostsPerDay, options.maxPostsPerDay);
+  const random = fixtureRandom(0x7a11ce);
+  const topics = [
+    ["A practical look at the newest model", "Практический разбор новой модели"],
+    ["What changed in the latest release", "Что изменилось в последнем релизе"],
+    ["A small experiment with a useful result", "Небольшой эксперимент с полезным результатом"],
+    ["The workflow that saved an afternoon", "Процесс, который сэкономил целый вечер"],
+    ["Three details worth noticing", "Три детали, на которые стоит обратить внимание"],
+  ] as const;
+  let postId = 1;
+  const posts: FixturePost[] = [];
+
+  counts.forEach((count, day) => {
+    const start = fixtureDayStart(day);
+    const end =
+      day === 0 ? new Date(Math.max(start.getTime() + 60_000, Date.now() - 60_000)) : new Date(start.getTime() + 86_400_000 - 60_000);
+    const available = Math.max(60_000, end.getTime() - start.getTime());
+    for (let index = 0; index < count; index += 1) {
+      const [englishTopic, russianTopic] = topics[(postId - 1) % topics.length] ?? topics[0];
+      const publishedAt = new Date(Math.min(end.getTime(), start.getTime() + Math.round((available * (index + 1)) / (count + 1))));
+      const number = postId;
+      const images = day === 0 && index === 0 ? Math.max(1, galleryImages) : 1;
+      const premiumMark = random() > 0.9 ? " · premium reach" : "";
+      posts.push({
+        postId: number,
+        dateUtc: publishedAt.toISOString(),
+        en: {
+          slug: `full-dev-post-${number}`,
+          text: `${englishTopic} · fixture post ${number}${premiumMark}.\nSecond paragraph for the reading view.`,
+          images,
+        },
+        ru: {
+          slug: `full-dev-post-${number}-ru`,
+          text: `${russianTopic} · пост фикстуры ${number}${premiumMark ? " · премиальный охват" : ""}.\nВторой абзац для режима чтения.`,
+          images,
+        },
+        sources: [{ url: `https://example.com/full-dev-post-${number}`, labelRu: "Источник", labelEn: "Source", displayKind: "official" }],
+      });
+      postId += 1;
+    }
+  });
+  return posts;
+}
+
+function fixtureRandom(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state * 1_664_525 + 1_013_904_223) >>> 0;
+    return state / 4_294_967_296;
+  };
 }
 
 /** Titles of the six text publications the overview reference layout shows. The

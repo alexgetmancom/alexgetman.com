@@ -13,7 +13,7 @@ import { formatMetricValue } from "./format.js";
 import { renderHeroCard, renderHeroMicroMetrics, type TextHeroMetrics, type VideoHeroMetrics } from "./hero-section.js";
 import { escapeHtml } from "./html.js";
 import { getTargetMetric, postMetricTotals } from "./metrics.js";
-import { renderPublicationColumns, renderTrackPublicationList } from "./table.js";
+import { renderOverviewPublicationList, renderPublicationColumns } from "./table.js";
 import type { PipelineData, PipelinePost } from "./types.js";
 import type { MetricEvent, VideoOverview } from "./video-overview.js";
 
@@ -173,13 +173,13 @@ function renderOverviewColumn(
   const showMetricFilter = single || kind === "text";
   const publicationMarkup =
     kind === "text"
-      ? renderTrackPublicationList(
+      ? renderOverviewPublicationList(
           posts,
           ORDERED_TARGETS.map((target) => target.id),
           [],
           { limit: 4, moreUrl: input.publicationDetailsUrl },
         )
-      : renderTrackPublicationList([], [], input.video.items, { limit: 4, moreUrl: input.publicationDetailsUrl });
+      : renderOverviewPublicationList([], [], input.video.items, { limit: 4, moreUrl: input.publicationDetailsUrl });
   const heroMarkup = kind === "text" ? renderHeroCard("text", hero as TextHeroMetrics) : renderHeroCard("video", hero as VideoHeroMetrics);
   const microMarkup =
     kind === "text" ? renderHeroMicroMetrics("text", hero as TextHeroMetrics) : renderHeroMicroMetrics("video", hero as VideoHeroMetrics);
@@ -191,7 +191,7 @@ function renderOverviewColumn(
     ${renderOverviewSparkline(history, color, `Динамика просмотров: ${title}`, historyLabel, historyRightLabel)}
     ${microMarkup}
     ${renderOverviewPlatforms(input, kind, platformRows, showMetricFilter)}
-    <div class="overview-publications">
+    <div class="overview-publications" id="overview-publications-${kind}">
       <div class="overview-kicker">ПУБЛИКАЦИИ</div>
       ${publicationMarkup}
     </div>
@@ -224,40 +224,25 @@ function renderOverviewPlatforms(
           })
           .join("")
       : `<i class="overview-platforms__empty-segment" style="width:100%;background:${color}"></i>`;
-  // Always the same four slots per track. The list is a fixed legend for the bar
-  // above it, so a quiet day must not shorten it — the two columns would stop
-  // lining up and the publication lists below them would sit at different
-  // heights. Rows beyond the fourth stay in the "+ Ещё" drawer.
-  const ranked =
-    input.platformMetric === "reach" ? rows.filter((row) => !row.secondary || row.views >= 10) : rows.filter((row) => !row.secondary);
+  // Keep the four largest destinations in the visible legend. The full bar
+  // still carries every source in its hover text, while the small drawer keeps
+  // the publication list immediately below the first four rows.
+  const ranked = input.platformMetric === "reach" ? rows : rows.filter((row) => !row.secondary);
   const visibleRows = ranked.slice(0, PLATFORM_SLOTS);
-  const hiddenRows = [
-    ...ranked.slice(PLATFORM_SLOTS),
-    ...(input.platformMetric === "reach" ? rows.filter((row) => row.secondary && row.views < 10) : []),
-  ];
+  const hiddenRows = ranked.slice(PLATFORM_SLOTS);
   const renderRow = (row: OverviewPlatformRow): string => {
     const value = metricValue(row);
     const formatted = value === null ? "—" : formatMetricValue(value);
     const delta = input.platformMetric === "reach" ? formatPlatformDelta(row.delta) : "";
-    // The icon already says which platform; the locale badge already says which
-    // audience. A spelled-out name next to both was the same fact stated three
-    // times in one row.
-    const body = `<span class="overview-platform__icon" style="color:${color}">${row.icon}</span><span class="overview-platform__name">${row.locale ? `<b>${escapeHtml(row.locale.toUpperCase())}</b>` : ""}</span><strong>${formatted}</strong><span class="overview-platform__delta ${row.delta !== null && row.delta >= 0 ? "overview-platform__delta--up" : "overview-platform__delta--down"}">${delta || "\u00a0"}</span>`;
+    const body = `<span class="overview-platform__icon" style="color:${color}">${row.icon}</span><span class="overview-platform__name"><span class="overview-platform__label">${escapeHtml(row.label)}</span>${row.locale ? `<b>${escapeHtml(row.locale.toUpperCase())}</b>` : ""}</span><strong>${formatted}</strong><span class="overview-platform__delta ${row.delta !== null && row.delta >= 0 ? "overview-platform__delta--up" : "overview-platform__delta--down"}">${delta || "\u00a0"}</span>`;
     return row.href
       ? `<a class="overview-platform" href="${escapeHtml(row.href)}" title="${escapeHtml(row.label)}" aria-label="${escapeHtml(row.label)}">${body}</a>`
       : `<div class="overview-platform" title="${escapeHtml(row.label)}" aria-label="${escapeHtml(row.label)}">${body}</div>`;
   };
-  // Short of four, the remaining slots are held open rather than collapsed, for
-  // the same alignment reason.
-  const platformRows = Array.from({ length: Math.max(PLATFORM_SLOTS, visibleRows.length) }, (_, index) => {
-    const row = visibleRows[index];
-    return row
-      ? renderRow(row)
-      : '<div class="overview-platform overview-platform--empty" aria-hidden="true"><span></span><span></span><span></span><span></span></div>';
-  }).join("");
+  const platformRows = visibleRows.map(renderRow).join("");
   const more = hiddenRows.length
-    ? `<details class="overview-platforms__more platform-more"><summary>+ Ещё <span>${hiddenRows.length}</span></summary><div class="platform-more__list">${hiddenRows.map(renderRow).join("")}</div></details>`
-    : "";
+    ? `<details class="overview-platforms__more platform-more"><summary>Ещё <span>${hiddenRows.length}</span></summary><div class="platform-more__list">${hiddenRows.map(renderRow).join("")}</div></details>`
+    : `<a class="overview-platforms__more overview-platforms__more--jump" href="#overview-publications-${kind}">Публикации</a>`;
   const filter = showMetricFilter ? renderPlatformMetricFilter(input.platformMetric, input.periodDays, input.weekOffset, input.mode) : "";
   // No kicker over the bar: the RU/EN labels already name the row, and a second
   // heading only pushed the first number further down. The metric switch stays —
@@ -316,9 +301,8 @@ function overviewPlatformRows(
     secondary: SECONDARY_TEXT_TARGETS.has(platform.key),
   }));
   const known = new Set(rows.map((row) => row.key));
-  const secondary = ORDERED_TARGETS.filter((target) => SECONDARY_TEXT_TARGETS.has(target.id) && !known.has(target.id))
-    .filter((target) => hasTextTargetData(currentPosts, target.id))
-    .map((target) => ({
+  const publishedTargets = ORDERED_TARGETS.filter((target) => !known.has(target.id) && hasTextTargetData(currentPosts, target.id)).map(
+    (target) => ({
       key: target.id,
       label: target.label,
       locale: target.locale,
@@ -327,9 +311,10 @@ function overviewPlatformRows(
       followers: null,
       delta: percentDelta(platformViews(target.id, currentPosts, currentX), platformViews(target.id, comparisonPosts, comparisonX)),
       href: null,
-      secondary: true,
-    }));
-  return [...rows, ...secondary].sort((left, right) =>
+      secondary: SECONDARY_TEXT_TARGETS.has(target.id),
+    }),
+  );
+  return [...rows, ...publishedTargets].sort((left, right) =>
     input.platformMetric === "reach" ? right.views - left.views : (right.followers ?? -1) - (left.followers ?? -1),
   );
 }

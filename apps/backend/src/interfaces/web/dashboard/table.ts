@@ -40,19 +40,7 @@ export function renderPublicationColumns(
   const entries = publicationEntries(posts, targetIds, videos);
   const ranked = [...entries].sort((left, right) => right.views - left.views).slice(0, 3);
   const recent = [...entries].sort((left, right) => right.date.localeCompare(left.date));
-  const lazy = Boolean(options.moreUrl);
-  const recentHtml = lazy
-    ? recent
-        .slice(0, VISIBLE_RECENT)
-        .map((entry) => entry.recent(false))
-        .join("")
-    : recent.map((entry, index) => entry.recent(index >= VISIBLE_RECENT)).join("");
-  const moreButton =
-    recent.length > VISIBLE_RECENT
-      ? lazy
-        ? `<button class="show-more-posts" type="button" data-more-url="${escapeHtml(options.moreUrl ?? "")}" data-more-offset="${VISIBLE_RECENT}">Показать ещё <span>${recent.length - VISIBLE_RECENT}</span></button>`
-        : `<button class="show-more-posts" type="button">Показать ещё <span>${recent.length - VISIBLE_RECENT}</span></button>`
-      : "";
+  const recentMarkup = renderRecentPublicationList(recent, VISIBLE_RECENT, options.moreUrl);
   return [
     '<div class="publication-columns">',
     '<section class="best-posts">',
@@ -64,8 +52,7 @@ export function renderPublicationColumns(
     '<div class="section-kicker">Последние публикации</div>',
     "<span>Площадки</span><span>Охват</span><span>Реакции</span><span>Ответы</span>",
     "</header>",
-    recent.length ? recentHtml : empty(NO_POSTS),
-    moreButton,
+    recent.length ? recentMarkup : empty(NO_POSTS),
     "</section>",
     "</div>",
   ].join("");
@@ -132,6 +119,35 @@ export function renderTrackPublicationList(
         : `<div class="track-publication">${content}</div>`;
     })
     .join("")}${more}`;
+}
+
+/** Thin, recent rows for the overview. Text rows keep the same inline details
+ * as the lower publication table, while video rows remain direct links because
+ * their provider-specific detail has no second locale or post body. */
+export function renderOverviewPublicationList(
+  posts: PipelinePost[],
+  targetIds: string[] = ORDERED_TARGETS.map((target) => target.id),
+  videos: VideoContentItem[] = [],
+  options: TrackPublicationListOptions = {},
+): string {
+  const recent = [...publicationEntries(posts, targetIds, videos)].sort((left, right) => right.date.localeCompare(left.date));
+  if (!recent.length) return empty(NO_POSTS);
+  return `<div class="overview-publications__list">${renderRecentPublicationList(recent, Math.max(1, options.limit ?? 4), options.moreUrl)}</div>`;
+}
+
+function renderRecentPublicationList(entries: PublicationEntry[], limit: number, moreUrl?: string): string {
+  const lazy = Boolean(moreUrl);
+  const rows = lazy
+    ? entries
+        .slice(0, limit)
+        .map((entry) => entry.recent(false))
+        .join("")
+    : entries.map((entry, index) => entry.recent(index >= limit)).join("");
+  if (entries.length <= limit) return rows;
+  const button = lazy
+    ? `<button class="show-more-posts" type="button" data-more-url="${escapeHtml(moreUrl ?? "")}" data-more-offset="${limit}">Показать ещё <span>${entries.length - limit}</span></button>`
+    : `<button class="show-more-posts" type="button">Показать ещё <span>${entries.length - limit}</span></button>`;
+  return `${rows}${button}`;
 }
 
 /** Renders only a bounded fragment for the dashboard's read-only detail loader. */
@@ -244,16 +260,18 @@ function videoIcon(target: string): string {
 }
 
 function renderRecentVideo(video: VideoContentItem, hidden: boolean): string {
+  const extra = [
+    video.afterPeriodViews > 0 ? `+${formatMetricValue(video.afterPeriodViews)} после периода` : "",
+    video.subscribers ? `${video.subscribers > 0 ? "+" : ""}${formatMetricValue(video.subscribers)} подписки` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const body = [
     '<span class="post-detail__summary">',
     '<span class="post-detail__headline"><span class="post-detail__chevron post-detail__chevron--link">↗</span>',
-    `<span class="post-detail__title">${escapeHtml(shortPipelineText(video.title, 11))}</span></span>`,
-    `<span class="post-detail__media">${videoIcon(video.target)}</span>`,
-    `<span class="post-detail__views"><span>${formatMetricValue(video.views)}</span>${
-      video.afterPeriodViews > 0
-        ? `<small class="post-after-period">+${formatMetricValue(video.afterPeriodViews)} после периода</small>`
-        : ""
-    }${videoSubscribersLine(video.subscribers)}</span>`,
+    `<span class="post-detail__title">${escapeHtml(shortPipelineText(video.title, 11))}${extra ? ` <small class="post-detail__inline-meta">· ${escapeHtml(extra)}</small>` : ""}</span></span>`,
+    `<span class="post-detail__media"><span class="post-detail__source">${escapeHtml(publicationTag(video.target, video.locale))}</span>${videoIcon(video.target)}</span>`,
+    `<span class="post-detail__views"><span>${formatMetricValue(video.views)}</span></span>`,
     `<span>${formatMetricValue(video.reactions)}</span>`,
     `<span>${formatMetricValue(video.replies)}</span>`,
     "</span>",
