@@ -240,4 +240,26 @@ describe("renderPublicationColumns", () => {
     expect(untrusted).not.toContain("javascript:");
     expect(untrusted).toContain("post-preview--empty");
   });
+
+  it("shows per-video subscriber attribution when it is available", () => {
+    const html = renderPublicationColumns([], undefined, [
+      {
+        key: "video:1",
+        target: "youtube_shorts",
+        providerAccountId: null,
+        label: "YouTube RU",
+        locale: "RU",
+        title: "A Short",
+        url: "https://youtube.com/shorts/a",
+        publishedAt: "2026-08-01T12:00:00.000Z",
+        views: 100,
+        reactions: 8,
+        replies: 1,
+        afterPeriodViews: 0,
+        lifetimeViews: 100,
+        subscribers: 4,
+      },
+    ]);
+    expect(html).toContain("+4 подписки");
+  });
 });

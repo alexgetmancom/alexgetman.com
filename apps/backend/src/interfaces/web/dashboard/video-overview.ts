@@ -1,3 +1,4 @@
+import { audienceGrowthByPlatform } from "../../../analytics/metric-deltas.js";
 import { metricNumber } from "../../../analytics/snapshots/creator-store.js";
 import { videoDestinations } from "../../../channels/destinations.js";
 import type { BackendDb } from "../../../db/client.js";
@@ -42,6 +43,8 @@ export type VideoContentItem = {
   /** Current lifetime views which arrived after the selected period ended. */
   afterPeriodViews: number;
   lifetimeViews: number;
+  /** Net subscribers/follows attributed to this publication during the period. */
+  subscribers: number | null;
 };
 
 /**
@@ -78,7 +81,7 @@ export type VideoOverview = {
   summary: VideoSummaryMetrics;
   platforms: VideoPlatformTotal[];
   /** Period increments keyed by the studio calendar date. */
-  dailyByDay: Record<string, { views: number; reactions: number; replies: number }>;
+  dailyByDay: Record<string, DailyVideoMetrics>;
   viewEvents: MetricEvent[];
 };
 
@@ -105,6 +108,7 @@ type VideoMetrics = {
 };
 type VideoSnapshot = { at: Date; metrics: VideoMetrics };
 type DailyMetrics = { views: number; reactions: number; replies: number };
+type DailyVideoMetrics = DailyMetrics & { subscribers: number | null };
 type PeriodDay = { key: string; start: Date; end: Date };
 
 export function emptyVideoOverview(): VideoOverview {
@@ -146,6 +150,7 @@ export function videoOverview(backendDb: BackendDb, start: Date, end: Date, time
         replies: period.totals.replies,
         afterPeriodViews: Math.max(0, lifetime.views - periodEnd.views),
         lifetimeViews: lifetime.views,
+        subscribers: periodSubscriberDelta(history, periodDays),
       };
     })
     .sort((left, right) => (right.publishedAt ?? "").localeCompare(left.publishedAt ?? ""));
@@ -192,7 +197,7 @@ export function videoOverview(backendDb: BackendDb, start: Date, end: Date, time
     totals,
     summary,
     platforms,
-    dailyByDay: aggregateDailyMetrics(rows, snapshots, periodDays),
+    dailyByDay: aggregateDailyMetrics(backendDb, rows, snapshots, periodDays),
     viewEvents: viewEvents(rows, snapshots, start, end),
   };
 }
@@ -264,23 +269,32 @@ function viewEvents(rows: TargetRow[], snapshots: Map<number, VideoSnapshot[]>, 
 }
 
 function aggregateDailyMetrics(
+  backendDb: BackendDb,
   rows: TargetRow[],
   snapshots: Map<number, VideoSnapshot[]>,
   days: PeriodDay[],
-): Record<string, DailyMetrics> {
-  const result: Record<string, DailyMetrics> = {};
-  for (const day of days) result[day.key] = emptyDailyMetrics();
+): Record<string, DailyVideoMetrics> {
+  const result: Record<string, DailyVideoMetrics> = {};
+  for (const day of days) result[day.key] = emptyDailyVideoMetrics();
   for (const row of rows) {
     const history = snapshots.get(row.id) ?? [];
     for (const day of days) {
       const before = latestAtOrBefore(history, day.start)?.metrics ?? emptyMetrics();
       const atEnd = latestAtOrBefore(history, day.end)?.metrics ?? before;
-      const bucket = result[day.key] ?? emptyDailyMetrics();
+      const bucket = result[day.key] ?? emptyDailyVideoMetrics();
       bucket.views += Math.max(0, atEnd.views - before.views);
       bucket.reactions += Math.max(0, atEnd.likes - before.likes);
       bucket.replies += Math.max(0, atEnd.comments - before.comments);
       result[day.key] = bucket;
     }
+  }
+  const profileKeys = new Set(rows.map(profileKeyForRow).filter((key): key is string => key !== null));
+  for (const day of days) {
+    const growth = audienceGrowthByPlatform(backendDb, day.start.toISOString(), 1, day.end.toISOString(), false);
+    const values = [...profileKeys].filter((key) => growth.has(key)).map((key) => growth.get(key) ?? 0);
+    const bucket = result[day.key] ?? emptyDailyVideoMetrics();
+    bucket.subscribers = values.length ? values.reduce((total, value) => total + value, 0) : null;
+    result[day.key] = bucket;
   }
   return result;
 }
@@ -295,6 +309,19 @@ function periodMetrics(history: VideoSnapshot[], days: PeriodDay[]): { totals: D
     totals.replies += Math.max(0, atEnd.comments - before.comments);
   }
   return { totals };
+}
+
+function periodSubscriberDelta(history: VideoSnapshot[], days: PeriodDay[]): number | null {
+  let total = 0;
+  let observed = false;
+  for (const day of days) {
+    const before = latestAtOrBefore(history, day.start)?.metrics ?? emptyMetrics();
+    const atEnd = latestAtOrBefore(history, day.end)?.metrics ?? before;
+    if (before.follows === null && atEnd.follows === null) continue;
+    observed = true;
+    total += (atEnd.follows ?? before.follows ?? 0) - (before.follows ?? 0);
+  }
+  return observed ? total : null;
 }
 
 function latestAtOrBefore(history: VideoSnapshot[], cutoff: Date): VideoSnapshot | undefined {
@@ -340,6 +367,10 @@ function emptyMetrics(): VideoMetrics {
 
 function emptyDailyMetrics(): DailyMetrics {
   return { views: 0, reactions: 0, replies: 0 };
+}
+
+function emptyDailyVideoMetrics(): DailyVideoMetrics {
+  return { ...emptyDailyMetrics(), subscribers: null };
 }
 
 function followerCounts(backendDb: BackendDb): Map<string, number> {
@@ -423,16 +454,35 @@ function videoSummaryMetrics(
   // valid for the current calendar day; reusing today's 1d/7d report for a
   // historical dashboard window would make an old date move when the account
   // sync runs again.
+  const reportDays = reportPeriodDays(periodDays.length);
   let profileSubscribers = 0;
   let hasProfileSubscribers = false;
   let accountProfileKeys = new Set<string>();
-  if (isCurrentCalendarDay(end, timeZone)) {
-    const profileMetrics = profileSummaryMetrics(backendDb, rows, periodDays.length);
+  if (isCurrentCalendarDay(end, timeZone) && reportDays !== null) {
+    const profileMetrics = profileSummaryMetrics(backendDb, rows, reportDays);
     if (profileMetrics.averageWatchTimeMs !== null)
       watchSamples.push({ value: profileMetrics.averageWatchTimeMs, weight: Math.max(1, profileMetrics.views) });
+    if (profileMetrics.completionRate !== null)
+      completionSamples.push({ value: profileMetrics.completionRate, weight: Math.max(1, profileMetrics.views) });
     profileSubscribers = profileMetrics.subscribers;
     hasProfileSubscribers = profileMetrics.hasSubscribers;
     accountProfileKeys = profileMetrics.accountProfileKeys;
+  }
+
+  const audienceDays = reportDays ?? periodDays.length;
+  const audienceGrowth = audienceGrowthByPlatform(
+    backendDb,
+    periodDays[0]?.start.toISOString() ?? end.toISOString(),
+    audienceDays,
+    end.toISOString(),
+    isCurrentCalendarDay(end, timeZone) && reportDays !== null,
+  );
+  for (const row of rows) {
+    const profileKey = profileKeyForRow(row);
+    if (profileKey === null || accountProfileKeys.has(profileKey) || !audienceGrowth.has(profileKey)) continue;
+    profileSubscribers += audienceGrowth.get(profileKey) ?? 0;
+    hasProfileSubscribers = true;
+    accountProfileKeys.add(profileKey);
   }
 
   // Do not add a per-video number for a channel whose account report already
@@ -454,8 +504,13 @@ function videoSummaryMetrics(
   };
 }
 
+function reportPeriodDays(days: number): 1 | 7 | 30 | null {
+  return days === 1 || days === 7 || days === 30 ? days : null;
+}
+
 type ProfileSummaryMetrics = {
   averageWatchTimeMs: number | null;
+  completionRate: number | null;
   subscribers: number;
   hasSubscribers: boolean;
   accountProfileKeys: Set<string>;
@@ -468,6 +523,8 @@ function profileSummaryMetrics(backendDb: BackendDb, rows: TargetRow[], days: nu
   const accountKeys = new Set(rows.map(profileKeyForRow).filter((key): key is string => key !== null));
   let averageWatchTotal = 0;
   let averageWatchWeight = 0;
+  let completionTotal = 0;
+  let completionWeight = 0;
   let subscribers = 0;
   let hasSubscribers = false;
   let views = 0;
@@ -487,6 +544,12 @@ function profileSummaryMetrics(backendDb: BackendDb, rows: TargetRow[], days: nu
         averageWatchTotal += averageViewDuration * 1_000 * weight;
         averageWatchWeight += weight;
       }
+      const averageViewPercentage = optionalMetric(data[`averageViewPercentage${suffix}`] ?? data.averageViewPercentage);
+      if (averageViewPercentage !== null && averageViewPercentage >= 0) {
+        const weight = Math.max(1, periodViews);
+        completionTotal += averageViewPercentage * weight;
+        completionWeight += weight;
+      }
       if (gained !== null || lost !== null) {
         subscribers += (gained ?? 0) - (lost ?? 0);
         hasSubscribers = true;
@@ -504,6 +567,7 @@ function profileSummaryMetrics(backendDb: BackendDb, rows: TargetRow[], days: nu
   }
   return {
     averageWatchTimeMs: averageWatchWeight > 0 ? averageWatchTotal / averageWatchWeight : null,
+    completionRate: completionWeight > 0 ? completionTotal / completionWeight : null,
     subscribers,
     hasSubscribers,
     accountProfileKeys,

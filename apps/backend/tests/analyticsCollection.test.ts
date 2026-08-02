@@ -181,6 +181,77 @@ describe("creator analytics collection", () => {
     });
   });
 
+  it("merges one batched YouTube Analytics report into Data API snapshots", async () => {
+    await withDb(async (backendDb) => {
+      const publishedAt = new Date(Date.now() - 3 * 24 * 60 * 60_000).toISOString();
+      const { targetId } = insertPublishedVideo(backendDb, {
+        label: "YouTube analytics test",
+        target: "youtube_shorts",
+        publishedAt,
+        externalId: "youtube-analytics-test",
+      });
+      const config = loadConfig({ YOUTUBE_CLIENT_ID: "client", YOUTUBE_CLIENT_SECRET: "secret", YOUTUBE_REFRESH_TOKEN: "refresh" });
+      config.studio.modules.video_posting = true;
+      const requested: string[] = [];
+      const fetchMock = (async (input: URL | RequestInfo) => {
+        const url = String(input);
+        requested.push(url);
+        if (url === "https://oauth2.googleapis.com/token") return new Response(JSON.stringify({ access_token: "access" }));
+        if (url.includes("youtube/v3/videos"))
+          return new Response(
+            JSON.stringify({
+              items: [
+                {
+                  snippet: { title: "YouTube analytics test", publishedAt },
+                  statistics: { viewCount: "1200", likeCount: "80", commentCount: "9" },
+                  contentDetails: { duration: "PT30S" },
+                },
+              ],
+            }),
+          );
+        if (url.includes("youtube/v3/commentThreads"))
+          return new Response(JSON.stringify({ error: { message: "Request had insufficient authentication scopes." } }), { status: 403 });
+        if (url.includes("youtubeanalytics.googleapis.com"))
+          return new Response(
+            JSON.stringify({
+              columnHeaders: [
+                { name: "video" },
+                { name: "views" },
+                { name: "estimatedMinutesWatched" },
+                { name: "averageViewDuration" },
+                { name: "averageViewPercentage" },
+                { name: "subscribersGained" },
+                { name: "subscribersLost" },
+              ],
+              rows: [["youtube-analytics-test", 2400, 36, 18, 60, 7, 2]],
+            }),
+          );
+        throw new Error(`Unexpected request: ${url}`);
+      }) as typeof fetch;
+
+      await runVideoMetricSchedule(config, backendDb, fetchMock);
+
+      const metrics = backendDb.db
+        .select()
+        .from(videoMetricSnapshots)
+        .where(eq(videoMetricSnapshots.videoTargetId, targetId))
+        .get()?.metricsJson;
+      expect(metrics).toMatchObject({
+        // Data API remains the source of the current public counter.
+        views: 1_200,
+        videoDurationMs: 30_000,
+        averageWatchTimeMs: 18_000,
+        totalWatchTimeMs: 2_160_000,
+        completionRate: 60,
+        subscribersGained: 7,
+        subscribersLost: 2,
+        follows: 5,
+        analyticsSource: "youtube_analytics_api",
+      });
+      expect(requested.some((url) => url.includes("dimensions=video") && url.includes("filters=video%3D%3D"))).toBe(true);
+    });
+  });
+
   it("refreshes YouTube OAuth once and freezes a failed batch without a request burst", async () => {
     await withDb(async (backendDb) => {
       const publishedAt = new Date(Date.now() - 2 * 60 * 60_000).toISOString();
@@ -307,6 +378,9 @@ describe("creator analytics collection", () => {
         averageWatchTimeMs: 7000,
         videoDurationMs: 12_000,
       });
+      expect(
+        backendDb.db.select().from(videoMetricSnapshots).where(eq(videoMetricSnapshots.videoTargetId, targetId)).get()?.metricsJson,
+      ).toMatchObject({ completionRate: (7000 / 12_000) * 100 });
       expect(backendDb.db.select().from(creatorProfiles).where(eq(creatorProfiles.platform, "instagram_ru")).get()?.dataJson).toMatchObject(
         {
           followersCount: 306,

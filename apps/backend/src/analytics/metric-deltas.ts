@@ -236,14 +236,17 @@ export function sum(rows: VideoMetricRow[], field: string): number {
 
 /** Current projection minus the last observation at or before `since`, keyed by
  * `platform${KEY_SEP}account`. A profile with no baseline is omitted rather than
- * counting its lifetime follower number as growth. */
-function audienceGrowthByAccount(backendDb: BackendDb, since: string): Map<string, number> {
+ * counting its lifetime follower number as growth. `until` makes the same
+ * calculation safe for historical dashboard dates: the latest sample must be
+ * inside the selected period, not whatever was collected today. */
+function audienceGrowthByAccount(backendDb: BackendDb, since: string, until: string): Map<string, number> {
   const rows = backendDb.sqlite
     .prepare(
       `WITH samples AS (
          SELECT platform, account, sampled_at, id,
                 CAST(COALESCE(json_extract(metrics_json, '$.subscriberCount'), json_extract(metrics_json, '$.followersCount'), 0) AS INTEGER) AS value
          FROM creator_profile_snapshots
+         WHERE sampled_at <= ?
        ),
        ranked_latest AS (
          SELECT platform, account, value,
@@ -261,7 +264,7 @@ function audienceGrowthByAccount(backendDb: BackendDb, since: string): Map<strin
        LEFT JOIN ranked_baseline b ON b.platform = l.platform AND b.account = l.account AND b.rn = 1
        WHERE l.rn = 1`,
     )
-    .all(since) as Array<{ platform: string; account: string; latest: number; baseline: number | null }>;
+    .all(until, since) as Array<{ platform: string; account: string; latest: number; baseline: number | null }>;
   return new Map(
     rows.filter((row) => row.baseline != null).map((row) => [`${row.platform}${KEY_SEP}${row.account}`, row.latest - (row.baseline ?? 0)]),
   );
@@ -271,12 +274,19 @@ function audienceGrowthByAccount(backendDb: BackendDb, since: string): Map<strin
  * gained/lost subscribers directly). Zernio currently exposes this aggregate
  * only for 30 days, so shorter Instagram periods continue to use our durable
  * daily observations. */
-export function audienceGrowthByPlatform(backendDb: BackendDb, since: string, days: 1 | 7 | 30): Map<string, number> {
+export function audienceGrowthByPlatform(
+  backendDb: BackendDb,
+  since: string,
+  days: number,
+  until = new Date().toISOString(),
+  useCurrentProviderReports = true,
+): Map<string, number> {
   const totals = new Map<string, number>();
-  for (const [key, value] of audienceGrowthByAccount(backendDb, since)) {
+  for (const [key, value] of audienceGrowthByAccount(backendDb, since, until)) {
     const [platform] = key.split(KEY_SEP);
     if (platform) totals.set(platform, (totals.get(platform) ?? 0) + value);
   }
+  if (!useCurrentProviderReports) return totals;
   for (const profile of backendDb.db.select().from(creatorProfiles).all()) {
     const direct = providerFollowerGrowth(profile.platform, profile.dataJson, days);
     const observed = totals.get(profile.platform);
@@ -288,7 +298,7 @@ export function audienceGrowthByPlatform(backendDb: BackendDb, since: string, da
   return totals;
 }
 
-function providerFollowerGrowth(platform: string, data: Record<string, unknown>, days: 1 | 7 | 30): number | null {
+function providerFollowerGrowth(platform: string, data: Record<string, unknown>, days: number): number | null {
   if (platform === "youtube" || platform.startsWith("youtube_")) {
     const suffix = days === 30 ? "" : `${days}d`;
     const gained = data[`subscribersGained${suffix}`];

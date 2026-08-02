@@ -141,6 +141,27 @@ function seedHistoricalVideo(backendDb: ReturnType<typeof openBackendDb>): void 
         sampledAt,
       })
       .run();
+  backendDb.db
+    .insert(creatorProfileSnapshots)
+    .values([
+      {
+        platform: "youtube_ru",
+        account: "marux",
+        sampledOn: "2026-07-29T20",
+        metricsJson: { subscriberCount: 100 },
+        source: "fixture",
+        sampledAt: "2026-07-29T20:00:00.000Z",
+      },
+      {
+        platform: "youtube_ru",
+        account: "marux",
+        sampledOn: "2026-07-30T20",
+        metricsJson: { subscriberCount: 107 },
+        source: "fixture",
+        sampledAt: "2026-07-30T20:00:00.000Z",
+      },
+    ])
+    .run();
 }
 
 describe("unified overview video read model", () => {
@@ -212,6 +233,8 @@ describe("unified overview video read model", () => {
       expect(overview.items[0]?.views).toBe(800);
       expect(overview.items[0]?.lifetimeViews).toBe(2_300);
       expect(overview.items[0]?.afterPeriodViews).toBe(1_500);
+      expect(overview.summary.subscribers).toBe(7);
+      expect(overview.dailyByDay["2026-07-30"]?.subscribers).toBe(7);
       expect(overview.dailyByDay["2026-07-30"]?.views).toBe(800);
       expect(overview.viewEvents.map((event) => event.value)).toEqual([100, 800]);
     } finally {
@@ -228,6 +251,8 @@ describe("unified overview video read model", () => {
       expect(overview.totals.views).toBe(1_500);
       expect(overview.dailyByDay["2026-07-30"]?.views).toBe(800);
       expect(overview.dailyByDay["2026-07-31"]?.views).toBe(700);
+      expect(overview.dailyByDay["2026-07-30"]?.subscribers).toBe(7);
+      expect(overview.dailyByDay["2026-07-31"]?.subscribers).toBe(0);
       expect(overview.items[0]?.afterPeriodViews).toBe(800);
     } finally {
       backendDb.close();

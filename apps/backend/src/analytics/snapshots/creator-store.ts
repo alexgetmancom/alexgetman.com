@@ -87,6 +87,28 @@ export function upsertVideoSnapshot(
     .run(videoTargetId, platform, JSON.stringify(metrics), checkpointIndex, sampledAt);
 }
 
+/** Adds provider-specific enrichment to the snapshot written by the base collector. */
+export function mergeVideoSnapshot(
+  backendDb: BackendDb,
+  videoTargetId: number,
+  platform: string,
+  checkpointIndex: number,
+  metrics: Record<string, unknown>,
+): void {
+  const existing = backendDb.sqlite
+    .prepare("SELECT metrics_json AS metricsJson FROM video_metric_snapshots WHERE video_target_id=? AND checkpoint_index=?")
+    .get(videoTargetId, checkpointIndex) as { metricsJson?: string } | null;
+  let current: Record<string, unknown> = {};
+  if (existing?.metricsJson) {
+    try {
+      current = JSON.parse(existing.metricsJson) as Record<string, unknown>;
+    } catch {
+      current = {};
+    }
+  }
+  upsertVideoSnapshot(backendDb, videoTargetId, platform, checkpointIndex, { ...current, ...metrics });
+}
+
 export function upsertComment(
   backendDb: BackendDb,
   platform: "youtube" | "instagram",

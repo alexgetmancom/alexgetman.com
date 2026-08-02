@@ -9,16 +9,13 @@ import { youtubeAccessToken } from "../../foundation/external/youtube.js";
 import { requestJson } from "../../foundation/http.js";
 import { studioAudiencePlatforms } from "../audience-groups.js";
 import { canSync, markSynced, metricNumber, recordProfileSnapshot } from "../snapshots/creator-store.js";
+import { queryYouTubeAnalytics, youtubeAnalyticsDateRange } from "./youtube-analytics.js";
 
 type YouTubeChannel = {
   items?: Array<{
     snippet?: { title?: string };
     statistics?: Record<string, string>;
   }>;
-};
-type YouTubeReport = {
-  columnHeaders?: Array<{ name?: string }>;
-  rows?: Array<Array<string | number>>;
 };
 type InstagramProfile = {
   username?: string;
@@ -99,33 +96,11 @@ async function youtubeReport(fetchImpl: typeof fetch, token: string, days = 30):
   // YouTube Analytics defines report days in Pacific time and may omit the
   // most recent days. Ask only for completed days; a currently-open calendar
   // day otherwise produces an empty report that looks like a real zero.
-  const pacificDay = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Los_Angeles",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  })
-    .formatToParts(new Date())
-    .reduce<Record<string, string>>((result, part) => {
-      result[part.type] = part.value;
-      return result;
-    }, {});
-  const completedEnd = new Date(`${pacificDay.year}-${pacificDay.month}-${pacificDay.day}T12:00:00Z`);
-  completedEnd.setUTCDate(completedEnd.getUTCDate() - 1);
-  const end = completedEnd.toISOString().slice(0, 10);
-  const startDate = new Date(completedEnd);
-  startDate.setUTCDate(startDate.getUTCDate() - days + 1);
-  const start = startDate.toISOString().slice(0, 10);
-  const url = new URL("https://youtubeanalytics.googleapis.com/v2/reports");
-  url.searchParams.set("ids", "channel==MINE");
-  url.searchParams.set("startDate", start);
-  url.searchParams.set("endDate", end);
-  url.searchParams.set(
-    "metrics",
-    "views,likes,comments,shares,estimatedMinutesWatched,averageViewDuration,subscribersGained,subscribersLost",
-  );
-  const report = await requestJson<YouTubeReport>(fetchImpl, url.toString(), {
-    headers: { Authorization: `Bearer ${token}` },
+  const range = youtubeAnalyticsDateRange(days);
+  const report = await queryYouTubeAnalytics(fetchImpl, token, {
+    ...range,
+    metrics:
+      "views,likes,comments,shares,estimatedMinutesWatched,averageViewDuration,averageViewPercentage,subscribersGained,subscribersLost",
   });
   return Object.fromEntries(
     (report.columnHeaders ?? []).map((header, index) => [header.name ?? `metric_${index}`, metricNumber(report.rows?.[0]?.[index])]),

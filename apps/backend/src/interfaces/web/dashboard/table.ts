@@ -134,6 +134,7 @@ function renderBestVideo(video: VideoContentItem, rank: number): string {
     video.reactions,
     video.url,
     video.afterPeriodViews,
+    video.subscribers,
   );
 }
 
@@ -145,6 +146,7 @@ function bestBody(
   likes: number,
   url: string | null,
   afterPeriodViews = 0,
+  subscribers: number | null = null,
 ): string {
   const opening = url
     ? `<a class="best-post" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">`
@@ -156,6 +158,7 @@ function bestBody(
     '<div class="best-post__stats">',
     `<strong>${formatMetricValue(views)}</strong><small>просмотры</small>`,
     afterPeriodViews > 0 ? `<small class="post-after-period">+${formatMetricValue(afterPeriodViews)} после периода</small>` : "",
+    videoSubscribersLine(subscribers),
     `<em>♡ ${formatMetricValue(likes)}</em>`,
     "</div>",
     url ? "</a>" : "</article>",
@@ -187,7 +190,7 @@ function renderRecentVideo(video: VideoContentItem, hidden: boolean): string {
       video.afterPeriodViews > 0
         ? `<small class="post-after-period">+${formatMetricValue(video.afterPeriodViews)} после периода</small>`
         : ""
-    }</span>`,
+    }${videoSubscribersLine(video.subscribers)}</span>`,
     `<span>${formatMetricValue(video.reactions)}</span>`,
     `<span>${formatMetricValue(video.replies)}</span>`,
     "</span>",
@@ -196,6 +199,11 @@ function renderRecentVideo(video: VideoContentItem, hidden: boolean): string {
   return video.url
     ? `<a class="${className}" href="${escapeHtml(video.url)}" target="_blank" rel="noopener noreferrer">${body}</a>`
     : `<div class="${className}">${body}</div>`;
+}
+
+function videoSubscribersLine(value: number | null): string {
+  if (value === null || value === 0) return "";
+  return `<small class="post-video-subscribers">${value > 0 ? "+" : ""}${formatMetricValue(value)} подписки</small>`;
 }
 
 function bestPostUrl(post: PipelinePost, targetIds: string[]): string | null {

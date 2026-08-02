@@ -7,9 +7,10 @@ import type { BackendConfig } from "../../foundation/config.js";
 import { instagramConfigForLocale, instagramGraphHost } from "../../foundation/external/instagram.js";
 import { youtubeAccessToken } from "../../foundation/external/youtube.js";
 import { requestJson } from "../../foundation/http.js";
-import { metricNumber, upsertComment, upsertVideoSnapshot } from "../snapshots/creator-store.js";
+import { markSynced, mergeVideoSnapshot, metricNumber, upsertComment, upsertVideoSnapshot } from "../snapshots/creator-store.js";
 import { isTerminalMetricError, terminalIfMissingRemoteObject } from "./collectors/errors.js";
 import { nextVideoMetricCheckAt, videoMetricCheckpointAt } from "./metric-checkpoints.js";
+import { queryYouTubeAnalytics, youtubeAnalyticsCompletedEnd, youtubeAnalyticsDate } from "./youtube-analytics.js";
 
 /** Matches the "common.untitled" i18n fallback shown for drafts without a label;
  * this collector runs in the background with no locale, so it can't call `t()`. */
@@ -25,6 +26,7 @@ type VideoMetricTask = {
   externalUrl: string | null;
   publishedAt: string;
   label: string | null;
+  metadataJson: Record<string, unknown>;
   checkpointIndex: number;
   errorCount: number;
   locale: "ru" | "en";
@@ -143,6 +145,20 @@ export async function runVideoMetricSchedule(config: BackendConfig, backendDb: B
         });
     }
   }
+  for (const locale of ["ru", "en"] as const) {
+    const localizedTasks = youtubeTasks.filter((task) => task.locale === locale);
+    const token = youtubeTokens.get(locale);
+    if (!localizedTasks.length || !token) continue;
+    try {
+      await collectYouTubeVideoAnalyticsBatch(backendDb, localizedTasks, token, fetchImpl);
+      markSynced(backendDb, `youtube_video_analytics_${locale}`);
+    } catch (error) {
+      // Data API snapshots remain authoritative for the checkpoint. Analytics
+      // enrichment is retried on the next video checkpoint and never freezes a
+      // healthy publication just because the report endpoint is delayed.
+      markSynced(backendDb, `youtube_video_analytics_${locale}`, error instanceof Error ? error.message : String(error));
+    }
+  }
   return tasks.length;
 }
 
@@ -230,6 +246,7 @@ function dueVideoMetricTasks(backendDb: BackendDb, limit: number): VideoMetricTa
       externalUrl: videoTargets.externalUrl,
       publishedAt: videoTargets.publishedAt,
       label: videoDrafts.label,
+      metadataJson: videoTargets.metadataJson,
       checkpointIndex: videoMetricSchedule.checkpointIndex,
       errorCount: videoMetricSchedule.errorCount,
       locale: videoDrafts.locale,
@@ -268,11 +285,17 @@ async function collectZernioInstagramVideoMetrics(
   const platform = data.platforms?.find((item) => item.platform === "instagram");
   const metrics = platform?.analytics ?? data.analytics ?? {};
   const follows = optionalProviderMetric(metrics.follows);
+  const views = metricNumber(metrics.views);
+  const averageWatchTimeMs = firstMetric(metrics, ["igReelsAvgWatchTime", "averageWatchTimeMs", "averageWatchTime"]);
+  const totalWatchTimeMs = firstMetric(metrics, ["igReelsVideoViewTotalTime", "totalWatchTimeMs", "totalWatchTime"]);
+  const videoDurationMs = analyticsVideoDurationMs(metrics) ?? targetVideoDurationMs(target);
+  const completionRate =
+    providerCompletionRate(metrics) ?? derivedCompletionRate(views, averageWatchTimeMs, totalWatchTimeMs, videoDurationMs);
   upsertVideoSnapshot(backendDb, target.id, "instagram_reels", target.checkpointIndex, {
     title: target.label ?? UNTITLED_VIDEO,
     url: platform?.platformPostUrl ?? data.platformPostUrl ?? target.externalUrl,
     publishedAt: data.publishedAt ?? target.publishedAt,
-    views: metricNumber(metrics.views),
+    views,
     likes: metricNumber(metrics.likes),
     comments: metricNumber(metrics.comments),
     reach: metricNumber(metrics.reach),
@@ -281,10 +304,47 @@ async function collectZernioInstagramVideoMetrics(
     saves: metricNumber(metrics.saves),
     ...(follows === null ? {} : { follows }),
     engagementRate: metricNumber(metrics.engagementRate),
-    averageWatchTimeMs: metricNumber(metrics.igReelsAvgWatchTime),
-    totalWatchTimeMs: metricNumber(metrics.igReelsVideoViewTotalTime),
-    videoDurationMs: analyticsVideoDurationMs(metrics),
+    ...(averageWatchTimeMs === null ? {} : { averageWatchTimeMs }),
+    ...(totalWatchTimeMs === null ? {} : { totalWatchTimeMs }),
+    ...(videoDurationMs === null ? {} : { videoDurationMs }),
+    ...(completionRate === null ? {} : { completionRate }),
   });
+}
+
+function targetVideoDurationMs(target: VideoMetricTask): number | null {
+  const milliseconds = firstMetric(target.metadataJson, ["videoDurationMs", "durationMs"]);
+  if (milliseconds !== null && milliseconds > 0) return milliseconds;
+  const seconds = firstMetric(target.metadataJson, ["videoDuration", "duration"]);
+  return seconds !== null && seconds > 0 ? seconds * 1_000 : null;
+}
+
+function providerCompletionRate(metrics: Record<string, number | string | null>): number | null {
+  const value = firstMetric(metrics, [
+    "completionRate",
+    "completion_rate",
+    "completionPercentage",
+    "completion_percentage",
+    "averageViewPercentage",
+    "igReelsCompletionRate",
+    "igReelsAverageViewPercentage",
+  ]);
+  return value === null ? null : clampPercentage(value);
+}
+
+function derivedCompletionRate(
+  views: number,
+  averageWatchTimeMs: number | null,
+  totalWatchTimeMs: number | null,
+  videoDurationMs: number | null,
+): number | null {
+  if (videoDurationMs === null || videoDurationMs <= 0) return null;
+  if (totalWatchTimeMs !== null && views > 0) return clampPercentage((totalWatchTimeMs / (views * videoDurationMs)) * 100);
+  if (averageWatchTimeMs !== null && averageWatchTimeMs > 0) return clampPercentage((averageWatchTimeMs / videoDurationMs) * 100);
+  return null;
+}
+
+function clampPercentage(value: number): number {
+  return Math.min(100, Math.max(0, value));
 }
 
 /** A non-terminal error (e.g. a transient timeout) retries every 15 minutes;
@@ -370,6 +430,64 @@ async function collectYouTubeVideoMetrics(
   }
 }
 
+/** Enriches the Data API snapshot with one batched owner Analytics report. */
+async function collectYouTubeVideoAnalyticsBatch(
+  backendDb: BackendDb,
+  tasks: VideoMetricTask[],
+  token: string,
+  fetchImpl: typeof fetch,
+): Promise<void> {
+  const completedEnd = youtubeAnalyticsCompletedEnd();
+  const eligible = tasks.filter((task) => new Date(task.publishedAt).getTime() <= completedEnd.getTime());
+  if (!eligible.length) return;
+  const startDate = eligible.reduce(
+    (earliest, task) => {
+      const publishedAt = new Date(task.publishedAt);
+      return publishedAt < earliest ? publishedAt : earliest;
+    },
+    new Date(eligible[0]?.publishedAt ?? completedEnd),
+  );
+  const range = {
+    startDate: youtubeAnalyticsDate(startDate),
+    endDate: completedEnd.toISOString().slice(0, 10),
+  };
+  if (range.startDate > range.endDate) return;
+  const tasksByVideo = new Map(eligible.map((task) => [task.externalId, task]));
+  const videoIds = [...tasksByVideo.keys()];
+  for (let offset = 0; offset < videoIds.length; offset += 500) {
+    const batch = videoIds.slice(offset, offset + 500);
+    const report = await queryYouTubeAnalytics(fetchImpl, token, {
+      ...range,
+      metrics: "views,estimatedMinutesWatched,averageViewDuration,averageViewPercentage,subscribersGained,subscribersLost",
+      dimensions: "video",
+      filters: `video==${batch.join(",")}`,
+      maxResults: 500,
+    });
+    const headers = (report.columnHeaders ?? []).map((header, index) => header.name ?? `metric_${index}`);
+    for (const row of report.rows ?? []) {
+      const values = Object.fromEntries(headers.map((header, index) => [header, row[index]]));
+      const videoId = typeof values.video === "string" ? values.video : null;
+      const task = videoId ? tasksByVideo.get(videoId) : undefined;
+      if (!task) continue;
+      const averageViewDuration = optionalProviderMetric(values.averageViewDuration);
+      const averageViewPercentage = optionalProviderMetric(values.averageViewPercentage);
+      const estimatedMinutesWatched = optionalProviderMetric(values.estimatedMinutesWatched);
+      const gained = optionalProviderMetric(values.subscribersGained);
+      const lost = optionalProviderMetric(values.subscribersLost);
+      const enrichment: Record<string, unknown> = {
+        analyticsSource: "youtube_analytics_api",
+        ...(averageViewDuration === null ? {} : { averageWatchTimeMs: averageViewDuration * 1_000 }),
+        ...(averageViewPercentage === null ? {} : { completionRate: clampPercentage(averageViewPercentage) }),
+        ...(estimatedMinutesWatched === null ? {} : { totalWatchTimeMs: estimatedMinutesWatched * 60_000 }),
+        ...(gained === null ? {} : { subscribersGained: gained }),
+        ...(lost === null ? {} : { subscribersLost: lost }),
+        ...(gained === null && lost === null ? {} : { follows: (gained ?? 0) - (lost ?? 0) }),
+      };
+      if (Object.keys(enrichment).length > 1) mergeVideoSnapshot(backendDb, task.id, "youtube_shorts", task.checkpointIndex, enrichment);
+    }
+  }
+}
+
 function analyticsVideoDurationMs(metrics: Record<string, number | string | null>): number | null {
   const milliseconds = firstMetric(metrics, ["videoDurationMs", "durationMs", "igReelsVideoDurationMs"]);
   if (milliseconds !== null && milliseconds > 0) return milliseconds;
@@ -377,7 +495,7 @@ function analyticsVideoDurationMs(metrics: Record<string, number | string | null
   return seconds !== null && seconds > 0 ? seconds * 1_000 : null;
 }
 
-function firstMetric(metrics: Record<string, number | string | null>, keys: string[]): number | null {
+function firstMetric(metrics: Record<string, unknown>, keys: string[]): number | null {
   for (const key of keys) {
     const value = metrics[key];
     const parsed = optionalProviderMetric(value);
@@ -420,6 +538,7 @@ async function collectInstagramVideoMetrics(
     `${base}?fields=like_count,comments_count,permalink,timestamp,caption&access_token=${encodeURIComponent(token)}`,
   );
   const views = await instagramReelViews(fetchImpl, base, token);
+  const videoDurationMs = targetVideoDurationMs(target);
   upsertVideoSnapshot(backendDb, target.id, "instagram_reels", target.checkpointIndex, {
     title: target.label ?? UNTITLED_VIDEO,
     url: media.permalink ?? target.externalUrl,
@@ -427,6 +546,7 @@ async function collectInstagramVideoMetrics(
     views,
     likes: metricNumber(media.like_count),
     comments: metricNumber(media.comments_count),
+    ...(videoDurationMs === null ? {} : { videoDurationMs }),
   });
   let comments: InstagramComments | null = null;
   try {
