@@ -170,10 +170,13 @@ export function renderDashboardShell(body: string): string {
     .mode-btn--active { background:var(--accent-glow); color:var(--accent-soft-text); }
 
     /* The landing hero separates content types before the rest of the overview
-       explains platforms and publications. The cards are deliberately equal in
-       width: neither a text post nor a video is the implicit default. */
-    .hero-metrics { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; margin:0 0 18px; }
-    .hero-card { min-width:0; padding:14px 16px 12px; border:1px solid var(--border-soft); border-radius:8px; background:var(--surface); }
+       explains platforms and publications. It is one flat overview band, not a
+       card inside a card: the page surface and the separators are shared with
+       the platform and chart bands below it. */
+    .hero-metrics { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0; margin:0 0 22px; padding:0 0 22px; border:0; border-bottom:1px solid var(--border-soft); border-radius:0; overflow:visible; background:transparent; }
+    .hero-card { min-width:0; padding:14px 0 12px; border:0; border-radius:0; background:transparent; }
+    .hero-card:first-child { padding-right:26px; }
+    .hero-card + .hero-card { padding-left:26px; border-left:1px solid var(--border-soft); }
     .hero-card__heading { display:flex; align-items:center; gap:8px; color:var(--text-secondary); font-size:14px; }
     .hero-card__heading i { width:10px; height:10px; border-radius:50%; flex:0 0 auto; }
     .hero-card__heading strong { color:var(--text-main); font-size:16px; letter-spacing:.04em; }
@@ -323,6 +326,8 @@ export function renderDashboardShell(body: string): string {
       .pagination-bar { align-items:stretch; flex-wrap:wrap; justify-content:center; }
       .pag-current { flex:1 1 100%; text-align:center; }
       .hero-metrics { grid-template-columns:1fr; }
+      .hero-card:first-child { padding-right:0; }
+      .hero-card + .hero-card { padding-left:0; border-left:0; border-top:1px solid var(--border-soft); }
       .hero-card__primary { grid-template-columns:minmax(0,1fr) minmax(86px,.6fr) auto; gap:12px; }
       .hero-card__views strong { font-size:36px; }
       .platform-columns { grid-template-columns:1fr; gap:14px; }
