@@ -479,6 +479,24 @@ ${DASHBOARD_THEME_TOGGLE_SCRIPT}
       if (fragmentRequests.get(key) === request) fragmentRequests.delete(key);
     }
   };
+  const prefetchDashboard = (target) => {
+    if (target.origin !== window.location.origin || target.pathname !== '/command-center') return;
+    const key = fragmentKey(target);
+    if (fragmentCache.has(key) || fragmentRequests.has(key)) return;
+    void loadFragment(target, key).catch(() => {});
+  };
+  const shouldPrefetch = (link) => link.matches('.period-quick-link, .period-menu a, .period-nav');
+  document.addEventListener('pointerover', (event) => {
+    if (!(event.target instanceof Element)) return;
+    const link = event.target.closest('a[href]');
+    if (!link || !shouldPrefetch(link) || (event.relatedTarget instanceof Node && link.contains(event.relatedTarget))) return;
+    prefetchDashboard(new URL(link.href, window.location.href));
+  });
+  document.addEventListener('focusin', (event) => {
+    if (!(event.target instanceof Element)) return;
+    const link = event.target.closest('a[href]');
+    if (link && shouldPrefetch(link)) prefetchDashboard(new URL(link.href, window.location.href));
+  });
   let navigationSerial = 0;
   const navigateDashboard = async (target, replace = false) => {
     const main = document.querySelector('main');

@@ -9,7 +9,13 @@ import type { CombinedSectionInput, OverviewMode, PlatformMetric } from "./combi
 import { audiencePlatformFollowers } from "./ops-sections.js";
 import { rollingPeriodDates } from "./period-controls.js";
 import type { PipelineData, PipelinePost } from "./types.js";
-import { createVideoOverviewCache, emptyVideoOverview, type VideoOverview, videoOverview } from "./video-overview.js";
+import {
+  createVideoOverviewCache,
+  emptyVideoOverview,
+  setVideoOverviewCacheRange,
+  type VideoOverview,
+  videoOverview,
+} from "./video-overview.js";
 
 type OverviewService = ReturnType<typeof operationsService>;
 type OverviewCache = ReturnType<typeof createVideoOverviewCache>;
@@ -32,8 +38,10 @@ export function buildOverviewData(
   const selectX = (items: XActivityDashboardItem[]): XActivityDashboardItem[] => (!activeView ? items : activeView === "x" ? items : []);
   const comparisonPipeline =
     periodDays === 1
-      ? selectPipeline(service.pipeline(0, 30, 0, weekOffset + 1, { includeSamples: false, includeContent: false }))
-      : selectPipeline(service.pipeline(weekOffset + 1, periodDays, 0, undefined, { includeSamples: false, includeContent: false }));
+      ? selectPipeline(service.pipelineOverview(0, 30, 0, weekOffset + 1, { includeSamples: false, includeContent: false }))
+      : selectPipeline(
+          service.pipelineOverview(weekOffset + 1, periodDays, 0, undefined, { includeSamples: false, includeContent: false }),
+        );
   const comparisonX =
     periodDays === 1
       ? selectX(xActivityDashboard(backendDb, (weekOffset + 1) / 30, 30, config.TIMEZONE))
@@ -47,21 +55,33 @@ export function buildOverviewData(
   const medianOffsetDays = weekOffset * periodDays + periodDays;
   const medianPeriodOffset = medianOffsetDays / 30;
   const [medianStart, medianEnd] = rollingPeriodDates(medianPeriodOffset, 30, config.TIMEZONE);
+  const videoHistoryStart = new Date(Math.min(start.getTime(), previousStart.getTime(), medianStart.getTime(), yesterdayStart.getTime()));
+  const videoHistoryEnd = new Date(
+    Math.max(end.getTime(), previousEnd.getTime(), medianEnd.getTime(), yesterdayEnd.getTime()) + 86_400_000 - 1,
+  );
+  setVideoOverviewCacheRange(videoCache, videoHistoryStart, videoHistoryEnd, periodDays <= 7 ? 60 * 60 : 24 * 60 * 60);
 
   return {
-    data: selectPipeline(service.pipeline(weekOffset, periodDays, 0, undefined, { includeSamples: periodDays === 1 })),
+    data: selectPipeline(
+      service.pipelineOverview(weekOffset, periodDays, 0, undefined, {
+        includeSamples: periodDays === 1,
+        contentLimit: 4,
+      }),
+    ),
     previousData: comparisonPipeline,
     xItems: selectX(xActivityDashboard(backendDb, weekOffset, periodDays, config.TIMEZONE)),
     previousXItems: comparisonX,
     dayComparisonData:
-      periodDays === 1 ? selectPipeline(service.pipeline(0, 1, 0, weekOffset + 1, { includeSamples: true, includeContent: false })) : null,
+      periodDays === 1
+        ? selectPipeline(service.pipelineOverview(0, 1, 0, weekOffset + 1, { includeSamples: true, includeContent: false }))
+        : null,
     video: videoEnabled ? videoForDates(backendDb, config.TIMEZONE, videoCache, start, end, false) : emptyVideoOverview(),
     previousVideo: videoEnabled
       ? videoForDates(backendDb, config.TIMEZONE, videoCache, previousStart, previousEnd, true)
       : emptyVideoOverview(),
     dayComparisonVideo:
       videoEnabled && periodDays === 1 ? videoForDates(backendDb, config.TIMEZONE, videoCache, yesterdayStart, yesterdayEnd, true) : null,
-    medianData: selectPipeline(service.pipeline(0, 30, 0, medianOffsetDays, { includeSamples: false, includeContent: false })),
+    medianData: selectPipeline(service.pipelineOverview(0, 30, 0, medianOffsetDays, { includeSamples: false, includeContent: false })),
     medianXItems: selectX(xActivityDashboard(backendDb, medianPeriodOffset, 30, config.TIMEZONE)),
     medianVideo: videoEnabled ? videoForDates(backendDb, config.TIMEZONE, videoCache, medianStart, medianEnd, true) : emptyVideoOverview(),
     followers: audiencePlatformFollowers(backendDb),
@@ -80,7 +100,7 @@ export function buildOverviewData(
 
 export function videoOverviewForPeriod(backendDb: BackendDb, weekOffset: number, periodDays: number, config: BackendConfig): VideoOverview {
   const [start, end] = rollingPeriodDates(weekOffset, periodDays, config.TIMEZONE);
-  return videoForDates(backendDb, config.TIMEZONE, createVideoOverviewCache(), start, end, true);
+  return videoForDates(backendDb, config.TIMEZONE, createVideoOverviewCache(periodDays <= 7 ? 60 * 60 : 24 * 60 * 60), start, end, true);
 }
 
 function videoForDates(

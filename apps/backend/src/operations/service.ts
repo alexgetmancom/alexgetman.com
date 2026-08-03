@@ -3,7 +3,7 @@ import type { BackendConfig } from "../foundation/config.js";
 import { commandCenterAttention, commandCenterFingerprint, commandCenterPayload, postDebugPayload } from "./command-center.js";
 import { runOperationCommand } from "./commands.js";
 import type { OperationsCommand } from "./contracts.js";
-import { type PipelineReadModelOptions, pipelineStatusPayload } from "./read-model.js";
+import { type PipelineReadModelOptions, pipelineOverviewPayload, pipelineStatusPayload } from "./read-model.js";
 
 /** Operations boundary for Command Center and authenticated API controllers. */
 export function operationsService(backendDb: BackendDb, config: BackendConfig) {
@@ -13,6 +13,8 @@ export function operationsService(backendDb: BackendDb, config: BackendConfig) {
     fingerprint: () => commandCenterFingerprint(backendDb),
     pipeline: (weekOffset = 0, periodDays = 7, comparisonOffset = 0, offsetDays?: number, options: PipelineReadModelOptions = {}) =>
       pipelineStatusPayload(config, backendDb, weekOffset, periodDays, comparisonOffset, offsetDays, options),
+    pipelineOverview: (weekOffset = 0, periodDays = 7, comparisonOffset = 0, offsetDays?: number, options: PipelineReadModelOptions = {}) =>
+      pipelineOverviewPayload(config, backendDb, weekOffset, periodDays, comparisonOffset, offsetDays, options),
     postDebug: (ref: string) => postDebugPayload(backendDb, ref),
     command: (input: OperationsCommand, fetchImpl?: typeof fetch) => runOperationCommand(backendDb, input, config, fetchImpl),
   };

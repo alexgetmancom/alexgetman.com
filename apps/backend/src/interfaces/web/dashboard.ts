@@ -19,8 +19,8 @@ import { renderStudioSection } from "./studio.js";
 
 type DashboardTab = "posts" | "studio";
 type DashboardPanel = "overview" | "queue" | "health" | "repair";
-const DASHBOARD_CACHE_TTL_MS = 3_000;
-const MAX_DASHBOARD_CACHE_ENTRIES = 2;
+const DASHBOARD_CACHE_TTL_MS = 10_000;
+const MAX_DASHBOARD_CACHE_ENTRIES = 5;
 type DashboardCacheEntry = { expiresAt: number; html: string };
 const dashboardCaches = new WeakMap<BackendDb, Map<string, DashboardCacheEntry>>();
 
@@ -226,9 +226,10 @@ export function renderDashboardPublicationDetails(
   const data =
     mode === "video"
       ? null
-      : operationsService(backendDb, config).pipeline(weekOffset, periodDays, 0, undefined, {
+      : operationsService(backendDb, config).pipelineOverview(weekOffset, periodDays, 0, undefined, {
           includeSamples: false,
           includeContent: true,
+          contentLimit: offset + limit,
         });
   const posts = targetIds ? (filterPipeline(data, targetIds)?.posts ?? []) : (data?.posts ?? []);
   const xItems = requestedView === "x" ? xActivityDashboard(backendDb, weekOffset, periodDays, config.TIMEZONE) : [];

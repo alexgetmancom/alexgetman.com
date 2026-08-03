@@ -89,10 +89,20 @@ export type VideoOverview = {
 export type VideoOverviewCache = {
   loadedTargetIds: Set<number>;
   snapshots: Map<number, VideoSnapshot[]>;
+  rangeStart: Date | null;
+  rangeEnd: Date | null;
+  sampleBucketSeconds: number;
 };
 
-export function createVideoOverviewCache(): VideoOverviewCache {
-  return { loadedTargetIds: new Set(), snapshots: new Map() };
+export function createVideoOverviewCache(sampleBucketSeconds = 60 * 60): VideoOverviewCache {
+  return { loadedTargetIds: new Set(), snapshots: new Map(), rangeStart: null, rangeEnd: null, sampleBucketSeconds };
+}
+
+/** Sets the one bounded history window shared by all period comparisons in a render. */
+export function setVideoOverviewCacheRange(cache: VideoOverviewCache, start: Date, end: Date, sampleBucketSeconds?: number): void {
+  cache.rangeStart = start;
+  cache.rangeEnd = end;
+  if (sampleBucketSeconds !== undefined) cache.sampleBucketSeconds = sampleBucketSeconds;
 }
 
 type TargetRow = {
@@ -141,7 +151,7 @@ export function videoOverview(
 ): VideoOverview {
   const catalogue = videoDestinations(backendDb);
   const rows = publishedTargets(backendDb, start.toISOString(), end.toISOString());
-  const snapshots = videoSnapshots(backendDb, rows, cache);
+  const snapshots = videoSnapshots(backendDb, rows, start, end, cache);
   const periodDays = calendarDays(start, end, timeZone);
   const summary = videoSummaryMetrics(backendDb, rows, snapshots, periodDays, end, timeZone);
   const historicalDestinations = publishedDestinationKeys(backendDb, catalogue);
@@ -231,20 +241,73 @@ function publishedTargets(backendDb: BackendDb, startIso: string, endIso: string
     .all(startIso, endIso) as TargetRow[];
 }
 
-function videoSnapshots(backendDb: BackendDb, rows: TargetRow[], cache?: VideoOverviewCache): Map<number, VideoSnapshot[]> {
+function videoSnapshots(
+  backendDb: BackendDb,
+  rows: TargetRow[],
+  start: Date,
+  end: Date,
+  cache?: VideoOverviewCache,
+): Map<number, VideoSnapshot[]> {
   const snapshots = new Map<number, VideoSnapshot[]>();
   if (!rows.length) return snapshots;
   const missingRows = cache ? rows.filter((row) => !cache.loadedTargetIds.has(row.id)) : rows;
   if (missingRows.length) {
     const placeholders = missingRows.map(() => "?").join(",");
+    const rangeStart = cache?.rangeStart ?? start;
+    const rangeEnd = cache?.rangeEnd ?? end;
+    const bucketSeconds = cache?.sampleBucketSeconds ?? (end.getTime() - start.getTime() > 7 * 86_400_000 ? 86_400 : 3_600);
+    const bucketFactor = 86_400 / bucketSeconds;
     const samples = backendDb.sqlite
       .prepare(
-        `SELECT video_target_id AS targetId, metrics_json AS metricsJson, sampled_at AS sampledAt
-           FROM video_metric_snapshots
+        `WITH bucketed AS (
+           SELECT id,
+                  ROW_NUMBER() OVER (
+                    PARTITION BY video_target_id, CAST((julianday(sampled_at) - julianday(?)) * ? AS INTEGER)
+                    ORDER BY julianday(sampled_at) DESC, id DESC
+                  ) AS bucketRank
+             FROM video_metric_snapshots
+            WHERE video_target_id IN (${placeholders})
+              AND julianday(sampled_at) BETWEEN julianday(?) AND julianday(?)
+         ),
+         selected AS (
+           SELECT id FROM bucketed WHERE bucketRank = 1
+         )
+         SELECT video_target_id AS targetId, metrics_json AS metricsJson, sampled_at AS sampledAt
+           FROM video_metric_snapshots AS sample
           WHERE video_target_id IN (${placeholders})
-          ORDER BY video_target_id ASC, sampled_at ASC, id ASC`,
+            AND (
+              id IN (SELECT id FROM selected)
+              OR id = (
+                SELECT baseline.id
+                  FROM video_metric_snapshots AS baseline
+                 WHERE baseline.video_target_id = sample.video_target_id
+                   AND julianday(baseline.sampled_at) < julianday(?)
+                 ORDER BY julianday(baseline.sampled_at) DESC, baseline.id DESC
+                 LIMIT 1
+              )
+              OR id = (
+                SELECT latest.id
+                  FROM video_metric_snapshots AS latest
+                 WHERE latest.video_target_id = sample.video_target_id
+                 ORDER BY julianday(latest.sampled_at) DESC, latest.id DESC
+                 LIMIT 1
+              )
+            )
+          ORDER BY targetId ASC, julianday(sampledAt) ASC, id ASC`,
       )
-      .all(...missingRows.map((row) => row.id)) as Array<{ targetId: number; metricsJson: string; sampledAt: string }>;
+      .all(
+        rangeStart.toISOString(),
+        bucketFactor,
+        ...missingRows.map((row) => row.id),
+        rangeStart.toISOString(),
+        rangeEnd.toISOString(),
+        ...missingRows.map((row) => row.id),
+        rangeStart.toISOString(),
+      ) as Array<{
+      targetId: number;
+      metricsJson: string;
+      sampledAt: string;
+    }>;
     for (const sample of samples) {
       const at = new Date(sample.sampledAt);
       if (Number.isNaN(at.getTime())) continue;
