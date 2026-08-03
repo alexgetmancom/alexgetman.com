@@ -1,6 +1,6 @@
-import { desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import type { PostEventRecord, StudioNotificationStore } from "../../application/ports.js";
-import { drafts, postEvents, posts, videoDrafts } from "../schema.js";
+import { drafts, postEvents, posts, studioNotificationJobs, videoDrafts } from "../schema.js";
 import type { BackendDatabase } from "../types.js";
 
 /** SQLite adapter for the transport-neutral Studio notification inbox. */
@@ -23,6 +23,15 @@ export function createStudioNotificationStore(db: BackendDatabase): StudioNotifi
     acknowledge(id: number, now: string): boolean {
       db.update(postEvents).set({ ackedAt: now }).where(eq(postEvents.id, id)).run();
       return true;
+    },
+
+    cancelQueuedReminders(actorId: number, now: string): number {
+      return db
+        .update(studioNotificationJobs)
+        .set({ status: "cancelled", updatedAt: now })
+        .where(and(eq(studioNotificationJobs.actorId, actorId), eq(studioNotificationJobs.status, "queued")))
+        .returning({ id: studioNotificationJobs.id })
+        .all().length;
     },
 
     draftOwner(draftId: number): number | null {

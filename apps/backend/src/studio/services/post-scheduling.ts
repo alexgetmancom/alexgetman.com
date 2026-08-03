@@ -6,20 +6,45 @@ import type { BackendConfig } from "../../foundation/config.js";
 import { cancelScheduledNotifications, scheduleReminder } from "../../notifications/jobs.js";
 import { cancelDraft, cancelRemainingPostJobs } from "../../publishing/draft-lifecycle.js";
 import { publishDraftToQueue } from "../../publishing/publication-workflow.js";
-import { parseManualSchedule, scheduleClockToday } from "../../publishing/schedule.js";
+import { assertFutureSchedule, assertValidScheduleDate, parseManualSchedule, scheduleClockToday } from "../../publishing/schedule.js";
 import { parseTargets } from "../../publishing/targets.js";
+import { readyStoryCardMedia } from "../../story-cards/store.js";
 import { requireOwnedDraft } from "./post-access.js";
 import { settingsService } from "./settings.js";
 
-export type PostScheduleInput = { ruAt: Date | null; enAt: Date | null };
+export type PostScheduleInput = { ruAt: Date | null; enAt: Date | null; allowPast?: boolean };
 export type PostScheduleScope = "ru" | "en" | "both";
+
+/** Replans a scheduled text-only post after both regenerated Story cards are
+ * ready. The draft keeps its previous all/site_only choice while cards render. */
+export function replanScheduledPostAfterStoryCards(backendDb: BackendDb, config: BackendConfig, draftId: number): boolean {
+  const draft = backendDb.drafts.get(draftId);
+  if (draft?.status !== "scheduled" || (draft.story_publish_mode !== "all" && draft.story_publish_mode !== "site_only")) return false;
+  if (!readyStoryCardMedia(backendDb, draftId)) return false;
+  postSchedulingService(backendDb, config).schedule(draft.actor_id, draftId, {
+    ruAt: dateOrNull(draft.scheduled_at),
+    enAt: dateOrNull(draft.scheduled_en_at),
+    allowPast: true,
+  });
+  return true;
+}
 
 /** Scheduling and lifecycle commands kept behind the public post facade. */
 export function postSchedulingService(backendDb: BackendDb, config: BackendConfig) {
   return {
     schedule(actorId: number, draftId: number, input: PostScheduleInput): number {
       const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
-      const postId = publishDraftToQueue(backendDb, draftId, { mode: "scheduled", ...input });
+      const now = new Date();
+      for (const value of [input.ruAt, input.enAt]) {
+        if (!value) continue;
+        if (input.allowPast) assertValidScheduleDate(value);
+        else assertFutureSchedule(value, now);
+      }
+      const postId = publishDraftToQueue(backendDb, draftId, {
+        mode: "scheduled",
+        ruAt: input.ruAt,
+        enAt: input.enAt,
+      });
       const scheduled = requireOwnedDraft(backendDb, config, actorId, draftId);
       const preference = settingsService(backendDb).notifications(actorId);
       const title = draft.text_ru.trim().split("\n")[0]?.slice(0, 100) || `Post #${postId}`;

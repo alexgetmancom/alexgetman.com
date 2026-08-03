@@ -1,5 +1,5 @@
 import type { DraftPatch, DraftRecord } from "../../application/ports.js";
-import { PRESETS, presetName, TARGETS } from "../../botTargets.js";
+import { isStoryTarget, PRESETS, presetName, TARGETS } from "../../botTargets.js";
 import { effectivePostTargets, registeredPostTargetIds } from "../../channels/registry.js";
 import { createDraftFromMessage } from "../../content/index.js";
 import type { DraftMessage } from "../../content/message.js";
@@ -81,8 +81,7 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       if (registered.size && !registered.has(target)) throw new StudioError("err.unknown-target");
       const targets = parseTargets(draft.targets_json);
       targets[target] = !targets[target];
-      saveTargets(backendDb, draftId, targets);
-      rescheduleIfNeeded(scheduling, actorId, draftId, draft);
+      saveTargetsAndReschedule(backendDb, scheduling, actorId, draftId, draft, targets);
     },
     cycleMode(actorId: number, draftId: number): keyof typeof PRESETS {
       const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
@@ -91,18 +90,40 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       const next = current === "full" ? "ru" : current === "ru" ? "en" : current === "en" ? "tg" : "full";
       const preset = effectivePostTargets(backendDb, PRESETS[next] ?? {});
       if (!preset) throw new StudioError("err.post-mode");
-      saveTargets(backendDb, draftId, preset);
-      rescheduleIfNeeded(scheduling, actorId, draftId, draft);
+      saveTargetsAndReschedule(backendDb, scheduling, actorId, draftId, draft, preset);
       return next;
     },
     edit(actorId: number, draftId: number, input: EditInput): void {
-      editDraftContent(backendDb, config, actorId, draftId, input);
+      const draft = editDraftContent(backendDb, config, actorId, draftId, input);
+      const updated = backendDb.drafts.get(draftId) ?? draft;
+      try {
+        if (!waitForStoryCardReplan(updated)) rescheduleIfNeeded(scheduling, actorId, draftId, updated);
+      } catch (error) {
+        restoreDraftContent(backendDb, draftId, draft, input);
+        throw error;
+      }
+      recordEditEvent(backendDb, draftId, input);
     },
   };
 }
 
-function editDraftContent(backendDb: BackendDb, config: BackendConfig, actorId: number, draftId: number, input: EditInput): void {
-  requireOwnedDraft(backendDb, config, actorId, draftId);
+function waitForStoryCardReplan(draft: DraftRecord): boolean {
+  if (draft.status !== "scheduled" || (draft.story_publish_mode !== "all" && draft.story_publish_mode !== "site_only")) return false;
+  if (hasMedia(draft.media_ru_json) || hasMedia(draft.media_en_json)) return false;
+  return Object.entries(parseTargets(draft.targets_json)).some(([target, enabled]) => enabled && isStoryTarget(target));
+}
+
+function hasMedia(value: string | null): boolean {
+  try {
+    const parsed = value ? JSON.parse(value) : [];
+    return Array.isArray(parsed) && parsed.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+function editDraftContent(backendDb: BackendDb, config: BackendConfig, actorId: number, draftId: number, input: EditInput): DraftRecord {
+  const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
   const clearMedia = Boolean(input.clearMedia);
   const update: DraftPatch = { updatedAt: backendDb.clock.now().toISOString() };
   const ru = input.locale === "ru";
@@ -120,17 +141,64 @@ function editDraftContent(backendDb: BackendDb, config: BackendConfig, actorId: 
   if (Object.keys(update).length === 1) throw new StudioError("err.post-no-edit");
   backendDb.drafts.update(draftId, update);
   backendDb.storyCards.queue(draftId);
+  return draft;
+}
+
+function restoreDraftContent(backendDb: BackendDb, draftId: number, draft: DraftRecord, input: EditInput): void {
+  const ru = input.locale === "ru";
+  const patch: DraftPatch = { updatedAt: backendDb.clock.now().toISOString() };
+  if (input.clearMedia) patch[ru ? "mediaRuJson" : "mediaEnJson"] = ru ? draft.media_ru_json : draft.media_en_json;
+  else {
+    if (input.media.length) patch[ru ? "mediaRuJson" : "mediaEnJson"] = ru ? draft.media_ru_json : draft.media_en_json;
+    if (!input.replaceMediaOnly && input.text) {
+      patch[ru ? "textRu" : "textEnApproved"] = ru ? draft.text_ru : (draft.text_en_approved ?? "");
+      patch[ru ? "textRuEntitiesJson" : "textEnEntitiesJson"] = ru ? draft.text_ru_entities_json : draft.text_en_entities_json;
+      patch.threadsChainApproved = draft.threads_chain_approved;
+    }
+  }
+  backendDb.drafts.update(draftId, patch);
+  backendDb.storyCards.queue(draftId);
+}
+
+function recordEditEvent(backendDb: BackendDb, draftId: number, input: EditInput): void {
   recordDomainEvent(backendDb.events, {
     ref: `draft:${draftId}`,
     type: "content.draft.edited",
     severity: "info",
     message: `Draft #${draftId} content updated`,
-    details: { locale: input.locale, media_changed: input.media.length > 0 || clearMedia, text_changed: !input.replaceMediaOnly },
+    details: {
+      locale: input.locale,
+      media_changed: input.media.length > 0 || Boolean(input.clearMedia),
+      text_changed: !input.replaceMediaOnly,
+    },
   });
 }
 
 function saveTargets(backendDb: BackendDb, draftId: number, targets: Record<string, boolean>): void {
   backendDb.drafts.update(draftId, { targetsJson: JSON.stringify(targets), updatedAt: backendDb.clock.now().toISOString() });
+}
+
+function saveTargetsAndReschedule(
+  backendDb: BackendDb,
+  scheduling: ReturnType<typeof postSchedulingService>,
+  actorId: number,
+  draftId: number,
+  draft: DraftRecord,
+  targets: Record<string, boolean>,
+): void {
+  try {
+    saveTargets(backendDb, draftId, targets);
+    rescheduleIfNeeded(scheduling, actorId, draftId, draft);
+  } catch (error) {
+    // Replanning is durable and transactional, but target selection is owned by
+    // the draft row. Restore it if validation or queue hand-off rejects the new
+    // selection so the draft cannot advertise targets its jobs do not represent.
+    backendDb.drafts.update(draftId, {
+      targetsJson: draft.targets_json,
+      updatedAt: backendDb.clock.now().toISOString(),
+    });
+    throw error;
+  }
 }
 
 function rescheduleIfNeeded(
@@ -143,6 +211,7 @@ function rescheduleIfNeeded(
   scheduling.schedule(actorId, draftId, {
     ruAt: scheduledDate(draft.scheduled_at),
     enAt: scheduledDate(draft.scheduled_en_at),
+    allowPast: true,
   });
 }
 

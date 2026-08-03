@@ -12,8 +12,9 @@ export async function showQueue(ctx: Context, backendDb: BackendDb, config: Back
   const keyboard = new InlineKeyboard();
   const text = queueText(snapshot, locale, config.TIMEZONE);
 
-  for (const item of snapshot.upcoming) keyboard.text(itemButton(item, locale, config.TIMEZONE), itemCallback(item)).row();
-  for (const item of snapshot.drafts) keyboard.text(`${kindIcon(item.kind)} ${item.label}`, itemCallback(item)).row();
+  for (const item of snapshot.upcoming.slice(0, 5)) keyboard.text(itemButton(item, locale, config.TIMEZONE), itemCallback(item)).row();
+  for (const item of snapshot.attention.slice(0, 5)) keyboard.text(`⚠️ ${kindIcon(item.kind)} ${item.label}`, itemCallback(item)).row();
+  for (const item of snapshot.drafts.slice(0, 10)) keyboard.text(`${kindIcon(item.kind)} ${item.label}`, itemCallback(item)).row();
   keyboard.row().text(t(locale, "common.menu"), "menu_home");
   await replaceQueueMessage(ctx, text, keyboard);
 }
@@ -24,6 +25,10 @@ export function queueText(snapshot: StudioQueueSnapshot, locale: BotLocale, time
   else
     for (const item of snapshot.upcoming.slice(0, 5))
       lines.push(`• ${formatQueueTime(item.time, locale, timeZone)} — ${kindIcon(item.kind)} ${item.label}`);
+  if (snapshot.attention.length) {
+    lines.push("", `*${t(locale, "queue.attention-heading", { count: snapshot.attention.length })}*`);
+    for (const item of snapshot.attention.slice(0, 5)) lines.push(`• ⚠️ ${kindIcon(item.kind)} ${item.label}`);
+  }
   lines.push("", `*${t(locale, "queue.drafts-btn", { count: snapshot.drafts.length })}*`);
   lines.push(snapshot.drafts.length ? t(locale, "queue.choose-draft") : t(locale, "queue.no-drafts"));
   return lines.join("\n");
@@ -38,7 +43,7 @@ function kindIcon(kind: StudioQueueItem["kind"]): string {
   return kind === "post" ? "📝" : "🎬";
 }
 
-function itemCallback(item: StudioQueueItem): string {
+function itemCallback(item: Pick<StudioQueueItem, "id" | "kind">): string {
   return item.kind === "post" ? `preview:${item.id}` : `video_open:${item.id}`;
 }
 

@@ -44,9 +44,9 @@ export type NewDraft = {
 
 export type DraftPatch = Partial<{
   textRu: string;
-  textEnApproved: string;
-  textRuEntitiesJson: string;
-  textEnEntitiesJson: string;
+  textEnApproved: string | null;
+  textRuEntitiesJson: string | null;
+  textEnEntitiesJson: string | null;
   targetsJson: string;
   mediaRuJson: string | null;
   mediaEnJson: string | null;
@@ -143,6 +143,7 @@ export type StudioNotificationStore = {
   unread(limit: number): PostEventRecord[];
   get(id: number): PostEventRecord | null;
   acknowledge(id: number, now: string): boolean;
+  cancelQueuedReminders(actorId: number, now: string): number;
   draftOwner(draftId: number): number | null;
   videoOwner(videoDraftId: number): number | null;
   postIdForKey(postKey: string): number | null;

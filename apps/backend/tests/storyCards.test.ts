@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import sharp from "sharp";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import type { UnsafeBackendDb } from "../src/db/client.js";
-import { drafts, postLocales, publishJobs, siteJobs } from "../src/db/schema.js";
+import { drafts, postLocales, publicationSources, publishJobs, siteJobs } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { backfillTextStoryCards } from "../src/operations/story-card-backfill.js";
 import { localizeTargetPayload } from "../src/publishing/payload.js";
@@ -16,6 +16,7 @@ import { buildStoryCardCopy, lineUnits, MAX_LINE_UNITS, MAX_LINES, TEMPLATE_VERS
 import { discardDraftStoryCards, readyStoryCardMedia, setStoryPublishMode, storyCardsForDraft } from "../src/story-cards/store.js";
 import { emojiAssetFile, STORY_CARD_EMOJI_LEFT, STORY_CARD_EMOJI_SIZE, storyCardEmojiTop } from "../src/story-cards/svg.js";
 import { runStoryCardCycle } from "../src/story-cards/worker.js";
+import { postService } from "../src/studio/services/posts.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
 let backendDb: UnsafeBackendDb | null = null;
@@ -181,6 +182,37 @@ describe("text Story cards", () => {
       expect.objectContaining({ localPath: "/cards/ru.jpg", storyLocalPath: "/cards/ru.jpg" }),
     ]);
   });
+
+  it("replans a scheduled text post after edited Story cards are ready", async () => {
+    backendDb = openBackendDb(":memory:");
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "scheduled-story-edit-test-"));
+    temporaryDirectories.push(directory);
+    const config = loadConfig({
+      ADMIN_IDS: "42",
+      DATA_DIR: directory,
+      STORY_CARD_DIR: directory,
+      STORY_CARD_ASSETS_DIR: path.resolve("apps/backend/assets/story-card"),
+      STORY_CARD_RENDERER_ENTRY: path.resolve("apps/backend/src/story-cards/renderer-process.ts"),
+    });
+    const posts = postService(backendDb, config);
+    const draftId = posts.create(42, { text: "Before", textEn: "Before", entities: [], media: [] });
+    await runStoryCardCycle(config, backendDb);
+    await runStoryCardCycle(config, backendDb);
+    posts.setStoryPublishMode(42, draftId, "all");
+    const postId = posts.schedule(42, draftId, { ruAt: new Date(Date.now() + 60_000), enAt: null });
+
+    posts.edit(42, draftId, { locale: "ru", text: "After", entities: [], media: [] });
+    expect(backendDb.db.select().from(publicationSources).where(eq(publicationSources.postId, postId)).get()?.itemJson).toMatchObject({
+      text_ru: "Before",
+    });
+    expect(backendDb.db.select().from(drafts).where(eq(drafts.id, draftId)).get()?.storyPublishMode).toBe("all");
+
+    await runStoryCardCycle(config, backendDb);
+    await runStoryCardCycle(config, backendDb);
+    expect(backendDb.db.select().from(publicationSources).where(eq(publicationSources.postId, postId)).get()?.itemJson).toMatchObject({
+      text_ru: "After",
+    });
+  }, 20_000);
 
   it("stores the final bundle decision durably", () => {
     backendDb = openBackendDb(":memory:");

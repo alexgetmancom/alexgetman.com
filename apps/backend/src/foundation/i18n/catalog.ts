@@ -247,6 +247,7 @@ const en = {
   "queue.no-drafts": "No drafts. Start a post or video from the menu.",
   "queue.choose-draft": "Choose a draft to continue:",
   "queue.platforms-suffix": "platforms",
+  "queue.attention-heading": "⚠️ Needs attention ({count})",
   // Analytics screen
   "analytics.posts-btn": "📝 Posts · {count}",
   "analytics.videos-btn": "🎬 Videos · {count}",
@@ -666,6 +667,7 @@ const ru = {
   "queue.no-drafts": "Черновиков нет. Начните пост или видео из меню.",
   "queue.choose-draft": "Выберите черновик, чтобы продолжить:",
   "queue.platforms-suffix": "площадок",
+  "queue.attention-heading": "⚠️ Требует внимания ({count})",
   // Analytics screen
   "analytics.posts-btn": "📝 Посты · {count}",
   "analytics.videos-btn": "🎬 Видео · {count}",

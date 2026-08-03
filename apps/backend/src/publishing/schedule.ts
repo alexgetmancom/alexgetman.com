@@ -41,6 +41,23 @@ export function parseManualSchedule(value: string, now = new Date()): Date {
   return candidate;
 }
 
+/** Returns a short-lived future timestamp for an explicit "publish now" action.
+ * Scheduled commands still reject timestamps that are already in the past. */
+export function scheduleNow(now = new Date()): Date {
+  return new Date(now.getTime() + 1_000);
+}
+
+/** Enforces the application-level contract shared by post and video scheduling. */
+export function assertFutureSchedule(value: Date, now = new Date()): void {
+  if (Number.isNaN(value.getTime()) || value.getTime() <= now.getTime()) throw new StudioError("err.schedule-time-past");
+}
+
+/** Validates a persisted schedule while allowing an internal replan to retain a
+ * timestamp that has become due between the original schedule and the replan. */
+export function assertValidScheduleDate(value: Date): void {
+  if (Number.isNaN(value.getTime())) throw new StudioError("err.schedule-time-past");
+}
+
 function mskDateParts(date: Date): { year: number; month: number; day: number } {
   return zonedDateParts(date, SCHEDULE_TIMEZONE);
 }

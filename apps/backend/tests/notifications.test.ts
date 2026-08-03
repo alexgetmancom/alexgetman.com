@@ -159,4 +159,28 @@ describe("Studio notifications", () => {
       backendDb.close();
     }
   });
+
+  it("cancels queued reminders when the owner disables reminders", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const videoId = createVideoDraft(backendDb, 42, "owner-video", 24);
+      scheduleReminder(backendDb, {
+        actorId: 42,
+        ref: `video:${videoId}`,
+        kind: "video.youtube_shorts",
+        publishAt: new Date(Date.now() + 60 * 60_000),
+        title: "Launch",
+        targets: ["youtube_shorts"],
+        preference: { remindersEnabled: true, reminderMinutes: 5, completionEnabled: true },
+      });
+
+      settingsService(backendDb).setNotifications(42, { remindersEnabled: false });
+
+      expect(backendDb.db.select({ status: studioNotificationJobs.status }).from(studioNotificationJobs).all()).toEqual([
+        { status: "cancelled" },
+      ]);
+    } finally {
+      backendDb.close();
+    }
+  });
 });

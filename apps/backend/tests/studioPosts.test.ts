@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { eq } from "drizzle-orm";
 import type { UnsafeBackendDb } from "../src/db/client.js";
+import { publicationSources, publishJobs } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { postService } from "../src/studio/services/posts.js";
 import { openBackendDb } from "./helpers/open-db.js";
@@ -88,5 +90,27 @@ describe("Studio post commands", () => {
     ).toEqual({
       count: 0,
     });
+  });
+
+  it("rejects a post schedule that is already in the past", () => {
+    backendDb = openBackendDb(":memory:");
+    const posts = postService(backendDb, loadConfig({ ADMIN_IDS: "42" }));
+    const draftId = posts.create(42, { text: "Past", textEn: "Past", entities: [], media: [] });
+
+    expect(() => posts.schedule(42, draftId, { ruAt: new Date(Date.now() - 1_000), enAt: null })).toThrow("err.schedule-time-past");
+  });
+
+  it("replans the durable payload when a scheduled post is edited", () => {
+    backendDb = openBackendDb(":memory:");
+    const posts = postService(backendDb, loadConfig({ ADMIN_IDS: "42" }));
+    const draftId = posts.create(42, { text: "Before", textEn: "Before", entities: [], media: [] });
+    const postId = posts.schedule(42, draftId, { ruAt: new Date(Date.now() + 60_000), enAt: null });
+
+    posts.edit(42, draftId, { locale: "ru", text: "After", entities: [], media: [] });
+
+    const source = backendDb.db.select().from(publicationSources).where(eq(publicationSources.postId, postId)).get();
+    const job = backendDb.db.select().from(publishJobs).where(eq(publishJobs.postId, postId)).get();
+    expect(source?.itemJson).toMatchObject({ text_ru: "After" });
+    expect(job?.payloadJson).toMatchObject({ text_ru: "After" });
   });
 });

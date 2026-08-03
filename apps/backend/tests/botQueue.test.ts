@@ -196,4 +196,16 @@ describe("Telegram work queue", () => {
     expect(text).toContain("Scheduled clip");
     expect(text).toContain("Черновики (1)");
   });
+
+  it("renders failed work as an actionable attention section", () => {
+    const snapshot: StudioQueueSnapshot = {
+      upcoming: [],
+      drafts: [],
+      attention: [{ id: 12, label: "Failed clip", kind: "video" }],
+    };
+
+    const text = queueText(snapshot, "ru", "Europe/Moscow");
+    expect(text).toContain("Требует внимания (1)");
+    expect(text).toContain("Failed clip");
+  });
 });

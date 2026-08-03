@@ -6,6 +6,7 @@ import { draftStoryCards } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { recordWorkerState } from "../foundation/runtime/worker-state.js";
 import { trackUsageAsync } from "../observability/usage.js";
+import { replanScheduledPostAfterStoryCards } from "../studio/services/post-scheduling.js";
 import { buildStoryCardCopy } from "./copy.js";
 
 type ClaimedCard = typeof draftStoryCards.$inferSelect & { lockedBy: string; lockedAt: string };
@@ -45,6 +46,7 @@ export async function runStoryCardCycle(config: BackendConfig, backendDb: Backen
         ),
       )
       .run();
+    replanScheduledPostAfterStoryCards(backendDb, config, card.draftId);
     recordWorkerState(backendDb, "story-cards", { claimed: 1, published: 1 });
   } catch (error) {
     const attempt = card.attemptCount + 1;

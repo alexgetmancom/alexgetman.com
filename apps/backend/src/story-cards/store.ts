@@ -84,7 +84,8 @@ export function queueDraftStoryCards(backendDb: ApplicationPorts, draftId: numbe
     // Only a card that actually changed invalidates the editor's Story choice.
     // This runs on every draft save, so resetting unconditionally threw away the
     // "publish everywhere" decision each time an unrelated field was edited.
-    if (requeued) tx.update(drafts).set({ storyPublishMode: null, updatedAt: now }).where(eq(drafts.id, draftId)).run();
+    if (requeued && draft.status !== "scheduled")
+      tx.update(drafts).set({ storyPublishMode: null, updatedAt: now }).where(eq(drafts.id, draftId)).run();
   });
   removeFiles(stalePaths);
 }

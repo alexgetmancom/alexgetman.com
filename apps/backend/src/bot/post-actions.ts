@@ -109,8 +109,10 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
   }
   if (action === "sched_scope" && first) {
     clearPostAdminState(backendDb, actorId);
-    if (first === "ru_now") return commitLocaleScheduleOnce(ctx, backendDb, config, actorId, draftId, "ru", new Date(), data);
-    if (first === "en_now") return commitLocaleScheduleOnce(ctx, backendDb, config, actorId, draftId, "en", new Date(), data);
+    if (first === "ru_now")
+      return commitLocaleScheduleOnce(ctx, backendDb, config, actorId, draftId, "ru", new Date(Date.now() + 1_000), data);
+    if (first === "en_now")
+      return commitLocaleScheduleOnce(ctx, backendDb, config, actorId, draftId, "en", new Date(Date.now() + 1_000), data);
     if (first === "both") return editDraftPreview(ctx, backendDb, draftId, config, "schedule_ru");
     return void (await ctx.answerCallbackQuery({ text: t(locale, "action.unknown") }));
   }

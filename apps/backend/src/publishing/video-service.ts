@@ -11,6 +11,7 @@ import { instagramCredentialsForLocale } from "../foundation/external/instagram.
 import { youtubeCredentials } from "../foundation/external/youtube.js";
 import { runFfprobe } from "../foundation/runtime/ffmpeg.js";
 import { isZernioRouteReady, registeredVideoDeliveryRoute } from "./delivery-provider.js";
+import { assertFutureSchedule } from "./schedule.js";
 import { isVideoTargetEditable, isVideoTargetSchedulable } from "./state.js";
 import { getVideoDraft, insertVideoJob, listVideoTargets, refreshVideoDraftStatus } from "./video-data.js";
 import type { VideoLocale, VideoMetadata, VideoTarget } from "./video-types.js";
@@ -140,7 +141,8 @@ export function scheduleVideo(
     // and arm a second prepare/publish pair for something already delivered.
     if (!isVideoTargetSchedulable(target.status)) throw new StudioError("err.video-target-not-schedulable");
     const date = schedule[target.target as VideoTarget];
-    if (!date || Number.isNaN(date.getTime()) || date.getTime() <= now.getTime()) throw new StudioError("err.schedule-time-past");
+    if (!date) throw new StudioError("err.schedule-time-past");
+    assertFutureSchedule(date, now);
   }
   unsafeDb(backendDb).db.transaction((tx) => {
     for (const target of selectedTargets) {
