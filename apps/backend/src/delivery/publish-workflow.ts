@@ -196,39 +196,47 @@ async function timedDeliveryPhase<T>(
   try {
     const result = await work();
     const durationMs = Date.now() - startedAt;
-    recordDomainEvent(backendDb.events, {
-      ref: job.postKey,
-      target: job.target,
-      type: "publish.job.phase",
-      severity: "info",
-      message: `${job.target} ${phase} completed`,
-      details: {
-        job_id: job.jobId,
-        attempt: job.attemptCount,
-        phase,
-        status: "completed",
-        duration_ms: durationMs,
-        provider_request_id: providerRequestId(result) ?? providerRequestId(providerResult),
-      },
-    });
+    try {
+      recordDomainEvent(backendDb.events, {
+        ref: job.postKey,
+        target: job.target,
+        type: "publish.job.phase",
+        severity: "info",
+        message: `${job.target} ${phase} completed`,
+        details: {
+          job_id: job.jobId,
+          attempt: job.attemptCount,
+          phase,
+          status: "completed",
+          duration_ms: durationMs,
+          provider_request_id: providerRequestId(result) ?? providerRequestId(providerResult),
+        },
+      });
+    } catch (eventError) {
+      log("warn", "publish phase event journal failed", { jobId: job.jobId, target: job.target, phase, error: String(eventError) });
+    }
     return result;
   } catch (error) {
-    recordDomainEvent(backendDb.events, {
-      ref: job.postKey,
-      target: job.target,
-      type: "publish.job.phase",
-      severity: "error",
-      message: `${job.target} ${phase} failed`,
-      details: {
-        job_id: job.jobId,
-        attempt: job.attemptCount,
-        phase,
-        status: "failed",
-        duration_ms: Date.now() - startedAt,
-        provider_request_id: providerRequestId(providerResult),
-        error: String(error instanceof Error ? error.message : error),
-      },
-    });
+    try {
+      recordDomainEvent(backendDb.events, {
+        ref: job.postKey,
+        target: job.target,
+        type: "publish.job.phase",
+        severity: "error",
+        message: `${job.target} ${phase} failed`,
+        details: {
+          job_id: job.jobId,
+          attempt: job.attemptCount,
+          phase,
+          status: "failed",
+          duration_ms: Date.now() - startedAt,
+          provider_request_id: providerRequestId(providerResult),
+          error: String(error instanceof Error ? error.message : error),
+        },
+      });
+    } catch (eventError) {
+      log("warn", "publish phase event journal failed", { jobId: job.jobId, target: job.target, phase, error: String(eventError) });
+    }
     throw error;
   }
 }
