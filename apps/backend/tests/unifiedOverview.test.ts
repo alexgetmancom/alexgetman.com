@@ -9,7 +9,7 @@ import { buildOverviewData } from "../src/interfaces/web/dashboard/overview-data
 import { renderTrackPublicationList } from "../src/interfaces/web/dashboard/table.js";
 import type { PipelinePost } from "../src/interfaces/web/dashboard/types.js";
 import { createVideoOverviewCache, emptyVideoOverview, videoOverview } from "../src/interfaces/web/dashboard/video-overview.js";
-import { operationsService } from "../src/operations/index.js";
+import { createOperationsService } from "../src/operations/index.js";
 
 const hoursAgo = (hours: number): string => new Date(Date.now() - hours * 3_600_000).toISOString();
 
@@ -170,6 +170,16 @@ function seedHistoricalVideo(backendDb: ReturnType<typeof openBackendDb>): void 
 }
 
 describe("unified overview video read model", () => {
+  it("reuses the operations service for one database and configuration", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const config = loadConfig({});
+      expect(createOperationsService(backendDb, config)).toBe(createOperationsService(backendDb, config));
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("includes videos published during the selected current day", () => {
     const backendDb = openBackendDb(":memory:");
     try {
@@ -181,7 +191,7 @@ describe("unified overview video read model", () => {
       const overview = buildOverviewData(
         config,
         backendDb,
-        operationsService(backendDb, config),
+        createOperationsService(backendDb, config),
         createVideoOverviewCache(),
         0,
         1,

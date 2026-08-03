@@ -9,7 +9,7 @@ import {
   telegramAnalyticsDashboards,
 } from "../interfaces/telegram/control-cards.js";
 import { sendTelegramArchiveMedia } from "../interfaces/telegram/delivery-previews.js";
-import { studioServices } from "../studio/services/index.js";
+import { createStudioServices } from "../studio/services/index.js";
 import { botLocale } from "./i18n.js";
 import { isUnchangedMessageEdit } from "./telegram-errors.js";
 
@@ -20,7 +20,7 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
   const data = ctx.callbackQuery?.data ?? "";
   const actorId = Number(ctx.from?.id);
   const locale = botLocale(backendDb, actorId);
-  const analytics = studioServices(backendDb, config).analytics;
+  const analytics = createStudioServices(backendDb, config).analytics;
   if (data === "archive_noop") {
     await ctx.answerCallbackQuery();
     return true;
@@ -142,7 +142,7 @@ export async function showAnalyticsDashboard(
 ): Promise<void> {
   const actorId = Number(ctx.from?.id);
   const locale = botLocale(backendDb, actorId);
-  const dashboard = studioServices(backendDb, config).analytics.dashboard(section, days, locale);
+  const dashboard = createStudioServices(backendDb, config).analytics.dashboard(section, days, locale);
   const keyboard = analyticsKeyboard(config, locale, section, days);
   await ctx.editMessageText({ html: dashboard.richHtml }, { reply_markup: keyboard });
   const messageId = ctx.callbackQuery?.message?.message_id;
@@ -153,7 +153,7 @@ export async function showAnalyticsDashboard(
 /** Refreshes only the currently open dashboard for each owner. The interface
  * binding prevents hourly analytics collection from creating chat noise. */
 export async function refreshTelegramAnalyticsDashboards(bot: Bot, backendDb: BackendDb, config: BackendConfig): Promise<number> {
-  const analytics = studioServices(backendDb, config).analytics;
+  const analytics = createStudioServices(backendDb, config).analytics;
   const results = await Promise.all(
     telegramAnalyticsDashboards(backendDb).map(async (card) => {
       const section = card.section === "overview" && !showOverview(config) ? defaultAnalyticsSection(config) : card.section;

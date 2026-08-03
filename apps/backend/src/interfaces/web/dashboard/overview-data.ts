@@ -4,7 +4,7 @@ import type { AudienceView } from "../../../botTargets.js";
 import type { BackendDb } from "../../../db/client.js";
 import type { BackendConfig } from "../../../foundation/config.js";
 import { zonedSlot } from "../../../foundation/time.js";
-import type { operationsService } from "../../../operations/index.js";
+import type { createOperationsService } from "../../../operations/index.js";
 import type { CombinedSectionInput, PlatformMetric } from "./combined-section.js";
 import { audiencePlatformFollowers } from "./ops-sections.js";
 import { rollingPeriodDates } from "./period-controls.js";
@@ -17,7 +17,7 @@ import {
   videoOverview,
 } from "./video-overview.js";
 
-type OverviewService = ReturnType<typeof operationsService>;
+type OverviewService = ReturnType<typeof createOperationsService>;
 type OverviewCache = ReturnType<typeof createVideoOverviewCache>;
 
 export function buildOverviewData(
@@ -111,7 +111,14 @@ export function buildOverviewData(
 
 export function videoOverviewForPeriod(backendDb: BackendDb, weekOffset: number, periodDays: number, config: BackendConfig): VideoOverview {
   const [start, end] = rollingPeriodDates(weekOffset, periodDays, config.TIMEZONE);
-  return videoForDates(backendDb, config.TIMEZONE, createVideoOverviewCache(periodDays <= 7 ? 60 * 60 : 24 * 60 * 60), start, end, true);
+  const cache = createVideoOverviewCache(periodDays <= 7 ? 60 * 60 : 24 * 60 * 60);
+  setVideoOverviewCacheRange(
+    cache,
+    videoDayBounds(start, config.TIMEZONE, false),
+    videoDayBounds(end, config.TIMEZONE, true),
+    cache.sampleBucketSeconds,
+  );
+  return videoForDates(backendDb, config.TIMEZONE, cache, start, end, true);
 }
 
 function videoForDates(

@@ -2,16 +2,16 @@ import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import type { StudioLocale } from "../../foundation/locale.js";
 import { formatZonedDateTime } from "../../foundation/time.js";
-import { studioServices } from "../../studio/services/index.js";
+import { createStudioServices } from "../../studio/services/index.js";
 
 /**
  * Studio section of the Command Center: a second adapter over the same
- * studioServices Telegram and MCP use. Read-only beyond acknowledging a
+ * createStudioServices Telegram and MCP use. Read-only beyond acknowledging a
  * notification - no business logic lives here, only rendering of what the
  * services already return.
  */
 export function renderStudioSection(config: BackendConfig, backendDb: BackendDb, actorId: number, locale: StudioLocale): string {
-  const data = studioServices(backendDb, config).dashboard(actorId, locale);
+  const data = createStudioServices(backendDb, config).dashboard(actorId, locale);
   const zone = { timeZone: config.TIMEZONE, label: config.TIMEZONE_LABEL };
   return `
     <nav class="studio-locale">

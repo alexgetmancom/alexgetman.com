@@ -4,7 +4,7 @@ import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { describeError, t } from "../foundation/i18n/index.js";
 import { setTelegramPostCard } from "../interfaces/telegram/control-cards.js";
-import { studioServices } from "../studio/services/index.js";
+import { createStudioServices } from "../studio/services/index.js";
 import { appendPendingAlbum } from "./albums.js";
 import { botLocale } from "./i18n.js";
 import { persistentKeyboard, showMainMenu } from "./menu-render.js";
@@ -79,7 +79,10 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
     return;
   }
   const textEn = await translatePostText(message.text, config);
-  const draftId = studioServices(backendDb, config).publications.create(actorId, { kind: "post", message: { ...message, textEn } }).id;
+  const draftId = createStudioServices(backendDb, config).publications.create(actorId, {
+    kind: "post",
+    message: { ...message, textEn },
+  }).id;
   clearPostAdminState(backendDb, actorId);
   const control = await sendDraftPreview(ctx, backendDb, draftId, config);
   if (ctx.chat?.id) setTelegramPostCard(backendDb, draftId, Number(ctx.chat.id), control.message_id);

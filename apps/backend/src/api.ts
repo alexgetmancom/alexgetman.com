@@ -9,12 +9,14 @@ import { engagementRoutes } from "./interfaces/http/engagement.js";
 import { healthRoutes } from "./interfaces/http/health.js";
 import { studioRoutes } from "./interfaces/http/studio.js";
 import { telegramWebhookRoute } from "./interfaces/telegram/webhook.js";
-import { operationsService } from "./operations/service.js";
+import { createOperationsService } from "./operations/service.js";
+import { createStudioServices, type StudioServices } from "./studio/services/index.js";
 
 type ApiContext = {
   config: BackendConfig;
   backendDb: BackendDb;
   bot: Bot | null;
+  studio?: StudioServices;
 };
 const apps = new WeakMap<ApiContext, Hono>();
 
@@ -31,11 +33,13 @@ export function createApiHandler(context: ApiContext) {
  * each route module, and owns nothing else. Handlers live under
  * interfaces/http/ (and interfaces/telegram/ for the webhook, which is the only
  * one that touches grammy); response and auth helpers live in foundation/. */
-function buildApp({ config, backendDb, bot }: ApiContext): Hono {
+function buildApp({ config, backendDb, bot, studio: providedStudio }: ApiContext): Hono {
+  const studio = providedStudio ?? createStudioServices(backendDb, config);
   const deps = {
     config,
     backendDb,
-    operations: operationsService(backendDb, config),
+    studio,
+    operations: createOperationsService(backendDb, config),
     engagement: engagementService(backendDb, config),
   };
   // Trailing slashes reached this dispatcher un-normalized under the old Astro

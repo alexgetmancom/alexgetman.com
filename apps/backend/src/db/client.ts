@@ -11,6 +11,7 @@ import { queueDraftStoryCards } from "../story-cards/store.js";
 import { createDraftStore } from "./repositories/drafts.js";
 import { createEventStore } from "./repositories/events.js";
 import { createStudioPostStore } from "./repositories/studio-posts.js";
+import { createStudioQueueStore } from "./repositories/studio-queue.js";
 import * as schema from "./schema.js";
 
 export type BackendDb = ApplicationPorts & {
@@ -60,6 +61,7 @@ export function openBackendDb(path: string, timeout = 30_000): BackendDb {
     drafts: createDraftStore(db, clock),
     events: createEventStore(db, clock),
     studioPosts: createStudioPostStore(db),
+    studioQueue: createStudioQueueStore(db),
     storyCards: { queue: (draftId) => queueDraftStoryCards(backendDb, draftId) },
     close: () => sqlite.close(),
   };

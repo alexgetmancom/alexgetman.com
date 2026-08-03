@@ -1,8 +1,6 @@
-import { eq } from "drizzle-orm";
 import { TARGETS } from "../../botTargets.js";
 import { effectivePostTargets } from "../../channels/registry.js";
 import type { BackendDb } from "../../db/client.js";
-import { drafts, publishJobs, siteJobs } from "../../db/schema.js";
 import { parseTargets } from "../../publishing/targets.js";
 
 export type PostProgressStatus = "published" | "publishing" | "failed" | "verification_required" | "waiting" | "cancelled";
@@ -15,16 +13,13 @@ export type PostProgressState = {
 
 /** Transport-free progress read model shared by Telegram cards and future clients. */
 export function postProgressState(backendDb: BackendDb, draftId: number): PostProgressState {
-  const draft = backendDb.db.select().from(drafts).where(eq(drafts.id, draftId)).get();
-  if (!draft) throw new Error(`draft ${draftId} not found`);
+  const progress = backendDb.studioPosts.progress(draftId);
+  if (!progress) throw new Error(`draft ${draftId} not found`);
   const statuses = new Map<string, { status: PostProgressStatus; error: string | null }>();
-  if (draft.postId != null) {
-    for (const job of backendDb.db.select().from(publishJobs).where(eq(publishJobs.postId, draft.postId)).all())
-      statuses.set(job.target, normalize(job.status, job.lastError));
-    for (const job of backendDb.db.select().from(siteJobs).where(eq(siteJobs.postId, draft.postId)).all())
-      statuses.set(job.reason === "publish_ru" ? "site_ru" : "site_en", normalize(job.status, job.lastError));
-  }
-  const targets = effectivePostTargets(backendDb, parseTargets(draft.targetsJson));
+  for (const job of progress.publishJobs) statuses.set(job.target, normalize(job.status, job.lastError));
+  for (const job of progress.siteJobs)
+    statuses.set(job.reason === "publish_ru" ? "site_ru" : "site_en", normalize(job.status, job.lastError));
+  const targets = effectivePostTargets(backendDb, parseTargets(progress.draft.targetsJson));
   const items = TARGETS.filter(({ id }) => targets[id]).map(({ id: target, label, locale }) => {
     const current = statuses.get(target) ?? { status: "waiting" as const, error: null };
     return { target, label, locale, ...current };
@@ -38,7 +33,7 @@ export function postProgressState(backendDb: BackendDb, draftId: number): PostPr
     cancelled: 0,
   };
   for (const item of items) counts[item.status] += 1;
-  return { draftId, actorId: draft.actorId, targets: items, counts };
+  return { draftId, actorId: progress.draft.actorId, targets: items, counts };
 }
 
 function normalize(status: string, error?: string | null): { status: PostProgressStatus; error: string | null } {

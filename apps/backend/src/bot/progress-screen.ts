@@ -2,7 +2,7 @@ import type { Context } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { setTelegramPostProgressCard } from "../interfaces/telegram/control-cards.js";
-import { studioServices } from "../studio/services/index.js";
+import { createStudioServices } from "../studio/services/index.js";
 import { botLocale } from "./i18n.js";
 import { renderPostProgress } from "./progress.js";
 
@@ -21,11 +21,11 @@ export async function handleProgressCallback(ctx: Context, backendDb: BackendDb,
   }
   const actorId = Number(ctx.from?.id);
   if (cancel) {
-    studioServices(backendDb, config).posts.cancelRemaining(actorId, draftId);
+    createStudioServices(backendDb, config).posts.cancelRemaining(actorId, draftId);
     await ctx.answerCallbackQuery({ text: "Remaining work cancelled" });
   } else await ctx.answerCallbackQuery();
   const progress = renderPostProgress(
-    studioServices(backendDb, config).posts.progress(actorId, draftId),
+    createStudioServices(backendDb, config).posts.progress(actorId, draftId),
     botLocale(backendDb, actorId),
     Boolean(details),
   );

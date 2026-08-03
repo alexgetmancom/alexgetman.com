@@ -4,15 +4,13 @@ import path from "node:path";
 import { commandAllowed, mcpStudioActor } from "../../foundation/http-auth.js";
 import { json, sse, text } from "../../foundation/http-response.js";
 import { trackUsageAsync } from "../../observability/usage.js";
-import { studioServices } from "../../studio/services/index.js";
 import { mcpResponse } from "../mcp.js";
 import type { RouteModule } from "./context.js";
 import { isMediaUploadTooLarge, MediaUploadTooLargeError, streamUploadToFile } from "./media-upload.js";
 
 let activeMediaUploads = 0;
 
-export const studioRoutes: RouteModule = (app, { config, backendDb, engagement }) => {
-  const studio = studioServices(backendDb, config);
+export const studioRoutes: RouteModule = (app, { config, backendDb, engagement, studio }) => {
   // The MCP transport is a privileged Studio surface, same as POST /api/mcp:
   // an unauthenticated stream let any client pin an open connection and a
   // recurring timer for free.
@@ -29,7 +27,7 @@ export const studioRoutes: RouteModule = (app, { config, backendDb, engagement }
     if (body == null) return json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Invalid JSON" } });
     return json(
       await trackUsageAsync(backendDb, "studio.mcp.request", () =>
-        mcpResponse(backendDb, config, body, engagement.clientKey(c.req.raw), mcpStudioActor(c.req.raw, config)),
+        mcpResponse(backendDb, config, body, engagement.clientKey(c.req.raw), mcpStudioActor(c.req.raw, config), studio),
       ),
     );
   });

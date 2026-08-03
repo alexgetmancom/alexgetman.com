@@ -2,7 +2,7 @@ import { type Context, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { t } from "../foundation/i18n/index.js";
-import { studioServices } from "../studio/services/index.js";
+import { createStudioServices } from "../studio/services/index.js";
 import type { StudioQueueItem, StudioQueueSnapshot } from "../studio/services/queue.js";
 import { type BotLocale, botLocale } from "./i18n.js";
 
@@ -15,7 +15,7 @@ export async function showQueue(
   requestedView: QueueView = "upcoming",
 ): Promise<void> {
   const locale = botLocale(backendDb, Number(ctx.from?.id));
-  const snapshot = studioServices(backendDb, config).queue.snapshot(Number(ctx.from?.id));
+  const snapshot = createStudioServices(backendDb, config).queue.snapshot(Number(ctx.from?.id));
   // Queue opens as a quiet operational overview. Draft history is opt-in,
   // rather than becoming a wall of old cards whenever nothing is scheduled.
   const view = requestedView;

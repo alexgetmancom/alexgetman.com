@@ -10,7 +10,7 @@ import { sendTelegramDeliveryPreviews } from "../interfaces/telegram/delivery-pr
 import { storeTelegramVideo } from "../interfaces/telegram/video-ingress.js";
 import { videoPreview } from "../interfaces/telegram/video-preview.js";
 import { type VideoMetadata, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
-import { studioServices } from "../studio/services/index.js";
+import { createStudioServices } from "../studio/services/index.js";
 import {
   advanceVideoMetadata,
   advanceVideoTargetSchedule,
@@ -60,14 +60,14 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
   try {
     if (session.step === "asset") {
       const stored = await storeTelegramVideo(ctx, backendDb, config, actorId);
-      const draftId = studioServices(backendDb, config).publications.create(actorId, {
+      const draftId = createStudioServices(backendDb, config).publications.create(actorId, {
         kind: "video",
         studioMediaAssetId: stored.assetId,
         locale: session.data.videoLocale === "en" ? "en" : "ru",
       }).id;
       const selected = enabledVideoTargets(config);
       if (!selected.length) throw new StudioError("err.no-video-platforms-config");
-      studioServices(backendDb, config).videos.replaceTargets(actorId, draftId, selected);
+      createStudioServices(backendDb, config).videos.replaceTargets(actorId, draftId, selected);
       const first = firstVideoMetadataStep(selected);
       const next = { ...session, draftId, step: first.step, selected };
       saveSession(backendDb, actorId, next);
@@ -89,11 +89,11 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
     }
     if (session.step.startsWith("youtube_")) return handleYouTubeMessage(ctx, backendDb, config, actorId, session, text);
     if (session.step === "label") {
-      studioServices(backendDb, config).videos.rename(actorId, session.draftId, text);
+      createStudioServices(backendDb, config).videos.rename(actorId, session.draftId, text);
       if (session.data.is_single_edit) {
         clearSession(backendDb, actorId);
         const locale = botLocale(backendDb, actorId);
-        const preview = videoPreview(studioServices(backendDb, config).videos.preview(actorId, session.draftId), config, locale);
+        const preview = videoPreview(createStudioServices(backendDb, config).videos.preview(actorId, session.draftId), config, locale);
         await sendFreshVideoCard(ctx, backendDb, session.draftId, preview);
         return true;
       }
@@ -112,9 +112,9 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
     if (session.step === "instagram_caption") {
       const transition = advanceVideoMetadata("instagram_caption", text, session.data);
       const metadata = { caption: String(transition.data.instagram_caption ?? "") };
-      studioServices(backendDb, config).videos.updateMetadata(actorId, session.draftId, "instagram_reels", metadata);
+      createStudioServices(backendDb, config).videos.updateMetadata(actorId, session.draftId, "instagram_reels", metadata);
       if (!session.selected.includes("youtube_shorts"))
-        studioServices(backendDb, config).videos.rename(actorId, session.draftId, metadata.caption || "Instagram Reels");
+        createStudioServices(backendDb, config).videos.rename(actorId, session.draftId, metadata.caption || "Instagram Reels");
       await askSchedule(ctx, backendDb, actorId, session);
       return true;
     }
@@ -170,8 +170,8 @@ async function handleYouTubeMessage(
     ...(String(session.data.youtube_game_url ?? "") ? { gameUrl: String(session.data.youtube_game_url) } : {}),
     tags,
   };
-  studioServices(backendDb, config).videos.updateMetadata(actorId, session.draftId, "youtube_shorts", metadata);
-  studioServices(backendDb, config).videos.rename(actorId, session.draftId, metadata.title || "YouTube Shorts");
+  createStudioServices(backendDb, config).videos.updateMetadata(actorId, session.draftId, "youtube_shorts", metadata);
+  createStudioServices(backendDb, config).videos.rename(actorId, session.draftId, metadata.title || "YouTube Shorts");
   await askInstagramOrSchedule(ctx, backendDb, actorId, session);
   return true;
 }
@@ -191,7 +191,7 @@ function singleEditChange(
       target: "youtube_shorts",
       apply: (metadata, draftId) => {
         metadata.title = text;
-        studioServices(backendDb, config).videos.rename(actorId, draftId, text || "YouTube Shorts");
+        createStudioServices(backendDb, config).videos.rename(actorId, draftId, text || "YouTube Shorts");
       },
     };
   if (step === "youtube_description")
@@ -238,7 +238,7 @@ async function parseScheduleDate(
   text: string,
 ): Promise<Date | null> {
   try {
-    return studioServices(backendDb, config).videos.parseSchedule(actorId, draftId, text);
+    return createStudioServices(backendDb, config).videos.parseSchedule(actorId, draftId, text);
   } catch (error) {
     const locale = botLocale(backendDb, actorId);
     await replyVideoPrompt(ctx, locale, describeError(locale, error), { plainText: true });
@@ -328,7 +328,7 @@ async function confirmVideoSchedule(
     },
   };
   saveSession(backendDb, actorId, next);
-  const delivery = studioServices(backendDb, config).videos.preview(actorId, session.draftId).delivery;
+  const delivery = createStudioServices(backendDb, config).videos.preview(actorId, session.draftId).delivery;
   await sendTelegramDeliveryPreviews(ctx, delivery.projections, botLocale(backendDb, actorId));
   const lines = [`🎬 *${t(locale, "common.confirm-schedule")}*`];
   for (const target of next.selected) {
@@ -354,15 +354,15 @@ async function finishSingleVideoEdit(
   change: (metadata: Record<string, unknown>, draftId: number) => void,
 ): Promise<void> {
   if (session.draftId == null) throw new StudioError("err.video-reopen-edit");
-  const row = studioServices(backendDb, config)
+  const row = createStudioServices(backendDb, config)
     .videos.get(actorId, session.draftId)
     .targets.find((item) => item.target === target);
   const metadata = { ...(row?.metadataJson as Record<string, unknown> | undefined) };
   change(metadata, session.draftId);
-  studioServices(backendDb, config).videos.updateMetadata(actorId, session.draftId, target, metadata as VideoMetadata);
+  createStudioServices(backendDb, config).videos.updateMetadata(actorId, session.draftId, target, metadata as VideoMetadata);
   clearSession(backendDb, actorId);
   const locale = botLocale(backendDb, actorId);
-  const preview = videoPreview(studioServices(backendDb, config).videos.preview(actorId, session.draftId), config, locale);
+  const preview = videoPreview(createStudioServices(backendDb, config).videos.preview(actorId, session.draftId), config, locale);
   await sendFreshVideoCard(ctx, backendDb, session.draftId, preview);
 }
 

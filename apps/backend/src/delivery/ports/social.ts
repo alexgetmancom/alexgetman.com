@@ -1,20 +1,13 @@
-import { isStoryTarget, TARGET_GROUPS, targetInGroup } from "../../botTargets.js";
+import { isStoryTarget } from "../../botTargets.js";
 import type { BackendConfig } from "../../foundation/config.js";
-import { instagramConfigForLocale } from "../../foundation/external/instagram.js";
 import { log } from "../../foundation/logger.js";
 import { createSerialQueue } from "../../foundation/serial-queue.js";
-import { isCapabilityReady } from "../../observability/capabilities.js";
-import type { PublishResult } from "../../publishing/errors.js";
 import { selectMediaForTarget } from "../../publishing/media-policy.js";
-import { platformProfile } from "../../publishing/platform-profiles.js";
 import type { ClaimedPublishJob } from "../../publishing/queue.js";
 import { prepareMediaItems } from "../media-prepare.js";
-import { type DeliveryPorts, type DeliveryPublisher, deliveryAdapter } from "../ports.js";
-import { publishInstagramStory, verifyInstagramPublication } from "../social/instagram.js";
+import { createPlatformAdapters } from "../platform-adapters.js";
+import type { DeliveryPorts } from "../ports.js";
 import { payloadMedia } from "../social/payload.js";
-import { publishToTelegram } from "../social/telegram.js";
-import { publishToThreads, verifyThreadsPost } from "../social/threads.js";
-import { publishToX, verifyXPost } from "../social/x.js";
 import { generateStoryMedia } from "../story-media.js";
 
 type PreparedMedia = Awaited<ReturnType<typeof prepareMediaItems>>;
@@ -45,108 +38,11 @@ export function createPlatformPorts(config: BackendConfig, fetchImpl: typeof fet
         throw error;
       });
     });
-  const threadsEnConfig = platformConfig("threads_en", config);
-  const instagramEnConfig = platformConfig("instagram_stories", config);
-  const instagramRuConfig = platformConfig("instagram_stories_ru", config);
-  const targetConfigs: Record<string, BackendConfig> = {
-    telegram: config,
-    ...Object.fromEntries(TARGET_GROUPS.threads.map((target) => [target, target === "threads_en" ? threadsEnConfig : config])),
-    ...Object.fromEntries(TARGET_GROUPS.x.map((target) => [target, config])),
-    ...Object.fromEntries(
-      TARGET_GROUPS.instagramStory.map((target) => [
-        target,
-        target === "instagram_stories" ? instagramEnConfig : target === "instagram_stories_ru" ? instagramRuConfig : config,
-      ]),
-    ),
-    ...Object.fromEntries(TARGET_GROUPS.telegramStory.map((target) => [target, config])),
-  };
-  const publishers: Record<string, DeliveryPublisher> = {
-    // Every target that can use media goes through the same preparation step.
-    telegram: (job) => publishToTelegram(job.payload, config, fetchImpl),
-  };
-  for (const target of TARGET_GROUPS.threads)
-    publishers[target] = (job) =>
-      publishToThreads(
-        job.payload,
-        target === "threads_en" ? threadsEnConfig : config,
-        fetchImpl,
-        target === "threads_en" ? target : undefined,
-      );
-  for (const target of TARGET_GROUPS.x) publishers[target] = (job) => publishToX(job.payload, config, fetchImpl);
-  for (const target of TARGET_GROUPS.instagramStory)
-    publishers[target] = (job) => publishInstagramStory(job.payload, targetConfigs[target] ?? config, fetchImpl);
-  for (const target of TARGET_GROUPS.telegramStory)
-    publishers[target] = (job) =>
-      import("../social/telegramStories.js").then(({ publishTelegramStory }) => publishTelegramStory(job.payload, config));
-  return Object.fromEntries(
-    Object.entries(publishers).map(([target, publish]) => [
-      target,
-      deliveryAdapter(publish, {
-        validate: async () => validatePlatformTarget(target, targetConfigs[target] ?? config),
-        prepare: async (job) => (target === "telegram" ? job : prepare(job, targetConfigs[target] ?? config)),
-        verify: async (_job, result) => verifyPlatformPublication(target, result, targetConfigs[target] ?? config, fetchImpl),
-      }),
-    ]),
-  ) as DeliveryPorts;
+  return createPlatformAdapters(config, fetchImpl, prepare);
 }
 
-export function platformConfig(target: string, config: BackendConfig): BackendConfig {
-  if (target === "threads_en") return { ...config, THREADS_ACCESS_TOKEN: config.THREADS_EN_ACCESS_TOKEN ?? config.THREADS_ACCESS_TOKEN };
-  // Stories carry the shared fallback for English; Reels deliberately do not.
-  if (target === "instagram_stories" || target === "instagram_stories_ru") {
-    const locale = target === "instagram_stories" ? "en" : "ru";
-    const normalized = instagramConfigForLocale(config, locale, "shared");
-    const credentials = { accessToken: normalized.INSTAGRAM_ACCESS_TOKEN, userId: normalized.INSTAGRAM_USER_ID };
-    return {
-      ...normalized,
-      ...(locale === "en"
-        ? { INSTAGRAM_EN_ACCESS_TOKEN: credentials.accessToken, INSTAGRAM_EN_USER_ID: credentials.userId }
-        : { INSTAGRAM_RU_ACCESS_TOKEN: credentials.accessToken, INSTAGRAM_RU_USER_ID: credentials.userId }),
-    };
-  }
-  return config;
-}
-
-export async function verifyPlatformPublication(
-  target: string,
-  result: PublishResult,
-  config: BackendConfig,
-  fetchImpl: typeof fetch = fetch,
-): Promise<PublishResult> {
-  if (!result.ok || result.id == null) return result;
-  const id = String(result.id);
-  try {
-    if (targetInGroup(TARGET_GROUPS.threads, target)) {
-      const verified = await verifyThreadsPost(id, config, fetchImpl);
-      return { ...result, url: result.url ?? verified.url, verification: { status: "verified", providerId: verified.id } };
-    }
-    if (targetInGroup(TARGET_GROUPS.instagramStory, target)) {
-      const verified = await verifyInstagramPublication(id, config, fetchImpl);
-      return { ...result, url: result.url ?? verified.url, verification: { status: "verified", providerId: verified.id } };
-    }
-    if (targetInGroup(TARGET_GROUPS.x, target)) {
-      const verified = await verifyXPost(id, config, fetchImpl);
-      return { ...result, verification: { status: "verified", providerId: verified.id } };
-    }
-    return { ...result, verification: { status: "unsupported" } };
-  } catch (error) {
-    // The provider already returned an external ID. Verification is an
-    // observation layer and must never replay the public mutation.
-    return {
-      ...result,
-      verification: { status: "unavailable", error: error instanceof Error ? error.message : String(error) },
-    };
-  }
-}
-
-/** Fail before a provider request when the declarative target profile is not ready. */
-function validatePlatformTarget(target: string, config: BackendConfig): void {
-  const profile = platformProfile(target);
-  if (!profile?.requirements.length) return;
-  if (isCapabilityReady(config, profile.id)) return;
-  const missing = profile.requirements.filter((name) => !(config as unknown as Record<string, unknown>)[name]);
-  throw new Error(`${profile.label} is not configured: ${missing.join(", ")}`);
-}
+export { verifyPlatformPublication } from "../platform-adapters.js";
+export { platformConfig } from "../platform-routing.js";
 
 async function withPreparedMedia(
   job: ClaimedPublishJob,

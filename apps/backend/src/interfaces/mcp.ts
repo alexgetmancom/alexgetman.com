@@ -3,7 +3,7 @@ import type { BackendDb } from "../db/client.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { log } from "../foundation/logger.js";
-import { type StudioServices, studioServices } from "../studio/services/index.js";
+import { createStudioServices, type StudioServices } from "../studio/services/index.js";
 
 const feedbackHits = new Map<string, number[]>();
 
@@ -554,6 +554,7 @@ export async function mcpResponse(
   body: unknown,
   clientKey: string,
   actorId: number | null,
+  studio?: StudioServices,
 ): Promise<Record<string, unknown>> {
   if (!body || typeof body !== "object" || Array.isArray(body)) return rpcError(null, -32600, "Invalid request");
   const request = body as JsonObject;
@@ -577,7 +578,7 @@ export async function mcpResponse(
   try {
     if (name === "submit_feedback") return success(id, submitFeedback(backendDb, args, clientKey));
     if (!actorId) return rpcError(id, -32001, "Studio MCP authorization is required");
-    return success(id, await runStudioTool(backendDb, config, actorId, name, args));
+    return success(id, await runStudioTool(backendDb, config, actorId, name, args, studio));
   } catch (error) {
     if (error instanceof McpToolError) return rpcError(id, error.code, error.message);
     return rpcError(id, -32603, error instanceof Error ? error.message : String(error));
@@ -590,12 +591,13 @@ async function runStudioTool(
   actorId: number,
   name: string,
   args: JsonObject,
+  studio?: StudioServices,
 ): Promise<unknown> {
   const def = (studioToolDefs as Record<string, ToolDef>)[name];
   if (!def) throw new McpToolError(-32601, `Unknown Studio tool: ${name}`);
-  const studio: StudioServices = studioServices(backendDb, config);
+  const resolvedStudio: StudioServices = studio ?? createStudioServices(backendDb, config);
   const input = parseArgs(def.schema, args);
-  const result = await def.handler(studio, actorId, input);
+  const result = await def.handler(resolvedStudio, actorId, input);
   // The mutation already happened. Reporting a journal failure as a tool
   // failure would invite the caller to retry it and publish twice, so the audit
   // trail is best-effort and the caller still sees the success it earned.

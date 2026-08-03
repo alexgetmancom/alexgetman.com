@@ -7,7 +7,7 @@ import { t } from "../../foundation/i18n/index.js";
 import { escapeMarkdown } from "../../foundation/markdown.js";
 import { threadsBody, threadsTextLimit } from "../../publishing/threads-text.js";
 import type { DeliveryProjection } from "../../studio/projections.js";
-import { studioServices } from "../../studio/services/index.js";
+import { createStudioServices } from "../../studio/services/index.js";
 
 const TELEGRAM_MEDIA_GROUP_LIMIT = 10;
 
@@ -114,9 +114,9 @@ export async function handleTelegramDeliveryPreviewCallback(ctx: Context, backen
   if (!Number.isSafeInteger(id)) return false;
   const delivery =
     kind === "video"
-      ? studioServices(backendDb, config).videos.preview(actorId, id).delivery
+      ? createStudioServices(backendDb, config).videos.preview(actorId, id).delivery
       : kind === "post"
-        ? studioServices(backendDb, config).posts.preview(actorId, id).delivery
+        ? createStudioServices(backendDb, config).posts.preview(actorId, id).delivery
         : null;
   const projection = delivery?.projections.find((item) => item.id === projectionId);
   await ctx.answerCallbackQuery();

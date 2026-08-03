@@ -3,7 +3,6 @@ import { html, json, loginRedirect, queryTokenRedirect, sse, text } from "../../
 import { measureMemorySync } from "../../observability/memory.js";
 import { trackUsageAsync, trackUsageSync } from "../../observability/usage.js";
 import { commandActionSchema, type OperationsCommand } from "../../operations/index.js";
-import { studioServices } from "../../studio/services/index.js";
 import {
   invalidateDashboardRenderCache,
   renderCommandCenterLogin,
@@ -12,7 +11,7 @@ import {
 } from "../web/dashboard.js";
 import type { RouteModule } from "./context.js";
 
-export const commandCenterRoutes: RouteModule = (app, { config, backendDb, operations }) => {
+export const commandCenterRoutes: RouteModule = (app, { config, backendDb, operations, studio }) => {
   app.get("/api/pipeline-status", (c) => {
     if (!commandAllowed(c.req.raw, config)) return text("unauthorized\n", 401);
     const weekOffset = Number(c.req.query("week_offset") ?? 0) || 0;
@@ -101,7 +100,7 @@ export const commandCenterRoutes: RouteModule = (app, { config, backendDb, opera
     const actorId = config.MCP_STUDIO_ACTOR_ID;
     const form = await request.formData().catch(() => new FormData());
     const id = Number(form.get("id"));
-    if (actorId && Number.isSafeInteger(id)) studioServices(backendDb, config).notifications.acknowledge(actorId, id);
+    if (actorId && Number.isSafeInteger(id)) studio.notifications.acknowledge(actorId, id);
     invalidateDashboardRenderCache(backendDb);
     return new Response(null, { status: 303, headers: { location: "/command-center?tab=studio" } });
   });

@@ -9,8 +9,15 @@ import { assertFfmpegAvailable, configureFfmpegConcurrency } from "../../../back
 import type { ScheduledLoop } from "../../../backend/src/foundation/scheduler.js";
 import { startTelegramWorkers } from "../../../backend/src/interfaces/telegram/worker.js";
 import { startCoreWorkers } from "../../../backend/src/runtime/workers.js";
+import { createStudioServices, type StudioServices } from "../../../backend/src/studio/services/index.js";
 
-type AppRuntime = { config: BackendConfig; backendDb: BackendDb; bot: ReturnType<typeof createBot>; loops: ScheduledLoop[] };
+type AppRuntime = {
+  config: BackendConfig;
+  backendDb: BackendDb;
+  studio: StudioServices;
+  bot: ReturnType<typeof createBot>;
+  loops: ScheduledLoop[];
+};
 
 let runtime: AppRuntime | undefined;
 
@@ -31,9 +38,10 @@ export function startRuntime(): AppRuntime {
   configureFfmpegConcurrency(config.FFMPEG_MAX_CONCURRENCY);
   const backendDb = openBackendDb(config.PIPELINE_DB);
   bootstrapConfiguredChannels(backendDb, config);
+  const studio = createStudioServices(backendDb, config);
   const bot = createBot(config, backendDb);
   const loops = [...startCoreWorkers(config, backendDb), ...startTelegramWorkers(config, backendDb, bot)];
-  runtime = { config, backendDb, bot, loops };
+  runtime = { config, backendDb, studio, bot, loops };
   runtimeGlobal.__alexgetmanRuntime = runtime;
   if (!assertFfmpegAvailable()) log("warn", "ffmpeg is not available; video poster generation will fail until Docker/runtime installs it");
   reportUnwritableDataDirectories(config, backendDb);

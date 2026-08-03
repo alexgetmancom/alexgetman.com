@@ -8,7 +8,7 @@ import { setTelegramPostCard, setTelegramPostProgressCard } from "../interfaces/
 import { sendTelegramDeliveryPreviews } from "../interfaces/telegram/delivery-previews.js";
 import { formatMsk } from "../interfaces/telegram/time.js";
 import { runStoryCardCycle } from "../story-cards/worker.js";
-import { studioServices } from "../studio/services/index.js";
+import { createStudioServices } from "../studio/services/index.js";
 import { botLocale } from "./i18n.js";
 import { extractMessage } from "./message.js";
 import { editDraftPreview, editDraftPrompt, sendDraftPreview, showScheduleConfirmation } from "./post-card.js";
@@ -27,7 +27,7 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
   const actorId = Number(ctx.from?.id);
   const locale = botLocale(backendDb, actorId);
   if (!Number.isSafeInteger(draftId)) return void (await ctx.answerCallbackQuery({ text: t(locale, "action.invalid-post") }));
-  const posts = studioServices(backendDb, config).posts;
+  const posts = createStudioServices(backendDb, config).posts;
   posts.get(actorId, draftId);
   if (action === "toggle" && second) {
     posts.toggleTarget(actorId, draftId, second);
@@ -165,7 +165,7 @@ async function queuePostNow(
   actionKey: string,
   locale: ReturnType<typeof botLocale>,
 ): Promise<void> {
-  const posts = studioServices(backendDb, config).posts;
+  const posts = createStudioServices(backendDb, config).posts;
   const result = await withActionLock(`${actorId}:${actionKey}`, async () => {
     posts.publish(actorId, draftId);
   });
@@ -185,7 +185,7 @@ async function showStoryCardChoice(
   draftId: number,
   intent: "publish" | "schedule",
 ): Promise<boolean> {
-  const posts = studioServices(backendDb, config).posts;
+  const posts = createStudioServices(backendDb, config).posts;
   let cards = posts.preview(actorId, draftId).storyCards;
   if (cards.length === 0) return false;
   const deadline = Date.now() + 4_000;
@@ -238,7 +238,7 @@ async function commitLocaleSchedule(
   scheduleLocale: "ru" | "en",
   value: Date,
 ): Promise<void> {
-  const posts = studioServices(backendDb, config).posts;
+  const posts = createStudioServices(backendDb, config).posts;
   const { ruAt, enAt } = posts.scheduleAt(actorId, draftId, scheduleLocale, value);
   const postId = posts.schedule(actorId, draftId, { ruAt, enAt });
   const otherLocale = scheduleLocale === "ru" ? "en" : "ru";
@@ -260,7 +260,7 @@ async function sendPublishConfirmation(
   actorId: number,
   draftId: number,
 ): Promise<void> {
-  const delivery = studioServices(backendDb, config).posts.preview(actorId, draftId).delivery;
+  const delivery = createStudioServices(backendDb, config).posts.preview(actorId, draftId).delivery;
   await sendTelegramDeliveryPreviews(ctx, delivery.projections, botLocale(backendDb, actorId));
   const preview = draftPreview(backendDb, draftId, config, "confirm_publish");
   await ctx.reply(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
@@ -274,7 +274,7 @@ async function showPublicationPreflight(
   draftId: number,
   locale: ReturnType<typeof botLocale>,
 ): Promise<boolean> {
-  const issues = studioServices(backendDb, config).posts.validate(actorId, draftId);
+  const issues = createStudioServices(backendDb, config).posts.validate(actorId, draftId);
   const issue = issues[0];
   if (!issue) return false;
   // A waivable issue needs a message, not an alert: an alert cannot carry a
@@ -312,7 +312,7 @@ export async function applyAdminState(
   const message = extractMessage(ctx);
   if (action.startsWith("schedule_manual_")) {
     const scope = requireScheduleLocale(action.slice("schedule_manual_".length));
-    const { ruAt, enAt } = studioServices(backendDb, config).posts.manualSchedule(actorId, draftId, scope, message.text);
+    const { ruAt, enAt } = createStudioServices(backendDb, config).posts.manualSchedule(actorId, draftId, scope, message.text);
     const value = scope === "ru" ? ruAt : enAt;
     if (!value) throw new StudioError("err.no-pub-time");
     setPostAdminState(backendDb, actorId, `schedule_confirm_${scope}_${value.toISOString()}`, draftId, controlMessageId);
@@ -328,7 +328,7 @@ export async function applyAdminState(
       scope === "ru" ? "schedule_ru" : "schedule_en",
     );
   } else if (action === "edit_ru" || action === "edit_en") {
-    studioServices(backendDb, config).posts.edit(actorId, draftId, {
+    createStudioServices(backendDb, config).posts.edit(actorId, draftId, {
       locale: action === "edit_ru" ? "ru" : "en",
       text: message.text,
       entities: message.entities,
@@ -336,7 +336,7 @@ export async function applyAdminState(
       clearMedia: isClearMediaCommand(message.text),
     });
   } else if (action === "replace_ru_media" || action === "replace_en_media") {
-    studioServices(backendDb, config).posts.edit(actorId, draftId, {
+    createStudioServices(backendDb, config).posts.edit(actorId, draftId, {
       locale: action === "replace_ru_media" ? "ru" : "en",
       text: message.text,
       entities: message.entities,
@@ -346,7 +346,7 @@ export async function applyAdminState(
   } else if (action === "edit_sources") {
     const urls = extractUrls(message.text);
     if (urls.length === 0) throw new StudioError("err.no-valid-source-links");
-    studioServices(backendDb, config).posts.replaceSources(actorId, draftId, urls);
+    createStudioServices(backendDb, config).posts.replaceSources(actorId, draftId, urls);
   }
   clearPostAdminState(backendDb, actorId);
   // A completed edit gets a fresh card at the bottom, same as the album path
@@ -383,7 +383,7 @@ async function sendPostPreviews(
   actorId: number,
   draftId: number,
 ): Promise<void> {
-  const delivery = studioServices(backendDb, config).posts.preview(actorId, draftId).delivery;
+  const delivery = createStudioServices(backendDb, config).posts.preview(actorId, draftId).delivery;
   await sendTelegramDeliveryPreviews(ctx, delivery.projections, botLocale(backendDb, actorId));
 }
 

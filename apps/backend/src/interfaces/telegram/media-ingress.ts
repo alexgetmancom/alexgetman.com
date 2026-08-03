@@ -2,7 +2,7 @@ import fs from "node:fs";
 import type { Bot } from "grammy";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
-import { type StudioServices, studioServices } from "../../studio/services/index.js";
+import { createStudioServices, type StudioServices } from "../../studio/services/index.js";
 import { downloadTelegramFile } from "./file-download.js";
 
 /** Converts Telegram transport file ids into Content-owned assets before a draft is written. */
@@ -14,7 +14,7 @@ export async function importTelegramAlbumMedia(
   media: Record<string, unknown>[],
 ): Promise<Record<string, unknown>[]> {
   if (typeof bot.api.getFile !== "function") return media; // compatibility for historical/test-only ingress.
-  const studioMedia = studioServices(backendDb, config).media;
+  const studioMedia = createStudioServices(backendDb, config).media;
   return Promise.all(media.map((item) => importTelegramMediaItem(bot, studioMedia, config, actorId, item)));
 }
 

@@ -8,7 +8,7 @@ import { t } from "../foundation/i18n/index.js";
 import { log } from "../foundation/logger.js";
 import { setTelegramPostCard } from "../interfaces/telegram/control-cards.js";
 import { importTelegramAlbumMedia } from "../interfaces/telegram/media-ingress.js";
-import { studioServices } from "../studio/services/index.js";
+import { createStudioServices } from "../studio/services/index.js";
 import { botLocale } from "./i18n.js";
 import { clearPostAdminStateIfCurrent } from "./post-state.js";
 import { translatePostText } from "./post-translation.js";
@@ -109,7 +109,7 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
       const isEdit = row.action === "edit_ru" || row.action === "edit_en";
       const isMediaReplacement = row.action === "replace_ru_media" || row.action === "replace_en_media";
       if ((isEdit || isMediaReplacement) && draftId) {
-        studioServices(backendDb, config).posts.edit(row.actorId, draftId, {
+        createStudioServices(backendDb, config).posts.edit(row.actorId, draftId, {
           locale: row.action === "edit_ru" || row.action === "replace_ru_media" ? "ru" : "en",
           text: isMediaReplacement ? "" : row.textRu,
           entities: isMediaReplacement ? [] : parseArrayValue(row.textEntitiesJson),
@@ -121,7 +121,7 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
       } else {
         const text = row.textRu;
         const textEn = await translatePostText(text, config);
-        const created = studioServices(backendDb, config).publications.create(row.actorId, {
+        const created = createStudioServices(backendDb, config).publications.create(row.actorId, {
           kind: "post",
           message: { text, textEn, media, entities: parseArrayValue(row.textEntitiesJson) },
         }).id;

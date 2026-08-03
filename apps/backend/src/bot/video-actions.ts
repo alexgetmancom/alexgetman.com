@@ -7,7 +7,7 @@ import { describeError, type MessageKey, t } from "../foundation/i18n/index.js";
 import { setTelegramVideoCard } from "../interfaces/telegram/control-cards.js";
 import { videoPreview } from "../interfaces/telegram/video-preview.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
-import { studioServices } from "../studio/services/index.js";
+import { createStudioServices } from "../studio/services/index.js";
 import { previousVideoMetadataStep, type VideoWizardStep } from "../studio/video-fsm.js";
 import { type BotLocale, botLocale } from "./i18n.js";
 import { applyVideoScheduleDate, startVideoConversation } from "./video-conversation.js";
@@ -124,7 +124,7 @@ async function showVideoCard(
   id: number,
   locale: BotLocale,
 ): Promise<void> {
-  const preview = videoPreview(studioServices(backendDb, config).videos.preview(actorId, id), config, locale);
+  const preview = videoPreview(createStudioServices(backendDb, config).videos.preview(actorId, id), config, locale);
   await ctx.editMessageText(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
 }
 
@@ -181,7 +181,7 @@ async function handleToggle({ ctx, backendDb, config, actorId, locale, data }: V
 async function handleTargetsDone({ ctx, backendDb, config, actorId, locale }: VideoActionArgs): Promise<VideoActionResult> {
   const session = getSession(backendDb, actorId);
   if (!session?.draftId || !session.selected.length) throw new StudioError("err.video-pick-platform");
-  studioServices(backendDb, config).videos.replaceTargets(actorId, session.draftId, session.selected);
+  createStudioServices(backendDb, config).videos.replaceTargets(actorId, session.draftId, session.selected);
   if (session.selected.includes("youtube_shorts")) {
     const next = { ...session, step: "youtube_title" };
     saveSession(backendDb, actorId, next);
@@ -207,7 +207,7 @@ async function handleMetaBack({ ctx, backendDb, actorId }: VideoActionArgs): Pro
 
 async function handleOpen({ ctx, backendDb, config, actorId, locale, data }: VideoActionArgs): Promise<VideoActionResult> {
   const id = requireDraftId(data.slice("video_open:".length));
-  studioServices(backendDb, config).videos.get(actorId, id);
+  createStudioServices(backendDb, config).videos.get(actorId, id);
   const messageId = callbackMessageId(ctx);
   if (messageId && ctx.chat?.id) setTelegramVideoCard(backendDb, id, Number(ctx.chat.id), messageId);
   await showVideoCard(ctx, backendDb, config, actorId, id, locale);
@@ -217,7 +217,7 @@ async function handleRetry({ ctx, backendDb, config, actorId, locale, data }: Vi
   const [, targetText, idText] = data.split(":");
   const target = requireVideoTarget(targetText ?? "");
   const id = requireDraftId(idText);
-  studioServices(backendDb, config).videos.retry(actorId, id, target);
+  createStudioServices(backendDb, config).videos.retry(actorId, id, target);
   await showVideoCard(ctx, backendDb, config, actorId, id, locale);
   return { toast: t(locale, "video.requeued", { label: videoTargetLabel(target) }) };
 }
@@ -242,7 +242,7 @@ async function handleScheduleConfirm({ ctx, backendDb, config, actorId, data }: 
 
 async function handleScheduleStart({ ctx, backendDb, config, actorId, locale, data }: VideoActionArgs): Promise<VideoActionResult> {
   const id = requireDraftId(data.slice("video_schedule:".length));
-  const targets = studioServices(backendDb, config)
+  const targets = createStudioServices(backendDb, config)
     .videos.get(actorId, id)
     .targets.map((row) => row.target as VideoTarget);
   if (!targets.length) throw new StudioError("err.video-no-platforms");
@@ -257,7 +257,7 @@ async function handleScheduleStart({ ctx, backendDb, config, actorId, locale, da
 async function handleScheduleMode({ ctx, backendDb, config, actorId, locale, data }: VideoActionArgs): Promise<VideoActionResult> {
   const id = requireDraftId(data.split(":")[1]);
   const session = getSession(backendDb, actorId);
-  const targets = studioServices(backendDb, config)
+  const targets = createStudioServices(backendDb, config)
     .videos.get(actorId, id)
     .targets.map((row) => row.target as VideoTarget);
   if (!session || !targets.length) throw new StudioError("err.video-reopen-publish");
@@ -282,8 +282,8 @@ async function handleScheduleMode({ ctx, backendDb, config, actorId, locale, dat
 
 async function handleNowAsk({ ctx, backendDb, config, actorId, locale, data }: VideoActionArgs): Promise<VideoActionResult> {
   const id = requireDraftId(data.slice("video_now:".length));
-  studioServices(backendDb, config).videos.get(actorId, id);
-  const preview = videoPreview(studioServices(backendDb, config).videos.preview(actorId, id), config, locale);
+  createStudioServices(backendDb, config).videos.get(actorId, id);
+  const preview = videoPreview(createStudioServices(backendDb, config).videos.preview(actorId, id), config, locale);
   await ctx.editMessageText(`${preview.text}\n\n${t(locale, "video.publish-now-q")}`, {
     parse_mode: "Markdown",
     reply_markup: new InlineKeyboard()
@@ -306,8 +306,8 @@ async function handleNowConfirm({ ctx, backendDb, config, actorId, data }: Video
 
 async function handleCancelAsk({ ctx, backendDb, config, actorId, locale, data }: VideoActionArgs): Promise<VideoActionResult> {
   const id = requireDraftId(data.slice("video_cancel_ask:".length));
-  studioServices(backendDb, config).videos.get(actorId, id);
-  const preview = videoPreview(studioServices(backendDb, config).videos.preview(actorId, id), config, locale);
+  createStudioServices(backendDb, config).videos.get(actorId, id);
+  const preview = videoPreview(createStudioServices(backendDb, config).videos.preview(actorId, id), config, locale);
   await ctx.editMessageText(
     `${preview.text}\n\n⚠️ *${t(locale, "vpreview.cancel-confirm-q")}*\n${t(locale, "vpreview.cancel-confirm-warn")}`,
     {
@@ -323,9 +323,9 @@ async function handleRemoveAsk({ ctx, backendDb, config, actorId, locale, data }
   const [, targetText, idText] = data.split(":");
   const target = requireVideoTarget(targetText ?? "");
   const id = requireDraftId(idText);
-  studioServices(backendDb, config).videos.get(actorId, id);
+  createStudioServices(backendDb, config).videos.get(actorId, id);
   const label = videoTargetLabel(target);
-  const preview = videoPreview(studioServices(backendDb, config).videos.preview(actorId, id), config, locale);
+  const preview = videoPreview(createStudioServices(backendDb, config).videos.preview(actorId, id), config, locale);
   await ctx.editMessageText(
     `${preview.text}\n\n⚠️ *${t(locale, "vpreview.remove-confirm-q", { target: label })}*\n${t(locale, "vpreview.remove-confirm-warn", { target: label })}`,
     {
@@ -339,7 +339,7 @@ async function handleRemoveAsk({ ctx, backendDb, config, actorId, locale, data }
 
 async function handleCancel({ ctx, backendDb, config, actorId, locale, data }: VideoActionArgs): Promise<VideoActionResult> {
   const result = await withActionLock(`${actorId}:${data}`, () =>
-    studioServices(backendDb, config).videos.cancel(actorId, requireDraftId(data.slice("video_cancel:".length))),
+    createStudioServices(backendDb, config).videos.cancel(actorId, requireDraftId(data.slice("video_cancel:".length))),
   );
   if (!result.ok) return;
   clearSession(backendDb, actorId);
@@ -362,7 +362,7 @@ async function handleTime({ ctx, backendDb, config, actorId, locale, data }: Vid
   const [, targetText, idText] = data.split(":");
   const target = requireVideoTarget(targetText ?? "");
   const id = requireDraftId(idText);
-  studioServices(backendDb, config).videos.get(actorId, id);
+  createStudioServices(backendDb, config).videos.get(actorId, id);
   const session = {
     draftId: id,
     step: `schedule_target:${target}`,
@@ -386,7 +386,7 @@ async function handleSchedulePick({ ctx, backendDb, config, actorId, data }: Vid
   const session = getSession(backendDb, actorId);
   if (!session || session.draftId !== id || !(session.step === "schedule_common" || session.step.startsWith("schedule_target:")))
     throw new StudioError("action.schedule-expired");
-  const value = studioServices(backendDb, config).videos.slotTime(`${(hhmm ?? "").slice(0, 2)}:${(hhmm ?? "").slice(2, 4)}`);
+  const value = createStudioServices(backendDb, config).videos.slotTime(`${(hhmm ?? "").slice(0, 2)}:${(hhmm ?? "").slice(2, 4)}`);
   await applyVideoScheduleDate(ctx, backendDb, config, actorId, session, value);
 }
 
@@ -403,7 +403,7 @@ async function handleRemove({ ctx, backendDb, config, actorId, locale, data }: V
   const target = requireVideoTarget(targetText ?? "");
   const id = requireDraftId(idText);
   const result = await withActionLock(`${actorId}:${data}`, async () =>
-    studioServices(backendDb, config).videos.removeTarget(actorId, id, target),
+    createStudioServices(backendDb, config).videos.removeTarget(actorId, id, target),
   );
   if (!result.ok) return;
   const { cancelled } = result.value;
@@ -422,7 +422,7 @@ async function handleRemove({ ctx, backendDb, config, actorId, locale, data }: V
 
 async function handleEditMenu({ ctx, backendDb, config, actorId, locale, data }: VideoActionArgs): Promise<VideoActionResult> {
   const id = requireDraftId(data.slice("video_edit_menu:".length));
-  const targets = studioServices(backendDb, config)
+  const targets = createStudioServices(backendDb, config)
     .videos.get(actorId, id)
     .targets.map((target) => target.target as VideoTarget);
   const keyboard = new InlineKeyboard().text(t(locale, "video.edit-card-name"), `video_edit_field:label:${id}`).row();
@@ -443,7 +443,7 @@ async function handleEditField({ ctx, backendDb, config, actorId, locale, data }
   const prompt = EDIT_FIELD_PROMPTS[field];
   if (!prompt) throw new StudioError("err.video-reopen-edit");
   const id = requireDraftId(idText);
-  const targets = studioServices(backendDb, config).videos.get(actorId, id).targets;
+  const targets = createStudioServices(backendDb, config).videos.get(actorId, id).targets;
   const session = {
     draftId: id,
     step: field,
@@ -457,7 +457,7 @@ async function handleEditField({ ctx, backendDb, config, actorId, locale, data }
 
 async function handleEdit({ ctx, backendDb, config, actorId, locale, data }: VideoActionArgs): Promise<VideoActionResult> {
   const id = requireDraftId(data.slice("video_edit:".length));
-  const details = studioServices(backendDb, config).videos.get(actorId, id);
+  const details = createStudioServices(backendDb, config).videos.get(actorId, id);
   const session = {
     draftId: id,
     step: "label",

@@ -5,8 +5,7 @@ import { runOperationCommand } from "./commands.js";
 import type { OperationsCommand } from "./contracts.js";
 import { type PipelineReadModelOptions, pipelineOverviewPayload, pipelineStatusPayload } from "./read-model.js";
 
-/** Operations boundary for Command Center and authenticated API controllers. */
-export function operationsService(backendDb: BackendDb, config: BackendConfig) {
+function buildOperationsService(backendDb: BackendDb, config: BackendConfig) {
   return {
     dashboard: () => commandCenterPayload(config, backendDb),
     attention: () => commandCenterAttention(config, backendDb),
@@ -18,4 +17,16 @@ export function operationsService(backendDb: BackendDb, config: BackendConfig) {
     postDebug: (ref: string) => postDebugPayload(backendDb, ref),
     command: (input: OperationsCommand, fetchImpl?: typeof fetch) => runOperationCommand(backendDb, input, config, fetchImpl),
   };
+}
+
+type OperationsService = ReturnType<typeof buildOperationsService>;
+const operationsInstances = new WeakMap<BackendDb, { config: BackendConfig; service: OperationsService }>();
+
+/** Operations boundary for Command Center and authenticated API controllers. */
+export function createOperationsService(backendDb: BackendDb, config: BackendConfig): OperationsService {
+  const cached = operationsInstances.get(backendDb);
+  if (cached?.config === config) return cached.service;
+  const service = buildOperationsService(backendDb, config);
+  operationsInstances.set(backendDb, { config, service });
+  return service;
 }

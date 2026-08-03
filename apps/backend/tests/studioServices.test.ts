@@ -4,15 +4,25 @@ import os from "node:os";
 import path from "node:path";
 import { openBackendDb } from "../src/db/client.js";
 import { loadConfig } from "../src/foundation/config.js";
-import { studioServices } from "../src/studio/services/index.js";
+import { createStudioServices } from "../src/studio/services/index.js";
 
 describe("Studio service boundaries", () => {
+  it("reuses the service bundle for one database and configuration", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const config = loadConfig({});
+      expect(createStudioServices(backendDb, config)).toBe(createStudioServices(backendDb, config));
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("imports byte and file media through one facade with content deduplication", async () => {
     const backendDb = openBackendDb(":memory:");
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "studio-service-media-"));
     try {
       const config = loadConfig({ STUDIO_MEDIA_DIR: directory, STUDIO_MEDIA_MAX_BYTES: "1000" });
-      const media = studioServices(backendDb, config).media;
+      const media = createStudioServices(backendDb, config).media;
       const bytes = new Uint8Array([1, 2, 3, 4]);
       const first = await media.import(42, {
         filename: "first.jpg",
@@ -40,7 +50,7 @@ describe("Studio service boundaries", () => {
   it("keeps locale and YouTube signature in the shared settings service", () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      const settings = studioServices(backendDb, loadConfig({})).settings;
+      const settings = createStudioServices(backendDb, loadConfig({})).settings;
       expect(settings.locale(42)).toBe("en");
       settings.setLocale(42, "ru");
       expect(settings.locale(42)).toBe("ru");
@@ -57,7 +67,7 @@ describe("Studio service boundaries", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const config = loadConfig({ CHANNEL_SECRET_KEY: "channel-secret-16" });
-      const channels = studioServices(backendDb, config).channels;
+      const channels = createStudioServices(backendDb, config).channels;
       const result = channels.connect({
         platform: "instagram",
         locale: "en",

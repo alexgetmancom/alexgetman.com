@@ -87,19 +87,42 @@ export type VideoOverview = {
 
 /** Request-scoped cache shared by the period comparisons on one dashboard. */
 export type VideoOverviewCache = {
-  loadedTargetIds: Set<number>;
-  snapshots: Map<number, VideoSnapshot[]>;
   rangeStart: Date | null;
   rangeEnd: Date | null;
   sampleBucketSeconds: number;
+  bundleKey: string | null;
+  bundle: VideoAnalyticsBundle | null;
+  audienceGrowth: Map<string, Map<string, number>>;
+  audienceGrowthByDay: Map<string, Map<string, Map<string, number>>>;
+  profileSummaries: Map<string, ProfileSummaryMetrics>;
 };
 
 export function createVideoOverviewCache(sampleBucketSeconds = 60 * 60): VideoOverviewCache {
-  return { loadedTargetIds: new Set(), snapshots: new Map(), rangeStart: null, rangeEnd: null, sampleBucketSeconds };
+  return {
+    rangeStart: null,
+    rangeEnd: null,
+    sampleBucketSeconds,
+    bundleKey: null,
+    bundle: null,
+    audienceGrowth: new Map(),
+    audienceGrowthByDay: new Map(),
+    profileSummaries: new Map(),
+  };
 }
 
 /** Sets the one bounded history window shared by all period comparisons in a render. */
 export function setVideoOverviewCacheRange(cache: VideoOverviewCache, start: Date, end: Date, sampleBucketSeconds?: number): void {
+  if (
+    cache.rangeStart?.getTime() !== start.getTime() ||
+    cache.rangeEnd?.getTime() !== end.getTime() ||
+    (sampleBucketSeconds !== undefined && cache.sampleBucketSeconds !== sampleBucketSeconds)
+  ) {
+    cache.bundleKey = null;
+    cache.bundle = null;
+    cache.audienceGrowth.clear();
+    cache.audienceGrowthByDay.clear();
+    cache.profileSummaries.clear();
+  }
   cache.rangeStart = start;
   cache.rangeEnd = end;
   if (sampleBucketSeconds !== undefined) cache.sampleBucketSeconds = sampleBucketSeconds;
@@ -130,6 +153,23 @@ type VideoSnapshot = { at: Date; metrics: VideoMetrics };
 type DailyMetrics = { views: number; reactions: number; replies: number };
 type DailyVideoMetrics = DailyMetrics & { subscribers: number | null };
 type PeriodDay = { key: string; start: Date; end: Date };
+type VideoAnalyticsBundle = {
+  catalogue: readonly VideoDestination[];
+  rows: TargetRow[];
+  snapshots: Map<number, VideoSnapshot[]>;
+  historicalDestinations: Set<string>;
+  followers: Map<string, number>;
+};
+
+const VIDEO_BUNDLE_TTL_MS = 3_000;
+const MAX_SHARED_VIDEO_BUNDLES = 1;
+type SharedVideoBundle = { expiresAt: number; bundle: VideoAnalyticsBundle };
+const sharedVideoBundles = new WeakMap<BackendDb, Map<string, SharedVideoBundle>>();
+
+/** Drops the short-lived cross-request bundle after a dashboard mutation. */
+export function invalidateVideoOverviewCache(backendDb: BackendDb): void {
+  sharedVideoBundles.delete(backendDb);
+}
 
 export function emptyVideoOverview(): VideoOverview {
   return {
@@ -149,20 +189,20 @@ export function videoOverview(
   timeZone = "Europe/Moscow",
   cache?: VideoOverviewCache,
 ): VideoOverview {
-  const catalogue = videoDestinations(backendDb);
-  const rows = publishedTargets(backendDb, start.toISOString(), end.toISOString());
-  fillMissingVideoUrls(backendDb, rows);
-  const snapshots = videoSnapshots(backendDb, rows, start, end, cache);
+  const bundle = videoAnalyticsBundle(backendDb, start, end, cache);
+  const startIso = start.toISOString();
+  const endIso = end.toISOString();
+  const rows = bundle.rows.filter((row) => Boolean(row.publishedAt && row.publishedAt >= startIso && row.publishedAt <= endIso));
+  const snapshots = new Map(rows.map((row) => [row.id, bundle.snapshots.get(row.id) ?? []]));
   const periodDays = calendarDays(start, end, timeZone);
-  const summary = videoSummaryMetrics(backendDb, rows, snapshots, periodDays, end, timeZone);
-  const historicalDestinations = publishedDestinationKeys(backendDb, catalogue);
+  const summary = videoSummaryMetrics(backendDb, rows, snapshots, periodDays, end, timeZone, cache);
   const items = rows
     .map((row) => {
       const history = snapshots.get(row.id) ?? [];
       const period = periodMetrics(history, periodDays);
       const periodEnd = latestAtOrBefore(history, end)?.metrics ?? emptyMetrics();
       const lifetime = history.at(-1)?.metrics ?? emptyMetrics();
-      const destination = destinationFor(catalogue, row);
+      const destination = destinationFor(bundle.catalogue, row);
       return {
         key: `video:${row.id}`,
         target: row.target,
@@ -193,18 +233,17 @@ export function videoOverview(
     { views: 0, reactions: 0, replies: 0, posts: 0 },
   );
 
-  const followers = followerCounts(backendDb);
   // One row per declared destination, filtered to the ones this Studio actually
   // has: publications in the period, or an audience snapshot. Listing the whole
   // catalogue would put an English channel on a Studio that has never had one;
   // listing only what published would drop a real channel on a quiet week.
-  const counted = catalogue.map((destination) => {
+  const counted = bundle.catalogue.map((destination) => {
     const published = items.filter((item) => item.target === destination.target && item.locale === destination.locale.toUpperCase());
     return {
       destination,
       published,
-      hasPublication: historicalDestinations.has(destinationKey(destination)),
-      own: followers.get(destination.profile) ?? null,
+      hasPublication: bundle.historicalDestinations.has(destinationKey(destination)),
+      own: bundle.followers.get(destination.profile) ?? null,
     };
   });
   const platforms = counted
@@ -224,9 +263,54 @@ export function videoOverview(
     totals,
     summary,
     platforms,
-    dailyByDay: aggregateDailyMetrics(backendDb, rows, snapshots, periodDays),
+    dailyByDay: aggregateDailyMetrics(backendDb, rows, snapshots, periodDays, cache),
     viewEvents: viewEvents(rows, snapshots, start, end),
   };
+}
+
+function videoAnalyticsBundle(backendDb: BackendDb, start: Date, end: Date, cache?: VideoOverviewCache): VideoAnalyticsBundle {
+  const rangeStart = cache?.rangeStart ?? start;
+  const rangeEnd = cache?.rangeEnd ?? end;
+  const bucketSeconds = cache?.sampleBucketSeconds ?? (end.getTime() - start.getTime() > 7 * 86_400_000 ? 86_400 : 3_600);
+  const key = `${rangeStart.toISOString()}|${rangeEnd.toISOString()}|${bucketSeconds}`;
+  if (cache?.bundleKey === key && cache.bundle) return cache.bundle;
+
+  const now = Date.now();
+  const shared = sharedVideoBundles.get(backendDb);
+  const sharedEntry = shared?.get(key);
+  if (sharedEntry && sharedEntry.expiresAt > now) {
+    if (cache) {
+      cache.bundleKey = key;
+      cache.bundle = sharedEntry.bundle;
+    }
+    return sharedEntry.bundle;
+  }
+
+  const catalogue = videoDestinations(backendDb);
+  const rows = publishedTargets(backendDb, rangeStart.toISOString(), rangeEnd.toISOString());
+  fillMissingVideoUrls(backendDb, rows);
+  const snapshots = videoSnapshots(backendDb, rows, rangeStart, rangeEnd, bucketSeconds);
+  const bundle: VideoAnalyticsBundle = {
+    catalogue,
+    rows,
+    snapshots,
+    historicalDestinations: publishedDestinationKeys(backendDb, catalogue),
+    followers: followerCounts(backendDb),
+  };
+
+  const entries = shared ?? new Map<string, SharedVideoBundle>();
+  entries.set(key, { expiresAt: now + VIDEO_BUNDLE_TTL_MS, bundle });
+  while (entries.size > MAX_SHARED_VIDEO_BUNDLES) {
+    const oldest = entries.keys().next().value;
+    if (typeof oldest !== "string") break;
+    entries.delete(oldest);
+  }
+  sharedVideoBundles.set(backendDb, entries);
+  if (cache) {
+    cache.bundleKey = key;
+    cache.bundle = bundle;
+  }
+  return bundle;
 }
 
 function publishedTargets(backendDb: BackendDb, startIso: string, endIso: string): TargetRow[] {
@@ -248,28 +332,34 @@ function fillMissingVideoUrls(backendDb: BackendDb, rows: TargetRow[]): void {
   const placeholders = missingIds.map(() => "?").join(",");
   const snapshots = backendDb.sqlite
     .prepare(
-      `SELECT video_target_id AS videoTargetId, metrics_json AS metricsJson
-         FROM video_metric_snapshots
-        WHERE video_target_id IN (${placeholders})
-        ORDER BY sampled_at DESC`,
+      `WITH candidates AS (
+         SELECT video_target_id AS videoTargetId,
+                json_extract(metrics_json, '$.url') AS url,
+                ROW_NUMBER() OVER (
+                  PARTITION BY video_target_id
+                  ORDER BY sampled_at DESC, id DESC
+                ) AS rowNumber
+           FROM video_metric_snapshots
+          WHERE video_target_id IN (${placeholders})
+            AND json_type(metrics_json, '$.url') = 'text'
+            AND (json_extract(metrics_json, '$.url') LIKE 'http://%' OR json_extract(metrics_json, '$.url') LIKE 'https://%')
+       )
+       SELECT videoTargetId, url
+         FROM candidates
+        WHERE rowNumber = 1`,
     )
-    .all(...missingIds) as Array<{ videoTargetId: number; metricsJson: string }>;
+    .all(...missingIds) as Array<{ videoTargetId: number; url: unknown }>;
   const urls = new Map<number, string>();
   for (const snapshot of snapshots) {
     if (urls.has(snapshot.videoTargetId)) continue;
-    const url = snapshotUrl(snapshot.metricsJson);
+    const url = snapshotUrl(snapshot.url);
     if (url) urls.set(snapshot.videoTargetId, url);
   }
   for (const row of rows) row.externalUrl ??= urls.get(row.id) ?? null;
 }
 
-function snapshotUrl(metricsJson: string): string | null {
-  try {
-    const metrics = JSON.parse(metricsJson) as { url?: unknown };
-    return typeof metrics.url === "string" && /^https?:\/\//.test(metrics.url) ? metrics.url : null;
-  } catch {
-    return null;
-  }
+function snapshotUrl(value: unknown): string | null {
+  return typeof value === "string" && /^https?:\/\//.test(value) ? value : null;
 }
 
 function videoSnapshots(
@@ -277,80 +367,103 @@ function videoSnapshots(
   rows: TargetRow[],
   start: Date,
   end: Date,
-  cache?: VideoOverviewCache,
+  bucketSeconds: number,
 ): Map<number, VideoSnapshot[]> {
   const snapshots = new Map<number, VideoSnapshot[]>();
   if (!rows.length) return snapshots;
-  const missingRows = cache ? rows.filter((row) => !cache.loadedTargetIds.has(row.id)) : rows;
-  if (missingRows.length) {
-    const placeholders = missingRows.map(() => "?").join(",");
-    const rangeStart = cache?.rangeStart ?? start;
-    const rangeEnd = cache?.rangeEnd ?? end;
-    const bucketSeconds = cache?.sampleBucketSeconds ?? (end.getTime() - start.getTime() > 7 * 86_400_000 ? 86_400 : 3_600);
-    const bucketFactor = 86_400 / bucketSeconds;
-    const samples = backendDb.sqlite
-      .prepare(
-        `WITH bucketed AS (
-           SELECT id,
+  const placeholders = rows.map(() => "?").join(",");
+  const bucketFactor = 86_400 / bucketSeconds;
+  const samples = backendDb.sqlite
+    .prepare(
+      `WITH bucketed AS (
+           SELECT id, video_target_id AS targetId,
                   ROW_NUMBER() OVER (
                     PARTITION BY video_target_id, CAST((julianday(sampled_at) - julianday(?)) * ? AS INTEGER)
-                    ORDER BY julianday(sampled_at) DESC, id DESC
+                    ORDER BY sampled_at DESC, id DESC
                   ) AS bucketRank
              FROM video_metric_snapshots
             WHERE video_target_id IN (${placeholders})
-              AND julianday(sampled_at) BETWEEN julianday(?) AND julianday(?)
+              AND sampled_at >= ? AND sampled_at <= ?
          ),
          selected AS (
            SELECT id FROM bucketed WHERE bucketRank = 1
+         ),
+         baseline AS (
+           SELECT id, video_target_id AS targetId,
+                  ROW_NUMBER() OVER (PARTITION BY video_target_id ORDER BY sampled_at DESC, id DESC) AS rowNumber
+             FROM video_metric_snapshots
+            WHERE video_target_id IN (${placeholders}) AND sampled_at < ?
+         ),
+         latest AS (
+           SELECT id, video_target_id AS targetId,
+                  ROW_NUMBER() OVER (PARTITION BY video_target_id ORDER BY sampled_at DESC, id DESC) AS rowNumber
+             FROM video_metric_snapshots
+            WHERE video_target_id IN (${placeholders})
+         ),
+         wanted AS (
+           SELECT id FROM selected
+           UNION
+           SELECT id FROM baseline WHERE rowNumber = 1
+           UNION
+           SELECT id FROM latest WHERE rowNumber = 1
          )
-         SELECT video_target_id AS targetId, metrics_json AS metricsJson, sampled_at AS sampledAt
+         SELECT video_target_id AS targetId,
+                sampled_at AS sampledAt,
+                CAST(COALESCE(json_extract(metrics_json, '$.views'), 0) AS REAL) AS views,
+                CAST(COALESCE(json_extract(metrics_json, '$.likes'), 0) AS REAL) AS likes,
+                CAST(COALESCE(json_extract(metrics_json, '$.comments'), 0) AS REAL) AS comments,
+                COALESCE(json_extract(metrics_json, '$.averageWatchTimeMs'), json_extract(metrics_json, '$.averageWatchTime')) AS averageWatchTimeMs,
+                COALESCE(json_extract(metrics_json, '$.totalWatchTimeMs'), json_extract(metrics_json, '$.totalWatchTime')) AS totalWatchTimeMs,
+                COALESCE(json_extract(metrics_json, '$.follows'), json_extract(metrics_json, '$.subscribersGained')) AS follows,
+                COALESCE(json_extract(metrics_json, '$.completionRate'), json_extract(metrics_json, '$.completion_rate'), json_extract(metrics_json, '$.completionPercentage'), json_extract(metrics_json, '$.completion_percentage')) AS completionRate,
+                COALESCE(json_extract(metrics_json, '$.videoDurationMs'), json_extract(metrics_json, '$.durationMs')) AS videoDurationMs
            FROM video_metric_snapshots AS sample
-          WHERE video_target_id IN (${placeholders})
-            AND (
-              id IN (SELECT id FROM selected)
-              OR id = (
-                SELECT baseline.id
-                  FROM video_metric_snapshots AS baseline
-                 WHERE baseline.video_target_id = sample.video_target_id
-                   AND julianday(baseline.sampled_at) < julianday(?)
-                 ORDER BY julianday(baseline.sampled_at) DESC, baseline.id DESC
-                 LIMIT 1
-              )
-              OR id = (
-                SELECT latest.id
-                  FROM video_metric_snapshots AS latest
-                 WHERE latest.video_target_id = sample.video_target_id
-                 ORDER BY julianday(latest.sampled_at) DESC, latest.id DESC
-                 LIMIT 1
-              )
-            )
-          ORDER BY targetId ASC, julianday(sampledAt) ASC, id ASC`,
-      )
-      .all(
-        rangeStart.toISOString(),
-        bucketFactor,
-        ...missingRows.map((row) => row.id),
-        rangeStart.toISOString(),
-        rangeEnd.toISOString(),
-        ...missingRows.map((row) => row.id),
-        rangeStart.toISOString(),
-      ) as Array<{
-      targetId: number;
-      metricsJson: string;
-      sampledAt: string;
-    }>;
-    for (const sample of samples) {
-      const at = new Date(sample.sampledAt);
-      if (Number.isNaN(at.getTime())) continue;
-      const list = cache?.snapshots.get(sample.targetId) ?? snapshots.get(sample.targetId) ?? [];
-      list.push({ at, metrics: parseMetrics(sample.metricsJson) });
-      if (cache) cache.snapshots.set(sample.targetId, list);
-      else snapshots.set(sample.targetId, list);
-    }
-    if (cache) for (const row of missingRows) cache.loadedTargetIds.add(row.id);
+          WHERE video_target_id IN (${placeholders}) AND id IN (SELECT id FROM wanted)
+          ORDER BY targetId ASC, sampledAt ASC, id ASC`,
+    )
+    .all(
+      start.toISOString(),
+      bucketFactor,
+      ...rows.map((row) => row.id),
+      start.toISOString(),
+      end.toISOString(),
+      ...rows.map((row) => row.id),
+      start.toISOString(),
+      ...rows.map((row) => row.id),
+      ...rows.map((row) => row.id),
+    ) as Array<{
+    targetId: number;
+    sampledAt: string;
+    views: number;
+    likes: number;
+    comments: number;
+    averageWatchTimeMs: unknown;
+    totalWatchTimeMs: unknown;
+    follows: unknown;
+    completionRate: unknown;
+    videoDurationMs: unknown;
+  }>;
+  for (const sample of samples) {
+    const at = new Date(sample.sampledAt);
+    if (Number.isNaN(at.getTime())) continue;
+    const list = snapshots.get(sample.targetId) ?? [];
+    list.push({
+      at,
+      metrics: {
+        views: metricNumber(sample.views),
+        likes: metricNumber(sample.likes),
+        comments: metricNumber(sample.comments),
+        averageWatchTimeMs: optionalMetric(sample.averageWatchTimeMs),
+        totalWatchTimeMs: optionalMetric(sample.totalWatchTimeMs),
+        follows: optionalMetric(sample.follows),
+        completionRate: optionalMetric(sample.completionRate),
+        videoDurationMs: optionalMetric(sample.videoDurationMs),
+      },
+    });
+    snapshots.set(sample.targetId, list);
   }
   for (const row of rows) {
-    const history = cache?.snapshots.get(row.id) ?? snapshots.get(row.id) ?? [];
+    const history = snapshots.get(row.id) ?? [];
     snapshots.set(row.id, history);
   }
   return snapshots;
@@ -392,6 +505,7 @@ function aggregateDailyMetrics(
   rows: TargetRow[],
   snapshots: Map<number, VideoSnapshot[]>,
   days: PeriodDay[],
+  cache?: VideoOverviewCache,
 ): Record<string, DailyVideoMetrics> {
   const result: Record<string, DailyVideoMetrics> = {};
   for (const day of days) result[day.key] = emptyDailyVideoMetrics();
@@ -408,7 +522,9 @@ function aggregateDailyMetrics(
     }
   }
   const profileKeys = new Set(rows.map(profileKeyForRow).filter((key): key is string => key !== null));
-  const growthByDay = audienceGrowthByDay(backendDb, days, profileKeys);
+  const growthKey = `${days.map((day) => `${day.start.toISOString()}|${day.end.toISOString()}`).join(",")}|${[...profileKeys].sort().join(",")}`;
+  const growthByDay = cache?.audienceGrowthByDay.get(growthKey) ?? audienceGrowthByDay(backendDb, days, profileKeys);
+  cache?.audienceGrowthByDay.set(growthKey, growthByDay);
   for (const day of days) {
     const growth = growthByDay.get(day.key);
     const values = [...profileKeys].filter((key) => growth?.has(key)).map((key) => growth?.get(key) ?? 0);
@@ -561,17 +677,17 @@ function emptyDailyVideoMetrics(): DailyVideoMetrics {
 function followerCounts(backendDb: BackendDb): Map<string, number> {
   const rows = backendDb.sqlite
     .prepare(
-      `SELECT platform, metrics_json AS metricsJson FROM creator_profile_snapshots
+      `SELECT platform,
+              CAST(COALESCE(json_extract(metrics_json, '$.subscriberCount'), json_extract(metrics_json, '$.followersCount'), 0) AS INTEGER) AS value
+         FROM creator_profile_snapshots
         WHERE id IN (SELECT MAX(id) FROM creator_profile_snapshots GROUP BY platform, account)`,
     )
-    .all() as Array<{ platform: string; metricsJson: string }>;
+    .all() as Array<{ platform: string; value: number }>;
   const counts = new Map<string, number>();
   for (const row of rows) {
-    const metrics = parseJson(row.metricsJson);
-    const value = metricNumber(metrics.subscriberCount ?? metrics.followersCount);
     // Snapshots exist per (platform, account); the overview panel is per
     // platform, so the accounts publishing through one platform are summed.
-    counts.set(row.platform, (counts.get(row.platform) ?? 0) + value);
+    counts.set(row.platform, (counts.get(row.platform) ?? 0) + metricNumber(row.value));
   }
   return counts;
 }
@@ -589,22 +705,6 @@ function videoLocale(value: string | null): VideoLocale | null {
   return value === "ru" || value === "en" ? value : null;
 }
 
-function parseMetrics(value: string | null): VideoMetrics {
-  const metrics = parseJson(value);
-  return {
-    views: metricNumber(metrics.views),
-    likes: metricNumber(metrics.likes),
-    comments: metricNumber(metrics.comments),
-    averageWatchTimeMs: optionalMetric(metrics.averageWatchTimeMs ?? metrics.averageWatchTime),
-    totalWatchTimeMs: optionalMetric(metrics.totalWatchTimeMs ?? metrics.totalWatchTime),
-    follows: optionalMetric(metrics.follows ?? metrics.subscribersGained),
-    completionRate: optionalMetric(
-      metrics.completionRate ?? metrics.completion_rate ?? metrics.completionPercentage ?? metrics.completion_percentage,
-    ),
-    videoDurationMs: optionalMetric(metrics.videoDurationMs ?? metrics.durationMs),
-  };
-}
-
 function videoSummaryMetrics(
   backendDb: BackendDb,
   rows: TargetRow[],
@@ -612,6 +712,7 @@ function videoSummaryMetrics(
   periodDays: PeriodDay[],
   end: Date,
   timeZone: string,
+  cache?: VideoOverviewCache,
 ): VideoSummaryMetrics {
   const watchSamples: Array<{ value: number; weight: number }> = [];
   const completionSamples: Array<{ value: number; weight: number }> = [];
@@ -644,7 +745,9 @@ function videoSummaryMetrics(
   let hasProfileSubscribers = false;
   let accountProfileKeys = new Set<string>();
   if (isCurrentCalendarDay(end, timeZone) && reportDays !== null) {
-    const profileMetrics = profileSummaryMetrics(backendDb, rows, reportDays);
+    const profileKey = `${reportDays}|${[...new Set(rows.map(profileKeyForRow).filter((key): key is string => key !== null))].sort().join(",")}`;
+    const profileMetrics = cache?.profileSummaries.get(profileKey) ?? profileSummaryMetrics(backendDb, rows, reportDays);
+    cache?.profileSummaries.set(profileKey, profileMetrics);
     if (profileMetrics.averageWatchTimeMs !== null)
       watchSamples.push({ value: profileMetrics.averageWatchTimeMs, weight: Math.max(1, profileMetrics.views) });
     if (profileMetrics.completionRate !== null)
@@ -655,13 +758,13 @@ function videoSummaryMetrics(
   }
 
   const audienceDays = reportDays ?? periodDays.length;
-  const audienceGrowth = audienceGrowthByPlatform(
-    backendDb,
-    periodDays[0]?.start.toISOString() ?? end.toISOString(),
-    audienceDays,
-    end.toISOString(),
-    isCurrentCalendarDay(end, timeZone) && reportDays !== null,
-  );
+  const audienceStart = periodDays[0]?.start.toISOString() ?? end.toISOString();
+  const useCurrentProviderReports = isCurrentCalendarDay(end, timeZone) && reportDays !== null;
+  const audienceKey = `${audienceStart}|${audienceDays}|${end.toISOString()}|${useCurrentProviderReports ? "provider" : "history"}`;
+  const audienceGrowth =
+    cache?.audienceGrowth.get(audienceKey) ??
+    audienceGrowthByPlatform(backendDb, audienceStart, audienceDays, end.toISOString(), useCurrentProviderReports);
+  cache?.audienceGrowth.set(audienceKey, audienceGrowth);
   for (const row of rows) {
     const profileKey = profileKeyForRow(row);
     if (profileKey === null || accountProfileKeys.has(profileKey) || !audienceGrowth.has(profileKey)) continue;

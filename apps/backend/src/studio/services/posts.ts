@@ -1,26 +1,20 @@
-import type { DraftPatch, DraftRecord } from "../../application/ports.js";
-import { PRESETS, presetName, TARGETS, targetLocale } from "../../botTargets.js";
+import type { DraftPatch } from "../../application/ports.js";
+import { PRESETS, presetName, TARGETS } from "../../botTargets.js";
 import { effectivePostTargets, registeredPostTargetIds } from "../../channels/registry.js";
-import { listStudioMediaAssets, mediaItemsFromAssets, requireStudioMediaAssets } from "../../content/assets.js";
 import { createDraftFromMessage } from "../../content/index.js";
 import type { DraftMessage } from "../../content/message.js";
 import type { BackendDb } from "../../db/client.js";
 import { recordDomainEvent } from "../../domain/events.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { StudioError } from "../../foundation/errors.js";
-import { cancelScheduledNotifications, scheduleReminder } from "../../notifications/jobs.js";
-import { cancelDraft, cancelRemainingPostJobs } from "../../publishing/draft-lifecycle.js";
 import { publishDraftToQueue } from "../../publishing/publication-workflow.js";
-import { parseManualSchedule, scheduleClockToday } from "../../publishing/schedule.js";
 import { parseTargets } from "../../publishing/targets.js";
 import { type StoryPublishMode, setStoryPublishMode } from "../../story-cards/store.js";
-import { accessibleStudioActorIds } from "../access.js";
-import { draftMedia, requireOwnedDraft } from "./post-access.js";
+import { requireOwnedDraft } from "./post-access.js";
+import { postMediaService } from "./post-media.js";
 import { postQueryService } from "./post-queries.js";
-import { settingsService } from "./settings.js";
+import { postSchedulingService } from "./post-scheduling.js";
 
-type ScheduleInput = { ruAt: Date | null; enAt: Date | null };
-type ScheduleScope = "ru" | "en" | "both";
 type EditInput = {
   locale: "ru" | "en";
   text: string;
@@ -36,11 +30,15 @@ type DraftEntityCandidate = { kind: "company" | "model" | "person" | "topic"; sl
  * single entry point for Telegram, Web Studio and later MCP mutations. */
 export function postService(backendDb: BackendDb, config: BackendConfig) {
   const queries = postQueryService(backendDb, config);
+  const scheduling = postSchedulingService(backendDb, config);
+  const media = postMediaService(backendDb, config);
   return {
     create(actorId: number, message: DraftMessage): number {
       return createDraftFromMessage(backendDb, actorId, message);
     },
     ...queries,
+    ...scheduling,
+    ...media,
     setStoryPublishMode(actorId: number, draftId: number, mode: StoryPublishMode): void {
       requireOwnedDraft(backendDb, config, actorId, draftId);
       setStoryPublishMode(backendDb, draftId, mode);
@@ -76,58 +74,6 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       requireOwnedDraft(backendDb, config, actorId, draftId);
       return publishDraftToQueue(backendDb, draftId);
     },
-    schedule(actorId: number, draftId: number, input: ScheduleInput): number {
-      const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
-      const postId = publishDraftToQueue(backendDb, draftId, { mode: "scheduled", ...input });
-      const scheduled = requireOwnedDraft(backendDb, config, actorId, draftId);
-      const preference = settingsService(backendDb).notifications(actorId);
-      const title = draft.text_ru.trim().split("\n")[0]?.slice(0, 100) || `Post #${postId}`;
-      if (scheduled.scheduled_at)
-        scheduleReminder(backendDb, {
-          actorId: actorId,
-          ref: `post:${postId}`,
-          kind: "post.ru",
-          publishAt: new Date(scheduled.scheduled_at),
-          title,
-          targets: localeTargets(backendDb, draft.targets_json, "ru"),
-          preference,
-        });
-      if (scheduled.scheduled_en_at)
-        scheduleReminder(backendDb, {
-          actorId: actorId,
-          ref: `post:${postId}`,
-          kind: "post.en",
-          publishAt: new Date(scheduled.scheduled_en_at),
-          title,
-          targets: localeTargets(backendDb, draft.targets_json, "en"),
-          preference,
-        });
-      return postId;
-    },
-    hasLocaleTargets(actorId: number, draftId: number, locale: "ru" | "en"): boolean {
-      const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
-      return hasLocaleTarget(effectivePostTargets(backendDb, parseTargets(draft.targets_json)), locale);
-    },
-    /** Resolves a slot-button clock (`HH:MM` MSK) to its next occurrence. */
-    slotTime(clock: string): Date {
-      return scheduleClockToday(clock);
-    },
-    manualSchedule(actorId: number, draftId: number, scope: ScheduleScope, value: string): ScheduleInput {
-      return scheduleAt(requireOwnedDraft(backendDb, config, actorId, draftId), scope, parseManualSchedule(value));
-    },
-    scheduleAt(actorId: number, draftId: number, scope: ScheduleScope, value: Date): ScheduleInput {
-      return scheduleAt(requireOwnedDraft(backendDb, config, actorId, draftId), scope, value);
-    },
-    cancel(actorId: number, draftId: number): void {
-      const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
-      cancelDraft(backendDb, draftId);
-      if (draft.post_id != null) cancelScheduledNotifications(backendDb, `post:${draft.post_id}`);
-    },
-    cancelRemaining(actorId: number, draftId: number): void {
-      const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
-      cancelRemainingPostJobs(backendDb, draftId);
-      if (draft.post_id != null) cancelScheduledNotifications(backendDb, `post:${draft.post_id}`);
-    },
     toggleTarget(actorId: number, draftId: number, target: string): void {
       const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
       if (!TARGETS.some(({ id }) => id === target)) throw new StudioError("err.unknown-target");
@@ -150,51 +96,7 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
     edit(actorId: number, draftId: number, input: EditInput): void {
       editDraftContent(backendDb, config, actorId, draftId, input);
     },
-    mediaAssets(actorId: number, limit = 50) {
-      return listStudioMediaAssets(backendDb, actorId, limit, accessibleStudioActorIds(config, actorId));
-    },
-    attachMediaAssets(actorId: number, draftId: number, locale: "ru" | "en", assetIds: number[], replace = false): void {
-      const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
-      const assets = mediaItemsFromAssets(
-        requireStudioMediaAssets(backendDb, actorId, assetIds, accessibleStudioActorIds(config, actorId)),
-      );
-      const key = locale === "ru" ? "mediaRuJson" : "mediaEnJson";
-      const current = replace ? [] : draftMedia(draft, locale);
-      backendDb.drafts.update(draftId, { [key]: JSON.stringify([...current, ...assets]), updatedAt: backendDb.clock.now().toISOString() });
-      backendDb.storyCards.queue(draftId);
-      recordDomainEvent(backendDb.events, {
-        ref: `draft:${draftId}`,
-        type: "content.draft.media_attached",
-        severity: "info",
-        message: `Draft #${draftId} media attached`,
-        details: { locale, asset_ids: assetIds, replace },
-      });
-    },
-    removeMedia(actorId: number, draftId: number, locale: "ru" | "en", assetIds: number[]): void {
-      const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
-      const current = draftMedia(draft, locale);
-      const removed = new Set(assetIds);
-      const media = current.filter((item) => !removed.has(Number(item.asset_id)));
-      backendDb.drafts.update(draftId, {
-        [locale === "ru" ? "mediaRuJson" : "mediaEnJson"]: JSON.stringify(media),
-        updatedAt: backendDb.clock.now().toISOString(),
-      });
-      backendDb.storyCards.queue(draftId);
-      recordDomainEvent(backendDb.events, {
-        ref: `draft:${draftId}`,
-        type: "content.draft.media_removed",
-        severity: "info",
-        message: `Draft #${draftId} media removed`,
-        details: { locale, asset_ids: assetIds },
-      });
-    },
   };
-}
-
-function localeTargets(backendDb: BackendDb, json: string, locale: "ru" | "en"): string[] {
-  return Object.entries(effectivePostTargets(backendDb, parseTargets(json)))
-    .filter(([target, enabled]) => enabled && targetLocale(target) === locale)
-    .map(([target]) => target);
 }
 
 function editDraftContent(backendDb: BackendDb, config: BackendConfig, actorId: number, draftId: number, input: EditInput): void {
@@ -223,23 +125,6 @@ function editDraftContent(backendDb: BackendDb, config: BackendConfig, actorId: 
     message: `Draft #${draftId} content updated`,
     details: { locale: input.locale, media_changed: input.media.length > 0 || clearMedia, text_changed: !input.replaceMediaOnly },
   });
-}
-
-function hasLocaleTarget(targets: Record<string, boolean>, locale: "ru" | "en"): boolean {
-  return Object.entries(targets).some(([target, enabled]) => enabled && targetLocale(target) === locale);
-}
-
-function scheduleAt(draft: DraftRecord, scope: ScheduleScope, value: Date): ScheduleInput {
-  return {
-    ruAt: scope === "en" ? dateOrNull(draft.scheduled_at) : value,
-    enAt: scope === "ru" ? dateOrNull(draft.scheduled_en_at) : value,
-  };
-}
-
-function dateOrNull(value: string | null): Date | null {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function saveTargets(backendDb: BackendDb, draftId: number, targets: Record<string, boolean>): void {

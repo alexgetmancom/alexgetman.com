@@ -2,3 +2,4 @@
 export { createDraftStore } from "./drafts.js";
 export { createEventStore } from "./events.js";
 export { createStudioPostStore } from "./studio-posts.js";
+export { createStudioQueueStore } from "./studio-queue.js";

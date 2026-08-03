@@ -1,7 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
-import { effectivePostTargets } from "../../channels/registry.js";
 import type { BackendDb } from "../../db/client.js";
-import { drafts, publishJobs, siteJobs, videoDrafts, videoTargets } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { parseTargets } from "../../publishing/targets.js";
 import { accessibleStudioActorIds } from "../access.js";
@@ -38,24 +35,11 @@ export function queueService(backendDb: BackendDb, config: BackendConfig) {
       const attention: StudioAttentionItem[] = [];
       const actorIds = accessibleStudioActorIds(config, actorId);
       const rowLimit = Math.max(1, Math.min(limit, MAX_QUEUE_ROWS));
-      const postDrafts = backendDb.db.select().from(drafts).where(inArray(drafts.actorId, actorIds)).limit(rowLimit).all();
-      const videos = backendDb.db.select().from(videoDrafts).where(inArray(videoDrafts.actorId, actorIds)).limit(rowLimit).all();
+      const postDrafts = backendDb.studioQueue.posts(actorIds, rowLimit);
+      const videos = backendDb.studioQueue.videos(actorIds, rowLimit);
 
       const postIds = postDrafts.flatMap((draft) => (draft.postId == null ? [] : [draft.postId]));
-      const failedPostIds = new Set<number>();
-      if (postIds.length) {
-        const failedPublishJobs = backendDb.db
-          .select({ postId: publishJobs.postId })
-          .from(publishJobs)
-          .where(and(inArray(publishJobs.postId, postIds), inArray(publishJobs.status, ["failed", "verification_required"])))
-          .all();
-        const failedSiteJobs = backendDb.db
-          .select({ postId: siteJobs.postId })
-          .from(siteJobs)
-          .where(and(inArray(siteJobs.postId, postIds), eq(siteJobs.status, "failed")))
-          .all();
-        for (const row of [...failedPublishJobs, ...failedSiteJobs]) if (row.postId != null) failedPostIds.add(row.postId);
-      }
+      const failedPostIds = new Set(backendDb.studioQueue.failedPostIds(postIds));
 
       for (const draft of postDrafts) {
         const label = shorten(draft.textRu.split("\n")[0]?.trim() || `Post #${draft.id}`);
@@ -77,18 +61,9 @@ export function queueService(backendDb: BackendDb, config: BackendConfig) {
 
       // One query for every draft's targets rather than one per draft: this
       // snapshot backs a screen the operator opens constantly.
-      const targetsByDraft = new Map<number, (typeof videoTargets.$inferSelect)[]>();
+      const targetsByDraft = new Map<number, ReturnType<BackendDb["studioQueue"]["videoTargets"]>[number][]>();
       if (videos.length) {
-        const rows = backendDb.db
-          .select()
-          .from(videoTargets)
-          .where(
-            inArray(
-              videoTargets.videoDraftId,
-              videos.map((video) => video.id),
-            ),
-          )
-          .all();
+        const rows = backendDb.studioQueue.videoTargets(videos.map((video) => video.id));
         for (const row of rows) targetsByDraft.set(row.videoDraftId, [...(targetsByDraft.get(row.videoDraftId) ?? []), row]);
       }
 
@@ -117,7 +92,7 @@ export function queueService(backendDb: BackendDb, config: BackendConfig) {
 }
 
 function enabledPostTargets(backendDb: BackendDb, value: string): number {
-  return Object.values(effectivePostTargets(backendDb, parseTargets(value))).filter(Boolean).length;
+  return Object.values(backendDb.studioQueue.effectivePostTargets(parseTargets(value))).filter(Boolean).length;
 }
 
 function earliestDate(...values: Array<string | null>): Date | null {

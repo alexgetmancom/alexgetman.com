@@ -3,7 +3,7 @@ import type { Context } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { t } from "../foundation/i18n/index.js";
-import { studioServices } from "../studio/services/index.js";
+import { createStudioServices } from "../studio/services/index.js";
 import { defaultAnalyticsSection, showAnalyticsDashboard } from "./analytics-screen.js";
 import { botLocale } from "./i18n.js";
 import { openPostScreen } from "./post-screen.js";
@@ -40,7 +40,7 @@ export function buildMainMenu(
   menu.text(
     (ctx) => {
       const locale = botLocale(backendDb, Number(ctx.from?.id));
-      const queue = studioServices(backendDb, config).queue.snapshot(Number(ctx.from?.id));
+      const queue = createStudioServices(backendDb, config).queue.snapshot(Number(ctx.from?.id));
       const pending = queue.upcoming.length + queue.drafts.length;
       return pending ? t(locale, "menu.work-queue-count", { count: pending }) : t(locale, "menu.work-queue");
     },
@@ -54,7 +54,7 @@ export function buildMainMenu(
   menu.submenu(
     (ctx) => {
       const locale = botLocale(backendDb, Number(ctx.from?.id));
-      const unread = studioServices(backendDb, config).notifications.inbox(Number(ctx.from?.id), 100).length;
+      const unread = createStudioServices(backendDb, config).notifications.inbox(Number(ctx.from?.id), 100).length;
       return unread ? t(locale, "menu.settings-unread", { count: unread }) : t(locale, "settings.title");
     },
     SETTINGS_MENU_ID,

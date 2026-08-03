@@ -4,7 +4,7 @@ import { AUDIENCE_VIEWS, type AudienceView } from "../../botTargets.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import type { StudioLocale } from "../../foundation/locale.js";
-import { type CommandCenterAttention, operationsService } from "../../operations/index.js";
+import { type CommandCenterAttention, createOperationsService } from "../../operations/index.js";
 import { type PlatformMetric, renderCombinedSection } from "./dashboard/combined-section.js";
 import { renderCredentialsSection, renderDiagnosticsSection, renderQueueSection, renderRepairSection } from "./dashboard/ops-sections.js";
 import { buildOverviewData, videoOverviewForPeriod } from "./dashboard/overview-data.js";
@@ -13,7 +13,7 @@ import { renderDashboardShell } from "./dashboard/shell.js";
 import { type PublicationDetailsResult, renderPublicationDetails } from "./dashboard/table.js";
 import { DASHBOARD_THEME_TOGGLE_HTML } from "./dashboard/theme.js";
 import type { OpsPayload, PipelineData, PipelinePost } from "./dashboard/types.js";
-import { createVideoOverviewCache } from "./dashboard/video-overview.js";
+import { createVideoOverviewCache, invalidateVideoOverviewCache } from "./dashboard/video-overview.js";
 import { renderStudioSection } from "./studio.js";
 
 type DashboardTab = "posts" | "studio";
@@ -75,6 +75,7 @@ function rememberDashboard(cache: Map<string, DashboardCacheEntry>, key: string,
 /** Clears the short-lived HTML cache after an authenticated dashboard mutation. */
 export function invalidateDashboardRenderCache(backendDb: BackendDb): void {
   dashboardCaches.delete(backendDb);
+  invalidateVideoOverviewCache(backendDb);
 }
 
 export function renderDashboard(
@@ -113,7 +114,7 @@ export function renderDashboard(
     }
     cache.delete(cacheKey);
   }
-  const service = operationsService(backendDb, config);
+  const service = createOperationsService(backendDb, config);
   const videoCache = createVideoOverviewCache();
   const studioActorId = config.MCP_STUDIO_ACTOR_ID;
   // The unified overview is the landing screen of every Studio, whichever
@@ -209,7 +210,7 @@ export function renderDashboardPublicationDetails(
   limit: number,
 ): PublicationDetailsResult {
   const targetIds = dashboardTargetIds(requestedView);
-  const data = operationsService(backendDb, config).pipelineOverview(weekOffset, periodDays, 0, undefined, {
+  const data = createOperationsService(backendDb, config).pipelineOverview(weekOffset, periodDays, 0, undefined, {
     includeSamples: false,
     includeContent: true,
     contentLimit: offset + limit,

@@ -18,7 +18,7 @@ import {
   withMaintenanceLock,
 } from "./operations/maintenance.js";
 import { diagnoseMediaProcessor, mediaJobReport, mediaProcessorStatus, reprocessPostMedia } from "./operations/media-processor.js";
-import { operationsService } from "./operations/service.js";
+import { createOperationsService } from "./operations/service.js";
 import { backfillSiteImageMedia } from "./operations/site-media-backfill.js";
 import { deduplicateSiteMedia } from "./operations/site-media-deduplicate.js";
 import { compactOperationsStatus } from "./operations/status.js";
@@ -282,7 +282,7 @@ async function main(): Promise<void> {
       const localeValue = args.values.get("locale");
       if (localeValue && localeValue !== "ru" && localeValue !== "en") throw new Error("--locale must be ru or en");
       const locale: "ru" | "en" | undefined = localeValue as "ru" | "en" | undefined;
-      const result = await operationsService(backendDb, config).command(
+      const result = await createOperationsService(backendDb, config).command(
         {
           action: "republish",
           ref: required(args, "ref"),

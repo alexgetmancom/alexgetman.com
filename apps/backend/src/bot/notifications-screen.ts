@@ -3,7 +3,7 @@ import type { Context } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { t } from "../foundation/i18n/index.js";
-import { studioServices } from "../studio/services/index.js";
+import { createStudioServices } from "../studio/services/index.js";
 import { botLocale } from "./i18n.js";
 
 export const NOTIFICATIONS_MENU_ID = "notifications-menu";
@@ -12,7 +12,7 @@ export function buildNotificationsMenu(config: BackendConfig, backendDb: Backend
   const detail = new Menu<Context>("notification-detail", { autoAnswer: true }).dynamic((ctx, range) => {
     const actorId = Number(ctx.from?.id);
     const locale = botLocale(backendDb, actorId);
-    const notifications = studioServices(backendDb, config).notifications;
+    const notifications = createStudioServices(backendDb, config).notifications;
     const event = notifications.get(actorId, Number(ctx.match));
     if (!event) {
       range.back(t(locale, "notif.back"));
@@ -32,15 +32,15 @@ export function buildNotificationsMenu(config: BackendConfig, backendDb: Backend
   inbox.dynamic((ctx, range) => {
     const actorId = Number(ctx.from?.id);
     const locale = botLocale(backendDb, actorId);
-    const events = studioServices(backendDb, config).notifications.inbox(actorId, 10);
+    const events = createStudioServices(backendDb, config).notifications.inbox(actorId, 10);
     for (const event of events) {
       range
         .submenu({ text: notificationLabel(event, locale), payload: String(event.id) }, "notification-detail", async (ctx) => {
-          const found = studioServices(backendDb, config).notifications.get(actorId, Number(ctx.match));
+          const found = createStudioServices(backendDb, config).notifications.get(actorId, Number(ctx.match));
           if (found) await ctx.editMessageText(notificationText(found, locale, config.TIMEZONE));
         })
         .text({ text: "✓", payload: String(event.id) }, async (ctx) => {
-          studioServices(backendDb, config).notifications.acknowledge(actorId, Number(ctx.match));
+          createStudioServices(backendDb, config).notifications.acknowledge(actorId, Number(ctx.match));
           await ctx.editMessageText(notificationsInboxText(backendDb, config, actorId, locale));
         })
         .row();
@@ -57,7 +57,7 @@ export function notificationsInboxText(
   actorId: number,
   locale: ReturnType<typeof botLocale>,
 ): string {
-  const events = studioServices(backendDb, config).notifications.inbox(actorId, 10);
+  const events = createStudioServices(backendDb, config).notifications.inbox(actorId, 10);
   const lines = [`🔔 ${t(locale, "notif.title")}`];
   if (!events.length) lines.push(`\n${t(locale, "notif.none")}`);
   return lines.join("\n");

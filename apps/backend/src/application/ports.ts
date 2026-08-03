@@ -93,6 +93,49 @@ export type StudioPostStore = {
   acceptEntityCandidates(draftId: number, now: string): void;
   notificationSettings(actorIds: number[]): Array<{ actorId: number; remindersEnabled: number }>;
   history(draftId: number, postId: number | null, limit: number): PostEventRecord[];
+  progress(draftId: number): StudioPostProgress | null;
+};
+
+/** Persistence projection used by the transport-neutral post progress read model. */
+export type StudioPostProgress = {
+  draft: { id: number; actorId: number; postId: number | null; targetsJson: string };
+  publishJobs: Array<{ target: string; status: string; lastError: string | null }>;
+  siteJobs: Array<{ reason: string; status: string; lastError: string | null }>;
+};
+
+/** Queue projection used by every Studio interface. */
+export type StudioQueueStore = {
+  posts(actorIds: number[], limit: number): StudioQueuePost[];
+  videos(actorIds: number[], limit: number): StudioQueueVideo[];
+  failedPostIds(postIds: number[]): number[];
+  videoTargets(videoDraftIds: number[]): StudioQueueVideoTarget[];
+  effectivePostTargets(targets: Record<string, boolean>): Record<string, boolean>;
+};
+
+export type StudioQueuePost = {
+  id: number;
+  actorId: number;
+  status: string;
+  textRu: string;
+  targetsJson: string;
+  updatedAt: string;
+  scheduledAt: string | null;
+  scheduledEnAt: string | null;
+  postId: number | null;
+};
+
+export type StudioQueueVideo = {
+  id: number;
+  actorId: number;
+  status: string;
+  label: string;
+  updatedAt: string;
+};
+
+export type StudioQueueVideoTarget = {
+  videoDraftId: number;
+  status: string;
+  scheduledAt: string | null;
 };
 
 /** Persistence port used by content and Studio use cases. */
@@ -115,5 +158,6 @@ export type ApplicationPorts = {
   drafts: DraftStore;
   events: EventStore;
   studioPosts: StudioPostStore;
+  studioQueue: StudioQueueStore;
   storyCards: StoryCardQueue;
 };

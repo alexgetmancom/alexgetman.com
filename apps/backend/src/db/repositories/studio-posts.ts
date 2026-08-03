@@ -1,6 +1,6 @@
 import { desc, eq, inArray, or } from "drizzle-orm";
 import type { DraftEntityCandidate, DraftSource, PostEventRecord, StudioPostStore } from "../../application/ports.js";
-import { draftEntityCandidates, draftSources, postEvents, studioNotificationSettings } from "../schema.js";
+import { draftEntityCandidates, draftSources, drafts, postEvents, publishJobs, siteJobs, studioNotificationSettings } from "../schema.js";
 import type { BackendDatabase } from "../types.js";
 
 /** SQLite adapter for Studio post-specific persistence operations. */
@@ -56,6 +56,34 @@ export function createStudioPostStore(db: BackendDatabase): StudioPostStore {
           ? eq(postEvents.postKey, `draft:${draftId}`)
           : or(eq(postEvents.postKey, `draft:${draftId}`), eq(postEvents.postKey, `post:${postId}`));
       return db.select().from(postEvents).where(scope).orderBy(desc(postEvents.createdAt), desc(postEvents.id)).limit(limit).all();
+    },
+
+    progress(draftId: number) {
+      const draft = db
+        .select({ id: drafts.id, actorId: drafts.actorId, postId: drafts.postId, targetsJson: drafts.targetsJson })
+        .from(drafts)
+        .where(eq(drafts.id, draftId))
+        .get();
+      if (!draft) return null;
+      return {
+        draft,
+        publishJobs:
+          draft.postId == null
+            ? []
+            : db
+                .select({ target: publishJobs.target, status: publishJobs.status, lastError: publishJobs.lastError })
+                .from(publishJobs)
+                .where(eq(publishJobs.postId, draft.postId))
+                .all(),
+        siteJobs:
+          draft.postId == null
+            ? []
+            : db
+                .select({ reason: siteJobs.reason, status: siteJobs.status, lastError: siteJobs.lastError })
+                .from(siteJobs)
+                .where(eq(siteJobs.postId, draft.postId))
+                .all(),
+      };
     },
   };
 }

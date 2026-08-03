@@ -2,7 +2,8 @@ import type { Hono } from "hono";
 import type { BackendDb } from "../../db/client.js";
 import type { engagementService } from "../../engagement/service.js";
 import type { BackendConfig } from "../../foundation/config.js";
-import type { operationsService } from "../../operations/index.js";
+import type { createOperationsService } from "../../operations/index.js";
+import type { StudioServices } from "../../studio/services/index.js";
 
 /** What a route module is handed. Services are built once by the composition
  * root (api.ts) and shared, so registering a route never opens its own
@@ -10,7 +11,8 @@ import type { operationsService } from "../../operations/index.js";
 type HttpDeps = {
   config: BackendConfig;
   backendDb: BackendDb;
-  operations: ReturnType<typeof operationsService>;
+  studio: StudioServices;
+  operations: ReturnType<typeof createOperationsService>;
   engagement: ReturnType<typeof engagementService>;
 };
 

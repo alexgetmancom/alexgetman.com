@@ -7,7 +7,7 @@ import { setTelegramVideoCard } from "../interfaces/telegram/control-cards.js";
 import { videoPreview } from "../interfaces/telegram/video-preview.js";
 import type { VideoTechnicalCheck } from "../publishing/video-service.js";
 import type { VideoTarget } from "../publishing/video-types.js";
-import { studioServices } from "../studio/services/index.js";
+import { createStudioServices } from "../studio/services/index.js";
 import { type BotLocale, botLocale } from "./i18n.js";
 import { clearSession, type VideoSession } from "./video-session.js";
 
@@ -21,7 +21,7 @@ export async function finishVideoSchedule(
 ): Promise<void> {
   if (!session.draftId) throw new StudioError("err.video-missing");
   const locale = botLocale(backendDb, actorId);
-  const technical = await studioServices(backendDb, config).videos.schedule(actorId, session.draftId, schedule);
+  const technical = await createStudioServices(backendDb, config).videos.schedule(actorId, session.draftId, schedule);
   await showScheduledVideo(ctx, backendDb, config, actorId, session, technical, locale);
 }
 
@@ -35,7 +35,7 @@ export async function finishVideoNow(
 ): Promise<void> {
   if (!session.draftId) throw new StudioError("err.video-missing");
   const locale = botLocale(backendDb, actorId);
-  const technical = await studioServices(backendDb, config).videos.publish(actorId, session.draftId);
+  const technical = await createStudioServices(backendDb, config).videos.publish(actorId, session.draftId);
   await showScheduledVideo(ctx, backendDb, config, actorId, session, technical, locale);
 }
 
@@ -64,8 +64,8 @@ async function showScheduledVideo(
   locale: BotLocale,
 ): Promise<void> {
   if (!session.draftId) throw new StudioError("err.video-missing");
-  const preview = videoPreview(studioServices(backendDb, config).videos.preview(actorId, session.draftId), config, locale);
-  const reminderMinutes = studioServices(backendDb, config).settings.notifications(actorId).reminderMinutes;
+  const preview = videoPreview(createStudioServices(backendDb, config).videos.preview(actorId, session.draftId), config, locale);
+  const reminderMinutes = createStudioServices(backendDb, config).settings.notifications(actorId).reminderMinutes;
   const warning = technical.aspectOk ? "" : `\n${t(locale, "video.aspect-warning")}`;
   const text = `${videoCheckSummary(technical, locale)}${warning}\n\n✅ ${t(locale, "common.scheduled")}. ${t(locale, "video.reminder", { minutes: reminderMinutes })}\n\n${preview.text}`;
   const controlMessageId = Number(session.data.controlMessageId);

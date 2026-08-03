@@ -13,15 +13,33 @@ import { queueService } from "./queue.js";
 import { settingsService } from "./settings.js";
 import { videoService } from "./videos.js";
 
+export type StudioServices = {
+  posts: ReturnType<typeof postService>;
+  publications: ReturnType<typeof publicationService>;
+  media: ReturnType<typeof mediaService>;
+  channels: ReturnType<typeof channelService>;
+  videos: ReturnType<typeof videoService>;
+  queue: ReturnType<typeof queueService>;
+  notifications: ReturnType<typeof notificationService>;
+  analytics: ReturnType<typeof analyticsService>;
+  capabilities: ReturnType<typeof studioCapabilityService>;
+  settings: ReturnType<typeof settingsService>;
+  dashboard: (actorId: StudioActorId, locale: StudioLocale) => ReturnType<typeof studioDashboard>;
+};
+
+const studioInstances = new WeakMap<BackendDb, { config: BackendConfig; services: StudioServices }>();
+
 /**
  * Single application entry point for every Studio interface.
  * Telegram, the future Web Studio and MCP receive the same capability set;
  * only rendering and transport live outside this boundary.
  */
-export function studioServices(backendDb: BackendDb, config: BackendConfig) {
+export function createStudioServices(backendDb: BackendDb, config: BackendConfig): StudioServices {
+  const cached = studioInstances.get(backendDb);
+  if (cached?.config === config) return cached.services;
   const posts = postService(backendDb, config);
   const videos = videoService(backendDb, config);
-  return {
+  const services = {
     posts,
     publications: publicationService(posts, videos),
     media: mediaService(backendDb, config),
@@ -34,7 +52,6 @@ export function studioServices(backendDb: BackendDb, config: BackendConfig) {
     settings: settingsService(backendDb),
     dashboard: (actorId: StudioActorId, locale: StudioLocale) => studioDashboard(backendDb, config, actorId, locale),
   };
+  studioInstances.set(backendDb, { config, services });
+  return services;
 }
-
-/** Explicit application contract shared by Telegram and MCP adapters. */
-export type StudioServices = ReturnType<typeof studioServices>;
