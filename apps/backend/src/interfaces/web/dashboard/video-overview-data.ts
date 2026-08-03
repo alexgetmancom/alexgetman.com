@@ -3,7 +3,6 @@ import { metricNumber } from "../../../analytics/snapshots/creator-store.js";
 import { videoDestinations } from "../../../channels/destinations.js";
 import { type BackendDb, unsafeDb } from "../../../db/client.js";
 import { creatorProfiles } from "../../../db/schema.js";
-import { zonedDateParts, zonedSlot } from "../../../foundation/time.js";
 import {
   VIDEO_TARGETS,
   type VideoDestination,
@@ -11,6 +10,16 @@ import {
   videoDestination,
   videoTargetLabel,
 } from "../../../publishing/video-types.js";
+import {
+  type DailyMetrics,
+  emptyDailyMetrics,
+  emptyMetrics,
+  isCurrentCalendarDay,
+  latestAtOrBefore,
+  type PeriodDay,
+  periodMetrics,
+  type VideoSnapshot,
+} from "./video-overview-calendar.js";
 
 /**
  * Read model behind the video half of the unified overview.
@@ -128,7 +137,7 @@ export function setVideoOverviewCacheRange(cache: VideoOverviewCache, start: Dat
   if (sampleBucketSeconds !== undefined) cache.sampleBucketSeconds = sampleBucketSeconds;
 }
 
-export type TargetRow = {
+type TargetRow = {
   id: number;
   target: string;
   providerAccountId: string | null;
@@ -139,21 +148,8 @@ export type TargetRow = {
   metadataJson: string | null;
 };
 
-export type VideoMetrics = {
-  views: number;
-  likes: number;
-  comments: number;
-  averageWatchTimeMs: number | null;
-  totalWatchTimeMs: number | null;
-  follows: number | null;
-  completionRate: number | null;
-  videoDurationMs: number | null;
-};
-export type VideoSnapshot = { at: Date; metrics: VideoMetrics };
-export type DailyMetrics = { views: number; reactions: number; replies: number };
-export type DailyVideoMetrics = DailyMetrics & { subscribers: number | null };
-export type PeriodDay = { key: string; start: Date; end: Date };
-export type VideoAnalyticsBundle = {
+type DailyVideoMetrics = DailyMetrics & { subscribers: number | null };
+type VideoAnalyticsBundle = {
   catalogue: readonly VideoDestination[];
   rows: TargetRow[];
   snapshots: Map<number, VideoSnapshot[]>;
@@ -163,7 +159,7 @@ export type VideoAnalyticsBundle = {
 
 const VIDEO_BUNDLE_TTL_MS = 3_000;
 const MAX_SHARED_VIDEO_BUNDLES = 1;
-export type SharedVideoBundle = { expiresAt: number; bundle: VideoAnalyticsBundle };
+type SharedVideoBundle = { expiresAt: number; bundle: VideoAnalyticsBundle };
 const sharedVideoBundles = new WeakMap<BackendDb, Map<string, SharedVideoBundle>>();
 
 /** Drops the short-lived cross-request bundle after a dashboard mutation. */
@@ -226,7 +222,7 @@ export function videoAnalyticsBundle(backendDb: BackendDb, start: Date, end: Dat
   return bundle;
 }
 
-export function publishedTargets(backendDb: BackendDb, startIso: string, endIso: string): TargetRow[] {
+function publishedTargets(backendDb: BackendDb, startIso: string, endIso: string): TargetRow[] {
   return unsafeDb(backendDb)
     .sqlite.prepare(
       `SELECT t.id AS id, t.target AS target, COALESCE(d.label, '') AS label, d.locale AS locale, t.published_at AS publishedAt,
@@ -239,7 +235,7 @@ export function publishedTargets(backendDb: BackendDb, startIso: string, endIso:
     .all(startIso, endIso) as TargetRow[];
 }
 
-export function fillMissingVideoUrls(backendDb: BackendDb, rows: TargetRow[]): void {
+function fillMissingVideoUrls(backendDb: BackendDb, rows: TargetRow[]): void {
   const missingIds = rows.filter((row) => !row.externalUrl).map((row) => row.id);
   if (!missingIds.length) return;
   const placeholders = missingIds.map(() => "?").join(",");
@@ -275,7 +271,7 @@ function snapshotUrl(value: unknown): string | null {
   return typeof value === "string" && /^https?:\/\//.test(value) ? value : null;
 }
 
-export function videoSnapshots(
+function videoSnapshots(
   backendDb: BackendDb,
   rows: TargetRow[],
   start: Date,
@@ -382,7 +378,7 @@ export function videoSnapshots(
   return snapshots;
 }
 
-export function publishedDestinationKeys(backendDb: BackendDb, catalogue: readonly VideoDestination[]): Set<string> {
+function publishedDestinationKeys(backendDb: BackendDb, catalogue: readonly VideoDestination[]): Set<string> {
   const rows = unsafeDb(backendDb)
     .sqlite.prepare(
       `SELECT t.target AS target, d.locale AS locale
@@ -450,7 +446,7 @@ export function aggregateDailyMetrics(
 
 /** Loads audience history once for the whole chart instead of rerunning the
  * same window query once per calendar day. */
-export function audienceGrowthByDay(backendDb: BackendDb, days: PeriodDay[], profileKeys: Set<string>): Map<string, Map<string, number>> {
+function audienceGrowthByDay(backendDb: BackendDb, days: PeriodDay[], profileKeys: Set<string>): Map<string, Map<string, number>> {
   const lastDay = days.at(-1);
   if (!days.length || !lastDay || profileKeys.size === 0) return new Map();
 
@@ -503,91 +499,11 @@ export function audienceGrowthByDay(backendDb: BackendDb, days: PeriodDay[], pro
   return totals;
 }
 
-export function periodMetrics(history: VideoSnapshot[], days: PeriodDay[]): { totals: DailyMetrics } {
-  const totals = emptyDailyMetrics();
-  for (const day of days) {
-    const before = latestAtOrBefore(history, day.start)?.metrics ?? emptyMetrics();
-    const atEnd = latestAtOrBefore(history, day.end)?.metrics ?? before;
-    totals.views += Math.max(0, atEnd.views - before.views);
-    totals.reactions += Math.max(0, atEnd.likes - before.likes);
-    totals.replies += Math.max(0, atEnd.comments - before.comments);
-  }
-  return { totals };
-}
-
-export function periodSubscriberDelta(history: VideoSnapshot[], days: PeriodDay[]): number | null {
-  let total = 0;
-  let observed = false;
-  for (const day of days) {
-    const before = latestAtOrBefore(history, day.start)?.metrics ?? emptyMetrics();
-    const atEnd = latestAtOrBefore(history, day.end)?.metrics ?? before;
-    if (before.follows === null && atEnd.follows === null) continue;
-    observed = true;
-    total += (atEnd.follows ?? before.follows ?? 0) - (before.follows ?? 0);
-  }
-  return observed ? total : null;
-}
-
-export function latestAtOrBefore(history: VideoSnapshot[], cutoff: Date): VideoSnapshot | undefined {
-  let low = 0;
-  let high = history.length - 1;
-  let latest: VideoSnapshot | undefined;
-  while (low <= high) {
-    const middle = Math.floor((low + high) / 2);
-    const sample = history[middle];
-    if (!sample) break;
-    if (sample.at <= cutoff) {
-      latest = sample;
-      low = middle + 1;
-    } else {
-      high = middle - 1;
-    }
-  }
-  return latest;
-}
-
-export function calendarDays(start: Date, end: Date, timeZone: string): PeriodDay[] {
-  if (end < start) return [];
-  const days: PeriodDay[] = [];
-  let cursor = new Date(start);
-  while (cursor <= end) {
-    const parts = zonedDateParts(cursor, timeZone);
-    const nextDay = zonedSlot(parts.year, parts.month, parts.day + 1, "00:00", timeZone);
-    const dayEnd = new Date(Math.min(end.getTime(), nextDay.getTime() - 1));
-    days.push({ key: calendarKey(cursor, timeZone), start: new Date(cursor), end: dayEnd });
-    if (dayEnd >= end) break;
-    cursor = nextDay;
-  }
-  return days;
-}
-
-export function calendarKey(value: Date, timeZone: string): string {
-  const parts = zonedDateParts(value, timeZone);
-  return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
-}
-
-export function emptyMetrics(): VideoMetrics {
-  return {
-    views: 0,
-    likes: 0,
-    comments: 0,
-    averageWatchTimeMs: null,
-    totalWatchTimeMs: null,
-    follows: null,
-    completionRate: null,
-    videoDurationMs: null,
-  };
-}
-
-export function emptyDailyMetrics(): DailyMetrics {
-  return { views: 0, reactions: 0, replies: 0 };
-}
-
-export function emptyDailyVideoMetrics(): DailyVideoMetrics {
+function emptyDailyVideoMetrics(): DailyVideoMetrics {
   return { ...emptyDailyMetrics(), subscribers: null };
 }
 
-export function followerCounts(backendDb: BackendDb): Map<string, number> {
+function followerCounts(backendDb: BackendDb): Map<string, number> {
   const rows = unsafeDb(backendDb)
     .sqlite.prepare(
       `SELECT platform,
@@ -617,7 +533,7 @@ export function destinationKey(destination: VideoDestination): string {
   return `${destination.target}:${destination.locale}`;
 }
 
-export function videoLocale(value: string | null): VideoLocale | null {
+function videoLocale(value: string | null): VideoLocale | null {
   return value === "ru" || value === "en" ? value : null;
 }
 
@@ -712,7 +628,7 @@ function reportPeriodDays(days: number): 1 | 7 | 30 | null {
   return days === 1 || days === 7 || days === 30 ? days : null;
 }
 
-export type ProfileSummaryMetrics = {
+type ProfileSummaryMetrics = {
   averageWatchTimeMs: number | null;
   completionRate: number | null;
   subscribers: number;
@@ -721,7 +637,7 @@ export type ProfileSummaryMetrics = {
   views: number;
 };
 
-export function profileSummaryMetrics(backendDb: BackendDb, rows: TargetRow[], days: number): ProfileSummaryMetrics {
+function profileSummaryMetrics(backendDb: BackendDb, rows: TargetRow[], days: number): ProfileSummaryMetrics {
   const reportDays = days === 1 ? 1 : days === 7 ? 7 : 30;
   const suffix = reportDays === 30 ? "" : `${reportDays}d`;
   const accountKeys = new Set(rows.map(profileKeyForRow).filter((key): key is string => key !== null));
@@ -779,13 +695,13 @@ export function profileSummaryMetrics(backendDb: BackendDb, rows: TargetRow[], d
   };
 }
 
-export function profileKeyForRow(row: TargetRow): string | null {
+function profileKeyForRow(row: TargetRow): string | null {
   if (row.target !== "youtube_shorts" && row.target !== "instagram_reels") return null;
   if (row.locale !== "ru" && row.locale !== "en") return null;
   return `${row.target === "youtube_shorts" ? "youtube" : "instagram"}_${row.locale}`;
 }
 
-export function targetDurationMs(row: TargetRow): number | null {
+function targetDurationMs(row: TargetRow): number | null {
   const metadata = parseJson(row.metadataJson);
   const milliseconds = optionalMetric(metadata.videoDurationMs ?? metadata.durationMs);
   if (milliseconds !== null && milliseconds > 0) return milliseconds;
@@ -793,25 +709,19 @@ export function targetDurationMs(row: TargetRow): number | null {
   return seconds !== null && seconds > 0 ? seconds * 1_000 : null;
 }
 
-export function isCurrentCalendarDay(value: Date, timeZone: string): boolean {
-  const current = zonedDateParts(new Date(), timeZone);
-  const target = zonedDateParts(value, timeZone);
-  return current.year === target.year && current.month === target.month && current.day === target.day;
-}
-
-export function optionalMetric(value: unknown): number | null {
+function optionalMetric(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export function weightedAverage(samples: Array<{ value: number; weight: number }>): number | null {
+function weightedAverage(samples: Array<{ value: number; weight: number }>): number | null {
   if (!samples.length) return null;
   const weight = samples.reduce((sum, sample) => sum + sample.weight, 0);
   return weight > 0 ? samples.reduce((sum, sample) => sum + sample.value * sample.weight, 0) / weight : null;
 }
 
-export function parseJson(value: string | null): Record<string, unknown> {
+function parseJson(value: string | null): Record<string, unknown> {
   if (!value) return {};
   try {
     return JSON.parse(value) as Record<string, unknown>;

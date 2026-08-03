@@ -1,13 +1,9 @@
 import type { BackendDb } from "../../../db/client.js";
+import { calendarDays, emptyMetrics, latestAtOrBefore, periodMetrics, periodSubscriberDelta } from "./video-overview-calendar.js";
 import {
   aggregateDailyMetrics,
-  calendarDays,
   destinationFor,
   destinationKey,
-  emptyMetrics,
-  latestAtOrBefore,
-  periodMetrics,
-  periodSubscriberDelta,
   type VideoOverview,
   type VideoOverviewCache,
   videoAnalyticsBundle,
@@ -17,15 +13,11 @@ import {
 } from "./video-overview-data.js";
 
 export type {
-  DailyMetrics,
-  DailyVideoMetrics,
   MetricEvent,
   VideoContentItem,
-  VideoMetrics,
   VideoOverview,
   VideoOverviewCache,
   VideoPlatformTotal,
-  VideoSnapshot,
   VideoSummaryMetrics,
 } from "./video-overview-data.js";
 
