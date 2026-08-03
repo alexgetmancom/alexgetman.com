@@ -471,10 +471,6 @@ jobs:
           payload=$(printf '{"image":"%s","release":"%s"}' "$IMAGE" "$RELEASE")
           ssh "${ssh_opts[@]}" "$remote" "curl --fail-with-body --silent --show-error --retry 3 --retry-all-errors --retry-delay 5 --retry-max-time 420 --max-time 180 -H 'Authorization: Bearer $DEPLOY_AGENT_TOKEN' -H 'Content-Type: application/json' --data '$payload' http://127.0.0.1:9899/v1/deploy"
           phase backend-activation
-          if [ "$MARU_DEPLOY_ENABLED" = "true" ]; then
-            ssh "${ssh_opts[@]}" "$remote" "curl --fail-with-body --silent --show-error --retry 3 --retry-all-errors --retry-delay 5 --retry-max-time 420 --max-time 180 -H 'Authorization: Bearer $DEPLOY_AGENT_TOKEN' -H 'Content-Type: application/json' --data '$payload' http://127.0.0.1:9899/v1/deploy/maru"
-            phase maru-activation
-          fi
           curl --fail --silent --show-error --retry 3 --retry-all-errors https://alexgetman.com/readyz &
           public_ready_pid=$!
           ssh "${ssh_opts[@]}" "$remote" "curl --fail --silent --show-error --retry 3 --retry-all-errors http://127.0.0.1:8789/readyz" &
