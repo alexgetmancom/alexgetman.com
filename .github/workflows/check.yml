@@ -29,6 +29,7 @@ jobs:
       backend_image_changed: ${{ steps.filter.outputs.backend_image }}
       runtime_config_changed: ${{ steps.filter.outputs.runtime_config }}
       nginx_config_changed: ${{ steps.filter.outputs.nginx_config }}
+      deployment_required: ${{ steps.filter.outputs.deployment }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -53,24 +54,30 @@ jobs:
           backend_image=false
           runtime_config=false
           nginx_config=false
+          deployment=false
 
           while IFS= read -r path; do
             case "$path" in
               deploy/media-processor/compose.yml|deploy/media-processor/Dockerfile|deploy/media-processor/Dockerfile.runtime-base|deploy/media-processor/server.ts|deploy/media-processor/service.ts|deploy/media-processor/serial-queue.ts|deploy/media-processor/story-encode.ts)
                 media=true
+                deployment=true
                 ;;
               bun.lock | package.json | */package.json)
                 dependencies=true
                 backend_image=true
+                deployment=true
                 ;;
               apps/web/*|apps/backend/src/*|apps/backend/assets/*|apps/backend/drizzle/*|apps/backend/tsconfig.json|apps/backend/Dockerfile.release|apps/backend/Dockerfile.runtime-base|astro.config.ts|bunfig.toml|scripts/generate-responsive-images.ts|svelte.config.ts|tsconfig.base.json|tsconfig.json)
                 backend_image=true
+                deployment=true
                 ;;
               apps/backend/compose.yaml | deploy/maru.compose.yaml)
                 runtime_config=true
+                deployment=true
                 ;;
               deploy/nginx/production/*)
                 nginx_config=true
+                deployment=true
                 ;;
             esac
           done < <(git diff --name-only --no-renames "$base_sha" "$HEAD_SHA")
@@ -81,13 +88,18 @@ jobs:
             echo "backend_image=$backend_image"
             echo "runtime_config=$runtime_config"
             echo "nginx_config=$nginx_config"
+            echo "deployment=$deployment"
           } >> "$GITHUB_OUTPUT"
 
-          echo "Changed areas: media=$media dependencies=$dependencies backend_image=$backend_image runtime_config=$runtime_config nginx_config=$nginx_config"
+          echo "Changed areas: media=$media dependencies=$dependencies backend_image=$backend_image runtime_config=$runtime_config nginx_config=$nginx_config deployment=$deployment"
 
   deployment-status-pending:
     name: Production deployment
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: scope
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      needs.scope.result == 'success' &&
+      needs.scope.outputs.deployment_required == 'true'
     permissions:
       statuses: write
     runs-on: ubuntu-latest
@@ -383,6 +395,7 @@ jobs:
     if: >-
       always() && vars.DEPLOY_ENABLED == 'true' &&
       needs.scope.result == 'success' &&
+      needs.scope.outputs.deployment_required == 'true' &&
       needs.backend-image.result == 'success' &&
       needs.media-processor-image.result == 'success'
     runs-on: ubuntu-latest
@@ -544,11 +557,20 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ github.sha }}
           TARGET_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          DEPLOYMENT_REQUIRED: ${{ needs.scope.outputs.deployment_required }}
           BACKEND_IMAGE_RESULT: ${{ needs.backend-image.result }}
           MEDIA_PROCESSOR_IMAGE_RESULT: ${{ needs.media-processor-image.result }}
           DEPLOY_RESULT: ${{ needs.deploy.result }}
         run: |
-          if [ "$BACKEND_IMAGE_RESULT" = "success" ] && [ "$MEDIA_PROCESSOR_IMAGE_RESULT" = "success" ] && [ "$DEPLOY_RESULT" = "success" ]; then
+          if [ "$DEPLOYMENT_REQUIRED" != "true" ]; then
+            if [ "$BACKEND_IMAGE_RESULT" = "success" ] && [ "$MEDIA_PROCESSOR_IMAGE_RESULT" = "success" ]; then
+              state=success
+              description='CI passed; production unchanged'
+            else
+              state=failure
+              description='CI passed quality gates, but image reuse failed; production unchanged'
+            fi
+          elif [ "$BACKEND_IMAGE_RESULT" = "success" ] && [ "$MEDIA_PROCESSOR_IMAGE_RESULT" = "success" ] && [ "$DEPLOY_RESULT" = "success" ]; then
             state=success
             description='Image activated and production readiness passed'
           else
