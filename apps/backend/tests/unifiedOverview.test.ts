@@ -194,6 +194,55 @@ describe("unified overview video read model", () => {
     }
   });
 
+  it("uses a collected permalink when an older video target has no stored URL", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const publishedAt = hoursAgo(3);
+      const draft = backendDb.db
+        .insert(videoDrafts)
+        .values({
+          actorId: 1,
+          locale: "ru",
+          label: "Instagram reel",
+          assetKey: "asset-reel",
+          status: "published",
+          createdAt: publishedAt,
+          updatedAt: publishedAt,
+        })
+        .returning({ id: videoDrafts.id })
+        .get();
+      const target = backendDb.db
+        .insert(videoTargets)
+        .values({
+          videoDraftId: draft.id,
+          target: "instagram_reels",
+          metadataJson: {},
+          status: "published",
+          publishedAt,
+          externalId: "ig-media-1",
+          createdAt: publishedAt,
+          updatedAt: publishedAt,
+        })
+        .returning({ id: videoTargets.id })
+        .get();
+      backendDb.db
+        .insert(videoMetricSnapshots)
+        .values({
+          videoTargetId: target.id,
+          platform: "instagram_reels",
+          metricsJson: { views: 120, likes: 12, comments: 3, url: "https://www.instagram.com/reel/CODE123/" },
+          sampledAt: hoursAgo(1),
+        })
+        .run();
+
+      const overview = videoOverview(backendDb, new Date(Date.now() - 86_400_000), new Date());
+
+      expect(overview.items[0]?.url).toBe("https://www.instagram.com/reel/CODE123/");
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("keeps declared destinations and their audiences independent of the period", () => {
     const backendDb = openBackendDb(":memory:");
     try {

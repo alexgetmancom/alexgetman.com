@@ -100,6 +100,7 @@ describe("dashboard shell", () => {
     const html = renderDashboardShell("");
     expect(html).toContain(".overview-chart-tooltip[hidden] { display:none; }");
     expect(html).toContain(".overview-platforms__more { display:block; margin-top:8px; border:0;");
+    expect(html).toContain(".post-detail__content { display:block; padding:18px 0 0 38px; }");
     expect(html).toContain("const chartTooltip = root.querySelector('.overview-chart-tooltip')");
     expect(html).not.toContain("chart-scale");
   });
@@ -286,11 +287,17 @@ describe("renderOverviewPublicationList", () => {
     expect(html).toContain("Full English copy");
     expect(html).toContain("Русский текст");
     expect(html).toContain('class="post-platforms"');
-    expect(html).toContain('<img src="/media/post.jpg"');
+    expect(html).toContain('<b class="post-platform__locale">EN</b>');
+    expect(html).toContain('class="post-platform__metrics"');
+    expect(html).toContain('title="Охват" aria-label="Охват: 42"');
+    expect(html).toContain('title="Реакции" aria-label="Реакции: 4"');
+    expect(html).toContain('title="Ответы" aria-label="Ответы: 2"');
+    expect(html).not.toContain("X (Twitter) EN</span>");
+    expect(html).not.toContain('<img src="/media/post.jpg"');
     expect(html).not.toContain('class="track-publication"');
   });
 
-  it("keeps publication rows compact with one platform mark per destination", () => {
+  it("keeps publication rows compact with a count and a grouped tooltip", () => {
     const textPost: PipelinePost = {
       post_id: 2,
       date: "2026-08-02T12:00:00.000Z",
@@ -307,15 +314,20 @@ describe("renderOverviewPublicationList", () => {
     const html = renderOverviewPublicationList([textPost], ["telegram", "x"]);
 
     expect(html).toContain("One two three four five six seven...");
-    expect(html).toContain('class="post-detail__platform-marker" aria-label="Telegram RU"');
-    expect(html).toContain('class="post-detail__platform-marker" aria-label="X (Twitter) EN"');
-    expect(html).not.toContain("post-detail__platform-count");
+    expect(html).toContain('class="post-detail__platform-summary post-detail__platform-summary--count"');
+    expect(html).toContain('<b class="post-detail__platform-count">2</b>');
+    expect(html).toContain('class="post-detail__platform-tooltip" role="tooltip"');
+    expect(html).toContain("<b>EN</b>");
+    expect(html).toContain("<b>RU</b>");
+    expect(html).toContain("<span>X (Twitter)</span>");
+    expect(html).toContain("<span>Telegram</span>");
+    expect(html).not.toContain("post-detail__platform-marker");
     expect(html).not.toContain("data-tooltip=");
     expect(html.match(/class="post-detail__metric/g)?.length).toBe(3);
     expect(html).not.toContain("post-detail__metric--separated");
   });
 
-  it("shows every published destination with its icon and locale", () => {
+  it("shows the exact destination count and splits the tooltip by locale", () => {
     const targetIds = [
       "site_en",
       "site_ru",
@@ -333,19 +345,12 @@ describe("renderOverviewPublicationList", () => {
     };
     const html = renderOverviewPublicationList([post], targetIds);
 
-    expect(html.match(/class="post-detail__platform-marker"/g)?.length).toBe(8);
-    for (const label of [
-      "Site EN",
-      "Site RU",
-      "Threads EN",
-      "Threads RU",
-      "Instagram Stories EN",
-      "Instagram Stories RU",
-      "Telegram RU",
-      "Telegram Stories RU",
-    ])
-      expect(html).toContain('aria-label="' + label + '"');
-    expect(html).not.toContain("post-detail__platform-count");
+    expect(html).toContain('<b class="post-detail__platform-count">8</b>');
+    expect(html).toContain("<b>EN</b>");
+    expect(html).toContain("<b>RU</b>");
+    for (const name of ["Site", "Threads", "Instagram Stories", "Telegram", "Telegram Stories"])
+      expect(html).toContain(`<span>${name}</span>`);
+    expect(html).not.toContain("post-detail__platform-marker");
     expect(html).not.toContain("data-tooltip=");
   });
 
@@ -361,7 +366,7 @@ describe("renderOverviewPublicationList", () => {
           label: "Instagram RU",
           locale: "RU",
           title: "First second third fourth fifth sixth seventh eighth",
-          url: null,
+          url: "https://www.instagram.com/reel/CODE123/",
           publishedAt: "2026-08-02T12:00:00.000Z",
           views: 100,
           reactions: 8,
@@ -374,7 +379,9 @@ describe("renderOverviewPublicationList", () => {
     );
 
     expect(html).toContain("First second third fourth fifth sixth seventh...");
-    expect(html).toContain('class="post-detail__platform-marker" aria-label="Instagram RU"');
+    expect(html).toContain('href="https://www.instagram.com/reel/CODE123/"');
+    expect(html).toContain('class="post-detail__platform-summary" aria-label="Instagram RU"');
+    expect(html).toContain('<i class="platform-mark">');
     expect(html).toContain('<b class="post-detail__platform-locale">RU</b>');
     expect(html).not.toContain("data-tooltip=");
     expect(html).not.toContain("post-detail__source");

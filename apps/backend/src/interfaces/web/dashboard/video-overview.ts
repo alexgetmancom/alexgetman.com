@@ -151,6 +151,7 @@ export function videoOverview(
 ): VideoOverview {
   const catalogue = videoDestinations(backendDb);
   const rows = publishedTargets(backendDb, start.toISOString(), end.toISOString());
+  fillMissingVideoUrls(backendDb, rows);
   const snapshots = videoSnapshots(backendDb, rows, start, end, cache);
   const periodDays = calendarDays(start, end, timeZone);
   const summary = videoSummaryMetrics(backendDb, rows, snapshots, periodDays, end, timeZone);
@@ -239,6 +240,36 @@ function publishedTargets(backendDb: BackendDb, startIso: string, endIso: string
         ORDER BY t.published_at DESC`,
     )
     .all(startIso, endIso) as TargetRow[];
+}
+
+function fillMissingVideoUrls(backendDb: BackendDb, rows: TargetRow[]): void {
+  const missingIds = rows.filter((row) => !row.externalUrl).map((row) => row.id);
+  if (!missingIds.length) return;
+  const placeholders = missingIds.map(() => "?").join(",");
+  const snapshots = backendDb.sqlite
+    .prepare(
+      `SELECT video_target_id AS videoTargetId, metrics_json AS metricsJson
+         FROM video_metric_snapshots
+        WHERE video_target_id IN (${placeholders})
+        ORDER BY sampled_at DESC`,
+    )
+    .all(...missingIds) as Array<{ videoTargetId: number; metricsJson: string }>;
+  const urls = new Map<number, string>();
+  for (const snapshot of snapshots) {
+    if (urls.has(snapshot.videoTargetId)) continue;
+    const url = snapshotUrl(snapshot.metricsJson);
+    if (url) urls.set(snapshot.videoTargetId, url);
+  }
+  for (const row of rows) row.externalUrl ??= urls.get(row.id) ?? null;
+}
+
+function snapshotUrl(metricsJson: string): string | null {
+  try {
+    const metrics = JSON.parse(metricsJson) as { url?: unknown };
+    return typeof metrics.url === "string" && /^https?:\/\//.test(metrics.url) ? metrics.url : null;
+  } catch {
+    return null;
+  }
 }
 
 function videoSnapshots(

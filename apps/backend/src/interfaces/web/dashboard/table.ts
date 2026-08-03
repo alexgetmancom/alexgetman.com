@@ -1,7 +1,7 @@
 import { ORDERED_TARGETS, PLATFORM_ICONS, platformKey, VIDEO_PLATFORM_ICON_KEYS } from "./assets.js";
 import { formatMetricValue, shortPipelineText } from "./format.js";
 import { escapeHtml } from "./html.js";
-import { formatMedia, getTargetMetric, postMetricTotals } from "./metrics.js";
+import { getTargetMetric, postMetricTotals } from "./metrics.js";
 import { getTargetUrl } from "./target-url.js";
 import type { PipelinePost } from "./types.js";
 import type { VideoContentItem } from "./video-overview.js";
@@ -167,24 +167,38 @@ function videoPublicationPlatforms(video: VideoContentItem): PublicationPlatform
 
 function publicationPlatformSummary(platforms: PublicationPlatform[]): string {
   if (!platforms.length) return "";
-  const labels = platforms.map((platform) => platform.name + (platform.locale ? " " + platform.locale : ""));
-  const accessible = escapeHtml(labels.join(", "));
-  const markers = platforms
-    .map((platform) => {
-      const label = platform.name + (platform.locale ? " " + platform.locale : "");
-      const locale = platform.locale ? '<b class="post-detail__platform-locale">' + escapeHtml(platform.locale) + "</b>" : "";
-      return (
-        '<span class="post-detail__platform-marker" aria-label="' +
-        escapeHtml(label) +
-        '"><i class="platform-mark">' +
-        platform.icon +
-        "</i>" +
-        locale +
-        "</span>"
-      );
+  if (platforms.length === 1) {
+    const platform = platforms[0];
+    if (!platform) return "";
+    const label = platform.name + (platform.locale ? ` ${platform.locale}` : "");
+    const locale = platform.locale ? `<b class="post-detail__platform-locale">${escapeHtml(platform.locale)}</b>` : "";
+    return `<span class="post-detail__platform-summary" aria-label="${escapeHtml(label)}"><i class="platform-mark">${platform.icon}</i>${locale}</span>`;
+  }
+
+  const grouped = new Map<string, PublicationPlatform[]>();
+  for (const platform of platforms) {
+    const locale = platform.locale || "OTHER";
+    const group = grouped.get(locale);
+    if (group) group.push(platform);
+    else grouped.set(locale, [platform]);
+  }
+  const localeOrder = ["EN", "RU", ...[...grouped.keys()].filter((locale) => locale !== "EN" && locale !== "RU")];
+  const columns = localeOrder
+    .filter((locale) => grouped.has(locale))
+    .map((locale) => {
+      const entries = grouped.get(locale) ?? [];
+      return [
+        `<div class="post-detail__platform-tooltip-column"><b>${escapeHtml(locale)}</b><ul>`,
+        entries
+          .map((platform) => `<li><i class="platform-mark">${platform.icon}</i><span>${escapeHtml(platform.name)}</span></li>`)
+          .join(""),
+        "</ul></div>",
+      ].join("");
     })
     .join("");
-  return '<span class="post-detail__platform-summary" aria-label="' + accessible + '">' + markers + "</span>";
+  const labels = platforms.map((platform) => platform.name + (platform.locale ? ` ${platform.locale}` : ""));
+  const accessible = escapeHtml(`${platforms.length} площадок: ${labels.join(", ")}`);
+  return `<span class="post-detail__platform-summary post-detail__platform-summary--count" tabindex="0" aria-label="${accessible}"><b class="post-detail__platform-count">${platforms.length}</b><span class="post-detail__platform-tooltip" role="tooltip" aria-hidden="true">${columns}</span></span>`;
 }
 
 function renderRecentVideo(video: VideoContentItem, hidden: boolean): string {
@@ -265,7 +279,6 @@ function renderRecentPost(post: PipelinePost, targetIds: string[], hidden: boole
     `<span class="post-detail__label">ENGLISH</span><p>${escapeHtml(english)}</p>`,
     `<span class="post-detail__label">RU ORIGINAL</span><p>${escapeHtml(russian)}</p>`,
     "</div>",
-    mediaPreview(post),
     "</div></div>",
     "</details>",
   ].join("");
@@ -278,21 +291,25 @@ function platformBreakdown(post: PipelinePost, targetIds: string[]): string {
     '<section class="post-platforms" aria-label="Метрики по площадкам">',
     '<span class="post-detail__label">РЕЗУЛЬТАТ ПО ПЛОЩАДКАМ</span>',
     '<div class="post-platforms__grid">',
-    published.map((target) => platformMetrics(post, target.id, target.label)).join(""),
+    published.map((target) => platformMetrics(post, target.id, target.locale)).join(""),
     "</div>",
     "</section>",
   ].join("");
 }
 
-function platformMetrics(post: PipelinePost, targetId: string, label: string): string {
+function platformMetrics(post: PipelinePost, targetId: string, locale: string): string {
   const url = getTargetUrl(post, targetId);
   const metrics = {
     views: getTargetMetric(post, targetId, "views"),
     reactions: getTargetMetric(post, targetId, "likes") + getTargetMetric(post, targetId, "reposts"),
     replies: getTargetMetric(post, targetId, "replies"),
   };
-  const name = `<span class="post-platform__name">${PLATFORM_ICONS[platformKey(targetId)] ?? ""}<span>${escapeHtml(label)}</span></span>`;
-  const content = `${name}<span class="post-platform__metrics"><b>${formatMetricValue(metrics.views)}</b> охват <b>${formatMetricValue(metrics.reactions)}</b> реакции <b>${formatMetricValue(metrics.replies)}</b> ответы</span>`;
+  const name = `<span class="post-platform__name">${PLATFORM_ICONS[platformKey(targetId)] ?? ""}<b class="post-platform__locale">${escapeHtml(locale.toUpperCase())}</b></span>`;
+  const metric = (label: string, value: number) => {
+    const formatted = formatMetricValue(value);
+    return `<span class="post-platform__metric" title="${label}" aria-label="${label}: ${formatted}"><b>${formatted}</b></span>`;
+  };
+  const content = `${name}<span class="post-platform__metrics">${metric("Охват", metrics.views)}${metric("Реакции", metrics.reactions)}${metric("Ответы", metrics.replies)}</span>`;
   return url
     ? `<a class="post-platform" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${content}</a>`
     : `<div class="post-platform">${content}</div>`;
@@ -305,29 +322,6 @@ function targetStatus(post: PipelinePost, target: string): string | null {
   if (target === "site_ru" && post.site_ru) return "published";
   if (target === "site_en" && post.site_en) return "published";
   return null;
-}
-
-function mediaPreview(post: PipelinePost): string {
-  const media = post.media_en_json ?? post.media_json ?? post.media_ru_json;
-  const url = mediaUrl(media);
-  if (url)
-    return `<a class="post-preview" href="${escapeHtml(url)}" target="_blank" rel="noreferrer"><img src="${escapeHtml(url)}" alt="Превью медиа"></a>`;
-  return `<div class="post-preview post-preview--empty">${escapeHtml(mediaLabel(post))}</div>`;
-}
-
-function mediaUrl(value: unknown): string | null {
-  const first = Array.isArray(value) ? value[0] : value;
-  if (!first || typeof first !== "object") return null;
-  const candidate =
-    (first as Record<string, unknown>).url ?? (first as Record<string, unknown>).public_url ?? (first as Record<string, unknown>).vps_url;
-  return typeof candidate === "string" && (/^https:\/\//.test(candidate) || candidate.startsWith("/")) ? candidate : null;
-}
-
-function mediaLabel(post: PipelinePost): string {
-  const media = formatMedia(post).toLowerCase();
-  if (/(vid|video)/.test(media)) return "Видео";
-  if (/(pic|photo|image)/.test(media)) return "Изображение";
-  return "Текст";
 }
 
 function total(post: PipelinePost, targetIds: string[]) {
