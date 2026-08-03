@@ -56,8 +56,16 @@ export function videoPreview(
   }
   if (ytTarget?.status === "failed" || ytTarget?.status === "verification_required")
     keyboard.text(t(locale, "vpreview.yt-retry"), `video_retry:youtube_shorts:${draft.id}`).row();
+  // Publishing now and scheduling are the same pair of choices a text post
+  // offers on its own card. The immediate path was implemented end to end
+  // (video_now -> video_now_confirm) but no keyboard ever emitted it, so a
+  // video could only be scheduled.
   if (targets.length > 0 && (draft.status === "draft" || draft.status === "editing"))
-    keyboard.text(t(locale, "post.schedule-btn"), `video_schedule:${draft.id}`).row();
+    keyboard
+      .text(t(locale, "post.publish-now-btn"), `video_now:${draft.id}`)
+      .row()
+      .text(t(locale, "post.schedule-btn"), `video_schedule:${draft.id}`)
+      .row();
   keyboard.text(t(locale, "vpreview.edit-details"), `video_edit_menu:${draft.id}`).row();
   keyboard.text(t(locale, "vpreview.cancel-pub"), `video_cancel_ask:${draft.id}`).row();
   keyboard.text(t(locale, "vpreview.back-queue"), "queue_home");

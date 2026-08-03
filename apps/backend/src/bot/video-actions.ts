@@ -72,6 +72,10 @@ const routes: Record<string, VideoActionHandler> = {
   video_edit: handleEdit,
 };
 
+/** The routed video callback names, so the callback-wiring test can check every
+ * `video_` button the bot renders against the real map instead of a copy. */
+export const videoRouteKeys: readonly string[] = Object.keys(routes);
+
 function routeKey(data: string): string {
   const separator = data.indexOf(":");
   return separator === -1 ? data : data.slice(0, separator);
@@ -94,9 +98,15 @@ export async function handleVideoActionCallback(ctx: Context, backendDb: Backend
   const locale = botLocale(backendDb, actorId);
   try {
     const route = routes[routeKey(data)];
-    const result = route ? await route({ ctx, backendDb, config, actorId, locale, data }) : undefined;
-    if (result?.toast) await ctx.answerCallbackQuery({ text: toast(result.toast) });
-    else await ctx.answerCallbackQuery();
+    // An unrouted `video_` callback used to be answered with an empty toast,
+    // which is indistinguishable from a button that worked: the spinner just
+    // stops. Report it the way the post branch reports an unknown action.
+    if (!route) await ctx.answerCallbackQuery({ text: t(locale, "action.unknown") });
+    else {
+      const result = await route({ ctx, backendDb, config, actorId, locale, data });
+      if (result?.toast) await ctx.answerCallbackQuery({ text: toast(result.toast) });
+      else await ctx.answerCallbackQuery();
+    }
   } catch (error) {
     await ctx.answerCallbackQuery({ text: toast(describeError(locale, error)) });
   }

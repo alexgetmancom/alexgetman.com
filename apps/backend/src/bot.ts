@@ -4,7 +4,7 @@ import { handleAnalyticsCallback } from "./bot/analytics-screen.js";
 import { botLocale } from "./bot/i18n.js";
 import { persistentKeyboard, showMainMenu } from "./bot/menu-render.js";
 import { buildMainMenu } from "./bot/navigation.js";
-import { buildNotificationsMenu } from "./bot/notifications-screen.js";
+import { buildNotificationsMenu, notificationsInboxText } from "./bot/notifications-screen.js";
 import { handleOperationsCallback } from "./bot/operations-screen.js";
 import { handlePostAction } from "./bot/post-actions.js";
 import { handlePostMessage, handlePostScreenCallback, startPostScreen } from "./bot/post-screen.js";
@@ -104,6 +104,16 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
     if (ctx.callbackQuery.data === "queue_drafts") {
       await ctx.answerCallbackQuery();
       await showQueue(ctx, backendDb, config);
+      return;
+    }
+    // Video notifications link here. Without a branch the tap fell through to
+    // the post handler, which read no draft id out of it and answered
+    // "invalid post" — an error toast on a button that navigates.
+    if (ctx.callbackQuery.data === "notifications_home") {
+      await ctx.answerCallbackQuery();
+      await ctx.reply(notificationsInboxText(backendDb, config, Number(ctx.from?.id), botLocale(backendDb, Number(ctx.from?.id))), {
+        reply_markup: notificationsMenu,
+      });
       return;
     }
     if (ctx.callbackQuery.data === "menu_home") {
