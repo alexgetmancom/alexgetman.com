@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
+import { queueText } from "../src/bot/queue.js";
 import { drafts, publishJobs, videoDrafts, videoTargets } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
+import type { StudioQueueSnapshot } from "../src/studio/services/queue.js";
 import { queueService } from "../src/studio/services/queue.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
@@ -129,5 +131,26 @@ describe("Telegram work queue", () => {
     } finally {
       backendDb.close();
     }
+  });
+
+  it("renders upcoming work and drafts on the same queue screen", () => {
+    const snapshot: StudioQueueSnapshot = {
+      upcoming: [
+        {
+          id: 187,
+          label: "Scheduled clip",
+          time: new Date("2026-08-04T22:02:00.000Z"),
+          kind: "video",
+          targets: 2,
+        },
+      ],
+      drafts: [{ id: 188, label: "Unfinished clip", time: new Date("2026-08-03T20:35:00.000Z"), kind: "video", targets: 0 }],
+      attention: [],
+    };
+
+    const text = queueText(snapshot, "ru", "Europe/Moscow");
+    expect(text).toContain("Ближайшие публикации");
+    expect(text).toContain("Scheduled clip");
+    expect(text).toContain("Черновики (1)");
   });
 });

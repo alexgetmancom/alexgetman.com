@@ -103,7 +103,7 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
     }
     if (ctx.callbackQuery.data === "queue_drafts") {
       await ctx.answerCallbackQuery();
-      await showQueue(ctx, backendDb, config, "drafts");
+      await showQueue(ctx, backendDb, config);
       return;
     }
     if (ctx.callbackQuery.data === "menu_home") {

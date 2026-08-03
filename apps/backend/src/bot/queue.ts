@@ -6,48 +6,26 @@ import { createStudioServices } from "../studio/services/index.js";
 import type { StudioQueueItem, StudioQueueSnapshot } from "../studio/services/queue.js";
 import { type BotLocale, botLocale } from "./i18n.js";
 
-type QueueView = "upcoming" | "drafts";
-
-export async function showQueue(
-  ctx: Context,
-  backendDb: BackendDb,
-  config: BackendConfig,
-  requestedView: QueueView = "upcoming",
-): Promise<void> {
+export async function showQueue(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<void> {
   const locale = botLocale(backendDb, Number(ctx.from?.id));
   const snapshot = createStudioServices(backendDb, config).queue.snapshot(Number(ctx.from?.id));
-  // Queue opens as a quiet operational overview. Draft history is opt-in,
-  // rather than becoming a wall of old cards whenever nothing is scheduled.
-  const view = requestedView;
   const keyboard = new InlineKeyboard();
-  const text = view === "drafts" ? draftsText(snapshot, locale) : upcomingText(snapshot, locale, config.TIMEZONE);
+  const text = queueText(snapshot, locale, config.TIMEZONE);
 
-  if (view === "drafts") {
-    for (const item of snapshot.drafts) keyboard.text(`${kindIcon(item.kind)} ${item.label}`, itemCallback(item)).row();
-  } else {
-    for (const item of snapshot.upcoming) keyboard.text(itemButton(item, locale, config.TIMEZONE), itemCallback(item)).row();
-  }
-
-  if (view !== "upcoming") keyboard.text(t(locale, "queue.upcoming-btn"), "queue_home");
-  if (view !== "drafts") keyboard.text(t(locale, "queue.drafts-btn", { count: snapshot.drafts.length }), "queue_drafts");
+  for (const item of snapshot.upcoming) keyboard.text(itemButton(item, locale, config.TIMEZONE), itemCallback(item)).row();
+  for (const item of snapshot.drafts) keyboard.text(`${kindIcon(item.kind)} ${item.label}`, itemCallback(item)).row();
   keyboard.row().text(t(locale, "common.menu"), "menu_home");
   await replaceQueueMessage(ctx, text, keyboard);
 }
 
-function upcomingText(snapshot: StudioQueueSnapshot, locale: BotLocale, timeZone: string): string {
+export function queueText(snapshot: StudioQueueSnapshot, locale: BotLocale, timeZone: string): string {
   const lines = [`📋 *${t(locale, "queue.title")}*`, "", `*${t(locale, "queue.upcoming-heading")}*`];
   if (!snapshot.upcoming.length) lines.push(t(locale, "queue.nothing-scheduled"));
   else
     for (const item of snapshot.upcoming.slice(0, 5))
       lines.push(`• ${formatQueueTime(item.time, locale, timeZone)} — ${kindIcon(item.kind)} ${item.label}`);
-  lines.push("", `🟡 ${t(locale, "queue.drafts-label")}: ${snapshot.drafts.length}`);
-  return lines.join("\n");
-}
-
-function draftsText(snapshot: StudioQueueSnapshot, locale: BotLocale): string {
-  const lines = [`🟡 *${t(locale, "queue.drafts-label")}*`];
-  if (!snapshot.drafts.length) lines.push(`\n${t(locale, "queue.no-drafts")}`);
-  else lines.push(`\n${t(locale, "queue.choose-draft")}`);
+  lines.push("", `*${t(locale, "queue.drafts-btn", { count: snapshot.drafts.length })}*`);
+  lines.push(snapshot.drafts.length ? t(locale, "queue.choose-draft") : t(locale, "queue.no-drafts"));
   return lines.join("\n");
 }
 
