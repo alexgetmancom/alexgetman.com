@@ -308,7 +308,11 @@ jobs:
   deploy:
     name: Deploy immutable image
     needs: [backend-image, media-processor-image, deploy-agent]
-    if: vars.DEPLOY_ENABLED == 'true'
+    if: >-
+      always() && vars.DEPLOY_ENABLED == 'true' &&
+      needs.backend-image.result == 'success' &&
+      needs.media-processor-image.result == 'success' &&
+      needs.deploy-agent.result == 'success'
     runs-on: ubuntu-latest
     concurrency:
       group: production-deploy
