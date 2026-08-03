@@ -97,7 +97,7 @@ export type StudioPostStore = {
 };
 
 /** Persistence projection used by the transport-neutral post progress read model. */
-export type StudioPostProgress = {
+type StudioPostProgress = {
   draft: { id: number; actorId: number; postId: number | null; targetsJson: string };
   publishJobs: Array<{ target: string; status: string; lastError: string | null }>;
   siteJobs: Array<{ reason: string; status: string; lastError: string | null }>;
