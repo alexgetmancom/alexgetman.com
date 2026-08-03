@@ -70,8 +70,62 @@ describe("Telegram work queue", () => {
       const snapshot = queueService(backendDb, loadConfig({ ADMIN_IDS: "7,8" })).snapshot(7);
       expect(snapshot.upcoming).toHaveLength(1);
       expect(snapshot.upcoming[0]?.label).toBe("Запланированный пост");
-      expect(snapshot.drafts.map((item) => item.label)).toEqual(["Черновик поста", "Чужой черновик", "Черновик видео"]);
+      expect(snapshot.drafts.map((item) => item.label)).toEqual(["Чужой черновик", "Черновик поста", "Черновик видео"]);
       expect(snapshot.attention).toEqual([{ id: 1, label: "Запланированный пост", kind: "post" }]);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("keeps recent scheduled videos visible after the queue history exceeds its cap", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      backendDb.db
+        .insert(videoDrafts)
+        .values(
+          Array.from({ length: 100 }, (_, index) => ({
+            actorId: 7,
+            assetKey: `published-${index}`,
+            label: `Published video ${index}`,
+            status: "published",
+            createdAt: now,
+            updatedAt: now,
+          })),
+        )
+        .run();
+      const scheduledAt = new Date(Date.now() + 60 * 60_000).toISOString();
+      const scheduled = backendDb.db
+        .insert(videoDrafts)
+        .values({
+          actorId: 7,
+          assetKey: "scheduled-video",
+          label: "Recent scheduled video",
+          status: "scheduled",
+          scheduledAt,
+          createdAt: now,
+          updatedAt: new Date(Date.now() + 1_000).toISOString(),
+        })
+        .returning({ id: videoDrafts.id })
+        .get();
+      if (!scheduled) throw new Error("scheduled video missing");
+      backendDb.db
+        .insert(videoTargets)
+        .values({
+          videoDraftId: scheduled.id,
+          target: "youtube_shorts",
+          metadataJson: {},
+          status: "scheduled",
+          scheduledAt,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+
+      const snapshot = queueService(backendDb, loadConfig({ ADMIN_IDS: "7" })).snapshot(7);
+      expect(snapshot.upcoming).toEqual([
+        expect.objectContaining({ id: scheduled.id, label: "Recent scheduled video", kind: "video", targets: 1 }),
+      ]);
     } finally {
       backendDb.close();
     }

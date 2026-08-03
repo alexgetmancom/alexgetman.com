@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import type { StudioQueuePost, StudioQueueStore, StudioQueueVideo, StudioQueueVideoTarget } from "../../application/ports.js";
 import { channelConnections, drafts, publishJobs, siteJobs, videoDrafts, videoTargets } from "../schema.js";
 import type { BackendDatabase } from "../types.js";
@@ -7,37 +7,45 @@ import type { BackendDatabase } from "../types.js";
 export function createStudioQueueStore(db: BackendDatabase): StudioQueueStore {
   return {
     posts(actorIds: number[], limit: number): StudioQueuePost[] {
-      return db
-        .select({
-          id: drafts.id,
-          actorId: drafts.actorId,
-          status: drafts.status,
-          textRu: drafts.textRu,
-          targetsJson: drafts.targetsJson,
-          updatedAt: drafts.updatedAt,
-          scheduledAt: drafts.scheduledAt,
-          scheduledEnAt: drafts.scheduledEnAt,
-          postId: drafts.postId,
-        })
-        .from(drafts)
-        .where(inArray(drafts.actorId, actorIds))
-        .limit(limit)
-        .all();
+      return (
+        db
+          .select({
+            id: drafts.id,
+            actorId: drafts.actorId,
+            status: drafts.status,
+            textRu: drafts.textRu,
+            targetsJson: drafts.targetsJson,
+            updatedAt: drafts.updatedAt,
+            scheduledAt: drafts.scheduledAt,
+            scheduledEnAt: drafts.scheduledEnAt,
+            postId: drafts.postId,
+          })
+          .from(drafts)
+          .where(inArray(drafts.actorId, actorIds))
+          // Apply the cap after recency ordering so archive history cannot hide new work.
+          .orderBy(desc(drafts.updatedAt), desc(drafts.id))
+          .limit(limit)
+          .all()
+      );
     },
 
     videos(actorIds: number[], limit: number): StudioQueueVideo[] {
-      return db
-        .select({
-          id: videoDrafts.id,
-          actorId: videoDrafts.actorId,
-          status: videoDrafts.status,
-          label: videoDrafts.label,
-          updatedAt: videoDrafts.updatedAt,
-        })
-        .from(videoDrafts)
-        .where(inArray(videoDrafts.actorId, actorIds))
-        .limit(limit)
-        .all();
+      return (
+        db
+          .select({
+            id: videoDrafts.id,
+            actorId: videoDrafts.actorId,
+            status: videoDrafts.status,
+            label: videoDrafts.label,
+            updatedAt: videoDrafts.updatedAt,
+          })
+          .from(videoDrafts)
+          .where(inArray(videoDrafts.actorId, actorIds))
+          // Apply the cap after recency ordering so archive history cannot hide new work.
+          .orderBy(desc(videoDrafts.updatedAt), desc(videoDrafts.id))
+          .limit(limit)
+          .all()
+      );
     },
 
     failedPostIds(postIds: number[]): number[] {
