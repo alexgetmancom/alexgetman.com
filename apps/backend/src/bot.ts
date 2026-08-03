@@ -1,6 +1,7 @@
 import { autoRetry } from "@grammyjs/auto-retry";
 import { Bot, type Context } from "grammy";
 import { handleAnalyticsCallback } from "./bot/analytics-screen.js";
+import { runCallbackBoundary } from "./bot/callback-boundary.js";
 import { botLocale } from "./bot/i18n.js";
 import { persistentKeyboard, showMainMenu } from "./bot/menu-render.js";
 import { buildMainMenu } from "./bot/navigation.js";
@@ -58,6 +59,10 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
       return;
     }
     await next();
+  });
+  bot.use(async (ctx, next) => {
+    if (!ctx.callbackQuery?.data) return next();
+    await runCallbackBoundary(ctx, backendDb, next);
   });
   bot.use(mainMenu);
 
