@@ -5,7 +5,7 @@ import { creatorProfileSnapshots, videoDrafts, videoMetricSnapshots, videoTarget
 import { loadConfig } from "../src/foundation/config.js";
 import { renderCombinedSection } from "../src/interfaces/web/dashboard/combined-section.js";
 import { renderHeroCard } from "../src/interfaces/web/dashboard/hero-section.js";
-import { buildOverviewData } from "../src/interfaces/web/dashboard/overview-data.js";
+import { buildOverviewData, loadDashboardReadModel } from "../src/interfaces/web/dashboard/overview-data.js";
 import { renderTrackPublicationList } from "../src/interfaces/web/dashboard/table.js";
 import type { PipelinePost } from "../src/interfaces/web/dashboard/types.js";
 import { createVideoOverviewCache, emptyVideoOverview, videoOverview } from "../src/interfaces/web/dashboard/video-overview.js";
@@ -188,7 +188,7 @@ describe("unified overview video read model", () => {
       config.studio.modules.video_posting = true;
       config.studio.modules.youtube = true;
 
-      const overview = buildOverviewData(
+      const readModel = loadDashboardReadModel(
         config,
         backendDb,
         createOperationsService(backendDb, config),
@@ -196,8 +196,8 @@ describe("unified overview video read model", () => {
         0,
         1,
         undefined,
-        "reach",
       );
+      const overview = buildOverviewData(readModel, undefined, "reach");
 
       expect(overview.video.items).toHaveLength(1);
       expect(overview.video.totals.posts).toBe(1);

@@ -7,7 +7,7 @@ import type { StudioLocale } from "../../foundation/locale.js";
 import { type CommandCenterAttention, createOperationsService } from "../../operations/index.js";
 import { type PlatformMetric, renderCombinedSection } from "./dashboard/combined-section.js";
 import { renderCredentialsSection, renderDiagnosticsSection, renderQueueSection, renderRepairSection } from "./dashboard/ops-sections.js";
-import { buildOverviewData, videoOverviewForPeriod } from "./dashboard/overview-data.js";
+import { buildOverviewData, loadDashboardReadModel, videoOverviewForPeriod } from "./dashboard/overview-data.js";
 import { renderPeriodControls } from "./dashboard/period-controls.js";
 import { renderDashboardShell } from "./dashboard/shell.js";
 import { type PublicationDetailsResult, renderPublicationDetails } from "./dashboard/table.js";
@@ -154,10 +154,10 @@ export function renderDashboard(
   }
 
   function renderOverview(): string {
-    if (showPosts)
-      return renderCombinedSection(
-        buildOverviewData(config, backendDb, service, videoCache, weekOffset, periodDays, activeView, platformMetric),
-      );
+    if (showPosts) {
+      const readModel = loadDashboardReadModel(config, backendDb, service, videoCache, weekOffset, periodDays, activeView);
+      return renderCombinedSection(buildOverviewData(readModel, activeView, platformMetric));
+    }
     if (showStudio && studioActorId) return renderStudioSection(config, backendDb, studioActorId, locale);
     return "";
   }
