@@ -1,6 +1,7 @@
 import type { BackendDb } from "../db/client.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { instagramCredentialsForLocale, instagramGraphHost } from "../foundation/external/instagram.js";
 import { oauthAuthorization } from "../foundation/external/x-oauth.js";
 import { youtubeAccessToken } from "../foundation/external/youtube.js";
 import { ExternalHttpError, requestJson } from "../foundation/http.js";
@@ -29,10 +30,6 @@ type Probe = {
   /** Resolves to an ISO expiry timestamp when the provider can report one. */
   run: (config: BackendConfig, fetchImpl: typeof fetch) => Promise<string | null | undefined>;
 };
-
-function instagramHost(token: string): "graph.instagram.com" | "graph.facebook.com" {
-  return token.startsWith("IG") ? "graph.instagram.com" : "graph.facebook.com";
-}
 
 /** Best-effort token expiry lookup; a failure here must not turn an otherwise
  * healthy probe into a reported auth failure. Meta reports a non-expiring
@@ -147,29 +144,37 @@ const probes: Probe[] = [
     configured: (c) => Boolean(c.INSTAGRAM_ACCESS_TOKEN && c.INSTAGRAM_USER_ID),
     run: (config, fetchImpl) => {
       const token = config.INSTAGRAM_ACCESS_TOKEN as string;
-      const host = instagramHost(token);
+      const host = instagramGraphHost(token);
       const version = config.INSTAGRAM_GRAPH_API_VERSION;
       return graphMeCheck("instagram_reels", host, version, config.INSTAGRAM_USER_ID as string, token, fetchImpl);
     },
   },
   {
     target: "instagram_stories",
-    configured: (c) => Boolean(c.INSTAGRAM_EN_ACCESS_TOKEN && c.INSTAGRAM_EN_USER_ID),
+    configured: (c) => {
+      const credentials = instagramCredentialsForLocale(c, "en", "shared");
+      return Boolean(credentials.accessToken && credentials.userId);
+    },
     run: (config, fetchImpl) => {
-      const token = config.INSTAGRAM_EN_ACCESS_TOKEN as string;
-      const host = instagramHost(token);
+      const { accessToken: token, userId } = instagramCredentialsForLocale(config, "en", "shared");
+      if (!token || !userId) throw new Error("Instagram Stories EN credentials are missing");
+      const host = instagramGraphHost(token);
       const version = config.INSTAGRAM_GRAPH_API_VERSION;
-      return graphMeCheck("instagram_stories", host, version, config.INSTAGRAM_EN_USER_ID as string, token, fetchImpl);
+      return graphMeCheck("instagram_stories", host, version, userId, token, fetchImpl);
     },
   },
   {
     target: "instagram_stories_ru",
-    configured: (c) => Boolean(c.INSTAGRAM_RU_ACCESS_TOKEN && c.INSTAGRAM_RU_USER_ID),
+    configured: (c) => {
+      const credentials = instagramCredentialsForLocale(c, "ru", "shared");
+      return Boolean(credentials.accessToken && credentials.userId);
+    },
     run: (config, fetchImpl) => {
-      const token = config.INSTAGRAM_RU_ACCESS_TOKEN as string;
-      const host = instagramHost(token);
+      const { accessToken: token, userId } = instagramCredentialsForLocale(config, "ru", "shared");
+      if (!token || !userId) throw new Error("Instagram Stories RU credentials are missing");
+      const host = instagramGraphHost(token);
       const version = config.INSTAGRAM_GRAPH_API_VERSION;
-      return graphMeCheck("instagram_stories_ru", host, version, config.INSTAGRAM_RU_USER_ID as string, token, fetchImpl);
+      return graphMeCheck("instagram_stories_ru", host, version, userId, token, fetchImpl);
     },
   },
 ];

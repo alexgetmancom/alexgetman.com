@@ -74,4 +74,28 @@ describe("token health probes", () => {
       backendDb.close();
     }
   });
+
+  it("uses the shared Instagram account for both enabled Story locale probes", async () => {
+    const backendDb = tempDb();
+    try {
+      const calls: string[] = [];
+      const fetchMock = mock(async (url: string | URL | Request) => {
+        calls.push(String(url));
+        return jsonResponse({ id: "shared-user" });
+      });
+      const config = loadConfig({
+        ENABLE_INSTAGRAM_STORIES: "true",
+        INSTAGRAM_ACCESS_TOKEN: "EAAtoken",
+        INSTAGRAM_USER_ID: "shared-user",
+      });
+
+      await checkTokenHealth(config, backendDb, fetchMock as unknown as typeof fetch);
+
+      expect(backendDb.db.select().from(credentialChecks).where(eq(credentialChecks.target, "instagram_stories")).get()).toBeDefined();
+      expect(backendDb.db.select().from(credentialChecks).where(eq(credentialChecks.target, "instagram_stories_ru")).get()).toBeDefined();
+      expect(calls.some((url) => url.includes("/shared-user?fields=id"))).toBe(true);
+    } finally {
+      backendDb.close();
+    }
+  });
 });

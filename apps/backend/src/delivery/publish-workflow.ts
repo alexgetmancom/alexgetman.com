@@ -93,7 +93,7 @@ export async function runDeliveryPublishCycle(
         try {
           completePublishJob(backendDb, config, job.jobId, result, job.lockId);
         } catch (error) {
-          settleUnexpectedFinalization(backendDb, job, error);
+          settleUnexpectedFinalization(backendDb, job, error, result);
         }
       }),
     ),
@@ -155,11 +155,16 @@ export async function runDeliveryPublishCycle(
   return jobs.length;
 }
 
-function settleUnexpectedFinalization(backendDb: BackendDb, job: { jobId: number; target: string; lockId: string }, error: unknown): void {
+function settleUnexpectedFinalization(
+  backendDb: BackendDb,
+  job: { jobId: number; target: string; lockId: string },
+  error: unknown,
+  result: Awaited<ReturnType<DeliveryPublisher>> | null = null,
+): void {
   const message = `worker finalization failed: ${String(error instanceof Error ? error.message : error)}`;
   log("error", "publish job finalization failed", { jobId: job.jobId, target: job.target, error: message });
   try {
-    forcePublishJobVerification(backendDb, job.jobId, message, job.lockId);
+    forcePublishJobVerification(backendDb, job.jobId, message, job.lockId, result);
   } catch (finalizationError) {
     log("error", "publish job emergency settlement failed", {
       jobId: job.jobId,

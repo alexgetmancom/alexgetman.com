@@ -2,7 +2,7 @@ import { and, inArray, isNull, sql } from "drizzle-orm";
 import type { BackendDb } from "../db/client.js";
 import { credentialChecks, postEvents, workerState } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
-import { workerLiveness } from "../foundation/runtime/worker-state.js";
+import { expectedWorkerNames, workerLiveness } from "../foundation/runtime/worker-state.js";
 import { capabilityReport } from "./capabilities.js";
 
 /** Transport-neutral health snapshot for operators, APIs and future automation. */
@@ -15,6 +15,8 @@ export function healthReport(config: BackendConfig, backendDb: BackendDb) {
     .all()
     .filter((credential) => activeCapabilityTargets.has(credential.target));
   const workers = backendDb.db.select().from(workerState).all();
+  const observedWorkers = new Set(workers.map((worker) => worker.name));
+  const missingWorkers = expectedWorkerNames(config).filter((name) => !observedWorkers.has(name));
   const [pending] = backendDb.db
     .select({ count: sql<number>`count(*)` })
     .from(postEvents)
@@ -39,6 +41,7 @@ export function healthReport(config: BackendConfig, backendDb: BackendDb) {
       updatedAt: worker.updatedAt,
       ...workerLiveness(worker.stateJson, worker.updatedAt),
     })),
+    missingWorkers,
     pendingAlerts: Number(pending?.count ?? 0),
   };
 }

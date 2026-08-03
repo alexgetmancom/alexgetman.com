@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { and, eq, isNull, lt, lte, or } from "drizzle-orm";
 import type { BackendDb } from "../db/client.js";
 import { postTargets, publishJobs, videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
@@ -5,7 +6,7 @@ import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { isTargetAuthBlocked } from "../observability/auth-circuit.js";
 import { nextRetryAt } from "../publishing/errors.js";
-import { reconcilePublication } from "../publishing/index.js";
+import { reconcilePublication, workerId } from "../publishing/index.js";
 import { refreshVideoDraftStatus } from "../publishing/video-data.js";
 import { platformConfig, verifyPlatformPublication } from "./ports/social.js";
 import { verifyYouTubeVideo } from "./video-publishers.js";
@@ -24,6 +25,8 @@ export async function runPublicationReconciliation(
   let checked = 0;
   let resolved = 0;
   const nowIso = new Date().toISOString();
+  const reconciliationWorker = `${workerId("reconciliation")}:${crypto.randomUUID()}`;
+  const staleBefore = new Date(Date.now() - config.METRIC_LOCK_TIMEOUT_SECONDS * 1000).toISOString();
   const ordinary = backendDb.db
     .select({ job: publishJobs, target: postTargets })
     .from(publishJobs)
@@ -33,33 +36,60 @@ export async function runPublicationReconciliation(
         eq(publishJobs.status, "verification_required"),
         lt(publishJobs.reconcileAttemptCount, config.RECONCILE_MAX_ATTEMPTS),
         or(isNull(publishJobs.nextAttemptAt), lte(publishJobs.nextAttemptAt, nowIso)),
+        or(isNull(publishJobs.lockedBy), isNull(publishJobs.lockedAt), lt(publishJobs.lockedAt, staleBefore)),
       ),
     )
     .limit(config.PUBLISH_CLAIM_LIMIT)
     .all();
   for (const row of ordinary) {
+    const claimed = backendDb.db
+      .update(publishJobs)
+      .set({ lockedBy: reconciliationWorker, lockedAt: nowIso, updatedAt: nowIso })
+      .where(
+        and(
+          eq(publishJobs.jobId, row.job.jobId),
+          eq(publishJobs.status, "verification_required"),
+          or(isNull(publishJobs.lockedBy), isNull(publishJobs.lockedAt), lt(publishJobs.lockedAt, staleBefore)),
+        ),
+      )
+      .returning({ jobId: publishJobs.jobId })
+      .get();
+    if (!claimed) continue;
+    const job = { ...row.job, lockedBy: reconciliationWorker, lockedAt: nowIso };
     checked += 1;
     const externalId = row.target.externalId;
     if (!externalId || isTargetAuthBlocked(backendDb, row.job.target)) {
-      deferOrdinaryReconciliation(backendDb, config, row.job);
+      deferOrdinaryReconciliation(backendDb, config, job, reconciliationWorker);
       continue;
     }
-    const result = await verifyPlatformPublication(
-      row.job.target,
-      { ok: true, id: externalId, url: row.target.url },
-      platformConfig(row.job.target, config),
-      fetchImpl,
-    );
+    let result: Awaited<ReturnType<typeof verifyPlatformPublication>>;
+    try {
+      result = await verifyPlatformPublication(
+        row.job.target,
+        { ok: true, id: externalId, url: row.target.url },
+        platformConfig(row.job.target, config),
+        fetchImpl,
+      );
+    } catch {
+      deferOrdinaryReconciliation(backendDb, config, job, reconciliationWorker);
+      continue;
+    }
     const verification = result.verification as { status?: string } | undefined;
     if (verification?.status !== "verified") {
-      deferOrdinaryReconciliation(backendDb, config, row.job);
+      deferOrdinaryReconciliation(backendDb, config, job, reconciliationWorker);
       continue;
     }
     const now = new Date().toISOString();
     backendDb.db.transaction((tx) => {
       tx.update(publishJobs)
-        .set({ status: "published", currentPhase: null, lastError: null, updatedAt: now })
-        .where(and(eq(publishJobs.jobId, row.job.jobId), eq(publishJobs.status, "verification_required")))
+        .set({ status: "published", currentPhase: null, lockedBy: null, lockedAt: null, lastError: null, updatedAt: now })
+        .where(
+          and(
+            eq(publishJobs.jobId, row.job.jobId),
+            eq(publishJobs.status, "verification_required"),
+            eq(publishJobs.lockedBy, reconciliationWorker),
+          ),
+        )
         .run();
       tx.update(postTargets)
         .set({
@@ -97,14 +127,29 @@ export async function runPublicationReconciliation(
         eq(videoJobs.status, "verification_required"),
         lt(videoJobs.reconcileAttemptCount, config.RECONCILE_MAX_ATTEMPTS),
         or(isNull(videoJobs.nextAttemptAt), lte(videoJobs.nextAttemptAt, nowIso)),
+        or(isNull(videoJobs.lockedBy), isNull(videoJobs.lockedAt), lt(videoJobs.lockedAt, staleBefore)),
       ),
     )
     .limit(config.PUBLISH_CLAIM_LIMIT)
     .all();
   for (const row of videos) {
+    const claimed = backendDb.db
+      .update(videoJobs)
+      .set({ lockedBy: reconciliationWorker, lockedAt: nowIso, updatedAt: nowIso })
+      .where(
+        and(
+          eq(videoJobs.id, row.job.id),
+          eq(videoJobs.status, "verification_required"),
+          or(isNull(videoJobs.lockedBy), isNull(videoJobs.lockedAt), lt(videoJobs.lockedAt, staleBefore)),
+        ),
+      )
+      .returning({ id: videoJobs.id })
+      .get();
+    if (!claimed) continue;
+    const job = { ...row.job, lockedBy: reconciliationWorker, lockedAt: nowIso };
     checked += 1;
     if (isTargetAuthBlocked(backendDb, row.target.target)) {
-      deferVideoReconciliation(backendDb, config, row.job);
+      deferVideoReconciliation(backendDb, config, job, reconciliationWorker);
       continue;
     }
     // Native Instagram Reels are deliberately absent below. Before media_publish
@@ -121,11 +166,11 @@ export async function runPublicationReconciliation(
         confirmation = { externalId: verified.id, url: verified.url };
       }
     } catch {
-      deferVideoReconciliation(backendDb, config, row.job);
+      deferVideoReconciliation(backendDb, config, job, reconciliationWorker);
       continue;
     }
     if (!confirmation) {
-      deferVideoReconciliation(backendDb, config, row.job);
+      deferVideoReconciliation(backendDb, config, job, reconciliationWorker);
       continue;
     }
     const now = new Date().toISOString();
@@ -145,7 +190,13 @@ export async function runPublicationReconciliation(
         .run();
       tx.update(videoJobs)
         .set({ status: "completed", lastError: null, lockedAt: null, lockedBy: null, updatedAt: now })
-        .where(and(eq(videoJobs.videoTargetId, row.target.id), eq(videoJobs.status, "verification_required")))
+        .where(
+          and(
+            eq(videoJobs.videoTargetId, row.target.id),
+            eq(videoJobs.status, "verification_required"),
+            eq(videoJobs.lockedBy, reconciliationWorker),
+          ),
+        )
         .run();
     });
     refreshVideoDraftStatus(backendDb, row.target.videoDraftId, config.VIDEO_MEDIA_RETENTION_HOURS);
@@ -190,29 +241,38 @@ export async function runPublicationReconciliation(
   return { checked, resolved, unresolved: unresolvedTimes.length, oldestAt: unresolvedTimes[0] ?? null };
 }
 
-function deferOrdinaryReconciliation(backendDb: BackendDb, config: BackendConfig, job: typeof publishJobs.$inferSelect): void {
+function deferOrdinaryReconciliation(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  job: typeof publishJobs.$inferSelect,
+  owner: string,
+): void {
   const attempt = job.reconcileAttemptCount + 1;
   backendDb.db
     .update(publishJobs)
     .set({
       reconcileAttemptCount: attempt,
       nextAttemptAt: reconciliationNextAttempt(config, attempt),
+      lockedBy: null,
+      lockedAt: null,
       updatedAt: new Date().toISOString(),
     })
-    .where(and(eq(publishJobs.jobId, job.jobId), eq(publishJobs.status, "verification_required")))
+    .where(and(eq(publishJobs.jobId, job.jobId), eq(publishJobs.status, "verification_required"), eq(publishJobs.lockedBy, owner)))
     .run();
 }
 
-function deferVideoReconciliation(backendDb: BackendDb, config: BackendConfig, job: typeof videoJobs.$inferSelect): void {
+function deferVideoReconciliation(backendDb: BackendDb, config: BackendConfig, job: typeof videoJobs.$inferSelect, owner: string): void {
   const attempt = job.reconcileAttemptCount + 1;
   backendDb.db
     .update(videoJobs)
     .set({
       reconcileAttemptCount: attempt,
       nextAttemptAt: reconciliationNextAttempt(config, attempt),
+      lockedBy: null,
+      lockedAt: null,
       updatedAt: new Date().toISOString(),
     })
-    .where(and(eq(videoJobs.id, job.id), eq(videoJobs.status, "verification_required")))
+    .where(and(eq(videoJobs.id, job.id), eq(videoJobs.status, "verification_required"), eq(videoJobs.lockedBy, owner)))
     .run();
 }
 

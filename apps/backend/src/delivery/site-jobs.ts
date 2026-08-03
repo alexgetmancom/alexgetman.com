@@ -6,7 +6,7 @@ import { postEvents, postMetrics, postTargets, publicationSources, siteJobs } fr
 import type { BackendConfig } from "../foundation/config.js";
 import { withJobHeartbeat } from "../foundation/runtime/job-heartbeat.js";
 import { recordWorkerState } from "../foundation/runtime/worker-state.js";
-import { atomicWriteJson } from "../fsUtils.js";
+import { atomicWriteJson, parseObject } from "../fsUtils.js";
 import { trackUsageAsync } from "../observability/usage.js";
 import { invalidatePublicSiteFeed } from "../public/site-read-model.js";
 import { nextRetryAt } from "../publishing/errors.js";
@@ -380,15 +380,4 @@ function insertSiteEvent(
   db.insert(postEvents)
     .values({ eventType, severity, message, detailsJson: JSON.stringify(details), createdAt: new Date().toISOString() })
     .run();
-}
-
-function parseObject(value: unknown): Record<string, unknown> | null {
-  if (value && typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
-  if (typeof value !== "string" || !value) return null;
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
-  } catch {
-    return null;
-  }
 }

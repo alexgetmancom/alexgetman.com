@@ -1,6 +1,7 @@
 import { asc, eq } from "drizzle-orm";
 import type { BackendDb } from "../db/client.js";
 import { postEvents, postTargets, publishJobs } from "../db/schema.js";
+import { jsonObject } from "../json.js";
 
 export function publicationTimeline(backendDb: BackendDb, ref: string): Record<string, unknown> {
   if (!/^post:\d+$/.test(ref)) throw new Error("--ref must look like post:106");
@@ -16,7 +17,7 @@ export function publicationTimeline(backendDb: BackendDb, ref: string): Record<s
       type: event.eventType,
       target: event.target,
       message: event.message,
-      details: parseObject(event.detailsJson),
+      details: jsonObject(event.detailsJson),
     }));
   const jobs = backendDb.db
     .select({
@@ -49,15 +50,6 @@ export function publicationTimeline(backendDb: BackendDb, ref: string): Record<s
     .orderBy(postTargets.target)
     .all();
   return { ref, jobs, targets, events };
-}
-
-function parseObject(value: string | null): Record<string, unknown> {
-  try {
-    const parsed = JSON.parse(value ?? "{}");
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
-  } catch {
-    return {};
-  }
 }
 
 function elapsed(start: string | null, end: string | null): number | null {

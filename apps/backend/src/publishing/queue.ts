@@ -436,12 +436,19 @@ export function requirePublishVerification(backendDb: BackendDb, jobId: number, 
  * avoids the event journal because this path is used when normal settlement
  * itself failed; verification_required is safer than retrying an API mutation.
  */
-export function forcePublishJobVerification(backendDb: BackendDb, jobId: number, error: unknown, lockId?: string): boolean {
+export function forcePublishJobVerification(
+  backendDb: BackendDb,
+  jobId: number,
+  error: unknown,
+  lockId?: string,
+  result: PublishResult | null = null,
+): boolean {
   const now = new Date().toISOString();
   const job = backendDb.db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get();
   if (!job || (lockId != null && (job.status !== "publishing" || job.lockedBy !== lockId))) return false;
   const postKey = jobPostKey(job);
   const errorText = error instanceof Error ? error.message : String(error);
+  const evidence = result ? normalizePublishResult(result) : null;
   const updated = backendDb.db.transaction((tx) => {
     const row = tx
       .update(publishJobs)
@@ -473,6 +480,13 @@ export function forcePublishJobVerification(backendDb: BackendDb, jobId: number,
       skipped: 0,
       updatedAt: now,
       rawJson: JSON.stringify({ job_id: jobId, emergency: true }),
+      ...(evidence
+        ? {
+            externalId: evidence.externalId,
+            externalIdsJson: evidence.externalIds == null ? null : evidence.externalIds.map((value) => String(value)),
+            url: evidence.url,
+          }
+        : {}),
     });
     return true;
   });

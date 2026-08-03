@@ -362,6 +362,26 @@ describe("healthReport", () => {
     }
   });
 
+  it("goes not-ok when a lifecycle heartbeat is stale", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      insertCredential(backendDb, "x", "ready");
+      backendDb.db
+        .insert(workerState)
+        .values({
+          name: "queue",
+          stateJson: { ok: true, phase: "running", heartbeat_interval_ms: 60_000, last_heartbeat_at: "2000-01-01T00:00:00.000Z" },
+          updatedAt: "2000-01-01T00:00:00.000Z",
+        })
+        .run();
+      const report = healthReport(loadConfig(READY_ENV), backendDb);
+      expect(report.ok).toBe(false);
+      expect(report.workers.find((worker) => worker.name === "queue")).toMatchObject({ stale: true });
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("goes not-ok and names the missing env when a capability is unconfigured", () => {
     const backendDb = openBackendDb(":memory:");
     try {

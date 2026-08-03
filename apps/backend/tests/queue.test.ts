@@ -569,9 +569,16 @@ describe("publish queue", () => {
         .from(publishJobs)
         .where(eq(publishJobs.jobId, id))
         .get();
-      if (!job) throw new Error("expected failed job");
+      if (!job) throw new Error("expected settled job");
       expect(job.status).toBe("verification_required");
       expect(job.lockedBy).toBeNull();
+      expect(
+        backendDb.db
+          .select({ status: postTargets.status, externalId: postTargets.externalId })
+          .from(postTargets)
+          .where(eq(postTargets.target, "test_platform"))
+          .get(),
+      ).toEqual({ status: "verification_required", externalId: "test-platform-1" });
       expect(job.lastError).toContain("worker finalization failed");
     }));
 

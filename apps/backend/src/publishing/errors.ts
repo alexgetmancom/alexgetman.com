@@ -99,7 +99,7 @@ export function normalizePublishResult(record: PublishResult | null | undefined)
   const ok = Boolean(result.ok);
   const skipped = Boolean(result.skipped);
   const status = ok ? "published" : skipped ? "skipped" : "failed";
-  const ids = Array.isArray(result.ids) ? result.ids : null;
+  const ids = Array.isArray(result.ids) ? result.ids.map(String) : null;
   let externalId = result.id == null ? null : String(result.id);
   const url = typeof result.url === "string" ? result.url : null;
   if (!externalId && ids && ids.length > 0) externalId = String(ids[0]);

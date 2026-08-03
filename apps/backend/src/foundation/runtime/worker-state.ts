@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import type { BackendDb } from "../../db/client.js";
 import { type JsonValue, workerState } from "../../db/schema.js";
+import type { BackendConfig } from "../config.js";
 
 /** Runtime heartbeat persistence shared by background cycles. */
 export function recordWorkerState(backendDb: BackendDb, name: string, state: Record<string, JsonValue>, error: string | null = null): void {
@@ -38,8 +39,26 @@ export function recordWorkerHeartbeat(
     .run();
 }
 
+/** Names expected once the corresponding runtime has started its workers. */
+export function expectedWorkerNames(config: BackendConfig): string[] {
+  if (!config.ENABLE_WORKERS) return [];
+  return [
+    "story-cards",
+    "queue",
+    "publish-watchdog",
+    "publication-reconciliation",
+    "notifications",
+    ...(config.studio.modules.video_posting ? ["video"] : []),
+    ...(config.studio.modules.analytics ? ["metrics", "creator-analytics", "metric-retention"] : []),
+    ...(config.studio.modules.site ? ["site", "site-watchdog"] : []),
+    "media-cache",
+    "operational-retention",
+    "observability",
+  ];
+}
+
 export function workerLiveness(
-  state: Record<string, JsonValue>,
+  state: Record<string, unknown>,
   updatedAt: string,
 ): { ageSeconds: number; stale: boolean; lastHeartbeatAt: string } {
   const lastHeartbeatAt = typeof state.last_heartbeat_at === "string" ? state.last_heartbeat_at : updatedAt;
