@@ -1,16 +1,10 @@
-import { and, eq, inArray } from "drizzle-orm";
 import type { BackendDb } from "../db/client.js";
-import { knowledgeEntities, knowledgeEntityAliases, postEntityLinks, postLocales } from "../db/schema.js";
 
 /** Deterministic, non-blocking enrichment for published stories. It only uses
  * a small reviewed catalogue; ambiguous AI guesses never become public links.
  * A focus is deliberately stricter than a mention: only focuses feed hubs. */
 export function enrichPublishedPostEntities(backendDb: BackendDb, postId: number): number {
-  const locales = backendDb.db
-    .select({ locale: postLocales.locale, text: postLocales.text })
-    .from(postLocales)
-    .where(and(eq(postLocales.postId, postId), inArray(postLocales.locale, ["ru", "en"])))
-    .all();
+  const locales = backendDb.entityEnrichment.locales(postId);
   const text = locales
     .map((locale) => locale.text ?? "")
     .join("\n")
@@ -18,12 +12,8 @@ export function enrichPublishedPostEntities(backendDb: BackendDb, postId: number
   if (!text.trim()) return 0;
   const headlines = locales.map((locale) => headline(locale.text ?? "")).filter(Boolean);
 
-  const entities = backendDb.db
-    .select()
-    .from(knowledgeEntities)
-    .where(inArray(knowledgeEntities.kind, ["company", "model", "topic"]))
-    .all();
-  const aliases = backendDb.db.select().from(knowledgeEntityAliases).all();
+  const entities = backendDb.entityEnrichment.entities();
+  const aliases = backendDb.entityEnrichment.aliases();
   const aliasesByEntity = new Map<number, string[]>();
   for (const alias of aliases) aliasesByEntity.set(alias.entityId, [...(aliasesByEntity.get(alias.entityId) ?? []), alias.alias]);
   const matches = entities.filter(
@@ -53,11 +43,7 @@ export function enrichPublishedPostEntities(backendDb: BackendDb, postId: number
 }
 
 function insertLink(backendDb: BackendDb, postId: number, entityId: number, linkRole: "focus" | "mention", createdAt: string): void {
-  backendDb.db
-    .insert(postEntityLinks)
-    .values({ postId, entityId, linkRole, createdAt })
-    .onConflictDoUpdate({ target: [postEntityLinks.postId, postEntityLinks.entityId], set: { linkRole } })
-    .run();
+  backendDb.entityEnrichment.link(postId, entityId, linkRole, createdAt);
 }
 
 function supportsAutomaticMatching(kind: string, slug: string): boolean {

@@ -1,12 +1,9 @@
-import { eq } from "drizzle-orm";
 import { isStoryTarget, targetLocale } from "../botTargets.js";
 import { draftLocaleContent } from "../content/draft-content.js";
 import type { BackendDb } from "../db/client.js";
-import { studioMediaAssets } from "../db/schema.js";
 import { mediaPolicyForTarget } from "../publishing/media-policy.js";
 import { formatPlatformText, platformProfile } from "../publishing/platform-profiles.js";
 import { parseTargets } from "../publishing/targets.js";
-import { getVideoDraft, listVideoTargets } from "../publishing/video-data.js";
 
 export type DeliveryProjection = {
   id: string;
@@ -91,15 +88,13 @@ export function postDeliveryProjections(
 }
 
 export function videoDeliveryProjections(backendDb: BackendDb, videoDraftId: number) {
-  const draft = getVideoDraft(backendDb, videoDraftId);
-  const asset =
-    draft.studioMediaAssetId == null
-      ? null
-      : backendDb.db.select().from(studioMediaAssets).where(eq(studioMediaAssets.id, draft.studioMediaAssetId)).get();
+  const draft = backendDb.studioVideos.get(videoDraftId);
+  if (!draft) throw new Error("Video publication was not found.");
+  const asset = draft.studioMediaAssetId == null ? null : backendDb.studioMediaAssets.get(draft.studioMediaAssetId);
   const media = asset
     ? [{ type: "video", asset_id: asset.id, local_path: asset.localPath, filename: asset.filename, mime_type: asset.mimeType }]
     : [];
-  const projections = listVideoTargets(backendDb, videoDraftId).map((target) => ({
+  const projections = backendDb.studioVideos.targets(videoDraftId).map((target) => ({
     id: `video:${videoDraftId}:${target.target}`,
     label: target.target === "youtube_shorts" ? "Preview · YouTube Shorts" : "Preview · Instagram Reels",
     targets: [target.target],

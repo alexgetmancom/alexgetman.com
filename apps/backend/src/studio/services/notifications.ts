@@ -1,6 +1,4 @@
-import { desc, eq, isNull } from "drizzle-orm";
 import type { BackendDb } from "../../db/client.js";
-import { drafts, postEvents, posts, videoDrafts } from "../../db/schema.js";
 import { type DomainEventInput, recordDomainEvent } from "../../domain/events.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { canAccessStudioOwner } from "../access.js";
@@ -12,28 +10,21 @@ export function notificationService(backendDb: BackendDb, config?: BackendConfig
       return recordDomainEvent(backendDb.events, input);
     },
     inbox(actorId: number, limit = 50) {
-      const events = backendDb.db
-        .select()
-        .from(postEvents)
-        .where(isNull(postEvents.ackedAt))
-        .orderBy(desc(postEvents.createdAt), desc(postEvents.id))
-        // Filter after fetching: technical journal events can otherwise fill
-        // the page before any actual Studio notification is reached.
-        .limit(Math.max(limit * 10, 100))
-        .all();
+      // Filter after fetching: technical journal events can otherwise fill the
+      // page before any actual Studio notification is reached.
+      const events = backendDb.studioNotifications.unread(Math.max(limit * 10, 100));
       return events
         .filter((event) => isInboxEvent(event.eventType) && isVisibleTo(backendDb, config, event.postKey, actorId))
         .slice(0, limit);
     },
     get(actorId: number, id: number) {
-      const event = backendDb.db.select().from(postEvents).where(eq(postEvents.id, id)).get();
+      const event = backendDb.studioNotifications.get(id);
       return event && isInboxEvent(event.eventType) && isVisibleTo(backendDb, config, event.postKey, actorId) ? event : null;
     },
     acknowledge(actorId: number, id: number): boolean {
-      const event = backendDb.db.select().from(postEvents).where(eq(postEvents.id, id)).get();
+      const event = backendDb.studioNotifications.get(id);
       if (!event || !isInboxEvent(event.eventType) || !isVisibleTo(backendDb, config, event.postKey, actorId)) return false;
-      backendDb.db.update(postEvents).set({ ackedAt: new Date().toISOString() }).where(eq(postEvents.id, id)).run();
-      return true;
+      return backendDb.studioNotifications.acknowledge(id, backendDb.clock.now().toISOString());
     },
   };
 }
@@ -55,15 +46,13 @@ function isVisibleTo(backendDb: BackendDb, config: BackendConfig | undefined, re
   if (!ref) return true;
   if (ref.startsWith("draft:")) {
     const id = Number(ref.slice("draft:".length));
-    const ownerId = Number.isSafeInteger(id)
-      ? backendDb.db.select({ actorId: drafts.actorId }).from(drafts).where(eq(drafts.id, id)).get()?.actorId
-      : undefined;
+    const ownerId = Number.isSafeInteger(id) ? backendDb.studioNotifications.draftOwner(id) : undefined;
     return ownerId != null && (config ? canAccessStudioOwner(config, actorId, ownerId) : ownerId === actorId);
   }
   if (ref.startsWith("video:")) {
     const id = Number(ref.slice("video:".length));
     if (!Number.isSafeInteger(id)) return false;
-    const ownerId = backendDb.db.select({ actorId: videoDrafts.actorId }).from(videoDrafts).where(eq(videoDrafts.id, id)).get()?.actorId;
+    const ownerId = backendDb.studioNotifications.videoOwner(id);
     return ownerId != null && (config ? canAccessStudioOwner(config, actorId, ownerId) : ownerId === actorId);
   }
   // A malformed id is a broken reference, not a shared operational event:
@@ -72,12 +61,12 @@ function isVisibleTo(backendDb: BackendDb, config: BackendConfig | undefined, re
     const id = Number(ref.slice("post:".length));
     return Number.isSafeInteger(id) && ownsPost(backendDb, config, id, actorId);
   }
-  const postId = backendDb.db.select({ postId: posts.postId }).from(posts).where(eq(posts.postKey, ref)).get()?.postId;
+  const postId = backendDb.studioNotifications.postIdForKey(ref);
   if (postId == null || !Number.isSafeInteger(postId)) return true;
   return ownsPost(backendDb, config, postId, actorId);
 }
 
 function ownsPost(backendDb: BackendDb, config: BackendConfig | undefined, postId: number, actorId: number): boolean {
-  const ownerId = backendDb.db.select({ actorId: drafts.actorId }).from(drafts).where(eq(drafts.postId, postId)).get()?.actorId;
+  const ownerId = backendDb.studioNotifications.postOwner(postId);
   return ownerId != null && (config ? canAccessStudioOwner(config, actorId, ownerId) : ownerId === actorId);
 }

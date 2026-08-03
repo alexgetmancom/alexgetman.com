@@ -1,9 +1,8 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { and, eq, inArray } from "drizzle-orm";
+import type { StudioMediaAssetRecord } from "../application/ports.js";
 import type { BackendDb } from "../db/client.js";
-import { studioMediaAssets } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
 
@@ -45,11 +44,7 @@ export async function importStudioMediaFile(backendDb: BackendDb, config: Backen
   const filename = `${sha256.slice(0, 24)}${extension}`;
   const directory = path.join(config.STUDIO_MEDIA_DIR, String(actorId));
   const localPath = path.join(directory, filename);
-  const existing = backendDb.db
-    .select()
-    .from(studioMediaAssets)
-    .where(and(eq(studioMediaAssets.actorId, actorId), eq(studioMediaAssets.sha256, sha256)))
-    .get();
+  const existing = backendDb.studioMediaAssets.findByOwnerHash(actorId, sha256);
   const storedPath = existing?.localPath ?? localPath;
   await fs.promises.mkdir(path.dirname(storedPath), { recursive: true });
   if (!fs.existsSync(storedPath)) {
@@ -65,30 +60,18 @@ export async function importStudioMediaFile(backendDb: BackendDb, config: Backen
   // `onConflictDoNothing` + re-read makes the loser adopt the winner's row.
   const inserted = existing
     ? undefined
-    : backendDb.db
-        .insert(studioMediaAssets)
-        .values({
-          actorId,
-          kind,
-          mimeType: input.contentType || (kind === "video" ? "video/mp4" : "image/jpeg"),
-          filename: safeFilename(input.filename) || filename,
-          localPath: storedPath,
-          byteSize,
-          sha256,
-          source: input.source,
-          createdAt: now,
-        })
-        .onConflictDoNothing({ target: [studioMediaAssets.actorId, studioMediaAssets.sha256] })
-        .returning()
-        .get();
-  const asset =
-    existing ??
-    inserted ??
-    backendDb.db
-      .select()
-      .from(studioMediaAssets)
-      .where(and(eq(studioMediaAssets.actorId, actorId), eq(studioMediaAssets.sha256, sha256)))
-      .get();
+    : backendDb.studioMediaAssets.insertIfAbsent({
+        actorId,
+        kind,
+        mimeType: input.contentType || (kind === "video" ? "video/mp4" : "image/jpeg"),
+        filename: safeFilename(input.filename) || filename,
+        localPath: storedPath,
+        byteSize,
+        sha256,
+        source: input.source,
+        createdAt: now,
+      });
+  const asset = existing ?? inserted ?? backendDb.studioMediaAssets.findByOwnerHash(actorId, sha256);
   if (!asset) throw new Error("Media asset could not be stored.");
   // A concurrent import with another extension may have won the unique hash
   // race. Remove only our deterministic candidate, never the winner's path.
@@ -107,29 +90,14 @@ export async function importStudioMediaFile(backendDb: BackendDb, config: Backen
 }
 
 export function listStudioMediaAssets(backendDb: BackendDb, actorId: number, limit = 50, actorIds: number[] = [actorId]) {
-  return backendDb.db
-    .select()
-    .from(studioMediaAssets)
-    .where(inArray(studioMediaAssets.actorId, actorIds))
-    .orderBy(studioMediaAssets.id)
-    .limit(limit)
-    .all();
+  return backendDb.studioMediaAssets.list(actorIds, limit);
 }
 
 export function requireStudioMediaAssets(backendDb: BackendDb, actorId: number, assetIds: number[], actorIds: number[] = [actorId]) {
-  const ids = [...new Set(assetIds)];
-  if (ids.length === 0) return [];
-  const assets = backendDb.db
-    .select()
-    .from(studioMediaAssets)
-    .where(and(inArray(studioMediaAssets.actorId, actorIds), inArray(studioMediaAssets.id, ids)))
-    .all();
-  if (assets.length !== ids.length) throw new Error("One or more media assets are not available to this owner.");
-  const byId = new Map(assets.map((asset) => [asset.id, asset]));
-  return ids.map((id) => byId.get(id)).filter((asset): asset is (typeof assets)[number] => asset != null);
+  return backendDb.studioMediaAssets.require(actorIds, assetIds);
 }
 
-export function mediaItemsFromAssets(assets: ReturnType<typeof requireStudioMediaAssets>): Record<string, unknown>[] {
+export function mediaItemsFromAssets(assets: StudioMediaAssetRecord[]): Record<string, unknown>[] {
   return assets.map((asset) => ({
     type: asset.kind,
     asset_id: asset.id,

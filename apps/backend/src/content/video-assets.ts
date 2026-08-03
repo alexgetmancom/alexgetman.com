@@ -1,8 +1,6 @@
 import { existsSync, readdirSync, rmSync } from "node:fs";
 import path from "node:path";
-import { eq } from "drizzle-orm";
 import type { BackendDb } from "../db/client.js";
-import { studioMediaAssets } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 
 /** Content-owned source files stay available through delivery, then the video
@@ -25,7 +23,7 @@ export function videoSourcePath(
   source: { assetKey: string; studioMediaAssetId: number | null },
 ): string | null {
   if (source.studioMediaAssetId != null) {
-    const asset = backendDb.db.select().from(studioMediaAssets).where(eq(studioMediaAssets.id, source.studioMediaAssetId)).get();
+    const asset = backendDb.studioMediaAssets.get(source.studioMediaAssetId);
     return asset?.kind === "video" && existsSync(asset.localPath) ? asset.localPath : null;
   }
   return videoPath(config, source.assetKey);
@@ -40,11 +38,7 @@ export function videoPublicUrl(
   if (source.studioMediaAssetId == null) return `${base}/media/video/${source.assetKey}`;
   // The public media route is content-addressed by sha256 so the unguessable
   // digest, not the enumerable asset id, is what grants read access.
-  const asset = backendDb.db
-    .select({ sha256: studioMediaAssets.sha256 })
-    .from(studioMediaAssets)
-    .where(eq(studioMediaAssets.id, source.studioMediaAssetId))
-    .get();
+  const asset = backendDb.studioMediaAssets.get(source.studioMediaAssetId);
   if (!asset) throw new Error(`Studio media asset ${source.studioMediaAssetId} has no public URL`);
   return `${base}/media/video/asset/${asset.sha256}`;
 }

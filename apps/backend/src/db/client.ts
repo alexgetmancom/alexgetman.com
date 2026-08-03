@@ -9,9 +9,14 @@ import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 import type { ApplicationPorts } from "../application/ports.js";
 import { queueDraftStoryCards } from "../story-cards/store.js";
 import { createDraftStore } from "./repositories/drafts.js";
+import { createEntityEnrichmentStore } from "./repositories/entity-enrichment.js";
 import { createEventStore } from "./repositories/events.js";
+import { createStudioMediaAssetStore } from "./repositories/studio-media-assets.js";
+import { createStudioNotificationStore } from "./repositories/studio-notifications.js";
 import { createStudioPostStore } from "./repositories/studio-posts.js";
 import { createStudioQueueStore } from "./repositories/studio-queue.js";
+import { createStudioSettingsStore } from "./repositories/studio-settings.js";
+import { createStudioVideoStore } from "./repositories/studio-videos.js";
 import * as schema from "./schema.js";
 
 export type BackendDb = ApplicationPorts & {
@@ -60,8 +65,13 @@ export function openBackendDb(path: string, timeout = 30_000): BackendDb {
     clock,
     drafts: createDraftStore(db, clock),
     events: createEventStore(db, clock),
+    entityEnrichment: createEntityEnrichmentStore(db),
+    studioNotifications: createStudioNotificationStore(db),
+    studioSettings: createStudioSettingsStore(db),
+    studioMediaAssets: createStudioMediaAssetStore(db),
     studioPosts: createStudioPostStore(db),
     studioQueue: createStudioQueueStore(db),
+    studioVideos: createStudioVideoStore(db),
     storyCards: { queue: (draftId) => queueDraftStoryCards(backendDb, draftId) },
     close: () => sqlite.close(),
   };

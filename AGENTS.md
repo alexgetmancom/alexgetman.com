@@ -19,9 +19,12 @@
 
 - Work only on `main`; do not create branches or PRs.
 - Before every push: typecheck, tests, and production build.
-- Push directly to `main`; CI/CD is main prodiction path
+- Push directly to `main`; CI/CD is the main production path.
 
-## Tatically after 2026-07-15. All other production deployments remain CI/CD-only.
+## Production deployment
+
+- The `alex` production container follows the CI/CD deployment path.
+- The `maru` production container is deployed manually by the user. CI/CD does not update Maru automatically; an unchanged Maru image or revision after a push is expected. Do not deploy Maru unless the user explicitly asks.
 
 ## Локальные данные для сайта и плеера
 

@@ -138,6 +138,149 @@ export type StudioQueueVideoTarget = {
   scheduledAt: string | null;
 };
 
+/** Durable notification persistence used by the transport-neutral Studio inbox. */
+export type StudioNotificationStore = {
+  unread(limit: number): PostEventRecord[];
+  get(id: number): PostEventRecord | null;
+  acknowledge(id: number, now: string): boolean;
+  draftOwner(draftId: number): number | null;
+  videoOwner(videoDraftId: number): number | null;
+  postIdForKey(postKey: string): number | null;
+  postOwner(postId: number): number | null;
+};
+
+export type StudioSettingsStore = {
+  notifications(actorId: number): StudioNotificationSettingsRecord | null;
+  locale(actorId: number): string | null;
+  weeklyDigest(): StudioWeeklyDigestSettingsRecord | null;
+  saveWeeklyDigest(input: { enabled: number; weekday: number; updatedAt: string }): void;
+  saveNotifications(input: {
+    actorId: number;
+    remindersEnabled: number;
+    reminderMinutes: number;
+    completionEnabled: number;
+    updatedAt: string;
+  }): void;
+  botSettings(actorId: number): StudioBotSettingsRecord | null;
+  saveBotSettings(input: { actorId: number; youtubeSignature: string; pendingAction: string | null; updatedAt: string }): void;
+  saveLocale(input: { actorId: number; locale: string; updatedAt: string }): void;
+};
+
+export type StudioNotificationSettingsRecord = {
+  actorId: number;
+  remindersEnabled: number;
+  reminderMinutes: number;
+  completionEnabled: number;
+  updatedAt: string;
+};
+
+export type StudioWeeklyDigestSettingsRecord = {
+  id: number;
+  enabled: number;
+  weekday: number;
+  updatedAt: string;
+};
+
+export type StudioBotSettingsRecord = {
+  actorId: number;
+  youtubeSignature: string;
+  pendingAction: string | null;
+  updatedAt: string;
+};
+
+export type StudioMediaAssetRecord = {
+  id: number;
+  actorId: number;
+  kind: string;
+  mimeType: string;
+  filename: string;
+  localPath: string;
+  byteSize: number;
+  sha256: string;
+  source: string;
+  createdAt: string;
+};
+
+export type StudioMediaAssetStore = {
+  findByOwnerHash(actorId: number, sha256: string): StudioMediaAssetRecord | null;
+  insertIfAbsent(input: Omit<StudioMediaAssetRecord, "id">): StudioMediaAssetRecord | null;
+  get(id: number): StudioMediaAssetRecord | null;
+  list(actorIds: number[], limit: number): StudioMediaAssetRecord[];
+  require(actorIds: number[], assetIds: number[]): StudioMediaAssetRecord[];
+};
+
+export type StudioVideoDraftRecord = {
+  id: number;
+  actorId: number;
+  locale: string;
+  label: string;
+  assetKey: string;
+  studioMediaAssetId: number | null;
+  status: string;
+  scheduledAt: string | null;
+  reminderSentAt: string | null;
+  retentionUntil: string | null;
+  sourcePrunedAt: string | null;
+  controlChatId: number | null;
+  controlMessageId: number | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type StudioVideoTargetRecord = {
+  id: number;
+  videoDraftId: number;
+  target: string;
+  metadataJson: Record<string, unknown>;
+  scheduledAt: string | null;
+  status: string;
+  deliveryProvider: string;
+  providerAccountId: string | null;
+  providerPostId: string | null;
+  externalId: string | null;
+  externalUrl: string | null;
+  preparedAt: string | null;
+  publishedAt: string | null;
+  confirmationSource: string | null;
+  verifiedAt: string | null;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type StudioVideoJobRecord = {
+  id: number;
+  videoDraftId: number;
+  videoTargetId: number | null;
+  kind: string;
+  runAt: string;
+  status: string;
+  reconcileAttemptCount: number;
+  attemptCount: number;
+  nextAttemptAt: string | null;
+  lastError: string | null;
+  lockedBy: string | null;
+  lockedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** Read-side video persistence used by Studio interfaces and previews. */
+export type StudioVideoStore = {
+  get(videoDraftId: number): StudioVideoDraftRecord | null;
+  list(actorIds: number[], limit: number): StudioVideoDraftRecord[];
+  targets(videoDraftId: number): StudioVideoTargetRecord[];
+  jobs(videoDraftId: number): StudioVideoJobRecord[];
+  history(postKey: string, limit: number): PostEventRecord[];
+};
+
+export type EntityEnrichmentStore = {
+  locales(postId: number): Array<{ locale: string; text: string | null }>;
+  entities(): Array<{ id: number; kind: string; parentEntityId: number | null; slug: string; titleRu: string; titleEn: string | null }>;
+  aliases(): Array<{ entityId: number; alias: string }>;
+  link(postId: number, entityId: number, linkRole: "focus" | "mention", createdAt: string): void;
+};
+
 /** Persistence port used by content and Studio use cases. */
 export type DraftStore = {
   create(input: NewDraft): number;
@@ -159,5 +302,10 @@ export type ApplicationPorts = {
   events: EventStore;
   studioPosts: StudioPostStore;
   studioQueue: StudioQueueStore;
+  studioNotifications: StudioNotificationStore;
+  studioSettings: StudioSettingsStore;
+  studioMediaAssets: StudioMediaAssetStore;
+  studioVideos: StudioVideoStore;
+  entityEnrichment: EntityEnrichmentStore;
   storyCards: StoryCardQueue;
 };

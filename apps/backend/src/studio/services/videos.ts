@@ -1,14 +1,11 @@
-import { desc, eq, inArray } from "drizzle-orm";
 import { requireStudioMediaAssets } from "../../content/assets.js";
 import type { BackendDb } from "../../db/client.js";
-import { postEvents, videoDrafts, videoJobs } from "../../db/schema.js";
 import { keepYouTubeUploadPrivate } from "../../delivery/video-publishers.js";
 import { recordDomainEvent } from "../../domain/events.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { StudioError } from "../../foundation/errors.js";
 import { cancelScheduledNotifications, scheduleReminder } from "../../notifications/jobs.js";
 import { parseManualSchedule, scheduleClockToday } from "../../publishing/schedule.js";
-import { getVideoDraft, listVideoTargets } from "../../publishing/video-data.js";
 import {
   cancelVideo,
   createVideoDraft,
@@ -35,16 +32,10 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
     },
     get(actorId: number, videoDraftId: number) {
       const draft = requireOwnedVideo(backendDb, config, actorId, videoDraftId);
-      return { draft, targets: listVideoTargets(backendDb, videoDraftId) };
+      return { draft, targets: backendDb.studioVideos.targets(videoDraftId) };
     },
     list(actorId: number, limit = 50) {
-      return backendDb.db
-        .select()
-        .from(videoDrafts)
-        .where(inArray(videoDrafts.actorId, accessibleStudioActorIds(config, actorId)))
-        .orderBy(desc(videoDrafts.updatedAt))
-        .limit(limit)
-        .all();
+      return backendDb.studioVideos.list(accessibleStudioActorIds(config, actorId), limit);
     },
     async schedule(actorId: number, videoDraftId: number, schedule: Partial<Record<VideoTarget, Date>>) {
       return scheduleOwnedVideo(backendDb, config, actorId, videoDraftId, schedule);
@@ -57,7 +48,7 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
       // Access first: otherwise an outsider's draft answers "choose platforms"
       // instead of "not yours", which leaks whether it exists and how it looks.
       requireOwnedVideo(backendDb, config, actorId, videoDraftId);
-      const targets = listVideoTargets(backendDb, videoDraftId).map((row) => row.target as VideoTarget);
+      const targets = backendDb.studioVideos.targets(videoDraftId).map((row) => row.target as VideoTarget);
       if (!targets.length) throw new StudioError("err.video-choose-platforms");
       const schedule = Object.fromEntries(targets.map((target) => [target, new Date(Date.now() + 60_000)])) as Partial<
         Record<VideoTarget, Date>
@@ -101,25 +92,19 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
     },
     preview(actorId: number, videoDraftId: number) {
       const draft = requireOwnedVideo(backendDb, config, actorId, videoDraftId);
-      return { draft, targets: listVideoTargets(backendDb, videoDraftId), delivery: videoDeliveryProjections(backendDb, videoDraftId) };
+      return { draft, targets: backendDb.studioVideos.targets(videoDraftId), delivery: videoDeliveryProjections(backendDb, videoDraftId) };
     },
     status(actorId: number, videoDraftId: number) {
       const draft = requireOwnedVideo(backendDb, config, actorId, videoDraftId);
       return {
         draft,
-        targets: listVideoTargets(backendDb, videoDraftId),
-        jobs: backendDb.db.select().from(videoJobs).where(eq(videoJobs.videoDraftId, videoDraftId)).orderBy(desc(videoJobs.id)).all(),
+        targets: backendDb.studioVideos.targets(videoDraftId),
+        jobs: backendDb.studioVideos.jobs(videoDraftId),
       };
     },
     history(actorId: number, videoDraftId: number, limit = 50) {
       requireOwnedVideo(backendDb, config, actorId, videoDraftId);
-      return backendDb.db
-        .select()
-        .from(postEvents)
-        .where(eq(postEvents.postKey, `video:${videoDraftId}`))
-        .orderBy(desc(postEvents.createdAt), desc(postEvents.id))
-        .limit(limit)
-        .all();
+      return backendDb.studioVideos.history(`video:${videoDraftId}`, limit);
     },
     updateMetadata(actorId: number, videoDraftId: number, target: VideoTarget, metadata: VideoMetadata): void {
       requireOwnedVideo(backendDb, config, actorId, videoDraftId);
@@ -175,7 +160,7 @@ function scheduleVideoReminders(backendDb: BackendDb, ownerId: number, videoDraf
   cancelScheduledNotifications(backendDb, `video:${videoDraftId}`);
   const preference = settingsService(backendDb).notifications(ownerId);
   const grouped = new Map<string, VideoTarget[]>();
-  for (const target of listVideoTargets(backendDb, videoDraftId)) {
+  for (const target of backendDb.studioVideos.targets(videoDraftId)) {
     if (!target.scheduledAt || ["published", "cancelled", "failed", "verification_required"].includes(target.status)) continue;
     const targets = grouped.get(target.scheduledAt) ?? [];
     targets.push(target.target as VideoTarget);
@@ -195,7 +180,8 @@ function scheduleVideoReminders(backendDb: BackendDb, ownerId: number, videoDraf
 }
 
 function requireOwnedVideo(backendDb: BackendDb, config: BackendConfig, actorId: number, videoDraftId: number) {
-  const draft = getVideoDraft(backendDb, videoDraftId);
+  const draft = backendDb.studioVideos.get(videoDraftId);
+  if (!draft) throw new Error("Video publication was not found.");
   if (!canAccessStudioOwner(config, actorId, draft.actorId)) throw new StudioError("err.video-not-yours");
   return draft;
 }
