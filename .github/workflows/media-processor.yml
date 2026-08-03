@@ -49,6 +49,32 @@ jobs:
           else
             echo "No reusable media processor image found; building one"
           fi
+      - name: Resolve media processor runtime base
+        id: runtime_base
+        if: inputs.build-image == true || steps.reuse.outputs.digest == ''
+        env:
+          BASE_IMAGE: ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor:runtime-${{ hashFiles('deploy/media-processor/Dockerfile.runtime-base') }}
+        run: |
+          echo "image=$BASE_IMAGE" >> "$GITHUB_OUTPUT"
+          if docker buildx imagetools inspect "$BASE_IMAGE" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Reusing media processor runtime base $BASE_IMAGE"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Building media processor runtime base $BASE_IMAGE"
+          fi
+      - name: Build and publish media processor runtime base
+        if: steps.runtime_base.outputs.image != '' && steps.runtime_base.outputs.exists != 'true'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: ./deploy/media-processor
+          file: ./deploy/media-processor/Dockerfile.runtime-base
+          push: true
+          tags: |
+            ${{ steps.runtime_base.outputs.image }}
+            ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor:runtime-base
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor:buildcache-runtime
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor:buildcache-runtime,mode=max
       - name: Build and publish media processor image
         id: media_processor
         if: inputs.build-image == true || steps.reuse.outputs.digest == ''
@@ -56,14 +82,18 @@ jobs:
         with:
           context: ./deploy/media-processor
           file: ./deploy/media-processor/Dockerfile
-          push: true
+          build-args: |
+            RUNTIME_BASE_IMAGE=${{ steps.runtime_base.outputs.image }}
           tags: ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor:${{ inputs.image-tag }},ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor:latest
+          outputs: |
+            type=registry
+            type=docker
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor:buildcache
           cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor:buildcache,mode=max
       - name: Smoke test newly published media processor image
         if: steps.media_processor.outputs.digest != ''
         env:
-          IMAGE: ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor@${{ steps.media_processor.outputs.digest }}
+          IMAGE: ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor:${{ inputs.image-tag }}
         run: |
           container="media-processor-smoke-${GITHUB_RUN_ID}"
           port=$((18000 + RANDOM % 1000))
@@ -71,7 +101,8 @@ jobs:
             docker rm -f "$container" >/dev/null 2>&1 || true
           }
           trap cleanup EXIT
-          docker run --pull always --detach --name "$container" --publish "127.0.0.1:${port}:8787" \
+          docker image inspect "$IMAGE" >/dev/null
+          docker run --pull never --detach --name "$container" --publish "127.0.0.1:${port}:8787" \
             --env MEDIA_PROCESSOR_TOKEN=ci-media-processor-smoke-token \
             --env MEDIA_PROCESSOR_WORK_DIR=/tmp "$IMAGE"
           response=$(curl --fail --silent --show-error --retry 30 --retry-delay 1 --retry-all-errors "http://127.0.0.1:${port}/health")

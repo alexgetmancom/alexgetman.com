@@ -26,12 +26,12 @@ import { storyFfmpegArgs } from "../deploy/media-processor/story-encode.js";
  * Hence: run the real image, and assert on rendered bodies rather than on
  * process liveness.
  *
- *   IMAGE=ghcr.io/... bun scripts/image-smoke.ts
+ *   IMAGE=ghcr.io/...:tag bun scripts/image-smoke.ts
  */
 
 const image = process.env.IMAGE;
 if (!image) {
-  console.error("IMAGE is required, e.g. IMAGE=ghcr.io/owner/alexgetman-backend@sha256:...");
+  console.error("IMAGE is required, e.g. IMAGE=ghcr.io/owner/alexgetman-backend:tag");
   process.exit(1);
 }
 
@@ -71,6 +71,11 @@ async function cleanup(): Promise<void> {
 }
 
 try {
+  const available = await run(["docker", "image", "inspect", image]);
+  if (available.code !== 0) {
+    throw new Error(`Docker image is not loaded locally: ${image}`);
+  }
+
   /**
    * The fixture goes into a docker volume rather than a bind mount, and the
    * container is created, filled and only then started.
@@ -90,6 +95,8 @@ try {
   const created = await run([
     "docker",
     "create",
+    "--pull",
+    "never",
     "--name",
     container,
     "-p",
@@ -278,7 +285,12 @@ try {
   check(sources.code === 0, "ffmpeg builds the smoke sources", sources.out.trim().slice(0, 200));
 
   /** Each entry runs prod's real arguments and states what the output must be. */
-  const encodes: { name: string; args: string[]; output: string; expect?: string }[] = [
+  const encodes: {
+    name: string;
+    args: string[];
+    output: string;
+    expect?: string;
+  }[] = [
     {
       name: "story video (local executor)",
       args: storyFfmpegArgs("/tmp/src.mp4", "/tmp/story.mp4", "video"),

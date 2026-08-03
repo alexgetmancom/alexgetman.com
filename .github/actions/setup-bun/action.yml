@@ -27,4 +27,4 @@ runs:
         key: ${{ inputs.cache-key }}
     - name: Install dependencies
       shell: bash
-      run: bun install --frozen-lockfile
+      run: bun install --frozen-lockfile --ignore-scripts

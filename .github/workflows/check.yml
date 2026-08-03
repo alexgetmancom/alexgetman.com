@@ -38,7 +38,13 @@ jobs:
         with:
           filters: |
             media:
-              - 'deploy/media-processor/**'
+              - 'deploy/media-processor/compose.yml'
+              - 'deploy/media-processor/Dockerfile'
+              - 'deploy/media-processor/Dockerfile.runtime-base'
+              - 'deploy/media-processor/server.ts'
+              - 'deploy/media-processor/service.ts'
+              - 'deploy/media-processor/serial-queue.ts'
+              - 'deploy/media-processor/story-encode.ts'
             dependencies:
               - 'bun.lock'
               - '**/package.json'
@@ -185,32 +191,25 @@ jobs:
       - name: Dependency audit
         run: bun run check:audit
 
-  quality-gate:
-    name: Quality gate
-    needs: [scope, quality-static, quality-analysis, quality-tests, build, dependency-audit]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Require all applicable quality jobs to pass
-        env:
-          SCOPE_RESULT: ${{ needs.scope.result }}
-          STATIC_RESULT: ${{ needs.quality-static.result }}
-          ANALYSIS_RESULT: ${{ needs.quality-analysis.result }}
-          TESTS_RESULT: ${{ needs.quality-tests.result }}
-          BUILD_RESULT: ${{ needs.build.result }}
-          AUDIT_RESULT: ${{ needs.dependency-audit.result }}
-        run: |
-          for result in "$SCOPE_RESULT" "$STATIC_RESULT" "$ANALYSIS_RESULT" "$TESTS_RESULT" "$BUILD_RESULT" "$AUDIT_RESULT"; do
-            if [ "$result" != success ] && [ "$result" != skipped ]; then
-              echo "Quality gate failed: $result"
-              exit 1
-            fi
-          done
-
   backend-image:
     name: Build backend image
-    needs: quality-gate
-    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.quality-gate.result == 'success'
+    needs:
+      [
+        scope,
+        quality-static,
+        quality-analysis,
+        quality-tests,
+        build,
+        dependency-audit,
+      ]
+    if: >-
+      always() && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      needs.scope.result == 'success' &&
+      needs.quality-static.result == 'success' &&
+      needs.quality-analysis.result == 'success' &&
+      needs.quality-tests.result == 'success' &&
+      needs.build.result == 'success' &&
+      (needs.dependency-audit.result == 'success' || needs.dependency-audit.result == 'skipped')
     permissions:
       contents: read
       actions: read
@@ -266,8 +265,10 @@ jobs:
           build-args: |
             RUNTIME_BASE_IMAGE=${{ steps.runtime_base.outputs.image }}
             GIT_REVISION=${{ github.sha }}
-          push: true
           tags: ghcr.io/${{ github.repository_owner }}/alexgetman-backend:${{ github.sha }},ghcr.io/${{ github.repository_owner }}/alexgetman-backend:latest
+          outputs: |
+            type=registry
+            type=docker
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/alexgetman-backend:buildcache-app
           cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/alexgetman-backend:buildcache-app,mode=min
       - uses: ./.github/actions/setup-bun
@@ -276,13 +277,28 @@ jobs:
           cache-key: bun-workspace-1.3.14-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'apps/backend/package.json', 'tools/knip/package.json', 'tools/svelte-check/package.json', 'tools/layer-checker/package.json') }}
       - name: Image smoke test
         env:
-          IMAGE: ghcr.io/${{ github.repository_owner }}/alexgetman-backend@${{ steps.image.outputs.digest }}
+          IMAGE: ghcr.io/${{ github.repository_owner }}/alexgetman-backend:${{ github.sha }}
         run: bun scripts/image-smoke.ts
 
   media-processor-image:
     name: Build media processor image
-    needs: [scope, quality-gate]
-    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.quality-gate.result == 'success'
+    needs:
+      [
+        scope,
+        quality-static,
+        quality-analysis,
+        quality-tests,
+        build,
+        dependency-audit,
+      ]
+    if: >-
+      always() && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      needs.scope.result == 'success' &&
+      needs.quality-static.result == 'success' &&
+      needs.quality-analysis.result == 'success' &&
+      needs.quality-tests.result == 'success' &&
+      needs.build.result == 'success' &&
+      (needs.dependency-audit.result == 'success' || needs.dependency-audit.result == 'skipped')
     permissions:
       contents: read
       actions: read
@@ -293,34 +309,14 @@ jobs:
       image-tag: ${{ github.sha }}
     secrets: inherit
 
-  deploy-agent:
-    name: Build media processor deploy agent
-    needs: quality-gate
-    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.quality-gate.result == 'success'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: 1.3.14
-      - name: Compile media processor deploy-agent
-        run: bun build --compile --target=bun-linux-x64 --outfile media-processor-deploy-agent deploy/deploy-agent.ts
-      - name: Upload media processor deploy-agent
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: media-processor-deploy-agent-${{ github.sha }}
-          path: media-processor-deploy-agent
-          if-no-files-found: error
-
   deploy:
     name: Deploy immutable image
-    needs: [scope, backend-image, media-processor-image, deploy-agent]
+    needs: [scope, backend-image, media-processor-image]
     if: >-
       always() && vars.DEPLOY_ENABLED == 'true' &&
       needs.scope.result == 'success' &&
       needs.backend-image.result == 'success' &&
-      needs.media-processor-image.result == 'success' &&
-      needs.deploy-agent.result == 'success'
+      needs.media-processor-image.result == 'success'
     runs-on: ubuntu-latest
     concurrency:
       group: production-deploy
@@ -413,8 +409,26 @@ jobs:
 
   deployment-status-on-ci-failure:
     name: Production deployment status on CI failure
-    needs: [quality-gate, deployment-status-pending]
-    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.quality-gate.result != 'success'
+    needs:
+      [
+        scope,
+        quality-static,
+        quality-analysis,
+        quality-tests,
+        build,
+        dependency-audit,
+        deployment-status-pending,
+      ]
+    if: >-
+      always() && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      (
+        needs.scope.result != 'success' ||
+        needs.quality-static.result != 'success' ||
+        needs.quality-analysis.result != 'success' ||
+        needs.quality-tests.result != 'success' ||
+        needs.build.result != 'success' ||
+        (needs.dependency-audit.result != 'success' && needs.dependency-audit.result != 'skipped')
+      )
     permissions:
       statuses: write
     runs-on: ubuntu-latest
@@ -433,8 +447,26 @@ jobs:
 
   deployment-status:
     name: Production deployment status
-    needs: [quality-gate, backend-image, media-processor-image, deploy]
-    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.quality-gate.result == 'success'
+    needs:
+      [
+        scope,
+        quality-static,
+        quality-analysis,
+        quality-tests,
+        build,
+        dependency-audit,
+        backend-image,
+        media-processor-image,
+        deploy,
+      ]
+    if: >-
+      always() && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      needs.scope.result == 'success' &&
+      needs.quality-static.result == 'success' &&
+      needs.quality-analysis.result == 'success' &&
+      needs.quality-tests.result == 'success' &&
+      needs.build.result == 'success' &&
+      (needs.dependency-audit.result == 'success' || needs.dependency-audit.result == 'skipped')
     permissions:
       statuses: write
     runs-on: ubuntu-latest
