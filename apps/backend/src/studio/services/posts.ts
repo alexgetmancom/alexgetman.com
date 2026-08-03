@@ -1,25 +1,22 @@
-import { desc, eq, inArray, or } from "drizzle-orm";
+import type { DraftPatch, DraftRecord } from "../../application/ports.js";
 import { PRESETS, presetName, TARGETS, targetLocale } from "../../botTargets.js";
 import { effectivePostTargets, registeredPostTargetIds } from "../../channels/registry.js";
 import { listStudioMediaAssets, mediaItemsFromAssets, requireStudioMediaAssets } from "../../content/assets.js";
-import { createDraftFromMessage, requireDraft } from "../../content/drafts.js";
+import { createDraftFromMessage } from "../../content/index.js";
 import type { DraftMessage } from "../../content/message.js";
 import type { BackendDb } from "../../db/client.js";
-import { draftEntityCandidates, draftSources, drafts, postEvents, studioNotificationSettings } from "../../db/schema.js";
 import { recordDomainEvent } from "../../domain/events.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { StudioError } from "../../foundation/errors.js";
 import { cancelScheduledNotifications, scheduleReminder } from "../../notifications/jobs.js";
 import { cancelDraft, cancelRemainingPostJobs } from "../../publishing/draft-lifecycle.js";
-import { mediaPolicyForTarget } from "../../publishing/media-policy.js";
-import { publicationPreflight } from "../../publishing/preflight.js";
 import { publishDraftToQueue } from "../../publishing/publication-workflow.js";
 import { parseManualSchedule, scheduleClockToday } from "../../publishing/schedule.js";
 import { parseTargets } from "../../publishing/targets.js";
-import { queueDraftStoryCards, type StoryPublishMode, setStoryPublishMode, storyCardsForDraft } from "../../story-cards/store.js";
-import { accessibleStudioActorIds, canAccessStudioOwner, studioActorIds } from "../access.js";
-import { postDeliveryProjections } from "../projections.js";
-import { postProgressState } from "./post-progress.js";
+import { type StoryPublishMode, setStoryPublishMode } from "../../story-cards/store.js";
+import { accessibleStudioActorIds, studioActorIds } from "../access.js";
+import { draftMedia, requireOwnedDraft } from "./post-access.js";
+import { postQueryService } from "./post-queries.js";
 
 type ScheduleInput = { ruAt: Date | null; enAt: Date | null };
 type ScheduleScope = "ru" | "en" | "both";
@@ -37,109 +34,36 @@ type DraftEntityCandidate = { kind: "company" | "model" | "person" | "topic"; sl
 /** Commands for post drafts. These are deliberately transport-free and become the
  * single entry point for Telegram, Web Studio and later MCP mutations. */
 export function postService(backendDb: BackendDb, config: BackendConfig) {
+  const queries = postQueryService(backendDb, config);
   return {
     create(actorId: number, message: DraftMessage): number {
       return createDraftFromMessage(backendDb, actorId, message);
     },
-    get(actorId: number, draftId: number) {
-      return requireOwnedDraft(backendDb, config, actorId, draftId);
-    },
-    list(actorId: number, limit = 50) {
-      return backendDb.db
-        .select()
-        .from(drafts)
-        .where(inArray(drafts.actorId, accessibleStudioActorIds(config, actorId)))
-        .orderBy(desc(drafts.updatedAt))
-        .limit(limit)
-        .all();
-    },
-    validate(actorId: number, draftId: number) {
-      const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
-      return publicationPreflight({
-        ...draft,
-        targets_json: JSON.stringify(effectivePostTargets(backendDb, parseTargets(draft.targets_json))),
-      });
-    },
-    preview(actorId: number, draftId: number) {
-      const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
-      const ruMedia = draftMedia(draft, "ru");
-      const enMedia = draftMedia(draft, "en");
-      const storyCards = storyCardsForDraft(backendDb, draftId);
-      const storyCardsReady = ["ru", "en"].every((locale) =>
-        storyCards.some((card) => card.locale === locale && card.status === "ready" && card.localPath),
-      );
-      const targets = effectivePostTargets(backendDb, parseTargets(draft.targets_json));
-      return {
-        id: draft.id,
-        status: draft.status,
-        locales: [
-          {
-            locale: "ru" as const,
-            text: draft.text_ru,
-            entities: parseJsonArray(draft.text_ru_entities_json),
-            media: ruMedia,
-          },
-          { locale: "en" as const, text: draft.text_en_approved, entities: [], media: enMedia },
-        ],
-        targets,
-        sources: backendDb.db.select().from(draftSources).where(eq(draftSources.draftId, draftId)).orderBy(draftSources.sortOrder).all(),
-        mediaPolicy: Object.entries(targets)
-          .filter(([, enabled]) => enabled)
-          .map(([target]) => mediaPolicyForTarget(target, targetLocale(target) === "ru" ? ruMedia : enMedia)),
-        delivery: postDeliveryProjections(draft, storyCardsReady),
-        storyCards,
-      };
-    },
+    ...queries,
     setStoryPublishMode(actorId: number, draftId: number, mode: StoryPublishMode): void {
       requireOwnedDraft(backendDb, config, actorId, draftId);
       setStoryPublishMode(backendDb, draftId, mode);
     },
     replaceSources(actorId: number, draftId: number, urls: string[]): void {
       requireOwnedDraft(backendDb, config, actorId, draftId);
-      const now = new Date().toISOString();
-      backendDb.db.delete(draftSources).where(eq(draftSources.draftId, draftId)).run();
       const uniqueUrls = [...new Set(urls)];
-      if (uniqueUrls.length === 0) return;
-      backendDb.db
-        .insert(draftSources)
-        .values(
-          uniqueUrls.map((url, sortOrder) => ({
-            draftId,
-            url,
-            labelRu: sourceLabel(url),
-            labelEn: sourceLabel(url),
-            sortOrder,
-            createdAt: now,
-            updatedAt: now,
-          })),
-        )
-        .run();
+      backendDb.studioPosts.replaceSources(draftId, uniqueUrls, backendDb.clock.now().toISOString());
     },
     replaceEntityCandidates(actorId: number, draftId: number, candidates: DraftEntityCandidate[]): void {
       requireOwnedDraft(backendDb, config, actorId, draftId);
-      const now = new Date().toISOString();
-      backendDb.db.delete(draftEntityCandidates).where(eq(draftEntityCandidates.draftId, draftId)).run();
-      if (candidates.length)
-        backendDb.db
-          .insert(draftEntityCandidates)
-          .values(candidates.map((entity) => ({ ...entity, draftId, status: "suggested", createdAt: now, updatedAt: now })))
-          .run();
+      backendDb.studioPosts.replaceEntityCandidates(draftId, candidates, backendDb.clock.now().toISOString());
     },
     acceptEntityCandidates(actorId: number, draftId: number): void {
       requireOwnedDraft(backendDb, config, actorId, draftId);
-      backendDb.db
-        .update(draftEntityCandidates)
-        .set({ status: "accepted", updatedAt: new Date().toISOString() })
-        .where(eq(draftEntityCandidates.draftId, draftId))
-        .run();
+      backendDb.studioPosts.acceptEntityCandidates(draftId, backendDb.clock.now().toISOString());
     },
     /** Waives the 500-character Threads rule for this draft: the overflow becomes
      * a reply chain. Deliberately has no "off" command — editing the text resets
      * it, and a draft nobody waived is the normal state. */
     approveThreadsChain(actorId: number, draftId: number): void {
       requireOwnedDraft(backendDb, config, actorId, draftId);
-      backendDb.db.update(drafts).set({ threadsChainApproved: 1, updatedAt: new Date().toISOString() }).where(eq(drafts.id, draftId)).run();
-      recordDomainEvent(backendDb, {
+      backendDb.drafts.update(draftId, { threadsChainApproved: 1, updatedAt: backendDb.clock.now().toISOString() });
+      recordDomainEvent(backendDb.events, {
         ref: `draft:${draftId}`,
         type: "content.draft.threads-chain-approved",
         severity: "info",
@@ -203,27 +127,6 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       cancelRemainingPostJobs(backendDb, draftId);
       if (draft.post_id != null) cancelScheduledNotifications(backendDb, `post:${draft.post_id}`);
     },
-    progress(actorId: number, draftId: number) {
-      requireOwnedDraft(backendDb, config, actorId, draftId);
-      return postProgressState(backendDb, draftId);
-    },
-    status(actorId: number, draftId: number) {
-      return postProgressState(backendDb, requireOwnedDraft(backendDb, config, actorId, draftId).id);
-    },
-    history(actorId: number, draftId: number, limit = 50) {
-      const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
-      const scope =
-        draft.post_id == null
-          ? eq(postEvents.postKey, `draft:${draft.id}`)
-          : or(eq(postEvents.postKey, `draft:${draft.id}`), eq(postEvents.postKey, `post:${draft.post_id}`));
-      return backendDb.db
-        .select()
-        .from(postEvents)
-        .where(scope)
-        .orderBy(desc(postEvents.createdAt), desc(postEvents.id))
-        .limit(limit)
-        .all();
-    },
     toggleTarget(actorId: number, draftId: number, target: string): void {
       const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
       if (!TARGETS.some(({ id }) => id === target)) throw new StudioError("err.unknown-target");
@@ -256,13 +159,9 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       );
       const key = locale === "ru" ? "mediaRuJson" : "mediaEnJson";
       const current = replace ? [] : draftMedia(draft, locale);
-      backendDb.db
-        .update(drafts)
-        .set({ [key]: JSON.stringify([...current, ...assets]), updatedAt: new Date().toISOString() })
-        .where(eq(drafts.id, draftId))
-        .run();
-      queueDraftStoryCards(backendDb, draftId);
-      recordDomainEvent(backendDb, {
+      backendDb.drafts.update(draftId, { [key]: JSON.stringify([...current, ...assets]), updatedAt: backendDb.clock.now().toISOString() });
+      backendDb.storyCards.queue(draftId);
+      recordDomainEvent(backendDb.events, {
         ref: `draft:${draftId}`,
         type: "content.draft.media_attached",
         severity: "info",
@@ -275,13 +174,12 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       const current = draftMedia(draft, locale);
       const removed = new Set(assetIds);
       const media = current.filter((item) => !removed.has(Number(item.asset_id)));
-      backendDb.db
-        .update(drafts)
-        .set({ [locale === "ru" ? "mediaRuJson" : "mediaEnJson"]: JSON.stringify(media), updatedAt: new Date().toISOString() })
-        .where(eq(drafts.id, draftId))
-        .run();
-      queueDraftStoryCards(backendDb, draftId);
-      recordDomainEvent(backendDb, {
+      backendDb.drafts.update(draftId, {
+        [locale === "ru" ? "mediaRuJson" : "mediaEnJson"]: JSON.stringify(media),
+        updatedAt: backendDb.clock.now().toISOString(),
+      });
+      backendDb.storyCards.queue(draftId);
+      recordDomainEvent(backendDb.events, {
         ref: `draft:${draftId}`,
         type: "content.draft.media_removed",
         severity: "info",
@@ -292,19 +190,9 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
   };
 }
 
-function sourceLabel(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return url;
-  }
-}
-
 function workspaceNotificationPreference(backendDb: BackendDb, config: BackendConfig) {
   const actorIds = studioActorIds(config);
-  const rows = actorIds.length
-    ? backendDb.db.select().from(studioNotificationSettings).where(inArray(studioNotificationSettings.actorId, actorIds)).all()
-    : [];
+  const rows = backendDb.studioPosts.notificationSettings(actorIds);
   const byActor = new Map(rows.map((row) => [row.actorId, row]));
   return {
     remindersEnabled: actorIds.some((actorId) => byActor.get(actorId)?.remindersEnabled !== 0),
@@ -322,7 +210,7 @@ function localeTargets(backendDb: BackendDb, json: string, locale: "ru" | "en"):
 function editDraftContent(backendDb: BackendDb, config: BackendConfig, actorId: number, draftId: number, input: EditInput): void {
   requireOwnedDraft(backendDb, config, actorId, draftId);
   const clearMedia = Boolean(input.clearMedia);
-  const update: Record<string, unknown> = { updatedAt: new Date().toISOString() };
+  const update: DraftPatch = { updatedAt: backendDb.clock.now().toISOString() };
   const ru = input.locale === "ru";
   if (clearMedia) update[ru ? "mediaRuJson" : "mediaEnJson"] = null;
   else {
@@ -336,9 +224,9 @@ function editDraftContent(backendDb: BackendDb, config: BackendConfig, actorId: 
     }
   }
   if (Object.keys(update).length === 1) throw new StudioError("err.post-no-edit");
-  backendDb.db.update(drafts).set(update).where(eq(drafts.id, draftId)).run();
-  queueDraftStoryCards(backendDb, draftId);
-  recordDomainEvent(backendDb, {
+  backendDb.drafts.update(draftId, update);
+  backendDb.storyCards.queue(draftId);
+  recordDomainEvent(backendDb.events, {
     ref: `draft:${draftId}`,
     type: "content.draft.edited",
     severity: "info",
@@ -351,7 +239,7 @@ function hasLocaleTarget(targets: Record<string, boolean>, locale: "ru" | "en"):
   return Object.entries(targets).some(([target, enabled]) => enabled && targetLocale(target) === locale);
 }
 
-function scheduleAt(draft: ReturnType<typeof requireDraft>, scope: ScheduleScope, value: Date): ScheduleInput {
+function scheduleAt(draft: DraftRecord, scope: ScheduleScope, value: Date): ScheduleInput {
   return {
     ruAt: scope === "en" ? dateOrNull(draft.scheduled_at) : value,
     enAt: scope === "ru" ? dateOrNull(draft.scheduled_en_at) : value,
@@ -364,33 +252,6 @@ function dateOrNull(value: string | null): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function requireOwnedDraft(backendDb: BackendDb, config: BackendConfig, actorId: number, draftId: number) {
-  const draft = requireDraft(backendDb, draftId);
-  if (!canAccessStudioOwner(config, actorId, draft.actor_id)) throw new StudioError("err.post-not-yours");
-  return draft;
-}
-
-/** A legacy or truncated JSON column must surface as an empty list, not as a
- * raw SyntaxError escaping a Studio verb: every transport (Telegram, MCP, Web)
- * only knows how to render StudioError and would show a generic failure. */
-function parseJsonArray(value: string | null): Record<string, unknown>[] {
-  if (!value) return [];
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return Array.isArray(parsed) ? parsed.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object") : [];
-  } catch {
-    return [];
-  }
-}
-
-function draftMedia(draft: ReturnType<typeof requireDraft>, locale: "ru" | "en"): Record<string, unknown>[] {
-  return parseJsonArray(locale === "ru" ? draft.media_ru_json : draft.media_en_json);
-}
-
 function saveTargets(backendDb: BackendDb, draftId: number, targets: Record<string, boolean>): void {
-  backendDb.db
-    .update(drafts)
-    .set({ targetsJson: JSON.stringify(targets), updatedAt: new Date().toISOString() })
-    .where(eq(drafts.id, draftId))
-    .run();
+  backendDb.drafts.update(draftId, { targetsJson: JSON.stringify(targets), updatedAt: backendDb.clock.now().toISOString() });
 }

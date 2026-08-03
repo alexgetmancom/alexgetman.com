@@ -16,8 +16,8 @@ function milestone(message: string) {
 describe("Telegram event consumer", () => {
   it("drops an undeliverable event instead of blocking every event behind it", async () =>
     withDb(async (backendDb) => {
-      recordDomainEvent(backendDb, milestone("first"));
-      recordDomainEvent(backendDb, milestone("second"));
+      recordDomainEvent(backendDb.events, milestone("first"));
+      recordDomainEvent(backendDb.events, milestone("second"));
       // Telegram's real failure here is a 403 from a user who blocked the bot:
       // permanent, chat-specific, and no reason to stall the whole queue.
       const sendMessage = mock(async (_chatId: number, text: string) => {
@@ -36,7 +36,7 @@ describe("Telegram event consumer", () => {
 
   it("delivers each event exactly once across repeated ticks", async () =>
     withDb(async (backendDb) => {
-      recordDomainEvent(backendDb, milestone("only"));
+      recordDomainEvent(backendDb.events, milestone("only"));
       const sendMessage = mock(async () => ({ message_id: 1, date: 1, chat: { id: 42, type: "private" as const } }));
       const bot = { api: { sendMessage } } as unknown as Bot;
 

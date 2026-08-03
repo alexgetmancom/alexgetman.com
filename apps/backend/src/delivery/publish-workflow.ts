@@ -97,7 +97,7 @@ export async function runDeliveryPublishCycle(
       .where(and(eq(postTargets.postKey, job.postKey), eq(postTargets.target, job.target)))
       .run();
     try {
-      recordDomainEvent(backendDb, {
+      recordDomainEvent(backendDb.events, {
         ref: job.postKey,
         target: job.target,
         type: "delivery.job.finalization_failed",
@@ -113,7 +113,7 @@ export async function runDeliveryPublishCycle(
   const postIds = [...new Set(jobs.map((job) => job.postId).filter((id): id is number => id != null))];
   for (const postId of postIds) {
     try {
-      recordDomainEvent(backendDb, {
+      recordDomainEvent(backendDb.events, {
         ref: `post:${postId}`,
         type: "delivery.post.settled",
         severity: "info",
@@ -127,7 +127,7 @@ export async function runDeliveryPublishCycle(
         finalJobs.every((job) => ["published", "failed", "cancelled", "skipped", "verification_required"].includes(job.status))
       ) {
         const failed = finalJobs.filter((job) => job.status === "failed" || job.status === "verification_required").length;
-        recordDomainEvent(backendDb, {
+        recordDomainEvent(backendDb.events, {
           ref: `post:${postId}`,
           type: "delivery.post.completed",
           // The terminal target already emitted the single actionable
@@ -177,7 +177,7 @@ async function timedDeliveryPhase<T>(
   try {
     const result = await work();
     const durationMs = Date.now() - startedAt;
-    recordDomainEvent(backendDb, {
+    recordDomainEvent(backendDb.events, {
       ref: job.postKey,
       target: job.target,
       type: "publish.job.phase",
@@ -194,7 +194,7 @@ async function timedDeliveryPhase<T>(
     });
     return result;
   } catch (error) {
-    recordDomainEvent(backendDb, {
+    recordDomainEvent(backendDb.events, {
       ref: job.postKey,
       target: job.target,
       type: "publish.job.phase",

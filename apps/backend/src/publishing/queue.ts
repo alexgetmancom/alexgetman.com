@@ -4,12 +4,13 @@ import process from "node:process";
 import { and, eq, isNull, lt, lte, or } from "drizzle-orm";
 import { recordPublishedXActivity } from "../analytics/x-activity-store.js";
 import type { BackendDb } from "../db/client.js";
-import { drafts, type JsonObject, publications, publishJobs, siteJobs } from "../db/schema.js";
+import { type JsonObject, publishJobs } from "../db/schema.js";
 import { insertPublishJobSchema } from "../db/validation.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { recordAuthFailure, recordAuthSuccess } from "../observability/auth-circuit.js";
 import { classifyPublishError, normalizePublishResult, type PublishResult } from "./errors.js";
 import { failedJobTransition, reconciliationTransition } from "./job-policy.js";
+import { reconcilePublication } from "./publication-reconciliation.js";
 import {
   deleteSupersededJobs,
   durationSince,
@@ -23,7 +24,8 @@ import {
   upsertPostTarget,
   verificationStatus,
 } from "./queue-state.js";
-import { publicationStatus } from "./state.js";
+
+export { reconcilePublication } from "./publication-reconciliation.js";
 
 export type ClaimedPublishJob = {
   jobId: number;
@@ -427,21 +429,6 @@ export function requirePublishVerification(backendDb: BackendDb, jobId: number, 
   });
   if (updated && job.postId != null) reconcilePublication(backendDb, job.postId);
   return updated;
-}
-
-export function reconcilePublication(backendDb: BackendDb, postId: number): void {
-  const existing = backendDb.db.select({ status: publications.status }).from(publications).where(eq(publications.postId, postId)).get();
-  if (existing?.status === "cancelled") return;
-  const social = backendDb.db.select({ status: publishJobs.status }).from(publishJobs).where(eq(publishJobs.postId, postId)).all();
-  const site = backendDb.db.select({ status: siteJobs.status }).from(siteJobs).where(eq(siteJobs.postId, postId)).all();
-  const all = [...social, ...site];
-  const status = publicationStatus(all.map((job) => job.status));
-  if (!status) return;
-  const now = new Date().toISOString();
-  backendDb.db.transaction((tx) => {
-    tx.update(publications).set({ status, updatedAt: now }).where(eq(publications.postId, postId)).run();
-    tx.update(drafts).set({ status, updatedAt: now }).where(eq(drafts.postId, postId)).run();
-  });
 }
 
 export function enqueuePublishJobTx(db: BackendDb["db"], input: EnqueuePublishJobInput): number {

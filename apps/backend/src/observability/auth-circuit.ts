@@ -63,7 +63,7 @@ export function recordAuthFailure(backendDb: BackendDb, target: string): void {
       .run();
   }
   if (tripped && streak === AUTH_FAILURE_THRESHOLD) {
-    recordDomainEvent(backendDb, {
+    recordDomainEvent(backendDb.events, {
       target,
       type: "credential.auth_circuit_tripped",
       severity: "error",

@@ -53,7 +53,7 @@ export function cancelDraft(backendDb: BackendDb, draftId: number): void {
     tx.update(drafts).set({ postId: null, updatedAt: now }).where(eq(drafts.id, draftId)).run();
   });
   discardDraftStoryCards(backendDb, draftId);
-  recordDomainEvent(backendDb, {
+  recordDomainEvent(backendDb.events, {
     ref: `draft:${draftId}`,
     type: "publishing.draft.cancelled",
     severity: "info",
@@ -71,7 +71,7 @@ export function cancelRemainingPostJobs(backendDb: BackendDb, draftId: number): 
     .set({ status: "cancelled", updatedAt: now })
     .where(and(eq(publishJobs.postId, draft.postId), inArray(publishJobs.status, ["queued", "failed"])))
     .run();
-  recordDomainEvent(backendDb, {
+  recordDomainEvent(backendDb.events, {
     ref: `draft:${draftId}`,
     type: "publishing.remaining.cancelled",
     severity: "warn",

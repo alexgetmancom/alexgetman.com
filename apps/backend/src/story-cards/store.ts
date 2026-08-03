@@ -1,14 +1,14 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import { and, eq } from "drizzle-orm";
-import type { BackendDb } from "../db/client.js";
 import { draftStoryCards, drafts } from "../db/schema.js";
+import type { BackendDatabase } from "../db/types.js";
 import { log } from "../foundation/logger.js";
 import { buildStoryCardCopy } from "./copy.js";
 
 export type StoryPublishMode = "all" | "site_only";
 
-export function queueDraftStoryCards(backendDb: BackendDb, draftId: number): void {
+export function queueDraftStoryCards(backendDb: { db: BackendDatabase }, draftId: number): void {
   const draft = backendDb.db.select().from(drafts).where(eq(drafts.id, draftId)).get();
   if (!draft) throw new Error(`draft ${draftId} not found`);
   if (mediaCount(draft.mediaRuJson) > 0 || mediaCount(draft.mediaEnJson) > 0) {
@@ -84,11 +84,14 @@ export function queueDraftStoryCards(backendDb: BackendDb, draftId: number): voi
   removeFiles(stalePaths);
 }
 
-export function storyCardsForDraft(backendDb: BackendDb, draftId: number) {
+export function storyCardsForDraft(backendDb: { db: BackendDatabase }, draftId: number) {
   return backendDb.db.select().from(draftStoryCards).where(eq(draftStoryCards.draftId, draftId)).all();
 }
 
-export function readyStoryCardMedia(backendDb: BackendDb, draftId: number): Record<"ru" | "en", Record<string, unknown>> | null {
+export function readyStoryCardMedia(
+  backendDb: { db: BackendDatabase },
+  draftId: number,
+): Record<"ru" | "en", Record<string, unknown>> | null {
   const rows = storyCardsForDraft(backendDb, draftId);
   const byLocale = new Map(rows.map((row) => [row.locale, row]));
   const ru = byLocale.get("ru");
@@ -100,12 +103,12 @@ export function readyStoryCardMedia(backendDb: BackendDb, draftId: number): Reco
   };
 }
 
-export function setStoryPublishMode(backendDb: BackendDb, draftId: number, mode: StoryPublishMode): void {
+export function setStoryPublishMode(backendDb: { db: BackendDatabase }, draftId: number, mode: StoryPublishMode): void {
   const now = new Date().toISOString();
   backendDb.db.update(drafts).set({ storyPublishMode: mode, updatedAt: now }).where(eq(drafts.id, draftId)).run();
 }
 
-export function discardDraftStoryCards(backendDb: BackendDb, draftId: number): void {
+export function discardDraftStoryCards(backendDb: { db: BackendDatabase }, draftId: number): void {
   const paths = storyCardsForDraft(backendDb, draftId).flatMap((card) => (card.localPath ? [card.localPath] : []));
   backendDb.db.delete(draftStoryCards).where(eq(draftStoryCards.draftId, draftId)).run();
   removeFiles(paths);

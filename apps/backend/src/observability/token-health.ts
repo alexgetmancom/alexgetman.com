@@ -186,7 +186,7 @@ export async function checkTokenHealth(config: BackendConfig, backendDb: Backend
       recordTokenPing(backendDb, probe.target, expiresAt);
       recordAuthSuccess(backendDb, probe.target);
       if (expiresAt && new Date(expiresAt).getTime() - Date.now() < EXPIRY_WARNING_WINDOW_MS) {
-        recordDomainEvent(backendDb, {
+        recordDomainEvent(backendDb.events, {
           target: probe.target,
           type: "credential.token_expiring_soon",
           severity: "warn",

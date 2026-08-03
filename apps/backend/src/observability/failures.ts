@@ -25,7 +25,7 @@ export function recordPublicationFailures(config: BackendConfig, backendDb: Back
     .limit(100)
     .all();
   for (const job of stale)
-    recordDomainEvent(backendDb, {
+    recordDomainEvent(backendDb.events, {
       ref: job.postKey,
       type: "queue.stale",
       severity: "error",
@@ -39,7 +39,7 @@ export function recordPublicationFailures(config: BackendConfig, backendDb: Back
   // that would turn one failed publication into a new Telegram alert every
   // cooldown window forever.
   for (const job of failedSite)
-    recordDomainEvent(backendDb, {
+    recordDomainEvent(backendDb.events, {
       ref: job.postId == null ? null : `post:${job.postId}`,
       type: "site.build.failed",
       severity: "error",

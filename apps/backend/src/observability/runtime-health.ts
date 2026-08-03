@@ -66,7 +66,7 @@ export function recordProcessRestart(config: BackendConfig, backendDb: BackendDb
   writeRuntimeState(backendDb, { bootId: BOOT_ID, bootedAt, restartsAt });
 
   const previousUptimeSeconds = previous.bootedAt ? Math.round((Date.parse(bootedAt) - Date.parse(previous.bootedAt)) / 1000) : null;
-  recordDomainEvent(backendDb, {
+  recordDomainEvent(backendDb.events, {
     type: looping ? "runtime.restart.looping" : "runtime.restarted",
     severity: looping ? "error" : "info",
     target: "runtime",
@@ -118,7 +118,7 @@ export function recordMemoryPressure(
   const usedPercent = Math.round((rss / limitBytes) * 100);
   if (usedPercent < config.MEMORY_ALERT_PERCENT) return false;
   const toMb = (bytes: number) => Math.round(bytes / 1024 / 1024);
-  return recordDomainEvent(backendDb, {
+  return recordDomainEvent(backendDb.events, {
     type: "runtime.memory.pressure",
     severity: "warn",
     target: "runtime",

@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { InlineKeyboard } from "grammy";
 import { type PresetName, presetName, TARGETS } from "../botTargets.js";
 import { effectivePostTargets, registeredPostTargetIds } from "../channels/registry.js";
-import { requireDraft } from "../content/drafts.js";
+import { requireDraft } from "../content/index.js";
 import type { BackendDb } from "../db/client.js";
 import { draftSources, draftStoryCards } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";

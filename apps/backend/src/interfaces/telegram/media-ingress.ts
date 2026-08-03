@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { Bot } from "grammy";
-import { importStudioMediaFile } from "../../content/assets.js";
+import { importStudioMediaFile } from "../../content/index.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 

@@ -9,7 +9,7 @@ import { atomicWriteJson } from "../fsUtils.js";
 import { trackUsageAsync } from "../observability/usage.js";
 import { invalidatePublicSiteFeed } from "../public/site-read-model.js";
 import { nextRetryAt } from "../publishing/errors.js";
-import { reconcilePublication, workerId } from "../publishing/queue.js";
+import { reconcilePublication, workerId } from "../publishing/index.js";
 import { publishContentIndex } from "./site-content-index.js";
 import { pingIndexNow } from "./site-index-now.js";
 import { materializeSiteMedia } from "./site-media.js";

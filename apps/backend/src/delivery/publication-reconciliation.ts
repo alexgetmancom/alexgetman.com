@@ -5,7 +5,7 @@ import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { isTargetAuthBlocked } from "../observability/auth-circuit.js";
 import { nextRetryAt } from "../publishing/errors.js";
-import { reconcilePublication } from "../publishing/queue.js";
+import { reconcilePublication } from "../publishing/index.js";
 import { refreshVideoDraftStatus } from "../publishing/video-data.js";
 import { platformConfig, verifyPlatformPublication } from "./ports/social.js";
 import { verifyYouTubeVideo } from "./video-publishers.js";
@@ -75,7 +75,7 @@ export async function runPublicationReconciliation(
         .run();
     });
     if (row.job.postId != null) reconcilePublication(backendDb, row.job.postId);
-    recordDomainEvent(backendDb, {
+    recordDomainEvent(backendDb.events, {
       ref: row.target.postKey,
       target: row.target.target,
       type: "publish.job.reconciled",
@@ -149,7 +149,7 @@ export async function runPublicationReconciliation(
         .run();
     });
     refreshVideoDraftStatus(backendDb, row.target.videoDraftId, config.VIDEO_MEDIA_RETENTION_HOURS);
-    recordDomainEvent(backendDb, {
+    recordDomainEvent(backendDb.events, {
       ref: `video:${row.target.videoDraftId}`,
       target: row.target.target,
       type: "video.target.reconciled",
@@ -179,7 +179,7 @@ export async function runPublicationReconciliation(
     .filter((value): value is string => Boolean(value))
     .sort();
   if (unresolvedTimes.length) {
-    recordDomainEvent(backendDb, {
+    recordDomainEvent(backendDb.events, {
       type: "studio.notification.publication_verification_required",
       severity: "warn",
       message: `${unresolvedTimes.length} publication(s) still require verification; oldest since ${unresolvedTimes[0]}`,

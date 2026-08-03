@@ -105,7 +105,7 @@ export async function runVideoMetricSchedule(config: BackendConfig, backendDb: B
       const terminal = isTerminalMetricError(normalized);
       const frozen = localizedTasks.filter((task) => finishVideoMetricTask(backendDb, task, message, terminal));
       if (frozen.length)
-        recordDomainEvent(backendDb, {
+        recordDomainEvent(backendDb.events, {
           ref: `analytics:youtube:${locale}`,
           target: "youtube_shorts",
           type: "analytics.video_metrics.frozen",
@@ -134,7 +134,7 @@ export async function runVideoMetricSchedule(config: BackendConfig, backendDb: B
         isTerminalMetricError(normalized),
       );
       if (frozen)
-        recordDomainEvent(backendDb, {
+        recordDomainEvent(backendDb.events, {
           ref: `video:${task.videoDraftId}`,
           target: task.target,
           type: "analytics.video_metrics.frozen",

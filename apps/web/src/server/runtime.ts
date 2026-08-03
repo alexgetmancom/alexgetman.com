@@ -50,7 +50,7 @@ function reportUnwritableDataDirectories(config: BackendConfig, backendDb: Backe
   if (!unwritable.length) return;
   const summary = unwritable.map((check) => `${check.name} (${check.path}): ${check.error}`).join("; ");
   log("error", "one or more data directories are not writable by this process", { directories: unwritable });
-  recordDomainEvent(backendDb, {
+  recordDomainEvent(backendDb.events, {
     ref: "runtime:data-dirs",
     type: "runtime.data_directory_unwritable",
     severity: "error",

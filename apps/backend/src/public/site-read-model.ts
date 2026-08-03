@@ -258,7 +258,7 @@ function buildPublicSiteFeed(backendDb: BackendDb, sitePublicDir: string): FeedI
     // A single malformed row (a legacy shape, an unexpected null) must never take
     // down the whole public feed; drop it and keep every other post serving.
     if (!parsed.success) {
-      recordDomainEvent(backendDb, {
+      recordDomainEvent(backendDb.events, {
         ref: row.postKey,
         type: "site.feed.item_invalid",
         severity: "warn",

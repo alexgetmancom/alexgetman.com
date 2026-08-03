@@ -1,4 +1,4 @@
-import type { DraftMessage } from "../../content/message.js";
+import type { DraftMessage } from "../../content/index.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import type { VideoLocale } from "../../publishing/video-types.js";

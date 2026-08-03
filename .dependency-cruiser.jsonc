@@ -20,6 +20,23 @@
       "to": { "circular": true }
     },
     {
+      "name": "application-ports-are-infrastructure-free",
+      "comment": "Application vocabulary is the stable inward-facing contract. Database clients, delivery adapters and interface frameworks belong to the composition root.",
+      "severity": "error",
+      "from": { "path": "^apps/backend/src/application/" },
+      "to": {
+        "path": "^apps/backend/src/(db/|delivery/|interfaces/|bot/|runtime/)|node_modules/(drizzle-orm|grammy|hono)/",
+        "dependencyTypes": ["local", "npm"]
+      }
+    },
+    {
+      "name": "domain-event-policy-is-storage-free",
+      "comment": "The domain event policy talks to EventStore; the durable SQLite adapter is selected by the composition root.",
+      "severity": "error",
+      "from": { "path": "^apps/backend/src/domain/events\\.ts$" },
+      "to": { "path": "^apps/backend/src/db/|node_modules/drizzle-orm/" }
+    },
+    {
       "name": "grammy-only-in-telegram",
       "comment": "The Telegram SDK is an interface detail. Core layers speak in domain types and codes, never in grammy Contexts.",
       "severity": "error",

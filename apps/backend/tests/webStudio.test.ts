@@ -21,7 +21,7 @@ describe("Command Center Studio tab", () => {
       expect(anonymous.status).toBe(200);
       expect(await anonymous.text()).toContain("Command Center token");
 
-      recordDomainEvent(backendDb, {
+      recordDomainEvent(backendDb.events, {
         ref: null,
         type: "studio.notification.test",
         severity: "info",

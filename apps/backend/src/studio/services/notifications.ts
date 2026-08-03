@@ -9,7 +9,7 @@ import { canAccessStudioOwner } from "../access.js";
 export function notificationService(backendDb: BackendDb, config?: BackendConfig) {
   return {
     record(input: DomainEventInput): boolean {
-      return recordDomainEvent(backendDb, input);
+      return recordDomainEvent(backendDb.events, input);
     },
     inbox(actorId: number, limit = 50) {
       const events = backendDb.db

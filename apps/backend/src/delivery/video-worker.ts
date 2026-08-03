@@ -96,7 +96,7 @@ function recordVideoCompletionIfFinal(backendDb: BackendDb, videoDraftId: number
   if (!targets.length || !targets.every((target) => ["published", "failed", "cancelled", "verification_required"].includes(target.status)))
     return;
   const failed = targets.filter((target) => target.status === "failed" || target.status === "verification_required").length;
-  recordDomainEvent(backendDb, {
+  recordDomainEvent(backendDb.events, {
     ref: `video:${videoDraftId}`,
     type: "delivery.video.completed",
     severity: failed ? "warn" : "info",
@@ -143,7 +143,7 @@ function claimVideoJobs(backendDb: BackendDb, limit: number): VideoJob[] {
 
 async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job: VideoJob): Promise<void> {
   if (job.kind === "reminder") {
-    recordDomainEvent(backendDb, {
+    recordDomainEvent(backendDb.events, {
       ref: `video:${job.videoDraftId}`,
       type: "video.reminder.due",
       severity: "info",
@@ -183,7 +183,7 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
         try {
           await keepYouTubeUploadPrivate(youtubeConfig, result.id, locale);
         } catch (error) {
-          recordDomainEvent(backendDb, {
+          recordDomainEvent(backendDb.events, {
             ref: `video:${job.videoDraftId}`,
             type: "studio.notification.video_cancelled",
             severity: "warn",
@@ -268,7 +268,7 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
 }
 
 function recordVideoProgressEvent(backendDb: BackendDb, job: VideoJob, type: string): void {
-  recordDomainEvent(backendDb, {
+  recordDomainEvent(backendDb.events, {
     ref: `video:${job.videoDraftId}`,
     type,
     severity: "info",
@@ -350,7 +350,7 @@ function failVideoJob(backendDb: BackendDb, job: VideoJob, cause: unknown, confi
       job.videoTargetId == null
         ? null
         : backendDb.db.select({ target: videoTargets.target }).from(videoTargets).where(eq(videoTargets.id, job.videoTargetId)).get();
-    recordDomainEvent(backendDb, {
+    recordDomainEvent(backendDb.events, {
       ref: `video:${job.videoDraftId}`,
       type: "video.target.failed",
       severity: "error",
@@ -392,7 +392,7 @@ function requireVideoVerification(backendDb: BackendDb, job: VideoJob, cause: un
     job.videoTargetId == null
       ? null
       : backendDb.db.select({ target: videoTargets.target }).from(videoTargets).where(eq(videoTargets.id, job.videoTargetId)).get();
-  recordDomainEvent(backendDb, {
+  recordDomainEvent(backendDb.events, {
     ref: `video:${job.videoDraftId}`,
     type: "video.target.verification_required",
     severity: "warn",
@@ -511,7 +511,7 @@ export function recoverVideoLocks(backendDb: BackendDb, config: BackendConfig): 
       job.videoTargetId == null
         ? null
         : backendDb.db.select({ target: videoTargets.target }).from(videoTargets).where(eq(videoTargets.id, job.videoTargetId)).get();
-    recordDomainEvent(backendDb, {
+    recordDomainEvent(backendDb.events, {
       ref: `video:${job.videoDraftId}`,
       type: verificationRequired ? "video.target.verification_required" : "video.target.failed",
       severity: verificationRequired ? "warn" : "error",

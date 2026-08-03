@@ -78,7 +78,7 @@ export function runNotificationCycle(backendDb: BackendDb, limit = 50): number {
         .get();
       if (!claimed) return false;
       const payload = job.payloadJson ?? {};
-      recordDomainEvent(backendDb, {
+      recordDomainEvent(backendDb.events, {
         ref: job.ref,
         type: "studio.notification.reminder.due",
         severity: "info",

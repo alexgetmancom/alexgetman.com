@@ -552,7 +552,7 @@ async function runStudioTool(
   // trail is best-effort and the caller still sees the success it earned.
   if (def.mutates)
     try {
-      recordDomainEvent(backendDb, {
+      recordDomainEvent(backendDb.events, {
         ref: def.ref ? def.ref(input, result) : null,
         type: "studio.mcp.command",
         severity: "info",
@@ -570,7 +570,7 @@ function submitFeedback(backendDb: BackendDb, args: JsonObject, clientKey: strin
   const input = parseArgs(feedbackToolDef.schema, args);
   const name = input.name || "Anonymous Agent";
   if (rateLimited(clientKey)) throw new McpToolError(-32000, "rate limit exceeded");
-  recordDomainEvent(backendDb, {
+  recordDomainEvent(backendDb.events, {
     ref: "mcp:feedback",
     target: "mcp",
     type: "mcp.feedback.received",

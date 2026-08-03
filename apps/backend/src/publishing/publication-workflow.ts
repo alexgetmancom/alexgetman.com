@@ -1,7 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import { effectivePostTargets, registeredPostTargetIds } from "../channels/registry.js";
-import { requireDraft } from "../content/drafts.js";
 import { enrichPublishedPostEntities } from "../content/entity-enrichment.js";
+import { requireDraft } from "../content/index.js";
 import type { BackendDb } from "../db/client.js";
 import { draftEntityCandidates, draftSources, knowledgeEntities, postEntityLinks, postSources, publications } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
@@ -56,7 +56,7 @@ function publishDraftToQueueInternal(backendDb: BackendDb, draftId: number, opti
     reconcilePublication(backendDb, publicationId);
     return { postId: publicationId, plan: publicationPlan };
   });
-  recordDomainEvent(backendDb, {
+  recordDomainEvent(backendDb.events, {
     ref: `post:${postId}`,
     type: "publishing.plan.created",
     severity: "info",

@@ -6,9 +6,14 @@ import { fileURLToPath } from "node:url";
 import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
+import type { ApplicationPorts } from "../application/ports.js";
+import { queueDraftStoryCards } from "../story-cards/store.js";
+import { createDraftStore } from "./repositories/drafts.js";
+import { createEventStore } from "./repositories/events.js";
+import { createStudioPostStore } from "./repositories/studio-posts.js";
 import * as schema from "./schema.js";
 
-export type BackendDb = {
+export type BackendDb = ApplicationPorts & {
   sqlite: SqliteCompat;
   db: BunSQLiteDatabase<typeof schema>;
   close: () => void;
@@ -46,11 +51,19 @@ export function openBackendDb(path: string, timeout = 30_000): BackendDb {
   sqlite.run("PRAGMA foreign_keys = OFF");
   migrate(db, { migrationsFolder: migrationsFolder() });
   sqlite.run("PRAGMA foreign_keys = ON");
-  return {
+  const clock = { now: () => new Date() };
+  let backendDb: BackendDb;
+  backendDb = {
     sqlite,
     db,
+    clock,
+    drafts: createDraftStore(db, clock),
+    events: createEventStore(db, clock),
+    studioPosts: createStudioPostStore(db),
+    storyCards: { queue: (draftId) => queueDraftStoryCards(backendDb, draftId) },
     close: () => sqlite.close(),
   };
+  return backendDb;
 }
 
 export function migrationStatus(sqlite: SqliteCompat): MigrationStatus[] {

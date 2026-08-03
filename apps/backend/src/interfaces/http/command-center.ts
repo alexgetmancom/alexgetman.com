@@ -2,8 +2,7 @@ import { commandAllowed, sameOriginCommandLogin } from "../../foundation/http-au
 import { html, json, loginRedirect, queryTokenRedirect, sse, text } from "../../foundation/http-response.js";
 import { measureMemorySync } from "../../observability/memory.js";
 import { trackUsageAsync, trackUsageSync } from "../../observability/usage.js";
-import { commandActionSchema } from "../../operations/commands.js";
-import type { OperationsCommand } from "../../operations/contracts.js";
+import { commandActionSchema, type OperationsCommand } from "../../operations/index.js";
 import { studioServices } from "../../studio/services/index.js";
 import {
   invalidateDashboardRenderCache,

@@ -84,7 +84,7 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
         }
       }
       if (cancellation.manualRemoval.length || holdFailures.length) {
-        recordDomainEvent(backendDb, {
+        recordDomainEvent(backendDb.events, {
           ref: `video:${videoDraftId}`,
           type: "studio.notification.video_cancelled",
           severity: holdFailures.length ? "warn" : "info",

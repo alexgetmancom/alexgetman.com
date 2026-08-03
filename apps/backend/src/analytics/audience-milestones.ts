@@ -118,7 +118,7 @@ function recordMilestone(backendDb: BackendDb, scope: MilestoneScope, threshold:
   if (backendDb.db.select().from(alertDedup).where(eq(alertDedup.alertKey, key)).get()) return false;
   const now = new Date().toISOString();
   backendDb.db.insert(alertDedup).values({ alertKey: key, lastSentAt: now, suppressedCount: 0 }).run();
-  return recordDomainEvent(backendDb, {
+  return recordDomainEvent(backendDb.events, {
     type: "analytics.milestone.reached",
     severity: "info",
     target: scope.target,

@@ -92,7 +92,7 @@ export async function importStudioMediaFile(backendDb: BackendDb, config: Backen
   // Only the import that actually created the row announces it: a lost race and
   // a plain re-upload are both "this asset already exists", not a new import.
   if (inserted)
-    recordDomainEvent(backendDb, {
+    recordDomainEvent(backendDb.events, {
       ref: `asset:${asset.id}`,
       type: "content.media.imported",
       severity: "info",
