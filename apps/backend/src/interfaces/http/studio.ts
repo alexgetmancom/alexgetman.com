@@ -1,10 +1,10 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { importStudioMediaFile } from "../../content/assets.js";
 import { commandAllowed, mcpStudioActor } from "../../foundation/http-auth.js";
 import { json, sse, text } from "../../foundation/http-response.js";
 import { trackUsageAsync } from "../../observability/usage.js";
+import { studioServices } from "../../studio/services/index.js";
 import { mcpResponse } from "../mcp.js";
 import type { RouteModule } from "./context.js";
 import { isMediaUploadTooLarge, MediaUploadTooLargeError, streamUploadToFile } from "./media-upload.js";
@@ -12,6 +12,7 @@ import { isMediaUploadTooLarge, MediaUploadTooLargeError, streamUploadToFile } f
 let activeMediaUploads = 0;
 
 export const studioRoutes: RouteModule = (app, { config, backendDb, engagement }) => {
+  const studio = studioServices(backendDb, config);
   // The MCP transport is a privileged Studio surface, same as POST /api/mcp:
   // an unauthenticated stream let any client pin an open connection and a
   // recurring timer for free.
@@ -50,13 +51,13 @@ export const studioRoutes: RouteModule = (app, { config, backendDb, engagement }
       const temporaryDirectory = path.join(config.STUDIO_MEDIA_DIR, ".incoming");
       const temporary = path.join(temporaryDirectory, crypto.randomUUID());
       await fs.promises.mkdir(temporaryDirectory, { recursive: true });
-      let asset: Awaited<ReturnType<typeof importStudioMediaFile>>;
+      let asset: Awaited<ReturnType<typeof studio.media.importFile>>;
       try {
         const contentLength = Number(request.headers.get("content-length"));
         if (Number.isFinite(contentLength) && contentLength > config.STUDIO_MEDIA_MAX_BYTES)
           throw new MediaUploadTooLargeError(config.STUDIO_MEDIA_MAX_BYTES);
         const byteSize = await streamUploadToFile(body, temporary, config.STUDIO_MEDIA_MAX_BYTES);
-        asset = await importStudioMediaFile(backendDb, config, actorId, {
+        asset = await studio.media.importFile(actorId, {
           filename: request.headers.get("x-filename") ?? request.headers.get("x-file-name") ?? "upload",
           contentType,
           localPath: temporary,

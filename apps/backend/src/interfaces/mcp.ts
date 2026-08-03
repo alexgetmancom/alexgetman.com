@@ -124,6 +124,34 @@ const studioToolDefs = {
     schema: z.object({}),
     handler: (studio, actorId) => studio.settings.notifications(actorId),
   }),
+  studio_locale: tool({
+    description: "Read the authenticated owner's Studio interface locale.",
+    schema: z.object({}),
+    handler: (studio, actorId) => ({ locale: studio.settings.locale(actorId) }),
+  }),
+  studio_locale_update: tool({
+    description: "Update the authenticated owner's shared interface locale.",
+    schema: z.object({ locale: localeSchema }),
+    mutates: true,
+    handler: (studio, actorId, input) => {
+      studio.settings.setLocale(actorId, input.locale);
+      return { locale: input.locale, updated: true };
+    },
+  }),
+  studio_youtube_signature: tool({
+    description: "Read the authenticated owner's YouTube description signature.",
+    schema: z.object({}),
+    handler: (studio, actorId) => ({ signature: studio.settings.youtubeSignature(actorId) }),
+  }),
+  studio_youtube_signature_update: tool({
+    description: "Set or clear the authenticated owner's YouTube description signature.",
+    schema: z.object({ signature: z.string().max(500) }),
+    mutates: true,
+    handler: (studio, actorId, input) => {
+      studio.settings.setYoutubeSignature(actorId, input.signature);
+      return { signature: studio.settings.youtubeSignature(actorId), updated: true };
+    },
+  }),
   studio_notification_settings_update: tool({
     description: "Update notification policy. These settings apply to every connected interface; Telegram is only one delivery adapter.",
     schema: z.object({

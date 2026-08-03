@@ -1,10 +1,10 @@
-import { importStudioMediaAsset } from "../../content/assets.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import type { StudioActorId, StudioLocale } from "../contracts.js";
 import { analyticsService } from "./analytics.js";
 import { studioCapabilityService } from "./capabilities.js";
 import { studioDashboard } from "./dashboard.js";
+import { mediaService } from "./media.js";
 import { notificationService } from "./notifications.js";
 import { postService } from "./posts.js";
 import { publicationService } from "./publications.js";
@@ -23,10 +23,7 @@ export function studioServices(backendDb: BackendDb, config: BackendConfig) {
   return {
     posts,
     publications: publicationService(posts, videos),
-    media: {
-      import: (actorId: StudioActorId, input: Parameters<typeof importStudioMediaAsset>[3]) =>
-        importStudioMediaAsset(backendDb, config, actorId, input),
-    },
+    media: mediaService(backendDb, config),
     videos,
     queue: queueService(backendDb, config),
     notifications: notificationService(backendDb, config),

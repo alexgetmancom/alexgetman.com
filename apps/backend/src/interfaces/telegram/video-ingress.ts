@@ -1,10 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Context } from "grammy";
-import { importStudioMediaFile } from "../../content/index.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { StudioError } from "../../foundation/errors.js";
+import { type StudioServices, studioServices } from "../../studio/services/index.js";
 import { downloadTelegramFile } from "./file-download.js";
 
 type StoredVideo = { assetId: number };
@@ -23,9 +23,10 @@ export async function storeTelegramVideo(ctx: Context, backendDb: BackendDb, con
   if (!apiFile.file_path) throw new Error("Telegram did not return a file path.");
   const extension = path.extname(name) || ".mp4";
   const downloaded = await downloadTelegramFile(config, apiFile.file_path, extension.toLowerCase());
-  let asset: Awaited<ReturnType<typeof importStudioMediaFile>>;
+  const studioMedia: StudioServices["media"] = studioServices(backendDb, config).media;
+  let asset: Awaited<ReturnType<StudioServices["media"]["importFile"]>>;
   try {
-    asset = await importStudioMediaFile(backendDb, config, actorId, {
+    asset = await studioMedia.importFile(actorId, {
       filename: name || `telegram-video${extension.toLowerCase()}`,
       contentType: mime || "video/mp4",
       localPath: downloaded.path,

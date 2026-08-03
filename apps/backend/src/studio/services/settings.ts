@@ -16,6 +16,25 @@ function readNotifications(backendDb: BackendDb, actorId: StudioActorId) {
   };
 }
 
+function readLocale(backendDb: BackendDb, actorId: StudioActorId): StudioLocale {
+  return backendDb.db.select({ value: botUiSettings.locale }).from(botUiSettings).where(eq(botUiSettings.actorId, actorId)).get()?.value ===
+    "ru"
+    ? "ru"
+    : "en";
+}
+
+function writeYoutubeSignature(backendDb: BackendDb, actorId: StudioActorId, value: string): void {
+  const now = new Date().toISOString();
+  backendDb.db
+    .insert(botSettings)
+    .values({ actorId, youtubeSignature: value === "-" ? "" : fixUrlSlashes(value), pendingAction: null, updatedAt: now })
+    .onConflictDoUpdate({
+      target: botSettings.actorId,
+      set: { youtubeSignature: value === "-" ? "" : fixUrlSlashes(value), pendingAction: null, updatedAt: now },
+    })
+    .run();
+}
+
 function readWeeklyDigest(backendDb: BackendDb) {
   const row = backendDb.db.select().from(studioWeeklyDigestSettings).where(eq(studioWeeklyDigestSettings.id, 1)).get();
   return { enabled: row?.enabled !== 0, weekday: row?.weekday ?? 0 };
@@ -24,6 +43,9 @@ function readWeeklyDigest(backendDb: BackendDb) {
 /** Owner settings commands used by Telegram today and any future Studio adapter. */
 export function settingsService(backendDb: BackendDb) {
   return {
+    locale(actorId: StudioActorId): StudioLocale {
+      return readLocale(backendDb, actorId);
+    },
     notifications(actorId: StudioActorId) {
       return readNotifications(backendDb, actorId);
     },
@@ -86,6 +108,9 @@ export function settingsService(backendDb: BackendDb) {
     youtubeSignature(actorId: StudioActorId): string {
       return backendDb.db.select().from(botSettings).where(eq(botSettings.actorId, actorId)).get()?.youtubeSignature.trim() ?? "";
     },
+    setYoutubeSignature(actorId: StudioActorId, value: string): void {
+      writeYoutubeSignature(backendDb, actorId, value);
+    },
     beginYoutubeSignatureEdit(actorId: StudioActorId): void {
       const now = new Date().toISOString();
       backendDb.db
@@ -97,20 +122,11 @@ export function settingsService(backendDb: BackendDb) {
     saveYoutubeSignature(actorId: StudioActorId, value: string): boolean {
       const setting = backendDb.db.select().from(botSettings).where(eq(botSettings.actorId, actorId)).get();
       if (setting?.pendingAction !== "youtube_signature") return false;
-      backendDb.db
-        .update(botSettings)
-        .set({ youtubeSignature: value === "-" ? "" : fixUrlSlashes(value), pendingAction: null, updatedAt: new Date().toISOString() })
-        .where(eq(botSettings.actorId, actorId))
-        .run();
+      writeYoutubeSignature(backendDb, actorId, value);
       return true;
     },
     clearYoutubeSignature(actorId: StudioActorId): void {
-      const now = new Date().toISOString();
-      backendDb.db
-        .insert(botSettings)
-        .values({ actorId: actorId, youtubeSignature: "", pendingAction: null, updatedAt: now })
-        .onConflictDoUpdate({ target: botSettings.actorId, set: { youtubeSignature: "", pendingAction: null, updatedAt: now } })
-        .run();
+      writeYoutubeSignature(backendDb, actorId, "-");
     },
     setLocale(actorId: StudioActorId, locale: StudioLocale): void {
       backendDb.db
