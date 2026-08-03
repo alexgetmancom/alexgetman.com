@@ -88,7 +88,7 @@ export function createPublicationPlan(
     entitiesJson: typeof entitiesJson === "string" ? entitiesJson : null,
     mediaJson: media,
     siteEnabled: enabled ? 1 : 0,
-    publishedAt: enabled ? (publishedAt ?? now) : null,
+    publishedAt: enabled ? (publishedAt ?? (schedule.mode === "immediate" ? now : null)) : null,
     updatedAt: now,
   });
   return {

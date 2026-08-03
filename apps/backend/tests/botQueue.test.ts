@@ -133,6 +133,49 @@ describe("Telegram work queue", () => {
     }
   });
 
+  it("keeps a partially scheduled post actionable instead of showing a past time as upcoming", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      const ruAt = new Date(Date.now() + 60 * 60_000).toISOString();
+      backendDb.db
+        .insert(drafts)
+        .values({
+          actorId: 7,
+          status: "scheduled",
+          textRu: "RU already handled",
+          targetsJson: JSON.stringify({ telegram: true, threads_en: true }),
+          scheduledAt: new Date(Date.now() - 60_000).toISOString(),
+          scheduledEnAt: null,
+          postId: 201,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      const futureDraft = backendDb.db
+        .insert(drafts)
+        .values({
+          actorId: 7,
+          status: "scheduled",
+          textRu: "RU then EN",
+          targetsJson: JSON.stringify({ telegram: true, threads_en: true }),
+          scheduledAt: ruAt,
+          scheduledEnAt: null,
+          postId: 202,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      void futureDraft;
+
+      const snapshot = queueService(backendDb, loadConfig({ ADMIN_IDS: "7" })).snapshot(7);
+      expect(snapshot.upcoming).toHaveLength(0);
+      expect(snapshot.drafts.map((item) => item.label)).toEqual(["⏳ RU then EN", "⏳ RU already handled"]);
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("renders upcoming work and drafts on the same queue screen", () => {
     const snapshot: StudioQueueSnapshot = {
       upcoming: [

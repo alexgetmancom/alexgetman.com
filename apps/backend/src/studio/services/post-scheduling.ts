@@ -23,24 +23,27 @@ export function postSchedulingService(backendDb: BackendDb, config: BackendConfi
       const scheduled = requireOwnedDraft(backendDb, config, actorId, draftId);
       const preference = settingsService(backendDb).notifications(actorId);
       const title = draft.text_ru.trim().split("\n")[0]?.slice(0, 100) || `Post #${postId}`;
-      if (scheduled.scheduled_at)
+      cancelScheduledNotifications(backendDb, `post:${postId}`);
+      const ruTargets = localeTargets(backendDb, draft.targets_json, "ru");
+      const enTargets = localeTargets(backendDb, draft.targets_json, "en");
+      if (scheduled.scheduled_at && ruTargets.length)
         scheduleReminder(backendDb, {
           actorId,
           ref: `post:${postId}`,
           kind: "post.ru",
           publishAt: new Date(scheduled.scheduled_at),
           title,
-          targets: localeTargets(backendDb, draft.targets_json, "ru"),
+          targets: ruTargets,
           preference,
         });
-      if (scheduled.scheduled_en_at)
+      if (scheduled.scheduled_en_at && enTargets.length)
         scheduleReminder(backendDb, {
           actorId,
           ref: `post:${postId}`,
           kind: "post.en",
           publishAt: new Date(scheduled.scheduled_en_at),
           title,
-          targets: localeTargets(backendDb, draft.targets_json, "en"),
+          targets: enTargets,
           preference,
         });
       return postId;

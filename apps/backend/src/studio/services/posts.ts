@@ -1,4 +1,4 @@
-import type { DraftPatch } from "../../application/ports.js";
+import type { DraftPatch, DraftRecord } from "../../application/ports.js";
 import { PRESETS, presetName, TARGETS } from "../../botTargets.js";
 import { effectivePostTargets, registeredPostTargetIds } from "../../channels/registry.js";
 import { createDraftFromMessage } from "../../content/index.js";
@@ -82,6 +82,7 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       const targets = parseTargets(draft.targets_json);
       targets[target] = !targets[target];
       saveTargets(backendDb, draftId, targets);
+      rescheduleIfNeeded(scheduling, actorId, draftId, draft);
     },
     cycleMode(actorId: number, draftId: number): keyof typeof PRESETS {
       const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
@@ -91,6 +92,7 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       const preset = effectivePostTargets(backendDb, PRESETS[next] ?? {});
       if (!preset) throw new StudioError("err.post-mode");
       saveTargets(backendDb, draftId, preset);
+      rescheduleIfNeeded(scheduling, actorId, draftId, draft);
       return next;
     },
     edit(actorId: number, draftId: number, input: EditInput): void {
@@ -129,4 +131,23 @@ function editDraftContent(backendDb: BackendDb, config: BackendConfig, actorId: 
 
 function saveTargets(backendDb: BackendDb, draftId: number, targets: Record<string, boolean>): void {
   backendDb.drafts.update(draftId, { targetsJson: JSON.stringify(targets), updatedAt: backendDb.clock.now().toISOString() });
+}
+
+function rescheduleIfNeeded(
+  scheduling: ReturnType<typeof postSchedulingService>,
+  actorId: number,
+  draftId: number,
+  draft: DraftRecord,
+): void {
+  if (draft.status !== "scheduled") return;
+  scheduling.schedule(actorId, draftId, {
+    ruAt: scheduledDate(draft.scheduled_at),
+    enAt: scheduledDate(draft.scheduled_en_at),
+  });
+}
+
+function scheduledDate(value: string | null): Date | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }

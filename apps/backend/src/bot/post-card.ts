@@ -18,9 +18,10 @@ export async function editDraftPreview(
   draftId: number,
   config: BackendConfig,
   view: DraftView = "overview",
+  callbackText?: string,
 ): Promise<void> {
   const preview = draftPreview(backendDb, draftId, config, view);
-  await ctx.answerCallbackQuery();
+  await ctx.answerCallbackQuery(callbackText ? { text: callbackText } : {});
   await ctx.editMessageText(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
 }
 

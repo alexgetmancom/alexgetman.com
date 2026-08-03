@@ -31,19 +31,16 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
   posts.get(actorId, draftId);
   if (action === "toggle" && second) {
     posts.toggleTarget(actorId, draftId, second);
-    await ctx.answerCallbackQuery({ text: t(locale, "action.target-updated", { target: second }) });
-    return editDraftPreview(ctx, backendDb, draftId, config, "platforms");
+    return editDraftPreview(ctx, backendDb, draftId, config, "platforms", t(locale, "action.target-updated", { target: second }));
   }
   if (action === "preview") return editDraftPreview(ctx, backendDb, draftId, config);
   if (action === "platforms") return editDraftPreview(ctx, backendDb, draftId, config, "platforms");
   if (action === "cycle_mode") {
     const nextMode = posts.cycleMode(actorId, draftId);
-    await ctx.answerCallbackQuery({ text: `${t(locale, "post.mode")}: ${modeLabel(nextMode, locale)}` });
-    return editDraftPreview(ctx, backendDb, draftId, config);
+    return editDraftPreview(ctx, backendDb, draftId, config, "overview", `${t(locale, "post.mode")}: ${modeLabel(nextMode, locale)}`);
   }
   if (action === "cancel_state") {
     clearPostAdminState(backendDb, actorId);
-    await ctx.answerCallbackQuery();
     return editDraftPreview(ctx, backendDb, draftId, config, second && isDraftView(second) ? second : "overview");
   }
   if (["edit_ru", "edit_en", "replace_ru_media", "replace_en_media"].includes(action ?? "")) {
@@ -90,36 +87,41 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
   }
   if (action === "story_schedule_all" || action === "story_schedule_site") {
     posts.setStoryPublishMode(actorId, draftId, action === "story_schedule_all" ? "all" : "site_only");
-    await ctx.answerCallbackQuery();
     return editDraftPreview(ctx, backendDb, draftId, config, "schedule");
   }
   if (action === "threads_chain") {
     posts.approveThreadsChain(actorId, draftId);
-    await ctx.answerCallbackQuery({ text: t(locale, "action.preflight-chain-approved") });
     // The waiver only clears the Threads rule. Anything else preflight refuses —
     // a Telegram caption, say — must still stop the publication here.
     if (await showPublicationPreflight(ctx, backendDb, config, actorId, draftId, locale)) return;
     if (await showStoryCardChoice(ctx, backendDb, config, actorId, draftId, "publish")) return;
+    await ctx.answerCallbackQuery({ text: t(locale, "action.preflight-chain-approved") });
     return sendPublishConfirmation(ctx, backendDb, config, actorId, draftId);
   }
   if (action === "publish_confirm") {
     return queuePostNow(ctx, backendDb, config, actorId, draftId, data, locale);
   }
   if (action === "schedule") {
+    clearPostAdminState(backendDb, actorId);
     if (await showPublicationPreflight(ctx, backendDb, config, actorId, draftId, locale)) return;
     if (await showStoryCardChoice(ctx, backendDb, config, actorId, draftId, "schedule")) return;
     return editDraftPreview(ctx, backendDb, draftId, config, "schedule");
   }
   if (action === "sched_scope" && first) {
-    if (first === "ru_now") return commitLocaleSchedule(ctx, backendDb, config, actorId, draftId, "ru", new Date());
-    if (first === "en_now") return commitLocaleSchedule(ctx, backendDb, config, actorId, draftId, "en", new Date());
+    clearPostAdminState(backendDb, actorId);
+    if (first === "ru_now") return commitLocaleScheduleOnce(ctx, backendDb, config, actorId, draftId, "ru", new Date(), data);
+    if (first === "en_now") return commitLocaleScheduleOnce(ctx, backendDb, config, actorId, draftId, "en", new Date(), data);
     if (first === "both") return editDraftPreview(ctx, backendDb, draftId, config, "schedule_ru");
     return void (await ctx.answerCallbackQuery({ text: t(locale, "action.unknown") }));
   }
-  if (action === "sched_view" && first && isDraftView(first)) return editDraftPreview(ctx, backendDb, draftId, config, first);
+  if (action === "sched_view" && first && isDraftView(first)) {
+    clearPostAdminState(backendDb, actorId);
+    return editDraftPreview(ctx, backendDb, draftId, config, first);
+  }
   if (action === "sched_pick" && first && second) {
+    clearPostAdminState(backendDb, actorId);
     const value = posts.slotTime(`${second.slice(0, 2)}:${second.slice(2, 4)}`);
-    return commitLocaleSchedule(ctx, backendDb, config, actorId, draftId, requireScheduleLocale(first), value);
+    return commitLocaleScheduleOnce(ctx, backendDb, config, actorId, draftId, requireScheduleLocale(first), value, data);
   }
   if (action === "sched_manual_confirm") {
     const state = getPostAdminState(backendDb, actorId);
@@ -135,14 +137,11 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
         text: t(locale, "action.schedule-expired"),
       }));
     clearPostAdminState(backendDb, actorId);
-    const result = await withActionLock(`${actorId}:sched_manual_confirm:${draftId}`, () =>
-      commitLocaleSchedule(ctx, backendDb, config, actorId, draftId, scope, value),
-    );
-    if (!result.ok) return void (await ctx.answerCallbackQuery());
-    return;
+    return commitLocaleScheduleOnce(ctx, backendDb, config, actorId, draftId, scope, value, `sched_manual_confirm:${draftId}`);
   }
   if (action === "sched_manual" && first) {
     const pickLocale = requireScheduleLocale(first);
+    clearPostAdminState(backendDb, actorId);
     setPostAdminState(backendDb, actorId, `schedule_manual_${pickLocale}`, draftId, callbackMessageId(ctx));
     await ctx.answerCallbackQuery({ text: t(locale, "action.send-time") });
     return editDraftPrompt(
@@ -251,6 +250,22 @@ async function commitLocaleSchedule(
   await ctx.editMessageText(scheduledDraftText(uiLocale, draftId, postId, ruAt, enAt, config), {
     reply_markup: new InlineKeyboard().text(t(uiLocale, "queue.upcoming-btn"), "queue_home").text(t(uiLocale, "common.menu"), "menu_home"),
   });
+}
+
+async function commitLocaleScheduleOnce(
+  ctx: Context,
+  backendDb: BackendDb,
+  config: BackendConfig,
+  actorId: number,
+  draftId: number,
+  scheduleLocale: "ru" | "en",
+  value: Date,
+  actionKey: string,
+): Promise<void> {
+  const result = await withActionLock(`${actorId}:${actionKey}`, () =>
+    commitLocaleSchedule(ctx, backendDb, config, actorId, draftId, scheduleLocale, value),
+  );
+  if (!result.ok) await ctx.answerCallbackQuery();
 }
 
 async function sendPublishConfirmation(

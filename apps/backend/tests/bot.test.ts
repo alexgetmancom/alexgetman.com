@@ -155,7 +155,7 @@ describe("Telegram controller flow", () => {
     ]);
   });
 
-  it("creates immediate jobs for enabled locales without an explicit scheduled time", () => {
+  it("does not publish a locale whose scheduled time has not been chosen yet", () => {
     backendDb = openBackendDb(":memory:");
     const draftId = createDraftFromMessage(backendDb, 42, {
       text: "Partial schedule",
@@ -163,27 +163,52 @@ describe("Telegram controller flow", () => {
       entities: [],
       media: [],
     });
-    const before = Date.now();
+    const ruAt = new Date(Date.now() + 60_000);
     const postId = publishDraftToQueue(backendDb, draftId, {
       mode: "scheduled",
-      ruAt: new Date(Date.now() + 60_000),
+      ruAt,
       enAt: null,
     });
-    const after = Date.now();
-    const enSite = backendDb.sqlite
-      .prepare("SELECT next_attempt_at FROM site_jobs WHERE post_id=? AND reason='publish_en'")
-      .get(postId) as {
-      next_attempt_at: string;
-    };
-    const enSocial = backendDb.sqlite
-      .prepare("SELECT publish_at FROM publish_jobs WHERE post_id=? AND target='threads_en'")
-      .get(postId) as {
+    const jobs = backendDb.sqlite
+      .prepare("SELECT target, publish_at FROM publish_jobs WHERE post_id=? ORDER BY target")
+      .all(postId) as Array<{
+      target: string;
       publish_at: string;
-    };
-    expect(Date.parse(enSite.next_attempt_at)).toBeGreaterThanOrEqual(before);
-    expect(Date.parse(enSite.next_attempt_at)).toBeLessThanOrEqual(after);
-    expect(Date.parse(enSocial.publish_at)).toBeGreaterThanOrEqual(before);
-    expect(Date.parse(enSocial.publish_at)).toBeLessThanOrEqual(after);
+    }>;
+    const enSite = backendDb.sqlite.prepare("SELECT next_attempt_at FROM site_jobs WHERE post_id=? AND reason='publish_en'").get(postId);
+
+    expect(jobs.length).toBeGreaterThan(0);
+    expect(jobs.every((job) => job.publish_at === ruAt.toISOString())).toBe(true);
+    expect(jobs.some((job) => job.target.endsWith("_en"))).toBe(false);
+    expect(enSite).toBeNull();
+    expect(backendDb.sqlite.prepare("SELECT published_at FROM post_locales WHERE post_id=? AND locale='en'").get(postId)).toEqual({
+      published_at: null,
+    });
+  });
+
+  it("keeps a partial scheduled publication open until the missing locale is scheduled", () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createDraftFromMessage(backendDb, 42, {
+      text: "Partial lifecycle",
+      textEn: "Partial lifecycle",
+      entities: [],
+      media: [],
+    });
+    const ruAt = new Date(Date.now() + 60_000);
+    const postId = publishDraftToQueue(backendDb, draftId, { mode: "scheduled", ruAt, enAt: null });
+
+    backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE post_id=?").run(postId);
+    backendDb.sqlite.prepare("UPDATE site_jobs SET status='published' WHERE post_id=?").run(postId);
+    reconcilePublication(backendDb, postId);
+
+    expect(backendDb.sqlite.prepare("SELECT status FROM publications WHERE post_id=?").get(postId)).toEqual({ status: "scheduled" });
+    expect(backendDb.sqlite.prepare("SELECT status FROM drafts WHERE id=?").get(draftId)).toEqual({ status: "scheduled" });
+
+    const enAt = new Date(Date.now() + 120_000);
+    publishDraftToQueue(backendDb, draftId, { mode: "scheduled", ruAt, enAt });
+    expect(backendDb.sqlite.prepare("SELECT publish_at FROM publish_jobs WHERE post_id=? AND target='threads_en'").get(postId)).toEqual({
+      publish_at: enAt.toISOString(),
+    });
   });
 
   it("marks a publication published only after every social and site job is final", () => {

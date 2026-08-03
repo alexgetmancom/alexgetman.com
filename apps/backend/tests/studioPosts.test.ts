@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import type { BackendDb } from "../src/db/client.js";
+import type { UnsafeBackendDb } from "../src/db/client.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { postService } from "../src/studio/services/posts.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
-let backendDb: BackendDb | null = null;
+let backendDb: UnsafeBackendDb | null = null;
 
 afterEach(() => {
   backendDb?.close();
@@ -60,5 +60,33 @@ describe("Studio post commands", () => {
     const manual = posts.manualSchedule(42, draftId, "both", "23:15");
     expect(manual.ruAt?.getMinutes()).toBe(15);
     expect(manual.enAt?.getMinutes()).toBe(15);
+  });
+
+  it("replans unfinished targets when a scheduled post's platforms change", () => {
+    backendDb = openBackendDb(":memory:");
+    const posts = postService(backendDb, loadConfig({ ADMIN_IDS: "42" }));
+    const draftId = posts.create(42, { text: "Targets", textEn: "Targets", entities: [], media: [] });
+    posts.toggleTarget(42, draftId, "threads_en");
+    const ruAt = new Date(Date.now() + 60_000);
+    const enAt = new Date(Date.now() + 120_000);
+    const postId = posts.schedule(42, draftId, { ruAt, enAt });
+
+    expect(
+      backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM publish_jobs WHERE post_id=? AND target='threads_en'").get(postId),
+    ).toEqual({
+      count: 0,
+    });
+
+    posts.toggleTarget(42, draftId, "threads_en");
+    expect(backendDb.sqlite.prepare("SELECT publish_at FROM publish_jobs WHERE post_id=? AND target='threads_en'").get(postId)).toEqual({
+      publish_at: enAt.toISOString(),
+    });
+
+    posts.toggleTarget(42, draftId, "threads_en");
+    expect(
+      backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM publish_jobs WHERE post_id=? AND target='threads_en'").get(postId),
+    ).toEqual({
+      count: 0,
+    });
   });
 });

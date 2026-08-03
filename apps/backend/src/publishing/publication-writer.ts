@@ -66,6 +66,7 @@ export function persistPublicationPlanTx(tx: UnsafeBackendDb["db"], plan: Public
       .run();
   const storedPlan = {
     draft_id: plan.draftId,
+    mode: plan.mode,
     targets: plan.targets,
     scheduled_at: plan.ruAt,
     scheduled_en_at: plan.enAt,
@@ -117,21 +118,23 @@ export function persistPublicationPlanTx(tx: UnsafeBackendDb["db"], plan: Public
       .filter((locale): locale is "ru" | "en" => locale === "ru" || locale === "en"),
   );
   for (const [target, enabled] of Object.entries(plan.targets)) {
-    if (enabled && !isSiteTarget(target) && !finalTargets.has(target))
+    const publishAt = publishAtForTarget(plan, target);
+    if (enabled && publishAt != null && !isSiteTarget(target) && !finalTargets.has(target))
       enqueuePublishJobTx(tx, {
         postId: plan.postId,
         postKey: plan.postKey,
         messageId: plan.messageId,
         target,
         payload: localizeTargetPayload(plan.payload, target),
-        publishAt: (targetLocale(target) === "en" ? plan.enAt : plan.ruAt) ?? plan.now,
+        publishAt,
       });
   }
-  for (const [locale, enabled, publishAt] of [
-    ["ru", plan.targets.site_ru, plan.ruAt],
-    ["en", plan.targets.site_en, plan.enAt],
+  for (const [locale, enabled] of [
+    ["ru", plan.targets.site_ru],
+    ["en", plan.targets.site_en],
   ] as const) {
-    if (enabled && !finalSiteLocales.has(locale))
+    const publishAt = publishAtForLocale(plan, locale);
+    if (enabled && publishAt != null && !finalSiteLocales.has(locale))
       tx.insert(siteJobs)
         .values({
           postId: plan.postId,
@@ -156,4 +159,14 @@ export function persistPublicationPlanTx(tx: UnsafeBackendDb["db"], plan: Public
     .where(eq(drafts.id, plan.draftId))
     .run();
   tx.update(publications).set({ status: "scheduled", updatedAt: plan.now }).where(eq(publications.postId, plan.postId)).run();
+}
+
+function publishAtForTarget(plan: PublicationPlan, target: string): string | null {
+  const locale = targetLocale(target);
+  return locale ? publishAtForLocale(plan, locale) : null;
+}
+
+function publishAtForLocale(plan: PublicationPlan, locale: "ru" | "en"): string | null {
+  if (plan.mode === "immediate") return plan.now;
+  return locale === "en" ? plan.enAt : plan.ruAt;
 }
