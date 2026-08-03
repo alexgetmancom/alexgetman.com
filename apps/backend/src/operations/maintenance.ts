@@ -46,6 +46,59 @@ export function restoreDatabase(source: string, destination: string, force: bool
   fs.copyFileSync(source, destination, fs.constants.COPYFILE_FICLONE);
 }
 
+export type OperationalRetentionResult = {
+  postEvents: number;
+  opsActions: number;
+  sitePageviews: number;
+  runtimeUsage: number;
+  total: number;
+};
+
+type OperationalRetentionConfig = Pick<
+  BackendConfig,
+  "POST_EVENTS_RETENTION_DAYS" | "OPS_ACTIONS_RETENTION_DAYS" | "SITE_PAGEVIEWS_RETENTION_DAYS" | "RUNTIME_USAGE_RETENTION_DAYS"
+>;
+
+const RETENTION_BATCH_SIZE = 2_000;
+
+/** Deletes derived operational history while preserving unresolved alerts. */
+export function pruneOperationalHistory(
+  backendDb: BackendDb,
+  config: OperationalRetentionConfig,
+  now = new Date(),
+): OperationalRetentionResult {
+  const cutoff = (days: number) => new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString();
+  const cutoffDay = (days: number) => cutoff(days).slice(0, 10);
+  const deleteBatched = (statement: string, ...params: string[]): number => {
+    let deleted = 0;
+    while (true) {
+      const changes = backendDb.sqlite.prepare(`${statement} LIMIT ${RETENTION_BATCH_SIZE}`).run(...params).changes;
+      deleted += changes;
+      if (changes < RETENTION_BATCH_SIZE) return deleted;
+    }
+  };
+
+  const postEventsDeleted = deleteBatched(
+    `DELETE FROM post_events
+     WHERE created_at < ?
+       AND NOT (severity IN ('warn', 'error') AND acked_at IS NULL)`,
+    cutoff(config.POST_EVENTS_RETENTION_DAYS),
+  );
+  const opsActionsDeleted = deleteBatched("DELETE FROM ops_actions WHERE created_at < ?", cutoff(config.OPS_ACTIONS_RETENTION_DAYS));
+  const sitePageviewsDeleted = deleteBatched("DELETE FROM site_pageviews WHERE day < ?", cutoffDay(config.SITE_PAGEVIEWS_RETENTION_DAYS));
+  const runtimeUsageDeleted = deleteBatched(
+    "DELETE FROM runtime_usage WHERE bucket_day < ?",
+    cutoffDay(config.RUNTIME_USAGE_RETENTION_DAYS),
+  );
+  return {
+    postEvents: postEventsDeleted,
+    opsActions: opsActionsDeleted,
+    sitePageviews: sitePageviewsDeleted,
+    runtimeUsage: runtimeUsageDeleted,
+    total: postEventsDeleted + opsActionsDeleted + sitePageviewsDeleted + runtimeUsageDeleted,
+  };
+}
+
 export function buildMetricsBackfillPlan(
   backendDb: BackendDb,
   options: { targets: string[]; refs?: string[]; dateFrom?: string; dateTo?: string },

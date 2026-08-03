@@ -20,13 +20,16 @@ services:
       PIPELINE_DB: /data/pipeline.db
       MEDIA_CACHE_DIR: /data/media-cache
       VIDEO_MEDIA_DIR: /data/video-media
+      NODE_ENV: production
+      DEPLOYMENT_ENV: production
+      RUNTIME_ROLE: web
       # This is a media-only public endpoint for Meta to fetch Reels source
       # files. It does not enable the Maru site module.
       PUBLIC_BASE_URL: ${MARU_PUBLIC_BASE_URL:-https://alexgetman.com/maru-media}
       TRUSTED_CLIENT_IP_HEADER: x-real-ip
       TELEGRAM_API_BASE_URL: http://alexgetman-telegram-bot-api:8081
-      ENABLE_BOT_POLLING: "true"
-      ENABLE_WORKERS: "true"
+      ENABLE_BOT_POLLING: "false"
+      ENABLE_WORKERS: "false"
       BIND_HOST: 0.0.0.0
       PORT: "8788"
     volumes:
@@ -47,6 +50,49 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+    networks:
+      - agent_default
+    mem_limit: 512m
+    cpus: 0.75
+    pids_limit: 96
+
+  worker:
+    image: ${BACKEND_IMAGE:?set an immutable backend image digest}
+    pull_policy: always
+    container_name: maru-backend-worker
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - ./secrets.env
+    group_add:
+      - "${BOT_API_GID:-101}"
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      STUDIO_CONFIG: /app/studio.yaml
+      DATA_DIR: /data
+      PIPELINE_DB: /data/pipeline.db
+      MEDIA_CACHE_DIR: /data/media-cache
+      VIDEO_MEDIA_DIR: /data/video-media
+      PUBLIC_BASE_URL: ${MARU_PUBLIC_BASE_URL:-https://alexgetman.com/maru-media}
+      TRUSTED_CLIENT_IP_HEADER: x-real-ip
+      TELEGRAM_API_BASE_URL: http://alexgetman-telegram-bot-api:8081
+      NODE_ENV: production
+      DEPLOYMENT_ENV: production
+      RUNTIME_ROLE: worker
+      ENABLE_BOT_POLLING: "true"
+      ENABLE_WORKERS: "true"
+      PORT: "8788"
+    volumes:
+      - ${MARU_STUDIO_CONFIG_FILE:-./studio.yaml}:/app/studio.yaml:ro
+      - ./data:/data
+      - ${MARU_MEDIA_CACHE_DIR_HOST:-./media-cache}:/data/media-cache
+      - ${MARU_VIDEO_MEDIA_DIR_HOST:-./video-media}:/data/video-media
+      - ${MARU_BOT_API_DATA_DIR:-/home/deploy/alexgetman-runtime/bot-api-data}:/var/lib/telegram-bot-api:ro
+    extra_hosts:
+      - "host.docker.internal:${DEPLOY_AGENT_HOST_GATEWAY:-host-gateway}"
     networks:
       - agent_default
     mem_limit: 512m

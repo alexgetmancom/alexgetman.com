@@ -13,6 +13,10 @@ if (runtime.bot) {
     log("info", "grammY webhook bot initialized");
   }
 }
+if (runtime.config.RUNTIME_ROLE === "worker") {
+  log("info", "worker runtime started", { loops: runtime.loops.map((loop) => loop.name) });
+  await new Promise<void>(() => {});
+}
 const entry = process.env.ASTRO_DIST_ENTRY ?? "/app/dist/server/entry.mjs";
 const { handler } = await import(entry);
 

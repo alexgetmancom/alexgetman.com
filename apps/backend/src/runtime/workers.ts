@@ -14,6 +14,7 @@ import { log } from "../foundation/logger.js";
 import { type ScheduledLoop, startLoop } from "../foundation/scheduler.js";
 import { runNotificationCycle } from "../notifications/jobs.js";
 import { observabilityService } from "../observability/service.js";
+import { pruneOperationalHistory, withMaintenanceLock } from "../operations/maintenance.js";
 import { recoverStalePublishJobs } from "../publishing/index.js";
 import { recoverStoryCardJobs, runStoryCardCycle } from "../story-cards/worker.js";
 
@@ -114,6 +115,10 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
     startLoop("media-cache", 60 * 60 * 1000, async () => {
       const removed = await pruneMediaCache(config);
       if (removed) log("info", "pruned expired media cache", { removed });
+    }),
+    startLoop("operational-retention", 24 * 60 * 60 * 1000, async () => {
+      const result = withMaintenanceLock(backendDb, () => pruneOperationalHistory(backendDb, config));
+      if (result.total) log("info", "pruned operational history", result);
     }),
     startLoop("observability", config.OBSERVABILITY_INTERVAL_SECONDS * 1000, async () => {
       const result = await observabilityService(backendDb, config).run();

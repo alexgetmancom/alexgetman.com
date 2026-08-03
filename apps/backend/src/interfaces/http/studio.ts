@@ -1,10 +1,15 @@
 import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import { importStudioMediaFile } from "../../content/assets.js";
 import { commandAllowed, mcpStudioActor } from "../../foundation/http-auth.js";
 import { json, sse, text } from "../../foundation/http-response.js";
 import { trackUsageAsync } from "../../observability/usage.js";
-import { studioServices } from "../../studio/services/index.js";
 import { mcpResponse } from "../mcp.js";
 import type { RouteModule } from "./context.js";
+import { isMediaUploadTooLarge, MediaUploadTooLargeError, streamUploadToFile } from "./media-upload.js";
+
+let activeMediaUploads = 0;
 
 export const studioRoutes: RouteModule = (app, { config, backendDb, engagement }) => {
   // The MCP transport is a privileged Studio surface, same as POST /api/mcp:
@@ -32,19 +37,40 @@ export const studioRoutes: RouteModule = (app, { config, backendDb, engagement }
     const request = c.req.raw;
     const actorId = mcpStudioActor(request, config);
     if (!actorId) return text("forbidden\n", 403);
-    const form = await request.formData().catch(() => null);
-    const file = form?.get("file");
-    if (!(file instanceof File)) return json({ error: "Expected multipart field: file" }, 400);
+    if (activeMediaUploads >= config.STUDIO_UPLOAD_CONCURRENCY) {
+      return json({ error: "Too many media uploads are active; retry shortly." }, 429, { "retry-after": "30" });
+    }
+    activeMediaUploads += 1;
     try {
-      const asset = await studioServices(backendDb, config).media.import(actorId, {
-        filename: file.name,
-        contentType: file.type,
-        bytes: new Uint8Array(await file.arrayBuffer()),
-        source: "http_upload",
-      });
+      const contentType = ((request.headers.get("content-type") ?? "application/octet-stream").split(";", 1)[0] ?? "").trim().toLowerCase();
+      if (contentType === "multipart/form-data")
+        return json({ error: "Upload the raw file body with X-Filename and Content-Type headers." }, 415);
+      const body = request.body;
+      if (!body) return json({ error: "Media request has no body" }, 400);
+      const temporaryDirectory = path.join(config.STUDIO_MEDIA_DIR, ".incoming");
+      const temporary = path.join(temporaryDirectory, crypto.randomUUID());
+      await fs.promises.mkdir(temporaryDirectory, { recursive: true });
+      let asset: Awaited<ReturnType<typeof importStudioMediaFile>>;
+      try {
+        const contentLength = Number(request.headers.get("content-length"));
+        if (Number.isFinite(contentLength) && contentLength > config.STUDIO_MEDIA_MAX_BYTES)
+          throw new MediaUploadTooLargeError(config.STUDIO_MEDIA_MAX_BYTES);
+        const byteSize = await streamUploadToFile(body, temporary, config.STUDIO_MEDIA_MAX_BYTES);
+        asset = await importStudioMediaFile(backendDb, config, actorId, {
+          filename: request.headers.get("x-filename") ?? request.headers.get("x-file-name") ?? "upload",
+          contentType,
+          localPath: temporary,
+          byteSize,
+          source: "http_upload",
+        });
+      } finally {
+        await fs.promises.rm(temporary, { force: true });
+      }
       return json({ asset_id: asset.id, kind: asset.kind, filename: asset.filename, byte_size: asset.byteSize });
     } catch (error) {
-      return json({ error: error instanceof Error ? error.message : String(error) }, 400);
+      return json({ error: error instanceof Error ? error.message : String(error) }, isMediaUploadTooLarge(error) ? 413 : 400);
+    } finally {
+      activeMediaUploads -= 1;
     }
   });
 };

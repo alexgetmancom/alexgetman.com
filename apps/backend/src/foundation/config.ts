@@ -32,7 +32,9 @@ const providerRoutes = z
 
 const envSchema = z
   .object({
-    NODE_ENV: z.string().default("development"),
+    NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+    DEPLOYMENT_ENV: z.enum(["development", "test", "production"]).default("development"),
+    RUNTIME_ROLE: z.enum(["web", "worker"]).default("web"),
     LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
     PORT: z.coerce.number().int().positive().default(8788),
     BIND_HOST: z.string().default("127.0.0.1"),
@@ -158,6 +160,11 @@ const envSchema = z
     // pipeline/database disk mounted at /data.
     STUDIO_MEDIA_DIR: z.string().default("/data/video-media"),
     STUDIO_MEDIA_MAX_BYTES: z.coerce.number().int().positive().max(2_000_000_000).default(1_000_000_000),
+    STUDIO_UPLOAD_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(2),
+    POST_EVENTS_RETENTION_DAYS: z.coerce.number().int().min(30).max(3_650).default(365),
+    OPS_ACTIONS_RETENTION_DAYS: z.coerce.number().int().min(30).max(3_650).default(365),
+    SITE_PAGEVIEWS_RETENTION_DAYS: z.coerce.number().int().min(30).max(3_650).default(730),
+    RUNTIME_USAGE_RETENTION_DAYS: z.coerce.number().int().min(30).max(3_650).default(365),
     VIDEO_MEDIA_DIR: z.string().default("/data/video-media"),
     VIDEO_MAX_BYTES: z.coerce.number().int().positive().max(2_000_000_000).default(1_000_000_000),
     // Video jobs heartbeat (see video-worker.ts's withHeartbeat) at a tighter
@@ -318,7 +325,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BackendConfig 
     // an unset-but-present env leaves the Studio with no administrators.
     ADMIN_IDS: env.ADMIN_IDS || env.CONTROLLER_ADMIN_IDS,
   });
-  if (parsed.NODE_ENV === "production") {
+  if (parsed.NODE_ENV === "production" && parsed.DEPLOYMENT_ENV !== "production")
+    throw new Error("DEPLOYMENT_ENV=production is required when NODE_ENV=production");
+  if (parsed.DEPLOYMENT_ENV === "production" && parsed.NODE_ENV !== "production")
+    throw new Error("NODE_ENV=production is required when DEPLOYMENT_ENV=production");
+  if (parsed.DEPLOYMENT_ENV === "production") {
     if (!parsed.COMMAND_CENTER_TOKEN) throw new Error("COMMAND_CENTER_TOKEN is required in production");
     if (parsed.COMMAND_CENTER_TOKEN === parsed.TELEGRAM_WEBHOOK_SECRET)
       throw new Error("COMMAND_CENTER_TOKEN must be separate from TELEGRAM_WEBHOOK_SECRET in production");

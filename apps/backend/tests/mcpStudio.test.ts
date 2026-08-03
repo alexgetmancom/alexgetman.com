@@ -189,10 +189,12 @@ describe("Studio MCP", () => {
         authorization,
       );
       expect(created.status).toBe(200);
-      const form = new FormData();
-      form.set("file", new File([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], "agent-image.jpg", { type: "image/jpeg" }));
       const uploaded = await app(
-        new Request("http://localhost/api/studio/media", { method: "POST", headers: { authorization }, body: form }),
+        new Request("http://localhost/api/studio/media", {
+          method: "POST",
+          headers: { authorization, "content-type": "image/jpeg", "x-filename": "agent-image.jpg" },
+          body: new Uint8Array([0xff, 0xd8, 0xff, 0xd9]),
+        }),
       );
       expect(await uploaded.json()).toMatchObject({ asset_id: 1, kind: "photo", filename: "agent-image.jpg", byte_size: 4 });
 

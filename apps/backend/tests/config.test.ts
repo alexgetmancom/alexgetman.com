@@ -13,6 +13,19 @@ describe("loadConfig", () => {
     expect(config.STUDIO_MEDIA_DIR).toBe("/data/video-media");
   });
 
+  it("requires an explicit matching production environment", () => {
+    expect(() => loadConfig({ NODE_ENV: "production", COMMAND_CENTER_TOKEN: "b".repeat(16) })).toThrow("DEPLOYMENT_ENV=production");
+    expect(() => loadConfig({ DEPLOYMENT_ENV: "production", COMMAND_CENTER_TOKEN: "b".repeat(16) })).toThrow("NODE_ENV=production");
+    expect(
+      loadConfig({
+        NODE_ENV: "production",
+        DEPLOYMENT_ENV: "production",
+        COMMAND_CENTER_TOKEN: "b".repeat(16),
+        CHANNEL_USERNAME: "example",
+      }).RUNTIME_ROLE,
+    ).toBe("web");
+  });
+
   it("uses controller token as primary bot token", () => {
     const config = loadConfig({ CONTROLLER_BOT_TOKEN: "controller", TELEGRAM_BOT_TOKEN: "telegram" });
     expect(config.controllerBotToken).toBe("controller");

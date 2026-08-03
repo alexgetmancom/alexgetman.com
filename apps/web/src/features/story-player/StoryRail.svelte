@@ -11,6 +11,7 @@
 ============================================================================= -->
 <script lang="ts">
 import { onStoryImageError } from "../../scripts/story-player/media";
+import { easeOutCubic, railScrollTarget } from "../../scripts/story-player/rail-geometry";
 import { truncateText } from "../../utils/text";
 import type { StoryUi } from "./i18n";
 import type { PlayerPost } from "./payload";
@@ -59,10 +60,6 @@ function distanceFromActive(index: number): number {
    молча оставляет scrollTop на месте, поэтому доводим позицию сами. */
 const SCROLL_MS = 380;
 
-function easeOutCubic(progress: number): number {
-  return 1 - (1 - progress) ** 3;
-}
-
 function glideTo(railEl: HTMLElement, left: number, top: number): () => void {
   const fromLeft = railEl.scrollLeft;
   const fromTop = railEl.scrollTop;
@@ -93,9 +90,8 @@ $effect(() => {
   const railEl = rail;
   let stopGlide: (() => void) | undefined;
   const timer = window.setTimeout(() => {
-    const left = card.offsetLeft - (railEl.clientWidth - card.offsetWidth) / 2;
-    const top = card.offsetTop - (railEl.clientHeight - card.offsetHeight) / 2;
-    stopGlide = glideTo(railEl, Math.max(0, left), Math.max(0, top));
+    const target = railScrollTarget(railEl, card);
+    stopGlide = glideTo(railEl, target.left, target.top);
   }, 60);
   return () => {
     window.clearTimeout(timer);

@@ -17,17 +17,21 @@ export const postEvents = sqliteTable(
   (table) => [index("idx_post_events_lookup").on(table.postKey, table.target, table.createdAt)],
 );
 
-export const opsActions = sqliteTable("ops_actions", {
-  actionId: autoId(),
-  actorType: text().notNull(),
-  action: text().notNull(),
-  messageId: integer(),
-  target: text(),
-  status: text().notNull(),
-  detailsJson: text(),
-  createdAt: text().notNull(),
-  completedAt: text(),
-});
+export const opsActions = sqliteTable(
+  "ops_actions",
+  {
+    actionId: autoId(),
+    actorType: text().notNull(),
+    action: text().notNull(),
+    messageId: integer(),
+    target: text(),
+    status: text().notNull(),
+    detailsJson: text(),
+    createdAt: text().notNull(),
+    completedAt: text(),
+  },
+  (table) => [index("idx_ops_actions_created_at").on(table.createdAt)],
+);
 
 export const workerState = sqliteTable("worker_state", {
   name: text().primaryKey(),
