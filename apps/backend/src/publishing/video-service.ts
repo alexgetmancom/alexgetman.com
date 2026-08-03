@@ -11,7 +11,7 @@ import { instagramCredentialsForLocale } from "../foundation/external/instagram.
 import { youtubeCredentials } from "../foundation/external/youtube.js";
 import { runFfprobe } from "../foundation/runtime/ffmpeg.js";
 import { isZernioRouteReady, registeredVideoDeliveryRoute } from "./delivery-provider.js";
-import { isVideoTargetEditable } from "./state.js";
+import { isVideoTargetEditable, isVideoTargetSchedulable } from "./state.js";
 import { getVideoDraft, insertVideoJob, listVideoTargets, refreshVideoDraftStatus } from "./video-data.js";
 import type { VideoLocale, VideoMetadata, VideoTarget } from "./video-types.js";
 import { VIDEO_TARGETS } from "./video-types.js";
@@ -134,6 +134,11 @@ export function scheduleVideo(
   const selectedTargets = targets.filter((target) => schedule[target.target as VideoTarget] != null);
   if (selectedTargets.length === 0) throw new StudioError("err.video-pick-platform");
   for (const target of selectedTargets) {
+    // The card already hides the time control for a settled target, but that is
+    // a rendering decision: reaching this service another way (a stale keyboard,
+    // MCP, a retry path) used to flip a published target back to "scheduled"
+    // and arm a second prepare/publish pair for something already delivered.
+    if (!isVideoTargetSchedulable(target.status)) throw new StudioError("err.video-target-not-schedulable");
     const date = schedule[target.target as VideoTarget];
     if (!date || Number.isNaN(date.getTime()) || date.getTime() <= now.getTime()) throw new StudioError("err.schedule-time-past");
   }
