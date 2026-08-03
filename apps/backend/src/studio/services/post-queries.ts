@@ -1,5 +1,6 @@
 import { targetLocale } from "../../botTargets.js";
 import { effectivePostTargets } from "../../channels/registry.js";
+import { draftLocaleContent } from "../../content/draft-content.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { mediaPolicyForTarget } from "../../publishing/media-policy.js";
@@ -8,7 +9,7 @@ import { parseTargets } from "../../publishing/targets.js";
 import { storyCardsForDraft } from "../../story-cards/store.js";
 import { accessibleStudioActorIds } from "../access.js";
 import { postDeliveryProjections } from "../projections.js";
-import { draftMedia, parseJsonArray, requireOwnedDraft } from "./post-access.js";
+import { requireOwnedDraft } from "./post-access.js";
 import { postProgressState } from "./post-progress.js";
 
 /** Query-side use cases exposed through the Studio post facade. */
@@ -32,8 +33,8 @@ export function postQueryService(backendDb: BackendDb, config: BackendConfig) {
 
     preview(actorId: number, draftId: number) {
       const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
-      const ruMedia = draftMedia(draft, "ru");
-      const enMedia = draftMedia(draft, "en");
+      const ruContent = draftLocaleContent(draft, "ru");
+      const enContent = draftLocaleContent(draft, "en");
       const storyCards = storyCardsForDraft(backendDb, draftId);
       const storyCardsReady = ["ru", "en"].every((locale) =>
         storyCards.some((card) => card.locale === locale && card.status === "ready" && card.localPath),
@@ -43,14 +44,14 @@ export function postQueryService(backendDb: BackendDb, config: BackendConfig) {
         id: draft.id,
         status: draft.status,
         locales: [
-          { locale: "ru" as const, text: draft.text_ru, entities: parseJsonArray(draft.text_ru_entities_json), media: ruMedia },
-          { locale: "en" as const, text: draft.text_en_approved, entities: [], media: enMedia },
+          { locale: "ru" as const, ...ruContent },
+          { locale: "en" as const, ...enContent },
         ],
         targets,
         sources: backendDb.studioPosts.sources(draftId),
         mediaPolicy: Object.entries(targets)
           .filter(([, enabled]) => enabled)
-          .map(([target]) => mediaPolicyForTarget(target, targetLocale(target) === "ru" ? ruMedia : enMedia)),
+          .map(([target]) => mediaPolicyForTarget(target, targetLocale(target) === "ru" ? ruContent.media : enContent.media)),
         delivery: postDeliveryProjections(draft, storyCardsReady),
         storyCards,
       };

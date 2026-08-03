@@ -33,10 +33,11 @@ deploy/      Docker, nginx, deployment-agent, and production runbook material
 scripts/     repository checks and build helpers
 ```
 
-The main path is deliberately small: Telegram, MCP, and the private web Studio
-are adapters over the same Studio services; those services create durable SQLite
-publication jobs; workers deliver them to the site and social platforms. The
-Command Center and operations CLI only read or explicitly maintain that state.
+The main path is deliberately small: Telegram and MCP are command adapters over
+the same Studio services, while the private web Studio is a read-only view of
+their read model. Those services create durable SQLite publication jobs; workers
+deliver them to the site and social platforms. The Command Center and operations
+CLI only read or explicitly maintain that state.
 
 ## Local development
 

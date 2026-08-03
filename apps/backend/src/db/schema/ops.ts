@@ -117,19 +117,6 @@ export const credentialChecks = sqliteTable("credential_checks", {
   detailsJson: text(),
 });
 
-export const platformRules = sqliteTable(
-  "platform_rules",
-  {
-    target: text().notNull(),
-    formatKey: text().notNull(),
-    supportStatus: text().notNull().default("unknown"),
-    maxItems: integer(),
-    notes: text(),
-    updatedAt: text().notNull(),
-  },
-  (table) => [primaryKey({ columns: [table.target, table.formatKey] })],
-);
-
 export const platformCapabilities = sqliteTable(
   "platform_capabilities",
   {

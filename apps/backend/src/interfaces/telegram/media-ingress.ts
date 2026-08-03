@@ -1,12 +1,9 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
-import path from "node:path";
 import type { Bot } from "grammy";
 import { importStudioMediaFile } from "../../content/index.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
-
-const TELEGRAM_DOWNLOAD_TIMEOUT_MS = 300_000;
+import { downloadTelegramFile } from "./file-download.js";
 
 /** Converts Telegram transport file ids into Content-owned assets before a draft is written. */
 export async function importTelegramAlbumMedia(
@@ -34,7 +31,7 @@ async function importTelegramMediaItem(
   if (!file.file_path) throw new Error("Telegram did not return a media file path.");
   const type = String(item.type ?? "photo").toLowerCase();
   const extension = type === "video" ? ".mp4" : ".jpg";
-  const downloaded = await telegramFilePath(config, file.file_path, extension);
+  const downloaded = await downloadTelegramFile(config, file.file_path, extension);
   let asset: Awaited<ReturnType<typeof importStudioMediaFile>>;
   try {
     asset = await importStudioMediaFile(backendDb, config, actorId, {
@@ -53,29 +50,6 @@ async function importTelegramMediaItem(
     filename: asset.filename,
     mime_type: asset.mimeType,
   };
-}
-
-async function telegramFilePath(config: BackendConfig, filePath: string, extension: string): Promise<{ path: string; temporary: boolean }> {
-  if (path.isAbsolute(filePath)) return { path: filePath, temporary: false };
-  if (!config.controllerBotToken) throw new Error("Telegram bot token is not configured.");
-  const url = `${config.TELEGRAM_API_BASE_URL.replace(/\/$/, "")}/file/bot${config.controllerBotToken}/${filePath}`;
-  // Not the shared 30s client: a self-hosted Bot API server serves files up to
-  // 2GB, so the ceiling is generous — but it must exist, or a stalled CDN pins
-  // the ingress handler forever. The URL embeds the bot token and never
-  // reaches an error message.
-  let response: Response;
-  try {
-    response = await fetch(url, { signal: AbortSignal.timeout(TELEGRAM_DOWNLOAD_TIMEOUT_MS) });
-  } catch (error) {
-    if (error instanceof Error && error.name === "TimeoutError")
-      throw new Error(`Telegram media download timed out after ${TELEGRAM_DOWNLOAD_TIMEOUT_MS / 1000}s.`);
-    throw new Error("Telegram media download failed.", { cause: error });
-  }
-  if (!response.ok) throw new Error(`Telegram media download failed: ${response.status}`);
-  const target = path.join(config.STUDIO_MEDIA_DIR, ".incoming", `telegram-media-${crypto.randomUUID()}${extension}`);
-  await fs.promises.mkdir(path.dirname(target), { recursive: true });
-  await Bun.write(target, response);
-  return { path: target, temporary: true };
 }
 
 function string(value: unknown): string | null {

@@ -15,7 +15,7 @@ type PlatformProfile = {
   capabilities: { text: boolean; image: boolean; video: boolean };
   requirements: readonly string[];
   text?: { removeUrls?: boolean };
-  limits?: { text?: number; caption?: number; media?: number };
+  limits?: { text?: number; caption?: number };
   /** Delivery-facing media contract. Interfaces use this for previews; ports own execution. */
   media?: MediaRule & { whenVideo?: MediaRule };
   video?: { landscape: readonly [number, number]; portrait: readonly [number, number]; square: readonly [number, number] };
@@ -52,7 +52,7 @@ const threadsVideo = { landscape: [1920, 1080], portrait: [1080, 1920], square: 
 const platformOverrides: Record<PlatformId, Omit<PlatformProfile, "id" | "label" | "locale" | "kind" | "requirements">> = {
   telegram: {
     capabilities: { text: true, image: true, video: true },
-    limits: { text: 4096, caption: 1024, media: 10 },
+    limits: { text: 4096, caption: 1024 },
     media: { mode: "limited", limit: 10, label: "Telegram" },
   },
   site_ru: { capabilities: { text: true, image: true, video: false }, media: { mode: "all" } },

@@ -24,7 +24,7 @@ export function cancelDraft(backendDb: BackendDb, draftId: number): void {
       .run();
     if (!postId) return;
     tx.update(publications).set({ status: "cancelled", updatedAt: now }).where(eq(publications.postId, postId)).run();
-    const finalCount =
+    const finalSocialCount =
       tx
         .select({ count: count() })
         .from(publishJobs)
@@ -32,6 +32,13 @@ export function cancelDraft(backendDb: BackendDb, draftId: number): void {
           and(eq(publishJobs.postId, postId), inArray(publishJobs.status, ["publishing", "published", "skipped", "verification_required"])),
         )
         .get()?.count ?? 0;
+    const finalSiteCount =
+      tx
+        .select({ count: count() })
+        .from(siteJobs)
+        .where(and(eq(siteJobs.postId, postId), inArray(siteJobs.status, ["rendering", "published"])))
+        .get()?.count ?? 0;
+    const finalCount = finalSocialCount + finalSiteCount;
     if (finalCount > 0) {
       tx.update(publishJobs)
         .set({ status: "cancelled", updatedAt: now })

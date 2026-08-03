@@ -1,4 +1,5 @@
-import { and, asc, eq, inArray, isNull, lte, notInArray, or, sql } from "drizzle-orm";
+import crypto from "node:crypto";
+import { and, asc, eq, inArray, isNull, lt, lte, notInArray, or, sql } from "drizzle-orm";
 import { TARGET_GROUPS } from "../../botTargets.js";
 import type { BackendDb } from "../../db/client.js";
 import { metricSchedule, posts, postTargets } from "../../db/schema.js";
@@ -14,6 +15,7 @@ export type MetricTask = {
   externalId: string | null;
   externalIds: string[];
   url: string | null;
+  lockId: string;
 };
 
 const PAID_METRIC_TARGETS = TARGET_GROUPS.x;
@@ -24,7 +26,15 @@ export function ensureMetricSchedule(backendDb: BackendDb, targets: readonly str
     .select({ postKey: posts.postKey, dateUtc: posts.dateUtc, target: postTargets.target })
     .from(posts)
     .innerJoin(postTargets, eq(postTargets.postKey, posts.postKey))
-    .where(and(eq(posts.status, "active"), eq(postTargets.status, "published"), inArray(postTargets.target, [...targets])))
+    .leftJoin(metricSchedule, and(eq(metricSchedule.postKey, posts.postKey), eq(metricSchedule.target, postTargets.target)))
+    .where(
+      and(
+        eq(posts.status, "active"),
+        eq(postTargets.status, "published"),
+        inArray(postTargets.target, [...targets]),
+        isNull(metricSchedule.postKey),
+      ),
+    )
     .all();
   const now = new Date().toISOString();
   backendDb.db.transaction((tx) => {
@@ -44,8 +54,15 @@ export function ensureMetricSchedule(backendDb: BackendDb, targets: readonly str
   });
 }
 
-export function dueMetricTasks(backendDb: BackendDb, config: BackendConfig, targets: readonly string[]): MetricTask[] {
+export function claimDueMetricTasks(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  targets: readonly string[],
+  worker = `metrics:${crypto.randomUUID()}`,
+): MetricTask[] {
   if (targets.length === 0) return [];
+  const now = new Date().toISOString();
+  const cutoff = new Date(Date.now() - config.METRIC_LOCK_TIMEOUT_SECONDS * 1000).toISOString();
   const rows = backendDb.db
     .select({
       postKey: metricSchedule.postKey,
@@ -56,6 +73,8 @@ export function dueMetricTasks(backendDb: BackendDb, config: BackendConfig, targ
       externalId: postTargets.externalId,
       externalIds: postTargets.externalIdsJson,
       url: postTargets.url,
+      lockedBy: metricSchedule.lockedBy,
+      lockedAt: metricSchedule.lockedAt,
     })
     .from(metricSchedule)
     .innerJoin(posts, eq(posts.postKey, metricSchedule.postKey))
@@ -66,7 +85,8 @@ export function dueMetricTasks(backendDb: BackendDb, config: BackendConfig, targ
         eq(postTargets.status, "published"),
         inArray(metricSchedule.target, [...targets]),
         ...(config.ENABLE_X_METRICS ? [] : [notInArray(metricSchedule.target, [...PAID_METRIC_TARGETS])]),
-        or(isNull(metricSchedule.nextCheckAt), lte(metricSchedule.nextCheckAt, new Date().toISOString())),
+        or(isNull(metricSchedule.nextCheckAt), lte(metricSchedule.nextCheckAt, now)),
+        or(isNull(metricSchedule.lockedBy), isNull(metricSchedule.lockedAt), lt(metricSchedule.lockedAt, cutoff)),
       ),
     )
     // Oldest due work must win. Ordering by the post date starved historical
@@ -74,33 +94,59 @@ export function dueMetricTasks(backendDb: BackendDb, config: BackendConfig, targ
     .orderBy(asc(metricSchedule.nextCheckAt), asc(metricSchedule.checkCount), asc(posts.dateUtc))
     .limit(config.MAX_METRIC_TASKS_PER_CYCLE)
     .all();
-  return rows.map((row) => ({
-    postKey: row.postKey,
-    target: row.target,
-    checkCount: row.checkCount,
-    messageId: row.messageId,
-    dateUtc: row.dateUtc,
-    externalId: row.externalId,
-    externalIds: row.externalIds ?? (row.externalId ? [row.externalId] : []),
-    url: row.url,
-  }));
+  const claimed: MetricTask[] = [];
+  backendDb.db.transaction((tx) => {
+    for (const row of rows) {
+      const locked = tx
+        .update(metricSchedule)
+        .set({ lockedBy: worker, lockedAt: now, updatedAt: now })
+        .where(
+          and(
+            eq(metricSchedule.postKey, row.postKey),
+            eq(metricSchedule.target, row.target),
+            or(isNull(metricSchedule.lockedBy), isNull(metricSchedule.lockedAt), lt(metricSchedule.lockedAt, cutoff)),
+          ),
+        )
+        .returning({ postKey: metricSchedule.postKey })
+        .get();
+      if (!locked) continue;
+      claimed.push({
+        postKey: row.postKey,
+        target: row.target,
+        checkCount: row.checkCount,
+        messageId: row.messageId,
+        dateUtc: row.dateUtc,
+        externalId: row.externalId,
+        externalIds: row.externalIds ?? (row.externalId ? [row.externalId] : []),
+        url: row.url,
+        lockId: worker,
+      });
+    }
+  });
+  return claimed;
 }
 
-export function finishMetricTask(backendDb: BackendDb, task: MetricTask, error: string | null, terminal = false): void {
+/** Compatibility name for callers that only need the due-task projection. */
+export function dueMetricTasks(backendDb: BackendDb, config: BackendConfig, targets: readonly string[]): MetricTask[] {
+  return claimDueMetricTasks(backendDb, config, targets);
+}
+
+export function finishMetricTask(backendDb: BackendDb, task: MetricTask, error: string | null, terminal = false, db = backendDb.db): void {
   const now = new Date();
   const nextIndex = error ? task.checkCount : task.checkCount + 1;
   const nextCheckpoint = terminal ? null : error ? new Date(now.getTime() + 15 * 60_000) : metricCheckpointAt(task.dateUtc, nextIndex, now);
-  backendDb.db
-    .update(metricSchedule)
+  db.update(metricSchedule)
     .set({
       nextCheckAt: nextCheckpoint?.toISOString() ?? null,
       lastCheckedAt: now.toISOString(),
       checkCount: error ? task.checkCount : sql`${metricSchedule.checkCount} + 1`,
       frozenAt: nextCheckpoint == null ? now.toISOString() : null,
       lastError: error,
+      lockedBy: null,
+      lockedAt: null,
       updatedAt: now.toISOString(),
     })
-    .where(and(eq(metricSchedule.postKey, task.postKey), eq(metricSchedule.target, task.target)))
+    .where(and(eq(metricSchedule.postKey, task.postKey), eq(metricSchedule.target, task.target), eq(metricSchedule.lockedBy, task.lockId)))
     .run();
 }
 

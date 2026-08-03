@@ -1,12 +1,12 @@
 import { loadFeedItems } from "../server/public-site";
 import { keyEntities } from "../utils/key-entities";
+import { sortedPublishedItems } from "../utils/public-feed";
 import { compactText, truncateText } from "../utils/text";
 
 export const prerender = false;
 
 export async function GET() {
-  const items = loadFeedItems()
-    .filter((item) => item.has_en && item.text_en && item.post_id && item.slug_en)
+  const items = sortedPublishedItems(loadFeedItems(), "en", 100)
     .map((item) => {
       const text = compactText(item.text_en);
       const canonicalUrl = `https://alexgetman.com/${item.post_id}/${item.slug_en}/`;

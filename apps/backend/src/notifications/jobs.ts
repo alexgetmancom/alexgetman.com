@@ -1,7 +1,7 @@
 import { and, asc, eq, lte } from "drizzle-orm";
 import type { BackendDb } from "../db/client.js";
+import { recordEvent } from "../db/repositories/events.js";
 import { studioNotificationJobs } from "../db/schema.js";
-import { recordDomainEvent } from "../domain/events.js";
 
 type NotificationPreference = { remindersEnabled: boolean; reminderMinutes: number; completionEnabled: boolean };
 
@@ -69,8 +69,8 @@ export function runNotificationCycle(backendDb: BackendDb, limit = 50): number {
     // Claim and emit as one unit. Marking the job delivered first meant a
     // failing recordDomainEvent silently swallowed the reminder: the job was
     // terminal, and nothing left to retry.
-    const emitted = backendDb.db.transaction(() => {
-      const claimed = backendDb.db
+    const emitted = backendDb.db.transaction((tx) => {
+      const claimed = tx
         .update(studioNotificationJobs)
         .set({ status: "delivered", updatedAt: now })
         .where(and(eq(studioNotificationJobs.id, job.id), eq(studioNotificationJobs.status, "queued")))
@@ -78,7 +78,7 @@ export function runNotificationCycle(backendDb: BackendDb, limit = 50): number {
         .get();
       if (!claimed) return false;
       const payload = job.payloadJson ?? {};
-      recordDomainEvent(backendDb.events, {
+      recordEvent(backendDb.db, backendDb.clock, {
         ref: job.ref,
         type: "studio.notification.reminder.due",
         severity: "info",

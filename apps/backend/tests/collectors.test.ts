@@ -28,6 +28,7 @@ function task(overrides: Partial<MetricTask> = {}): MetricTask {
     externalId: "1234",
     externalIds: ["1234"],
     url: null,
+    lockId: "test-worker",
     ...overrides,
   };
 }

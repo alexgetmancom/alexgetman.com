@@ -14,9 +14,10 @@ import { publishDraftToQueue } from "../../publishing/publication-workflow.js";
 import { parseManualSchedule, scheduleClockToday } from "../../publishing/schedule.js";
 import { parseTargets } from "../../publishing/targets.js";
 import { type StoryPublishMode, setStoryPublishMode } from "../../story-cards/store.js";
-import { accessibleStudioActorIds, studioActorIds } from "../access.js";
+import { accessibleStudioActorIds } from "../access.js";
 import { draftMedia, requireOwnedDraft } from "./post-access.js";
 import { postQueryService } from "./post-queries.js";
+import { settingsService } from "./settings.js";
 
 type ScheduleInput = { ruAt: Date | null; enAt: Date | null };
 type ScheduleScope = "ru" | "en" | "both";
@@ -79,7 +80,7 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
       const postId = publishDraftToQueue(backendDb, draftId, { mode: "scheduled", ...input });
       const scheduled = requireOwnedDraft(backendDb, config, actorId, draftId);
-      const preference = workspaceNotificationPreference(backendDb, config);
+      const preference = settingsService(backendDb).notifications(actorId);
       const title = draft.text_ru.trim().split("\n")[0]?.slice(0, 100) || `Post #${postId}`;
       if (scheduled.scheduled_at)
         scheduleReminder(backendDb, {
@@ -187,17 +188,6 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
         details: { locale, asset_ids: assetIds },
       });
     },
-  };
-}
-
-function workspaceNotificationPreference(backendDb: BackendDb, config: BackendConfig) {
-  const actorIds = studioActorIds(config);
-  const rows = backendDb.studioPosts.notificationSettings(actorIds);
-  const byActor = new Map(rows.map((row) => [row.actorId, row]));
-  return {
-    remindersEnabled: actorIds.some((actorId) => byActor.get(actorId)?.remindersEnabled !== 0),
-    reminderMinutes: config.VIDEO_REMINDER_MINUTES,
-    completionEnabled: true,
   };
 }
 

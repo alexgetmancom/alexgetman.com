@@ -36,7 +36,7 @@ export type NewDraft = {
   actorId: number;
   textRu: string;
   textEnMachine: string;
-  textEnApproved: string;
+  textEnApproved: string | null;
   targetsJson: string;
   mediaRuJson: string | null;
   textRuEntitiesJson: string;

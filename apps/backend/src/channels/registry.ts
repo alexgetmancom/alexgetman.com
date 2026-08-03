@@ -4,7 +4,7 @@ import { channelConnections } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { instagramCredentialsForLocale } from "../foundation/external/instagram.js";
 import type { VideoLocale } from "../foundation/external/youtube.js";
-import type { VideoTarget } from "../publishing/video-types.js";
+import { VIDEO_TARGET_PLATFORM, type VideoTarget } from "../publishing/video-types.js";
 
 export type ChannelConnection = typeof channelConnections.$inferSelect;
 export type ChannelSeed = Omit<ChannelConnection, "createdAt" | "updatedAt">;
@@ -73,10 +73,18 @@ function configuredPostChannels(config: BackendConfig): ChannelSeed[] {
   if (config.ENABLE_TELEGRAM_STORIES)
     add("telegram_stories", "telegram_stories", "ru", "Telegram Stories RU", "native", config.TELEGRAM_STORIES_CHANNEL);
   if (config.ENABLE_INSTAGRAM_STORIES) {
-    if (config.INSTAGRAM_RU_ACCESS_TOKEN && config.INSTAGRAM_RU_USER_ID)
-      add("instagram_stories_ru", "instagram_stories", "ru", "Instagram Stories RU", "native", config.INSTAGRAM_RU_USER_ID);
-    if (config.INSTAGRAM_EN_ACCESS_TOKEN && config.INSTAGRAM_EN_USER_ID)
-      add("instagram_stories", "instagram_stories", "en", "Instagram Stories EN", "native", config.INSTAGRAM_EN_USER_ID);
+    for (const locale of ["ru", "en"] as const) {
+      const credentials = instagramCredentialsForLocale(config, locale, "shared");
+      if (credentials.accessToken && credentials.userId)
+        add(
+          locale === "en" ? "instagram_stories" : "instagram_stories_ru",
+          "instagram_stories",
+          locale,
+          `Instagram Stories ${locale.toUpperCase()}`,
+          "native",
+          credentials.userId,
+        );
+    }
   }
   return seeds;
 }
@@ -193,7 +201,7 @@ export function hasChannelRegistry(backendDb: BackendDb): boolean {
 /** The platform a video target is delivered through. Kept next to the registry
  * because the registry stores platforms, while publishing speaks in targets. */
 export function videoPlatform(target: VideoTarget): string {
-  return target === "youtube_shorts" ? "youtube" : "instagram";
+  return VIDEO_TARGET_PLATFORM[target];
 }
 
 export function channelFor(backendDb: BackendDb, platform: string, locale: VideoLocale): ChannelConnection | undefined {

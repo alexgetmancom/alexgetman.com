@@ -3,6 +3,12 @@ export const VIDEO_TARGETS = ["youtube_shorts", "instagram_reels"] as const;
 export type VideoTarget = (typeof VIDEO_TARGETS)[number];
 export type VideoLocale = "ru" | "en";
 
+/** The provider platform for each durable video target. */
+export const VIDEO_TARGET_PLATFORM = {
+  youtube_shorts: "youtube",
+  instagram_reels: "instagram",
+} as const satisfies Record<VideoTarget, string>;
+
 type VideoSourceMetadata = { videoDurationMs?: number };
 export type YouTubeMetadata = { title: string; description: string; tags: string[]; gameUrl?: string } & VideoSourceMetadata;
 /** Instagram receives one ready-to-publish caption, including any hashtags. */

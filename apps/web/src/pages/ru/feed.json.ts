@@ -1,18 +1,7 @@
-import { loadFeedItems } from "../../server/public-site";
+import { publicJsonFeedResponse } from "../../server/public-feed";
 
 export const prerender = false;
 
-export async function GET() {
-  const items = loadFeedItems()
-    .filter((item) => item.has_ru && item.post_id)
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    .slice(0, 50);
-
-  return new Response(JSON.stringify({ items }, null, 2), {
-    headers: {
-      "Content-Type": "application/json; charset=utf-8",
-      "Cache-Control": "public, max-age=60",
-      "X-Robots-Tag": "noindex, follow",
-    },
-  });
+export function GET() {
+  return publicJsonFeedResponse("ru");
 }

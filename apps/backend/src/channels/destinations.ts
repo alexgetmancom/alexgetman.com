@@ -1,6 +1,7 @@
 import type { BackendDb } from "../db/client.js";
 import {
   BOOTSTRAP_VIDEO_DESTINATIONS,
+  VIDEO_TARGET_PLATFORM,
   VIDEO_TARGETS,
   type VideoDestination,
   type VideoLocale,
@@ -37,10 +38,9 @@ export function videoDestinations(backendDb: BackendDb): VideoDestination[] {
 /** Platforms the video pipeline can publish to, keyed by the registry's platform
  * name. A platform absent from here has no target to be delivered through, so a
  * channel for it would be a connection that never publishes. */
-export const VIDEO_PLATFORM_TARGET: Record<string, VideoTarget | undefined> = {
-  youtube: "youtube_shorts",
-  instagram: "instagram_reels",
-};
+export const VIDEO_PLATFORM_TARGET: Record<string, VideoTarget | undefined> = Object.fromEntries(
+  Object.entries(VIDEO_TARGET_PLATFORM).map(([target, platform]) => [platform, target]),
+) as Record<string, VideoTarget | undefined>;
 
 export function isPublishableVideoPlatform(platform: string): boolean {
   const target = VIDEO_PLATFORM_TARGET[platform];

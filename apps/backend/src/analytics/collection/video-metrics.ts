@@ -1,4 +1,5 @@
-import { and, asc, eq, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import crypto from "node:crypto";
+import { and, asc, eq, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { videoChannelConfig } from "../../channels/channel-config.js";
 import type { BackendDb } from "../../db/client.js";
 import { videoDrafts, videoMetricSchedule, videoTargets } from "../../db/schema.js";
@@ -30,6 +31,7 @@ type VideoMetricTask = {
   checkpointIndex: number;
   errorCount: number;
   locale: "ru" | "en";
+  lockId: string;
 };
 type YouTubeVideo = {
   items?: Array<{
@@ -85,7 +87,7 @@ type ZernioPostAnalytics = {
 /** Uses the same fixed-from-publication checkpoints as text-post metrics. */
 export async function runVideoMetricSchedule(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<number> {
   ensureVideoMetricSchedule(backendDb);
-  const tasks = dueVideoMetricTasks(backendDb, config.MAX_METRIC_TASKS_PER_CYCLE);
+  const tasks = claimDueVideoMetricTasks(backendDb, config, config.MAX_METRIC_TASKS_PER_CYCLE);
   const youtubeTasks = tasks.filter((task) => task.target === "youtube_shorts");
   const youtubeTokens = new Map<"ru" | "en", string>();
   for (const locale of ["ru", "en"] as const) {
@@ -233,9 +235,15 @@ function ensureVideoMetricSchedule(backendDb: BackendDb): void {
   }
 }
 
-function dueVideoMetricTasks(backendDb: BackendDb, limit: number): VideoMetricTask[] {
+function claimDueVideoMetricTasks(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  limit: number,
+  worker = `video-metrics:${crypto.randomUUID()}`,
+): VideoMetricTask[] {
   const now = new Date().toISOString();
-  return backendDb.db
+  const cutoff = new Date(Date.now() - config.METRIC_LOCK_TIMEOUT_SECONDS * 1000).toISOString();
+  const rows = backendDb.db
     .select({
       id: videoTargets.id,
       videoDraftId: videoTargets.videoDraftId,
@@ -250,6 +258,8 @@ function dueVideoMetricTasks(backendDb: BackendDb, limit: number): VideoMetricTa
       checkpointIndex: videoMetricSchedule.checkpointIndex,
       errorCount: videoMetricSchedule.errorCount,
       locale: videoDrafts.locale,
+      lockedBy: videoMetricSchedule.lockedBy,
+      lockedAt: videoMetricSchedule.lockedAt,
     })
     .from(videoMetricSchedule)
     .innerJoin(videoTargets, eq(videoTargets.id, videoMetricSchedule.videoTargetId))
@@ -260,14 +270,31 @@ function dueVideoMetricTasks(backendDb: BackendDb, limit: number): VideoMetricTa
         isNull(videoMetricSchedule.frozenAt),
         lte(videoMetricSchedule.nextCheckAt, now),
         or(eq(videoTargets.target, "youtube_shorts"), eq(videoTargets.target, "instagram_reels")),
+        or(isNull(videoMetricSchedule.lockedBy), isNull(videoMetricSchedule.lockedAt), lt(videoMetricSchedule.lockedAt, cutoff)),
       ),
     )
     .orderBy(asc(videoMetricSchedule.nextCheckAt))
     .limit(limit)
     .all()
-    .filter((task) =>
-      Boolean((task.deliveryProvider === "zernio" ? task.providerPostId : task.externalId) && task.publishedAt),
-    ) as VideoMetricTask[];
+    .filter((task) => Boolean((task.deliveryProvider === "zernio" ? task.providerPostId : task.externalId) && task.publishedAt));
+  const claimed: VideoMetricTask[] = [];
+  backendDb.db.transaction((tx) => {
+    for (const task of rows) {
+      const locked = tx
+        .update(videoMetricSchedule)
+        .set({ lockedBy: worker, lockedAt: now, updatedAt: now })
+        .where(
+          and(
+            eq(videoMetricSchedule.videoTargetId, task.id),
+            or(isNull(videoMetricSchedule.lockedBy), isNull(videoMetricSchedule.lockedAt), lt(videoMetricSchedule.lockedAt, cutoff)),
+          ),
+        )
+        .returning({ videoTargetId: videoMetricSchedule.videoTargetId })
+        .get();
+      if (locked) claimed.push({ ...task, lockId: worker } as VideoMetricTask);
+    }
+  });
+  return claimed;
 }
 
 async function collectZernioInstagramVideoMetrics(
@@ -372,9 +399,11 @@ function finishVideoMetricTask(backendDb: BackendDb, task: VideoMetricTask, erro
       lastCheckedAt: now.toISOString(),
       lastError: error,
       frozenAt: nextCheckAt == null ? now.toISOString() : null,
+      lockedBy: null,
+      lockedAt: null,
       updatedAt: now.toISOString(),
     })
-    .where(eq(videoMetricSchedule.videoTargetId, task.id))
+    .where(and(eq(videoMetricSchedule.videoTargetId, task.id), eq(videoMetricSchedule.lockedBy, task.lockId)))
     .run();
   return nextCheckAt == null;
 }

@@ -35,6 +35,26 @@ describe("PublicationPlan", () => {
       ]),
     );
   });
+
+  it("rejects an enabled target that has no delivery contract", () => {
+    expect(() =>
+      createPublicationPlan(
+        {
+          channel_message_id: 42,
+          text_ru: "Text",
+          text_en_machine: "Text",
+          text_en_approved: null,
+          targets_json: JSON.stringify({ bogus_target: true }),
+          media_ru_json: null,
+          media_en_json: null,
+        } as never,
+        1,
+        2,
+        { mode: "immediate", ruAt: null, enAt: null },
+        "2026-07-14T10:00:00.000Z",
+      ),
+    ).toThrow("Unknown publication target(s): bogus_target");
+  });
 });
 
 describe("publication preflight", () => {

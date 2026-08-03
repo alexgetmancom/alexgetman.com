@@ -1,9 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { and, eq, inArray, isNotNull, isNull, lte, or } from "drizzle-orm";
+import { parseArrayValue } from "../content/message.js";
 import { deleteVideo } from "../content/video-assets.js";
 import type { BackendDb } from "../db/client.js";
-import { studioMediaAssets, videoDrafts } from "../db/schema.js";
+import { drafts, studioMediaAssets, videoDrafts } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 
 /** Reclaims video source files whose drafts are final and past their
@@ -80,6 +81,9 @@ function pruneStudioAssetSource(config: BackendConfig, backendDb: BackendDb, ass
     )
   )
     return;
+  // Post attachments still use durable JSON for compatibility with old drafts.
+  // Never remove a shared source merely because the video side became final.
+  if (postDraftReferencesAsset(backendDb, assetId)) return;
   const asset = backendDb.db
     .select({ localPath: studioMediaAssets.localPath })
     .from(studioMediaAssets)
@@ -87,6 +91,16 @@ function pruneStudioAssetSource(config: BackendConfig, backendDb: BackendDb, ass
     .get();
   if (!asset || !isManagedVideoSource(config, asset.localPath)) return;
   fs.rmSync(asset.localPath, { force: true });
+}
+
+function postDraftReferencesAsset(backendDb: BackendDb, assetId: number): boolean {
+  return backendDb.db
+    .select({ mediaRuJson: drafts.mediaRuJson, mediaEnJson: drafts.mediaEnJson })
+    .from(drafts)
+    .all()
+    .some((draft) =>
+      [draft.mediaRuJson, draft.mediaEnJson].some((value) => parseArrayValue(value).some((item) => Number(item.asset_id) === assetId)),
+    );
 }
 
 function isManagedVideoSource(config: BackendConfig, source: string): boolean {

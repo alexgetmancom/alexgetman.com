@@ -1,6 +1,7 @@
 import { hasChannelRegistry, listChannels } from "../channels/registry.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { instagramCredentialsForLocale } from "../foundation/external/instagram.js";
 import { videoDeliveryRoute } from "../publishing/delivery-provider.js";
 import { PLATFORM_PROFILES } from "../publishing/platform-profiles.js";
 
@@ -20,9 +21,20 @@ export function capabilityReport(config: BackendConfig, backendDb?: BackendDb): 
   const requirements = activeTargets ? scopedRequirements(allRequirements, config, activeTargets) : allRequirements;
   const values = config as unknown as Record<string, unknown>;
   return [...requirements.entries()].map(([target, required]) => {
-    const missing = required.filter((name) => (name === "ADMIN_IDS" ? config.ADMIN_IDS.length === 0 : !values[name]));
+    const missing = target.startsWith("instagram_stories")
+      ? missingInstagramStoryCredentials(config, target)
+      : required.filter((name) => (name === "ADMIN_IDS" ? config.ADMIN_IDS.length === 0 : !values[name]));
     return { target, required, missing: [...missing], status: missing.length ? "missing" : "ready" };
   });
+}
+
+function missingInstagramStoryCredentials(config: BackendConfig, target: string): string[] {
+  const locale = target === "instagram_stories_ru" ? "ru" : "en";
+  const credentials = instagramCredentialsForLocale(config, locale, "shared");
+  if (credentials.accessToken && credentials.userId) return [];
+  return locale === "ru"
+    ? ["INSTAGRAM_RU_ACCESS_TOKEN", "INSTAGRAM_RU_USER_ID"].filter((name) => !(config as unknown as Record<string, unknown>)[name])
+    : ["INSTAGRAM_EN_ACCESS_TOKEN", "INSTAGRAM_EN_USER_ID"].filter((name) => !(config as unknown as Record<string, unknown>)[name]);
 }
 
 function capabilityRequirements(config: BackendConfig): Map<string, readonly string[]> {

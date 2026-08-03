@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { effectivePostTargets, registeredPostTargetIds } from "../channels/registry.js";
 import { enrichPublishedPostEntities } from "../content/entity-enrichment.js";
 import { requireDraft } from "../content/index.js";
@@ -9,7 +9,7 @@ import { trackUsageSync } from "../observability/usage.js";
 import { readyStoryCardMedia } from "../story-cards/store.js";
 import { assertPublicationPreflight } from "./preflight.js";
 import { createPublicationPlan, type PublishMode } from "./publication-plan.js";
-import { persistPublicationPlan } from "./publication-writer.js";
+import { persistPublicationPlanTx } from "./publication-writer.js";
 import { reconcilePublication } from "./queue.js";
 import { parseTargets } from "./targets.js";
 
@@ -34,10 +34,10 @@ function publishDraftToQueueInternal(backendDb: BackendDb, draftId: number, opti
   // One transaction for the whole hand-off: a failure midway used to leave a
   // publications row with no plan behind it, which no worker picks up and no
   // retry path repairs. Every step below is synchronous, so this is free.
-  const { postId, plan } = backendDb.db.transaction(() => {
-    const publicationId = ensurePublication(backendDb, draftId, now);
-    copyDraftSources(backendDb, draftId, publicationId, now);
-    copyAcceptedEntities(backendDb, draftId, publicationId, now);
+  const { postId, plan } = backendDb.db.transaction((tx) => {
+    const publicationId = ensurePublication(tx, draftId, now);
+    copyDraftSources(tx, draftId, publicationId, now);
+    copyAcceptedEntities(tx, draftId, publicationId, now);
     const registeredTargets = registeredPostTargetIds(backendDb);
     const storyCards = readyStoryCardMedia(backendDb, draftId);
     if (storyCards && draft.story_publish_mode !== "all" && draft.story_publish_mode !== "site_only")
@@ -51,11 +51,11 @@ function publishDraftToQueueInternal(backendDb: BackendDb, draftId: number, opti
       registeredTargets.size ? registeredTargets : undefined,
       storyCards ?? undefined,
     );
-    persistPublicationPlan(backendDb, publicationPlan);
+    persistPublicationPlanTx(tx, publicationPlan);
     enrichPublishedPostEntities(backendDb, publicationId);
-    reconcilePublication(backendDb, publicationId);
     return { postId: publicationId, plan: publicationPlan };
   });
+  reconcilePublication(backendDb, postId);
   recordDomainEvent(backendDb.events, {
     ref: `post:${postId}`,
     type: "publishing.plan.created",
@@ -72,44 +72,45 @@ function publishDraftToQueueInternal(backendDb: BackendDb, draftId: number, opti
   return postId;
 }
 
-function copyAcceptedEntities(backendDb: BackendDb, draftId: number, postId: number, now: string): void {
-  const candidates = backendDb.db
+function copyAcceptedEntities(db: BackendDb["db"], draftId: number, postId: number, now: string): void {
+  const candidates = db
     .select()
     .from(draftEntityCandidates)
     .where(and(eq(draftEntityCandidates.draftId, draftId), eq(draftEntityCandidates.status, "accepted")))
     .all();
-  for (const candidate of candidates) {
-    backendDb.db
-      .insert(knowledgeEntities)
-      .values({
+  if (!candidates.length) return;
+  db.insert(knowledgeEntities)
+    .values(
+      candidates.map((candidate) => ({
         kind: candidate.kind,
         slug: candidate.slug,
         titleRu: candidate.titleRu,
         titleEn: candidate.titleEn,
         createdAt: now,
         updatedAt: now,
-      })
+      })),
+    )
+    .onConflictDoNothing()
+    .run();
+  const kinds = [...new Set(candidates.map((candidate) => candidate.kind))];
+  const candidateKeys = new Set(candidates.map((candidate) => `${candidate.kind}\u0000${candidate.slug}`));
+  const entities = db
+    .select({ id: knowledgeEntities.id, kind: knowledgeEntities.kind, slug: knowledgeEntities.slug })
+    .from(knowledgeEntities)
+    .where(inArray(knowledgeEntities.kind, kinds))
+    .all()
+    .filter((entity) => candidateKeys.has(`${entity.kind}\u0000${entity.slug}`));
+  if (entities.length)
+    db.insert(postEntityLinks)
+      .values(entities.map((entity) => ({ postId, entityId: entity.id, createdAt: now })))
       .onConflictDoNothing()
       .run();
-    const entity = backendDb.db
-      .select({ id: knowledgeEntities.id })
-      .from(knowledgeEntities)
-      .where(and(eq(knowledgeEntities.kind, candidate.kind), eq(knowledgeEntities.slug, candidate.slug)))
-      .get();
-    if (entity) backendDb.db.insert(postEntityLinks).values({ postId, entityId: entity.id, createdAt: now }).onConflictDoNothing().run();
-  }
 }
 
-function copyDraftSources(backendDb: BackendDb, draftId: number, postId: number, now: string): void {
-  const sources = backendDb.db
-    .select()
-    .from(draftSources)
-    .where(eq(draftSources.draftId, draftId))
-    .orderBy(asc(draftSources.sortOrder))
-    .all();
+function copyDraftSources(db: BackendDb["db"], draftId: number, postId: number, now: string): void {
+  const sources = db.select().from(draftSources).where(eq(draftSources.draftId, draftId)).orderBy(asc(draftSources.sortOrder)).all();
   for (const source of sources) {
-    backendDb.db
-      .insert(postSources)
+    db.insert(postSources)
       .values({
         postId,
         url: source.url,
@@ -125,10 +126,10 @@ function copyDraftSources(backendDb: BackendDb, draftId: number, postId: number,
   }
 }
 
-function ensurePublication(backendDb: BackendDb, draftId: number, now: string): number {
-  const existing = backendDb.db.select({ postId: publications.postId }).from(publications).where(eq(publications.draftId, draftId)).get();
+function ensurePublication(db: BackendDb["db"], draftId: number, now: string): number {
+  const existing = db.select({ postId: publications.postId }).from(publications).where(eq(publications.draftId, draftId)).get();
   if (existing?.postId != null) return existing.postId;
-  const inserted = backendDb.db
+  const inserted = db
     .insert(publications)
     .values({ status: "scheduled", draftId, createdAt: now, updatedAt: now })
     .returning({ postId: publications.postId })

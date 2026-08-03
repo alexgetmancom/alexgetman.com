@@ -1,24 +1,25 @@
 import { InlineKeyboard } from "grammy";
 import type { BotLocale } from "../../bot/i18n.js";
-import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { t } from "../../foundation/i18n/index.js";
 import { escapeMarkdown } from "../../foundation/markdown.js";
 import { isVideoTargetEditable, isVideoTargetSchedulable } from "../../publishing/state.js";
-import { getVideoDraft, listVideoTargets } from "../../publishing/video-data.js";
 import type { InstagramMetadata, YouTubeMetadata } from "../../publishing/video-types.js";
 import { formatVideoTime } from "./video-time.js";
+
+type VideoPreviewData = {
+  draft: { id: number; label: string; locale: string; status: string };
+  targets: Array<{ id: number; target: string; status: string; metadataJson: unknown; scheduledAt: string | null }>;
+};
 
 /** Telegram-only representation of a video draft. The video domain itself
  * exposes data and operations, never grammY markup or interface language. */
 export function videoPreview(
-  backendDb: BackendDb,
+  data: VideoPreviewData,
   config: Pick<BackendConfig, "TIMEZONE" | "TIMEZONE_LABEL">,
-  videoDraftId: number,
   locale: BotLocale = "ru",
 ): { text: string; keyboard: InlineKeyboard } {
-  const draft = getVideoDraft(backendDb, videoDraftId);
-  const targets = listVideoTargets(backendDb, videoDraftId);
+  const { draft, targets } = data;
   const title = draft.label || t(locale, "vpreview.title-fallback");
   const lines = [
     `🎬 *${escapeMarkdown(title)}*`,

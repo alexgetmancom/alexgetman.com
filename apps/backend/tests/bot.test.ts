@@ -123,6 +123,68 @@ describe("Telegram controller flow", () => {
     ).toEqual({ count: 1 });
   });
 
+  it("does not duplicate a final site locale when a publication is replanned", () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createDraftFromMessage(backendDb, 42, { text: "Repeat site", textEn: "Repeat site", entities: [], media: [] });
+    const postId = publishDraftToQueue(backendDb, draftId);
+    backendDb.sqlite.prepare("UPDATE site_jobs SET status='published' WHERE post_id=? AND reason='publish_en'").run(postId);
+
+    publishDraftToQueue(backendDb, draftId);
+
+    expect(backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM site_jobs WHERE post_id=? AND reason='publish_en'").get(postId)).toEqual(
+      {
+        count: 1,
+      },
+    );
+  });
+
+  it("keeps publication history when only the site has reached a final state", () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createDraftFromMessage(backendDb, 42, { text: "Site history", textEn: "Site history", entities: [], media: [] });
+    const postId = publishDraftToQueue(backendDb, draftId);
+    backendDb.sqlite.prepare("UPDATE site_jobs SET status='published' WHERE post_id=? AND reason='publish_ru'").run(postId);
+
+    cancelDraft(backendDb, draftId);
+
+    expect(backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM publications WHERE post_id=?").get(postId)).toEqual({ count: 1 });
+    expect(backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM posts WHERE post_id=?").get(postId)).toEqual({ count: 1 });
+    expect(backendDb.sqlite.prepare("SELECT status FROM site_jobs WHERE post_id=? ORDER BY reason").all(postId)).toEqual([
+      { status: "cancelled" },
+      { status: "published" },
+    ]);
+  });
+
+  it("creates immediate jobs for enabled locales without an explicit scheduled time", () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createDraftFromMessage(backendDb, 42, {
+      text: "Partial schedule",
+      textEn: "Partial schedule",
+      entities: [],
+      media: [],
+    });
+    const before = Date.now();
+    const postId = publishDraftToQueue(backendDb, draftId, {
+      mode: "scheduled",
+      ruAt: new Date(Date.now() + 60_000),
+      enAt: null,
+    });
+    const after = Date.now();
+    const enSite = backendDb.sqlite
+      .prepare("SELECT next_attempt_at FROM site_jobs WHERE post_id=? AND reason='publish_en'")
+      .get(postId) as {
+      next_attempt_at: string;
+    };
+    const enSocial = backendDb.sqlite
+      .prepare("SELECT publish_at FROM publish_jobs WHERE post_id=? AND target='threads_en'")
+      .get(postId) as {
+      publish_at: string;
+    };
+    expect(Date.parse(enSite.next_attempt_at)).toBeGreaterThanOrEqual(before);
+    expect(Date.parse(enSite.next_attempt_at)).toBeLessThanOrEqual(after);
+    expect(Date.parse(enSocial.publish_at)).toBeGreaterThanOrEqual(before);
+    expect(Date.parse(enSocial.publish_at)).toBeLessThanOrEqual(after);
+  });
+
   it("marks a publication published only after every social and site job is final", () => {
     backendDb = openBackendDb(":memory:");
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Complete", textEn: "Complete", entities: [], media: [] });

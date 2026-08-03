@@ -72,7 +72,7 @@ const feedItemSchema = z
 export type FeedItem = z.infer<typeof feedItemSchema>;
 
 /** The whole published site, indexed the way the routes actually ask for it. */
-export type PublicSiteSnapshot = {
+type PublicSiteSnapshot = {
   items: FeedItem[];
   byPostId: Map<number, FeedItem>;
 };
@@ -106,10 +106,7 @@ export function loadPublicSiteItem(
   return buildPublicSiteFeed(backendDb, sitePublicDir, postId)[0];
 }
 
-export function loadPublicSiteSnapshot(
-  backendDb: BackendDb,
-  sitePublicDir = process.env.SITE_PUBLIC_DIR ?? "/data/site",
-): PublicSiteSnapshot {
+function loadPublicSiteSnapshot(backendDb: BackendDb, sitePublicDir = process.env.SITE_PUBLIC_DIR ?? "/data/site"): PublicSiteSnapshot {
   const byDir = feedCache.get(backendDb) ?? new Map<string, CachedFeed>();
   const cached = byDir.get(sitePublicDir);
   if (cached && Date.now() - cached.builtAt < FEED_CACHE_TTL_MS) return cached.snapshot;

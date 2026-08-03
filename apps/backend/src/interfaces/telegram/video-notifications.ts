@@ -6,7 +6,7 @@ import { drafts, publishJobs, studioNotificationSettings, videoDrafts, videoTarg
 import type { BackendConfig } from "../../foundation/config.js";
 import { t } from "../../foundation/i18n/index.js";
 import { log } from "../../foundation/logger.js";
-import { getVideoDraft } from "../../publishing/video-data.js";
+import { getVideoDraft, listVideoTargets } from "../../publishing/video-data.js";
 import type { VideoTarget } from "../../publishing/video-types.js";
 import { videoTargetLabel } from "../../publishing/video-types.js";
 import { telegramVideoCard } from "./control-cards.js";
@@ -53,7 +53,10 @@ export async function refreshVideoControlCard(
   if (!bot) return;
   const card = telegramVideoCard(backendDb, videoDraftId);
   if (!card || card.chatId == null || card.messageId == null) return;
-  const preview = videoPreview(backendDb, config, videoDraftId);
+  const preview = videoPreview(
+    { draft: getVideoDraft(backendDb, videoDraftId), targets: listVideoTargets(backendDb, videoDraftId) },
+    config,
+  );
   try {
     await bot.api.editMessageText(card.chatId, card.messageId, preview.text, {
       parse_mode: "Markdown",
@@ -67,19 +70,19 @@ export async function refreshVideoControlCard(
 export async function sendVideoReminder(
   backendDb: BackendDb,
   bot: Bot | null,
-  config: StudioTimeConfig & Pick<BackendConfig, "VIDEO_REMINDER_MINUTES" | "ADMIN_IDS">,
+  config: StudioTimeConfig & Pick<BackendConfig, "ADMIN_IDS">,
   videoDraftId: number,
   videoTargetId: number | null,
 ): Promise<void> {
-  const reminderMinutes = config.VIDEO_REMINDER_MINUTES;
   const draft = getVideoDraft(backendDb, videoDraftId);
   const target = videoTargetId == null ? null : backendDb.db.select().from(videoTargets).where(eq(videoTargets.id, videoTargetId)).get();
   if (!bot || !target || draft.status !== "scheduled") return;
   await forEachAdmin(config.ADMIN_IDS, async (actorId) => {
-    if (!notificationPreference(backendDb, actorId).remindersEnabled) return;
+    const preference = notificationPreference(backendDb, actorId);
+    if (!preference.remindersEnabled) return;
     const locale = botLocale(backendDb, actorId);
     const title = draft.label || t(locale, "common.untitled");
-    const text = `${t(locale, "notif.reminder-head", { minutes: reminderMinutes })}\n\n🎬 ${title}\n${draft.locale === "en" ? "🇬🇧 EN" : "🇷🇺 RU"}\n\n• ${videoTargetLabel(target.target as VideoTarget)}\n\n${formatVideoTime(target.scheduledAt, locale, config)}`;
+    const text = `${t(locale, "notif.reminder-head", { minutes: preference.reminderMinutes })}\n\n🎬 ${title}\n${draft.locale === "en" ? "🇬🇧 EN" : "🇷🇺 RU"}\n\n• ${videoTargetLabel(target.target as VideoTarget)}\n\n${formatVideoTime(target.scheduledAt, locale, config)}`;
     await bot.api.sendMessage(actorId, text, {
       reply_markup: new InlineKeyboard()
         .text(t(locale, "notif.open"), `video_open:${draft.id}`)
@@ -241,7 +244,11 @@ function friendlyStatus(status: string, locale: "ru" | "en"): string {
 
 function notificationPreference(backendDb: BackendDb, actorId: number) {
   const row = backendDb.db.select().from(studioNotificationSettings).where(eq(studioNotificationSettings.actorId, actorId)).get();
-  return { remindersEnabled: row?.remindersEnabled !== 0, completionEnabled: row?.completionEnabled !== 0 };
+  return {
+    remindersEnabled: row?.remindersEnabled !== 0,
+    reminderMinutes: row?.reminderMinutes ?? 5,
+    completionEnabled: row?.completionEnabled !== 0,
+  };
 }
 
 function ownerForRef(backendDb: BackendDb, ref: string | null): number | null {

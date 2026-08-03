@@ -40,11 +40,22 @@ export const PRESETS: Record<string, Record<TargetId, boolean>> = {
 };
 
 export function targetLocale(target: string): TargetLocale | null {
-  return targetById.get(target)?.locale ?? null;
+  const definition = targetById.get(target);
+  if (definition) return definition.locale;
+  if (target === "threads" || target === "instagram_story" || target === "telegram_story" || target === "telegram_stories") return "ru";
+  if (target === "twitter") return "en";
+  return null;
 }
 
 export function targetDefinition(target: string): (typeof TARGETS)[number] | null {
   return targetById.get(target) ?? null;
+}
+
+const LEGACY_TARGETS = new Set<string>(Object.values(TARGET_GROUPS).flat());
+
+/** Accepts canonical targets and aliases that still exist in durable legacy rows. */
+export function isKnownTarget(target: string): boolean {
+  return targetById.has(target) || LEGACY_TARGETS.has(target);
 }
 
 export function isSiteTarget(target: string): boolean {

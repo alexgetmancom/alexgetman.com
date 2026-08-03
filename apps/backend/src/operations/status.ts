@@ -2,6 +2,7 @@ import fs from "node:fs";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { gitRevision } from "../foundation/runtime/git.js";
+import { workerLiveness } from "../foundation/runtime/worker-state.js";
 
 type StatusCountRow = {
   status: string;
@@ -28,12 +29,18 @@ function total(counts: Record<string, number>): number {
 function workers(backendDb: BackendDb) {
   return (backendDb.sqlite.query("SELECT name,state_json,updated_at FROM worker_state ORDER BY name").all() as WorkerStateRow[]).map(
     (row) => {
-      const state = JSON.parse(row.state_json) as Record<string, unknown>;
+      const state = JSON.parse(row.state_json) as Record<string, import("../db/schema.js").JsonValue>;
       return {
         name: row.name,
         ok: state.ok !== false,
         lastRunAt: typeof state.last_run_at === "string" ? state.last_run_at : row.updated_at,
-        lastError: typeof state.last_error === "string" ? state.last_error : null,
+        lastError:
+          typeof state.scheduler_error === "string"
+            ? state.scheduler_error
+            : typeof state.last_error === "string"
+              ? state.last_error
+              : null,
+        ...workerLiveness(state, row.updated_at),
       };
     },
   );

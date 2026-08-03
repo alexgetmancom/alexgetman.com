@@ -9,4 +9,3 @@ export {
 } from "./assets.js";
 export { createDraftFromMessage, requireDraft } from "./drafts.js";
 export type { DraftMessage } from "./message.js";
-export { firstLine, firstNonEmptyLine, fixUrlSlashes, parseArrayValue, slugify } from "./message.js";

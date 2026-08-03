@@ -3,6 +3,7 @@ import type { BackendDb } from "../db/client.js";
 import { payloadMedia } from "../delivery/social/payload.js";
 import { generateStoryMedia } from "../delivery/story-media.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { selectMediaForTarget } from "../publishing/media-policy.js";
 import { publicationTimeline } from "./timeline.js";
 
 type MediaHealth = {
@@ -106,7 +107,7 @@ export async function reprocessPostMedia(
     .all(ref) as Array<{ job_id: number; target: string; payload_json: string | null }>;
   const plans = rows.flatMap((row) => {
     const payload = parseJson(row.payload_json ?? "{}") as Record<string, unknown> | null;
-    const media = payload ? payloadMedia(payload).slice(0, 1) : [];
+    const media = payload ? selectMediaForTarget(row.target, payloadMedia(payload)) : [];
     if (!payload || media.length === 0) return [];
     const locale: "ru" | "en" = payload.locale === "ru" || row.target.endsWith("_ru") ? "ru" : "en";
     return [{ jobId: row.job_id, target: row.target, locale, payload, media }];

@@ -32,12 +32,6 @@ export const publishJobs = sqliteTable(
   ],
 );
 
-export const publishPlans = sqliteTable("publish_plans", {
-  messageId: integer().primaryKey(),
-  planJson: json<JsonObject>().notNull(),
-  ...timestamps(),
-});
-
 export const siteSourceItems = sqliteTable("site_source_items", {
   messageId: integer().primaryKey(),
   itemJson: json<JsonObject>().notNull(),
@@ -130,12 +124,5 @@ export const pendingAlbums = sqliteTable("pending_albums", {
   mediaJson: text().notNull(),
   notified: integer().notNull().default(0),
   attemptCount: integer().notNull().default(0),
-  updatedAt: text().notNull(),
-});
-
-export const postControlCards = sqliteTable("post_control_cards", {
-  draftId: integer().primaryKey(),
-  chatId: integer().notNull(),
-  messageId: integer().notNull(),
   updatedAt: text().notNull(),
 });

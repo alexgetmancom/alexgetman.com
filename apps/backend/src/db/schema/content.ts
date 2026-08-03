@@ -1,4 +1,4 @@
-import { integer, primaryKey, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { json, type MediaPayload, timestamps } from "./_shared.js";
 
 export const posts = sqliteTable("posts", {
@@ -70,38 +70,4 @@ export const postLifecycle = sqliteTable("post_lifecycle", {
   updatedAt: text().notNull(),
   reason: text(),
   rawJson: text(),
-});
-
-export const mediaAssets = sqliteTable("media_assets", {
-  assetKey: text().primaryKey(),
-  postKey: text(),
-  draftId: integer(),
-  locale: text().notNull().default("ru"),
-  role: text().notNull().default("original"),
-  mediaType: text(),
-  fileId: text(),
-  sourcePath: text(),
-  publicUrl: text(),
-  sha256: text(),
-  sizeBytes: integer(),
-  width: integer(),
-  height: integer(),
-  durationSeconds: real(),
-  variantOf: text(),
-  status: text().notNull().default("known"),
-  detailsJson: text(),
-  ...timestamps(),
-});
-
-export const contentMemory = sqliteTable("content_memory", {
-  postKey: text().primaryKey(),
-  messageId: integer(),
-  lang: text().notNull().default("mixed"),
-  title: text(),
-  summary: text(),
-  topicsJson: text(),
-  entitiesJson: text(),
-  sourceUrlsJson: text(),
-  performanceJson: text(),
-  ...timestamps(),
 });

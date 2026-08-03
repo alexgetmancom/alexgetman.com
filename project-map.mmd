@@ -2,7 +2,7 @@ flowchart LR
   subgraph Authoring["How a post enters the system"]
     ControlBot["Telegram control bot\ncreate/edit/schedule"]
     MCP["MCP adapter\nagent commands"]
-    CommandCenter["Private Command Center\nweb Studio + operations"]
+    CommandCenter["Private Command Center\nread-only web Studio + operations"]
   end
 
   subgraph Core["Durable application core"]

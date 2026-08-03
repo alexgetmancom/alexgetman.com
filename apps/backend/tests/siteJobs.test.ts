@@ -77,4 +77,52 @@ describe("site jobs", () => {
     if (!job) throw new Error("expected site job");
     expect(job.status).toBe("published");
   });
+
+  it("does not re-materialize a locale after its site target was cancelled", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-site-"));
+    const config = loadConfig({
+      FEED_JSON: path.join(tempDir, "feed.json"),
+      SITE_CONTENT_METRICS_JSON: path.join(tempDir, "content-metrics.json"),
+      SITE_PUBLIC_DIR: tempDir,
+    });
+    backendDb = openBackendDb(":memory:");
+    const now = new Date().toISOString();
+    backendDb.db
+      .insert(publicationSources)
+      .values({
+        postId: 7,
+        itemJson: { post_id: 7, text_ru: "RU", text_en: "EN", has_ru: true, has_en: true, publish_at_ru: now, publish_at_en: now },
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+    backendDb.db
+      .insert(siteJobs)
+      .values({
+        postId: 7,
+        messageId: 7,
+        reason: "publish_ru",
+        status: "cancelled",
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+    backendDb.db
+      .insert(siteJobs)
+      .values({
+        postId: 7,
+        messageId: 7,
+        reason: "publish_en",
+        status: "published",
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+
+    await renderFeedFiles(config, backendDb);
+
+    const feed = JSON.parse(fs.readFileSync(config.FEED_JSON, "utf8")) as { items: Array<Record<string, unknown>> };
+    expect(feed.items).toHaveLength(1);
+    expect(feed.items[0]).toMatchObject({ has_ru: false, has_en: true });
+  });
 });

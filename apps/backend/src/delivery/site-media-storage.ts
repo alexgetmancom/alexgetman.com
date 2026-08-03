@@ -56,16 +56,6 @@ export async function copyFileAtomically(source: string, target: string): Promis
   }
 }
 
-export async function writeFileAtomically(target: string, content: Uint8Array): Promise<void> {
-  const temporary = temporaryPath(target);
-  try {
-    await fs.promises.writeFile(temporary, content);
-    await fs.promises.rename(temporary, target);
-  } finally {
-    await fs.promises.rm(temporary, { force: true }).catch(() => {});
-  }
-}
-
 export async function writeResponseAtomically(target: string, response: Response): Promise<void> {
   const temporary = temporaryPath(target);
   try {

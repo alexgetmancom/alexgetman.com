@@ -1,5 +1,6 @@
 import path from "node:path";
 import type { APIRoute } from "astro";
+import { RESPONSIVE_WIDTHS } from "../../../../../backend/src/content/site-media-naming.js";
 import { getRuntime } from "../../../server/runtime.js";
 
 export const prerender = false;
@@ -8,7 +9,7 @@ export const prerender = false;
  * reaches the feed. Public requests only read the cached file; they never
  * launch ffmpeg or sharp. */
 
-const ALLOWED_WIDTHS = new Set(["360", "640", "960"]);
+const ALLOWED_WIDTHS = new Set(RESPONSIVE_WIDTHS.map(String));
 
 function sourceRoots(): string[] {
   const roots = [path.resolve(process.cwd(), "apps/web/public"), path.resolve(process.cwd(), "public")];

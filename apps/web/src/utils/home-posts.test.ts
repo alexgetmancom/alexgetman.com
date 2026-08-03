@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { FeedItem } from "../server/public-site";
-import { existingSiteImage, toHomePost } from "./home-posts";
+import { existingSiteImage, sortedHomePosts, toHomePost } from "./home-posts";
 
 function feedItem(overrides: Partial<FeedItem> = {}): FeedItem {
   return {
@@ -69,6 +69,10 @@ describe("existingSiteImage", () => {
 });
 
 describe("toHomePost", () => {
+  it("drops a published locale without a canonical slug", () => {
+    expect(sortedHomePosts([feedItem({ slug_en: null })], "en")).toEqual([]);
+  });
+
   it("resolves an image post whose file exists", () => {
     touch("media/posts/1-en-0.jpg");
     const post = toHomePost(feedItem({ image_en: "media/posts/1-en-0.jpg" }), "en");

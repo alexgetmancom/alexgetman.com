@@ -5,15 +5,16 @@ import { log } from "../../foundation/logger.js";
 import { createSerialQueue } from "../../foundation/serial-queue.js";
 import { isCapabilityReady } from "../../observability/capabilities.js";
 import type { PublishResult } from "../../publishing/errors.js";
+import { selectMediaForTarget } from "../../publishing/media-policy.js";
 import { platformProfile } from "../../publishing/platform-profiles.js";
 import type { ClaimedPublishJob } from "../../publishing/queue.js";
 import { prepareMediaItems } from "../media-prepare.js";
-import { type DeliveryPort, type DeliveryPorts, deliveryAdapter } from "../ports.js";
+import { type DeliveryPorts, type DeliveryPublisher, deliveryAdapter } from "../ports.js";
 import { publishInstagramStory, verifyInstagramPublication } from "../social/instagram.js";
 import { payloadMedia } from "../social/payload.js";
 import { publishToTelegram } from "../social/telegram.js";
 import { publishToThreads, verifyThreadsPost } from "../social/threads.js";
-import { publishToX } from "../social/x.js";
+import { publishToX, verifyXPost } from "../social/x.js";
 import { generateStoryMedia } from "../story-media.js";
 
 type PreparedMedia = Awaited<ReturnType<typeof prepareMediaItems>>;
@@ -59,7 +60,7 @@ export function createPlatformPorts(config: BackendConfig, fetchImpl: typeof fet
     ),
     ...Object.fromEntries(TARGET_GROUPS.telegramStory.map((target) => [target, config])),
   };
-  const publishers: Record<string, DeliveryPort> = {
+  const publishers: Record<string, DeliveryPublisher> = {
     // Every target that can use media goes through the same preparation step.
     telegram: (job) => publishToTelegram(job.payload, config, fetchImpl),
   };
@@ -81,7 +82,7 @@ export function createPlatformPorts(config: BackendConfig, fetchImpl: typeof fet
     Object.entries(publishers).map(([target, publish]) => [
       target,
       deliveryAdapter(publish, {
-        validate: async () => validatePlatformTarget(target, config),
+        validate: async () => validatePlatformTarget(target, targetConfigs[target] ?? config),
         prepare: async (job) => (target === "telegram" ? job : prepare(job, targetConfigs[target] ?? config)),
         verify: async (_job, result) => verifyPlatformPublication(target, result, targetConfigs[target] ?? config, fetchImpl),
       }),
@@ -92,8 +93,17 @@ export function createPlatformPorts(config: BackendConfig, fetchImpl: typeof fet
 export function platformConfig(target: string, config: BackendConfig): BackendConfig {
   if (target === "threads_en") return { ...config, THREADS_ACCESS_TOKEN: config.THREADS_EN_ACCESS_TOKEN ?? config.THREADS_ACCESS_TOKEN };
   // Stories carry the shared fallback for English; Reels deliberately do not.
-  if (target === "instagram_stories") return instagramConfigForLocale(config, "en", "shared");
-  if (target === "instagram_stories_ru") return instagramConfigForLocale(config, "ru");
+  if (target === "instagram_stories" || target === "instagram_stories_ru") {
+    const locale = target === "instagram_stories" ? "en" : "ru";
+    const normalized = instagramConfigForLocale(config, locale, "shared");
+    const credentials = { accessToken: normalized.INSTAGRAM_ACCESS_TOKEN, userId: normalized.INSTAGRAM_USER_ID };
+    return {
+      ...normalized,
+      ...(locale === "en"
+        ? { INSTAGRAM_EN_ACCESS_TOKEN: credentials.accessToken, INSTAGRAM_EN_USER_ID: credentials.userId }
+        : { INSTAGRAM_RU_ACCESS_TOKEN: credentials.accessToken, INSTAGRAM_RU_USER_ID: credentials.userId }),
+    };
+  }
   return config;
 }
 
@@ -113,6 +123,10 @@ export async function verifyPlatformPublication(
     if (targetInGroup(TARGET_GROUPS.instagramStory, target)) {
       const verified = await verifyInstagramPublication(id, config, fetchImpl);
       return { ...result, url: result.url ?? verified.url, verification: { status: "verified", providerId: verified.id } };
+    }
+    if (targetInGroup(TARGET_GROUPS.x, target)) {
+      const verified = await verifyXPost(id, config, fetchImpl);
+      return { ...result, verification: { status: "verified", providerId: verified.id } };
     }
     return { ...result, verification: { status: "unsupported" } };
   } catch (error) {
@@ -151,9 +165,9 @@ async function withPreparedMedia(
   // a local durable asset, so do not send it through ordinary feed staging
   // before Story rendering; that redundant step can otherwise stall a Story
   // before it ever reaches the Media Processing Port.
-  const storySource = isStoryTarget(job.target) ? media.slice(0, 1) : media;
+  const storySource = selectMediaForTarget(job.target, media);
   if (isStoryTarget(job.target)) log("info", "story delivery preparation started", { jobId: job.jobId, target: job.target });
-  const sourceMedia = isStoryTarget(job.target) ? await renderStory(job, storySource) : media;
+  const sourceMedia = isStoryTarget(job.target) ? await renderStory(job, storySource) : storySource;
   const key = mediaCacheKey(job, sourceMedia, config);
   // One preparation per (post, target, media) within a delivery cycle. The
   // rendered files persist on disk and are aged out by pruneMediaCache, so

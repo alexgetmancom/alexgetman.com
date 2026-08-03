@@ -26,17 +26,36 @@ export type StudioQueueSnapshot = {
   attention: StudioAttentionItem[];
 };
 
+const MAX_QUEUE_ROWS = 100;
+
 /** Read-only work inbox for every Studio interface. It deliberately returns
  * entity references, not Telegram callbacks or display markup. */
 export function queueService(backendDb: BackendDb, config: BackendConfig) {
   return {
-    snapshot(actorId: number): StudioQueueSnapshot {
+    snapshot(actorId: number, limit = MAX_QUEUE_ROWS): StudioQueueSnapshot {
       const upcoming: StudioQueueItem[] = [];
       const draftItems: StudioQueueItem[] = [];
       const attention: StudioAttentionItem[] = [];
       const actorIds = accessibleStudioActorIds(config, actorId);
-      const postDrafts = backendDb.db.select().from(drafts).where(inArray(drafts.actorId, actorIds)).all();
-      const videos = backendDb.db.select().from(videoDrafts).where(inArray(videoDrafts.actorId, actorIds)).all();
+      const rowLimit = Math.max(1, Math.min(limit, MAX_QUEUE_ROWS));
+      const postDrafts = backendDb.db.select().from(drafts).where(inArray(drafts.actorId, actorIds)).limit(rowLimit).all();
+      const videos = backendDb.db.select().from(videoDrafts).where(inArray(videoDrafts.actorId, actorIds)).limit(rowLimit).all();
+
+      const postIds = postDrafts.flatMap((draft) => (draft.postId == null ? [] : [draft.postId]));
+      const failedPostIds = new Set<number>();
+      if (postIds.length) {
+        const failedPublishJobs = backendDb.db
+          .select({ postId: publishJobs.postId })
+          .from(publishJobs)
+          .where(and(inArray(publishJobs.postId, postIds), inArray(publishJobs.status, ["failed", "verification_required"])))
+          .all();
+        const failedSiteJobs = backendDb.db
+          .select({ postId: siteJobs.postId })
+          .from(siteJobs)
+          .where(and(inArray(siteJobs.postId, postIds), eq(siteJobs.status, "failed")))
+          .all();
+        for (const row of [...failedPublishJobs, ...failedSiteJobs]) if (row.postId != null) failedPostIds.add(row.postId);
+      }
 
       for (const draft of postDrafts) {
         const label = shorten(draft.textRu.split("\n")[0]?.trim() || `Post #${draft.id}`);
@@ -53,21 +72,7 @@ export function queueService(backendDb: BackendDb, config: BackendConfig) {
         }
         if (draft.status === "needs_review")
           draftItems.push({ id: draft.id, label, time: new Date(draft.updatedAt), kind: "post", targets: 0 });
-        if (draft.postId != null) {
-          const failed = backendDb.db
-            .select({ jobId: publishJobs.jobId })
-            .from(publishJobs)
-            .where(and(eq(publishJobs.postId, draft.postId), inArray(publishJobs.status, ["failed", "verification_required"])))
-            .limit(1)
-            .get();
-          const failedSite = backendDb.db
-            .select({ jobId: siteJobs.jobId })
-            .from(siteJobs)
-            .where(and(eq(siteJobs.postId, draft.postId), eq(siteJobs.status, "failed")))
-            .limit(1)
-            .get();
-          if (failed || failedSite) attention.push({ id: draft.id, label, kind: "post" });
-        }
+        if (draft.postId != null && failedPostIds.has(draft.postId)) attention.push({ id: draft.id, label, kind: "post" });
       }
 
       // One query for every draft's targets rather than one per draft: this

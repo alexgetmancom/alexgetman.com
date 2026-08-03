@@ -1,9 +1,10 @@
 import { isStoryTarget } from "../botTargets.js";
+import { draftLocaleContent } from "../content/draft-content.js";
 import type { requireDraft } from "../content/drafts.js";
-import { firstLine, parseArrayValue, slugify } from "../content/message.js";
+import { firstLine, slugify } from "../content/message.js";
 import { entitiesToHtml } from "../content/text.js";
 import type { postLocales } from "../db/schema.js";
-import { parseTargets } from "./targets.js";
+import { assertKnownTargets, parseTargets } from "./targets.js";
 
 export type PublishMode = "immediate" | "scheduled";
 type PublicationSchedule = { mode: PublishMode; ruAt: string | null; enAt: string | null };
@@ -19,15 +20,16 @@ export function createPublicationPlan(
   availableTargets?: ReadonlySet<string>,
   storyCards?: StoryCardMedia,
 ) {
+  const parsedTargets = parseTargets(draft.targets_json);
+  assertKnownTargets(parsedTargets);
   const messageId = Number(draft.channel_message_id ?? postId);
   const postKey = `post:${postId}`;
-  const mediaRu = parseArrayValue(draft.media_ru_json);
-  const parsedMediaEn = parseArrayValue(draft.media_en_json);
-  const mediaEn = parsedMediaEn.length > 0 ? parsedMediaEn : mediaRu;
-  const entitiesRu = parseArrayValue(draft.text_ru_entities_json);
-  const entitiesEn = parseArrayValue(draft.text_en_entities_json);
+  const contentRu = draftLocaleContent(draft, "ru");
+  const contentEn = draftLocaleContent(draft, "en");
+  const { media: mediaRu, entities: entitiesRu, text: textRu } = contentRu;
+  const { media: mediaEn, entities: entitiesEn, text: textEn } = contentEn;
   const targets = Object.fromEntries(
-    Object.entries(parseTargets(draft.targets_json)).map(([target, enabled]) => [
+    Object.entries(parsedTargets).map(([target, enabled]) => [
       target,
       // A generated card gates a Story target behind the editor's explicit
       // choice, but it never revives a target the editor switched off: the
@@ -37,8 +39,6 @@ export function createPublicationPlan(
         (!availableTargets || availableTargets.has(target)),
     ]),
   );
-  const textRu = String(draft.text_ru ?? "");
-  const textEn = String(draft.text_en_approved ?? draft.text_en_machine ?? draft.text_ru ?? "");
   const slugRu = slugify(firstLine(textRu), postId);
   const slugEn = slugify(firstLine(textEn), postId);
   const payload = {
@@ -88,7 +88,7 @@ export function createPublicationPlan(
     entitiesJson: typeof entitiesJson === "string" ? entitiesJson : null,
     mediaJson: media,
     siteEnabled: enabled ? 1 : 0,
-    publishedAt: enabled ? publishedAt : null,
+    publishedAt: enabled ? (publishedAt ?? now) : null,
     updatedAt: now,
   });
   return {

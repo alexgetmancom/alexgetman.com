@@ -1,23 +1,60 @@
-import { eq } from "drizzle-orm";
+import { and, eq, isNull, lt, lte, or } from "drizzle-orm";
 import type { BackendDb } from "../../db/client.js";
 import { analyticsSync, creatorProfileSnapshots, creatorProfiles, socialComments } from "../../db/schema.js";
 
-const DAILY_SYNC_MS = 24 * 60 * 60_000;
-
-export function canSync(backendDb: BackendDb, source: string, intervalSeconds = DAILY_SYNC_MS / 1000): boolean {
-  const row = backendDb.db.select().from(analyticsSync).where(eq(analyticsSync.source, source)).get();
-  return !row || Date.now() - new Date(row.lastSyncedAt).getTime() >= intervalSeconds * 1000;
-}
-
-export function markSynced(backendDb: BackendDb, source: string, error: string | null = null): void {
-  const lastSyncedAt = new Date().toISOString();
+/** Atomically reserves a due profile sync for one worker instance. */
+export function claimSync(backendDb: BackendDb, source: string, intervalSeconds: number, owner: string): boolean {
+  const now = new Date().toISOString();
+  const dueBefore = new Date(Date.now() - intervalSeconds * 1000).toISOString();
+  const staleBefore = new Date(Date.now() - intervalSeconds * 2 * 1000).toISOString();
   backendDb.db
     .insert(analyticsSync)
-    .values({ source, lastSyncedAt, lastSuccessAt: error ? null : lastSyncedAt, lastError: error })
-    .onConflictDoUpdate({
-      target: analyticsSync.source,
-      set: { lastSyncedAt, ...(error ? { lastError: error } : { lastSuccessAt: lastSyncedAt, lastError: null }) },
+    .values({ source, lastSyncedAt: new Date(0).toISOString(), lastSuccessAt: null, lastError: null, lockedBy: null, lockedAt: null })
+    .onConflictDoNothing()
+    .run();
+  return Boolean(
+    backendDb.db
+      .update(analyticsSync)
+      .set({ lockedBy: owner, lockedAt: now })
+      .where(
+        and(
+          eq(analyticsSync.source, source),
+          lte(analyticsSync.lastSyncedAt, dueBefore),
+          or(isNull(analyticsSync.lockedBy), isNull(analyticsSync.lockedAt), lt(analyticsSync.lockedAt, staleBefore)),
+        ),
+      )
+      .returning({ source: analyticsSync.source })
+      .get(),
+  );
+}
+
+export function markSynced(backendDb: BackendDb, source: string, error: string | null = null, owner?: string): void {
+  const lastSyncedAt = new Date().toISOString();
+  if (!owner) {
+    backendDb.db
+      .insert(analyticsSync)
+      .values({ source, lastSyncedAt, lastSuccessAt: error ? null : lastSyncedAt, lastError: error, lockedBy: null, lockedAt: null })
+      .onConflictDoUpdate({
+        target: analyticsSync.source,
+        set: {
+          lastSyncedAt,
+          ...(error ? { lastError: error } : { lastSuccessAt: lastSyncedAt, lastError: null }),
+          lockedBy: null,
+          lockedAt: null,
+        },
+      })
+      .run();
+    return;
+  }
+  backendDb.db
+    .update(analyticsSync)
+    .set({
+      lastSyncedAt,
+      ...(error ? { lastError: error } : { lastSuccessAt: lastSyncedAt, lastError: null }),
+      lockedBy: null,
+      lockedAt: null,
     })
+    .where(owner ? and(eq(analyticsSync.source, source), eq(analyticsSync.lockedBy, owner)) : eq(analyticsSync.source, source))
     .run();
 }
 

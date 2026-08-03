@@ -31,7 +31,7 @@ export function notificationService(backendDb: BackendDb, config?: BackendConfig
     },
     acknowledge(actorId: number, id: number): boolean {
       const event = backendDb.db.select().from(postEvents).where(eq(postEvents.id, id)).get();
-      if (!event || !isVisibleTo(backendDb, config, event.postKey, actorId)) return false;
+      if (!event || !isInboxEvent(event.eventType) || !isVisibleTo(backendDb, config, event.postKey, actorId)) return false;
       backendDb.db.update(postEvents).set({ ackedAt: new Date().toISOString() }).where(eq(postEvents.id, id)).run();
       return true;
     },

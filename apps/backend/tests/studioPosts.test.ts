@@ -12,6 +12,31 @@ afterEach(() => {
 });
 
 describe("Studio post commands", () => {
+  it("previews EN entities and falls back to RU media exactly like delivery", () => {
+    backendDb = openBackendDb(":memory:");
+    const posts = postService(backendDb, loadConfig({ ADMIN_IDS: "42" }));
+    const draftId = posts.create(42, {
+      text: "Russian text",
+      textEn: "English text",
+      entities: [],
+      media: [{ type: "photo", asset_id: 7 }],
+    });
+    posts.edit(42, draftId, {
+      locale: "en",
+      text: "English text",
+      entities: [{ type: "bold", offset: 0, length: 7 }],
+      media: [],
+    });
+
+    const preview = posts.preview(42, draftId);
+    expect(preview.locales).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ locale: "en", text: "English text", entities: [{ type: "bold", offset: 0, length: 7 }] }),
+      ]),
+    );
+    expect(preview.locales.find((locale) => locale.locale === "en")?.media).toEqual([{ type: "photo", asset_id: 7 }]);
+  });
+
   it("shares draft commands with configured Studio admins and rejects outsiders", () => {
     backendDb = openBackendDb(":memory:");
     const posts = postService(backendDb, loadConfig({ ADMIN_IDS: "42,7" }));

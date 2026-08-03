@@ -99,11 +99,13 @@ const envSchema = z
       .default(60 * 60),
     TELEGRAM_METRICS_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(10),
     MAX_METRIC_TASKS_PER_CYCLE: z.coerce.number().int().positive().default(30),
+    METRIC_LOCK_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(900),
     OBSERVABILITY_INTERVAL_SECONDS: z.coerce.number().int().positive().default(300),
     ALERT_COOLDOWN_SECONDS: z.coerce.number().int().positive().default(3600),
     RUNTIME_RESTART_WINDOW_SECONDS: z.coerce.number().int().positive().default(1800),
     RUNTIME_RESTART_ALERT_THRESHOLD: z.coerce.number().int().min(2).default(3),
     MEMORY_ALERT_PERCENT: z.coerce.number().int().min(1).max(100).default(85),
+    WORKER_HEARTBEAT_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
     IDLE_POLL_INTERVAL_SECONDS: z.coerce.number().int().positive().default(5),
     /** Stale publish locks are recovered on the watchdog's own clock, not the
      * queue's. A lock lives for PUBLISH_LOCK_TIMEOUT_SECONDS (900 by default)
@@ -115,7 +117,7 @@ const envSchema = z
     SITE_JOB_POLL_INTERVAL_SECONDS: z.coerce.number().int().positive().default(10),
     /** Every profile is separately rate-limited by
      * CREATOR_PROFILE_REFRESH_INTERVAL_SECONDS, so a faster loop only re-runs
-     * channel bootstrap and canSync checks to decide it has nothing to do. */
+     * channel bootstrap and claim checks to decide it has nothing to do. */
     PROFILE_POLL_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
     CONTROLLER_ALBUM_SETTLE_SECONDS: z.coerce.number().positive().default(4),
     PUBLISH_CLAIM_LIMIT: z.coerce.number().int().positive().default(20),
@@ -127,7 +129,7 @@ const envSchema = z
     // A newly started worker may safely reclaim locks older than this short
     // grace period: the process that held them is already gone after restart.
     PUBLISH_RESTART_LOCK_GRACE_SECONDS: z.coerce.number().int().positive().default(30),
-    // Social publish jobs heartbeat (see publish-workflow.ts's withHeartbeat)
+    // Social publish jobs heartbeat (see publish-workflow.ts's withJobHeartbeat)
     // while a slow provider call is in flight, touching lockedAt so
     // recoverStalePublishJobs doesn't mistake "still working" for "worker crashed".
     PUBLISH_HEARTBEAT_INTERVAL_SECONDS: z.coerce.number().int().positive().default(180),
@@ -136,6 +138,7 @@ const envSchema = z
     PUBLISH_BACKOFF_BASE_SECONDS: z.coerce.number().int().positive().default(60),
     PUBLISH_BACKOFF_MAX_SECONDS: z.coerce.number().int().positive().default(3600),
     SITE_JOB_CLAIM_LIMIT: z.coerce.number().int().positive().default(20),
+    SITE_JOB_HEARTBEAT_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
     SITE_JOB_LOCK_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(900),
     SITE_JOB_RESTART_LOCK_GRACE_SECONDS: z.coerce.number().int().positive().default(30),
     SITE_JOB_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
@@ -167,7 +170,7 @@ const envSchema = z
     RUNTIME_USAGE_RETENTION_DAYS: z.coerce.number().int().min(30).max(3_650).default(365),
     VIDEO_MEDIA_DIR: z.string().default("/data/video-media"),
     VIDEO_MAX_BYTES: z.coerce.number().int().positive().max(2_000_000_000).default(1_000_000_000),
-    // Video jobs heartbeat (see video-worker.ts's withHeartbeat) at a tighter
+    // Video jobs heartbeat (see video-worker.ts's withJobHeartbeat) at a tighter
     // interval than the social pipeline, so this lock timeout only has to be a
     // few missed heartbeats wide to safely detect a crash.
     VIDEO_LOCK_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(120),

@@ -26,7 +26,7 @@ export function mediaPolicyForTarget(target: string, media: unknown[]): MediaPol
     note: inputCount > limit ? `${label} receives at most ${limit} media items.` : null,
   });
 
-  const rule = platformProfile(target)?.media;
+  const rule = mediaRuleForTarget(target);
   if (!rule) return all(target, inputCount);
   const selected = rule.whenVideo && media.some(isVideo) ? rule.whenVideo : rule;
   switch (selected.mode) {
@@ -38,6 +38,30 @@ export function mediaPolicyForTarget(target: string, media: unknown[]): MediaPol
     default:
       return all(target, inputCount);
   }
+}
+
+/** Applies the same target policy used by previews to the durable delivery payload. */
+export function selectMediaForTarget<T>(target: string, media: readonly T[]): T[] {
+  const rule = mediaRuleForTarget(target);
+  const selected = rule?.whenVideo && media.some(isVideo) ? rule.whenVideo : rule;
+  if (!selected) return [...media];
+  if (selected.mode === "limited") return [...media].slice(0, selected.limit);
+  if (selected.mode === "first" || selected.mode === "story-first") return [...media].slice(0, 1);
+  return [...media];
+}
+
+function mediaRuleForTarget(target: string) {
+  const canonicalTarget =
+    target === "threads"
+      ? "threads_ru"
+      : target === "twitter"
+        ? "x"
+        : target === "instagram_story"
+          ? "instagram_stories_ru"
+          : target === "telegram_story"
+            ? "telegram_stories"
+            : target;
+  return platformProfile(canonicalTarget)?.media;
 }
 
 function all(target: string, inputCount: number): MediaPolicy {

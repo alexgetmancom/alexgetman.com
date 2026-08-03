@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { Context } from "grammy";
@@ -6,6 +5,7 @@ import { importStudioMediaFile } from "../../content/index.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { StudioError } from "../../foundation/errors.js";
+import { downloadTelegramFile } from "./file-download.js";
 
 type StoredVideo = { assetId: number };
 
@@ -22,27 +22,17 @@ export async function storeTelegramVideo(ctx: Context, backendDb: BackendDb, con
   const apiFile = await ctx.api.getFile(file.file_id);
   if (!apiFile.file_path) throw new Error("Telegram did not return a file path.");
   const extension = path.extname(name) || ".mp4";
-  let localPath = apiFile.file_path;
-  let temporaryPath: string | null = null;
-  if (!path.isAbsolute(localPath)) {
-    const url = `${config.TELEGRAM_API_BASE_URL.replace(/\/$/, "")}/file/bot${config.controllerBotToken}/${apiFile.file_path}`;
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`Telegram video download failed: ${response.status}`);
-    temporaryPath = path.join(config.STUDIO_MEDIA_DIR, ".incoming", `telegram-video-${crypto.randomUUID()}${extension.toLowerCase()}`);
-    await fs.promises.mkdir(path.dirname(temporaryPath), { recursive: true });
-    await Bun.write(temporaryPath, response);
-    localPath = temporaryPath;
-  }
+  const downloaded = await downloadTelegramFile(config, apiFile.file_path, extension.toLowerCase());
   let asset: Awaited<ReturnType<typeof importStudioMediaFile>>;
   try {
     asset = await importStudioMediaFile(backendDb, config, actorId, {
       filename: name || `telegram-video${extension.toLowerCase()}`,
       contentType: mime || "video/mp4",
-      localPath,
+      localPath: downloaded.path,
       source: "telegram_upload",
     });
   } finally {
-    if (temporaryPath) await fs.promises.rm(temporaryPath, { force: true });
+    if (downloaded.temporary) await fs.promises.rm(downloaded.path, { force: true });
   }
   if (asset.kind !== "video") throw new StudioError("err.only-mp4");
   return { assetId: asset.id };

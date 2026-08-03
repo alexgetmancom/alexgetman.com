@@ -7,6 +7,7 @@
 /** Filesystem/URL directory segment holding materialized post media, relative to the site public root. */
 export const SITE_MEDIA_DIR_SEGMENTS = ["media", "posts"] as const;
 export const SITE_MEDIA_URL_PREFIX = SITE_MEDIA_DIR_SEGMENTS.join("/");
+export const RESPONSIVE_WIDTHS = [360, 640, 960] as const;
 
 function siteMediaBaseName(postId: number, locale: "ru" | "en", index: number): string {
   return `${postId}-${locale}-${index}`;

@@ -1,34 +1,32 @@
 import type { PublishResult } from "../publishing/errors.js";
 import type { ClaimedPublishJob } from "../publishing/queue.js";
 
-/** Backward-compatible callable publisher shape used by focused tests and integrations. */
-export type DeliveryPort = (job: ClaimedPublishJob) => Promise<PublishResult>;
+/** Provider mutation owned by one delivery adapter. */
+export type DeliveryPublisher = (job: ClaimedPublishJob) => Promise<PublishResult>;
 
 /**
- * Platform boundary. Publishing owns retry policy and durable jobs; an adapter
- * owns validation, provider API calls and an optional post-publish verification.
- * It never receives Telegram, MCP or HTTP interface state.
+ * Platform boundary for social publication jobs. Publishing owns retry policy
+ * and durable jobs; an adapter owns validation, preparation, provider API calls
+ * and post-publish verification. It never receives Telegram, MCP or HTTP state.
  */
-export type DeliveryAdapter = DeliveryPort & {
+export type DeliveryAdapter = {
   validate: (job: ClaimedPublishJob) => Promise<void>;
   prepare: (job: ClaimedPublishJob) => Promise<ClaimedPublishJob>;
-  publish: DeliveryPort;
+  publish: DeliveryPublisher;
   verify: (job: ClaimedPublishJob, result: PublishResult) => Promise<PublishResult>;
 };
 
-/** Wrap a publisher in the uniform Delivery contract while remaining callable for legacy consumers. */
-export function deliveryAdapter(
-  publish: DeliveryPort,
-  hooks: Partial<Pick<DeliveryAdapter, "validate" | "prepare" | "verify">> = {},
-): DeliveryAdapter {
+type DeliveryAdapterHooks = Pick<DeliveryAdapter, "validate" | "verify"> & Partial<Pick<DeliveryAdapter, "prepare">>;
+
+/** Build one explicit adapter; validation and verification are never implicit no-ops. */
+export function deliveryAdapter(publish: DeliveryPublisher, hooks: DeliveryAdapterHooks): DeliveryAdapter {
   const prepare = hooks.prepare ?? (async (job: ClaimedPublishJob) => job);
-  const callable: DeliveryPort = async (job) => publish(await prepare(job));
-  return Object.assign(callable, {
+  return {
     publish,
     prepare,
-    validate: hooks.validate ?? (async () => undefined),
-    verify: hooks.verify ?? (async (_job, result) => result),
-  });
+    validate: hooks.validate,
+    verify: hooks.verify,
+  };
 }
 
 /** The workflow selects an adapter only by the durable publication target. */

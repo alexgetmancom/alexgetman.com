@@ -23,8 +23,7 @@ import {
 import type { VideoLocale, VideoMetadata, VideoTarget } from "../../publishing/video-types.js";
 import { accessibleStudioActorIds, canAccessStudioOwner } from "../access.js";
 import { videoDeliveryProjections } from "../projections.js";
-
-type VideoEditInput = { label?: string; target?: VideoTarget; metadata?: VideoMetadata };
+import { settingsService } from "./settings.js";
 
 /** Video publication command boundary for Telegram Studio, Web Studio and MCP. */
 export function videoService(backendDb: BackendDb, config: BackendConfig) {
@@ -126,12 +125,6 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
       requireOwnedVideo(backendDb, config, actorId, videoDraftId);
       saveVideoMetadata(backendDb, videoDraftId, target, metadata);
     },
-    edit(actorId: number, videoDraftId: number, input: VideoEditInput): void {
-      requireOwnedVideo(backendDb, config, actorId, videoDraftId);
-      if (input.label != null) updateVideoLabel(backendDb, videoDraftId, input.label);
-      if (input.target && input.metadata) saveVideoMetadata(backendDb, videoDraftId, input.target, input.metadata);
-      if (input.label == null && (!input.target || !input.metadata)) throw new StudioError("err.video-no-edit-fields");
-    },
     rename(actorId: number, videoDraftId: number, label: string): void {
       requireOwnedVideo(backendDb, config, actorId, videoDraftId);
       updateVideoLabel(backendDb, videoDraftId, label);
@@ -174,17 +167,13 @@ async function scheduleOwnedVideo(
     config,
     technical.seconds,
   );
-  scheduleVideoReminders(backendDb, config, draft.actorId, videoDraftId, draft.label);
+  scheduleVideoReminders(backendDb, draft.actorId, videoDraftId, draft.label);
   return technical;
 }
 
-function scheduleVideoReminders(backendDb: BackendDb, config: BackendConfig, ownerId: number, videoDraftId: number, label: string): void {
+function scheduleVideoReminders(backendDb: BackendDb, ownerId: number, videoDraftId: number, label: string): void {
   cancelScheduledNotifications(backendDb, `video:${videoDraftId}`);
-  const preference = {
-    remindersEnabled: config.ADMIN_IDS.length > 0,
-    reminderMinutes: config.VIDEO_REMINDER_MINUTES,
-    completionEnabled: true,
-  };
+  const preference = settingsService(backendDb).notifications(ownerId);
   const grouped = new Map<string, VideoTarget[]>();
   for (const target of listVideoTargets(backendDb, videoDraftId)) {
     if (!target.scheduledAt || ["published", "cancelled", "failed", "verification_required"].includes(target.status)) continue;

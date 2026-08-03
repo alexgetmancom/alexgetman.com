@@ -1,10 +1,8 @@
 import type { Menu } from "@grammyjs/menu";
 import { type Context, InlineKeyboard } from "grammy";
-import { translateToEnglish } from "../content/translation.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { describeError, t } from "../foundation/i18n/index.js";
-import { log } from "../foundation/logger.js";
 import { setTelegramPostCard } from "../interfaces/telegram/control-cards.js";
 import { studioServices } from "../studio/services/index.js";
 import { appendPendingAlbum } from "./albums.js";
@@ -14,6 +12,7 @@ import { extractMessage } from "./message.js";
 import { applyAdminState } from "./post-actions.js";
 import { sendDraftPreview } from "./post-card.js";
 import { clearPostAdminState, getPostAdminState, startPostDialog } from "./post-state.js";
+import { translatePostText } from "./post-translation.js";
 
 /** The conversational text-post screen. It owns user input and keeps the
  * root bot router limited to authorization and screen dispatch.
@@ -79,12 +78,7 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
     await ctx.reply(t(locale, "post.need-new-post"), { reply_markup: persistentKeyboard(locale) });
     return;
   }
-  let textEn = message.text;
-  try {
-    textEn = await translateToEnglish(message.text, config);
-  } catch (error) {
-    log("warn", "draft translation failed", { error: String(error) });
-  }
+  const textEn = await translatePostText(message.text, config);
   const draftId = studioServices(backendDb, config).publications.create(actorId, { kind: "post", message: { ...message, textEn } }).id;
   clearPostAdminState(backendDb, actorId);
   const control = await sendDraftPreview(ctx, backendDb, draftId, config);

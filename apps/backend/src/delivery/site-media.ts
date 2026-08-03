@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import {
+  RESPONSIVE_WIDTHS,
   SITE_MEDIA_DIR_SEGMENTS,
   SITE_MEDIA_URL_PREFIX,
   siteMediaFilename,
@@ -28,8 +29,6 @@ type SiteMedia = Record<string, unknown> & {
   local_path?: string;
   localPath?: string;
 };
-
-export const RESPONSIVE_WIDTHS = [360, 640, 960] as const;
 
 /**
  * The three ffmpeg recipes this module runs *inside the backend container*,

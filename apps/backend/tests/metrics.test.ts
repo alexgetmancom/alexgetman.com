@@ -271,5 +271,6 @@ function task(target: string): MetricTask {
     externalId: "523",
     externalIds: ["523"],
     url: null,
+    lockId: "test-worker",
   };
 }

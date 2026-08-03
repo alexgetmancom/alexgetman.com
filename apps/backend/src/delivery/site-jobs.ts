@@ -4,6 +4,7 @@ import { and, asc, count, desc, eq, isNotNull, isNull, lt, lte, or, sql } from "
 import type { BackendDb } from "../db/client.js";
 import { postEvents, postMetrics, postTargets, publicationSources, siteJobs } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { withJobHeartbeat } from "../foundation/runtime/job-heartbeat.js";
 import { recordWorkerState } from "../foundation/runtime/worker-state.js";
 import { atomicWriteJson } from "../fsUtils.js";
 import { trackUsageAsync } from "../observability/usage.js";
@@ -30,13 +31,24 @@ export async function runSiteJobCycle(config: BackendConfig, backendDb: BackendD
     return 0;
   }
   try {
-    await trackUsageAsync(backendDb, "publishing.site.materialize", () =>
-      renderFeedFiles(
-        config,
-        backendDb,
-        fetch,
-        new Set(jobs.map((job) => job.post_id).filter((postId): postId is number => postId != null)),
-      ),
+    await withJobHeartbeat(
+      config.SITE_JOB_HEARTBEAT_INTERVAL_SECONDS,
+      () => {
+        backendDb.db
+          .update(siteJobs)
+          .set({ lockedAt: new Date().toISOString() })
+          .where(and(eq(siteJobs.status, "rendering"), eq(siteJobs.lockedBy, jobs[0]?.lock_id ?? "")))
+          .run();
+      },
+      () =>
+        trackUsageAsync(backendDb, "publishing.site.materialize", () =>
+          renderFeedFiles(
+            config,
+            backendDb,
+            fetch,
+            new Set(jobs.map((job) => job.post_id).filter((postId): postId is number => postId != null)),
+          ),
+        ),
     );
     const completed = completeSiteJobs(backendDb, jobs);
     // A materialization is the one moment this process knows the published site
@@ -221,6 +233,7 @@ function failSiteJobs(config: BackendConfig, backendDb: BackendDb, jobs: SiteJob
 }
 
 function sourceItems(backendDb: BackendDb): Record<string, unknown>[] {
+  const localeStates = siteLocaleStates(backendDb);
   const rows = backendDb.db
     .select({ itemJson: publicationSources.itemJson, postId: publicationSources.postId })
     .from(publicationSources)
@@ -228,8 +241,28 @@ function sourceItems(backendDb: BackendDb): Record<string, unknown>[] {
     .all();
   return rows.flatMap((row): Record<string, unknown>[] => {
     const item = parseObject(row.itemJson);
-    return item ? [{ ...item, id: `post:${row.postId}`, post_id: row.postId }] : [];
+    if (!item) return [];
+    const state = localeStates.get(row.postId);
+    const localized = state && state.seen.size > 0 ? { ...item, has_ru: state.active.has("ru"), has_en: state.active.has("en") } : item;
+    return [{ ...localized, id: `post:${row.postId}`, post_id: row.postId }];
   });
+}
+
+type SiteLocaleState = { seen: Set<"ru" | "en">; active: Set<"ru" | "en"> };
+
+/** Site publication state is the authority after a target is cancelled. */
+function siteLocaleStates(backendDb: BackendDb): Map<number, SiteLocaleState> {
+  const states = new Map<number, SiteLocaleState>();
+  const rows = backendDb.db.select({ postId: siteJobs.postId, reason: siteJobs.reason, status: siteJobs.status }).from(siteJobs).all();
+  for (const row of rows) {
+    const locale = row.reason.match(/(?:^|_)(ru|en)(?:_|$)/)?.[1];
+    if ((locale !== "ru" && locale !== "en") || row.postId == null) continue;
+    const state = states.get(row.postId) ?? { seen: new Set(), active: new Set() };
+    state.seen.add(locale);
+    if (["queued", "rendering", "published"].includes(row.status)) state.active.add(locale);
+    states.set(row.postId, state);
+  }
+  return states;
 }
 
 function previousFeedItems(config: BackendConfig): Map<number, Record<string, unknown>> {

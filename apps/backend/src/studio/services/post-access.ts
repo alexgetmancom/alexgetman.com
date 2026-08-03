@@ -1,5 +1,6 @@
 import type { ApplicationPorts, DraftRecord } from "../../application/ports.js";
 import { requireDraft } from "../../content/drafts.js";
+import { parseArrayValue } from "../../content/message.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { StudioError } from "../../foundation/errors.js";
 import { canAccessStudioOwner } from "../access.js";
@@ -11,17 +12,6 @@ export function requireOwnedDraft(ports: Pick<ApplicationPorts, "drafts">, confi
   return draft;
 }
 
-/** A legacy or truncated JSON column must surface as an empty list, not as a raw SyntaxError. */
-export function parseJsonArray(value: string | null): Record<string, unknown>[] {
-  if (!value) return [];
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return Array.isArray(parsed) ? parsed.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object") : [];
-  } catch {
-    return [];
-  }
-}
-
 export function draftMedia(draft: DraftRecord, locale: "ru" | "en"): Record<string, unknown>[] {
-  return parseJsonArray(locale === "ru" ? draft.media_ru_json : draft.media_en_json);
+  return parseArrayValue(locale === "ru" ? draft.media_ru_json : draft.media_en_json);
 }

@@ -1,10 +1,14 @@
 import { describe, expect, it } from "bun:test";
+import { eq } from "drizzle-orm";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import { openBackendDb } from "../src/db/client.js";
+import { postEvents, studioNotificationJobs } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { cancelScheduledNotifications, runNotificationCycle, scheduleReminder } from "../src/notifications/jobs.js";
 import { createVideoDraft } from "../src/publishing/video-service.js";
 import { notificationService } from "../src/studio/services/notifications.js";
+import { postService } from "../src/studio/services/posts.js";
+import { settingsService } from "../src/studio/services/settings.js";
 
 describe("Studio notifications", () => {
   it("shares the durable inbox across configured administrators", () => {
@@ -67,6 +71,11 @@ describe("Studio notifications", () => {
       expect(notifications.acknowledge(42, id)).toBe(true);
       expect(notifications.inbox(42)).toHaveLength(0);
       expect(notifications.inbox(7)).toHaveLength(1);
+
+      const auditEvent = backendDb.db.select().from(postEvents).where(eq(postEvents.eventType, "worker.failed")).get();
+      if (!auditEvent) throw new Error("audit event is missing");
+      expect(notifications.acknowledge(42, auditEvent.id)).toBe(false);
+      expect(backendDb.db.select().from(postEvents).where(eq(postEvents.id, auditEvent.id)).get()?.ackedAt).toBeNull();
     } finally {
       backendDb.close();
     }
@@ -127,6 +136,25 @@ describe("Studio notifications", () => {
       });
       cancelScheduledNotifications(backendDb, `video:${videoId}`);
       expect(runNotificationCycle(backendDb)).toBe(0);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("uses the owner's stored reminder interval when scheduling a post", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const config = loadConfig({ ADMIN_IDS: "42" });
+      settingsService(backendDb).setNotifications(42, { reminderMinutes: 17 });
+      const posts = postService(backendDb, config);
+      const draftId = posts.create(42, { text: "Scheduled", textEn: "Scheduled", entities: [], media: [] });
+      const postId = posts.schedule(42, draftId, { ruAt: new Date(Date.now() + 60 * 60_000), enAt: null });
+      const job = backendDb.db
+        .select()
+        .from(studioNotificationJobs)
+        .where(eq(studioNotificationJobs.ref, `post:${postId}`))
+        .get();
+      expect(job?.payloadJson).toMatchObject({ minutes: 17 });
     } finally {
       backendDb.close();
     }

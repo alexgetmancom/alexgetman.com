@@ -17,6 +17,7 @@ import {
 } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { gitRevision } from "../foundation/runtime/git.js";
+import { workerLiveness } from "../foundation/runtime/worker-state.js";
 import { zonedRollingPeriodBounds } from "../foundation/time.js";
 import {
   formatPipelinePosts,
@@ -105,7 +106,13 @@ export function pipelineStatusPayload(
         ok: state.ok !== false,
         lastRunAt: typeof state.last_run_at === "string" ? state.last_run_at : row.updatedAt,
         nextRunAt: typeof state.next_run_at === "string" ? state.next_run_at : null,
-        lastError: typeof state.last_error === "string" ? state.last_error : null,
+        lastError:
+          typeof state.scheduler_error === "string"
+            ? state.scheduler_error
+            : typeof state.last_error === "string"
+              ? state.last_error
+              : null,
+        ...workerLiveness(state, row.updatedAt),
       };
     });
 

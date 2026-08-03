@@ -1,7 +1,7 @@
 import { desc, eq, sql } from "drizzle-orm";
-import { markSynced } from "../../analytics/snapshots/creator-store.js";
+import { claimSync, markSynced } from "../../analytics/snapshots/creator-store.js";
 import type { BackendDb } from "../../db/client.js";
-import { analyticsSync, knowledgeEntities, postEntityLinks, posts } from "../../db/schema.js";
+import { knowledgeEntities, postEntityLinks, posts } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { requestJson } from "../../foundation/http.js";
 import { log } from "../../foundation/logger.js";
@@ -32,7 +32,6 @@ export async function sendDailyEditorialInbox(
   const date = moscowDate(now);
   if (date.hour < config.EDITORIAL_INBOX_HOUR_MSK) return false;
   const key = `editorial_inbox:${date.day}`;
-  if (backendDb.db.select().from(analyticsSync).where(eq(analyticsSync.source, key)).get()) return false;
 
   const material = backendDb.db
     .select({ postId: posts.postId, date: posts.dateUtc, text: posts.text, textEn: posts.textEn })
@@ -46,6 +45,8 @@ export async function sendDailyEditorialInbox(
       return post.postId != null && text ? [{ id: post.postId, date: post.date, text: text.slice(0, 900) }] : [];
     });
   if (material.length === 0) return false;
+  const owner = "telegram:editorial-inbox";
+  if (!claimSync(backendDb, key, 24 * 60 * 60, owner)) return false;
   const clusters = backendDb.db
     .select({ slug: knowledgeEntities.slug, title: knowledgeEntities.titleRu, count: sql<number>`count(*)` })
     .from(postEntityLinks)
@@ -88,11 +89,11 @@ export async function sendDailyEditorialInbox(
     if (items.length === 0) throw new Error("editorial inbox returned no usable opportunities");
     const message = renderInbox(items);
     for (const actorId of config.ADMIN_IDS) await bot.api.sendMessage(actorId, message);
-    markSynced(backendDb, key);
+    markSynced(backendDb, key, null, owner);
     return true;
   } catch (error) {
     // One failed provider call should not retry every five seconds all day.
-    markSynced(backendDb, key, String(error).slice(0, 500));
+    markSynced(backendDb, key, String(error).slice(0, 500), owner);
     log("warn", "daily editorial inbox failed", { error: String(error) });
     return false;
   }

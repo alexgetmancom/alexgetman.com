@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import type { openBackendDb } from "../src/db/client.js";
 import { type JsonObject, postEvents, postTargets, publishJobs } from "../src/db/schema.js";
 import { AmbiguousPublicationError } from "../src/delivery/ambiguous-publication.js";
-import { deliveryAdapter } from "../src/delivery/ports.js";
+import { type DeliveryAdapter, type DeliveryPorts, type DeliveryPublisher, deliveryAdapter } from "../src/delivery/ports.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { HttpPublishError } from "../src/publishing/errors.js";
 import {
@@ -27,6 +27,20 @@ function enqueuePublishJob(
     postId: input.messageId,
     postKey: `post:${input.messageId}`,
   });
+}
+
+function testAdapter(publish: DeliveryPublisher, hooks: Partial<Pick<DeliveryAdapter, "prepare">> = {}): DeliveryAdapter {
+  return deliveryAdapter(publish, {
+    validate: async () => undefined,
+    verify: async (_job, result) => result,
+    ...hooks,
+  });
+}
+
+function testPorts(entries: Record<string, DeliveryPublisher | DeliveryAdapter>): DeliveryPorts {
+  return Object.fromEntries(
+    Object.entries(entries).map(([target, entry]) => [target, typeof entry === "function" ? testAdapter(entry) : entry]),
+  ) as DeliveryPorts;
 }
 
 describe("publish queue", () => {
@@ -129,7 +143,7 @@ describe("publish queue", () => {
       });
       expect(claimDuePublishJobs(backendDb, 10)).toEqual([]);
       backendDb.db.update(publishJobs).set({ publishAt: null }).where(eq(publishJobs.jobId, id)).run();
-      await runPublishCycle(loadConfig({}), backendDb, { test_platform: async () => ({ ok: true, id: "due" }) });
+      await runPublishCycle(loadConfig({}), backendDb, testPorts({ test_platform: async () => ({ ok: true, id: "due" }) }));
       expect(backendDb.db.select({ status: publishJobs.status }).from(publishJobs).where(eq(publishJobs.jobId, id)).get()).toEqual({
         status: "published",
       });
@@ -142,9 +156,13 @@ describe("publish queue", () => {
         target: "test_platform",
         payload: { title: "Queued", bodyMarkdown: "Body" },
       });
-      const claimed = await runPublishCycle(loadConfig({}), backendDb, {
-        test_platform: async () => ({ ok: true, id: "test-platform-1", url: "https://example.test/posts/test-platform-1" }),
-      });
+      const claimed = await runPublishCycle(
+        loadConfig({}),
+        backendDb,
+        testPorts({
+          test_platform: async () => ({ ok: true, id: "test-platform-1", url: "https://example.test/posts/test-platform-1" }),
+        }),
+      );
       expect(claimed).toBe(1);
       const job = backendDb.db
         .select({ status: publishJobs.status, lastError: publishJobs.lastError })
@@ -189,7 +207,7 @@ describe("publish queue", () => {
       let maxActiveSlow = 0;
       let fastElapsedMs: number | null = null;
       const start = Date.now();
-      const publishers = {
+      const publishers = testPorts({
         "slow-target": async () => {
           activeSlow += 1;
           maxActiveSlow = Math.max(maxActiveSlow, activeSlow);
@@ -201,7 +219,7 @@ describe("publish queue", () => {
           fastElapsedMs = Date.now() - start;
           return { ok: true, id: "fast" };
         },
-      };
+      });
       await runPublishCycle(loadConfig({}), backendDb, publishers);
       // Two jobs on the same target never overlap...
       expect(maxActiveSlow).toBe(1);
@@ -214,17 +232,21 @@ describe("publish queue", () => {
     withDb(async (backendDb) => {
       const id = enqueuePublishJob(backendDb, { messageId: 700, target: "slow-target", payload: { title: "Queued" } });
       let lockedAtDuringPublish: string | null | undefined;
-      await runPublishCycle(loadConfig({ PUBLISH_HEARTBEAT_INTERVAL_SECONDS: "1" }), backendDb, {
-        "slow-target": async () => {
-          await Bun.sleep(1100);
-          lockedAtDuringPublish = backendDb.db
-            .select({ lockedAt: publishJobs.lockedAt })
-            .from(publishJobs)
-            .where(eq(publishJobs.jobId, id))
-            .get()?.lockedAt;
-          return { ok: true, id: "slow" };
-        },
-      });
+      await runPublishCycle(
+        loadConfig({ PUBLISH_HEARTBEAT_INTERVAL_SECONDS: "1" }),
+        backendDb,
+        testPorts({
+          "slow-target": async () => {
+            await Bun.sleep(1100);
+            lockedAtDuringPublish = backendDb.db
+              .select({ lockedAt: publishJobs.lockedAt })
+              .from(publishJobs)
+              .where(eq(publishJobs.jobId, id))
+              .get()?.lockedAt;
+            return { ok: true, id: "slow" };
+          },
+        }),
+      );
       const claimedAt = backendDb.db.select({ lockedAt: publishJobs.lockedAt }).from(publishJobs).where(eq(publishJobs.jobId, id)).get();
       // The job already completed by the time we read it back, so lockedAt is
       // cleared; what matters is the heartbeat fired at least once mid-publish.
@@ -240,11 +262,15 @@ describe("publish queue", () => {
         target: "test_platform",
         payload: { title: "Queued", bodyMarkdown: "Body" },
       });
-      await runPublishCycle(loadConfig({ PUBLISH_BACKOFF_BASE_SECONDS: "1" }), backendDb, {
-        test_platform: async () => {
-          throw new HttpPublishError("temporary", 503, "temporary");
-        },
-      });
+      await runPublishCycle(
+        loadConfig({ PUBLISH_BACKOFF_BASE_SECONDS: "1" }),
+        backendDb,
+        testPorts({
+          test_platform: async () => {
+            throw new HttpPublishError("temporary", 503, "temporary");
+          },
+        }),
+      );
       const job = backendDb.db
         .select({
           status: publishJobs.status,
@@ -269,11 +295,15 @@ describe("publish queue", () => {
         target: "ambiguous-provider",
         payload: { title: "Queued" },
       });
-      await runPublishCycle(loadConfig({}), backendDb, {
-        "ambiguous-provider": async () => {
-          throw new AmbiguousPublicationError("ambiguous-provider", new Error("socket closed"));
-        },
-      });
+      await runPublishCycle(
+        loadConfig({}),
+        backendDb,
+        testPorts({
+          "ambiguous-provider": async () => {
+            throw new AmbiguousPublicationError("ambiguous-provider", new Error("socket closed"));
+          },
+        }),
+      );
       expect(
         backendDb.db
           .select({ status: publishJobs.status, nextAttemptAt: publishJobs.nextAttemptAt })
@@ -293,11 +323,11 @@ describe("publish queue", () => {
         target: "test_platform",
         payload: { title: "Queued", bodyMarkdown: "Body" },
       });
-      const publishers = {
+      const publishers = testPorts({
         test_platform: async () => {
           throw new Error("unclassified upstream response");
         },
-      };
+      });
       const config = loadConfig({ PUBLISH_BACKOFF_BASE_SECONDS: "1" });
       await runPublishCycle(config, backendDb, publishers);
       expect(
@@ -326,11 +356,15 @@ describe("publish queue", () => {
         target: "slow-provider",
         payload: { title: "Queued" },
       });
-      await runPublishCycle(loadConfig({ PUBLISH_JOB_TIMEOUT_SECONDS: "1" }), backendDb, {
-        "slow-provider": deliveryAdapter(async () => ({ ok: true }), {
-          prepare: async () => await new Promise<never>(() => undefined),
+      await runPublishCycle(
+        loadConfig({ PUBLISH_JOB_TIMEOUT_SECONDS: "1" }),
+        backendDb,
+        testPorts({
+          "slow-provider": testAdapter(async () => ({ ok: true }), {
+            prepare: async () => await new Promise<never>(() => undefined),
+          }),
         }),
-      });
+      );
       expect(
         backendDb.db
           .select({ status: publishJobs.status, attemptCount: publishJobs.attemptCount, lastError: publishJobs.lastError })
@@ -356,20 +390,24 @@ describe("publish queue", () => {
       const preparation = new Promise<void>((resolve) => {
         releasePreparation = resolve;
       });
-      await runPublishCycle(loadConfig({ PUBLISH_JOB_TIMEOUT_SECONDS: "1" }), backendDb, {
-        "slow-prepare": deliveryAdapter(
-          async () => {
-            publishCalls += 1;
-            return { ok: true };
-          },
-          {
-            prepare: async (job) => {
-              await preparation;
-              return job;
+      await runPublishCycle(
+        loadConfig({ PUBLISH_JOB_TIMEOUT_SECONDS: "1" }),
+        backendDb,
+        testPorts({
+          "slow-prepare": testAdapter(
+            async () => {
+              publishCalls += 1;
+              return { ok: true };
             },
-          },
-        ),
-      });
+            {
+              prepare: async (job) => {
+                await preparation;
+                return job;
+              },
+            },
+          ),
+        }),
+      );
       releasePreparation?.();
       await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -516,19 +554,23 @@ describe("publish queue", () => {
         target: "test_platform",
         payload: { title: "Queued", bodyMarkdown: "Body" },
       });
-      await runPublishCycle(loadConfig({}), backendDb, {
-        test_platform: async () => {
-          backendDb.sqlite.exec("DROP TABLE post_events; CREATE TABLE post_events (id INTEGER PRIMARY KEY)");
-          return { ok: true, id: "test-platform-1" };
-        },
-      });
+      await runPublishCycle(
+        loadConfig({}),
+        backendDb,
+        testPorts({
+          test_platform: async () => {
+            backendDb.sqlite.exec("DROP TABLE post_events; CREATE TABLE post_events (id INTEGER PRIMARY KEY)");
+            return { ok: true, id: "test-platform-1" };
+          },
+        }),
+      );
       const job = backendDb.db
         .select({ status: publishJobs.status, lockedBy: publishJobs.lockedBy, lastError: publishJobs.lastError })
         .from(publishJobs)
         .where(eq(publishJobs.jobId, id))
         .get();
       if (!job) throw new Error("expected failed job");
-      expect(job.status).toBe("failed");
+      expect(job.status).toBe("verification_required");
       expect(job.lockedBy).toBeNull();
       expect(job.lastError).toContain("worker finalization failed");
     }));

@@ -6,6 +6,7 @@ import { and, eq } from "drizzle-orm";
 import { handleVideoCallback, handleVideoMessage } from "../src/bot/video-screen.js";
 import { getSession, saveSession } from "../src/bot/video-session.js";
 import {
+  drafts,
   socialComments,
   studioMediaAssets,
   videoDrafts,
@@ -129,6 +130,59 @@ describe("video publication queue", () => {
       await runVideoCycle(config, backendDb);
       expect(existsSync(source)).toBe(false);
       expect(backendDb.db.select().from(studioMediaAssets).where(eq(studioMediaAssets.id, asset.id)).get()).toBeDefined();
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps an expired Studio source that is still attached to a post draft", async () => {
+    const backendDb = testDb.open();
+    const directory = mkdtempSync(path.join(os.tmpdir(), "studio-video-retention-shared-"));
+    const source = path.join(directory, "source.mp4");
+    writeFileSync(source, "video");
+    try {
+      const now = new Date().toISOString();
+      const asset = backendDb.db
+        .insert(studioMediaAssets)
+        .values({
+          actorId: 42,
+          kind: "video",
+          mimeType: "video/mp4",
+          filename: "source.mp4",
+          localPath: source,
+          byteSize: 5,
+          sha256: "b".repeat(64),
+          source: "telegram",
+          createdAt: now,
+        })
+        .returning({ id: studioMediaAssets.id })
+        .get();
+      if (!asset) throw new Error("asset missing");
+      const draftId = createVideoDraft(backendDb, 42, { studioMediaAssetId: asset.id }, 24);
+      replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
+      const target = listVideoTargets(backendDb, draftId)[0];
+      if (!target) throw new Error("target missing");
+      backendDb.db.update(videoTargets).set({ status: "published", updatedAt: now }).where(eq(videoTargets.id, target.id)).run();
+      backendDb.db
+        .update(videoDrafts)
+        .set({ status: "published", retentionUntil: new Date(Date.now() - 1_000).toISOString(), updatedAt: now })
+        .where(eq(videoDrafts.id, draftId))
+        .run();
+      backendDb.db
+        .insert(drafts)
+        .values({
+          actorId: 42,
+          status: "needs_review",
+          textRu: "Post using the same asset",
+          targetsJson: "{}",
+          mediaRuJson: JSON.stringify([{ type: "video", asset_id: asset.id, local_path: source }]),
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+
+      await runVideoCycle({ ...videoConfig(), STUDIO_MEDIA_DIR: directory, VIDEO_MEDIA_DIR: directory }, backendDb);
+      expect(existsSync(source)).toBe(true);
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
@@ -514,7 +568,7 @@ describe("video publication queue", () => {
       caption: "Описание для Instagram\n#game #reels",
     });
 
-    const preview = videoPreview(backendDb, videoConfig(), draftId);
+    const preview = videoPreview(videoService(backendDb, videoConfig()).preview(42, draftId), videoConfig());
     expect(preview.text).toContain("▶️ *YouTube Shorts*");
     expect(preview.text).toContain("Название: Название ролика");
     expect(preview.text).toContain("Игра: https://store.steampowered.com/app/123");

@@ -1,5 +1,6 @@
 import { InstagramContainerInvalidError, isExpiredInstagramContainer } from "../delivery/social/instagram-container.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { instagramGraphHost } from "../foundation/external/instagram.js";
 import { type VideoLocale, youtubeAccessToken } from "../foundation/external/youtube.js";
 import { ExternalTransportError, externalFetch, formBody, requestJson } from "../foundation/http.js";
 import type { InstagramMetadata, YouTubeMetadata } from "../publishing/video-types.js";
@@ -36,7 +37,7 @@ export class InstagramContainerProcessingError extends Error {}
 export { InstagramContainerInvalidError };
 
 function instagramGraphBase(config: BackendConfig): string {
-  const host = config.INSTAGRAM_ACCESS_TOKEN?.startsWith("IG") ? "graph.instagram.com" : "graph.facebook.com";
+  const host = instagramGraphHost(config.INSTAGRAM_ACCESS_TOKEN ?? "");
   const version = config.INSTAGRAM_GRAPH_API_VERSION;
   return `https://${host}/${version}`;
 }

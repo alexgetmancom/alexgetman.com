@@ -1,10 +1,11 @@
+import crypto from "node:crypto";
 import { bootstrapConfiguredChannels } from "../../channels/registry.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { log } from "../../foundation/logger.js";
 import { trackUsageAsync } from "../../observability/usage.js";
 import { evaluateAudienceMilestones } from "../audience-milestones.js";
-import { canSync } from "../snapshots/creator-store.js";
+import { claimSync } from "../snapshots/creator-store.js";
 import { syncCommunityProfiles, syncInstagramProfile, syncXProfile, syncYouTubeProfile, syncZernioChannelProfile } from "./profile-sync.js";
 import { runVideoMetricSchedule } from "./video-metrics.js";
 
@@ -29,36 +30,43 @@ export async function runAnalyticsCycle(config: BackendConfig, backendDb: Backen
   let profiles = 0;
   const channels = bootstrapConfiguredChannels(backendDb, config);
   for (const channel of channels) {
-    if (!canSync(backendDb, channel.id, profileInterval)) continue;
+    const standardProfile = channel.platform === "youtube" || channel.platform === "instagram";
+    const profileSupported = standardProfile || (channel.provider === "zernio" && !standardProfile);
+    if (!profileSupported) continue;
+    const owner = `profile:${channel.id}:${crypto.randomUUID()}`;
+    if (!claimSync(backendDb, channel.id, profileInterval, owner)) continue;
     if (channel.platform === "youtube")
       profiles += await step(backendDb, channel.id, "analytics.creator_profile.sync", () =>
-        syncYouTubeProfile(config, backendDb, fetchImpl, channel),
+        syncYouTubeProfile(config, backendDb, fetchImpl, channel, owner),
       );
     if (channel.platform === "instagram")
       profiles += await step(backendDb, channel.id, "analytics.creator_profile.sync", () =>
-        syncInstagramProfile(config, backendDb, fetchImpl, channel),
+        syncInstagramProfile(config, backendDb, fetchImpl, channel, owner),
       );
-    if (!["youtube", "instagram"].includes(channel.platform) && channel.provider === "zernio")
+    if (channel.provider === "zernio" && !standardProfile)
       profiles += await step(backendDb, channel.id, "analytics.creator_profile.sync", () =>
-        syncZernioChannelProfile(config, backendDb, fetchImpl, channel),
+        syncZernioChannelProfile(config, backendDb, fetchImpl, channel, owner),
       );
   }
+  const xOwner = `profile:x:${crypto.randomUUID()}`;
   if (
     config.ENABLE_X_PROFILE_METRICS &&
     config.X_CONSUMER_KEY &&
     config.X_CONSUMER_SECRET &&
     config.X_ACCESS_TOKEN &&
     config.X_ACCESS_TOKEN_SECRET &&
-    canSync(backendDb, "x_profile", profileInterval)
+    claimSync(backendDb, "x_profile", profileInterval, xOwner)
   )
-    profiles += await step(backendDb, "x_profile", "analytics.creator_profile.sync", () => syncXProfile(config, backendDb, fetchImpl));
+    profiles += await step(backendDb, "x_profile", "analytics.creator_profile.sync", () =>
+      syncXProfile(config, backendDb, fetchImpl, xOwner),
+    );
   const community = [
     ...(config.controllerBotToken ? ["telegram_profile"] : []),
     ...(config.THREADS_ACCESS_TOKEN ? ["threads_profile"] : []),
   ];
-  if (community.some((source) => canSync(backendDb, source, profileInterval)))
+  if (community.length > 0)
     profiles += await step(backendDb, "community", "analytics.creator_profile.sync", () =>
-      syncCommunityProfiles(config, backendDb, fetchImpl),
+      syncCommunityProfiles(config, backendDb, fetchImpl, `community:${crypto.randomUUID()}`),
     );
   evaluateAudienceMilestones(backendDb);
   let metrics = 0;

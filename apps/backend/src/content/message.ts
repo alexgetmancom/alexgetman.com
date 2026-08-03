@@ -4,6 +4,8 @@ import { jsonRecordArray } from "../json.js";
 export type DraftMessage = {
   text: string;
   textEn?: string;
+  /** Explicit human approval is separate from the machine translation. */
+  textEnApproved?: string | null;
   media: Record<string, unknown>[];
   entities: unknown[];
 };

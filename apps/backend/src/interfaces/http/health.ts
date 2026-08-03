@@ -4,6 +4,7 @@ import type { BackendDb } from "../../db/client.js";
 import { workerState } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { json, text } from "../../foundation/http-response.js";
+import { workerLiveness } from "../../foundation/runtime/worker-state.js";
 import type { RouteModule } from "./context.js";
 
 export const healthRoutes: RouteModule = (app, { config, backendDb }) => {
@@ -67,7 +68,13 @@ function readiness(config: BackendConfig, backendDb: BackendDb): Record<string, 
       .select()
       .from(workerState)
       .all()
-      .map((row) => [row.name, { updated_at: row.updatedAt, age_seconds: Math.round((Date.now() - Date.parse(row.updatedAt)) / 1000) }]),
+      .map((row) => [
+        row.name,
+        {
+          updated_at: row.updatedAt,
+          ...workerLiveness(row.stateJson, row.updatedAt),
+        },
+      ]),
   );
 
   return {

@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { channelConfig } from "../../channels/channel-config.js";
 import type { ChannelConnection } from "../../channels/registry.js";
 import type { BackendDb } from "../../db/client.js";
@@ -8,7 +9,7 @@ import { oauthAuthorization } from "../../foundation/external/x-oauth.js";
 import { youtubeAccessToken } from "../../foundation/external/youtube.js";
 import { requestJson } from "../../foundation/http.js";
 import { studioAudiencePlatforms } from "../audience-groups.js";
-import { canSync, markSynced, metricNumber, recordProfileSnapshot } from "../snapshots/creator-store.js";
+import { claimSync, markSynced, metricNumber, recordProfileSnapshot } from "../snapshots/creator-store.js";
 import { queryYouTubeAnalytics, youtubeAnalyticsDateRange } from "./youtube-analytics.js";
 
 type YouTubeChannel = {
@@ -29,12 +30,13 @@ type ZernioInsights = { metrics?: Record<string, { total?: number }> };
 
 /** Runs one platform sync and records its outcome; every platform below funnels through
  * this so a new integration can't forget the success/failure timestamp update. */
-async function synced(backendDb: BackendDb, source: string, run: () => Promise<void>): Promise<void> {
+async function synced(backendDb: BackendDb, source: string, run: () => Promise<void>, owner?: string): Promise<void> {
   try {
     await run();
-    markSynced(backendDb, source);
+    markSynced(backendDb, source, null, owner);
   } catch (error) {
-    markSynced(backendDb, source, error instanceof Error ? error.message : String(error));
+    markSynced(backendDb, source, error instanceof Error ? error.message : String(error), owner);
+    throw error;
   }
 }
 
@@ -43,49 +45,55 @@ export async function syncYouTubeProfile(
   backendDb: BackendDb,
   fetchImpl: typeof fetch,
   connection: ChannelConnection,
+  owner?: string,
 ): Promise<void> {
   const profileKey = connection.id;
   const locale = connection.locale === "en" ? "en" : "ru";
-  await synced(backendDb, profileKey, async () => {
-    const token = await youtubeAccessToken(channelConfig(backendDb, config, "youtube", locale), fetchImpl, locale);
-    const auth = { Authorization: `Bearer ${token}` };
-    const channel = await requestJson<YouTubeChannel>(
-      fetchImpl,
-      "https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&mine=true",
-      { headers: auth },
-    );
-    const channelItem = channel.items?.[0];
-    const reports = await Promise.allSettled([
-      youtubeReport(fetchImpl, token, 1),
-      youtubeReport(fetchImpl, token, 7),
-      youtubeReport(fetchImpl, token, 30),
-    ]);
-    const [today = {}, week = {}, period = {}] = reports.map((report) => (report.status === "fulfilled" ? report.value : {}));
-    recordProfileSnapshot(backendDb, {
-      platform: profileKey,
-      account: channelItem?.snippet?.title ?? "channel",
-      source: "youtube_data_api",
-      audiencePlatforms: [profileKey],
-      metrics: {
-        title: channelItem?.snippet?.title ?? "YouTube",
-        subscriberCount: metricNumber(channelItem?.statistics?.subscriberCount),
-        viewCount: metricNumber(channelItem?.statistics?.viewCount),
-        videoCount: metricNumber(channelItem?.statistics?.videoCount),
-        ...period,
-        ...periodMetrics(today, 1),
-        ...periodMetrics(week, 7),
-      },
-      // Keep the current channel total once per hour. Analytics reports lag;
-      // the durable channel counter lets the 24-hour dashboard calculate a
-      // live view delta without polling any text-post platforms.
-      resolution: "hour",
-    });
-    // The Data API and Analytics API are independently enabled Google
-    // services. Keep the live channel counter when Analytics is unavailable,
-    // then surface the failing report in analytics_sync for diagnosis.
-    const failed = reports.find((report): report is PromiseRejectedResult => report.status === "rejected");
-    if (failed) throw failed.reason;
-  });
+  await synced(
+    backendDb,
+    profileKey,
+    async () => {
+      const token = await youtubeAccessToken(channelConfig(backendDb, config, "youtube", locale), fetchImpl, locale);
+      const auth = { Authorization: `Bearer ${token}` };
+      const channel = await requestJson<YouTubeChannel>(
+        fetchImpl,
+        "https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&mine=true",
+        { headers: auth },
+      );
+      const channelItem = channel.items?.[0];
+      const reports = await Promise.allSettled([
+        youtubeReport(fetchImpl, token, 1),
+        youtubeReport(fetchImpl, token, 7),
+        youtubeReport(fetchImpl, token, 30),
+      ]);
+      const [today = {}, week = {}, period = {}] = reports.map((report) => (report.status === "fulfilled" ? report.value : {}));
+      recordProfileSnapshot(backendDb, {
+        platform: profileKey,
+        account: channelItem?.snippet?.title ?? "channel",
+        source: "youtube_data_api",
+        audiencePlatforms: [profileKey],
+        metrics: {
+          title: channelItem?.snippet?.title ?? "YouTube",
+          subscriberCount: metricNumber(channelItem?.statistics?.subscriberCount),
+          viewCount: metricNumber(channelItem?.statistics?.viewCount),
+          videoCount: metricNumber(channelItem?.statistics?.videoCount),
+          ...period,
+          ...periodMetrics(today, 1),
+          ...periodMetrics(week, 7),
+        },
+        // Keep the current channel total once per hour. Analytics reports lag;
+        // the durable channel counter lets the 24-hour dashboard calculate a
+        // live view delta without polling any text-post platforms.
+        resolution: "hour",
+      });
+      // The Data API and Analytics API are independently enabled Google
+      // services. Keep the live channel counter when Analytics is unavailable,
+      // then surface the failing report in analytics_sync for diagnosis.
+      const failed = reports.find((report): report is PromiseRejectedResult => report.status === "rejected");
+      if (failed) throw failed.reason;
+    },
+    owner,
+  );
 }
 
 function periodMetrics(metrics: Record<string, number>, days: 1 | 7): Record<string, number> {
@@ -112,36 +120,42 @@ export async function syncInstagramProfile(
   backendDb: BackendDb,
   fetchImpl: typeof fetch,
   connection: ChannelConnection,
+  owner?: string,
 ): Promise<void> {
   const profileKey = connection.id;
-  await synced(backendDb, profileKey, async () => {
-    if (connection.provider === "zernio") {
-      await syncZernioInstagramProfile(config, backendDb, fetchImpl, connection);
-      return;
-    }
-    const instagramLocale = connection.locale === "en" ? "en" : "ru";
-    const instagramConfig = instagramConfigForLocale(channelConfig(backendDb, config, "instagram", instagramLocale), instagramLocale);
-    const token = instagramConfig.INSTAGRAM_ACCESS_TOKEN;
-    const userId = instagramConfig.INSTAGRAM_USER_ID;
-    if (!token || !userId) throw new Error("Instagram credentials are missing");
-    const host = instagramGraphHost(token);
-    const profileData = await requestJson<InstagramProfile>(
-      fetchImpl,
-      `https://${host}/${instagramConfig.INSTAGRAM_GRAPH_API_VERSION}/${userId}?fields=username,biography,followers_count,media_count&access_token=${encodeURIComponent(token)}`,
-    );
-    recordProfileSnapshot(backendDb, {
-      platform: profileKey,
-      account: profileData.username ?? "instagram",
-      source: "instagram_graph_api",
-      audiencePlatforms: [profileKey],
-      metrics: {
-        username: profileData.username ?? "Instagram",
-        biography: profileData.biography ?? "",
-        followersCount: metricNumber(profileData.followers_count),
-        mediaCount: metricNumber(profileData.media_count),
-      },
-    });
-  });
+  await synced(
+    backendDb,
+    profileKey,
+    async () => {
+      if (connection.provider === "zernio") {
+        await syncZernioInstagramProfile(config, backendDb, fetchImpl, connection);
+        return;
+      }
+      const instagramLocale = connection.locale === "en" ? "en" : "ru";
+      const instagramConfig = instagramConfigForLocale(channelConfig(backendDb, config, "instagram", instagramLocale), instagramLocale);
+      const token = instagramConfig.INSTAGRAM_ACCESS_TOKEN;
+      const userId = instagramConfig.INSTAGRAM_USER_ID;
+      if (!token || !userId) throw new Error("Instagram credentials are missing");
+      const host = instagramGraphHost(token);
+      const profileData = await requestJson<InstagramProfile>(
+        fetchImpl,
+        `https://${host}/${instagramConfig.INSTAGRAM_GRAPH_API_VERSION}/${userId}?fields=username,biography,followers_count,media_count&access_token=${encodeURIComponent(token)}`,
+      );
+      recordProfileSnapshot(backendDb, {
+        platform: profileKey,
+        account: profileData.username ?? "instagram",
+        source: "instagram_graph_api",
+        audiencePlatforms: [profileKey],
+        metrics: {
+          username: profileData.username ?? "Instagram",
+          biography: profileData.biography ?? "",
+          followersCount: metricNumber(profileData.followers_count),
+          mediaCount: metricNumber(profileData.media_count),
+        },
+      });
+    },
+    owner,
+  );
 }
 
 /** Keeps a newly registered Zernio platform visible in audience analytics even
@@ -151,26 +165,32 @@ export async function syncZernioChannelProfile(
   backendDb: BackendDb,
   fetchImpl: typeof fetch,
   connection: ChannelConnection,
+  owner?: string,
 ): Promise<void> {
-  await synced(backendDb, connection.id, async () => {
-    if (!config.ZERNIO_API_KEY || !connection.providerAccountId) throw new Error("Zernio channel credentials are missing");
-    const headers = { Authorization: `Bearer ${config.ZERNIO_API_KEY}` };
-    const accounts = await requestJson<ZernioAccounts>(fetchImpl, "https://zernio.com/api/v1/accounts", { headers });
-    const account = (Array.isArray(accounts) ? accounts : (accounts.accounts ?? [])).find(
-      (item) => item._id === connection.providerAccountId,
-    );
-    if (!account) throw new Error("Zernio channel account was not found");
-    recordProfileSnapshot(backendDb, {
-      platform: connection.id,
-      account: account.username ?? connection.providerAccountId,
-      source: "zernio",
-      audiencePlatforms: [connection.id],
-      metrics: {
-        username: account.username ?? account.displayName ?? connection.label,
-        followersCount: metricNumber(account.followersCount),
-      },
-    });
-  });
+  await synced(
+    backendDb,
+    connection.id,
+    async () => {
+      if (!config.ZERNIO_API_KEY || !connection.providerAccountId) throw new Error("Zernio channel credentials are missing");
+      const headers = { Authorization: `Bearer ${config.ZERNIO_API_KEY}` };
+      const accounts = await requestJson<ZernioAccounts>(fetchImpl, "https://zernio.com/api/v1/accounts", { headers });
+      const account = (Array.isArray(accounts) ? accounts : (accounts.accounts ?? [])).find(
+        (item) => item._id === connection.providerAccountId,
+      );
+      if (!account) throw new Error("Zernio channel account was not found");
+      recordProfileSnapshot(backendDb, {
+        platform: connection.id,
+        account: account.username ?? connection.providerAccountId,
+        source: "zernio",
+        audiencePlatforms: [connection.id],
+        metrics: {
+          username: account.username ?? account.displayName ?? connection.label,
+          followersCount: metricNumber(account.followersCount),
+        },
+      });
+    },
+    owner,
+  );
 }
 
 async function syncZernioInstagramProfile(
@@ -264,40 +284,55 @@ type TelegramBroadcastStats = {
 };
 type ThreadsProfile = { id?: string; username?: string };
 
-export async function syncXProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
+export async function syncXProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch, owner?: string): Promise<void> {
   if (!config.ENABLE_X_PROFILE_METRICS) return;
-  await synced(backendDb, "x_profile", async () => {
-    const url = "https://api.x.com/2/users/me?user.fields=public_metrics";
-    const profile = await requestJson<XProfile>(fetchImpl, url, { headers: { Authorization: oauthAuthorization("GET", url, config) } });
-    const user = profile.data;
-    if (!user?.id) throw new Error("X profile response has no user");
-    recordProfileSnapshot(backendDb, {
-      platform: "x",
-      account: user.username ?? user.id,
-      source: "x_user_api",
-      audiencePlatforms: studioAudiencePlatforms(config, "text"),
-      metrics: {
-        name: user.name ?? user.username ?? user.id,
-        followersCount: metricNumber(user.public_metrics?.followers_count),
-        followingCount: metricNumber(user.public_metrics?.following_count),
-        postsCount: metricNumber(user.public_metrics?.tweet_count),
-        listedCount: metricNumber(user.public_metrics?.listed_count),
-      },
-    });
-  });
+  await synced(
+    backendDb,
+    "x_profile",
+    async () => {
+      const url = "https://api.x.com/2/users/me?user.fields=public_metrics";
+      const profile = await requestJson<XProfile>(fetchImpl, url, { headers: { Authorization: oauthAuthorization("GET", url, config) } });
+      const user = profile.data;
+      if (!user?.id) throw new Error("X profile response has no user");
+      recordProfileSnapshot(backendDb, {
+        platform: "x",
+        account: user.username ?? user.id,
+        source: "x_user_api",
+        audiencePlatforms: studioAudiencePlatforms(config, "text"),
+        metrics: {
+          name: user.name ?? user.username ?? user.id,
+          followersCount: metricNumber(user.public_metrics?.followers_count),
+          followingCount: metricNumber(user.public_metrics?.following_count),
+          postsCount: metricNumber(user.public_metrics?.tweet_count),
+          listedCount: metricNumber(user.public_metrics?.listed_count),
+        },
+      });
+    },
+    owner,
+  );
 }
 
-export async function syncCommunityProfiles(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
+export async function syncCommunityProfiles(
+  config: BackendConfig,
+  backendDb: BackendDb,
+  fetchImpl: typeof fetch,
+  owner?: string,
+): Promise<void> {
   const jobs: Promise<void>[] = [];
   const interval = config.CREATOR_PROFILE_REFRESH_INTERVAL_SECONDS;
+  const ownerPrefix = owner ?? `community:${crypto.randomUUID()}`;
   // A controller bot is not itself a Telegram publishing channel. In a
   // video-only Studio (such as Maru) CHANNEL_USERNAME may merely fall back to
   // the legacy default, so collecting it would leak another creator's audience
   // into this dashboard.
-  if (config.studio.modules.text_posting && config.controllerBotToken && canSync(backendDb, "telegram_profile", interval))
-    jobs.push(syncTelegramProfile(config, backendDb, fetchImpl));
-  if (config.THREADS_ACCESS_TOKEN && canSync(backendDb, "threads_profile", interval))
-    jobs.push(syncThreadsProfile(config, backendDb, fetchImpl));
+  if (
+    config.studio.modules.text_posting &&
+    config.controllerBotToken &&
+    claimSync(backendDb, "telegram_profile", interval, `${ownerPrefix}:telegram`)
+  )
+    jobs.push(syncTelegramProfile(config, backendDb, fetchImpl, `${ownerPrefix}:telegram`));
+  if (config.THREADS_ACCESS_TOKEN && claimSync(backendDb, "threads_profile", interval, `${ownerPrefix}:threads`))
+    jobs.push(syncThreadsProfile(config, backendDb, fetchImpl, `${ownerPrefix}:threads`));
   await Promise.all(jobs);
 }
 
@@ -308,38 +343,43 @@ function channelHandle(config: BackendConfig): string {
   return config.CHANNEL_USERNAME.replace(/^@/, "");
 }
 
-async function syncTelegramProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
-  await synced(backendDb, "telegram_profile", async () => {
-    const mtprotoMetrics = await collectTelegramChannelStats(config);
-    if (mtprotoMetrics) {
+async function syncTelegramProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch, owner?: string): Promise<void> {
+  await synced(
+    backendDb,
+    "telegram_profile",
+    async () => {
+      const mtprotoMetrics = await collectTelegramChannelStats(config);
+      if (mtprotoMetrics) {
+        recordProfileSnapshot(backendDb, {
+          platform: "telegram",
+          account: channelHandle(config),
+          source: "telegram_mtproto_stats",
+          audiencePlatforms: studioAudiencePlatforms(config, "text"),
+          metrics: mtprotoMetrics,
+        });
+        return;
+      }
+      if (!config.controllerBotToken) throw new Error("Telegram channel credentials are missing");
+      const result = await requestJson<TelegramCount>(
+        fetchImpl,
+        `${config.TELEGRAM_API_BASE_URL.replace(/\/$/, "")}/bot${config.controllerBotToken}/getChatMemberCount`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chat_id: `@${channelHandle(config)}` }),
+        },
+      );
+      if (!result.ok || result.result == null) throw new Error("Telegram channel member count is unavailable");
       recordProfileSnapshot(backendDb, {
         platform: "telegram",
         account: channelHandle(config),
-        source: "telegram_mtproto_stats",
+        source: "telegram_bot_api",
         audiencePlatforms: studioAudiencePlatforms(config, "text"),
-        metrics: mtprotoMetrics,
+        metrics: { followersCount: metricNumber(result.result) },
       });
-      return;
-    }
-    if (!config.controllerBotToken) throw new Error("Telegram channel credentials are missing");
-    const result = await requestJson<TelegramCount>(
-      fetchImpl,
-      `${config.TELEGRAM_API_BASE_URL.replace(/\/$/, "")}/bot${config.controllerBotToken}/getChatMemberCount`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: `@${channelHandle(config)}` }),
-      },
-    );
-    if (!result.ok || result.result == null) throw new Error("Telegram channel member count is unavailable");
-    recordProfileSnapshot(backendDb, {
-      platform: "telegram",
-      account: channelHandle(config),
-      source: "telegram_bot_api",
-      audiencePlatforms: studioAudiencePlatforms(config, "text"),
-      metrics: { followersCount: metricNumber(result.result) },
-    });
-  });
+    },
+    owner,
+  );
 }
 
 async function collectTelegramChannelStats(config: BackendConfig): Promise<Record<string, number> | null> {
@@ -369,21 +409,26 @@ function telegramChannelMetrics(stats: TelegramBroadcastStats): Record<string, n
   };
 }
 
-async function syncThreadsProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<void> {
+async function syncThreadsProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch, owner?: string): Promise<void> {
   const token = config.THREADS_ACCESS_TOKEN;
   if (!token) return;
-  await synced(backendDb, "threads_profile", async () => {
-    const profile = await requestJson<ThreadsProfile>(
-      fetchImpl,
-      `https://graph.threads.net/v1.0/me?fields=id,username&access_token=${encodeURIComponent(token)}`,
-    );
-    if (!profile.id) throw new Error("Threads profile response has no account");
-    recordProfileSnapshot(backendDb, {
-      platform: "threads",
-      account: profile.username ?? profile.id,
-      source: "threads_api",
-      audiencePlatforms: studioAudiencePlatforms(config, "text"),
-      metrics: { name: profile.username ?? profile.id },
-    });
-  });
+  await synced(
+    backendDb,
+    "threads_profile",
+    async () => {
+      const profile = await requestJson<ThreadsProfile>(
+        fetchImpl,
+        `https://graph.threads.net/v1.0/me?fields=id,username&access_token=${encodeURIComponent(token)}`,
+      );
+      if (!profile.id) throw new Error("Threads profile response has no account");
+      recordProfileSnapshot(backendDb, {
+        platform: "threads",
+        account: profile.username ?? profile.id,
+        source: "threads_api",
+        audiencePlatforms: studioAudiencePlatforms(config, "text"),
+        metrics: { name: profile.username ?? profile.id },
+      });
+    },
+    owner,
+  );
 }

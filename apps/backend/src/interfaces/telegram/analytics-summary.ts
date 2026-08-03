@@ -1,9 +1,7 @@
-import { eq } from "drizzle-orm";
 import type { Bot } from "grammy";
 import { creatorDashboard } from "../../analytics/reports/dashboard.js";
-import { markSynced } from "../../analytics/snapshots/creator-store.js";
+import { claimSync, markSynced } from "../../analytics/snapshots/creator-store.js";
 import type { BackendDb } from "../../db/client.js";
-import { analyticsSync } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { t } from "../../foundation/i18n/index.js";
 import { log } from "../../foundation/logger.js";
@@ -39,12 +37,13 @@ export async function sendWeeklyAnalyticsSummary(
   const settings = settingsService(backendDb).weeklyDigest();
   if (!settings.enabled || settings.weekday !== weekday) return false;
   const key = `weekly_summary:${parts.year}-${parts.month}-${parts.day}`;
-  if (backendDb.db.select().from(analyticsSync).where(eq(analyticsSync.source, key)).get()) return false;
   const weekTitle = `📊 *${t("ru", "report.stats-for", { period: t("ru", "report.period-days", { days: 7 }) })}*`;
   const report = creatorDashboard(backendDb, config, 7).text.replace(weekTitle, `📊 *${t("ru", "weekly.digest")}*`);
+  const owner = "telegram:weekly-summary";
+  if (!claimSync(backendDb, key, 24 * 60 * 60, owner)) return false;
   // Claim this Studio before sending so one unreachable chat cannot cause
   // repeated delivery attempts to the other administrators on every worker tick.
-  markSynced(backendDb, key);
+  markSynced(backendDb, key, null, owner);
   for (const actorId of config.ADMIN_IDS) {
     try {
       await bot.api.sendMessage(actorId, report, { parse_mode: "Markdown" });

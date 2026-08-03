@@ -1,8 +1,8 @@
 import { targetLocale } from "../botTargets.js";
-import { parseArrayValue } from "../content/message.js";
+import { draftLocaleContent } from "../content/draft-content.js";
 import { splitText } from "../delivery/social/payload.js";
 import { formatPlatformText, platformProfile } from "./platform-profiles.js";
-import { parseTargets } from "./targets.js";
+import { assertKnownTargets, parseTargets } from "./targets.js";
 import { isThreadsTarget, threadsBody } from "./threads-text.js";
 
 type DraftForPreflight = {
@@ -38,16 +38,8 @@ type PublicationPreflightIssue = {
 export function publicationPreflight(draft: DraftForPreflight): PublicationPreflightIssue[] {
   const targets = parseTargets(draft.targets_json);
   const content = {
-    ru: {
-      text: String(draft.text_ru ?? ""),
-      media: parseArrayValue(draft.media_ru_json),
-      entities: parseArrayValue(draft.text_ru_entities_json),
-    },
-    en: {
-      text: String(draft.text_en_approved ?? draft.text_en_machine ?? ""),
-      media: parseArrayValue(draft.media_en_json ?? draft.media_ru_json),
-      entities: parseArrayValue(draft.text_en_entities_json),
-    },
+    ru: draftLocaleContent(draft, "ru"),
+    en: draftLocaleContent(draft, "en"),
   } as const;
   return Object.entries(targets).flatMap(([target, enabled]) => {
     if (!enabled) return [];
@@ -97,6 +89,7 @@ export function publicationPreflight(draft: DraftForPreflight): PublicationPrefl
 }
 
 export function assertPublicationPreflight(draft: DraftForPreflight): void {
+  assertKnownTargets(parseTargets(draft.targets_json));
   const issues = publicationPreflight(draft);
   if (issues.length > 0) throw new Error(issues.map((issue) => issue.message).join(" "));
 }

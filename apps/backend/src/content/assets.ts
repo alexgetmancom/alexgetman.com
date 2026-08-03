@@ -45,20 +45,21 @@ export async function importStudioMediaFile(backendDb: BackendDb, config: Backen
   const filename = `${sha256.slice(0, 24)}${extension}`;
   const directory = path.join(config.STUDIO_MEDIA_DIR, String(actorId));
   const localPath = path.join(directory, filename);
-  await fs.promises.mkdir(directory, { recursive: true });
-  if (!fs.existsSync(localPath)) {
-    // Copy rather than link/rename: callers keep ownership of `input.localPath`
-    // (a bot-api download, a caller temp file), and the chmod below would
-    // otherwise reach through a shared inode into a file that is not ours.
-    await fs.promises.copyFile(input.localPath, localPath);
-    await fs.promises.chmod(localPath, 0o640);
-  }
-  const now = new Date().toISOString();
   const existing = backendDb.db
     .select()
     .from(studioMediaAssets)
     .where(and(eq(studioMediaAssets.actorId, actorId), eq(studioMediaAssets.sha256, sha256)))
     .get();
+  const storedPath = existing?.localPath ?? localPath;
+  await fs.promises.mkdir(path.dirname(storedPath), { recursive: true });
+  if (!fs.existsSync(storedPath)) {
+    // Copy rather than link/rename: callers keep ownership of `input.localPath`
+    // (a bot-api download, a caller temp file), and the chmod below would
+    // otherwise reach through a shared inode into a file that is not ours.
+    await fs.promises.copyFile(input.localPath, storedPath);
+    await fs.promises.chmod(storedPath, 0o640);
+  }
+  const now = new Date().toISOString();
   // The insert is guarded by the unique (actor_id, sha256) index rather than by
   // the lookup above: two concurrent imports of one file both miss the select.
   // `onConflictDoNothing` + re-read makes the loser adopt the winner's row.
@@ -71,7 +72,7 @@ export async function importStudioMediaFile(backendDb: BackendDb, config: Backen
           kind,
           mimeType: input.contentType || (kind === "video" ? "video/mp4" : "image/jpeg"),
           filename: safeFilename(input.filename) || filename,
-          localPath,
+          localPath: storedPath,
           byteSize,
           sha256,
           source: input.source,
@@ -89,6 +90,9 @@ export async function importStudioMediaFile(backendDb: BackendDb, config: Backen
       .where(and(eq(studioMediaAssets.actorId, actorId), eq(studioMediaAssets.sha256, sha256)))
       .get();
   if (!asset) throw new Error("Media asset could not be stored.");
+  // A concurrent import with another extension may have won the unique hash
+  // race. Remove only our deterministic candidate, never the winner's path.
+  if (!existing && asset.localPath !== localPath) await fs.promises.rm(localPath, { force: true });
   // Only the import that actually created the row announces it: a lost race and
   // a plain re-upload are both "this asset already exists", not a new import.
   if (inserted)

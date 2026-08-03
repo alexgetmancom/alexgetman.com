@@ -104,19 +104,25 @@ export const videoMetricSnapshots = sqliteTable(
   (table) => [index("idx_video_metric_snapshots_target_sampled").on(table.videoTargetId, table.sampledAt)],
 );
 
-export const videoMetricSchedule = sqliteTable("video_metric_schedule", {
-  videoTargetId: integer()
-    .primaryKey()
-    .references(() => videoTargets.id, { onDelete: "cascade" }),
-  checkpointIndex: integer().notNull().default(0),
-  nextCheckAt: text().notNull(),
-  lastCheckedAt: text(),
-  lastError: text(),
-  /** Consecutive non-terminal failures since the last successful check; reset to 0 on success. */
-  errorCount: integer().notNull().default(0),
-  frozenAt: text(),
-  updatedAt: text().notNull(),
-});
+export const videoMetricSchedule = sqliteTable(
+  "video_metric_schedule",
+  {
+    videoTargetId: integer()
+      .primaryKey()
+      .references(() => videoTargets.id, { onDelete: "cascade" }),
+    checkpointIndex: integer().notNull().default(0),
+    nextCheckAt: text().notNull(),
+    lastCheckedAt: text(),
+    lastError: text(),
+    /** Consecutive non-terminal failures since the last successful check; reset to 0 on success. */
+    errorCount: integer().notNull().default(0),
+    frozenAt: text(),
+    lockedBy: text(),
+    lockedAt: text(),
+    updatedAt: text().notNull(),
+  },
+  (table) => [index("idx_video_metric_schedule_lock").on(table.lockedBy, table.lockedAt)],
+);
 
 export const socialComments = sqliteTable(
   "social_comments",

@@ -1,4 +1,5 @@
 import type { BackendConfig } from "../../foundation/config.js";
+import { instagramGraphHost } from "../../foundation/external/instagram.js";
 import { externalFetch, retryAfterSecondsFromHeaders } from "../../foundation/http.js";
 import { redactExternalSecrets } from "../../foundation/redact.js";
 import type { PublishResult } from "../../publishing/errors.js";
@@ -191,7 +192,7 @@ async function graphGet(
 }
 
 async function graphRequest(config: BackendConfig, path: string, fetchImpl: typeof fetch, init?: RequestInit): Promise<GraphResponse> {
-  const host = config.INSTAGRAM_ACCESS_TOKEN?.startsWith("IG") ? "graph.instagram.com" : "graph.facebook.com";
+  const host = instagramGraphHost(config.INSTAGRAM_ACCESS_TOKEN ?? "");
   const version = config.INSTAGRAM_GRAPH_API_VERSION;
   const response = await externalFetch(fetchImpl, `https://${host}/${version}/${path.replace(/^\/+/, "")}`, init);
   const body = await response.text();

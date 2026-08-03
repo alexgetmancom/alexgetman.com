@@ -7,6 +7,7 @@ import { botSettings, videoJobs, videoTargets } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { instagramConfigForLocale } from "../foundation/external/instagram.js";
+import { withJobHeartbeat } from "../foundation/runtime/job-heartbeat.js";
 import { trackUsageAsync } from "../observability/usage.js";
 import { nextRetryAt } from "../publishing/errors.js";
 import { failedJobTransition } from "../publishing/job-policy.js";
@@ -39,7 +40,17 @@ export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb)
   for (const job of jobs) {
     try {
       await trackUsageAsync(backendDb, "publishing.video.job", async () => {
-        await withHeartbeat(backendDb, job, config.VIDEO_HEARTBEAT_INTERVAL_SECONDS, () => executeVideoJob(config, backendDb, job));
+        await withJobHeartbeat(
+          config.VIDEO_HEARTBEAT_INTERVAL_SECONDS,
+          () => {
+            try {
+              backendDb.db.update(videoJobs).set({ lockedAt: new Date().toISOString() }).where(activeVideoJob(job)).run();
+            } catch {
+              // The shared heartbeat wrapper treats one missed beat as recoverable.
+            }
+          },
+          () => executeVideoJob(config, backendDb, job),
+        );
         if (completeVideoJob(backendDb, job)) {
           recordVideoProgressEvent(backendDb, job, "video.job.completed");
           recordVideoCompletionIfFinal(backendDb, job.videoDraftId);
@@ -57,26 +68,6 @@ export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb)
   }
   pruneExpiredVideos(config, backendDb);
   return jobs.length;
-}
-
-/** Keeps a claimed job's lock fresh while a long-running upload/poll is in
- * flight, so recoverVideoLocks can use a short timeout without mistaking
- * "still working" for "worker crashed". Silence (a real crash) still goes
- * stale after VIDEO_LOCK_TIMEOUT_SECONDS with no heartbeat. */
-async function withHeartbeat<T>(backendDb: BackendDb, job: VideoJob, intervalSeconds: number, work: () => Promise<T>): Promise<T> {
-  const timer = setInterval(() => {
-    // A throw inside a timer callback has no caller to catch it and would take
-    // the whole process down, killing every other in-flight job. A missed beat
-    // is harmless on its own: the next one lands well inside the lock timeout.
-    try {
-      backendDb.db.update(videoJobs).set({ lockedAt: new Date().toISOString() }).where(activeVideoJob(job)).run();
-    } catch {}
-  }, intervalSeconds * 1000);
-  try {
-    return await work();
-  } finally {
-    clearInterval(timer);
-  }
 }
 
 /** Keeps target state updates consistent across the prepare/publish/fail/recovery paths. */

@@ -1,21 +1,11 @@
-import {
-  type FeedItem,
-  loadPublicSiteFeed,
-  loadPublicSiteItem,
-  loadPublicSiteSnapshot,
-  type PublicSiteSnapshot,
-} from "../../../backend/src/public/site-read-model.js";
+import { type FeedItem, loadPublicSiteFeed, loadPublicSiteItem } from "../../../backend/src/public/site-read-model.js";
 import { getRuntime } from "./runtime.js";
 
-export type { FeedItem, PublicSiteSnapshot };
+export type { FeedItem };
 
 /** Web adapter for the backend-owned published-site read model. */
 export function loadFeedItems(): FeedItem[] {
   return loadPublicSiteFeed(getRuntime().backendDb);
-}
-
-export function loadFeedSnapshot(): PublicSiteSnapshot {
-  return loadPublicSiteSnapshot(getRuntime().backendDb);
 }
 
 /** A post page knows its id, so it has no reason to scan the whole archive.

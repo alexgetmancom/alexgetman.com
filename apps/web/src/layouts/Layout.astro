@@ -1,4 +1,5 @@
 ---
+import { BRAND_ASSET_VERSION } from "../utils/brand";
 import { removeLeadingEmoji } from "../utils/text";
 import "../styles/layout.css";
 
@@ -38,7 +39,6 @@ const {
 
 const cleanDescription = removeLeadingEmoji(description);
 const publicBaseUrl = "https://alexgetman.com";
-const brandAssetVersion = "20260629-new-avatar";
 const socialImage = socialImageProp
   ? socialImageProp.startsWith("http")
     ? socialImageProp
@@ -72,8 +72,8 @@ const safeSchema = schema?.replace(/</g, "\\u003c").replace(/>/g, "\\u003e").rep
     </script>
     <link rel="icon" type="image/png" href="/brand-favicon-20260629.png" />
     <link rel="apple-touch-icon" href="/brand-favicon-20260629.png" />
-    <link rel="icon" type="image/svg+xml" href={`/favicon.svg?v=${brandAssetVersion}`} />
-    <link rel="alternate icon" type="image/x-icon" href={`/favicon.ico?v=${brandAssetVersion}`} />
+    <link rel="icon" type="image/svg+xml" href={`/favicon.svg?v=${BRAND_ASSET_VERSION}`} />
+    <link rel="alternate icon" type="image/x-icon" href={`/favicon.ico?v=${BRAND_ASSET_VERSION}`} />
     <link rel="manifest" href="/manifest.json" />
     <link rel="canonical" href={canonicalUrl} />
     <link rel="alternate" type="application/rss+xml" title={title} href={rssHref} />

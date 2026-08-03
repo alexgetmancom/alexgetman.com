@@ -16,138 +16,144 @@ import { localizeTargetPayload } from "./payload.js";
 import type { PublicationPlan } from "./publication-plan.js";
 import { enqueuePublishJobTx } from "./queue.js";
 
-/** Persists one complete plan atomically, then materializes only its non-final jobs. */
-export function persistPublicationPlan(backendDb: BackendDb, plan: PublicationPlan): void {
-  backendDb.db.transaction((tx) => {
-    const postValues = {
-      postId: plan.postId,
-      source: "studio",
-      channel: "studio",
-      messageId: plan.messageId,
-      dateUtc: plan.ruAt ?? plan.enAt ?? plan.now,
-      text: plan.textRu,
-      textEn: plan.textEn,
-      mediaJson: JSON.stringify(plan.mediaRu),
-      mediaCount: plan.mediaRu.length,
-      createdAt: plan.now,
-      updatedAt: plan.now,
-      rawJson: JSON.stringify(plan.payload),
-    };
-    tx.insert(posts)
-      .values({ postKey: plan.postKey, ...postValues })
+export function persistPublicationPlanTx(tx: BackendDb["db"], plan: PublicationPlan): void {
+  const postValues = {
+    postId: plan.postId,
+    source: "studio",
+    channel: "studio",
+    messageId: plan.messageId,
+    dateUtc: plan.ruAt ?? plan.enAt ?? plan.now,
+    text: plan.textRu,
+    textEn: plan.textEn,
+    mediaJson: JSON.stringify(plan.mediaRu),
+    mediaCount: plan.mediaRu.length,
+    createdAt: plan.now,
+    updatedAt: plan.now,
+    rawJson: JSON.stringify(plan.payload),
+  };
+  tx.insert(posts)
+    .values({ postKey: plan.postKey, ...postValues })
+    .onConflictDoUpdate({
+      target: posts.postKey,
+      set: {
+        postId: plan.postId,
+        dateUtc: postValues.dateUtc,
+        text: plan.textRu,
+        textEn: plan.textEn,
+        mediaJson: postValues.mediaJson,
+        mediaCount: plan.mediaRu.length,
+        updatedAt: plan.now,
+        rawJson: postValues.rawJson,
+      },
+    })
+    .run();
+  for (const locale of plan.locales)
+    tx.insert(postLocales)
+      .values(locale)
       .onConflictDoUpdate({
-        target: posts.postKey,
+        target: [postLocales.postId, postLocales.locale],
         set: {
-          postId: plan.postId,
-          dateUtc: postValues.dateUtc,
-          text: plan.textRu,
-          textEn: plan.textEn,
-          mediaJson: postValues.mediaJson,
-          mediaCount: plan.mediaRu.length,
+          slug: locale.slug,
+          text: locale.text,
+          html: locale.html,
+          entitiesJson: locale.entitiesJson,
+          mediaJson: locale.mediaJson,
+          siteEnabled: locale.siteEnabled,
+          publishedAt: locale.publishedAt,
           updatedAt: plan.now,
-          rawJson: postValues.rawJson,
         },
       })
       .run();
-    for (const locale of plan.locales)
-      tx.insert(postLocales)
-        .values(locale)
-        .onConflictDoUpdate({
-          target: [postLocales.postId, postLocales.locale],
-          set: {
-            slug: locale.slug,
-            text: locale.text,
-            html: locale.html,
-            entitiesJson: locale.entitiesJson,
-            mediaJson: locale.mediaJson,
-            siteEnabled: locale.siteEnabled,
-            publishedAt: locale.publishedAt,
-            updatedAt: plan.now,
-          },
+  const storedPlan = {
+    draft_id: plan.draftId,
+    targets: plan.targets,
+    scheduled_at: plan.ruAt,
+    scheduled_en_at: plan.enAt,
+    created_at: plan.now,
+  };
+  tx.insert(publicationPlans)
+    .values({ postId: plan.postId, planJson: storedPlan, createdAt: plan.now, updatedAt: plan.now })
+    .onConflictDoUpdate({ target: publicationPlans.postId, set: { planJson: storedPlan, updatedAt: plan.now } })
+    .run();
+  tx.insert(publicationSources)
+    .values({ postId: plan.postId, itemJson: plan.payload, createdAt: plan.now, updatedAt: plan.now })
+    .onConflictDoUpdate({ target: publicationSources.postId, set: { itemJson: plan.payload, updatedAt: plan.now } })
+    .run();
+  tx.insert(siteSourceItems)
+    .values({ messageId: plan.messageId, itemJson: plan.payload, createdAt: plan.now, updatedAt: plan.now })
+    .onConflictDoUpdate({ target: siteSourceItems.messageId, set: { itemJson: plan.payload, updatedAt: plan.now } })
+    .run();
+  tx.delete(publishJobs)
+    .where(and(eq(publishJobs.postId, plan.postId), inArray(publishJobs.status, ["queued", "failed"])))
+    .run();
+  tx.delete(siteJobs)
+    .where(and(eq(siteJobs.postId, plan.postId), inArray(siteJobs.status, ["queued", "failed"])))
+    .run();
+  // Targets whose delivery is settled or actively in flight are not replanned.
+  // "publishing" counts as final on purpose: a worker already holds that job
+  // and may have hit the platform, so rewriting its payload risks a duplicate
+  // post. Re-planning a publication mid-delivery therefore leaves those
+  // targets on the previous plan — visible to the user, and intended.
+  const finalTargets = new Set(
+    tx
+      .select({ target: publishJobs.target })
+      .from(publishJobs)
+      .where(
+        and(
+          eq(publishJobs.postId, plan.postId),
+          inArray(publishJobs.status, ["publishing", "published", "skipped", "verification_required"]),
+        ),
+      )
+      .all()
+      .map((row) => row.target),
+  );
+  const finalSiteLocales = new Set(
+    tx
+      .select({ reason: siteJobs.reason })
+      .from(siteJobs)
+      .where(and(eq(siteJobs.postId, plan.postId), inArray(siteJobs.status, ["rendering", "published"])))
+      .all()
+      .map((row) => row.reason.match(/(?:^|_)(ru|en)(?:_|$)/)?.[1])
+      .filter((locale): locale is "ru" | "en" => locale === "ru" || locale === "en"),
+  );
+  for (const [target, enabled] of Object.entries(plan.targets)) {
+    if (enabled && !isSiteTarget(target) && !finalTargets.has(target))
+      enqueuePublishJobTx(tx, {
+        postId: plan.postId,
+        postKey: plan.postKey,
+        messageId: plan.messageId,
+        target,
+        payload: localizeTargetPayload(plan.payload, target),
+        publishAt: (targetLocale(target) === "en" ? plan.enAt : plan.ruAt) ?? plan.now,
+      });
+  }
+  for (const [locale, enabled, publishAt] of [
+    ["ru", plan.targets.site_ru, plan.ruAt],
+    ["en", plan.targets.site_en, plan.enAt],
+  ] as const) {
+    if (enabled && !finalSiteLocales.has(locale))
+      tx.insert(siteJobs)
+        .values({
+          postId: plan.postId,
+          messageId: plan.messageId,
+          reason: `publish_${locale}`,
+          status: "queued",
+          nextAttemptAt: publishAt ?? plan.now,
+          createdAt: plan.now,
+          updatedAt: plan.now,
         })
         .run();
-    const storedPlan = {
-      draft_id: plan.draftId,
-      targets: plan.targets,
-      scheduled_at: plan.ruAt,
-      scheduled_en_at: plan.enAt,
-      created_at: plan.now,
-    };
-    tx.insert(publicationPlans)
-      .values({ postId: plan.postId, planJson: storedPlan, createdAt: plan.now, updatedAt: plan.now })
-      .onConflictDoUpdate({ target: publicationPlans.postId, set: { planJson: storedPlan, updatedAt: plan.now } })
-      .run();
-    tx.insert(publicationSources)
-      .values({ postId: plan.postId, itemJson: plan.payload, createdAt: plan.now, updatedAt: plan.now })
-      .onConflictDoUpdate({ target: publicationSources.postId, set: { itemJson: plan.payload, updatedAt: plan.now } })
-      .run();
-    tx.insert(siteSourceItems)
-      .values({ messageId: plan.messageId, itemJson: plan.payload, createdAt: plan.now, updatedAt: plan.now })
-      .onConflictDoUpdate({ target: siteSourceItems.messageId, set: { itemJson: plan.payload, updatedAt: plan.now } })
-      .run();
-    tx.delete(publishJobs)
-      .where(and(eq(publishJobs.postId, plan.postId), inArray(publishJobs.status, ["queued", "failed"])))
-      .run();
-    tx.delete(siteJobs)
-      .where(and(eq(siteJobs.postId, plan.postId), inArray(siteJobs.status, ["queued", "failed"])))
-      .run();
-    // Targets whose delivery is settled or actively in flight are not replanned.
-    // "publishing" counts as final on purpose: a worker already holds that job
-    // and may have hit the platform, so rewriting its payload risks a duplicate
-    // post. Re-planning a publication mid-delivery therefore leaves those
-    // targets on the previous plan — visible to the user, and intended.
-    const finalTargets = new Set(
-      tx
-        .select({ target: publishJobs.target })
-        .from(publishJobs)
-        .where(
-          and(
-            eq(publishJobs.postId, plan.postId),
-            inArray(publishJobs.status, ["publishing", "published", "skipped", "verification_required"]),
-          ),
-        )
-        .all()
-        .map((row) => row.target),
-    );
-    for (const [target, enabled] of Object.entries(plan.targets)) {
-      if (enabled && !isSiteTarget(target) && !finalTargets.has(target))
-        enqueuePublishJobTx(tx, {
-          postId: plan.postId,
-          postKey: plan.postKey,
-          messageId: plan.messageId,
-          target,
-          payload: localizeTargetPayload(plan.payload, target),
-          publishAt: targetLocale(target) === "en" ? plan.enAt : plan.ruAt,
-        });
-    }
-    for (const [locale, enabled, publishAt] of [
-      ["ru", plan.targets.site_ru, plan.ruAt],
-      ["en", plan.targets.site_en, plan.enAt],
-    ] as const) {
-      if (enabled && publishAt)
-        tx.insert(siteJobs)
-          .values({
-            postId: plan.postId,
-            messageId: plan.messageId,
-            reason: `publish_${locale}`,
-            status: "queued",
-            nextAttemptAt: publishAt,
-            createdAt: plan.now,
-            updatedAt: plan.now,
-          })
-          .run();
-    }
-    tx.update(drafts)
-      .set({
-        status: "scheduled",
-        postId: plan.postId,
-        publishMode: plan.mode,
-        scheduledAt: plan.ruAt,
-        scheduledEnAt: plan.enAt,
-        updatedAt: plan.now,
-      })
-      .where(eq(drafts.id, plan.draftId))
-      .run();
-    tx.update(publications).set({ status: "scheduled", updatedAt: plan.now }).where(eq(publications.postId, plan.postId)).run();
-  });
+  }
+  tx.update(drafts)
+    .set({
+      status: "scheduled",
+      postId: plan.postId,
+      publishMode: plan.mode,
+      scheduledAt: plan.ruAt,
+      scheduledEnAt: plan.enAt,
+      updatedAt: plan.now,
+    })
+    .where(eq(drafts.id, plan.draftId))
+    .run();
+  tx.update(publications).set({ status: "scheduled", updatedAt: plan.now }).where(eq(publications.postId, plan.postId)).run();
 }

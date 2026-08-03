@@ -1,6 +1,7 @@
 import { isStoryTarget, targetLocale } from "../botTargets.js";
 import { firstLine } from "../content/message.js";
 import { payloadMedia } from "../delivery/social/payload.js";
+import { selectMediaForTarget } from "./media-policy.js";
 
 /** Resolves a draft's dual-locale payload to one target's locale, and
  * canonicalizes its media items (localPath/local_path, vpsUrl/vps_url, ...)
@@ -13,6 +14,8 @@ export function localizeTargetPayload(payload: Record<string, unknown>, target: 
   if (locale === "ru") {
     const text = String(payload.text_ru ?? payload.text ?? "");
     const entities = recordArray(payload.entities_ru ?? payload.entities);
+    const rawMedia = storyMedia ?? payload.media;
+    const selectedMedia = Array.isArray(rawMedia) ? selectMediaForTarget(target, rawMedia) : rawMedia;
     const localized = {
       ...payload,
       locale,
@@ -21,7 +24,7 @@ export function localizeTargetPayload(payload: Record<string, unknown>, target: 
       text_ru: text,
       text_en: "",
       bodyMarkdown: text,
-      media: storyMedia ?? payload.media,
+      media: selectedMedia,
       media_en: undefined,
       entities,
       slug: payload.slug_ru,
@@ -33,6 +36,7 @@ export function localizeTargetPayload(payload: Record<string, unknown>, target: 
   const text = String(payload.text_en ?? payload.text ?? "");
   const entities = recordArray(payload.entities_en ?? payload.entities);
   const rawMedia = storyMedia ?? payload.media_en ?? payload.media;
+  const selectedMedia = Array.isArray(rawMedia) ? selectMediaForTarget(target, rawMedia) : rawMedia;
   const localized = {
     ...payload,
     locale,
@@ -40,8 +44,8 @@ export function localizeTargetPayload(payload: Record<string, unknown>, target: 
     text,
     text_en: text,
     bodyMarkdown: text,
-    media: rawMedia,
-    media_en: rawMedia,
+    media: selectedMedia,
+    media_en: selectedMedia,
     entities,
     slug: payload.slug_en,
   };

@@ -13,6 +13,24 @@ import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
 import { withDb } from "./helpers/db.js";
 
 describe("channel registry", () => {
+  it("uses the shared Instagram account for enabled English Stories", () => {
+    const config = loadConfig({
+      ENABLE_INSTAGRAM_STORIES: "true",
+      INSTAGRAM_ACCESS_TOKEN: "shared-token",
+      INSTAGRAM_USER_ID: "shared-user",
+    });
+
+    const stories = configuredChannels(config).filter((channel) => channel.platform === "instagram_stories");
+    expect(stories).toContainEqual(
+      expect.objectContaining({
+        id: "instagram_stories",
+        targetId: "instagram_stories",
+        locale: "en",
+        providerAccountId: "shared-user",
+      }),
+    );
+  });
+
   it("keeps one shared Instagram account as a single Russian channel", () => {
     // The unprefixed pair is the Russian account of a Studio that never split.
     // Seeding an English channel from it would snapshot the same account under

@@ -3,7 +3,8 @@ import path from "node:path";
 import type { HomePost } from "../components/home-news/types";
 import type { FeedItem } from "../server/public-site";
 import { formatRelativeTime } from "./dates";
-import { postImagePath, postMediaGallery, postOgImagePath, postVisualMedia } from "./media";
+import { postMediaGallery, postOgImagePath, responsiveImageSrcSet, responsiveVariantFor } from "./media";
+import { hasPublishedLocale } from "./public-feed";
 import { categoryLabel, categorySlugFromBadge, getSmartBadge } from "./taxonomy";
 import { excerptAfterTitle, getFirstSentence } from "./text";
 
@@ -37,30 +38,6 @@ export function existingSiteImage(publicPath: string | null | undefined) {
   return normalizedPath;
 }
 
-function responsiveBaseFor(publicPath: string | null | undefined): string | null {
-  const source = String(publicPath ?? "").split(/[?#]/, 1)[0] ?? "";
-  if (!source || !/\.(png|jpe?g)$/i.test(source)) return null;
-  return source
-    .replace(/^\/+/, "")
-    .replace(/[\\/]/g, "-")
-    .replace(/\.[a-z0-9]+$/i, "");
-}
-
-/** Variants are produced on demand by pages/generated/responsive/[...file].ts,
- * so the srcset is emitted unconditionally for any resizable source. */
-export function responsiveSrcSetFor(publicPath: string | null | undefined) {
-  const base = responsiveBaseFor(publicPath);
-  if (!base) return undefined;
-  const suffix = String(publicPath ?? "").match(/[?#].*$/)?.[0] ?? "";
-  return [360, 640, 960].map((width) => `/generated/responsive/${base}-${width}.webp${suffix} ${width}w`).join(", ");
-}
-
-export function responsiveVariantFor(publicPath: string | null | undefined, width: 360 | 640 | 960) {
-  const base = responsiveBaseFor(publicPath);
-  const suffix = String(publicPath ?? "").match(/[?#].*$/)?.[0] ?? "";
-  return base ? `generated/responsive/${base}-${width}.webp${suffix}` : undefined;
-}
-
 function audioUrlFor(item: FeedItem, locale: "en" | "ru") {
   return (locale === "ru" ? item.audio_url_ru : item.audio_url_en) || null;
 }
@@ -75,7 +52,8 @@ export function toHomePost(item: FeedItem, locale: "en" | "ru"): HomePost {
   const title = getFirstSentence(text) || (locale === "ru" ? `Пост ${id}` : `Post ${id}`);
   const badge = getSmartBadge(text);
   const categorySlug = categorySlugFromBadge(badge);
-  const visualMedia = postVisualMedia(item, locale);
+  const gallery = postMediaGallery(item, locale);
+  const visualMedia = gallery[0] ?? null;
   const visualPath = existingSiteImage(visualMedia?.path);
   const posterPath = existingSiteImage(visualMedia?.poster);
   const fallbackOgPath = existingSiteImage(postOgImagePath(item, locale));
@@ -94,13 +72,11 @@ export function toHomePost(item: FeedItem, locale: "en" | "ru"): HomePost {
     image,
     fallbackImage: posterPath || fallbackOgPath,
     mediaType,
-    gallery: postMediaGallery(item, locale).filter((media) => existingSiteImage(media.path)),
+    gallery: gallery.filter((media) => existingSiteImage(media.path)),
     audioUrl: audioUrlFor(item, locale),
     spotifyUrl: spotifyUrlFor(item, locale),
     imageSrcSet:
-      visualPath && mediaType === "image"
-        ? responsiveSrcSetFor(postImagePath(item, locale))
-        : responsiveSrcSetFor(posterPath || fallbackOgPath),
+      visualPath && mediaType === "image" ? responsiveImageSrcSet(visualMedia?.path) : responsiveImageSrcSet(posterPath || fallbackOgPath),
     posterSrc: mediaType === "video" ? responsiveVariantFor(posterPath || fallbackOgPath, 960) : undefined,
     views: Number(item.views || 0),
     categorySlug,
@@ -115,7 +91,7 @@ export function toHomePost(item: FeedItem, locale: "en" | "ru"): HomePost {
 
 export function sortedHomePosts(feedItems: readonly FeedItem[], locale: "en" | "ru"): HomePost[] {
   return feedItems
-    .filter((item) => (locale === "ru" ? item.has_ru && item.text && item.post_id : item.has_en && item.text_en && item.post_id))
+    .filter((item) => hasPublishedLocale(item, locale))
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     .map((item) => toHomePost(item, locale));
 }

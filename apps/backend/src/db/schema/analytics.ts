@@ -47,9 +47,11 @@ export const metricSchedule = sqliteTable(
     checkCount: integer().notNull().default(0),
     frozenAt: text(),
     lastError: text(),
+    lockedBy: text(),
+    lockedAt: text(),
     updatedAt: text().notNull(),
   },
-  (table) => [primaryKey({ columns: [table.postKey, table.target] })],
+  (table) => [primaryKey({ columns: [table.postKey, table.target] }), index("idx_metric_schedule_lock").on(table.lockedBy, table.lockedAt)],
 );
 
 export const analyticsRollups = sqliteTable("analytics_rollups", {
@@ -65,6 +67,8 @@ export const analyticsSync = sqliteTable("analytics_sync", {
   lastSyncedAt: text().notNull(),
   lastSuccessAt: text(),
   lastError: text(),
+  lockedBy: text(),
+  lockedAt: text(),
 });
 
 export const creatorProfiles = sqliteTable("creator_profiles", {

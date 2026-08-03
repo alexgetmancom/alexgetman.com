@@ -10,7 +10,7 @@ import { isTerminalMetricError } from "./collectors/errors.js";
 import { createMetricCollectors, SUPPORTED_METRIC_TARGETS } from "./collectors/index.js";
 import type { MetricCollector } from "./collectors/types.js";
 import {
-  dueMetricTasks,
+  claimDueMetricTasks,
   ensureMetricSchedule,
   finishMetricTask,
   freezeDisabledMetricSchedules,
@@ -28,7 +28,7 @@ export async function runMetricsCycle(
   ensureMetricSchedule(backendDb, collectableTargets);
   freezeUnsupportedMetricSchedules(backendDb, SUPPORTED_METRIC_TARGETS);
   freezeDisabledMetricSchedules(backendDb, [...(config.ENABLE_X_METRICS ? [] : ["x", "twitter"])]);
-  const tasks = dueMetricTasks(backendDb, config, collectableTargets);
+  const tasks = claimDueMetricTasks(backendDb, config, collectableTargets);
   for (const task of tasks) {
     const collector = collectors[task.target];
     if (!collector) continue;
@@ -36,22 +36,30 @@ export async function runMetricsCycle(
       await trackUsageAsync(backendDb, "analytics.metrics.collect", async () => {
         const result = await collector(task);
         backendDb.db.transaction((tx) => {
-          upsertMetrics(backendDb, task.postKey, task.target, result.metrics, result.source, result.raw);
+          upsertMetrics(backendDb, task.postKey, task.target, result.metrics, result.source, result.raw, tx as BackendDb["db"]);
           if (result.url)
             tx.update(postTargets)
               .set({ url: result.url, updatedAt: new Date().toISOString() })
               .where(and(eq(postTargets.postKey, task.postKey), eq(postTargets.target, task.target)))
               .run();
-          finishMetricTask(backendDb, task, null);
+          finishMetricTask(backendDb, task, null, false, tx as BackendDb["db"]);
         });
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      backendDb.db.transaction(() => {
-        upsertMetricError(backendDb, task.postKey, task.target, `${task.target}_metrics`, message, {
-          external_id: task.externalId,
-        } as JsonValue);
-        finishMetricTask(backendDb, task, message, isTerminalMetricError(error));
+      backendDb.db.transaction((transactionDb) => {
+        upsertMetricError(
+          backendDb,
+          task.postKey,
+          task.target,
+          `${task.target}_metrics`,
+          message,
+          {
+            external_id: task.externalId,
+          } as JsonValue,
+          transactionDb as BackendDb["db"],
+        );
+        finishMetricTask(backendDb, task, message, isTerminalMetricError(error), transactionDb as BackendDb["db"]);
       });
     }
   }

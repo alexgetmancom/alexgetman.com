@@ -182,7 +182,16 @@ describe("TypeScript operations tooling", () => {
         jobs: { total: 1, byStatus: { published: 1 } },
       });
       expect(status.videos.drafts.total).toBe(0);
-      expect(status.workers).toEqual([{ name: "queue", ok: true, lastRunAt: "2026-01-01", lastError: null }]);
+      expect(status.workers).toHaveLength(1);
+      expect(status.workers[0]).toMatchObject({
+        name: "queue",
+        ok: true,
+        lastRunAt: "2026-01-01",
+        lastError: null,
+        ageSeconds: expect.any(Number),
+        lastHeartbeatAt: expect.any(String),
+        stale: false,
+      });
       expect(JSON.stringify(status).length).toBeLessThan(2_000);
       expect(status).not.toHaveProperty("jobs");
     } finally {

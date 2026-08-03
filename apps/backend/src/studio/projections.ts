@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { isStoryTarget, targetLocale } from "../botTargets.js";
-import { parseArrayValue } from "../content/message.js";
+import { draftLocaleContent } from "../content/draft-content.js";
 import type { BackendDb } from "../db/client.js";
 import { studioMediaAssets } from "../db/schema.js";
 import { mediaPolicyForTarget } from "../publishing/media-policy.js";
@@ -42,15 +42,8 @@ export function postDeliveryProjections(
 ) {
   const targets = Object.entries(parseTargets(draft.targets_json)).flatMap(([target, enabled]) => (enabled ? [target] : []));
   const content = {
-    ru: { text: draft.text_ru, entities: parseArrayValue(draft.text_ru_entities_json), media: parseArrayValue(draft.media_ru_json) },
-    en: {
-      text: draft.text_en_approved ?? draft.text_en_machine ?? draft.text_ru,
-      entities: parseArrayValue(draft.text_en_entities_json),
-      media: (() => {
-        const value = parseArrayValue(draft.media_en_json);
-        return value.length ? value : parseArrayValue(draft.media_ru_json);
-      })(),
-    },
+    ru: draftLocaleContent(draft, "ru"),
+    en: draftLocaleContent(draft, "en"),
   } as const;
   // One platform-specific deviation note per locale, not a whole separate
   // preview message per platform: with a dozen-plus targets, most differing

@@ -25,6 +25,6 @@ describe("Delivery adapter contract", () => {
 
     expect(calls).toEqual(["validate", "publish", "verify"]);
     expect(result).toMatchObject({ ok: true, url: "https://provider.example/post" });
-    expect(await adapter(job)).toMatchObject({ ok: true });
+    expect(await adapter.prepare(job)).toBe(job);
   });
 });

@@ -1,4 +1,4 @@
-import { DEFAULT_TARGETS } from "../botTargets.js";
+import { DEFAULT_TARGETS, isKnownTarget } from "../botTargets.js";
 import { parseJsonValue } from "../json.js";
 
 /**
@@ -13,4 +13,13 @@ export function parseTargets(value: unknown): Record<string, boolean> {
     ...DEFAULT_TARGETS,
     ...Object.fromEntries(Object.entries(parsed as Record<string, unknown>).map(([key, enabled]) => [key, Boolean(enabled)])),
   };
+}
+
+/** Unknown enabled keys must fail before a durable job can be materialized. */
+export function assertKnownTargets(targets: Readonly<Record<string, boolean>>): void {
+  const unknown = Object.entries(targets)
+    .filter(([target, enabled]) => enabled && !isKnownTarget(target))
+    .map(([target]) => target)
+    .sort();
+  if (unknown.length > 0) throw new Error(`Unknown publication target(s): ${unknown.join(", ")}`);
 }

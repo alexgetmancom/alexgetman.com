@@ -1,3 +1,4 @@
+import { RESPONSIVE_WIDTHS } from "../../../backend/src/content/site-media-naming.js";
 import type { FeedItem, SiteMedia } from "../../../backend/src/public/site-read-model";
 
 type FeedLocale = "en" | "ru";
@@ -65,5 +66,14 @@ export function responsiveImageSrcSet(publicPath: string | null | undefined): st
   if (!source || !/\.(png|jpe?g)$/i.test(source)) return undefined;
   const base = source.replace(/[\\/]/g, "-").replace(/\.[a-z0-9]+$/i, "");
   const suffix = cacheSuffix(normalized);
-  return [360, 640, 960].map((width) => `/generated/responsive/${base}-${width}.webp${suffix} ${width}w`).join(", ");
+  return RESPONSIVE_WIDTHS.map((width) => `/generated/responsive/${base}-${width}.webp${suffix} ${width}w`).join(", ");
+}
+
+export function responsiveVariantFor(publicPath: string | null | undefined, width: (typeof RESPONSIVE_WIDTHS)[number]) {
+  const normalized = normalizePublicPath(publicPath);
+  const source = filePath(normalized);
+  if (!source || !/\.(png|jpe?g)$/i.test(source)) return undefined;
+  const base = source.replace(/[\\/]/g, "-").replace(/\.[a-z0-9]+$/i, "");
+  const suffix = cacheSuffix(normalized);
+  return `generated/responsive/${base}-${width}.webp${suffix}`;
 }

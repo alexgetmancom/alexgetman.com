@@ -174,7 +174,12 @@ const studioToolDefs = {
     handler: (studio, actorId, input) => {
       const draftId = studio.publications.create(actorId, {
         kind: "post",
-        message: { text: input.text, ...(input.text_en === undefined ? {} : { textEn: input.text_en }), entities: [], media: [] },
+        message: {
+          text: input.text,
+          ...(input.text_en === undefined ? {} : { textEn: input.text_en, textEnApproved: input.text_en }),
+          entities: [],
+          media: [],
+        },
       }).id;
       return { draft_id: draftId };
     },

@@ -431,6 +431,55 @@ export function requirePublishVerification(backendDb: BackendDb, jobId: number, 
   return updated;
 }
 
+/**
+ * Last-resort settlement for an ambiguous worker failure. It intentionally
+ * avoids the event journal because this path is used when normal settlement
+ * itself failed; verification_required is safer than retrying an API mutation.
+ */
+export function forcePublishJobVerification(backendDb: BackendDb, jobId: number, error: unknown, lockId?: string): boolean {
+  const now = new Date().toISOString();
+  const job = backendDb.db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get();
+  if (!job || (lockId != null && (job.status !== "publishing" || job.lockedBy !== lockId))) return false;
+  const postKey = jobPostKey(job);
+  const errorText = error instanceof Error ? error.message : String(error);
+  const updated = backendDb.db.transaction((tx) => {
+    const row = tx
+      .update(publishJobs)
+      .set({
+        status: "verification_required",
+        attemptCount: job.attemptCount + 1,
+        nextAttemptAt: null,
+        currentPhase: null,
+        lockedBy: null,
+        lockedAt: null,
+        lastError: errorText,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(publishJobs.jobId, jobId),
+          eq(publishJobs.status, "publishing"),
+          ...(lockId != null ? [eq(publishJobs.lockedBy, lockId)] : []),
+        ),
+      )
+      .returning({ jobId: publishJobs.jobId })
+      .get();
+    if (!row) return false;
+    upsertPostTarget(tx, {
+      postKey,
+      target: job.target,
+      status: "verification_required",
+      error: errorText,
+      skipped: 0,
+      updatedAt: now,
+      rawJson: JSON.stringify({ job_id: jobId, emergency: true }),
+    });
+    return true;
+  });
+  if (updated && job.postId != null) reconcilePublication(backendDb, job.postId);
+  return updated;
+}
+
 export function enqueuePublishJobTx(db: BackendDb["db"], input: EnqueuePublishJobInput): number {
   const now = new Date().toISOString();
   const inputRecord = {

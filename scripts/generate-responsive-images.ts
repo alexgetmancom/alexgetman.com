@@ -1,20 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
+import { RESPONSIVE_WIDTHS } from "../apps/backend/src/content/site-media-naming.ts";
+import type { FeedItem } from "../apps/backend/src/public/site-read-model.ts";
+import { postImagePath } from "../apps/web/src/utils/media.ts";
 import { categorySlugFromBadge, getSmartBadge, categoryLabel as taxonomyLabel } from "../apps/web/src/utils/taxonomy.ts";
-
-type FeedMediaItem = { type?: string; path?: string };
-type FeedItem = {
-  post_id?: number | string;
-  has_en?: boolean;
-  has_ru?: boolean;
-  text?: string;
-  text_en?: string;
-  image?: string;
-  image_en?: string;
-  media?: FeedMediaItem[];
-  media_en?: FeedMediaItem[];
-};
 
 const root = process.cwd();
 const webRoot = path.join(root, "apps", "web");
@@ -23,7 +13,6 @@ const publishedDir = process.env.PUBLISHED_DIR || "/home/deploy/ialexey-web";
 const dataDir = process.env.DATA_DIR || "/home/deploy/ialexey-feed/data";
 const feedJsonPaths = [path.join(dataDir, "feed.json"), path.join(webRoot, "src/data/feed.json")];
 const cacheFile = path.join(webRoot, ".image-cache.json");
-const widths = [360, 640, 960];
 
 async function exists(filePath: string): Promise<boolean> {
   try {
@@ -157,22 +146,8 @@ function categoryLabel(text: unknown, locale: string): string {
   return taxonomyLabel(categorySlugFromBadge(getSmartBadge(String(text ?? ""))), locale);
 }
 
-function normalizePublicPath(value: unknown): string {
-  return String(value || "").replace(/^\/+/, "");
-}
-
-function postImagePath(item: FeedItem, locale: string): string {
-  const localizedMedia = locale === "ru" ? item.media : item.media_en;
-  const fallbackMedia = locale === "ru" ? item.media_en : item.media;
-  const media =
-    Array.isArray(localizedMedia) && localizedMedia.length > 0 ? localizedMedia : Array.isArray(fallbackMedia) ? fallbackMedia : [];
-  const imageMedia = media.find((mediaItem) => mediaItem?.type !== "video" && mediaItem?.path);
-  const directImage = locale === "ru" ? item.image || item.image_en : item.image_en || item.image;
-  return normalizePublicPath(directImage || imageMedia?.path);
-}
-
 async function resolvePublicImage(publicPath: string | null | undefined): Promise<string | null> {
-  const normalized = normalizePublicPath(publicPath);
+  const normalized = String(publicPath || "").replace(/^\/+/, "");
   if (!normalized) return null;
   const candidates = [path.join(publicDir, normalized), path.join(publishedDir, normalized)];
   for (const candidate of candidates) {
@@ -353,7 +328,7 @@ async function generateResponsiveImages() {
   await fs.mkdir(outputDir, { recursive: true });
   const images = new Set(await collectImages(publicDir));
   for (const item of await loadFeedItems()) {
-    for (const locale of ["en", "ru"]) {
+    for (const locale of ["en", "ru"] as const) {
       const image = postImagePath(item, locale);
       if (image && /\.(png|jpe?g)$/i.test(image)) images.add(image);
     }
@@ -364,7 +339,10 @@ async function generateResponsiveImages() {
     if (!inputPath) continue;
     const key = `responsive:${publicPath}`;
     const updated = await needsUpdate(inputPath, key);
-    const outputs = widths.map((width) => ({ width, outputPath: path.join(outputDir, responsiveOutputName(publicPath, width)) }));
+    const outputs = RESPONSIVE_WIDTHS.map((width) => ({
+      width,
+      outputPath: path.join(outputDir, responsiveOutputName(publicPath, width)),
+    }));
     // Reading metadata costs an open+header parse per image. Only do it once we
     // know at least one variant actually has to be produced, so an unchanged
     // run touches nothing but the cache and the output stat calls.

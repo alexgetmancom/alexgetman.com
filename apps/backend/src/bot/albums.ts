@@ -1,7 +1,6 @@
 import { and, asc, eq, lte } from "drizzle-orm";
 import type { Bot } from "grammy";
 import { parseArrayValue } from "../content/message.js";
-import { translateToEnglish } from "../content/translation.js";
 import type { BackendDb } from "../db/client.js";
 import { pendingAlbums } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -12,6 +11,7 @@ import { importTelegramAlbumMedia } from "../interfaces/telegram/media-ingress.j
 import { studioServices } from "../studio/services/index.js";
 import { botLocale } from "./i18n.js";
 import { clearPostAdminStateIfCurrent } from "./post-state.js";
+import { translatePostText } from "./post-translation.js";
 import { draftPreview } from "./preview.js";
 
 // pending_albums.notified lifecycle: an album is SETTLED once its caption and
@@ -120,12 +120,7 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
         await refreshDraftControlCard(bot, backendDb, config, row.actorId, draftId, row.chatId);
       } else {
         const text = row.textRu;
-        let textEn = text;
-        try {
-          textEn = await translateToEnglish(text, config);
-        } catch {
-          textEn = "";
-        }
+        const textEn = await translatePostText(text, config);
         const created = studioServices(backendDb, config).publications.create(row.actorId, {
           kind: "post",
           message: { text, textEn, media, entities: parseArrayValue(row.textEntitiesJson) },

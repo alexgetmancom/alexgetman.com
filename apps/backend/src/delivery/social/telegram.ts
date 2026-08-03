@@ -2,6 +2,7 @@ import path from "node:path";
 import type { BackendConfig } from "../../foundation/config.js";
 import { requestJson } from "../../foundation/http.js";
 import type { PublishResult } from "../../publishing/errors.js";
+import { selectMediaForTarget } from "../../publishing/media-policy.js";
 import { ambiguousExternalMutation } from "../ambiguous-publication.js";
 import { payloadMedia, payloadText } from "./payload.js";
 
@@ -26,7 +27,7 @@ export async function publishToTelegram(
 
   if (media.length > 1) {
     const attachments: TelegramAttachment[] = [];
-    const items = media.slice(0, 10).map((item, index) => ({
+    const items = selectMediaForTarget("telegram", media).map((item, index) => ({
       type: item.type === "VIDEO" ? "video" : "photo",
       media: telegramMediaSource(item.fileId, item.vpsUrl, item.localPath, `media-${index}`, attachments),
       caption: index === 0 ? caption.text : undefined,

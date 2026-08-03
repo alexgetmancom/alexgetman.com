@@ -1,7 +1,7 @@
 import { importStudioMediaAsset } from "../../content/assets.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
-import type { StudioActorId, StudioEntityContract, StudioLocale } from "../contracts.js";
+import type { StudioActorId, StudioLocale } from "../contracts.js";
 import { analyticsService } from "./analytics.js";
 import { studioCapabilityService } from "./capabilities.js";
 import { studioDashboard } from "./dashboard.js";
@@ -20,11 +20,9 @@ import { videoService } from "./videos.js";
 export function studioServices(backendDb: BackendDb, config: BackendConfig) {
   const posts = postService(backendDb, config);
   const videos = videoService(backendDb, config);
-  assertEntityContract(posts);
-  assertEntityContract(videos);
   return {
     posts,
-    publications: publicationService(backendDb, config),
+    publications: publicationService(posts, videos),
     media: {
       import: (actorId: StudioActorId, input: Parameters<typeof importStudioMediaAsset>[3]) =>
         importStudioMediaAsset(backendDb, config, actorId, input),
@@ -38,9 +36,6 @@ export function studioServices(backendDb: BackendDb, config: BackendConfig) {
     dashboard: (actorId: StudioActorId, locale: StudioLocale) => studioDashboard(backendDb, config, actorId, locale),
   };
 }
-
-/** Compile-time guard: every Studio entity exposes the same transport-neutral verbs. */
-function assertEntityContract(_service: StudioEntityContract<number, never, never, never, unknown, unknown, unknown>): void {}
 
 /** Explicit application contract shared by Telegram and MCP adapters. */
 export type StudioServices = ReturnType<typeof studioServices>;
