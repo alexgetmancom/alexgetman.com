@@ -25,11 +25,3 @@ export function parseJsonArray(value: string | null): Record<string, unknown>[] 
 export function draftMedia(draft: DraftRecord, locale: "ru" | "en"): Record<string, unknown>[] {
   return parseJsonArray(locale === "ru" ? draft.media_ru_json : draft.media_en_json);
 }
-
-export function sourceLabel(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return url;
-  }
-}
