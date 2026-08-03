@@ -22,6 +22,7 @@ jobs:
   scope:
     name: Determine changed areas
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     outputs:
       media_changed: ${{ steps.filter.outputs.media }}
       dependencies_changed: ${{ steps.filter.outputs.dependencies }}
@@ -34,25 +35,54 @@ jobs:
       - name: Detect relevant changes
         id: filter
         if: github.event_name != 'schedule'
-        uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3
-        with:
-          filters: |
-            media:
-              - 'deploy/media-processor/compose.yml'
-              - 'deploy/media-processor/Dockerfile'
-              - 'deploy/media-processor/Dockerfile.runtime-base'
-              - 'deploy/media-processor/server.ts'
-              - 'deploy/media-processor/service.ts'
-              - 'deploy/media-processor/serial-queue.ts'
-              - 'deploy/media-processor/story-encode.ts'
-            dependencies:
-              - 'bun.lock'
-              - '**/package.json'
-            runtime_config:
-              - 'apps/backend/compose.yaml'
-              - 'deploy/maru.compose.yaml'
-            nginx_config:
-              - 'deploy/nginx/production/**'
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          base_sha="$BASE_SHA"
+          if [[ -z "$base_sha" || "$base_sha" =~ ^0+$ ]]; then
+            base_sha=$(git rev-list --max-parents=0 "$HEAD_SHA" | tail -n 1)
+          fi
+
+          media=false
+          dependencies=false
+          runtime_config=false
+          nginx_config=false
+
+          while IFS= read -r path; do
+            case "$path" in
+              deploy/media-processor/compose.yml |
+              deploy/media-processor/Dockerfile |
+              deploy/media-processor/Dockerfile.runtime-base |
+              deploy/media-processor/server.ts |
+              deploy/media-processor/service.ts |
+              deploy/media-processor/serial-queue.ts |
+              deploy/media-processor/story-encode.ts)
+                media=true
+                ;;
+              bun.lock | package.json | */package.json)
+                dependencies=true
+                ;;
+              apps/backend/compose.yaml | deploy/maru.compose.yaml)
+                runtime_config=true
+                ;;
+              deploy/nginx/production/*)
+                nginx_config=true
+                ;;
+            esac
+          done < <(git diff --name-only --no-renames "$base_sha" "$HEAD_SHA")
+
+          {
+            echo "media=$media"
+            echo "dependencies=$dependencies"
+            echo "runtime_config=$runtime_config"
+            echo "nginx_config=$nginx_config"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Changed areas: media=$media dependencies=$dependencies runtime_config=$runtime_config nginx_config=$nginx_config"
 
   deployment-status-pending:
     name: Production deployment
@@ -265,10 +295,8 @@ jobs:
           build-args: |
             RUNTIME_BASE_IMAGE=${{ steps.runtime_base.outputs.image }}
             GIT_REVISION=${{ github.sha }}
+          push: true
           tags: ghcr.io/${{ github.repository_owner }}/alexgetman-backend:${{ github.sha }},ghcr.io/${{ github.repository_owner }}/alexgetman-backend:latest
-          outputs: |
-            type=registry
-            type=docker
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/alexgetman-backend:buildcache-app
           cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/alexgetman-backend:buildcache-app,mode=min
       - uses: ./.github/actions/setup-bun
@@ -277,7 +305,7 @@ jobs:
           cache-key: bun-workspace-1.3.14-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'apps/backend/package.json', 'tools/knip/package.json', 'tools/svelte-check/package.json', 'tools/layer-checker/package.json') }}
       - name: Image smoke test
         env:
-          IMAGE: ghcr.io/${{ github.repository_owner }}/alexgetman-backend:${{ github.sha }}
+          IMAGE: ghcr.io/${{ github.repository_owner }}/alexgetman-backend@${{ steps.image.outputs.digest }}
         run: bun scripts/image-smoke.ts
 
   media-processor-image:

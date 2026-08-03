@@ -73,7 +73,10 @@ async function cleanup(): Promise<void> {
 try {
   const available = await run(["docker", "image", "inspect", image]);
   if (available.code !== 0) {
-    throw new Error(`Docker image is not loaded locally: ${image}`);
+    const pulled = await run(["docker", "pull", image]);
+    if (pulled.code !== 0) {
+      throw new Error(`Docker image is not available locally and pull failed: ${image}\n${pulled.out}`);
+    }
   }
 
   /**
