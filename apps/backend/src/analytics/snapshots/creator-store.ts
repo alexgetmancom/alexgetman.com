@@ -80,9 +80,6 @@ export function recordProfileSnapshot(
     account: string;
     metrics: Record<string, unknown>;
     source: string;
-    /** Retained in the collector contract for compatibility. Milestone grouping
-     * now comes from the durable channel registry after the complete cycle. */
-    audiencePlatforms: readonly string[];
     sampledAt?: Date;
     /** "hour" is intentionally used only for the video analytics feed. */
     resolution?: "day" | "hour";

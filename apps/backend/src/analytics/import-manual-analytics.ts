@@ -39,7 +39,6 @@ export function importManualAnalytics(backendDb: BackendDb, input: ManualAnalyti
       account: profile.account,
       metrics: { name: profile.account, followersCount: profile.followersCount, manual: true },
       source: "manual_cli",
-      audiencePlatforms: [profile.platform],
       sampledAt,
     });
   return { sampledAt: sampledAt.toISOString(), x, profiles };

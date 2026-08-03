@@ -239,7 +239,9 @@ describe("command center actions", () => {
       backendDb.db.insert(publications).values({ postId: 10, status: "published", createdAt: now, updatedAt: now }).run();
       const result = await runOperationCommand(backendDb, { action: "refresh_site", ref: "post:10", locale: "en" });
       expect(result).toMatchObject({ ok: true, post_id: 10, locale: "en", site_refresh: true });
+      await runOperationCommand(backendDb, { action: "refresh_site", ref: "post:10", locale: "en" });
       expect(backendDb.db.select().from(siteJobs).get()).toMatchObject({ postId: 10, reason: "refresh_en_site", status: "queued" });
+      expect(backendDb.db.select({ count: count() }).from(siteJobs).get()?.count).toBe(1);
       expect(backendDb.db.select().from(publishJobs).all()).toHaveLength(0);
     } finally {
       backendDb.close();

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
-import { studioAudiencePlatforms } from "../src/analytics/audience-groups.js";
 import { evaluateAudienceMilestones } from "../src/analytics/audience-milestones.js";
 import { audienceGrowthByPlatform, youtubeChannelViewDeltaSince } from "../src/analytics/metric-deltas.js";
 import { creatorDashboard } from "../src/analytics/reports/dashboard.js";
@@ -229,14 +228,12 @@ describe("creator analytics deltas", () => {
         platform: "youtube_ru",
         account: "channel",
         source: "test",
-        audiencePlatforms: studioAudiencePlatforms(config, "video"),
         metrics: { subscriberCount: 493 },
       });
       recordProfileSnapshot(backendDb, {
         platform: "telegram",
         account: "channel",
         source: "test",
-        audiencePlatforms: studioAudiencePlatforms(config, "text"),
         metrics: { followersCount: 0 },
       });
       expect(evaluateAudienceMilestones(backendDb)).toBe(0);
@@ -245,14 +242,12 @@ describe("creator analytics deltas", () => {
         platform: "youtube_ru",
         account: "channel",
         source: "test",
-        audiencePlatforms: studioAudiencePlatforms(config, "video"),
         metrics: { subscriberCount: 500 },
       });
       recordProfileSnapshot(backendDb, {
         platform: "telegram",
         account: "channel",
         source: "test",
-        audiencePlatforms: studioAudiencePlatforms(config, "text"),
         metrics: { followersCount: 100 },
       });
       expect(evaluateAudienceMilestones(backendDb)).toBe(6);
@@ -276,7 +271,6 @@ describe("creator analytics deltas", () => {
         platform: "instagram_en",
         account: "new-channel",
         source: "test",
-        audiencePlatforms: studioAudiencePlatforms(config, "video"),
         metrics: { followersCount: 600 },
       });
       expect(evaluateAudienceMilestones(backendDb)).toBe(0);

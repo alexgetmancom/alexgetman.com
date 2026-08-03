@@ -8,7 +8,6 @@ import { createChannelStoryClient } from "../../foundation/external/telegram-ses
 import { oauthAuthorization } from "../../foundation/external/x-oauth.js";
 import { youtubeAccessToken } from "../../foundation/external/youtube.js";
 import { requestJson } from "../../foundation/http.js";
-import { studioAudiencePlatforms } from "../audience-groups.js";
 import { claimSync, markSynced, metricNumber, recordProfileSnapshot } from "../snapshots/creator-store.js";
 import { queryYouTubeAnalytics, youtubeAnalyticsDateRange } from "./youtube-analytics.js";
 
@@ -71,7 +70,6 @@ export async function syncYouTubeProfile(
         platform: profileKey,
         account: channelItem?.snippet?.title ?? "channel",
         source: "youtube_data_api",
-        audiencePlatforms: [profileKey],
         metrics: {
           title: channelItem?.snippet?.title ?? "YouTube",
           subscriberCount: metricNumber(channelItem?.statistics?.subscriberCount),
@@ -145,7 +143,6 @@ export async function syncInstagramProfile(
         platform: profileKey,
         account: profileData.username ?? "instagram",
         source: "instagram_graph_api",
-        audiencePlatforms: [profileKey],
         metrics: {
           username: profileData.username ?? "Instagram",
           biography: profileData.biography ?? "",
@@ -182,7 +179,6 @@ export async function syncZernioChannelProfile(
         platform: connection.id,
         account: account.username ?? connection.providerAccountId,
         source: "zernio",
-        audiencePlatforms: [connection.id],
         metrics: {
           username: account.username ?? account.displayName ?? connection.label,
           followersCount: metricNumber(account.followersCount),
@@ -220,7 +216,6 @@ async function syncZernioInstagramProfile(
     platform: connection.id,
     account: account.username ?? route.accountId,
     source: "zernio",
-    audiencePlatforms: [connection.id],
     metrics: {
       username: account.username ?? account.displayName ?? "Instagram",
       // Zernio's follower-history series starts only after its daily snapshotter
@@ -298,7 +293,6 @@ export async function syncXProfile(config: BackendConfig, backendDb: BackendDb, 
         platform: "x",
         account: user.username ?? user.id,
         source: "x_user_api",
-        audiencePlatforms: studioAudiencePlatforms(config, "text"),
         metrics: {
           name: user.name ?? user.username ?? user.id,
           followersCount: metricNumber(user.public_metrics?.followers_count),
@@ -354,7 +348,6 @@ async function syncTelegramProfile(config: BackendConfig, backendDb: BackendDb, 
           platform: "telegram",
           account: channelHandle(config),
           source: "telegram_mtproto_stats",
-          audiencePlatforms: studioAudiencePlatforms(config, "text"),
           metrics: mtprotoMetrics,
         });
         return;
@@ -374,7 +367,6 @@ async function syncTelegramProfile(config: BackendConfig, backendDb: BackendDb, 
         platform: "telegram",
         account: channelHandle(config),
         source: "telegram_bot_api",
-        audiencePlatforms: studioAudiencePlatforms(config, "text"),
         metrics: { followersCount: metricNumber(result.result) },
       });
     },
@@ -425,7 +417,6 @@ async function syncThreadsProfile(config: BackendConfig, backendDb: BackendDb, f
         platform: "threads",
         account: profile.username ?? profile.id,
         source: "threads_api",
-        audiencePlatforms: studioAudiencePlatforms(config, "text"),
         metrics: { name: profile.username ?? profile.id },
       });
     },

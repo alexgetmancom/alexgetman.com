@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../../db/client.js";
 import { drafts, postLocales, posts, publicationSources, siteJobs, siteSourceItems } from "../../db/schema.js";
 import { jsonObject } from "../../json.js";
@@ -113,6 +113,20 @@ function updateSource(db: UnsafeBackendDb["db"], ref: PublicationRef, patch: Rec
 }
 
 function enqueueRepairSiteJob(db: UnsafeBackendDb["db"], ref: PublicationRef, reason: string, now: string): void {
+  const activeJob = db
+    .select({ jobId: siteJobs.jobId })
+    .from(siteJobs)
+    .where(
+      and(
+        eq(siteJobs.messageId, ref.messageId),
+        ref.postId == null ? isNull(siteJobs.postId) : eq(siteJobs.postId, ref.postId),
+        eq(siteJobs.reason, reason),
+        inArray(siteJobs.status, ["queued", "rendering"]),
+      ),
+    )
+    .get();
+  if (activeJob) return;
+
   db.insert(siteJobs)
     .values({ postId: ref.postId, messageId: ref.messageId, reason, status: "queued", nextAttemptAt: now, createdAt: now, updatedAt: now })
     .run();
