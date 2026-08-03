@@ -166,7 +166,7 @@ export type StudioSettingsStore = {
   saveLocale(input: { actorId: number; locale: string; updatedAt: string }): void;
 };
 
-export type StudioNotificationSettingsRecord = {
+type StudioNotificationSettingsRecord = {
   actorId: number;
   remindersEnabled: number;
   reminderMinutes: number;
@@ -174,14 +174,14 @@ export type StudioNotificationSettingsRecord = {
   updatedAt: string;
 };
 
-export type StudioWeeklyDigestSettingsRecord = {
+type StudioWeeklyDigestSettingsRecord = {
   id: number;
   enabled: number;
   weekday: number;
   updatedAt: string;
 };
 
-export type StudioBotSettingsRecord = {
+type StudioBotSettingsRecord = {
   actorId: number;
   youtubeSignature: string;
   pendingAction: string | null;
@@ -209,7 +209,7 @@ export type StudioMediaAssetStore = {
   require(actorIds: number[], assetIds: number[]): StudioMediaAssetRecord[];
 };
 
-export type StudioVideoDraftRecord = {
+type StudioVideoDraftRecord = {
   id: number;
   actorId: number;
   locale: string;
@@ -227,7 +227,7 @@ export type StudioVideoDraftRecord = {
   updatedAt: string;
 };
 
-export type StudioVideoTargetRecord = {
+type StudioVideoTargetRecord = {
   id: number;
   videoDraftId: number;
   target: string;
@@ -248,7 +248,7 @@ export type StudioVideoTargetRecord = {
   updatedAt: string;
 };
 
-export type StudioVideoJobRecord = {
+type StudioVideoJobRecord = {
   id: number;
   videoDraftId: number;
   videoTargetId: number | null;
