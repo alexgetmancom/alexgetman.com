@@ -281,6 +281,33 @@ export type EntityEnrichmentStore = {
   link(postId: number, entityId: number, linkRole: "focus" | "mention", createdAt: string): void;
 };
 
+export type ChannelConnectionRecord = {
+  id: string;
+  platform: string;
+  locale: string;
+  provider: string;
+  providerAccountId: string | null;
+  targetId: string | null;
+  label: string;
+  enabled: number;
+  source: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ChannelStore = {
+  list(enabledOnly: boolean): ChannelConnectionRecord[];
+  get(id: string): ChannelConnectionRecord | null;
+  upsert(input: Omit<ChannelConnectionRecord, "createdAt" | "updatedAt">, now: string): void;
+  disable(id: string, now: string): void;
+  hasAny(): boolean;
+  find(platform: string, locale: string): ChannelConnectionRecord | null;
+  secrets(channelId: string): Array<{ name: string; valueEncrypted: string }>;
+  saveSecret(input: { channelId: string; name: string; valueEncrypted: string; updatedAt: string }): void;
+  deleteSecrets(channelId: string, name?: string): void;
+  secretNames(channelId: string): string[];
+};
+
 /** Persistence port used by content and Studio use cases. */
 export type DraftStore = {
   create(input: NewDraft): number;
@@ -307,5 +334,6 @@ export type ApplicationPorts = {
   studioMediaAssets: StudioMediaAssetStore;
   studioVideos: StudioVideoStore;
   entityEnrichment: EntityEnrichmentStore;
+  channels: ChannelStore;
   storyCards: StoryCardQueue;
 };

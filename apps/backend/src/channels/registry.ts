@@ -1,12 +1,11 @@
-import { and, eq } from "drizzle-orm";
+import type { ChannelConnectionRecord } from "../application/ports.js";
 import type { BackendDb } from "../db/client.js";
-import { channelConnections } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { instagramCredentialsForLocale } from "../foundation/external/instagram.js";
 import type { VideoLocale } from "../foundation/external/youtube.js";
 import { VIDEO_TARGET_PLATFORM, type VideoTarget } from "../publishing/video-types.js";
 
-export type ChannelConnection = typeof channelConnections.$inferSelect;
+export type ChannelConnection = ChannelConnectionRecord;
 export type ChannelSeed = Omit<ChannelConnection, "createdAt" | "updatedAt">;
 
 function channelId(platform: string, locale: VideoLocale): string {
@@ -94,37 +93,20 @@ export function bootstrapConfiguredChannels(backendDb: BackendDb, config: Backen
   const configured = configuredChannels(config);
   const configuredIds = new Set(configured.map((connection) => connection.id));
   for (const existing of listChannels(backendDb, false))
-    if (existing.source === "config" && !configuredIds.has(existing.id))
-      backendDb.db.update(channelConnections).set({ enabled: 0, updatedAt: now }).where(eq(channelConnections.id, existing.id)).run();
+    if (existing.source === "config" && !configuredIds.has(existing.id)) backendDb.channels.disable(existing.id, now);
   for (const connection of configured) {
-    const existing = backendDb.db.select().from(channelConnections).where(eq(channelConnections.id, connection.id)).get();
+    const existing = backendDb.channels.get(connection.id);
     // An account explicitly selected in an interface overrides the bootstrap
     // route until that connection is disabled or replaced there.
     if (existing && existing.source !== "config") continue;
-    backendDb.db
-      .insert(channelConnections)
-      .values({ ...connection, createdAt: now, updatedAt: now })
-      .onConflictDoUpdate({
-        target: channelConnections.id,
-        set: {
-          platform: connection.platform,
-          locale: connection.locale,
-          provider: connection.provider,
-          providerAccountId: connection.providerAccountId,
-          targetId: connection.targetId,
-          enabled: 1,
-          updatedAt: now,
-        },
-      })
-      .run();
+    backendDb.channels.upsert({ ...connection, enabled: 1 }, now);
   }
   return listChannels(backendDb);
 }
 
 export function listChannels(backendDb: BackendDb, enabledOnly = true): ChannelConnection[] {
-  const query = backendDb.db.select().from(channelConnections);
-  return (enabledOnly ? query.where(eq(channelConnections.enabled, 1)) : query)
-    .all()
+  return backendDb.channels
+    .list(enabledOnly)
     .sort((left, right) => left.platform.localeCompare(right.platform) || left.locale.localeCompare(right.locale));
 }
 
@@ -142,9 +124,8 @@ export function registerChannel(
 ): ChannelConnection {
   const now = new Date().toISOString();
   const id = channelId(input.platform, input.locale);
-  backendDb.db
-    .insert(channelConnections)
-    .values({
+  backendDb.channels.upsert(
+    {
       id,
       platform: input.platform,
       locale: input.locale,
@@ -154,23 +135,10 @@ export function registerChannel(
       label: input.label ?? `${displayPlatform(input.platform)} ${input.locale.toUpperCase()}`,
       enabled: 1,
       source: input.source ?? "interface",
-      createdAt: now,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: channelConnections.id,
-      set: {
-        provider: input.provider,
-        providerAccountId: input.providerAccountId ?? null,
-        targetId: input.targetId ?? null,
-        label: input.label ?? `${displayPlatform(input.platform)} ${input.locale.toUpperCase()}`,
-        enabled: 1,
-        source: input.source ?? "interface",
-        updatedAt: now,
-      },
-    })
-    .run();
-  const connection = backendDb.db.select().from(channelConnections).where(eq(channelConnections.id, id)).get();
+    },
+    now,
+  );
+  const connection = backendDb.channels.get(id);
   if (!connection) throw new Error(`Channel registration did not persist: ${id}`);
   return connection;
 }
@@ -195,7 +163,7 @@ export function effectivePostTargets(backendDb: BackendDb, targets: Record<strin
  * bootstrap has not run — a fresh database or a fixture — and is the only case
  * in which configuration still answers routing questions directly. */
 export function hasChannelRegistry(backendDb: BackendDb): boolean {
-  return Boolean(backendDb.db.select({ id: channelConnections.id }).from(channelConnections).limit(1).get());
+  return backendDb.channels.hasAny();
 }
 
 /** The platform a video target is delivered through. Kept next to the registry
@@ -205,20 +173,12 @@ export function videoPlatform(target: VideoTarget): string {
 }
 
 export function channelFor(backendDb: BackendDb, platform: string, locale: VideoLocale): ChannelConnection | undefined {
-  return backendDb.db
-    .select()
-    .from(channelConnections)
-    .where(and(eq(channelConnections.platform, platform), eq(channelConnections.locale, locale), eq(channelConnections.enabled, 1)))
-    .get();
+  return backendDb.channels.find(platform, locale) ?? undefined;
 }
 
 export function channelForVideo(backendDb: BackendDb, target: VideoTarget, locale: VideoLocale): ChannelConnection | undefined {
   const platform = videoPlatform(target);
-  return backendDb.db
-    .select()
-    .from(channelConnections)
-    .where(and(eq(channelConnections.platform, platform), eq(channelConnections.locale, locale), eq(channelConnections.enabled, 1)))
-    .get();
+  return backendDb.channels.find(platform, locale) ?? undefined;
 }
 
 function displayPlatform(platform: string): string {

@@ -1,7 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
-import { and, eq } from "drizzle-orm";
 import type { BackendDb } from "../db/client.js";
-import { channelCredentials } from "../db/schema.js";
 import type { VideoLocale } from "../publishing/video-types.js";
 
 /**
@@ -62,7 +60,7 @@ export function credentialEnvironment(
 }
 
 export function channelSecrets(backendDb: BackendDb, secretKey: string | undefined, channelId: string): Record<string, string> {
-  const rows = backendDb.db.select().from(channelCredentials).where(eq(channelCredentials.channelId, channelId)).all();
+  const rows = backendDb.channels.secrets(channelId);
   if (!rows.length) return {};
   const key = encryptionKey(secretKey);
   return Object.fromEntries(rows.map((row) => [row.name, decryptSecret(row.valueEncrypted, key)]));
@@ -79,35 +77,20 @@ export function setChannelSecrets(
   const written: string[] = [];
   for (const [name, value] of Object.entries(values)) {
     if (!value) continue;
-    backendDb.db
-      .insert(channelCredentials)
-      .values({ channelId, name, valueEncrypted: encryptSecret(value, key), updatedAt: now })
-      .onConflictDoUpdate({
-        target: [channelCredentials.channelId, channelCredentials.name],
-        set: { valueEncrypted: encryptSecret(value, key), updatedAt: now },
-      })
-      .run();
+    backendDb.channels.saveSecret({ channelId, name, valueEncrypted: encryptSecret(value, key), updatedAt: now });
     written.push(name);
   }
   return written;
 }
 
 export function deleteChannelSecrets(backendDb: BackendDb, channelId: string, name?: string): void {
-  const where = name
-    ? and(eq(channelCredentials.channelId, channelId), eq(channelCredentials.name, name))
-    : eq(channelCredentials.channelId, channelId);
-  backendDb.db.delete(channelCredentials).where(where).run();
+  backendDb.channels.deleteSecrets(channelId, name);
 }
 
 /** Names only — a caller that wants to report configuration state must never be
  * able to leak the values by accident. */
 export function storedCredentialNames(backendDb: BackendDb, channelId: string): string[] {
-  return backendDb.db
-    .select({ name: channelCredentials.name })
-    .from(channelCredentials)
-    .where(eq(channelCredentials.channelId, channelId))
-    .all()
-    .map((row) => row.name);
+  return backendDb.channels.secretNames(channelId);
 }
 
 /** Any passphrase is accepted and hashed to the required length: the operator

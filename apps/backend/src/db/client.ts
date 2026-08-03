@@ -8,6 +8,7 @@ import { drizzle } from "drizzle-orm/bun-sqlite";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 import type { ApplicationPorts } from "../application/ports.js";
 import { queueDraftStoryCards } from "../story-cards/store.js";
+import { createChannelStore } from "./repositories/channels.js";
 import { createDraftStore } from "./repositories/drafts.js";
 import { createEntityEnrichmentStore } from "./repositories/entity-enrichment.js";
 import { createEventStore } from "./repositories/events.js";
@@ -66,6 +67,7 @@ export function openBackendDb(path: string, timeout = 30_000): BackendDb {
     drafts: createDraftStore(db, clock),
     events: createEventStore(db, clock),
     entityEnrichment: createEntityEnrichmentStore(db),
+    channels: createChannelStore(db),
     studioNotifications: createStudioNotificationStore(db),
     studioSettings: createStudioSettingsStore(db),
     studioMediaAssets: createStudioMediaAssetStore(db),

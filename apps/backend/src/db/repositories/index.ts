@@ -1,5 +1,6 @@
 /** Infrastructure composition points. Application code depends on ports, not these adapters. */
 
+export { createChannelStore } from "./channels.js";
 export { createDraftStore } from "./drafts.js";
 export { createEntityEnrichmentStore } from "./entity-enrichment.js";
 export { createEventStore } from "./events.js";
