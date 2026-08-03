@@ -22,12 +22,13 @@ backend's explicit `local` provider instead of silently falling back.
 
 ## Deployment model
 
-CI builds and publishes this image on every successful `main` revision. Image
-activation is intentionally manual: a deployment target selects a tested digest,
-pulls it, recreates only `media-processor`, probes `/health`, and restores the
-previous digest if that probe fails. Target names, image repository, compose
-path, service name, health URL, and deployment transport belong in deployment
-configuration; none are tied to a particular account or VM name.
+CI builds and publishes this image when `deploy/media-processor/**` changes on
+`main`. Other releases reuse the last tested immutable digest. Image activation
+is intentionally manual: a deployment target selects a tested digest, pulls it,
+recreates only `media-processor`, probes `/health`, and restores the previous
+digest if that probe fails. Target names, image repository, compose path, service
+name, health URL, and deployment transport belong in deployment configuration;
+none are tied to a particular account or VM name.
 
 For a migration from a legacy hand-built process, the one-time
 `DEPLOY_ALLOW_INITIAL_SEED=true` setting permits the first immutable deployment

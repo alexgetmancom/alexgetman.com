@@ -1,0 +1,21 @@
+# Commit-specific backend image assembled from the stable runtime base.
+ARG RUNTIME_BASE_IMAGE
+FROM ${RUNTIME_BASE_IMAGE} AS app
+
+ARG GIT_REVISION=unknown
+ENV GIT_REVISION=${GIT_REVISION}
+
+WORKDIR /app
+COPY dist ./dist
+COPY runtime ./runtime
+COPY ops ./ops
+COPY entrypoint ./entrypoint
+COPY story-renderer ./story-renderer
+# Bun emits mtcute's dynamically loaded WASM files beside the server bundle,
+# while mtcute resolves them relative to the process working directory.
+COPY runtime/*.wasm ./
+COPY apps/backend/drizzle ./apps/backend/drizzle
+COPY apps/backend/assets ./apps/backend/assets
+
+# The entrypoint starts as root to fix bind-mount ownership, then drops to bun.
+ENTRYPOINT ["tini", "--", "bun", "--smol", "/app/entrypoint/docker-entrypoint.js"]

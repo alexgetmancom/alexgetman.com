@@ -1,0 +1,30 @@
+name: Set up Bun workspace
+description: Restore the Bun download cache and installed workspace dependencies.
+
+inputs:
+  bun-version:
+    description: Bun version to install.
+    required: true
+  cache-key:
+    description: Exact cache key for this Bun and workspace dependency tree.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Bun
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: ${{ inputs.bun-version }}
+    - name: Cache Bun workspace
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.bun/install/cache
+          node_modules
+          apps/*/node_modules
+          tools/*/node_modules
+        key: ${{ inputs.cache-key }}
+    - name: Install dependencies
+      shell: bash
+      run: bun install --frozen-lockfile

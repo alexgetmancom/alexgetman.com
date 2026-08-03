@@ -1,0 +1,77 @@
+name: Media processor image
+
+on:
+  workflow_call:
+    inputs:
+      build-image:
+        description: Build a new image instead of reusing the current digest.
+        required: true
+        type: boolean
+      image-tag:
+        description: Commit tag to publish when a new image is built.
+        required: true
+        type: string
+    outputs:
+      image_digest:
+        description: Immutable digest of the tested or reused media processor image.
+        value: ${{ jobs.build.outputs.image_digest }}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    name: Build or reuse media processor image
+    runs-on: ubuntu-latest
+    outputs:
+      image_digest: ${{ steps.media_processor.outputs.digest || steps.reuse.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve existing media processor image
+        id: reuse
+        if: inputs.build-image != true
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor:latest
+        run: |
+          digest=$(docker buildx imagetools inspect "$IMAGE" 2>/dev/null | awk '/^Digest:/ { print $2; exit }')
+          if [[ "$digest" =~ ^sha256:[0-9a-fA-F]{64}$ ]]; then
+            echo "digest=$digest" >> "$GITHUB_OUTPUT"
+            echo "Reusing existing media processor image $digest"
+          else
+            echo "No reusable media processor image found; building one"
+          fi
+      - name: Build and publish media processor image
+        id: media_processor
+        if: inputs.build-image == true || steps.reuse.outputs.digest == ''
+        uses: docker/build-push-action@v7
+        with:
+          context: ./deploy/media-processor
+          file: ./deploy/media-processor/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor:${{ inputs.image-tag }},ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor:latest
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor:buildcache,mode=max
+      - name: Smoke test newly published media processor image
+        if: steps.media_processor.outputs.digest != ''
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor@${{ steps.media_processor.outputs.digest }}
+        run: |
+          container="media-processor-smoke-${GITHUB_RUN_ID}"
+          port=$((18000 + RANDOM % 1000))
+          cleanup() {
+            docker rm -f "$container" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          docker run --pull always --detach --name "$container" --publish "127.0.0.1:${port}:8787" \
+            --env MEDIA_PROCESSOR_TOKEN=ci-media-processor-smoke-token \
+            --env MEDIA_PROCESSOR_WORK_DIR=/tmp "$IMAGE"
+          response=$(curl --fail --silent --show-error --retry 30 --retry-delay 1 --retry-all-errors "http://127.0.0.1:${port}/health")
+          printf '%s\n' "$response"
+          printf '%s\n' "$response" | grep -q '"status":"ready"'
