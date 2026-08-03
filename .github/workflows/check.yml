@@ -203,7 +203,7 @@ jobs:
   backend-image:
     name: Build backend image
     needs: quality-gate
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.quality-gate.result == 'success'
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.quality-gate.result == 'success'
     runs-on: ubuntu-latest
     outputs:
       image_digest: ${{ steps.image.outputs.digest }}
@@ -271,7 +271,7 @@ jobs:
   media-processor-image:
     name: Build media processor image
     needs: [scope, quality-gate]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.quality-gate.result == 'success'
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.quality-gate.result == 'success'
     uses: ./.github/workflows/media-processor.yml
     with:
       build-image: ${{ needs.scope.outputs.media_changed == 'true' }}
@@ -281,7 +281,7 @@ jobs:
   deploy-agent:
     name: Build media processor deploy agent
     needs: quality-gate
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.quality-gate.result == 'success'
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.quality-gate.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
