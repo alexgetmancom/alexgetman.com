@@ -39,6 +39,24 @@ describe("architecture fitness", () => {
     }
   });
 
+  it("keeps Studio and content application services behind persistence ports", () => {
+    const files = [
+      "apps/backend/src/content/assets.ts",
+      "apps/backend/src/content/entity-enrichment.ts",
+      "apps/backend/src/content/video-assets.ts",
+      "apps/backend/src/studio/projections.ts",
+      "apps/backend/src/studio/services/notifications.ts",
+      "apps/backend/src/studio/services/settings.ts",
+      "apps/backend/src/studio/services/videos.ts",
+    ];
+    for (const file of files) {
+      const text = source(file);
+      expect(text).not.toContain("backendDb.db");
+      expect(text).not.toMatch(/from ["'][^"']*\/db\/schema/);
+      expect(text).not.toMatch(/from ["']drizzle-orm/);
+    }
+  });
+
   it("routes domain events through the durable event port", () => {
     const events = source("apps/backend/src/domain/events.ts");
     expect(events).toContain("events: EventStore");
