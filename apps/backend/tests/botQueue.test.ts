@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { queueText } from "../src/bot/queue.js";
+import { queuePageCount, queueText } from "../src/bot/queue.js";
 import { drafts, publishJobs, videoDrafts, videoTargets } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import type { StudioQueueSnapshot } from "../src/studio/services/queue.js";
@@ -207,5 +207,23 @@ describe("Telegram work queue", () => {
     const text = queueText(snapshot, "ru", "Europe/Moscow");
     expect(text).toContain("Требует внимания (1)");
     expect(text).toContain("Failed clip");
+  });
+
+  it("paginates every queue section without dropping items", () => {
+    const snapshot: StudioQueueSnapshot = {
+      upcoming: Array.from({ length: 6 }, (_, index) => ({
+        id: index + 1,
+        label: `Upcoming ${index + 1}`,
+        kind: "post",
+        targets: 1,
+        time: new Date(Date.now() + (index + 1) * 60_000),
+      })),
+      attention: [],
+      drafts: [],
+    };
+
+    expect(queuePageCount(snapshot)).toBe(2);
+    expect(queueText(snapshot, "en", "Europe/Moscow", 1)).toContain("Upcoming 6");
+    expect(queueText(snapshot, "en", "Europe/Moscow", 1)).toContain("Page 2 of 2");
   });
 });

@@ -1,5 +1,5 @@
 import type { DraftRecord } from "../../application/ports.js";
-import { targetLocale } from "../../botTargets.js";
+import { isStoryTarget, targetLocale } from "../../botTargets.js";
 import { effectivePostTargets } from "../../channels/registry.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
@@ -9,7 +9,7 @@ import { publishDraftToQueue } from "../../publishing/publication-workflow.js";
 import { assertFutureSchedule, assertValidScheduleDate, parseManualSchedule, scheduleClockToday } from "../../publishing/schedule.js";
 import { parseTargets } from "../../publishing/targets.js";
 import { readyStoryCardMedia } from "../../story-cards/store.js";
-import { requireOwnedDraft } from "./post-access.js";
+import { requireMutableDraft, requireOwnedDraft } from "./post-access.js";
 import { settingsService } from "./settings.js";
 
 export type PostScheduleInput = { ruAt: Date | null; enAt: Date | null; allowPast?: boolean };
@@ -29,11 +29,37 @@ export function replanScheduledPostAfterStoryCards(backendDb: BackendDb, config:
   return true;
 }
 
+/** Rebuilds the durable plan after a scheduled draft mutation whenever its
+ * delivery inputs are complete. Text-only Story posts wait for the regenerated
+ * cards and are replanned by the Story worker instead. */
+export function replanScheduledPostAfterMutation(backendDb: BackendDb, config: BackendConfig, draftId: number): boolean {
+  const draft = backendDb.drafts.get(draftId);
+  if (draft?.status !== "scheduled") return false;
+  const targets = effectivePostTargets(backendDb, parseTargets(draft.targets_json));
+  const hasMedia = [draft.media_ru_json, draft.media_en_json].some((value) => {
+    try {
+      const parsed = value ? JSON.parse(value) : [];
+      return Array.isArray(parsed) && parsed.length > 0;
+    } catch {
+      return false;
+    }
+  });
+  const hasStoryTarget = Object.entries(targets).some(([target, enabled]) => enabled && isStoryTarget(target));
+  const waitsForStoryCards = draft.story_publish_mode === "all" || draft.story_publish_mode === "site_only";
+  if (waitsForStoryCards && hasStoryTarget && !hasMedia && !readyStoryCardMedia(backendDb, draftId)) return false;
+  postSchedulingService(backendDb, config).schedule(draft.actor_id, draftId, {
+    ruAt: dateOrNull(draft.scheduled_at),
+    enAt: dateOrNull(draft.scheduled_en_at),
+    allowPast: true,
+  });
+  return true;
+}
+
 /** Scheduling and lifecycle commands kept behind the public post facade. */
 export function postSchedulingService(backendDb: BackendDb, config: BackendConfig) {
   return {
     schedule(actorId: number, draftId: number, input: PostScheduleInput): number {
-      const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
+      const draft = requireMutableDraft(backendDb, config, actorId, draftId);
       const now = new Date();
       for (const value of [input.ruAt, input.enAt]) {
         if (!value) continue;
@@ -93,7 +119,7 @@ export function postSchedulingService(backendDb: BackendDb, config: BackendConfi
     },
 
     cancel(actorId: number, draftId: number): void {
-      const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
+      const draft = requireMutableDraft(backendDb, config, actorId, draftId);
       cancelDraft(backendDb, draftId);
       if (draft.post_id != null) cancelScheduledNotifications(backendDb, `post:${draft.post_id}`);
     },

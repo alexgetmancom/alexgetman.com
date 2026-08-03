@@ -111,6 +111,13 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
       await showQueue(ctx, backendDb, config);
       return;
     }
+    if (ctx.callbackQuery.data.startsWith("queue_page:")) {
+      const value = ctx.callbackQuery.data.slice("queue_page:".length);
+      const page = value === "noop" ? 0 : Number(value);
+      await ctx.answerCallbackQuery();
+      if (value !== "noop" && Number.isSafeInteger(page) && page >= 0) await showQueue(ctx, backendDb, config, page);
+      return;
+    }
     // Video notifications link here. Without a branch the tap fell through to
     // the post handler, which read no draft id out of it and answered
     // "invalid post" — an error toast on a button that navigates.

@@ -330,6 +330,13 @@
       "when": 1785976100000,
       "tag": "0046_worker_leases",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "6",
+      "when": 1785976200000,
+      "tag": "0047_bot_state_expiry",
+      "breakpoints": true
     }
   ]
 }

@@ -10,10 +10,10 @@ import { StudioError } from "../../foundation/errors.js";
 import { publishDraftToQueue } from "../../publishing/publication-workflow.js";
 import { parseTargets } from "../../publishing/targets.js";
 import { type StoryPublishMode, setStoryPublishMode } from "../../story-cards/store.js";
-import { requireOwnedDraft } from "./post-access.js";
+import { requireMutableDraft } from "./post-access.js";
 import { postMediaService } from "./post-media.js";
 import { postQueryService } from "./post-queries.js";
-import { postSchedulingService } from "./post-scheduling.js";
+import { postSchedulingService, replanScheduledPostAfterMutation } from "./post-scheduling.js";
 
 type EditInput = {
   locale: "ru" | "en";
@@ -40,27 +40,31 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
     ...scheduling,
     ...media,
     setStoryPublishMode(actorId: number, draftId: number, mode: StoryPublishMode): void {
-      requireOwnedDraft(backendDb, config, actorId, draftId);
+      requireMutableDraft(backendDb, config, actorId, draftId);
       setStoryPublishMode(backendDb, draftId, mode);
+      replanScheduledPostAfterMutation(backendDb, config, draftId);
     },
     replaceSources(actorId: number, draftId: number, urls: string[]): void {
-      requireOwnedDraft(backendDb, config, actorId, draftId);
+      requireMutableDraft(backendDb, config, actorId, draftId);
       const uniqueUrls = [...new Set(urls)];
       backendDb.studioPosts.replaceSources(draftId, uniqueUrls, backendDb.clock.now().toISOString());
+      replanScheduledPostAfterMutation(backendDb, config, draftId);
     },
     replaceEntityCandidates(actorId: number, draftId: number, candidates: DraftEntityCandidate[]): void {
-      requireOwnedDraft(backendDb, config, actorId, draftId);
+      requireMutableDraft(backendDb, config, actorId, draftId);
       backendDb.studioPosts.replaceEntityCandidates(draftId, candidates, backendDb.clock.now().toISOString());
+      replanScheduledPostAfterMutation(backendDb, config, draftId);
     },
     acceptEntityCandidates(actorId: number, draftId: number): void {
-      requireOwnedDraft(backendDb, config, actorId, draftId);
+      requireMutableDraft(backendDb, config, actorId, draftId);
       backendDb.studioPosts.acceptEntityCandidates(draftId, backendDb.clock.now().toISOString());
+      replanScheduledPostAfterMutation(backendDb, config, draftId);
     },
     /** Waives the 500-character Threads rule for this draft: the overflow becomes
      * a reply chain. Deliberately has no "off" command — editing the text resets
      * it, and a draft nobody waived is the normal state. */
     approveThreadsChain(actorId: number, draftId: number): void {
-      requireOwnedDraft(backendDb, config, actorId, draftId);
+      requireMutableDraft(backendDb, config, actorId, draftId);
       backendDb.drafts.update(draftId, { threadsChainApproved: 1, updatedAt: backendDb.clock.now().toISOString() });
       recordDomainEvent(backendDb.events, {
         ref: `draft:${draftId}`,
@@ -71,11 +75,11 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       });
     },
     publish(actorId: number, draftId: number): number {
-      requireOwnedDraft(backendDb, config, actorId, draftId);
+      requireMutableDraft(backendDb, config, actorId, draftId);
       return publishDraftToQueue(backendDb, draftId);
     },
     toggleTarget(actorId: number, draftId: number, target: string): void {
-      const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
+      const draft = requireMutableDraft(backendDb, config, actorId, draftId);
       if (!TARGETS.some(({ id }) => id === target)) throw new StudioError("err.unknown-target");
       const registered = registeredPostTargetIds(backendDb);
       if (registered.size && !registered.has(target)) throw new StudioError("err.unknown-target");
@@ -84,7 +88,7 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       saveTargetsAndReschedule(backendDb, scheduling, actorId, draftId, draft, targets);
     },
     cycleMode(actorId: number, draftId: number): keyof typeof PRESETS {
-      const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
+      const draft = requireMutableDraft(backendDb, config, actorId, draftId);
       const targets = parseTargets(draft.targets_json);
       const current = presetName(targets);
       const next = current === "full" ? "ru" : current === "ru" ? "en" : current === "en" ? "tg" : "full";
@@ -123,7 +127,7 @@ function hasMedia(value: string | null): boolean {
 }
 
 function editDraftContent(backendDb: BackendDb, config: BackendConfig, actorId: number, draftId: number, input: EditInput): DraftRecord {
-  const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
+  const draft = requireMutableDraft(backendDb, config, actorId, draftId);
   const clearMedia = Boolean(input.clearMedia);
   const update: DraftPatch = { updatedAt: backendDb.clock.now().toISOString() };
   const ru = input.locale === "ru";

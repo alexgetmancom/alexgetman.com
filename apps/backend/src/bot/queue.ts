@@ -6,32 +6,63 @@ import { createStudioServices } from "../studio/services/index.js";
 import type { StudioQueueItem, StudioQueueSnapshot } from "../studio/services/queue.js";
 import { type BotLocale, botLocale } from "./i18n.js";
 
-export async function showQueue(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<void> {
+const UPCOMING_PAGE_SIZE = 5;
+const ATTENTION_PAGE_SIZE = 5;
+const DRAFT_PAGE_SIZE = 10;
+
+export async function showQueue(ctx: Context, backendDb: BackendDb, config: BackendConfig, page = 0): Promise<void> {
   const locale = botLocale(backendDb, Number(ctx.from?.id));
   const snapshot = createStudioServices(backendDb, config).queue.snapshot(Number(ctx.from?.id));
   const keyboard = new InlineKeyboard();
-  const text = queueText(snapshot, locale, config.TIMEZONE);
+  const currentPage = Math.max(0, Math.min(Math.trunc(page), queuePageCount(snapshot) - 1));
+  const text = queueText(snapshot, locale, config.TIMEZONE, currentPage);
 
-  for (const item of snapshot.upcoming.slice(0, 5)) keyboard.text(itemButton(item, locale, config.TIMEZONE), itemCallback(item)).row();
-  for (const item of snapshot.attention.slice(0, 5)) keyboard.text(`⚠️ ${kindIcon(item.kind)} ${item.label}`, itemCallback(item)).row();
-  for (const item of snapshot.drafts.slice(0, 10)) keyboard.text(`${kindIcon(item.kind)} ${item.label}`, itemCallback(item)).row();
+  for (const item of pageSlice(snapshot.upcoming, currentPage, UPCOMING_PAGE_SIZE))
+    keyboard.text(itemButton(item, locale, config.TIMEZONE), itemCallback(item)).row();
+  for (const item of pageSlice(snapshot.attention, currentPage, ATTENTION_PAGE_SIZE))
+    keyboard.text(`⚠️ ${kindIcon(item.kind)} ${item.label}`, itemCallback(item)).row();
+  for (const item of pageSlice(snapshot.drafts, currentPage, DRAFT_PAGE_SIZE))
+    keyboard.text(`${kindIcon(item.kind)} ${item.label}`, itemCallback(item)).row();
+  const pages = queuePageCount(snapshot);
+  if (pages > 1) {
+    keyboard.row();
+    if (currentPage > 0) keyboard.text("←", `queue_page:${currentPage - 1}`);
+    keyboard.text(`${currentPage + 1}/${pages}`, "queue_page:noop");
+    if (currentPage < pages - 1) keyboard.text("→", `queue_page:${currentPage + 1}`);
+  }
   keyboard.row().text(t(locale, "common.menu"), "menu_home");
   await replaceQueueMessage(ctx, text, keyboard);
 }
 
-export function queueText(snapshot: StudioQueueSnapshot, locale: BotLocale, timeZone: string): string {
+export function queueText(snapshot: StudioQueueSnapshot, locale: BotLocale, timeZone: string, page = 0): string {
+  const currentPage = Math.max(0, Math.min(Math.trunc(page), queuePageCount(snapshot) - 1));
   const lines = [`📋 *${t(locale, "queue.title")}*`, "", `*${t(locale, "queue.upcoming-heading")}*`];
-  if (!snapshot.upcoming.length) lines.push(t(locale, "queue.nothing-scheduled"));
-  else
-    for (const item of snapshot.upcoming.slice(0, 5))
-      lines.push(`• ${formatQueueTime(item.time, locale, timeZone)} — ${kindIcon(item.kind)} ${item.label}`);
+  const upcoming = pageSlice(snapshot.upcoming, currentPage, UPCOMING_PAGE_SIZE);
+  if (!upcoming.length) lines.push(t(locale, "queue.nothing-scheduled"));
+  else for (const item of upcoming) lines.push(`• ${formatQueueTime(item.time, locale, timeZone)} — ${kindIcon(item.kind)} ${item.label}`);
   if (snapshot.attention.length) {
     lines.push("", `*${t(locale, "queue.attention-heading", { count: snapshot.attention.length })}*`);
-    for (const item of snapshot.attention.slice(0, 5)) lines.push(`• ⚠️ ${kindIcon(item.kind)} ${item.label}`);
+    for (const item of pageSlice(snapshot.attention, currentPage, ATTENTION_PAGE_SIZE))
+      lines.push(`• ⚠️ ${kindIcon(item.kind)} ${item.label}`);
   }
   lines.push("", `*${t(locale, "queue.drafts-btn", { count: snapshot.drafts.length })}*`);
-  lines.push(snapshot.drafts.length ? t(locale, "queue.choose-draft") : t(locale, "queue.no-drafts"));
+  const drafts = pageSlice(snapshot.drafts, currentPage, DRAFT_PAGE_SIZE);
+  lines.push(drafts.length ? t(locale, "queue.choose-draft") : t(locale, "queue.no-drafts"));
+  if (queuePageCount(snapshot) > 1) lines.push("", t(locale, "queue.page", { page: currentPage + 1, pages: queuePageCount(snapshot) }));
   return lines.join("\n");
+}
+
+export function queuePageCount(snapshot: StudioQueueSnapshot): number {
+  return Math.max(
+    1,
+    Math.ceil(snapshot.upcoming.length / UPCOMING_PAGE_SIZE),
+    Math.ceil(snapshot.attention.length / ATTENTION_PAGE_SIZE),
+    Math.ceil(snapshot.drafts.length / DRAFT_PAGE_SIZE),
+  );
+}
+
+function pageSlice<T>(items: T[], page: number, size: number): T[] {
+  return items.slice(page * size, (page + 1) * size);
 }
 
 function itemButton(item: StudioQueueItem, locale: BotLocale, timeZone: string): string {

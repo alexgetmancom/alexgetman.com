@@ -66,7 +66,8 @@ export function videoPreview(
       .row()
       .text(t(locale, "post.schedule-btn"), `video_schedule:${draft.id}`)
       .row();
-  keyboard.text(t(locale, "vpreview.edit-details"), `video_edit_menu:${draft.id}`).row();
+  if (["draft", "editing"].includes(draft.status) && targets.every((target) => isVideoTargetEditable(target.status)))
+    keyboard.text(t(locale, "vpreview.edit-details"), `video_edit_menu:${draft.id}`).row();
   keyboard.text(t(locale, "vpreview.cancel-pub"), `video_cancel_ask:${draft.id}`).row();
   keyboard.text(t(locale, "vpreview.back-queue"), "queue_home");
   return { text: lines.join("\n"), keyboard };

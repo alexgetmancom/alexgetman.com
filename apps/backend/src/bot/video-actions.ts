@@ -9,6 +9,7 @@ import { videoPreview } from "../interfaces/telegram/video-preview.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { previousVideoMetadataStep, type VideoWizardStep } from "../studio/video-fsm.js";
+import { isStaleVideoCardCallback } from "./card-freshness.js";
 import { type BotLocale, botLocale } from "./i18n.js";
 import { applyVideoScheduleDate, startVideoConversation } from "./video-conversation.js";
 import { finishVideoNow, finishVideoSchedule } from "./video-scheduling.js";
@@ -17,6 +18,7 @@ import {
   callbackMessageId,
   clearSession,
   getSession,
+  parseVideoSessionStep,
   replyVideoPrompt,
   saveSession,
   sendVideoMetadataPrompt,
@@ -25,6 +27,7 @@ import {
   setData,
   targetKeyboard,
   updateVideoControl,
+  type VideoSession,
 } from "./video-session.js";
 
 type VideoActionArgs = { ctx: Context; backendDb: BackendDb; config: BackendConfig; actorId: number; locale: BotLocale; data: string };
@@ -101,7 +104,8 @@ export async function handleVideoActionCallback(ctx: Context, backendDb: Backend
     // An unrouted `video_` callback used to be answered with an empty toast,
     // which is indistinguishable from a button that worked: the spinner just
     // stops. Report it the way the post branch reports an unknown action.
-    if (!route) await ctx.answerCallbackQuery({ text: t(locale, "action.unknown") });
+    if (isStaleVideoCardCallback(ctx, backendDb, data)) await ctx.answerCallbackQuery({ text: t(locale, "action.card-stale") });
+    else if (!route) await ctx.answerCallbackQuery({ text: t(locale, "action.unknown") });
     else {
       const result = await route({ ctx, backendDb, config, actorId, locale, data });
       if (result?.toast) await ctx.answerCallbackQuery({ text: toast(result.toast) });
@@ -193,7 +197,7 @@ async function handleTargetsDone({ ctx, backendDb, config, actorId, locale }: Vi
   if (!session?.draftId || !session.selected.length) throw new StudioError("err.video-pick-platform");
   createStudioServices(backendDb, config).videos.replaceTargets(actorId, session.draftId, session.selected);
   if (session.selected.includes("youtube_shorts")) {
-    const next = { ...session, step: "youtube_title" };
+    const next: VideoSession = { ...session, step: "youtube_title" };
     saveSession(backendDb, actorId, next);
     await replyVideoPrompt(ctx, locale, t(locale, "video.prompt-yt-title"));
   } else await askInstagramOrSchedule(ctx, backendDb, actorId, session);
@@ -258,7 +262,12 @@ async function handleScheduleStart({ ctx, backendDb, config, actorId, locale, da
   if (!targets.length) throw new StudioError("err.video-no-platforms");
   const keyboard = new InlineKeyboard().text(t(locale, "video.same-time"), `video_common:${id}`);
   if (targets.length > 1) keyboard.row().text(t(locale, "video.different-time"), `video_individual:${id}`);
-  const session = { draftId: id, step: "schedule_choice", selected: targets, data: { controlMessageId: callbackMessageId(ctx) } };
+  const session: VideoSession = {
+    draftId: id,
+    step: "schedule_choice",
+    selected: targets,
+    data: { controlMessageId: callbackMessageId(ctx) },
+  };
   saveSession(backendDb, actorId, session);
   setControlFromSession(backendDb, id, ctx, session);
   await updateVideoControl(ctx, session, t(locale, "video.schedule-time-msk"), keyboard, locale);
@@ -272,14 +281,14 @@ async function handleScheduleMode({ ctx, backendDb, config, actorId, locale, dat
     .targets.map((row) => row.target as VideoTarget);
   if (!session || !targets.length) throw new StudioError("err.video-reopen-publish");
   if (data.startsWith("video_common:")) {
-    const next = { ...session, draftId: id, selected: targets, step: "schedule_common" };
+    const next: VideoSession = { ...session, draftId: id, selected: targets, step: "schedule_common" };
     saveSession(backendDb, actorId, next);
     await sendVideoTimePrompt(ctx, backendDb, actorId, next, t(locale, "video.enter-datetime"));
     return;
   }
   const first = targets[0];
   if (!first) throw new StudioError("err.video-no-platforms");
-  const next = {
+  const next: VideoSession = {
     ...session,
     draftId: id,
     selected: targets,
@@ -307,7 +316,7 @@ async function handleNowConfirm({ ctx, backendDb, config, actorId, data }: Video
   await withActionLock(`${actorId}:${data}`, () =>
     finishVideoNow(ctx, backendDb, config, actorId, {
       draftId: id,
-      step: "",
+      step: "schedule_confirm",
       selected: [],
       data: { controlMessageId: callbackMessageId(ctx) },
     }),
@@ -373,7 +382,7 @@ async function handleTime({ ctx, backendDb, config, actorId, locale, data }: Vid
   const target = requireVideoTarget(targetText ?? "");
   const id = requireDraftId(idText);
   createStudioServices(backendDb, config).videos.get(actorId, id);
-  const session = {
+  const session: VideoSession = {
     draftId: id,
     step: `schedule_target:${target}`,
     selected: [target],
@@ -454,9 +463,11 @@ async function handleEditField({ ctx, backendDb, config, actorId, locale, data }
   if (!prompt) throw new StudioError("err.video-reopen-edit");
   const id = requireDraftId(idText);
   const targets = createStudioServices(backendDb, config).videos.get(actorId, id).targets;
-  const session = {
+  const step = parseVideoSessionStep(field);
+  if (!step) throw new StudioError("err.video-reopen-edit");
+  const session: VideoSession = {
     draftId: id,
-    step: field,
+    step,
     selected: targets.map((target) => target.target as VideoTarget),
     data: { controlMessageId: callbackMessageId(ctx), is_single_edit: true },
   };
@@ -468,7 +479,7 @@ async function handleEditField({ ctx, backendDb, config, actorId, locale, data }
 async function handleEdit({ ctx, backendDb, config, actorId, locale, data }: VideoActionArgs): Promise<VideoActionResult> {
   const id = requireDraftId(data.slice("video_edit:".length));
   const details = createStudioServices(backendDb, config).videos.get(actorId, id);
-  const session = {
+  const session: import("./video-session.js").VideoSession = {
     draftId: id,
     step: "label",
     selected: details.targets.map((row) => row.target as VideoTarget),

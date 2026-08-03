@@ -88,6 +88,7 @@ export const videoBotSessions = sqliteTable("video_bot_sessions", {
   selectedTargetsJson: json<string[]>().notNull().default([]),
   dataJson: json<JsonObject>().notNull().default({}),
   updatedAt: text().notNull(),
+  expiresAt: text(),
 });
 
 export const videoMetricSnapshots = sqliteTable(

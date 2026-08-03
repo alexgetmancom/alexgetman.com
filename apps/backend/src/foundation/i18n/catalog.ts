@@ -123,6 +123,7 @@ const en = {
   "action.send-time": "Send time",
   "action.enter-datetime": "⌨ Send a date and time: `15.07 18:30` (MSK).",
   "action.unknown": "Unknown action",
+  "action.card-stale": "This card is outdated. Open the current card from the queue.",
   "action.scheduled-as": "Draft #{draftId} is scheduled as post #{postId}.",
   "action.preflight": "{label} with media: {actual}/{limit} characters. Shorten the text or disable {label} in Platforms.",
   "action.preflight-chain":
@@ -248,6 +249,7 @@ const en = {
   "queue.choose-draft": "Choose a draft to continue:",
   "queue.platforms-suffix": "platforms",
   "queue.attention-heading": "⚠️ Needs attention ({count})",
+  "queue.page": "Page {page} of {pages}",
   // Analytics screen
   "analytics.posts-btn": "📝 Posts · {count}",
   "analytics.videos-btn": "🎬 Videos · {count}",
@@ -387,6 +389,7 @@ const en = {
   "err.unknown-target": "Unknown publication target.",
   "err.post-no-edit": "No text or media detected for editing.",
   "err.post-not-yours": "Draft is not available to this user.",
+  "err.post-locked": "This post is already settled and can no longer be edited.",
   "err.no-valid-source-links": "Send at least one valid http(s) link.",
   "err.no-pub-time": "No publication time selected.",
   "err.unknown-scope": "Unknown schedule scope.",
@@ -419,6 +422,7 @@ const en = {
   "err.video-targets-locked": "Video platforms can be replaced only before scheduling. Remove an editable platform instead.",
   "err.video-target-missing": "Video platform was not found.",
   "err.video-target-locked": "This video platform can no longer be removed.",
+  "err.video-draft-locked": "Video details can be changed only before scheduling.",
   "err.video-target-not-schedulable": "This video platform is already settled and cannot be rescheduled.",
   "err.schedule-time-past": "Publication time must be in the future.",
   "video.check-summary": "🔎 Video check: {dims}, {dur}, {codecs}, {sound}, {fps}, {mb} MB — looks good.",
@@ -542,6 +546,7 @@ const ru = {
   "action.send-time": "Введите время",
   "action.enter-datetime": "⌨ Введите дату и время: `15.07 18:30` (МСК).",
   "action.unknown": "Неизвестное действие",
+  "action.card-stale": "Эта карточка устарела. Откройте актуальную карточку из очереди.",
   "action.scheduled-as": "Черновик #{draftId} запланирован как пост #{postId}.",
   "action.preflight": "{label} с медиа: {actual}/{limit} символов. Сократите текст или отключите {label} в Площадках.",
   "action.preflight-chain":
@@ -668,6 +673,7 @@ const ru = {
   "queue.choose-draft": "Выберите черновик, чтобы продолжить:",
   "queue.platforms-suffix": "площадок",
   "queue.attention-heading": "⚠️ Требует внимания ({count})",
+  "queue.page": "Страница {page} из {pages}",
   // Analytics screen
   "analytics.posts-btn": "📝 Посты · {count}",
   "analytics.videos-btn": "🎬 Видео · {count}",
@@ -807,6 +813,7 @@ const ru = {
   "err.unknown-target": "Неизвестная площадка публикации.",
   "err.post-no-edit": "Не обнаружено текста или медиа для редактирования.",
   "err.post-not-yours": "Черновик недоступен этому пользователю.",
+  "err.post-locked": "Этот пост уже завершён, его больше нельзя редактировать.",
   "err.no-valid-source-links": "Пришлите хотя бы одну корректную http(s) ссылку.",
   "err.no-pub-time": "Время публикации не выбрано.",
   "err.unknown-scope": "Неизвестная область планирования.",
@@ -839,6 +846,7 @@ const ru = {
   "err.video-targets-locked": "Платформы видео можно менять только до планирования. Уберите редактируемую площадку вместо этого.",
   "err.video-target-missing": "Платформа видео не найдена.",
   "err.video-target-locked": "Эту платформу видео больше нельзя убрать.",
+  "err.video-draft-locked": "Данные видео можно менять только до планирования.",
   "err.video-target-not-schedulable": "Эта платформа уже отработала — её нельзя перепланировать.",
   "err.schedule-time-past": "Время публикации должно быть в будущем.",
   "video.check-summary": "🔎 Проверка видео: {dims}, {dur}, {codecs}, {sound}, {fps}, {mb} МБ — подходит.",

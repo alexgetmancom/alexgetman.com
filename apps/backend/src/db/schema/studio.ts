@@ -67,6 +67,7 @@ export const adminState = sqliteTable("admin_state", {
   draftId: integer(),
   controlMessageId: integer(),
   updatedAt: text().notNull(),
+  expiresAt: text(),
 });
 
 export const botSettings = sqliteTable("bot_settings", {

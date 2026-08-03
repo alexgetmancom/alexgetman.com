@@ -45,6 +45,8 @@ export function createVideoDraft(
 }
 
 export function updateVideoLabel(backendDb: BackendDb, id: number, label: string): void {
+  const draft = getVideoDraft(backendDb, id);
+  if (!["draft", "editing"].includes(draft.status)) throw new StudioError("err.video-draft-locked");
   unsafeDb(backendDb)
     .db.update(videoDrafts)
     .set({ label: label.trim(), updatedAt: new Date().toISOString() })
@@ -111,6 +113,15 @@ export function removeVideoTarget(backendDb: BackendDb, videoDraftId: number, ta
 }
 
 export function saveVideoMetadata(backendDb: BackendDb, videoDraftId: number, target: VideoTarget, metadata: VideoMetadata): void {
+  const draft = getVideoDraft(backendDb, videoDraftId);
+  if (!["draft", "editing"].includes(draft.status)) throw new StudioError("err.video-draft-locked");
+  const existing = unsafeDb(backendDb)
+    .db.select({ status: videoTargets.status })
+    .from(videoTargets)
+    .where(and(eq(videoTargets.videoDraftId, videoDraftId), eq(videoTargets.target, target)))
+    .get();
+  if (!existing) throw new StudioError("err.video-target-missing");
+  if (!isVideoTargetEditable(existing.status)) throw new StudioError("err.video-target-locked");
   unsafeDb(backendDb)
     .db.update(videoTargets)
     .set({

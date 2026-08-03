@@ -109,6 +109,7 @@ function copyAcceptedEntities(db: UnsafeBackendDb["db"], draftId: number, postId
 
 function copyDraftSources(db: UnsafeBackendDb["db"], draftId: number, postId: number, now: string): void {
   const sources = db.select().from(draftSources).where(eq(draftSources.draftId, draftId)).orderBy(asc(draftSources.sortOrder)).all();
+  db.delete(postSources).where(eq(postSources.postId, postId)).run();
   for (const source of sources) {
     db.insert(postSources)
       .values({
@@ -121,7 +122,6 @@ function copyDraftSources(db: UnsafeBackendDb["db"], draftId: number, postId: nu
         createdAt: now,
         updatedAt: now,
       })
-      .onConflictDoNothing()
       .run();
   }
 }

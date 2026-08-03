@@ -9,7 +9,33 @@ import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing
 import { nextVideoFlowStep, previousVideoMetadataStep, type VideoPrompt, type VideoWizardStep } from "../studio/video-fsm.js";
 import { type BotLocale, botLocale } from "./i18n.js";
 
-export type VideoSession = { draftId: number | null; step: string; selected: VideoTarget[]; data: Record<string, unknown> };
+const VIDEO_SESSION_TTL_MS = 30 * 60_000;
+export type VideoSessionStep =
+  | "locale"
+  | "asset"
+  | "targets"
+  | "schedule_choice"
+  | "schedule_common"
+  | "schedule_confirm"
+  | "label"
+  | VideoWizardStep
+  | `schedule_target:${VideoTarget}`;
+export type VideoSession = { draftId: number | null; step: VideoSessionStep; selected: VideoTarget[]; data: Record<string, unknown> };
+
+const STATIC_VIDEO_SESSION_STEPS = new Set<VideoSessionStep>([
+  "locale",
+  "asset",
+  "targets",
+  "schedule_choice",
+  "schedule_common",
+  "schedule_confirm",
+  "label",
+  "youtube_title",
+  "youtube_description",
+  "youtube_game_url",
+  "youtube_tags",
+  "instagram_caption",
+]);
 
 export function targetKeyboard(config: BackendConfig, selected: VideoTarget[], locale: BotLocale): InlineKeyboard {
   const keyboard = new InlineKeyboard();
@@ -28,13 +54,27 @@ export function enabledVideoTargets(config: BackendConfig): VideoTarget[] {
 
 export function getSession(backendDb: BackendDb, actorId: number): VideoSession | null {
   const row = unsafeDb(backendDb).db.select().from(videoBotSessions).where(eq(videoBotSessions.actorId, actorId)).get();
-  return row
-    ? { draftId: row.videoDraftId, step: row.step, selected: row.selectedTargetsJson as VideoTarget[], data: row.dataJson ?? {} }
-    : null;
+  if (row) {
+    const expiresAt = row.expiresAt ? Date.parse(row.expiresAt) : Date.parse(row.updatedAt) + VIDEO_SESSION_TTL_MS;
+    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+      clearSession(backendDb, actorId);
+      return null;
+    }
+  }
+  if (!row) return null;
+  const step = parseVideoSessionStep(row.step);
+  const selected = parseSelectedTargets(row.selectedTargetsJson);
+  const data = row.dataJson;
+  if (!step || !selected || !data || typeof data !== "object" || Array.isArray(data)) {
+    clearSession(backendDb, actorId);
+    return null;
+  }
+  return { draftId: row.videoDraftId, step, selected, data: data as Record<string, unknown> };
 }
 
 export function saveSession(backendDb: BackendDb, actorId: number, session: VideoSession): void {
   const now = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + VIDEO_SESSION_TTL_MS).toISOString();
   unsafeDb(backendDb)
     .db.insert(videoBotSessions)
     .values({
@@ -44,6 +84,7 @@ export function saveSession(backendDb: BackendDb, actorId: number, session: Vide
       selectedTargetsJson: session.selected,
       dataJson: session.data,
       updatedAt: now,
+      expiresAt,
     })
     .onConflictDoUpdate({
       target: videoBotSessions.actorId,
@@ -53,6 +94,7 @@ export function saveSession(backendDb: BackendDb, actorId: number, session: Vide
         selectedTargetsJson: session.selected,
         dataJson: session.data,
         updatedAt: now,
+        expiresAt,
       },
     })
     .run();
@@ -64,7 +106,7 @@ export function setData(
   session: VideoSession,
   key: string,
   value: unknown,
-  nextStep: string,
+  nextStep: VideoSessionStep,
 ): VideoSession {
   const next = { ...session, step: nextStep, data: { ...session.data, [key]: value } };
   saveSession(backendDb, actorId, next);
@@ -141,14 +183,14 @@ export async function sendVideoControl(
   keyboard: InlineKeyboard,
 ): Promise<VideoSession> {
   const message = await ctx.reply(text, { parse_mode: "Markdown", reply_markup: keyboard });
-  const next = { ...session, data: { ...session.data, controlMessageId: message.message_id } };
+  const next: VideoSession = { ...session, data: { ...session.data, controlMessageId: message.message_id } };
   saveSession(backendDb, actorId, next);
   return next;
 }
 
 export async function askInstagramOrSchedule(ctx: Context, backendDb: BackendDb, actorId: number, session: VideoSession): Promise<void> {
   if (nextVideoFlowStep(session.selected) === "instagram_caption") {
-    const next = { ...session, step: "instagram_caption" };
+    const next: VideoSession = { ...session, step: "instagram_caption" };
     saveSession(backendDb, actorId, next);
     await sendVideoMetadataPrompt(ctx, backendDb, actorId, "instagram_caption", session.selected);
     return;
@@ -183,7 +225,7 @@ export async function sendVideoTimePrompt(
 }
 
 export async function askSchedule(ctx: Context, backendDb: BackendDb, actorId: number, session: VideoSession): Promise<void> {
-  const next = { ...session, step: "schedule_choice" };
+  const next: VideoSession = { ...session, step: "schedule_choice" };
   saveSession(backendDb, actorId, next);
   const locale = botLocale(backendDb, actorId);
   const keyboard = new InlineKeyboard().text(t(locale, "video.same-time"), `video_common:${session.draftId}`);
@@ -200,4 +242,17 @@ export function setControlFromSession(backendDb: BackendDb, draftId: number, ctx
 export function callbackMessageId(ctx: Context): number | null {
   const message = ctx.callbackQuery?.message;
   return message && "message_id" in message ? message.message_id : null;
+}
+
+export function parseVideoSessionStep(value: string): VideoSessionStep | null {
+  if (STATIC_VIDEO_SESSION_STEPS.has(value as VideoSessionStep)) return value as VideoSessionStep;
+  return /^schedule_target:(youtube_shorts|instagram_reels)$/.test(value) ? (value as VideoSessionStep) : null;
+}
+
+function parseSelectedTargets(value: unknown): VideoTarget[] | null {
+  if (!Array.isArray(value)) return null;
+  if (new Set(value).size !== value.length) return null;
+  return value.every((target): target is VideoTarget => typeof target === "string" && VIDEO_TARGETS.includes(target as VideoTarget))
+    ? value
+    : null;
 }

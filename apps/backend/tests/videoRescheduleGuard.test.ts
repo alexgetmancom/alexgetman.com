@@ -2,7 +2,13 @@ import { describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
 import { videoJobs, videoTargets } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
-import { createVideoDraft, replaceVideoTargets, scheduleVideo } from "../src/publishing/video-service.js";
+import {
+  createVideoDraft,
+  replaceVideoTargets,
+  saveVideoMetadata,
+  scheduleVideo,
+  updateVideoLabel,
+} from "../src/publishing/video-service.js";
 import { useBackendDb } from "./helpers/db.js";
 
 const testDb = useBackendDb();
@@ -53,5 +59,17 @@ describe("video reschedule guard", () => {
         .map((job) => job.kind)
         .sort(),
     ).toEqual(["prepare", "publish"]);
+  });
+
+  it("blocks metadata changes after a platform has been scheduled", () => {
+    const backendDb = testDb.open();
+    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
+    scheduleVideo(backendDb, draftId, { youtube_shorts: new Date(Date.now() + 3_600_000) }, timing, videoConfig(), 24);
+
+    expect(() => saveVideoMetadata(backendDb, draftId, "youtube_shorts", { title: "Changed", description: "", tags: [] })).toThrow(
+      "err.video-draft-locked",
+    );
+    expect(() => updateVideoLabel(backendDb, draftId, "Changed")).toThrow("err.video-draft-locked");
   });
 });

@@ -3,7 +3,8 @@ import type { BackendDb } from "../../db/client.js";
 import { recordDomainEvent } from "../../domain/events.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { accessibleStudioActorIds } from "../access.js";
-import { draftMedia, requireOwnedDraft } from "./post-access.js";
+import { draftMedia, requireMutableDraft } from "./post-access.js";
+import { replanScheduledPostAfterMutation } from "./post-scheduling.js";
 
 /** Media commands kept behind the public post facade. */
 export function postMediaService(backendDb: BackendDb, config: BackendConfig) {
@@ -13,7 +14,7 @@ export function postMediaService(backendDb: BackendDb, config: BackendConfig) {
     },
 
     attachMediaAssets(actorId: number, draftId: number, locale: "ru" | "en", assetIds: number[], replace = false): void {
-      const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
+      const draft = requireMutableDraft(backendDb, config, actorId, draftId);
       const assets = mediaItemsFromAssets(
         requireStudioMediaAssets(backendDb, actorId, assetIds, accessibleStudioActorIds(config, actorId)),
       );
@@ -24,6 +25,7 @@ export function postMediaService(backendDb: BackendDb, config: BackendConfig) {
         updatedAt: backendDb.clock.now().toISOString(),
       });
       backendDb.storyCards.queue(draftId);
+      replanScheduledPostAfterMutation(backendDb, config, draftId);
       recordDomainEvent(backendDb.events, {
         ref: `draft:${draftId}`,
         type: "content.draft.media_attached",
@@ -34,7 +36,7 @@ export function postMediaService(backendDb: BackendDb, config: BackendConfig) {
     },
 
     removeMedia(actorId: number, draftId: number, locale: "ru" | "en", assetIds: number[]): void {
-      const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
+      const draft = requireMutableDraft(backendDb, config, actorId, draftId);
       const current = draftMedia(draft, locale);
       const removed = new Set(assetIds);
       const media = current.filter((item) => !removed.has(Number(item.asset_id)));
@@ -43,6 +45,7 @@ export function postMediaService(backendDb: BackendDb, config: BackendConfig) {
         updatedAt: backendDb.clock.now().toISOString(),
       });
       backendDb.storyCards.queue(draftId);
+      replanScheduledPostAfterMutation(backendDb, config, draftId);
       recordDomainEvent(backendDb.events, {
         ref: `draft:${draftId}`,
         type: "content.draft.media_removed",

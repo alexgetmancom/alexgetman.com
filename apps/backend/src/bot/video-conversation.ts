@@ -97,7 +97,7 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
         await sendFreshVideoCard(ctx, backendDb, session.draftId, preview);
         return true;
       }
-      const next = { ...session, step: "targets" };
+      const next: VideoSession = { ...session, step: "targets" };
       saveSession(backendDb, actorId, next);
       await sendVideoControl(
         ctx,
@@ -286,7 +286,11 @@ export async function applyVideoScheduleDate(
     date,
   );
   if (transition.nextTarget) {
-    const next = { ...session, step: `schedule_target:${transition.nextTarget}`, data: { ...session.data, schedule: transition.schedule } };
+    const next: VideoSession = {
+      ...session,
+      step: `schedule_target:${transition.nextTarget}`,
+      data: { ...session.data, schedule: transition.schedule },
+    };
     saveSession(backendDb, actorId, next);
     await sendVideoTimePrompt(
       ctx,
@@ -319,7 +323,7 @@ async function confirmVideoSchedule(
 ): Promise<void> {
   if (!session.draftId) throw new StudioError("err.video-missing");
   const locale = botLocale(backendDb, actorId);
-  const next = {
+  const next: VideoSession = {
     ...session,
     step: "schedule_confirm",
     data: {

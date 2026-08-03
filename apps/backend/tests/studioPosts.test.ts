@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
 import type { UnsafeBackendDb } from "../src/db/client.js";
-import { publicationSources, publishJobs } from "../src/db/schema.js";
+import { drafts, postSources, publicationSources, publishJobs } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { postService } from "../src/studio/services/posts.js";
 import { openBackendDb } from "./helpers/open-db.js";
@@ -112,5 +112,32 @@ describe("Studio post commands", () => {
     const job = backendDb.db.select().from(publishJobs).where(eq(publishJobs.postId, postId)).get();
     expect(source?.itemJson).toMatchObject({ text_ru: "After" });
     expect(job?.payloadJson).toMatchObject({ text_ru: "After" });
+  });
+
+  it("replaces copied publication sources when a scheduled draft changes them", () => {
+    backendDb = openBackendDb(":memory:");
+    const posts = postService(backendDb, loadConfig({ ADMIN_IDS: "42" }));
+    const draftId = posts.create(42, { text: "Sources", textEn: "Sources", entities: [], media: [] });
+    posts.replaceSources(42, draftId, ["https://before.example"]);
+    const postId = posts.schedule(42, draftId, { ruAt: new Date(Date.now() + 60_000), enAt: null });
+
+    posts.replaceSources(42, draftId, ["https://after.example"]);
+
+    expect(backendDb.db.select({ url: postSources.url }).from(postSources).where(eq(postSources.postId, postId)).all()).toEqual([
+      { url: "https://after.example" },
+    ]);
+  });
+
+  it("blocks post mutations after the publication is settled", () => {
+    backendDb = openBackendDb(":memory:");
+    const posts = postService(backendDb, loadConfig({ ADMIN_IDS: "42" }));
+    const draftId = posts.create(42, { text: "Settled", textEn: "Settled", entities: [], media: [] });
+    backendDb.db.update(drafts).set({ status: "published" }).where(eq(drafts.id, draftId)).run();
+
+    expect(() => posts.edit(42, draftId, { locale: "ru", text: "Changed", entities: [], media: [] })).toThrow("err.post-locked");
+    expect(() => posts.toggleTarget(42, draftId, "telegram")).toThrow("err.post-locked");
+    expect(() => posts.schedule(42, draftId, { ruAt: new Date(Date.now() + 60_000), enAt: null })).toThrow("err.post-locked");
+    expect(() => posts.publish(42, draftId)).toThrow("err.post-locked");
+    expect(() => posts.cancel(42, draftId)).toThrow("err.post-locked");
   });
 });

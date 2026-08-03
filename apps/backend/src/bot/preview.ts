@@ -9,6 +9,7 @@ import type { BackendConfig } from "../foundation/config.js";
 import { type MessageKey, t } from "../foundation/i18n/index.js";
 import { formatMsk } from "../interfaces/telegram/time.js";
 import { mediaPolicyForTarget } from "../publishing/media-policy.js";
+import { isPostDraftMutable } from "../publishing/state.js";
 import { parseTargets } from "../publishing/targets.js";
 import { type BotLocale, botLocale } from "./i18n.js";
 
@@ -96,6 +97,23 @@ export function draftPreview(
     .all().length;
   const keyboard = new InlineKeyboard();
   const mode = presetName(targets);
+  const mutable = isPostDraftMutable(draft.status);
+
+  if (
+    !mutable &&
+    [
+      "platforms",
+      "schedule",
+      "schedule_ru",
+      "schedule_ru_day",
+      "schedule_ru_evening",
+      "schedule_en",
+      "schedule_en_us",
+      "confirm_publish",
+      "confirm_delete",
+    ].includes(view)
+  )
+    return draftPreview(backendDb, draftId, config, "overview");
 
   if (view === "platforms") {
     for (let index = 0; index < targetRows.length; index += 2) {
@@ -167,12 +185,16 @@ export function draftPreview(
   }
 
   const modeEmoji = mode === "manual" ? "🛞" : "⚙️";
-  keyboard.text(`${modeEmoji} ${t(locale, "post.mode")}: ${modeLabel(mode, locale)}`, `cycle_mode:${draftId}`).row();
-  keyboard.text(t(locale, "post.choose-platforms"), `platforms:${draftId}`).row();
-  keyboard.text(t(locale, "post.edit-ru"), `edit_ru:${draftId}`).text(t(locale, "post.edit-en"), `edit_en:${draftId}`).row();
-  keyboard.text(`🔗 ${locale === "ru" ? "Источники" : "Sources"}: ${sourceCount}`, `sources:${draftId}`).row();
-  keyboard.text(t(locale, "post.publish-btn"), `publish:${draftId}`).text(t(locale, "post.schedule-btn"), `schedule:${draftId}`).row();
-  keyboard.text(t(locale, "post.delete-btn"), `cancel:${draftId}`);
+  if (mutable) {
+    keyboard.text(`${modeEmoji} ${t(locale, "post.mode")}: ${modeLabel(mode, locale)}`, `cycle_mode:${draftId}`).row();
+    keyboard.text(t(locale, "post.choose-platforms"), `platforms:${draftId}`).row();
+    keyboard.text(t(locale, "post.edit-ru"), `edit_ru:${draftId}`).text(t(locale, "post.edit-en"), `edit_en:${draftId}`).row();
+    keyboard.text(`🔗 ${locale === "ru" ? "Источники" : "Sources"}: ${sourceCount}`, `sources:${draftId}`).row();
+    keyboard.text(t(locale, "post.publish-btn"), `publish:${draftId}`).text(t(locale, "post.schedule-btn"), `schedule:${draftId}`).row();
+    keyboard.text(t(locale, "post.delete-btn"), `cancel:${draftId}`);
+  } else {
+    keyboard.text(t(locale, "queue.upcoming-btn"), "queue_home").text(t(locale, "common.menu"), "menu_home");
+  }
 
   const schedule =
     draft.status === "scheduled"

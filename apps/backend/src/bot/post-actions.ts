@@ -9,6 +9,7 @@ import { sendTelegramDeliveryPreviews } from "../interfaces/telegram/delivery-pr
 import { formatMsk } from "../interfaces/telegram/time.js";
 import { runStoryCardCycle } from "../story-cards/worker.js";
 import { createStudioServices } from "../studio/services/index.js";
+import { isStalePostCardCallback } from "./card-freshness.js";
 import { botLocale } from "./i18n.js";
 import { extractMessage } from "./message.js";
 import { editDraftPreview, editDraftPrompt, sendDraftPreview, showScheduleConfirmation } from "./post-card.js";
@@ -27,6 +28,8 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
   const actorId = Number(ctx.from?.id);
   const locale = botLocale(backendDb, actorId);
   if (!Number.isSafeInteger(draftId)) return void (await ctx.answerCallbackQuery({ text: t(locale, "action.invalid-post") }));
+  if (isStalePostCardCallback(ctx, backendDb, action ?? "", draftId))
+    return void (await ctx.answerCallbackQuery({ text: t(locale, "action.card-stale") }));
   const posts = createStudioServices(backendDb, config).posts;
   posts.get(actorId, draftId);
   if (action === "toggle" && second) {

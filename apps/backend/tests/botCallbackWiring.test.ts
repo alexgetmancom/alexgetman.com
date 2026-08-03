@@ -13,6 +13,7 @@ const HANDLED_PREFIXES = new Set([
   "cancel_dialog",
   "queue_home",
   "queue_drafts",
+  "queue_page",
   "notifications_home",
   // post card and scheduling
   "preview",
