@@ -6,6 +6,7 @@ import type { BackendConfig } from "../../foundation/config.js";
 import type { StudioLocale } from "../../foundation/locale.js";
 import { type CommandCenterAttention, createOperationsService } from "../../operations/index.js";
 import { type PlatformMetric, renderCombinedSection } from "./dashboard/combined-section.js";
+import { escapeHtml } from "./dashboard/html.js";
 import { renderCredentialsSection, renderDiagnosticsSection, renderQueueSection, renderRepairSection } from "./dashboard/ops-sections.js";
 import { buildOverviewData, loadDashboardReadModel, videoOverviewForPeriod } from "./dashboard/overview-data.js";
 import { renderPeriodControls } from "./dashboard/period-controls.js";
@@ -256,12 +257,6 @@ function xActivityPipelinePost(item: XActivityDashboardItem): PipelinePost {
       },
     },
   };
-}
-
-const HTML_ENTITIES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (char) => HTML_ENTITIES[char] ?? char);
 }
 
 function filterPipeline(data: PipelineData | null, targetIds: string[]): PipelineData | null {

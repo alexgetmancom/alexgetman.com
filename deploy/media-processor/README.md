@@ -4,6 +4,29 @@ This directory is the complete, versioned source for an optional remote
 `MEDIA_PROCESSOR_PROVIDER=remote_http` executor. The backend's `local` provider
 does not contact this service and uses its own CPU ffmpeg recipe.
 
+## Self-hosting modes
+
+Choose one media execution mode per backend installation:
+
+- `local`: the backend container performs media transforms with its bundled CPU
+  ffmpeg. Use this when the application host has enough CPU and memory.
+- `remote_http`: the backend keeps the application, database, Telegram polling,
+  and publication queues, while this service performs the expensive Story and
+  short-form video encoding on another host. A reverse tunnel or private
+  network endpoint can carry the authenticated requests.
+
+The application worker and this media processor are different roles. A remote
+media processor must not be confused with the optional second backend runtime;
+starting both backend runtimes against one SQLite database and bot token is not
+the normal deployment mode.
+
+In the current alexgetman.com deployment, the backend runs on the VPS and the
+remote media processor runs on VM-106 (`agent106`) with VAAPI. The backend does
+not use its local encoder for the heavy Story and short-form video transform in
+that mode. Small auxiliary work such as upload normalization, poster extraction,
+responsive image variants, and compatibility fallbacks may still run locally.
+Other self-hosted installations may select `local` instead.
+
 ## Runtime contract
 
 The remote image requires an Intel VAAPI render node and encodes video Stories

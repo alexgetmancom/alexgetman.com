@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { autoId, type JsonObject, json, queueAttempts, timestamps } from "./_shared.js";
 import { studioMediaAssets } from "./studio.js";
@@ -101,7 +102,12 @@ export const videoMetricSnapshots = sqliteTable(
     checkpointIndex: integer(),
     sampledAt: text().notNull(),
   },
-  (table) => [index("idx_video_metric_snapshots_target_sampled").on(table.videoTargetId, table.sampledAt)],
+  (table) => [
+    index("idx_video_metric_snapshots_target_sampled").on(table.videoTargetId, table.sampledAt),
+    uniqueIndex("idx_video_metric_snapshots_checkpoint")
+      .on(table.videoTargetId, table.checkpointIndex)
+      .where(sql`${table.checkpointIndex} IS NOT NULL`),
+  ],
 );
 
 export const videoMetricSchedule = sqliteTable(

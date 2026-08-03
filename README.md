@@ -12,6 +12,15 @@ It is designed for a small editorial workflow rather than as a multi-tenant CMS 
 - Serves an Astro site with feeds, sitemap, structured metadata, search, and machine-readable endpoints.
 - Collects publication and creator metrics, exposes a private Command Center, and sends operational alerts to the owner.
 
+### Media processing modes
+
+Media processing supports two self-hosting modes:
+
+- `MEDIA_PROCESSOR_PROVIDER=local` runs the ffmpeg executor inside the backend container. This is the simple default for a host with enough CPU and memory.
+- `MEDIA_PROCESSOR_PROVIDER=remote_http` keeps the backend and durable queues on the application host, but sends heavy Story and short-form video transforms to a separately deployed media processor. This is the recommended mode for a small VPS; the remote worker can run on a stronger home server or another host.
+
+The backend queue worker and the remote media processor are separate roles. The remote processor owns the hardware-accelerated video encode; it does not run the application's Telegram polling or publication queues. See [deploy/media-processor/README.md](deploy/media-processor/README.md) for the deployment contract.
+
 ## Stack
 
 - Bun and TypeScript

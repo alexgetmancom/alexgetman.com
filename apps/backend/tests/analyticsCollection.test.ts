@@ -30,7 +30,8 @@ describe("creator analytics collection", () => {
       const originalFetch = globalThis.fetch;
       globalThis.fetch = fetchMock;
       try {
-        await runAnalyticsCycle(config, backendDb, fetchMock);
+        const collected = await runAnalyticsCycle(config, backendDb, fetchMock);
+        expect(collected).toBe(0);
       } finally {
         globalThis.fetch = originalFetch;
       }

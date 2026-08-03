@@ -12,7 +12,7 @@ export function metricCheckpointAt(publishedAt: string | null, checkpointIndex: 
 
 /** The first check happens one hour after publication. Subsequent checks use
  * the adaptive cadence below so early video performance stays live. */
-export function videoMetricCheckpointAt(publishedAt: string | null, _checkpointIndex: number, fallback = new Date()): Date {
+export function videoMetricCheckpointAt(publishedAt: string | null, fallback = new Date()): Date {
   const published = publishedAt ? new Date(publishedAt) : fallback;
   const base = Number.isNaN(published.getTime()) ? fallback : published;
   return new Date(base.getTime() + HOUR);

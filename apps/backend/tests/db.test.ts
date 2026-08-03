@@ -130,6 +130,31 @@ describe("openBackendDb", () => {
     }
   });
 
+  it("enforces one video metric snapshot per checkpoint while allowing uncheckpointed rows", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      backendDb.sqlite
+        .prepare("INSERT INTO video_drafts (actor_id, label, asset_key, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+        .run(1, "", "asset", "draft", now, now);
+      backendDb.sqlite
+        .prepare(
+          "INSERT INTO video_targets (video_draft_id, target, metadata_json, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .run(1, "youtube_shorts", "{}", "draft", now, now);
+
+      const insert = backendDb.sqlite.prepare(
+        "INSERT INTO video_metric_snapshots (video_target_id, platform, metrics_json, checkpoint_index, sampled_at) VALUES (?, ?, ?, ?, ?)",
+      );
+      insert.run(1, "youtube_shorts", "{}", 1, now);
+      expect(() => insert.run(1, "youtube_shorts", "{}", 1, now)).toThrow();
+      expect(() => insert.run(1, "youtube_shorts", "{}", null, now)).not.toThrow();
+      expect(() => insert.run(1, "youtube_shorts", "{}", null, now)).not.toThrow();
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("publishes against the production publications schema", () => {
     const dir = mkdtempSync(join(tmpdir(), "alexgetman-production-schema-"));
     const dbPath = join(dir, "pipeline.db");

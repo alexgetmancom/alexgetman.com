@@ -187,7 +187,7 @@ function ensureVideoMetricSchedule(backendDb: BackendDb): void {
       .values({
         videoTargetId: target.id,
         checkpointIndex: 0,
-        nextCheckAt: videoMetricCheckpointAt(publishedAt.toISOString(), 0, publishedAt).toISOString(),
+        nextCheckAt: videoMetricCheckpointAt(publishedAt.toISOString(), publishedAt).toISOString(),
         updatedAt: now,
       })
       .onConflictDoNothing()

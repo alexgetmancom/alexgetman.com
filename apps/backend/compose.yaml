@@ -89,67 +89,6 @@ services:
     cpus: 1.0
     pids_limit: 96
 
-  worker:
-    image: ${BACKEND_IMAGE:?set an immutable backend image digest}
-    pull_policy: always
-    container_name: alexgetman-backend-worker
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
-    env_file:
-      - path: ./secrets.env
-      - path: ./site-feed.env
-        required: false
-    group_add:
-      - "${BOT_API_GID:-101}"
-    depends_on:
-      bot-api:
-        condition: service_started
-      backend:
-        condition: service_healthy
-    environment:
-      DATA_DIR: /data
-      STUDIO_CONFIG: /app/studio.yaml
-      PIPELINE_DB: /data/pipeline.db
-      FEED_JSON: /data/feed.json
-      SITE_METRICS_JSON: /data/metrics.json
-      SITE_CONTENT_METRICS_JSON: /data/content-metrics.json
-      TRUSTED_CLIENT_IP_HEADER: x-real-ip
-      SITE_PUBLIC_DIR: /data/site
-      CHANNEL_USERNAME: alexgetmancom
-      TELEGRAM_API_BASE_URL: http://bot-api:8081
-      COMMAND_CENTER_URL: https://alexgetman.com/command-center
-      OBSERVABILITY_INTERVAL_SECONDS: "300"
-      REMOTE_MEDIA_PATH: /media/threads
-      PUBLIC_MEDIA_BASE_URL: https://alexgetman.com/media/threads
-      MEDIA_CACHE_DIR: /data/media-cache
-      VIDEO_MEDIA_DIR: /data/video-media
-      NODE_ENV: production
-      DEPLOYMENT_ENV: production
-      RUNTIME_ROLE: worker
-      ENABLE_BOT_POLLING: "true"
-      ENABLE_WORKERS: "true"
-      ENABLE_TELEGRAM_STORIES: "true"
-      METRICS_REFRESH_INTERVAL_SECONDS: "10"
-      PIPELINE_BASELINE_MESSAGE_ID: "422"
-      IDLE_POLL_INTERVAL_SECONDS: "5"
-      PORT: "8788"
-    volumes:
-      - ${STUDIO_CONFIG_FILE:-./studio.yaml}:/app/studio.yaml:ro
-      - ./data:/data
-      - ${ALEX_MEDIA_CACHE_DIR_HOST:-./media-cache}:/data/media-cache
-      - ${ALEX_VIDEO_MEDIA_DIR_HOST:-./video-media}:/data/video-media
-      - ./bot-api-data:/var/lib/telegram-bot-api:ro
-      - ${ALEX_THREADS_MEDIA_DIR_HOST:-/home/deploy/ialexey-web/media/threads}:/media/threads
-      - ${ALEX_SITE_MEDIA_DIR_HOST:-/home/deploy/ialexey-web/media}:/data/site/media
-    extra_hosts:
-      - "host.docker.internal:${DEPLOY_AGENT_HOST_GATEWAY:-host-gateway}"
-    networks:
-      - agent_default
-    mem_limit: 768m
-    cpus: 1.0
-    pids_limit: 96
-
 networks:
   agent_default:
     external: true

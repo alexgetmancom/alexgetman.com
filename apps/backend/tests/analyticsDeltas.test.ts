@@ -215,7 +215,6 @@ describe("creator analytics deltas", () => {
 
   it("baselines new channels and evaluates channel, language, group and project milestones after the cycle", async () => {
     await withDb(async (backendDb) => {
-      const config = loadConfig({});
       registerChannel(backendDb, { platform: "youtube", locale: "ru", provider: "native", label: "YouTube RU" });
       registerChannel(backendDb, {
         platform: "telegram",
