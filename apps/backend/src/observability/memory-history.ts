@@ -1,5 +1,5 @@
 import { lt } from "drizzle-orm";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { runtimeMemorySamples } from "../db/schema.js";
 import { gitRevision } from "../foundation/runtime/git.js";
 import type { MemorySnapshot } from "./memory.js";
@@ -12,8 +12,8 @@ const revision = gitRevision();
 /** Stores one small sample in the durable /data database and bounds its age. */
 export function recordMemorySample(backendDb: BackendDb, snapshot: MemorySnapshot, now = new Date()): void {
   const observedAt = now.toISOString();
-  backendDb.db
-    .insert(runtimeMemorySamples)
+  unsafeDb(backendDb)
+    .db.insert(runtimeMemorySamples)
     .values({
       observedAt,
       processStartedAt,
@@ -29,8 +29,8 @@ export function recordMemorySample(backendDb: BackendDb, snapshot: MemorySnapsho
       cgroupFileBytes: snapshot.cgroupFileBytes,
     })
     .run();
-  backendDb.db
-    .delete(runtimeMemorySamples)
+  unsafeDb(backendDb)
+    .db.delete(runtimeMemorySamples)
     .where(lt(runtimeMemorySamples.observedAt, new Date(now.getTime() - retentionDays * millisecondsPerDay).toISOString()))
     .run();
 }

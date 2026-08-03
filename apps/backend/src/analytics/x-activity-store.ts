@@ -1,4 +1,4 @@
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 
 /** Registers a Studio-originated X publication immediately. CSV imports later
  * enrich the same identity with account-wide metrics. */
@@ -6,14 +6,14 @@ export function recordPublishedXActivity(
   backendDb: BackendDb,
   input: { postKey: string; xPostId: string; url: string | null; publishedAt: string },
 ): void {
-  const post = backendDb.sqlite.prepare("SELECT text_en,text,date_utc FROM posts WHERE post_key=?").get(input.postKey) as {
+  const post = unsafeDb(backendDb).sqlite.prepare("SELECT text_en,text,date_utc FROM posts WHERE post_key=?").get(input.postKey) as {
     text_en: string | null;
     text: string | null;
     date_utc: string | null;
   } | null;
   const text = post?.text_en?.trim() || post?.text?.trim() || "";
-  backendDb.sqlite
-    .prepare(
+  unsafeDb(backendDb)
+    .sqlite.prepare(
       `INSERT INTO x_activity_items
        (x_post_id,kind,published_at,text,url,linked_post_key,first_seen_at,last_seen_at,raw_json)
        VALUES (?,'standalone',?,?,?,?,?,?,?)

@@ -1,7 +1,7 @@
 import { and, asc, eq, gte, inArray, notExists, notInArray, or, sql } from "drizzle-orm";
 import type { Bot } from "grammy";
 import { refreshPostControlCard } from "../../bot/progress.js";
-import type { BackendDb } from "../../db/client.js";
+import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { alertDedup, drafts, postEvents } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { log } from "../../foundation/logger.js";
@@ -44,12 +44,12 @@ export async function consumeTelegramEvents(backendDb: BackendDb, bot: Bot | nul
   if (!bot) return 0;
   // Filter in SQL, before LIMIT. Filtering after LIMIT starves new events once
   // the first page is occupied by historically delivered Telegram effects.
-  const delivered = backendDb.db
-    .select({ one: sql<number>`1` })
+  const delivered = unsafeDb(backendDb)
+    .db.select({ one: sql<number>`1` })
     .from(alertDedup)
     .where(eq(alertDedup.alertKey, sql<string>`'telegram:event:' || ${postEvents.id}`));
-  const events = backendDb.db
-    .select()
+  const events = unsafeDb(backendDb)
+    .db.select()
     .from(postEvents)
     .where(
       and(
@@ -101,7 +101,8 @@ async function deliverEvent(backendDb: BackendDb, bot: Bot, config: BackendConfi
     for (const actorId of config.ADMIN_IDS) await bot.api.sendMessage(actorId, event.message);
   } else if (event.eventType === "delivery.post.settled" || event.eventType.startsWith("publish.job.")) {
     const postId = numberDetail(details, "post_id") ?? postIdFromRef(event.postKey);
-    const draft = postId == null ? null : backendDb.db.select({ id: drafts.id }).from(drafts).where(eq(drafts.postId, postId)).get();
+    const draft =
+      postId == null ? null : unsafeDb(backendDb).db.select({ id: drafts.id }).from(drafts).where(eq(drafts.postId, postId)).get();
     if (draft) await refreshPostControlCard(backendDb, bot, draft.id);
   } else if (event.eventType === "video.reminder.due" && videoDraftId != null)
     await sendVideoReminder(backendDb, bot, config, videoDraftId, videoTargetId);
@@ -117,8 +118,8 @@ function postIdFromRef(value: string | null): number | null {
 
 function wasDelivered(backendDb: BackendDb, eventId: number): boolean {
   return (
-    backendDb.db
-      .select()
+    unsafeDb(backendDb)
+      .db.select()
       .from(alertDedup)
       .where(eq(alertDedup.alertKey, `telegram:event:${eventId}`))
       .get() != null
@@ -126,8 +127,8 @@ function wasDelivered(backendDb: BackendDb, eventId: number): boolean {
 }
 
 function markDelivered(backendDb: BackendDb, eventId: number): void {
-  backendDb.db
-    .insert(alertDedup)
+  unsafeDb(backendDb)
+    .db.insert(alertDedup)
     .values({ alertKey: `telegram:event:${eventId}`, lastSentAt: new Date().toISOString(), suppressedCount: 0 })
     .onConflictDoNothing()
     .run();

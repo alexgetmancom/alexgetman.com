@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import type { BackendDb } from "../../db/client.js";
+import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { interfaceBindings, type JsonValue } from "../../db/schema.js";
 
 const TELEGRAM = "telegram";
@@ -18,8 +18,8 @@ function setBinding(
   state?: Record<string, JsonValue>,
 ): void {
   const now = new Date().toISOString();
-  backendDb.db
-    .insert(interfaceBindings)
+  unsafeDb(backendDb)
+    .db.insert(interfaceBindings)
     .values({
       interfaceId: TELEGRAM,
       entityType,
@@ -38,8 +38,8 @@ function setBinding(
 }
 
 function getBinding(backendDb: BackendDb, entityType: string, entityId: number) {
-  return backendDb.db
-    .select()
+  return unsafeDb(backendDb)
+    .db.select()
     .from(interfaceBindings)
     .where(
       and(
@@ -102,8 +102,8 @@ export function setTelegramAnalyticsDashboard(
 }
 
 export function telegramAnalyticsDashboards(backendDb: BackendDb): Array<AnalyticsDashboardCard & { actorId: number }> {
-  return backendDb.db
-    .select()
+  return unsafeDb(backendDb)
+    .db.select()
     .from(interfaceBindings)
     .where(and(eq(interfaceBindings.interfaceId, TELEGRAM), eq(interfaceBindings.entityType, "analytics_dashboard")))
     .all()
@@ -116,8 +116,8 @@ export function telegramAnalyticsDashboards(backendDb: BackendDb): Array<Analyti
 }
 
 export function clearTelegramAnalyticsDashboard(backendDb: BackendDb, actorId: number): void {
-  backendDb.db
-    .delete(interfaceBindings)
+  unsafeDb(backendDb)
+    .db.delete(interfaceBindings)
     .where(
       and(
         eq(interfaceBindings.interfaceId, TELEGRAM),

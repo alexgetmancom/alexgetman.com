@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { credentialChecks } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 
@@ -31,7 +31,7 @@ function parseDetails(json: string | null | undefined): AuthCircuitDetails {
 /** Called after a publish attempt fails with errorClass "auth". */
 export function recordAuthFailure(backendDb: BackendDb, target: string): void {
   const now = new Date();
-  const row = backendDb.db.select().from(credentialChecks).where(eq(credentialChecks.target, target)).get();
+  const row = unsafeDb(backendDb).db.select().from(credentialChecks).where(eq(credentialChecks.target, target)).get();
   const details = parseDetails(row?.detailsJson);
   const streak = (details.authFailureStreak ?? 0) + 1;
   const tripped = streak >= AUTH_FAILURE_THRESHOLD;
@@ -44,14 +44,14 @@ export function recordAuthFailure(backendDb: BackendDb, target: string): void {
   // breaker is meant to stop calling.
   const nextDetails: AuthCircuitDetails = { ...details, authFailureStreak: streak, blockedUntil, lastAuthFailureAt: now.toISOString() };
   if (row) {
-    backendDb.db
-      .update(credentialChecks)
+    unsafeDb(backendDb)
+      .db.update(credentialChecks)
       .set({ detailsJson: JSON.stringify(nextDetails) })
       .where(eq(credentialChecks.target, target))
       .run();
   } else {
-    backendDb.db
-      .insert(credentialChecks)
+    unsafeDb(backendDb)
+      .db.insert(credentialChecks)
       .values({
         target,
         status: "unknown",
@@ -76,7 +76,7 @@ export function recordAuthFailure(backendDb: BackendDb, target: string): void {
 
 /** Called after a publish attempt to `target` succeeds, to clear any tripped breaker. */
 export function recordAuthSuccess(backendDb: BackendDb, target: string): void {
-  const row = backendDb.db.select().from(credentialChecks).where(eq(credentialChecks.target, target)).get();
+  const row = unsafeDb(backendDb).db.select().from(credentialChecks).where(eq(credentialChecks.target, target)).get();
   if (!row) return;
   const details = parseDetails(row.detailsJson);
   if (!details.authFailureStreak && !details.blockedUntil) return;
@@ -84,8 +84,8 @@ export function recordAuthSuccess(backendDb: BackendDb, target: string): void {
   // wiping the whole details blob, but still clear every circuit-breaker field.
   const nextDetails: AuthCircuitDetails = { ...details, authFailureStreak: 0, blockedUntil: null };
   delete nextDetails.lastAuthFailureAt;
-  backendDb.db
-    .update(credentialChecks)
+  unsafeDb(backendDb)
+    .db.update(credentialChecks)
     .set({ detailsJson: JSON.stringify(nextDetails) })
     .where(eq(credentialChecks.target, target))
     .run();
@@ -93,7 +93,7 @@ export function recordAuthSuccess(backendDb: BackendDb, target: string): void {
 
 /** Checked before a publish call is attempted for `target`. */
 export function isTargetAuthBlocked(backendDb: BackendDb, target: string): boolean {
-  const row = backendDb.db.select().from(credentialChecks).where(eq(credentialChecks.target, target)).get();
+  const row = unsafeDb(backendDb).db.select().from(credentialChecks).where(eq(credentialChecks.target, target)).get();
   if (!row) return false;
   const details = parseDetails(row.detailsJson);
   if (!details.blockedUntil) return false;
@@ -107,7 +107,7 @@ export function isTargetAuthBlocked(backendDb: BackendDb, target: string): boole
  * observability cadence, so we don't hit every provider's "whoami" endpoint
  * every cycle. */
 export function shouldPingToken(backendDb: BackendDb, target: string, intervalSeconds: number): boolean {
-  const row = backendDb.db.select().from(credentialChecks).where(eq(credentialChecks.target, target)).get();
+  const row = unsafeDb(backendDb).db.select().from(credentialChecks).where(eq(credentialChecks.target, target)).get();
   const details = parseDetails(row?.detailsJson);
   if (!details.lastPingAt) return true;
   return Date.now() - new Date(details.lastPingAt).getTime() >= intervalSeconds * 1000;
@@ -128,19 +128,19 @@ export function recordTokenPing(
   options: { backdateSeconds?: number } = {},
 ): void {
   const now = new Date().toISOString();
-  const row = backendDb.db.select().from(credentialChecks).where(eq(credentialChecks.target, target)).get();
+  const row = unsafeDb(backendDb).db.select().from(credentialChecks).where(eq(credentialChecks.target, target)).get();
   const details = parseDetails(row?.detailsJson);
   const lastPingAt = options.backdateSeconds ? new Date(Date.now() - options.backdateSeconds * 1000).toISOString() : now;
   const nextDetails: AuthCircuitDetails = { ...details, lastPingAt };
   if (row) {
-    backendDb.db
-      .update(credentialChecks)
+    unsafeDb(backendDb)
+      .db.update(credentialChecks)
       .set({ detailsJson: JSON.stringify(nextDetails), ...(tokenExpiresAt !== undefined ? { expiresAt: tokenExpiresAt } : {}) })
       .where(eq(credentialChecks.target, target))
       .run();
   } else {
-    backendDb.db
-      .insert(credentialChecks)
+    unsafeDb(backendDb)
+      .db.insert(credentialChecks)
       .values({
         target,
         status: "unknown",

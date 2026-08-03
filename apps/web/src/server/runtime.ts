@@ -1,6 +1,8 @@
 import { createBot } from "../../../backend/src/bot.js";
 import { bootstrapConfiguredChannels } from "../../../backend/src/channels/registry.js";
 import { type BackendDb, openBackendDb } from "../../../backend/src/db/client.js";
+import type { RawBackendDb } from "../../../backend/src/db/unsafe.js";
+import { unsafeDb } from "../../../backend/src/db/unsafe.js";
 import { recordDomainEvent } from "../../../backend/src/domain/events.js";
 import { type BackendConfig, loadConfig } from "../../../backend/src/foundation/config.js";
 import { configureLogging, log } from "../../../backend/src/foundation/logger.js";
@@ -70,6 +72,11 @@ function reportUnwritableDataDirectories(config: BackendConfig, backendDb: Backe
 
 export function getRuntime(): AppRuntime {
   return startRuntime();
+}
+
+/** Explicit infrastructure escape hatch for server routes that still need a raw query. */
+export function unsafeRuntimeDb(): RawBackendDb {
+  return unsafeDb(getRuntime().backendDb);
 }
 
 export async function stopRuntime(signal: string): Promise<void> {

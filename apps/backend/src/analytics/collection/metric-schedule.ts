@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { and, asc, eq, inArray, isNull, lt, lte, notInArray, or, sql } from "drizzle-orm";
 import { TARGET_GROUPS } from "../../botTargets.js";
-import type { BackendDb } from "../../db/client.js";
+import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { metricSchedule, posts, postTargets } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { metricCheckpointAt } from "./metric-checkpoints.js";
@@ -22,8 +22,8 @@ const PAID_METRIC_TARGETS = TARGET_GROUPS.x;
 
 export function ensureMetricSchedule(backendDb: BackendDb, targets: readonly string[]): void {
   if (targets.length === 0) return;
-  const rows = backendDb.db
-    .select({ postKey: posts.postKey, dateUtc: posts.dateUtc, target: postTargets.target })
+  const rows = unsafeDb(backendDb)
+    .db.select({ postKey: posts.postKey, dateUtc: posts.dateUtc, target: postTargets.target })
     .from(posts)
     .innerJoin(postTargets, eq(postTargets.postKey, posts.postKey))
     .leftJoin(metricSchedule, and(eq(metricSchedule.postKey, posts.postKey), eq(metricSchedule.target, postTargets.target)))
@@ -37,7 +37,7 @@ export function ensureMetricSchedule(backendDb: BackendDb, targets: readonly str
     )
     .all();
   const now = new Date().toISOString();
-  backendDb.db.transaction((tx) => {
+  unsafeDb(backendDb).db.transaction((tx) => {
     for (const row of rows) {
       const publishedAt = parseDate(row.dateUtc);
       tx.insert(metricSchedule)
@@ -63,8 +63,8 @@ export function claimDueMetricTasks(
   if (targets.length === 0) return [];
   const now = new Date().toISOString();
   const cutoff = new Date(Date.now() - config.METRIC_LOCK_TIMEOUT_SECONDS * 1000).toISOString();
-  const rows = backendDb.db
-    .select({
+  const rows = unsafeDb(backendDb)
+    .db.select({
       postKey: metricSchedule.postKey,
       target: metricSchedule.target,
       checkCount: metricSchedule.checkCount,
@@ -95,7 +95,7 @@ export function claimDueMetricTasks(
     .limit(config.MAX_METRIC_TASKS_PER_CYCLE)
     .all();
   const claimed: MetricTask[] = [];
-  backendDb.db.transaction((tx) => {
+  unsafeDb(backendDb).db.transaction((tx) => {
     for (const row of rows) {
       const locked = tx
         .update(metricSchedule)
@@ -131,7 +131,13 @@ export function dueMetricTasks(backendDb: BackendDb, config: BackendConfig, targ
   return claimDueMetricTasks(backendDb, config, targets);
 }
 
-export function finishMetricTask(backendDb: BackendDb, task: MetricTask, error: string | null, terminal = false, db = backendDb.db): void {
+export function finishMetricTask(
+  backendDb: BackendDb,
+  task: MetricTask,
+  error: string | null,
+  terminal = false,
+  db = unsafeDb(backendDb).db,
+): void {
   const now = new Date();
   const nextIndex = error ? task.checkCount : task.checkCount + 1;
   const nextCheckpoint = terminal ? null : error ? new Date(now.getTime() + 15 * 60_000) : metricCheckpointAt(task.dateUtc, nextIndex, now);
@@ -161,8 +167,8 @@ export function finishMetricTask(backendDb: BackendDb, task: MetricTask, error: 
 export function freezeUnsupportedMetricSchedules(backendDb: BackendDb, supported: readonly string[]): void {
   if (supported.length === 0) return;
   const now = new Date().toISOString();
-  backendDb.db
-    .update(metricSchedule)
+  unsafeDb(backendDb)
+    .db.update(metricSchedule)
     .set({ frozenAt: now, nextCheckAt: null, lastError: null, updatedAt: now })
     .where(and(isNull(metricSchedule.frozenAt), notInArray(metricSchedule.target, [...supported, ...PAID_METRIC_TARGETS])))
     .run();
@@ -171,8 +177,8 @@ export function freezeUnsupportedMetricSchedules(backendDb: BackendDb, supported
 export function freezeDisabledMetricSchedules(backendDb: BackendDb, targets: readonly string[]): void {
   if (targets.length === 0) return;
   const now = new Date().toISOString();
-  backendDb.db
-    .update(metricSchedule)
+  unsafeDb(backendDb)
+    .db.update(metricSchedule)
     .set({ frozenAt: now, nextCheckAt: null, lastError: null, updatedAt: now })
     .where(and(isNull(metricSchedule.frozenAt), inArray(metricSchedule.target, [...targets])))
     .run();

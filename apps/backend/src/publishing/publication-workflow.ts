@@ -2,7 +2,7 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { effectivePostTargets, registeredPostTargetIds } from "../channels/registry.js";
 import { enrichPublishedPostEntities } from "../content/entity-enrichment.js";
 import { requireDraft } from "../content/index.js";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../db/client.js";
 import { draftEntityCandidates, draftSources, knowledgeEntities, postEntityLinks, postSources, publications } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import { trackUsageSync } from "../observability/usage.js";
@@ -34,7 +34,7 @@ function publishDraftToQueueInternal(backendDb: BackendDb, draftId: number, opti
   // One transaction for the whole hand-off: a failure midway used to leave a
   // publications row with no plan behind it, which no worker picks up and no
   // retry path repairs. Every step below is synchronous, so this is free.
-  const { postId, plan } = backendDb.db.transaction((tx) => {
+  const { postId, plan } = unsafeDb(backendDb).db.transaction((tx) => {
     const publicationId = ensurePublication(tx, draftId, now);
     copyDraftSources(tx, draftId, publicationId, now);
     copyAcceptedEntities(tx, draftId, publicationId, now);
@@ -72,7 +72,7 @@ function publishDraftToQueueInternal(backendDb: BackendDb, draftId: number, opti
   return postId;
 }
 
-function copyAcceptedEntities(db: BackendDb["db"], draftId: number, postId: number, now: string): void {
+function copyAcceptedEntities(db: UnsafeBackendDb["db"], draftId: number, postId: number, now: string): void {
   const candidates = db
     .select()
     .from(draftEntityCandidates)
@@ -107,7 +107,7 @@ function copyAcceptedEntities(db: BackendDb["db"], draftId: number, postId: numb
       .run();
 }
 
-function copyDraftSources(db: BackendDb["db"], draftId: number, postId: number, now: string): void {
+function copyDraftSources(db: UnsafeBackendDb["db"], draftId: number, postId: number, now: string): void {
   const sources = db.select().from(draftSources).where(eq(draftSources.draftId, draftId)).orderBy(asc(draftSources.sortOrder)).all();
   for (const source of sources) {
     db.insert(postSources)
@@ -126,7 +126,7 @@ function copyDraftSources(db: BackendDb["db"], draftId: number, postId: number, 
   }
 }
 
-function ensurePublication(db: BackendDb["db"], draftId: number, now: string): number {
+function ensurePublication(db: UnsafeBackendDb["db"], draftId: number, now: string): number {
   const existing = db.select({ postId: publications.postId }).from(publications).where(eq(publications.draftId, draftId)).get();
   if (existing?.postId != null) return existing.postId;
   const inserted = db

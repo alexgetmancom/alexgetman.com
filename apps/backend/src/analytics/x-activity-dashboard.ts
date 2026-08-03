@@ -1,4 +1,4 @@
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { zonedRollingPeriodBounds } from "../foundation/time.js";
 
 export type XActivityDashboardItem = {
@@ -21,8 +21,8 @@ export function xActivityDashboard(
   timeZone: string,
 ): XActivityDashboardItem[] {
   const [start, end] = zonedRollingPeriodBounds(weekOffset, periodDays, timeZone);
-  const rows = backendDb.sqlite
-    .prepare(
+  const rows = unsafeDb(backendDb)
+    .sqlite.prepare(
       `SELECT x_post_id AS xPostId,kind,published_at AS publishedAt,text,url,linked_post_key AS linkedPostKey
        FROM x_activity_items
        WHERE published_at BETWEEN ? AND ?
@@ -32,8 +32,8 @@ export function xActivityDashboard(
   if (!rows.length) return [];
   const ids = rows.map((row) => row.xPostId);
   const placeholders = ids.map(() => "?").join(",");
-  const metrics = backendDb.sqlite
-    .prepare(
+  const metrics = unsafeDb(backendDb)
+    .sqlite.prepare(
       `SELECT snapshot.x_post_id AS xPostId,snapshot.metric_name AS metricName,snapshot.value
        FROM x_activity_metric_snapshots AS snapshot
        INNER JOIN (

@@ -1,7 +1,7 @@
 import { audienceGrowthByPlatform } from "../../../analytics/metric-deltas.js";
 import { metricNumber } from "../../../analytics/snapshots/creator-store.js";
 import { videoDestinations } from "../../../channels/destinations.js";
-import type { BackendDb } from "../../../db/client.js";
+import { type BackendDb, unsafeDb } from "../../../db/client.js";
 import { creatorProfiles } from "../../../db/schema.js";
 import { zonedDateParts, zonedSlot } from "../../../foundation/time.js";
 import {
@@ -314,8 +314,8 @@ function videoAnalyticsBundle(backendDb: BackendDb, start: Date, end: Date, cach
 }
 
 function publishedTargets(backendDb: BackendDb, startIso: string, endIso: string): TargetRow[] {
-  return backendDb.sqlite
-    .prepare(
+  return unsafeDb(backendDb)
+    .sqlite.prepare(
       `SELECT t.id AS id, t.target AS target, COALESCE(d.label, '') AS label, d.locale AS locale, t.published_at AS publishedAt,
               t.provider_account_id AS providerAccountId, t.external_url AS externalUrl, t.metadata_json AS metadataJson
          FROM video_targets t
@@ -330,8 +330,8 @@ function fillMissingVideoUrls(backendDb: BackendDb, rows: TargetRow[]): void {
   const missingIds = rows.filter((row) => !row.externalUrl).map((row) => row.id);
   if (!missingIds.length) return;
   const placeholders = missingIds.map(() => "?").join(",");
-  const snapshots = backendDb.sqlite
-    .prepare(
+  const snapshots = unsafeDb(backendDb)
+    .sqlite.prepare(
       `WITH candidates AS (
          SELECT video_target_id AS videoTargetId,
                 json_extract(metrics_json, '$.url') AS url,
@@ -373,8 +373,8 @@ function videoSnapshots(
   if (!rows.length) return snapshots;
   const placeholders = rows.map(() => "?").join(",");
   const bucketFactor = 86_400 / bucketSeconds;
-  const samples = backendDb.sqlite
-    .prepare(
+  const samples = unsafeDb(backendDb)
+    .sqlite.prepare(
       `WITH bucketed AS (
            SELECT id, video_target_id AS targetId,
                   ROW_NUMBER() OVER (
@@ -470,8 +470,8 @@ function videoSnapshots(
 }
 
 function publishedDestinationKeys(backendDb: BackendDb, catalogue: readonly VideoDestination[]): Set<string> {
-  const rows = backendDb.sqlite
-    .prepare(
+  const rows = unsafeDb(backendDb)
+    .sqlite.prepare(
       `SELECT t.target AS target, d.locale AS locale
          FROM video_targets t
          JOIN video_drafts d ON d.id = t.video_draft_id
@@ -543,8 +543,8 @@ function audienceGrowthByDay(backendDb: BackendDb, days: PeriodDay[], profileKey
 
   const platformNames = [...profileKeys];
   const placeholders = platformNames.map(() => "?").join(",");
-  const rows = backendDb.sqlite
-    .prepare(
+  const rows = unsafeDb(backendDb)
+    .sqlite.prepare(
       `SELECT platform, account, sampled_at AS sampledAt,
               CAST(COALESCE(json_extract(metrics_json, '$.subscriberCount'), json_extract(metrics_json, '$.followersCount'), 0) AS INTEGER) AS value
          FROM creator_profile_snapshots
@@ -675,8 +675,8 @@ function emptyDailyVideoMetrics(): DailyVideoMetrics {
 }
 
 function followerCounts(backendDb: BackendDb): Map<string, number> {
-  const rows = backendDb.sqlite
-    .prepare(
+  const rows = unsafeDb(backendDb)
+    .sqlite.prepare(
       `SELECT platform,
               CAST(COALESCE(json_extract(metrics_json, '$.subscriberCount'), json_extract(metrics_json, '$.followersCount'), 0) AS INTEGER) AS value
          FROM creator_profile_snapshots
@@ -817,7 +817,7 @@ function profileSummaryMetrics(backendDb: BackendDb, rows: TargetRow[], days: nu
   let hasSubscribers = false;
   let views = 0;
   const accountProfileKeys = new Set<string>();
-  for (const profile of backendDb.db.select().from(creatorProfiles).all()) {
+  for (const profile of unsafeDb(backendDb).db.select().from(creatorProfiles).all()) {
     if (!accountKeys.has(profile.platform)) continue;
     const data = profile.dataJson as Record<string, unknown>;
     const periodViews = optionalMetric(data[`views${suffix}`] ?? data.views ?? data.viewCount) ?? 0;

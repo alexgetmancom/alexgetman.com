@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { and, asc, eq, isNull, lt, lte, or } from "drizzle-orm";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { draftStoryCards } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { recordWorkerState } from "../foundation/runtime/worker-state.js";
@@ -25,8 +25,8 @@ export async function runStoryCardCycle(config: BackendConfig, backendDb: Backen
     const output = outputPath(config, card);
     await trackUsageAsync(backendDb, "content.story_card.render", () => renderStoryCard(config, card, output));
     const now = new Date().toISOString();
-    backendDb.db
-      .update(draftStoryCards)
+    unsafeDb(backendDb)
+      .db.update(draftStoryCards)
       .set({
         status: "ready",
         localPath: output,
@@ -50,8 +50,8 @@ export async function runStoryCardCycle(config: BackendConfig, backendDb: Backen
     const attempt = card.attemptCount + 1;
     const retry = attempt < config.STORY_CARD_MAX_ATTEMPTS;
     const now = new Date().toISOString();
-    backendDb.db
-      .update(draftStoryCards)
+    unsafeDb(backendDb)
+      .db.update(draftStoryCards)
       .set({
         status: retry ? "queued" : "failed",
         attemptCount: attempt,
@@ -79,8 +79,8 @@ export function recoverStoryCardJobs(backendDb: BackendDb, staleAfterMs = 60_000
   const cutoff = new Date(Date.now() - staleAfterMs).toISOString();
   const now = new Date().toISOString();
   return (
-    backendDb.db
-      .update(draftStoryCards)
+    unsafeDb(backendDb)
+      .db.update(draftStoryCards)
       .set({ status: "queued", lockedBy: null, lockedAt: null, nextAttemptAt: now, updatedAt: now })
       // A row left "rendering" with no lock timestamp cannot age out of a `<
       // cutoff` comparison, so it would stay claimed forever. It is already
@@ -98,24 +98,24 @@ function claimStoryCard(backendDb: BackendDb, preferDraftId?: number): ClaimedCa
   const preferred =
     preferDraftId === undefined
       ? undefined
-      : backendDb.db
-          .select()
+      : unsafeDb(backendDb)
+          .db.select()
           .from(draftStoryCards)
           .where(and(due, eq(draftStoryCards.draftId, preferDraftId)))
           .orderBy(...order)
           .get();
   const candidate =
     preferred ??
-    backendDb.db
-      .select()
+    unsafeDb(backendDb)
+      .db.select()
       .from(draftStoryCards)
       .where(due)
       .orderBy(...order)
       .get();
   if (!candidate) return null;
   const lockId = `story-card:${process.pid}:${crypto.randomUUID()}`;
-  const claimed = backendDb.db
-    .update(draftStoryCards)
+  const claimed = unsafeDb(backendDb)
+    .db.update(draftStoryCards)
     .set({ status: "rendering", lockedBy: lockId, lockedAt: now, updatedAt: now })
     .where(
       and(

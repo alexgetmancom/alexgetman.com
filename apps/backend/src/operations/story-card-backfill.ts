@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { firstNonEmptyLine } from "../content/message.js";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { drafts, postLocales, publicationSources, publications, siteJobs, siteSourceItems } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { jsonObject } from "../json.js";
@@ -21,19 +21,19 @@ export async function backfillTextStoryCards(
 ): Promise<Record<string, unknown>> {
   const ref = resolvePublicationRef(backendDb, input);
   if (!ref?.postId) throw new Error(`publication not found: ${input}`);
-  const publication = backendDb.db
-    .select({ draftId: publications.draftId })
+  const publication = unsafeDb(backendDb)
+    .db.select({ draftId: publications.draftId })
     .from(publications)
     .where(eq(publications.postId, ref.postId))
     .get();
   if (!publication?.draftId) throw new Error(`published draft not found: ${input}`);
-  const draft = backendDb.db.select().from(drafts).where(eq(drafts.id, publication.draftId)).get();
+  const draft = unsafeDb(backendDb).db.select().from(drafts).where(eq(drafts.id, publication.draftId)).get();
   if (!draft) throw new Error(`draft ${publication.draftId} not found`);
   if (mediaCount(draft.mediaRuJson) > 0 || mediaCount(draft.mediaEnJson) > 0)
     throw new Error(`draft ${publication.draftId} already has original media`);
 
-  const locales = backendDb.db
-    .select({
+  const locales = unsafeDb(backendDb)
+    .db.select({
       locale: postLocales.locale,
       slug: postLocales.slug,
       text: postLocales.text,
@@ -68,7 +68,7 @@ export async function backfillTextStoryCards(
   queueDraftStoryCards(backendDb, publication.draftId);
   const cards = await waitForCards(backendDb, config, publication.draftId);
   const now = new Date().toISOString();
-  backendDb.db.transaction((tx) => {
+  unsafeDb(backendDb).db.transaction((tx) => {
     for (const item of plan) {
       const media = [cards[item.locale]];
       tx.update(postLocales)

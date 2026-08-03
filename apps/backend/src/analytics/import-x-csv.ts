@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 
 type CsvRow = Record<string, string>;
 type ParsedCsv = { headers: string[]; rows: CsvRow[] };
@@ -48,7 +48,7 @@ export function importXAnalyticsCsv(backendDb: BackendDb, sourcePath: string, sa
   if (!metrics.length) throw new Error("Expected an X Analytics CSV with at least one known metric column");
   const sourceBytes = fs.readFileSync(sourcePath);
   const checksum = crypto.createHash("sha256").update(sourceBytes).digest("hex");
-  const existingImport = backendDb.sqlite.prepare("SELECT id FROM x_activity_imports WHERE checksum=?").get(checksum) as {
+  const existingImport = unsafeDb(backendDb).sqlite.prepare("SELECT id FROM x_activity_imports WHERE checksum=?").get(checksum) as {
     id: number;
   } | null;
   if (existingImport)
@@ -66,16 +66,18 @@ export function importXAnalyticsCsv(backendDb: BackendDb, sourcePath: string, sa
     };
   const [periodStart, periodEnd] = exportPeriod(sourcePath);
   const importedAt = new Date().toISOString();
-  backendDb.sqlite
-    .prepare(
+  unsafeDb(backendDb)
+    .sqlite.prepare(
       `INSERT OR IGNORE INTO x_activity_imports
        (checksum,source_file,period_start,period_end,sampled_at,imported_at,row_count)
        VALUES (?,?,?,?,?,?,?)`,
     )
     .run(checksum, path.basename(sourcePath), periodStart, periodEnd, sampledAt, importedAt, rows.length);
-  const importRow = backendDb.sqlite.prepare("SELECT id FROM x_activity_imports WHERE checksum=?").get(checksum) as { id: number };
-  const targets = backendDb.sqlite
-    .prepare("SELECT post_key, external_id, external_ids_json FROM post_targets WHERE target='x'")
+  const importRow = unsafeDb(backendDb).sqlite.prepare("SELECT id FROM x_activity_imports WHERE checksum=?").get(checksum) as {
+    id: number;
+  };
+  const targets = unsafeDb(backendDb)
+    .sqlite.prepare("SELECT post_key, external_id, external_ids_json FROM post_targets WHERE target='x'")
     .all() as Array<{ post_key: string; external_id: string | null; external_ids_json: string | null }>;
   const postByExternalId = new Map<string, string>();
   const targetIdsByPost = new Map<string, Set<string>>();
@@ -84,17 +86,19 @@ export function importXAnalyticsCsv(backendDb: BackendDb, sourcePath: string, sa
     targetIdsByPost.set(target.post_key, ids);
     for (const id of ids) postByExternalId.set(id, target.post_key);
   }
-  const postText = backendDb.sqlite.prepare("SELECT post_key, text_en FROM posts WHERE trim(COALESCE(text_en, '')) <> ''").all() as Array<{
+  const postText = unsafeDb(backendDb)
+    .sqlite.prepare("SELECT post_key, text_en FROM posts WHERE trim(COALESCE(text_en, '')) <> ''")
+    .all() as Array<{
     post_key: string;
     text_en: string;
   }>;
-  const imported = backendDb.sqlite.prepare(
+  const imported = unsafeDb(backendDb).sqlite.prepare(
     "SELECT 1 FROM metric_samples WHERE post_key=? AND target='x' AND metric_name=? AND sampled_at=? AND source='x_csv_export' LIMIT 1",
   );
-  const insert = backendDb.sqlite.prepare(
+  const insert = unsafeDb(backendDb).sqlite.prepare(
     "INSERT INTO metric_samples (post_key, target, metric_name, value, sampled_at, source) VALUES (?, 'x', ?, ?, ?, 'x_csv_export')",
   );
-  const updateCurrent = backendDb.sqlite.prepare(
+  const updateCurrent = unsafeDb(backendDb).sqlite.prepare(
     `INSERT INTO post_metrics (post_key, target, metric_name, value, unit, source, sampled_at, error, raw_json)
      VALUES (?, 'x', ?, ?, 'count', 'x_csv_export', ?, NULL, ?)
      ON CONFLICT(post_key, target, metric_name) DO UPDATE SET
@@ -105,14 +109,14 @@ export function importXAnalyticsCsv(backendDb: BackendDb, sourcePath: string, sa
        error=NULL,
        raw_json=excluded.raw_json`,
   );
-  const linkTarget = backendDb.sqlite.prepare(
+  const linkTarget = unsafeDb(backendDb).sqlite.prepare(
     `INSERT INTO post_targets (post_key, target, status, external_id, external_ids_json, url, error, skipped, updated_at, raw_json)
      VALUES (?, 'x', 'published', ?, ?, ?, NULL, 0, ?, ?)
      ON CONFLICT(post_key, target) DO UPDATE SET
        status='published', external_id=excluded.external_id, external_ids_json=excluded.external_ids_json,
        url=excluded.url, error=NULL, skipped=0, updated_at=excluded.updated_at, raw_json=excluded.raw_json`,
   );
-  const upsertActivity = backendDb.sqlite.prepare(
+  const upsertActivity = unsafeDb(backendDb).sqlite.prepare(
     `INSERT INTO x_activity_items
      (x_post_id,kind,published_at,text,url,linked_post_key,first_seen_at,last_seen_at,raw_json)
      VALUES (?,?,?,?,?,?,?,?,?)
@@ -125,7 +129,7 @@ export function importXAnalyticsCsv(backendDb: BackendDb, sourcePath: string, sa
        last_seen_at=excluded.last_seen_at,
        raw_json=excluded.raw_json`,
   );
-  const insertActivitySample = backendDb.sqlite.prepare(
+  const insertActivitySample = unsafeDb(backendDb).sqlite.prepare(
     `INSERT OR IGNORE INTO x_activity_metric_snapshots
      (x_post_id,metric_name,value,sampled_at,import_id,raw_json)
      VALUES (?,?,?,?,?,?)`,
@@ -142,7 +146,7 @@ export function importXAnalyticsCsv(backendDb: BackendDb, sourcePath: string, sa
     importId: importRow.id,
     duplicateImport: false,
   };
-  backendDb.sqlite.transaction(() => {
+  unsafeDb(backendDb).sqlite.transaction(() => {
     for (const row of rows) {
       const externalId = row["Идентификатор поста"]?.trim();
       if (!externalId) continue;

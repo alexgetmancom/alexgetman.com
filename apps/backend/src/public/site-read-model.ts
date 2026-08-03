@@ -10,7 +10,7 @@ import {
   siteMediaPosterFilename,
   siteMediaVerticalFilename,
 } from "../content/site-media-naming.js";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { knowledgeEntities, postEntityLinks, postLocales, postMetrics, postSources, posts, publications } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 
@@ -127,8 +127,8 @@ export function invalidatePublicSiteFeed(backendDb: BackendDb): void {
 function buildPublicSiteFeed(backendDb: BackendDb, sitePublicDir: string, postId?: number): FeedItem[] {
   const ruLocale = alias(postLocales, "site_locale_ru");
   const enLocale = alias(postLocales, "site_locale_en");
-  const rows = backendDb.db
-    .select({
+  const rows = unsafeDb(backendDb)
+    .db.select({
       postId: publications.postId,
       messageId: posts.messageId,
       postKey: posts.postKey,
@@ -168,8 +168,8 @@ function buildPublicSiteFeed(backendDb: BackendDb, sitePublicDir: string, postId
   const sourcesByPost = new Map<number, FeedSource[]>();
   const entitiesByPost = new Map<number, FeedEntity[]>();
   if (postIds.length > 0) {
-    const sourceRows = backendDb.db
-      .select({
+    const sourceRows = unsafeDb(backendDb)
+      .db.select({
         postId: postSources.postId,
         url: postSources.url,
         labelRu: postSources.labelRu,
@@ -192,8 +192,8 @@ function buildPublicSiteFeed(backendDb: BackendDb, sitePublicDir: string, postId
       });
       sourcesByPost.set(source.postId, list);
     }
-    const entityRows = backendDb.db
-      .select({
+    const entityRows = unsafeDb(backendDb)
+      .db.select({
         postId: postEntityLinks.postId,
         kind: knowledgeEntities.kind,
         slug: knowledgeEntities.slug,

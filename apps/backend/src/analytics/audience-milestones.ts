@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { type ChannelConnection, listChannels } from "../channels/registry.js";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { alertDedup, analyticsRollups, creatorProfiles } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import { type AudienceGroup, audienceGroup } from "./audience-groups.js";
@@ -70,8 +70,8 @@ export function evaluateAudienceMilestones(backendDb: BackendDb): number {
 
 function audienceEntries(backendDb: BackendDb): AudienceEntry[] {
   const profiles = new Map(
-    backendDb.db
-      .select()
+    unsafeDb(backendDb)
+      .db.select()
       .from(creatorProfiles)
       .all()
       .map((profile) => [profile.platform, profile]),
@@ -115,9 +115,9 @@ function evaluateScope(backendDb: BackendDb, scope: MilestoneScope): number {
 
 function recordMilestone(backendDb: BackendDb, scope: MilestoneScope, threshold: number): boolean {
   const key = dedupKey(scope.id, threshold);
-  if (backendDb.db.select().from(alertDedup).where(eq(alertDedup.alertKey, key)).get()) return false;
+  if (unsafeDb(backendDb).db.select().from(alertDedup).where(eq(alertDedup.alertKey, key)).get()) return false;
   const now = new Date().toISOString();
-  backendDb.db.insert(alertDedup).values({ alertKey: key, lastSentAt: now, suppressedCount: 0 }).run();
+  unsafeDb(backendDb).db.insert(alertDedup).values({ alertKey: key, lastSentAt: now, suppressedCount: 0 }).run();
   return recordDomainEvent(backendDb.events, {
     type: "analytics.milestone.reached",
     severity: "info",
@@ -131,8 +131,8 @@ function markReachedThrough(backendDb: BackendDb, scope: string, value: number):
   const now = new Date().toISOString();
   for (const threshold of FOLLOWER_MILESTONES) {
     if (threshold > value) break;
-    backendDb.db
-      .insert(alertDedup)
+    unsafeDb(backendDb)
+      .db.insert(alertDedup)
       .values({ alertKey: dedupKey(scope, threshold), lastSentAt: now, suppressedCount: 0 })
       .onConflictDoNothing()
       .run();
@@ -140,8 +140,8 @@ function markReachedThrough(backendDb: BackendDb, scope: string, value: number):
 }
 
 function readState(backendDb: BackendDb, scope: string): number | null {
-  const row = backendDb.db
-    .select({ metricJson: analyticsRollups.metricJson })
+  const row = unsafeDb(backendDb)
+    .db.select({ metricJson: analyticsRollups.metricJson })
     .from(analyticsRollups)
     .where(eq(analyticsRollups.rollupKey, `${ROLLUP_PREFIX}${scope}`))
     .get();
@@ -155,8 +155,8 @@ function readState(backendDb: BackendDb, scope: string): number | null {
 
 function writeState(backendDb: BackendDb, scope: string, followers: number): void {
   const now = new Date().toISOString();
-  backendDb.db
-    .insert(analyticsRollups)
+  unsafeDb(backendDb)
+    .db.insert(analyticsRollups)
     .values({
       rollupKey: `${ROLLUP_PREFIX}${scope}`,
       scope: "audience_milestone",

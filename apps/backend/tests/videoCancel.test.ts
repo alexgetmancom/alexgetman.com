@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, mock } from "bun:test";
 import { and, eq } from "drizzle-orm";
-import type { BackendDb } from "../src/db/client.js";
+import type { UnsafeBackendDb } from "../src/db/client.js";
 import { postEvents, studioNotificationJobs, videoTargets } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { createVideoDraft, replaceVideoTargets } from "../src/publishing/video-service.js";
@@ -46,7 +46,7 @@ afterAll(() => {
   intercepting = false;
 });
 
-function setup(backendDb: BackendDb): number {
+function setup(backendDb: UnsafeBackendDb): number {
   held.length = 0;
   failFor = new Set();
   const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
@@ -56,7 +56,7 @@ function setup(backendDb: BackendDb): number {
 
 /** A YouTube upload that already exists on the platform but is still scheduled
  * for a future time — the only shape cancelVideo asks to be held private. */
-function scheduledYouTube(backendDb: BackendDb, draftId: number, externalId: string): void {
+function scheduledYouTube(backendDb: UnsafeBackendDb, draftId: number, externalId: string): void {
   const now = new Date().toISOString();
   backendDb.db
     .update(videoTargets)
@@ -65,7 +65,7 @@ function scheduledYouTube(backendDb: BackendDb, draftId: number, externalId: str
     .run();
 }
 
-function publishedInstagram(backendDb: BackendDb, draftId: number): void {
+function publishedInstagram(backendDb: UnsafeBackendDb, draftId: number): void {
   const now = new Date().toISOString();
   backendDb.db
     .update(videoTargets)
@@ -79,7 +79,7 @@ function eventDetails(event: { detailsJson?: string | null } | undefined): Recor
   return JSON.parse(event?.detailsJson ?? "{}") as Record<string, unknown>;
 }
 
-function cancellationEvents(backendDb: BackendDb, draftId: number) {
+function cancellationEvents(backendDb: UnsafeBackendDb, draftId: number) {
   return backendDb.db
     .select()
     .from(postEvents)

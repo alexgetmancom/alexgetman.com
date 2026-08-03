@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { eq } from "drizzle-orm";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { type JsonValue, workerState } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -19,7 +19,7 @@ type RuntimeState = {
 
 function readRuntimeState(backendDb: BackendDb): RuntimeState {
   const empty: RuntimeState = { bootId: null, bootedAt: null, restartsAt: [] };
-  const row = backendDb.db.select().from(workerState).where(eq(workerState.name, RUNTIME_STATE_KEY)).get();
+  const row = unsafeDb(backendDb).db.select().from(workerState).where(eq(workerState.name, RUNTIME_STATE_KEY)).get();
   const state = row?.stateJson;
   if (!state || typeof state !== "object" || Array.isArray(state)) return empty;
   return {
@@ -32,8 +32,8 @@ function readRuntimeState(backendDb: BackendDb): RuntimeState {
 function writeRuntimeState(backendDb: BackendDb, state: { bootId: string; bootedAt: string; restartsAt: string[] }): void {
   const now = new Date().toISOString();
   const payload = { bootId: state.bootId, bootedAt: state.bootedAt, restartsAt: state.restartsAt } satisfies Record<string, JsonValue>;
-  backendDb.db
-    .insert(workerState)
+  unsafeDb(backendDb)
+    .db.insert(workerState)
     .values({ name: RUNTIME_STATE_KEY, stateJson: payload, updatedAt: now })
     .onConflictDoUpdate({ target: workerState.name, set: { stateJson: payload, updatedAt: now } })
     .run();

@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import type { BackendDb } from "../../db/client.js";
+import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../../db/client.js";
 import { drafts, postLocales, posts, publicationSources, siteJobs, siteSourceItems } from "../../db/schema.js";
 import { jsonObject } from "../../json.js";
 import type { PublicationRef } from "../publication-ref.js";
@@ -9,7 +9,7 @@ export function editLocaleContent(backendDb: BackendDb, ref: PublicationRef, loc
   const value = text.trim();
   if (!value) throw new Error(`text_${locale} is required`);
   const now = new Date().toISOString();
-  backendDb.db.transaction((tx) => {
+  unsafeDb(backendDb).db.transaction((tx) => {
     if (ref.postId != null) {
       tx.update(drafts)
         .set(locale === "en" ? { textEnApproved: value, updatedAt: now } : { textRu: value, updatedAt: now })
@@ -44,7 +44,7 @@ export function replaceLocaleMedia(
   media: Record<string, unknown>[] | null,
 ): Record<string, unknown> {
   const now = new Date().toISOString();
-  backendDb.db.transaction((tx) => {
+  unsafeDb(backendDb).db.transaction((tx) => {
     if (ref.postId != null) {
       tx.update(drafts)
         .set(
@@ -73,7 +73,7 @@ export function replaceLocaleMedia(
 /** Rebuilds one locale's public projection without touching social targets. */
 export function refreshLocaleSite(backendDb: BackendDb, ref: PublicationRef, locale: "ru" | "en"): Record<string, unknown> {
   const now = new Date().toISOString();
-  backendDb.db.transaction((tx) => enqueueRepairSiteJob(tx, ref, `refresh_${locale}_site`, now));
+  unsafeDb(backendDb).db.transaction((tx) => enqueueRepairSiteJob(tx, ref, `refresh_${locale}_site`, now));
   return { ok: true, post_id: ref.postId, post_key: ref.postKey, locale, site_refresh: true };
 }
 
@@ -86,7 +86,7 @@ export function parseEnglishMedia(raw: string | undefined): Record<string, unkno
   return items as Record<string, unknown>[];
 }
 
-function updateSource(db: BackendDb["db"], ref: PublicationRef, patch: Record<string, unknown>, now: string): void {
+function updateSource(db: UnsafeBackendDb["db"], ref: PublicationRef, patch: Record<string, unknown>, now: string): void {
   const row =
     ref.postId == null
       ? null
@@ -112,7 +112,7 @@ function updateSource(db: BackendDb["db"], ref: PublicationRef, patch: Record<st
     .run();
 }
 
-function enqueueRepairSiteJob(db: BackendDb["db"], ref: PublicationRef, reason: string, now: string): void {
+function enqueueRepairSiteJob(db: UnsafeBackendDb["db"], ref: PublicationRef, reason: string, now: string): void {
   db.insert(siteJobs)
     .values({ postId: ref.postId, messageId: ref.messageId, reason, status: "queued", nextAttemptAt: now, createdAt: now, updatedAt: now })
     .run();

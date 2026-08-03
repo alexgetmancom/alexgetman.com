@@ -1,5 +1,5 @@
 import { eq, or } from "drizzle-orm";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { posts, publicationSources, publications, siteSourceItems } from "../db/schema.js";
 import { jsonObject } from "../json.js";
 
@@ -11,15 +11,19 @@ export function resolvePublicationRef(backendDb: BackendDb, ref: string): Public
   const postKeyRef = trimmed.startsWith("post:") ? trimmed : null;
   const numeric = trimmed.match(/^post:(\d+)$/)?.[1] ?? (/^\d+$/.test(trimmed) ? trimmed : null);
   if (postKeyRef) {
-    const post = backendDb.db.select().from(posts).where(eq(posts.postKey, postKeyRef)).get();
+    const post = unsafeDb(backendDb).db.select().from(posts).where(eq(posts.postKey, postKeyRef)).get();
     if (post) return { input: ref, postId: post.postId, postKey: post.postKey, messageId: post.messageId };
   }
   if (!numeric) return null;
   const id = Number(numeric);
-  const publication = backendDb.db.select({ postId: publications.postId }).from(publications).where(eq(publications.postId, id)).get();
+  const publication = unsafeDb(backendDb)
+    .db.select({ postId: publications.postId })
+    .from(publications)
+    .where(eq(publications.postId, id))
+    .get();
   if (publication) {
-    const post = backendDb.db
-      .select()
+    const post = unsafeDb(backendDb)
+      .db.select()
       .from(posts)
       .where(eq(posts.postKey, `post:${publication.postId}`))
       .get();
@@ -30,8 +34,8 @@ export function resolvePublicationRef(backendDb: BackendDb, ref: string): Public
       messageId: post?.messageId ?? publication.postId,
     };
   }
-  const post = backendDb.db
-    .select()
+  const post = unsafeDb(backendDb)
+    .db.select()
     .from(posts)
     .where(or(eq(posts.messageId, id), eq(posts.postId, id), eq(posts.postKey, `post:${id}`)))
     .get();
@@ -41,8 +45,8 @@ export function resolvePublicationRef(backendDb: BackendDb, ref: string): Public
 export function sourcePayload(backendDb: BackendDb, ref: PublicationRef): Record<string, unknown> {
   if (ref.postId != null) {
     const source = jsonObject(
-      backendDb.db
-        .select({ itemJson: publicationSources.itemJson })
+      unsafeDb(backendDb)
+        .db.select({ itemJson: publicationSources.itemJson })
         .from(publicationSources)
         .where(eq(publicationSources.postId, ref.postId))
         .get()?.itemJson,
@@ -50,12 +54,14 @@ export function sourcePayload(backendDb: BackendDb, ref: PublicationRef): Record
     if (Object.keys(source).length > 0) return source;
   }
   const siteSource = jsonObject(
-    backendDb.db
-      .select({ itemJson: siteSourceItems.itemJson })
+    unsafeDb(backendDb)
+      .db.select({ itemJson: siteSourceItems.itemJson })
       .from(siteSourceItems)
       .where(eq(siteSourceItems.messageId, ref.messageId))
       .get()?.itemJson,
   );
   if (Object.keys(siteSource).length > 0) return siteSource;
-  return jsonObject(backendDb.db.select({ rawJson: posts.rawJson }).from(posts).where(eq(posts.postKey, ref.postKey)).get()?.rawJson);
+  return jsonObject(
+    unsafeDb(backendDb).db.select({ rawJson: posts.rawJson }).from(posts).where(eq(posts.postKey, ref.postKey)).get()?.rawJson,
+  );
 }

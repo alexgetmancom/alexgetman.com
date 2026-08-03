@@ -1,5 +1,5 @@
 import { desc } from "drizzle-orm";
-import type { BackendDb } from "../../db/client.js";
+import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { socialComments } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { requestJson } from "../../foundation/http.js";
@@ -16,8 +16,8 @@ export async function audienceAnalysis(
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
   if (!config.DEEPSEEK_API_KEY) return `🤖 ${t(locale, "audience.unavailable")}`;
-  const comments = backendDb.db
-    .select({ platform: socialComments.platform, text: socialComments.text })
+  const comments = unsafeDb(backendDb)
+    .db.select({ platform: socialComments.platform, text: socialComments.text })
     .from(socialComments)
     .orderBy(desc(socialComments.publishedAt))
     .limit(100)

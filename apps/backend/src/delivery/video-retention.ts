@@ -3,7 +3,7 @@ import path from "node:path";
 import { and, eq, inArray, isNotNull, isNull, lte, or } from "drizzle-orm";
 import { parseArrayValue } from "../content/message.js";
 import { deleteVideo } from "../content/video-assets.js";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { drafts, studioMediaAssets, videoDrafts } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 
@@ -13,8 +13,8 @@ import type { BackendConfig } from "../foundation/config.js";
 export function pruneExpiredVideos(config: BackendConfig, backendDb: BackendDb): void {
   const now = new Date().toISOString();
   const legacyDraftExpiresAt = new Date(Date.now() - config.VIDEO_MEDIA_RETENTION_HOURS * 60 * 60_000).toISOString();
-  const rows = backendDb.db
-    .select()
+  const rows = unsafeDb(backendDb)
+    .db.select()
     .from(videoDrafts)
     .where(
       and(
@@ -52,8 +52,8 @@ export function pruneExpiredVideos(config: BackendConfig, backendDb: BackendDb):
   for (const row of rows) {
     if (row.studioMediaAssetId == null) deleteVideo(config, row.assetKey);
     else pruneStudioAssetSource(config, backendDb, row.studioMediaAssetId, now);
-    backendDb.db
-      .update(videoDrafts)
+    unsafeDb(backendDb)
+      .db.update(videoDrafts)
       .set({
         status: row.status === "editing" ? "cancelled" : row.status,
         retentionUntil: null,
@@ -68,8 +68,8 @@ export function pruneExpiredVideos(config: BackendConfig, backendDb: BackendDb):
 /** Studio metadata remains available for published-history and analytics, but
  * the original upload is disposable after every draft using it is final. */
 function pruneStudioAssetSource(config: BackendConfig, backendDb: BackendDb, assetId: number, now: string): void {
-  const drafts = backendDb.db
-    .select({ status: videoDrafts.status, retentionUntil: videoDrafts.retentionUntil })
+  const drafts = unsafeDb(backendDb)
+    .db.select({ status: videoDrafts.status, retentionUntil: videoDrafts.retentionUntil })
     .from(videoDrafts)
     .where(eq(videoDrafts.studioMediaAssetId, assetId))
     .all();
@@ -84,8 +84,8 @@ function pruneStudioAssetSource(config: BackendConfig, backendDb: BackendDb, ass
   // Post attachments still use durable JSON for compatibility with old drafts.
   // Never remove a shared source merely because the video side became final.
   if (postDraftReferencesAsset(backendDb, assetId)) return;
-  const asset = backendDb.db
-    .select({ localPath: studioMediaAssets.localPath })
+  const asset = unsafeDb(backendDb)
+    .db.select({ localPath: studioMediaAssets.localPath })
     .from(studioMediaAssets)
     .where(eq(studioMediaAssets.id, assetId))
     .get();
@@ -94,8 +94,8 @@ function pruneStudioAssetSource(config: BackendConfig, backendDb: BackendDb, ass
 }
 
 function postDraftReferencesAsset(backendDb: BackendDb, assetId: number): boolean {
-  return backendDb.db
-    .select({ mediaRuJson: drafts.mediaRuJson, mediaEnJson: drafts.mediaEnJson })
+  return unsafeDb(backendDb)
+    .db.select({ mediaRuJson: drafts.mediaRuJson, mediaEnJson: drafts.mediaEnJson })
     .from(drafts)
     .all()
     .some((draft) =>

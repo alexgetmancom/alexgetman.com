@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { and, asc, eq, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { videoChannelConfig } from "../../channels/channel-config.js";
-import type { BackendDb } from "../../db/client.js";
+import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { videoDrafts, videoMetricSchedule, videoTargets } from "../../db/schema.js";
 import { recordDomainEvent } from "../../domain/events.js";
 import type { BackendConfig } from "../../foundation/config.js";
@@ -168,8 +168,8 @@ export async function runVideoMetricSchedule(config: BackendConfig, backendDb: B
  * join keeps this cheap regardless of how much publish history has piled up. */
 function ensureVideoMetricSchedule(backendDb: BackendDb): void {
   const now = new Date().toISOString();
-  const targets = backendDb.db
-    .select({ id: videoTargets.id, publishedAt: videoTargets.publishedAt })
+  const targets = unsafeDb(backendDb)
+    .db.select({ id: videoTargets.id, publishedAt: videoTargets.publishedAt })
     .from(videoTargets)
     .leftJoin(videoMetricSchedule, eq(videoMetricSchedule.videoTargetId, videoTargets.id))
     .where(
@@ -182,8 +182,8 @@ function ensureVideoMetricSchedule(backendDb: BackendDb): void {
     .all();
   for (const target of targets) {
     const publishedAt = new Date(target.publishedAt ?? now);
-    backendDb.db
-      .insert(videoMetricSchedule)
+    unsafeDb(backendDb)
+      .db.insert(videoMetricSchedule)
       .values({
         videoTargetId: target.id,
         checkpointIndex: 0,
@@ -203,8 +203,8 @@ function ensureVideoMetricSchedule(backendDb: BackendDb): void {
   // otherwise it re-reads 500 rows on every collection cycle forever. It is a
   // deliberately coarse superset — the exact per-row decision below still
   // belongs to nextVideoMetricCheckAt.
-  const scheduled = backendDb.db
-    .select({
+  const scheduled = unsafeDb(backendDb)
+    .db.select({
       id: videoTargets.id,
       publishedAt: videoTargets.publishedAt,
       lastCheckedAt: videoMetricSchedule.lastCheckedAt,
@@ -227,8 +227,8 @@ function ensureVideoMetricSchedule(backendDb: BackendDb): void {
     if (!task.lastCheckedAt) continue;
     const desired = nextVideoMetricCheckAt(task.publishedAt, new Date(task.lastCheckedAt)).toISOString();
     if (!task.nextCheckAt || task.nextCheckAt > desired)
-      backendDb.db
-        .update(videoMetricSchedule)
+      unsafeDb(backendDb)
+        .db.update(videoMetricSchedule)
         .set({ nextCheckAt: desired, updatedAt: now })
         .where(eq(videoMetricSchedule.videoTargetId, task.id))
         .run();
@@ -243,8 +243,8 @@ function claimDueVideoMetricTasks(
 ): VideoMetricTask[] {
   const now = new Date().toISOString();
   const cutoff = new Date(Date.now() - config.METRIC_LOCK_TIMEOUT_SECONDS * 1000).toISOString();
-  const rows = backendDb.db
-    .select({
+  const rows = unsafeDb(backendDb)
+    .db.select({
       id: videoTargets.id,
       videoDraftId: videoTargets.videoDraftId,
       target: videoTargets.target,
@@ -278,7 +278,7 @@ function claimDueVideoMetricTasks(
     .all()
     .filter((task) => Boolean((task.deliveryProvider === "zernio" ? task.providerPostId : task.externalId) && task.publishedAt));
   const claimed: VideoMetricTask[] = [];
-  backendDb.db.transaction((tx) => {
+  unsafeDb(backendDb).db.transaction((tx) => {
     for (const task of rows) {
       const locked = tx
         .update(videoMetricSchedule)
@@ -388,8 +388,8 @@ function finishVideoMetricTask(backendDb: BackendDb, task: VideoMetricTask, erro
   const exhausted = error != null && errorCount >= MAX_METRIC_ERROR_RETRIES;
   const nextCheckAt =
     terminal || exhausted ? null : error ? new Date(now.getTime() + 15 * 60_000) : nextVideoMetricCheckAt(task.publishedAt, now);
-  backendDb.db
-    .update(videoMetricSchedule)
+  unsafeDb(backendDb)
+    .db.update(videoMetricSchedule)
     .set({
       checkpointIndex: nextIndex,
       errorCount,

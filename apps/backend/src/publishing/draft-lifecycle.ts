@@ -1,12 +1,12 @@
 import { and, asc, count, eq, inArray, sql } from "drizzle-orm";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { drafts, postLocales, posts, publicationPlans, publicationSources, publications, publishJobs, siteJobs } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import { discardDraftStoryCards } from "../story-cards/store.js";
 
 export function scheduledDrafts(backendDb: BackendDb): Array<{ id: number; scheduledAt: string | null; scheduledEnAt: string | null }> {
-  return backendDb.db
-    .select({ id: drafts.id, scheduledAt: drafts.scheduledAt, scheduledEnAt: drafts.scheduledEnAt })
+  return unsafeDb(backendDb)
+    .db.select({ id: drafts.id, scheduledAt: drafts.scheduledAt, scheduledEnAt: drafts.scheduledEnAt })
     .from(drafts)
     .where(eq(drafts.status, "scheduled"))
     .orderBy(asc(sql`coalesce(${drafts.scheduledAt}, ${drafts.scheduledEnAt})`), asc(drafts.id))
@@ -15,7 +15,7 @@ export function scheduledDrafts(backendDb: BackendDb): Array<{ id: number; sched
 
 export function cancelDraft(backendDb: BackendDb, draftId: number): void {
   const now = new Date().toISOString();
-  backendDb.db.transaction((tx) => {
+  unsafeDb(backendDb).db.transaction((tx) => {
     const publication = tx.select({ postId: publications.postId }).from(publications).where(eq(publications.draftId, draftId)).get();
     const postId = publication?.postId;
     tx.update(drafts)
@@ -70,11 +70,11 @@ export function cancelDraft(backendDb: BackendDb, draftId: number): void {
 
 /** Cancels only jobs that have not reached a final external state. */
 export function cancelRemainingPostJobs(backendDb: BackendDb, draftId: number): void {
-  const draft = backendDb.db.select({ postId: drafts.postId }).from(drafts).where(eq(drafts.id, draftId)).get();
+  const draft = unsafeDb(backendDb).db.select({ postId: drafts.postId }).from(drafts).where(eq(drafts.id, draftId)).get();
   if (!draft?.postId) return;
   const now = new Date().toISOString();
-  backendDb.db
-    .update(publishJobs)
+  unsafeDb(backendDb)
+    .db.update(publishJobs)
     .set({ status: "cancelled", updatedAt: now })
     .where(and(eq(publishJobs.postId, draft.postId), inArray(publishJobs.status, ["queued", "failed"])))
     .run();
@@ -84,8 +84,8 @@ export function cancelRemainingPostJobs(backendDb: BackendDb, draftId: number): 
     severity: "warn",
     message: `Remaining publication jobs for draft #${draftId} cancelled`,
   });
-  backendDb.db
-    .update(siteJobs)
+  unsafeDb(backendDb)
+    .db.update(siteJobs)
     .set({ status: "cancelled", updatedAt: now })
     .where(and(eq(siteJobs.postId, draft.postId), inArray(siteJobs.status, ["queued", "failed"])))
     .run();

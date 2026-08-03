@@ -3,7 +3,7 @@ import { InlineKeyboard } from "grammy";
 import { type PresetName, presetName, TARGETS } from "../botTargets.js";
 import { effectivePostTargets, registeredPostTargetIds } from "../channels/registry.js";
 import { requireDraft } from "../content/index.js";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { draftSources, draftStoryCards } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { type MessageKey, t } from "../foundation/i18n/index.js";
@@ -89,7 +89,11 @@ export function draftPreview(
   const targets = effectivePostTargets(backendDb, parseTargets(draft.targets_json));
   const registered = registeredPostTargetIds(backendDb);
   const targetRows = registered.size ? TARGETS.filter(({ id }) => registered.has(id)) : TARGETS;
-  const sourceCount = backendDb.db.select({ id: draftSources.id }).from(draftSources).where(eq(draftSources.draftId, draftId)).all().length;
+  const sourceCount = unsafeDb(backendDb)
+    .db.select({ id: draftSources.id })
+    .from(draftSources)
+    .where(eq(draftSources.draftId, draftId))
+    .all().length;
   const keyboard = new InlineKeyboard();
   const mode = presetName(targets);
 
@@ -176,7 +180,7 @@ export function draftPreview(
       : "";
   const mediaRu = safeMediaCount(draft.media_ru_json);
   const mediaEn = safeMediaCount(draft.media_en_json);
-  const storyCards = backendDb.db.select().from(draftStoryCards).where(eq(draftStoryCards.draftId, draftId)).all();
+  const storyCards = unsafeDb(backendDb).db.select().from(draftStoryCards).where(eq(draftStoryCards.draftId, draftId)).all();
   const storyCardStatus =
     storyCards.length === 0
       ? ""

@@ -1,5 +1,5 @@
 import { and, desc, eq, gte, lt } from "drizzle-orm";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { publishJobs, siteJobs } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -7,8 +7,8 @@ import type { BackendConfig } from "../foundation/config.js";
 /** Records Delivery failures as durable domain events; no alert transport is used here. */
 export function recordPublicationFailures(config: BackendConfig, backendDb: BackendDb): void {
   const staleBefore = new Date(Date.now() - config.PUBLISH_LOCK_TIMEOUT_SECONDS * 1000).toISOString();
-  const stale = backendDb.db
-    .select()
+  const stale = unsafeDb(backendDb)
+    .db.select()
     .from(publishJobs)
     .where(and(eq(publishJobs.status, "publishing"), lt(publishJobs.lockedAt, staleBefore)))
     .all();
@@ -17,8 +17,8 @@ export function recordPublicationFailures(config: BackendConfig, backendDb: Back
   // stays in this result set and produces a fresh alert once per cooldown window
   // forever. Only failures that moved recently are worth reporting.
   const siteFailureWindowStart = new Date(Date.now() - config.ALERT_COOLDOWN_SECONDS * 1000).toISOString();
-  const failedSite = backendDb.db
-    .select()
+  const failedSite = unsafeDb(backendDb)
+    .db.select()
     .from(siteJobs)
     .where(and(eq(siteJobs.status, "failed"), gte(siteJobs.updatedAt, siteFailureWindowStart)))
     .orderBy(desc(siteJobs.updatedAt))

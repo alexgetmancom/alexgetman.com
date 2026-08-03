@@ -1,5 +1,5 @@
 import { and, asc, eq, isNull, ne } from "drizzle-orm";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../db/client.js";
 import { videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
 import { StudioError } from "../foundation/errors.js";
 import { isVideoTargetFinal, videoDraftStatus } from "./state.js";
@@ -10,17 +10,22 @@ export type VideoJob = typeof videoJobs.$inferSelect;
 type VideoJobKind = "prepare" | "publish" | "reminder";
 
 export function getVideoDraft(backendDb: BackendDb, id: number): VideoDraft {
-  const draft = backendDb.db.select().from(videoDrafts).where(eq(videoDrafts.id, id)).get();
+  const draft = unsafeDb(backendDb).db.select().from(videoDrafts).where(eq(videoDrafts.id, id)).get();
   if (!draft) throw new Error("Video publication was not found.");
   return draft;
 }
 
 export function listVideoTargets(backendDb: BackendDb, videoDraftId: number): VideoTargetRow[] {
-  return backendDb.db.select().from(videoTargets).where(eq(videoTargets.videoDraftId, videoDraftId)).orderBy(asc(videoTargets.id)).all();
+  return unsafeDb(backendDb)
+    .db.select()
+    .from(videoTargets)
+    .where(eq(videoTargets.videoDraftId, videoDraftId))
+    .orderBy(asc(videoTargets.id))
+    .all();
 }
 
 export function insertVideoJob(
-  tx: BackendDb["db"],
+  tx: UnsafeBackendDb["db"],
   videoDraftId: number,
   videoTargetId: number | null,
   kind: VideoJobKind,
@@ -77,8 +82,8 @@ export function refreshVideoDraftStatus(backendDb: BackendDb, videoDraftId: numb
   if (targets.length === 0) return;
   const final = targets.every((target) => isVideoTargetFinal(target.status));
   const status = videoDraftStatus(targets.map((target) => target.status));
-  backendDb.db
-    .update(videoDrafts)
+  unsafeDb(backendDb)
+    .db.update(videoDrafts)
     .set({
       status,
       retentionUntil: final ? new Date(Date.now() + retentionHours * 60 * 60_000).toISOString() : null,

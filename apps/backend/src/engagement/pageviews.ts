@@ -1,5 +1,5 @@
 import { eq, or } from "drizzle-orm";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { posts } from "../db/schema.js";
 
 export function recordPageview(backendDb: BackendDb, rawPath: string): string {
@@ -9,34 +9,34 @@ export function recordPageview(backendDb: BackendDb, rawPath: string): string {
   const candidates = path.endsWith("/") ? [path, path.slice(0, -1)] : [path, `${path}/`];
   const [firstCandidate, secondCandidate] = candidates;
   if (!firstCandidate || !secondCandidate) return path;
-  const ru = backendDb.db
-    .select({ postKey: posts.postKey })
+  const ru = unsafeDb(backendDb)
+    .db.select({ postKey: posts.postKey })
     .from(posts)
     .where(or(eq(posts.siteRuPath, firstCandidate), eq(posts.siteRuPath, secondCandidate)))
     .get();
   const en = ru
     ? null
-    : backendDb.db
-        .select({ postKey: posts.postKey })
+    : unsafeDb(backendDb)
+        .db.select({ postKey: posts.postKey })
         .from(posts)
         .where(or(eq(posts.siteEnPath, firstCandidate), eq(posts.siteEnPath, secondCandidate)))
         .get();
   const row = ru ? { postKey: ru.postKey, target: "site_ru" } : en ? { postKey: en.postKey, target: "site_en" } : null;
   const sampledAt = now.toISOString();
-  backendDb.sqlite.transaction(() => {
-    backendDb.sqlite
-      .prepare(
+  unsafeDb(backendDb).sqlite.transaction(() => {
+    unsafeDb(backendDb)
+      .sqlite.prepare(
         "INSERT INTO site_pageviews (day, path, count, updated_at) VALUES (?, ?, 1, ?) ON CONFLICT(day, path) DO UPDATE SET count=count+1, updated_at=excluded.updated_at",
       )
       .run(day, path, sampledAt);
     if (!row) return;
-    const incremented = backendDb.sqlite
-      .prepare(
+    const incremented = unsafeDb(backendDb)
+      .sqlite.prepare(
         "INSERT INTO post_metrics (post_key, target, metric_name, value, unit, source, sampled_at, error, raw_json) VALUES (?, ?, 'views', 1, 'count', 'site_pageview_endpoint', ?, NULL, ?) ON CONFLICT(post_key, target, metric_name) DO UPDATE SET value=COALESCE(value,0)+1, source=excluded.source, sampled_at=excluded.sampled_at, error=NULL, raw_json=excluded.raw_json RETURNING value",
       )
       .get(row.postKey, row.target, sampledAt, JSON.stringify({ path })) as { value: number } | null;
-    backendDb.sqlite
-      .prepare(
+    unsafeDb(backendDb)
+      .sqlite.prepare(
         "INSERT INTO metric_samples (post_key, target, metric_name, value, sampled_at, source) VALUES (?, ?, 'views', ?, ?, 'site_pageview_endpoint')",
       )
       .run(row.postKey, row.target, Number(incremented?.value ?? 0), sampledAt);
@@ -45,8 +45,8 @@ export function recordPageview(backendDb: BackendDb, rawPath: string): string {
 }
 
 export function metricsSummary(backendDb: BackendDb): { total: number; today: number; last7: number; updated_at: unknown } {
-  const rows = backendDb.sqlite
-    .prepare("SELECT day, sum(count) AS total, max(updated_at) AS updated_at FROM site_pageviews GROUP BY day ORDER BY day DESC")
+  const rows = unsafeDb(backendDb)
+    .sqlite.prepare("SELECT day, sum(count) AS total, max(updated_at) AS updated_at FROM site_pageviews GROUP BY day ORDER BY day DESC")
     .all() as Array<{ day: string; total: number; updated_at: string | null }>;
   const now = new Date();
   const today = mskDay(now);

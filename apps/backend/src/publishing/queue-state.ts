@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull, ne, or } from "drizzle-orm";
 import * as z from "zod";
-import type { BackendDb } from "../db/client.js";
+import type { UnsafeBackendDb } from "../db/client.js";
 import type { JsonObject } from "../db/schema.js";
 import { postEvents, postTargets, publishJobs } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -34,7 +34,12 @@ export function publishRetryPolicy(config: BackendConfig) {
   };
 }
 
-export function deleteSupersededJobs(tx: BackendDb["db"], job: typeof publishJobs.$inferSelect, jobId: number, postKey: string): void {
+export function deleteSupersededJobs(
+  tx: UnsafeBackendDb["db"],
+  job: typeof publishJobs.$inferSelect,
+  jobId: number,
+  postKey: string,
+): void {
   tx.delete(publishJobs)
     .where(
       and(
@@ -64,7 +69,7 @@ export function jobPostKey(job: Pick<typeof publishJobs.$inferSelect, "postKey" 
 }
 
 /** Keeps target state updates consistent across claim, completion, and recovery paths. */
-export function upsertPostTarget(db: BackendDb["db"], value: typeof postTargets.$inferInsert): void {
+export function upsertPostTarget(db: UnsafeBackendDb["db"], value: typeof postTargets.$inferInsert): void {
   const { postKey, target, ...patch } = value;
   db.insert(postTargets)
     .values(value)
@@ -73,7 +78,7 @@ export function upsertPostTarget(db: BackendDb["db"], value: typeof postTargets.
 }
 
 export function insertEvent(
-  tx: BackendDb["db"],
+  tx: UnsafeBackendDb["db"],
   postKey: string | null,
   target: string | null,
   eventType: string,
@@ -89,7 +94,7 @@ export function insertEvent(
 
 /** A settlement updates the job, mirrors target state, and journals the event atomically. */
 export function settleJob(
-  tx: BackendDb["db"],
+  tx: UnsafeBackendDb["db"],
   jobId: number,
   jobPatch: Partial<typeof publishJobs.$inferInsert> | null,
   postKey: string,

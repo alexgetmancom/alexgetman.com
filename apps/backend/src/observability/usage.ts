@@ -1,4 +1,4 @@
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { log } from "../foundation/logger.js";
 
 /** Curated operation boundaries that are useful when deciding what to simplify.
@@ -58,8 +58,8 @@ export function recordUsage(backendDb: BackendDb, featureKey: string, success: b
   const timestamp = now.toISOString();
   const bucketDay = timestamp.slice(0, 10);
   try {
-    backendDb.sqlite
-      .prepare(
+    unsafeDb(backendDb)
+      .sqlite.prepare(
         `INSERT INTO runtime_usage
           (feature_key, bucket_day, calls, successes, failures, total_duration_ms, first_seen_at, last_seen_at)
          VALUES (?, ?, 1, ?, ?, ?, ?, ?)
@@ -119,8 +119,8 @@ export function usageReport(backendDb: BackendDb, options: { days?: number; unus
   const unusedDays = positiveDays(options.unusedDays, 90);
   const sinceDate = new Date(now.getTime() - (windowDays - 1) * millisecondsPerDay);
   const unusedSinceDate = new Date(now.getTime() - (unusedDays - 1) * millisecondsPerDay);
-  const rows = backendDb.sqlite
-    .prepare(
+  const rows = unsafeDb(backendDb)
+    .sqlite.prepare(
       `SELECT
          feature_key AS featureKey,
          COALESCE(SUM(CASE WHEN bucket_day >= ? THEN calls ELSE 0 END), 0) AS calls,

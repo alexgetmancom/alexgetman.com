@@ -2,7 +2,7 @@ import path from "node:path";
 import { and, desc, eq } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { firstLine } from "../content/message.js";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { postLocales, publications } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { atomicWriteText } from "../fsUtils.js";
@@ -11,8 +11,8 @@ import { atomicWriteText } from "../fsUtils.js";
 export function publishContentIndex(config: BackendConfig, backendDb: BackendDb): string[] {
   const ru = alias(postLocales, "ru");
   const en = alias(postLocales, "en");
-  const rows = backendDb.db
-    .select({
+  const rows = unsafeDb(backendDb)
+    .db.select({
       postId: publications.postId,
       updatedAt: publications.updatedAt,
       slugRu: ru.slug,

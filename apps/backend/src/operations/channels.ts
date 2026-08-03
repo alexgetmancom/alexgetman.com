@@ -3,7 +3,7 @@ import { credentialShape, deleteChannelSecrets, storedCredentialNames } from "..
 import { isPublishableVideoPlatform } from "../channels/destinations.js";
 import { persistChannelConnection } from "../channels/management.js";
 import { listChannels } from "../channels/registry.js";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { channelConnections } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import type { VideoLocale } from "../publishing/video-types.js";
@@ -77,8 +77,8 @@ export function connectChannel(
 /** Disabling keeps the row: its publications, metrics and audience history stay
  * attributable to the account they came from. */
 export function disableChannel(backendDb: BackendDb, channelId: string, forgetCredentials: boolean): { id: string; disabled: boolean } {
-  const updated = backendDb.db
-    .update(channelConnections)
+  const updated = unsafeDb(backendDb)
+    .db.update(channelConnections)
     .set({ enabled: 0, updatedAt: new Date().toISOString() })
     .where(eq(channelConnections.id, channelId))
     .returning({ id: channelConnections.id })

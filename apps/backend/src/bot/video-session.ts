@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { type Context, InlineKeyboard } from "grammy";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { videoBotSessions } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { t } from "../foundation/i18n/index.js";
@@ -27,7 +27,7 @@ export function enabledVideoTargets(config: BackendConfig): VideoTarget[] {
 }
 
 export function getSession(backendDb: BackendDb, actorId: number): VideoSession | null {
-  const row = backendDb.db.select().from(videoBotSessions).where(eq(videoBotSessions.actorId, actorId)).get();
+  const row = unsafeDb(backendDb).db.select().from(videoBotSessions).where(eq(videoBotSessions.actorId, actorId)).get();
   return row
     ? { draftId: row.videoDraftId, step: row.step, selected: row.selectedTargetsJson as VideoTarget[], data: row.dataJson ?? {} }
     : null;
@@ -35,8 +35,8 @@ export function getSession(backendDb: BackendDb, actorId: number): VideoSession 
 
 export function saveSession(backendDb: BackendDb, actorId: number, session: VideoSession): void {
   const now = new Date().toISOString();
-  backendDb.db
-    .insert(videoBotSessions)
+  unsafeDb(backendDb)
+    .db.insert(videoBotSessions)
     .values({
       actorId,
       videoDraftId: session.draftId,
@@ -72,7 +72,7 @@ export function setData(
 }
 
 export function clearSession(backendDb: BackendDb, actorId: number): void {
-  backendDb.db.delete(videoBotSessions).where(eq(videoBotSessions.actorId, actorId)).run();
+  unsafeDb(backendDb).db.delete(videoBotSessions).where(eq(videoBotSessions.actorId, actorId)).run();
 }
 
 export async function updateVideoControl(

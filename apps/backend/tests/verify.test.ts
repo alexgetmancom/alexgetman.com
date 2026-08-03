@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import type { BackendDb } from "../src/db/client.js";
+import type { UnsafeBackendDb } from "../src/db/client.js";
 import { posts, postTargets } from "../src/db/schema.js";
 import { verifyPostTargets } from "../src/operations/verify.js";
 import { withDb } from "./helpers/db.js";
@@ -25,7 +25,7 @@ function stubFetch(handler: (url: string) => Response | Promise<Response>): { ur
   return { urls };
 }
 
-function insertPost(backendDb: BackendDb, overrides: { postKey: string; postId?: number | null; messageId: number }): void {
+function insertPost(backendDb: UnsafeBackendDb, overrides: { postKey: string; postId?: number | null; messageId: number }): void {
   backendDb.db
     .insert(posts)
     .values({
@@ -40,7 +40,7 @@ function insertPost(backendDb: BackendDb, overrides: { postKey: string; postId?:
 }
 
 function insertTarget(
-  backendDb: BackendDb,
+  backendDb: UnsafeBackendDb,
   values: { postKey: string; target: string; status: string; url?: string | null; error?: string | null },
 ): void {
   backendDb.db

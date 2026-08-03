@@ -1,7 +1,7 @@
 import { metricNumber } from "../../../analytics/snapshots/creator-store.js";
 import { AUDIENCE_VIEWS, targetDefinition } from "../../../botTargets.js";
 import { hasChannelRegistry, listChannels } from "../../../channels/registry.js";
-import type { BackendDb } from "../../../db/client.js";
+import { type BackendDb, unsafeDb } from "../../../db/client.js";
 import { creatorProfiles } from "../../../db/schema.js";
 import { ORDERED_TARGETS } from "./assets.js";
 import { shortPipelineText } from "./format.js";
@@ -24,8 +24,8 @@ const AUDIENCE_PLATFORMS: AudiencePlatform[] = AUDIENCE_VIEWS.map((key) => ({
 export function audiencePlatformFollowers(backendDb: BackendDb): Array<{ key: string; label: string; followers: number | null }> {
   const platforms = activeAudiencePlatforms(backendDb);
   const profiles = new Map(
-    backendDb.db
-      .select()
+    unsafeDb(backendDb)
+      .db.select()
       .from(creatorProfiles)
       .all()
       .map((profile) => [profile.platform, profile.dataJson]),

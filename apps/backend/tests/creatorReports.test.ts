@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { audienceAnalysis } from "../src/analytics/reports/audience.js";
 import { creatorVideoArchive, creatorVideoMetrics } from "../src/analytics/reports/video-archive.js";
-import type { BackendDb } from "../src/db/client.js";
+import type { UnsafeBackendDb } from "../src/db/client.js";
 import { socialComments, videoMetricSnapshots } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { insertPublishedVideo } from "./helpers/analytics.js";
@@ -13,7 +13,7 @@ afterEach(() => {
   globalThis.fetch = realFetch;
 });
 
-function snapshot(backendDb: BackendDb, targetId: number, platform: string, metrics: Record<string, number>): void {
+function snapshot(backendDb: UnsafeBackendDb, targetId: number, platform: string, metrics: Record<string, number>): void {
   backendDb.db.insert(videoMetricSnapshots).values({ videoTargetId: targetId, platform, metricsJson: metrics, sampledAt }).run();
 }
 
@@ -150,7 +150,7 @@ describe("creatorVideoMetrics", () => {
 describe("audienceAnalysis", () => {
   const config = loadConfig({ ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "t", DEEPSEEK_API_KEY: "sk-test" });
 
-  function comment(backendDb: BackendDb, targetId: number, text: string, publishedAt: string): void {
+  function comment(backendDb: UnsafeBackendDb, targetId: number, text: string, publishedAt: string): void {
     backendDb.db
       .insert(socialComments)
       .values({

@@ -1,4 +1,4 @@
-import type { BackendDb } from "../../src/db/client.js";
+import type { UnsafeBackendDb } from "../../src/db/client.js";
 import { videoDrafts, videoTargets } from "../../src/db/schema.js";
 
 export type PublishedVideoOptions = {
@@ -15,7 +15,7 @@ export type PublishedVideoOptions = {
 };
 
 /** Inserts a published video draft with one target, the shape every analytics test needs. */
-export function insertPublishedVideo(backendDb: BackendDb, options: PublishedVideoOptions): { draftId: number; targetId: number } {
+export function insertPublishedVideo(backendDb: UnsafeBackendDb, options: PublishedVideoOptions): { draftId: number; targetId: number } {
   const updatedAt = options.updatedAt ?? options.publishedAt;
   const draft = backendDb.db
     .insert(videoDrafts)

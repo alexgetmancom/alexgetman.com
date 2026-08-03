@@ -1,5 +1,5 @@
 import { afterEach } from "bun:test";
-import { type BackendDb, openBackendDb } from "../../src/db/client.js";
+import { openBackendDb, type UnsafeBackendDb } from "../../src/db/client.js";
 
 /** Open an in-memory backend DB for one test and always close it, even on
  * throw. Use for a single self-contained test body:
@@ -7,7 +7,7 @@ import { type BackendDb, openBackendDb } from "../../src/db/client.js";
  *   it("...", () => withDb((backendDb) => { ... }));
  *   it("...", async () => withDb(async (backendDb) => { ... }));
  */
-export function withDb<T>(fn: (backendDb: BackendDb) => T | Promise<T>): Promise<T> {
+export function withDb<T>(fn: (backendDb: UnsafeBackendDb) => T | Promise<T>): Promise<T> {
   const backendDb = openBackendDb(":memory:");
   return (async () => fn(backendDb))().finally(() => backendDb.close());
 }
@@ -22,8 +22,8 @@ export function withDb<T>(fn: (backendDb: BackendDb) => T | Promise<T>): Promise
  *     ...
  *   });
  */
-export function useBackendDb(): { open: () => BackendDb } {
-  let backendDb: BackendDb | null = null;
+export function useBackendDb(): { open: () => UnsafeBackendDb } {
+  let backendDb: UnsafeBackendDb | null = null;
   afterEach(() => {
     backendDb?.close();
     backendDb = null;

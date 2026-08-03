@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { payloadMedia } from "../delivery/social/payload.js";
 import { generateStoryMedia } from "../delivery/story-media.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -97,8 +97,8 @@ export async function reprocessPostMedia(
   apply: boolean,
 ): Promise<Record<string, unknown>> {
   if (!/^post:\d+$/.test(ref)) throw new Error("--ref must look like post:106");
-  const rows = backendDb.sqlite
-    .query(
+  const rows = unsafeDb(backendDb)
+    .sqlite.query(
       `SELECT job_id,target,payload_json
        FROM publish_jobs
        WHERE post_key=? AND target IN ('instagram_story','instagram_stories','instagram_stories_ru','telegram_story','telegram_stories')

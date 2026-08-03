@@ -1,12 +1,12 @@
 import { asc, eq } from "drizzle-orm";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { postEvents, postTargets, publishJobs } from "../db/schema.js";
 import { jsonObject } from "../json.js";
 
 export function publicationTimeline(backendDb: BackendDb, ref: string): Record<string, unknown> {
   if (!/^post:\d+$/.test(ref)) throw new Error("--ref must look like post:106");
-  const events = backendDb.db
-    .select()
+  const events = unsafeDb(backendDb)
+    .db.select()
     .from(postEvents)
     .where(eq(postEvents.postKey, ref))
     .orderBy(asc(postEvents.createdAt), asc(postEvents.id))
@@ -19,8 +19,8 @@ export function publicationTimeline(backendDb: BackendDb, ref: string): Record<s
       message: event.message,
       details: jsonObject(event.detailsJson),
     }));
-  const jobs = backendDb.db
-    .select({
+  const jobs = unsafeDb(backendDb)
+    .db.select({
       jobId: publishJobs.jobId,
       target: publishJobs.target,
       status: publishJobs.status,
@@ -36,8 +36,8 @@ export function publicationTimeline(backendDb: BackendDb, ref: string): Record<s
     .orderBy(asc(publishJobs.createdAt), asc(publishJobs.jobId))
     .all()
     .map((job) => ({ ...job, durationMs: elapsed(job.lockedAt ?? job.createdAt, job.updatedAt) }));
-  const targets = backendDb.db
-    .select({
+  const targets = unsafeDb(backendDb)
+    .db.select({
       target: postTargets.target,
       status: postTargets.status,
       url: postTargets.url,

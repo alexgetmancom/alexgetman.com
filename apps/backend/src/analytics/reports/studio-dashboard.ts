@@ -1,5 +1,5 @@
 import { listChannels } from "../../channels/registry.js";
-import type { BackendDb } from "../../db/client.js";
+import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { creatorProfiles, socialComments } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { t } from "../../foundation/i18n/index.js";
@@ -111,8 +111,8 @@ function audienceProfiles(
   locale: BotLocale,
 ): Block[] {
   const growth = audienceGrowthByPlatform(backendDb, since, days);
-  return backendDb.db
-    .select()
+  return unsafeDb(backendDb)
+    .db.select()
     .from(creatorProfiles)
     .all()
     .filter((row) => dashboardAudiencePlatforms(backendDb, config).has(row.platform))
@@ -143,8 +143,8 @@ function unifiedAnalyticsTable(
   days: AnalyticsPeriod,
   locale: BotLocale,
 ): Block[] {
-  const profiles = backendDb.db
-    .select()
+  const profiles = unsafeDb(backendDb)
+    .db.select()
     .from(creatorProfiles)
     .all()
     .filter((row) => audiencePlatformsForSection(backendDb, config, section).has(row.platform));
@@ -433,5 +433,5 @@ function periodLabel(days: AnalyticsPeriod, locale: BotLocale): string {
 }
 
 function hasAudienceComments(backendDb: BackendDb): boolean {
-  return backendDb.db.select({ platform: socialComments.platform }).from(socialComments).limit(1).get() != null;
+  return unsafeDb(backendDb).db.select({ platform: socialComments.platform }).from(socialComments).limit(1).get() != null;
 }

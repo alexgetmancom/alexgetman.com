@@ -21,6 +21,13 @@
 - Before every push: typecheck, tests, and production build.
 - Push directly to `main`; CI/CD is the main production path.
 
+## Persistence boundaries
+
+- Studio and Content application services consume persistence ports, not Drizzle or raw SQLite.
+- Publishing, Delivery, and Channels are application boundaries too: new or changed application logic there should use ports; existing worker and reconciliation transactions remain explicit `unsafeDb(...)` exceptions until a focused port refactor moves them.
+- Analytics reports, Operations read models, Observability, and Engagement may read Drizzle directly because they are database-backed reporting or operational surfaces.
+- `BackendDb` is the safe application handle. Raw SQLite is available only through the explicitly named `unsafeDb(...)` escape hatch, and architecture tests must keep the Studio and Content exception set empty unless a file is deliberately classified as infrastructure.
+
 ## Production deployment
 
 - The `alex` production container follows the CI/CD deployment path.

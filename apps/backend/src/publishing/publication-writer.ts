@@ -1,6 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { isSiteTarget, targetLocale } from "../botTargets.js";
-import type { BackendDb } from "../db/client.js";
+import type { UnsafeBackendDb } from "../db/client.js";
 import {
   drafts,
   postLocales,
@@ -16,7 +16,7 @@ import { localizeTargetPayload } from "./payload.js";
 import type { PublicationPlan } from "./publication-plan.js";
 import { enqueuePublishJobTx } from "./queue.js";
 
-export function persistPublicationPlanTx(tx: BackendDb["db"], plan: PublicationPlan): void {
+export function persistPublicationPlanTx(tx: UnsafeBackendDb["db"], plan: PublicationPlan): void {
   const postValues = {
     postId: plan.postId,
     source: "studio",

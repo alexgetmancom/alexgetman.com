@@ -1,5 +1,5 @@
 import { and, inArray, isNull, sql } from "drizzle-orm";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { credentialChecks, postEvents, workerState } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { expectedWorkerNames, workerLiveness } from "../foundation/runtime/worker-state.js";
@@ -9,16 +9,16 @@ import { capabilityReport } from "./capabilities.js";
 export function healthReport(config: BackendConfig, backendDb: BackendDb) {
   const capabilities = capabilityReport(config, backendDb);
   const activeCapabilityTargets = new Set(capabilities.map((capability) => capability.target));
-  const credentials = backendDb.db
-    .select()
+  const credentials = unsafeDb(backendDb)
+    .db.select()
     .from(credentialChecks)
     .all()
     .filter((credential) => activeCapabilityTargets.has(credential.target));
-  const workers = backendDb.db.select().from(workerState).all();
+  const workers = unsafeDb(backendDb).db.select().from(workerState).all();
   const observedWorkers = new Set(workers.map((worker) => worker.name));
   const missingWorkers = expectedWorkerNames(config).filter((name) => !observedWorkers.has(name));
-  const [pending] = backendDb.db
-    .select({ count: sql<number>`count(*)` })
+  const [pending] = unsafeDb(backendDb)
+    .db.select({ count: sql<number>`count(*)` })
     .from(postEvents)
     .where(and(inArray(postEvents.severity, ["warn", "error"]), isNull(postEvents.ackedAt)))
     .all();

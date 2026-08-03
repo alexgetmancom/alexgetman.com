@@ -1,5 +1,5 @@
 import { asc, desc, eq, or, sql } from "drizzle-orm";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import {
   credentialChecks,
   drafts,
@@ -17,14 +17,14 @@ import { capabilityReport } from "../observability/capabilities.js";
 import { pipelineUpdatedAt } from "./read-model.js";
 
 export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb) {
-  const queue = backendDb.db
-    .select({ status: publishJobs.status, count: sql<number>`count(*)` })
+  const queue = unsafeDb(backendDb)
+    .db.select({ status: publishJobs.status, count: sql<number>`count(*)` })
     .from(publishJobs)
     .groupBy(publishJobs.status)
     .orderBy(asc(publishJobs.status))
     .all();
-  const targets = backendDb.db
-    .select({
+  const targets = unsafeDb(backendDb)
+    .db.select({
       target: postTargets.target,
       status: postTargets.status,
       count: sql<number>`count(*)`,
@@ -33,8 +33,8 @@ export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb
     .groupBy(postTargets.target, postTargets.status)
     .orderBy(asc(postTargets.target), asc(postTargets.status))
     .all();
-  const events = backendDb.db
-    .select({
+  const events = unsafeDb(backendDb)
+    .db.select({
       id: postEvents.id,
       postKey: postEvents.postKey,
       eventType: postEvents.eventType,
@@ -48,8 +48,8 @@ export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb
     .orderBy(desc(postEvents.createdAt), desc(postEvents.id))
     .limit(50)
     .all();
-  const jobs = backendDb.db
-    .select({
+  const jobs = unsafeDb(backendDb)
+    .db.select({
       jobId: publishJobs.jobId,
       postId: publishJobs.postId,
       messageId: publishJobs.messageId,
@@ -65,8 +65,8 @@ export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb
     .orderBy(desc(publishJobs.updatedAt), desc(publishJobs.jobId))
     .limit(100)
     .all();
-  const draftRows = backendDb.db
-    .select({
+  const draftRows = unsafeDb(backendDb)
+    .db.select({
       id: drafts.id,
       status: drafts.status,
       textRu: drafts.textRu,
@@ -80,8 +80,8 @@ export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb
     .limit(50)
     .all();
   const activeCapabilityTargets = new Set(capabilityReport(config, backendDb).map((capability) => capability.target));
-  const credentials = backendDb.db
-    .select({
+  const credentials = unsafeDb(backendDb)
+    .db.select({
       target: credentialChecks.target,
       status: credentialChecks.status,
       missingEnvJson: credentialChecks.missingEnvJson,
@@ -93,8 +93,8 @@ export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb
     .all()
     .filter((credential) => activeCapabilityTargets.has(credential.target))
     .slice(0, 100);
-  const lifecycle = backendDb.db
-    .select({
+  const lifecycle = unsafeDb(backendDb)
+    .db.select({
       postKey: postLifecycle.postKey,
       state: postLifecycle.state,
       reason: postLifecycle.reason,
@@ -104,8 +104,8 @@ export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb
     .orderBy(desc(postLifecycle.updatedAt))
     .limit(100)
     .all();
-  const actions = backendDb.db
-    .select({
+  const actions = unsafeDb(backendDb)
+    .db.select({
       actionId: opsActions.actionId,
       actorType: opsActions.actorType,
       action: opsActions.action,
@@ -119,8 +119,8 @@ export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb
     .orderBy(desc(opsActions.createdAt), desc(opsActions.actionId))
     .limit(100)
     .all();
-  const recentMetrics = backendDb.db
-    .select({
+  const recentMetrics = unsafeDb(backendDb)
+    .db.select({
       postKey: postMetrics.postKey,
       target: postMetrics.target,
       metricName: postMetrics.metricName,
@@ -172,22 +172,22 @@ export type CommandCenterAttention = {
 
 /** Small overview-only projection. Full queue and diagnostic rows stay behind their panels. */
 export function commandCenterAttention(config: BackendConfig, backendDb: BackendDb): CommandCenterAttention {
-  const failedJob = backendDb.db
-    .select({ status: publishJobs.status })
+  const failedJob = unsafeDb(backendDb)
+    .db.select({ status: publishJobs.status })
     .from(publishJobs)
     .orderBy(desc(publishJobs.updatedAt), desc(publishJobs.jobId))
     .limit(100)
     .all()
     .some((job) => job.status === "failed");
   const activeCapabilityTargets = new Set(capabilityReport(config, backendDb).map((capability) => capability.target));
-  const credentialIssue = backendDb.db
-    .select({ target: credentialChecks.target, status: credentialChecks.status })
+  const credentialIssue = unsafeDb(backendDb)
+    .db.select({ target: credentialChecks.target, status: credentialChecks.status })
     .from(credentialChecks)
     .orderBy(desc(credentialChecks.lastCheckedAt))
     .all()
     .some((credential) => activeCapabilityTargets.has(credential.target) && credential.status !== "ok" && credential.status !== "ready");
-  const metricIssue = backendDb.db
-    .select({ error: postMetrics.error })
+  const metricIssue = unsafeDb(backendDb)
+    .db.select({ error: postMetrics.error })
     .from(postMetrics)
     .orderBy(desc(postMetrics.sampledAt))
     .limit(100)
@@ -204,8 +204,8 @@ export type CommandCenterFingerprint = {
 };
 
 export function commandCenterFingerprint(backendDb: BackendDb): CommandCenterFingerprint {
-  const revisions = backendDb.sqlite
-    .prepare(
+  const revisions = unsafeDb(backendDb)
+    .sqlite.prepare(
       `SELECT
          (SELECT MAX(updated_at) FROM publish_jobs) AS latestJobUpdatedAt,
          (SELECT MAX(created_at) FROM post_events) AS latestEventAt,
@@ -221,23 +221,28 @@ export function commandCenterFingerprint(backendDb: BackendDb): CommandCenterFin
 export function postDebugPayload(backendDb: BackendDb, ref: string) {
   const postKey = resolvePostKey(backendDb, ref);
   if (!postKey) return null;
-  const post = backendDb.db.select().from(posts).where(eq(posts.postKey, postKey)).get();
-  const targets = backendDb.db.select().from(postTargets).where(eq(postTargets.postKey, postKey)).orderBy(asc(postTargets.target)).all();
-  const metrics = backendDb.db
-    .select()
+  const post = unsafeDb(backendDb).db.select().from(posts).where(eq(posts.postKey, postKey)).get();
+  const targets = unsafeDb(backendDb)
+    .db.select()
+    .from(postTargets)
+    .where(eq(postTargets.postKey, postKey))
+    .orderBy(asc(postTargets.target))
+    .all();
+  const metrics = unsafeDb(backendDb)
+    .db.select()
     .from(postMetrics)
     .where(eq(postMetrics.postKey, postKey))
     .orderBy(asc(postMetrics.target), asc(postMetrics.metricName))
     .all();
-  const schedule = backendDb.db
-    .select()
+  const schedule = unsafeDb(backendDb)
+    .db.select()
     .from(metricSchedule)
     .where(eq(metricSchedule.postKey, postKey))
     .orderBy(asc(metricSchedule.target))
     .all();
   const id = numericRef(ref);
-  const jobs = backendDb.db
-    .select()
+  const jobs = unsafeDb(backendDb)
+    .db.select()
     .from(publishJobs)
     .where(
       or(
@@ -264,14 +269,14 @@ function resolvePostKey(backendDb: BackendDb, ref: string): string | null {
   if (value.startsWith("post:")) return value;
   const id = numericRef(value);
   if (id == null) return value;
-  const post = backendDb.db
-    .select({ postKey: posts.postKey })
+  const post = unsafeDb(backendDb)
+    .db.select({ postKey: posts.postKey })
     .from(posts)
     .where(or(eq(posts.postId, id), eq(posts.postKey, `post:${id}`), eq(posts.messageId, id)))
     .get();
   if (post?.postKey) return post.postKey;
-  const job = backendDb.db
-    .select({ postKey: publishJobs.postKey, postId: publishJobs.postId })
+  const job = unsafeDb(backendDb)
+    .db.select({ postKey: publishJobs.postKey, postId: publishJobs.postId })
     .from(publishJobs)
     .where(or(eq(publishJobs.messageId, id), eq(publishJobs.postId, id)))
     .orderBy(desc(publishJobs.jobId))

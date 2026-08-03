@@ -1,5 +1,5 @@
 import { and, eq, inArray } from "drizzle-orm";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { postLocales, publicationSources, publications } from "../db/schema.js";
 import { materializeSiteMedia } from "../delivery/site-media.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -17,8 +17,8 @@ export async function backfillSiteImageMedia(
   apply: boolean,
   maxUploadKbps?: number,
 ): Promise<Record<string, unknown>> {
-  const rows = backendDb.db
-    .select({ postId: publicationSources.postId, itemJson: publicationSources.itemJson, locale: postLocales.locale })
+  const rows = unsafeDb(backendDb)
+    .db.select({ postId: publicationSources.postId, itemJson: publicationSources.itemJson, locale: postLocales.locale })
     .from(publicationSources)
     .innerJoin(publications, eq(publications.postId, publicationSources.postId))
     .innerJoin(postLocales, and(eq(postLocales.postId, publicationSources.postId), eq(postLocales.siteEnabled, 1)))

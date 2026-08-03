@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import pLimit from "p-limit";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { publishJobs } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -70,8 +70,8 @@ export async function runDeliveryPublishCycle(
             const result = await withJobHeartbeat(
               config.PUBLISH_HEARTBEAT_INTERVAL_SECONDS,
               () =>
-                backendDb.db
-                  .update(publishJobs)
+                unsafeDb(backendDb)
+                  .db.update(publishJobs)
                   .set({ lockedAt: new Date().toISOString() })
                   .where(and(eq(publishJobs.jobId, job.jobId), eq(publishJobs.status, "publishing"), eq(publishJobs.lockedBy, job.lockId)))
                   .run(),
@@ -121,7 +121,11 @@ export async function runDeliveryPublishCycle(
         details: { post_id: postId },
         cooldownSeconds: 10,
       });
-      const finalJobs = backendDb.db.select({ status: publishJobs.status }).from(publishJobs).where(eq(publishJobs.postId, postId)).all();
+      const finalJobs = unsafeDb(backendDb)
+        .db.select({ status: publishJobs.status })
+        .from(publishJobs)
+        .where(eq(publishJobs.postId, postId))
+        .all();
       if (
         finalJobs.length > 0 &&
         finalJobs.every((job) => ["published", "failed", "cancelled", "skipped", "verification_required"].includes(job.status))
@@ -182,14 +186,14 @@ async function timedDeliveryPhase<T>(
   providerResult?: unknown,
 ): Promise<T> {
   const startedAt = Date.now();
-  const owned = backendDb.db
-    .select({ jobId: publishJobs.jobId })
+  const owned = unsafeDb(backendDb)
+    .db.select({ jobId: publishJobs.jobId })
     .from(publishJobs)
     .where(and(eq(publishJobs.jobId, job.jobId), eq(publishJobs.status, "publishing"), eq(publishJobs.lockedBy, job.lockId)))
     .get();
   if (!owned) throw new Error(`delivery_job_no_longer_owned:${job.jobId}`);
-  backendDb.db
-    .update(publishJobs)
+  unsafeDb(backendDb)
+    .db.update(publishJobs)
     .set({ currentPhase: phase, updatedAt: new Date().toISOString() })
     .where(and(eq(publishJobs.jobId, job.jobId), eq(publishJobs.status, "publishing")))
     .run();
@@ -270,8 +274,8 @@ async function withinPublishTimeout<T>(
       work(),
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => {
-          const phase = backendDb.db
-            .select({ currentPhase: publishJobs.currentPhase })
+          const phase = unsafeDb(backendDb)
+            .db.select({ currentPhase: publishJobs.currentPhase })
             .from(publishJobs)
             .where(eq(publishJobs.jobId, job.jobId))
             .get()?.currentPhase;

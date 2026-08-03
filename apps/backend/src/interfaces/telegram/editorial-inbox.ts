@@ -1,6 +1,6 @@
 import { desc, eq, sql } from "drizzle-orm";
 import { claimSync, markSynced } from "../../analytics/snapshots/creator-store.js";
-import type { BackendDb } from "../../db/client.js";
+import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { knowledgeEntities, postEntityLinks, posts } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { requestJson } from "../../foundation/http.js";
@@ -33,8 +33,8 @@ export async function sendDailyEditorialInbox(
   if (date.hour < config.EDITORIAL_INBOX_HOUR_MSK) return false;
   const key = `editorial_inbox:${date.day}`;
 
-  const material = backendDb.db
-    .select({ postId: posts.postId, date: posts.dateUtc, text: posts.text, textEn: posts.textEn })
+  const material = unsafeDb(backendDb)
+    .db.select({ postId: posts.postId, date: posts.dateUtc, text: posts.text, textEn: posts.textEn })
     .from(posts)
     .where(eq(posts.status, "active"))
     .orderBy(desc(posts.dateUtc), desc(posts.createdAt))
@@ -47,8 +47,8 @@ export async function sendDailyEditorialInbox(
   if (material.length === 0) return false;
   const owner = "telegram:editorial-inbox";
   if (!claimSync(backendDb, key, 24 * 60 * 60, owner)) return false;
-  const clusters = backendDb.db
-    .select({ slug: knowledgeEntities.slug, title: knowledgeEntities.titleRu, count: sql<number>`count(*)` })
+  const clusters = unsafeDb(backendDb)
+    .db.select({ slug: knowledgeEntities.slug, title: knowledgeEntities.titleRu, count: sql<number>`count(*)` })
     .from(postEntityLinks)
     .innerJoin(knowledgeEntities, eq(knowledgeEntities.id, postEntityLinks.entityId))
     .groupBy(knowledgeEntities.id)

@@ -3,7 +3,6 @@ import crypto from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, unlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 import type { ApplicationPorts } from "../application/ports.js";
@@ -19,22 +18,29 @@ import { createStudioQueueStore } from "./repositories/studio-queue.js";
 import { createStudioSettingsStore } from "./repositories/studio-settings.js";
 import { createStudioVideoStore } from "./repositories/studio-videos.js";
 import * as schema from "./schema.js";
+import type { RawBackendDb, RawSqlite } from "./unsafe.js";
 
+export { unsafeDb } from "./unsafe.js";
+
+/** Public runtime handle exposed to application services and interfaces. */
 export type BackendDb = ApplicationPorts & {
-  sqlite: SqliteCompat;
-  db: BunSQLiteDatabase<typeof schema>;
   close: () => void;
+};
+
+/**
+ * Explicit escape hatch for infrastructure code that still needs raw SQLite.
+ * Keep this type out of Studio and Content application services.
+ */
+export type UnsafeBackendDb = BackendDb & {
+  sqlite: RawBackendDb["sqlite"];
+  db: RawBackendDb["db"];
 };
 
 type MigrationStatus = { hash: string; createdAt: number };
 
-type SqliteCompat = Omit<Database, "prepare" | "query"> & {
-  prepare: (sql: string) => any;
-  query: (sql: string) => any;
-  backup: (target: string) => Promise<void>;
-};
+type SqliteCompat = RawSqlite;
 
-export function openBackendDb(path: string, timeout = 30_000): BackendDb {
+export function openBackendDb(path: string, timeout = 30_000): UnsafeBackendDb {
   if (path !== ":memory:") {
     mkdirSync(dirname(path), { recursive: true });
   }
@@ -59,7 +65,7 @@ export function openBackendDb(path: string, timeout = 30_000): BackendDb {
   migrate(db, { migrationsFolder: migrationsFolder() });
   sqlite.run("PRAGMA foreign_keys = ON");
   const clock = { now: () => new Date() };
-  let backendDb: BackendDb;
+  let backendDb: UnsafeBackendDb;
   backendDb = {
     sqlite,
     db,

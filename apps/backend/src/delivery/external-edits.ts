@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { targetLocale } from "../botTargets.js";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { posts, postTargets } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { requestJson } from "../foundation/http.js";
@@ -14,13 +14,13 @@ export async function editPublishedTargets(
   config: BackendConfig,
   fetchImpl: typeof fetch = fetch,
 ): Promise<Array<Record<string, unknown>>> {
-  const post = backendDb.db
-    .select({ chatId: posts.chatId, mediaCount: posts.mediaCount })
+  const post = unsafeDb(backendDb)
+    .db.select({ chatId: posts.chatId, mediaCount: posts.mediaCount })
     .from(posts)
     .where(eq(posts.postKey, edit.postKey))
     .get();
-  const rows = backendDb.db
-    .select({ target: postTargets.target, status: postTargets.status, externalId: postTargets.externalId })
+  const rows = unsafeDb(backendDb)
+    .db.select({ target: postTargets.target, status: postTargets.status, externalId: postTargets.externalId })
     .from(postTargets)
     .where(eq(postTargets.postKey, edit.postKey))
     .all();

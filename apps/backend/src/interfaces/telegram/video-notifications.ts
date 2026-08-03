@@ -1,7 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import { type Bot, InlineKeyboard } from "grammy";
 import { botLocale } from "../../bot/i18n.js";
-import type { BackendDb } from "../../db/client.js";
+import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { drafts, publishJobs, studioNotificationSettings, videoDrafts, videoTargets } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { t } from "../../foundation/i18n/index.js";
@@ -24,7 +24,7 @@ export async function notifyFinalVideoFailure(
   videoTargetId: number | null,
 ): Promise<void> {
   if (!bot || !videoTargetId) return;
-  const target = backendDb.db.select().from(videoTargets).where(eq(videoTargets.id, videoTargetId)).get();
+  const target = unsafeDb(backendDb).db.select().from(videoTargets).where(eq(videoTargets.id, videoTargetId)).get();
   if (target?.status !== "failed") return;
   const draft = getVideoDraft(backendDb, videoDraftId);
   const targetName = target.target as VideoTarget;
@@ -75,7 +75,8 @@ export async function sendVideoReminder(
   videoTargetId: number | null,
 ): Promise<void> {
   const draft = getVideoDraft(backendDb, videoDraftId);
-  const target = videoTargetId == null ? null : backendDb.db.select().from(videoTargets).where(eq(videoTargets.id, videoTargetId)).get();
+  const target =
+    videoTargetId == null ? null : unsafeDb(backendDb).db.select().from(videoTargets).where(eq(videoTargets.id, videoTargetId)).get();
   if (!bot || !target || draft.status !== "scheduled") return;
   await forEachAdmin(config.ADMIN_IDS, async (actorId) => {
     const preference = notificationPreference(backendDb, actorId);
@@ -89,8 +90,8 @@ export async function sendVideoReminder(
         .text(t(locale, "notif.cancel-btn"), `video_cancel:${draft.id}`),
     });
   });
-  backendDb.db
-    .update(videoDrafts)
+  unsafeDb(backendDb)
+    .db.update(videoDrafts)
     .set({ reminderSentAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
     .where(eq(videoDrafts.id, draft.id))
     .run();
@@ -174,13 +175,13 @@ function completionTargets(backendDb: BackendDb, ref: string | null): Array<{ ta
   const match = ref?.match(/^(post|video):(\d+)$/);
   if (!match) return [];
   if (match[1] === "video")
-    return backendDb.db
-      .select({ target: videoTargets.target, status: videoTargets.status })
+    return unsafeDb(backendDb)
+      .db.select({ target: videoTargets.target, status: videoTargets.status })
       .from(videoTargets)
       .where(eq(videoTargets.videoDraftId, Number(match[2])))
       .all();
-  const jobs = backendDb.db
-    .select({ target: publishJobs.target, status: publishJobs.status })
+  const jobs = unsafeDb(backendDb)
+    .db.select({ target: publishJobs.target, status: publishJobs.status })
     .from(publishJobs)
     .where(eq(publishJobs.postId, Number(match[2])))
     .orderBy(desc(publishJobs.jobId))
@@ -191,8 +192,8 @@ function completionTargets(backendDb: BackendDb, ref: string | null): Array<{ ta
 function videoLocaleForRef(backendDb: BackendDb, ref: string | null): "ru" | "en" | null {
   const match = ref?.match(/^video:(\d+)$/);
   if (!match) return null;
-  const locale = backendDb.db
-    .select({ locale: videoDrafts.locale })
+  const locale = unsafeDb(backendDb)
+    .db.select({ locale: videoDrafts.locale })
     .from(videoDrafts)
     .where(eq(videoDrafts.id, Number(match[1])))
     .get()?.locale;
@@ -243,7 +244,7 @@ function friendlyStatus(status: string, locale: "ru" | "en"): string {
 }
 
 function notificationPreference(backendDb: BackendDb, actorId: number) {
-  const row = backendDb.db.select().from(studioNotificationSettings).where(eq(studioNotificationSettings.actorId, actorId)).get();
+  const row = unsafeDb(backendDb).db.select().from(studioNotificationSettings).where(eq(studioNotificationSettings.actorId, actorId)).get();
   return {
     remindersEnabled: row?.remindersEnabled !== 0,
     reminderMinutes: row?.reminderMinutes ?? 5,
@@ -256,15 +257,15 @@ function ownerForRef(backendDb: BackendDb, ref: string | null): number | null {
   if (!match) return null;
   if (match[1] === "video")
     return (
-      backendDb.db
-        .select({ actorId: videoDrafts.actorId })
+      unsafeDb(backendDb)
+        .db.select({ actorId: videoDrafts.actorId })
         .from(videoDrafts)
         .where(eq(videoDrafts.id, Number(match[2])))
         .get()?.actorId ?? null
     );
   return (
-    backendDb.db
-      .select({ actorId: drafts.actorId })
+    unsafeDb(backendDb)
+      .db.select({ actorId: drafts.actorId })
       .from(drafts)
       .where(eq(drafts.postId, Number(match[2])))
       .get()?.actorId ?? null

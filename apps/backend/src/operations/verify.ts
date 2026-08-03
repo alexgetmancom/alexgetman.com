@@ -1,5 +1,5 @@
 import { asc, eq, or } from "drizzle-orm";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { posts, postTargets } from "../db/schema.js";
 
 /** Read-only target verification for the Operations CLI and API. */
@@ -9,14 +9,14 @@ export async function verifyPostTargets(backendDb: BackendDb, ref: string): Prom
   // usable id, and otherwise match on the post key alone.
   const id = Number.isSafeInteger(numeric) ? numeric : null;
   const byKey = eq(posts.postKey, ref);
-  const post = backendDb.db
-    .select({ postKey: posts.postKey })
+  const post = unsafeDb(backendDb)
+    .db.select({ postKey: posts.postKey })
     .from(posts)
     .where(id == null ? byKey : or(byKey, eq(posts.postId, id), eq(posts.messageId, id)))
     .get();
   if (!post) throw new Error(`post not found: ${ref}`);
-  const targets = backendDb.db
-    .select({ target: postTargets.target, status: postTargets.status, url: postTargets.url, error: postTargets.error })
+  const targets = unsafeDb(backendDb)
+    .db.select({ target: postTargets.target, status: postTargets.status, url: postTargets.url, error: postTargets.error })
     .from(postTargets)
     .where(eq(postTargets.postKey, post.postKey))
     .orderBy(asc(postTargets.target))

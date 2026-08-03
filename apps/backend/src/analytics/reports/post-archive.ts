@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, max, sql } from "drizzle-orm";
-import type { BackendDb } from "../../db/client.js";
+import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { metricSamples, postLocales, posts, publications, videoTargets } from "../../db/schema.js";
 import { t } from "../../foundation/i18n/index.js";
 import type { StudioLocale as BotLocale } from "../../foundation/locale.js";
@@ -10,8 +10,8 @@ const PAGE_SIZE = 10;
 /** One definition of "a post the creator actually published", shared by the
  * archive listing and the archive summary so the two can never disagree. */
 function publishedPostCount(backendDb: BackendDb): number {
-  const row = backendDb.db
-    .select({ count: sql<number>`count(*)` })
+  const row = unsafeDb(backendDb)
+    .db.select({ count: sql<number>`count(*)` })
     .from(posts)
     .innerJoin(publications, eq(publications.postId, posts.postId))
     .where(eq(publications.status, "published"))
@@ -25,8 +25,8 @@ export function creatorPostArchive(
   locale: BotLocale = "en",
 ): { text: string; items: Array<{ id: number; label: string }>; total: number } {
   const total = publishedPostCount(backendDb);
-  const rows = backendDb.db
-    .select({ id: posts.postId, label: sql<string>`coalesce(nullif(trim(${posts.text}), ''), 'Media post')` })
+  const rows = unsafeDb(backendDb)
+    .db.select({ id: posts.postId, label: sql<string>`coalesce(nullif(trim(${posts.text}), ''), 'Media post')` })
     .from(posts)
     .innerJoin(publications, eq(publications.postId, posts.postId))
     .where(eq(publications.status, "published"))
@@ -44,21 +44,21 @@ export function creatorPostArchive(
 
 export function creatorPostMetrics(backendDb: BackendDb, postId: number, locale: BotLocale = "en"): string {
   const postKey = `post:${postId}`;
-  const post = backendDb.db
-    .select({ text: posts.text, mediaCount: posts.mediaCount, dateMsk: posts.dateMsk })
+  const post = unsafeDb(backendDb)
+    .db.select({ text: posts.text, mediaCount: posts.mediaCount, dateMsk: posts.dateMsk })
     .from(posts)
     .where(eq(posts.postId, postId))
     .get();
   if (!post) return t(locale, "report.post-not-found");
   // Only the newest sample per (target, metric): metric_samples is an append-only
   // history, so a plain select would sum every past observation.
-  const latestSampleIds = backendDb.db
-    .select({ id: max(metricSamples.id) })
+  const latestSampleIds = unsafeDb(backendDb)
+    .db.select({ id: max(metricSamples.id) })
     .from(metricSamples)
     .where(eq(metricSamples.postKey, postKey))
     .groupBy(metricSamples.target, metricSamples.metricName);
-  const rows = backendDb.db
-    .select({ target: metricSamples.target, metricName: metricSamples.metricName, value: metricSamples.value })
+  const rows = unsafeDb(backendDb)
+    .db.select({ target: metricSamples.target, metricName: metricSamples.metricName, value: metricSamples.value })
     .from(metricSamples)
     .where(and(eq(metricSamples.postKey, postKey), inArray(metricSamples.id, latestSampleIds)))
     .orderBy(metricSamples.target, metricSamples.metricName)
@@ -98,8 +98,8 @@ export function creatorPostMetrics(backendDb: BackendDb, postId: number, locale:
  * to render it, so archive previews do not leak transport details into Analytics. */
 export function creatorPostMedia(backendDb: BackendDb, postId: number, locale: BotLocale): Record<string, unknown>[] {
   const preferred = locale === "ru" ? "ru" : "en";
-  const row = backendDb.db
-    .select({ mediaJson: postLocales.mediaJson })
+  const row = unsafeDb(backendDb)
+    .db.select({ mediaJson: postLocales.mediaJson })
     .from(postLocales)
     .where(and(eq(postLocales.postId, postId), eq(postLocales.locale, preferred)))
     .get();
@@ -119,8 +119,8 @@ export function creatorArchiveSummary(
   const postCount = publishedPostCount(backendDb);
   const videos = hasVideo
     ? Number(
-        backendDb.db
-          .select({ count: sql<number>`count(distinct ${videoTargets.videoDraftId})` })
+        unsafeDb(backendDb)
+          .db.select({ count: sql<number>`count(distinct ${videoTargets.videoDraftId})` })
           .from(videoTargets)
           .where(eq(videoTargets.status, "published"))
           .get()?.count ?? 0,

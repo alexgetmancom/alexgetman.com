@@ -1,11 +1,11 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { likes } from "../db/schema.js";
 
 export function likesInfo(backendDb: BackendDb, postId: string, clientHash: string): { likes: number; user_liked: boolean } {
-  const count = backendDb.db.select({ count: sql<number>`count(*)` }).from(likes).where(eq(likes.postId, postId)).get();
-  const liked = backendDb.db
-    .select({ postId: likes.postId })
+  const count = unsafeDb(backendDb).db.select({ count: sql<number>`count(*)` }).from(likes).where(eq(likes.postId, postId)).get();
+  const liked = unsafeDb(backendDb)
+    .db.select({ postId: likes.postId })
     .from(likes)
     .where(and(eq(likes.postId, postId), eq(likes.ipHash, clientHash)))
     .get();
@@ -19,8 +19,8 @@ export function batchLikes(
 ): Record<string, { likes: number; user_liked: boolean }> {
   if (postIds.length === 0) return {};
   const unique = [...new Set(postIds)];
-  const rows = backendDb.db
-    .select({
+  const rows = unsafeDb(backendDb)
+    .db.select({
       postId: likes.postId,
       count: sql<number>`count(*)`,
       userLiked: sql<number>`max(case when ${likes.ipHash} = ${clientHash} then 1 else 0 end)`,
@@ -34,7 +34,7 @@ export function batchLikes(
 }
 
 export function toggleLike(backendDb: BackendDb, postId: string, clientHash: string): { likes: number; user_liked: boolean } {
-  backendDb.db.transaction((tx) => {
+  unsafeDb(backendDb).db.transaction((tx) => {
     const exists = tx
       .select({ postId: likes.postId })
       .from(likes)

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { creatorArchiveSummary, creatorPostArchive, creatorPostMedia, creatorPostMetrics } from "../src/analytics/reports/post-archive.js";
-import type { BackendDb } from "../src/db/client.js";
+import type { UnsafeBackendDb } from "../src/db/client.js";
 import { metricSamples, postLocales, posts, publications } from "../src/db/schema.js";
 import { insertPublishedVideo } from "./helpers/analytics.js";
 import { withDb } from "./helpers/db.js";
@@ -8,7 +8,7 @@ import { withDb } from "./helpers/db.js";
 const at = "2026-07-27T10:00:00.000Z";
 
 function publishedPost(
-  backendDb: BackendDb,
+  backendDb: UnsafeBackendDb,
   options: { postId: number; text?: string | null; updatedAt?: string; mediaCount?: number; dateMsk?: string; status?: string },
 ): void {
   backendDb.db
@@ -32,7 +32,7 @@ function publishedPost(
 }
 
 function sample(
-  backendDb: BackendDb,
+  backendDb: UnsafeBackendDb,
   values: { postId: number; target: string; metricName: string; value: number; sampledAt?: string },
 ): void {
   backendDb.db

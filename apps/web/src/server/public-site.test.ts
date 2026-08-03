@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { type BackendDb, openBackendDb } from "../../../backend/src/db/client.js";
+import { openBackendDb, type UnsafeBackendDb } from "../../../backend/src/db/client.js";
 import {
   knowledgeEntities,
   postEntityLinks,
@@ -14,7 +14,7 @@ import {
 } from "../../../backend/src/db/schema.js";
 import { loadPublicSiteFeed, loadPublicSiteItem } from "../../../backend/src/public/site-read-model.js";
 
-let backendDb: BackendDb;
+let backendDb: UnsafeBackendDb;
 
 // Opened per test rather than inside each `it`: a failure before the assignment
 // used to leave the previous test's handle in place and close it twice.

@@ -3,7 +3,7 @@ import path from "node:path";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { videoChannelConfig } from "../channels/channel-config.js";
 import { videoSourcePath } from "../content/video-assets.js";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
@@ -25,8 +25,8 @@ export function createVideoDraft(
 ): number {
   const now = new Date().toISOString();
   const retentionUntil = new Date(Date.now() + retentionHours * 60 * 60_000).toISOString();
-  const row = backendDb.db
-    .insert(videoDrafts)
+  const row = unsafeDb(backendDb)
+    .db.insert(videoDrafts)
     .values({
       actorId,
       locale,
@@ -44,14 +44,18 @@ export function createVideoDraft(
 }
 
 export function updateVideoLabel(backendDb: BackendDb, id: number, label: string): void {
-  backendDb.db.update(videoDrafts).set({ label: label.trim(), updatedAt: new Date().toISOString() }).where(eq(videoDrafts.id, id)).run();
+  unsafeDb(backendDb)
+    .db.update(videoDrafts)
+    .set({ label: label.trim(), updatedAt: new Date().toISOString() })
+    .where(eq(videoDrafts.id, id))
+    .run();
 }
 
 export function replaceVideoTargets(backendDb: BackendDb, videoDraftId: number, targets: VideoTarget[]): void {
   const allowed = targets.filter((target, index) => VIDEO_TARGETS.includes(target) && targets.indexOf(target) === index);
   if (allowed.length === 0) throw new StudioError("err.video-pick-platform");
   const now = new Date().toISOString();
-  backendDb.db.transaction((tx) => {
+  unsafeDb(backendDb).db.transaction((tx) => {
     const existingTargets = tx.select().from(videoTargets).where(eq(videoTargets.videoDraftId, videoDraftId)).all();
     if (existingTargets.some((target) => !isVideoTargetEditable(target.status))) throw new StudioError("err.video-targets-locked");
     // Foreign keys cascade (PRAGMA foreign_keys=ON, migration 0008): deleting the
@@ -76,8 +80,8 @@ export function replaceVideoTargets(backendDb: BackendDb, videoDraftId: number, 
 
 /** Removes one editable target and every dependent job/metric row atomically. */
 export function removeVideoTarget(backendDb: BackendDb, videoDraftId: number, targetName: VideoTarget, retentionHours: number): boolean {
-  const target = backendDb.db
-    .select()
+  const target = unsafeDb(backendDb)
+    .db.select()
     .from(videoTargets)
     .where(and(eq(videoTargets.videoDraftId, videoDraftId), eq(videoTargets.target, targetName)))
     .get();
@@ -85,7 +89,7 @@ export function removeVideoTarget(backendDb: BackendDb, videoDraftId: number, ta
   if (!isVideoTargetEditable(target.status)) throw new StudioError("err.video-target-locked");
 
   const now = new Date().toISOString();
-  const remaining = backendDb.db.transaction((tx) => {
+  const remaining = unsafeDb(backendDb).db.transaction((tx) => {
     // FK cascade (see replaceVideoTargets): removing the target row deletes its
     // comments, metric snapshots, schedule and platform jobs.
     tx.delete(videoTargets).where(eq(videoTargets.id, target.id)).run();
@@ -106,8 +110,8 @@ export function removeVideoTarget(backendDb: BackendDb, videoDraftId: number, ta
 }
 
 export function saveVideoMetadata(backendDb: BackendDb, videoDraftId: number, target: VideoTarget, metadata: VideoMetadata): void {
-  backendDb.db
-    .update(videoTargets)
+  unsafeDb(backendDb)
+    .db.update(videoTargets)
     .set({
       metadataJson: metadata as Record<string, unknown>,
       updatedAt: new Date().toISOString(),
@@ -133,7 +137,7 @@ export function scheduleVideo(
     const date = schedule[target.target as VideoTarget];
     if (!date || Number.isNaN(date.getTime()) || date.getTime() <= now.getTime()) throw new StudioError("err.schedule-time-past");
   }
-  backendDb.db.transaction((tx) => {
+  unsafeDb(backendDb).db.transaction((tx) => {
     for (const target of selectedTargets) {
       const targetSchedule = schedule[target.target as VideoTarget];
       if (!targetSchedule) continue;
@@ -184,15 +188,15 @@ export function scheduleVideo(
 /** Requeues only an explicitly selected failed or externally verified platform;
  * the other platform and its media stay untouched. */
 export function retryFailedVideoTarget(backendDb: BackendDb, videoDraftId: number, targetName: VideoTarget): void {
-  const target = backendDb.db
-    .select()
+  const target = unsafeDb(backendDb)
+    .db.select()
     .from(videoTargets)
     .where(and(eq(videoTargets.videoDraftId, videoDraftId), eq(videoTargets.target, targetName)))
     .get();
   if (!target || !["failed", "verification_required"].includes(target.status)) throw new StudioError("err.retry-only-failed");
   const now = new Date();
   const nowIso = now.toISOString();
-  backendDb.db.transaction((tx) => {
+  unsafeDb(backendDb).db.transaction((tx) => {
     const reusePreparedYouTube = targetName === "youtube_shorts" && Boolean(target.externalId);
     tx.update(videoTargets)
       .set({
@@ -319,7 +323,7 @@ export function cancelVideo(backendDb: BackendDb, videoDraftId: number, retentio
         new Date(target.scheduledAt).getTime() > nowMs,
     )
     .map((target) => target.externalId as string);
-  backendDb.db.transaction((tx) => {
+  unsafeDb(backendDb).db.transaction((tx) => {
     tx.update(videoJobs)
       .set({ status: "cancelled", lockedAt: null, lockedBy: null, updatedAt: now })
       .where(and(eq(videoJobs.videoDraftId, videoDraftId), inArray(videoJobs.status, ["queued", "running"])))

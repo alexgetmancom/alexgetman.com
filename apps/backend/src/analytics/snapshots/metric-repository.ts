@@ -1,5 +1,5 @@
 import { lte } from "drizzle-orm";
-import type { BackendDb } from "../../db/client.js";
+import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { type JsonValue, metricSamples, postMetrics } from "../../db/schema.js";
 
 /** Persistence for collected analytics samples. */
@@ -10,7 +10,7 @@ export function upsertMetrics(
   metrics: Record<string, number>,
   source: string,
   raw: JsonValue,
-  db = backendDb.db,
+  db = unsafeDb(backendDb).db,
 ): void {
   const sampledAt = new Date().toISOString();
   for (const [name, value] of Object.entries(metrics)) {
@@ -33,7 +33,7 @@ export function upsertMetricError(
   source: string,
   error: string,
   raw: JsonValue,
-  db = backendDb.db,
+  db = unsafeDb(backendDb).db,
 ): void {
   const sampledAt = new Date().toISOString();
   db.insert(postMetrics)
@@ -49,5 +49,5 @@ export function upsertMetricError(
 // before its start to calculate a delta.
 export function pruneMetricSamples(backendDb: BackendDb, daysKeep = 35): void {
   const cutoff = new Date(Date.now() - daysKeep * 24 * 60 * 60 * 1000).toISOString();
-  backendDb.db.delete(metricSamples).where(lte(metricSamples.sampledAt, cutoff)).run();
+  unsafeDb(backendDb).db.delete(metricSamples).where(lte(metricSamples.sampledAt, cutoff)).run();
 }

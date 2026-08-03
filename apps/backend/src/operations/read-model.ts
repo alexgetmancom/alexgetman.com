@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import {
   type JsonValue,
   metricSamples,
@@ -75,8 +75,8 @@ export function pipelineStatusPayload(
   options: PipelineReadModelOptions = {},
 ) {
   const readModelOptions = resolvePipelineReadModelOptions(options);
-  const jobs = backendDb.db
-    .select({
+  const jobs = unsafeDb(backendDb)
+    .db.select({
       jobId: publishJobs.jobId,
       postId: publishJobs.postId,
       postKey: publishJobs.postKey,
@@ -95,8 +95,8 @@ export function pipelineStatusPayload(
     .limit(50)
     .all();
 
-  const workers = backendDb.db
-    .select({ name: workerState.name, stateJson: workerState.stateJson, updatedAt: workerState.updatedAt })
+  const workers = unsafeDb(backendDb)
+    .db.select({ name: workerState.name, stateJson: workerState.stateJson, updatedAt: workerState.updatedAt })
     .from(workerState)
     .all()
     .map((row) => {
@@ -116,12 +116,12 @@ export function pipelineStatusPayload(
       };
     });
 
-  const [postCount] = backendDb.db.select({ count: sql<number>`count(*)` }).from(posts).all();
-  const [targetCount] = backendDb.db.select({ count: sql<number>`count(*)` }).from(postTargets).all();
-  const [metricCount] = backendDb.db.select({ count: sql<number>`count(*)` }).from(postMetrics).all();
-  const [sampleCount] = backendDb.db.select({ count: sql<number>`count(*)` }).from(metricSamples).all();
-  const latestSiteJobs = backendDb.db
-    .select({
+  const [postCount] = unsafeDb(backendDb).db.select({ count: sql<number>`count(*)` }).from(posts).all();
+  const [targetCount] = unsafeDb(backendDb).db.select({ count: sql<number>`count(*)` }).from(postTargets).all();
+  const [metricCount] = unsafeDb(backendDb).db.select({ count: sql<number>`count(*)` }).from(postMetrics).all();
+  const [sampleCount] = unsafeDb(backendDb).db.select({ count: sql<number>`count(*)` }).from(metricSamples).all();
+  const latestSiteJobs = unsafeDb(backendDb)
+    .db.select({
       jobId: siteJobs.jobId,
       postId: siteJobs.postId,
       messageId: siteJobs.messageId,
@@ -137,8 +137,8 @@ export function pipelineStatusPayload(
     .orderBy(desc(siteJobs.updatedAt), desc(siteJobs.jobId))
     .limit(25)
     .all();
-  const recentMetrics = backendDb.db
-    .select({
+  const recentMetrics = unsafeDb(backendDb)
+    .db.select({
       postKey: postMetrics.postKey,
       target: postMetrics.target,
       metricName: postMetrics.metricName,
@@ -155,8 +155,8 @@ export function pipelineStatusPayload(
     .limit(100)
     .all();
   const now = new Date().toISOString();
-  const [metricScheduleSummary] = backendDb.db
-    .select({
+  const [metricScheduleSummary] = unsafeDb(backendDb)
+    .db.select({
       total: sql<number>`count(*)`,
       frozen: sql<number>`sum(case when ${metricSchedule.frozenAt} is not null then 1 else 0 end)`,
       due: sql<number>`sum(case when ${metricSchedule.frozenAt} is null and (${metricSchedule.nextCheckAt} is null or ${metricSchedule.nextCheckAt} <= ${now}) then 1 else 0 end)`,
@@ -168,13 +168,13 @@ export function pipelineStatusPayload(
   const pipelinePostRows = pipelinePosts(backendDb, config, weekOffset, periodDays, comparisonOffset, offsetDays, readModelOptions);
   const feed = readFeedSummary(config, backendDb);
   const socialState = readWorkerState(backendDb, "crosspost_worker") ?? readWorkerState(backendDb, "queue") ?? {};
-  const [targetFailureCount] = backendDb.db
-    .select({ count: sql<number>`count(*)` })
+  const [targetFailureCount] = unsafeDb(backendDb)
+    .db.select({ count: sql<number>`count(*)` })
     .from(postTargets)
     .where(eq(postTargets.status, "failed"))
     .all();
-  const [siteFailureCount] = backendDb.db
-    .select({ count: sql<number>`count(*)` })
+  const [siteFailureCount] = unsafeDb(backendDb)
+    .db.select({ count: sql<number>`count(*)` })
     .from(siteJobs)
     .where(eq(siteJobs.status, "failed"))
     .all();
@@ -229,8 +229,8 @@ function pipelinePosts(
   const postKeys = rows.map((row) => String(row.post_key ?? "")).filter(Boolean);
   const targetRows = (
     postKeys.length
-      ? backendDb.db
-          .select(
+      ? unsafeDb(backendDb)
+          .db.select(
             options.compact
               ? {
                   postKey: postTargets.postKey,
@@ -258,8 +258,8 @@ function pipelinePosts(
   ) as PipelineTargetRow[];
   const metricRows = (
     postKeys.length
-      ? backendDb.db
-          .select(
+      ? unsafeDb(backendDb)
+          .db.select(
             options.compact
               ? {
                   postKey: postMetrics.postKey,
@@ -316,8 +316,8 @@ function fetchPostRows(
   const boundedContent = includeContent && contentLimit !== null;
   const publicationRows = (
     includeContent && !boundedContent
-      ? backendDb.db
-          .select({
+      ? unsafeDb(backendDb)
+          .db.select({
             postId: publications.postId,
             telegramMessageId: publications.telegramMessageId,
             createdAt: publications.createdAt,
@@ -339,8 +339,8 @@ function fetchPostRows(
           .limit(100)
           .all()
       : boundedContent
-        ? backendDb.db
-            .select({
+        ? unsafeDb(backendDb)
+            .db.select({
               postId: publications.postId,
               telegramMessageId: publications.telegramMessageId,
               createdAt: publications.createdAt,
@@ -357,8 +357,8 @@ function fetchPostRows(
             .orderBy(desc(publications.createdAt))
             .limit(100)
             .all()
-        : backendDb.db
-            .select({
+        : unsafeDb(backendDb)
+            .db.select({
               postId: publications.postId,
               telegramMessageId: publications.telegramMessageId,
               createdAt: publications.createdAt,
@@ -373,8 +373,8 @@ function fetchPostRows(
   if (boundedContent) {
     const contentPostIds = publicationRows.slice(0, Math.max(0, Math.min(100, Math.floor(contentLimit ?? 0)))).map((row) => row.postId);
     if (contentPostIds.length) {
-      const contentRows = backendDb.db
-        .select({ postId: postLocales.postId, locale: postLocales.locale, text: postLocales.text, mediaJson: postLocales.mediaJson })
+      const contentRows = unsafeDb(backendDb)
+        .db.select({ postId: postLocales.postId, locale: postLocales.locale, text: postLocales.text, mediaJson: postLocales.mediaJson })
         .from(postLocales)
         .where(inArray(postLocales.postId, contentPostIds))
         .all();
@@ -399,8 +399,8 @@ function fetchPostRows(
   }
   const publicationKeys = publicationRows.map((row) => `post:${row.postId}`);
   const publicationPosts = publicationKeys.length
-    ? backendDb.db
-        .select({ postKey: posts.postKey, messageId: posts.messageId, dateMsk: posts.dateMsk, telegramUrl: posts.telegramUrl })
+    ? unsafeDb(backendDb)
+        .db.select({ postKey: posts.postKey, messageId: posts.messageId, dateMsk: posts.dateMsk, telegramUrl: posts.telegramUrl })
         .from(posts)
         .where(inArray(posts.postKey, publicationKeys))
         .all()
@@ -456,8 +456,8 @@ function fetchMetricSamples(
   if (postKeys.length === 0) return [];
   const placeholders = postKeys.map(() => "?").join(",");
   const bucketSeconds = periodDays <= 7 ? 60 * 60 : 24 * 60 * 60;
-  const rows = backendDb.sqlite
-    .prepare(
+  const rows = unsafeDb(backendDb)
+    .sqlite.prepare(
       `WITH bucketed AS (
          SELECT id, post_key, target, metric_name, value, sampled_at,
                 CAST((unixepoch(sampled_at) - unixepoch(?)) / ? AS INTEGER) AS bucket
@@ -497,8 +497,8 @@ function fetchMetricSamples(
 
 /** Stable revision for the pipeline read model. It must not be request time. */
 export function pipelineUpdatedAt(backendDb: BackendDb): string | null {
-  const row = backendDb.sqlite
-    .prepare(
+  const row = unsafeDb(backendDb)
+    .sqlite.prepare(
       `SELECT MAX(value) AS value
          FROM (
            SELECT MAX(updated_at) AS value FROM posts
@@ -515,14 +515,14 @@ export function pipelineUpdatedAt(backendDb: BackendDb): string | null {
 }
 
 function readFeedSummary(config: BackendConfig, backendDb: BackendDb): { channel: string; updated_at: string | null; items: number } {
-  const [summary] = backendDb.db
-    .select({ items: sql<number>`count(*)`, updatedAt: sql<string | null>`max(${posts.updatedAt})` })
+  const [summary] = unsafeDb(backendDb)
+    .db.select({ items: sql<number>`count(*)`, updatedAt: sql<string | null>`max(${posts.updatedAt})` })
     .from(posts)
     .all();
   return { channel: config.CHANNEL_USERNAME, updated_at: summary?.updatedAt ?? null, items: Number(summary?.items ?? 0) };
 }
 
 function readWorkerState(backendDb: BackendDb, name: string): Record<string, unknown> | null {
-  const row = backendDb.db.select({ stateJson: workerState.stateJson }).from(workerState).where(eq(workerState.name, name)).get();
+  const row = unsafeDb(backendDb).db.select({ stateJson: workerState.stateJson }).from(workerState).where(eq(workerState.name, name)).get();
   return row?.stateJson ?? null;
 }

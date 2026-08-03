@@ -1,11 +1,13 @@
+import type { ApplicationPorts } from "../../application/ports.js";
 import { fixUrlSlashes } from "../../content/message.js";
-import type { BackendDb } from "../../db/client.js";
 import { StudioError } from "../../foundation/errors.js";
 import type { StudioActorId, StudioLocale } from "../contracts.js";
 
+type SettingsDependencies = Pick<ApplicationPorts, "clock" | "studioSettings">;
+
 /** Read as a plain function, not a method: the service is an object literal, so
  * a method reading it through `this` breaks the moment it is destructured. */
-function readNotifications(backendDb: BackendDb, actorId: StudioActorId) {
+function readNotifications(backendDb: SettingsDependencies, actorId: StudioActorId) {
   const row = backendDb.studioSettings.notifications(actorId);
   return {
     remindersEnabled: row?.remindersEnabled !== 0,
@@ -14,11 +16,11 @@ function readNotifications(backendDb: BackendDb, actorId: StudioActorId) {
   };
 }
 
-function readLocale(backendDb: BackendDb, actorId: StudioActorId): StudioLocale {
+function readLocale(backendDb: SettingsDependencies, actorId: StudioActorId): StudioLocale {
   return backendDb.studioSettings.locale(actorId) === "ru" ? "ru" : "en";
 }
 
-function writeYoutubeSignature(backendDb: BackendDb, actorId: StudioActorId, value: string): void {
+function writeYoutubeSignature(backendDb: SettingsDependencies, actorId: StudioActorId, value: string): void {
   const signature = value === "-" ? "" : fixUrlSlashes(value);
   backendDb.studioSettings.saveBotSettings({
     actorId,
@@ -28,13 +30,13 @@ function writeYoutubeSignature(backendDb: BackendDb, actorId: StudioActorId, val
   });
 }
 
-function readWeeklyDigest(backendDb: BackendDb) {
+function readWeeklyDigest(backendDb: SettingsDependencies) {
   const row = backendDb.studioSettings.weeklyDigest();
   return { enabled: row?.enabled !== 0, weekday: row?.weekday ?? 0 };
 }
 
 /** Owner settings commands used by Telegram today and any future Studio adapter. */
-export function settingsService(backendDb: BackendDb) {
+export function settingsService(backendDb: SettingsDependencies) {
   return {
     locale(actorId: StudioActorId): StudioLocale {
       return readLocale(backendDb, actorId);

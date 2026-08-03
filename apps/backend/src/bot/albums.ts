@@ -1,7 +1,7 @@
 import { and, asc, eq, lte } from "drizzle-orm";
 import type { Bot } from "grammy";
 import { parseArrayValue } from "../content/message.js";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { pendingAlbums } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { t } from "../foundation/i18n/index.js";
@@ -37,8 +37,8 @@ type PendingAlbumInput = {
 
 export function appendPendingAlbum(backendDb: BackendDb, input: PendingAlbumInput): boolean {
   const id = `${input.actorId}:${input.chatId}:${input.mediaGroupId}:${input.action ?? "draft"}:${input.draftId ?? ""}`;
-  const row = backendDb.db
-    .select({ mediaJson: pendingAlbums.mediaJson, textRu: pendingAlbums.textRu, textEntitiesJson: pendingAlbums.textEntitiesJson })
+  const row = unsafeDb(backendDb)
+    .db.select({ mediaJson: pendingAlbums.mediaJson, textRu: pendingAlbums.textRu, textEntitiesJson: pendingAlbums.textEntitiesJson })
     .from(pendingAlbums)
     .where(eq(pendingAlbums.id, id))
     .get();
@@ -58,8 +58,8 @@ export function appendPendingAlbum(backendDb: BackendDb, input: PendingAlbumInpu
     notified: ALBUM_SETTLED,
     updatedAt: now,
   };
-  backendDb.db
-    .insert(pendingAlbums)
+  unsafeDb(backendDb)
+    .db.insert(pendingAlbums)
     .values(values)
     .onConflictDoUpdate({
       target: pendingAlbums.id,
@@ -78,8 +78,8 @@ export function appendPendingAlbum(backendDb: BackendDb, input: PendingAlbumInpu
 export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendDb, config: BackendConfig): Promise<number> {
   if (!bot) return 0;
   const cutoff = new Date(Date.now() - config.CONTROLLER_ALBUM_SETTLE_SECONDS * 1000).toISOString();
-  const rows = backendDb.db
-    .select({
+  const rows = unsafeDb(backendDb)
+    .db.select({
       id: pendingAlbums.id,
       actorId: pendingAlbums.actorId,
       chatId: pendingAlbums.chatId,
@@ -96,8 +96,8 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
     .all();
   let completed = 0;
   for (const row of rows) {
-    const claim = backendDb.db
-      .update(pendingAlbums)
+    const claim = unsafeDb(backendDb)
+      .db.update(pendingAlbums)
       .set({ notified: ALBUM_CLAIMED })
       .where(and(eq(pendingAlbums.id, row.id), eq(pendingAlbums.notified, ALBUM_SETTLED), lte(pendingAlbums.updatedAt, cutoff)))
       .returning({ id: pendingAlbums.id })
@@ -128,8 +128,8 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
         await refreshDraftControlCard(bot, backendDb, config, row.actorId, created, row.chatId);
         clearPostAdminStateIfCurrent(backendDb, row.actorId, row.action, row.draftId);
       }
-      const removed = backendDb.db
-        .delete(pendingAlbums)
+      const removed = unsafeDb(backendDb)
+        .db.delete(pendingAlbums)
         .where(and(eq(pendingAlbums.id, row.id), eq(pendingAlbums.notified, ALBUM_CLAIMED)))
         .returning({ id: pendingAlbums.id })
         .get();
@@ -138,11 +138,11 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
       const attempts = row.attemptCount + 1;
       const exhausted = attempts >= ALBUM_MAX_ATTEMPTS;
       if (exhausted) {
-        backendDb.db.delete(pendingAlbums).where(eq(pendingAlbums.id, row.id)).run();
+        unsafeDb(backendDb).db.delete(pendingAlbums).where(eq(pendingAlbums.id, row.id)).run();
         await notifyAlbumGaveUp(bot, backendDb, row.actorId, row.chatId);
       } else {
-        backendDb.db
-          .update(pendingAlbums)
+        unsafeDb(backendDb)
+          .db.update(pendingAlbums)
           .set({ notified: ALBUM_SETTLED, attemptCount: attempts, updatedAt: new Date().toISOString() })
           .where(and(eq(pendingAlbums.id, row.id), eq(pendingAlbums.notified, ALBUM_CLAIMED)))
           .run();

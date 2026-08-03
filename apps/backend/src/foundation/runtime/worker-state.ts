@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import type { BackendDb } from "../../db/client.js";
+import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { type JsonValue, workerState } from "../../db/schema.js";
 import type { BackendConfig } from "../config.js";
 
@@ -14,8 +14,8 @@ export function recordWorkerState(backendDb: BackendDb, name: string, state: Rec
     scheduler_error: null,
     last_heartbeat_at: now,
   };
-  backendDb.db
-    .insert(workerState)
+  unsafeDb(backendDb)
+    .db.insert(workerState)
     .values({ name, stateJson: payload, updatedAt: now })
     .onConflictDoUpdate({ target: workerState.name, set: { stateJson: payload, updatedAt: now } })
     .run();
@@ -30,10 +30,11 @@ export function recordWorkerHeartbeat(
 ): void {
   const now = new Date().toISOString();
   const current =
-    backendDb.db.select({ stateJson: workerState.stateJson }).from(workerState).where(eq(workerState.name, name)).get()?.stateJson ?? {};
+    unsafeDb(backendDb).db.select({ stateJson: workerState.stateJson }).from(workerState).where(eq(workerState.name, name)).get()
+      ?.stateJson ?? {};
   const payload = { ...current, ...state, scheduler_error: schedulerError, last_heartbeat_at: now };
-  backendDb.db
-    .insert(workerState)
+  unsafeDb(backendDb)
+    .db.insert(workerState)
     .values({ name, stateJson: payload, updatedAt: now })
     .onConflictDoUpdate({ target: workerState.name, set: { stateJson: payload, updatedAt: now } })
     .run();

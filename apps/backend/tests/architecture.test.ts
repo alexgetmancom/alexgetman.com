@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const root = join(import.meta.dir, "../../..");
@@ -7,6 +7,17 @@ const root = join(import.meta.dir, "../../..");
 function source(relativePath: string): string {
   return readFileSync(join(root, relativePath), "utf8");
 }
+
+function sourceFiles(relativeDirectory: string): string[] {
+  return readdirSync(join(root, relativeDirectory), { withFileTypes: true }).flatMap((entry) => {
+    const relativePath = join(relativeDirectory, entry.name);
+    if (entry.isDirectory()) return sourceFiles(relativePath);
+    return entry.isFile() && entry.name.endsWith(".ts") ? [relativePath] : [];
+  });
+}
+
+/** Keep exceptions explicit and shrinking. New application files are covered automatically. */
+const applicationPersistenceExceptions = new Set<string>();
 
 describe("architecture fitness", () => {
   it("keeps one public entry point for each application boundary", () => {
@@ -40,18 +51,13 @@ describe("architecture fitness", () => {
   });
 
   it("keeps Studio and content application services behind persistence ports", () => {
-    const files = [
-      "apps/backend/src/content/assets.ts",
-      "apps/backend/src/content/entity-enrichment.ts",
-      "apps/backend/src/content/video-assets.ts",
-      "apps/backend/src/studio/projections.ts",
-      "apps/backend/src/studio/services/notifications.ts",
-      "apps/backend/src/studio/services/settings.ts",
-      "apps/backend/src/studio/services/videos.ts",
-    ];
+    const files = ["apps/backend/src/studio", "apps/backend/src/content"].flatMap(sourceFiles);
     for (const file of files) {
+      if (applicationPersistenceExceptions.has(file)) continue;
       const text = source(file);
       expect(text).not.toContain("backendDb.db");
+      expect(text).not.toContain("backendDb.sqlite");
+      expect(text).not.toContain("unsafeDb(");
       expect(text).not.toMatch(/from ["'][^"']*\/db\/schema/);
       expect(text).not.toMatch(/from ["']drizzle-orm/);
     }

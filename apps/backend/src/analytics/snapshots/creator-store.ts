@@ -1,5 +1,5 @@
 import { and, eq, isNull, lt, lte, or } from "drizzle-orm";
-import type { BackendDb } from "../../db/client.js";
+import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { analyticsSync, creatorProfileSnapshots, creatorProfiles, socialComments } from "../../db/schema.js";
 
 /** Atomically reserves a due profile sync for one worker instance. */
@@ -7,14 +7,14 @@ export function claimSync(backendDb: BackendDb, source: string, intervalSeconds:
   const now = new Date().toISOString();
   const dueBefore = new Date(Date.now() - intervalSeconds * 1000).toISOString();
   const staleBefore = new Date(Date.now() - intervalSeconds * 2 * 1000).toISOString();
-  backendDb.db
-    .insert(analyticsSync)
+  unsafeDb(backendDb)
+    .db.insert(analyticsSync)
     .values({ source, lastSyncedAt: new Date(0).toISOString(), lastSuccessAt: null, lastError: null, lockedBy: null, lockedAt: null })
     .onConflictDoNothing()
     .run();
   return Boolean(
-    backendDb.db
-      .update(analyticsSync)
+    unsafeDb(backendDb)
+      .db.update(analyticsSync)
       .set({ lockedBy: owner, lockedAt: now })
       .where(
         and(
@@ -31,8 +31,8 @@ export function claimSync(backendDb: BackendDb, source: string, intervalSeconds:
 export function markSynced(backendDb: BackendDb, source: string, error: string | null = null, owner?: string): void {
   const lastSyncedAt = new Date().toISOString();
   if (!owner) {
-    backendDb.db
-      .insert(analyticsSync)
+    unsafeDb(backendDb)
+      .db.insert(analyticsSync)
       .values({ source, lastSyncedAt, lastSuccessAt: error ? null : lastSyncedAt, lastError: error, lockedBy: null, lockedAt: null })
       .onConflictDoUpdate({
         target: analyticsSync.source,
@@ -46,8 +46,8 @@ export function markSynced(backendDb: BackendDb, source: string, error: string |
       .run();
     return;
   }
-  backendDb.db
-    .update(analyticsSync)
+  unsafeDb(backendDb)
+    .db.update(analyticsSync)
     .set({
       lastSyncedAt,
       ...(error ? { lastError: error } : { lastSuccessAt: lastSyncedAt, lastError: null }),
@@ -60,8 +60,8 @@ export function markSynced(backendDb: BackendDb, source: string, error: string |
 
 function upsertProfile(backendDb: BackendDb, platform: string, data: Record<string, unknown>): void {
   const updatedAt = new Date().toISOString();
-  backendDb.db
-    .insert(creatorProfiles)
+  unsafeDb(backendDb)
+    .db.insert(creatorProfiles)
     .values({ platform, dataJson: data, updatedAt })
     .onConflictDoUpdate({
       target: creatorProfiles.platform,
@@ -91,8 +91,8 @@ export function recordProfileSnapshot(
   const sampledAt = input.sampledAt ?? new Date();
   const timestamp = sampledAt.toISOString();
   const sampledOn = input.resolution === "hour" ? timestamp.slice(0, 13) : timestamp.slice(0, 10);
-  backendDb.db
-    .insert(creatorProfileSnapshots)
+  unsafeDb(backendDb)
+    .db.insert(creatorProfileSnapshots)
     .values({
       platform: input.platform,
       account: input.account,
@@ -117,8 +117,8 @@ export function upsertVideoSnapshot(
   metrics: Record<string, unknown>,
 ): void {
   const sampledAt = new Date().toISOString();
-  backendDb.sqlite
-    .prepare(
+  unsafeDb(backendDb)
+    .sqlite.prepare(
       "INSERT INTO video_metric_snapshots (video_target_id, platform, metrics_json, checkpoint_index, sampled_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(video_target_id, checkpoint_index) WHERE checkpoint_index IS NOT NULL DO UPDATE SET platform=excluded.platform, metrics_json=excluded.metrics_json, sampled_at=excluded.sampled_at",
     )
     .run(videoTargetId, platform, JSON.stringify(metrics), checkpointIndex, sampledAt);
@@ -132,8 +132,8 @@ export function mergeVideoSnapshot(
   checkpointIndex: number,
   metrics: Record<string, unknown>,
 ): void {
-  const existing = backendDb.sqlite
-    .prepare("SELECT metrics_json AS metricsJson FROM video_metric_snapshots WHERE video_target_id=? AND checkpoint_index=?")
+  const existing = unsafeDb(backendDb)
+    .sqlite.prepare("SELECT metrics_json AS metricsJson FROM video_metric_snapshots WHERE video_target_id=? AND checkpoint_index=?")
     .get(videoTargetId, checkpointIndex) as { metricsJson?: string } | null;
   let current: Record<string, unknown> = {};
   if (existing?.metricsJson) {
@@ -156,8 +156,8 @@ export function upsertComment(
   likeCount: number,
   publishedAt: string | undefined,
 ): void {
-  backendDb.db
-    .insert(socialComments)
+  unsafeDb(backendDb)
+    .db.insert(socialComments)
     .values({
       platform,
       commentId,

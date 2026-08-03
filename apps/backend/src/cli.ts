@@ -1,6 +1,6 @@
 import { importManualAnalytics } from "./analytics/import-manual-analytics.js";
 import { importXAnalyticsCsv } from "./analytics/import-x-csv.js";
-import { baselineDrizzleMigrations, migrationStatus, openBackendDb } from "./db/client.js";
+import { baselineDrizzleMigrations, migrationStatus, openBackendDb, unsafeDb } from "./db/client.js";
 import { loadConfig } from "./foundation/config.js";
 import { checkDataDirectoriesWritable, requiredDataDirectories } from "./foundation/runtime/data-dirs.js";
 import { capabilityReport } from "./observability/capabilities.js";
@@ -163,7 +163,8 @@ async function main(): Promise<void> {
         ),
       );
     } else if (args.command === "status") console.log(JSON.stringify(compactOperationsStatus(config, backendDb), null, 2));
-    else if (args.command === "migrations") console.log(JSON.stringify({ migrations: migrationStatus(backendDb.sqlite) }, null, 2));
+    else if (args.command === "migrations")
+      console.log(JSON.stringify({ migrations: migrationStatus(unsafeDb(backendDb).sqlite) }, null, 2));
     else if (args.command === "backup")
       console.log(JSON.stringify({ ok: true, path: await backupDatabase(backendDb, dbPath, args.values.get("output")) }, null, 2));
     else if (args.command === "audit") console.log(JSON.stringify(auditOperations(backendDb), null, 2));

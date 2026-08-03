@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { and, asc, eq, isNull, lte, or, sql } from "drizzle-orm";
 import { videoChannelConfig } from "../channels/channel-config.js";
 import { videoPublicUrl, videoSourcePath } from "../content/video-assets.js";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../db/client.js";
 import { botSettings, videoJobs, videoTargets } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -44,7 +44,7 @@ export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb)
           config.VIDEO_HEARTBEAT_INTERVAL_SECONDS,
           () => {
             try {
-              backendDb.db.update(videoJobs).set({ lockedAt: new Date().toISOString() }).where(activeVideoJob(job)).run();
+              unsafeDb(backendDb).db.update(videoJobs).set({ lockedAt: new Date().toISOString() }).where(activeVideoJob(job)).run();
             } catch {
               // The shared heartbeat wrapper treats one missed beat as recoverable.
             }
@@ -71,7 +71,7 @@ export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb)
 }
 
 /** Keeps target state updates consistent across the prepare/publish/fail/recovery paths. */
-function updateVideoTarget(db: BackendDb["db"], targetId: number, patch: Partial<typeof videoTargets.$inferInsert>): void {
+function updateVideoTarget(db: UnsafeBackendDb["db"], targetId: number, patch: Partial<typeof videoTargets.$inferInsert>): void {
   db.update(videoTargets)
     .set({ ...patch, updatedAt: new Date().toISOString() })
     .where(eq(videoTargets.id, targetId))
@@ -79,8 +79,8 @@ function updateVideoTarget(db: BackendDb["db"], targetId: number, patch: Partial
 }
 
 function recordVideoCompletionIfFinal(backendDb: BackendDb, videoDraftId: number): void {
-  const targets = backendDb.db
-    .select({ status: videoTargets.status })
+  const targets = unsafeDb(backendDb)
+    .db.select({ status: videoTargets.status })
     .from(videoTargets)
     .where(eq(videoTargets.videoDraftId, videoDraftId))
     .all();
@@ -99,8 +99,8 @@ function recordVideoCompletionIfFinal(backendDb: BackendDb, videoDraftId: number
 
 function claimVideoJobs(backendDb: BackendDb, limit: number): VideoJob[] {
   const now = new Date().toISOString();
-  const rows = backendDb.db
-    .select()
+  const rows = unsafeDb(backendDb)
+    .db.select()
     .from(videoJobs)
     .where(
       and(
@@ -113,7 +113,7 @@ function claimVideoJobs(backendDb: BackendDb, limit: number): VideoJob[] {
     .limit(limit)
     .all();
   const claimed: VideoJob[] = [];
-  backendDb.db.transaction((tx) => {
+  unsafeDb(backendDb).db.transaction((tx) => {
     for (const job of rows) {
       const updated = tx
         .update(videoJobs)
@@ -144,7 +144,7 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
     return;
   }
   if (!job.videoTargetId) throw new Error("Video platform job has no target.");
-  const target = backendDb.db.select().from(videoTargets).where(eq(videoTargets.id, job.videoTargetId)).get();
+  const target = unsafeDb(backendDb).db.select().from(videoTargets).where(eq(videoTargets.id, job.videoTargetId)).get();
   const draft = getVideoDraft(backendDb, job.videoDraftId);
   if (!target || target.status === "cancelled" || target.status === "published") return;
   const filePath = videoSourcePath(backendDb, config, draft);
@@ -185,7 +185,7 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
         }
         return;
       }
-      updateVideoTarget(backendDb.db, target.id, {
+      updateVideoTarget(unsafeDb(backendDb).db, target.id, {
         status: "prepared",
         externalId: result.id,
         externalUrl: result.url,
@@ -196,18 +196,22 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
       // Zernio accepts the public video at its publish time, so prepare is a
       // local checkpoint only. Publishing early would violate the schedule.
       if (!target.providerAccountId) throw new Error("Zernio Instagram account is missing");
-      updateVideoTarget(backendDb.db, target.id, { status: "prepared", preparedAt: new Date().toISOString() });
+      updateVideoTarget(unsafeDb(backendDb).db, target.id, { status: "prepared", preparedAt: new Date().toISOString() });
     } else {
       const result = await prepareInstagramReel(instagramConfig, videoPublicUrl(backendDb, config, draft), metadata as InstagramMetadata);
       if (!ownsVideoJob(backendDb, job)) return;
-      updateVideoTarget(backendDb.db, target.id, { status: "prepared", externalId: result.id, preparedAt: new Date().toISOString() });
+      updateVideoTarget(unsafeDb(backendDb).db, target.id, {
+        status: "prepared",
+        externalId: result.id,
+        preparedAt: new Date().toISOString(),
+      });
     }
     return;
   }
   if (target.target === "youtube_shorts") {
     if (!target.externalId) throw new Error("YouTube upload has not completed yet.");
     if (!ownsVideoJob(backendDb, job)) return;
-    updateVideoTarget(backendDb.db, target.id, {
+    updateVideoTarget(unsafeDb(backendDb).db, target.id, {
       status: "published",
       publishedAt: new Date().toISOString(),
       confirmationSource: target.confirmationSource ?? "publish_response",
@@ -222,7 +226,7 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
       requestId: `video-target:${target.id}`,
     });
     if (!ownsVideoJob(backendDb, job)) return;
-    updateVideoTarget(backendDb.db, target.id, {
+    updateVideoTarget(unsafeDb(backendDb).db, target.id, {
       status: "published",
       providerPostId: result.providerPostId,
       externalId: result.externalId,
@@ -246,7 +250,7 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
       // The publish response already returned the media ID. Verification
       // failure is diagnostic and must not replay media_publish.
     }
-    updateVideoTarget(backendDb.db, target.id, {
+    updateVideoTarget(unsafeDb(backendDb).db, target.id, {
       status: "published",
       externalId: result.id,
       externalUrl,
@@ -269,8 +273,8 @@ function recordVideoProgressEvent(backendDb: BackendDb, job: VideoJob, type: str
 }
 
 function completeVideoJob(backendDb: BackendDb, job: VideoJob): boolean {
-  const completed = backendDb.db
-    .update(videoJobs)
+  const completed = unsafeDb(backendDb)
+    .db.update(videoJobs)
     .set({
       status: "completed",
       lockedAt: null,
@@ -289,7 +293,7 @@ function failVideoJob(backendDb: BackendDb, job: VideoJob, cause: unknown, confi
   if (cause instanceof InstagramContainerProcessingError && attempts < config.PUBLISH_MAX_ATTEMPTS) {
     const now = new Date().toISOString();
     let failed = false;
-    backendDb.db.transaction((tx) => {
+    unsafeDb(backendDb).db.transaction((tx) => {
       const updated = tx
         .update(videoJobs)
         .set({
@@ -313,7 +317,7 @@ function failVideoJob(backendDb: BackendDb, job: VideoJob, cause: unknown, confi
   const retry = attempts < config.PUBLISH_MAX_ATTEMPTS;
   const now = new Date().toISOString();
   let failed = false;
-  backendDb.db.transaction((tx) => {
+  unsafeDb(backendDb).db.transaction((tx) => {
     const updated = tx
       .update(videoJobs)
       .set({
@@ -340,7 +344,11 @@ function failVideoJob(backendDb: BackendDb, job: VideoJob, cause: unknown, confi
     const target =
       job.videoTargetId == null
         ? null
-        : backendDb.db.select({ target: videoTargets.target }).from(videoTargets).where(eq(videoTargets.id, job.videoTargetId)).get();
+        : unsafeDb(backendDb)
+            .db.select({ target: videoTargets.target })
+            .from(videoTargets)
+            .where(eq(videoTargets.id, job.videoTargetId))
+            .get();
     recordDomainEvent(backendDb.events, {
       ref: `video:${job.videoDraftId}`,
       type: "video.target.failed",
@@ -358,7 +366,7 @@ function requireVideoVerification(backendDb: BackendDb, job: VideoJob, cause: un
   const error = cause instanceof Error ? cause.message : String(cause);
   const now = new Date().toISOString();
   let settled = false;
-  backendDb.db.transaction((tx) => {
+  unsafeDb(backendDb).db.transaction((tx) => {
     const updated = tx
       .update(videoJobs)
       .set({
@@ -382,7 +390,11 @@ function requireVideoVerification(backendDb: BackendDb, job: VideoJob, cause: un
   const target =
     job.videoTargetId == null
       ? null
-      : backendDb.db.select({ target: videoTargets.target }).from(videoTargets).where(eq(videoTargets.id, job.videoTargetId)).get();
+      : unsafeDb(backendDb)
+          .db.select({ target: videoTargets.target })
+          .from(videoTargets)
+          .where(eq(videoTargets.id, job.videoTargetId))
+          .get();
   recordDomainEvent(backendDb.events, {
     ref: `video:${job.videoDraftId}`,
     type: "video.target.verification_required",
@@ -397,7 +409,7 @@ function requireVideoVerification(backendDb: BackendDb, job: VideoJob, cause: un
 
 /** Instagram containers can go stale between prepare and publish; re-run prepare
  * from scratch instead of retrying the publish call against a dead container. */
-function requeueInstagramPreparation(tx: BackendDb["db"], job: VideoJob, error: string, now: string, attempts: number): void {
+function requeueInstagramPreparation(tx: UnsafeBackendDb["db"], job: VideoJob, error: string, now: string, attempts: number): void {
   if (!job.videoTargetId) return;
   updateVideoTarget(tx, job.videoTargetId, {
     status: "scheduled",
@@ -434,8 +446,8 @@ function requeueInstagramPreparation(tx: BackendDb["db"], job: VideoJob, error: 
 }
 
 function composeYouTubeDescription(backendDb: BackendDb, actorId: number, metadata: YouTubeMetadata): string {
-  const signature = backendDb.db
-    .select({ value: botSettings.youtubeSignature })
+  const signature = unsafeDb(backendDb)
+    .db.select({ value: botSettings.youtubeSignature })
     .from(botSettings)
     .where(eq(botSettings.actorId, actorId))
     .get()
@@ -452,14 +464,14 @@ function composeYouTubeDescription(backendDb: BackendDb, actorId: number, metada
 export function recoverVideoLocks(backendDb: BackendDb, config: BackendConfig): number {
   const cutoff = new Date(Date.now() - config.VIDEO_LOCK_TIMEOUT_SECONDS * 1000).toISOString();
   const now = new Date().toISOString();
-  const stale = backendDb.db
-    .select()
+  const stale = unsafeDb(backendDb)
+    .db.select()
     .from(videoJobs)
     .where(and(eq(videoJobs.status, "running"), lte(videoJobs.lockedAt, cutoff)))
     .all();
   let recovered = 0;
   const terminalFailures: Array<{ job: VideoJob; error: string; verificationRequired: boolean }> = [];
-  backendDb.db.transaction((tx) => {
+  unsafeDb(backendDb).db.transaction((tx) => {
     for (const job of stale) {
       if (!job.lockedAt) continue;
       const error = "worker_lost: video lock expired before completion";
@@ -501,7 +513,11 @@ export function recoverVideoLocks(backendDb: BackendDb, config: BackendConfig): 
     const target =
       job.videoTargetId == null
         ? null
-        : backendDb.db.select({ target: videoTargets.target }).from(videoTargets).where(eq(videoTargets.id, job.videoTargetId)).get();
+        : unsafeDb(backendDb)
+            .db.select({ target: videoTargets.target })
+            .from(videoTargets)
+            .where(eq(videoTargets.id, job.videoTargetId))
+            .get();
     recordDomainEvent(backendDb.events, {
       ref: `video:${job.videoDraftId}`,
       type: verificationRequired ? "video.target.verification_required" : "video.target.failed",
@@ -517,7 +533,7 @@ export function recoverVideoLocks(backendDb: BackendDb, config: BackendConfig): 
 }
 
 function ownsVideoJob(backendDb: BackendDb, job: VideoJob): boolean {
-  return backendDb.db.select({ id: videoJobs.id }).from(videoJobs).where(activeVideoJob(job)).get() != null;
+  return unsafeDb(backendDb).db.select({ id: videoJobs.id }).from(videoJobs).where(activeVideoJob(job)).get() != null;
 }
 
 function activeVideoJob(job: VideoJob) {

@@ -1,4 +1,4 @@
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { credentialChecks } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { capabilityReport } from "./capabilities.js";
@@ -9,8 +9,8 @@ export function updateCredentialChecks(config: BackendConfig, backendDb: Backend
   const report = capabilityReport(config, backendDb);
   for (const { target, required, missing, status } of report) {
     const nextCheckAt = new Date(Date.now() + 3_600_000).toISOString();
-    backendDb.db
-      .insert(credentialChecks)
+    unsafeDb(backendDb)
+      .db.insert(credentialChecks)
       .values({
         target,
         status,

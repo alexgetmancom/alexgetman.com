@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import type { BackendDb } from "../../db/client.js";
+import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../../db/client.js";
 import { type JsonValue, postTargets } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { recordWorkerState } from "../../foundation/runtime/worker-state.js";
@@ -35,19 +35,19 @@ export async function runMetricsCycle(
     try {
       await trackUsageAsync(backendDb, "analytics.metrics.collect", async () => {
         const result = await collector(task);
-        backendDb.db.transaction((tx) => {
-          upsertMetrics(backendDb, task.postKey, task.target, result.metrics, result.source, result.raw, tx as BackendDb["db"]);
+        unsafeDb(backendDb).db.transaction((tx) => {
+          upsertMetrics(backendDb, task.postKey, task.target, result.metrics, result.source, result.raw, tx as UnsafeBackendDb["db"]);
           if (result.url)
             tx.update(postTargets)
               .set({ url: result.url, updatedAt: new Date().toISOString() })
               .where(and(eq(postTargets.postKey, task.postKey), eq(postTargets.target, task.target)))
               .run();
-          finishMetricTask(backendDb, task, null, false, tx as BackendDb["db"]);
+          finishMetricTask(backendDb, task, null, false, tx as UnsafeBackendDb["db"]);
         });
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      backendDb.db.transaction((transactionDb) => {
+      unsafeDb(backendDb).db.transaction((transactionDb) => {
         upsertMetricError(
           backendDb,
           task.postKey,
@@ -57,9 +57,9 @@ export async function runMetricsCycle(
           {
             external_id: task.externalId,
           } as JsonValue,
-          transactionDb as BackendDb["db"],
+          transactionDb as UnsafeBackendDb["db"],
         );
-        finishMetricTask(backendDb, task, message, isTerminalMetricError(error), transactionDb as BackendDb["db"]);
+        finishMetricTask(backendDb, task, message, isTerminalMetricError(error), transactionDb as UnsafeBackendDb["db"]);
       });
     }
   }

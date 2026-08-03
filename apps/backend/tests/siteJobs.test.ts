@@ -2,12 +2,12 @@ import { afterEach, describe, expect, it } from "bun:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { type BackendDb, openBackendDb } from "../src/db/client.js";
+import { openBackendDb, type UnsafeBackendDb } from "../src/db/client.js";
 import { publicationSources, publications, siteJobs } from "../src/db/schema.js";
 import { renderFeedFiles, runSiteJobCycle } from "../src/delivery/site-jobs.js";
 import { loadConfig } from "../src/foundation/config.js";
 
-let backendDb: BackendDb | null = null;
+let backendDb: UnsafeBackendDb | null = null;
 let tempDir: string | null = null;
 
 afterEach(() => {

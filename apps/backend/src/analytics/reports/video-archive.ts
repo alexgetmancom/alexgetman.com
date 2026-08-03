@@ -1,4 +1,4 @@
-import type { BackendDb } from "../../db/client.js";
+import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { t } from "../../foundation/i18n/index.js";
 import type { StudioLocale as BotLocale } from "../../foundation/locale.js";
 import { escapeMarkdown } from "../../foundation/markdown.js";
@@ -15,13 +15,15 @@ export function creatorVideoArchive(
 } {
   const total = Number(
     (
-      backendDb.sqlite.prepare("SELECT COUNT(DISTINCT video_draft_id) AS count FROM video_targets WHERE status='published'").get() as {
+      unsafeDb(backendDb)
+        .sqlite.prepare("SELECT COUNT(DISTINCT video_draft_id) AS count FROM video_targets WHERE status='published'")
+        .get() as {
         count: number;
       }
     ).count,
   );
-  const rows = backendDb.sqlite
-    .prepare(
+  const rows = unsafeDb(backendDb)
+    .sqlite.prepare(
       `SELECT d.id, COALESCE(d.label, 'Без названия') AS label FROM video_drafts d WHERE EXISTS (SELECT 1 FROM video_targets t WHERE t.video_draft_id=d.id AND t.status='published') ORDER BY d.updated_at DESC LIMIT 10 OFFSET ?`,
     )
     .all(offset) as Array<{ id: number; label: string }>;
@@ -33,12 +35,12 @@ export function creatorVideoArchive(
 }
 
 export function creatorVideoMetrics(backendDb: BackendDb, videoDraftId: number, locale: BotLocale = "en"): string {
-  const draft = backendDb.sqlite
-    .prepare("SELECT COALESCE(label, 'Без названия') AS label FROM video_drafts WHERE id=?")
+  const draft = unsafeDb(backendDb)
+    .sqlite.prepare("SELECT COALESCE(label, 'Без названия') AS label FROM video_drafts WHERE id=?")
     .get(videoDraftId) as { label: string } | null;
   if (!draft) return t(locale, "report.video-not-found");
-  const rows = backendDb.sqlite
-    .prepare(
+  const rows = unsafeDb(backendDb)
+    .sqlite.prepare(
       `SELECT t.target, t.external_url, s.metrics_json, s.sampled_at FROM video_targets t LEFT JOIN video_metric_snapshots s ON s.id=(SELECT MAX(id) FROM video_metric_snapshots WHERE video_target_id=t.id) WHERE t.video_draft_id=? ORDER BY t.id`,
     )
     .all(videoDraftId) as Array<{

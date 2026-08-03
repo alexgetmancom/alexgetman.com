@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, notInArray, sql } from "drizzle-orm";
 import { freezeDisabledMetricSchedules } from "../analytics/collection/metric-schedule.js";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import {
   deploymentSnapshots,
   drafts,
@@ -30,9 +30,9 @@ export async function backupDatabase(backendDb: BackendDb, sourcePath: string, d
     .replace(/[-:]/g, "")
     .replace(/\.\d{3}Z$/, "Z");
   const destination = path.join(directory, `${path.basename(sourcePath, path.extname(sourcePath))}-${stamp}.db`);
-  await backendDb.sqlite.backup(destination);
-  backendDb.db
-    .insert(deploymentSnapshots)
+  await unsafeDb(backendDb).sqlite.backup(destination);
+  unsafeDb(backendDb)
+    .db.insert(deploymentSnapshots)
     .values({ action: "backup", status: "ok", backupPath: destination, createdAt: new Date().toISOString() })
     .run();
   return destination;
@@ -72,7 +72,9 @@ export function pruneOperationalHistory(
   const deleteBatched = (statement: string, ...params: string[]): number => {
     let deleted = 0;
     while (true) {
-      const changes = backendDb.sqlite.prepare(`${statement} LIMIT ${RETENTION_BATCH_SIZE}`).run(...params).changes;
+      const changes = unsafeDb(backendDb)
+        .sqlite.prepare(`${statement} LIMIT ${RETENTION_BATCH_SIZE}`)
+        .run(...params).changes;
       deleted += changes;
       if (changes < RETENTION_BATCH_SIZE) return deleted;
     }
@@ -108,8 +110,8 @@ export function buildMetricsBackfillPlan(
   if (options.refs?.length) conditions.push(inArray(posts.postKey, options.refs));
   if (options.dateFrom) conditions.push(gte(posts.dateUtc, options.dateFrom));
   if (options.dateTo) conditions.push(lte(posts.dateUtc, options.dateTo));
-  return backendDb.db
-    .select({
+  return unsafeDb(backendDb)
+    .db.select({
       postKey: posts.postKey,
       postId: posts.postId,
       messageId: posts.messageId,
@@ -130,7 +132,7 @@ export function applyMetricsBackfill(
   resetCounts = false,
 ): number {
   const now = new Date().toISOString();
-  backendDb.db.transaction((tx) => {
+  unsafeDb(backendDb).db.transaction((tx) => {
     for (const row of rows) {
       const postKey = typeof row.postKey === "string" ? row.postKey : "";
       const target = typeof row.target === "string" ? row.target : "";
@@ -153,8 +155,8 @@ export function applyMetricsBackfill(
 
 export function auditOperations(backendDb: BackendDb): Record<string, unknown> {
   return {
-    postEventsByType: backendDb.db
-      .select({
+    postEventsByType: unsafeDb(backendDb)
+      .db.select({
         severity: postEvents.severity,
         eventType: postEvents.eventType,
         count: sql<number>`count(*)`,
@@ -164,8 +166,8 @@ export function auditOperations(backendDb: BackendDb): Record<string, unknown> {
       .groupBy(postEvents.severity, postEvents.eventType)
       .orderBy(postEvents.severity, postEvents.eventType)
       .all(),
-    recentPostEvents: backendDb.db
-      .select({
+    recentPostEvents: unsafeDb(backendDb)
+      .db.select({
         severity: postEvents.severity,
         eventType: postEvents.eventType,
         target: postEvents.target,
@@ -176,22 +178,22 @@ export function auditOperations(backendDb: BackendDb): Record<string, unknown> {
       .orderBy(desc(postEvents.createdAt))
       .limit(20)
       .all(),
-    failedPublishJobs: backendDb.db
-      .select({ target: publishJobs.target, count: sql<number>`count(*)`, latest: sql<string | null>`max(${publishJobs.updatedAt})` })
+    failedPublishJobs: unsafeDb(backendDb)
+      .db.select({ target: publishJobs.target, count: sql<number>`count(*)`, latest: sql<string | null>`max(${publishJobs.updatedAt})` })
       .from(publishJobs)
       .where(eq(publishJobs.status, "failed"))
       .groupBy(publishJobs.target)
       .orderBy(publishJobs.target)
       .all(),
-    failedTargets: backendDb.db
-      .select({ target: postTargets.target, count: sql<number>`count(*)`, latest: sql<string | null>`max(${postTargets.updatedAt})` })
+    failedTargets: unsafeDb(backendDb)
+      .db.select({ target: postTargets.target, count: sql<number>`count(*)`, latest: sql<string | null>`max(${postTargets.updatedAt})` })
       .from(postTargets)
       .where(eq(postTargets.status, "failed"))
       .groupBy(postTargets.target)
       .orderBy(postTargets.target)
       .all(),
-    verificationRequiredPublishJobs: backendDb.db
-      .select({
+    verificationRequiredPublishJobs: unsafeDb(backendDb)
+      .db.select({
         target: publishJobs.target,
         count: sql<number>`count(*)`,
         latest: sql<string | null>`max(${publishJobs.updatedAt})`,
@@ -201,8 +203,8 @@ export function auditOperations(backendDb: BackendDb): Record<string, unknown> {
       .groupBy(publishJobs.target)
       .orderBy(publishJobs.target)
       .all(),
-    verificationRequiredTargets: backendDb.db
-      .select({
+    verificationRequiredTargets: unsafeDb(backendDb)
+      .db.select({
         target: postTargets.target,
         count: sql<number>`count(*)`,
         latest: sql<string | null>`max(${postTargets.updatedAt})`,
@@ -213,8 +215,12 @@ export function auditOperations(backendDb: BackendDb): Record<string, unknown> {
       .orderBy(postTargets.target)
       .all(),
     publicationConsistency: publicationConsistencyReport(backendDb),
-    metricScheduleErrors: backendDb.db
-      .select({ target: metricSchedule.target, count: sql<number>`count(*)`, latest: sql<string | null>`max(${metricSchedule.updatedAt})` })
+    metricScheduleErrors: unsafeDb(backendDb)
+      .db.select({
+        target: metricSchedule.target,
+        count: sql<number>`count(*)`,
+        latest: sql<string | null>`max(${metricSchedule.updatedAt})`,
+      })
       .from(metricSchedule)
       .where(and(isNull(metricSchedule.frozenAt), isNotNull(metricSchedule.lastError), sql`${metricSchedule.lastError} != ''`))
       .groupBy(metricSchedule.target)
@@ -222,8 +228,8 @@ export function auditOperations(backendDb: BackendDb): Record<string, unknown> {
       .all(),
     // Only actionable delivery failures belong here. Cancelled targets and
     // unfinished/deleted drafts are lifecycle history, not production noise.
-    recentVideoFailures: backendDb.db
-      .select({
+    recentVideoFailures: unsafeDb(backendDb)
+      .db.select({
         videoDraftId: videoTargets.videoDraftId,
         label: videoDrafts.label,
         target: videoTargets.target,
@@ -238,8 +244,8 @@ export function auditOperations(backendDb: BackendDb): Record<string, unknown> {
       .orderBy(desc(videoTargets.updatedAt))
       .limit(20)
       .all(),
-    recentVideoVerificationRequired: backendDb.db
-      .select({
+    recentVideoVerificationRequired: unsafeDb(backendDb)
+      .db.select({
         videoDraftId: videoTargets.videoDraftId,
         label: videoDrafts.label,
         target: videoTargets.target,
@@ -266,9 +272,9 @@ type LatestPublishJob = {
 };
 
 export function publicationConsistencyReport(backendDb: BackendDb): Record<string, unknown> {
-  const foreignKeyViolations = backendDb.sqlite.query("PRAGMA foreign_key_check").all();
-  const staleTargets = backendDb.sqlite
-    .query(
+  const foreignKeyViolations = unsafeDb(backendDb).sqlite.query("PRAGMA foreign_key_check").all();
+  const staleTargets = unsafeDb(backendDb)
+    .sqlite.query(
       `SELECT t.post_key,t.target,t.status,t.error,t.updated_at
        FROM post_targets t
        WHERE t.status IN ('queued','publishing')
@@ -281,8 +287,8 @@ export function publicationConsistencyReport(backendDb: BackendDb): Record<strin
     .all();
   const targetMismatches = targetStateMismatches(backendDb);
   const publicationMismatches = publicationStateMismatches(backendDb);
-  const videoDraftMismatches = backendDb.sqlite
-    .query(
+  const videoDraftMismatches = unsafeDb(backendDb)
+    .sqlite.query(
       `SELECT d.id,d.status,group_concat(t.status) AS target_statuses
        FROM video_drafts d JOIN video_targets t ON t.video_draft_id=d.id
        GROUP BY d.id
@@ -292,8 +298,8 @@ export function publicationConsistencyReport(backendDb: BackendDb): Record<strin
        ORDER BY d.id`,
     )
     .all();
-  const videoTargetJobMismatches = backendDb.sqlite
-    .query(
+  const videoTargetJobMismatches = unsafeDb(backendDb)
+    .sqlite.query(
       `SELECT t.video_draft_id,t.id AS video_target_id,t.target,t.status AS target_status,
               j.id AS publish_job_id,j.status AS job_status,j.last_error
        FROM video_targets t
@@ -319,7 +325,7 @@ export function repairPublicationConsistency(backendDb: BackendDb): Record<strin
   let deletedOrphans = 0;
   let repairedTargets = 0;
   let repairedPublications = 0;
-  backendDb.db.transaction(() => {
+  unsafeDb(backendDb).db.transaction(() => {
     for (const statement of [
       "DELETE FROM social_comments WHERE video_target_id NOT IN (SELECT id FROM video_targets) OR video_target_id IN (SELECT id FROM video_targets WHERE video_draft_id NOT IN (SELECT id FROM video_drafts))",
       "DELETE FROM video_metric_snapshots WHERE video_target_id NOT IN (SELECT id FROM video_targets) OR video_target_id IN (SELECT id FROM video_targets WHERE video_draft_id NOT IN (SELECT id FROM video_drafts))",
@@ -332,13 +338,13 @@ export function repairPublicationConsistency(backendDb: BackendDb): Record<strin
       "DELETE FROM publication_sources WHERE post_id NOT IN (SELECT post_id FROM publications)",
       "DELETE FROM publication_plans WHERE post_id NOT IN (SELECT post_id FROM publications)",
     ])
-      deletedOrphans += backendDb.sqlite.run(statement).changes;
+      deletedOrphans += unsafeDb(backendDb).sqlite.run(statement).changes;
 
     for (const mismatch of targetStateMismatches(backendDb)) {
       const normalized = normalizeArchivedJobStatus(mismatch.job_status);
       const error = normalized === "failed" ? mismatch.last_error : null;
-      backendDb.sqlite
-        .query(
+      unsafeDb(backendDb)
+        .sqlite.query(
           `UPDATE post_targets
            SET status=?, error=?, skipped=?, updated_at=?
            WHERE post_key=? AND target=?`,
@@ -348,12 +354,16 @@ export function repairPublicationConsistency(backendDb: BackendDb): Record<strin
     }
 
     for (const mismatch of publicationStateMismatches(backendDb)) {
-      backendDb.db
-        .update(publications)
+      unsafeDb(backendDb)
+        .db.update(publications)
         .set({ status: mismatch.expected, updatedAt: now })
         .where(eq(publications.postId, mismatch.post_id))
         .run();
-      backendDb.db.update(drafts).set({ status: mismatch.expected, updatedAt: now }).where(eq(drafts.postId, mismatch.post_id)).run();
+      unsafeDb(backendDb)
+        .db.update(drafts)
+        .set({ status: mismatch.expected, updatedAt: now })
+        .where(eq(drafts.postId, mismatch.post_id))
+        .run();
       repairedPublications += 1;
     }
   });
@@ -366,8 +376,8 @@ export function repairPublicationConsistency(backendDb: BackendDb): Record<strin
 }
 
 function targetStateMismatches(backendDb: BackendDb): Array<LatestPublishJob & { target_status: string; job_status: string }> {
-  const rows = backendDb.sqlite
-    .query(
+  const rows = unsafeDb(backendDb)
+    .sqlite.query(
       `WITH latest AS (
          SELECT p.post_key,p.target,p.status,p.last_error
          FROM publish_jobs p
@@ -386,8 +396,8 @@ function targetStateMismatches(backendDb: BackendDb): Array<LatestPublishJob & {
 }
 
 function publicationStateMismatches(backendDb: BackendDb): Array<{ post_id: number; status: string; expected: "published" | "failed" }> {
-  const rows = backendDb.sqlite
-    .query(
+  const rows = unsafeDb(backendDb)
+    .sqlite.query(
       `SELECT p.post_id,p.status,
               group_concat(x.status) AS statuses
        FROM publications p
@@ -416,7 +426,7 @@ export function withMaintenanceLock<T>(backendDb: BackendDb, operation: () => T)
   const owner = `${os.hostname()}:${process.pid}`;
   const now = new Date();
   const expires = new Date(now.getTime() + 30 * 60_000).toISOString();
-  backendDb.db.transaction((tx) => {
+  unsafeDb(backendDb).db.transaction((tx) => {
     tx.delete(maintenanceLocks)
       .where(and(eq(maintenanceLocks.name, name), lt(maintenanceLocks.expiresAt, now.toISOString())))
       .run();
@@ -428,8 +438,8 @@ export function withMaintenanceLock<T>(backendDb: BackendDb, operation: () => T)
   try {
     return operation();
   } finally {
-    backendDb.db
-      .delete(maintenanceLocks)
+    unsafeDb(backendDb)
+      .db.delete(maintenanceLocks)
       .where(and(eq(maintenanceLocks.name, name), eq(maintenanceLocks.owner, owner)))
       .run();
   }

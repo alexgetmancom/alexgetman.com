@@ -3,7 +3,7 @@ import os from "node:os";
 import process from "node:process";
 import { and, eq, isNull, lt, lte, or } from "drizzle-orm";
 import { recordPublishedXActivity } from "../analytics/x-activity-store.js";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../db/client.js";
 import { type JsonObject, publishJobs } from "../db/schema.js";
 import { insertPublishJobSchema } from "../db/validation.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -48,8 +48,8 @@ export function claimDuePublishJobs(
   worker = `${workerId()}:${crypto.randomUUID()}`,
 ): ClaimedPublishJob[] {
   const now = new Date().toISOString();
-  const rows = backendDb.db
-    .select()
+  const rows = unsafeDb(backendDb)
+    .db.select()
     .from(publishJobs)
     .where(
       and(
@@ -62,7 +62,7 @@ export function claimDuePublishJobs(
     .limit(limit)
     .all();
   const claimed: ClaimedPublishJob[] = [];
-  backendDb.db.transaction((tx) => {
+  unsafeDb(backendDb).db.transaction((tx) => {
     for (const row of rows) {
       const locked = tx
         .update(publishJobs)
@@ -104,12 +104,12 @@ export function recoverStalePublishJobs(
 ): number {
   const cutoff = new Date(Date.now() - maxLockAgeSeconds * 1000).toISOString();
   const now = new Date().toISOString();
-  const stale = backendDb.db
-    .select()
+  const stale = unsafeDb(backendDb)
+    .db.select()
     .from(publishJobs)
     .where(and(eq(publishJobs.status, "publishing"), lt(publishJobs.lockedAt, cutoff)))
     .all();
-  backendDb.db.transaction((tx) => {
+  unsafeDb(backendDb).db.transaction((tx) => {
     for (const job of stale) {
       const lockedAt = job.lockedAt;
       if (!lockedAt) continue;
@@ -175,7 +175,7 @@ export function completePublishJob(
   lockId?: string,
 ): void {
   const now = new Date().toISOString();
-  const job = backendDb.db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get();
+  const job = unsafeDb(backendDb).db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get();
   if (!job || (lockId != null && (job.status !== "publishing" || job.lockedBy !== lockId))) return;
   const postKey = jobPostKey(job);
   // Threads partial-publish and generic reconciliation both resume from a set of
@@ -218,7 +218,7 @@ export function completePublishJob(
     return;
   }
   const normalized = normalizePublishResult(result);
-  backendDb.db.transaction((tx) => {
+  unsafeDb(backendDb).db.transaction((tx) => {
     const published = normalized.status === "published";
     // `post_targets` is the canonical external-publication reference for every
     // platform. Legacy Telegram message columns remain readable for history,
@@ -295,7 +295,7 @@ function settleRetryableIds(
   const retry = status === "queued";
   const error = String(result.error ?? fallbackError);
   const payload = { ...parsePayload(job.payloadJson), [payloadKey]: ids };
-  backendDb.db.transaction((tx) => {
+  unsafeDb(backendDb).db.transaction((tx) => {
     // A queued row is unique per (post_key, target); clear any competing one
     // before this job re-enters the queue, and clear superseded rows once this
     // one is terminal — exactly what failPublishJob does for the same states.
@@ -331,7 +331,7 @@ function settleRetryableIds(
 
 export function failPublishJob(backendDb: BackendDb, config: BackendConfig, jobId: number, error: unknown, lockId?: string): void {
   const now = new Date().toISOString();
-  const job = backendDb.db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get();
+  const job = unsafeDb(backendDb).db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get();
   if (!job || (lockId != null && (job.status !== "publishing" || job.lockedBy !== lockId))) return;
   const postKey = jobPostKey(job);
   const {
@@ -342,7 +342,7 @@ export function failPublishJob(backendDb: BackendDb, config: BackendConfig, jobI
   } = failedJobTransition(error, job.attemptCount, publishRetryPolicy(config));
   const shouldRetry = status === "queued";
   const errorText = String(error instanceof Error ? error.message : error);
-  backendDb.db.transaction((tx) => {
+  unsafeDb(backendDb).db.transaction((tx) => {
     // Before this job re-enters the queue (or becomes the terminal record for
     // its target), no other queued/failed row for the same target may remain:
     // a queued row is unique per (post_key, target).
@@ -390,12 +390,12 @@ export function failPublishJob(backendDb: BackendDb, config: BackendConfig, jobI
 
 export function requirePublishVerification(backendDb: BackendDb, jobId: number, error: unknown, lockId?: string): boolean {
   const now = new Date().toISOString();
-  const job = backendDb.db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get();
+  const job = unsafeDb(backendDb).db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get();
   if (!job || (lockId != null && (job.status !== "publishing" || job.lockedBy !== lockId))) return false;
   const postKey = jobPostKey(job);
   const errorText = error instanceof Error ? error.message : String(error);
   let updated = false;
-  backendDb.db.transaction((tx) => {
+  unsafeDb(backendDb).db.transaction((tx) => {
     deleteSupersededJobs(tx, job, jobId, postKey);
     settleJob(
       tx,
@@ -444,12 +444,12 @@ export function forcePublishJobVerification(
   result: PublishResult | null = null,
 ): boolean {
   const now = new Date().toISOString();
-  const job = backendDb.db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get();
+  const job = unsafeDb(backendDb).db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get();
   if (!job || (lockId != null && (job.status !== "publishing" || job.lockedBy !== lockId))) return false;
   const postKey = jobPostKey(job);
   const errorText = error instanceof Error ? error.message : String(error);
   const evidence = result ? normalizePublishResult(result) : null;
-  const updated = backendDb.db.transaction((tx) => {
+  const updated = unsafeDb(backendDb).db.transaction((tx) => {
     const row = tx
       .update(publishJobs)
       .set({
@@ -494,7 +494,7 @@ export function forcePublishJobVerification(
   return updated;
 }
 
-export function enqueuePublishJobTx(db: BackendDb["db"], input: EnqueuePublishJobInput): number {
+export function enqueuePublishJobTx(db: UnsafeBackendDb["db"], input: EnqueuePublishJobInput): number {
   const now = new Date().toISOString();
   const inputRecord = {
     postId: input.postId,

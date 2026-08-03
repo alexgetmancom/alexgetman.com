@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import { and, asc, count, desc, eq, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../db/client.js";
 import { postEvents, postMetrics, postTargets, publicationSources, siteJobs } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { withJobHeartbeat } from "../foundation/runtime/job-heartbeat.js";
@@ -34,8 +34,8 @@ export async function runSiteJobCycle(config: BackendConfig, backendDb: BackendD
     await withJobHeartbeat(
       config.SITE_JOB_HEARTBEAT_INTERVAL_SECONDS,
       () => {
-        backendDb.db
-          .update(siteJobs)
+        unsafeDb(backendDb)
+          .db.update(siteJobs)
           .set({ lockedAt: new Date().toISOString() })
           .where(and(eq(siteJobs.status, "rendering"), eq(siteJobs.lockedBy, jobs[0]?.lock_id ?? "")))
           .run();
@@ -59,10 +59,18 @@ export async function runSiteJobCycle(config: BackendConfig, backendDb: BackendD
       // IndexNow is an external notification, not a prerequisite for serving
       // the already materialized feed through SSR.
       void pingIndexNow(config, urls).catch((error) => {
-        insertSiteEvent(backendDb.db, "site.indexnow.failed", "warn", String(error instanceof Error ? error.message : error), { urls });
+        insertSiteEvent(unsafeDb(backendDb).db, "site.indexnow.failed", "warn", String(error instanceof Error ? error.message : error), {
+          urls,
+        });
       });
     } catch (error) {
-      insertSiteEvent(backendDb.db, "site.index.build.failed", "warn", String(error instanceof Error ? error.message : error), {});
+      insertSiteEvent(
+        unsafeDb(backendDb).db,
+        "site.index.build.failed",
+        "warn",
+        String(error instanceof Error ? error.message : error),
+        {},
+      );
     }
     recordWorkerState(backendDb, "site", { claimed: jobs.length, published: completed.length });
   } catch (error) {
@@ -84,8 +92,8 @@ export function recoverStaleSiteJobs(
 ): number {
   const cutoff = new Date(Date.now() - maxLockAgeSeconds * 1000).toISOString();
   const now = new Date().toISOString();
-  return backendDb.db
-    .update(siteJobs)
+  return unsafeDb(backendDb)
+    .db.update(siteJobs)
     .set({
       status: "queued",
       lockedBy: null,
@@ -122,8 +130,8 @@ export async function renderFeedFiles(
     .filter((value): value is Record<string, unknown> => value != null)
     .sort((a, b) => String(b.date ?? b.created_at ?? "").localeCompare(String(a.date ?? a.created_at ?? "")));
   await atomicWriteJson(config.FEED_JSON, { updated_at: new Date().toISOString(), channel: config.CHANNEL_USERNAME, items: ordered });
-  const targetCounts = backendDb.db
-    .select({ target: postTargets.target, status: postTargets.status, count: count() })
+  const targetCounts = unsafeDb(backendDb)
+    .db.select({ target: postTargets.target, status: postTargets.status, count: count() })
     .from(postTargets)
     .groupBy(postTargets.target, postTargets.status)
     .all();
@@ -138,15 +146,15 @@ export async function renderFeedFiles(
 function claimSiteJobs(config: BackendConfig, backendDb: BackendDb): SiteJob[] {
   const now = new Date().toISOString();
   const lockId = `${workerId("site")}:${crypto.randomUUID()}`;
-  const rows = backendDb.db
-    .select()
+  const rows = unsafeDb(backendDb)
+    .db.select()
     .from(siteJobs)
     .where(and(eq(siteJobs.status, "queued"), or(isNull(siteJobs.nextAttemptAt), lte(siteJobs.nextAttemptAt, now))))
     .orderBy(asc(siteJobs.createdAt), asc(siteJobs.jobId))
     .limit(config.SITE_JOB_CLAIM_LIMIT)
     .all();
   const claimed: SiteJob[] = [];
-  backendDb.db.transaction((tx) => {
+  unsafeDb(backendDb).db.transaction((tx) => {
     for (const row of rows) {
       const claimedRow = tx
         .update(siteJobs)
@@ -176,7 +184,7 @@ function claimSiteJobs(config: BackendConfig, backendDb: BackendDb): SiteJob[] {
 function completeSiteJobs(backendDb: BackendDb, jobs: SiteJob[]): SiteJob[] {
   const now = new Date().toISOString();
   const completed: SiteJob[] = [];
-  backendDb.db.transaction((tx) => {
+  unsafeDb(backendDb).db.transaction((tx) => {
     for (const job of jobs) {
       const updated = tx
         .update(siteJobs)
@@ -200,7 +208,7 @@ function failSiteJobs(config: BackendConfig, backendDb: BackendDb, jobs: SiteJob
   const now = new Date().toISOString();
   const message = String(error instanceof Error ? error.message : error);
   const failed: SiteJob[] = [];
-  backendDb.db.transaction((tx) => {
+  unsafeDb(backendDb).db.transaction((tx) => {
     for (const job of jobs) {
       const attempt = Number(job.attempt_count ?? 0) + 1;
       const retry = attempt < config.SITE_JOB_MAX_ATTEMPTS;
@@ -234,8 +242,8 @@ function failSiteJobs(config: BackendConfig, backendDb: BackendDb, jobs: SiteJob
 
 function sourceItems(backendDb: BackendDb): Record<string, unknown>[] {
   const localeStates = siteLocaleStates(backendDb);
-  const rows = backendDb.db
-    .select({ itemJson: publicationSources.itemJson, postId: publicationSources.postId })
+  const rows = unsafeDb(backendDb)
+    .db.select({ itemJson: publicationSources.itemJson, postId: publicationSources.postId })
     .from(publicationSources)
     .orderBy(desc(publicationSources.postId))
     .all();
@@ -253,7 +261,10 @@ type SiteLocaleState = { seen: Set<"ru" | "en">; active: Set<"ru" | "en"> };
 /** Site publication state is the authority after a target is cancelled. */
 function siteLocaleStates(backendDb: BackendDb): Map<number, SiteLocaleState> {
   const states = new Map<number, SiteLocaleState>();
-  const rows = backendDb.db.select({ postId: siteJobs.postId, reason: siteJobs.reason, status: siteJobs.status }).from(siteJobs).all();
+  const rows = unsafeDb(backendDb)
+    .db.select({ postId: siteJobs.postId, reason: siteJobs.reason, status: siteJobs.status })
+    .from(siteJobs)
+    .all();
   for (const row of rows) {
     const locale = row.reason.match(/(?:^|_)(ru|en)(?:_|$)/)?.[1];
     if ((locale !== "ru" && locale !== "en") || row.postId == null) continue;
@@ -283,8 +294,8 @@ function previousFeedItems(config: BackendConfig): Map<number, Record<string, un
 }
 
 function siteTargetUrlsByPostKey(backendDb: BackendDb): Map<string, Array<{ target: string; url: string | null }>> {
-  const rows = backendDb.db
-    .select({ postKey: postTargets.postKey, target: postTargets.target, url: postTargets.url })
+  const rows = unsafeDb(backendDb)
+    .db.select({ postKey: postTargets.postKey, target: postTargets.target, url: postTargets.url })
     .from(postTargets)
     .all();
   const byPostKey = new Map<string, Array<{ target: string; url: string | null }>>();
@@ -362,8 +373,8 @@ function isDue(value: unknown, now: number): boolean {
 }
 
 function viewsByPostKey(backendDb: BackendDb): Map<string, number> {
-  const rows = backendDb.db
-    .select({ postKey: postMetrics.postKey, value: postMetrics.value })
+  const rows = unsafeDb(backendDb)
+    .db.select({ postKey: postMetrics.postKey, value: postMetrics.value })
     .from(postMetrics)
     .where(and(eq(postMetrics.target, "telegram"), eq(postMetrics.metricName, "views")))
     .all();
@@ -371,7 +382,7 @@ function viewsByPostKey(backendDb: BackendDb): Map<string, number> {
 }
 
 function insertSiteEvent(
-  db: BackendDb["db"],
+  db: UnsafeBackendDb["db"],
   eventType: string,
   severity: string,
   message: string,

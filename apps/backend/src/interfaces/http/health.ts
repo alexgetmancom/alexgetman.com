@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import { videoPath } from "../../content/video-assets.js";
-import type { BackendDb } from "../../db/client.js";
+import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { workerState } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { json, text } from "../../foundation/http-response.js";
@@ -45,7 +45,7 @@ function readiness(config: BackendConfig, backendDb: BackendDb): Record<string, 
   checks.database = attempt(() => {
     // A real query, not a stat: this is what every request path needs, and it
     // is what fails on a corrupt file or a read-only volume.
-    backendDb.sqlite.prepare("SELECT count(*) FROM worker_state").get();
+    unsafeDb(backendDb).sqlite.prepare("SELECT count(*) FROM worker_state").get();
   });
 
   // Data directory holds the database and its WAL; unwritable means every
@@ -64,8 +64,8 @@ function readiness(config: BackendConfig, backendDb: BackendDb): Record<string, 
   }
 
   const workers = Object.fromEntries(
-    backendDb.db
-      .select()
+    unsafeDb(backendDb)
+      .db.select()
       .from(workerState)
       .all()
       .map((row) => [

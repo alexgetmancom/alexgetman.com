@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { and, eq, isNull, lt, lte, or } from "drizzle-orm";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { postTargets, publishJobs, videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -27,8 +27,8 @@ export async function runPublicationReconciliation(
   const nowIso = new Date().toISOString();
   const reconciliationWorker = `${workerId("reconciliation")}:${crypto.randomUUID()}`;
   const staleBefore = new Date(Date.now() - config.METRIC_LOCK_TIMEOUT_SECONDS * 1000).toISOString();
-  const ordinary = backendDb.db
-    .select({ job: publishJobs, target: postTargets })
+  const ordinary = unsafeDb(backendDb)
+    .db.select({ job: publishJobs, target: postTargets })
     .from(publishJobs)
     .innerJoin(postTargets, and(eq(postTargets.postKey, publishJobs.postKey), eq(postTargets.target, publishJobs.target)))
     .where(
@@ -42,8 +42,8 @@ export async function runPublicationReconciliation(
     .limit(config.PUBLISH_CLAIM_LIMIT)
     .all();
   for (const row of ordinary) {
-    const claimed = backendDb.db
-      .update(publishJobs)
+    const claimed = unsafeDb(backendDb)
+      .db.update(publishJobs)
       .set({ lockedBy: reconciliationWorker, lockedAt: nowIso, updatedAt: nowIso })
       .where(
         and(
@@ -80,7 +80,7 @@ export async function runPublicationReconciliation(
       continue;
     }
     const now = new Date().toISOString();
-    backendDb.db.transaction((tx) => {
+    unsafeDb(backendDb).db.transaction((tx) => {
       tx.update(publishJobs)
         .set({ status: "published", currentPhase: null, lockedBy: null, lockedAt: null, lastError: null, updatedAt: now })
         .where(
@@ -116,8 +116,8 @@ export async function runPublicationReconciliation(
     resolved += 1;
   }
 
-  const videos = backendDb.db
-    .select({ target: videoTargets, draft: videoDrafts, job: videoJobs })
+  const videos = unsafeDb(backendDb)
+    .db.select({ target: videoTargets, draft: videoDrafts, job: videoJobs })
     .from(videoTargets)
     .innerJoin(videoDrafts, eq(videoDrafts.id, videoTargets.videoDraftId))
     .innerJoin(videoJobs, eq(videoJobs.videoTargetId, videoTargets.id))
@@ -133,8 +133,8 @@ export async function runPublicationReconciliation(
     .limit(config.PUBLISH_CLAIM_LIMIT)
     .all();
   for (const row of videos) {
-    const claimed = backendDb.db
-      .update(videoJobs)
+    const claimed = unsafeDb(backendDb)
+      .db.update(videoJobs)
       .set({ lockedBy: reconciliationWorker, lockedAt: nowIso, updatedAt: nowIso })
       .where(
         and(
@@ -174,7 +174,7 @@ export async function runPublicationReconciliation(
       continue;
     }
     const now = new Date().toISOString();
-    backendDb.db.transaction((tx) => {
+    unsafeDb(backendDb).db.transaction((tx) => {
       tx.update(videoTargets)
         .set({
           status: "published",
@@ -215,13 +215,13 @@ export async function runPublicationReconciliation(
   // touches the job row, so measuring there would reset the incident's age on
   // every tick and an inbox that never ages is an inbox nobody escalates.
   const unresolvedTimes = [
-    ...backendDb.db
-      .select({ updatedAt: postTargets.updatedAt })
+    ...unsafeDb(backendDb)
+      .db.select({ updatedAt: postTargets.updatedAt })
       .from(postTargets)
       .where(eq(postTargets.status, "verification_required"))
       .all(),
-    ...backendDb.db
-      .select({ updatedAt: videoTargets.updatedAt })
+    ...unsafeDb(backendDb)
+      .db.select({ updatedAt: videoTargets.updatedAt })
       .from(videoTargets)
       .where(eq(videoTargets.status, "verification_required"))
       .all(),
@@ -248,8 +248,8 @@ function deferOrdinaryReconciliation(
   owner: string,
 ): void {
   const attempt = job.reconcileAttemptCount + 1;
-  backendDb.db
-    .update(publishJobs)
+  unsafeDb(backendDb)
+    .db.update(publishJobs)
     .set({
       reconcileAttemptCount: attempt,
       nextAttemptAt: reconciliationNextAttempt(config, attempt),
@@ -263,8 +263,8 @@ function deferOrdinaryReconciliation(
 
 function deferVideoReconciliation(backendDb: BackendDb, config: BackendConfig, job: typeof videoJobs.$inferSelect, owner: string): void {
   const attempt = job.reconcileAttemptCount + 1;
-  backendDb.db
-    .update(videoJobs)
+  unsafeDb(backendDb)
+    .db.update(videoJobs)
     .set({
       reconcileAttemptCount: attempt,
       nextAttemptAt: reconciliationNextAttempt(config, attempt),

@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import type { BackendDb } from "../../db/client.js";
+import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { creatorProfiles, socialComments } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { t } from "../../foundation/i18n/index.js";
@@ -13,7 +13,7 @@ export function creatorDashboard(
   days: number,
   locale: BotLocale = "ru",
 ): { text: string; hasComments: boolean } {
-  const hasComments = backendDb.db.select({ id: socialComments.commentId }).from(socialComments).limit(1).get() != null;
+  const hasComments = unsafeDb(backendDb).db.select({ id: socialComments.commentId }).from(socialComments).limit(1).get() != null;
   if (days === 0) return overallDashboard(backendDb, config, hasComments, locale);
   const since = new Date(Date.now() - days * 24 * 60 * 60_000).toISOString();
   const latest = latestVideoMetrics(backendDb, since);
@@ -163,8 +163,8 @@ function profile(backendDb: BackendDb, platform: string): CreatorProfileMetrics 
   const profiles = ["ru", "en"]
     .map(
       (locale) =>
-        backendDb.db
-          .select()
+        unsafeDb(backendDb)
+          .db.select()
           .from(creatorProfiles)
           .where(eq(creatorProfiles.platform, `${platform}_${locale}`))
           .get()?.dataJson,

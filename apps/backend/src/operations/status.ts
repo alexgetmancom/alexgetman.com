@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { gitRevision } from "../foundation/runtime/git.js";
 import { workerLiveness } from "../foundation/runtime/worker-state.js";
@@ -16,8 +16,8 @@ type WorkerStateRow = {
 };
 
 function statusCounts(backendDb: BackendDb, table: string): Record<string, number> {
-  const rows = backendDb.sqlite
-    .query(`SELECT status, count(*) AS count FROM ${table} GROUP BY status ORDER BY status`)
+  const rows = unsafeDb(backendDb)
+    .sqlite.query(`SELECT status, count(*) AS count FROM ${table} GROUP BY status ORDER BY status`)
     .all() as StatusCountRow[];
   return Object.fromEntries(rows.map((row) => [row.status, Number(row.count)]));
 }
@@ -27,27 +27,23 @@ function total(counts: Record<string, number>): number {
 }
 
 function workers(backendDb: BackendDb) {
-  return (backendDb.sqlite.query("SELECT name,state_json,updated_at FROM worker_state ORDER BY name").all() as WorkerStateRow[]).map(
-    (row) => {
-      const state = JSON.parse(row.state_json) as Record<string, import("../db/schema.js").JsonValue>;
-      return {
-        name: row.name,
-        ok: state.ok !== false,
-        lastRunAt: typeof state.last_run_at === "string" ? state.last_run_at : row.updated_at,
-        lastError:
-          typeof state.scheduler_error === "string"
-            ? state.scheduler_error
-            : typeof state.last_error === "string"
-              ? state.last_error
-              : null,
-        ...workerLiveness(state, row.updated_at),
-      };
-    },
-  );
+  return (
+    unsafeDb(backendDb).sqlite.query("SELECT name,state_json,updated_at FROM worker_state ORDER BY name").all() as WorkerStateRow[]
+  ).map((row) => {
+    const state = JSON.parse(row.state_json) as Record<string, import("../db/schema.js").JsonValue>;
+    return {
+      name: row.name,
+      ok: state.ok !== false,
+      lastRunAt: typeof state.last_run_at === "string" ? state.last_run_at : row.updated_at,
+      lastError:
+        typeof state.scheduler_error === "string" ? state.scheduler_error : typeof state.last_error === "string" ? state.last_error : null,
+      ...workerLiveness(state, row.updated_at),
+    };
+  });
 }
 
 function countRows(backendDb: BackendDb, table: string): number {
-  const row = backendDb.sqlite.query(`SELECT count(*) AS count FROM ${table}`).get() as { count: number };
+  const row = unsafeDb(backendDb).sqlite.query(`SELECT count(*) AS count FROM ${table}`).get() as { count: number };
   return Number(row.count);
 }
 
@@ -60,8 +56,8 @@ export function compactOperationsStatus(config: BackendConfig, backendDb: Backen
   const videoDraftCounts = statusCounts(backendDb, "video_drafts");
   const videoTargetCounts = statusCounts(backendDb, "video_targets");
   const videoJobCounts = statusCounts(backendDb, "video_jobs");
-  const metricSchedule = backendDb.sqlite
-    .query(
+  const metricSchedule = unsafeDb(backendDb)
+    .sqlite.query(
       `SELECT count(*) AS total,
         sum(CASE WHEN frozen_at IS NOT NULL THEN 1 ELSE 0 END) AS frozen,
         sum(CASE WHEN frozen_at IS NULL AND (next_check_at IS NULL OR next_check_at <= ?) THEN 1 ELSE 0 END) AS due,
@@ -76,8 +72,8 @@ export function compactOperationsStatus(config: BackendConfig, backendDb: Backen
     errors: number | null;
     lastCheckedAt: string | null;
   };
-  const actionableVideoFailures = backendDb.sqlite
-    .query(
+  const actionableVideoFailures = unsafeDb(backendDb)
+    .sqlite.query(
       `SELECT count(*) AS count
        FROM video_targets AS target
        INNER JOIN video_drafts AS draft ON draft.id = target.video_draft_id

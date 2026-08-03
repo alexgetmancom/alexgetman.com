@@ -1,5 +1,5 @@
 import { and, asc, eq, lte } from "drizzle-orm";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { recordEvent } from "../db/repositories/events.js";
 import { studioNotificationJobs } from "../db/schema.js";
 
@@ -27,8 +27,8 @@ export function scheduleReminder(
     publish_at: input.publishAt.toISOString(),
     minutes: input.preference.reminderMinutes,
   };
-  backendDb.db
-    .insert(studioNotificationJobs)
+  unsafeDb(backendDb)
+    .db.insert(studioNotificationJobs)
     .values({
       actorId: input.actorId,
       ref: input.ref,
@@ -47,8 +47,8 @@ export function scheduleReminder(
 }
 
 export function cancelScheduledNotifications(backendDb: BackendDb, ref: string): void {
-  backendDb.db
-    .update(studioNotificationJobs)
+  unsafeDb(backendDb)
+    .db.update(studioNotificationJobs)
     .set({ status: "cancelled", updatedAt: new Date().toISOString() })
     .where(and(eq(studioNotificationJobs.ref, ref), eq(studioNotificationJobs.status, "queued")))
     .run();
@@ -57,8 +57,8 @@ export function cancelScheduledNotifications(backendDb: BackendDb, ref: string):
 /** Core worker: turns due notification jobs into durable Studio events. */
 export function runNotificationCycle(backendDb: BackendDb, limit = 50): number {
   const now = new Date().toISOString();
-  const jobs = backendDb.db
-    .select()
+  const jobs = unsafeDb(backendDb)
+    .db.select()
     .from(studioNotificationJobs)
     .where(and(eq(studioNotificationJobs.status, "queued"), lte(studioNotificationJobs.runAt, now)))
     .orderBy(asc(studioNotificationJobs.runAt), asc(studioNotificationJobs.id))
@@ -69,7 +69,7 @@ export function runNotificationCycle(backendDb: BackendDb, limit = 50): number {
     // Claim and emit as one unit. Marking the job delivered first meant a
     // failing recordDomainEvent silently swallowed the reminder: the job was
     // terminal, and nothing left to retry.
-    const emitted = backendDb.db.transaction((tx) => {
+    const emitted = unsafeDb(backendDb).db.transaction((tx) => {
       const claimed = tx
         .update(studioNotificationJobs)
         .set({ status: "delivered", updatedAt: now })
@@ -78,7 +78,7 @@ export function runNotificationCycle(backendDb: BackendDb, limit = 50): number {
         .get();
       if (!claimed) return false;
       const payload = job.payloadJson ?? {};
-      recordEvent(backendDb.db, backendDb.clock, {
+      recordEvent(unsafeDb(backendDb).db, backendDb.clock, {
         ref: job.ref,
         type: "studio.notification.reminder.due",
         severity: "info",

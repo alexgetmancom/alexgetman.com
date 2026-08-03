@@ -1,6 +1,6 @@
 import { asc, eq, sql } from "drizzle-orm";
 import { TARGETS } from "../botTargets.js";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { mediaTestCases, mediaTestResults, platformCapabilities, posts, postTargets } from "../db/schema.js";
 
 const MEDIA_TEST_CASES = [
@@ -27,7 +27,7 @@ export function seedCapabilities(backendDb: BackendDb): void {
   const unknown = expectedTargets.filter((target) => !known.has(target));
   if (unknown.length) throw new Error(`capability fixture references unknown targets: ${unknown.join(", ")}`);
   const now = new Date().toISOString();
-  backendDb.db.transaction((tx) => {
+  unsafeDb(backendDb).db.transaction((tx) => {
     for (const [testId, formatKey, title, recipe] of MEDIA_TEST_CASES) {
       tx.insert(mediaTestCases)
         .values({
@@ -52,16 +52,16 @@ export function seedCapabilities(backendDb: BackendDb): void {
 
 export function recordCapabilityPost(backendDb: BackendDb, testId: string, messageId: number, notes?: string): string {
   seedCapabilities(backendDb);
-  const test = backendDb.db.select().from(mediaTestCases).where(eq(mediaTestCases.testId, testId)).get();
+  const test = unsafeDb(backendDb).db.select().from(mediaTestCases).where(eq(mediaTestCases.testId, testId)).get();
   if (!test) throw new Error(`unknown test: ${testId}`);
-  const post = backendDb.db.select({ postKey: posts.postKey }).from(posts).where(eq(posts.messageId, messageId)).get();
+  const post = unsafeDb(backendDb).db.select({ postKey: posts.postKey }).from(posts).where(eq(posts.messageId, messageId)).get();
   if (!post) throw new Error(`message not found: ${messageId}`);
-  const rows = backendDb.db.select().from(postTargets).where(eq(postTargets.postKey, post.postKey)).all();
+  const rows = unsafeDb(backendDb).db.select().from(postTargets).where(eq(postTargets.postKey, post.postKey)).all();
   const byTarget = new Map(rows.map((row) => [row.target, row]));
   const expected = JSON.parse(test.expectedTargetsJson) as string[];
   const statuses: string[] = [];
   const now = new Date().toISOString();
-  backendDb.db.transaction((tx) => {
+  unsafeDb(backendDb).db.transaction((tx) => {
     for (const { id: target } of TARGETS) {
       const row = byTarget.get(target);
       const status = row?.status === "published" ? "supported" : row?.skipped ? "blocked" : row?.status === "failed" ? "failed" : "unknown";
@@ -131,14 +131,14 @@ export function recordCapabilityPost(backendDb: BackendDb, testId: string, messa
       .run();
   });
   return (
-    backendDb.db.select({ status: mediaTestCases.status }).from(mediaTestCases).where(eq(mediaTestCases.testId, testId)).get()?.status ??
-    "pending"
+    unsafeDb(backendDb).db.select({ status: mediaTestCases.status }).from(mediaTestCases).where(eq(mediaTestCases.testId, testId)).get()
+      ?.status ?? "pending"
   );
 }
 
 export function capabilitySummary(backendDb: BackendDb): Record<string, unknown>[] {
-  return backendDb.db
-    .select({
+  return unsafeDb(backendDb)
+    .db.select({
       testId: mediaTestCases.testId,
       title: mediaTestCases.title,
       formatKey: mediaTestCases.formatKey,

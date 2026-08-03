@@ -1,4 +1,4 @@
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import { creatorProfiles } from "../db/schema.js";
 import { metricNumber } from "./snapshots/creator-store.js";
 
@@ -41,8 +41,8 @@ const SCOPE_WHERE: Record<MetricScope, string> = {
  * is built on, so the scan and baseline rule exist in exactly one place. */
 function metricSeriesSince(backendDb: BackendDb, since: string, scope?: MetricScope): MetricSeries[] {
   const where = scope ? SCOPE_WHERE[scope] : "1=1";
-  const rows = backendDb.sqlite
-    .prepare(
+  const rows = unsafeDb(backendDb)
+    .sqlite.prepare(
       `WITH matched AS (
          SELECT post_key, target, metric_name, value, sampled_at, id FROM metric_samples WHERE ${where}
        ),
@@ -109,8 +109,8 @@ export function textContentMetricsByPlatform(backendDb: BackendDb, since: string
  * metric observation so the dashboard can show a clear zero rather than hide
  * a newly published post. */
 export function latestTextPostMetrics(backendDb: BackendDb, since: string): TextPostMetricRow[] {
-  const rows = backendDb.sqlite
-    .prepare(
+  const rows = unsafeDb(backendDb)
+    .sqlite.prepare(
       `WITH ranked_samples AS (
          SELECT post_key, target, metric_name, value, sampled_at, id,
                 ROW_NUMBER() OVER (PARTITION BY post_key, target, metric_name ORDER BY sampled_at DESC, id DESC) AS rn
@@ -163,8 +163,8 @@ export function siteTotal(backendDb: BackendDb, since: string): number {
 }
 
 export function latestVideoMetrics(backendDb: BackendDb, since: string): VideoMetricRow[] {
-  const rows = backendDb.sqlite
-    .prepare(
+  const rows = unsafeDb(backendDb)
+    .sqlite.prepare(
       `SELECT target.target AS platform, draft.locale, draft.label, target.published_at,
               latest.metrics_json AS latest_metrics, baseline.metrics_json AS baseline_metrics
        FROM video_targets target
@@ -211,8 +211,8 @@ export function youtubeChannelViewDeltaSince(backendDb: BackendDb, since: string
   // A recovery after an outage must not label several days of channel growth
   // as a 24-hour delta. Hourly collection normally allows a small delay.
   const oldestUsableBaseline = new Date(new Date(since).getTime() - 2 * 60 * 60_000).toISOString();
-  const rows = backendDb.sqlite
-    .prepare(
+  const rows = unsafeDb(backendDb)
+    .sqlite.prepare(
       `SELECT
          (SELECT CAST(COALESCE(json_extract(metrics_json, '$.viewCount'), 0) AS INTEGER)
           FROM creator_profile_snapshots WHERE platform = ?
@@ -240,8 +240,8 @@ export function sum(rows: VideoMetricRow[], field: string): number {
  * calculation safe for historical dashboard dates: the latest sample must be
  * inside the selected period, not whatever was collected today. */
 function audienceGrowthByAccount(backendDb: BackendDb, since: string, until: string): Map<string, number> {
-  const rows = backendDb.sqlite
-    .prepare(
+  const rows = unsafeDb(backendDb)
+    .sqlite.prepare(
       `WITH samples AS (
          SELECT platform, account, sampled_at, id,
                 CAST(COALESCE(json_extract(metrics_json, '$.subscriberCount'), json_extract(metrics_json, '$.followersCount'), 0) AS INTEGER) AS value
@@ -287,7 +287,7 @@ export function audienceGrowthByPlatform(
     if (platform) totals.set(platform, (totals.get(platform) ?? 0) + value);
   }
   if (!useCurrentProviderReports) return totals;
-  for (const profile of backendDb.db.select().from(creatorProfiles).all()) {
+  for (const profile of unsafeDb(backendDb).db.select().from(creatorProfiles).all()) {
     const direct = providerFollowerGrowth(profile.platform, profile.dataJson, days);
     const observed = totals.get(profile.platform);
     // The YouTube daily report is often absent while its response shape still
