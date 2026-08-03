@@ -2,11 +2,14 @@ import { describe, expect, it } from "bun:test";
 import type { XActivityDashboardItem } from "../src/analytics/x-activity-dashboard.js";
 import { openBackendDb } from "../src/db/client.js";
 import { creatorProfileSnapshots, videoDrafts, videoMetricSnapshots, videoTargets } from "../src/db/schema.js";
+import { loadConfig } from "../src/foundation/config.js";
 import { renderCombinedSection } from "../src/interfaces/web/dashboard/combined-section.js";
 import { renderHeroCard } from "../src/interfaces/web/dashboard/hero-section.js";
+import { buildOverviewData } from "../src/interfaces/web/dashboard/overview-data.js";
 import { renderTrackPublicationList } from "../src/interfaces/web/dashboard/table.js";
 import type { PipelinePost } from "../src/interfaces/web/dashboard/types.js";
-import { emptyVideoOverview, videoOverview } from "../src/interfaces/web/dashboard/video-overview.js";
+import { createVideoOverviewCache, emptyVideoOverview, videoOverview } from "../src/interfaces/web/dashboard/video-overview.js";
+import { operationsService } from "../src/operations/index.js";
 
 const hoursAgo = (hours: number): string => new Date(Date.now() - hours * 3_600_000).toISOString();
 
@@ -167,6 +170,32 @@ function seedHistoricalVideo(backendDb: ReturnType<typeof openBackendDb>): void 
 }
 
 describe("unified overview video read model", () => {
+  it("includes videos published during the selected current day", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      seedVideo(backendDb);
+      const config = loadConfig({});
+      config.studio.modules.video_posting = true;
+      config.studio.modules.youtube = true;
+
+      const overview = buildOverviewData(
+        config,
+        backendDb,
+        operationsService(backendDb, config),
+        createVideoOverviewCache(),
+        0,
+        1,
+        undefined,
+        "reach",
+      );
+
+      expect(overview.video.items).toHaveLength(1);
+      expect(overview.video.totals.posts).toBe(1);
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("reports the latest sample per publication and names the destination", () => {
     const backendDb = openBackendDb(":memory:");
     try {
@@ -335,7 +364,7 @@ describe("unified overview rendering", () => {
     try {
       seedVideo(backendDb);
       const video = videoOverview(backendDb, new Date(Date.now() - 86_400_000), new Date());
-      const html = renderCombinedSection({ ...baseInput, video, mode: "all" });
+      const html = renderCombinedSection({ ...baseInput, video });
 
       expect(html).toContain("<strong>1k</strong>");
       expect(html).toContain("Текст");
@@ -382,7 +411,6 @@ describe("unified overview rendering", () => {
       previousData: { posts: [post(100)] },
       video: currentVideo,
       previousVideo,
-      mode: "all",
     });
 
     expect(html).toContain("+200%");
@@ -401,7 +429,6 @@ describe("unified overview rendering", () => {
       data: { posts: [post(0)] },
       previousData: { posts: [post(100)] },
       video: emptyVideoOverview(),
-      mode: "text",
     });
 
     expect(html).toContain("<strong>0</strong>");
@@ -422,7 +449,6 @@ describe("unified overview rendering", () => {
       data: { posts: [post(200, "2026-08-01T12:00:00.000Z")] },
       previousData: { posts: previousPosts },
       video: emptyVideoOverview(),
-      mode: "text",
     });
 
     expect(html).toContain("+100%");
@@ -450,7 +476,6 @@ describe("unified overview rendering", () => {
           { key: "telegram", label: "Telegram", followers: 135 },
           { key: "x", label: "X", followers: 83 },
         ],
-        mode: "all",
       });
       // The source name and locale badge must come from the data, not from a
       // guessed suffix in the target id.
@@ -462,27 +487,26 @@ describe("unified overview rendering", () => {
     }
   });
 
-  it("switches platform rows between reach and followers while preserving the mode", () => {
+  it("switches platform rows between reach and followers", () => {
     const followers = [
       { key: "telegram", label: "Telegram", followers: 135 },
       { key: "x", label: "X", followers: 85 },
     ];
-    const reachHtml = renderCombinedSection({ ...baseInput, followers, video: emptyVideoOverview(), mode: "text" });
+    const reachHtml = renderCombinedSection({ ...baseInput, followers, video: emptyVideoOverview() });
     const followerHtml = renderCombinedSection({
       ...baseInput,
       followers,
       video: emptyVideoOverview(),
-      mode: "text",
       platformMetric: "followers",
     });
 
-    expect(reachHtml).toContain('href="/command-center?period=1&week_offset=0&mode=text&metric=followers"');
+    expect(reachHtml).toContain('href="/command-center?period=1&week_offset=0&metric=followers"');
     expect(reachHtml).toContain('class="platform-metric-btn platform-metric-btn--active"');
     expect(followerHtml).toContain(">135</strong>");
     // The metric is named by the active switch itself; the panel carries no
     // separate heading repeating it.
     expect(followerHtml).toContain('aria-pressed="true">Подписчики</a>');
-    expect(followerHtml).toContain('href="/command-center?period=1&week_offset=0&mode=text"');
+    expect(followerHtml).toContain('href="/command-center?period=1&week_offset=0"');
   });
 
   it("scopes the new overview to the selected text platform", () => {
@@ -507,7 +531,6 @@ describe("unified overview rendering", () => {
         { key: "threads_en", label: "Threads EN", followers: 100 },
         { key: "telegram", label: "Telegram", followers: 200 },
       ],
-      mode: "text",
       textTargetIds: ["threads_en"],
       textView: "threads_en",
     });
@@ -612,7 +635,6 @@ describe("unified overview rendering", () => {
       data: { posts: [post] },
       followers,
       video,
-      mode: "all",
       platformMetric: "reach",
     });
     const reachText = column(reachHtml, "text");
@@ -625,7 +647,6 @@ describe("unified overview rendering", () => {
       data: { posts: [post] },
       followers,
       video,
-      mode: "all",
       platformMetric: "followers",
     });
     const followerText = column(followerHtml, "text");
@@ -654,7 +675,6 @@ describe("unified overview rendering", () => {
       ...baseInput,
       data: { posts: [post] },
       video: emptyVideoOverview(),
-      mode: "text",
     });
     // Scoped to the row list, not the whole block: the bar still names every
     // source in its tooltip, while the rows keep only the first four visible.
@@ -676,7 +696,6 @@ describe("unified overview rendering", () => {
       ...baseInput,
       data: { posts: [post] },
       video: emptyVideoOverview(),
-      mode: "text",
       platformMetric: "followers",
     });
     const followersPlatformHtml = followersHtml.slice(
@@ -697,7 +716,7 @@ describe("unified overview rendering", () => {
         { target: "youtube_shorts", label: "YouTube RU", locales: ["RU"], views: 9_000, followers: null },
       ],
     };
-    const html = renderCombinedSection({ ...baseInput, video, mode: "video" });
+    const html = renderCombinedSection({ ...baseInput, video });
     const videoStart = html.indexOf('<section class="overview-track overview-track--video');
     const videoEnd = html.indexOf('<div class="overview-publications" id="overview-publications-video">', videoStart);
     const videoPlatformHtml = html.slice(videoStart, videoEnd);
@@ -732,24 +751,19 @@ describe("unified overview rendering", () => {
       xItems,
       followers: [{ key: "x", label: "X", followers: 85 }],
       video: emptyVideoOverview(),
-      mode: "text",
     });
 
     expect(html).toContain("<strong>42</strong>");
   });
 
-  it("drops the other half entirely when the mode selects one", () => {
+  it("keeps both halves available in the single overview mode", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       seedVideo(backendDb);
       const video = videoOverview(backendDb, new Date(Date.now() - 86_400_000), new Date());
-      const textOnly = renderCombinedSection({ ...baseInput, video, mode: "text" });
-      expect(textOnly).not.toContain("YouTube Shorts");
-      expect(textOnly).toContain("Telegram");
-
-      const videoOnly = renderCombinedSection({ ...baseInput, video, mode: "video" });
-      expect(videoOnly).toContain("YouTube RU");
-      expect(videoOnly).not.toContain("Telegram");
+      const html = renderCombinedSection({ ...baseInput, video });
+      expect(html).toContain("YouTube RU");
+      expect(html).toContain("Telegram");
     } finally {
       backendDb.close();
     }

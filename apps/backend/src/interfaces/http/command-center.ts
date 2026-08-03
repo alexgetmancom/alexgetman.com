@@ -79,7 +79,6 @@ export const commandCenterRoutes: RouteModule = (app, { config, backendDb, opera
             url.searchParams.get("panel") ?? undefined,
             url.searchParams.get("period") ?? undefined,
             url.searchParams.get("view") ?? undefined,
-            url.searchParams.get("mode") ?? undefined,
             url.searchParams.get("metric") ?? undefined,
           ),
         ),
@@ -134,17 +133,7 @@ export const commandCenterRoutes: RouteModule = (app, { config, backendDb, opera
       measureMemorySync(
         "command_center.dashboard.publication_details",
         { route: "/api/command-center/publication-details", period: periodDays, weekOffset, offset, limit },
-        () =>
-          renderDashboardPublicationDetails(
-            config,
-            backendDb,
-            weekOffset,
-            periodDays,
-            c.req.query("view") ?? undefined,
-            c.req.query("mode") ?? undefined,
-            offset,
-            limit,
-          ),
+        () => renderDashboardPublicationDetails(config, backendDb, weekOffset, periodDays, c.req.query("view") ?? undefined, offset, limit),
       ),
     );
   });
@@ -194,7 +183,6 @@ function dashboardMemoryContext(url: URL): Record<string, string | null> {
     panel: url.searchParams.get("panel") ?? "overview",
     period: url.searchParams.get("period") ?? "1",
     view: url.searchParams.get("view"),
-    mode: url.searchParams.get("mode"),
     metric: url.searchParams.get("metric"),
   };
 }

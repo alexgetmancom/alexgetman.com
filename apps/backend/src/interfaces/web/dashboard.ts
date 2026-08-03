@@ -5,7 +5,7 @@ import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import type { StudioLocale } from "../../foundation/locale.js";
 import { type CommandCenterAttention, operationsService } from "../../operations/index.js";
-import { type OverviewMode, type PlatformMetric, renderCombinedSection } from "./dashboard/combined-section.js";
+import { type PlatformMetric, renderCombinedSection } from "./dashboard/combined-section.js";
 import { renderCredentialsSection, renderDiagnosticsSection, renderQueueSection, renderRepairSection } from "./dashboard/ops-sections.js";
 import { buildOverviewData, videoOverviewForPeriod } from "./dashboard/overview-data.js";
 import { renderPeriodControls } from "./dashboard/period-controls.js";
@@ -41,7 +41,6 @@ function dashboardCacheKey(
   requestedPanel: string | undefined,
   requestedPeriod: string | undefined,
   requestedView: string | undefined,
-  requestedMode: string | undefined,
   requestedMetric: string | undefined,
 ): string {
   return JSON.stringify({
@@ -58,7 +57,6 @@ function dashboardCacheKey(
       requestedPanel ?? null,
       requestedPeriod ?? null,
       requestedView ?? null,
-      requestedMode ?? null,
       requestedMetric ?? null,
     ],
   });
@@ -90,7 +88,6 @@ export function renderDashboard(
   requestedPanel?: string,
   requestedPeriod?: string,
   requestedView?: string,
-  requestedMode?: string,
   requestedMetric?: string,
 ): string {
   const cache = dashboardCacheFor(backendDb);
@@ -104,7 +101,6 @@ export function renderDashboard(
     requestedPanel,
     requestedPeriod,
     requestedView,
-    requestedMode,
     requestedMetric,
   );
   const now = Date.now();
@@ -136,15 +132,9 @@ export function renderDashboard(
     showPosts && config.studio.modules.text_posting && AUDIENCE_VIEWS.includes(requestedView as AudienceView)
       ? (requestedView as AudienceView)
       : undefined;
-  // "Все" is the landing view of every Studio that publishes both halves — the
-  // whole point of the unified overview is that the account is one thing.
-  // Publishing one half only leaves nothing to combine, so those open on the
-  // half that exists rather than on a view half of which is permanently empty.
-  const mode = resolveOverviewMode(config, requestedMode);
-  const overviewMode = activeView ? "text" : mode;
   const platformMetric: PlatformMetric = requestedMetric === "followers" ? "followers" : "reach";
   const panelLink = (value: DashboardPanel) => `/command-center?tab=posts&panel=${value}${periodDays !== 1 ? `&period=${periodDays}` : ""}`;
-  const overviewFilterQuery = `${activeView ? "" : overviewMode === "all" ? "" : `&mode=${overviewMode}`}${platformMetric === "followers" ? "&metric=followers" : ""}`;
+  const overviewFilterQuery = platformMetric === "followers" ? "&metric=followers" : "";
   const overviewControls =
     panel === "overview" && showPosts ? renderPeriodControls(weekOffset, periodDays, config.TIMEZONE, activeView, overviewFilterQuery) : "";
   const content = renderPanel();
@@ -165,7 +155,7 @@ export function renderDashboard(
   function renderOverview(): string {
     if (showPosts)
       return renderCombinedSection(
-        buildOverviewData(config, backendDb, service, videoCache, weekOffset, periodDays, activeView, overviewMode, platformMetric),
+        buildOverviewData(config, backendDb, service, videoCache, weekOffset, periodDays, activeView, platformMetric),
       );
     if (showStudio && studioActorId) return renderStudioSection(config, backendDb, studioActorId, locale);
     return "";
@@ -198,9 +188,8 @@ export function renderDashboard(
       )
       .join("")}</div>
   </details>`;
-  // No content-type switch in the bar. The overview shows both halves side by
-  // side, which is the answer the filter existed to give; ?mode= still works for
-  // a direct link, it just has no control of its own.
+  // The overview is one complete Studio surface: text and video stay side by
+  // side, with only the period, platform and metric filters remaining.
   const body = `
     <nav class="dashboard-tabs"><span class="dashboard-tabs__start">${overviewTab}${menu}</span><span class="dashboard-tabs__end">${overviewControls}${DASHBOARD_THEME_TOGGLE_HTML}</span></nav>
     <section id="overview" class="overview">${content}</section>`;
@@ -216,26 +205,21 @@ export function renderDashboardPublicationDetails(
   weekOffset: number,
   periodDays: number,
   requestedView: string | undefined,
-  requestedMode: string | undefined,
   offset: number,
   limit: number,
 ): PublicationDetailsResult {
-  const mode = resolveOverviewMode(config, requestedMode);
   const targetIds = dashboardTargetIds(requestedView);
-  const data =
-    mode === "video"
-      ? null
-      : operationsService(backendDb, config).pipelineOverview(weekOffset, periodDays, 0, undefined, {
-          includeSamples: false,
-          includeContent: true,
-          contentLimit: offset + limit,
-        });
+  const data = operationsService(backendDb, config).pipelineOverview(weekOffset, periodDays, 0, undefined, {
+    includeSamples: false,
+    includeContent: true,
+    contentLimit: offset + limit,
+  });
   const posts = targetIds ? (filterPipeline(data, targetIds)?.posts ?? []) : (data?.posts ?? []);
   const xItems = requestedView === "x" ? xActivityDashboard(backendDb, weekOffset, periodDays, config.TIMEZONE) : [];
   const representedPostKeys = new Set(posts.map((post) => post.post_key).filter((key): key is string => Boolean(key)));
   const xPosts = xItems.filter((item) => !item.linkedPostKey || !representedPostKeys.has(item.linkedPostKey)).map(xActivityPipelinePost);
   const videos =
-    mode === "text" || !config.studio.modules.video_posting ? [] : videoOverviewForPeriod(backendDb, weekOffset, periodDays, config).items;
+    requestedView || !config.studio.modules.video_posting ? [] : videoOverviewForPeriod(backendDb, weekOffset, periodDays, config).items;
   return renderPublicationDetails([...posts, ...xPosts], targetIds ?? (requestedView === "x" ? ["x"] : undefined), videos, offset, limit);
 }
 
@@ -250,12 +234,6 @@ function opsNeedsAttention(ops: OpsPayload): boolean {
 
 function commandCenterAttentionState(attention: CommandCenterAttention): boolean {
   return attention.hasFailedJob || attention.hasCredentialIssue || attention.hasMetricIssue;
-}
-
-function resolveOverviewMode(config: BackendConfig, requestedMode: string | undefined): OverviewMode {
-  if (requestedMode === "text" || requestedMode === "video") return requestedMode;
-  if (!config.studio.modules.video_posting) return "text";
-  return config.studio.modules.text_posting ? "all" : "video";
 }
 
 function dashboardTargetIds(requestedView: string | undefined): string[] | undefined {

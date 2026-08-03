@@ -39,7 +39,6 @@ import type { VideoOverview } from "./video-overview.js";
  * side by side, each with its own comparison, and the sum is never shown.
  */
 
-export type OverviewMode = "all" | "text" | "video";
 export type PlatformMetric = "reach" | "followers";
 
 export type TextPlatformFollowers = { key: string; label: string; followers: number | null };
@@ -64,7 +63,6 @@ export type CombinedSectionInput = {
   periodDays: number;
   weekOffset: number;
   timeZone: string;
-  mode: OverviewMode;
   platformMetric: PlatformMetric;
   /** Restricts the text half when a platform row is selected. */
   textTargetIds?: readonly string[] | undefined;
@@ -77,15 +75,15 @@ const TEXT_COLOR = "var(--series-text)";
 const VIDEO_COLOR = "var(--series-video)";
 
 export function renderCombinedSection(input: CombinedSectionInput): string {
-  const { mode, periodDays, timeZone } = input;
+  const { periodDays, timeZone } = input;
   const textTargetIds = selectedTextTargetIds(input);
   const posts = input.data?.posts ?? [];
   const previousPosts = input.previousData?.posts ?? [];
   const extraX = additionalXItems(posts, input.xItems);
   const previousExtraX = additionalXItems(previousPosts, input.previousXItems);
 
-  const showText = mode !== "video";
-  const showVideo = mode !== "text";
+  const showText = true;
+  const showVideo = !input.textView;
 
   const text = combinedTotals(posts, extraX, textTargetIds);
   const previousText =
@@ -257,7 +255,7 @@ function renderOverviewPlatforms(
     ? `<details class="overview-platforms__more platform-more"><summary>Ещё <span>${hiddenRows.length}</span></summary><div class="platform-more__list">${hiddenRows.map(renderRow).join("")}</div></details>`
     : `<a class="overview-platforms__more overview-platforms__more--jump" href="#overview-publications-${kind}">Публикации</a>`;
   const filter = showMetricFilter
-    ? renderPlatformMetricFilter(input.platformMetric, input.periodDays, input.weekOffset, input.mode, input.textView)
+    ? renderPlatformMetricFilter(input.platformMetric, input.periodDays, input.weekOffset, input.textView)
     : "";
   // No kicker over the bar: the RU/EN labels already name the row, and a second
   // heading only pushed the first number further down. The metric switch stays —
@@ -317,7 +315,7 @@ function overviewPlatformRows(
       delta: percentDelta(platformViews(platform.key, currentPosts, currentX), platformViews(platform.key, comparisonPosts, comparisonX)),
       href: input.textView
         ? null
-        : `/command-center?period=${input.periodDays}&week_offset=${input.weekOffset}${input.mode === "all" ? "" : `&mode=${input.mode}`}&view=${encodeURIComponent(platform.key)}`,
+        : `/command-center?period=${input.periodDays}&week_offset=${input.weekOffset}&view=${encodeURIComponent(platform.key)}`,
       secondary: SECONDARY_TEXT_TARGETS.has(platform.key),
     }));
   const known = new Set(rows.map((row) => row.key));
@@ -519,15 +517,9 @@ const PLATFORM_SLOTS = 4;
 
 const SECONDARY_TEXT_TARGETS = new Set(["site_ru", "site_en", "telegram_stories", "instagram_stories_ru", "instagram_stories"]);
 
-export function renderPlatformMetricFilter(
-  platformMetric: PlatformMetric,
-  periodDays: number,
-  weekOffset: number,
-  mode: OverviewMode = "all",
-  view?: string,
-): string {
+export function renderPlatformMetricFilter(platformMetric: PlatformMetric, periodDays: number, weekOffset: number, view?: string): string {
   const viewParam = view ? `&view=${encodeURIComponent(view)}` : "";
-  const base = `/command-center?period=${periodDays}&week_offset=${weekOffset}${mode === "all" ? "" : `&mode=${mode}`}${viewParam}`;
+  const base = `/command-center?period=${periodDays}&week_offset=${weekOffset}${viewParam}`;
   const options: Array<[PlatformMetric, string]> = [
     ["reach", "Охват"],
     ["followers", "Подписчики"],

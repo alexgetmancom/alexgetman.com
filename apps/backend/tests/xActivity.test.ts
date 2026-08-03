@@ -137,7 +137,6 @@ describe("X Activity", () => {
       periodDays: 1,
       weekOffset: 0,
       timeZone: "Europe/Moscow",
-      mode: "all",
       platformMetric: "reach",
     });
 
@@ -149,7 +148,7 @@ describe("X Activity", () => {
     // The two halves are reported separately and never added together.
     expect(html).toContain("Текст");
     expect(html).toContain("Видео");
-    // The mode switch itself lives in the tab bar, not in this section.
+    // The unified overview has no content-type mode switch.
     expect(html).not.toContain('class="mode-filter"');
   });
 });

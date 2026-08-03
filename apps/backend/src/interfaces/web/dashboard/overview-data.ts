@@ -5,7 +5,7 @@ import type { BackendDb } from "../../../db/client.js";
 import type { BackendConfig } from "../../../foundation/config.js";
 import { zonedSlot } from "../../../foundation/time.js";
 import type { operationsService } from "../../../operations/index.js";
-import type { CombinedSectionInput, OverviewMode, PlatformMetric } from "./combined-section.js";
+import type { CombinedSectionInput, PlatformMetric } from "./combined-section.js";
 import { audiencePlatformFollowers } from "./ops-sections.js";
 import { rollingPeriodDates } from "./period-controls.js";
 import type { PipelineData, PipelinePost } from "./types.js";
@@ -28,7 +28,6 @@ export function buildOverviewData(
   weekOffset: number,
   periodDays: number,
   activeView: AudienceView | undefined,
-  mode: OverviewMode,
   platformMetric: PlatformMetric,
 ): CombinedSectionInput {
   const [start, end] = rollingPeriodDates(weekOffset, periodDays, config.TIMEZONE);
@@ -75,7 +74,7 @@ export function buildOverviewData(
       periodDays === 1
         ? selectPipeline(service.pipelineOverview(0, 1, 0, weekOffset + 1, { includeSamples: true, includeContent: false }))
         : null,
-    video: videoEnabled ? videoForDates(backendDb, config.TIMEZONE, videoCache, start, end, false) : emptyVideoOverview(),
+    video: videoEnabled ? videoForDates(backendDb, config.TIMEZONE, videoCache, start, end, true) : emptyVideoOverview(),
     previousVideo: videoEnabled
       ? videoForDates(backendDb, config.TIMEZONE, videoCache, previousStart, previousEnd, true)
       : emptyVideoOverview(),
@@ -90,11 +89,10 @@ export function buildOverviewData(
     periodDays,
     weekOffset,
     timeZone: config.TIMEZONE,
-    mode: activeView ? "text" : mode,
     platformMetric,
     textTargetIds: selectedTargetIds,
     textView: activeView,
-    publicationDetailsUrl: publicationDetailsUrl(periodDays, weekOffset, activeView, activeView ? "text" : mode, platformMetric),
+    publicationDetailsUrl: publicationDetailsUrl(periodDays, weekOffset, activeView, platformMetric),
   };
 }
 
@@ -123,12 +121,10 @@ function publicationDetailsUrl(
   periodDays: number,
   weekOffset: number,
   requestedView: AudienceView | undefined,
-  mode: OverviewMode,
   platformMetric: PlatformMetric,
 ): string {
   const params = new URLSearchParams({ period: String(periodDays), week_offset: String(weekOffset) });
   if (requestedView) params.set("view", requestedView);
-  if (mode !== "all") params.set("mode", mode);
   if (platformMetric === "followers") params.set("metric", platformMetric);
   return `/api/command-center/publication-details?${params.toString()}`;
 }
