@@ -1,12 +1,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import {
-  RESPONSIVE_WIDTHS,
-  responsiveWebpFfmpegArgs,
-  sitePosterFfmpegArgs,
-  siteVerticalFfmpegArgs,
-} from "../apps/backend/src/delivery/site-media.js";
+import { RESPONSIVE_WIDTHS } from "../apps/backend/src/content/site-media-naming.ts";
+import { responsiveWebpFfmpegArgs, sitePosterFfmpegArgs, siteVerticalFfmpegArgs } from "../apps/backend/src/delivery/site-media.js";
 import { devFixture, seedSiteFixture } from "../apps/web/src/server/site-fixture.js";
 import { storyFfmpegArgs } from "../deploy/media-processor/story-encode.js";
 
