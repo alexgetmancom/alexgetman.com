@@ -143,52 +143,48 @@ function publicationEntries(posts: PipelinePost[], targetIds: string[], videos: 
 }
 
 type PublicationPlatform = {
-  names: string[];
-  locales: string[];
+  name: string;
+  locale: string;
   icon: string;
 };
 
 function textPublicationPlatforms(post: PipelinePost, targetIds: string[]): PublicationPlatform[] {
-  const platforms = new Map<string, PublicationPlatform>();
-  for (const target of ORDERED_TARGETS) {
-    if (!targetIds.includes(target.id) || targetStatus(post, target.id) !== "published") continue;
-    const key = platformKey(target.id);
-    const locale = target.locale.toUpperCase();
-    const name = /\s(?:RU|EN)$/i.test(target.label) ? target.label : `${target.label} ${locale}`;
-    const platform = platforms.get(key);
-    if (platform) {
-      if (!platform.names.includes(name)) platform.names.push(name);
-      if (!platform.locales.includes(locale)) platform.locales.push(locale);
-      continue;
-    }
-    platforms.set(key, {
-      names: [name],
-      locales: [locale],
-      icon: PLATFORM_ICONS[key] ?? "",
-    });
-  }
-  return [...platforms.values()];
+  return ORDERED_TARGETS.filter((target) => targetIds.includes(target.id) && targetStatus(post, target.id) === "published").map(
+    (target) => ({
+      name: target.label.replace(/\s(?:RU|EN)$/i, ""),
+      locale: target.locale.toUpperCase(),
+      icon: PLATFORM_ICONS[platformKey(target.id)] ?? "",
+    }),
+  );
 }
 
 function videoPublicationPlatforms(video: VideoContentItem): PublicationPlatform[] {
   const key = VIDEO_PLATFORM_ICON_KEYS[video.target] ?? video.target;
   const locale = video.locale?.toUpperCase() ?? "";
-  const name = video.label || `${video.target}${locale ? ` ${locale}` : ""}`;
-  return [{ names: [name], locales: locale ? [locale] : [], icon: PLATFORM_ICONS[key] ?? "" }];
+  const name = (video.label || video.target).replace(/\s(?:RU|EN)$/i, "");
+  return [{ name, locale, icon: PLATFORM_ICONS[key] ?? "" }];
 }
 
 function publicationPlatformSummary(platforms: PublicationPlatform[]): string {
   if (!platforms.length) return "";
-  const names = platforms.flatMap((platform) => platform.names);
-  const tooltip = escapeHtml(names.join(", "));
-  const commonAttributes = `class="post-detail__platform-summary" title="${tooltip}" data-tooltip="${tooltip}" aria-label="${tooltip}"`;
-  if (platforms.length === 1) {
-    const platform = platforms[0];
-    if (!platform) return "";
-    const locale = platform.locales.length ? `<b class="post-detail__platform-locale">${escapeHtml(platform.locales.join("/"))}</b>` : "";
-    return `<span ${commonAttributes}><i class="platform-mark">${platform.icon}</i>${locale}</span>`;
-  }
-  return `<span ${commonAttributes}><b class="post-detail__platform-count">${platforms.length}</b></span>`;
+  const labels = platforms.map((platform) => platform.name + (platform.locale ? " " + platform.locale : ""));
+  const accessible = escapeHtml(labels.join(", "));
+  const markers = platforms
+    .map((platform) => {
+      const label = platform.name + (platform.locale ? " " + platform.locale : "");
+      const locale = platform.locale ? '<b class="post-detail__platform-locale">' + escapeHtml(platform.locale) + "</b>" : "";
+      return (
+        '<span class="post-detail__platform-marker" aria-label="' +
+        escapeHtml(label) +
+        '"><i class="platform-mark">' +
+        platform.icon +
+        "</i>" +
+        locale +
+        "</span>"
+      );
+    })
+    .join("");
+  return '<span class="post-detail__platform-summary" aria-label="' + accessible + '">' + markers + "</span>";
 }
 
 function renderRecentVideo(video: VideoContentItem, hidden: boolean): string {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { OVERVIEW_SPARK_MAX, renderOverviewSparkline } from "../src/interfaces/web/dashboard/chart.js";
 import { formatMetricValue, getMskDateString, shortPipelineText } from "../src/interfaces/web/dashboard/format.js";
-import { renderHeroMicroMetrics } from "../src/interfaces/web/dashboard/hero-section.js";
+import { renderHeroCard, renderHeroMicroMetrics } from "../src/interfaces/web/dashboard/hero-section.js";
 import { formatMedia, getTargetMetric, postMetricTotals, targetCell } from "../src/interfaces/web/dashboard/metrics.js";
 import { renderDashboardShell } from "../src/interfaces/web/dashboard/shell.js";
 import { renderOverviewPublicationList, renderPublicationDetails } from "../src/interfaces/web/dashboard/table.js";
@@ -22,6 +22,31 @@ function published(target: string, metrics: Record<string, number> = {}): Partia
 }
 
 describe("dashboard formatting", () => {
+  it("does not show a views delta while the selected period is still zero", () => {
+    const metrics = {
+      postCount: 0,
+      views: 0,
+      medianViews: 10_600,
+      reactions: 0,
+      replies: 0,
+      reposts: 0,
+      engagementRate: null,
+      countLabel: "0 постов сегодня",
+      normLabel: "норма дня",
+      contextLabel: "ОХВАТ · 2 АВГ",
+      paceLabel: "до нормы 10.6k",
+      projectionViews: 0,
+      progressPercent: 0,
+    };
+
+    const html = renderHeroCard("text", metrics);
+
+    expect(html).toContain("<strong>0</strong>");
+    expect(html).not.toContain("−100%");
+    expect(html).not.toContain("0%");
+    expect(html).not.toContain('class="hero-card__delta');
+  });
+
   it("formats video completion as a percentage with one decimal place", () => {
     const html = renderHeroMicroMetrics("video", {
       videoCount: 1,
@@ -74,6 +99,7 @@ describe("dashboard shell", () => {
   it("keeps a hidden overview tooltip hidden after the pointer leaves a chart", () => {
     const html = renderDashboardShell("");
     expect(html).toContain(".overview-chart-tooltip[hidden] { display:none; }");
+    expect(html).toContain(".overview-platforms__more { display:block; margin-top:8px; border:0;");
     expect(html).toContain("const chartTooltip = root.querySelector('.overview-chart-tooltip')");
     expect(html).not.toContain("chart-scale");
   });
@@ -264,7 +290,7 @@ describe("renderOverviewPublicationList", () => {
     expect(html).not.toContain('class="track-publication"');
   });
 
-  it("keeps publication rows compact with one platform mark or a counted platform summary", () => {
+  it("keeps publication rows compact with one platform mark per destination", () => {
     const textPost: PipelinePost = {
       post_id: 2,
       date: "2026-08-02T12:00:00.000Z",
@@ -281,10 +307,46 @@ describe("renderOverviewPublicationList", () => {
     const html = renderOverviewPublicationList([textPost], ["telegram", "x"]);
 
     expect(html).toContain("One two three four five six seven...");
-    expect(html).toContain('<b class="post-detail__platform-count">2</b>');
-    expect(html).toContain('data-tooltip="Telegram RU, X (Twitter) EN"');
+    expect(html).toContain('class="post-detail__platform-marker" aria-label="Telegram RU"');
+    expect(html).toContain('class="post-detail__platform-marker" aria-label="X (Twitter) EN"');
+    expect(html).not.toContain("post-detail__platform-count");
+    expect(html).not.toContain("data-tooltip=");
     expect(html.match(/class="post-detail__metric/g)?.length).toBe(3);
     expect(html).not.toContain("post-detail__metric--separated");
+  });
+
+  it("shows every published destination with its icon and locale", () => {
+    const targetIds = [
+      "site_en",
+      "site_ru",
+      "threads_en",
+      "threads_ru",
+      "instagram_stories",
+      "instagram_stories_ru",
+      "telegram",
+      "telegram_stories",
+    ];
+    const post: PipelinePost = {
+      date: "2026-08-02T12:00:00.000Z",
+      full_text_en: "Published everywhere",
+      targets: Object.fromEntries(targetIds.map((target) => [target, { status: "published" }])),
+    };
+    const html = renderOverviewPublicationList([post], targetIds);
+
+    expect(html.match(/class="post-detail__platform-marker"/g)?.length).toBe(8);
+    for (const label of [
+      "Site EN",
+      "Site RU",
+      "Threads EN",
+      "Threads RU",
+      "Instagram Stories EN",
+      "Instagram Stories RU",
+      "Telegram RU",
+      "Telegram Stories RU",
+    ])
+      expect(html).toContain('aria-label="' + label + '"');
+    expect(html).not.toContain("post-detail__platform-count");
+    expect(html).not.toContain("data-tooltip=");
   });
 
   it("renders a video row as icon plus locale without a source label", () => {
@@ -312,8 +374,9 @@ describe("renderOverviewPublicationList", () => {
     );
 
     expect(html).toContain("First second third fourth fifth sixth seventh...");
-    expect(html).toContain('data-tooltip="Instagram RU"');
+    expect(html).toContain('class="post-detail__platform-marker" aria-label="Instagram RU"');
     expect(html).toContain('<b class="post-detail__platform-locale">RU</b>');
+    expect(html).not.toContain("data-tooltip=");
     expect(html).not.toContain("post-detail__source");
   });
 });

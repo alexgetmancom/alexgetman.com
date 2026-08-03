@@ -43,13 +43,14 @@ export function renderHeroCard(kind: "text" | "video", metrics: TextHeroMetrics 
   const color = isText ? "var(--series-text)" : "var(--series-video)";
   const ariaLabel = isText ? "Текстовые метрики" : "Видео-метрики";
   const progress = metrics.progressPercent === null ? 0 : Math.min(100, Math.max(0, metrics.progressPercent)) / 100;
+  const delta = formatDelta(metrics.views, metrics.medianViews);
   // The rule under the heading is the goal gauge, and it turns green once the
   // norm is passed — the same signal the pace label spells out in words.
   const beatNorm = metrics.progressPercent !== null && metrics.progressPercent >= 100;
   return `<article class="hero-card overview-hero-card hero-card--${kind}" style="--hero-progress:${progress.toFixed(3)}" aria-label="${ariaLabel}">
     <div class="hero-card__heading overview-hero-card__heading${beatNorm ? " overview-hero-card__heading--win" : ""}"><i style="background:${color}"></i><strong>${label}</strong><span>${escapeHtml(count)}</span></div>
     <div class="hero-card__primary overview-hero-card__primary">
-      <div class="hero-card__views overview-hero-card__views"><strong>${formatMetricValue(metrics.views)}</strong><em class="hero-card__delta ${deltaClass(metrics.views, metrics.medianViews)}">${formatDelta(metrics.views, metrics.medianViews)}</em></div>
+      <div class="hero-card__views overview-hero-card__views"><strong>${formatMetricValue(metrics.views)}</strong>${delta ? `<em class="hero-card__delta ${deltaClass(metrics.views, metrics.medianViews)}">${delta}</em>` : ""}</div>
       <div class="hero-card__median overview-hero-card__median"><span>${escapeHtml(metrics.normLabel)} · <b>${formatOptionalMetric(metrics.medianViews)}</b></span></div>
     </div>
     <div class="overview-hero-card__context"><span>${escapeHtml(metrics.contextLabel)}</span>${metrics.paceLabel ? `<span class="overview-hero-card__pace ${metrics.progressPercent !== null && metrics.progressPercent >= 100 ? "overview-hero-card__pace--positive" : ""}">${escapeHtml(metrics.paceLabel)}</span>` : ""}</div>
@@ -98,6 +99,10 @@ function formatSigned(value: number | null): string {
 }
 
 function formatDelta(value: number, median: number | null): string {
+  // A zero for the selected period is incomplete data, not a meaningful
+  // performance change. Showing -100% or 0% here creates noise until metrics
+  // arrive.
+  if (value === 0) return "";
   if (median === null) return "—";
   if (median === 0) return value > 0 ? "+100%" : "0%";
   const delta = Math.round(((value - median) / median) * 100);

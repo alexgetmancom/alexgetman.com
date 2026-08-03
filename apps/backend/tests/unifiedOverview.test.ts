@@ -341,6 +341,24 @@ describe("unified overview rendering", () => {
     expect(html).not.toContain("↑ 2900%");
   });
 
+  it("does not show platform deltas while the selected period is still zero", () => {
+    const post = (views: number): PipelinePost => ({
+      targets: { telegram: { status: "published" } },
+      metrics: { telegram: { views: { value: views } } },
+    });
+    const html = renderCombinedSection({
+      ...baseInput,
+      periodDays: 30,
+      data: { posts: [post(0)] },
+      previousData: { posts: [post(100)] },
+      video: emptyVideoOverview(),
+      mode: "text",
+    });
+
+    expect(html).toContain("<strong>0</strong>");
+    expect(html).not.toContain("−100%");
+  });
+
   it("compares one-day totals with the previous 30-day median", () => {
     const post = (views: number, date: string): PipelinePost => ({
       date,

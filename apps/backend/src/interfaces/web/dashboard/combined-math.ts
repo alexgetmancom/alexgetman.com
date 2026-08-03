@@ -10,7 +10,9 @@ export function formatPlatformDelta(value: number | null): string {
 }
 
 export function percentDelta(value: number, previous: number): number | null {
-  if (previous <= 0) return null;
+  // A zero for the selected period is incomplete data, not a meaningful
+  // performance change. Leave the delta blank until the metric arrives.
+  if (value <= 0 || previous <= 0) return null;
   return Math.round(((value - previous) / previous) * 100);
 }
 
