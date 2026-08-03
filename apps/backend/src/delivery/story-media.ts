@@ -10,6 +10,7 @@ import { runFfmpeg } from "../foundation/runtime/ffmpeg.js";
 import { withTimeout } from "../foundation/runtime/timeout.js";
 import { HttpPublishError } from "../publishing/errors.js";
 import { mediaTransformKey } from "./media-idempotency.js";
+import { writeResponseAtomically } from "./site-media-storage.js";
 import type { PublishMediaItem } from "./social/payload.js";
 import { VERTICAL_MEDIA_TRANSFORM, verticalMediaRecipe } from "./vertical-media-recipe.js";
 
@@ -131,8 +132,7 @@ async function transformRemotely(
       if (video && telegramOutput) await downloadRemoteVariant(config, idempotencyKey, "telegram", telegramOutput, fetchImpl);
       log("info", "story media remote variants written", { output, telegramOutput });
     } else {
-      const result = await withTimeout(response.arrayBuffer(), 30_000, "media_processor_result_read_timeout");
-      await withTimeout(Bun.write(output, result), 30_000, "media_processor_result_write_timeout");
+      await withTimeout(writeResponseAtomically(output, response), 30_000, "media_processor_result_write_timeout");
       log("info", "story media remote legacy result written", { output });
     }
   } catch (error) {
@@ -160,7 +160,7 @@ async function downloadRemoteVariant(
     "media_processor_variant_download_timeout",
   );
   if (!response.ok) throw new Error(`media_processor_variant_failed: ${variant} ${response.status}`);
-  await withTimeout(Bun.write(output, await response.arrayBuffer()), 30_000, "media_processor_variant_write_timeout");
+  await withTimeout(writeResponseAtomically(output, response), 30_000, "media_processor_variant_write_timeout");
   await withTimeout(fs.promises.chmod(output, 0o664), 30_000, "story_output_finalize_timeout");
 }
 
@@ -196,7 +196,7 @@ async function resolveSource(
   const target = path.join(directory, `draft-${draftId}-${locale}-source${extension}`);
   const download = await fetchImpl(`${base}/file/bot${config.controllerBotToken}/${filePath}`);
   if (!download.ok) throw new Error(`Telegram file download failed: ${download.status}`);
-  await fs.promises.writeFile(target, Buffer.from(await download.arrayBuffer()));
+  await writeResponseAtomically(target, download);
   return target;
 }
 

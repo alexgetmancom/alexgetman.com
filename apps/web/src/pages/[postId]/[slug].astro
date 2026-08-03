@@ -1,7 +1,7 @@
 ---
 import HomeNewsPage from "../../components/HomeNewsPage.astro";
 import Layout from "../../layouts/Layout.astro";
-import { loadFeedSnapshot } from "../../server/public-site";
+import { findFeedItem } from "../../server/public-site";
 import { sortedHomePosts } from "../../utils/home-posts";
 import { postOgImagePath } from "../../utils/media";
 import { buildPostSchema } from "../../utils/post-schema";
@@ -10,15 +10,14 @@ import { excerptAfterTitle, getFirstSentence } from "../../utils/text";
 export const prerender = false;
 
 const { postId, slug } = Astro.params;
-const { items: feedItems, byPostId } = loadFeedSnapshot();
-const found = byPostId.get(Number(postId));
+const found = findFeedItem(postId);
 const item = found?.slug_en === slug ? found : undefined;
 if (!item) {
   // Same id, different slug: the post was renamed, so send the reader on.
   if (found?.has_en && found.slug_en) return Astro.redirect(`/${found.post_id}/${found.slug_en}/`, 301);
   return new Response("Not found\n", { status: 404 });
 }
-const englishPosts = sortedHomePosts(feedItems, "en");
+const englishPosts = sortedHomePosts([item], "en");
 const selectedPost = englishPosts.find((post) => String(post.id) === String(postId));
 const siteAuthor = "Alex Getman";
 const postText = item.text_en || item.text || "";

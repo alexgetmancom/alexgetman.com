@@ -66,6 +66,16 @@ export async function writeFileAtomically(target: string, content: Uint8Array): 
   }
 }
 
+export async function writeResponseAtomically(target: string, response: Response): Promise<void> {
+  const temporary = temporaryPath(target);
+  try {
+    await Bun.write(temporary, response);
+    await fs.promises.rename(temporary, target);
+  } finally {
+    await fs.promises.rm(temporary, { force: true }).catch(() => {});
+  }
+}
+
 export function temporaryPath(target: string): string {
   const extension = path.extname(target);
   const stem = extension ? path.basename(target, extension) : path.basename(target);

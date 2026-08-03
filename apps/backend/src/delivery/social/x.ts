@@ -54,11 +54,7 @@ export async function verifyXPost(id: string, config: BackendConfig, fetchImpl: 
 
 async function uploadImage(filePath: string, config: BackendConfig, fetchImpl: typeof fetch): Promise<string> {
   const form = new FormData();
-  form.set(
-    "media",
-    new Blob([await fs.promises.readFile(filePath)], { type: guessContentType(filePath) }),
-    filePath.split("/").pop() || "image",
-  );
+  form.set("media", Bun.file(filePath, { type: guessContentType(filePath) }), filePath.split("/").pop() || "image");
   const response = await oauthFetch(UPLOAD_URL, config, fetchImpl, { method: "POST", body: form });
   const result = await jsonResponse<{ media_id_string?: string }>(response, "X media upload");
   if (!result.media_id_string) throw new Error("X media upload missing media_id_string");

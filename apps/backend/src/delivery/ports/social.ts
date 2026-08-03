@@ -17,6 +17,7 @@ import { publishToX } from "../social/x.js";
 import { generateStoryMedia } from "../story-media.js";
 
 type PreparedMedia = Awaited<ReturnType<typeof prepareMediaItems>>;
+const MAX_PREPARATION_CACHE_ENTRIES = 32;
 
 export function createPlatformPorts(config: BackendConfig, fetchImpl: typeof fetch = fetch): DeliveryPorts {
   // Publisher instances own their preparation state. This prevents cache entries
@@ -33,10 +34,10 @@ export function createPlatformPorts(config: BackendConfig, fetchImpl: typeof fet
   const prepare = (job: ClaimedPublishJob, publisherConfig: BackendConfig) =>
     withPreparedMedia(job, publisherConfig, fetchImpl, mediaCache, enqueueMediaPreparation, (job, media) => {
       const key = storyMediaCacheKey(job, media);
-      let rendered = storyMediaCache.get(key);
+      let rendered = readBoundedCache(storyMediaCache, key);
       if (!rendered) {
         rendered = enqueueStoryPreparation(() => createStoryMedia(job, media, publisherConfig));
-        storyMediaCache.set(key, rendered);
+        writeBoundedCache(storyMediaCache, key, rendered);
       }
       return rendered.catch((error) => {
         storyMediaCache.delete(key);
@@ -157,10 +158,10 @@ async function withPreparedMedia(
   // One preparation per (post, target, media) within a delivery cycle. The
   // rendered files persist on disk and are aged out by pruneMediaCache, so
   // there is no per-user refcount: nothing here owns eager deletion.
-  let prepared = mediaCache.get(key);
+  let prepared = readBoundedCache(mediaCache, key);
   if (!prepared) {
     prepared = enqueue(() => prepareMediaItems(config, sourceMedia, fetchImpl, job.target));
-    mediaCache.set(key, prepared);
+    writeBoundedCache(mediaCache, key, prepared);
   }
   let items: PreparedMedia;
   try {
@@ -203,4 +204,22 @@ function storyMediaCacheKey(job: ClaimedPublishJob, media: ReturnType<typeof pay
     locale: job.payload.locale ?? "en",
     media: media.map((item) => [item.fileId, item.localPath, item.type]),
   });
+}
+
+function readBoundedCache<T>(cache: Map<string, T>, key: string): T | undefined {
+  const value = cache.get(key);
+  if (value === undefined) return undefined;
+  cache.delete(key);
+  cache.set(key, value);
+  return value;
+}
+
+function writeBoundedCache<T>(cache: Map<string, T>, key: string, value: T): void {
+  cache.delete(key);
+  cache.set(key, value);
+  while (cache.size > MAX_PREPARATION_CACHE_ENTRIES) {
+    const oldest = cache.keys().next().value;
+    if (oldest === undefined) return;
+    cache.delete(oldest);
+  }
 }

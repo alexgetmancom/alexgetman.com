@@ -7,12 +7,12 @@ export type PipelineTargetRow = {
   postKey: string;
   target: string;
   status: string;
-  externalId: string | null;
-  externalIdsJson: string[] | null;
-  url: string | null;
-  error: string | null;
-  skipped: number;
-  updatedAt: string;
+  externalId?: string | null;
+  externalIdsJson?: string[] | null;
+  url?: string | null;
+  error?: string | null;
+  skipped?: number;
+  updatedAt?: string | null;
 };
 
 export type PipelineMetricRow = {
@@ -20,9 +20,9 @@ export type PipelineMetricRow = {
   target: string;
   metricName: string;
   value: number | null;
-  source: string | null;
-  sampledAt: string | null;
-  error: string | null;
+  source?: string | null;
+  sampledAt?: string | null;
+  error?: string | null;
 };
 
 export type PipelineSampleRow = {
@@ -62,6 +62,7 @@ export function formatPipelinePosts(
   metricRows: PipelineMetricRow[],
   sampleRows: PipelineSampleRow[],
   includeContent: boolean,
+  compact = false,
 ): Record<string, unknown>[] {
   const targetsByPost = groupBy(targetRows, (target) => target.postKey);
   const metricsByPost = groupBy(metricRows, (metric) => metric.postKey);
@@ -72,16 +73,18 @@ export function formatPipelinePosts(
     const targets = Object.fromEntries(
       (targetsByPost.get(postKey) ?? []).map((target) => [
         target.target,
-        {
-          status: target.status,
-          ok: target.status === "published",
-          external_id: target.externalId,
-          external_ids: target.externalIdsJson ?? [],
-          url: target.url,
-          error: target.error,
-          skipped: Boolean(target.skipped),
-          updated_at: target.updatedAt,
-        },
+        compact
+          ? { status: target.status, url: target.url ?? null }
+          : {
+              status: target.status,
+              ok: target.status === "published",
+              external_id: target.externalId,
+              external_ids: target.externalIdsJson ?? [],
+              url: target.url,
+              error: target.error,
+              skipped: Boolean(target.skipped),
+              updated_at: target.updatedAt,
+            },
       ]),
     );
     const metrics: Record<string, Record<string, unknown>> = {};
@@ -90,19 +93,26 @@ export function formatPipelinePosts(
       metrics[metric.target] = targetMetrics;
       targetMetrics[metric.metricName] = {
         value: metric.value,
-        sampled_at: metric.sampledAt,
-        source: metric.source,
-        error: metric.error,
-        samples: (samplesByMetric.get(`${postKey}\u0000${metric.target}\u0000${metric.metricName}`) ?? []).map((sample) => ({
-          value: sample.value,
-          sampled_at: sample.sampledAt,
-        })),
+        ...(compact
+          ? {}
+          : {
+              sampled_at: metric.sampledAt,
+              source: metric.source,
+              error: metric.error,
+              samples: (samplesByMetric.get(`${postKey}\u0000${metric.target}\u0000${metric.metricName}`) ?? []).map((sample) => ({
+                value: sample.value,
+                sampled_at: sample.sampledAt,
+              })),
+            }),
       };
     }
     const mediaRu = jsonArray(row.media_ru_json);
     const mediaEn = jsonArray(row.media_en_json);
     const textRu = String(row.text_ru ?? "");
     const textEn = String(row.text_en ?? "");
+    const contentLoaded =
+      row.text_ru !== undefined || row.media_ru_json !== undefined || row.text_en !== undefined || row.media_en_json !== undefined;
+    const includeRowContent = includeContent && (!compact || contentLoaded);
     const telegramMessageId = row.telegram_message_id == null ? null : Number(row.telegram_message_id);
     const telegramUrl =
       typeof row.telegram_url === "string" && row.telegram_url
@@ -116,7 +126,7 @@ export function formatPipelinePosts(
       telegram_message_id: telegramMessageId,
       date: row.created_at,
       date_msk: row.date_msk ?? formatZonedSortable(String(row.created_at), config.TIMEZONE),
-      ...(includeContent
+      ...(includeRowContent
         ? {
             text_ru: shortText(textRu),
             text_en: shortText(textEn),
@@ -135,7 +145,7 @@ export function formatPipelinePosts(
             .filter(Boolean),
         ),
       ],
-      ...(includeContent
+      ...(includeRowContent
         ? {
             slug_en: row.slug_en,
             slug_ru: row.slug_ru,
@@ -145,17 +155,19 @@ export function formatPipelinePosts(
       telegram_url: telegramUrl,
       targets,
       metrics,
-      ...(includeContent
+      ...(includeRowContent
         ? { locales_map: { ru: { site_enabled: Number(row.site_ru ?? 0) }, en: { site_enabled: Number(row.site_en ?? 0) } } }
         : {}),
     };
-    for (const { id: target } of TARGETS) {
-      const record = targets[target] as { status?: unknown } | undefined;
-      result[target] =
-        record?.status === "published" ||
-        (target === "telegram" && Boolean(telegramUrl)) ||
-        (target === "site_ru" && Boolean(row.site_ru)) ||
-        (target === "site_en" && Boolean(row.site_en));
+    if (!compact) {
+      for (const { id: target } of TARGETS) {
+        const record = targets[target] as { status?: unknown } | undefined;
+        result[target] =
+          record?.status === "published" ||
+          (target === "telegram" && Boolean(telegramUrl)) ||
+          (target === "site_ru" && Boolean(row.site_ru)) ||
+          (target === "site_en" && Boolean(row.site_en));
+      }
     }
     return result;
   });

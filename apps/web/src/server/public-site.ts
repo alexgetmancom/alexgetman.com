@@ -1,6 +1,7 @@
 import {
   type FeedItem,
   loadPublicSiteFeed,
+  loadPublicSiteItem,
   loadPublicSiteSnapshot,
   type PublicSiteSnapshot,
 } from "../../../backend/src/public/site-read-model.js";
@@ -22,5 +23,5 @@ export function loadFeedSnapshot(): PublicSiteSnapshot {
  * item per id and this returns the same answer `.find()` did. */
 export function findFeedItem(postId: string | number | undefined): FeedItem | undefined {
   const id = Number(postId);
-  return Number.isFinite(id) ? loadFeedSnapshot().byPostId.get(id) : undefined;
+  return Number.isFinite(id) ? loadPublicSiteItem(getRuntime().backendDb, id) : undefined;
 }

@@ -37,9 +37,13 @@ export function buildOverviewData(
   const selectX = (items: XActivityDashboardItem[]): XActivityDashboardItem[] => (!activeView ? items : activeView === "x" ? items : []);
   const comparisonPipeline =
     periodDays === 1
-      ? selectPipeline(service.pipelineOverview(0, 30, 0, weekOffset + 1, { includeSamples: false, includeContent: false }))
+      ? selectPipeline(service.pipelineOverview(0, 30, 0, weekOffset + 1, { includeSamples: false, includeContent: false, compact: true }))
       : selectPipeline(
-          service.pipelineOverview(weekOffset + 1, periodDays, 0, undefined, { includeSamples: false, includeContent: false }),
+          service.pipelineOverview(weekOffset + 1, periodDays, 0, undefined, {
+            includeSamples: false,
+            includeContent: false,
+            compact: true,
+          }),
         );
   const comparisonX =
     periodDays === 1
@@ -63,8 +67,9 @@ export function buildOverviewData(
   return {
     data: selectPipeline(
       service.pipelineOverview(weekOffset, periodDays, 0, undefined, {
-        includeSamples: periodDays === 1,
+        includeSamples: false,
         contentLimit: 4,
+        compact: true,
       }),
     ),
     previousData: comparisonPipeline,
@@ -72,7 +77,13 @@ export function buildOverviewData(
     previousXItems: comparisonX,
     dayComparisonData:
       periodDays === 1
-        ? selectPipeline(service.pipelineOverview(0, 1, 0, weekOffset + 1, { includeSamples: true, includeContent: false }))
+        ? selectPipeline(
+            service.pipelineOverview(0, 1, 0, weekOffset + 1, {
+              includeSamples: false,
+              includeContent: false,
+              compact: true,
+            }),
+          )
         : null,
     video: videoEnabled ? videoForDates(backendDb, config.TIMEZONE, videoCache, start, end, true) : emptyVideoOverview(),
     previousVideo: videoEnabled
@@ -80,7 +91,9 @@ export function buildOverviewData(
       : emptyVideoOverview(),
     dayComparisonVideo:
       videoEnabled && periodDays === 1 ? videoForDates(backendDb, config.TIMEZONE, videoCache, yesterdayStart, yesterdayEnd, true) : null,
-    medianData: selectPipeline(service.pipelineOverview(0, 30, 0, medianOffsetDays, { includeSamples: false, includeContent: false })),
+    medianData: selectPipeline(
+      service.pipelineOverview(0, 30, 0, medianOffsetDays, { includeSamples: false, includeContent: false, compact: true }),
+    ),
     medianXItems: selectX(xActivityDashboard(backendDb, medianPeriodOffset, 30, config.TIMEZONE)),
     medianVideo: videoEnabled ? videoForDates(backendDb, config.TIMEZONE, videoCache, medianStart, medianEnd, true) : emptyVideoOverview(),
     followers: audiencePlatformFollowers(backendDb),

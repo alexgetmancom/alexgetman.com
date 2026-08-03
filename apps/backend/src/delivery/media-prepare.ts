@@ -4,7 +4,7 @@ import type { BackendConfig } from "../foundation/config.js";
 import { requestJson } from "../foundation/http.js";
 import { runFfmpeg, runFfprobe } from "../foundation/runtime/ffmpeg.js";
 import { videoBounds } from "../publishing/platform-profiles.js";
-import { copyFileAtomically } from "./site-media-storage.js";
+import { copyFileAtomically, writeResponseAtomically } from "./site-media-storage.js";
 import { mediaExtension, type PublishMediaItem } from "./social/payload.js";
 
 type TelegramFileResponse = {
@@ -128,8 +128,7 @@ async function ensureLocalMedia(config: BackendConfig, item: PublishMediaItem, c
     const body = await response.text();
     throw new Error(`Telegram file download failed: ${response.status} ${body}`);
   }
-  const bytes = Buffer.from(await response.arrayBuffer());
-  await Bun.write(target, bytes);
+  await writeResponseAtomically(target, response);
   return target;
 }
 

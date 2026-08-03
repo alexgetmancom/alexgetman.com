@@ -16,7 +16,7 @@ import {
   removeDeduplicatedSiteMediaFile,
   sha256File,
   temporaryPath,
-  writeFileAtomically,
+  writeResponseAtomically,
 } from "./site-media-storage.js";
 import { VERTICAL_MEDIA_TRANSFORM, verticalMediaRecipe } from "./vertical-media-recipe.js";
 
@@ -185,7 +185,7 @@ async function materializeVerticalViewerMedia(
     signal: AbortSignal.timeout(30_000),
   });
   if (!download.ok) throw new Error(`site_vertical_media_download_failed: ${download.status}`);
-  await writeFileAtomically(output, new Uint8Array(await download.arrayBuffer()));
+  await writeResponseAtomically(output, download);
   await fs.promises.chmod(output, 0o664);
 }
 
@@ -285,7 +285,7 @@ async function copyOrDownload(config: BackendConfig, item: SiteMedia, target: st
   }
   const response = await fetchImpl(`${base}/file/bot${token}/${filePath}`);
   if (!response.ok) throw new Error(`Telegram file download failed: ${response.status}`);
-  await writeFileAtomically(target, new Uint8Array(await response.arrayBuffer()));
+  await writeResponseAtomically(target, response);
 }
 
 async function isCurrentCopy(source: string, target: string): Promise<boolean> {

@@ -12,7 +12,7 @@ import {
   posts,
   publications,
 } from "../../../backend/src/db/schema.js";
-import { loadPublicSiteFeed } from "../../../backend/src/public/site-read-model.js";
+import { loadPublicSiteFeed, loadPublicSiteItem } from "../../../backend/src/public/site-read-model.js";
 
 let backendDb: BackendDb;
 
@@ -107,6 +107,8 @@ describe("Drizzle site feed", () => {
         entities: [expect.objectContaining({ kind: "company", slug: "example-ai" })],
       }),
     ]);
+    expect(loadPublicSiteItem(backendDb, 7)).toEqual(expect.objectContaining({ id: "post:7", post_id: 7, text_en: "English text" }));
+    expect(loadPublicSiteItem(backendDb, 999)).toBeUndefined();
   });
 
   it("does not expose scheduled or disabled locales", () => {

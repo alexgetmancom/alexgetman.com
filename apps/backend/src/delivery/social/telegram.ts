@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import path from "node:path";
 import type { BackendConfig } from "../../foundation/config.js";
 import { requestJson } from "../../foundation/http.js";
@@ -151,10 +150,7 @@ function telegramMediaSource(
 async function telegramForm(fields: Record<string, string>, attachments: TelegramAttachment[]): Promise<FormData> {
   const form = new FormData();
   for (const [key, value] of Object.entries(fields)) form.set(key, value);
-  for (const attachment of attachments) {
-    const bytes = await fs.promises.readFile(attachment.localPath);
-    form.set(attachment.name, new Blob([bytes]), path.basename(attachment.localPath));
-  }
+  for (const attachment of attachments) form.set(attachment.name, Bun.file(attachment.localPath), path.basename(attachment.localPath));
   return form;
 }
 

@@ -97,6 +97,15 @@ export function loadPublicSiteFeed(backendDb: BackendDb, sitePublicDir = process
   return loadPublicSiteSnapshot(backendDb, sitePublicDir).items;
 }
 
+/** Loads one published item without building the surrounding archive. */
+export function loadPublicSiteItem(
+  backendDb: BackendDb,
+  postId: number,
+  sitePublicDir = process.env.SITE_PUBLIC_DIR ?? "/data/site",
+): FeedItem | undefined {
+  return buildPublicSiteFeed(backendDb, sitePublicDir, postId)[0];
+}
+
 export function loadPublicSiteSnapshot(
   backendDb: BackendDb,
   sitePublicDir = process.env.SITE_PUBLIC_DIR ?? "/data/site",
@@ -118,7 +127,7 @@ export function invalidatePublicSiteFeed(backendDb: BackendDb): void {
   feedCache.delete(backendDb);
 }
 
-function buildPublicSiteFeed(backendDb: BackendDb, sitePublicDir: string): FeedItem[] {
+function buildPublicSiteFeed(backendDb: BackendDb, sitePublicDir: string, postId?: number): FeedItem[] {
   const ruLocale = alias(postLocales, "site_locale_ru");
   const enLocale = alias(postLocales, "site_locale_en");
   const rows = backendDb.db
@@ -150,7 +159,11 @@ function buildPublicSiteFeed(backendDb: BackendDb, sitePublicDir: string): FeedI
       postMetrics,
       and(eq(postMetrics.postKey, posts.postKey), eq(postMetrics.target, "telegram"), eq(postMetrics.metricName, "views")),
     )
-    .where(inArray(publications.status, ["published", "failed"]))
+    .where(
+      postId === undefined
+        ? inArray(publications.status, ["published", "failed"])
+        : and(inArray(publications.status, ["published", "failed"]), eq(publications.postId, postId)),
+    )
     .orderBy(desc(posts.dateUtc), desc(publications.postId))
     .all();
 
@@ -312,24 +325,65 @@ function firstImage(media: SiteMedia[]): string | null {
 /** Once a composite exists it is never deleted, so a positive result is safe to
  * remember for the life of the process; only "not yet backfilled" is re-checked
  * on every call, so a completed backfill is still picked up without a restart. */
+const MAX_MEDIA_CACHE_ENTRIES = 512;
 const verticalMediaExistsCache = new Map<string, boolean>();
 function verticalMediaExists(fullPath: string): boolean {
-  if (verticalMediaExistsCache.get(fullPath)) return true;
+  if (verticalMediaExistsCache.has(fullPath)) {
+    rememberMediaCache(verticalMediaExistsCache, fullPath, true);
+    return true;
+  }
   const exists = fs.existsSync(fullPath);
-  if (exists) verticalMediaExistsCache.set(fullPath, true);
+  if (exists) rememberMediaCache(verticalMediaExistsCache, fullPath, true);
   return exists;
 }
 
 const mediaVersionCache = new Map<string, { signature: string; version: string }>();
+const MEDIA_HASH_CHUNK_BYTES = 64 * 1024;
+const MAX_SSR_CONTENT_HASH_BYTES = 8 * 1024 * 1024;
 function versionedMediaPath(publicPath: string, fullPath: string): string {
   const stat = fs.statSync(fullPath, { throwIfNoEntry: false });
   if (!stat?.isFile()) return publicPath;
   const signature = `${stat.size}:${stat.mtimeMs}`;
   const cached = mediaVersionCache.get(fullPath);
-  if (cached?.signature === signature) return `${publicPath}?v=${cached.version}`;
-  const version = crypto.createHash("sha256").update(fs.readFileSync(fullPath)).digest("hex").slice(0, 12);
-  mediaVersionCache.set(fullPath, { signature, version });
+  if (cached?.signature === signature) {
+    rememberMediaCache(mediaVersionCache, fullPath, cached);
+    return `${publicPath}?v=${cached.version}`;
+  }
+  // Images keep the old content hash semantics, but large videos use the
+  // stable size/mtime signature so SSR never allocates a video-sized Buffer.
+  const isVideo = /\.(?:mp4|webm|mov|m4v)$/i.test(fullPath);
+  const version =
+    !isVideo && stat.size <= MAX_SSR_CONTENT_HASH_BYTES ? hashFileInChunks(fullPath) : `s${stat.size}-${Math.trunc(stat.mtimeMs)}`;
+  rememberMediaCache(mediaVersionCache, fullPath, { signature, version });
   return `${publicPath}?v=${version}`;
+}
+
+function hashFileInChunks(fullPath: string): string {
+  const hash = crypto.createHash("sha256");
+  const descriptor = fs.openSync(fullPath, "r");
+  const chunk = Buffer.allocUnsafe(MEDIA_HASH_CHUNK_BYTES);
+  let position = 0;
+  try {
+    while (true) {
+      const bytesRead = fs.readSync(descriptor, chunk, 0, chunk.length, position);
+      if (bytesRead === 0) break;
+      hash.update(chunk.subarray(0, bytesRead));
+      position += bytesRead;
+    }
+  } finally {
+    fs.closeSync(descriptor);
+  }
+  return hash.digest("hex").slice(0, 12);
+}
+
+function rememberMediaCache<K, V>(cache: Map<K, V>, key: K, value: V): void {
+  cache.delete(key);
+  cache.set(key, value);
+  while (cache.size > MAX_MEDIA_CACHE_ENTRIES) {
+    const oldest = cache.keys().next().value;
+    if (oldest === undefined) return;
+    cache.delete(oldest);
+  }
 }
 
 /** The final viewer URL is chosen only after its durable file exists. This is

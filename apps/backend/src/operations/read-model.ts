@@ -18,13 +18,21 @@ import {
 import type { BackendConfig } from "../foundation/config.js";
 import { gitRevision } from "../foundation/runtime/git.js";
 import { zonedRollingPeriodBounds } from "../foundation/time.js";
-import { formatPipelinePosts, type PipelinePostRow, type PipelineSampleRow } from "./pipeline-presenter.js";
+import {
+  formatPipelinePosts,
+  type PipelineMetricRow,
+  type PipelinePostRow,
+  type PipelineSampleRow,
+  type PipelineTargetRow,
+} from "./pipeline-presenter.js";
 
 export type PipelineReadModelOptions = {
   /** Dashboard charts are the only consumers that need immutable samples. */
   includeSamples?: boolean;
   /** Comparison read models only need dates, statuses and metrics, not copy or media. */
   includeContent?: boolean;
+  /** Use narrow target/metric projections for dashboard summaries. */
+  compact?: boolean;
   /** Load full locale/media content only for the newest N publications. */
   contentLimit?: number;
   /** Hard cap per (post, target, metric) series after time bucketing. */
@@ -34,6 +42,7 @@ export type PipelineReadModelOptions = {
 type ResolvedPipelineReadModelOptions = {
   includeSamples: boolean;
   includeContent: boolean;
+  compact: boolean;
   contentLimit: number | null;
   sampleLimitPerSeries: number;
 };
@@ -211,44 +220,66 @@ function pipelinePosts(
   const [start, end] = zonedRollingPeriodBounds(periodOffsetDays / periodDays, periodDays, config.TIMEZONE);
   const rows = fetchPostRows(backendDb, start, end, options.includeContent, options.contentLimit);
   const postKeys = rows.map((row) => String(row.post_key ?? "")).filter(Boolean);
-  const targetRows = postKeys.length
-    ? backendDb.db
-        .select({
-          postKey: postTargets.postKey,
-          target: postTargets.target,
-          status: postTargets.status,
-          externalId: postTargets.externalId,
-          externalIdsJson: postTargets.externalIdsJson,
-          url: postTargets.url,
-          error: postTargets.error,
-          skipped: postTargets.skipped,
-          updatedAt: postTargets.updatedAt,
-        })
-        .from(postTargets)
-        .where(inArray(postTargets.postKey, postKeys))
-        .orderBy(asc(postTargets.target))
-        .all()
-    : [];
-  const metricRows = postKeys.length
-    ? backendDb.db
-        .select({
-          postKey: postMetrics.postKey,
-          target: postMetrics.target,
-          metricName: postMetrics.metricName,
-          value: postMetrics.value,
-          source: postMetrics.source,
-          sampledAt: postMetrics.sampledAt,
-          error: postMetrics.error,
-        })
-        .from(postMetrics)
-        .where(inArray(postMetrics.postKey, postKeys))
-        .orderBy(asc(postMetrics.target), asc(postMetrics.metricName))
-        .all()
-    : [];
+  const targetRows = (
+    postKeys.length
+      ? backendDb.db
+          .select(
+            options.compact
+              ? {
+                  postKey: postTargets.postKey,
+                  target: postTargets.target,
+                  status: postTargets.status,
+                  url: postTargets.url,
+                }
+              : {
+                  postKey: postTargets.postKey,
+                  target: postTargets.target,
+                  status: postTargets.status,
+                  externalId: postTargets.externalId,
+                  externalIdsJson: postTargets.externalIdsJson,
+                  url: postTargets.url,
+                  error: postTargets.error,
+                  skipped: postTargets.skipped,
+                  updatedAt: postTargets.updatedAt,
+                },
+          )
+          .from(postTargets)
+          .where(inArray(postTargets.postKey, postKeys))
+          .orderBy(asc(postTargets.target))
+          .all()
+      : []
+  ) as PipelineTargetRow[];
+  const metricRows = (
+    postKeys.length
+      ? backendDb.db
+          .select(
+            options.compact
+              ? {
+                  postKey: postMetrics.postKey,
+                  target: postMetrics.target,
+                  metricName: postMetrics.metricName,
+                  value: postMetrics.value,
+                }
+              : {
+                  postKey: postMetrics.postKey,
+                  target: postMetrics.target,
+                  metricName: postMetrics.metricName,
+                  value: postMetrics.value,
+                  source: postMetrics.source,
+                  sampledAt: postMetrics.sampledAt,
+                  error: postMetrics.error,
+                },
+          )
+          .from(postMetrics)
+          .where(inArray(postMetrics.postKey, postKeys))
+          .orderBy(asc(postMetrics.target), asc(postMetrics.metricName))
+          .all()
+      : []
+  ) as PipelineMetricRow[];
   const sampleRows = options.includeSamples
     ? fetchMetricSamples(backendDb, postKeys, start, end, periodDays, options.sampleLimitPerSeries)
     : [];
-  return formatPipelinePosts(config, rows, targetRows, metricRows, sampleRows, options.includeContent);
+  return formatPipelinePosts(config, rows, targetRows, metricRows, sampleRows, options.includeContent, options.compact);
 }
 
 type PublicationQueryRow = {
@@ -395,6 +426,7 @@ function resolvePipelineReadModelOptions(options: PipelineReadModelOptions): Res
   return {
     includeSamples: options.includeSamples === true,
     includeContent: options.includeContent !== false,
+    compact: options.compact === true,
     contentLimit:
       options.includeContent === false || options.contentLimit === undefined
         ? null
