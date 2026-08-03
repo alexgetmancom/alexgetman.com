@@ -19,6 +19,7 @@ const config = loadConfig({
   X_ACCESS_TOKEN: "access-token",
   X_ACCESS_TOKEN_SECRET: "access-token-secret",
 });
+const instantSleep = async (_milliseconds: number): Promise<void> => {};
 
 type Call = { url: string; method: string; command?: string | undefined; authorization?: string | undefined };
 
@@ -120,7 +121,7 @@ describe("publishToX", () => {
   it("waits for asynchronous processing before tweeting the video", async () => {
     await withTempFile(Buffer.alloc(1024, 1), "clip.mp4", async (file) => {
       const { fetchImpl, commands } = transport({ status: ["in_progress", "succeeded"] });
-      const result = await publishToX({ text: "clip", media: [{ type: "VIDEO", localPath: file }] }, config, fetchImpl);
+      const result = await publishToX({ text: "clip", media: [{ type: "VIDEO", localPath: file }] }, config, fetchImpl, instantSleep);
       expect(commands().filter((command) => command === "STATUS").length).toBeGreaterThanOrEqual(1);
       expect(result.ok).toBe(true);
     });
@@ -139,9 +140,9 @@ describe("publishToX", () => {
         if (command === "STATUS") return json({ processing_info: { state: "failed", error: { message: "InvalidMedia" } } });
         return json({});
       }) as unknown as typeof fetch;
-      await expect(publishToX({ text: "clip", media: [{ type: "VIDEO", localPath: file }] }, config, failing)).rejects.toThrow(
-        /InvalidMedia/,
-      );
+      await expect(
+        publishToX({ text: "clip", media: [{ type: "VIDEO", localPath: file }] }, config, failing, instantSleep),
+      ).rejects.toThrow(/InvalidMedia/);
     });
   });
 

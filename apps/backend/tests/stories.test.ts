@@ -10,6 +10,7 @@ import { generateStoryMedia } from "../src/delivery/story-media.js";
 import { loadConfig } from "../src/foundation/config.js";
 
 const ffmpegCalls: string[][] = [];
+const instantSleep = async (_milliseconds: number): Promise<void> => {};
 
 mock.module("../src/foundation/runtime/ffmpeg.js", () => {
   return {
@@ -171,7 +172,12 @@ describe("story publishers", () => {
       INSTAGRAM_USER_ID: "ig-user",
     });
 
-    const result = await publishInstagramStory({ media: [{ type: "IMAGE", vps_url: "https://example.com/story.jpg" }] }, config, fetchImpl);
+    const result = await publishInstagramStory(
+      { media: [{ type: "IMAGE", vps_url: "https://example.com/story.jpg" }] },
+      config,
+      fetchImpl,
+      instantSleep,
+    );
 
     expect(result).toMatchObject({ ok: true, id: "story-2" });
     expect(requests.filter((url) => url.endsWith("/ig-user/media"))).toHaveLength(2);
@@ -204,6 +210,7 @@ describe("story publishers", () => {
       { media: [{ type: "IMAGE", vps_url: "https://example.com/story.jpg" }] },
       config,
       fetchImpl,
+      instantSleep,
     ).catch((error: unknown) => error);
 
     expect(failure).toBeInstanceOf(InstagramContainerInvalidError);

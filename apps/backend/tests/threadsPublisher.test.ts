@@ -230,7 +230,11 @@ describe("publishToThreads", () => {
 
   it("stops waiting once the container timeout passes", async () => {
     const { fetchImpl } = transport({ statuses: ["IN_PROGRESS", "IN_PROGRESS", "IN_PROGRESS"] });
-    await expect(publishToThreads({ text: "hello" }, config, fetchImpl)).rejects.toThrow(/timed out/);
+    let now = 0;
+    const advanceTime = async (milliseconds: number): Promise<void> => {
+      now += milliseconds;
+    };
+    await expect(publishToThreads({ text: "hello" }, config, fetchImpl, "threads_ru", advanceTime, () => now)).rejects.toThrow(/timed out/);
   });
 
   it("retries a throttled call before giving up on it", async () => {

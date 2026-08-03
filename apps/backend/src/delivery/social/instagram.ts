@@ -21,6 +21,7 @@ type MediaProbe = {
   contentLength: string | null;
   error?: string;
 };
+type SleepImplementation = (milliseconds: number) => Promise<void>;
 
 // Worst-case wall time for one story, spent inside a single worker slot:
 // CONTAINER_ATTEMPTS × (READY_POLLS + PUBLISH_ATTEMPTS) × POLL_DELAY_MS.
@@ -29,11 +30,13 @@ const POLL_DELAY_MS = 5_000;
 const READY_POLLS = 30;
 const PUBLISH_ATTEMPTS = 5;
 const CONTAINER_ATTEMPTS = 2;
+const defaultSleep: SleepImplementation = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 export async function publishInstagramStory(
   payload: Record<string, unknown>,
   config: BackendConfig,
   fetchImpl: typeof fetch = fetch,
+  sleepImpl: SleepImplementation = defaultSleep,
 ): Promise<PublishResult> {
   if (!config.ENABLE_INSTAGRAM_STORIES) return { ok: false, skipped: true, reason: "instagram_stories_disabled" };
   if (!config.INSTAGRAM_ACCESS_TOKEN) throw new Error("missing INSTAGRAM_ACCESS_TOKEN");
@@ -56,11 +59,11 @@ export async function publishInstagramStory(
         fetchImpl,
       );
       if (!creation.id) return { ok: false, error: JSON.stringify(creation) };
-      await waitForContainer(config, creation.id, publicUrl, media.type, fetchImpl);
-      published = await publishReadyContainer(config, creation.id, fetchImpl);
+      await waitForContainer(config, creation.id, publicUrl, media.type, fetchImpl, sleepImpl);
+      published = await publishReadyContainer(config, creation.id, fetchImpl, sleepImpl);
     } catch (error) {
       if (containerAttempt < CONTAINER_ATTEMPTS - 1 && isExpiredInstagramContainer(error)) {
-        await delay(POLL_DELAY_MS);
+        await sleepImpl(POLL_DELAY_MS);
         continue;
       }
       throw error;
@@ -93,6 +96,7 @@ async function waitForContainer(
   publicUrl: string,
   mediaType: string,
   fetchImpl: typeof fetch,
+  sleepImpl: SleepImplementation,
 ): Promise<void> {
   for (let attempt = 0; attempt < READY_POLLS; attempt += 1) {
     const status = await graphGet(config, creationId, { fields: "status_code,status" }, fetchImpl);
@@ -112,7 +116,7 @@ async function waitForContainer(
         })}`,
       );
     }
-    await delay(POLL_DELAY_MS);
+    await sleepImpl(POLL_DELAY_MS);
   }
   throw new Error(`instagram_container_timeout:${creationId}`);
 }
@@ -135,7 +139,12 @@ async function probePublicMedia(publicUrl: string, fetchImpl: typeof fetch): Pro
   }
 }
 
-async function publishReadyContainer(config: BackendConfig, creationId: string, fetchImpl: typeof fetch): Promise<GraphResponse> {
+async function publishReadyContainer(
+  config: BackendConfig,
+  creationId: string,
+  fetchImpl: typeof fetch,
+  sleepImpl: SleepImplementation,
+): Promise<GraphResponse> {
   for (let attempt = 1; attempt <= PUBLISH_ATTEMPTS; attempt += 1) {
     try {
       return await ambiguousExternalMutation("instagram_stories", () =>
@@ -148,7 +157,7 @@ async function publishReadyContainer(config: BackendConfig, creationId: string, 
       // replica lagging, so retry in place first; only the last attempt escalates
       // to the caller's rebuild-the-container path.
       if (attempt < PUBLISH_ATTEMPTS && isExpiredInstagramContainer(error)) {
-        await delay(POLL_DELAY_MS);
+        await sleepImpl(POLL_DELAY_MS);
         continue;
       }
       if (isExpiredInstagramContainer(error)) throw new InstagramContainerInvalidError(message);
@@ -196,10 +205,6 @@ async function graphRequest(config: BackendConfig, path: string, fetchImpl: type
     );
   }
   return body ? (JSON.parse(body) as GraphResponse) : {};
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function instagramToken(config: BackendConfig): string {

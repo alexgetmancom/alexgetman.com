@@ -11,12 +11,17 @@ type ThreadsResponse = {
   status?: string;
   error_message?: string;
 };
+type SleepImplementation = (milliseconds: number) => Promise<void>;
+type NowImplementation = () => number;
+const defaultSleep: SleepImplementation = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 export async function publishToThreads(
   payload: Record<string, unknown>,
   config: BackendConfig,
   fetchImpl: typeof fetch = fetch,
   target: "threads_ru" | "threads_en" = "threads_ru",
+  sleepImpl: SleepImplementation = defaultSleep,
+  nowImpl: NowImplementation = Date.now,
 ): Promise<PublishResult> {
   if (!config.THREADS_ACCESS_TOKEN) return { skipped: true, reason: "missing THREADS_ACCESS_TOKEN" };
   // One post by default: the text is written to fit 500 characters and preflight
@@ -51,9 +56,11 @@ export async function publishToThreads(
               [item.type === "VIDEO" ? "video_url" : "image_url"]: item.vpsUrl,
             },
             fetchImpl,
+            "POST",
+            sleepImpl,
           );
           if (!child.id) throw new Error("threads_carousel_child_missing");
-          await waitForThreadsContainer(config, child.id, fetchImpl);
+          await waitForThreadsContainer(config, child.id, fetchImpl, sleepImpl, nowImpl);
           children.push(child.id);
         }
         const parent = await callThreadsWithRetry(
@@ -61,13 +68,15 @@ export async function publishToThreads(
           "me/threads",
           { media_type: "CAROUSEL", text: parts[0], children: children.join(",") },
           fetchImpl,
+          "POST",
+          sleepImpl,
         );
         if (!parent.id) throw new Error("threads_carousel_parent_missing");
-        await waitForThreadsContainer(config, parent.id, fetchImpl);
+        await waitForThreadsContainer(config, parent.id, fetchImpl, sleepImpl, nowImpl);
         firstContainer = parent.id;
       } catch (error) {
         if (carouselAttempt === 0 && isInvalidCarouselError(error)) {
-          await Bun.sleep(config.THREADS_RETRY_DELAY_MS);
+          await sleepImpl(config.THREADS_RETRY_DELAY_MS);
           continue;
         }
         throw error;
@@ -84,22 +93,31 @@ export async function publishToThreads(
         [item.type === "VIDEO" ? "video_url" : "image_url"]: item.vpsUrl,
       },
       fetchImpl,
+      "POST",
+      sleepImpl,
     );
     if (container.id) {
-      await waitForThreadsContainer(config, container.id, fetchImpl);
+      await waitForThreadsContainer(config, container.id, fetchImpl, sleepImpl, nowImpl);
       firstContainer = container.id;
     }
   } else if (ids.length === 0) {
-    const container = await callThreadsWithRetry(config, "me/threads", { media_type: "TEXT", text: parts[0] }, fetchImpl);
+    const container = await callThreadsWithRetry(
+      config,
+      "me/threads",
+      { media_type: "TEXT", text: parts[0] },
+      fetchImpl,
+      "POST",
+      sleepImpl,
+    );
     if (container.id) {
-      await waitForThreadsContainer(config, container.id, fetchImpl);
+      await waitForThreadsContainer(config, container.id, fetchImpl, sleepImpl, nowImpl);
       firstContainer = container.id;
     }
   }
 
   if (firstContainer) {
     const published = await ambiguousExternalMutation("threads", () =>
-      callThreadsWithRetry(config, "me/threads_publish", { creation_id: firstContainer }, fetchImpl),
+      callThreadsWithRetry(config, "me/threads_publish", { creation_id: firstContainer }, fetchImpl, "POST", sleepImpl),
     );
     if (!published.id) return { ok: false, error: "threads_publish_missing" };
     ids.push(published.id);
@@ -108,11 +126,18 @@ export async function publishToThreads(
   if (!parentId) return { ok: false, error: "threads_container_missing" };
   for (const part of parts.slice(ids.length)) {
     try {
-      const reply = await callThreadsWithRetry(config, "me/threads", { media_type: "TEXT", text: part, reply_to_id: parentId }, fetchImpl);
+      const reply = await callThreadsWithRetry(
+        config,
+        "me/threads",
+        { media_type: "TEXT", text: part, reply_to_id: parentId },
+        fetchImpl,
+        "POST",
+        sleepImpl,
+      );
       if (!reply.id) return { partial: true, ids, error: "threads_reply_container_missing", retryable: true };
-      await waitForThreadsContainer(config, reply.id, fetchImpl);
+      await waitForThreadsContainer(config, reply.id, fetchImpl, sleepImpl, nowImpl);
       const replyPublish = await ambiguousExternalMutation("threads", () =>
-        callThreadsWithRetry(config, "me/threads_publish", { creation_id: reply.id }, fetchImpl),
+        callThreadsWithRetry(config, "me/threads_publish", { creation_id: reply.id }, fetchImpl, "POST", sleepImpl),
       );
       if (!replyPublish.id) return { partial: true, ids, error: "threads_reply_publish_missing", retryable: true };
       ids.push(replyPublish.id);
@@ -147,6 +172,7 @@ async function callThreadsWithRetry(
   payload: Record<string, unknown>,
   fetchImpl: typeof fetch,
   method: "GET" | "POST" = "POST",
+  sleepImpl: SleepImplementation = defaultSleep,
 ): Promise<ThreadsResponse> {
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -155,7 +181,7 @@ async function callThreadsWithRetry(
     } catch (error) {
       lastError = error;
       if (!isRetryableThreadsError(error)) throw error;
-      await Bun.sleep(config.THREADS_RETRY_DELAY_MS * (attempt + 1));
+      await sleepImpl(config.THREADS_RETRY_DELAY_MS * (attempt + 1));
     }
   }
   throw lastError;
@@ -195,14 +221,20 @@ async function callThreads(
   });
 }
 
-async function waitForThreadsContainer(config: BackendConfig, id: string, fetchImpl: typeof fetch): Promise<void> {
-  const deadline = Date.now() + config.THREADS_CONTAINER_TIMEOUT_SECONDS * 1000;
-  while (Date.now() < deadline) {
+async function waitForThreadsContainer(
+  config: BackendConfig,
+  id: string,
+  fetchImpl: typeof fetch,
+  sleepImpl: SleepImplementation,
+  nowImpl: NowImplementation,
+): Promise<void> {
+  const deadline = nowImpl() + config.THREADS_CONTAINER_TIMEOUT_SECONDS * 1000;
+  while (nowImpl() < deadline) {
     const status = await callThreads(config, id, { fields: "status,error_message" }, fetchImpl, "GET");
     if (status.status === "FINISHED") return;
     if (status.status === "ERROR" || status.status === "EXPIRED")
       throw new Error(`Threads container ${id} failed: ${status.error_message ?? status.status}`);
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await sleepImpl(2000);
   }
   throw new Error(`Threads container ${id} timed out`);
 }

@@ -10,18 +10,23 @@ import { ambiguousExternalMutation } from "../ambiguous-publication.js";
 import { guessContentType, payloadMedia, payloadText } from "./payload.js";
 
 const UPLOAD_URL = "https://upload.twitter.com/1.1/media/upload.json";
+type SleepImplementation = (milliseconds: number) => Promise<void>;
+const defaultSleep: SleepImplementation = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 export async function publishToX(
   payload: Record<string, unknown>,
   config: BackendConfig,
   fetchImpl: typeof fetch = fetch,
+  sleepImpl: SleepImplementation = defaultSleep,
 ): Promise<PublishResult> {
   assertXCredentials(config);
   const mediaIds: string[] = [];
   for (const item of payloadMedia(payload)) {
     if (!item.localPath || !fs.existsSync(item.localPath)) continue;
     mediaIds.push(
-      item.type === "VIDEO" ? await uploadVideo(item.localPath, config, fetchImpl) : await uploadImage(item.localPath, config, fetchImpl),
+      item.type === "VIDEO"
+        ? await uploadVideo(item.localPath, config, fetchImpl, sleepImpl)
+        : await uploadImage(item.localPath, config, fetchImpl),
     );
   }
   const body = JSON.stringify({
@@ -60,7 +65,12 @@ async function uploadImage(filePath: string, config: BackendConfig, fetchImpl: t
   return result.media_id_string;
 }
 
-async function uploadVideo(filePath: string, config: BackendConfig, fetchImpl: typeof fetch): Promise<string> {
+async function uploadVideo(
+  filePath: string,
+  config: BackendConfig,
+  fetchImpl: typeof fetch,
+  sleepImpl: SleepImplementation,
+): Promise<string> {
   const initParams = new URLSearchParams({
     command: "INIT",
     total_bytes: String(fs.statSync(filePath).size),
@@ -104,7 +114,7 @@ async function uploadVideo(filePath: string, config: BackendConfig, fetchImpl: t
     await oauthFetch(UPLOAD_URL, config, fetchImpl, formInit(finalizeParams), finalizeParams),
     "X media FINALIZE",
   );
-  await waitForProcessing(mediaId, finalized.processing_info, config, fetchImpl);
+  await waitForProcessing(mediaId, finalized.processing_info, config, fetchImpl, sleepImpl);
   return mediaId;
 }
 
@@ -113,12 +123,13 @@ async function waitForProcessing(
   initial: ProcessingInfo | undefined,
   config: BackendConfig,
   fetchImpl: typeof fetch,
+  sleepImpl: SleepImplementation,
 ): Promise<void> {
   let processing = initial;
   const deadline = Date.now() + 600_000;
   while (processing && ["pending", "in_progress"].includes(processing.state ?? "")) {
     if (Date.now() >= deadline) throw new Error("X media processing timeout");
-    await delay(Math.max(1, processing.check_after_secs ?? 5) * 1000);
+    await sleepImpl(Math.max(1, processing.check_after_secs ?? 5) * 1000);
     const query = new URLSearchParams({ command: "STATUS", media_id: mediaId });
     const result = await jsonResponse<ProcessingResponse>(
       await oauthFetch(`${UPLOAD_URL}?${query}`, config, fetchImpl, { method: "GET" }),
@@ -171,8 +182,4 @@ async function responseError(response: Response, label: string): Promise<HttpPub
     safeBody,
     retryAfterSecondsFromHeaders(response.headers),
   );
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
