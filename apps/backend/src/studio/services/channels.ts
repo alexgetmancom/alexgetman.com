@@ -1,6 +1,7 @@
-import { credentialShape, setChannelSecrets } from "../../channels/credentials.js";
+import { credentialShape } from "../../channels/credentials.js";
 import { isPublishableVideoPlatform, VIDEO_PLATFORM_TARGET } from "../../channels/destinations.js";
-import { listChannels, registerChannel } from "../../channels/registry.js";
+import { type ChannelConnectInput, persistChannelConnection } from "../../channels/management.js";
+import { listChannels } from "../../channels/registry.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { requestJson } from "../../foundation/http.js";
@@ -30,30 +31,8 @@ export function channelService(backendDb: BackendDb, config: BackendConfig) {
     credentialShape(platform: string, provider: string, locale: VideoLocale) {
       return credentialShape(platform, provider, locale);
     },
-    connect(input: {
-      platform: string;
-      locale: VideoLocale;
-      provider: string;
-      accountId?: string;
-      label?: string;
-      credentials?: Record<string, string>;
-    }) {
-      const credentials = input.credentials ?? {};
-      const shape = credentialShape(input.platform, input.provider, input.locale);
-      const missing = shape.filter((field) => !credentials[field.name]).map((field) => field.name);
-      if (missing.length && input.provider === "native") throw new Error(`missing credentials: ${missing.join(", ")}`);
-      const channel = registerChannel(backendDb, {
-        platform: input.platform,
-        locale: input.locale,
-        provider: input.provider,
-        ...(input.accountId ? { providerAccountId: input.accountId } : {}),
-        ...(input.label ? { label: input.label } : {}),
-        source: "interface",
-      });
-      const stored = Object.keys(credentials).length
-        ? setChannelSecrets(backendDb, config.CHANNEL_SECRET_KEY, channel.id, credentials)
-        : [];
-      return { channel, stored };
+    connect(input: Omit<ChannelConnectInput, "source">) {
+      return persistChannelConnection(backendDb, config, { ...input, source: "interface" });
     },
     async discoverZernioAccounts(): Promise<StudioZernioAccount[]> {
       if (!config.ZERNIO_API_KEY) throw new Error("Zernio API key is not configured.");

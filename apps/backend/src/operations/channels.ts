@@ -1,7 +1,8 @@
 import { eq } from "drizzle-orm";
-import { credentialShape, deleteChannelSecrets, setChannelSecrets, storedCredentialNames } from "../channels/credentials.js";
+import { credentialShape, deleteChannelSecrets, storedCredentialNames } from "../channels/credentials.js";
 import { isPublishableVideoPlatform } from "../channels/destinations.js";
-import { listChannels, registerChannel } from "../channels/registry.js";
+import { persistChannelConnection } from "../channels/management.js";
+import { listChannels } from "../channels/registry.js";
 import type { BackendDb } from "../db/client.js";
 import { channelConnections } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -69,21 +70,8 @@ export function connectChannel(
     credentials: Record<string, string>;
   },
 ): { id: string; stored: string[] } {
-  const shape = credentialShape(input.platform, input.provider, input.locale);
-  const missing = shape.filter((field) => !input.credentials[field.name]).map((field) => field.name);
-  if (missing.length && input.provider === "native") throw new Error(`missing credentials: ${missing.join(", ")}`);
-  const channel = registerChannel(backendDb, {
-    platform: input.platform,
-    locale: input.locale,
-    provider: input.provider,
-    ...(input.accountId ? { providerAccountId: input.accountId } : {}),
-    ...(input.label ? { label: input.label } : {}),
-    source: "cli",
-  });
-  const stored = Object.keys(input.credentials).length
-    ? setChannelSecrets(backendDb, config.CHANNEL_SECRET_KEY, channel.id, input.credentials)
-    : [];
-  return { id: channel.id, stored };
+  const result = persistChannelConnection(backendDb, config, { ...input, source: "cli" });
+  return { id: result.channel.id, stored: result.stored };
 }
 
 /** Disabling keeps the row: its publications, metrics and audience history stay
