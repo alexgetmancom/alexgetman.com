@@ -56,32 +56,14 @@ jobs:
 
           while IFS= read -r path; do
             case "$path" in
-              deploy/media-processor/compose.yml |
-              deploy/media-processor/Dockerfile |
-              deploy/media-processor/Dockerfile.runtime-base |
-              deploy/media-processor/server.ts |
-              deploy/media-processor/service.ts |
-              deploy/media-processor/serial-queue.ts |
-              deploy/media-processor/story-encode.ts)
+              deploy/media-processor/compose.yml|deploy/media-processor/Dockerfile|deploy/media-processor/Dockerfile.runtime-base|deploy/media-processor/server.ts|deploy/media-processor/service.ts|deploy/media-processor/serial-queue.ts|deploy/media-processor/story-encode.ts)
                 media=true
                 ;;
               bun.lock | package.json | */package.json)
                 dependencies=true
                 backend_image=true
                 ;;
-              apps/web/* |
-              apps/backend/src/* |
-              apps/backend/assets/* |
-              apps/backend/drizzle/* |
-              apps/backend/tsconfig.json |
-              apps/backend/Dockerfile.release |
-              apps/backend/Dockerfile.runtime-base |
-              astro.config.ts |
-              bunfig.toml |
-              scripts/generate-responsive-images.ts |
-              svelte.config.ts |
-              tsconfig.base.json |
-              tsconfig.json)
+              apps/web/*|apps/backend/src/*|apps/backend/assets/*|apps/backend/drizzle/*|apps/backend/tsconfig.json|apps/backend/Dockerfile.release|apps/backend/Dockerfile.runtime-base|astro.config.ts|bunfig.toml|scripts/generate-responsive-images.ts|svelte.config.ts|tsconfig.base.json|tsconfig.json)
                 backend_image=true
                 ;;
               apps/backend/compose.yaml | deploy/maru.compose.yaml)
