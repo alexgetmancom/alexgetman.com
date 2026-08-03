@@ -2,7 +2,7 @@ name: maru
 
 services:
   backend:
-    image: ${BACKEND_IMAGE:-ghcr.io/alexgetmancom/alexgetman-backend:latest}
+    image: ${BACKEND_IMAGE:?set an immutable backend image digest}
     pull_policy: always
     container_name: maru-backend
     # No `command:` — see apps/backend/compose.yaml: the image entrypoint owns

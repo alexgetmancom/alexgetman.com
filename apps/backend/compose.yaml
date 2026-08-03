@@ -2,7 +2,7 @@ name: ${PROJECT_NAME:-alexgetman}-backend
 
 services:
   bot-api:
-    image: aiogram/telegram-bot-api:latest
+    image: aiogram/telegram-bot-api:10.2@sha256:6ab985144d46d024c723f4def72419d949b88ba97bf234dadf415051367a1b69
     container_name: alexgetman-telegram-bot-api
     restart: unless-stopped
     env_file:
@@ -20,7 +20,7 @@ services:
       - agent_default
 
   backend:
-    image: ${BACKEND_IMAGE:-ghcr.io/alexgetmancom/alexgetman-backend:latest}
+    image: ${BACKEND_IMAGE:?set an immutable backend image digest}
     pull_policy: always
     container_name: alexgetman-backend
     # No `command:` — the image entrypoint starts the server itself (it fixes
