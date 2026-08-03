@@ -3,10 +3,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { eq } from "drizzle-orm";
-import { openBackendDb } from "../src/db/client.js";
 import { credentialChecks, postEvents } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { checkTokenHealth } from "../src/observability/token-health.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 const tempDirectories: string[] = [];
 

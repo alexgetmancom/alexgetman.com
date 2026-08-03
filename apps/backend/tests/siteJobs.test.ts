@@ -2,10 +2,11 @@ import { afterEach, describe, expect, it } from "bun:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { openBackendDb, type UnsafeBackendDb } from "../src/db/client.js";
+import type { UnsafeBackendDb } from "../src/db/client.js";
 import { publicationSources, publications, siteJobs } from "../src/db/schema.js";
 import { renderFeedFiles, runSiteJobCycle } from "../src/delivery/site-jobs.js";
 import { loadConfig } from "../src/foundation/config.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 let backendDb: UnsafeBackendDb | null = null;
 let tempDir: string | null = null;

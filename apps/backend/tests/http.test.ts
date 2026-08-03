@@ -4,10 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApiHandler } from "../src/api.js";
 import { createDraftFromMessage } from "../src/content/drafts.js";
-import { openBackendDb } from "../src/db/client.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
 import { enqueuePublishJobTx } from "../src/publishing/queue.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 const tempDirs: string[] = [];
 

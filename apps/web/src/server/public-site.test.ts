@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { openBackendDb, type UnsafeBackendDb } from "../../../backend/src/db/client.js";
+import { type BackendDb, openBackendDb, unsafeDb } from "../../../backend/src/db/client.js";
 import {
   knowledgeEntities,
   postEntityLinks,
@@ -14,20 +14,22 @@ import {
 } from "../../../backend/src/db/schema.js";
 import { loadPublicSiteFeed, loadPublicSiteItem } from "../../../backend/src/public/site-read-model.js";
 
-let backendDb: UnsafeBackendDb;
+let backendDb: BackendDb;
+let rawDb: ReturnType<typeof unsafeDb>;
 
 // Opened per test rather than inside each `it`: a failure before the assignment
 // used to leave the previous test's handle in place and close it twice.
 beforeEach(() => {
   backendDb = openBackendDb(":memory:");
+  rawDb = unsafeDb(backendDb);
 });
 afterEach(() => backendDb.close());
 
 describe("Drizzle site feed", () => {
   it("reads published localized posts and Telegram views from SQLite without feed.json", () => {
     const now = new Date().toISOString();
-    backendDb.db.insert(publications).values({ postId: 7, status: "published", createdAt: now, updatedAt: now }).run();
-    backendDb.db
+    rawDb.db.insert(publications).values({ postId: 7, status: "published", createdAt: now, updatedAt: now }).run();
+    rawDb.db
       .insert(posts)
       .values({
         postKey: "post:7",
@@ -40,7 +42,7 @@ describe("Drizzle site feed", () => {
         updatedAt: now,
       })
       .run();
-    backendDb.db
+    rawDb.db
       .insert(postLocales)
       .values([
         {
@@ -67,11 +69,8 @@ describe("Drizzle site feed", () => {
         },
       ])
       .run();
-    backendDb.db
-      .insert(postMetrics)
-      .values({ postKey: "post:7", target: "telegram", metricName: "views", value: 321, unit: "count" })
-      .run();
-    backendDb.db
+    rawDb.db.insert(postMetrics).values({ postKey: "post:7", target: "telegram", metricName: "views", value: 321, unit: "count" }).run();
+    rawDb.db
       .insert(postSources)
       .values({
         postId: 7,
@@ -84,13 +83,13 @@ describe("Drizzle site feed", () => {
         updatedAt: now,
       })
       .run();
-    const entity = backendDb.db
+    const entity = rawDb.db
       .insert(knowledgeEntities)
       .values({ kind: "company", slug: "example-ai", titleRu: "Example AI", titleEn: "Example AI", createdAt: now, updatedAt: now })
       .returning({ id: knowledgeEntities.id })
       .get();
     if (!entity) throw new Error("knowledge entity was not inserted");
-    backendDb.db.insert(postEntityLinks).values({ postId: 7, entityId: entity.id, createdAt: now }).run();
+    rawDb.db.insert(postEntityLinks).values({ postId: 7, entityId: entity.id, createdAt: now }).run();
 
     expect(loadPublicSiteFeed(backendDb)).toEqual([
       expect.objectContaining({
@@ -113,12 +112,12 @@ describe("Drizzle site feed", () => {
 
   it("does not expose scheduled or disabled locales", () => {
     const now = new Date().toISOString();
-    backendDb.db.insert(publications).values({ postId: 8, status: "scheduled", createdAt: now, updatedAt: now }).run();
-    backendDb.db
+    rawDb.db.insert(publications).values({ postId: 8, status: "scheduled", createdAt: now, updatedAt: now }).run();
+    rawDb.db
       .insert(posts)
       .values({ postKey: "post:8", postId: 8, source: "bot", channel: "controller", messageId: 88, createdAt: now, updatedAt: now })
       .run();
-    backendDb.db
+    rawDb.db
       .insert(postLocales)
       .values({ postId: 8, locale: "en", slug: "future", text: "Future", mediaJson: [], siteEnabled: 1, publishedAt: now, updatedAt: now })
       .run();
@@ -127,12 +126,12 @@ describe("Drizzle site feed", () => {
 
   it("maps published Telegram media IDs to the deterministic site media manifest", () => {
     const now = new Date().toISOString();
-    backendDb.db.insert(publications).values({ postId: 9, status: "published", createdAt: now, updatedAt: now }).run();
-    backendDb.db
+    rawDb.db.insert(publications).values({ postId: 9, status: "published", createdAt: now, updatedAt: now }).run();
+    rawDb.db
       .insert(posts)
       .values({ postKey: "post:9", postId: 9, source: "bot", channel: "controller", messageId: 99, createdAt: now, updatedAt: now })
       .run();
-    backendDb.db
+    rawDb.db
       .insert(postLocales)
       .values({
         postId: 9,

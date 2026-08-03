@@ -3,12 +3,12 @@ import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createDraftFromMessage } from "../src/content/drafts.js";
-import { openBackendDb } from "../src/db/client.js";
 import { publishContentIndex } from "../src/delivery/site-content-index.js";
 import { pingIndexNow } from "../src/delivery/site-index-now.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
 import { reconcilePublication } from "../src/publishing/queue.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 describe("site parity", () => {
   it("publishes content memory and deduplicates IndexNow submissions", async () => {

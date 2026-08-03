@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import { openBackendDb } from "../src/db/client.js";
 import { drafts, publishJobs, videoDrafts, videoTargets } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { queueService } from "../src/studio/services/queue.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 describe("Telegram work queue", () => {
   it("separates upcoming work, unfinished drafts and actual failed targets", () => {

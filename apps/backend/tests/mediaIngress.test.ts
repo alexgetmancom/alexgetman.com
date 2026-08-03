@@ -3,9 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Bot } from "grammy";
-import { openBackendDb } from "../src/db/client.js";
 import { type BackendConfig, loadConfig } from "../src/foundation/config.js";
 import { importTelegramAlbumMedia } from "../src/interfaces/telegram/media-ingress.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 function botWith(getFile: ((fileId: string) => Promise<{ file_path?: string }>) | undefined): Bot {
   return { api: { getFile } } as unknown as Bot;

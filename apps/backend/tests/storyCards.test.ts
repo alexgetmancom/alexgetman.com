@@ -5,7 +5,7 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 import sharp from "sharp";
 import { createDraftFromMessage } from "../src/content/drafts.js";
-import { openBackendDb, type UnsafeBackendDb } from "../src/db/client.js";
+import type { UnsafeBackendDb } from "../src/db/client.js";
 import { drafts, postLocales, publishJobs, siteJobs } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { backfillTextStoryCards } from "../src/operations/story-card-backfill.js";
@@ -16,6 +16,7 @@ import { buildStoryCardCopy, lineUnits, MAX_LINE_UNITS, MAX_LINES, TEMPLATE_VERS
 import { discardDraftStoryCards, readyStoryCardMedia, setStoryPublishMode, storyCardsForDraft } from "../src/story-cards/store.js";
 import { emojiAssetFile, STORY_CARD_EMOJI_LEFT, STORY_CARD_EMOJI_SIZE, storyCardEmojiTop } from "../src/story-cards/svg.js";
 import { runStoryCardCycle } from "../src/story-cards/worker.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 let backendDb: UnsafeBackendDb | null = null;
 const temporaryDirectories: string[] = [];

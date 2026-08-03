@@ -1,6 +1,5 @@
 import { describe, expect, it } from "bun:test";
 import type { XActivityDashboardItem } from "../src/analytics/x-activity-dashboard.js";
-import { openBackendDb } from "../src/db/client.js";
 import { creatorProfileSnapshots, videoDrafts, videoMetricSnapshots, videoTargets } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { renderCombinedSection } from "../src/interfaces/web/dashboard/combined-section.js";
@@ -10,6 +9,7 @@ import { renderTrackPublicationList } from "../src/interfaces/web/dashboard/tabl
 import type { PipelinePost } from "../src/interfaces/web/dashboard/types.js";
 import { createVideoOverviewCache, emptyVideoOverview, videoOverview } from "../src/interfaces/web/dashboard/video-overview.js";
 import { createOperationsService } from "../src/operations/index.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 const hoursAgo = (hours: number): string => new Date(Date.now() - hours * 3_600_000).toISOString();
 

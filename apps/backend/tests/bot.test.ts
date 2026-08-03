@@ -7,7 +7,7 @@ import { postProgress } from "../src/bot/progress.js";
 import { DEFAULT_TARGETS, TARGETS, targetLocale } from "../src/botTargets.js";
 import { createDraftFromMessage, requireDraft } from "../src/content/drafts.js";
 import { entitiesToHtml } from "../src/content/text.js";
-import { openBackendDb, type UnsafeBackendDb } from "../src/db/client.js";
+import type { UnsafeBackendDb } from "../src/db/client.js";
 import { botUiSettings } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { threadsPreviewText } from "../src/interfaces/telegram/delivery-previews.js";
@@ -15,6 +15,7 @@ import { cancelDraft, scheduledDrafts } from "../src/publishing/draft-lifecycle.
 import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
 import { reconcilePublication } from "../src/publishing/queue.js";
 import { postDeliveryProjections } from "../src/studio/projections.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 let backendDb: UnsafeBackendDb | null = null;
 

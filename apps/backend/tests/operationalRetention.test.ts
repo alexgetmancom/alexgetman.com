@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import { openBackendDb } from "../src/db/client.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { pruneOperationalHistory } from "../src/operations/maintenance.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 describe("operational retention", () => {
   it("removes old derived history but preserves unresolved alerts", () => {

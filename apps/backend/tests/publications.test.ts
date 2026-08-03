@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import type { UnsafeBackendDb } from "../src/db/client.js";
-import { openBackendDb } from "../src/db/client.js";
 import { studioMediaAssets } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { postService } from "../src/studio/services/posts.js";
 import { publicationService } from "../src/studio/services/publications.js";
 import { videoService } from "../src/studio/services/videos.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 let backendDb: UnsafeBackendDb | null = null;
 

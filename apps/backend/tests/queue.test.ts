@@ -1,6 +1,6 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, setSystemTime } from "bun:test";
 import { eq } from "drizzle-orm";
-import type { openBackendDb } from "../src/db/client.js";
+import type { UnsafeBackendDb } from "../src/db/client.js";
 import { type JsonObject, postEvents, postTargets, publishJobs } from "../src/db/schema.js";
 import { AmbiguousPublicationError } from "../src/delivery/ambiguous-publication.js";
 import { type DeliveryAdapter, type DeliveryPorts, type DeliveryPublisher, deliveryAdapter } from "../src/delivery/ports.js";
@@ -19,7 +19,7 @@ import { withDb } from "./helpers/db.js";
 /** Test-only convenience over enqueuePublishJobTx: derives a postId/postKey from
  * messageId so queue-mechanics tests don't need a real publication behind each job. */
 function enqueuePublishJob(
-  backendDb: ReturnType<typeof openBackendDb>,
+  backendDb: UnsafeBackendDb,
   input: { messageId: number; target: string; payload: JsonObject; publishAt?: string | null },
 ): number {
   return enqueuePublishJobTx(backendDb.db, {
@@ -424,6 +424,7 @@ describe("publish queue", () => {
         target: "test_platform",
         payload: { title: "Queued", bodyMarkdown: "Body" },
       });
+
       backendDb.db
         .update(publishJobs)
         .set({
@@ -448,6 +449,25 @@ describe("publish queue", () => {
         status: "verification_required",
       });
     }));
+
+  it("can freeze system time when testing stale publishing lock recovery", () => {
+    setSystemTime(new Date("2026-08-03T12:00:00.000Z"));
+    return withDb((backendDb) => {
+      const id = enqueuePublishJob(backendDb, {
+        messageId: 1033,
+        target: "test_platform",
+        payload: { title: "Queued", bodyMarkdown: "Body" },
+      });
+      const lockedAt = new Date(Date.now() - 2 * 60_000).toISOString();
+      backendDb.db
+        .update(publishJobs)
+        .set({ status: "publishing", lockedBy: "old-worker", lockedAt, updatedAt: lockedAt })
+        .where(eq(publishJobs.jobId, id))
+        .run();
+
+      expect(recoverStalePublishJobs(backendDb, loadConfig({}), 60)).toBe(1);
+    }).finally(() => setSystemTime());
+  });
 
   it("requeues a stale preparation lock because no public mutation started", () =>
     withDb((backendDb) => {

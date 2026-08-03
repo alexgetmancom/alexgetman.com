@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import type { BackendDb } from "../src/db/client.js";
-import { openBackendDb } from "../src/db/client.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { postService } from "../src/studio/services/posts.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 let backendDb: BackendDb | null = null;
 

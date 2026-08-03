@@ -1,7 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
 import { createDraftFromMessage } from "../src/content/drafts.js";
-import { openBackendDb } from "../src/db/client.js";
 import { postEvents, studioNotificationJobs } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { cancelScheduledNotifications, runNotificationCycle, scheduleReminder } from "../src/notifications/jobs.js";
@@ -9,6 +8,7 @@ import { createVideoDraft } from "../src/publishing/video-service.js";
 import { notificationService } from "../src/studio/services/notifications.js";
 import { postService } from "../src/studio/services/posts.js";
 import { settingsService } from "../src/studio/services/settings.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 describe("Studio notifications", () => {
   it("shares the durable inbox across configured administrators", () => {

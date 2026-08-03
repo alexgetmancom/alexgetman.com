@@ -1,9 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import type { Bot } from "grammy";
-import { openBackendDb } from "../src/db/client.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { sendWeeklyAnalyticsSummary } from "../src/interfaces/telegram/analytics-summary.js";
 import { settingsService } from "../src/studio/services/settings.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 describe("weekly analytics summary", () => {
   it("uses one Studio-wide setting, sends to every administrator, and does not require video posting", async () => {

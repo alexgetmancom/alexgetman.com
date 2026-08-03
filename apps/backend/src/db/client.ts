@@ -40,7 +40,7 @@ type MigrationStatus = { hash: string; createdAt: number };
 
 type SqliteCompat = RawSqlite;
 
-export function openBackendDb(path: string, timeout = 30_000): UnsafeBackendDb {
+export function openBackendDb(path: string, timeout = 30_000): BackendDb {
   if (path !== ":memory:") {
     mkdirSync(dirname(path), { recursive: true });
   }

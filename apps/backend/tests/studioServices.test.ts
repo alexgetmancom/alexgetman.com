@@ -2,9 +2,9 @@ import { describe, expect, it } from "bun:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { openBackendDb } from "../src/db/client.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { createStudioServices } from "../src/studio/services/index.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 describe("Studio service boundaries", () => {
   it("reuses the service bundle for one database and configuration", () => {

@@ -1,5 +1,6 @@
 import { afterEach } from "bun:test";
-import { openBackendDb, type UnsafeBackendDb } from "../../src/db/client.js";
+import type { UnsafeBackendDb } from "../../src/db/client.js";
+import { openBackendDb } from "./open-db.js";
 
 /** Open an in-memory backend DB for one test and always close it, even on
  * throw. Use for a single self-contained test body:

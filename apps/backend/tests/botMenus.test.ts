@@ -6,8 +6,8 @@ import { buildNotificationsMenu } from "../src/bot/notifications-screen.js";
 import { buildSettingsMenu } from "../src/bot/settings-screen.js";
 import { isAdmin } from "../src/bot.js";
 import type { BackendDb } from "../src/db/client.js";
-import { openBackendDb } from "../src/db/client.js";
 import { loadConfig } from "../src/foundation/config.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 let backendDb: BackendDb | null = null;
 

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { createApiHandler } from "../src/api.js";
-import { openBackendDb } from "../src/db/client.js";
 import { recordDomainEvent } from "../src/domain/events.js";
 import { loadConfig } from "../src/foundation/config.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 const COMMAND_TOKEN = "b".repeat(16);
 

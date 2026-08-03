@@ -1,10 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import { asc, count, eq } from "drizzle-orm";
-import { openBackendDb } from "../src/db/client.js";
 import { posts, postTargets, publicationSources, publications, publishJobs, siteJobs, siteSourceItems } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { runOperationCommand } from "../src/operations/commands.js";
 import { enqueuePublishJobTx } from "../src/publishing/queue.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 describe("command center actions", () => {
   it("rebuilds retried jobs from the source using the target locale", async () => {

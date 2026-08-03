@@ -4,8 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { importStudioMediaFile } from "../src/content/assets.js";
 import type { BackendDb } from "../src/db/client.js";
-import { openBackendDb } from "../src/db/client.js";
 import { loadConfig } from "../src/foundation/config.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 let backendDb: BackendDb | null = null;
 let directories: string[] = [];

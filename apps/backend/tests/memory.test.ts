@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import { openBackendDb } from "../src/db/client.js";
 import { runtimeMemorySamples } from "../src/db/schema.js";
 import { type MemorySnapshot, measureMemorySync } from "../src/observability/memory.js";
 import { recordMemorySample } from "../src/observability/memory-history.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 const megabyte = 1024 * 1024;
 

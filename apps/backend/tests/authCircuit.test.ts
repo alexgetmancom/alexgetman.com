@@ -3,7 +3,6 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { eq } from "drizzle-orm";
-import { openBackendDb } from "../src/db/client.js";
 import { credentialChecks, type JsonObject } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import {
@@ -15,6 +14,7 @@ import {
 } from "../src/observability/auth-circuit.js";
 import { HttpPublishError } from "../src/publishing/errors.js";
 import { claimDuePublishJobs, enqueuePublishJobTx, failPublishJob } from "../src/publishing/queue.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 function tempDb() {
   const dir = mkdtempSync(join(tmpdir(), "alexgetman-auth-circuit-"));

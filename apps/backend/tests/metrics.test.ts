@@ -4,9 +4,9 @@ import { TerminalMetricError } from "../src/analytics/collection/collectors/erro
 import { createMetricCollectors, SUPPORTED_METRIC_TARGETS } from "../src/analytics/collection/collectors/index.js";
 import { dueMetricTasks, type MetricTask } from "../src/analytics/collection/metric-schedule.js";
 import { runMetricsCycle } from "../src/analytics/collection/metrics-cycle.js";
-import { openBackendDb } from "../src/db/client.js";
 import { metricSamples, metricSchedule, postMetrics, posts, postTargets, workerState } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 describe("metrics cycle", () => {
   it("schedules published targets and persists metric samples", async () => {

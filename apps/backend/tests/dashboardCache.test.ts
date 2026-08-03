@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import { openBackendDb } from "../src/db/client.js";
 import { publishJobs } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { invalidateDashboardRenderCache, renderDashboard } from "../src/interfaces/web/dashboard.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 describe("dashboard render cache", () => {
   it("reuses an identical dashboard briefly and invalidates after a mutation", () => {

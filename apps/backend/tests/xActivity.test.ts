@@ -3,10 +3,10 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { importXAnalyticsCsv } from "../src/analytics/import-x-csv.js";
-import { openBackendDb } from "../src/db/client.js";
 import { xActivityItems, xActivityMetricSnapshots } from "../src/db/schema.js";
 import { renderCombinedSection } from "../src/interfaces/web/dashboard/combined-section.js";
 import { emptyVideoOverview } from "../src/interfaces/web/dashboard/video-overview.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 const HEADERS = [
   "Идентификатор поста",

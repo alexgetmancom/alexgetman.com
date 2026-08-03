@@ -17,7 +17,7 @@ type ZernioAccounts = { accounts?: StudioZernioAccount[] } | StudioZernioAccount
  * operations available to Web Studio and MCP without copying the wizard's DB
  * logic into another adapter.
  */
-export function channelService(backendDb: BackendDb, config: BackendConfig) {
+export function channelService(backendDb: BackendDb, config: BackendConfig, fetchImpl: typeof fetch = fetch) {
   return {
     list(enabledOnly = true) {
       return listChannels(backendDb, enabledOnly);
@@ -36,7 +36,7 @@ export function channelService(backendDb: BackendDb, config: BackendConfig) {
     },
     async discoverZernioAccounts(): Promise<StudioZernioAccount[]> {
       if (!config.ZERNIO_API_KEY) throw new Error("Zernio API key is not configured.");
-      const response = await requestJson<ZernioAccounts>(fetch, "https://zernio.com/api/v1/accounts", {
+      const response = await requestJson<ZernioAccounts>(fetchImpl, "https://zernio.com/api/v1/accounts", {
         headers: { Authorization: `Bearer ${config.ZERNIO_API_KEY}` },
       });
       return Array.isArray(response) ? response : (response.accounts ?? []);

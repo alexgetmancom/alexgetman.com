@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { openBackendDb } from "../src/db/client.js";
 import { recordUsage, trackUsageAsync, trackUsageSync, usageReport } from "../src/observability/usage.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 describe("runtime usage telemetry", () => {
   it("aggregates successful and failed calls by day without changing operation errors", async () => {

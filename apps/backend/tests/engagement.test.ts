@@ -1,10 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { openBackendDb } from "../src/db/client.js";
 import { likes } from "../src/db/schema.js";
 import { clientIpHash } from "../src/engagement/identity.js";
 import { batchLikes } from "../src/engagement/likes.js";
 import { metricsSummary, recordPageview } from "../src/engagement/pageviews.js";
 import { loadConfig } from "../src/foundation/config.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 describe("engagement likes", () => {
   it("returns batched counts and caller liked state", () => {

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { SITE_MEDIA_URL_PREFIX, siteMediaVerticalFilename } from "../../../backend/src/content/site-media-naming.js";
-import { openBackendDb } from "../../../backend/src/db/client.js";
+import { openBackendDb, unsafeDb } from "../../../backend/src/db/client.js";
 import { knowledgeEntities, postEntityLinks, postLocales, postSources, posts, publications } from "../../../backend/src/db/schema.js";
 import { fixtureDayWindow } from "./fixture-utils.js";
 
@@ -183,13 +183,14 @@ export type SeededSite = {
 export function seedSiteFixture(options: { dbPath: string; publicDir: string; posts?: FixturePost[] }): SeededSite {
   const fixture = options.posts ?? SMOKE_FIXTURE;
   const backendDb = openBackendDb(options.dbPath);
+  const rawDb = unsafeDb(backendDb);
   const now = new Date().toISOString();
   const imagePaths: string[] = [];
   try {
     for (const post of fixture) {
       const createdAt = post.dateUtc ?? now;
-      backendDb.db.insert(publications).values({ postId: post.postId, status: "published", createdAt, updatedAt: now }).run();
-      backendDb.db
+      rawDb.db.insert(publications).values({ postId: post.postId, status: "published", createdAt, updatedAt: now }).run();
+      rawDb.db
         .insert(posts)
         .values({
           postKey: `post:${post.postId}`,
@@ -205,7 +206,7 @@ export function seedSiteFixture(options: { dbPath: string; publicDir: string; po
       for (const locale of ["en", "ru"] as const) {
         const spec = post[locale];
         const images = spec.images ?? 0;
-        backendDb.db
+        rawDb.db
           .insert(postLocales)
           .values({
             postId: post.postId,
@@ -227,7 +228,7 @@ export function seedSiteFixture(options: { dbPath: string; publicDir: string; po
         for (let index = 0; index < images; index += 1) imagePaths.push(writeFixtureImage(options.publicDir, post.postId, locale, index));
       }
       for (const source of post.sources ?? [])
-        backendDb.db
+        rawDb.db
           .insert(postSources)
           .values({
             postId: post.postId,
@@ -240,7 +241,7 @@ export function seedSiteFixture(options: { dbPath: string; publicDir: string; po
           })
           .run();
       for (const entity of post.entities ?? []) {
-        const row = backendDb.db
+        const row = rawDb.db
           .insert(knowledgeEntities)
           .values({
             kind: entity.kind,
@@ -252,7 +253,7 @@ export function seedSiteFixture(options: { dbPath: string; publicDir: string; po
           })
           .returning({ id: knowledgeEntities.id })
           .get();
-        backendDb.db.insert(postEntityLinks).values({ postId: post.postId, entityId: row.id, createdAt: now }).run();
+        rawDb.db.insert(postEntityLinks).values({ postId: post.postId, entityId: row.id, createdAt: now }).run();
       }
     }
   } finally {

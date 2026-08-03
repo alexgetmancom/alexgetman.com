@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
 import { importManualAnalytics } from "../src/analytics/import-manual-analytics.js";
-import { openBackendDb } from "../src/db/client.js";
 import { creatorProfileSnapshots, creatorProfiles } from "../src/db/schema.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 describe("manual analytics import", () => {
   it("records both Threads accounts as one dated operator observation", () => {

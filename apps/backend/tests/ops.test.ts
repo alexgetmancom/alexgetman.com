@@ -2,7 +2,6 @@ import { describe, expect, it } from "bun:test";
 import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openBackendDb } from "../src/db/client.js";
 import { metricSchedule } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { capabilitySummary, seedCapabilities } from "../src/operations/capabilities.js";
@@ -19,6 +18,7 @@ import { diagnoseMediaProcessor, mediaProcessorStatus, reprocessPostMedia } from
 import { pipelineStatusPayload } from "../src/operations/read-model.js";
 import { compactOperationsStatus } from "../src/operations/status.js";
 import { publicationTimeline } from "../src/operations/timeline.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 describe("TypeScript operations tooling", () => {
   it("builds a durable publication timeline with parsed details and durations", () => {

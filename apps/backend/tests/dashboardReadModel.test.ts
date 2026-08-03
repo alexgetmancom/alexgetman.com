@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import { openBackendDb } from "../src/db/client.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { zonedRollingPeriodBounds } from "../src/foundation/time.js";
 import { pipelineStatusPayload } from "../src/operations/read-model.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 describe("dashboard read model bounds", () => {
   it("filters samples, aggregates them into time buckets, and omits provider raw payloads", () => {

@@ -1,7 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import { eq } from "drizzle-orm";
 import { registerChannel } from "../src/channels/registry.js";
-import { openBackendDb } from "../src/db/client.js";
 import { alertDedup, credentialChecks, postEvents, publishJobs, runtimeMemorySamples, siteJobs, workerState } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { renderDashboard } from "../src/interfaces/web/dashboard.js";
@@ -9,6 +8,7 @@ import { runObservabilityCycle } from "../src/observability/cycle.js";
 import { healthReport } from "../src/observability/health.js";
 import { recordMemoryPressure } from "../src/observability/runtime-health.js";
 import { commandCenterPayload } from "../src/operations/command-center.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 function testHarness() {
   const backendDb = openBackendDb(":memory:");

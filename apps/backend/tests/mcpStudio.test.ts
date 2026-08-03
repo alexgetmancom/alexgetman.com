@@ -3,9 +3,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApiHandler } from "../src/api.js";
-import { openBackendDb } from "../src/db/client.js";
 import { studioMediaAssets } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 function request(app: ReturnType<typeof createApiHandler>, body: unknown, authorization?: string) {
   return app(

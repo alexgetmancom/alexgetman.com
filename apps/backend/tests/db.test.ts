@@ -5,9 +5,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { and, eq } from "drizzle-orm";
 import { createDraftFromMessage } from "../src/content/drafts.js";
-import { baselineDrizzleMigrations, drizzleMigrationMetadata, migrationStatus, openBackendDb } from "../src/db/client.js";
+import { baselineDrizzleMigrations, drizzleMigrationMetadata, migrationStatus } from "../src/db/client.js";
 import { draftSources, knowledgeEntities, postEntityLinks, postSources } from "../src/db/schema.js";
 import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 describe("openBackendDb", () => {
   it("enables WAL, busy timeout and foreign keys", () => {

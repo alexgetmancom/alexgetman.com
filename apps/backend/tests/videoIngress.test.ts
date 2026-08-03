@@ -3,10 +3,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Context } from "grammy";
-import { openBackendDb } from "../src/db/client.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { StudioError } from "../src/foundation/errors.js";
 import { storeTelegramVideo } from "../src/interfaces/telegram/video-ingress.js";
+import { openBackendDb } from "./helpers/open-db.js";
 
 /** Synthetic grammY context: only the shape storeTelegramVideo actually reads. */
 function contextWith(message: Record<string, unknown>, getFile: (fileId: string) => Promise<{ file_path?: string }>): Context {

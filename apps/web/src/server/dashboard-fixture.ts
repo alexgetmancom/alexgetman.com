@@ -1,4 +1,4 @@
-import { openBackendDb } from "../../../backend/src/db/client.js";
+import { openBackendDb, unsafeDb } from "../../../backend/src/db/client.js";
 import {
   creatorProfileSnapshots,
   metricSamples,
@@ -199,6 +199,7 @@ function fullVideoPlans(options: FullDashboardFixtureOptions, now: Date): VideoF
 
 export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDashboard {
   const backendDb = openBackendDb(options.dbPath);
+  const rawDb = unsafeDb(backendDb);
   const now = new Date();
   const nowIso = iso(now);
   let targetRows = 0;
@@ -213,7 +214,7 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
 
       for (const plan of TARGET_PLAN) {
         const failed = options.full ? plan.target === "x" && index === 0 : plan.status === "failed";
-        backendDb.db
+        rawDb.db
           .insert(postTargets)
           .values({
             postKey,
@@ -240,7 +241,7 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
           const value = options.full
             ? fullMetricValue(base, index, plan.target, metricName)
             : Math.max(0, Math.round(base * (1 - index * 0.18)));
-          backendDb.db
+          rawDb.db
             .insert(postMetrics)
             .values({ postKey, target: plan.target, metricName, value, unit: "count", source: "fixture", sampledAt: nowIso })
             .run();
@@ -258,7 +259,7 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
             : DAYS_OF_HISTORY * SAMPLES_PER_DAY;
           for (let slot = slots; slot >= 0; slot -= 1) {
             const progress = (slots - slot) / slots;
-            backendDb.db
+            rawDb.db
               .insert(metricSamples)
               .values({
                 postKey,
@@ -275,7 +276,7 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
           }
         }
 
-        backendDb.db
+        rawDb.db
           .insert(metricSchedule)
           .values({
             postKey,
@@ -288,7 +289,7 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
           .run();
       }
 
-      backendDb.db
+      rawDb.db
         .insert(publishJobs)
         .values({
           postId,
@@ -303,7 +304,7 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
           updatedAt: nowIso,
         })
         .run();
-      backendDb.db
+      rawDb.db
         .insert(siteJobs)
         .values({
           postId,
@@ -320,7 +321,7 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
     // One job left in the queue, so the queue panel and the "in flight" counter
     // are exercised. It has no post of its own on purpose: the dashboard must
     // survive a job whose post row is not there yet.
-    backendDb.db
+    rawDb.db
       .insert(publishJobs)
       .values({
         postId: 999,
@@ -335,11 +336,11 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
       })
       .run();
 
-    backendDb.db
+    rawDb.db
       .insert(workerState)
       .values({ name: "publisher", stateJson: { lastRunAt: nowIso, status: "idle" }, updatedAt: nowIso })
       .run();
-    backendDb.db
+    rawDb.db
       .insert(workerState)
       .values({ name: "metrics", stateJson: { lastRunAt: nowIso, status: "idle" }, updatedAt: nowIso })
       .run();
@@ -348,7 +349,7 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
       const xPostId = `fixture-x-${index + 1}`;
       const reply = index % 3 === 1;
       const publishedAt = iso(hoursAgo(index * 8));
-      backendDb.db
+      rawDb.db
         .insert(xActivityItems)
         .values({
           xPostId,
@@ -367,7 +368,7 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
         ["interactions", 120 - index * 8],
         ["replies", reply ? 18 - index : 4 + index],
       ] as const)
-        backendDb.db
+        rawDb.db
           .insert(xActivityMetricSnapshots)
           .values({ xPostId, metricName, value, sampledAt: nowIso, rawJson: { source: "fixture" } })
           .run();
@@ -382,7 +383,7 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
         }));
     for (const [index, plan] of videoPlans.entries()) {
       const publishedAt = plan.publishedAt;
-      const draft = backendDb.db
+      const draft = rawDb.db
         .insert(videoDrafts)
         .values({
           actorId: 1,
@@ -398,7 +399,7 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
         .get();
 
       for (const target of plan.targets) {
-        const inserted = backendDb.db
+        const inserted = rawDb.db
           .insert(videoTargets)
           .values({
             videoDraftId: draft.id,
@@ -423,7 +424,7 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
           : Math.max(1, Math.round((Date.now() - new Date(publishedAt).getTime()) / HOUR_MS / HOURS_PER_SAMPLE));
         for (let slot = slots; slot >= 0; slot -= 1) {
           const progress = (slots - slot) / slots;
-          backendDb.db
+          rawDb.db
             .insert(videoMetricSnapshots)
             .values({
               videoTargetId: inserted.id,
@@ -453,7 +454,7 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
       ["instagram_ru", 5_120],
       ["instagram_en", 940],
     ] as const)
-      backendDb.db
+      rawDb.db
         .insert(creatorProfileSnapshots)
         .values({
           platform,
@@ -582,16 +583,17 @@ const PARITY_WATCH_TIME_MS = 13_000;
  */
 export function seedOverviewParityFixture(options: { dbPath: string; postIds: number[] }): SeededDashboard {
   const backendDb = openBackendDb(options.dbPath);
+  const rawDb = unsafeDb(backendDb);
   const now = new Date();
   const nowIso = iso(now);
   let targetRows = 0;
   let sampleRows = 0;
 
   const writeMetric = (postKey: string, target: string, metricName: string, value: number, sampledAt: string) => {
-    backendDb.db.insert(postMetrics).values({ postKey, target, metricName, value, unit: "count", source: "fixture", sampledAt }).run();
+    rawDb.db.insert(postMetrics).values({ postKey, target, metricName, value, unit: "count", source: "fixture", sampledAt }).run();
   };
   const publishTarget = (postKey: string, target: string, publishedAt: string) => {
-    backendDb.db
+    rawDb.db
       .insert(postTargets)
       .values({
         postKey,
@@ -629,7 +631,7 @@ export function seedOverviewParityFixture(options: { dbPath: string; postIds: nu
 
       const slots = Math.max(1, Math.round((3 + index * 2) / HOURS_PER_SAMPLE));
       for (let slot = slots; slot >= 0; slot -= 1) {
-        backendDb.db
+        rawDb.db
           .insert(metricSamples)
           .values({
             postKey,
@@ -662,18 +664,18 @@ export function seedOverviewParityFixture(options: { dbPath: string; postIds: nu
         writeMetric(postKey, "telegram", metricName, Math.round(base * factor), dayIso);
     }
 
-    backendDb.db
+    rawDb.db
       .insert(workerState)
       .values({ name: "publisher", stateJson: { lastRunAt: nowIso, status: "idle" }, updatedAt: nowIso })
       .run();
-    backendDb.db
+    rawDb.db
       .insert(workerState)
       .values({ name: "metrics", stateJson: { lastRunAt: nowIso, status: "idle" }, updatedAt: nowIso })
       .run();
 
     for (const [index, plan] of PARITY_VIDEO.entries()) {
       const publishedAt = iso(hoursAgo(plan.hoursAgo));
-      const draft = backendDb.db
+      const draft = rawDb.db
         .insert(videoDrafts)
         .values({
           actorId: 1,
@@ -689,7 +691,7 @@ export function seedOverviewParityFixture(options: { dbPath: string; postIds: nu
         .get();
 
       for (const target of plan.targets) {
-        const inserted = backendDb.db
+        const inserted = rawDb.db
           .insert(videoTargets)
           .values({
             videoDraftId: draft.id,
@@ -711,7 +713,7 @@ export function seedOverviewParityFixture(options: { dbPath: string; postIds: nu
         for (let slot = slots; slot >= 0; slot -= 1) {
           const progress = (slots - slot) / slots;
           const views = Math.round(target.views * progress);
-          backendDb.db
+          rawDb.db
             .insert(videoMetricSnapshots)
             .values({
               videoTargetId: inserted.id,
@@ -746,7 +748,7 @@ export function seedOverviewParityFixture(options: { dbPath: string; postIds: nu
     // asked for, so a video published on day 31 contributes to none of it, no
     // matter how many older snapshots it carries.
     const historyPublishedAt = daysAgo(PARITY_HISTORY_DAYS - 1);
-    const historyDraft = backendDb.db
+    const historyDraft = rawDb.db
       .insert(videoDrafts)
       .values({
         actorId: 1,
@@ -760,7 +762,7 @@ export function seedOverviewParityFixture(options: { dbPath: string; postIds: nu
       })
       .returning({ id: videoDrafts.id })
       .get();
-    const historyTarget = backendDb.db
+    const historyTarget = rawDb.db
       .insert(videoTargets)
       .values({
         videoDraftId: historyDraft.id,
@@ -787,7 +789,7 @@ export function seedOverviewParityFixture(options: { dbPath: string; postIds: nu
       cumulativeViews += Math.round(PARITY_DAILY_VIDEO_VIEWS * factor);
       cumulativeLikes += Math.round(120 * factor);
       cumulativeComments += Math.round(4 * factor);
-      backendDb.db
+      rawDb.db
         .insert(videoMetricSnapshots)
         .values({
           videoTargetId: historyTarget.id,
@@ -813,7 +815,7 @@ export function seedOverviewParityFixture(options: { dbPath: string; postIds: nu
         [daysAgo(1), followers],
         [now, followers + gained],
       ] as const)
-        backendDb.db
+        rawDb.db
           .insert(creatorProfileSnapshots)
           .values({
             platform,
