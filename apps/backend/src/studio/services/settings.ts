@@ -24,13 +24,14 @@ function readLocale(backendDb: BackendDb, actorId: StudioActorId): StudioLocale 
 }
 
 function writeYoutubeSignature(backendDb: BackendDb, actorId: StudioActorId, value: string): void {
+  const signature = value === "-" ? "" : fixUrlSlashes(value);
   const now = new Date().toISOString();
   backendDb.db
     .insert(botSettings)
-    .values({ actorId, youtubeSignature: value === "-" ? "" : fixUrlSlashes(value), pendingAction: null, updatedAt: now })
+    .values({ actorId, youtubeSignature: signature, pendingAction: null, updatedAt: now })
     .onConflictDoUpdate({
       target: botSettings.actorId,
-      set: { youtubeSignature: value === "-" ? "" : fixUrlSlashes(value), pendingAction: null, updatedAt: now },
+      set: { youtubeSignature: signature, pendingAction: null, updatedAt: now },
     })
     .run();
 }

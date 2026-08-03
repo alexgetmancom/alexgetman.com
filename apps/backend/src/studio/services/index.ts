@@ -3,6 +3,7 @@ import type { BackendConfig } from "../../foundation/config.js";
 import type { StudioActorId, StudioLocale } from "../contracts.js";
 import { analyticsService } from "./analytics.js";
 import { studioCapabilityService } from "./capabilities.js";
+import { channelService } from "./channels.js";
 import { studioDashboard } from "./dashboard.js";
 import { mediaService } from "./media.js";
 import { notificationService } from "./notifications.js";
@@ -24,6 +25,7 @@ export function studioServices(backendDb: BackendDb, config: BackendConfig) {
     posts,
     publications: publicationService(posts, videos),
     media: mediaService(backendDb, config),
+    channels: channelService(backendDb, config),
     videos,
     queue: queueService(backendDb, config),
     notifications: notificationService(backendDb, config),

@@ -1,13 +1,10 @@
 import { Menu, type MenuFlavor } from "@grammyjs/menu";
 import type { Context } from "grammy";
-import { credentialShape, setChannelSecrets } from "../channels/credentials.js";
-import { isPublishableVideoPlatform, VIDEO_PLATFORM_TARGET } from "../channels/destinations.js";
-import { listChannels, registerChannel } from "../channels/registry.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
-import { requestJson } from "../foundation/http.js";
 import { t } from "../foundation/i18n/index.js";
 import { escapeMarkdown } from "../foundation/markdown.js";
+import type { StudioZernioAccount } from "../studio/services/channels.js";
 import { studioServices } from "../studio/services/index.js";
 import { botLocale } from "./i18n.js";
 import { persistentKeyboard } from "./menu-render.js";
@@ -19,13 +16,7 @@ const WEEKLY_DIGEST_MENU_ID = "settings-weekly-digest";
 const YOUTUBE_SIGNATURE_MENU_ID = "settings-youtube";
 const LANGUAGE_MENU_ID = "settings-language";
 const CHANNELS_MENU_ID = "settings-channels";
-
-/** Platforms whose accounts carry their own credentials, so they can be
- * connected here instead of through a deployment variable. */
-const NATIVE_CONNECTABLE_PLATFORMS = Object.keys(VIDEO_PLATFORM_TARGET).filter(isPublishableVideoPlatform);
-
-type ZernioAccount = { _id?: string; username?: string; displayName?: string; platform?: string };
-type ZernioAccounts = { accounts?: ZernioAccount[] } | ZernioAccount[];
+type ZernioAccount = StudioZernioAccount;
 const discoveredAccounts = new Map<number, { locale: "ru" | "en"; accounts: ZernioAccount[]; hidden: number }>();
 
 /**
@@ -64,6 +55,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
   const channels = new Menu<Context>(CHANNELS_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
     const actorId = Number(ctx.from?.id);
     const locale = botLocale(backendDb, actorId);
+    const studioChannels = studioServices(backendDb, config).channels;
     const discovered = discoveredAccounts.get(actorId);
     if (discovered) {
       for (const account of discovered.accounts) {
@@ -71,22 +63,21 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
         const platform = zernioPlatform(account);
         // A channel the pipeline has no target for would sit in the registry
         // and never publish, so it is never offered.
-        if (!isPublishableVideoPlatform(platform)) continue;
+        if (!studioChannels.isPublishablePlatform(platform)) continue;
         range
           .text(
             `${channelPlatformLabel(platform)} ${discovered.locale.toUpperCase()} · @${account.username ?? account.displayName ?? account._id}`,
             async (ctx) => {
-              registerChannel(backendDb, {
+              studioChannels.connect({
                 platform,
                 locale: discovered.locale,
                 provider: "zernio",
-                ...(account._id ? { providerAccountId: account._id } : {}),
+                ...(account._id ? { accountId: account._id } : {}),
                 label: `${channelPlatformLabel(platform)} ${discovered.locale.toUpperCase()} · @${account.username ?? account.displayName ?? account._id}`,
-                source: "telegram",
               });
               discoveredAccounts.delete(actorId);
               await ctx.answerCallbackQuery({ text: t(locale, "settings.channel-connected") });
-              await ctx.editMessageText(channelsText(backendDb, locale));
+              await ctx.editMessageText(channelsText(backendDb, config, locale));
             },
           )
           .row();
@@ -99,7 +90,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
         .row();
     // Native accounts are offered for every platform the pipeline publishes to,
     // regardless of what the deployment's variables happen to hold.
-    for (const platform of NATIVE_CONNECTABLE_PLATFORMS) {
+    for (const platform of studioChannels.nativeConnectablePlatforms()) {
       range
         .text(`➕ ${channelPlatformLabel(platform)} · RU`, (ctx) => startNativeConnection(ctx, actorId, platform, "ru", locale))
         .text(`➕ ${channelPlatformLabel(platform)} · EN`, (ctx) => startNativeConnection(ctx, actorId, platform, "en", locale))
@@ -213,7 +204,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
     range
       .submenu(t(locale, "settings.channels"), CHANNELS_MENU_ID, async (ctx) => {
         await ctx.answerCallbackQuery();
-        await ctx.editMessageText(channelsText(backendDb, locale));
+        await ctx.editMessageText(channelsText(backendDb, config, locale));
       })
       .row()
       .submenu(t(locale, "settings.notifications"), NOTIFICATIONS_MENU_ID, async (ctx) => {
@@ -259,7 +250,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
       await ctx.answerCallbackQuery({ text: t(locale, "settings.channel-no-secret-key"), show_alert: true });
       return;
     }
-    const shape = credentialShape(platform, "native", channelLocale);
+    const shape = studioServices(backendDb, config).channels.credentialShape(platform, "native", channelLocale);
     if (!shape.length) {
       await ctx.answerCallbackQuery({ text: t(locale, "settings.channels-error"), show_alert: true });
       return;
@@ -281,13 +272,12 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
     locale: ReturnType<typeof botLocale>,
   ) {
     try {
-      const headers = { Authorization: `Bearer ${config.ZERNIO_API_KEY}` };
-      const response = await requestJson<ZernioAccounts>(fetch, "https://zernio.com/api/v1/accounts", { headers });
-      const accounts = Array.isArray(response) ? response : (response.accounts ?? []);
-      const supported = accounts.filter((account) => isPublishableVideoPlatform(zernioPlatform(account)));
+      const studioChannels = studioServices(backendDb, config).channels;
+      const accounts = await studioChannels.discoverZernioAccounts();
+      const supported = accounts.filter((account) => studioChannels.isPublishablePlatform(zernioPlatform(account)));
       discoveredAccounts.set(actorId, { locale: channelLocale, accounts, hidden: accounts.length - supported.length });
       await ctx.answerCallbackQuery({ text: t(locale, "settings.channels-found", { count: supported.length }) });
-      await ctx.editMessageText(channelsText(backendDb, locale, supported.length, accounts.length - supported.length));
+      await ctx.editMessageText(channelsText(backendDb, config, locale, supported.length, accounts.length - supported.length));
       await ctx.menu.update();
     } catch {
       await ctx.answerCallbackQuery({ text: t(locale, "settings.channels-error"), show_alert: true });
@@ -370,16 +360,15 @@ async function collectChannelCredential(
   }
   pendingConnections.delete(actorId);
   const label = `${channelPlatformLabel(pending.platform)} ${pending.locale.toUpperCase()}`;
-  const channel = registerChannel(backendDb, {
+  const channel = studioServices(backendDb, config).channels.connect({
     platform: pending.platform,
     locale: pending.locale,
     provider: "native",
     label,
-    source: "telegram",
-    ...(pending.collected.userId ? { providerAccountId: pending.collected.userId } : {}),
+    ...(pending.collected.userId ? { accountId: pending.collected.userId } : {}),
+    credentials: pending.collected,
   });
-  setChannelSecrets(backendDb, config.CHANNEL_SECRET_KEY, channel.id, pending.collected);
-  await ctx.reply(t(locale, "settings.channel-ready", { channel: label }));
+  await ctx.reply(t(locale, "settings.channel-ready", { channel: channel.channel.label }));
   return true;
 }
 
@@ -394,10 +383,16 @@ function channelPlatformLabel(platform: string): string {
   return platform === "tiktok" ? "TikTok" : platform === "youtube" ? "YouTube" : "Instagram";
 }
 
-function channelsText(backendDb: BackendDb, locale: ReturnType<typeof botLocale>, discoveredCount?: number, hiddenCount = 0): string {
-  const rows = listChannels(backendDb).map(
-    (channel) => `• ${channel.label} — ${channel.provider}${channel.providerAccountId ? ` · ${channel.providerAccountId}` : ""}`,
-  );
+function channelsText(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  locale: ReturnType<typeof botLocale>,
+  discoveredCount?: number,
+  hiddenCount = 0,
+): string {
+  const rows = studioServices(backendDb, config)
+    .channels.list()
+    .map((channel) => `• ${channel.label} — ${channel.provider}${channel.providerAccountId ? ` · ${channel.providerAccountId}` : ""}`);
   const suffix = discoveredCount == null ? "" : `\n\n${t(locale, "settings.channels-pick", { count: discoveredCount })}`;
   const hidden = hiddenCount ? `\n${t(locale, "settings.channels-unsupported", { count: hiddenCount })}` : "";
   return `${t(locale, "settings.channels-title")}\n\n${rows.join("\n") || t(locale, "settings.channels-none")}${suffix}${hidden}`;

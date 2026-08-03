@@ -129,6 +129,22 @@ const studioToolDefs = {
     schema: z.object({}),
     handler: (studio, actorId) => ({ locale: studio.settings.locale(actorId) }),
   }),
+  studio_channels: tool({
+    description: "List connected Studio channels without exposing stored credentials.",
+    schema: z.object({}),
+    handler: (studio) =>
+      studio.channels.list(false).map(({ id, platform, locale, provider, providerAccountId, targetId, label, enabled, source }) => ({
+        id,
+        platform,
+        locale,
+        provider,
+        provider_account_id: providerAccountId,
+        target_id: targetId,
+        label,
+        enabled: enabled === 1,
+        source,
+      })),
+  }),
   studio_locale_update: tool({
     description: "Update the authenticated owner's shared interface locale.",
     schema: z.object({ locale: localeSchema }),

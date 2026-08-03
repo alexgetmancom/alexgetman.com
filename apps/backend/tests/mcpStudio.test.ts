@@ -27,7 +27,10 @@ describe("Studio MCP", () => {
       expect(JSON.stringify(await anonymousTools.json())).not.toContain("studio_post_create");
 
       const authorizedTools = await request(app, { jsonrpc: "2.0", id: 2, method: "tools/list" }, `Bearer ${"a".repeat(16)}`);
-      expect(JSON.stringify(await authorizedTools.json())).toContain("studio_post_create");
+      const authorizedToolList = JSON.stringify(await authorizedTools.json());
+      expect(authorizedToolList).toContain("studio_post_create");
+      expect(authorizedToolList).toContain("studio_channels");
+      expect(authorizedToolList).toContain("studio_locale_update");
 
       const denied = await request(
         app,
@@ -74,6 +77,33 @@ describe("Studio MCP", () => {
       // Capabilities describe what is enabled, never what is missing: a leaked
       // `required` list would expose which credentials the owner has not set.
       expect(JSON.stringify(capabilityPayload)).not.toContain('"required"');
+
+      const locale = await request(
+        app,
+        { jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "studio_locale", arguments: {} } },
+        `Bearer ${"a".repeat(16)}`,
+      );
+      const localeBody = (await locale.json()) as { result: { content: Array<{ text: string }> } };
+      expect(localeBody.result.content[0]?.text).toContain('"locale":"en"');
+      const localeUpdate = await request(
+        app,
+        { jsonrpc: "2.0", id: 8, method: "tools/call", params: { name: "studio_locale_update", arguments: { locale: "ru" } } },
+        `Bearer ${"a".repeat(16)}`,
+      );
+      const localeUpdateBody = (await localeUpdate.json()) as { result: { content: Array<{ text: string }> } };
+      expect(localeUpdateBody.result.content[0]?.text).toContain('"updated":true');
+      const signatureUpdate = await request(
+        app,
+        {
+          jsonrpc: "2.0",
+          id: 9,
+          method: "tools/call",
+          params: { name: "studio_youtube_signature_update", arguments: { signature: "https://example.com" } },
+        },
+        `Bearer ${"a".repeat(16)}`,
+      );
+      const signatureUpdateBody = (await signatureUpdate.json()) as { result: { content: Array<{ text: string }> } };
+      expect(signatureUpdateBody.result.content[0]?.text).toContain("https://example.com");
     } finally {
       backendDb.close();
     }
