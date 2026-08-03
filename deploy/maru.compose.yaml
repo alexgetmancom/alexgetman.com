@@ -28,8 +28,8 @@ services:
       PUBLIC_BASE_URL: ${MARU_PUBLIC_BASE_URL:-https://alexgetman.com/maru-media}
       TRUSTED_CLIENT_IP_HEADER: x-real-ip
       TELEGRAM_API_BASE_URL: http://alexgetman-telegram-bot-api:8081
-      ENABLE_BOT_POLLING: "false"
-      ENABLE_WORKERS: "false"
+      ENABLE_BOT_POLLING: "true"
+      ENABLE_WORKERS: "true"
       BIND_HOST: 0.0.0.0
       PORT: "8788"
     volumes:

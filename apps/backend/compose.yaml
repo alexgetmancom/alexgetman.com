@@ -60,8 +60,8 @@ services:
       NODE_ENV: production
       DEPLOYMENT_ENV: production
       RUNTIME_ROLE: web
-      ENABLE_BOT_POLLING: "false"
-      ENABLE_WORKERS: "false"
+      ENABLE_BOT_POLLING: "true"
+      ENABLE_WORKERS: "true"
       ENABLE_TELEGRAM_STORIES: "true"
       BIND_HOST: 0.0.0.0
       PORT: "8788"
