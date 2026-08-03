@@ -20,8 +20,7 @@ function today(): Date {
   return new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
 }
 
-function seedVideo(backendDb: ReturnType<typeof openBackendDb>): void {
-  const publishedAt = hoursAgo(3);
+function seedVideo(backendDb: ReturnType<typeof openBackendDb>, publishedAt = hoursAgo(3)): void {
   const draft = backendDb.db
     .insert(videoDrafts)
     .values({
@@ -183,7 +182,7 @@ describe("unified overview video read model", () => {
   it("includes videos published during the selected current day", () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      seedVideo(backendDb);
+      seedVideo(backendDb, new Date().toISOString());
       const config = loadConfig({});
       config.studio.modules.video_posting = true;
       config.studio.modules.youtube = true;
