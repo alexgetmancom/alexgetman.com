@@ -1,4 +1,4 @@
-FROM oven/bun:1.3.14-debian@sha256:9dba1a1b43ce28c9d7931bfc4eb00feb63b0114720a0277a8f939ae4dfc9db6
+FROM oven/bun:1.3.14-debian@sha256:9dba1a1b43ce28c9d7931bfc4eb00feb63b0114720a0277a8f939ae4dfc9db6f
 
 # VAAPI needs Intel's iHD driver in the image in addition to the /dev/dri
 # device supplied by compose.  The remote VM-106 executor is intentionally
