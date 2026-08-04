@@ -7,7 +7,6 @@ import { plural, t } from "../foundation/i18n/index.js";
 import { log } from "../foundation/logger.js";
 import { formatMsk } from "../interfaces/telegram/time.js";
 import { createStudioServices } from "../studio/services/index.js";
-import { withCallbackActionLock } from "./callback-action.js";
 import type { PublicationActionContext, PublicationActionResult } from "./callback-router.js";
 import { isStaleCardCallback, PUBLICATION_CARD_FRESHNESS } from "./card-freshness.js";
 import { clearConversationState, getConversationState, requireConversationState, saveConversationState } from "./conversation-state.js";
@@ -116,9 +115,8 @@ async function handleCancel({ backendDb, config, draftId }: PostActionArgs): Pro
   return previewEffects(backendDb, draftId, config, "confirm_delete");
 }
 
-async function handleCancelConfirm({ ctx, actorId, locale, draftId, data, posts }: PostActionArgs): Promise<PublicationActionResult> {
-  const result = await withCallbackActionLock(ctx, `${actorId}:${data}`, async () => posts.cancel(actorId, draftId));
-  if (!result.ok) return;
+async function handleCancelConfirm({ actorId, locale, draftId, posts }: PostActionArgs): Promise<PublicationActionResult> {
+  posts.cancel(actorId, draftId);
   return [
     { type: "toast", text: t(locale, "action.cancelled") },
     {
@@ -131,7 +129,6 @@ async function handleCancelConfirm({ ctx, actorId, locale, draftId, data, posts 
 }
 
 async function handleRetry({
-  ctx,
   backendDb,
   config,
   actorId,
@@ -139,25 +136,21 @@ async function handleRetry({
   action,
   second,
   draftId,
-  data,
   posts,
 }: PostActionArgs): Promise<PublicationActionResult> {
-  const result = await withCallbackActionLock(ctx, `${actorId}:${data}`, async () =>
-    posts.retryFailed(actorId, draftId, second || undefined),
-  );
-  if (!result.ok) return;
+  const result = posts.retryFailed(actorId, draftId, second || undefined);
   if (action !== "post_retry")
     return [
       {
         type: "toast",
-        text: t(locale, "action.retry-result", { requeued: result.value.requeued, alreadyQueued: result.value.alreadyQueued }),
+        text: t(locale, "action.retry-result", { requeued: result.requeued, alreadyQueued: result.alreadyQueued }),
       },
     ];
   const preview = draftPreview(backendDb, draftId, config);
   return [
     {
       type: "toast",
-      text: t(locale, "action.retry-result", { requeued: result.value.requeued, alreadyQueued: result.value.alreadyQueued }),
+      text: t(locale, "action.retry-result", { requeued: result.requeued, alreadyQueued: result.alreadyQueued }),
     },
     {
       type: "screen",
@@ -179,18 +172,16 @@ async function handlePublish(args: PostActionArgs): Promise<PublicationActionRes
 }
 
 async function handleStoryPublish({
-  ctx,
   backendDb,
   config,
   actorId,
   locale,
   action,
   draftId,
-  data,
   posts,
 }: PostActionArgs): Promise<PublicationActionResult> {
   posts.setStoryPublishMode(actorId, draftId, action === "story_publish_all" ? "all" : "site_only");
-  return queuePostNow(ctx, backendDb, config, actorId, draftId, data, locale);
+  return queuePostNow(backendDb, config, actorId, draftId, locale);
 }
 
 async function handleStorySchedule({
@@ -226,16 +217,8 @@ async function handleThreadsChain({
   ];
 }
 
-async function handlePublishConfirm({
-  ctx,
-  backendDb,
-  config,
-  actorId,
-  locale,
-  draftId,
-  data,
-}: PostActionArgs): Promise<PublicationActionResult> {
-  return queuePostNow(ctx, backendDb, config, actorId, draftId, data, locale);
+async function handlePublishConfirm({ backendDb, config, actorId, locale, draftId }: PostActionArgs): Promise<PublicationActionResult> {
+  return queuePostNow(backendDb, config, actorId, draftId, locale);
 }
 
 async function handleSchedule(args: PostActionArgs): Promise<PublicationActionResult> {
@@ -249,19 +232,17 @@ async function handleSchedule(args: PostActionArgs): Promise<PublicationActionRe
 }
 
 async function handleScheduleScope({
-  ctx,
   backendDb,
   config,
   actorId,
   locale,
   first,
   draftId,
-  data,
 }: PostActionArgs): Promise<PublicationActionResult> {
   if (!first) return [{ type: "toast", text: t(locale, "action.unknown") }];
   clearConversationState(backendDb, actorId, "post");
-  if (first === "ru_now") return commitLocaleScheduleOnce(ctx, backendDb, config, actorId, draftId, "ru", new Date(), data, "ru");
-  if (first === "en_now") return commitLocaleScheduleOnce(ctx, backendDb, config, actorId, draftId, "en", new Date(), data, "en");
+  if (first === "ru_now") return commitLocaleScheduleOnce(backendDb, config, actorId, draftId, "ru", new Date(), "ru");
+  if (first === "en_now") return commitLocaleScheduleOnce(backendDb, config, actorId, draftId, "en", new Date(), "en");
   if (first === "both") return previewEffects(backendDb, draftId, config, "schedule_ru");
   return [{ type: "toast", text: t(locale, "action.unknown") }];
 }
@@ -273,24 +254,21 @@ async function handleScheduleView({ backendDb, config, actorId, first, draftId }
 }
 
 async function handleSchedulePick({
-  ctx,
   backendDb,
   config,
   actorId,
   first,
   second,
   draftId,
-  data,
   posts,
 }: PostActionArgs): Promise<PublicationActionResult> {
   if (!first || !second) return;
   clearConversationState(backendDb, actorId, "post");
   const value = posts.slotTime(`${second.slice(0, 2)}:${second.slice(2, 4)}`);
-  return commitLocaleScheduleOnce(ctx, backendDb, config, actorId, draftId, requireScheduleLocale(first), value, data);
+  return commitLocaleScheduleOnce(backendDb, config, actorId, draftId, requireScheduleLocale(first), value);
 }
 
 async function handleManualScheduleConfirm({
-  ctx,
   backendDb,
   config,
   actorId,
@@ -303,7 +281,7 @@ async function handleManualScheduleConfirm({
     return [{ type: "toast", text: t(locale, "action.schedule-expired") }];
   const { locale: scope, value } = stateStep;
   clearConversationState(backendDb, actorId, "post");
-  return commitLocaleScheduleOnce(ctx, backendDb, config, actorId, draftId, scope, value, `sched_manual_confirm:${draftId}`);
+  return commitLocaleScheduleOnce(backendDb, config, actorId, draftId, scope, value);
 }
 
 async function handleManualSchedule({
@@ -332,19 +310,14 @@ async function handleManualSchedule({
 }
 
 async function queuePostNow(
-  ctx: Context,
   backendDb: BackendDb,
   config: BackendConfig,
   actorId: number,
   draftId: number,
-  actionKey: string,
   locale: ReturnType<typeof botLocale>,
 ): Promise<PublicationActionResult> {
   const posts = createStudioServices(backendDb, config).posts;
-  const result = await withCallbackActionLock(ctx, `${actorId}:${actionKey}`, async () => {
-    posts.publish(actorId, draftId);
-  });
-  if (!result.ok) return;
+  posts.publish(actorId, draftId);
   const progress = renderPostProgress(posts.progress(actorId, draftId), locale);
   return [
     { type: "toast", text: t(locale, "action.queued") },
@@ -515,21 +488,15 @@ async function commitLocaleSchedule(
 }
 
 async function commitLocaleScheduleOnce(
-  ctx: Context,
   backendDb: BackendDb,
   config: BackendConfig,
   actorId: number,
   draftId: number,
   scheduleLocale: "ru" | "en",
   value: Date,
-  actionKey: string,
   immediateLocale?: "ru" | "en",
 ): Promise<PublicationActionResult> {
-  const result = await withCallbackActionLock(ctx, `${actorId}:${actionKey}`, () =>
-    commitLocaleSchedule(backendDb, config, actorId, draftId, scheduleLocale, value, immediateLocale),
-  );
-  if (!result.ok) return;
-  return result.value;
+  return commitLocaleSchedule(backendDb, config, actorId, draftId, scheduleLocale, value, immediateLocale);
 }
 
 function sendPublishConfirmation(backendDb: BackendDb, config: BackendConfig, actorId: number, draftId: number): PublicationEffect[] {
@@ -642,16 +609,12 @@ export async function applyAdminState(
   const actorId = Number(ctx.from?.id);
   if (expectedRevision != null) requireConversationState(backendDb, actorId, "post", expectedRevision);
   const message = extractMessage(ctx);
-  const transition = await acceptFlow(
-    POST_FLOW,
-    step.type,
-    { ctx, backendDb, config, actorId, draftId, controlMessageId, step, message },
-    {},
-  );
+  const transition = await acceptFlow(POST_FLOW, step.type, { backendDb, config, actorId, draftId, controlMessageId, step, message }, {});
   if (!transition) throw new StudioError("action.session-stale");
   if (transition.next === null) {
     const preview = draftPreview(backendDb, draftId, config);
     return [
+      ...transition.effects,
       { type: "session", operation: "clear", kind: "post", actorId },
       {
         type: "prompt",
@@ -661,7 +624,7 @@ export async function applyAdminState(
       },
     ];
   }
-  return [];
+  return [...transition.effects];
 }
 
 function scheduledDraftText(

@@ -1,3 +1,4 @@
+import type { Menu } from "@grammyjs/menu";
 import { type Context, type InlineKeyboard, InputFile } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import { setTelegramPostCard, setTelegramPostProgressCard, setTelegramVideoCard } from "../interfaces/telegram/control-cards.js";
@@ -6,6 +7,7 @@ import type { DeliveryProjection } from "../studio/projections.js";
 import type { ConversationStateInput } from "./conversation-state.js";
 import { clearConversationState, saveConversationState } from "./conversation-state.js";
 import type { BotLocale } from "./i18n.js";
+import { showMainMenu } from "./menu-render.js";
 
 type PublicationCard =
   | { kind: "post"; draftId: number }
@@ -22,8 +24,14 @@ export type PublicationEffect =
   | { type: "edit-reply-markup"; keyboard: InlineKeyboard }
   | { type: "photo"; path: string; options?: Record<string, unknown>; card?: PublicationCard }
   | { type: "delivery-previews"; projections: DeliveryProjection[]; locale: BotLocale }
+  | { type: "main-menu"; menu: Menu<Context>; edit?: boolean }
   | { type: "session"; operation: "clear"; kind: "post" | "video"; actorId: number }
   | { type: "session"; operation: "save"; actorId: number; state: ConversationStateInput };
+
+export type PublicationMessageResult = {
+  handled: boolean;
+  effects: readonly PublicationEffect[];
+};
 
 /** Executes transport effects in order, keeping callback acknowledgements in one place. */
 export async function executePublicationEffects(ctx: Context, backendDb: BackendDb, effects: readonly PublicationEffect[]): Promise<void> {
@@ -44,7 +52,7 @@ export async function executePublicationEffects(ctx: Context, backendDb: Backend
       const mode = effect.type === "screen" ? effect.mode : "reply";
       const message =
         mode === "edit" ? await ctx.editMessageText(effect.text, effect.options) : await ctx.reply(effect.text, effect.options);
-      const messageId = mode === "edit" ? callbackMessageId(ctx) : typeof message === "boolean" ? null : message.message_id;
+      const messageId = mode === "edit" ? callbackMessageId(ctx) : typeof message === "boolean" || !message ? null : message.message_id;
       if (messageId != null) bindCard(backendDb, ctx, effect.card, messageId);
       continue;
     }
@@ -63,6 +71,10 @@ export async function executePublicationEffects(ctx: Context, backendDb: Backend
     }
     if (effect.type === "delivery-previews") {
       await sendTelegramDeliveryPreviews(ctx, effect.projections, effect.locale);
+      continue;
+    }
+    if (effect.type === "main-menu") {
+      await showMainMenu(ctx, backendDb, effect.menu, effect.edit);
       continue;
     }
     if (effect.operation === "clear") {

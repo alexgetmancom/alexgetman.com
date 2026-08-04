@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { and, eq } from "drizzle-orm";
 import { clearConversationStateIfCurrent, getConversationState, saveConversationState } from "../src/bot/conversation-state.js";
-import { type PostWizardStep, postStateStep, resolvePostWizardStep } from "../src/bot/post-fsm.js";
+import { type PostWizardStep, postStateStep } from "../src/bot/post-fsm.js";
 import { clearVideoState, getVideoState, saveVideoState } from "../src/bot/video-ui.js";
 import type { BackendDb } from "../src/db/client.js";
 import { conversationSessions } from "../src/db/schema.js";
@@ -61,15 +61,9 @@ describe("Telegram dialog state", () => {
     ];
 
     for (const step of steps) {
-      expect(resolvePostWizardStep(step.type, postData(step))).toEqual(step);
+      expect(postStateStep({ step: step.type, data: postData(step) })).toEqual(step);
     }
-    expect(resolvePostWizardStep("schedule_confirm", { locale: "ru", value: "not-a-date" })).toBeNull();
-    expect(resolvePostWizardStep("edit_text_ru")).toEqual({ type: "edit_text", locale: "ru" });
-    expect(resolvePostWizardStep("schedule_confirm_en_2026-08-04T12:34:56.000Z")).toEqual({
-      type: "schedule_confirm",
-      locale: "en",
-      value,
-    });
+    expect(postStateStep({ step: "schedule_confirm", data: { locale: "ru", value: "not-a-date" } })).toBeNull();
   });
 
   it("stores the step name beside its structured parameters", () => {

@@ -3,9 +3,10 @@ import { and, eq } from "drizzle-orm";
 import { type Context, InlineKeyboard } from "grammy";
 import { handlePublicationCallback } from "../src/bot/callback-router.js";
 import { isStaleCardCallback } from "../src/bot/card-freshness.js";
-import { editDraftPreview, showScheduleConfirmation } from "../src/bot/post-card.js";
+import { executePublicationEffects } from "../src/bot/effects.js";
+import { draftPreview } from "../src/bot/preview.js";
 import { type PublicationCallback, parseSessionCallback, publicationCallback, versionedCallback } from "../src/bot/session-fsm.js";
-import { getVideoState, sendVideoControl } from "../src/bot/video-ui.js";
+import { getVideoState, videoControlEffects } from "../src/bot/video-ui.js";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import type { BackendDb } from "../src/db/client.js";
 import { draftStoryCards, videoDrafts } from "../src/db/schema.js";
@@ -113,7 +114,16 @@ describe("Telegram card freshness", () => {
         editMessageText: async () => undefined,
       } as unknown as Context;
 
-      await editDraftPreview(ctx, backendDb, draftId, loadConfig({}), "schedule");
+      const preview = draftPreview(backendDb, draftId, loadConfig({}), "schedule");
+      await executePublicationEffects(ctx, backendDb, [
+        {
+          type: "screen",
+          mode: "edit",
+          text: preview.text,
+          options: { parse_mode: "Markdown", reply_markup: preview.keyboard },
+          card: { kind: "post", draftId },
+        },
+      ]);
 
       expect(telegramPostCard(backendDb, draftId)).toEqual({ chatId: 100, messageId: 20 });
     } finally {
@@ -131,15 +141,15 @@ describe("Telegram card freshness", () => {
         reply: async () => ({ message_id: 21 }),
       } as unknown as Context;
 
-      await showScheduleConfirmation(
-        ctx,
-        backendDb,
-        draftId,
-        loadConfig({}),
-        new Date("2026-08-05T08:00:00.000Z"),
-        null,
-        "sched_manual_confirm:1",
-      );
+      const preview = draftPreview(backendDb, draftId, loadConfig({}));
+      await executePublicationEffects(ctx, backendDb, [
+        {
+          type: "prompt",
+          text: preview.text,
+          options: { parse_mode: "Markdown", reply_markup: preview.keyboard },
+          card: { kind: "post", draftId },
+        },
+      ]);
 
       expect(telegramPostCard(backendDb, draftId)).toEqual({ chatId: 100, messageId: 21 });
     } finally {
@@ -216,13 +226,14 @@ describe("Telegram card freshness", () => {
         reply: async () => ({ message_id: 21 }),
       } as unknown as Context;
 
-      await sendVideoControl(
+      await executePublicationEffects(
         ctx,
         backendDb,
-        42,
-        { kind: "video", draftId, step: "schedule_common", selected: ["youtube_shorts"], data: {}, controlMessageId: null, revision: 0 },
-        "When?",
-        new InlineKeyboard(),
+        videoControlEffects(
+          { kind: "video", draftId, step: "schedule_common", selected: ["youtube_shorts"], data: {}, controlMessageId: null, revision: 0 },
+          "When?",
+          new InlineKeyboard(),
+        ),
       );
 
       expect(telegramVideoCard(backendDb, draftId)).toEqual({ chatId: 100, messageId: 21 });

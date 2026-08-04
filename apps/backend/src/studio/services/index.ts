@@ -8,12 +8,15 @@ import { studioDashboard } from "./dashboard.js";
 import { mediaService } from "./media.js";
 import { notificationService } from "./notifications.js";
 import { postService } from "./posts.js";
+import type { PublicationPipelines } from "./publication-pipelines.js";
+import { publicationPipelines } from "./publication-pipelines.js";
 import { queueService } from "./queue.js";
 import { settingsService } from "./settings.js";
 import { videoService } from "./videos.js";
 
 export type StudioServices = {
   posts: ReturnType<typeof postService>;
+  publications: PublicationPipelines;
   media: ReturnType<typeof mediaService>;
   channels: ReturnType<typeof channelService>;
   videos: ReturnType<typeof videoService>;
@@ -39,6 +42,7 @@ export function createStudioServices(backendDb: BackendDb, config: BackendConfig
   const videos = videoService(backendDb, config);
   const services = {
     posts,
+    publications: publicationPipelines(posts, videos),
     media: mediaService(backendDb, config),
     channels: channelService(backendDb, config),
     videos,

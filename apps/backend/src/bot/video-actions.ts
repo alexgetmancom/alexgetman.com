@@ -14,7 +14,6 @@ import {
   VIDEO_FLOW,
   type VideoWizardStep,
 } from "../studio/video-fsm.js";
-import { withCallbackActionLock } from "./callback-action.js";
 import type { PublicationActionContext, PublicationActionResult } from "./callback-router.js";
 import { appendCancelButton, cancelPromptKeyboard, confirmationKeyboard, resultNavigationKeyboard } from "./dialog-ui.js";
 import type { PublicationEffect } from "./effects.js";
@@ -343,23 +342,20 @@ async function handleRetry({ backendDb, config, actorId, locale, args }: VideoAc
   ];
 }
 
-async function handleScheduleConfirm({ ctx, backendDb, config, actorId, args, data }: VideoActionArgs): Promise<VideoActionResult> {
+async function handleScheduleConfirm({ backendDb, config, actorId, args }: VideoActionArgs): Promise<VideoActionResult> {
   const id = requireDraftId(args[0]);
   const session = getVideoState(backendDb, actorId);
   if (!session || session.draftId !== id) throw new StudioError("action.schedule-expired");
   requireSessionStep(session.step, ["schedule_confirm"], "action.schedule-expired");
   const values = session.data.schedule as Record<string, string> | undefined;
   if (!values) throw new StudioError("action.schedule-expired");
-  const result = await withCallbackActionLock(ctx, `${actorId}:${data}`, () =>
-    finishVideoSchedule(
-      backendDb,
-      config,
-      actorId,
-      session,
-      Object.fromEntries(Object.entries(values).map(([target, value]) => [target, new Date(value)])) as Partial<Record<VideoTarget, Date>>,
-    ),
+  return finishVideoSchedule(
+    backendDb,
+    config,
+    actorId,
+    session,
+    Object.fromEntries(Object.entries(values).map(([target, value]) => [target, new Date(value)])) as Partial<Record<VideoTarget, Date>>,
   );
-  return result.ok ? result.value : undefined;
 }
 
 async function handleScheduleStart({ ctx, backendDb, config, actorId, locale, args }: VideoActionArgs): Promise<VideoActionResult> {
@@ -443,13 +439,12 @@ async function handleNowAsk({ ctx, backendDb, config, actorId, locale, args }: V
   ];
 }
 
-async function handleNowConfirm({ ctx, backendDb, config, actorId, args, data }: VideoActionArgs): Promise<VideoActionResult> {
+async function handleNowConfirm({ backendDb, config, actorId, args }: VideoActionArgs): Promise<VideoActionResult> {
   const id = requireDraftId(args[0]);
   const session = getVideoState(backendDb, actorId);
   if (!session || session.draftId !== id) throw new StudioError("action.schedule-expired");
   requireSessionStep(session.step, ["schedule_confirm"], "action.schedule-expired");
-  const result = await withCallbackActionLock(ctx, `${actorId}:${data}`, () => finishVideoNow(backendDb, config, actorId, session));
-  return result.ok ? result.value : undefined;
+  return finishVideoNow(backendDb, config, actorId, session);
 }
 
 async function handleCancelAsk({ backendDb, config, actorId, locale, args }: VideoActionArgs): Promise<VideoActionResult> {
@@ -497,17 +492,14 @@ async function handleRemoveAsk({ backendDb, config, actorId, locale, args }: Vid
   ];
 }
 
-async function handleCancel({ ctx, backendDb, config, actorId, locale, args, data }: VideoActionArgs): Promise<VideoActionResult> {
-  const result = await withCallbackActionLock(ctx, `${actorId}:${data}`, () =>
-    createStudioServices(backendDb, config).videos.cancel(actorId, requireDraftId(args[0])),
-  );
-  if (!result.ok) return;
+async function handleCancel({ backendDb, config, actorId, locale, args }: VideoActionArgs): Promise<VideoActionResult> {
+  const result = await createStudioServices(backendDb, config).videos.cancel(actorId, requireDraftId(args[0]));
   clearVideoState(backendDb, actorId);
-  const manualRemoval = result.value.manualRemoval
+  const manualRemoval = result.manualRemoval
     .map(({ target, url }) => t(locale, "video.remove-manually", { label: videoTargetLabel(target), url: url ? `: ${url}` : "" }))
     .join("\n");
-  const heldPrivate = result.value.heldPrivateYouTubeIds.length ? `\n${t(locale, "video.held-private")}` : "";
-  const attention = result.value.holdFailures.length ? `\n${t(locale, "video.hold-failed")}` : "";
+  const heldPrivate = result.heldPrivateYouTubeIds.length ? `\n${t(locale, "video.held-private")}` : "";
+  const attention = result.holdFailures.length ? `\n${t(locale, "video.hold-failed")}` : "";
   return [
     {
       type: "screen",
@@ -600,15 +592,11 @@ function scheduleSessionSteps(): string[] {
   return ["schedule_common", "schedule_target"];
 }
 
-async function handleRemove({ ctx, backendDb, config, actorId, locale, args, data }: VideoActionArgs): Promise<VideoActionResult> {
+async function handleRemove({ backendDb, config, actorId, locale, args }: VideoActionArgs): Promise<VideoActionResult> {
   const [idText, targetText] = args;
   const target = requireVideoTarget(targetText ?? "");
   const id = requireDraftId(idText);
-  const result = await withCallbackActionLock(ctx, `${actorId}:${data}`, async () =>
-    createStudioServices(backendDb, config).videos.removeTarget(actorId, id, target),
-  );
-  if (!result.ok) return;
-  const { cancelled } = result.value;
+  const { cancelled } = createStudioServices(backendDb, config).videos.removeTarget(actorId, id, target);
   if (cancelled) {
     clearVideoState(backendDb, actorId);
     return [

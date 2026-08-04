@@ -1,23 +1,21 @@
-import type { Menu } from "@grammyjs/menu";
 import type { Context } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { describeError, t } from "../foundation/i18n/index.js";
-import { setTelegramPostCard } from "../interfaces/telegram/control-cards.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { appendPendingAlbum } from "./albums.js";
 import { clearConversationState, getConversationState, saveConversationState } from "./conversation-state.js";
 import { cancelPromptKeyboard } from "./dialog-ui.js";
-import { executePublicationEffects } from "./effects.js";
+import { executePublicationEffects, type PublicationMessageResult } from "./effects.js";
 import { botLocale } from "./i18n.js";
-import { persistentKeyboard, showMainMenu } from "./menu-render.js";
+import { persistentKeyboard } from "./menu-render.js";
 import { extractMessage } from "./message.js";
 import { applyAdminState } from "./post-actions.js";
-import { sendDraftPreview } from "./post-card.js";
 import { isPostInputStep, postStateStep } from "./post-fsm.js";
 import { translatePostText } from "./post-translation.js";
-import { parseSessionCallback, requireSessionRevision } from "./session-fsm.js";
+import { draftPreview } from "./preview.js";
+import { parseSessionCallback, publicationCallback } from "./session-fsm.js";
 
 /** The conversational text-post screen. It owns user input and keeps the
  * root bot router limited to authorization and screen dispatch.
@@ -35,9 +33,8 @@ async function renderPostScreen(ctx: Context, backendDb: BackendDb, mode: "reply
   }).revision;
   const locale = botLocale(backendDb, actorId);
   const prompt = t(locale, "post.dialog-prompt");
-  const options = { reply_markup: cancelPromptKeyboard(locale, "cancel_dialog", revision) };
-  if (mode === "edit") await ctx.editMessageText(prompt, options);
-  else await ctx.reply(prompt, options);
+  const options = { reply_markup: cancelPromptKeyboard(locale, publicationCallback("post", "cancel_dialog", [], revision)) };
+  await executePublicationEffects(ctx, backendDb, [{ type: "screen", mode, text: prompt, options }]);
 }
 
 export async function startPostScreen(ctx: Context, backendDb: BackendDb): Promise<void> {
@@ -48,7 +45,7 @@ export async function openPostScreen(ctx: Context, backendDb: BackendDb): Promis
   await renderPostScreen(ctx, backendDb, "edit");
 }
 
-export async function handlePostMessage(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<void> {
+export async function handlePostMessage(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<PublicationMessageResult> {
   const actorId = Number(ctx.from?.id);
   const locale = botLocale(backendDb, actorId);
   const state = getConversationState(backendDb, actorId, "post");
@@ -57,11 +54,20 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
   const mediaGroupId = ctx.message && "media_group_id" in ctx.message ? ctx.message.media_group_id : undefined;
   if (mediaGroupId && message.media.length > 0) {
     if (!stateStep || (stateStep.type !== "new_post" && !state?.draftId)) {
-      await ctx.reply(t(locale, "post.album-need-action"), { reply_markup: persistentKeyboard(locale) });
-      return;
+      return {
+        handled: true,
+        effects: [
+          {
+            type: "screen",
+            mode: "reply",
+            text: t(locale, "post.album-need-action"),
+            options: { reply_markup: persistentKeyboard(locale) },
+          },
+        ],
+      };
     }
     const media = message.media[0];
-    if (!media) return;
+    if (!media) return { handled: true, effects: [] };
     const isNew = appendPendingAlbum(backendDb, {
       actorId,
       chatId: Number(ctx.chat?.id),
@@ -73,53 +79,54 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
       draftId: state?.draftId ?? null,
       stateRevision: state?.revision ?? null,
     });
-    if (isNew) await ctx.reply(t(locale, "post.album-received"));
-    return;
+    return { handled: true, effects: isNew ? [{ type: "screen", mode: "reply", text: t(locale, "post.album-received") }] : [] };
   }
   if (stateStep && isPostInputStep(stateStep) && state?.draftId) {
     try {
       const effects = await applyAdminState(ctx, backendDb, config, stateStep, state.draftId, state.controlMessageId, state.revision);
-      await executePublicationEffects(ctx, backendDb, effects);
+      return { handled: true, effects };
     } catch (error) {
       const scheduleInput = stateStep.type === "schedule_manual";
       const errorText =
         error instanceof StudioError && error.code === "common.schedule-parse-error"
           ? t(locale, "common.schedule-parse-error", { timezone: config.TIMEZONE_LABEL })
           : describeError(locale, error);
-      await ctx.reply(scheduleInput ? errorText : t(locale, "post.value-error", { error: errorText }));
+      return {
+        handled: true,
+        effects: [{ type: "screen", mode: "reply", text: scheduleInput ? errorText : t(locale, "post.value-error", { error: errorText }) }],
+      };
     }
-    return;
   }
   if (stateStep?.type !== "new_post") {
-    await ctx.reply(t(locale, "post.need-new-post"), { reply_markup: persistentKeyboard(locale) });
-    return;
+    return {
+      handled: true,
+      effects: [
+        { type: "screen", mode: "reply", text: t(locale, "post.need-new-post"), options: { reply_markup: persistentKeyboard(locale) } },
+      ],
+    };
   }
   const textEn = await translatePostText(message.text, config);
   const draftId = createStudioServices(backendDb, config).posts.create(actorId, { ...message, textEn });
   clearConversationState(backendDb, actorId, "post");
-  const control = await sendDraftPreview(ctx, backendDb, draftId, config);
-  if (ctx.chat?.id) setTelegramPostCard(backendDb, draftId, Number(ctx.chat.id), control.message_id);
+  const preview = draftPreview(backendDb, draftId, config);
+  return {
+    handled: true,
+    effects: [
+      {
+        type: "screen",
+        mode: "reply",
+        text: preview.text,
+        options: { parse_mode: "Markdown", reply_markup: preview.keyboard },
+        card: { kind: "post", draftId },
+      },
+    ],
+  };
 }
 
-export async function handlePostScreenCallback(ctx: Context, backendDb: BackendDb, mainMenu: Menu<Context>): Promise<boolean> {
+export async function handlePostScreenCallback(ctx: Context, backendDb: BackendDb): Promise<boolean> {
   const rawData = ctx.callbackQuery?.data;
-  const session = rawData ? parseSessionCallback(rawData) : { data: undefined, callback: null, revision: null };
-  const publication = session.callback;
-  const data = publication?.kind === "post" ? publication.action : session.data;
-  const revision = session.revision;
-  if (data === "menu_text") {
-    await ctx.answerCallbackQuery();
-    await openPostScreen(ctx, backendDb);
-    return true;
-  }
-  if (data === "cancel_dialog") {
-    requireSessionRevision(getConversationState(backendDb, Number(ctx.from?.id), "post")?.revision, revision);
-    await ctx.answerCallbackQuery();
-    clearConversationState(backendDb, Number(ctx.from?.id), "post");
-    // Cancelling is pure navigation, not a content change: turn this same
-    // message back into the main menu instead of deleting and sending a new one.
-    await showMainMenu(ctx, backendDb, mainMenu, true);
-    return true;
-  }
-  return false;
+  if (!rawData || parseSessionCallback(rawData).data !== "menu_text") return false;
+  await executePublicationEffects(ctx, backendDb, [{ type: "answer-callback" }]);
+  await openPostScreen(ctx, backendDb);
+  return true;
 }

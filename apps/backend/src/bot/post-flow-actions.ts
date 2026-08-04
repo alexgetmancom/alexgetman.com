@@ -1,16 +1,20 @@
-import type { BackendDb } from "../db/client.js";
-import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
-import { sendTelegramDeliveryPreviews } from "../interfaces/telegram/delivery-previews.js";
+import { t } from "../foundation/i18n/index.js";
+import { formatMsk } from "../interfaces/telegram/time.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { saveConversationState } from "./conversation-state.js";
+import { confirmationKeyboard } from "./dialog-ui.js";
+import type { PublicationEffect } from "./effects.js";
 import { botLocale } from "./i18n.js";
-import { showScheduleConfirmation } from "./post-card.js";
 import type { PostFlowData, PostFlowInput } from "./post-fsm.js";
+import { draftPreview } from "./preview.js";
 import { publicationCallback } from "./session-fsm.js";
 
 /** Accepts a manually entered publication time and opens the confirmation step. */
-export async function acceptManualPostSchedule(input: PostFlowInput, data: PostFlowData): Promise<PostFlowData> {
+export async function acceptManualPostSchedule(
+  input: PostFlowInput,
+  data: PostFlowData,
+): Promise<{ data: PostFlowData; effects: readonly PublicationEffect[] }> {
   const { step } = input;
   if (step.type !== "schedule_manual") throw new StudioError("action.session-stale");
   const { ruAt, enAt } = createStudioServices(input.backendDb, input.config).posts.manualSchedule(
@@ -21,25 +25,32 @@ export async function acceptManualPostSchedule(input: PostFlowInput, data: PostF
   );
   const value = step.locale === "ru" ? ruAt : enAt;
   if (!value) throw new StudioError("err.no-pub-time");
-  const revision = saveConversationState(input.backendDb, input.actorId, {
+  saveConversationState(input.backendDb, input.actorId, {
     kind: "post",
     draftId: input.draftId,
     step: "schedule_confirm",
     data: { locale: step.locale, value: value.toISOString() },
     controlMessageId: input.controlMessageId,
-  }).revision;
-  await sendPostPreviews(input.ctx, input.backendDb, input.config, input.actorId, input.draftId);
-  await showScheduleConfirmation(
-    input.ctx,
-    input.backendDb,
-    input.draftId,
-    input.config,
-    ruAt,
-    enAt,
-    publicationCallback("post", "sched_manual_confirm", [input.draftId], revision),
-    step.locale === "ru" ? "schedule_ru" : "schedule_en",
+  });
+  const locale = botLocale(input.backendDb, input.actorId);
+  const preview = draftPreview(input.backendDb, input.draftId, input.config);
+  const keyboard = confirmationKeyboard(
+    { label: t(locale, "post.confirm-schedule-btn"), callback: publicationCallback("post", "sched_manual_confirm", [input.draftId]) },
+    {
+      label: t(locale, "common.back"),
+      callback: publicationCallback("post", "sched_view", [input.draftId, step.locale === "ru" ? "schedule_ru" : "schedule_en"]),
+    },
   );
-  return { ...data, value };
+  const text = `${preview.text}\n\n📅 *${t(locale, "common.confirm-schedule")}*\nRU: ${formatMsk(ruAt, input.config)}\nEN: ${formatMsk(enAt, input.config)}`;
+  const effects: PublicationEffect[] = [
+    {
+      type: "delivery-previews",
+      projections: createStudioServices(input.backendDb, input.config).posts.preview(input.actorId, input.draftId).delivery.projections,
+      locale,
+    },
+    { type: "prompt", text, options: { parse_mode: "Markdown", reply_markup: keyboard }, card: { kind: "post", draftId: input.draftId } },
+  ];
+  return { data: { ...data, value }, effects };
 }
 
 /** Applies a replacement text through the canonical post service. */
@@ -95,15 +106,4 @@ function extractUrls(value: string): string[] {
         return false;
       }
     });
-}
-
-async function sendPostPreviews(
-  ctx: PostFlowInput["ctx"],
-  backendDb: BackendDb,
-  config: BackendConfig,
-  actorId: number,
-  draftId: number,
-): Promise<void> {
-  const delivery = createStudioServices(backendDb, config).posts.preview(actorId, draftId).delivery;
-  await sendTelegramDeliveryPreviews(ctx, delivery.projections, botLocale(backendDb, actorId));
 }

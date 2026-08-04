@@ -2,13 +2,13 @@ import { autoRetry } from "@grammyjs/auto-retry";
 import { Bot, type Context } from "grammy";
 import { handleAnalyticsCallback } from "./bot/analytics-screen.js";
 import { runCallbackBoundary } from "./bot/callback-boundary.js";
-import { handleActivePublicationMessage, handlePublicationCallback } from "./bot/callback-router.js";
+import { handlePublicationCallback, handlePublicationMessage } from "./bot/callback-router.js";
 import { botLocale } from "./bot/i18n.js";
 import { persistentKeyboard, showMainMenu } from "./bot/menu-render.js";
 import { buildMainMenu } from "./bot/navigation.js";
 import { buildNotificationsMenu, notificationsInboxText } from "./bot/notifications-screen.js";
 import { handleOperationsCallback } from "./bot/operations-screen.js";
-import { handlePostMessage, handlePostScreenCallback, startPostScreen } from "./bot/post-screen.js";
+import { handlePostScreenCallback, startPostScreen } from "./bot/post-screen.js";
 import { handleProgressCallback } from "./bot/progress-screen.js";
 import { showQueue, showQueueAttention } from "./bot/queue.js";
 import { parseSessionCallback } from "./bot/session-fsm.js";
@@ -97,15 +97,14 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
   bot.on("message", async (ctx) => {
     if (!isAdmin(config, ctx.from?.id)) return;
     if (await handleSettingsMessage(ctx, backendDb, config, settingsMenu)) return;
-    if (await handleActivePublicationMessage(ctx, backendDb, config)) return;
-    await handlePostMessage(ctx, backendDb, config);
+    await handlePublicationMessage(ctx, backendDb, config);
   });
 
   const callbackRoutes: CallbackRoute[] = [
     {
       name: "post-screen",
       matches: (data) => data === "menu_text",
-      handle: async (ctx) => handlePostScreenCallback(ctx, backendDb, mainMenu),
+      handle: async (ctx) => handlePostScreenCallback(ctx, backendDb),
     },
     {
       name: "queue",

@@ -1,9 +1,9 @@
-import type { Context } from "grammy";
 import type { Flow, FlowStep } from "../application/conversation-flow.js";
 import type { DraftMessage } from "../content/message.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import type { ConversationState } from "./conversation-state.js";
+import type { PublicationEffect } from "./effects.js";
 import { acceptManualPostSchedule, acceptPostMediaReplacement, acceptPostSourceEdit, acceptPostTextEdit } from "./post-flow-actions.js";
 
 export type PostWizardLocale = "ru" | "en";
@@ -21,7 +21,6 @@ export type PostWizardStep =
 
 export type PostFlowData = Record<string, unknown>;
 export type PostFlowInput = {
-  ctx: Context;
   backendDb: BackendDb;
   config: BackendConfig;
   actorId: number;
@@ -30,70 +29,43 @@ export type PostFlowInput = {
   step: PostWizardStep;
   message: DraftMessage;
 };
-export type PostWizardStepInput = PostWizardStep | PostSessionStep | null;
 
-function postStep(
-  name: PostSessionStep,
-  next: (data: PostFlowData) => string | null,
-  accept?: (input: PostFlowInput, data: PostFlowData) => PostFlowData | Promise<PostFlowData>,
-): FlowStep<PostFlowData, PostFlowInput> {
-  return { name, next, ...(accept ? { accept } : {}) };
-}
-
-const POST_STEPS: Record<string, FlowStep<PostFlowData, PostFlowInput>> = {
-  new_post: postStep(
-    "new_post",
-    () => null,
-    (input, data) => ({ ...data, input: input.message }),
-  ),
-  edit_sources: postStep("edit_sources", () => null, acceptPostSourceEdit),
-  edit_text: postStep("edit_text", () => null, acceptPostTextEdit),
-  replace_media: postStep("replace_media", () => null, acceptPostMediaReplacement),
-  schedule_manual: postStep("schedule_manual", () => "schedule_confirm", acceptManualPostSchedule),
-  schedule_confirm: postStep("schedule_confirm", () => null),
+const POST_STEPS: Record<string, FlowStep<PostFlowData, PostFlowInput, PublicationEffect>> = {
+  new_post: {
+    name: "new_post",
+    next: () => null,
+    accept: (input, data) => ({ ...data, input: input.message }),
+  },
+  edit_sources: { name: "edit_sources", next: () => null, accept: acceptPostSourceEdit },
+  edit_text: { name: "edit_text", next: () => null, accept: acceptPostTextEdit },
+  replace_media: { name: "replace_media", next: () => null, accept: acceptPostMediaReplacement },
+  schedule_manual: { name: "schedule_manual", next: () => "schedule_confirm", accept: acceptManualPostSchedule },
+  schedule_confirm: { name: "schedule_confirm", next: () => null },
 };
 
 /** The complete post workflow, including input effects and transitions. */
-export const POST_FLOW: Flow<PostFlowData, PostFlowInput> = {
+export const POST_FLOW: Flow<PostFlowData, PostFlowInput, PublicationEffect> = {
   kind: "post",
   steps: POST_STEPS,
 };
-
-export function resolvePostWizardStep(value: PostWizardStepInput | string, data: Record<string, unknown> = {}): PostWizardStep | null {
-  if (value && typeof value === "object") return value;
-  if (value === "new_post") return { type: "new_post" };
-  if (value === "edit_sources") return { type: "edit_sources" };
-  if (value === "edit_text") return localeStep("edit_text", data.locale);
-  if (value === "replace_media") return localeStep("replace_media", data.locale);
-  if (value === "schedule_manual") return localeStep("schedule_manual", data.locale);
-  if (value === "schedule_confirm") {
-    const locale = parseLocale(data.locale);
-    const date = parseDate(data.value);
-    return locale && date ? { type: "schedule_confirm", locale, value: date } : null;
-  }
-  if (typeof value !== "string") return null;
-  // Read-only compatibility for sessions written before step parameters moved
-  // into data_json. New writes never use this representation.
-  const legacyLocaleStep = value.match(/^(edit_text|replace_media|schedule_manual)_(ru|en)$/);
-  if (legacyLocaleStep)
-    return {
-      type: legacyLocaleStep[1] as "edit_text" | "replace_media" | "schedule_manual",
-      locale: legacyLocaleStep[2] as PostWizardLocale,
-    };
-  const legacySchedule = value.match(/^schedule_confirm_(ru|en)_(.+)$/);
-  if (legacySchedule) {
-    const date = parseDate(legacySchedule[2]);
-    return date ? { type: "schedule_confirm", locale: legacySchedule[1] as PostWizardLocale, value: date } : null;
-  }
-  return null;
-}
 
 export function isPostInputStep(step: PostWizardStep | null): boolean {
   return step?.type === "edit_sources" || step?.type === "edit_text" || step?.type === "replace_media" || step?.type === "schedule_manual";
 }
 
 export function postStateStep(state: Pick<ConversationState, "step" | "data"> | null): PostWizardStep | null {
-  return state ? resolvePostWizardStep(state.step, state.data) : null;
+  if (!state) return null;
+  if (state.step === "new_post") return { type: "new_post" };
+  if (state.step === "edit_sources") return { type: "edit_sources" };
+  if (state.step === "edit_text") return localeStep("edit_text", state.data.locale);
+  if (state.step === "replace_media") return localeStep("replace_media", state.data.locale);
+  if (state.step === "schedule_manual") return localeStep("schedule_manual", state.data.locale);
+  if (state.step === "schedule_confirm") {
+    const locale = parseLocale(state.data.locale);
+    const date = parseDate(state.data.value);
+    return locale && date ? { type: "schedule_confirm", locale, value: date } : null;
+  }
+  return null;
 }
 
 function localeStep(type: "edit_text" | "replace_media" | "schedule_manual", value: unknown): PostWizardStep | null {

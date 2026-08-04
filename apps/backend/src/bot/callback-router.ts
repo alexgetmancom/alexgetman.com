@@ -1,15 +1,16 @@
 import type { Menu } from "@grammyjs/menu";
 import { type Context, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
+import { withActionLock } from "../foundation/action-lock.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { describeError, t } from "../foundation/i18n/index.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { isStaleCardCallback, PUBLICATION_CARD_FRESHNESS } from "./card-freshness.js";
 import { getActiveConversationState, getConversationState } from "./conversation-state.js";
-import { executePublicationEffects, type PublicationEffect } from "./effects.js";
+import { executePublicationEffects, type PublicationEffect, type PublicationMessageResult } from "./effects.js";
 import { type BotLocale, botLocale } from "./i18n.js";
 import { postActionHandlers } from "./post-actions.js";
-import { handlePostMessage, handlePostScreenCallback } from "./post-screen.js";
+import { handlePostMessage } from "./post-screen.js";
 import {
   type PUBLICATION_ACTIONS,
   type PublicationCallback,
@@ -33,6 +34,7 @@ export type CallbackRouterContext = {
   revision: number | null;
   parts: string[];
   args: string[];
+  mainMenu?: Menu<Context> | undefined;
 };
 
 export type PublicationActionContext = CallbackRouterContext & {
@@ -88,6 +90,7 @@ export function createCallbackRouter<TArgs, TEntity = undefined, TResult = void>
       revision,
       parts,
       args: callback.args,
+      mainMenu,
     };
     const route = options.routes[callback.kind][action];
 
@@ -117,8 +120,8 @@ export function createCallbackRouter<TArgs, TEntity = undefined, TResult = void>
         return true;
       }
       await options.prepare?.(common, entity ?? undefined);
-      const result = await route(options.buildArgs(common, entity ?? undefined, mainMenu));
-      await options.onResult?.(common, result);
+      const locked = await withActionLock(`${actorId}:${data}`, () => route(options.buildArgs(common, entity ?? undefined, mainMenu)));
+      await options.onResult?.(common, locked.ok ? locked.value : ([{ type: "answer-callback" }] as TResult));
     } catch (error) {
       if (!options.onError) throw error;
       await options.onError(common, error);
@@ -132,6 +135,7 @@ async function answerCallback(ctx: Context, backendDb: BackendDb, text: string |
 }
 
 type PublicationHandler = (args: PublicationActionContext) => Promise<PublicationActionResult>;
+type PublicationMessageHandler = (ctx: Context, backendDb: BackendDb, config: BackendConfig) => Promise<PublicationMessageResult>;
 // biome-ignore lint/suspicious/noConfusingVoidType: action declarations intentionally return no toast on the normal path.
 export type PublicationActionResult = readonly PublicationEffect[] | void;
 type PublicationRoutes = {
@@ -160,12 +164,21 @@ const VIDEO_SESSION_BOUND = new Set([
   "sched_manual",
 ]);
 
+const PUBLICATION_MESSAGE_HANDLERS: Record<PublicationKind, PublicationMessageHandler> = {
+  post: handlePostMessage,
+  video: handleVideoConversationMessage,
+};
+
 /** One action table for both publication kinds. Modules only declare handlers. */
 export const routes: PublicationRoutes = {
   post: {
-    cancel_dialog: async ({ ctx, backendDb, mainMenu }) => {
-      if (!mainMenu) return;
-      await handlePostScreenCallback(ctx, backendDb, mainMenu);
+    cancel_dialog: async ({ backendDb, actorId, revision, mainMenu }) => {
+      requireSessionRevision(getConversationState(backendDb, actorId, "post")?.revision, revision);
+      return [
+        { type: "answer-callback" },
+        { type: "session", operation: "clear", kind: "post", actorId },
+        ...(mainMenu ? [{ type: "main-menu", menu: mainMenu, edit: true } as const] : []),
+      ];
     },
     ...postActionHandlers,
   },
@@ -220,12 +233,20 @@ export async function handlePublicationCallback(
   return publicationRouter(ctx, backendDb, config, mainMenu);
 }
 
-/** Routes incoming text/media to the one active publication conversation. */
-export async function handleActivePublicationMessage(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<boolean> {
+/** Routes a message through the active publication flow, or starts a post when no flow is open. */
+export async function handlePublicationMessage(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<boolean> {
   const actorId = Number(ctx.from?.id);
-  const state = getActiveConversationState(backendDb, actorId);
-  if (!state) return false;
-  if (state.kind === "video") return handleVideoConversationMessage(ctx, backendDb, config);
-  await handlePostMessage(ctx, backendDb, config);
-  return true;
+  const active = getActiveConversationState(backendDb, actorId);
+  const result = await routePublicationMessage(ctx, backendDb, config, active?.kind ?? "post");
+  if (result.effects.length) await executePublicationEffects(ctx, backendDb, result.effects);
+  return result.handled;
+}
+
+async function routePublicationMessage(
+  ctx: Context,
+  backendDb: BackendDb,
+  config: BackendConfig,
+  kind: PublicationKind,
+): Promise<PublicationMessageResult> {
+  return PUBLICATION_MESSAGE_HANDLERS[kind](ctx, backendDb, config);
 }

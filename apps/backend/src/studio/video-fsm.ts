@@ -5,85 +5,64 @@ import type { VideoTarget } from "../publishing/video-types.js";
 export type VideoWizardStep = "youtube_title" | "youtube_description" | "youtube_game_url" | "youtube_tags" | "instagram_caption";
 export type VideoFlowData = Record<string, unknown> & { selectedTargets?: VideoTarget[]; nextTarget?: VideoTarget | null };
 
-function videoStep(
-  name: string,
-  next: (data: VideoFlowData) => string | null,
-  accept?: (input: unknown, data: VideoFlowData) => VideoFlowData,
-  back?: (data: VideoFlowData) => string | null,
-): FlowStep<VideoFlowData> {
-  return { name, next, ...(accept ? { accept } : {}), ...(back ? { back } : {}) };
-}
-
 const VIDEO_STEPS: Record<string, FlowStep<VideoFlowData>> = {
-  locale: videoStep(
-    "locale",
-    () => "asset",
-    (input, data) => ({ ...data, videoLocale: input }),
-  ),
-  asset: videoStep(
-    "asset",
-    (data) => (data.selectedTargets?.includes("youtube_shorts") ? "youtube_title" : "instagram_caption"),
-    (input, data) => ({ ...data, assetId: input }),
-  ),
-  label: videoStep(
-    "label",
-    () => "targets",
-    (input, data) => ({ ...data, label: input }),
-  ),
-  targets: videoStep(
-    "targets",
-    (data) => (data.selectedTargets?.includes("youtube_shorts") ? "youtube_title" : "instagram_caption"),
-    (input, data) => ({ ...data, selectedTargets: input as VideoTarget[] }),
-  ),
-  schedule_choice: videoStep(
-    "schedule_choice",
-    (data) => (data.scheduleMode === "common" ? "schedule_common" : "schedule_target"),
-    (input, data) => ({ ...data, scheduleMode: input }),
-  ),
-  schedule_common: videoStep(
-    "schedule_common",
-    () => "schedule_confirm",
-    (input, data) => ({ ...data, scheduleValue: input }),
-  ),
-  schedule_target: videoStep(
-    "schedule_target",
-    (data) => (data.nextTarget ? "schedule_target" : "schedule_confirm"),
-    (input, data) => ({ ...data, scheduleValue: input }),
-  ),
-  schedule_confirm: videoStep(
-    "schedule_confirm",
-    () => null,
-    (_input, data) => data,
-  ),
-  youtube_title: videoStep(
-    "youtube_title",
-    () => "youtube_description",
-    (input, data) => advanceVideoMetadata("youtube_title", String(input), data).data,
-  ),
-  youtube_description: videoStep(
-    "youtube_description",
-    () => "youtube_game_url",
-    (input, data) => advanceVideoMetadata("youtube_description", String(input), data).data,
-    () => "youtube_title",
-  ),
-  youtube_game_url: videoStep(
-    "youtube_game_url",
-    () => "youtube_tags",
-    (input, data) => advanceVideoMetadata("youtube_game_url", String(input), data).data,
-    () => "youtube_description",
-  ),
-  youtube_tags: videoStep(
-    "youtube_tags",
-    (data) => (data.selectedTargets?.includes("instagram_reels") ? "instagram_caption" : "schedule_choice"),
-    (input, data) => advanceVideoMetadata("youtube_tags", String(input), data).data,
-    () => "youtube_game_url",
-  ),
-  instagram_caption: videoStep(
-    "instagram_caption",
-    () => "schedule_choice",
-    (input, data) => advanceVideoMetadata("instagram_caption", String(input), data).data,
-    (data) => (data.selectedTargets?.includes("youtube_shorts") ? "youtube_tags" : null),
-  ),
+  locale: { name: "locale", next: () => "asset", accept: (input, data) => ({ ...data, videoLocale: input }) },
+  asset: {
+    name: "asset",
+    next: (data) => (data.selectedTargets?.includes("youtube_shorts") ? "youtube_title" : "instagram_caption"),
+    accept: (input, data) => ({ ...data, assetId: input }),
+  },
+  label: { name: "label", next: () => "targets", accept: (input, data) => ({ ...data, label: input }) },
+  targets: {
+    name: "targets",
+    next: (data) => (data.selectedTargets?.includes("youtube_shorts") ? "youtube_title" : "instagram_caption"),
+    accept: (input, data) => ({ ...data, selectedTargets: input as VideoTarget[] }),
+  },
+  schedule_choice: {
+    name: "schedule_choice",
+    next: (data) => (data.scheduleMode === "common" ? "schedule_common" : "schedule_target"),
+    accept: (input, data) => ({ ...data, scheduleMode: input }),
+  },
+  schedule_common: {
+    name: "schedule_common",
+    next: () => "schedule_confirm",
+    accept: (input, data) => ({ ...data, scheduleValue: input }),
+  },
+  schedule_target: {
+    name: "schedule_target",
+    next: (data) => (data.nextTarget ? "schedule_target" : "schedule_confirm"),
+    accept: (input, data) => ({ ...data, scheduleValue: input }),
+  },
+  schedule_confirm: { name: "schedule_confirm", next: () => null, accept: (_input, data) => data },
+  youtube_title: {
+    name: "youtube_title",
+    next: () => "youtube_description",
+    accept: (input, data) => advanceVideoMetadata("youtube_title", String(input), data).data,
+  },
+  youtube_description: {
+    name: "youtube_description",
+    next: () => "youtube_game_url",
+    accept: (input, data) => advanceVideoMetadata("youtube_description", String(input), data).data,
+    back: () => "youtube_title",
+  },
+  youtube_game_url: {
+    name: "youtube_game_url",
+    next: () => "youtube_tags",
+    accept: (input, data) => advanceVideoMetadata("youtube_game_url", String(input), data).data,
+    back: () => "youtube_description",
+  },
+  youtube_tags: {
+    name: "youtube_tags",
+    next: (data) => (data.selectedTargets?.includes("instagram_reels") ? "instagram_caption" : "schedule_choice"),
+    accept: (input, data) => advanceVideoMetadata("youtube_tags", String(input), data).data,
+    back: () => "youtube_game_url",
+  },
+  instagram_caption: {
+    name: "instagram_caption",
+    next: () => "schedule_choice",
+    accept: (input, data) => advanceVideoMetadata("instagram_caption", String(input), data).data,
+    back: (data) => (data.selectedTargets?.includes("youtube_shorts") ? "youtube_tags" : null),
+  },
 };
 
 /** The complete transport-neutral video workflow. Telegram renders step-specific questions separately. */

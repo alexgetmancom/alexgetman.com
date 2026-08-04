@@ -276,7 +276,7 @@ describe("video publication queue", () => {
     saveVideoState(backendDb, 42, { draftId, step: "youtube_title", selected: ["youtube_shorts"], data: { is_single_edit: true } });
     const { context } = videoContext({ text: "New title" });
 
-    expect(await handleVideoConversationMessage(context, backendDb, videoConfig())).toBe(true);
+    expect((await handleVideoConversationMessage(context, backendDb, videoConfig())).handled).toBe(true);
     expect(listVideoTargets(backendDb, draftId)[0]?.metadataJson).toMatchObject({ title: "New title" });
     expect(getVideoState(backendDb, 42)).toBeNull();
   });
