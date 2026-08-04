@@ -4,19 +4,70 @@ import { withActionLock } from "../foundation/action-lock.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { plural, t } from "../foundation/i18n/index.js";
+import { log } from "../foundation/logger.js";
 import { setTelegramPostCard, setTelegramPostProgressCard } from "../interfaces/telegram/control-cards.js";
 import { sendTelegramDeliveryPreviews } from "../interfaces/telegram/delivery-previews.js";
 import { formatMsk } from "../interfaces/telegram/time.js";
-import { runStoryCardCycle } from "../story-cards/worker.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { isStalePostCardCallback } from "./card-freshness.js";
 import { botLocale } from "./i18n.js";
 import { extractMessage } from "./message.js";
 import { editDraftPreview, editDraftPrompt, sendDraftPreview, showScheduleConfirmation } from "./post-card.js";
+import { POST_ACTION_KEYS, type PostActionKey } from "./post-routes.js";
 import { clearPostAdminState, getPostAdminState, requireCurrentPostSession, setPostAdminState } from "./post-state.js";
 import { draftPreview, isDraftView, modeLabel } from "./preview.js";
 import { renderPostProgress } from "./progress.js";
 import { parseSessionCallback, versionedCallback } from "./session-fsm.js";
+
+type PostService = ReturnType<typeof createStudioServices>["posts"];
+type PostActionArgs = {
+  ctx: Context;
+  backendDb: BackendDb;
+  config: BackendConfig;
+  actorId: number;
+  locale: ReturnType<typeof botLocale>;
+  data: string;
+  action: PostActionKey;
+  first: string | undefined;
+  second: string | undefined;
+  draftId: number;
+  posts: PostService;
+};
+type PostActionHandler = (args: PostActionArgs) => Promise<void>;
+
+const postRoutes: Record<PostActionKey, PostActionHandler> = {
+  toggle: handleToggle,
+  preview: handlePreview,
+  platforms: handlePlatforms,
+  cycle_mode: handleCycleMode,
+  cancel_state: handleCancelState,
+  edit_ru: handleEdit,
+  edit_en: handleEdit,
+  replace_ru_media: handleEdit,
+  replace_en_media: handleEdit,
+  sources: handleSources,
+  cancel: handleCancel,
+  cancel_confirm: handleCancelConfirm,
+  post_retry: handleRetry,
+  post_retry_notice: handleRetry,
+  publish: handlePublish,
+  story_publish_all: handleStoryPublish,
+  story_publish_site: handleStoryPublish,
+  story_schedule_all: handleStorySchedule,
+  story_schedule_site: handleStorySchedule,
+  threads_chain: handleThreadsChain,
+  publish_confirm: handlePublishConfirm,
+  schedule: handleSchedule,
+  sched_scope: handleScheduleScope,
+  sched_view: handleScheduleView,
+  sched_pick: handleSchedulePick,
+  sched_manual_confirm: handleManualScheduleConfirm,
+  sched_manual: handleManualSchedule,
+};
+
+/** Routed post callback names. The freshness guard and callback wiring test use
+ * the same action vocabulary, so adding a button requires one map entry. */
+export const postRouteKeys: readonly string[] = POST_ACTION_KEYS.filter((key) => key in postRoutes);
 
 /** Applies a command selected on a text-post card. Telegram rendering lives in post-card. */
 export async function handlePostAction(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<void> {
@@ -37,144 +88,184 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
     return void (await ctx.answerCallbackQuery({ text: t(locale, "action.card-stale") }));
   const posts = createStudioServices(backendDb, config).posts;
   posts.get(actorId, draftId);
-  if (action === "toggle" && second) {
-    posts.toggleTarget(actorId, draftId, second);
-    return editDraftPreview(ctx, backendDb, draftId, config, "platforms", t(locale, "action.target-updated", { target: second }));
-  }
-  if (action === "preview") return editDraftPreview(ctx, backendDb, draftId, config);
-  if (action === "platforms") return editDraftPreview(ctx, backendDb, draftId, config, "platforms");
-  if (action === "cycle_mode") {
-    const nextMode = posts.cycleMode(actorId, draftId);
-    return editDraftPreview(ctx, backendDb, draftId, config, "overview", `${t(locale, "post.mode")}: ${modeLabel(nextMode, locale)}`);
-  }
-  if (action === "cancel_state") {
-    clearPostAdminState(backendDb, actorId);
-    return editDraftPreview(ctx, backendDb, draftId, config, second && isDraftView(second) ? second : "overview");
-  }
-  if (["edit_ru", "edit_en", "replace_ru_media", "replace_en_media"].includes(action ?? "")) {
-    if (!action) return;
-    setPostAdminState(backendDb, actorId, action, draftId, callbackMessageId(ctx));
-    await ctx.answerCallbackQuery({
-      text: t(locale, "action.send-replacement"),
-    });
-    return editDraftPrompt(
-      ctx,
-      backendDb,
-      draftId,
-      action.startsWith("edit") ? t(locale, "action.send-new-text") : t(locale, "action.send-new-media"),
-    );
-  }
-  if (action === "sources") {
-    setPostAdminState(backendDb, actorId, "edit_sources", draftId, callbackMessageId(ctx));
-    await ctx.answerCallbackQuery();
-    return editDraftPrompt(ctx, backendDb, draftId, t(locale, "post.sources-prompt"));
-  }
-  if (action === "cancel") {
-    return editDraftPreview(ctx, backendDb, draftId, config, "confirm_delete");
-  }
-  if (action === "cancel_confirm") {
-    const result = await withActionLock(`${actorId}:${data}`, async () => {
-      posts.cancel(actorId, draftId);
-    });
-    if (!result.ok) return void (await ctx.answerCallbackQuery());
-    await ctx.answerCallbackQuery({ text: t(locale, "action.cancelled") });
-    return void (await ctx.editMessageText(t(locale, "action.draft-cancelled", { id: draftId }), {
-      reply_markup: new InlineKeyboard()
-        .text(t(locale, "action.back-to-drafts"), "queue_drafts")
-        .text(t(locale, "common.menu"), "menu_home"),
-    }));
-  }
-  if (action === "post_retry" || action === "post_retry_notice") {
-    const result = await withActionLock(`${actorId}:${data}`, async () => posts.retryFailed(actorId, draftId, second || undefined));
-    if (!result.ok) return void (await ctx.answerCallbackQuery());
-    await ctx.answerCallbackQuery({
-      text: t(locale, "action.retry-result", { requeued: result.value.requeued, alreadyQueued: result.value.alreadyQueued }),
-    });
-    if (action === "post_retry") {
-      const preview = draftPreview(backendDb, draftId, config);
-      await ctx.editMessageText(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
-      const messageId = callbackMessageId(ctx);
-      if (ctx.chat?.id != null && messageId != null) setTelegramPostCard(backendDb, draftId, ctx.chat.id, messageId);
-    }
-    return;
-  }
-  if (action === "publish") {
-    if (await showPublicationPreflight(ctx, backendDb, config, actorId, draftId, locale)) return;
-    if (await showStoryCardChoice(ctx, backendDb, config, actorId, draftId, "publish")) return;
-    return sendPublishConfirmation(ctx, backendDb, config, actorId, draftId);
-  }
-  if (action === "story_publish_all" || action === "story_publish_site") {
-    posts.setStoryPublishMode(actorId, draftId, action === "story_publish_all" ? "all" : "site_only");
-    return queuePostNow(ctx, backendDb, config, actorId, draftId, data, locale);
-  }
-  if (action === "story_schedule_all" || action === "story_schedule_site") {
-    posts.setStoryPublishMode(actorId, draftId, action === "story_schedule_all" ? "all" : "site_only");
-    return editDraftPreview(ctx, backendDb, draftId, config, "schedule");
-  }
-  if (action === "threads_chain") {
-    posts.approveThreadsChain(actorId, draftId);
-    // The waiver only clears the Threads rule. Anything else preflight refuses —
-    // a Telegram caption, say — must still stop the publication here.
-    if (await showPublicationPreflight(ctx, backendDb, config, actorId, draftId, locale)) return;
-    if (await showStoryCardChoice(ctx, backendDb, config, actorId, draftId, "publish")) return;
-    await ctx.answerCallbackQuery({ text: t(locale, "action.preflight-chain-approved") });
-    return sendPublishConfirmation(ctx, backendDb, config, actorId, draftId);
-  }
-  if (action === "publish_confirm") {
-    return queuePostNow(ctx, backendDb, config, actorId, draftId, data, locale);
-  }
-  if (action === "schedule") {
-    clearPostAdminState(backendDb, actorId);
-    if (await showPublicationPreflight(ctx, backendDb, config, actorId, draftId, locale)) return;
-    if (await showStoryCardChoice(ctx, backendDb, config, actorId, draftId, "schedule")) return;
-    return editDraftPreview(ctx, backendDb, draftId, config, "schedule");
-  }
-  if (action === "sched_scope" && first) {
-    clearPostAdminState(backendDb, actorId);
-    if (first === "ru_now") return commitLocaleScheduleOnce(ctx, backendDb, config, actorId, draftId, "ru", new Date(), data, "ru");
-    if (first === "en_now") return commitLocaleScheduleOnce(ctx, backendDb, config, actorId, draftId, "en", new Date(), data, "en");
-    if (first === "both") return editDraftPreview(ctx, backendDb, draftId, config, "schedule_ru");
+  const handler = action ? postRoutes[action as PostActionKey] : undefined;
+  if (!handler || !POST_ACTION_KEYS.includes(action as PostActionKey))
     return void (await ctx.answerCallbackQuery({ text: t(locale, "action.unknown") }));
-  }
-  if (action === "sched_view" && first && isDraftView(first)) {
-    clearPostAdminState(backendDb, actorId);
-    return editDraftPreview(ctx, backendDb, draftId, config, first);
-  }
-  if (action === "sched_pick" && first && second) {
-    clearPostAdminState(backendDb, actorId);
-    const value = posts.slotTime(`${second.slice(0, 2)}:${second.slice(2, 4)}`);
-    return commitLocaleScheduleOnce(ctx, backendDb, config, actorId, draftId, requireScheduleLocale(first), value, data);
-  }
-  if (action === "sched_manual_confirm") {
-    const state = getPostAdminState(backendDb, actorId);
-    const match = state?.action?.match(/^schedule_confirm_(ru|en)_(.+)$/);
-    if (!match || state?.draft_id !== draftId)
-      return void (await ctx.answerCallbackQuery({
-        text: t(locale, "action.schedule-expired"),
-      }));
-    const scope = requireScheduleLocale(match[1] ?? "");
-    const value = new Date(match[2] ?? "");
-    if (Number.isNaN(value.getTime()))
-      return void (await ctx.answerCallbackQuery({
-        text: t(locale, "action.schedule-expired"),
-      }));
-    clearPostAdminState(backendDb, actorId);
-    return commitLocaleScheduleOnce(ctx, backendDb, config, actorId, draftId, scope, value, `sched_manual_confirm:${draftId}`);
-  }
-  if (action === "sched_manual" && first) {
-    const pickLocale = requireScheduleLocale(first);
-    clearPostAdminState(backendDb, actorId);
-    setPostAdminState(backendDb, actorId, `schedule_manual_${pickLocale}`, draftId, callbackMessageId(ctx));
-    await ctx.answerCallbackQuery({ text: t(locale, "action.send-time") });
-    return editDraftPrompt(
-      ctx,
-      backendDb,
-      draftId,
-      t(locale, "action.enter-datetime", { timezone: config.TIMEZONE_LABEL }),
-      pickLocale === "ru" ? "schedule_ru" : "schedule_en",
-    );
-  }
+  await handler({ ctx, backendDb, config, actorId, locale, data, action: action as PostActionKey, first, second, draftId, posts });
+}
+
+async function handleToggle({ ctx, backendDb, config, actorId, locale, second, draftId, posts }: PostActionArgs): Promise<void> {
+  if (!second) return void (await ctx.answerCallbackQuery({ text: t(locale, "action.unknown") }));
+  posts.toggleTarget(actorId, draftId, second);
+  await editDraftPreview(ctx, backendDb, draftId, config, "platforms", t(locale, "action.target-updated", { target: second }));
+}
+
+async function handlePreview({ ctx, backendDb, config, draftId }: PostActionArgs): Promise<void> {
+  await editDraftPreview(ctx, backendDb, draftId, config);
+}
+
+async function handlePlatforms({ ctx, backendDb, config, draftId }: PostActionArgs): Promise<void> {
+  await editDraftPreview(ctx, backendDb, draftId, config, "platforms");
+}
+
+async function handleCycleMode({ ctx, backendDb, config, actorId, locale, draftId, posts }: PostActionArgs): Promise<void> {
+  const nextMode = posts.cycleMode(actorId, draftId);
+  await editDraftPreview(ctx, backendDb, draftId, config, "overview", `${t(locale, "post.mode")}: ${modeLabel(nextMode, locale)}`);
+}
+
+async function handleCancelState({ ctx, backendDb, config, actorId, second, draftId }: PostActionArgs): Promise<void> {
+  clearPostAdminState(backendDb, actorId);
+  await editDraftPreview(ctx, backendDb, draftId, config, second && isDraftView(second) ? second : "overview");
+}
+
+async function handleEdit({ ctx, backendDb, actorId, locale, action, draftId }: PostActionArgs): Promise<void> {
+  setPostAdminState(backendDb, actorId, action, draftId, callbackMessageId(ctx));
+  await ctx.answerCallbackQuery({ text: t(locale, "action.send-replacement") });
+  await editDraftPrompt(
+    ctx,
+    backendDb,
+    draftId,
+    action.startsWith("edit") ? t(locale, "action.send-new-text") : t(locale, "action.send-new-media"),
+  );
+}
+
+async function handleSources({ ctx, backendDb, actorId, locale, draftId }: PostActionArgs): Promise<void> {
+  setPostAdminState(backendDb, actorId, "edit_sources", draftId, callbackMessageId(ctx));
+  await ctx.answerCallbackQuery();
+  await editDraftPrompt(ctx, backendDb, draftId, t(locale, "post.sources-prompt"));
+}
+
+async function handleCancel({ ctx, backendDb, config, draftId }: PostActionArgs): Promise<void> {
+  await editDraftPreview(ctx, backendDb, draftId, config, "confirm_delete");
+}
+
+async function handleCancelConfirm({ ctx, actorId, locale, draftId, data, posts }: PostActionArgs): Promise<void> {
+  const result = await withActionLock(`${actorId}:${data}`, async () => posts.cancel(actorId, draftId));
+  if (!result.ok) return void (await ctx.answerCallbackQuery());
+  await ctx.answerCallbackQuery({ text: t(locale, "action.cancelled") });
+  await ctx.editMessageText(t(locale, "action.draft-cancelled", { id: draftId }), {
+    reply_markup: new InlineKeyboard().text(t(locale, "action.back-to-drafts"), "queue_drafts").text(t(locale, "common.menu"), "menu_home"),
+  });
+}
+
+async function handleRetry({
+  ctx,
+  backendDb,
+  config,
+  actorId,
+  locale,
+  action,
+  second,
+  draftId,
+  data,
+  posts,
+}: PostActionArgs): Promise<void> {
+  const result = await withActionLock(`${actorId}:${data}`, async () => posts.retryFailed(actorId, draftId, second || undefined));
+  if (!result.ok) return void (await ctx.answerCallbackQuery());
+  await ctx.answerCallbackQuery({
+    text: t(locale, "action.retry-result", { requeued: result.value.requeued, alreadyQueued: result.value.alreadyQueued }),
+  });
+  if (action !== "post_retry") return;
+  const preview = draftPreview(backendDb, draftId, config);
+  await ctx.editMessageText(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
+  const messageId = callbackMessageId(ctx);
+  if (ctx.chat?.id != null && messageId != null) setTelegramPostCard(backendDb, draftId, ctx.chat.id, messageId);
+}
+
+async function handlePublish(args: PostActionArgs): Promise<void> {
+  const { ctx, backendDb, config, actorId, locale, draftId } = args;
+  if (await showPublicationPreflight(ctx, backendDb, config, actorId, draftId, locale)) return;
+  if (await showStoryCardChoice(ctx, backendDb, config, actorId, draftId, "publish")) return;
+  await sendPublishConfirmation(ctx, backendDb, config, actorId, draftId);
+}
+
+async function handleStoryPublish({
+  ctx,
+  backendDb,
+  config,
+  actorId,
+  locale,
+  action,
+  draftId,
+  data,
+  posts,
+}: PostActionArgs): Promise<void> {
+  posts.setStoryPublishMode(actorId, draftId, action === "story_publish_all" ? "all" : "site_only");
+  await queuePostNow(ctx, backendDb, config, actorId, draftId, data, locale);
+}
+
+async function handleStorySchedule({ ctx, backendDb, config, actorId, action, draftId, posts }: PostActionArgs): Promise<void> {
+  posts.setStoryPublishMode(actorId, draftId, action === "story_schedule_all" ? "all" : "site_only");
+  await editDraftPreview(ctx, backendDb, draftId, config, "schedule");
+}
+
+async function handleThreadsChain({ ctx, backendDb, config, actorId, locale, draftId, posts }: PostActionArgs): Promise<void> {
+  posts.approveThreadsChain(actorId, draftId);
+  // The waiver only clears the Threads rule. Other preflight issues remain fatal.
+  if (await showPublicationPreflight(ctx, backendDb, config, actorId, draftId, locale)) return;
+  if (await showStoryCardChoice(ctx, backendDb, config, actorId, draftId, "publish")) return;
+  await ctx.answerCallbackQuery({ text: t(locale, "action.preflight-chain-approved") });
+  await sendPublishConfirmation(ctx, backendDb, config, actorId, draftId);
+}
+
+async function handlePublishConfirm({ ctx, backendDb, config, actorId, locale, draftId, data }: PostActionArgs): Promise<void> {
+  await queuePostNow(ctx, backendDb, config, actorId, draftId, data, locale);
+}
+
+async function handleSchedule(args: PostActionArgs): Promise<void> {
+  const { ctx, backendDb, config, actorId, locale, draftId } = args;
+  clearPostAdminState(backendDb, actorId);
+  if (await showPublicationPreflight(ctx, backendDb, config, actorId, draftId, locale)) return;
+  if (await showStoryCardChoice(ctx, backendDb, config, actorId, draftId, "schedule")) return;
+  await editDraftPreview(ctx, backendDb, draftId, config, "schedule");
+}
+
+async function handleScheduleScope({ ctx, backendDb, config, actorId, locale, first, draftId, data }: PostActionArgs): Promise<void> {
+  if (!first) return void (await ctx.answerCallbackQuery({ text: t(locale, "action.unknown") }));
+  clearPostAdminState(backendDb, actorId);
+  if (first === "ru_now") return commitLocaleScheduleOnce(ctx, backendDb, config, actorId, draftId, "ru", new Date(), data, "ru");
+  if (first === "en_now") return commitLocaleScheduleOnce(ctx, backendDb, config, actorId, draftId, "en", new Date(), data, "en");
+  if (first === "both") return editDraftPreview(ctx, backendDb, draftId, config, "schedule_ru");
   await ctx.answerCallbackQuery({ text: t(locale, "action.unknown") });
+}
+
+async function handleScheduleView({ ctx, backendDb, config, actorId, first, draftId }: PostActionArgs): Promise<void> {
+  if (!first || !isDraftView(first)) return;
+  clearPostAdminState(backendDb, actorId);
+  await editDraftPreview(ctx, backendDb, draftId, config, first);
+}
+
+async function handleSchedulePick({ ctx, backendDb, config, actorId, first, second, draftId, data, posts }: PostActionArgs): Promise<void> {
+  if (!first || !second) return;
+  clearPostAdminState(backendDb, actorId);
+  const value = posts.slotTime(`${second.slice(0, 2)}:${second.slice(2, 4)}`);
+  await commitLocaleScheduleOnce(ctx, backendDb, config, actorId, draftId, requireScheduleLocale(first), value, data);
+}
+
+async function handleManualScheduleConfirm({ ctx, backendDb, config, actorId, locale, draftId }: PostActionArgs): Promise<void> {
+  const state = getPostAdminState(backendDb, actorId);
+  const match = state?.action?.match(/^schedule_confirm_(ru|en)_(.+)$/);
+  if (!match || state?.draft_id !== draftId) return void (await ctx.answerCallbackQuery({ text: t(locale, "action.schedule-expired") }));
+  const scope = requireScheduleLocale(match[1] ?? "");
+  const value = new Date(match[2] ?? "");
+  if (Number.isNaN(value.getTime())) return void (await ctx.answerCallbackQuery({ text: t(locale, "action.schedule-expired") }));
+  clearPostAdminState(backendDb, actorId);
+  await commitLocaleScheduleOnce(ctx, backendDb, config, actorId, draftId, scope, value, `sched_manual_confirm:${draftId}`);
+}
+
+async function handleManualSchedule({ ctx, backendDb, config, actorId, locale, first, draftId }: PostActionArgs): Promise<void> {
+  if (!first) return;
+  const pickLocale = requireScheduleLocale(first);
+  clearPostAdminState(backendDb, actorId);
+  setPostAdminState(backendDb, actorId, `schedule_manual_${pickLocale}`, draftId, callbackMessageId(ctx));
+  await ctx.answerCallbackQuery({ text: t(locale, "action.send-time") });
+  await editDraftPrompt(
+    ctx,
+    backendDb,
+    draftId,
+    t(locale, "action.enter-datetime", { timezone: config.TIMEZONE_LABEL }),
+    pickLocale === "ru" ? "schedule_ru" : "schedule_en",
+  );
 }
 
 async function queuePostNow(
@@ -207,20 +298,68 @@ async function showStoryCardChoice(
   intent: "publish" | "schedule",
 ): Promise<boolean> {
   const posts = createStudioServices(backendDb, config).posts;
-  let cards = posts.preview(actorId, draftId).storyCards;
+  const cards = posts.preview(actorId, draftId).storyCards;
   if (cards.length === 0) return false;
-  const deadline = Date.now() + 4_000;
-  while (!cardsReady(cards) && Date.now() < deadline) {
-    await runStoryCardCycle(config, backendDb, draftId);
-    cards = posts.preview(actorId, draftId).storyCards;
-    if (!cardsReady(cards)) await Bun.sleep(100);
-  }
   const locale = botLocale(backendDb, actorId);
   if (!cardsReady(cards)) {
-    await ctx.answerCallbackQuery({ text: t(locale, "post.story-cards-generating"), show_alert: true });
+    await ctx.answerCallbackQuery({ text: t(locale, "post.story-cards-generating") });
+    queueStoryCardChoice(ctx, backendDb, config, actorId, draftId, intent);
     return true;
   }
   await ctx.answerCallbackQuery();
+  await sendStoryCardChoice(ctx, backendDb, actorId, draftId, intent, cards);
+  return true;
+}
+
+const pendingStoryCardChoices = new Map<string, Promise<void>>();
+
+/** The Story worker owns rendering. This lightweight continuation only waits
+ * for its durable result and sends the choice as a follow-up Telegram message. */
+function queueStoryCardChoice(
+  ctx: Context,
+  backendDb: BackendDb,
+  config: BackendConfig,
+  actorId: number,
+  draftId: number,
+  intent: "publish" | "schedule",
+): void {
+  const key = `${actorId}:${draftId}:${intent}`;
+  if (pendingStoryCardChoices.has(key)) return;
+  const task = waitForStoryCards(ctx, backendDb, config, actorId, draftId, intent).finally(() => pendingStoryCardChoices.delete(key));
+  pendingStoryCardChoices.set(key, task);
+  void task.catch((error) => {
+    logStoryCardChoiceFailure(error, actorId, draftId);
+  });
+}
+
+async function waitForStoryCards(
+  ctx: Context,
+  backendDb: BackendDb,
+  config: BackendConfig,
+  actorId: number,
+  draftId: number,
+  intent: "publish" | "schedule",
+): Promise<void> {
+  const posts = createStudioServices(backendDb, config).posts;
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    await delay(1_000);
+    const cards = posts.preview(actorId, draftId).storyCards;
+    if (!cardsReady(cards)) continue;
+    if (isStalePostCardCallback(ctx, backendDb, intent === "publish" ? "publish" : "schedule", draftId)) return;
+    await sendStoryCardChoice(ctx, backendDb, actorId, draftId, intent, cards);
+    return;
+  }
+}
+
+async function sendStoryCardChoice(
+  ctx: Context,
+  backendDb: BackendDb,
+  actorId: number,
+  draftId: number,
+  intent: "publish" | "schedule",
+  cards: Array<{ locale: string; status: string; localPath: string | null }>,
+): Promise<void> {
+  const locale = botLocale(backendDb, actorId);
   for (const cardLocale of ["ru", "en"] as const) {
     const card = cards.find((item) => item.locale === cardLocale);
     if (card?.localPath) await ctx.replyWithPhoto(new InputFile(card.localPath), { caption: `Story · ${cardLocale.toUpperCase()}` });
@@ -241,7 +380,18 @@ async function showStoryCardChoice(
           .text(t(locale, "common.back"), `preview:${draftId}`);
   const message = await ctx.reply(t(locale, "post.story-cards-question"), { parse_mode: "Markdown", reply_markup: keyboard });
   if (ctx.chat?.id != null) setTelegramPostCard(backendDb, draftId, ctx.chat.id, message.message_id);
-  return true;
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function logStoryCardChoiceFailure(error: unknown, actorId: number, draftId: number): void {
+  log("error", "failed to send Story card choice", {
+    actorId,
+    draftId,
+    error: error instanceof Error ? error.message : String(error),
+  });
 }
 
 function cardsReady(cards: Array<{ locale: string; status: string; localPath: string | null }>): boolean {
@@ -332,9 +482,17 @@ async function showPublicationPreflight(
       few: t(locale, "action.parts-few"),
       many: t(locale, "action.parts-many"),
     });
-    await ctx.reply(t(locale, "action.preflight-chain", { label: issue.label, actual: issue.actual, limit: issue.limit, parts: label }), {
-      reply_markup: new InlineKeyboard().text(t(locale, "action.preflight-chain-button", { parts: label }), `threads_chain:${draftId}`),
-    });
+    const revision = getPostAdminState(backendDb, actorId)?.revision;
+    const message = await ctx.reply(
+      t(locale, "action.preflight-chain", { label: issue.label, actual: issue.actual, limit: issue.limit, parts: label }),
+      {
+        reply_markup: new InlineKeyboard().text(
+          t(locale, "action.preflight-chain-button", { parts: label }),
+          versionedCallback(`threads_chain:${draftId}`, revision),
+        ),
+      },
+    );
+    if (ctx.chat?.id != null) setTelegramPostCard(backendDb, draftId, ctx.chat.id, message.message_id);
     return true;
   }
   await ctx.answerCallbackQuery({

@@ -13,6 +13,7 @@ import { isStaleVideoCardCallback } from "./card-freshness.js";
 import { type BotLocale, botLocale } from "./i18n.js";
 import { parseSessionCallback, requireSessionRevision, requireSessionStep, versionedCallback } from "./session-fsm.js";
 import { applyVideoScheduleDate, startVideoConversation } from "./video-conversation.js";
+import { VIDEO_ACTION_KEYS, type VideoActionKey } from "./video-routes.js";
 import { finishVideoNow, finishVideoSchedule } from "./video-scheduling.js";
 import {
   askInstagramOrSchedule,
@@ -48,7 +49,7 @@ const EDIT_FIELD_PROMPTS: Record<string, MessageKey> = {
 /** Routed by the action token before the first ":" (or the whole string, for
  * bare actions). Exact-match keys, so unlike prefix/startsWith matching, no
  * entry can accidentally shadow another and their declaration order is free. */
-const routes: Record<string, VideoActionHandler> = {
+const routes: Record<VideoActionKey, VideoActionHandler> = {
   video_start: handleStart,
   video_locale: handleLocale,
   video_cancel_dialog: handleCancelDialog,
@@ -79,7 +80,7 @@ const routes: Record<string, VideoActionHandler> = {
 
 /** The routed video callback names, so the callback-wiring test can check every
  * `video_` button the bot renders against the real map instead of a copy. */
-export const videoRouteKeys: readonly string[] = Object.keys(routes);
+export const videoRouteKeys: readonly string[] = VIDEO_ACTION_KEYS;
 
 const SESSION_BOUND_VIDEO_ACTIONS = new Set([
   "video_locale",
@@ -112,13 +113,14 @@ function toast(text: string): string {
 /** Callback-only adapter: it changes a session or invokes a Studio command, never parses chat replies. */
 export async function handleVideoActionCallback(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<boolean> {
   const rawData = ctx.callbackQuery?.data;
-  if (!rawData?.startsWith("video_")) return false;
+  if (!rawData) return false;
   const { data, revision } = parseSessionCallback(rawData);
+  if (!data.startsWith("video_")) return false;
   const actorId = Number(ctx.from?.id);
   const locale = botLocale(backendDb, actorId);
   try {
     if (revision != null) requireSessionRevision(getSession(backendDb, actorId)?.revision, revision);
-    const route = routes[routeKey(data)];
+    const route = routes[routeKey(data) as VideoActionKey];
     // An unrouted `video_` callback used to be answered with an empty toast,
     // which is indistinguishable from a button that worked: the spinner just
     // stops. Report it the way the post branch reports an unknown action.

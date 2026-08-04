@@ -13,6 +13,7 @@ import { createEntityEnrichmentStore } from "./repositories/entity-enrichment.js
 import { createEventStore } from "./repositories/events.js";
 import { createStudioMediaAssetStore } from "./repositories/studio-media-assets.js";
 import { createStudioNotificationStore } from "./repositories/studio-notifications.js";
+import { createStudioPostAdminStateStore } from "./repositories/studio-post-admin-state.js";
 import { createStudioPostStore } from "./repositories/studio-posts.js";
 import { createStudioQueueStore } from "./repositories/studio-queue.js";
 import { createStudioSettingsStore } from "./repositories/studio-settings.js";
@@ -78,6 +79,7 @@ export function openBackendDb(path: string, timeout = 30_000): BackendDb {
     studioSettings: createStudioSettingsStore(db),
     studioMediaAssets: createStudioMediaAssetStore(db),
     studioPosts: createStudioPostStore(db),
+    studioPostAdminState: createStudioPostAdminStateStore(db),
     studioQueue: createStudioQueueStore(db),
     studioVideos: createStudioVideoStore(db),
     storyCards: { queue: (draftId) => queueDraftStoryCards(backendDb, draftId) },

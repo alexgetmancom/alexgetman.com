@@ -35,6 +35,7 @@ const en = {
   "menu.analytics": "📊 Analytics",
   "menu.settings-unread": "⚙️ Settings · 🔴{count}",
   "menu.button": "☰ Menu",
+  "menu.button-legacy": "☰ Show menu",
   "settings.title": "⚙️ Settings",
   "settings.youtube-signature": "▶️ YouTube signature",
   "settings.notifications": "🔔 Notifications",
@@ -392,6 +393,7 @@ const en = {
   "preview.show-telegram": "← Show Telegram",
   "bot.video-disabled": "Video publishing is disabled in studio.yaml.",
   "bot.forbidden": "Forbidden",
+  "bot.command-start": "Restore bot menu",
   "weekly.digest": "Weekly digest",
   // Domain error codes (thrown as StudioError, rendered by the adapter)
   "err.post-mode": "Post mode is not configured.",
@@ -469,6 +471,7 @@ const ru = {
   "menu.analytics": "📊 Статистика",
   "menu.settings-unread": "⚙️ Настройки · 🔴{count}",
   "menu.button": "☰ Меню",
+  "menu.button-legacy": "☰ Показать меню",
   "settings.title": "⚙️ Настройки",
   "settings.youtube-signature": "▶️ Подпись YouTube",
   "settings.notifications": "🔔 Уведомления",
@@ -827,6 +830,7 @@ const ru = {
   "preview.show-telegram": "← Показать Telegram",
   "bot.video-disabled": "Видеопубликация выключена в studio.yaml.",
   "bot.forbidden": "Доступ запрещён",
+  "bot.command-start": "Восстановить меню бота",
   "weekly.digest": "Итоги недели",
   // Domain error codes (thrown as StudioError, rendered by the adapter)
   "err.post-mode": "Режим поста не настроен.",

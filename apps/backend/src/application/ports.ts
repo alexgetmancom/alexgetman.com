@@ -109,6 +109,36 @@ export type StudioPostStore = {
   retryPublicationTargets(postId: number, targets: string[]): PublicationRetryResult[];
 };
 
+export type StudioPostAdminStateRecord = {
+  action: string | null;
+  draftId: number | null;
+  controlMessageId: number | null;
+  revision: number;
+  updatedAt: string;
+  expiresAt: string | null;
+};
+
+/** Durable conversational state used by the Telegram post adapter. */
+export type StudioPostAdminStateStore = {
+  get(actorId: number): StudioPostAdminStateRecord | null;
+  save(input: {
+    actorId: number;
+    action: string | null;
+    draftId: number | null;
+    controlMessageId: number | null;
+    updatedAt: string;
+    expiresAt: string | null;
+  }): number;
+  clearIfCurrent(input: {
+    actorId: number;
+    action: string;
+    draftId: number | null;
+    expectedRevision: number | null | undefined;
+    updatedAt: string;
+  }): boolean;
+  retire(actorId: number, updatedAt: string): void;
+};
+
 /** Persistence projection used by the transport-neutral post progress read model. */
 type StudioPostProgress = {
   draft: { id: number; actorId: number; postId: number | null; targetsJson: string };
@@ -343,6 +373,7 @@ export type ApplicationPorts = {
   drafts: DraftStore;
   events: EventStore;
   studioPosts: StudioPostStore;
+  studioPostAdminState: StudioPostAdminStateStore;
   studioQueue: StudioQueueStore;
   studioNotifications: StudioNotificationStore;
   studioSettings: StudioSettingsStore;

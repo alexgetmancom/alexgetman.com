@@ -1,6 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import { Glob } from "bun";
+import { postRouteKeys } from "../src/bot/post-actions.js";
+import { POST_ACTION_KEYS, POST_CARD_ACTION_KEYS } from "../src/bot/post-routes.js";
 import { videoRouteKeys } from "../src/bot/video-actions.js";
+import { VIDEO_ACTION_KEYS, VIDEO_CARD_ACTION_KEYS } from "../src/bot/video-routes.js";
 
 /** Callback prefixes the dispatcher in `bot.ts` resolves to a handler. A new
  * button whose prefix is missing here fails this test: a rendered callback with
@@ -128,7 +131,7 @@ describe("Telegram callback wiring", () => {
     const rendered = await renderedCallbacks();
     // i18n message keys reach the same argument position on menu-plugin
     // buttons, whose handler is a function rather than callback data.
-    const handled = new Set([...HANDLED_PREFIXES, ...videoRouteKeys]);
+    const handled = new Set([...HANDLED_PREFIXES, ...videoRouteKeys, ...postRouteKeys]);
     const unrouted = [...rendered]
       .filter(([prefix]) => !prefix.includes(".") && !handled.has(prefix))
       .map(([prefix, file]) => `${prefix} (${file})`);
@@ -141,5 +144,12 @@ describe("Telegram callback wiring", () => {
     expect([...rendered.keys()]).toContain("sched_scope");
     expect([...rendered.keys()]).toContain("video_now");
     expect([...rendered.keys()]).toContain("notifications_home");
+  });
+
+  it("keeps post routing and freshness vocabulary in one contract", () => {
+    expect(postRouteKeys).toEqual([...POST_ACTION_KEYS]);
+    expect(POST_CARD_ACTION_KEYS).toContain("threads_chain");
+    expect(videoRouteKeys).toEqual([...VIDEO_ACTION_KEYS]);
+    expect(VIDEO_CARD_ACTION_KEYS).toContain("video_schedule");
   });
 });

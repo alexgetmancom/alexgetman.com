@@ -1,6 +1,4 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
-import { type BackendDb, unsafeDb } from "../db/client.js";
-import { adminState } from "../db/schema.js";
+import type { BackendDb } from "../db/client.js";
 import { StudioError } from "../foundation/errors.js";
 import { requireSessionRevision } from "./session-fsm.js";
 
@@ -22,20 +20,9 @@ export type PostAdminState = {
 };
 
 export function getPostAdminState(backendDb: BackendDb, actorId: number): PostAdminState | null {
-  const row = unsafeDb(backendDb)
-    .db.select({
-      action: adminState.action,
-      draft_id: adminState.draftId,
-      control_message_id: adminState.controlMessageId,
-      revision: adminState.revision,
-      updated_at: adminState.updatedAt,
-      expires_at: adminState.expiresAt,
-    })
-    .from(adminState)
-    .where(eq(adminState.actorId, actorId))
-    .get();
+  const row = backendDb.studioPostAdminState.get(actorId);
   if (!row) return null;
-  const expiresAt = row.expires_at ? Date.parse(row.expires_at) : Date.parse(row.updated_at) + POST_STATE_TTL_MS;
+  const expiresAt = row.expiresAt ? Date.parse(row.expiresAt) : Date.parse(row.updatedAt) + POST_STATE_TTL_MS;
   if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
     retirePostAdminState(backendDb, actorId);
     return null;
@@ -47,8 +34,8 @@ export function getPostAdminState(backendDb: BackendDb, actorId: number): PostAd
   }
   return {
     action,
-    draft_id: row.draft_id,
-    control_message_id: row.control_message_id,
+    draft_id: row.draftId,
+    control_message_id: row.controlMessageId,
     revision: row.revision,
   };
 }
@@ -62,23 +49,9 @@ export function setPostAdminState(
 ): number {
   const parsedAction = parsePostAction(action);
   if (action !== null && !parsedAction) throw new Error(`Unknown post admin action: ${action}`);
-  const previous = unsafeDb(backendDb)
-    .db.select({ revision: adminState.revision })
-    .from(adminState)
-    .where(eq(adminState.actorId, actorId))
-    .get();
-  const revision = (previous?.revision ?? 0) + 1;
   const updatedAt = new Date().toISOString();
   const expiresAt = parsedAction ? new Date(Date.now() + POST_STATE_TTL_MS).toISOString() : null;
-  unsafeDb(backendDb)
-    .db.insert(adminState)
-    .values({ actorId, action: parsedAction, draftId, controlMessageId, revision, updatedAt, expiresAt })
-    .onConflictDoUpdate({
-      target: adminState.actorId,
-      set: { action: parsedAction, draftId, controlMessageId, revision, updatedAt, expiresAt },
-    })
-    .run();
-  return revision;
+  return backendDb.studioPostAdminState.save({ actorId, action: parsedAction, draftId, controlMessageId, updatedAt, expiresAt });
 }
 
 export function clearPostAdminState(backendDb: BackendDb, actorId: number): number {
@@ -94,27 +67,13 @@ export function clearPostAdminStateIfCurrent(
   expectedRevision?: number | null,
 ): boolean {
   if (!action) return false;
-  const result = unsafeDb(backendDb)
-    .db.update(adminState)
-    .set({
-      action: null,
-      draftId: null,
-      controlMessageId: null,
-      revision: sql`${adminState.revision} + 1`,
-      updatedAt: new Date().toISOString(),
-      expiresAt: null,
-    })
-    .where(
-      and(
-        eq(adminState.actorId, actorId),
-        eq(adminState.action, action),
-        draftId == null ? isNull(adminState.draftId) : eq(adminState.draftId, draftId),
-        ...(expectedRevision == null ? [] : [eq(adminState.revision, expectedRevision)]),
-      ),
-    )
-    .returning({ actorId: adminState.actorId })
-    .get();
-  return result != null;
+  return backendDb.studioPostAdminState.clearIfCurrent({
+    actorId,
+    action,
+    draftId,
+    expectedRevision,
+    updatedAt: new Date().toISOString(),
+  });
 }
 
 export function startPostDialog(backendDb: BackendDb, actorId: number): number {
@@ -122,18 +81,7 @@ export function startPostDialog(backendDb: BackendDb, actorId: number): number {
 }
 
 function retirePostAdminState(backendDb: BackendDb, actorId: number): void {
-  unsafeDb(backendDb)
-    .db.update(adminState)
-    .set({
-      action: null,
-      draftId: null,
-      controlMessageId: null,
-      revision: sql`${adminState.revision} + 1`,
-      updatedAt: new Date().toISOString(),
-      expiresAt: null,
-    })
-    .where(eq(adminState.actorId, actorId))
-    .run();
+  backendDb.studioPostAdminState.retire(actorId, new Date().toISOString());
 }
 
 export function requireCurrentPostSession(backendDb: BackendDb, actorId: number, expectedRevision: number | null): PostAdminState {
