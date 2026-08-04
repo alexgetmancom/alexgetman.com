@@ -4,6 +4,7 @@ import path from "node:path";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import * as z from "zod";
+import { publicationRef } from "../application/publication-ref.js";
 import {
   SITE_MEDIA_URL_PREFIX,
   siteMediaFilename,
@@ -269,7 +270,7 @@ function buildPublicSiteFeed(backendDb: BackendDb, sitePublicDir: string, postId
     // down the whole public feed; drop it and keep every other post serving.
     if (!parsed.success) {
       recordDomainEvent(backendDb.events, {
-        ref: row.postKey,
+        ref: publicationRef("post", row.postId),
         type: "site.feed.item_invalid",
         severity: "warn",
         message: `Post ${row.postKey} dropped from the public feed: ${parsed.error.issues[0]?.message ?? "invalid shape"}`,

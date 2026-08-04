@@ -294,20 +294,20 @@ const SINGLE_EDIT_CHANGES: Record<string, SingleEditBuilder> = {
 /** Isolates the one step that legitimately fails on bad user input. Any other
  * error in this flow (preview, delivery, storage) must reach the generic
  * describeError path instead of being misreported as an unparsable date. */
-async function parseScheduleDate(
+async function manualScheduleDate(
   backendDb: BackendDb,
   config: BackendConfig,
   actorId: number,
   draftId: number,
   text: string,
 ): Promise<Date> {
-  return createStudioServices(backendDb, config).videos.parseSchedule(actorId, draftId, text);
+  return createStudioServices(backendDb, config).videos.manualSchedule(actorId, draftId, text);
 }
 
 async function handleScheduleMessage({ backendDb, config, actorId, session, text }: VideoMessageArgs): Promise<PublicationEffect[]> {
   if (session.draftId == null) throw new StudioError("err.video-missing");
   try {
-    const date = await parseScheduleDate(backendDb, config, actorId, session.draftId, text);
+    const date = await manualScheduleDate(backendDb, config, actorId, session.draftId, text);
     return applyVideoScheduleDate(backendDb, config, actorId, session, date);
   } catch (error) {
     const locale = botLocale(backendDb, actorId);

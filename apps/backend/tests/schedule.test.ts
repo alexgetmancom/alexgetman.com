@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { InlineKeyboard } from "grammy";
 import { appendScheduleAxisButtons, SCHEDULE_SLOT_PRESETS, scheduleTimeKeyboard } from "../src/bot/scheduling.js";
 import { StudioError } from "../src/foundation/errors.js";
-import { parseManualSchedule, scheduleClockToday } from "../src/publishing/schedule.js";
+import { parseManualSchedule, publicationSlotTime } from "../src/publishing/schedule.js";
 
 function expectStudioError(fn: () => unknown, code: string): void {
   try {
@@ -65,8 +65,8 @@ describe("publishing schedule", () => {
     expect(parseManualSchedule("21:15", "Europe/Moscow", now).toISOString()).toBe("2026-07-10T18:15:00.000Z");
     expect(parseManualSchedule("09:00", "Europe/Moscow", now).toISOString()).toBe("2026-07-11T06:00:00.000Z");
     expect(parseManualSchedule("12.07 10:30", "Europe/Moscow", now).toISOString()).toBe("2026-07-12T07:30:00.000Z");
-    expect(scheduleClockToday("21:00", "Europe/Moscow", now).toISOString()).toBe("2026-07-10T18:00:00.000Z");
-    expect(scheduleClockToday("10:00", "Europe/Moscow", now).toISOString()).toBe("2026-07-11T07:00:00.000Z");
+    expect(publicationSlotTime("21:00", "Europe/Moscow", now).toISOString()).toBe("2026-07-10T18:00:00.000Z");
+    expect(publicationSlotTime("10:00", "Europe/Moscow", now).toISOString()).toBe("2026-07-11T07:00:00.000Z");
     expectStudioError(() => parseManualSchedule("25:00", "Europe/Moscow", now), "common.schedule-parse-error");
     expectStudioError(() => parseManualSchedule("31.02 10:00", "Europe/Moscow", now), "common.schedule-parse-error");
     expectStudioError(() => parseManualSchedule("01.01.2020 10:00", "Europe/Moscow", now), "err.schedule-time-past");
@@ -77,7 +77,7 @@ describe("publishing schedule", () => {
     const springNow = new Date("2026-03-07T12:00:00.000Z");
     expect(parseManualSchedule("08.03 01:30", zone, springNow).toISOString()).toBe("2026-03-08T06:30:00.000Z");
     expect(parseManualSchedule("08.03 03:30", zone, springNow).toISOString()).toBe("2026-03-08T07:30:00.000Z");
-    expect(scheduleClockToday("01:30", zone, new Date("2026-03-07T08:00:00.000Z")).toISOString()).toBe("2026-03-08T06:30:00.000Z");
+    expect(publicationSlotTime("01:30", zone, new Date("2026-03-07T08:00:00.000Z")).toISOString()).toBe("2026-03-08T06:30:00.000Z");
     const fallNow = new Date("2026-10-31T12:00:00.000Z");
     // When a wall clock occurs twice, choose the first occurrence so the slot
     // never silently moves later than the operator requested.

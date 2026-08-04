@@ -1,4 +1,5 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
+import { publicationRef } from "../application/publication-ref.js";
 import { effectivePostTargets, registeredPostTargetIds } from "../channels/registry.js";
 import { enrichPublishedPostEntities } from "../content/entity-enrichment.js";
 import { requireDraft } from "../content/index.js";
@@ -57,7 +58,7 @@ function publishDraftToQueueInternal(backendDb: BackendDb, draftId: number, opti
   });
   reconcilePublication(backendDb, postId);
   recordDomainEvent(backendDb.events, {
-    ref: `post:${postId}`,
+    ref: publicationRef("post", postId),
     type: "publishing.plan.created",
     severity: "info",
     message: `Publication plan created for draft #${draftId}`,

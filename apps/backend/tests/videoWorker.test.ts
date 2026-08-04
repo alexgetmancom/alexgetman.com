@@ -315,7 +315,9 @@ describe("video job execution", () => {
       await runVideoCycle(config, backendDb);
 
       expect(seen).toHaveLength(0);
-      const events = backendDb.sqlite.prepare("SELECT event_type FROM post_events WHERE post_key = ?").all(`video:${draftId}`) as {
+      const events = backendDb.sqlite
+        .prepare("SELECT event_type FROM post_events WHERE post_key = ?")
+        .all(`publication:video:${draftId}`) as {
         event_type: string;
       }[];
       expect(events.map((event) => event.event_type)).toContain("video.reminder.due");

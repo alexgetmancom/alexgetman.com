@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { and, eq, isNull, lt, lte, or } from "drizzle-orm";
+import { publicationRef } from "../application/publication-ref.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { postTargets, publishJobs, videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
@@ -201,7 +202,7 @@ export async function runPublicationReconciliation(
     });
     refreshVideoDraftStatus(backendDb, row.target.videoDraftId, config.VIDEO_MEDIA_RETENTION_HOURS);
     recordDomainEvent(backendDb.events, {
-      ref: `video:${row.target.videoDraftId}`,
+      ref: publicationRef("video", row.target.videoDraftId),
       target: row.target.target,
       type: "video.target.reconciled",
       severity: "info",

@@ -33,8 +33,8 @@ export function analyticsService(backendDb: BackendDb, config: BackendConfig) {
     videoArchive(offset: number, locale: BotLocale) {
       return creatorVideoArchive(backendDb, offset, locale);
     },
-    videoMetrics(videoDraftId: number, locale: BotLocale) {
-      return creatorVideoMetrics(backendDb, videoDraftId, locale);
+    videoMetrics(publicationId: number, locale: BotLocale) {
+      return creatorVideoMetrics(backendDb, publicationId, locale);
     },
     audienceAnalysis(locale: BotLocale) {
       return audienceAnalysis(backendDb, config, locale);

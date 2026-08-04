@@ -1,4 +1,5 @@
 import { and, asc, count, eq, inArray, sql } from "drizzle-orm";
+import { publicationRef } from "../application/publication-ref.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { drafts, postLocales, posts, publicationPlans, publicationSources, publications, publishJobs, siteJobs } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
@@ -61,7 +62,7 @@ export function cancelDraft(backendDb: BackendDb, draftId: number): void {
   });
   discardDraftStoryCards(backendDb, draftId);
   recordDomainEvent(backendDb.events, {
-    ref: `draft:${draftId}`,
+    ref: publicationRef("draft", draftId),
     type: "publishing.draft.cancelled",
     severity: "info",
     message: `Publication for draft #${draftId} cancelled`,
@@ -69,7 +70,7 @@ export function cancelDraft(backendDb: BackendDb, draftId: number): void {
 }
 
 /** Cancels only jobs that have not reached a final external state. */
-export function cancelRemainingPostJobs(backendDb: BackendDb, draftId: number): void {
+export function cancelPendingPostJobs(backendDb: BackendDb, draftId: number): void {
   const draft = unsafeDb(backendDb).db.select({ postId: drafts.postId }).from(drafts).where(eq(drafts.id, draftId)).get();
   if (!draft?.postId) return;
   const now = new Date().toISOString();
@@ -79,7 +80,7 @@ export function cancelRemainingPostJobs(backendDb: BackendDb, draftId: number): 
     .where(and(eq(publishJobs.postId, draft.postId), inArray(publishJobs.status, ["queued", "failed"])))
     .run();
   recordDomainEvent(backendDb.events, {
-    ref: `draft:${draftId}`,
+    ref: publicationRef("draft", draftId),
     type: "publishing.remaining.cancelled",
     severity: "warn",
     message: `Remaining publication jobs for draft #${draftId} cancelled`,

@@ -138,7 +138,7 @@ async function handleRetry({
   draftId,
   posts,
 }: PostActionArgs): Promise<PublicationActionResult> {
-  const result = posts.retryFailed(actorId, draftId, second || undefined);
+  const result = posts.retryTarget(actorId, draftId, second || undefined);
   if (action !== "post_retry")
     return [
       {

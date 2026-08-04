@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { publicationRef } from "../application/publication-ref.js";
 import { targetLocale } from "../botTargets.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { drafts, publicationPlans, publications, publishJobs, siteJobs } from "../db/schema.js";
@@ -32,7 +33,7 @@ export function reconcilePublication(backendDb: BackendDb, postId: number): void
   if (effectiveStatus !== "scheduled" && previousStatus !== effectiveStatus && all.every((job) => FINAL_JOB_STATUSES.has(job.status))) {
     const failed = all.filter((job) => job.status === "failed" || job.status === "verification_required").length;
     recordDomainEvent(backendDb.events, {
-      ref: `post:${postId}`,
+      ref: publicationRef("post", postId),
       type: "delivery.post.completed",
       severity: "info",
       message: failed ? `Post #${postId} completed with ${failed} failed target(s)` : `Post #${postId} published successfully`,

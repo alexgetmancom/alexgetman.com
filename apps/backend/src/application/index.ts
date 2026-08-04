@@ -14,4 +14,14 @@ export type {
   StoryCardQueue,
   StudioPostStore,
 } from "./ports.js";
-export type { PublicationCapabilities, PublicationPipeline, PublicationSchedule, PublicationScheduleAxis } from "./publication-pipeline.js";
+export type {
+  Issue,
+  PreviewModel,
+  PublicationCapabilities,
+  PublicationPipeline,
+  PublicationSchedule,
+  PublicationScheduleAxis,
+  PublicationView,
+} from "./publication-pipeline.js";
+export type { PublicationRef, PublicationRefKind } from "./publication-ref.js";
+export { parsePublicationRef, publicationRef } from "./publication-ref.js";

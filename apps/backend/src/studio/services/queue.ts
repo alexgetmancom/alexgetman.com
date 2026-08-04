@@ -73,7 +73,7 @@ export function queueService(backendDb: BackendDb, config: BackendConfig) {
       const targetsByDraft = new Map<number, ReturnType<BackendDb["studioQueue"]["videoTargets"]>[number][]>();
       if (videos.length) {
         const rows = backendDb.studioQueue.videoTargets(videos.map((video) => video.id));
-        for (const row of rows) targetsByDraft.set(row.videoDraftId, [...(targetsByDraft.get(row.videoDraftId) ?? []), row]);
+        for (const row of rows) targetsByDraft.set(row.publicationId, [...(targetsByDraft.get(row.publicationId) ?? []), row]);
       }
 
       for (const video of videos) {

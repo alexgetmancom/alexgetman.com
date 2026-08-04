@@ -38,8 +38,8 @@ export function createStudioNotificationStore(db: BackendDatabase): StudioNotifi
       return db.select({ actorId: drafts.actorId }).from(drafts).where(eq(drafts.id, draftId)).get()?.actorId ?? null;
     },
 
-    videoOwner(videoDraftId: number): number | null {
-      return db.select({ actorId: videoDrafts.actorId }).from(videoDrafts).where(eq(videoDrafts.id, videoDraftId)).get()?.actorId ?? null;
+    videoOwner(publicationId: number): number | null {
+      return db.select({ actorId: videoDrafts.actorId }).from(videoDrafts).where(eq(videoDrafts.id, publicationId)).get()?.actorId ?? null;
     },
 
     postIdForKey(postKey: string): number | null {

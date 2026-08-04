@@ -335,7 +335,7 @@ async function handleRetry({ backendDb, config, actorId, locale, args }: VideoAc
   const [idText, targetText] = args;
   const target = requireVideoTarget(targetText ?? "");
   const id = requireDraftId(idText);
-  createStudioServices(backendDb, config).videos.retry(actorId, id, target);
+  createStudioServices(backendDb, config).videos.retryTarget(actorId, id, target);
   return [
     ...showVideoCard(backendDb, config, actorId, id, locale),
     { type: "toast", text: t(locale, "video.requeued", { label: videoTargetLabel(target) }) },

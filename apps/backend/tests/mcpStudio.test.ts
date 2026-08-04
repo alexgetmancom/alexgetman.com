@@ -192,7 +192,7 @@ describe("Studio MCP", () => {
       });
       expect(
         backendDb.sqlite
-          .prepare("SELECT COUNT(*) AS count FROM post_events WHERE event_type='studio.mcp.command' AND post_key='video:1'")
+          .prepare("SELECT COUNT(*) AS count FROM post_events WHERE event_type='studio.mcp.command' AND post_key='publication:video:1'")
           .get(),
       ).toEqual({ count: 3 });
     } finally {

@@ -152,7 +152,7 @@ describe("Studio notifications", () => {
       const job = backendDb.db
         .select()
         .from(studioNotificationJobs)
-        .where(eq(studioNotificationJobs.ref, `post:${postId}`))
+        .where(eq(studioNotificationJobs.ref, `publication:post:${postId}`))
         .get();
       expect(job?.payloadJson).toMatchObject({ minutes: 17 });
     } finally {

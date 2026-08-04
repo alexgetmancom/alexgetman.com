@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { and, asc, eq, isNull, lte, or, sql } from "drizzle-orm";
+import { publicationRef } from "../application/publication-ref.js";
 import { videoChannelConfig } from "../channels/channel-config.js";
 import { videoPublicUrl, videoSourcePath } from "../content/video-assets.js";
 import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../db/client.js";
@@ -88,7 +89,7 @@ function recordVideoCompletionIfFinal(backendDb: BackendDb, videoDraftId: number
     return;
   const failed = targets.filter((target) => target.status === "failed" || target.status === "verification_required").length;
   recordDomainEvent(backendDb.events, {
-    ref: `video:${videoDraftId}`,
+    ref: publicationRef("video", videoDraftId),
     type: "delivery.video.completed",
     severity: failed ? "warn" : "info",
     message: failed ? `Video #${videoDraftId} completed with ${failed} failed target(s)` : `Video #${videoDraftId} published successfully`,
@@ -135,7 +136,7 @@ function claimVideoJobs(backendDb: BackendDb, limit: number): VideoJob[] {
 async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job: VideoJob): Promise<void> {
   if (job.kind === "reminder") {
     recordDomainEvent(backendDb.events, {
-      ref: `video:${job.videoDraftId}`,
+      ref: publicationRef("video", job.videoDraftId),
       type: "video.reminder.due",
       severity: "info",
       message: `Video reminder due for draft #${job.videoDraftId}`,
@@ -175,7 +176,7 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
           await keepYouTubeUploadPrivate(youtubeConfig, result.id, locale);
         } catch (error) {
           recordDomainEvent(backendDb.events, {
-            ref: `video:${job.videoDraftId}`,
+            ref: publicationRef("video", job.videoDraftId),
             type: "studio.notification.video_cancelled",
             severity: "warn",
             target: "youtube_shorts",
@@ -264,7 +265,7 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
 
 function recordVideoProgressEvent(backendDb: BackendDb, job: VideoJob, type: string): void {
   recordDomainEvent(backendDb.events, {
-    ref: `video:${job.videoDraftId}`,
+    ref: publicationRef("video", job.videoDraftId),
     type,
     severity: "info",
     message: `Video job ${job.kind} settled for draft #${job.videoDraftId}`,
@@ -350,7 +351,7 @@ function failVideoJob(backendDb: BackendDb, job: VideoJob, cause: unknown, confi
             .where(eq(videoTargets.id, job.videoTargetId))
             .get();
     recordDomainEvent(backendDb.events, {
-      ref: `video:${job.videoDraftId}`,
+      ref: publicationRef("video", job.videoDraftId),
       type: "video.target.failed",
       severity: "error",
       target: target?.target ?? "video",
@@ -396,7 +397,7 @@ function requireVideoVerification(backendDb: BackendDb, job: VideoJob, cause: un
           .where(eq(videoTargets.id, job.videoTargetId))
           .get();
   recordDomainEvent(backendDb.events, {
-    ref: `video:${job.videoDraftId}`,
+    ref: publicationRef("video", job.videoDraftId),
     type: "video.target.verification_required",
     severity: "warn",
     target: target?.target ?? "video",
@@ -519,7 +520,7 @@ export function recoverVideoLocks(backendDb: BackendDb, config: BackendConfig): 
             .where(eq(videoTargets.id, job.videoTargetId))
             .get();
     recordDomainEvent(backendDb.events, {
-      ref: `video:${job.videoDraftId}`,
+      ref: publicationRef("video", job.videoDraftId),
       type: verificationRequired ? "video.target.verification_required" : "video.target.failed",
       severity: verificationRequired ? "warn" : "error",
       target: target?.target ?? "video",

@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { and, asc, eq, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { publicationRef } from "../../application/publication-ref.js";
 import { videoChannelConfig } from "../../channels/channel-config.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { videoDrafts, videoMetricSchedule, videoTargets } from "../../db/schema.js";
@@ -137,7 +138,7 @@ export async function runVideoMetricSchedule(config: BackendConfig, backendDb: B
       );
       if (frozen)
         recordDomainEvent(backendDb.events, {
-          ref: `video:${task.videoDraftId}`,
+          ref: publicationRef("video", task.videoDraftId),
           target: task.target,
           type: "analytics.video_metrics.frozen",
           severity: "warn",

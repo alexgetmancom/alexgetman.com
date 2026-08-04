@@ -54,7 +54,7 @@ describe("post publication retry", () => {
       const posts = createStudioServices(backendDb, loadConfig({ ADMIN_IDS: "42" })).posts;
       expect(backendDb.studioPosts.failedPublicationTargets(700).map((item) => item.target)).toEqual(["telegram_ru", "site_en"]);
 
-      expect(posts.retryFailed(42, 7)).toMatchObject({ requeued: 2, alreadyQueued: 0 });
+      expect(posts.retryTarget(42, 7)).toMatchObject({ requeued: 2, alreadyQueued: 0 });
       expect(backendDb.db.select({ status: publishJobs.status, attemptCount: publishJobs.attemptCount }).from(publishJobs).all()).toEqual([
         { status: "queued", attemptCount: 0 },
       ]);
@@ -65,6 +65,6 @@ describe("post publication retry", () => {
         { target: "telegram_ru", status: "queued" },
         { target: "site_en", status: "queued" },
       ]);
-      expect(() => posts.retryFailed(42, 7)).toThrow("err.retry-only-failed");
+      expect(() => posts.retryTarget(42, 7)).toThrow("err.retry-only-failed");
     }));
 });

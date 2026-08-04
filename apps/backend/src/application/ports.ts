@@ -166,7 +166,7 @@ export type StudioQueueStore = {
   videos(actorIds: number[], limit: number): StudioQueueVideo[];
   failedPostIds(postIds: number[]): number[];
   failedStoryCardDraftIds(draftIds: number[]): number[];
-  videoTargets(videoDraftIds: number[]): StudioQueueVideoTarget[];
+  videoTargets(publicationIds: number[]): StudioQueueVideoTarget[];
   effectivePostTargets(targets: Record<string, boolean>): Record<string, boolean>;
 };
 
@@ -191,7 +191,7 @@ export type StudioQueueVideo = {
 };
 
 export type StudioQueueVideoTarget = {
-  videoDraftId: number;
+  publicationId: number;
   status: string;
   scheduledAt: string | null;
 };
@@ -203,7 +203,7 @@ export type StudioNotificationStore = {
   acknowledge(id: number, now: string): boolean;
   cancelQueuedReminders(actorId: number, now: string): number;
   draftOwner(draftId: number): number | null;
-  videoOwner(videoDraftId: number): number | null;
+  videoOwner(publicationId: number): number | null;
   postIdForKey(postKey: string): number | null;
   postOwner(postId: number): number | null;
 };
@@ -288,7 +288,7 @@ type StudioVideoDraftRecord = {
 
 type StudioVideoTargetRecord = {
   id: number;
-  videoDraftId: number;
+  publicationId: number;
   target: string;
   metadataJson: Record<string, unknown>;
   scheduledAt: string | null;
@@ -309,7 +309,7 @@ type StudioVideoTargetRecord = {
 
 type StudioVideoJobRecord = {
   id: number;
-  videoDraftId: number;
+  publicationId: number;
   videoTargetId: number | null;
   kind: string;
   runAt: string;
@@ -326,10 +326,10 @@ type StudioVideoJobRecord = {
 
 /** Read-side video persistence used by Studio interfaces and previews. */
 export type StudioVideoStore = {
-  get(videoDraftId: number): StudioVideoDraftRecord | null;
+  get(publicationId: number): StudioVideoDraftRecord | null;
   list(actorIds: number[], limit: number): StudioVideoDraftRecord[];
-  targets(videoDraftId: number): StudioVideoTargetRecord[];
-  jobs(videoDraftId: number): StudioVideoJobRecord[];
+  targets(publicationId: number): StudioVideoTargetRecord[];
+  jobs(publicationId: number): StudioVideoJobRecord[];
   history(postKey: string, limit: number): PostEventRecord[];
 };
 

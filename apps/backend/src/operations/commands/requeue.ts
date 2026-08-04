@@ -6,10 +6,10 @@ import { removePublishedTargets } from "../../delivery/external-removals.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { jsonObject } from "../../json.js";
 import { localizeTargetPayload } from "../../publishing/payload.js";
-import { type PublicationRef, sourcePayload } from "../publication-ref.js";
+import { type ResolvedPublicationRef, sourcePayload } from "../publication-ref.js";
 
 /** Restores queued Delivery work from its durable publication source. */
-function requeuePublication(backendDb: BackendDb, ref: PublicationRef, target?: string): Record<string, unknown> {
+function requeuePublication(backendDb: BackendDb, ref: ResolvedPublicationRef, target?: string): Record<string, unknown> {
   const source = sourcePayload(backendDb, ref);
   const whereRef = ref.postId != null ? eq(publishJobs.postId, ref.postId) : eq(publishJobs.postKey, ref.postKey);
   const rows = unsafeDb(backendDb)
@@ -116,7 +116,7 @@ function requeuePublication(backendDb: BackendDb, ref: PublicationRef, target?: 
 
 export function requeuePublicationScope(
   backendDb: BackendDb,
-  ref: PublicationRef,
+  ref: ResolvedPublicationRef,
   target?: string,
   locale?: "ru" | "en",
 ): Record<string, unknown> {
@@ -136,7 +136,7 @@ export function requeuePublicationScope(
 
 export function requeueAfterRemoval(
   backendDb: BackendDb,
-  ref: PublicationRef,
+  ref: ResolvedPublicationRef,
   removals: Array<Record<string, unknown>>,
   target?: string,
 ): Record<string, unknown> {
@@ -150,7 +150,7 @@ export function requeueAfterRemoval(
 
 export async function replaceTextFallbackTargets(
   backendDb: BackendDb,
-  ref: PublicationRef,
+  ref: ResolvedPublicationRef,
   config: BackendConfig,
   target: string | undefined,
   locale: "ru" | "en",

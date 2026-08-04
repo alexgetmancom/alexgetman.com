@@ -3,10 +3,10 @@ import { type BackendDb, unsafeDb } from "../db/client.js";
 import { posts, publicationSources, publications, siteSourceItems } from "../db/schema.js";
 import { jsonObject } from "../json.js";
 
-export type PublicationRef = { input: string; postId: number | null; postKey: string; messageId: number };
+export type ResolvedPublicationRef = { input: string; postId: number | null; postKey: string; messageId: number };
 
 /** Resolves external command input to the stable publication identity used by Operations commands. */
-export function resolvePublicationRef(backendDb: BackendDb, ref: string): PublicationRef | null {
+export function resolvePublicationRef(backendDb: BackendDb, ref: string): ResolvedPublicationRef | null {
   const trimmed = ref.trim();
   const postKeyRef = trimmed.startsWith("post:") ? trimmed : null;
   const numeric = trimmed.match(/^post:(\d+)$/)?.[1] ?? (/^\d+$/.test(trimmed) ? trimmed : null);
@@ -42,7 +42,7 @@ export function resolvePublicationRef(backendDb: BackendDb, ref: string): Public
   return post ? { input: ref, postId: post.postId, postKey: post.postKey, messageId: post.messageId } : null;
 }
 
-export function sourcePayload(backendDb: BackendDb, ref: PublicationRef): Record<string, unknown> {
+export function sourcePayload(backendDb: BackendDb, ref: ResolvedPublicationRef): Record<string, unknown> {
   if (ref.postId != null) {
     const source = jsonObject(
       unsafeDb(backendDb)

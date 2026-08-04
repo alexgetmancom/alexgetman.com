@@ -1,4 +1,6 @@
 import type { DraftPatch, DraftRecord } from "../../application/ports.js";
+import type { PublicationPipeline, PublicationSchedule } from "../../application/publication-pipeline.js";
+import { publicationRef } from "../../application/publication-ref.js";
 import { isStoryTarget, PRESETS, presetName, TARGETS, targetLocale } from "../../botTargets.js";
 import { effectivePostTargets, registeredPostTargetIds } from "../../channels/registry.js";
 import { listStudioMediaAssets, mediaItemsFromAssets, requireStudioMediaAssets } from "../../content/assets.js";
@@ -10,11 +12,11 @@ import { recordDomainEvent } from "../../domain/events.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { StudioError } from "../../foundation/errors.js";
 import { cancelScheduledNotifications, scheduleReminder } from "../../notifications/jobs.js";
-import { cancelDraft, cancelRemainingPostJobs } from "../../publishing/draft-lifecycle.js";
+import { cancelDraft, cancelPendingPostJobs } from "../../publishing/draft-lifecycle.js";
 import { mediaPolicyForTarget } from "../../publishing/media-policy.js";
 import { publicationPreflight } from "../../publishing/preflight.js";
 import { publishDraftToQueue } from "../../publishing/publication-workflow.js";
-import { assertFutureSchedule, assertValidScheduleDate, parseManualSchedule, scheduleClockToday } from "../../publishing/schedule.js";
+import { assertFutureSchedule, assertValidScheduleDate, parseManualSchedule, publicationSlotTime } from "../../publishing/schedule.js";
 import { parseTargets } from "../../publishing/targets.js";
 import { readyStoryCardMedia, type StoryPublishMode, setStoryPublishMode, storyCardsForDraft } from "../../story-cards/store.js";
 import { accessibleStudioActorIds } from "../access.js";
@@ -72,7 +74,7 @@ export function replanScheduledPostAfterStoryCardFailure(backendDb: BackendDb, c
   );
   if (!replanned) return false;
   recordDomainEvent(backendDb.events, {
-    ref: `draft:${draftId}`,
+    ref: publicationRef("draft", draftId),
     type: "studio.notification.story-cards.failed",
     severity: "error",
     message: `Story cards failed for draft #${draftId}; Story delivery was skipped`,
@@ -122,7 +124,9 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
     return postProgressState(backendDb, draft.id);
   };
 
-  return {
+  const service = {
+    kind: "post" as const,
+    capabilities: { hasMetadataWizard: false, hasStoryCards: true, scheduleAxis: "locale" as const },
     create(actorId: number, message: DraftMessage): number {
       return createDraftFromMessage(backendDb, actorId, message);
     },
@@ -151,6 +155,10 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       return {
         id: draft.id,
         status: draft.status,
+        issues: publicationPreflight({
+          ...draft,
+          targets_json: JSON.stringify(targets),
+        }),
         locales: [
           { locale: "ru" as const, ...ruContent },
           { locale: "en" as const, ...enContent },
@@ -187,7 +195,7 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       backendDb.storyCards.queue(draftId);
       replanScheduledPostAfterMutation(backendDb, config, draftId);
       recordDomainEvent(backendDb.events, {
-        ref: `draft:${draftId}`,
+        ref: publicationRef("draft", draftId),
         type: "content.draft.media_attached",
         severity: "info",
         message: `Draft #${draftId} media attached`,
@@ -206,22 +214,22 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       backendDb.storyCards.queue(draftId);
       replanScheduledPostAfterMutation(backendDb, config, draftId);
       recordDomainEvent(backendDb.events, {
-        ref: `draft:${draftId}`,
+        ref: publicationRef("draft", draftId),
         type: "content.draft.media_removed",
         severity: "info",
         message: `Draft #${draftId} media removed`,
         details: { locale, asset_ids: assetIds },
       });
     },
-    schedule(actorId: number, draftId: number, input: PostScheduleInput): number {
-      return schedulePost(backendDb, config, actorId, draftId, input);
+    schedule(actorId: number, draftId: number, input: PostScheduleInput | PublicationSchedule): number {
+      return schedulePost(backendDb, config, actorId, draftId, toPostScheduleInput(input));
     },
     hasLocaleTargets(actorId: number, draftId: number, locale: "ru" | "en"): boolean {
       const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
       return hasLocaleTarget(effectivePostTargets(backendDb, parseTargets(draft.targets_json)), locale);
     },
     slotTime(clock: string): Date {
-      return scheduleClockToday(clock, config.TIMEZONE, backendDb.clock.now());
+      return publicationSlotTime(clock, config.TIMEZONE, backendDb.clock.now());
     },
     manualSchedule(actorId: number, draftId: number, scope: PostScheduleScope, value: string): PostScheduleInput {
       return scheduleAt(
@@ -236,12 +244,12 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
     cancel(actorId: number, draftId: number): void {
       const draft = requireMutableDraft(backendDb, config, actorId, draftId);
       cancelDraft(backendDb, draftId);
-      if (draft.post_id != null) cancelScheduledNotifications(backendDb, `post:${draft.post_id}`);
+      if (draft.post_id != null) cancelScheduledNotifications(backendDb, publicationRef("post", draft.post_id));
     },
-    cancelRemaining(actorId: number, draftId: number): void {
+    cancelJobs(actorId: number, draftId: number): void {
       const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
-      cancelRemainingPostJobs(backendDb, draftId);
-      if (draft.post_id != null) cancelScheduledNotifications(backendDb, `post:${draft.post_id}`);
+      cancelPendingPostJobs(backendDb, draftId);
+      if (draft.post_id != null) cancelScheduledNotifications(backendDb, publicationRef("post", draft.post_id));
     },
     setStoryPublishMode(actorId: number, draftId: number, mode: StoryPublishMode): void {
       requirePostEditAllowed(backendDb, config, actorId, draftId, backendDb.clock.now());
@@ -272,7 +280,7 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       backendDb.drafts.update(draftId, { threadsChainApproved: 1, updatedAt: backendDb.clock.now().toISOString() });
       replanScheduledPostAfterMutation(backendDb, config, draftId);
       recordDomainEvent(backendDb.events, {
-        ref: `draft:${draftId}`,
+        ref: publicationRef("draft", draftId),
         type: "content.draft.threads-chain-approved",
         severity: "info",
         message: `Draft #${draftId} waived the Threads single-post rule`,
@@ -283,7 +291,7 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       requireMutableDraft(backendDb, config, actorId, draftId);
       return publishDraftToQueue(backendDb, draftId);
     },
-    retryFailed(actorId: number, draftId: number, target?: string) {
+    retryTarget(actorId: number, draftId: number, target?: string) {
       const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
       if (draft.post_id == null) throw new StudioError("err.retry-only-failed");
       const failed = backendDb.studioPosts.failedPublicationTargets(draft.post_id);
@@ -341,6 +349,18 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       );
       recordEditEvent(backendDb, draftId, input);
     },
+  };
+  service satisfies PublicationPipeline;
+  return service;
+}
+
+function toPostScheduleInput(input: PostScheduleInput | PublicationSchedule): PostScheduleInput {
+  if (!("values" in input)) return input;
+  return {
+    ruAt: input.values.ru ?? null,
+    enAt: input.values.en ?? null,
+    ...(input.allowPast === undefined ? {} : { allowPast: input.allowPast }),
+    ...(input.immediateKey === "ru" || input.immediateKey === "en" ? { immediateLocale: input.immediateKey } : {}),
   };
 }
 
@@ -413,7 +433,7 @@ function withDraftRollback<T>(
 
 function recordEditEvent(backendDb: BackendDb, draftId: number, input: EditInput): void {
   recordDomainEvent(backendDb.events, {
-    ref: `draft:${draftId}`,
+    ref: publicationRef("draft", draftId),
     type: "content.draft.edited",
     severity: "info",
     message: `Draft #${draftId} content updated`,
@@ -472,7 +492,7 @@ function schedulePost(backendDb: BackendDb, config: BackendConfig, actorId: numb
 function rescheduleReminders(backendDb: BackendDb, actorId: number, postId: number, draft: DraftRecord, scheduled: DraftRecord): void {
   const preference = settingsService(backendDb).notifications(actorId);
   const title = draft.text_ru.trim().split("\n")[0]?.slice(0, 100) || `Post #${postId}`;
-  cancelScheduledNotifications(backendDb, `post:${postId}`);
+  cancelScheduledNotifications(backendDb, publicationRef("post", postId));
   for (const [locale, scheduledAt] of [
     ["ru", scheduled.scheduled_at],
     ["en", scheduled.scheduled_en_at],
@@ -482,7 +502,7 @@ function rescheduleReminders(backendDb: BackendDb, actorId: number, postId: numb
     if (!targets.length) continue;
     scheduleReminder(backendDb, {
       actorId,
-      ref: `post:${postId}`,
+      ref: publicationRef("post", postId),
       kind: `post.${locale}`,
       publishAt: new Date(scheduledAt),
       title,

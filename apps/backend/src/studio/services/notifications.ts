@@ -1,3 +1,4 @@
+import { parsePublicationRef } from "../../application/publication-ref.js";
 import type { BackendDb } from "../../db/client.js";
 import { type DomainEventInput, recordDomainEvent } from "../../domain/events.js";
 import type { BackendConfig } from "../../foundation/config.js";
@@ -44,23 +45,21 @@ function isInboxEvent(eventType: string): boolean {
  * visible to every trusted operator in the installation. */
 function isVisibleTo(backendDb: BackendDb, config: BackendConfig | undefined, ref: string | null, actorId: number): boolean {
   if (!ref) return true;
-  if (ref.startsWith("draft:")) {
-    const id = Number(ref.slice("draft:".length));
-    const ownerId = Number.isSafeInteger(id) ? backendDb.studioNotifications.draftOwner(id) : undefined;
+  const publication = parsePublicationRef(ref);
+  if (publication?.kind === "draft") {
+    const ownerId = backendDb.studioNotifications.draftOwner(publication.id);
     return ownerId != null && (config ? canAccessStudioOwner(config, actorId, ownerId) : ownerId === actorId);
   }
-  if (ref.startsWith("video:")) {
-    const id = Number(ref.slice("video:".length));
-    if (!Number.isSafeInteger(id)) return false;
-    const ownerId = backendDb.studioNotifications.videoOwner(id);
+  if (publication?.kind === "video") {
+    const ownerId = backendDb.studioNotifications.videoOwner(publication.id);
     return ownerId != null && (config ? canAccessStudioOwner(config, actorId, ownerId) : ownerId === actorId);
   }
   // A malformed id is a broken reference, not a shared operational event:
   // only a ref with no recognised entity at all may stay visible to everyone.
-  if (ref.startsWith("post:")) {
-    const id = Number(ref.slice("post:".length));
-    return Number.isSafeInteger(id) && ownsPost(backendDb, config, id, actorId);
+  if (publication?.kind === "post") {
+    return ownsPost(backendDb, config, publication.id, actorId);
   }
+  if (/^(?:publication:)?(draft|post|video):/.test(ref)) return false;
   const postId = backendDb.studioNotifications.postIdForKey(ref);
   if (postId == null || !Number.isSafeInteger(postId)) return true;
   return ownsPost(backendDb, config, postId, actorId);

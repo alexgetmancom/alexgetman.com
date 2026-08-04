@@ -25,7 +25,7 @@ import {
   cancelVideo,
   createVideoDraft,
   replaceVideoTargets,
-  retryFailedVideoTarget,
+  retryVideoTarget,
   saveVideoMetadata,
   scheduleVideo,
 } from "../src/publishing/video-service.js";
@@ -597,7 +597,7 @@ describe("video publication queue", () => {
     if (!instagram) throw new Error("instagram target missing");
     backendDb.db.update(videoTargets).set({ status: "failed", lastError: "Meta failed" }).where(eq(videoTargets.id, instagram.id)).run();
 
-    retryFailedVideoTarget(backendDb, draftId, "instagram_reels");
+    retryVideoTarget(backendDb, draftId, "instagram_reels");
 
     expect(backendDb.sqlite.prepare("SELECT status FROM video_targets WHERE id=?").get(instagram.id)).toEqual({ status: "scheduled" });
     expect(

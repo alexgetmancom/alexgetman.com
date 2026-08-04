@@ -1,5 +1,6 @@
 import { and, asc, eq, gte, inArray, notExists, notInArray, or, sql } from "drizzle-orm";
 import type { Bot } from "grammy";
+import { parsePublicationRef } from "../../application/publication-ref.js";
 import { refreshPostControlCard } from "../../bot/progress.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { alertDedup, drafts, postEvents } from "../../db/schema.js";
@@ -112,8 +113,8 @@ async function deliverEvent(backendDb: BackendDb, bot: Bot, config: BackendConfi
 }
 
 function postIdFromRef(value: string | null): number | null {
-  const match = value?.match(/^post:(\d+)$/);
-  return match ? Number(match[1]) : null;
+  const publication = parsePublicationRef(value);
+  return publication?.kind === "post" ? publication.id : null;
 }
 
 function wasDelivered(backendDb: BackendDb, eventId: number): boolean {

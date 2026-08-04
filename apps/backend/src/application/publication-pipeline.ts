@@ -14,29 +14,34 @@ export type PublicationSchedule = {
   immediateKey?: string;
 };
 
-/** The common application port for publication mutations and read models. */
-export type PublicationPipeline<
-  TPublication = unknown,
-  TPreview = unknown,
-  TValidation = unknown,
-  TSchedule = unknown,
-  TPublish = unknown,
-  TCancel = unknown,
-  TRetry = unknown,
-  TTarget = string,
-  TRemoveTarget = void,
-  TToggleTarget = void,
-> = {
+export type PublicationView = {
+  id: number;
+  status: string;
+};
+
+export type Issue = {
+  message: string;
+  target?: string;
+  locale?: "ru" | "en";
+  code?: string;
+};
+
+export type PreviewModel = PublicationView & {
+  issues: Issue[];
+};
+
+/** The shared application vocabulary implemented directly by each publication service. */
+export type PublicationPipeline = {
   kind: PublicationKind;
   capabilities: PublicationCapabilities;
-  get(actorId: number, publicationId: number): TPublication;
-  preview(actorId: number, publicationId: number): TPreview;
-  validate(actorId: number, publicationId: number): TValidation | Promise<TValidation>;
-  schedule(actorId: number, publicationId: number, schedule: PublicationSchedule): TSchedule | Promise<TSchedule>;
-  publish(actorId: number, publicationId: number): TPublish | Promise<TPublish>;
-  cancel(actorId: number, publicationId: number): TCancel | Promise<TCancel>;
-  retryTarget(actorId: number, publicationId: number, target: TTarget): TRetry | Promise<TRetry>;
-  removeTarget(actorId: number, publicationId: number, target: TTarget): TRemoveTarget | Promise<TRemoveTarget>;
-  toggleTarget(actorId: number, publicationId: number, target: TTarget): TToggleTarget | Promise<TToggleTarget>;
+  get(actorId: number, publicationId: number): PublicationView;
+  preview(actorId: number, publicationId: number): PreviewModel;
+  validate(actorId: number, publicationId: number): Issue[] | Promise<Issue[]>;
+  schedule(actorId: number, publicationId: number, schedule: PublicationSchedule): unknown;
+  publish(actorId: number, publicationId: number): unknown;
+  cancel(actorId: number, publicationId: number): unknown;
+  retryTarget(actorId: number, publicationId: number, target: string): unknown;
+  removeTarget(actorId: number, publicationId: number, target: string): unknown;
+  toggleTarget(actorId: number, publicationId: number, target: string): unknown;
   slotTime(clock: string): Date;
 };

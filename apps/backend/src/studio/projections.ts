@@ -87,15 +87,15 @@ export function postDeliveryProjections(
   return { kind: "post" as const, draftId: draft.id, projections: canonical };
 }
 
-export function videoDeliveryProjections(backendDb: BackendDb, videoDraftId: number) {
-  const draft = backendDb.studioVideos.get(videoDraftId);
+export function videoDeliveryProjections(backendDb: BackendDb, publicationId: number) {
+  const draft = backendDb.studioVideos.get(publicationId);
   if (!draft) throw new Error("Video publication was not found.");
   const asset = draft.studioMediaAssetId == null ? null : backendDb.studioMediaAssets.get(draft.studioMediaAssetId);
   const media = asset
     ? [{ type: "video", asset_id: asset.id, local_path: asset.localPath, filename: asset.filename, mime_type: asset.mimeType }]
     : [];
-  const projections = backendDb.studioVideos.targets(videoDraftId).map((target) => ({
-    id: `video:${videoDraftId}:${target.target}`,
+  const projections = backendDb.studioVideos.targets(publicationId).map((target) => ({
+    id: `video:${publicationId}:${target.target}`,
     label: target.target === "youtube_shorts" ? "Preview · YouTube Shorts" : "Preview · Instagram Reels",
     targets: [target.target],
     text: "",
@@ -105,5 +105,5 @@ export function videoDeliveryProjections(backendDb: BackendDb, videoDraftId: num
     metadata: (target.metadataJson ?? {}) as Record<string, unknown>,
     notes: [],
   })) satisfies DeliveryProjection[];
-  return { kind: "video" as const, videoDraftId, projections, sourceAvailable: media.length === 1 };
+  return { kind: "video" as const, publicationId, projections, sourceAvailable: media.length === 1 };
 }

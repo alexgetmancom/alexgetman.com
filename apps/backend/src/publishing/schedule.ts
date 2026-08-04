@@ -4,7 +4,7 @@ import { zonedDateParts, zonedSlot } from "../foundation/time.js";
 /** Resolves a slot-button clock (`HH:MM` in the configured zone) to today's occurrence, or
  * tomorrow's if today's has already passed. Used by the RU/EN preset
  * scheduling buttons. */
-export function scheduleClockToday(clock: string, timeZone: string, now = new Date()): Date {
+export function publicationSlotTime(clock: string, timeZone: string, now = new Date()): Date {
   const today = zonedDateParts(now, timeZone);
   const value = zonedSlot(today.year, today.month, today.day, clock, timeZone);
   if (value > now) return value;

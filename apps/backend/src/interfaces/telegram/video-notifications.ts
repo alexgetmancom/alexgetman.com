@@ -1,5 +1,6 @@
 import { desc, eq } from "drizzle-orm";
 import { type Bot, InlineKeyboard } from "grammy";
+import { parsePublicationRef } from "../../application/publication-ref.js";
 import { botLocale } from "../../bot/i18n.js";
 import { publicationCallback } from "../../bot/session-fsm.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
@@ -146,7 +147,7 @@ export async function sendStudioCompletion(
   await forEachAdmin(config.ADMIN_IDS, async (actorId) => {
     if (!notificationPreference(backendDb, actorId).completionEnabled) return;
     const locale = botLocale(backendDb, actorId);
-    const label = event.postKey?.startsWith("video:") ? t(locale, "notif.label-video") : t(locale, "notif.label-post");
+    const label = parsePublicationRef(event.postKey)?.kind === "video" ? t(locale, "notif.label-video") : t(locale, "notif.label-post");
     const headline = failed
       ? t(locale, "notif.completion-failed", { label, published, total, failed })
       : t(locale, "notif.completion-ok", { label, done: published || total, total });
@@ -170,7 +171,8 @@ function completionKeyboard(
   failedTargets: Array<{ target: string; status: string; error: string | null }>,
 ): InlineKeyboard {
   const keyboard = new InlineKeyboard();
-  if (postKey?.startsWith("post:") && draftId != null && failedTargets.length) {
+  const publication = parsePublicationRef(postKey);
+  if (publication?.kind === "post" && draftId != null && failedTargets.length) {
     keyboard.text(t(locale, "notif.retry-failed"), publicationCallback("post", "post_retry_notice", [draftId])).row();
     keyboard.text(t(locale, "notif.open"), publicationCallback("post", "preview", [draftId])).row();
     for (const target of failedTargets)
@@ -181,7 +183,7 @@ function completionKeyboard(
         )
         .row();
   }
-  if (postKey?.startsWith("video:") && draftId != null && failedTargets.length) {
+  if (publication?.kind === "video" && draftId != null && failedTargets.length) {
     keyboard.text(t(locale, "notif.open"), publicationCallback("video", "open", [draftId])).row();
     for (const target of failedTargets)
       keyboard
@@ -208,18 +210,18 @@ async function forEachAdmin(actorIds: number[], deliver: (actorId: number) => Pr
 }
 
 function completionTargets(backendDb: BackendDb, ref: string | null): Array<{ target: string; status: string; error: string | null }> {
-  const match = ref?.match(/^(post|video):(\d+)$/);
-  if (!match) return [];
-  if (match[1] === "video")
+  const publication = parsePublicationRef(ref);
+  if (!publication || publication.kind === "draft") return [];
+  if (publication.kind === "video")
     return unsafeDb(backendDb)
       .db.select({ target: videoTargets.target, status: videoTargets.status, error: videoTargets.lastError })
       .from(videoTargets)
-      .where(eq(videoTargets.videoDraftId, Number(match[2])))
+      .where(eq(videoTargets.videoDraftId, publication.id))
       .all();
   const jobs = unsafeDb(backendDb)
     .db.select({ target: publishJobs.target, status: publishJobs.status, error: publishJobs.lastError, jobId: publishJobs.jobId })
     .from(publishJobs)
-    .where(eq(publishJobs.postId, Number(match[2])))
+    .where(eq(publishJobs.postId, publication.id))
     .orderBy(desc(publishJobs.jobId))
     .all();
   const latest = new Map<string, (typeof jobs)[number]>();
@@ -227,7 +229,7 @@ function completionTargets(backendDb: BackendDb, ref: string | null): Array<{ ta
   const site = unsafeDb(backendDb)
     .db.select({ reason: siteJobs.reason, status: siteJobs.status, error: siteJobs.lastError, jobId: siteJobs.jobId })
     .from(siteJobs)
-    .where(eq(siteJobs.postId, Number(match[2])))
+    .where(eq(siteJobs.postId, publication.id))
     .orderBy(desc(siteJobs.jobId))
     .all();
   for (const job of site) {
@@ -238,15 +240,9 @@ function completionTargets(backendDb: BackendDb, ref: string | null): Array<{ ta
 }
 
 function postDraftId(backendDb: BackendDb, ref: string | null): number | null {
-  const match = ref?.match(/^post:(\d+)$/);
-  if (!match) return null;
-  return (
-    unsafeDb(backendDb)
-      .db.select({ id: drafts.id })
-      .from(drafts)
-      .where(eq(drafts.postId, Number(match[1])))
-      .get()?.id ?? null
-  );
+  const publication = parsePublicationRef(ref);
+  if (publication?.kind !== "post") return null;
+  return unsafeDb(backendDb).db.select({ id: drafts.id }).from(drafts).where(eq(drafts.postId, publication.id)).get()?.id ?? null;
 }
 
 function siteTarget(reason: string): string | null {
@@ -260,12 +256,12 @@ function shortError(value: string): string {
 }
 
 function videoLocaleForRef(backendDb: BackendDb, ref: string | null): "ru" | "en" | null {
-  const match = ref?.match(/^video:(\d+)$/);
-  if (!match) return null;
+  const publication = parsePublicationRef(ref);
+  if (publication?.kind !== "video") return null;
   const locale = unsafeDb(backendDb)
     .db.select({ locale: videoDrafts.locale })
     .from(videoDrafts)
-    .where(eq(videoDrafts.id, Number(match[1])))
+    .where(eq(videoDrafts.id, publication.id))
     .get()?.locale;
   return locale === "en" ? "en" : locale === "ru" ? "ru" : null;
 }
@@ -323,22 +319,15 @@ function notificationPreference(backendDb: BackendDb, actorId: number) {
 }
 
 function ownerForRef(backendDb: BackendDb, ref: string | null): number | null {
-  const match = ref?.match(/^(post|video):(\d+)$/);
-  if (!match) return null;
-  if (match[1] === "video")
+  const publication = parsePublicationRef(ref);
+  if (!publication || publication.kind === "draft") return null;
+  if (publication.kind === "video")
     return (
-      unsafeDb(backendDb)
-        .db.select({ actorId: videoDrafts.actorId })
-        .from(videoDrafts)
-        .where(eq(videoDrafts.id, Number(match[2])))
-        .get()?.actorId ?? null
+      unsafeDb(backendDb).db.select({ actorId: videoDrafts.actorId }).from(videoDrafts).where(eq(videoDrafts.id, publication.id)).get()
+        ?.actorId ?? null
     );
   return (
-    unsafeDb(backendDb)
-      .db.select({ actorId: drafts.actorId })
-      .from(drafts)
-      .where(eq(drafts.postId, Number(match[2])))
-      .get()?.actorId ?? null
+    unsafeDb(backendDb).db.select({ actorId: drafts.actorId }).from(drafts).where(eq(drafts.postId, publication.id)).get()?.actorId ?? null
   );
 }
 

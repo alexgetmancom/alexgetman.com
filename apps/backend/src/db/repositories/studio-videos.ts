@@ -1,13 +1,14 @@
 import { asc, desc, eq, inArray } from "drizzle-orm";
 import type { PostEventRecord, StudioVideoStore } from "../../application/ports.js";
+import { parsePublicationRef } from "../../application/publication-ref.js";
 import { postEvents, videoDrafts, videoJobs, videoTargets } from "../schema.js";
 import type { BackendDatabase } from "../types.js";
 
 /** SQLite read adapter for Studio video drafts, targets, jobs, and history. */
 export function createStudioVideoStore(db: BackendDatabase): StudioVideoStore {
   return {
-    get(videoDraftId) {
-      return db.select().from(videoDrafts).where(eq(videoDrafts.id, videoDraftId)).get() ?? null;
+    get(publicationId) {
+      return db.select().from(videoDrafts).where(eq(videoDrafts.id, publicationId)).get() ?? null;
     },
 
     list(actorIds, limit) {
@@ -20,19 +21,33 @@ export function createStudioVideoStore(db: BackendDatabase): StudioVideoStore {
         .all();
     },
 
-    targets(videoDraftId) {
-      return db.select().from(videoTargets).where(eq(videoTargets.videoDraftId, videoDraftId)).orderBy(asc(videoTargets.id)).all();
+    targets(publicationId) {
+      return db
+        .select()
+        .from(videoTargets)
+        .where(eq(videoTargets.videoDraftId, publicationId))
+        .orderBy(asc(videoTargets.id))
+        .all()
+        .map(({ videoDraftId, ...target }) => ({ ...target, publicationId: videoDraftId }));
     },
 
-    jobs(videoDraftId) {
-      return db.select().from(videoJobs).where(eq(videoJobs.videoDraftId, videoDraftId)).orderBy(desc(videoJobs.id)).all();
+    jobs(publicationId) {
+      return db
+        .select()
+        .from(videoJobs)
+        .where(eq(videoJobs.videoDraftId, publicationId))
+        .orderBy(desc(videoJobs.id))
+        .all()
+        .map(({ videoDraftId, ...job }) => ({ ...job, publicationId: videoDraftId }));
     },
 
     history(postKey, limit): PostEventRecord[] {
+      const parsed = parsePublicationRef(postKey);
+      const refs = parsed ? [postKey, `${parsed.kind}:${parsed.id}`] : [postKey];
       return db
         .select()
         .from(postEvents)
-        .where(eq(postEvents.postKey, postKey))
+        .where(inArray(postEvents.postKey, refs))
         .orderBy(desc(postEvents.createdAt), desc(postEvents.id))
         .limit(limit)
         .all();

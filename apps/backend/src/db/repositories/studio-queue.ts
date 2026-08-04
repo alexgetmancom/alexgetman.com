@@ -77,16 +77,16 @@ export function createStudioQueueStore(db: BackendDatabase): StudioQueueStore {
       ];
     },
 
-    videoTargets(videoDraftIds: number[]): StudioQueueVideoTarget[] {
-      if (videoDraftIds.length === 0) return [];
+    videoTargets(publicationIds: number[]): StudioQueueVideoTarget[] {
+      if (publicationIds.length === 0) return [];
       return db
         .select({
-          videoDraftId: videoTargets.videoDraftId,
+          publicationId: videoTargets.videoDraftId,
           status: videoTargets.status,
           scheduledAt: videoTargets.scheduledAt,
         })
         .from(videoTargets)
-        .where(inArray(videoTargets.videoDraftId, videoDraftIds))
+        .where(inArray(videoTargets.videoDraftId, publicationIds))
         .all();
     },
 

@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it } from "bun:test";
 import type { UnsafeBackendDb } from "../src/db/client.js";
 import { studioMediaAssets } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
-import { createStudioServices } from "../src/studio/services/index.js";
 import { postService } from "../src/studio/services/posts.js";
 import { videoService } from "../src/studio/services/videos.js";
 import { openBackendDb } from "./helpers/open-db.js";
@@ -41,21 +40,17 @@ describe("Studio publication services", () => {
     const config = loadConfig({ ADMIN_IDS: "42" });
     const posts = postService(backendDb, config);
     const videos = videoService(backendDb, config);
-    const pipelines = createStudioServices(backendDb, config).publications;
-
-    expect(pipelines.post.capabilities).toEqual({ hasMetadataWizard: false, hasStoryCards: true, scheduleAxis: "locale" });
-    expect(pipelines.video.capabilities).toEqual({ hasMetadataWizard: true, hasStoryCards: false, scheduleAxis: "target" });
 
     const postId = posts.create(42, { text: "Hello", textEn: "Hello", entities: [], media: [] });
     expect(postId).toBe(1);
-    expect(pipelines.post.get(42, postId).id).toBe(postId);
-    expect(pipelines.post.preview(42, postId).id).toBe(postId);
+    expect(posts.get(42, postId).id).toBe(postId);
+    expect(posts.preview(42, postId).id).toBe(postId);
 
     const asset = videoAssetId(backendDb);
     const videoId = videos.create(42, asset);
     expect(videoId).toBe(1);
-    expect(pipelines.video.get(42, videoId).draft.id).toBe(videoId);
-    expect(pipelines.video.preview(42, videoId).draft.id).toBe(videoId);
+    expect(videos.get(42, videoId).draft.id).toBe(videoId);
+    expect(videos.preview(42, videoId).draft.id).toBe(videoId);
     expect(typeof posts.slotTime("08:30").toISOString()).toBe("string");
     expect(typeof videos.slotTime("08:30").toISOString()).toBe("string");
   });

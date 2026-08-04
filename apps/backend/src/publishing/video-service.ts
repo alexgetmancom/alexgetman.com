@@ -211,7 +211,7 @@ export function scheduleVideo(
 
 /** Requeues only an explicitly selected failed or externally verified platform;
  * the other platform and its media stay untouched. */
-export function retryFailedVideoTarget(backendDb: BackendDb, videoDraftId: number, targetName: VideoTarget): void {
+export function retryVideoTarget(backendDb: BackendDb, videoDraftId: number, targetName: VideoTarget): void {
   const target = unsafeDb(backendDb)
     .db.select()
     .from(videoTargets)

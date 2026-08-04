@@ -7,6 +7,7 @@ import type {
   PublicationRetryResult,
   StudioPostStore,
 } from "../../application/ports.js";
+import { publicationRef } from "../../application/publication-ref.js";
 import { jsonObject } from "../../json.js";
 import { localizeTargetPayload } from "../../publishing/payload.js";
 import {
@@ -78,8 +79,13 @@ export function createStudioPostStore(db: BackendDatabase): StudioPostStore {
     history(draftId: number, postId: number | null, limit: number): PostEventRecord[] {
       const scope =
         postId == null
-          ? eq(postEvents.postKey, `draft:${draftId}`)
-          : or(eq(postEvents.postKey, `draft:${draftId}`), eq(postEvents.postKey, `post:${postId}`));
+          ? or(eq(postEvents.postKey, publicationRef("draft", draftId)), eq(postEvents.postKey, `draft:${draftId}`))
+          : or(
+              eq(postEvents.postKey, publicationRef("draft", draftId)),
+              eq(postEvents.postKey, publicationRef("post", postId)),
+              eq(postEvents.postKey, `draft:${draftId}`),
+              eq(postEvents.postKey, `post:${postId}`),
+            );
       return db.select().from(postEvents).where(scope).orderBy(desc(postEvents.createdAt), desc(postEvents.id)).limit(limit).all();
     },
 

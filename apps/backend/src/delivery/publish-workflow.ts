@@ -1,5 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import pLimit from "p-limit";
+import { publicationRef } from "../application/publication-ref.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { publishJobs } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
@@ -114,7 +115,7 @@ export async function runDeliveryPublishCycle(
   for (const postId of postIds) {
     try {
       recordDomainEvent(backendDb.events, {
-        ref: `post:${postId}`,
+        ref: publicationRef("post", postId),
         type: "delivery.post.settled",
         severity: "info",
         message: `Delivery cycle settled post #${postId}`,
@@ -153,7 +154,7 @@ function settleUnexpectedFinalization(
 
 async function timedDeliveryPhase<T>(
   backendDb: BackendDb,
-  job: { jobId: number; postKey: string; target: string; attemptCount: number; lockId: string },
+  job: { jobId: number; postId: number | null; postKey: string; target: string; attemptCount: number; lockId: string },
   phase: string,
   work: () => Promise<T>,
   providerResult?: unknown,
@@ -175,7 +176,7 @@ async function timedDeliveryPhase<T>(
     const durationMs = Date.now() - startedAt;
     try {
       recordDomainEvent(backendDb.events, {
-        ref: job.postKey,
+        ref: job.postId == null ? job.postKey : publicationRef("post", job.postId),
         target: job.target,
         type: "publish.job.phase",
         severity: "info",
@@ -196,7 +197,7 @@ async function timedDeliveryPhase<T>(
   } catch (error) {
     try {
       recordDomainEvent(backendDb.events, {
-        ref: job.postKey,
+        ref: job.postId == null ? job.postKey : publicationRef("post", job.postId),
         target: job.target,
         type: "publish.job.phase",
         severity: "error",

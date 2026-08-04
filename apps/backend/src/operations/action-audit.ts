@@ -1,11 +1,11 @@
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { opsActions } from "../db/schema.js";
-import type { PublicationRef } from "./publication-ref.js";
+import type { ResolvedPublicationRef } from "./publication-ref.js";
 
 export function recordOperationAction(
   backendDb: BackendDb,
   action: string,
-  ref: PublicationRef,
+  ref: ResolvedPublicationRef,
   target: string | null,
   details: Record<string, unknown>,
   actorType = "command-center",

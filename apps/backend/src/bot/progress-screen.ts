@@ -21,7 +21,7 @@ export async function handleProgressCallback(ctx: Context, backendDb: BackendDb,
   }
   const actorId = Number(ctx.from?.id);
   if (cancel) {
-    createStudioServices(backendDb, config).posts.cancelRemaining(actorId, draftId);
+    createStudioServices(backendDb, config).posts.cancelJobs(actorId, draftId);
     await ctx.answerCallbackQuery({ text: "Remaining work cancelled" });
   } else await ctx.answerCallbackQuery();
   const progress = renderPostProgress(

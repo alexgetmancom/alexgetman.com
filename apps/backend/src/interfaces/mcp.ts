@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { publicationRef } from "../application/publication-ref.js";
 import type { BackendDb } from "../db/client.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -214,7 +215,7 @@ const studioToolDefs = {
     description: "Create a text-post draft for the authenticated owner.",
     schema: z.object({ text: trimmed(1, 20_000), text_en: trimmed(0, 20_000).optional() }),
     mutates: true,
-    ref: (_input, result) => `draft:${(result as { draft_id: number }).draft_id}`,
+    ref: (_input, result) => publicationRef("draft", (result as { draft_id: number }).draft_id),
     handler: (studio, actorId, input) => {
       const draftId = studio.posts.create(actorId, {
         text: input.text,
@@ -255,7 +256,7 @@ const studioToolDefs = {
     }),
     list: z.object({ draft_id: positiveInt, locale: localeSchema, asset_ids: intArrayShape(1, 10), replace: z.boolean().optional() }),
     mutates: true,
-    ref: (input) => `draft:${input.draft_id}`,
+    ref: (input) => publicationRef("draft", input.draft_id),
     handler: (studio, actorId, input) => {
       studio.posts.attachMediaAssets(actorId, input.draft_id, input.locale, input.asset_ids, Boolean(input.replace));
       return {
@@ -272,7 +273,7 @@ const studioToolDefs = {
     schema: z.object({ draft_id: positiveInt, locale: localeSchema, asset_ids: uniqueIntArray(1, 10) }),
     list: z.object({ draft_id: positiveInt, locale: localeSchema, asset_ids: intArrayShape(1, 10) }),
     mutates: true,
-    ref: (input) => `draft:${input.draft_id}`,
+    ref: (input) => publicationRef("draft", input.draft_id),
     handler: (studio, actorId, input) => {
       studio.posts.removeMedia(actorId, input.draft_id, input.locale, input.asset_ids);
       return { draft_id: input.draft_id, locale: input.locale, asset_ids: input.asset_ids, removed: true };
@@ -287,7 +288,7 @@ const studioToolDefs = {
     description: "Edit text on one owned post draft.",
     schema: z.object({ draft_id: positiveInt, locale: localeSchema, text: trimmed(0, 20_000) }),
     mutates: true,
-    ref: (input) => `draft:${input.draft_id}`,
+    ref: (input) => publicationRef("draft", input.draft_id),
     handler: (studio, actorId, input) => {
       studio.posts.edit(actorId, input.draft_id, { locale: input.locale, text: input.text, entities: [], media: [] });
       return { draft_id: input.draft_id, updated: true };
@@ -297,7 +298,7 @@ const studioToolDefs = {
     description: "Toggle one configured target on an owned post draft.",
     schema: z.object({ draft_id: positiveInt, target: trimmed(1, 120) }),
     mutates: true,
-    ref: (input) => `draft:${input.draft_id}`,
+    ref: (input) => publicationRef("draft", input.draft_id),
     handler: (studio, actorId, input) => {
       studio.posts.toggleTarget(actorId, input.draft_id, input.target);
       return { draft_id: input.draft_id, updated: true };
@@ -307,7 +308,7 @@ const studioToolDefs = {
     description: "Queue an owned post draft for immediate publication.",
     schema: z.object({ draft_id: positiveInt }),
     mutates: true,
-    ref: (_input, result) => `post:${(result as { post_id: number }).post_id}`,
+    ref: (_input, result) => publicationRef("post", (result as { post_id: number }).post_id),
     handler: (studio, actorId, input) => {
       const postId = studio.posts.publish(actorId, input.draft_id);
       return { draft_id: input.draft_id, post_id: postId, queued: true };
@@ -320,7 +321,7 @@ const studioToolDefs = {
       .refine((value) => value.ru_at || value.en_at, { message: "ru_at or en_at is required" }),
     list: z.object({ draft_id: positiveInt, ru_at: isoDateShape(80), en_at: isoDateShape(80) }),
     mutates: true,
-    ref: (_input, result) => `post:${(result as { post_id: number }).post_id}`,
+    ref: (_input, result) => publicationRef("post", (result as { post_id: number }).post_id),
     handler: (studio, actorId, input) => {
       const postId = studio.posts.schedule(actorId, input.draft_id, { ruAt: input.ru_at, enAt: input.en_at });
       return { draft_id: input.draft_id, post_id: postId, scheduled: true };
@@ -330,7 +331,7 @@ const studioToolDefs = {
     description: "Cancel an owned post draft and its remaining work.",
     schema: z.object({ draft_id: positiveInt }),
     mutates: true,
-    ref: (input) => `draft:${input.draft_id}`,
+    ref: (input) => publicationRef("draft", input.draft_id),
     handler: (studio, actorId, input) => {
       studio.posts.cancel(actorId, input.draft_id);
       return { draft_id: input.draft_id, cancelled: true };
@@ -340,10 +341,10 @@ const studioToolDefs = {
     description: "Create an owned video draft from an already-uploaded Studio video asset.",
     schema: z.object({ asset_id: positiveInt, locale: localeSchema.optional() }),
     mutates: true,
-    ref: (_input, result) => `video:${(result as { video_draft_id: number }).video_draft_id}`,
+    ref: (_input, result) => publicationRef("video", (result as { video_draft_id: number }).video_draft_id),
     handler: (studio, actorId, input) => {
-      const videoDraftId = studio.videos.create(actorId, input.asset_id, input.locale);
-      return { video_draft_id: videoDraftId };
+      const publicationId = studio.videos.create(actorId, input.asset_id, input.locale);
+      return { video_draft_id: publicationId };
     },
   }),
   studio_video_list: tool({
@@ -375,7 +376,7 @@ const studioToolDefs = {
     description: "Rename an owned video draft.",
     schema: z.object({ video_draft_id: positiveInt, label: trimmed(1, 500) }),
     mutates: true,
-    ref: (input) => `video:${input.video_draft_id}`,
+    ref: (input) => publicationRef("video", input.video_draft_id),
     handler: (studio, actorId, input) => {
       studio.videos.rename(actorId, input.video_draft_id, input.label);
       return { video_draft_id: input.video_draft_id, updated: true };
@@ -392,7 +393,7 @@ const studioToolDefs = {
         .refine((values) => new Set(values).size === values.length, { message: "targets must not contain duplicates" }),
     }),
     mutates: true,
-    ref: (input) => `video:${input.video_draft_id}`,
+    ref: (input) => publicationRef("video", input.video_draft_id),
     handler: (studio, actorId, input) => {
       studio.videos.replaceTargets(actorId, input.video_draft_id, input.targets);
       return { video_draft_id: input.video_draft_id, updated: true };
@@ -415,14 +416,14 @@ const studioToolDefs = {
           "game_url" in parsed.data
             ? { title: parsed.data.title, description: parsed.data.description, tags: parsed.data.tags, gameUrl: parsed.data.game_url }
             : parsed.data;
-        return { videoDraftId: value.video_draft_id, target: value.target, metadata };
+        return { publicationId: value.video_draft_id, target: value.target, metadata };
       }),
     list: z.object({ video_draft_id: positiveInt, target: videoTargetSchema, metadata: z.record(z.string(), z.unknown()) }),
     mutates: true,
-    ref: (input) => `video:${input.videoDraftId}`,
+    ref: (input) => publicationRef("video", input.publicationId),
     handler: (studio, actorId, input) => {
-      studio.videos.updateMetadata(actorId, input.videoDraftId, input.target, input.metadata as never);
-      return { video_draft_id: input.videoDraftId, target: input.target, updated: true };
+      studio.videos.updateMetadata(actorId, input.publicationId, input.target, input.metadata as never);
+      return { video_draft_id: input.publicationId, target: input.target, updated: true };
     },
   }),
   studio_video_schedule: tool({
@@ -434,7 +435,7 @@ const studioToolDefs = {
       }),
     list: z.object({ video_draft_id: positiveInt, youtube_shorts_at: isoDateShape(80), instagram_reels_at: isoDateShape(80) }),
     mutates: true,
-    ref: (input) => `video:${input.video_draft_id}`,
+    ref: (input) => publicationRef("video", input.video_draft_id),
     handler: async (studio, actorId, input) => {
       const technical = await studio.videos.schedule(actorId, input.video_draft_id, {
         ...(input.youtube_shorts_at ? { youtube_shorts: input.youtube_shorts_at } : {}),
@@ -446,13 +447,13 @@ const studioToolDefs = {
   studio_video_preflight: tool({
     description: "Validate an owned video source and configured targets without scheduling it.",
     schema: z.object({ video_draft_id: positiveInt }),
-    handler: (studio, actorId, input) => studio.videos.validate(actorId, input.video_draft_id),
+    handler: (studio, actorId, input) => studio.videos.technicalCheck(actorId, input.video_draft_id),
   }),
   studio_video_publish: tool({
     description: "Queue all configured video targets for immediate publication.",
     schema: z.object({ video_draft_id: positiveInt }),
     mutates: true,
-    ref: (input) => `video:${input.video_draft_id}`,
+    ref: (input) => publicationRef("video", input.video_draft_id),
     handler: async (studio, actorId, input) => {
       const technical = await studio.videos.publish(actorId, input.video_draft_id);
       return { video_draft_id: input.video_draft_id, queued: true, technical };
@@ -462,9 +463,9 @@ const studioToolDefs = {
     description: "Retry one failed video target.",
     schema: z.object({ video_draft_id: positiveInt, target: videoTargetSchema }),
     mutates: true,
-    ref: (input) => `video:${input.video_draft_id}`,
+    ref: (input) => publicationRef("video", input.video_draft_id),
     handler: (studio, actorId, input) => {
-      studio.videos.retry(actorId, input.video_draft_id, input.target);
+      studio.videos.retryTarget(actorId, input.video_draft_id, input.target);
       return { video_draft_id: input.video_draft_id, target: input.target, retried: true };
     },
   }),
@@ -472,7 +473,7 @@ const studioToolDefs = {
     description: "Remove one editable video target.",
     schema: z.object({ video_draft_id: positiveInt, target: videoTargetSchema }),
     mutates: true,
-    ref: (input) => `video:${input.video_draft_id}`,
+    ref: (input) => publicationRef("video", input.video_draft_id),
     handler: (studio, actorId, input) => ({
       video_draft_id: input.video_draft_id,
       target: input.target,
@@ -483,7 +484,7 @@ const studioToolDefs = {
     description: "Cancel an owned video publication.",
     schema: z.object({ video_draft_id: positiveInt }),
     mutates: true,
-    ref: (input) => `video:${input.video_draft_id}`,
+    ref: (input) => publicationRef("video", input.video_draft_id),
     handler: async (studio, actorId, input) => ({
       video_draft_id: input.video_draft_id,
       cancelled: true,

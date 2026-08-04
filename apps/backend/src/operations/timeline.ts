@@ -1,14 +1,16 @@
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, or } from "drizzle-orm";
+import { publicationRef } from "../application/publication-ref.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { postEvents, postTargets, publishJobs } from "../db/schema.js";
 import { jsonObject } from "../json.js";
 
 export function publicationTimeline(backendDb: BackendDb, ref: string): Record<string, unknown> {
   if (!/^post:\d+$/.test(ref)) throw new Error("--ref must look like post:106");
+  const postId = Number(ref.slice("post:".length));
   const events = unsafeDb(backendDb)
     .db.select()
     .from(postEvents)
-    .where(eq(postEvents.postKey, ref))
+    .where(or(eq(postEvents.postKey, ref), eq(postEvents.postKey, publicationRef("post", postId))))
     .orderBy(asc(postEvents.createdAt), asc(postEvents.id))
     .all()
     .map((event) => ({

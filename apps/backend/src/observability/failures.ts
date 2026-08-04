@@ -1,4 +1,5 @@
 import { and, desc, eq, gte, lt } from "drizzle-orm";
+import { publicationRef } from "../application/publication-ref.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { publishJobs, siteJobs } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
@@ -26,7 +27,7 @@ export function recordPublicationFailures(config: BackendConfig, backendDb: Back
     .all();
   for (const job of stale)
     recordDomainEvent(backendDb.events, {
-      ref: job.postKey,
+      ref: job.postId == null ? job.postKey : publicationRef("post", job.postId),
       type: "queue.stale",
       severity: "error",
       target: job.target,
@@ -40,7 +41,7 @@ export function recordPublicationFailures(config: BackendConfig, backendDb: Back
   // cooldown window forever.
   for (const job of failedSite)
     recordDomainEvent(backendDb.events, {
-      ref: job.postId == null ? null : `post:${job.postId}`,
+      ref: job.postId == null ? null : publicationRef("post", job.postId),
       type: "site.build.failed",
       severity: "error",
       target: "site",
