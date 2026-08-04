@@ -40,6 +40,13 @@ describe("video card controls", () => {
     expect(keyboard).not.toContain("video_now:7");
     expect(keyboard).not.toContain("video_schedule:7");
   });
+
+  it("localizes a target that needs provider verification", () => {
+    const preview = videoPreview(draftCard("verification_required"), config);
+
+    expect(preview.text).toContain("нужна проверка");
+    expect(preview.text).not.toContain("verification_required");
+  });
 });
 
 describe("video callback dispatch", () => {

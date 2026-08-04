@@ -303,6 +303,7 @@ const en = {
   "vstatus.publishing": "publishing",
   "vstatus.published": "published",
   "vstatus.failed": "failed",
+  "vstatus.verification-required": "verification required",
   "vstatus.cancelled": "cancelled",
   // Analytics report text — archives
   "report.post-archive-choose": "Post archive\n\nChoose a post:",
@@ -737,6 +738,7 @@ const ru = {
   "vstatus.publishing": "публикуется",
   "vstatus.published": "опубликовано",
   "vstatus.failed": "ошибка",
+  "vstatus.verification-required": "нужна проверка",
   "vstatus.cancelled": "отменено",
   // Analytics report text — archives
   "report.post-archive-choose": "Архив постов\n\nВыберите пост:",

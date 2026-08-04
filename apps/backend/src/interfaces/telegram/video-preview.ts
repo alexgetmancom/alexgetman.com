@@ -83,6 +83,7 @@ function videoStatusLabel(status: string, locale: BotLocale): string {
     publishing: t(locale, "vstatus.publishing"),
     published: t(locale, "vstatus.published"),
     failed: t(locale, "vstatus.failed"),
+    verification_required: t(locale, "vstatus.verification-required"),
     cancelled: t(locale, "vstatus.cancelled"),
   };
   return labels[status] ?? status;
