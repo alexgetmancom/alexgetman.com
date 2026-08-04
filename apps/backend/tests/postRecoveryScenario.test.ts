@@ -1,0 +1,92 @@
+import { describe, expect, it } from "bun:test";
+import type { Bot, Context } from "grammy";
+import { runCallbackBoundary } from "../src/bot/callback-boundary.js";
+import { handlePostAction } from "../src/bot/post-actions.js";
+import type { BackendDb } from "../src/db/client.js";
+import { drafts, postTargets, publications, publishJobs } from "../src/db/schema.js";
+import { loadConfig } from "../src/foundation/config.js";
+import { consumeTelegramEvents } from "../src/interfaces/telegram/event-consumer.js";
+import { HttpPublishError } from "../src/publishing/errors.js";
+import { claimDuePublishJobs, enqueuePublishJobTx, failPublishJob } from "../src/publishing/queue.js";
+import { withDb } from "./helpers/db.js";
+
+const config = loadConfig({ ADMIN_IDS: "42" });
+
+describe("post recovery scenario", () => {
+  it("notifies once, retries all failed targets once, and exposes no duplicate queue rows", async () =>
+    withDb(async (backendDb) => {
+      const now = new Date().toISOString();
+      backendDb.db
+        .insert(drafts)
+        .values({
+          id: 7,
+          actorId: 42,
+          status: "scheduled",
+          textRu: "Night post",
+          textEnMachine: "Night post",
+          targetsJson: JSON.stringify({ telegram: true, threads_ru: true }),
+          postId: 700,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      backendDb.db.insert(publications).values({ postId: 700, draftId: 7, status: "scheduled", createdAt: now, updatedAt: now }).run();
+      for (const target of ["telegram", "threads_ru"])
+        enqueuePublishJobTx(backendDb.db, {
+          postId: 700,
+          postKey: "post:700",
+          messageId: 700,
+          target,
+          payload: { text: "Night post" },
+        });
+
+      const claimed = claimDuePublishJobs(backendDb, 2, "scenario-worker");
+      expect(claimed).toHaveLength(2);
+      for (const job of claimed)
+        failPublishJob(backendDb, config, job.jobId, new HttpPublishError("Provider rejected the post", 400), job.lockId);
+
+      const messages: Array<{ chatId: number; text: string; options: unknown }> = [];
+      const bot = {
+        api: {
+          sendMessage: async (chatId: number, text: string, options: unknown) => {
+            messages.push({ chatId, text, options });
+            return { message_id: 1, date: 1, chat: { id: chatId, type: "private" as const } };
+          },
+        },
+      } as unknown as Bot;
+      await consumeTelegramEvents(backendDb, bot, config);
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0]?.text).toContain("Telegram");
+      expect(messages[0]?.text).toContain("Threads");
+      expect(JSON.stringify(messages[0]?.options)).toContain("post_retry_notice:7");
+
+      const answers: Array<{ text?: string } | undefined> = [];
+      const retryContext = (id: string, callbackAnswers: Array<{ text?: string } | undefined>): Context =>
+        ({
+          callbackQuery: { id, data: "post_retry_notice:7" },
+          from: { id: 42 },
+          answerCallbackQuery: async (options?: { text?: string }) => void callbackAnswers.push(options),
+        }) as unknown as Context;
+      const firstRetry = retryContext("post-recovery-retry", answers);
+      await runCallbackBoundary(firstRetry, backendDb, () => handlePostAction(firstRetry, backendDb, config));
+
+      expect(answers[0]?.text).toContain("Queued again: 2");
+      expect(backendDb.db.select({ status: publishJobs.status }).from(publishJobs).all()).toEqual([
+        { status: "queued" },
+        { status: "queued" },
+      ]);
+      expect(backendDb.db.select().from(publishJobs).all()).toHaveLength(2);
+      expect(backendDb.db.select({ status: postTargets.status }).from(postTargets).all()).toEqual([
+        { status: "queued" },
+        { status: "queued" },
+      ]);
+
+      const duplicateAnswers: Array<{ text?: string } | undefined> = [];
+      const duplicateRetry = retryContext("post-recovery-retry-again", duplicateAnswers);
+      await runCallbackBoundary(duplicateRetry, backendDb, () => handlePostAction(duplicateRetry, backendDb, config));
+
+      expect(duplicateAnswers[0]?.text).toContain("Only a failed platform can be retried.");
+      expect(backendDb.db.select().from(publishJobs).all()).toHaveLength(2);
+    }));
+});
