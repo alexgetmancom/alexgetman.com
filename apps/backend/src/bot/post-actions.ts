@@ -232,8 +232,8 @@ async function handleScheduleScope({
 }: PostActionArgs): Promise<PublicationActionResult> {
   if (!first) return [{ type: "toast", text: t(locale, "action.unknown") }];
   clearConversationState(backendDb, actorId, "post");
-  if (first === "ru_now") return commitLocaleScheduleOnce(backendDb, config, actorId, draftId, "ru", new Date(), "ru");
-  if (first === "en_now") return commitLocaleScheduleOnce(backendDb, config, actorId, draftId, "en", new Date(), "en");
+  if (first === "ru_now") return commitLocaleSchedule(backendDb, config, actorId, draftId, "ru", new Date(), "ru");
+  if (first === "en_now") return commitLocaleSchedule(backendDb, config, actorId, draftId, "en", new Date(), "en");
   if (first === "both") return previewEffects(backendDb, draftId, config, "schedule_ru");
   return [{ type: "toast", text: t(locale, "action.unknown") }];
 }
@@ -257,7 +257,7 @@ async function handleSchedulePick({
   if (pipeline.capabilities.scheduleAxis !== "locale") throw new StudioError("action.schedule-expired");
   clearConversationState(backendDb, actorId, "post");
   const value = pipeline.slotTime(`${second.slice(0, 2)}:${second.slice(2, 4)}`);
-  return commitLocaleScheduleOnce(backendDb, config, actorId, draftId, requireScheduleLocale(first), value);
+  return commitLocaleSchedule(backendDb, config, actorId, draftId, requireScheduleLocale(first), value);
 }
 
 async function handleManualScheduleConfirm({
@@ -273,7 +273,7 @@ async function handleManualScheduleConfirm({
     return [{ type: "toast", text: t(locale, "action.schedule-expired") }];
   const { locale: scope, value } = stateStep;
   clearConversationState(backendDb, actorId, "post");
-  return commitLocaleScheduleOnce(backendDb, config, actorId, draftId, scope, value);
+  return commitLocaleSchedule(backendDb, config, actorId, draftId, scope, value);
 }
 
 async function handleManualSchedule({
@@ -477,18 +477,6 @@ async function commitLocaleSchedule(
       options: { reply_markup: resultNavigationKeyboard(uiLocale, "upcoming") },
     },
   ];
-}
-
-async function commitLocaleScheduleOnce(
-  backendDb: BackendDb,
-  config: BackendConfig,
-  actorId: number,
-  draftId: number,
-  scheduleLocale: "ru" | "en",
-  value: Date,
-  immediateLocale?: "ru" | "en",
-): Promise<PublicationActionResult> {
-  return commitLocaleSchedule(backendDb, config, actorId, draftId, scheduleLocale, value, immediateLocale);
 }
 
 function sendPublishConfirmation(backendDb: BackendDb, config: BackendConfig, actorId: number, draftId: number): PublicationEffect[] {

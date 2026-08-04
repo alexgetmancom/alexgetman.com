@@ -41,6 +41,8 @@ type VideoActionArgs = PublicationActionContext;
 type VideoActionResult = PublicationActionResult;
 type VideoActionHandler = (args: PublicationActionContext) => Promise<VideoActionResult>;
 
+const SCHEDULE_SESSION_STEPS = ["schedule_common", "schedule_target"];
+
 const EDIT_FIELD_PROMPTS: Record<string, MessageKey> = {
   label: "video.edit-label-prompt",
   youtube_title: "video.edit-yt-title-prompt",
@@ -452,7 +454,7 @@ async function handleSchedulePick({ backendDb, config, actorId, args, pipeline }
   const id = requireDraftId(idText);
   if (pipeline.capabilities.scheduleAxis !== "target") throw new StudioError("action.schedule-expired");
   const session = getVideoState(backendDb, actorId);
-  requireSessionStep(session?.step, scheduleSessionSteps(), "action.schedule-expired");
+  requireSessionStep(session?.step, SCHEDULE_SESSION_STEPS, "action.schedule-expired");
   if (!session || session.draftId !== id) throw new StudioError("action.schedule-expired");
   const value = pipeline.slotTime(`${(hhmm ?? "").slice(0, 2)}:${(hhmm ?? "").slice(2, 4)}`);
   if (session.step === "schedule_common")
@@ -498,13 +500,9 @@ async function handleSchedulePick({ backendDb, config, actorId, args, pipeline }
 async function handleScheduleManual({ backendDb, config, actorId, locale, args }: VideoActionArgs): Promise<VideoActionResult> {
   const id = requireDraftId(args[0]);
   const session = getVideoState(backendDb, actorId);
-  requireSessionStep(session?.step, scheduleSessionSteps(), "action.schedule-expired");
+  requireSessionStep(session?.step, SCHEDULE_SESSION_STEPS, "action.schedule-expired");
   if (!session || session.draftId !== id) throw new StudioError("action.schedule-expired");
   return [videoPromptEffect(backendDb, actorId, t(locale, "video.enter-datetime", { timezone: config.TIMEZONE_LABEL }))];
-}
-
-function scheduleSessionSteps(): string[] {
-  return ["schedule_common", "schedule_target"];
 }
 
 async function handleRemove({ backendDb, config, actorId, locale, args, pipeline }: VideoActionArgs): Promise<VideoActionResult> {
