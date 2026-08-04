@@ -14,6 +14,7 @@ import { isPostDraftMutable } from "../publishing/state.js";
 import { parseTargets } from "../publishing/targets.js";
 import { requirePostEditAllowed } from "../studio/services/post-access.js";
 import { postProgressState } from "../studio/services/post-progress.js";
+import { appendResultNavigation, confirmationKeyboard } from "./dialog-ui.js";
 import { type BotLocale, botLocale } from "./i18n.js";
 import { appendScheduleAxisButtons } from "./scheduling.js";
 
@@ -170,18 +171,22 @@ export function draftPreview(
     const mediaEn = safeMediaCount(draft.media_en_json) || mediaRu;
     const available = enabledTargetLabels(targets, mediaRu, mediaEn) || t(locale, "post.no-platforms");
     const unavailable = unavailableTargetLabels(targets, mediaRu, mediaEn);
-    keyboard.text(t(locale, "post.publish-now-btn"), `publish_confirm:${draftId}`).text(t(locale, "common.back"), `preview:${draftId}`);
     return {
       text: `${draftHeader(draftId, targets, locale)}\n\n⚠️ *${t(locale, "post.publish-now-q")}*\n${t(locale, "post.will-send-to")}: ${available}.${unavailable ? `\n⚠️ ${t(locale, "post.will-skip-no-media", { targets: unavailable })}` : ""}`,
-      keyboard,
+      keyboard: confirmationKeyboard(
+        { label: t(locale, "post.publish-now-btn"), callback: `publish_confirm:${draftId}` },
+        { label: t(locale, "common.back"), callback: `preview:${draftId}` },
+      ),
     };
   }
 
   if (view === "confirm_delete") {
-    keyboard.text(t(locale, "post.delete-btn"), `cancel_confirm:${draftId}`).text(t(locale, "common.back"), `preview:${draftId}`);
     return {
       text: `${draftHeader(draftId, targets, locale)}\n\n⚠️ *${t(locale, "post.delete-q")}*\n${t(locale, "post.delete-warn")}`,
-      keyboard,
+      keyboard: confirmationKeyboard(
+        { label: t(locale, "post.delete-btn"), callback: `cancel_confirm:${draftId}` },
+        { label: t(locale, "common.back"), callback: `preview:${draftId}` },
+      ),
     };
   }
 
@@ -204,7 +209,7 @@ export function draftPreview(
       for (const item of retryable)
         keyboard.text(t(locale, "notif.retry-target", { target: item.label }), `post_retry:${draftId}:${item.target}`).row();
     }
-    keyboard.text(t(locale, "queue.upcoming-btn"), "queue_home").text(t(locale, "common.menu"), "menu_home");
+    appendResultNavigation(keyboard, locale, "upcoming");
   }
 
   const schedule =

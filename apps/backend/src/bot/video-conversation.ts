@@ -18,8 +18,8 @@ import {
   firstVideoMetadataStep,
   type VideoWizardStep,
 } from "../studio/video-fsm.js";
+import { appendCancelButton, confirmationKeyboard } from "./dialog-ui.js";
 import { botLocale } from "./i18n.js";
-import { scheduleConfirmationKeyboard } from "./scheduling.js";
 import { versionedCallback } from "./session-fsm.js";
 import {
   askInstagramOrSchedule,
@@ -46,8 +46,8 @@ export async function startVideoConversation(ctx: Context, backendDb: BackendDb)
   const keyboard = new InlineKeyboard()
     .text(t(locale, "video.language-ru"), versionedCallback("video_locale:ru", session.revision))
     .text(t(locale, "video.language-en"), versionedCallback("video_locale:en", session.revision))
-    .row()
-    .text(t(locale, "common.cancel"), versionedCallback("video_cancel_dialog", session.revision));
+    .row();
+  appendCancelButton(keyboard, locale, "video_cancel_dialog", session.revision);
   // Reached via a menu button, this is pure navigation: turn that same
   // message into the prompt instead of leaving it and adding a new one.
   if (ctx.callbackQuery?.message) await ctx.editMessageText(text, { reply_markup: keyboard });
@@ -352,11 +352,11 @@ async function confirmVideoSchedule(
         `${videoTargetLabel(target)}: ${value.toLocaleString(locale === "ru" ? "ru-RU" : "en-GB", { timeZone: config.TIMEZONE })} ${config.TIMEZONE_LABEL}`,
       );
   }
-  const keyboard = scheduleConfirmationKeyboard({
-    revision: saved.revision,
-    confirm: { label: t(locale, "common.confirm"), callback: `video_schedule_confirm:${session.draftId}` },
-    back: { label: t(locale, "common.back"), callback: `video_schedule:${session.draftId}` },
-  });
+  const keyboard = confirmationKeyboard(
+    { label: t(locale, "common.confirm"), callback: `video_schedule_confirm:${session.draftId}` },
+    { label: t(locale, "common.back"), callback: `video_schedule:${session.draftId}` },
+    saved.revision,
+  );
   await sendVideoControl(ctx, backendDb, actorId, saved, lines.join("\n"), keyboard);
 }
 

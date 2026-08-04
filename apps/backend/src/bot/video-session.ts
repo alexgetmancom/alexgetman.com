@@ -7,6 +7,7 @@ import { t } from "../foundation/i18n/index.js";
 import { setTelegramVideoCard } from "../interfaces/telegram/control-cards.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import { nextVideoFlowStep, previousVideoMetadataStep, type VideoPrompt, type VideoWizardStep } from "../studio/video-fsm.js";
+import { appendCancelButton, cancelPromptKeyboard } from "./dialog-ui.js";
 import { type BotLocale, botLocale } from "./i18n.js";
 import { SCHEDULE_SLOT_PRESETS, scheduleTimeKeyboard } from "./scheduling.js";
 import { versionedCallback } from "./session-fsm.js";
@@ -53,10 +54,8 @@ export function targetKeyboard(config: BackendConfig, selected: VideoTarget[], l
       .text(`${selected.includes(target) ? "✓" : "○"} ${videoTargetLabel(target)}`, versionedCallback(`video_toggle:${target}`, revision))
       .row();
   }
-  return keyboard
-    .text(t(locale, "video.next"), versionedCallback("video_targets_done", revision))
-    .row()
-    .text(t(locale, "common.cancel"), versionedCallback("video_cancel_dialog", revision));
+  keyboard.text(t(locale, "video.next"), versionedCallback("video_targets_done", revision)).row();
+  return appendCancelButton(keyboard, locale, "video_cancel_dialog", revision);
 }
 
 export function enabledVideoTargets(config: BackendConfig): VideoTarget[] {
@@ -133,8 +132,7 @@ export async function updateVideoControl(
   locale: BotLocale,
 ): Promise<void> {
   const messageId = Number(session.data.controlMessageId);
-  const replyMarkup =
-    keyboard ?? new InlineKeyboard().text(t(locale, "common.cancel"), versionedCallback("video_cancel_dialog", session.revision));
+  const replyMarkup = keyboard ?? cancelPromptKeyboard(locale, "video_cancel_dialog", session.revision);
   if (messageId && ctx.chat?.id)
     return void (await ctx.api.editMessageText(ctx.chat.id, messageId, text, { parse_mode: "Markdown", reply_markup: replyMarkup }));
   await ctx.reply(text, { parse_mode: "Markdown", reply_markup: replyMarkup });
@@ -156,7 +154,7 @@ export async function replyVideoPrompt(
   const revision = getSession(backendDb, actorId)?.revision;
   await ctx.reply(text, {
     ...(options?.plainText ? {} : { parse_mode: "Markdown" }),
-    reply_markup: new InlineKeyboard().text(t(locale, "common.cancel"), versionedCallback("video_cancel_dialog", revision)),
+    reply_markup: cancelPromptKeyboard(locale, "video_cancel_dialog", revision),
   });
 }
 
@@ -175,7 +173,7 @@ export async function sendVideoMetadataPrompt(
   const keyboard = new InlineKeyboard();
   if (step === "youtube_game_url") keyboard.text(t(locale, "video.skip"), versionedCallback("video_game_skip", revision));
   if (previousVideoMetadataStep(step, selected)) keyboard.text(t(locale, "common.back"), versionedCallback("video_meta_back", revision));
-  keyboard.text(t(locale, "common.cancel"), versionedCallback("video_cancel_dialog", revision));
+  appendCancelButton(keyboard, locale, "video_cancel_dialog", revision);
   await ctx.reply(videoPrompt(locale, step), { reply_markup: keyboard });
 }
 
@@ -262,7 +260,8 @@ export async function askSchedule(
   );
   if (session.selected.length > 1)
     keyboard.row().text(t(locale, "video.different-time"), versionedCallback(`video_individual:${session.draftId}`, next.revision));
-  keyboard.row().text(t(locale, "common.cancel"), versionedCallback("video_cancel_dialog", next.revision));
+  keyboard.row();
+  appendCancelButton(keyboard, locale, "video_cancel_dialog", next.revision);
   await sendVideoControl(
     ctx,
     backendDb,

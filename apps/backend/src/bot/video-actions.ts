@@ -1,7 +1,6 @@
 import type { Menu } from "@grammyjs/menu";
 import { type Context, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
-import { withActionLock } from "../foundation/action-lock.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { describeError, type MessageKey, t } from "../foundation/i18n/index.js";
@@ -10,8 +9,10 @@ import { videoPreview } from "../interfaces/telegram/video-preview.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { previousVideoMetadataStep, type VideoWizardStep } from "../studio/video-fsm.js";
+import { withCallbackActionLock } from "./callback-action.js";
 import { createCallbackRouter } from "./callback-router.js";
 import { isStaleCardCallback, VIDEO_CARD_FRESHNESS } from "./card-freshness.js";
+import { appendCancelButton, cancelPromptKeyboard, confirmationKeyboard, resultNavigationKeyboard } from "./dialog-ui.js";
 import type { BotLocale } from "./i18n.js";
 import { showMainMenu } from "./menu-render.js";
 import { requireSessionStep, versionedCallback } from "./session-fsm.js";
@@ -184,7 +185,7 @@ async function handleLocale({ ctx, backendDb, actorId, locale, data }: VideoActi
   if (!session || !["ru", "en"].includes(videoLocale)) throw new StudioError("err.video-restart");
   const next = saveSession(backendDb, actorId, { ...session, step: "asset", data: { ...session.data, videoLocale } });
   await ctx.editMessageText(t(locale, "video.dialog-prompt"), {
-    reply_markup: new InlineKeyboard().text(t(locale, "common.cancel"), versionedCallback("video_cancel_dialog", next.revision)),
+    reply_markup: cancelPromptKeyboard(locale, "video_cancel_dialog", next.revision),
   });
 }
 
@@ -272,7 +273,7 @@ async function handleScheduleConfirm({ ctx, backendDb, config, actorId, data }: 
   requireSessionStep(session.step, ["schedule_confirm"], "action.schedule-expired");
   const values = session.data.schedule as Record<string, string> | undefined;
   if (!values) throw new StudioError("action.schedule-expired");
-  await withActionLock(`${actorId}:${data}`, () =>
+  await withCallbackActionLock(ctx, `${actorId}:${data}`, () =>
     finishVideoSchedule(
       ctx,
       backendDb,
@@ -299,7 +300,8 @@ async function handleScheduleStart({ ctx, backendDb, config, actorId, locale, da
   const keyboard = new InlineKeyboard().text(t(locale, "video.same-time"), versionedCallback(`video_common:${id}`, session.revision));
   if (targets.length > 1)
     keyboard.row().text(t(locale, "video.different-time"), versionedCallback(`video_individual:${id}`, session.revision));
-  keyboard.row().text(t(locale, "common.cancel"), versionedCallback("video_cancel_dialog", session.revision));
+  keyboard.row();
+  appendCancelButton(keyboard, locale, "video_cancel_dialog", session.revision);
   setControlFromSession(backendDb, id, ctx, session);
   await updateVideoControl(ctx, session, t(locale, "video.schedule-time-msk", { timezone: config.TIMEZONE_LABEL }), keyboard, locale);
 }
@@ -347,9 +349,11 @@ async function handleNowAsk({ ctx, backendDb, config, actorId, locale, data }: V
   const preview = videoPreview(createStudioServices(backendDb, config).videos.preview(actorId, id), config, locale);
   await ctx.editMessageText(`${preview.text}\n\n${t(locale, "video.publish-now-q")}`, {
     parse_mode: "Markdown",
-    reply_markup: new InlineKeyboard()
-      .text(t(locale, "video.publish-now-yes"), versionedCallback(`video_now_confirm:${id}`, session.revision))
-      .text(t(locale, "common.back"), `video_open:${id}`),
+    reply_markup: confirmationKeyboard(
+      { label: t(locale, "video.publish-now-yes"), callback: `video_now_confirm:${id}` },
+      { label: t(locale, "common.back"), callback: `video_open:${id}` },
+      session.revision,
+    ),
   });
 }
 
@@ -358,7 +362,7 @@ async function handleNowConfirm({ ctx, backendDb, config, actorId, data }: Video
   const session = getSession(backendDb, actorId);
   if (!session || session.draftId !== id) throw new StudioError("action.schedule-expired");
   requireSessionStep(session.step, ["schedule_confirm"], "action.schedule-expired");
-  await withActionLock(`${actorId}:${data}`, () => finishVideoNow(ctx, backendDb, config, actorId, session));
+  await withCallbackActionLock(ctx, `${actorId}:${data}`, () => finishVideoNow(ctx, backendDb, config, actorId, session));
 }
 
 async function handleCancelAsk({ ctx, backendDb, config, actorId, locale, data }: VideoActionArgs): Promise<VideoActionResult> {
@@ -369,9 +373,10 @@ async function handleCancelAsk({ ctx, backendDb, config, actorId, locale, data }
     `${preview.text}\n\n⚠️ *${t(locale, "vpreview.cancel-confirm-q")}*\n${t(locale, "vpreview.cancel-confirm-warn")}`,
     {
       parse_mode: "Markdown",
-      reply_markup: new InlineKeyboard()
-        .text(t(locale, "vpreview.cancel-yes"), `video_cancel:${id}`)
-        .text(t(locale, "common.back"), `video_open:${id}`),
+      reply_markup: confirmationKeyboard(
+        { label: t(locale, "vpreview.cancel-yes"), callback: `video_cancel:${id}` },
+        { label: t(locale, "common.back"), callback: `video_open:${id}` },
+      ),
     },
   );
 }
@@ -387,16 +392,17 @@ async function handleRemoveAsk({ ctx, backendDb, config, actorId, locale, data }
     `${preview.text}\n\n⚠️ *${t(locale, "vpreview.remove-confirm-q", { target: label })}*\n${t(locale, "vpreview.remove-confirm-warn", { target: label })}`,
     {
       parse_mode: "Markdown",
-      reply_markup: new InlineKeyboard()
-        .text(t(locale, "vpreview.remove-yes", { target: label }), `video_remove:${target}:${id}`)
-        .text(t(locale, "common.back"), `video_open:${id}`),
+      reply_markup: confirmationKeyboard(
+        { label: t(locale, "vpreview.remove-yes", { target: label }), callback: `video_remove:${target}:${id}` },
+        { label: t(locale, "common.back"), callback: `video_open:${id}` },
+      ),
     },
   );
 }
 
 async function handleCancel({ ctx, backendDb, config, actorId, locale, data }: VideoActionArgs): Promise<VideoActionResult> {
   const prefix = data.startsWith("video_cancel_notice:") ? "video_cancel_notice:" : "video_cancel:";
-  const result = await withActionLock(`${actorId}:${data}`, () =>
+  const result = await withCallbackActionLock(ctx, `${actorId}:${data}`, () =>
     createStudioServices(backendDb, config).videos.cancel(actorId, requireDraftId(data.slice(prefix.length))),
   );
   if (!result.ok) return;
@@ -409,9 +415,7 @@ async function handleCancel({ ctx, backendDb, config, actorId, locale, data }: V
   await ctx.editMessageText(
     `${t(locale, "video.cancelled-local", { hours: config.VIDEO_MEDIA_RETENTION_HOURS })}${heldPrivate}${attention}${manualRemoval ? `\n\n${t(locale, "video.already-published")}\n${manualRemoval}` : ""}`,
     {
-      reply_markup: new InlineKeyboard()
-        .text(t(locale, "action.back-to-drafts"), "queue_drafts")
-        .text(t(locale, "common.menu"), "menu_home"),
+      reply_markup: resultNavigationKeyboard(locale, "drafts"),
     },
   );
 }
@@ -465,7 +469,7 @@ async function handleRemove({ ctx, backendDb, config, actorId, locale, data }: V
   const [, targetText, idText] = data.split(":");
   const target = requireVideoTarget(targetText ?? "");
   const id = requireDraftId(idText);
-  const result = await withActionLock(`${actorId}:${data}`, async () =>
+  const result = await withCallbackActionLock(ctx, `${actorId}:${data}`, async () =>
     createStudioServices(backendDb, config).videos.removeTarget(actorId, id, target),
   );
   if (!result.ok) return;
@@ -473,9 +477,7 @@ async function handleRemove({ ctx, backendDb, config, actorId, locale, data }: V
   if (cancelled) {
     clearSession(backendDb, actorId);
     await ctx.editMessageText(t(locale, "video.all-removed"), {
-      reply_markup: new InlineKeyboard()
-        .text(t(locale, "action.back-to-drafts"), "queue_drafts")
-        .text(t(locale, "common.menu"), "menu_home"),
+      reply_markup: resultNavigationKeyboard(locale, "drafts"),
     });
     return;
   }

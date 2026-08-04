@@ -41,15 +41,3 @@ export function scheduleTimeKeyboard<T extends string>(options: {
   keyboard.text(options.cancel.label, versionedCallback(options.cancel.callback, options.revision));
   return keyboard;
 }
-
-/** Builds the common confirmation footer while preserving each flow's
- * callback namespace and optional session revision. */
-export function scheduleConfirmationKeyboard(options: {
-  revision?: number | null;
-  confirm: { label: string; callback: string };
-  back: { label: string; callback: string };
-}): InlineKeyboard {
-  return new InlineKeyboard()
-    .text(options.confirm.label, versionedCallback(options.confirm.callback, options.revision))
-    .text(options.back.label, versionedCallback(options.back.callback, options.revision));
-}

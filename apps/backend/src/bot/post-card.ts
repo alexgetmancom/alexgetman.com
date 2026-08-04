@@ -1,14 +1,13 @@
-import { type Context, InlineKeyboard } from "grammy";
+import type { Context } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { t } from "../foundation/i18n/index.js";
 import { setTelegramPostCard } from "../interfaces/telegram/control-cards.js";
 import { formatMsk } from "../interfaces/telegram/time.js";
+import { cancelPromptKeyboard, confirmationKeyboard } from "./dialog-ui.js";
 import { botLocale } from "./i18n.js";
 import { getPostAdminState } from "./post-state.js";
 import { type DraftView, draftPreview } from "./preview.js";
-import { scheduleConfirmationKeyboard } from "./scheduling.js";
-import { versionedCallback } from "./session-fsm.js";
 
 /** Telegram rendering for a post control card; mutations stay in post actions. */
 export async function sendDraftPreview(ctx: Pick<Context, "reply">, backendDb: BackendDb, draftId: number, config: BackendConfig) {
@@ -43,10 +42,7 @@ export async function editDraftPrompt(
   const revision = getPostAdminState(backendDb, actorId)?.revision;
   await ctx.reply(prompt, {
     parse_mode: "Markdown",
-    reply_markup: new InlineKeyboard().text(
-      t(locale, "common.cancel"),
-      versionedCallback(`cancel_state:${draftId}:${returnView}`, revision),
-    ),
+    reply_markup: cancelPromptKeyboard(locale, `cancel_state:${draftId}:${returnView}`, revision),
   });
 }
 
@@ -62,10 +58,10 @@ export async function showScheduleConfirmation(
 ): Promise<void> {
   const locale = botLocale(backendDb, Number(ctx.from?.id));
   const preview = draftPreview(backendDb, draftId, config);
-  const keyboard = scheduleConfirmationKeyboard({
-    confirm: { label: t(locale, "post.confirm-schedule-btn"), callback: confirmCallback },
-    back: { label: t(locale, "common.back"), callback: `sched_view:${backView}:${draftId}` },
-  });
+  const keyboard = confirmationKeyboard(
+    { label: t(locale, "post.confirm-schedule-btn"), callback: confirmCallback },
+    { label: t(locale, "common.back"), callback: `sched_view:${backView}:${draftId}` },
+  );
   const text = `${preview.text}\n\n📅 *${t(locale, "common.confirm-schedule")}*\nRU: ${formatMsk(ruAt, config)}\nEN: ${formatMsk(enAt, config)}`;
   const message = await ctx.reply(text, { parse_mode: "Markdown", reply_markup: keyboard });
   if (ctx.chat?.id != null) setTelegramPostCard(backendDb, draftId, ctx.chat.id, message.message_id);

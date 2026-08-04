@@ -1,5 +1,5 @@
 import type { Menu } from "@grammyjs/menu";
-import { type Context, InlineKeyboard } from "grammy";
+import type { Context } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
@@ -7,6 +7,7 @@ import { describeError, t } from "../foundation/i18n/index.js";
 import { setTelegramPostCard } from "../interfaces/telegram/control-cards.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { appendPendingAlbum } from "./albums.js";
+import { cancelPromptKeyboard } from "./dialog-ui.js";
 import { botLocale } from "./i18n.js";
 import { persistentKeyboard, showMainMenu } from "./menu-render.js";
 import { extractMessage } from "./message.js";
@@ -14,7 +15,7 @@ import { applyAdminState } from "./post-actions.js";
 import { sendDraftPreview } from "./post-card.js";
 import { clearPostAdminState, getPostAdminState, startPostDialog } from "./post-state.js";
 import { translatePostText } from "./post-translation.js";
-import { parseSessionCallback, requireSessionRevision, versionedCallback } from "./session-fsm.js";
+import { parseSessionCallback, requireSessionRevision } from "./session-fsm.js";
 
 /** The conversational text-post screen. It owns user input and keeps the
  * root bot router limited to authorization and screen dispatch.
@@ -26,7 +27,7 @@ async function renderPostScreen(ctx: Context, backendDb: BackendDb, mode: "reply
   const revision = startPostDialog(backendDb, actorId);
   const locale = botLocale(backendDb, actorId);
   const prompt = t(locale, "post.dialog-prompt");
-  const options = { reply_markup: new InlineKeyboard().text(t(locale, "common.cancel"), versionedCallback("cancel_dialog", revision)) };
+  const options = { reply_markup: cancelPromptKeyboard(locale, "cancel_dialog", revision) };
   if (mode === "edit") await ctx.editMessageText(prompt, options);
   else await ctx.reply(prompt, options);
 }

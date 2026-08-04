@@ -1,6 +1,5 @@
 import { type Context, InlineKeyboard, InputFile } from "grammy";
 import type { BackendDb } from "../db/client.js";
-import { withActionLock } from "../foundation/action-lock.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { plural, t } from "../foundation/i18n/index.js";
@@ -9,8 +8,10 @@ import { setTelegramPostCard, setTelegramPostProgressCard } from "../interfaces/
 import { sendTelegramDeliveryPreviews } from "../interfaces/telegram/delivery-previews.js";
 import { formatMsk } from "../interfaces/telegram/time.js";
 import { createStudioServices } from "../studio/services/index.js";
+import { withCallbackActionLock } from "./callback-action.js";
 import { type CallbackRouterContext, createCallbackRouter } from "./callback-router.js";
 import { isStaleCardCallback, POST_CARD_FRESHNESS } from "./card-freshness.js";
+import { resultNavigationKeyboard } from "./dialog-ui.js";
 import { botLocale } from "./i18n.js";
 import { extractMessage } from "./message.js";
 import { editDraftPreview, editDraftPrompt, sendDraftPreview, showScheduleConfirmation } from "./post-card.js";
@@ -143,11 +144,11 @@ async function handleCancel({ ctx, backendDb, config, draftId }: PostActionArgs)
 }
 
 async function handleCancelConfirm({ ctx, actorId, locale, draftId, data, posts }: PostActionArgs): Promise<void> {
-  const result = await withActionLock(`${actorId}:${data}`, async () => posts.cancel(actorId, draftId));
-  if (!result.ok) return void (await ctx.answerCallbackQuery());
+  const result = await withCallbackActionLock(ctx, `${actorId}:${data}`, async () => posts.cancel(actorId, draftId));
+  if (!result.ok) return;
   await ctx.answerCallbackQuery({ text: t(locale, "action.cancelled") });
   await ctx.editMessageText(t(locale, "action.draft-cancelled", { id: draftId }), {
-    reply_markup: new InlineKeyboard().text(t(locale, "action.back-to-drafts"), "queue_drafts").text(t(locale, "common.menu"), "menu_home"),
+    reply_markup: resultNavigationKeyboard(locale, "drafts"),
   });
 }
 
@@ -163,8 +164,10 @@ async function handleRetry({
   data,
   posts,
 }: PostActionArgs): Promise<void> {
-  const result = await withActionLock(`${actorId}:${data}`, async () => posts.retryFailed(actorId, draftId, second || undefined));
-  if (!result.ok) return void (await ctx.answerCallbackQuery());
+  const result = await withCallbackActionLock(ctx, `${actorId}:${data}`, async () =>
+    posts.retryFailed(actorId, draftId, second || undefined),
+  );
+  if (!result.ok) return;
   await ctx.answerCallbackQuery({
     text: t(locale, "action.retry-result", { requeued: result.value.requeued, alreadyQueued: result.value.alreadyQueued }),
   });
@@ -281,10 +284,10 @@ async function queuePostNow(
   locale: ReturnType<typeof botLocale>,
 ): Promise<void> {
   const posts = createStudioServices(backendDb, config).posts;
-  const result = await withActionLock(`${actorId}:${actionKey}`, async () => {
+  const result = await withCallbackActionLock(ctx, `${actorId}:${actionKey}`, async () => {
     posts.publish(actorId, draftId);
   });
-  if (!result.ok) return void (await ctx.answerCallbackQuery());
+  if (!result.ok) return;
   await ctx.answerCallbackQuery({ text: t(locale, "action.queued") });
   await ctx.editMessageText(t(locale, "action.post-queued", { id: draftId }));
   const progress = renderPostProgress(posts.progress(actorId, draftId), locale);
@@ -429,7 +432,7 @@ async function commitLocaleSchedule(
   }
   await ctx.answerCallbackQuery({ text: t(uiLocale, "common.scheduled") });
   await ctx.editMessageText(scheduledDraftText(uiLocale, draftId, postId, ruAt, enAt, config), {
-    reply_markup: new InlineKeyboard().text(t(uiLocale, "queue.upcoming-btn"), "queue_home").text(t(uiLocale, "common.menu"), "menu_home"),
+    reply_markup: resultNavigationKeyboard(uiLocale, "upcoming"),
   });
 }
 
@@ -444,10 +447,10 @@ async function commitLocaleScheduleOnce(
   actionKey: string,
   immediateLocale?: "ru" | "en",
 ): Promise<void> {
-  const result = await withActionLock(`${actorId}:${actionKey}`, () =>
+  const result = await withCallbackActionLock(ctx, `${actorId}:${actionKey}`, () =>
     commitLocaleSchedule(ctx, backendDb, config, actorId, draftId, scheduleLocale, value, immediateLocale),
   );
-  if (!result.ok) await ctx.answerCallbackQuery();
+  if (!result.ok) return;
 }
 
 async function sendPublishConfirmation(

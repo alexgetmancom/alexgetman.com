@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import type { Context } from "grammy";
+import { withCallbackActionLock } from "../src/bot/callback-action.js";
 import { withActionLock } from "../src/foundation/action-lock.js";
 
 /** Resolves only when the test says so, so two calls can be genuinely
@@ -14,6 +16,23 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reje
 }
 
 describe("withActionLock", () => {
+  it("acknowledges a duplicate callback through the shared adapter", async () => {
+    const gate = deferred<string>();
+    let answers = 0;
+    const ctx = {
+      answerCallbackQuery: async () => {
+        answers += 1;
+      },
+    } as unknown as Context;
+    const first = withCallbackActionLock(ctx, "callback:1", async () => gate.promise);
+
+    expect(await withCallbackActionLock(ctx, "callback:1", async () => "second")).toEqual({ ok: false });
+    expect(answers).toBe(1);
+
+    gate.resolve("first");
+    expect(await first).toEqual({ ok: true, value: "first" });
+  });
+
   it("runs the action and returns its value", async () => {
     expect(await withActionLock("publish:1", async () => "published")).toEqual({ ok: true, value: "published" });
   });
