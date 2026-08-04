@@ -10,7 +10,7 @@ import { formatMsk } from "../interfaces/telegram/time.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { withCallbackActionLock } from "./callback-action.js";
 import type { PublicationActionContext } from "./callback-router.js";
-import { isStaleCardCallback, POST_CARD_FRESHNESS } from "./card-freshness.js";
+import { isStaleCardCallback, PUBLICATION_CARD_FRESHNESS } from "./card-freshness.js";
 import { clearConversationState, getConversationState, requireConversationState, saveConversationState } from "./conversation-state.js";
 import { resultNavigationKeyboard } from "./dialog-ui.js";
 import { botLocale } from "./i18n.js";
@@ -315,7 +315,15 @@ async function waitForStoryCards(
     await delay(1_000);
     const cards = posts.preview(actorId, draftId).storyCards;
     if (!cardsReady(cards)) continue;
-    if (isStaleCardCallback(ctx, backendDb, `${intent === "publish" ? "publish" : "schedule"}:${draftId}`, POST_CARD_FRESHNESS)) return;
+    if (
+      isStaleCardCallback(
+        ctx,
+        backendDb,
+        { kind: "post", action: intent === "publish" ? "publish" : "schedule", args: [String(draftId)] },
+        PUBLICATION_CARD_FRESHNESS,
+      )
+    )
+      return;
     await sendStoryCardChoice(ctx, backendDb, actorId, draftId, intent, cards);
     return;
   }

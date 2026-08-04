@@ -16,7 +16,7 @@ import { applyAdminState } from "./post-actions.js";
 import { sendDraftPreview } from "./post-card.js";
 import { isPostInputStep, postStateStep } from "./post-fsm.js";
 import { translatePostText } from "./post-translation.js";
-import { parsePublicationCallback, parseSessionCallback, requireSessionRevision } from "./session-fsm.js";
+import { parseSessionCallback, requireSessionRevision } from "./session-fsm.js";
 
 /** The conversational text-post screen. It owns user input and keeps the
  * root bot router limited to authorization and screen dispatch.
@@ -104,8 +104,8 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
 
 export async function handlePostScreenCallback(ctx: Context, backendDb: BackendDb, mainMenu: Menu<Context>): Promise<boolean> {
   const rawData = ctx.callbackQuery?.data;
-  const session = rawData ? parseSessionCallback(rawData) : { data: undefined, revision: null };
-  const publication = session.data ? parsePublicationCallback(session.data) : null;
+  const session = rawData ? parseSessionCallback(rawData) : { data: undefined, callback: null, revision: null };
+  const publication = session.callback;
   const data = publication?.kind === "post" ? publication.action : session.data;
   const revision = session.revision;
   if (data === "menu_text") {

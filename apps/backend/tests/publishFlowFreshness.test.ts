@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import type { Context } from "grammy";
 import { handlePublicationCallback } from "../src/bot/callback-router.js";
-import { isStaleCardCallback, POST_CARD_FRESHNESS, VIDEO_CARD_FRESHNESS } from "../src/bot/card-freshness.js";
-import { publicationCallback } from "../src/bot/session-fsm.js";
+import { isStaleCardCallback } from "../src/bot/card-freshness.js";
+import { type PublicationCallback, parseSessionCallback, publicationCallback } from "../src/bot/session-fsm.js";
 import { getVideoState } from "../src/bot/video-ui.js";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import type { BackendDb } from "../src/db/client.js";
@@ -26,6 +26,12 @@ function videoCallback(data: string, messageId: number): Context {
   } as unknown as Context;
 }
 
+function parsed(value: string): PublicationCallback {
+  const callback = parseSessionCallback(value).callback;
+  if (!callback) throw new Error(`Expected publication callback: ${value}`);
+  return callback;
+}
+
 describe("video publication card flow", () => {
   it("keeps the immediate confirmation on the current video card", async () => {
     const backendDb: BackendDb = openBackendDb(":memory:");
@@ -46,8 +52,7 @@ describe("video publication card flow", () => {
         isStaleCardCallback(
           videoCallback(publicationCallback("video", "now_confirm", [draftId]), 10),
           backendDb,
-          publicationCallback("video", "now_confirm", [draftId]),
-          VIDEO_CARD_FRESHNESS,
+          parsed(publicationCallback("video", "now_confirm", [draftId])),
         ),
       ).toBe(false);
     } finally {
@@ -85,8 +90,7 @@ describe("post publication card flow", () => {
         isStaleCardCallback(
           { callbackQuery: { message: { message_id: nextMessageId } } } as unknown as Context,
           backendDb,
-          publicationCallback("post", "publish_confirm", [draftId]),
-          POST_CARD_FRESHNESS,
+          parsed(publicationCallback("post", "publish_confirm", [draftId])),
         ),
       ).toBe(false);
     } finally {

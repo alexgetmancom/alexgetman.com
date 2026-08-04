@@ -98,6 +98,27 @@ describe("video callback dispatch", () => {
     expect(answers[0]?.text).toBeTruthy();
   });
 
+  it("routes legacy and namespaced callbacks to the same video handler", async () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createVideoDraft(backendDb, 42, "clip.mp4", 24);
+    replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
+
+    for (const data of [`video_now:${draftId}`, publicationCallback("video", "now", [draftId])]) {
+      const ctx = {
+        callbackQuery: { data, message: { message_id: 10 } },
+        from: { id: 42 },
+        chat: { id: 100 },
+        editMessageText: async () => undefined,
+        answerCallbackQuery: async () => undefined,
+      } as unknown as Context;
+
+      await handlePublicationCallback(ctx, backendDb, config);
+
+      expect(getVideoState(backendDb, 42)?.step).toBe("schedule_confirm");
+      clearVideoState(backendDb, 42);
+    }
+  });
+
   it("rejects a callback from an older video dialog revision", async () => {
     backendDb = openBackendDb(":memory:");
     const first = saveVideoState(backendDb, 42, { draftId: 7, step: "targets", selected: [], data: {} });

@@ -6,11 +6,15 @@ export type { PublicationKind } from "../application/conversation-flow.js";
 const SESSION_VERSION_PREFIX = /^sv(\d+)\|(.*)$/;
 const PUBLICATION_CALLBACK = /^p:(post|video):([^:]+)(?::(.*))?$/;
 
-export type SessionCallback = { data: string; revision: number | null };
 export type PublicationCallback = {
   kind: PublicationKind;
   action: string;
   args: string[];
+};
+export type SessionCallback = {
+  data: string;
+  callback: PublicationCallback | null;
+  revision: number | null;
 };
 
 /** The canonical callback vocabulary for every publication workflow. */
@@ -148,6 +152,61 @@ export function parsePublicationCallback(data: string): PublicationCallback | nu
   };
 }
 
+type LegacyPublicationAction = Pick<PublicationCallback, "kind" | "action">;
+
+/** The only compatibility table for callbacks emitted before `p:` existed. */
+const LEGACY_PUBLICATION_ACTIONS: Readonly<Record<string, LegacyPublicationAction>> = Object.fromEntries([
+  ...PUBLICATION_ACTIONS.post.map((action) => [action, { kind: "post", action }]),
+  ...PUBLICATION_ACTIONS.video.map((action) => [`video_${action}`, { kind: "video", action }]),
+]) as Readonly<Record<string, LegacyPublicationAction>>;
+
+const LEGACY_VIDEO_ARGUMENTS: Partial<Record<VideoActionKey, (args: string[]) => string[]>> = {
+  retry: moveTargetAndDraftId,
+  remove_ask: moveTargetAndDraftId,
+  time: moveTargetAndDraftId,
+  remove: moveTargetAndDraftId,
+  sched_pick: moveSecondAndFirst,
+  edit_field: moveSecondAndFirst,
+};
+
+const LEGACY_POST_ARGUMENTS: Partial<Record<PostActionKey, (args: string[]) => string[]>> = {
+  sched_scope: moveSecondAndFirst,
+  sched_view: moveSecondAndFirst,
+  sched_manual: moveSecondAndFirst,
+  sched_pick: moveLastToFront,
+};
+
+/** Translates one pre-namespace callback into the canonical object shape. */
+export function legacyToPublication(data: string): PublicationCallback | null {
+  const [name, ...args] = data.split(":");
+  const legacy = LEGACY_PUBLICATION_ACTIONS[name ?? ""];
+  if (!legacy) return null;
+  const normalizer =
+    legacy.kind === "video"
+      ? LEGACY_VIDEO_ARGUMENTS[legacy.action as VideoActionKey]
+      : LEGACY_POST_ARGUMENTS[legacy.action as PostActionKey];
+  const normalizedArgs = normalizer?.(args) ?? args;
+  return { ...legacy, args: normalizedArgs };
+}
+
+function moveTargetAndDraftId(args: string[]): string[] {
+  if (args.length < 2) return args;
+  const [target, draftId, ...rest] = args;
+  return [draftId as string, target as string, ...rest];
+}
+
+function moveSecondAndFirst(args: string[]): string[] {
+  if (args.length < 2) return args;
+  const [first, second, ...rest] = args;
+  return [second as string, first as string, ...rest];
+}
+
+function moveLastToFront(args: string[]): string[] {
+  if (args.length < 2) return args;
+  const last = args.at(-1);
+  return last === undefined ? args : [last, ...args.slice(0, -1)];
+}
+
 /** Parses a positive draft identifier used by publication callbacks. */
 export function parseDraftId(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
@@ -163,8 +222,13 @@ export function versionedCallback(data: string, revision: number | null | undefi
 /** Separates the optional revision suffix without interpreting the callback namespace. */
 export function parseSessionCallback(data: string): SessionCallback {
   const prefix = data.match(SESSION_VERSION_PREFIX);
-  if (prefix) return { data: prefix[2] ?? "", revision: Number(prefix[1]) };
-  return { data, revision: null };
+  const payload = prefix?.[2] ?? data;
+  const revision = prefix ? Number(prefix[1]) : null;
+  return {
+    data: payload,
+    callback: parsePublicationCallback(payload) ?? legacyToPublication(payload),
+    revision,
+  };
 }
 
 /** Rejects a callback or write based on an older dialog generation. */

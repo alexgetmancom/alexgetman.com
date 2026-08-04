@@ -4,7 +4,7 @@ import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { describeError, t } from "../foundation/i18n/index.js";
 import { createStudioServices } from "../studio/services/index.js";
-import { isStaleCardCallback, POST_CARD_FRESHNESS, VIDEO_CARD_FRESHNESS } from "./card-freshness.js";
+import { isStaleCardCallback, PUBLICATION_CARD_FRESHNESS } from "./card-freshness.js";
 import { getConversationState } from "./conversation-state.js";
 import { type BotLocale, botLocale } from "./i18n.js";
 import { postActionHandlers } from "./post-actions.js";
@@ -14,7 +14,6 @@ import {
   type PublicationCallback,
   type PublicationKind,
   parseDraftId,
-  parsePublicationCallback,
   parseSessionCallback,
   requireSessionRevision,
 } from "./session-fsm.js";
@@ -71,8 +70,7 @@ export function createCallbackRouter<TArgs, TEntity = undefined, TResult = void>
     const rawData = ctx.callbackQuery?.data;
     if (!rawData) return false;
 
-    const { data, revision } = parseSessionCallback(rawData);
-    const callback = parsePublicationCallback(data);
+    const { data, callback, revision } = parseSessionCallback(rawData);
     if (!callback) return false;
     const parts = [callback.action, ...callback.args];
     const action = callback.action;
@@ -193,8 +191,7 @@ const publicationRouter = createCallbackRouter<PublicationActionContext, number,
     if (callback.kind === "post" && callback.action !== "cancel_dialog")
       createStudioServices(backendDb, config).posts.get(actorId, draftId as number);
   },
-  isStale: ({ ctx, backendDb, callback }) =>
-    isStaleCardCallback(ctx, backendDb, callback, callback.kind === "post" ? POST_CARD_FRESHNESS : VIDEO_CARD_FRESHNESS),
+  isStale: ({ ctx, backendDb, callback }) => isStaleCardCallback(ctx, backendDb, callback, PUBLICATION_CARD_FRESHNESS),
   invalidEntityText: (locale) => t(locale, "action.invalid-post"),
   staleText: (locale) => t(locale, "action.card-stale"),
   unknownText: (locale) => t(locale, "action.card-stale"),
