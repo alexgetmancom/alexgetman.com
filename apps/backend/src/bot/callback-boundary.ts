@@ -9,6 +9,10 @@ const CALLBACK_DEDUPLICATION_LIMIT = 10_000;
 const seenCallbackQueries = new Map<string, number>();
 const MAX_CALLBACK_TOAST_LENGTH = 200;
 
+// This dedupe is intentionally process-local. It suppresses Telegram redelivery
+// within one bot process, but is not a distributed idempotency guarantee across
+// restarts or multiple instances; durable mutations must remain idempotent too.
+
 /** Runs every callback downstream of the bot's authorization middleware. */
 export async function runCallbackBoundary(ctx: Context, backendDb: BackendDb, next: () => Promise<void>): Promise<void> {
   const callbackId = ctx.callbackQuery?.id;

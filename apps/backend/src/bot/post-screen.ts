@@ -2,6 +2,7 @@ import type { Menu } from "@grammyjs/menu";
 import { type Context, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { StudioError } from "../foundation/errors.js";
 import { describeError, t } from "../foundation/i18n/index.js";
 import { setTelegramPostCard } from "../interfaces/telegram/control-cards.js";
 import { createStudioServices } from "../studio/services/index.js";
@@ -70,9 +71,11 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
       await applyAdminState(ctx, backendDb, config, state.action, state.draft_id, state.control_message_id, state.revision);
     } catch (error) {
       const scheduleInput = state.action.startsWith("schedule_manual_");
-      await ctx.reply(
-        scheduleInput ? describeError(locale, error) : t(locale, "post.value-error", { error: describeError(locale, error) }),
-      );
+      const errorText =
+        error instanceof StudioError && error.code === "common.schedule-parse-error"
+          ? t(locale, "common.schedule-parse-error", { timezone: config.TIMEZONE_LABEL })
+          : describeError(locale, error);
+      await ctx.reply(scheduleInput ? errorText : t(locale, "post.value-error", { error: errorText }));
     }
     return;
   }

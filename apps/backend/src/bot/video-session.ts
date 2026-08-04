@@ -222,14 +222,20 @@ export async function sendVideoControl(
   return saveSession(backendDb, actorId, next);
 }
 
-export async function askInstagramOrSchedule(ctx: Context, backendDb: BackendDb, actorId: number, session: VideoSession): Promise<void> {
+export async function askInstagramOrSchedule(
+  ctx: Context,
+  backendDb: BackendDb,
+  config: BackendConfig,
+  actorId: number,
+  session: VideoSession,
+): Promise<void> {
   if (nextVideoFlowStep(session.selected) === "instagram_caption") {
     const next: VideoSession = { ...session, step: "instagram_caption" };
     saveSession(backendDb, actorId, next);
     await sendVideoMetadataPrompt(ctx, backendDb, actorId, "instagram_caption", session.selected);
     return;
   }
-  await askSchedule(ctx, backendDb, actorId, session);
+  await askSchedule(ctx, backendDb, config, actorId, session);
 }
 
 // A curated spread across the same posting hours as text-post scheduling
@@ -259,7 +265,13 @@ export async function sendVideoTimePrompt(
   return sendVideoControl(ctx, backendDb, actorId, session, text, keyboard);
 }
 
-export async function askSchedule(ctx: Context, backendDb: BackendDb, actorId: number, session: VideoSession): Promise<void> {
+export async function askSchedule(
+  ctx: Context,
+  backendDb: BackendDb,
+  config: BackendConfig,
+  actorId: number,
+  session: VideoSession,
+): Promise<void> {
   const next = saveSession(backendDb, actorId, { ...session, step: "schedule_choice" });
   const locale = botLocale(backendDb, actorId);
   const keyboard = new InlineKeyboard().text(
@@ -269,7 +281,14 @@ export async function askSchedule(ctx: Context, backendDb: BackendDb, actorId: n
   if (session.selected.length > 1)
     keyboard.row().text(t(locale, "video.different-time"), versionedCallback(`video_individual:${session.draftId}`, next.revision));
   keyboard.row().text(t(locale, "common.cancel"), versionedCallback("video_cancel_dialog", next.revision));
-  await sendVideoControl(ctx, backendDb, actorId, next, t(locale, "video.saved-choose-schedule"), keyboard);
+  await sendVideoControl(
+    ctx,
+    backendDb,
+    actorId,
+    next,
+    t(locale, "video.saved-choose-schedule", { timezone: config.TIMEZONE_LABEL }),
+    keyboard,
+  );
 }
 
 export function setControlFromSession(backendDb: BackendDb, draftId: number, ctx: Context, session: VideoSession): void {

@@ -69,8 +69,8 @@ describe("Studio post commands", () => {
     const posts = postService(backendDb, loadConfig({ ADMIN_IDS: "42" }));
     const draftId = posts.create(42, { text: "Targets", textEn: "Targets", entities: [], media: [] });
     posts.toggleTarget(42, draftId, "threads_en");
-    const ruAt = new Date(Date.now() + 60_000);
-    const enAt = new Date(Date.now() + 120_000);
+    const ruAt = new Date(Date.now() + 5 * 60_000);
+    const enAt = new Date(Date.now() + 6 * 60_000);
     const postId = posts.schedule(42, draftId, { ruAt, enAt });
 
     expect(
@@ -104,7 +104,7 @@ describe("Studio post commands", () => {
     backendDb = openBackendDb(":memory:");
     const posts = postService(backendDb, loadConfig({ ADMIN_IDS: "42" }));
     const draftId = posts.create(42, { text: "Before", textEn: "Before", entities: [], media: [] });
-    const postId = posts.schedule(42, draftId, { ruAt: new Date(Date.now() + 60_000), enAt: null });
+    const postId = posts.schedule(42, draftId, { ruAt: new Date(Date.now() + 5 * 60_000), enAt: null });
 
     posts.edit(42, draftId, { locale: "ru", text: "After", entities: [], media: [] });
 
@@ -118,7 +118,7 @@ describe("Studio post commands", () => {
     backendDb = openBackendDb(":memory:");
     const posts = postService(backendDb, loadConfig({ ADMIN_IDS: "42" }));
     const draftId = posts.create(42, { text: "Before", textEn: "Before", entities: [], media: [] });
-    posts.schedule(42, draftId, { ruAt: new Date(Date.now() + 60_000), enAt: null });
+    posts.schedule(42, draftId, { ruAt: new Date(Date.now() + 5 * 60_000), enAt: null });
 
     expect(() =>
       posts.edit(42, draftId, {
@@ -133,12 +133,24 @@ describe("Studio post commands", () => {
     });
   });
 
+  it("blocks material edits inside the publication lock window", () => {
+    backendDb = openBackendDb(":memory:");
+    const posts = postService(backendDb, loadConfig({ ADMIN_IDS: "42" }));
+    const draftId = posts.create(42, { text: "Before", textEn: "Before", entities: [], media: [] });
+    posts.schedule(42, draftId, { ruAt: new Date(Date.now() + 60_000), enAt: null });
+
+    expect(() => posts.edit(42, draftId, { locale: "ru", text: "After", entities: [], media: [] })).toThrow(
+      "err.post-too-close-to-publish",
+    );
+    expect(() => posts.toggleTarget(42, draftId, "telegram")).toThrow("err.post-too-close-to-publish");
+  });
+
   it("replaces copied publication sources when a scheduled draft changes them", () => {
     backendDb = openBackendDb(":memory:");
     const posts = postService(backendDb, loadConfig({ ADMIN_IDS: "42" }));
     const draftId = posts.create(42, { text: "Sources", textEn: "Sources", entities: [], media: [] });
     posts.replaceSources(42, draftId, ["https://before.example"]);
-    const postId = posts.schedule(42, draftId, { ruAt: new Date(Date.now() + 60_000), enAt: null });
+    const postId = posts.schedule(42, draftId, { ruAt: new Date(Date.now() + 5 * 60_000), enAt: null });
 
     posts.replaceSources(42, draftId, ["https://after.example"]);
 

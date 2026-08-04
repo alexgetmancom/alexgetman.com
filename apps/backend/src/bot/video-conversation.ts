@@ -117,7 +117,7 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
       createStudioServices(backendDb, config).videos.updateMetadata(actorId, session.draftId, "instagram_reels", metadata);
       if (!session.selected.includes("youtube_shorts"))
         createStudioServices(backendDb, config).videos.rename(actorId, session.draftId, metadata.caption || "Instagram Reels");
-      await askSchedule(ctx, backendDb, actorId, session);
+      await askSchedule(ctx, backendDb, config, actorId, session);
       return true;
     }
     if (session.step === "schedule_common" || session.step.startsWith("schedule_target:"))
@@ -174,7 +174,7 @@ async function handleYouTubeMessage(
   };
   createStudioServices(backendDb, config).videos.updateMetadata(actorId, session.draftId, "youtube_shorts", metadata);
   createStudioServices(backendDb, config).videos.rename(actorId, session.draftId, metadata.title || "YouTube Shorts");
-  await askInstagramOrSchedule(ctx, backendDb, actorId, session);
+  await askInstagramOrSchedule(ctx, backendDb, config, actorId, session);
   return true;
 }
 
@@ -243,7 +243,11 @@ async function parseScheduleDate(
     return createStudioServices(backendDb, config).videos.parseSchedule(actorId, draftId, text);
   } catch (error) {
     const locale = botLocale(backendDb, actorId);
-    await replyVideoPrompt(ctx, backendDb, actorId, locale, describeError(locale, error), { plainText: true });
+    const message =
+      error instanceof StudioError && error.code === "common.schedule-parse-error"
+        ? t(locale, "common.schedule-parse-error", { timezone: config.TIMEZONE_LABEL })
+        : describeError(locale, error);
+    await replyVideoPrompt(ctx, backendDb, actorId, locale, message, { plainText: true });
     return null;
   }
 }
@@ -299,7 +303,10 @@ export async function applyVideoScheduleDate(
       backendDb,
       actorId,
       saved,
-      t(botLocale(backendDb, actorId), "video.schedule-target-prompt", { target: videoTargetLabel(transition.nextTarget) }),
+      t(botLocale(backendDb, actorId), "video.schedule-target-prompt", {
+        target: videoTargetLabel(transition.nextTarget),
+        timezone: config.TIMEZONE_LABEL,
+      }),
     );
     return;
   }

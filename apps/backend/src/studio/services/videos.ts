@@ -124,11 +124,11 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
     },
     parseSchedule(actorId: number, videoDraftId: number, value: string): Date {
       requireOwnedVideo(backendDb, config, actorId, videoDraftId);
-      return parseManualSchedule(value);
+      return parseManualSchedule(value, config.TIMEZONE, backendDb.clock.now());
     },
-    /** Resolves a slot-button clock (`HH:MM` MSK) to its next occurrence. */
+    /** Resolves a slot-button clock (`HH:MM` in the configured Studio zone) to its next occurrence. */
     slotTime(clock: string): Date {
-      return scheduleClockToday(clock);
+      return scheduleClockToday(clock, config.TIMEZONE, backendDb.clock.now());
     },
   };
 }

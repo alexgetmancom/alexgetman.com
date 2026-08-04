@@ -86,7 +86,7 @@ export function postSchedulingService(backendDb: BackendDb, config: BackendConfi
   return {
     schedule(actorId: number, draftId: number, input: PostScheduleInput): number {
       const draft = requireMutableDraft(backendDb, config, actorId, draftId);
-      const now = new Date();
+      const now = backendDb.clock.now();
       for (const [locale, value] of [
         ["ru", input.ruAt],
         ["en", input.enAt],
@@ -137,13 +137,17 @@ export function postSchedulingService(backendDb: BackendDb, config: BackendConfi
       return hasLocaleTarget(effectivePostTargets(backendDb, parseTargets(draft.targets_json)), locale);
     },
 
-    /** Resolves a slot-button clock (`HH:MM` MSK) to its next occurrence. */
+    /** Resolves a slot-button clock (`HH:MM` in the configured Studio zone) to its next occurrence. */
     slotTime(clock: string): Date {
-      return scheduleClockToday(clock);
+      return scheduleClockToday(clock, config.TIMEZONE, backendDb.clock.now());
     },
 
     manualSchedule(actorId: number, draftId: number, scope: PostScheduleScope, value: string): PostScheduleInput {
-      return scheduleAt(requireOwnedDraft(backendDb, config, actorId, draftId), scope, parseManualSchedule(value));
+      return scheduleAt(
+        requireOwnedDraft(backendDb, config, actorId, draftId),
+        scope,
+        parseManualSchedule(value, config.TIMEZONE, backendDb.clock.now()),
+      );
     },
 
     scheduleAt(actorId: number, draftId: number, scope: PostScheduleScope, value: Date): PostScheduleInput {

@@ -221,7 +221,7 @@ async function handleTargetsDone({ ctx, backendDb, config, actorId, locale }: Vi
   if (session.selected.includes("youtube_shorts")) {
     saveSession(backendDb, actorId, { ...session, step: "youtube_title" });
     await replyVideoPrompt(ctx, backendDb, actorId, locale, t(locale, "video.prompt-yt-title"));
-  } else await askInstagramOrSchedule(ctx, backendDb, actorId, session);
+  } else await askInstagramOrSchedule(ctx, backendDb, config, actorId, session);
 }
 
 async function handleGameSkip({ ctx, backendDb, actorId, locale }: VideoActionArgs): Promise<VideoActionResult> {
@@ -294,7 +294,7 @@ async function handleScheduleStart({ ctx, backendDb, config, actorId, locale, da
     keyboard.row().text(t(locale, "video.different-time"), versionedCallback(`video_individual:${id}`, session.revision));
   keyboard.row().text(t(locale, "common.cancel"), versionedCallback("video_cancel_dialog", session.revision));
   setControlFromSession(backendDb, id, ctx, session);
-  await updateVideoControl(ctx, session, t(locale, "video.schedule-time-msk"), keyboard, locale);
+  await updateVideoControl(ctx, session, t(locale, "video.schedule-time-msk", { timezone: config.TIMEZONE_LABEL }), keyboard, locale);
 }
 
 async function handleScheduleMode({ ctx, backendDb, config, actorId, locale, data }: VideoActionArgs): Promise<VideoActionResult> {
@@ -307,7 +307,7 @@ async function handleScheduleMode({ ctx, backendDb, config, actorId, locale, dat
   requireSessionStep(session.step, ["schedule_choice"], "err.video-reopen-publish");
   if (data.startsWith("video_common:")) {
     const next = saveSession(backendDb, actorId, { ...session, draftId: id, selected: targets, step: "schedule_common" });
-    await sendVideoTimePrompt(ctx, backendDb, actorId, next, t(locale, "video.enter-datetime"));
+    await sendVideoTimePrompt(ctx, backendDb, actorId, next, t(locale, "video.enter-datetime", { timezone: config.TIMEZONE_LABEL }));
     return;
   }
   const first = targets[0];
@@ -319,7 +319,13 @@ async function handleScheduleMode({ ctx, backendDb, config, actorId, locale, dat
     step: `schedule_target:${first}`,
     data: { ...session.data, schedule: {} },
   });
-  await sendVideoTimePrompt(ctx, backendDb, actorId, next, t(locale, "video.schedule-target-prompt", { target: videoTargetLabel(first) }));
+  await sendVideoTimePrompt(
+    ctx,
+    backendDb,
+    actorId,
+    next,
+    t(locale, "video.schedule-target-prompt", { target: videoTargetLabel(first), timezone: config.TIMEZONE_LABEL }),
+  );
 }
 
 async function handleNowAsk({ ctx, backendDb, config, actorId, locale, data }: VideoActionArgs): Promise<VideoActionResult> {
@@ -420,7 +426,7 @@ async function handleTime({ ctx, backendDb, config, actorId, locale, data }: Vid
     backendDb,
     actorId,
     saved,
-    t(locale, "video.schedule-target-prompt", { target: videoTargetLabel(target) }),
+    t(locale, "video.schedule-target-prompt", { target: videoTargetLabel(target), timezone: config.TIMEZONE_LABEL }),
   );
 }
 
@@ -434,12 +440,12 @@ async function handleSchedulePick({ ctx, backendDb, config, actorId, data }: Vid
   await applyVideoScheduleDate(ctx, backendDb, config, actorId, session, value);
 }
 
-async function handleScheduleManual({ ctx, backendDb, actorId, locale, data }: VideoActionArgs): Promise<VideoActionResult> {
+async function handleScheduleManual({ ctx, backendDb, config, actorId, locale, data }: VideoActionArgs): Promise<VideoActionResult> {
   const id = requireDraftId(data.slice("video_sched_manual:".length));
   const session = getSession(backendDb, actorId);
   requireSessionStep(session?.step, scheduleSessionSteps(), "action.schedule-expired");
   if (!session || session.draftId !== id) throw new StudioError("action.schedule-expired");
-  await replyVideoPrompt(ctx, backendDb, actorId, locale, t(locale, "video.enter-datetime"));
+  await replyVideoPrompt(ctx, backendDb, actorId, locale, t(locale, "video.enter-datetime", { timezone: config.TIMEZONE_LABEL }));
 }
 
 function scheduleSessionSteps(): string[] {

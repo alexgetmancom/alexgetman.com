@@ -107,6 +107,9 @@ const envSchema = z
     MEMORY_ALERT_PERCENT: z.coerce.number().int().min(1).max(100).default(85),
     WORKER_HEARTBEAT_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
     IDLE_POLL_INTERVAL_SECONDS: z.coerce.number().int().positive().default(5),
+    // Refuse material post edits shortly before delivery so one locale cannot
+    // silently publish the old payload while another publishes the new one.
+    POST_EDIT_LOCK_MINUTES: z.coerce.number().int().min(1).max(60).default(2),
     /** Stale publish locks are recovered on the watchdog's own clock, not the
      * queue's. A lock lives for PUBLISH_LOCK_TIMEOUT_SECONDS (900 by default)
      * with a 180s heartbeat, so probing for one every idle tick spent 12 SQLite

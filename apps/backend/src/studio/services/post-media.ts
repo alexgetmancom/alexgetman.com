@@ -3,7 +3,7 @@ import type { BackendDb } from "../../db/client.js";
 import { recordDomainEvent } from "../../domain/events.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { accessibleStudioActorIds } from "../access.js";
-import { draftMedia, requireMutableDraft } from "./post-access.js";
+import { draftMedia, requirePostEditAllowed } from "./post-access.js";
 import { replanScheduledPostAfterMutation } from "./post-scheduling.js";
 
 /** Media commands kept behind the public post facade. */
@@ -14,7 +14,7 @@ export function postMediaService(backendDb: BackendDb, config: BackendConfig) {
     },
 
     attachMediaAssets(actorId: number, draftId: number, locale: "ru" | "en", assetIds: number[], replace = false): void {
-      const draft = requireMutableDraft(backendDb, config, actorId, draftId);
+      const draft = requirePostEditAllowed(backendDb, config, actorId, draftId, backendDb.clock.now());
       const assets = mediaItemsFromAssets(
         requireStudioMediaAssets(backendDb, actorId, assetIds, accessibleStudioActorIds(config, actorId)),
       );
@@ -36,7 +36,7 @@ export function postMediaService(backendDb: BackendDb, config: BackendConfig) {
     },
 
     removeMedia(actorId: number, draftId: number, locale: "ru" | "en", assetIds: number[]): void {
-      const draft = requireMutableDraft(backendDb, config, actorId, draftId);
+      const draft = requirePostEditAllowed(backendDb, config, actorId, draftId, backendDb.clock.now());
       const current = draftMedia(draft, locale);
       const removed = new Set(assetIds);
       const media = current.filter((item) => !removed.has(Number(item.asset_id)));

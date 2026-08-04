@@ -156,7 +156,7 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
       ctx,
       backendDb,
       draftId,
-      t(locale, "action.enter-datetime"),
+      t(locale, "action.enter-datetime", { timezone: config.TIMEZONE_LABEL }),
       pickLocale === "ru" ? "schedule_ru" : "schedule_en",
     );
   }

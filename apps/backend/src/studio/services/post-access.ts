@@ -24,6 +24,26 @@ export function requireMutableDraft(
   return draft;
 }
 
+/** Prevents payload-changing edits from racing a due publication. The schedule
+ * command remains available so an operator can explicitly replan a draft; this
+ * guard applies to content, media, target and policy mutations only. */
+export function requirePostEditAllowed(
+  ports: Pick<ApplicationPorts, "drafts">,
+  config: BackendConfig,
+  actorId: number,
+  draftId: number,
+  now = new Date(),
+): DraftRecord {
+  const draft = requireMutableDraft(ports, config, actorId, draftId);
+  const lockUntil = now.getTime() + config.POST_EDIT_LOCK_MINUTES * 60_000;
+  const scheduledTimes = [draft.scheduled_at, draft.scheduled_en_at]
+    .filter((value): value is string => value != null)
+    .map((value) => Date.parse(value))
+    .filter((value) => Number.isFinite(value));
+  if (scheduledTimes.some((scheduledAt) => scheduledAt <= lockUntil)) throw new StudioError("err.post-too-close-to-publish");
+  return draft;
+}
+
 export function draftMedia(draft: DraftRecord, locale: "ru" | "en"): Record<string, unknown>[] {
   return parseArrayValue(locale === "ru" ? draft.media_ru_json : draft.media_en_json);
 }

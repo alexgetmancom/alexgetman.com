@@ -213,7 +213,7 @@ describe("text Story cards", () => {
     await runStoryCardCycle(config, backendDb);
     await runStoryCardCycle(config, backendDb);
     posts.setStoryPublishMode(42, draftId, "all");
-    const postId = posts.schedule(42, draftId, { ruAt: new Date(Date.now() + 60_000), enAt: null });
+    const postId = posts.schedule(42, draftId, { ruAt: new Date(Date.now() + 5 * 60_000), enAt: null });
 
     posts.edit(42, draftId, { locale: "ru", text: "After", entities: [], media: [] });
     expect(backendDb.db.select().from(publicationSources).where(eq(publicationSources.postId, postId)).get()?.itemJson).toMatchObject({

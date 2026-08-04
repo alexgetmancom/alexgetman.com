@@ -9,26 +9,7 @@
  * locale-formatted offset string (ICU renders e.g. "UTC" inconsistently
  * across platforms, which broke a string-parsing version of this in CI). */
 export function timezoneOffsetMs(date: Date, timeZone: string): number {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(date);
-  const value = Object.fromEntries(parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
-  const wallClockAsUtc = Date.UTC(
-    Number(value.year),
-    Number(value.month) - 1,
-    Number(value.day),
-    Number(value.hour),
-    Number(value.minute),
-    Number(value.second),
-  );
-  return wallClockAsUtc - date.getTime();
+  return zonedWallClockMs(date, timeZone) - date.getTime();
 }
 
 /** Calendar date `date` reads as in `timeZone`. */
@@ -41,8 +22,43 @@ export function zonedDateParts(date: Date, timeZone: string): { year: number; mo
 /** The instant at which the wall clock in `timeZone` reads `clock` (HH:MM) on the given date. */
 export function zonedSlot(year: number, month: number, day: number, clock: string, timeZone: string): Date {
   const [hour, minute] = clock.split(":").map(Number) as [number, number];
-  const wallClock = new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
-  return new Date(wallClock.getTime() - timezoneOffsetMs(wallClock, timeZone));
+  const wallClockMs = Date.UTC(year, month - 1, day, hour, minute, 0);
+  const offsets = new Set<number>();
+  // Sample both sides of the requested wall clock. A single offset lookup at
+  // the UTC-shaped wall clock is wrong around DST changes: it can select the
+  // offset before the transition for a time after it, or vice versa.
+  for (let deltaHours = -72; deltaHours <= 72; deltaHours += 6) {
+    offsets.add(timezoneOffsetMs(new Date(wallClockMs + deltaHours * 3_600_000), timeZone));
+  }
+  const candidates = [...offsets]
+    .map((offset) => wallClockMs - offset)
+    .filter((candidateMs) => zonedWallClockMs(new Date(candidateMs), timeZone) === wallClockMs)
+    .sort((left, right) => left - right);
+  const candidateMs = candidates[0];
+  if (candidateMs == null) throw new RangeError(`Wall-clock time does not exist in ${timeZone}`);
+  return new Date(candidateMs);
+}
+
+function zonedWallClockMs(date: Date, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const value = Object.fromEntries(parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
+  return Date.UTC(
+    Number(value.year),
+    Number(value.month) - 1,
+    Number(value.day),
+    Number(value.hour),
+    Number(value.minute),
+    Number(value.second),
+  );
 }
 
 /** Telegram/dashboard display, e.g. "15.07.2026 18:30 MSK". */

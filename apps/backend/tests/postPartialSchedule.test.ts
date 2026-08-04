@@ -3,7 +3,9 @@ import { eq } from "drizzle-orm";
 import { targetLocale } from "../src/botTargets.js";
 import { type BackendDb, unsafeDb } from "../src/db/client.js";
 import { publishJobs, siteJobs } from "../src/db/schema.js";
+import { type DeliveryPorts, deliveryAdapter } from "../src/delivery/ports.js";
 import { loadConfig } from "../src/foundation/config.js";
+import { runPublishCycle } from "../src/runtime/workers.js";
 import { postService } from "../src/studio/services/posts.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
@@ -84,5 +86,45 @@ describe("partial locale scheduling", () => {
 
     const second = posts.scheduleAt(42, draftId, "en", new Date(Date.now() + 3_600_000));
     expect(() => posts.schedule(42, draftId, second)).not.toThrow();
+  });
+
+  it("publishes each scheduled locale exactly once when the worker reaches both times", async () => {
+    backendDb = openBackendDb(":memory:");
+    const config = loadConfig({ ADMIN_IDS: "42", PUBLISH_CLAIM_LIMIT: "20" });
+    const posts = postService(backendDb, config);
+    const draftId = posts.create(42, { text: "Russian", textEn: "English", entities: [], media: [] });
+    const base = new Date();
+    const postId = posts.schedule(42, draftId, {
+      ruAt: new Date(base.getTime() + 25),
+      enAt: new Date(base.getTime() + 25),
+    });
+    const calls: string[] = [];
+    const publishers: DeliveryPorts = Object.fromEntries(
+      ["telegram", "threads_ru", "threads_en"].map((target) => [
+        target,
+        deliveryAdapter(
+          async (job) => {
+            calls.push(job.target);
+            return { ok: true, id: `${job.target}-published` };
+          },
+          { validate: async () => undefined, verify: async (_job, result) => result },
+        ),
+      ]),
+    );
+    await Bun.sleep(100);
+    expect(await runPublishCycle(config, backendDb, publishers)).toBe(3);
+    expect(calls).toHaveLength(3);
+    expect(new Set(calls)).toEqual(new Set(["telegram", "threads_ru", "threads_en"]));
+    expect(
+      unsafeDb(backendDb)
+        .db.select({ status: publishJobs.status })
+        .from(publishJobs)
+        .where(eq(publishJobs.postId, postId))
+        .all()
+        .every((job) => job.status === "published"),
+    ).toBe(true);
+
+    expect(await runPublishCycle(config, backendDb, publishers)).toBe(0);
+    expect(calls).toHaveLength(3);
   });
 });
