@@ -11,6 +11,8 @@ import { formatMsk } from "../interfaces/telegram/time.js";
 import { mediaPolicyForTarget } from "../publishing/media-policy.js";
 import { isPostDraftMutable } from "../publishing/state.js";
 import { parseTargets } from "../publishing/targets.js";
+import { requirePostEditAllowed } from "../studio/services/post-access.js";
+import { postProgressState } from "../studio/services/post-progress.js";
 import { type BotLocale, botLocale } from "./i18n.js";
 
 const DRAFT_VIEWS = [
@@ -82,7 +84,7 @@ function addSlotButtons(keyboard: InlineKeyboard, target: "ru" | "en", clocks: r
 export function draftPreview(
   backendDb: BackendDb,
   draftId: number,
-  config: Pick<BackendConfig, "TIMEZONE" | "TIMEZONE_LABEL">,
+  config: BackendConfig,
   view: DraftView = "overview",
 ): { text: string; keyboard: InlineKeyboard } {
   const draft = requireDraft(backendDb, draftId);
@@ -188,11 +190,21 @@ export function draftPreview(
   if (mutable) {
     keyboard.text(`${modeEmoji} ${t(locale, "post.mode")}: ${modeLabel(mode, locale)}`, `cycle_mode:${draftId}`).row();
     keyboard.text(t(locale, "post.choose-platforms"), `platforms:${draftId}`).row();
-    keyboard.text(t(locale, "post.edit-ru"), `edit_ru:${draftId}`).text(t(locale, "post.edit-en"), `edit_en:${draftId}`).row();
+    const canEditRu = canEditLocale(backendDb, config, draft.actor_id, draftId, "ru");
+    const canEditEn = canEditLocale(backendDb, config, draft.actor_id, draftId, "en");
+    if (canEditRu) keyboard.text(t(locale, "post.edit-ru"), `edit_ru:${draftId}`);
+    if (canEditEn) keyboard.text(t(locale, "post.edit-en"), `edit_en:${draftId}`);
+    if (canEditRu || canEditEn) keyboard.row();
     keyboard.text(`🔗 ${locale === "ru" ? "Источники" : "Sources"}: ${sourceCount}`, `sources:${draftId}`).row();
     keyboard.text(t(locale, "post.publish-btn"), `publish:${draftId}`).text(t(locale, "post.schedule-btn"), `schedule:${draftId}`).row();
     keyboard.text(t(locale, "post.delete-btn"), `cancel:${draftId}`);
   } else {
+    const retryable = failedTargets(backendDb, draftId);
+    if (retryable.length) {
+      keyboard.text(t(locale, "notif.retry-failed"), `post_retry:${draftId}`).row();
+      for (const item of retryable)
+        keyboard.text(t(locale, "notif.retry-target", { target: item.label }), `post_retry:${draftId}:${item.target}`).row();
+    }
     keyboard.text(t(locale, "queue.upcoming-btn"), "queue_home").text(t(locale, "common.menu"), "menu_home");
   }
 
@@ -215,6 +227,25 @@ export function draftPreview(
     text: `${draftHeader(draftId, targets, locale)}${media}${storyCardStatus}${enMediaWarning}\n\nRU:\n${String(draft.text_ru || t(locale, "post.media-only")).slice(0, 1000)}\n\nEN:\n${String(draft.text_en_approved || draft.text_en_machine || t(locale, "post.not-translated")).slice(0, 1000)}${schedule}`,
     keyboard,
   };
+}
+
+function failedTargets(backendDb: BackendDb, draftId: number): Array<{ target: string; label: string }> {
+  try {
+    return postProgressState(backendDb, draftId)
+      .targets.filter((item) => item.status === "failed" || item.status === "verification_required")
+      .map(({ target, label }) => ({ target, label }));
+  } catch {
+    return [];
+  }
+}
+
+function canEditLocale(backendDb: BackendDb, config: BackendConfig, actorId: number, draftId: number, locale: "ru" | "en"): boolean {
+  try {
+    requirePostEditAllowed(backendDb, config, actorId, draftId, new Date(), locale);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function safeMediaCount(value: string | null): number {

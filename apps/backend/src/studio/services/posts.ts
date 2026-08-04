@@ -10,7 +10,7 @@ import { StudioError } from "../../foundation/errors.js";
 import { publishDraftToQueue } from "../../publishing/publication-workflow.js";
 import { parseTargets } from "../../publishing/targets.js";
 import { type StoryPublishMode, setStoryPublishMode } from "../../story-cards/store.js";
-import { draftMedia, requireMutableDraft, requirePostEditAllowed } from "./post-access.js";
+import { draftMedia, requireMutableDraft, requireOwnedDraft, requirePostEditAllowed } from "./post-access.js";
 import { postMediaService } from "./post-media.js";
 import { postQueryService } from "./post-queries.js";
 import { postSchedulingService, replanScheduledPostAfterMutation, scheduledDate } from "./post-scheduling.js";
@@ -79,6 +79,21 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       requireMutableDraft(backendDb, config, actorId, draftId);
       return publishDraftToQueue(backendDb, draftId);
     },
+    retryFailed(actorId: number, draftId: number, target?: string) {
+      const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
+      if (draft.post_id == null) throw new StudioError("err.retry-only-failed");
+      const failed = backendDb.studioPosts.failedPublicationTargets(draft.post_id);
+      const selected = target ? failed.filter((item) => item.target === target) : failed;
+      if (selected.length === 0) throw new StudioError("err.retry-only-failed");
+      const results = backendDb.studioPosts.retryPublicationTargets(
+        draft.post_id,
+        selected.map((item) => item.target),
+      );
+      const requeued = results.filter((item) => item.outcome === "requeued").length;
+      const alreadyQueued = results.filter((item) => item.outcome === "already_queued").length;
+      if (requeued === 0 && alreadyQueued === 0) throw new StudioError("err.retry-only-failed");
+      return { results, requeued, alreadyQueued };
+    },
     toggleTarget(actorId: number, draftId: number, target: string): void {
       const draft = requirePostEditAllowed(backendDb, config, actorId, draftId, backendDb.clock.now());
       if (!TARGETS.some(({ id }) => id === target)) throw new StudioError("err.unknown-target");
@@ -119,7 +134,7 @@ function waitForStoryCardReplan(draft: DraftRecord): boolean {
 }
 
 function editDraftContent(backendDb: BackendDb, config: BackendConfig, actorId: number, draftId: number, input: EditInput): DraftRecord {
-  const draft = requirePostEditAllowed(backendDb, config, actorId, draftId, backendDb.clock.now());
+  const draft = requirePostEditAllowed(backendDb, config, actorId, draftId, backendDb.clock.now(), input.locale);
   const clearMedia = Boolean(input.clearMedia);
   const update: DraftPatch = { updatedAt: backendDb.clock.now().toISOString() };
   const ru = input.locale === "ru";

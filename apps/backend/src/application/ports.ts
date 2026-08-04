@@ -78,6 +78,17 @@ export type PostEventRecord = {
   ackedAt: string | null;
 };
 
+export type FailedPublicationTarget = {
+  target: string;
+  status: "failed" | "verification_required";
+  error: string | null;
+};
+
+export type PublicationRetryResult = {
+  target: string;
+  outcome: "requeued" | "already_queued" | "not_failed";
+};
+
 export type DraftEntityCandidate = {
   kind: string;
   slug: string;
@@ -94,6 +105,8 @@ export type StudioPostStore = {
   notificationSettings(actorIds: number[]): Array<{ actorId: number; remindersEnabled: number }>;
   history(draftId: number, postId: number | null, limit: number): PostEventRecord[];
   progress(draftId: number): StudioPostProgress | null;
+  failedPublicationTargets(postId: number): FailedPublicationTarget[];
+  retryPublicationTargets(postId: number, targets: string[]): PublicationRetryResult[];
 };
 
 /** Persistence projection used by the transport-neutral post progress read model. */

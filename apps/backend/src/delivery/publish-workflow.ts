@@ -121,33 +121,6 @@ export async function runDeliveryPublishCycle(
         details: { post_id: postId },
         cooldownSeconds: 10,
       });
-      const finalJobs = unsafeDb(backendDb)
-        .db.select({ status: publishJobs.status })
-        .from(publishJobs)
-        .where(eq(publishJobs.postId, postId))
-        .all();
-      if (
-        finalJobs.length > 0 &&
-        finalJobs.every((job) => ["published", "failed", "cancelled", "skipped", "verification_required"].includes(job.status))
-      ) {
-        const failed = finalJobs.filter((job) => job.status === "failed" || job.status === "verification_required").length;
-        recordDomainEvent(backendDb.events, {
-          ref: `post:${postId}`,
-          type: "delivery.post.completed",
-          // The terminal target already emitted the single actionable
-          // `publish.job.failed` error alert. Keep this aggregate completion
-          // informational so a partially failed post does not notify twice.
-          severity: "info",
-          message: failed ? `Post #${postId} completed with ${failed} failed target(s)` : `Post #${postId} published successfully`,
-          details: {
-            post_id: postId,
-            total: finalJobs.length,
-            failed,
-            published: finalJobs.filter((job) => job.status === "published").length,
-          },
-          cooldownSeconds: 60 * 60,
-        });
-      }
     } catch (eventError) {
       // A domain-event write failure here must not stop the loop from settling
       // the remaining posts in this cycle; see the finalization-failure event

@@ -1,12 +1,55 @@
 import { describe, expect, it } from "bun:test";
 import { and, eq } from "drizzle-orm";
-import { postEvents, postTargets, publishJobs } from "../src/db/schema.js";
+import { drafts, postEvents, postTargets, publications, publishJobs, siteJobs } from "../src/db/schema.js";
 import { runPublicationReconciliation } from "../src/delivery/publication-reconciliation.js";
 import { loadConfig } from "../src/foundation/config.js";
+import { reconcilePublication } from "../src/publishing/publication-reconciliation.js";
 import { enqueuePublishJobTx } from "../src/publishing/queue.js";
 import { withDb } from "./helpers/db.js";
 
 describe("publication reconciliation", () => {
+  it("emits one aggregate when social and site targets are terminal", () =>
+    withDb((backendDb) => {
+      const now = new Date().toISOString();
+      backendDb.db
+        .insert(drafts)
+        .values({
+          id: 91,
+          actorId: 42,
+          status: "scheduled",
+          textRu: "Terminal post",
+          targetsJson: JSON.stringify({ telegram_ru: true, site_en: true }),
+          postId: 91,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      backendDb.db.insert(publications).values({ postId: 91, draftId: 91, status: "scheduled", createdAt: now, updatedAt: now }).run();
+      backendDb.db
+        .insert(publishJobs)
+        .values({
+          postId: 91,
+          postKey: "post:91",
+          messageId: 91,
+          target: "telegram_ru",
+          status: "failed",
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      backendDb.db
+        .insert(siteJobs)
+        .values({ postId: 91, messageId: 91, reason: "publish_en", status: "published", createdAt: now, updatedAt: now })
+        .run();
+
+      reconcilePublication(backendDb, 91);
+      expect(backendDb.db.select({ eventType: postEvents.eventType }).from(postEvents).all()).toHaveLength(1);
+      expect(backendDb.db.select({ status: drafts.status }).from(drafts).where(eq(drafts.id, 91)).get()).toEqual({ status: "failed" });
+
+      reconcilePublication(backendDb, 91);
+      expect(backendDb.db.select({ eventType: postEvents.eventType }).from(postEvents).all()).toHaveLength(1);
+    }));
+
   it("settles a publication that already has durable provider evidence", () =>
     withDb(async (backendDb) => {
       const jobId = enqueuePublishJobTx(backendDb.db, {

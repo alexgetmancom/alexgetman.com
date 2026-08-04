@@ -10,7 +10,7 @@ import { handleOperationsCallback } from "./bot/operations-screen.js";
 import { handlePostAction } from "./bot/post-actions.js";
 import { handlePostMessage, handlePostScreenCallback, startPostScreen } from "./bot/post-screen.js";
 import { handleProgressCallback } from "./bot/progress-screen.js";
-import { showQueue } from "./bot/queue.js";
+import { showQueue, showQueueAttention } from "./bot/queue.js";
 import { buildSettingsMenu, handleSettingsMessage, showSettings } from "./bot/settings-screen.js";
 import { handleVideoActionCallback } from "./bot/video-actions.js";
 import { handleVideoConversationMessage, startVideoConversation } from "./bot/video-conversation.js";
@@ -109,6 +109,18 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
     if (ctx.callbackQuery.data === "queue_drafts") {
       await ctx.answerCallbackQuery();
       await showQueue(ctx, backendDb, config);
+      return;
+    }
+    if (ctx.callbackQuery.data === "queue_attention") {
+      await ctx.answerCallbackQuery();
+      await showQueueAttention(ctx, backendDb, config);
+      return;
+    }
+    if (ctx.callbackQuery.data.startsWith("queue_attention_page:")) {
+      const value = ctx.callbackQuery.data.slice("queue_attention_page:".length);
+      const page = value === "noop" ? 0 : Number(value);
+      await ctx.answerCallbackQuery();
+      if (value !== "noop" && Number.isSafeInteger(page) && page >= 0) await showQueueAttention(ctx, backendDb, config, page);
       return;
     }
     if (ctx.callbackQuery.data.startsWith("queue_page:")) {

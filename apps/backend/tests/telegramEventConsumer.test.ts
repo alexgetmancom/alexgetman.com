@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { Bot } from "grammy";
-import { videoDrafts, videoTargets } from "../src/db/schema.js";
+import { drafts, publishJobs, siteJobs, videoDrafts, videoTargets } from "../src/db/schema.js";
 import { recordDomainEvent } from "../src/domain/events.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { consumeTelegramEvents } from "../src/interfaces/telegram/event-consumer.js";
@@ -68,11 +68,12 @@ describe("Telegram event consumer", () => {
           { videoDraftId: 10, target: "instagram_reels", metadataJson: {}, status: "published", createdAt: now, updatedAt: now },
         ])
         .run();
-      const sendMessage = mock(async (chatId: number, text: string) => ({
+      const sendMessage = mock(async (chatId: number, text: string, options: unknown) => ({
         message_id: 1,
         date: 1,
         chat: { id: chatId, type: "private" as const },
         text,
+        options,
       }));
       const bot = { api: { sendMessage } } as unknown as Bot;
       const sharedConfig = loadConfig({ ADMIN_IDS: "42,7" });
@@ -102,5 +103,71 @@ describe("Telegram event consumer", () => {
         expect(call[1]).toContain("✅ YouTube Shorts");
         expect(call[1]).toContain("✅ Instagram Reels");
       }
+    }));
+
+  it("sends one actionable aggregate for a failed post and does not replay it", async () =>
+    withDb(async (backendDb) => {
+      const now = new Date().toISOString();
+      backendDb.db
+        .insert(drafts)
+        .values({
+          id: 11,
+          actorId: 42,
+          status: "failed",
+          textRu: "Failed post",
+          targetsJson: JSON.stringify({ telegram_ru: true, site_en: true }),
+          postId: 110,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      backendDb.db
+        .insert(publishJobs)
+        .values({
+          postId: 110,
+          postKey: "post:110",
+          messageId: 110,
+          target: "telegram_ru",
+          status: "failed",
+          lastError: "Telegram timed out",
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      backendDb.db
+        .insert(siteJobs)
+        .values({
+          postId: 110,
+          messageId: 110,
+          reason: "publish_en",
+          status: "published",
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      recordDomainEvent(backendDb.events, {
+        ref: "post:110",
+        type: "delivery.post.completed",
+        severity: "info",
+        message: "Post #110 completed with 1 failed target(s)",
+        details: { post_id: 110, total: 2, published: 1, failed: 1 },
+      });
+      const sendMessage = mock(async (chatId: number, text: string, options: unknown) => ({
+        message_id: 1,
+        date: 1,
+        chat: { id: chatId, type: "private" as const },
+        text,
+        options,
+      }));
+      const bot = { api: { sendMessage } } as unknown as Bot;
+
+      expect(await consumeTelegramEvents(backendDb, bot, config)).toBe(1);
+      expect(sendMessage).toHaveBeenCalledTimes(1);
+      expect(sendMessage.mock.calls[0]?.[1]).toContain("Telegram");
+      expect(sendMessage.mock.calls[0]?.[1]).toContain("Telegram timed out");
+      expect(JSON.stringify(sendMessage.mock.calls[0]?.[2])).toContain("post_retry_notice:11");
+      expect(JSON.stringify(sendMessage.mock.calls[0]?.[2])).toContain("preview:11");
+      expect(await consumeTelegramEvents(backendDb, bot, config)).toBe(0);
+      expect(sendMessage).toHaveBeenCalledTimes(1);
     }));
 });

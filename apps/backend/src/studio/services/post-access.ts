@@ -33,10 +33,13 @@ export function requirePostEditAllowed(
   actorId: number,
   draftId: number,
   now = new Date(),
+  locale?: "ru" | "en",
 ): DraftRecord {
   const draft = requireMutableDraft(ports, config, actorId, draftId);
   const lockUntil = now.getTime() + config.POST_EDIT_LOCK_MINUTES * 60_000;
-  const scheduledTimes = [draft.scheduled_at, draft.scheduled_en_at]
+  const scheduledTimes = (
+    locale === "ru" ? [draft.scheduled_at] : locale === "en" ? [draft.scheduled_en_at] : [draft.scheduled_at, draft.scheduled_en_at]
+  )
     .filter((value): value is string => value != null)
     .map((value) => Date.parse(value))
     .filter((value) => Number.isFinite(value));

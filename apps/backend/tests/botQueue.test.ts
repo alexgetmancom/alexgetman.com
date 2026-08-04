@@ -86,7 +86,7 @@ describe("Telegram work queue", () => {
       expect(snapshot.upcoming).toHaveLength(1);
       expect(snapshot.upcoming[0]?.label).toBe("Запланированный пост");
       expect(snapshot.drafts.map((item) => item.label)).toEqual(["Чужой черновик", "Черновик поста", "Черновик видео"]);
-      expect(snapshot.attention).toEqual([{ id: 1, label: "Запланированный пост", kind: "post" }]);
+      expect(snapshot.attention).toEqual([{ id: 1, label: "Запланированный пост", kind: "post", time: new Date(now) }]);
     } finally {
       backendDb.close();
     }
@@ -214,17 +214,17 @@ describe("Telegram work queue", () => {
     const snapshot: StudioQueueSnapshot = {
       upcoming: [],
       drafts: [],
-      attention: [{ id: 12, label: "Failed clip", kind: "video" }],
+      attention: [{ id: 12, label: "Failed clip", kind: "video", time: new Date() }],
     };
 
     const text = queueText(snapshot, "ru", "Europe/Moscow");
     expect(text).toContain("Требует внимания (1)");
-    expect(text).toContain("Failed clip");
+    expect(text).not.toContain("Failed clip");
   });
 
   it("paginates every queue section without dropping items", () => {
     const snapshot: StudioQueueSnapshot = {
-      upcoming: Array.from({ length: 6 }, (_, index) => ({
+      upcoming: Array.from({ length: 11 }, (_, index) => ({
         id: index + 1,
         label: `Upcoming ${index + 1}`,
         kind: "post",
@@ -236,7 +236,7 @@ describe("Telegram work queue", () => {
     };
 
     expect(queuePageCount(snapshot)).toBe(2);
-    expect(queueText(snapshot, "en", "Europe/Moscow", 1)).toContain("Upcoming 6");
+    expect(queueText(snapshot, "en", "Europe/Moscow", 1)).toContain("Upcoming 11");
     expect(queueText(snapshot, "en", "Europe/Moscow", 1)).toContain("Page 2 of 2");
   });
 });

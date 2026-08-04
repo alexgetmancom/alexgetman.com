@@ -12,6 +12,7 @@ const POST_CARD_ACTIONS = new Set([
   "replace_en_media",
   "cancel",
   "cancel_confirm",
+  "post_retry",
   "publish",
   "publish_confirm",
   "schedule",

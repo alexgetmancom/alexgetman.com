@@ -14,6 +14,10 @@ const HANDLED_PREFIXES = new Set([
   "queue_home",
   "queue_drafts",
   "queue_page",
+  "queue_attention",
+  "queue_attention_page",
+  "post_retry",
+  "post_retry_notice",
   "notifications_home",
   // post card and scheduling
   "preview",

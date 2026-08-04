@@ -1,6 +1,28 @@
-import { desc, eq, inArray, or } from "drizzle-orm";
-import type { DraftEntityCandidate, DraftSource, PostEventRecord, StudioPostStore } from "../../application/ports.js";
-import { draftEntityCandidates, draftSources, drafts, postEvents, publishJobs, siteJobs, studioNotificationSettings } from "../schema.js";
+import { and, desc, eq, inArray, or } from "drizzle-orm";
+import type {
+  DraftEntityCandidate,
+  DraftSource,
+  FailedPublicationTarget,
+  PostEventRecord,
+  PublicationRetryResult,
+  StudioPostStore,
+} from "../../application/ports.js";
+import { jsonObject } from "../../json.js";
+import { localizeTargetPayload } from "../../publishing/payload.js";
+import {
+  draftEntityCandidates,
+  draftSources,
+  drafts,
+  postEvents,
+  posts,
+  postTargets,
+  publicationSources,
+  publications,
+  publishJobs,
+  siteJobs,
+  siteSourceItems,
+  studioNotificationSettings,
+} from "../schema.js";
 import type { BackendDatabase } from "../types.js";
 
 /** SQLite adapter for Studio post-specific persistence operations. */
@@ -85,7 +107,181 @@ export function createStudioPostStore(db: BackendDatabase): StudioPostStore {
                 .all(),
       };
     },
+
+    failedPublicationTargets(postId: number): FailedPublicationTarget[] {
+      const social = db
+        .select({ target: publishJobs.target, status: publishJobs.status, error: publishJobs.lastError, jobId: publishJobs.jobId })
+        .from(publishJobs)
+        .where(eq(publishJobs.postId, postId))
+        .orderBy(desc(publishJobs.jobId))
+        .all();
+      const latestSocial = new Map<string, (typeof social)[number]>();
+      for (const row of social) if (!latestSocial.has(row.target)) latestSocial.set(row.target, row);
+
+      const site = db
+        .select({ reason: siteJobs.reason, status: siteJobs.status, error: siteJobs.lastError, jobId: siteJobs.jobId })
+        .from(siteJobs)
+        .where(eq(siteJobs.postId, postId))
+        .orderBy(desc(siteJobs.jobId))
+        .all();
+      const latestSite = new Map<string, (typeof site)[number]>();
+      for (const row of site) {
+        const target = siteTarget(row.reason);
+        if (target && !latestSite.has(target)) latestSite.set(target, row);
+      }
+
+      return [...latestSocial.entries(), ...latestSite.entries()].flatMap(([target, row]) => {
+        if (row.status !== "failed" && row.status !== "verification_required") return [];
+        return [{ target, status: row.status, error: row.error }];
+      });
+    },
+
+    retryPublicationTargets(postId: number, targets: string[]): PublicationRetryResult[] {
+      const requested = [...new Set(targets)];
+      const source = publicationSource(db, postId);
+      const now = new Date().toISOString();
+      const results: PublicationRetryResult[] = [];
+      let changed = false;
+
+      db.transaction((tx) => {
+        for (const target of requested) {
+          const siteTargetName = siteReason(target);
+          if (siteTargetName) {
+            const row = tx
+              .select()
+              .from(siteJobs)
+              .where(and(eq(siteJobs.postId, postId), eq(siteJobs.reason, siteTargetName)))
+              .orderBy(desc(siteJobs.jobId))
+              .get();
+            if (!row) {
+              results.push({ target, outcome: "not_failed" });
+              continue;
+            }
+            const queued = tx
+              .select({ jobId: siteJobs.jobId })
+              .from(siteJobs)
+              .where(and(eq(siteJobs.postId, postId), eq(siteJobs.reason, siteTargetName), eq(siteJobs.status, "queued")))
+              .get();
+            if (queued) {
+              results.push({ target, outcome: "already_queued" });
+              continue;
+            }
+            if (row.status !== "failed" && row.status !== "verification_required") {
+              results.push({ target, outcome: "not_failed" });
+              continue;
+            }
+            tx.update(siteJobs)
+              .set({
+                status: "queued",
+                attemptCount: 0,
+                nextAttemptAt: null,
+                lockedBy: null,
+                lockedAt: null,
+                lastError: null,
+                updatedAt: now,
+              })
+              .where(and(eq(siteJobs.jobId, row.jobId), inArray(siteJobs.status, ["failed", "verification_required"])))
+              .run();
+            upsertPostTarget(tx, postId, target, now);
+            changed = true;
+            results.push({ target, outcome: "requeued" });
+            continue;
+          }
+
+          const row = tx
+            .select()
+            .from(publishJobs)
+            .where(and(eq(publishJobs.postId, postId), eq(publishJobs.target, target)))
+            .orderBy(desc(publishJobs.jobId))
+            .get();
+          if (!row) {
+            results.push({ target, outcome: "not_failed" });
+            continue;
+          }
+          const queued = tx
+            .select({ jobId: publishJobs.jobId })
+            .from(publishJobs)
+            .where(and(eq(publishJobs.postId, postId), eq(publishJobs.target, target), eq(publishJobs.status, "queued")))
+            .get();
+          if (queued) {
+            results.push({ target, outcome: "already_queued" });
+            continue;
+          }
+          const payload = localizeTargetPayload(Object.keys(source).length > 0 ? source : jsonObject(row.payloadJson), target);
+          if (row.status !== "failed" && row.status !== "verification_required") {
+            results.push({ target, outcome: "not_failed" });
+            continue;
+          }
+          tx.update(publishJobs)
+            .set({
+              status: "queued",
+              attemptCount: 0,
+              publishAt: now,
+              nextAttemptAt: null,
+              lockedBy: null,
+              lockedAt: null,
+              currentPhase: null,
+              payloadJson: payload,
+              lastError: null,
+              updatedAt: now,
+            })
+            .where(and(eq(publishJobs.jobId, row.jobId), inArray(publishJobs.status, ["failed", "verification_required"])))
+            .run();
+          upsertPostTarget(tx, postId, target, now);
+          changed = true;
+          results.push({ target, outcome: "requeued" });
+        }
+        if (changed) tx.update(publications).set({ status: "scheduled", updatedAt: now }).where(eq(publications.postId, postId)).run();
+      });
+      return results;
+    },
   };
+}
+
+function siteTarget(reason: string): string | null {
+  if (reason === "publish_ru") return "site_ru";
+  if (reason === "publish_en") return "site_en";
+  return null;
+}
+
+function siteReason(target: string): string | null {
+  if (target === "site_ru") return "publish_ru";
+  if (target === "site_en") return "publish_en";
+  return null;
+}
+
+function publicationSource(db: BackendDatabase, postId: number): Record<string, unknown> {
+  const source = jsonObject(
+    db.select({ itemJson: publicationSources.itemJson }).from(publicationSources).where(eq(publicationSources.postId, postId)).get()
+      ?.itemJson,
+  );
+  if (Object.keys(source).length > 0) return source;
+  const post = db.select({ messageId: posts.messageId, rawJson: posts.rawJson }).from(posts).where(eq(posts.postId, postId)).get();
+  const siteSource = post
+    ? jsonObject(
+        db.select({ itemJson: siteSourceItems.itemJson }).from(siteSourceItems).where(eq(siteSourceItems.messageId, post.messageId)).get()
+          ?.itemJson,
+      )
+    : {};
+  return Object.keys(siteSource).length > 0 ? siteSource : jsonObject(post?.rawJson);
+}
+
+function upsertPostTarget(db: Pick<BackendDatabase, "insert">, postId: number, target: string, now: string): void {
+  db.insert(postTargets)
+    .values({
+      postKey: `post:${postId}`,
+      target,
+      status: "queued",
+      error: null,
+      skipped: 0,
+      updatedAt: now,
+      rawJson: JSON.stringify({ requeued: true }),
+    })
+    .onConflictDoUpdate({
+      target: [postTargets.postKey, postTargets.target],
+      set: { status: "queued", error: null, skipped: 0, updatedAt: now, rawJson: JSON.stringify({ requeued: true }) },
+    })
+    .run();
 }
 
 function sourceLabel(url: string): string {

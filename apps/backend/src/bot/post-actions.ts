@@ -84,6 +84,20 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
         .text(t(locale, "common.menu"), "menu_home"),
     }));
   }
+  if (action === "post_retry" || action === "post_retry_notice") {
+    const result = await withActionLock(`${actorId}:${data}`, async () => posts.retryFailed(actorId, draftId, second || undefined));
+    if (!result.ok) return void (await ctx.answerCallbackQuery());
+    await ctx.answerCallbackQuery({
+      text: t(locale, "action.retry-result", { requeued: result.value.requeued, alreadyQueued: result.value.alreadyQueued }),
+    });
+    if (action === "post_retry") {
+      const preview = draftPreview(backendDb, draftId, config);
+      await ctx.editMessageText(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
+      const messageId = callbackMessageId(ctx);
+      if (ctx.chat?.id != null && messageId != null) setTelegramPostCard(backendDb, draftId, ctx.chat.id, messageId);
+    }
+    return;
+  }
   if (action === "publish") {
     if (await showPublicationPreflight(ctx, backendDb, config, actorId, draftId, locale)) return;
     if (await showStoryCardChoice(ctx, backendDb, config, actorId, draftId, "publish")) return;

@@ -13,16 +13,17 @@ export type StudioQueueItem = {
   targets: number;
 };
 
-type StudioAttentionItem = {
+export type StudioQueueAttentionItem = {
   id: number;
   label: string;
   kind: "post" | "video";
+  time: Date;
 };
 
 export type StudioQueueSnapshot = {
   upcoming: StudioQueueItem[];
   drafts: StudioQueueItem[];
-  attention: StudioAttentionItem[];
+  attention: StudioQueueAttentionItem[];
 };
 
 const MAX_QUEUE_ROWS = 100;
@@ -34,7 +35,7 @@ export function queueService(backendDb: BackendDb, config: BackendConfig) {
     snapshot(actorId: number, limit = MAX_QUEUE_ROWS): StudioQueueSnapshot {
       const upcoming: StudioQueueItem[] = [];
       const draftItems: StudioQueueItem[] = [];
-      const attention: StudioAttentionItem[] = [];
+      const attention: StudioQueueAttentionItem[] = [];
       const actorIds = accessibleStudioActorIds(config, actorId);
       const rowLimit = Math.max(1, Math.min(limit, MAX_QUEUE_ROWS));
       const postDrafts = backendDb.studioQueue.posts(actorIds, rowLimit);
@@ -64,7 +65,7 @@ export function queueService(backendDb: BackendDb, config: BackendConfig) {
         if (draft.status === "needs_review")
           draftItems.push({ id: draft.id, label, time: new Date(draft.updatedAt), kind: "post", targets: 0 });
         if ((draft.postId != null && failedPostIds.has(draft.postId)) || failedStoryCardDraftIds.has(draft.id))
-          attention.push({ id: draft.id, label, kind: "post" });
+          attention.push({ id: draft.id, label, kind: "post", time: new Date(draft.updatedAt) });
       }
 
       // One query for every draft's targets rather than one per draft: this
@@ -89,11 +90,12 @@ export function queueService(backendDb: BackendDb, config: BackendConfig) {
         if (video.status === "draft" || video.status === "editing")
           draftItems.push({ id: video.id, label, time: new Date(video.updatedAt), kind: "video", targets: 0 });
         if (targets.some((target) => target.status === "failed" || target.status === "verification_required"))
-          attention.push({ id: video.id, label, kind: "video" });
+          attention.push({ id: video.id, label, kind: "video", time: new Date(video.updatedAt) });
       }
 
       upcoming.sort((left, right) => left.time.getTime() - right.time.getTime());
       draftItems.sort((left, right) => right.time.getTime() - left.time.getTime());
+      attention.sort((left, right) => right.time.getTime() - left.time.getTime());
       return { upcoming, drafts: draftItems, attention };
     },
   };

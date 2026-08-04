@@ -2,7 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { type Bot, InlineKeyboard } from "grammy";
 import { botLocale } from "../../bot/i18n.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
-import { drafts, publishJobs, studioNotificationSettings, videoDrafts, videoTargets } from "../../db/schema.js";
+import { drafts, publishJobs, siteJobs, studioNotificationSettings, videoDrafts, videoTargets } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { t } from "../../foundation/i18n/index.js";
 import { log } from "../../foundation/logger.js";
@@ -142,6 +142,8 @@ export async function sendStudioCompletion(
   const failed = number(details.failed) ?? 0;
   const results = completionTargets(backendDb, event.postKey);
   const videoLocale = videoLocaleForRef(backendDb, event.postKey);
+  const failedTargets = results.filter((result) => result.status === "failed" || result.status === "verification_required");
+  const draftId = postDraftId(backendDb, event.postKey);
   await forEachAdmin(config.ADMIN_IDS, async (actorId) => {
     if (!notificationPreference(backendDb, actorId).completionEnabled) return;
     const locale = botLocale(backendDb, actorId);
@@ -150,13 +152,35 @@ export async function sendStudioCompletion(
       ? t(locale, "notif.completion-failed", { label, published, total, failed })
       : t(locale, "notif.completion-ok", { label, done: published || total, total });
     const lines = results.map(
-      (result) => `${statusIcon(result.status)} ${friendlyTarget(result.target)} — ${friendlyStatus(result.status, locale)}`,
+      (result) =>
+        `${statusIcon(result.status)} ${friendlyTarget(result.target)} — ${friendlyStatus(result.status, locale)}${
+          result.error && (result.status === "failed" || result.status === "verification_required") ? ` — ${shortError(result.error)}` : ""
+        }`,
     );
     const text = `${headline}${videoLocale ? `\n${videoLocale === "en" ? "🇬🇧 EN" : "🇷🇺 RU"}` : ""}${lines.length ? `\n\n${lines.join("\n")}` : ""}`;
     await bot.api.sendMessage(actorId, text, {
-      reply_markup: new InlineKeyboard().text(t(locale, "settings.notifications"), "notifications_home"),
+      reply_markup: completionKeyboard(locale, event.postKey, draftId, failedTargets),
     });
   });
+}
+
+function completionKeyboard(
+  locale: ReturnType<typeof botLocale>,
+  postKey: string | null,
+  draftId: number | null,
+  failedTargets: Array<{ target: string; status: string; error: string | null }>,
+): InlineKeyboard {
+  const keyboard = new InlineKeyboard();
+  if (postKey?.startsWith("post:") && draftId != null && failedTargets.length) {
+    keyboard.text(t(locale, "notif.retry-failed"), `post_retry_notice:${draftId}`).row();
+    keyboard.text(t(locale, "notif.open"), `preview:${draftId}`).row();
+    for (const target of failedTargets)
+      keyboard
+        .text(t(locale, "notif.retry-target", { target: friendlyTarget(target.target) }), `post_retry_notice:${draftId}:${target.target}`)
+        .row();
+  }
+  keyboard.text(t(locale, "settings.notifications"), "notifications_home");
+  return keyboard;
 }
 
 async function forEachAdmin(actorIds: number[], deliver: (actorId: number) => Promise<void>): Promise<void> {
@@ -171,22 +195,56 @@ async function forEachAdmin(actorIds: number[], deliver: (actorId: number) => Pr
   }
 }
 
-function completionTargets(backendDb: BackendDb, ref: string | null): Array<{ target: string; status: string }> {
+function completionTargets(backendDb: BackendDb, ref: string | null): Array<{ target: string; status: string; error: string | null }> {
   const match = ref?.match(/^(post|video):(\d+)$/);
   if (!match) return [];
   if (match[1] === "video")
     return unsafeDb(backendDb)
-      .db.select({ target: videoTargets.target, status: videoTargets.status })
+      .db.select({ target: videoTargets.target, status: videoTargets.status, error: videoTargets.lastError })
       .from(videoTargets)
       .where(eq(videoTargets.videoDraftId, Number(match[2])))
       .all();
   const jobs = unsafeDb(backendDb)
-    .db.select({ target: publishJobs.target, status: publishJobs.status })
+    .db.select({ target: publishJobs.target, status: publishJobs.status, error: publishJobs.lastError, jobId: publishJobs.jobId })
     .from(publishJobs)
     .where(eq(publishJobs.postId, Number(match[2])))
     .orderBy(desc(publishJobs.jobId))
     .all();
-  return [...new Map(jobs.map((job) => [job.target, job])).values()];
+  const latest = new Map<string, (typeof jobs)[number]>();
+  for (const job of jobs) if (!latest.has(job.target)) latest.set(job.target, job);
+  const site = unsafeDb(backendDb)
+    .db.select({ reason: siteJobs.reason, status: siteJobs.status, error: siteJobs.lastError, jobId: siteJobs.jobId })
+    .from(siteJobs)
+    .where(eq(siteJobs.postId, Number(match[2])))
+    .orderBy(desc(siteJobs.jobId))
+    .all();
+  for (const job of site) {
+    const target = siteTarget(job.reason);
+    if (target && !latest.has(target)) latest.set(target, { target, status: job.status, error: job.error, jobId: job.jobId });
+  }
+  return [...latest.values()];
+}
+
+function postDraftId(backendDb: BackendDb, ref: string | null): number | null {
+  const match = ref?.match(/^post:(\d+)$/);
+  if (!match) return null;
+  return (
+    unsafeDb(backendDb)
+      .db.select({ id: drafts.id })
+      .from(drafts)
+      .where(eq(drafts.postId, Number(match[1])))
+      .get()?.id ?? null
+  );
+}
+
+function siteTarget(reason: string): string | null {
+  if (reason === "publish_ru") return "site_ru";
+  if (reason === "publish_en") return "site_en";
+  return null;
+}
+
+function shortError(value: string): string {
+  return value.replace(/\s+/g, " ").slice(0, 180);
 }
 
 function videoLocaleForRef(backendDb: BackendDb, ref: string | null): "ru" | "en" | null {
