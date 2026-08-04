@@ -222,6 +222,16 @@ describe("Telegram work queue", () => {
     expect(text).not.toContain("Failed clip");
   });
 
+  it("escapes Markdown in queue labels", () => {
+    const snapshot: StudioQueueSnapshot = {
+      upcoming: [],
+      drafts: [{ id: 12, label: "*Draft* [with] _markup_", kind: "post", time: new Date(), targets: 0 }],
+      attention: [],
+    };
+
+    expect(queueText(snapshot, "en", "Europe/Moscow")).toContain("\\*Draft\\* \\[with\\] \\_markup\\_");
+  });
+
   it("paginates every queue section without dropping items", () => {
     const snapshot: StudioQueueSnapshot = {
       upcoming: Array.from({ length: 11 }, (_, index) => ({

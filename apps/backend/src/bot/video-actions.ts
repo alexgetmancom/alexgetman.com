@@ -1,3 +1,4 @@
+import type { Menu } from "@grammyjs/menu";
 import { type Context, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import { withActionLock } from "../foundation/action-lock.js";
@@ -11,6 +12,7 @@ import { createStudioServices } from "../studio/services/index.js";
 import { previousVideoMetadataStep, type VideoWizardStep } from "../studio/video-fsm.js";
 import { isStaleVideoCardCallback } from "./card-freshness.js";
 import { type BotLocale, botLocale } from "./i18n.js";
+import { showMainMenu } from "./menu-render.js";
 import { parseSessionCallback, requireSessionRevision, requireSessionStep, versionedCallback } from "./session-fsm.js";
 import { applyVideoScheduleDate, startVideoConversation } from "./video-conversation.js";
 import { VIDEO_ACTION_KEYS, type VideoActionKey } from "./video-routes.js";
@@ -32,7 +34,15 @@ import {
   type VideoSession,
 } from "./video-session.js";
 
-type VideoActionArgs = { ctx: Context; backendDb: BackendDb; config: BackendConfig; actorId: number; locale: BotLocale; data: string };
+type VideoActionArgs = {
+  ctx: Context;
+  backendDb: BackendDb;
+  config: BackendConfig;
+  actorId: number;
+  locale: BotLocale;
+  data: string;
+  mainMenu: Menu<Context> | undefined;
+};
 // biome-ignore lint/suspicious/noConfusingVoidType: handlers use bare `return;` on every no-toast path; `void` is what makes that a valid Promise<VideoActionResult>.
 type VideoActionResult = { toast?: string } | void;
 type VideoActionHandler = (args: VideoActionArgs) => Promise<VideoActionResult>;
@@ -90,6 +100,7 @@ const SESSION_BOUND_VIDEO_ACTIONS = new Set([
   "video_game_skip",
   "video_meta_back",
   "video_schedule_confirm",
+  "video_now_confirm",
   "video_common",
   "video_individual",
   "video_sched_pick",
@@ -111,7 +122,12 @@ function toast(text: string): string {
 }
 
 /** Callback-only adapter: it changes a session or invokes a Studio command, never parses chat replies. */
-export async function handleVideoActionCallback(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<boolean> {
+export async function handleVideoActionCallback(
+  ctx: Context,
+  backendDb: BackendDb,
+  config: BackendConfig,
+  mainMenu?: Menu<Context>,
+): Promise<boolean> {
   const rawData = ctx.callbackQuery?.data;
   if (!rawData) return false;
   const { data, revision } = parseSessionCallback(rawData);
@@ -129,7 +145,7 @@ export async function handleVideoActionCallback(ctx: Context, backendDb: Backend
     else if (isStaleVideoCardCallback(ctx, backendDb, data)) await ctx.answerCallbackQuery({ text: t(locale, "action.card-stale") });
     else if (!route) await ctx.answerCallbackQuery({ text: t(locale, "action.unknown") });
     else {
-      const result = await route({ ctx, backendDb, config, actorId, locale, data });
+      const result = await route({ ctx, backendDb, config, actorId, locale, data, mainMenu });
       if (result?.toast) await ctx.answerCallbackQuery({ text: toast(result.toast) });
       else await ctx.answerCallbackQuery();
     }
@@ -181,7 +197,7 @@ async function handleLocale({ ctx, backendDb, actorId, locale, data }: VideoActi
   });
 }
 
-async function handleCancelDialog({ ctx, backendDb, config, actorId, locale }: VideoActionArgs): Promise<VideoActionResult> {
+async function handleCancelDialog({ ctx, backendDb, config, actorId, locale, mainMenu }: VideoActionArgs): Promise<VideoActionResult> {
   const session = getSession(backendDb, actorId);
   clearSession(backendDb, actorId);
   // The draft already exists once a video file was uploaded (even mid-wizard):
@@ -193,18 +209,13 @@ async function handleCancelDialog({ ctx, backendDb, config, actorId, locale }: V
       return;
     } catch {}
   }
-  const keyboard = new InlineKeyboard();
-  if (config.studio.modules.text_posting) keyboard.text(t(locale, "menu.new-post"), "menu_text");
-  if (config.studio.modules.video_posting) keyboard.text(t(locale, "menu.new-video"), "video_start");
-  keyboard.row().text(t(locale, "menu.work-queue"), "queue_home");
-  if (config.studio.modules.analytics) keyboard.text(t(locale, "menu.analytics"), "analytics_home");
-  const text = `${t(locale, "menu.control-panel")}:`;
+  if (!mainMenu) throw new StudioError("err.video-restart");
   // Cancelling is pure navigation, not a content change: turn this same
   // message into the control panel instead of deleting and sending a new one.
   try {
-    await ctx.editMessageText(text, { reply_markup: keyboard });
+    await showMainMenu(ctx, backendDb, mainMenu, true);
   } catch {
-    await ctx.reply(text, { reply_markup: keyboard });
+    await showMainMenu(ctx, backendDb, mainMenu);
   }
 }
 
@@ -336,26 +347,27 @@ async function handleScheduleMode({ ctx, backendDb, config, actorId, locale, dat
 async function handleNowAsk({ ctx, backendDb, config, actorId, locale, data }: VideoActionArgs): Promise<VideoActionResult> {
   const id = requireDraftId(data.slice("video_now:".length));
   createStudioServices(backendDb, config).videos.get(actorId, id);
+  const session = saveSession(backendDb, actorId, {
+    draftId: id,
+    step: "schedule_confirm",
+    selected: [],
+    data: { controlMessageId: callbackMessageId(ctx) },
+  });
   const preview = videoPreview(createStudioServices(backendDb, config).videos.preview(actorId, id), config, locale);
   await ctx.editMessageText(`${preview.text}\n\n${t(locale, "video.publish-now-q")}`, {
     parse_mode: "Markdown",
     reply_markup: new InlineKeyboard()
-      .text(t(locale, "video.publish-now-yes"), `video_now_confirm:${id}`)
+      .text(t(locale, "video.publish-now-yes"), versionedCallback(`video_now_confirm:${id}`, session.revision))
       .text(t(locale, "common.back"), `video_open:${id}`),
   });
 }
 
 async function handleNowConfirm({ ctx, backendDb, config, actorId, data }: VideoActionArgs): Promise<VideoActionResult> {
   const id = requireDraftId(data.slice("video_now_confirm:".length));
-  await withActionLock(`${actorId}:${data}`, () =>
-    finishVideoNow(ctx, backendDb, config, actorId, {
-      draftId: id,
-      step: "schedule_confirm",
-      selected: [],
-      data: { controlMessageId: callbackMessageId(ctx) },
-      revision: getSession(backendDb, actorId)?.revision ?? 0,
-    }),
-  );
+  const session = getSession(backendDb, actorId);
+  if (!session || session.draftId !== id) throw new StudioError("action.schedule-expired");
+  requireSessionStep(session.step, ["schedule_confirm"], "action.schedule-expired");
+  await withActionLock(`${actorId}:${data}`, () => finishVideoNow(ctx, backendDb, config, actorId, session));
 }
 
 async function handleCancelAsk({ ctx, backendDb, config, actorId, locale, data }: VideoActionArgs): Promise<VideoActionResult> {

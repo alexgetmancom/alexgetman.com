@@ -7,6 +7,7 @@ import { type BackendDb, unsafeDb } from "../db/client.js";
 import { draftSources, draftStoryCards } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { type MessageKey, t } from "../foundation/i18n/index.js";
+import { escapeMarkdown } from "../foundation/markdown.js";
 import { formatMsk } from "../interfaces/telegram/time.js";
 import { mediaPolicyForTarget } from "../publishing/media-policy.js";
 import { isPostDraftMutable } from "../publishing/state.js";
@@ -224,7 +225,7 @@ export function draftPreview(
   const media = mediaRu || mediaEn ? `\n${t(locale, "post.media")}: ${mediaRu || 0} RU · ${mediaEn || mediaRu || 0} EN` : "";
   const enMediaWarning = mediaRu > 0 && mediaEn === 0 ? `\n⚠️ ${t(locale, "post.en-uses-ru-media")}` : "";
   return {
-    text: `${draftHeader(draftId, targets, locale)}${media}${storyCardStatus}${enMediaWarning}\n\nRU:\n${String(draft.text_ru || t(locale, "post.media-only")).slice(0, 1000)}\n\nEN:\n${String(draft.text_en_approved || draft.text_en_machine || t(locale, "post.not-translated")).slice(0, 1000)}${schedule}`,
+    text: `${draftHeader(draftId, targets, locale)}${media}${storyCardStatus}${enMediaWarning}\n\nRU:\n${escapeMarkdown(String(draft.text_ru || t(locale, "post.media-only")).slice(0, 1000))}\n\nEN:\n${escapeMarkdown(String(draft.text_en_approved || draft.text_en_machine || t(locale, "post.not-translated")).slice(0, 1000))}${schedule}`,
     keyboard,
   };
 }

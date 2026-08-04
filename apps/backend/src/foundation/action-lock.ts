@@ -1,3 +1,6 @@
+// This is intentionally process-local. It only closes the double-tap window
+// inside one bot process; durable service idempotency and database constraints
+// remain responsible for correctness across restarts or multiple replicas.
 const inFlight = new Set<string>();
 
 /** Guards a mutating action (publish, cancel, deploy) against a double tap

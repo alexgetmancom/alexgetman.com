@@ -47,6 +47,21 @@ describe("Telegram controller flow", () => {
     expect(JSON.stringify(preview.keyboard)).toContain("Запланировать");
   });
 
+  it("escapes draft Markdown before embedding copy in the control card", () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createDraftFromMessage(backendDb, 42, {
+      text: "*bold* [link] _under_ `code`",
+      textEn: "*English* [link] _under_ `code`",
+      entities: [],
+      media: [],
+    });
+
+    const preview = draftPreview(backendDb, draftId, loadConfig({}));
+
+    expect(preview.text).toContain("\\*bold\\* \\[link\\] \\_under\\_ \\`code\\`");
+    expect(preview.text).toContain("\\*English\\* \\[link\\] \\_under\\_ \\`code\\`");
+  });
+
   it("creates a draft and queues enabled publication targets without Telegram API", () => {
     backendDb = openBackendDb(":memory:");
     const draftId = createDraftFromMessage(backendDb, 42, {
@@ -510,6 +525,19 @@ describe("Telegram controller flow", () => {
     ]);
     expect(completed).toEqual([1, 0]);
     expect(backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM drafts").get()).toEqual({ count: 1 });
+    expect((backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM pending_albums").get() as { count: number }).count).toBe(0);
+  });
+
+  it("reclaims a stale album claim left by a crashed worker", async () => {
+    backendDb = openBackendDb(":memory:");
+    backendDb.sqlite
+      .prepare(`INSERT INTO pending_albums(id,actor_id,chat_id,media_group_id,action,text_ru,text_entities_json,media_json,notified,updated_at)
+      VALUES ('stale-claim',42,42,'group','new_post','Album caption','[]',?,2,'2000-01-01T00:00:00.000Z')`)
+      .run(JSON.stringify([{ type: "photo", file_id: "one" }]));
+    const sendMessage = mock(async () => ({ message_id: 1, date: 1, chat: { id: 42, type: "private" as const } }));
+    const fakeBot = { api: { sendMessage } } as unknown as Bot;
+
+    expect(await finalizePendingAlbums(fakeBot, backendDb, loadConfig({ CONTROLLER_ALBUM_SETTLE_SECONDS: "1" }))).toBe(1);
     expect((backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM pending_albums").get() as { count: number }).count).toBe(0);
   });
 

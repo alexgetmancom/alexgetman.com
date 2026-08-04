@@ -2,9 +2,11 @@ import { type Context, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { t } from "../foundation/i18n/index.js";
+import { escapeMarkdown } from "../foundation/markdown.js";
 import { createStudioServices } from "../studio/services/index.js";
 import type { StudioQueueAttentionItem, StudioQueueItem, StudioQueueSnapshot } from "../studio/services/queue.js";
 import { type BotLocale, botLocale } from "./i18n.js";
+import { isUnchangedMessageEdit } from "./telegram-errors.js";
 
 const QUEUE_PAGE_SIZE = 10;
 const ATTENTION_PAGE_SIZE = 10;
@@ -54,7 +56,8 @@ export async function showQueueAttention(ctx: Context, backendDb: BackendDb, con
   const lines = [`⚠️ *${t(locale, "queue.attention-title")}*`, ""];
   if (!items.length) lines.push(t(locale, "queue.no-attention"));
   else
-    for (const item of items) lines.push(`• ${formatQueueTime(item.time, locale, config.TIMEZONE)} — ${kindIcon(item.kind)} ${item.label}`);
+    for (const item of items)
+      lines.push(`• ${formatQueueTime(item.time, locale, config.TIMEZONE)} — ${kindIcon(item.kind)} ${escapeMarkdown(item.label)}`);
   if (pages > 1) lines.push("", t(locale, "queue.page", { page: currentPage + 1, pages }));
   await replaceQueueMessage(ctx, lines.join("\n"), keyboard);
 }
@@ -75,12 +78,12 @@ export function queueText(snapshot: StudioQueueSnapshot, locale: BotLocale, time
         lines.push("", `*${queueDayLabel(item.time, locale, timeZone)}*`);
         lastDay = day;
       }
-      lines.push(`• ${formatQueueTime(item.time, locale, timeZone)} — ${kindIcon(item.kind)} ${item.label}`);
+      lines.push(`• ${formatQueueTime(item.time, locale, timeZone)} — ${kindIcon(item.kind)} ${escapeMarkdown(item.label)}`);
     }
   }
   lines.push("", `*${t(locale, "queue.drafts-btn", { count: snapshot.drafts.length })}*`);
   if (!pageItems.drafts.length) lines.push(t(locale, "queue.no-drafts"));
-  else for (const item of pageItems.drafts) lines.push(`• ${kindIcon(item.kind)} ${item.label}`);
+  else for (const item of pageItems.drafts) lines.push(`• ${kindIcon(item.kind)} ${escapeMarkdown(item.label)}`);
   if (pages.length > 1) lines.push("", t(locale, "queue.page", { page: currentPage + 1, pages: pages.length }));
   return lines.join("\n");
 }
@@ -146,9 +149,13 @@ function itemCallback(item: Pick<StudioQueueItem | StudioQueueAttentionItem, "id
 
 async function replaceQueueMessage(ctx: Context, text: string, keyboard: InlineKeyboard): Promise<void> {
   const messageId = ctx.callbackQuery?.message?.message_id;
-  if (messageId && ctx.chat?.id)
-    await ctx.api.editMessageText(ctx.chat.id, messageId, text, { parse_mode: "Markdown", reply_markup: keyboard });
-  else await ctx.reply(text, { parse_mode: "Markdown", reply_markup: keyboard });
+  if (messageId && ctx.chat?.id) {
+    try {
+      await ctx.api.editMessageText(ctx.chat.id, messageId, text, { parse_mode: "Markdown", reply_markup: keyboard });
+    } catch (error) {
+      if (!isUnchangedMessageEdit(error)) throw error;
+    }
+  } else await ctx.reply(text, { parse_mode: "Markdown", reply_markup: keyboard });
 }
 
 /** Intl.DateTimeFormat construction is expensive and this runs per queue row,

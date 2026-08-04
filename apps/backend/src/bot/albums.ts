@@ -18,6 +18,9 @@ import { draftPreview } from "./preview.js";
 // media are collected, then CLAIMED by exactly one worker before finalization.
 const ALBUM_SETTLED = 1;
 const ALBUM_CLAIMED = 2;
+// A claim is durable so a process crash cannot lose the album, but it needs a
+// lease so a claim abandoned mid-import can be picked up by the next cycle.
+const ALBUM_CLAIM_LEASE_MS = 10 * 60_000;
 // A failed finalization goes back to SETTLED and is retried once per settle
 // window. Deterministic failures (an expired file_id, a draft deleted mid-flight)
 // would loop forever, so give up after a few tries and tell the sender instead
@@ -79,7 +82,17 @@ export function appendPendingAlbum(backendDb: BackendDb, input: PendingAlbumInpu
 
 export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendDb, config: BackendConfig): Promise<number> {
   if (!bot) return 0;
-  const cutoff = new Date(Date.now() - config.CONTROLLER_ALBUM_SETTLE_SECONDS * 1000).toISOString();
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const claimCutoff = new Date(now.getTime() - ALBUM_CLAIM_LEASE_MS).toISOString();
+  // Recover claims left behind by a crashed worker. Keep updatedAt untouched:
+  // the row can be selected in this same cycle if its settle window elapsed.
+  unsafeDb(backendDb)
+    .db.update(pendingAlbums)
+    .set({ notified: ALBUM_SETTLED })
+    .where(and(eq(pendingAlbums.notified, ALBUM_CLAIMED), lte(pendingAlbums.updatedAt, claimCutoff)))
+    .run();
+  const cutoff = new Date(now.getTime() - config.CONTROLLER_ALBUM_SETTLE_SECONDS * 1000).toISOString();
   const rows = unsafeDb(backendDb)
     .db.select({
       id: pendingAlbums.id,
@@ -101,7 +114,7 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
   for (const row of rows) {
     const claim = unsafeDb(backendDb)
       .db.update(pendingAlbums)
-      .set({ notified: ALBUM_CLAIMED })
+      .set({ notified: ALBUM_CLAIMED, updatedAt: nowIso })
       .where(and(eq(pendingAlbums.id, row.id), eq(pendingAlbums.notified, ALBUM_SETTLED), lte(pendingAlbums.updatedAt, cutoff)))
       .returning({ id: pendingAlbums.id })
       .get();

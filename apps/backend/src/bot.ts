@@ -92,7 +92,6 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
     await startVideoConversation(ctx, backendDb);
   });
   bot.hears(localizedTextVariants(["menu.new-post"]), async (ctx) => {
-    const locale = botLocale(backendDb, Number(ctx.from?.id));
     if (!isAdmin(config, ctx.from?.id)) return;
     await startPostScreen(ctx, backendDb);
   });
@@ -189,7 +188,7 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
     {
       name: "video",
       matches: (data) => data.startsWith("video_"),
-      handle: async (ctx) => handleVideoActionCallback(ctx, backendDb, config),
+      handle: async (ctx) => handleVideoActionCallback(ctx, backendDb, config, mainMenu),
     },
     {
       name: "operations",

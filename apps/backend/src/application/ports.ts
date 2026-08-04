@@ -109,7 +109,7 @@ export type StudioPostStore = {
   retryPublicationTargets(postId: number, targets: string[]): PublicationRetryResult[];
 };
 
-export type StudioPostAdminStateRecord = {
+type StudioPostAdminStateRecord = {
   action: string | null;
   draftId: number | null;
   controlMessageId: number | null;
