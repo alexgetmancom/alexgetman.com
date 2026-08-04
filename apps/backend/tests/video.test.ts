@@ -3,8 +3,8 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { and, eq } from "drizzle-orm";
+import { handlePublicationCallback } from "../src/bot/callback-router.js";
 import { publicationCallback, versionedCallback } from "../src/bot/session-fsm.js";
-import { handleVideoActionCallback } from "../src/bot/video-actions.js";
 import { handleVideoConversationMessage } from "../src/bot/video-conversation.js";
 import { getVideoState, saveVideoState } from "../src/bot/video-ui.js";
 import {
@@ -70,7 +70,7 @@ describe("video publication queue", () => {
     const session = saveVideoState(backendDb, 42, { draftId: null, step: "locale", selected: [], data: {} });
 
     expect(
-      await handleVideoActionCallback(
+      await handlePublicationCallback(
         videoContext({ callback: versionedCallback(publicationCallback("video", "locale", ["en"]), session.revision) }).context,
         backendDb,
         videoConfig(),
@@ -317,7 +317,7 @@ describe("video publication queue", () => {
     const session = saveVideoState(backendDb, 42, { draftId, step: "targets", selected: ["youtube_shorts"], data: {} });
     const selected = videoContext({ callback: versionedCallback(publicationCallback("video", "targets_done"), session.revision) });
 
-    expect(await handleVideoActionCallback(selected.context, backendDb, videoConfig())).toBe(true);
+    expect(await handlePublicationCallback(selected.context, backendDb, videoConfig())).toBe(true);
     expect(getVideoState(backendDb, 42)).toMatchObject({ draftId, step: "youtube_title" });
     expect(listVideoTargets(backendDb, draftId).map((target) => target.target)).toEqual(["youtube_shorts"]);
 
@@ -325,7 +325,7 @@ describe("video publication queue", () => {
     const invalid = videoContext({
       callback: versionedCallback(publicationCallback("video", "toggle", ["not-a-target"]), invalidSession.revision),
     });
-    expect(await handleVideoActionCallback(invalid.context, backendDb, videoConfig())).toBe(true);
+    expect(await handlePublicationCallback(invalid.context, backendDb, videoConfig())).toBe(true);
     expect(invalid.callbackAnswers).toEqual([{ text: "Start creating the video again." }]);
   });
 

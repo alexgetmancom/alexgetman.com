@@ -2,16 +2,24 @@ import type { Menu } from "@grammyjs/menu";
 import { type Context, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
-import { t } from "../foundation/i18n/index.js";
+import { describeError, t } from "../foundation/i18n/index.js";
+import { createStudioServices } from "../studio/services/index.js";
+import { isStaleCardCallback, POST_CARD_FRESHNESS, VIDEO_CARD_FRESHNESS } from "./card-freshness.js";
+import { getConversationState } from "./conversation-state.js";
 import { type BotLocale, botLocale } from "./i18n.js";
+import { postActionHandlers } from "./post-actions.js";
+import { handlePostMessage, handlePostScreenCallback } from "./post-screen.js";
 import {
-  PUBLICATION_ACTIONS,
+  type PUBLICATION_ACTIONS,
   type PublicationCallback,
   type PublicationKind,
+  parseDraftId,
   parsePublicationCallback,
   parseSessionCallback,
   requireSessionRevision,
 } from "./session-fsm.js";
+import { videoActionHandlers } from "./video-actions.js";
+import { handleVideoConversationMessage } from "./video-conversation.js";
 
 export type CallbackRouterContext = {
   ctx: Context;
@@ -27,14 +35,22 @@ export type CallbackRouterContext = {
   args: string[];
 };
 
+export type PublicationActionContext = CallbackRouterContext & {
+  first: string | undefined;
+  second: string | undefined;
+  draftId: number;
+  mainMenu: Menu<Context> | undefined;
+  posts: ReturnType<typeof createStudioServices>["posts"];
+};
+
 type CallbackRouteHandler<TArgs, TResult> = (args: TArgs) => Promise<TResult>;
 
 type CallbackRouterBase<TArgs, TEntity, TResult> = {
-  routes: Readonly<Record<string, CallbackRouteHandler<TArgs, TResult>>>;
-  sessionBound?: ReadonlySet<string>;
+  routes: Readonly<Record<PublicationKind, Readonly<Record<string, CallbackRouteHandler<TArgs, TResult>>>>>;
+  sessionBound?: (context: CallbackRouterContext) => boolean;
   currentSessionRevision?: (context: CallbackRouterContext) => number | undefined;
   parseEntity?: (callback: PublicationCallback, action: string) => TEntity | null;
-  buildArgs: (context: CallbackRouterContext, entity: TEntity | undefined) => TArgs;
+  buildArgs: (context: CallbackRouterContext, entity: TEntity | undefined, mainMenu?: Menu<Context>) => TArgs;
   prepare?: (context: CallbackRouterContext, entity: TEntity | undefined) => void | Promise<void>;
   isStale?: (context: CallbackRouterContext, entity: TEntity | undefined) => boolean | Promise<boolean>;
   invalidEntityText?: (locale: BotLocale) => string;
@@ -45,23 +61,19 @@ type CallbackRouterBase<TArgs, TEntity, TResult> = {
   onError?: (context: CallbackRouterContext, error: unknown) => void | Promise<void>;
 };
 
-export type CallbackRouterOptions<TArgs, TEntity = undefined, TResult = void> = CallbackRouterBase<TArgs, TEntity, TResult> &
-  ({ prefix: string; matches?: never } | { matches: (callback: PublicationCallback) => boolean; prefix?: never });
+export type CallbackRouterOptions<TArgs, TEntity = undefined, TResult = void> = CallbackRouterBase<TArgs, TEntity, TResult>;
 
 /** Builds a callback-only adapter with common transport, session, and guard handling. */
 export function createCallbackRouter<TArgs, TEntity = undefined, TResult = void>(
   options: CallbackRouterOptions<TArgs, TEntity, TResult>,
-): (ctx: Context, backendDb: BackendDb, config: BackendConfig) => Promise<boolean> {
-  return async (ctx, backendDb, config): Promise<boolean> => {
+): (ctx: Context, backendDb: BackendDb, config: BackendConfig, mainMenu?: Menu<Context>) => Promise<boolean> {
+  return async (ctx, backendDb, config, mainMenu): Promise<boolean> => {
     const rawData = ctx.callbackQuery?.data;
     if (!rawData) return false;
 
     const { data, revision } = parseSessionCallback(rawData);
     const callback = parsePublicationCallback(data);
     if (!callback) return false;
-    const matches = options.matches ? options.matches(callback) : `${callback.kind}_${callback.action}`.startsWith(options.prefix ?? "");
-    if (!matches) return false;
-
     const parts = [callback.action, ...callback.args];
     const action = callback.action;
     const actorId = Number(ctx.from?.id);
@@ -78,16 +90,17 @@ export function createCallbackRouter<TArgs, TEntity = undefined, TResult = void>
       parts,
       args: callback.args,
     };
-    const route = options.routes[action];
+    const route = options.routes[callback.kind][action];
 
     try {
       if (!route) {
         await answerCallback(ctx, options.unknownText?.(common.locale));
         const keyboard = options.unknownKeyboard?.(common.locale);
-        if (keyboard) await ctx.reply(options.unknownText?.(common.locale) ?? "", { reply_markup: keyboard });
+        if (keyboard && typeof ctx.reply === "function")
+          await ctx.reply(options.unknownText?.(common.locale) ?? "", { reply_markup: keyboard });
         return true;
       }
-      if (options.sessionBound?.has(action) && revision == null) {
+      if (options.sessionBound?.(common) && revision == null) {
         await answerCallback(ctx, options.staleText?.(common.locale));
         return true;
       }
@@ -105,7 +118,7 @@ export function createCallbackRouter<TArgs, TEntity = undefined, TResult = void>
         return true;
       }
       await options.prepare?.(common, entity ?? undefined);
-      const result = await route(options.buildArgs(common, entity ?? undefined));
+      const result = await route(options.buildArgs(common, entity ?? undefined, mainMenu));
       await options.onResult?.(common, result);
     } catch (error) {
       if (!options.onError) throw error;
@@ -119,43 +132,81 @@ async function answerCallback(ctx: Context, text: string | undefined): Promise<v
   await ctx.answerCallbackQuery(text ? { text } : undefined);
 }
 
-type PublicationHandler = (
-  ctx: Context,
-  backendDb: BackendDb,
-  config: BackendConfig,
-  mainMenu?: Menu<Context>,
-) => Promise<boolean | undefined>;
+type PublicationHandler = (args: PublicationActionContext) => Promise<PublicationActionResult>;
+// biome-ignore lint/suspicious/noConfusingVoidType: action declarations intentionally return no toast on the normal path.
+type PublicationActionResult = { toast?: string } | void;
 type PublicationRoutes = {
   [K in PublicationKind]: Record<(typeof PUBLICATION_ACTIONS)[K][number], PublicationHandler>;
 };
 
-/** One dispatch table for both publication kinds. Action modules keep the
- * handler declarations; this table owns the publication boundary. */
+const MAX_TOAST_LENGTH = 200;
+
+function toast(text: string): string {
+  return text.length > MAX_TOAST_LENGTH ? `${text.slice(0, MAX_TOAST_LENGTH - 1)}…` : text;
+}
+
+const POST_SESSION_BOUND = new Set(["cancel_state", "sched_manual_confirm"]);
+const VIDEO_SESSION_BOUND = new Set([
+  "locale",
+  "cancel_dialog",
+  "toggle",
+  "targets_done",
+  "game_skip",
+  "meta_back",
+  "schedule_confirm",
+  "now_confirm",
+  "common",
+  "individual",
+  "sched_pick",
+  "sched_manual",
+]);
+
+/** One action table for both publication kinds. Modules only declare handlers. */
 export const routes: PublicationRoutes = {
-  post: Object.fromEntries(
-    PUBLICATION_ACTIONS.post.map((action) => [
-      action,
-      async (ctx, backendDb, config, mainMenu) => {
-        if (action === "cancel_dialog") {
-          const { handlePostScreenCallback } = await import("./post-screen.js");
-          if (!mainMenu) return false;
-          return handlePostScreenCallback(ctx, backendDb, mainMenu);
-        }
-        const { handlePostAction } = await import("./post-actions.js");
-        await handlePostAction(ctx, backendDb, config);
-      },
-    ]),
-  ) as PublicationRoutes["post"],
-  video: Object.fromEntries(
-    PUBLICATION_ACTIONS.video.map((action) => [
-      action,
-      async (ctx, backendDb, config, mainMenu) => {
-        const { handleVideoActionCallback } = await import("./video-actions.js");
-        return handleVideoActionCallback(ctx, backendDb, config, mainMenu);
-      },
-    ]),
-  ) as PublicationRoutes["video"],
+  post: {
+    cancel_dialog: async ({ ctx, backendDb, mainMenu }) => {
+      if (!mainMenu) return;
+      await handlePostScreenCallback(ctx, backendDb, mainMenu);
+    },
+    ...postActionHandlers,
+  },
+  video: videoActionHandlers,
 };
+
+const publicationRouter = createCallbackRouter<PublicationActionContext, number, PublicationActionResult>({
+  routes,
+  sessionBound: ({ callback, action }) => (callback.kind === "post" ? POST_SESSION_BOUND : VIDEO_SESSION_BOUND).has(action),
+  currentSessionRevision: ({ backendDb, actorId, callback }) => getConversationState(backendDb, actorId, callback.kind)?.revision,
+  parseEntity: (callback) => {
+    if (callback.kind !== "post" || callback.action === "cancel_dialog") return 0;
+    return parseDraftId(callback.args[0]);
+  },
+  buildArgs: (common, draftId, mainMenu) => ({
+    ...common,
+    first: common.args[1],
+    second: common.args[2],
+    draftId: draftId ?? 0,
+    mainMenu,
+    posts: createStudioServices(common.backendDb, common.config).posts,
+  }),
+  prepare: ({ backendDb, config, actorId, callback }, draftId) => {
+    if (callback.kind === "post" && callback.action !== "cancel_dialog")
+      createStudioServices(backendDb, config).posts.get(actorId, draftId as number);
+  },
+  isStale: ({ ctx, backendDb, callback }) =>
+    isStaleCardCallback(ctx, backendDb, callback, callback.kind === "post" ? POST_CARD_FRESHNESS : VIDEO_CARD_FRESHNESS),
+  invalidEntityText: (locale) => t(locale, "action.invalid-post"),
+  staleText: (locale) => t(locale, "action.card-stale"),
+  unknownText: (locale) => t(locale, "action.card-stale"),
+  unknownKeyboard: (locale) => new InlineKeyboard().text(t(locale, "menu.work-queue"), "queue_home"),
+  onResult: async ({ ctx, callback }, result) => {
+    if (callback.kind === "video") await ctx.answerCallbackQuery(result?.toast ? { text: toast(result.toast) } : undefined);
+  },
+  onError: async ({ ctx, callback, locale }, error) => {
+    if (callback.kind === "video") return void (await ctx.answerCallbackQuery({ text: toast(describeError(locale, error)) }));
+    throw error;
+  },
+});
 
 /** Dispatches canonical publication callbacks through the shared action map. */
 export async function handlePublicationCallback(
@@ -164,33 +215,16 @@ export async function handlePublicationCallback(
   config: BackendConfig,
   mainMenu?: Menu<Context>,
 ): Promise<boolean> {
-  const rawData = ctx.callbackQuery?.data;
-  if (!rawData) return false;
-  const { data } = parseSessionCallback(rawData);
-  const callback = parsePublicationCallback(data);
-  if (!callback) return false;
-  const handler = routes[callback.kind][callback.action as keyof (typeof routes)[typeof callback.kind]];
-  if (!handler) {
-    const locale = botLocale(backendDb, Number(ctx.from?.id));
-    await answerCallback(ctx, t(locale, "action.card-stale"));
-    await ctx.reply(t(locale, "action.card-stale"), {
-      reply_markup: new InlineKeyboard().text(t(locale, "menu.work-queue"), "queue_home"),
-    });
-    return true;
-  }
-  return (await handler(ctx, backendDb, config, mainMenu)) !== false;
+  return publicationRouter(ctx, backendDb, config, mainMenu);
 }
 
 /** Routes incoming text/media to the one active publication conversation. */
 export async function handleActivePublicationMessage(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<boolean> {
   const actorId = Number(ctx.from?.id);
-  const { getConversationState } = await import("./conversation-state.js");
   if (getConversationState(backendDb, actorId, "video")) {
-    const { handleVideoConversationMessage } = await import("./video-conversation.js");
     return handleVideoConversationMessage(ctx, backendDb, config);
   }
   if (getConversationState(backendDb, actorId, "post")) {
-    const { handlePostMessage } = await import("./post-screen.js");
     await handlePostMessage(ctx, backendDb, config);
     return true;
   }

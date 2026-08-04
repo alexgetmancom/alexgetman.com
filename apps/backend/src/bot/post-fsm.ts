@@ -1,5 +1,10 @@
+import type { Context } from "grammy";
 import { acceptFlow, type Flow, type FlowStep } from "../application/conversation-flow.js";
+import type { DraftMessage } from "../content/message.js";
+import type { BackendDb } from "../db/client.js";
+import type { BackendConfig } from "../foundation/config.js";
 import type { ConversationState } from "./conversation-state.js";
+import { acceptManualPostSchedule, acceptPostMediaReplacement, acceptPostSourceEdit, acceptPostTextEdit } from "./post-flow-actions.js";
 
 export type PostWizardLocale = "ru" | "en";
 
@@ -15,47 +20,41 @@ export type PostWizardStep =
   | { type: "schedule_confirm"; locale: PostWizardLocale; value: Date };
 
 export type PostFlowData = Record<string, unknown>;
+export type PostFlowInput = {
+  ctx: Context;
+  backendDb: BackendDb;
+  config: BackendConfig;
+  actorId: number;
+  draftId: number;
+  controlMessageId: number | null;
+  step: PostWizardStep;
+  message: DraftMessage;
+};
 export type PostWizardStepInput = PostWizardStep | PostSessionStep | null;
 
 function postStep(
   name: PostSessionStep,
   next: (data: PostFlowData) => string | null,
-  accept?: (input: unknown, data: PostFlowData) => PostFlowData,
-): FlowStep<PostFlowData> {
-  return { name, prompt: () => name, next, ...(accept ? { accept } : {}) };
+  accept?: (input: PostFlowInput, data: PostFlowData) => PostFlowData | Promise<PostFlowData>,
+): FlowStep<PostFlowData, PostFlowInput> {
+  return { name, next, ...(accept ? { accept } : {}) };
 }
 
-const POST_STEPS: Record<string, FlowStep<PostFlowData>> = {
+const POST_STEPS: Record<string, FlowStep<PostFlowData, PostFlowInput>> = {
   new_post: postStep(
     "new_post",
     () => null,
-    (input, data) => ({ ...data, input }),
+    (input, data) => ({ ...data, input: input.message }),
   ),
-  edit_sources: postStep(
-    "edit_sources",
-    () => null,
-    (input, data) => ({ ...data, input }),
-  ),
-  edit_text: postStep(
-    "edit_text",
-    () => null,
-    (input, data) => ({ ...data, input }),
-  ),
-  replace_media: postStep(
-    "replace_media",
-    () => null,
-    (input, data) => ({ ...data, input }),
-  ),
-  schedule_manual: postStep(
-    "schedule_manual",
-    () => "schedule_confirm",
-    (input, data) => ({ ...data, value: input }),
-  ),
+  edit_sources: postStep("edit_sources", () => null, acceptPostSourceEdit),
+  edit_text: postStep("edit_text", () => null, acceptPostTextEdit),
+  replace_media: postStep("replace_media", () => null, acceptPostMediaReplacement),
+  schedule_manual: postStep("schedule_manual", () => "schedule_confirm", acceptManualPostSchedule),
   schedule_confirm: postStep("schedule_confirm", () => null),
 };
 
-/** The complete transport-neutral post workflow. Telegram renders its prompt names. */
-export const POST_FLOW: Flow<PostFlowData> = {
+/** The complete post workflow, including input effects and transitions. */
+export const POST_FLOW: Flow<PostFlowData, PostFlowInput> = {
   kind: "post",
   steps: POST_STEPS,
 };
@@ -119,9 +118,9 @@ export function postStateStep(state: Pick<ConversationState, "step" | "data"> | 
 
 export function acceptPostFlowStep(
   step: PostWizardStep,
-  input: unknown,
+  input: PostFlowInput,
   data: PostFlowData,
-): { data: PostFlowData; next: string | null } | null {
+): Promise<{ data: PostFlowData; next: string | null } | null> {
   return acceptFlow(POST_FLOW, step.type, input, data);
 }
 

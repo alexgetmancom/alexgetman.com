@@ -9,30 +9,22 @@ import { sendTelegramDeliveryPreviews } from "../interfaces/telegram/delivery-pr
 import { formatMsk } from "../interfaces/telegram/time.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { withCallbackActionLock } from "./callback-action.js";
-import { type CallbackRouterContext, createCallbackRouter } from "./callback-router.js";
+import type { PublicationActionContext } from "./callback-router.js";
 import { isStaleCardCallback, POST_CARD_FRESHNESS } from "./card-freshness.js";
 import { clearConversationState, getConversationState, requireConversationState, saveConversationState } from "./conversation-state.js";
 import { resultNavigationKeyboard } from "./dialog-ui.js";
 import { botLocale } from "./i18n.js";
 import { extractMessage } from "./message.js";
-import { editDraftPreview, editDraftPrompt, sendDraftPreview, showScheduleConfirmation } from "./post-card.js";
+import { editDraftPreview, editDraftPrompt, sendDraftPreview } from "./post-card.js";
 import { acceptPostFlowStep, type PostWizardStep, postStateStep, postStepData, postStepName } from "./post-fsm.js";
 import { draftPreview, isDraftView, modeLabel } from "./preview.js";
 import { renderPostProgress } from "./progress.js";
-import { type PostActionKey, type PublicationCallback, parseDraftId, publicationCallback } from "./session-fsm.js";
+import { type PostActionKey, publicationCallback } from "./session-fsm.js";
 
-type PostService = ReturnType<typeof createStudioServices>["posts"];
-type PostActionArgs = Omit<CallbackRouterContext, "action"> & {
-  action: PostActionKey;
-  first: string | undefined;
-  second: string | undefined;
-  draftId: number;
-  posts: PostService;
-};
+type PostActionArgs = PublicationActionContext;
 type PostActionHandler = (args: PostActionArgs) => Promise<void>;
 
-const postRoutes: Record<PostActionKey, PostActionHandler> = {
-  cancel_dialog: handleCancelDialog,
+export const postActionHandlers: Record<Exclude<PostActionKey, "cancel_dialog">, PostActionHandler> = {
   toggle: handleToggle,
   preview: handlePreview,
   platforms: handlePlatforms,
@@ -62,47 +54,12 @@ const postRoutes: Record<PostActionKey, PostActionHandler> = {
   sched_manual: handleManualSchedule,
 };
 
-async function handleCancelDialog({ ctx, backendDb, actorId }: PostActionArgs): Promise<void> {
-  clearConversationState(backendDb, actorId, "post");
-  await ctx.answerCallbackQuery();
-}
-
 const POST_INPUT_STEPS: Record<string, PostWizardStep> = {
   edit_ru: { type: "edit_text", locale: "ru" },
   edit_en: { type: "edit_text", locale: "en" },
   replace_ru_media: { type: "replace_media", locale: "ru" },
   replace_en_media: { type: "replace_media", locale: "en" },
 };
-
-const postRouter = createCallbackRouter<PostActionArgs, number, void>({
-  matches: (callback: PublicationCallback) => callback.kind === "post",
-  routes: postRoutes,
-  sessionBound: new Set(["cancel_state", "sched_manual_confirm"]),
-  currentSessionRevision: ({ backendDb, actorId }) => getConversationState(backendDb, actorId, "post")?.revision,
-  parseEntity: (callback) => {
-    return parseDraftId(callback.args[0]);
-  },
-  buildArgs: (common, draftId) => ({
-    ...common,
-    action: common.action as PostActionKey,
-    first: common.args[1],
-    second: common.args[2],
-    draftId: draftId as number,
-    posts: createStudioServices(common.backendDb, common.config).posts,
-  }),
-  prepare: ({ backendDb, config, actorId }, draftId) => {
-    createStudioServices(backendDb, config).posts.get(actorId, draftId as number);
-  },
-  isStale: ({ ctx, backendDb, callback }) => isStaleCardCallback(ctx, backendDb, callback, POST_CARD_FRESHNESS),
-  invalidEntityText: (locale) => t(locale, "action.invalid-post"),
-  staleText: (locale) => t(locale, "action.card-stale"),
-  unknownText: (locale) => t(locale, "action.unknown"),
-});
-
-/** Applies a command selected on a text-post card. Telegram rendering lives in post-card. */
-export async function handlePostAction(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<void> {
-  await postRouter(ctx, backendDb, config);
-}
 
 async function handleToggle({ ctx, backendDb, config, actorId, locale, second, draftId, posts }: PostActionArgs): Promise<void> {
   if (!second) return void (await ctx.answerCallbackQuery({ text: t(locale, "action.unknown") }));
@@ -528,156 +485,13 @@ export async function applyAdminState(
   const actorId = Number(ctx.from?.id);
   if (expectedRevision != null) requireConversationState(backendDb, actorId, "post", expectedRevision);
   const message = extractMessage(ctx);
-  if (!acceptPostFlowStep(step, message, {})) throw new StudioError("action.session-stale");
-  const handler = POST_INPUT_HANDLERS[step.type];
-  if (!handler) throw new StudioError("action.session-stale");
-  const completion = await handler({ ctx, backendDb, config, actorId, draftId, controlMessageId, step, message });
-  await POST_INPUT_COMPLETION[completion]({ ctx, backendDb, config, actorId, draftId });
-}
-
-type PostInputHandlerArgs = {
-  ctx: Context;
-  backendDb: BackendDb;
-  config: BackendConfig;
-  actorId: number;
-  draftId: number;
-  controlMessageId: number | null;
-  step: PostWizardStep;
-  message: ReturnType<typeof extractMessage>;
-};
-type PostInputCompletion = "complete" | "continued";
-type PostInputHandler = (args: PostInputHandlerArgs) => Promise<PostInputCompletion>;
-
-const POST_INPUT_HANDLERS: Record<string, PostInputHandler> = {
-  schedule_manual: handleManualPostSchedule,
-  edit_text: handlePostTextEdit,
-  replace_media: handlePostMediaReplacement,
-  edit_sources: handlePostSourceEdit,
-};
-
-const POST_INPUT_COMPLETION: Record<
-  PostInputCompletion,
-  (args: Pick<PostInputHandlerArgs, "ctx" | "backendDb" | "config" | "actorId" | "draftId">) => Promise<void>
-> = {
-  continued: async () => undefined,
-  complete: async ({ ctx, backendDb, config, actorId, draftId }) => {
+  const transition = await acceptPostFlowStep(step, { ctx, backendDb, config, actorId, draftId, controlMessageId, step, message }, {});
+  if (!transition) throw new StudioError("action.session-stale");
+  if (transition.next === null) {
     clearConversationState(backendDb, actorId, "post");
     const control = await sendDraftPreview(ctx, backendDb, draftId, config);
     if (ctx.chat?.id) setTelegramPostCard(backendDb, draftId, Number(ctx.chat.id), control.message_id);
-  },
-};
-
-async function handleManualPostSchedule({
-  ctx,
-  backendDb,
-  config,
-  actorId,
-  draftId,
-  controlMessageId,
-  step,
-  message,
-}: PostInputHandlerArgs): Promise<PostInputCompletion> {
-  if (step.type !== "schedule_manual") throw new StudioError("action.session-stale");
-  const { ruAt, enAt } = createStudioServices(backendDb, config).posts.manualSchedule(actorId, draftId, step.locale, message.text);
-  const value = step.locale === "ru" ? ruAt : enAt;
-  if (!value) throw new StudioError("err.no-pub-time");
-  const revision = savePostState(backendDb, actorId, { type: "schedule_confirm", locale: step.locale, value }, draftId, controlMessageId);
-  await sendPostPreviews(ctx, backendDb, config, actorId, draftId);
-  await showScheduleConfirmation(
-    ctx,
-    backendDb,
-    draftId,
-    config,
-    ruAt,
-    enAt,
-    publicationCallback("post", "sched_manual_confirm", [draftId], revision),
-    step.locale === "ru" ? "schedule_ru" : "schedule_en",
-  );
-  return "continued";
-}
-
-async function handlePostTextEdit({
-  backendDb,
-  config,
-  actorId,
-  draftId,
-  message,
-  step,
-}: PostInputHandlerArgs): Promise<PostInputCompletion> {
-  if (step.type !== "edit_text") throw new StudioError("action.session-stale");
-  createStudioServices(backendDb, config).posts.edit(actorId, draftId, {
-    locale: step.locale,
-    text: message.text,
-    entities: message.entities,
-    media: message.media,
-    clearMedia: isClearMediaCommand(message.text),
-  });
-  return "complete";
-}
-
-async function handlePostMediaReplacement({
-  backendDb,
-  config,
-  actorId,
-  draftId,
-  message,
-  step,
-}: PostInputHandlerArgs): Promise<PostInputCompletion> {
-  if (step.type !== "replace_media") throw new StudioError("action.session-stale");
-  createStudioServices(backendDb, config).posts.edit(actorId, draftId, {
-    locale: step.locale,
-    text: message.text,
-    entities: message.entities,
-    media: message.media,
-    replaceMediaOnly: true,
-  });
-  return "complete";
-}
-
-async function handlePostSourceEdit({
-  backendDb,
-  config,
-  actorId,
-  draftId,
-  message,
-  step,
-}: PostInputHandlerArgs): Promise<PostInputCompletion> {
-  if (step.type !== "edit_sources") throw new StudioError("action.session-stale");
-  const urls = extractUrls(message.text);
-  if (urls.length === 0) throw new StudioError("err.no-valid-source-links");
-  createStudioServices(backendDb, config).posts.replaceSources(actorId, draftId, urls);
-  return "complete";
-}
-
-/** Chat-only shorthand for clearing a post's media during a free-text edit reply. */
-function isClearMediaCommand(text: string): boolean {
-  const clean = text.trim().toLowerCase();
-  return clean === "/delmedia" || clean === "очистить" || clean === "без медиа" || clean === "clear media";
-}
-
-function extractUrls(value: string): string[] {
-  return value
-    .split(/\s+/)
-    .map((item) => item.trim())
-    .filter((item) => {
-      try {
-        const url = new URL(item);
-        return url.protocol === "https:" || url.protocol === "http:";
-      } catch {
-        return false;
-      }
-    });
-}
-
-async function sendPostPreviews(
-  ctx: Context,
-  backendDb: BackendDb,
-  config: BackendConfig,
-  actorId: number,
-  draftId: number,
-): Promise<void> {
-  const delivery = createStudioServices(backendDb, config).posts.preview(actorId, draftId).delivery;
-  await sendTelegramDeliveryPreviews(ctx, delivery.projections, botLocale(backendDb, actorId));
+  }
 }
 
 function scheduledDraftText(

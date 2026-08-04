@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import type { Context } from "grammy";
+import { handlePublicationCallback } from "../src/bot/callback-router.js";
 import { publicationCallback, versionedCallback } from "../src/bot/session-fsm.js";
-import { handleVideoActionCallback } from "../src/bot/video-actions.js";
 import { clearVideoState, getVideoState, saveVideoState } from "../src/bot/video-ui.js";
 import { type BackendDb, unsafeDb } from "../src/db/client.js";
 import { loadConfig } from "../src/foundation/config.js";
@@ -71,7 +71,7 @@ describe("video card controls", () => {
       answerCallbackQuery: async () => undefined,
     } as unknown as Context;
 
-    await handleVideoActionCallback(ctx, backendDb, config);
+    await handlePublicationCallback(ctx, backendDb, config);
 
     const keyboard = JSON.stringify(options?.reply_markup);
     expect(keyboard).toContain(`p:video:edit_field:${draftId}:instagram_caption`);
@@ -89,7 +89,7 @@ describe("video callback dispatch", () => {
       answerCallbackQuery: async (options?: { text?: string }) => void answers.push(options),
     } as unknown as Context;
 
-    const handled = await handleVideoActionCallback(ctx, backendDb, config);
+    const handled = await handlePublicationCallback(ctx, backendDb, config);
 
     // Still claimed by the video branch: falling through would reach the post
     // handler, which would answer a second time with "invalid post".
@@ -109,7 +109,7 @@ describe("video callback dispatch", () => {
       answerCallbackQuery: async (options?: { text?: string }) => void answers.push(options),
     } as unknown as Context;
 
-    expect(await handleVideoActionCallback(ctx, backendDb, config)).toBe(true);
+    expect(await handlePublicationCallback(ctx, backendDb, config)).toBe(true);
     expect(answers[0]?.text).toBe("This dialog is outdated. Start again.");
     expect(getVideoState(backendDb, 42)?.selected).toEqual(["youtube_shorts"]);
   });
@@ -138,7 +138,7 @@ describe("video callback dispatch", () => {
       answerCallbackQuery: async (options?: { text?: string }) => void answers.push(options),
     } as unknown as Context;
 
-    await handleVideoActionCallback(ctx, backendDb, config);
+    await handlePublicationCallback(ctx, backendDb, config);
 
     expect(answers).toEqual([undefined]);
     expect(getVideoState(backendDb, 42)).toMatchObject({
@@ -163,7 +163,7 @@ describe("video callback dispatch", () => {
       answerCallbackQuery: async (options?: { text?: string }) => void answers.push(options),
     } as unknown as Context;
 
-    await handleVideoActionCallback(ctx, backendDb, config);
+    await handlePublicationCallback(ctx, backendDb, config);
 
     expect(answers).toEqual([undefined]);
     expect(unsafeDb(backendDb).sqlite.prepare("SELECT status FROM video_targets WHERE video_draft_id=?").get(draftId)).toEqual({

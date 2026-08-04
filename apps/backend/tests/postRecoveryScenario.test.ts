@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { Bot, Context } from "grammy";
 import { runCallbackBoundary } from "../src/bot/callback-boundary.js";
-import { handlePostAction } from "../src/bot/post-actions.js";
+import { handlePublicationCallback } from "../src/bot/callback-router.js";
 import { publicationCallback } from "../src/bot/session-fsm.js";
 import { drafts, postTargets, publications, publishJobs } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
@@ -69,7 +69,9 @@ describe("post recovery scenario", () => {
           answerCallbackQuery: async (options?: { text?: string }) => void callbackAnswers.push(options),
         }) as unknown as Context;
       const firstRetry = retryContext("post-recovery-retry", answers);
-      await runCallbackBoundary(firstRetry, backendDb, () => handlePostAction(firstRetry, backendDb, config));
+      await runCallbackBoundary(firstRetry, backendDb, async () => {
+        await handlePublicationCallback(firstRetry, backendDb, config);
+      });
 
       expect(answers[0]?.text).toContain("Queued again: 2");
       expect(backendDb.db.select({ status: publishJobs.status }).from(publishJobs).all()).toEqual([
@@ -84,7 +86,9 @@ describe("post recovery scenario", () => {
 
       const duplicateAnswers: Array<{ text?: string } | undefined> = [];
       const duplicateRetry = retryContext("post-recovery-retry-again", duplicateAnswers);
-      await runCallbackBoundary(duplicateRetry, backendDb, () => handlePostAction(duplicateRetry, backendDb, config));
+      await runCallbackBoundary(duplicateRetry, backendDb, async () => {
+        await handlePublicationCallback(duplicateRetry, backendDb, config);
+      });
 
       expect(duplicateAnswers[0]?.text).toContain("Only a failed platform can be retried.");
       expect(backendDb.db.select().from(publishJobs).all()).toHaveLength(2);

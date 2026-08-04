@@ -1,11 +1,10 @@
 import { type Context, InlineKeyboard } from "grammy";
-import { promptFlow } from "../application/conversation-flow.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { t } from "../foundation/i18n/index.js";
 import { setTelegramVideoCard } from "../interfaces/telegram/control-cards.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
-import { nextVideoFlowStep, previousVideoMetadataStep, VIDEO_FLOW, type VideoPrompt, type VideoWizardStep } from "../studio/video-fsm.js";
+import { nextVideoFlowStep, previousVideoMetadataStep, VIDEO_FLOW, type VideoWizardStep } from "../studio/video-fsm.js";
 import { type ConversationState, clearConversationState, getConversationState, saveConversationState } from "./conversation-state.js";
 import { appendCancelButton, cancelPromptKeyboard } from "./dialog-ui.js";
 import { type BotLocale, botLocale } from "./i18n.js";
@@ -144,17 +143,16 @@ export async function sendVideoMetadataPrompt(
   if (previousVideoMetadataStep(step, selected))
     keyboard.text(t(locale, "common.back"), publicationCallback("video", "meta_back", [], revision));
   appendCancelButton(keyboard, locale, publicationCallback("video", "cancel_dialog"), revision);
-  const prompt = promptFlow(VIDEO_FLOW, step, null) as VideoPrompt | null;
-  await ctx.reply(videoPrompt(locale, prompt ?? step), { reply_markup: keyboard });
+  await ctx.reply(videoPrompt(locale, step), { reply_markup: keyboard });
 }
 
-function videoPrompt(locale: BotLocale, prompt: VideoPrompt): string {
+function videoPrompt(locale: BotLocale, prompt: VideoWizardStep): string {
   if (prompt === "youtube_title") return t(locale, "video.prompt-yt-title");
   if (prompt === "youtube_description") return t(locale, "video.prompt-yt-description");
   if (prompt === "youtube_game_url") return t(locale, "video.prompt-yt-game-url");
   if (prompt === "youtube_tags") return t(locale, "video.prompt-yt-tags");
   if (prompt === "instagram_caption") return t(locale, "video.prompt-ig-caption");
-  return t(locale, "video.prompt-when-publish");
+  throw new Error(`Unsupported video metadata step: ${prompt}`);
 }
 
 /**

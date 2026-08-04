@@ -1,21 +1,19 @@
-import type { Menu } from "@grammyjs/menu";
 import { type Context, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
-import { describeError, type MessageKey, t } from "../foundation/i18n/index.js";
+import { type MessageKey, t } from "../foundation/i18n/index.js";
 import { setTelegramVideoCard } from "../interfaces/telegram/control-cards.js";
 import { videoPreview } from "../interfaces/telegram/video-preview.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { acceptVideoFlowStep, previousVideoMetadataStep, type VideoWizardStep } from "../studio/video-fsm.js";
 import { withCallbackActionLock } from "./callback-action.js";
-import { createCallbackRouter } from "./callback-router.js";
-import { isStaleCardCallback, VIDEO_CARD_FRESHNESS } from "./card-freshness.js";
+import type { PublicationActionContext } from "./callback-router.js";
 import { appendCancelButton, cancelPromptKeyboard, confirmationKeyboard, resultNavigationKeyboard } from "./dialog-ui.js";
 import type { BotLocale } from "./i18n.js";
 import { showMainMenu } from "./menu-render.js";
-import { type PublicationCallback, parseDraftId, publicationCallback, requireSessionStep, type VideoActionKey } from "./session-fsm.js";
+import { parseDraftId, publicationCallback, requireSessionStep, type VideoActionKey } from "./session-fsm.js";
 import { applyVideoScheduleDate, startVideoConversation } from "./video-conversation.js";
 import { finishVideoNow, finishVideoSchedule } from "./video-scheduling.js";
 import {
@@ -35,20 +33,10 @@ import {
   type VideoConversationState,
 } from "./video-ui.js";
 
-type VideoActionArgs = {
-  ctx: Context;
-  backendDb: BackendDb;
-  config: BackendConfig;
-  actorId: number;
-  locale: BotLocale;
-  data: string;
-  args: string[];
-  action: VideoActionKey;
-  mainMenu: Menu<Context> | undefined;
-};
+type VideoActionArgs = PublicationActionContext;
 // biome-ignore lint/suspicious/noConfusingVoidType: handlers use bare `return;` on every no-toast path; `void` is what makes that a valid Promise<VideoActionResult>.
 type VideoActionResult = { toast?: string } | void;
-type VideoActionHandler = (args: VideoActionArgs) => Promise<VideoActionResult>;
+type VideoActionHandler = (args: PublicationActionContext) => Promise<VideoActionResult>;
 
 const EDIT_FIELD_PROMPTS: Record<string, MessageKey> = {
   label: "video.edit-label-prompt",
@@ -62,7 +50,7 @@ const EDIT_FIELD_PROMPTS: Record<string, MessageKey> = {
 /** Routed by the action token before the first ":" (or the whole string, for
  * bare actions). Exact-match keys, so unlike prefix/startsWith matching, no
  * entry can accidentally shadow another and their declaration order is free. */
-const routes: Record<VideoActionKey, VideoActionHandler> = {
+export const videoActionHandlers: Record<VideoActionKey, VideoActionHandler> = {
   start: handleStart,
   locale: handleLocale,
   cancel_dialog: handleCancelDialog,
@@ -90,59 +78,6 @@ const routes: Record<VideoActionKey, VideoActionHandler> = {
   edit_field: handleEditField,
   edit: handleEdit,
 };
-
-const SESSION_BOUND_VIDEO_ACTIONS = new Set([
-  "locale",
-  "cancel_dialog",
-  "toggle",
-  "targets_done",
-  "game_skip",
-  "meta_back",
-  "schedule_confirm",
-  "now_confirm",
-  "common",
-  "individual",
-  "sched_pick",
-  "sched_manual",
-]);
-
-/** Telegram rejects a callback answer longer than this, which would turn the
- * error path itself into an unanswered callback: a spinner and no explanation.
- * External API failures reach describeError as raw provider text of any length. */
-const MAX_TOAST_LENGTH = 200;
-
-function toast(text: string): string {
-  return text.length > MAX_TOAST_LENGTH ? `${text.slice(0, MAX_TOAST_LENGTH - 1)}…` : text;
-}
-
-function createVideoCallbackRouter(mainMenu?: Menu<Context>) {
-  return createCallbackRouter<VideoActionArgs, undefined, VideoActionResult>({
-    matches: (callback: PublicationCallback) => callback.kind === "video",
-    routes,
-    sessionBound: SESSION_BOUND_VIDEO_ACTIONS,
-    currentSessionRevision: ({ backendDb, actorId }) => getVideoState(backendDb, actorId)?.revision,
-    buildArgs: (common) => ({ ...common, action: common.action as VideoActionKey, mainMenu }),
-    isStale: ({ ctx, backendDb, callback }) => isStaleCardCallback(ctx, backendDb, callback, VIDEO_CARD_FRESHNESS),
-    staleText: (locale) => t(locale, "action.card-stale"),
-    unknownText: (locale) => t(locale, "action.unknown"),
-    onResult: async ({ ctx }, result) => {
-      await ctx.answerCallbackQuery(result?.toast ? { text: toast(result.toast) } : undefined);
-    },
-    onError: async ({ ctx, locale }, error) => {
-      await ctx.answerCallbackQuery({ text: toast(describeError(locale, error)) });
-    },
-  });
-}
-
-/** Callback-only adapter: it changes a session or invokes a Studio command, never parses chat replies. */
-export async function handleVideoActionCallback(
-  ctx: Context,
-  backendDb: BackendDb,
-  config: BackendConfig,
-  mainMenu?: Menu<Context>,
-): Promise<boolean> {
-  return createVideoCallbackRouter(mainMenu)(ctx, backendDb, config);
-}
 
 function requireVideoTarget(value: string): VideoTarget {
   if (!VIDEO_TARGETS.includes(value as VideoTarget)) throw new StudioError("err.unknown-platform");
@@ -180,7 +115,7 @@ async function handleLocale({ ctx, backendDb, actorId, locale, args }: VideoActi
   const session = getVideoState(backendDb, actorId);
   requireSessionStep(session?.step, ["locale"], "err.video-restart");
   if (!session || !["ru", "en"].includes(videoLocale)) throw new StudioError("err.video-restart");
-  const transition = acceptVideoFlowStep("locale", videoLocale, session.data);
+  const transition = await acceptVideoFlowStep("locale", videoLocale, session.data);
   if (!transition?.next) throw new StudioError("err.video-restart");
   const next = saveVideoState(backendDb, actorId, { ...session, step: transition.next as "asset", data: transition.data });
   await ctx.editMessageText(t(locale, "video.dialog-prompt"), {
@@ -225,7 +160,7 @@ async function handleTargetsDone({ ctx, backendDb, config, actorId }: VideoActio
   requireSessionStep(session?.step, ["targets"], "err.video-pick-platform");
   if (!session?.draftId || !session.selected.length) throw new StudioError("err.video-pick-platform");
   createStudioServices(backendDb, config).videos.replaceTargets(actorId, session.draftId, session.selected);
-  const transition = acceptVideoFlowStep("targets", session.selected, { ...session.data, selectedTargets: session.selected });
+  const transition = await acceptVideoFlowStep("targets", session.selected, { ...session.data, selectedTargets: session.selected });
   if (!transition?.next) throw new StudioError("err.video-pick-platform");
   const next = saveVideoState(backendDb, actorId, {
     ...session,
@@ -241,7 +176,7 @@ async function handleGameSkip({ ctx, backendDb, actorId, locale }: VideoActionAr
   const session = getVideoState(backendDb, actorId);
   requireSessionStep(session?.step, ["youtube_game_url"], "err.video-reopen-create");
   if (!session?.draftId) throw new StudioError("err.video-reopen-create");
-  const transition = acceptVideoFlowStep("youtube_game_url", "-", { ...session.data, selectedTargets: session.selected });
+  const transition = await acceptVideoFlowStep("youtube_game_url", "-", { ...session.data, selectedTargets: session.selected });
   if (!transition?.next) throw new StudioError("err.video-reopen-create");
   saveVideoState(backendDb, actorId, { ...session, step: transition.next as VideoConversationState["step"], data: transition.data });
   await ctx.editMessageText(t(locale, "video.game-skipped"));
@@ -324,7 +259,7 @@ async function handleScheduleMode({ ctx, backendDb, config, actorId, locale, act
   requireSessionStep(session.step, ["schedule_choice"], "err.video-reopen-publish");
   const mode = ({ common: "common", individual: "individual" } as const)[action as "common" | "individual"];
   if (!mode) throw new StudioError("err.video-reopen-publish");
-  const transition = acceptVideoFlowStep("schedule_choice", mode, { ...session.data, selectedTargets: targets });
+  const transition = await acceptVideoFlowStep("schedule_choice", mode, { ...session.data, selectedTargets: targets });
   const nextStep = transition?.next as "schedule_common" | "schedule_target" | null;
   if (!transition || !nextStep) throw new StudioError("err.video-reopen-publish");
   const first = targets[0];

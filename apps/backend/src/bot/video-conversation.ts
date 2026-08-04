@@ -126,7 +126,7 @@ async function handleAssetMessage({ ctx, backendDb, config, actorId, session }: 
   if (!selected.length) throw new StudioError("err.no-video-platforms-config");
   createStudioServices(backendDb, config).videos.replaceTargets(actorId, draftId, selected);
   const first = firstVideoMetadataStep(selected);
-  const transition = acceptVideoFlowStep("asset", stored.assetId, { ...session.data, selectedTargets: selected });
+  const transition = await acceptVideoFlowStep("asset", stored.assetId, { ...session.data, selectedTargets: selected });
   if (!transition?.next) throw new StudioError("err.video-restart");
   const next: VideoConversationState = { ...session, draftId, step: first.step, selected, data: transition.data };
   saveVideoState(backendDb, actorId, next);
@@ -144,7 +144,7 @@ async function handleLabelMessage({ ctx, backendDb, config, actorId, session, te
     await sendFreshVideoCard(ctx, backendDb, session.draftId, preview);
     return true;
   }
-  const transition = acceptVideoFlowStep("label", text, { ...session.data, selectedTargets: session.selected });
+  const transition = await acceptVideoFlowStep("label", text, { ...session.data, selectedTargets: session.selected });
   if (!transition?.next) throw new StudioError("err.video-restart");
   const next: VideoConversationState = { ...session, step: transition.next as VideoConversationState["step"], data: transition.data };
   const saved = saveVideoState(backendDb, actorId, next);
@@ -162,7 +162,7 @@ async function handleLabelMessage({ ctx, backendDb, config, actorId, session, te
 async function handleLinearMetadataMessage({ ctx, backendDb, actorId, session, text }: VideoMessageArgs): Promise<boolean> {
   if (session.draftId == null) return false;
   const step = session.step as VideoWizardStep;
-  const transition = acceptVideoFlowStep(step, text, { ...session.data, selectedTargets: session.selected });
+  const transition = await acceptVideoFlowStep(step, text, { ...session.data, selectedTargets: session.selected });
   if (!transition?.next) throw new StudioError("err.video-restart");
   const data = withoutFlowData(transition.data);
   setVideoData(backendDb, actorId, session, step, data[step], transition.next as VideoConversationState["step"]);
@@ -172,7 +172,7 @@ async function handleLinearMetadataMessage({ ctx, backendDb, actorId, session, t
 
 async function handleYoutubeTagsMessage({ ctx, backendDb, config, actorId, session, text }: VideoMessageArgs): Promise<boolean> {
   if (session.draftId == null) return false;
-  const transition = acceptVideoFlowStep("youtube_tags", text, { ...session.data, selectedTargets: session.selected });
+  const transition = await acceptVideoFlowStep("youtube_tags", text, { ...session.data, selectedTargets: session.selected });
   if (!transition) throw new StudioError("err.video-restart");
   const tags = transition.data.youtube_tags as string[];
   const metadata = {
@@ -190,7 +190,7 @@ async function handleYoutubeTagsMessage({ ctx, backendDb, config, actorId, sessi
 
 async function handleInstagramCaptionMessage({ ctx, backendDb, config, actorId, session, text }: VideoMessageArgs): Promise<boolean> {
   if (session.draftId == null) return false;
-  const transition = acceptVideoFlowStep("instagram_caption", text, { ...session.data, selectedTargets: session.selected });
+  const transition = await acceptVideoFlowStep("instagram_caption", text, { ...session.data, selectedTargets: session.selected });
   if (!transition) throw new StudioError("err.video-restart");
   const metadata = { caption: String(transition.data.instagram_caption ?? "") };
   createStudioServices(backendDb, config).videos.updateMetadata(actorId, session.draftId, "instagram_reels", metadata);
@@ -323,7 +323,10 @@ type ScheduleDateArgs = {
 
 const SCHEDULE_DATE_HANDLERS: Record<"schedule_common" | "schedule_target", (args: ScheduleDateArgs) => Promise<void>> = {
   schedule_common: async ({ ctx, backendDb, config, actorId, session, date }) => {
-    const transition = acceptVideoFlowStep("schedule_common", date.toISOString(), { ...session.data, selectedTargets: session.selected });
+    const transition = await acceptVideoFlowStep("schedule_common", date.toISOString(), {
+      ...session.data,
+      selectedTargets: session.selected,
+    });
     if (!transition?.next) throw new StudioError("err.video-reopen-publish");
     await confirmVideoSchedule(ctx, backendDb, config, actorId, session, commonVideoSchedule(session.selected, date));
   },
@@ -342,7 +345,7 @@ async function applyIndividualScheduleDate({ ctx, backendDb, config, actorId, se
     target,
     date,
   );
-  const flowTransition = acceptVideoFlowStep("schedule_target", date.toISOString(), {
+  const flowTransition = await acceptVideoFlowStep("schedule_target", date.toISOString(), {
     ...session.data,
     selectedTargets: session.selected,
     nextTarget: transition.nextTarget,

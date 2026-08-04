@@ -1,11 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import { and, eq } from "drizzle-orm";
 import { type Context, InlineKeyboard } from "grammy";
+import { handlePublicationCallback } from "../src/bot/callback-router.js";
 import { isStaleCardCallback, POST_CARD_FRESHNESS, VIDEO_CARD_FRESHNESS } from "../src/bot/card-freshness.js";
-import { handlePostAction } from "../src/bot/post-actions.js";
 import { editDraftPreview, showScheduleConfirmation } from "../src/bot/post-card.js";
 import { publicationCallback, versionedCallback } from "../src/bot/session-fsm.js";
-import { handleVideoActionCallback } from "../src/bot/video-actions.js";
 import { getVideoState, sendVideoControl } from "../src/bot/video-ui.js";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import type { BackendDb } from "../src/db/client.js";
@@ -75,7 +74,7 @@ describe("Telegram card freshness", () => {
           replyWithVideo: async () => ({ message_id: ++nextMessageId }),
         }) as unknown as Context;
 
-      await handlePostAction(context(postAction("publish", [draftId]), 10), backendDb, config);
+      await handlePublicationCallback(context(postAction("publish", [draftId]), 10), backendDb, config);
 
       expect(telegramPostCard(backendDb, draftId)).toEqual({ chatId: 100, messageId: 17 });
       expect(
@@ -162,11 +161,11 @@ describe("Telegram card freshness", () => {
           replyWithPhoto: async () => ({ message_id: 12 }),
         }) as unknown as Context;
 
-      await handlePostAction(context(postAction("schedule", [draftId]), 10), backendDb, config);
+      await handlePublicationCallback(context(postAction("schedule", [draftId]), 10), backendDb, config);
       expect(telegramPostCard(backendDb, draftId)).toEqual({ chatId: 100, messageId: 11 });
 
-      await handlePostAction(context(postAction("story_schedule_all", [draftId]), 11), backendDb, config);
-      await handlePostAction(context(postAction("sched_scope", [draftId, "both"]), 11), backendDb, config);
+      await handlePublicationCallback(context(postAction("story_schedule_all", [draftId]), 11), backendDb, config);
+      await handlePublicationCallback(context(postAction("sched_scope", [draftId, "both"]), 11), backendDb, config);
       expect(telegramPostCard(backendDb, draftId)).toEqual({ chatId: 100, messageId: 11 });
     } finally {
       backendDb.close();
@@ -245,15 +244,15 @@ describe("Telegram card freshness", () => {
           api: { editMessageText: async () => undefined },
         }) as unknown as Context;
 
-      await handleVideoActionCallback(context(videoAction("schedule", [draftId]), 10), backendDb, config);
+      await handlePublicationCallback(context(videoAction("schedule", [draftId]), 10), backendDb, config);
       const choice = getVideoState(backendDb, 42);
       if (!choice) throw new Error("video schedule session missing");
-      await handleVideoActionCallback(context(versionedCallback(videoAction("common", [draftId]), choice.revision), 10), backendDb, config);
+      await handlePublicationCallback(context(versionedCallback(videoAction("common", [draftId]), choice.revision), 10), backendDb, config);
       const timePrompt = getVideoState(backendDb, 42);
       if (!timePrompt) throw new Error("video time session missing");
       expect(telegramVideoCard(backendDb, draftId)).toEqual({ chatId: 100, messageId: 21 });
 
-      await handleVideoActionCallback(
+      await handlePublicationCallback(
         context(versionedCallback(videoAction("sched_pick", [draftId, "0800"]), timePrompt.revision), 21),
         backendDb,
         config,

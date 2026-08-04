@@ -11,11 +11,11 @@ function videoStep(
   next: (data: VideoFlowData) => string | null,
   accept?: (input: unknown, data: VideoFlowData) => VideoFlowData,
   back?: (data: VideoFlowData) => string | null,
-): FlowStep<VideoFlowData, unknown, string> {
-  return { name, prompt: () => name, next, ...(accept ? { accept } : {}), ...(back ? { back } : {}) };
+): FlowStep<VideoFlowData> {
+  return { name, next, ...(accept ? { accept } : {}), ...(back ? { back } : {}) };
 }
 
-const VIDEO_STEPS: Record<string, FlowStep<VideoFlowData, unknown, string>> = {
+const VIDEO_STEPS: Record<string, FlowStep<VideoFlowData>> = {
   locale: videoStep(
     "locale",
     () => "asset",
@@ -87,8 +87,8 @@ const VIDEO_STEPS: Record<string, FlowStep<VideoFlowData, unknown, string>> = {
   ),
 };
 
-/** The complete transport-neutral video workflow. Telegram only renders its prompt names. */
-export const VIDEO_FLOW: Flow<VideoFlowData, unknown, string> = {
+/** The complete transport-neutral video workflow. Telegram renders step-specific questions separately. */
+export const VIDEO_FLOW: Flow<VideoFlowData> = {
   kind: "video",
   steps: VIDEO_STEPS,
 };
@@ -147,7 +147,7 @@ export function acceptVideoFlowStep(
   step: string,
   input: unknown,
   data: VideoFlowData,
-): { data: VideoFlowData; next: string | null } | null {
+): Promise<{ data: VideoFlowData; next: string | null } | null> {
   return acceptFlow(VIDEO_FLOW, step, input, data);
 }
 

@@ -1,9 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import type { Context } from "grammy";
+import { handlePublicationCallback } from "../src/bot/callback-router.js";
 import { isStaleCardCallback, POST_CARD_FRESHNESS, VIDEO_CARD_FRESHNESS } from "../src/bot/card-freshness.js";
-import { handlePostAction } from "../src/bot/post-actions.js";
 import { publicationCallback } from "../src/bot/session-fsm.js";
-import { handleVideoActionCallback } from "../src/bot/video-actions.js";
 import { getVideoState } from "../src/bot/video-ui.js";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import type { BackendDb } from "../src/db/client.js";
@@ -38,7 +37,7 @@ describe("video publication card flow", () => {
       replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
       setTelegramVideoCard(backendDb, draftId, 100, 10);
 
-      await handleVideoActionCallback(videoCallback(publicationCallback("video", "now", [draftId]), 10), backendDb, config);
+      await handlePublicationCallback(videoCallback(publicationCallback("video", "now", [draftId]), 10), backendDb, config);
 
       const session = getVideoState(backendDb, 42);
       expect(session?.step).toBe("schedule_confirm");
@@ -79,7 +78,7 @@ describe("post publication card flow", () => {
         replyWithVideo: async () => ({ message_id: ++nextMessageId }),
       } as unknown as Context;
 
-      await handlePostAction(context, backendDb, config);
+      await handlePublicationCallback(context, backendDb, config);
 
       expect(telegramPostCard(backendDb, draftId)).toEqual({ chatId: 100, messageId: nextMessageId });
       expect(
