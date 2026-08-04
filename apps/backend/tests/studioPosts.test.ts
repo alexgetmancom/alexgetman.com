@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
+import { registerChannel } from "../src/channels/registry.js";
 import type { UnsafeBackendDb } from "../src/db/client.js";
 import { drafts, postSources, publicationSources, publishJobs } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
@@ -112,6 +113,27 @@ describe("Studio post commands", () => {
     const job = backendDb.db.select().from(publishJobs).where(eq(publishJobs.postId, postId)).get();
     expect(source?.itemJson).toMatchObject({ text_ru: "After" });
     expect(job?.payloadJson).toMatchObject({ text_ru: "After" });
+  });
+
+  it("uses effective targets when deciding whether a Story-card replan must wait", () => {
+    backendDb = openBackendDb(":memory:");
+    registerChannel(backendDb, {
+      platform: "site",
+      locale: "ru",
+      provider: "internal",
+      targetId: "site_ru",
+      source: "test",
+    });
+    const posts = postService(backendDb, loadConfig({ ADMIN_IDS: "42" }));
+    const draftId = posts.create(42, { text: "Before", textEn: "Before", entities: [], media: [] });
+    posts.setStoryPublishMode(42, draftId, "all");
+    const postId = posts.schedule(42, draftId, { ruAt: new Date(Date.now() + 5 * 60_000), enAt: null });
+
+    posts.edit(42, draftId, { locale: "ru", text: "After", entities: [], media: [] });
+
+    expect(backendDb.db.select().from(publicationSources).where(eq(publicationSources.postId, postId)).get()?.itemJson).toMatchObject({
+      text_ru: "After",
+    });
   });
 
   it("restores an unapproved EN translation as null when a replan rejects the edit", () => {

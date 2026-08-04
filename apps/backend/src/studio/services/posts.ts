@@ -33,35 +33,44 @@ type EditInput = {
   clearMedia?: boolean;
 };
 type DraftEntityCandidate = { kind: "company" | "model" | "person" | "topic"; slug: string; titleRu: string; titleEn: string | null };
+type DraftPatchField = Exclude<keyof DraftPatch, "updatedAt">;
+
+const draftPatchReaders = {
+  textRu: (draft: DraftRecord) => draft.text_ru,
+  textEnApproved: (draft: DraftRecord) => draft.text_en_approved,
+  textRuEntitiesJson: (draft: DraftRecord) => draft.text_ru_entities_json,
+  textEnEntitiesJson: (draft: DraftRecord) => draft.text_en_entities_json,
+  targetsJson: (draft: DraftRecord) => draft.targets_json,
+  mediaRuJson: (draft: DraftRecord) => draft.media_ru_json,
+  mediaEnJson: (draft: DraftRecord) => draft.media_en_json,
+  threadsChainApproved: (draft: DraftRecord) => draft.threads_chain_approved,
+} satisfies Record<DraftPatchField, (draft: DraftRecord) => string | number | null>;
 
 export type PostScheduleInput = { ruAt: Date | null; enAt: Date | null; allowPast?: boolean; immediateLocale?: "ru" | "en" };
 export type PostScheduleScope = "ru" | "en" | "both";
 
 /** Replans a scheduled text-only post after regenerated Story cards are ready. */
 export function replanScheduledPostAfterStoryCards(backendDb: BackendDb, config: BackendConfig, draftId: number): boolean {
-  const draft = backendDb.drafts.get(draftId);
-  if (draft?.status !== "scheduled" || (draft.story_publish_mode !== "all" && draft.story_publish_mode !== "site_only")) return false;
-  if (!readyStoryCardMedia(backendDb, draftId)) return false;
-  schedulePost(backendDb, config, draft.actor_id, draftId, {
-    ruAt: scheduledDate(draft.scheduled_at),
-    enAt: scheduledDate(draft.scheduled_en_at),
-    allowPast: true,
-  });
-  return true;
+  return replanScheduled(
+    backendDb,
+    config,
+    draftId,
+    (draft) => isStoryPublishMode(draft) && Boolean(readyStoryCardMedia(backendDb, draftId)),
+  );
 }
 
 /** Replans ordinary delivery after Story-card rendering gives up. */
 export function replanScheduledPostAfterStoryCardFailure(backendDb: BackendDb, config: BackendConfig, draftId: number): boolean {
-  const draft = backendDb.drafts.get(draftId);
-  if (draft?.status !== "scheduled" || (draft.story_publish_mode !== "all" && draft.story_publish_mode !== "site_only")) return false;
-  const targets = effectivePostTargets(backendDb, parseTargets(draft.targets_json));
-  if (!Object.entries(targets).some(([target, enabled]) => enabled && isStoryTarget(target))) return false;
-  if (!storyCardsForDraft(backendDb, draftId).some((card) => card.status === "failed")) return false;
-  schedulePost(backendDb, config, draft.actor_id, draftId, {
-    ruAt: scheduledDate(draft.scheduled_at),
-    enAt: scheduledDate(draft.scheduled_en_at),
-    allowPast: true,
-  });
+  const replanned = replanScheduled(
+    backendDb,
+    config,
+    draftId,
+    (draft) =>
+      isStoryPublishMode(draft) &&
+      hasStoryTarget(backendDb, draft) &&
+      storyCardsForDraft(backendDb, draftId).some((card) => card.status === "failed"),
+  );
+  if (!replanned) return false;
   recordDomainEvent(backendDb.events, {
     ref: `draft:${draftId}`,
     type: "studio.notification.story-cards.failed",
@@ -75,25 +84,44 @@ export function replanScheduledPostAfterStoryCardFailure(backendDb: BackendDb, c
 
 /** Replans a scheduled post after a durable content or target mutation. */
 export function replanScheduledPostAfterMutation(backendDb: BackendDb, config: BackendConfig, draftId: number): boolean {
+  return replanScheduled(backendDb, config, draftId, (draft) => {
+    const hasMedia = draftMedia(draft, "ru").length > 0 || draftMedia(draft, "en").length > 0;
+    const hasFailedStoryCard = storyCardsForDraft(backendDb, draftId).some((card) => card.status === "failed");
+    return !(
+      isStoryPublishMode(draft) &&
+      hasStoryTarget(backendDb, draft) &&
+      !hasMedia &&
+      !hasFailedStoryCard &&
+      !readyStoryCardMedia(backendDb, draftId)
+    );
+  });
+}
+
+type ReplanGuard = (draft: DraftRecord) => boolean;
+
+function replanScheduled(backendDb: BackendDb, config: BackendConfig, draftId: number, guard: ReplanGuard): boolean {
   const draft = backendDb.drafts.get(draftId);
-  if (draft?.status !== "scheduled") return false;
-  const targets = effectivePostTargets(backendDb, parseTargets(draft.targets_json));
-  const hasMedia = draftMedia(draft, "ru").length > 0 || draftMedia(draft, "en").length > 0;
-  const hasStoryTarget = Object.entries(targets).some(([target, enabled]) => enabled && isStoryTarget(target));
-  const waitsForStoryCards = draft.story_publish_mode === "all" || draft.story_publish_mode === "site_only";
-  const hasFailedStoryCard = storyCardsForDraft(backendDb, draftId).some((card) => card.status === "failed");
-  if (waitsForStoryCards && hasStoryTarget && !hasMedia && !hasFailedStoryCard && !readyStoryCardMedia(backendDb, draftId)) return false;
-  schedulePost(backendDb, config, draft.actor_id, draftId, {
+  if (draft?.status !== "scheduled" || !guard(draft)) return false;
+  schedulePost(backendDb, config, draft.actor_id, draftId, scheduledPostInput(draft));
+  return true;
+}
+
+function scheduledPostInput(draft: DraftRecord): PostScheduleInput {
+  return {
     ruAt: scheduledDate(draft.scheduled_at),
     enAt: scheduledDate(draft.scheduled_en_at),
     allowPast: true,
-  });
-  return true;
+  };
 }
 
 /** Commands for post drafts. These are deliberately transport-free and become the
  * single entry point for Telegram, Web Studio and later MCP mutations. */
 export function postService(backendDb: BackendDb, config: BackendConfig) {
+  const progress = (actorId: number, draftId: number) => {
+    const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
+    return postProgressState(backendDb, draft.id);
+  };
+
   return {
     create(actorId: number, message: DraftMessage): number {
       return createDraftFromMessage(backendDb, actorId, message);
@@ -136,13 +164,8 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
         storyCards,
       };
     },
-    progress(actorId: number, draftId: number) {
-      requireOwnedDraft(backendDb, config, actorId, draftId);
-      return postProgressState(backendDb, draftId);
-    },
-    status(actorId: number, draftId: number) {
-      return postProgressState(backendDb, requireOwnedDraft(backendDb, config, actorId, draftId).id);
-    },
+    progress,
+    status: progress,
     history(actorId: number, draftId: number, limit = 50) {
       const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
       return backendDb.studioPosts.history(draft.id, draft.post_id, limit);
@@ -277,18 +300,14 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
     },
     toggleTarget(actorId: number, draftId: number, target: string): void {
       const draft = requirePostEditAllowed(backendDb, config, actorId, draftId, backendDb.clock.now());
-      if (!TARGETS.some(({ id }) => id === target)) throw new StudioError("err.unknown-target");
-      const registered = registeredPostTargetIds(backendDb);
-      if (registered.size && !registered.has(target)) throw new StudioError("err.unknown-target");
+      assertKnownTarget(backendDb, target);
       const targets = parseTargets(draft.targets_json);
       targets[target] = !targets[target];
       saveTargetsAndReschedule(backendDb, config, actorId, draftId, draft, targets);
     },
     removeTarget(actorId: number, draftId: number, target: string): void {
       const draft = requirePostEditAllowed(backendDb, config, actorId, draftId, backendDb.clock.now());
-      if (!TARGETS.some(({ id }) => id === target)) throw new StudioError("err.unknown-target");
-      const registered = registeredPostTargetIds(backendDb);
-      if (registered.size && !registered.has(target)) throw new StudioError("err.unknown-target");
+      assertKnownTarget(backendDb, target);
       const targets = parseTargets(draft.targets_json);
       if (!targets[target]) return;
       targets[target] = false;
@@ -299,32 +318,55 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       const targets = parseTargets(draft.targets_json);
       const current = presetName(targets);
       const next = current === "full" ? "ru" : current === "ru" ? "en" : current === "en" ? "tg" : "full";
-      const preset = effectivePostTargets(backendDb, PRESETS[next] ?? {});
-      if (!preset) throw new StudioError("err.post-mode");
+      const nextPreset = PRESETS[next];
+      if (!nextPreset) throw new StudioError("err.post-mode");
+      const preset = effectivePostTargets(backendDb, nextPreset);
       saveTargetsAndReschedule(backendDb, config, actorId, draftId, draft, preset);
       return next;
     },
     edit(actorId: number, draftId: number, input: EditInput): void {
-      const draft = editDraftContent(backendDb, config, actorId, draftId, input);
-      const updated = backendDb.drafts.get(draftId) ?? draft;
-      try {
-        if (!waitForStoryCardReplan(updated)) rescheduleIfNeeded(backendDb, config, actorId, draftId, updated);
-      } catch (error) {
-        restoreDraftContent(backendDb, draftId, draft, input);
-        throw error;
-      }
+      const { draft, patch } = prepareDraftContentEdit(backendDb, config, actorId, draftId, input);
+      withDraftRollback(
+        backendDb,
+        draftId,
+        draft,
+        patch,
+        () => {
+          backendDb.drafts.update(draftId, patch);
+          backendDb.storyCards.queue(draftId);
+          const updated = backendDb.drafts.get(draftId) ?? draft;
+          if (!waitForStoryCardReplan(backendDb, updated)) rescheduleIfNeeded(backendDb, config, actorId, draftId, updated);
+        },
+        { queueStoryCards: true },
+      );
       recordEditEvent(backendDb, draftId, input);
     },
   };
 }
 
-function waitForStoryCardReplan(draft: DraftRecord): boolean {
-  if (draft.status !== "scheduled" || (draft.story_publish_mode !== "all" && draft.story_publish_mode !== "site_only")) return false;
-  if (draftMedia(draft, "ru").length > 0 || draftMedia(draft, "en").length > 0) return false;
-  return Object.entries(parseTargets(draft.targets_json)).some(([target, enabled]) => enabled && isStoryTarget(target));
+function isStoryPublishMode(draft: DraftRecord): boolean {
+  return draft.story_publish_mode === "all" || draft.story_publish_mode === "site_only";
 }
 
-function editDraftContent(backendDb: BackendDb, config: BackendConfig, actorId: number, draftId: number, input: EditInput): DraftRecord {
+function hasStoryTarget(backendDb: BackendDb, draft: DraftRecord): boolean {
+  return Object.entries(effectivePostTargets(backendDb, parseTargets(draft.targets_json))).some(
+    ([target, enabled]) => enabled && isStoryTarget(target),
+  );
+}
+
+function waitForStoryCardReplan(backendDb: BackendDb, draft: DraftRecord): boolean {
+  if (draft.status !== "scheduled" || !isStoryPublishMode(draft)) return false;
+  if (draftMedia(draft, "ru").length > 0 || draftMedia(draft, "en").length > 0) return false;
+  return hasStoryTarget(backendDb, draft);
+}
+
+function prepareDraftContentEdit(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  actorId: number,
+  draftId: number,
+  input: EditInput,
+): { draft: DraftRecord; patch: DraftPatch } {
   const draft = requirePostEditAllowed(backendDb, config, actorId, draftId, backendDb.clock.now(), input.locale);
   const clearMedia = Boolean(input.clearMedia);
   const update: DraftPatch = { updatedAt: backendDb.clock.now().toISOString() };
@@ -341,26 +383,32 @@ function editDraftContent(backendDb: BackendDb, config: BackendConfig, actorId: 
     }
   }
   if (Object.keys(update).length === 1) throw new StudioError("err.post-no-edit");
-  backendDb.drafts.update(draftId, update);
-  backendDb.storyCards.queue(draftId);
-  return draft;
+  return { draft, patch: update };
 }
 
-function restoreDraftContent(backendDb: BackendDb, draftId: number, draft: DraftRecord, input: EditInput): void {
-  const ru = input.locale === "ru";
-  const patch: DraftPatch = { updatedAt: backendDb.clock.now().toISOString() };
-  if (input.clearMedia) patch[ru ? "mediaRuJson" : "mediaEnJson"] = ru ? draft.media_ru_json : draft.media_en_json;
-  else {
-    if (input.media.length) patch[ru ? "mediaRuJson" : "mediaEnJson"] = ru ? draft.media_ru_json : draft.media_en_json;
-    if (!input.replaceMediaOnly && input.text) {
-      if (ru) patch.textRu = draft.text_ru;
-      else patch.textEnApproved = draft.text_en_approved;
-      patch[ru ? "textRuEntitiesJson" : "textEnEntitiesJson"] = ru ? draft.text_ru_entities_json : draft.text_en_entities_json;
-      patch.threadsChainApproved = draft.threads_chain_approved;
-    }
+function withDraftRollback<T>(
+  backendDb: BackendDb,
+  draftId: number,
+  draft: DraftRecord,
+  patch: DraftPatch,
+  operation: () => T,
+  options: { queueStoryCards?: boolean } = {},
+): T {
+  try {
+    return operation();
+  } catch (error) {
+    const restored: DraftPatch = {
+      ...Object.fromEntries(
+        (Object.keys(patch) as Array<keyof DraftPatch>)
+          .filter((field): field is DraftPatchField => field !== "updatedAt")
+          .map((field) => [field, draftPatchReaders[field](draft)]),
+      ),
+      updatedAt: backendDb.clock.now().toISOString(),
+    };
+    backendDb.drafts.update(draftId, restored);
+    if (options.queueStoryCards) backendDb.storyCards.queue(draftId);
+    throw error;
   }
-  backendDb.drafts.update(draftId, patch);
-  backendDb.storyCards.queue(draftId);
 }
 
 function recordEditEvent(backendDb: BackendDb, draftId: number, input: EditInput): void {
@@ -377,10 +425,6 @@ function recordEditEvent(backendDb: BackendDb, draftId: number, input: EditInput
   });
 }
 
-function saveTargets(backendDb: BackendDb, draftId: number, targets: Record<string, boolean>): void {
-  backendDb.drafts.update(draftId, { targetsJson: JSON.stringify(targets), updatedAt: backendDb.clock.now().toISOString() });
-}
-
 function saveTargetsAndReschedule(
   backendDb: BackendDb,
   config: BackendConfig,
@@ -389,28 +433,16 @@ function saveTargetsAndReschedule(
   draft: DraftRecord,
   targets: Record<string, boolean>,
 ): void {
-  try {
-    saveTargets(backendDb, draftId, targets);
+  const patch: DraftPatch = { targetsJson: JSON.stringify(targets), updatedAt: backendDb.clock.now().toISOString() };
+  withDraftRollback(backendDb, draftId, draft, patch, () => {
+    backendDb.drafts.update(draftId, patch);
     rescheduleIfNeeded(backendDb, config, actorId, draftId, draft);
-  } catch (error) {
-    // Replanning is durable and transactional, but target selection is owned by
-    // the draft row. Restore it if validation or queue hand-off rejects the new
-    // selection so the draft cannot advertise targets its jobs do not represent.
-    backendDb.drafts.update(draftId, {
-      targetsJson: draft.targets_json,
-      updatedAt: backendDb.clock.now().toISOString(),
-    });
-    throw error;
-  }
+  });
 }
 
 function rescheduleIfNeeded(backendDb: BackendDb, config: BackendConfig, actorId: number, draftId: number, draft: DraftRecord): void {
   if (draft.status !== "scheduled") return;
-  schedulePost(backendDb, config, actorId, draftId, {
-    ruAt: scheduledDate(draft.scheduled_at),
-    enAt: scheduledDate(draft.scheduled_en_at),
-    allowPast: true,
-  });
+  schedulePost(backendDb, config, actorId, draftId, scheduledPostInput(draft));
 }
 
 function schedulePost(backendDb: BackendDb, config: BackendConfig, actorId: number, draftId: number, input: PostScheduleInput): number {
@@ -433,32 +465,37 @@ function schedulePost(backendDb: BackendDb, config: BackendConfig, actorId: numb
     ...(input.immediateLocale ? { immediateLocale: input.immediateLocale } : {}),
   });
   const scheduled = requireOwnedDraft(backendDb, config, actorId, draftId);
+  rescheduleReminders(backendDb, actorId, postId, draft, scheduled);
+  return postId;
+}
+
+function rescheduleReminders(backendDb: BackendDb, actorId: number, postId: number, draft: DraftRecord, scheduled: DraftRecord): void {
   const preference = settingsService(backendDb).notifications(actorId);
   const title = draft.text_ru.trim().split("\n")[0]?.slice(0, 100) || `Post #${postId}`;
   cancelScheduledNotifications(backendDb, `post:${postId}`);
-  const ruTargets = localeTargets(backendDb, draft.targets_json, "ru");
-  const enTargets = localeTargets(backendDb, draft.targets_json, "en");
-  if (scheduled.scheduled_at && ruTargets.length)
+  for (const [locale, scheduledAt] of [
+    ["ru", scheduled.scheduled_at],
+    ["en", scheduled.scheduled_en_at],
+  ] as const) {
+    if (!scheduledAt) continue;
+    const targets = localeTargets(backendDb, draft.targets_json, locale);
+    if (!targets.length) continue;
     scheduleReminder(backendDb, {
       actorId,
       ref: `post:${postId}`,
-      kind: "post.ru",
-      publishAt: new Date(scheduled.scheduled_at),
+      kind: `post.${locale}`,
+      publishAt: new Date(scheduledAt),
       title,
-      targets: ruTargets,
+      targets,
       preference,
     });
-  if (scheduled.scheduled_en_at && enTargets.length)
-    scheduleReminder(backendDb, {
-      actorId,
-      ref: `post:${postId}`,
-      kind: "post.en",
-      publishAt: new Date(scheduled.scheduled_en_at),
-      title,
-      targets: enTargets,
-      preference,
-    });
-  return postId;
+  }
+}
+
+function assertKnownTarget(backendDb: BackendDb, target: string): void {
+  if (!TARGETS.some(({ id }) => id === target)) throw new StudioError("err.unknown-target");
+  const registered = registeredPostTargetIds(backendDb);
+  if (registered.size && !registered.has(target)) throw new StudioError("err.unknown-target");
 }
 
 function localeTargets(backendDb: BackendDb, json: string, locale: "ru" | "en"): string[] {
