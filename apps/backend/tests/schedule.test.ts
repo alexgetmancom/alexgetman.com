@@ -1,6 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import { InlineKeyboard } from "grammy";
-import { appendScheduleAxisButtons, SCHEDULE_SLOT_PRESETS, scheduleTimeKeyboard } from "../src/bot/scheduling.js";
+import {
+  appendScheduleAxisButtons,
+  createPublicationScheduleEngine,
+  SCHEDULE_SLOT_PRESETS,
+  scheduleTimeKeyboard,
+} from "../src/bot/scheduling.js";
 import { StudioError } from "../src/foundation/errors.js";
 import { parseManualSchedule, publicationSlotTime } from "../src/publishing/schedule.js";
 
@@ -15,6 +20,25 @@ function expectStudioError(fn: () => unknown, code: string): void {
 }
 
 describe("publishing schedule", () => {
+  it("uses one callback protocol for locale and target schedule axes", () => {
+    const engine = createPublicationScheduleEngine({
+      kind: "video",
+      publicationId: 7,
+      scheduleAxis: "target",
+      axisKeys: ["youtube_shorts", "instagram_reels"],
+      axisLabel: (key) => key,
+      slotValues: SCHEDULE_SLOT_PRESETS,
+      includeAxisKey: true,
+    });
+
+    expect(engine.scheduleAxis).toBe("target");
+    expect(engine.axisKeys).toEqual(["youtube_shorts", "instagram_reels"]);
+    expect(engine.axisLabel("youtube_shorts")).toBe("youtube_shorts");
+    expect(engine.pickCallback("youtube_shorts", "08:00")).toBe("p:video:sched_pick:7:youtube_shorts:0800");
+    expect(engine.manualCallback("youtube_shorts")).toBe("p:video:sched_manual:7:youtube_shorts");
+    expect(engine.confirmCallback()).toBe("p:video:sched_confirm:7");
+  });
+
   it("renders every scheduling axis in the shared two-column picker", () => {
     const keyboard = scheduleTimeKeyboard({
       axis: {

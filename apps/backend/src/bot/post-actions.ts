@@ -14,9 +14,10 @@ import { executePublicationEffects, type PublicationEffect } from "./effects.js"
 import { botLocale } from "./i18n.js";
 import { extractMessage } from "./message.js";
 import { POST_FLOW, type PostWizardStep, postStateStep } from "./post-fsm.js";
-import { type DraftView, draftPreview, isDraftView, modeLabel } from "./preview.js";
+import { type DraftView, isDraftView, modeLabel } from "./preview.js";
 import { renderPostProgress } from "./progress.js";
 import type { PublicationActionContext, PublicationActionResult } from "./publication-action-types.js";
+import { renderPublicationCard } from "./publication-card.js";
 import { type PostActionKey, publicationCallback } from "./session-fsm.js";
 
 type PostActionArgs = PublicationActionContext;
@@ -48,6 +49,7 @@ export const postActionHandlers: Record<Exclude<PostActionKey, "cancel_dialog">,
   sched_scope: handleScheduleScope,
   sched_view: handleScheduleView,
   sched_pick: handleSchedulePick,
+  sched_confirm: handleManualScheduleConfirm,
   sched_manual_confirm: handleManualScheduleConfirm,
   sched_manual: handleManualSchedule,
 };
@@ -66,14 +68,15 @@ async function handleToggle({
   locale,
   second,
   draftId,
-  posts,
+  pipeline,
 }: PostActionArgs): Promise<PublicationActionResult> {
   if (!second) return [{ type: "toast", text: t(locale, "action.unknown") }];
-  posts.toggleTarget(actorId, draftId, second);
+  pipeline.toggleTarget(actorId, draftId, second);
   return previewEffects(backendDb, draftId, config, "platforms", t(locale, "action.target-updated", { target: second }));
 }
 
-async function handlePreview({ backendDb, config, draftId }: PostActionArgs): Promise<PublicationActionResult> {
+async function handlePreview({ backendDb, config, actorId, draftId, pipeline }: PostActionArgs): Promise<PublicationActionResult> {
+  pipeline.get(actorId, draftId);
   return previewEffects(backendDb, draftId, config);
 }
 
@@ -81,7 +84,8 @@ async function handlePlatforms({ backendDb, config, draftId }: PostActionArgs): 
   return previewEffects(backendDb, draftId, config, "platforms");
 }
 
-async function handleCycleMode({ backendDb, config, actorId, locale, draftId, posts }: PostActionArgs): Promise<PublicationActionResult> {
+async function handleCycleMode({ backendDb, config, actorId, locale, draftId }: PostActionArgs): Promise<PublicationActionResult> {
+  const posts = createStudioServices(backendDb, config).posts;
   const nextMode = posts.cycleMode(actorId, draftId);
   return previewEffects(backendDb, draftId, config, "overview", `${t(locale, "post.mode")}: ${modeLabel(nextMode, locale)}`);
 }
@@ -115,8 +119,8 @@ async function handleCancel({ backendDb, config, draftId }: PostActionArgs): Pro
   return previewEffects(backendDb, draftId, config, "confirm_delete");
 }
 
-async function handleCancelConfirm({ actorId, locale, draftId, posts }: PostActionArgs): Promise<PublicationActionResult> {
-  posts.cancel(actorId, draftId);
+async function handleCancelConfirm({ actorId, locale, draftId, pipeline }: PostActionArgs): Promise<PublicationActionResult> {
+  pipeline.cancel(actorId, draftId);
   return [
     { type: "toast", text: t(locale, "action.cancelled") },
     {
@@ -136,9 +140,9 @@ async function handleRetry({
   action,
   second,
   draftId,
-  posts,
+  pipeline,
 }: PostActionArgs): Promise<PublicationActionResult> {
-  const result = posts.retryTarget(actorId, draftId, second || undefined);
+  const result = pipeline.retryTarget(actorId, draftId, second || "") as { requeued: number; alreadyQueued: number };
   if (action !== "post_retry")
     return [
       {
@@ -146,7 +150,7 @@ async function handleRetry({
         text: t(locale, "action.retry-result", { requeued: result.requeued, alreadyQueued: result.alreadyQueued }),
       },
     ];
-  const preview = draftPreview(backendDb, draftId, config);
+  const preview = renderPublicationCard("post", { backendDb, config, publicationId: draftId });
   return [
     {
       type: "toast",
@@ -178,33 +182,20 @@ async function handleStoryPublish({
   locale,
   action,
   draftId,
-  posts,
 }: PostActionArgs): Promise<PublicationActionResult> {
+  const posts = createStudioServices(backendDb, config).posts;
   posts.setStoryPublishMode(actorId, draftId, action === "story_publish_all" ? "all" : "site_only");
   return queuePostNow(backendDb, config, actorId, draftId, locale);
 }
 
-async function handleStorySchedule({
-  backendDb,
-  config,
-  actorId,
-  action,
-  draftId,
-  posts,
-}: PostActionArgs): Promise<PublicationActionResult> {
+async function handleStorySchedule({ backendDb, config, actorId, action, draftId }: PostActionArgs): Promise<PublicationActionResult> {
+  const posts = createStudioServices(backendDb, config).posts;
   posts.setStoryPublishMode(actorId, draftId, action === "story_schedule_all" ? "all" : "site_only");
   return previewEffects(backendDb, draftId, config, "schedule");
 }
 
-async function handleThreadsChain({
-  ctx,
-  backendDb,
-  config,
-  actorId,
-  locale,
-  draftId,
-  posts,
-}: PostActionArgs): Promise<PublicationActionResult> {
+async function handleThreadsChain({ ctx, backendDb, config, actorId, locale, draftId }: PostActionArgs): Promise<PublicationActionResult> {
+  const posts = createStudioServices(backendDb, config).posts;
   posts.approveThreadsChain(actorId, draftId);
   // The waiver only clears the Threads rule. Other preflight issues remain fatal.
   const preflight = await showPublicationPreflight(backendDb, config, actorId, draftId, locale);
@@ -260,11 +251,12 @@ async function handleSchedulePick({
   first,
   second,
   draftId,
-  posts,
+  pipeline,
 }: PostActionArgs): Promise<PublicationActionResult> {
   if (!first || !second) return;
+  if (pipeline.capabilities.scheduleAxis !== "locale") throw new StudioError("action.schedule-expired");
   clearConversationState(backendDb, actorId, "post");
-  const value = posts.slotTime(`${second.slice(0, 2)}:${second.slice(2, 4)}`);
+  const value = pipeline.slotTime(`${second.slice(0, 2)}:${second.slice(2, 4)}`);
   return commitLocaleScheduleOnce(backendDb, config, actorId, draftId, requireScheduleLocale(first), value);
 }
 
@@ -501,7 +493,7 @@ async function commitLocaleScheduleOnce(
 
 function sendPublishConfirmation(backendDb: BackendDb, config: BackendConfig, actorId: number, draftId: number): PublicationEffect[] {
   const delivery = createStudioServices(backendDb, config).posts.preview(actorId, draftId).delivery;
-  const preview = draftPreview(backendDb, draftId, config, "confirm_publish");
+  const preview = renderPublicationCard("post", { backendDb, config, publicationId: draftId, view: "confirm_publish" });
   return [
     { type: "delivery-previews", projections: delivery.projections, locale: botLocale(backendDb, actorId) },
     {
@@ -565,7 +557,7 @@ function previewEffects(
   view: DraftView = "overview",
   callbackText?: string,
 ): PublicationEffect[] {
-  const preview = draftPreview(backendDb, draftId, config, view);
+  const preview = renderPublicationCard("post", { backendDb, config, publicationId: draftId, view });
   return [
     { type: "answer-callback", ...(callbackText ? { text: callbackText } : {}) },
     {
@@ -612,7 +604,7 @@ export async function applyAdminState(
   const transition = await acceptFlow(POST_FLOW, step.type, { backendDb, config, actorId, draftId, controlMessageId, step, message }, {});
   if (!transition) throw new StudioError("action.session-stale");
   if (transition.next === null) {
-    const preview = draftPreview(backendDb, draftId, config);
+    const preview = renderPublicationCard("post", { backendDb, config, publicationId: draftId });
     return [
       ...transition.effects,
       { type: "session", operation: "clear", kind: "post", actorId },

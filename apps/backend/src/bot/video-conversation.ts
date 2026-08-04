@@ -7,7 +7,6 @@ import { StudioError } from "../foundation/errors.js";
 import { describeError, t } from "../foundation/i18n/index.js";
 import { log } from "../foundation/logger.js";
 import { storeTelegramVideo } from "../interfaces/telegram/video-ingress.js";
-import { videoPreview } from "../interfaces/telegram/video-preview.js";
 import { VIDEO_TARGETS, type VideoMetadata, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import { createStudioServices } from "../studio/services/index.js";
 import {
@@ -21,7 +20,9 @@ import {
 import { appendCancelButton, confirmationKeyboard } from "./dialog-ui.js";
 import { executePublicationEffects, type PublicationEffect, type PublicationMessageResult } from "./effects.js";
 import { botLocale } from "./i18n.js";
-import { publicationCallback } from "./session-fsm.js";
+import { renderPublicationCard } from "./publication-card.js";
+import { createPublicationScheduleEngine } from "./scheduling.js";
+import { publicationCallback, versionedCallback } from "./session-fsm.js";
 import {
   clearVideoState,
   enabledVideoTargets,
@@ -143,7 +144,11 @@ async function handleLabelMessage({ backendDb, config, actorId, session, text }:
   if (session.data.is_single_edit) {
     clearVideoState(backendDb, actorId);
     const locale = botLocale(backendDb, actorId);
-    const preview = videoPreview(createStudioServices(backendDb, config).videos.preview(actorId, session.draftId), config, locale);
+    const preview = renderPublicationCard("video", {
+      data: createStudioServices(backendDb, config).videos.preview(actorId, session.draftId),
+      config,
+      locale,
+    });
     return [
       {
         type: "screen",
@@ -411,6 +416,7 @@ async function confirmVideoSchedule(
 ): Promise<PublicationEffect[]> {
   if (!session.draftId) throw new StudioError("err.video-missing");
   const locale = botLocale(backendDb, actorId);
+  const videoPipeline = createStudioServices(backendDb, config).videos;
   const next: VideoConversationState = {
     ...session,
     step: "schedule_confirm",
@@ -429,8 +435,17 @@ async function confirmVideoSchedule(
         `${videoTargetLabel(target)}: ${value.toLocaleString(locale === "ru" ? "ru-RU" : "en-GB", { timeZone: config.TIMEZONE })} ${config.TIMEZONE_LABEL}`,
       );
   }
+  const scheduleEngine = createPublicationScheduleEngine({
+    kind: "video",
+    publicationId: session.draftId,
+    scheduleAxis: videoPipeline.capabilities.scheduleAxis,
+    axisKeys: next.selected,
+    axisLabel: videoTargetLabel,
+    slotValues: [],
+    includeAxisKey: false,
+  });
   const keyboard = confirmationKeyboard(
-    { label: t(locale, "common.confirm"), callback: publicationCallback("video", "schedule_confirm", [session.draftId ?? ""]) },
+    { label: t(locale, "common.confirm"), callback: versionedCallback(scheduleEngine.confirmCallback(), saved.revision) },
     { label: t(locale, "common.back"), callback: publicationCallback("video", "schedule", [session.draftId ?? ""]) },
     saved.revision,
   );
@@ -457,7 +472,11 @@ async function finishSingleVideoEdit(
   createStudioServices(backendDb, config).videos.updateMetadata(actorId, session.draftId, target, metadata as VideoMetadata);
   clearVideoState(backendDb, actorId);
   const locale = botLocale(backendDb, actorId);
-  const preview = videoPreview(createStudioServices(backendDb, config).videos.preview(actorId, session.draftId), config, locale);
+  const preview = renderPublicationCard("video", {
+    data: createStudioServices(backendDb, config).videos.preview(actorId, session.draftId),
+    config,
+    locale,
+  });
   return [
     {
       type: "screen",

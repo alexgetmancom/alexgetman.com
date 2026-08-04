@@ -8,7 +8,7 @@ import { isVideoTargetEditable, isVideoTargetMetadataEditable, isVideoTargetSche
 import type { InstagramMetadata, YouTubeMetadata } from "../../publishing/video-types.js";
 import { formatVideoTime } from "./video-time.js";
 
-type VideoPreviewData = {
+export type VideoPreviewData = {
   draft: { id: number; label: string; locale: string; status: string };
   targets: Array<{ id: number; target: string; status: string; metadataJson: unknown; scheduledAt: string | null }>;
 };

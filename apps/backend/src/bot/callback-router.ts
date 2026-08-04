@@ -128,7 +128,7 @@ function toast(text: string): string {
   return text.length > MAX_TOAST_LENGTH ? `${text.slice(0, MAX_TOAST_LENGTH - 1)}…` : text;
 }
 
-const POST_SESSION_BOUND = new Set(["cancel_state", "sched_manual_confirm"]);
+const POST_SESSION_BOUND = new Set(["cancel_state", "sched_confirm", "sched_manual_confirm"]);
 const VIDEO_SESSION_BOUND = new Set([
   "locale",
   "cancel_dialog",
@@ -137,6 +137,7 @@ const VIDEO_SESSION_BOUND = new Set([
   "game_skip",
   "meta_back",
   "schedule_confirm",
+  "sched_confirm",
   "now_confirm",
   "common",
   "individual",
@@ -179,7 +180,10 @@ const publicationRouter = createCallbackRouter<PublicationActionContext, number,
     second: common.args[2],
     draftId: draftId ?? 0,
     mainMenu,
-    posts: createStudioServices(common.backendDb, common.config).posts,
+    pipeline:
+      common.callback.kind === "post"
+        ? createStudioServices(common.backendDb, common.config).posts
+        : createStudioServices(common.backendDb, common.config).videos,
   }),
   prepare: ({ backendDb, config, actorId, callback }, draftId) => {
     if (callback.kind === "post" && callback.action !== "cancel_dialog")

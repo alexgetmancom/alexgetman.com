@@ -2,6 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { type Bot, InlineKeyboard } from "grammy";
 import { parsePublicationRef } from "../../application/publication-ref.js";
 import { botLocale } from "../../bot/i18n.js";
+import { renderPublicationCard } from "../../bot/publication-card.js";
 import { publicationCallback } from "../../bot/session-fsm.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { drafts, publishJobs, siteJobs, studioNotificationSettings, videoDrafts, videoTargets } from "../../db/schema.js";
@@ -12,7 +13,6 @@ import { getVideoDraft, listVideoTargets } from "../../publishing/video-data.js"
 import type { VideoTarget } from "../../publishing/video-types.js";
 import { videoTargetLabel } from "../../publishing/video-types.js";
 import { telegramVideoCard } from "./control-cards.js";
-import { videoPreview } from "./video-preview.js";
 import { formatVideoTime } from "./video-time.js";
 
 /** These adapters render times, so they need the configured zone — nothing more. */
@@ -56,7 +56,11 @@ export async function refreshVideoControlCard(
   const card = telegramVideoCard(backendDb, videoDraftId);
   if (!card || card.chatId == null || card.messageId == null) return;
   const draft = getVideoDraft(backendDb, videoDraftId);
-  const preview = videoPreview({ draft, targets: listVideoTargets(backendDb, videoDraftId) }, config, botLocale(backendDb, draft.actorId));
+  const preview = renderPublicationCard("video", {
+    data: { draft, targets: listVideoTargets(backendDb, videoDraftId) },
+    config,
+    locale: botLocale(backendDb, draft.actorId),
+  });
   try {
     await bot.api.editMessageText(card.chatId, card.messageId, preview.text, {
       parse_mode: "Markdown",

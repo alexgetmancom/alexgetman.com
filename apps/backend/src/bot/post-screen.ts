@@ -14,7 +14,7 @@ import { extractMessage } from "./message.js";
 import { applyAdminState } from "./post-actions.js";
 import { isPostInputStep, postStateStep } from "./post-fsm.js";
 import { translatePostText } from "./post-translation.js";
-import { draftPreview } from "./preview.js";
+import { renderPublicationCard } from "./publication-card.js";
 import { parseSessionCallback, publicationCallback } from "./session-fsm.js";
 
 /** The conversational text-post screen. It owns user input and keeps the
@@ -108,7 +108,7 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
   const textEn = await translatePostText(message.text, config);
   const draftId = createStudioServices(backendDb, config).posts.create(actorId, { ...message, textEn });
   clearConversationState(backendDb, actorId, "post");
-  const preview = draftPreview(backendDb, draftId, config);
+  const preview = renderPublicationCard("post", { backendDb, config, publicationId: draftId });
   return {
     handled: true,
     effects: [

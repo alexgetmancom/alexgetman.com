@@ -1,4 +1,6 @@
 import { InlineKeyboard } from "grammy";
+import type { PublicationKind } from "../application/conversation-flow.js";
+import type { PublicationScheduleAxis } from "../application/publication-pipeline.js";
 import { versionedCallback } from "./session-fsm.js";
 
 /** The values along which a scheduling screen lets an operator move. */
@@ -7,6 +9,51 @@ export type ScheduleAxis<T extends string> = {
   label: (value: T) => string;
   callback: (value: T) => string;
 };
+
+export type PublicationScheduleEngine<T extends string> = {
+  scheduleAxis: PublicationScheduleAxis;
+  axisKeys: readonly T[];
+  axisLabel: (key: T) => string;
+  axis: ScheduleAxis<string>;
+  pickCallback: (key: T | undefined, clock: string) => string;
+  manualCallback: (key?: T) => string;
+  confirmCallback: () => string;
+};
+
+/** Creates the shared Telegram schedule protocol for a publication pipeline.
+ * The domain supplies its axis keys and labels; all three callback actions are
+ * emitted from this one engine. */
+export function createPublicationScheduleEngine<T extends string>(options: {
+  kind: PublicationKind;
+  publicationId: number;
+  scheduleAxis: PublicationScheduleAxis;
+  axisKeys: readonly T[];
+  axisLabel: (key: T) => string;
+  slotValues: readonly string[];
+  includeAxisKey?: boolean;
+}): PublicationScheduleEngine<T> {
+  const includeAxisKey = options.includeAxisKey ?? true;
+  const args = (key: T | undefined, clock?: string): Array<string | number> => {
+    const result: Array<string | number> = [options.publicationId];
+    if (includeAxisKey && key !== undefined) result.push(key);
+    if (clock !== undefined) result.push(clock.replace(":", ""));
+    return result;
+  };
+  const pickCallback = (key: T | undefined, clock: string) => ["p", options.kind, "sched_pick", ...args(key, clock).map(String)].join(":");
+  return {
+    scheduleAxis: options.scheduleAxis,
+    axisKeys: options.axisKeys,
+    axisLabel: options.axisLabel,
+    axis: {
+      values: options.slotValues,
+      label: (clock) => clock,
+      callback: (clock) => pickCallback(options.axisKeys[0], clock),
+    },
+    pickCallback,
+    manualCallback: (key) => ["p", options.kind, "sched_manual", ...args(key).map(String)].join(":"),
+    confirmCallback: () => ["p", options.kind, "sched_confirm", String(options.publicationId)].join(":"),
+  };
+}
 
 /** Renders an axis as two-column slot rows. The caller owns the surrounding
  * navigation because post and video screens have different footer actions. */

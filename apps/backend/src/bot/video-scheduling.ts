@@ -2,12 +2,12 @@ import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { t } from "../foundation/i18n/index.js";
-import { videoPreview } from "../interfaces/telegram/video-preview.js";
 import type { VideoTechnicalCheck } from "../publishing/video-service.js";
 import type { VideoTarget } from "../publishing/video-types.js";
 import { createStudioServices } from "../studio/services/index.js";
 import type { PublicationEffect } from "./effects.js";
 import { type BotLocale, botLocale } from "./i18n.js";
+import { renderPublicationCard } from "./publication-card.js";
 import { clearVideoState, type VideoConversationState } from "./video-ui.js";
 
 export async function finishVideoSchedule(
@@ -60,7 +60,11 @@ async function showScheduledVideo(
   locale: BotLocale,
 ): Promise<PublicationEffect[]> {
   if (!session.draftId) throw new StudioError("err.video-missing");
-  const preview = videoPreview(createStudioServices(backendDb, config).videos.preview(actorId, session.draftId), config, locale);
+  const preview = renderPublicationCard("video", {
+    data: createStudioServices(backendDb, config).videos.preview(actorId, session.draftId),
+    config,
+    locale,
+  });
   const reminderMinutes = createStudioServices(backendDb, config).settings.notifications(actorId).reminderMinutes;
   const warning = technical.aspectOk ? "" : `\n${t(locale, "video.aspect-warning")}`;
   const text = `${videoCheckSummary(technical, locale)}${warning}\n\n✅ ${t(locale, "common.scheduled")}. ${t(locale, "video.reminder", { minutes: reminderMinutes })}\n\n${preview.text}`;

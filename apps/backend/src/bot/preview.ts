@@ -12,11 +12,12 @@ import { formatMsk } from "../interfaces/telegram/time.js";
 import { mediaPolicyForTarget } from "../publishing/media-policy.js";
 import { isPostDraftMutable } from "../publishing/state.js";
 import { parseTargets } from "../publishing/targets.js";
+import { createStudioServices } from "../studio/services/index.js";
 import { requirePostEditAllowed } from "../studio/services/post-access.js";
 import { postProgressState } from "../studio/services/post-progress.js";
 import { appendResultNavigation, confirmationKeyboard } from "./dialog-ui.js";
 import { type BotLocale, botLocale } from "./i18n.js";
-import { appendScheduleAxisButtons } from "./scheduling.js";
+import { appendScheduleAxisButtons, createPublicationScheduleEngine } from "./scheduling.js";
 import { publicationCallback } from "./session-fsm.js";
 
 const DRAFT_VIEWS = [
@@ -145,10 +146,18 @@ export function draftPreview(
   const scheduleGrid = SCHEDULE_GRIDS.find((grid) => view in grid.slots);
   if (scheduleGrid) {
     const isMainView = view === scheduleGrid.mainView;
+    const scheduleEngine = createPublicationScheduleEngine({
+      kind: "post",
+      publicationId: draftId,
+      scheduleAxis: createStudioServices(backendDb, config).posts.capabilities.scheduleAxis,
+      axisKeys: [scheduleGrid.target],
+      axisLabel: (key) => key.toUpperCase(),
+      slotValues: scheduleGrid.slots[view] ?? [],
+    });
     appendScheduleAxisButtons(keyboard, {
-      values: scheduleGrid.slots[view] ?? [],
-      label: (clock) => clock,
-      callback: (clock) => publicationCallback("post", "sched_pick", [draftId, scheduleGrid.target, clock.replace(":", "")]),
+      values: scheduleEngine.axis.values,
+      label: scheduleEngine.axis.label,
+      callback: (clock) => scheduleEngine.pickCallback(scheduleGrid.target, clock),
     });
     keyboard.row();
     if (isMainView) {
@@ -156,7 +165,7 @@ export function draftPreview(
         keyboard.text(t(locale, extra.labelKey), publicationCallback("post", "sched_view", [draftId, extra.view]));
       keyboard
         .row()
-        .text(t(locale, "post.enter-time"), publicationCallback("post", "sched_manual", [draftId, scheduleGrid.target]))
+        .text(t(locale, "post.enter-time"), scheduleEngine.manualCallback(scheduleGrid.target))
         .row()
         .text(t(locale, "common.back"), publicationCallback("post", "preview", [draftId]));
     } else {

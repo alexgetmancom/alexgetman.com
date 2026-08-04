@@ -7,8 +7,9 @@ import { confirmationKeyboard } from "./dialog-ui.js";
 import type { PublicationEffect } from "./effects.js";
 import { botLocale } from "./i18n.js";
 import type { PostFlowData, PostFlowInput } from "./post-flow-types.js";
-import { draftPreview } from "./preview.js";
-import { publicationCallback } from "./session-fsm.js";
+import { renderPublicationCard } from "./publication-card.js";
+import { createPublicationScheduleEngine } from "./scheduling.js";
+import { publicationCallback, versionedCallback } from "./session-fsm.js";
 
 /** Accepts a manually entered publication time and opens the confirmation step. */
 export async function acceptManualPostSchedule(
@@ -25,7 +26,7 @@ export async function acceptManualPostSchedule(
   );
   const value = step.locale === "ru" ? ruAt : enAt;
   if (!value) throw new StudioError("err.no-pub-time");
-  saveConversationState(input.backendDb, input.actorId, {
+  const saved = saveConversationState(input.backendDb, input.actorId, {
     kind: "post",
     draftId: input.draftId,
     step: "schedule_confirm",
@@ -33,9 +34,24 @@ export async function acceptManualPostSchedule(
     controlMessageId: input.controlMessageId,
   });
   const locale = botLocale(input.backendDb, input.actorId);
-  const preview = draftPreview(input.backendDb, input.draftId, input.config);
+  const preview = renderPublicationCard("post", {
+    backendDb: input.backendDb,
+    config: input.config,
+    publicationId: input.draftId,
+  });
+  const scheduleEngine = createPublicationScheduleEngine({
+    kind: "post",
+    publicationId: input.draftId,
+    scheduleAxis: "locale",
+    axisKeys: [step.locale],
+    axisLabel: (key) => key.toUpperCase(),
+    slotValues: [],
+  });
   const keyboard = confirmationKeyboard(
-    { label: t(locale, "post.confirm-schedule-btn"), callback: publicationCallback("post", "sched_manual_confirm", [input.draftId]) },
+    {
+      label: t(locale, "post.confirm-schedule-btn"),
+      callback: versionedCallback(scheduleEngine.confirmCallback(), saved.revision),
+    },
     {
       label: t(locale, "common.back"),
       callback: publicationCallback("post", "sched_view", [input.draftId, step.locale === "ru" ? "schedule_ru" : "schedule_en"]),

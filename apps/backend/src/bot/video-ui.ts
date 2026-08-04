@@ -8,7 +8,7 @@ import { type ConversationState, clearConversationState, getConversationState, s
 import { appendCancelButton, cancelPromptKeyboard } from "./dialog-ui.js";
 import type { PublicationEffect } from "./effects.js";
 import { type BotLocale, botLocale } from "./i18n.js";
-import { SCHEDULE_SLOT_PRESETS, scheduleTimeKeyboard } from "./scheduling.js";
+import { createPublicationScheduleEngine, SCHEDULE_SLOT_PRESETS, scheduleTimeKeyboard } from "./scheduling.js";
 import { publicationCallback } from "./session-fsm.js";
 
 export type VideoConversationStep =
@@ -144,14 +144,19 @@ export function videoTimeEffects(
 ): PublicationEffect[] {
   const locale = botLocale(backendDb, actorId);
   const revision = getVideoState(backendDb, actorId)?.revision ?? session.revision;
+  const engine = createPublicationScheduleEngine({
+    kind: "video",
+    publicationId: session.draftId ?? 0,
+    scheduleAxis: "target",
+    axisKeys: session.selected,
+    axisLabel: videoTargetLabel,
+    slotValues: SCHEDULE_SLOT_PRESETS,
+    includeAxisKey: false,
+  });
   const keyboard = scheduleTimeKeyboard({
-    axis: {
-      values: SCHEDULE_SLOT_PRESETS,
-      label: (clock) => clock,
-      callback: (clock) => publicationCallback("video", "sched_pick", [session.draftId ?? "", clock.replace(":", "")]),
-    },
+    axis: engine.axis,
     revision,
-    manual: { label: t(locale, "video.enter-time-btn"), callback: publicationCallback("video", "sched_manual", [session.draftId ?? ""]) },
+    manual: { label: t(locale, "video.enter-time-btn"), callback: engine.manualCallback() },
     cancel: { label: t(locale, "common.cancel"), callback: publicationCallback("video", "cancel_dialog") },
   });
   return videoControlEffects(session, text, keyboard);
