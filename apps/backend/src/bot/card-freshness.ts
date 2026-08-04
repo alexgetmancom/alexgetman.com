@@ -19,6 +19,10 @@ const POST_CARD_ACTIONS = new Set([
   "sched_view",
   "sched_pick",
   "sched_manual",
+  "story_publish_all",
+  "story_publish_site",
+  "story_schedule_all",
+  "story_schedule_site",
 ]);
 
 const VIDEO_CARD_ACTIONS = new Set([

@@ -225,7 +225,8 @@ async function showStoryCardChoice(
           .text(t(locale, "post.story-cards-site-only-schedule"), `story_schedule_site:${draftId}`)
           .row()
           .text(t(locale, "common.back"), `preview:${draftId}`);
-  await ctx.reply(t(locale, "post.story-cards-question"), { parse_mode: "Markdown", reply_markup: keyboard });
+  const message = await ctx.reply(t(locale, "post.story-cards-question"), { parse_mode: "Markdown", reply_markup: keyboard });
+  if (ctx.chat?.id != null) setTelegramPostCard(backendDb, draftId, ctx.chat.id, message.message_id);
   return true;
 }
 

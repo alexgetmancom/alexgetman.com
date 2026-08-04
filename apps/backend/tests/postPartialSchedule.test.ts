@@ -36,6 +36,41 @@ function enTargetsDueNow(db: BackendDb, postId: number): string[] {
 }
 
 describe("partial locale scheduling", () => {
+  it("finishes a RU-only post without waiting for an EN schedule", () => {
+    backendDb = openBackendDb(":memory:");
+    const posts = postService(backendDb, loadConfig({ ADMIN_IDS: "42" }));
+    const draftId = posts.create(42, { text: "Russian", textEn: "English", entities: [], media: [] });
+    expect(posts.cycleMode(42, draftId)).toBe("full");
+    expect(posts.cycleMode(42, draftId)).toBe("ru");
+
+    const { ruAt, enAt } = posts.scheduleAt(42, draftId, "ru", new Date(Date.now() + 3_600_000));
+    expect(enAt).toBeNull();
+    const postId = posts.schedule(42, draftId, { ruAt, enAt });
+
+    expect(
+      unsafeDb(backendDb).db.select({ target: publishJobs.target }).from(publishJobs).where(eq(publishJobs.postId, postId)).all(),
+    ).not.toContainEqual(expect.objectContaining({ target: "threads_en" }));
+    expect(posts.hasLocaleTargets(42, draftId, "en")).toBe(false);
+  });
+
+  it("finishes an EN-only post without waiting for a RU schedule", () => {
+    backendDb = openBackendDb(":memory:");
+    const posts = postService(backendDb, loadConfig({ ADMIN_IDS: "42" }));
+    const draftId = posts.create(42, { text: "Russian", textEn: "English", entities: [], media: [] });
+    expect(posts.cycleMode(42, draftId)).toBe("full");
+    expect(posts.cycleMode(42, draftId)).toBe("ru");
+    expect(posts.cycleMode(42, draftId)).toBe("en");
+
+    const { ruAt, enAt } = posts.scheduleAt(42, draftId, "en", new Date(Date.now() + 3_600_000));
+    expect(ruAt).toBeNull();
+    const postId = posts.schedule(42, draftId, { ruAt, enAt });
+
+    expect(
+      unsafeDb(backendDb).db.select({ target: publishJobs.target }).from(publishJobs).where(eq(publishJobs.postId, postId)).all(),
+    ).not.toContainEqual(expect.objectContaining({ target: "threads_ru" }));
+    expect(posts.hasLocaleTargets(42, draftId, "ru")).toBe(false);
+  });
+
   it("does not publish EN while its time has not been chosen yet", () => {
     backendDb = openBackendDb(":memory:");
     const posts = postService(backendDb, loadConfig({ ADMIN_IDS: "42" }));
