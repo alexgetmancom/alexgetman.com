@@ -7,7 +7,6 @@ import { plural, t } from "../foundation/i18n/index.js";
 import { log } from "../foundation/logger.js";
 import { formatMsk } from "../interfaces/telegram/time.js";
 import { createStudioServices } from "../studio/services/index.js";
-import type { PublicationActionContext, PublicationActionResult } from "./callback-router.js";
 import { isStaleCardCallback, PUBLICATION_CARD_FRESHNESS } from "./card-freshness.js";
 import { clearConversationState, getConversationState, requireConversationState, saveConversationState } from "./conversation-state.js";
 import { cancelPromptKeyboard, resultNavigationKeyboard } from "./dialog-ui.js";
@@ -17,6 +16,7 @@ import { extractMessage } from "./message.js";
 import { POST_FLOW, type PostWizardStep, postStateStep } from "./post-fsm.js";
 import { type DraftView, draftPreview, isDraftView, modeLabel } from "./preview.js";
 import { renderPostProgress } from "./progress.js";
+import type { PublicationActionContext, PublicationActionResult } from "./publication-action-types.js";
 import { type PostActionKey, publicationCallback } from "./session-fsm.js";
 
 type PostActionArgs = PublicationActionContext;

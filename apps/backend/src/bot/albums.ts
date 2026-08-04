@@ -11,7 +11,7 @@ import { importTelegramAlbumMedia } from "../interfaces/telegram/media-ingress.j
 import { createStudioServices } from "../studio/services/index.js";
 import { clearConversationStateIfCurrent, getConversationState } from "./conversation-state.js";
 import { botLocale } from "./i18n.js";
-import type { PostSessionStep, PostWizardStep } from "./post-fsm.js";
+import type { PostSessionStep, PostWizardStep } from "./post-flow-types.js";
 import { translatePostText } from "./post-translation.js";
 import { draftPreview } from "./preview.js";
 

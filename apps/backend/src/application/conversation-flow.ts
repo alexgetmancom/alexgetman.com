@@ -1,7 +1,7 @@
 export type PublicationKind = "post" | "video";
 
 /** Transport-neutral shape for a conversational publication workflow. */
-export type FlowAcceptance<TData, TEffect = never> = {
+type FlowAcceptance<TData, TEffect = never> = {
   data: TData;
   effects?: readonly TEffect[];
 };

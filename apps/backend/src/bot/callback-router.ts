@@ -7,10 +7,16 @@ import { describeError, t } from "../foundation/i18n/index.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { isStaleCardCallback, PUBLICATION_CARD_FRESHNESS } from "./card-freshness.js";
 import { getActiveConversationState, getConversationState } from "./conversation-state.js";
-import { executePublicationEffects, type PublicationEffect, type PublicationMessageResult } from "./effects.js";
+import { executePublicationEffects, type PublicationMessageResult } from "./effects.js";
 import { type BotLocale, botLocale } from "./i18n.js";
 import { postActionHandlers } from "./post-actions.js";
 import { handlePostMessage } from "./post-screen.js";
+import type {
+  CallbackRouterContext,
+  PublicationActionContext,
+  PublicationActionHandler,
+  PublicationActionResult,
+} from "./publication-action-types.js";
 import {
   type PUBLICATION_ACTIONS,
   type PublicationCallback,
@@ -21,29 +27,6 @@ import {
 } from "./session-fsm.js";
 import { videoActionHandlers } from "./video-actions.js";
 import { handleVideoConversationMessage } from "./video-conversation.js";
-
-export type CallbackRouterContext = {
-  ctx: Context;
-  backendDb: BackendDb;
-  config: BackendConfig;
-  actorId: number;
-  locale: BotLocale;
-  data: string;
-  callback: PublicationCallback;
-  action: string;
-  revision: number | null;
-  parts: string[];
-  args: string[];
-  mainMenu?: Menu<Context> | undefined;
-};
-
-export type PublicationActionContext = CallbackRouterContext & {
-  first: string | undefined;
-  second: string | undefined;
-  draftId: number;
-  mainMenu: Menu<Context> | undefined;
-  posts: ReturnType<typeof createStudioServices>["posts"];
-};
 
 type CallbackRouteHandler<TArgs, TResult> = (args: TArgs) => Promise<TResult>;
 
@@ -63,10 +46,10 @@ type CallbackRouterBase<TArgs, TEntity, TResult> = {
   onError?: (context: CallbackRouterContext, error: unknown) => void | Promise<void>;
 };
 
-export type CallbackRouterOptions<TArgs, TEntity = undefined, TResult = void> = CallbackRouterBase<TArgs, TEntity, TResult>;
+type CallbackRouterOptions<TArgs, TEntity = undefined, TResult = void> = CallbackRouterBase<TArgs, TEntity, TResult>;
 
 /** Builds a callback-only adapter with common transport, session, and guard handling. */
-export function createCallbackRouter<TArgs, TEntity = undefined, TResult = void>(
+function createCallbackRouter<TArgs, TEntity = undefined, TResult = void>(
   options: CallbackRouterOptions<TArgs, TEntity, TResult>,
 ): (ctx: Context, backendDb: BackendDb, config: BackendConfig, mainMenu?: Menu<Context>) => Promise<boolean> {
   return async (ctx, backendDb, config, mainMenu): Promise<boolean> => {
@@ -134,12 +117,9 @@ async function answerCallback(ctx: Context, backendDb: BackendDb, text: string |
   await executePublicationEffects(ctx, backendDb, [{ type: "answer-callback", ...(text ? { text } : {}) }]);
 }
 
-type PublicationHandler = (args: PublicationActionContext) => Promise<PublicationActionResult>;
 type PublicationMessageHandler = (ctx: Context, backendDb: BackendDb, config: BackendConfig) => Promise<PublicationMessageResult>;
-// biome-ignore lint/suspicious/noConfusingVoidType: action declarations intentionally return no toast on the normal path.
-export type PublicationActionResult = readonly PublicationEffect[] | void;
 type PublicationRoutes = {
-  [K in PublicationKind]: Record<(typeof PUBLICATION_ACTIONS)[K][number], PublicationHandler>;
+  [K in PublicationKind]: Record<(typeof PUBLICATION_ACTIONS)[K][number], PublicationActionHandler>;
 };
 
 const MAX_TOAST_LENGTH = 200;
@@ -170,7 +150,7 @@ const PUBLICATION_MESSAGE_HANDLERS: Record<PublicationKind, PublicationMessageHa
 };
 
 /** One action table for both publication kinds. Modules only declare handlers. */
-export const routes: PublicationRoutes = {
+const routes: PublicationRoutes = {
   post: {
     cancel_dialog: async ({ backendDb, actorId, revision, mainMenu }) => {
       requireSessionRevision(getConversationState(backendDb, actorId, "post")?.revision, revision);

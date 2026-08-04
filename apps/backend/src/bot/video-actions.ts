@@ -14,10 +14,10 @@ import {
   VIDEO_FLOW,
   type VideoWizardStep,
 } from "../studio/video-fsm.js";
-import type { PublicationActionContext, PublicationActionResult } from "./callback-router.js";
 import { appendCancelButton, cancelPromptKeyboard, confirmationKeyboard, resultNavigationKeyboard } from "./dialog-ui.js";
 import type { PublicationEffect } from "./effects.js";
 import { type BotLocale, botLocale } from "./i18n.js";
+import type { PublicationActionContext, PublicationActionResult } from "./publication-action-types.js";
 import { SCHEDULE_SLOT_PRESETS, scheduleTimeKeyboard } from "./scheduling.js";
 import { parseDraftId, publicationCallback, requireSessionStep, type VideoActionKey } from "./session-fsm.js";
 import { finishVideoNow, finishVideoSchedule } from "./video-scheduling.js";

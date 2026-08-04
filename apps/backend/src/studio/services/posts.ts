@@ -83,7 +83,7 @@ export function replanScheduledPostAfterStoryCardFailure(backendDb: BackendDb, c
 }
 
 /** Replans a scheduled post after a durable content or target mutation. */
-export function replanScheduledPostAfterMutation(backendDb: BackendDb, config: BackendConfig, draftId: number): boolean {
+function replanScheduledPostAfterMutation(backendDb: BackendDb, config: BackendConfig, draftId: number): boolean {
   return replanScheduled(backendDb, config, draftId, (draft) => {
     const hasMedia = draftMedia(draft, "ru").length > 0 || draftMedia(draft, "en").length > 0;
     const hasFailedStoryCard = storyCardsForDraft(backendDb, draftId).some((card) => card.status === "failed");
@@ -517,7 +517,7 @@ function scheduleAt(draft: DraftRecord, scope: PostScheduleScope, value: Date): 
 
 /** Reads a persisted schedule column as a Date, treating an unset or unparsable
  * value as no schedule rather than an Invalid Date. */
-export function scheduledDate(value: string | null): Date | null {
+function scheduledDate(value: string | null): Date | null {
   if (!value) return null;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;

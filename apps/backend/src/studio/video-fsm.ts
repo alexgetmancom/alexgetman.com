@@ -111,11 +111,6 @@ export function advanceVideoMetadata(
 }
 
 /** Chooses the next metadata or scheduling state without knowing about Telegram controls. */
-export function nextVideoFlowStep(selected: VideoTarget[]): "instagram_caption" | "schedule_choice" {
-  const next = VIDEO_FLOW.steps.youtube_tags?.next({ selectedTargets: selected });
-  return next === "instagram_caption" ? next : "schedule_choice";
-}
-
 /** Adds one parsed target time and chooses either the next target prompt or confirmation. */
 export function advanceVideoTargetSchedule(
   selected: VideoTarget[],

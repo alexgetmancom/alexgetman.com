@@ -1,34 +1,15 @@
 import type { Flow, FlowStep } from "../application/conversation-flow.js";
-import type { DraftMessage } from "../content/message.js";
-import type { BackendDb } from "../db/client.js";
-import type { BackendConfig } from "../foundation/config.js";
 import type { ConversationState } from "./conversation-state.js";
 import type { PublicationEffect } from "./effects.js";
 import { acceptManualPostSchedule, acceptPostMediaReplacement, acceptPostSourceEdit, acceptPostTextEdit } from "./post-flow-actions.js";
 
-export type PostWizardLocale = "ru" | "en";
+export type {
+  PostFlowData,
+  PostFlowInput,
+  PostWizardStep,
+} from "./post-flow-types.js";
 
-/** The short names persisted in conversation_sessions.step. */
-export type PostSessionStep = "new_post" | "edit_sources" | "edit_text" | "replace_media" | "schedule_manual" | "schedule_confirm";
-
-export type PostWizardStep =
-  | { type: "new_post" }
-  | { type: "edit_sources" }
-  | { type: "edit_text"; locale: PostWizardLocale }
-  | { type: "replace_media"; locale: PostWizardLocale }
-  | { type: "schedule_manual"; locale: PostWizardLocale }
-  | { type: "schedule_confirm"; locale: PostWizardLocale; value: Date };
-
-export type PostFlowData = Record<string, unknown>;
-export type PostFlowInput = {
-  backendDb: BackendDb;
-  config: BackendConfig;
-  actorId: number;
-  draftId: number;
-  controlMessageId: number | null;
-  step: PostWizardStep;
-  message: DraftMessage;
-};
+import type { PostFlowData, PostFlowInput, PostWizardLocale, PostWizardStep } from "./post-flow-types.js";
 
 const POST_STEPS: Record<string, FlowStep<PostFlowData, PostFlowInput, PublicationEffect>> = {
   new_post: {

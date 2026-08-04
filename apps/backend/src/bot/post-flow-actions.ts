@@ -6,7 +6,7 @@ import { saveConversationState } from "./conversation-state.js";
 import { confirmationKeyboard } from "./dialog-ui.js";
 import type { PublicationEffect } from "./effects.js";
 import { botLocale } from "./i18n.js";
-import type { PostFlowData, PostFlowInput } from "./post-fsm.js";
+import type { PostFlowData, PostFlowInput } from "./post-flow-types.js";
 import { draftPreview } from "./preview.js";
 import { publicationCallback } from "./session-fsm.js";
 

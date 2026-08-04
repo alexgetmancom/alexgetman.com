@@ -323,7 +323,7 @@ async function handleScheduleMessage({ backendDb, config, actorId, session, text
  * came from free text or a slot button. Shared so the "different time per
  * platform" chain (schedule_target + data.target → next target) behaves identically
  * either way. */
-export async function applyVideoScheduleDate(
+async function applyVideoScheduleDate(
   backendDb: BackendDb,
   config: BackendConfig,
   actorId: number,
