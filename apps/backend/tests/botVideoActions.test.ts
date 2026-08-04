@@ -7,7 +7,7 @@ import { type BackendDb, unsafeDb } from "../src/db/client.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { setTelegramVideoCard } from "../src/interfaces/telegram/control-cards.js";
 import { videoPreview } from "../src/interfaces/telegram/video-preview.js";
-import { createVideoDraft, replaceVideoTargets } from "../src/publishing/video-service.js";
+import { createVideoDraft, replaceVideoTargets, scheduleVideo } from "../src/publishing/video-service.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
 let backendDb: BackendDb | null = null;
@@ -39,6 +39,7 @@ describe("video card controls", () => {
 
     expect(keyboard).not.toContain("p:video:now:7");
     expect(keyboard).not.toContain("p:video:schedule:7");
+    expect(keyboard).toContain("p:video:edit_menu:7");
   });
 
   it("localizes a target that needs provider verification", () => {
@@ -46,6 +47,35 @@ describe("video card controls", () => {
 
     expect(preview.text).toContain("нужна проверка");
     expect(preview.text).not.toContain("verification_required");
+  });
+
+  it("offers Instagram metadata editing while a scheduled target is still waiting", async () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    replaceVideoTargets(backendDb, draftId, ["instagram_reels"]);
+    scheduleVideo(
+      backendDb,
+      draftId,
+      { instagram_reels: new Date(Date.now() + 3_600_000) },
+      { prepareLeadMinutes: 10, reminderMinutes: 15 },
+      config,
+    );
+    let options: { reply_markup?: unknown } | undefined;
+    const ctx = {
+      callbackQuery: { data: publicationCallback("video", "edit_menu", [draftId]), message: { message_id: 10 } },
+      from: { id: 42 },
+      chat: { id: 100 },
+      editMessageText: async (_text: string, nextOptions: { reply_markup?: unknown }) => {
+        options = nextOptions;
+      },
+      answerCallbackQuery: async () => undefined,
+    } as unknown as Context;
+
+    await handleVideoActionCallback(ctx, backendDb, config);
+
+    const keyboard = JSON.stringify(options?.reply_markup);
+    expect(keyboard).toContain(`p:video:edit_field:${draftId}:instagram_caption`);
+    expect(keyboard).not.toContain(`p:video:edit_field:${draftId}:label`);
   });
 });
 
@@ -113,7 +143,8 @@ describe("video callback dispatch", () => {
     expect(answers).toEqual([undefined]);
     expect(getSession(backendDb, 42)).toMatchObject({
       draftId,
-      step: "schedule_target:youtube_shorts",
+      step: "schedule_target",
+      data: { target: "youtube_shorts" },
       revision: previous.revision + 2,
     });
   });

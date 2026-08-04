@@ -7,14 +7,13 @@ import { persistentKeyboard, showMainMenu } from "./bot/menu-render.js";
 import { buildMainMenu } from "./bot/navigation.js";
 import { buildNotificationsMenu, notificationsInboxText } from "./bot/notifications-screen.js";
 import { handleOperationsCallback } from "./bot/operations-screen.js";
-import { handlePostAction, postRouteKeys } from "./bot/post-actions.js";
 import { handlePostMessage, handlePostScreenCallback, startPostScreen } from "./bot/post-screen.js";
 import { handleProgressCallback } from "./bot/progress-screen.js";
+import { handleActivePublicationMessage, handlePublicationCallback } from "./bot/publication-actions.js";
 import { showQueue, showQueueAttention } from "./bot/queue.js";
-import { callbackAction, parseSessionCallback } from "./bot/session-fsm.js";
+import { parseSessionCallback, publicationFromCallbackData } from "./bot/session-fsm.js";
 import { buildSettingsMenu, handleSettingsMessage, showSettings } from "./bot/settings-screen.js";
-import { handleVideoActionCallback } from "./bot/video-actions.js";
-import { handleVideoConversationMessage, startVideoConversation } from "./bot/video-conversation.js";
+import { startVideoConversation } from "./bot/video-conversation.js";
 import type { BackendDb } from "./db/client.js";
 import { actorFromTelegramUser } from "./foundation/actors.js";
 import type { BackendConfig } from "./foundation/config.js";
@@ -98,7 +97,7 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
   bot.on("message", async (ctx) => {
     if (!isAdmin(config, ctx.from?.id)) return;
     if (await handleSettingsMessage(ctx, backendDb, config, settingsMenu)) return;
-    if (await handleVideoConversationMessage(ctx, backendDb, config)) return;
+    if (await handleActivePublicationMessage(ctx, backendDb, config)) return;
     await handlePostMessage(ctx, backendDb, config);
   });
 
@@ -186,22 +185,14 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
       handle: async (ctx) => handleAnalyticsCallback(ctx, backendDb, config),
     },
     {
-      name: "video",
-      matches: (data) => data.startsWith("video_"),
-      handle: async (ctx) => handleVideoActionCallback(ctx, backendDb, config, mainMenu),
+      name: "publication",
+      matches: (data) => publicationFromCallbackData(data) !== null,
+      handle: async (ctx) => handlePublicationCallback(ctx, backendDb, config, mainMenu),
     },
     {
       name: "operations",
       matches: (data) => data.startsWith("deploy_"),
       handle: async (ctx) => handleOperationsCallback(ctx, config),
-    },
-    {
-      name: "post-action",
-      matches: (data) => postRouteKeys.includes(callbackAction(data)),
-      handle: async (ctx) => {
-        await handlePostAction(ctx, backendDb, config);
-        return true;
-      },
     },
   ];
 

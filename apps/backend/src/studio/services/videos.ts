@@ -6,6 +6,7 @@ import type { BackendConfig } from "../../foundation/config.js";
 import { StudioError } from "../../foundation/errors.js";
 import { cancelScheduledNotifications, scheduleReminder } from "../../notifications/jobs.js";
 import { parseManualSchedule, scheduleClockToday } from "../../publishing/schedule.js";
+import { isVideoTargetMetadataEditable } from "../../publishing/state.js";
 import {
   cancelVideo,
   createVideoDraft,
@@ -33,6 +34,13 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
     get(actorId: number, videoDraftId: number) {
       const draft = requireOwnedVideo(backendDb, config, actorId, videoDraftId);
       return { draft, targets: backendDb.studioVideos.targets(videoDraftId) };
+    },
+    metadataEditableTargets(actorId: number, videoDraftId: number): VideoTarget[] {
+      requireOwnedVideo(backendDb, config, actorId, videoDraftId);
+      return backendDb.studioVideos
+        .targets(videoDraftId)
+        .filter((target) => isVideoTargetMetadataEditable(target.status))
+        .map((target) => target.target as VideoTarget);
     },
     list(actorId: number, limit = 50) {
       return backendDb.studioVideos.list(accessibleStudioActorIds(config, actorId), limit);

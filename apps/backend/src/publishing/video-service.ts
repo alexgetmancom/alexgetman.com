@@ -12,7 +12,7 @@ import { youtubeCredentials } from "../foundation/external/youtube.js";
 import { runFfprobe } from "../foundation/runtime/ffmpeg.js";
 import { isZernioRouteReady, registeredVideoDeliveryRoute } from "./delivery-provider.js";
 import { assertFutureSchedule } from "./schedule.js";
-import { isVideoTargetEditable, isVideoTargetSchedulable } from "./state.js";
+import { isVideoTargetEditable, isVideoTargetMetadataEditable, isVideoTargetSchedulable } from "./state.js";
 import { getVideoDraft, insertVideoJob, listVideoTargets, refreshVideoDraftStatus } from "./video-data.js";
 import type { VideoLocale, VideoMetadata, VideoTarget } from "./video-types.js";
 import { VIDEO_TARGETS } from "./video-types.js";
@@ -114,14 +114,20 @@ export function removeVideoTarget(backendDb: BackendDb, videoDraftId: number, ta
 
 export function saveVideoMetadata(backendDb: BackendDb, videoDraftId: number, target: VideoTarget, metadata: VideoMetadata): void {
   const draft = getVideoDraft(backendDb, videoDraftId);
-  if (!["draft", "editing"].includes(draft.status)) throw new StudioError("err.video-draft-locked");
+  if (!["draft", "editing", "scheduled"].includes(draft.status)) throw new StudioError("err.video-draft-locked");
   const existing = unsafeDb(backendDb)
-    .db.select({ status: videoTargets.status })
+    .db.select({ id: videoTargets.id, status: videoTargets.status })
     .from(videoTargets)
     .where(and(eq(videoTargets.videoDraftId, videoDraftId), eq(videoTargets.target, target)))
     .get();
   if (!existing) throw new StudioError("err.video-target-missing");
-  if (!isVideoTargetEditable(existing.status)) throw new StudioError("err.video-target-locked");
+  if (!isVideoTargetMetadataEditable(existing.status)) throw new StudioError("err.video-metadata-locked");
+  const runningJob = unsafeDb(backendDb)
+    .db.select({ id: videoJobs.id })
+    .from(videoJobs)
+    .where(and(eq(videoJobs.videoTargetId, existing.id), eq(videoJobs.status, "running")))
+    .get();
+  if (runningJob) throw new StudioError("err.video-job-running");
   unsafeDb(backendDb)
     .db.update(videoTargets)
     .set({

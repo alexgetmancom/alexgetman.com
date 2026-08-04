@@ -197,7 +197,7 @@ describe("Telegram card freshness", () => {
         ctx,
         backendDb,
         42,
-        { draftId, step: "schedule_common", selected: ["youtube_shorts"], data: {}, revision: 0 },
+        { draftId, step: "schedule_common", selected: ["youtube_shorts"], data: {}, controlMessageId: null, revision: 0 },
         "When?",
         new InlineKeyboard(),
       );

@@ -2,10 +2,9 @@ import { describe, expect, it } from "bun:test";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Glob } from "bun";
-import { postRouteKeys } from "../src/bot/post-actions.js";
-import { POST_ACTION_KEYS, POST_CARD_ACTION_KEYS } from "../src/bot/post-routes.js";
-import { videoRouteKeys } from "../src/bot/video-actions.js";
-import { VIDEO_ACTION_KEYS, VIDEO_CARD_ACTION_KEYS } from "../src/bot/video-routes.js";
+import { POST_CARD_ACTION_KEYS } from "../src/bot/post-routes.js";
+import { PUBLICATION_ACTIONS } from "../src/bot/session-fsm.js";
+import { VIDEO_CARD_ACTION_KEYS } from "../src/bot/video-routes.js";
 
 /** Callback prefixes the dispatcher in `bot.ts` resolves to a handler. A new
  * button whose prefix is missing here fails this test: a rendered callback with
@@ -124,8 +123,8 @@ async function renderedCallbacks(): Promise<Map<string, string>> {
         const kind = callbackArgs?.[0]?.trim().replace(/^['"]|['"]$/g, "");
         const action = callbackArgs?.[1]?.trim().replace(/^['"]|['"]$/g, "");
         if ((kind === "post" || kind === "video") && action && !action.includes("$")) {
-          const prefix = kind === "video" ? `video_${action}` : action;
-          if (!found.has(prefix)) found.set(prefix, file);
+          const key = `${kind}:${action}`;
+          if (!found.has(key)) found.set(key, file);
         }
         continue;
       }
@@ -145,7 +144,8 @@ describe("Telegram callback wiring", () => {
     const rendered = await renderedCallbacks();
     // i18n message keys reach the same argument position on menu-plugin
     // buttons, whose handler is a function rather than callback data.
-    const handled = new Set([...HANDLED_PREFIXES, ...videoRouteKeys, ...postRouteKeys]);
+    const publicationKeys = Object.entries(PUBLICATION_ACTIONS).flatMap(([kind, actions]) => actions.map((action) => `${kind}:${action}`));
+    const handled = new Set([...HANDLED_PREFIXES, ...publicationKeys]);
     const unrouted = [...rendered]
       .filter(([prefix]) => !prefix.includes(".") && !handled.has(prefix))
       .map(([prefix, file]) => `${prefix} (${file})`);
@@ -155,15 +155,15 @@ describe("Telegram callback wiring", () => {
 
   it("finds the callbacks it is supposed to be checking", async () => {
     const rendered = await renderedCallbacks();
-    expect([...rendered.keys()]).toContain("sched_scope");
-    expect([...rendered.keys()]).toContain("video_now");
+    expect([...rendered.keys()]).toContain("post:sched_scope");
+    expect([...rendered.keys()]).toContain("video:now");
     expect([...rendered.keys()]).toContain("notifications_home");
   });
 
   it("keeps post routing and freshness vocabulary in one contract", () => {
-    expect(postRouteKeys).toEqual([...POST_ACTION_KEYS]);
+    expect(PUBLICATION_ACTIONS.post).toEqual(expect.arrayContaining(["threads_chain"]));
     expect(POST_CARD_ACTION_KEYS).toContain("threads_chain");
-    expect(videoRouteKeys).toEqual([...VIDEO_ACTION_KEYS]);
-    expect(VIDEO_CARD_ACTION_KEYS).toContain("video_schedule");
+    expect(PUBLICATION_ACTIONS.video).toEqual(expect.arrayContaining(["schedule"]));
+    expect(VIDEO_CARD_ACTION_KEYS).toContain("schedule");
   });
 });

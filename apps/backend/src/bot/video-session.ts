@@ -5,7 +5,7 @@ import type { BackendConfig } from "../foundation/config.js";
 import { t } from "../foundation/i18n/index.js";
 import { setTelegramVideoCard } from "../interfaces/telegram/control-cards.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
-import { nextVideoFlowStep, previousVideoMetadataStep, type VideoPrompt, type VideoWizardStep } from "../studio/video-fsm.js";
+import { nextVideoFlowStep, previousVideoMetadataStep, VIDEO_FLOW, type VideoPrompt, type VideoWizardStep } from "../studio/video-fsm.js";
 import {
   activeConversationSession,
   CONVERSATION_SESSION_TTL_MS,
@@ -23,33 +23,20 @@ export type VideoSessionStep =
   | "targets"
   | "schedule_choice"
   | "schedule_common"
+  | "schedule_target"
   | "schedule_confirm"
   | "label"
-  | VideoWizardStep
-  | `schedule_target:${VideoTarget}`;
+  | VideoWizardStep;
 export type VideoSession = {
   draftId: number | null;
   step: VideoSessionStep;
   selected: VideoTarget[];
   data: Record<string, unknown>;
+  controlMessageId?: number | null;
   revision: number;
 };
-export type VideoSessionInput = Omit<VideoSession, "revision"> & Partial<Pick<VideoSession, "revision">>;
-
-const STATIC_VIDEO_SESSION_STEPS = new Set<VideoSessionStep>([
-  "locale",
-  "asset",
-  "targets",
-  "schedule_choice",
-  "schedule_common",
-  "schedule_confirm",
-  "label",
-  "youtube_title",
-  "youtube_description",
-  "youtube_game_url",
-  "youtube_tags",
-  "instagram_caption",
-]);
+export type VideoSessionInput = Omit<VideoSession, "revision" | "controlMessageId"> &
+  Partial<Pick<VideoSession, "controlMessageId" | "revision">>;
 
 export function targetKeyboard(config: BackendConfig, selected: VideoTarget[], locale: BotLocale, revision?: number): InlineKeyboard {
   const keyboard = new InlineKeyboard();
@@ -77,12 +64,21 @@ export function getSession(backendDb: BackendDb, actorId: number): VideoSession 
   if (!row || row.active === 0) return null;
   const step = row.step ? parseVideoSessionStep(row.step) : null;
   const selected = parseSelectedTargets(row.selectedTargets);
-  const data = row.data;
+  const legacyTarget = legacyScheduleTarget(row.step);
+  const storedData = withoutControlMessageData(row.data);
+  const data = legacyTarget && storedData.target == null ? { ...storedData, target: legacyTarget } : storedData;
   if (!step || !selected || !data || typeof data !== "object" || Array.isArray(data)) {
     clearSession(backendDb, actorId);
     return null;
   }
-  return { draftId: row.draftId, step, selected, data: data as Record<string, unknown>, revision: row.revision };
+  return {
+    draftId: row.draftId,
+    step,
+    selected,
+    data: data as Record<string, unknown>,
+    controlMessageId: row.controlMessageId,
+    revision: row.revision,
+  };
 }
 
 export function saveSession(backendDb: BackendDb, actorId: number, session: VideoSessionInput): VideoSession {
@@ -96,8 +92,8 @@ export function saveSession(backendDb: BackendDb, actorId: number, session: Vide
     action: null,
     step: session.step,
     selectedTargets: session.selected,
-    data: session.data,
-    controlMessageId: controlMessageIdFromData(session.data),
+    data: withoutControlMessageData(session.data),
+    controlMessageId: session.controlMessageId ?? null,
     active: 1,
     ...(session.revision == null ? {} : { expectedRevision: session.revision }),
     preserveRevision: existing != null && !hasSemanticChange(existing, session),
@@ -130,7 +126,7 @@ export async function updateVideoControl(
   keyboard: InlineKeyboard | undefined,
   locale: BotLocale,
 ): Promise<void> {
-  const messageId = Number(session.data.controlMessageId);
+  const messageId = session.controlMessageId;
   const replyMarkup = keyboard ?? cancelPromptKeyboard(locale, publicationCallback("video", "cancel_dialog"), session.revision);
   if (messageId && ctx.chat?.id)
     return void (await ctx.api.editMessageText(ctx.chat.id, messageId, text, { parse_mode: "Markdown", reply_markup: replyMarkup }));
@@ -201,7 +197,7 @@ export async function sendVideoControl(
   const message = await ctx.reply(text, { parse_mode: "Markdown", reply_markup: keyboard });
   if (session.draftId != null && ctx.chat?.id != null)
     setTelegramVideoCard(backendDb, session.draftId, Number(ctx.chat.id), message.message_id);
-  const next: VideoSessionInput = { ...session, data: { ...session.data, controlMessageId: message.message_id } };
+  const next: VideoSessionInput = { ...session, controlMessageId: message.message_id };
   return saveSession(backendDb, actorId, next);
 }
 
@@ -236,7 +232,7 @@ export async function sendVideoTimePrompt(
     axis: {
       values: SCHEDULE_SLOT_PRESETS,
       label: (clock) => clock,
-      callback: (clock) => publicationCallback("video", "sched_pick", [clock.replace(":", ""), session.draftId ?? ""]),
+      callback: (clock) => publicationCallback("video", "sched_pick", [session.draftId ?? "", clock.replace(":", "")]),
     },
     revision,
     manual: {
@@ -278,7 +274,7 @@ export async function askSchedule(
 }
 
 export function setControlFromSession(backendDb: BackendDb, draftId: number, ctx: Context, session: VideoSession): void {
-  const messageId = Number(session.data.controlMessageId);
+  const messageId = session.controlMessageId;
   if (messageId && ctx.chat?.id) setTelegramVideoCard(backendDb, draftId, Number(ctx.chat.id), messageId);
 }
 
@@ -288,8 +284,13 @@ export function callbackMessageId(ctx: Context): number | null {
 }
 
 export function parseVideoSessionStep(value: string): VideoSessionStep | null {
-  if (STATIC_VIDEO_SESSION_STEPS.has(value as VideoSessionStep)) return value as VideoSessionStep;
-  return /^schedule_target:(youtube_shorts|instagram_reels)$/.test(value) ? (value as VideoSessionStep) : null;
+  if (value in VIDEO_FLOW.steps) return value as VideoSessionStep;
+  return legacyScheduleTarget(value) ? "schedule_target" : null;
+}
+
+function legacyScheduleTarget(value: string | null): VideoTarget | null {
+  const target = value?.match(/^schedule_target:(youtube_shorts|instagram_reels)$/)?.[1];
+  return target && VIDEO_TARGETS.includes(target as VideoTarget) ? (target as VideoTarget) : null;
 }
 
 function parseSelectedTargets(value: unknown): VideoTarget[] | null {
@@ -306,16 +307,11 @@ function hasSemanticChange(row: ConversationSessionRecord, session: VideoSession
     row.draftId !== session.draftId ||
     row.step !== session.step ||
     JSON.stringify(row.selectedTargets) !== JSON.stringify(session.selected) ||
-    JSON.stringify(withoutPresentationData(row.data)) !== JSON.stringify(withoutPresentationData(session.data))
+    JSON.stringify(withoutControlMessageData(row.data)) !== JSON.stringify(withoutControlMessageData(session.data))
   );
 }
 
-function controlMessageIdFromData(data: Record<string, unknown>): number | null {
-  const value = data.controlMessageId;
-  return typeof value === "number" && Number.isInteger(value) ? value : null;
-}
-
-function withoutPresentationData(value: unknown): Record<string, unknown> {
+function withoutControlMessageData(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   const { controlMessageId: _controlMessageId, ...semantic } = value as Record<string, unknown>;
   return semantic;

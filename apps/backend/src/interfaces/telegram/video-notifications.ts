@@ -38,7 +38,7 @@ export async function notifyFinalVideoFailure(
       {
         reply_markup: new InlineKeyboard().text(
           t(locale, "notif.retry", { platform: targetName === "youtube_shorts" ? "YouTube" : "Instagram" }),
-          publicationCallback("video", "retry", [targetName, draft.id]),
+          publicationCallback("video", "retry", [draft.id, targetName]),
         ),
       },
     );
@@ -187,7 +187,7 @@ function completionKeyboard(
       keyboard
         .text(
           t(locale, "notif.retry-target", { target: friendlyTarget(target.target) }),
-          publicationCallback("video", "retry", [target.target, draftId]),
+          publicationCallback("video", "retry", [draftId, target.target]),
         )
         .row();
   }

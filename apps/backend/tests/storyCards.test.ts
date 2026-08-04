@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { eq } from "drizzle-orm";
 import sharp from "sharp";
 import { createDraftFromMessage } from "../src/content/drafts.js";
@@ -21,6 +22,8 @@ import { openBackendDb } from "./helpers/open-db.js";
 
 let backendDb: UnsafeBackendDb | null = null;
 const temporaryDirectories: string[] = [];
+const storyCardAssets = fileURLToPath(new URL("../assets/story-card/", import.meta.url));
+const storyCardRenderer = fileURLToPath(new URL("../src/story-cards/renderer-process.ts", import.meta.url));
 
 afterEach(() => {
   backendDb?.close();
@@ -70,13 +73,11 @@ describe("text Story cards", () => {
     backendDb = openBackendDb(":memory:");
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "story-card-test-"));
     temporaryDirectories.push(directory);
-    const assets = path.resolve("apps/backend/assets/story-card");
-    const renderer = path.resolve("apps/backend/src/story-cards/renderer-process.ts");
     const config = loadConfig({
       DATA_DIR: directory,
       STORY_CARD_DIR: directory,
-      STORY_CARD_ASSETS_DIR: assets,
-      STORY_CARD_RENDERER_ENTRY: renderer,
+      STORY_CARD_ASSETS_DIR: storyCardAssets,
+      STORY_CARD_RENDERER_ENTRY: storyCardRenderer,
     });
     const draftId = createDraftFromMessage(backendDb, 42, {
       text: "⚡ ChatGPT достиг примерно миллиарда еженедельно активных пользователей.",
@@ -205,8 +206,8 @@ describe("text Story cards", () => {
       ADMIN_IDS: "42",
       DATA_DIR: directory,
       STORY_CARD_DIR: directory,
-      STORY_CARD_ASSETS_DIR: path.resolve("apps/backend/assets/story-card"),
-      STORY_CARD_RENDERER_ENTRY: path.resolve("apps/backend/src/story-cards/renderer-process.ts"),
+      STORY_CARD_ASSETS_DIR: storyCardAssets,
+      STORY_CARD_RENDERER_ENTRY: storyCardRenderer,
     });
     const posts = postService(backendDb, config);
     const draftId = posts.create(42, { text: "Before", textEn: "Before", entities: [], media: [] });
@@ -236,7 +237,7 @@ describe("text Story cards", () => {
       ADMIN_IDS: "42",
       DATA_DIR: directory,
       STORY_CARD_DIR: directory,
-      STORY_CARD_ASSETS_DIR: path.resolve("apps/backend/assets/story-card"),
+      STORY_CARD_ASSETS_DIR: storyCardAssets,
       STORY_CARD_RENDERER_ENTRY: path.join(directory, "missing-renderer.ts"),
       STORY_CARD_MAX_ATTEMPTS: "1",
     });
@@ -275,8 +276,8 @@ describe("text Story cards", () => {
     const config = loadConfig({
       DATA_DIR: directory,
       STORY_CARD_DIR: directory,
-      STORY_CARD_ASSETS_DIR: path.resolve("apps/backend/assets/story-card"),
-      STORY_CARD_RENDERER_ENTRY: path.resolve("apps/backend/src/story-cards/renderer-process.ts"),
+      STORY_CARD_ASSETS_DIR: storyCardAssets,
+      STORY_CARD_RENDERER_ENTRY: storyCardRenderer,
     });
     const draftId = createDraftFromMessage(backendDb, 42, {
       text: "🚨 СЛИВ: Две модели OpenAI появились в DesignArena.",

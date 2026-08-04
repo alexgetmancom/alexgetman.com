@@ -9,7 +9,7 @@ import { setTelegramVideoCard } from "../interfaces/telegram/control-cards.js";
 import { sendTelegramDeliveryPreviews } from "../interfaces/telegram/delivery-previews.js";
 import { storeTelegramVideo } from "../interfaces/telegram/video-ingress.js";
 import { videoPreview } from "../interfaces/telegram/video-preview.js";
-import { type VideoMetadata, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
+import { VIDEO_TARGETS, type VideoMetadata, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import { createStudioServices } from "../studio/services/index.js";
 import {
   advanceVideoMetadata,
@@ -121,7 +121,7 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
       await askSchedule(ctx, backendDb, config, actorId, session);
       return true;
     }
-    if (session.step === "schedule_common" || session.step.startsWith("schedule_target:"))
+    if (session.step === "schedule_common" || session.step === "schedule_target")
       return handleScheduleMessage(ctx, backendDb, config, actorId, session, text);
   } catch (error) {
     const locale = botLocale(backendDb, actorId);
@@ -270,7 +270,7 @@ async function handleScheduleMessage(
 
 /** Applies one parsed/picked date to the current schedule step, whether it
  * came from free text or a slot button. Shared so the "different time per
- * platform" chain (schedule_target:X → next target) behaves identically
+ * platform" chain (schedule_target + data.target → next target) behaves identically
  * either way. */
 export async function applyVideoScheduleDate(
   ctx: Context,
@@ -285,7 +285,11 @@ export async function applyVideoScheduleDate(
     await confirmVideoSchedule(ctx, backendDb, config, actorId, session, commonVideoSchedule(session.selected, date));
     return;
   }
-  const target = session.step.slice("schedule_target:".length) as VideoTarget;
+  const target =
+    typeof session.data.target === "string" && VIDEO_TARGETS.includes(session.data.target as VideoTarget)
+      ? (session.data.target as VideoTarget)
+      : null;
+  if (!target || !session.selected.includes(target)) throw new StudioError("err.video-reopen-publish");
   const transition = advanceVideoTargetSchedule(
     session.selected,
     (session.data.schedule as Record<string, string> | undefined) ?? {},
@@ -295,8 +299,8 @@ export async function applyVideoScheduleDate(
   if (transition.nextTarget) {
     const next: VideoSession = {
       ...session,
-      step: `schedule_target:${transition.nextTarget}`,
-      data: { ...session.data, schedule: transition.schedule },
+      step: "schedule_target",
+      data: { ...session.data, schedule: transition.schedule, target: transition.nextTarget },
     };
     const saved = saveSession(backendDb, actorId, next);
     await sendVideoTimePrompt(

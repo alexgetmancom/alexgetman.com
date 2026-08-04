@@ -2,7 +2,7 @@ import type { Context } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { type BotLocale, botLocale } from "./i18n.js";
-import { callbackAction, parseSessionCallback, requireSessionRevision } from "./session-fsm.js";
+import { type PublicationCallback, parseSessionCallback, publicationFromCallbackData, requireSessionRevision } from "./session-fsm.js";
 
 export type CallbackRouterContext = {
   ctx: Context;
@@ -11,20 +11,20 @@ export type CallbackRouterContext = {
   actorId: number;
   locale: BotLocale;
   data: string;
+  callback: PublicationCallback;
   action: string;
   revision: number | null;
   parts: string[];
+  args: string[];
 };
 
 type CallbackRouteHandler<TArgs, TResult> = (args: TArgs) => Promise<TResult>;
 
-export type CallbackRouterOptions<TArgs, TEntity = undefined, TResult = void> = {
-  prefix: string;
-  matches?: (data: string) => boolean;
+type CallbackRouterBase<TArgs, TEntity, TResult> = {
   routes: Readonly<Record<string, CallbackRouteHandler<TArgs, TResult>>>;
   sessionBound?: ReadonlySet<string>;
   currentSessionRevision?: (context: CallbackRouterContext) => number | undefined;
-  parseEntity?: (data: string, action: string) => TEntity | null;
+  parseEntity?: (callback: PublicationCallback, action: string) => TEntity | null;
   buildArgs: (context: CallbackRouterContext, entity: TEntity | undefined) => TArgs;
   prepare?: (context: CallbackRouterContext, entity: TEntity | undefined) => void | Promise<void>;
   isStale?: (context: CallbackRouterContext, entity: TEntity | undefined) => boolean | Promise<boolean>;
@@ -35,6 +35,9 @@ export type CallbackRouterOptions<TArgs, TEntity = undefined, TResult = void> = 
   onError?: (context: CallbackRouterContext, error: unknown) => void | Promise<void>;
 };
 
+export type CallbackRouterOptions<TArgs, TEntity = undefined, TResult = void> = CallbackRouterBase<TArgs, TEntity, TResult> &
+  ({ prefix: string; matches?: never } | { matches: (callback: PublicationCallback) => boolean; prefix?: never });
+
 /** Builds a callback-only adapter with common transport, session, and guard handling. */
 export function createCallbackRouter<TArgs, TEntity = undefined, TResult = void>(
   options: CallbackRouterOptions<TArgs, TEntity, TResult>,
@@ -44,10 +47,13 @@ export function createCallbackRouter<TArgs, TEntity = undefined, TResult = void>
     if (!rawData) return false;
 
     const { data, revision } = parseSessionCallback(rawData);
-    if (options.matches ? !options.matches(data) : !data.startsWith(options.prefix)) return false;
+    const callback = publicationFromCallbackData(data);
+    if (!callback) return false;
+    const matches = options.matches ? options.matches(callback) : `${callback.kind}_${callback.action}`.startsWith(options.prefix ?? "");
+    if (!matches) return false;
 
-    const parts = data.split(":");
-    const action = callbackAction(data);
+    const parts = [callback.action, ...callback.args];
+    const action = callback.action;
     const actorId = Number(ctx.from?.id);
     const common: CallbackRouterContext = {
       ctx,
@@ -56,9 +62,11 @@ export function createCallbackRouter<TArgs, TEntity = undefined, TResult = void>
       actorId,
       locale: botLocale(backendDb, actorId),
       data,
+      callback,
       action,
       revision,
       parts,
+      args: callback.args,
     };
     const route = options.routes[action];
 
@@ -75,7 +83,7 @@ export function createCallbackRouter<TArgs, TEntity = undefined, TResult = void>
         requireSessionRevision(options.currentSessionRevision(common), revision);
       }
 
-      const entity = options.parseEntity?.(data, action);
+      const entity = options.parseEntity?.(callback, action);
       if (options.parseEntity && entity == null) {
         await answerCallback(ctx, options.invalidEntityText?.(common.locale));
         return true;

@@ -1,5 +1,6 @@
 const VIDEO_FINAL_TARGET_STATUSES = new Set(["published", "failed", "cancelled", "verification_required"]);
 const VIDEO_EDITABLE_TARGET_STATUSES = new Set(["editing", "draft"]);
+const VIDEO_METADATA_EDITABLE_TARGET_STATUSES = new Set(["editing", "draft", "scheduled"]);
 const VIDEO_SCHEDULABLE_TARGET_STATUSES = new Set(["editing", "draft", "scheduled"]);
 const ACTIVE_PUBLICATION_JOB_STATUSES = new Set(["queued", "publishing", "rendering"]);
 const POST_MUTABLE_STATUSES = new Set(["draft", "needs_review", "scheduled"]);
@@ -10,6 +11,12 @@ export function isVideoTargetFinal(status: string): boolean {
 
 export function isVideoTargetEditable(status: string): boolean {
   return VIDEO_EDITABLE_TARGET_STATUSES.has(status);
+}
+
+/** Metadata remains mutable while a target is queued, but not once preparation
+ * has started because some providers have already captured the caption. */
+export function isVideoTargetMetadataEditable(status: string): boolean {
+  return VIDEO_METADATA_EDITABLE_TARGET_STATUSES.has(status);
 }
 
 export function isVideoTargetSchedulable(status: string): boolean {

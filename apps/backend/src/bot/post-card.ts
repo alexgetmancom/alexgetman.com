@@ -61,7 +61,7 @@ export async function showScheduleConfirmation(
   const preview = draftPreview(backendDb, draftId, config);
   const keyboard = confirmationKeyboard(
     { label: t(locale, "post.confirm-schedule-btn"), callback: confirmCallback },
-    { label: t(locale, "common.back"), callback: publicationCallback("post", "sched_view", [backView, draftId]) },
+    { label: t(locale, "common.back"), callback: publicationCallback("post", "sched_view", [draftId, backView]) },
   );
   const text = `${preview.text}\n\n📅 *${t(locale, "common.confirm-schedule")}*\nRU: ${formatMsk(ruAt, config)}\nEN: ${formatMsk(enAt, config)}`;
   const message = await ctx.reply(text, { parse_mode: "Markdown", reply_markup: keyboard });

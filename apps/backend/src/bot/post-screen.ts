@@ -70,7 +70,7 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
   }
   if (state?.step && isPostInputStep(state.step) && state.draft_id && state.action) {
     try {
-      await applyAdminState(ctx, backendDb, config, state.action, state.draft_id, state.control_message_id, state.revision);
+      await applyAdminState(ctx, backendDb, config, state.step, state.draft_id, state.control_message_id, state.revision);
     } catch (error) {
       const scheduleInput = state.step.type === "schedule_manual";
       const errorText =

@@ -1,9 +1,36 @@
+import type { Flow, FlowStep } from "../application/conversation-flow.js";
 import { fixUrlSlashes } from "../content/message.js";
 import type { VideoTarget } from "../publishing/video-types.js";
 
 export type VideoWizardStep = "youtube_title" | "youtube_description" | "youtube_game_url" | "youtube_tags" | "instagram_caption";
 export type VideoPrompt = "youtube_title" | "youtube_description" | "youtube_game_url" | "youtube_tags" | "instagram_caption" | "schedule";
 type VideoWizardData = Record<string, unknown>;
+
+const VIDEO_STEPS: Record<string, FlowStep<VideoWizardData>> = Object.fromEntries(
+  (
+    [
+      "locale",
+      "asset",
+      "targets",
+      "schedule_choice",
+      "schedule_common",
+      "schedule_target",
+      "schedule_confirm",
+      "label",
+      "youtube_title",
+      "youtube_description",
+      "youtube_game_url",
+      "youtube_tags",
+      "instagram_caption",
+    ] as const
+  ).map((name) => [name, { name, prompt: () => null, next: () => null }]),
+);
+
+/** State-only video flow; Telegram prompt rendering stays in the bot adapter. */
+export const VIDEO_FLOW: Flow<VideoWizardData> = {
+  kind: "video",
+  steps: VIDEO_STEPS,
+};
 
 export function firstVideoMetadataStep(selected: VideoTarget[]): { step: VideoWizardStep; prompt: VideoPrompt } {
   return selected.includes("youtube_shorts")

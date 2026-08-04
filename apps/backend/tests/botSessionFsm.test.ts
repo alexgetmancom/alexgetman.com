@@ -1,5 +1,12 @@
 import { describe, expect, it } from "bun:test";
-import { parsePublicationCallback, parseSessionCallback, publicationCallback, versionedCallback } from "../src/bot/session-fsm.js";
+import {
+  legacyToPublication,
+  parseDraftId,
+  parsePublicationCallback,
+  parseSessionCallback,
+  publicationCallback,
+  versionedCallback,
+} from "../src/bot/session-fsm.js";
 
 describe("Telegram session callback encoding", () => {
   it("uses a prefix so a future data segment cannot look like a revision suffix", () => {
@@ -18,12 +25,21 @@ describe("Telegram session callback encoding", () => {
     expect(parsePublicationCallback("p:video:sched_pick:0800:7")).toEqual({
       kind: "video",
       action: "sched_pick",
-      args: ["0800", "7"],
+      args: ["7", "0800"],
     });
-    expect(parseSessionCallback(encoded)).toEqual({ data: "video_sched_pick:0800:7", revision: 4 });
+    expect(parseSessionCallback(encoded)).toEqual({ data: "p:video:sched_pick:0800:7", revision: 4 });
   });
 
-  it("normalizes an unversioned canonical post callback for the existing router", () => {
-    expect(parseSessionCallback("p:post:sched_scope:both:42")).toEqual({ data: "sched_scope:both:42", revision: null });
+  it("leaves the canonical namespace intact while legacy translation normalizes old payloads", () => {
+    expect(parseSessionCallback("p:post:sched_scope:both:42")).toEqual({ data: "p:post:sched_scope:both:42", revision: null });
+    expect(legacyToPublication("video_now:12")).toEqual({ kind: "video", action: "now", args: ["12"] });
+    expect(parsePublicationCallback("p:video:now:12")).toEqual({ kind: "video", action: "now", args: ["12"] });
+  });
+
+  it("accepts only positive safe draft identifiers", () => {
+    expect(parseDraftId("1")).toBe(1);
+    expect(parseDraftId("0")).toBeNull();
+    expect(parseDraftId("-1")).toBeNull();
+    expect(parseDraftId("9007199254740992")).toBeNull();
   });
 });

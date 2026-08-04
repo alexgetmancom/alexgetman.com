@@ -4,7 +4,7 @@ import { publicationCallback } from "../../bot/session-fsm.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { t } from "../../foundation/i18n/index.js";
 import { escapeMarkdown } from "../../foundation/markdown.js";
-import { isVideoTargetEditable, isVideoTargetSchedulable } from "../../publishing/state.js";
+import { isVideoTargetEditable, isVideoTargetMetadataEditable, isVideoTargetSchedulable } from "../../publishing/state.js";
 import type { InstagramMetadata, YouTubeMetadata } from "../../publishing/video-types.js";
 import { formatVideoTime } from "./video-time.js";
 
@@ -40,9 +40,9 @@ export function videoPreview(
       `${t(locale, "vpreview.state")}: ${videoStatusLabel(ytTarget.status, locale)}${ytTarget.scheduledAt ? ` · ${formatVideoTime(ytTarget.scheduledAt, locale, config)}` : ""}`,
     );
     if (isVideoTargetSchedulable(ytTarget.status))
-      keyboard.text(t(locale, "vpreview.yt-time"), publicationCallback("video", "time", ["youtube_shorts", draft.id]));
+      keyboard.text(t(locale, "vpreview.yt-time"), publicationCallback("video", "time", [draft.id, "youtube_shorts"]));
     if (isVideoTargetEditable(ytTarget.status))
-      keyboard.text(t(locale, "vpreview.yt-remove"), publicationCallback("video", "remove_ask", ["youtube_shorts", draft.id])).row();
+      keyboard.text(t(locale, "vpreview.yt-remove"), publicationCallback("video", "remove_ask", [draft.id, "youtube_shorts"])).row();
   }
   if (igTarget) {
     const metadata = (igTarget.metadataJson ?? {}) as Partial<InstagramMetadata>;
@@ -51,14 +51,14 @@ export function videoPreview(
       `${t(locale, "vpreview.state")}: ${videoStatusLabel(igTarget.status, locale)}${igTarget.scheduledAt ? ` · ${formatVideoTime(igTarget.scheduledAt, locale, config)}` : ""}`,
     );
     if (isVideoTargetSchedulable(igTarget.status))
-      keyboard.text(t(locale, "vpreview.ig-time"), publicationCallback("video", "time", ["instagram_reels", draft.id]));
+      keyboard.text(t(locale, "vpreview.ig-time"), publicationCallback("video", "time", [draft.id, "instagram_reels"]));
     if (isVideoTargetEditable(igTarget.status))
-      keyboard.text(t(locale, "vpreview.ig-remove"), publicationCallback("video", "remove_ask", ["instagram_reels", draft.id])).row();
+      keyboard.text(t(locale, "vpreview.ig-remove"), publicationCallback("video", "remove_ask", [draft.id, "instagram_reels"])).row();
     if (igTarget.status === "failed" || igTarget.status === "verification_required")
-      keyboard.text(t(locale, "vpreview.ig-retry"), publicationCallback("video", "retry", ["instagram_reels", draft.id])).row();
+      keyboard.text(t(locale, "vpreview.ig-retry"), publicationCallback("video", "retry", [draft.id, "instagram_reels"])).row();
   }
   if (ytTarget?.status === "failed" || ytTarget?.status === "verification_required")
-    keyboard.text(t(locale, "vpreview.yt-retry"), publicationCallback("video", "retry", ["youtube_shorts", draft.id])).row();
+    keyboard.text(t(locale, "vpreview.yt-retry"), publicationCallback("video", "retry", [draft.id, "youtube_shorts"])).row();
   // Publishing now and scheduling are the same pair of choices a text post
   // offers on its own card. The immediate path was implemented end to end
   // (video_now -> video_now_confirm) but no keyboard ever emitted it, so a
@@ -69,7 +69,7 @@ export function videoPreview(
       .row()
       .text(t(locale, "post.schedule-btn"), publicationCallback("video", "schedule", [draft.id]))
       .row();
-  if (["draft", "editing"].includes(draft.status) && targets.every((target) => isVideoTargetEditable(target.status)))
+  if (["draft", "editing", "scheduled"].includes(draft.status) && targets.some((target) => isVideoTargetMetadataEditable(target.status)))
     keyboard.text(t(locale, "vpreview.edit-details"), publicationCallback("video", "edit_menu", [draft.id])).row();
   keyboard.text(t(locale, "vpreview.cancel-pub"), publicationCallback("video", "cancel_ask", [draft.id])).row();
   keyboard.text(t(locale, "vpreview.back-queue"), "queue_home");

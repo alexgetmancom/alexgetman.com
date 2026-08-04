@@ -129,11 +129,11 @@ export function draftPreview(
 
   if (view === "schedule") {
     keyboard
-      .text(t(locale, "post.scope-ru-now"), publicationCallback("post", "sched_scope", ["ru_now", draftId]))
+      .text(t(locale, "post.scope-ru-now"), publicationCallback("post", "sched_scope", [draftId, "ru_now"]))
       .row()
-      .text(t(locale, "post.scope-en-now"), publicationCallback("post", "sched_scope", ["en_now", draftId]))
+      .text(t(locale, "post.scope-en-now"), publicationCallback("post", "sched_scope", [draftId, "en_now"]))
       .row()
-      .text(t(locale, "post.scope-both"), publicationCallback("post", "sched_scope", ["both", draftId]))
+      .text(t(locale, "post.scope-both"), publicationCallback("post", "sched_scope", [draftId, "both"]))
       .row()
       .text(t(locale, "common.back"), publicationCallback("post", "preview", [draftId]));
     return {
@@ -148,19 +148,19 @@ export function draftPreview(
     appendScheduleAxisButtons(keyboard, {
       values: scheduleGrid.slots[view] ?? [],
       label: (clock) => clock,
-      callback: (clock) => publicationCallback("post", "sched_pick", [scheduleGrid.target, clock.replace(":", ""), draftId]),
+      callback: (clock) => publicationCallback("post", "sched_pick", [draftId, scheduleGrid.target, clock.replace(":", "")]),
     });
     keyboard.row();
     if (isMainView) {
       for (const extra of scheduleGrid.extraViews)
-        keyboard.text(t(locale, extra.labelKey), publicationCallback("post", "sched_view", [extra.view, draftId]));
+        keyboard.text(t(locale, extra.labelKey), publicationCallback("post", "sched_view", [draftId, extra.view]));
       keyboard
         .row()
-        .text(t(locale, "post.enter-time"), publicationCallback("post", "sched_manual", [scheduleGrid.target, draftId]))
+        .text(t(locale, "post.enter-time"), publicationCallback("post", "sched_manual", [draftId, scheduleGrid.target]))
         .row()
         .text(t(locale, "common.back"), publicationCallback("post", "preview", [draftId]));
     } else {
-      keyboard.text(t(locale, "common.back"), publicationCallback("post", "sched_view", [scheduleGrid.mainView, draftId]));
+      keyboard.text(t(locale, "common.back"), publicationCallback("post", "sched_view", [draftId, scheduleGrid.mainView]));
     }
     return {
       text: `${draftHeader(draftId, targets, locale)}\n\n📅 *${t(locale, scheduleGrid.titleKey)}*\n${t(locale, "post.pick-slot-hint")}`,

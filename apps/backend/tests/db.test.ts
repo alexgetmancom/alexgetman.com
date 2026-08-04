@@ -70,9 +70,10 @@ describe("openBackendDb", () => {
         "2026-08-04T10:00:00.000Z",
         "2026-08-04T10:30:00.000Z",
       );
+    const conversationMigration = drizzleMigrationMetadata().at(-2);
     const latestMigration = drizzleMigrationMetadata().at(-1);
-    if (!latestMigration) throw new Error("migration metadata is empty");
-    fixture.prepare("DELETE FROM __drizzle_migrations WHERE hash=?").run(latestMigration.hash);
+    if (!conversationMigration || !latestMigration) throw new Error("migration metadata is incomplete");
+    fixture.prepare("DELETE FROM __drizzle_migrations WHERE hash IN (?, ?)").run(conversationMigration.hash, latestMigration.hash);
     fixture.close();
 
     const backendDb = openBackendDb(dbPath);
@@ -85,6 +86,14 @@ describe("openBackendDb", () => {
         { kind: "post", draft_id: 7, action: "edit_en", revision: 4 },
         { kind: "video", draft_id: 9, action: null, revision: 6 },
       ]);
+      expect(
+        backendDb.sqlite
+          .prepare("SELECT control_message_id, data_json FROM conversation_sessions WHERE actor_id=? AND kind='video'")
+          .get(42),
+      ).toEqual({
+        control_message_id: 27,
+        data_json: "{}",
+      });
       expect(backendDb.sqlite.prepare("SELECT name FROM sqlite_master WHERE name IN ('admin_state', 'video_bot_sessions')").all()).toEqual(
         [],
       );

@@ -68,7 +68,7 @@ async function showScheduledVideo(
   const reminderMinutes = createStudioServices(backendDb, config).settings.notifications(actorId).reminderMinutes;
   const warning = technical.aspectOk ? "" : `\n${t(locale, "video.aspect-warning")}`;
   const text = `${videoCheckSummary(technical, locale)}${warning}\n\n✅ ${t(locale, "common.scheduled")}. ${t(locale, "video.reminder", { minutes: reminderMinutes })}\n\n${preview.text}`;
-  const controlMessageId = Number(session.data.controlMessageId);
+  const controlMessageId = session.controlMessageId;
   clearSession(backendDb, actorId);
   if (controlMessageId && ctx.chat?.id) {
     await ctx.api.editMessageText(ctx.chat.id, controlMessageId, `✅ ${t(locale, "video.confirmed-card")}`);

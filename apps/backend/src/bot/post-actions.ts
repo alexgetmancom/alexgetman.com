@@ -15,12 +15,12 @@ import { resultNavigationKeyboard } from "./dialog-ui.js";
 import { botLocale } from "./i18n.js";
 import { extractMessage } from "./message.js";
 import { editDraftPreview, editDraftPrompt, sendDraftPreview, showScheduleConfirmation } from "./post-card.js";
-import { encodePostWizardStep, parsePostWizardStep } from "./post-fsm.js";
-import { POST_ACTION_KEYS, type PostActionKey } from "./post-routes.js";
+import { type PostWizardStep, resolvePostWizardStep } from "./post-fsm.js";
+import type { PostActionKey } from "./post-routes.js";
 import { clearPostAdminState, getPostAdminState, requireCurrentPostSession, setPostAdminState } from "./post-state.js";
 import { draftPreview, isDraftView, modeLabel } from "./preview.js";
 import { renderPostProgress } from "./progress.js";
-import { callbackAction, publicationCallback } from "./session-fsm.js";
+import { type PublicationCallback, parseDraftId, publicationCallback } from "./session-fsm.js";
 
 type PostService = ReturnType<typeof createStudioServices>["posts"];
 type PostActionArgs = Omit<CallbackRouterContext, "action"> & {
@@ -62,33 +62,26 @@ const postRoutes: Record<PostActionKey, PostActionHandler> = {
   sched_manual: handleManualSchedule,
 };
 
-/** Routed post callback names. The freshness guard and callback wiring test use
- * the same action vocabulary, so adding a button requires one map entry. */
-export const postRouteKeys: readonly string[] = POST_ACTION_KEYS.filter((key) => key in postRoutes);
-
 const postRouter = createCallbackRouter<PostActionArgs, number, void>({
-  prefix: "",
-  matches: (data) => POST_ACTION_KEYS.includes(callbackAction(data) as PostActionKey),
+  matches: (callback: PublicationCallback) => callback.kind === "post",
   routes: postRoutes,
   sessionBound: new Set(["cancel_state", "sched_manual_confirm"]),
   currentSessionRevision: ({ backendDb, actorId }) => getPostAdminState(backendDb, actorId)?.revision,
-  parseEntity: (data, action) => {
-    const parts = data.split(":");
-    const draftId = Number(action.startsWith("sched_") ? parts.at(-1) : parts[1]);
-    return Number.isSafeInteger(draftId) ? draftId : null;
+  parseEntity: (callback) => {
+    return parseDraftId(callback.args[0]);
   },
   buildArgs: (common, draftId) => ({
     ...common,
     action: common.action as PostActionKey,
-    first: common.parts[1],
-    second: common.parts[2],
+    first: common.args[1],
+    second: common.args[2],
     draftId: draftId as number,
     posts: createStudioServices(common.backendDb, common.config).posts,
   }),
   prepare: ({ backendDb, config, actorId }, draftId) => {
     createStudioServices(backendDb, config).posts.get(actorId, draftId as number);
   },
-  isStale: ({ ctx, backendDb, data }) => isStaleCardCallback(ctx, backendDb, data, POST_CARD_FRESHNESS),
+  isStale: ({ ctx, backendDb, callback }) => isStaleCardCallback(ctx, backendDb, callback, POST_CARD_FRESHNESS),
   invalidEntityText: (locale) => t(locale, "action.invalid-post"),
   staleText: (locale) => t(locale, "action.card-stale"),
   unknownText: (locale) => t(locale, "action.unknown"),
@@ -262,13 +255,7 @@ async function handleManualSchedule({ ctx, backendDb, config, actorId, locale, f
   if (!first) return;
   const pickLocale = requireScheduleLocale(first);
   clearPostAdminState(backendDb, actorId);
-  setPostAdminState(
-    backendDb,
-    actorId,
-    encodePostWizardStep({ type: "schedule_manual", locale: pickLocale }),
-    draftId,
-    callbackMessageId(ctx),
-  );
+  setPostAdminState(backendDb, actorId, { type: "schedule_manual", locale: pickLocale }, draftId, callbackMessageId(ctx));
   await ctx.answerCallbackQuery({ text: t(locale, "action.send-time") });
   await editDraftPrompt(
     ctx,
@@ -518,7 +505,7 @@ export async function applyAdminState(
   ctx: Context,
   backendDb: BackendDb,
   config: BackendConfig,
-  action: string,
+  action: PostWizardStep | string,
   draftId: number,
   controlMessageId: number | null,
   expectedRevision?: number | null,
@@ -526,20 +513,14 @@ export async function applyAdminState(
   const actorId = Number(ctx.from?.id);
   if (expectedRevision != null) requireCurrentPostSession(backendDb, actorId, expectedRevision);
   const message = extractMessage(ctx);
-  const step = parsePostWizardStep(action);
+  const step = resolvePostWizardStep(action);
   if (!step) throw new StudioError("action.session-stale");
   if (step.type === "schedule_manual") {
     const scope = step.locale;
     const { ruAt, enAt } = createStudioServices(backendDb, config).posts.manualSchedule(actorId, draftId, scope, message.text);
     const value = scope === "ru" ? ruAt : enAt;
     if (!value) throw new StudioError("err.no-pub-time");
-    const revision = setPostAdminState(
-      backendDb,
-      actorId,
-      encodePostWizardStep({ type: "schedule_confirm", locale: scope, value }),
-      draftId,
-      controlMessageId,
-    );
+    const revision = setPostAdminState(backendDb, actorId, { type: "schedule_confirm", locale: scope, value }, draftId, controlMessageId);
     await sendPostPreviews(ctx, backendDb, config, actorId, draftId);
     return showScheduleConfirmation(
       ctx,

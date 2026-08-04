@@ -61,15 +61,32 @@ describe("video reschedule guard", () => {
     ).toEqual(["prepare", "publish"]);
   });
 
-  it("blocks metadata changes after a platform has been scheduled", () => {
+  it("allows metadata changes while a scheduled platform is still waiting", () => {
     const backendDb = testDb.open();
     const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
     scheduleVideo(backendDb, draftId, { youtube_shorts: new Date(Date.now() + 3_600_000) }, timing, videoConfig(), 24);
 
-    expect(() => saveVideoMetadata(backendDb, draftId, "youtube_shorts", { title: "Changed", description: "", tags: [] })).toThrow(
-      "err.video-draft-locked",
-    );
+    saveVideoMetadata(backendDb, draftId, "youtube_shorts", { title: "Changed", description: "", tags: [] });
+    expect(backendDb.db.select().from(videoTargets).where(eq(videoTargets.videoDraftId, draftId)).get()?.metadataJson).toEqual({
+      title: "Changed",
+      description: "",
+      tags: [],
+    });
     expect(() => updateVideoLabel(backendDb, draftId, "Changed")).toThrow("err.video-draft-locked");
+  });
+
+  it("blocks metadata changes after target preparation has started", () => {
+    const backendDb = testDb.open();
+    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
+    scheduleVideo(backendDb, draftId, { youtube_shorts: new Date(Date.now() + 3_600_000) }, timing, videoConfig(), 24);
+    const target = backendDb.db.select().from(videoTargets).where(eq(videoTargets.videoDraftId, draftId)).get();
+    if (!target) throw new Error("target was not created");
+    backendDb.db.update(videoTargets).set({ status: "prepared" }).where(eq(videoTargets.id, target.id)).run();
+
+    expect(() => saveVideoMetadata(backendDb, draftId, "youtube_shorts", { title: "Changed", description: "", tags: [] })).toThrow(
+      "err.video-metadata-locked",
+    );
   });
 });

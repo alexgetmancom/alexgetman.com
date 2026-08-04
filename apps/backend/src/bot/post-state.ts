@@ -7,12 +7,19 @@ import {
   retireConversationSession,
   saveConversationSession,
 } from "./conversation-session.js";
-import { encodePostWizardStep, type PostWizardStep, parsePostWizardStep } from "./post-fsm.js";
+import {
+  POST_FLOW,
+  type PostWizardStep,
+  type PostWizardStepInput,
+  postStepAction,
+  postStepData,
+  postStepName,
+  resolvePostWizardStep,
+} from "./post-fsm.js";
 import { requireSessionRevision } from "./session-fsm.js";
 
-export type PostAdminAction = import("./post-fsm.js").PostWizardStepValue;
 export type PostAdminState = {
-  action: PostAdminAction | null;
+  action: string | null;
   step: PostWizardStep | null;
   draft_id: number | null;
   control_message_id: number | null;
@@ -23,13 +30,13 @@ export function getPostAdminState(backendDb: BackendDb, actorId: number): PostAd
   const row = activeConversationSession(backendDb, actorId, "post");
   if (!row) return null;
   const rawStep = row.step ?? row.action;
-  const step = parsePostWizardStep(rawStep);
-  if (rawStep !== null && !step) {
+  const step = resolvePostWizardStep(rawStep, row.data);
+  if (rawStep !== null && (!step || !POST_FLOW.steps[step.type])) {
     retirePostAdminState(backendDb, actorId);
     return null;
   }
   return {
-    action: step ? encodePostWizardStep(step) : null,
+    action: step ? postStepAction(step) : null,
     step,
     draft_id: row.draftId,
     control_message_id: row.controlMessageId,
@@ -40,11 +47,11 @@ export function getPostAdminState(backendDb: BackendDb, actorId: number): PostAd
 export function setPostAdminState(
   backendDb: BackendDb,
   actorId: number,
-  action: PostAdminAction | string | null = null,
+  action: PostWizardStepInput = null,
   draftId: number | null = null,
   controlMessageId: number | null = null,
 ): number {
-  const parsedStep = parsePostWizardStep(action);
+  const parsedStep = resolvePostWizardStep(action);
   if (action !== null && !parsedStep) throw new Error(`Unknown post admin action: ${action}`);
   const updatedAt = new Date().toISOString();
   const expiresAt = parsedStep ? new Date(Date.now() + CONVERSATION_SESSION_TTL_MS).toISOString() : null;
@@ -53,9 +60,9 @@ export function setPostAdminState(
     kind: "post",
     draftId,
     action: null,
-    step: parsedStep ? encodePostWizardStep(parsedStep) : null,
+    step: parsedStep ? postStepName(parsedStep) : null,
     selectedTargets: [],
-    data: {},
+    data: parsedStep ? postStepData(parsedStep) : {},
     controlMessageId,
     active: parsedStep ? 1 : 0,
     updatedAt,
@@ -76,10 +83,12 @@ export function clearPostAdminStateIfCurrent(
   expectedRevision?: number | null,
 ): boolean {
   if (!action) return false;
+  const step = resolvePostWizardStep(action);
+  if (!step) return false;
   return clearConversationSessionIfCurrent(backendDb, {
     actorId,
     kind: "post",
-    step: action,
+    step: postStepName(step),
     draftId,
     expectedRevision,
     updatedAt: new Date().toISOString(),
