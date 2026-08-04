@@ -20,7 +20,7 @@ export type PostAdminState = {
 };
 
 export function getPostAdminState(backendDb: BackendDb, actorId: number): PostAdminState | null {
-  const row = backendDb.studioPostAdminState.get(actorId);
+  const row = backendDb.conversationSessions.get(actorId, "post");
   if (!row) return null;
   const expiresAt = row.expiresAt ? Date.parse(row.expiresAt) : Date.parse(row.updatedAt) + POST_STATE_TTL_MS;
   if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
@@ -51,7 +51,19 @@ export function setPostAdminState(
   if (action !== null && !parsedAction) throw new Error(`Unknown post admin action: ${action}`);
   const updatedAt = new Date().toISOString();
   const expiresAt = parsedAction ? new Date(Date.now() + POST_STATE_TTL_MS).toISOString() : null;
-  return backendDb.studioPostAdminState.save({ actorId, action: parsedAction, draftId, controlMessageId, updatedAt, expiresAt });
+  return backendDb.conversationSessions.save({
+    actorId,
+    kind: "post",
+    draftId,
+    action: parsedAction,
+    step: null,
+    selectedTargets: [],
+    data: {},
+    controlMessageId,
+    active: parsedAction ? 1 : 0,
+    updatedAt,
+    expiresAt,
+  });
 }
 
 export function clearPostAdminState(backendDb: BackendDb, actorId: number): number {
@@ -67,8 +79,9 @@ export function clearPostAdminStateIfCurrent(
   expectedRevision?: number | null,
 ): boolean {
   if (!action) return false;
-  return backendDb.studioPostAdminState.clearIfCurrent({
+  return backendDb.conversationSessions.clearIfCurrent({
     actorId,
+    kind: "post",
     action,
     draftId,
     expectedRevision,
@@ -81,7 +94,7 @@ export function startPostDialog(backendDb: BackendDb, actorId: number): number {
 }
 
 function retirePostAdminState(backendDb: BackendDb, actorId: number): void {
-  backendDb.studioPostAdminState.retire(actorId, new Date().toISOString());
+  backendDb.conversationSessions.retire(actorId, "post", new Date().toISOString());
 }
 
 export function requireCurrentPostSession(backendDb: BackendDb, actorId: number, expectedRevision: number | null): PostAdminState {

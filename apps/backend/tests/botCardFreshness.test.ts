@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { and, eq } from "drizzle-orm";
 import { type Context, InlineKeyboard } from "grammy";
-import { isStalePostCardCallback, isStaleVideoCardCallback } from "../src/bot/card-freshness.js";
+import { isStaleCardCallback, POST_CARD_FRESHNESS, VIDEO_CARD_FRESHNESS } from "../src/bot/card-freshness.js";
 import { handlePostAction } from "../src/bot/post-actions.js";
 import { editDraftPreview, showScheduleConfirmation } from "../src/bot/post-card.js";
 import { versionedCallback } from "../src/bot/session-fsm.js";
@@ -30,13 +30,46 @@ describe("Telegram card freshness", () => {
     const backendDb: BackendDb = openBackendDb(":memory:");
     try {
       setTelegramPostCard(backendDb, 7, 100, 20);
-      expect(isStalePostCardCallback(callbackContext(19), backendDb, "publish", 7)).toBe(true);
-      expect(isStalePostCardCallback(callbackContext(20), backendDb, "publish", 7)).toBe(false);
-      expect(isStalePostCardCallback(callbackContext(19), backendDb, "preview", 7)).toBe(false);
-      expect(isStalePostCardCallback(callbackContext(19), backendDb, "threads_chain", 7)).toBe(true);
-      expect(isStalePostCardCallback(callbackContext(20), backendDb, "threads_chain", 7)).toBe(false);
-      expect(isStalePostCardCallback(callbackContext(19), backendDb, "story_schedule_all", 7)).toBe(true);
-      expect(isStalePostCardCallback(callbackContext(20), backendDb, "story_schedule_all", 7)).toBe(false);
+      expect(isStaleCardCallback(callbackContext(19), backendDb, "publish:7", POST_CARD_FRESHNESS)).toBe(true);
+      expect(isStaleCardCallback(callbackContext(20), backendDb, "publish:7", POST_CARD_FRESHNESS)).toBe(false);
+      expect(isStaleCardCallback(callbackContext(19), backendDb, "preview:7", POST_CARD_FRESHNESS)).toBe(false);
+      expect(isStaleCardCallback(callbackContext(19), backendDb, "threads_chain:7", POST_CARD_FRESHNESS)).toBe(true);
+      expect(isStaleCardCallback(callbackContext(20), backendDb, "threads_chain:7", POST_CARD_FRESHNESS)).toBe(false);
+      expect(isStaleCardCallback(callbackContext(19), backendDb, "story_schedule_all:7", POST_CARD_FRESHNESS)).toBe(true);
+      expect(isStaleCardCallback(callbackContext(20), backendDb, "story_schedule_all:7", POST_CARD_FRESHNESS)).toBe(false);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("tracks the publish confirmation card after delivery previews", async () => {
+    const backendDb: BackendDb = openBackendDb(":memory:");
+    try {
+      const config = loadConfig({ ADMIN_IDS: "42" });
+      const draftId = createDraftFromMessage(backendDb, 42, {
+        text: "Video post",
+        textEn: "Video post",
+        entities: [],
+        media: [{ type: "video", file_id: "video-1" }],
+      });
+      setTelegramPostCard(backendDb, draftId, 100, 10);
+      let nextMessageId = 10;
+      const context = (data: string, messageId: number): Context =>
+        ({
+          from: { id: 42 },
+          chat: { id: 100 },
+          callbackQuery: { data, message: { message_id: messageId } },
+          answerCallbackQuery: async () => true,
+          reply: async () => ({ message_id: ++nextMessageId }),
+          replyWithVideo: async () => ({ message_id: ++nextMessageId }),
+        }) as unknown as Context;
+
+      await handlePostAction(context(`publish:${draftId}`, 10), backendDb, config);
+
+      expect(telegramPostCard(backendDb, draftId)).toEqual({ chatId: 100, messageId: 17 });
+      expect(
+        isStaleCardCallback(context(`publish_confirm:${draftId}`, 17), backendDb, `publish_confirm:${draftId}`, POST_CARD_FRESHNESS),
+      ).toBe(false);
     } finally {
       backendDb.close();
     }
@@ -128,15 +161,15 @@ describe("Telegram card freshness", () => {
     const backendDb: BackendDb = openBackendDb(":memory:");
     try {
       setTelegramVideoCard(backendDb, 7, 100, 20);
-      expect(isStaleVideoCardCallback(callbackContext(19), backendDb, "video_schedule:7")).toBe(true);
-      expect(isStaleVideoCardCallback(callbackContext(19), backendDb, "video_sched_pick:2100:7")).toBe(true);
-      expect(isStaleVideoCardCallback(callbackContext(20), backendDb, "video_schedule:7")).toBe(false);
+      expect(isStaleCardCallback(callbackContext(19), backendDb, "video_schedule:7", VIDEO_CARD_FRESHNESS)).toBe(true);
+      expect(isStaleCardCallback(callbackContext(19), backendDb, "video_sched_pick:2100:7", VIDEO_CARD_FRESHNESS)).toBe(true);
+      expect(isStaleCardCallback(callbackContext(20), backendDb, "video_schedule:7", VIDEO_CARD_FRESHNESS)).toBe(false);
       // Retry callbacks are also emitted by failure notifications, which are
       // separate messages from the current card. The service validates the
       // target state, so this action does not need card freshness protection.
-      expect(isStaleVideoCardCallback(callbackContext(19), backendDb, "video_retry:youtube_shorts:7")).toBe(false);
-      expect(isStaleVideoCardCallback(callbackContext(19), backendDb, "video_cancel_notice:7")).toBe(false);
-      expect(isStaleVideoCardCallback(callbackContext(19), backendDb, "video_open:7")).toBe(false);
+      expect(isStaleCardCallback(callbackContext(19), backendDb, "video_retry:youtube_shorts:7", VIDEO_CARD_FRESHNESS)).toBe(false);
+      expect(isStaleCardCallback(callbackContext(19), backendDb, "video_cancel_notice:7", VIDEO_CARD_FRESHNESS)).toBe(false);
+      expect(isStaleCardCallback(callbackContext(19), backendDb, "video_open:7", VIDEO_CARD_FRESHNESS)).toBe(false);
     } finally {
       backendDb.close();
     }
@@ -210,8 +243,12 @@ describe("Telegram card freshness", () => {
 
       expect(getSession(backendDb, 42)?.step).toBe("schedule_confirm");
       expect(telegramVideoCard(backendDb, draftId)).toEqual({ chatId: 100, messageId: 24 });
-      expect(isStaleVideoCardCallback(context("video_schedule_confirm:1", 21), backendDb, `video_schedule_confirm:${draftId}`)).toBe(true);
-      expect(isStaleVideoCardCallback(context("video_schedule_confirm:1", 24), backendDb, `video_schedule_confirm:${draftId}`)).toBe(false);
+      expect(
+        isStaleCardCallback(context("video_schedule_confirm:1", 21), backendDb, `video_schedule_confirm:${draftId}`, VIDEO_CARD_FRESHNESS),
+      ).toBe(true);
+      expect(
+        isStaleCardCallback(context("video_schedule_confirm:1", 24), backendDb, `video_schedule_confirm:${draftId}`, VIDEO_CARD_FRESHNESS),
+      ).toBe(false);
     } finally {
       backendDb.close();
     }

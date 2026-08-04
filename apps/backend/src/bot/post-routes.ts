@@ -56,8 +56,3 @@ export const POST_CARD_ACTION_KEYS: readonly PostActionKey[] = [
   "story_schedule_site",
   "threads_chain",
 ];
-
-export function callbackAction(data: string): string {
-  const separator = data.indexOf(":");
-  return separator === -1 ? data : data.slice(0, separator);
-}

@@ -7,11 +7,11 @@ import { persistentKeyboard, showMainMenu } from "./bot/menu-render.js";
 import { buildMainMenu } from "./bot/navigation.js";
 import { buildNotificationsMenu, notificationsInboxText } from "./bot/notifications-screen.js";
 import { handleOperationsCallback } from "./bot/operations-screen.js";
-import { handlePostAction } from "./bot/post-actions.js";
+import { handlePostAction, postRouteKeys } from "./bot/post-actions.js";
 import { handlePostMessage, handlePostScreenCallback, startPostScreen } from "./bot/post-screen.js";
 import { handleProgressCallback } from "./bot/progress-screen.js";
 import { showQueue, showQueueAttention } from "./bot/queue.js";
-import { parseSessionCallback } from "./bot/session-fsm.js";
+import { callbackAction, parseSessionCallback } from "./bot/session-fsm.js";
 import { buildSettingsMenu, handleSettingsMessage, showSettings } from "./bot/settings-screen.js";
 import { handleVideoActionCallback } from "./bot/video-actions.js";
 import { handleVideoConversationMessage, startVideoConversation } from "./bot/video-conversation.js";
@@ -197,7 +197,7 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
     },
     {
       name: "post-action",
-      matches: () => true,
+      matches: (data) => postRouteKeys.includes(callbackAction(data)),
       handle: async (ctx) => {
         await handlePostAction(ctx, backendDb, config);
         return true;
@@ -210,6 +210,7 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
     const routeData = parseCallbackData(ctx);
     const route = callbackRoutes.find((candidate) => candidate.matches(routeData));
     if (route) await route.handle(ctx);
+    else await ctx.answerCallbackQuery({ text: t(botLocale(backendDb, Number(ctx.from?.id)), "action.unknown") });
   });
 }
 

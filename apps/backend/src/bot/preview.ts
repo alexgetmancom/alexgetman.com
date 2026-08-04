@@ -15,6 +15,7 @@ import { parseTargets } from "../publishing/targets.js";
 import { requirePostEditAllowed } from "../studio/services/post-access.js";
 import { postProgressState } from "../studio/services/post-progress.js";
 import { type BotLocale, botLocale } from "./i18n.js";
+import { appendScheduleAxisButtons } from "./scheduling.js";
 
 const DRAFT_VIEWS = [
   "overview",
@@ -73,14 +74,6 @@ const SCHEDULE_GRIDS: readonly ScheduleGrid[] = [
     extraViews: [{ labelKey: "post.en-us-night", view: "schedule_en_us" }],
   },
 ];
-
-function addSlotButtons(keyboard: InlineKeyboard, target: "ru" | "en", clocks: readonly string[], draftId: number): InlineKeyboard {
-  for (let index = 0; index < clocks.length; index += 2) {
-    for (const clock of clocks.slice(index, index + 2)) keyboard.text(clock, `sched_pick:${target}:${clock.replace(":", "")}:${draftId}`);
-    keyboard.row();
-  }
-  return keyboard;
-}
 
 export function draftPreview(
   backendDb: BackendDb,
@@ -150,7 +143,12 @@ export function draftPreview(
   const scheduleGrid = SCHEDULE_GRIDS.find((grid) => view in grid.slots);
   if (scheduleGrid) {
     const isMainView = view === scheduleGrid.mainView;
-    addSlotButtons(keyboard, scheduleGrid.target, scheduleGrid.slots[view] ?? [], draftId);
+    appendScheduleAxisButtons(keyboard, {
+      values: scheduleGrid.slots[view] ?? [],
+      label: (clock) => clock,
+      callback: (clock) => `sched_pick:${scheduleGrid.target}:${clock.replace(":", "")}:${draftId}`,
+    });
+    keyboard.row();
     if (isMainView) {
       for (const extra of scheduleGrid.extraViews) keyboard.text(t(locale, extra.labelKey), `sched_view:${extra.view}:${draftId}`);
       keyboard

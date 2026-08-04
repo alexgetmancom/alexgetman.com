@@ -61,16 +61,6 @@ export const studioMediaAssets = sqliteTable(
   ],
 );
 
-export const adminState = sqliteTable("admin_state", {
-  actorId: integer().primaryKey(),
-  action: text(),
-  draftId: integer(),
-  controlMessageId: integer(),
-  revision: integer().notNull().default(0),
-  updatedAt: text().notNull(),
-  expiresAt: text(),
-});
-
 export const botSettings = sqliteTable("bot_settings", {
   actorId: integer().primaryKey(),
   youtubeSignature: text().notNull().default(""),

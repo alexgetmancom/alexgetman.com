@@ -7,6 +7,7 @@ import { formatMsk } from "../interfaces/telegram/time.js";
 import { botLocale } from "./i18n.js";
 import { getPostAdminState } from "./post-state.js";
 import { type DraftView, draftPreview } from "./preview.js";
+import { scheduleConfirmationKeyboard } from "./scheduling.js";
 import { versionedCallback } from "./session-fsm.js";
 
 /** Telegram rendering for a post control card; mutations stay in post actions. */
@@ -61,9 +62,10 @@ export async function showScheduleConfirmation(
 ): Promise<void> {
   const locale = botLocale(backendDb, Number(ctx.from?.id));
   const preview = draftPreview(backendDb, draftId, config);
-  const keyboard = new InlineKeyboard()
-    .text(t(locale, "post.confirm-schedule-btn"), confirmCallback)
-    .text(t(locale, "common.back"), `sched_view:${backView}:${draftId}`);
+  const keyboard = scheduleConfirmationKeyboard({
+    confirm: { label: t(locale, "post.confirm-schedule-btn"), callback: confirmCallback },
+    back: { label: t(locale, "common.back"), callback: `sched_view:${backView}:${draftId}` },
+  });
   const text = `${preview.text}\n\n📅 *${t(locale, "common.confirm-schedule")}*\nRU: ${formatMsk(ruAt, config)}\nEN: ${formatMsk(enAt, config)}`;
   const message = await ctx.reply(text, { parse_mode: "Markdown", reply_markup: keyboard });
   if (ctx.chat?.id != null) setTelegramPostCard(backendDb, draftId, ctx.chat.id, message.message_id);

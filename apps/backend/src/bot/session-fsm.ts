@@ -5,6 +5,11 @@ const LEGACY_SESSION_VERSION_SUFFIX = /^(.*):sv(\d+)$/;
 
 export type SessionCallback = { data: string; revision: number | null };
 
+export function callbackAction(data: string): string {
+  const separator = data.indexOf(":");
+  return separator === -1 ? data : data.slice(0, separator);
+}
+
 /** Appends a monotonically increasing dialog revision to a callback payload. */
 export function versionedCallback(data: string, revision: number | null | undefined): string {
   return revision == null ? data : `sv${revision}|${data}`;

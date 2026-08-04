@@ -1,7 +1,6 @@
-import { eq, sql } from "drizzle-orm";
 import { type Context, InlineKeyboard } from "grammy";
-import { type BackendDb, unsafeDb } from "../db/client.js";
-import { videoBotSessions } from "../db/schema.js";
+import type { ConversationSessionRecord } from "../application/ports.js";
+import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { t } from "../foundation/i18n/index.js";
@@ -9,6 +8,7 @@ import { setTelegramVideoCard } from "../interfaces/telegram/control-cards.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import { nextVideoFlowStep, previousVideoMetadataStep, type VideoPrompt, type VideoWizardStep } from "../studio/video-fsm.js";
 import { type BotLocale, botLocale } from "./i18n.js";
+import { SCHEDULE_SLOT_PRESETS, scheduleTimeKeyboard } from "./scheduling.js";
 import { versionedCallback } from "./session-fsm.js";
 
 const VIDEO_SESSION_TTL_MS = 30 * 60_000;
@@ -67,7 +67,7 @@ export function enabledVideoTargets(config: BackendConfig): VideoTarget[] {
 }
 
 export function getSession(backendDb: BackendDb, actorId: number): VideoSession | null {
-  const row = unsafeDb(backendDb).db.select().from(videoBotSessions).where(eq(videoBotSessions.actorId, actorId)).get();
+  const row = backendDb.conversationSessions.get(actorId, "video");
   if (!row || row.active === 0) return null;
   if (row) {
     const expiresAt = row.expiresAt ? Date.parse(row.expiresAt) : Date.parse(row.updatedAt) + VIDEO_SESSION_TTL_MS;
@@ -76,49 +76,36 @@ export function getSession(backendDb: BackendDb, actorId: number): VideoSession 
       return null;
     }
   }
-  const step = parseVideoSessionStep(row.step);
-  const selected = parseSelectedTargets(row.selectedTargetsJson);
-  const data = row.dataJson;
+  const step = row.step ? parseVideoSessionStep(row.step) : null;
+  const selected = parseSelectedTargets(row.selectedTargets);
+  const data = row.data;
   if (!step || !selected || !data || typeof data !== "object" || Array.isArray(data)) {
     clearSession(backendDb, actorId);
     return null;
   }
-  return { draftId: row.videoDraftId, step, selected, data: data as Record<string, unknown>, revision: row.revision };
+  return { draftId: row.draftId, step, selected, data: data as Record<string, unknown>, revision: row.revision };
 }
 
 export function saveSession(backendDb: BackendDb, actorId: number, session: VideoSessionInput): VideoSession {
-  const existing = unsafeDb(backendDb).db.select().from(videoBotSessions).where(eq(videoBotSessions.actorId, actorId)).get();
+  const existing = backendDb.conversationSessions.get(actorId, "video");
   if (existing && session.revision != null && existing.revision !== session.revision) throw new StudioError("action.session-stale");
-  const revision = existing && !hasSemanticChange(existing, session) ? existing.revision : (existing?.revision ?? 0) + 1;
   const now = new Date().toISOString();
   const expiresAt = new Date(Date.now() + VIDEO_SESSION_TTL_MS).toISOString();
-  unsafeDb(backendDb)
-    .db.insert(videoBotSessions)
-    .values({
-      actorId,
-      videoDraftId: session.draftId,
-      step: session.step,
-      selectedTargetsJson: session.selected,
-      dataJson: session.data,
-      revision,
-      active: 1,
-      updatedAt: now,
-      expiresAt,
-    })
-    .onConflictDoUpdate({
-      target: videoBotSessions.actorId,
-      set: {
-        videoDraftId: session.draftId,
-        step: session.step,
-        selectedTargetsJson: session.selected,
-        dataJson: session.data,
-        revision,
-        active: 1,
-        updatedAt: now,
-        expiresAt,
-      },
-    })
-    .run();
+  const revision = backendDb.conversationSessions.save({
+    actorId,
+    kind: "video",
+    draftId: session.draftId,
+    action: null,
+    step: session.step,
+    selectedTargets: session.selected,
+    data: session.data,
+    controlMessageId: controlMessageIdFromData(session.data),
+    active: 1,
+    ...(session.revision == null ? {} : { expectedRevision: session.revision }),
+    preserveRevision: existing != null && !hasSemanticChange(existing, session),
+    updatedAt: now,
+    expiresAt,
+  });
   return { ...session, revision };
 }
 
@@ -135,11 +122,7 @@ export function setData(
 }
 
 export function clearSession(backendDb: BackendDb, actorId: number): void {
-  unsafeDb(backendDb)
-    .db.update(videoBotSessions)
-    .set({ active: 0, revision: sql`${videoBotSessions.revision} + 1`, updatedAt: new Date().toISOString(), expiresAt: null })
-    .where(eq(videoBotSessions.actorId, actorId))
-    .run();
+  backendDb.conversationSessions.retire(actorId, "video", new Date().toISOString());
 }
 
 export async function updateVideoControl(
@@ -240,11 +223,6 @@ export async function askInstagramOrSchedule(
   await askSchedule(ctx, backendDb, config, actorId, session);
 }
 
-// A curated spread across the same posting hours as text-post scheduling
-// (morning through evening); video has no per-locale slot grid, so this is
-// one flat preset list rather than RU/EN-specific ones.
-const VIDEO_SLOT_PRESETS = ["08:00", "11:00", "13:00", "18:00", "20:00", "22:00"];
-
 /** Prompts for a schedule time with slot-button presets plus a manual-entry
  * fallback, replacing a bare free-text-only prompt. */
 export async function sendVideoTimePrompt(
@@ -256,14 +234,16 @@ export async function sendVideoTimePrompt(
 ): Promise<VideoSession> {
   const locale = botLocale(backendDb, actorId);
   const revision = getSession(backendDb, actorId)?.revision ?? session.revision;
-  const keyboard = new InlineKeyboard();
-  for (let index = 0; index < VIDEO_SLOT_PRESETS.length; index += 2) {
-    for (const clock of VIDEO_SLOT_PRESETS.slice(index, index + 2))
-      keyboard.text(clock, versionedCallback(`video_sched_pick:${clock.replace(":", "")}:${session.draftId}`, revision));
-    keyboard.row();
-  }
-  keyboard.text(t(locale, "video.enter-time-btn"), versionedCallback(`video_sched_manual:${session.draftId}`, revision)).row();
-  keyboard.text(t(locale, "common.cancel"), versionedCallback("video_cancel_dialog", revision));
+  const keyboard = scheduleTimeKeyboard({
+    axis: {
+      values: SCHEDULE_SLOT_PRESETS,
+      label: (clock) => clock,
+      callback: (clock) => `video_sched_pick:${clock.replace(":", "")}:${session.draftId}`,
+    },
+    revision,
+    manual: { label: t(locale, "video.enter-time-btn"), callback: `video_sched_manual:${session.draftId}` },
+    cancel: { label: t(locale, "common.cancel"), callback: "video_cancel_dialog" },
+  });
   return sendVideoControl(ctx, backendDb, actorId, session, text, keyboard);
 }
 
@@ -316,14 +296,19 @@ function parseSelectedTargets(value: unknown): VideoTarget[] | null {
     : null;
 }
 
-function hasSemanticChange(row: typeof videoBotSessions.$inferSelect, session: VideoSessionInput): boolean {
+function hasSemanticChange(row: ConversationSessionRecord, session: VideoSessionInput): boolean {
   return (
     row.active !== 1 ||
-    row.videoDraftId !== session.draftId ||
+    row.draftId !== session.draftId ||
     row.step !== session.step ||
-    JSON.stringify(row.selectedTargetsJson) !== JSON.stringify(session.selected) ||
-    JSON.stringify(withoutPresentationData(row.dataJson)) !== JSON.stringify(withoutPresentationData(session.data))
+    JSON.stringify(row.selectedTargets) !== JSON.stringify(session.selected) ||
+    JSON.stringify(withoutPresentationData(row.data)) !== JSON.stringify(withoutPresentationData(session.data))
   );
+}
+
+function controlMessageIdFromData(data: Record<string, unknown>): number | null {
+  const value = data.controlMessageId;
+  return typeof value === "number" && Number.isInteger(value) ? value : null;
 }
 
 function withoutPresentationData(value: unknown): Record<string, unknown> {

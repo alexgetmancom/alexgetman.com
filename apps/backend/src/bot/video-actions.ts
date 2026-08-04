@@ -10,10 +10,11 @@ import { videoPreview } from "../interfaces/telegram/video-preview.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { previousVideoMetadataStep, type VideoWizardStep } from "../studio/video-fsm.js";
-import { isStaleVideoCardCallback } from "./card-freshness.js";
-import { type BotLocale, botLocale } from "./i18n.js";
+import { createCallbackRouter } from "./callback-router.js";
+import { isStaleCardCallback, VIDEO_CARD_FRESHNESS } from "./card-freshness.js";
+import type { BotLocale } from "./i18n.js";
 import { showMainMenu } from "./menu-render.js";
-import { parseSessionCallback, requireSessionRevision, requireSessionStep, versionedCallback } from "./session-fsm.js";
+import { requireSessionStep, versionedCallback } from "./session-fsm.js";
 import { applyVideoScheduleDate, startVideoConversation } from "./video-conversation.js";
 import { VIDEO_ACTION_KEYS, type VideoActionKey } from "./video-routes.js";
 import { finishVideoNow, finishVideoSchedule } from "./video-scheduling.js";
@@ -107,11 +108,6 @@ const SESSION_BOUND_VIDEO_ACTIONS = new Set([
   "video_sched_manual",
 ]);
 
-function routeKey(data: string): string {
-  const separator = data.indexOf(":");
-  return separator === -1 ? data : data.slice(0, separator);
-}
-
 /** Telegram rejects a callback answer longer than this, which would turn the
  * error path itself into an unanswered callback: a spinner and no explanation.
  * External API failures reach describeError as raw provider text of any length. */
@@ -121,6 +117,25 @@ function toast(text: string): string {
   return text.length > MAX_TOAST_LENGTH ? `${text.slice(0, MAX_TOAST_LENGTH - 1)}…` : text;
 }
 
+function createVideoCallbackRouter(mainMenu?: Menu<Context>) {
+  return createCallbackRouter<VideoActionArgs, undefined, VideoActionResult>({
+    prefix: "video_",
+    routes,
+    sessionBound: SESSION_BOUND_VIDEO_ACTIONS,
+    currentSessionRevision: ({ backendDb, actorId }) => getSession(backendDb, actorId)?.revision,
+    buildArgs: (common) => ({ ...common, mainMenu }),
+    isStale: ({ ctx, backendDb, data }) => isStaleCardCallback(ctx, backendDb, data, VIDEO_CARD_FRESHNESS),
+    staleText: (locale) => t(locale, "action.card-stale"),
+    unknownText: (locale) => t(locale, "action.unknown"),
+    onResult: async ({ ctx }, result) => {
+      await ctx.answerCallbackQuery(result?.toast ? { text: toast(result.toast) } : undefined);
+    },
+    onError: async ({ ctx, locale }, error) => {
+      await ctx.answerCallbackQuery({ text: toast(describeError(locale, error)) });
+    },
+  });
+}
+
 /** Callback-only adapter: it changes a session or invokes a Studio command, never parses chat replies. */
 export async function handleVideoActionCallback(
   ctx: Context,
@@ -128,31 +143,7 @@ export async function handleVideoActionCallback(
   config: BackendConfig,
   mainMenu?: Menu<Context>,
 ): Promise<boolean> {
-  const rawData = ctx.callbackQuery?.data;
-  if (!rawData) return false;
-  const { data, revision } = parseSessionCallback(rawData);
-  if (!data.startsWith("video_")) return false;
-  const actorId = Number(ctx.from?.id);
-  const locale = botLocale(backendDb, actorId);
-  try {
-    if (revision != null) requireSessionRevision(getSession(backendDb, actorId)?.revision, revision);
-    const route = routes[routeKey(data) as VideoActionKey];
-    // An unrouted `video_` callback used to be answered with an empty toast,
-    // which is indistinguishable from a button that worked: the spinner just
-    // stops. Report it the way the post branch reports an unknown action.
-    if (SESSION_BOUND_VIDEO_ACTIONS.has(routeKey(data)) && revision == null)
-      await ctx.answerCallbackQuery({ text: t(locale, "action.session-stale") });
-    else if (isStaleVideoCardCallback(ctx, backendDb, data)) await ctx.answerCallbackQuery({ text: t(locale, "action.card-stale") });
-    else if (!route) await ctx.answerCallbackQuery({ text: t(locale, "action.unknown") });
-    else {
-      const result = await route({ ctx, backendDb, config, actorId, locale, data, mainMenu });
-      if (result?.toast) await ctx.answerCallbackQuery({ text: toast(result.toast) });
-      else await ctx.answerCallbackQuery();
-    }
-  } catch (error) {
-    await ctx.answerCallbackQuery({ text: toast(describeError(locale, error)) });
-  }
-  return true;
+  return createVideoCallbackRouter(mainMenu)(ctx, backendDb, config);
 }
 
 function requireVideoTarget(value: string): VideoTarget {

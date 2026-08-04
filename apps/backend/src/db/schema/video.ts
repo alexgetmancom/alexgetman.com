@@ -81,18 +81,6 @@ export const videoJobs = sqliteTable(
   ],
 );
 
-export const videoBotSessions = sqliteTable("video_bot_sessions", {
-  actorId: integer().primaryKey(),
-  videoDraftId: integer(),
-  step: text().notNull(),
-  selectedTargetsJson: json<string[]>().notNull().default([]),
-  dataJson: json<JsonObject>().notNull().default({}),
-  revision: integer().notNull().default(0),
-  active: integer().notNull().default(1),
-  updatedAt: text().notNull(),
-  expiresAt: text(),
-});
-
 export const videoMetricSnapshots = sqliteTable(
   "video_metric_snapshots",
   {

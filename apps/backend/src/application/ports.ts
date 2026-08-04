@@ -109,34 +109,50 @@ export type StudioPostStore = {
   retryPublicationTargets(postId: number, targets: string[]): PublicationRetryResult[];
 };
 
-type StudioPostAdminStateRecord = {
-  action: string | null;
+export type ConversationSessionKind = "post" | "video";
+
+export type ConversationSessionRecord = {
+  actorId: number;
+  kind: ConversationSessionKind;
   draftId: number | null;
+  action: string | null;
+  step: string | null;
+  selectedTargets: string[];
+  data: Record<string, unknown>;
   controlMessageId: number | null;
   revision: number;
+  active: number;
   updatedAt: string;
   expiresAt: string | null;
 };
 
-/** Durable conversational state used by the Telegram post adapter. */
-export type StudioPostAdminStateStore = {
-  get(actorId: number): StudioPostAdminStateRecord | null;
+/** Durable conversational state shared by the Telegram post and video adapters. */
+export type ConversationSessionStore = {
+  get(actorId: number, kind: ConversationSessionKind): ConversationSessionRecord | null;
   save(input: {
     actorId: number;
-    action: string | null;
+    kind: ConversationSessionKind;
     draftId: number | null;
+    action: string | null;
+    step: string | null;
+    selectedTargets: string[];
+    data: Record<string, unknown>;
     controlMessageId: number | null;
+    active: number;
+    expectedRevision?: number | null;
+    preserveRevision?: boolean;
     updatedAt: string;
     expiresAt: string | null;
   }): number;
   clearIfCurrent(input: {
-    actorId: number;
-    action: string;
     draftId: number | null;
+    actorId: number;
+    kind: ConversationSessionKind;
+    action: string;
     expectedRevision: number | null | undefined;
     updatedAt: string;
   }): boolean;
-  retire(actorId: number, updatedAt: string): void;
+  retire(actorId: number, kind: ConversationSessionKind, updatedAt: string): void;
 };
 
 /** Persistence projection used by the transport-neutral post progress read model. */
@@ -373,7 +389,7 @@ export type ApplicationPorts = {
   drafts: DraftStore;
   events: EventStore;
   studioPosts: StudioPostStore;
-  studioPostAdminState: StudioPostAdminStateStore;
+  conversationSessions: ConversationSessionStore;
   studioQueue: StudioQueueStore;
   studioNotifications: StudioNotificationStore;
   studioSettings: StudioSettingsStore;

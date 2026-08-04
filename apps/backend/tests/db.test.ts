@@ -36,6 +36,63 @@ describe("openBackendDb", () => {
     }
   });
 
+  it("moves legacy post and video conversations into the shared session store", () => {
+    const dir = mkdtempSync(join(tmpdir(), "alexgetman-conversation-migration-"));
+    const dbPath = join(dir, "pipeline.db");
+    const initial = openBackendDb(dbPath);
+    initial.close();
+
+    const fixture = new Database(dbPath);
+    fixture.exec("DROP TABLE conversation_sessions");
+    fixture.exec(
+      "CREATE TABLE admin_state (actor_id integer PRIMARY KEY NOT NULL, action text, draft_id integer, control_message_id integer, revision integer NOT NULL DEFAULT 0, updated_at text NOT NULL, expires_at text)",
+    );
+    fixture.exec(
+      "CREATE TABLE video_bot_sessions (actor_id integer PRIMARY KEY NOT NULL, video_draft_id integer, step text NOT NULL, selected_targets_json text DEFAULT '[]' NOT NULL, data_json text DEFAULT '{}' NOT NULL, revision integer NOT NULL DEFAULT 0, active integer NOT NULL DEFAULT 1, updated_at text NOT NULL, expires_at text)",
+    );
+    fixture
+      .prepare(
+        "INSERT INTO admin_state (actor_id, action, draft_id, control_message_id, revision, updated_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(42, "edit_en", 7, 19, 4, "2026-08-04T10:00:00.000Z", "2026-08-04T10:30:00.000Z");
+    fixture
+      .prepare(
+        "INSERT INTO video_bot_sessions (actor_id, video_draft_id, step, selected_targets_json, data_json, revision, active, updated_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(
+        42,
+        9,
+        "schedule_confirm",
+        '["youtube_shorts"]',
+        '{"controlMessageId":27}',
+        6,
+        1,
+        "2026-08-04T10:00:00.000Z",
+        "2026-08-04T10:30:00.000Z",
+      );
+    const latestMigration = drizzleMigrationMetadata().at(-1);
+    if (!latestMigration) throw new Error("migration metadata is empty");
+    fixture.prepare("DELETE FROM __drizzle_migrations WHERE hash=?").run(latestMigration.hash);
+    fixture.close();
+
+    const backendDb = openBackendDb(dbPath);
+    try {
+      expect(
+        backendDb.sqlite
+          .prepare("SELECT kind, draft_id, action, revision FROM conversation_sessions WHERE actor_id=? ORDER BY kind")
+          .all(42),
+      ).toEqual([
+        { kind: "post", draft_id: 7, action: "edit_en", revision: 4 },
+        { kind: "video", draft_id: 9, action: null, revision: 6 },
+      ]);
+      expect(backendDb.sqlite.prepare("SELECT name FROM sqlite_master WHERE name IN ('admin_state', 'video_bot_sessions')").all()).toEqual(
+        [],
+      );
+    } finally {
+      backendDb.close();
+    }
+  });
+
   /** The one inventory worth maintaining by hand: it guards the destructive
    * direction. A migration that drops or renames a table still applies cleanly
    * and passes every behavioural test whose data it did not touch, and the loss
@@ -50,7 +107,7 @@ describe("openBackendDb", () => {
           .map((row: { name: string }) => row.name),
       );
       for (const table of [
-        "admin_state",
+        "conversation_sessions",
         "alert_dedup",
         "analytics_rollups",
         "content_memory",
@@ -163,7 +220,7 @@ describe("openBackendDb", () => {
     const fixture = new Database(dbPath);
     fixture.exec("DROP TABLE __drizzle_migrations");
     fixture.exec(
-      "DROP TABLE channel_connections; DROP TABLE draft_entity_candidates; DROP TABLE draft_sources; DROP TABLE post_entity_links; DROP TABLE knowledge_entity_aliases; DROP TABLE knowledge_entities; DROP TABLE post_sources; DROP TABLE site_pageviews; DROP TABLE video_bot_sessions; DROP TABLE video_jobs; DROP TABLE video_targets; DROP TABLE video_drafts; DROP TABLE analytics_sync; DROP TABLE creator_profiles; DROP TABLE creator_profile_snapshots; DROP TABLE video_metric_snapshots; DROP TABLE video_metric_schedule; DROP TABLE social_comments; DROP TABLE runtime_memory_samples; DROP TABLE admin_state; CREATE TABLE admin_state (admin_id integer PRIMARY KEY NOT NULL, action text, draft_id integer, updated_at text NOT NULL)",
+      "DROP TABLE channel_connections; DROP TABLE draft_entity_candidates; DROP TABLE draft_sources; DROP TABLE post_entity_links; DROP TABLE knowledge_entity_aliases; DROP TABLE knowledge_entities; DROP TABLE post_sources; DROP TABLE site_pageviews; DROP TABLE conversation_sessions; DROP TABLE video_jobs; DROP TABLE video_targets; DROP TABLE video_drafts; DROP TABLE analytics_sync; DROP TABLE creator_profiles; DROP TABLE creator_profile_snapshots; DROP TABLE video_metric_snapshots; DROP TABLE video_metric_schedule; DROP TABLE social_comments; DROP TABLE runtime_memory_samples; CREATE TABLE admin_state (admin_id integer PRIMARY KEY NOT NULL, action text, draft_id integer, updated_at text NOT NULL)",
     );
     // The fixture is built by the current migration chain and then replayed from
     // the baseline, so every column 0030 renames has to be put back to its

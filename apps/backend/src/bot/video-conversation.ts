@@ -19,6 +19,7 @@ import {
   type VideoWizardStep,
 } from "../studio/video-fsm.js";
 import { botLocale } from "./i18n.js";
+import { scheduleConfirmationKeyboard } from "./scheduling.js";
 import { versionedCallback } from "./session-fsm.js";
 import {
   askInstagramOrSchedule,
@@ -351,9 +352,11 @@ async function confirmVideoSchedule(
         `${videoTargetLabel(target)}: ${value.toLocaleString(locale === "ru" ? "ru-RU" : "en-GB", { timeZone: config.TIMEZONE })} ${config.TIMEZONE_LABEL}`,
       );
   }
-  const keyboard = new InlineKeyboard()
-    .text(t(locale, "common.confirm"), versionedCallback(`video_schedule_confirm:${session.draftId}`, saved.revision))
-    .text(t(locale, "common.back"), versionedCallback(`video_schedule:${session.draftId}`, saved.revision));
+  const keyboard = scheduleConfirmationKeyboard({
+    revision: saved.revision,
+    confirm: { label: t(locale, "common.confirm"), callback: `video_schedule_confirm:${session.draftId}` },
+    back: { label: t(locale, "common.back"), callback: `video_schedule:${session.draftId}` },
+  });
   await sendVideoControl(ctx, backendDb, actorId, saved, lines.join("\n"), keyboard);
 }
 

@@ -9,7 +9,8 @@ import { setTelegramPostCard, setTelegramPostProgressCard } from "../interfaces/
 import { sendTelegramDeliveryPreviews } from "../interfaces/telegram/delivery-previews.js";
 import { formatMsk } from "../interfaces/telegram/time.js";
 import { createStudioServices } from "../studio/services/index.js";
-import { isStalePostCardCallback } from "./card-freshness.js";
+import { type CallbackRouterContext, createCallbackRouter } from "./callback-router.js";
+import { isStaleCardCallback, POST_CARD_FRESHNESS } from "./card-freshness.js";
 import { botLocale } from "./i18n.js";
 import { extractMessage } from "./message.js";
 import { editDraftPreview, editDraftPrompt, sendDraftPreview, showScheduleConfirmation } from "./post-card.js";
@@ -17,16 +18,10 @@ import { POST_ACTION_KEYS, type PostActionKey } from "./post-routes.js";
 import { clearPostAdminState, getPostAdminState, requireCurrentPostSession, setPostAdminState } from "./post-state.js";
 import { draftPreview, isDraftView, modeLabel } from "./preview.js";
 import { renderPostProgress } from "./progress.js";
-import { parseSessionCallback, versionedCallback } from "./session-fsm.js";
+import { callbackAction, versionedCallback } from "./session-fsm.js";
 
 type PostService = ReturnType<typeof createStudioServices>["posts"];
-type PostActionArgs = {
-  ctx: Context;
-  backendDb: BackendDb;
-  config: BackendConfig;
-  actorId: number;
-  locale: ReturnType<typeof botLocale>;
-  data: string;
+type PostActionArgs = Omit<CallbackRouterContext, "action"> & {
   action: PostActionKey;
   first: string | undefined;
   second: string | undefined;
@@ -69,29 +64,37 @@ const postRoutes: Record<PostActionKey, PostActionHandler> = {
  * the same action vocabulary, so adding a button requires one map entry. */
 export const postRouteKeys: readonly string[] = POST_ACTION_KEYS.filter((key) => key in postRoutes);
 
+const postRouter = createCallbackRouter<PostActionArgs, number, void>({
+  prefix: "",
+  matches: (data) => POST_ACTION_KEYS.includes(callbackAction(data) as PostActionKey),
+  routes: postRoutes,
+  sessionBound: new Set(["cancel_state", "sched_manual_confirm"]),
+  currentSessionRevision: ({ backendDb, actorId }) => getPostAdminState(backendDb, actorId)?.revision,
+  parseEntity: (data, action) => {
+    const parts = data.split(":");
+    const draftId = Number(action.startsWith("sched_") ? parts.at(-1) : parts[1]);
+    return Number.isSafeInteger(draftId) ? draftId : null;
+  },
+  buildArgs: (common, draftId) => ({
+    ...common,
+    action: common.action as PostActionKey,
+    first: common.parts[1],
+    second: common.parts[2],
+    draftId: draftId as number,
+    posts: createStudioServices(common.backendDb, common.config).posts,
+  }),
+  prepare: ({ backendDb, config, actorId }, draftId) => {
+    createStudioServices(backendDb, config).posts.get(actorId, draftId as number);
+  },
+  isStale: ({ ctx, backendDb, data }) => isStaleCardCallback(ctx, backendDb, data, POST_CARD_FRESHNESS),
+  invalidEntityText: (locale) => t(locale, "action.invalid-post"),
+  staleText: (locale) => t(locale, "action.card-stale"),
+  unknownText: (locale) => t(locale, "action.unknown"),
+});
+
 /** Applies a command selected on a text-post card. Telegram rendering lives in post-card. */
 export async function handlePostAction(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<void> {
-  const rawData = ctx.callbackQuery?.data ?? "";
-  const { data, revision } = parseSessionCallback(rawData);
-  const parts = data.split(":");
-  const [action, first, second] = parts;
-  // `sched_*` callbacks carry their scope arguments first and the draft id last;
-  // every other callback puts the draft id immediately after the action name.
-  const draftId = Number(action?.startsWith("sched_") ? parts.at(-1) : first);
-  const actorId = Number(ctx.from?.id);
-  const locale = botLocale(backendDb, actorId);
-  if (!Number.isSafeInteger(draftId)) return void (await ctx.answerCallbackQuery({ text: t(locale, "action.invalid-post") }));
-  if ((action === "cancel_state" || action === "sched_manual_confirm") && revision == null)
-    return void (await ctx.answerCallbackQuery({ text: t(locale, "action.session-stale") }));
-  if (revision != null) requireCurrentPostSession(backendDb, actorId, revision);
-  if (isStalePostCardCallback(ctx, backendDb, action ?? "", draftId))
-    return void (await ctx.answerCallbackQuery({ text: t(locale, "action.card-stale") }));
-  const posts = createStudioServices(backendDb, config).posts;
-  posts.get(actorId, draftId);
-  const handler = action ? postRoutes[action as PostActionKey] : undefined;
-  if (!handler || !POST_ACTION_KEYS.includes(action as PostActionKey))
-    return void (await ctx.answerCallbackQuery({ text: t(locale, "action.unknown") }));
-  await handler({ ctx, backendDb, config, actorId, locale, data, action: action as PostActionKey, first, second, draftId, posts });
+  await postRouter(ctx, backendDb, config);
 }
 
 async function handleToggle({ ctx, backendDb, config, actorId, locale, second, draftId, posts }: PostActionArgs): Promise<void> {
@@ -345,7 +348,7 @@ async function waitForStoryCards(
     await delay(1_000);
     const cards = posts.preview(actorId, draftId).storyCards;
     if (!cardsReady(cards)) continue;
-    if (isStalePostCardCallback(ctx, backendDb, intent === "publish" ? "publish" : "schedule", draftId)) return;
+    if (isStaleCardCallback(ctx, backendDb, `${intent === "publish" ? "publish" : "schedule"}:${draftId}`, POST_CARD_FRESHNESS)) return;
     await sendStoryCardChoice(ctx, backendDb, actorId, draftId, intent, cards);
     return;
   }
@@ -457,7 +460,8 @@ async function sendPublishConfirmation(
   const delivery = createStudioServices(backendDb, config).posts.preview(actorId, draftId).delivery;
   await sendTelegramDeliveryPreviews(ctx, delivery.projections, botLocale(backendDb, actorId));
   const preview = draftPreview(backendDb, draftId, config, "confirm_publish");
-  await ctx.reply(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
+  const message = await ctx.reply(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
+  if (ctx.chat?.id != null) setTelegramPostCard(backendDb, draftId, ctx.chat.id, message.message_id);
 }
 
 async function showPublicationPreflight(

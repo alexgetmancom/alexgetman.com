@@ -1,9 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { clearPostAdminStateIfCurrent, getPostAdminState, setPostAdminState } from "../src/bot/post-state.js";
 import { clearSession, getSession, saveSession } from "../src/bot/video-session.js";
 import type { BackendDb } from "../src/db/client.js";
-import { adminState, videoBotSessions } from "../src/db/schema.js";
+import { conversationSessions } from "../src/db/schema.js";
 import { unsafeDb } from "../src/db/unsafe.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
@@ -56,12 +56,20 @@ describe("Telegram dialog state", () => {
     try {
       const expired = new Date(Date.now() - 31 * 60_000).toISOString();
       unsafeDb(backendDb)
-        .db.insert(adminState)
-        .values({ actorId: 42, action: "edit_ru", draftId: 7, controlMessageId: 9, updatedAt: expired, expiresAt: expired })
+        .db.insert(conversationSessions)
+        .values({
+          actorId: 42,
+          kind: "post",
+          action: "edit_ru",
+          draftId: 7,
+          controlMessageId: 9,
+          updatedAt: expired,
+          expiresAt: expired,
+        })
         .run();
 
       expect(getPostAdminState(backendDb, 42)).toBeNull();
-      expect(unsafeDb(backendDb).db.select().from(adminState).where(eq(adminState.actorId, 42)).get()).toMatchObject({
+      expect(unsafeDb(backendDb).db.select().from(conversationSessions).where(eq(conversationSessions.actorId, 42)).get()).toMatchObject({
         action: null,
         revision: 1,
       });
@@ -75,10 +83,11 @@ describe("Telegram dialog state", () => {
     try {
       const expired = new Date(Date.now() - 31 * 60_000).toISOString();
       unsafeDb(backendDb)
-        .db.insert(videoBotSessions)
+        .db.insert(conversationSessions)
         .values({
           actorId: 42,
-          videoDraftId: 7,
+          kind: "video",
+          draftId: 7,
           step: "schedule_confirm",
           selectedTargetsJson: ["youtube_shorts"],
           dataJson: {},
@@ -88,7 +97,13 @@ describe("Telegram dialog state", () => {
         .run();
 
       expect(getSession(backendDb, 42)).toBeNull();
-      expect(unsafeDb(backendDb).db.select().from(videoBotSessions).where(eq(videoBotSessions.actorId, 42)).get()).toMatchObject({
+      expect(
+        unsafeDb(backendDb)
+          .db.select()
+          .from(conversationSessions)
+          .where(and(eq(conversationSessions.actorId, 42), eq(conversationSessions.kind, "video")))
+          .get(),
+      ).toMatchObject({
         active: 0,
       });
     } finally {
@@ -100,10 +115,11 @@ describe("Telegram dialog state", () => {
     const backendDb: BackendDb = openBackendDb(":memory:");
     try {
       unsafeDb(backendDb)
-        .db.insert(videoBotSessions)
+        .db.insert(conversationSessions)
         .values({
           actorId: 42,
-          videoDraftId: 7,
+          kind: "video",
+          draftId: 7,
           step: "not-a-real-step",
           selectedTargetsJson: ["youtube_shorts"],
           dataJson: {},
@@ -112,7 +128,13 @@ describe("Telegram dialog state", () => {
         .run();
 
       expect(getSession(backendDb, 42)).toBeNull();
-      expect(unsafeDb(backendDb).db.select().from(videoBotSessions).where(eq(videoBotSessions.actorId, 42)).get()).toMatchObject({
+      expect(
+        unsafeDb(backendDb)
+          .db.select()
+          .from(conversationSessions)
+          .where(and(eq(conversationSessions.actorId, 42), eq(conversationSessions.kind, "video")))
+          .get(),
+      ).toMatchObject({
         active: 0,
       });
     } finally {

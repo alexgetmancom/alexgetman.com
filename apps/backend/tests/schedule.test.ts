@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import { InlineKeyboard } from "grammy";
+import { appendScheduleAxisButtons, SCHEDULE_SLOT_PRESETS, scheduleTimeKeyboard } from "../src/bot/scheduling.js";
 import { StudioError } from "../src/foundation/errors.js";
 import { parseManualSchedule, scheduleClockToday } from "../src/publishing/schedule.js";
 
@@ -13,6 +15,51 @@ function expectStudioError(fn: () => unknown, code: string): void {
 }
 
 describe("publishing schedule", () => {
+  it("renders every scheduling axis in the shared two-column picker", () => {
+    const keyboard = scheduleTimeKeyboard({
+      axis: {
+        values: SCHEDULE_SLOT_PRESETS,
+        label: (clock) => clock,
+        callback: (clock) => `pick:${clock.replace(":", "")}`,
+      },
+      revision: 7,
+      manual: { label: "Manual", callback: "manual" },
+      cancel: { label: "Cancel", callback: "cancel" },
+    });
+
+    expect(keyboard.inline_keyboard).toEqual([
+      [
+        { text: "08:00", callback_data: "sv7|pick:0800" },
+        { text: "11:00", callback_data: "sv7|pick:1100" },
+      ],
+      [
+        { text: "13:00", callback_data: "sv7|pick:1300" },
+        { text: "18:00", callback_data: "sv7|pick:1800" },
+      ],
+      [
+        { text: "20:00", callback_data: "sv7|pick:2000" },
+        { text: "22:00", callback_data: "sv7|pick:2200" },
+      ],
+      [{ text: "Manual", callback_data: "sv7|manual" }],
+      [{ text: "Cancel", callback_data: "sv7|cancel" }],
+    ]);
+  });
+
+  it("can render a domain-specific axis without changing its callback protocol", () => {
+    const keyboard = appendScheduleAxisButtons(new InlineKeyboard(), {
+      values: ["ru-morning", "ru-evening"],
+      label: (value: string) => value.replace("ru-", ""),
+      callback: (value: string) => `sched:${value}`,
+    });
+
+    expect(keyboard.inline_keyboard).toEqual([
+      [
+        { text: "morning", callback_data: "sched:ru-morning" },
+        { text: "evening", callback_data: "sched:ru-evening" },
+      ],
+    ]);
+  });
+
   it("parses manual MSK times and resolves slot-button clocks", () => {
     const now = new Date("2026-07-10T15:00:00.000Z"); // 18:00 MSK
     expect(parseManualSchedule("21:15", "Europe/Moscow", now).toISOString()).toBe("2026-07-10T18:15:00.000Z");
