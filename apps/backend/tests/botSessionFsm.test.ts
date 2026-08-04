@@ -19,18 +19,25 @@ describe("Telegram session callback encoding", () => {
     expect(parseSessionCallback("action:7:sv3")).toEqual({ data: "action:7", revision: 3 });
   });
 
-  it("writes publication controls in one namespace and reads them back as legacy handler data", () => {
-    const encoded = publicationCallback("video", "sched_pick", ["0800", 7], 4);
-    expect(encoded).toBe("sv4|p:video:sched_pick:0800:7");
+  it("round-trips canonical publication arguments without guessing their meaning", () => {
+    for (const draftId of [7, 999, 1000, 9999, 10000]) {
+      const args = [String(draftId), "0800"];
+      const encoded = publicationCallback("video", "sched_pick", args, 4);
+      expect(encoded).toBe(`sv4|p:video:sched_pick:${draftId}:0800`);
+      expect(parsePublicationCallback(`p:video:sched_pick:${draftId}:0800`)).toEqual({
+        kind: "video",
+        action: "sched_pick",
+        args,
+      });
+    }
     expect(parsePublicationCallback("p:video:sched_pick:0800:7")).toEqual({
       kind: "video",
       action: "sched_pick",
-      args: ["7", "0800"],
+      args: ["0800", "7"],
     });
-    expect(parseSessionCallback(encoded)).toEqual({ data: "p:video:sched_pick:0800:7", revision: 4 });
   });
 
-  it("leaves the canonical namespace intact while legacy translation normalizes old payloads", () => {
+  it("leaves the canonical namespace intact while legacy translation remains explicit", () => {
     expect(parseSessionCallback("p:post:sched_scope:both:42")).toEqual({ data: "p:post:sched_scope:both:42", revision: null });
     expect(legacyToPublication("video_now:12")).toEqual({ kind: "video", action: "now", args: ["12"] });
     expect(parsePublicationCallback("p:video:now:12")).toEqual({ kind: "video", action: "now", args: ["12"] });

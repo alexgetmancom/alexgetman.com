@@ -32,8 +32,7 @@ export async function handlePublicationCallback(
 export async function handleActivePublicationMessage(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<boolean> {
   const actorId = Number(ctx.from?.id);
   if (getSession(backendDb, actorId)) {
-    await handleVideoConversationMessage(ctx, backendDb, config);
-    return true;
+    return handleVideoConversationMessage(ctx, backendDb, config);
   }
   if (getPostAdminState(backendDb, actorId)) {
     await handlePostMessage(ctx, backendDb, config);

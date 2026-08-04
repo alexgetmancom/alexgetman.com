@@ -97,7 +97,7 @@ export function parsePublicationCallback(data: string): PublicationCallback | nu
   return {
     kind: kind as PublicationKind,
     action: action ?? "",
-    args: normalizePublicationArgs(kind as PublicationKind, action ?? "", args ? args.split(":") : []),
+    args: args ? args.split(":") : [],
   };
 }
 
@@ -115,10 +115,10 @@ export function legacyToPublication(data: string): PublicationCallback | null {
   if (key.startsWith(LEGACY_VIDEO_PREFIX)) {
     const action = key.slice(LEGACY_VIDEO_PREFIX.length);
     if (!action) return null;
-    return { kind: "video", action, args: normalizePublicationArgs("video", action, rawArgs) };
+    return { kind: "video", action, args: rawArgs };
   }
   if (!PUBLICATION_ACTIONS.post.includes(key as (typeof PUBLICATION_ACTIONS.post)[number])) return null;
-  return { kind: "post", action: key, args: normalizePublicationArgs("post", key, rawArgs) };
+  return { kind: "post", action: key, args: rawArgs };
 }
 
 /** Resolves either a canonical callback or a legacy callback payload. */
@@ -147,15 +147,6 @@ export function parseSessionCallback(data: string): SessionCallback {
   const legacy = data.match(LEGACY_SESSION_VERSION_SUFFIX);
   if (!legacy) return { data, revision: null };
   return { data: legacy[1] ?? "", revision: Number(legacy[2]) };
-}
-
-function normalizePublicationArgs(kind: PublicationKind, action: string, args: string[]): string[] {
-  const legacyNumericClock = kind === "video" && action === "sched_pick" && /^\d{4}$/.test(args[0] ?? "") && parseDraftId(args[1]) != null;
-  if (args.length < 2 || (!legacyNumericClock && parseDraftId(args[0]) != null) || parseDraftId(args.at(-1)) == null) return args;
-  // Before the namespace became canonical, video actions placed their target
-  // or field before the draft id, and post scheduling did the same with scope,
-  // view, or clock. The new contract always puts draftId at args[0].
-  return [args.at(-1) as string, ...args.slice(0, -1)];
 }
 
 /** Rejects a callback or write based on an older dialog generation. */

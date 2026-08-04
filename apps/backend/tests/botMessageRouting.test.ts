@@ -19,7 +19,7 @@ describe("Telegram publication message routing", () => {
         message: { text: "This must stay in the video flow" },
       } as unknown as Context;
 
-      expect(await handleActivePublicationMessage(ctx, backendDb, loadConfig({ ADMIN_IDS: "42" }))).toBe(true);
+      expect(await handleActivePublicationMessage(ctx, backendDb, loadConfig({ ADMIN_IDS: "42" }))).toBe(false);
       expect(unsafeDb(backendDb).sqlite.prepare("SELECT count(*) AS count FROM drafts").get()).toEqual({ count: 0 });
     } finally {
       backendDb.close();
