@@ -33,7 +33,7 @@ import {
   setData,
   targetKeyboard,
   updateVideoControl,
-  type VideoSession,
+  type VideoSessionInput,
 } from "./video-session.js";
 
 type VideoActionArgs = {
@@ -425,12 +425,13 @@ async function handleTime({ ctx, backendDb, config, actorId, locale, data }: Vid
   const target = requireVideoTarget(targetText ?? "");
   const id = requireDraftId(idText);
   createStudioServices(backendDb, config).videos.get(actorId, id);
-  const session: VideoSession = {
+  const currentSession = getSession(backendDb, actorId);
+  const session: VideoSessionInput = {
     draftId: id,
     step: `schedule_target:${target}` as const,
     selected: [target],
     data: { controlMessageId: callbackMessageId(ctx) },
-    revision: getSession(backendDb, actorId)?.revision ?? 0,
+    ...(currentSession ? { revision: currentSession.revision } : {}),
   };
   const saved = saveSession(backendDb, actorId, session);
   setControlFromSession(backendDb, id, ctx, saved);

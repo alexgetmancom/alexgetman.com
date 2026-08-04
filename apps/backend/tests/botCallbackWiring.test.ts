@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { Glob } from "bun";
 import { postRouteKeys } from "../src/bot/post-actions.js";
 import { POST_ACTION_KEYS, POST_CARD_ACTION_KEYS } from "../src/bot/post-routes.js";
@@ -109,7 +111,9 @@ function splitArgs(src: string, start: number): string[] | null {
 
 async function renderedCallbacks(): Promise<Map<string, string>> {
   const found = new Map<string, string>();
-  for await (const file of new Glob("apps/backend/src/**/*.ts").scan(".")) {
+  const sourceRoot = fileURLToPath(new URL("../src/", import.meta.url));
+  for await (const relativeFile of new Glob("**/*.ts").scan({ cwd: sourceRoot })) {
+    const file = path.join(sourceRoot, relativeFile);
     const src = await Bun.file(file).text();
     for (let idx = src.indexOf(".text("); idx !== -1; idx = src.indexOf(".text(", idx + 1)) {
       const args = splitArgs(src, idx + ".text(".length);

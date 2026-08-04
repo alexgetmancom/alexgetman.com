@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import type { Context } from "grammy";
-import { versionedCallback } from "../src/bot/session-fsm.js";
+import { publicationCallback, versionedCallback } from "../src/bot/session-fsm.js";
 import { handleVideoActionCallback } from "../src/bot/video-actions.js";
-import { getSession, saveSession } from "../src/bot/video-session.js";
+import { clearSession, getSession, saveSession } from "../src/bot/video-session.js";
 import { type BackendDb, unsafeDb } from "../src/db/client.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { setTelegramVideoCard } from "../src/interfaces/telegram/control-cards.js";
@@ -82,6 +82,40 @@ describe("video callback dispatch", () => {
     expect(await handleVideoActionCallback(ctx, backendDb, config)).toBe(true);
     expect(answers[0]?.text).toBe("This dialog is outdated. Start again.");
     expect(getSession(backendDb, 42)?.selected).toEqual(["youtube_shorts"]);
+  });
+
+  it("opens target scheduling after a previous video dialog was retired", async () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createVideoDraft(backendDb, 42, "clip.mp4", 24);
+    replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
+    const previous = saveSession(backendDb, 42, {
+      draftId,
+      step: "schedule_common",
+      selected: ["youtube_shorts"],
+      data: {},
+    });
+    clearSession(backendDb, 42);
+
+    const answers: Array<{ text?: string } | undefined> = [];
+    const ctx = {
+      callbackQuery: {
+        data: publicationCallback("video", "time", ["youtube_shorts", draftId]),
+        message: { message_id: 10 },
+      },
+      from: { id: 42 },
+      chat: { id: 100 },
+      reply: async () => ({ message_id: 11 }),
+      answerCallbackQuery: async (options?: { text?: string }) => void answers.push(options),
+    } as unknown as Context;
+
+    await handleVideoActionCallback(ctx, backendDb, config);
+
+    expect(answers).toEqual([undefined]);
+    expect(getSession(backendDb, 42)).toMatchObject({
+      draftId,
+      step: "schedule_target:youtube_shorts",
+      revision: previous.revision + 2,
+    });
   });
 
   it("accepts cancellation from a standalone reminder even when the card was replaced", async () => {
