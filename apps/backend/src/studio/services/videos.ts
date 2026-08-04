@@ -135,6 +135,22 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
       requireOwnedVideo(backendDb, config, actorId, publicationId);
       saveVideoMetadata(backendDb, publicationId, target, metadata);
     },
+    /** Persists everything a metadata wizard collected for one platform and
+     * titles the draft after it. Which fields a platform stores, and which of
+     * several platforms gets to name the draft, are publication decisions — a
+     * dialog only forwards what the operator typed. */
+    completeWizardTarget(
+      actorId: number,
+      publicationId: number,
+      target: VideoTarget,
+      collected: Record<string, unknown>,
+      selected: VideoTarget[],
+    ): void {
+      requireOwnedVideo(backendDb, config, actorId, publicationId);
+      const metadata = wizardMetadata(target, collected);
+      saveVideoMetadata(backendDb, publicationId, target, metadata);
+      if (target === labellingVideoTarget(selected)) updateVideoLabel(backendDb, publicationId, wizardLabel(metadata));
+    },
     rename(actorId: number, publicationId: number, label: string): void {
       requireOwnedVideo(backendDb, config, actorId, publicationId);
       updateVideoLabel(backendDb, publicationId, label);
@@ -168,6 +184,33 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
   };
   service satisfies PublicationPipeline;
   return service;
+}
+
+/** YouTube titles the draft whenever it is one of the destinations: it is the
+ * only platform with a real title field, so falling back to a caption there
+ * would rename an already correctly named draft. */
+function labellingVideoTarget(selected: VideoTarget[]): VideoTarget {
+  return selected.includes("youtube_shorts") ? "youtube_shorts" : "instagram_reels";
+}
+
+function wizardMetadata(target: VideoTarget, collected: Record<string, unknown>): VideoMetadata {
+  if (target === "instagram_reels") return { caption: wizardText(collected.instagram_caption) };
+  const gameUrl = wizardText(collected.youtube_game_url);
+  return {
+    title: wizardText(collected.youtube_title),
+    description: wizardText(collected.youtube_description),
+    tags: Array.isArray(collected.youtube_tags) ? (collected.youtube_tags as string[]) : [],
+    ...(gameUrl ? { gameUrl } : {}),
+  };
+}
+
+function wizardLabel(metadata: VideoMetadata): string {
+  if ("title" in metadata) return metadata.title || "YouTube Shorts";
+  return metadata.caption || "Instagram Reels";
+}
+
+function wizardText(value: unknown): string {
+  return typeof value === "string" ? value : "";
 }
 
 function toVideoScheduleInput(input: Partial<Record<VideoTarget, Date>> | PublicationSchedule): Partial<Record<VideoTarget, Date>> {

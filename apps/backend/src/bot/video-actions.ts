@@ -1,5 +1,5 @@
 import { type Context, InlineKeyboard } from "grammy";
-import { acceptFlow } from "../application/conversation-flow.js";
+import { acceptFlow, backFlow } from "../application/conversation-flow.js";
 import type { PublicationPipeline } from "../application/publication-pipeline.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -7,34 +7,25 @@ import { StudioError } from "../foundation/errors.js";
 import { type MessageKey, t } from "../foundation/i18n/index.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import { createStudioServices } from "../studio/services/index.js";
-import {
-  advanceVideoTargetSchedule,
-  commonVideoSchedule,
-  previousVideoMetadataStep,
-  VIDEO_FLOW,
-  type VideoWizardStep,
-} from "../studio/video-fsm.js";
+import { VIDEO_FLOW } from "../studio/video-fsm.js";
 import { appendCancelButton, cancelPromptKeyboard, confirmationKeyboard, resultNavigationKeyboard } from "./dialog-ui.js";
 import type { PublicationEffect } from "./effects.js";
-import { type BotLocale, botLocale } from "./i18n.js";
+import type { BotLocale } from "./i18n.js";
 import type { PublicationActionContext, PublicationActionResult } from "./publication-action-types.js";
 import { renderPublicationCard } from "./publication-card.js";
 import { parseDraftId, publicationCallback, requireSessionStep, type VideoActionKey } from "./session-fsm.js";
-import { finishVideoNow, finishVideoSchedule } from "./video-scheduling.js";
+import { applyVideoScheduleDate, finishVideoNow, finishVideoSchedule } from "./video-scheduling.js";
 import {
   callbackMessageId,
   clearVideoState,
   getVideoState,
-  metadataPromptEffects,
   parseVideoStep,
   saveVideoState,
-  scheduleChoiceEffects,
   targetKeyboard,
   type VideoConversationInput,
   type VideoConversationState,
   videoPromptEffect,
-  videoScheduleConfirmationEffects,
-  videoTimeEffects,
+  videoStepEffects,
 } from "./video-ui.js";
 
 type VideoActionArgs = PublicationActionContext;
@@ -220,48 +211,39 @@ async function handleToggle({ backendDb, config, actorId, locale, args, pipeline
   return [{ type: "edit-reply-markup", keyboard: targetKeyboard(config, selected, locale, next.revision) }];
 }
 
-async function handleTargetsDone({ backendDb, config, actorId, locale }: VideoActionArgs): Promise<VideoActionResult> {
+async function handleTargetsDone({ backendDb, config, actorId }: VideoActionArgs): Promise<VideoActionResult> {
   const session = getVideoState(backendDb, actorId);
   requireSessionStep(session?.step, ["targets"], "err.video-pick-platform");
   if (!session?.draftId || !session.selected.length) throw new StudioError("err.video-pick-platform");
   createStudioServices(backendDb, config).videos.replaceTargets(actorId, session.draftId, session.selected);
   const transition = await acceptFlow(VIDEO_FLOW, "targets", session.selected, { ...session.data, selectedTargets: session.selected });
   if (!transition?.next) throw new StudioError("err.video-pick-platform");
-  const next = saveVideoState(backendDb, actorId, {
-    ...session,
-    step: transition.next as VideoConversationState["step"],
-    data: transition.data,
-  });
-  if (transition.next === "youtube_title" || transition.next === "instagram_caption")
-    return metadataPromptEffects(backendDb, actorId, transition.next, session.selected);
-  return scheduleChoiceEffects(
-    backendDb,
-    actorId,
-    next,
-    locale,
-    t(locale, "video.saved-choose-schedule", { timezone: config.TIMEZONE_LABEL }),
-  );
+  const next = transition.next as VideoConversationState["step"];
+  const saved = saveVideoState(backendDb, actorId, { ...session, step: next, data: transition.data });
+  return videoStepEffects(backendDb, config, actorId, next, saved);
 }
 
-async function handleGameSkip({ backendDb, actorId, locale }: VideoActionArgs): Promise<VideoActionResult> {
+async function handleGameSkip({ backendDb, config, actorId, locale }: VideoActionArgs): Promise<VideoActionResult> {
   const session = getVideoState(backendDb, actorId);
   requireSessionStep(session?.step, ["youtube_game_url"], "err.video-reopen-create");
   if (!session?.draftId) throw new StudioError("err.video-reopen-create");
   const transition = await acceptFlow(VIDEO_FLOW, "youtube_game_url", "-", { ...session.data, selectedTargets: session.selected });
   if (!transition?.next) throw new StudioError("err.video-reopen-create");
-  saveVideoState(backendDb, actorId, { ...session, step: transition.next as VideoConversationState["step"], data: transition.data });
+  const next = transition.next as VideoConversationState["step"];
+  const saved = saveVideoState(backendDb, actorId, { ...session, step: next, data: transition.data });
   return [
     { type: "screen", mode: "edit", text: t(locale, "video.game-skipped") },
-    ...metadataPromptEffects(backendDb, actorId, "youtube_tags", session.selected),
+    ...videoStepEffects(backendDb, config, actorId, next, saved),
   ];
 }
 
-async function handleMetaBack({ backendDb, actorId }: VideoActionArgs): Promise<VideoActionResult> {
+async function handleMetaBack({ backendDb, config, actorId }: VideoActionArgs): Promise<VideoActionResult> {
   const session = getVideoState(backendDb, actorId);
-  const prevStep = session && previousVideoMetadataStep(session.step as VideoWizardStep, session.selected);
-  if (!session?.draftId || !prevStep) throw new StudioError("err.video-reopen-create");
-  saveVideoState(backendDb, actorId, { ...session, step: prevStep });
-  return metadataPromptEffects(backendDb, actorId, prevStep, session.selected);
+  const previous = session && backFlow(VIDEO_FLOW, session.step, { selectedTargets: session.selected });
+  if (!session?.draftId || !previous) throw new StudioError("err.video-reopen-create");
+  const step = previous as VideoConversationState["step"];
+  const saved = saveVideoState(backendDb, actorId, { ...session, step });
+  return videoStepEffects(backendDb, config, actorId, step, saved);
 }
 
 async function handleOpen({ config, actorId, locale, args, pipeline }: VideoActionArgs): Promise<VideoActionResult> {
@@ -318,7 +300,7 @@ async function handleScheduleStart({ ctx, backendDb, config, actorId, locale, ar
   return existingVideoControlEffect(session, t(locale, "video.schedule-time-msk", { timezone: config.TIMEZONE_LABEL }), keyboard);
 }
 
-async function handleScheduleMode({ backendDb, config, actorId, locale, action, args }: VideoActionArgs): Promise<VideoActionResult> {
+async function handleScheduleMode({ backendDb, config, actorId, action, args }: VideoActionArgs): Promise<VideoActionResult> {
   const id = requireDraftId(args[0]);
   const session = getVideoState(backendDb, actorId);
   const targets = createStudioServices(backendDb, config)
@@ -332,6 +314,7 @@ async function handleScheduleMode({ backendDb, config, actorId, locale, action, 
   const nextStep = transition?.next as "schedule_common" | "schedule_target" | null;
   if (!transition || !nextStep) throw new StudioError("err.video-reopen-publish");
   const first = targets[0];
+  if (nextStep === "schedule_target" && !first) throw new StudioError("err.video-no-platforms");
   const next = saveVideoState(backendDb, actorId, {
     ...session,
     draftId: id,
@@ -339,14 +322,7 @@ async function handleScheduleMode({ backendDb, config, actorId, locale, action, 
     step: nextStep,
     data: nextStep === "schedule_target" ? { ...transition.data, schedule: {}, target: first } : transition.data,
   });
-  const prompt = {
-    schedule_common: () => t(locale, "video.enter-datetime", { timezone: config.TIMEZONE_LABEL }),
-    schedule_target: () => {
-      if (!first) throw new StudioError("err.video-no-platforms");
-      return t(locale, "video.schedule-target-prompt", { target: videoTargetLabel(first), timezone: config.TIMEZONE_LABEL });
-    },
-  }[nextStep];
-  return videoTimeEffects(backendDb, actorId, next, prompt());
+  return videoStepEffects(backendDb, config, actorId, nextStep, next);
 }
 
 async function handleNowAsk(actionArgs: VideoActionArgs): Promise<VideoActionResult> {
@@ -426,7 +402,7 @@ async function handleCancel({ backendDb, config, actorId, locale, args, pipeline
   ];
 }
 
-async function handleTime({ ctx, backendDb, config, actorId, locale, args, pipeline }: VideoActionArgs): Promise<VideoActionResult> {
+async function handleTime({ ctx, backendDb, config, actorId, args, pipeline }: VideoActionArgs): Promise<VideoActionResult> {
   const [idText, targetText] = args;
   const target = requireVideoTarget(targetText ?? "");
   const id = requireDraftId(idText);
@@ -441,12 +417,7 @@ async function handleTime({ ctx, backendDb, config, actorId, locale, args, pipel
     ...(currentSession ? { revision: currentSession.revision } : {}),
   };
   const saved = saveVideoState(backendDb, actorId, session);
-  return videoTimeEffects(
-    backendDb,
-    actorId,
-    saved,
-    t(locale, "video.schedule-target-prompt", { target: videoTargetLabel(target), timezone: config.TIMEZONE_LABEL }),
-  );
+  return videoStepEffects(backendDb, config, actorId, "schedule_target", saved);
 }
 
 async function handleSchedulePick({ backendDb, config, actorId, args, pipeline }: VideoActionArgs): Promise<VideoActionResult> {
@@ -457,44 +428,7 @@ async function handleSchedulePick({ backendDb, config, actorId, args, pipeline }
   requireSessionStep(session?.step, SCHEDULE_SESSION_STEPS, "action.schedule-expired");
   if (!session || session.draftId !== id) throw new StudioError("action.schedule-expired");
   const value = pipeline.slotTime(`${(hhmm ?? "").slice(0, 2)}:${(hhmm ?? "").slice(2, 4)}`);
-  if (session.step === "schedule_common")
-    return videoScheduleConfirmationEffects(backendDb, config, actorId, session, commonVideoSchedule(session.selected, value));
-  const target =
-    typeof session.data.target === "string" && VIDEO_TARGETS.includes(session.data.target as VideoTarget)
-      ? (session.data.target as VideoTarget)
-      : null;
-  if (!target || !session.selected.includes(target)) throw new StudioError("err.video-reopen-publish");
-  const transition = advanceVideoTargetSchedule(
-    session.selected,
-    (session.data.schedule as Record<string, string> | undefined) ?? {},
-    target,
-    value,
-  );
-  if (transition.nextTarget) {
-    const next = saveVideoState(backendDb, actorId, {
-      ...session,
-      step: "schedule_target",
-      data: { ...session.data, schedule: transition.schedule, target: transition.nextTarget },
-    });
-    return videoTimeEffects(
-      backendDb,
-      actorId,
-      next,
-      t(botLocale(backendDb, actorId), "video.schedule-target-prompt", {
-        target: videoTargetLabel(transition.nextTarget),
-        timezone: config.TIMEZONE_LABEL,
-      }),
-    );
-  }
-  return videoScheduleConfirmationEffects(
-    backendDb,
-    config,
-    actorId,
-    session,
-    Object.fromEntries(Object.entries(transition.schedule).map(([key, item]) => [key, new Date(item)])) as Partial<
-      Record<VideoTarget, Date>
-    >,
-  );
+  return applyVideoScheduleDate(backendDb, config, actorId, session, value);
 }
 
 async function handleScheduleManual({ backendDb, config, actorId, locale, args }: VideoActionArgs): Promise<VideoActionResult> {

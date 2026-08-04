@@ -1,11 +1,16 @@
 import { describe, expect, it } from "bun:test";
+import { backFlow } from "../src/application/conversation-flow.js";
 import {
   advanceVideoMetadata,
   advanceVideoTargetSchedule,
   commonVideoSchedule,
   firstVideoMetadataStep,
-  previousVideoMetadataStep,
+  VIDEO_FLOW,
 } from "../src/studio/video-fsm.js";
+
+function previousStep(step: string, selected: ("youtube_shorts" | "instagram_reels")[]): string | null {
+  return backFlow(VIDEO_FLOW, step, { selectedTargets: selected });
+}
 
 describe("video metadata FSM", () => {
   it("selects the first required platform prompt", () => {
@@ -25,15 +30,15 @@ describe("video metadata FSM", () => {
 
   it("reverses the YouTube chain step by step, and stops at its start", () => {
     const selected: ("youtube_shorts" | "instagram_reels")[] = ["youtube_shorts"];
-    expect(previousVideoMetadataStep("youtube_description", selected)).toBe("youtube_title");
-    expect(previousVideoMetadataStep("youtube_game_url", selected)).toBe("youtube_description");
-    expect(previousVideoMetadataStep("youtube_tags", selected)).toBe("youtube_game_url");
-    expect(previousVideoMetadataStep("youtube_title", selected)).toBeNull();
+    expect(previousStep("youtube_description", selected)).toBe("youtube_title");
+    expect(previousStep("youtube_game_url", selected)).toBe("youtube_description");
+    expect(previousStep("youtube_tags", selected)).toBe("youtube_game_url");
+    expect(previousStep("youtube_title", selected)).toBeNull();
   });
 
   it("routes instagram_caption's back step depending on whether YouTube was also selected", () => {
-    expect(previousVideoMetadataStep("instagram_caption", ["youtube_shorts", "instagram_reels"])).toBe("youtube_tags");
-    expect(previousVideoMetadataStep("instagram_caption", ["instagram_reels"])).toBeNull();
+    expect(previousStep("instagram_caption", ["youtube_shorts", "instagram_reels"])).toBe("youtube_tags");
+    expect(previousStep("instagram_caption", ["instagram_reels"])).toBeNull();
   });
 
   it("advances independent and common schedules without Telegram state", () => {

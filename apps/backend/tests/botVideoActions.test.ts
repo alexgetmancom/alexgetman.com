@@ -117,6 +117,68 @@ describe("video callback dispatch", () => {
     clearVideoState(backendDb, 42);
   });
 
+  it("asks every platform for its own time before confirming a per-target schedule", async () => {
+    backendDb = openBackendDb(":memory:");
+    const bothPlatforms = loadConfig({ ADMIN_IDS: "42" });
+    bothPlatforms.studio.modules.youtube = true;
+    bothPlatforms.studio.modules.instagram = true;
+    const draftId = createVideoDraft(backendDb, 42, "clip.mp4", 24);
+    replaceVideoTargets(backendDb, draftId, ["youtube_shorts", "instagram_reels"]);
+    setTelegramVideoCard(backendDb, draftId, 100, 10);
+    let nextMessageId = 20;
+    // Each prompt arrives as a fresh message and becomes the card, so the next
+    // tap has to come from it — a callback on a superseded message is stale.
+    let cardMessageId = 10;
+    const context = (data: string): Context =>
+      ({
+        from: { id: 42 },
+        chat: { id: 100 },
+        callbackQuery: { data, message: { message_id: cardMessageId } },
+        answerCallbackQuery: async () => true,
+        editMessageText: async () => undefined,
+        reply: async () => {
+          nextMessageId += 1;
+          cardMessageId = nextMessageId;
+          return { message_id: nextMessageId };
+        },
+        api: { editMessageText: async () => undefined },
+      }) as unknown as Context;
+    const current = () => {
+      const state = getVideoState(backendDb as BackendDb, 42);
+      if (!state) throw new Error("video schedule session missing");
+      return state;
+    };
+
+    await handlePublicationCallback(context(publicationCallback("video", "schedule", [draftId])), backendDb, bothPlatforms);
+    await handlePublicationCallback(
+      context(versionedCallback(publicationCallback("video", "individual", [draftId]), current().revision)),
+      backendDb,
+      bothPlatforms,
+    );
+    expect(current()).toMatchObject({ step: "schedule_target", data: { target: "youtube_shorts" } });
+
+    await handlePublicationCallback(
+      context(versionedCallback(publicationCallback("video", "sched_pick", [draftId, "0800"]), current().revision)),
+      backendDb,
+      bothPlatforms,
+    );
+    // The first pick must not jump to confirmation: Instagram has no time yet.
+    expect(current()).toMatchObject({ step: "schedule_target", data: { target: "instagram_reels" } });
+
+    await handlePublicationCallback(
+      context(versionedCallback(publicationCallback("video", "sched_pick", [draftId, "0930"]), current().revision)),
+      backendDb,
+      bothPlatforms,
+    );
+
+    const confirmed = current();
+    expect(confirmed.step).toBe("schedule_confirm");
+    const schedule = confirmed.data.schedule as Record<string, string>;
+    expect(Object.keys(schedule).sort()).toEqual(["instagram_reels", "youtube_shorts"]);
+    expect(new Date(schedule.youtube_shorts ?? "").getTime()).not.toBe(new Date(schedule.instagram_reels ?? "").getTime());
+    clearVideoState(backendDb, 42);
+  });
+
   it("rejects a callback from an older video dialog revision", async () => {
     backendDb = openBackendDb(":memory:");
     const first = saveVideoState(backendDb, 42, { draftId: 7, step: "targets", selected: [], data: {} });

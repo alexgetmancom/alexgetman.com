@@ -1,21 +1,23 @@
 import type { Flow, FlowStep } from "../application/conversation-flow.js";
 import { fixUrlSlashes } from "../content/message.js";
-import type { VideoTarget } from "../publishing/video-types.js";
+import { StudioError } from "../foundation/errors.js";
+import { VIDEO_TARGETS, type VideoTarget } from "../publishing/video-types.js";
 
 export type VideoWizardStep = "youtube_title" | "youtube_description" | "youtube_game_url" | "youtube_tags" | "instagram_caption";
-export type VideoFlowData = Record<string, unknown> & { selectedTargets?: VideoTarget[]; nextTarget?: VideoTarget | null };
+export type VideoFlowData = Record<string, unknown> & { selectedTargets?: VideoTarget[] };
 
 const VIDEO_STEPS: Record<string, FlowStep<VideoFlowData>> = {
   locale: { name: "locale", next: () => "asset", accept: (input, data) => ({ ...data, videoLocale: input }) },
   asset: {
     name: "asset",
-    next: (data) => (data.selectedTargets?.includes("youtube_shorts") ? "youtube_title" : "instagram_caption"),
+    input: "media",
+    next: (data) => firstVideoMetadataStep(data.selectedTargets ?? []),
     accept: (input, data) => ({ ...data, assetId: input }),
   },
-  label: { name: "label", next: () => "targets", accept: (input, data) => ({ ...data, label: input }) },
+  label: { name: "label", input: "text", next: () => "targets", accept: (input, data) => ({ ...data, label: input }) },
   targets: {
     name: "targets",
-    next: (data) => (data.selectedTargets?.includes("youtube_shorts") ? "youtube_title" : "instagram_caption"),
+    next: (data) => firstVideoMetadataStep(data.selectedTargets ?? []),
     accept: (input, data) => ({ ...data, selectedTargets: input as VideoTarget[] }),
   },
   schedule_choice: {
@@ -25,40 +27,64 @@ const VIDEO_STEPS: Record<string, FlowStep<VideoFlowData>> = {
   },
   schedule_common: {
     name: "schedule_common",
+    input: "text",
     next: () => "schedule_confirm",
-    accept: (input, data) => ({ ...data, scheduleValue: input }),
+    // One typed or picked time answers for every selected platform at once, so
+    // the step writes the whole schedule rather than a single value the caller
+    // would have to fan out again.
+    accept: (input, data) => ({
+      ...data,
+      schedule: isoSchedule(commonVideoSchedule(data.selectedTargets ?? [], new Date(String(input)))),
+    }),
   },
   schedule_target: {
     name: "schedule_target",
-    next: (data) => (data.nextTarget ? "schedule_target" : "schedule_confirm"),
-    accept: (input, data) => ({ ...data, scheduleValue: input }),
+    input: "text",
+    // Both the schedule and the platform still waiting for a time come from the
+    // accumulated schedule itself. Nothing outside the step recomputes them.
+    next: (data) => (pendingScheduleTarget(data.selectedTargets ?? [], currentSchedule(data)) ? "schedule_target" : "schedule_confirm"),
+    accept: (input, data) => {
+      const target = requireScheduleTarget(data);
+      const { schedule, nextTarget } = advanceVideoTargetSchedule(
+        data.selectedTargets ?? [],
+        currentSchedule(data),
+        target,
+        new Date(String(input)),
+      );
+      return { ...data, schedule, ...(nextTarget ? { target: nextTarget } : {}) };
+    },
   },
   schedule_confirm: { name: "schedule_confirm", next: () => null, accept: (_input, data) => data },
   youtube_title: {
     name: "youtube_title",
+    input: "text",
     next: () => "youtube_description",
     accept: (input, data) => advanceVideoMetadata("youtube_title", String(input), data).data,
   },
   youtube_description: {
     name: "youtube_description",
+    input: "text",
     next: () => "youtube_game_url",
     accept: (input, data) => advanceVideoMetadata("youtube_description", String(input), data).data,
     back: () => "youtube_title",
   },
   youtube_game_url: {
     name: "youtube_game_url",
+    input: "text",
     next: () => "youtube_tags",
     accept: (input, data) => advanceVideoMetadata("youtube_game_url", String(input), data).data,
     back: () => "youtube_description",
   },
   youtube_tags: {
     name: "youtube_tags",
+    input: "text",
     next: (data) => (data.selectedTargets?.includes("instagram_reels") ? "instagram_caption" : "schedule_choice"),
     accept: (input, data) => advanceVideoMetadata("youtube_tags", String(input), data).data,
     back: () => "youtube_game_url",
   },
   instagram_caption: {
     name: "instagram_caption",
+    input: "text",
     next: () => "schedule_choice",
     accept: (input, data) => advanceVideoMetadata("instagram_caption", String(input), data).data,
     back: (data) => (data.selectedTargets?.includes("youtube_shorts") ? "youtube_tags" : null),
@@ -73,14 +99,6 @@ export const VIDEO_FLOW: Flow<VideoFlowData> = {
 
 export function firstVideoMetadataStep(selected: VideoTarget[]): VideoWizardStep {
   return selected.includes("youtube_shorts") ? "youtube_title" : "instagram_caption";
-}
-
-/** The step a "← Back" tap returns to, or null if the current step is the
- * first one in the metadata chain (nothing earlier to revisit). Mirrors
- * advanceVideoMetadata's forward transitions in reverse. */
-export function previousVideoMetadataStep(step: VideoWizardStep, selected: VideoTarget[]): VideoWizardStep | null {
-  const previous = VIDEO_FLOW.steps[step]?.back?.({ selectedTargets: selected });
-  return (previous as VideoWizardStep | null | undefined) ?? null;
 }
 
 /** Pure metadata transition used by the video Flow and non-Telegram callers. */
@@ -110,8 +128,7 @@ export function advanceVideoMetadata(
   return { data: { ...data, instagram_caption: text === "-" ? "" : text }, nextStep: null };
 }
 
-/** Chooses the next metadata or scheduling state without knowing about Telegram controls. */
-/** Adds one parsed target time and chooses either the next target prompt or confirmation. */
+/** Adds one parsed target time and names the platform still waiting for one. */
 export function advanceVideoTargetSchedule(
   selected: VideoTarget[],
   current: Record<string, string>,
@@ -119,9 +136,39 @@ export function advanceVideoTargetSchedule(
   value: Date,
 ): { schedule: Record<string, string>; nextTarget: VideoTarget | null } {
   const schedule = { ...current, [target]: value.toISOString() };
-  return { schedule, nextTarget: selected.find((item) => !schedule[item]) ?? null };
+  return { schedule, nextTarget: pendingScheduleTarget(selected, schedule) };
 }
 
 export function commonVideoSchedule(selected: VideoTarget[], value: Date): Partial<Record<VideoTarget, Date>> {
   return Object.fromEntries(selected.map((target) => [target, value])) as Partial<Record<VideoTarget, Date>>;
+}
+
+/** Reads the ISO schedule accumulated so far by the per-target chain. */
+export function currentSchedule(data: VideoFlowData): Record<string, string> {
+  return (data.schedule as Record<string, string> | undefined) ?? {};
+}
+
+export function videoScheduleDates(schedule: Record<string, string>): Partial<Record<VideoTarget, Date>> {
+  return Object.fromEntries(Object.entries(schedule).map(([target, value]) => [target, new Date(value)])) as Partial<
+    Record<VideoTarget, Date>
+  >;
+}
+
+function isoSchedule(schedule: Partial<Record<VideoTarget, Date>>): Record<string, string> {
+  return Object.fromEntries(Object.entries(schedule).flatMap(([target, value]) => (value ? [[target, value.toISOString()]] : [])));
+}
+
+function pendingScheduleTarget(selected: VideoTarget[], schedule: Record<string, string>): VideoTarget | null {
+  return selected.find((target) => !schedule[target]) ?? null;
+}
+
+function requireScheduleTarget(data: VideoFlowData): VideoTarget {
+  const target = data.target;
+  if (
+    typeof target !== "string" ||
+    !VIDEO_TARGETS.includes(target as VideoTarget) ||
+    !data.selectedTargets?.includes(target as VideoTarget)
+  )
+    throw new StudioError("err.video-reopen-publish");
+  return target as VideoTarget;
 }

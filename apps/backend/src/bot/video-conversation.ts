@@ -1,41 +1,31 @@
 import { type Context, InlineKeyboard } from "grammy";
-import { acceptFlow } from "../application/conversation-flow.js";
-import { fixUrlSlashes } from "../content/message.js";
+import { acceptFlow, flowStepInput } from "../application/conversation-flow.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { describeError, t } from "../foundation/i18n/index.js";
 import { log } from "../foundation/logger.js";
 import { storeTelegramVideo } from "../interfaces/telegram/video-ingress.js";
-import { VIDEO_TARGETS, type VideoMetadata, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
+import type { VideoMetadata, VideoTarget } from "../publishing/video-types.js";
 import { createStudioServices } from "../studio/services/index.js";
-import {
-  advanceVideoMetadata,
-  advanceVideoTargetSchedule,
-  commonVideoSchedule,
-  firstVideoMetadataStep,
-  VIDEO_FLOW,
-  type VideoWizardStep,
-} from "../studio/video-fsm.js";
+import { advanceVideoMetadata, VIDEO_FLOW, type VideoWizardStep } from "../studio/video-fsm.js";
 import { appendCancelButton } from "./dialog-ui.js";
 import { executePublicationEffects, type PublicationEffect, type PublicationMessageResult } from "./effects.js";
 import { botLocale } from "./i18n.js";
 import { renderPublicationCard } from "./publication-card.js";
 import { publicationCallback } from "./session-fsm.js";
+import { applyVideoScheduleDate } from "./video-scheduling.js";
 import {
   clearVideoState,
   enabledVideoTargets,
   getVideoState,
-  metadataPromptEffects,
   saveVideoState,
-  scheduleChoiceEffects,
-  setVideoData,
   targetKeyboard,
   type VideoConversationState,
+  type VideoConversationStep,
   videoControlEffects,
   videoPromptEffect,
-  videoScheduleConfirmationEffects,
-  videoTimeEffects,
+  videoStepEffects,
 } from "./video-ui.js";
 
 type VideoMessageArgs = {
@@ -45,20 +35,6 @@ type VideoMessageArgs = {
   actorId: number;
   session: VideoConversationState;
   text: string;
-};
-type VideoMessageHandler = (args: VideoMessageArgs) => Promise<PublicationEffect[]>;
-type VideoMessageHandlerDefinition = { handle: VideoMessageHandler; requiresText: boolean };
-
-const VIDEO_MESSAGE_HANDLERS: Record<string, VideoMessageHandlerDefinition> = {
-  asset: { handle: handleAssetMessage, requiresText: false },
-  label: { handle: handleLabelMessage, requiresText: true },
-  youtube_title: { handle: handleLinearMetadataMessage, requiresText: true },
-  youtube_description: { handle: handleLinearMetadataMessage, requiresText: true },
-  youtube_game_url: { handle: handleLinearMetadataMessage, requiresText: true },
-  youtube_tags: { handle: handleYoutubeTagsMessage, requiresText: true },
-  instagram_caption: { handle: handleInstagramCaptionMessage, requiresText: true },
-  schedule_common: { handle: handleScheduleMessage, requiresText: true },
-  schedule_target: { handle: handleScheduleMessage, requiresText: true },
 };
 
 /** Starts and advances the MP4 → metadata → schedule conversation. */
@@ -88,20 +64,19 @@ export async function handleVideoConversationMessage(
   const actorId = Number(ctx.from?.id);
   const session = getVideoState(backendDb, actorId);
   if (!session) return { handled: false, effects: [] };
-  const handler = VIDEO_MESSAGE_HANDLERS[session.step];
-  if (!handler) return { handled: false, effects: [] };
+  // A step that expects nothing from the operator is driven by its own
+  // controls, so an incoming message is not ours to consume.
+  const input = flowStepInput(VIDEO_FLOW, session.step);
+  if (!input) return { handled: false, effects: [] };
   try {
     const text = ctx.message && "text" in ctx.message ? (ctx.message.text?.trim() ?? "") : "";
-    if (handler.requiresText && !text) {
+    if (input === "text" && !text) {
       const locale = botLocale(backendDb, actorId);
       return { handled: true, effects: [videoPromptEffect(backendDb, actorId, t(locale, "video.await-text"))] };
     }
-    const edit =
-      session.data.is_single_edit && handler.requiresText ? singleEditChange(backendDb, config, actorId, session.step, text) : null;
-    const effects = edit
-      ? await finishSingleVideoEdit(backendDb, config, actorId, session, edit.target, edit.apply)
-      : await handler.handle({ ctx, backendDb, config, actorId, session, text });
-    return { handled: true, effects };
+    const args = { ctx, backendDb, config, actorId, session, text };
+    const singleEdit = session.data.is_single_edit && SINGLE_EDIT_FIELDS[session.step];
+    return { handled: true, effects: singleEdit ? await finishSingleVideoEdit(args) : await acceptVideoMessage(args) };
   } catch (error) {
     const locale = botLocale(backendDb, actorId);
     // The original error is operationally important (disk, Telegram download,
@@ -120,200 +95,71 @@ export async function handleVideoConversationMessage(
   }
 }
 
-async function handleAssetMessage({ ctx, backendDb, config, actorId, session }: VideoMessageArgs): Promise<PublicationEffect[]> {
+/** Routes the message to the operation the current step performs. The wizard's
+ * metadata steps are deliberately one case: they differ only in which field
+ * they collect, and the flow already knows that. */
+async function acceptVideoMessage(args: VideoMessageArgs): Promise<PublicationEffect[]> {
+  const { step } = args.session;
+  if (step === "asset") return acceptVideoAsset(args);
+  if (step === "label") return acceptVideoLabel(args);
+  if (step === "schedule_common" || step === "schedule_target") return acceptVideoScheduleDate(args);
+  return acceptVideoMetadata(args);
+}
+
+async function acceptVideoAsset({ ctx, backendDb, config, actorId, session }: VideoMessageArgs): Promise<PublicationEffect[]> {
   const stored = await storeTelegramVideo(ctx, backendDb, config, actorId);
-  const draftId = createStudioServices(backendDb, config).videos.create(
-    actorId,
-    stored.assetId,
-    session.data.videoLocale === "en" ? "en" : "ru",
-  );
+  const videos = createStudioServices(backendDb, config).videos;
+  const draftId = videos.create(actorId, stored.assetId, session.data.videoLocale === "en" ? "en" : "ru");
   const selected = enabledVideoTargets(config);
   if (!selected.length) throw new StudioError("err.no-video-platforms-config");
-  createStudioServices(backendDb, config).videos.replaceTargets(actorId, draftId, selected);
-  const first = firstVideoMetadataStep(selected);
+  videos.replaceTargets(actorId, draftId, selected);
   const transition = await acceptFlow(VIDEO_FLOW, "asset", stored.assetId, { ...session.data, selectedTargets: selected });
   if (!transition?.next) throw new StudioError("err.video-restart");
-  const next: VideoConversationState = { ...session, draftId, step: first, selected, data: transition.data };
-  saveVideoState(backendDb, actorId, next);
-  return metadataPromptEffects(backendDb, actorId, first, selected);
+  const next = transition.next as VideoConversationStep;
+  const saved = saveVideoState(backendDb, actorId, { ...session, draftId, step: next, selected, data: transition.data });
+  return videoStepEffects(backendDb, config, actorId, next, saved);
 }
 
-async function handleLabelMessage({ backendDb, config, actorId, session, text }: VideoMessageArgs): Promise<PublicationEffect[]> {
+async function acceptVideoLabel({ backendDb, config, actorId, session, text }: VideoMessageArgs): Promise<PublicationEffect[]> {
   if (session.draftId == null) return [];
   createStudioServices(backendDb, config).videos.rename(actorId, session.draftId, text);
-  if (session.data.is_single_edit) {
-    clearVideoState(backendDb, actorId);
-    const locale = botLocale(backendDb, actorId);
-    const preview = renderPublicationCard("video", {
-      data: createStudioServices(backendDb, config).videos.preview(actorId, session.draftId),
-      config,
-      locale,
-    });
-    return [
-      {
-        type: "screen",
-        mode: "reply",
-        text: preview.text,
-        options: { parse_mode: "Markdown", reply_markup: preview.keyboard },
-        card: { kind: "video", draftId: session.draftId },
-      },
-    ];
-  }
+  if (session.data.is_single_edit) return videoCardEffects(backendDb, config, actorId, session.draftId);
   const transition = await acceptFlow(VIDEO_FLOW, "label", text, { ...session.data, selectedTargets: session.selected });
   if (!transition?.next) throw new StudioError("err.video-restart");
-  const next: VideoConversationState = { ...session, step: transition.next as VideoConversationState["step"], data: transition.data };
-  const saved = saveVideoState(backendDb, actorId, next);
+  const saved = saveVideoState(backendDb, actorId, { ...session, step: transition.next as VideoConversationStep, data: transition.data });
+  const locale = botLocale(backendDb, actorId);
   return videoControlEffects(
     saved,
-    t(botLocale(backendDb, actorId), "video.choose-platforms-next"),
-    targetKeyboard(config, saved.selected, botLocale(backendDb, actorId), saved.revision),
+    t(locale, "video.choose-platforms-next"),
+    targetKeyboard(config, saved.selected, locale, saved.revision),
   );
 }
 
-async function handleLinearMetadataMessage({ backendDb, actorId, session, text }: VideoMessageArgs): Promise<PublicationEffect[]> {
+/** One case for every metadata field. A platform's collected fields are handed
+ * to Video Studio the moment the flow leaves that platform's chain — the dialog
+ * never decides what the metadata looks like or what the draft ends up called. */
+async function acceptVideoMetadata({ backendDb, config, actorId, session, text }: VideoMessageArgs): Promise<PublicationEffect[]> {
   if (session.draftId == null) return [];
   const step = session.step as VideoWizardStep;
   const transition = await acceptFlow(VIDEO_FLOW, step, text, { ...session.data, selectedTargets: session.selected });
   if (!transition?.next) throw new StudioError("err.video-restart");
+  const next = transition.next as VideoConversationStep;
   const data = withoutFlowData(transition.data);
-  setVideoData(backendDb, actorId, session, step, data[step], transition.next as VideoConversationState["step"]);
-  return metadataPromptEffects(backendDb, actorId, transition.next as VideoWizardStep, session.selected);
+  const completed = COMPLETED_WIZARD_TARGET[step];
+  if (completed)
+    createStudioServices(backendDb, config).videos.completeWizardTarget(actorId, session.draftId, completed, data, session.selected);
+  const saved = saveVideoState(backendDb, actorId, { ...session, step: next, data });
+  return videoStepEffects(backendDb, config, actorId, next, saved);
 }
-
-async function handleYoutubeTagsMessage({ backendDb, config, actorId, session, text }: VideoMessageArgs): Promise<PublicationEffect[]> {
-  if (session.draftId == null) return [];
-  const transition = await acceptFlow(VIDEO_FLOW, "youtube_tags", text, { ...session.data, selectedTargets: session.selected });
-  if (!transition) throw new StudioError("err.video-restart");
-  const tags = transition.data.youtube_tags as string[];
-  const metadata = {
-    title: String(session.data.youtube_title ?? ""),
-    description: String(session.data.youtube_description ?? ""),
-    ...(String(session.data.youtube_game_url ?? "") ? { gameUrl: String(session.data.youtube_game_url) } : {}),
-    tags,
-  };
-  createStudioServices(backendDb, config).videos.updateMetadata(actorId, session.draftId, "youtube_shorts", metadata);
-  createStudioServices(backendDb, config).videos.rename(actorId, session.draftId, metadata.title || "YouTube Shorts");
-  const saved = saveVideoState(backendDb, actorId, { ...session, data: withoutFlowData(transition.data) });
-  if (nextVideoStep(saved.selected) === "instagram_caption") {
-    const next = saveVideoState(backendDb, actorId, { ...saved, step: "instagram_caption" });
-    return metadataPromptEffects(backendDb, actorId, "instagram_caption", next.selected);
-  }
-  return scheduleChoiceEffects(
-    backendDb,
-    actorId,
-    saved,
-    botLocale(backendDb, actorId),
-    t(botLocale(backendDb, actorId), "video.saved-choose-schedule", { timezone: config.TIMEZONE_LABEL }),
-  );
-}
-
-async function handleInstagramCaptionMessage({
-  backendDb,
-  config,
-  actorId,
-  session,
-  text,
-}: VideoMessageArgs): Promise<PublicationEffect[]> {
-  if (session.draftId == null) return [];
-  const transition = await acceptFlow(VIDEO_FLOW, "instagram_caption", text, { ...session.data, selectedTargets: session.selected });
-  if (!transition) throw new StudioError("err.video-restart");
-  const metadata = { caption: String(transition.data.instagram_caption ?? "") };
-  createStudioServices(backendDb, config).videos.updateMetadata(actorId, session.draftId, "instagram_reels", metadata);
-  if (!session.selected.includes("youtube_shorts"))
-    createStudioServices(backendDb, config).videos.rename(actorId, session.draftId, metadata.caption || "Instagram Reels");
-  const saved = saveVideoState(backendDb, actorId, { ...session, data: withoutFlowData(transition.data) });
-  return scheduleChoiceEffects(
-    backendDb,
-    actorId,
-    saved,
-    botLocale(backendDb, actorId),
-    t(botLocale(backendDb, actorId), "video.saved-choose-schedule", { timezone: config.TIMEZONE_LABEL }),
-  );
-}
-
-function nextVideoStep(selected: VideoTarget[]): "instagram_caption" | "schedule_choice" {
-  return selected.includes("instagram_reels") ? "instagram_caption" : "schedule_choice";
-}
-
-function withoutFlowData(data: Record<string, unknown>): Record<string, unknown> {
-  const { nextTarget: _nextTarget, ...persisted } = data;
-  return persisted;
-}
-
-/** Table for editing one already-set metadata field outside the wizard order
- * (reached via "✏️ Edit" on a finished draft). Kept separate from the wizard
- * advance logic above so neither has to know about the other's entry point. */
-function singleEditChange(
-  backendDb: BackendDb,
-  config: BackendConfig,
-  actorId: number,
-  step: string,
-  text: string,
-): { target: VideoTarget; apply: (metadata: Record<string, unknown>, draftId: number) => void } | null {
-  const builder = SINGLE_EDIT_CHANGES[step];
-  return builder ? builder(backendDb, config, actorId, text) : null;
-}
-
-type SingleEditBuilder = (
-  backendDb: BackendDb,
-  config: BackendConfig,
-  actorId: number,
-  text: string,
-) => { target: VideoTarget; apply: (metadata: Record<string, unknown>, draftId: number) => void };
-
-const SINGLE_EDIT_CHANGES: Record<string, SingleEditBuilder> = {
-  youtube_title: (_backendDb, _config, actorId, text) => ({
-    target: "youtube_shorts",
-    apply: (metadata, draftId) => {
-      metadata.title = text;
-      createStudioServices(_backendDb, _config).videos.rename(actorId, draftId, text || "YouTube Shorts");
-    },
-  }),
-  youtube_description: (_backendDb, _config, _actorId, text) => ({
-    target: "youtube_shorts",
-    apply: (metadata) => {
-      metadata.description = text === "-" ? "" : text;
-    },
-  }),
-  youtube_game_url: (_backendDb, _config, _actorId, text) => ({
-    target: "youtube_shorts",
-    apply: (metadata) => {
-      metadata.gameUrl = text === "-" ? undefined : fixUrlSlashes(text);
-    },
-  }),
-  youtube_tags: (_backendDb, _config, _actorId, text) => ({
-    target: "youtube_shorts",
-    apply: (metadata) => {
-      metadata.tags = advanceVideoMetadata("youtube_tags", text, {}).data.youtube_tags as string[];
-    },
-  }),
-  instagram_caption: (_backendDb, _config, _actorId, text) => ({
-    target: "instagram_reels",
-    apply: (metadata) => {
-      metadata.caption = text === "-" ? "" : text;
-      delete metadata.hashtags;
-    },
-  }),
-};
 
 /** Isolates the one step that legitimately fails on bad user input. Any other
  * error in this flow (preview, delivery, storage) must reach the generic
  * describeError path instead of being misreported as an unparsable date. */
-async function manualScheduleDate(
-  backendDb: BackendDb,
-  config: BackendConfig,
-  actorId: number,
-  draftId: number,
-  text: string,
-): Promise<Date> {
-  return createStudioServices(backendDb, config).videos.manualSchedule(actorId, draftId, text);
-}
-
-async function handleScheduleMessage({ backendDb, config, actorId, session, text }: VideoMessageArgs): Promise<PublicationEffect[]> {
+async function acceptVideoScheduleDate({ backendDb, config, actorId, session, text }: VideoMessageArgs): Promise<PublicationEffect[]> {
   if (session.draftId == null) throw new StudioError("err.video-missing");
+  let date: Date;
   try {
-    const date = await manualScheduleDate(backendDb, config, actorId, session.draftId, text);
-    return applyVideoScheduleDate(backendDb, config, actorId, session, date);
+    date = createStudioServices(backendDb, config).videos.manualSchedule(actorId, session.draftId, text);
   } catch (error) {
     const locale = botLocale(backendDb, actorId);
     const message =
@@ -322,112 +168,68 @@ async function handleScheduleMessage({ backendDb, config, actorId, session, text
         : describeError(locale, error);
     return [videoPromptEffect(backendDb, actorId, message, true)];
   }
+  return applyVideoScheduleDate(backendDb, config, actorId, session, date);
 }
 
-/** Applies one parsed/picked date to the current schedule step, whether it
- * came from free text or a slot button. Shared so the "different time per
- * platform" chain (schedule_target + data.target → next target) behaves identically
- * either way. */
-async function applyVideoScheduleDate(
-  backendDb: BackendDb,
-  config: BackendConfig,
-  actorId: number,
-  session: VideoConversationState,
-  date: Date,
-): Promise<PublicationEffect[]> {
-  if (session.draftId == null) throw new StudioError("err.video-missing");
-  const handler = SCHEDULE_DATE_HANDLERS[session.step as keyof typeof SCHEDULE_DATE_HANDLERS];
-  if (!handler) throw new StudioError("err.video-reopen-publish");
-  return handler({ backendDb, config, actorId, session, date });
-}
-
-type ScheduleDateArgs = {
-  backendDb: BackendDb;
-  config: BackendConfig;
-  actorId: number;
-  session: VideoConversationState;
-  date: Date;
+/** The last step of each platform's metadata chain, which is where that
+ * platform's collected fields become its stored metadata. */
+const COMPLETED_WIZARD_TARGET: Partial<Record<VideoWizardStep, VideoTarget>> = {
+  youtube_tags: "youtube_shorts",
+  instagram_caption: "instagram_reels",
 };
 
-const SCHEDULE_DATE_HANDLERS: Record<"schedule_common" | "schedule_target", (args: ScheduleDateArgs) => Promise<PublicationEffect[]>> = {
-  schedule_common: async ({ backendDb, config, actorId, session, date }) => {
-    const transition = await acceptFlow(VIDEO_FLOW, "schedule_common", date.toISOString(), {
-      ...session.data,
-      selectedTargets: session.selected,
-    });
-    if (!transition?.next) throw new StudioError("err.video-reopen-publish");
-    return videoScheduleConfirmationEffects(backendDb, config, actorId, session, commonVideoSchedule(session.selected, date));
-  },
-  schedule_target: applyIndividualScheduleDate,
-};
-
-async function applyIndividualScheduleDate({ backendDb, config, actorId, session, date }: ScheduleDateArgs): Promise<PublicationEffect[]> {
-  const target =
-    typeof session.data.target === "string" && VIDEO_TARGETS.includes(session.data.target as VideoTarget)
-      ? (session.data.target as VideoTarget)
-      : null;
-  if (!target || !session.selected.includes(target)) throw new StudioError("err.video-reopen-publish");
-  const transition = advanceVideoTargetSchedule(
-    session.selected,
-    (session.data.schedule as Record<string, string> | undefined) ?? {},
-    target,
-    date,
-  );
-  const flowTransition = await acceptFlow(VIDEO_FLOW, "schedule_target", date.toISOString(), {
-    ...session.data,
-    selectedTargets: session.selected,
-    nextTarget: transition.nextTarget,
-  });
-  if (!flowTransition?.next) throw new StudioError("err.video-reopen-publish");
-  if (flowTransition.next === "schedule_target") {
-    const next: VideoConversationState = {
-      ...session,
-      step: flowTransition.next,
-      data: { ...flowTransition.data, schedule: transition.schedule, target: transition.nextTarget },
-    };
-    const saved = saveVideoState(backendDb, actorId, next);
-    return videoTimeEffects(
-      backendDb,
-      actorId,
-      saved,
-      t(botLocale(backendDb, actorId), "video.schedule-target-prompt", {
-        target: videoTargetLabel(transition.nextTarget as VideoTarget),
-        timezone: config.TIMEZONE_LABEL,
-      }),
-    );
-  }
-  return videoScheduleConfirmationEffects(
-    backendDb,
-    config,
-    actorId,
-    session,
-    Object.fromEntries(Object.entries(transition.schedule).map(([key, value]) => [key, new Date(value)])) as Partial<
-      Record<VideoTarget, Date>
-    >,
-  );
+function withoutFlowData(data: Record<string, unknown>): Record<string, unknown> {
+  const { selectedTargets: _selectedTargets, ...persisted } = data;
+  return persisted;
 }
 
-async function finishSingleVideoEdit(
-  backendDb: BackendDb,
-  config: BackendConfig,
-  actorId: number,
-  session: VideoConversationState,
-  target: VideoTarget,
-  change: (metadata: Record<string, unknown>, draftId: number) => void,
-): Promise<PublicationEffect[]> {
+/** Which target one already-set field belongs to when it is edited outside the
+ * wizard order (reached via "✏️ Edit" on a finished draft). The value itself is
+ * parsed by the same transition the wizard uses, so "-" and URL fixing cannot
+ * drift between the two entry points. */
+const SINGLE_EDIT_FIELDS: Partial<Record<string, VideoTarget>> = {
+  youtube_title: "youtube_shorts",
+  youtube_description: "youtube_shorts",
+  youtube_game_url: "youtube_shorts",
+  youtube_tags: "youtube_shorts",
+  instagram_caption: "instagram_reels",
+};
+
+async function finishSingleVideoEdit({ backendDb, config, actorId, session, text }: VideoMessageArgs): Promise<PublicationEffect[]> {
   if (session.draftId == null) throw new StudioError("err.video-reopen-edit");
-  const row = createStudioServices(backendDb, config)
-    .videos.get(actorId, session.draftId)
-    .targets.find((item) => item.target === target);
+  const step = session.step as VideoWizardStep;
+  const target = SINGLE_EDIT_FIELDS[step];
+  if (!target) throw new StudioError("err.video-reopen-edit");
+  const videos = createStudioServices(backendDb, config).videos;
+  const row = videos.get(actorId, session.draftId).targets.find((item) => item.target === target);
   const metadata = { ...(row?.metadataJson as Record<string, unknown> | undefined) };
-  change(metadata, session.draftId);
-  createStudioServices(backendDb, config).videos.updateMetadata(actorId, session.draftId, target, metadata as VideoMetadata);
+  applySingleEdit(metadata, step, advanceVideoMetadata(step, text, {}).data[step]);
+  videos.updateMetadata(actorId, session.draftId, target, metadata as VideoMetadata);
+  if (step === "youtube_title") videos.rename(actorId, session.draftId, String(metadata.title ?? "") || "YouTube Shorts");
+  return videoCardEffects(backendDb, config, actorId, session.draftId);
+}
+
+function applySingleEdit(metadata: Record<string, unknown>, step: VideoWizardStep, value: unknown): void {
+  if (step === "youtube_title") metadata.title = value;
+  if (step === "youtube_description") metadata.description = value;
+  // An emptied URL is absent, not blank: the field is optional and a stored ""
+  // would still render as a game link row on the card.
+  if (step === "youtube_game_url") metadata.gameUrl = value ? value : undefined;
+  if (step === "youtube_tags") metadata.tags = value;
+  if (step === "instagram_caption") {
+    metadata.caption = value;
+    delete metadata.hashtags;
+  }
+}
+
+/** Ends the dialog on the draft's own card. Both single-field edits and the
+ * label edit finish this way: there is no next question to ask. */
+function videoCardEffects(backendDb: BackendDb, config: BackendConfig, actorId: number, draftId: number): PublicationEffect[] {
   clearVideoState(backendDb, actorId);
-  const locale = botLocale(backendDb, actorId);
   const preview = renderPublicationCard("video", {
-    data: createStudioServices(backendDb, config).videos.preview(actorId, session.draftId),
+    data: createStudioServices(backendDb, config).videos.preview(actorId, draftId),
     config,
-    locale,
+    locale: botLocale(backendDb, actorId),
   });
   return [
     {
@@ -435,7 +237,7 @@ async function finishSingleVideoEdit(
       mode: "reply",
       text: preview.text,
       options: { parse_mode: "Markdown", reply_markup: preview.keyboard },
-      card: { kind: "video", draftId: session.draftId },
+      card: { kind: "video", draftId },
     },
   ];
 }

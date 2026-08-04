@@ -1,11 +1,12 @@
 import { type Context, InlineKeyboard } from "grammy";
+import { backFlow } from "../application/conversation-flow.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
-import { t } from "../foundation/i18n/index.js";
+import { type MessageKey, t } from "../foundation/i18n/index.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import { createStudioServices } from "../studio/services/index.js";
-import { previousVideoMetadataStep, VIDEO_FLOW, type VideoWizardStep } from "../studio/video-fsm.js";
+import { VIDEO_FLOW, type VideoWizardStep } from "../studio/video-fsm.js";
 import { type ConversationState, clearConversationState, getConversationState, saveConversationState } from "./conversation-state.js";
 import { appendCancelButton, cancelPromptKeyboard, confirmationKeyboard } from "./dialog-ui.js";
 import type { PublicationEffect } from "./effects.js";
@@ -78,17 +79,6 @@ export function saveVideoState(backendDb: BackendDb, actorId: number, session: V
   return { ...saved, step: saved.step as VideoConversationStep, selected: session.selected };
 }
 
-export function setVideoData(
-  backendDb: BackendDb,
-  actorId: number,
-  session: VideoConversationState,
-  key: string,
-  value: unknown,
-  nextStep: VideoConversationStep,
-): VideoConversationState {
-  return saveVideoState(backendDb, actorId, { ...session, step: nextStep, data: { ...session.data, [key]: value } });
-}
-
 export function clearVideoState(backendDb: BackendDb, actorId: number): void {
   clearConversationState(backendDb, actorId, "video");
 }
@@ -106,31 +96,60 @@ export function videoPromptEffect(backendDb: BackendDb, actorId: number, text: s
   };
 }
 
-export function metadataPromptEffects(
+/** Renders whatever the flow's current step asks the operator for. Every path
+ * that advances the wizard — a typed message or a tapped control — ends here
+ * with the step the transition produced, so no caller decides for itself which
+ * question comes next or how it looks. */
+export function videoStepEffects(
   backendDb: BackendDb,
+  config: BackendConfig,
   actorId: number,
-  step: VideoWizardStep,
-  selected: VideoTarget[],
+  step: VideoConversationStep,
+  session: VideoConversationState,
 ): PublicationEffect[] {
+  const locale = botLocale(backendDb, actorId);
+  if (step in VIDEO_METADATA_PROMPTS) return metadataPromptEffects(backendDb, actorId, step as VideoWizardStep, session.selected);
+  if (step === "schedule_choice")
+    return scheduleChoiceEffects(session, locale, t(locale, "video.saved-choose-schedule", { timezone: config.TIMEZONE_LABEL }));
+  if (step === "schedule_common")
+    return videoTimeEffects(backendDb, actorId, session, t(locale, "video.enter-datetime", { timezone: config.TIMEZONE_LABEL }));
+  if (step === "schedule_target") {
+    const target = session.data.target;
+    if (typeof target !== "string" || !VIDEO_TARGETS.includes(target as VideoTarget)) throw new StudioError("err.video-no-platforms");
+    return videoTimeEffects(
+      backendDb,
+      actorId,
+      session,
+      t(locale, "video.schedule-target-prompt", {
+        target: videoTargetLabel(target as VideoTarget),
+        timezone: config.TIMEZONE_LABEL,
+      }),
+    );
+  }
+  throw new StudioError("err.video-restart");
+}
+
+function metadataPromptEffects(backendDb: BackendDb, actorId: number, step: VideoWizardStep, selected: VideoTarget[]): PublicationEffect[] {
   const locale = botLocale(backendDb, actorId);
   const revision = getVideoState(backendDb, actorId)?.revision;
   const keyboard = new InlineKeyboard();
   if (step === "youtube_game_url") keyboard.text(t(locale, "video.skip"), publicationCallback("video", "game_skip", [], revision));
-  if (previousVideoMetadataStep(step, selected))
+  if (backFlow(VIDEO_FLOW, step, { selectedTargets: selected }))
     keyboard.text(t(locale, "common.back"), publicationCallback("video", "meta_back", [], revision));
   appendCancelButton(keyboard, locale, publicationCallback("video", "cancel_dialog"), revision);
   return [{ type: "prompt", text: videoPrompt(locale, step), options: { reply_markup: keyboard } }];
 }
 
+const VIDEO_METADATA_PROMPTS: Record<VideoWizardStep, MessageKey> = {
+  youtube_title: "video.prompt-yt-title",
+  youtube_description: "video.prompt-yt-description",
+  youtube_game_url: "video.prompt-yt-game-url",
+  youtube_tags: "video.prompt-yt-tags",
+  instagram_caption: "video.prompt-ig-caption",
+};
+
 function videoPrompt(locale: BotLocale, prompt: VideoWizardStep): string {
-  const prompts: Record<VideoWizardStep, string> = {
-    youtube_title: "video.prompt-yt-title",
-    youtube_description: "video.prompt-yt-description",
-    youtube_game_url: "video.prompt-yt-game-url",
-    youtube_tags: "video.prompt-yt-tags",
-    instagram_caption: "video.prompt-ig-caption",
-  };
-  return t(locale, prompts[prompt] as Parameters<typeof t>[1]);
+  return t(locale, VIDEO_METADATA_PROMPTS[prompt]);
 }
 
 export function videoControlEffects(session: VideoConversationState, text: string, keyboard: InlineKeyboard): PublicationEffect[] {
@@ -138,12 +157,7 @@ export function videoControlEffects(session: VideoConversationState, text: strin
   return [{ type: "prompt", text, options: { parse_mode: "Markdown", reply_markup: keyboard }, ...(card ? { card } : {}) }];
 }
 
-export function videoTimeEffects(
-  backendDb: BackendDb,
-  actorId: number,
-  session: VideoConversationState,
-  text: string,
-): PublicationEffect[] {
+function videoTimeEffects(backendDb: BackendDb, actorId: number, session: VideoConversationState, text: string): PublicationEffect[] {
   const locale = botLocale(backendDb, actorId);
   const revision = getVideoState(backendDb, actorId)?.revision ?? session.revision;
   const engine = createPublicationScheduleEngine({
@@ -164,25 +178,20 @@ export function videoTimeEffects(
   return videoControlEffects(session, text, keyboard);
 }
 
-export function scheduleChoiceEffects(
-  backendDb: BackendDb,
-  actorId: number,
-  session: VideoConversationState,
-  locale: BotLocale,
-  text: string,
-): PublicationEffect[] {
-  const next = saveVideoState(backendDb, actorId, { ...session, step: "schedule_choice" });
+/** Expects the session to already sit on `schedule_choice`: the caller applied
+ * the transition that got here, and saving again only burns a revision the
+ * keyboard below would then be built against. */
+function scheduleChoiceEffects(session: VideoConversationState, locale: BotLocale, text: string): PublicationEffect[] {
+  const { revision } = session;
   const keyboard = new InlineKeyboard().text(
     t(locale, "video.same-time"),
-    publicationCallback("video", "common", [session.draftId ?? ""], next.revision),
+    publicationCallback("video", "common", [session.draftId ?? ""], revision),
   );
   if (session.selected.length > 1)
-    keyboard
-      .row()
-      .text(t(locale, "video.different-time"), publicationCallback("video", "individual", [session.draftId ?? ""], next.revision));
+    keyboard.row().text(t(locale, "video.different-time"), publicationCallback("video", "individual", [session.draftId ?? ""], revision));
   keyboard.row();
-  appendCancelButton(keyboard, locale, publicationCallback("video", "cancel_dialog"), next.revision);
-  return videoControlEffects(next, text, keyboard);
+  appendCancelButton(keyboard, locale, publicationCallback("video", "cancel_dialog"), revision);
+  return videoControlEffects(session, text, keyboard);
 }
 
 /** Moves the session to `schedule_confirm` and renders the per-target summary
