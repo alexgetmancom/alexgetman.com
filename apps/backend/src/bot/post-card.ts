@@ -4,9 +4,9 @@ import type { BackendConfig } from "../foundation/config.js";
 import { t } from "../foundation/i18n/index.js";
 import { setTelegramPostCard } from "../interfaces/telegram/control-cards.js";
 import { formatMsk } from "../interfaces/telegram/time.js";
+import { getConversationState } from "./conversation-state.js";
 import { cancelPromptKeyboard, confirmationKeyboard } from "./dialog-ui.js";
 import { botLocale } from "./i18n.js";
-import { getPostAdminState } from "./post-state.js";
 import { type DraftView, draftPreview } from "./preview.js";
 import { publicationCallback } from "./session-fsm.js";
 
@@ -40,7 +40,7 @@ export async function editDraftPrompt(
 ): Promise<void> {
   const actorId = Number(ctx.from?.id);
   const locale = botLocale(backendDb, actorId);
-  const revision = getPostAdminState(backendDb, actorId)?.revision;
+  const revision = getConversationState(backendDb, actorId, "post")?.revision;
   await ctx.reply(prompt, {
     parse_mode: "Markdown",
     reply_markup: cancelPromptKeyboard(locale, publicationCallback("post", "cancel_state", [draftId, returnView]), revision),

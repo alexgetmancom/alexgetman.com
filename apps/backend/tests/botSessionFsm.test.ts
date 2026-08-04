@@ -1,6 +1,5 @@
 import { describe, expect, it } from "bun:test";
 import {
-  legacyToPublication,
   parseDraftId,
   parsePublicationCallback,
   parseSessionCallback,
@@ -15,8 +14,8 @@ describe("Telegram session callback encoding", () => {
     expect(parseSessionCallback(encoded)).toEqual({ data: "action:sv42", revision: 7 });
   });
 
-  it("continues accepting callbacks emitted before the prefix format", () => {
-    expect(parseSessionCallback("action:7:sv3")).toEqual({ data: "action:7", revision: 3 });
+  it("leaves an unversioned callback without a revision", () => {
+    expect(parseSessionCallback("action:7:sv3")).toEqual({ data: "action:7:sv3", revision: null });
   });
 
   it("round-trips canonical publication arguments without guessing their meaning", () => {
@@ -37,9 +36,9 @@ describe("Telegram session callback encoding", () => {
     });
   });
 
-  it("leaves the canonical namespace intact while legacy translation remains explicit", () => {
+  it("accepts only the canonical publication namespace", () => {
     expect(parseSessionCallback("p:post:sched_scope:both:42")).toEqual({ data: "p:post:sched_scope:both:42", revision: null });
-    expect(legacyToPublication("video_now:12")).toEqual({ kind: "video", action: "now", args: ["12"] });
+    expect(parsePublicationCallback("video_now:12")).toBeNull();
     expect(parsePublicationCallback("p:video:now:12")).toEqual({ kind: "video", action: "now", args: ["12"] });
   });
 

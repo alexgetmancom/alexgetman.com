@@ -1,12 +1,46 @@
 import { describe, expect, it } from "bun:test";
 import { and, eq } from "drizzle-orm";
-import { postStepData, postStepName, resolvePostWizardStep } from "../src/bot/post-fsm.js";
-import { clearPostAdminStateIfCurrent, getPostAdminState, setPostAdminState } from "../src/bot/post-state.js";
-import { clearSession, getSession, saveSession } from "../src/bot/video-session.js";
+import { clearConversationStateIfCurrent, getConversationState, saveConversationState } from "../src/bot/conversation-state.js";
+import { type PostWizardStep, postStateStep, postStepData, postStepName, resolvePostWizardStep } from "../src/bot/post-fsm.js";
+import { clearVideoState, getVideoState, saveVideoState } from "../src/bot/video-ui.js";
 import type { BackendDb } from "../src/db/client.js";
 import { conversationSessions } from "../src/db/schema.js";
 import { unsafeDb } from "../src/db/unsafe.js";
 import { openBackendDb } from "./helpers/open-db.js";
+
+function setPostAdminState(
+  db: BackendDb,
+  actorId: number,
+  step: PostWizardStep,
+  draftId: number | null,
+  controlMessageId: number | null,
+): number {
+  return saveConversationState(db, actorId, {
+    kind: "post",
+    draftId,
+    step: postStepName(step),
+    data: postStepData(step),
+    controlMessageId,
+  }).revision;
+}
+
+function getPostState(db: BackendDb, actorId: number) {
+  const state = getConversationState(db, actorId, "post");
+  const step = postStateStep(state);
+  return state
+    ? { action: step, step, draft_id: state.draftId, control_message_id: state.controlMessageId, revision: state.revision }
+    : null;
+}
+
+function clearPostAdminStateIfCurrent(
+  db: BackendDb,
+  actorId: number,
+  step: PostWizardStep,
+  draftId: number | null,
+  expectedRevision: number,
+): boolean {
+  return clearConversationStateIfCurrent(db, { kind: "post", step: postStepName(step), draftId }, actorId, expectedRevision);
+}
 
 describe("Telegram dialog state", () => {
   it("round-trips typed post wizard steps through short names and data", () => {
@@ -29,20 +63,26 @@ describe("Telegram dialog state", () => {
   it("stores new post state in the typed step column and reads legacy action rows", () => {
     const backendDb: BackendDb = openBackendDb(":memory:");
     try {
-      setPostAdminState(backendDb, 42, "edit_ru", 7, 9);
+      setPostAdminState(backendDb, 42, { type: "edit_text", locale: "ru" }, 7, 9);
       expect(unsafeDb(backendDb).db.select().from(conversationSessions).where(eq(conversationSessions.actorId, 42)).get()).toMatchObject({
         action: null,
         step: "edit_text",
         dataJson: { locale: "ru" },
       });
-      expect(getPostAdminState(backendDb, 42)).toMatchObject({ action: "edit_ru", step: { type: "edit_text", locale: "ru" } });
+      expect(getPostState(backendDb, 42)).toMatchObject({
+        action: { type: "edit_text", locale: "ru" },
+        step: { type: "edit_text", locale: "ru" },
+      });
 
       unsafeDb(backendDb)
         .db.update(conversationSessions)
-        .set({ action: "edit_en", step: null })
+        .set({ action: null, step: "edit_text", dataJson: { locale: "en" } })
         .where(eq(conversationSessions.actorId, 42))
         .run();
-      expect(getPostAdminState(backendDb, 42)).toMatchObject({ action: "edit_en", step: { type: "edit_text", locale: "en" } });
+      expect(getPostState(backendDb, 42)).toMatchObject({
+        action: { type: "edit_text", locale: "en" },
+        step: { type: "edit_text", locale: "en" },
+      });
     } finally {
       backendDb.close();
     }
@@ -51,13 +91,13 @@ describe("Telegram dialog state", () => {
   it("increments post revisions and refuses to clear a newer dialog", () => {
     const backendDb: BackendDb = openBackendDb(":memory:");
     try {
-      const first = setPostAdminState(backendDb, 42, "edit_ru", 7, 9);
-      const second = setPostAdminState(backendDb, 42, "edit_en", 7, 10);
+      const first = setPostAdminState(backendDb, 42, { type: "edit_text", locale: "ru" }, 7, 9);
+      const second = setPostAdminState(backendDb, 42, { type: "edit_text", locale: "en" }, 7, 10);
 
       expect(second).toBe(first + 1);
-      expect(clearPostAdminStateIfCurrent(backendDb, 42, "edit_en", 7, first)).toBe(false);
-      expect(clearPostAdminStateIfCurrent(backendDb, 42, "edit_en", 7, second)).toBe(true);
-      expect(getPostAdminState(backendDb, 42)).toMatchObject({ action: null, revision: second + 1 });
+      expect(clearPostAdminStateIfCurrent(backendDb, 42, { type: "edit_text", locale: "en" }, 7, first)).toBe(false);
+      expect(clearPostAdminStateIfCurrent(backendDb, 42, { type: "edit_text", locale: "en" }, 7, second)).toBe(true);
+      expect(getPostState(backendDb, 42)).toBeNull();
     } finally {
       backendDb.close();
     }
@@ -66,12 +106,12 @@ describe("Telegram dialog state", () => {
   it("increments video revisions and rejects writes from an older wizard", () => {
     const backendDb: BackendDb = openBackendDb(":memory:");
     try {
-      const first = saveSession(backendDb, 42, { draftId: null, step: "locale", selected: [], data: {} });
-      const second = saveSession(backendDb, 42, { ...first, step: "asset" });
+      const first = saveVideoState(backendDb, 42, { draftId: null, step: "locale", selected: [], data: {} });
+      const second = saveVideoState(backendDb, 42, { ...first, step: "asset" });
 
       expect(second.revision).toBe(first.revision + 1);
-      expect(() => saveSession(backendDb, 42, first)).toThrow("action.session-stale");
-      expect(getSession(backendDb, 42)).toMatchObject({ step: "asset", revision: second.revision });
+      expect(() => saveVideoState(backendDb, 42, first)).toThrow("action.session-stale");
+      expect(getVideoState(backendDb, 42)).toMatchObject({ step: "asset", revision: second.revision });
     } finally {
       backendDb.close();
     }
@@ -80,7 +120,7 @@ describe("Telegram dialog state", () => {
   it("keeps the video control message in its column across a session reload", () => {
     const backendDb: BackendDb = openBackendDb(":memory:");
     try {
-      saveSession(backendDb, 42, {
+      saveVideoState(backendDb, 42, {
         draftId: 7,
         step: "schedule_confirm",
         selected: ["youtube_shorts"],
@@ -92,15 +132,15 @@ describe("Telegram dialog state", () => {
         unsafeDb(backendDb).sqlite.prepare("SELECT control_message_id, data_json FROM conversation_sessions WHERE actor_id=?").get(42),
       ).toEqual({
         control_message_id: 27,
-        data_json: JSON.stringify({ schedule: { youtube_shorts: "2026-08-04T12:00:00.000Z" } }),
+        data_json: JSON.stringify({ schedule: { youtube_shorts: "2026-08-04T12:00:00.000Z" }, selectedTargets: ["youtube_shorts"] }),
       });
-      expect(getSession(backendDb, 42)).toMatchObject({ controlMessageId: 27 });
+      expect(getVideoState(backendDb, 42)).toMatchObject({ controlMessageId: 27 });
     } finally {
       backendDb.close();
     }
   });
 
-  it("reads a legacy individual schedule step into the short step and data", () => {
+  it("retires a malformed individual schedule step", () => {
     const backendDb: BackendDb = openBackendDb(":memory:");
     try {
       unsafeDb(backendDb)
@@ -116,7 +156,7 @@ describe("Telegram dialog state", () => {
         })
         .run();
 
-      expect(getSession(backendDb, 42)).toMatchObject({ step: "schedule_target", data: { target: "youtube_shorts" } });
+      expect(getVideoState(backendDb, 42)).toBeNull();
     } finally {
       backendDb.close();
     }
@@ -125,12 +165,12 @@ describe("Telegram dialog state", () => {
   it("does not reuse a video revision after a session is cleared", () => {
     const backendDb: BackendDb = openBackendDb(":memory:");
     try {
-      const first = saveSession(backendDb, 42, { draftId: null, step: "locale", selected: [], data: {} });
-      clearSession(backendDb, 42);
-      const second = saveSession(backendDb, 42, { draftId: null, step: "locale", selected: [], data: {} });
+      const first = saveVideoState(backendDb, 42, { draftId: null, step: "locale", selected: [], data: {} });
+      clearVideoState(backendDb, 42);
+      const second = saveVideoState(backendDb, 42, { draftId: null, step: "locale", selected: [], data: {} });
 
       expect(second.revision).toBeGreaterThan(first.revision);
-      expect(getSession(backendDb, 42)).toMatchObject({ revision: second.revision, step: "locale" });
+      expect(getVideoState(backendDb, 42)).toMatchObject({ revision: second.revision, step: "locale" });
     } finally {
       backendDb.close();
     }
@@ -153,7 +193,7 @@ describe("Telegram dialog state", () => {
         })
         .run();
 
-      expect(getPostAdminState(backendDb, 42)).toBeNull();
+      expect(getPostState(backendDb, 42)).toBeNull();
       expect(unsafeDb(backendDb).db.select().from(conversationSessions).where(eq(conversationSessions.actorId, 42)).get()).toMatchObject({
         action: null,
         revision: 1,
@@ -181,7 +221,7 @@ describe("Telegram dialog state", () => {
         })
         .run();
 
-      expect(getSession(backendDb, 42)).toBeNull();
+      expect(getVideoState(backendDb, 42)).toBeNull();
       expect(
         unsafeDb(backendDb)
           .db.select()
@@ -212,7 +252,7 @@ describe("Telegram dialog state", () => {
         })
         .run();
 
-      expect(getSession(backendDb, 42)).toBeNull();
+      expect(getVideoState(backendDb, 42)).toBeNull();
       expect(
         unsafeDb(backendDb)
           .db.select()

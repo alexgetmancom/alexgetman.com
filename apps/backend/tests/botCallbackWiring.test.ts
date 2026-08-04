@@ -2,9 +2,7 @@ import { describe, expect, it } from "bun:test";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Glob } from "bun";
-import { POST_CARD_ACTION_KEYS } from "../src/bot/post-routes.js";
-import { PUBLICATION_ACTIONS } from "../src/bot/session-fsm.js";
-import { VIDEO_CARD_ACTION_KEYS } from "../src/bot/video-routes.js";
+import { PUBLICATION_ACTIONS, PUBLICATION_CARD_ACTIONS } from "../src/bot/session-fsm.js";
 
 /** Callback prefixes the dispatcher in `bot.ts` resolves to a handler. A new
  * button whose prefix is missing here fails this test: a rendered callback with
@@ -162,8 +160,8 @@ describe("Telegram callback wiring", () => {
 
   it("keeps post routing and freshness vocabulary in one contract", () => {
     expect(PUBLICATION_ACTIONS.post).toEqual(expect.arrayContaining(["threads_chain"]));
-    expect(POST_CARD_ACTION_KEYS).toContain("threads_chain");
+    expect(PUBLICATION_CARD_ACTIONS.post).toContain("threads_chain");
     expect(PUBLICATION_ACTIONS.video).toEqual(expect.arrayContaining(["schedule"]));
-    expect(VIDEO_CARD_ACTION_KEYS).toContain("schedule");
+    expect(PUBLICATION_CARD_ACTIONS.video).toContain("schedule");
   });
 });

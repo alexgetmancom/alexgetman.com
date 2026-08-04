@@ -2,8 +2,9 @@ import { describe, expect, it } from "bun:test";
 import type { Context } from "grammy";
 import { isStaleCardCallback, POST_CARD_FRESHNESS, VIDEO_CARD_FRESHNESS } from "../src/bot/card-freshness.js";
 import { handlePostAction } from "../src/bot/post-actions.js";
+import { publicationCallback } from "../src/bot/session-fsm.js";
 import { handleVideoActionCallback } from "../src/bot/video-actions.js";
-import { getSession } from "../src/bot/video-session.js";
+import { getVideoState } from "../src/bot/video-ui.js";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import type { BackendDb } from "../src/db/client.js";
 import { loadConfig } from "../src/foundation/config.js";
@@ -37,16 +38,16 @@ describe("video publication card flow", () => {
       replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
       setTelegramVideoCard(backendDb, draftId, 100, 10);
 
-      await handleVideoActionCallback(videoCallback(`video_now:${draftId}`, 10), backendDb, config);
+      await handleVideoActionCallback(videoCallback(publicationCallback("video", "now", [draftId]), 10), backendDb, config);
 
-      const session = getSession(backendDb, 42);
+      const session = getVideoState(backendDb, 42);
       expect(session?.step).toBe("schedule_confirm");
       expect(telegramVideoCard(backendDb, draftId)).toEqual({ chatId: 100, messageId: 10 });
       expect(
         isStaleCardCallback(
-          videoCallback(`video_now_confirm:${draftId}`, 10),
+          videoCallback(publicationCallback("video", "now_confirm", [draftId]), 10),
           backendDb,
-          `video_now_confirm:${draftId}`,
+          publicationCallback("video", "now_confirm", [draftId]),
           VIDEO_CARD_FRESHNESS,
         ),
       ).toBe(false);
@@ -72,7 +73,7 @@ describe("post publication card flow", () => {
       const context = {
         from: { id: 42 },
         chat: { id: 100 },
-        callbackQuery: { data: `publish:${draftId}`, message: { message_id: 10 } },
+        callbackQuery: { data: publicationCallback("post", "publish", [draftId]), message: { message_id: 10 } },
         answerCallbackQuery: async () => true,
         reply: async () => ({ message_id: ++nextMessageId }),
         replyWithVideo: async () => ({ message_id: ++nextMessageId }),
@@ -85,7 +86,7 @@ describe("post publication card flow", () => {
         isStaleCardCallback(
           { callbackQuery: { message: { message_id: nextMessageId } } } as unknown as Context,
           backendDb,
-          `publish_confirm:${draftId}`,
+          publicationCallback("post", "publish_confirm", [draftId]),
           POST_CARD_FRESHNESS,
         ),
       ).toBe(false);

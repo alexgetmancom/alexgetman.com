@@ -9,8 +9,9 @@ import { log } from "../foundation/logger.js";
 import { setTelegramPostCard } from "../interfaces/telegram/control-cards.js";
 import { importTelegramAlbumMedia } from "../interfaces/telegram/media-ingress.js";
 import { createStudioServices } from "../studio/services/index.js";
+import { clearConversationStateIfCurrent, getConversationState } from "./conversation-state.js";
 import { botLocale } from "./i18n.js";
-import { clearPostAdminStateIfCurrent, getPostAdminState } from "./post-state.js";
+import { type PostWizardStep, parsePostWizardStep, postStepName, serializePostWizardStep } from "./post-fsm.js";
 import { translatePostText } from "./post-translation.js";
 import { draftPreview } from "./preview.js";
 
@@ -34,13 +35,14 @@ type PendingAlbumInput = {
   text: string;
   entities: unknown[];
   media: Record<string, unknown>;
-  action: string | null;
+  action: PostWizardStep | null;
   draftId: number | null;
   stateRevision: number | null;
 };
 
 export function appendPendingAlbum(backendDb: BackendDb, input: PendingAlbumInput): boolean {
-  const id = `${input.actorId}:${input.chatId}:${input.mediaGroupId}:${input.action ?? "draft"}:${input.draftId ?? ""}`;
+  const serializedAction = serializePostWizardStep(input.action);
+  const id = `${input.actorId}:${input.chatId}:${input.mediaGroupId}:${serializedAction ?? "draft"}:${input.draftId ?? ""}`;
   const row = unsafeDb(backendDb)
     .db.select({ mediaJson: pendingAlbums.mediaJson, textRu: pendingAlbums.textRu, textEntitiesJson: pendingAlbums.textEntitiesJson })
     .from(pendingAlbums)
@@ -54,7 +56,7 @@ export function appendPendingAlbum(backendDb: BackendDb, input: PendingAlbumInpu
     actorId: input.actorId,
     chatId: input.chatId,
     mediaGroupId: input.mediaGroupId,
-    action: input.action,
+    action: serializedAction,
     draftId: input.draftId,
     stateRevision: input.stateRevision,
     textRu: input.text || row?.textRu || "",
@@ -120,7 +122,7 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
       .get();
     if (!claim) continue;
     try {
-      if (row.stateRevision != null && getPostAdminState(backendDb, row.actorId)?.revision !== row.stateRevision) {
+      if (row.stateRevision != null && getConversationState(backendDb, row.actorId, "post")?.revision !== row.stateRevision) {
         unsafeDb(backendDb)
           .db.delete(pendingAlbums)
           .where(and(eq(pendingAlbums.id, row.id), eq(pendingAlbums.notified, ALBUM_CLAIMED)))
@@ -130,17 +132,18 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
       }
       const media = await importTelegramAlbumMedia(bot, backendDb, config, row.actorId, parseArrayValue(row.mediaJson));
       const draftId = row.draftId;
-      const isEdit = row.action === "edit_ru" || row.action === "edit_en";
-      const isMediaReplacement = row.action === "replace_ru_media" || row.action === "replace_en_media";
-      if ((isEdit || isMediaReplacement) && draftId) {
+      const step = parsePostWizardStep(row.action);
+      const isEdit = step?.type === "edit_text";
+      const isMediaReplacement = step?.type === "replace_media";
+      if ((isEdit || isMediaReplacement) && draftId && step) {
         createStudioServices(backendDb, config).posts.edit(row.actorId, draftId, {
-          locale: row.action === "edit_ru" || row.action === "replace_ru_media" ? "ru" : "en",
+          locale: step.locale,
           text: isMediaReplacement ? "" : row.textRu,
           entities: isMediaReplacement ? [] : parseArrayValue(row.textEntitiesJson),
           media,
           ...(isMediaReplacement ? { replaceMediaOnly: true } : {}),
         });
-        clearPostAdminStateIfCurrent(backendDb, row.actorId, row.action, draftId, row.stateRevision);
+        clearConversationStateIfCurrent(backendDb, { kind: "post", step: postStepName(step), draftId }, row.actorId, row.stateRevision);
         await refreshDraftControlCard(bot, backendDb, config, row.actorId, draftId, row.chatId);
       } else {
         const text = row.textRu;
@@ -150,7 +153,13 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
           message: { text, textEn, media, entities: parseArrayValue(row.textEntitiesJson) },
         }).id;
         await refreshDraftControlCard(bot, backendDb, config, row.actorId, created, row.chatId);
-        clearPostAdminStateIfCurrent(backendDb, row.actorId, row.action, row.draftId, row.stateRevision);
+        if (step)
+          clearConversationStateIfCurrent(
+            backendDb,
+            { kind: "post", step: postStepName(step), draftId: row.draftId },
+            row.actorId,
+            row.stateRevision,
+          );
       }
       const removed = unsafeDb(backendDb)
         .db.delete(pendingAlbums)

@@ -1,33 +1,94 @@
-import type { Flow, FlowStep } from "../application/conversation-flow.js";
+import { acceptFlow, type Flow, type FlowStep } from "../application/conversation-flow.js";
 import { fixUrlSlashes } from "../content/message.js";
 import type { VideoTarget } from "../publishing/video-types.js";
 
 export type VideoWizardStep = "youtube_title" | "youtube_description" | "youtube_game_url" | "youtube_tags" | "instagram_caption";
 export type VideoPrompt = "youtube_title" | "youtube_description" | "youtube_game_url" | "youtube_tags" | "instagram_caption" | "schedule";
-type VideoWizardData = Record<string, unknown>;
+export type VideoFlowData = Record<string, unknown> & { selectedTargets?: VideoTarget[]; nextTarget?: VideoTarget | null };
 
-const VIDEO_STEPS: Record<string, FlowStep<VideoWizardData>> = Object.fromEntries(
-  (
-    [
-      "locale",
-      "asset",
-      "targets",
-      "schedule_choice",
-      "schedule_common",
-      "schedule_target",
-      "schedule_confirm",
-      "label",
-      "youtube_title",
-      "youtube_description",
-      "youtube_game_url",
-      "youtube_tags",
-      "instagram_caption",
-    ] as const
-  ).map((name) => [name, { name, prompt: () => null, next: () => null }]),
-);
+function videoStep(
+  name: string,
+  next: (data: VideoFlowData) => string | null,
+  accept?: (input: unknown, data: VideoFlowData) => VideoFlowData,
+  back?: (data: VideoFlowData) => string | null,
+): FlowStep<VideoFlowData, unknown, string> {
+  return { name, prompt: () => name, next, ...(accept ? { accept } : {}), ...(back ? { back } : {}) };
+}
 
-/** State-only video flow; Telegram prompt rendering stays in the bot adapter. */
-export const VIDEO_FLOW: Flow<VideoWizardData> = {
+const VIDEO_STEPS: Record<string, FlowStep<VideoFlowData, unknown, string>> = {
+  locale: videoStep(
+    "locale",
+    () => "asset",
+    (input, data) => ({ ...data, videoLocale: input }),
+  ),
+  asset: videoStep(
+    "asset",
+    (data) => (data.selectedTargets?.includes("youtube_shorts") ? "youtube_title" : "instagram_caption"),
+    (input, data) => ({ ...data, assetId: input }),
+  ),
+  label: videoStep(
+    "label",
+    () => "targets",
+    (input, data) => ({ ...data, label: input }),
+  ),
+  targets: videoStep(
+    "targets",
+    (data) => (data.selectedTargets?.includes("youtube_shorts") ? "youtube_title" : "instagram_caption"),
+    (input, data) => ({ ...data, selectedTargets: input as VideoTarget[] }),
+  ),
+  schedule_choice: videoStep(
+    "schedule_choice",
+    (data) => (data.scheduleMode === "common" ? "schedule_common" : "schedule_target"),
+    (input, data) => ({ ...data, scheduleMode: input }),
+  ),
+  schedule_common: videoStep(
+    "schedule_common",
+    () => "schedule_confirm",
+    (input, data) => ({ ...data, scheduleValue: input }),
+  ),
+  schedule_target: videoStep(
+    "schedule_target",
+    (data) => (data.nextTarget ? "schedule_target" : "schedule_confirm"),
+    (input, data) => ({ ...data, scheduleValue: input }),
+  ),
+  schedule_confirm: videoStep(
+    "schedule_confirm",
+    () => null,
+    (_input, data) => data,
+  ),
+  youtube_title: videoStep(
+    "youtube_title",
+    () => "youtube_description",
+    (input, data) => advanceVideoMetadata("youtube_title", String(input), data).data,
+  ),
+  youtube_description: videoStep(
+    "youtube_description",
+    () => "youtube_game_url",
+    (input, data) => advanceVideoMetadata("youtube_description", String(input), data).data,
+    () => "youtube_title",
+  ),
+  youtube_game_url: videoStep(
+    "youtube_game_url",
+    () => "youtube_tags",
+    (input, data) => advanceVideoMetadata("youtube_game_url", String(input), data).data,
+    () => "youtube_description",
+  ),
+  youtube_tags: videoStep(
+    "youtube_tags",
+    (data) => (data.selectedTargets?.includes("instagram_reels") ? "instagram_caption" : "schedule_choice"),
+    (input, data) => advanceVideoMetadata("youtube_tags", String(input), data).data,
+    () => "youtube_game_url",
+  ),
+  instagram_caption: videoStep(
+    "instagram_caption",
+    () => "schedule_choice",
+    (input, data) => advanceVideoMetadata("instagram_caption", String(input), data).data,
+    (data) => (data.selectedTargets?.includes("youtube_shorts") ? "youtube_tags" : null),
+  ),
+};
+
+/** The complete transport-neutral video workflow. Telegram only renders its prompt names. */
+export const VIDEO_FLOW: Flow<VideoFlowData, unknown, string> = {
   kind: "video",
   steps: VIDEO_STEPS,
 };
@@ -42,19 +103,16 @@ export function firstVideoMetadataStep(selected: VideoTarget[]): { step: VideoWi
  * first one in the metadata chain (nothing earlier to revisit). Mirrors
  * advanceVideoMetadata's forward transitions in reverse. */
 export function previousVideoMetadataStep(step: VideoWizardStep, selected: VideoTarget[]): VideoWizardStep | null {
-  if (step === "youtube_description") return "youtube_title";
-  if (step === "youtube_game_url") return "youtube_description";
-  if (step === "youtube_tags") return "youtube_game_url";
-  if (step === "instagram_caption") return selected.includes("youtube_shorts") ? "youtube_tags" : null;
-  return null;
+  const previous = VIDEO_FLOW.steps[step]?.back?.({ selectedTargets: selected });
+  return (previous as VideoWizardStep | null | undefined) ?? null;
 }
 
-/** Pure conversation state machine. Persistence and Telegram rendering remain adapters. */
+/** Pure metadata transition used by the video Flow and non-Telegram callers. */
 export function advanceVideoMetadata(
   step: VideoWizardStep,
   text: string,
-  data: VideoWizardData,
-): { data: VideoWizardData; nextStep: VideoWizardStep | null; prompt: VideoPrompt } {
+  data: VideoFlowData,
+): { data: VideoFlowData; nextStep: VideoWizardStep | null; prompt: VideoPrompt } {
   if (step === "youtube_title")
     return { data: { ...data, youtube_title: text }, nextStep: "youtube_description", prompt: "youtube_description" };
   if (step === "youtube_description")
@@ -80,7 +138,17 @@ export function advanceVideoMetadata(
 
 /** Chooses the next metadata or scheduling state without knowing about Telegram controls. */
 export function nextVideoFlowStep(selected: VideoTarget[]): "instagram_caption" | "schedule_choice" {
-  return selected.includes("instagram_reels") ? "instagram_caption" : "schedule_choice";
+  const next = VIDEO_FLOW.steps.youtube_tags?.next({ selectedTargets: selected });
+  return next === "instagram_caption" ? next : "schedule_choice";
+}
+
+/** Executes a metadata step through the shared Flow runtime. */
+export function acceptVideoFlowStep(
+  step: string,
+  input: unknown,
+  data: VideoFlowData,
+): { data: VideoFlowData; next: string | null } | null {
+  return acceptFlow(VIDEO_FLOW, step, input, data);
 }
 
 /** Adds one parsed target time and chooses either the next target prompt or confirmation. */

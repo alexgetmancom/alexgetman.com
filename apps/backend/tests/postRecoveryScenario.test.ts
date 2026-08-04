@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import type { Bot, Context } from "grammy";
 import { runCallbackBoundary } from "../src/bot/callback-boundary.js";
 import { handlePostAction } from "../src/bot/post-actions.js";
+import { publicationCallback } from "../src/bot/session-fsm.js";
 import { drafts, postTargets, publications, publishJobs } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { consumeTelegramEvents } from "../src/interfaces/telegram/event-consumer.js";
@@ -63,7 +64,7 @@ describe("post recovery scenario", () => {
       const answers: Array<{ text?: string } | undefined> = [];
       const retryContext = (id: string, callbackAnswers: Array<{ text?: string } | undefined>): Context =>
         ({
-          callbackQuery: { id, data: "post_retry_notice:7" },
+          callbackQuery: { id, data: publicationCallback("post", "post_retry_notice", [7]) },
           from: { id: 42 },
           answerCallbackQuery: async (options?: { text?: string }) => void callbackAnswers.push(options),
         }) as unknown as Context;

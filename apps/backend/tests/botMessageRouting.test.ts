@@ -1,8 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import type { Context } from "grammy";
-import { setPostAdminState } from "../src/bot/post-state.js";
-import { handleActivePublicationMessage } from "../src/bot/publication-actions.js";
-import { saveSession } from "../src/bot/video-session.js";
+import { handleActivePublicationMessage } from "../src/bot/callback-router.js";
+import { saveConversationState } from "../src/bot/conversation-state.js";
+import { postStepData, postStepName } from "../src/bot/post-fsm.js";
+import { saveVideoState } from "../src/bot/video-ui.js";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import { pendingAlbums } from "../src/db/schema.js";
 import { unsafeDb } from "../src/db/unsafe.js";
@@ -13,7 +14,7 @@ describe("Telegram publication message routing", () => {
   it("does not send a text message from an active video session to the post handler", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      saveSession(backendDb, 42, { draftId: null, step: "locale", selected: [], data: {} });
+      saveVideoState(backendDb, 42, { draftId: null, step: "locale", selected: [], data: {} });
       const ctx = {
         from: { id: 42 },
         message: { text: "This must stay in the video flow" },
@@ -30,7 +31,13 @@ describe("Telegram publication message routing", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const draftId = createDraftFromMessage(backendDb, 42, { text: "Before", textEn: "Before", entities: [], media: [] });
-      setPostAdminState(backendDb, 42, "replace_en_media", draftId, 99);
+      saveConversationState(backendDb, 42, {
+        kind: "post",
+        draftId,
+        step: postStepName({ type: "replace_media", locale: "en" }),
+        data: postStepData({ type: "replace_media", locale: "en" }),
+        controlMessageId: 99,
+      });
       const ctx = {
         from: { id: 42 },
         chat: { id: 100 },

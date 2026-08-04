@@ -64,7 +64,7 @@ describe("architecture fitness", () => {
   });
 
   it("keeps Telegram conversation state behind one persistence port", () => {
-    const stateAdapters = ["apps/backend/src/bot/post-state.ts", "apps/backend/src/bot/video-session.ts"];
+    const stateAdapters = ["apps/backend/src/bot/conversation-state.ts"];
     for (const file of stateAdapters) {
       const text = source(file);
       expect(text).not.toContain("unsafeDb(");

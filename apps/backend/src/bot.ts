@@ -1,7 +1,8 @@
 import { autoRetry } from "@grammyjs/auto-retry";
-import { Bot, type Context } from "grammy";
+import { Bot, type Context, InlineKeyboard } from "grammy";
 import { handleAnalyticsCallback } from "./bot/analytics-screen.js";
 import { runCallbackBoundary } from "./bot/callback-boundary.js";
+import { handleActivePublicationMessage, handlePublicationCallback } from "./bot/callback-router.js";
 import { botLocale } from "./bot/i18n.js";
 import { persistentKeyboard, showMainMenu } from "./bot/menu-render.js";
 import { buildMainMenu } from "./bot/navigation.js";
@@ -9,9 +10,8 @@ import { buildNotificationsMenu, notificationsInboxText } from "./bot/notificati
 import { handleOperationsCallback } from "./bot/operations-screen.js";
 import { handlePostMessage, handlePostScreenCallback, startPostScreen } from "./bot/post-screen.js";
 import { handleProgressCallback } from "./bot/progress-screen.js";
-import { handleActivePublicationMessage, handlePublicationCallback } from "./bot/publication-actions.js";
 import { showQueue, showQueueAttention } from "./bot/queue.js";
-import { parseSessionCallback, publicationFromCallbackData } from "./bot/session-fsm.js";
+import { PUBLICATION_ACTIONS, parsePublicationCallback, parseSessionCallback } from "./bot/session-fsm.js";
 import { buildSettingsMenu, handleSettingsMessage, showSettings } from "./bot/settings-screen.js";
 import { startVideoConversation } from "./bot/video-conversation.js";
 import type { BackendDb } from "./db/client.js";
@@ -186,7 +186,7 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
     },
     {
       name: "publication",
-      matches: (data) => publicationFromCallbackData(data) !== null,
+      matches: (data) => parsePublicationCallback(data) !== null,
       handle: async (ctx) => handlePublicationCallback(ctx, backendDb, config, mainMenu),
     },
     {
@@ -201,7 +201,17 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
     const routeData = parseCallbackData(ctx);
     const route = callbackRoutes.find((candidate) => candidate.matches(routeData));
     if (route) await route.handle(ctx);
-    else await ctx.answerCallbackQuery({ text: t(botLocale(backendDb, Number(ctx.from?.id)), "action.unknown") });
+    else {
+      const locale = botLocale(backendDb, Number(ctx.from?.id));
+      const data = parseCallbackData(ctx);
+      const key = data.split(":", 1)[0] ?? "";
+      const stale = key.startsWith("video_") || PUBLICATION_ACTIONS.post.includes(key as (typeof PUBLICATION_ACTIONS.post)[number]);
+      await ctx.answerCallbackQuery({ text: t(locale, stale ? "action.card-stale" : "action.unknown") });
+      if (stale)
+        await ctx.reply(t(locale, "action.card-stale"), {
+          reply_markup: new InlineKeyboard().text(t(locale, "menu.work-queue"), "queue_home"),
+        });
+    }
   });
 }
 

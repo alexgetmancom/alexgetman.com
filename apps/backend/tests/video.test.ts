@@ -3,10 +3,10 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { and, eq } from "drizzle-orm";
-import { versionedCallback } from "../src/bot/session-fsm.js";
+import { publicationCallback, versionedCallback } from "../src/bot/session-fsm.js";
 import { handleVideoActionCallback } from "../src/bot/video-actions.js";
 import { handleVideoConversationMessage } from "../src/bot/video-conversation.js";
-import { getSession, saveSession } from "../src/bot/video-session.js";
+import { getVideoState, saveVideoState } from "../src/bot/video-ui.js";
 import {
   drafts,
   socialComments,
@@ -67,16 +67,16 @@ function videoContext(input: { text?: string; callback?: string } = {}) {
 describe("video publication queue", () => {
   it("selects the video locale before asking for the MP4", async () => {
     const backendDb = testDb.open();
-    const session = saveSession(backendDb, 42, { draftId: null, step: "locale", selected: [], data: {} });
+    const session = saveVideoState(backendDb, 42, { draftId: null, step: "locale", selected: [], data: {} });
 
     expect(
       await handleVideoActionCallback(
-        videoContext({ callback: versionedCallback("video_locale:en", session.revision) }).context,
+        videoContext({ callback: versionedCallback(publicationCallback("video", "locale", ["en"]), session.revision) }).context,
         backendDb,
         videoConfig(),
       ),
     ).toBe(true);
-    expect(getSession(backendDb, 42)).toMatchObject({ step: "asset", data: { videoLocale: "en" } });
+    expect(getVideoState(backendDb, 42)).toMatchObject({ step: "asset", data: { videoLocale: "en" } });
   });
 
   it("persists the selected locale and resolves the matching Zernio account", () => {
@@ -273,31 +273,31 @@ describe("video publication queue", () => {
     const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
     saveVideoMetadata(backendDb, draftId, "youtube_shorts", { title: "Old", description: "Description", tags: [] });
-    saveSession(backendDb, 42, { draftId, step: "youtube_title", selected: ["youtube_shorts"], data: { is_single_edit: true } });
+    saveVideoState(backendDb, 42, { draftId, step: "youtube_title", selected: ["youtube_shorts"], data: { is_single_edit: true } });
     const { context } = videoContext({ text: "New title" });
 
     expect(await handleVideoConversationMessage(context, backendDb, videoConfig())).toBe(true);
     expect(listVideoTargets(backendDb, draftId)[0]?.metadataJson).toMatchObject({ title: "New title" });
-    expect(getSession(backendDb, 42)).toBeNull();
+    expect(getVideoState(backendDb, 42)).toBeNull();
   });
 
   it("advances the YouTube+Instagram wizard through every metadata step in FSM order", async () => {
     const backendDb = testDb.open();
     const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts", "instagram_reels"]);
-    saveSession(backendDb, 42, { draftId, step: "youtube_title", selected: ["youtube_shorts", "instagram_reels"], data: {} });
+    saveVideoState(backendDb, 42, { draftId, step: "youtube_title", selected: ["youtube_shorts", "instagram_reels"], data: {} });
 
     await handleVideoConversationMessage(videoContext({ text: "My Title" }).context, backendDb, videoConfig());
-    expect(getSession(backendDb, 42)).toMatchObject({ step: "youtube_description" });
+    expect(getVideoState(backendDb, 42)).toMatchObject({ step: "youtube_description" });
 
     await handleVideoConversationMessage(videoContext({ text: "My Description" }).context, backendDb, videoConfig());
-    expect(getSession(backendDb, 42)).toMatchObject({ step: "youtube_game_url" });
+    expect(getVideoState(backendDb, 42)).toMatchObject({ step: "youtube_game_url" });
 
     await handleVideoConversationMessage(videoContext({ text: "-" }).context, backendDb, videoConfig());
-    expect(getSession(backendDb, 42)).toMatchObject({ step: "youtube_tags" });
+    expect(getVideoState(backendDb, 42)).toMatchObject({ step: "youtube_tags" });
 
     await handleVideoConversationMessage(videoContext({ text: "a, b, c" }).context, backendDb, videoConfig());
-    expect(getSession(backendDb, 42)).toMatchObject({ step: "instagram_caption" });
+    expect(getVideoState(backendDb, 42)).toMatchObject({ step: "instagram_caption" });
     expect(listVideoTargets(backendDb, draftId).find((row) => row.target === "youtube_shorts")?.metadataJson).toMatchObject({
       title: "My Title",
       description: "My Description",
@@ -305,7 +305,7 @@ describe("video publication queue", () => {
     });
 
     await handleVideoConversationMessage(videoContext({ text: "Caption #tag" }).context, backendDb, videoConfig());
-    expect(getSession(backendDb, 42)).toMatchObject({ step: "schedule_choice" });
+    expect(getVideoState(backendDb, 42)).toMatchObject({ step: "schedule_choice" });
     expect(listVideoTargets(backendDb, draftId).find((row) => row.target === "instagram_reels")?.metadataJson).toMatchObject({
       caption: "Caption #tag",
     });
@@ -314,15 +314,17 @@ describe("video publication queue", () => {
   it("routes target selection callbacks and rejects an invalid target", async () => {
     const backendDb = testDb.open();
     const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
-    const session = saveSession(backendDb, 42, { draftId, step: "targets", selected: ["youtube_shorts"], data: {} });
-    const selected = videoContext({ callback: versionedCallback("video_targets_done", session.revision) });
+    const session = saveVideoState(backendDb, 42, { draftId, step: "targets", selected: ["youtube_shorts"], data: {} });
+    const selected = videoContext({ callback: versionedCallback(publicationCallback("video", "targets_done"), session.revision) });
 
     expect(await handleVideoActionCallback(selected.context, backendDb, videoConfig())).toBe(true);
-    expect(getSession(backendDb, 42)).toMatchObject({ draftId, step: "youtube_title" });
+    expect(getVideoState(backendDb, 42)).toMatchObject({ draftId, step: "youtube_title" });
     expect(listVideoTargets(backendDb, draftId).map((target) => target.target)).toEqual(["youtube_shorts"]);
 
-    const invalidSession = saveSession(backendDb, 42, { draftId, step: "targets", selected: ["youtube_shorts"], data: {} });
-    const invalid = videoContext({ callback: versionedCallback("video_toggle:not-a-target", invalidSession.revision) });
+    const invalidSession = saveVideoState(backendDb, 42, { draftId, step: "targets", selected: ["youtube_shorts"], data: {} });
+    const invalid = videoContext({
+      callback: versionedCallback(publicationCallback("video", "toggle", ["not-a-target"]), invalidSession.revision),
+    });
     expect(await handleVideoActionCallback(invalid.context, backendDb, videoConfig())).toBe(true);
     expect(invalid.callbackAnswers).toEqual([{ text: "Start creating the video again." }]);
   });

@@ -1,23 +1,18 @@
 import { type Context, InlineKeyboard } from "grammy";
-import type { ConversationSessionRecord } from "../application/ports.js";
+import { promptFlow } from "../application/conversation-flow.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { t } from "../foundation/i18n/index.js";
 import { setTelegramVideoCard } from "../interfaces/telegram/control-cards.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import { nextVideoFlowStep, previousVideoMetadataStep, VIDEO_FLOW, type VideoPrompt, type VideoWizardStep } from "../studio/video-fsm.js";
-import {
-  activeConversationSession,
-  CONVERSATION_SESSION_TTL_MS,
-  retireConversationSession,
-  saveConversationSession,
-} from "./conversation-session.js";
+import { type ConversationState, clearConversationState, getConversationState, saveConversationState } from "./conversation-state.js";
 import { appendCancelButton, cancelPromptKeyboard } from "./dialog-ui.js";
 import { type BotLocale, botLocale } from "./i18n.js";
 import { SCHEDULE_SLOT_PRESETS, scheduleTimeKeyboard } from "./scheduling.js";
 import { publicationCallback } from "./session-fsm.js";
 
-export type VideoSessionStep =
+export type VideoConversationStep =
   | "locale"
   | "asset"
   | "targets"
@@ -27,16 +22,12 @@ export type VideoSessionStep =
   | "schedule_confirm"
   | "label"
   | VideoWizardStep;
-export type VideoSession = {
-  draftId: number | null;
-  step: VideoSessionStep;
+export type VideoConversationState = ConversationState & {
+  step: VideoConversationStep;
   selected: VideoTarget[];
-  data: Record<string, unknown>;
-  controlMessageId?: number | null;
-  revision: number;
 };
-export type VideoSessionInput = Omit<VideoSession, "revision" | "controlMessageId"> &
-  Partial<Pick<VideoSession, "controlMessageId" | "revision">>;
+export type VideoConversationInput = Omit<VideoConversationState, "kind" | "revision" | "controlMessageId"> &
+  Partial<Pick<VideoConversationState, "controlMessageId" | "revision">>;
 
 export function targetKeyboard(config: BackendConfig, selected: VideoTarget[], locale: BotLocale, revision?: number): InlineKeyboard {
   const keyboard = new InlineKeyboard();
@@ -59,69 +50,52 @@ export function enabledVideoTargets(config: BackendConfig): VideoTarget[] {
   );
 }
 
-export function getSession(backendDb: BackendDb, actorId: number): VideoSession | null {
-  const row = activeConversationSession(backendDb, actorId, "video", CONVERSATION_SESSION_TTL_MS);
-  if (!row || row.active === 0) return null;
-  const step = row.step ? parseVideoSessionStep(row.step) : null;
-  const selected = parseSelectedTargets(row.selectedTargets);
-  const legacyTarget = legacyScheduleTarget(row.step);
-  const storedData = withoutControlMessageData(row.data);
-  const data = legacyTarget && storedData.target == null ? { ...storedData, target: legacyTarget } : storedData;
-  if (!step || !selected || !data || typeof data !== "object" || Array.isArray(data)) {
-    clearSession(backendDb, actorId);
+export function getVideoState(backendDb: BackendDb, actorId: number): VideoConversationState | null {
+  const state = getConversationState(backendDb, actorId, "video");
+  if (!state) return null;
+  if (!(state.step in VIDEO_FLOW.steps)) {
+    clearVideoState(backendDb, actorId);
     return null;
   }
-  return {
-    draftId: row.draftId,
-    step,
-    selected,
-    data: data as Record<string, unknown>,
-    controlMessageId: row.controlMessageId,
-    revision: row.revision,
-  };
+  const selected = state.data.selectedTargets === undefined ? [] : parseSelectedTargets(state.data.selectedTargets);
+  if (!selected) {
+    clearVideoState(backendDb, actorId);
+    return null;
+  }
+  return { ...state, step: state.step as VideoConversationStep, selected };
 }
 
-export function saveSession(backendDb: BackendDb, actorId: number, session: VideoSessionInput): VideoSession {
-  const existing = backendDb.conversationSessions.get(actorId, "video");
-  const now = new Date().toISOString();
-  const expiresAt = new Date(Date.now() + CONVERSATION_SESSION_TTL_MS).toISOString();
-  const revision = saveConversationSession(backendDb, {
-    actorId,
+export function saveVideoState(backendDb: BackendDb, actorId: number, session: VideoConversationInput): VideoConversationState {
+  const saved = saveConversationState(backendDb, actorId, {
     kind: "video",
     draftId: session.draftId,
-    action: null,
     step: session.step,
-    selectedTargets: session.selected,
-    data: withoutControlMessageData(session.data),
+    data: { ...session.data, selectedTargets: session.selected },
     controlMessageId: session.controlMessageId ?? null,
-    active: 1,
-    ...(session.revision == null ? {} : { expectedRevision: session.revision }),
-    preserveRevision: existing != null && !hasSemanticChange(existing, session),
-    updatedAt: now,
-    expiresAt,
+    ...(session.revision == null ? {} : { revision: session.revision }),
   });
-  return { ...session, revision };
+  return { ...saved, step: saved.step as VideoConversationStep, selected: session.selected };
 }
 
-export function setData(
+export function setVideoData(
   backendDb: BackendDb,
   actorId: number,
-  session: VideoSession,
+  session: VideoConversationState,
   key: string,
   value: unknown,
-  nextStep: VideoSessionStep,
-): VideoSession {
+  nextStep: VideoConversationStep,
+): VideoConversationState {
   const next = { ...session, step: nextStep, data: { ...session.data, [key]: value } };
-  return saveSession(backendDb, actorId, next);
+  return saveVideoState(backendDb, actorId, next);
 }
 
-export function clearSession(backendDb: BackendDb, actorId: number): void {
-  retireConversationSession(backendDb, actorId, "video");
+export function clearVideoState(backendDb: BackendDb, actorId: number): void {
+  clearConversationState(backendDb, actorId, "video");
 }
 
 export async function updateVideoControl(
   ctx: Context,
-  session: VideoSession,
+  session: VideoConversationState,
   text: string,
   keyboard: InlineKeyboard | undefined,
   locale: BotLocale,
@@ -146,7 +120,7 @@ export async function replyVideoPrompt(
   text: string,
   options?: { plainText?: boolean },
 ): Promise<void> {
-  const revision = getSession(backendDb, actorId)?.revision;
+  const revision = getVideoState(backendDb, actorId)?.revision;
   await ctx.reply(text, {
     ...(options?.plainText ? {} : { parse_mode: "Markdown" }),
     reply_markup: cancelPromptKeyboard(locale, publicationCallback("video", "cancel_dialog"), revision),
@@ -164,13 +138,14 @@ export async function sendVideoMetadataPrompt(
   selected: VideoTarget[],
 ): Promise<void> {
   const locale = botLocale(backendDb, actorId);
-  const revision = getSession(backendDb, actorId)?.revision;
+  const revision = getVideoState(backendDb, actorId)?.revision;
   const keyboard = new InlineKeyboard();
   if (step === "youtube_game_url") keyboard.text(t(locale, "video.skip"), publicationCallback("video", "game_skip", [], revision));
   if (previousVideoMetadataStep(step, selected))
     keyboard.text(t(locale, "common.back"), publicationCallback("video", "meta_back", [], revision));
   appendCancelButton(keyboard, locale, publicationCallback("video", "cancel_dialog"), revision);
-  await ctx.reply(videoPrompt(locale, step), { reply_markup: keyboard });
+  const prompt = promptFlow(VIDEO_FLOW, step, null) as VideoPrompt | null;
+  await ctx.reply(videoPrompt(locale, prompt ?? step), { reply_markup: keyboard });
 }
 
 function videoPrompt(locale: BotLocale, prompt: VideoPrompt): string {
@@ -190,15 +165,15 @@ export async function sendVideoControl(
   ctx: Context,
   backendDb: BackendDb,
   actorId: number,
-  session: VideoSession,
+  session: VideoConversationState,
   text: string,
   keyboard: InlineKeyboard,
-): Promise<VideoSession> {
+): Promise<VideoConversationState> {
   const message = await ctx.reply(text, { parse_mode: "Markdown", reply_markup: keyboard });
   if (session.draftId != null && ctx.chat?.id != null)
     setTelegramVideoCard(backendDb, session.draftId, Number(ctx.chat.id), message.message_id);
-  const next: VideoSessionInput = { ...session, controlMessageId: message.message_id };
-  return saveSession(backendDb, actorId, next);
+  const next: VideoConversationInput = { ...session, controlMessageId: message.message_id };
+  return saveVideoState(backendDb, actorId, next);
 }
 
 export async function askInstagramOrSchedule(
@@ -206,11 +181,11 @@ export async function askInstagramOrSchedule(
   backendDb: BackendDb,
   config: BackendConfig,
   actorId: number,
-  session: VideoSession,
+  session: VideoConversationState,
 ): Promise<void> {
   if (nextVideoFlowStep(session.selected) === "instagram_caption") {
-    const next: VideoSession = { ...session, step: "instagram_caption" };
-    saveSession(backendDb, actorId, next);
+    const next: VideoConversationState = { ...session, step: "instagram_caption" };
+    saveVideoState(backendDb, actorId, next);
     await sendVideoMetadataPrompt(ctx, backendDb, actorId, "instagram_caption", session.selected);
     return;
   }
@@ -223,11 +198,11 @@ export async function sendVideoTimePrompt(
   ctx: Context,
   backendDb: BackendDb,
   actorId: number,
-  session: VideoSession,
+  session: VideoConversationState,
   text: string,
-): Promise<VideoSession> {
+): Promise<VideoConversationState> {
   const locale = botLocale(backendDb, actorId);
-  const revision = getSession(backendDb, actorId)?.revision ?? session.revision;
+  const revision = getVideoState(backendDb, actorId)?.revision ?? session.revision;
   const keyboard = scheduleTimeKeyboard({
     axis: {
       values: SCHEDULE_SLOT_PRESETS,
@@ -249,9 +224,9 @@ export async function askSchedule(
   backendDb: BackendDb,
   config: BackendConfig,
   actorId: number,
-  session: VideoSession,
+  session: VideoConversationState,
 ): Promise<void> {
-  const next = saveSession(backendDb, actorId, { ...session, step: "schedule_choice" });
+  const next = saveVideoState(backendDb, actorId, { ...session, step: "schedule_choice" });
   const locale = botLocale(backendDb, actorId);
   const keyboard = new InlineKeyboard().text(
     t(locale, "video.same-time"),
@@ -273,7 +248,7 @@ export async function askSchedule(
   );
 }
 
-export function setControlFromSession(backendDb: BackendDb, draftId: number, ctx: Context, session: VideoSession): void {
+export function setControlFromSession(backendDb: BackendDb, draftId: number, ctx: Context, session: VideoConversationState): void {
   const messageId = session.controlMessageId;
   if (messageId && ctx.chat?.id) setTelegramVideoCard(backendDb, draftId, Number(ctx.chat.id), messageId);
 }
@@ -283,14 +258,9 @@ export function callbackMessageId(ctx: Context): number | null {
   return message && "message_id" in message ? message.message_id : null;
 }
 
-export function parseVideoSessionStep(value: string): VideoSessionStep | null {
-  if (value in VIDEO_FLOW.steps) return value as VideoSessionStep;
-  return legacyScheduleTarget(value) ? "schedule_target" : null;
-}
-
-function legacyScheduleTarget(value: string | null): VideoTarget | null {
-  const target = value?.match(/^schedule_target:(youtube_shorts|instagram_reels)$/)?.[1];
-  return target && VIDEO_TARGETS.includes(target as VideoTarget) ? (target as VideoTarget) : null;
+export function parseVideoStep(value: string): VideoConversationStep | null {
+  if (value in VIDEO_FLOW.steps) return value as VideoConversationStep;
+  return null;
 }
 
 function parseSelectedTargets(value: unknown): VideoTarget[] | null {
@@ -299,20 +269,4 @@ function parseSelectedTargets(value: unknown): VideoTarget[] | null {
   return value.every((target): target is VideoTarget => typeof target === "string" && VIDEO_TARGETS.includes(target as VideoTarget))
     ? value
     : null;
-}
-
-function hasSemanticChange(row: ConversationSessionRecord, session: VideoSessionInput): boolean {
-  return (
-    row.active !== 1 ||
-    row.draftId !== session.draftId ||
-    row.step !== session.step ||
-    JSON.stringify(row.selectedTargets) !== JSON.stringify(session.selected) ||
-    JSON.stringify(withoutControlMessageData(row.data)) !== JSON.stringify(withoutControlMessageData(session.data))
-  );
-}
-
-function withoutControlMessageData(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  const { controlMessageId: _controlMessageId, ...semantic } = value as Record<string, unknown>;
-  return semantic;
 }

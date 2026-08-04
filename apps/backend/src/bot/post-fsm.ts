@@ -1,6 +1,7 @@
-import type { Flow, FlowStep } from "../application/conversation-flow.js";
+import { acceptFlow, type Flow, type FlowStep } from "../application/conversation-flow.js";
+import type { ConversationState } from "./conversation-state.js";
 
-type PostWizardLocale = "ru" | "en";
+export type PostWizardLocale = "ru" | "en";
 
 /** The short names persisted in conversation_sessions.step. */
 export type PostSessionStep = "new_post" | "edit_sources" | "edit_text" | "replace_media" | "schedule_manual" | "schedule_confirm";
@@ -13,23 +14,53 @@ export type PostWizardStep =
   | { type: "schedule_manual"; locale: PostWizardLocale }
   | { type: "schedule_confirm"; locale: PostWizardLocale; value: Date };
 
-export type PostWizardStepInput = PostWizardStep | string | null;
+export type PostFlowData = Record<string, unknown>;
+export type PostWizardStepInput = PostWizardStep | PostSessionStep | null;
 
-const POST_STEPS: Record<string, FlowStep<Record<string, unknown>>> = Object.fromEntries(
-  (["new_post", "edit_sources", "edit_text", "replace_media", "schedule_manual", "schedule_confirm"] as const).map((name) => [
-    name,
-    { name, prompt: () => null, next: () => null },
-  ]),
-);
+function postStep(
+  name: PostSessionStep,
+  next: (data: PostFlowData) => string | null,
+  accept?: (input: unknown, data: PostFlowData) => PostFlowData,
+): FlowStep<PostFlowData> {
+  return { name, prompt: () => name, next, ...(accept ? { accept } : {}) };
+}
 
-/** State-only post flow. Telegram screens remain in post-screen and post-actions. */
-export const POST_FLOW: Flow<Record<string, unknown>> = {
+const POST_STEPS: Record<string, FlowStep<PostFlowData>> = {
+  new_post: postStep(
+    "new_post",
+    () => null,
+    (input, data) => ({ ...data, input }),
+  ),
+  edit_sources: postStep(
+    "edit_sources",
+    () => null,
+    (input, data) => ({ ...data, input }),
+  ),
+  edit_text: postStep(
+    "edit_text",
+    () => null,
+    (input, data) => ({ ...data, input }),
+  ),
+  replace_media: postStep(
+    "replace_media",
+    () => null,
+    (input, data) => ({ ...data, input }),
+  ),
+  schedule_manual: postStep(
+    "schedule_manual",
+    () => "schedule_confirm",
+    (input, data) => ({ ...data, value: input }),
+  ),
+  schedule_confirm: postStep("schedule_confirm", () => null),
+};
+
+/** The complete transport-neutral post workflow. Telegram renders its prompt names. */
+export const POST_FLOW: Flow<PostFlowData> = {
   kind: "post",
   steps: POST_STEPS,
 };
 
-/** Resolves both the current short-step form and the legacy 30-minute form. */
-export function resolvePostWizardStep(value: PostWizardStepInput, data: Record<string, unknown> = {}): PostWizardStep | null {
+export function resolvePostWizardStep(value: PostWizardStepInput | string, data: Record<string, unknown> = {}): PostWizardStep | null {
   if (value && typeof value === "object") return value;
   if (value === "new_post") return { type: "new_post" };
   if (value === "edit_sources") return { type: "edit_sources" };
@@ -41,18 +72,7 @@ export function resolvePostWizardStep(value: PostWizardStepInput, data: Record<s
     const date = parseDate(data.value);
     return locale && date ? { type: "schedule_confirm", locale, value: date } : null;
   }
-  if (value === "edit_ru") return { type: "edit_text", locale: "ru" };
-  if (value === "edit_en") return { type: "edit_text", locale: "en" };
-  if (value === "replace_ru_media") return { type: "replace_media", locale: "ru" };
-  if (value === "replace_en_media") return { type: "replace_media", locale: "en" };
-
-  const manualMatch = value?.match(/^schedule_manual_(ru|en)$/);
-  if (manualMatch) return { type: "schedule_manual", locale: manualMatch[1] as PostWizardLocale };
-
-  const confirmMatch = value?.match(/^schedule_confirm_(ru|en)_(.+)$/);
-  if (!confirmMatch) return null;
-  const date = parseDate(confirmMatch[2]);
-  return date ? { type: "schedule_confirm", locale: confirmMatch[1] as PostWizardLocale, value: date } : null;
+  return null;
 }
 
 /** Returns the short database value for a typed post step. */
@@ -69,17 +89,40 @@ export function postStepData(step: PostWizardStep): Record<string, unknown> {
   return {};
 }
 
-/** Keeps the old action value at the adapter boundary for pending albums. */
-export function postStepAction(step: PostWizardStep): string {
-  if (step.type === "new_post" || step.type === "edit_sources") return step.type;
-  if (step.type === "edit_text") return `edit_${step.locale}`;
-  if (step.type === "replace_media") return `replace_${step.locale}_media`;
-  if (step.type === "schedule_manual") return `schedule_manual_${step.locale}`;
-  return `schedule_confirm_${step.locale}_${step.value.toISOString()}`;
+/** Compact value used by the durable album handoff. */
+export function serializePostWizardStep(step: PostWizardStep | null): string | null {
+  if (!step) return null;
+  if (step.type === "edit_text" || step.type === "replace_media" || step.type === "schedule_manual") return `${step.type}:${step.locale}`;
+  if (step.type === "schedule_confirm") return `${step.type}:${step.locale}`;
+  return step.type;
+}
+
+/** Parses the typed step stored beside a pending album. */
+export function parsePostWizardStep(value: string | null): PostWizardStep | null {
+  if (!value) return null;
+  const [type, locale] = value.split(":");
+  if (type === "new_post") return { type };
+  if (type === "edit_sources") return { type };
+  if (type === "edit_text" || type === "replace_media" || type === "schedule_manual") {
+    return locale === "ru" || locale === "en" ? { type, locale } : null;
+  }
+  return null;
 }
 
 export function isPostInputStep(step: PostWizardStep | null): boolean {
   return step?.type === "edit_sources" || step?.type === "edit_text" || step?.type === "replace_media" || step?.type === "schedule_manual";
+}
+
+export function postStateStep(state: Pick<ConversationState, "step" | "data"> | null): PostWizardStep | null {
+  return state ? resolvePostWizardStep(state.step, state.data) : null;
+}
+
+export function acceptPostFlowStep(
+  step: PostWizardStep,
+  input: unknown,
+  data: PostFlowData,
+): { data: PostFlowData; next: string | null } | null {
+  return acceptFlow(POST_FLOW, step.type, input, data);
 }
 
 function localeStep(type: "edit_text" | "replace_media" | "schedule_manual", value: unknown): PostWizardStep | null {

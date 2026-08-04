@@ -1,15 +1,14 @@
 import type { Context } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import { telegramPostCard, telegramVideoCard } from "../interfaces/telegram/control-cards.js";
-import { POST_CARD_ACTION_KEYS } from "./post-routes.js";
 import {
+  PUBLICATION_CARD_ACTIONS,
   type PublicationCallback,
   type PublicationKind,
   parseDraftId,
+  parsePublicationCallback,
   parseSessionCallback,
-  publicationFromCallbackData,
 } from "./session-fsm.js";
-import { VIDEO_CARD_ACTION_KEYS } from "./video-routes.js";
 
 export type CardFreshnessDescriptor = {
   actions: readonly string[];
@@ -17,12 +16,12 @@ export type CardFreshnessDescriptor = {
 };
 
 export const POST_CARD_FRESHNESS: CardFreshnessDescriptor = {
-  actions: POST_CARD_ACTION_KEYS,
+  actions: PUBLICATION_CARD_ACTIONS.post,
   kind: "post",
 };
 
 export const VIDEO_CARD_FRESHNESS: CardFreshnessDescriptor = {
-  actions: VIDEO_CARD_ACTION_KEYS,
+  actions: PUBLICATION_CARD_ACTIONS.video,
   kind: "video",
 };
 
@@ -33,7 +32,7 @@ export function isStaleCardCallback(
   callback: PublicationCallback | string,
   descriptor: CardFreshnessDescriptor,
 ): boolean {
-  const publication = typeof callback === "string" ? publicationFromCallbackData(parseSessionCallback(callback).data) : callback;
+  const publication = typeof callback === "string" ? parsePublicationCallback(parseSessionCallback(callback).data) : callback;
   if (!publication || publication.kind !== descriptor.kind || !descriptor.actions.includes(publication.action)) return false;
   const draftId = parseDraftId(publication.args[0]);
   if (draftId == null) return false;

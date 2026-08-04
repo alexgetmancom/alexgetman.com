@@ -4,9 +4,7 @@ import { StudioError } from "../foundation/errors.js";
 export type { PublicationKind } from "../application/conversation-flow.js";
 
 const SESSION_VERSION_PREFIX = /^sv(\d+)\|(.*)$/;
-const LEGACY_SESSION_VERSION_SUFFIX = /^(.*):sv(\d+)$/;
 const PUBLICATION_CALLBACK = /^p:(post|video):([^:]+)(?::(.*))?$/;
-const LEGACY_VIDEO_PREFIX = "video_";
 
 export type SessionCallback = { data: string; revision: number | null };
 export type PublicationCallback = {
@@ -18,6 +16,7 @@ export type PublicationCallback = {
 /** The canonical callback vocabulary for every publication workflow. */
 export const PUBLICATION_ACTIONS = {
   post: [
+    "cancel_dialog",
     "toggle",
     "preview",
     "platforms",
@@ -76,7 +75,55 @@ export const PUBLICATION_ACTIONS = {
   ],
 } as const satisfies Record<PublicationKind, readonly string[]>;
 
+/** Callback actions whose card identity must be checked before execution. */
+export const PUBLICATION_CARD_ACTIONS = {
+  post: [
+    "toggle",
+    "cycle_mode",
+    "sources",
+    "edit_ru",
+    "edit_en",
+    "replace_ru_media",
+    "replace_en_media",
+    "cancel",
+    "cancel_confirm",
+    "post_retry",
+    "publish",
+    "publish_confirm",
+    "schedule",
+    "sched_scope",
+    "sched_view",
+    "sched_pick",
+    "sched_manual",
+    "story_publish_all",
+    "story_publish_site",
+    "story_schedule_all",
+    "story_schedule_site",
+    "threads_chain",
+  ],
+  video: [
+    "schedule_confirm",
+    "schedule",
+    "common",
+    "individual",
+    "now",
+    "now_confirm",
+    "cancel_ask",
+    "remove_ask",
+    "cancel",
+    "time",
+    "sched_pick",
+    "sched_manual",
+    "remove",
+    "edit_menu",
+    "edit_field",
+    "edit",
+  ],
+} as const satisfies Record<PublicationKind, readonly string[]>;
+
 type PublicationAction = (typeof PUBLICATION_ACTIONS)[PublicationKind][number];
+export type PostActionKey = (typeof PUBLICATION_ACTIONS.post)[number];
+export type VideoActionKey = (typeof PUBLICATION_ACTIONS.video)[number];
 
 /** Builds the compact callback namespace shared by post and video controls. */
 export function publicationCallback(
@@ -101,31 +148,6 @@ export function parsePublicationCallback(data: string): PublicationCallback | nu
   };
 }
 
-/**
- * Translates callbacks emitted before the shared namespace was enforced.
- * This is the only compatibility table for bare post names and video-prefixed
- * names. It also keeps callbacks already sitting in Telegram usable while the
- * canonical argument order is rolled out.
- */
-export function legacyToPublication(data: string): PublicationCallback | null {
-  const separator = data.indexOf(":");
-  const key = separator === -1 ? data : data.slice(0, separator);
-  const rawArgs = separator === -1 ? [] : data.slice(separator + 1).split(":");
-
-  if (key.startsWith(LEGACY_VIDEO_PREFIX)) {
-    const action = key.slice(LEGACY_VIDEO_PREFIX.length);
-    if (!action) return null;
-    return { kind: "video", action, args: rawArgs };
-  }
-  if (!PUBLICATION_ACTIONS.post.includes(key as (typeof PUBLICATION_ACTIONS.post)[number])) return null;
-  return { kind: "post", action: key, args: rawArgs };
-}
-
-/** Resolves either a canonical callback or a legacy callback payload. */
-export function publicationFromCallbackData(data: string): PublicationCallback | null {
-  return parsePublicationCallback(data) ?? legacyToPublication(data);
-}
-
 /** Parses a positive draft identifier used by publication callbacks. */
 export function parseDraftId(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
@@ -142,11 +164,7 @@ export function versionedCallback(data: string, revision: number | null | undefi
 export function parseSessionCallback(data: string): SessionCallback {
   const prefix = data.match(SESSION_VERSION_PREFIX);
   if (prefix) return { data: prefix[2] ?? "", revision: Number(prefix[1]) };
-  // Keep accepting callbacks emitted before the unambiguous prefix format was
-  // deployed. New payloads never inspect an arbitrary final `:svN` segment.
-  const legacy = data.match(LEGACY_SESSION_VERSION_SUFFIX);
-  if (!legacy) return { data, revision: null };
-  return { data: legacy[1] ?? "", revision: Number(legacy[2]) };
+  return { data, revision: null };
 }
 
 /** Rejects a callback or write based on an older dialog generation. */

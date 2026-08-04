@@ -9,14 +9,14 @@ import type { VideoTechnicalCheck } from "../publishing/video-service.js";
 import type { VideoTarget } from "../publishing/video-types.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { type BotLocale, botLocale } from "./i18n.js";
-import { clearSession, type VideoSession } from "./video-session.js";
+import { clearVideoState, type VideoConversationState } from "./video-ui.js";
 
 export async function finishVideoSchedule(
   ctx: Context,
   backendDb: BackendDb,
   config: BackendConfig,
   actorId: number,
-  session: VideoSession,
+  session: VideoConversationState,
   schedule: Partial<Record<VideoTarget, Date>>,
 ): Promise<void> {
   if (!session.draftId) throw new StudioError("err.video-missing");
@@ -31,7 +31,7 @@ export async function finishVideoNow(
   backendDb: BackendDb,
   config: BackendConfig,
   actorId: number,
-  session: VideoSession,
+  session: VideoConversationState,
 ): Promise<void> {
   if (!session.draftId) throw new StudioError("err.video-missing");
   const locale = botLocale(backendDb, actorId);
@@ -59,7 +59,7 @@ async function showScheduledVideo(
   backendDb: BackendDb,
   config: BackendConfig,
   actorId: number,
-  session: VideoSession,
+  session: VideoConversationState,
   technical: VideoTechnicalCheck,
   locale: BotLocale,
 ): Promise<void> {
@@ -69,7 +69,7 @@ async function showScheduledVideo(
   const warning = technical.aspectOk ? "" : `\n${t(locale, "video.aspect-warning")}`;
   const text = `${videoCheckSummary(technical, locale)}${warning}\n\n✅ ${t(locale, "common.scheduled")}. ${t(locale, "video.reminder", { minutes: reminderMinutes })}\n\n${preview.text}`;
   const controlMessageId = session.controlMessageId;
-  clearSession(backendDb, actorId);
+  clearVideoState(backendDb, actorId);
   if (controlMessageId && ctx.chat?.id) {
     await ctx.api.editMessageText(ctx.chat.id, controlMessageId, `✅ ${t(locale, "video.confirmed-card")}`);
   }

@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
 import type { Bot } from "grammy";
 import { finalizePendingAlbums } from "../src/bot/albums.js";
-import { getPostAdminState, setPostAdminState } from "../src/bot/post-state.js";
+import { getConversationState, saveConversationState } from "../src/bot/conversation-state.js";
+import { type PostWizardStep, postStepData, postStepName } from "../src/bot/post-fsm.js";
 import { draftPreview } from "../src/bot/preview.js";
 import { postProgress } from "../src/bot/progress.js";
 import { DEFAULT_TARGETS, TARGETS, targetLocale } from "../src/botTargets.js";
@@ -18,6 +19,16 @@ import { postDeliveryProjections } from "../src/studio/projections.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
 let backendDb: UnsafeBackendDb | null = null;
+
+function savePostState(db: UnsafeBackendDb, actorId: number, step: PostWizardStep, draftId: number, controlMessageId: number): number {
+  return saveConversationState(db, actorId, {
+    kind: "post",
+    draftId,
+    step: postStepName(step),
+    data: postStepData(step),
+    controlMessageId,
+  }).revision;
+}
 
 afterEach(() => {
   backendDb?.close();
@@ -469,10 +480,10 @@ describe("Telegram controller flow", () => {
       entities: [],
       media: [{ type: "photo", file_id: "ru-photo" }],
     });
-    setPostAdminState(backendDb, 42, "edit_en", draftId, 99);
+    savePostState(backendDb, 42, { type: "edit_text", locale: "en" }, draftId, 99);
     backendDb.sqlite
       .prepare(`INSERT INTO pending_albums(id,actor_id,chat_id,media_group_id,action,draft_id,text_ru,text_entities_json,media_json,notified,updated_at)
-      VALUES ('en-edit',42,42,'group','edit_en',?,'English replacement','[]',?,1,'2000-01-01T00:00:00.000Z')`)
+      VALUES ('en-edit',42,42,'group','edit_text:en',?,'English replacement','[]',?,1,'2000-01-01T00:00:00.000Z')`)
       .run(
         draftId,
         JSON.stringify([
@@ -501,7 +512,7 @@ describe("Telegram controller flow", () => {
       { type: "photo", file_id: "en-photo-1" },
       { type: "photo", file_id: "en-photo-2" },
     ]);
-    expect(getPostAdminState(backendDb, 42)).toMatchObject({ action: null, draft_id: null });
+    expect(getConversationState(backendDb, 42, "post")).toBeNull();
   });
 
   it("claims one pending album only once when Telegram workers overlap", async () => {
@@ -546,7 +557,7 @@ describe("Telegram controller flow", () => {
     backendDb = db;
     db.sqlite
       .prepare(`INSERT INTO pending_albums(id,actor_id,chat_id,media_group_id,action,draft_id,text_ru,text_entities_json,media_json,notified,attempt_count,updated_at)
-      VALUES ('doomed',42,42,'group','edit_ru',4242,'Caption','[]',?,1,0,'2000-01-01T00:00:00.000Z')`)
+      VALUES ('doomed',42,42,'group','edit_text:ru',4242,'Caption','[]',?,1,0,'2000-01-01T00:00:00.000Z')`)
       .run(JSON.stringify([{ type: "photo", file_id: "one" }]));
     const sendMessage = mock(async () => ({ message_id: 1, date: 1, chat: { id: 42, type: "private" as const } }));
     const fakeBot = { api: { sendMessage } } as unknown as Bot;

@@ -11,16 +11,15 @@ import { createStudioServices } from "../studio/services/index.js";
 import { withCallbackActionLock } from "./callback-action.js";
 import { type CallbackRouterContext, createCallbackRouter } from "./callback-router.js";
 import { isStaleCardCallback, POST_CARD_FRESHNESS } from "./card-freshness.js";
+import { clearConversationState, getConversationState, requireConversationState, saveConversationState } from "./conversation-state.js";
 import { resultNavigationKeyboard } from "./dialog-ui.js";
 import { botLocale } from "./i18n.js";
 import { extractMessage } from "./message.js";
 import { editDraftPreview, editDraftPrompt, sendDraftPreview, showScheduleConfirmation } from "./post-card.js";
-import { type PostWizardStep, resolvePostWizardStep } from "./post-fsm.js";
-import type { PostActionKey } from "./post-routes.js";
-import { clearPostAdminState, getPostAdminState, requireCurrentPostSession, setPostAdminState } from "./post-state.js";
+import { acceptPostFlowStep, type PostWizardStep, postStateStep, postStepData, postStepName } from "./post-fsm.js";
 import { draftPreview, isDraftView, modeLabel } from "./preview.js";
 import { renderPostProgress } from "./progress.js";
-import { type PublicationCallback, parseDraftId, publicationCallback } from "./session-fsm.js";
+import { type PostActionKey, type PublicationCallback, parseDraftId, publicationCallback } from "./session-fsm.js";
 
 type PostService = ReturnType<typeof createStudioServices>["posts"];
 type PostActionArgs = Omit<CallbackRouterContext, "action"> & {
@@ -33,6 +32,7 @@ type PostActionArgs = Omit<CallbackRouterContext, "action"> & {
 type PostActionHandler = (args: PostActionArgs) => Promise<void>;
 
 const postRoutes: Record<PostActionKey, PostActionHandler> = {
+  cancel_dialog: handleCancelDialog,
   toggle: handleToggle,
   preview: handlePreview,
   platforms: handlePlatforms,
@@ -62,11 +62,23 @@ const postRoutes: Record<PostActionKey, PostActionHandler> = {
   sched_manual: handleManualSchedule,
 };
 
+async function handleCancelDialog({ ctx, backendDb, actorId }: PostActionArgs): Promise<void> {
+  clearConversationState(backendDb, actorId, "post");
+  await ctx.answerCallbackQuery();
+}
+
+const POST_INPUT_STEPS: Record<string, PostWizardStep> = {
+  edit_ru: { type: "edit_text", locale: "ru" },
+  edit_en: { type: "edit_text", locale: "en" },
+  replace_ru_media: { type: "replace_media", locale: "ru" },
+  replace_en_media: { type: "replace_media", locale: "en" },
+};
+
 const postRouter = createCallbackRouter<PostActionArgs, number, void>({
   matches: (callback: PublicationCallback) => callback.kind === "post",
   routes: postRoutes,
   sessionBound: new Set(["cancel_state", "sched_manual_confirm"]),
-  currentSessionRevision: ({ backendDb, actorId }) => getPostAdminState(backendDb, actorId)?.revision,
+  currentSessionRevision: ({ backendDb, actorId }) => getConversationState(backendDb, actorId, "post")?.revision,
   parseEntity: (callback) => {
     return parseDraftId(callback.args[0]);
   },
@@ -112,12 +124,14 @@ async function handleCycleMode({ ctx, backendDb, config, actorId, locale, draftI
 }
 
 async function handleCancelState({ ctx, backendDb, config, actorId, second, draftId }: PostActionArgs): Promise<void> {
-  clearPostAdminState(backendDb, actorId);
+  clearConversationState(backendDb, actorId, "post");
   await editDraftPreview(ctx, backendDb, draftId, config, second && isDraftView(second) ? second : "overview");
 }
 
 async function handleEdit({ ctx, backendDb, actorId, locale, action, draftId }: PostActionArgs): Promise<void> {
-  setPostAdminState(backendDb, actorId, action, draftId, callbackMessageId(ctx));
+  const step = POST_INPUT_STEPS[action];
+  if (!step) throw new StudioError("action.session-stale");
+  savePostState(backendDb, actorId, step, draftId, callbackMessageId(ctx));
   await ctx.answerCallbackQuery({ text: t(locale, "action.send-replacement") });
   await editDraftPrompt(
     ctx,
@@ -128,7 +142,7 @@ async function handleEdit({ ctx, backendDb, actorId, locale, action, draftId }: 
 }
 
 async function handleSources({ ctx, backendDb, actorId, locale, draftId }: PostActionArgs): Promise<void> {
-  setPostAdminState(backendDb, actorId, "edit_sources", draftId, callbackMessageId(ctx));
+  savePostState(backendDb, actorId, { type: "edit_sources" }, draftId, callbackMessageId(ctx));
   await ctx.answerCallbackQuery();
   await editDraftPrompt(ctx, backendDb, draftId, t(locale, "post.sources-prompt"));
 }
@@ -214,7 +228,7 @@ async function handlePublishConfirm({ ctx, backendDb, config, actorId, locale, d
 
 async function handleSchedule(args: PostActionArgs): Promise<void> {
   const { ctx, backendDb, config, actorId, locale, draftId } = args;
-  clearPostAdminState(backendDb, actorId);
+  clearConversationState(backendDb, actorId, "post");
   if (await showPublicationPreflight(ctx, backendDb, config, actorId, draftId, locale)) return;
   if (await showStoryCardChoice(ctx, backendDb, config, actorId, draftId, "schedule")) return;
   await editDraftPreview(ctx, backendDb, draftId, config, "schedule");
@@ -222,7 +236,7 @@ async function handleSchedule(args: PostActionArgs): Promise<void> {
 
 async function handleScheduleScope({ ctx, backendDb, config, actorId, locale, first, draftId, data }: PostActionArgs): Promise<void> {
   if (!first) return void (await ctx.answerCallbackQuery({ text: t(locale, "action.unknown") }));
-  clearPostAdminState(backendDb, actorId);
+  clearConversationState(backendDb, actorId, "post");
   if (first === "ru_now") return commitLocaleScheduleOnce(ctx, backendDb, config, actorId, draftId, "ru", new Date(), data, "ru");
   if (first === "en_now") return commitLocaleScheduleOnce(ctx, backendDb, config, actorId, draftId, "en", new Date(), data, "en");
   if (first === "both") return editDraftPreview(ctx, backendDb, draftId, config, "schedule_ru");
@@ -231,31 +245,32 @@ async function handleScheduleScope({ ctx, backendDb, config, actorId, locale, fi
 
 async function handleScheduleView({ ctx, backendDb, config, actorId, first, draftId }: PostActionArgs): Promise<void> {
   if (!first || !isDraftView(first)) return;
-  clearPostAdminState(backendDb, actorId);
+  clearConversationState(backendDb, actorId, "post");
   await editDraftPreview(ctx, backendDb, draftId, config, first);
 }
 
 async function handleSchedulePick({ ctx, backendDb, config, actorId, first, second, draftId, data, posts }: PostActionArgs): Promise<void> {
   if (!first || !second) return;
-  clearPostAdminState(backendDb, actorId);
+  clearConversationState(backendDb, actorId, "post");
   const value = posts.slotTime(`${second.slice(0, 2)}:${second.slice(2, 4)}`);
   await commitLocaleScheduleOnce(ctx, backendDb, config, actorId, draftId, requireScheduleLocale(first), value, data);
 }
 
 async function handleManualScheduleConfirm({ ctx, backendDb, config, actorId, locale, draftId }: PostActionArgs): Promise<void> {
-  const state = getPostAdminState(backendDb, actorId);
-  if (state?.step?.type !== "schedule_confirm" || state.draft_id !== draftId)
+  const state = getConversationState(backendDb, actorId, "post");
+  const stateStep = postStateStep(state);
+  if (stateStep?.type !== "schedule_confirm" || state?.draftId !== draftId)
     return void (await ctx.answerCallbackQuery({ text: t(locale, "action.schedule-expired") }));
-  const { locale: scope, value } = state.step;
-  clearPostAdminState(backendDb, actorId);
+  const { locale: scope, value } = stateStep;
+  clearConversationState(backendDb, actorId, "post");
   await commitLocaleScheduleOnce(ctx, backendDb, config, actorId, draftId, scope, value, `sched_manual_confirm:${draftId}`);
 }
 
 async function handleManualSchedule({ ctx, backendDb, config, actorId, locale, first, draftId }: PostActionArgs): Promise<void> {
   if (!first) return;
   const pickLocale = requireScheduleLocale(first);
-  clearPostAdminState(backendDb, actorId);
-  setPostAdminState(backendDb, actorId, { type: "schedule_manual", locale: pickLocale }, draftId, callbackMessageId(ctx));
+  clearConversationState(backendDb, actorId, "post");
+  savePostState(backendDb, actorId, { type: "schedule_manual", locale: pickLocale }, draftId, callbackMessageId(ctx));
   await ctx.answerCallbackQuery({ text: t(locale, "action.send-time") });
   await editDraftPrompt(
     ctx,
@@ -481,7 +496,7 @@ async function showPublicationPreflight(
       few: t(locale, "action.parts-few"),
       many: t(locale, "action.parts-many"),
     });
-    const revision = getPostAdminState(backendDb, actorId)?.revision;
+    const revision = getConversationState(backendDb, actorId, "post")?.revision;
     const message = await ctx.reply(
       t(locale, "action.preflight-chain", { label: issue.label, actual: issue.actual, limit: issue.limit, parts: label }),
       {
@@ -505,60 +520,133 @@ export async function applyAdminState(
   ctx: Context,
   backendDb: BackendDb,
   config: BackendConfig,
-  action: PostWizardStep | string,
+  step: PostWizardStep,
   draftId: number,
   controlMessageId: number | null,
   expectedRevision?: number | null,
 ): Promise<void> {
   const actorId = Number(ctx.from?.id);
-  if (expectedRevision != null) requireCurrentPostSession(backendDb, actorId, expectedRevision);
+  if (expectedRevision != null) requireConversationState(backendDb, actorId, "post", expectedRevision);
   const message = extractMessage(ctx);
-  const step = resolvePostWizardStep(action);
-  if (!step) throw new StudioError("action.session-stale");
-  if (step.type === "schedule_manual") {
-    const scope = step.locale;
-    const { ruAt, enAt } = createStudioServices(backendDb, config).posts.manualSchedule(actorId, draftId, scope, message.text);
-    const value = scope === "ru" ? ruAt : enAt;
-    if (!value) throw new StudioError("err.no-pub-time");
-    const revision = setPostAdminState(backendDb, actorId, { type: "schedule_confirm", locale: scope, value }, draftId, controlMessageId);
-    await sendPostPreviews(ctx, backendDb, config, actorId, draftId);
-    return showScheduleConfirmation(
-      ctx,
-      backendDb,
-      draftId,
-      config,
-      ruAt,
-      enAt,
-      publicationCallback("post", "sched_manual_confirm", [draftId], revision),
-      scope === "ru" ? "schedule_ru" : "schedule_en",
-    );
-  } else if (step.type === "edit_text") {
-    createStudioServices(backendDb, config).posts.edit(actorId, draftId, {
-      locale: step.locale,
-      text: message.text,
-      entities: message.entities,
-      media: message.media,
-      clearMedia: isClearMediaCommand(message.text),
-    });
-  } else if (step.type === "replace_media") {
-    createStudioServices(backendDb, config).posts.edit(actorId, draftId, {
-      locale: step.locale,
-      text: message.text,
-      entities: message.entities,
-      media: message.media,
-      replaceMediaOnly: true,
-    });
-  } else if (step.type === "edit_sources") {
-    const urls = extractUrls(message.text);
-    if (urls.length === 0) throw new StudioError("err.no-valid-source-links");
-    createStudioServices(backendDb, config).posts.replaceSources(actorId, draftId, urls);
-  }
-  clearPostAdminState(backendDb, actorId);
-  // A completed edit gets a fresh card at the bottom, same as the album path
-  // in albums.ts: the previous card is history to scroll back to, never a
-  // moving prompt that erases what it looked like before the edit.
-  const control = await sendDraftPreview(ctx, backendDb, draftId, config);
-  if (ctx.chat?.id) setTelegramPostCard(backendDb, draftId, Number(ctx.chat.id), control.message_id);
+  if (!acceptPostFlowStep(step, message, {})) throw new StudioError("action.session-stale");
+  const handler = POST_INPUT_HANDLERS[step.type];
+  if (!handler) throw new StudioError("action.session-stale");
+  const completion = await handler({ ctx, backendDb, config, actorId, draftId, controlMessageId, step, message });
+  await POST_INPUT_COMPLETION[completion]({ ctx, backendDb, config, actorId, draftId });
+}
+
+type PostInputHandlerArgs = {
+  ctx: Context;
+  backendDb: BackendDb;
+  config: BackendConfig;
+  actorId: number;
+  draftId: number;
+  controlMessageId: number | null;
+  step: PostWizardStep;
+  message: ReturnType<typeof extractMessage>;
+};
+type PostInputCompletion = "complete" | "continued";
+type PostInputHandler = (args: PostInputHandlerArgs) => Promise<PostInputCompletion>;
+
+const POST_INPUT_HANDLERS: Record<string, PostInputHandler> = {
+  schedule_manual: handleManualPostSchedule,
+  edit_text: handlePostTextEdit,
+  replace_media: handlePostMediaReplacement,
+  edit_sources: handlePostSourceEdit,
+};
+
+const POST_INPUT_COMPLETION: Record<
+  PostInputCompletion,
+  (args: Pick<PostInputHandlerArgs, "ctx" | "backendDb" | "config" | "actorId" | "draftId">) => Promise<void>
+> = {
+  continued: async () => undefined,
+  complete: async ({ ctx, backendDb, config, actorId, draftId }) => {
+    clearConversationState(backendDb, actorId, "post");
+    const control = await sendDraftPreview(ctx, backendDb, draftId, config);
+    if (ctx.chat?.id) setTelegramPostCard(backendDb, draftId, Number(ctx.chat.id), control.message_id);
+  },
+};
+
+async function handleManualPostSchedule({
+  ctx,
+  backendDb,
+  config,
+  actorId,
+  draftId,
+  controlMessageId,
+  step,
+  message,
+}: PostInputHandlerArgs): Promise<PostInputCompletion> {
+  if (step.type !== "schedule_manual") throw new StudioError("action.session-stale");
+  const { ruAt, enAt } = createStudioServices(backendDb, config).posts.manualSchedule(actorId, draftId, step.locale, message.text);
+  const value = step.locale === "ru" ? ruAt : enAt;
+  if (!value) throw new StudioError("err.no-pub-time");
+  const revision = savePostState(backendDb, actorId, { type: "schedule_confirm", locale: step.locale, value }, draftId, controlMessageId);
+  await sendPostPreviews(ctx, backendDb, config, actorId, draftId);
+  await showScheduleConfirmation(
+    ctx,
+    backendDb,
+    draftId,
+    config,
+    ruAt,
+    enAt,
+    publicationCallback("post", "sched_manual_confirm", [draftId], revision),
+    step.locale === "ru" ? "schedule_ru" : "schedule_en",
+  );
+  return "continued";
+}
+
+async function handlePostTextEdit({
+  backendDb,
+  config,
+  actorId,
+  draftId,
+  message,
+  step,
+}: PostInputHandlerArgs): Promise<PostInputCompletion> {
+  if (step.type !== "edit_text") throw new StudioError("action.session-stale");
+  createStudioServices(backendDb, config).posts.edit(actorId, draftId, {
+    locale: step.locale,
+    text: message.text,
+    entities: message.entities,
+    media: message.media,
+    clearMedia: isClearMediaCommand(message.text),
+  });
+  return "complete";
+}
+
+async function handlePostMediaReplacement({
+  backendDb,
+  config,
+  actorId,
+  draftId,
+  message,
+  step,
+}: PostInputHandlerArgs): Promise<PostInputCompletion> {
+  if (step.type !== "replace_media") throw new StudioError("action.session-stale");
+  createStudioServices(backendDb, config).posts.edit(actorId, draftId, {
+    locale: step.locale,
+    text: message.text,
+    entities: message.entities,
+    media: message.media,
+    replaceMediaOnly: true,
+  });
+  return "complete";
+}
+
+async function handlePostSourceEdit({
+  backendDb,
+  config,
+  actorId,
+  draftId,
+  message,
+  step,
+}: PostInputHandlerArgs): Promise<PostInputCompletion> {
+  if (step.type !== "edit_sources") throw new StudioError("action.session-stale");
+  const urls = extractUrls(message.text);
+  if (urls.length === 0) throw new StudioError("err.no-valid-source-links");
+  createStudioServices(backendDb, config).posts.replaceSources(actorId, draftId, urls);
+  return "complete";
 }
 
 /** Chat-only shorthand for clearing a post's media during a free-text edit reply. */
@@ -606,6 +694,22 @@ function scheduledDraftText(
 function callbackMessageId(ctx: Context): number | null {
   const message = ctx.callbackQuery?.message;
   return message && "message_id" in message ? message.message_id : null;
+}
+
+function savePostState(
+  backendDb: BackendDb,
+  actorId: number,
+  step: PostWizardStep,
+  draftId: number | null,
+  controlMessageId: number | null,
+): number {
+  return saveConversationState(backendDb, actorId, {
+    kind: "post",
+    draftId,
+    step: postStepName(step),
+    data: postStepData(step),
+    controlMessageId,
+  }).revision;
 }
 
 function requireScheduleLocale(value: string): "ru" | "en" {

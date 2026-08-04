@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import type { Context } from "grammy";
 import { publicationCallback, versionedCallback } from "../src/bot/session-fsm.js";
 import { handleVideoActionCallback } from "../src/bot/video-actions.js";
-import { clearSession, getSession, saveSession } from "../src/bot/video-session.js";
+import { clearVideoState, getVideoState, saveVideoState } from "../src/bot/video-ui.js";
 import { type BackendDb, unsafeDb } from "../src/db/client.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { setTelegramVideoCard } from "../src/interfaces/telegram/control-cards.js";
@@ -84,7 +84,7 @@ describe("video callback dispatch", () => {
     backendDb = openBackendDb(":memory:");
     const answers: Array<{ text?: string } | undefined> = [];
     const ctx = {
-      callbackQuery: { data: "video_not_a_route:7" },
+      callbackQuery: { data: "p:video:not_a_route:7" },
       from: { id: 42 },
       answerCallbackQuery: async (options?: { text?: string }) => void answers.push(options),
     } as unknown as Context;
@@ -100,36 +100,36 @@ describe("video callback dispatch", () => {
 
   it("rejects a callback from an older video dialog revision", async () => {
     backendDb = openBackendDb(":memory:");
-    const first = saveSession(backendDb, 42, { draftId: 7, step: "targets", selected: [], data: {} });
-    saveSession(backendDb, 42, { ...first, selected: ["youtube_shorts"] });
+    const first = saveVideoState(backendDb, 42, { draftId: 7, step: "targets", selected: [], data: {} });
+    saveVideoState(backendDb, 42, { ...first, selected: ["youtube_shorts"] });
     const answers: Array<{ text?: string } | undefined> = [];
     const ctx = {
-      callbackQuery: { data: versionedCallback("video_toggle:instagram_reels", first.revision) },
+      callbackQuery: { data: versionedCallback(publicationCallback("video", "toggle", ["instagram_reels"]), first.revision) },
       from: { id: 42 },
       answerCallbackQuery: async (options?: { text?: string }) => void answers.push(options),
     } as unknown as Context;
 
     expect(await handleVideoActionCallback(ctx, backendDb, config)).toBe(true);
     expect(answers[0]?.text).toBe("This dialog is outdated. Start again.");
-    expect(getSession(backendDb, 42)?.selected).toEqual(["youtube_shorts"]);
+    expect(getVideoState(backendDb, 42)?.selected).toEqual(["youtube_shorts"]);
   });
 
   it("opens target scheduling after a previous video dialog was retired", async () => {
     backendDb = openBackendDb(":memory:");
     const draftId = createVideoDraft(backendDb, 42, "clip.mp4", 24);
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
-    const previous = saveSession(backendDb, 42, {
+    const previous = saveVideoState(backendDb, 42, {
       draftId,
       step: "schedule_common",
       selected: ["youtube_shorts"],
       data: {},
     });
-    clearSession(backendDb, 42);
+    clearVideoState(backendDb, 42);
 
     const answers: Array<{ text?: string } | undefined> = [];
     const ctx = {
       callbackQuery: {
-        data: publicationCallback("video", "time", ["youtube_shorts", draftId]),
+        data: publicationCallback("video", "time", [draftId, "youtube_shorts"]),
         message: { message_id: 10 },
       },
       from: { id: 42 },
@@ -141,7 +141,7 @@ describe("video callback dispatch", () => {
     await handleVideoActionCallback(ctx, backendDb, config);
 
     expect(answers).toEqual([undefined]);
-    expect(getSession(backendDb, 42)).toMatchObject({
+    expect(getVideoState(backendDb, 42)).toMatchObject({
       draftId,
       step: "schedule_target",
       data: { target: "youtube_shorts" },
@@ -156,7 +156,7 @@ describe("video callback dispatch", () => {
     setTelegramVideoCard(backendDb, draftId, 100, 10);
     const answers: Array<{ text?: string } | undefined> = [];
     const ctx = {
-      callbackQuery: { data: `video_cancel_notice:${draftId}`, message: { message_id: 50 } },
+      callbackQuery: { data: publicationCallback("video", "cancel_notice", [draftId]), message: { message_id: 50 } },
       from: { id: 42 },
       chat: { id: 100 },
       editMessageText: async () => undefined,
