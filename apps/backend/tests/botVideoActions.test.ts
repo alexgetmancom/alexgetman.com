@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import type { Context } from "grammy";
+import { versionedCallback } from "../src/bot/session-fsm.js";
 import { handleVideoActionCallback } from "../src/bot/video-actions.js";
+import { getSession, saveSession } from "../src/bot/video-session.js";
 import type { BackendDb } from "../src/db/client.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { videoPreview } from "../src/interfaces/telegram/video-preview.js";
@@ -55,5 +57,21 @@ describe("video callback dispatch", () => {
     expect(handled).toBe(true);
     expect(answers).toHaveLength(1);
     expect(answers[0]?.text).toBeTruthy();
+  });
+
+  it("rejects a callback from an older video dialog revision", async () => {
+    backendDb = openBackendDb(":memory:");
+    const first = saveSession(backendDb, 42, { draftId: 7, step: "targets", selected: [], data: {} });
+    saveSession(backendDb, 42, { ...first, selected: ["youtube_shorts"] });
+    const answers: Array<{ text?: string } | undefined> = [];
+    const ctx = {
+      callbackQuery: { data: versionedCallback("video_toggle:instagram_reels", first.revision) },
+      from: { id: 42 },
+      answerCallbackQuery: async (options?: { text?: string }) => void answers.push(options),
+    } as unknown as Context;
+
+    expect(await handleVideoActionCallback(ctx, backendDb, config)).toBe(true);
+    expect(answers[0]?.text).toBe("This dialog is outdated. Start again.");
+    expect(getSession(backendDb, 42)?.selected).toEqual(["youtube_shorts"]);
   });
 });

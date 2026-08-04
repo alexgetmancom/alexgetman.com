@@ -13,6 +13,7 @@ import { applyAdminState } from "./post-actions.js";
 import { sendDraftPreview } from "./post-card.js";
 import { clearPostAdminState, getPostAdminState, startPostDialog } from "./post-state.js";
 import { translatePostText } from "./post-translation.js";
+import { parseSessionCallback, requireSessionRevision, versionedCallback } from "./session-fsm.js";
 
 /** The conversational text-post screen. It owns user input and keeps the
  * root bot router limited to authorization and screen dispatch.
@@ -21,10 +22,10 @@ import { translatePostText } from "./post-translation.js";
  * operator just tapped into it, which is what a callback should do. */
 async function renderPostScreen(ctx: Context, backendDb: BackendDb, mode: "reply" | "edit"): Promise<void> {
   const actorId = Number(ctx.from?.id);
-  startPostDialog(backendDb, actorId);
+  const revision = startPostDialog(backendDb, actorId);
   const locale = botLocale(backendDb, actorId);
   const prompt = t(locale, "post.dialog-prompt");
-  const options = { reply_markup: new InlineKeyboard().text(t(locale, "common.cancel"), "cancel_dialog") };
+  const options = { reply_markup: new InlineKeyboard().text(t(locale, "common.cancel"), versionedCallback("cancel_dialog", revision)) };
   if (mode === "edit") await ctx.editMessageText(prompt, options);
   else await ctx.reply(prompt, options);
 }
@@ -59,13 +60,14 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
       media,
       action: state.action,
       draftId: state.draft_id,
+      stateRevision: state.revision,
     });
     if (isNew) await ctx.reply(t(locale, "post.album-received"));
     return;
   }
   if (state?.action && state.action !== "new_post" && state.draft_id) {
     try {
-      await applyAdminState(ctx, backendDb, config, state.action, state.draft_id, state.control_message_id);
+      await applyAdminState(ctx, backendDb, config, state.action, state.draft_id, state.control_message_id, state.revision);
     } catch (error) {
       const scheduleInput = state.action.startsWith("schedule_manual_");
       await ctx.reply(
@@ -89,12 +91,15 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
 }
 
 export async function handlePostScreenCallback(ctx: Context, backendDb: BackendDb, mainMenu: Menu<Context>): Promise<boolean> {
-  if (ctx.callbackQuery?.data === "menu_text") {
+  const rawData = ctx.callbackQuery?.data;
+  const { data, revision } = rawData ? parseSessionCallback(rawData) : { data: undefined, revision: null };
+  if (data === "menu_text") {
     await ctx.answerCallbackQuery();
     await openPostScreen(ctx, backendDb);
     return true;
   }
-  if (ctx.callbackQuery?.data === "cancel_dialog") {
+  if (data === "cancel_dialog") {
+    requireSessionRevision(getPostAdminState(backendDb, Number(ctx.from?.id))?.revision, revision);
     await ctx.answerCallbackQuery();
     clearPostAdminState(backendDb, Number(ctx.from?.id));
     // Cancelling is pure navigation, not a content change: turn this same

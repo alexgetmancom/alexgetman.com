@@ -4,7 +4,9 @@ import type { BackendConfig } from "../foundation/config.js";
 import { t } from "../foundation/i18n/index.js";
 import { formatMsk } from "../interfaces/telegram/time.js";
 import { botLocale } from "./i18n.js";
+import { getPostAdminState } from "./post-state.js";
 import { type DraftView, draftPreview } from "./preview.js";
+import { versionedCallback } from "./session-fsm.js";
 
 /** Telegram rendering for a post control card; mutations stay in post actions. */
 export async function sendDraftPreview(ctx: Pick<Context, "reply">, backendDb: BackendDb, draftId: number, config: BackendConfig) {
@@ -32,10 +34,15 @@ export async function editDraftPrompt(
   prompt: string,
   returnView: DraftView = "overview",
 ): Promise<void> {
-  const locale = botLocale(backendDb, Number(ctx.from?.id));
+  const actorId = Number(ctx.from?.id);
+  const locale = botLocale(backendDb, actorId);
+  const revision = getPostAdminState(backendDb, actorId)?.revision;
   await ctx.reply(prompt, {
     parse_mode: "Markdown",
-    reply_markup: new InlineKeyboard().text(t(locale, "common.cancel"), `cancel_state:${draftId}:${returnView}`),
+    reply_markup: new InlineKeyboard().text(
+      t(locale, "common.cancel"),
+      versionedCallback(`cancel_state:${draftId}:${returnView}`, revision),
+    ),
   });
 }
 

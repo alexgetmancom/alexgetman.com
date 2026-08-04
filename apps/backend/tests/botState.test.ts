@@ -1,13 +1,56 @@
 import { describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
-import { getPostAdminState } from "../src/bot/post-state.js";
-import { getSession } from "../src/bot/video-session.js";
+import { clearPostAdminStateIfCurrent, getPostAdminState, setPostAdminState } from "../src/bot/post-state.js";
+import { clearSession, getSession, saveSession } from "../src/bot/video-session.js";
 import type { BackendDb } from "../src/db/client.js";
 import { adminState, videoBotSessions } from "../src/db/schema.js";
 import { unsafeDb } from "../src/db/unsafe.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
 describe("Telegram dialog state", () => {
+  it("increments post revisions and refuses to clear a newer dialog", () => {
+    const backendDb: BackendDb = openBackendDb(":memory:");
+    try {
+      const first = setPostAdminState(backendDb, 42, "edit_ru", 7, 9);
+      const second = setPostAdminState(backendDb, 42, "edit_en", 7, 10);
+
+      expect(second).toBe(first + 1);
+      expect(clearPostAdminStateIfCurrent(backendDb, 42, "edit_en", 7, first)).toBe(false);
+      expect(clearPostAdminStateIfCurrent(backendDb, 42, "edit_en", 7, second)).toBe(true);
+      expect(getPostAdminState(backendDb, 42)).toMatchObject({ action: null, revision: second + 1 });
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("increments video revisions and rejects writes from an older wizard", () => {
+    const backendDb: BackendDb = openBackendDb(":memory:");
+    try {
+      const first = saveSession(backendDb, 42, { draftId: null, step: "locale", selected: [], data: {} });
+      const second = saveSession(backendDb, 42, { ...first, step: "asset" });
+
+      expect(second.revision).toBe(first.revision + 1);
+      expect(() => saveSession(backendDb, 42, first)).toThrow("action.session-stale");
+      expect(getSession(backendDb, 42)).toMatchObject({ step: "asset", revision: second.revision });
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("does not reuse a video revision after a session is cleared", () => {
+    const backendDb: BackendDb = openBackendDb(":memory:");
+    try {
+      const first = saveSession(backendDb, 42, { draftId: null, step: "locale", selected: [], data: {} });
+      clearSession(backendDb, 42);
+      const second = saveSession(backendDb, 42, { draftId: null, step: "locale", selected: [], data: {} });
+
+      expect(second.revision).toBeGreaterThan(first.revision);
+      expect(getSession(backendDb, 42)).toMatchObject({ revision: second.revision, step: "locale" });
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("expires a stale post state instead of applying an old text reply", () => {
     const backendDb: BackendDb = openBackendDb(":memory:");
     try {
@@ -18,7 +61,10 @@ describe("Telegram dialog state", () => {
         .run();
 
       expect(getPostAdminState(backendDb, 42)).toBeNull();
-      expect(unsafeDb(backendDb).db.select().from(adminState).where(eq(adminState.actorId, 42)).get()).toBeUndefined();
+      expect(unsafeDb(backendDb).db.select().from(adminState).where(eq(adminState.actorId, 42)).get()).toMatchObject({
+        action: null,
+        revision: 1,
+      });
     } finally {
       backendDb.close();
     }
@@ -42,7 +88,9 @@ describe("Telegram dialog state", () => {
         .run();
 
       expect(getSession(backendDb, 42)).toBeNull();
-      expect(unsafeDb(backendDb).db.select().from(videoBotSessions).where(eq(videoBotSessions.actorId, 42)).get()).toBeUndefined();
+      expect(unsafeDb(backendDb).db.select().from(videoBotSessions).where(eq(videoBotSessions.actorId, 42)).get()).toMatchObject({
+        active: 0,
+      });
     } finally {
       backendDb.close();
     }
@@ -64,7 +112,9 @@ describe("Telegram dialog state", () => {
         .run();
 
       expect(getSession(backendDb, 42)).toBeNull();
-      expect(unsafeDb(backendDb).db.select().from(videoBotSessions).where(eq(videoBotSessions.actorId, 42)).get()).toBeUndefined();
+      expect(unsafeDb(backendDb).db.select().from(videoBotSessions).where(eq(videoBotSessions.actorId, 42)).get()).toMatchObject({
+        active: 0,
+      });
     } finally {
       backendDb.close();
     }

@@ -119,6 +119,7 @@ export const pendingAlbums = sqliteTable("pending_albums", {
   mediaGroupId: text().notNull(),
   action: text(),
   draftId: integer(),
+  stateRevision: integer(),
   textRu: text().notNull().default(""),
   textEntitiesJson: text(),
   mediaJson: text().notNull(),

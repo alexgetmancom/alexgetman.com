@@ -19,6 +19,7 @@ import {
   type VideoWizardStep,
 } from "../studio/video-fsm.js";
 import { botLocale } from "./i18n.js";
+import { versionedCallback } from "./session-fsm.js";
 import {
   askInstagramOrSchedule,
   askSchedule,
@@ -40,16 +41,16 @@ export async function startVideoConversation(ctx: Context, backendDb: BackendDb)
   const actorId = Number(ctx.from?.id);
   const locale = botLocale(backendDb, actorId);
   const text = t(locale, "video.choose-language");
+  const session = saveSession(backendDb, actorId, { draftId: null, step: "locale", selected: [], data: {} });
   const keyboard = new InlineKeyboard()
-    .text(t(locale, "video.language-ru"), "video_locale:ru")
-    .text(t(locale, "video.language-en"), "video_locale:en")
+    .text(t(locale, "video.language-ru"), versionedCallback("video_locale:ru", session.revision))
+    .text(t(locale, "video.language-en"), versionedCallback("video_locale:en", session.revision))
     .row()
-    .text(t(locale, "common.cancel"), "video_cancel_dialog");
+    .text(t(locale, "common.cancel"), versionedCallback("video_cancel_dialog", session.revision));
   // Reached via a menu button, this is pure navigation: turn that same
   // message into the prompt instead of leaving it and adding a new one.
   if (ctx.callbackQuery?.message) await ctx.editMessageText(text, { reply_markup: keyboard });
   else await ctx.reply(text, { reply_markup: keyboard });
-  saveSession(backendDb, actorId, { draftId: null, step: "locale", selected: [], data: {} });
 }
 
 export async function handleVideoConversationMessage(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<boolean> {
@@ -76,7 +77,8 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
     }
     const text = ctx.message && "text" in ctx.message ? (ctx.message.text?.trim() ?? "") : "";
     if (!text) {
-      await replyVideoPrompt(ctx, botLocale(backendDb, actorId), t(botLocale(backendDb, actorId), "video.await-text"));
+      const locale = botLocale(backendDb, actorId);
+      await replyVideoPrompt(ctx, backendDb, actorId, locale, t(locale, "video.await-text"));
       return true;
     }
     if (!session.draftId) return false;
@@ -98,14 +100,14 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
         return true;
       }
       const next: VideoSession = { ...session, step: "targets" };
-      saveSession(backendDb, actorId, next);
+      const saved = saveSession(backendDb, actorId, next);
       await sendVideoControl(
         ctx,
         backendDb,
         actorId,
         next,
         t(botLocale(backendDb, actorId), "video.choose-platforms-next"),
-        targetKeyboard(config, session.selected, botLocale(backendDb, actorId)),
+        targetKeyboard(config, saved.selected, botLocale(backendDb, actorId), saved.revision),
       );
       return true;
     }
@@ -131,7 +133,7 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
       step: session.step,
       error: error instanceof Error ? error.message : String(error),
     });
-    await replyVideoPrompt(ctx, locale, `🔴 ${t(locale, "video.value-error")}: ${describeError(locale, error)}`, {
+    await replyVideoPrompt(ctx, backendDb, actorId, locale, `🔴 ${t(locale, "video.value-error")}: ${describeError(locale, error)}`, {
       plainText: true,
     });
     return true;
@@ -241,7 +243,7 @@ async function parseScheduleDate(
     return createStudioServices(backendDb, config).videos.parseSchedule(actorId, draftId, text);
   } catch (error) {
     const locale = botLocale(backendDb, actorId);
-    await replyVideoPrompt(ctx, locale, describeError(locale, error), { plainText: true });
+    await replyVideoPrompt(ctx, backendDb, actorId, locale, describeError(locale, error), { plainText: true });
     return null;
   }
 }
@@ -291,12 +293,12 @@ export async function applyVideoScheduleDate(
       step: `schedule_target:${transition.nextTarget}`,
       data: { ...session.data, schedule: transition.schedule },
     };
-    saveSession(backendDb, actorId, next);
+    const saved = saveSession(backendDb, actorId, next);
     await sendVideoTimePrompt(
       ctx,
       backendDb,
       actorId,
-      next,
+      saved,
       t(botLocale(backendDb, actorId), "video.schedule-target-prompt", { target: videoTargetLabel(transition.nextTarget) }),
     );
     return;
@@ -331,7 +333,7 @@ async function confirmVideoSchedule(
       schedule: Object.fromEntries(Object.entries(schedule).map(([target, value]) => [target, value?.toISOString()])),
     },
   };
-  saveSession(backendDb, actorId, next);
+  const saved = saveSession(backendDb, actorId, next);
   const delivery = createStudioServices(backendDb, config).videos.preview(actorId, session.draftId).delivery;
   await sendTelegramDeliveryPreviews(ctx, delivery.projections, botLocale(backendDb, actorId));
   const lines = [`🎬 *${t(locale, "common.confirm-schedule")}*`];
@@ -343,9 +345,9 @@ async function confirmVideoSchedule(
       );
   }
   const keyboard = new InlineKeyboard()
-    .text(t(locale, "common.confirm"), `video_schedule_confirm:${session.draftId}`)
-    .text(t(locale, "common.back"), `video_schedule:${session.draftId}`);
-  await sendVideoControl(ctx, backendDb, actorId, next, lines.join("\n"), keyboard);
+    .text(t(locale, "common.confirm"), versionedCallback(`video_schedule_confirm:${session.draftId}`, saved.revision))
+    .text(t(locale, "common.back"), versionedCallback(`video_schedule:${session.draftId}`, saved.revision));
+  await sendVideoControl(ctx, backendDb, actorId, saved, lines.join("\n"), keyboard);
 }
 
 async function finishSingleVideoEdit(

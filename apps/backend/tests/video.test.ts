@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { and, eq } from "drizzle-orm";
+import { versionedCallback } from "../src/bot/session-fsm.js";
 import { handleVideoCallback, handleVideoMessage } from "../src/bot/video-screen.js";
 import { getSession, saveSession } from "../src/bot/video-session.js";
 import {
@@ -65,9 +66,15 @@ function videoContext(input: { text?: string; callback?: string } = {}) {
 describe("video publication queue", () => {
   it("selects the video locale before asking for the MP4", async () => {
     const backendDb = testDb.open();
-    saveSession(backendDb, 42, { draftId: null, step: "locale", selected: [], data: {} });
+    const session = saveSession(backendDb, 42, { draftId: null, step: "locale", selected: [], data: {} });
 
-    expect(await handleVideoCallback(videoContext({ callback: "video_locale:en" }).context, backendDb, videoConfig())).toBe(true);
+    expect(
+      await handleVideoCallback(
+        videoContext({ callback: versionedCallback("video_locale:en", session.revision) }).context,
+        backendDb,
+        videoConfig(),
+      ),
+    ).toBe(true);
     expect(getSession(backendDb, 42)).toMatchObject({ step: "asset", data: { videoLocale: "en" } });
   });
 
@@ -306,14 +313,15 @@ describe("video publication queue", () => {
   it("routes target selection callbacks and rejects an invalid target", async () => {
     const backendDb = testDb.open();
     const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
-    saveSession(backendDb, 42, { draftId, step: "targets", selected: ["youtube_shorts"], data: {} });
-    const selected = videoContext({ callback: "video_targets_done" });
+    const session = saveSession(backendDb, 42, { draftId, step: "targets", selected: ["youtube_shorts"], data: {} });
+    const selected = videoContext({ callback: versionedCallback("video_targets_done", session.revision) });
 
     expect(await handleVideoCallback(selected.context, backendDb, videoConfig())).toBe(true);
     expect(getSession(backendDb, 42)).toMatchObject({ draftId, step: "youtube_title" });
     expect(listVideoTargets(backendDb, draftId).map((target) => target.target)).toEqual(["youtube_shorts"]);
 
-    const invalid = videoContext({ callback: "video_toggle:not-a-target" });
+    const invalidSession = saveSession(backendDb, 42, { draftId, step: "targets", selected: ["youtube_shorts"], data: {} });
+    const invalid = videoContext({ callback: versionedCallback("video_toggle:not-a-target", invalidSession.revision) });
     expect(await handleVideoCallback(invalid.context, backendDb, videoConfig())).toBe(true);
     expect(invalid.callbackAnswers).toEqual([{ text: "Start creating the video again." }]);
   });

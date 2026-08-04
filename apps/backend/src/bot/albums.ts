@@ -10,7 +10,7 @@ import { setTelegramPostCard } from "../interfaces/telegram/control-cards.js";
 import { importTelegramAlbumMedia } from "../interfaces/telegram/media-ingress.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { botLocale } from "./i18n.js";
-import { clearPostAdminStateIfCurrent } from "./post-state.js";
+import { clearPostAdminStateIfCurrent, getPostAdminState } from "./post-state.js";
 import { translatePostText } from "./post-translation.js";
 import { draftPreview } from "./preview.js";
 
@@ -33,6 +33,7 @@ type PendingAlbumInput = {
   media: Record<string, unknown>;
   action: string | null;
   draftId: number | null;
+  stateRevision: number | null;
 };
 
 export function appendPendingAlbum(backendDb: BackendDb, input: PendingAlbumInput): boolean {
@@ -52,6 +53,7 @@ export function appendPendingAlbum(backendDb: BackendDb, input: PendingAlbumInpu
     mediaGroupId: input.mediaGroupId,
     action: input.action,
     draftId: input.draftId,
+    stateRevision: input.stateRevision,
     textRu: input.text || row?.textRu || "",
     textEntitiesJson: JSON.stringify(input.entities.length ? input.entities : parseArrayValue(row?.textEntitiesJson)),
     mediaJson: JSON.stringify(media),
@@ -85,6 +87,7 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
       chatId: pendingAlbums.chatId,
       action: pendingAlbums.action,
       draftId: pendingAlbums.draftId,
+      stateRevision: pendingAlbums.stateRevision,
       attemptCount: pendingAlbums.attemptCount,
       textRu: pendingAlbums.textRu,
       textEntitiesJson: pendingAlbums.textEntitiesJson,
@@ -104,6 +107,14 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
       .get();
     if (!claim) continue;
     try {
+      if (row.stateRevision != null && getPostAdminState(backendDb, row.actorId)?.revision !== row.stateRevision) {
+        unsafeDb(backendDb)
+          .db.delete(pendingAlbums)
+          .where(and(eq(pendingAlbums.id, row.id), eq(pendingAlbums.notified, ALBUM_CLAIMED)))
+          .run();
+        log("warn", "stale album discarded", { album: row.id, actorId: row.actorId, stateRevision: row.stateRevision });
+        continue;
+      }
       const media = await importTelegramAlbumMedia(bot, backendDb, config, row.actorId, parseArrayValue(row.mediaJson));
       const draftId = row.draftId;
       const isEdit = row.action === "edit_ru" || row.action === "edit_en";
@@ -116,7 +127,7 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
           media,
           ...(isMediaReplacement ? { replaceMediaOnly: true } : {}),
         });
-        clearPostAdminStateIfCurrent(backendDb, row.actorId, row.action, draftId);
+        clearPostAdminStateIfCurrent(backendDb, row.actorId, row.action, draftId, row.stateRevision);
         await refreshDraftControlCard(bot, backendDb, config, row.actorId, draftId, row.chatId);
       } else {
         const text = row.textRu;
@@ -126,7 +137,7 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
           message: { text, textEn, media, entities: parseArrayValue(row.textEntitiesJson) },
         }).id;
         await refreshDraftControlCard(bot, backendDb, config, row.actorId, created, row.chatId);
-        clearPostAdminStateIfCurrent(backendDb, row.actorId, row.action, row.draftId);
+        clearPostAdminStateIfCurrent(backendDb, row.actorId, row.action, row.draftId, row.stateRevision);
       }
       const removed = unsafeDb(backendDb)
         .db.delete(pendingAlbums)

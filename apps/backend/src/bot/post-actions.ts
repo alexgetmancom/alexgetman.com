@@ -13,13 +13,15 @@ import { isStalePostCardCallback } from "./card-freshness.js";
 import { botLocale } from "./i18n.js";
 import { extractMessage } from "./message.js";
 import { editDraftPreview, editDraftPrompt, sendDraftPreview, showScheduleConfirmation } from "./post-card.js";
-import { clearPostAdminState, getPostAdminState, setPostAdminState } from "./post-state.js";
+import { clearPostAdminState, getPostAdminState, requireCurrentPostSession, setPostAdminState } from "./post-state.js";
 import { draftPreview, isDraftView, modeLabel } from "./preview.js";
 import { renderPostProgress } from "./progress.js";
+import { parseSessionCallback, versionedCallback } from "./session-fsm.js";
 
 /** Applies a command selected on a text-post card. Telegram rendering lives in post-card. */
 export async function handlePostAction(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<void> {
-  const data = ctx.callbackQuery?.data ?? "";
+  const rawData = ctx.callbackQuery?.data ?? "";
+  const { data, revision } = parseSessionCallback(rawData);
   const parts = data.split(":");
   const [action, first, second] = parts;
   // `sched_*` callbacks carry their scope arguments first and the draft id last;
@@ -28,6 +30,9 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
   const actorId = Number(ctx.from?.id);
   const locale = botLocale(backendDb, actorId);
   if (!Number.isSafeInteger(draftId)) return void (await ctx.answerCallbackQuery({ text: t(locale, "action.invalid-post") }));
+  if ((action === "cancel_state" || action === "sched_manual_confirm") && revision == null)
+    return void (await ctx.answerCallbackQuery({ text: t(locale, "action.session-stale") }));
+  if (revision != null) requireCurrentPostSession(backendDb, actorId, revision);
   if (isStalePostCardCallback(ctx, backendDb, action ?? "", draftId))
     return void (await ctx.answerCallbackQuery({ text: t(locale, "action.card-stale") }));
   const posts = createStudioServices(backendDb, config).posts;
@@ -331,15 +336,17 @@ export async function applyAdminState(
   action: string,
   draftId: number,
   controlMessageId: number | null,
+  expectedRevision?: number | null,
 ): Promise<void> {
   const actorId = Number(ctx.from?.id);
+  if (expectedRevision != null) requireCurrentPostSession(backendDb, actorId, expectedRevision);
   const message = extractMessage(ctx);
   if (action.startsWith("schedule_manual_")) {
     const scope = requireScheduleLocale(action.slice("schedule_manual_".length));
     const { ruAt, enAt } = createStudioServices(backendDb, config).posts.manualSchedule(actorId, draftId, scope, message.text);
     const value = scope === "ru" ? ruAt : enAt;
     if (!value) throw new StudioError("err.no-pub-time");
-    setPostAdminState(backendDb, actorId, `schedule_confirm_${scope}_${value.toISOString()}`, draftId, controlMessageId);
+    const revision = setPostAdminState(backendDb, actorId, `schedule_confirm_${scope}_${value.toISOString()}`, draftId, controlMessageId);
     await sendPostPreviews(ctx, backendDb, config, actorId, draftId);
     return showScheduleConfirmation(
       ctx,
@@ -348,7 +355,7 @@ export async function applyAdminState(
       config,
       ruAt,
       enAt,
-      `sched_manual_confirm:${draftId}`,
+      versionedCallback(`sched_manual_confirm:${draftId}`, revision),
       scope === "ru" ? "schedule_ru" : "schedule_en",
     );
   } else if (action === "edit_ru" || action === "edit_en") {

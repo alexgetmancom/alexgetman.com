@@ -87,6 +87,8 @@ export const videoBotSessions = sqliteTable("video_bot_sessions", {
   step: text().notNull(),
   selectedTargetsJson: json<string[]>().notNull().default([]),
   dataJson: json<JsonObject>().notNull().default({}),
+  revision: integer().notNull().default(0),
+  active: integer().notNull().default(1),
   updatedAt: text().notNull(),
   expiresAt: text(),
 });

@@ -1,13 +1,15 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { type Context, InlineKeyboard } from "grammy";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { videoBotSessions } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { StudioError } from "../foundation/errors.js";
 import { t } from "../foundation/i18n/index.js";
 import { setTelegramVideoCard } from "../interfaces/telegram/control-cards.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import { nextVideoFlowStep, previousVideoMetadataStep, type VideoPrompt, type VideoWizardStep } from "../studio/video-fsm.js";
 import { type BotLocale, botLocale } from "./i18n.js";
+import { versionedCallback } from "./session-fsm.js";
 
 const VIDEO_SESSION_TTL_MS = 30 * 60_000;
 export type VideoSessionStep =
@@ -20,7 +22,14 @@ export type VideoSessionStep =
   | "label"
   | VideoWizardStep
   | `schedule_target:${VideoTarget}`;
-export type VideoSession = { draftId: number | null; step: VideoSessionStep; selected: VideoTarget[]; data: Record<string, unknown> };
+export type VideoSession = {
+  draftId: number | null;
+  step: VideoSessionStep;
+  selected: VideoTarget[];
+  data: Record<string, unknown>;
+  revision: number;
+};
+export type VideoSessionInput = Omit<VideoSession, "revision"> & Partial<Pick<VideoSession, "revision">>;
 
 const STATIC_VIDEO_SESSION_STEPS = new Set<VideoSessionStep>([
   "locale",
@@ -37,12 +46,17 @@ const STATIC_VIDEO_SESSION_STEPS = new Set<VideoSessionStep>([
   "instagram_caption",
 ]);
 
-export function targetKeyboard(config: BackendConfig, selected: VideoTarget[], locale: BotLocale): InlineKeyboard {
+export function targetKeyboard(config: BackendConfig, selected: VideoTarget[], locale: BotLocale, revision?: number): InlineKeyboard {
   const keyboard = new InlineKeyboard();
   for (const target of enabledVideoTargets(config)) {
-    keyboard.text(`${selected.includes(target) ? "✓" : "○"} ${videoTargetLabel(target)}`, `video_toggle:${target}`).row();
+    keyboard
+      .text(`${selected.includes(target) ? "✓" : "○"} ${videoTargetLabel(target)}`, versionedCallback(`video_toggle:${target}`, revision))
+      .row();
   }
-  return keyboard.text(t(locale, "video.next"), "video_targets_done").row().text(t(locale, "common.cancel"), "video_cancel_dialog");
+  return keyboard
+    .text(t(locale, "video.next"), versionedCallback("video_targets_done", revision))
+    .row()
+    .text(t(locale, "common.cancel"), versionedCallback("video_cancel_dialog", revision));
 }
 
 export function enabledVideoTargets(config: BackendConfig): VideoTarget[] {
@@ -54,6 +68,7 @@ export function enabledVideoTargets(config: BackendConfig): VideoTarget[] {
 
 export function getSession(backendDb: BackendDb, actorId: number): VideoSession | null {
   const row = unsafeDb(backendDb).db.select().from(videoBotSessions).where(eq(videoBotSessions.actorId, actorId)).get();
+  if (!row || row.active === 0) return null;
   if (row) {
     const expiresAt = row.expiresAt ? Date.parse(row.expiresAt) : Date.parse(row.updatedAt) + VIDEO_SESSION_TTL_MS;
     if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
@@ -61,7 +76,6 @@ export function getSession(backendDb: BackendDb, actorId: number): VideoSession 
       return null;
     }
   }
-  if (!row) return null;
   const step = parseVideoSessionStep(row.step);
   const selected = parseSelectedTargets(row.selectedTargetsJson);
   const data = row.dataJson;
@@ -69,10 +83,13 @@ export function getSession(backendDb: BackendDb, actorId: number): VideoSession 
     clearSession(backendDb, actorId);
     return null;
   }
-  return { draftId: row.videoDraftId, step, selected, data: data as Record<string, unknown> };
+  return { draftId: row.videoDraftId, step, selected, data: data as Record<string, unknown>, revision: row.revision };
 }
 
-export function saveSession(backendDb: BackendDb, actorId: number, session: VideoSession): void {
+export function saveSession(backendDb: BackendDb, actorId: number, session: VideoSessionInput): VideoSession {
+  const existing = unsafeDb(backendDb).db.select().from(videoBotSessions).where(eq(videoBotSessions.actorId, actorId)).get();
+  if (existing && session.revision != null && existing.revision !== session.revision) throw new StudioError("action.session-stale");
+  const revision = existing && !hasSemanticChange(existing, session) ? existing.revision : (existing?.revision ?? 0) + 1;
   const now = new Date().toISOString();
   const expiresAt = new Date(Date.now() + VIDEO_SESSION_TTL_MS).toISOString();
   unsafeDb(backendDb)
@@ -83,6 +100,8 @@ export function saveSession(backendDb: BackendDb, actorId: number, session: Vide
       step: session.step,
       selectedTargetsJson: session.selected,
       dataJson: session.data,
+      revision,
+      active: 1,
       updatedAt: now,
       expiresAt,
     })
@@ -93,11 +112,14 @@ export function saveSession(backendDb: BackendDb, actorId: number, session: Vide
         step: session.step,
         selectedTargetsJson: session.selected,
         dataJson: session.data,
+        revision,
+        active: 1,
         updatedAt: now,
         expiresAt,
       },
     })
     .run();
+  return { ...session, revision };
 }
 
 export function setData(
@@ -109,12 +131,15 @@ export function setData(
   nextStep: VideoSessionStep,
 ): VideoSession {
   const next = { ...session, step: nextStep, data: { ...session.data, [key]: value } };
-  saveSession(backendDb, actorId, next);
-  return next;
+  return saveSession(backendDb, actorId, next);
 }
 
 export function clearSession(backendDb: BackendDb, actorId: number): void {
-  unsafeDb(backendDb).db.delete(videoBotSessions).where(eq(videoBotSessions.actorId, actorId)).run();
+  unsafeDb(backendDb)
+    .db.update(videoBotSessions)
+    .set({ active: 0, revision: sql`${videoBotSessions.revision} + 1`, updatedAt: new Date().toISOString(), expiresAt: null })
+    .where(eq(videoBotSessions.actorId, actorId))
+    .run();
 }
 
 export async function updateVideoControl(
@@ -125,7 +150,8 @@ export async function updateVideoControl(
   locale: BotLocale,
 ): Promise<void> {
   const messageId = Number(session.data.controlMessageId);
-  const replyMarkup = keyboard ?? new InlineKeyboard().text(t(locale, "common.cancel"), "video_cancel_dialog");
+  const replyMarkup =
+    keyboard ?? new InlineKeyboard().text(t(locale, "common.cancel"), versionedCallback("video_cancel_dialog", session.revision));
   if (messageId && ctx.chat?.id)
     return void (await ctx.api.editMessageText(ctx.chat.id, messageId, text, { parse_mode: "Markdown", reply_markup: replyMarkup }));
   await ctx.reply(text, { parse_mode: "Markdown", reply_markup: replyMarkup });
@@ -136,10 +162,18 @@ export async function updateVideoControl(
  * Pass `plainText` for anything carrying an error message: those embed raw
  * paths and API responses whose `_` and `*` make Telegram reject the whole
  * send as unparsable Markdown, losing exactly the text worth reading. */
-export async function replyVideoPrompt(ctx: Context, locale: BotLocale, text: string, options?: { plainText?: boolean }): Promise<void> {
+export async function replyVideoPrompt(
+  ctx: Context,
+  backendDb: BackendDb,
+  actorId: number,
+  locale: BotLocale,
+  text: string,
+  options?: { plainText?: boolean },
+): Promise<void> {
+  const revision = getSession(backendDb, actorId)?.revision;
   await ctx.reply(text, {
     ...(options?.plainText ? {} : { parse_mode: "Markdown" }),
-    reply_markup: new InlineKeyboard().text(t(locale, "common.cancel"), "video_cancel_dialog"),
+    reply_markup: new InlineKeyboard().text(t(locale, "common.cancel"), versionedCallback("video_cancel_dialog", revision)),
   });
 }
 
@@ -154,10 +188,11 @@ export async function sendVideoMetadataPrompt(
   selected: VideoTarget[],
 ): Promise<void> {
   const locale = botLocale(backendDb, actorId);
+  const revision = getSession(backendDb, actorId)?.revision;
   const keyboard = new InlineKeyboard();
-  if (step === "youtube_game_url") keyboard.text(t(locale, "video.skip"), "video_game_skip");
-  if (previousVideoMetadataStep(step, selected)) keyboard.text(t(locale, "common.back"), "video_meta_back");
-  keyboard.text(t(locale, "common.cancel"), "video_cancel_dialog");
+  if (step === "youtube_game_url") keyboard.text(t(locale, "video.skip"), versionedCallback("video_game_skip", revision));
+  if (previousVideoMetadataStep(step, selected)) keyboard.text(t(locale, "common.back"), versionedCallback("video_meta_back", revision));
+  keyboard.text(t(locale, "common.cancel"), versionedCallback("video_cancel_dialog", revision));
   await ctx.reply(videoPrompt(locale, step), { reply_markup: keyboard });
 }
 
@@ -183,9 +218,8 @@ export async function sendVideoControl(
   keyboard: InlineKeyboard,
 ): Promise<VideoSession> {
   const message = await ctx.reply(text, { parse_mode: "Markdown", reply_markup: keyboard });
-  const next: VideoSession = { ...session, data: { ...session.data, controlMessageId: message.message_id } };
-  saveSession(backendDb, actorId, next);
-  return next;
+  const next: VideoSessionInput = { ...session, data: { ...session.data, controlMessageId: message.message_id } };
+  return saveSession(backendDb, actorId, next);
 }
 
 export async function askInstagramOrSchedule(ctx: Context, backendDb: BackendDb, actorId: number, session: VideoSession): Promise<void> {
@@ -213,24 +247,28 @@ export async function sendVideoTimePrompt(
   text: string,
 ): Promise<VideoSession> {
   const locale = botLocale(backendDb, actorId);
+  const revision = getSession(backendDb, actorId)?.revision ?? session.revision;
   const keyboard = new InlineKeyboard();
   for (let index = 0; index < VIDEO_SLOT_PRESETS.length; index += 2) {
     for (const clock of VIDEO_SLOT_PRESETS.slice(index, index + 2))
-      keyboard.text(clock, `video_sched_pick:${clock.replace(":", "")}:${session.draftId}`);
+      keyboard.text(clock, versionedCallback(`video_sched_pick:${clock.replace(":", "")}:${session.draftId}`, revision));
     keyboard.row();
   }
-  keyboard.text(t(locale, "video.enter-time-btn"), `video_sched_manual:${session.draftId}`).row();
-  keyboard.text(t(locale, "common.cancel"), "video_cancel_dialog");
+  keyboard.text(t(locale, "video.enter-time-btn"), versionedCallback(`video_sched_manual:${session.draftId}`, revision)).row();
+  keyboard.text(t(locale, "common.cancel"), versionedCallback("video_cancel_dialog", revision));
   return sendVideoControl(ctx, backendDb, actorId, session, text, keyboard);
 }
 
 export async function askSchedule(ctx: Context, backendDb: BackendDb, actorId: number, session: VideoSession): Promise<void> {
-  const next: VideoSession = { ...session, step: "schedule_choice" };
-  saveSession(backendDb, actorId, next);
+  const next = saveSession(backendDb, actorId, { ...session, step: "schedule_choice" });
   const locale = botLocale(backendDb, actorId);
-  const keyboard = new InlineKeyboard().text(t(locale, "video.same-time"), `video_common:${session.draftId}`);
-  if (session.selected.length > 1) keyboard.row().text(t(locale, "video.different-time"), `video_individual:${session.draftId}`);
-  keyboard.row().text(t(locale, "common.cancel"), "video_cancel_dialog");
+  const keyboard = new InlineKeyboard().text(
+    t(locale, "video.same-time"),
+    versionedCallback(`video_common:${session.draftId}`, next.revision),
+  );
+  if (session.selected.length > 1)
+    keyboard.row().text(t(locale, "video.different-time"), versionedCallback(`video_individual:${session.draftId}`, next.revision));
+  keyboard.row().text(t(locale, "common.cancel"), versionedCallback("video_cancel_dialog", next.revision));
   await sendVideoControl(ctx, backendDb, actorId, next, t(locale, "video.saved-choose-schedule"), keyboard);
 }
 
@@ -255,4 +293,20 @@ function parseSelectedTargets(value: unknown): VideoTarget[] | null {
   return value.every((target): target is VideoTarget => typeof target === "string" && VIDEO_TARGETS.includes(target as VideoTarget))
     ? value
     : null;
+}
+
+function hasSemanticChange(row: typeof videoBotSessions.$inferSelect, session: VideoSessionInput): boolean {
+  return (
+    row.active !== 1 ||
+    row.videoDraftId !== session.draftId ||
+    row.step !== session.step ||
+    JSON.stringify(row.selectedTargetsJson) !== JSON.stringify(session.selected) ||
+    JSON.stringify(withoutPresentationData(row.dataJson)) !== JSON.stringify(withoutPresentationData(session.data))
+  );
+}
+
+function withoutPresentationData(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const { controlMessageId: _controlMessageId, ...semantic } = value as Record<string, unknown>;
+  return semantic;
 }

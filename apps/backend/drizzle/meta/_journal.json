@@ -337,6 +337,13 @@
       "when": 1785976200000,
       "tag": "0047_bot_state_expiry",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "6",
+      "when": 1785976300000,
+      "tag": "0048_bot_session_revisions",
+      "breakpoints": true
     }
   ]
 }
