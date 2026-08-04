@@ -12,9 +12,28 @@ export function timezoneOffsetMs(date: Date, timeZone: string): number {
   return zonedWallClockMs(date, timeZone) - date.getTime();
 }
 
+/** Constructing an Intl.DateTimeFormat costs far more than formatting with one,
+ * and this module runs per queue row, per calendar day and per offset probe.
+ * Formatters are immutable and depend only on (locale, zone, shape), so one
+ * instance per combination is reused for the process lifetime. */
+const formatterCache = new Map<string, Intl.DateTimeFormat>();
+
+function formatter(cacheKey: string, locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const cached = formatterCache.get(cacheKey);
+  if (cached) return cached;
+  const created = new Intl.DateTimeFormat(locale, options);
+  formatterCache.set(cacheKey, created);
+  return created;
+}
+
 /** Calendar date `date` reads as in `timeZone`. */
 export function zonedDateParts(date: Date, timeZone: string): { year: number; month: number; day: number } {
-  const parts = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
+  const parts = formatter(`parts:${timeZone}`, "en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
   const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return { year: Number(value.year), month: Number(value.month), day: Number(value.day) };
 }
@@ -26,9 +45,11 @@ export function zonedSlot(year: number, month: number, day: number, clock: strin
   const offsets = new Set<number>();
   // Sample both sides of the requested wall clock. A single offset lookup at
   // the UTC-shaped wall clock is wrong around DST changes: it can select the
-  // offset before the transition for a time after it, or vice versa.
-  for (let deltaHours = -72; deltaHours <= 72; deltaHours += 6) {
-    offsets.add(timezoneOffsetMs(new Date(wallClockMs + deltaHours * 3_600_000), timeZone));
+  // offset before the transition for a time after it, or vice versa. A day on
+  // each side is enough — no zone's offset differs from the instant it labels
+  // by more than that — and the round-trip filter below rejects a wrong guess.
+  for (const probeMs of [wallClockMs - 86_400_000, wallClockMs, wallClockMs + 86_400_000]) {
+    offsets.add(timezoneOffsetMs(new Date(probeMs), timeZone));
   }
   const candidates = [...offsets]
     .map((offset) => wallClockMs - offset)
@@ -40,7 +61,7 @@ export function zonedSlot(year: number, month: number, day: number, clock: strin
 }
 
 function zonedWallClockMs(date: Date, timeZone: string): number {
-  const parts = new Intl.DateTimeFormat("en-US", {
+  const parts = formatter(`wall:${timeZone}`, "en-US", {
     timeZone,
     year: "numeric",
     month: "2-digit",
@@ -65,7 +86,7 @@ function zonedWallClockMs(date: Date, timeZone: string): number {
 export function formatZonedDateTime(value: string | Date | null, timeZone: string, label: string): string {
   if (!value) return "-";
   const date = typeof value === "string" ? new Date(value) : value;
-  return `${new Intl.DateTimeFormat("ru-RU", {
+  return `${formatter(`display:${timeZone}`, "ru-RU", {
     timeZone,
     day: "2-digit",
     month: "2-digit",
@@ -79,7 +100,7 @@ export function formatZonedDateTime(value: string | Date | null, timeZone: strin
 /** Sortable "YYYY-MM-DD HH:MM" reading in `timeZone`, for machine-friendly summaries. */
 export function formatZonedSortable(value: string, timeZone: string): string {
   const date = new Date(value);
-  return new Intl.DateTimeFormat("sv-SE", {
+  return formatter(`sortable:${timeZone}`, "sv-SE", {
     timeZone,
     year: "numeric",
     month: "2-digit",

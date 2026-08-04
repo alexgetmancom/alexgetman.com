@@ -10,7 +10,7 @@ import { publishDraftToQueue } from "../../publishing/publication-workflow.js";
 import { assertFutureSchedule, assertValidScheduleDate, parseManualSchedule, scheduleClockToday } from "../../publishing/schedule.js";
 import { parseTargets } from "../../publishing/targets.js";
 import { readyStoryCardMedia, storyCardsForDraft } from "../../story-cards/store.js";
-import { requireMutableDraft, requireOwnedDraft } from "./post-access.js";
+import { draftMedia, requireMutableDraft, requireOwnedDraft } from "./post-access.js";
 import { settingsService } from "./settings.js";
 
 export type PostScheduleInput = { ruAt: Date | null; enAt: Date | null; allowPast?: boolean; immediateLocale?: "ru" | "en" };
@@ -23,8 +23,8 @@ export function replanScheduledPostAfterStoryCards(backendDb: BackendDb, config:
   if (draft?.status !== "scheduled" || (draft.story_publish_mode !== "all" && draft.story_publish_mode !== "site_only")) return false;
   if (!readyStoryCardMedia(backendDb, draftId)) return false;
   postSchedulingService(backendDb, config).schedule(draft.actor_id, draftId, {
-    ruAt: dateOrNull(draft.scheduled_at),
-    enAt: dateOrNull(draft.scheduled_en_at),
+    ruAt: scheduledDate(draft.scheduled_at),
+    enAt: scheduledDate(draft.scheduled_en_at),
     allowPast: true,
   });
   return true;
@@ -39,8 +39,8 @@ export function replanScheduledPostAfterStoryCardFailure(backendDb: BackendDb, c
   if (!Object.entries(targets).some(([target, enabled]) => enabled && isStoryTarget(target))) return false;
   if (!storyCardsForDraft(backendDb, draftId).some((card) => card.status === "failed")) return false;
   postSchedulingService(backendDb, config).schedule(draft.actor_id, draftId, {
-    ruAt: dateOrNull(draft.scheduled_at),
-    enAt: dateOrNull(draft.scheduled_en_at),
+    ruAt: scheduledDate(draft.scheduled_at),
+    enAt: scheduledDate(draft.scheduled_en_at),
     allowPast: true,
   });
   recordDomainEvent(backendDb.events, {
@@ -61,21 +61,14 @@ export function replanScheduledPostAfterMutation(backendDb: BackendDb, config: B
   const draft = backendDb.drafts.get(draftId);
   if (draft?.status !== "scheduled") return false;
   const targets = effectivePostTargets(backendDb, parseTargets(draft.targets_json));
-  const hasMedia = [draft.media_ru_json, draft.media_en_json].some((value) => {
-    try {
-      const parsed = value ? JSON.parse(value) : [];
-      return Array.isArray(parsed) && parsed.length > 0;
-    } catch {
-      return false;
-    }
-  });
+  const hasMedia = draftMedia(draft, "ru").length > 0 || draftMedia(draft, "en").length > 0;
   const hasStoryTarget = Object.entries(targets).some(([target, enabled]) => enabled && isStoryTarget(target));
   const waitsForStoryCards = draft.story_publish_mode === "all" || draft.story_publish_mode === "site_only";
   const hasFailedStoryCard = storyCardsForDraft(backendDb, draftId).some((card) => card.status === "failed");
   if (waitsForStoryCards && hasStoryTarget && !hasMedia && !hasFailedStoryCard && !readyStoryCardMedia(backendDb, draftId)) return false;
   postSchedulingService(backendDb, config).schedule(draft.actor_id, draftId, {
-    ruAt: dateOrNull(draft.scheduled_at),
-    enAt: dateOrNull(draft.scheduled_en_at),
+    ruAt: scheduledDate(draft.scheduled_at),
+    enAt: scheduledDate(draft.scheduled_en_at),
     allowPast: true,
   });
   return true;
@@ -92,7 +85,7 @@ export function postSchedulingService(backendDb: BackendDb, config: BackendConfi
         ["en", input.enAt],
       ] as const) {
         if (!value) continue;
-        const existing = locale === "ru" ? dateOrNull(draft.scheduled_at) : dateOrNull(draft.scheduled_en_at);
+        const existing = locale === "ru" ? scheduledDate(draft.scheduled_at) : scheduledDate(draft.scheduled_en_at);
         const preservesExistingSchedule = draft.status === "scheduled" && existing?.getTime() === value.getTime();
         if (input.allowPast || input.immediateLocale === locale || preservesExistingSchedule) assertValidScheduleDate(value);
         else assertFutureSchedule(value, now);
@@ -180,12 +173,14 @@ function hasLocaleTarget(targets: Record<string, boolean>, locale: "ru" | "en"):
 
 function scheduleAt(draft: DraftRecord, scope: PostScheduleScope, value: Date): PostScheduleInput {
   return {
-    ruAt: scope === "en" ? dateOrNull(draft.scheduled_at) : value,
-    enAt: scope === "ru" ? dateOrNull(draft.scheduled_en_at) : value,
+    ruAt: scope === "en" ? scheduledDate(draft.scheduled_at) : value,
+    enAt: scope === "ru" ? scheduledDate(draft.scheduled_en_at) : value,
   };
 }
 
-function dateOrNull(value: string | null): Date | null {
+/** Reads a persisted schedule column as a Date, treating an unset or unparsable
+ * value as "no schedule" rather than an Invalid Date that silently compares false. */
+export function scheduledDate(value: string | null): Date | null {
   if (!value) return null;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;

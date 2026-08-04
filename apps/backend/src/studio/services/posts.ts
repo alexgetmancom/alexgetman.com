@@ -10,10 +10,10 @@ import { StudioError } from "../../foundation/errors.js";
 import { publishDraftToQueue } from "../../publishing/publication-workflow.js";
 import { parseTargets } from "../../publishing/targets.js";
 import { type StoryPublishMode, setStoryPublishMode } from "../../story-cards/store.js";
-import { requireMutableDraft, requirePostEditAllowed } from "./post-access.js";
+import { draftMedia, requireMutableDraft, requirePostEditAllowed } from "./post-access.js";
 import { postMediaService } from "./post-media.js";
 import { postQueryService } from "./post-queries.js";
-import { postSchedulingService, replanScheduledPostAfterMutation } from "./post-scheduling.js";
+import { postSchedulingService, replanScheduledPostAfterMutation, scheduledDate } from "./post-scheduling.js";
 
 type EditInput = {
   locale: "ru" | "en";
@@ -114,17 +114,8 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
 
 function waitForStoryCardReplan(draft: DraftRecord): boolean {
   if (draft.status !== "scheduled" || (draft.story_publish_mode !== "all" && draft.story_publish_mode !== "site_only")) return false;
-  if (hasMedia(draft.media_ru_json) || hasMedia(draft.media_en_json)) return false;
+  if (draftMedia(draft, "ru").length > 0 || draftMedia(draft, "en").length > 0) return false;
   return Object.entries(parseTargets(draft.targets_json)).some(([target, enabled]) => enabled && isStoryTarget(target));
-}
-
-function hasMedia(value: string | null): boolean {
-  try {
-    const parsed = value ? JSON.parse(value) : [];
-    return Array.isArray(parsed) && parsed.length > 0;
-  } catch {
-    return false;
-  }
 }
 
 function editDraftContent(backendDb: BackendDb, config: BackendConfig, actorId: number, draftId: number, input: EditInput): DraftRecord {
@@ -219,10 +210,4 @@ function rescheduleIfNeeded(
     enAt: scheduledDate(draft.scheduled_en_at),
     allowPast: true,
   });
-}
-
-function scheduledDate(value: string | null): Date | null {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
 }

@@ -12,8 +12,8 @@ import { handlePostMessage, handlePostScreenCallback, startPostScreen } from "./
 import { handleProgressCallback } from "./bot/progress-screen.js";
 import { showQueue } from "./bot/queue.js";
 import { buildSettingsMenu, handleSettingsMessage, showSettings } from "./bot/settings-screen.js";
-import { startVideoConversation } from "./bot/video-conversation.js";
-import { handleVideoCallback, handleVideoMessage } from "./bot/video-screen.js";
+import { handleVideoActionCallback } from "./bot/video-actions.js";
+import { handleVideoConversationMessage, startVideoConversation } from "./bot/video-conversation.js";
 import type { BackendDb } from "./db/client.js";
 import { actorFromTelegramUser } from "./foundation/actors.js";
 import type { BackendConfig } from "./foundation/config.js";
@@ -94,7 +94,7 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
   bot.on("message", async (ctx) => {
     if (!isAdmin(config, ctx.from?.id)) return void (await ctx.reply(t(botLocale(backendDb, Number(ctx.from?.id)), "bot.forbidden")));
     if (await handleSettingsMessage(ctx, backendDb, config, settingsMenu)) return;
-    if (await handleVideoMessage(ctx, backendDb, config)) return;
+    if (await handleVideoConversationMessage(ctx, backendDb, config)) return;
     await handlePostMessage(ctx, backendDb, config);
   });
   bot.on("callback_query:data", async (ctx) => {
@@ -137,7 +137,7 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
     if (await handleProgressCallback(ctx, backendDb, config)) return;
     if (await handleTelegramDeliveryPreviewCallback(ctx, backendDb, config)) return;
     if (await handleAnalyticsCallback(ctx, backendDb, config)) return;
-    if (await handleVideoCallback(ctx, backendDb, config)) return;
+    if (await handleVideoActionCallback(ctx, backendDb, config)) return;
     if (await handleOperationsCallback(ctx, config)) return;
     await handlePostAction(ctx, backendDb, config);
   });
