@@ -2,7 +2,6 @@ import { describe, expect, it } from "bun:test";
 import type { Bot, Context } from "grammy";
 import { runCallbackBoundary } from "../src/bot/callback-boundary.js";
 import { handlePostAction } from "../src/bot/post-actions.js";
-import type { BackendDb } from "../src/db/client.js";
 import { drafts, postTargets, publications, publishJobs } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { consumeTelegramEvents } from "../src/interfaces/telegram/event-consumer.js";

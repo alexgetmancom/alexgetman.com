@@ -89,7 +89,7 @@ export function queuePageCount(snapshot: StudioQueueSnapshot, timeZone = "UTC"):
   return queuePages(snapshot, timeZone).length;
 }
 
-export function attentionPageCount(snapshot: StudioQueueSnapshot): number {
+function attentionPageCount(snapshot: StudioQueueSnapshot): number {
   return Math.max(1, Math.ceil(snapshot.attention.length / ATTENTION_PAGE_SIZE));
 }
 
