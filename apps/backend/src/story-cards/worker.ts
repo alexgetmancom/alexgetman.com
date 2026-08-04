@@ -7,7 +7,7 @@ import type { BackendConfig } from "../foundation/config.js";
 import { log } from "../foundation/logger.js";
 import { recordWorkerState } from "../foundation/runtime/worker-state.js";
 import { trackUsageAsync } from "../observability/usage.js";
-import { replanScheduledPostAfterStoryCardFailure, replanScheduledPostAfterStoryCards } from "../studio/services/post-scheduling.js";
+import { replanScheduledPostAfterStoryCardFailure, replanScheduledPostAfterStoryCards } from "../studio/services/posts.js";
 import { buildStoryCardCopy } from "./copy.js";
 
 type ClaimedCard = typeof draftStoryCards.$inferSelect & { lockedBy: string; lockedAt: string };

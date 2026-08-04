@@ -4,32 +4,31 @@ import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { type MessageKey, t } from "../foundation/i18n/index.js";
-import { setTelegramVideoCard } from "../interfaces/telegram/control-cards.js";
 import { videoPreview } from "../interfaces/telegram/video-preview.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import { createStudioServices } from "../studio/services/index.js";
-import { previousVideoMetadataStep, VIDEO_FLOW, type VideoWizardStep } from "../studio/video-fsm.js";
+import {
+  advanceVideoTargetSchedule,
+  commonVideoSchedule,
+  previousVideoMetadataStep,
+  VIDEO_FLOW,
+  type VideoWizardStep,
+} from "../studio/video-fsm.js";
 import { withCallbackActionLock } from "./callback-action.js";
 import type { PublicationActionContext, PublicationActionResult } from "./callback-router.js";
 import { appendCancelButton, cancelPromptKeyboard, confirmationKeyboard, resultNavigationKeyboard } from "./dialog-ui.js";
-import type { BotLocale } from "./i18n.js";
-import { showMainMenu } from "./menu-render.js";
+import type { PublicationEffect } from "./effects.js";
+import { type BotLocale, botLocale } from "./i18n.js";
+import { SCHEDULE_SLOT_PRESETS, scheduleTimeKeyboard } from "./scheduling.js";
 import { parseDraftId, publicationCallback, requireSessionStep, type VideoActionKey } from "./session-fsm.js";
-import { applyVideoScheduleDate, startVideoConversation } from "./video-conversation.js";
 import { finishVideoNow, finishVideoSchedule } from "./video-scheduling.js";
 import {
-  askInstagramOrSchedule,
   callbackMessageId,
   clearVideoState,
   getVideoState,
   parseVideoStep,
-  replyVideoPrompt,
   saveVideoState,
-  sendVideoMetadataPrompt,
-  sendVideoTimePrompt,
-  setControlFromSession,
   targetKeyboard,
-  updateVideoControl,
   type VideoConversationInput,
   type VideoConversationState,
 } from "./video-ui.js";
@@ -92,25 +91,161 @@ function requireDraftId(value: string | undefined): number {
 
 /** Renders an owned video draft's card in place. Used by every action that ends
  * by returning to (or refreshing) the same card. */
-async function showVideoCard(
-  ctx: Context,
+function showVideoCard(backendDb: BackendDb, config: BackendConfig, actorId: number, id: number, locale: BotLocale): PublicationEffect[] {
+  const preview = videoPreview(createStudioServices(backendDb, config).videos.preview(actorId, id), config, locale);
+  return [
+    {
+      type: "screen",
+      mode: "edit",
+      text: preview.text,
+      options: { parse_mode: "Markdown", reply_markup: preview.keyboard },
+      card: { kind: "video", draftId: id },
+    },
+  ];
+}
+
+function startVideoEffects(ctx: Context, backendDb: BackendDb, actorId: number, locale: BotLocale): PublicationEffect[] {
+  const session = saveVideoState(backendDb, actorId, { draftId: null, step: "locale", selected: [], data: {}, controlMessageId: null });
+  const keyboard = new InlineKeyboard()
+    .text(t(locale, "video.language-ru"), publicationCallback("video", "locale", ["ru"], session.revision))
+    .text(t(locale, "video.language-en"), publicationCallback("video", "locale", ["en"], session.revision))
+    .row();
+  appendCancelButton(keyboard, locale, publicationCallback("video", "cancel_dialog"), session.revision);
+  return [
+    {
+      type: "screen",
+      mode: ctx.callbackQuery?.message ? "edit" : "reply",
+      text: t(locale, "video.choose-language"),
+      options: { reply_markup: keyboard },
+    },
+  ];
+}
+
+function metadataPromptEffect(backendDb: BackendDb, actorId: number, step: VideoWizardStep, selected: VideoTarget[]): PublicationEffect[] {
+  const locale = botLocale(backendDb, actorId);
+  const revision = getVideoState(backendDb, actorId)?.revision;
+  const keyboard = new InlineKeyboard();
+  if (step === "youtube_game_url") keyboard.text(t(locale, "video.skip"), publicationCallback("video", "game_skip", [], revision));
+  if (previousVideoMetadataStep(step, selected))
+    keyboard.text(t(locale, "common.back"), publicationCallback("video", "meta_back", [], revision));
+  appendCancelButton(keyboard, locale, publicationCallback("video", "cancel_dialog"), revision);
+  return [{ type: "prompt", text: metadataPromptText(locale, step), options: { reply_markup: keyboard } }];
+}
+
+function metadataPromptText(locale: BotLocale, step: VideoWizardStep): string {
+  const prompts: Record<VideoWizardStep, MessageKey> = {
+    youtube_title: "video.prompt-yt-title",
+    youtube_description: "video.prompt-yt-description",
+    youtube_game_url: "video.prompt-yt-game-url",
+    youtube_tags: "video.prompt-yt-tags",
+    instagram_caption: "video.prompt-ig-caption",
+  };
+  return t(locale, prompts[step]);
+}
+
+function videoPromptEffect(backendDb: BackendDb, actorId: number, text: string, plainText = false): PublicationEffect {
+  const locale = botLocale(backendDb, actorId);
+  const revision = getVideoState(backendDb, actorId)?.revision;
+  return {
+    type: "prompt",
+    text,
+    options: {
+      ...(plainText ? {} : { parse_mode: "Markdown" }),
+      reply_markup: cancelPromptKeyboard(locale, publicationCallback("video", "cancel_dialog"), revision),
+    },
+  };
+}
+
+function videoControlEffect(session: VideoConversationState, text: string, keyboard: InlineKeyboard): PublicationEffect[] {
+  const options = { parse_mode: "Markdown", reply_markup: keyboard };
+  const card = session.draftId == null ? {} : { card: { kind: "video" as const, draftId: session.draftId } };
+  return [{ type: "prompt", text, options, ...card }];
+}
+
+function existingVideoControlEffect(session: VideoConversationState, text: string, keyboard: InlineKeyboard): PublicationEffect[] {
+  if (!session.controlMessageId) return [{ type: "prompt", text, options: { parse_mode: "Markdown", reply_markup: keyboard } }];
+  return [{ type: "edit-message", messageId: session.controlMessageId, text, options: { parse_mode: "Markdown", reply_markup: keyboard } }];
+}
+
+function scheduleChoiceEffect(
   backendDb: BackendDb,
   config: BackendConfig,
   actorId: number,
-  id: number,
+  session: VideoConversationState,
   locale: BotLocale,
-): Promise<void> {
-  const preview = videoPreview(createStudioServices(backendDb, config).videos.preview(actorId, id), config, locale);
-  await ctx.editMessageText(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
-  const messageId = callbackMessageId(ctx);
-  if (messageId && ctx.chat?.id) setTelegramVideoCard(backendDb, id, Number(ctx.chat.id), messageId);
+): PublicationEffect[] {
+  const next = saveVideoState(backendDb, actorId, { ...session, step: "schedule_choice" });
+  const keyboard = new InlineKeyboard().text(
+    t(locale, "video.same-time"),
+    publicationCallback("video", "common", [session.draftId ?? ""], next.revision),
+  );
+  if (session.selected.length > 1)
+    keyboard
+      .row()
+      .text(t(locale, "video.different-time"), publicationCallback("video", "individual", [session.draftId ?? ""], next.revision));
+  keyboard.row();
+  appendCancelButton(keyboard, locale, publicationCallback("video", "cancel_dialog"), next.revision);
+  return videoControlEffect(next, t(locale, "video.saved-choose-schedule", { timezone: config.TIMEZONE_LABEL }), keyboard);
 }
 
-async function handleStart({ ctx, backendDb }: VideoActionArgs): Promise<VideoActionResult> {
-  await startVideoConversation(ctx, backendDb);
+function videoTimeEffect(backendDb: BackendDb, actorId: number, session: VideoConversationState, text: string): PublicationEffect[] {
+  const locale = botLocale(backendDb, actorId);
+  const revision = getVideoState(backendDb, actorId)?.revision ?? session.revision;
+  const keyboard = scheduleTimeKeyboard({
+    axis: {
+      values: SCHEDULE_SLOT_PRESETS,
+      label: (clock) => clock,
+      callback: (clock) => publicationCallback("video", "sched_pick", [session.draftId ?? "", clock.replace(":", "")]),
+    },
+    revision,
+    manual: { label: t(locale, "video.enter-time-btn"), callback: publicationCallback("video", "sched_manual", [session.draftId ?? ""]) },
+    cancel: { label: t(locale, "common.cancel"), callback: publicationCallback("video", "cancel_dialog") },
+  });
+  return videoControlEffect(session, text, keyboard);
 }
 
-async function handleLocale({ ctx, backendDb, actorId, locale, args }: VideoActionArgs): Promise<VideoActionResult> {
+function videoScheduleConfirmationEffects(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  actorId: number,
+  session: VideoConversationState,
+  schedule: Partial<Record<VideoTarget, Date>>,
+): PublicationEffect[] {
+  if (!session.draftId) throw new StudioError("err.video-missing");
+  const locale = botLocale(backendDb, actorId);
+  const next = saveVideoState(backendDb, actorId, {
+    ...session,
+    step: "schedule_confirm",
+    data: {
+      ...session.data,
+      schedule: Object.fromEntries(Object.entries(schedule).map(([target, value]) => [target, value?.toISOString()])),
+    },
+  });
+  const delivery = createStudioServices(backendDb, config).videos.preview(actorId, session.draftId).delivery;
+  const lines = [`🎬 *${t(locale, "common.confirm-schedule")}*`];
+  for (const target of next.selected) {
+    const value = schedule[target];
+    if (value)
+      lines.push(
+        `${videoTargetLabel(target)}: ${value.toLocaleString(locale === "ru" ? "ru-RU" : "en-GB", { timeZone: config.TIMEZONE })} ${config.TIMEZONE_LABEL}`,
+      );
+  }
+  const keyboard = confirmationKeyboard(
+    { label: t(locale, "common.confirm"), callback: publicationCallback("video", "schedule_confirm", [session.draftId]) },
+    { label: t(locale, "common.back"), callback: publicationCallback("video", "schedule", [session.draftId]) },
+    next.revision,
+  );
+  return [
+    { type: "delivery-previews", projections: delivery.projections, locale },
+    ...videoControlEffect(next, lines.join("\n"), keyboard),
+  ];
+}
+
+async function handleStart({ ctx, backendDb, actorId, locale }: VideoActionArgs): Promise<VideoActionResult> {
+  return startVideoEffects(ctx, backendDb, actorId, locale);
+}
+
+async function handleLocale({ backendDb, actorId, locale, args }: VideoActionArgs): Promise<VideoActionResult> {
   const videoLocale = args[0] ?? "";
   const session = getVideoState(backendDb, actorId);
   requireSessionStep(session?.step, ["locale"], "err.video-restart");
@@ -118,44 +253,42 @@ async function handleLocale({ ctx, backendDb, actorId, locale, args }: VideoActi
   const transition = await acceptFlow(VIDEO_FLOW, "locale", videoLocale, session.data);
   if (!transition?.next) throw new StudioError("err.video-restart");
   const next = saveVideoState(backendDb, actorId, { ...session, step: transition.next as "asset", data: transition.data });
-  await ctx.editMessageText(t(locale, "video.dialog-prompt"), {
-    reply_markup: cancelPromptKeyboard(locale, publicationCallback("video", "cancel_dialog"), next.revision),
-  });
+  return [
+    {
+      type: "screen",
+      mode: "edit",
+      text: t(locale, "video.dialog-prompt"),
+      options: { reply_markup: cancelPromptKeyboard(locale, publicationCallback("video", "cancel_dialog"), next.revision) },
+    },
+  ];
 }
 
-async function handleCancelDialog({ ctx, backendDb, config, actorId, locale, mainMenu }: VideoActionArgs): Promise<VideoActionResult> {
+async function handleCancelDialog({ backendDb, config, actorId, locale, mainMenu }: VideoActionArgs): Promise<VideoActionResult> {
   const session = getVideoState(backendDb, actorId);
   clearVideoState(backendDb, actorId);
   // The draft already exists once a video file was uploaded (even mid-wizard):
   // cancel returns to that draft's own card so nothing is lost or orphaned,
   // rather than dropping into a menu with no way back to it.
   if (session?.draftId != null) {
-    try {
-      await showVideoCard(ctx, backendDb, config, actorId, session.draftId, locale);
-      return;
-    } catch {}
+    return showVideoCard(backendDb, config, actorId, session.draftId, locale);
   }
   if (!mainMenu) throw new StudioError("err.video-restart");
   // Cancelling is pure navigation, not a content change: turn this same
   // message into the control panel instead of deleting and sending a new one.
-  try {
-    await showMainMenu(ctx, backendDb, mainMenu, true);
-  } catch {
-    await showMainMenu(ctx, backendDb, mainMenu);
-  }
+  return [{ type: "screen", mode: "edit", text: t(locale, "menu.control-panel"), options: { reply_markup: mainMenu } }];
 }
 
-async function handleToggle({ ctx, backendDb, config, actorId, locale, args }: VideoActionArgs): Promise<VideoActionResult> {
+async function handleToggle({ backendDb, config, actorId, locale, args }: VideoActionArgs): Promise<VideoActionResult> {
   const target = args[0] as VideoTarget;
   const session = getVideoState(backendDb, actorId);
   requireSessionStep(session?.step, ["targets"], "err.video-restart");
   if (!session || !VIDEO_TARGETS.includes(target)) throw new StudioError("err.video-restart");
   const selected = session.selected.includes(target) ? session.selected.filter((item) => item !== target) : [...session.selected, target];
   const next = saveVideoState(backendDb, actorId, { ...session, selected });
-  await ctx.editMessageReplyMarkup({ reply_markup: targetKeyboard(config, selected, locale, next.revision) });
+  return [{ type: "edit-reply-markup", keyboard: targetKeyboard(config, selected, locale, next.revision) }];
 }
 
-async function handleTargetsDone({ ctx, backendDb, config, actorId }: VideoActionArgs): Promise<VideoActionResult> {
+async function handleTargetsDone({ backendDb, config, actorId, locale }: VideoActionArgs): Promise<VideoActionResult> {
   const session = getVideoState(backendDb, actorId);
   requireSessionStep(session?.step, ["targets"], "err.video-pick-platform");
   if (!session?.draftId || !session.selected.length) throw new StudioError("err.video-pick-platform");
@@ -167,45 +300,47 @@ async function handleTargetsDone({ ctx, backendDb, config, actorId }: VideoActio
     step: transition.next as VideoConversationState["step"],
     data: transition.data,
   });
-  if (transition.next === "youtube_title" || transition.next === "instagram_caption") {
-    await sendVideoMetadataPrompt(ctx, backendDb, actorId, transition.next, session.selected);
-  } else await askInstagramOrSchedule(ctx, backendDb, config, actorId, next);
+  if (transition.next === "youtube_title" || transition.next === "instagram_caption")
+    return metadataPromptEffect(backendDb, actorId, transition.next, session.selected);
+  return scheduleChoiceEffect(backendDb, config, actorId, next, locale);
 }
 
-async function handleGameSkip({ ctx, backendDb, actorId, locale }: VideoActionArgs): Promise<VideoActionResult> {
+async function handleGameSkip({ backendDb, actorId, locale }: VideoActionArgs): Promise<VideoActionResult> {
   const session = getVideoState(backendDb, actorId);
   requireSessionStep(session?.step, ["youtube_game_url"], "err.video-reopen-create");
   if (!session?.draftId) throw new StudioError("err.video-reopen-create");
   const transition = await acceptFlow(VIDEO_FLOW, "youtube_game_url", "-", { ...session.data, selectedTargets: session.selected });
   if (!transition?.next) throw new StudioError("err.video-reopen-create");
   saveVideoState(backendDb, actorId, { ...session, step: transition.next as VideoConversationState["step"], data: transition.data });
-  await ctx.editMessageText(t(locale, "video.game-skipped"));
-  await sendVideoMetadataPrompt(ctx, backendDb, actorId, "youtube_tags", session.selected);
+  return [
+    { type: "screen", mode: "edit", text: t(locale, "video.game-skipped") },
+    ...metadataPromptEffect(backendDb, actorId, "youtube_tags", session.selected),
+  ];
 }
 
-async function handleMetaBack({ ctx, backendDb, actorId }: VideoActionArgs): Promise<VideoActionResult> {
+async function handleMetaBack({ backendDb, actorId }: VideoActionArgs): Promise<VideoActionResult> {
   const session = getVideoState(backendDb, actorId);
   const prevStep = session && previousVideoMetadataStep(session.step as VideoWizardStep, session.selected);
   if (!session?.draftId || !prevStep) throw new StudioError("err.video-reopen-create");
   saveVideoState(backendDb, actorId, { ...session, step: prevStep });
-  await sendVideoMetadataPrompt(ctx, backendDb, actorId, prevStep, session.selected);
+  return metadataPromptEffect(backendDb, actorId, prevStep, session.selected);
 }
 
-async function handleOpen({ ctx, backendDb, config, actorId, locale, args }: VideoActionArgs): Promise<VideoActionResult> {
+async function handleOpen({ backendDb, config, actorId, locale, args }: VideoActionArgs): Promise<VideoActionResult> {
   const id = requireDraftId(args[0]);
   createStudioServices(backendDb, config).videos.get(actorId, id);
-  const messageId = callbackMessageId(ctx);
-  if (messageId && ctx.chat?.id) setTelegramVideoCard(backendDb, id, Number(ctx.chat.id), messageId);
-  await showVideoCard(ctx, backendDb, config, actorId, id, locale);
+  return showVideoCard(backendDb, config, actorId, id, locale);
 }
 
-async function handleRetry({ ctx, backendDb, config, actorId, locale, args }: VideoActionArgs): Promise<VideoActionResult> {
+async function handleRetry({ backendDb, config, actorId, locale, args }: VideoActionArgs): Promise<VideoActionResult> {
   const [idText, targetText] = args;
   const target = requireVideoTarget(targetText ?? "");
   const id = requireDraftId(idText);
   createStudioServices(backendDb, config).videos.retry(actorId, id, target);
-  await showVideoCard(ctx, backendDb, config, actorId, id, locale);
-  return [{ type: "toast", text: t(locale, "video.requeued", { label: videoTargetLabel(target) }) }];
+  return [
+    ...showVideoCard(backendDb, config, actorId, id, locale),
+    { type: "toast", text: t(locale, "video.requeued", { label: videoTargetLabel(target) }) },
+  ];
 }
 
 async function handleScheduleConfirm({ ctx, backendDb, config, actorId, args, data }: VideoActionArgs): Promise<VideoActionResult> {
@@ -215,9 +350,8 @@ async function handleScheduleConfirm({ ctx, backendDb, config, actorId, args, da
   requireSessionStep(session.step, ["schedule_confirm"], "action.schedule-expired");
   const values = session.data.schedule as Record<string, string> | undefined;
   if (!values) throw new StudioError("action.schedule-expired");
-  await withCallbackActionLock(ctx, `${actorId}:${data}`, () =>
+  const result = await withCallbackActionLock(ctx, `${actorId}:${data}`, () =>
     finishVideoSchedule(
-      ctx,
       backendDb,
       config,
       actorId,
@@ -225,6 +359,7 @@ async function handleScheduleConfirm({ ctx, backendDb, config, actorId, args, da
       Object.fromEntries(Object.entries(values).map(([target, value]) => [target, new Date(value)])) as Partial<Record<VideoTarget, Date>>,
     ),
   );
+  return result.ok ? result.value : undefined;
 }
 
 async function handleScheduleStart({ ctx, backendDb, config, actorId, locale, args }: VideoActionArgs): Promise<VideoActionResult> {
@@ -245,11 +380,10 @@ async function handleScheduleStart({ ctx, backendDb, config, actorId, locale, ar
     keyboard.row().text(t(locale, "video.different-time"), publicationCallback("video", "individual", [id], session.revision));
   keyboard.row();
   appendCancelButton(keyboard, locale, publicationCallback("video", "cancel_dialog"), session.revision);
-  setControlFromSession(backendDb, id, ctx, session);
-  await updateVideoControl(ctx, session, t(locale, "video.schedule-time-msk", { timezone: config.TIMEZONE_LABEL }), keyboard, locale);
+  return existingVideoControlEffect(session, t(locale, "video.schedule-time-msk", { timezone: config.TIMEZONE_LABEL }), keyboard);
 }
 
-async function handleScheduleMode({ ctx, backendDb, config, actorId, locale, action, args }: VideoActionArgs): Promise<VideoActionResult> {
+async function handleScheduleMode({ backendDb, config, actorId, locale, action, args }: VideoActionArgs): Promise<VideoActionResult> {
   const id = requireDraftId(args[0]);
   const session = getVideoState(backendDb, actorId);
   const targets = createStudioServices(backendDb, config)
@@ -277,7 +411,7 @@ async function handleScheduleMode({ ctx, backendDb, config, actorId, locale, act
       return t(locale, "video.schedule-target-prompt", { target: videoTargetLabel(first), timezone: config.TIMEZONE_LABEL });
     },
   }[nextStep];
-  await sendVideoTimePrompt(ctx, backendDb, actorId, next, prompt());
+  return videoTimeEffect(backendDb, actorId, next, prompt());
 }
 
 async function handleNowAsk({ ctx, backendDb, config, actorId, locale, args }: VideoActionArgs): Promise<VideoActionResult> {
@@ -291,14 +425,22 @@ async function handleNowAsk({ ctx, backendDb, config, actorId, locale, args }: V
     controlMessageId: callbackMessageId(ctx),
   });
   const preview = videoPreview(createStudioServices(backendDb, config).videos.preview(actorId, id), config, locale);
-  await ctx.editMessageText(`${preview.text}\n\n${t(locale, "video.publish-now-q")}`, {
-    parse_mode: "Markdown",
-    reply_markup: confirmationKeyboard(
-      { label: t(locale, "video.publish-now-yes"), callback: publicationCallback("video", "now_confirm", [id]) },
-      { label: t(locale, "common.back"), callback: publicationCallback("video", "open", [id]) },
-      session.revision,
-    ),
-  });
+  return [
+    {
+      type: "screen",
+      mode: "edit",
+      text: `${preview.text}\n\n${t(locale, "video.publish-now-q")}`,
+      options: {
+        parse_mode: "Markdown",
+        reply_markup: confirmationKeyboard(
+          { label: t(locale, "video.publish-now-yes"), callback: publicationCallback("video", "now_confirm", [id]) },
+          { label: t(locale, "common.back"), callback: publicationCallback("video", "open", [id]) },
+          session.revision,
+        ),
+      },
+      card: { kind: "video", draftId: id },
+    },
+  ];
 }
 
 async function handleNowConfirm({ ctx, backendDb, config, actorId, args, data }: VideoActionArgs): Promise<VideoActionResult> {
@@ -306,42 +448,53 @@ async function handleNowConfirm({ ctx, backendDb, config, actorId, args, data }:
   const session = getVideoState(backendDb, actorId);
   if (!session || session.draftId !== id) throw new StudioError("action.schedule-expired");
   requireSessionStep(session.step, ["schedule_confirm"], "action.schedule-expired");
-  await withCallbackActionLock(ctx, `${actorId}:${data}`, () => finishVideoNow(ctx, backendDb, config, actorId, session));
+  const result = await withCallbackActionLock(ctx, `${actorId}:${data}`, () => finishVideoNow(backendDb, config, actorId, session));
+  return result.ok ? result.value : undefined;
 }
 
-async function handleCancelAsk({ ctx, backendDb, config, actorId, locale, args }: VideoActionArgs): Promise<VideoActionResult> {
+async function handleCancelAsk({ backendDb, config, actorId, locale, args }: VideoActionArgs): Promise<VideoActionResult> {
   const id = requireDraftId(args[0]);
   createStudioServices(backendDb, config).videos.get(actorId, id);
   const preview = videoPreview(createStudioServices(backendDb, config).videos.preview(actorId, id), config, locale);
-  await ctx.editMessageText(
-    `${preview.text}\n\n⚠️ *${t(locale, "vpreview.cancel-confirm-q")}*\n${t(locale, "vpreview.cancel-confirm-warn")}`,
+  return [
     {
-      parse_mode: "Markdown",
-      reply_markup: confirmationKeyboard(
-        { label: t(locale, "vpreview.cancel-yes"), callback: publicationCallback("video", "cancel", [id]) },
-        { label: t(locale, "common.back"), callback: publicationCallback("video", "open", [id]) },
-      ),
+      type: "screen",
+      mode: "edit",
+      text: `${preview.text}\n\n⚠️ *${t(locale, "vpreview.cancel-confirm-q")}*\n${t(locale, "vpreview.cancel-confirm-warn")}`,
+      options: {
+        parse_mode: "Markdown",
+        reply_markup: confirmationKeyboard(
+          { label: t(locale, "vpreview.cancel-yes"), callback: publicationCallback("video", "cancel", [id]) },
+          { label: t(locale, "common.back"), callback: publicationCallback("video", "open", [id]) },
+        ),
+      },
+      card: { kind: "video", draftId: id },
     },
-  );
+  ];
 }
 
-async function handleRemoveAsk({ ctx, backendDb, config, actorId, locale, args }: VideoActionArgs): Promise<VideoActionResult> {
+async function handleRemoveAsk({ backendDb, config, actorId, locale, args }: VideoActionArgs): Promise<VideoActionResult> {
   const [idText, targetText] = args;
   const target = requireVideoTarget(targetText ?? "");
   const id = requireDraftId(idText);
   createStudioServices(backendDb, config).videos.get(actorId, id);
   const label = videoTargetLabel(target);
   const preview = videoPreview(createStudioServices(backendDb, config).videos.preview(actorId, id), config, locale);
-  await ctx.editMessageText(
-    `${preview.text}\n\n⚠️ *${t(locale, "vpreview.remove-confirm-q", { target: label })}*\n${t(locale, "vpreview.remove-confirm-warn", { target: label })}`,
+  return [
     {
-      parse_mode: "Markdown",
-      reply_markup: confirmationKeyboard(
-        { label: t(locale, "vpreview.remove-yes", { target: label }), callback: publicationCallback("video", "remove", [id, target]) },
-        { label: t(locale, "common.back"), callback: publicationCallback("video", "open", [id]) },
-      ),
+      type: "screen",
+      mode: "edit",
+      text: `${preview.text}\n\n⚠️ *${t(locale, "vpreview.remove-confirm-q", { target: label })}*\n${t(locale, "vpreview.remove-confirm-warn", { target: label })}`,
+      options: {
+        parse_mode: "Markdown",
+        reply_markup: confirmationKeyboard(
+          { label: t(locale, "vpreview.remove-yes", { target: label }), callback: publicationCallback("video", "remove", [id, target]) },
+          { label: t(locale, "common.back"), callback: publicationCallback("video", "open", [id]) },
+        ),
+      },
+      card: { kind: "video", draftId: id },
     },
-  );
+  ];
 }
 
 async function handleCancel({ ctx, backendDb, config, actorId, locale, args, data }: VideoActionArgs): Promise<VideoActionResult> {
@@ -355,12 +508,14 @@ async function handleCancel({ ctx, backendDb, config, actorId, locale, args, dat
     .join("\n");
   const heldPrivate = result.value.heldPrivateYouTubeIds.length ? `\n${t(locale, "video.held-private")}` : "";
   const attention = result.value.holdFailures.length ? `\n${t(locale, "video.hold-failed")}` : "";
-  await ctx.editMessageText(
-    `${t(locale, "video.cancelled-local", { hours: config.VIDEO_MEDIA_RETENTION_HOURS })}${heldPrivate}${attention}${manualRemoval ? `\n\n${t(locale, "video.already-published")}\n${manualRemoval}` : ""}`,
+  return [
     {
-      reply_markup: resultNavigationKeyboard(locale, "drafts"),
+      type: "screen",
+      mode: "edit",
+      text: `${t(locale, "video.cancelled-local", { hours: config.VIDEO_MEDIA_RETENTION_HOURS })}${heldPrivate}${attention}${manualRemoval ? `\n\n${t(locale, "video.already-published")}\n${manualRemoval}` : ""}`,
+      options: { reply_markup: resultNavigationKeyboard(locale, "drafts") },
     },
-  );
+  ];
 }
 
 async function handleTime({ ctx, backendDb, config, actorId, locale, args }: VideoActionArgs): Promise<VideoActionResult> {
@@ -378,9 +533,7 @@ async function handleTime({ ctx, backendDb, config, actorId, locale, args }: Vid
     ...(currentSession ? { revision: currentSession.revision } : {}),
   };
   const saved = saveVideoState(backendDb, actorId, session);
-  setControlFromSession(backendDb, id, ctx, saved);
-  await sendVideoTimePrompt(
-    ctx,
+  return videoTimeEffect(
     backendDb,
     actorId,
     saved,
@@ -388,22 +541,59 @@ async function handleTime({ ctx, backendDb, config, actorId, locale, args }: Vid
   );
 }
 
-async function handleSchedulePick({ ctx, backendDb, config, actorId, args }: VideoActionArgs): Promise<VideoActionResult> {
+async function handleSchedulePick({ backendDb, config, actorId, args }: VideoActionArgs): Promise<VideoActionResult> {
   const [idText, hhmm] = args;
   const id = requireDraftId(idText);
   const session = getVideoState(backendDb, actorId);
   requireSessionStep(session?.step, scheduleSessionSteps(), "action.schedule-expired");
   if (!session || session.draftId !== id) throw new StudioError("action.schedule-expired");
   const value = createStudioServices(backendDb, config).videos.slotTime(`${(hhmm ?? "").slice(0, 2)}:${(hhmm ?? "").slice(2, 4)}`);
-  await applyVideoScheduleDate(ctx, backendDb, config, actorId, session, value);
+  if (session.step === "schedule_common")
+    return videoScheduleConfirmationEffects(backendDb, config, actorId, session, commonVideoSchedule(session.selected, value));
+  const target =
+    typeof session.data.target === "string" && VIDEO_TARGETS.includes(session.data.target as VideoTarget)
+      ? (session.data.target as VideoTarget)
+      : null;
+  if (!target || !session.selected.includes(target)) throw new StudioError("err.video-reopen-publish");
+  const transition = advanceVideoTargetSchedule(
+    session.selected,
+    (session.data.schedule as Record<string, string> | undefined) ?? {},
+    target,
+    value,
+  );
+  if (transition.nextTarget) {
+    const next = saveVideoState(backendDb, actorId, {
+      ...session,
+      step: "schedule_target",
+      data: { ...session.data, schedule: transition.schedule, target: transition.nextTarget },
+    });
+    return videoTimeEffect(
+      backendDb,
+      actorId,
+      next,
+      t(botLocale(backendDb, actorId), "video.schedule-target-prompt", {
+        target: videoTargetLabel(transition.nextTarget),
+        timezone: config.TIMEZONE_LABEL,
+      }),
+    );
+  }
+  return videoScheduleConfirmationEffects(
+    backendDb,
+    config,
+    actorId,
+    session,
+    Object.fromEntries(Object.entries(transition.schedule).map(([key, item]) => [key, new Date(item)])) as Partial<
+      Record<VideoTarget, Date>
+    >,
+  );
 }
 
-async function handleScheduleManual({ ctx, backendDb, config, actorId, locale, args }: VideoActionArgs): Promise<VideoActionResult> {
+async function handleScheduleManual({ backendDb, config, actorId, locale, args }: VideoActionArgs): Promise<VideoActionResult> {
   const id = requireDraftId(args[0]);
   const session = getVideoState(backendDb, actorId);
   requireSessionStep(session?.step, scheduleSessionSteps(), "action.schedule-expired");
   if (!session || session.draftId !== id) throw new StudioError("action.schedule-expired");
-  await replyVideoPrompt(ctx, backendDb, actorId, locale, t(locale, "video.enter-datetime", { timezone: config.TIMEZONE_LABEL }));
+  return [videoPromptEffect(backendDb, actorId, t(locale, "video.enter-datetime", { timezone: config.TIMEZONE_LABEL }))];
 }
 
 function scheduleSessionSteps(): string[] {
@@ -421,16 +611,22 @@ async function handleRemove({ ctx, backendDb, config, actorId, locale, args, dat
   const { cancelled } = result.value;
   if (cancelled) {
     clearVideoState(backendDb, actorId);
-    await ctx.editMessageText(t(locale, "video.all-removed"), {
-      reply_markup: resultNavigationKeyboard(locale, "drafts"),
-    });
-    return;
+    return [
+      {
+        type: "screen",
+        mode: "edit",
+        text: t(locale, "video.all-removed"),
+        options: { reply_markup: resultNavigationKeyboard(locale, "drafts") },
+      },
+    ];
   }
-  await showVideoCard(ctx, backendDb, config, actorId, id, locale);
-  return [{ type: "toast", text: t(locale, "video.removed", { label: videoTargetLabel(target) }) }];
+  return [
+    ...showVideoCard(backendDb, config, actorId, id, locale),
+    { type: "toast", text: t(locale, "video.removed", { label: videoTargetLabel(target) }) },
+  ];
 }
 
-async function handleEditMenu({ ctx, backendDb, config, actorId, locale, args }: VideoActionArgs): Promise<VideoActionResult> {
+async function handleEditMenu({ backendDb, config, actorId, locale, args }: VideoActionArgs): Promise<VideoActionResult> {
   const id = requireDraftId(args[0]);
   const videos = createStudioServices(backendDb, config).videos;
   const details = videos.get(actorId, id);
@@ -447,7 +643,15 @@ async function handleEditMenu({ ctx, backendDb, config, actorId, locale, args }:
   if (targets.includes("instagram_reels"))
     keyboard.text(t(locale, "video.edit-ig-caption"), publicationCallback("video", "edit_field", [id, "instagram_caption"])).row();
   keyboard.text(t(locale, "common.back"), publicationCallback("video", "open", [id]));
-  await ctx.editMessageText(t(locale, "video.what-to-edit"), { parse_mode: "Markdown", reply_markup: keyboard });
+  return [
+    {
+      type: "screen",
+      mode: "edit",
+      text: t(locale, "video.what-to-edit"),
+      options: { parse_mode: "Markdown", reply_markup: keyboard },
+      card: { kind: "video", draftId: id },
+    },
+  ];
 }
 
 async function handleEditField({ ctx, backendDb, config, actorId, locale, args }: VideoActionArgs): Promise<VideoActionResult> {
@@ -465,9 +669,8 @@ async function handleEditField({ ctx, backendDb, config, actorId, locale, args }
     data: { is_single_edit: true },
     controlMessageId: callbackMessageId(ctx),
   };
-  const saved = saveVideoState(backendDb, actorId, session);
-  setControlFromSession(backendDb, id, ctx, saved);
-  await replyVideoPrompt(ctx, backendDb, actorId, locale, t(locale, prompt));
+  saveVideoState(backendDb, actorId, session);
+  return [videoPromptEffect(backendDb, actorId, t(locale, prompt))];
 }
 
 async function handleEdit({ ctx, backendDb, config, actorId, locale, args }: VideoActionArgs): Promise<VideoActionResult> {
@@ -480,7 +683,6 @@ async function handleEdit({ ctx, backendDb, config, actorId, locale, args }: Vid
     data: {},
     controlMessageId: callbackMessageId(ctx),
   };
-  const saved = saveVideoState(backendDb, actorId, session);
-  setControlFromSession(backendDb, id, ctx, saved);
-  await replyVideoPrompt(ctx, backendDb, actorId, locale, t(locale, "video.edit-label-prompt"));
+  saveVideoState(backendDb, actorId, session);
+  return [videoPromptEffect(backendDb, actorId, t(locale, "video.edit-label-prompt"))];
 }

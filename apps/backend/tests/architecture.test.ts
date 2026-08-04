@@ -43,7 +43,7 @@ describe("architecture fitness", () => {
       expect(text).not.toMatch(/from ["'][^"']*\/db\//);
       expect(text).not.toMatch(/from ["']drizzle-orm/);
     }
-    for (const file of ["apps/backend/src/studio/services/posts.ts", "apps/backend/src/studio/services/post-queries.ts"]) {
+    for (const file of ["apps/backend/src/studio/services/posts.ts"]) {
       const text = source(file);
       expect(text).not.toMatch(/from ["'][^"']*\/db\/schema/);
       expect(text).not.toMatch(/from ["']drizzle-orm/);

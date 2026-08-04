@@ -118,11 +118,11 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
 
 async function handleAssetMessage({ ctx, backendDb, config, actorId, session }: VideoMessageArgs): Promise<boolean> {
   const stored = await storeTelegramVideo(ctx, backendDb, config, actorId);
-  const draftId = createStudioServices(backendDb, config).publicationPipeline.create(actorId, {
-    kind: "video",
-    studioMediaAssetId: stored.assetId,
-    locale: session.data.videoLocale === "en" ? "en" : "ru",
-  }).id;
+  const draftId = createStudioServices(backendDb, config).videos.create(
+    actorId,
+    stored.assetId,
+    session.data.videoLocale === "en" ? "en" : "ru",
+  );
   const selected = enabledVideoTargets(config);
   if (!selected.length) throw new StudioError("err.no-video-platforms-config");
   createStudioServices(backendDb, config).videos.replaceTargets(actorId, draftId, selected);

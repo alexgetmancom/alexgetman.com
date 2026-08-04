@@ -216,15 +216,12 @@ const studioToolDefs = {
     mutates: true,
     ref: (_input, result) => `draft:${(result as { draft_id: number }).draft_id}`,
     handler: (studio, actorId, input) => {
-      const draftId = studio.publicationPipeline.create(actorId, {
-        kind: "post",
-        message: {
-          text: input.text,
-          ...(input.text_en === undefined ? {} : { textEn: input.text_en, textEnApproved: input.text_en }),
-          entities: [],
-          media: [],
-        },
-      }).id;
+      const draftId = studio.posts.create(actorId, {
+        text: input.text,
+        ...(input.text_en === undefined ? {} : { textEn: input.text_en, textEnApproved: input.text_en }),
+        entities: [],
+        media: [],
+      });
       return { draft_id: draftId };
     },
   }),
@@ -345,11 +342,7 @@ const studioToolDefs = {
     mutates: true,
     ref: (_input, result) => `video:${(result as { video_draft_id: number }).video_draft_id}`,
     handler: (studio, actorId, input) => {
-      const videoDraftId = studio.publicationPipeline.create(actorId, {
-        kind: "video",
-        studioMediaAssetId: input.asset_id,
-        ...(input.locale ? { locale: input.locale } : {}),
-      }).id;
+      const videoDraftId = studio.videos.create(actorId, input.asset_id, input.locale);
       return { video_draft_id: videoDraftId };
     },
   }),

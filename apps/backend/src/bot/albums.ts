@@ -160,10 +160,12 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
       } else {
         const text = row.textRu;
         const textEn = await translatePostText(text, config);
-        const created = createStudioServices(backendDb, config).publicationPipeline.create(row.actorId, {
-          kind: "post",
-          message: { text, textEn, media, entities: parseArrayValue(row.textEntitiesJson) },
-        }).id;
+        const created = createStudioServices(backendDb, config).posts.create(row.actorId, {
+          text,
+          textEn,
+          media,
+          entities: parseArrayValue(row.textEntitiesJson),
+        });
         await refreshDraftControlCard(bot, backendDb, config, row.actorId, created, row.chatId);
         if (step) clearConversationStateIfCurrent(backendDb, { kind: "post", step, draftId: row.draftId }, row.actorId, row.stateRevision);
       }

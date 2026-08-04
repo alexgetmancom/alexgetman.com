@@ -1,42 +1,39 @@
-import type { Context } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { t } from "../foundation/i18n/index.js";
-import { setTelegramVideoCard } from "../interfaces/telegram/control-cards.js";
 import { videoPreview } from "../interfaces/telegram/video-preview.js";
 import type { VideoTechnicalCheck } from "../publishing/video-service.js";
 import type { VideoTarget } from "../publishing/video-types.js";
 import { createStudioServices } from "../studio/services/index.js";
+import type { PublicationEffect } from "./effects.js";
 import { type BotLocale, botLocale } from "./i18n.js";
 import { clearVideoState, type VideoConversationState } from "./video-ui.js";
 
 export async function finishVideoSchedule(
-  ctx: Context,
   backendDb: BackendDb,
   config: BackendConfig,
   actorId: number,
   session: VideoConversationState,
   schedule: Partial<Record<VideoTarget, Date>>,
-): Promise<void> {
+): Promise<PublicationEffect[]> {
   if (!session.draftId) throw new StudioError("err.video-missing");
   const locale = botLocale(backendDb, actorId);
   const technical = await createStudioServices(backendDb, config).videos.schedule(actorId, session.draftId, schedule);
-  await showScheduledVideo(ctx, backendDb, config, actorId, session, technical, locale);
+  return showScheduledVideo(backendDb, config, actorId, session, technical, locale);
 }
 
 /** Telegram only renders the result; the immediate scheduling policy lives in Video Studio. */
 export async function finishVideoNow(
-  ctx: Context,
   backendDb: BackendDb,
   config: BackendConfig,
   actorId: number,
   session: VideoConversationState,
-): Promise<void> {
+): Promise<PublicationEffect[]> {
   if (!session.draftId) throw new StudioError("err.video-missing");
   const locale = botLocale(backendDb, actorId);
   const technical = await createStudioServices(backendDb, config).videos.publish(actorId, session.draftId);
-  await showScheduledVideo(ctx, backendDb, config, actorId, session, technical, locale);
+  return showScheduledVideo(backendDb, config, actorId, session, technical, locale);
 }
 
 /** Formats the transport-neutral technical check into a Telegram summary line. */
@@ -55,24 +52,26 @@ function videoCheckSummary(technical: VideoTechnicalCheck, locale: BotLocale): s
 }
 
 async function showScheduledVideo(
-  ctx: Context,
   backendDb: BackendDb,
   config: BackendConfig,
   actorId: number,
   session: VideoConversationState,
   technical: VideoTechnicalCheck,
   locale: BotLocale,
-): Promise<void> {
+): Promise<PublicationEffect[]> {
   if (!session.draftId) throw new StudioError("err.video-missing");
   const preview = videoPreview(createStudioServices(backendDb, config).videos.preview(actorId, session.draftId), config, locale);
   const reminderMinutes = createStudioServices(backendDb, config).settings.notifications(actorId).reminderMinutes;
   const warning = technical.aspectOk ? "" : `\n${t(locale, "video.aspect-warning")}`;
   const text = `${videoCheckSummary(technical, locale)}${warning}\n\n✅ ${t(locale, "common.scheduled")}. ${t(locale, "video.reminder", { minutes: reminderMinutes })}\n\n${preview.text}`;
-  const controlMessageId = session.controlMessageId;
   clearVideoState(backendDb, actorId);
-  if (controlMessageId && ctx.chat?.id) {
-    await ctx.api.editMessageText(ctx.chat.id, controlMessageId, `✅ ${t(locale, "video.confirmed-card")}`);
-  }
-  const message = await ctx.reply(text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
-  if (ctx.chat?.id) setTelegramVideoCard(backendDb, session.draftId, Number(ctx.chat.id), message.message_id);
+  return [
+    { type: "screen", mode: "edit", text: `✅ ${t(locale, "video.confirmed-card")}` },
+    {
+      type: "prompt",
+      text,
+      options: { parse_mode: "Markdown", reply_markup: preview.keyboard },
+      card: { kind: "video", draftId: session.draftId },
+    },
+  ];
 }

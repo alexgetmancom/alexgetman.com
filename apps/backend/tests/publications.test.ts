@@ -3,7 +3,6 @@ import type { UnsafeBackendDb } from "../src/db/client.js";
 import { studioMediaAssets } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { postService } from "../src/studio/services/posts.js";
-import { publicationPipelineService } from "../src/studio/services/publication-pipeline.js";
 import { videoService } from "../src/studio/services/videos.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
@@ -35,21 +34,20 @@ function videoAssetId(db: UnsafeBackendDb): number {
   return row.id;
 }
 
-describe("Studio publication pipeline", () => {
-  it("dispatches create to the right pipeline and tags the handle by kind", () => {
+describe("Studio publication services", () => {
+  it("creates posts and videos through their direct service boundaries", () => {
     backendDb = openBackendDb(":memory:");
     const config = loadConfig({ ADMIN_IDS: "42" });
-    const pipeline = publicationPipelineService(postService(backendDb, config), videoService(backendDb, config));
+    const posts = postService(backendDb, config);
+    const videos = videoService(backendDb, config);
 
-    const post = pipeline.create(42, { kind: "post", message: { text: "Hello", textEn: "Hello", entities: [], media: [] } });
-    expect(post).toEqual({ kind: "post", id: 1 });
-    expect(pipeline.capabilities("post")).toEqual({ hasMetadataWizard: false, hasStoryCards: true, scheduleAxis: "locale" });
+    const postId = posts.create(42, { text: "Hello", textEn: "Hello", entities: [], media: [] });
+    expect(postId).toBe(1);
 
     const asset = videoAssetId(backendDb);
-    const video = pipeline.create(42, { kind: "video", studioMediaAssetId: asset });
-    expect(video).toEqual({ kind: "video", id: 1 });
-    expect(pipeline.capabilities("video")).toEqual({ hasMetadataWizard: true, hasStoryCards: false, scheduleAxis: "target" });
-    expect(typeof pipeline.slotTime(post, "08:30").toISOString()).toBe("string");
-    expect(typeof pipeline.slotTime(video, "08:30").toISOString()).toBe("string");
+    const videoId = videos.create(42, asset);
+    expect(videoId).toBe(1);
+    expect(typeof posts.slotTime("08:30").toISOString()).toBe("string");
+    expect(typeof videos.slotTime("08:30").toISOString()).toBe("string");
   });
 });
