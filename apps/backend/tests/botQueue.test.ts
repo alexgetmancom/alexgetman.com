@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { queuePageCount, queueText } from "../src/bot/queue.js";
-import { drafts, publishJobs, videoDrafts, videoTargets } from "../src/db/schema.js";
+import { draftStoryCards, drafts, publishJobs, videoDrafts, videoTargets } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import type { StudioQueueSnapshot } from "../src/studio/services/queue.js";
 import { queueService } from "../src/studio/services/queue.js";
@@ -54,6 +54,19 @@ describe("Telegram work queue", () => {
           messageId: 101,
           target: "telegram_ru",
           status: "failed",
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      backendDb.db
+        .insert(draftStoryCards)
+        .values({
+          draftId: 1,
+          locale: "ru",
+          sourceHash: "failed-card",
+          headline: "Failed card",
+          status: "failed",
+          templateVersion: "test",
           createdAt: now,
           updatedAt: now,
         })

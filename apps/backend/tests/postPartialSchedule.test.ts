@@ -67,4 +67,23 @@ describe("partial locale scheduling", () => {
       .filter((job) => targetLocale(job.target) === "en");
     expect(enJobs.length).toBeGreaterThan(0);
   });
+
+  it("represents a locale published now without a fake future timestamp", () => {
+    backendDb = openBackendDb(":memory:");
+    const posts = postService(backendDb, loadConfig({ ADMIN_IDS: "42" }));
+    const draftId = posts.create(42, { text: "Russian", textEn: "English", entities: [], media: [] });
+
+    const postId = posts.schedule(42, draftId, { ruAt: new Date(), enAt: null, immediateLocale: "ru" });
+    const ruJobs = unsafeDb(backendDb)
+      .db.select({ target: publishJobs.target, publishAt: publishJobs.publishAt })
+      .from(publishJobs)
+      .where(eq(publishJobs.postId, postId))
+      .all()
+      .filter((job) => targetLocale(job.target) === "ru");
+    expect(ruJobs.length).toBeGreaterThan(0);
+    expect(ruJobs.every((job) => job.publishAt != null && new Date(job.publishAt).getTime() <= Date.now())).toBe(true);
+
+    const second = posts.scheduleAt(42, draftId, "en", new Date(Date.now() + 3_600_000));
+    expect(() => posts.schedule(42, draftId, second)).not.toThrow();
+  });
 });

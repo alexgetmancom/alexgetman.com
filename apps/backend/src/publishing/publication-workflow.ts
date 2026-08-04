@@ -13,7 +13,7 @@ import { persistPublicationPlanTx } from "./publication-writer.js";
 import { reconcilePublication } from "./queue.js";
 import { parseTargets } from "./targets.js";
 
-type PublishDraftOptions = { mode?: PublishMode; ruAt?: Date | null; enAt?: Date | null };
+type PublishDraftOptions = { mode?: PublishMode; ruAt?: Date | null; enAt?: Date | null; immediateLocale?: "ru" | "en" };
 
 /** Coordinates validated content, durable plan persistence and initial queue reconciliation. */
 export function publishDraftToQueue(backendDb: BackendDb, draftId: number, options: PublishDraftOptions = {}): number {
@@ -29,8 +29,8 @@ function publishDraftToQueueInternal(backendDb: BackendDb, draftId: number, opti
   assertPublicationPreflight(effectiveDraft);
   const now = new Date().toISOString();
   const mode = options.mode ?? "immediate";
-  const ruAt = mode === "immediate" ? now : (options.ruAt?.toISOString() ?? null);
-  const enAt = mode === "immediate" ? now : (options.enAt?.toISOString() ?? null);
+  const ruAt = mode === "immediate" || options.immediateLocale === "ru" ? now : (options.ruAt?.toISOString() ?? null);
+  const enAt = mode === "immediate" || options.immediateLocale === "en" ? now : (options.enAt?.toISOString() ?? null);
   // One transaction for the whole hand-off: a failure midway used to leave a
   // publications row with no plan behind it, which no worker picks up and no
   // retry path repairs. Every step below is synchronous, so this is free.

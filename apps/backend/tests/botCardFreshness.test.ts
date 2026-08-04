@@ -27,6 +27,7 @@ describe("Telegram card freshness", () => {
     try {
       setTelegramVideoCard(backendDb, 7, 100, 20);
       expect(isStaleVideoCardCallback(callbackContext(19), backendDb, "video_schedule:7")).toBe(true);
+      expect(isStaleVideoCardCallback(callbackContext(19), backendDb, "video_sched_pick:2100:7")).toBe(true);
       expect(isStaleVideoCardCallback(callbackContext(20), backendDb, "video_schedule:7")).toBe(false);
       expect(isStaleVideoCardCallback(callbackContext(19), backendDb, "video_open:7")).toBe(false);
     } finally {

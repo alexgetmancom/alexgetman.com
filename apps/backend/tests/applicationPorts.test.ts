@@ -6,8 +6,18 @@ describe("application persistence ports", () => {
   it("runs the settings service without SQLite", () => {
     let weeklyDigest: Parameters<ApplicationPorts["studioSettings"]["saveWeeklyDigest"]>[0] | undefined;
     let notifications: Parameters<ApplicationPorts["studioSettings"]["saveNotifications"]>[0] | undefined;
-    const ports: Pick<ApplicationPorts, "clock" | "studioSettings"> = {
+    const ports: Pick<ApplicationPorts, "clock" | "studioNotifications" | "studioSettings"> = {
       clock: { now: () => new Date("2026-01-02T03:04:05.000Z") },
+      studioNotifications: {
+        unread: () => [],
+        get: () => null,
+        acknowledge: () => false,
+        cancelQueuedReminders: () => 0,
+        draftOwner: () => null,
+        videoOwner: () => null,
+        postIdForKey: () => null,
+        postOwner: () => null,
+      },
       studioSettings: {
         notifications: () => null,
         locale: () => null,

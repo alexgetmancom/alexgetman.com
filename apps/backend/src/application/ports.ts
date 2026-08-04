@@ -108,6 +108,7 @@ export type StudioQueueStore = {
   posts(actorIds: number[], limit: number): StudioQueuePost[];
   videos(actorIds: number[], limit: number): StudioQueueVideo[];
   failedPostIds(postIds: number[]): number[];
+  failedStoryCardDraftIds(draftIds: number[]): number[];
   videoTargets(videoDraftIds: number[]): StudioQueueVideoTarget[];
   effectivePostTargets(targets: Record<string, boolean>): Record<string, boolean>;
 };

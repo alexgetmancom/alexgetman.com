@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import sharp from "sharp";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import type { UnsafeBackendDb } from "../src/db/client.js";
-import { drafts, postLocales, publicationSources, publishJobs, siteJobs } from "../src/db/schema.js";
+import { draftStoryCards, drafts, postEvents, postLocales, publicationSources, publishJobs, siteJobs } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { backfillTextStoryCards } from "../src/operations/story-card-backfill.js";
 import { localizeTargetPayload } from "../src/publishing/payload.js";
@@ -160,6 +160,20 @@ describe("text Story cards", () => {
     );
     expect(withStories.targets.telegram_stories).toBe(true);
 
+    const withoutCards = createPublicationPlan(
+      { ...draft, story_publish_mode: "all" } as never,
+      1,
+      2,
+      { mode: "scheduled", ruAt: "2026-07-29T10:00:00.000Z", enAt: "2026-07-29T10:00:00.000Z" },
+      "2026-07-29T10:00:00.000Z",
+    );
+    expect(withoutCards.targets).toMatchObject({
+      telegram: true,
+      telegram_stories: false,
+      instagram_stories_ru: false,
+      instagram_stories: false,
+    });
+
     // "Publish everywhere" narrows the editor's selection; it must not switch a
     // Story target back on that the editor had deliberately switched off.
     const disabled = createPublicationPlan(
@@ -212,6 +226,39 @@ describe("text Story cards", () => {
     expect(backendDb.db.select().from(publicationSources).where(eq(publicationSources.postId, postId)).get()?.itemJson).toMatchObject({
       text_ru: "After",
     });
+  }, 20_000);
+
+  it("skips Story delivery and notifies the inbox after a card exhausts retries", async () => {
+    backendDb = openBackendDb(":memory:");
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "failed-story-card-test-"));
+    temporaryDirectories.push(directory);
+    const config = loadConfig({
+      ADMIN_IDS: "42",
+      DATA_DIR: directory,
+      STORY_CARD_DIR: directory,
+      STORY_CARD_ASSETS_DIR: path.resolve("apps/backend/assets/story-card"),
+      STORY_CARD_RENDERER_ENTRY: path.join(directory, "missing-renderer.ts"),
+      STORY_CARD_MAX_ATTEMPTS: "1",
+    });
+    const posts = postService(backendDb, config);
+    const draftId = posts.create(42, { text: "Text", textEn: "Text", entities: [], media: [] });
+    setStoryPublishMode(backendDb, draftId, "all");
+    const postId = posts.schedule(42, draftId, { ruAt: new Date(Date.now() + 60_000), enAt: null });
+
+    expect(await runStoryCardCycle(config, backendDb)).toBe(1);
+
+    expect(backendDb.db.select().from(draftStoryCards).where(eq(draftStoryCards.draftId, draftId)).get()?.status).toBe("failed");
+    expect(
+      backendDb.db
+        .select()
+        .from(publishJobs)
+        .where(eq(publishJobs.postId, postId))
+        .all()
+        .some((job) => job.target.includes("stories")),
+    ).toBe(false);
+    expect(
+      backendDb.db.select().from(postEvents).where(eq(postEvents.eventType, "studio.notification.story-cards.failed")).all(),
+    ).toHaveLength(1);
   }, 20_000);
 
   it("stores the final bundle decision durably", () => {

@@ -112,10 +112,8 @@ export async function handlePostAction(ctx: Context, backendDb: BackendDb, confi
   }
   if (action === "sched_scope" && first) {
     clearPostAdminState(backendDb, actorId);
-    if (first === "ru_now")
-      return commitLocaleScheduleOnce(ctx, backendDb, config, actorId, draftId, "ru", new Date(Date.now() + 1_000), data);
-    if (first === "en_now")
-      return commitLocaleScheduleOnce(ctx, backendDb, config, actorId, draftId, "en", new Date(Date.now() + 1_000), data);
+    if (first === "ru_now") return commitLocaleScheduleOnce(ctx, backendDb, config, actorId, draftId, "ru", new Date(), data, "ru");
+    if (first === "en_now") return commitLocaleScheduleOnce(ctx, backendDb, config, actorId, draftId, "en", new Date(), data, "en");
     if (first === "both") return editDraftPreview(ctx, backendDb, draftId, config, "schedule_ru");
     return void (await ctx.answerCallbackQuery({ text: t(locale, "action.unknown") }));
   }
@@ -241,10 +239,15 @@ async function commitLocaleSchedule(
   draftId: number,
   scheduleLocale: "ru" | "en",
   value: Date,
+  immediateLocale?: "ru" | "en",
 ): Promise<void> {
   const posts = createStudioServices(backendDb, config).posts;
   const { ruAt, enAt } = posts.scheduleAt(actorId, draftId, scheduleLocale, value);
-  const postId = posts.schedule(actorId, draftId, { ruAt, enAt });
+  const postId = posts.schedule(actorId, draftId, {
+    ruAt,
+    enAt,
+    ...(immediateLocale ? { immediateLocale } : {}),
+  });
   const otherLocale = scheduleLocale === "ru" ? "en" : "ru";
   const otherAt = otherLocale === "ru" ? ruAt : enAt;
   const uiLocale = botLocale(backendDb, actorId);
@@ -266,9 +269,10 @@ async function commitLocaleScheduleOnce(
   scheduleLocale: "ru" | "en",
   value: Date,
   actionKey: string,
+  immediateLocale?: "ru" | "en",
 ): Promise<void> {
   const result = await withActionLock(`${actorId}:${actionKey}`, () =>
-    commitLocaleSchedule(ctx, backendDb, config, actorId, draftId, scheduleLocale, value),
+    commitLocaleSchedule(ctx, backendDb, config, actorId, draftId, scheduleLocale, value, immediateLocale),
   );
   if (!result.ok) await ctx.answerCallbackQuery();
 }

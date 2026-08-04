@@ -155,7 +155,8 @@ function restoreDraftContent(backendDb: BackendDb, draftId: number, draft: Draft
   else {
     if (input.media.length) patch[ru ? "mediaRuJson" : "mediaEnJson"] = ru ? draft.media_ru_json : draft.media_en_json;
     if (!input.replaceMediaOnly && input.text) {
-      patch[ru ? "textRu" : "textEnApproved"] = ru ? draft.text_ru : (draft.text_en_approved ?? "");
+      if (ru) patch.textRu = draft.text_ru;
+      else patch.textEnApproved = draft.text_en_approved;
       patch[ru ? "textRuEntitiesJson" : "textEnEntitiesJson"] = ru ? draft.text_ru_entities_json : draft.text_en_entities_json;
       patch.threadsChainApproved = draft.threads_chain_approved;
     }

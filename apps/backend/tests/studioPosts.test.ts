@@ -114,6 +114,25 @@ describe("Studio post commands", () => {
     expect(job?.payloadJson).toMatchObject({ text_ru: "After" });
   });
 
+  it("restores an unapproved EN translation as null when a replan rejects the edit", () => {
+    backendDb = openBackendDb(":memory:");
+    const posts = postService(backendDb, loadConfig({ ADMIN_IDS: "42" }));
+    const draftId = posts.create(42, { text: "Before", textEn: "Before", entities: [], media: [] });
+    posts.schedule(42, draftId, { ruAt: new Date(Date.now() + 60_000), enAt: null });
+
+    expect(() =>
+      posts.edit(42, draftId, {
+        locale: "en",
+        text: "x".repeat(501),
+        entities: [],
+        media: [],
+      }),
+    ).toThrow();
+    expect(backendDb.db.select({ textEnApproved: drafts.textEnApproved }).from(drafts).where(eq(drafts.id, draftId)).get()).toEqual({
+      textEnApproved: null,
+    });
+  });
+
   it("replaces copied publication sources when a scheduled draft changes them", () => {
     backendDb = openBackendDb(":memory:");
     const posts = postService(backendDb, loadConfig({ ADMIN_IDS: "42" }));

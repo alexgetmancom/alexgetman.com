@@ -51,12 +51,8 @@ export function isStalePostCardCallback(ctx: Context, backendDb: BackendDb, acti
 export function isStaleVideoCardCallback(ctx: Context, backendDb: BackendDb, data: string): boolean {
   const action = data.split(":")[0] ?? "";
   if (!VIDEO_CARD_ACTIONS.has(action)) return false;
-  const draftId = data
-    .split(":")
-    .slice(1)
-    .map(Number)
-    .find((value) => Number.isSafeInteger(value) && value > 0);
-  if (draftId == null) return false;
+  const draftId = Number(data.split(":").at(-1));
+  if (!Number.isSafeInteger(draftId) || draftId <= 0) return false;
   return isStale(ctx, telegramVideoCard(backendDb, draftId)?.messageId);
 }
 

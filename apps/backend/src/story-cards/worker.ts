@@ -4,9 +4,10 @@ import { and, asc, eq, isNull, lt, lte, or } from "drizzle-orm";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { draftStoryCards } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { log } from "../foundation/logger.js";
 import { recordWorkerState } from "../foundation/runtime/worker-state.js";
 import { trackUsageAsync } from "../observability/usage.js";
-import { replanScheduledPostAfterStoryCards } from "../studio/services/post-scheduling.js";
+import { replanScheduledPostAfterStoryCardFailure, replanScheduledPostAfterStoryCards } from "../studio/services/post-scheduling.js";
 import { buildStoryCardCopy } from "./copy.js";
 
 type ClaimedCard = typeof draftStoryCards.$inferSelect & { lockedBy: string; lockedAt: string };
@@ -72,6 +73,16 @@ export async function runStoryCardCycle(config: BackendConfig, backendDb: Backen
         ),
       )
       .run();
+    if (!retry) {
+      try {
+        replanScheduledPostAfterStoryCardFailure(backendDb, config, card.draftId);
+      } catch (replanError) {
+        log("error", "failed to replan after Story card failure", {
+          draftId: card.draftId,
+          error: replanError instanceof Error ? replanError.message : String(replanError),
+        });
+      }
+    }
     recordWorkerState(backendDb, "story-cards", { claimed: 1, failed: 1 }, error instanceof Error ? error.message : String(error));
   }
   return 1;

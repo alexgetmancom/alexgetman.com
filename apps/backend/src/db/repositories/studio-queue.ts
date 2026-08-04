@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type { StudioQueuePost, StudioQueueStore, StudioQueueVideo, StudioQueueVideoTarget } from "../../application/ports.js";
-import { channelConnections, drafts, publishJobs, siteJobs, videoDrafts, videoTargets } from "../schema.js";
+import { channelConnections, draftStoryCards, drafts, publishJobs, siteJobs, videoDrafts, videoTargets } from "../schema.js";
 import type { BackendDatabase } from "../types.js";
 
 /** SQLite adapter for the transport-neutral Studio queue projection. */
@@ -61,6 +61,20 @@ export function createStudioQueueStore(db: BackendDatabase): StudioQueueStore {
         .where(and(inArray(siteJobs.postId, postIds), eq(siteJobs.status, "failed")))
         .all();
       return [...new Set([...failed, ...failedSite].flatMap((row) => (row.postId == null ? [] : [row.postId])))];
+    },
+
+    failedStoryCardDraftIds(draftIds: number[]): number[] {
+      if (draftIds.length === 0) return [];
+      return [
+        ...new Set(
+          db
+            .select({ draftId: draftStoryCards.draftId })
+            .from(draftStoryCards)
+            .where(and(inArray(draftStoryCards.draftId, draftIds), eq(draftStoryCards.status, "failed")))
+            .all()
+            .map((row) => row.draftId),
+        ),
+      ];
     },
 
     videoTargets(videoDraftIds: number[]): StudioQueueVideoTarget[] {

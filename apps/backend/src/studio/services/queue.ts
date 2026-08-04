@@ -42,6 +42,7 @@ export function queueService(backendDb: BackendDb, config: BackendConfig) {
 
       const postIds = postDrafts.flatMap((draft) => (draft.postId == null ? [] : [draft.postId]));
       const failedPostIds = new Set(backendDb.studioQueue.failedPostIds(postIds));
+      const failedStoryCardDraftIds = new Set(backendDb.studioQueue.failedStoryCardDraftIds(postDrafts.map((draft) => draft.id)));
       const nowMs = backendDb.clock.now().getTime();
 
       for (const draft of postDrafts) {
@@ -62,7 +63,8 @@ export function queueService(backendDb: BackendDb, config: BackendConfig) {
         if (scheduleGap) draftItems.push({ id: draft.id, label: `⏳ ${label}`, time: new Date(draft.updatedAt), kind: "post", targets: 0 });
         if (draft.status === "needs_review")
           draftItems.push({ id: draft.id, label, time: new Date(draft.updatedAt), kind: "post", targets: 0 });
-        if (draft.postId != null && failedPostIds.has(draft.postId)) attention.push({ id: draft.id, label, kind: "post" });
+        if ((draft.postId != null && failedPostIds.has(draft.postId)) || failedStoryCardDraftIds.has(draft.id))
+          attention.push({ id: draft.id, label, kind: "post" });
       }
 
       // One query for every draft's targets rather than one per draft: this

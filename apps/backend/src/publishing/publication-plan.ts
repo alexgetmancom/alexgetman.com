@@ -1,4 +1,4 @@
-import { isStoryTarget } from "../botTargets.js";
+import { isStoryTarget, targetLocale } from "../botTargets.js";
 import { draftLocaleContent } from "../content/draft-content.js";
 import type { requireDraft } from "../content/drafts.js";
 import { firstLine, slugify } from "../content/message.js";
@@ -35,6 +35,7 @@ export function createPublicationPlan(
       // choice, but it never revives a target the editor switched off: the
       // choice narrows the selection, it does not replace it.
       enabled &&
+        (!isStoryTarget(target) || storyCards != null || (targetLocale(target) === "ru" ? mediaRu : mediaEn).length > 0) &&
         (storyCards && isStoryTarget(target) ? draft.story_publish_mode === "all" : true) &&
         (!availableTargets || availableTargets.has(target)),
     ]),

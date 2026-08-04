@@ -3,7 +3,7 @@ import { fixUrlSlashes } from "../../content/message.js";
 import { StudioError } from "../../foundation/errors.js";
 import type { StudioActorId, StudioLocale } from "../contracts.js";
 
-type SettingsDependencies = Pick<ApplicationPorts, "clock" | "studioSettings"> & Partial<Pick<ApplicationPorts, "studioNotifications">>;
+type SettingsDependencies = Pick<ApplicationPorts, "clock" | "studioNotifications" | "studioSettings">;
 
 /** Read as a plain function, not a method: the service is an object literal, so
  * a method reading it through `this` breaks the moment it is destructured. */
@@ -82,7 +82,7 @@ export function settingsService(backendDb: SettingsDependencies) {
         completionEnabled: Number(next.completionEnabled),
         updatedAt: now,
       });
-      if (current.remindersEnabled && !next.remindersEnabled) backendDb.studioNotifications?.cancelQueuedReminders(actorId, now);
+      if (current.remindersEnabled && !next.remindersEnabled) backendDb.studioNotifications.cancelQueuedReminders(actorId, now);
       return next;
     },
     youtubeSignature(actorId: StudioActorId): string {
