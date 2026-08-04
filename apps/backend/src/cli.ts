@@ -132,11 +132,11 @@ async function main(): Promise<void> {
         .map(([key]) => key);
       const dataDirectories = checkDataDirectoriesWritable(requiredDataDirectories(config));
       // Required: a false value here means the deployment cannot function.
-      // Advisory (commandCenterToken*/webhookSecret below): informational
-      // hardening status, legitimately false for e.g. a polling-only deployment
-      // with no webhook secret configured — never a reason to report `ok: false`.
+      // Telegram is webhook-only; without the secret every update is rejected
+      // before grammY sees it.
       const requiredChecks = {
         telegramBot: Boolean(config.controllerBotToken),
+        webhookSecretConfigured: Boolean(config.TELEGRAM_WEBHOOK_SECRET),
         youtube: !config.studio.modules.youtube || Boolean(config.YOUTUBE_REFRESH_TOKEN),
         instagram: !config.studio.modules.instagram || Boolean(config.INSTAGRAM_ACCESS_TOKEN && config.INSTAGRAM_USER_ID),
         dataDirectoriesWritable: dataDirectories.every((check) => check.writable),
@@ -144,7 +144,6 @@ async function main(): Promise<void> {
       const checks = {
         ...requiredChecks,
         commandCenterTokenConfigured: Boolean(config.COMMAND_CENTER_TOKEN),
-        webhookSecretConfigured: Boolean(config.TELEGRAM_WEBHOOK_SECRET),
         commandCenterTokenSeparated: Boolean(config.COMMAND_CENTER_TOKEN && config.TELEGRAM_WEBHOOK_SECRET),
       };
       console.log(

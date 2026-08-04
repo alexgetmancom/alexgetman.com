@@ -1,10 +1,11 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { Bot } from "grammy";
-import { drafts, publishJobs, siteJobs, videoDrafts, videoTargets } from "../src/db/schema.js";
+import { botUiSettings, drafts, publishJobs, siteJobs, videoDrafts, videoTargets } from "../src/db/schema.js";
 import { recordDomainEvent } from "../src/domain/events.js";
 import { loadConfig } from "../src/foundation/config.js";
+import { setTelegramVideoCard } from "../src/interfaces/telegram/control-cards.js";
 import { consumeTelegramEvents } from "../src/interfaces/telegram/event-consumer.js";
-import { sendStudioCompletion, sendStudioReminder } from "../src/interfaces/telegram/video-notifications.js";
+import { refreshVideoControlCard, sendStudioCompletion, sendStudioReminder } from "../src/interfaces/telegram/video-notifications.js";
 import { withDb } from "./helpers/db.js";
 
 const config = loadConfig({ ADMIN_IDS: "42" });
@@ -14,6 +15,38 @@ function milestone(message: string) {
 }
 
 describe("Telegram event consumer", () => {
+  it("refreshes a video card in its owner's stored UI locale", async () =>
+    withDb(async (backendDb) => {
+      const now = new Date().toISOString();
+      backendDb.db.insert(botUiSettings).values({ actorId: 42, locale: "en", updatedAt: now }).run();
+      backendDb.db
+        .insert(videoDrafts)
+        .values({
+          id: 11,
+          actorId: 42,
+          locale: "en",
+          label: "Shared launch",
+          assetKey: "asset",
+          status: "draft",
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      backendDb.db
+        .insert(videoTargets)
+        .values({ videoDraftId: 11, target: "youtube_shorts", metadataJson: {}, status: "draft", createdAt: now, updatedAt: now })
+        .run();
+      setTelegramVideoCard(backendDb, 11, 42, 100);
+      const edits: string[] = [];
+      const editMessageText = mock(async (_chatId: number, _messageId: number, text: string) => void edits.push(text));
+      const bot = { api: { editMessageText } } as unknown as Bot;
+
+      await refreshVideoControlCard(backendDb, bot, { TIMEZONE: "UTC", TIMEZONE_LABEL: "UTC" }, 11);
+
+      expect(edits[0]).toContain("Status:");
+      expect(edits[0]).not.toContain("Статус:");
+    }));
+
   it("drops an undeliverable event instead of blocking every event behind it", async () =>
     withDb(async (backendDb) => {
       recordDomainEvent(backendDb.events, milestone("first"));

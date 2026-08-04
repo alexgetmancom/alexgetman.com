@@ -17,7 +17,7 @@ type VideoPreviewData = {
 export function videoPreview(
   data: VideoPreviewData,
   config: Pick<BackendConfig, "TIMEZONE" | "TIMEZONE_LABEL">,
-  locale: BotLocale = "ru",
+  locale: BotLocale,
 ): { text: string; keyboard: InlineKeyboard } {
   const { draft, targets } = data;
   const title = draft.label || t(locale, "vpreview.title-fallback");

@@ -53,10 +53,8 @@ export async function refreshVideoControlCard(
   if (!bot) return;
   const card = telegramVideoCard(backendDb, videoDraftId);
   if (!card || card.chatId == null || card.messageId == null) return;
-  const preview = videoPreview(
-    { draft: getVideoDraft(backendDb, videoDraftId), targets: listVideoTargets(backendDb, videoDraftId) },
-    config,
-  );
+  const draft = getVideoDraft(backendDb, videoDraftId);
+  const preview = videoPreview({ draft, targets: listVideoTargets(backendDb, videoDraftId) }, config, botLocale(backendDb, draft.actorId));
   try {
     await bot.api.editMessageText(card.chatId, card.messageId, preview.text, {
       parse_mode: "Markdown",

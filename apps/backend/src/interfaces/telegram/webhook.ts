@@ -3,6 +3,7 @@ import type { Hono } from "hono";
 import type { BackendConfig } from "../../foundation/config.js";
 import { safeEqual } from "../../foundation/http-auth.js";
 import { text } from "../../foundation/http-response.js";
+import { log } from "../../foundation/logger.js";
 
 /** grammy's `bot.init()` fetches the bot identity and must finish before the
  * first update is handled. Under webhooks there is no long-polling start to do
@@ -28,8 +29,12 @@ export function telegramWebhookRoute(app: Hono, config: BackendConfig, bot: Bot 
       return text("forbidden\n", 403);
     const update = await request.json().catch(() => null);
     if (bot && update) {
-      await initializeWebhookBot(bot);
-      await bot.handleUpdate(update as Parameters<Bot["handleUpdate"]>[0]);
+      // Telegram retries a webhook when the handler does not acknowledge it
+      // quickly. ACK first, then let the bot process media, translations and
+      // other slow work without extending the webhook request lifetime.
+      void initializeWebhookBot(bot)
+        .then(() => bot.handleUpdate(update as Parameters<Bot["handleUpdate"]>[0]))
+        .catch((error) => log("error", "Telegram webhook update failed", { error: String(error) }));
     }
     return text("ok\n");
   });

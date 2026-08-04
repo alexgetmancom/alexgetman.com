@@ -299,6 +299,38 @@ describe("Astro endpoint controller", () => {
     }
   });
 
+  it("acknowledges a Telegram webhook before slow update handling finishes", async () => {
+    const backendDb = tempDb();
+    const started = Promise.withResolvers<void>();
+    const finished = Promise.withResolvers<void>();
+    try {
+      const init = mock(async () => undefined);
+      const handleUpdate = mock(async () => {
+        started.resolve();
+        await finished.promise;
+      });
+      const app = createApiApp(loadConfig({ TELEGRAM_WEBHOOK_SECRET: "webhook-secret" }), backendDb, {
+        init,
+        handleUpdate,
+      } as unknown as import("grammy").Bot);
+      const responsePromise = app.request("/tg-feed/webhook", {
+        method: "POST",
+        headers: { "X-Telegram-Bot-Api-Secret-Token": "webhook-secret", "content-type": "application/json" },
+        body: JSON.stringify({ update_id: 99 }),
+      });
+
+      await started.promise;
+      const response = await Promise.race([responsePromise, new Promise<null>((resolve) => setTimeout(() => resolve(null), 25))]);
+      finished.resolve();
+      expect(response).not.toBeNull();
+      expect(response?.status).toBe(200);
+      await responsePromise;
+    } finally {
+      finished.resolve();
+      backendDb.close();
+    }
+  });
+
   it("renders the full command center through the framework-neutral controller", async () => {
     const backendDb = tempDb();
     const dir = tempDir("alexgetman-markdown-");
