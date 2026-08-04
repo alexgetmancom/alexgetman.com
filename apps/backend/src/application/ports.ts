@@ -148,7 +148,8 @@ export type ConversationSessionStore = {
     draftId: number | null;
     actorId: number;
     kind: ConversationSessionKind;
-    action: string;
+    action?: string | null;
+    step?: string | null;
     expectedRevision: number | null | undefined;
     updatedAt: string;
   }): boolean;

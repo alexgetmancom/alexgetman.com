@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, or, sql } from "drizzle-orm";
 import type { ConversationSessionKind, ConversationSessionStore } from "../../application/ports.js";
 import { StudioError } from "../../foundation/errors.js";
 import { conversationSessions } from "../schema.js";
@@ -74,6 +74,8 @@ export function createConversationSessionStore(db: BackendDatabase): Conversatio
     },
 
     clearIfCurrent(input) {
+      const expectedStep = input.step ?? input.action;
+      if (!expectedStep) return false;
       return (
         db
           .update(conversationSessions)
@@ -93,7 +95,7 @@ export function createConversationSessionStore(db: BackendDatabase): Conversatio
             and(
               eq(conversationSessions.actorId, input.actorId),
               eq(conversationSessions.kind, input.kind),
-              eq(conversationSessions.action, input.action),
+              or(eq(conversationSessions.step, expectedStep), eq(conversationSessions.action, expectedStep)),
               input.draftId == null ? isNull(conversationSessions.draftId) : eq(conversationSessions.draftId, input.draftId),
               ...(input.expectedRevision == null ? [] : [eq(conversationSessions.revision, input.expectedRevision)]),
             ),

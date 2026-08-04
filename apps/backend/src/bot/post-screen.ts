@@ -13,6 +13,7 @@ import { persistentKeyboard, showMainMenu } from "./menu-render.js";
 import { extractMessage } from "./message.js";
 import { applyAdminState } from "./post-actions.js";
 import { sendDraftPreview } from "./post-card.js";
+import { isPostInputStep } from "./post-fsm.js";
 import { clearPostAdminState, getPostAdminState, startPostDialog } from "./post-state.js";
 import { translatePostText } from "./post-translation.js";
 import { parseSessionCallback, requireSessionRevision } from "./session-fsm.js";
@@ -47,7 +48,7 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
   const message = extractMessage(ctx);
   const mediaGroupId = ctx.message && "media_group_id" in ctx.message ? ctx.message.media_group_id : undefined;
   if (mediaGroupId && message.media.length > 0) {
-    if (!state?.action || (state.action !== "new_post" && !state.draft_id)) {
+    if (!state?.step || (state.step.type !== "new_post" && !state.draft_id)) {
       await ctx.reply(t(locale, "post.album-need-action"), { reply_markup: persistentKeyboard(locale) });
       return;
     }
@@ -67,11 +68,11 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
     if (isNew) await ctx.reply(t(locale, "post.album-received"));
     return;
   }
-  if (state?.action && state.action !== "new_post" && state.draft_id) {
+  if (state?.step && isPostInputStep(state.step) && state.draft_id && state.action) {
     try {
       await applyAdminState(ctx, backendDb, config, state.action, state.draft_id, state.control_message_id, state.revision);
     } catch (error) {
-      const scheduleInput = state.action.startsWith("schedule_manual_");
+      const scheduleInput = state.step.type === "schedule_manual";
       const errorText =
         error instanceof StudioError && error.code === "common.schedule-parse-error"
           ? t(locale, "common.schedule-parse-error", { timezone: config.TIMEZONE_LABEL })
@@ -80,7 +81,7 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
     }
     return;
   }
-  if (state?.action !== "new_post") {
+  if (state?.step?.type !== "new_post") {
     await ctx.reply(t(locale, "post.need-new-post"), { reply_markup: persistentKeyboard(locale) });
     return;
   }

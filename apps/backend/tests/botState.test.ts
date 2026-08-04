@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { and, eq } from "drizzle-orm";
+import { encodePostWizardStep, parsePostWizardStep } from "../src/bot/post-fsm.js";
 import { clearPostAdminStateIfCurrent, getPostAdminState, setPostAdminState } from "../src/bot/post-state.js";
 import { clearSession, getSession, saveSession } from "../src/bot/video-session.js";
 import type { BackendDb } from "../src/db/client.js";
@@ -8,6 +9,45 @@ import { unsafeDb } from "../src/db/unsafe.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
 describe("Telegram dialog state", () => {
+  it("round-trips typed post wizard steps through the legacy callback values", () => {
+    const value = new Date("2026-08-04T12:34:56.000Z");
+    const steps = [
+      { type: "new_post" } as const,
+      { type: "edit_sources" } as const,
+      { type: "edit_text", locale: "ru" } as const,
+      { type: "replace_media", locale: "en" } as const,
+      { type: "schedule_manual", locale: "ru" } as const,
+      { type: "schedule_confirm", locale: "en", value } as const,
+    ];
+
+    for (const step of steps) {
+      const encoded = encodePostWizardStep(step);
+      expect(parsePostWizardStep(encoded)).toEqual(step);
+    }
+    expect(parsePostWizardStep("schedule_confirm_ru_not-a-date")).toBeNull();
+  });
+
+  it("stores new post state in the typed step column and reads legacy action rows", () => {
+    const backendDb: BackendDb = openBackendDb(":memory:");
+    try {
+      setPostAdminState(backendDb, 42, "edit_ru", 7, 9);
+      expect(unsafeDb(backendDb).db.select().from(conversationSessions).where(eq(conversationSessions.actorId, 42)).get()).toMatchObject({
+        action: null,
+        step: "edit_ru",
+      });
+      expect(getPostAdminState(backendDb, 42)).toMatchObject({ action: "edit_ru", step: { type: "edit_text", locale: "ru" } });
+
+      unsafeDb(backendDb)
+        .db.update(conversationSessions)
+        .set({ action: "edit_en", step: null })
+        .where(eq(conversationSessions.actorId, 42))
+        .run();
+      expect(getPostAdminState(backendDb, 42)).toMatchObject({ action: "edit_en", step: { type: "edit_text", locale: "en" } });
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("increments post revisions and refuses to clear a newer dialog", () => {
     const backendDb: BackendDb = openBackendDb(":memory:");
     try {

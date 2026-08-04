@@ -15,6 +15,7 @@ import { resultNavigationKeyboard } from "./dialog-ui.js";
 import { botLocale } from "./i18n.js";
 import { extractMessage } from "./message.js";
 import { editDraftPreview, editDraftPrompt, sendDraftPreview, showScheduleConfirmation } from "./post-card.js";
+import { encodePostWizardStep, parsePostWizardStep } from "./post-fsm.js";
 import { POST_ACTION_KEYS, type PostActionKey } from "./post-routes.js";
 import { clearPostAdminState, getPostAdminState, requireCurrentPostSession, setPostAdminState } from "./post-state.js";
 import { draftPreview, isDraftView, modeLabel } from "./preview.js";
@@ -250,11 +251,9 @@ async function handleSchedulePick({ ctx, backendDb, config, actorId, first, seco
 
 async function handleManualScheduleConfirm({ ctx, backendDb, config, actorId, locale, draftId }: PostActionArgs): Promise<void> {
   const state = getPostAdminState(backendDb, actorId);
-  const match = state?.action?.match(/^schedule_confirm_(ru|en)_(.+)$/);
-  if (!match || state?.draft_id !== draftId) return void (await ctx.answerCallbackQuery({ text: t(locale, "action.schedule-expired") }));
-  const scope = requireScheduleLocale(match[1] ?? "");
-  const value = new Date(match[2] ?? "");
-  if (Number.isNaN(value.getTime())) return void (await ctx.answerCallbackQuery({ text: t(locale, "action.schedule-expired") }));
+  if (state?.step?.type !== "schedule_confirm" || state.draft_id !== draftId)
+    return void (await ctx.answerCallbackQuery({ text: t(locale, "action.schedule-expired") }));
+  const { locale: scope, value } = state.step;
   clearPostAdminState(backendDb, actorId);
   await commitLocaleScheduleOnce(ctx, backendDb, config, actorId, draftId, scope, value, `sched_manual_confirm:${draftId}`);
 }
@@ -263,7 +262,13 @@ async function handleManualSchedule({ ctx, backendDb, config, actorId, locale, f
   if (!first) return;
   const pickLocale = requireScheduleLocale(first);
   clearPostAdminState(backendDb, actorId);
-  setPostAdminState(backendDb, actorId, `schedule_manual_${pickLocale}`, draftId, callbackMessageId(ctx));
+  setPostAdminState(
+    backendDb,
+    actorId,
+    encodePostWizardStep({ type: "schedule_manual", locale: pickLocale }),
+    draftId,
+    callbackMessageId(ctx),
+  );
   await ctx.answerCallbackQuery({ text: t(locale, "action.send-time") });
   await editDraftPrompt(
     ctx,
@@ -521,12 +526,20 @@ export async function applyAdminState(
   const actorId = Number(ctx.from?.id);
   if (expectedRevision != null) requireCurrentPostSession(backendDb, actorId, expectedRevision);
   const message = extractMessage(ctx);
-  if (action.startsWith("schedule_manual_")) {
-    const scope = requireScheduleLocale(action.slice("schedule_manual_".length));
+  const step = parsePostWizardStep(action);
+  if (!step) throw new StudioError("action.session-stale");
+  if (step.type === "schedule_manual") {
+    const scope = step.locale;
     const { ruAt, enAt } = createStudioServices(backendDb, config).posts.manualSchedule(actorId, draftId, scope, message.text);
     const value = scope === "ru" ? ruAt : enAt;
     if (!value) throw new StudioError("err.no-pub-time");
-    const revision = setPostAdminState(backendDb, actorId, `schedule_confirm_${scope}_${value.toISOString()}`, draftId, controlMessageId);
+    const revision = setPostAdminState(
+      backendDb,
+      actorId,
+      encodePostWizardStep({ type: "schedule_confirm", locale: scope, value }),
+      draftId,
+      controlMessageId,
+    );
     await sendPostPreviews(ctx, backendDb, config, actorId, draftId);
     return showScheduleConfirmation(
       ctx,
@@ -538,23 +551,23 @@ export async function applyAdminState(
       publicationCallback("post", "sched_manual_confirm", [draftId], revision),
       scope === "ru" ? "schedule_ru" : "schedule_en",
     );
-  } else if (action === "edit_ru" || action === "edit_en") {
+  } else if (step.type === "edit_text") {
     createStudioServices(backendDb, config).posts.edit(actorId, draftId, {
-      locale: action === "edit_ru" ? "ru" : "en",
+      locale: step.locale,
       text: message.text,
       entities: message.entities,
       media: message.media,
       clearMedia: isClearMediaCommand(message.text),
     });
-  } else if (action === "replace_ru_media" || action === "replace_en_media") {
+  } else if (step.type === "replace_media") {
     createStudioServices(backendDb, config).posts.edit(actorId, draftId, {
-      locale: action === "replace_ru_media" ? "ru" : "en",
+      locale: step.locale,
       text: message.text,
       entities: message.entities,
       media: message.media,
       replaceMediaOnly: true,
     });
-  } else if (action === "edit_sources") {
+  } else if (step.type === "edit_sources") {
     const urls = extractUrls(message.text);
     if (urls.length === 0) throw new StudioError("err.no-valid-source-links");
     createStudioServices(backendDb, config).posts.replaceSources(actorId, draftId, urls);
