@@ -87,7 +87,7 @@ export async function sendVideoReminder(
     await bot.api.sendMessage(actorId, text, {
       reply_markup: new InlineKeyboard()
         .text(t(locale, "notif.open"), `video_open:${draft.id}`)
-        .text(t(locale, "notif.cancel-btn"), `video_cancel:${draft.id}`),
+        .text(t(locale, "notif.cancel-btn"), `video_cancel_notice:${draft.id}`),
     });
   });
   unsafeDb(backendDb)
@@ -177,6 +177,13 @@ function completionKeyboard(
     for (const target of failedTargets)
       keyboard
         .text(t(locale, "notif.retry-target", { target: friendlyTarget(target.target) }), `post_retry_notice:${draftId}:${target.target}`)
+        .row();
+  }
+  if (postKey?.startsWith("video:") && draftId != null && failedTargets.length) {
+    keyboard.text(t(locale, "notif.open"), `video_open:${draftId}`).row();
+    for (const target of failedTargets)
+      keyboard
+        .text(t(locale, "notif.retry-target", { target: friendlyTarget(target.target) }), `video_retry:${target.target}:${draftId}`)
         .row();
   }
   keyboard.text(t(locale, "settings.notifications"), "notifications_home");

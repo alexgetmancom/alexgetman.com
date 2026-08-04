@@ -342,9 +342,17 @@ export function cancelVideo(backendDb: BackendDb, videoDraftId: number, retentio
     )
     .map((target) => target.externalId as string);
   unsafeDb(backendDb).db.transaction((tx) => {
+    const activeDelivery = tx
+      .select({ id: videoJobs.id })
+      .from(videoJobs)
+      .where(
+        and(eq(videoJobs.videoDraftId, videoDraftId), inArray(videoJobs.kind, ["prepare", "publish"]), eq(videoJobs.status, "running")),
+      )
+      .get();
+    if (activeDelivery) throw new StudioError("err.video-cancel-in-progress");
     tx.update(videoJobs)
       .set({ status: "cancelled", lockedAt: null, lockedBy: null, updatedAt: now })
-      .where(and(eq(videoJobs.videoDraftId, videoDraftId), inArray(videoJobs.status, ["queued", "running"])))
+      .where(and(eq(videoJobs.videoDraftId, videoDraftId), eq(videoJobs.status, "queued")))
       .run();
     tx.update(videoTargets)
       .set({ status: "cancelled", updatedAt: now })

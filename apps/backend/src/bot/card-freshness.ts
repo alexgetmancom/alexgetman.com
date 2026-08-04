@@ -27,7 +27,6 @@ const POST_CARD_ACTIONS = new Set([
 ]);
 
 const VIDEO_CARD_ACTIONS = new Set([
-  "video_retry",
   "video_schedule_confirm",
   "video_schedule",
   "video_common",
@@ -52,7 +51,9 @@ export function isStalePostCardCallback(ctx: Context, backendDb: BackendDb, acti
   return isStale(ctx, telegramPostCard(backendDb, draftId)?.messageId);
 }
 
-/** Old video cards must not reschedule, cancel, retry, or edit a video. */
+/** Old video cards must not reschedule, cancel, or edit a video. Target retry is
+ * state-guarded in the service because the same callback is also used by
+ * standalone failure notifications. */
 export function isStaleVideoCardCallback(ctx: Context, backendDb: BackendDb, data: string): boolean {
   const action = data.split(":")[0] ?? "";
   if (!VIDEO_CARD_ACTIONS.has(action)) return false;

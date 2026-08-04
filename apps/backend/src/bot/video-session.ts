@@ -218,6 +218,8 @@ export async function sendVideoControl(
   keyboard: InlineKeyboard,
 ): Promise<VideoSession> {
   const message = await ctx.reply(text, { parse_mode: "Markdown", reply_markup: keyboard });
+  if (session.draftId != null && ctx.chat?.id != null)
+    setTelegramVideoCard(backendDb, session.draftId, Number(ctx.chat.id), message.message_id);
   const next: VideoSessionInput = { ...session, data: { ...session.data, controlMessageId: message.message_id } };
   return saveSession(backendDb, actorId, next);
 }

@@ -3,9 +3,11 @@ import type { Context } from "grammy";
 import { versionedCallback } from "../src/bot/session-fsm.js";
 import { handleVideoActionCallback } from "../src/bot/video-actions.js";
 import { getSession, saveSession } from "../src/bot/video-session.js";
-import type { BackendDb } from "../src/db/client.js";
+import { type BackendDb, unsafeDb } from "../src/db/client.js";
 import { loadConfig } from "../src/foundation/config.js";
+import { setTelegramVideoCard } from "../src/interfaces/telegram/control-cards.js";
 import { videoPreview } from "../src/interfaces/telegram/video-preview.js";
+import { createVideoDraft, replaceVideoTargets } from "../src/publishing/video-service.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
 let backendDb: BackendDb | null = null;
@@ -73,5 +75,27 @@ describe("video callback dispatch", () => {
     expect(await handleVideoActionCallback(ctx, backendDb, config)).toBe(true);
     expect(answers[0]?.text).toBe("This dialog is outdated. Start again.");
     expect(getSession(backendDb, 42)?.selected).toEqual(["youtube_shorts"]);
+  });
+
+  it("accepts cancellation from a standalone reminder even when the card was replaced", async () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createVideoDraft(backendDb, 42, "clip.mp4", 24);
+    replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
+    setTelegramVideoCard(backendDb, draftId, 100, 10);
+    const answers: Array<{ text?: string } | undefined> = [];
+    const ctx = {
+      callbackQuery: { data: `video_cancel_notice:${draftId}`, message: { message_id: 50 } },
+      from: { id: 42 },
+      chat: { id: 100 },
+      editMessageText: async () => undefined,
+      answerCallbackQuery: async (options?: { text?: string }) => void answers.push(options),
+    } as unknown as Context;
+
+    await handleVideoActionCallback(ctx, backendDb, config);
+
+    expect(answers).toEqual([undefined]);
+    expect(unsafeDb(backendDb).sqlite.prepare("SELECT status FROM video_targets WHERE video_draft_id=?").get(draftId)).toEqual({
+      status: "cancelled",
+    });
   });
 });

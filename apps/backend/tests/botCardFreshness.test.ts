@@ -1,15 +1,24 @@
 import { describe, expect, it } from "bun:test";
 import { and, eq } from "drizzle-orm";
-import type { Context } from "grammy";
+import { type Context, InlineKeyboard } from "grammy";
 import { isStalePostCardCallback, isStaleVideoCardCallback } from "../src/bot/card-freshness.js";
 import { handlePostAction } from "../src/bot/post-actions.js";
 import { editDraftPreview, showScheduleConfirmation } from "../src/bot/post-card.js";
+import { versionedCallback } from "../src/bot/session-fsm.js";
+import { handleVideoActionCallback } from "../src/bot/video-actions.js";
+import { getSession, sendVideoControl } from "../src/bot/video-session.js";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import type { BackendDb } from "../src/db/client.js";
-import { draftStoryCards } from "../src/db/schema.js";
+import { draftStoryCards, videoDrafts } from "../src/db/schema.js";
 import { unsafeDb } from "../src/db/unsafe.js";
 import { loadConfig } from "../src/foundation/config.js";
-import { setTelegramPostCard, setTelegramVideoCard, telegramPostCard } from "../src/interfaces/telegram/control-cards.js";
+import {
+  setTelegramPostCard,
+  setTelegramVideoCard,
+  telegramPostCard,
+  telegramVideoCard,
+} from "../src/interfaces/telegram/control-cards.js";
+import { createVideoDraft, replaceVideoTargets } from "../src/publishing/video-service.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
 function callbackContext(messageId: number): Context {
@@ -120,7 +129,87 @@ describe("Telegram card freshness", () => {
       expect(isStaleVideoCardCallback(callbackContext(19), backendDb, "video_schedule:7")).toBe(true);
       expect(isStaleVideoCardCallback(callbackContext(19), backendDb, "video_sched_pick:2100:7")).toBe(true);
       expect(isStaleVideoCardCallback(callbackContext(20), backendDb, "video_schedule:7")).toBe(false);
+      // Retry callbacks are also emitted by failure notifications, which are
+      // separate messages from the current card. The service validates the
+      // target state, so this action does not need card freshness protection.
+      expect(isStaleVideoCardCallback(callbackContext(19), backendDb, "video_retry:youtube_shorts:7")).toBe(false);
+      expect(isStaleVideoCardCallback(callbackContext(19), backendDb, "video_cancel_notice:7")).toBe(false);
       expect(isStaleVideoCardCallback(callbackContext(19), backendDb, "video_open:7")).toBe(false);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("rebases the durable video card when a scheduling prompt becomes a new message", async () => {
+    const backendDb: BackendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      const draftId = unsafeDb(backendDb)
+        .db.insert(videoDrafts)
+        .values({ actorId: 42, locale: "ru", assetKey: "clip.mp4", status: "editing", createdAt: now, updatedAt: now })
+        .returning({ id: videoDrafts.id })
+        .get()?.id;
+      if (!draftId) throw new Error("video draft missing");
+      const ctx = {
+        chat: { id: 100 },
+        reply: async () => ({ message_id: 21 }),
+      } as unknown as Context;
+
+      await sendVideoControl(
+        ctx,
+        backendDb,
+        42,
+        { draftId, step: "schedule_common", selected: ["youtube_shorts"], data: {}, revision: 0 },
+        "When?",
+        new InlineKeyboard(),
+      );
+
+      expect(telegramVideoCard(backendDb, draftId)).toEqual({ chatId: 100, messageId: 21 });
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("keeps a two-platform video schedule on the latest Telegram control message", async () => {
+    const backendDb: BackendDb = openBackendDb(":memory:");
+    try {
+      const config = loadConfig({ ADMIN_IDS: "42" });
+      config.studio.modules.video_posting = true;
+      config.studio.modules.youtube = true;
+      config.studio.modules.instagram = true;
+      const draftId = createVideoDraft(backendDb, 42, "clip.mp4", 24);
+      replaceVideoTargets(backendDb, draftId, ["youtube_shorts", "instagram_reels"]);
+      setTelegramVideoCard(backendDb, draftId, 100, 10);
+      let nextMessageId = 20;
+      const context = (data: string, messageId: number): Context =>
+        ({
+          from: { id: 42 },
+          chat: { id: 100 },
+          callbackQuery: { data, message: { message_id: messageId } },
+          answerCallbackQuery: async () => true,
+          editMessageText: async () => undefined,
+          reply: async () => ({ message_id: ++nextMessageId }),
+          api: { editMessageText: async () => undefined },
+        }) as unknown as Context;
+
+      await handleVideoActionCallback(context(`video_schedule:${draftId}`, 10), backendDb, config);
+      const choice = getSession(backendDb, 42);
+      if (!choice) throw new Error("video schedule session missing");
+      await handleVideoActionCallback(context(versionedCallback(`video_common:${draftId}`, choice.revision), 10), backendDb, config);
+      const timePrompt = getSession(backendDb, 42);
+      if (!timePrompt) throw new Error("video time session missing");
+      expect(telegramVideoCard(backendDb, draftId)).toEqual({ chatId: 100, messageId: 21 });
+
+      await handleVideoActionCallback(
+        context(versionedCallback(`video_sched_pick:0800:${draftId}`, timePrompt.revision), 21),
+        backendDb,
+        config,
+      );
+
+      expect(getSession(backendDb, 42)?.step).toBe("schedule_confirm");
+      expect(telegramVideoCard(backendDb, draftId)).toEqual({ chatId: 100, messageId: 24 });
+      expect(isStaleVideoCardCallback(context("video_schedule_confirm:1", 21), backendDb, `video_schedule_confirm:${draftId}`)).toBe(true);
+      expect(isStaleVideoCardCallback(context("video_schedule_confirm:1", 24), backendDb, `video_schedule_confirm:${draftId}`)).toBe(false);
     } finally {
       backendDb.close();
     }

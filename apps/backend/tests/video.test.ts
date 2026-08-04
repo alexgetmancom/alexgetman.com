@@ -396,7 +396,7 @@ describe("video publication queue", () => {
     ]);
   });
 
-  it("fences running delivery and leaves already published targets for manual removal", () => {
+  it("refuses cancellation while delivery is running and leaves every target untouched", () => {
     const backendDb = testDb.open();
     const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts", "instagram_reels"]);
@@ -425,13 +425,11 @@ describe("video publication queue", () => {
       })
       .run();
 
-    const cancellation = cancelVideo(backendDb, draftId, 24);
-
-    expect(cancellation.manualRemoval).toEqual([{ target: "youtube_shorts", url: "https://www.youtube.com/watch?v=published" }]);
-    expect(backendDb.db.select().from(videoJobs).all()).toMatchObject([{ status: "cancelled", lockedBy: null, lockedAt: null }]);
+    expect(() => cancelVideo(backendDb, draftId, 24)).toThrow("err.video-cancel-in-progress");
+    expect(backendDb.db.select().from(videoJobs).all()).toMatchObject([{ status: "running", lockedBy: "worker-1", lockedAt: now }]);
     expect(listVideoTargets(backendDb, draftId).map((target) => ({ target: target.target, status: target.status }))).toEqual([
       { target: "youtube_shorts", status: "published" },
-      { target: "instagram_reels", status: "cancelled" },
+      { target: "instagram_reels", status: "editing" },
     ]);
   });
 

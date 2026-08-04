@@ -58,6 +58,7 @@ const routes: Record<string, VideoActionHandler> = {
   video_meta_back: handleMetaBack,
   video_open: handleOpen,
   video_retry: handleRetry,
+  video_cancel_notice: handleCancel,
   video_schedule_confirm: handleScheduleConfirm,
   video_schedule: handleScheduleStart,
   video_common: handleScheduleMode,
@@ -159,6 +160,8 @@ async function showVideoCard(
 ): Promise<void> {
   const preview = videoPreview(createStudioServices(backendDb, config).videos.preview(actorId, id), config, locale);
   await ctx.editMessageText(preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });
+  const messageId = callbackMessageId(ctx);
+  if (messageId && ctx.chat?.id) setTelegramVideoCard(backendDb, id, Number(ctx.chat.id), messageId);
 }
 
 async function handleStart({ ctx, backendDb }: VideoActionArgs): Promise<VideoActionResult> {
@@ -387,8 +390,9 @@ async function handleRemoveAsk({ ctx, backendDb, config, actorId, locale, data }
 }
 
 async function handleCancel({ ctx, backendDb, config, actorId, locale, data }: VideoActionArgs): Promise<VideoActionResult> {
+  const prefix = data.startsWith("video_cancel_notice:") ? "video_cancel_notice:" : "video_cancel:";
   const result = await withActionLock(`${actorId}:${data}`, () =>
-    createStudioServices(backendDb, config).videos.cancel(actorId, requireDraftId(data.slice("video_cancel:".length))),
+    createStudioServices(backendDb, config).videos.cancel(actorId, requireDraftId(data.slice(prefix.length))),
   );
   if (!result.ok) return;
   clearSession(backendDb, actorId);

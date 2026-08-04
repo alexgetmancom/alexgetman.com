@@ -179,21 +179,26 @@ describe("video job execution", () => {
     });
   });
 
-  it("keeps a cancelled YouTube upload private instead of leaking it", async () => {
+  it("rejects cancellation during a YouTube upload instead of losing the provider id", async () => {
     reset();
     await withDirectory(async (directory) => {
       const backendDb = testDb.open();
       const config = videoConfig(directory);
       const draftId = dueDraft(backendDb, directory, ["youtube_shorts"], config);
-      // The video id exists only in the upload response, so a cancellation
-      // arriving mid-flight must fence it before the state is discarded.
-      duringUpload = () => cancelVideo(backendDb, draftId, 24);
+      // The video id exists only in the upload response, so cancellation must
+      // not discard the local job while the provider call is in flight.
+      duringUpload = () => {
+        expect(() => cancelVideo(backendDb, draftId, 24)).toThrow("err.video-cancel-in-progress");
+      };
 
       await runVideoCycle(config, backendDb);
 
-      expect(seen).toContain("keepYouTubeUploadPrivate");
-      expect(targetRow(backendDb, draftId)?.status).toBe("cancelled");
-      expect(targetRow(backendDb, draftId)?.externalId).toBeNull();
+      // Cancellation is rejected while the delivery lock is held. The worker
+      // therefore completes the upload and records one durable publication,
+      // instead of losing the provider id in a cancellation race.
+      expect(seen).toContain("prepareYouTubeVideo");
+      expect(seen).not.toContain("keepYouTubeUploadPrivate");
+      expect(targetRow(backendDb, draftId)).toMatchObject({ status: "published", externalId: "yt-1" });
     });
   });
 
