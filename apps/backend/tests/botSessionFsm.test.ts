@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { parseSessionCallback, versionedCallback } from "../src/bot/session-fsm.js";
+import { parsePublicationCallback, parseSessionCallback, publicationCallback, versionedCallback } from "../src/bot/session-fsm.js";
 
 describe("Telegram session callback encoding", () => {
   it("uses a prefix so a future data segment cannot look like a revision suffix", () => {
@@ -10,5 +10,20 @@ describe("Telegram session callback encoding", () => {
 
   it("continues accepting callbacks emitted before the prefix format", () => {
     expect(parseSessionCallback("action:7:sv3")).toEqual({ data: "action:7", revision: 3 });
+  });
+
+  it("writes publication controls in one namespace and reads them back as legacy handler data", () => {
+    const encoded = publicationCallback("video", "sched_pick", ["0800", 7], 4);
+    expect(encoded).toBe("sv4|p:video:sched_pick:0800:7");
+    expect(parsePublicationCallback("p:video:sched_pick:0800:7")).toEqual({
+      kind: "video",
+      action: "sched_pick",
+      args: ["0800", "7"],
+    });
+    expect(parseSessionCallback(encoded)).toEqual({ data: "video_sched_pick:0800:7", revision: 4 });
+  });
+
+  it("normalizes an unversioned canonical post callback for the existing router", () => {
+    expect(parseSessionCallback("p:post:sched_scope:both:42")).toEqual({ data: "sched_scope:both:42", revision: null });
   });
 });

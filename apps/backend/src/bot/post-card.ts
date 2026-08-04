@@ -8,6 +8,7 @@ import { cancelPromptKeyboard, confirmationKeyboard } from "./dialog-ui.js";
 import { botLocale } from "./i18n.js";
 import { getPostAdminState } from "./post-state.js";
 import { type DraftView, draftPreview } from "./preview.js";
+import { publicationCallback } from "./session-fsm.js";
 
 /** Telegram rendering for a post control card; mutations stay in post actions. */
 export async function sendDraftPreview(ctx: Pick<Context, "reply">, backendDb: BackendDb, draftId: number, config: BackendConfig) {
@@ -42,7 +43,7 @@ export async function editDraftPrompt(
   const revision = getPostAdminState(backendDb, actorId)?.revision;
   await ctx.reply(prompt, {
     parse_mode: "Markdown",
-    reply_markup: cancelPromptKeyboard(locale, `cancel_state:${draftId}:${returnView}`, revision),
+    reply_markup: cancelPromptKeyboard(locale, publicationCallback("post", "cancel_state", [draftId, returnView]), revision),
   });
 }
 
@@ -60,7 +61,7 @@ export async function showScheduleConfirmation(
   const preview = draftPreview(backendDb, draftId, config);
   const keyboard = confirmationKeyboard(
     { label: t(locale, "post.confirm-schedule-btn"), callback: confirmCallback },
-    { label: t(locale, "common.back"), callback: `sched_view:${backView}:${draftId}` },
+    { label: t(locale, "common.back"), callback: publicationCallback("post", "sched_view", [backView, draftId]) },
   );
   const text = `${preview.text}\n\n📅 *${t(locale, "common.confirm-schedule")}*\nRU: ${formatMsk(ruAt, config)}\nEN: ${formatMsk(enAt, config)}`;
   const message = await ctx.reply(text, { parse_mode: "Markdown", reply_markup: keyboard });

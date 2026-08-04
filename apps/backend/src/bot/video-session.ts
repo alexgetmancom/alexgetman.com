@@ -2,17 +2,21 @@ import { type Context, InlineKeyboard } from "grammy";
 import type { ConversationSessionRecord } from "../application/ports.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
-import { StudioError } from "../foundation/errors.js";
 import { t } from "../foundation/i18n/index.js";
 import { setTelegramVideoCard } from "../interfaces/telegram/control-cards.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import { nextVideoFlowStep, previousVideoMetadataStep, type VideoPrompt, type VideoWizardStep } from "../studio/video-fsm.js";
+import {
+  activeConversationSession,
+  CONVERSATION_SESSION_TTL_MS,
+  retireConversationSession,
+  saveConversationSession,
+} from "./conversation-session.js";
 import { appendCancelButton, cancelPromptKeyboard } from "./dialog-ui.js";
 import { type BotLocale, botLocale } from "./i18n.js";
 import { SCHEDULE_SLOT_PRESETS, scheduleTimeKeyboard } from "./scheduling.js";
-import { versionedCallback } from "./session-fsm.js";
+import { publicationCallback } from "./session-fsm.js";
 
-const VIDEO_SESSION_TTL_MS = 30 * 60_000;
 export type VideoSessionStep =
   | "locale"
   | "asset"
@@ -51,11 +55,14 @@ export function targetKeyboard(config: BackendConfig, selected: VideoTarget[], l
   const keyboard = new InlineKeyboard();
   for (const target of enabledVideoTargets(config)) {
     keyboard
-      .text(`${selected.includes(target) ? "✓" : "○"} ${videoTargetLabel(target)}`, versionedCallback(`video_toggle:${target}`, revision))
+      .text(
+        `${selected.includes(target) ? "✓" : "○"} ${videoTargetLabel(target)}`,
+        publicationCallback("video", "toggle", [target], revision),
+      )
       .row();
   }
-  keyboard.text(t(locale, "video.next"), versionedCallback("video_targets_done", revision)).row();
-  return appendCancelButton(keyboard, locale, "video_cancel_dialog", revision);
+  keyboard.text(t(locale, "video.next"), publicationCallback("video", "targets_done", [], revision)).row();
+  return appendCancelButton(keyboard, locale, publicationCallback("video", "cancel_dialog"), revision);
 }
 
 export function enabledVideoTargets(config: BackendConfig): VideoTarget[] {
@@ -66,15 +73,8 @@ export function enabledVideoTargets(config: BackendConfig): VideoTarget[] {
 }
 
 export function getSession(backendDb: BackendDb, actorId: number): VideoSession | null {
-  const row = backendDb.conversationSessions.get(actorId, "video");
+  const row = activeConversationSession(backendDb, actorId, "video", CONVERSATION_SESSION_TTL_MS);
   if (!row || row.active === 0) return null;
-  if (row) {
-    const expiresAt = row.expiresAt ? Date.parse(row.expiresAt) : Date.parse(row.updatedAt) + VIDEO_SESSION_TTL_MS;
-    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
-      clearSession(backendDb, actorId);
-      return null;
-    }
-  }
   const step = row.step ? parseVideoSessionStep(row.step) : null;
   const selected = parseSelectedTargets(row.selectedTargets);
   const data = row.data;
@@ -87,10 +87,9 @@ export function getSession(backendDb: BackendDb, actorId: number): VideoSession 
 
 export function saveSession(backendDb: BackendDb, actorId: number, session: VideoSessionInput): VideoSession {
   const existing = backendDb.conversationSessions.get(actorId, "video");
-  if (existing && session.revision != null && existing.revision !== session.revision) throw new StudioError("action.session-stale");
   const now = new Date().toISOString();
-  const expiresAt = new Date(Date.now() + VIDEO_SESSION_TTL_MS).toISOString();
-  const revision = backendDb.conversationSessions.save({
+  const expiresAt = new Date(Date.now() + CONVERSATION_SESSION_TTL_MS).toISOString();
+  const revision = saveConversationSession(backendDb, {
     actorId,
     kind: "video",
     draftId: session.draftId,
@@ -121,7 +120,7 @@ export function setData(
 }
 
 export function clearSession(backendDb: BackendDb, actorId: number): void {
-  backendDb.conversationSessions.retire(actorId, "video", new Date().toISOString());
+  retireConversationSession(backendDb, actorId, "video");
 }
 
 export async function updateVideoControl(
@@ -132,7 +131,7 @@ export async function updateVideoControl(
   locale: BotLocale,
 ): Promise<void> {
   const messageId = Number(session.data.controlMessageId);
-  const replyMarkup = keyboard ?? cancelPromptKeyboard(locale, "video_cancel_dialog", session.revision);
+  const replyMarkup = keyboard ?? cancelPromptKeyboard(locale, publicationCallback("video", "cancel_dialog"), session.revision);
   if (messageId && ctx.chat?.id)
     return void (await ctx.api.editMessageText(ctx.chat.id, messageId, text, { parse_mode: "Markdown", reply_markup: replyMarkup }));
   await ctx.reply(text, { parse_mode: "Markdown", reply_markup: replyMarkup });
@@ -154,7 +153,7 @@ export async function replyVideoPrompt(
   const revision = getSession(backendDb, actorId)?.revision;
   await ctx.reply(text, {
     ...(options?.plainText ? {} : { parse_mode: "Markdown" }),
-    reply_markup: cancelPromptKeyboard(locale, "video_cancel_dialog", revision),
+    reply_markup: cancelPromptKeyboard(locale, publicationCallback("video", "cancel_dialog"), revision),
   });
 }
 
@@ -171,9 +170,10 @@ export async function sendVideoMetadataPrompt(
   const locale = botLocale(backendDb, actorId);
   const revision = getSession(backendDb, actorId)?.revision;
   const keyboard = new InlineKeyboard();
-  if (step === "youtube_game_url") keyboard.text(t(locale, "video.skip"), versionedCallback("video_game_skip", revision));
-  if (previousVideoMetadataStep(step, selected)) keyboard.text(t(locale, "common.back"), versionedCallback("video_meta_back", revision));
-  appendCancelButton(keyboard, locale, "video_cancel_dialog", revision);
+  if (step === "youtube_game_url") keyboard.text(t(locale, "video.skip"), publicationCallback("video", "game_skip", [], revision));
+  if (previousVideoMetadataStep(step, selected))
+    keyboard.text(t(locale, "common.back"), publicationCallback("video", "meta_back", [], revision));
+  appendCancelButton(keyboard, locale, publicationCallback("video", "cancel_dialog"), revision);
   await ctx.reply(videoPrompt(locale, step), { reply_markup: keyboard });
 }
 
@@ -236,11 +236,14 @@ export async function sendVideoTimePrompt(
     axis: {
       values: SCHEDULE_SLOT_PRESETS,
       label: (clock) => clock,
-      callback: (clock) => `video_sched_pick:${clock.replace(":", "")}:${session.draftId}`,
+      callback: (clock) => publicationCallback("video", "sched_pick", [clock.replace(":", ""), session.draftId ?? ""]),
     },
     revision,
-    manual: { label: t(locale, "video.enter-time-btn"), callback: `video_sched_manual:${session.draftId}` },
-    cancel: { label: t(locale, "common.cancel"), callback: "video_cancel_dialog" },
+    manual: {
+      label: t(locale, "video.enter-time-btn"),
+      callback: publicationCallback("video", "sched_manual", [session.draftId ?? ""]),
+    },
+    cancel: { label: t(locale, "common.cancel"), callback: publicationCallback("video", "cancel_dialog") },
   });
   return sendVideoControl(ctx, backendDb, actorId, session, text, keyboard);
 }
@@ -256,12 +259,14 @@ export async function askSchedule(
   const locale = botLocale(backendDb, actorId);
   const keyboard = new InlineKeyboard().text(
     t(locale, "video.same-time"),
-    versionedCallback(`video_common:${session.draftId}`, next.revision),
+    publicationCallback("video", "common", [session.draftId ?? ""], next.revision),
   );
   if (session.selected.length > 1)
-    keyboard.row().text(t(locale, "video.different-time"), versionedCallback(`video_individual:${session.draftId}`, next.revision));
+    keyboard
+      .row()
+      .text(t(locale, "video.different-time"), publicationCallback("video", "individual", [session.draftId ?? ""], next.revision));
   keyboard.row();
-  appendCancelButton(keyboard, locale, "video_cancel_dialog", next.revision);
+  appendCancelButton(keyboard, locale, publicationCallback("video", "cancel_dialog"), next.revision);
   await sendVideoControl(
     ctx,
     backendDb,

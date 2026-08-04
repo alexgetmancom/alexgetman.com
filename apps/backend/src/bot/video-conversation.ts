@@ -20,7 +20,7 @@ import {
 } from "../studio/video-fsm.js";
 import { appendCancelButton, confirmationKeyboard } from "./dialog-ui.js";
 import { botLocale } from "./i18n.js";
-import { versionedCallback } from "./session-fsm.js";
+import { publicationCallback } from "./session-fsm.js";
 import {
   askInstagramOrSchedule,
   askSchedule,
@@ -44,10 +44,10 @@ export async function startVideoConversation(ctx: Context, backendDb: BackendDb)
   const text = t(locale, "video.choose-language");
   const session = saveSession(backendDb, actorId, { draftId: null, step: "locale", selected: [], data: {} });
   const keyboard = new InlineKeyboard()
-    .text(t(locale, "video.language-ru"), versionedCallback("video_locale:ru", session.revision))
-    .text(t(locale, "video.language-en"), versionedCallback("video_locale:en", session.revision))
+    .text(t(locale, "video.language-ru"), publicationCallback("video", "locale", ["ru"], session.revision))
+    .text(t(locale, "video.language-en"), publicationCallback("video", "locale", ["en"], session.revision))
     .row();
-  appendCancelButton(keyboard, locale, "video_cancel_dialog", session.revision);
+  appendCancelButton(keyboard, locale, publicationCallback("video", "cancel_dialog"), session.revision);
   // Reached via a menu button, this is pure navigation: turn that same
   // message into the prompt instead of leaving it and adding a new one.
   if (ctx.callbackQuery?.message) await ctx.editMessageText(text, { reply_markup: keyboard });
@@ -353,8 +353,8 @@ async function confirmVideoSchedule(
       );
   }
   const keyboard = confirmationKeyboard(
-    { label: t(locale, "common.confirm"), callback: `video_schedule_confirm:${session.draftId}` },
-    { label: t(locale, "common.back"), callback: `video_schedule:${session.draftId}` },
+    { label: t(locale, "common.confirm"), callback: publicationCallback("video", "schedule_confirm", [session.draftId ?? ""]) },
+    { label: t(locale, "common.back"), callback: publicationCallback("video", "schedule", [session.draftId ?? ""]) },
     saved.revision,
   );
   await sendVideoControl(ctx, backendDb, actorId, saved, lines.join("\n"), keyboard);

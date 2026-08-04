@@ -15,7 +15,7 @@ import { isStaleCardCallback, VIDEO_CARD_FRESHNESS } from "./card-freshness.js";
 import { appendCancelButton, cancelPromptKeyboard, confirmationKeyboard, resultNavigationKeyboard } from "./dialog-ui.js";
 import type { BotLocale } from "./i18n.js";
 import { showMainMenu } from "./menu-render.js";
-import { requireSessionStep, versionedCallback } from "./session-fsm.js";
+import { publicationCallback, requireSessionStep } from "./session-fsm.js";
 import { applyVideoScheduleDate, startVideoConversation } from "./video-conversation.js";
 import { VIDEO_ACTION_KEYS, type VideoActionKey } from "./video-routes.js";
 import { finishVideoNow, finishVideoSchedule } from "./video-scheduling.js";
@@ -185,7 +185,7 @@ async function handleLocale({ ctx, backendDb, actorId, locale, data }: VideoActi
   if (!session || !["ru", "en"].includes(videoLocale)) throw new StudioError("err.video-restart");
   const next = saveSession(backendDb, actorId, { ...session, step: "asset", data: { ...session.data, videoLocale } });
   await ctx.editMessageText(t(locale, "video.dialog-prompt"), {
-    reply_markup: cancelPromptKeyboard(locale, "video_cancel_dialog", next.revision),
+    reply_markup: cancelPromptKeyboard(locale, publicationCallback("video", "cancel_dialog"), next.revision),
   });
 }
 
@@ -297,11 +297,11 @@ async function handleScheduleStart({ ctx, backendDb, config, actorId, locale, da
     selected: targets,
     data: { controlMessageId: callbackMessageId(ctx) },
   });
-  const keyboard = new InlineKeyboard().text(t(locale, "video.same-time"), versionedCallback(`video_common:${id}`, session.revision));
+  const keyboard = new InlineKeyboard().text(t(locale, "video.same-time"), publicationCallback("video", "common", [id], session.revision));
   if (targets.length > 1)
-    keyboard.row().text(t(locale, "video.different-time"), versionedCallback(`video_individual:${id}`, session.revision));
+    keyboard.row().text(t(locale, "video.different-time"), publicationCallback("video", "individual", [id], session.revision));
   keyboard.row();
-  appendCancelButton(keyboard, locale, "video_cancel_dialog", session.revision);
+  appendCancelButton(keyboard, locale, publicationCallback("video", "cancel_dialog"), session.revision);
   setControlFromSession(backendDb, id, ctx, session);
   await updateVideoControl(ctx, session, t(locale, "video.schedule-time-msk", { timezone: config.TIMEZONE_LABEL }), keyboard, locale);
 }
@@ -350,8 +350,8 @@ async function handleNowAsk({ ctx, backendDb, config, actorId, locale, data }: V
   await ctx.editMessageText(`${preview.text}\n\n${t(locale, "video.publish-now-q")}`, {
     parse_mode: "Markdown",
     reply_markup: confirmationKeyboard(
-      { label: t(locale, "video.publish-now-yes"), callback: `video_now_confirm:${id}` },
-      { label: t(locale, "common.back"), callback: `video_open:${id}` },
+      { label: t(locale, "video.publish-now-yes"), callback: publicationCallback("video", "now_confirm", [id]) },
+      { label: t(locale, "common.back"), callback: publicationCallback("video", "open", [id]) },
       session.revision,
     ),
   });
@@ -374,8 +374,8 @@ async function handleCancelAsk({ ctx, backendDb, config, actorId, locale, data }
     {
       parse_mode: "Markdown",
       reply_markup: confirmationKeyboard(
-        { label: t(locale, "vpreview.cancel-yes"), callback: `video_cancel:${id}` },
-        { label: t(locale, "common.back"), callback: `video_open:${id}` },
+        { label: t(locale, "vpreview.cancel-yes"), callback: publicationCallback("video", "cancel", [id]) },
+        { label: t(locale, "common.back"), callback: publicationCallback("video", "open", [id]) },
       ),
     },
   );
@@ -393,8 +393,8 @@ async function handleRemoveAsk({ ctx, backendDb, config, actorId, locale, data }
     {
       parse_mode: "Markdown",
       reply_markup: confirmationKeyboard(
-        { label: t(locale, "vpreview.remove-yes", { target: label }), callback: `video_remove:${target}:${id}` },
-        { label: t(locale, "common.back"), callback: `video_open:${id}` },
+        { label: t(locale, "vpreview.remove-yes", { target: label }), callback: publicationCallback("video", "remove", [target, id]) },
+        { label: t(locale, "common.back"), callback: publicationCallback("video", "open", [id]) },
       ),
     },
   );
@@ -490,16 +490,18 @@ async function handleEditMenu({ ctx, backendDb, config, actorId, locale, data }:
   const targets = createStudioServices(backendDb, config)
     .videos.get(actorId, id)
     .targets.map((target) => target.target as VideoTarget);
-  const keyboard = new InlineKeyboard().text(t(locale, "video.edit-card-name"), `video_edit_field:label:${id}`).row();
+  const keyboard = new InlineKeyboard()
+    .text(t(locale, "video.edit-card-name"), publicationCallback("video", "edit_field", ["label", id]))
+    .row();
   if (targets.includes("youtube_shorts")) {
-    keyboard.text(t(locale, "video.edit-yt-title"), `video_edit_field:youtube_title:${id}`).row();
-    keyboard.text(t(locale, "video.edit-yt-desc"), `video_edit_field:youtube_description:${id}`).row();
-    keyboard.text(t(locale, "video.edit-game-url"), `video_edit_field:youtube_game_url:${id}`).row();
-    keyboard.text(t(locale, "video.edit-yt-tags"), `video_edit_field:youtube_tags:${id}`).row();
+    keyboard.text(t(locale, "video.edit-yt-title"), publicationCallback("video", "edit_field", ["youtube_title", id])).row();
+    keyboard.text(t(locale, "video.edit-yt-desc"), publicationCallback("video", "edit_field", ["youtube_description", id])).row();
+    keyboard.text(t(locale, "video.edit-game-url"), publicationCallback("video", "edit_field", ["youtube_game_url", id])).row();
+    keyboard.text(t(locale, "video.edit-yt-tags"), publicationCallback("video", "edit_field", ["youtube_tags", id])).row();
   }
   if (targets.includes("instagram_reels"))
-    keyboard.text(t(locale, "video.edit-ig-caption"), `video_edit_field:instagram_caption:${id}`).row();
-  keyboard.text(t(locale, "common.back"), `video_open:${id}`);
+    keyboard.text(t(locale, "video.edit-ig-caption"), publicationCallback("video", "edit_field", ["instagram_caption", id])).row();
+  keyboard.text(t(locale, "common.back"), publicationCallback("video", "open", [id]));
   await ctx.editMessageText(t(locale, "video.what-to-edit"), { parse_mode: "Markdown", reply_markup: keyboard });
 }
 

@@ -58,7 +58,7 @@ describe("post recovery scenario", () => {
       expect(messages).toHaveLength(1);
       expect(messages[0]?.text).toContain("Telegram");
       expect(messages[0]?.text).toContain("Threads");
-      expect(JSON.stringify(messages[0]?.options)).toContain("post_retry_notice:7");
+      expect(JSON.stringify(messages[0]?.options)).toContain("p:post:post_retry_notice:7");
 
       const answers: Array<{ text?: string } | undefined> = [];
       const retryContext = (id: string, callbackAnswers: Array<{ text?: string } | undefined>): Context =>

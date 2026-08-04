@@ -115,6 +115,16 @@ async function renderedCallbacks(): Promise<Map<string, string>> {
       const args = splitArgs(src, idx + ".text(".length);
       if (!args || args.length < 2) continue;
       const last = args[args.length - 1]?.trim() ?? "";
+      if (last.startsWith("publicationCallback(")) {
+        const callbackArgs = splitArgs(last, "publicationCallback(".length);
+        const kind = callbackArgs?.[0]?.trim().replace(/^['"]|['"]$/g, "");
+        const action = callbackArgs?.[1]?.trim().replace(/^['"]|['"]$/g, "");
+        if ((kind === "post" || kind === "video") && action && !action.includes("$")) {
+          const prefix = kind === "video" ? `video_${action}` : action;
+          if (!found.has(prefix)) found.set(prefix, file);
+        }
+        continue;
+      }
       if (!/^(`|")/.test(last)) continue;
       // A menu-plugin `.text(label, handler)` never carries callback data, and
       // template holes are ids, not part of the routed prefix.

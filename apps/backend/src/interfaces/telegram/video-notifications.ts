@@ -1,6 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import { type Bot, InlineKeyboard } from "grammy";
 import { botLocale } from "../../bot/i18n.js";
+import { publicationCallback } from "../../bot/session-fsm.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { drafts, publishJobs, siteJobs, studioNotificationSettings, videoDrafts, videoTargets } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
@@ -37,7 +38,7 @@ export async function notifyFinalVideoFailure(
       {
         reply_markup: new InlineKeyboard().text(
           t(locale, "notif.retry", { platform: targetName === "youtube_shorts" ? "YouTube" : "Instagram" }),
-          `video_retry:${targetName}:${draft.id}`,
+          publicationCallback("video", "retry", [targetName, draft.id]),
         ),
       },
     );
@@ -84,8 +85,8 @@ export async function sendVideoReminder(
     const text = `${t(locale, "notif.reminder-head", { minutes: preference.reminderMinutes })}\n\n🎬 ${title}\n${draft.locale === "en" ? "🇬🇧 EN" : "🇷🇺 RU"}\n\n• ${videoTargetLabel(target.target as VideoTarget)}\n\n${formatVideoTime(target.scheduledAt, locale, config)}`;
     await bot.api.sendMessage(actorId, text, {
       reply_markup: new InlineKeyboard()
-        .text(t(locale, "notif.open"), `video_open:${draft.id}`)
-        .text(t(locale, "notif.cancel-btn"), `video_cancel_notice:${draft.id}`),
+        .text(t(locale, "notif.open"), publicationCallback("video", "open", [draft.id]))
+        .text(t(locale, "notif.cancel-btn"), publicationCallback("video", "cancel_notice", [draft.id])),
     });
   });
   unsafeDb(backendDb)
@@ -170,18 +171,24 @@ function completionKeyboard(
 ): InlineKeyboard {
   const keyboard = new InlineKeyboard();
   if (postKey?.startsWith("post:") && draftId != null && failedTargets.length) {
-    keyboard.text(t(locale, "notif.retry-failed"), `post_retry_notice:${draftId}`).row();
-    keyboard.text(t(locale, "notif.open"), `preview:${draftId}`).row();
+    keyboard.text(t(locale, "notif.retry-failed"), publicationCallback("post", "post_retry_notice", [draftId])).row();
+    keyboard.text(t(locale, "notif.open"), publicationCallback("post", "preview", [draftId])).row();
     for (const target of failedTargets)
       keyboard
-        .text(t(locale, "notif.retry-target", { target: friendlyTarget(target.target) }), `post_retry_notice:${draftId}:${target.target}`)
+        .text(
+          t(locale, "notif.retry-target", { target: friendlyTarget(target.target) }),
+          publicationCallback("post", "post_retry_notice", [draftId, target.target]),
+        )
         .row();
   }
   if (postKey?.startsWith("video:") && draftId != null && failedTargets.length) {
-    keyboard.text(t(locale, "notif.open"), `video_open:${draftId}`).row();
+    keyboard.text(t(locale, "notif.open"), publicationCallback("video", "open", [draftId])).row();
     for (const target of failedTargets)
       keyboard
-        .text(t(locale, "notif.retry-target", { target: friendlyTarget(target.target) }), `video_retry:${target.target}:${draftId}`)
+        .text(
+          t(locale, "notif.retry-target", { target: friendlyTarget(target.target) }),
+          publicationCallback("video", "retry", [target.target, draftId]),
+        )
         .row();
   }
   keyboard.text(t(locale, "settings.notifications"), "notifications_home");

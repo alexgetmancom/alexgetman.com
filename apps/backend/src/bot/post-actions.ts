@@ -19,7 +19,7 @@ import { POST_ACTION_KEYS, type PostActionKey } from "./post-routes.js";
 import { clearPostAdminState, getPostAdminState, requireCurrentPostSession, setPostAdminState } from "./post-state.js";
 import { draftPreview, isDraftView, modeLabel } from "./preview.js";
 import { renderPostProgress } from "./progress.js";
-import { callbackAction, versionedCallback } from "./session-fsm.js";
+import { callbackAction, publicationCallback } from "./session-fsm.js";
 
 type PostService = ReturnType<typeof createStudioServices>["posts"];
 type PostActionArgs = Omit<CallbackRouterContext, "action"> & {
@@ -373,17 +373,17 @@ async function sendStoryCardChoice(
   const keyboard =
     intent === "publish"
       ? new InlineKeyboard()
-          .text(t(locale, "post.story-cards-all"), `story_publish_all:${draftId}`)
+          .text(t(locale, "post.story-cards-all"), publicationCallback("post", "story_publish_all", [draftId]))
           .row()
-          .text(t(locale, "post.story-cards-site-only"), `story_publish_site:${draftId}`)
+          .text(t(locale, "post.story-cards-site-only"), publicationCallback("post", "story_publish_site", [draftId]))
           .row()
-          .text(t(locale, "common.back"), `preview:${draftId}`)
+          .text(t(locale, "common.back"), publicationCallback("post", "preview", [draftId]))
       : new InlineKeyboard()
-          .text(t(locale, "post.story-cards-all-schedule"), `story_schedule_all:${draftId}`)
+          .text(t(locale, "post.story-cards-all-schedule"), publicationCallback("post", "story_schedule_all", [draftId]))
           .row()
-          .text(t(locale, "post.story-cards-site-only-schedule"), `story_schedule_site:${draftId}`)
+          .text(t(locale, "post.story-cards-site-only-schedule"), publicationCallback("post", "story_schedule_site", [draftId]))
           .row()
-          .text(t(locale, "common.back"), `preview:${draftId}`);
+          .text(t(locale, "common.back"), publicationCallback("post", "preview", [draftId]));
   const message = await ctx.reply(t(locale, "post.story-cards-question"), { parse_mode: "Markdown", reply_markup: keyboard });
   if (ctx.chat?.id != null) setTelegramPostCard(backendDb, draftId, ctx.chat.id, message.message_id);
 }
@@ -495,7 +495,7 @@ async function showPublicationPreflight(
       {
         reply_markup: new InlineKeyboard().text(
           t(locale, "action.preflight-chain-button", { parts: label }),
-          versionedCallback(`threads_chain:${draftId}`, revision),
+          publicationCallback("post", "threads_chain", [draftId], revision),
         ),
       },
     );
@@ -535,7 +535,7 @@ export async function applyAdminState(
       config,
       ruAt,
       enAt,
-      versionedCallback(`sched_manual_confirm:${draftId}`, revision),
+      publicationCallback("post", "sched_manual_confirm", [draftId], revision),
       scope === "ru" ? "schedule_ru" : "schedule_en",
     );
   } else if (action === "edit_ru" || action === "edit_en") {

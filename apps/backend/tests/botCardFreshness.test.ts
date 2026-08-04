@@ -4,7 +4,7 @@ import { type Context, InlineKeyboard } from "grammy";
 import { isStaleCardCallback, POST_CARD_FRESHNESS, VIDEO_CARD_FRESHNESS } from "../src/bot/card-freshness.js";
 import { handlePostAction } from "../src/bot/post-actions.js";
 import { editDraftPreview, showScheduleConfirmation } from "../src/bot/post-card.js";
-import { versionedCallback } from "../src/bot/session-fsm.js";
+import { publicationCallback, versionedCallback } from "../src/bot/session-fsm.js";
 import { handleVideoActionCallback } from "../src/bot/video-actions.js";
 import { getSession, sendVideoControl } from "../src/bot/video-session.js";
 import { createDraftFromMessage } from "../src/content/drafts.js";
@@ -32,6 +32,9 @@ describe("Telegram card freshness", () => {
       setTelegramPostCard(backendDb, 7, 100, 20);
       expect(isStaleCardCallback(callbackContext(19), backendDb, "publish:7", POST_CARD_FRESHNESS)).toBe(true);
       expect(isStaleCardCallback(callbackContext(20), backendDb, "publish:7", POST_CARD_FRESHNESS)).toBe(false);
+      expect(isStaleCardCallback(callbackContext(19), backendDb, publicationCallback("post", "publish", [7]), POST_CARD_FRESHNESS)).toBe(
+        true,
+      );
       expect(isStaleCardCallback(callbackContext(19), backendDb, "preview:7", POST_CARD_FRESHNESS)).toBe(false);
       expect(isStaleCardCallback(callbackContext(19), backendDb, "threads_chain:7", POST_CARD_FRESHNESS)).toBe(true);
       expect(isStaleCardCallback(callbackContext(20), backendDb, "threads_chain:7", POST_CARD_FRESHNESS)).toBe(false);

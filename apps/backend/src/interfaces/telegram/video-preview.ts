@@ -1,5 +1,6 @@
 import { InlineKeyboard } from "grammy";
 import type { BotLocale } from "../../bot/i18n.js";
+import { publicationCallback } from "../../bot/session-fsm.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { t } from "../../foundation/i18n/index.js";
 import { escapeMarkdown } from "../../foundation/markdown.js";
@@ -38,9 +39,10 @@ export function videoPreview(
     lines.push(
       `${t(locale, "vpreview.state")}: ${videoStatusLabel(ytTarget.status, locale)}${ytTarget.scheduledAt ? ` · ${formatVideoTime(ytTarget.scheduledAt, locale, config)}` : ""}`,
     );
-    if (isVideoTargetSchedulable(ytTarget.status)) keyboard.text(t(locale, "vpreview.yt-time"), `video_time:youtube_shorts:${draft.id}`);
+    if (isVideoTargetSchedulable(ytTarget.status))
+      keyboard.text(t(locale, "vpreview.yt-time"), publicationCallback("video", "time", ["youtube_shorts", draft.id]));
     if (isVideoTargetEditable(ytTarget.status))
-      keyboard.text(t(locale, "vpreview.yt-remove"), `video_remove_ask:youtube_shorts:${draft.id}`).row();
+      keyboard.text(t(locale, "vpreview.yt-remove"), publicationCallback("video", "remove_ask", ["youtube_shorts", draft.id])).row();
   }
   if (igTarget) {
     const metadata = (igTarget.metadataJson ?? {}) as Partial<InstagramMetadata>;
@@ -48,27 +50,28 @@ export function videoPreview(
     lines.push(
       `${t(locale, "vpreview.state")}: ${videoStatusLabel(igTarget.status, locale)}${igTarget.scheduledAt ? ` · ${formatVideoTime(igTarget.scheduledAt, locale, config)}` : ""}`,
     );
-    if (isVideoTargetSchedulable(igTarget.status)) keyboard.text(t(locale, "vpreview.ig-time"), `video_time:instagram_reels:${draft.id}`);
+    if (isVideoTargetSchedulable(igTarget.status))
+      keyboard.text(t(locale, "vpreview.ig-time"), publicationCallback("video", "time", ["instagram_reels", draft.id]));
     if (isVideoTargetEditable(igTarget.status))
-      keyboard.text(t(locale, "vpreview.ig-remove"), `video_remove_ask:instagram_reels:${draft.id}`).row();
+      keyboard.text(t(locale, "vpreview.ig-remove"), publicationCallback("video", "remove_ask", ["instagram_reels", draft.id])).row();
     if (igTarget.status === "failed" || igTarget.status === "verification_required")
-      keyboard.text(t(locale, "vpreview.ig-retry"), `video_retry:instagram_reels:${draft.id}`).row();
+      keyboard.text(t(locale, "vpreview.ig-retry"), publicationCallback("video", "retry", ["instagram_reels", draft.id])).row();
   }
   if (ytTarget?.status === "failed" || ytTarget?.status === "verification_required")
-    keyboard.text(t(locale, "vpreview.yt-retry"), `video_retry:youtube_shorts:${draft.id}`).row();
+    keyboard.text(t(locale, "vpreview.yt-retry"), publicationCallback("video", "retry", ["youtube_shorts", draft.id])).row();
   // Publishing now and scheduling are the same pair of choices a text post
   // offers on its own card. The immediate path was implemented end to end
   // (video_now -> video_now_confirm) but no keyboard ever emitted it, so a
   // video could only be scheduled.
   if (targets.length > 0 && (draft.status === "draft" || draft.status === "editing"))
     keyboard
-      .text(t(locale, "post.publish-now-btn"), `video_now:${draft.id}`)
+      .text(t(locale, "post.publish-now-btn"), publicationCallback("video", "now", [draft.id]))
       .row()
-      .text(t(locale, "post.schedule-btn"), `video_schedule:${draft.id}`)
+      .text(t(locale, "post.schedule-btn"), publicationCallback("video", "schedule", [draft.id]))
       .row();
   if (["draft", "editing"].includes(draft.status) && targets.every((target) => isVideoTargetEditable(target.status)))
-    keyboard.text(t(locale, "vpreview.edit-details"), `video_edit_menu:${draft.id}`).row();
-  keyboard.text(t(locale, "vpreview.cancel-pub"), `video_cancel_ask:${draft.id}`).row();
+    keyboard.text(t(locale, "vpreview.edit-details"), publicationCallback("video", "edit_menu", [draft.id])).row();
+  keyboard.text(t(locale, "vpreview.cancel-pub"), publicationCallback("video", "cancel_ask", [draft.id])).row();
   keyboard.text(t(locale, "vpreview.back-queue"), "queue_home");
   return { text: lines.join("\n"), keyboard };
 }

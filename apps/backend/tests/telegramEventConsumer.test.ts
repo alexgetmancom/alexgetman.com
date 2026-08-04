@@ -198,8 +198,8 @@ describe("Telegram event consumer", () => {
       expect(sendMessage).toHaveBeenCalledTimes(1);
       expect(sendMessage.mock.calls[0]?.[1]).toContain("Telegram");
       expect(sendMessage.mock.calls[0]?.[1]).toContain("Telegram timed out");
-      expect(JSON.stringify(sendMessage.mock.calls[0]?.[2])).toContain("post_retry_notice:11");
-      expect(JSON.stringify(sendMessage.mock.calls[0]?.[2])).toContain("preview:11");
+      expect(JSON.stringify(sendMessage.mock.calls[0]?.[2])).toContain("p:post:post_retry_notice:11");
+      expect(JSON.stringify(sendMessage.mock.calls[0]?.[2])).toContain("p:post:preview:11");
       expect(await consumeTelegramEvents(backendDb, bot, config)).toBe(0);
       expect(sendMessage).toHaveBeenCalledTimes(1);
     }));

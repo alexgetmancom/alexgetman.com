@@ -30,15 +30,15 @@ describe("video card controls", () => {
   it("offers publishing now beside scheduling, like a text post card", () => {
     const keyboard = JSON.stringify(videoPreview(draftCard("draft"), config, "ru").keyboard);
 
-    expect(keyboard).toContain("video_now:7");
-    expect(keyboard).toContain("video_schedule:7");
+    expect(keyboard).toContain("p:video:now:7");
+    expect(keyboard).toContain("p:video:schedule:7");
   });
 
   it("drops both publication controls once the video leaves the draft states", () => {
     const keyboard = JSON.stringify(videoPreview(draftCard("scheduled"), config, "ru").keyboard);
 
-    expect(keyboard).not.toContain("video_now:7");
-    expect(keyboard).not.toContain("video_schedule:7");
+    expect(keyboard).not.toContain("p:video:now:7");
+    expect(keyboard).not.toContain("p:video:schedule:7");
   });
 
   it("localizes a target that needs provider verification", () => {

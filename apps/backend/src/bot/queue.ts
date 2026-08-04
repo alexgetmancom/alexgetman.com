@@ -6,6 +6,7 @@ import { escapeMarkdown } from "../foundation/markdown.js";
 import { createStudioServices } from "../studio/services/index.js";
 import type { StudioQueueAttentionItem, StudioQueueItem, StudioQueueSnapshot } from "../studio/services/queue.js";
 import { type BotLocale, botLocale } from "./i18n.js";
+import { publicationCallback } from "./session-fsm.js";
 import { isUnchangedMessageEdit } from "./telegram-errors.js";
 
 const QUEUE_PAGE_SIZE = 10;
@@ -144,7 +145,7 @@ function kindIcon(kind: StudioQueueItem["kind"]): string {
 }
 
 function itemCallback(item: Pick<StudioQueueItem | StudioQueueAttentionItem, "id" | "kind">): string {
-  return item.kind === "post" ? `preview:${item.id}` : `video_open:${item.id}`;
+  return item.kind === "post" ? publicationCallback("post", "preview", [item.id]) : publicationCallback("video", "open", [item.id]);
 }
 
 async function replaceQueueMessage(ctx: Context, text: string, keyboard: InlineKeyboard): Promise<void> {

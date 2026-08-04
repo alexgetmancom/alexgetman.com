@@ -17,6 +17,7 @@ import { postProgressState } from "../studio/services/post-progress.js";
 import { appendResultNavigation, confirmationKeyboard } from "./dialog-ui.js";
 import { type BotLocale, botLocale } from "./i18n.js";
 import { appendScheduleAxisButtons } from "./scheduling.js";
+import { publicationCallback } from "./session-fsm.js";
 
 const DRAFT_VIEWS = [
   "overview",
@@ -115,10 +116,10 @@ export function draftPreview(
   if (view === "platforms") {
     for (let index = 0; index < targetRows.length; index += 2) {
       for (const { id: target, label } of targetRows.slice(index, index + 2))
-        keyboard.text(`${targets[target] ? "✓" : "□"} ${label}`, `toggle:${draftId}:${target}`);
+        keyboard.text(`${targets[target] ? "✓" : "□"} ${label}`, publicationCallback("post", "toggle", [draftId, target]));
       keyboard.row();
     }
-    keyboard.text(t(locale, "post.back-to-preview"), `preview:${draftId}`).row();
+    keyboard.text(t(locale, "post.back-to-preview"), publicationCallback("post", "preview", [draftId])).row();
     const enabled = enabledTargetLabels(targets) || t(locale, "post.none");
     return {
       text: `📝 *${t(locale, "post.platforms-title", { id: draftId })}*\n\n${t(locale, "post.active")}: *${enabled}*\n\n${t(locale, "post.toggle-hint")}`,
@@ -128,13 +129,13 @@ export function draftPreview(
 
   if (view === "schedule") {
     keyboard
-      .text(t(locale, "post.scope-ru-now"), `sched_scope:ru_now:${draftId}`)
+      .text(t(locale, "post.scope-ru-now"), publicationCallback("post", "sched_scope", ["ru_now", draftId]))
       .row()
-      .text(t(locale, "post.scope-en-now"), `sched_scope:en_now:${draftId}`)
+      .text(t(locale, "post.scope-en-now"), publicationCallback("post", "sched_scope", ["en_now", draftId]))
       .row()
-      .text(t(locale, "post.scope-both"), `sched_scope:both:${draftId}`)
+      .text(t(locale, "post.scope-both"), publicationCallback("post", "sched_scope", ["both", draftId]))
       .row()
-      .text(t(locale, "common.back"), `preview:${draftId}`);
+      .text(t(locale, "common.back"), publicationCallback("post", "preview", [draftId]));
     return {
       text: `${draftHeader(draftId, targets, locale)}\n\n📅 *${t(locale, "post.schedule-title")}*\n${t(locale, "post.schedule-hint")}`,
       keyboard,
@@ -147,18 +148,19 @@ export function draftPreview(
     appendScheduleAxisButtons(keyboard, {
       values: scheduleGrid.slots[view] ?? [],
       label: (clock) => clock,
-      callback: (clock) => `sched_pick:${scheduleGrid.target}:${clock.replace(":", "")}:${draftId}`,
+      callback: (clock) => publicationCallback("post", "sched_pick", [scheduleGrid.target, clock.replace(":", ""), draftId]),
     });
     keyboard.row();
     if (isMainView) {
-      for (const extra of scheduleGrid.extraViews) keyboard.text(t(locale, extra.labelKey), `sched_view:${extra.view}:${draftId}`);
+      for (const extra of scheduleGrid.extraViews)
+        keyboard.text(t(locale, extra.labelKey), publicationCallback("post", "sched_view", [extra.view, draftId]));
       keyboard
         .row()
-        .text(t(locale, "post.enter-time"), `sched_manual:${scheduleGrid.target}:${draftId}`)
+        .text(t(locale, "post.enter-time"), publicationCallback("post", "sched_manual", [scheduleGrid.target, draftId]))
         .row()
-        .text(t(locale, "common.back"), `preview:${draftId}`);
+        .text(t(locale, "common.back"), publicationCallback("post", "preview", [draftId]));
     } else {
-      keyboard.text(t(locale, "common.back"), `sched_view:${scheduleGrid.mainView}:${draftId}`);
+      keyboard.text(t(locale, "common.back"), publicationCallback("post", "sched_view", [scheduleGrid.mainView, draftId]));
     }
     return {
       text: `${draftHeader(draftId, targets, locale)}\n\n📅 *${t(locale, scheduleGrid.titleKey)}*\n${t(locale, "post.pick-slot-hint")}`,
@@ -174,8 +176,8 @@ export function draftPreview(
     return {
       text: `${draftHeader(draftId, targets, locale)}\n\n⚠️ *${t(locale, "post.publish-now-q")}*\n${t(locale, "post.will-send-to")}: ${available}.${unavailable ? `\n⚠️ ${t(locale, "post.will-skip-no-media", { targets: unavailable })}` : ""}`,
       keyboard: confirmationKeyboard(
-        { label: t(locale, "post.publish-now-btn"), callback: `publish_confirm:${draftId}` },
-        { label: t(locale, "common.back"), callback: `preview:${draftId}` },
+        { label: t(locale, "post.publish-now-btn"), callback: publicationCallback("post", "publish_confirm", [draftId]) },
+        { label: t(locale, "common.back"), callback: publicationCallback("post", "preview", [draftId]) },
       ),
     };
   }
@@ -184,30 +186,39 @@ export function draftPreview(
     return {
       text: `${draftHeader(draftId, targets, locale)}\n\n⚠️ *${t(locale, "post.delete-q")}*\n${t(locale, "post.delete-warn")}`,
       keyboard: confirmationKeyboard(
-        { label: t(locale, "post.delete-btn"), callback: `cancel_confirm:${draftId}` },
-        { label: t(locale, "common.back"), callback: `preview:${draftId}` },
+        { label: t(locale, "post.delete-btn"), callback: publicationCallback("post", "cancel_confirm", [draftId]) },
+        { label: t(locale, "common.back"), callback: publicationCallback("post", "preview", [draftId]) },
       ),
     };
   }
 
   const modeEmoji = mode === "manual" ? "🛞" : "⚙️";
   if (mutable) {
-    keyboard.text(`${modeEmoji} ${t(locale, "post.mode")}: ${modeLabel(mode, locale)}`, `cycle_mode:${draftId}`).row();
-    keyboard.text(t(locale, "post.choose-platforms"), `platforms:${draftId}`).row();
+    keyboard
+      .text(`${modeEmoji} ${t(locale, "post.mode")}: ${modeLabel(mode, locale)}`, publicationCallback("post", "cycle_mode", [draftId]))
+      .row();
+    keyboard.text(t(locale, "post.choose-platforms"), publicationCallback("post", "platforms", [draftId])).row();
     const canEditRu = canEditLocale(backendDb, config, draft.actor_id, draftId, "ru");
     const canEditEn = canEditLocale(backendDb, config, draft.actor_id, draftId, "en");
-    if (canEditRu) keyboard.text(t(locale, "post.edit-ru"), `edit_ru:${draftId}`);
-    if (canEditEn) keyboard.text(t(locale, "post.edit-en"), `edit_en:${draftId}`);
+    if (canEditRu) keyboard.text(t(locale, "post.edit-ru"), publicationCallback("post", "edit_ru", [draftId]));
+    if (canEditEn) keyboard.text(t(locale, "post.edit-en"), publicationCallback("post", "edit_en", [draftId]));
     if (canEditRu || canEditEn) keyboard.row();
-    keyboard.text(`🔗 ${locale === "ru" ? "Источники" : "Sources"}: ${sourceCount}`, `sources:${draftId}`).row();
-    keyboard.text(t(locale, "post.publish-btn"), `publish:${draftId}`).text(t(locale, "post.schedule-btn"), `schedule:${draftId}`).row();
-    keyboard.text(t(locale, "post.delete-btn"), `cancel:${draftId}`);
+    keyboard
+      .text(`🔗 ${locale === "ru" ? "Источники" : "Sources"}: ${sourceCount}`, publicationCallback("post", "sources", [draftId]))
+      .row();
+    keyboard
+      .text(t(locale, "post.publish-btn"), publicationCallback("post", "publish", [draftId]))
+      .text(t(locale, "post.schedule-btn"), publicationCallback("post", "schedule", [draftId]))
+      .row();
+    keyboard.text(t(locale, "post.delete-btn"), publicationCallback("post", "cancel", [draftId]));
   } else {
     const retryable = failedTargets(backendDb, draftId);
     if (retryable.length) {
-      keyboard.text(t(locale, "notif.retry-failed"), `post_retry:${draftId}`).row();
+      keyboard.text(t(locale, "notif.retry-failed"), publicationCallback("post", "post_retry", [draftId])).row();
       for (const item of retryable)
-        keyboard.text(t(locale, "notif.retry-target", { target: item.label }), `post_retry:${draftId}:${item.target}`).row();
+        keyboard
+          .text(t(locale, "notif.retry-target", { target: item.label }), publicationCallback("post", "post_retry", [draftId, item.target]))
+          .row();
     }
     appendResultNavigation(keyboard, locale, "upcoming");
   }

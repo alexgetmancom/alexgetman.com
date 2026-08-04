@@ -2,7 +2,7 @@ import type { Context } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import { telegramPostCard, telegramVideoCard } from "../interfaces/telegram/control-cards.js";
 import { POST_CARD_ACTION_KEYS } from "./post-routes.js";
-import { callbackAction } from "./session-fsm.js";
+import { callbackAction, parseSessionCallback } from "./session-fsm.js";
 import { VIDEO_CARD_ACTION_KEYS } from "./video-routes.js";
 
 export type CardFreshnessDescriptor = {
@@ -25,9 +25,10 @@ export const VIDEO_CARD_FRESHNESS: CardFreshnessDescriptor = {
 
 /** Rejects a callback from a card replaced by a newer Telegram control message. */
 export function isStaleCardCallback(ctx: Context, backendDb: BackendDb, data: string, descriptor: CardFreshnessDescriptor): boolean {
-  const action = callbackAction(data);
+  const normalized = parseSessionCallback(data).data;
+  const action = callbackAction(normalized);
   if (!descriptor.actions.includes(action)) return false;
-  const parts = data.split(":");
+  const parts = normalized.split(":");
   const rawDraftId =
     typeof descriptor.draftIdFrom === "function"
       ? descriptor.draftIdFrom(parts)

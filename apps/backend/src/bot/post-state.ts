@@ -1,8 +1,14 @@
 import type { BackendDb } from "../db/client.js";
 import { StudioError } from "../foundation/errors.js";
+import {
+  activeConversationSession,
+  CONVERSATION_SESSION_TTL_MS,
+  clearConversationSessionIfCurrent,
+  retireConversationSession,
+  saveConversationSession,
+} from "./conversation-session.js";
 import { requireSessionRevision } from "./session-fsm.js";
 
-const POST_STATE_TTL_MS = 30 * 60_000;
 export type PostAdminAction =
   | "new_post"
   | "edit_sources"
@@ -20,13 +26,8 @@ export type PostAdminState = {
 };
 
 export function getPostAdminState(backendDb: BackendDb, actorId: number): PostAdminState | null {
-  const row = backendDb.conversationSessions.get(actorId, "post");
+  const row = activeConversationSession(backendDb, actorId, "post");
   if (!row) return null;
-  const expiresAt = row.expiresAt ? Date.parse(row.expiresAt) : Date.parse(row.updatedAt) + POST_STATE_TTL_MS;
-  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
-    retirePostAdminState(backendDb, actorId);
-    return null;
-  }
   const action = parsePostAction(row.action);
   if (row.action !== null && !action) {
     retirePostAdminState(backendDb, actorId);
@@ -50,8 +51,8 @@ export function setPostAdminState(
   const parsedAction = parsePostAction(action);
   if (action !== null && !parsedAction) throw new Error(`Unknown post admin action: ${action}`);
   const updatedAt = new Date().toISOString();
-  const expiresAt = parsedAction ? new Date(Date.now() + POST_STATE_TTL_MS).toISOString() : null;
-  return backendDb.conversationSessions.save({
+  const expiresAt = parsedAction ? new Date(Date.now() + CONVERSATION_SESSION_TTL_MS).toISOString() : null;
+  return saveConversationSession(backendDb, {
     actorId,
     kind: "post",
     draftId,
@@ -79,7 +80,7 @@ export function clearPostAdminStateIfCurrent(
   expectedRevision?: number | null,
 ): boolean {
   if (!action) return false;
-  return backendDb.conversationSessions.clearIfCurrent({
+  return clearConversationSessionIfCurrent(backendDb, {
     actorId,
     kind: "post",
     action,
@@ -94,7 +95,7 @@ export function startPostDialog(backendDb: BackendDb, actorId: number): number {
 }
 
 function retirePostAdminState(backendDb: BackendDb, actorId: number): void {
-  backendDb.conversationSessions.retire(actorId, "post", new Date().toISOString());
+  retireConversationSession(backendDb, actorId, "post");
 }
 
 export function requireCurrentPostSession(backendDb: BackendDb, actorId: number, expectedRevision: number | null): PostAdminState {

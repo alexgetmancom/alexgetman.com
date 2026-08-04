@@ -64,12 +64,14 @@ describe("architecture fitness", () => {
   });
 
   it("keeps Telegram conversation state behind one persistence port", () => {
-    for (const file of ["apps/backend/src/bot/post-state.ts", "apps/backend/src/bot/video-session.ts"]) {
+    const stateAdapters = ["apps/backend/src/bot/post-state.ts", "apps/backend/src/bot/video-session.ts"];
+    for (const file of stateAdapters) {
       const text = source(file);
       expect(text).not.toContain("unsafeDb(");
       expect(text).not.toMatch(/from ["'][^"']*\/db\/schema/);
-      expect(text).toContain("conversationSessions");
+      expect(text).toContain("conversation-session.js");
     }
+    expect(source("apps/backend/src/bot/conversation-session.ts")).toContain("conversationSessions");
   });
 
   it("routes domain events through the durable event port", () => {
