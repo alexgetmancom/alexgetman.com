@@ -16,7 +16,7 @@ export type CallbackRouterContext = {
   parts: string[];
 };
 
-export type CallbackRouteHandler<TArgs, TResult> = (args: TArgs) => Promise<TResult>;
+type CallbackRouteHandler<TArgs, TResult> = (args: TArgs) => Promise<TResult>;
 
 export type CallbackRouterOptions<TArgs, TEntity = undefined, TResult = void> = {
   prefix: string;

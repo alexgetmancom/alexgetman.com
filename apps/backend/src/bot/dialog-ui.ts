@@ -6,7 +6,7 @@ import { versionedCallback } from "./session-fsm.js";
 export type DialogButton = { label: string; callback: string };
 
 /** Renders a compact row of dialog actions with an optional session revision. */
-export function dialogKeyboard(buttons: readonly DialogButton[], revision?: number | null): InlineKeyboard {
+function dialogKeyboard(buttons: readonly DialogButton[], revision?: number | null): InlineKeyboard {
   const keyboard = new InlineKeyboard();
   for (const button of buttons) keyboard.text(button.label, versionedCallback(button.callback, revision));
   return keyboard;
