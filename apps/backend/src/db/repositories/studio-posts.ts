@@ -25,6 +25,9 @@ import {
 } from "../schema.js";
 import type { BackendDatabase } from "../types.js";
 
+type BackendTransaction = Parameters<BackendDatabase["transaction"]>[0] extends (tx: infer T) => unknown ? T : never;
+type RetryJobRow = { jobId: number; status: string };
+
 /** SQLite adapter for Studio post-specific persistence operations. */
 export function createStudioPostStore(db: BackendDatabase): StudioPostStore {
   return {
@@ -138,98 +141,96 @@ export function createStudioPostStore(db: BackendDatabase): StudioPostStore {
 
     retryPublicationTargets(postId: number, targets: string[]): PublicationRetryResult[] {
       const requested = [...new Set(targets)];
-      const source = publicationSource(db, postId);
       const now = new Date().toISOString();
       const results: PublicationRetryResult[] = [];
+      let source: Record<string, unknown> | null = null;
       let changed = false;
 
       db.transaction((tx) => {
         for (const target of requested) {
           const siteTargetName = siteReason(target);
+          let result: PublicationRetryResult;
+
           if (siteTargetName) {
-            const row = tx
-              .select()
-              .from(siteJobs)
-              .where(and(eq(siteJobs.postId, postId), eq(siteJobs.reason, siteTargetName)))
-              .orderBy(desc(siteJobs.jobId))
-              .get();
-            if (!row) {
-              results.push({ target, outcome: "not_failed" });
-              continue;
-            }
-            const queued = tx
-              .select({ jobId: siteJobs.jobId })
-              .from(siteJobs)
-              .where(and(eq(siteJobs.postId, postId), eq(siteJobs.reason, siteTargetName), eq(siteJobs.status, "queued")))
-              .get();
-            if (queued) {
-              results.push({ target, outcome: "already_queued" });
-              continue;
-            }
-            if (row.status !== "failed" && row.status !== "verification_required") {
-              results.push({ target, outcome: "not_failed" });
-              continue;
-            }
-            tx.update(siteJobs)
-              .set({
-                status: "queued",
-                attemptCount: 0,
-                nextAttemptAt: null,
-                lockedBy: null,
-                lockedAt: null,
-                lastError: null,
-                updatedAt: now,
-              })
-              .where(and(eq(siteJobs.jobId, row.jobId), inArray(siteJobs.status, ["failed", "verification_required"])))
-              .run();
-            upsertPostTarget(tx, postId, target, now);
-            changed = true;
-            results.push({ target, outcome: "requeued" });
-            continue;
+            result = retryPublicationTarget({
+              target,
+              latest: () =>
+                tx
+                  .select()
+                  .from(siteJobs)
+                  .where(and(eq(siteJobs.postId, postId), eq(siteJobs.reason, siteTargetName)))
+                  .orderBy(desc(siteJobs.jobId))
+                  .get(),
+              queued: () =>
+                tx
+                  .select({ jobId: siteJobs.jobId })
+                  .from(siteJobs)
+                  .where(and(eq(siteJobs.postId, postId), eq(siteJobs.reason, siteTargetName), eq(siteJobs.status, "queued")))
+                  .get() != null,
+              requeue: (row) => {
+                tx.update(siteJobs)
+                  .set({
+                    status: "queued",
+                    attemptCount: 0,
+                    nextAttemptAt: null,
+                    lockedBy: null,
+                    lockedAt: null,
+                    lastError: null,
+                    updatedAt: now,
+                  })
+                  .where(and(eq(siteJobs.jobId, row.jobId), inArray(siteJobs.status, ["failed", "verification_required"])))
+                  .run();
+                upsertPostTarget(tx, postId, target, now);
+              },
+            });
+          } else {
+            result = retryPublicationTarget({
+              target,
+              latest: () =>
+                tx
+                  .select()
+                  .from(publishJobs)
+                  .where(and(eq(publishJobs.postId, postId), eq(publishJobs.target, target)))
+                  .orderBy(desc(publishJobs.jobId))
+                  .get(),
+              queued: () =>
+                tx
+                  .select({ jobId: publishJobs.jobId })
+                  .from(publishJobs)
+                  .where(and(eq(publishJobs.postId, postId), eq(publishJobs.target, target), eq(publishJobs.status, "queued")))
+                  .get() != null,
+              requeue: (row) => {
+                let publicationPayload = source;
+                if (publicationPayload === null) {
+                  publicationPayload = publicationSource(db, postId);
+                  source = publicationPayload;
+                }
+                const payload = localizeTargetPayload(
+                  Object.keys(publicationPayload).length > 0 ? publicationPayload : jsonObject(row.payloadJson),
+                  target,
+                );
+                tx.update(publishJobs)
+                  .set({
+                    status: "queued",
+                    attemptCount: 0,
+                    publishAt: now,
+                    nextAttemptAt: null,
+                    lockedBy: null,
+                    lockedAt: null,
+                    currentPhase: null,
+                    payloadJson: payload,
+                    lastError: null,
+                    updatedAt: now,
+                  })
+                  .where(and(eq(publishJobs.jobId, row.jobId), inArray(publishJobs.status, ["failed", "verification_required"])))
+                  .run();
+                upsertPostTarget(tx, postId, target, now);
+              },
+            });
           }
 
-          const row = tx
-            .select()
-            .from(publishJobs)
-            .where(and(eq(publishJobs.postId, postId), eq(publishJobs.target, target)))
-            .orderBy(desc(publishJobs.jobId))
-            .get();
-          if (!row) {
-            results.push({ target, outcome: "not_failed" });
-            continue;
-          }
-          const queued = tx
-            .select({ jobId: publishJobs.jobId })
-            .from(publishJobs)
-            .where(and(eq(publishJobs.postId, postId), eq(publishJobs.target, target), eq(publishJobs.status, "queued")))
-            .get();
-          if (queued) {
-            results.push({ target, outcome: "already_queued" });
-            continue;
-          }
-          const payload = localizeTargetPayload(Object.keys(source).length > 0 ? source : jsonObject(row.payloadJson), target);
-          if (row.status !== "failed" && row.status !== "verification_required") {
-            results.push({ target, outcome: "not_failed" });
-            continue;
-          }
-          tx.update(publishJobs)
-            .set({
-              status: "queued",
-              attemptCount: 0,
-              publishAt: now,
-              nextAttemptAt: null,
-              lockedBy: null,
-              lockedAt: null,
-              currentPhase: null,
-              payloadJson: payload,
-              lastError: null,
-              updatedAt: now,
-            })
-            .where(and(eq(publishJobs.jobId, row.jobId), inArray(publishJobs.status, ["failed", "verification_required"])))
-            .run();
-          upsertPostTarget(tx, postId, target, now);
-          changed = true;
-          results.push({ target, outcome: "requeued" });
+          results.push(result);
+          if (result.outcome === "requeued") changed = true;
         }
         if (changed) tx.update(publications).set({ status: "scheduled", updatedAt: now }).where(eq(publications.postId, postId)).run();
       });
@@ -250,6 +251,22 @@ function siteReason(target: string): string | null {
   return null;
 }
 
+function retryPublicationTarget<T extends RetryJobRow>(input: {
+  target: string;
+  latest: () => T | undefined;
+  queued: () => boolean;
+  requeue: (row: T) => void;
+}): PublicationRetryResult {
+  const row = input.latest();
+  if (!row) return { target: input.target, outcome: "not_failed" };
+  if (input.queued()) return { target: input.target, outcome: "already_queued" };
+  if (row.status !== "failed" && row.status !== "verification_required") {
+    return { target: input.target, outcome: "not_failed" };
+  }
+  input.requeue(row);
+  return { target: input.target, outcome: "requeued" };
+}
+
 function publicationSource(db: BackendDatabase, postId: number): Record<string, unknown> {
   const source = jsonObject(
     db.select({ itemJson: publicationSources.itemJson }).from(publicationSources).where(eq(publicationSources.postId, postId)).get()
@@ -266,7 +283,7 @@ function publicationSource(db: BackendDatabase, postId: number): Record<string, 
   return Object.keys(siteSource).length > 0 ? siteSource : jsonObject(post?.rawJson);
 }
 
-function upsertPostTarget(db: Pick<BackendDatabase, "insert">, postId: number, target: string, now: string): void {
+function upsertPostTarget(db: BackendTransaction, postId: number, target: string, now: string): void {
   db.insert(postTargets)
     .values({
       postKey: `post:${postId}`,
