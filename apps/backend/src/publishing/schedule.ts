@@ -41,12 +41,6 @@ export function parseManualSchedule(value: string, now = new Date()): Date {
   return candidate;
 }
 
-/** Returns a short-lived future timestamp for an explicit "publish now" action.
- * Scheduled commands still reject timestamps that are already in the past. */
-export function scheduleNow(now = new Date()): Date {
-  return new Date(now.getTime() + 1_000);
-}
-
 /** Enforces the application-level contract shared by post and video scheduling. */
 export function assertFutureSchedule(value: Date, now = new Date()): void {
   if (Number.isNaN(value.getTime()) || value.getTime() <= now.getTime()) throw new StudioError("err.schedule-time-past");

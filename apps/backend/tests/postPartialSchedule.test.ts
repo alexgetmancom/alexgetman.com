@@ -4,7 +4,6 @@ import { targetLocale } from "../src/botTargets.js";
 import { type BackendDb, unsafeDb } from "../src/db/client.js";
 import { publishJobs, siteJobs } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
-import { scheduleNow } from "../src/publishing/schedule.js";
 import { postService } from "../src/studio/services/posts.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
@@ -41,9 +40,9 @@ describe("partial locale scheduling", () => {
     const draftId = posts.create(42, { text: "Russian", textEn: "English", entities: [], media: [] });
 
     // The editor picks "RU now" and has not reached the EN slot screen yet.
-    const { ruAt, enAt } = posts.scheduleAt(42, draftId, "ru", scheduleNow());
+    const { ruAt, enAt } = posts.scheduleAt(42, draftId, "ru", new Date());
     expect(enAt).toBeNull();
-    const postId = posts.schedule(42, draftId, { ruAt, enAt });
+    const postId = posts.schedule(42, draftId, { ruAt, enAt, immediateLocale: "ru" });
 
     expect(enTargetsDueNow(backendDb, postId)).toEqual([]);
   });
@@ -53,8 +52,8 @@ describe("partial locale scheduling", () => {
     const posts = postService(backendDb, loadConfig({ ADMIN_IDS: "42" }));
     const draftId = posts.create(42, { text: "Russian", textEn: "English", entities: [], media: [] });
 
-    const first = posts.scheduleAt(42, draftId, "ru", scheduleNow());
-    const postId = posts.schedule(42, draftId, first);
+    const first = posts.scheduleAt(42, draftId, "ru", new Date());
+    const postId = posts.schedule(42, draftId, { ...first, immediateLocale: "ru" });
     const second = posts.scheduleAt(42, draftId, "en", new Date(Date.now() + 3_600_000));
     expect(second.ruAt).not.toBeNull();
     posts.schedule(42, draftId, second);
