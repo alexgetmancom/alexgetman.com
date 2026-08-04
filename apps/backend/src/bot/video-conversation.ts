@@ -17,12 +17,11 @@ import {
   VIDEO_FLOW,
   type VideoWizardStep,
 } from "../studio/video-fsm.js";
-import { appendCancelButton, confirmationKeyboard } from "./dialog-ui.js";
+import { appendCancelButton } from "./dialog-ui.js";
 import { executePublicationEffects, type PublicationEffect, type PublicationMessageResult } from "./effects.js";
 import { botLocale } from "./i18n.js";
 import { renderPublicationCard } from "./publication-card.js";
-import { createPublicationScheduleEngine } from "./scheduling.js";
-import { publicationCallback, versionedCallback } from "./session-fsm.js";
+import { publicationCallback } from "./session-fsm.js";
 import {
   clearVideoState,
   enabledVideoTargets,
@@ -35,6 +34,7 @@ import {
   type VideoConversationState,
   videoControlEffects,
   videoPromptEffect,
+  videoScheduleConfirmationEffects,
   videoTimeEffects,
 } from "./video-ui.js";
 
@@ -356,7 +356,7 @@ const SCHEDULE_DATE_HANDLERS: Record<"schedule_common" | "schedule_target", (arg
       selectedTargets: session.selected,
     });
     if (!transition?.next) throw new StudioError("err.video-reopen-publish");
-    return confirmVideoSchedule(backendDb, config, actorId, session, commonVideoSchedule(session.selected, date));
+    return videoScheduleConfirmationEffects(backendDb, config, actorId, session, commonVideoSchedule(session.selected, date));
   },
   schedule_target: applyIndividualScheduleDate,
 };
@@ -396,7 +396,7 @@ async function applyIndividualScheduleDate({ backendDb, config, actorId, session
       }),
     );
   }
-  return confirmVideoSchedule(
+  return videoScheduleConfirmationEffects(
     backendDb,
     config,
     actorId,
@@ -405,54 +405,6 @@ async function applyIndividualScheduleDate({ backendDb, config, actorId, session
       Record<VideoTarget, Date>
     >,
   );
-}
-
-async function confirmVideoSchedule(
-  backendDb: BackendDb,
-  config: BackendConfig,
-  actorId: number,
-  session: VideoConversationState,
-  schedule: Partial<Record<VideoTarget, Date>>,
-): Promise<PublicationEffect[]> {
-  if (!session.draftId) throw new StudioError("err.video-missing");
-  const locale = botLocale(backendDb, actorId);
-  const videoPipeline = createStudioServices(backendDb, config).videos;
-  const next: VideoConversationState = {
-    ...session,
-    step: "schedule_confirm",
-    data: {
-      ...session.data,
-      schedule: Object.fromEntries(Object.entries(schedule).map(([target, value]) => [target, value?.toISOString()])),
-    },
-  };
-  const saved = saveVideoState(backendDb, actorId, next);
-  const delivery = createStudioServices(backendDb, config).videos.preview(actorId, session.draftId).delivery;
-  const lines = [`🎬 *${t(locale, "common.confirm-schedule")}*`];
-  for (const target of next.selected) {
-    const value = schedule[target];
-    if (value)
-      lines.push(
-        `${videoTargetLabel(target)}: ${value.toLocaleString(locale === "ru" ? "ru-RU" : "en-GB", { timeZone: config.TIMEZONE })} ${config.TIMEZONE_LABEL}`,
-      );
-  }
-  const scheduleEngine = createPublicationScheduleEngine({
-    kind: "video",
-    publicationId: session.draftId,
-    scheduleAxis: videoPipeline.capabilities.scheduleAxis,
-    axisKeys: next.selected,
-    axisLabel: videoTargetLabel,
-    slotValues: [],
-    includeAxisKey: false,
-  });
-  const keyboard = confirmationKeyboard(
-    { label: t(locale, "common.confirm"), callback: versionedCallback(scheduleEngine.confirmCallback(), saved.revision) },
-    { label: t(locale, "common.back"), callback: publicationCallback("video", "schedule", [session.draftId ?? ""]) },
-    saved.revision,
-  );
-  return [
-    { type: "delivery-previews", projections: delivery.projections, locale },
-    ...videoControlEffects(saved, lines.join("\n"), keyboard),
-  ];
 }
 
 async function finishSingleVideoEdit(

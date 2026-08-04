@@ -1,6 +1,6 @@
 import { type Context, InlineKeyboard } from "grammy";
 import { acceptFlow } from "../application/conversation-flow.js";
-import type { PublicationPipeline, PublicationScheduleAxis } from "../application/publication-pipeline.js";
+import type { PublicationPipeline } from "../application/publication-pipeline.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
@@ -19,8 +19,7 @@ import type { PublicationEffect } from "./effects.js";
 import { type BotLocale, botLocale } from "./i18n.js";
 import type { PublicationActionContext, PublicationActionResult } from "./publication-action-types.js";
 import { renderPublicationCard } from "./publication-card.js";
-import { createPublicationScheduleEngine } from "./scheduling.js";
-import { parseDraftId, publicationCallback, requireSessionStep, type VideoActionKey, versionedCallback } from "./session-fsm.js";
+import { parseDraftId, publicationCallback, requireSessionStep, type VideoActionKey } from "./session-fsm.js";
 import { finishVideoNow, finishVideoSchedule } from "./video-scheduling.js";
 import {
   callbackMessageId,
@@ -33,8 +32,8 @@ import {
   targetKeyboard,
   type VideoConversationInput,
   type VideoConversationState,
-  videoControlEffects,
   videoPromptEffect,
+  videoScheduleConfirmationEffects,
   videoTimeEffects,
 } from "./video-ui.js";
 
@@ -137,56 +136,38 @@ function startVideoEffects(ctx: Context, backendDb: BackendDb, actorId: number, 
   ];
 }
 
+/** Asks a yes/no question on top of the draft's own card. "Back" always returns
+ * to that same card, so a declined confirmation costs the operator nothing. */
+function videoConfirmationEffects(
+  args: Pick<VideoActionArgs, "config" | "actorId" | "locale" | "pipeline">,
+  id: number,
+  question: string,
+  confirm: { label: string; callback: string },
+  revision?: number,
+): PublicationEffect[] {
+  const { config, actorId, locale, pipeline } = args;
+  const preview = renderPublicationCard("video", { data: pipeline.preview(actorId, id), config, locale });
+  return [
+    {
+      type: "screen",
+      mode: "edit",
+      text: `${preview.text}\n\n${question}`,
+      options: {
+        parse_mode: "Markdown",
+        reply_markup: confirmationKeyboard(
+          confirm,
+          { label: t(locale, "common.back"), callback: publicationCallback("video", "open", [id]) },
+          revision,
+        ),
+      },
+      card: { kind: "video", draftId: id },
+    },
+  ];
+}
+
 function existingVideoControlEffect(session: VideoConversationState, text: string, keyboard: InlineKeyboard): PublicationEffect[] {
   if (!session.controlMessageId) return [{ type: "prompt", text, options: { parse_mode: "Markdown", reply_markup: keyboard } }];
   return [{ type: "edit-message", messageId: session.controlMessageId, text, options: { parse_mode: "Markdown", reply_markup: keyboard } }];
-}
-
-function videoScheduleConfirmationEffects(
-  backendDb: BackendDb,
-  config: BackendConfig,
-  actorId: number,
-  session: VideoConversationState,
-  schedule: Partial<Record<VideoTarget, Date>>,
-  scheduleAxis: PublicationScheduleAxis,
-): PublicationEffect[] {
-  if (!session.draftId) throw new StudioError("err.video-missing");
-  const locale = botLocale(backendDb, actorId);
-  const next = saveVideoState(backendDb, actorId, {
-    ...session,
-    step: "schedule_confirm",
-    data: {
-      ...session.data,
-      schedule: Object.fromEntries(Object.entries(schedule).map(([target, value]) => [target, value?.toISOString()])),
-    },
-  });
-  const delivery = createStudioServices(backendDb, config).videos.preview(actorId, session.draftId).delivery;
-  const lines = [`🎬 *${t(locale, "common.confirm-schedule")}*`];
-  for (const target of next.selected) {
-    const value = schedule[target];
-    if (value)
-      lines.push(
-        `${videoTargetLabel(target)}: ${value.toLocaleString(locale === "ru" ? "ru-RU" : "en-GB", { timeZone: config.TIMEZONE })} ${config.TIMEZONE_LABEL}`,
-      );
-  }
-  const scheduleEngine = createPublicationScheduleEngine({
-    kind: "video",
-    publicationId: session.draftId,
-    scheduleAxis,
-    axisKeys: next.selected,
-    axisLabel: videoTargetLabel,
-    slotValues: [],
-    includeAxisKey: false,
-  });
-  const keyboard = confirmationKeyboard(
-    { label: t(locale, "common.confirm"), callback: versionedCallback(scheduleEngine.confirmCallback(), next.revision) },
-    { label: t(locale, "common.back"), callback: publicationCallback("video", "schedule", [session.draftId]) },
-    next.revision,
-  );
-  return [
-    { type: "delivery-previews", projections: delivery.projections, locale },
-    ...videoControlEffects(next, lines.join("\n"), keyboard),
-  ];
 }
 
 async function handleStart({ ctx, backendDb, actorId, locale }: VideoActionArgs): Promise<VideoActionResult> {
@@ -366,7 +347,8 @@ async function handleScheduleMode({ backendDb, config, actorId, locale, action, 
   return videoTimeEffects(backendDb, actorId, next, prompt());
 }
 
-async function handleNowAsk({ ctx, backendDb, config, actorId, locale, args, pipeline }: VideoActionArgs): Promise<VideoActionResult> {
+async function handleNowAsk(actionArgs: VideoActionArgs): Promise<VideoActionResult> {
+  const { ctx, backendDb, actorId, locale, args, pipeline } = actionArgs;
   const id = requireDraftId(args[0]);
   pipeline.get(actorId, id);
   const session = saveVideoState(backendDb, actorId, {
@@ -376,23 +358,13 @@ async function handleNowAsk({ ctx, backendDb, config, actorId, locale, args, pip
     data: {},
     controlMessageId: callbackMessageId(ctx),
   });
-  const preview = renderPublicationCard("video", { data: pipeline.preview(actorId, id), config, locale });
-  return [
-    {
-      type: "screen",
-      mode: "edit",
-      text: `${preview.text}\n\n${t(locale, "video.publish-now-q")}`,
-      options: {
-        parse_mode: "Markdown",
-        reply_markup: confirmationKeyboard(
-          { label: t(locale, "video.publish-now-yes"), callback: publicationCallback("video", "now_confirm", [id]) },
-          { label: t(locale, "common.back"), callback: publicationCallback("video", "open", [id]) },
-          session.revision,
-        ),
-      },
-      card: { kind: "video", draftId: id },
-    },
-  ];
+  return videoConfirmationEffects(
+    actionArgs,
+    id,
+    t(locale, "video.publish-now-q"),
+    { label: t(locale, "video.publish-now-yes"), callback: publicationCallback("video", "now_confirm", [id]) },
+    session.revision,
+  );
 }
 
 async function handleNowConfirm({ backendDb, config, actorId, args }: VideoActionArgs): Promise<VideoActionResult> {
@@ -403,49 +375,31 @@ async function handleNowConfirm({ backendDb, config, actorId, args }: VideoActio
   return finishVideoNow(backendDb, config, actorId, session);
 }
 
-async function handleCancelAsk({ config, actorId, locale, args, pipeline }: VideoActionArgs): Promise<VideoActionResult> {
+async function handleCancelAsk(actionArgs: VideoActionArgs): Promise<VideoActionResult> {
+  const { actorId, locale, args, pipeline } = actionArgs;
   const id = requireDraftId(args[0]);
   pipeline.get(actorId, id);
-  const preview = renderPublicationCard("video", { data: pipeline.preview(actorId, id), config, locale });
-  return [
-    {
-      type: "screen",
-      mode: "edit",
-      text: `${preview.text}\n\n⚠️ *${t(locale, "vpreview.cancel-confirm-q")}*\n${t(locale, "vpreview.cancel-confirm-warn")}`,
-      options: {
-        parse_mode: "Markdown",
-        reply_markup: confirmationKeyboard(
-          { label: t(locale, "vpreview.cancel-yes"), callback: publicationCallback("video", "cancel", [id]) },
-          { label: t(locale, "common.back"), callback: publicationCallback("video", "open", [id]) },
-        ),
-      },
-      card: { kind: "video", draftId: id },
-    },
-  ];
+  return videoConfirmationEffects(
+    actionArgs,
+    id,
+    `⚠️ *${t(locale, "vpreview.cancel-confirm-q")}*\n${t(locale, "vpreview.cancel-confirm-warn")}`,
+    { label: t(locale, "vpreview.cancel-yes"), callback: publicationCallback("video", "cancel", [id]) },
+  );
 }
 
-async function handleRemoveAsk({ config, actorId, locale, args, pipeline }: VideoActionArgs): Promise<VideoActionResult> {
+async function handleRemoveAsk(actionArgs: VideoActionArgs): Promise<VideoActionResult> {
+  const { actorId, locale, args, pipeline } = actionArgs;
   const [idText, targetText] = args;
   const target = requireVideoTarget(targetText ?? "");
   const id = requireDraftId(idText);
   pipeline.get(actorId, id);
   const label = videoTargetLabel(target);
-  const preview = renderPublicationCard("video", { data: pipeline.preview(actorId, id), config, locale });
-  return [
-    {
-      type: "screen",
-      mode: "edit",
-      text: `${preview.text}\n\n⚠️ *${t(locale, "vpreview.remove-confirm-q", { target: label })}*\n${t(locale, "vpreview.remove-confirm-warn", { target: label })}`,
-      options: {
-        parse_mode: "Markdown",
-        reply_markup: confirmationKeyboard(
-          { label: t(locale, "vpreview.remove-yes", { target: label }), callback: publicationCallback("video", "remove", [id, target]) },
-          { label: t(locale, "common.back"), callback: publicationCallback("video", "open", [id]) },
-        ),
-      },
-      card: { kind: "video", draftId: id },
-    },
-  ];
+  return videoConfirmationEffects(
+    actionArgs,
+    id,
+    `⚠️ *${t(locale, "vpreview.remove-confirm-q", { target: label })}*\n${t(locale, "vpreview.remove-confirm-warn", { target: label })}`,
+    { label: t(locale, "vpreview.remove-yes", { target: label }), callback: publicationCallback("video", "remove", [id, target]) },
+  );
 }
 
 async function handleCancel({ backendDb, config, actorId, locale, args, pipeline }: VideoActionArgs): Promise<VideoActionResult> {
@@ -502,14 +456,7 @@ async function handleSchedulePick({ backendDb, config, actorId, args, pipeline }
   if (!session || session.draftId !== id) throw new StudioError("action.schedule-expired");
   const value = pipeline.slotTime(`${(hhmm ?? "").slice(0, 2)}:${(hhmm ?? "").slice(2, 4)}`);
   if (session.step === "schedule_common")
-    return videoScheduleConfirmationEffects(
-      backendDb,
-      config,
-      actorId,
-      session,
-      commonVideoSchedule(session.selected, value),
-      pipeline.capabilities.scheduleAxis,
-    );
+    return videoScheduleConfirmationEffects(backendDb, config, actorId, session, commonVideoSchedule(session.selected, value));
   const target =
     typeof session.data.target === "string" && VIDEO_TARGETS.includes(session.data.target as VideoTarget)
       ? (session.data.target as VideoTarget)
@@ -545,7 +492,6 @@ async function handleSchedulePick({ backendDb, config, actorId, args, pipeline }
     Object.fromEntries(Object.entries(transition.schedule).map(([key, item]) => [key, new Date(item)])) as Partial<
       Record<VideoTarget, Date>
     >,
-    pipeline.capabilities.scheduleAxis,
   );
 }
 

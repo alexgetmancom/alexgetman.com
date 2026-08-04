@@ -1,15 +1,17 @@
 import { type Context, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { StudioError } from "../foundation/errors.js";
 import { t } from "../foundation/i18n/index.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
+import { createStudioServices } from "../studio/services/index.js";
 import { previousVideoMetadataStep, VIDEO_FLOW, type VideoWizardStep } from "../studio/video-fsm.js";
 import { type ConversationState, clearConversationState, getConversationState, saveConversationState } from "./conversation-state.js";
-import { appendCancelButton, cancelPromptKeyboard } from "./dialog-ui.js";
+import { appendCancelButton, cancelPromptKeyboard, confirmationKeyboard } from "./dialog-ui.js";
 import type { PublicationEffect } from "./effects.js";
 import { type BotLocale, botLocale } from "./i18n.js";
 import { createPublicationScheduleEngine, SCHEDULE_SLOT_PRESETS, scheduleTimeKeyboard } from "./scheduling.js";
-import { publicationCallback } from "./session-fsm.js";
+import { publicationCallback, versionedCallback } from "./session-fsm.js";
 
 export type VideoConversationStep =
   | "locale"
@@ -181,6 +183,57 @@ export function scheduleChoiceEffects(
   keyboard.row();
   appendCancelButton(keyboard, locale, publicationCallback("video", "cancel_dialog"), next.revision);
   return videoControlEffects(next, text, keyboard);
+}
+
+/** Moves the session to `schedule_confirm` and renders the per-target summary
+ * with its confirm/back keyboard. Shared because the schedule can be completed
+ * from either transport path — slot buttons (callbacks) or a typed date
+ * (messages) — and both must land on the identical confirmation. */
+export function videoScheduleConfirmationEffects(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  actorId: number,
+  session: VideoConversationState,
+  schedule: Partial<Record<VideoTarget, Date>>,
+): PublicationEffect[] {
+  const { draftId } = session;
+  if (!draftId) throw new StudioError("err.video-missing");
+  const locale = botLocale(backendDb, actorId);
+  const videos = createStudioServices(backendDb, config).videos;
+  const next = saveVideoState(backendDb, actorId, {
+    ...session,
+    step: "schedule_confirm",
+    data: {
+      ...session.data,
+      schedule: Object.fromEntries(Object.entries(schedule).map(([target, value]) => [target, value?.toISOString()])),
+    },
+  });
+  const lines = [`🎬 *${t(locale, "common.confirm-schedule")}*`];
+  for (const target of next.selected) {
+    const value = schedule[target];
+    if (value)
+      lines.push(
+        `${videoTargetLabel(target)}: ${value.toLocaleString(locale === "ru" ? "ru-RU" : "en-GB", { timeZone: config.TIMEZONE })} ${config.TIMEZONE_LABEL}`,
+      );
+  }
+  const engine = createPublicationScheduleEngine({
+    kind: "video",
+    publicationId: draftId,
+    scheduleAxis: videos.capabilities.scheduleAxis,
+    axisKeys: next.selected,
+    axisLabel: videoTargetLabel,
+    slotValues: [],
+    includeAxisKey: false,
+  });
+  const keyboard = confirmationKeyboard(
+    { label: t(locale, "common.confirm"), callback: versionedCallback(engine.confirmCallback(), next.revision) },
+    { label: t(locale, "common.back"), callback: publicationCallback("video", "schedule", [draftId]) },
+    next.revision,
+  );
+  return [
+    { type: "delivery-previews", projections: videos.preview(actorId, draftId).delivery.projections, locale },
+    ...videoControlEffects(next, lines.join("\n"), keyboard),
+  ];
 }
 
 export function parseVideoStep(value: string): VideoConversationStep | null {
