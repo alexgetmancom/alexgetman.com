@@ -1,4 +1,5 @@
 import { type Context, InlineKeyboard } from "grammy";
+import { acceptFlow } from "../application/conversation-flow.js";
 import { fixUrlSlashes } from "../content/message.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -12,11 +13,11 @@ import { videoPreview } from "../interfaces/telegram/video-preview.js";
 import { VIDEO_TARGETS, type VideoMetadata, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import { createStudioServices } from "../studio/services/index.js";
 import {
-  acceptVideoFlowStep,
   advanceVideoMetadata,
   advanceVideoTargetSchedule,
   commonVideoSchedule,
   firstVideoMetadataStep,
+  VIDEO_FLOW,
   type VideoWizardStep,
 } from "../studio/video-fsm.js";
 import { appendCancelButton, confirmationKeyboard } from "./dialog-ui.js";
@@ -117,7 +118,7 @@ export async function handleVideoConversationMessage(ctx: Context, backendDb: Ba
 
 async function handleAssetMessage({ ctx, backendDb, config, actorId, session }: VideoMessageArgs): Promise<boolean> {
   const stored = await storeTelegramVideo(ctx, backendDb, config, actorId);
-  const draftId = createStudioServices(backendDb, config).publications.create(actorId, {
+  const draftId = createStudioServices(backendDb, config).publicationPipeline.create(actorId, {
     kind: "video",
     studioMediaAssetId: stored.assetId,
     locale: session.data.videoLocale === "en" ? "en" : "ru",
@@ -126,11 +127,11 @@ async function handleAssetMessage({ ctx, backendDb, config, actorId, session }: 
   if (!selected.length) throw new StudioError("err.no-video-platforms-config");
   createStudioServices(backendDb, config).videos.replaceTargets(actorId, draftId, selected);
   const first = firstVideoMetadataStep(selected);
-  const transition = await acceptVideoFlowStep("asset", stored.assetId, { ...session.data, selectedTargets: selected });
+  const transition = await acceptFlow(VIDEO_FLOW, "asset", stored.assetId, { ...session.data, selectedTargets: selected });
   if (!transition?.next) throw new StudioError("err.video-restart");
-  const next: VideoConversationState = { ...session, draftId, step: first.step, selected, data: transition.data };
+  const next: VideoConversationState = { ...session, draftId, step: first, selected, data: transition.data };
   saveVideoState(backendDb, actorId, next);
-  await sendVideoMetadataPrompt(ctx, backendDb, actorId, first.step, selected);
+  await sendVideoMetadataPrompt(ctx, backendDb, actorId, first, selected);
   return true;
 }
 
@@ -144,7 +145,7 @@ async function handleLabelMessage({ ctx, backendDb, config, actorId, session, te
     await sendFreshVideoCard(ctx, backendDb, session.draftId, preview);
     return true;
   }
-  const transition = await acceptVideoFlowStep("label", text, { ...session.data, selectedTargets: session.selected });
+  const transition = await acceptFlow(VIDEO_FLOW, "label", text, { ...session.data, selectedTargets: session.selected });
   if (!transition?.next) throw new StudioError("err.video-restart");
   const next: VideoConversationState = { ...session, step: transition.next as VideoConversationState["step"], data: transition.data };
   const saved = saveVideoState(backendDb, actorId, next);
@@ -162,7 +163,7 @@ async function handleLabelMessage({ ctx, backendDb, config, actorId, session, te
 async function handleLinearMetadataMessage({ ctx, backendDb, actorId, session, text }: VideoMessageArgs): Promise<boolean> {
   if (session.draftId == null) return false;
   const step = session.step as VideoWizardStep;
-  const transition = await acceptVideoFlowStep(step, text, { ...session.data, selectedTargets: session.selected });
+  const transition = await acceptFlow(VIDEO_FLOW, step, text, { ...session.data, selectedTargets: session.selected });
   if (!transition?.next) throw new StudioError("err.video-restart");
   const data = withoutFlowData(transition.data);
   setVideoData(backendDb, actorId, session, step, data[step], transition.next as VideoConversationState["step"]);
@@ -172,7 +173,7 @@ async function handleLinearMetadataMessage({ ctx, backendDb, actorId, session, t
 
 async function handleYoutubeTagsMessage({ ctx, backendDb, config, actorId, session, text }: VideoMessageArgs): Promise<boolean> {
   if (session.draftId == null) return false;
-  const transition = await acceptVideoFlowStep("youtube_tags", text, { ...session.data, selectedTargets: session.selected });
+  const transition = await acceptFlow(VIDEO_FLOW, "youtube_tags", text, { ...session.data, selectedTargets: session.selected });
   if (!transition) throw new StudioError("err.video-restart");
   const tags = transition.data.youtube_tags as string[];
   const metadata = {
@@ -190,7 +191,7 @@ async function handleYoutubeTagsMessage({ ctx, backendDb, config, actorId, sessi
 
 async function handleInstagramCaptionMessage({ ctx, backendDb, config, actorId, session, text }: VideoMessageArgs): Promise<boolean> {
   if (session.draftId == null) return false;
-  const transition = await acceptVideoFlowStep("instagram_caption", text, { ...session.data, selectedTargets: session.selected });
+  const transition = await acceptFlow(VIDEO_FLOW, "instagram_caption", text, { ...session.data, selectedTargets: session.selected });
   if (!transition) throw new StudioError("err.video-restart");
   const metadata = { caption: String(transition.data.instagram_caption ?? "") };
   createStudioServices(backendDb, config).videos.updateMetadata(actorId, session.draftId, "instagram_reels", metadata);
@@ -323,7 +324,7 @@ type ScheduleDateArgs = {
 
 const SCHEDULE_DATE_HANDLERS: Record<"schedule_common" | "schedule_target", (args: ScheduleDateArgs) => Promise<void>> = {
   schedule_common: async ({ ctx, backendDb, config, actorId, session, date }) => {
-    const transition = await acceptVideoFlowStep("schedule_common", date.toISOString(), {
+    const transition = await acceptFlow(VIDEO_FLOW, "schedule_common", date.toISOString(), {
       ...session.data,
       selectedTargets: session.selected,
     });
@@ -345,7 +346,7 @@ async function applyIndividualScheduleDate({ ctx, backendDb, config, actorId, se
     target,
     date,
   );
-  const flowTransition = await acceptVideoFlowStep("schedule_target", date.toISOString(), {
+  const flowTransition = await acceptFlow(VIDEO_FLOW, "schedule_target", date.toISOString(), {
     ...session.data,
     selectedTargets: session.selected,
     nextTarget: transition.nextTarget,

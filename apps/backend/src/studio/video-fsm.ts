@@ -1,9 +1,8 @@
-import { acceptFlow, type Flow, type FlowStep } from "../application/conversation-flow.js";
+import type { Flow, FlowStep } from "../application/conversation-flow.js";
 import { fixUrlSlashes } from "../content/message.js";
 import type { VideoTarget } from "../publishing/video-types.js";
 
 export type VideoWizardStep = "youtube_title" | "youtube_description" | "youtube_game_url" | "youtube_tags" | "instagram_caption";
-export type VideoPrompt = "youtube_title" | "youtube_description" | "youtube_game_url" | "youtube_tags" | "instagram_caption" | "schedule";
 export type VideoFlowData = Record<string, unknown> & { selectedTargets?: VideoTarget[]; nextTarget?: VideoTarget | null };
 
 function videoStep(
@@ -93,10 +92,8 @@ export const VIDEO_FLOW: Flow<VideoFlowData> = {
   steps: VIDEO_STEPS,
 };
 
-export function firstVideoMetadataStep(selected: VideoTarget[]): { step: VideoWizardStep; prompt: VideoPrompt } {
-  return selected.includes("youtube_shorts")
-    ? { step: "youtube_title", prompt: "youtube_title" }
-    : { step: "instagram_caption", prompt: "instagram_caption" };
+export function firstVideoMetadataStep(selected: VideoTarget[]): VideoWizardStep {
+  return selected.includes("youtube_shorts") ? "youtube_title" : "instagram_caption";
 }
 
 /** The step a "← Back" tap returns to, or null if the current step is the
@@ -112,16 +109,14 @@ export function advanceVideoMetadata(
   step: VideoWizardStep,
   text: string,
   data: VideoFlowData,
-): { data: VideoFlowData; nextStep: VideoWizardStep | null; prompt: VideoPrompt } {
-  if (step === "youtube_title")
-    return { data: { ...data, youtube_title: text }, nextStep: "youtube_description", prompt: "youtube_description" };
+): { data: VideoFlowData; nextStep: VideoWizardStep | null } {
+  if (step === "youtube_title") return { data: { ...data, youtube_title: text }, nextStep: "youtube_description" };
   if (step === "youtube_description")
-    return { data: { ...data, youtube_description: text === "-" ? "" : text }, nextStep: "youtube_game_url", prompt: "youtube_game_url" };
+    return { data: { ...data, youtube_description: text === "-" ? "" : text }, nextStep: "youtube_game_url" };
   if (step === "youtube_game_url")
     return {
       data: { ...data, youtube_game_url: text === "-" ? "" : fixUrlSlashes(text) },
       nextStep: "youtube_tags",
-      prompt: "youtube_tags",
     };
   if (step === "youtube_tags") {
     const tags =
@@ -131,24 +126,15 @@ export function advanceVideoMetadata(
             .split(",")
             .map((tag) => tag.trim())
             .filter(Boolean);
-    return { data: { ...data, youtube_tags: tags }, nextStep: null, prompt: "schedule" };
+    return { data: { ...data, youtube_tags: tags }, nextStep: null };
   }
-  return { data: { ...data, instagram_caption: text === "-" ? "" : text }, nextStep: null, prompt: "schedule" };
+  return { data: { ...data, instagram_caption: text === "-" ? "" : text }, nextStep: null };
 }
 
 /** Chooses the next metadata or scheduling state without knowing about Telegram controls. */
 export function nextVideoFlowStep(selected: VideoTarget[]): "instagram_caption" | "schedule_choice" {
   const next = VIDEO_FLOW.steps.youtube_tags?.next({ selectedTargets: selected });
   return next === "instagram_caption" ? next : "schedule_choice";
-}
-
-/** Executes a metadata step through the shared Flow runtime. */
-export function acceptVideoFlowStep(
-  step: string,
-  input: unknown,
-  data: VideoFlowData,
-): Promise<{ data: VideoFlowData; next: string | null } | null> {
-  return acceptFlow(VIDEO_FLOW, step, input, data);
 }
 
 /** Adds one parsed target time and chooses either the next target prompt or confirmation. */

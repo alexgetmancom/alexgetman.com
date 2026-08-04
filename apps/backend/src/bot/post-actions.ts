@@ -1,4 +1,5 @@
 import { type Context, InlineKeyboard, InputFile } from "grammy";
+import { acceptFlow } from "../application/conversation-flow.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
@@ -16,7 +17,7 @@ import { resultNavigationKeyboard } from "./dialog-ui.js";
 import { botLocale } from "./i18n.js";
 import { extractMessage } from "./message.js";
 import { editDraftPreview, editDraftPrompt, sendDraftPreview } from "./post-card.js";
-import { acceptPostFlowStep, type PostWizardStep, postStateStep, postStepData, postStepName } from "./post-fsm.js";
+import { POST_FLOW, type PostWizardStep, postStateStep } from "./post-fsm.js";
 import { draftPreview, isDraftView, modeLabel } from "./preview.js";
 import { renderPostProgress } from "./progress.js";
 import { type PostActionKey, publicationCallback } from "./session-fsm.js";
@@ -493,7 +494,12 @@ export async function applyAdminState(
   const actorId = Number(ctx.from?.id);
   if (expectedRevision != null) requireConversationState(backendDb, actorId, "post", expectedRevision);
   const message = extractMessage(ctx);
-  const transition = await acceptPostFlowStep(step, { ctx, backendDb, config, actorId, draftId, controlMessageId, step, message }, {});
+  const transition = await acceptFlow(
+    POST_FLOW,
+    step.type,
+    { ctx, backendDb, config, actorId, draftId, controlMessageId, step, message },
+    {},
+  );
   if (!transition) throw new StudioError("action.session-stale");
   if (transition.next === null) {
     clearConversationState(backendDb, actorId, "post");
@@ -528,8 +534,13 @@ function savePostState(
   return saveConversationState(backendDb, actorId, {
     kind: "post",
     draftId,
-    step: postStepName(step),
-    data: postStepData(step),
+    step: step.type,
+    data:
+      step.type === "edit_text" || step.type === "replace_media" || step.type === "schedule_manual"
+        ? { locale: step.locale }
+        : step.type === "schedule_confirm"
+          ? { locale: step.locale, value: step.value.toISOString() }
+          : {},
     controlMessageId,
   }).revision;
 }

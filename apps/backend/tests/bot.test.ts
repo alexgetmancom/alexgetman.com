@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, mock } from "bun:test";
 import type { Bot } from "grammy";
 import { finalizePendingAlbums } from "../src/bot/albums.js";
 import { getConversationState, saveConversationState } from "../src/bot/conversation-state.js";
-import { type PostWizardStep, postStepData, postStepName } from "../src/bot/post-fsm.js";
+import type { PostWizardStep } from "../src/bot/post-fsm.js";
 import { draftPreview } from "../src/bot/preview.js";
 import { postProgress } from "../src/bot/progress.js";
 import { DEFAULT_TARGETS, TARGETS, targetLocale } from "../src/botTargets.js";
@@ -24,8 +24,13 @@ function savePostState(db: UnsafeBackendDb, actorId: number, step: PostWizardSte
   return saveConversationState(db, actorId, {
     kind: "post",
     draftId,
-    step: postStepName(step),
-    data: postStepData(step),
+    step: step.type,
+    data:
+      step.type === "edit_text" || step.type === "replace_media" || step.type === "schedule_manual"
+        ? { locale: step.locale }
+        : step.type === "schedule_confirm"
+          ? { locale: step.locale, value: step.value.toISOString() }
+          : {},
     controlMessageId,
   }).revision;
 }
@@ -482,8 +487,8 @@ describe("Telegram controller flow", () => {
     });
     savePostState(backendDb, 42, { type: "edit_text", locale: "en" }, draftId, 99);
     backendDb.sqlite
-      .prepare(`INSERT INTO pending_albums(id,actor_id,chat_id,media_group_id,action,draft_id,text_ru,text_entities_json,media_json,notified,updated_at)
-      VALUES ('en-edit',42,42,'group','edit_text:en',?,'English replacement','[]',?,1,'2000-01-01T00:00:00.000Z')`)
+      .prepare(`INSERT INTO pending_albums(id,actor_id,chat_id,media_group_id,step,step_data_json,draft_id,text_ru,text_entities_json,media_json,notified,updated_at)
+      VALUES ('en-edit',42,42,'group','edit_text','{"locale":"en"}',?,'English replacement','[]',?,1,'2000-01-01T00:00:00.000Z')`)
       .run(
         draftId,
         JSON.stringify([
@@ -518,7 +523,7 @@ describe("Telegram controller flow", () => {
   it("claims one pending album only once when Telegram workers overlap", async () => {
     backendDb = openBackendDb(":memory:");
     backendDb.sqlite
-      .prepare(`INSERT INTO pending_albums(id,actor_id,chat_id,media_group_id,action,text_ru,text_entities_json,media_json,notified,updated_at)
+      .prepare(`INSERT INTO pending_albums(id,actor_id,chat_id,media_group_id,step,text_ru,text_entities_json,media_json,notified,updated_at)
       VALUES ('once',42,42,'group','new_post','Album caption','[]',?,1,'2000-01-01T00:00:00.000Z')`)
       .run(
         JSON.stringify([
@@ -542,7 +547,7 @@ describe("Telegram controller flow", () => {
   it("reclaims a stale album claim left by a crashed worker", async () => {
     backendDb = openBackendDb(":memory:");
     backendDb.sqlite
-      .prepare(`INSERT INTO pending_albums(id,actor_id,chat_id,media_group_id,action,text_ru,text_entities_json,media_json,notified,updated_at)
+      .prepare(`INSERT INTO pending_albums(id,actor_id,chat_id,media_group_id,step,text_ru,text_entities_json,media_json,notified,updated_at)
       VALUES ('stale-claim',42,42,'group','new_post','Album caption','[]',?,2,'2000-01-01T00:00:00.000Z')`)
       .run(JSON.stringify([{ type: "photo", file_id: "one" }]));
     const sendMessage = mock(async () => ({ message_id: 1, date: 1, chat: { id: 42, type: "private" as const } }));
@@ -556,8 +561,8 @@ describe("Telegram controller flow", () => {
     const db = openBackendDb(":memory:");
     backendDb = db;
     db.sqlite
-      .prepare(`INSERT INTO pending_albums(id,actor_id,chat_id,media_group_id,action,draft_id,text_ru,text_entities_json,media_json,notified,attempt_count,updated_at)
-      VALUES ('doomed',42,42,'group','edit_text:ru',4242,'Caption','[]',?,1,0,'2000-01-01T00:00:00.000Z')`)
+      .prepare(`INSERT INTO pending_albums(id,actor_id,chat_id,media_group_id,step,step_data_json,draft_id,text_ru,text_entities_json,media_json,notified,attempt_count,updated_at)
+      VALUES ('doomed',42,42,'group','edit_text','{"locale":"ru"}',4242,'Caption','[]',?,1,0,'2000-01-01T00:00:00.000Z')`)
       .run(JSON.stringify([{ type: "photo", file_id: "one" }]));
     const sendMessage = mock(async () => ({ message_id: 1, date: 1, chat: { id: 42, type: "private" as const } }));
     const fakeBot = { api: { sendMessage } } as unknown as Bot;

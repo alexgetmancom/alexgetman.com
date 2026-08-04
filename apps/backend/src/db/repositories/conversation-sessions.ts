@@ -1,4 +1,4 @@
-import { and, eq, isNull, or, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import type { ConversationSessionKind, ConversationSessionStore } from "../../application/ports.js";
 import { StudioError } from "../../foundation/errors.js";
 import { conversationSessions } from "../schema.js";
@@ -18,7 +18,6 @@ export function createConversationSessionStore(db: BackendDatabase): Conversatio
         actorId: row.actorId,
         kind: row.kind as ConversationSessionKind,
         draftId: row.draftId,
-        action: row.action,
         step: row.step,
         selectedTargets: row.selectedTargetsJson,
         data: row.dataJson,
@@ -44,7 +43,6 @@ export function createConversationSessionStore(db: BackendDatabase): Conversatio
           actorId: input.actorId,
           kind: input.kind,
           draftId: input.draftId,
-          action: input.action,
           step: input.step,
           selectedTargetsJson: input.selectedTargets,
           dataJson: input.data,
@@ -58,7 +56,6 @@ export function createConversationSessionStore(db: BackendDatabase): Conversatio
           target: [conversationSessions.actorId, conversationSessions.kind],
           set: {
             draftId: input.draftId,
-            action: input.action,
             step: input.step,
             selectedTargetsJson: input.selectedTargets,
             dataJson: input.data,
@@ -74,14 +71,13 @@ export function createConversationSessionStore(db: BackendDatabase): Conversatio
     },
 
     clearIfCurrent(input) {
-      const expectedStep = input.step ?? input.action;
+      const expectedStep = input.step;
       if (!expectedStep) return false;
       return (
         db
           .update(conversationSessions)
           .set({
             draftId: null,
-            action: null,
             step: null,
             selectedTargetsJson: [],
             dataJson: {},
@@ -95,7 +91,7 @@ export function createConversationSessionStore(db: BackendDatabase): Conversatio
             and(
               eq(conversationSessions.actorId, input.actorId),
               eq(conversationSessions.kind, input.kind),
-              or(eq(conversationSessions.step, expectedStep), eq(conversationSessions.action, expectedStep)),
+              eq(conversationSessions.step, expectedStep),
               input.draftId == null ? isNull(conversationSessions.draftId) : eq(conversationSessions.draftId, input.draftId),
               ...(input.expectedRevision == null ? [] : [eq(conversationSessions.revision, input.expectedRevision)]),
             ),
@@ -109,7 +105,6 @@ export function createConversationSessionStore(db: BackendDatabase): Conversatio
       db.update(conversationSessions)
         .set({
           draftId: null,
-          action: null,
           step: null,
           selectedTargetsJson: [],
           dataJson: {},

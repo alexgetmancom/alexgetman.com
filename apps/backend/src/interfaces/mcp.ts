@@ -216,7 +216,7 @@ const studioToolDefs = {
     mutates: true,
     ref: (_input, result) => `draft:${(result as { draft_id: number }).draft_id}`,
     handler: (studio, actorId, input) => {
-      const draftId = studio.publications.create(actorId, {
+      const draftId = studio.publicationPipeline.create(actorId, {
         kind: "post",
         message: {
           text: input.text,
@@ -345,7 +345,7 @@ const studioToolDefs = {
     mutates: true,
     ref: (_input, result) => `video:${(result as { video_draft_id: number }).video_draft_id}`,
     handler: (studio, actorId, input) => {
-      const videoDraftId = studio.publications.create(actorId, {
+      const videoDraftId = studio.publicationPipeline.create(actorId, {
         kind: "video",
         studioMediaAssetId: input.asset_id,
         ...(input.locale ? { locale: input.locale } : {}),

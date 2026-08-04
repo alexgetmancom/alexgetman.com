@@ -51,7 +51,6 @@ export function saveConversationState(backendDb: BackendDb, actorId: number, inp
     actorId,
     kind: input.kind,
     draftId: input.draftId,
-    action: null,
     step: input.step,
     selectedTargets,
     data,

@@ -11,7 +11,7 @@ import { importTelegramAlbumMedia } from "../interfaces/telegram/media-ingress.j
 import { createStudioServices } from "../studio/services/index.js";
 import { clearConversationStateIfCurrent, getConversationState } from "./conversation-state.js";
 import { botLocale } from "./i18n.js";
-import { type PostWizardStep, parsePostWizardStep, postStepName, serializePostWizardStep } from "./post-fsm.js";
+import type { PostSessionStep, PostWizardStep } from "./post-fsm.js";
 import { translatePostText } from "./post-translation.js";
 import { draftPreview } from "./preview.js";
 
@@ -35,14 +35,14 @@ type PendingAlbumInput = {
   text: string;
   entities: unknown[];
   media: Record<string, unknown>;
-  action: PostWizardStep | null;
+  step: PostWizardStep | null;
   draftId: number | null;
   stateRevision: number | null;
 };
 
 export function appendPendingAlbum(backendDb: BackendDb, input: PendingAlbumInput): boolean {
-  const serializedAction = serializePostWizardStep(input.action);
-  const id = `${input.actorId}:${input.chatId}:${input.mediaGroupId}:${serializedAction ?? "draft"}:${input.draftId ?? ""}`;
+  const step = input.step?.type ?? null;
+  const id = `${input.actorId}:${input.chatId}:${input.mediaGroupId}:${step ?? "draft"}:${input.draftId ?? ""}`;
   const row = unsafeDb(backendDb)
     .db.select({ mediaJson: pendingAlbums.mediaJson, textRu: pendingAlbums.textRu, textEntitiesJson: pendingAlbums.textEntitiesJson })
     .from(pendingAlbums)
@@ -56,7 +56,8 @@ export function appendPendingAlbum(backendDb: BackendDb, input: PendingAlbumInpu
     actorId: input.actorId,
     chatId: input.chatId,
     mediaGroupId: input.mediaGroupId,
-    action: serializedAction,
+    step,
+    stepDataJson: stepData(input.step),
     draftId: input.draftId,
     stateRevision: input.stateRevision,
     textRu: input.text || row?.textRu || "",
@@ -71,6 +72,8 @@ export function appendPendingAlbum(backendDb: BackendDb, input: PendingAlbumInpu
     .onConflictDoUpdate({
       target: pendingAlbums.id,
       set: {
+        step: values.step,
+        stepDataJson: values.stepDataJson,
         textRu: values.textRu,
         textEntitiesJson: values.textEntitiesJson,
         mediaJson: values.mediaJson,
@@ -100,7 +103,8 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
       id: pendingAlbums.id,
       actorId: pendingAlbums.actorId,
       chatId: pendingAlbums.chatId,
-      action: pendingAlbums.action,
+      step: pendingAlbums.step,
+      stepDataJson: pendingAlbums.stepDataJson,
       draftId: pendingAlbums.draftId,
       stateRevision: pendingAlbums.stateRevision,
       attemptCount: pendingAlbums.attemptCount,
@@ -122,7 +126,8 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
       .get();
     if (!claim) continue;
     try {
-      if (row.stateRevision != null && getConversationState(backendDb, row.actorId, "post")?.revision !== row.stateRevision) {
+      const state = getConversationState(backendDb, row.actorId, "post");
+      if (row.stateRevision != null && state?.revision !== row.stateRevision) {
         unsafeDb(backendDb)
           .db.delete(pendingAlbums)
           .where(and(eq(pendingAlbums.id, row.id), eq(pendingAlbums.notified, ALBUM_CLAIMED)))
@@ -132,34 +137,35 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
       }
       const media = await importTelegramAlbumMedia(bot, backendDb, config, row.actorId, parseArrayValue(row.mediaJson));
       const draftId = row.draftId;
-      const step = parsePostWizardStep(row.action);
-      const isEdit = step?.type === "edit_text";
-      const isMediaReplacement = step?.type === "replace_media";
-      if ((isEdit || isMediaReplacement) && draftId && step) {
+      const step = row.step as PostSessionStep | null;
+      const albumData = row.stepDataJson;
+      const locale =
+        albumData.locale === "ru" || albumData.locale === "en"
+          ? albumData.locale
+          : state?.data.locale === "ru" || state?.data.locale === "en"
+            ? state.data.locale
+            : null;
+      const isEdit = step === "edit_text" && locale !== null;
+      const isMediaReplacement = step === "replace_media" && locale !== null;
+      if ((isEdit || isMediaReplacement) && draftId && locale) {
         createStudioServices(backendDb, config).posts.edit(row.actorId, draftId, {
-          locale: step.locale,
+          locale,
           text: isMediaReplacement ? "" : row.textRu,
           entities: isMediaReplacement ? [] : parseArrayValue(row.textEntitiesJson),
           media,
           ...(isMediaReplacement ? { replaceMediaOnly: true } : {}),
         });
-        clearConversationStateIfCurrent(backendDb, { kind: "post", step: postStepName(step), draftId }, row.actorId, row.stateRevision);
+        clearConversationStateIfCurrent(backendDb, { kind: "post", step, draftId }, row.actorId, row.stateRevision);
         await refreshDraftControlCard(bot, backendDb, config, row.actorId, draftId, row.chatId);
       } else {
         const text = row.textRu;
         const textEn = await translatePostText(text, config);
-        const created = createStudioServices(backendDb, config).publications.create(row.actorId, {
+        const created = createStudioServices(backendDb, config).publicationPipeline.create(row.actorId, {
           kind: "post",
           message: { text, textEn, media, entities: parseArrayValue(row.textEntitiesJson) },
         }).id;
         await refreshDraftControlCard(bot, backendDb, config, row.actorId, created, row.chatId);
-        if (step)
-          clearConversationStateIfCurrent(
-            backendDb,
-            { kind: "post", step: postStepName(step), draftId: row.draftId },
-            row.actorId,
-            row.stateRevision,
-          );
+        if (step) clearConversationStateIfCurrent(backendDb, { kind: "post", step, draftId: row.draftId }, row.actorId, row.stateRevision);
       }
       const removed = unsafeDb(backendDb)
         .db.delete(pendingAlbums)
@@ -189,6 +195,12 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
     }
   }
   return completed;
+}
+
+function stepData(step: PostWizardStep | null): Record<string, unknown> {
+  if (step?.type === "edit_text" || step?.type === "replace_media" || step?.type === "schedule_manual") return { locale: step.locale };
+  if (step?.type === "schedule_confirm") return { locale: step.locale, value: step.value.toISOString() };
+  return {};
 }
 
 /** Last word on an album that will never become a draft. Best-effort: a failed

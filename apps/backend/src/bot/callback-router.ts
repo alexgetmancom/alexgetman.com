@@ -5,7 +5,8 @@ import type { BackendConfig } from "../foundation/config.js";
 import { describeError, t } from "../foundation/i18n/index.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { isStaleCardCallback, PUBLICATION_CARD_FRESHNESS } from "./card-freshness.js";
-import { getConversationState } from "./conversation-state.js";
+import { getActiveConversationState, getConversationState } from "./conversation-state.js";
+import { executePublicationEffects, type PublicationEffect } from "./effects.js";
 import { type BotLocale, botLocale } from "./i18n.js";
 import { postActionHandlers } from "./post-actions.js";
 import { handlePostMessage, handlePostScreenCallback } from "./post-screen.js";
@@ -92,14 +93,14 @@ export function createCallbackRouter<TArgs, TEntity = undefined, TResult = void>
 
     try {
       if (!route) {
-        await answerCallback(ctx, options.unknownText?.(common.locale));
+        await answerCallback(ctx, backendDb, options.unknownText?.(common.locale));
         const keyboard = options.unknownKeyboard?.(common.locale);
         if (keyboard && typeof ctx.reply === "function")
           await ctx.reply(options.unknownText?.(common.locale) ?? "", { reply_markup: keyboard });
         return true;
       }
       if (options.sessionBound?.(common) && revision == null) {
-        await answerCallback(ctx, options.staleText?.(common.locale));
+        await answerCallback(ctx, backendDb, options.staleText?.(common.locale));
         return true;
       }
       if (revision != null && options.currentSessionRevision) {
@@ -108,11 +109,11 @@ export function createCallbackRouter<TArgs, TEntity = undefined, TResult = void>
 
       const entity = options.parseEntity?.(callback, action);
       if (options.parseEntity && entity == null) {
-        await answerCallback(ctx, options.invalidEntityText?.(common.locale));
+        await answerCallback(ctx, backendDb, options.invalidEntityText?.(common.locale));
         return true;
       }
       if (options.isStale && (await options.isStale(common, entity ?? undefined))) {
-        await answerCallback(ctx, options.staleText?.(common.locale));
+        await answerCallback(ctx, backendDb, options.staleText?.(common.locale));
         return true;
       }
       await options.prepare?.(common, entity ?? undefined);
@@ -126,13 +127,13 @@ export function createCallbackRouter<TArgs, TEntity = undefined, TResult = void>
   };
 }
 
-async function answerCallback(ctx: Context, text: string | undefined): Promise<void> {
-  await ctx.answerCallbackQuery(text ? { text } : undefined);
+async function answerCallback(ctx: Context, backendDb: BackendDb, text: string | undefined): Promise<void> {
+  await executePublicationEffects(ctx, backendDb, [{ type: "answer-callback", ...(text ? { text } : {}) }]);
 }
 
 type PublicationHandler = (args: PublicationActionContext) => Promise<PublicationActionResult>;
 // biome-ignore lint/suspicious/noConfusingVoidType: action declarations intentionally return no toast on the normal path.
-type PublicationActionResult = { toast?: string } | void;
+export type PublicationActionResult = readonly PublicationEffect[] | void;
 type PublicationRoutes = {
   [K in PublicationKind]: Record<(typeof PUBLICATION_ACTIONS)[K][number], PublicationHandler>;
 };
@@ -196,11 +197,15 @@ const publicationRouter = createCallbackRouter<PublicationActionContext, number,
   staleText: (locale) => t(locale, "action.card-stale"),
   unknownText: (locale) => t(locale, "action.card-stale"),
   unknownKeyboard: (locale) => new InlineKeyboard().text(t(locale, "menu.work-queue"), "queue_home"),
-  onResult: async ({ ctx, callback }, result) => {
-    if (callback.kind === "video") await ctx.answerCallbackQuery(result?.toast ? { text: toast(result.toast) } : undefined);
+  onResult: async ({ ctx, backendDb, callback }, result) => {
+    const effects = result ? [...result] : [];
+    if (callback.kind === "video" && !effects.some((effect) => effect.type === "answer-callback" || effect.type === "toast"))
+      effects.push({ type: "answer-callback" });
+    if (effects.length) await executePublicationEffects(ctx, backendDb, effects);
   },
-  onError: async ({ ctx, callback, locale }, error) => {
-    if (callback.kind === "video") return void (await ctx.answerCallbackQuery({ text: toast(describeError(locale, error)) }));
+  onError: async ({ ctx, backendDb, callback, locale }, error) => {
+    if (callback.kind === "video")
+      return void (await executePublicationEffects(ctx, backendDb, [{ type: "toast", text: toast(describeError(locale, error)) }]));
     throw error;
   },
 });
@@ -218,12 +223,9 @@ export async function handlePublicationCallback(
 /** Routes incoming text/media to the one active publication conversation. */
 export async function handleActivePublicationMessage(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<boolean> {
   const actorId = Number(ctx.from?.id);
-  if (getConversationState(backendDb, actorId, "video")) {
-    return handleVideoConversationMessage(ctx, backendDb, config);
-  }
-  if (getConversationState(backendDb, actorId, "post")) {
-    await handlePostMessage(ctx, backendDb, config);
-    return true;
-  }
-  return false;
+  const state = getActiveConversationState(backendDb, actorId);
+  if (!state) return false;
+  if (state.kind === "video") return handleVideoConversationMessage(ctx, backendDb, config);
+  await handlePostMessage(ctx, backendDb, config);
+  return true;
 }

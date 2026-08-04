@@ -1,4 +1,5 @@
 import { type Context, InlineKeyboard } from "grammy";
+import { acceptFlow } from "../application/conversation-flow.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
@@ -7,9 +8,9 @@ import { setTelegramVideoCard } from "../interfaces/telegram/control-cards.js";
 import { videoPreview } from "../interfaces/telegram/video-preview.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import { createStudioServices } from "../studio/services/index.js";
-import { acceptVideoFlowStep, previousVideoMetadataStep, type VideoWizardStep } from "../studio/video-fsm.js";
+import { previousVideoMetadataStep, VIDEO_FLOW, type VideoWizardStep } from "../studio/video-fsm.js";
 import { withCallbackActionLock } from "./callback-action.js";
-import type { PublicationActionContext } from "./callback-router.js";
+import type { PublicationActionContext, PublicationActionResult } from "./callback-router.js";
 import { appendCancelButton, cancelPromptKeyboard, confirmationKeyboard, resultNavigationKeyboard } from "./dialog-ui.js";
 import type { BotLocale } from "./i18n.js";
 import { showMainMenu } from "./menu-render.js";
@@ -34,8 +35,7 @@ import {
 } from "./video-ui.js";
 
 type VideoActionArgs = PublicationActionContext;
-// biome-ignore lint/suspicious/noConfusingVoidType: handlers use bare `return;` on every no-toast path; `void` is what makes that a valid Promise<VideoActionResult>.
-type VideoActionResult = { toast?: string } | void;
+type VideoActionResult = PublicationActionResult;
 type VideoActionHandler = (args: PublicationActionContext) => Promise<VideoActionResult>;
 
 const EDIT_FIELD_PROMPTS: Record<string, MessageKey> = {
@@ -115,7 +115,7 @@ async function handleLocale({ ctx, backendDb, actorId, locale, args }: VideoActi
   const session = getVideoState(backendDb, actorId);
   requireSessionStep(session?.step, ["locale"], "err.video-restart");
   if (!session || !["ru", "en"].includes(videoLocale)) throw new StudioError("err.video-restart");
-  const transition = await acceptVideoFlowStep("locale", videoLocale, session.data);
+  const transition = await acceptFlow(VIDEO_FLOW, "locale", videoLocale, session.data);
   if (!transition?.next) throw new StudioError("err.video-restart");
   const next = saveVideoState(backendDb, actorId, { ...session, step: transition.next as "asset", data: transition.data });
   await ctx.editMessageText(t(locale, "video.dialog-prompt"), {
@@ -160,7 +160,7 @@ async function handleTargetsDone({ ctx, backendDb, config, actorId }: VideoActio
   requireSessionStep(session?.step, ["targets"], "err.video-pick-platform");
   if (!session?.draftId || !session.selected.length) throw new StudioError("err.video-pick-platform");
   createStudioServices(backendDb, config).videos.replaceTargets(actorId, session.draftId, session.selected);
-  const transition = await acceptVideoFlowStep("targets", session.selected, { ...session.data, selectedTargets: session.selected });
+  const transition = await acceptFlow(VIDEO_FLOW, "targets", session.selected, { ...session.data, selectedTargets: session.selected });
   if (!transition?.next) throw new StudioError("err.video-pick-platform");
   const next = saveVideoState(backendDb, actorId, {
     ...session,
@@ -176,7 +176,7 @@ async function handleGameSkip({ ctx, backendDb, actorId, locale }: VideoActionAr
   const session = getVideoState(backendDb, actorId);
   requireSessionStep(session?.step, ["youtube_game_url"], "err.video-reopen-create");
   if (!session?.draftId) throw new StudioError("err.video-reopen-create");
-  const transition = await acceptVideoFlowStep("youtube_game_url", "-", { ...session.data, selectedTargets: session.selected });
+  const transition = await acceptFlow(VIDEO_FLOW, "youtube_game_url", "-", { ...session.data, selectedTargets: session.selected });
   if (!transition?.next) throw new StudioError("err.video-reopen-create");
   saveVideoState(backendDb, actorId, { ...session, step: transition.next as VideoConversationState["step"], data: transition.data });
   await ctx.editMessageText(t(locale, "video.game-skipped"));
@@ -205,7 +205,7 @@ async function handleRetry({ ctx, backendDb, config, actorId, locale, args }: Vi
   const id = requireDraftId(idText);
   createStudioServices(backendDb, config).videos.retry(actorId, id, target);
   await showVideoCard(ctx, backendDb, config, actorId, id, locale);
-  return { toast: t(locale, "video.requeued", { label: videoTargetLabel(target) }) };
+  return [{ type: "toast", text: t(locale, "video.requeued", { label: videoTargetLabel(target) }) }];
 }
 
 async function handleScheduleConfirm({ ctx, backendDb, config, actorId, args, data }: VideoActionArgs): Promise<VideoActionResult> {
@@ -259,7 +259,7 @@ async function handleScheduleMode({ ctx, backendDb, config, actorId, locale, act
   requireSessionStep(session.step, ["schedule_choice"], "err.video-reopen-publish");
   const mode = ({ common: "common", individual: "individual" } as const)[action as "common" | "individual"];
   if (!mode) throw new StudioError("err.video-reopen-publish");
-  const transition = await acceptVideoFlowStep("schedule_choice", mode, { ...session.data, selectedTargets: targets });
+  const transition = await acceptFlow(VIDEO_FLOW, "schedule_choice", mode, { ...session.data, selectedTargets: targets });
   const nextStep = transition?.next as "schedule_common" | "schedule_target" | null;
   if (!transition || !nextStep) throw new StudioError("err.video-reopen-publish");
   const first = targets[0];
@@ -427,7 +427,7 @@ async function handleRemove({ ctx, backendDb, config, actorId, locale, args, dat
     return;
   }
   await showVideoCard(ctx, backendDb, config, actorId, id, locale);
-  return { toast: t(locale, "video.removed", { label: videoTargetLabel(target) }) };
+  return [{ type: "toast", text: t(locale, "video.removed", { label: videoTargetLabel(target) }) }];
 }
 
 async function handleEditMenu({ ctx, backendDb, config, actorId, locale, args }: VideoActionArgs): Promise<VideoActionResult> {

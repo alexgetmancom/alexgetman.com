@@ -8,7 +8,6 @@ export const conversationSessions = sqliteTable(
     actorId: integer().notNull(),
     kind: text().notNull(),
     draftId: integer(),
-    action: text(),
     step: text(),
     selectedTargetsJson: json<string[]>().notNull().default([]),
     dataJson: json<JsonObject>().notNull().default({}),

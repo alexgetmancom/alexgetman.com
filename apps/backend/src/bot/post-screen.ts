@@ -68,7 +68,7 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
       text: message.text,
       entities: message.entities,
       media,
-      action: stateStep,
+      step: stateStep,
       draftId: state?.draftId ?? null,
       stateRevision: state?.revision ?? null,
     });
@@ -93,7 +93,7 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
     return;
   }
   const textEn = await translatePostText(message.text, config);
-  const draftId = createStudioServices(backendDb, config).publications.create(actorId, {
+  const draftId = createStudioServices(backendDb, config).publicationPipeline.create(actorId, {
     kind: "post",
     message: { ...message, textEn },
   }).id;

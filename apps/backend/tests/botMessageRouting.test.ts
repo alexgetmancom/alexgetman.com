@@ -2,7 +2,6 @@ import { describe, expect, it } from "bun:test";
 import type { Context } from "grammy";
 import { handleActivePublicationMessage } from "../src/bot/callback-router.js";
 import { saveConversationState } from "../src/bot/conversation-state.js";
-import { postStepData, postStepName } from "../src/bot/post-fsm.js";
 import { saveVideoState } from "../src/bot/video-ui.js";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import { pendingAlbums } from "../src/db/schema.js";
@@ -27,6 +26,25 @@ describe("Telegram publication message routing", () => {
     }
   });
 
+  it("does not send a text message from an active post session to the video handler", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      saveConversationState(backendDb, 42, { kind: "post", draftId: null, step: "new_post", data: {}, controlMessageId: null });
+      const ctx = {
+        from: { id: 42 },
+        chat: { id: 100 },
+        message: { text: "This must stay in the post flow" },
+        reply: async () => ({ message_id: 1 }),
+      } as unknown as Context;
+
+      expect(await handleActivePublicationMessage(ctx, backendDb, loadConfig({ ADMIN_IDS: "42" }))).toBe(true);
+      expect(unsafeDb(backendDb).sqlite.prepare("SELECT count(*) AS count FROM drafts").get()).toEqual({ count: 1 });
+      expect(unsafeDb(backendDb).sqlite.prepare("SELECT count(*) AS count FROM video_drafts").get()).toEqual({ count: 0 });
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("sends an album through the active post flow before parsing its input step", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
@@ -34,8 +52,8 @@ describe("Telegram publication message routing", () => {
       saveConversationState(backendDb, 42, {
         kind: "post",
         draftId,
-        step: postStepName({ type: "replace_media", locale: "en" }),
-        data: postStepData({ type: "replace_media", locale: "en" }),
+        step: "replace_media",
+        data: { locale: "en" },
         controlMessageId: 99,
       });
       const ctx = {

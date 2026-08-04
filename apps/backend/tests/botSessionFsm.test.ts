@@ -1,6 +1,5 @@
 import { describe, expect, it } from "bun:test";
 import {
-  legacyToPublication,
   parseDraftId,
   parsePublicationCallback,
   parseSessionCallback,
@@ -37,40 +36,12 @@ describe("Telegram session callback encoding", () => {
     });
   });
 
-  it("parses canonical and legacy publication callbacks into one object shape", () => {
+  it("parses canonical publication callbacks into one object shape", () => {
     expect(parseSessionCallback("p:post:sched_scope:both:42")).toEqual({
       data: "p:post:sched_scope:both:42",
       callback: { kind: "post", action: "sched_scope", args: ["both", "42"] },
       revision: null,
     });
-    expect(legacyToPublication("video_now:12")).toEqual({ kind: "video", action: "now", args: ["12"] });
-    expect(parseSessionCallback("video_now:12").callback).toEqual({ kind: "video", action: "now", args: ["12"] });
-    expect(legacyToPublication("sched_scope:both:42")).toEqual({
-      kind: "post",
-      action: "sched_scope",
-      args: ["42", "both"],
-    });
-    expect(legacyToPublication("sched_pick:ru:0830:42")).toEqual({
-      kind: "post",
-      action: "sched_pick",
-      args: ["42", "ru", "0830"],
-    });
-    expect(legacyToPublication("video_retry:youtube_shorts:12")).toEqual({
-      kind: "video",
-      action: "retry",
-      args: ["12", "youtube_shorts"],
-    });
-    expect(legacyToPublication("video_sched_pick:0800:7")).toEqual({
-      kind: "video",
-      action: "sched_pick",
-      args: ["7", "0800"],
-    });
-    expect(legacyToPublication("video_edit_field:youtube_title:7")).toEqual({
-      kind: "video",
-      action: "edit_field",
-      args: ["7", "youtube_title"],
-    });
-    expect(parsePublicationCallback("video_now:12")).toBeNull();
     expect(parsePublicationCallback("p:video:now:12")).toEqual({ kind: "video", action: "now", args: ["12"] });
   });
 

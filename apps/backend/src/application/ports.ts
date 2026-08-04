@@ -115,7 +115,6 @@ export type ConversationSessionRecord = {
   actorId: number;
   kind: ConversationSessionKind;
   draftId: number | null;
-  action: string | null;
   step: string | null;
   selectedTargets: string[];
   data: Record<string, unknown>;
@@ -133,7 +132,6 @@ export type ConversationSessionStore = {
     actorId: number;
     kind: ConversationSessionKind;
     draftId: number | null;
-    action: string | null;
     step: string | null;
     selectedTargets: string[];
     data: Record<string, unknown>;
@@ -148,7 +146,6 @@ export type ConversationSessionStore = {
     draftId: number | null;
     actorId: number;
     kind: ConversationSessionKind;
-    action?: string | null;
     step?: string | null;
     expectedRevision: number | null | undefined;
     updatedAt: string;

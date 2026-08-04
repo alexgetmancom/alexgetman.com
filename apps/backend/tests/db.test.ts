@@ -44,6 +44,10 @@ describe("openBackendDb", () => {
 
     const fixture = new Database(dbPath);
     fixture.exec("DROP TABLE conversation_sessions");
+    fixture.exec("DROP TABLE pending_albums");
+    fixture.exec(
+      "CREATE TABLE pending_albums (id text PRIMARY KEY NOT NULL, actor_id integer NOT NULL, chat_id integer NOT NULL, media_group_id text NOT NULL, action text, draft_id integer, state_revision integer, text_ru text DEFAULT '' NOT NULL, text_entities_json text, media_json text NOT NULL, notified integer DEFAULT 0 NOT NULL, attempt_count integer DEFAULT 0 NOT NULL, updated_at text NOT NULL)",
+    );
     fixture.exec(
       "CREATE TABLE admin_state (actor_id integer PRIMARY KEY NOT NULL, action text, draft_id integer, control_message_id integer, revision integer NOT NULL DEFAULT 0, updated_at text NOT NULL, expires_at text)",
     );
@@ -70,22 +74,23 @@ describe("openBackendDb", () => {
         "2026-08-04T10:00:00.000Z",
         "2026-08-04T10:30:00.000Z",
       );
-    const conversationMigration = drizzleMigrationMetadata().at(-2);
-    const latestMigration = drizzleMigrationMetadata().at(-1);
-    if (!conversationMigration || !latestMigration) throw new Error("migration metadata is incomplete");
-    fixture.prepare("DELETE FROM __drizzle_migrations WHERE hash IN (?, ?)").run(conversationMigration.hash, latestMigration.hash);
+    const migrations = drizzleMigrationMetadata();
+    const latestMigrations = migrations.slice(-3);
+    if (latestMigrations.length !== 3) throw new Error("migration metadata is incomplete");
+    fixture.prepare("DELETE FROM __drizzle_migrations WHERE hash IN (?, ?, ?)").run(...latestMigrations.map((migration) => migration.hash));
     fixture.close();
 
     const backendDb = openBackendDb(dbPath);
     try {
       expect(
-        backendDb.sqlite
-          .prepare("SELECT kind, draft_id, action, revision FROM conversation_sessions WHERE actor_id=? ORDER BY kind")
-          .all(42),
+        backendDb.sqlite.prepare("SELECT kind, draft_id, step, revision FROM conversation_sessions WHERE actor_id=? ORDER BY kind").all(42),
       ).toEqual([
-        { kind: "post", draft_id: 7, action: "edit_en", revision: 4 },
-        { kind: "video", draft_id: 9, action: null, revision: 6 },
+        { kind: "post", draft_id: 7, step: "edit_text", revision: 4 },
+        { kind: "video", draft_id: 9, step: "schedule_confirm", revision: 6 },
       ]);
+      expect(backendDb.sqlite.prepare("SELECT data_json FROM conversation_sessions WHERE actor_id=? AND kind='post'").get(42)).toEqual({
+        data_json: '{"locale":"en"}',
+      });
       expect(
         backendDb.sqlite
           .prepare("SELECT control_message_id, data_json FROM conversation_sessions WHERE actor_id=? AND kind='video'")

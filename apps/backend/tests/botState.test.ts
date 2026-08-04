@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { and, eq } from "drizzle-orm";
 import { clearConversationStateIfCurrent, getConversationState, saveConversationState } from "../src/bot/conversation-state.js";
-import { type PostWizardStep, postStateStep, postStepData, postStepName, resolvePostWizardStep } from "../src/bot/post-fsm.js";
+import { type PostWizardStep, postStateStep, resolvePostWizardStep } from "../src/bot/post-fsm.js";
 import { clearVideoState, getVideoState, saveVideoState } from "../src/bot/video-ui.js";
 import type { BackendDb } from "../src/db/client.js";
 import { conversationSessions } from "../src/db/schema.js";
@@ -18,8 +18,8 @@ function setPostAdminState(
   return saveConversationState(db, actorId, {
     kind: "post",
     draftId,
-    step: postStepName(step),
-    data: postStepData(step),
+    step: step.type,
+    data: postData(step),
     controlMessageId,
   }).revision;
 }
@@ -28,7 +28,7 @@ function getPostState(db: BackendDb, actorId: number) {
   const state = getConversationState(db, actorId, "post");
   const step = postStateStep(state);
   return state
-    ? { action: step, step, draft_id: state.draftId, control_message_id: state.controlMessageId, revision: state.revision }
+    ? { wizardStep: step, step, draft_id: state.draftId, control_message_id: state.controlMessageId, revision: state.revision }
     : null;
 }
 
@@ -39,7 +39,13 @@ function clearPostAdminStateIfCurrent(
   draftId: number | null,
   expectedRevision: number,
 ): boolean {
-  return clearConversationStateIfCurrent(db, { kind: "post", step: postStepName(step), draftId }, actorId, expectedRevision);
+  return clearConversationStateIfCurrent(db, { kind: "post", step: step.type, draftId }, actorId, expectedRevision);
+}
+
+function postData(step: PostWizardStep): Record<string, unknown> {
+  if (step.type === "edit_text" || step.type === "replace_media" || step.type === "schedule_manual") return { locale: step.locale };
+  if (step.type === "schedule_confirm") return { locale: step.locale, value: step.value.toISOString() };
+  return {};
 }
 
 describe("Telegram dialog state", () => {
@@ -55,32 +61,37 @@ describe("Telegram dialog state", () => {
     ];
 
     for (const step of steps) {
-      expect(resolvePostWizardStep(postStepName(step), postStepData(step))).toEqual(step);
+      expect(resolvePostWizardStep(step.type, postData(step))).toEqual(step);
     }
     expect(resolvePostWizardStep("schedule_confirm", { locale: "ru", value: "not-a-date" })).toBeNull();
+    expect(resolvePostWizardStep("edit_text_ru")).toEqual({ type: "edit_text", locale: "ru" });
+    expect(resolvePostWizardStep("schedule_confirm_en_2026-08-04T12:34:56.000Z")).toEqual({
+      type: "schedule_confirm",
+      locale: "en",
+      value,
+    });
   });
 
-  it("stores new post state in the typed step column and reads legacy action rows", () => {
+  it("stores the step name beside its structured parameters", () => {
     const backendDb: BackendDb = openBackendDb(":memory:");
     try {
       setPostAdminState(backendDb, 42, { type: "edit_text", locale: "ru" }, 7, 9);
       expect(unsafeDb(backendDb).db.select().from(conversationSessions).where(eq(conversationSessions.actorId, 42)).get()).toMatchObject({
-        action: null,
         step: "edit_text",
         dataJson: { locale: "ru" },
       });
       expect(getPostState(backendDb, 42)).toMatchObject({
-        action: { type: "edit_text", locale: "ru" },
+        wizardStep: { type: "edit_text", locale: "ru" },
         step: { type: "edit_text", locale: "ru" },
       });
 
       unsafeDb(backendDb)
         .db.update(conversationSessions)
-        .set({ action: null, step: "edit_text", dataJson: { locale: "en" } })
+        .set({ step: "edit_text", dataJson: { locale: "en" } })
         .where(eq(conversationSessions.actorId, 42))
         .run();
       expect(getPostState(backendDb, 42)).toMatchObject({
-        action: { type: "edit_text", locale: "en" },
+        wizardStep: { type: "edit_text", locale: "en" },
         step: { type: "edit_text", locale: "en" },
       });
     } finally {
@@ -185,7 +196,7 @@ describe("Telegram dialog state", () => {
         .values({
           actorId: 42,
           kind: "post",
-          action: "edit_ru",
+          step: "edit_text",
           draftId: 7,
           controlMessageId: 9,
           updatedAt: expired,
@@ -195,7 +206,6 @@ describe("Telegram dialog state", () => {
 
       expect(getPostState(backendDb, 42)).toBeNull();
       expect(unsafeDb(backendDb).db.select().from(conversationSessions).where(eq(conversationSessions.actorId, 42)).get()).toMatchObject({
-        action: null,
         revision: 1,
       });
     } finally {

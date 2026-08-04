@@ -103,6 +103,16 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       targets[target] = !targets[target];
       saveTargetsAndReschedule(backendDb, scheduling, actorId, draftId, draft, targets);
     },
+    removeTarget(actorId: number, draftId: number, target: string): void {
+      const draft = requirePostEditAllowed(backendDb, config, actorId, draftId, backendDb.clock.now());
+      if (!TARGETS.some(({ id }) => id === target)) throw new StudioError("err.unknown-target");
+      const registered = registeredPostTargetIds(backendDb);
+      if (registered.size && !registered.has(target)) throw new StudioError("err.unknown-target");
+      const targets = parseTargets(draft.targets_json);
+      if (!targets[target]) return;
+      targets[target] = false;
+      saveTargetsAndReschedule(backendDb, scheduling, actorId, draftId, draft, targets);
+    },
     cycleMode(actorId: number, draftId: number): keyof typeof PRESETS {
       const draft = requirePostEditAllowed(backendDb, config, actorId, draftId, backendDb.clock.now());
       const targets = parseTargets(draft.targets_json);

@@ -1,5 +1,5 @@
 import type { Context } from "grammy";
-import { acceptFlow, type Flow, type FlowStep } from "../application/conversation-flow.js";
+import type { Flow, FlowStep } from "../application/conversation-flow.js";
 import type { DraftMessage } from "../content/message.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -71,39 +71,19 @@ export function resolvePostWizardStep(value: PostWizardStepInput | string, data:
     const date = parseDate(data.value);
     return locale && date ? { type: "schedule_confirm", locale, value: date } : null;
   }
-  return null;
-}
-
-/** Returns the short database value for a typed post step. */
-export function postStepName(step: PostWizardStep): PostSessionStep {
-  const flowStep = POST_FLOW.steps[step.type];
-  if (!flowStep) throw new Error(`Unknown post flow step: ${step.type}`);
-  return flowStep.name as PostSessionStep;
-}
-
-/** Returns the parameter payload stored beside the short step name. */
-export function postStepData(step: PostWizardStep): Record<string, unknown> {
-  if (step.type === "edit_text" || step.type === "replace_media" || step.type === "schedule_manual") return { locale: step.locale };
-  if (step.type === "schedule_confirm") return { locale: step.locale, value: step.value.toISOString() };
-  return {};
-}
-
-/** Compact value used by the durable album handoff. */
-export function serializePostWizardStep(step: PostWizardStep | null): string | null {
-  if (!step) return null;
-  if (step.type === "edit_text" || step.type === "replace_media" || step.type === "schedule_manual") return `${step.type}:${step.locale}`;
-  if (step.type === "schedule_confirm") return `${step.type}:${step.locale}`;
-  return step.type;
-}
-
-/** Parses the typed step stored beside a pending album. */
-export function parsePostWizardStep(value: string | null): PostWizardStep | null {
-  if (!value) return null;
-  const [type, locale] = value.split(":");
-  if (type === "new_post") return { type };
-  if (type === "edit_sources") return { type };
-  if (type === "edit_text" || type === "replace_media" || type === "schedule_manual") {
-    return locale === "ru" || locale === "en" ? { type, locale } : null;
+  if (typeof value !== "string") return null;
+  // Read-only compatibility for sessions written before step parameters moved
+  // into data_json. New writes never use this representation.
+  const legacyLocaleStep = value.match(/^(edit_text|replace_media|schedule_manual)_(ru|en)$/);
+  if (legacyLocaleStep)
+    return {
+      type: legacyLocaleStep[1] as "edit_text" | "replace_media" | "schedule_manual",
+      locale: legacyLocaleStep[2] as PostWizardLocale,
+    };
+  const legacySchedule = value.match(/^schedule_confirm_(ru|en)_(.+)$/);
+  if (legacySchedule) {
+    const date = parseDate(legacySchedule[2]);
+    return date ? { type: "schedule_confirm", locale: legacySchedule[1] as PostWizardLocale, value: date } : null;
   }
   return null;
 }
@@ -114,14 +94,6 @@ export function isPostInputStep(step: PostWizardStep | null): boolean {
 
 export function postStateStep(state: Pick<ConversationState, "step" | "data"> | null): PostWizardStep | null {
   return state ? resolvePostWizardStep(state.step, state.data) : null;
-}
-
-export function acceptPostFlowStep(
-  step: PostWizardStep,
-  input: PostFlowInput,
-  data: PostFlowData,
-): Promise<{ data: PostFlowData; next: string | null } | null> {
-  return acceptFlow(POST_FLOW, step.type, input, data);
 }
 
 function localeStep(type: "edit_text" | "replace_media" | "schedule_manual", value: unknown): PostWizardStep | null {
