@@ -8,6 +8,7 @@ import { usageReport } from "./observability/usage.js";
 import { capabilitySummary, recordCapabilityPost } from "./operations/capabilities.js";
 import { channelReport, connectChannel, disableChannel } from "./operations/channels.js";
 import { doctorChecks } from "./operations/doctor.js";
+import { buildOperationsGuide, formatOperationsGuide, operationsGuideUsage } from "./operations/guide.js";
 import {
   applyMetricsBackfill,
   auditOperations,
@@ -72,6 +73,7 @@ function parseCredentials(pairs: string[]): Record<string, string> {
 function printHelp(): void {
   console.log(`alexgetman backend operations
 
+${operationsGuideUsage()}
   status [--db PATH]
   migrations [--db PATH]
   migrations-baseline --db PATH
@@ -110,6 +112,11 @@ async function main(): Promise<void> {
     return;
   }
   const dbPath = args.values.get("db") ?? process.env.PIPELINE_DB ?? "/data/pipeline.db";
+  if (args.command === "guide") {
+    const guide = buildOperationsGuide(dbPath);
+    console.log(args.flags.has("json") ? JSON.stringify(guide, null, 2) : formatOperationsGuide(guide));
+    return;
+  }
   if (args.command === "restore") {
     restoreDatabase(required(args, "source"), dbPath, args.flags.has("force"));
     console.log(JSON.stringify({ ok: true, restored: dbPath }, null, 2));
