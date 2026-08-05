@@ -23,5 +23,27 @@ export function extractMessage(ctx: Context): DraftMessage {
       duration: message.video.duration,
     });
   }
+  if (message && "animation" in message && message.animation) {
+    media.push({
+      type: "video",
+      file_id: message.animation.file_id,
+      width: message.animation.width,
+      height: message.animation.height,
+      duration: message.animation.duration,
+      file_name: message.animation.file_name,
+      mime_type: message.animation.mime_type,
+    });
+  }
+  const document = message && "document" in message ? message.document : undefined;
+  const documentName = document?.file_name ?? "";
+  const documentMimeType = document?.mime_type ?? "";
+  if (document && (documentMimeType.toLowerCase().startsWith("video/") || /\.(mp4|m4v|mov|webm|mkv|gif)$/i.test(documentName))) {
+    media.push({
+      type: "video",
+      file_id: document.file_id,
+      file_name: documentName || undefined,
+      mime_type: documentMimeType || undefined,
+    });
+  }
   return { text, media, entities };
 }
