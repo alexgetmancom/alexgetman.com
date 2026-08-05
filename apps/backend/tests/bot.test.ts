@@ -144,6 +144,29 @@ describe("Telegram controller flow", () => {
     expect(scheduledDrafts(backendDb)).toEqual([{ id: draftId, scheduledAt: ruAt.toISOString(), scheduledEnAt: enAt.toISOString() }]);
   });
 
+  it("renders compact controls for a scheduled post", () => {
+    backendDb = openBackendDb(":memory:");
+    const config = loadConfig({ ADMIN_IDS: "42" });
+    const draftId = createDraftFromMessage(backendDb, 42, { text: "Scheduled", textEn: "Scheduled", entities: [], media: [] });
+    const at = new Date(Date.now() + 60 * 60_000);
+    publishDraftToQueue(backendDb, draftId, { mode: "scheduled", ruAt: at, enAt: at });
+
+    const preview = draftPreview(backendDb, draftId, config);
+    const buttons = preview.keyboard.inline_keyboard.flat().map((button) => button.text);
+    expect(buttons).toEqual(["🕒 Change time", "✏️ Edit details", "🗑 Cancel publication", "← Work queue"]);
+    expect(buttons).not.toContain("▶️ Publish now");
+    expect(buttons).not.toContain("🗑 Delete draft");
+
+    const confirmation = draftPreview(backendDb, draftId, config, "confirm_cancel");
+    expect(confirmation.text).toContain("Cancel this publication?");
+    expect(JSON.stringify(confirmation.keyboard)).toContain("cancel_confirm");
+
+    const schedule = draftPreview(backendDb, draftId, config, "schedule");
+    expect(JSON.stringify(schedule.keyboard)).toContain("schedule_ru");
+    expect(JSON.stringify(schedule.keyboard)).toContain("schedule_en");
+    expect(JSON.stringify(schedule.keyboard)).not.toContain("sched_scope");
+  });
+
   it("does not enqueue a duplicate target job after that target is already final", () => {
     backendDb = openBackendDb(":memory:");
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Repeat", textEn: "Repeat", entities: [], media: [] });

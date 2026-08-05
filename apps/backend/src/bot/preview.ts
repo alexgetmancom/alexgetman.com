@@ -31,6 +31,7 @@ const DRAFT_VIEWS = [
   "schedule_en_us",
   "confirm_publish",
   "confirm_delete",
+  "confirm_cancel",
   "platforms",
 ] as const;
 
@@ -110,6 +111,7 @@ export function draftPreview(
       "schedule_en_us",
       "confirm_publish",
       "confirm_delete",
+      "confirm_cancel",
     ].includes(view)
   )
     return draftPreview(backendDb, draftId, config, "overview");
@@ -129,6 +131,18 @@ export function draftPreview(
   }
 
   if (view === "schedule") {
+    if (draft.status === "scheduled") {
+      keyboard
+        .text(t(locale, "post.change-time-ru"), publicationCallback("post", "view", [draftId, "schedule_ru"]))
+        .row()
+        .text(t(locale, "post.change-time-en"), publicationCallback("post", "view", [draftId, "schedule_en"]))
+        .row()
+        .text(t(locale, "common.back"), publicationCallback("post", "view", [draftId, "overview"]));
+      return {
+        text: `${draftHeader(draftId, targets, locale)}\n\n📅 *${t(locale, "post.change-time-title")}*\n${t(locale, "post.change-time-hint")}`,
+        keyboard,
+      };
+    }
     keyboard
       .text(t(locale, "post.scope-ru-now"), publicationCallback("post", "sched_scope", [draftId, "ru_now"]))
       .row()
@@ -196,6 +210,31 @@ export function draftPreview(
         { label: t(locale, "post.delete-btn"), callback: publicationCallback("post", "cancel_confirm", [draftId]) },
         { label: t(locale, "common.back"), callback: publicationCallback("post", "view", [draftId, "overview"]) },
       ),
+    };
+  }
+
+  if (view === "confirm_cancel") {
+    return {
+      text: `${draftHeader(draftId, targets, locale)}\n\n⚠️ *${t(locale, "post.cancel-publication-q")}*\n${t(locale, "post.cancel-publication-warn")}`,
+      keyboard: confirmationKeyboard(
+        { label: t(locale, "post.cancel-publication-btn"), callback: publicationCallback("post", "cancel_confirm", [draftId]) },
+        { label: t(locale, "common.back"), callback: publicationCallback("post", "view", [draftId, "overview"]) },
+      ),
+    };
+  }
+
+  if (draft.status === "scheduled") {
+    const canEditRu = canEditLocale(backendDb, config, draft.actor_id, draftId, "ru");
+    const canEditEn = canEditLocale(backendDb, config, draft.actor_id, draftId, "en");
+    keyboard.text(t(locale, "post.change-time"), publicationCallback("post", "schedule", [draftId])).row();
+    if (canEditRu || canEditEn) keyboard.text(t(locale, "post.edit-button"), publicationCallback("post", "edit_menu", [draftId])).row();
+    keyboard
+      .text(t(locale, "post.cancel-publication"), publicationCallback("post", "cancel", [draftId, "confirm_cancel"]))
+      .row()
+      .text(t(locale, "queue.back-btn"), "queue_home");
+    return {
+      text: `${draftHeader(draftId, targets, locale)}\n\n${t(locale, "post.scheduled-ru")}: ${formatMsk(draft.scheduled_at ? String(draft.scheduled_at) : null, config)}\n${t(locale, "post.scheduled-en")}: ${formatMsk(draft.scheduled_en_at ? String(draft.scheduled_en_at) : null, config)}`,
+      keyboard,
     };
   }
 

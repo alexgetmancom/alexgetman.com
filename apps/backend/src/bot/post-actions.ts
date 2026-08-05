@@ -248,14 +248,15 @@ async function handleCancel(args: PostActionArgs): Promise<PublicationActionResu
 }
 
 async function handleCancelConfirm(args: PostActionArgs): Promise<PublicationActionResult> {
+  const wasScheduled = args.pipeline.get(args.actorId, args.draftId).status === "scheduled";
   args.pipeline.cancel(args.actorId, args.draftId);
   return [
     { type: "toast", text: t(args.locale, "action.cancelled") },
     {
       type: "screen",
       mode: "edit",
-      text: t(args.locale, "action.draft-cancelled", { id: args.draftId }),
-      options: { reply_markup: resultNavigationKeyboard(args.locale, "drafts") },
+      text: t(args.locale, wasScheduled ? "action.publication-cancelled" : "action.draft-cancelled", { id: args.draftId }),
+      options: { reply_markup: resultNavigationKeyboard(args.locale, wasScheduled ? "upcoming" : "drafts") },
     },
   ];
 }
@@ -307,6 +308,8 @@ async function handleEditMenu({ backendDb, config, actorId, locale, draftId }: P
   };
   addLocale("ru");
   addLocale("en");
+  keyboard.text(t(locale, "post.edit-platforms"), publicationCallback("post", "view", [draftId, "platforms"])).row();
+  keyboard.text(t(locale, "post.edit-sources"), publicationCallback("post", "sources", [draftId])).row();
   keyboard.text(t(locale, "common.back"), publicationCallback("post", "view", [draftId, "overview"]));
   return [
     {
@@ -358,8 +361,9 @@ async function handleThreadsChain(args: PostActionArgs): Promise<PublicationActi
 }
 
 async function handleSchedule(args: PostActionArgs): Promise<PublicationActionResult> {
-  const { backendDb, actorId } = args;
+  const { backendDb, config, actorId, draftId, services } = args;
   clearConversationState(backendDb, actorId, "post");
+  if (services.posts.get(actorId, draftId).status === "scheduled") return previewEffects(backendDb, draftId, config, "schedule");
   return showPublicationIntent(args, "schedule");
 }
 
