@@ -187,6 +187,10 @@ describe("Telegram card freshness", () => {
       await handlePublicationCallback(context(postAction("story_schedule_all", [draftId]), 11), backendDb, config);
       await handlePublicationCallback(context(postAction("sched_scope", [draftId, "both"]), 11), backendDb, config);
       expect(telegramPostCard(backendDb, draftId)).toEqual({ chatId: 100, messageId: 11 });
+
+      await handlePublicationCallback(context(postAction("sched_pick", [draftId, "ru", "0800"]), 11), backendDb, config);
+      await handlePublicationCallback(context(postAction("sched_pick", [draftId, "en", "1800"]), 11), backendDb, config);
+      expect(JSON.stringify(draftPreview(backendDb, draftId, config))).toContain(`edit_menu:${draftId}`);
     } finally {
       backendDb.close();
     }

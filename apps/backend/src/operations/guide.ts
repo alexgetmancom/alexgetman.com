@@ -46,6 +46,7 @@ const OPERATIONS_GUIDE_COMMANDS: readonly OperationsGuideCommand[] = [
   },
   { name: "republish", usage: "republish --ref post:1 [--target x] [--locale ru|en]", mutates: true },
   { name: "retry", usage: "retry --ref post:1 [--target x] [--locale ru|en]", mutates: true },
+  { name: "reschedule", usage: 'reschedule --ref post:1 --locale ru|en|both --at "06.08.2026 08:00"', mutates: true },
   { name: "site-media-images", usage: "site-media-images [--apply --max-upload-kbps 6250]", mutates: true },
   { name: "site-media-deduplicate", usage: "site-media-deduplicate [--apply]", mutates: true },
   { name: "story-card-backfill", usage: "story-card-backfill --ref post:1 [--apply] [--force]", mutates: true },

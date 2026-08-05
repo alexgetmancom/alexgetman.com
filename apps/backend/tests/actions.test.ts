@@ -4,6 +4,7 @@ import { posts, postTargets, publicationSources, publications, publishJobs, site
 import { loadConfig } from "../src/foundation/config.js";
 import { runOperationCommand } from "../src/operations/commands.js";
 import { enqueuePublishJobTx } from "../src/publishing/queue.js";
+import { postService } from "../src/studio/services/posts.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
 describe("command center actions", () => {
@@ -243,6 +244,30 @@ describe("command center actions", () => {
       expect(backendDb.db.select().from(siteJobs).get()).toMatchObject({ postId: 10, reason: "refresh_en_site", status: "queued" });
       expect(backendDb.db.select({ count: count() }).from(siteJobs).get()?.count).toBe(1);
       expect(backendDb.db.select().from(publishJobs).all()).toHaveLength(0);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("reschedules a Studio post by locale through the operations command", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const config = loadConfig({ ADMIN_IDS: "42" });
+      const posts = postService(backendDb, config);
+      const draftId = posts.create(42, { text: "RU", textEn: "EN", entities: [], media: [] });
+      const initialAt = new Date(Date.now() + 60 * 60_000);
+      const postId = posts.schedule(42, draftId, { ruAt: initialAt, enAt: initialAt });
+      const nextAt = new Date(Date.now() + 2 * 60 * 60_000);
+
+      const result = await runOperationCommand(
+        backendDb,
+        { action: "reschedule", ref: `post:${postId}`, schedule_locale: "ru", at: nextAt.toISOString() },
+        config,
+      );
+
+      expect(result).toMatchObject({ ok: true, action: "reschedule", draft_id: draftId, post_id: postId, locale: "ru" });
+      expect(result.ru_at).toBe(nextAt.toISOString());
+      expect(result.en_at).toBe(initialAt.toISOString());
     } finally {
       backendDb.close();
     }

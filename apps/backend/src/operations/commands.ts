@@ -1,8 +1,13 @@
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import type { BackendDb } from "../db/client.js";
+import { unsafeDb } from "../db/client.js";
+import { drafts } from "../db/schema.js";
 import { editPublishedTargets } from "../delivery/external-edits.js";
 import { removePublishedTargets } from "../delivery/external-removals.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { parseManualSchedule } from "../publishing/schedule.js";
+import { createStudioServices } from "../studio/services/index.js";
 import { recordOperationAction } from "./action-audit.js";
 import { editLocaleContent, parseEnglishMedia, refreshLocaleSite, replaceLocaleMedia } from "./commands/content-repair.js";
 import { replaceTextFallbackTargets, requeueAfterRemoval, requeuePublicationScope } from "./commands/requeue.js";
@@ -19,6 +24,8 @@ export const commandActionSchema = z.object({
   media_json: z.string().optional(),
   text_en: z.string().optional(),
   media_en_json: z.string().optional(),
+  at: z.string().optional(),
+  schedule_locale: z.enum(["ru", "en", "both"]).optional(),
   token: z.string().optional(),
   actor_type: z.string().optional(),
 });
@@ -39,7 +46,10 @@ export async function runOperationCommand(
   let result: Record<string, unknown>;
   if (input.action === "retry" || input.action === "republish")
     result = requeuePublicationScope(backendDb, publicationRef, input.target, input.locale);
-  else if (input.action === "refresh_site") {
+  else if (input.action === "reschedule") {
+    if (!config) throw new Error("reschedule requires runtime config");
+    result = reschedulePost(backendDb, publicationRef, config, input.schedule_locale, input.at);
+  } else if (input.action === "refresh_site") {
     const locale = input.locale ?? "en";
     result = refreshLocaleSite(backendDb, publicationRef, locale);
   } else if (input.action === "edit" || input.action === "edit_en") {
@@ -97,4 +107,48 @@ export async function runOperationCommand(
   } else throw new Error(`unknown action: ${input.action}`);
   recordOperationAction(backendDb, input.action, publicationRef, input.target ?? null, result, input.actor_type ?? "command-center");
   return result;
+}
+
+function reschedulePost(
+  backendDb: BackendDb,
+  ref: ReturnType<typeof resolvePublicationRef> & {},
+  config: BackendConfig,
+  locale: "ru" | "en" | "both" | undefined,
+  rawAt: string | undefined,
+): Record<string, unknown> {
+  if (ref.postId == null) throw new Error("reschedule requires a Studio post ref");
+  if (!locale) throw new Error("missing schedule locale");
+  if (!rawAt?.trim()) throw new Error("missing schedule time");
+  const draft = unsafeDb(backendDb)
+    .db.select({ id: drafts.id, actorId: drafts.actorId })
+    .from(drafts)
+    .where(eq(drafts.postId, ref.postId))
+    .get();
+  if (!draft) throw new Error(`draft not found for publication: ${ref.postKey}`);
+  const at = parseOperationSchedule(rawAt, config);
+  const posts = createStudioServices(backendDb, config).posts;
+  const input = posts.scheduleAt(draft.actorId, draft.id, locale, at);
+  const postId = posts.schedule(draft.actorId, draft.id, input);
+  const updated = posts.get(draft.actorId, draft.id);
+  return {
+    ok: true,
+    action: "reschedule",
+    draft_id: draft.id,
+    post_id: postId,
+    locale,
+    at: at.toISOString(),
+    ru_at: updated.scheduled_at,
+    en_at: updated.scheduled_en_at,
+    status: updated.status,
+  };
+}
+
+function parseOperationSchedule(value: string, config: BackendConfig): Date {
+  const trimmed = value.trim();
+  if (/[zZ]|[+-]\d{2}:?\d{2}$/.test(trimmed)) {
+    const parsed = new Date(trimmed);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+    throw new Error(`invalid schedule time: ${value}`);
+  }
+  return parseManualSchedule(trimmed, config.TIMEZONE, new Date());
 }

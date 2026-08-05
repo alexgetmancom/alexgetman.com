@@ -96,6 +96,7 @@ ${operationsGuideUsage()}
   media-reprocess --ref post:1 [--apply]
   republish --ref post:1 [--target x] [--locale ru|en]
   retry --ref post:1 [--target x] [--locale ru|en]
+  reschedule --ref post:1 --locale ru|en|both --at "06.08.2026 08:00"
   site-media-images [--apply --max-upload-kbps 6250]
   site-media-deduplicate [--apply]
   story-card-backfill --ref post:1 [--apply] [--force]
@@ -287,6 +288,16 @@ async function main(): Promise<void> {
         },
         fetch,
       );
+      console.log(JSON.stringify(result, null, 2));
+    } else if (args.command === "reschedule") {
+      const locale = required(args, "locale");
+      if (locale !== "ru" && locale !== "en" && locale !== "both") throw new Error("--locale must be ru, en, or both");
+      const result = await createOperationsService(backendDb, config).command({
+        action: "reschedule",
+        ref: required(args, "ref"),
+        schedule_locale: locale,
+        at: required(args, "at"),
+      });
       console.log(JSON.stringify(result, null, 2));
     } else throw new Error(`unknown command: ${args.command}`);
   } finally {

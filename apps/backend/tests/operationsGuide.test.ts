@@ -25,5 +25,6 @@ describe("operations guide", () => {
       mutates: true,
       usage: "publication-repair [--ref post:1|video:1] [--apply]",
     });
+    expect(guide.commands.find((command) => command.name === "reschedule")).toMatchObject({ mutates: true });
   });
 });

@@ -80,6 +80,12 @@ describe("Telegram publication callback registry", () => {
     expect(publicationAction("post", "toggle")?.args).toEqual(["target"]);
   });
 
+  it("does not require a conversation revision for stateless post schedule pickers", () => {
+    expect(publicationAction("post", "sched_pick")?.sessionRevision).toBeUndefined();
+    expect(publicationAction("post", "sched_manual")?.sessionRevision).toBeUndefined();
+    expect(publicationAction("post", "sched_confirm")?.sessionRevision).toBe(true);
+  });
+
   it("keeps generated callback data under Telegram's 64-byte limit", () => {
     const callbacks = [
       publicationCallback("post", "view", [123456789, "schedule_ru_evening"]),

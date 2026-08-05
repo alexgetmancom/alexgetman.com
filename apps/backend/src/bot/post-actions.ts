@@ -5,7 +5,6 @@ import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { plural, t } from "../foundation/i18n/index.js";
-import { formatMsk } from "../interfaces/telegram/time.js";
 import { createStudioServices } from "../studio/services/index.js";
 import type { ConversationState } from "./conversation-state.js";
 import { clearConversationState, getConversationState } from "./conversation-state.js";
@@ -13,7 +12,7 @@ import { cancelPromptKeyboard, resultNavigationKeyboard } from "./dialog-ui.js";
 import type { PublicationEffect } from "./effects.js";
 import { botLocale } from "./i18n.js";
 import { showStoryCardChoice } from "./post-story-cards.js";
-import { type DraftView, modeLabel } from "./preview.js";
+import { canEditLocale, type DraftView, modeLabel } from "./preview.js";
 import { renderPostProgress } from "./progress.js";
 import type {
   action,
@@ -178,14 +177,17 @@ export function definePostActionHandlers(define: typeof action): Record<string, 
     cancel_confirm: define(handleCancelConfirm, { entity: "draft", freshCard: true, args: [] }),
     cancel_dialog: define(handleCancelDialog, { entity: "session", sessionRevision: true, args: [] }),
     cycle_mode: define(handleCycleMode, { entity: "draft", freshCard: true, args: [] }),
+    edit_menu: define(handleEditMenu, { entity: "draft", freshCard: true, args: [] }),
     edit_ru: define(handleEdit, { entity: "draft", freshCard: true, args: [] }),
     edit_en: define(handleEdit, { entity: "draft", freshCard: true, args: [] }),
+    edit_media_ru: define(handleEdit, { entity: "draft", freshCard: true, args: [] }),
+    edit_media_en: define(handleEdit, { entity: "draft", freshCard: true, args: [] }),
     sources: define(handleSources, { entity: "draft", freshCard: true, args: [] }),
     schedule: define(handleSchedule, { entity: "draft", freshCard: true, args: [] }),
     sched_scope: define(handleScheduleScope, { entity: "draft", freshCard: true, args: ["scope"] }),
-    sched_pick: define(handleSchedulePick, { entity: "draft", freshCard: true, sessionRevision: true, args: ["axis", "clock"] }),
+    sched_pick: define(handleSchedulePick, { entity: "draft", freshCard: true, args: ["axis", "clock"] }),
     sched_confirm: define(handleManualScheduleConfirm, { entity: "draft", freshCard: true, sessionRevision: true, args: [] }),
-    sched_manual: define(handleManualSchedule, { entity: "draft", freshCard: true, sessionRevision: true, args: ["axis"] }),
+    sched_manual: define(handleManualSchedule, { entity: "draft", freshCard: true, args: ["axis"] }),
     story_publish_all: define(handleStoryChoice, { entity: "draft", freshCard: true, args: [] }),
     story_publish_site: define(handleStoryChoice, { entity: "draft", freshCard: true, args: [] }),
     story_schedule_all: define(handleStoryChoice, { entity: "draft", freshCard: true, args: [] }),
@@ -199,6 +201,8 @@ export function definePostActionHandlers(define: typeof action): Record<string, 
 const POST_INPUT_STEPS: Record<string, PostWizardStep> = {
   edit_ru: { type: "edit_text", locale: "ru" },
   edit_en: { type: "edit_text", locale: "en" },
+  edit_media_ru: { type: "replace_media", locale: "ru" },
+  edit_media_en: { type: "replace_media", locale: "en" },
 };
 
 async function handleCycleMode({
@@ -281,8 +285,37 @@ async function handleEdit({ ctx, backendDb, actorId, locale, action, draftId }: 
       backendDb,
       actorId,
       draftId,
-      action.startsWith("edit") ? t(locale, "action.send-new-text") : t(locale, "action.send-new-media"),
+      step.type === "replace_media" ? t(locale, "action.send-new-media") : t(locale, "action.send-new-text"),
     ),
+  ];
+}
+
+async function handleEditMenu({ backendDb, config, actorId, locale, draftId }: PostActionArgs): Promise<PublicationActionResult> {
+  const keyboard = new InlineKeyboard();
+  const addLocale = (targetLocale: "ru" | "en"): void => {
+    if (!canEditLocale(backendDb, config, actorId, draftId, targetLocale)) return;
+    if (targetLocale === "ru")
+      keyboard
+        .text(t(locale, "post.edit-ru"), publicationCallback("post", "edit_ru", [draftId]))
+        .text(t(locale, "post.edit-media-ru"), publicationCallback("post", "edit_media_ru", [draftId]))
+        .row();
+    else
+      keyboard
+        .text(t(locale, "post.edit-en"), publicationCallback("post", "edit_en", [draftId]))
+        .text(t(locale, "post.edit-media-en"), publicationCallback("post", "edit_media_en", [draftId]))
+        .row();
+  };
+  addLocale("ru");
+  addLocale("en");
+  keyboard.text(t(locale, "common.back"), publicationCallback("post", "view", [draftId, "overview"]));
+  return [
+    {
+      type: "screen",
+      mode: "edit",
+      text: t(locale, "post.what-to-edit"),
+      options: { parse_mode: "Markdown", reply_markup: keyboard },
+      card: { kind: "post", draftId },
+    },
   ];
 }
 
@@ -426,7 +459,7 @@ async function commitLocaleSchedule(
   const { services, backendDb, config, actorId, draftId } = args;
   const posts = services.posts;
   const { ruAt, enAt } = posts.scheduleAt(actorId, draftId, scheduleLocale, value);
-  const postId = posts.schedule(actorId, draftId, {
+  posts.schedule(actorId, draftId, {
     ruAt,
     enAt,
     ...(immediateLocale ? { immediateLocale } : {}),
@@ -439,12 +472,17 @@ async function commitLocaleSchedule(
   }
   return [
     { type: "toast", text: t(uiLocale, "common.scheduled") },
-    {
-      type: "screen",
-      mode: "edit",
-      text: scheduledDraftText(uiLocale, draftId, postId, ruAt, enAt, config),
-      options: { reply_markup: resultNavigationKeyboard(uiLocale, "upcoming") },
-    },
+    ...publicationCardEffect(
+      args.renderer.card({
+        backendDb,
+        pipeline: posts,
+        actorId,
+        publicationId: draftId,
+        config,
+        locale: uiLocale,
+        view: "overview",
+      }),
+    ),
   ];
 }
 
@@ -542,17 +580,6 @@ function promptEffect(
       reply_markup: cancelPromptKeyboard(locale, publicationCallback("post", "cancel_dialog", [], revision)),
     },
   };
-}
-
-function scheduledDraftText(
-  locale: ReturnType<typeof botLocale>,
-  draftId: number,
-  postId: number,
-  ruAt: Date | null,
-  enAt: Date | null,
-  config: BackendConfig,
-): string {
-  return `🟢 ${t(locale, "action.scheduled-as", { draftId, postId })}\nRU: ${formatMsk(ruAt, config)}\nEN: ${formatMsk(enAt, config)}`;
 }
 
 function requireScheduleLocale(value: string): "ru" | "en" {

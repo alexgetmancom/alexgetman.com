@@ -466,7 +466,8 @@ function rescheduleIfNeeded(backendDb: BackendDb, config: BackendConfig, actorId
 }
 
 function schedulePost(backendDb: BackendDb, config: BackendConfig, actorId: number, draftId: number, input: PostScheduleInput): number {
-  const draft = requireMutableDraft(backendDb, config, actorId, draftId);
+  const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
+  if (draft.status === "cancelled") throw new StudioError("err.post-locked");
   const now = backendDb.clock.now();
   for (const [locale, value] of [
     ["ru", input.ruAt],
@@ -474,7 +475,7 @@ function schedulePost(backendDb: BackendDb, config: BackendConfig, actorId: numb
   ] as const) {
     if (!value) continue;
     const existing = locale === "ru" ? scheduledDate(draft.scheduled_at) : scheduledDate(draft.scheduled_en_at);
-    const preservesExistingSchedule = draft.status === "scheduled" && existing?.getTime() === value.getTime();
+    const preservesExistingSchedule = existing?.getTime() === value.getTime();
     if (input.allowPast || input.immediateLocale === locale || preservesExistingSchedule) assertValidScheduleDate(value);
     else assertFutureSchedule(value, now);
   }

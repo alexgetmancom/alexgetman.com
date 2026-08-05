@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
 import { registerChannel } from "../src/channels/registry.js";
 import type { UnsafeBackendDb } from "../src/db/client.js";
-import { drafts, postSources, publicationSources, publishJobs } from "../src/db/schema.js";
+import { drafts, postSources, publicationSources, publishJobs, siteJobs } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { postService } from "../src/studio/services/posts.js";
 import { openBackendDb } from "./helpers/open-db.js";
@@ -181,7 +181,7 @@ describe("Studio post commands", () => {
     ]);
   });
 
-  it("blocks post mutations after the publication is settled", () => {
+  it("blocks content mutations after the publication is settled but allows rescheduling", () => {
     backendDb = openBackendDb(":memory:");
     const posts = postService(backendDb, loadConfig({ ADMIN_IDS: "42" }));
     const draftId = posts.create(42, { text: "Settled", textEn: "Settled", entities: [], media: [] });
@@ -189,8 +189,43 @@ describe("Studio post commands", () => {
 
     expect(() => posts.edit(42, draftId, { locale: "ru", text: "Changed", entities: [], media: [] })).toThrow("err.post-locked");
     expect(() => posts.toggleTarget(42, draftId, "telegram")).toThrow("err.post-locked");
-    expect(() => posts.schedule(42, draftId, { ruAt: new Date(Date.now() + 60_000), enAt: null })).toThrow("err.post-locked");
     expect(() => posts.publish(42, draftId)).toThrow("err.post-locked");
     expect(() => posts.cancel(42, draftId)).toThrow("err.post-locked");
+    expect(() => posts.schedule(42, draftId, { ruAt: new Date(Date.now() + 60_000), enAt: null })).not.toThrow();
+  });
+
+  it("does not duplicate final jobs when a settled post is rescheduled", () => {
+    backendDb = openBackendDb(":memory:");
+    const config = loadConfig({ ADMIN_IDS: "42" });
+    const posts = postService(backendDb, config);
+    const draftId = posts.create(42, { text: "Settled", textEn: "Settled", entities: [], media: [] });
+    const firstAt = new Date(Date.now() + 5 * 60_000);
+    const postId = posts.schedule(42, draftId, { ruAt: firstAt, enAt: firstAt });
+    const socialBefore = backendDb.db.select({ jobId: publishJobs.jobId }).from(publishJobs).where(eq(publishJobs.postId, postId)).all();
+    const siteBefore = backendDb.db.select({ jobId: siteJobs.jobId }).from(siteJobs).where(eq(siteJobs.postId, postId)).all();
+
+    backendDb.db.update(publishJobs).set({ status: "published" }).where(eq(publishJobs.postId, postId)).run();
+    backendDb.db.update(siteJobs).set({ status: "published" }).where(eq(siteJobs.postId, postId)).run();
+    backendDb.db.update(drafts).set({ status: "published" }).where(eq(drafts.id, draftId)).run();
+
+    const nextAt = new Date(Date.now() + 10 * 60_000);
+    expect(() => posts.schedule(42, draftId, { ruAt: nextAt, enAt: nextAt })).not.toThrow();
+    expect(backendDb.db.select({ jobId: publishJobs.jobId }).from(publishJobs).where(eq(publishJobs.postId, postId)).all()).toEqual(
+      socialBefore,
+    );
+    expect(backendDb.db.select({ jobId: siteJobs.jobId }).from(siteJobs).where(eq(siteJobs.postId, postId)).all()).toEqual(siteBefore);
+    expect(
+      backendDb.db
+        .select({ status: publishJobs.status })
+        .from(publishJobs)
+        .where(eq(publishJobs.postId, postId))
+        .all()
+        .every((job) => job.status === "published"),
+    ).toBe(true);
+    expect(posts.get(42, draftId)).toMatchObject({
+      status: "published",
+      scheduled_at: nextAt.toISOString(),
+      scheduled_en_at: nextAt.toISOString(),
+    });
   });
 });

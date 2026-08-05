@@ -207,9 +207,7 @@ export function draftPreview(
     keyboard.text(t(locale, "post.choose-platforms"), publicationCallback("post", "view", [draftId, "platforms"])).row();
     const canEditRu = canEditLocale(backendDb, config, draft.actor_id, draftId, "ru");
     const canEditEn = canEditLocale(backendDb, config, draft.actor_id, draftId, "en");
-    if (canEditRu) keyboard.text(t(locale, "post.edit-ru"), publicationCallback("post", "edit_ru", [draftId]));
-    if (canEditEn) keyboard.text(t(locale, "post.edit-en"), publicationCallback("post", "edit_en", [draftId]));
-    if (canEditRu || canEditEn) keyboard.row();
+    if (canEditRu || canEditEn) keyboard.text(t(locale, "post.edit-button"), publicationCallback("post", "edit_menu", [draftId])).row();
     keyboard
       .text(`🔗 ${locale === "ru" ? "Источники" : "Sources"}: ${sourceCount}`, publicationCallback("post", "sources", [draftId]))
       .row();
@@ -264,7 +262,7 @@ function failedTargets(backendDb: BackendDb, draftId: number): Array<{ target: s
   }
 }
 
-function canEditLocale(backendDb: BackendDb, config: BackendConfig, actorId: number, draftId: number, locale: "ru" | "en"): boolean {
+export function canEditLocale(backendDb: BackendDb, config: BackendConfig, actorId: number, draftId: number, locale: "ru" | "en"): boolean {
   try {
     requirePostEditAllowed(backendDb, config, actorId, draftId, new Date(), locale);
     return true;
