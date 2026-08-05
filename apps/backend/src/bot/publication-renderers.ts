@@ -17,7 +17,7 @@ export type PublicationCard = {
   keyboard: InlineKeyboard;
 };
 
-export type PublicationRendererInput = {
+type PublicationRendererInput = {
   backendDb: BackendDb;
   pipeline: PublicationPipeline;
   actorId: number;

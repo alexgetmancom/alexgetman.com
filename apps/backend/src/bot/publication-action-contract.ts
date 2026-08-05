@@ -29,7 +29,7 @@ export type PublicationActionContext = {
 
 export type PublicationActionResult = readonly PublicationEffect[] | void;
 export type PublicationActionHandler = (context: PublicationActionContext) => Promise<PublicationActionResult>;
-export type PublicationActionEntity = "draft" | "session" | "none";
+type PublicationActionEntity = "draft" | "session" | "none";
 
 export type PublicationActionDefinition = {
   handler: PublicationActionHandler;

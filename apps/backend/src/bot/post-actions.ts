@@ -28,7 +28,7 @@ import { callbackMessageId } from "./telegram-context.js";
 
 type PostActionArgs = PublicationActionContext;
 
-export type PostWizardLocale = "ru" | "en";
+type PostWizardLocale = "ru" | "en";
 export type PostSessionStep = "new_post" | "edit_sources" | "edit_text" | "replace_media" | "schedule_manual" | "schedule_confirm";
 
 export type PostWizardStep =
@@ -51,7 +51,7 @@ export type PostFlowInput = {
   message: DraftMessage;
 };
 
-export function postStepData(step: PostWizardStep): Record<string, unknown> {
+function postStepData(step: PostWizardStep): Record<string, unknown> {
   if (step.type === "edit_text" || step.type === "replace_media" || step.type === "schedule_manual") return { locale: step.locale };
   if (step.type === "schedule_confirm") return { locale: step.locale, value: step.value.toISOString() };
   return {};

@@ -19,14 +19,12 @@ const sharedActions = {
   retry: action(handleRetry, { entity: "draft", args: ["target", "origin"] }),
 } as const satisfies Record<string, PublicationActionDefinition>;
 
-export const publicationActions = {
+const publicationActions = {
   post: { ...sharedActions, ...definePostActionHandlers(action) },
   video: { ...sharedActions, ...defineVideoActionHandlers(action) },
 } as const satisfies Record<PublicationKind, Readonly<Record<string, PublicationActionDefinition>>>;
 
 const ACTION_TABLES: Record<PublicationKind, Readonly<Record<string, PublicationActionDefinition>>> = publicationActions;
-
-export type PublicationActionName = keyof (typeof publicationActions)[PublicationKind];
 
 export function publicationAction(kind: PublicationKind, name: string): PublicationActionDefinition | undefined {
   return ACTION_TABLES[kind][name];

@@ -14,7 +14,7 @@ export type PublicationSchedule = {
   immediateKey?: string;
 };
 
-export type PublicationRetrySummary = {
+type PublicationRetrySummary = {
   requeued: number;
   alreadyQueued: number;
 };

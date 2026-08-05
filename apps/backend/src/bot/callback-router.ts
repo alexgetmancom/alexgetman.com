@@ -22,7 +22,7 @@ import {
 import { publicationRenderers } from "./publication-renderers.js";
 import { handleVideoConversationMessage } from "./video-conversation.js";
 
-export type CallbackRouterContext = Omit<PublicationActionContext, "args" | "draftId" | "pipeline" | "services" | "renderer"> & {
+type CallbackRouterContext = Omit<PublicationActionContext, "args" | "draftId" | "pipeline" | "services" | "renderer"> & {
   data: string;
   rawArgs: string[];
 };
