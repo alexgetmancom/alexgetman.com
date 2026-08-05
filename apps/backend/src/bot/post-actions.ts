@@ -173,11 +173,13 @@ function extractUrls(value: string): string[] {
 
 export function definePostActionHandlers(define: typeof action): Record<string, PublicationActionDefinition> {
   return {
+    toggle: define(handleToggle, { entity: "draft", freshCard: true, args: ["target"] }),
+    cancel: define(handleCancel, { entity: "draft", freshCard: true, args: ["view"] }),
+    cancel_confirm: define(handleCancelConfirm, { entity: "draft", freshCard: true, args: [] }),
+    cancel_dialog: define(handleCancelDialog, { entity: "session", sessionRevision: true, args: [] }),
     cycle_mode: define(handleCycleMode, { entity: "draft", freshCard: true, args: [] }),
     edit_ru: define(handleEdit, { entity: "draft", freshCard: true, args: [] }),
     edit_en: define(handleEdit, { entity: "draft", freshCard: true, args: [] }),
-    replace_ru_media: define(handleEdit, { entity: "draft", freshCard: true, args: [] }),
-    replace_en_media: define(handleEdit, { entity: "draft", freshCard: true, args: [] }),
     sources: define(handleSources, { entity: "draft", freshCard: true, args: [] }),
     schedule: define(handleSchedule, { entity: "draft", freshCard: true, args: [] }),
     sched_scope: define(handleScheduleScope, { entity: "draft", freshCard: true, args: ["scope"] }),
@@ -197,8 +199,6 @@ export function definePostActionHandlers(define: typeof action): Record<string, 
 const POST_INPUT_STEPS: Record<string, PostWizardStep> = {
   edit_ru: { type: "edit_text", locale: "ru" },
   edit_en: { type: "edit_text", locale: "en" },
-  replace_ru_media: { type: "replace_media", locale: "ru" },
-  replace_en_media: { type: "replace_media", locale: "en" },
 };
 
 async function handleCycleMode({
@@ -212,6 +212,56 @@ async function handleCycleMode({
   const posts = services.posts;
   const nextMode = posts.cycleMode(actorId, draftId);
   return previewEffects(backendDb, draftId, config, "overview", `${t(locale, "post.mode")}: ${modeLabel(nextMode, locale)}`);
+}
+
+async function handleToggle(args: PostActionArgs): Promise<PublicationActionResult> {
+  const target = args.args.target;
+  if (!target) throw new StudioError("action.unknown");
+  args.pipeline.toggleTarget(args.actorId, args.draftId, target);
+  const card = args.renderer.card({
+    backendDb: args.backendDb,
+    pipeline: args.pipeline,
+    actorId: args.actorId,
+    publicationId: args.draftId,
+    config: args.config,
+    locale: args.locale,
+    view: "platforms",
+  });
+  return [{ type: "toast", text: t(args.locale, "action.target-updated", { target }) }, ...publicationCardEffect(card)];
+}
+
+async function handleCancel(args: PostActionArgs): Promise<PublicationActionResult> {
+  const card = args.renderer.card({
+    backendDb: args.backendDb,
+    pipeline: args.pipeline,
+    actorId: args.actorId,
+    publicationId: args.draftId,
+    config: args.config,
+    locale: args.locale,
+    view: args.args.view ?? "confirm_cancel",
+  });
+  return publicationCardEffect(card);
+}
+
+async function handleCancelConfirm(args: PostActionArgs): Promise<PublicationActionResult> {
+  args.pipeline.cancel(args.actorId, args.draftId);
+  return [
+    { type: "toast", text: t(args.locale, "action.cancelled") },
+    {
+      type: "screen",
+      mode: "edit",
+      text: t(args.locale, "action.draft-cancelled", { id: args.draftId }),
+      options: { reply_markup: resultNavigationKeyboard(args.locale, "drafts") },
+    },
+  ];
+}
+
+async function handleCancelDialog(args: PostActionArgs): Promise<PublicationActionResult> {
+  return [
+    { type: "answer-callback" },
+    { type: "session", operation: "clear", kind: args.callback.kind, actorId: args.actorId },
+    ...(args.mainMenu ? [{ type: "main-menu", menu: args.mainMenu, edit: true } as const] : []),
+  ];
 }
 
 async function handleEdit({ ctx, backendDb, actorId, locale, action, draftId }: PostActionArgs): Promise<PublicationActionResult> {

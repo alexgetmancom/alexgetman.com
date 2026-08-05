@@ -26,7 +26,6 @@ import {
   getVideoState,
   parseVideoStep,
   saveVideoState,
-  startVideoEffects,
   targetKeyboard,
   type VideoConversationInput,
   type VideoConversationState,
@@ -57,7 +56,6 @@ function requireFlowStep(current: string | undefined, allowed: readonly string[]
 /** Declares the video-only portion of the publication action registry. */
 export function defineVideoActionHandlers(define: typeof action): Record<string, PublicationActionDefinition> {
   return {
-    start: define(handleStart, { entity: "none", args: [] }),
     locale: define(handleLocale, { entity: "session", sessionRevision: true, args: ["locale"] }),
     cancel_dialog: define(handleCancelDialog, { entity: "session", sessionRevision: true, args: [] }),
     wizard_toggle: define(handleToggle, { entity: "session", sessionRevision: true, args: ["target"] }),
@@ -73,13 +71,12 @@ export function defineVideoActionHandlers(define: typeof action): Record<string,
     cancel_confirm: define(handleCancel, { entity: "draft", args: [] }),
     time: define(handleTime, { entity: "draft", freshCard: true, args: ["axis"] }),
     sched_pick: define(handleSchedulePick, { entity: "draft", freshCard: true, sessionRevision: true, args: ["axis", "clock"] }),
-    sched_manual: define(handleScheduleManual, { entity: "draft", freshCard: true, sessionRevision: true, args: ["axis"] }),
+    sched_manual: define(handleScheduleManual, { entity: "draft", freshCard: true, sessionRevision: true, args: [] }),
     sched_confirm: define(handleScheduleConfirm, { entity: "draft", freshCard: true, sessionRevision: true, args: [] }),
     remove_ask: define(handleRemoveAsk, { entity: "draft", freshCard: true, args: ["target"] }),
     remove: define(handleRemove, { entity: "draft", freshCard: true, args: ["target"] }),
     edit_menu: define(handleEditMenu, { entity: "draft", freshCard: true, args: [] }),
     edit_field: define(handleEditField, { entity: "draft", freshCard: true, args: ["field"] }),
-    edit: define(handleEdit, { entity: "draft", freshCard: true, args: [] }),
   };
 }
 
@@ -157,10 +154,6 @@ function videoConfirmationEffect(
 function existingVideoControlEffect(session: VideoConversationState, text: string, keyboard: InlineKeyboard): PublicationEffect[] {
   if (!session.controlMessageId) return [{ type: "prompt", text, options: { parse_mode: "Markdown", reply_markup: keyboard } }];
   return [{ type: "edit-message", messageId: session.controlMessageId, text, options: { parse_mode: "Markdown", reply_markup: keyboard } }];
-}
-
-async function handleStart({ ctx, backendDb, actorId, locale }: VideoActionArgs): Promise<VideoActionResult> {
-  return startVideoEffects(ctx, backendDb, actorId, locale);
 }
 
 async function handleLocale({ backendDb, actorId, locale, args }: VideoActionArgs): Promise<VideoActionResult> {
@@ -459,18 +452,6 @@ async function handleEditField({ ctx, backendDb, actorId, locale, args, draftId,
   };
   saveVideoState(backendDb, actorId, session);
   return [videoPromptEffect(backendDb, actorId, t(locale, definition.prompt))];
-}
-
-async function handleEdit({ ctx, backendDb, actorId, locale, draftId, services }: VideoActionArgs): Promise<VideoActionResult> {
-  const session: VideoConversationInput = {
-    draftId,
-    step: "label",
-    selected: getVideoTargets(services, actorId, draftId),
-    data: {},
-    controlMessageId: callbackMessageId(ctx),
-  };
-  saveVideoState(backendDb, actorId, session);
-  return [videoPromptEffect(backendDb, actorId, t(locale, "video.edit-label-prompt"))];
 }
 
 function scheduleValues(value: unknown): Record<string, string> | undefined {
