@@ -1,14 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 
-export type OperationsGuideCommand = {
+type OperationsGuideCommand = {
   name: string;
   usage: string;
   mutates: boolean;
   notes?: string;
 };
 
-export const OPERATIONS_GUIDE_COMMANDS: readonly OperationsGuideCommand[] = [
+const OPERATIONS_GUIDE_COMMANDS: readonly OperationsGuideCommand[] = [
   { name: "status", usage: "status [--db PATH]", mutates: false },
   { name: "migrations", usage: "migrations [--db PATH]", mutates: false },
   { name: "migrations-baseline", usage: "migrations-baseline --db PATH", mutates: true, notes: "writes the migration baseline" },
@@ -56,7 +56,7 @@ export const OPERATIONS_GUIDE_COMMANDS: readonly OperationsGuideCommand[] = [
 
 type LocalState = "available" | "missing" | "unusable";
 
-export type LocalOperationsProbe = {
+type LocalOperationsProbe = {
   path: string;
   state: LocalState;
   reason: string;
@@ -79,7 +79,7 @@ export type OperationsGuide = {
   commands: readonly OperationsGuideCommand[];
 };
 
-export function probeLocalOperations(databasePath: string): LocalOperationsProbe {
+function probeLocalOperations(databasePath: string): LocalOperationsProbe {
   const resolvedPath = path.resolve(databasePath);
   try {
     const stat = fs.statSync(resolvedPath);
