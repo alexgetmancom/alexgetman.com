@@ -1,93 +1,92 @@
+# How to work here
+
+I am the only developer, reviewer, and operator of this system. No other code calls these APIs,
+there is no team, there is no on-call rotation. Anything that exists to coordinate a team, or to
+keep someone else's callers working, is dead weight. Assume the direct version of the work and do
+not ask permission for it.
+
+- No transitional scaffolding: no shims, no aliases kept "for one release", no facade or adapter
+  layers bridging an old shape to a new one, no dual read/write windows, no flags guarding an old
+  path, no backfills for a shape being abandoned. Cut over in one move — rename, delete the old
+  path in the same commit, update every call site, migrate or drop the data.
+- A wrapper is still a wrapper when it is small. A one-function file around another function, or a
+  "facade" that is a type switch with casts inside, gets deleted.
+- Build for the case that exists. No extension points, strategy layers, or config knobs with one
+  implementation and no second one in sight.
+- A shared abstraction that needs a branch on which caller it serves is the wrong abstraction. Push
+  the difference into an explicit capability, or keep the two implementations apart under names that
+  say what they do. Never add the branch.
+- Deleting beats adding. Say how many lines went.
+- One concept, one name. Two names for the same thing is a defect.
+- Finish in one move: no TODO breadcrumbs, no stubs "for later", no half-migrated state in the tree.
+  If it cannot be finished, say so instead of leaving a seam.
+- Fewer, larger steps. A stage boundary belongs only where a real risk boundary is.
+- No team ceremony: no RFCs, no ADRs, no deprecation notices, no changelog, no pull requests.
+- One path to production. A second mechanism doing the same job means one of them is wrong.
+- Tests where they earn their keep: silent breakage, wiring that drifts, bugs actually found. Not
+  coverage as ritual.
+- Verify, don't reason. Run it, measure it, then state it — especially about CI, Docker, production.
+- Docs only when they change what I do next.
+
+If the direct version has a real cost — data loss, a broken card in chat, an interrupted session —
+name it in a sentence or two and proceed. Do not turn it into a menu of options.
+
 # Language
 
-**The repository is English-only. The product is bilingual; the codebase is not.**
-
-- English is required in: code comments, identifiers, commit messages, test names,
-  log and error messages, `README.md`, and every other doc or design note.
-- Russian belongs only in *product content* — user-facing UI strings, locale
-  files, bot copy, post text. Those are data, not code.
-- Why: the product ships RU and EN, so Russian in source blurs the line between
-  "text the reader sees" and "text explaining the code". A reviewer must be able
-  to tell them apart at a glance, and translation tooling must never pick up a
-  comment.
-- Translated docs get an explicit suffix: `README.md` is the source of truth,
-  `README.ru.md` is a translation of it (not yet written).
-- When you touch a file that still has Russian comments, convert the lines you
-  are already editing. Do not open unrelated files just to translate them.
+The repository is English-only: code, comments, identifiers, commit messages, test names, log and
+error messages, docs. Russian belongs only to product content — UI strings, locale files, bot copy,
+post text. That is data, not code. Convert Russian comments in lines you are already editing; do not
+open unrelated files to translate them.
 
 # Workflow
 
-- Work only on `main`; do not create branches or PRs.
-- Before every push: typecheck, tests, and production build.
-- Push directly to `main`; CI/CD is the main production path.
+Work on `main`. No branches, no PRs. Typecheck, tests, and a production build before every push.
+CI/CD deploys `alex` from `main`. The `maru` container is deployed by hand — an unchanged Maru
+revision after a push is expected; never deploy it unless asked.
 
-## Persistence boundaries
+# Persistence boundaries
 
-- Studio and Content application services consume persistence ports, not Drizzle or raw SQLite.
-- Publishing, Delivery, and Channels are application boundaries too: new or changed application logic there should use ports; existing worker and reconciliation transactions remain explicit `unsafeDb(...)` exceptions until a focused port refactor moves them.
-- Analytics reports, Operations read models, Observability, and Engagement may read Drizzle directly because they are database-backed reporting or operational surfaces.
-- `BackendDb` is the safe application handle. Raw SQLite is available only through the explicitly named `unsafeDb(...)` escape hatch, and architecture tests must keep the Studio and Content exception set empty unless a file is deliberately classified as infrastructure.
+`BackendDb` is the application handle; raw SQLite only through the explicitly named `unsafeDb(...)`.
+Studio and Content go through persistence ports, and their exception set in the architecture tests
+must stay empty. Publishing, Delivery, and Channels use ports for new logic; their existing worker
+and reconciliation transactions remain `unsafeDb(...)` until a focused refactor moves them.
+Analytics, Operations read models, Observability, and Engagement may read Drizzle directly.
 
-## Production deployment
+# Runtime diagnostics
 
-- The `alex` production container follows the CI/CD deployment path.
-- The `maru` production container is deployed manually by the user. CI/CD does not update Maru automatically; an unchanged Maru image or revision after a push is expected. Do not deploy Maru unless the user explicitly asks.
+Start any worker, queue, configuration, publication, or error investigation with
+`bun run --filter @alexgetman/backend ops guide --json`. It is read-only and it is the source of
+truth for the command catalog and for whether the local route is usable. If it reports `local.state`
+as `missing` or `unusable`, do not repair `/data` or seed a local database — use the production
+command it prints.
 
-## Локальные данные для сайта и плеера
+Production is `ssh tw-nl`, containers `alexgetman-backend` and `maru-backend`, and direct execution
+needs `docker exec -u bun <container> bun /app/ops/cli.js <command>` because the entrypoint starts as
+root. For a missing publication start with `audit`; it covers both the text and video pipelines.
+Get CLI output before reading source for production state.
 
-- Пустая локальная БД — норма: главная отрендерит «English posts will appear here…», плеер не смонтируется. **Не сеять данные вручную и не писать INSERT'ы по месту** — есть фикстура.
-- `bun scripts/dev-seed.ts` — 3 опубликованных поста, у первого 2 картинки. Пишет БД и медиа в `.dev-fixture/` (в gitignore) и печатает готовую строку запуска:
-  - `PIPELINE_DB=<db> SITE_PUBLIC_DIR=<public-dir> bun run dev`
-  - Флаги: `--posts N`, `--gallery N` (картинок у первого поста), `--db`, `--public-dir`, `--reset` (пересоздать).
-- Почему по умолчанию именно так: на пустом или односоставном фиде не видны ни лента, ни фильтры режимов, ни сегментированная полоса прогресса — она появляется только при 2+ картинках в посте.
-- Источник данных — `apps/web/src/server/site-fixture.ts` (drizzle-схема + реальные байты картинок под продовым именованием из `site-media-naming.ts`). Оттуда же сеется SSR-смоук-тест, поэтому дев и CI смотрят на одну и ту же форму данных. Менять форму — там, а не в вызывающих местах.
-- Для логики плеера (таймеры, автоматы, прогресс) писать юнит-тесты рядом с `apps/web/src/scripts/story-player/*.test.ts` на happy-dom — быстро и детерминированно. Учитывать: **happy-dom не считает layout**, `offsetTop`/`clientHeight`/`scrollTop` там всегда 0, поэтому геометрия и прокрутка проверяются только живым браузером.
+**Never run a mutation without an explicit request** — `backup`, `restore`, `--apply` variants,
+`capability-record`, channel connect/disable, retry/republish, manual SQL, deployments.
 
-## Running the dashboard locally
+# Local data
 
-- The same `bun scripts/dev-seed.ts` also fills Command Center. It prints both URLs; the dashboard one carries the token:
-  - site — `http://localhost:4321/`
-  - dashboard — `http://localhost:4321/command-center?token=dev`
-- The dashboard needs `COMMAND_CENTER_TOKEN` to be set or every request renders the login screen. Locally any value works as long as the server and the URL agree; `.claude/launch.json` sets `dev`. `?token=` is traded for an HttpOnly cookie on the first GET.
-- `--no-dashboard` seeds site rows only. Use it when you are working on the player and do not want ~4k metric sample rows.
-- Fixture layering: `apps/web/src/server/site-fixture.ts` writes what the public read model needs, `apps/web/src/server/dashboard-fixture.ts` adds what only Command Center reads (per-target publish state, metric history, queue and worker rows). Change the shape there, not in the seed script.
-- The dashboard fixture is deliberately not all-green: one target fails with an error, one job stays queued, and metric samples are spread every two hours across 14 days. A fixture with one sample per day makes the overview chart draw a vertical spike instead of a curve, and an all-published fixture hides every error style.
-- **No audience numbers locally.** Audience counts come from live platform APIs, not from the database, so that panel shows `—` against a fixture. That is expected, not a bug to chase.
+`bun scripts/dev-seed.ts` seeds site and dashboard fixtures and prints the launch line and both
+URLs; `--no-dashboard` skips ~4k metric rows. The dashboard renders its login screen unless
+`COMMAND_CENTER_TOKEN` matches the token in the URL (`.claude/launch.json` sets `dev`). An empty database is normal, not a bug — never write
+INSERTs by hand. Change fixture shape in `apps/web/src/server/site-fixture.ts` (public read model)
+or `apps/web/src/server/dashboard-fixture.ts` (Command Center), not in the seed script. The
+dashboard fixture is deliberately not all-green, and audience counts read `—` locally because they
+come from live platform APIs.
 
-## Theming
+happy-dom does not compute layout: `offsetTop`, `clientHeight`, and `scrollTop` are always 0 there,
+so player geometry and scrolling can only be verified in a real browser.
 
-- Two skins, one vocabulary. Site tokens: `apps/web/src/shared/styles/tokens.css`. Dashboard tokens: `apps/backend/src/interfaces/web/dashboard/theme.ts`. The names match, the values deliberately do not — the site is editorial (crimson accent), the dashboard is a dense ops tool (blue accent, higher contrast).
-- `apps/backend/tests/themeContract.test.ts` parses both files and fails if a shared token is missing from either, in either theme. Add a token to `SHARED_THEME_TOKENS` and you must add it to both stylesheets.
-- The theme is `data-theme` on `<html>`, applied by an inline script before first paint (otherwise the wrong theme flashes). System preference is the default; an explicit click is stored in `localStorage` and wins from then on.
-- **Never write a raw colour in CSS** — only `var(--*)`. The dashboard used to hold 143 literal hexes across three files, roughly twenty of which were near-identical greys nobody could tell apart.
-- Only the picture itself is exempt from the theme. Everything around it — stage background, letterbox, rail, panels — follows it via `--player-*`; see "Story player chrome" below.
+# Theming
 
-## Runtime diagnostics
+Two skins, one vocabulary: `apps/web/src/shared/styles/tokens.css` and
+`apps/backend/src/interfaces/web/dashboard/theme.ts`. Names match, values deliberately do not.
+`themeContract.test.ts` fails if a shared token is missing from either file in either theme.
+**Never write a raw colour in CSS** — only `var(--*)`. The theme is `data-theme` on `<html>`, set by
+an inline script before first paint.
 
-- Before any worker, queue, configuration, publication, or error investigation, run `bun run --filter @alexgetman/backend ops guide --json`. This read-only command probes the configured local `PIPELINE_DB`, reports whether the local route is usable, and prints the current command catalog plus the production route when local state is unavailable.
-- If the guide reports `local.state` as `missing` or `unusable`, do not repair `/data`, create a local database, or seed data for diagnostics. Continue with the production command it prints, normally `bun run ops:prod --account alex|maru <command>`.
-- Local-first commands are `bun run --filter @alexgetman/backend ops status`, `doctor`, `audit`, `capabilities`, and `channels`. For a specific post use `verify --ref post:<id>` or `timeline --ref post:<id>`. The guide is the source of truth for the full command and flag list.
-- Production SSH alias is `ssh tw-nl`. The containers are `alexgetman-backend` (alex) and `maru-backend` (maru). Direct production execution must use `docker exec -u bun <container> bun /app/ops/cli.js <command>`; `-u bun` is required because the container entrypoint starts as root.
-- Start production investigations with `status`, `doctor`, and `audit`. For a missing publication, start with `audit`; it reports both text and video pipelines. If `lastError` is insufficient, inspect the affected code and its git history rather than guessing from logs.
-- Use `/api/post-debug?ref=post:<id>` for an authenticated post diagnosis. Do not search source code for production state before obtaining CLI output.
-- Never run a mutation without an explicit user request. This includes `backup`, `restore`, `metrics-backfill --apply`, `media-reprocess --apply`, `capability-record`, channel connect/disable, retry/republish, scoped `publication-repair --apply`, manual SQL updates, and deployment actions.
-
-## Story player chrome
-
-- **Only the picture is exempt from the theme.** The frame around it is page, not media: the stage background, the letterbox bands, the strip under the story and the black band beside a rail thumbnail all follow the theme through `--player-surface` / `--player-backdrop`. A slab of black around a story on a white page is just a slab of black. The same goes for shadows — the player carried 0.85-alpha black drops sized for a black page, which over white read as a halo drawn around the frame; they come from `--player-lift` / `--player-lift-soft` now.
-- **`--player-text` / `--player-fill` exist because custom properties inherit.** The dark override rewrites `--text-*`, `--border` and `--scrim-*` for everything inside `.story-visual`, which is right for chrome sitting on the picture and wrong for chrome sitting on the themed strip beside it — and a descendant cannot opt out of an inherited value by selector. These are names the override does not touch.
-- **Translucency inside the player used to assume something dark behind it.** Several surfaces were `rgba(0, 0, 0, 0.5–0.8)` and inactive rail cards are dimmed with `opacity: 0.38` and `grayscale(1)`. Over a light page the translucent ones composited to grey slabs, so they are opaque themed fills now. The opacity case is different: it fades toward whatever is behind, so `--player-backdrop` has to be a real colour on both themes and has to sit on an ancestor (`.story-rail-container`) — an element cannot opt its own background out of its own opacity.
-- The token override in tokens.css is scoped to `.story-visual`, not `.story-player`. Widening it back would drag the panel and the rail into dark-only again.
-- **Colours picked against one background do not survive the other.** The article body was `#e2e8f0` and the category badge `#ff5c77` — both chosen for a dark panel, both unreadable on a white one. The same applied to a 4-7% crimson wash on the active rail card: invisible on black, distinctly pink on white. Use tokens, and prefer a border over a tint for state.
-- The progress bar is white over media, which fails on a light image — and plenty of posts are screenshots of white pages. A gradient scrim under the top overlay (`.story-visual__top-scrim`) fixes every image at once instead of hunting for a bar colour that works on all of them.
-- The bottom actions are one floating blurred bar holding three equal labelled items, not a row of separate chips — the shape a mobile tab bar has. The same bar is reused at the foot of the desktop context panel, so there is one component in two positions. Because the items are equal and labelled, a video-first feed needs no layout variant; only the third label changes meaning, from "read the post" to "read the transcript".
-- **No large colour fills over media.** Emphasis on the primary item is a slightly lighter translucent fill, not the brand crimson. Hue works as a small mark (category badge, link) where it reads as brand; spread across a slab on top of a photo it reads as an alarm and outshouts the frame. Same reason the progress bar is white on a translucent track rather than crimson. The overlay palette lives in `--overlay-*` in tokens.css and is deliberately not themed — the surface underneath is media, not the page.
-- **Nothing in the player chrome is crimson.** The stage border, the rail control, the active rail card and the sound chip all used an accent or a raw red; framing a thumbnail or a media viewer in red reads as an error, and on the light theme it was the loudest thing on the page. Active state is `--player-active-border` — a neutral high-contrast hairline in both themes. Hue is left to the category badge and links.
-- **The rail's active slot is a viewfinder.** `.story-rail-viewfinder` is a frame fixed at `--rail-active-offset` that the cards glide through, so the strip reads as a picker: this is the slot, whatever is in it is on the stage. The slot was always fixed — the control is pinned to it — but nothing said so, and the only cue travelled with the card. It draws the frame around the card alone; the control's own border continues the bracket to the left, and the active card therefore has no border of its own. Hidden once the rail turns horizontal, where there is no fixed slot to point at.
-- **The rail is a scroll affordance, so its neighbours must stay readable.** Every inactive card used to drop to `opacity: 0.38` with full grayscale, which erased the titles above and below and made the strip look like a single card. The fade now runs over distance (`data-distance` 1/2/3 on the card) and only bottoms out past the second neighbour. Distance is counted in *visible* slots, not post indexes — with a feed filter on, `index + 1` can be three cards down the strip.
-- **The article panel is a reading column, not a slide.** Body copy was `clamp(1.16rem, 1.28vw, 1.48rem)` at 1.32 leading and the headline went up to 2.5rem — display proportions applied to running text, so a two-sentence post looked like a pull quote. Body is ~1rem at 1.62, headline tops out near 1.9rem, and the hierarchy is carried by weight and by the space above the body instead.
-- **On a phone the stage reserves a strip at the bottom for the controls.** A phone screen is taller than 9:16, so contain-fitting a 9:16 story into a full-height stage centres it and leaves a band above and below — 73px each on a 375x812 viewport, with the progress bar stranded in the upper one. The media box stops above `--stage-actions-strip` and the picture sits at the top of it, so the slack collects under the picture where the bar is. The strip is *reserved*, not leftover: an SE is 375x667, almost exactly 9:16, and a layout relying on spare height would put the bar back on the image there. Do not "fix" the bands with `object-fit: cover` — many posts are screenshots of text and cropping eats lines.
-- **Absolutely positioned `<img>`/`<video>` need an explicit height, not a bottom inset.** A replaced element resolves `height: auto` from its intrinsic size, so `inset: 0 0 <strip>` is silently ignored and the media keeps its own height.
-- **The feed gesture is a vertical swipe, and it must dominate the axis.** `scripts/story-player/gestures.ts` decides; the components only listen. The old handler read `clientX` alone, so scrolling the article sideways-drifted past the threshold and changed the post. Touches are ignored outright while the reading or discussion sheet is open — it is fixed on phones but still a DOM descendant, so its touches bubble to the player root. The left and right edges of the stage page a post's gallery, and only when it has one: on a single image the whole frame stays a play/pause target rather than growing dead bands.
-- **Autoplay with sound is impossible on a first visit** — browsers refuse it until the user has interacted with the page. The clip therefore always starts muted, and the prompt to enable sound is the required gesture. `hasMutedPreference()` separates "chose silence" from "never asked"; only the second is prompted, and any answer is persisted.
-- No theme switch below 760px: mobile OSes have a reliable system dark mode, so the override only earns its place on desktop.
+Player chrome has its own rules in `apps/web/src/scripts/story-player/AGENTS.md`.
