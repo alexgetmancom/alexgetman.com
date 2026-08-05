@@ -1,47 +1,15 @@
-import type { Context } from "grammy";
-import { acceptFlow } from "../application/conversation-flow.js";
-import type { BackendDb } from "../db/client.js";
-import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { t } from "../foundation/i18n/index.js";
 import { formatMsk } from "../interfaces/telegram/time.js";
 import { createStudioServices } from "../studio/services/index.js";
-import { requireConversationState, saveConversationState } from "./conversation-state.js";
+import { saveConversationState } from "./conversation-state.js";
 import { confirmationKeyboard } from "./dialog-ui.js";
 import type { PublicationEffect } from "./effects.js";
 import { botLocale } from "./i18n.js";
-import { extractMessage } from "./message.js";
 import type { PostFlowData, PostFlowInput } from "./post-flow-types.js";
-import { POST_FLOW, type PostWizardStep } from "./post-fsm.js";
 import { renderPublicationCard } from "./publication-card.js";
-import { publicationCardEffect } from "./publication-card-effects.js";
 import { createPublicationScheduleEngine } from "./scheduling.js";
 import { publicationCallback, versionedCallback } from "./session-fsm.js";
-
-export async function applyAdminState(
-  ctx: Context,
-  backendDb: BackendDb,
-  config: BackendConfig,
-  step: PostWizardStep,
-  draftId: number,
-  controlMessageId: number | null,
-  expectedRevision?: number | null,
-): Promise<PublicationEffect[]> {
-  const actorId = Number(ctx.from?.id);
-  if (expectedRevision != null) requireConversationState(backendDb, actorId, "post", expectedRevision);
-  const message = extractMessage(ctx);
-  const transition = await acceptFlow(POST_FLOW, step.type, { backendDb, config, actorId, draftId, controlMessageId, step, message }, {});
-  if (!transition) throw new StudioError("action.session-stale");
-  if (transition.next === null) {
-    const preview = renderPublicationCard("post", { backendDb, config, publicationId: draftId });
-    return [
-      ...transition.effects,
-      { type: "session", operation: "clear", kind: "post", actorId },
-      ...publicationCardEffect("post", draftId, preview, { type: "prompt" }),
-    ];
-  }
-  return [...transition.effects];
-}
 
 /** Accepts a manually entered publication time and opens the confirmation step. */
 export async function acceptManualPostSchedule(
