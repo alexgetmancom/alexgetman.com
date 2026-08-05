@@ -4,7 +4,7 @@ import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { plural, t } from "../foundation/i18n/index.js";
 import { formatMsk } from "../interfaces/telegram/time.js";
-import { createStudioServices } from "../studio/services/index.js";
+import type { StudioServices } from "../studio/services/index.js";
 import { clearConversationState, getConversationState, saveConversationState } from "./conversation-state.js";
 import { cancelPromptKeyboard, resultNavigationKeyboard } from "./dialog-ui.js";
 import type { PublicationEffect } from "./effects.js";
@@ -74,8 +74,7 @@ async function handleToggle({
   return previewEffects(backendDb, draftId, config, "platforms", t(locale, "action.target-updated", { target: second }));
 }
 
-async function handlePreview({ backendDb, config, actorId, draftId, pipeline }: PostActionArgs): Promise<PublicationActionResult> {
-  pipeline.get(actorId, draftId);
+async function handlePreview({ backendDb, config, draftId }: PostActionArgs): Promise<PublicationActionResult> {
   return previewEffects(backendDb, draftId, config);
 }
 
@@ -83,8 +82,15 @@ async function handlePlatforms({ backendDb, config, draftId }: PostActionArgs): 
   return previewEffects(backendDb, draftId, config, "platforms");
 }
 
-async function handleCycleMode({ backendDb, config, actorId, locale, draftId }: PostActionArgs): Promise<PublicationActionResult> {
-  const posts = createStudioServices(backendDb, config).posts;
+async function handleCycleMode({
+  backendDb,
+  config,
+  actorId,
+  locale,
+  draftId,
+  services,
+}: PostActionArgs): Promise<PublicationActionResult> {
+  const posts = services.posts;
   const nextMode = posts.cycleMode(actorId, draftId);
   return previewEffects(backendDb, draftId, config, "overview", `${t(locale, "post.mode")}: ${modeLabel(nextMode, locale)}`);
 }
@@ -170,30 +176,39 @@ async function handleStoryChoice({
   locale,
   action,
   draftId,
+  services,
 }: PostActionArgs): Promise<PublicationActionResult> {
-  const posts = createStudioServices(backendDb, config).posts;
+  const posts = services.posts;
   posts.setStoryPublishMode(actorId, draftId, action.endsWith("_all") ? "all" : "site_only");
   return action.startsWith("story_publish_")
-    ? queuePostNow(backendDb, config, actorId, draftId, locale)
+    ? queuePostNow(services, actorId, draftId, locale)
     : previewEffects(backendDb, draftId, config, "schedule");
 }
 
-async function handleThreadsChain({ ctx, backendDb, config, actorId, locale, draftId }: PostActionArgs): Promise<PublicationActionResult> {
-  const posts = createStudioServices(backendDb, config).posts;
+async function handleThreadsChain({
+  ctx,
+  backendDb,
+  config,
+  actorId,
+  locale,
+  draftId,
+  services,
+}: PostActionArgs): Promise<PublicationActionResult> {
+  const posts = services.posts;
   posts.approveThreadsChain(actorId, draftId);
   // The waiver only clears the Threads rule. Other preflight issues remain fatal.
-  const preflight = await showPublicationPreflight(backendDb, config, actorId, draftId, locale);
+  const preflight = await showPublicationPreflight(services, backendDb, actorId, draftId, locale);
   if (preflight) return preflight;
   const storyChoice = await showStoryCardChoice(ctx, backendDb, config, actorId, draftId, "publish");
   if (storyChoice) return storyChoice;
   return [
     { type: "toast", text: t(locale, "action.preflight-chain-approved") },
-    ...sendPublishConfirmation(backendDb, config, actorId, draftId),
+    ...sendPublishConfirmation(services, backendDb, config, actorId, draftId),
   ];
 }
 
-async function handlePublishConfirm({ backendDb, config, actorId, locale, draftId }: PostActionArgs): Promise<PublicationActionResult> {
-  return queuePostNow(backendDb, config, actorId, draftId, locale);
+async function handlePublishConfirm({ actorId, locale, draftId, services }: PostActionArgs): Promise<PublicationActionResult> {
+  return queuePostNow(services, actorId, draftId, locale);
 }
 
 async function handleSchedule(args: PostActionArgs): Promise<PublicationActionResult> {
@@ -203,13 +218,13 @@ async function handleSchedule(args: PostActionArgs): Promise<PublicationActionRe
 }
 
 async function showPublicationIntent(args: PostActionArgs, intent: "publish" | "schedule"): Promise<PublicationActionResult> {
-  const { backendDb, config, actorId, locale, draftId } = args;
-  const preflight = await showPublicationPreflight(backendDb, config, actorId, draftId, locale);
+  const { backendDb, config, actorId, locale, draftId, services } = args;
+  const preflight = await showPublicationPreflight(services, backendDb, actorId, draftId, locale);
   if (preflight) return preflight;
   const storyChoice = await showStoryCardChoice(args.ctx, backendDb, config, actorId, draftId, intent);
   if (storyChoice) return storyChoice;
   return intent === "publish"
-    ? sendPublishConfirmation(backendDb, config, actorId, draftId)
+    ? sendPublishConfirmation(services, backendDb, config, actorId, draftId)
     : previewEffects(backendDb, draftId, config, "schedule");
 }
 
@@ -220,11 +235,12 @@ async function handleScheduleScope({
   locale,
   first,
   draftId,
+  services,
 }: PostActionArgs): Promise<PublicationActionResult> {
   if (!first) return [{ type: "toast", text: t(locale, "action.unknown") }];
   clearConversationState(backendDb, actorId, "post");
-  if (first === "ru_now") return commitLocaleSchedule(backendDb, config, actorId, draftId, "ru", new Date(), "ru");
-  if (first === "en_now") return commitLocaleSchedule(backendDb, config, actorId, draftId, "en", new Date(), "en");
+  if (first === "ru_now") return commitLocaleSchedule(services, backendDb, config, actorId, draftId, "ru", new Date(), "ru");
+  if (first === "en_now") return commitLocaleSchedule(services, backendDb, config, actorId, draftId, "en", new Date(), "en");
   if (first === "both") return previewEffects(backendDb, draftId, config, "schedule_ru");
   return [{ type: "toast", text: t(locale, "action.unknown") }];
 }
@@ -243,12 +259,13 @@ async function handleSchedulePick({
   second,
   draftId,
   pipeline,
+  services,
 }: PostActionArgs): Promise<PublicationActionResult> {
   if (!first || !second) return;
   if (pipeline.capabilities.scheduleAxis !== "locale") throw new StudioError("action.schedule-expired");
   clearConversationState(backendDb, actorId, "post");
   const value = pipeline.slotTime(`${second.slice(0, 2)}:${second.slice(2, 4)}`);
-  return commitLocaleSchedule(backendDb, config, actorId, draftId, requireScheduleLocale(first), value);
+  return commitLocaleSchedule(services, backendDb, config, actorId, draftId, requireScheduleLocale(first), value);
 }
 
 async function handleManualScheduleConfirm({
@@ -257,6 +274,7 @@ async function handleManualScheduleConfirm({
   actorId,
   locale,
   draftId,
+  services,
 }: PostActionArgs): Promise<PublicationActionResult> {
   const state = getConversationState(backendDb, actorId, "post");
   const stateStep = postStateStep(state);
@@ -264,7 +282,7 @@ async function handleManualScheduleConfirm({
     return [{ type: "toast", text: t(locale, "action.schedule-expired") }];
   const { locale: scope, value } = stateStep;
   clearConversationState(backendDb, actorId, "post");
-  return commitLocaleSchedule(backendDb, config, actorId, draftId, scope, value);
+  return commitLocaleSchedule(services, backendDb, config, actorId, draftId, scope, value);
 }
 
 async function handleManualSchedule({
@@ -293,13 +311,12 @@ async function handleManualSchedule({
 }
 
 async function queuePostNow(
-  backendDb: BackendDb,
-  config: BackendConfig,
+  services: StudioServices,
   actorId: number,
   draftId: number,
   locale: ReturnType<typeof botLocale>,
 ): Promise<PublicationActionResult> {
-  const posts = createStudioServices(backendDb, config).posts;
+  const posts = services.posts;
   posts.publish(actorId, draftId);
   const progress = renderPostProgress(posts.progress(actorId, draftId), locale);
   return [
@@ -318,6 +335,7 @@ async function queuePostNow(
  * the other locale still needs a time and has enabled targets, hands off to
  * its slot screen instead of finishing; otherwise shows the final result. */
 async function commitLocaleSchedule(
+  services: StudioServices,
   backendDb: BackendDb,
   config: BackendConfig,
   actorId: number,
@@ -326,7 +344,7 @@ async function commitLocaleSchedule(
   value: Date,
   immediateLocale?: "ru" | "en",
 ): Promise<PublicationEffect[]> {
-  const posts = createStudioServices(backendDb, config).posts;
+  const posts = services.posts;
   const { ruAt, enAt } = posts.scheduleAt(actorId, draftId, scheduleLocale, value);
   const postId = posts.schedule(actorId, draftId, {
     ruAt,
@@ -350,8 +368,14 @@ async function commitLocaleSchedule(
   ];
 }
 
-function sendPublishConfirmation(backendDb: BackendDb, config: BackendConfig, actorId: number, draftId: number): PublicationEffect[] {
-  const delivery = createStudioServices(backendDb, config).posts.preview(actorId, draftId).delivery;
+function sendPublishConfirmation(
+  services: StudioServices,
+  backendDb: BackendDb,
+  config: BackendConfig,
+  actorId: number,
+  draftId: number,
+): PublicationEffect[] {
+  const delivery = services.posts.preview(actorId, draftId).delivery;
   const preview = renderPublicationCard("post", { backendDb, config, publicationId: draftId, view: "confirm_publish" });
   return [
     { type: "delivery-previews", projections: delivery.projections, locale: botLocale(backendDb, actorId) },
@@ -365,13 +389,13 @@ function sendPublishConfirmation(backendDb: BackendDb, config: BackendConfig, ac
 }
 
 async function showPublicationPreflight(
+  services: StudioServices,
   backendDb: BackendDb,
-  config: BackendConfig,
   actorId: number,
   draftId: number,
   locale: ReturnType<typeof botLocale>,
 ): Promise<PublicationEffect[] | null> {
-  const issues = createStudioServices(backendDb, config).posts.validate(actorId, draftId);
+  const issues = services.posts.validate(actorId, draftId);
   const issue = issues[0];
   if (!issue) return null;
   // A waivable issue needs a message, not an alert: an alert cannot carry a

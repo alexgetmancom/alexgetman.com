@@ -1,16 +1,25 @@
 import { InlineKeyboard } from "grammy";
+import { confirmationKeyboard } from "../../bot/dialog-ui.js";
 import type { BotLocale } from "../../bot/i18n.js";
 import { publicationCallback } from "../../bot/session-fsm.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { t } from "../../foundation/i18n/index.js";
 import { escapeMarkdown } from "../../foundation/markdown.js";
 import { isVideoTargetEditable, isVideoTargetMetadataEditable, isVideoTargetSchedulable } from "../../publishing/state.js";
-import type { InstagramMetadata, YouTubeMetadata } from "../../publishing/video-types.js";
+import { type InstagramMetadata, type VideoTarget, videoTargetLabel, type YouTubeMetadata } from "../../publishing/video-types.js";
 import { formatVideoTime } from "./video-time.js";
 
 export type VideoPreviewData = {
   draft: { id: number; label: string; locale: string; status: string };
   targets: Array<{ id: number; target: string; status: string; metadataJson: unknown; scheduledAt: string | null }>;
+};
+
+export type VideoPreviewView = "overview" | "confirm_now" | "confirm_cancel" | "confirm_remove";
+
+export type VideoPreviewOptions = {
+  view?: VideoPreviewView | undefined;
+  revision?: number | null | undefined;
+  target?: VideoTarget | undefined;
 };
 
 /** Telegram-only representation of a video draft. The video domain itself
@@ -19,6 +28,7 @@ export function videoPreview(
   data: VideoPreviewData,
   config: Pick<BackendConfig, "TIMEZONE" | "TIMEZONE_LABEL">,
   locale: BotLocale,
+  options: VideoPreviewOptions = {},
 ): { text: string; keyboard: InlineKeyboard } {
   const { draft, targets } = data;
   const title = draft.label || t(locale, "vpreview.title-fallback");
@@ -28,6 +38,7 @@ export function videoPreview(
     `${t(locale, "vpreview.status")}: *${videoStatusLabel(draft.status, locale)}*`,
   ];
   const keyboard = new InlineKeyboard();
+  const view = options.view ?? "overview";
   const ytTarget = targets.find((target) => target.target === "youtube_shorts");
   const igTarget = targets.find((target) => target.target === "instagram_reels");
   if (ytTarget) {
@@ -59,6 +70,7 @@ export function videoPreview(
   }
   if (ytTarget?.status === "failed" || ytTarget?.status === "verification_required")
     keyboard.text(t(locale, "vpreview.yt-retry"), publicationCallback("video", "retry", [draft.id, "youtube_shorts"])).row();
+  if (view !== "overview") return videoConfirmationPreview(draft.id, lines.join("\n"), locale, view, options);
   // Publishing now and scheduling are the same pair of choices a text post
   // offers on its own card. The immediate path was implemented end to end
   // (video_now -> video_now_confirm) but no keyboard ever emitted it, so a
@@ -74,6 +86,46 @@ export function videoPreview(
   keyboard.text(t(locale, "vpreview.cancel-pub"), publicationCallback("video", "cancel_ask", [draft.id])).row();
   keyboard.text(t(locale, "vpreview.back-queue"), "queue_home");
   return { text: lines.join("\n"), keyboard };
+}
+
+function videoConfirmationPreview(
+  draftId: number,
+  overviewText: string,
+  locale: BotLocale,
+  view: Exclude<VideoPreviewView, "overview">,
+  options: VideoPreviewOptions,
+): { text: string; keyboard: InlineKeyboard } {
+  if (view === "confirm_now") {
+    return {
+      text: `${overviewText}\n\n${t(locale, "video.publish-now-q")}`,
+      keyboard: confirmationKeyboard(
+        { label: t(locale, "video.publish-now-yes"), callback: publicationCallback("video", "now_confirm", [draftId]) },
+        { label: t(locale, "common.back"), callback: publicationCallback("video", "open", [draftId]) },
+        options.revision,
+      ),
+    };
+  }
+  if (view === "confirm_cancel") {
+    return {
+      text: `${overviewText}\n\n⚠️ *${t(locale, "vpreview.cancel-confirm-q")}*\n${t(locale, "vpreview.cancel-confirm-warn")}`,
+      keyboard: confirmationKeyboard(
+        { label: t(locale, "vpreview.cancel-yes"), callback: publicationCallback("video", "cancel", [draftId]) },
+        { label: t(locale, "common.back"), callback: publicationCallback("video", "open", [draftId]) },
+        options.revision,
+      ),
+    };
+  }
+  const target = options.target;
+  if (!target) throw new Error("Video removal confirmation target is missing.");
+  const label = videoTargetLabel(target);
+  return {
+    text: `${overviewText}\n\n⚠️ *${t(locale, "vpreview.remove-confirm-q", { target: label })}*\n${t(locale, "vpreview.remove-confirm-warn", { target: label })}`,
+    keyboard: confirmationKeyboard(
+      { label: t(locale, "vpreview.remove-yes", { target: label }), callback: publicationCallback("video", "remove", [draftId, target]) },
+      { label: t(locale, "common.back"), callback: publicationCallback("video", "open", [draftId]) },
+      options.revision,
+    ),
+  };
 }
 
 function videoStatusLabel(status: string, locale: BotLocale): string {

@@ -1,7 +1,8 @@
 import type { InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
-import { type VideoPreviewData, videoPreview } from "../interfaces/telegram/video-preview.js";
+import { type VideoPreviewData, type VideoPreviewView, videoPreview } from "../interfaces/telegram/video-preview.js";
+import type { VideoTarget } from "../publishing/video-types.js";
 import type { BotLocale } from "./i18n.js";
 import { type DraftView, draftPreview } from "./preview.js";
 
@@ -21,6 +22,9 @@ type VideoCardInput = {
   data: unknown;
   config: Pick<BackendConfig, "TIMEZONE" | "TIMEZONE_LABEL">;
   locale: BotLocale;
+  view?: VideoPreviewView | undefined;
+  revision?: number | null | undefined;
+  target?: VideoTarget | undefined;
 };
 
 /** Renders the Telegram card for either publication kind through one boundary. */
@@ -32,5 +36,9 @@ export function renderPublicationCard(kind: "post" | "video", input: PostCardInp
     return draftPreview(post.backendDb, post.publicationId, post.config, post.view);
   }
   const video = input as VideoCardInput;
-  return videoPreview(video.data as VideoPreviewData, video.config, video.locale);
+  return videoPreview(video.data as VideoPreviewData, video.config, video.locale, {
+    view: video.view,
+    revision: video.revision,
+    target: video.target,
+  });
 }

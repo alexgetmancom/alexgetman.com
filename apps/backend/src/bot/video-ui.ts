@@ -5,7 +5,7 @@ import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { type MessageKey, t } from "../foundation/i18n/index.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
-import { createStudioServices } from "../studio/services/index.js";
+import type { StudioServices } from "../studio/services/index.js";
 import { isVideoWizardStep, VIDEO_FLOW, type VideoConversationStep, type VideoWizardStep } from "../studio/video-fsm.js";
 import { type ConversationState, clearConversationState, getConversationState, saveConversationState } from "./conversation-state.js";
 import { appendCancelButton, cancelPromptKeyboard, confirmationKeyboard } from "./dialog-ui.js";
@@ -213,19 +213,16 @@ export function videoScheduleConfirmationEffects(
   actorId: number,
   session: VideoConversationState,
   schedule: Partial<Record<VideoTarget, Date>>,
+  services: StudioServices,
 ): PublicationEffect[] {
   const { draftId } = session;
   if (!draftId) throw new StudioError("err.video-missing");
   const locale = botLocale(backendDb, actorId);
-  const videos = createStudioServices(backendDb, config).videos;
-  const next = saveVideoState(backendDb, actorId, {
-    ...session,
-    step: "schedule_confirm",
-    data: {
-      ...session.data,
-      schedule: Object.fromEntries(Object.entries(schedule).map(([target, value]) => [target, value?.toISOString()])),
-    },
-  });
+  const videos = services.videos;
+  // The transition runner already saved the `schedule_confirm` session. This
+  // renderer must only derive Telegram effects, otherwise one user action
+  // would consume two revisions and invalidate its own buttons.
+  const next = session;
   const lines = [`🎬 *${t(locale, "common.confirm-schedule")}*`];
   for (const target of next.selected) {
     const value = schedule[target];

@@ -1,5 +1,5 @@
 import type { Context } from "grammy";
-import { acceptFlow, flowStepInput } from "../application/conversation-flow.js";
+import { flowStepInput } from "../application/conversation-flow.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
@@ -7,18 +7,19 @@ import { describeError, t } from "../foundation/i18n/index.js";
 import { log } from "../foundation/logger.js";
 import { storeTelegramVideo } from "../interfaces/telegram/video-ingress.js";
 import type { VideoTarget } from "../publishing/video-types.js";
+import type { StudioServices } from "../studio/services/index.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { advanceVideoMetadata, isVideoWizardStep, VIDEO_FLOW, type VideoWizardStep } from "../studio/video-fsm.js";
 import { executePublicationEffects, type PublicationEffect, type PublicationMessageResult } from "./effects.js";
 import { botLocale } from "./i18n.js";
 import { renderPublicationCard } from "./publication-card.js";
 import { publicationCardEffect } from "./publication-card-effects.js";
+import { advanceVideoFlow } from "./video-flow-transition.js";
 import { applyVideoScheduleDate } from "./video-scheduling.js";
 import {
   clearVideoState,
   enabledVideoTargets,
   getVideoState,
-  saveVideoState,
   startVideoEffects,
   targetKeyboard,
   type VideoConversationState,
@@ -34,6 +35,7 @@ type VideoMessageArgs = {
   actorId: number;
   session: VideoConversationState;
   text: string;
+  services: StudioServices;
 };
 
 /** Starts and advances the MP4 → metadata → schedule conversation. */
@@ -65,8 +67,12 @@ export async function handleVideoConversationMessage(
       return { handled: true, effects: [videoPromptEffect(backendDb, actorId, t(locale, "video.await-text"))] };
     }
     const args = { ctx, backendDb, config, actorId, session, text };
+    const services = createStudioServices(backendDb, config);
     const singleEdit = session.data.is_single_edit && isVideoWizardStep(session.step);
-    return { handled: true, effects: singleEdit ? await finishSingleVideoEdit(args) : await acceptVideoMessage(args) };
+    return {
+      handled: true,
+      effects: singleEdit ? await finishSingleVideoEdit({ ...args, services }) : await acceptVideoMessage({ ...args, services }),
+    };
   } catch (error) {
     const locale = botLocale(backendDb, actorId);
     // The original error is operationally important (disk, Telegram download,
@@ -97,27 +103,22 @@ async function acceptVideoMessage(args: VideoMessageArgs): Promise<PublicationEf
   return acceptVideoMetadata(args);
 }
 
-async function acceptVideoAsset({ ctx, backendDb, config, actorId, session }: VideoMessageArgs): Promise<PublicationEffect[]> {
+async function acceptVideoAsset({ ctx, backendDb, config, actorId, session, services }: VideoMessageArgs): Promise<PublicationEffect[]> {
   const stored = await storeTelegramVideo(ctx, backendDb, config, actorId);
-  const videos = createStudioServices(backendDb, config).videos;
+  const videos = services.videos;
   const draftId = videos.create(actorId, stored.assetId, session.data.videoLocale === "en" ? "en" : "ru");
   const selected = enabledVideoTargets(config);
   if (!selected.length) throw new StudioError("err.no-video-platforms-config");
   videos.replaceTargets(actorId, draftId, selected);
-  const transition = await acceptFlow(VIDEO_FLOW, "asset", stored.assetId, { ...session.data, selectedTargets: selected });
-  if (!transition?.next) throw new StudioError("err.video-restart");
-  const next = transition.next;
-  const saved = saveVideoState(backendDb, actorId, { ...session, draftId, step: next, selected, data: transition.data });
+  const saved = await advanceVideoFlow(backendDb, actorId, { ...session, draftId, selected }, "asset", stored.assetId, "err.video-restart");
   return videoStepEffects(backendDb, config, actorId, saved);
 }
 
-async function acceptVideoLabel({ backendDb, config, actorId, session, text }: VideoMessageArgs): Promise<PublicationEffect[]> {
+async function acceptVideoLabel({ backendDb, config, actorId, session, text, services }: VideoMessageArgs): Promise<PublicationEffect[]> {
   if (session.draftId == null) return [];
-  createStudioServices(backendDb, config).videos.rename(actorId, session.draftId, text);
-  if (session.data.is_single_edit) return videoCardEffects(backendDb, config, actorId, session.draftId);
-  const transition = await acceptFlow(VIDEO_FLOW, "label", text, { ...session.data, selectedTargets: session.selected });
-  if (!transition?.next) throw new StudioError("err.video-restart");
-  const saved = saveVideoState(backendDb, actorId, { ...session, step: transition.next, data: transition.data });
+  services.videos.rename(actorId, session.draftId, text);
+  if (session.data.is_single_edit) return videoCardEffects(backendDb, config, actorId, session.draftId, services);
+  const saved = await advanceVideoFlow(backendDb, actorId, session, "label", text, "err.video-restart");
   const locale = botLocale(backendDb, actorId);
   return videoControlEffects(
     saved,
@@ -129,29 +130,38 @@ async function acceptVideoLabel({ backendDb, config, actorId, session, text }: V
 /** One case for every metadata field. A platform's collected fields are handed
  * to Video Studio the moment the flow leaves that platform's chain — the dialog
  * never decides what the metadata looks like or what the draft ends up called. */
-async function acceptVideoMetadata({ backendDb, config, actorId, session, text }: VideoMessageArgs): Promise<PublicationEffect[]> {
+async function acceptVideoMetadata({
+  backendDb,
+  config,
+  actorId,
+  session,
+  text,
+  services,
+}: VideoMessageArgs): Promise<PublicationEffect[]> {
   if (session.draftId == null) return [];
   if (!isVideoWizardStep(session.step)) throw new StudioError("err.video-restart");
   const step = session.step;
-  const transition = await acceptFlow(VIDEO_FLOW, step, text, { ...session.data, selectedTargets: session.selected });
-  if (!transition?.next) throw new StudioError("err.video-restart");
-  const next = transition.next;
-  const data = withoutFlowData(transition.data);
+  const saved = await advanceVideoFlow(backendDb, actorId, session, step, text, "err.video-restart", (data) => withoutFlowData(data));
   const completed = COMPLETED_WIZARD_TARGET[step];
-  if (completed)
-    createStudioServices(backendDb, config).videos.completeWizardTarget(actorId, session.draftId, completed, data, session.selected);
-  const saved = saveVideoState(backendDb, actorId, { ...session, step: next, data });
+  if (completed) services.videos.completeWizardTarget(actorId, session.draftId, completed, saved.data, session.selected);
   return videoStepEffects(backendDb, config, actorId, saved);
 }
 
 /** Isolates the one step that legitimately fails on bad user input. Any other
  * error in this flow (preview, delivery, storage) must reach the generic
  * describeError path instead of being misreported as an unparsable date. */
-async function acceptVideoScheduleDate({ backendDb, config, actorId, session, text }: VideoMessageArgs): Promise<PublicationEffect[]> {
+async function acceptVideoScheduleDate({
+  backendDb,
+  config,
+  actorId,
+  session,
+  text,
+  services,
+}: VideoMessageArgs): Promise<PublicationEffect[]> {
   if (session.draftId == null) throw new StudioError("err.video-missing");
   let date: Date;
   try {
-    date = createStudioServices(backendDb, config).videos.manualSchedule(actorId, session.draftId, text);
+    date = services.videos.manualSchedule(actorId, session.draftId, text);
   } catch (error) {
     const locale = botLocale(backendDb, actorId);
     const message =
@@ -160,7 +170,7 @@ async function acceptVideoScheduleDate({ backendDb, config, actorId, session, te
         : describeError(locale, error);
     return [videoPromptEffect(backendDb, actorId, message, true)];
   }
-  return applyVideoScheduleDate(backendDb, config, actorId, session, date);
+  return applyVideoScheduleDate(backendDb, config, actorId, session, date, services);
 }
 
 /** The last step of each platform's metadata chain, which is where that
@@ -179,22 +189,35 @@ function withoutFlowData(data: Record<string, unknown>): Record<string, unknown>
  * wizard order (reached via "✏️ Edit" on a finished draft). The value itself is
  * parsed by the same transition the wizard uses, so "-" and URL fixing cannot
  * drift between the two entry points. */
-async function finishSingleVideoEdit({ backendDb, config, actorId, session, text }: VideoMessageArgs): Promise<PublicationEffect[]> {
+async function finishSingleVideoEdit({
+  backendDb,
+  config,
+  actorId,
+  session,
+  text,
+  services,
+}: VideoMessageArgs): Promise<PublicationEffect[]> {
   if (session.draftId == null) throw new StudioError("err.video-reopen-edit");
   if (!isVideoWizardStep(session.step)) throw new StudioError("err.video-reopen-edit");
   const step = session.step;
-  const videos = createStudioServices(backendDb, config).videos;
+  const videos = services.videos;
   const parsed = advanceVideoMetadata(step, text, {})[step];
   videos.editMetadataField(actorId, session.draftId, step, parsed);
-  return videoCardEffects(backendDb, config, actorId, session.draftId);
+  return videoCardEffects(backendDb, config, actorId, session.draftId, services);
 }
 
 /** Ends the dialog on the draft's own card. Both single-field edits and the
  * label edit finish this way: there is no next question to ask. */
-function videoCardEffects(backendDb: BackendDb, config: BackendConfig, actorId: number, draftId: number): PublicationEffect[] {
+function videoCardEffects(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  actorId: number,
+  draftId: number,
+  services: StudioServices,
+): PublicationEffect[] {
   clearVideoState(backendDb, actorId);
   const preview = renderPublicationCard("video", {
-    data: createStudioServices(backendDb, config).videos.preview(actorId, draftId),
+    data: services.videos.preview(actorId, draftId),
     config,
     locale: botLocale(backendDb, actorId),
   });
