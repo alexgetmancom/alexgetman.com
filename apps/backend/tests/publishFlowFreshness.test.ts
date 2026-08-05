@@ -1,8 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { Context } from "grammy";
-import { handlePublicationCallback } from "../src/bot/callback-router.js";
-import { isStaleCardCallback } from "../src/bot/card-freshness.js";
-import { type PublicationCallback, parseSessionCallback, publicationCallback } from "../src/bot/session-fsm.js";
+import { handlePublicationCallback, isStaleCardCallback } from "../src/bot/callback-router.js";
+import { type PublicationCallback, parseSessionCallback, publicationCallback } from "../src/bot/publication-callback.js";
 import { getVideoState } from "../src/bot/video-ui.js";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import type { BackendDb } from "../src/db/client.js";
@@ -43,16 +42,16 @@ describe("video publication card flow", () => {
       replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
       setTelegramVideoCard(backendDb, draftId, 100, 10);
 
-      await handlePublicationCallback(videoCallback(publicationCallback("video", "now", [draftId]), 10), backendDb, config);
+      await handlePublicationCallback(videoCallback(publicationCallback("video", "publish", [draftId]), 10), backendDb, config);
 
       const session = getVideoState(backendDb, 42);
       expect(session?.step).toBe("schedule_confirm");
       expect(telegramVideoCard(backendDb, draftId)).toEqual({ chatId: 100, messageId: 10 });
       expect(
         isStaleCardCallback(
-          videoCallback(publicationCallback("video", "now_confirm", [draftId]), 10),
+          videoCallback(publicationCallback("video", "publish_confirm", [draftId]), 10),
           backendDb,
-          parsed(publicationCallback("video", "now_confirm", [draftId])),
+          parsed(publicationCallback("video", "publish_confirm", [draftId])),
         ),
       ).toBe(false);
     } finally {

@@ -1,7 +1,9 @@
 import { InlineKeyboard } from "grammy";
 import type { PublicationKind } from "../application/conversation-flow.js";
 import type { PublicationScheduleAxis } from "../application/publication-pipeline.js";
-import { versionedCallback } from "./session-fsm.js";
+import { confirmationKeyboard } from "./dialog-ui.js";
+import type { PublicationEffect } from "./effects.js";
+import { publicationCallback, versionedCallback } from "./publication-callback.js";
 
 /** The values along which a scheduling screen lets an operator move. */
 export type ScheduleAxis<T extends string> = {
@@ -30,16 +32,14 @@ export function createPublicationScheduleEngine<T extends string>(options: {
   axisKeys: readonly T[];
   axisLabel: (key: T) => string;
   slotValues: readonly string[];
-  includeAxisKey?: boolean;
 }): PublicationScheduleEngine<T> {
-  const includeAxisKey = options.includeAxisKey ?? true;
   const args = (key: T | undefined, clock?: string): Array<string | number> => {
     const result: Array<string | number> = [options.publicationId];
-    if (includeAxisKey && key !== undefined) result.push(key);
+    if (key !== undefined) result.push(key);
     if (clock !== undefined) result.push(clock.replace(":", ""));
     return result;
   };
-  const pickCallback = (key: T | undefined, clock: string) => ["p", options.kind, "sched_pick", ...args(key, clock).map(String)].join(":");
+  const pickCallback = (key: T | undefined, clock: string) => publicationCallback(options.kind, "sched_pick", args(key, clock));
   return {
     scheduleAxis: options.scheduleAxis,
     axisKeys: options.axisKeys,
@@ -50,8 +50,8 @@ export function createPublicationScheduleEngine<T extends string>(options: {
       callback: (clock) => pickCallback(options.axisKeys[0], clock),
     },
     pickCallback,
-    manualCallback: (key) => ["p", options.kind, "sched_manual", ...args(key).map(String)].join(":"),
-    confirmCallback: () => ["p", options.kind, "sched_confirm", String(options.publicationId)].join(":"),
+    manualCallback: (key) => publicationCallback(options.kind, "sched_manual", args(key)),
+    confirmCallback: () => publicationCallback(options.kind, "sched_confirm", [options.publicationId]),
   };
 }
 
@@ -72,6 +72,36 @@ export function appendScheduleAxisButtons<T extends string>(
 
 /** Shared posting-hour presets used by the flat video schedule axis. */
 export const SCHEDULE_SLOT_PRESETS = ["08:00", "11:00", "13:00", "18:00", "20:00", "22:00"] as const;
+
+/** Renders the single confirmation screen shared by locale and target schedules. */
+export function scheduleConfirmationEffects<T extends string>(options: {
+  kind: PublicationKind;
+  publicationId: number;
+  revision: number;
+  intro?: string;
+  title: string;
+  titlePrefix: string;
+  entries: readonly { key: T; value: Date }[];
+  label: (key: T) => string;
+  formatValue: (value: Date) => string;
+  confirm: { label: string; callback: string };
+  back: { label: string; callback: string };
+  effects?: readonly PublicationEffect[];
+}): PublicationEffect[] {
+  const lines = options.entries.map(({ key, value }) => `${options.label(key)}: ${options.formatValue(value)}`);
+  const summary = [`${options.titlePrefix} *${options.title}*`, ...lines].join("\n");
+  const text = options.intro ? `${options.intro}\n\n${summary}` : summary;
+  const keyboard = confirmationKeyboard(options.confirm, options.back, options.revision);
+  return [
+    ...(options.effects ?? []),
+    {
+      type: "prompt",
+      text,
+      options: { parse_mode: "Markdown", reply_markup: keyboard },
+      card: { kind: options.kind, draftId: options.publicationId },
+    },
+  ];
+}
 
 /** Builds the common video-style time picker: slot presets, manual entry and
  * a versioned cancel action. Domain-specific confirmation remains outside. */

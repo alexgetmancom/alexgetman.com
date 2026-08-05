@@ -365,6 +365,13 @@
       "when": 1785976600000,
       "tag": "0051_publication_state_cutover",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1785976700000,
+      "tag": "0052_conversation_session_data",
+      "breakpoints": true
     }
   ]
 }

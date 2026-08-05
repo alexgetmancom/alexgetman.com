@@ -8,11 +8,11 @@ import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing
 import type { StudioServices } from "../studio/services/index.js";
 import { isVideoWizardStep, VIDEO_FLOW, type VideoConversationStep, type VideoWizardStep } from "../studio/video-fsm.js";
 import { type ConversationState, clearConversationState, getConversationState, saveConversationState } from "./conversation-state.js";
-import { appendCancelButton, cancelPromptKeyboard, confirmationKeyboard } from "./dialog-ui.js";
+import { appendCancelButton, cancelPromptKeyboard } from "./dialog-ui.js";
 import type { PublicationEffect } from "./effects.js";
 import { type BotLocale, botLocale } from "./i18n.js";
-import { createPublicationScheduleEngine, SCHEDULE_SLOT_PRESETS, scheduleTimeKeyboard } from "./scheduling.js";
-import { publicationCallback, versionedCallback } from "./session-fsm.js";
+import { publicationCallback, versionedCallback } from "./publication-callback.js";
+import { createPublicationScheduleEngine, SCHEDULE_SLOT_PRESETS, scheduleConfirmationEffects, scheduleTimeKeyboard } from "./scheduling.js";
 
 export type { VideoConversationStep } from "../studio/video-fsm.js";
 export type VideoConversationState = ConversationState & {
@@ -28,7 +28,7 @@ export function targetKeyboard(config: BackendConfig, selected: VideoTarget[], l
     keyboard
       .text(
         `${selected.includes(target) ? "✓" : "○"} ${videoTargetLabel(target)}`,
-        publicationCallback("video", "toggle", [target], revision),
+        publicationCallback("video", "wizard_toggle", [target], revision),
       )
       .row();
   }
@@ -176,7 +176,6 @@ function videoTimeEffects(backendDb: BackendDb, actorId: number, session: VideoC
     axisKeys: session.selected,
     axisLabel: videoTargetLabel,
     slotValues: SCHEDULE_SLOT_PRESETS,
-    includeAxisKey: false,
   });
   const keyboard = scheduleTimeKeyboard({
     axis: engine.axis,
@@ -223,14 +222,10 @@ export function videoScheduleConfirmationEffects(
   // renderer must only derive Telegram effects, otherwise one user action
   // would consume two revisions and invalidate its own buttons.
   const next = session;
-  const lines = [`🎬 *${t(locale, "common.confirm-schedule")}*`];
-  for (const target of next.selected) {
+  const entries = next.selected.flatMap((target) => {
     const value = schedule[target];
-    if (value)
-      lines.push(
-        `${videoTargetLabel(target)}: ${value.toLocaleString(locale === "ru" ? "ru-RU" : "en-GB", { timeZone: config.TIMEZONE })} ${config.TIMEZONE_LABEL}`,
-      );
-  }
+    return value ? [{ key: target, value }] : [];
+  });
   const engine = createPublicationScheduleEngine({
     kind: "video",
     publicationId: draftId,
@@ -238,17 +233,21 @@ export function videoScheduleConfirmationEffects(
     axisKeys: next.selected,
     axisLabel: videoTargetLabel,
     slotValues: [],
-    includeAxisKey: false,
   });
-  const keyboard = confirmationKeyboard(
-    { label: t(locale, "common.confirm"), callback: versionedCallback(engine.confirmCallback(), next.revision) },
-    { label: t(locale, "common.back"), callback: publicationCallback("video", "schedule", [draftId]) },
-    next.revision,
-  );
-  return [
-    { type: "delivery-previews", projections: videos.preview(actorId, draftId).delivery.projections, locale },
-    ...videoControlEffects(next, lines.join("\n"), keyboard),
-  ];
+  return scheduleConfirmationEffects({
+    kind: "video",
+    publicationId: draftId,
+    revision: next.revision,
+    title: t(locale, "common.confirm-schedule"),
+    titlePrefix: "🎬",
+    entries,
+    label: videoTargetLabel,
+    formatValue: (value) =>
+      `${value.toLocaleString(locale === "ru" ? "ru-RU" : "en-GB", { timeZone: config.TIMEZONE })} ${config.TIMEZONE_LABEL}`,
+    confirm: { label: t(locale, "common.confirm"), callback: engine.confirmCallback() },
+    back: { label: t(locale, "common.back"), callback: publicationCallback("video", "schedule", [draftId]) },
+    effects: [{ type: "delivery-previews", projections: videos.preview(actorId, draftId).delivery.projections, locale }],
+  });
 }
 
 export function parseVideoStep(value: string): VideoConversationStep | null {

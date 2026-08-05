@@ -2406,14 +2406,6 @@
           "notNull": true,
           "autoincrement": false
         },
-        "selected_targets_json": {
-          "name": "selected_targets_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'[]'"
-        },
         "data_json": {
           "name": "data_json",
           "type": "text",

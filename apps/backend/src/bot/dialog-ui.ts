@@ -1,7 +1,7 @@
 import { InlineKeyboard } from "grammy";
 import { t } from "../foundation/i18n/index.js";
 import type { BotLocale } from "./i18n.js";
-import { versionedCallback } from "./session-fsm.js";
+import { versionedCallback } from "./publication-callback.js";
 
 export type DialogButton = { label: string; callback: string };
 

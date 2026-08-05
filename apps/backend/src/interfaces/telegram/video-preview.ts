@@ -1,7 +1,7 @@
 import { InlineKeyboard } from "grammy";
 import { confirmationKeyboard } from "../../bot/dialog-ui.js";
 import type { BotLocale } from "../../bot/i18n.js";
-import { publicationCallback } from "../../bot/session-fsm.js";
+import { publicationCallback } from "../../bot/publication-callback.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { t } from "../../foundation/i18n/index.js";
 import { escapeMarkdown } from "../../foundation/markdown.js";
@@ -15,6 +15,10 @@ export type VideoPreviewData = {
 };
 
 export type VideoPreviewView = "overview" | "confirm_now" | "confirm_cancel" | "confirm_remove";
+
+export function isVideoPreviewView(value: string | undefined): value is VideoPreviewView {
+  return value === "overview" || value === "confirm_now" || value === "confirm_cancel" || value === "confirm_remove";
+}
 
 export type VideoPreviewOptions = {
   view?: VideoPreviewView | undefined;
@@ -66,24 +70,22 @@ export function videoPreview(
     if (isVideoTargetEditable(igTarget.status))
       keyboard.text(t(locale, "vpreview.ig-remove"), publicationCallback("video", "remove_ask", [draft.id, "instagram_reels"])).row();
     if (igTarget.status === "failed" || igTarget.status === "verification_required")
-      keyboard.text(t(locale, "vpreview.ig-retry"), publicationCallback("video", "retry", [draft.id, "instagram_reels"])).row();
+      keyboard.text(t(locale, "vpreview.ig-retry"), publicationCallback("video", "retry", [draft.id, "instagram_reels", "card"])).row();
   }
   if (ytTarget?.status === "failed" || ytTarget?.status === "verification_required")
-    keyboard.text(t(locale, "vpreview.yt-retry"), publicationCallback("video", "retry", [draft.id, "youtube_shorts"])).row();
+    keyboard.text(t(locale, "vpreview.yt-retry"), publicationCallback("video", "retry", [draft.id, "youtube_shorts", "card"])).row();
   if (view !== "overview") return videoConfirmationPreview(draft.id, lines.join("\n"), locale, view, options);
   // Publishing now and scheduling are the same pair of choices a text post
-  // offers on its own card. The immediate path was implemented end to end
-  // (video_now -> video_now_confirm) but no keyboard ever emitted it, so a
-  // video could only be scheduled.
+  // offers on its own card, and both use the shared publication actions.
   if (targets.length > 0 && (draft.status === "draft" || draft.status === "editing"))
     keyboard
-      .text(t(locale, "post.publish-now-btn"), publicationCallback("video", "now", [draft.id]))
+      .text(t(locale, "post.publish-now-btn"), publicationCallback("video", "publish", [draft.id]))
       .row()
       .text(t(locale, "post.schedule-btn"), publicationCallback("video", "schedule", [draft.id]))
       .row();
   if (["draft", "editing", "scheduled"].includes(draft.status) && targets.some((target) => isVideoTargetMetadataEditable(target.status)))
     keyboard.text(t(locale, "vpreview.edit-details"), publicationCallback("video", "edit_menu", [draft.id])).row();
-  keyboard.text(t(locale, "vpreview.cancel-pub"), publicationCallback("video", "cancel_ask", [draft.id])).row();
+  keyboard.text(t(locale, "vpreview.cancel-pub"), publicationCallback("video", "cancel", [draft.id, "confirm_cancel"])).row();
   keyboard.text(t(locale, "vpreview.back-queue"), "queue_home");
   return { text: lines.join("\n"), keyboard };
 }
@@ -99,8 +101,8 @@ function videoConfirmationPreview(
     return {
       text: `${overviewText}\n\n${t(locale, "video.publish-now-q")}`,
       keyboard: confirmationKeyboard(
-        { label: t(locale, "video.publish-now-yes"), callback: publicationCallback("video", "now_confirm", [draftId]) },
-        { label: t(locale, "common.back"), callback: publicationCallback("video", "open", [draftId]) },
+        { label: t(locale, "video.publish-now-yes"), callback: publicationCallback("video", "publish_confirm", [draftId]) },
+        { label: t(locale, "common.back"), callback: publicationCallback("video", "view", [draftId, "overview"]) },
         options.revision,
       ),
     };
@@ -109,8 +111,8 @@ function videoConfirmationPreview(
     return {
       text: `${overviewText}\n\n⚠️ *${t(locale, "vpreview.cancel-confirm-q")}*\n${t(locale, "vpreview.cancel-confirm-warn")}`,
       keyboard: confirmationKeyboard(
-        { label: t(locale, "vpreview.cancel-yes"), callback: publicationCallback("video", "cancel", [draftId]) },
-        { label: t(locale, "common.back"), callback: publicationCallback("video", "open", [draftId]) },
+        { label: t(locale, "vpreview.cancel-yes"), callback: publicationCallback("video", "cancel_confirm", [draftId]) },
+        { label: t(locale, "common.back"), callback: publicationCallback("video", "view", [draftId, "overview"]) },
         options.revision,
       ),
     };
@@ -122,7 +124,7 @@ function videoConfirmationPreview(
     text: `${overviewText}\n\n⚠️ *${t(locale, "vpreview.remove-confirm-q", { target: label })}*\n${t(locale, "vpreview.remove-confirm-warn", { target: label })}`,
     keyboard: confirmationKeyboard(
       { label: t(locale, "vpreview.remove-yes", { target: label }), callback: publicationCallback("video", "remove", [draftId, target]) },
-      { label: t(locale, "common.back"), callback: publicationCallback("video", "open", [draftId]) },
+      { label: t(locale, "common.back"), callback: publicationCallback("video", "view", [draftId, "overview"]) },
       options.revision,
     ),
   };

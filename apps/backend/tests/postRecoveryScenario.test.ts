@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import type { Bot, Context } from "grammy";
 import { runCallbackBoundary } from "../src/bot/callback-boundary.js";
 import { handlePublicationCallback } from "../src/bot/callback-router.js";
-import { publicationCallback } from "../src/bot/session-fsm.js";
+import { publicationCallback } from "../src/bot/publication-callback.js";
 import { drafts, postTargets, publications, publishJobs } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { consumeTelegramEvents } from "../src/interfaces/telegram/event-consumer.js";
@@ -59,12 +59,12 @@ describe("post recovery scenario", () => {
       expect(messages).toHaveLength(1);
       expect(messages[0]?.text).toContain("Telegram");
       expect(messages[0]?.text).toContain("Threads");
-      expect(JSON.stringify(messages[0]?.options)).toContain("p:post:post_retry_notice:7");
+      expect(JSON.stringify(messages[0]?.options)).toContain("p:post:retry:7:all:notice");
 
       const answers: Array<{ text?: string } | undefined> = [];
       const retryContext = (id: string, callbackAnswers: Array<{ text?: string } | undefined>): Context =>
         ({
-          callbackQuery: { id, data: publicationCallback("post", "post_retry_notice", [7]) },
+          callbackQuery: { id, data: publicationCallback("post", "retry", [7, "all", "notice"]) },
           from: { id: 42 },
           answerCallbackQuery: async (options?: { text?: string }) => void callbackAnswers.push(options),
         }) as unknown as Context;

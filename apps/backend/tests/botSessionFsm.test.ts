@@ -5,7 +5,7 @@ import {
   parseSessionCallback,
   publicationCallback,
   versionedCallback,
-} from "../src/bot/session-fsm.js";
+} from "../src/bot/publication-callback.js";
 
 describe("Telegram session callback encoding", () => {
   it("uses a prefix so a future data segment cannot look like a revision suffix", () => {
@@ -42,7 +42,7 @@ describe("Telegram session callback encoding", () => {
       callback: { kind: "post", action: "sched_scope", args: ["both", "42"] },
       revision: null,
     });
-    expect(parsePublicationCallback("p:video:now:12")).toEqual({ kind: "video", action: "now", args: ["12"] });
+    expect(parsePublicationCallback("p:video:publish:12")).toEqual({ kind: "video", action: "publish", args: ["12"] });
   });
 
   it("accepts only positive safe draft identifiers", () => {

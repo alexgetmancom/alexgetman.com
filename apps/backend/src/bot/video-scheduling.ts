@@ -5,11 +5,11 @@ import { t } from "../foundation/i18n/index.js";
 import type { VideoTechnicalCheck } from "../publishing/video-service.js";
 import type { VideoTarget } from "../publishing/video-types.js";
 import type { StudioServices } from "../studio/services/index.js";
-import { videoScheduleDates } from "../studio/video-fsm.js";
+import { VIDEO_FLOW, videoScheduleDates } from "../studio/video-fsm.js";
 import type { PublicationEffect } from "./effects.js";
 import { type BotLocale, botLocale } from "./i18n.js";
-import { renderPublicationCard } from "./publication-card.js";
-import { advanceVideoFlow } from "./video-flow-transition.js";
+import { advancePublicationFlow } from "./publication-flow.js";
+import { publicationRenderers } from "./publication-renderers.js";
 import { clearVideoState, type VideoConversationState, videoScheduleConfirmationEffects, videoStepEffects } from "./video-ui.js";
 
 /** Applies one chosen time to whichever scheduling step the session is on. The
@@ -25,7 +25,15 @@ export async function applyVideoScheduleDate(
   services: StudioServices,
 ): Promise<PublicationEffect[]> {
   if (session.draftId == null) throw new StudioError("err.video-missing");
-  const next = await advanceVideoFlow(backendDb, actorId, session, session.step, date.toISOString(), "err.video-reopen-publish");
+  const next = await advancePublicationFlow(
+    backendDb,
+    actorId,
+    VIDEO_FLOW,
+    session,
+    date.toISOString(),
+    { ...session.data, selectedTargets: session.selected },
+    "err.video-reopen-publish",
+  );
   if (next.step === "schedule_target") {
     return videoStepEffects(backendDb, config, actorId, next);
   }
@@ -92,8 +100,11 @@ async function showScheduledVideo(
   services: StudioServices,
 ): Promise<PublicationEffect[]> {
   if (!session.draftId) throw new StudioError("err.video-missing");
-  const preview = renderPublicationCard("video", {
-    data: services.videos.preview(actorId, session.draftId),
+  const preview = publicationRenderers(backendDb, config, services).video.card({
+    backendDb,
+    pipeline: services.videos,
+    actorId,
+    publicationId: session.draftId,
     config,
     locale,
   });

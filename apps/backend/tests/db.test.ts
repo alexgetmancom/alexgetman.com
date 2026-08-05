@@ -75,30 +75,19 @@ describe("openBackendDb", () => {
         "2026-08-04T10:30:00.000Z",
       );
     const migrations = drizzleMigrationMetadata();
-    const latestMigrations = migrations.slice(-3);
-    if (latestMigrations.length !== 3) throw new Error("migration metadata is incomplete");
-    fixture.prepare("DELETE FROM __drizzle_migrations WHERE hash IN (?, ?, ?)").run(...latestMigrations.map((migration) => migration.hash));
+    const latestMigrations = migrations.slice(-4);
+    if (latestMigrations.length !== 4) throw new Error("migration metadata is incomplete");
+    fixture
+      .prepare(`DELETE FROM __drizzle_migrations WHERE hash IN (${latestMigrations.map(() => "?").join(", ")})`)
+      .run(...latestMigrations.map((migration) => migration.hash));
     fixture.close();
 
     const backendDb = openBackendDb(dbPath);
     try {
       expect(
         backendDb.sqlite.prepare("SELECT kind, draft_id, step, revision FROM conversation_sessions WHERE actor_id=? ORDER BY kind").all(42),
-      ).toEqual([
-        { kind: "post", draft_id: 7, step: "edit_text", revision: 4 },
-        { kind: "video", draft_id: 9, step: "schedule_confirm", revision: 6 },
-      ]);
-      expect(backendDb.sqlite.prepare("SELECT data_json FROM conversation_sessions WHERE actor_id=? AND kind='post'").get(42)).toEqual({
-        data_json: '{"locale":"en"}',
-      });
-      expect(
-        backendDb.sqlite
-          .prepare("SELECT control_message_id, data_json FROM conversation_sessions WHERE actor_id=? AND kind='video'")
-          .get(42),
-      ).toEqual({
-        control_message_id: 27,
-        data_json: "{}",
-      });
+      ).toEqual([]);
+      expect(backendDb.sqlite.prepare("SELECT data_json FROM conversation_sessions WHERE actor_id=?").all(42)).toEqual([]);
       expect(backendDb.sqlite.prepare("SELECT name FROM sqlite_master WHERE name IN ('admin_state', 'video_bot_sessions')").all()).toEqual(
         [],
       );

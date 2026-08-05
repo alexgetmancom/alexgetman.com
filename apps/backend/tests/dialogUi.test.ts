@@ -5,8 +5,8 @@ import { t } from "../src/foundation/i18n/index.js";
 
 describe("Telegram dialog UI", () => {
   it("keeps prompt and confirmation callbacks versioned in one place", () => {
-    expect(cancelPromptKeyboard("en", "cancel_state:7:overview", 4).inline_keyboard).toEqual([
-      [{ text: "← Cancel", callback_data: "sv4|cancel_state:7:overview" }],
+    expect(cancelPromptKeyboard("en", "p:post:cancel_dialog:7:overview", 4).inline_keyboard).toEqual([
+      [{ text: "← Cancel", callback_data: "sv4|p:post:cancel_dialog:7:overview" }],
     ]);
     expect(
       confirmationKeyboard({ label: "Yes", callback: "confirm:7" }, { label: "Back", callback: "preview:7" }, 5).inline_keyboard,

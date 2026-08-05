@@ -40,10 +40,6 @@ export function saveConversationState(backendDb: BackendDb, actorId: number, inp
   const now = new Date().toISOString();
   const expiresAt = new Date(Date.now() + CONVERSATION_SESSION_TTL_MS).toISOString();
   const data = { ...input.data };
-  const selectedTargets = Array.isArray(data.selectedTargets)
-    ? data.selectedTargets.filter((value): value is string => typeof value === "string")
-    : [];
-
   // A person can have one active publication conversation. Starting a new one
   // retires the other kind before the new state is written.
   retireConversationSession(backendDb, actorId, input.kind === "post" ? "video" : "post");
@@ -52,12 +48,11 @@ export function saveConversationState(backendDb: BackendDb, actorId: number, inp
     kind: input.kind,
     draftId: input.draftId,
     step: input.step,
-    selectedTargets,
     data,
     controlMessageId: input.controlMessageId,
     active: 1,
     ...(input.revision == null ? {} : { expectedRevision: input.revision }),
-    preserveRevision: existing != null && !hasSemanticChange(existing, input, selectedTargets),
+    preserveRevision: existing != null && !hasSemanticChange(existing, input),
     updatedAt: now,
     expiresAt,
   });
@@ -97,7 +92,6 @@ export function requireConversationState(
 
 function stateFromRow(row: ConversationSessionRecord): ConversationState {
   const data = { ...row.data };
-  if (row.selectedTargets.length > 0 && !Array.isArray(data.selectedTargets)) data.selectedTargets = row.selectedTargets;
   return {
     kind: row.kind,
     draftId: row.draftId,
@@ -108,12 +102,8 @@ function stateFromRow(row: ConversationSessionRecord): ConversationState {
   };
 }
 
-function hasSemanticChange(row: ConversationSessionRecord, input: ConversationStateInput, selectedTargets: string[]): boolean {
+function hasSemanticChange(row: ConversationSessionRecord, input: ConversationStateInput): boolean {
   return (
-    row.active !== 1 ||
-    row.draftId !== input.draftId ||
-    row.step !== input.step ||
-    JSON.stringify(row.selectedTargets) !== JSON.stringify(selectedTargets) ||
-    JSON.stringify(row.data) !== JSON.stringify(input.data)
+    row.active !== 1 || row.draftId !== input.draftId || row.step !== input.step || JSON.stringify(row.data) !== JSON.stringify(input.data)
   );
 }

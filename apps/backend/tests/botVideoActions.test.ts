@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import type { Context } from "grammy";
 import { handlePublicationCallback } from "../src/bot/callback-router.js";
-import { publicationCallback, versionedCallback } from "../src/bot/session-fsm.js";
+import { publicationCallback, versionedCallback } from "../src/bot/publication-callback.js";
 import { clearVideoState, getVideoState, saveVideoState } from "../src/bot/video-ui.js";
 import { type BackendDb, unsafeDb } from "../src/db/client.js";
 import { loadConfig } from "../src/foundation/config.js";
@@ -30,14 +30,14 @@ describe("video card controls", () => {
   it("offers publishing now beside scheduling, like a text post card", () => {
     const keyboard = JSON.stringify(videoPreview(draftCard("draft"), config, "ru").keyboard);
 
-    expect(keyboard).toContain("p:video:now:7");
+    expect(keyboard).toContain("p:video:publish:7");
     expect(keyboard).toContain("p:video:schedule:7");
   });
 
   it("drops both publication controls once the video leaves the draft states", () => {
     const keyboard = JSON.stringify(videoPreview(draftCard("scheduled"), config, "ru").keyboard);
 
-    expect(keyboard).not.toContain("p:video:now:7");
+    expect(keyboard).not.toContain("p:video:publish:7");
     expect(keyboard).not.toContain("p:video:schedule:7");
     expect(keyboard).toContain("p:video:edit_menu:7");
   });
@@ -104,7 +104,7 @@ describe("video callback dispatch", () => {
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
 
     const ctx = {
-      callbackQuery: { data: publicationCallback("video", "now", [draftId]), message: { message_id: 10 } },
+      callbackQuery: { data: publicationCallback("video", "publish", [draftId]), message: { message_id: 10 } },
       from: { id: 42 },
       chat: { id: 100 },
       editMessageText: async () => undefined,
@@ -158,7 +158,7 @@ describe("video callback dispatch", () => {
     expect(current()).toMatchObject({ step: "schedule_target", data: { target: "youtube_shorts" } });
 
     await handlePublicationCallback(
-      context(versionedCallback(publicationCallback("video", "sched_pick", [draftId, "0800"]), current().revision)),
+      context(versionedCallback(publicationCallback("video", "sched_pick", [draftId, "youtube_shorts", "0800"]), current().revision)),
       backendDb,
       bothPlatforms,
     );
@@ -166,7 +166,7 @@ describe("video callback dispatch", () => {
     expect(current()).toMatchObject({ step: "schedule_target", data: { target: "instagram_reels" } });
 
     await handlePublicationCallback(
-      context(versionedCallback(publicationCallback("video", "sched_pick", [draftId, "0930"]), current().revision)),
+      context(versionedCallback(publicationCallback("video", "sched_pick", [draftId, "instagram_reels", "0930"]), current().revision)),
       backendDb,
       bothPlatforms,
     );
@@ -185,7 +185,7 @@ describe("video callback dispatch", () => {
     saveVideoState(backendDb, 42, { ...first, selected: ["youtube_shorts"] });
     const answers: Array<{ text?: string } | undefined> = [];
     const ctx = {
-      callbackQuery: { data: versionedCallback(publicationCallback("video", "toggle", ["instagram_reels"]), first.revision) },
+      callbackQuery: { data: versionedCallback(publicationCallback("video", "wizard_toggle", ["instagram_reels"]), first.revision) },
       from: { id: 42 },
       answerCallbackQuery: async (options?: { text?: string }) => void answers.push(options),
     } as unknown as Context;
@@ -237,7 +237,7 @@ describe("video callback dispatch", () => {
     setTelegramVideoCard(backendDb, draftId, 100, 10);
     const answers: Array<{ text?: string } | undefined> = [];
     const ctx = {
-      callbackQuery: { data: publicationCallback("video", "cancel_notice", [draftId]), message: { message_id: 50 } },
+      callbackQuery: { data: publicationCallback("video", "cancel_confirm", [draftId]), message: { message_id: 50 } },
       from: { id: 42 },
       chat: { id: 100 },
       editMessageText: async () => undefined,

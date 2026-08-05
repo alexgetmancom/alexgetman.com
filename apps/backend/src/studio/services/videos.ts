@@ -74,9 +74,10 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
       >;
       return scheduleOwnedVideo(backendDb, config, actorId, publicationId, schedule);
     },
-    retryTarget(actorId: number, publicationId: number, target: VideoTarget): void {
+    retryTarget(actorId: number, publicationId: number, target: VideoTarget) {
       requireOwnedVideo(backendDb, config, actorId, publicationId);
       retryVideoTarget(backendDb, publicationId, target);
+      return { requeued: 1, alreadyQueued: 0 };
     },
     async cancel(actorId: number, publicationId: number) {
       const draft = requireOwnedVideo(backendDb, config, actorId, publicationId);

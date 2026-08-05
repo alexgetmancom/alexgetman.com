@@ -17,8 +17,8 @@ import { requirePostEditAllowed } from "../studio/services/post-access.js";
 import { postProgressState } from "../studio/services/post-progress.js";
 import { appendResultNavigation, confirmationKeyboard } from "./dialog-ui.js";
 import { type BotLocale, botLocale } from "./i18n.js";
-import { appendScheduleAxisButtons, createPublicationScheduleEngine } from "./scheduling.js";
-import { publicationCallback } from "./session-fsm.js";
+import { publicationCallback } from "./publication-callback.js";
+import { createPublicationScheduleEngine, scheduleTimeKeyboard } from "./scheduling.js";
 
 const DRAFT_VIEWS = [
   "overview",
@@ -120,7 +120,7 @@ export function draftPreview(
         keyboard.text(`${targets[target] ? "✓" : "□"} ${label}`, publicationCallback("post", "toggle", [draftId, target]));
       keyboard.row();
     }
-    keyboard.text(t(locale, "post.back-to-preview"), publicationCallback("post", "preview", [draftId])).row();
+    keyboard.text(t(locale, "post.back-to-preview"), publicationCallback("post", "view", [draftId, "overview"])).row();
     const enabled = enabledTargetLabels(targets) || t(locale, "post.none");
     return {
       text: `📝 *${t(locale, "post.platforms-title", { id: draftId })}*\n\n${t(locale, "post.active")}: *${enabled}*\n\n${t(locale, "post.toggle-hint")}`,
@@ -136,7 +136,7 @@ export function draftPreview(
       .row()
       .text(t(locale, "post.scope-both"), publicationCallback("post", "sched_scope", [draftId, "both"]))
       .row()
-      .text(t(locale, "common.back"), publicationCallback("post", "preview", [draftId]));
+      .text(t(locale, "common.back"), publicationCallback("post", "view", [draftId, "overview"]));
     return {
       text: `${draftHeader(draftId, targets, locale)}\n\n📅 *${t(locale, "post.schedule-title")}*\n${t(locale, "post.schedule-hint")}`,
       keyboard,
@@ -154,26 +154,24 @@ export function draftPreview(
       axisLabel: (key) => key.toUpperCase(),
       slotValues: scheduleGrid.slots[view] ?? [],
     });
-    appendScheduleAxisButtons(keyboard, {
-      values: scheduleEngine.axis.values,
-      label: scheduleEngine.axis.label,
-      callback: (clock) => scheduleEngine.pickCallback(scheduleGrid.target, clock),
+    const scheduleKeyboard = scheduleTimeKeyboard({
+      axis: {
+        values: scheduleEngine.axis.values,
+        label: scheduleEngine.axis.label,
+        callback: (clock) => scheduleEngine.pickCallback(scheduleGrid.target, clock),
+      },
+      manual: { label: t(locale, "post.enter-time"), callback: scheduleEngine.manualCallback(scheduleGrid.target) },
+      cancel: { label: t(locale, "common.back"), callback: publicationCallback("post", "view", [draftId, "overview"]) },
     });
-    keyboard.row();
     if (isMainView) {
       for (const extra of scheduleGrid.extraViews)
-        keyboard.text(t(locale, extra.labelKey), publicationCallback("post", "sched_view", [draftId, extra.view]));
-      keyboard
-        .row()
-        .text(t(locale, "post.enter-time"), scheduleEngine.manualCallback(scheduleGrid.target))
-        .row()
-        .text(t(locale, "common.back"), publicationCallback("post", "preview", [draftId]));
+        scheduleKeyboard.row().text(t(locale, extra.labelKey), publicationCallback("post", "view", [draftId, extra.view]));
     } else {
-      keyboard.text(t(locale, "common.back"), publicationCallback("post", "sched_view", [draftId, scheduleGrid.mainView]));
+      scheduleKeyboard.row().text(t(locale, "common.back"), publicationCallback("post", "view", [draftId, scheduleGrid.mainView]));
     }
     return {
       text: `${draftHeader(draftId, targets, locale)}\n\n📅 *${t(locale, scheduleGrid.titleKey)}*\n${t(locale, "post.pick-slot-hint")}`,
-      keyboard,
+      keyboard: scheduleKeyboard,
     };
   }
 
@@ -186,7 +184,7 @@ export function draftPreview(
       text: `${draftHeader(draftId, targets, locale)}\n\n⚠️ *${t(locale, "post.publish-now-q")}*\n${t(locale, "post.will-send-to")}: ${available}.${unavailable ? `\n⚠️ ${t(locale, "post.will-skip-no-media", { targets: unavailable })}` : ""}`,
       keyboard: confirmationKeyboard(
         { label: t(locale, "post.publish-now-btn"), callback: publicationCallback("post", "publish_confirm", [draftId]) },
-        { label: t(locale, "common.back"), callback: publicationCallback("post", "preview", [draftId]) },
+        { label: t(locale, "common.back"), callback: publicationCallback("post", "view", [draftId, "overview"]) },
       ),
     };
   }
@@ -196,7 +194,7 @@ export function draftPreview(
       text: `${draftHeader(draftId, targets, locale)}\n\n⚠️ *${t(locale, "post.delete-q")}*\n${t(locale, "post.delete-warn")}`,
       keyboard: confirmationKeyboard(
         { label: t(locale, "post.delete-btn"), callback: publicationCallback("post", "cancel_confirm", [draftId]) },
-        { label: t(locale, "common.back"), callback: publicationCallback("post", "preview", [draftId]) },
+        { label: t(locale, "common.back"), callback: publicationCallback("post", "view", [draftId, "overview"]) },
       ),
     };
   }
@@ -206,7 +204,7 @@ export function draftPreview(
     keyboard
       .text(`${modeEmoji} ${t(locale, "post.mode")}: ${modeLabel(mode, locale)}`, publicationCallback("post", "cycle_mode", [draftId]))
       .row();
-    keyboard.text(t(locale, "post.choose-platforms"), publicationCallback("post", "platforms", [draftId])).row();
+    keyboard.text(t(locale, "post.choose-platforms"), publicationCallback("post", "view", [draftId, "platforms"])).row();
     const canEditRu = canEditLocale(backendDb, config, draft.actor_id, draftId, "ru");
     const canEditEn = canEditLocale(backendDb, config, draft.actor_id, draftId, "en");
     if (canEditRu) keyboard.text(t(locale, "post.edit-ru"), publicationCallback("post", "edit_ru", [draftId]));
@@ -219,14 +217,17 @@ export function draftPreview(
       .text(t(locale, "post.publish-btn"), publicationCallback("post", "publish", [draftId]))
       .text(t(locale, "post.schedule-btn"), publicationCallback("post", "schedule", [draftId]))
       .row();
-    keyboard.text(t(locale, "post.delete-btn"), publicationCallback("post", "cancel", [draftId]));
+    keyboard.text(t(locale, "post.delete-btn"), publicationCallback("post", "cancel", [draftId, "confirm_delete"]));
   } else {
     const retryable = failedTargets(backendDb, draftId);
     if (retryable.length) {
-      keyboard.text(t(locale, "notif.retry-failed"), publicationCallback("post", "post_retry", [draftId])).row();
+      keyboard.text(t(locale, "notif.retry-failed"), publicationCallback("post", "retry", [draftId, "all", "card"])).row();
       for (const item of retryable)
         keyboard
-          .text(t(locale, "notif.retry-target", { target: item.label }), publicationCallback("post", "post_retry", [draftId, item.target]))
+          .text(
+            t(locale, "notif.retry-target", { target: item.label }),
+            publicationCallback("post", "retry", [draftId, item.target, "card"]),
+          )
           .row();
     }
     appendResultNavigation(keyboard, locale, "upcoming");

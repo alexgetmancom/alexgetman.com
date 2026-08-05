@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { and, eq } from "drizzle-orm";
 import { handlePublicationCallback } from "../src/bot/callback-router.js";
-import { publicationCallback, versionedCallback } from "../src/bot/session-fsm.js";
+import { publicationCallback, versionedCallback } from "../src/bot/publication-callback.js";
 import { handleVideoConversationMessage } from "../src/bot/video-conversation.js";
 import { getVideoState, saveVideoState } from "../src/bot/video-ui.js";
 import {
@@ -323,7 +323,7 @@ describe("video publication queue", () => {
 
     const invalidSession = saveVideoState(backendDb, 42, { draftId, step: "targets", selected: ["youtube_shorts"], data: {} });
     const invalid = videoContext({
-      callback: versionedCallback(publicationCallback("video", "toggle", ["not-a-target"]), invalidSession.revision),
+      callback: versionedCallback(publicationCallback("video", "wizard_toggle", ["not-a-target"]), invalidSession.revision),
     });
     expect(await handlePublicationCallback(invalid.context, backendDb, videoConfig())).toBe(true);
     expect(invalid.callbackAnswers).toEqual([{ text: "Start creating the video again." }]);

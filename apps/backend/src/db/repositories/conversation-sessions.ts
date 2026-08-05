@@ -19,7 +19,6 @@ export function createConversationSessionStore(db: BackendDatabase): Conversatio
         kind: row.kind as ConversationSessionKind,
         draftId: row.draftId,
         step: row.step,
-        selectedTargets: row.selectedTargetsJson,
         data: row.dataJson,
         controlMessageId: row.controlMessageId,
         revision: row.revision,
@@ -44,7 +43,6 @@ export function createConversationSessionStore(db: BackendDatabase): Conversatio
           kind: input.kind,
           draftId: input.draftId,
           step: input.step,
-          selectedTargetsJson: input.selectedTargets,
           dataJson: input.data,
           controlMessageId: input.controlMessageId,
           revision,
@@ -57,7 +55,6 @@ export function createConversationSessionStore(db: BackendDatabase): Conversatio
           set: {
             draftId: input.draftId,
             step: input.step,
-            selectedTargetsJson: input.selectedTargets,
             dataJson: input.data,
             controlMessageId: input.controlMessageId,
             revision,
@@ -79,7 +76,6 @@ export function createConversationSessionStore(db: BackendDatabase): Conversatio
           .set({
             draftId: null,
             step: null,
-            selectedTargetsJson: [],
             dataJson: {},
             controlMessageId: null,
             revision: sql`${conversationSessions.revision} + 1`,
@@ -106,7 +102,6 @@ export function createConversationSessionStore(db: BackendDatabase): Conversatio
         .set({
           draftId: null,
           step: null,
-          selectedTargetsJson: [],
           dataJson: {},
           controlMessageId: null,
           revision: sql`${conversationSessions.revision} + 1`,

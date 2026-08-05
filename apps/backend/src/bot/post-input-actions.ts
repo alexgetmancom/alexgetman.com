@@ -1,15 +1,19 @@
 import type { Context } from "grammy";
-import { acceptFlow } from "../application/conversation-flow.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
+import { t } from "../foundation/i18n/index.js";
+import { formatMsk } from "../interfaces/telegram/time.js";
+import { createStudioServices } from "../studio/services/index.js";
 import { requireConversationState } from "./conversation-state.js";
 import type { PublicationEffect } from "./effects.js";
+import { botLocale } from "./i18n.js";
 import { extractMessage } from "./message.js";
-import type { PostFlowInput, PostWizardStep } from "./post-flow-types.js";
-import { POST_FLOW } from "./post-fsm.js";
-import { renderPublicationCard } from "./publication-card.js";
-import { publicationCardEffect } from "./publication-card-effects.js";
+import { POST_FLOW, type PostFlowInput, type PostWizardStep, postStateStep } from "./post-actions.js";
+import { publicationCallback } from "./publication-callback.js";
+import { advancePublicationFlow } from "./publication-flow.js";
+import { publicationCardEffect, publicationRenderers } from "./publication-renderers.js";
+import { createPublicationScheduleEngine, scheduleConfirmationEffects } from "./scheduling.js";
 
 export async function applyAdminState(
   ctx: Context,
@@ -21,18 +25,64 @@ export async function applyAdminState(
   expectedRevision?: number | null,
 ): Promise<PublicationEffect[]> {
   const actorId = Number(ctx.from?.id);
-  if (expectedRevision != null) requireConversationState(backendDb, actorId, "post", expectedRevision);
   const message = extractMessage(ctx);
   const input: PostFlowInput = { backendDb, config, actorId, draftId, controlMessageId, step, message };
-  const transition = await acceptFlow(POST_FLOW, step.type, input, {});
-  if (!transition) throw new StudioError("action.session-stale");
-  if (transition.next === null) {
-    const preview = renderPublicationCard("post", { backendDb, config, publicationId: draftId });
-    return [
-      ...transition.effects,
-      { type: "session", operation: "clear", kind: "post", actorId },
-      ...publicationCardEffect("post", draftId, preview, { type: "prompt" }),
-    ];
-  }
-  return [...transition.effects];
+  const session = requireConversationState(backendDb, actorId, "post", expectedRevision ?? null);
+  const saved = await advancePublicationFlow(backendDb, actorId, POST_FLOW, session, input, session.data, "action.session-stale");
+  if (saved.step === "schedule_confirm") return renderPostScheduleConfirmation(backendDb, config, actorId, draftId, saved);
+  const preview = publicationRenderers(backendDb, config).post.card({
+    backendDb,
+    pipeline: createStudioServices(backendDb, config).posts,
+    actorId,
+    publicationId: draftId,
+    config,
+    locale: botLocale(backendDb, actorId),
+  });
+  return [{ type: "session", operation: "clear", kind: "post", actorId }, ...publicationCardEffect(preview, { type: "prompt" })];
+}
+
+function renderPostScheduleConfirmation(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  actorId: number,
+  draftId: number,
+  state: { revision: number; data: Record<string, unknown> },
+): PublicationEffect[] {
+  const locale = botLocale(backendDb, actorId);
+  const step = postStateStep({ step: "schedule_confirm", data: state.data });
+  if (!step || step.type !== "schedule_confirm") throw new StudioError("action.schedule-expired");
+  const posts = createStudioServices(backendDb, config).posts;
+  const card = publicationRenderers(backendDb, config).post.card({
+    backendDb,
+    pipeline: posts,
+    actorId,
+    publicationId: draftId,
+    config,
+    locale,
+  });
+  const engine = createPublicationScheduleEngine({
+    kind: "post",
+    publicationId: draftId,
+    scheduleAxis: "locale",
+    axisKeys: [step.locale],
+    axisLabel: (key) => key.toUpperCase(),
+    slotValues: [],
+  });
+  return scheduleConfirmationEffects({
+    kind: "post",
+    publicationId: draftId,
+    revision: state.revision,
+    intro: card.text,
+    title: t(locale, "common.confirm-schedule"),
+    titlePrefix: "📅",
+    entries: [{ key: step.locale, value: step.value }],
+    label: (key) => key.toUpperCase(),
+    formatValue: (value) => formatMsk(value, config),
+    confirm: { label: t(locale, "post.confirm-schedule-btn"), callback: engine.confirmCallback() },
+    back: {
+      label: t(locale, "common.back"),
+      callback: publicationCallback("post", "view", [draftId, step.locale === "ru" ? "schedule_ru" : "schedule_en"]),
+    },
+    effects: [{ type: "delivery-previews", projections: posts.preview(actorId, draftId).delivery.projections, locale }],
+  });
 }

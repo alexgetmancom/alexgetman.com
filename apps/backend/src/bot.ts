@@ -10,8 +10,8 @@ import { buildNotificationsMenu, notificationsInboxText } from "./bot/notificati
 import { handleOperationsCallback } from "./bot/operations-screen.js";
 import { handlePostScreenCallback, startPostScreen } from "./bot/post-screen.js";
 import { handleProgressCallback } from "./bot/progress-screen.js";
+import { parseSessionCallback } from "./bot/publication-callback.js";
 import { showQueue, showQueueAttention } from "./bot/queue.js";
-import { parseSessionCallback } from "./bot/session-fsm.js";
 import { buildSettingsMenu, handleSettingsMessage, showSettings } from "./bot/settings-screen.js";
 import { startVideoConversation } from "./bot/video-conversation.js";
 import type { BackendDb } from "./db/client.js";

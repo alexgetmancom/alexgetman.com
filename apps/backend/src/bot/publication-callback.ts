@@ -11,76 +11,12 @@ export type PublicationCallback = {
   action: string;
   args: string[];
 };
+
 export type SessionCallback = {
   data: string;
   callback: PublicationCallback | null;
   revision: number | null;
 };
-
-/** The canonical callback vocabulary for the post action table. Video actions
- * are derived from their handler registry so a callback key has one owner. */
-export const POST_ACTION_KEYS = [
-  "cancel_dialog",
-  "toggle",
-  "preview",
-  "platforms",
-  "cycle_mode",
-  "cancel_state",
-  "edit_ru",
-  "edit_en",
-  "replace_ru_media",
-  "replace_en_media",
-  "sources",
-  "cancel",
-  "cancel_confirm",
-  "post_retry",
-  "post_retry_notice",
-  "publish",
-  "story_publish_all",
-  "story_publish_site",
-  "story_schedule_all",
-  "story_schedule_site",
-  "threads_chain",
-  "publish_confirm",
-  "schedule",
-  "sched_scope",
-  "sched_view",
-  "sched_pick",
-  "sched_confirm",
-  "sched_manual_confirm",
-  "sched_manual",
-] as const;
-
-/** Callback actions whose card identity must be checked before execution. */
-export const POST_CARD_ACTIONS = {
-  post: [
-    "toggle",
-    "cycle_mode",
-    "sources",
-    "edit_ru",
-    "edit_en",
-    "replace_ru_media",
-    "replace_en_media",
-    "cancel",
-    "cancel_confirm",
-    "post_retry",
-    "publish",
-    "publish_confirm",
-    "schedule",
-    "sched_scope",
-    "sched_view",
-    "sched_pick",
-    "sched_confirm",
-    "sched_manual",
-    "story_publish_all",
-    "story_publish_site",
-    "story_schedule_all",
-    "story_schedule_site",
-    "threads_chain",
-  ],
-} as const;
-
-export type PostActionKey = (typeof POST_ACTION_KEYS)[number];
 
 /** Builds the compact callback namespace shared by post and video controls. */
 export function publicationCallback(
@@ -105,7 +41,7 @@ export function parsePublicationCallback(data: string): PublicationCallback | nu
   };
 }
 
-/** Parses a positive draft identifier used by publication callbacks. */
+/** Parses a positive publication identifier used by publication callbacks. */
 export function parseDraftId(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
   const number = typeof value === "number" ? value : Number(value);
@@ -132,9 +68,4 @@ export function parseSessionCallback(data: string): SessionCallback {
 /** Rejects a callback or write based on an older dialog generation. */
 export function requireSessionRevision(current: number | undefined, expected: number | null, errorCode = "action.session-stale"): void {
   if (expected != null && current !== expected) throw new StudioError(errorCode);
-}
-
-/** Shared transition guard for every conversational FSM. */
-export function requireSessionStep(current: string | undefined, allowed: readonly string[], errorCode: string): void {
-  if (!current || !allowed.includes(current)) throw new StudioError(errorCode);
 }

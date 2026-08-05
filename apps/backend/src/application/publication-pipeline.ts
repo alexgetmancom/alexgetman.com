@@ -14,6 +14,11 @@ export type PublicationSchedule = {
   immediateKey?: string;
 };
 
+export type PublicationRetrySummary = {
+  requeued: number;
+  alreadyQueued: number;
+};
+
 export type PublicationView = {
   id: number;
   status: string;
@@ -40,7 +45,7 @@ export type PublicationPipeline = {
   schedule(actorId: number, publicationId: number, schedule: PublicationSchedule): unknown;
   publish(actorId: number, publicationId: number): unknown;
   cancel(actorId: number, publicationId: number): unknown;
-  retryTarget(actorId: number, publicationId: number, target: string): unknown;
+  retryTarget(actorId: number, publicationId: number, target: string): PublicationRetrySummary;
   removeTarget(actorId: number, publicationId: number, target: string): unknown;
   toggleTarget(actorId: number, publicationId: number, target: string): unknown;
   slotTime(clock: string): Date;

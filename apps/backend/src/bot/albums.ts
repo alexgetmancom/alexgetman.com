@@ -11,9 +11,9 @@ import { importTelegramAlbumMedia } from "../interfaces/telegram/media-ingress.j
 import { createStudioServices } from "../studio/services/index.js";
 import { clearConversationStateIfCurrent, getConversationState } from "./conversation-state.js";
 import { botLocale } from "./i18n.js";
-import type { PostSessionStep, PostWizardStep } from "./post-flow-types.js";
+import type { PostSessionStep, PostWizardStep } from "./post-actions.js";
 import { translatePostText } from "./post-translation.js";
-import { renderPublicationCard } from "./publication-card.js";
+import { publicationRenderers } from "./publication-renderers.js";
 
 // pending_albums.notified lifecycle: an album is SETTLED once its caption and
 // media are collected, then CLAIMED by exactly one worker before finalization.
@@ -223,7 +223,14 @@ async function refreshDraftControlCard(
   draftId: number,
   chatId: number,
 ): Promise<void> {
-  const preview = renderPublicationCard("post", { backendDb, config, publicationId: draftId });
+  const preview = publicationRenderers(backendDb, config).post.card({
+    backendDb,
+    pipeline: createStudioServices(backendDb, config).posts,
+    actorId: _actorId,
+    publicationId: draftId,
+    config,
+    locale: botLocale(backendDb, _actorId),
+  });
   // A completed chat edit gets a fresh card at the bottom. Previous cards are
   // history, never a moving conversation prompt above the user's reply.
   const control = await bot.api.sendMessage(chatId, preview.text, { parse_mode: "Markdown", reply_markup: preview.keyboard });

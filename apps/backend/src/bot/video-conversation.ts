@@ -12,9 +12,8 @@ import { createStudioServices } from "../studio/services/index.js";
 import { advanceVideoMetadata, isVideoWizardStep, VIDEO_FLOW, type VideoWizardStep } from "../studio/video-fsm.js";
 import { executePublicationEffects, type PublicationEffect, type PublicationMessageResult } from "./effects.js";
 import { botLocale } from "./i18n.js";
-import { renderPublicationCard } from "./publication-card.js";
-import { publicationCardEffect } from "./publication-card-effects.js";
-import { advanceVideoFlow } from "./video-flow-transition.js";
+import { advancePublicationFlow } from "./publication-flow.js";
+import { publicationCardEffect, publicationRenderers } from "./publication-renderers.js";
 import { applyVideoScheduleDate } from "./video-scheduling.js";
 import {
   clearVideoState,
@@ -110,7 +109,15 @@ async function acceptVideoAsset({ ctx, backendDb, config, actorId, session, serv
   const selected = enabledVideoTargets(config);
   if (!selected.length) throw new StudioError("err.no-video-platforms-config");
   videos.replaceTargets(actorId, draftId, selected);
-  const saved = await advanceVideoFlow(backendDb, actorId, { ...session, draftId, selected }, "asset", stored.assetId, "err.video-restart");
+  const saved = await advancePublicationFlow(
+    backendDb,
+    actorId,
+    VIDEO_FLOW,
+    { ...session, draftId, selected },
+    stored.assetId,
+    { ...session.data, selectedTargets: selected },
+    "err.video-restart",
+  );
   return videoStepEffects(backendDb, config, actorId, saved);
 }
 
@@ -118,7 +125,15 @@ async function acceptVideoLabel({ backendDb, config, actorId, session, text, ser
   if (session.draftId == null) return [];
   services.videos.rename(actorId, session.draftId, text);
   if (session.data.is_single_edit) return videoCardEffects(backendDb, config, actorId, session.draftId, services);
-  const saved = await advanceVideoFlow(backendDb, actorId, session, "label", text, "err.video-restart");
+  const saved = await advancePublicationFlow(
+    backendDb,
+    actorId,
+    VIDEO_FLOW,
+    session,
+    text,
+    { ...session.data, selectedTargets: session.selected },
+    "err.video-restart",
+  );
   const locale = botLocale(backendDb, actorId);
   return videoControlEffects(
     saved,
@@ -141,7 +156,16 @@ async function acceptVideoMetadata({
   if (session.draftId == null) return [];
   if (!isVideoWizardStep(session.step)) throw new StudioError("err.video-restart");
   const step = session.step;
-  const saved = await advanceVideoFlow(backendDb, actorId, session, step, text, "err.video-restart", (data) => withoutFlowData(data));
+  const saved = await advancePublicationFlow(
+    backendDb,
+    actorId,
+    VIDEO_FLOW,
+    session,
+    text,
+    { ...session.data, selectedTargets: session.selected },
+    "err.video-restart",
+    (data) => withoutFlowData(data),
+  );
   const completed = COMPLETED_WIZARD_TARGET[step];
   if (completed) services.videos.completeWizardTarget(actorId, session.draftId, completed, saved.data, session.selected);
   return videoStepEffects(backendDb, config, actorId, saved);
@@ -181,8 +205,7 @@ const COMPLETED_WIZARD_TARGET: Partial<Record<VideoWizardStep, VideoTarget>> = {
 };
 
 function withoutFlowData(data: Record<string, unknown>): Record<string, unknown> {
-  const { selectedTargets: _selectedTargets, ...persisted } = data;
-  return persisted;
+  return data;
 }
 
 /** Which target one already-set field belongs to when it is edited outside the
@@ -216,10 +239,13 @@ function videoCardEffects(
   services: StudioServices,
 ): PublicationEffect[] {
   clearVideoState(backendDb, actorId);
-  const preview = renderPublicationCard("video", {
-    data: services.videos.preview(actorId, draftId),
+  const preview = publicationRenderers(backendDb, config, services).video.card({
+    backendDb,
+    pipeline: services.videos,
+    actorId,
+    publicationId: draftId,
     config,
     locale: botLocale(backendDb, actorId),
   });
-  return publicationCardEffect("video", draftId, preview, { mode: "reply" });
+  return publicationCardEffect(preview, { mode: "reply" });
 }

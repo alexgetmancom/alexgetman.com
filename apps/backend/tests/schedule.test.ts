@@ -28,7 +28,6 @@ describe("publishing schedule", () => {
       axisKeys: ["youtube_shorts", "instagram_reels"],
       axisLabel: (key) => key,
       slotValues: SCHEDULE_SLOT_PRESETS,
-      includeAxisKey: true,
     });
 
     expect(engine.scheduleAxis).toBe("target");

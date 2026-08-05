@@ -9,7 +9,6 @@ export const conversationSessions = sqliteTable(
     kind: text().notNull(),
     draftId: integer(),
     step: text(),
-    selectedTargetsJson: json<string[]>().notNull().default([]),
     dataJson: json<JsonObject>().notNull().default({}),
     controlMessageId: integer(),
     revision: integer().notNull().default(0),

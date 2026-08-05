@@ -3,11 +3,11 @@ import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { t } from "../foundation/i18n/index.js";
 import { log } from "../foundation/logger.js";
+import { telegramPostCard } from "../interfaces/telegram/control-cards.js";
 import { createStudioServices } from "../studio/services/index.js";
-import { isStaleCardCallback, PUBLICATION_CARD_FRESHNESS } from "./card-freshness.js";
 import { executePublicationEffects, type PublicationEffect } from "./effects.js";
 import { botLocale } from "./i18n.js";
-import { publicationCallback } from "./session-fsm.js";
+import { publicationCallback } from "./publication-callback.js";
 
 type StoryCard = { locale: string; status: string; localPath: string | null };
 
@@ -65,15 +65,7 @@ async function waitForStoryCards(
     await delay(1_000);
     const cards = posts.preview(actorId, draftId).storyCards;
     if (!cardsReady(cards)) continue;
-    if (
-      isStaleCardCallback(
-        ctx,
-        backendDb,
-        { kind: "post", action: intent === "publish" ? "publish" : "schedule", args: [String(draftId)] },
-        PUBLICATION_CARD_FRESHNESS,
-      )
-    )
-      return;
+    if (isStalePostCard(ctx, backendDb, draftId)) return;
     await executePublicationEffects(ctx, backendDb, sendStoryCardChoice(backendDb, actorId, draftId, intent, cards));
     return;
   }
@@ -104,7 +96,7 @@ function sendStoryCardChoice(
       .row()
       .text(t(locale, "post.story-cards-site-only-schedule"), publicationCallback("post", "story_schedule_site", [draftId]));
   }
-  keyboard.row().text(t(locale, "common.back"), publicationCallback("post", "preview", [draftId]));
+  keyboard.row().text(t(locale, "common.back"), publicationCallback("post", "view", [draftId, "overview"]));
   effects.push({
     type: "prompt",
     text: t(locale, "post.story-cards-question"),
@@ -128,4 +120,11 @@ function logStoryCardChoiceFailure(error: unknown, actorId: number, draftId: num
 
 function cardsReady(cards: StoryCard[]): boolean {
   return ["ru", "en"].every((locale) => cards.some((card) => card.locale === locale && card.status === "ready" && card.localPath));
+}
+
+function isStalePostCard(ctx: Context, backendDb: BackendDb, draftId: number): boolean {
+  const current = telegramPostCard(backendDb, draftId)?.messageId;
+  const callbackMessage = ctx.callbackQuery?.message;
+  const messageId = callbackMessage && "message_id" in callbackMessage ? callbackMessage.message_id : null;
+  return messageId != null && current != null && messageId !== current;
 }

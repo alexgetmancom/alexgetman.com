@@ -2,17 +2,17 @@ import { desc, eq } from "drizzle-orm";
 import { type Bot, InlineKeyboard } from "grammy";
 import { parsePublicationRef } from "../../application/publication-ref.js";
 import { botLocale } from "../../bot/i18n.js";
-import { renderPublicationCard } from "../../bot/publication-card.js";
-import { publicationCallback } from "../../bot/session-fsm.js";
+import { publicationCallback } from "../../bot/publication-callback.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { drafts, publishJobs, siteJobs, studioNotificationSettings, videoDrafts, videoTargets } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { t } from "../../foundation/i18n/index.js";
 import { log } from "../../foundation/logger.js";
-import { getVideoDraft, listVideoTargets } from "../../publishing/video-data.js";
+import { getVideoDraft } from "../../publishing/video-data.js";
 import type { VideoTarget } from "../../publishing/video-types.js";
 import { videoTargetLabel } from "../../publishing/video-types.js";
 import { telegramVideoCard } from "./control-cards.js";
+import { videoPreview } from "./video-preview.js";
 import { formatVideoTime } from "./video-time.js";
 
 /** These adapters render times, so they need the configured zone — nothing more. */
@@ -39,7 +39,7 @@ export async function notifyFinalVideoFailure(
       {
         reply_markup: new InlineKeyboard().text(
           t(locale, "notif.retry", { platform: targetName === "youtube_shorts" ? "YouTube" : "Instagram" }),
-          publicationCallback("video", "retry", [draft.id, targetName]),
+          publicationCallback("video", "retry", [draft.id, targetName, "notice"]),
         ),
       },
     );
@@ -56,11 +56,11 @@ export async function refreshVideoControlCard(
   const card = telegramVideoCard(backendDb, videoDraftId);
   if (!card || card.chatId == null || card.messageId == null) return;
   const draft = getVideoDraft(backendDb, videoDraftId);
-  const preview = renderPublicationCard("video", {
-    data: { draft, targets: listVideoTargets(backendDb, videoDraftId) },
+  const preview = videoPreview(
+    { draft, targets: unsafeDb(backendDb).db.select().from(videoTargets).where(eq(videoTargets.videoDraftId, videoDraftId)).all() },
     config,
-    locale: botLocale(backendDb, draft.actorId),
-  });
+    botLocale(backendDb, draft.actorId),
+  );
   try {
     await bot.api.editMessageText(card.chatId, card.messageId, preview.text, {
       parse_mode: "Markdown",
@@ -90,8 +90,8 @@ export async function sendVideoReminder(
     const text = `${t(locale, "notif.reminder-head", { minutes: preference.reminderMinutes })}\n\n🎬 ${title}\n${draft.locale === "en" ? "🇬🇧 EN" : "🇷🇺 RU"}\n\n• ${videoTargetLabel(target.target as VideoTarget)}\n\n${formatVideoTime(target.scheduledAt, locale, config)}`;
     await bot.api.sendMessage(actorId, text, {
       reply_markup: new InlineKeyboard()
-        .text(t(locale, "notif.open"), publicationCallback("video", "open", [draft.id]))
-        .text(t(locale, "notif.cancel-btn"), publicationCallback("video", "cancel_notice", [draft.id])),
+        .text(t(locale, "notif.open"), publicationCallback("video", "view", [draft.id, "overview"]))
+        .text(t(locale, "notif.cancel-btn"), publicationCallback("video", "cancel_confirm", [draft.id])),
     });
   });
   unsafeDb(backendDb)
@@ -177,23 +177,23 @@ function completionKeyboard(
   const keyboard = new InlineKeyboard();
   const publication = parsePublicationRef(postKey);
   if (publication?.kind === "post" && draftId != null && failedTargets.length) {
-    keyboard.text(t(locale, "notif.retry-failed"), publicationCallback("post", "post_retry_notice", [draftId])).row();
-    keyboard.text(t(locale, "notif.open"), publicationCallback("post", "preview", [draftId])).row();
+    keyboard.text(t(locale, "notif.retry-failed"), publicationCallback("post", "retry", [draftId, "all", "notice"])).row();
+    keyboard.text(t(locale, "notif.open"), publicationCallback("post", "view", [draftId, "overview"])).row();
     for (const target of failedTargets)
       keyboard
         .text(
           t(locale, "notif.retry-target", { target: friendlyTarget(target.target) }),
-          publicationCallback("post", "post_retry_notice", [draftId, target.target]),
+          publicationCallback("post", "retry", [draftId, target.target, "notice"]),
         )
         .row();
   }
   if (publication?.kind === "video" && draftId != null && failedTargets.length) {
-    keyboard.text(t(locale, "notif.open"), publicationCallback("video", "open", [draftId])).row();
+    keyboard.text(t(locale, "notif.open"), publicationCallback("video", "view", [draftId, "overview"])).row();
     for (const target of failedTargets)
       keyboard
         .text(
           t(locale, "notif.retry-target", { target: friendlyTarget(target.target) }),
-          publicationCallback("video", "retry", [draftId, target.target]),
+          publicationCallback("video", "retry", [draftId, target.target, "notice"]),
         )
         .row();
   }

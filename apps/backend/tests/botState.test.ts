@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { and, eq } from "drizzle-orm";
 import { clearConversationStateIfCurrent, getConversationState, saveConversationState } from "../src/bot/conversation-state.js";
-import { type PostWizardStep, postStateStep } from "../src/bot/post-fsm.js";
+import { type PostWizardStep, postStateStep } from "../src/bot/post-actions.js";
 import { clearVideoState, getVideoState, saveVideoState } from "../src/bot/video-ui.js";
 import type { BackendDb } from "../src/db/client.js";
 import { conversationSessions } from "../src/db/schema.js";
@@ -155,8 +155,7 @@ describe("Telegram dialog state", () => {
           kind: "video",
           draftId: 7,
           step: "schedule_target:youtube_shorts",
-          selectedTargetsJson: ["youtube_shorts"],
-          dataJson: {},
+          dataJson: { selectedTargets: ["youtube_shorts"] },
           updatedAt: new Date().toISOString(),
         })
         .run();
@@ -218,8 +217,7 @@ describe("Telegram dialog state", () => {
           kind: "video",
           draftId: 7,
           step: "schedule_confirm",
-          selectedTargetsJson: ["youtube_shorts"],
-          dataJson: {},
+          dataJson: { selectedTargets: ["youtube_shorts"] },
           updatedAt: expired,
           expiresAt: expired,
         })
@@ -250,8 +248,7 @@ describe("Telegram dialog state", () => {
           kind: "video",
           draftId: 7,
           step: "not-a-real-step",
-          selectedTargetsJson: ["youtube_shorts"],
-          dataJson: {},
+          dataJson: { selectedTargets: ["youtube_shorts"] },
           updatedAt: new Date().toISOString(),
         })
         .run();

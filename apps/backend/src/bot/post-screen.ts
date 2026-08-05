@@ -6,17 +6,18 @@ import { StudioError } from "../foundation/errors.js";
 import { describeError, t } from "../foundation/i18n/index.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { appendPendingAlbum } from "./albums.js";
-import { clearConversationState, getConversationState, saveConversationState } from "./conversation-state.js";
+import { clearConversationState, getConversationState } from "./conversation-state.js";
 import { cancelPromptKeyboard } from "./dialog-ui.js";
 import { executePublicationEffects, type PublicationMessageResult } from "./effects.js";
 import { botLocale } from "./i18n.js";
 import { persistentKeyboard } from "./menu-render.js";
 import { extractMessage } from "./message.js";
-import { POST_FLOW, postStateStep } from "./post-fsm.js";
+import { POST_FLOW, postStateStep } from "./post-actions.js";
 import { applyAdminState } from "./post-input-actions.js";
 import { translatePostText } from "./post-translation.js";
-import { renderPublicationCard } from "./publication-card.js";
-import { parseSessionCallback, publicationCallback } from "./session-fsm.js";
+import { parseSessionCallback, publicationCallback } from "./publication-callback.js";
+import { openPublicationFlow } from "./publication-flow.js";
+import { publicationRenderers } from "./publication-renderers.js";
 
 /** The conversational text-post screen. It owns user input and keeps the
  * root bot router limited to authorization and screen dispatch.
@@ -25,7 +26,7 @@ import { parseSessionCallback, publicationCallback } from "./session-fsm.js";
  * operator just tapped into it, which is what a callback should do. */
 async function renderPostScreen(ctx: Context, backendDb: BackendDb, mode: "reply" | "edit"): Promise<void> {
   const actorId = Number(ctx.from?.id);
-  const revision = saveConversationState(backendDb, actorId, {
+  const revision = openPublicationFlow(backendDb, actorId, {
     kind: "post",
     draftId: null,
     step: "new_post",
@@ -109,7 +110,14 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
   const textEn = await translatePostText(message.text, config);
   const draftId = createStudioServices(backendDb, config).posts.create(actorId, { ...message, textEn });
   clearConversationState(backendDb, actorId, "post");
-  const preview = renderPublicationCard("post", { backendDb, config, publicationId: draftId });
+  const preview = publicationRenderers(backendDb, config).post.card({
+    backendDb,
+    pipeline: createStudioServices(backendDb, config).posts,
+    actorId,
+    publicationId: draftId,
+    config,
+    locale,
+  });
   return {
     handled: true,
     effects: [

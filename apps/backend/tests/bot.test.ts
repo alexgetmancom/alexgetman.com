@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, mock } from "bun:test";
 import type { Bot } from "grammy";
 import { finalizePendingAlbums } from "../src/bot/albums.js";
 import { getConversationState, saveConversationState } from "../src/bot/conversation-state.js";
-import type { PostWizardStep } from "../src/bot/post-fsm.js";
+import type { PostWizardStep } from "../src/bot/post-actions.js";
 import { draftPreview } from "../src/bot/preview.js";
 import { postProgress } from "../src/bot/progress.js";
 import { DEFAULT_TARGETS, TARGETS, targetLocale } from "../src/botTargets.js";
@@ -20,7 +20,7 @@ import { openBackendDb } from "./helpers/open-db.js";
 
 let backendDb: UnsafeBackendDb | null = null;
 
-function savePostState(db: UnsafeBackendDb, actorId: number, step: PostWizardStep, draftId: number, controlMessageId: number): number {
+function persistPostState(db: UnsafeBackendDb, actorId: number, step: PostWizardStep, draftId: number, controlMessageId: number): number {
   return saveConversationState(db, actorId, {
     kind: "post",
     draftId,
@@ -47,7 +47,7 @@ describe("Telegram controller flow", () => {
     const preview = draftPreview(backendDb, draftId, loadConfig({}));
     expect(preview.text).toContain("Mode: *Manual*");
     expect(JSON.stringify(preview.keyboard)).toContain(`cycle_mode:${draftId}`);
-    expect(JSON.stringify(preview.keyboard)).toContain(`platforms:${draftId}`);
+    expect(JSON.stringify(preview.keyboard)).toContain(`view:${draftId}:platforms`);
     expect(JSON.stringify(preview.keyboard)).toContain(`sources:${draftId}`);
     expect(JSON.stringify(preview.keyboard)).not.toContain("use_ru_media");
   });
@@ -485,7 +485,7 @@ describe("Telegram controller flow", () => {
       entities: [],
       media: [{ type: "photo", file_id: "ru-photo" }],
     });
-    savePostState(backendDb, 42, { type: "edit_text", locale: "en" }, draftId, 99);
+    persistPostState(backendDb, 42, { type: "edit_text", locale: "en" }, draftId, 99);
     backendDb.sqlite
       .prepare(`INSERT INTO pending_albums(id,actor_id,chat_id,media_group_id,step,step_data_json,draft_id,text_ru,text_entities_json,media_json,notified,updated_at)
       VALUES ('en-edit',42,42,'group','edit_text','{"locale":"en"}',?,'English replacement','[]',?,1,'2000-01-01T00:00:00.000Z')`)
