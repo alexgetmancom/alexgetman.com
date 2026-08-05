@@ -36,6 +36,7 @@ function isInboxEvent(eventType: string): boolean {
   return (
     eventType.startsWith("studio.notification.") ||
     eventType === "delivery.post.completed" ||
+    eventType === "delivery.post.locale.completed" ||
     eventType === "delivery.video.completed" ||
     eventType === "analytics.video_metrics.frozen"
   );

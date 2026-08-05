@@ -16,6 +16,7 @@ import {
 
 const TELEGRAM_EVENT_TYPES = [
   "delivery.post.settled",
+  "delivery.post.locale.completed",
   "publish.job.claimed",
   "publish.job.published",
   "publish.job.failed",
@@ -96,7 +97,11 @@ async function deliverEvent(backendDb: BackendDb, bot: Bot, config: BackendConfi
   const videoTargetId = numberDetail(details, "videoTargetId");
   if (event.eventType === "studio.notification.reminder.due") {
     await sendStudioReminder(backendDb, bot, config, { ...event, detailsJson: details });
-  } else if (event.eventType === "delivery.post.completed" || event.eventType === "delivery.video.completed") {
+  } else if (
+    event.eventType === "delivery.post.completed" ||
+    event.eventType === "delivery.post.locale.completed" ||
+    event.eventType === "delivery.video.completed"
+  ) {
     await sendStudioCompletion(backendDb, bot, config, { ...event, detailsJson: details });
   } else if (event.eventType === "analytics.milestone.reached") {
     for (const actorId of config.ADMIN_IDS) await bot.api.sendMessage(actorId, event.message);

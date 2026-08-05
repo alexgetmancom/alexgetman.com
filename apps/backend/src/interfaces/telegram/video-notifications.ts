@@ -3,6 +3,7 @@ import { type Bot, InlineKeyboard } from "grammy";
 import { parsePublicationRef } from "../../application/publication-ref.js";
 import { botLocale } from "../../bot/i18n.js";
 import { publicationCallback } from "../../bot/publication-callback.js";
+import { targetLocale } from "../../botTargets.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { drafts, publishJobs, siteJobs, studioNotificationSettings, videoDrafts, videoTargets } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
@@ -134,8 +135,8 @@ export async function sendStudioReminder(
 export async function sendStudioCompletion(
   backendDb: BackendDb,
   bot: Bot | null,
-  config: Pick<BackendConfig, "ADMIN_IDS">,
-  event: { postKey: string | null; detailsJson: unknown },
+  config: Pick<BackendConfig, "ADMIN_IDS" | "TIMEZONE" | "TIMEZONE_LABEL">,
+  event: { postKey: string | null; detailsJson: unknown; eventType?: string },
 ): Promise<void> {
   if (!bot) return;
   const ownerId = ownerForRef(backendDb, event.postKey);
@@ -144,7 +145,10 @@ export async function sendStudioCompletion(
   const total = number(details.total) ?? 0;
   const published = number(details.published) ?? 0;
   const failed = number(details.failed) ?? 0;
-  const results = completionTargets(backendDb, event.postKey);
+  const partialLocale = event.eventType === "delivery.post.locale.completed" ? localeDetail(details.locale) : null;
+  const results = completionTargets(backendDb, event.postKey).filter(
+    (result) => partialLocale == null || targetLocale(result.target) === partialLocale,
+  );
   const videoLocale = videoLocaleForRef(backendDb, event.postKey);
   const failedTargets = results.filter((result) => result.status === "failed" || result.status === "verification_required");
   const draftId = postDraftId(backendDb, event.postKey);
@@ -152,18 +156,29 @@ export async function sendStudioCompletion(
     if (!notificationPreference(backendDb, actorId).completionEnabled) return;
     const locale = botLocale(backendDb, actorId);
     const label = parsePublicationRef(event.postKey)?.kind === "video" ? t(locale, "notif.label-video") : t(locale, "notif.label-post");
-    const headline = failed
-      ? t(locale, "notif.completion-failed", { label, published, total, failed })
-      : t(locale, "notif.completion-ok", { label, done: published || total, total });
+    const headline = partialLocale
+      ? failed
+        ? t(locale, "notif.locale-completion-failed", {
+            label,
+            locale: localeName(partialLocale, locale),
+            published,
+            total,
+            failed,
+          })
+        : t(locale, "notif.locale-completion-ok", { label, locale: localeName(partialLocale, locale), done: published || total, total })
+      : failed
+        ? t(locale, "notif.completion-failed", { label, published, total, failed })
+        : t(locale, "notif.completion-ok", { label, done: published || total, total });
     const lines = results.map(
       (result) =>
         `${statusIcon(result.status)} ${friendlyTarget(result.target)} — ${friendlyStatus(result.status, locale)}${
           result.error && (result.status === "failed" || result.status === "verification_required") ? ` — ${shortError(result.error)}` : ""
         }`,
     );
-    const text = `${headline}${videoLocale ? `\n${videoLocale === "en" ? "🇬🇧 EN" : "🇷🇺 RU"}` : ""}${lines.length ? `\n\n${lines.join("\n")}` : ""}`;
+    const remaining = partialLocale ? remainingScheduleText(details, locale, config) : "";
+    const text = `${headline}${videoLocale ? `\n${videoLocale === "en" ? "🇬🇧 EN" : "🇷🇺 RU"}` : ""}${remaining ? `\n\n${remaining}` : ""}${lines.length ? `\n\n${lines.join("\n")}` : ""}`;
     await bot.api.sendMessage(actorId, text, {
-      reply_markup: completionKeyboard(locale, event.postKey, draftId, failedTargets),
+      reply_markup: completionKeyboard(locale, event.postKey, draftId, failedTargets, partialLocale != null),
     });
   });
 }
@@ -173,11 +188,13 @@ function completionKeyboard(
   postKey: string | null,
   draftId: number | null,
   failedTargets: Array<{ target: string; status: string; error: string | null }>,
+  partial: boolean,
 ): InlineKeyboard {
   const keyboard = new InlineKeyboard();
   const publication = parsePublicationRef(postKey);
-  if (publication?.kind === "post" && draftId != null && failedTargets.length) {
-    keyboard.text(t(locale, "notif.retry-failed"), publicationCallback("post", "retry", [draftId, "all", "notice"])).row();
+  if (publication?.kind === "post" && draftId != null && (failedTargets.length || partial)) {
+    if (failedTargets.length)
+      keyboard.text(t(locale, "notif.retry-failed"), publicationCallback("post", "retry", [draftId, "all", "notice"])).row();
     keyboard.text(t(locale, "notif.open"), publicationCallback("post", "view", [draftId, "overview"])).row();
     for (const target of failedTargets)
       keyboard
@@ -287,6 +304,32 @@ function friendlyTarget(target: string): string {
   return labels[target] ?? target;
 }
 
+function localeName(locale: "ru" | "en", interfaceLocale: "ru" | "en"): string {
+  return t(interfaceLocale, locale === "en" ? "notif.locale-en" : "notif.locale-ru");
+}
+
+function remainingScheduleText(
+  details: Record<string, unknown>,
+  interfaceLocale: "ru" | "en",
+  config: Pick<BackendConfig, "TIMEZONE" | "TIMEZONE_LABEL">,
+): string {
+  const remaining = Array.isArray(details.remaining) ? details.remaining : [];
+  return remaining
+    .map((value) => {
+      if (value == null || typeof value !== "object" || Array.isArray(value)) return null;
+      const item = value as Record<string, unknown>;
+      const itemLocale = localeDetail(item.locale);
+      if (!itemLocale) return null;
+      const at = typeof item.scheduled_at === "string" ? formatVideoTime(item.scheduled_at, interfaceLocale, config) : null;
+      return t(interfaceLocale, at ? "notif.remaining-scheduled" : "notif.remaining-unscheduled", {
+        locale: localeName(itemLocale, interfaceLocale),
+        at: at ?? "",
+      });
+    })
+    .filter((value): value is string => value != null)
+    .join("\n");
+}
+
 function statusIcon(status: string): string {
   if (["published", "completed"].includes(status)) return "✅";
   if (status === "failed") return "❌";
@@ -341,4 +384,8 @@ function object(value: unknown): Record<string, unknown> {
 
 function number(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function localeDetail(value: unknown): "ru" | "en" | null {
+  return value === "ru" || value === "en" ? value : null;
 }

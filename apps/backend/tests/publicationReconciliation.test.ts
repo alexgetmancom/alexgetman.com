@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { and, eq } from "drizzle-orm";
-import { drafts, postEvents, postTargets, publications, publishJobs, siteJobs } from "../src/db/schema.js";
+import { drafts, postEvents, postTargets, publicationPlans, publications, publishJobs, siteJobs } from "../src/db/schema.js";
 import { runPublicationReconciliation } from "../src/delivery/publication-reconciliation.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { reconcilePublication } from "../src/publishing/publication-reconciliation.js";
@@ -8,6 +8,104 @@ import { enqueuePublishJobTx } from "../src/publishing/queue.js";
 import { withDb } from "./helpers/db.js";
 
 describe("publication reconciliation", () => {
+  it("emits one completion event for an earlier locale while a later locale waits", () =>
+    withDb((backendDb) => {
+      const now = new Date("2026-08-05T21:32:13.000Z");
+      const later = new Date("2026-08-06T07:00:00.000Z");
+      backendDb.db
+        .insert(drafts)
+        .values({
+          id: 90,
+          actorId: 42,
+          status: "scheduled",
+          textRu: "RU",
+          textEnMachine: "EN",
+          targetsJson: JSON.stringify({ telegram: true, site_ru: true, threads_en: true, site_en: true }),
+          postId: 90,
+          scheduledAt: later.toISOString(),
+          scheduledEnAt: now.toISOString(),
+          createdAt: now.toISOString(),
+          updatedAt: now.toISOString(),
+        })
+        .run();
+      backendDb.db
+        .insert(publications)
+        .values({ postId: 90, draftId: 90, status: "scheduled", createdAt: now.toISOString(), updatedAt: now.toISOString() })
+        .run();
+      backendDb.db
+        .insert(publicationPlans)
+        .values({
+          postId: 90,
+          planJson: {
+            mode: "scheduled",
+            targets: { telegram: true, site_ru: true, threads_en: true, site_en: true },
+            scheduled_at: later.toISOString(),
+            scheduled_en_at: now.toISOString(),
+          },
+          createdAt: now.toISOString(),
+          updatedAt: now.toISOString(),
+        })
+        .run();
+      backendDb.db
+        .insert(publishJobs)
+        .values([
+          {
+            postId: 90,
+            postKey: "post:90",
+            messageId: 90,
+            target: "threads_en",
+            status: "published",
+            createdAt: now.toISOString(),
+            updatedAt: now.toISOString(),
+          },
+          {
+            postId: 90,
+            postKey: "post:90",
+            messageId: 90,
+            target: "telegram",
+            status: "queued",
+            publishAt: later.toISOString(),
+            createdAt: now.toISOString(),
+            updatedAt: now.toISOString(),
+          },
+        ])
+        .run();
+      backendDb.db
+        .insert(siteJobs)
+        .values([
+          {
+            postId: 90,
+            messageId: 90,
+            reason: "publish_en",
+            status: "published",
+            createdAt: now.toISOString(),
+            updatedAt: now.toISOString(),
+          },
+          {
+            postId: 90,
+            messageId: 90,
+            reason: "publish_ru",
+            status: "queued",
+            nextAttemptAt: later.toISOString(),
+            createdAt: now.toISOString(),
+            updatedAt: now.toISOString(),
+          },
+        ])
+        .run();
+
+      reconcilePublication(backendDb, 90);
+      reconcilePublication(backendDb, 90);
+
+      const events = backendDb.db.select().from(postEvents).all();
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ eventType: "delivery.post.locale.completed", target: "en" });
+      expect(JSON.parse(events[0]?.detailsJson ?? "{}")).toMatchObject({
+        locale: "en",
+        published: 2,
+        remaining: [{ locale: "ru", scheduled_at: later.toISOString() }],
+      });
+    }));
+
   it("emits one aggregate when social and site targets are terminal", () =>
     withDb((backendDb) => {
       const now = new Date().toISOString();

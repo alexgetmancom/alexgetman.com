@@ -190,6 +190,84 @@ describe("Telegram event consumer", () => {
       }
     }));
 
+  it("notifies about a completed locale and shows the later locale schedule", async () =>
+    withDb(async (backendDb) => {
+      const now = new Date().toISOString();
+      const later = "2026-08-06T07:00:00.000Z";
+      backendDb.db
+        .insert(drafts)
+        .values({
+          id: 13,
+          actorId: 42,
+          status: "scheduled",
+          textRu: "RU",
+          textEnMachine: "EN",
+          targetsJson: JSON.stringify({ telegram: true, site_ru: true, threads_en: true, site_en: true }),
+          postId: 113,
+          scheduledAt: later,
+          scheduledEnAt: now,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      backendDb.db
+        .insert(publishJobs)
+        .values([
+          { postId: 113, postKey: "post:113", messageId: 113, target: "threads_en", status: "published", createdAt: now, updatedAt: now },
+          {
+            postId: 113,
+            postKey: "post:113",
+            messageId: 113,
+            target: "telegram",
+            status: "queued",
+            publishAt: later,
+            createdAt: now,
+            updatedAt: now,
+          },
+        ])
+        .run();
+      backendDb.db
+        .insert(siteJobs)
+        .values([
+          { postId: 113, messageId: 113, reason: "publish_en", status: "published", createdAt: now, updatedAt: now },
+          { postId: 113, messageId: 113, reason: "publish_ru", status: "queued", nextAttemptAt: later, createdAt: now, updatedAt: now },
+        ])
+        .run();
+      recordDomainEvent(backendDb.events, {
+        ref: "post:113",
+        target: "en",
+        type: "delivery.post.locale.completed",
+        severity: "info",
+        message: "Post #113 EN publication part completed",
+        details: {
+          post_id: 113,
+          locale: "en",
+          total: 2,
+          published: 2,
+          failed: 0,
+          remaining: [{ locale: "ru", scheduled_at: later }],
+        },
+      });
+      const sendMessage = mock(async (chatId: number, text: string, options: unknown) => ({
+        message_id: 1,
+        date: 1,
+        chat: { id: chatId, type: "private" as const },
+        text,
+        options,
+      }));
+      const bot = { api: { sendMessage } } as unknown as Bot;
+
+      expect(await consumeTelegramEvents(backendDb, bot, config)).toBe(1);
+      expect(sendMessage).toHaveBeenCalledTimes(1);
+      expect(sendMessage.mock.calls[0]?.[1]).toContain("🇬🇧 EN part of Post published");
+      expect(sendMessage.mock.calls[0]?.[1]).toContain("Threads EN");
+      expect(sendMessage.mock.calls[0]?.[1]).toContain("Site EN");
+      expect(sendMessage.mock.calls[0]?.[1]).toContain("🇷🇺 RU");
+      expect(sendMessage.mock.calls[0]?.[1]).toContain("10:00 MSK");
+      expect(JSON.stringify(sendMessage.mock.calls[0]?.[2])).toContain("p:post:view:13:overview");
+      expect(JSON.stringify(sendMessage.mock.calls[0]?.[2])).not.toContain("retry:13:all:notice");
+    }));
+
   it("sends one actionable aggregate for a failed post and does not replay it", async () =>
     withDb(async (backendDb) => {
       const now = new Date().toISOString();

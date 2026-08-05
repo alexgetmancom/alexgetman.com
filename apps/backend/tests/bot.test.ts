@@ -48,8 +48,9 @@ describe("Telegram controller flow", () => {
     expect(preview.text).toContain("Mode: *Manual*");
     expect(JSON.stringify(preview.keyboard)).toContain(`cycle_mode:${draftId}`);
     expect(JSON.stringify(preview.keyboard)).toContain(`view:${draftId}:platforms`);
-    expect(JSON.stringify(preview.keyboard)).toContain(`edit_menu:${draftId}`);
-    expect(JSON.stringify(preview.keyboard)).not.toContain(`edit_ru:${draftId}`);
+    expect(JSON.stringify(preview.keyboard)).toContain(`edit_ru:${draftId}`);
+    expect(JSON.stringify(preview.keyboard)).toContain(`edit_en:${draftId}`);
+    expect(JSON.stringify(preview.keyboard)).not.toContain(`edit_menu:${draftId}`);
     expect(JSON.stringify(preview.keyboard)).toContain(`sources:${draftId}`);
     expect(JSON.stringify(preview.keyboard)).not.toContain("use_ru_media");
   });

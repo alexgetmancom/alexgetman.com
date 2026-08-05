@@ -112,6 +112,7 @@ describe("Drizzle site feed", () => {
 
   it("does not expose scheduled or disabled locales", () => {
     const now = new Date().toISOString();
+    const future = new Date(Date.now() + 60_000).toISOString();
     rawDb.db.insert(publications).values({ postId: 8, status: "scheduled", createdAt: now, updatedAt: now }).run();
     rawDb.db
       .insert(posts)
@@ -119,9 +120,48 @@ describe("Drizzle site feed", () => {
       .run();
     rawDb.db
       .insert(postLocales)
-      .values({ postId: 8, locale: "en", slug: "future", text: "Future", mediaJson: [], siteEnabled: 1, publishedAt: now, updatedAt: now })
+      .values({
+        postId: 8,
+        locale: "en",
+        slug: "future",
+        text: "Future",
+        mediaJson: [],
+        siteEnabled: 1,
+        publishedAt: future,
+        updatedAt: now,
+      })
       .run();
     expect(loadPublicSiteFeed(backendDb)).toEqual([]);
+  });
+
+  it("exposes an EN locale while RU remains scheduled", () => {
+    const now = new Date().toISOString();
+    const future = new Date(Date.now() + 60_000).toISOString();
+    rawDb.db.insert(publications).values({ postId: 10, status: "scheduled", createdAt: now, updatedAt: now }).run();
+    rawDb.db
+      .insert(posts)
+      .values({ postKey: "post:10", postId: 10, source: "studio", channel: "studio", messageId: 110, createdAt: now, updatedAt: now })
+      .run();
+    rawDb.db
+      .insert(postLocales)
+      .values([
+        {
+          postId: 10,
+          locale: "ru",
+          slug: "ru-future",
+          text: "RU future",
+          mediaJson: [],
+          siteEnabled: 1,
+          publishedAt: future,
+          updatedAt: now,
+        },
+        { postId: 10, locale: "en", slug: "en-now", text: "EN now", mediaJson: [], siteEnabled: 1, publishedAt: now, updatedAt: now },
+      ])
+      .run();
+
+    expect(loadPublicSiteItem(backendDb, 10)).toEqual(
+      expect.objectContaining({ text_en: "EN now", has_en: true, has_ru: false, slug_en: "en-now" }),
+    );
   });
 
   it("maps published Telegram media IDs to the deterministic site media manifest", () => {

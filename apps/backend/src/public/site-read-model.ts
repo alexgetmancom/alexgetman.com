@@ -159,8 +159,8 @@ function buildPublicSiteFeed(backendDb: BackendDb, sitePublicDir: string, postId
     )
     .where(
       postId === undefined
-        ? inArray(publications.status, ["published", "failed"])
-        : and(inArray(publications.status, ["published", "failed"]), eq(publications.postId, postId)),
+        ? inArray(publications.status, ["published", "failed", "scheduled"])
+        : and(inArray(publications.status, ["published", "failed", "scheduled"]), eq(publications.postId, postId)),
     )
     .orderBy(desc(posts.dateUtc), desc(publications.postId))
     .all();

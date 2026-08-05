@@ -246,7 +246,9 @@ export function draftPreview(
     keyboard.text(t(locale, "post.choose-platforms"), publicationCallback("post", "view", [draftId, "platforms"])).row();
     const canEditRu = canEditLocale(backendDb, config, draft.actor_id, draftId, "ru");
     const canEditEn = canEditLocale(backendDb, config, draft.actor_id, draftId, "en");
-    if (canEditRu || canEditEn) keyboard.text(t(locale, "post.edit-button"), publicationCallback("post", "edit_menu", [draftId])).row();
+    if (canEditRu) keyboard.text(t(locale, "post.edit-ru"), publicationCallback("post", "edit_ru", [draftId]));
+    if (canEditEn) keyboard.text(t(locale, "post.edit-en"), publicationCallback("post", "edit_en", [draftId]));
+    if (canEditRu || canEditEn) keyboard.row();
     keyboard
       .text(`🔗 ${locale === "ru" ? "Источники" : "Sources"}: ${sourceCount}`, publicationCallback("post", "sources", [draftId]))
       .row();
