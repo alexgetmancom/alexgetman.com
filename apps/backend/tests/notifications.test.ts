@@ -141,6 +141,25 @@ describe("Studio notifications", () => {
     }
   });
 
+  it("does not remind about a publication that is already due", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      scheduleReminder(backendDb, {
+        actorId: 42,
+        ref: "publication:post:1",
+        kind: "post.en",
+        publishAt: new Date(Date.now() - 1_000),
+        title: "Immediate publication",
+        targets: ["threads_en"],
+        preference: { remindersEnabled: true, reminderMinutes: 5, completionEnabled: true },
+      });
+
+      expect(backendDb.db.select().from(studioNotificationJobs).all()).toHaveLength(0);
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("uses the owner's stored reminder interval when scheduling a post", () => {
     const backendDb = openBackendDb(":memory:");
     try {

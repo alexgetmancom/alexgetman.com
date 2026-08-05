@@ -1,9 +1,10 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { Bot } from "grammy";
+import { refreshPostControlCard } from "../src/bot/progress.js";
 import { botUiSettings, drafts, publishJobs, siteJobs, videoDrafts, videoTargets } from "../src/db/schema.js";
 import { recordDomainEvent } from "../src/domain/events.js";
 import { loadConfig } from "../src/foundation/config.js";
-import { setTelegramVideoCard } from "../src/interfaces/telegram/control-cards.js";
+import { setTelegramPostCard, setTelegramPostProgressCard, setTelegramVideoCard } from "../src/interfaces/telegram/control-cards.js";
 import { consumeTelegramEvents } from "../src/interfaces/telegram/event-consumer.js";
 import { refreshVideoControlCard, sendStudioCompletion, sendStudioReminder } from "../src/interfaces/telegram/video-notifications.js";
 import { withDb } from "./helpers/db.js";
@@ -15,6 +16,57 @@ function milestone(message: string) {
 }
 
 describe("Telegram event consumer", () => {
+  it("does not overwrite a draft card while no progress card is bound", async () =>
+    withDb(async (backendDb) => {
+      const draftId = 11;
+      const now = new Date().toISOString();
+      backendDb.db
+        .insert(drafts)
+        .values({
+          id: draftId,
+          actorId: 42,
+          status: "scheduled",
+          textRu: "Scheduled post",
+          targetsJson: JSON.stringify({ threads_en: true }),
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      setTelegramPostCard(backendDb, draftId, 42, 100);
+      const editMessageText = mock(async () => undefined);
+      const bot = { api: { editMessageText } } as unknown as Bot;
+
+      await refreshPostControlCard(backendDb, bot, draftId);
+
+      expect(editMessageText).not.toHaveBeenCalled();
+    }));
+
+  it("refreshes the explicitly bound progress card", async () =>
+    withDb(async (backendDb) => {
+      const draftId = 12;
+      const now = new Date().toISOString();
+      backendDb.db
+        .insert(drafts)
+        .values({
+          id: draftId,
+          actorId: 42,
+          status: "scheduled",
+          textRu: "Scheduled post",
+          targetsJson: JSON.stringify({ threads_en: true }),
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      setTelegramPostProgressCard(backendDb, draftId, 42, 101);
+      const editMessageText = mock(async (_chatId: number, _messageId: number, text: string) => text);
+      const bot = { api: { editMessageText } } as unknown as Bot;
+
+      await refreshPostControlCard(backendDb, bot, draftId);
+
+      expect(editMessageText).toHaveBeenCalledTimes(1);
+      expect(editMessageText.mock.calls[0]?.[2]).toContain("Post #12");
+    }));
+
   it("refreshes a video card in its owner's stored UI locale", async () =>
     withDb(async (backendDb) => {
       const now = new Date().toISOString();

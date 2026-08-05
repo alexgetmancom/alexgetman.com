@@ -18,7 +18,7 @@ export function scheduleReminder(
     preference: NotificationPreference;
   },
 ): void {
-  if (!input.preference.remindersEnabled) return;
+  if (!input.preference.remindersEnabled || input.publishAt.getTime() <= Date.now()) return;
   const now = new Date();
   const runAt = new Date(Math.max(now.getTime(), input.publishAt.getTime() - input.preference.reminderMinutes * 60_000)).toISOString();
   const timestamp = now.toISOString();

@@ -3,7 +3,7 @@ import type { BackendDb } from "../db/client.js";
 import { t } from "../foundation/i18n/index.js";
 import { log } from "../foundation/logger.js";
 import { escapeMarkdown } from "../foundation/markdown.js";
-import { telegramPostCard, telegramPostProgressCard } from "../interfaces/telegram/control-cards.js";
+import { telegramPostProgressCard } from "../interfaces/telegram/control-cards.js";
 
 import { type PostProgressState, type PostProgressStatus, postProgressState } from "../studio/services/post-progress.js";
 import { botLocale } from "./i18n.js";
@@ -63,7 +63,7 @@ export function renderPostProgress(
 
 export async function refreshPostControlCard(backendDb: BackendDb, bot: Bot | null, draftId: number): Promise<void> {
   if (!bot) return;
-  const control = telegramPostProgressCard(backendDb, draftId) ?? telegramPostCard(backendDb, draftId);
+  const control = telegramPostProgressCard(backendDb, draftId);
   if (!control) return;
   const card = postProgress(backendDb, draftId, "details" in control && control.details === true);
   try {
