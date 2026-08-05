@@ -83,4 +83,23 @@ describe("startLoop", () => {
       loop.stop();
     }
   });
+
+  it("keeps heartbeats alive while an infrequent task is idle", async () => {
+    let heartbeats = 0;
+    const loop = startLoop("idle-heartbeat", 60_000, () => {}, {
+      heartbeatIntervalMs: 5,
+      onHeartbeat: () => {
+        heartbeats += 1;
+      },
+    });
+    try {
+      await tick(25);
+      expect(heartbeats).toBeGreaterThan(2);
+    } finally {
+      loop.stop();
+    }
+    const afterStop = heartbeats;
+    await tick(20);
+    expect(heartbeats).toBe(afterStop);
+  });
 });

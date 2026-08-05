@@ -7,6 +7,7 @@ import { capabilityReport } from "./observability/capabilities.js";
 import { usageReport } from "./observability/usage.js";
 import { capabilitySummary, recordCapabilityPost } from "./operations/capabilities.js";
 import { channelReport, connectChannel, disableChannel } from "./operations/channels.js";
+import { doctorChecks } from "./operations/doctor.js";
 import {
   applyMetricsBackfill,
   auditOperations,
@@ -78,7 +79,7 @@ function printHelp(): void {
   restore --source PATH [--db PATH] --force
   audit [--db PATH]
   metrics-backfill [--targets a,b] [--refs post:1,post:2] [--from ISO] [--to ISO] [--apply] [--reset-counts]
-  publication-repair [--apply]
+  publication-repair [--ref post:1|video:1] [--apply]
   import-x-analytics --file PATH --sampled-at ISO
   import-manual-analytics [--x-file PATH] [--threads-ru-followers N] [--threads-en-followers N] [--sampled-at ISO]
   capabilities [--db PATH]
@@ -131,21 +132,7 @@ async function main(): Promise<void> {
         .filter(([, value]) => value)
         .map(([key]) => key);
       const dataDirectories = checkDataDirectoriesWritable(requiredDataDirectories(config));
-      // Required: a false value here means the deployment cannot function.
-      // Telegram is webhook-only; without the secret every update is rejected
-      // before grammY sees it.
-      const requiredChecks = {
-        telegramBot: Boolean(config.controllerBotToken),
-        webhookSecretConfigured: Boolean(config.TELEGRAM_WEBHOOK_SECRET),
-        youtube: !config.studio.modules.youtube || Boolean(config.YOUTUBE_REFRESH_TOKEN),
-        instagram: !config.studio.modules.instagram || Boolean(config.INSTAGRAM_ACCESS_TOKEN && config.INSTAGRAM_USER_ID),
-        dataDirectoriesWritable: dataDirectories.every((check) => check.writable),
-      };
-      const checks = {
-        ...requiredChecks,
-        commandCenterTokenConfigured: Boolean(config.COMMAND_CENTER_TOKEN),
-        commandCenterTokenSeparated: Boolean(config.COMMAND_CENTER_TOKEN && config.TELEGRAM_WEBHOOK_SECRET),
-      };
+      const { requiredChecks, checks } = doctorChecks(config, dataDirectories);
       console.log(
         JSON.stringify(
           {
@@ -168,10 +155,12 @@ async function main(): Promise<void> {
       console.log(JSON.stringify({ ok: true, path: await backupDatabase(backendDb, dbPath, args.values.get("output")) }, null, 2));
     else if (args.command === "audit") console.log(JSON.stringify(auditOperations(backendDb), null, 2));
     else if (args.command === "publication-repair") {
-      const before = publicationConsistencyReport(backendDb);
-      const repaired = args.flags.has("apply") ? repairPublicationConsistency(backendDb) : null;
-      const after = repaired ? publicationConsistencyReport(backendDb) : null;
-      console.log(JSON.stringify({ before, repaired, after }, null, 2));
+      const ref = args.values.get("ref");
+      const options = ref ? { ref } : undefined;
+      const before = publicationConsistencyReport(backendDb, options);
+      const repaired = args.flags.has("apply") ? repairPublicationConsistency(backendDb, options) : null;
+      const after = repaired ? publicationConsistencyReport(backendDb, options) : null;
+      console.log(JSON.stringify({ ...(ref ? { ref } : {}), before, repaired, after }, null, 2));
     } else if (args.command === "metrics-backfill") {
       const targets = (
         args.values.get("targets") ?? "telegram,threads_ru,threads_en,instagram_stories,instagram_stories_ru,telegram_stories"

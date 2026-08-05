@@ -14,6 +14,7 @@ export type LoopHooks = {
 
 export function startLoop(name: string, intervalMs: number, task: () => void | Promise<void>, hooks: LoopHooks = {}): ScheduledLoop {
   let running = false;
+  let stopped = false;
   const notify = (hook: (() => void) | undefined) => {
     if (!hook) return;
     try {
@@ -23,11 +24,9 @@ export function startLoop(name: string, intervalMs: number, task: () => void | P
     }
   };
   const run = async () => {
-    if (running) return;
+    if (stopped || running) return;
     running = true;
     notify(hooks.onStart);
-    const heartbeatTimer =
-      hooks.onHeartbeat && hooks.heartbeatIntervalMs ? setInterval(() => notify(hooks.onHeartbeat), hooks.heartbeatIntervalMs) : undefined;
     let failure: unknown | null = null;
     try {
       await task();
@@ -35,15 +34,20 @@ export function startLoop(name: string, intervalMs: number, task: () => void | P
       failure = error;
       log("error", `${name} loop failed`, { error: String(error) });
     } finally {
-      if (heartbeatTimer) clearInterval(heartbeatTimer);
       notify(() => hooks.onFinish?.(failure));
       running = false;
     }
   };
   const timer = setInterval(run, intervalMs);
+  const heartbeatTimer =
+    hooks.onHeartbeat && hooks.heartbeatIntervalMs ? setInterval(() => notify(hooks.onHeartbeat), hooks.heartbeatIntervalMs) : undefined;
   void run();
   return {
     name,
-    stop: () => clearInterval(timer),
+    stop: () => {
+      stopped = true;
+      clearInterval(timer);
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+    },
   };
 }

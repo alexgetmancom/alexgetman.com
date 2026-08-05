@@ -289,6 +289,11 @@ describe("TypeScript operations tooling", () => {
           job_status: "failed",
         }),
       ]);
+      expect(repairPublicationConsistency(backendDb, { ref: "video:1" })).toMatchObject({ repairedVideoJobs: 1, skippedVideoJobs: 0 });
+      expect(backendDb.sqlite.query("SELECT status,last_error FROM video_jobs WHERE id=1").get()).toEqual({
+        status: "completed",
+        last_error: null,
+      });
     } finally {
       backendDb.close();
     }
@@ -390,6 +395,43 @@ describe("TypeScript operations tooling", () => {
       expect(backendDb.sqlite.query("SELECT count(*) AS count FROM video_jobs").get()).toEqual({ count: 0 });
       expect(backendDb.sqlite.query("SELECT count(*) AS count FROM video_metric_schedule").get()).toEqual({ count: 0 });
       expect(backendDb.sqlite.query("SELECT count(*) AS count FROM video_metric_snapshots").get()).toEqual({ count: 0 });
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("scopes publication repair without deleting unrelated orphan rows", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      backendDb.sqlite.query("INSERT INTO metric_schedule(post_key,target,updated_at) VALUES ('post:orphan','telegram',?)").run(now);
+      for (const postId of [1, 2]) {
+        backendDb.sqlite
+          .query("INSERT INTO publications(post_id,status,created_at,updated_at) VALUES (?,'failed',?,?)")
+          .run(postId, now, now);
+        backendDb.sqlite
+          .query("INSERT INTO posts(post_key,post_id,channel,message_id,status,created_at,updated_at) VALUES (?,?, 'test',?,'active',?,?)")
+          .run(`post:${postId}`, postId, postId, now, now);
+        backendDb.sqlite
+          .query("INSERT INTO post_targets(post_key,target,status,error,updated_at) VALUES (?,'telegram','failed','stale',?)")
+          .run(`post:${postId}`, now);
+        backendDb.sqlite
+          .query(
+            "INSERT INTO publish_jobs(post_id,post_key,message_id,target,status,created_at,updated_at) VALUES (?,? ,?,'telegram','published',?,?)",
+          )
+          .run(postId, `post:${postId}`, postId, now, now);
+      }
+
+      expect(repairPublicationConsistency(backendDb, { ref: "post:1" })).toMatchObject({
+        deletedOrphans: 0,
+        repairedTargets: 1,
+        repairedPublications: 1,
+      });
+      expect(backendDb.sqlite.query("SELECT count(*) AS count FROM metric_schedule WHERE post_key='post:orphan'").get()).toEqual({
+        count: 1,
+      });
+      expect(backendDb.sqlite.query("SELECT status FROM post_targets WHERE post_key='post:1'").get()).toEqual({ status: "published" });
+      expect(backendDb.sqlite.query("SELECT status FROM post_targets WHERE post_key='post:2'").get()).toEqual({ status: "failed" });
     } finally {
       backendDb.close();
     }

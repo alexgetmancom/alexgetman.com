@@ -32,9 +32,13 @@ describe("production nginx topology", () => {
     // sets above — a mismatch here silently rate-limits every visitor as one IP.
     const http = read("deploy/nginx/production/alexgetman.com.conf");
     const maru = read("deploy/maru.compose.yaml");
+    const maruNginx = read("deploy/nginx/production/marux.ru.conf");
 
     expect(http).toContain("proxy_pass http://127.0.0.1:8789/");
     expect(maru).toContain('"127.0.0.1:8789:8788"');
     expect(maru).toContain("TRUSTED_CLIENT_IP_HEADER: x-real-ip");
+    expect(maruNginx).toContain("location = /healthz");
+    expect(maruNginx).toContain("location = /readyz");
+    expect(maruNginx.match(/proxy_pass http:\/\/127\.0\.0\.1:8789;/g)).toHaveLength(6);
   });
 });

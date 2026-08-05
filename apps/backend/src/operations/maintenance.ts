@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, notInArray, sql } from "drizzle-orm";
 import { freezeDisabledMetricSchedules } from "../analytics/collection/metric-schedule.js";
+import { parsePublicationRef } from "../application/publication-ref.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import {
   deploymentSnapshots,
@@ -271,44 +272,66 @@ type LatestPublishJob = {
   last_error: string | null;
 };
 
-export function publicationConsistencyReport(backendDb: BackendDb): Record<string, unknown> {
+type PublicationConsistencyOptions = { ref?: string };
+type PublicationConsistencyScope = { kind: "post"; id: number; postKey: string } | { kind: "video"; id: number };
+
+function publicationConsistencyScope(ref: string | undefined): PublicationConsistencyScope | null {
+  if (!ref) return null;
+  const parsed = parsePublicationRef(ref);
+  if (!parsed || parsed.kind === "draft" || parsed.id <= 0) throw new Error("--ref must look like post:1 or video:1");
+  return parsed.kind === "post" ? { kind: "post", id: parsed.id, postKey: `post:${parsed.id}` } : { kind: "video", id: parsed.id };
+}
+
+export function publicationConsistencyReport(backendDb: BackendDb, options: PublicationConsistencyOptions = {}): Record<string, unknown> {
+  const scope = publicationConsistencyScope(options.ref);
   const foreignKeyViolations = unsafeDb(backendDb).sqlite.query("PRAGMA foreign_key_check").all();
-  const staleTargets = unsafeDb(backendDb)
-    .sqlite.query(
-      `SELECT t.post_key,t.target,t.status,t.error,t.updated_at
+  const staleTargets = (
+    unsafeDb(backendDb)
+      .sqlite.query(
+        `SELECT t.post_key,t.target,t.status,t.error,t.updated_at
        FROM post_targets t
        WHERE t.status IN ('queued','publishing')
          AND NOT EXISTS (
            SELECT 1 FROM publish_jobs j
            WHERE j.post_key=t.post_key AND j.target=t.target AND j.status IN ('queued','publishing')
-         )
+       )
        ORDER BY t.updated_at`,
-    )
-    .all();
-  const targetMismatches = targetStateMismatches(backendDb);
-  const publicationMismatches = publicationStateMismatches(backendDb);
-  const videoDraftMismatches = unsafeDb(backendDb)
-    .sqlite.query(
-      `SELECT d.id,d.status,group_concat(t.status) AS target_statuses
+      )
+      .all() as Array<{ post_key: string }>
+  ).filter((row) => !scope || (scope.kind === "post" && row.post_key === scope.postKey));
+  const targetMismatches = targetStateMismatches(backendDb).filter(
+    (row) => !scope || (scope.kind === "post" && row.post_key === scope.postKey),
+  );
+  const publicationMismatches = publicationStateMismatches(backendDb).filter(
+    (row) => !scope || (scope.kind === "post" && row.post_id === scope.id),
+  );
+  const videoDraftMismatches = (
+    unsafeDb(backendDb)
+      .sqlite.query(
+        `SELECT d.id,d.status,group_concat(t.status) AS target_statuses
        FROM video_drafts d JOIN video_targets t ON t.video_draft_id=d.id
        GROUP BY d.id
        HAVING (d.status='published' AND sum(t.status!='published')>0)
           OR (d.status='partial' AND sum(t.status IN ('failed','cancelled'))=0)
           OR (d.status='scheduled' AND sum(t.status NOT IN ('published','failed','cancelled','verification_required'))=0)
        ORDER BY d.id`,
-    )
-    .all();
-  const videoTargetJobMismatches = unsafeDb(backendDb)
-    .sqlite.query(
-      `SELECT t.video_draft_id,t.id AS video_target_id,t.target,t.status AS target_status,
-              j.id AS publish_job_id,j.status AS job_status,j.last_error
+      )
+      .all() as Array<{ id: number }>
+  ).filter((row) => !scope || (scope.kind === "video" && row.id === scope.id));
+  const videoTargetJobMismatches = (
+    unsafeDb(backendDb)
+      .sqlite.query(
+        `SELECT t.video_draft_id,t.id AS video_target_id,t.target,t.status AS target_status,
+              j.id AS publish_job_id,j.status AS job_status,j.last_error,
+              t.provider_post_id,t.external_id
        FROM video_targets t
        JOIN video_jobs j ON j.video_target_id=t.id AND j.kind='publish'
        WHERE (t.status='published' AND j.status NOT IN ('completed','cancelled'))
           OR (t.status='failed' AND j.status='completed')
        ORDER BY t.video_draft_id,t.id`,
-    )
-    .all();
+      )
+      .all() as Array<{ video_draft_id: number }>
+  ).filter((row) => !scope || (scope.kind === "video" && row.video_draft_id === scope.id));
   return {
     foreignKeyViolations,
     staleTargets,
@@ -319,28 +342,35 @@ export function publicationConsistencyReport(backendDb: BackendDb): Record<strin
   };
 }
 
-export function repairPublicationConsistency(backendDb: BackendDb): Record<string, number> {
-  const before = publicationConsistencyReport(backendDb);
+export function repairPublicationConsistency(backendDb: BackendDb, options: PublicationConsistencyOptions = {}): Record<string, number> {
+  const scope = publicationConsistencyScope(options.ref);
+  const before = publicationConsistencyReport(backendDb, options);
   const now = new Date().toISOString();
   let deletedOrphans = 0;
   let repairedTargets = 0;
   let repairedPublications = 0;
+  let repairedVideoJobs = 0;
+  let skippedVideoJobs = 0;
   unsafeDb(backendDb).db.transaction(() => {
-    for (const statement of [
-      "DELETE FROM social_comments WHERE video_target_id NOT IN (SELECT id FROM video_targets) OR video_target_id IN (SELECT id FROM video_targets WHERE video_draft_id NOT IN (SELECT id FROM video_drafts))",
-      "DELETE FROM video_metric_snapshots WHERE video_target_id NOT IN (SELECT id FROM video_targets) OR video_target_id IN (SELECT id FROM video_targets WHERE video_draft_id NOT IN (SELECT id FROM video_drafts))",
-      "DELETE FROM video_metric_schedule WHERE video_target_id NOT IN (SELECT id FROM video_targets) OR video_target_id IN (SELECT id FROM video_targets WHERE video_draft_id NOT IN (SELECT id FROM video_drafts))",
-      "DELETE FROM video_jobs WHERE video_draft_id NOT IN (SELECT id FROM video_drafts) OR (video_target_id IS NOT NULL AND video_target_id NOT IN (SELECT id FROM video_targets))",
-      "DELETE FROM video_targets WHERE video_draft_id NOT IN (SELECT id FROM video_drafts)",
-      "DELETE FROM metric_schedule WHERE post_key NOT IN (SELECT post_key FROM posts)",
-      "DELETE FROM post_targets WHERE post_key NOT IN (SELECT post_key FROM posts)",
-      "DELETE FROM post_locales WHERE post_id NOT IN (SELECT post_id FROM publications)",
-      "DELETE FROM publication_sources WHERE post_id NOT IN (SELECT post_id FROM publications)",
-      "DELETE FROM publication_plans WHERE post_id NOT IN (SELECT post_id FROM publications)",
-    ])
-      deletedOrphans += unsafeDb(backendDb).sqlite.run(statement).changes;
+    if (!scope) {
+      for (const statement of [
+        "DELETE FROM social_comments WHERE video_target_id NOT IN (SELECT id FROM video_targets) OR video_target_id IN (SELECT id FROM video_targets WHERE video_draft_id NOT IN (SELECT id FROM video_drafts))",
+        "DELETE FROM video_metric_snapshots WHERE video_target_id NOT IN (SELECT id FROM video_targets) OR video_target_id IN (SELECT id FROM video_targets WHERE video_draft_id NOT IN (SELECT id FROM video_drafts))",
+        "DELETE FROM video_metric_schedule WHERE video_target_id NOT IN (SELECT id FROM video_targets) OR video_target_id IN (SELECT id FROM video_targets WHERE video_draft_id NOT IN (SELECT id FROM video_drafts))",
+        "DELETE FROM video_jobs WHERE video_draft_id NOT IN (SELECT id FROM video_drafts) OR (video_target_id IS NOT NULL AND video_target_id NOT IN (SELECT id FROM video_targets))",
+        "DELETE FROM video_targets WHERE video_draft_id NOT IN (SELECT id FROM video_drafts)",
+        "DELETE FROM metric_schedule WHERE post_key NOT IN (SELECT post_key FROM posts)",
+        "DELETE FROM post_targets WHERE post_key NOT IN (SELECT post_key FROM posts)",
+        "DELETE FROM post_locales WHERE post_id NOT IN (SELECT post_id FROM publications)",
+        "DELETE FROM publication_sources WHERE post_id NOT IN (SELECT post_id FROM publications)",
+        "DELETE FROM publication_plans WHERE post_id NOT IN (SELECT post_id FROM publications)",
+      ])
+        deletedOrphans += unsafeDb(backendDb).sqlite.run(statement).changes;
+    }
 
-    for (const mismatch of targetStateMismatches(backendDb)) {
+    for (const mismatch of targetStateMismatches(backendDb).filter(
+      (row) => !scope || (scope.kind === "post" && row.post_key === scope.postKey),
+    )) {
       const normalized = normalizeArchivedJobStatus(mismatch.job_status);
       const error = normalized === "failed" ? mismatch.last_error : null;
       unsafeDb(backendDb)
@@ -353,7 +383,9 @@ export function repairPublicationConsistency(backendDb: BackendDb): Record<strin
       repairedTargets += 1;
     }
 
-    for (const mismatch of publicationStateMismatches(backendDb)) {
+    for (const mismatch of publicationStateMismatches(backendDb).filter(
+      (row) => !scope || (scope.kind === "post" && row.post_id === scope.id),
+    )) {
       unsafeDb(backendDb)
         .db.update(publications)
         .set({ status: mismatch.expected, updatedAt: now })
@@ -366,12 +398,52 @@ export function repairPublicationConsistency(backendDb: BackendDb): Record<strin
         .run();
       repairedPublications += 1;
     }
+
+    if (scope?.kind === "video") {
+      const mismatches = unsafeDb(backendDb)
+        .sqlite.query(
+          `SELECT t.video_draft_id,t.id AS video_target_id,t.status AS target_status,
+                  j.id AS publish_job_id,j.status AS job_status,j.last_error,
+                  t.provider_post_id,t.external_id
+           FROM video_targets t
+           JOIN video_jobs j ON j.video_target_id=t.id AND j.kind='publish'
+           WHERE t.video_draft_id=?
+             AND ((t.status='published' AND j.status NOT IN ('completed','cancelled'))
+               OR (t.status='failed' AND j.status='completed'))
+           ORDER BY t.id`,
+        )
+        .all(scope.id) as Array<{
+        video_target_id: number;
+        target_status: string;
+        publish_job_id: number;
+        job_status: string;
+        provider_post_id: string | null;
+        external_id: string | null;
+      }>;
+      for (const mismatch of mismatches) {
+        if (mismatch.target_status !== "published" || (!mismatch.provider_post_id && !mismatch.external_id)) {
+          skippedVideoJobs += 1;
+          continue;
+        }
+        unsafeDb(backendDb)
+          .sqlite.query(
+            "UPDATE video_jobs SET status='completed', last_error=NULL, locked_at=NULL, locked_by=NULL, updated_at=? WHERE id=?",
+          )
+          .run(now, mismatch.publish_job_id);
+        unsafeDb(backendDb)
+          .sqlite.query("UPDATE video_targets SET last_error=NULL, updated_at=? WHERE id=?")
+          .run(now, mismatch.video_target_id);
+        repairedVideoJobs += 1;
+      }
+    }
   });
   return {
     foreignKeyViolations: Array.isArray(before.foreignKeyViolations) ? before.foreignKeyViolations.length : 0,
     deletedOrphans,
     repairedTargets,
     repairedPublications,
+    repairedVideoJobs,
+    skippedVideoJobs,
   };
 }
 
