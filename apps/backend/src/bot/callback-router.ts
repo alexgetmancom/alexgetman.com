@@ -34,7 +34,7 @@ type CallbackRouteHandler<TArgs, TResult> = (args: TArgs) => Promise<TResult>;
 type CallbackRouterBase<TArgs, TEntity, TResult> = {
   routes: Readonly<Record<PublicationKind, Readonly<Record<string, CallbackRouteHandler<TArgs, TResult>>>>>;
   currentSessionRevision?: (context: CallbackRouterContext) => number | undefined;
-  actionMetadata?: (context: CallbackRouterContext) => ActionMetadata;
+  actionMetadata?: (context: CallbackRouterContext) => ActionMetadata | undefined;
   parseEntity?: (callback: PublicationCallback, action: string) => TEntity | null;
   buildArgs: (
     context: CallbackRouterContext,
@@ -96,7 +96,11 @@ function createCallbackRouter<TArgs, TEntity = undefined, TResult = void>(
         return true;
       }
       const metadata = options.actionMetadata?.(common);
-      if (metadata?.requiresSessionRevision && revision == null) {
+      if (!metadata) {
+        await answerCallback(ctx, backendDb, options.staleText?.(common.locale));
+        return true;
+      }
+      if (metadata.requiresSessionRevision && revision == null) {
         await answerCallback(ctx, backendDb, options.staleText?.(common.locale));
         return true;
       }
@@ -104,12 +108,12 @@ function createCallbackRouter<TArgs, TEntity = undefined, TResult = void>(
         requireSessionRevision(options.currentSessionRevision(common), revision);
       }
 
-      const entity = metadata?.entity === "draft" ? options.parseEntity?.(callback, action) : undefined;
-      if (metadata?.entity === "draft" && entity == null) {
+      const entity = metadata.entity === "draft" ? options.parseEntity?.(callback, action) : undefined;
+      if (metadata.entity === "draft" && entity == null) {
         await answerCallback(ctx, backendDb, options.invalidEntityText?.(common.locale, callback.kind));
         return true;
       }
-      if (metadata?.requiresFreshCard && options.isStale && (await options.isStale(common, entity ?? undefined))) {
+      if (metadata.requiresFreshCard && options.isStale && (await options.isStale(common, entity ?? undefined))) {
         await answerCallback(ctx, backendDb, options.staleText?.(common.locale));
         return true;
       }

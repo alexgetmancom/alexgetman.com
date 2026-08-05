@@ -90,14 +90,8 @@ export const videoActionHandlers = {
   edit: defineVideoAction(handleEdit, { cardBound: true }),
 };
 
-export type VideoActionKey = keyof typeof videoActionHandlers;
-
-export function isVideoSessionBoundAction(action: string): boolean {
-  return actionMetadata("video", action).entity === "session";
-}
-
 export function isVideoCardAction(action: string): boolean {
-  return actionMetadata("video", action).requiresFreshCard === true;
+  return actionMetadata("video", action)?.requiresFreshCard === true;
 }
 
 function requireVideoTarget(value: string): VideoTarget {

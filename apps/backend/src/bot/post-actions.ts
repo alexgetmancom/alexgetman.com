@@ -4,7 +4,6 @@ import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { plural, t } from "../foundation/i18n/index.js";
 import { formatMsk } from "../interfaces/telegram/time.js";
-import type { StudioServices } from "../studio/services/index.js";
 import { clearConversationState, getConversationState, saveConversationState } from "./conversation-state.js";
 import { cancelPromptKeyboard, resultNavigationKeyboard } from "./dialog-ui.js";
 import type { PublicationEffect } from "./effects.js";
@@ -169,46 +168,27 @@ async function handlePublish(args: PostActionArgs): Promise<PublicationActionRes
   return showPublicationIntent(args, "publish");
 }
 
-async function handleStoryChoice({
-  backendDb,
-  config,
-  actorId,
-  locale,
-  action,
-  draftId,
-  services,
-}: PostActionArgs): Promise<PublicationActionResult> {
+async function handleStoryChoice(args: PostActionArgs): Promise<PublicationActionResult> {
+  const { backendDb, config, actorId, action, draftId, services } = args;
   const posts = services.posts;
   posts.setStoryPublishMode(actorId, draftId, action.endsWith("_all") ? "all" : "site_only");
-  return action.startsWith("story_publish_")
-    ? queuePostNow(services, actorId, draftId, locale)
-    : previewEffects(backendDb, draftId, config, "schedule");
+  return action.startsWith("story_publish_") ? queuePostNow(args) : previewEffects(backendDb, draftId, config, "schedule");
 }
 
-async function handleThreadsChain({
-  ctx,
-  backendDb,
-  config,
-  actorId,
-  locale,
-  draftId,
-  services,
-}: PostActionArgs): Promise<PublicationActionResult> {
+async function handleThreadsChain(args: PostActionArgs): Promise<PublicationActionResult> {
+  const { ctx, backendDb, config, actorId, locale, draftId, services } = args;
   const posts = services.posts;
   posts.approveThreadsChain(actorId, draftId);
   // The waiver only clears the Threads rule. Other preflight issues remain fatal.
-  const preflight = await showPublicationPreflight(services, backendDb, actorId, draftId, locale);
+  const preflight = await showPublicationPreflight(args);
   if (preflight) return preflight;
   const storyChoice = await showStoryCardChoice(ctx, backendDb, config, actorId, draftId, "publish");
   if (storyChoice) return storyChoice;
-  return [
-    { type: "toast", text: t(locale, "action.preflight-chain-approved") },
-    ...sendPublishConfirmation(services, backendDb, config, actorId, draftId),
-  ];
+  return [{ type: "toast", text: t(locale, "action.preflight-chain-approved") }, ...sendPublishConfirmation(args)];
 }
 
-async function handlePublishConfirm({ actorId, locale, draftId, services }: PostActionArgs): Promise<PublicationActionResult> {
-  return queuePostNow(services, actorId, draftId, locale);
+async function handlePublishConfirm(args: PostActionArgs): Promise<PublicationActionResult> {
+  return queuePostNow(args);
 }
 
 async function handleSchedule(args: PostActionArgs): Promise<PublicationActionResult> {
@@ -218,29 +198,20 @@ async function handleSchedule(args: PostActionArgs): Promise<PublicationActionRe
 }
 
 async function showPublicationIntent(args: PostActionArgs, intent: "publish" | "schedule"): Promise<PublicationActionResult> {
-  const { backendDb, config, actorId, locale, draftId, services } = args;
-  const preflight = await showPublicationPreflight(services, backendDb, actorId, draftId, locale);
+  const { backendDb, config, actorId, draftId } = args;
+  const preflight = await showPublicationPreflight(args);
   if (preflight) return preflight;
   const storyChoice = await showStoryCardChoice(args.ctx, backendDb, config, actorId, draftId, intent);
   if (storyChoice) return storyChoice;
-  return intent === "publish"
-    ? sendPublishConfirmation(services, backendDb, config, actorId, draftId)
-    : previewEffects(backendDb, draftId, config, "schedule");
+  return intent === "publish" ? sendPublishConfirmation(args) : previewEffects(backendDb, draftId, config, "schedule");
 }
 
-async function handleScheduleScope({
-  backendDb,
-  config,
-  actorId,
-  locale,
-  first,
-  draftId,
-  services,
-}: PostActionArgs): Promise<PublicationActionResult> {
+async function handleScheduleScope(args: PostActionArgs): Promise<PublicationActionResult> {
+  const { backendDb, config, actorId, locale, first, draftId } = args;
   if (!first) return [{ type: "toast", text: t(locale, "action.unknown") }];
   clearConversationState(backendDb, actorId, "post");
-  if (first === "ru_now") return commitLocaleSchedule(services, backendDb, config, actorId, draftId, "ru", new Date(), "ru");
-  if (first === "en_now") return commitLocaleSchedule(services, backendDb, config, actorId, draftId, "en", new Date(), "en");
+  if (first === "ru_now") return commitLocaleSchedule(args, "ru", new Date(), "ru");
+  if (first === "en_now") return commitLocaleSchedule(args, "en", new Date(), "en");
   if (first === "both") return previewEffects(backendDb, draftId, config, "schedule_ru");
   return [{ type: "toast", text: t(locale, "action.unknown") }];
 }
@@ -251,38 +222,24 @@ async function handleScheduleView({ backendDb, config, actorId, first, draftId }
   return previewEffects(backendDb, draftId, config, first);
 }
 
-async function handleSchedulePick({
-  backendDb,
-  config,
-  actorId,
-  first,
-  second,
-  draftId,
-  pipeline,
-  services,
-}: PostActionArgs): Promise<PublicationActionResult> {
+async function handleSchedulePick(args: PostActionArgs): Promise<PublicationActionResult> {
+  const { backendDb, actorId, first, second, pipeline } = args;
   if (!first || !second) return;
   if (pipeline.capabilities.scheduleAxis !== "locale") throw new StudioError("action.schedule-expired");
   clearConversationState(backendDb, actorId, "post");
   const value = pipeline.slotTime(`${second.slice(0, 2)}:${second.slice(2, 4)}`);
-  return commitLocaleSchedule(services, backendDb, config, actorId, draftId, requireScheduleLocale(first), value);
+  return commitLocaleSchedule(args, requireScheduleLocale(first), value);
 }
 
-async function handleManualScheduleConfirm({
-  backendDb,
-  config,
-  actorId,
-  locale,
-  draftId,
-  services,
-}: PostActionArgs): Promise<PublicationActionResult> {
+async function handleManualScheduleConfirm(args: PostActionArgs): Promise<PublicationActionResult> {
+  const { backendDb, actorId, locale, draftId } = args;
   const state = getConversationState(backendDb, actorId, "post");
   const stateStep = postStateStep(state);
   if (stateStep?.type !== "schedule_confirm" || state?.draftId !== draftId)
     return [{ type: "toast", text: t(locale, "action.schedule-expired") }];
   const { locale: scope, value } = stateStep;
   clearConversationState(backendDb, actorId, "post");
-  return commitLocaleSchedule(services, backendDb, config, actorId, draftId, scope, value);
+  return commitLocaleSchedule(args, scope, value);
 }
 
 async function handleManualSchedule({
@@ -310,12 +267,8 @@ async function handleManualSchedule({
   ];
 }
 
-async function queuePostNow(
-  services: StudioServices,
-  actorId: number,
-  draftId: number,
-  locale: ReturnType<typeof botLocale>,
-): Promise<PublicationActionResult> {
+async function queuePostNow(args: PostActionArgs): Promise<PublicationActionResult> {
+  const { services, actorId, draftId, locale } = args;
   const posts = services.posts;
   posts.publish(actorId, draftId);
   const progress = renderPostProgress(posts.progress(actorId, draftId), locale);
@@ -335,15 +288,12 @@ async function queuePostNow(
  * the other locale still needs a time and has enabled targets, hands off to
  * its slot screen instead of finishing; otherwise shows the final result. */
 async function commitLocaleSchedule(
-  services: StudioServices,
-  backendDb: BackendDb,
-  config: BackendConfig,
-  actorId: number,
-  draftId: number,
+  args: PostActionArgs,
   scheduleLocale: "ru" | "en",
   value: Date,
   immediateLocale?: "ru" | "en",
 ): Promise<PublicationEffect[]> {
+  const { services, backendDb, config, actorId, draftId } = args;
   const posts = services.posts;
   const { ruAt, enAt } = posts.scheduleAt(actorId, draftId, scheduleLocale, value);
   const postId = posts.schedule(actorId, draftId, {
@@ -368,13 +318,8 @@ async function commitLocaleSchedule(
   ];
 }
 
-function sendPublishConfirmation(
-  services: StudioServices,
-  backendDb: BackendDb,
-  config: BackendConfig,
-  actorId: number,
-  draftId: number,
-): PublicationEffect[] {
+function sendPublishConfirmation(args: PostActionArgs): PublicationEffect[] {
+  const { services, backendDb, config, actorId, draftId } = args;
   const delivery = services.posts.preview(actorId, draftId).delivery;
   const preview = renderPublicationCard("post", { backendDb, config, publicationId: draftId, view: "confirm_publish" });
   return [
@@ -388,13 +333,8 @@ function sendPublishConfirmation(
   ];
 }
 
-async function showPublicationPreflight(
-  services: StudioServices,
-  backendDb: BackendDb,
-  actorId: number,
-  draftId: number,
-  locale: ReturnType<typeof botLocale>,
-): Promise<PublicationEffect[] | null> {
+async function showPublicationPreflight(args: PostActionArgs): Promise<PublicationEffect[] | null> {
+  const { services, backendDb, actorId, draftId, locale } = args;
   const issues = services.posts.validate(actorId, draftId);
   const issue = issues[0];
   if (!issue) return null;

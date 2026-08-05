@@ -2,6 +2,13 @@ import { describe, expect, it } from "bun:test";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Glob } from "bun";
+import {
+  ACTION_METADATA,
+  actionMetadata,
+  VIDEO_CARD_ACTIONS,
+  VIDEO_DRAFT_ACTIONS,
+  VIDEO_SESSION_ACTIONS,
+} from "../src/bot/publication-action-types.js";
 import { POST_ACTION_KEYS, POST_CARD_ACTIONS } from "../src/bot/session-fsm.js";
 import { isVideoCardAction, videoActionHandlers } from "../src/bot/video-actions.js";
 
@@ -167,5 +174,19 @@ describe("Telegram callback wiring", () => {
     expect(POST_CARD_ACTIONS.post).toContain("threads_chain");
     expect(Object.keys(videoActionHandlers)).toEqual(expect.arrayContaining(["schedule"]));
     expect(isVideoCardAction("schedule")).toBe(true);
+  });
+
+  it("keeps publication action metadata complete and fail-closed", () => {
+    const videoActionKeys = Object.keys(videoActionHandlers).sort();
+
+    expect(Object.keys(ACTION_METADATA.post).sort()).toEqual([...POST_ACTION_KEYS].sort());
+    expect(Object.keys(ACTION_METADATA.video).sort()).toEqual(videoActionKeys);
+    expect([...VIDEO_DRAFT_ACTIONS, ...VIDEO_SESSION_ACTIONS, "start"].sort()).toEqual(videoActionKeys);
+    expect(POST_CARD_ACTIONS.post.every((action) => actionMetadata("post", action)?.requiresFreshCard === true)).toBe(true);
+    expect(VIDEO_CARD_ACTIONS.every((action) => actionMetadata("video", action)?.requiresFreshCard === true)).toBe(true);
+    expect(VIDEO_SESSION_ACTIONS.every((action) => actionMetadata("video", action)?.entity === "session")).toBe(true);
+    expect(actionMetadata("video", "start")?.entity).toBe("none");
+    expect(actionMetadata("post", "missing_action")).toBeUndefined();
+    expect(actionMetadata("video", "missing_action")).toBeUndefined();
   });
 });
