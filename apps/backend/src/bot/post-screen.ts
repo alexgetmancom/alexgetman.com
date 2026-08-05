@@ -11,7 +11,7 @@ import { executePublicationEffects, type PublicationMessageResult } from "./effe
 import { botLocale } from "./i18n.js";
 import { persistentKeyboard } from "./menu-render.js";
 import { extractMessage } from "./message.js";
-import { applyAdminState } from "./post-actions.js";
+import { applyAdminState } from "./post-flow-actions.js";
 import { isPostInputStep, postStateStep } from "./post-fsm.js";
 import { translatePostText } from "./post-translation.js";
 import { renderPublicationCard } from "./publication-card.js";

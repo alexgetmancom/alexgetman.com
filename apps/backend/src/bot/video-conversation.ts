@@ -1,4 +1,4 @@
-import { type Context, InlineKeyboard } from "grammy";
+import type { Context } from "grammy";
 import { acceptFlow, flowStepInput } from "../application/conversation-flow.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -9,17 +9,17 @@ import { storeTelegramVideo } from "../interfaces/telegram/video-ingress.js";
 import type { VideoMetadata, VideoTarget } from "../publishing/video-types.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { advanceVideoMetadata, VIDEO_FLOW, type VideoWizardStep } from "../studio/video-fsm.js";
-import { appendCancelButton } from "./dialog-ui.js";
 import { executePublicationEffects, type PublicationEffect, type PublicationMessageResult } from "./effects.js";
 import { botLocale } from "./i18n.js";
 import { renderPublicationCard } from "./publication-card.js";
-import { publicationCallback } from "./session-fsm.js";
+import { publicationCardEffect } from "./publication-card-effects.js";
 import { applyVideoScheduleDate } from "./video-scheduling.js";
 import {
   clearVideoState,
   enabledVideoTargets,
   getVideoState,
   saveVideoState,
+  startVideoEffects,
   targetKeyboard,
   type VideoConversationState,
   type VideoConversationStep,
@@ -41,18 +41,9 @@ type VideoMessageArgs = {
 export async function startVideoConversation(ctx: Context, backendDb: BackendDb): Promise<void> {
   const actorId = Number(ctx.from?.id);
   const locale = botLocale(backendDb, actorId);
-  const text = t(locale, "video.choose-language");
-  const session = saveVideoState(backendDb, actorId, { draftId: null, step: "locale", selected: [], data: {}, controlMessageId: null });
-  const keyboard = new InlineKeyboard()
-    .text(t(locale, "video.language-ru"), publicationCallback("video", "locale", ["ru"], session.revision))
-    .text(t(locale, "video.language-en"), publicationCallback("video", "locale", ["en"], session.revision))
-    .row();
-  appendCancelButton(keyboard, locale, publicationCallback("video", "cancel_dialog"), session.revision);
   // Reached via a menu button, this is pure navigation: turn that same
   // message into the prompt instead of leaving it and adding a new one.
-  await executePublicationEffects(ctx, backendDb, [
-    { type: "screen", mode: ctx.callbackQuery?.message ? "edit" : "reply", text, options: { reply_markup: keyboard } },
-  ]);
+  await executePublicationEffects(ctx, backendDb, startVideoEffects(ctx, backendDb, actorId, locale));
 }
 
 export async function handleVideoConversationMessage(
@@ -231,13 +222,5 @@ function videoCardEffects(backendDb: BackendDb, config: BackendConfig, actorId: 
     config,
     locale: botLocale(backendDb, actorId),
   });
-  return [
-    {
-      type: "screen",
-      mode: "reply",
-      text: preview.text,
-      options: { parse_mode: "Markdown", reply_markup: preview.keyboard },
-      card: { kind: "video", draftId },
-    },
-  ];
+  return publicationCardEffect("video", draftId, preview, { mode: "reply" });
 }

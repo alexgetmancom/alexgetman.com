@@ -1,24 +1,23 @@
-import { type Context, InlineKeyboard } from "grammy";
-import { acceptFlow } from "../application/conversation-flow.js";
+import { InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { plural, t } from "../foundation/i18n/index.js";
-import { log } from "../foundation/logger.js";
 import { formatMsk } from "../interfaces/telegram/time.js";
 import { createStudioServices } from "../studio/services/index.js";
-import { isStaleCardCallback, PUBLICATION_CARD_FRESHNESS } from "./card-freshness.js";
-import { clearConversationState, getConversationState, requireConversationState, saveConversationState } from "./conversation-state.js";
+import { clearConversationState, getConversationState, saveConversationState } from "./conversation-state.js";
 import { cancelPromptKeyboard, resultNavigationKeyboard } from "./dialog-ui.js";
-import { executePublicationEffects, type PublicationEffect } from "./effects.js";
+import type { PublicationEffect } from "./effects.js";
 import { botLocale } from "./i18n.js";
-import { extractMessage } from "./message.js";
-import { POST_FLOW, type PostWizardStep, postStateStep } from "./post-fsm.js";
+import { type PostWizardStep, postStateStep } from "./post-fsm.js";
+import { showStoryCardChoice } from "./post-story-cards.js";
 import { type DraftView, isDraftView, modeLabel } from "./preview.js";
 import { renderPostProgress } from "./progress.js";
 import type { PublicationActionContext, PublicationActionResult } from "./publication-action-types.js";
 import { renderPublicationCard } from "./publication-card.js";
+import { publicationCardEffect } from "./publication-card-effects.js";
 import { type PostActionKey, publicationCallback } from "./session-fsm.js";
+import { callbackMessageId } from "./telegram-context.js";
 
 type PostActionArgs = PublicationActionContext;
 type PostActionHandler = (args: PostActionArgs) => Promise<PublicationActionResult>;
@@ -39,10 +38,10 @@ export const postActionHandlers: Record<Exclude<PostActionKey, "cancel_dialog">,
   post_retry: handleRetry,
   post_retry_notice: handleRetry,
   publish: handlePublish,
-  story_publish_all: handleStoryPublish,
-  story_publish_site: handleStoryPublish,
-  story_schedule_all: handleStorySchedule,
-  story_schedule_site: handleStorySchedule,
+  story_publish_all: handleStoryChoice,
+  story_publish_site: handleStoryChoice,
+  story_schedule_all: handleStoryChoice,
+  story_schedule_site: handleStoryChoice,
   threads_chain: handleThreadsChain,
   publish_confirm: handlePublishConfirm,
   schedule: handleSchedule,
@@ -156,26 +155,15 @@ async function handleRetry({
       type: "toast",
       text: t(locale, "action.retry-result", { requeued: result.requeued, alreadyQueued: result.alreadyQueued }),
     },
-    {
-      type: "screen",
-      mode: "edit",
-      text: preview.text,
-      options: { parse_mode: "Markdown", reply_markup: preview.keyboard },
-      card: { kind: "post", draftId },
-    },
+    ...publicationCardEffect("post", draftId, preview),
   ];
 }
 
 async function handlePublish(args: PostActionArgs): Promise<PublicationActionResult> {
-  const { backendDb, config, actorId, locale, draftId } = args;
-  const preflight = await showPublicationPreflight(backendDb, config, actorId, draftId, locale);
-  if (preflight) return preflight;
-  const storyChoice = await showStoryCardChoice(args.ctx, backendDb, config, actorId, draftId, "publish");
-  if (storyChoice) return storyChoice;
-  return sendPublishConfirmation(backendDb, config, actorId, draftId);
+  return showPublicationIntent(args, "publish");
 }
 
-async function handleStoryPublish({
+async function handleStoryChoice({
   backendDb,
   config,
   actorId,
@@ -184,14 +172,10 @@ async function handleStoryPublish({
   draftId,
 }: PostActionArgs): Promise<PublicationActionResult> {
   const posts = createStudioServices(backendDb, config).posts;
-  posts.setStoryPublishMode(actorId, draftId, action === "story_publish_all" ? "all" : "site_only");
-  return queuePostNow(backendDb, config, actorId, draftId, locale);
-}
-
-async function handleStorySchedule({ backendDb, config, actorId, action, draftId }: PostActionArgs): Promise<PublicationActionResult> {
-  const posts = createStudioServices(backendDb, config).posts;
-  posts.setStoryPublishMode(actorId, draftId, action === "story_schedule_all" ? "all" : "site_only");
-  return previewEffects(backendDb, draftId, config, "schedule");
+  posts.setStoryPublishMode(actorId, draftId, action.endsWith("_all") ? "all" : "site_only");
+  return action.startsWith("story_publish_")
+    ? queuePostNow(backendDb, config, actorId, draftId, locale)
+    : previewEffects(backendDb, draftId, config, "schedule");
 }
 
 async function handleThreadsChain({ ctx, backendDb, config, actorId, locale, draftId }: PostActionArgs): Promise<PublicationActionResult> {
@@ -213,13 +197,20 @@ async function handlePublishConfirm({ backendDb, config, actorId, locale, draftI
 }
 
 async function handleSchedule(args: PostActionArgs): Promise<PublicationActionResult> {
-  const { ctx, backendDb, config, actorId, locale, draftId } = args;
+  const { backendDb, actorId } = args;
   clearConversationState(backendDb, actorId, "post");
+  return showPublicationIntent(args, "schedule");
+}
+
+async function showPublicationIntent(args: PostActionArgs, intent: "publish" | "schedule"): Promise<PublicationActionResult> {
+  const { backendDb, config, actorId, locale, draftId } = args;
   const preflight = await showPublicationPreflight(backendDb, config, actorId, draftId, locale);
   if (preflight) return preflight;
-  const storyChoice = await showStoryCardChoice(ctx, backendDb, config, actorId, draftId, "schedule");
+  const storyChoice = await showStoryCardChoice(args.ctx, backendDb, config, actorId, draftId, intent);
   if (storyChoice) return storyChoice;
-  return previewEffects(backendDb, draftId, config, "schedule");
+  return intent === "publish"
+    ? sendPublishConfirmation(backendDb, config, actorId, draftId)
+    : previewEffects(backendDb, draftId, config, "schedule");
 }
 
 async function handleScheduleScope({
@@ -321,126 +312,6 @@ async function queuePostNow(
       card: { kind: "post-progress", draftId },
     },
   ];
-}
-
-async function showStoryCardChoice(
-  ctx: Context,
-  backendDb: BackendDb,
-  config: BackendConfig,
-  actorId: number,
-  draftId: number,
-  intent: "publish" | "schedule",
-): Promise<PublicationEffect[] | null> {
-  const posts = createStudioServices(backendDb, config).posts;
-  const cards = posts.preview(actorId, draftId).storyCards;
-  if (cards.length === 0) return null;
-  const locale = botLocale(backendDb, actorId);
-  if (!cardsReady(cards)) {
-    const effects: PublicationEffect[] = [{ type: "toast", text: t(locale, "post.story-cards-generating") }];
-    queueStoryCardChoice(ctx, backendDb, config, actorId, draftId, intent);
-    return effects;
-  }
-  return [{ type: "answer-callback" }, ...sendStoryCardChoice(backendDb, actorId, draftId, intent, cards)];
-}
-
-const pendingStoryCardChoices = new Map<string, Promise<void>>();
-
-/** The Story worker owns rendering. This lightweight continuation only waits
- * for its durable result and sends the choice as a follow-up Telegram message. */
-function queueStoryCardChoice(
-  ctx: Context,
-  backendDb: BackendDb,
-  config: BackendConfig,
-  actorId: number,
-  draftId: number,
-  intent: "publish" | "schedule",
-): void {
-  const key = `${actorId}:${draftId}:${intent}`;
-  if (pendingStoryCardChoices.has(key)) return;
-  const task = waitForStoryCards(ctx, backendDb, config, actorId, draftId, intent).finally(() => pendingStoryCardChoices.delete(key));
-  pendingStoryCardChoices.set(key, task);
-  void task.catch((error) => {
-    logStoryCardChoiceFailure(error, actorId, draftId);
-  });
-}
-
-async function waitForStoryCards(
-  ctx: Context,
-  backendDb: BackendDb,
-  config: BackendConfig,
-  actorId: number,
-  draftId: number,
-  intent: "publish" | "schedule",
-): Promise<void> {
-  const posts = createStudioServices(backendDb, config).posts;
-  for (let attempt = 0; attempt < 60; attempt += 1) {
-    await delay(1_000);
-    const cards = posts.preview(actorId, draftId).storyCards;
-    if (!cardsReady(cards)) continue;
-    if (
-      isStaleCardCallback(
-        ctx,
-        backendDb,
-        { kind: "post", action: intent === "publish" ? "publish" : "schedule", args: [String(draftId)] },
-        PUBLICATION_CARD_FRESHNESS,
-      )
-    )
-      return;
-    await executePublicationEffects(ctx, backendDb, sendStoryCardChoice(backendDb, actorId, draftId, intent, cards));
-    return;
-  }
-}
-
-function sendStoryCardChoice(
-  backendDb: BackendDb,
-  actorId: number,
-  draftId: number,
-  intent: "publish" | "schedule",
-  cards: Array<{ locale: string; status: string; localPath: string | null }>,
-): PublicationEffect[] {
-  const locale = botLocale(backendDb, actorId);
-  const effects: PublicationEffect[] = [];
-  for (const cardLocale of ["ru", "en"] as const) {
-    const card = cards.find((item) => item.locale === cardLocale);
-    if (card?.localPath) effects.push({ type: "photo", path: card.localPath, options: { caption: `Story · ${cardLocale.toUpperCase()}` } });
-  }
-  const keyboard =
-    intent === "publish"
-      ? new InlineKeyboard()
-          .text(t(locale, "post.story-cards-all"), publicationCallback("post", "story_publish_all", [draftId]))
-          .row()
-          .text(t(locale, "post.story-cards-site-only"), publicationCallback("post", "story_publish_site", [draftId]))
-          .row()
-          .text(t(locale, "common.back"), publicationCallback("post", "preview", [draftId]))
-      : new InlineKeyboard()
-          .text(t(locale, "post.story-cards-all-schedule"), publicationCallback("post", "story_schedule_all", [draftId]))
-          .row()
-          .text(t(locale, "post.story-cards-site-only-schedule"), publicationCallback("post", "story_schedule_site", [draftId]))
-          .row()
-          .text(t(locale, "common.back"), publicationCallback("post", "preview", [draftId]));
-  effects.push({
-    type: "prompt",
-    text: t(locale, "post.story-cards-question"),
-    options: { parse_mode: "Markdown", reply_markup: keyboard },
-    card: { kind: "post", draftId },
-  });
-  return effects;
-}
-
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
-function logStoryCardChoiceFailure(error: unknown, actorId: number, draftId: number): void {
-  log("error", "failed to send Story card choice", {
-    actorId,
-    draftId,
-    error: error instanceof Error ? error.message : String(error),
-  });
-}
-
-function cardsReady(cards: Array<{ locale: string; status: string; localPath: string | null }>): boolean {
-  return ["ru", "en"].every((locale) => cards.some((card) => card.locale === locale && card.status === "ready" && card.localPath));
 }
 
 /** Commits one locale's schedule immediately (button/auto pick, or "now"). If
@@ -546,16 +417,7 @@ function previewEffects(
   callbackText?: string,
 ): PublicationEffect[] {
   const preview = renderPublicationCard("post", { backendDb, config, publicationId: draftId, view });
-  return [
-    { type: "answer-callback", ...(callbackText ? { text: callbackText } : {}) },
-    {
-      type: "screen",
-      mode: "edit",
-      text: preview.text,
-      options: { parse_mode: "Markdown", reply_markup: preview.keyboard },
-      card: { kind: "post", draftId },
-    },
-  ];
+  return [{ type: "answer-callback", ...(callbackText ? { text: callbackText } : {}) }, ...publicationCardEffect("post", draftId, preview)];
 }
 
 function promptEffect(
@@ -577,36 +439,6 @@ function promptEffect(
   };
 }
 
-export async function applyAdminState(
-  ctx: Context,
-  backendDb: BackendDb,
-  config: BackendConfig,
-  step: PostWizardStep,
-  draftId: number,
-  controlMessageId: number | null,
-  expectedRevision?: number | null,
-): Promise<PublicationEffect[]> {
-  const actorId = Number(ctx.from?.id);
-  if (expectedRevision != null) requireConversationState(backendDb, actorId, "post", expectedRevision);
-  const message = extractMessage(ctx);
-  const transition = await acceptFlow(POST_FLOW, step.type, { backendDb, config, actorId, draftId, controlMessageId, step, message }, {});
-  if (!transition) throw new StudioError("action.session-stale");
-  if (transition.next === null) {
-    const preview = renderPublicationCard("post", { backendDb, config, publicationId: draftId });
-    return [
-      ...transition.effects,
-      { type: "session", operation: "clear", kind: "post", actorId },
-      {
-        type: "prompt",
-        text: preview.text,
-        options: { parse_mode: "Markdown", reply_markup: preview.keyboard },
-        card: { kind: "post", draftId },
-      },
-    ];
-  }
-  return [...transition.effects];
-}
-
 function scheduledDraftText(
   locale: ReturnType<typeof botLocale>,
   draftId: number,
@@ -616,11 +448,6 @@ function scheduledDraftText(
   config: BackendConfig,
 ): string {
   return `🟢 ${t(locale, "action.scheduled-as", { draftId, postId })}\nRU: ${formatMsk(ruAt, config)}\nEN: ${formatMsk(enAt, config)}`;
-}
-
-function callbackMessageId(ctx: Context): number | null {
-  const message = ctx.callbackQuery?.message;
-  return message && "message_id" in message ? message.message_id : null;
 }
 
 function savePostState(

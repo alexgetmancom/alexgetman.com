@@ -45,6 +45,23 @@ export function targetKeyboard(config: BackendConfig, selected: VideoTarget[], l
   return appendCancelButton(keyboard, locale, publicationCallback("video", "cancel_dialog"), revision);
 }
 
+export function startVideoEffects(ctx: Context, backendDb: BackendDb, actorId: number, locale: BotLocale): PublicationEffect[] {
+  const session = saveVideoState(backendDb, actorId, { draftId: null, step: "locale", selected: [], data: {}, controlMessageId: null });
+  const keyboard = new InlineKeyboard()
+    .text(t(locale, "video.language-ru"), publicationCallback("video", "locale", ["ru"], session.revision))
+    .text(t(locale, "video.language-en"), publicationCallback("video", "locale", ["en"], session.revision))
+    .row();
+  appendCancelButton(keyboard, locale, publicationCallback("video", "cancel_dialog"), session.revision);
+  return [
+    {
+      type: "screen",
+      mode: ctx.callbackQuery?.message ? "edit" : "reply",
+      text: t(locale, "video.choose-language"),
+      options: { reply_markup: keyboard },
+    },
+  ];
+}
+
 export function enabledVideoTargets(config: BackendConfig): VideoTarget[] {
   return VIDEO_TARGETS.filter(
     (target) =>
@@ -248,11 +265,6 @@ export function videoScheduleConfirmationEffects(
 export function parseVideoStep(value: string): VideoConversationStep | null {
   if (value in VIDEO_FLOW.steps) return value as VideoConversationStep;
   return null;
-}
-
-export function callbackMessageId(ctx: Context): number | null {
-  const message = ctx.callbackQuery?.message;
-  return message && "message_id" in message ? message.message_id : null;
 }
 
 function parseSelectedTargets(value: unknown): VideoTarget[] | null {

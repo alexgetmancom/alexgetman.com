@@ -8,6 +8,7 @@ import type { ConversationStateInput } from "./conversation-state.js";
 import { clearConversationState, saveConversationState } from "./conversation-state.js";
 import type { BotLocale } from "./i18n.js";
 import { showMainMenu } from "./menu-render.js";
+import { callbackMessageId } from "./telegram-context.js";
 
 type PublicationCard =
   | { kind: "post"; draftId: number }
@@ -83,11 +84,6 @@ export async function executePublicationEffects(ctx: Context, backendDb: Backend
       saveConversationState(backendDb, effect.actorId, effect.state);
     }
   }
-}
-
-function callbackMessageId(ctx: Context): number | null {
-  const message = ctx.callbackQuery?.message;
-  return message && "message_id" in message ? message.message_id : null;
 }
 
 function bindCard(backendDb: BackendDb, ctx: Context, card: PublicationCard | undefined, messageId: number): void {
