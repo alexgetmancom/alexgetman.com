@@ -6,7 +6,7 @@ import { StudioError } from "../foundation/errors.js";
 import { type MessageKey, t } from "../foundation/i18n/index.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import { createStudioServices } from "../studio/services/index.js";
-import { VIDEO_FLOW, type VideoWizardStep } from "../studio/video-fsm.js";
+import { isVideoWizardStep, VIDEO_FLOW, type VideoConversationStep, type VideoWizardStep } from "../studio/video-fsm.js";
 import { type ConversationState, clearConversationState, getConversationState, saveConversationState } from "./conversation-state.js";
 import { appendCancelButton, cancelPromptKeyboard, confirmationKeyboard } from "./dialog-ui.js";
 import type { PublicationEffect } from "./effects.js";
@@ -14,16 +14,7 @@ import { type BotLocale, botLocale } from "./i18n.js";
 import { createPublicationScheduleEngine, SCHEDULE_SLOT_PRESETS, scheduleTimeKeyboard } from "./scheduling.js";
 import { publicationCallback, versionedCallback } from "./session-fsm.js";
 
-export type VideoConversationStep =
-  | "locale"
-  | "asset"
-  | "targets"
-  | "schedule_choice"
-  | "schedule_common"
-  | "schedule_target"
-  | "schedule_confirm"
-  | "label"
-  | VideoWizardStep;
+export type { VideoConversationStep } from "../studio/video-fsm.js";
 export type VideoConversationState = ConversationState & {
   step: VideoConversationStep;
   selected: VideoTarget[];
@@ -72,7 +63,8 @@ export function enabledVideoTargets(config: BackendConfig): VideoTarget[] {
 export function getVideoState(backendDb: BackendDb, actorId: number): VideoConversationState | null {
   const state = getConversationState(backendDb, actorId, "video");
   if (!state) return null;
-  if (!(state.step in VIDEO_FLOW.steps)) {
+  const step = parseVideoStep(state.step);
+  if (!step) {
     clearVideoState(backendDb, actorId);
     return null;
   }
@@ -81,7 +73,7 @@ export function getVideoState(backendDb: BackendDb, actorId: number): VideoConve
     clearVideoState(backendDb, actorId);
     return null;
   }
-  return { ...state, step: state.step as VideoConversationStep, selected };
+  return { ...state, step, selected };
 }
 
 export function saveVideoState(backendDb: BackendDb, actorId: number, session: VideoConversationInput): VideoConversationState {
@@ -93,7 +85,7 @@ export function saveVideoState(backendDb: BackendDb, actorId: number, session: V
     controlMessageId: session.controlMessageId ?? null,
     ...(session.revision == null ? {} : { revision: session.revision }),
   });
-  return { ...saved, step: saved.step as VideoConversationStep, selected: session.selected };
+  return { ...saved, step: session.step, selected: session.selected };
 }
 
 export function clearVideoState(backendDb: BackendDb, actorId: number): void {
@@ -121,11 +113,11 @@ export function videoStepEffects(
   backendDb: BackendDb,
   config: BackendConfig,
   actorId: number,
-  step: VideoConversationStep,
   session: VideoConversationState,
 ): PublicationEffect[] {
+  const step = session.step;
   const locale = botLocale(backendDb, actorId);
-  if (step in VIDEO_METADATA_PROMPTS) return metadataPromptEffects(backendDb, actorId, step as VideoWizardStep, session.selected);
+  if (isVideoWizardStep(step)) return metadataPromptEffects(backendDb, actorId, step, session.selected);
   if (step === "schedule_choice")
     return scheduleChoiceEffects(session, locale, t(locale, "video.saved-choose-schedule", { timezone: config.TIMEZONE_LABEL }));
   if (step === "schedule_common")
@@ -263,8 +255,7 @@ export function videoScheduleConfirmationEffects(
 }
 
 export function parseVideoStep(value: string): VideoConversationStep | null {
-  if (value in VIDEO_FLOW.steps) return value as VideoConversationStep;
-  return null;
+  return Object.keys(VIDEO_FLOW.steps).find((step): step is VideoConversationStep => step === value) ?? null;
 }
 
 function parseSelectedTargets(value: unknown): VideoTarget[] | null {

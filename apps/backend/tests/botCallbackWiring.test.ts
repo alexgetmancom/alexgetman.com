@@ -2,7 +2,8 @@ import { describe, expect, it } from "bun:test";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Glob } from "bun";
-import { PUBLICATION_ACTIONS, PUBLICATION_CARD_ACTIONS } from "../src/bot/session-fsm.js";
+import { POST_ACTION_KEYS, POST_CARD_ACTIONS } from "../src/bot/session-fsm.js";
+import { isVideoCardAction, videoActionHandlers } from "../src/bot/video-actions.js";
 
 /** Callback prefixes the dispatcher in `bot.ts` resolves to a handler. A new
  * button whose prefix is missing here fails this test: a rendered callback with
@@ -142,7 +143,10 @@ describe("Telegram callback wiring", () => {
     const rendered = await renderedCallbacks();
     // i18n message keys reach the same argument position on menu-plugin
     // buttons, whose handler is a function rather than callback data.
-    const publicationKeys = Object.entries(PUBLICATION_ACTIONS).flatMap(([kind, actions]) => actions.map((action) => `${kind}:${action}`));
+    const publicationKeys = [
+      ...POST_ACTION_KEYS.map((action) => `post:${action}`),
+      ...Object.keys(videoActionHandlers).map((action) => `video:${action}`),
+    ];
     const handled = new Set([...HANDLED_PREFIXES, ...publicationKeys]);
     const unrouted = [...rendered]
       .filter(([prefix]) => !prefix.includes(".") && !handled.has(prefix))
@@ -159,9 +163,9 @@ describe("Telegram callback wiring", () => {
   });
 
   it("keeps post routing and freshness vocabulary in one contract", () => {
-    expect(PUBLICATION_ACTIONS.post).toEqual(expect.arrayContaining(["threads_chain"]));
-    expect(PUBLICATION_CARD_ACTIONS.post).toContain("threads_chain");
-    expect(PUBLICATION_ACTIONS.video).toEqual(expect.arrayContaining(["schedule"]));
-    expect(PUBLICATION_CARD_ACTIONS.video).toContain("schedule");
+    expect(POST_ACTION_KEYS).toEqual(expect.arrayContaining(["threads_chain"]));
+    expect(POST_CARD_ACTIONS.post).toContain("threads_chain");
+    expect(Object.keys(videoActionHandlers)).toEqual(expect.arrayContaining(["schedule"]));
+    expect(isVideoCardAction("schedule")).toBe(true);
   });
 });

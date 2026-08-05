@@ -11,33 +11,33 @@ type FlowAcceptance<TData, TEffect = never> = {
  * must leave them alone instead of guessing. */
 export type FlowStepInput = "text" | "media";
 
-export type FlowStep<TData, TInput = unknown, TEffect = never> = {
-  name: string;
+export type FlowStep<TData, TInput = unknown, TEffect = never, TStep extends string = string> = {
+  name: TStep;
   input?: FlowStepInput;
   accept?: (input: TInput, data: TData) => TData | FlowAcceptance<TData, TEffect> | Promise<TData | FlowAcceptance<TData, TEffect>>;
-  next: (data: TData) => string | null;
-  back?: (data: TData) => string | null;
+  next: (data: TData) => TStep | null;
+  back?: (data: TData) => TStep | null;
 };
 
-export type Flow<TData, TInput = unknown, TEffect = never> = {
+export type Flow<TData, TInput = unknown, TEffect = never, TStep extends string = string> = {
   kind: PublicationKind;
-  steps: Record<string, FlowStep<TData, TInput, TEffect>>;
+  steps: Record<TStep, FlowStep<TData, TInput, TEffect, TStep>>;
 };
 
-export type FlowTransition<TData, TEffect = never> = {
+export type FlowTransition<TData, TEffect = never, TStep extends string = string> = {
   data: TData;
-  next: string | null;
+  next: TStep | null;
   effects: readonly TEffect[];
 };
 
 /** Executes one transport-neutral step transition for an adapter. */
-export async function acceptFlow<TData, TInput, TEffect = never>(
-  flow: Flow<TData, TInput, TEffect>,
+export async function acceptFlow<TData, TInput, TEffect = never, TStep extends string = string>(
+  flow: Flow<TData, TInput, TEffect, TStep>,
   stepName: string,
   input: TInput,
   data: TData,
-): Promise<FlowTransition<TData, TEffect> | null> {
-  const step = flow.steps[stepName];
+): Promise<FlowTransition<TData, TEffect, TStep> | null> {
+  const step = flow.steps[stepName as TStep];
   if (!step?.accept) return null;
   const accepted = await step.accept(input, data);
   const nextData = isFlowAcceptance<TData, TEffect>(accepted) ? accepted.data : accepted;
@@ -49,8 +49,12 @@ export async function acceptFlow<TData, TInput, TEffect = never>(
 }
 
 /** The step a "back" control returns to, or null when nothing precedes it. */
-export function backFlow<TData, TInput, TEffect = never>(flow: Flow<TData, TInput, TEffect>, stepName: string, data: TData): string | null {
-  return flow.steps[stepName]?.back?.(data) ?? null;
+export function backFlow<TData, TInput, TEffect = never, TStep extends string = string>(
+  flow: Flow<TData, TInput, TEffect, TStep>,
+  stepName: string,
+  data: TData,
+): TStep | null {
+  return flow.steps[stepName as TStep]?.back?.(data) ?? null;
 }
 
 /** What the step at `stepName` expects an adapter to deliver, or null when the

@@ -17,72 +17,42 @@ export type SessionCallback = {
   revision: number | null;
 };
 
-/** The canonical callback vocabulary for every publication workflow. */
-export const PUBLICATION_ACTIONS = {
-  post: [
-    "cancel_dialog",
-    "toggle",
-    "preview",
-    "platforms",
-    "cycle_mode",
-    "cancel_state",
-    "edit_ru",
-    "edit_en",
-    "replace_ru_media",
-    "replace_en_media",
-    "sources",
-    "cancel",
-    "cancel_confirm",
-    "post_retry",
-    "post_retry_notice",
-    "publish",
-    "story_publish_all",
-    "story_publish_site",
-    "story_schedule_all",
-    "story_schedule_site",
-    "threads_chain",
-    "publish_confirm",
-    "schedule",
-    "sched_scope",
-    "sched_view",
-    "sched_pick",
-    "sched_confirm",
-    "sched_manual_confirm",
-    "sched_manual",
-  ],
-  video: [
-    "start",
-    "locale",
-    "cancel_dialog",
-    "toggle",
-    "targets_done",
-    "game_skip",
-    "meta_back",
-    "open",
-    "retry",
-    "cancel_notice",
-    "schedule_confirm",
-    "schedule",
-    "common",
-    "individual",
-    "now",
-    "now_confirm",
-    "cancel_ask",
-    "remove_ask",
-    "cancel",
-    "time",
-    "sched_pick",
-    "sched_confirm",
-    "sched_manual",
-    "remove",
-    "edit_menu",
-    "edit_field",
-    "edit",
-  ],
-} as const satisfies Record<PublicationKind, readonly string[]>;
+/** The canonical callback vocabulary for the post action table. Video actions
+ * are derived from their handler registry so a callback key has one owner. */
+export const POST_ACTION_KEYS = [
+  "cancel_dialog",
+  "toggle",
+  "preview",
+  "platforms",
+  "cycle_mode",
+  "cancel_state",
+  "edit_ru",
+  "edit_en",
+  "replace_ru_media",
+  "replace_en_media",
+  "sources",
+  "cancel",
+  "cancel_confirm",
+  "post_retry",
+  "post_retry_notice",
+  "publish",
+  "story_publish_all",
+  "story_publish_site",
+  "story_schedule_all",
+  "story_schedule_site",
+  "threads_chain",
+  "publish_confirm",
+  "schedule",
+  "sched_scope",
+  "sched_view",
+  "sched_pick",
+  "sched_confirm",
+  "sched_manual_confirm",
+  "sched_manual",
+] as const;
 
 /** Callback actions whose card identity must be checked before execution. */
-export const PUBLICATION_CARD_ACTIONS = {
+export const POST_CARD_ACTIONS = {
   post: [
     "toggle",
     "cycle_mode",
@@ -108,35 +78,14 @@ export const PUBLICATION_CARD_ACTIONS = {
     "story_schedule_site",
     "threads_chain",
   ],
-  video: [
-    "schedule_confirm",
-    "schedule",
-    "common",
-    "individual",
-    "now",
-    "now_confirm",
-    "cancel_ask",
-    "remove_ask",
-    "cancel",
-    "time",
-    "sched_pick",
-    "sched_confirm",
-    "sched_manual",
-    "remove",
-    "edit_menu",
-    "edit_field",
-    "edit",
-  ],
-} as const satisfies Record<PublicationKind, readonly string[]>;
+} as const;
 
-type PublicationAction = (typeof PUBLICATION_ACTIONS)[PublicationKind][number];
-export type PostActionKey = (typeof PUBLICATION_ACTIONS.post)[number];
-export type VideoActionKey = (typeof PUBLICATION_ACTIONS.video)[number];
+export type PostActionKey = (typeof POST_ACTION_KEYS)[number];
 
 /** Builds the compact callback namespace shared by post and video controls. */
 export function publicationCallback(
   kind: PublicationKind,
-  action: PublicationAction | string,
+  action: string,
   args: readonly (string | number)[] = [],
   revision?: number | null,
 ): string {

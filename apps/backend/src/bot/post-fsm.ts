@@ -17,10 +17,10 @@ const POST_STEPS: Record<string, FlowStep<PostFlowData, PostFlowInput, Publicati
     next: () => null,
     accept: (input, data) => ({ ...data, input: input.message }),
   },
-  edit_sources: { name: "edit_sources", next: () => null, accept: acceptPostSourceEdit },
-  edit_text: { name: "edit_text", next: () => null, accept: acceptPostTextEdit },
-  replace_media: { name: "replace_media", next: () => null, accept: acceptPostMediaReplacement },
-  schedule_manual: { name: "schedule_manual", next: () => "schedule_confirm", accept: acceptManualPostSchedule },
+  edit_sources: { name: "edit_sources", input: "text", next: () => null, accept: acceptPostSourceEdit },
+  edit_text: { name: "edit_text", input: "text", next: () => null, accept: acceptPostTextEdit },
+  replace_media: { name: "replace_media", input: "media", next: () => null, accept: acceptPostMediaReplacement },
+  schedule_manual: { name: "schedule_manual", input: "text", next: () => "schedule_confirm", accept: acceptManualPostSchedule },
   schedule_confirm: { name: "schedule_confirm", next: () => null },
 };
 
@@ -29,10 +29,6 @@ export const POST_FLOW: Flow<PostFlowData, PostFlowInput, PublicationEffect> = {
   kind: "post",
   steps: POST_STEPS,
 };
-
-export function isPostInputStep(step: PostWizardStep | null): boolean {
-  return step?.type === "edit_sources" || step?.type === "edit_text" || step?.type === "replace_media" || step?.type === "schedule_manual";
-}
 
 export function postStateStep(state: Pick<ConversationState, "step" | "data"> | null): PostWizardStep | null {
   if (!state) return null;

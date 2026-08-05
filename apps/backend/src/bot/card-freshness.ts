@@ -1,7 +1,8 @@
 import type { Context } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import { telegramPostCard, telegramVideoCard } from "../interfaces/telegram/control-cards.js";
-import { PUBLICATION_CARD_ACTIONS, type PublicationCallback, type PublicationKind, parseDraftId } from "./session-fsm.js";
+import { POST_CARD_ACTIONS, type PublicationCallback, type PublicationKind, parseDraftId } from "./session-fsm.js";
+import { isVideoCardAction, videoActionHandlers } from "./video-actions.js";
 
 export type CardFreshnessDescriptor = {
   actions: readonly string[];
@@ -9,8 +10,8 @@ export type CardFreshnessDescriptor = {
 };
 
 export const PUBLICATION_CARD_FRESHNESS: Record<PublicationKind, CardFreshnessDescriptor> = {
-  post: { actions: PUBLICATION_CARD_ACTIONS.post, kind: "post" },
-  video: { actions: PUBLICATION_CARD_ACTIONS.video, kind: "video" },
+  post: { actions: POST_CARD_ACTIONS.post, kind: "post" },
+  video: { actions: Object.keys(videoActionHandlers).filter(isVideoCardAction), kind: "video" },
 };
 
 /** Rejects a callback from a card replaced by a newer Telegram control message. */

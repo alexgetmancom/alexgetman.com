@@ -6,9 +6,9 @@ import { StudioError } from "../foundation/errors.js";
 import { describeError, t } from "../foundation/i18n/index.js";
 import { log } from "../foundation/logger.js";
 import { storeTelegramVideo } from "../interfaces/telegram/video-ingress.js";
-import type { VideoMetadata, VideoTarget } from "../publishing/video-types.js";
+import type { VideoTarget } from "../publishing/video-types.js";
 import { createStudioServices } from "../studio/services/index.js";
-import { advanceVideoMetadata, VIDEO_FLOW, type VideoWizardStep } from "../studio/video-fsm.js";
+import { advanceVideoMetadata, isVideoWizardStep, VIDEO_FLOW, type VideoWizardStep } from "../studio/video-fsm.js";
 import { executePublicationEffects, type PublicationEffect, type PublicationMessageResult } from "./effects.js";
 import { botLocale } from "./i18n.js";
 import { renderPublicationCard } from "./publication-card.js";
@@ -22,7 +22,6 @@ import {
   startVideoEffects,
   targetKeyboard,
   type VideoConversationState,
-  type VideoConversationStep,
   videoControlEffects,
   videoPromptEffect,
   videoStepEffects,
@@ -66,7 +65,7 @@ export async function handleVideoConversationMessage(
       return { handled: true, effects: [videoPromptEffect(backendDb, actorId, t(locale, "video.await-text"))] };
     }
     const args = { ctx, backendDb, config, actorId, session, text };
-    const singleEdit = session.data.is_single_edit && SINGLE_EDIT_FIELDS[session.step];
+    const singleEdit = session.data.is_single_edit && isVideoWizardStep(session.step);
     return { handled: true, effects: singleEdit ? await finishSingleVideoEdit(args) : await acceptVideoMessage(args) };
   } catch (error) {
     const locale = botLocale(backendDb, actorId);
@@ -94,6 +93,7 @@ async function acceptVideoMessage(args: VideoMessageArgs): Promise<PublicationEf
   if (step === "asset") return acceptVideoAsset(args);
   if (step === "label") return acceptVideoLabel(args);
   if (step === "schedule_common" || step === "schedule_target") return acceptVideoScheduleDate(args);
+  if (!isVideoWizardStep(step)) throw new StudioError("err.video-restart");
   return acceptVideoMetadata(args);
 }
 
@@ -106,9 +106,9 @@ async function acceptVideoAsset({ ctx, backendDb, config, actorId, session }: Vi
   videos.replaceTargets(actorId, draftId, selected);
   const transition = await acceptFlow(VIDEO_FLOW, "asset", stored.assetId, { ...session.data, selectedTargets: selected });
   if (!transition?.next) throw new StudioError("err.video-restart");
-  const next = transition.next as VideoConversationStep;
+  const next = transition.next;
   const saved = saveVideoState(backendDb, actorId, { ...session, draftId, step: next, selected, data: transition.data });
-  return videoStepEffects(backendDb, config, actorId, next, saved);
+  return videoStepEffects(backendDb, config, actorId, saved);
 }
 
 async function acceptVideoLabel({ backendDb, config, actorId, session, text }: VideoMessageArgs): Promise<PublicationEffect[]> {
@@ -117,7 +117,7 @@ async function acceptVideoLabel({ backendDb, config, actorId, session, text }: V
   if (session.data.is_single_edit) return videoCardEffects(backendDb, config, actorId, session.draftId);
   const transition = await acceptFlow(VIDEO_FLOW, "label", text, { ...session.data, selectedTargets: session.selected });
   if (!transition?.next) throw new StudioError("err.video-restart");
-  const saved = saveVideoState(backendDb, actorId, { ...session, step: transition.next as VideoConversationStep, data: transition.data });
+  const saved = saveVideoState(backendDb, actorId, { ...session, step: transition.next, data: transition.data });
   const locale = botLocale(backendDb, actorId);
   return videoControlEffects(
     saved,
@@ -131,16 +131,17 @@ async function acceptVideoLabel({ backendDb, config, actorId, session, text }: V
  * never decides what the metadata looks like or what the draft ends up called. */
 async function acceptVideoMetadata({ backendDb, config, actorId, session, text }: VideoMessageArgs): Promise<PublicationEffect[]> {
   if (session.draftId == null) return [];
-  const step = session.step as VideoWizardStep;
+  if (!isVideoWizardStep(session.step)) throw new StudioError("err.video-restart");
+  const step = session.step;
   const transition = await acceptFlow(VIDEO_FLOW, step, text, { ...session.data, selectedTargets: session.selected });
   if (!transition?.next) throw new StudioError("err.video-restart");
-  const next = transition.next as VideoConversationStep;
+  const next = transition.next;
   const data = withoutFlowData(transition.data);
   const completed = COMPLETED_WIZARD_TARGET[step];
   if (completed)
     createStudioServices(backendDb, config).videos.completeWizardTarget(actorId, session.draftId, completed, data, session.selected);
   const saved = saveVideoState(backendDb, actorId, { ...session, step: next, data });
-  return videoStepEffects(backendDb, config, actorId, next, saved);
+  return videoStepEffects(backendDb, config, actorId, saved);
 }
 
 /** Isolates the one step that legitimately fails on bad user input. Any other
@@ -178,39 +179,14 @@ function withoutFlowData(data: Record<string, unknown>): Record<string, unknown>
  * wizard order (reached via "✏️ Edit" on a finished draft). The value itself is
  * parsed by the same transition the wizard uses, so "-" and URL fixing cannot
  * drift between the two entry points. */
-const SINGLE_EDIT_FIELDS: Partial<Record<string, VideoTarget>> = {
-  youtube_title: "youtube_shorts",
-  youtube_description: "youtube_shorts",
-  youtube_game_url: "youtube_shorts",
-  youtube_tags: "youtube_shorts",
-  instagram_caption: "instagram_reels",
-};
-
 async function finishSingleVideoEdit({ backendDb, config, actorId, session, text }: VideoMessageArgs): Promise<PublicationEffect[]> {
   if (session.draftId == null) throw new StudioError("err.video-reopen-edit");
-  const step = session.step as VideoWizardStep;
-  const target = SINGLE_EDIT_FIELDS[step];
-  if (!target) throw new StudioError("err.video-reopen-edit");
+  if (!isVideoWizardStep(session.step)) throw new StudioError("err.video-reopen-edit");
+  const step = session.step;
   const videos = createStudioServices(backendDb, config).videos;
-  const row = videos.get(actorId, session.draftId).targets.find((item) => item.target === target);
-  const metadata = { ...(row?.metadataJson as Record<string, unknown> | undefined) };
-  applySingleEdit(metadata, step, advanceVideoMetadata(step, text, {}).data[step]);
-  videos.updateMetadata(actorId, session.draftId, target, metadata as VideoMetadata);
-  if (step === "youtube_title") videos.rename(actorId, session.draftId, String(metadata.title ?? "") || "YouTube Shorts");
+  const parsed = advanceVideoMetadata(step, text, {})[step];
+  videos.editMetadataField(actorId, session.draftId, step, parsed);
   return videoCardEffects(backendDb, config, actorId, session.draftId);
-}
-
-function applySingleEdit(metadata: Record<string, unknown>, step: VideoWizardStep, value: unknown): void {
-  if (step === "youtube_title") metadata.title = value;
-  if (step === "youtube_description") metadata.description = value;
-  // An emptied URL is absent, not blank: the field is optional and a stored ""
-  // would still render as a game link row on the card.
-  if (step === "youtube_game_url") metadata.gameUrl = value ? value : undefined;
-  if (step === "youtube_tags") metadata.tags = value;
-  if (step === "instagram_caption") {
-    metadata.caption = value;
-    delete metadata.hashtags;
-  }
 }
 
 /** Ends the dialog on the draft's own card. Both single-field edits and the

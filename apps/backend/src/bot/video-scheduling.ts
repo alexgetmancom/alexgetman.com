@@ -6,7 +6,7 @@ import { t } from "../foundation/i18n/index.js";
 import type { VideoTechnicalCheck } from "../publishing/video-service.js";
 import type { VideoTarget } from "../publishing/video-types.js";
 import { createStudioServices } from "../studio/services/index.js";
-import { currentSchedule, VIDEO_FLOW, videoScheduleDates } from "../studio/video-fsm.js";
+import { VIDEO_FLOW, videoScheduleDates } from "../studio/video-fsm.js";
 import type { PublicationEffect } from "./effects.js";
 import { type BotLocale, botLocale } from "./i18n.js";
 import { renderPublicationCard } from "./publication-card.js";
@@ -37,9 +37,15 @@ export async function applyVideoScheduleDate(
   if (!transition?.next) throw new StudioError("err.video-reopen-publish");
   if (transition.next === "schedule_target") {
     const saved = saveVideoState(backendDb, actorId, { ...session, step: "schedule_target", data: transition.data });
-    return videoStepEffects(backendDb, config, actorId, "schedule_target", saved);
+    return videoStepEffects(backendDb, config, actorId, saved);
   }
-  return videoScheduleConfirmationEffects(backendDb, config, actorId, session, videoScheduleDates(currentSchedule(transition.data)));
+  return videoScheduleConfirmationEffects(
+    backendDb,
+    config,
+    actorId,
+    session,
+    videoScheduleDates((transition.data.schedule as Record<string, string> | undefined) ?? {}),
+  );
 }
 
 export async function finishVideoSchedule(

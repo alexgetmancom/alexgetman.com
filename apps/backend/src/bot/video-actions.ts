@@ -14,7 +14,7 @@ import type { BotLocale } from "./i18n.js";
 import type { PublicationActionContext, PublicationActionResult } from "./publication-action-types.js";
 import { renderPublicationCard } from "./publication-card.js";
 import { publicationCardEffect } from "./publication-card-effects.js";
-import { parseDraftId, publicationCallback, requireSessionStep, type VideoActionKey } from "./session-fsm.js";
+import { parseDraftId, publicationCallback, requireSessionStep } from "./session-fsm.js";
 import { callbackMessageId } from "./telegram-context.js";
 import { applyVideoScheduleDate, finishVideoNow, finishVideoSchedule } from "./video-scheduling.js";
 import {
@@ -26,13 +26,24 @@ import {
   targetKeyboard,
   type VideoConversationInput,
   type VideoConversationState,
+  type VideoConversationStep,
   videoPromptEffect,
   videoStepEffects,
 } from "./video-ui.js";
 
 type VideoActionArgs = PublicationActionContext;
 type VideoActionResult = PublicationActionResult;
-type VideoActionHandler = (args: PublicationActionContext) => Promise<VideoActionResult>;
+type VideoActionHandler = ((args: PublicationActionContext) => Promise<VideoActionResult>) & {
+  sessionBound?: true;
+  cardBound?: true;
+};
+
+function defineVideoAction(
+  handler: (args: PublicationActionContext) => Promise<VideoActionResult>,
+  flags: Pick<VideoActionHandler, "sessionBound" | "cardBound"> = {},
+): VideoActionHandler {
+  return Object.assign((args: PublicationActionContext) => handler(args), flags);
+}
 
 const SCHEDULE_SESSION_STEPS = ["schedule_common", "schedule_target"] as const;
 
@@ -50,35 +61,45 @@ type EditableVideoField = keyof typeof EDIT_FIELDS;
 /** Routed by the action token before the first ":" (or the whole string, for
  * bare actions). Exact-match keys, so unlike prefix/startsWith matching, no
  * entry can accidentally shadow another and their declaration order is free. */
-export const videoActionHandlers: Record<VideoActionKey, VideoActionHandler> = {
-  start: handleStart,
-  locale: handleLocale,
-  cancel_dialog: handleCancelDialog,
-  toggle: handleToggle,
-  targets_done: handleTargetsDone,
-  game_skip: handleGameSkip,
-  meta_back: handleMetaBack,
-  open: handleOpen,
-  retry: handleRetry,
-  cancel_notice: handleCancel,
-  schedule_confirm: handleScheduleConfirm,
-  sched_confirm: handleScheduleConfirm,
-  schedule: handleScheduleStart,
-  common: handleScheduleMode,
-  individual: handleScheduleMode,
-  now: handleNowAsk,
-  now_confirm: handleNowConfirm,
-  cancel_ask: handleCancelAsk,
-  remove_ask: handleRemoveAsk,
-  cancel: handleCancel,
-  time: handleTime,
-  sched_pick: handleSchedulePick,
-  sched_manual: handleScheduleManual,
-  remove: handleRemove,
-  edit_menu: handleEditMenu,
-  edit_field: handleEditField,
-  edit: handleEdit,
+export const videoActionHandlers = {
+  start: defineVideoAction(handleStart),
+  locale: defineVideoAction(handleLocale, { sessionBound: true }),
+  cancel_dialog: defineVideoAction(handleCancelDialog, { sessionBound: true }),
+  toggle: defineVideoAction(handleToggle, { sessionBound: true }),
+  targets_done: defineVideoAction(handleTargetsDone, { sessionBound: true }),
+  game_skip: defineVideoAction(handleGameSkip, { sessionBound: true }),
+  meta_back: defineVideoAction(handleMetaBack, { sessionBound: true }),
+  open: defineVideoAction(handleOpen),
+  retry: defineVideoAction(handleRetry),
+  cancel_notice: defineVideoAction(handleCancel),
+  schedule_confirm: defineVideoAction(handleScheduleConfirm, { sessionBound: true, cardBound: true }),
+  sched_confirm: defineVideoAction(handleScheduleConfirm, { sessionBound: true, cardBound: true }),
+  schedule: defineVideoAction(handleScheduleStart, { cardBound: true }),
+  common: defineVideoAction(handleScheduleMode, { sessionBound: true, cardBound: true }),
+  individual: defineVideoAction(handleScheduleMode, { sessionBound: true, cardBound: true }),
+  now: defineVideoAction(handleNowAsk, { cardBound: true }),
+  now_confirm: defineVideoAction(handleNowConfirm, { sessionBound: true, cardBound: true }),
+  cancel_ask: defineVideoAction(handleCancelAsk, { cardBound: true }),
+  remove_ask: defineVideoAction(handleRemoveAsk, { cardBound: true }),
+  cancel: defineVideoAction(handleCancel, { cardBound: true }),
+  time: defineVideoAction(handleTime, { cardBound: true }),
+  sched_pick: defineVideoAction(handleSchedulePick, { sessionBound: true, cardBound: true }),
+  sched_manual: defineVideoAction(handleScheduleManual, { sessionBound: true, cardBound: true }),
+  remove: defineVideoAction(handleRemove, { cardBound: true }),
+  edit_menu: defineVideoAction(handleEditMenu, { cardBound: true }),
+  edit_field: defineVideoAction(handleEditField, { cardBound: true }),
+  edit: defineVideoAction(handleEdit, { cardBound: true }),
 };
+
+export type VideoActionKey = keyof typeof videoActionHandlers;
+
+export function isVideoSessionBoundAction(action: string): boolean {
+  return Object.entries(videoActionHandlers).some(([key, handler]) => key === action && handler.sessionBound === true);
+}
+
+export function isVideoCardAction(action: string): boolean {
+  return Object.entries(videoActionHandlers).some(([key, handler]) => key === action && handler.cardBound === true);
+}
 
 function requireVideoTarget(value: string): VideoTarget {
   if (!VIDEO_TARGETS.includes(value as VideoTarget)) throw new StudioError("err.unknown-platform");
@@ -114,14 +135,14 @@ async function advanceVideoFlow(
   backendDb: BackendDb,
   actorId: number,
   session: VideoConversationState,
-  stepName: string,
+  stepName: VideoConversationStep,
   input: unknown,
   errorCode: string,
-  decorateData?: (data: Record<string, unknown>, nextStep: VideoConversationState["step"]) => Record<string, unknown>,
+  decorateData?: (data: Record<string, unknown>, nextStep: VideoConversationStep) => Record<string, unknown>,
 ): Promise<VideoConversationState> {
   const transition = await acceptFlow(VIDEO_FLOW, stepName, input, { ...session.data, selectedTargets: session.selected });
   if (!transition?.next) throw new StudioError(errorCode);
-  const nextStep = transition.next as VideoConversationState["step"];
+  const nextStep = transition.next;
   const data = decorateData ? decorateData(transition.data, nextStep) : transition.data;
   return saveVideoState(backendDb, actorId, { ...session, step: nextStep, data });
 }
@@ -229,7 +250,7 @@ async function handleTargetsDone({ backendDb, config, actorId }: VideoActionArgs
   if (!session?.draftId || !session.selected.length) throw new StudioError("err.video-pick-platform");
   createStudioServices(backendDb, config).videos.replaceTargets(actorId, session.draftId, session.selected);
   const next = await advanceVideoFlow(backendDb, actorId, session, "targets", session.selected, "err.video-pick-platform");
-  return videoStepEffects(backendDb, config, actorId, next.step, next);
+  return videoStepEffects(backendDb, config, actorId, next);
 }
 
 async function handleGameSkip({ backendDb, config, actorId, locale }: VideoActionArgs): Promise<VideoActionResult> {
@@ -237,19 +258,16 @@ async function handleGameSkip({ backendDb, config, actorId, locale }: VideoActio
   requireSessionStep(session?.step, ["youtube_game_url"], "err.video-reopen-create");
   if (!session?.draftId) throw new StudioError("err.video-reopen-create");
   const next = await advanceVideoFlow(backendDb, actorId, session, "youtube_game_url", "-", "err.video-reopen-create");
-  return [
-    { type: "screen", mode: "edit", text: t(locale, "video.game-skipped") },
-    ...videoStepEffects(backendDb, config, actorId, next.step, next),
-  ];
+  return [{ type: "screen", mode: "edit", text: t(locale, "video.game-skipped") }, ...videoStepEffects(backendDb, config, actorId, next)];
 }
 
 async function handleMetaBack({ backendDb, config, actorId }: VideoActionArgs): Promise<VideoActionResult> {
   const session = getVideoState(backendDb, actorId);
   const previous = session && backFlow(VIDEO_FLOW, session.step, { selectedTargets: session.selected });
   if (!session?.draftId || !previous) throw new StudioError("err.video-reopen-create");
-  const step = previous as VideoConversationState["step"];
+  const step = previous;
   const saved = saveVideoState(backendDb, actorId, { ...session, step });
-  return videoStepEffects(backendDb, config, actorId, step, saved);
+  return videoStepEffects(backendDb, config, actorId, saved);
 }
 
 async function handleOpen({ config, actorId, locale, args, pipeline }: VideoActionArgs): Promise<VideoActionResult> {
@@ -322,7 +340,7 @@ async function handleScheduleMode({ backendDb, config, actorId, action, args }: 
       return nextStep === "schedule_target" ? { ...data, schedule: {}, target: first } : data;
     },
   );
-  return videoStepEffects(backendDb, config, actorId, next.step, next);
+  return videoStepEffects(backendDb, config, actorId, next);
 }
 
 async function handleNowAsk(actionArgs: VideoActionArgs): Promise<VideoActionResult> {
@@ -415,7 +433,7 @@ async function handleTime({ ctx, backendDb, config, actorId, args, pipeline }: V
     ...(currentSession ? { revision: currentSession.revision } : {}),
   };
   const saved = saveVideoState(backendDb, actorId, session);
-  return videoStepEffects(backendDb, config, actorId, "schedule_target", saved);
+  return videoStepEffects(backendDb, config, actorId, saved);
 }
 
 async function handleSchedulePick({ backendDb, config, actorId, args, pipeline }: VideoActionArgs): Promise<VideoActionResult> {

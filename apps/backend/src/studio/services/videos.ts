@@ -23,6 +23,7 @@ import {
 import type { VideoLocale, VideoMetadata, VideoTarget } from "../../publishing/video-types.js";
 import { accessibleStudioActorIds } from "../access.js";
 import { videoDeliveryProjections } from "../projections.js";
+import type { VideoWizardStep } from "../video-fsm.js";
 import { requireOwnedPublication } from "./publication-access.js";
 import { settingsService } from "./settings.js";
 
@@ -134,6 +135,22 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
     updateMetadata(actorId: number, publicationId: number, target: VideoTarget, metadata: VideoMetadata): void {
       requireOwnedVideo(backendDb, config, actorId, publicationId);
       saveVideoMetadata(backendDb, publicationId, target, metadata);
+    },
+    editMetadataField(actorId: number, publicationId: number, field: VideoWizardStep, value: unknown): void {
+      requireOwnedVideo(backendDb, config, actorId, publicationId);
+      const target = field === "instagram_caption" ? "instagram_reels" : "youtube_shorts";
+      const row = backendDb.studioVideos.targets(publicationId).find((item) => item.target === target);
+      const metadata = { ...(row?.metadataJson as Record<string, unknown> | undefined) };
+      if (field === "youtube_title") metadata.title = value;
+      if (field === "youtube_description") metadata.description = value;
+      if (field === "youtube_game_url") metadata.gameUrl = value || undefined;
+      if (field === "youtube_tags") metadata.tags = value;
+      if (field === "instagram_caption") {
+        metadata.caption = value;
+        delete metadata.hashtags;
+      }
+      saveVideoMetadata(backendDb, publicationId, target, metadata as VideoMetadata);
+      if (field === "youtube_title") updateVideoLabel(backendDb, publicationId, String(value || "YouTube Shorts"));
     },
     /** Persists everything a metadata wizard collected for one platform and
      * titles the draft after it. Which fields a platform stores, and which of

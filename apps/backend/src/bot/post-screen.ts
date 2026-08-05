@@ -1,4 +1,5 @@
 import type { Context } from "grammy";
+import { flowStepInput } from "../application/conversation-flow.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
@@ -12,7 +13,7 @@ import { botLocale } from "./i18n.js";
 import { persistentKeyboard } from "./menu-render.js";
 import { extractMessage } from "./message.js";
 import { applyAdminState } from "./post-flow-actions.js";
-import { isPostInputStep, postStateStep } from "./post-fsm.js";
+import { POST_FLOW, postStateStep } from "./post-fsm.js";
 import { translatePostText } from "./post-translation.js";
 import { renderPublicationCard } from "./publication-card.js";
 import { parseSessionCallback, publicationCallback } from "./session-fsm.js";
@@ -81,7 +82,7 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
     });
     return { handled: true, effects: isNew ? [{ type: "screen", mode: "reply", text: t(locale, "post.album-received") }] : [] };
   }
-  if (stateStep && isPostInputStep(stateStep) && state?.draftId) {
+  if (stateStep && flowStepInput(POST_FLOW, stateStep.type) && state?.draftId) {
     try {
       const effects = await applyAdminState(ctx, backendDb, config, stateStep, state.draftId, state.controlMessageId, state.revision);
       return { handled: true, effects };

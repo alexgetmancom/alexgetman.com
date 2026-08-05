@@ -18,14 +18,13 @@ import type {
   PublicationActionResult,
 } from "./publication-action-types.js";
 import {
-  type PUBLICATION_ACTIONS,
   type PublicationCallback,
   type PublicationKind,
   parseDraftId,
   parseSessionCallback,
   requireSessionRevision,
 } from "./session-fsm.js";
-import { videoActionHandlers } from "./video-actions.js";
+import { isVideoSessionBoundAction, videoActionHandlers } from "./video-actions.js";
 import { handleVideoConversationMessage } from "./video-conversation.js";
 
 type CallbackRouteHandler<TArgs, TResult> = (args: TArgs) => Promise<TResult>;
@@ -119,7 +118,8 @@ async function answerCallback(ctx: Context, backendDb: BackendDb, text: string |
 
 type PublicationMessageHandler = (ctx: Context, backendDb: BackendDb, config: BackendConfig) => Promise<PublicationMessageResult>;
 type PublicationRoutes = {
-  [K in PublicationKind]: Record<(typeof PUBLICATION_ACTIONS)[K][number], PublicationActionHandler>;
+  post: Record<"cancel_dialog" | keyof typeof postActionHandlers, PublicationActionHandler>;
+  video: typeof videoActionHandlers;
 };
 
 const MAX_TOAST_LENGTH = 200;
@@ -129,22 +129,6 @@ function toast(text: string): string {
 }
 
 const POST_SESSION_BOUND = new Set(["cancel_state", "sched_confirm", "sched_manual_confirm"]);
-const VIDEO_SESSION_BOUND = new Set([
-  "locale",
-  "cancel_dialog",
-  "toggle",
-  "targets_done",
-  "game_skip",
-  "meta_back",
-  "schedule_confirm",
-  "sched_confirm",
-  "now_confirm",
-  "common",
-  "individual",
-  "sched_pick",
-  "sched_manual",
-]);
-
 const PUBLICATION_MESSAGE_HANDLERS: Record<PublicationKind, PublicationMessageHandler> = {
   post: handlePostMessage,
   video: handleVideoConversationMessage,
@@ -168,7 +152,7 @@ const routes: PublicationRoutes = {
 
 const publicationRouter = createCallbackRouter<PublicationActionContext, number, PublicationActionResult>({
   routes,
-  sessionBound: ({ callback, action }) => (callback.kind === "post" ? POST_SESSION_BOUND : VIDEO_SESSION_BOUND).has(action),
+  sessionBound: ({ callback, action }) => (callback.kind === "post" ? POST_SESSION_BOUND.has(action) : isVideoSessionBoundAction(action)),
   currentSessionRevision: ({ backendDb, actorId, callback }) => getConversationState(backendDb, actorId, callback.kind)?.revision,
   parseEntity: (callback) => {
     if (callback.kind !== "post" || callback.action === "cancel_dialog") return 0;

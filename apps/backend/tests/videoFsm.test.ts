@@ -1,12 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { backFlow } from "../src/application/conversation-flow.js";
-import {
-  advanceVideoMetadata,
-  advanceVideoTargetSchedule,
-  commonVideoSchedule,
-  firstVideoMetadataStep,
-  VIDEO_FLOW,
-} from "../src/studio/video-fsm.js";
+import { acceptFlow, backFlow } from "../src/application/conversation-flow.js";
+import { firstVideoMetadataStep, VIDEO_FLOW } from "../src/studio/video-fsm.js";
 
 function previousStep(step: string, selected: ("youtube_shorts" | "instagram_reels")[]): string | null {
   return backFlow(VIDEO_FLOW, step, { selectedTargets: selected });
@@ -18,14 +12,14 @@ describe("video metadata FSM", () => {
     expect(firstVideoMetadataStep(["instagram_reels"])).toBe("instagram_caption");
   });
 
-  it("advances YouTube metadata without Telegram state", () => {
-    const title = advanceVideoMetadata("youtube_title", "My short", {});
-    const description = advanceVideoMetadata("youtube_description", "-", title.data);
-    const tags = advanceVideoMetadata("youtube_tags", "game, devlog", description.data);
-    expect(title).toMatchObject({ nextStep: "youtube_description" });
-    expect(description.data.youtube_description).toBe("");
-    expect(tags).toMatchObject({ nextStep: null });
-    expect(tags.data.youtube_tags).toEqual(["game", "devlog"]);
+  it("advances YouTube metadata without Telegram state", async () => {
+    const title = await acceptFlow(VIDEO_FLOW, "youtube_title", "My short", {});
+    const description = await acceptFlow(VIDEO_FLOW, "youtube_description", "-", title?.data ?? {});
+    const tags = await acceptFlow(VIDEO_FLOW, "youtube_tags", "game, devlog", description?.data ?? {});
+    expect(title?.next).toBe("youtube_description");
+    expect(description?.data.youtube_description).toBe("");
+    expect(tags?.next).toBe("schedule_choice");
+    expect(tags?.data.youtube_tags).toEqual(["game", "devlog"]);
   });
 
   it("reverses the YouTube chain step by step, and stops at its start", () => {
@@ -41,15 +35,23 @@ describe("video metadata FSM", () => {
     expect(previousStep("instagram_caption", ["instagram_reels"])).toBeNull();
   });
 
-  it("advances independent and common schedules without Telegram state", () => {
+  it("advances independent and common schedules without Telegram state", async () => {
     const selected = ["youtube_shorts", "instagram_reels"] as const;
-    const first = advanceVideoTargetSchedule([...selected], {}, "youtube_shorts", new Date("2026-07-15T10:00:00.000Z"));
-    expect(first.nextTarget).toBe("instagram_reels");
-    const done = advanceVideoTargetSchedule([...selected], first.schedule, "instagram_reels", new Date("2026-07-15T11:00:00.000Z"));
-    expect(done.nextTarget).toBeNull();
-    expect(commonVideoSchedule([...selected], new Date("2026-07-15T10:00:00.000Z"))).toEqual({
-      youtube_shorts: new Date("2026-07-15T10:00:00.000Z"),
-      instagram_reels: new Date("2026-07-15T10:00:00.000Z"),
+    const first = await acceptFlow(VIDEO_FLOW, "schedule_target", "2026-07-15T10:00:00.000Z", {
+      selectedTargets: [...selected],
+      target: "youtube_shorts",
+    });
+    expect(first?.next).toBe("schedule_target");
+    const done = await acceptFlow(VIDEO_FLOW, "schedule_target", "2026-07-15T11:00:00.000Z", {
+      ...first?.data,
+      selectedTargets: [...selected],
+      target: "instagram_reels",
+    });
+    expect(done?.next).toBe("schedule_confirm");
+    const common = await acceptFlow(VIDEO_FLOW, "schedule_common", "2026-07-15T10:00:00.000Z", { selectedTargets: [...selected] });
+    expect(common?.data.schedule).toEqual({
+      youtube_shorts: "2026-07-15T10:00:00.000Z",
+      instagram_reels: "2026-07-15T10:00:00.000Z",
     });
   });
 });

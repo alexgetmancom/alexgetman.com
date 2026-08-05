@@ -3,32 +3,82 @@ import { fixUrlSlashes } from "../content/message.js";
 import { StudioError } from "../foundation/errors.js";
 import { VIDEO_TARGETS, type VideoTarget } from "../publishing/video-types.js";
 
-export type VideoWizardStep = "youtube_title" | "youtube_description" | "youtube_game_url" | "youtube_tags" | "instagram_caption";
 export type VideoFlowData = Record<string, unknown> & { selectedTargets?: VideoTarget[] };
 
-const VIDEO_STEPS: Record<string, FlowStep<VideoFlowData>> = {
-  locale: { name: "locale", next: () => "asset", accept: (input, data) => ({ ...data, videoLocale: input }) },
+function defineVideoSteps<const TSteps extends Record<string, FlowStep<VideoFlowData>>>(steps: TSteps): TSteps {
+  return steps;
+}
+
+const VIDEO_METADATA_STEP_NAMES = [
+  "youtube_title",
+  "youtube_description",
+  "youtube_game_url",
+  "youtube_tags",
+  "instagram_caption",
+] as const;
+
+export type VideoWizardStep = (typeof VIDEO_METADATA_STEP_NAMES)[number];
+
+const VIDEO_METADATA_STEPS = {
+  youtube_title: {
+    name: "youtube_title" as const,
+    input: "text",
+    next: () => "youtube_description" as const,
+    accept: (input, data) => advanceVideoMetadata("youtube_title", String(input), data),
+  },
+  youtube_description: {
+    name: "youtube_description" as const,
+    input: "text",
+    next: () => "youtube_game_url" as const,
+    accept: (input, data) => advanceVideoMetadata("youtube_description", String(input), data),
+    back: () => "youtube_title",
+  },
+  youtube_game_url: {
+    name: "youtube_game_url" as const,
+    input: "text",
+    next: () => "youtube_tags" as const,
+    accept: (input, data) => advanceVideoMetadata("youtube_game_url", String(input), data),
+    back: () => "youtube_description",
+  },
+  youtube_tags: {
+    name: "youtube_tags" as const,
+    input: "text",
+    next: (data) => (data.selectedTargets?.includes("instagram_reels") ? "instagram_caption" : "schedule_choice"),
+    accept: (input, data) => advanceVideoMetadata("youtube_tags", String(input), data),
+    back: () => "youtube_game_url",
+  },
+  instagram_caption: {
+    name: "instagram_caption" as const,
+    input: "text",
+    next: () => "schedule_choice" as const,
+    accept: (input, data) => advanceVideoMetadata("instagram_caption", String(input), data),
+    back: (data) => (data.selectedTargets?.includes("youtube_shorts") ? "youtube_tags" : null),
+  },
+} satisfies Record<VideoWizardStep, FlowStep<VideoFlowData, unknown, never, VideoWizardStep | "schedule_choice">>;
+
+export const VIDEO_STEPS = defineVideoSteps({
+  locale: { name: "locale" as const, next: () => "asset" as const, accept: (input, data) => ({ ...data, videoLocale: input }) },
   asset: {
-    name: "asset",
+    name: "asset" as const,
     input: "media",
     next: (data) => firstVideoMetadataStep(data.selectedTargets ?? []),
     accept: (input, data) => ({ ...data, assetId: input }),
   },
-  label: { name: "label", input: "text", next: () => "targets", accept: (input, data) => ({ ...data, label: input }) },
+  label: { name: "label" as const, input: "text", next: () => "targets" as const, accept: (input, data) => ({ ...data, label: input }) },
   targets: {
-    name: "targets",
+    name: "targets" as const,
     next: (data) => firstVideoMetadataStep(data.selectedTargets ?? []),
     accept: (input, data) => ({ ...data, selectedTargets: input as VideoTarget[] }),
   },
   schedule_choice: {
-    name: "schedule_choice",
+    name: "schedule_choice" as const,
     next: (data) => (data.scheduleMode === "common" ? "schedule_common" : "schedule_target"),
     accept: (input, data) => ({ ...data, scheduleMode: input }),
   },
   schedule_common: {
-    name: "schedule_common",
+    name: "schedule_common" as const,
     input: "text",
-    next: () => "schedule_confirm",
+    next: () => "schedule_confirm" as const,
     // One typed or picked time answers for every selected platform at once, so
     // the step writes the whole schedule rather than a single value the caller
     // would have to fan out again.
@@ -38,7 +88,7 @@ const VIDEO_STEPS: Record<string, FlowStep<VideoFlowData>> = {
     }),
   },
   schedule_target: {
-    name: "schedule_target",
+    name: "schedule_target" as const,
     input: "text",
     // Both the schedule and the platform still waiting for a time come from the
     // accumulated schedule itself. Nothing outside the step recomputes them.
@@ -54,45 +104,18 @@ const VIDEO_STEPS: Record<string, FlowStep<VideoFlowData>> = {
       return { ...data, schedule, ...(nextTarget ? { target: nextTarget } : {}) };
     },
   },
-  schedule_confirm: { name: "schedule_confirm", next: () => null, accept: (_input, data) => data },
-  youtube_title: {
-    name: "youtube_title",
-    input: "text",
-    next: () => "youtube_description",
-    accept: (input, data) => advanceVideoMetadata("youtube_title", String(input), data).data,
-  },
-  youtube_description: {
-    name: "youtube_description",
-    input: "text",
-    next: () => "youtube_game_url",
-    accept: (input, data) => advanceVideoMetadata("youtube_description", String(input), data).data,
-    back: () => "youtube_title",
-  },
-  youtube_game_url: {
-    name: "youtube_game_url",
-    input: "text",
-    next: () => "youtube_tags",
-    accept: (input, data) => advanceVideoMetadata("youtube_game_url", String(input), data).data,
-    back: () => "youtube_description",
-  },
-  youtube_tags: {
-    name: "youtube_tags",
-    input: "text",
-    next: (data) => (data.selectedTargets?.includes("instagram_reels") ? "instagram_caption" : "schedule_choice"),
-    accept: (input, data) => advanceVideoMetadata("youtube_tags", String(input), data).data,
-    back: () => "youtube_game_url",
-  },
-  instagram_caption: {
-    name: "instagram_caption",
-    input: "text",
-    next: () => "schedule_choice",
-    accept: (input, data) => advanceVideoMetadata("instagram_caption", String(input), data).data,
-    back: (data) => (data.selectedTargets?.includes("youtube_shorts") ? "youtube_tags" : null),
-  },
-};
+  schedule_confirm: { name: "schedule_confirm" as const, next: () => null },
+  ...VIDEO_METADATA_STEPS,
+});
+
+export type VideoConversationStep = keyof typeof VIDEO_STEPS;
+
+export function isVideoWizardStep(step: VideoConversationStep): step is VideoWizardStep {
+  return VIDEO_METADATA_STEP_NAMES.some((name) => name === step);
+}
 
 /** The complete transport-neutral video workflow. Telegram renders step-specific questions separately. */
-export const VIDEO_FLOW: Flow<VideoFlowData> = {
+export const VIDEO_FLOW: Flow<VideoFlowData, unknown, never, VideoConversationStep> = {
   kind: "video",
   steps: VIDEO_STEPS,
 };
@@ -102,19 +125,10 @@ export function firstVideoMetadataStep(selected: VideoTarget[]): VideoWizardStep
 }
 
 /** Pure metadata transition used by the video Flow and non-Telegram callers. */
-export function advanceVideoMetadata(
-  step: VideoWizardStep,
-  text: string,
-  data: VideoFlowData,
-): { data: VideoFlowData; nextStep: VideoWizardStep | null } {
-  if (step === "youtube_title") return { data: { ...data, youtube_title: text }, nextStep: "youtube_description" };
-  if (step === "youtube_description")
-    return { data: { ...data, youtube_description: text === "-" ? "" : text }, nextStep: "youtube_game_url" };
-  if (step === "youtube_game_url")
-    return {
-      data: { ...data, youtube_game_url: text === "-" ? "" : fixUrlSlashes(text) },
-      nextStep: "youtube_tags",
-    };
+export function advanceVideoMetadata(step: VideoWizardStep, text: string, data: VideoFlowData): VideoFlowData {
+  if (step === "youtube_title") return { ...data, youtube_title: text };
+  if (step === "youtube_description") return { ...data, youtube_description: text === "-" ? "" : text };
+  if (step === "youtube_game_url") return { ...data, youtube_game_url: text === "-" ? "" : fixUrlSlashes(text) };
   if (step === "youtube_tags") {
     const tags =
       text === "-"
@@ -123,13 +137,13 @@ export function advanceVideoMetadata(
             .split(",")
             .map((tag) => tag.trim())
             .filter(Boolean);
-    return { data: { ...data, youtube_tags: tags }, nextStep: null };
+    return { ...data, youtube_tags: tags };
   }
-  return { data: { ...data, instagram_caption: text === "-" ? "" : text }, nextStep: null };
+  return { ...data, instagram_caption: text === "-" ? "" : text };
 }
 
 /** Adds one parsed target time and names the platform still waiting for one. */
-export function advanceVideoTargetSchedule(
+function advanceVideoTargetSchedule(
   selected: VideoTarget[],
   current: Record<string, string>,
   target: VideoTarget,
@@ -139,12 +153,12 @@ export function advanceVideoTargetSchedule(
   return { schedule, nextTarget: pendingScheduleTarget(selected, schedule) };
 }
 
-export function commonVideoSchedule(selected: VideoTarget[], value: Date): Partial<Record<VideoTarget, Date>> {
+function commonVideoSchedule(selected: VideoTarget[], value: Date): Partial<Record<VideoTarget, Date>> {
   return Object.fromEntries(selected.map((target) => [target, value])) as Partial<Record<VideoTarget, Date>>;
 }
 
 /** Reads the ISO schedule accumulated so far by the per-target chain. */
-export function currentSchedule(data: VideoFlowData): Record<string, string> {
+function currentSchedule(data: VideoFlowData): Record<string, string> {
   return (data.schedule as Record<string, string> | undefined) ?? {};
 }
 
