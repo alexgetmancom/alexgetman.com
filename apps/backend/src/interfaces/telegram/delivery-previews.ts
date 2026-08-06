@@ -4,6 +4,7 @@ import type { BackendDb } from "../../db/client.js";
 import { splitText } from "../../delivery/social/payload.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { t } from "../../foundation/i18n/index.js";
+import { log } from "../../foundation/logger.js";
 import { escapeMarkdown } from "../../foundation/markdown.js";
 import { threadsBody, threadsTextLimit } from "../../publishing/threads-text.js";
 import type { DeliveryProjection } from "../../studio/projections.js";
@@ -18,25 +19,27 @@ export async function sendTelegramDeliveryPreviews(
   locale: BotLocale = "en",
 ): Promise<void> {
   for (const projection of projections) {
-    await ctx.reply(...deliveryHeader(projection, locale));
-    const hasVideo =
-      projection.targets.length > 0 && projection.media.some((item) => String(item.type ?? "photo").toLowerCase() === "video");
-    if (projection.targets.length) await sendProjectionContent(ctx, projection, !hasVideo);
-    if (hasVideo)
-      await ctx.reply(t(locale, "preview.video-ready"), {
-        reply_markup: new InlineKeyboard().text(t(locale, "preview.show-video"), `delivery_preview_video:${projection.id}`),
-      });
-    if (projection.notes.length) await ctx.reply(`ℹ️ ${projection.notes.map(escapeMarkdown).join("\n• ")}`, { parse_mode: "Markdown" });
+    // One unrenderable projection — a missing file, a Telegram 400 — must not
+    // swallow the previews that follow it.
+    try {
+      await ctx.reply(...deliveryHeader(projection, locale));
+      const hasVideo = projection.targets.length > 0 && projection.media.some(isVideo);
+      if (projection.targets.length) await sendProjectionContent(ctx, projection, !hasVideo);
+      if (hasVideo)
+        await ctx.reply(t(locale, "preview.video-ready"), {
+          reply_markup: new InlineKeyboard().text(t(locale, "preview.show-video"), `delivery_preview_video:${projection.id}`),
+        });
+      if (projection.notes.length)
+        await ctx.reply(projection.notes.map((note) => `ℹ️ ${escapeMarkdown(note)}`).join("\n"), { parse_mode: "Markdown" });
+    } catch (error) {
+      log("error", "telegram delivery preview failed", { projection: projection.id, error });
+    }
   }
 }
 
 /** Reuses the same safe Telegram media rendering for a published archive item. */
 export async function sendTelegramArchiveMedia(ctx: Context, media: Record<string, unknown>[]): Promise<void> {
-  await sendProjectionContent(
-    ctx,
-    { id: "archive", label: "Archive", targets: [], text: "", entities: [], media, unavailableTargets: [], notes: [] },
-    true,
-  );
+  await sendMedia(ctx, media, "", []);
 }
 
 async function sendProjectionContent(ctx: Context, projection: DeliveryProjection, includeVideo = true): Promise<void> {
@@ -45,73 +48,59 @@ async function sendProjectionContent(ctx: Context, projection: DeliveryProjectio
   // Metadata is preview-only and has no source entities; retain formatting only
   // when the projection contains its original post text unchanged.
   const entities = metadata ? [] : projection.entities;
-  const mediaItems = includeVideo
-    ? projection.media
-    : projection.media.filter((item) => String(item.type ?? "photo").toLowerCase() !== "video");
-  const first = mediaItems[0];
+  const media = includeVideo ? projection.media : projection.media.filter((item) => !isVideo(item));
+  await sendMedia(ctx, media, text, entities);
+}
+
+type RenderableMedia = { source: InputFile | string; video: boolean };
+
+/** Sends whatever of `media` Telegram can actually address, with `text` attached once. */
+async function sendMedia(ctx: Context, media: Record<string, unknown>[], text: string, entities: Record<string, unknown>[]) {
+  // An item with neither a local path nor a file id cannot be sent; dropping it
+  // here keeps the rest of the album from riding on the first item's fate.
+  const items = media.flatMap<RenderableMedia>((item) => {
+    const source = mediaSource(item);
+    return source ? [{ source, video: isVideo(item) }] : [];
+  });
+  const first = items[0];
   if (!first) {
-    if (text) await ctx.reply(text, entityOptions(entities));
+    if (text) await ctx.reply(text, entityOptions(entities, text.length));
     return;
   }
-  const source = mediaSource(first);
-  if (!source) {
-    if (text) await ctx.reply(text, entityOptions(entities));
-    return;
-  }
-  const type = String(first.type ?? "photo").toLowerCase();
   const hasCaption = Boolean(text && text.length <= 1024);
   const caption = hasCaption ? { caption: text, ...captionEntityOptions(entities, text.length) } : {};
-  if (mediaItems.length > 1) {
-    const group = mediaItems.flatMap((item, index) => {
-      const media = mediaSource(item);
-      if (!media) return [];
-      return [
-        {
-          type: String(item.type ?? "photo").toLowerCase() === "video" ? "video" : "photo",
-          media,
-          ...(index === 0 ? caption : {}),
-        },
-      ];
-    });
-    if (group.length > 1) {
-      // Telegram rejects an album larger than 10 outright, which would lose the
-      // whole preview; send the first ten as the album and the rest one by one.
-      await ctx.replyWithMediaGroup(group.slice(0, TELEGRAM_MEDIA_GROUP_LIMIT) as never);
-      for (const item of group.slice(TELEGRAM_MEDIA_GROUP_LIMIT)) {
-        if (item.type === "video") await ctx.replyWithVideo(item.media);
-        else await ctx.replyWithPhoto(item.media);
-      }
-      if (text && !hasCaption) await ctx.reply(text, entityOptions(entities));
-      return;
+  if (items.length > 1) {
+    const group = items.map((item, index) => ({
+      type: item.video ? "video" : "photo",
+      media: item.source,
+      ...(index === 0 ? caption : {}),
+    }));
+    // Telegram rejects an album larger than 10 outright, which would lose the
+    // whole preview; send the first ten as the album and the rest one by one.
+    await ctx.replyWithMediaGroup(group.slice(0, TELEGRAM_MEDIA_GROUP_LIMIT) as never);
+    for (const item of items.slice(TELEGRAM_MEDIA_GROUP_LIMIT)) {
+      if (item.video) await ctx.replyWithVideo(item.source);
+      else await ctx.replyWithPhoto(item.source);
     }
-  }
-  if (type === "video") await ctx.replyWithVideo(source, caption);
-  else await ctx.replyWithPhoto(source, caption);
-  if (text && !hasCaption) await ctx.reply(text, entityOptions(entities));
-  for (const item of mediaItems.slice(1)) {
-    const next = mediaSource(item);
-    if (!next) continue;
-    if (String(item.type ?? "photo").toLowerCase() === "video") await ctx.replyWithVideo(next);
-    else await ctx.replyWithPhoto(next);
-  }
+  } else if (first.video) await ctx.replyWithVideo(first.source, caption);
+  else await ctx.replyWithPhoto(first.source, caption);
+  if (text && !hasCaption) await ctx.reply(text, entityOptions(entities, text.length));
+}
+
+function isVideo(media: Record<string, unknown>): boolean {
+  return String(media.type ?? "photo").toLowerCase() === "video";
 }
 
 /** Callback-only Telegram adapter for deferred heavy video previews. */
 export async function handleTelegramDeliveryPreviewCallback(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<boolean> {
   const data = ctx.callbackQuery?.data ?? "";
-  const prefix = "delivery_preview_video:";
-  const threadsPrefix = "delivery_preview_threads:";
-  const telegramPrefix = "delivery_preview_telegram:";
-  if (!data.startsWith(prefix) && !data.startsWith(threadsPrefix) && !data.startsWith(telegramPrefix)) return false;
-  const projectionId = data.startsWith(prefix)
-    ? data.slice(prefix.length)
-    : data.startsWith(threadsPrefix)
-      ? data.slice(threadsPrefix.length)
-      : data.slice(telegramPrefix.length);
+  const view = PREVIEW_VIEWS.find((item) => data.startsWith(item.prefix));
+  if (!view) return false;
+  const projectionId = data.slice(view.prefix.length);
   const actorId = Number(ctx.from?.id);
   const [kind, idText] = projectionId.split(":");
   const id = Number(idText);
-  if (!Number.isSafeInteger(id)) return false;
+  if (!Number.isSafeInteger(id) || !Number.isSafeInteger(actorId)) return false;
   const delivery =
     kind === "video"
       ? createStudioServices(backendDb, config).videos.preview(actorId, id).delivery
@@ -122,43 +111,29 @@ export async function handleTelegramDeliveryPreviewCallback(ctx: Context, backen
   await ctx.answerCallbackQuery();
   if (!projection) return true;
   const locale = botLocale(backendDb, actorId);
-  if (data.startsWith(threadsPrefix)) {
+  if (view.name === "threads") {
     const target = projection.targets.find((item) => item === "threads_ru" || item === "threads_en");
     if (!target) return true;
-    await ctx.editMessageText(
-      threadsPreviewText(
-        target,
-        projection.text,
-        projection.entities,
-        Boolean("threadsChain" in projection && projection.threadsChain),
-        locale,
-      ),
-      {
-        reply_markup: new InlineKeyboard().text(t(locale, "preview.show-telegram"), `${telegramPrefix}${projection.id}`),
-      },
-    );
+    await ctx.editMessageText(threadsPreviewText(target, projection.text, projection.entities, Boolean(projection.threadsChain), locale), {
+      reply_markup: new InlineKeyboard().text(t(locale, "preview.show-telegram"), `${TELEGRAM_VIEW_PREFIX}${projection.id}`),
+    });
     return true;
   }
-  if (data.startsWith(telegramPrefix)) {
+  if (view.name === "telegram") {
     await ctx.editMessageText(...deliveryHeader(projection, locale));
     return true;
   }
-  await sendProjectionContent(
-    ctx,
-    {
-      id: projection.id,
-      label: projection.label,
-      targets: projection.targets,
-      text: "",
-      entities: [],
-      media: projection.media,
-      unavailableTargets: [],
-      notes: projection.notes,
-    },
-    true,
-  );
+  await sendMedia(ctx, projection.media, "", []);
   return true;
 }
+
+const TELEGRAM_VIEW_PREFIX = "delivery_preview_telegram:";
+
+const PREVIEW_VIEWS = [
+  { name: "video", prefix: "delivery_preview_video:" },
+  { name: "threads", prefix: "delivery_preview_threads:" },
+  { name: "telegram", prefix: TELEGRAM_VIEW_PREFIX },
+] as const;
 
 function deliveryHeader(
   projection: DeliveryProjection,
@@ -207,19 +182,25 @@ function threadMarker(index: number): string {
   return ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"][index] ?? `${index + 1}.`;
 }
 
-function entityOptions(entities: Record<string, unknown>[]) {
-  return entities.length ? { entities: entities as never } : {};
+function entityOptions(entities: Record<string, unknown>[], length: number) {
+  const safe = safeEntities(entities, length);
+  return safe.length ? { entities: safe as never } : {};
 }
 
 function captionEntityOptions(entities: Record<string, unknown>[], length: number) {
-  const safeEntities = entities.flatMap((entity) => {
+  const safe = safeEntities(entities, length);
+  return safe.length ? { caption_entities: safe as never } : {};
+}
+
+/** An entity reaching past the text it annotates is a 400 from Telegram, so clamp or drop it. */
+function safeEntities(entities: Record<string, unknown>[], length: number) {
+  return entities.flatMap((entity) => {
     const offset = Number(entity.offset);
     const entityLength = Number(entity.length);
     if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(entityLength) || offset < 0 || entityLength <= 0 || offset >= length)
       return [];
     return [{ ...entity, offset, length: Math.min(entityLength, length - offset) }];
   });
-  return safeEntities.length ? { caption_entities: safeEntities as never } : {};
 }
 
 function mediaSource(media: Record<string, unknown>): InputFile | string | null {
