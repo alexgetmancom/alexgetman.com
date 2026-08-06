@@ -94,7 +94,7 @@ export function videoDeliveryProjections(backendDb: BackendDb, publicationId: nu
   const media = asset
     ? [{ type: "video", asset_id: asset.id, local_path: asset.localPath, filename: asset.filename, mime_type: asset.mimeType }]
     : [];
-  const projections = backendDb.studioVideos.targets(publicationId).map((target) => ({
+  const projections: DeliveryProjection[] = backendDb.studioVideos.targets(publicationId).map((target) => ({
     id: `video:${publicationId}:${target.target}`,
     label: target.target === "youtube_shorts" ? "Preview · YouTube Shorts" : "Preview · Instagram Reels",
     targets: [target.target],
@@ -104,6 +104,6 @@ export function videoDeliveryProjections(backendDb: BackendDb, publicationId: nu
     unavailableTargets: [],
     metadata: (target.metadataJson ?? {}) as Record<string, unknown>,
     notes: [],
-  })) satisfies DeliveryProjection[];
+  }));
   return { kind: "video" as const, publicationId, projections, sourceAvailable: media.length === 1 };
 }
