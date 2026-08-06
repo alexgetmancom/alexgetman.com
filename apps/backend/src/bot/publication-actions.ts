@@ -10,7 +10,7 @@ import {
   type PublicationActionResult,
   type PublicationDraftActionContext,
 } from "./publication-action-contract.js";
-import type { PublicationCallback, PublicationKind } from "./publication-callback.js";
+import type { PublicationKind } from "./publication-callback.js";
 import { publicationCardEffect } from "./publication-renderers.js";
 import { defineVideoActionHandlers } from "./video-actions.js";
 

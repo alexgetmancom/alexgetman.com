@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, mock } from "bun:test";
 import type { Bot } from "grammy";
 import { finalizePendingAlbums } from "../src/bot/albums.js";
 import { getConversationState, saveConversationState } from "../src/bot/conversation-state.js";
-import type { PostWizardStep } from "../src/bot/post-actions.js";
+import type { PostWizardStep } from "../src/bot/post-flow.js";
 import { draftPreview } from "../src/bot/preview.js";
 import { postProgress } from "../src/bot/progress.js";
 import { DEFAULT_TARGETS, TARGETS, targetLocale } from "../src/botTargets.js";

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { and, eq } from "drizzle-orm";
 import { clearConversationStateIfCurrent, getConversationState, saveConversationState } from "../src/bot/conversation-state.js";
-import { type PostWizardStep, postStateStep } from "../src/bot/post-actions.js";
+import { type PostWizardStep, postStateStep, postStepData } from "../src/bot/post-flow.js";
 import { clearVideoState, getVideoState, saveVideoState } from "../src/bot/video-ui.js";
 import type { BackendDb } from "../src/db/client.js";
 import { conversationSessions } from "../src/db/schema.js";
@@ -19,7 +19,7 @@ function setPostAdminState(
     kind: "post",
     draftId,
     step: step.type,
-    data: postData(step),
+    data: postStepData(step),
     controlMessageId,
   }).revision;
 }
@@ -42,12 +42,6 @@ function clearPostAdminStateIfCurrent(
   return clearConversationStateIfCurrent(db, { kind: "post", step: step.type, draftId }, actorId, expectedRevision);
 }
 
-function postData(step: PostWizardStep): Record<string, unknown> {
-  if (step.type === "edit_text" || step.type === "replace_media" || step.type === "schedule_manual") return { locale: step.locale };
-  if (step.type === "schedule_confirm") return { locale: step.locale, value: step.value.toISOString() };
-  return {};
-}
-
 describe("Telegram dialog state", () => {
   it("round-trips typed post wizard steps through short names and data", () => {
     const value = new Date("2026-08-04T12:34:56.000Z");
@@ -61,7 +55,7 @@ describe("Telegram dialog state", () => {
     ];
 
     for (const step of steps) {
-      expect(postStateStep({ step: step.type, data: postData(step) })).toEqual(step);
+      expect(postStateStep({ step: step.type, data: postStepData(step) })).toEqual(step);
     }
     expect(postStateStep({ step: "schedule_confirm", data: { locale: "ru", value: "not-a-date" } })).toBeNull();
   });

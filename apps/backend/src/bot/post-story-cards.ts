@@ -28,7 +28,7 @@ export async function showStoryCardChoice(
     queueStoryCardChoice(ctx, backendDb, config, actorId, draftId, intent);
     return effects;
   }
-  return [{ type: "answer-callback" }, ...sendStoryCardChoice(backendDb, actorId, draftId, intent, cards)];
+  return [...sendStoryCardChoice(backendDb, actorId, draftId, intent, cards)];
 }
 
 const pendingStoryCardChoices = new Map<string, Promise<void>>();

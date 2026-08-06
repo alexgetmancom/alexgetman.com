@@ -1,17 +1,13 @@
 import { InlineKeyboard } from "grammy";
-import type { Flow, FlowStep } from "../application/conversation-flow.js";
-import type { DraftMessage } from "../content/message.js";
 import type { BackendDb } from "../db/client.js";
-import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { plural, t } from "../foundation/i18n/index.js";
 import { manualScheduleExample } from "../foundation/time.js";
-import { createStudioServices } from "../studio/services/index.js";
-import type { ConversationState } from "./conversation-state.js";
 import { clearConversationState, getConversationState } from "./conversation-state.js";
 import { cancelPromptKeyboard, resultNavigationKeyboard } from "./dialog-ui.js";
 import type { PublicationEffect } from "./effects.js";
 import { botLocale } from "./i18n.js";
+import { type PostWizardStep, postStateStep, postStepData } from "./post-flow.js";
 import { showStoryCardChoice } from "./post-story-cards.js";
 import { canEditLocale, type DraftView, modeLabel } from "./preview.js";
 import { renderPostProgress } from "./progress.js";
@@ -23,153 +19,10 @@ import type {
 } from "./publication-action-contract.js";
 import { publicationCallback } from "./publication-callback.js";
 import { openPublicationFlow } from "./publication-flow.js";
-import { publicationCardEffect, publicationRenderers } from "./publication-renderers.js";
+import { publicationCardEffect } from "./publication-renderers.js";
 import { callbackMessageId } from "./telegram-context.js";
 
 type PostActionArgs = PublicationDraftActionContext;
-
-type PostWizardLocale = "ru" | "en";
-export type PostSessionStep = "new_post" | "edit_sources" | "edit_text" | "replace_media" | "schedule_manual" | "schedule_confirm";
-
-export type PostWizardStep =
-  | { type: "new_post" }
-  | { type: "edit_sources" }
-  | { type: "edit_text"; locale: PostWizardLocale }
-  | { type: "replace_media"; locale: PostWizardLocale }
-  | { type: "schedule_manual"; locale: PostWizardLocale }
-  | { type: "schedule_confirm"; locale: PostWizardLocale; value: Date };
-
-export type PostFlowData = Record<string, unknown>;
-
-export type PostFlowInput = {
-  backendDb: BackendDb;
-  config: BackendConfig;
-  actorId: number;
-  draftId: number;
-  controlMessageId: number | null;
-  step: PostWizardStep;
-  message: DraftMessage;
-};
-
-function postStepData(step: PostWizardStep): Record<string, unknown> {
-  if (step.type === "edit_text" || step.type === "replace_media" || step.type === "schedule_manual") return { locale: step.locale };
-  if (step.type === "schedule_confirm") return { locale: step.locale, value: step.value.toISOString() };
-  return {};
-}
-
-const POST_STEPS: Record<string, FlowStep<PostFlowData, PostFlowInput, PublicationEffect>> = {
-  new_post: {
-    name: "new_post",
-    next: () => "completed",
-    accept: (input, data) => ({ ...data, input: input.message }),
-  },
-  edit_sources: { name: "edit_sources", input: "text", next: () => "completed", accept: acceptPostSourceEdit },
-  edit_text: { name: "edit_text", input: "text", next: () => "completed", accept: acceptPostTextEdit },
-  replace_media: { name: "replace_media", input: "media", next: () => "completed", accept: acceptPostMediaReplacement },
-  schedule_manual: { name: "schedule_manual", input: "text", next: () => "schedule_confirm", accept: acceptManualPostSchedule },
-  schedule_confirm: { name: "schedule_confirm", next: () => "completed" },
-  completed: { name: "completed", next: () => null },
-};
-
-/** The complete post workflow, including input effects and transitions. */
-export const POST_FLOW: Flow<PostFlowData, PostFlowInput, PublicationEffect> = {
-  kind: "post",
-  steps: POST_STEPS,
-};
-
-export function postStateStep(state: Pick<ConversationState, "step" | "data"> | null): PostWizardStep | null {
-  if (!state) return null;
-  if (state.step === "new_post") return { type: "new_post" };
-  if (state.step === "edit_sources") return { type: "edit_sources" };
-  if (state.step === "edit_text") return localeStep("edit_text", state.data.locale);
-  if (state.step === "replace_media") return localeStep("replace_media", state.data.locale);
-  if (state.step === "schedule_manual") return localeStep("schedule_manual", state.data.locale);
-  if (state.step === "schedule_confirm") {
-    const locale = parseLocale(state.data.locale);
-    const date = parseDate(state.data.value);
-    return locale && date ? { type: "schedule_confirm", locale, value: date } : null;
-  }
-  return null;
-}
-
-async function acceptManualPostSchedule(
-  input: PostFlowInput,
-  data: PostFlowData,
-): Promise<{ data: PostFlowData; effects: readonly PublicationEffect[] }> {
-  const { step } = input;
-  if (step.type !== "schedule_manual") throw new StudioError("action.session-stale");
-  const posts = createStudioServices(input.backendDb, input.config).posts;
-  const { ruAt, enAt } = posts.manualSchedule(input.actorId, input.draftId, step.locale, input.message.text);
-  const value = step.locale === "ru" ? ruAt : enAt;
-  if (!value) throw new StudioError("err.no-pub-time");
-  return { data: { ...data, locale: step.locale, value: value.toISOString() }, effects: [] };
-}
-
-async function acceptPostTextEdit(input: PostFlowInput, data: PostFlowData): Promise<PostFlowData> {
-  if (input.step.type !== "edit_text") throw new StudioError("action.session-stale");
-  createStudioServices(input.backendDb, input.config).posts.edit(input.actorId, input.draftId, {
-    locale: input.step.locale,
-    text: input.message.text,
-    entities: input.message.entities,
-    media: input.message.media,
-    clearMedia: isClearMediaCommand(input.message.text),
-  });
-  return { ...data, input: input.message };
-}
-
-async function acceptPostMediaReplacement(input: PostFlowInput, data: PostFlowData): Promise<PostFlowData> {
-  if (input.step.type !== "replace_media") throw new StudioError("action.session-stale");
-  createStudioServices(input.backendDb, input.config).posts.edit(input.actorId, input.draftId, {
-    locale: input.step.locale,
-    text: input.message.text,
-    entities: input.message.entities,
-    media: input.message.media,
-    replaceMediaOnly: true,
-  });
-  return { ...data, input: input.message };
-}
-
-async function acceptPostSourceEdit(input: PostFlowInput, data: PostFlowData): Promise<PostFlowData> {
-  if (input.step.type !== "edit_sources") throw new StudioError("action.session-stale");
-  const urls = extractUrls(input.message.text);
-  if (urls.length === 0) throw new StudioError("err.no-valid-source-links");
-  createStudioServices(input.backendDb, input.config).posts.replaceSources(input.actorId, input.draftId, urls);
-  return { ...data, input: input.message };
-}
-
-function localeStep(type: "edit_text" | "replace_media" | "schedule_manual", value: unknown): PostWizardStep | null {
-  const locale = parseLocale(value);
-  return locale ? { type, locale } : null;
-}
-
-function parseLocale(value: unknown): PostWizardLocale | null {
-  return value === "ru" || value === "en" ? value : null;
-}
-
-function parseDate(value: unknown): Date | null {
-  if (typeof value !== "string" && !(value instanceof Date)) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function isClearMediaCommand(text: string): boolean {
-  const clean = text.trim().toLowerCase();
-  return clean === "/delmedia" || clean === "очистить" || clean === "без медиа" || clean === "clear media";
-}
-
-function extractUrls(value: string): string[] {
-  return value
-    .split(/\s+/)
-    .map((item) => item.trim())
-    .filter((item) => {
-      try {
-        const url = new URL(item);
-        return url.protocol === "https:" || url.protocol === "http:";
-      } catch {
-        return false;
-      }
-    });
-}
 
 export function definePostActionHandlers(define: typeof action): Record<string, PublicationActionDefinition> {
   return {
@@ -206,17 +59,10 @@ const POST_INPUT_STEPS: Record<string, PostWizardStep> = {
   edit_media_en: { type: "replace_media", locale: "en" },
 };
 
-async function handleCycleMode({
-  backendDb,
-  config,
-  actorId,
-  locale,
-  draftId,
-  services,
-}: PostActionArgs): Promise<PublicationActionResult> {
-  const posts = services.posts;
-  const nextMode = posts.cycleMode(actorId, draftId);
-  return previewEffects(backendDb, draftId, config, "overview", `${t(locale, "post.mode")}: ${modeLabel(nextMode, locale)}`);
+async function handleCycleMode(args: PostActionArgs): Promise<PublicationActionResult> {
+  const { actorId, locale, draftId, services } = args;
+  const nextMode = services.posts.cycleMode(actorId, draftId);
+  return previewEffects(args, "overview", `${t(locale, "post.mode")}: ${modeLabel(nextMode, locale)}`);
 }
 
 async function handleToggle(args: PostActionArgs): Promise<PublicationActionResult> {
@@ -264,14 +110,12 @@ async function handleCancelConfirm(args: PostActionArgs): Promise<PublicationAct
 
 async function handleCancelDialog(args: PostActionArgs): Promise<PublicationActionResult> {
   return [
-    { type: "answer-callback" },
     { type: "session", operation: "clear", kind: args.callback.kind, actorId: args.actorId },
     ...(args.mainMenu ? [{ type: "main-menu", menu: args.mainMenu, edit: true } as const] : []),
   ];
 }
 
 async function handleEdit({ ctx, backendDb, actorId, locale, action, draftId }: PostActionArgs): Promise<PublicationActionResult> {
-  if (!draftId) throw new StudioError("action.invalid-post");
   const step = POST_INPUT_STEPS[action];
   if (!step) throw new StudioError("action.session-stale");
   openPublicationFlow(backendDb, actorId, {
@@ -286,7 +130,6 @@ async function handleEdit({ ctx, backendDb, actorId, locale, action, draftId }: 
     promptEffect(
       backendDb,
       actorId,
-      draftId,
       step.type === "replace_media" ? t(locale, "action.send-new-media") : t(locale, "action.send-new-text"),
     ),
   ];
@@ -331,7 +174,7 @@ async function handleSources({ ctx, backendDb, actorId, locale, draftId }: PostA
     data: {},
     controlMessageId: callbackMessageId(ctx),
   });
-  return [{ type: "answer-callback" }, promptEffect(backendDb, actorId, draftId, t(locale, "post.sources-prompt"))];
+  return [promptEffect(backendDb, actorId, t(locale, "post.sources-prompt"))];
 }
 
 async function handlePublish(args: PostActionArgs): Promise<PublicationActionResult> {
@@ -343,16 +186,14 @@ async function handlePublishConfirm(args: PostActionArgs): Promise<PublicationAc
 }
 
 async function handleStoryChoice(args: PostActionArgs): Promise<PublicationActionResult> {
-  const { backendDb, config, actorId, action, draftId, services } = args;
-  const posts = services.posts;
-  posts.setStoryPublishMode(actorId, draftId, action.endsWith("_all") ? "all" : "site_only");
-  return action.startsWith("story_publish_") ? queuePostNow(args) : previewEffects(backendDb, draftId, config, "schedule");
+  const { actorId, action, draftId, services } = args;
+  services.posts.setStoryPublishMode(actorId, draftId, action.endsWith("_all") ? "all" : "site_only");
+  return action.startsWith("story_publish_") ? queuePostNow(args) : previewEffects(args, "schedule");
 }
 
 async function handleThreadsChain(args: PostActionArgs): Promise<PublicationActionResult> {
   const { ctx, backendDb, config, actorId, locale, draftId, services } = args;
-  const posts = services.posts;
-  posts.approveThreadsChain(actorId, draftId);
+  services.posts.approveThreadsChain(actorId, draftId);
   // The waiver only clears the Threads rule. Other preflight issues remain fatal.
   const preflight = await showPublicationPreflight(args);
   if (preflight) return preflight;
@@ -362,9 +203,9 @@ async function handleThreadsChain(args: PostActionArgs): Promise<PublicationActi
 }
 
 async function handleSchedule(args: PostActionArgs): Promise<PublicationActionResult> {
-  const { backendDb, config, actorId, draftId, services } = args;
+  const { backendDb, actorId, draftId, services } = args;
   clearConversationState(backendDb, actorId, "post");
-  if (services.posts.get(actorId, draftId).status === "scheduled") return previewEffects(backendDb, draftId, config, "schedule");
+  if (services.posts.get(actorId, draftId).status === "scheduled") return previewEffects(args, "schedule");
   return showPublicationIntent(args, "schedule");
 }
 
@@ -374,25 +215,25 @@ async function showPublicationIntent(args: PostActionArgs, intent: "publish" | "
   if (preflight) return preflight;
   const storyChoice = await showStoryCardChoice(args.ctx, backendDb, config, actorId, draftId, intent);
   if (storyChoice) return storyChoice;
-  return intent === "publish" ? sendPublishConfirmation(args) : previewEffects(backendDb, draftId, config, "schedule");
+  return intent === "publish" ? sendPublishConfirmation(args) : previewEffects(args, "schedule");
 }
 
 async function handleScheduleScope(args: PostActionArgs): Promise<PublicationActionResult> {
-  const { backendDb, config, actorId, locale, draftId } = args;
+  const { backendDb, actorId, locale } = args;
   const scope = args.args.scope;
   if (!scope) return [{ type: "toast", text: t(locale, "action.unknown") }];
   clearConversationState(backendDb, actorId, "post");
   if (scope === "ru_now") return commitLocaleSchedule(args, "ru", new Date(), "ru");
   if (scope === "en_now") return commitLocaleSchedule(args, "en", new Date(), "en");
-  if (scope === "both") return previewEffects(backendDb, draftId, config, "schedule_ru");
+  if (scope === "both") return previewEffects(args, "schedule_ru");
   return [{ type: "toast", text: t(locale, "action.unknown") }];
 }
 
 async function handleSchedulePick(args: PostActionArgs): Promise<PublicationActionResult> {
-  const { backendDb, actorId, pipeline } = args;
+  const { backendDb, actorId, locale, pipeline } = args;
   const axis = args.args.axis;
   const clock = args.args.clock;
-  if (!axis || !clock) return;
+  if (!axis || !clock) return [{ type: "toast", text: t(locale, "action.unknown") }];
   if (pipeline.capabilities.scheduleAxis !== "locale") throw new StudioError("action.schedule-expired");
   clearConversationState(backendDb, actorId, "post");
   const value = pipeline.slotTime(actorId, `${clock.slice(0, 2)}:${clock.slice(2, 4)}`);
@@ -413,7 +254,7 @@ async function handleManualScheduleConfirm(args: PostActionArgs): Promise<Public
 async function handleManualSchedule(args: PostActionArgs): Promise<PublicationActionResult> {
   const { ctx, backendDb, actorId, locale, draftId, config, services } = args;
   const axis = args.args.axis;
-  if (!axis) return;
+  if (!axis) return [{ type: "toast", text: t(locale, "action.unknown") }];
   const pickLocale = requireScheduleLocale(axis);
   clearConversationState(backendDb, actorId, "post");
   const timeConfig = services.settings.timeConfig(actorId, config);
@@ -429,12 +270,10 @@ async function handleManualSchedule(args: PostActionArgs): Promise<PublicationAc
     promptEffect(
       backendDb,
       actorId,
-      draftId,
       t(locale, "action.enter-datetime", {
         timezone: timeConfig.TIMEZONE_LABEL,
         example: manualScheduleExample(timeConfig.TIMEZONE, backendDb.clock.now()),
       }),
-      pickLocale === "ru" ? "schedule_ru" : "schedule_en",
     ),
   ];
 }
@@ -477,7 +316,7 @@ async function commitLocaleSchedule(
   const otherAt = otherLocale === "ru" ? ruAt : enAt;
   const uiLocale = botLocale(backendDb, actorId);
   if (!otherAt && posts.hasLocaleTargets(actorId, draftId, otherLocale)) {
-    return previewEffects(backendDb, draftId, config, otherLocale === "ru" ? "schedule_ru" : "schedule_en");
+    return previewEffects(args, otherLocale === "ru" ? "schedule_ru" : "schedule_en");
   }
   return [
     { type: "toast", text: t(uiLocale, "common.scheduled") },
@@ -498,17 +337,18 @@ async function commitLocaleSchedule(
 function sendPublishConfirmation(args: PostActionArgs): PublicationEffect[] {
   const { services, backendDb, config, actorId, draftId } = args;
   const delivery = services.posts.preview(actorId, draftId).delivery;
+  const uiLocale = botLocale(backendDb, actorId);
   const card = args.renderer.card({
     backendDb,
     pipeline: services.posts,
     actorId,
     publicationId: draftId,
     config,
-    locale: botLocale(backendDb, actorId),
+    locale: uiLocale,
     view: "confirm_publish",
   });
   return [
-    { type: "delivery-previews", projections: delivery.projections, locale: botLocale(backendDb, actorId) },
+    { type: "delivery-previews", projections: delivery.projections, locale: uiLocale },
     ...publicationCardEffect(card, { type: "prompt" }),
   ];
 }
@@ -530,7 +370,6 @@ async function showPublicationPreflight(args: PostActionArgs): Promise<Publicati
     });
     const revision = getConversationState(backendDb, actorId, "post")?.revision;
     return [
-      { type: "answer-callback" },
       {
         type: "prompt",
         text: t(locale, "action.preflight-chain", { label: issue.label, actual: issue.actual, limit: issue.limit, parts: label }),
@@ -553,32 +392,21 @@ async function showPublicationPreflight(args: PostActionArgs): Promise<Publicati
   ];
 }
 
-function previewEffects(
-  backendDb: BackendDb,
-  draftId: number,
-  config: BackendConfig,
-  view: DraftView = "overview",
-  callbackText?: string,
-): PublicationEffect[] {
-  const card = publicationRenderers(backendDb, config).post.card({
-    backendDb,
-    pipeline: createStudioServices(backendDb, config).posts,
-    actorId: 0,
-    publicationId: draftId,
-    config,
-    locale: botLocale(backendDb, 0),
+function previewEffects(args: PostActionArgs, view: DraftView = "overview", callbackText?: string): PublicationEffect[] {
+  const card = args.renderer.card({
+    backendDb: args.backendDb,
+    pipeline: args.services.posts,
+    actorId: args.actorId,
+    publicationId: args.draftId,
+    config: args.config,
+    locale: args.locale,
     view,
   });
-  return [{ type: "answer-callback", ...(callbackText ? { text: callbackText } : {}) }, ...publicationCardEffect(card)];
+  const ack: PublicationEffect[] = callbackText ? [{ type: "toast", text: callbackText }] : [];
+  return [...ack, ...publicationCardEffect(card)];
 }
 
-function promptEffect(
-  backendDb: BackendDb,
-  actorId: number,
-  draftId: number,
-  text: string,
-  returnView: DraftView = "overview",
-): PublicationEffect {
+function promptEffect(backendDb: BackendDb, actorId: number, text: string): PublicationEffect {
   const locale = botLocale(backendDb, actorId);
   const revision = getConversationState(backendDb, actorId, "post")?.revision;
   return {

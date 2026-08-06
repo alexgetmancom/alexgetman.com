@@ -11,7 +11,7 @@ import { importTelegramAlbumMedia } from "../interfaces/telegram/media-ingress.j
 import { createStudioServices } from "../studio/services/index.js";
 import { clearConversationStateIfCurrent, getConversationState } from "./conversation-state.js";
 import { botLocale } from "./i18n.js";
-import type { PostSessionStep, PostWizardStep } from "./post-actions.js";
+import { type PostSessionStep, type PostWizardStep, postStepData } from "./post-flow.js";
 import { translatePostText } from "./post-translation.js";
 import { publicationRenderers } from "./publication-renderers.js";
 
@@ -64,7 +64,7 @@ export function appendPendingAlbum(backendDb: BackendDb, input: PendingAlbumInpu
       chatId: input.chatId,
       mediaGroupId: input.mediaGroupId,
       step,
-      stepDataJson: stepData(input.step),
+      stepDataJson: postStepData(input.step),
       draftId: input.draftId,
       stateRevision: input.stateRevision,
       textRu: input.text || row?.textRu || "",
@@ -219,12 +219,6 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
 
 function resolveLocale(value: unknown): "ru" | "en" | null {
   return value === "ru" || value === "en" ? value : null;
-}
-
-function stepData(step: PostWizardStep | null): Record<string, unknown> {
-  if (step?.type === "edit_text" || step?.type === "replace_media" || step?.type === "schedule_manual") return { locale: step.locale };
-  if (step?.type === "schedule_confirm") return { locale: step.locale, value: step.value.toISOString() };
-  return {};
 }
 
 /** Last word on an album that will never become a draft. Best-effort: a failed

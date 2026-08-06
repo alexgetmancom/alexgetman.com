@@ -12,7 +12,7 @@ import { executePublicationEffects, type PublicationMessageResult } from "./effe
 import { botLocale } from "./i18n.js";
 import { persistentKeyboard } from "./menu-render.js";
 import { extractMessage } from "./message.js";
-import { POST_FLOW, postStateStep } from "./post-actions.js";
+import { POST_FLOW, postStateStep } from "./post-flow.js";
 import { applyAdminState } from "./post-input-actions.js";
 import { translatePostText } from "./post-translation.js";
 import { parseSessionCallback, publicationCallback } from "./publication-callback.js";

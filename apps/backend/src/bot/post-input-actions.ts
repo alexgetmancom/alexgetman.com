@@ -9,7 +9,7 @@ import { requireConversationState } from "./conversation-state.js";
 import type { PublicationEffect } from "./effects.js";
 import { botLocale } from "./i18n.js";
 import { extractMessage } from "./message.js";
-import { POST_FLOW, type PostFlowInput, type PostWizardStep, postStateStep } from "./post-actions.js";
+import { POST_FLOW, type PostFlowInput, type PostWizardStep, postStateStep } from "./post-flow.js";
 import { publicationCallback } from "./publication-callback.js";
 import { advancePublicationFlow } from "./publication-flow.js";
 import { publicationCardEffect, publicationRenderers } from "./publication-renderers.js";
