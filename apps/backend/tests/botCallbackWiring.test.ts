@@ -80,6 +80,10 @@ describe("Telegram publication callback registry", () => {
     expect(publicationAction("post", "toggle")?.args).toEqual(["target"]);
   });
 
+  it("rejects an argument containing the separator instead of splitting it in two", () => {
+    expect(() => publicationCallback("post", "toggle", ["tele:gram"])).toThrow("action.invalid-callback-argument");
+  });
+
   it("does not require a conversation revision for stateless post schedule pickers", () => {
     expect(publicationAction("post", "sched_pick")?.sessionRevision).toBeUndefined();
     expect(publicationAction("post", "sched_manual")?.sessionRevision).toBeUndefined();

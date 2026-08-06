@@ -143,6 +143,8 @@ const en = {
   "action.enter-datetime": "⌨ Send a date and time, e.g. `{example}` ({timezone}).",
   "action.unknown": "Unknown action",
   "action.card-stale": "This card is outdated. Open the current card from the queue.",
+  "action.invalid-callback-argument": 'Internal error: a button argument contains ":".',
+  "action.in-flight": "Already running…",
   "action.preflight": "{label} with media: {actual}/{limit} characters. Shorten the text or disable {label} in Platforms.",
   "action.preflight-chain":
     "⚠️ {label}: {actual}/{limit} characters.\n\nA Threads post holds {limit}. Shorten the text, or post it as a chain of {parts} — the reader gets several posts instead of one.",
@@ -609,6 +611,8 @@ const ru = {
   "action.enter-datetime": "⌨ Введите дату и время, например `{example}` ({timezone}).",
   "action.unknown": "Неизвестное действие",
   "action.card-stale": "Эта карточка устарела. Откройте актуальную карточку из очереди.",
+  "action.invalid-callback-argument": 'Внутренняя ошибка: аргумент кнопки содержит ":".',
+  "action.in-flight": "Уже выполняется…",
   "action.preflight": "{label} с медиа: {actual}/{limit} символов. Сократите текст или отключите {label} в Площадках.",
   "action.preflight-chain":
     "⚠️ {label}: {actual}/{limit} символов.\n\nВ один пост Threads влезает {limit}. Сократите текст — или отправьте цепочкой из {parts}, тогда читатель получит несколько постов вместо одного.",

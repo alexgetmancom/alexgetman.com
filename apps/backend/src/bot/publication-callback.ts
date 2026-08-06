@@ -25,7 +25,12 @@ export function publicationCallback(
   args: readonly (string | number)[] = [],
   revision?: number | null,
 ): string {
-  const data = ["p", kind, action, ...args.map(String)].join(":");
+  const values = args.map(String);
+  // ":" is the argument separator, so an argument containing one would silently
+  // arrive as two and fail the arity check as "card stale". Fail here instead.
+  const separated = values.find((value) => value.includes(":"));
+  if (separated !== undefined) throw new StudioError("action.invalid-callback-argument");
+  const data = ["p", kind, action, ...values].join(":");
   return versionedCallback(data, revision);
 }
 

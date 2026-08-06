@@ -11,7 +11,11 @@ import { getActiveConversationState, getConversationState } from "./conversation
 import { executePublicationEffects, type PublicationMessageResult } from "./effects.js";
 import { type BotLocale, botLocale } from "./i18n.js";
 import { handlePostMessage } from "./post-screen.js";
-import type { PublicationActionContext, PublicationActionDefinition } from "./publication-action-contract.js";
+import type {
+  PublicationActionContext,
+  PublicationActionDefinition,
+  PublicationDraftActionContext,
+} from "./publication-action-contract.js";
 import { describePublicationError, isFreshPublicationAction, logPublicationActionError, publicationAction } from "./publication-actions.js";
 import {
   type PublicationCallback,
@@ -23,7 +27,7 @@ import {
 import { publicationRenderers } from "./publication-renderers.js";
 import { handleVideoConversationMessage } from "./video-conversation.js";
 
-type CallbackRouterContext = Omit<PublicationActionContext, "args" | "draftId" | "pipeline" | "services" | "renderer"> & {
+type CallbackRouterContext = Omit<PublicationActionContext, "args" | "pipeline" | "services" | "renderer"> & {
   data: string;
   rawArgs: string[];
 };
@@ -56,6 +60,7 @@ export async function handlePublicationCallback(
   if (!callback) return false;
 
   const actorId = Number(ctx.from?.id);
+  if (!Number.isSafeInteger(actorId) || actorId <= 0) return false;
   const locale = botLocale(backendDb, actorId);
   const action = publicationAction(callback.kind, callback.action);
   const common = {
@@ -102,22 +107,24 @@ export async function handlePublicationCallback(
       await staleCallback(ctx, backendDb, locale, false);
       return true;
     }
+    // Rejects a callback pointing at a draft this actor cannot open, before the handler runs.
     if (draftId != null) pipeline.get(actorId, draftId);
 
-    const actionContext: PublicationActionContext = {
+    const actionContext = {
       ...common,
       args: namedArguments(action, callback.args, action.entity === "draft"),
-      draftId: draftId ?? 0,
+      ...(draftId != null ? { draftId } : {}),
       pipeline,
       services,
       renderer,
-      invalidEntityCode: common.invalidEntityCode,
-    };
+      // Only "draft" actions carry a draft id; the handler type demands one, and the guards
+      // above guarantee it for exactly those actions.
+    } as PublicationDraftActionContext;
     const locked = await withActionLock(`${actorId}:${parsed.data}`, () => action.handler(actionContext));
-    const effects = locked.ok ? [...(locked.value ?? [])] : [{ type: "answer-callback" as const }];
+    const effects = locked.ok ? [...(locked.value ?? [])] : [{ type: "toast" as const, text: t(locale, "action.in-flight") }];
     if (!effects.some((effect) => effect.type === "answer-callback" || effect.type === "toast"))
       effects.unshift({ type: "answer-callback" });
-    if (effects.length) await executePublicationEffects(ctx, backendDb, effects);
+    await executePublicationEffects(ctx, backendDb, effects);
   } catch (error) {
     logPublicationActionError(common, error);
     const timeConfig = services.settings.timeConfig(actorId, config);
@@ -164,8 +171,7 @@ function namedArguments(
 
 async function staleCallback(ctx: Context, backendDb: BackendDb, locale: BotLocale, includeQueue: boolean): Promise<void> {
   await answerCallback(ctx, backendDb, t(locale, "action.card-stale"));
-  if (includeQueue && typeof ctx.reply === "function")
-    await ctx.reply(t(locale, "action.card-stale"), { reply_markup: UNKNOWN_KEYBOARD(locale) });
+  if (includeQueue) await ctx.reply(t(locale, "action.card-stale"), { reply_markup: UNKNOWN_KEYBOARD(locale) });
 }
 
 async function answerCallback(ctx: Context, backendDb: BackendDb, text?: string): Promise<void> {

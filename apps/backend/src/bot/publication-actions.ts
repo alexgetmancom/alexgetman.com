@@ -6,9 +6,9 @@ import type { BotLocale } from "./i18n.js";
 import { definePostActionHandlers } from "./post-actions.js";
 import {
   action,
-  type PublicationActionContext,
   type PublicationActionDefinition,
   type PublicationActionResult,
+  type PublicationDraftActionContext,
 } from "./publication-action-contract.js";
 import type { PublicationCallback, PublicationKind } from "./publication-callback.js";
 import { publicationCardEffect } from "./publication-renderers.js";
@@ -44,7 +44,7 @@ export function describePublicationError(locale: BotLocale, error: unknown, conf
   return describeError(locale, error);
 }
 
-async function handleView(context: PublicationActionContext): Promise<PublicationActionResult> {
+async function handleView(context: PublicationDraftActionContext): Promise<PublicationActionResult> {
   const card = context.renderer.card({
     backendDb: context.backendDb,
     pipeline: context.pipeline,
@@ -57,7 +57,7 @@ async function handleView(context: PublicationActionContext): Promise<Publicatio
   return publicationCardEffect(card);
 }
 
-async function handleRetry(context: PublicationActionContext): Promise<PublicationActionResult> {
+async function handleRetry(context: PublicationDraftActionContext): Promise<PublicationActionResult> {
   const target = context.args.target === "all" ? "" : (context.args.target ?? "");
   const result = context.pipeline.retryTarget(context.actorId, context.draftId, target);
   const toast = {
@@ -77,7 +77,7 @@ async function handleRetry(context: PublicationActionContext): Promise<Publicati
 }
 
 export function logPublicationActionError(
-  context: Pick<PublicationActionContext, "actorId" | "callback" | "action">,
+  context: Pick<PublicationDraftActionContext, "actorId" | "callback" | "action">,
   error: unknown,
 ): void {
   log("error", "Publication action failed", {

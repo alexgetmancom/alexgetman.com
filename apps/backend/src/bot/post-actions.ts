@@ -17,16 +17,16 @@ import { canEditLocale, type DraftView, modeLabel } from "./preview.js";
 import { renderPostProgress } from "./progress.js";
 import type {
   action,
-  PublicationActionContext,
   PublicationActionDefinition,
   PublicationActionResult,
+  PublicationDraftActionContext,
 } from "./publication-action-contract.js";
 import { publicationCallback } from "./publication-callback.js";
 import { openPublicationFlow } from "./publication-flow.js";
 import { publicationCardEffect, publicationRenderers } from "./publication-renderers.js";
 import { callbackMessageId } from "./telegram-context.js";
 
-type PostActionArgs = PublicationActionContext;
+type PostActionArgs = PublicationDraftActionContext;
 
 type PostWizardLocale = "ru" | "en";
 export type PostSessionStep = "new_post" | "edit_sources" | "edit_text" | "replace_media" | "schedule_manual" | "schedule_confirm";

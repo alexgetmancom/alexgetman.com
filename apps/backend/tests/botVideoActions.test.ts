@@ -87,6 +87,7 @@ describe("video callback dispatch", () => {
       callbackQuery: { data: "p:video:not_a_route:7" },
       from: { id: 42 },
       answerCallbackQuery: async (options?: { text?: string }) => void answers.push(options),
+      reply: async () => undefined,
     } as unknown as Context;
 
     const handled = await handlePublicationCallback(ctx, backendDb, config);

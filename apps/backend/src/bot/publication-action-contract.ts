@@ -20,15 +20,17 @@ export type PublicationActionContext = {
   revision: number | null;
   args: Record<string, string | undefined>;
   mainMenu: Menu<Context> | undefined;
-  draftId: number;
   pipeline: PublicationPipeline;
   services: StudioServices;
   renderer: PublicationRenderer;
   invalidEntityCode: string;
 };
 
+/** Context of an action declared with `entity: "draft"`: the router resolved a real draft id. */
+export type PublicationDraftActionContext = PublicationActionContext & { draftId: number };
+
 export type PublicationActionResult = readonly PublicationEffect[] | void;
-export type PublicationActionHandler = (context: PublicationActionContext) => Promise<PublicationActionResult>;
+export type PublicationActionHandler = (context: PublicationDraftActionContext) => Promise<PublicationActionResult>;
 type PublicationActionEntity = "draft" | "session" | "none";
 
 export type PublicationActionDefinition = {

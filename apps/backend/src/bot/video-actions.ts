@@ -13,9 +13,9 @@ import type { PublicationEffect } from "./effects.js";
 import type { BotLocale } from "./i18n.js";
 import type {
   action,
-  PublicationActionContext,
   PublicationActionDefinition,
   PublicationActionResult,
+  PublicationDraftActionContext,
 } from "./publication-action-contract.js";
 import { publicationCallback } from "./publication-callback.js";
 import { advancePublicationFlow } from "./publication-flow.js";
@@ -34,7 +34,7 @@ import {
   videoStepEffects,
 } from "./video-ui.js";
 
-type VideoActionArgs = PublicationActionContext;
+type VideoActionArgs = PublicationDraftActionContext;
 type VideoActionResult = PublicationActionResult;
 
 const SCHEDULE_SESSION_STEPS = ["schedule_common", "schedule_target"] as const;
