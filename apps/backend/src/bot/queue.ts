@@ -14,18 +14,17 @@ const QUEUE_PAGE_SIZE = 10;
 const ATTENTION_PAGE_SIZE = 10;
 
 type QueuePage = { upcoming: StudioQueueItem[]; drafts: StudioQueueItem[] };
+type QueueScreen = { text: string; items: QueuePage; currentPage: number; pages: number };
 
 export async function showQueue(ctx: Context, backendDb: BackendDb, config: BackendConfig, page = 0): Promise<void> {
-  const actorId = Number(ctx.from?.id);
+  const actorId = ctx.from?.id;
+  if (actorId === undefined) return;
   const locale = botLocale(backendDb, actorId);
   const services = createStudioServices(backendDb, config);
   const timeConfig = services.settings.timeConfig(actorId, config);
   const snapshot = services.queue.snapshot(actorId);
   const keyboard = new InlineKeyboard();
-  const pages = queuePageCount(snapshot, timeConfig.TIMEZONE);
-  const currentPage = Math.max(0, Math.min(Math.trunc(page), pages - 1));
-  const pageItems = queuePage(snapshot, timeConfig.TIMEZONE, currentPage);
-  const text = queueText(snapshot, locale, timeConfig.TIMEZONE, currentPage);
+  const { text, items: pageItems, currentPage, pages } = queueScreen(snapshot, locale, timeConfig.TIMEZONE, page);
 
   for (const item of pageItems.upcoming) keyboard.text(itemButton(item, locale, timeConfig.TIMEZONE), itemCallback(item)).row();
   for (const item of pageItems.drafts) keyboard.text(`${kindIcon(item.kind)} ${item.label}`, itemCallback(item)).row();
@@ -42,7 +41,8 @@ export async function showQueue(ctx: Context, backendDb: BackendDb, config: Back
 }
 
 export async function showQueueAttention(ctx: Context, backendDb: BackendDb, config: BackendConfig, page = 0): Promise<void> {
-  const actorId = Number(ctx.from?.id);
+  const actorId = ctx.from?.id;
+  if (actorId === undefined) return;
   const locale = botLocale(backendDb, actorId);
   const services = createStudioServices(backendDb, config);
   const timeConfig = services.settings.timeConfig(actorId, config);
@@ -70,18 +70,20 @@ export async function showQueueAttention(ctx: Context, backendDb: BackendDb, con
   await replaceQueueMessage(ctx, lines.join("\n"), keyboard);
 }
 
-export function queueText(snapshot: StudioQueueSnapshot, locale: BotLocale, timeZone: string, page = 0): string {
-  const pages = queuePages(snapshot, timeZone);
-  const currentPage = Math.max(0, Math.min(Math.trunc(page), pages.length - 1));
-  const pageItems = pages[currentPage] ?? { upcoming: [], drafts: [] };
+export function queueScreen(snapshot: StudioQueueSnapshot, locale: BotLocale, timeZone: string, page = 0): QueueScreen {
+  const allPages = queuePages(snapshot, timeZone);
+  const currentPage = Math.max(0, Math.min(Math.trunc(page), allPages.length - 1));
+  const pages = allPages.length;
+  const pageItems = allPages[currentPage] ?? { upcoming: [], drafts: [] };
   const lines = [`📋 *${t(locale, "queue.title")}*`, ""];
   if (snapshot.attention.length) lines.push(`⚠️ ${t(locale, "queue.attention-btn", { count: snapshot.attention.length })}`);
   lines.push("", `*${t(locale, "queue.upcoming-heading")}*`);
   if (!pageItems.upcoming.length) lines.push(t(locale, "queue.nothing-scheduled"));
   else {
     let lastDay = "";
+    const dayKey = dayKeyFormatter(timeZone);
     for (const item of pageItems.upcoming) {
-      const day = formatter("day-key", locale, timeZone).format(item.time);
+      const day = dayKey.format(item.time);
       if (day !== lastDay) {
         lines.push("", `*${queueDayLabel(item.time, locale, timeZone)}*`);
         lastDay = day;
@@ -89,23 +91,15 @@ export function queueText(snapshot: StudioQueueSnapshot, locale: BotLocale, time
       lines.push(`• ${formatQueueTime(item.time, locale, timeZone)} — ${kindIcon(item.kind)} ${escapeMarkdown(item.label)}`);
     }
   }
-  lines.push("", `*${t(locale, "queue.drafts-btn", { count: snapshot.drafts.length })}*`);
+  lines.push("", `*${t(locale, "queue.drafts-btn", { count: pageItems.drafts.length })}*`);
   if (!pageItems.drafts.length) lines.push(t(locale, "queue.no-drafts"));
   else for (const item of pageItems.drafts) lines.push(`• ${kindIcon(item.kind)} ${escapeMarkdown(item.label)}`);
-  if (pages.length > 1) lines.push("", t(locale, "queue.page", { page: currentPage + 1, pages: pages.length }));
-  return lines.join("\n");
-}
-
-export function queuePageCount(snapshot: StudioQueueSnapshot, timeZone = "UTC"): number {
-  return queuePages(snapshot, timeZone).length;
+  if (pages > 1) lines.push("", t(locale, "queue.page", { page: currentPage + 1, pages }));
+  return { text: lines.join("\n"), items: pageItems, currentPage, pages };
 }
 
 function attentionPageCount(snapshot: StudioQueueSnapshot): number {
   return Math.max(1, Math.ceil(snapshot.attention.length / ATTENTION_PAGE_SIZE));
-}
-
-function queuePage(snapshot: StudioQueueSnapshot, timeZone: string, page: number): QueuePage {
-  return queuePages(snapshot, timeZone)[page] ?? { upcoming: [], drafts: [] };
 }
 
 function queuePages(snapshot: StudioQueueSnapshot, timeZone: string): QueuePage[] {
@@ -120,17 +114,15 @@ function queuePages(snapshot: StudioQueueSnapshot, timeZone: string): QueuePage[
     current[section].push(item);
   };
   const groups = new Map<string, StudioQueueItem[]>();
+  const dayKey = dayKeyFormatter(timeZone);
   for (const item of snapshot.upcoming) {
-    const key = formatter("day-key", "en", timeZone).format(item.time);
-    groups.set(key, [...(groups.get(key) ?? []), item]);
+    const key = dayKey.format(item.time);
+    const group = groups.get(key);
+    if (group) group.push(item);
+    else groups.set(key, [item]);
   }
   for (const group of groups.values()) {
-    if (
-      group.length <= QUEUE_PAGE_SIZE &&
-      current.upcoming.length + current.drafts.length > 0 &&
-      current.upcoming.length + group.length > QUEUE_PAGE_SIZE
-    )
-      flush();
+    if (group.length <= QUEUE_PAGE_SIZE && current.upcoming.length > 0 && current.upcoming.length + group.length > QUEUE_PAGE_SIZE) flush();
     for (const item of group) add("upcoming", item);
   }
   for (const item of snapshot.drafts) add("drafts", item);
@@ -169,30 +161,36 @@ async function replaceQueueMessage(ctx: Context, text: string, keyboard: InlineK
 }
 
 /** Intl.DateTimeFormat construction is expensive and this runs per queue row,
- * so formatters are built once per (kind, locale, zone) and reused. */
+ * so formatters are built once per cache key and reused. Day keys are a sortable
+ * en-CA date that never varies by locale, so they are keyed by zone alone. */
 const formatterCache = new Map<string, Intl.DateTimeFormat>();
 
-function formatter(kind: "day-key" | "clock" | "day", locale: BotLocale, timeZone: string): Intl.DateTimeFormat {
-  const cacheKey = `${kind}:${locale}:${timeZone}`;
+function cachedFormatter(cacheKey: string, create: () => Intl.DateTimeFormat): Intl.DateTimeFormat {
   const cached = formatterCache.get(cacheKey);
   if (cached) return cached;
-  const intlLocale = locale === "ru" ? "ru-RU" : "en-GB";
-  const created =
-    kind === "day-key"
-      ? new Intl.DateTimeFormat("en-CA", { timeZone })
-      : kind === "clock"
-        ? new Intl.DateTimeFormat(intlLocale, { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone })
-        : new Intl.DateTimeFormat(intlLocale, { day: "numeric", month: "short", timeZone });
+  const created = create();
   formatterCache.set(cacheKey, created);
   return created;
 }
 
-/** `timeZone` comes from studio.yaml via config, not a constant: the Studio runs
- * for more than one account and every other schedule surface already reads it
- * from there (see foundation/time.ts). */
+function dayKeyFormatter(timeZone: string): Intl.DateTimeFormat {
+  return cachedFormatter(`day-key:${timeZone}`, () => new Intl.DateTimeFormat("en-CA", { timeZone }));
+}
+
+function formatter(kind: "clock" | "day", locale: BotLocale, timeZone: string): Intl.DateTimeFormat {
+  const intlLocale = locale === "ru" ? "ru-RU" : "en-GB";
+  return cachedFormatter(`${kind}:${locale}:${timeZone}`, () =>
+    kind === "clock"
+      ? new Intl.DateTimeFormat(intlLocale, { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone })
+      : new Intl.DateTimeFormat(intlLocale, { day: "numeric", month: "short", timeZone }),
+  );
+}
+
+/** `timeZone` is the actor's own zone resolved by the settings service, falling back
+ * to the studio default from config (see foundation/time.ts). */
 function formatQueueTime(date: Date, locale: BotLocale, timeZone: string): string {
   const now = new Date();
-  const dayKey = formatter("day-key", locale, timeZone);
+  const dayKey = dayKeyFormatter(timeZone);
   const time = formatter("clock", locale, timeZone).format(date);
   if (dayKey.format(date) === dayKey.format(now)) return `${t(locale, "common.today")}, ${time}`;
   if (dayKey.format(date) === dayKey.format(new Date(now.getTime() + 24 * 60 * 60_000))) return `${t(locale, "common.tomorrow")}, ${time}`;
@@ -200,7 +198,7 @@ function formatQueueTime(date: Date, locale: BotLocale, timeZone: string): strin
 }
 
 function queueDayLabel(date: Date, locale: BotLocale, timeZone: string): string {
-  const dayKey = formatter("day-key", locale, timeZone);
+  const dayKey = dayKeyFormatter(timeZone);
   const today = dayKey.format(new Date());
   const tomorrow = dayKey.format(new Date(Date.now() + 24 * 60 * 60_000));
   const current = dayKey.format(date);

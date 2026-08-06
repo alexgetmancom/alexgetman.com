@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { Context } from "grammy";
-import { queuePageCount, queueText, showQueue } from "../src/bot/queue.js";
+import { queueScreen, showQueue } from "../src/bot/queue.js";
 import { draftStoryCards, drafts, publishJobs, videoDrafts, videoTargets } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import type { StudioQueueSnapshot } from "../src/studio/services/queue.js";
@@ -205,7 +205,7 @@ describe("Telegram work queue", () => {
       attention: [],
     };
 
-    const text = queueText(snapshot, "ru", "Europe/Moscow");
+    const { text } = queueScreen(snapshot, "ru", "Europe/Moscow");
     expect(text).toContain("Ближайшие публикации");
     expect(text).toContain("Scheduled clip");
     expect(text).toContain("Черновики (1)");
@@ -218,7 +218,7 @@ describe("Telegram work queue", () => {
       attention: [{ id: 12, label: "Failed clip", kind: "video", time: new Date() }],
     };
 
-    const text = queueText(snapshot, "ru", "Europe/Moscow");
+    const { text } = queueScreen(snapshot, "ru", "Europe/Moscow");
     expect(text).toContain("Требует внимания (1)");
     expect(text).not.toContain("Failed clip");
   });
@@ -230,7 +230,7 @@ describe("Telegram work queue", () => {
       attention: [],
     };
 
-    expect(queueText(snapshot, "en", "Europe/Moscow")).toContain("\\*Draft\\* \\[with\\] \\_markup\\_");
+    expect(queueScreen(snapshot, "en", "Europe/Moscow").text).toContain("\\*Draft\\* \\[with\\] \\_markup\\_");
   });
 
   it("keeps a queue label well-formed when truncation reaches an emoji", () => {
@@ -323,8 +323,8 @@ describe("Telegram work queue", () => {
       drafts: [],
     };
 
-    expect(queuePageCount(snapshot)).toBe(2);
-    expect(queueText(snapshot, "en", "Europe/Moscow", 1)).toContain("Upcoming 11");
-    expect(queueText(snapshot, "en", "Europe/Moscow", 1)).toContain("Page 2 of 2");
+    expect(queueScreen(snapshot, "en", "Europe/Moscow").pages).toBe(2);
+    expect(queueScreen(snapshot, "en", "Europe/Moscow", 1).text).toContain("Upcoming 11");
+    expect(queueScreen(snapshot, "en", "Europe/Moscow", 1).text).toContain("Page 2 of 2");
   });
 });
