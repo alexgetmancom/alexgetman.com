@@ -18,7 +18,7 @@ const LANGUAGE_MENU_ID = "settings-language";
 const CHANNELS_MENU_ID = "settings-channels";
 const TIMEZONE_MENU_ID = "settings-timezone";
 type ZernioAccount = StudioZernioAccount;
-const discoveredAccounts = new Map<number, { locale: "ru" | "en"; accounts: ZernioAccount[]; hidden: number }>();
+const discoveredAccounts = new Map<number, { locale: "ru" | "en"; accounts: ZernioAccount[] }>();
 const pendingTimezones = new Set<number>();
 
 const TIMEZONE_OPTIONS = [
@@ -328,7 +328,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
       const studioChannels = createStudioServices(backendDb, config).channels;
       const accounts = await studioChannels.discoverZernioAccounts();
       const supported = accounts.filter((account) => studioChannels.isPublishablePlatform(zernioPlatform(account)));
-      discoveredAccounts.set(actorId, { locale: channelLocale, accounts, hidden: accounts.length - supported.length });
+      discoveredAccounts.set(actorId, { locale: channelLocale, accounts });
       await ctx.answerCallbackQuery({ text: t(locale, "settings.channels-found", { count: supported.length }) });
       await ctx.editMessageText(channelsText(backendDb, config, locale, supported.length, accounts.length - supported.length));
       await ctx.menu.update();
@@ -373,6 +373,18 @@ async function askNextCredential(ctx: Context, actorId: number, locale: ReturnTy
   );
 }
 
+/**
+ * A message that is navigation rather than input.
+ *
+ * Both collectors below sit in front of the router and claim the next message.
+ * Without this, pressing the persistent keyboard button or sending a command
+ * while a prompt is open stores that text as a time zone or a publishing token
+ * and deletes the message, leaving the user with no way out but `/cancel`.
+ */
+function isNavigationMessage(text: string): boolean {
+  return text.startsWith("/") || text === t("en", "menu.button") || text === t("ru", "menu.button");
+}
+
 async function collectTimezone(
   ctx: Context,
   backendDb: BackendDb,
@@ -383,6 +395,7 @@ async function collectTimezone(
 ): Promise<boolean> {
   if (!pendingTimezones.has(actorId)) return false;
   pendingTimezones.delete(actorId);
+  if (isNavigationMessage(text)) return false;
   const locale = botLocale(backendDb, actorId);
   try {
     createStudioServices(backendDb, config).settings.setTimezone(actorId, text);
@@ -415,21 +428,30 @@ async function collectChannelCredential(
   const pending = pendingConnections.get(actorId);
   if (!pending) return false;
   const locale = botLocale(backendDb, actorId);
-  if (!text) return true;
   if (text === "/cancel") {
     pendingConnections.delete(actorId);
     await ctx.reply(t(locale, "settings.channel-cancel"));
     return true;
   }
+  if (isNavigationMessage(text)) {
+    pendingConnections.delete(actorId);
+    return false;
+  }
+  if (!text) {
+    await askNextCredential(ctx, actorId, locale);
+    return true;
+  }
   const field = pending.remaining.shift();
   if (!field) return true;
   pending.collected[field] = text;
-  try {
-    await ctx.api.deleteMessage(ctx.chat?.id ?? actorId, ctx.message?.message_id ?? 0);
-  } catch {
-    // Telegram refuses deletions older than 48 hours and in some chat types.
-    // The value is already stored; failing to tidy up is not worth an error.
-  }
+  const messageId = ctx.message?.message_id;
+  if (messageId)
+    try {
+      await ctx.api.deleteMessage(ctx.chat?.id ?? actorId, messageId);
+    } catch {
+      // Telegram refuses deletions older than 48 hours and in some chat types.
+      // The value is already stored; failing to tidy up is not worth an error.
+    }
   if (pending.remaining.length) {
     await ctx.reply(t(locale, "settings.channel-stored", { remaining: pending.remaining.length }));
     await askNextCredential(ctx, actorId, locale);
@@ -450,10 +472,13 @@ async function collectChannelCredential(
 }
 
 function zernioPlatform(account: ZernioAccount): string {
-  const value = account.platform?.trim().toLowerCase();
-  if (value?.includes("tiktok")) return "tiktok";
-  if (value?.includes("youtube")) return "youtube";
-  return "instagram";
+  const value = account.platform?.trim().toLowerCase() ?? "";
+  if (value.includes("tiktok")) return "tiktok";
+  if (value.includes("youtube")) return "youtube";
+  if (value.includes("instagram")) return "instagram";
+  // Anything else is passed through unchanged so the publishable-platform
+  // filter drops it, instead of a new platform silently posing as Instagram.
+  return value;
 }
 
 function channelPlatformLabel(platform: string): string {
