@@ -1,10 +1,8 @@
-import { eq } from "drizzle-orm";
 import { InlineKeyboard } from "grammy";
 import { type PresetName, presetName, TARGETS } from "../botTargets.js";
 import { effectivePostTargets, registeredPostTargetIds } from "../channels/registry.js";
 import { requireDraft } from "../content/index.js";
-import { type BackendDb, unsafeDb } from "../db/client.js";
-import { draftSources, draftStoryCards } from "../db/schema.js";
+import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { type MessageKey, t } from "../foundation/i18n/index.js";
 import { escapeMarkdown } from "../foundation/markdown.js";
@@ -13,6 +11,7 @@ import { formatStudioTime } from "../interfaces/telegram/time.js";
 import { mediaPolicyForTarget } from "../publishing/media-policy.js";
 import { isPostDraftMutable } from "../publishing/state.js";
 import { parseTargets } from "../publishing/targets.js";
+import { storyCardsForDraft } from "../story-cards/store.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { requirePostEditAllowed } from "../studio/services/post-access.js";
 import { postProgressState } from "../studio/services/post-progress.js";
@@ -36,6 +35,10 @@ const DRAFT_VIEWS = [
 ] as const;
 
 export type DraftView = (typeof DRAFT_VIEWS)[number];
+
+/** Both draft texts share one Telegram message with the header, media line and
+ * card status, so each gets a quarter of the 4096-character message budget. */
+const PREVIEW_TEXT_LIMIT = 1000;
 
 export function isDraftView(value: string): value is DraftView {
   return (DRAFT_VIEWS as readonly string[]).includes(value);
@@ -91,31 +94,13 @@ export function draftPreview(
   const targets = effectivePostTargets(backendDb, parseTargets(draft.targets_json));
   const registered = registeredPostTargetIds(backendDb);
   const targetRows = registered.size ? TARGETS.filter(({ id }) => registered.has(id)) : TARGETS;
-  const sourceCount = unsafeDb(backendDb)
-    .db.select({ id: draftSources.id })
-    .from(draftSources)
-    .where(eq(draftSources.draftId, draftId))
-    .all().length;
+  const sourceCount = backendDb.studioPosts.sources(draftId).length;
   const keyboard = new InlineKeyboard();
   const mode = presetName(targets);
   const mutable = isPostDraftMutable(draft.status);
 
-  if (
-    !mutable &&
-    [
-      "platforms",
-      "schedule",
-      "schedule_ru",
-      "schedule_ru_day",
-      "schedule_ru_evening",
-      "schedule_en",
-      "schedule_en_us",
-      "confirm_publish",
-      "confirm_delete",
-      "confirm_cancel",
-    ].includes(view)
-  )
-    return draftPreview(backendDb, draftId, config, "overview");
+  // Every view except the overview edits or acts on the draft, so a frozen draft only ever shows the overview.
+  if (!mutable && view !== "overview") return draftPreview(backendDb, draftId, config, "overview");
 
   if (view === "platforms") {
     for (let index = 0; index < targetRows.length; index += 2) {
@@ -191,10 +176,9 @@ export function draftPreview(
   }
 
   if (view === "confirm_publish") {
-    const mediaRu = safeMediaCount(draft.media_ru_json);
-    const mediaEn = safeMediaCount(draft.media_en_json) || mediaRu;
-    const available = enabledTargetLabels(targets, mediaRu, mediaEn) || t(locale, "post.no-platforms");
-    const unavailable = unavailableTargetLabels(targets, mediaRu, mediaEn);
+    const media = mediaCounts(draft.media_ru_json, draft.media_en_json);
+    const available = enabledTargetLabels(targets, media.ru, media.enEffective) || t(locale, "post.no-platforms");
+    const unavailable = unavailableTargetLabels(targets, media.ru, media.enEffective);
     return {
       text: `${draftHeader(draftId, targets, locale)}\n\n⚠️ *${t(locale, "post.publish-now-q")}*\n${t(locale, "post.will-send-to")}: ${available}.${unavailable ? `\n⚠️ ${t(locale, "post.will-skip-no-media", { targets: unavailable })}` : ""}`,
       keyboard: confirmationKeyboard(
@@ -250,9 +234,7 @@ export function draftPreview(
     if (canEditRu) keyboard.text(t(locale, "post.edit-ru"), publicationCallback("post", "edit_ru", [draftId]));
     if (canEditEn) keyboard.text(t(locale, "post.edit-en"), publicationCallback("post", "edit_en", [draftId]));
     if (canEditRu || canEditEn) keyboard.row();
-    keyboard
-      .text(`🔗 ${locale === "ru" ? "Источники" : "Sources"}: ${sourceCount}`, publicationCallback("post", "sources", [draftId]))
-      .row();
+    keyboard.text(`🔗 ${t(locale, "post.sources")}: ${sourceCount}`, publicationCallback("post", "sources", [draftId])).row();
     keyboard
       .text(t(locale, "post.publish-btn"), publicationCallback("post", "publish", [draftId]))
       .text(t(locale, "post.schedule-btn"), publicationCallback("post", "schedule", [draftId]))
@@ -273,23 +255,18 @@ export function draftPreview(
     appendResultNavigation(keyboard, locale, "upcoming");
   }
 
-  const schedule =
-    draft.status === "scheduled"
-      ? `\n\n${t(locale, "post.scheduled-ru")}: ${formatStudioTime(draft.scheduled_at ? String(draft.scheduled_at) : null, timeConfig)}\n${t(locale, "post.scheduled-en")}: ${formatStudioTime(draft.scheduled_en_at ? String(draft.scheduled_en_at) : null, timeConfig)}`
-      : "";
-  const mediaRu = safeMediaCount(draft.media_ru_json);
-  const mediaEn = safeMediaCount(draft.media_en_json);
-  const storyCards = unsafeDb(backendDb).db.select().from(draftStoryCards).where(eq(draftStoryCards.draftId, draftId)).all();
+  const media = mediaCounts(draft.media_ru_json, draft.media_en_json);
+  const storyCards = storyCardsForDraft(backendDb, draftId);
   const storyCardStatus =
     storyCards.length === 0
       ? ""
       : storyCards.every((card) => card.status === "ready")
         ? "\nStory cards: ✓ RU · ✓ EN"
         : `\nStory cards: ${storyCards.map((card) => `${card.locale.toUpperCase()} ${card.status}`).join(" · ")}`;
-  const media = mediaRu || mediaEn ? `\n${t(locale, "post.media")}: ${mediaRu || 0} RU · ${mediaEn || mediaRu || 0} EN` : "";
-  const enMediaWarning = mediaRu > 0 && mediaEn === 0 ? `\n⚠️ ${t(locale, "post.en-uses-ru-media")}` : "";
+  const mediaLine = media.ru || media.en ? `\n${t(locale, "post.media")}: ${media.ru} RU · ${media.enEffective} EN` : "";
+  const enMediaWarning = media.ru > 0 && media.en === 0 ? `\n⚠️ ${t(locale, "post.en-uses-ru-media")}` : "";
   return {
-    text: `${draftHeader(draftId, targets, locale)}${media}${storyCardStatus}${enMediaWarning}\n\nRU:\n${escapeMarkdown(truncateUnicode(String(draft.text_ru || t(locale, "post.media-only")), 1000))}\n\nEN:\n${escapeMarkdown(truncateUnicode(String(draft.text_en_approved || draft.text_en_machine || t(locale, "post.not-translated")), 1000))}${schedule}`,
+    text: `${draftHeader(draftId, targets, locale)}${mediaLine}${storyCardStatus}${enMediaWarning}\n\nRU:\n${escapeMarkdown(truncateUnicode(String(draft.text_ru || t(locale, "post.media-only")), PREVIEW_TEXT_LIMIT))}\n\nEN:\n${escapeMarkdown(truncateUnicode(String(draft.text_en_approved || draft.text_en_machine || t(locale, "post.not-translated")), PREVIEW_TEXT_LIMIT))}`,
     keyboard,
   };
 }
@@ -311,6 +288,15 @@ export function canEditLocale(backendDb: BackendDb, config: BackendConfig, actor
   } catch {
     return false;
   }
+}
+
+/** EN falls back to RU media at publish time, so the preview counts both the raw
+ * EN attachments (to warn about the fallback) and the effective ones (to decide
+ * which targets can actually receive the post). */
+function mediaCounts(mediaRuJson: string | null, mediaEnJson: string | null): { ru: number; en: number; enEffective: number } {
+  const ru = safeMediaCount(mediaRuJson);
+  const en = safeMediaCount(mediaEnJson);
+  return { ru, en, enEffective: en || ru };
 }
 
 function safeMediaCount(value: string | null): number {
