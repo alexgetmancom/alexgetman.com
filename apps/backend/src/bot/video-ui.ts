@@ -12,7 +12,7 @@ import { type ConversationState, clearConversationState, getConversationState, s
 import { appendCancelButton, cancelPromptKeyboard } from "./dialog-ui.js";
 import type { PublicationEffect } from "./effects.js";
 import { type BotLocale, botLocale } from "./i18n.js";
-import { publicationCallback, versionedCallback } from "./publication-callback.js";
+import { publicationCallback } from "./publication-callback.js";
 import { createPublicationScheduleEngine, SCHEDULE_SLOT_PRESETS, scheduleConfirmationEffects, scheduleTimeKeyboard } from "./scheduling.js";
 
 export type { VideoConversationStep } from "../studio/video-fsm.js";
@@ -119,14 +119,13 @@ export function videoStepEffects(
   const step = session.step;
   const locale = botLocale(backendDb, actorId);
   const timeConfig = createStudioServices(backendDb, config).settings.timeConfig(actorId, config);
-  if (isVideoWizardStep(step)) return metadataPromptEffects(backendDb, actorId, step, session.selected);
+  if (isVideoWizardStep(step)) return metadataPromptEffects(locale, step, session);
   if (step === "schedule_choice")
     return scheduleChoiceEffects(session, locale, t(locale, "video.saved-choose-schedule", { timezone: timeConfig.TIMEZONE_LABEL }));
   if (step === "schedule_common")
     return videoTimeEffects(
-      backendDb,
-      actorId,
       session,
+      locale,
       t(locale, "video.enter-datetime", {
         timezone: timeConfig.TIMEZONE_LABEL,
         example: manualScheduleExample(timeConfig.TIMEZONE, backendDb.clock.now()),
@@ -134,11 +133,12 @@ export function videoStepEffects(
     );
   if (step === "schedule_target") {
     const target = session.data.target;
-    if (typeof target !== "string" || !VIDEO_TARGETS.includes(target as VideoTarget)) throw new StudioError("err.video-no-platforms");
+    // The step schedules one of the targets the operator picked, so a target
+    // outside the current selection means the session drifted from its buttons.
+    if (typeof target !== "string" || !session.selected.includes(target as VideoTarget)) throw new StudioError("err.video-restart");
     return videoTimeEffects(
-      backendDb,
-      actorId,
       session,
+      locale,
       t(locale, "video.schedule-target-prompt", {
         target: videoTargetLabel(target as VideoTarget),
         timezone: timeConfig.TIMEZONE_LABEL,
@@ -149,12 +149,11 @@ export function videoStepEffects(
   throw new StudioError("err.video-restart");
 }
 
-function metadataPromptEffects(backendDb: BackendDb, actorId: number, step: VideoWizardStep, selected: VideoTarget[]): PublicationEffect[] {
-  const locale = botLocale(backendDb, actorId);
-  const revision = getVideoState(backendDb, actorId)?.revision;
+function metadataPromptEffects(locale: BotLocale, step: VideoWizardStep, session: VideoConversationState): PublicationEffect[] {
+  const { revision } = session;
   const keyboard = new InlineKeyboard();
   if (step === "youtube_game_url") keyboard.text(t(locale, "video.skip"), publicationCallback("video", "game_skip", [], revision));
-  if (backFlow(VIDEO_FLOW, step, { selectedTargets: selected }))
+  if (backFlow(VIDEO_FLOW, step, { selectedTargets: session.selected }))
     keyboard.text(t(locale, "common.back"), publicationCallback("video", "meta_back", [], revision));
   appendCancelButton(keyboard, locale, publicationCallback("video", "cancel_dialog"), revision);
   return [{ type: "prompt", text: videoPrompt(locale, step), options: { reply_markup: keyboard } }];
@@ -177,12 +176,12 @@ export function videoControlEffects(session: VideoConversationState, text: strin
   return [{ type: "prompt", text, options: { parse_mode: "Markdown", reply_markup: keyboard }, ...(card ? { card } : {}) }];
 }
 
-function videoTimeEffects(backendDb: BackendDb, actorId: number, session: VideoConversationState, text: string): PublicationEffect[] {
-  const locale = botLocale(backendDb, actorId);
-  const revision = getVideoState(backendDb, actorId)?.revision ?? session.revision;
+function videoTimeEffects(session: VideoConversationState, locale: BotLocale, text: string): PublicationEffect[] {
+  const { revision, draftId } = session;
+  if (draftId == null) throw new StudioError("err.video-missing");
   const engine = createPublicationScheduleEngine({
     kind: "video",
-    publicationId: session.draftId ?? 0,
+    publicationId: draftId,
     scheduleAxis: "target",
     axisKeys: session.selected,
     axisLabel: videoTargetLabel,
@@ -201,13 +200,11 @@ function videoTimeEffects(backendDb: BackendDb, actorId: number, session: VideoC
  * the transition that got here, and saving again only burns a revision the
  * keyboard below would then be built against. */
 function scheduleChoiceEffects(session: VideoConversationState, locale: BotLocale, text: string): PublicationEffect[] {
-  const { revision } = session;
-  const keyboard = new InlineKeyboard().text(
-    t(locale, "video.same-time"),
-    publicationCallback("video", "common", [session.draftId ?? ""], revision),
-  );
+  const { revision, draftId } = session;
+  if (draftId == null) throw new StudioError("err.video-missing");
+  const keyboard = new InlineKeyboard().text(t(locale, "video.same-time"), publicationCallback("video", "common", [draftId], revision));
   if (session.selected.length > 1)
-    keyboard.row().text(t(locale, "video.different-time"), publicationCallback("video", "individual", [session.draftId ?? ""], revision));
+    keyboard.row().text(t(locale, "video.different-time"), publicationCallback("video", "individual", [draftId], revision));
   keyboard.row();
   appendCancelButton(keyboard, locale, publicationCallback("video", "cancel_dialog"), revision);
   return videoControlEffects(session, text, keyboard);
@@ -233,8 +230,7 @@ export function videoScheduleConfirmationEffects(
   // The transition runner already saved the `schedule_confirm` session. This
   // renderer must only derive Telegram effects, otherwise one user action
   // would consume two revisions and invalidate its own buttons.
-  const next = session;
-  const entries = next.selected.flatMap((target) => {
+  const entries = session.selected.flatMap((target) => {
     const value = schedule[target];
     return value ? [{ key: target, value }] : [];
   });
@@ -242,14 +238,14 @@ export function videoScheduleConfirmationEffects(
     kind: "video",
     publicationId: draftId,
     scheduleAxis: videos.capabilities.scheduleAxis,
-    axisKeys: next.selected,
+    axisKeys: session.selected,
     axisLabel: videoTargetLabel,
     slotValues: [],
   });
   return scheduleConfirmationEffects({
     kind: "video",
     publicationId: draftId,
-    revision: next.revision,
+    revision: session.revision,
     title: t(locale, "common.confirm-schedule"),
     titlePrefix: "🎬",
     entries,
@@ -263,7 +259,7 @@ export function videoScheduleConfirmationEffects(
 }
 
 export function parseVideoStep(value: string): VideoConversationStep | null {
-  return Object.keys(VIDEO_FLOW.steps).find((step): step is VideoConversationStep => step === value) ?? null;
+  return value in VIDEO_FLOW.steps ? (value as VideoConversationStep) : null;
 }
 
 function parseSelectedTargets(value: unknown): VideoTarget[] | null {
