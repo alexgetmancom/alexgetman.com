@@ -9,6 +9,7 @@ import { drafts, publishJobs, siteJobs, studioNotificationSettings, videoDrafts,
 import type { BackendConfig } from "../../foundation/config.js";
 import { t } from "../../foundation/i18n/index.js";
 import { log } from "../../foundation/logger.js";
+import { truncateUnicode } from "../../foundation/text.js";
 import { getVideoDraft } from "../../publishing/video-data.js";
 import type { VideoTarget } from "../../publishing/video-types.js";
 import { videoTargetLabel } from "../../publishing/video-types.js";
@@ -278,7 +279,7 @@ function siteTarget(reason: string): string | null {
 }
 
 function shortError(value: string): string {
-  return value.replace(/\s+/g, " ").slice(0, 180);
+  return truncateUnicode(value.replace(/\s+/g, " "), 180);
 }
 
 function videoLocaleForRef(backendDb: BackendDb, ref: string | null): "ru" | "en" | null {

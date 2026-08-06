@@ -5,6 +5,7 @@ import { knowledgeEntities, postEntityLinks, posts } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { requestJson } from "../../foundation/http.js";
 import { log } from "../../foundation/logger.js";
+import { truncateUnicode } from "../../foundation/text.js";
 
 type ChatCompletion = { choices?: Array<{ message?: { content?: string } }> };
 type Opportunity = { kind?: string; title?: string; reason?: string; posts?: number[] };
@@ -42,7 +43,7 @@ export async function sendDailyEditorialInbox(
     .all()
     .flatMap((post) => {
       const text = (post.text ?? post.textEn ?? "").trim();
-      return post.postId != null && text ? [{ id: post.postId, date: post.date, text: text.slice(0, 900) }] : [];
+      return post.postId != null && text ? [{ id: post.postId, date: post.date, text: truncateUnicode(text, 900) }] : [];
     });
   if (material.length === 0) return false;
   const owner = "telegram:editorial-inbox";
@@ -121,8 +122,8 @@ function editorialItems(value: string): Required<Pick<Opportunity, "kind" | "tit
   if (!Array.isArray(parsed.items)) return [];
   return parsed.items
     .flatMap((item) => {
-      const title = item.title?.trim().replace(/\s+/g, " ").slice(0, 180);
-      const reason = item.reason?.trim().replace(/\s+/g, " ").slice(0, 360);
+      const title = item.title ? truncateUnicode(item.title.trim().replace(/\s+/g, " "), 180) : undefined;
+      const reason = item.reason ? truncateUnicode(item.reason.trim().replace(/\s+/g, " "), 360) : undefined;
       const kind = ["review", "guide", "data", "roundup"].includes(item.kind ?? "") ? (item.kind ?? "review") : "review";
       const postIds = (item.posts ?? []).filter((id) => Number.isSafeInteger(id)).slice(0, 6);
       return title && reason ? [{ kind, title, reason, posts: postIds }] : [];

@@ -4,6 +4,7 @@ import type { BackendDb } from "../db/client.js";
 import { withActionLock } from "../foundation/action-lock.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { type MessageKey, t } from "../foundation/i18n/index.js";
+import { truncateUnicode } from "../foundation/text.js";
 import { telegramPostCard, telegramVideoCard } from "../interfaces/telegram/control-cards.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { getActiveConversationState, getConversationState } from "./conversation-state.js";
@@ -174,5 +175,6 @@ async function answerCallback(ctx: Context, backendDb: BackendDb, text?: string)
 const MAX_TOAST_LENGTH = 200;
 
 function toast(text: string): string {
-  return text.length > MAX_TOAST_LENGTH ? `${text.slice(0, MAX_TOAST_LENGTH - 1)}…` : text;
+  const shortened = truncateUnicode(text, MAX_TOAST_LENGTH);
+  return shortened.length < text.length ? `${truncateUnicode(text, MAX_TOAST_LENGTH - 1)}…` : shortened;
 }

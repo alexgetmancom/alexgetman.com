@@ -2,6 +2,7 @@ import type { Context } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import { describeError } from "../foundation/i18n/index.js";
 import { log } from "../foundation/logger.js";
+import { truncateUnicode } from "../foundation/text.js";
 import { botLocale } from "./i18n.js";
 
 const CALLBACK_DEDUPLICATION_TTL_MS = 15 * 60_000;
@@ -55,5 +56,6 @@ async function answerCallbackSafely(ctx: Context, options?: { text?: string }): 
 }
 
 function truncateCallbackToast(value: string): string {
-  return value.length > MAX_CALLBACK_TOAST_LENGTH ? `${value.slice(0, MAX_CALLBACK_TOAST_LENGTH - 1)}…` : value;
+  const shortened = truncateUnicode(value, MAX_CALLBACK_TOAST_LENGTH);
+  return shortened.length < value.length ? `${truncateUnicode(value, MAX_CALLBACK_TOAST_LENGTH - 1)}…` : shortened;
 }

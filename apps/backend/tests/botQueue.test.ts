@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { queuePageCount, queueText } from "../src/bot/queue.js";
+import type { Context } from "grammy";
+import { queuePageCount, queueText, showQueue } from "../src/bot/queue.js";
 import { draftStoryCards, drafts, publishJobs, videoDrafts, videoTargets } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import type { StudioQueueSnapshot } from "../src/studio/services/queue.js";
@@ -230,6 +231,83 @@ describe("Telegram work queue", () => {
     };
 
     expect(queueText(snapshot, "en", "Europe/Moscow")).toContain("\\*Draft\\* \\[with\\] \\_markup\\_");
+  });
+
+  it("keeps a queue label well-formed when truncation reaches an emoji", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      backendDb.db
+        .insert(drafts)
+        .values({
+          actorId: 7,
+          status: "needs_review",
+          textRu: `${"x".repeat(37)}😀 after the limit`,
+          targetsJson: "{}",
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+
+      const label = queueService(backendDb, loadConfig({ ADMIN_IDS: "7" })).snapshot(7).drafts[0]?.label;
+      expect(label).toBe(`${"x".repeat(37)}😀`);
+      expect(label).not.toMatch(/[\uD800-\uDFFF]/u);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("keeps the inline queue button well-formed after label truncation", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      const scheduledAt = new Date(Date.now() + 60 * 60_000).toISOString();
+      const draft = backendDb.db
+        .insert(videoDrafts)
+        .values({
+          actorId: 7,
+          assetKey: "video",
+          label: `${"x".repeat(29)}${"😀".repeat(9)}`,
+          status: "scheduled",
+          scheduledAt,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning({ id: videoDrafts.id })
+        .get();
+      if (!draft) throw new Error("video draft missing");
+      backendDb.db
+        .insert(videoTargets)
+        .values({
+          videoDraftId: draft.id,
+          target: "youtube_shorts",
+          metadataJson: {},
+          status: "scheduled",
+          scheduledAt,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+
+      let options: { reply_markup?: { inline_keyboard?: Array<Array<{ text: string }>> } } | undefined;
+      const ctx = {
+        from: { id: 7 },
+        chat: { id: 100 },
+        callbackQuery: { message: { message_id: 9 } },
+        api: {
+          editMessageText: async (_chatId: number, _messageId: number, _text: string, nextOptions: typeof options) => {
+            options = nextOptions;
+          },
+        },
+      } as unknown as Context;
+
+      await showQueue(ctx, backendDb, loadConfig({ ADMIN_IDS: "7" }));
+      const buttonText = options?.reply_markup?.inline_keyboard?.[0]?.[0]?.text;
+      expect(buttonText).toBeTruthy();
+      expect(() => encodeURIComponent(buttonText ?? "")).not.toThrow();
+    } finally {
+      backendDb.close();
+    }
   });
 
   it("paginates every queue section without dropping items", () => {

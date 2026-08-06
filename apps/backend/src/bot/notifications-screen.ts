@@ -3,6 +3,7 @@ import type { Context } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { t } from "../foundation/i18n/index.js";
+import { truncateUnicode } from "../foundation/text.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { botLocale } from "./i18n.js";
 
@@ -72,7 +73,7 @@ function notificationLabel(
 ): string {
   const prefix = event.severity === "error" ? "🔴" : event.severity === "warn" ? "🟡" : "🔔";
   const text = event.message || event.target || event.eventType;
-  return `${prefix} ${text}`.replace(/\s+/g, " ").slice(0, locale === "ru" ? 48 : 52);
+  return truncateUnicode(`${prefix} ${text}`.replace(/\s+/g, " "), locale === "ru" ? 48 : 52);
 }
 
 function notificationText(

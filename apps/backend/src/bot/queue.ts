@@ -3,6 +3,7 @@ import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { t } from "../foundation/i18n/index.js";
 import { escapeMarkdown } from "../foundation/markdown.js";
+import { truncateUnicode } from "../foundation/text.js";
 import { createStudioServices } from "../studio/services/index.js";
 import type { StudioQueueAttentionItem, StudioQueueItem, StudioQueueSnapshot } from "../studio/services/queue.js";
 import { type BotLocale, botLocale } from "./i18n.js";
@@ -143,7 +144,7 @@ function pageSlice<T>(items: T[], page: number, size: number): T[] {
 
 function itemButton(item: StudioQueueItem, locale: BotLocale, timeZone: string): string {
   const targets = item.targets ? ` · ${item.targets} ${t(locale, "queue.platforms-suffix")}` : "";
-  return `${formatQueueTime(item.time, locale, timeZone)} · ${kindIcon(item.kind)} ${item.label}${targets}`.slice(0, 60);
+  return truncateUnicode(`${formatQueueTime(item.time, locale, timeZone)} · ${kindIcon(item.kind)} ${item.label}${targets}`, 60);
 }
 
 function kindIcon(kind: StudioQueueItem["kind"]): string {

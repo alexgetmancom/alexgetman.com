@@ -3,6 +3,7 @@ import type { BackendDb } from "../db/client.js";
 import { t } from "../foundation/i18n/index.js";
 import { log } from "../foundation/logger.js";
 import { escapeMarkdown } from "../foundation/markdown.js";
+import { truncateUnicode } from "../foundation/text.js";
 import { telegramPostProgressCard } from "../interfaces/telegram/control-cards.js";
 
 import { type PostProgressState, type PostProgressStatus, postProgressState } from "../studio/services/post-progress.js";
@@ -83,5 +84,5 @@ function statusIcon(status: PostProgressStatus): string {
 
 /** A platform error can be arbitrarily long; the card must stay under Telegram's message limit. */
 function shortError(value: string): string {
-  return escapeMarkdown(value).slice(0, 180);
+  return truncateUnicode(escapeMarkdown(value), 180);
 }

@@ -1,6 +1,7 @@
 import { targetLocale } from "../../botTargets.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
+import { truncateUnicode } from "../../foundation/text.js";
 import { parseJsonValue } from "../../json.js";
 import { parseTargets } from "../../publishing/targets.js";
 import { accessibleStudioActorIds } from "../access.js";
@@ -133,5 +134,5 @@ function hasUnscheduledLocale(
 }
 
 function shorten(value: string): string {
-  return value.replace(/\s+/g, " ").slice(0, 38).trim();
+  return truncateUnicode(value.replace(/\s+/g, " "), 38).trim();
 }

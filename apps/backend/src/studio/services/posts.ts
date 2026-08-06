@@ -11,6 +11,7 @@ import type { BackendDb } from "../../db/client.js";
 import { recordDomainEvent } from "../../domain/events.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { StudioError } from "../../foundation/errors.js";
+import { truncateUnicode } from "../../foundation/text.js";
 import { cancelScheduledNotifications, scheduleReminder } from "../../notifications/jobs.js";
 import { cancelDraft, cancelPendingPostJobs } from "../../publishing/draft-lifecycle.js";
 import { mediaPolicyForTarget } from "../../publishing/media-policy.js";
@@ -494,7 +495,7 @@ function schedulePost(backendDb: BackendDb, config: BackendConfig, actorId: numb
 
 function rescheduleReminders(backendDb: BackendDb, actorId: number, postId: number, draft: DraftRecord, scheduled: DraftRecord): void {
   const preference = settingsService(backendDb).notifications(actorId);
-  const title = draft.text_ru.trim().split("\n")[0]?.slice(0, 100) || `Post #${postId}`;
+  const title = truncateUnicode(draft.text_ru.trim().split("\n")[0] ?? "", 100) || `Post #${postId}`;
   cancelScheduledNotifications(backendDb, publicationRef("post", postId));
   for (const [locale, scheduledAt] of [
     ["ru", scheduled.scheduled_at],
