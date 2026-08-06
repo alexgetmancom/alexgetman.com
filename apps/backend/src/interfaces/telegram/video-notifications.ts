@@ -3,16 +3,17 @@ import { type Bot, InlineKeyboard } from "grammy";
 import { parsePublicationRef } from "../../application/publication-ref.js";
 import { botLocale } from "../../bot/i18n.js";
 import { publicationCallback } from "../../bot/publication-callback.js";
-import { targetLocale } from "../../botTargets.js";
+import { targetDefinition, targetLocale } from "../../botTargets.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
-import { drafts, publishJobs, siteJobs, studioNotificationSettings, videoDrafts, videoTargets } from "../../db/schema.js";
+import { drafts, publishJobs, siteJobs, videoDrafts, videoTargets } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
+import type { MessageKey } from "../../foundation/i18n/index.js";
 import { t } from "../../foundation/i18n/index.js";
 import { log } from "../../foundation/logger.js";
 import { truncateUnicode } from "../../foundation/text.js";
 import { getVideoDraft } from "../../publishing/video-data.js";
 import type { VideoTarget } from "../../publishing/video-types.js";
-import { videoTargetLabel } from "../../publishing/video-types.js";
+import { VIDEO_TARGETS, videoTargetLabel } from "../../publishing/video-types.js";
 import { settingsService } from "../../studio/services/settings.js";
 import { telegramVideoCard } from "./control-cards.js";
 import { videoPreview } from "./video-preview.js";
@@ -34,6 +35,9 @@ export async function notifyFinalVideoFailure(
   const draft = getVideoDraft(backendDb, videoDraftId);
   const targetName = target.target as VideoTarget;
   await forEachAdmin(config.ADMIN_IDS, async (actorId) => {
+    // A dead target is the outcome of a publication, so the completion switch
+    // silences it like any other outcome.
+    if (!settingsService(backendDb).notifications(actorId).completionEnabled) return;
     const locale = botLocale(backendDb, actorId);
     const title = draft.label || t(locale, "common.untitled");
     await bot.api.sendMessage(
@@ -70,8 +74,10 @@ export async function refreshVideoControlCard(
       parse_mode: "Markdown",
       reply_markup: preview.keyboard,
     });
-  } catch {
-    // A deleted or manually edited Telegram message must not stop publication.
+  } catch (error) {
+    // A deleted or manually edited Telegram message must not stop publication,
+    // but a malformed card or a broken token has to be visible somewhere.
+    log("warn", "video control card was not refreshed", { videoDraftId, error: String(error) });
   }
 }
 
@@ -87,12 +93,12 @@ export async function sendVideoReminder(
     videoTargetId == null ? null : unsafeDb(backendDb).db.select().from(videoTargets).where(eq(videoTargets.id, videoTargetId)).get();
   if (!bot || !target || draft.status !== "scheduled") return;
   await forEachAdmin(config.ADMIN_IDS, async (actorId) => {
-    const preference = notificationPreference(backendDb, actorId);
+    const preference = settingsService(backendDb).notifications(actorId);
     if (!preference.remindersEnabled) return;
     const locale = botLocale(backendDb, actorId);
     const timeConfig = settingsService(backendDb).timeConfig(actorId, config);
     const title = draft.label || t(locale, "common.untitled");
-    const text = `${t(locale, "notif.reminder-head", { minutes: preference.reminderMinutes })}\n\n🎬 ${title}\n${draft.locale === "en" ? "🇬🇧 EN" : "🇷🇺 RU"}\n\n• ${videoTargetLabel(target.target as VideoTarget)}\n\n${formatVideoTime(target.scheduledAt, locale, timeConfig)}`;
+    const text = `${t(locale, "notif.reminder-head", { minutes: preference.reminderMinutes })}\n\n🎬 ${title}\n${localeName(draft.locale === "en" ? "en" : "ru", locale)}\n\n• ${videoTargetLabel(target.target as VideoTarget)}\n\n${formatVideoTime(target.scheduledAt, locale, timeConfig)}`;
     await bot.api.sendMessage(actorId, text, {
       reply_markup: new InlineKeyboard()
         .text(t(locale, "notif.open"), publicationCallback("video", "view", [draft.id, "overview"]))
@@ -115,23 +121,24 @@ export async function sendStudioReminder(
 ): Promise<void> {
   if (!bot) return;
   const details = object(event.detailsJson);
-  // `admin_id` is the pre-rename spelling. Domain events are durable, so rows
-  // written before 0030 are still queued here and must resolve to the same owner.
-  const ownerId = number(details.actor_id) ?? number(details.admin_id) ?? ownerForRef(backendDb, event.postKey);
-  if (ownerId == null) return;
+  // The reminder reaches every administrator, so the actor is not an address —
+  // it only says the event still refers to something real. `admin_id` is the
+  // pre-rename spelling, and events written before 0030 are still durable.
+  const known = number(details.actor_id) != null || number(details.admin_id) != null || publicationExists(backendDb, event.postKey);
+  if (!known) return;
   const targets = Array.isArray(details.targets) ? details.targets.filter((value): value is string => typeof value === "string") : [];
   const minutes = number(details.minutes) ?? 5;
   const publishAt = typeof details.publish_at === "string" ? details.publish_at : null;
   const videoLocale = videoLocaleForRef(backendDb, event.postKey);
   await forEachAdmin(config.ADMIN_IDS, async (actorId) => {
-    if (!notificationPreference(backendDb, actorId).remindersEnabled) return;
+    if (!settingsService(backendDb).notifications(actorId).remindersEnabled) return;
     const locale = botLocale(backendDb, actorId);
     const timeConfig = settingsService(backendDb).timeConfig(actorId, config);
     const title = typeof details.title === "string" ? details.title : (event.postKey ?? t(locale, "notif.publication"));
     const lines = targets.map((target) => `• ${friendlyTarget(target)}${videoLocale ? ` · ${videoLocale.toUpperCase()}` : ""}`);
     await bot.api.sendMessage(
       actorId,
-      `${t(locale, "notif.reminder-head", { minutes })}\n\n🎬 ${title}${videoLocale ? `\n${videoLocale === "en" ? "🇬🇧 EN" : "🇷🇺 RU"}` : ""}\n\n${lines.join("\n")}${publishAt ? `\n\n${formatVideoTime(publishAt, locale, timeConfig)}` : ""}`.trim(),
+      `${t(locale, "notif.reminder-head", { minutes })}\n\n🎬 ${title}${videoLocale ? `\n${localeName(videoLocale, locale)}` : ""}\n\n${lines.join("\n")}${publishAt ? `\n\n${formatVideoTime(publishAt, locale, timeConfig)}` : ""}`.trim(),
       { reply_markup: new InlineKeyboard().text(t(locale, "settings.notifications"), "notifications_home") },
     );
   });
@@ -144,8 +151,7 @@ export async function sendStudioCompletion(
   event: { postKey: string | null; detailsJson: unknown; eventType?: string },
 ): Promise<void> {
   if (!bot) return;
-  const ownerId = ownerForRef(backendDb, event.postKey);
-  if (ownerId == null) return;
+  if (!publicationExists(backendDb, event.postKey)) return;
   const details = object(event.detailsJson);
   const total = number(details.total) ?? 0;
   const published = number(details.published) ?? 0;
@@ -156,9 +162,9 @@ export async function sendStudioCompletion(
   );
   const videoLocale = videoLocaleForRef(backendDb, event.postKey);
   const failedTargets = results.filter((result) => result.status === "failed" || result.status === "verification_required");
-  const draftId = postDraftId(backendDb, event.postKey);
+  const draftId = publicationDraftId(backendDb, event.postKey);
   await forEachAdmin(config.ADMIN_IDS, async (actorId) => {
-    if (!notificationPreference(backendDb, actorId).completionEnabled) return;
+    if (!settingsService(backendDb).notifications(actorId).completionEnabled) return;
     const locale = botLocale(backendDb, actorId);
     const timeConfig = settingsService(backendDb).timeConfig(actorId, config);
     const label = parsePublicationRef(event.postKey)?.kind === "video" ? t(locale, "notif.label-video") : t(locale, "notif.label-post");
@@ -182,7 +188,7 @@ export async function sendStudioCompletion(
         }`,
     );
     const remaining = partialLocale ? remainingScheduleText(details, locale, timeConfig) : "";
-    const text = `${headline}${videoLocale ? `\n${videoLocale === "en" ? "🇬🇧 EN" : "🇷🇺 RU"}` : ""}${remaining ? `\n\n${remaining}` : ""}${lines.length ? `\n\n${lines.join("\n")}` : ""}`;
+    const text = `${headline}${videoLocale ? `\n${localeName(videoLocale, locale)}` : ""}${remaining ? `\n\n${remaining}` : ""}${lines.length ? `\n\n${lines.join("\n")}` : ""}`;
     await bot.api.sendMessage(actorId, text, {
       reply_markup: completionKeyboard(locale, event.postKey, draftId, failedTargets, partialLocale != null),
     });
@@ -198,25 +204,18 @@ function completionKeyboard(
 ): InlineKeyboard {
   const keyboard = new InlineKeyboard();
   const publication = parsePublicationRef(postKey);
-  if (publication?.kind === "post" && draftId != null && (failedTargets.length || partial)) {
-    if (failedTargets.length)
-      keyboard.text(t(locale, "notif.retry-failed"), publicationCallback("post", "retry", [draftId, "all", "notice"])).row();
-    keyboard.text(t(locale, "notif.open"), publicationCallback("post", "view", [draftId, "overview"])).row();
+  const kind = publication?.kind === "post" || publication?.kind === "video" ? publication.kind : null;
+  // Only a post can requeue every failed target in one call; a video is retried
+  // per target because each upload carries its own metadata.
+  const bulkRetry = kind === "post" && failedTargets.length > 0;
+  if (kind && draftId != null && (failedTargets.length || (kind === "post" && partial))) {
+    if (bulkRetry) keyboard.text(t(locale, "notif.retry-failed"), publicationCallback(kind, "retry", [draftId, "all", "notice"])).row();
+    keyboard.text(t(locale, "notif.open"), publicationCallback(kind, "view", [draftId, "overview"])).row();
     for (const target of failedTargets)
       keyboard
         .text(
           t(locale, "notif.retry-target", { target: friendlyTarget(target.target) }),
-          publicationCallback("post", "retry", [draftId, target.target, "notice"]),
-        )
-        .row();
-  }
-  if (publication?.kind === "video" && draftId != null && failedTargets.length) {
-    keyboard.text(t(locale, "notif.open"), publicationCallback("video", "view", [draftId, "overview"])).row();
-    for (const target of failedTargets)
-      keyboard
-        .text(
-          t(locale, "notif.retry-target", { target: friendlyTarget(target.target) }),
-          publicationCallback("video", "retry", [draftId, target.target, "notice"]),
+          publicationCallback(kind, "retry", [draftId, target.target, "notice"]),
         )
         .row();
   }
@@ -266,8 +265,11 @@ function completionTargets(backendDb: BackendDb, ref: string | null): Array<{ ta
   return [...latest.values()];
 }
 
-function postDraftId(backendDb: BackendDb, ref: string | null): number | null {
+/** The id the publication callbacks address: a video ref already carries its
+ * draft id, a post ref carries the published post and has to be looked up. */
+function publicationDraftId(backendDb: BackendDb, ref: string | null): number | null {
   const publication = parsePublicationRef(ref);
+  if (publication?.kind === "video") return publication.id;
   if (publication?.kind !== "post") return null;
   return unsafeDb(backendDb).db.select({ id: drafts.id }).from(drafts).where(eq(drafts.postId, publication.id)).get()?.id ?? null;
 }
@@ -293,21 +295,10 @@ function videoLocaleForRef(backendDb: BackendDb, ref: string | null): "ru" | "en
   return locale === "en" ? "en" : locale === "ru" ? "ru" : null;
 }
 
+/** One label per target, taken from the two vocabularies that own them. */
 function friendlyTarget(target: string): string {
-  const labels: Record<string, string> = {
-    youtube_shorts: "YouTube Shorts",
-    instagram_reels: "Instagram Reels",
-    telegram: "Telegram",
-    site_ru: "Site RU",
-    site_en: "Site EN",
-    threads_ru: "Threads RU",
-    threads_en: "Threads EN",
-    x: "X",
-    telegram_stories: "Telegram Stories",
-    instagram_stories_ru: "Instagram Stories RU",
-    instagram_stories: "Instagram Stories EN",
-  };
-  return labels[target] ?? target;
+  if ((VIDEO_TARGETS as readonly string[]).includes(target)) return videoTargetLabel(target as VideoTarget);
+  return targetDefinition(target)?.label ?? target;
 }
 
 function localeName(locale: "ru" | "en", interfaceLocale: "ru" | "en"): string {
@@ -336,52 +327,42 @@ function remainingScheduleText(
     .join("\n");
 }
 
+/** The delivery outcomes a notification renders. A row still arrives as a
+ * string, so unknown values fall back to "pending" instead of failing here. */
+type DeliveryStatus = "published" | "completed" | "failed" | "verification_required" | "cancelled";
+
+const DELIVERY_ICON = {
+  published: "✅",
+  completed: "✅",
+  failed: "❌",
+  verification_required: "⚠️",
+  cancelled: "🚫",
+} as const satisfies Record<DeliveryStatus, string>;
+
+const DELIVERY_LABEL = {
+  published: "notif.delivery-published",
+  completed: "notif.delivery-published",
+  failed: "notif.delivery-failed",
+  verification_required: "notif.delivery-verification",
+  cancelled: "notif.delivery-cancelled",
+} as const satisfies Record<DeliveryStatus, MessageKey>;
+
 function statusIcon(status: string): string {
-  if (["published", "completed"].includes(status)) return "✅";
-  if (status === "failed") return "❌";
-  if (status === "verification_required") return "⚠️";
-  if (status === "cancelled") return "🚫";
-  return "⏳";
+  return DELIVERY_ICON[status as DeliveryStatus] ?? "⏳";
 }
 
 function friendlyStatus(status: string, locale: "ru" | "en"): string {
-  const ru: Record<string, string> = {
-    published: "опубликовано",
-    completed: "опубликовано",
-    failed: "ошибка",
-    verification_required: "нужна проверка",
-    cancelled: "отменено",
-  };
-  const en: Record<string, string> = {
-    published: "published",
-    completed: "published",
-    failed: "failed",
-    verification_required: "verification required",
-    cancelled: "cancelled",
-  };
-  return (locale === "ru" ? ru : en)[status] ?? (locale === "ru" ? "ожидает" : "pending");
+  return t(locale, DELIVERY_LABEL[status as DeliveryStatus] ?? "notif.delivery-pending");
 }
 
-function notificationPreference(backendDb: BackendDb, actorId: number) {
-  const row = unsafeDb(backendDb).db.select().from(studioNotificationSettings).where(eq(studioNotificationSettings.actorId, actorId)).get();
-  return {
-    remindersEnabled: row?.remindersEnabled !== 0,
-    reminderMinutes: row?.reminderMinutes ?? 5,
-    completionEnabled: row?.completionEnabled !== 0,
-  };
-}
-
-function ownerForRef(backendDb: BackendDb, ref: string | null): number | null {
+/** Notifications go to every administrator, so a ref is only checked for still
+ * naming a real publication. */
+function publicationExists(backendDb: BackendDb, ref: string | null): boolean {
   const publication = parsePublicationRef(ref);
-  if (!publication || publication.kind === "draft") return null;
+  if (!publication || publication.kind === "draft") return false;
   if (publication.kind === "video")
-    return (
-      unsafeDb(backendDb).db.select({ actorId: videoDrafts.actorId }).from(videoDrafts).where(eq(videoDrafts.id, publication.id)).get()
-        ?.actorId ?? null
-    );
-  return (
-    unsafeDb(backendDb).db.select({ actorId: drafts.actorId }).from(drafts).where(eq(drafts.postId, publication.id)).get()?.actorId ?? null
-  );
+    return unsafeDb(backendDb).db.select({ id: videoDrafts.id }).from(videoDrafts).where(eq(videoDrafts.id, publication.id)).get() != null;
+  return unsafeDb(backendDb).db.select({ id: drafts.id }).from(drafts).where(eq(drafts.postId, publication.id)).get() != null;
 }
 
 function object(value: unknown): Record<string, unknown> {
