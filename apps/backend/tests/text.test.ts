@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { escapeMarkdown } from "../src/foundation/markdown.js";
 import { truncateUnicode } from "../src/foundation/text.js";
 
 describe("foundation/text", () => {
@@ -12,5 +13,13 @@ describe("foundation/text", () => {
     const result = truncateUnicode(value, 20);
     expect(result).toBe("before�after");
     expect(result).not.toMatch(/[\uD800-\uDFFF]/u);
+  });
+
+  // Truncating escaped text can cut between a backslash and the character it
+  // escapes, and Telegram rejects a message ending in a lone backslash.
+  it("leaves no dangling escape when truncation precedes escaping", () => {
+    const value = `${"x".repeat(179)}*tail*`;
+    expect(truncateUnicode(escapeMarkdown(value), 180)).toMatch(/(^|[^\\])\\$/);
+    expect(escapeMarkdown(truncateUnicode(value, 180))).not.toMatch(/(^|[^\\])\\$/);
   });
 });

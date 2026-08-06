@@ -82,7 +82,10 @@ function statusIcon(status: PostProgressStatus): string {
   return { published: "✅", publishing: "🔄", waiting: "⏳", failed: "❌", verification_required: "⚠️", cancelled: "⏹" }[status];
 }
 
-/** A platform error can be arbitrarily long; the card must stay under Telegram's message limit. */
+/** A platform error can be arbitrarily long; the card must stay under Telegram's
+ * message limit. Truncation comes first: cutting escaped text can strip the
+ * character a backslash was escaping and leave the card ending in a lone `\`,
+ * which the Markdown parser rejects. */
 function shortError(value: string): string {
-  return truncateUnicode(escapeMarkdown(value), 180);
+  return escapeMarkdown(truncateUnicode(value, 180));
 }
