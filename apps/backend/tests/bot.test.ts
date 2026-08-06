@@ -503,6 +503,24 @@ describe("Telegram controller flow", () => {
     expect((backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM pending_albums").get() as { count: number }).count).toBe(0);
   });
 
+  it("keeps one draft when the control card fails after the album is finalized", async () => {
+    backendDb = openBackendDb(":memory:");
+    backendDb.sqlite
+      .prepare(`INSERT INTO pending_albums(id,actor_id,chat_id,media_group_id,text_ru,text_entities_json,media_json,notified,updated_at)
+      VALUES ('card-fails',42,42,'group','Album caption','[]',?,1,'2000-01-01T00:00:00.000Z')`)
+      .run(JSON.stringify([{ type: "photo", file_id: "one" }]));
+    const sendMessage = mock(async () => {
+      throw new Error("Bad Request: message is too long");
+    });
+    const fakeBot = { api: { sendMessage } } as unknown as Bot;
+    const config = loadConfig({ CONTROLLER_ALBUM_SETTLE_SECONDS: "1" });
+
+    expect(await finalizePendingAlbums(fakeBot, backendDb, config)).toBe(1);
+    expect(await finalizePendingAlbums(fakeBot, backendDb, config)).toBe(0);
+    expect(backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM drafts").get()).toEqual({ count: 1 });
+    expect((backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM pending_albums").get() as { count: number }).count).toBe(0);
+  });
+
   it("applies an English edit album to its draft instead of creating a new draft", async () => {
     backendDb = openBackendDb(":memory:");
     const draftId = createDraftFromMessage(backendDb, 42, {

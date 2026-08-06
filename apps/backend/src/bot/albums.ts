@@ -27,6 +27,9 @@ const ALBUM_CLAIM_LEASE_MS = 10 * 60_000;
 // would loop forever, so give up after a few tries and tell the sender instead
 // of retrying silently at ~1 Hz.
 const ALBUM_MAX_ATTEMPTS = 5;
+// One cycle imports media and translates text per album, so a backlog is worked
+// off over several ticks instead of holding claims past their lease.
+const ALBUM_FINALIZE_BATCH = 20;
 
 type PendingAlbumInput = {
   actorId: number;
@@ -43,46 +46,51 @@ type PendingAlbumInput = {
 export function appendPendingAlbum(backendDb: BackendDb, input: PendingAlbumInput): boolean {
   const step = input.step?.type ?? null;
   const id = `${input.actorId}:${input.chatId}:${input.mediaGroupId}:${step ?? "draft"}:${input.draftId ?? ""}`;
-  const row = unsafeDb(backendDb)
-    .db.select({ mediaJson: pendingAlbums.mediaJson, textRu: pendingAlbums.textRu, textEntitiesJson: pendingAlbums.textEntitiesJson })
-    .from(pendingAlbums)
-    .where(eq(pendingAlbums.id, id))
-    .get();
-  const media = row ? parseArrayValue(row.mediaJson) : [];
-  media.push(input.media);
-  const now = new Date().toISOString();
-  const values = {
-    id,
-    actorId: input.actorId,
-    chatId: input.chatId,
-    mediaGroupId: input.mediaGroupId,
-    step,
-    stepDataJson: stepData(input.step),
-    draftId: input.draftId,
-    stateRevision: input.stateRevision,
-    textRu: input.text || row?.textRu || "",
-    textEntitiesJson: JSON.stringify(input.entities.length ? input.entities : parseArrayValue(row?.textEntitiesJson)),
-    mediaJson: JSON.stringify(media),
-    notified: ALBUM_SETTLED,
-    updatedAt: now,
-  };
-  unsafeDb(backendDb)
-    .db.insert(pendingAlbums)
-    .values(values)
-    .onConflictDoUpdate({
-      target: pendingAlbums.id,
-      set: {
-        step: values.step,
-        stepDataJson: values.stepDataJson,
-        textRu: values.textRu,
-        textEntitiesJson: values.textEntitiesJson,
-        mediaJson: values.mediaJson,
-        notified: ALBUM_SETTLED,
-        updatedAt: now,
-      },
-    })
-    .run();
-  return !row;
+  const handle = unsafeDb(backendDb);
+  // Album items arrive as separate updates that can be handled concurrently, so
+  // read-modify-write of mediaJson has to be one transaction or an item is lost.
+  return handle.sqlite.transaction(() => {
+    const row = handle.db
+      .select({ mediaJson: pendingAlbums.mediaJson, textRu: pendingAlbums.textRu, textEntitiesJson: pendingAlbums.textEntitiesJson })
+      .from(pendingAlbums)
+      .where(eq(pendingAlbums.id, id))
+      .get();
+    const media = row ? parseArrayValue(row.mediaJson) : [];
+    media.push(input.media);
+    const now = new Date().toISOString();
+    const values = {
+      id,
+      actorId: input.actorId,
+      chatId: input.chatId,
+      mediaGroupId: input.mediaGroupId,
+      step,
+      stepDataJson: stepData(input.step),
+      draftId: input.draftId,
+      stateRevision: input.stateRevision,
+      textRu: input.text || row?.textRu || "",
+      textEntitiesJson: JSON.stringify(input.entities.length ? input.entities : parseArrayValue(row?.textEntitiesJson)),
+      mediaJson: JSON.stringify(media),
+      notified: ALBUM_SETTLED,
+      updatedAt: now,
+    };
+    handle.db
+      .insert(pendingAlbums)
+      .values(values)
+      .onConflictDoUpdate({
+        target: pendingAlbums.id,
+        set: {
+          step: values.step,
+          stepDataJson: values.stepDataJson,
+          textRu: values.textRu,
+          textEntitiesJson: values.textEntitiesJson,
+          mediaJson: values.mediaJson,
+          notified: ALBUM_SETTLED,
+          updatedAt: now,
+        },
+      })
+      .run();
+    return !row;
+  })();
 }
 
 export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendDb, config: BackendConfig): Promise<number> {
@@ -115,16 +123,26 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
     .from(pendingAlbums)
     .where(and(eq(pendingAlbums.notified, ALBUM_SETTLED), lte(pendingAlbums.updatedAt, cutoff)))
     .orderBy(asc(pendingAlbums.updatedAt))
+    .limit(ALBUM_FINALIZE_BATCH)
     .all();
   let completed = 0;
   for (const row of rows) {
+    // Count the attempt when the claim is taken, not when it throws: a crash
+    // mid-import would otherwise return the row unchanged and loop forever.
+    const attempts = row.attemptCount + 1;
     const claim = unsafeDb(backendDb)
       .db.update(pendingAlbums)
-      .set({ notified: ALBUM_CLAIMED, updatedAt: nowIso })
+      .set({ notified: ALBUM_CLAIMED, attemptCount: attempts, updatedAt: nowIso })
       .where(and(eq(pendingAlbums.id, row.id), eq(pendingAlbums.notified, ALBUM_SETTLED), lte(pendingAlbums.updatedAt, cutoff)))
       .returning({ id: pendingAlbums.id })
       .get();
     if (!claim) continue;
+    if (attempts > ALBUM_MAX_ATTEMPTS) {
+      await giveUpAlbum(bot, backendDb, row.id, row.actorId, row.chatId);
+      log("error", "album finalization failed", { album: row.id, attempts, exhausted: true, error: "claim attempts exhausted" });
+      continue;
+    }
+    let cardDraftId: number | null = null;
     try {
       const state = getConversationState(backendDb, row.actorId, "post");
       if (row.stateRevision != null && state?.revision !== row.stateRevision) {
@@ -138,13 +156,7 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
       const media = await importTelegramAlbumMedia(bot, backendDb, config, row.actorId, parseArrayValue(row.mediaJson));
       const draftId = row.draftId;
       const step = row.step as PostSessionStep | null;
-      const albumData = row.stepDataJson;
-      const locale =
-        albumData.locale === "ru" || albumData.locale === "en"
-          ? albumData.locale
-          : state?.data.locale === "ru" || state?.data.locale === "en"
-            ? state.data.locale
-            : null;
+      const locale = resolveLocale(row.stepDataJson.locale) ?? resolveLocale(state?.data.locale);
       const isEdit = step === "edit_text" && locale !== null;
       const isMediaReplacement = step === "replace_media" && locale !== null;
       if ((isEdit || isMediaReplacement) && draftId && locale) {
@@ -156,17 +168,16 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
           ...(isMediaReplacement ? { replaceMediaOnly: true } : {}),
         });
         clearConversationStateIfCurrent(backendDb, { kind: "post", step, draftId }, row.actorId, row.stateRevision);
-        await refreshDraftControlCard(bot, backendDb, config, row.actorId, draftId, row.chatId);
+        cardDraftId = draftId;
       } else {
         const text = row.textRu;
         const textEn = await translatePostText(text, config);
-        const created = createStudioServices(backendDb, config).posts.create(row.actorId, {
+        cardDraftId = createStudioServices(backendDb, config).posts.create(row.actorId, {
           text,
           textEn,
           media,
           entities: parseArrayValue(row.textEntitiesJson),
         });
-        await refreshDraftControlCard(bot, backendDb, config, row.actorId, created, row.chatId);
         if (step) clearConversationStateIfCurrent(backendDb, { kind: "post", step, draftId: row.draftId }, row.actorId, row.stateRevision);
       }
       const removed = unsafeDb(backendDb)
@@ -176,15 +187,13 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
         .get();
       if (removed) completed += 1;
     } catch (error) {
-      const attempts = row.attemptCount + 1;
       const exhausted = attempts >= ALBUM_MAX_ATTEMPTS;
       if (exhausted) {
-        unsafeDb(backendDb).db.delete(pendingAlbums).where(eq(pendingAlbums.id, row.id)).run();
-        await notifyAlbumGaveUp(bot, backendDb, row.actorId, row.chatId);
+        await giveUpAlbum(bot, backendDb, row.id, row.actorId, row.chatId);
       } else {
         unsafeDb(backendDb)
           .db.update(pendingAlbums)
-          .set({ notified: ALBUM_SETTLED, attemptCount: attempts, updatedAt: new Date().toISOString() })
+          .set({ notified: ALBUM_SETTLED, updatedAt: new Date().toISOString() })
           .where(and(eq(pendingAlbums.id, row.id), eq(pendingAlbums.notified, ALBUM_CLAIMED)))
           .run();
       }
@@ -195,8 +204,21 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
         error: String(error),
       });
     }
+    // The draft exists and the row is gone: the card is presentation, and a
+    // Telegram failure here must never replay finalization into a second draft.
+    if (cardDraftId !== null) {
+      try {
+        await refreshDraftControlCard(bot, backendDb, config, row.actorId, cardDraftId, row.chatId);
+      } catch (error) {
+        log("warn", "album control card failed", { album: row.id, draftId: cardDraftId, error: String(error) });
+      }
+    }
   }
   return completed;
+}
+
+function resolveLocale(value: unknown): "ru" | "en" | null {
+  return value === "ru" || value === "en" ? value : null;
 }
 
 function stepData(step: PostWizardStep | null): Record<string, unknown> {
@@ -207,7 +229,8 @@ function stepData(step: PostWizardStep | null): Record<string, unknown> {
 
 /** Last word on an album that will never become a draft. Best-effort: a failed
  * notification must not resurrect the row we just dropped. */
-async function notifyAlbumGaveUp(bot: Bot, backendDb: BackendDb, actorId: number, chatId: number): Promise<void> {
+async function giveUpAlbum(bot: Bot, backendDb: BackendDb, albumId: string, actorId: number, chatId: number): Promise<void> {
+  unsafeDb(backendDb).db.delete(pendingAlbums).where(eq(pendingAlbums.id, albumId)).run();
   try {
     await bot.api.sendMessage(chatId, t(botLocale(backendDb, actorId), "post.album-failed"));
   } catch (error) {
@@ -219,17 +242,17 @@ async function refreshDraftControlCard(
   bot: Bot,
   backendDb: BackendDb,
   config: BackendConfig,
-  _actorId: number,
+  actorId: number,
   draftId: number,
   chatId: number,
 ): Promise<void> {
   const preview = publicationRenderers(backendDb, config).post.card({
     backendDb,
     pipeline: createStudioServices(backendDb, config).posts,
-    actorId: _actorId,
+    actorId,
     publicationId: draftId,
     config,
-    locale: botLocale(backendDb, _actorId),
+    locale: botLocale(backendDb, actorId),
   });
   // A completed chat edit gets a fresh card at the bottom. Previous cards are
   // history, never a moving conversation prompt above the user's reply.
