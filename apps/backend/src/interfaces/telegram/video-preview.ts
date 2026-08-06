@@ -85,7 +85,7 @@ export function videoPreview(
       .row();
   if (["draft", "editing", "scheduled"].includes(draft.status) && targets.some((target) => isVideoTargetMetadataEditable(target.status)))
     keyboard.text(t(locale, "vpreview.edit-details"), publicationCallback("video", "edit_menu", [draft.id])).row();
-  keyboard.text(t(locale, "vpreview.cancel-pub"), publicationCallback("video", "cancel", [draft.id, "confirm_cancel"])).row();
+  keyboard.text(t(locale, "vpreview.cancel-pub"), publicationCallback("video", "cancel", [draft.id])).row();
   keyboard.text(t(locale, "queue.back-btn"), "queue_home");
   return { text: lines.join("\n"), keyboard };
 }

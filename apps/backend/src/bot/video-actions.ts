@@ -68,7 +68,10 @@ export function defineVideoActionHandlers(define: typeof action): Record<string,
     individual: define(handleScheduleMode, { entity: "draft", freshCard: true, sessionRevision: true, args: [] }),
     publish: define(handleNowAsk, { entity: "draft", freshCard: true, args: [] }),
     publish_confirm: define(handleNowConfirm, { entity: "draft", freshCard: true, sessionRevision: true, args: [] }),
-    cancel: define(handleCancelAsk, { entity: "draft", freshCard: true, args: ["view"] }),
+    cancel: define(handleCancelAsk, { entity: "draft", freshCard: true, args: [] }),
+    // Reachable from a standalone reminder message, not only from the card, so
+    // card freshness would reject a legitimate cancellation. The service
+    // validates target state instead.
     cancel_confirm: define(handleCancel, { entity: "draft", args: [] }),
     time: define(handleTime, { entity: "draft", freshCard: true, args: ["axis"] }),
     sched_pick: define(handleSchedulePick, { entity: "draft", freshCard: true, sessionRevision: true, args: ["axis", "clock"] }),
@@ -150,11 +153,6 @@ function videoConfirmationEffect(
     target,
   });
   return publicationCardEffect(card);
-}
-
-function existingVideoControlEffect(session: VideoConversationState, text: string, keyboard: InlineKeyboard): PublicationEffect[] {
-  if (!session.controlMessageId) return [{ type: "prompt", text, options: { parse_mode: "Markdown", reply_markup: keyboard } }];
-  return [{ type: "edit-message", messageId: session.controlMessageId, text, options: { parse_mode: "Markdown", reply_markup: keyboard } }];
 }
 
 async function handleLocale({ backendDb, actorId, locale, args }: VideoActionArgs): Promise<VideoActionResult> {
@@ -244,8 +242,7 @@ async function handleMetaBack({ backendDb, config, actorId }: VideoActionArgs): 
   const session = getVideoState(backendDb, actorId);
   const previous = session && backFlow(VIDEO_FLOW, session.step, { selectedTargets: session.selected });
   if (!session?.draftId || !previous) throw new StudioError("err.video-reopen-create");
-  const step = previous;
-  const saved = saveVideoState(backendDb, actorId, { ...session, step });
+  const saved = saveVideoState(backendDb, actorId, { ...session, step: previous });
   return videoStepEffects(backendDb, config, actorId, saved);
 }
 
@@ -283,7 +280,10 @@ async function handleScheduleStart({
   keyboard.row();
   appendCancelButton(keyboard, locale, publicationCallback("video", "cancel_dialog"), session.revision);
   const timeConfig = services.settings.timeConfig(actorId, config);
-  return existingVideoControlEffect(session, t(locale, "video.schedule-time-msk", { timezone: timeConfig.TIMEZONE_LABEL }), keyboard);
+  const text = t(locale, "video.schedule-time-msk", { timezone: timeConfig.TIMEZONE_LABEL });
+  const options = { parse_mode: "Markdown" as const, reply_markup: keyboard };
+  if (!session.controlMessageId) return [{ type: "prompt", text, options }];
+  return [{ type: "edit-message", messageId: session.controlMessageId, text, options }];
 }
 
 async function handleScheduleMode({ backendDb, config, actorId, action, draftId, services }: VideoActionArgs): Promise<VideoActionResult> {
@@ -292,13 +292,14 @@ async function handleScheduleMode({ backendDb, config, actorId, action, draftId,
   if (!targets.length) throw new StudioError("err.video-reopen-publish");
   const mode = action === "common" || action === "individual" ? action : null;
   if (!mode) throw new StudioError("err.video-reopen-publish");
+  const flowData = { ...session.data, selectedTargets: targets };
   const next = await advancePublicationFlow(
     backendDb,
     actorId,
     VIDEO_FLOW,
-    { ...session, data: { ...session.data, selectedTargets: targets }, selected: targets },
+    { ...session, data: flowData, selected: targets },
     mode,
-    { ...session.data, selectedTargets: targets },
+    flowData,
     "err.video-reopen-publish",
     (data, nextStep) => {
       const first = targets[0];
@@ -436,13 +437,10 @@ async function handleEditMenu({ actorId, locale, draftId, services }: VideoActio
   const canEditLabel = ["draft", "editing"].includes(details.draft.status);
   const targets = videos.metadataEditableTargets(actorId, draftId);
   const keyboard = new InlineKeyboard();
-  const addField = (field: EditableVideoField): void => {
-    keyboard.text(t(locale, EDIT_FIELDS[field].label), publicationCallback("video", "edit_field", [draftId, field])).row();
-  };
-  if (canEditLabel) addField("label");
-  for (const field of ["youtube_title", "youtube_description", "youtube_game_url", "youtube_tags"] as const)
-    if (targets.includes(EDIT_FIELDS[field].target)) addField(field);
-  if (targets.includes(EDIT_FIELDS.instagram_caption.target)) addField("instagram_caption");
+  for (const [field, definition] of Object.entries(EDIT_FIELDS) as [EditableVideoField, (typeof EDIT_FIELDS)[EditableVideoField]][]) {
+    const editable = "target" in definition ? targets.includes(definition.target) : canEditLabel;
+    if (editable) keyboard.text(t(locale, definition.label), publicationCallback("video", "edit_field", [draftId, field])).row();
+  }
   keyboard.text(t(locale, "common.back"), publicationCallback("video", "view", [draftId, "overview"]));
   return [
     {
@@ -476,16 +474,16 @@ async function handleEditField({ ctx, backendDb, actorId, locale, args, draftId,
 function scheduleValues(value: unknown): Record<string, string> | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const entries = Object.entries(value);
-  return entries.every(([target, date]) => typeof target === "string" && typeof date === "string")
-    ? Object.fromEntries(entries)
-    : undefined;
+  return entries.every(([, date]) => typeof date === "string") ? Object.fromEntries(entries) : undefined;
 }
 
 function videoSchedule(values: Record<string, string>): Partial<Record<VideoTarget, Date>> {
   const schedule: Partial<Record<VideoTarget, Date>> = {};
   for (const [targetText, value] of Object.entries(values)) {
     const target = requireVideoTarget(targetText);
-    schedule[target] = new Date(value);
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) throw new StudioError("action.schedule-expired");
+    schedule[target] = date;
   }
   return schedule;
 }
