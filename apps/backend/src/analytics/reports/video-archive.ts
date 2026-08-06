@@ -3,6 +3,7 @@ import { t } from "../../foundation/i18n/index.js";
 import type { StudioLocale as BotLocale } from "../../foundation/locale.js";
 import { escapeMarkdown } from "../../foundation/markdown.js";
 import { metricNumber } from "../snapshots/creator-store.js";
+import { ARCHIVE_PAGE_SIZE } from "./post-archive.js";
 
 export function creatorVideoArchive(
   backendDb: BackendDb,
@@ -12,6 +13,7 @@ export function creatorVideoArchive(
   text: string;
   items: Array<{ id: number; label: string }>;
   total: number;
+  pageSize: number;
 } {
   const total = Number(
     (
@@ -24,13 +26,14 @@ export function creatorVideoArchive(
   );
   const rows = unsafeDb(backendDb)
     .sqlite.prepare(
-      `SELECT d.id, COALESCE(d.label, 'Без названия') AS label FROM video_drafts d WHERE EXISTS (SELECT 1 FROM video_targets t WHERE t.video_draft_id=d.id AND t.status='published') ORDER BY d.updated_at DESC LIMIT 10 OFFSET ?`,
+      `SELECT d.id, COALESCE(d.label, 'Без названия') AS label FROM video_drafts d WHERE EXISTS (SELECT 1 FROM video_targets t WHERE t.video_draft_id=d.id AND t.status='published') ORDER BY d.updated_at DESC LIMIT ${ARCHIVE_PAGE_SIZE} OFFSET ?`,
     )
     .all(offset) as Array<{ id: number; label: string }>;
   return {
     text: rows.length ? `📚 ${t(locale, "report.video-archive-choose")}` : `📚 ${t(locale, "report.no-videos")}`,
     items: rows,
     total,
+    pageSize: ARCHIVE_PAGE_SIZE,
   };
 }
 

@@ -5,7 +5,9 @@ import { t } from "../../foundation/i18n/index.js";
 import type { StudioLocale as BotLocale } from "../../foundation/locale.js";
 import { metricNumber } from "../snapshots/creator-store.js";
 
-const PAGE_SIZE = 10;
+/** One page of an archive listing, shared by the post and video archives so a
+ * screen that paginates one of them can do the arithmetic for both. */
+export const ARCHIVE_PAGE_SIZE = 10;
 
 /** One definition of "a post the creator actually published", shared by the
  * archive listing and the archive summary so the two can never disagree. */
@@ -23,7 +25,7 @@ export function creatorPostArchive(
   backendDb: BackendDb,
   offset = 0,
   locale: BotLocale = "en",
-): { text: string; items: Array<{ id: number; label: string }>; total: number } {
+): { text: string; items: Array<{ id: number; label: string }>; total: number; pageSize: number } {
   const total = publishedPostCount(backendDb);
   const rows = unsafeDb(backendDb)
     .db.select({ id: posts.postId, label: sql<string>`coalesce(nullif(trim(${posts.text}), ''), 'Media post')` })
@@ -31,7 +33,7 @@ export function creatorPostArchive(
     .innerJoin(publications, eq(publications.postId, posts.postId))
     .where(eq(publications.status, "published"))
     .orderBy(desc(posts.updatedAt))
-    .limit(PAGE_SIZE)
+    .limit(ARCHIVE_PAGE_SIZE)
     .offset(offset)
     .all();
   const items = rows.flatMap((item) => (item.id == null ? [] : [{ id: item.id, label: item.label.replace(/\s+/g, " ").slice(0, 42) }]));
@@ -39,6 +41,7 @@ export function creatorPostArchive(
     text: items.length ? `📚 ${t(locale, "report.post-archive-choose")}` : `📚 ${t(locale, "report.no-posts")}`,
     items,
     total,
+    pageSize: ARCHIVE_PAGE_SIZE,
   };
 }
 

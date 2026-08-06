@@ -13,7 +13,9 @@ import { createStudioServices } from "../studio/services/index.js";
 import { botLocale } from "./i18n.js";
 import { isUnchangedMessageEdit } from "./telegram-errors.js";
 
-type AnalyticsSection = "overview" | "audience" | "posts" | "video";
+/** The sections this screen offers. The analytics read model also renders an
+ * "audience" section, which only MCP asks for — no button here produces it. */
+type AnalyticsSection = "overview" | "posts" | "video";
 
 /** Telegram adapter for the Analytics Studio screen. The analytics read model itself stays transport-neutral. */
 export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<boolean> {
@@ -38,7 +40,7 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
       keyboard.row().text(t(locale, "analytics.videos-btn", { count: summary.videos }), "analytics_archive:0");
     keyboard.row().text(t(locale, "common.menu"), "menu_home");
     await ctx.answerCallbackQuery();
-    await ctx.editMessageText(summary.text, { parse_mode: "Markdown", reply_markup: keyboard });
+    await editScreen(ctx, summary.text, { parse_mode: "Markdown", reply_markup: keyboard });
     return true;
   }
   if (data === "analytics_total" || data.startsWith("analytics_period:")) {
@@ -49,8 +51,7 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
   }
   if (data.startsWith("analytics_section:")) {
     const [, sectionValue, daysValue] = data.split(":");
-    const requested: AnalyticsSection =
-      sectionValue === "audience" || sectionValue === "posts" || sectionValue === "video" ? sectionValue : "overview";
+    const requested: AnalyticsSection = sectionValue === "posts" || sectionValue === "video" ? sectionValue : "overview";
     const section = requested === "overview" && !showOverview(config) ? defaultAnalyticsSection(config) : requested;
     await ctx.answerCallbackQuery();
     await showAnalyticsDashboard(ctx, backendDb, config, section, analyticsPeriod(Number(daysValue)));
@@ -61,17 +62,17 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
     const archive = analytics.videoArchive(offset, locale);
     const keyboard = new InlineKeyboard();
     for (const item of archive.items) keyboard.text(item.label, `analytics_video:${item.id}`).row();
-    archivePagination(keyboard, locale, "analytics_archive", offset, archive.items.length, archive.total);
+    archivePagination(keyboard, locale, "analytics_archive", offset, archive);
     keyboard.text(t(locale, "analytics.back-archive"), "archive_home").row().text(t(locale, "common.menu"), "menu_home");
     await ctx.answerCallbackQuery();
-    await ctx.editMessageText(archive.text, { reply_markup: keyboard });
+    await editScreen(ctx, archive.text, { reply_markup: keyboard });
     return true;
   }
   if (data.startsWith("analytics_video:")) {
     const id = archiveItemId(data, "analytics_video:");
     await ctx.answerCallbackQuery();
     if (id == null) return true;
-    await ctx.editMessageText(analytics.videoMetrics(id, locale), {
+    await editScreen(ctx, analytics.videoMetrics(id, locale), {
       parse_mode: "Markdown",
       reply_markup: new InlineKeyboard()
         .text(t(locale, "analytics.back-archive"), "analytics_archive:0")
@@ -85,10 +86,10 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
     const archive = analytics.postArchive(offset, locale);
     const keyboard = new InlineKeyboard();
     for (const item of archive.items) keyboard.text(item.label, `analytics_post:${item.id}`).row();
-    archivePagination(keyboard, locale, "analytics_post_archive", offset, archive.items.length, archive.total);
+    archivePagination(keyboard, locale, "analytics_post_archive", offset, archive);
     keyboard.text(t(locale, "analytics.back-archive"), "archive_home").row().text(t(locale, "common.menu"), "menu_home");
     await ctx.answerCallbackQuery();
-    await ctx.editMessageText(archive.text, { reply_markup: keyboard });
+    await editScreen(ctx, archive.text, { reply_markup: keyboard });
     return true;
   }
   if (data.startsWith("analytics_post:")) {
@@ -99,7 +100,7 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
     const keyboard = new InlineKeyboard();
     if (media.length) keyboard.text(t(locale, "analytics.show-media"), `analytics_post_media:${id}`).row();
     keyboard.text(t(locale, "analytics.back-archive"), "analytics_post_archive:0").row().text(t(locale, "common.menu"), "menu_home");
-    await ctx.editMessageText(analytics.postMetrics(id, locale), {
+    await editScreen(ctx, analytics.postMetrics(id, locale), {
       parse_mode: "Markdown",
       reply_markup: keyboard,
     });
@@ -111,15 +112,19 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
     if (id != null) await sendTelegramArchiveMedia(ctx, analytics.postMedia(id, locale));
     return true;
   }
-  if (data !== "analytics_ai") return false;
-  clearTelegramAnalyticsDashboard(backendDb, actorId);
-  await ctx.answerCallbackQuery({ text: t(locale, "analytics.preparing-report") });
-  const report = await analytics.audienceAnalysis(locale);
-  await ctx.editMessageText(report, {
-    parse_mode: "Markdown",
-    reply_markup: new InlineKeyboard().text(t(locale, "analytics.back-video"), "analytics_section:video:7"),
-  });
-  return true;
+  return false;
+}
+
+/** Telegram rejects an edit whose text and markup match what the message
+ * already shows, and every screen here carries a button that re-renders its own
+ * state: the active period, the active section, "← Archive" while page 0 is
+ * open. A repeat tap is a no-op, not an error. */
+async function editScreen(ctx: Context, ...args: Parameters<Context["editMessageText"]>): Promise<void> {
+  try {
+    await ctx.editMessageText(...args);
+  } catch (error) {
+    if (!isUnchangedMessageEdit(error)) throw error;
+  }
 }
 
 /** Callback data is attacker-controlled text; an archive id is only usable once
@@ -144,9 +149,9 @@ export async function showAnalyticsDashboard(
   const locale = botLocale(backendDb, actorId);
   const dashboard = createStudioServices(backendDb, config).analytics.dashboard(section, days, locale);
   const keyboard = analyticsKeyboard(config, locale, section, days);
-  await ctx.editMessageText({ html: dashboard.richHtml }, { reply_markup: keyboard });
+  await editScreen(ctx, { html: dashboard.richHtml }, { reply_markup: keyboard });
   const messageId = ctx.callbackQuery?.message?.message_id;
-  if (section !== "audience" && Number.isSafeInteger(actorId) && messageId && ctx.chat?.id)
+  if (Number.isSafeInteger(actorId) && messageId && ctx.chat?.id)
     setTelegramAnalyticsDashboard(backendDb, actorId, Number(ctx.chat.id), messageId, section, days);
 }
 
@@ -216,36 +221,36 @@ export function defaultAnalyticsSection(config: BackendConfig): AnalyticsSection
   const preferred = config.studio.analytics.defaultTab;
   if (preferred === "posts" && config.studio.modules.text_posting) return preferred;
   if (preferred === "video" && config.studio.modules.video_posting) return preferred;
-  return "overview";
+  // Overview only exists with both modules on; otherwise the preference names a
+  // module this Studio does not run, and the fallback has to be the one it does
+  // — landing on a section with no button would leave nothing highlighted.
+  if (showOverview(config)) return "overview";
+  return config.studio.modules.video_posting ? "video" : "posts";
 }
 
 function showOverview(config: BackendConfig): boolean {
   return config.studio.modules.text_posting && config.studio.modules.video_posting;
 }
 
-const PERIOD_LABELS: Record<1 | 7 | 30, { ru: string; en: string }> = {
-  1: { ru: "24 ч", en: "24 h" },
-  7: { ru: "7 д", en: "7 d" },
-  30: { ru: "30 д", en: "30 d" },
-};
-
 function periodButtonLabel(locale: ReturnType<typeof botLocale>, period: 1 | 7 | 30, selected: 1 | 7 | 30): string {
-  return `${period === selected ? "• " : ""}${PERIOD_LABELS[period][locale === "ru" ? "ru" : "en"]}`;
+  return t(locale, period === selected ? `analytics.period-${period}-active` : `analytics.period-${period}`);
 }
 
+/** Page arithmetic follows the page size the archive itself used, so the
+ * numbers under a listing cannot disagree with the listing above them. */
 function archivePagination(
   keyboard: InlineKeyboard,
   locale: ReturnType<typeof botLocale>,
   prefix: "analytics_archive" | "analytics_post_archive",
   offset: number,
-  count: number,
-  total: number,
+  archive: { items: Array<unknown>; total: number; pageSize: number },
 ): void {
-  if (!total) return;
-  const page = Math.floor(offset / 10) + 1;
-  const pages = Math.max(1, Math.ceil(total / 10));
-  if (offset > 0) keyboard.text(t(locale, "analytics.prev"), `${prefix}:${Math.max(0, offset - 10)}`);
+  if (!archive.total) return;
+  const page = Math.floor(offset / archive.pageSize) + 1;
+  const pages = Math.max(1, Math.ceil(archive.total / archive.pageSize));
+  if (offset > 0) keyboard.text(t(locale, "analytics.prev"), `${prefix}:${Math.max(0, offset - archive.pageSize)}`);
   keyboard.text(`${page}/${pages}`, "archive_noop");
-  if (offset + count < total) keyboard.text(t(locale, "analytics.next"), `${prefix}:${offset + count}`);
+  if (offset + archive.items.length < archive.total)
+    keyboard.text(t(locale, "analytics.next"), `${prefix}:${offset + archive.items.length}`);
   keyboard.row();
 }
