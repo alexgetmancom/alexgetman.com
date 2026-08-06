@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
-import { videoJobs, videoTargets } from "../src/db/schema.js";
+import { videoDrafts, videoJobs, videoTargets } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import {
   createVideoDraft,
@@ -9,6 +9,7 @@ import {
   scheduleVideo,
   updateVideoLabel,
 } from "../src/publishing/video-service.js";
+import { videoService } from "../src/studio/services/videos.js";
 import { useBackendDb } from "./helpers/db.js";
 
 const testDb = useBackendDb();
@@ -61,7 +62,7 @@ describe("video reschedule guard", () => {
     ).toEqual(["prepare", "publish"]);
   });
 
-  it("allows metadata changes while a scheduled platform is still waiting", () => {
+  it("allows metadata and label changes while a scheduled platform is still waiting", () => {
     const backendDb = testDb.open();
     const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
@@ -73,7 +74,26 @@ describe("video reschedule guard", () => {
       description: "",
       tags: [],
     });
-    expect(() => updateVideoLabel(backendDb, draftId, "Changed")).toThrow("err.video-draft-locked");
+    expect(() => updateVideoLabel(backendDb, draftId, "Changed")).not.toThrow();
+    expect(backendDb.db.select().from(videoTargets).where(eq(videoTargets.videoDraftId, draftId)).get()?.metadataJson).toEqual({
+      title: "Changed",
+      description: "",
+      tags: [],
+    });
+  });
+
+  it("finishes a scheduled YouTube title edit instead of reporting a draft lock", () => {
+    const backendDb = testDb.open();
+    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
+    scheduleVideo(backendDb, draftId, { youtube_shorts: new Date(Date.now() + 3_600_000) }, timing, videoConfig(), 24);
+
+    expect(() => videoService(backendDb, videoConfig()).editMetadataField(42, draftId, "youtube_title", "Changed title")).not.toThrow();
+
+    expect(backendDb.db.select().from(videoTargets).where(eq(videoTargets.videoDraftId, draftId)).get()?.metadataJson).toMatchObject({
+      title: "Changed title",
+    });
+    expect(backendDb.db.select().from(videoDrafts).where(eq(videoDrafts.id, draftId)).get()?.label).toBe("Changed title");
   });
 
   it("blocks metadata changes after target preparation has started", () => {

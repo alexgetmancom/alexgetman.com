@@ -46,7 +46,7 @@ export function createVideoDraft(
 
 export function updateVideoLabel(backendDb: BackendDb, id: number, label: string): void {
   const draft = getVideoDraft(backendDb, id);
-  if (!["draft", "editing"].includes(draft.status)) throw new StudioError("err.video-draft-locked");
+  if (!["draft", "editing", "scheduled"].includes(draft.status)) throw new StudioError("err.video-draft-locked");
   unsafeDb(backendDb)
     .db.update(videoDrafts)
     .set({ label: label.trim(), updatedAt: new Date().toISOString() })
