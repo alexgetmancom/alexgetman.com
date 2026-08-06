@@ -50,7 +50,7 @@ function renderPostScheduleConfirmation(
 ): PublicationEffect[] {
   const locale = botLocale(backendDb, actorId);
   const step = postStateStep({ step: "schedule_confirm", data: state.data });
-  if (!step || step.type !== "schedule_confirm") throw new StudioError("action.schedule-expired");
+  if (step?.type !== "schedule_confirm") throw new StudioError("action.schedule-expired");
   const posts = createStudioServices(backendDb, config).posts;
   const timeConfig = createStudioServices(backendDb, config).settings.timeConfig(actorId, config);
   const card = publicationRenderers(backendDb, config).post.card({

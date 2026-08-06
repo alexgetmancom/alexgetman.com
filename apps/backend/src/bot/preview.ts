@@ -23,7 +23,6 @@ import { createPublicationScheduleEngine, scheduleTimeKeyboard } from "./schedul
 
 const DRAFT_VIEWS = [
   "overview",
-  "modes",
   "schedule",
   "schedule_ru",
   "schedule_ru_day",

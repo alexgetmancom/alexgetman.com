@@ -29,7 +29,7 @@ export type PublicationActionContext = {
 /** Context of an action declared with `entity: "draft"`: the router resolved a real draft id. */
 export type PublicationDraftActionContext = PublicationActionContext & { draftId: number };
 
-export type PublicationActionResult = readonly PublicationEffect[] | void;
+export type PublicationActionResult = readonly PublicationEffect[] | undefined;
 export type PublicationActionHandler = (context: PublicationDraftActionContext) => Promise<PublicationActionResult>;
 type PublicationActionEntity = "draft" | "session" | "none";
 

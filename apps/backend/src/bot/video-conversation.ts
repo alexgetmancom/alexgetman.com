@@ -103,11 +103,13 @@ async function acceptVideoMessage(args: VideoMessageArgs): Promise<PublicationEf
 }
 
 async function acceptVideoAsset({ ctx, backendDb, config, actorId, session, services }: VideoMessageArgs): Promise<PublicationEffect[]> {
+  // Nothing about this depends on the upload, so fail before spending a
+  // Telegram download and before a draft row exists to be orphaned.
+  const selected = enabledVideoTargets(config);
+  if (!selected.length) throw new StudioError("err.no-video-platforms-config");
   const stored = await storeTelegramVideo(ctx, backendDb, config, actorId);
   const videos = services.videos;
   const draftId = videos.create(actorId, stored.assetId, session.data.videoLocale === "en" ? "en" : "ru");
-  const selected = enabledVideoTargets(config);
-  if (!selected.length) throw new StudioError("err.no-video-platforms-config");
   videos.replaceTargets(actorId, draftId, selected);
   const saved = await advancePublicationFlow(
     backendDb,
@@ -122,7 +124,7 @@ async function acceptVideoAsset({ ctx, backendDb, config, actorId, session, serv
 }
 
 async function acceptVideoLabel({ backendDb, config, actorId, session, text, services }: VideoMessageArgs): Promise<PublicationEffect[]> {
-  if (session.draftId == null) return [];
+  if (session.draftId == null) throw new StudioError("err.video-missing");
   services.videos.rename(actorId, session.draftId, text);
   if (session.data.is_single_edit) return videoCardEffects(backendDb, config, actorId, session.draftId, services);
   const saved = await advancePublicationFlow(
@@ -153,7 +155,7 @@ async function acceptVideoMetadata({
   text,
   services,
 }: VideoMessageArgs): Promise<PublicationEffect[]> {
-  if (session.draftId == null) return [];
+  if (session.draftId == null) throw new StudioError("err.video-missing");
   if (!isVideoWizardStep(session.step)) throw new StudioError("err.video-restart");
   const step = session.step;
   const saved = await advancePublicationFlow(
@@ -164,7 +166,6 @@ async function acceptVideoMetadata({
     text,
     { ...session.data, selectedTargets: session.selected },
     "err.video-restart",
-    (data) => withoutFlowData(data),
   );
   const completed = COMPLETED_WIZARD_TARGET[step];
   if (completed) services.videos.completeWizardTarget(actorId, session.draftId, completed, saved.data, session.selected);
@@ -205,14 +206,9 @@ const COMPLETED_WIZARD_TARGET: Partial<Record<VideoWizardStep, VideoTarget>> = {
   instagram_caption: "instagram_reels",
 };
 
-function withoutFlowData(data: Record<string, unknown>): Record<string, unknown> {
-  return data;
-}
-
-/** Which target one already-set field belongs to when it is edited outside the
- * wizard order (reached via "✏️ Edit" on a finished draft). The value itself is
- * parsed by the same transition the wizard uses, so "-" and URL fixing cannot
- * drift between the two entry points. */
+/** Applies one already-set field edited outside the wizard order (reached via
+ * "✏️ Edit" on a finished draft). The value is parsed by the same transition the
+ * wizard uses, so "-" and URL fixing cannot drift between the two entry points. */
 async function finishSingleVideoEdit({
   backendDb,
   config,
