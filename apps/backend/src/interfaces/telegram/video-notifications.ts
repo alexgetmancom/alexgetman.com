@@ -12,6 +12,7 @@ import { log } from "../../foundation/logger.js";
 import { getVideoDraft } from "../../publishing/video-data.js";
 import type { VideoTarget } from "../../publishing/video-types.js";
 import { videoTargetLabel } from "../../publishing/video-types.js";
+import { settingsService } from "../../studio/services/settings.js";
 import { telegramVideoCard } from "./control-cards.js";
 import { videoPreview } from "./video-preview.js";
 import { formatVideoTime } from "./video-time.js";
@@ -57,9 +58,10 @@ export async function refreshVideoControlCard(
   const card = telegramVideoCard(backendDb, videoDraftId);
   if (!card || card.chatId == null || card.messageId == null) return;
   const draft = getVideoDraft(backendDb, videoDraftId);
+  const timeConfig = settingsService(backendDb).timeConfig(draft.actorId, config);
   const preview = videoPreview(
     { draft, targets: unsafeDb(backendDb).db.select().from(videoTargets).where(eq(videoTargets.videoDraftId, videoDraftId)).all() },
-    config,
+    timeConfig,
     botLocale(backendDb, draft.actorId),
   );
   try {
@@ -87,8 +89,9 @@ export async function sendVideoReminder(
     const preference = notificationPreference(backendDb, actorId);
     if (!preference.remindersEnabled) return;
     const locale = botLocale(backendDb, actorId);
+    const timeConfig = settingsService(backendDb).timeConfig(actorId, config);
     const title = draft.label || t(locale, "common.untitled");
-    const text = `${t(locale, "notif.reminder-head", { minutes: preference.reminderMinutes })}\n\n🎬 ${title}\n${draft.locale === "en" ? "🇬🇧 EN" : "🇷🇺 RU"}\n\n• ${videoTargetLabel(target.target as VideoTarget)}\n\n${formatVideoTime(target.scheduledAt, locale, config)}`;
+    const text = `${t(locale, "notif.reminder-head", { minutes: preference.reminderMinutes })}\n\n🎬 ${title}\n${draft.locale === "en" ? "🇬🇧 EN" : "🇷🇺 RU"}\n\n• ${videoTargetLabel(target.target as VideoTarget)}\n\n${formatVideoTime(target.scheduledAt, locale, timeConfig)}`;
     await bot.api.sendMessage(actorId, text, {
       reply_markup: new InlineKeyboard()
         .text(t(locale, "notif.open"), publicationCallback("video", "view", [draft.id, "overview"]))
@@ -122,11 +125,12 @@ export async function sendStudioReminder(
   await forEachAdmin(config.ADMIN_IDS, async (actorId) => {
     if (!notificationPreference(backendDb, actorId).remindersEnabled) return;
     const locale = botLocale(backendDb, actorId);
+    const timeConfig = settingsService(backendDb).timeConfig(actorId, config);
     const title = typeof details.title === "string" ? details.title : (event.postKey ?? t(locale, "notif.publication"));
     const lines = targets.map((target) => `• ${friendlyTarget(target)}${videoLocale ? ` · ${videoLocale.toUpperCase()}` : ""}`);
     await bot.api.sendMessage(
       actorId,
-      `${t(locale, "notif.reminder-head", { minutes })}\n\n🎬 ${title}${videoLocale ? `\n${videoLocale === "en" ? "🇬🇧 EN" : "🇷🇺 RU"}` : ""}\n\n${lines.join("\n")}${publishAt ? `\n\n${formatVideoTime(publishAt, locale, config)}` : ""}`.trim(),
+      `${t(locale, "notif.reminder-head", { minutes })}\n\n🎬 ${title}${videoLocale ? `\n${videoLocale === "en" ? "🇬🇧 EN" : "🇷🇺 RU"}` : ""}\n\n${lines.join("\n")}${publishAt ? `\n\n${formatVideoTime(publishAt, locale, timeConfig)}` : ""}`.trim(),
       { reply_markup: new InlineKeyboard().text(t(locale, "settings.notifications"), "notifications_home") },
     );
   });
@@ -155,6 +159,7 @@ export async function sendStudioCompletion(
   await forEachAdmin(config.ADMIN_IDS, async (actorId) => {
     if (!notificationPreference(backendDb, actorId).completionEnabled) return;
     const locale = botLocale(backendDb, actorId);
+    const timeConfig = settingsService(backendDb).timeConfig(actorId, config);
     const label = parsePublicationRef(event.postKey)?.kind === "video" ? t(locale, "notif.label-video") : t(locale, "notif.label-post");
     const headline = partialLocale
       ? failed
@@ -175,7 +180,7 @@ export async function sendStudioCompletion(
           result.error && (result.status === "failed" || result.status === "verification_required") ? ` — ${shortError(result.error)}` : ""
         }`,
     );
-    const remaining = partialLocale ? remainingScheduleText(details, locale, config) : "";
+    const remaining = partialLocale ? remainingScheduleText(details, locale, timeConfig) : "";
     const text = `${headline}${videoLocale ? `\n${videoLocale === "en" ? "🇬🇧 EN" : "🇷🇺 RU"}` : ""}${remaining ? `\n\n${remaining}` : ""}${lines.length ? `\n\n${lines.join("\n")}` : ""}`;
     await bot.api.sendMessage(actorId, text, {
       reply_markup: completionKeyboard(locale, event.postKey, draftId, failedTargets, partialLocale != null),

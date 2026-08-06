@@ -1,6 +1,8 @@
 import { StudioError } from "../foundation/errors.js";
 import { zonedDateParts, zonedSlot } from "../foundation/time.js";
 
+const MAX_SCHEDULE_AHEAD_MS = 30 * 24 * 60 * 60 * 1000;
+
 /** Resolves a slot-button clock (`HH:MM` in the configured zone) to today's occurrence, or
  * tomorrow's if today's has already passed. Used by the RU/EN preset
  * scheduling buttons. */
@@ -27,23 +29,24 @@ export function parseManualSchedule(value: string, timeZone: string, now = new D
   }
   match = input.match(/^(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))? (\d{1,2}):(\d{2})$/);
   if (!match) throw new StudioError("common.schedule-parse-error");
-  let year = Number(match[3] ?? today.year);
+  const year = Number(match[3] ?? today.year);
   const month = Number(match[2]);
   const day = Number(match[1]);
   const hour = Number(match[4]);
   const minute = Number(match[5]);
   if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59) throw new StudioError("common.schedule-parse-error");
-  let candidate = parseZonedSlot(year, month, day, `${match[4]?.padStart(2, "0")}:${match[5]}`, timeZone);
+  const candidate = parseZonedSlot(year, month, day, `${match[4]?.padStart(2, "0")}:${match[5]}`, timeZone);
   const parts = zonedDateParts(candidate, timeZone);
   if (parts.year !== year || parts.month !== month || parts.day !== day) throw new StudioError("common.schedule-parse-error");
-  if (!match[3] && candidate <= now) candidate = parseZonedSlot(++year, month, day, `${match[4]?.padStart(2, "0")}:${match[5]}`, timeZone);
-  if (candidate <= now) throw new StudioError("err.schedule-time-past");
+  if (!match[3] && candidate <= now) throw new StudioError("err.schedule-date-past");
+  assertFutureSchedule(candidate, now);
   return candidate;
 }
 
 /** Enforces the application-level contract shared by post and video scheduling. */
 export function assertFutureSchedule(value: Date, now = new Date()): void {
   if (Number.isNaN(value.getTime()) || value.getTime() <= now.getTime()) throw new StudioError("err.schedule-time-past");
+  if (value.getTime() - now.getTime() > MAX_SCHEDULE_AHEAD_MS) throw new StudioError("err.schedule-too-far");
 }
 
 /** Validates a persisted schedule while allowing an internal replan to retain a

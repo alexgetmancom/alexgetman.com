@@ -34,7 +34,7 @@ export function analyticsService(backendDb: BackendDb, config: BackendConfig) {
       return creatorVideoArchive(backendDb, offset, locale);
     },
     videoMetrics(publicationId: number, locale: BotLocale) {
-      return creatorVideoMetrics(backendDb, publicationId, locale);
+      return creatorVideoMetrics(backendDb, publicationId, locale, config.TIMEZONE);
     },
     audienceAnalysis(locale: BotLocale) {
       return audienceAnalysis(backendDb, config, locale);

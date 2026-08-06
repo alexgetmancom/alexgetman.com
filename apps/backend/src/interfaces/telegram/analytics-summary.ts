@@ -19,7 +19,7 @@ export async function sendWeeklyAnalyticsSummary(
   if (!bot || !config.studio.modules.analytics) return false;
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Europe/Moscow",
+      timeZone: config.TIMEZONE,
       weekday: "short",
       hour: "2-digit",
       hourCycle: "h23",

@@ -4,8 +4,9 @@ import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { type MessageKey, t } from "../foundation/i18n/index.js";
+import { manualScheduleExample } from "../foundation/time.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
-import type { StudioServices } from "../studio/services/index.js";
+import { createStudioServices, type StudioServices } from "../studio/services/index.js";
 import { isVideoWizardStep, VIDEO_FLOW, type VideoConversationStep, type VideoWizardStep } from "../studio/video-fsm.js";
 import { type ConversationState, clearConversationState, getConversationState, saveConversationState } from "./conversation-state.js";
 import { appendCancelButton, cancelPromptKeyboard } from "./dialog-ui.js";
@@ -117,11 +118,20 @@ export function videoStepEffects(
 ): PublicationEffect[] {
   const step = session.step;
   const locale = botLocale(backendDb, actorId);
+  const timeConfig = createStudioServices(backendDb, config).settings.timeConfig(actorId, config);
   if (isVideoWizardStep(step)) return metadataPromptEffects(backendDb, actorId, step, session.selected);
   if (step === "schedule_choice")
-    return scheduleChoiceEffects(session, locale, t(locale, "video.saved-choose-schedule", { timezone: config.TIMEZONE_LABEL }));
+    return scheduleChoiceEffects(session, locale, t(locale, "video.saved-choose-schedule", { timezone: timeConfig.TIMEZONE_LABEL }));
   if (step === "schedule_common")
-    return videoTimeEffects(backendDb, actorId, session, t(locale, "video.enter-datetime", { timezone: config.TIMEZONE_LABEL }));
+    return videoTimeEffects(
+      backendDb,
+      actorId,
+      session,
+      t(locale, "video.enter-datetime", {
+        timezone: timeConfig.TIMEZONE_LABEL,
+        example: manualScheduleExample(timeConfig.TIMEZONE, backendDb.clock.now()),
+      }),
+    );
   if (step === "schedule_target") {
     const target = session.data.target;
     if (typeof target !== "string" || !VIDEO_TARGETS.includes(target as VideoTarget)) throw new StudioError("err.video-no-platforms");
@@ -131,7 +141,8 @@ export function videoStepEffects(
       session,
       t(locale, "video.schedule-target-prompt", {
         target: videoTargetLabel(target as VideoTarget),
-        timezone: config.TIMEZONE_LABEL,
+        timezone: timeConfig.TIMEZONE_LABEL,
+        example: manualScheduleExample(timeConfig.TIMEZONE, backendDb.clock.now()),
       }),
     );
   }
@@ -218,6 +229,7 @@ export function videoScheduleConfirmationEffects(
   if (!draftId) throw new StudioError("err.video-missing");
   const locale = botLocale(backendDb, actorId);
   const videos = services.videos;
+  const timeConfig = services.settings.timeConfig(actorId, config);
   // The transition runner already saved the `schedule_confirm` session. This
   // renderer must only derive Telegram effects, otherwise one user action
   // would consume two revisions and invalidate its own buttons.
@@ -243,7 +255,7 @@ export function videoScheduleConfirmationEffects(
     entries,
     label: videoTargetLabel,
     formatValue: (value) =>
-      `${value.toLocaleString(locale === "ru" ? "ru-RU" : "en-GB", { timeZone: config.TIMEZONE })} ${config.TIMEZONE_LABEL}`,
+      `${value.toLocaleString(locale === "ru" ? "ru-RU" : "en-GB", { timeZone: timeConfig.TIMEZONE })} ${timeConfig.TIMEZONE_LABEL}`,
     confirm: { label: t(locale, "common.confirm"), callback: engine.confirmCallback() },
     back: { label: t(locale, "common.back"), callback: publicationCallback("video", "schedule", [draftId]) },
     effects: [{ type: "delivery-previews", projections: videos.preview(actorId, draftId).delivery.projections, locale }],

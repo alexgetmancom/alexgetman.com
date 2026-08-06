@@ -45,6 +45,7 @@ describe("openBackendDb", () => {
     const fixture = new Database(dbPath);
     fixture.exec("DROP TABLE conversation_sessions");
     fixture.exec("DROP TABLE pending_albums");
+    fixture.exec("ALTER TABLE bot_ui_settings DROP COLUMN timezone");
     fixture.exec(
       "CREATE TABLE pending_albums (id text PRIMARY KEY NOT NULL, actor_id integer NOT NULL, chat_id integer NOT NULL, media_group_id text NOT NULL, action text, draft_id integer, state_revision integer, text_ru text DEFAULT '' NOT NULL, text_entities_json text, media_json text NOT NULL, notified integer DEFAULT 0 NOT NULL, attempt_count integer DEFAULT 0 NOT NULL, updated_at text NOT NULL)",
     );
@@ -75,8 +76,8 @@ describe("openBackendDb", () => {
         "2026-08-04T10:30:00.000Z",
       );
     const migrations = drizzleMigrationMetadata();
-    const latestMigrations = migrations.slice(-4);
-    if (latestMigrations.length !== 4) throw new Error("migration metadata is incomplete");
+    const latestMigrations = migrations.slice(-5);
+    if (latestMigrations.length !== 5) throw new Error("migration metadata is incomplete");
     fixture
       .prepare(`DELETE FROM __drizzle_migrations WHERE hash IN (${latestMigrations.map(() => "?").join(", ")})`)
       .run(...latestMigrations.map((migration) => migration.hash));
@@ -257,6 +258,7 @@ describe("openBackendDb", () => {
     fixture.exec("DROP TABLE x_activity_metric_snapshots");
     fixture.exec("DROP TABLE channel_credentials");
     fixture.exec("DROP TABLE runtime_usage");
+    fixture.exec("ALTER TABLE bot_ui_settings DROP COLUMN timezone");
     fixture.close();
 
     const legacy = new Database(dbPath) as unknown as Parameters<typeof baselineDrizzleMigrations>[0];

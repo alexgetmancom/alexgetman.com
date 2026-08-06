@@ -14,6 +14,12 @@ export function createStudioSettingsStore(db: BackendDatabase): StudioSettingsSt
       return db.select({ value: botUiSettings.locale }).from(botUiSettings).where(eq(botUiSettings.actorId, actorId)).get()?.value ?? null;
     },
 
+    timezone(actorId) {
+      return (
+        db.select({ value: botUiSettings.timezone }).from(botUiSettings).where(eq(botUiSettings.actorId, actorId)).get()?.value ?? null
+      );
+    },
+
     weeklyDigest() {
       return db.select().from(studioWeeklyDigestSettings).where(eq(studioWeeklyDigestSettings.id, 1)).get() ?? null;
     },
@@ -67,6 +73,16 @@ export function createStudioSettingsStore(db: BackendDatabase): StudioSettingsSt
         .onConflictDoUpdate({
           target: botUiSettings.actorId,
           set: { locale: input.locale, updatedAt: input.updatedAt },
+        })
+        .run();
+    },
+
+    saveTimezone(input) {
+      db.insert(botUiSettings)
+        .values(input)
+        .onConflictDoUpdate({
+          target: botUiSettings.actorId,
+          set: { timezone: input.timezone, updatedAt: input.updatedAt },
         })
         .run();
     },

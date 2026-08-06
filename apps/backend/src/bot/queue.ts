@@ -15,15 +15,18 @@ const ATTENTION_PAGE_SIZE = 10;
 type QueuePage = { upcoming: StudioQueueItem[]; drafts: StudioQueueItem[] };
 
 export async function showQueue(ctx: Context, backendDb: BackendDb, config: BackendConfig, page = 0): Promise<void> {
-  const locale = botLocale(backendDb, Number(ctx.from?.id));
-  const snapshot = createStudioServices(backendDb, config).queue.snapshot(Number(ctx.from?.id));
+  const actorId = Number(ctx.from?.id);
+  const locale = botLocale(backendDb, actorId);
+  const services = createStudioServices(backendDb, config);
+  const timeConfig = services.settings.timeConfig(actorId, config);
+  const snapshot = services.queue.snapshot(actorId);
   const keyboard = new InlineKeyboard();
-  const pages = queuePageCount(snapshot, config.TIMEZONE);
+  const pages = queuePageCount(snapshot, timeConfig.TIMEZONE);
   const currentPage = Math.max(0, Math.min(Math.trunc(page), pages - 1));
-  const pageItems = queuePage(snapshot, config.TIMEZONE, currentPage);
-  const text = queueText(snapshot, locale, config.TIMEZONE, currentPage);
+  const pageItems = queuePage(snapshot, timeConfig.TIMEZONE, currentPage);
+  const text = queueText(snapshot, locale, timeConfig.TIMEZONE, currentPage);
 
-  for (const item of pageItems.upcoming) keyboard.text(itemButton(item, locale, config.TIMEZONE), itemCallback(item)).row();
+  for (const item of pageItems.upcoming) keyboard.text(itemButton(item, locale, timeConfig.TIMEZONE), itemCallback(item)).row();
   for (const item of pageItems.drafts) keyboard.text(`${kindIcon(item.kind)} ${item.label}`, itemCallback(item)).row();
   if (snapshot.attention.length)
     keyboard.text(t(locale, "queue.attention-btn", { count: snapshot.attention.length }), "queue_attention").row();
@@ -38,8 +41,11 @@ export async function showQueue(ctx: Context, backendDb: BackendDb, config: Back
 }
 
 export async function showQueueAttention(ctx: Context, backendDb: BackendDb, config: BackendConfig, page = 0): Promise<void> {
-  const locale = botLocale(backendDb, Number(ctx.from?.id));
-  const snapshot = createStudioServices(backendDb, config).queue.snapshot(Number(ctx.from?.id));
+  const actorId = Number(ctx.from?.id);
+  const locale = botLocale(backendDb, actorId);
+  const services = createStudioServices(backendDb, config);
+  const timeConfig = services.settings.timeConfig(actorId, config);
+  const snapshot = services.queue.snapshot(actorId);
   const pages = attentionPageCount(snapshot);
   const currentPage = Math.max(0, Math.min(Math.trunc(page), pages - 1));
   const items = pageSlice(snapshot.attention, currentPage, ATTENTION_PAGE_SIZE);
@@ -58,7 +64,7 @@ export async function showQueueAttention(ctx: Context, backendDb: BackendDb, con
   if (!items.length) lines.push(t(locale, "queue.no-attention"));
   else
     for (const item of items)
-      lines.push(`• ${formatQueueTime(item.time, locale, config.TIMEZONE)} — ${kindIcon(item.kind)} ${escapeMarkdown(item.label)}`);
+      lines.push(`• ${formatQueueTime(item.time, locale, timeConfig.TIMEZONE)} — ${kindIcon(item.kind)} ${escapeMarkdown(item.label)}`);
   if (pages > 1) lines.push("", t(locale, "queue.page", { page: currentPage + 1, pages }));
   await replaceQueueMessage(ctx, lines.join("\n"), keyboard);
 }

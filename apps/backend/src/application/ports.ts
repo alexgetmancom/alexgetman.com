@@ -209,6 +209,7 @@ export type StudioNotificationStore = {
 export type StudioSettingsStore = {
   notifications(actorId: number): StudioNotificationSettingsRecord | null;
   locale(actorId: number): string | null;
+  timezone(actorId: number): string | null;
   weeklyDigest(): StudioWeeklyDigestSettingsRecord | null;
   saveWeeklyDigest(input: { enabled: number; weekday: number; updatedAt: string }): void;
   saveNotifications(input: {
@@ -221,6 +222,7 @@ export type StudioSettingsStore = {
   botSettings(actorId: number): StudioBotSettingsRecord | null;
   saveBotSettings(input: { actorId: number; youtubeSignature: string; pendingAction: string | null; updatedAt: string }): void;
   saveLocale(input: { actorId: number; locale: string; updatedAt: string }): void;
+  saveTimezone(input: { actorId: number; timezone: string; updatedAt: string }): void;
 };
 
 type StudioNotificationSettingsRecord = {

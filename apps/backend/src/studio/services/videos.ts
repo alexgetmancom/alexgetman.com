@@ -193,11 +193,13 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
     },
     manualSchedule(actorId: number, publicationId: number, value: string): Date {
       requireOwnedVideo(backendDb, config, actorId, publicationId);
-      return parseManualSchedule(value, config.TIMEZONE, backendDb.clock.now());
+      const timeConfig = settingsService(backendDb).timeConfig(actorId, config);
+      return parseManualSchedule(value, timeConfig.TIMEZONE, backendDb.clock.now());
     },
     /** Resolves a slot-button clock (`HH:MM` in the configured Studio zone) to its next occurrence. */
-    slotTime(clock: string): Date {
-      return publicationSlotTime(clock, config.TIMEZONE, backendDb.clock.now());
+    slotTime(actorId: number, clock: string): Date {
+      const timeConfig = settingsService(backendDb).timeConfig(actorId, config);
+      return publicationSlotTime(clock, timeConfig.TIMEZONE, backendDb.clock.now());
     },
   };
   service satisfies PublicationPipeline;

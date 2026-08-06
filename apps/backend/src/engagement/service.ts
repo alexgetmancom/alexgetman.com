@@ -21,11 +21,11 @@ export function engagementService(backendDb: BackendDb, config: BackendConfig) {
       );
       if (!allowed.allowed) return false;
       return trackUsageSync(backendDb, "engagement.pageview.record", () => {
-        recordPageview(backendDb, path);
+        recordPageview(backendDb, path, config.TIMEZONE);
         return true;
       });
     },
-    metrics: () => metricsSummary(backendDb),
+    metrics: () => metricsSummary(backendDb, config.TIMEZONE),
     allowLikes,
     likes: (request: Request, postId: string) =>
       trackUsageSync(backendDb, "engagement.likes.lookup", () => likesInfo(backendDb, postId, clientKey(request))),

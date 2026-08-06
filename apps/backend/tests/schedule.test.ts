@@ -7,6 +7,7 @@ import {
   scheduleTimeKeyboard,
 } from "../src/bot/scheduling.js";
 import { StudioError } from "../src/foundation/errors.js";
+import { manualScheduleExample } from "../src/foundation/time.js";
 import { parseManualSchedule, publicationSlotTime } from "../src/publishing/schedule.js";
 
 function expectStudioError(fn: () => unknown, code: string): void {
@@ -88,6 +89,9 @@ describe("publishing schedule", () => {
     expect(parseManualSchedule("21:15", "Europe/Moscow", now).toISOString()).toBe("2026-07-10T18:15:00.000Z");
     expect(parseManualSchedule("09:00", "Europe/Moscow", now).toISOString()).toBe("2026-07-11T06:00:00.000Z");
     expect(parseManualSchedule("12.07 10:30", "Europe/Moscow", now).toISOString()).toBe("2026-07-12T07:30:00.000Z");
+    expectStudioError(() => parseManualSchedule("09.07 10:30", "Europe/Moscow", now), "err.schedule-date-past");
+    expectStudioError(() => parseManualSchedule("10.08 10:30", "Europe/Moscow", now), "err.schedule-too-far");
+    expect(manualScheduleExample("Europe/Moscow", now)).toBe("10.07 HH:MM");
     expect(publicationSlotTime("21:00", "Europe/Moscow", now).toISOString()).toBe("2026-07-10T18:00:00.000Z");
     expect(publicationSlotTime("10:00", "Europe/Moscow", now).toISOString()).toBe("2026-07-11T07:00:00.000Z");
     expectStudioError(() => parseManualSchedule("25:00", "Europe/Moscow", now), "common.schedule-parse-error");

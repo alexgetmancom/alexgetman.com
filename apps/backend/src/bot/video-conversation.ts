@@ -188,9 +188,10 @@ async function acceptVideoScheduleDate({
     date = services.videos.manualSchedule(actorId, session.draftId, text);
   } catch (error) {
     const locale = botLocale(backendDb, actorId);
+    const timeConfig = services.settings.timeConfig(actorId, config);
     const message =
       error instanceof StudioError && error.code === "common.schedule-parse-error"
-        ? t(locale, "common.schedule-parse-error", { timezone: config.TIMEZONE_LABEL })
+        ? t(locale, "common.schedule-parse-error", { timezone: timeConfig.TIMEZONE_LABEL })
         : describeError(locale, error);
     return [videoPromptEffect(backendDb, actorId, message, true)];
   }

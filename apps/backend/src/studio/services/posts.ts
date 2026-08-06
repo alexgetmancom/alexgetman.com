@@ -228,14 +228,16 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
       return hasLocaleTarget(effectivePostTargets(backendDb, parseTargets(draft.targets_json)), locale);
     },
-    slotTime(clock: string): Date {
-      return publicationSlotTime(clock, config.TIMEZONE, backendDb.clock.now());
+    slotTime(actorId: number, clock: string): Date {
+      const timeConfig = settingsService(backendDb).timeConfig(actorId, config);
+      return publicationSlotTime(clock, timeConfig.TIMEZONE, backendDb.clock.now());
     },
     manualSchedule(actorId: number, draftId: number, scope: PostScheduleScope, value: string): PostScheduleInput {
+      const timeConfig = settingsService(backendDb).timeConfig(actorId, config);
       return scheduleAt(
         requireOwnedDraft(backendDb, config, actorId, draftId),
         scope,
-        parseManualSchedule(value, config.TIMEZONE, backendDb.clock.now()),
+        parseManualSchedule(value, timeConfig.TIMEZONE, backendDb.clock.now()),
       );
     },
     scheduleAt(actorId: number, draftId: number, scope: PostScheduleScope, value: Date): PostScheduleInput {

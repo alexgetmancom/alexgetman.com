@@ -91,7 +91,9 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
       const scheduleInput = stateStep.type === "schedule_manual";
       const errorText =
         error instanceof StudioError && error.code === "common.schedule-parse-error"
-          ? t(locale, "common.schedule-parse-error", { timezone: config.TIMEZONE_LABEL })
+          ? t(locale, "common.schedule-parse-error", {
+              timezone: createStudioServices(backendDb, config).settings.timeConfig(actorId, config).TIMEZONE_LABEL,
+            })
           : describeError(locale, error);
       return {
         handled: true,

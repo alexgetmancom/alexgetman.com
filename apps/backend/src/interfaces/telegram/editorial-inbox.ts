@@ -29,7 +29,7 @@ export async function sendDailyEditorialInbox(
   fetchImpl: typeof fetch = fetch,
 ): Promise<boolean> {
   if (!bot || !config.DEEPSEEK_API_KEY || config.ADMIN_IDS.length === 0) return false;
-  const date = moscowDate(now);
+  const date = zonedDate(config.TIMEZONE, now);
   if (date.hour < config.EDITORIAL_INBOX_HOUR_MSK) return false;
   const key = `editorial_inbox:${date.day}`;
 
@@ -99,10 +99,10 @@ export async function sendDailyEditorialInbox(
   }
 }
 
-function moscowDate(now: Date): { day: string; hour: number } {
+function zonedDate(timeZone: string, now: Date): { day: string; hour: number } {
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Europe/Moscow",
+      timeZone,
       year: "numeric",
       month: "2-digit",
       day: "2-digit",

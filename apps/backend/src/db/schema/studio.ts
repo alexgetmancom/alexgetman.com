@@ -71,6 +71,7 @@ export const botSettings = sqliteTable("bot_settings", {
 export const botUiSettings = sqliteTable("bot_ui_settings", {
   actorId: integer().primaryKey(),
   locale: text().notNull().default("en"),
+  timezone: text(),
   updatedAt: text().notNull(),
 });
 

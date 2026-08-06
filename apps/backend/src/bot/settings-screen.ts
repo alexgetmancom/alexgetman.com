@@ -16,8 +16,28 @@ const WEEKLY_DIGEST_MENU_ID = "settings-weekly-digest";
 const YOUTUBE_SIGNATURE_MENU_ID = "settings-youtube";
 const LANGUAGE_MENU_ID = "settings-language";
 const CHANNELS_MENU_ID = "settings-channels";
+const TIMEZONE_MENU_ID = "settings-timezone";
 type ZernioAccount = StudioZernioAccount;
 const discoveredAccounts = new Map<number, { locale: "ru" | "en"; accounts: ZernioAccount[]; hidden: number }>();
+const pendingTimezones = new Set<number>();
+
+const TIMEZONE_OPTIONS = [
+  ["UTC", "UTC"],
+  ["Europe/London", "Europe/London"],
+  ["Europe/Berlin", "Europe/Berlin"],
+  ["Europe/Moscow", "Europe/Moscow"],
+  ["Asia/Dubai", "Asia/Dubai"],
+  ["Asia/Tashkent", "Asia/Tashkent"],
+  ["Asia/Kolkata", "Asia/Kolkata"],
+  ["Asia/Bangkok", "Asia/Bangkok"],
+  ["Asia/Singapore", "Asia/Singapore"],
+  ["Asia/Tokyo", "Asia/Tokyo"],
+  ["Australia/Sydney", "Australia/Sydney"],
+  ["America/New_York", "America/New_York"],
+  ["America/Chicago", "America/Chicago"],
+  ["America/Denver", "America/Denver"],
+  ["America/Los_Angeles", "America/Los_Angeles"],
+] as const;
 
 /**
  * A native connection being assembled, one value per message.
@@ -40,6 +60,7 @@ export async function handleSettingsMessage(
 ): Promise<boolean> {
   const actorId = Number(ctx.from?.id);
   const text = ctx.message && "text" in ctx.message ? (ctx.message.text?.trim() ?? "") : "";
+  if (await collectTimezone(ctx, backendDb, config, actorId, text, settingsMenu)) return true;
   if (await collectChannelCredential(ctx, backendDb, config, actorId, text)) return true;
   if (!createStudioServices(backendDb, config).settings.saveYoutubeSignature(actorId, text)) return false;
   const locale = botLocale(backendDb, actorId);
@@ -190,6 +211,32 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
       });
   });
 
+  const timezone = new Menu<Context>(TIMEZONE_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
+    const actorId = Number(ctx.from?.id);
+    const locale = botLocale(backendDb, actorId);
+    const service = createStudioServices(backendDb, config).settings;
+    const current = service.timezone(actorId, config.TIMEZONE);
+    const options = TIMEZONE_OPTIONS.some(([zone]) => zone === current) ? TIMEZONE_OPTIONS : [[current, current], ...TIMEZONE_OPTIONS];
+    for (let index = 0; index < options.length; index += 2) {
+      for (const [zone, label] of options.slice(index, index + 2))
+        range.text(`${zone === current ? "●" : "○"} ${label}`, async (ctx) => {
+          service.setTimezone(actorId, zone);
+          await ctx.answerCallbackQuery({ text: t(locale, "settings.timezone-set", { timezone: zone }) });
+          await ctx.editMessageText(timezoneText(backendDb, config, actorId, locale), { parse_mode: "Markdown" });
+        });
+      if (index + 2 < options.length) range.row();
+    }
+    range.row().text(t(locale, "settings.timezone-custom"), async (ctx) => {
+      pendingTimezones.add(actorId);
+      await ctx.answerCallbackQuery();
+      await ctx.reply(t(locale, "settings.timezone-input-prompt"));
+    });
+    range.row().back(t(locale, "settings.back-to-settings"), async (ctx) => {
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(t(locale, "settings.title"));
+    });
+  });
+
   const settings = new Menu<Context>(SETTINGS_MENU_ID, { autoAnswer: false });
   settings.dynamic((ctx, range) => {
     const actorId = Number(ctx.from?.id);
@@ -222,6 +269,11 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
         await ctx.editMessageText(weeklyDigestText(backendDb, config, locale), { parse_mode: "Markdown" });
       })
       .row()
+      .submenu(t(locale, "settings.timezone"), TIMEZONE_MENU_ID, async (ctx) => {
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(timezoneText(backendDb, config, actorId, locale), { parse_mode: "Markdown" });
+      })
+      .row()
       .submenu(t(locale, "settings.language"), LANGUAGE_MENU_ID, async (ctx) => {
         await ctx.answerCallbackQuery();
         await ctx.editMessageText(t(locale, "settings.language-title"));
@@ -237,6 +289,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
   settings.register(youtubeSignature);
   settings.register(language);
   settings.register(channels);
+  settings.register(timezone);
   return settings;
 
   async function startNativeConnection(
@@ -318,6 +371,30 @@ async function askNextCredential(ctx: Context, actorId: number, locale: ReturnTy
     }),
     { parse_mode: "Markdown" },
   );
+}
+
+async function collectTimezone(
+  ctx: Context,
+  backendDb: BackendDb,
+  config: BackendConfig,
+  actorId: number,
+  text: string,
+  settingsMenu: Menu<Context>,
+): Promise<boolean> {
+  if (!pendingTimezones.has(actorId)) return false;
+  pendingTimezones.delete(actorId);
+  const locale = botLocale(backendDb, actorId);
+  try {
+    createStudioServices(backendDb, config).settings.setTimezone(actorId, text);
+    await ctx.reply(t(locale, "settings.timezone-set", { timezone: text }));
+    await ctx.reply(timezoneText(backendDb, config, actorId, locale), {
+      parse_mode: "Markdown",
+      reply_markup: settingsMenu.at(TIMEZONE_MENU_ID),
+    });
+  } catch {
+    await ctx.reply(t(locale, "err.timezone-invalid"));
+  }
+  return true;
 }
 
 /**
@@ -419,6 +496,11 @@ function notificationSettingsText(
     minutes: settings.reminderMinutes,
     completion: on(settings.completionEnabled),
   });
+}
+
+function timezoneText(backendDb: BackendDb, config: BackendConfig, actorId: number, locale: ReturnType<typeof botLocale>): string {
+  const current = createStudioServices(backendDb, config).settings.timezone(actorId, config.TIMEZONE);
+  return t(locale, "settings.timezone-body", { timezone: current });
 }
 
 function youtubeSignatureText(backendDb: BackendDb, config: BackendConfig, actorId: number, locale: ReturnType<typeof botLocale>): string {

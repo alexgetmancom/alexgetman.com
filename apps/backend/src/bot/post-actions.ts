@@ -5,6 +5,7 @@ import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { plural, t } from "../foundation/i18n/index.js";
+import { manualScheduleExample } from "../foundation/time.js";
 import { createStudioServices } from "../studio/services/index.js";
 import type { ConversationState } from "./conversation-state.js";
 import { clearConversationState, getConversationState } from "./conversation-state.js";
@@ -394,7 +395,7 @@ async function handleSchedulePick(args: PostActionArgs): Promise<PublicationActi
   if (!axis || !clock) return;
   if (pipeline.capabilities.scheduleAxis !== "locale") throw new StudioError("action.schedule-expired");
   clearConversationState(backendDb, actorId, "post");
-  const value = pipeline.slotTime(`${clock.slice(0, 2)}:${clock.slice(2, 4)}`);
+  const value = pipeline.slotTime(actorId, `${clock.slice(0, 2)}:${clock.slice(2, 4)}`);
   return commitLocaleSchedule(args, requireScheduleLocale(axis), value);
 }
 
@@ -410,11 +411,12 @@ async function handleManualScheduleConfirm(args: PostActionArgs): Promise<Public
 }
 
 async function handleManualSchedule(args: PostActionArgs): Promise<PublicationActionResult> {
-  const { ctx, backendDb, actorId, locale, draftId, config } = args;
+  const { ctx, backendDb, actorId, locale, draftId, config, services } = args;
   const axis = args.args.axis;
   if (!axis) return;
   const pickLocale = requireScheduleLocale(axis);
   clearConversationState(backendDb, actorId, "post");
+  const timeConfig = services.settings.timeConfig(actorId, config);
   openPublicationFlow(backendDb, actorId, {
     kind: "post",
     draftId,
@@ -428,7 +430,10 @@ async function handleManualSchedule(args: PostActionArgs): Promise<PublicationAc
       backendDb,
       actorId,
       draftId,
-      t(locale, "action.enter-datetime", { timezone: config.TIMEZONE_LABEL }),
+      t(locale, "action.enter-datetime", {
+        timezone: timeConfig.TIMEZONE_LABEL,
+        example: manualScheduleExample(timeConfig.TIMEZONE, backendDb.clock.now()),
+      }),
       pickLocale === "ru" ? "schedule_ru" : "schedule_en",
     ),
   ];

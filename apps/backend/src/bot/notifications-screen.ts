@@ -37,7 +37,10 @@ export function buildNotificationsMenu(config: BackendConfig, backendDb: Backend
       range
         .submenu({ text: notificationLabel(event, locale), payload: String(event.id) }, "notification-detail", async (ctx) => {
           const found = createStudioServices(backendDb, config).notifications.get(actorId, Number(ctx.match));
-          if (found) await ctx.editMessageText(notificationText(found, locale, config.TIMEZONE));
+          if (found) {
+            const timeConfig = createStudioServices(backendDb, config).settings.timeConfig(actorId, config);
+            await ctx.editMessageText(notificationText(found, locale, timeConfig.TIMEZONE));
+          }
         })
         .text({ text: "✓", payload: String(event.id) }, async (ctx) => {
           createStudioServices(backendDb, config).notifications.acknowledge(actorId, Number(ctx.match));

@@ -51,7 +51,7 @@ describe("Studio publication services", () => {
     expect(videoId).toBe(1);
     expect(videos.get(42, videoId).draft.id).toBe(videoId);
     expect(videos.preview(42, videoId).draft.id).toBe(videoId);
-    expect(typeof posts.slotTime("08:30").toISOString()).toBe("string");
-    expect(typeof videos.slotTime("08:30").toISOString()).toBe("string");
+    expect(typeof posts.slotTime(42, "08:30").toISOString()).toBe("string");
+    expect(typeof videos.slotTime(42, "08:30").toISOString()).toBe("string");
   });
 });

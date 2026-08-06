@@ -12,6 +12,26 @@ export function timezoneOffsetMs(date: Date, timeZone: string): number {
   return zonedWallClockMs(date, timeZone) - date.getTime();
 }
 
+export function isValidTimeZone(timeZone: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en", { timeZone }).format();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function timeZoneOffsetLabel(timeZone: string, locale: "ru" | "en" = "en"): string {
+  return (
+    new Intl.DateTimeFormat(locale === "ru" ? "ru-RU" : "en-GB", {
+      timeZone,
+      timeZoneName: "shortOffset",
+    })
+      .formatToParts(new Date())
+      .find((part) => part.type === "timeZoneName")?.value ?? timeZone
+  );
+}
+
 /** Constructing an Intl.DateTimeFormat costs far more than formatting with one,
  * and this module runs per queue row, per calendar day and per offset probe.
  * Formatters are immutable and depend only on (locale, zone, shape), so one
@@ -36,6 +56,11 @@ export function zonedDateParts(date: Date, timeZone: string): { year: number; mo
   }).formatToParts(date);
   const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return { year: Number(value.year), month: Number(value.month), day: Number(value.day) };
+}
+
+export function manualScheduleExample(timeZone: string, now = new Date()): string {
+  const date = zonedDateParts(now, timeZone);
+  return `${String(date.day).padStart(2, "0")}.${String(date.month).padStart(2, "0")} HH:MM`;
 }
 
 /** The instant at which the wall clock in `timeZone` reads `clock` (HH:MM) on the given date. */

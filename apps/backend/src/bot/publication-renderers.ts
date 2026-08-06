@@ -50,7 +50,8 @@ export function publicationRenderers(
     },
     video: {
       card: (input) => {
-        const preview = videoPreview(services.videos.preview(input.actorId, input.publicationId), config, input.locale, {
+        const timeConfig = services.settings.timeConfig(input.actorId, config);
+        const preview = videoPreview(services.videos.preview(input.actorId, input.publicationId), timeConfig, input.locale, {
           view: isVideoPreviewView(input.view) ? input.view : undefined,
           revision: input.revision,
           target: input.target,

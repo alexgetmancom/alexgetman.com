@@ -34,7 +34,7 @@ export function creatorVideoArchive(
   };
 }
 
-export function creatorVideoMetrics(backendDb: BackendDb, videoDraftId: number, locale: BotLocale = "en"): string {
+export function creatorVideoMetrics(backendDb: BackendDb, videoDraftId: number, locale: BotLocale = "en", timeZone = "UTC"): string {
   const draft = unsafeDb(backendDb)
     .sqlite.prepare("SELECT COALESCE(label, 'Без названия') AS label FROM video_drafts WHERE id=?")
     .get(videoDraftId) as { label: string } | null;
@@ -60,7 +60,7 @@ export function creatorVideoMetrics(backendDb: BackendDb, videoDraftId: number, 
           : `\nreach: ${metricNumber(metrics.reach)} · shares: ${metricNumber(metrics.shares)} · saves: ${metricNumber(metrics.saves)} · follows: ${metricNumber(metrics.follows)} · avg watch: ${(metricNumber(metrics.averageWatchTimeMs) / 1000).toFixed(1)} s`
         : "";
     lines.push(
-      `\n${name}: ${metricNumber(metrics.views)} ${t(locale, "report.views")} · ${metricNumber(metrics.likes)} ${t(locale, "report.likes")} · ${metricNumber(metrics.comments)} ${t(locale, "report.comments")}${expanded}${row.sampled_at ? `\n${t(locale, "report.updated")}: ${new Date(row.sampled_at).toLocaleString(locale === "ru" ? "ru-RU" : "en-GB", { timeZone: "Europe/Moscow" })}` : `\n${t(locale, "report.no-metrics")}`}`,
+      `\n${name}: ${metricNumber(metrics.views)} ${t(locale, "report.views")} · ${metricNumber(metrics.likes)} ${t(locale, "report.likes")} · ${metricNumber(metrics.comments)} ${t(locale, "report.comments")}${expanded}${row.sampled_at ? `\n${t(locale, "report.updated")}: ${new Date(row.sampled_at).toLocaleString(locale === "ru" ? "ru-RU" : "en-GB", { timeZone })}` : `\n${t(locale, "report.no-metrics")}`}`,
     );
   }
   return lines.join("\n");

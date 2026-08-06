@@ -8,7 +8,7 @@ import { draftSources, draftStoryCards } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { type MessageKey, t } from "../foundation/i18n/index.js";
 import { escapeMarkdown } from "../foundation/markdown.js";
-import { formatMsk } from "../interfaces/telegram/time.js";
+import { formatStudioTime } from "../interfaces/telegram/time.js";
 import { mediaPolicyForTarget } from "../publishing/media-policy.js";
 import { isPostDraftMutable } from "../publishing/state.js";
 import { parseTargets } from "../publishing/targets.js";
@@ -87,6 +87,7 @@ export function draftPreview(
 ): { text: string; keyboard: InlineKeyboard } {
   const draft = requireDraft(backendDb, draftId);
   const locale = botLocale(backendDb, draft.actor_id);
+  const timeConfig = createStudioServices(backendDb, config).settings.timeConfig(draft.actor_id, config);
   const targets = effectivePostTargets(backendDb, parseTargets(draft.targets_json));
   const registered = registeredPostTargetIds(backendDb);
   const targetRows = registered.size ? TARGETS.filter(({ id }) => registered.has(id)) : TARGETS;
@@ -233,7 +234,7 @@ export function draftPreview(
       .row()
       .text(t(locale, "queue.back-btn"), "queue_home");
     return {
-      text: `${draftHeader(draftId, targets, locale)}\n\n${t(locale, "post.scheduled-ru")}: ${formatMsk(draft.scheduled_at ? String(draft.scheduled_at) : null, config)}\n${t(locale, "post.scheduled-en")}: ${formatMsk(draft.scheduled_en_at ? String(draft.scheduled_en_at) : null, config)}`,
+      text: `${draftHeader(draftId, targets, locale)}\n\n${t(locale, "post.scheduled-ru")}: ${formatStudioTime(draft.scheduled_at ? String(draft.scheduled_at) : null, timeConfig)}\n${t(locale, "post.scheduled-en")}: ${formatStudioTime(draft.scheduled_en_at ? String(draft.scheduled_en_at) : null, timeConfig)}`,
       keyboard,
     };
   }
@@ -274,7 +275,7 @@ export function draftPreview(
 
   const schedule =
     draft.status === "scheduled"
-      ? `\n\n${t(locale, "post.scheduled-ru")}: ${formatMsk(draft.scheduled_at ? String(draft.scheduled_at) : null, config)}\n${t(locale, "post.scheduled-en")}: ${formatMsk(draft.scheduled_en_at ? String(draft.scheduled_en_at) : null, config)}`
+      ? `\n\n${t(locale, "post.scheduled-ru")}: ${formatStudioTime(draft.scheduled_at ? String(draft.scheduled_at) : null, timeConfig)}\n${t(locale, "post.scheduled-en")}: ${formatStudioTime(draft.scheduled_en_at ? String(draft.scheduled_en_at) : null, timeConfig)}`
       : "";
   const mediaRu = safeMediaCount(draft.media_ru_json);
   const mediaEn = safeMediaCount(draft.media_en_json);

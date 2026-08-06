@@ -38,7 +38,7 @@ export function isFreshPublicationAction(kind: PublicationKind, name: string): b
   return publicationAction(kind, name)?.freshCard === true;
 }
 
-export function describePublicationError(locale: BotLocale, error: unknown, config: BackendConfig): string {
+export function describePublicationError(locale: BotLocale, error: unknown, config: Pick<BackendConfig, "TIMEZONE_LABEL">): string {
   if (error instanceof StudioError && error.code === "common.schedule-parse-error")
     return t(locale, "common.schedule-parse-error", { timezone: config.TIMEZONE_LABEL });
   return describeError(locale, error);

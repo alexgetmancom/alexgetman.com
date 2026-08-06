@@ -3,7 +3,7 @@ import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { t } from "../foundation/i18n/index.js";
-import { formatMsk } from "../interfaces/telegram/time.js";
+import { formatStudioTime } from "../interfaces/telegram/time.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { requireConversationState } from "./conversation-state.js";
 import type { PublicationEffect } from "./effects.js";
@@ -52,6 +52,7 @@ function renderPostScheduleConfirmation(
   const step = postStateStep({ step: "schedule_confirm", data: state.data });
   if (!step || step.type !== "schedule_confirm") throw new StudioError("action.schedule-expired");
   const posts = createStudioServices(backendDb, config).posts;
+  const timeConfig = createStudioServices(backendDb, config).settings.timeConfig(actorId, config);
   const card = publicationRenderers(backendDb, config).post.card({
     backendDb,
     pipeline: posts,
@@ -77,7 +78,7 @@ function renderPostScheduleConfirmation(
     titlePrefix: "📅",
     entries: [{ key: step.locale, value: step.value }],
     label: (key) => key.toUpperCase(),
-    formatValue: (value) => formatMsk(value, config),
+    formatValue: (value) => formatStudioTime(value, timeConfig),
     confirm: { label: t(locale, "post.confirm-schedule-btn"), callback: engine.confirmCallback() },
     back: {
       label: t(locale, "common.back"),

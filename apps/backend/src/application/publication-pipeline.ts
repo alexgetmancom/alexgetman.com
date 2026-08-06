@@ -48,5 +48,5 @@ export type PublicationPipeline = {
   retryTarget(actorId: number, publicationId: number, target: string): PublicationRetrySummary;
   removeTarget(actorId: number, publicationId: number, target: string): unknown;
   toggleTarget(actorId: number, publicationId: number, target: string): unknown;
-  slotTime(clock: string): Date;
+  slotTime(actorId: number, clock: string): Date;
 };

@@ -2,10 +2,10 @@ import { eq, or } from "drizzle-orm";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { posts } from "../db/schema.js";
 
-export function recordPageview(backendDb: BackendDb, rawPath: string): string {
+export function recordPageview(backendDb: BackendDb, rawPath: string, timeZone = "UTC"): string {
   const path = normalizeMetricPath(rawPath);
   const now = new Date();
-  const day = mskDay(now);
+  const day = zonedDay(now, timeZone);
   const candidates = path.endsWith("/") ? [path, path.slice(0, -1)] : [path, `${path}/`];
   const [firstCandidate, secondCandidate] = candidates;
   if (!firstCandidate || !secondCandidate) return path;
@@ -44,15 +44,18 @@ export function recordPageview(backendDb: BackendDb, rawPath: string): string {
   return path;
 }
 
-export function metricsSummary(backendDb: BackendDb): { total: number; today: number; last7: number; updated_at: unknown } {
+export function metricsSummary(
+  backendDb: BackendDb,
+  timeZone = "UTC",
+): { total: number; today: number; last7: number; updated_at: unknown } {
   const rows = unsafeDb(backendDb)
     .sqlite.prepare("SELECT day, sum(count) AS total, max(updated_at) AS updated_at FROM site_pageviews GROUP BY day ORDER BY day DESC")
     .all() as Array<{ day: string; total: number; updated_at: string | null }>;
   const now = new Date();
-  const today = mskDay(now);
+  const today = zonedDay(now, timeZone);
   // Calendar window, not "the 7 most recent rows": days with no traffic have no
   // row at all, and slicing would silently stretch the window across a gap.
-  const weekStart = mskDay(new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000));
+  const weekStart = zonedDay(new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000), timeZone);
   return {
     total: rows.reduce((sum, row) => sum + Number(row.total), 0),
     today: Number(rows.find((row) => row.day === today)?.total ?? 0),
@@ -61,8 +64,8 @@ export function metricsSummary(backendDb: BackendDb): { total: number; today: nu
   };
 }
 
-function mskDay(now: Date): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+function zonedDay(now: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
 }
 
 function normalizeMetricPath(value: string): string {

@@ -4,6 +4,7 @@ import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { type MessageKey, t } from "../foundation/i18n/index.js";
+import { manualScheduleExample } from "../foundation/time.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import type { StudioServices } from "../studio/services/index.js";
 import { VIDEO_FLOW } from "../studio/video-fsm.js";
@@ -281,7 +282,8 @@ async function handleScheduleStart({
     keyboard.row().text(t(locale, "video.different-time"), publicationCallback("video", "individual", [draftId], session.revision));
   keyboard.row();
   appendCancelButton(keyboard, locale, publicationCallback("video", "cancel_dialog"), session.revision);
-  return existingVideoControlEffect(session, t(locale, "video.schedule-time-msk", { timezone: config.TIMEZONE_LABEL }), keyboard);
+  const timeConfig = services.settings.timeConfig(actorId, config);
+  return existingVideoControlEffect(session, t(locale, "video.schedule-time-msk", { timezone: timeConfig.TIMEZONE_LABEL }), keyboard);
 }
 
 async function handleScheduleMode({ backendDb, config, actorId, action, draftId, services }: VideoActionArgs): Promise<VideoActionResult> {
@@ -381,13 +383,30 @@ async function handleSchedulePick({
   const hhmm = args.clock;
   if (pipeline.capabilities.scheduleAxis !== "target") throw new StudioError("action.schedule-expired");
   const session = requireVideoSession(backendDb, actorId, draftId, SCHEDULE_SESSION_STEPS, "action.schedule-expired");
-  const value = pipeline.slotTime(`${(hhmm ?? "").slice(0, 2)}:${(hhmm ?? "").slice(2, 4)}`);
+  const value = pipeline.slotTime(actorId, `${(hhmm ?? "").slice(0, 2)}:${(hhmm ?? "").slice(2, 4)}`);
   return applyVideoScheduleDate(backendDb, config, actorId, session, value, services);
 }
 
-async function handleScheduleManual({ backendDb, config, actorId, locale, draftId }: VideoActionArgs): Promise<VideoActionResult> {
+async function handleScheduleManual({
+  backendDb,
+  config,
+  actorId,
+  locale,
+  draftId,
+  services,
+}: VideoActionArgs): Promise<VideoActionResult> {
   requireVideoSession(backendDb, actorId, draftId, SCHEDULE_SESSION_STEPS, "action.schedule-expired");
-  return [videoPromptEffect(backendDb, actorId, t(locale, "video.enter-datetime", { timezone: config.TIMEZONE_LABEL }))];
+  const timeConfig = services.settings.timeConfig(actorId, config);
+  return [
+    videoPromptEffect(
+      backendDb,
+      actorId,
+      t(locale, "video.enter-datetime", {
+        timezone: timeConfig.TIMEZONE_LABEL,
+        example: manualScheduleExample(timeConfig.TIMEZONE, backendDb.clock.now()),
+      }),
+    ),
+  ];
 }
 
 async function handleRemove({ backendDb, config, actorId, locale, args, draftId, services }: VideoActionArgs): Promise<VideoActionResult> {

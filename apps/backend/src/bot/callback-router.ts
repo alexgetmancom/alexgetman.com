@@ -71,6 +71,7 @@ export async function handlePublicationCallback(
     mainMenu,
     invalidEntityCode: INVALID_ENTITY_TEXT[callback.kind],
   } satisfies CallbackRouterContext;
+  const services = createStudioServices(backendDb, config);
 
   try {
     if (!action) {
@@ -78,7 +79,6 @@ export async function handlePublicationCallback(
       return true;
     }
 
-    const services = createStudioServices(backendDb, config);
     const pipeline = { post: services.posts, video: services.videos }[callback.kind];
     const renderer = publicationRenderers(backendDb, config, services)[callback.kind];
     const draftId = action.entity === "draft" ? parseDraftId(callback.args[0]) : undefined;
@@ -119,7 +119,8 @@ export async function handlePublicationCallback(
     if (effects.length) await executePublicationEffects(ctx, backendDb, effects);
   } catch (error) {
     logPublicationActionError(common, error);
-    await executePublicationEffects(ctx, backendDb, [{ type: "toast", text: toast(describePublicationError(locale, error, config)) }]);
+    const timeConfig = services.settings.timeConfig(actorId, config);
+    await executePublicationEffects(ctx, backendDb, [{ type: "toast", text: toast(describePublicationError(locale, error, timeConfig)) }]);
   }
   return true;
 }

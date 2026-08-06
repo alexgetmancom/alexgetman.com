@@ -1,6 +1,8 @@
 import type { ApplicationPorts } from "../../application/ports.js";
 import { fixUrlSlashes } from "../../content/message.js";
+import type { BackendConfig } from "../../foundation/config.js";
 import { StudioError } from "../../foundation/errors.js";
+import { isValidTimeZone, timeZoneOffsetLabel } from "../../foundation/time.js";
 import type { StudioActorId, StudioLocale } from "../contracts.js";
 
 type SettingsDependencies = Pick<ApplicationPorts, "clock" | "studioNotifications" | "studioSettings">;
@@ -18,6 +20,11 @@ function readNotifications(backendDb: SettingsDependencies, actorId: StudioActor
 
 function readLocale(backendDb: SettingsDependencies, actorId: StudioActorId): StudioLocale {
   return backendDb.studioSettings.locale(actorId) === "ru" ? "ru" : "en";
+}
+
+function readTimezone(backendDb: SettingsDependencies, actorId: StudioActorId, fallback: string): string {
+  const timezone = backendDb.studioSettings.timezone(actorId)?.trim();
+  return timezone && isValidTimeZone(timezone) ? timezone : fallback;
 }
 
 function writeYoutubeSignature(backendDb: SettingsDependencies, actorId: StudioActorId, value: string): void {
@@ -40,6 +47,20 @@ export function settingsService(backendDb: SettingsDependencies) {
   return {
     locale(actorId: StudioActorId): StudioLocale {
       return readLocale(backendDb, actorId);
+    },
+    timezone(actorId: StudioActorId, fallback: string): string {
+      return readTimezone(backendDb, actorId, fallback);
+    },
+    timeConfig(
+      actorId: StudioActorId,
+      config: Pick<BackendConfig, "TIMEZONE" | "TIMEZONE_LABEL">,
+    ): Pick<BackendConfig, "TIMEZONE" | "TIMEZONE_LABEL"> {
+      const timezone = readTimezone(backendDb, actorId, config.TIMEZONE);
+      return {
+        TIMEZONE: timezone,
+        TIMEZONE_LABEL:
+          timezone === config.TIMEZONE ? config.TIMEZONE_LABEL : timeZoneOffsetLabel(timezone, readLocale(backendDb, actorId)),
+      };
     },
     notifications(actorId: StudioActorId) {
       return readNotifications(backendDb, actorId);
@@ -111,6 +132,11 @@ export function settingsService(backendDb: SettingsDependencies) {
     },
     setLocale(actorId: StudioActorId, locale: StudioLocale): void {
       backendDb.studioSettings.saveLocale({ actorId, locale, updatedAt: backendDb.clock.now().toISOString() });
+    },
+    setTimezone(actorId: StudioActorId, timezone: string): void {
+      const value = timezone.trim();
+      if (!isValidTimeZone(value)) throw new StudioError("err.timezone-invalid");
+      backendDb.studioSettings.saveTimezone({ actorId, timezone: value, updatedAt: backendDb.clock.now().toISOString() });
     },
   };
 }
