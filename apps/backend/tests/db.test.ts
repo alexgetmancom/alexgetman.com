@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { and, eq } from "drizzle-orm";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import { baselineDrizzleMigrations, drizzleMigrationMetadata, migrationStatus } from "../src/db/client.js";
-import { draftSources, knowledgeEntities, postEntityLinks, postSources } from "../src/db/schema.js";
+import { knowledgeEntities, postEntityLinks } from "../src/db/schema.js";
 import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
@@ -23,75 +23,24 @@ describe("openBackendDb", () => {
     }
   });
 
-  it("applies every migration on a fresh database", () => {
-    // The table inventory this used to spell out was a copy of the schema: each
-    // new table meant one more line, and it only ever caught a migration that
-    // had not run at all — which every other test here would fail on anyway.
-    // Applying the full migration list is the fact worth asserting.
-    const backendDb = openBackendDb(":memory:");
-    try {
-      expect(migrationStatus(backendDb.sqlite)).toHaveLength(drizzleMigrationMetadata().length);
-    } finally {
-      backendDb.close();
-    }
-  });
-
-  it("moves legacy post and video conversations into the shared session store", () => {
-    const dir = mkdtempSync(join(tmpdir(), "alexgetman-conversation-migration-"));
+  it("leaves a baselined database alone instead of recreating its schema", () => {
+    // How production is adopted: the schema is already there and the baseline
+    // must be recorded as applied, not replayed. Getting this wrong throws
+    // "table already exists" on the next boot.
+    const dir = mkdtempSync(join(tmpdir(), "alexgetman-baseline-"));
     const dbPath = join(dir, "pipeline.db");
     const initial = openBackendDb(dbPath);
     initial.close();
 
-    const fixture = new Database(dbPath);
-    fixture.exec("DROP TABLE conversation_sessions");
-    fixture.exec("DROP TABLE pending_albums");
-    fixture.exec("ALTER TABLE bot_ui_settings DROP COLUMN timezone");
-    fixture.exec(
-      "CREATE TABLE pending_albums (id text PRIMARY KEY NOT NULL, actor_id integer NOT NULL, chat_id integer NOT NULL, media_group_id text NOT NULL, action text, draft_id integer, state_revision integer, text_ru text DEFAULT '' NOT NULL, text_entities_json text, media_json text NOT NULL, notified integer DEFAULT 0 NOT NULL, attempt_count integer DEFAULT 0 NOT NULL, updated_at text NOT NULL)",
-    );
-    fixture.exec(
-      "CREATE TABLE admin_state (actor_id integer PRIMARY KEY NOT NULL, action text, draft_id integer, control_message_id integer, revision integer NOT NULL DEFAULT 0, updated_at text NOT NULL, expires_at text)",
-    );
-    fixture.exec(
-      "CREATE TABLE video_bot_sessions (actor_id integer PRIMARY KEY NOT NULL, video_draft_id integer, step text NOT NULL, selected_targets_json text DEFAULT '[]' NOT NULL, data_json text DEFAULT '{}' NOT NULL, revision integer NOT NULL DEFAULT 0, active integer NOT NULL DEFAULT 1, updated_at text NOT NULL, expires_at text)",
-    );
-    fixture
-      .prepare(
-        "INSERT INTO admin_state (actor_id, action, draft_id, control_message_id, revision, updated_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      )
-      .run(42, "edit_en", 7, 19, 4, "2026-08-04T10:00:00.000Z", "2026-08-04T10:30:00.000Z");
-    fixture
-      .prepare(
-        "INSERT INTO video_bot_sessions (actor_id, video_draft_id, step, selected_targets_json, data_json, revision, active, updated_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      )
-      .run(
-        42,
-        9,
-        "schedule_confirm",
-        '["youtube_shorts"]',
-        '{"controlMessageId":27}',
-        6,
-        1,
-        "2026-08-04T10:00:00.000Z",
-        "2026-08-04T10:30:00.000Z",
-      );
-    const migrations = drizzleMigrationMetadata();
-    const latestMigrations = migrations.slice(-5);
-    if (latestMigrations.length !== 5) throw new Error("migration metadata is incomplete");
-    fixture
-      .prepare(`DELETE FROM __drizzle_migrations WHERE hash IN (${latestMigrations.map(() => "?").join(", ")})`)
-      .run(...latestMigrations.map((migration) => migration.hash));
-    fixture.close();
+    const raw = new Database(dbPath) as unknown as Parameters<typeof baselineDrizzleMigrations>[0];
+    raw.run("DELETE FROM __drizzle_migrations");
+    expect(baselineDrizzleMigrations(raw)).toEqual(drizzleMigrationMetadata());
+    raw.close();
 
     const backendDb = openBackendDb(dbPath);
     try {
-      expect(
-        backendDb.sqlite.prepare("SELECT kind, draft_id, step, revision FROM conversation_sessions WHERE actor_id=? ORDER BY kind").all(42),
-      ).toEqual([]);
-      expect(backendDb.sqlite.prepare("SELECT data_json FROM conversation_sessions WHERE actor_id=?").all(42)).toEqual([]);
-      expect(backendDb.sqlite.prepare("SELECT name FROM sqlite_master WHERE name IN ('admin_state', 'video_bot_sessions')").all()).toEqual(
-        [],
-      );
+      expect(migrationStatus(backendDb.sqlite)).toEqual(drizzleMigrationMetadata());
+      expect(backendDb.db.select().from(knowledgeEntities).all().length).toBeGreaterThan(0);
     } finally {
       backendDb.close();
     }
@@ -211,85 +160,6 @@ describe("openBackendDb", () => {
       expect(() => insert.run(1, "youtube_shorts", "{}", 1, now)).toThrow();
       expect(() => insert.run(1, "youtube_shorts", "{}", null, now)).not.toThrow();
       expect(() => insert.run(1, "youtube_shorts", "{}", null, now)).not.toThrow();
-    } finally {
-      backendDb.close();
-    }
-  });
-
-  it("publishes against the production publications schema", () => {
-    const dir = mkdtempSync(join(tmpdir(), "alexgetman-production-schema-"));
-    const dbPath = join(dir, "pipeline.db");
-    const initial = openBackendDb(dbPath);
-    initial.close();
-    const fixture = new Database(dbPath);
-    fixture.exec("DROP TABLE __drizzle_migrations");
-    fixture.exec(
-      "DROP TABLE channel_connections; DROP TABLE draft_entity_candidates; DROP TABLE draft_sources; DROP TABLE post_entity_links; DROP TABLE knowledge_entity_aliases; DROP TABLE knowledge_entities; DROP TABLE post_sources; DROP TABLE site_pageviews; DROP TABLE conversation_sessions; DROP TABLE video_jobs; DROP TABLE video_targets; DROP TABLE video_drafts; DROP TABLE analytics_sync; DROP TABLE creator_profiles; DROP TABLE creator_profile_snapshots; DROP TABLE video_metric_snapshots; DROP TABLE video_metric_schedule; DROP TABLE social_comments; DROP TABLE runtime_memory_samples; CREATE TABLE admin_state (admin_id integer PRIMARY KEY NOT NULL, action text, draft_id integer, updated_at text NOT NULL)",
-    );
-    // The fixture is built by the current migration chain and then replayed from
-    // the baseline, so every column 0030 renames has to be put back to its
-    // pre-0030 spelling first. That is also what a restored production dump
-    // looks like, which is the whole point of this test.
-    for (const table of [
-      "drafts",
-      "pending_albums",
-      "studio_notification_settings",
-      "studio_notification_jobs",
-      "studio_media_assets",
-      "bot_settings",
-      "bot_ui_settings",
-    ])
-      fixture.exec(`ALTER TABLE ${table} RENAME COLUMN actor_id TO admin_id`);
-    // Same reason, one migration later: 0031 adds a column to a table this
-    // fixture keeps, and SQLite has no ADD COLUMN IF NOT EXISTS.
-    fixture.exec("ALTER TABLE drafts DROP COLUMN threads_chain_approved");
-    fixture.exec("DROP INDEX idx_metric_schedule_lock");
-    fixture.exec("ALTER TABLE metric_schedule DROP COLUMN locked_by");
-    fixture.exec("ALTER TABLE metric_schedule DROP COLUMN locked_at");
-    fixture.exec("ALTER TABLE publish_jobs DROP COLUMN current_phase");
-    fixture.exec("ALTER TABLE post_targets DROP COLUMN confirmation_source");
-    fixture.exec("ALTER TABLE post_targets DROP COLUMN verified_at");
-    fixture.exec("ALTER TABLE publish_jobs DROP COLUMN reconcile_attempt_count");
-    fixture.exec("ALTER TABLE drafts DROP COLUMN story_publish_mode");
-    fixture.exec("DROP TABLE draft_story_cards");
-    fixture.exec("DROP TABLE studio_weekly_digest_settings");
-    fixture.exec("DROP TABLE x_activity_imports");
-    fixture.exec("DROP TABLE x_activity_items");
-    fixture.exec("DROP TABLE x_activity_metric_snapshots");
-    fixture.exec("DROP TABLE channel_credentials");
-    fixture.exec("DROP TABLE runtime_usage");
-    fixture.exec("ALTER TABLE bot_ui_settings DROP COLUMN timezone");
-    fixture.close();
-
-    const legacy = new Database(dbPath) as unknown as Parameters<typeof baselineDrizzleMigrations>[0];
-    baselineDrizzleMigrations(legacy);
-    legacy.close();
-    const backendDb = openBackendDb(dbPath);
-    try {
-      const draftId = createDraftFromMessage(backendDb, 42, { text: "Production fixture", entities: [], media: [] });
-      backendDb.db
-        .insert(draftSources)
-        .values({
-          draftId,
-          url: "https://example.com/announcement",
-          labelRu: "example.com",
-          labelEn: "example.com",
-          sortOrder: 0,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        })
-        .run();
-      const postId = publishDraftToQueue(backendDb, draftId);
-      expect(backendDb.sqlite.prepare("SELECT draft_id, status FROM publications WHERE post_id=?").get(postId)).toEqual({
-        draft_id: draftId,
-        status: "scheduled",
-      });
-      expect(backendDb.sqlite.prepare("SELECT locale, slug FROM post_locales WHERE post_id=? ORDER BY locale").all(postId)).toEqual([
-        { locale: "en", slug: "production-fixture" },
-        { locale: "ru", slug: "production-fixture" },
-      ]);
-      expect(backendDb.db.select({ url: postSources.url }).from(postSources).all()).toEqual([{ url: "https://example.com/announcement" }]);
-      expect(migrationStatus(backendDb.sqlite)).toHaveLength(drizzleMigrationMetadata().length);
     } finally {
       backendDb.close();
     }

@@ -1,1 +1,0 @@
-ALTER TABLE `video_bot_sessions` ADD `data_json` text DEFAULT '{}' NOT NULL;

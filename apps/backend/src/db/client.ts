@@ -57,11 +57,8 @@ export function openBackendDb(path: string, timeout = 30_000): BackendDb {
   sqlite.run("PRAGMA journal_mode = WAL");
   sqlite.run(`PRAGMA busy_timeout = ${timeout}`);
   const db = drizzle(sqlite, { schema, casing: "snake_case" });
-  // Migrations run with foreign keys OFF and the pragma is turned on only after.
-  // The table-rebuild migrations (0008 and later) drop a parent table while the
-  // not-yet-rebuilt children still reference it; with enforcement on, that DROP
-  // runs an implicit DELETE and fails on the first child row. An empty database
-  // hides this — it only bites when migrating a restored dump that has data.
+  // The baseline creates children before their parents, so foreign keys stay
+  // off until it has run.
   sqlite.run("PRAGMA foreign_keys = OFF");
   migrate(db, { migrationsFolder: migrationsFolder() });
   sqlite.run("PRAGMA foreign_keys = ON");
@@ -89,27 +86,25 @@ export function openBackendDb(path: string, timeout = 30_000): BackendDb {
 }
 
 export function migrationStatus(sqlite: SqliteCompat): MigrationStatus[] {
-  return sqlite.prepare("SELECT hash, created_at FROM __drizzle_migrations ORDER BY created_at").all() as MigrationStatus[];
+  return sqlite.prepare("SELECT hash, created_at AS createdAt FROM __drizzle_migrations ORDER BY created_at").all() as MigrationStatus[];
 }
 
+/** Declares a database that already carries the schema as migrated, so Drizzle
+ * skips the baseline instead of recreating tables that exist. */
 export function baselineDrizzleMigrations(sqlite: SqliteCompat): MigrationStatus[] {
   const tables = sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all() as Array<{
     name: string;
   }>;
   const names = new Set(tables.map((table) => table.name));
   const missing = ["publish_jobs", "drafts", "publications", "posts", "post_targets", "site_jobs"].filter((name) => !names.has(name));
-  if (missing.length > 0) throw new Error(`baseline requires a complete legacy database; missing: ${missing.join(", ")}`);
+  if (missing.length > 0) throw new Error(`baseline requires a complete database; missing: ${missing.join(", ")}`);
   sqlite.exec(
     "CREATE TABLE IF NOT EXISTS __drizzle_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, hash text NOT NULL, created_at numeric)",
   );
-  if (migrationStatus(sqlite).length > 0) return migrationStatus(sqlite);
-  const migrations = drizzleMigrationMetadata();
-  // Only the legacy snapshot is baselined. Every migration added afterwards is
-  // intentionally applied by Drizzle, including when this command is rerun.
-  const baseline = migrations.slice(0, 1);
   sqlite.transaction(() => {
+    sqlite.run("DELETE FROM __drizzle_migrations");
     const insert = sqlite.prepare("INSERT INTO __drizzle_migrations(hash, created_at) VALUES (?, ?)");
-    for (const migration of baseline) insert.run(migration.hash, migration.createdAt);
+    for (const migration of drizzleMigrationMetadata()) insert.run(migration.hash, migration.createdAt);
   })();
   return migrationStatus(sqlite);
 }

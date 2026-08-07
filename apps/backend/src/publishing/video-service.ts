@@ -61,7 +61,7 @@ export function replaceVideoTargets(backendDb: BackendDb, videoDraftId: number, 
   unsafeDb(backendDb).db.transaction((tx) => {
     const existingTargets = tx.select().from(videoTargets).where(eq(videoTargets.videoDraftId, videoDraftId)).all();
     if (existingTargets.some((target) => !isVideoTargetEditable(target.status))) throw new StudioError("err.video-targets-locked");
-    // Foreign keys cascade (PRAGMA foreign_keys=ON, migration 0008): deleting the
+    // Foreign keys cascade (PRAGMA foreign_keys=ON): deleting the
     // target rows removes their comments, metric snapshots and schedules. Reminder
     // jobs carry a null target, so the draft's jobs are cleared explicitly.
     tx.delete(videoJobs).where(eq(videoJobs.videoDraftId, videoDraftId)).run();
