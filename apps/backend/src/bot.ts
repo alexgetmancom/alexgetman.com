@@ -191,7 +191,7 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
     {
       name: "operations",
       matches: (data) => data.startsWith("deploy_"),
-      handle: async (ctx) => handleOperationsCallback(ctx, config),
+      handle: async (ctx) => handleOperationsCallback(ctx, backendDb, config),
     },
   ];
 

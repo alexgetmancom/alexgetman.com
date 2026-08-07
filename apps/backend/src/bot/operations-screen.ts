@@ -1,4 +1,5 @@
 import { type Context, InlineKeyboard } from "grammy";
+import type { BackendDb } from "../db/client.js";
 import { withActionLock } from "../foundation/action-lock.js";
 import type { BackendConfig } from "../foundation/config.js";
 import {
@@ -11,35 +12,40 @@ import {
   requestDeploymentPromote,
   requestDeploymentRollback,
 } from "../foundation/deployment.js";
+import { t } from "../foundation/i18n/index.js";
+import { type BotLocale, botLocale } from "./i18n.js";
 
 /** Operations callbacks are deliberately outside content/post screens.
  * Every deploy action is ask -> confirm -> progress -> result, all as edits
  * to the same message, so a tap never looks like it silently did nothing. */
-export async function handleOperationsCallback(ctx: Context, config: BackendConfig): Promise<boolean> {
+export async function handleOperationsCallback(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<boolean> {
   const data = ctx.callbackQuery?.data ?? "";
+  const locale = botLocale(backendDb, ctx.from?.id ?? 0);
 
   const rollbackAsk = parseDeploymentRollbackAskCallback(data);
-  if (rollbackAsk) return askConfirmation(ctx, "rollback", rollbackAsk.target, rollbackAsk.revision);
+  if (rollbackAsk) return askConfirmation(ctx, locale, "rollback", rollbackAsk.target, rollbackAsk.revision);
 
   const promoteAsk = parseDeploymentPromoteAskCallback(data);
-  if (promoteAsk) return askConfirmation(ctx, "promote", promoteAsk.target, promoteAsk.revision);
+  if (promoteAsk) return askConfirmation(ctx, locale, "promote", promoteAsk.target, promoteAsk.revision);
 
   const menuRevision = parseDeploymentMenuCallback(data);
   if (menuRevision) {
     await ctx.answerCallbackQuery();
-    await ctx.editMessageText(deploymentMenuText(menuRevision), { reply_markup: deploymentMenuKeyboard(menuRevision) });
+    await ctx.editMessageText(deploymentMenuText(locale, menuRevision), {
+      reply_markup: deploymentMenuKeyboard(locale, menuRevision),
+    });
     return true;
   }
 
   if (data === "deploy_cancel") {
-    await ctx.answerCallbackQuery({ text: "Cancelled" });
-    await ctx.editMessageText("🚫 Cancelled. No change was made.", { reply_markup: new InlineKeyboard() });
+    await ctx.answerCallbackQuery({ text: t(locale, "ops.cancelled") });
+    await ctx.editMessageText(t(locale, "ops.cancelled-body"), { reply_markup: new InlineKeyboard() });
     return true;
   }
 
   const rollback = parseDeploymentRollbackCallback(data);
   if (rollback) {
-    await runDeployAction(ctx, data, rollback.revision, `⏳ Rolling back ${rollback.target}…`, () =>
+    await runDeployAction(ctx, locale, data, rollback.revision, t(locale, "ops.rolling-back", { target: rollback.target }), () =>
       requestDeploymentRollback(config, rollback.target, rollback.revision),
     );
     return true;
@@ -47,7 +53,8 @@ export async function handleOperationsCallback(ctx: Context, config: BackendConf
 
   const promote = parseDeploymentPromoteCallback(data);
   if (promote) {
-    await runDeployAction(ctx, data, promote.revision, `⏳ Deploying ${promote.target} (${promote.revision.slice(0, 12)})…`, () =>
+    const progress = t(locale, "ops.deploying", { target: promote.target, revision: promote.revision.slice(0, 12) });
+    await runDeployAction(ctx, locale, data, promote.revision, progress, () =>
       requestDeploymentPromote(config, promote.target, promote.revision),
     );
     return true;
@@ -56,20 +63,31 @@ export async function handleOperationsCallback(ctx: Context, config: BackendConf
   return false;
 }
 
-async function askConfirmation(ctx: Context, action: "rollback" | "promote", target: string, revision: string): Promise<boolean> {
+async function askConfirmation(
+  ctx: Context,
+  locale: BotLocale,
+  action: "rollback" | "promote",
+  target: string,
+  revision: string,
+): Promise<boolean> {
   await ctx.answerCallbackQuery();
   const question =
-    action === "rollback" ? `Roll ${target} back to the previous release?` : `Deploy ${revision.slice(0, 12)} to ${target} now?`;
+    action === "rollback"
+      ? t(locale, "ops.rollback-q", { target })
+      : t(locale, "ops.promote-q", { target, revision: revision.slice(0, 12) });
   const confirmData = action === "rollback" ? `deploy_rollback:${target}:${revision}` : `deploy_promote:${target}:${revision}`;
   const original = ctx.callbackQuery?.message && "text" in ctx.callbackQuery.message ? ctx.callbackQuery.message.text : undefined;
   await ctx.editMessageText(`${original ? `${original}\n\n` : ""}⚠️ ${question}`, {
-    reply_markup: new InlineKeyboard().text("✅ Yes", confirmData).text("⬅️ Назад", deploymentMenuCallback(revision)),
+    reply_markup: new InlineKeyboard()
+      .text(t(locale, "common.confirm"), confirmData)
+      .text(t(locale, "common.back"), deploymentMenuCallback(revision)),
   });
   return true;
 }
 
 async function runDeployAction(
   ctx: Context,
+  locale: BotLocale,
   lockKey: string,
   menuRevision: string,
   progressText: string,
@@ -81,38 +99,43 @@ async function runDeployAction(
   // request alone can take up to ~150s (agent healthcheck plus image pull).
   // Awaiting it here would freeze every chat's buttons and messages until it
   // resolves. Let it run in the background and edit this message once it's done.
-  // withActionLock stops a double tap on "✅ Yes" from firing the request twice
-  // before the button even disappears.
+  // withActionLock stops a double tap on the confirm button from firing the
+  // request twice before the button even disappears.
   void withActionLock(lockKey, action)
-    .then((result) => (result.ok ? finishDeployAction(ctx, result.value, menuRevision) : undefined))
+    .then((result) => (result.ok ? finishDeployAction(ctx, locale, result.value, menuRevision) : undefined))
     .catch((error) =>
-      finishDeployAction(ctx, { ok: false, message: error instanceof Error ? error.message : String(error) }, menuRevision),
+      finishDeployAction(ctx, locale, { ok: false, message: error instanceof Error ? error.message : String(error) }, menuRevision),
     );
 }
 
 async function finishDeployAction(
   ctx: Context,
+  locale: BotLocale,
   result: { ok: true; release: string; currentRevision: string } | { ok: false; message: string },
   fallbackRevision: string,
 ): Promise<void> {
-  const finalText = result.ok ? `✅ Done: now running ${result.currentRevision.slice(0, 12)}.` : `❌ Failed: ${result.message}`;
+  const finalText = result.ok
+    ? t(locale, "ops.done", { revision: result.currentRevision.slice(0, 12) })
+    : t(locale, "ops.failed", { message: result.message });
   const revision = result.ok ? result.currentRevision : fallbackRevision;
+  const body = `${finalText}\n\n${deploymentMenuText(locale, revision)}`;
+  const reply_markup = deploymentMenuKeyboard(locale, revision);
   try {
-    await ctx.editMessageText(`${finalText}\n\n${deploymentMenuText(revision)}`, { reply_markup: deploymentMenuKeyboard(revision) });
+    await ctx.editMessageText(body, { reply_markup });
   } catch {
-    await ctx.reply(`${finalText}\n\n${deploymentMenuText(revision)}`, { reply_markup: deploymentMenuKeyboard(revision) });
+    await ctx.reply(body, { reply_markup });
   }
 }
 
-function deploymentMenuKeyboard(revision: string): InlineKeyboard {
+function deploymentMenuKeyboard(locale: BotLocale, revision: string): InlineKeyboard {
   return new InlineKeyboard()
-    .text("Откатить alex", `deploy_rb_ask:alex:${revision}`)
+    .text(t(locale, "ops.rollback-btn", { target: "alex" }), `deploy_rb_ask:alex:${revision}`)
     .row()
-    .text("Раскатить maru", `deploy_pr_ask:maru:${revision}`)
+    .text(t(locale, "ops.promote-btn", { target: "maru" }), `deploy_pr_ask:maru:${revision}`)
     .row()
-    .text("Раскатить worker", `deploy_pr_ask:worker:${revision}`);
+    .text(t(locale, "ops.promote-btn", { target: "worker" }), `deploy_pr_ask:worker:${revision}`);
 }
 
-function deploymentMenuText(revision: string): string {
-  return `Управление релизом ${revision.slice(0, 12)}:`;
+function deploymentMenuText(locale: BotLocale, revision: string): string {
+  return t(locale, "ops.menu", { revision: revision.slice(0, 12) });
 }

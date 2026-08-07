@@ -486,6 +486,17 @@ const en = {
   "video.fps-unknown": "FPS unknown",
   "err.reminder-range": "Reminder interval must be between 1 and 60 minutes.",
   "err.weekday-range": "Digest weekday must be between 0 and 6.",
+  "ops.menu": "Release {revision}:",
+  "ops.rollback-btn": "Roll {target} back",
+  "ops.promote-btn": "Deploy {target}",
+  "ops.rollback-q": "Roll {target} back to the previous release?",
+  "ops.promote-q": "Deploy {revision} to {target} now?",
+  "ops.rolling-back": "⏳ Rolling back {target}…",
+  "ops.deploying": "⏳ Deploying {target} ({revision})…",
+  "ops.cancelled": "Cancelled",
+  "ops.cancelled-body": "🚫 Cancelled. No change was made.",
+  "ops.done": "✅ Done: now running {revision}.",
+  "ops.failed": "❌ Failed: {message}",
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -964,6 +975,17 @@ const ru = {
   "video.fps-unknown": "FPS неизвестен",
   "err.reminder-range": "Интервал напоминания должен быть от 1 до 60 минут.",
   "err.weekday-range": "День дайджеста должен быть числом от 0 до 6.",
+  "ops.menu": "Управление релизом {revision}:",
+  "ops.rollback-btn": "Откатить {target}",
+  "ops.promote-btn": "Раскатить {target}",
+  "ops.rollback-q": "Откатить {target} на предыдущий релиз?",
+  "ops.promote-q": "Раскатить {revision} на {target} сейчас?",
+  "ops.rolling-back": "⏳ Откатываю {target}…",
+  "ops.deploying": "⏳ Раскатываю {target} ({revision})…",
+  "ops.cancelled": "Отменено",
+  "ops.cancelled-body": "🚫 Отменено. Ничего не изменилось.",
+  "ops.done": "✅ Готово: сейчас работает {revision}.",
+  "ops.failed": "❌ Не получилось: {message}",
 } satisfies Record<MessageKey, string>;
 
 export const catalog: Record<UiLocale, Record<MessageKey, string>> = { en, ru };
