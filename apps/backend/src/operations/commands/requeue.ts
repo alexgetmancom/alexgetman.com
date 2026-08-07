@@ -1,16 +1,82 @@
 import { and, desc, eq } from "drizzle-orm";
 import { targetLocale } from "../../botTargets.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
-import { postTargets, publications, publishJobs } from "../../db/schema.js";
+import { postTargets, publications, publishJobs, siteJobs } from "../../db/schema.js";
 import { removePublishedTargets } from "../../delivery/external-removals.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { jsonObject } from "../../json.js";
 import { requeuedPublishJobColumns } from "../../publishing/job-policy.js";
 import { localizeTargetPayload } from "../../publishing/payload.js";
+import { siteReasonForTarget } from "../../publishing/targets.js";
 import { type ResolvedPublicationRef, sourcePayload } from "../publication-ref.js";
+
+/** The site is rendered from `siteJobs`, keyed by a publish reason; every other
+ * target is delivered from `publishJobs`, keyed by the target. Treating a site
+ * target as a publish target used to manufacture a publishJobs row for
+ * `site_ru`, which no publisher serves: the worker failed it as an unsupported
+ * target, the real site job was never re-rendered, and post_targets — what the
+ * Command Center and the bot read — was overwritten from its actual state to
+ * "queued". Studio's retry has always routed these apart; this is that routing. */
+function requeueSitePublication(
+  backendDb: BackendDb,
+  ref: ResolvedPublicationRef,
+  target: string,
+  reason: string,
+): Record<string, unknown> {
+  const now = new Date().toISOString();
+  const whereRef = ref.postId != null ? eq(siteJobs.postId, ref.postId) : eq(siteJobs.messageId, ref.messageId);
+  const outcome = unsafeDb(backendDb).db.transaction((tx) => {
+    const row = tx
+      .select()
+      .from(siteJobs)
+      .where(and(whereRef, eq(siteJobs.reason, reason)))
+      .orderBy(desc(siteJobs.jobId))
+      .get();
+    // Fabricating a site job here would be a different operation, and one
+    // `ops repair-content` already owns. Say so instead.
+    if (!row) return "no_job" as const;
+    if (row.status === "queued") return "already_queued" as const;
+    // Held by the renderer, for the same reason a publishing job is untouchable:
+    // recoverStaleSiteJobs releases it once its lock ages out.
+    if (row.status === "rendering") return "rendering" as const;
+    tx.update(siteJobs)
+      .set({ status: "queued", attemptCount: 0, nextAttemptAt: null, lockedBy: null, lockedAt: null, lastError: null, updatedAt: now })
+      .where(eq(siteJobs.jobId, row.jobId))
+      .run();
+    tx.insert(postTargets)
+      .values({
+        postKey: ref.postKey,
+        target,
+        status: "queued",
+        error: null,
+        skipped: 0,
+        updatedAt: now,
+        rawJson: JSON.stringify({ requeued: true }),
+      })
+      .onConflictDoUpdate({
+        target: [postTargets.postKey, postTargets.target],
+        set: { status: "queued", error: null, skipped: 0, updatedAt: now, rawJson: JSON.stringify({ requeued: true }) },
+      })
+      .run();
+    if (ref.postId != null)
+      tx.update(publications).set({ status: "scheduled", updatedAt: now }).where(eq(publications.postId, ref.postId)).run();
+    return "requeued" as const;
+  });
+  return {
+    ok: outcome === "requeued" || outcome === "already_queued",
+    post_id: ref.postId,
+    post_key: ref.postKey,
+    message_id: ref.messageId,
+    target,
+    targets: [target],
+    results: [{ target, outcome }],
+  };
+}
 
 /** Restores queued Delivery work from its durable publication source. */
 function requeuePublication(backendDb: BackendDb, ref: ResolvedPublicationRef, target?: string): Record<string, unknown> {
+  const siteReason = target ? siteReasonForTarget(target) : null;
+  if (target && siteReason) return requeueSitePublication(backendDb, ref, target, siteReason);
   const source = sourcePayload(backendDb, ref);
   const whereRef = ref.postId != null ? eq(publishJobs.postId, ref.postId) : eq(publishJobs.postKey, ref.postKey);
   const rows = unsafeDb(backendDb)

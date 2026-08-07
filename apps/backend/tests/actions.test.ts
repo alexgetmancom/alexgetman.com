@@ -339,4 +339,73 @@ describe("command center actions", () => {
       backendDb.close();
     }
   });
+  it("requeues a site target through its render job, not as a publish job", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      backendDb.db.insert(publications).values({ postId: 90, status: "published", createdAt: now, updatedAt: now }).run();
+      backendDb.db
+        .insert(publicationSources)
+        .values({ postId: 90, itemJson: { text: "RU", text_en: "EN" }, createdAt: now, updatedAt: now })
+        .run();
+      backendDb.db
+        .insert(siteJobs)
+        .values({
+          postId: 90,
+          messageId: 90,
+          reason: "publish_ru",
+          status: "failed",
+          attemptCount: 2,
+          lastError: "render boom",
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      backendDb.db
+        .insert(postTargets)
+        .values({ postKey: "post:90", target: "site_ru", status: "failed", error: "render boom", skipped: 0, updatedAt: now })
+        .run();
+
+      const result = await runOperationCommand(backendDb, { action: "retry", ref: "post:90", target: "site_ru" });
+
+      expect(result).toMatchObject({ ok: true, results: [{ target: "site_ru", outcome: "requeued" }] });
+      expect(backendDb.db.select().from(siteJobs).get()).toMatchObject({ status: "queued", attemptCount: 0, lastError: null });
+      // No publisher serves "site_ru": a publish job for it would be failed as an
+      // unsupported target while the site itself was never re-rendered.
+      expect(backendDb.db.select().from(publishJobs).all()).toEqual([]);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("routes site and social targets apart when republishing a whole locale", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      backendDb.db.insert(publications).values({ postId: 91, status: "published", createdAt: now, updatedAt: now }).run();
+      backendDb.db
+        .insert(publicationSources)
+        .values({ postId: 91, itemJson: { text: "RU", text_en: "EN" }, createdAt: now, updatedAt: now })
+        .run();
+      backendDb.db
+        .insert(siteJobs)
+        .values({ postId: 91, messageId: 91, reason: "publish_ru", status: "published", attemptCount: 1, createdAt: now, updatedAt: now })
+        .run();
+      for (const target of ["telegram", "site_ru"])
+        backendDb.db.insert(postTargets).values({ postKey: "post:91", target, status: "published", skipped: 0, updatedAt: now }).run();
+
+      await runOperationCommand(backendDb, { action: "retry", ref: "post:91", locale: "ru" });
+
+      expect(
+        backendDb.db
+          .select()
+          .from(publishJobs)
+          .all()
+          .map((job) => job.target),
+      ).toEqual(["telegram"]);
+      expect(backendDb.db.select().from(siteJobs).get()).toMatchObject({ status: "queued" });
+    } finally {
+      backendDb.close();
+    }
+  });
 });
