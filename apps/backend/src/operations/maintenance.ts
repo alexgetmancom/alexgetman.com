@@ -19,7 +19,7 @@ import {
   videoTargets,
 } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
-import { publicationStatus } from "../publishing/state.js";
+import { effectivePublicationStatus, planObject } from "../publishing/state.js";
 
 /** Explicitly invoked operational maintenance routines. */
 export async function backupDatabase(backendDb: BackendDb, sourcePath: string, destinationDirectory?: string): Promise<string> {
@@ -467,12 +467,17 @@ function targetStateMismatches(backendDb: BackendDb): Array<LatestPublishJob & {
   return rows.filter((row) => row.target_status !== normalizeArchivedJobStatus(row.job_status));
 }
 
-function publicationStateMismatches(backendDb: BackendDb): Array<{ post_id: number; status: string; expected: "published" | "failed" }> {
+function publicationStateMismatches(
+  backendDb: BackendDb,
+): Array<{ post_id: number; status: string; expected: "published" | "failed" | "scheduled" }> {
+  // The plan comes along because a locale the operator has not dated yet keeps
+  // the publication open; without it this scan called every such post a mismatch.
   const rows = unsafeDb(backendDb)
     .sqlite.query(
-      `SELECT p.post_id,p.status,
+      `SELECT p.post_id,p.status,pp.plan_json,
               group_concat(x.status) AS statuses
        FROM publications p
+       LEFT JOIN publication_plans pp ON pp.post_id=p.post_id
        LEFT JOIN (
          SELECT post_id,status FROM publish_jobs
          UNION ALL
@@ -481,12 +486,24 @@ function publicationStateMismatches(backendDb: BackendDb): Array<{ post_id: numb
        GROUP BY p.post_id
        ORDER BY p.post_id`,
     )
-    .all() as Array<{ post_id: number; status: string; statuses: string | null }>;
+    .all() as Array<{ post_id: number; status: string; plan_json: string | null; statuses: string | null }>;
   return rows.flatMap((row) => {
     if (row.status === "cancelled") return [];
-    const expected = publicationStatus((row.statuses ?? "").split(",").filter(Boolean).map(normalizeArchivedJobStatus));
+    const expected = effectivePublicationStatus(
+      (row.statuses ?? "").split(",").filter(Boolean).map(normalizeArchivedJobStatus),
+      parsePlan(row.plan_json),
+    );
     return expected && expected !== row.status ? [{ post_id: row.post_id, status: row.status, expected }] : [];
   });
+}
+
+function parsePlan(value: string | null): Record<string, unknown> | null {
+  if (!value) return null;
+  try {
+    return planObject(JSON.parse(value));
+  } catch {
+    return null;
+  }
 }
 
 function normalizeArchivedJobStatus(status: string): string {

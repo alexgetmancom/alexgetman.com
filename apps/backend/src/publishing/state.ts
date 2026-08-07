@@ -1,3 +1,5 @@
+import { targetLocale } from "../botTargets.js";
+
 const VIDEO_FINAL_TARGET_STATUSES = new Set(["published", "failed", "cancelled", "verification_required"]);
 const VIDEO_EDITABLE_TARGET_STATUSES = new Set(["editing", "draft"]);
 const VIDEO_METADATA_EDITABLE_TARGET_STATUSES = new Set(["editing", "draft", "scheduled"]);
@@ -43,4 +45,42 @@ export function publicationStatus(jobStatuses: string[]): "published" | "failed"
   if (jobStatuses.length === 0) return null;
   if (jobStatuses.some((status) => ACTIVE_PUBLICATION_JOB_STATUSES.has(status))) return null;
   return jobStatuses.some((status) => status === "failed" || status === "verification_required") ? "failed" : "published";
+}
+
+/** A publication whose plan still has an enabled target in a locale with no date
+ * is not finished, however its existing jobs settled: the operator has yet to say
+ * when that locale goes out.
+ *
+ * Reconciliation applied this rule and the audit's mismatch scan did not, so the
+ * audit reported every such post as a permanent mismatch, and `repair --apply`
+ * closed it as published. The next settling job put it back, and when no further
+ * job ever settled -- the usual case, since the pending locale has no job yet --
+ * the wrong status simply stood. One function now, for both. */
+export function effectivePublicationStatus(
+  jobStatuses: string[],
+  plan: Record<string, unknown> | null,
+): "published" | "failed" | "scheduled" | null {
+  const status = publicationStatus(jobStatuses);
+  if (!status) return null;
+  return status === "published" && hasPendingLocaleSchedule(plan) ? "scheduled" : status;
+}
+
+function hasPendingLocaleSchedule(plan: Record<string, unknown> | null): boolean {
+  if (plan?.mode !== "scheduled") return false;
+  const targets = planObject(plan.targets);
+  return Object.entries(targets).some(([target, enabled]) => {
+    if (!enabled) return false;
+    const locale = targetLocale(target);
+    if (!locale) return false;
+    return !planScheduleAt(plan, locale);
+  });
+}
+
+export function planScheduleAt(plan: Record<string, unknown>, locale: "ru" | "en"): string | null {
+  const value = plan[locale === "en" ? "scheduled_en_at" : "scheduled_at"];
+  return typeof value === "string" ? value : null;
+}
+
+export function planObject(value: unknown): Record<string, unknown> {
+  return value != null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }

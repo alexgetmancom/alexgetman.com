@@ -436,4 +436,44 @@ describe("TypeScript operations tooling", () => {
       backendDb.close();
     }
   });
+  it("leaves a publication open while a locale still has no date", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      // RU went out; EN is an enabled target the operator has not dated yet, so
+      // the publication is deliberately still scheduled.
+      backendDb.sqlite.query("INSERT INTO publications(post_id,status,created_at,updated_at) VALUES (70,'scheduled',?,?)").run(now, now);
+      backendDb.sqlite
+        .query("INSERT INTO publication_plans(post_id,plan_json,created_at,updated_at) VALUES (70,?,?,?)")
+        .run(JSON.stringify({ mode: "scheduled", targets: { telegram: true, threads_en: true }, scheduled_at: now }), now, now);
+      backendDb.sqlite
+        .query(
+          "INSERT INTO publish_jobs(post_id,post_key,message_id,target,status,created_at,updated_at) VALUES (70,'post:70',70,'telegram','published',?,?)",
+        )
+        .run(now, now);
+
+      expect(repairPublicationConsistency(backendDb)).toMatchObject({ repairedPublications: 0 });
+      expect(backendDb.sqlite.query("SELECT status FROM publications WHERE post_id=70").get()).toEqual({ status: "scheduled" });
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("still repairs a publication whose locales are all settled", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      backendDb.sqlite.query("INSERT INTO publications(post_id,status,created_at,updated_at) VALUES (71,'scheduled',?,?)").run(now, now);
+      backendDb.sqlite
+        .query(
+          "INSERT INTO publish_jobs(post_id,post_key,message_id,target,status,created_at,updated_at) VALUES (71,'post:71',71,'telegram','published',?,?)",
+        )
+        .run(now, now);
+
+      expect(repairPublicationConsistency(backendDb)).toMatchObject({ repairedPublications: 1 });
+      expect(backendDb.sqlite.query("SELECT status FROM publications WHERE post_id=71").get()).toEqual({ status: "published" });
+    } finally {
+      backendDb.close();
+    }
+  });
 });

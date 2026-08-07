@@ -352,8 +352,9 @@ jobs:
           # `latest` is moved by the deploy job, not here: the reuse path above
           # reads it, so it must mean "the image production is running".
           tags: ghcr.io/${{ github.repository_owner }}/alexgetman-backend:${{ github.sha }}
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/alexgetman-backend:buildcache-app
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/alexgetman-backend:buildcache-app,mode=min
+          # No build cache here on purpose: this stage is COPY of per-commit
+          # artifacts onto the runtime base, so nothing is ever reusable and the
+          # export was writing ~70s of cache no build could hit.
       - name: Select backend image digest
         id: image
         env:

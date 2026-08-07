@@ -4,7 +4,7 @@ import { targetLocale } from "../botTargets.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { drafts, postEvents, publicationPlans, publications, publishJobs, siteJobs } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
-import { publicationStatus } from "./state.js";
+import { effectivePublicationStatus, planObject, planScheduleAt } from "./state.js";
 import { siteTargetForReason } from "./targets.js";
 
 type PublicationJob = { target: string; status: string; error: string | null };
@@ -32,9 +32,11 @@ export function reconcilePublication(backendDb: BackendDb, postId: number): void
   const all: PublicationJob[] = [...social, ...site];
   const plan = publicationPlan(backendDb, postId);
   emitLocaleCompletion(backendDb, postId, all, plan);
-  const status = publicationStatus(all.map((job) => job.status));
-  if (!status) return;
-  const effectiveStatus = status === "published" && hasPendingLocaleSchedule(plan) ? "scheduled" : status;
+  const effectiveStatus = effectivePublicationStatus(
+    all.map((job) => job.status),
+    plan,
+  );
+  if (!effectiveStatus) return;
   const now = backendDb.clock.now().toISOString();
   unsafeDb(backendDb).db.transaction((tx) => {
     tx.update(publications).set({ status: effectiveStatus, updatedAt: now }).where(eq(publications.postId, postId)).run();
@@ -62,7 +64,7 @@ const FINAL_JOB_STATUSES = new Set(["published", "failed", "cancelled", "skipped
 
 function emitLocaleCompletion(backendDb: BackendDb, postId: number, jobs: PublicationJob[], plan: Record<string, unknown> | null): void {
   if (plan?.mode !== "scheduled") return;
-  const targets = object(plan.targets);
+  const targets = planObject(plan.targets);
   const enabledLocales = new Set<"ru" | "en">();
   for (const [target, enabled] of Object.entries(targets)) {
     if (enabled && targetLocale(target)) enabledLocales.add(targetLocale(target) as "ru" | "en");
@@ -88,7 +90,7 @@ function emitLocaleCompletion(backendDb: BackendDb, postId: number, jobs: Public
         if (otherJobs.length && otherJobs.every((job) => FINAL_JOB_STATUSES.has(job.status))) return false;
         return isDeferredLocale(plan, locale, other);
       })
-      .map((other) => ({ locale: other, scheduled_at: scheduleAt(plan, other) }));
+      .map((other) => ({ locale: other, scheduled_at: planScheduleAt(plan, other) }));
     if (!remaining.length) continue;
 
     const alreadyEmitted = unsafeDb(backendDb)
@@ -126,17 +128,12 @@ function emitLocaleCompletion(backendDb: BackendDb, postId: number, jobs: Public
 }
 
 function isDeferredLocale(plan: Record<string, unknown>, completed: "ru" | "en", remaining: "ru" | "en"): boolean {
-  const completedAt = scheduleAt(plan, completed);
-  const remainingAt = scheduleAt(plan, remaining);
+  const completedAt = planScheduleAt(plan, completed);
+  const remainingAt = planScheduleAt(plan, remaining);
   if (!remainingAt || !completedAt) return true;
   const completedTime = Date.parse(completedAt);
   const remainingTime = Date.parse(remainingAt);
   return Number.isFinite(remainingTime) && Number.isFinite(completedTime) && remainingTime > completedTime;
-}
-
-function scheduleAt(plan: Record<string, unknown>, locale: "ru" | "en"): string | null {
-  const value = plan[locale === "en" ? "scheduled_en_at" : "scheduled_at"];
-  return typeof value === "string" ? value : null;
 }
 
 function publicationPlan(backendDb: BackendDb, postId: number): Record<string, unknown> | null {
@@ -145,23 +142,5 @@ function publicationPlan(backendDb: BackendDb, postId: number): Record<string, u
     .from(publicationPlans)
     .where(eq(publicationPlans.postId, postId))
     .get()?.planJson;
-  return object(value);
-}
-
-function object(value: unknown): Record<string, unknown> {
-  return value != null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-}
-
-/** A scheduled post may intentionally have one locale waiting for a later
- * operator choice. That missing locale is not an immediate target and must
- * keep the publication open after the already scheduled locale settles. */
-function hasPendingLocaleSchedule(plan: Record<string, unknown> | null): boolean {
-  if (plan?.mode !== "scheduled") return false;
-  const targets = object(plan.targets);
-  return Object.entries(targets).some(([target, enabled]) => {
-    if (!enabled) return false;
-    const locale = targetLocale(target);
-    if (!locale) return false;
-    return !scheduleAt(plan, locale);
-  });
+  return planObject(value);
 }
