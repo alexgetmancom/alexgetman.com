@@ -83,7 +83,7 @@ const METRIC_BACKFILL_TARGETS = "telegram,threads_ru,threads_en,instagram_storie
 
 // --- The catalog ----------------------------------------------------------------
 
-export const operationDefs = {
+const operationDefs = {
   status: operation({
     summary: "Worker heartbeats, publication counts and metric schedule health.",
     schema: z.object({}),
@@ -410,8 +410,6 @@ export const operationDefs = {
     handler: (context, input) => disableChannel(context.db(), input.channel, input.forget_credentials),
   }),
 } satisfies Record<string, OperationDef>;
-
-export type OperationName = keyof typeof operationDefs;
 
 /** `name=value` pairs. Values reach the process through its arguments, so this
  * is meant for a shell inside the deployment, not for a shared terminal. */
