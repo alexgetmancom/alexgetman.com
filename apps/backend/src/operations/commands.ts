@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { isKnownTarget } from "../botTargets.js";
 import type { BackendDb } from "../db/client.js";
 import { unsafeDb } from "../db/client.js";
 import { drafts } from "../db/schema.js";
@@ -43,6 +44,12 @@ export async function runOperationCommand(
   if (!ref) throw new Error("missing publication ref");
   const publicationRef = resolvePublicationRef(backendDb, ref);
   if (!publicationRef) throw new Error(`publication not found: ${ref}`);
+  // Checked here rather than in commandActionSchema because the CLI builds its
+  // input directly and never parses it, and the HTTP route falls back to an
+  // empty command on a parse failure -- so the schema is not a choke point and
+  // this is. An unknown target used to reach a worker as a durable job for a
+  // target no publisher serves, failing hours later instead of at the keystroke.
+  if (input.target && !isKnownTarget(input.target)) throw new Error(`unknown target: ${input.target}`);
   let result: Record<string, unknown>;
   if (input.action === "retry" || input.action === "republish")
     result = requeuePublicationScope(backendDb, publicationRef, input.target, input.locale);

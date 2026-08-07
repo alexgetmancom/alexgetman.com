@@ -408,4 +408,23 @@ describe("command center actions", () => {
       backendDb.close();
     }
   });
+  it("rejects an unknown target before it becomes a durable job", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      backendDb.db.insert(publications).values({ postId: 92, status: "published", createdAt: now, updatedAt: now }).run();
+      backendDb.db
+        .insert(publicationSources)
+        .values({ postId: 92, itemJson: { text: "RU", text_en: "EN" }, createdAt: now, updatedAt: now })
+        .run();
+
+      expect(runOperationCommand(backendDb, { action: "retry", ref: "post:92", target: "threds_en" })).rejects.toThrow(
+        "unknown target: threds_en",
+      );
+      // Nothing durable was written on the way to the rejection.
+      expect(backendDb.db.select().from(publishJobs).all()).toEqual([]);
+    } finally {
+      backendDb.close();
+    }
+  });
 });
