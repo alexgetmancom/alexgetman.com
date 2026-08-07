@@ -9,7 +9,7 @@ const BASELINE_POSTS = 20;
 
 type DeliveredTarget = { target: string; status: string; url: string | null };
 
-type RecentPost = {
+type PublicationRow = {
   ref: string;
   postId: number | null;
   at: string | null;
@@ -19,102 +19,95 @@ type RecentPost = {
   missingTargets: string[];
 };
 
-export type RecentPublications = { expectedTargets: string[]; posts: RecentPost[] };
+export type RecentPublications = { expectedTargets: string[]; posts: PublicationRow[] };
 
-export type PublicationMatches = { query: string; matches: Array<Omit<RecentPost, "postId" | "status" | "missingTargets">> };
+export type PublicationMatches = { query: string; expectedTargets: string[]; matches: PublicationRow[] };
 
 /** Recent publications with their per-target delivery state, and the targets a
  * post is missing relative to what its neighbours got. Answers "which post is
  * this, and where did it not go" — the question that otherwise takes a handful
  * of ad-hoc SQL queries against production before any repair can be scoped. */
 export function recentPublications(backendDb: BackendDb, limit: number): RecentPublications {
+  const rows = publicationRows(backendDb, Math.max(limit, BASELINE_POSTS));
+  const expectedTargets = usualTargets(rows);
+  return { expectedTargets, posts: rows.slice(0, limit).map((row) => describe(row, expectedTargets)) };
+}
+
+/** Resolves a post by a fragment of its text, so a repair can be scoped from the
+ * copy at hand instead of a post id nobody memorises. Missing targets are
+ * measured against the same baseline `recent` uses: a match reported as "ok"
+ * here and as a gap there would be two answers to one question. */
+export function findPublication(backendDb: BackendDb, query: string): PublicationMatches {
+  const needle = query.trim().toLowerCase();
+  if (!needle) throw new Error("--query must not be empty");
+  const expectedTargets = usualTargets(publicationRows(backendDb, BASELINE_POSTS));
+  const matches = publicationRows(backendDb, 400)
+    .filter((row) => row.text.toLowerCase().includes(needle))
+    .slice(0, 10)
+    .map((row) => describe(row, expectedTargets));
+  return { query, expectedTargets, matches };
+}
+
+type RawRow = { postKey: string; postId: number | null; dateUtc: string | null; status: string; text: string; targets: DeliveredTarget[] };
+
+function publicationRows(backendDb: BackendDb, limit: number): RawRow[] {
   const rows = unsafeDb(backendDb)
     .db.select({ postKey: posts.postKey, postId: posts.postId, dateUtc: posts.dateUtc, status: posts.status, text: posts.text })
     .from(posts)
     .orderBy(desc(posts.dateUtc))
-    .limit(Math.max(limit, BASELINE_POSTS))
+    .limit(limit)
     .all();
-  const byPost = deliveredTargets(
-    backendDb,
-    rows.map((row) => row.postKey),
-  );
-  // A target counts as expected once most of the recent posts carried it, so a
-  // post that legitimately went to one channel only does not drag the baseline.
-  const seen = new Map<string, number>();
-  for (const row of rows.slice(0, BASELINE_POSTS))
-    for (const target of byPost.get(row.postKey) ?? []) seen.set(target.target, (seen.get(target.target) ?? 0) + 1);
-  const quorum = Math.max(Math.ceil(Math.min(rows.length, BASELINE_POSTS) / 2), 1);
-  const expectedTargets = [...seen]
-    .filter(([, count]) => count >= quorum)
-    .map(([target]) => target)
-    .sort();
-  return {
-    expectedTargets,
-    posts: rows.slice(0, limit).map((row) => {
-      const targets = byPost.get(row.postKey) ?? [];
-      const present = new Set(targets.map((target) => target.target));
-      return {
-        ref: row.postKey,
-        postId: row.postId,
-        at: row.dateUtc,
-        status: row.status,
-        headline: headline(row.text),
-        targets,
-        missingTargets: expectedTargets.filter((target) => !present.has(target)),
-      };
-    }),
-  };
-}
-
-/** Resolves a post by a fragment of its text, so a repair can be scoped from the
- * copy at hand instead of a post id nobody memorises. */
-export function findPublication(backendDb: BackendDb, query: string): PublicationMatches {
-  const needle = query.trim().toLowerCase();
-  if (!needle) throw new Error("--query must not be empty");
-  const rows = unsafeDb(backendDb)
-    .db.select({ postKey: posts.postKey, dateUtc: posts.dateUtc, text: posts.text })
-    .from(posts)
-    .orderBy(desc(posts.dateUtc))
-    .limit(400)
-    .all()
-    .filter((row) => (row.text ?? "").toLowerCase().includes(needle))
-    .slice(0, 10);
-  const byPost = deliveredTargets(
-    backendDb,
-    rows.map((row) => row.postKey),
-  );
-  return {
-    query,
-    matches: rows.map((row) => ({
-      ref: row.postKey,
-      at: row.dateUtc,
-      headline: headline(row.text),
-      targets: byPost.get(row.postKey) ?? [],
-    })),
-  };
-}
-
-function deliveredTargets(backendDb: BackendDb, keys: string[]): Map<string, DeliveredTarget[]> {
-  const byPost = new Map<string, DeliveredTarget[]>();
-  if (keys.length === 0) return byPost;
-  const rows = unsafeDb(backendDb)
+  if (rows.length === 0) return [];
+  const delivered = unsafeDb(backendDb)
     .db.select({ postKey: postTargets.postKey, target: postTargets.target, status: postTargets.status, url: postTargets.url })
     .from(postTargets)
-    .where(inArray(postTargets.postKey, keys))
+    .where(
+      inArray(
+        postTargets.postKey,
+        rows.map((row) => row.postKey),
+      ),
+    )
     .orderBy(postTargets.target)
     .all();
-  for (const row of rows) {
+  const byPost = new Map<string, DeliveredTarget[]>();
+  for (const row of delivered) {
     const list = byPost.get(row.postKey) ?? [];
     list.push({ target: row.target, status: row.status, url: row.url });
     byPost.set(row.postKey, list);
   }
-  return byPost;
+  return rows.map((row) => ({ ...row, text: row.text ?? "", targets: byPost.get(row.postKey) ?? [] }));
+}
+
+/** A target counts as expected once most of the recent posts carried it, so a
+ * post that legitimately went to one channel only does not drag the baseline. */
+function usualTargets(rows: RawRow[]): string[] {
+  const baseline = rows.slice(0, BASELINE_POSTS);
+  const seen = new Map<string, number>();
+  for (const row of baseline) for (const target of row.targets) seen.set(target.target, (seen.get(target.target) ?? 0) + 1);
+  const quorum = Math.max(Math.ceil(baseline.length / 2), 1);
+  return [...seen]
+    .filter(([, count]) => count >= quorum)
+    .map(([target]) => target)
+    .sort();
+}
+
+function describe(row: RawRow, expectedTargets: string[]): PublicationRow {
+  const present = new Set(row.targets.map((target) => target.target));
+  return {
+    ref: row.postKey,
+    postId: row.postId,
+    at: row.dateUtc,
+    status: row.status,
+    headline: headline(row.text),
+    targets: row.targets,
+    missingTargets: expectedTargets.filter((target) => !present.has(target)),
+  };
 }
 
 /** The first line is the post's own headline; anything past it is body copy the
  * operator does not need to identify the post. */
-function headline(text: string | null): string {
-  const first = (text ?? "").split("\n", 1)[0]?.trim() ?? "";
+function headline(text: string): string {
+  const first = text.split("\n", 1)[0]?.trim() ?? "";
   return first.length > 60 ? `${first.slice(0, 59)}…` : first;
 }
 
@@ -122,27 +115,20 @@ function headline(text: string | null): string {
  * two hundred lines for five posts, which buries the one fact being looked for:
  * which post, and what did not go out. */
 export function formatRecentPublications(report: RecentPublications): string {
-  return [
-    `expected targets: ${report.expectedTargets.join(", ") || "none"}`,
-    "",
-    ...report.posts.map((post) => publicationLine(post, post.missingTargets)),
-  ].join("\n");
+  return [`expected targets: ${report.expectedTargets.join(", ") || "none"}`, "", ...report.posts.map(publicationLine)].join("\n");
 }
 
 export function formatPublicationMatches(report: PublicationMatches): string {
   if (report.matches.length === 0) return `no post matches ${JSON.stringify(report.query)}`;
-  return report.matches.map((match) => publicationLine(match, [])).join("\n");
+  return report.matches.map(publicationLine).join("\n");
 }
 
-function publicationLine(
-  post: { ref: string; at: string | null; headline: string; targets: DeliveredTarget[] },
-  missing: string[],
-): string {
+function publicationLine(post: PublicationRow): string {
   const failed = post.targets.filter((target) => target.status !== "published").map((target) => `${target.target}=${target.status}`);
   const trailer = [
-    missing.length > 0 ? `MISSING ${missing.join(",")}` : "",
+    post.missingTargets.length > 0 ? `MISSING ${post.missingTargets.join(",")}` : "",
     failed.length > 0 ? failed.join(" ") : "",
-    missing.length === 0 && failed.length === 0 ? "ok" : "",
+    post.missingTargets.length === 0 && failed.length === 0 ? "ok" : "",
   ]
     .filter(Boolean)
     .join("  ");

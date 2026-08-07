@@ -1,66 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-
-type OperationsGuideCommand = {
-  name: string;
-  usage: string;
-  mutates: boolean;
-  notes?: string;
-};
-
-const OPERATIONS_GUIDE_COMMANDS: readonly OperationsGuideCommand[] = [
-  { name: "status", usage: "status [--db PATH]", mutates: false },
-  { name: "migrations", usage: "migrations [--db PATH]", mutates: false },
-  { name: "migrations-baseline", usage: "migrations-baseline --db PATH", mutates: true, notes: "writes the migration baseline" },
-  { name: "backup", usage: "backup [--db PATH] [--output DIRECTORY]", mutates: true },
-  { name: "restore", usage: "restore --source PATH [--db PATH] --force", mutates: true, notes: "replaces the database" },
-  { name: "audit", usage: "audit [--db PATH]", mutates: false },
-  {
-    name: "metrics-backfill",
-    usage: "metrics-backfill [--targets a,b] [--refs post:1,post:2] [--from ISO] [--to ISO] [--apply] [--reset-counts]",
-    mutates: true,
-    notes: "read-only plan unless --apply is present",
-  },
-  {
-    name: "publication-repair",
-    usage: "publication-repair [--ref post:1|video:1] [--apply]",
-    mutates: true,
-    notes: "read-only plan unless --apply is present; scoped repair is preferred",
-  },
-  { name: "import-x-analytics", usage: "import-x-analytics --file PATH --sampled-at ISO", mutates: true },
-  { name: "import-manual-analytics", usage: "import-manual-analytics [options]", mutates: true },
-  { name: "capabilities", usage: "capabilities [--db PATH]", mutates: false },
-  { name: "usage", usage: "usage [--days N] [--unused-days N] [--db PATH]", mutates: false },
-  { name: "doctor", usage: "doctor", mutates: false },
-  { name: "capability-record", usage: "capability-record --test T01 --message-id 123 [--notes TEXT]", mutates: true },
-  {
-    name: "recent",
-    usage: "recent [--limit N]",
-    mutates: false,
-    notes: "start here for a delivery gap: recent posts, their targets, and the targets each one is missing",
-  },
-  { name: "find", usage: 'find --query "Astra"', mutates: false, notes: "resolves a post ref from its text" },
-  { name: "verify", usage: "verify --ref post:1", mutates: false },
-  { name: "timeline", usage: "timeline --ref post:1", mutates: false },
-  { name: "media-status", usage: "media-status", mutates: false },
-  { name: "media-diagnose", usage: "media-diagnose", mutates: false },
-  { name: "media-job", usage: "media-job --ref post:1", mutates: false },
-  {
-    name: "media-reprocess",
-    usage: "media-reprocess --ref post:1 [--apply]",
-    mutates: true,
-    notes: "read-only plan unless --apply is present",
-  },
-  { name: "republish", usage: "republish --ref post:1 [--target x] [--locale ru|en]", mutates: true },
-  { name: "retry", usage: "retry --ref post:1 [--target x] [--locale ru|en]", mutates: true },
-  { name: "reschedule", usage: 'reschedule --ref post:1 --locale ru|en|both --at "06.08.2026 08:00"', mutates: true },
-  { name: "site-media-images", usage: "site-media-images [--apply --max-upload-kbps 6250]", mutates: true },
-  { name: "site-media-deduplicate", usage: "site-media-deduplicate [--apply]", mutates: true },
-  { name: "story-card-backfill", usage: "story-card-backfill --ref post:1 [--apply] [--force]", mutates: true },
-  { name: "channels", usage: "channels", mutates: false },
-  { name: "channel-connect", usage: "channel-connect --platform PLATFORM --locale ru|en [options]", mutates: true },
-  { name: "channel-disable", usage: "channel-disable --channel CHANNEL [--forget-credentials]", mutates: true },
-];
+import { type OperationCatalogEntry, operationCatalog } from "./registry.js";
 
 type LocalState = "available" | "missing" | "unusable";
 
@@ -84,7 +24,7 @@ export type OperationsGuide = {
     containers: { alex: "alexgetman-backend"; maru: "maru-backend" };
     execUser: "bun";
   };
-  commands: readonly OperationsGuideCommand[];
+  commands: readonly OperationCatalogEntry[];
 };
 
 function probeLocalOperations(databasePath: string): LocalOperationsProbe {
@@ -124,16 +64,16 @@ export function buildOperationsGuide(databasePath = process.env.PIPELINE_DB ?? "
       containers: { alex: "alexgetman-backend", maru: "maru-backend" },
       execUser: "bun",
     },
-    commands: OPERATIONS_GUIDE_COMMANDS,
+    commands: operationCatalog(),
   };
 }
 
 export function formatOperationsGuide(guide: OperationsGuide): string {
   const routeLabel = guide.route === "local" ? "LOCAL" : "PRODUCTION";
-  const commandLines = guide.commands.map((command) => {
+  const commandLines = guide.commands.flatMap((command) => {
     const safety = command.mutates ? "MUTATION" : "read-only";
-    const note = command.notes ? ` — ${command.notes}` : "";
-    return `  [${safety}] ${command.usage}${note}`;
+    const note = command.notes ? ` (${command.notes})` : "";
+    return [`  [${safety}] ${command.usage}`, `             ${command.summary}${note}`];
   });
   return [
     "alexgetman operations guide",

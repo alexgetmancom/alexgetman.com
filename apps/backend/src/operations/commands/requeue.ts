@@ -149,7 +149,7 @@ function requeuePublication(backendDb: BackendDb, ref: ResolvedPublicationRef, t
   });
   return {
     // Every target still in a worker's hands means nothing was requeued, and an
-    // operator reading `ok: true` off `ops republish` would believe otherwise.
+    // operator reading `ok: true` off `ops retry` would believe otherwise.
     ok: results.some((row) => row.outcome !== "publishing"),
     post_id: ref.postId,
     post_key: ref.postKey,
@@ -175,7 +175,7 @@ export function requeuePublicationScope(
     .map((row) => row.target)
     .filter((value) => targetLocale(value) === locale);
   // A mutation that matched nothing is not a success. Silently returning an
-  // empty result set reads as "done" to an operator running `ops republish`.
+  // empty result set reads as "done" to an operator running `ops retry`.
   if (targets.length === 0) throw new Error(`no ${locale} targets found for ${ref.postKey}`);
   return { ok: true, locale, results: targets.map((value) => requeuePublication(backendDb, ref, value)) };
 }

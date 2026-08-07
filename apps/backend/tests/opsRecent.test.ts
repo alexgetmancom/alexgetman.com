@@ -70,8 +70,20 @@ describe("ops recent", () => {
     backendDb = openBackendDb(":memory:");
     seed(backendDb, 4, { postId: 4, target: "x" });
 
-    const found = findPublication(backendDb, "headline 2") as { matches: Array<{ ref: string }> };
+    const found = findPublication(backendDb, "headline 2");
 
     expect(found.matches.map((match) => match.ref)).toEqual(["post:2"]);
+  });
+
+  /** A match reported as complete by `find` and as a gap by `recent` would be
+   * two answers to one question. */
+  it("measures a match against the same baseline recent uses", () => {
+    backendDb = openBackendDb(":memory:");
+    seed(backendDb, 12, { postId: 12, target: "x" });
+
+    const found = findPublication(backendDb, "headline 12");
+
+    expect(found.expectedTargets).toEqual(USUAL);
+    expect(found.matches[0]?.missingTargets).toEqual(["x"]);
   });
 });

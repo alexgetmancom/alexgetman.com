@@ -37,7 +37,7 @@ describe("operations guide", () => {
     expect(guide.route).toBe("local");
     expect(guide.commands.find((command) => command.name === "publication-repair")).toMatchObject({
       mutates: true,
-      usage: "publication-repair [--ref post:1|video:1] [--apply]",
+      usage: "publication-repair [--ref VALUE] [--apply]",
     });
     expect(guide.commands.find((command) => command.name === "reschedule")).toMatchObject({ mutates: true });
   });

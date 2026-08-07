@@ -5,6 +5,7 @@ import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { STUDIO_LOCALES } from "../foundation/locale.js";
 import { log } from "../foundation/logger.js";
+import { inputJsonSchema, type OperationDef, operationCatalog, operationDef, operationJsonSchema } from "../operations/registry.js";
 import { createStudioServices, type StudioServices } from "../studio/services/index.js";
 
 const feedbackHits = new Map<string, number[]>();
@@ -56,12 +57,11 @@ const youtubeMetadataSchema = z.object({
 });
 const instagramMetadataSchema = z.object({ caption: trimmed(1, 2_200) });
 
-/** JSON Schema for an MCP tool listing, stripped of the document-level $schema key.
- * Uses `def.list` when a tool's real schema has a transform (dates, dedup, metadata
- * shaping) that z.toJSONSchema can't represent. */
+/** JSON Schema for an MCP tool listing. Uses `def.list` when a tool's real
+ * schema has a transform (dates, dedup, metadata shaping) that z.toJSONSchema
+ * can't represent; the stripping itself is the registry's. */
 function jsonSchema(def: { schema: z.ZodType; list?: z.ZodType }): JsonObject {
-  const { $schema: _dropped, ...rest } = z.toJSONSchema(def.list ?? def.schema) as JsonObject & { $schema?: unknown };
-  return rest;
+  return inputJsonSchema(def.list ?? def.schema);
 }
 
 function parseArgs<T>(schema: z.ZodType<T>, args: unknown): T {
@@ -543,6 +543,27 @@ const studioTools = Object.entries(studioToolDefs).map(([name, def]) => ({
   inputSchema: jsonSchema(def),
 }));
 
+/** Operations reach MCP as a projection of the same registry the CLI dispatches
+ * from, so an agent diagnosing a delivery gap has the commands an operator has
+ * — minus the ones the registry marks host-only. `ops_` keeps them apart from
+ * the Studio authoring tools in a client's tool list. */
+const OPS_TOOL_PREFIX = "ops_";
+
+const opsToolNames = new Map(
+  operationCatalog()
+    .filter((entry) => entry.agent)
+    .map((entry) => [`${OPS_TOOL_PREFIX}${entry.name.replace(/-/g, "_")}`, entry.name]),
+);
+
+const opsTools = [...opsToolNames].map(([toolName, operation]) => {
+  const def = operationDef(operation) as OperationDef;
+  return {
+    name: toolName,
+    description: def.note ? `${def.summary} (${def.note})` : def.summary,
+    inputSchema: operationJsonSchema(def),
+  };
+});
+
 type JsonObject = Record<string, unknown>;
 
 /** MCP is an adapter: all Studio commands delegate to the same application services as Telegram. */
@@ -568,7 +589,7 @@ export async function mcpResponse(
       },
     };
   if (request.method === "tools/list")
-    return { jsonrpc: "2.0", id, result: { tools: actorId ? [...publicTools, ...studioTools] : publicTools } };
+    return { jsonrpc: "2.0", id, result: { tools: actorId ? [...publicTools, ...studioTools, ...opsTools] : publicTools } };
   if (request.method !== "tools/call") return rpcError(id, -32601, `Unknown method: ${String(request.method)}`);
   const params = object(request.params);
   const name = typeof params.name === "string" ? params.name : "";
@@ -576,6 +597,8 @@ export async function mcpResponse(
   try {
     if (name === "submit_feedback") return success(id, submitFeedback(backendDb, args, clientKey));
     if (!actorId) return rpcError(id, -32001, "Studio MCP authorization is required");
+    const operation = opsToolNames.get(name);
+    if (operation) return success(id, await runOpsTool(backendDb, config, actorId, name, operation, args));
     return success(id, await runStudioTool(backendDb, config, actorId, name, args, studio));
   } catch (error) {
     if (error instanceof McpToolError) return rpcError(id, error.code, error.message);
@@ -611,6 +634,38 @@ async function runStudioTool(
       });
     } catch (error) {
       log("error", "studio MCP audit event failed", { actorId, tool: name, error });
+    }
+  return result;
+}
+
+/** Validation is re-done here rather than through `runOperation` so a bad
+ * argument comes back as -32602 with the offending field named, the way every
+ * other MCP tool reports it; the schema and handler are still the registry's. */
+async function runOpsTool(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  actorId: number,
+  toolName: string,
+  operation: string,
+  args: JsonObject,
+): Promise<unknown> {
+  const def = operationDef(operation) as OperationDef;
+  const input = parseArgs(def.schema, args);
+  // The server owns this handle and this config; the operation borrows both and
+  // must not close what it did not open.
+  const result = await def.handler({ dbPath: config.PIPELINE_DB, config: () => config, db: () => backendDb, fetchImpl: fetch }, input);
+  if (def.mutates)
+    try {
+      recordDomainEvent(backendDb.events, {
+        ref: typeof (input as { ref?: unknown }).ref === "string" ? (input as { ref: string }).ref : null,
+        type: "operations.mcp.command",
+        severity: "info",
+        target: "mcp",
+        message: `Operations MCP ${toolName} executed`,
+        details: { actorId, tool: toolName, operation },
+      });
+    } catch (error) {
+      log("error", "operations MCP audit event failed", { actorId, tool: toolName, error });
     }
   return result;
 }

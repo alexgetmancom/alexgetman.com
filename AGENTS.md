@@ -69,7 +69,13 @@ headline, their targets, and the targets each one is missing — then `retry --r
 Get CLI output before reading source for production state.
 
 **Never run a mutation without an explicit request** — `backup`, `restore`, `--apply` variants,
-`capability-record`, channel connect/disable, retry/republish, manual SQL, deployments.
+`capability-record`, channel connect/disable, `retry`, manual SQL, deployments.
+
+Every operation is one entry in `apps/backend/src/operations/registry.ts`: summary, zod schema,
+`mutates`, `agent`, handler, optional text formatter. The CLI dispatch, the `--help` and `guide`
+catalogs, and the `ops_*` MCP tools are all projections of it — adding an entry is the whole change,
+and a usage string is never written by hand. `agent: false` keeps an operation off MCP; that is the
+line for anything moving the database file, writing credentials, or reading a host path.
 
 # Local data
 

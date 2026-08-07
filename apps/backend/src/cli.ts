@@ -1,35 +1,14 @@
-import { importManualAnalytics } from "./analytics/import-manual-analytics.js";
-import { importXAnalyticsCsv } from "./analytics/import-x-csv.js";
-import { baselineDrizzleMigrations, migrationStatus, openBackendDb, unsafeDb } from "./db/client.js";
-import { loadConfig } from "./foundation/config.js";
-import { checkDataDirectoriesWritable, requiredDataDirectories } from "./foundation/runtime/data-dirs.js";
-import { capabilityReport } from "./observability/capabilities.js";
-import { usageReport } from "./observability/usage.js";
-import { capabilitySummary, recordCapabilityPost } from "./operations/capabilities.js";
-import { channelReport, connectChannel, disableChannel } from "./operations/channels.js";
-import { doctorChecks } from "./operations/doctor.js";
+import { type BackendDb, baselineDrizzleMigrations, openBackendDb } from "./db/client.js";
+import { type BackendConfig, loadConfig } from "./foundation/config.js";
 import { buildOperationsGuide, formatOperationsGuide, operationsGuideUsage } from "./operations/guide.js";
 import {
-  applyMetricsBackfill,
-  auditOperations,
-  backupDatabase,
-  buildMetricsBackfillPlan,
-  publicationConsistencyReport,
-  repairPublicationConsistency,
-  restoreDatabase,
-  withMaintenanceLock,
-} from "./operations/maintenance.js";
-import { diagnoseMediaProcessor, mediaJobReport, mediaProcessorStatus, reprocessPostMedia } from "./operations/media-processor.js";
-import { findPublication, formatPublicationMatches, formatRecentPublications, recentPublications } from "./operations/recent.js";
-import { createOperationsService } from "./operations/service.js";
-import { backfillSiteImageMedia } from "./operations/site-media-backfill.js";
-import { deduplicateSiteMedia } from "./operations/site-media-deduplicate.js";
-import { compactOperationsStatus } from "./operations/status.js";
-import { backfillTextStoryCards } from "./operations/story-card-backfill.js";
-import { publicationTimeline } from "./operations/timeline.js";
-import { verifyPostTargets } from "./operations/verify.js";
-
-const republishAliases = new Set(["republish", "retry"]);
+  type OperationContext,
+  operationCatalog,
+  operationDef,
+  operationJsonSchema,
+  optionFlag,
+  runOperation,
+} from "./operations/registry.js";
 
 type Arguments = { command: string; values: Map<string, string>; repeated: Map<string, string[]>; flags: Set<string> };
 
@@ -53,60 +32,42 @@ function parseArguments(argv: string[]): Arguments {
   return { command, values, repeated, flags };
 }
 
-function required(args: Arguments, name: string): string {
-  const value = args.values.get(name);
-  if (!value) throw new Error(`missing --${name}`);
-  return value;
-}
-
-/** `name=value` pairs. Values reach the process through its arguments, so this
- * is meant for a shell inside the deployment, not for a shared terminal. */
-function parseCredentials(pairs: string[]): Record<string, string> {
-  return Object.fromEntries(
-    pairs.map((pair) => {
-      const separator = pair.indexOf("=");
-      if (separator <= 0) throw new Error(`--credential expects name=value, received: ${pair}`);
-      return [pair.slice(0, separator), pair.slice(separator + 1)];
-    }),
-  );
+/** Argv against the operation's own schema: a boolean field is a bare flag, an
+ * array field collects its repeats, and everything else is the last value
+ * given. Coercion and validation belong to the schema, not to this parser. */
+function operationInput(name: string, args: Arguments): Record<string, unknown> {
+  const properties = (operationJsonSchema(operationDef(name) as never).properties ?? {}) as Record<string, { type?: string }>;
+  const input: Record<string, unknown> = {};
+  for (const [field, property] of Object.entries(properties)) {
+    const flag = optionFlag(field);
+    if (property.type === "boolean") {
+      if (args.flags.has(flag)) input[field] = true;
+      continue;
+    }
+    if (property.type === "array") {
+      const values = args.repeated.get(flag);
+      if (values) input[field] = values;
+      continue;
+    }
+    const value = args.values.get(flag);
+    if (value !== undefined) input[field] = value;
+  }
+  return input;
 }
 
 function printHelp(): void {
-  console.log(`alexgetman backend operations
-
-${operationsGuideUsage()}
-  status [--db PATH]
-  migrations [--db PATH]
-  migrations-baseline --db PATH
-  backup [--db PATH] [--output DIRECTORY]
-  restore --source PATH [--db PATH] --force
-  audit [--db PATH]
-  metrics-backfill [--targets a,b] [--refs post:1,post:2] [--from ISO] [--to ISO] [--apply] [--reset-counts]
-  publication-repair [--ref post:1|video:1] [--apply]
-  import-x-analytics --file PATH --sampled-at ISO
-  import-manual-analytics [--x-file PATH] [--threads-ru-followers N] [--threads-en-followers N] [--sampled-at ISO]
-  capabilities [--db PATH]
-  usage [--days N] [--unused-days N] [--db PATH]
-  doctor
-  capability-record --test T01 --message-id 123 [--notes TEXT]
-  recent [--limit N] [--json]
-  find --query "Astra" [--json]
-  verify --ref post:1
-  timeline --ref post:1
-  media-status
-  media-diagnose
-  media-job --ref post:1
-  media-reprocess --ref post:1 [--apply]
-  republish --ref post:1 [--target x] [--locale ru|en]
-  retry --ref post:1 [--target x] [--locale ru|en]
-  reschedule --ref post:1 --locale ru|en|both --at "06.08.2026 08:00"
-  site-media-images [--apply --max-upload-kbps 6250]
-  site-media-deduplicate [--apply]
-  story-card-backfill --ref post:1 [--apply] [--force]
-  channels
-  channel-connect --platform youtube|instagram --locale ru|en [--provider native|zernio]
-                  [--account-id ID] [--label TEXT] [--credential name=value ...]
-  channel-disable --channel youtube_ru [--forget-credentials]`);
+  const lines = operationCatalog().map((entry) => `${entry.mutates ? "[MUTATION] " : "           "}${entry.usage}`);
+  console.log(
+    [
+      "alexgetman backend operations",
+      "",
+      `           ${operationsGuideUsage().trim()}`,
+      "           migrations-baseline --db PATH",
+      ...lines,
+      "",
+      "--db PATH overrides the database; --json prints the raw result.",
+    ].join("\n"),
+  );
 }
 
 async function main(): Promise<void> {
@@ -116,16 +77,15 @@ async function main(): Promise<void> {
     return;
   }
   const dbPath = args.values.get("db") ?? process.env.PIPELINE_DB ?? "/data/pipeline.db";
+  // The guide describes the catalog rather than belonging to it, and it is the
+  // one command that must answer when the database cannot be opened at all.
   if (args.command === "guide") {
     const guide = buildOperationsGuide(dbPath);
     console.log(args.flags.has("json") ? JSON.stringify(guide, null, 2) : formatOperationsGuide(guide));
     return;
   }
-  if (args.command === "restore") {
-    restoreDatabase(required(args, "source"), dbPath, args.flags.has("force"));
-    console.log(JSON.stringify({ ok: true, restored: dbPath }, null, 2));
-    return;
-  }
+  // Baselining writes migration bookkeeping through a raw handle, before the
+  // application schema this process would otherwise expect to already exist.
   if (args.command === "migrations-baseline") {
     const sqlite = new (await import("bun:sqlite")).Database(dbPath, { strict: true }) as Parameters<typeof baselineDrizzleMigrations>[0];
     try {
@@ -135,182 +95,23 @@ async function main(): Promise<void> {
     }
     return;
   }
-  const config = loadConfig({ ...process.env, PIPELINE_DB: dbPath });
-  const backendDb = openBackendDb(dbPath);
+  const def = operationDef(args.command);
+  if (!def) throw new Error(`unknown command: ${args.command}`);
+  // Held in a cell so the lazy accessors can fill them in without TypeScript
+  // losing the type across the closure boundary.
+  const opened: { db: BackendDb | null; config: BackendConfig | null } = { db: null, config: null };
+  const context: OperationContext = {
+    dbPath,
+    config: () => (opened.config ??= loadConfig({ ...process.env, PIPELINE_DB: dbPath })),
+    db: () => (opened.db ??= openBackendDb(dbPath)),
+    fetchImpl: fetch,
+  };
   try {
-    if (args.command === "doctor") {
-      const enabled = Object.entries(config.studio.modules)
-        .filter(([, value]) => value)
-        .map(([key]) => key);
-      const dataDirectories = checkDataDirectoriesWritable(requiredDataDirectories(config));
-      const { requiredChecks, checks } = doctorChecks(config, dataDirectories);
-      console.log(
-        JSON.stringify(
-          {
-            ok: Object.values(requiredChecks).every(Boolean),
-            modules: enabled,
-            video: config.studio.video,
-            publicBaseUrl: config.PUBLIC_BASE_URL,
-            checks,
-            dataDirectories,
-            capabilities: capabilityReport(config, backendDb),
-          },
-          null,
-          2,
-        ),
-      );
-    } else if (args.command === "status") console.log(JSON.stringify(compactOperationsStatus(config, backendDb), null, 2));
-    else if (args.command === "migrations")
-      console.log(JSON.stringify({ migrations: migrationStatus(unsafeDb(backendDb).sqlite) }, null, 2));
-    else if (args.command === "backup")
-      console.log(JSON.stringify({ ok: true, path: await backupDatabase(backendDb, dbPath, args.values.get("output")) }, null, 2));
-    else if (args.command === "audit") console.log(JSON.stringify(auditOperations(backendDb), null, 2));
-    else if (args.command === "publication-repair") {
-      const ref = args.values.get("ref");
-      const options = ref ? { ref } : undefined;
-      const before = publicationConsistencyReport(backendDb, options);
-      const repaired = args.flags.has("apply") ? repairPublicationConsistency(backendDb, options) : null;
-      const after = repaired ? publicationConsistencyReport(backendDb, options) : null;
-      console.log(JSON.stringify({ ...(ref ? { ref } : {}), before, repaired, after }, null, 2));
-    } else if (args.command === "metrics-backfill") {
-      const targets = (
-        args.values.get("targets") ?? "telegram,threads_ru,threads_en,instagram_stories,instagram_stories_ru,telegram_stories"
-      )
-        .split(",")
-        .filter(Boolean);
-      const refs = args.values.get("refs")?.split(",").filter(Boolean);
-      const dateFrom = args.values.get("from");
-      const dateTo = args.values.get("to");
-      const plan = buildMetricsBackfillPlan(backendDb, {
-        targets,
-        ...(refs ? { refs } : {}),
-        ...(dateFrom ? { dateFrom } : {}),
-        ...(dateTo ? { dateTo } : {}),
-      });
-      const applied = args.flags.has("apply")
-        ? withMaintenanceLock(backendDb, () => applyMetricsBackfill(backendDb, config, plan, args.flags.has("reset-counts")))
-        : 0;
-      console.log(JSON.stringify({ count: plan.length, applied, plan }, null, 2));
-    } else if (args.command === "import-x-analytics") {
-      console.log(JSON.stringify(importXAnalyticsCsv(backendDb, required(args, "file"), required(args, "sampled-at")), null, 2));
-    } else if (args.command === "import-manual-analytics") {
-      const xFile = args.values.get("x-file");
-      const threadsRuFollowers = args.values.get("threads-ru-followers");
-      const threadsEnFollowers = args.values.get("threads-en-followers");
-      console.log(
-        JSON.stringify(
-          importManualAnalytics(backendDb, {
-            sampledAt: args.values.get("sampled-at") ?? new Date().toISOString(),
-            ...(xFile ? { xFile } : {}),
-            ...(threadsRuFollowers == null ? {} : { threadsRuFollowers: Number(threadsRuFollowers) }),
-            ...(threadsEnFollowers == null ? {} : { threadsEnFollowers: Number(threadsEnFollowers) }),
-          }),
-          null,
-          2,
-        ),
-      );
-    } else if (args.command === "channels") {
-      console.log(JSON.stringify(channelReport(backendDb, config), null, 2));
-    } else if (args.command === "channel-connect") {
-      const locale = required(args, "locale");
-      if (locale !== "ru" && locale !== "en") throw new Error("--locale must be ru or en");
-      console.log(
-        JSON.stringify(
-          connectChannel(backendDb, config, {
-            platform: required(args, "platform"),
-            locale,
-            provider: args.values.get("provider") ?? "native",
-            ...(args.values.has("account-id") ? { accountId: args.values.get("account-id") as string } : {}),
-            ...(args.values.has("label") ? { label: args.values.get("label") as string } : {}),
-            credentials: parseCredentials(args.repeated.get("credential") ?? []),
-          }),
-          null,
-          2,
-        ),
-      );
-    } else if (args.command === "channel-disable") {
-      console.log(JSON.stringify(disableChannel(backendDb, required(args, "channel"), args.flags.has("forget-credentials")), null, 2));
-    } else if (args.command === "capabilities") {
-      console.log(JSON.stringify(capabilitySummary(backendDb), null, 2));
-    } else if (args.command === "usage") {
-      const rawDays = args.values.get("days");
-      const rawUnusedDays = args.values.get("unused-days");
-      const days = rawDays == null ? undefined : Number(rawDays);
-      const unusedDays = rawUnusedDays == null ? undefined : Number(rawUnusedDays);
-      console.log(
-        JSON.stringify(
-          usageReport(backendDb, {
-            ...(days === undefined ? {} : { days }),
-            ...(unusedDays === undefined ? {} : { unusedDays }),
-          }),
-          null,
-          2,
-        ),
-      );
-    } else if (args.command === "capability-record") {
-      const status = recordCapabilityPost(
-        backendDb,
-        required(args, "test"),
-        Number(required(args, "message-id")),
-        args.values.get("notes"),
-      );
-      console.log(JSON.stringify({ ok: true, status }, null, 2));
-    } else if (args.command === "recent") {
-      const report = recentPublications(backendDb, Number(args.values.get("limit") ?? 5));
-      console.log(args.flags.has("json") ? JSON.stringify(report, null, 2) : formatRecentPublications(report));
-    } else if (args.command === "find") {
-      const report = findPublication(backendDb, required(args, "query"));
-      console.log(args.flags.has("json") ? JSON.stringify(report, null, 2) : formatPublicationMatches(report));
-    } else if (args.command === "verify") console.log(JSON.stringify(await verifyPostTargets(backendDb, required(args, "ref")), null, 2));
-    else if (args.command === "timeline") console.log(JSON.stringify(publicationTimeline(backendDb, required(args, "ref")), null, 2));
-    else if (args.command === "media-status") console.log(JSON.stringify(await mediaProcessorStatus(config), null, 2));
-    else if (args.command === "media-diagnose") console.log(JSON.stringify(await diagnoseMediaProcessor(config), null, 2));
-    else if (args.command === "media-job") console.log(JSON.stringify(mediaJobReport(backendDb, required(args, "ref")), null, 2));
-    else if (args.command === "media-reprocess")
-      console.log(JSON.stringify(await reprocessPostMedia(backendDb, config, required(args, "ref"), args.flags.has("apply")), null, 2));
-    else if (args.command === "site-media-images") {
-      const rawLimit = args.values.get("max-upload-kbps");
-      const maxUploadKbps = rawLimit == null ? undefined : Number(rawLimit);
-      if (maxUploadKbps != null && (!Number.isFinite(maxUploadKbps) || maxUploadKbps <= 0 || maxUploadKbps > 6_250))
-        throw new Error("--max-upload-kbps must be between 1 and 6250");
-      console.log(JSON.stringify(await backfillSiteImageMedia(backendDb, config, args.flags.has("apply"), maxUploadKbps), null, 2));
-    } else if (args.command === "site-media-deduplicate") {
-      console.log(JSON.stringify(await deduplicateSiteMedia(config, args.flags.has("apply")), null, 2));
-    } else if (args.command === "story-card-backfill") {
-      console.log(
-        JSON.stringify(
-          await backfillTextStoryCards(backendDb, config, required(args, "ref"), args.flags.has("apply"), args.flags.has("force")),
-          null,
-          2,
-        ),
-      );
-    } else if (republishAliases.has(args.command)) {
-      const localeValue = args.values.get("locale");
-      if (localeValue && localeValue !== "ru" && localeValue !== "en") throw new Error("--locale must be ru or en");
-      const locale: "ru" | "en" | undefined = localeValue as "ru" | "en" | undefined;
-      const result = await createOperationsService(backendDb, config).command(
-        {
-          action: "republish",
-          ref: required(args, "ref"),
-          ...(args.values.has("target") ? { target: args.values.get("target") } : {}),
-          ...(locale ? { locale } : {}),
-        },
-        fetch,
-      );
-      console.log(JSON.stringify(result, null, 2));
-    } else if (args.command === "reschedule") {
-      const locale = required(args, "locale");
-      if (locale !== "ru" && locale !== "en" && locale !== "both") throw new Error("--locale must be ru, en, or both");
-      const result = await createOperationsService(backendDb, config).command({
-        action: "reschedule",
-        ref: required(args, "ref"),
-        schedule_locale: locale,
-        at: required(args, "at"),
-      });
-      console.log(JSON.stringify(result, null, 2));
-    } else throw new Error(`unknown command: ${args.command}`);
+    const result = await runOperation(args.command, context, operationInput(args.command, args));
+    const format = def.format;
+    console.log(format && !args.flags.has("json") ? format(result as never) : JSON.stringify(result, null, 2));
   } finally {
-    backendDb.close();
+    opened.db?.close();
   }
 }
 

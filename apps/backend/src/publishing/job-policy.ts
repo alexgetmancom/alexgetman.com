@@ -41,7 +41,7 @@ export function reconciliationTransition(
 
 /** The columns a publish job takes on when it re-enters the queue. Two paths
  * requeue jobs and they mean different things -- Studio retries a target that
- * failed, `ops republish` restores one whatever state it reached -- so *which*
+ * failed, `ops retry` restores one whatever state it reached -- so *which*
  * jobs each may touch stays a guard at the call site. What must not differ is
  * the row they leave behind: a job waiting to be claimed has shed its lock, its
  * backoff and the phase of its previous attempt.
