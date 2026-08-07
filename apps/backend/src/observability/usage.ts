@@ -17,7 +17,13 @@ const TRACKED_FEATURES = [
   "engagement.likes.lookup",
   "engagement.likes.batch",
   "engagement.likes.toggle",
-  "command_center.dashboard.view",
+  // The dashboard is three operations with three cost profiles: a full HTML
+  // render, the JSON payload behind it, and a fingerprint the open tab polls
+  // every 60 seconds. One shared key buried the render's cost under the poll's
+  // call count and made the average answer no question at all.
+  "command_center.dashboard.render",
+  "command_center.dashboard.payload",
+  "command_center.fingerprint.poll",
   "command_center.pipeline.view",
   "command_center.post_debug.view",
   "command_center.action.execute",

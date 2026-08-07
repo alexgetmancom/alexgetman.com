@@ -66,7 +66,7 @@ export const commandCenterRoutes: RouteModule = (app, { config, backendDb, opera
     if (!commandAllowed(request, config)) return html(renderCommandCenterLogin());
     return html(
       measureMemorySync("command_center.dashboard.render", dashboardMemoryContext(url), () =>
-        trackUsageSync(backendDb, "command_center.dashboard.view", () =>
+        trackUsageSync(backendDb, "command_center.dashboard.render", () =>
           renderDashboard(
             config,
             backendDb,
@@ -109,7 +109,7 @@ export const commandCenterRoutes: RouteModule = (app, { config, backendDb, opera
     commandAllowed(c.req.raw, config)
       ? json(
           measureMemorySync("command_center.dashboard.payload", { route: "/api/command-center" }, () =>
-            trackUsageSync(backendDb, "command_center.dashboard.view", () => operations.dashboard()),
+            trackUsageSync(backendDb, "command_center.dashboard.payload", () => operations.dashboard()),
           ),
         )
       : json({ detail: "forbidden" }, 403),
@@ -117,7 +117,7 @@ export const commandCenterRoutes: RouteModule = (app, { config, backendDb, opera
 
   app.get("/api/command-center/fingerprint", (c) =>
     commandAllowed(c.req.raw, config)
-      ? json(trackUsageSync(backendDb, "command_center.dashboard.view", () => operations.fingerprint()))
+      ? json(trackUsageSync(backendDb, "command_center.fingerprint.poll", () => operations.fingerprint()))
       : json({ detail: "forbidden" }, 403),
   );
 
@@ -142,7 +142,7 @@ export const commandCenterRoutes: RouteModule = (app, { config, backendDb, opera
       ? json(
           measureMemorySync("command_center.ops_dashboard.payload", { route: "/api/ops-dashboard" }, () => ({
             pipeline: trackUsageSync(backendDb, "command_center.pipeline.view", () => operations.pipeline()),
-            ops: trackUsageSync(backendDb, "command_center.dashboard.view", () => operations.dashboard()),
+            ops: trackUsageSync(backendDb, "command_center.dashboard.payload", () => operations.dashboard()),
           })),
         )
       : json({ detail: "forbidden" }, 403),

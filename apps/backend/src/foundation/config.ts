@@ -97,7 +97,10 @@ const envSchema = z
       .int()
       .min(60)
       .default(60 * 60),
-    TELEGRAM_METRICS_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(10),
+    // The public t.me page answers in about 90ms or not at all, and a failed
+    // check simply returns in 15 minutes. Ten seconds of waiting bought nothing
+    // and dominated the average collection time.
+    TELEGRAM_METRICS_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(4),
     MAX_METRIC_TASKS_PER_CYCLE: z.coerce.number().int().positive().default(30),
     METRIC_LOCK_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(900),
     OBSERVABILITY_INTERVAL_SECONDS: z.coerce.number().int().positive().default(300),
