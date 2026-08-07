@@ -118,17 +118,3 @@ function publicationDayKey(entry: ReachSeries, timeZone: string): string | null 
   const published = new Date(entry.publishedAt);
   return Number.isNaN(published.getTime()) ? null : calendarKey(published, timeZone);
 }
-
-/** Sums a daily map over the days that belong to the selected period. */
-export function reachTotals(daily: Record<string, DailyReach>, days: readonly PeriodDay[]): ReachCounters {
-  const totals = emptyReachCounters();
-  for (const day of days) {
-    const values = daily[day.key];
-    if (!values) continue;
-    totals.views += values.views;
-    totals.reactions += values.reactions;
-    totals.replies += values.replies;
-    totals.reposts += values.reposts;
-  }
-  return totals;
-}

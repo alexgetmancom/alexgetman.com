@@ -48,7 +48,7 @@ export type VideoContentItem = {
   subscribers: number | null;
 };
 
-export type VideoItemDestination = {
+type VideoItemDestination = {
   target: string;
   label: string;
   locale: string | null;

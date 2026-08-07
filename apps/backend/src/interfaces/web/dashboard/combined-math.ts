@@ -2,7 +2,6 @@ import { isCurrentCalendarDay, zonedDateParts, zonedSlot } from "../../../founda
 import { formatMetricValue } from "./format.js";
 
 export type Totals = { views: number; reactions: number; replies: number };
-export type TextDetails = Totals & { reposts: number };
 
 export function formatPlatformDelta(value: number | null): string {
   if (value === null) return "";
@@ -63,28 +62,8 @@ export function periodPaceLabel(value: number, norm: number | null, day: Date, p
     : `до нормы ${formatMetricValue(remaining)} · прогноз ${formatMetricValue(projection)}`;
 }
 
-export function scaleTextDetails(value: TextDetails, factor: number): TextDetails {
-  return {
-    views: value.views * factor,
-    reactions: value.reactions * factor,
-    replies: value.replies * factor,
-    reposts: value.reposts * factor,
-  };
-}
-
 export function scaleTotals(value: Totals, factor: number): Totals {
   return { views: value.views * factor, reactions: value.reactions * factor, replies: value.replies * factor };
-}
-
-export function medianDetails(values: TextDetails[], days: number): TextDetails {
-  const padded = [...values];
-  while (padded.length < days) padded.push({ views: 0, reactions: 0, replies: 0, reposts: 0 });
-  return {
-    views: median(padded.map((value) => value.views)),
-    reactions: median(padded.map((value) => value.reactions)),
-    replies: median(padded.map((value) => value.replies)),
-    reposts: median(padded.map((value) => value.reposts)),
-  };
 }
 
 export function medianOfDays(values: Totals[], days: number): Totals {
@@ -99,14 +78,6 @@ export function medianOfDays(values: Totals[], days: number): Totals {
 
 export function emptyTotals(): Totals {
   return { views: 0, reactions: 0, replies: 0 };
-}
-
-export function calendarKey(value: string | null | undefined, timeZone: string): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  const parts = zonedDateParts(date, timeZone);
-  return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
 }
 
 function median(values: number[]): number {

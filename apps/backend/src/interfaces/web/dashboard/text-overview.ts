@@ -28,10 +28,6 @@ type OverviewService = ReturnType<typeof createOperationsService>;
 /** The chart needs thirty days of context on top of whatever period is selected. */
 const HISTORY_CONTEXT_DAYS = 30;
 
-export function emptyTextOverview(): TextOverview {
-  return { byTarget: {}, days: [] };
-}
-
 export function textOverview(
   backendDb: BackendDb,
   service: OverviewService,
