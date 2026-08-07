@@ -189,7 +189,9 @@ export function renderDashboardShell(body: string): string {
     .post-detail__headline { display:grid; grid-template-columns:24px minmax(0,1fr); align-items:center; gap:14px; min-width:0; }
     .post-detail__chevron { color:var(--text-main); font-size:22px; line-height:12px; transform:rotate(0deg); transition:transform .15s; } .post-detail[open] .post-detail__chevron { transform:rotate(90deg); }
     .post-detail__title { color:var(--text-main); font-size:17px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .post-detail__media { display:flex; align-items:center; justify-content:flex-end; gap:6px; color:var(--text-secondary); text-align:right; } .post-detail__platform-summary { position:relative; display:inline-flex; align-items:center; justify-content:center; min-width:0; color:var(--text-secondary); outline:none; } .post-detail__platform-summary--count { width:22px; height:22px; cursor:help; } .post-detail__platform-locale { padding:1px 4px; border:1px solid var(--border-soft); border-radius:4px; color:var(--text-muted); font-size:10px; font-weight:700; letter-spacing:.04em; white-space:nowrap; } .post-detail__platform-count { display:inline-flex; width:20px; height:20px; align-items:center; justify-content:center; border:1px solid var(--border-soft); border-radius:4px; color:var(--text-main); font-size:12px; font-weight:650; line-height:1; } .post-detail__platform-tooltip { position:absolute; z-index:20; top:calc(100% + 7px); right:0; display:grid; grid-template-columns:repeat(2,minmax(118px,1fr)); gap:12px; min-width:236px; max-width:340px; padding:10px 12px; border:1px solid var(--border); border-radius:8px; background:var(--surface); box-shadow:0 10px 30px var(--tooltip-shadow); color:var(--text-main); cursor:default; opacity:0; pointer-events:none; visibility:hidden; transform:translateY(-3px); transition:opacity .12s ease, transform .12s ease, visibility .12s ease; text-align:left; } .post-detail__platform-summary:hover .post-detail__platform-tooltip, .post-detail__platform-summary:focus-visible .post-detail__platform-tooltip { opacity:1; pointer-events:auto; visibility:visible; transform:translateY(0); } .post-detail__platform-tooltip-column { min-width:0; } .post-detail__platform-tooltip-column > b { display:block; margin-bottom:6px; color:var(--text-muted); font-size:11px; font-weight:700; letter-spacing:.08em; } .post-detail__platform-tooltip-column ul { display:flex; flex-direction:column; gap:5px; margin:0; padding:0; list-style:none; } .post-detail__platform-tooltip-column li { display:flex; align-items:center; gap:6px; min-width:0; color:var(--text-main); font-size:12px; white-space:nowrap; } .post-detail__platform-tooltip-column li .platform-mark { display:inline-flex; width:15px; height:15px; flex:0 0 auto; color:var(--text-muted); } .post-detail__platform-tooltip-column li .platform-mark svg { width:15px; height:15px; }
-    .post-detail__metric { display:flex; min-width:0; align-items:center; justify-content:flex-end; color:var(--text-main); font-variant-numeric:tabular-nums; text-align:right; }
+    .post-detail__metric { display:flex; min-width:0; align-items:baseline; justify-content:flex-end; gap:5px; color:var(--text-main); font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap; }
+    .post-detail__lifetime { color:var(--text-muted); font-size:11px; white-space:nowrap; }
+    .overview-publications__list .post-detail__lifetime { justify-content:flex-start; }
     .post-detail__summary > span:nth-last-child(-n+4) { color:var(--text-main); text-align:right; } .post-detail__body { padding:0 0 22px; }
     .post-platforms { padding:12px 0 17px 38px; border-bottom:1px solid var(--border-soft); } .post-platforms__grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(214px,1fr)); gap:8px; margin-top:10px; }
     .post-platform { display:grid; grid-template-columns:minmax(0,1fr) 174px; align-items:center; gap:10px; min-width:0; padding:8px 10px; border:1px solid var(--border-soft); border-radius:6px; background:var(--scrim-soft); color:var(--text-main); font-size:13px; text-decoration:none; } a.post-platform:hover { border-color:var(--accent); }
@@ -260,30 +262,55 @@ export function renderDashboardShell(body: string): string {
     .overview-spark__cap-label { fill:var(--text-muted); font-size:10px; font-variant-numeric:tabular-nums; }
     .overview-spark__average { stroke:var(--text-muted); stroke-dasharray:3 5; stroke-width:1; opacity:.72; }
     .overview-spark__bar--over-cap { filter:brightness(1.25); }
+    .overview-spark__bar--partial { stroke:var(--text-muted); stroke-dasharray:2 3; stroke-width:1; }
+    .overview-spark__cohort { stroke:var(--surface); stroke-width:1; opacity:.85; }
     .overview-spark__footer { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-top:8px; color:var(--text-secondary); font-size:13px; font-variant-numeric:tabular-nums; }
     .overview-spark__footer span:nth-child(2) { color:var(--text-secondary); }
     .overview-spark__footer b { color:var(--text-main); font-weight:600; }
     .overview-micro { display:flex; flex-wrap:wrap; align-items:baseline; gap:12px; margin:0 0 30px; color:var(--text-secondary); font-size:15px; font-variant-numeric:tabular-nums; }
     .overview-micro b { color:var(--text-main); font-weight:500; }
     .overview-micro__separator { color:var(--text-muted); }
+    .overview-track__filter { display:inline-flex; align-items:center; gap:7px; margin:0 0 10px; padding:3px 8px; border:1px solid var(--accent); border-radius:14px; background:var(--accent-glow); color:var(--accent-soft-text); font-size:12px; font-weight:600; text-decoration:none; }
+    .overview-track__filter i { font-style:normal; font-size:14px; line-height:1; opacity:.75; }
+    .overview-track__filter:hover i { opacity:1; }
+    .overview-platform--active { border-radius:6px; box-shadow:inset 0 0 0 1px var(--accent); }
+    .overview-platform--active strong { color:var(--accent-soft-text); }
     .overview-kicker { color:var(--text-secondary); font-size:13px; font-weight:600; letter-spacing:.15em; text-transform:uppercase; }
-    .overview-platforms { margin:0 0 34px; }
+    .overview-platforms { margin:0 0 18px; }
     .overview-platforms__header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
     .overview-platforms__header em { color:var(--text-muted); font-size:12px; font-style:normal; font-weight:500; letter-spacing:0; text-transform:none; }
-    .overview-platforms__bar-labels { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px; color:var(--text-secondary); font-size:13px; letter-spacing:.1em; text-transform:uppercase; }
+    /* Under the bar and over the columns: the same two halves, one label each,
+       centred on the column it heads. The expander sits where the EN label used
+       to, clear of both. */
+    .overview-platforms__bar-labels { position:relative; display:grid; grid-template-columns:1fr 1fr; gap:0 28px; margin-top:9px; color:var(--text-secondary); font-size:13px; letter-spacing:.1em; text-transform:uppercase; }
+    .overview-platforms__bar-labels > span { text-align:center; }
+    .overview-platforms__all { position:absolute; top:50%; right:0; transform:translateY(-50%); }
+    .overview-platforms__all > summary { display:inline-flex; align-items:center; gap:4px; width:auto; height:20px; padding:0 6px; border:1px solid var(--border-soft); border-radius:6px; color:var(--text-secondary); font-size:13px; line-height:1; list-style:none; cursor:pointer; }
+    .overview-platforms__all > summary::-webkit-details-marker { display:none; }
+    .overview-platforms__all > summary:hover { border-color:var(--border-hover); color:var(--text-main); }
+    .overview-platforms__all > summary span { color:var(--text-muted); font-size:11px; }
+    .overview-platforms__all[open] > summary { color:var(--text-main); }
+    .overview-platforms__all-list { position:absolute; z-index:20; top:calc(100% + 6px); right:0; display:grid; grid-template-columns:1fr 1fr; gap:0 28px; min-width:300px; padding:6px 12px; border:1px solid var(--border); border-radius:9px; background:var(--surface); box-shadow:0 10px 30px var(--tooltip-shadow); }
     .overview-platforms__bar { display:flex; gap:2px; height:10px; overflow:hidden; border-radius:999px; background:var(--border-soft); }
     .overview-platforms__bar i { display:block; min-width:2px; height:100%; transition:filter .15s; }
     .overview-platforms__bar i:hover { filter:brightness(1.08); }
-    .overview-platforms__legend { display:flex; justify-content:space-between; gap:12px; margin-top:9px; color:var(--text-secondary); font-size:14px; font-variant-numeric:tabular-nums; }
+    .overview-platforms__legend { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px; color:var(--text-secondary); font-size:14px; font-variant-numeric:tabular-nums; }
     .overview-platforms__legend b { color:var(--text-main); font-weight:500; }
     /* Keep the control below the platform legend on the same baseline in both
        columns, even when one content type has fewer than four destinations. */
-    .overview-platforms__rows { min-height:160px; margin-top:17px; }
+    /* Two columns under the bar, читаются как его половины: RU слева, EN справа. */
+    /* Height comes from the rows actually drawn, not from a fixed reserve: the
+       renderer sets --platform-rows to the tallest column of either half, so the
+       two halves stay level and neither pads out empty space. */
+    .overview-platforms__rows { display:grid; grid-template-columns:1fr 1fr; gap:0 28px; min-height:calc(var(--platform-rows,3) * 40px); margin-top:6px; }
+    .overview-platforms__column { display:flex; flex-direction:column; min-width:0; }
+    /* A hairline between the halves, dashed so it separates without ruling. */
+    .overview-platforms__column + .overview-platforms__column { margin-left:-14px; padding-left:14px; border-left:1px dashed var(--border-soft); }
     /* No rule between rows: this block is a legend for the bar above it, and
        ruled rows turned it into a table competing with the publication list. */
     /* The source name and locale stay together so the bar can be reconciled
        without opening another panel. */
-    .overview-platform { display:grid; grid-template-columns:16px auto 1fr 56px; gap:10px; align-items:center; padding:8px 0; color:var(--text-main); text-decoration:none; font-variant-numeric:tabular-nums; }
+    .overview-platform { display:grid; grid-template-columns:16px 1fr 48px; gap:10px; align-items:center; padding:8px 0; color:var(--text-main); text-decoration:none; font-variant-numeric:tabular-nums; }
     .overview-platform:hover { background:var(--surface-raised); }
     .overview-platform__icon { display:inline-flex; flex:none; width:16px; height:16px; }
     .overview-platform__name { display:flex; align-items:center; gap:9px; min-width:0; color:var(--text-secondary); font-size:15px; }
@@ -292,7 +319,7 @@ export function renderDashboardShell(body: string): string {
        drawn in the muted colour of the row so it reads as chrome, not brand. */
     .track-publication__tag { display:inline-flex; flex:none; width:16px; height:16px; color:var(--text-muted); }
     .overview-platform > strong { color:var(--text-header); font-size:16px; font-weight:500; text-align:right; }
-    .overview-platform__delta { min-width:56px; color:var(--text-muted); font-size:13px; text-align:right; }
+    .overview-platform__delta { min-width:48px; color:var(--text-muted); font-size:13px; text-align:right; }
     .overview-platform__delta--up { color:var(--success); }
     .overview-platform__delta--down { color:var(--danger-strong); }
     .platform-metric-filter { display:inline-flex; flex:0 0 auto; gap:2px; padding:2px; border:1px solid var(--border-soft); border-radius:7px; background:var(--scrim-soft); }
@@ -301,17 +328,16 @@ export function renderDashboardShell(body: string): string {
     .platform-metric-btn--active { background:var(--accent-glow); color:var(--accent-soft-text); }
     /* Inside the overview the metric switch sits between the RU and EN labels,
        so it drops the box and reads as two small links. */
-    .overview-platforms__bar-labels .platform-metric-filter { gap:8px; padding:0; border:0; border-radius:0; background:transparent; }
-    .overview-platforms__bar-labels .platform-metric-btn { padding:0; border-radius:0; font-size:12px; font-weight:500; letter-spacing:0; text-transform:none; }
-    .overview-platforms__bar-labels .platform-metric-btn--active { background:transparent; color:var(--text-main); font-weight:650; }
-    .overview-platforms__more { display:block; margin-top:8px; border:0; border-radius:0; background:transparent; }
-    .overview-platforms__more > summary,
-    .overview-platforms__more--jump { display:inline-flex; align-items:center; gap:5px; padding:5px 9px; border:1px solid var(--border-soft); border-radius:6px; background:transparent; color:var(--accent); font-size:12px; font-weight:650; list-style:none; cursor:pointer; text-decoration:none; }
-    .overview-platforms__more > summary::-webkit-details-marker { display:none; }
-    .overview-platforms__more > summary span { color:var(--text-muted); font-weight:500; }
+    .overview-platforms__legend .platform-metric-filter { gap:8px; padding:0; border:0; border-radius:0; background:transparent; }
+    .overview-platforms__legend .platform-metric-btn { padding:0; border-radius:0; font-size:12px; font-weight:500; letter-spacing:0; text-transform:none; }
+    .overview-platforms__legend .platform-metric-btn--active { background:transparent; color:var(--text-main); font-weight:650; }
     .overview-publications { margin-top:2px; }
     .overview-publications .overview-kicker { margin-bottom:9px; }
     .overview-publications__list .post-detail__summary { grid-template-columns:minmax(0,1fr) 92px 68px 56px 48px; gap:10px; }
+    /* The video rows carry a sixth figure, the clip's lifetime. Fixed tracks, not
+       auto: every row is its own grid, and content-sized columns would settle at
+       a different width in each one instead of lining up down the list. */
+    .overview-track--video .overview-publications__list .post-detail__summary { grid-template-columns:minmax(0,1fr) 62px 58px 54px 52px 44px; }
     .overview-publications__list .post-detail__title { font-size:15px; font-weight:500; }
     .overview-publications--expanded .post-detail--more { display:block; }
     .track-publication { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:4px 12px; align-items:baseline; padding:14px 0; border-bottom:1px solid var(--border-soft); color:var(--text-main); text-decoration:none; }
@@ -352,7 +378,7 @@ export function renderDashboardShell(body: string): string {
       .overview-split { grid-template-columns:1fr; gap:44px; }
       .overview-track--text,.overview-track--video { padding-left:0; padding-right:0; border-left:0; }
       .overview-track--video { border-top:1px solid var(--border-soft); padding-top:44px; }
-      .overview-platforms__rows { min-height:0; }
+      .overview-platforms__rows { min-height:0; gap:0 14px; }
     }
     @media (max-width: 760px) {
       body { padding:16px 14px 48px; }
@@ -360,7 +386,7 @@ export function renderDashboardShell(body: string): string {
       .overview-hero-card__views strong { font-size:48px; }
       .overview-hero-card__context { align-items:flex-start; flex-direction:column; gap:5px; }
       .overview-hero-card__pace { text-align:left; }
-      .overview-platform { grid-template-columns:16px auto 1fr; }
+      .overview-platform { grid-template-columns:16px 1fr; }
       .overview-platform__delta { display:none; }
       .track-publication { grid-template-columns:auto minmax(0,1fr); }
       .track-publication__stats { grid-column:2; grid-row:1 / span 2; }

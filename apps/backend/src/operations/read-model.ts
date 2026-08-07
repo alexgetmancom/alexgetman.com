@@ -440,43 +440,27 @@ function fetchMetricSamples(
   if (postKeys.length === 0) return [];
   const placeholders = postKeys.map(() => "?").join(",");
   const bucketSeconds = periodDays <= 7 ? 60 * 60 : 24 * 60 * 60;
-  const rows = unsafeDb(backendDb)
+  // The cap keeps the newest buckets, not the oldest: a series longer than the
+  // cap is one whose recent days are the point of asking.
+  const totalBuckets = Math.ceil((Date.parse(end) - Date.parse(start)) / (bucketSeconds * 1_000));
+  const firstBucket = Math.max(0, totalBuckets - limitPerSeries);
+  // One row per (post, target, metric, bucket), carrying that bucket's last
+  // reading. SQLite hands back the row that produced max(sampled_at), which is
+  // what a window function was doing here at twice the cost.
+  return unsafeDb(backendDb)
     .sqlite.prepare(
-      `WITH bucketed AS (
-         SELECT id, post_key, target, metric_name, value, sampled_at,
-                CAST((unixepoch(sampled_at) - unixepoch(?)) / ? AS INTEGER) AS bucket
-           FROM metric_samples
-          WHERE post_key IN (${placeholders}) AND sampled_at >= ? AND sampled_at <= ?
-       ),
-       bucketedRanks AS (
-         SELECT id, post_key, target, metric_name, value, sampled_at, bucket,
-                ROW_NUMBER() OVER (
-                  PARTITION BY post_key, target, metric_name, bucket
-                  ORDER BY sampled_at DESC, id DESC
-                ) AS bucketRank
-           FROM bucketed
-       ),
-       latestBuckets AS (
-         SELECT id, post_key, target, metric_name, value, sampled_at, bucket
-           FROM bucketedRanks
-          WHERE bucketRank = 1
-       ),
-       seriesRanks AS (
-         SELECT id, post_key, target, metric_name, value, sampled_at, bucket,
-                ROW_NUMBER() OVER (
-                  PARTITION BY post_key, target, metric_name
-                  ORDER BY bucket ASC
-                ) AS seriesRank
-           FROM latestBuckets
-       )
-       SELECT id, post_key AS postKey, target, metric_name AS metricName, value, sampled_at AS sampledAt, bucket
-         FROM seriesRanks
-        WHERE seriesRank <= ?
+      `SELECT post_key AS postKey, target, metric_name AS metricName, value, max(sampled_at) AS sampledAt, bucket
+         FROM (
+           SELECT post_key, target, metric_name, value, sampled_at,
+                  CAST((unixepoch(sampled_at) - unixepoch(?)) / ? AS INTEGER) AS bucket
+             FROM metric_samples
+            WHERE post_key IN (${placeholders}) AND sampled_at >= ? AND sampled_at <= ?
+         )
+        WHERE bucket >= ?
+        GROUP BY postKey, target, metricName, bucket
         ORDER BY postKey ASC, target ASC, metricName ASC, bucket ASC`,
     )
-    .all(start, bucketSeconds, ...postKeys, start, end, limitPerSeries) as PipelineSampleRow[];
-  const startMs = Math.floor(Date.parse(start) / 1_000) * 1_000;
-  return rows.map((row) => ({ ...row, sampledAt: new Date(startMs + row.bucket * bucketSeconds * 1000).toISOString() }));
+    .all(start, bucketSeconds, ...postKeys, start, end, firstBucket) as PipelineSampleRow[];
 }
 
 /** Stable revision for the pipeline read model. It must not be request time. */

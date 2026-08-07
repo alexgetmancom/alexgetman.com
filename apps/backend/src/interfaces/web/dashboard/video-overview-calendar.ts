@@ -1,4 +1,4 @@
-import { zonedDateParts, zonedSlot } from "../../../foundation/time.js";
+import { type DailyReach, emptyDailyReach, latestAtOrBefore, type PeriodDay, type ReachSeries } from "./daily-reach.js";
 
 export type VideoMetrics = {
   views: number;
@@ -11,47 +11,6 @@ export type VideoMetrics = {
   videoDurationMs: number | null;
 };
 export type VideoSnapshot = { at: Date; metrics: VideoMetrics };
-
-export type DailyMetrics = { views: number; reactions: number; replies: number };
-export type PeriodDay = { key: string; start: Date; end: Date };
-
-export function latestAtOrBefore(history: VideoSnapshot[], cutoff: Date): VideoSnapshot | undefined {
-  let low = 0;
-  let high = history.length - 1;
-  let latest: VideoSnapshot | undefined;
-  while (low <= high) {
-    const middle = Math.floor((low + high) / 2);
-    const sample = history[middle];
-    if (!sample) break;
-    if (sample.at <= cutoff) {
-      latest = sample;
-      low = middle + 1;
-    } else {
-      high = middle - 1;
-    }
-  }
-  return latest;
-}
-
-export function calendarDays(start: Date, end: Date, timeZone: string): PeriodDay[] {
-  if (end < start) return [];
-  const days: PeriodDay[] = [];
-  let cursor = new Date(start);
-  while (cursor <= end) {
-    const parts = zonedDateParts(cursor, timeZone);
-    const nextDay = zonedSlot(parts.year, parts.month, parts.day + 1, "00:00", timeZone);
-    const dayEnd = new Date(Math.min(end.getTime(), nextDay.getTime() - 1));
-    days.push({ key: calendarKey(cursor, timeZone), start: new Date(cursor), end: dayEnd });
-    if (dayEnd >= end) break;
-    cursor = nextDay;
-  }
-  return days;
-}
-
-export function calendarKey(value: Date, timeZone: string): string {
-  const parts = zonedDateParts(value, timeZone);
-  return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
-}
 
 export function emptyMetrics(): VideoMetrics {
   return {
@@ -66,12 +25,26 @@ export function emptyMetrics(): VideoMetrics {
   };
 }
 
-export function emptyDailyMetrics(): DailyMetrics {
-  return { views: 0, reactions: 0, replies: 0 };
+/**
+ * The video feed's adapter onto the shared reach vocabulary: a like is the video
+ * answer to a reaction, a comment to a reply, and there is nothing to repost.
+ */
+export function videoReachSeries(publishedAt: string | null, target: string, history: readonly VideoSnapshot[]): ReachSeries {
+  return {
+    publishedAt,
+    target,
+    samples: history.map((snapshot) => ({
+      at: snapshot.at,
+      views: snapshot.metrics.views,
+      reactions: snapshot.metrics.likes,
+      replies: snapshot.metrics.comments,
+      reposts: 0,
+    })),
+  };
 }
 
-export function periodMetrics(history: VideoSnapshot[], days: PeriodDay[]): { totals: DailyMetrics } {
-  const totals = emptyDailyMetrics();
+export function periodMetrics(history: VideoSnapshot[], days: PeriodDay[]): { totals: DailyReach } {
+  const totals = emptyDailyReach();
   for (const day of days) {
     const before = latestAtOrBefore(history, day.start)?.metrics ?? emptyMetrics();
     const atEnd = latestAtOrBefore(history, day.end)?.metrics ?? before;

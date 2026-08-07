@@ -42,7 +42,7 @@ export function renderTrackPublicationList(
         title: shortPipelineText(post.text_ru || post.text_en || "Без текста", 14),
         tag: publicationTag(target?.id ?? "", target?.locale ?? null),
         icon: PLATFORM_ICONS[platformKey(target?.id ?? "")] ?? "",
-        afterPeriodViews: 0,
+        lifetimeViews: metrics.views,
         url: bestPostUrl(post, targetIds),
       };
     }),
@@ -52,9 +52,9 @@ export function renderTrackPublicationList(
       reactions: video.reactions,
       replies: video.replies,
       title: shortPipelineText(video.title, 14),
-      tag: publicationTag(video.target, video.locale),
-      icon: PLATFORM_ICONS[VIDEO_PLATFORM_ICON_KEYS[video.target] ?? ""] ?? "",
-      afterPeriodViews: video.afterPeriodViews,
+      tag: publicationTag(video.destinations[0]?.target ?? "", video.destinations[0]?.locale ?? null),
+      icon: PLATFORM_ICONS[VIDEO_PLATFORM_ICON_KEYS[video.destinations[0]?.target ?? ""] ?? ""] ?? "",
+      lifetimeViews: video.lifetimeViews,
       url: video.url,
     })),
   ].sort((left, right) => right.views - left.views || right.date.localeCompare(left.date));
@@ -69,7 +69,7 @@ export function renderTrackPublicationList(
 
   return `${rows
     .map((row) => {
-      const content = `<span class="track-publication__tag" title="${escapeHtml(row.tag)}">${row.icon}</span><span class="track-publication__title">${escapeHtml(row.title)}</span><span class="track-publication__stats"><b>${formatMetricValue(row.views)}</b>${row.afterPeriodViews > 0 ? `<small>+${formatMetricValue(row.afterPeriodViews)} после</small>` : ""}</span><span class="track-publication__meta">${formatMetricValue(row.reactions)} реакц. · ${formatMetricValue(row.replies)} отв.</span>`;
+      const content = `<span class="track-publication__tag" title="${escapeHtml(row.tag)}">${row.icon}</span><span class="track-publication__title">${escapeHtml(row.title)}</span><span class="track-publication__stats"><b>${formatMetricValue(row.views)}</b>${row.lifetimeViews > row.views ? `<small>из ${formatMetricValue(row.lifetimeViews)}</small>` : ""}</span><span class="track-publication__meta">${formatMetricValue(row.reactions)} реакц. · ${formatMetricValue(row.replies)} отв.</span>`;
       return row.url
         ? `<a class="track-publication" href="${escapeHtml(row.url)}" target="_blank" rel="noopener noreferrer">${content}</a>`
         : `<div class="track-publication">${content}</div>`;
@@ -159,10 +159,11 @@ function textPublicationPlatforms(post: PipelinePost, targetIds: string[]): Publ
 }
 
 function videoPublicationPlatforms(video: VideoContentItem): PublicationPlatform[] {
-  const key = VIDEO_PLATFORM_ICON_KEYS[video.target] ?? video.target;
-  const locale = video.locale?.toUpperCase() ?? "";
-  const name = (video.label || video.target).replace(/\s(?:RU|EN)$/i, "");
-  return [{ name, locale, icon: PLATFORM_ICONS[key] ?? "" }];
+  return video.destinations.map((destination) => ({
+    name: (destination.label || destination.target).replace(/\s(?:RU|EN)$/i, ""),
+    locale: destination.locale?.toUpperCase() ?? "",
+    icon: PLATFORM_ICONS[VIDEO_PLATFORM_ICON_KEYS[destination.target] ?? destination.target] ?? "",
+  }));
 }
 
 function publicationPlatformSummary(platforms: PublicationPlatform[]): string {
@@ -208,13 +209,17 @@ function renderRecentVideo(video: VideoContentItem, hidden: boolean): string {
   ]
     .filter(Boolean)
     .join(" · ");
-  const rowTitle = [video.label || video.title, extra].filter(Boolean).join(" · ");
+  const rowTitle = [video.title, extra].filter(Boolean).join(" · ");
   const body = [
     '<span class="post-detail__summary">',
     '<span class="post-detail__headline"><span class="post-detail__chevron post-detail__chevron--link">↗</span>',
     `<span class="post-detail__title">${escapeHtml(shortPipelineText(video.title, 7))}</span></span>`,
     `<span class="post-detail__media">${publicationPlatformSummary(videoPublicationPlatforms(video))}</span>`,
+    // Two figures answering two questions — what the clip earned inside the
+    // period, and what it is worth by now — each in its own column so the rows
+    // read down as columns.
     `<span class="post-detail__metric"><span>${formatMetricValue(video.views)}</span></span>`,
+    `<span class="post-detail__metric post-detail__lifetime">${video.lifetimeViews > video.views ? `из ${formatMetricValue(video.lifetimeViews)}` : ""}</span>`,
     `<span class="post-detail__metric"><span>${formatMetricValue(video.reactions)}</span></span>`,
     `<span class="post-detail__metric"><span>${formatMetricValue(video.replies)}</span></span>`,
     "</span>",

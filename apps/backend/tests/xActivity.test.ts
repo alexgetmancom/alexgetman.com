@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { importXAnalyticsCsv } from "../src/analytics/import-x-csv.js";
 import { xActivityItems, xActivityMetricSnapshots } from "../src/db/schema.js";
-import { renderCombinedSection } from "../src/interfaces/web/dashboard/combined-section.js";
+import { type CombinedSectionInput, renderCombinedSection, xChartPost } from "../src/interfaces/web/dashboard/combined-section.js";
+import { calendarDays } from "../src/interfaces/web/dashboard/daily-reach.js";
+import { textOverviewOf } from "../src/interfaces/web/dashboard/text-overview.js";
 import { emptyVideoOverview } from "../src/interfaces/web/dashboard/video-overview.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
@@ -27,6 +29,27 @@ const HEADERS = [
   "Клики по хештегам",
   "Клики по постоянным ссылкам",
 ];
+
+/** The renderer reads daily reach, which the read model derives from these very
+ * posts; the tests derive it the same way instead of restating the numbers. */
+function renderOverview(input: Omit<CombinedSectionInput, "textReach" | "videoReach">): string {
+  const start = new Date(input.rangeEnd);
+  start.setUTCDate(start.getUTCDate() - (input.periodDays + 40));
+  const days = calendarDays(start, new Date(input.rangeEnd.getTime() + 86_400_000 - 1), "UTC");
+  // Without a database the X rows arrive as items, so they stand in for the
+  // series the read model would load — including the rule that an X row wins
+  // over the pipeline's own copy of the same tweet.
+  const items = input.xItems ?? [];
+  const covered = new Set(items.map((item) => item.linkedPostKey).filter(Boolean));
+  const posts = [...(input.data?.posts ?? []), ...(input.previousData?.posts ?? [])].map((post) =>
+    post.post_key && covered.has(post.post_key) ? { ...post, targets: { ...post.targets, x: undefined } } : post,
+  );
+  return renderCombinedSection({
+    ...input,
+    videoReach: input.video.dailyByDay,
+    textReach: textOverviewOf([...posts, ...items.map(xChartPost)], [], days, "UTC"),
+  });
+}
 
 describe("X Activity", () => {
   it("imports linked posts and account-wide replies without adding editorial posts", () => {
@@ -122,7 +145,7 @@ describe("X Activity", () => {
       },
     ];
 
-    const html = renderCombinedSection({
+    const html = renderOverview({
       data: editorial,
       previousData: { posts: [] },
       xItems: items,

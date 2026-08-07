@@ -99,7 +99,10 @@ describe("dashboard shell", () => {
   it("keeps a hidden overview tooltip hidden after the pointer leaves a chart", () => {
     const html = renderDashboardShell("");
     expect(html).toContain(".overview-chart-tooltip[hidden] { display:none; }");
-    expect(html).toContain(".overview-platforms__more { display:block; margin-top:8px; border:0;");
+    expect(html).toContain(".overview-platforms__column + .overview-platforms__column { margin-left:-14px;");
+    // The destination block sizes to the rows drawn instead of reserving a fixed
+    // block of empty space above the publication list.
+    expect(html).toContain("min-height:calc(var(--platform-rows,3) * 40px)");
     expect(html).toContain(".post-detail__content { display:block; padding:18px 0 0 38px; }");
     expect(html).toContain("const chartTooltip = root.querySelector('.overview-chart-tooltip')");
     expect(html).not.toContain("chart-scale");
@@ -361,10 +364,9 @@ describe("renderOverviewPublicationList", () => {
       [
         {
           key: "video:2",
-          target: "instagram_reels",
-          providerAccountId: null,
-          label: "Instagram RU",
-          locale: "RU",
+          destinations: [
+            { target: "instagram_reels", label: "Instagram RU", locale: "RU", providerAccountId: null, url: null, views: 100 },
+          ],
           title: "First second third fourth fifth sixth seventh eighth",
           url: "https://www.instagram.com/reel/CODE123/",
           publishedAt: "2026-08-02T12:00:00.000Z",

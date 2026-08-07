@@ -1,9 +1,11 @@
 import type { BackendDb } from "../../../db/client.js";
-import { calendarDays, emptyMetrics, latestAtOrBefore, periodMetrics, periodSubscriberDelta } from "./video-overview-calendar.js";
+import { calendarDays, latestAtOrBefore } from "./daily-reach.js";
+import { emptyMetrics, periodMetrics, periodSubscriberDelta } from "./video-overview-calendar.js";
 import {
   aggregateDailyMetrics,
   destinationFor,
   destinationKey,
+  type TargetRow,
   type VideoOverview,
   type VideoOverviewCache,
   videoAnalyticsBundle,
@@ -33,49 +35,88 @@ export function videoOverview(
   end: Date,
   timeZone = "Europe/Moscow",
   cache?: VideoOverviewCache,
+  destination?: string,
 ): VideoOverview {
   const bundle = videoAnalyticsBundle(backendDb, start, end, cache);
   const startIso = start.toISOString();
   const endIso = end.toISOString();
-  const rows = bundle.rows.filter((row) => Boolean(row.publishedAt && row.publishedAt >= startIso && row.publishedAt <= endIso));
-  const snapshots = new Map(rows.map((row) => [row.id, bundle.snapshots.get(row.id) ?? []]));
+  // Two populations, deliberately not one. Reach is a property of the calendar
+  // period — every clip alive in it keeps earning views — while a publication
+  // list is a property of the period's own output. Scoping reach to the clips
+  // published in the window made the selected day answer a different question
+  // than every other day on the same chart.
+  // A selected destination narrows the whole half — reach, norm, platforms and
+  // the publication list alike — exactly as a selected text platform narrows
+  // the other one.
+  const reachRows = destination
+    ? bundle.rows.filter((row) => {
+        const own = destinationFor(bundle.catalogue, row);
+        return own !== null && destinationKey(own) === destination;
+      })
+    : bundle.rows;
+  const rows = reachRows.filter((row) => Boolean(row.publishedAt && row.publishedAt >= startIso && row.publishedAt <= endIso));
+  const snapshots = new Map(reachRows.map((row) => [row.id, bundle.snapshots.get(row.id) ?? []]));
   const periodDays = calendarDays(start, end, timeZone);
-  const summary = videoSummaryMetrics(backendDb, rows, snapshots, periodDays, end, timeZone, cache);
-  const items = rows
-    .map((row) => {
-      const history = snapshots.get(row.id) ?? [];
-      const period = periodMetrics(history, periodDays);
-      const periodEnd = latestAtOrBefore(history, end)?.metrics ?? emptyMetrics();
-      const lifetime = history.at(-1)?.metrics ?? emptyMetrics();
-      const destination = destinationFor(bundle.catalogue, row);
+  const summary = videoSummaryMetrics(backendDb, reachRows, snapshots, periodDays, end, timeZone, cache);
+  const reachViews = new Map(reachRows.map((row) => [row.id, periodMetrics(snapshots.get(row.id) ?? [], periodDays).totals]));
+  // One row per clip, not per destination: the same clip on Shorts and on Reels
+  // is one publication that went to two places, which is how the text side has
+  // always read a post that went to Telegram and to Threads.
+  const byDraft = new Map<number, TargetRow[]>();
+  for (const row of rows) byDraft.set(row.videoDraftId, [...(byDraft.get(row.videoDraftId) ?? []), row]);
+  const items = [...byDraft.values()]
+    .map((draftRows) => {
+      const destinations = draftRows
+        .map((row) => {
+          const destination = destinationFor(bundle.catalogue, row);
+          return {
+            target: row.target,
+            label: destination?.label ?? videoLabel(row.target),
+            locale: destination ? destination.locale.toUpperCase() : (row.locale?.toUpperCase() ?? null),
+            providerAccountId: row.providerAccountId,
+            url: row.externalUrl,
+            views: periodMetrics(snapshots.get(row.id) ?? [], periodDays).totals.views,
+          };
+        })
+        .sort((left, right) => right.views - left.views);
+      const totals = draftRows.reduce(
+        (all, row) => {
+          const history = snapshots.get(row.id) ?? [];
+          const period = periodMetrics(history, periodDays).totals;
+          const periodEnd = latestAtOrBefore(history, end)?.metrics ?? emptyMetrics();
+          const lifetime = history.at(-1)?.metrics ?? emptyMetrics();
+          const subscribers = periodSubscriberDelta(history, periodDays);
+          all.views += period.views;
+          all.reactions += period.reactions;
+          all.replies += period.replies;
+          all.afterPeriodViews += Math.max(0, lifetime.views - periodEnd.views);
+          all.lifetimeViews += lifetime.views;
+          if (subscribers !== null) all.subscribers = (all.subscribers ?? 0) + subscribers;
+          return all;
+        },
+        { views: 0, reactions: 0, replies: 0, afterPeriodViews: 0, lifetimeViews: 0, subscribers: null as number | null },
+      );
+      const first = draftRows[0];
       return {
-        key: `video:${row.id}`,
-        target: row.target,
-        providerAccountId: row.providerAccountId,
-        label: destination?.label ?? videoLabel(row.target),
-        locale: destination ? destination.locale.toUpperCase() : (row.locale?.toUpperCase() ?? null),
-        title: row.label || "Без названия",
-        url: row.externalUrl,
-        publishedAt: row.publishedAt,
-        views: period.totals.views,
-        reactions: period.totals.reactions,
-        replies: period.totals.replies,
-        afterPeriodViews: Math.max(0, lifetime.views - periodEnd.views),
-        lifetimeViews: lifetime.views,
-        subscribers: periodSubscriberDelta(history, periodDays),
+        key: `video:${first?.videoDraftId ?? 0}`,
+        destinations,
+        title: first?.label || "Без названия",
+        url: destinations.find((destination) => destination.url)?.url ?? null,
+        publishedAt: draftRows.map((row) => row.publishedAt).sort()[0] ?? null,
+        ...totals,
       };
     })
     .sort((left, right) => (right.publishedAt ?? "").localeCompare(left.publishedAt ?? ""));
 
-  const totals = items.reduce(
-    (all, item) => {
-      all.views += item.views;
-      all.reactions += item.reactions;
-      all.replies += item.replies;
-      all.posts += 1;
+  const totals = reachRows.reduce(
+    (all, row) => {
+      const period = reachViews.get(row.id);
+      all.views += period?.views ?? 0;
+      all.reactions += period?.reactions ?? 0;
+      all.replies += period?.replies ?? 0;
       return all;
     },
-    { views: 0, reactions: 0, replies: 0, posts: 0 },
+    { views: 0, reactions: 0, replies: 0, posts: items.length },
   );
 
   // One row per declared destination, filtered to the ones this Studio actually
@@ -83,20 +124,20 @@ export function videoOverview(
   // catalogue would put an English channel on a Studio that has never had one;
   // listing only what published would drop a real channel on a quiet week.
   const counted = bundle.catalogue.map((destination) => {
-    const published = items.filter((item) => item.target === destination.target && item.locale === destination.locale.toUpperCase());
+    const earning = reachRows.filter((row) => destinationFor(bundle.catalogue, row)?.profile === destination.profile);
     return {
       destination,
-      published,
+      earning,
       hasPublication: bundle.historicalDestinations.has(destinationKey(destination)),
       own: bundle.followers.get(destination.profile) ?? null,
     };
   });
   const platforms = counted
-    .map(({ destination, published, hasPublication, own }) => ({
+    .map(({ destination, earning, hasPublication, own }) => ({
       target: destination.target as string,
       label: destination.label,
       locales: [destination.locale.toUpperCase()],
-      views: published.reduce((sum, item) => sum + item.views, 0),
+      views: earning.reduce((sum, row) => sum + (reachViews.get(row.id)?.views ?? 0), 0),
       followers: own,
       active: hasPublication || own !== null,
     }))
@@ -108,7 +149,7 @@ export function videoOverview(
     totals,
     summary,
     platforms,
-    dailyByDay: aggregateDailyMetrics(backendDb, rows, snapshots, periodDays, cache),
-    viewEvents: viewEvents(rows, snapshots, start, end),
+    dailyByDay: aggregateDailyMetrics(backendDb, reachRows, snapshots, periodDays, timeZone, cache),
+    viewEvents: viewEvents(reachRows, snapshots, start, end),
   };
 }

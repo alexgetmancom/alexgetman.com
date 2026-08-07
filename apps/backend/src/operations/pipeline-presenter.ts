@@ -26,7 +26,6 @@ export type PipelineMetricRow = {
 };
 
 export type PipelineSampleRow = {
-  id: number;
   postKey: string;
   target: string;
   metricName: string;
@@ -91,19 +90,13 @@ export function formatPipelinePosts(
     for (const metric of metricsByPost.get(postKey) ?? []) {
       const targetMetrics = metrics[metric.target] ?? {};
       metrics[metric.target] = targetMetrics;
+      const samples = samplesByMetric.get(`${postKey}\u0000${metric.target}\u0000${metric.metricName}`);
       targetMetrics[metric.metricName] = {
         value: metric.value,
-        ...(compact
-          ? {}
-          : {
-              sampled_at: metric.sampledAt,
-              source: metric.source,
-              error: metric.error,
-              samples: (samplesByMetric.get(`${postKey}\u0000${metric.target}\u0000${metric.metricName}`) ?? []).map((sample) => ({
-                value: sample.value,
-                sampled_at: sample.sampledAt,
-              })),
-            }),
+        // Samples are fetched only when a caller asked for them, so `compact`
+        // has no second say here — it narrows metadata, not the series.
+        ...(samples ? { samples: samples.map((sample) => ({ value: sample.value, sampled_at: sample.sampledAt })) } : {}),
+        ...(compact ? {} : { sampled_at: metric.sampledAt, source: metric.source, error: metric.error }),
       };
     }
     const mediaRu = jsonArray(row.media_ru_json);

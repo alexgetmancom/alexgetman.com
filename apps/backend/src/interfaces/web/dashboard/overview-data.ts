@@ -8,6 +8,7 @@ import type { createOperationsService } from "../../../operations/service.js";
 import type { CombinedSectionInput, PlatformMetric } from "./combined-section.js";
 import { audiencePlatformFollowers } from "./ops-sections.js";
 import { rollingPeriodDates } from "./period-controls.js";
+import { type TextOverview, textOverview } from "./text-overview.js";
 import type { PipelineData, PipelinePost } from "./types.js";
 import {
   createVideoOverviewCache,
@@ -34,10 +35,15 @@ export type DashboardReadModel = {
   };
   video: {
     current: VideoOverview;
+    /** The chart's whole window, so a video bar means what a text bar means. */
+    history: VideoOverview;
     comparison: VideoOverview;
     dayComparison: VideoOverview | null;
     median: VideoOverview;
   };
+  text: TextOverview;
+  videoEnabled: boolean;
+  videoView: string | null;
   followers: Array<{ key: string; label: string; followers: number | null }>;
   rangeStart: Date;
   rangeEnd: Date;
@@ -54,7 +60,7 @@ export function loadDashboardReadModel(
   videoCache: OverviewCache,
   weekOffset: number,
   periodDays: number,
-  activeView?: AudienceView,
+  videoView?: string,
 ): DashboardReadModel {
   const [start, end] = rollingPeriodDates(weekOffset, periodDays, config.TIMEZONE);
   const comparisonPipeline =
@@ -74,7 +80,9 @@ export function loadDashboardReadModel(
   const previousEnd = periodDays === 1 ? yesterdayEnd : rollingPeriodDates(weekOffset + 1, periodDays, config.TIMEZONE)[1];
   const previousStart =
     periodDays === 1 ? shiftDays(yesterdayEnd, -29) : rollingPeriodDates(weekOffset + 1, periodDays, config.TIMEZONE)[0];
-  const videoEnabled = config.studio.modules.video_posting && !activeView;
+  // A text filter no longer removes the video half: the two halves are filtered
+  // independently, on the same screen.
+  const videoEnabled = config.studio.modules.video_posting;
   const medianOffsetDays = weekOffset * periodDays + periodDays;
   const medianPeriodOffset = medianOffsetDays / 30;
   const [medianStart, medianEnd] = rollingPeriodDates(medianPeriodOffset, 30, config.TIMEZONE);
@@ -112,14 +120,24 @@ export function loadDashboardReadModel(
       median: xActivityDashboard(backendDb, medianPeriodOffset, 30, config.TIMEZONE),
     },
     video: {
-      current: videoEnabled ? videoForDates(backendDb, config.TIMEZONE, videoCache, start, end, true) : emptyVideoOverview(),
+      current: videoEnabled ? videoForDates(backendDb, config.TIMEZONE, videoCache, start, end, true, videoView) : emptyVideoOverview(),
+      history: videoEnabled
+        ? videoForDates(backendDb, config.TIMEZONE, videoCache, videoHistoryStart, end, true, videoView)
+        : emptyVideoOverview(),
       comparison: videoEnabled
-        ? videoForDates(backendDb, config.TIMEZONE, videoCache, previousStart, previousEnd, true)
+        ? videoForDates(backendDb, config.TIMEZONE, videoCache, previousStart, previousEnd, true, videoView)
         : emptyVideoOverview(),
       dayComparison:
-        videoEnabled && periodDays === 1 ? videoForDates(backendDb, config.TIMEZONE, videoCache, yesterdayStart, yesterdayEnd, true) : null,
-      median: videoEnabled ? videoForDates(backendDb, config.TIMEZONE, videoCache, medianStart, medianEnd, true) : emptyVideoOverview(),
+        videoEnabled && periodDays === 1
+          ? videoForDates(backendDb, config.TIMEZONE, videoCache, yesterdayStart, yesterdayEnd, true, videoView)
+          : null,
+      median: videoEnabled
+        ? videoForDates(backendDb, config.TIMEZONE, videoCache, medianStart, medianEnd, true, videoView)
+        : emptyVideoOverview(),
     },
+    text: textOverview(backendDb, service, weekOffset, periodDays, config.TIMEZONE),
+    videoEnabled,
+    videoView: videoView ?? null,
     followers: audiencePlatformFollowers(backendDb),
     rangeStart: start,
     rangeEnd: end,
@@ -151,6 +169,10 @@ export function buildOverviewData(
     medianData: selectPipeline(readModel.pipeline.median),
     medianXItems: selectX(readModel.xActivity.median),
     medianVideo: readModel.video.median,
+    videoReach: readModel.video.history.dailyByDay,
+    showVideo: readModel.videoEnabled,
+    videoView: readModel.videoView ?? undefined,
+    textReach: readModel.text,
     followers: readModel.followers,
     rangeStart: readModel.rangeStart,
     rangeEnd: readModel.rangeEnd,
@@ -183,8 +205,16 @@ function videoForDates(
   start: Date,
   end: Date,
   endOfDay: boolean,
+  destination?: string,
 ): VideoOverview {
-  return videoOverview(backendDb, videoDayBounds(start, timeZone, false), videoDayBounds(end, timeZone, endOfDay), timeZone, cache);
+  return videoOverview(
+    backendDb,
+    videoDayBounds(start, timeZone, false),
+    videoDayBounds(end, timeZone, endOfDay),
+    timeZone,
+    cache,
+    destination,
+  );
 }
 
 function videoDayBounds(date: Date, timeZone: string, endOfDay: boolean): Date {

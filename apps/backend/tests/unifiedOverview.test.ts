@@ -2,12 +2,19 @@ import { describe, expect, it } from "bun:test";
 import type { XActivityDashboardItem } from "../src/analytics/x-activity-dashboard.js";
 import { creatorProfileSnapshots, videoDrafts, videoMetricSnapshots, videoTargets } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
-import { renderCombinedSection } from "../src/interfaces/web/dashboard/combined-section.js";
+import { type CombinedSectionInput, renderCombinedSection, xChartPost } from "../src/interfaces/web/dashboard/combined-section.js";
+import { calendarDays } from "../src/interfaces/web/dashboard/daily-reach.js";
 import { renderHeroCard } from "../src/interfaces/web/dashboard/hero-section.js";
 import { buildOverviewData, loadDashboardReadModel } from "../src/interfaces/web/dashboard/overview-data.js";
 import { renderTrackPublicationList } from "../src/interfaces/web/dashboard/table.js";
+import { textDailyReach, textOverviewOf } from "../src/interfaces/web/dashboard/text-overview.js";
 import type { PipelinePost } from "../src/interfaces/web/dashboard/types.js";
-import { createVideoOverviewCache, emptyVideoOverview, videoOverview } from "../src/interfaces/web/dashboard/video-overview.js";
+import {
+  createVideoOverviewCache,
+  emptyVideoOverview,
+  setVideoOverviewCacheRange,
+  videoOverview,
+} from "../src/interfaces/web/dashboard/video-overview.js";
 import { createOperationsService } from "../src/operations/service.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
@@ -168,6 +175,84 @@ function seedHistoricalVideo(backendDb: ReturnType<typeof openBackendDb>): void 
     .run();
 }
 
+/** The renderer reads daily reach, which the read model derives from these very
+ * posts; the tests derive it the same way instead of restating the numbers. */
+function renderOverview(input: Omit<CombinedSectionInput, "textReach" | "videoReach">): string {
+  const start = new Date(input.rangeEnd);
+  start.setUTCDate(start.getUTCDate() - (input.periodDays + 40));
+  const days = calendarDays(start, new Date(input.rangeEnd.getTime() + 86_400_000 - 1), "UTC");
+  // Without a database the X rows arrive as items, so they stand in for the
+  // series the read model would load — including the rule that an X row wins
+  // over the pipeline's own copy of the same tweet.
+  const items = input.xItems ?? [];
+  const covered = new Set(items.map((item) => item.linkedPostKey).filter(Boolean));
+  const posts = [...(input.data?.posts ?? []), ...(input.previousData?.posts ?? [])].map((post) =>
+    post.post_key && covered.has(post.post_key) ? { ...post, targets: { ...post.targets, x: undefined } } : post,
+  );
+  return renderCombinedSection({
+    ...input,
+    videoReach: input.video.dailyByDay,
+    textReach: textOverviewOf([...posts, ...items.map(xChartPost)], [], days, "UTC"),
+  });
+}
+
+/** The two locale columns of a track's platform legend, RU first. */
+function localeColumns(html: string, kind: "text" | "video"): [string, string] {
+  const start = html.indexOf(`class="overview-track overview-track--${kind}`);
+  const rows = html.indexOf('<div class="overview-platforms__rows">', start);
+  const stop = html.indexOf('<div class="overview-publications"', rows);
+  const columns = html
+    .slice(rows, stop < 0 ? undefined : stop)
+    .split('<div class="overview-platforms__column">')
+    .slice(1);
+  return [columns[0] ?? "", columns[1] ?? ""];
+}
+
+function seedCrosspostedVideo(backendDb: ReturnType<typeof openBackendDb>): void {
+  const publishedAt = hoursAgo(3);
+  const draft = backendDb.db
+    .insert(videoDrafts)
+    .values({
+      actorId: 1,
+      locale: "ru",
+      label: "Один ролик, две площадки",
+      assetKey: "asset-cross",
+      status: "published",
+      createdAt: publishedAt,
+      updatedAt: publishedAt,
+    })
+    .returning({ id: videoDrafts.id })
+    .get();
+  for (const [target, views] of [
+    ["youtube_shorts", 600],
+    ["instagram_reels", 400],
+  ] as const) {
+    const row = backendDb.db
+      .insert(videoTargets)
+      .values({
+        videoDraftId: draft.id,
+        target,
+        metadataJson: { title: "Один ролик, две площадки", description: "", tags: [] },
+        status: "published",
+        publishedAt,
+        externalUrl: `https://example.com/${target}`,
+        createdAt: publishedAt,
+        updatedAt: publishedAt,
+      })
+      .returning({ id: videoTargets.id })
+      .get();
+    backendDb.db
+      .insert(videoMetricSnapshots)
+      .values({
+        videoTargetId: row.id,
+        platform: target,
+        metricsJson: { views, likes: views / 10, comments: 1 },
+        sampledAt: hoursAgo(1),
+      })
+      .run();
+  }
+}
+
 describe("unified overview video read model", () => {
   it("reuses the operations service for one database and configuration", () => {
     const backendDb = openBackendDb(":memory:");
@@ -205,6 +290,27 @@ describe("unified overview video read model", () => {
     }
   });
 
+  // The text side has always shown one row per post with a badge for the places
+  // it went; a clip that went to two destinations now reads the same way.
+  it("keeps one clip on two destinations as one publication", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      seedCrosspostedVideo(backendDb);
+      const overview = videoOverview(backendDb, new Date(Date.now() - 86_400_000), new Date());
+
+      expect(overview.items).toHaveLength(1);
+      expect(overview.totals.posts).toBe(1);
+      expect(overview.items[0]?.destinations.map((destination) => destination.label)).toEqual(["YouTube RU", "Instagram RU"]);
+      expect(overview.items[0]?.views).toBe(1_000);
+      // The badge counts destinations, and the best performing one owns the link.
+      expect(overview.items[0]?.url).toBe("https://example.com/youtube_shorts");
+      // Both destinations still stand on their own in the platform panel.
+      expect(overview.platforms.filter((platform) => platform.views > 0).map((platform) => platform.views)).toEqual([600, 400]);
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("reports the latest sample per publication and names the destination", () => {
     const backendDb = openBackendDb(":memory:");
     try {
@@ -219,7 +325,7 @@ describe("unified overview video read model", () => {
       expect(overview.items[0]?.url).toBe("https://youtube.com/shorts/abc");
       // The platform alone is not the destination: a Russian draft on Shorts is
       // the Russian channel.
-      expect(overview.items[0]?.label).toBe("YouTube RU");
+      expect(overview.items[0]?.destinations.map((destination) => destination.label)).toEqual(["YouTube RU"]);
 
       expect(overview.platforms.map((platform) => platform.label)).toEqual(["YouTube RU"]);
       expect(overview.platforms[0]?.views).toBe(1_000);
@@ -347,6 +453,88 @@ describe("unified overview video read model", () => {
       backendDb.close();
     }
   });
+
+  // The bug this locks: a day used to mean "what clips published that day
+  // earned" when it was the selected day, and "what the whole catalogue earned"
+  // on every other bar of the same chart — 3k against 65k for one date.
+  it("reports catalogue reach for a day whose clips were published earlier", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      seedHistoricalVideo(backendDb);
+      const cache = createVideoOverviewCache(24 * 60 * 60);
+      setVideoOverviewCacheRange(cache, new Date("2026-07-29T21:00:00.000Z"), new Date("2026-08-01T20:59:59.999Z"));
+      const day = (start: string, end: string) => videoOverview(backendDb, new Date(start), new Date(end), "Europe/Moscow", cache);
+
+      const publicationDay = day("2026-07-29T21:00:00.000Z", "2026-07-30T20:59:59.999Z");
+      expect(publicationDay.totals.views).toBe(800);
+      expect(publicationDay.dailyByDay["2026-07-30"]?.freshViews).toBe(800);
+      expect(publicationDay.totals.posts).toBe(1);
+
+      const quietDay = day("2026-07-30T21:00:00.000Z", "2026-07-31T20:59:59.999Z");
+      expect(quietDay.totals.views).toBe(700);
+      expect(quietDay.dailyByDay["2026-07-31"]?.views).toBe(700);
+      expect(quietDay.dailyByDay["2026-07-31"]?.freshViews).toBe(0);
+      expect(quietDay.totals.posts).toBe(0);
+      expect(quietDay.platforms.find((platform) => platform.label === "YouTube RU")?.views).toBe(700);
+    } finally {
+      backendDb.close();
+    }
+  });
+});
+
+describe("text daily reach", () => {
+  const sampled = (values: Array<[string, number]>): PipelinePost => ({
+    post_key: "post:1",
+    date: "2026-07-30T08:00:00.000Z",
+    targets: { telegram: { status: "published" } },
+    metrics: {
+      telegram: {
+        views: { value: values.at(-1)?.[1] ?? 0, samples: values.map(([sampled_at, value]) => ({ sampled_at, value })) },
+      },
+    },
+  });
+
+  // The text twin of the video fix: a day earns what arrived on it, whoever
+  // published it and whenever.
+  it("credits a later day with an older post's growth and marks it as back catalogue", () => {
+    const overview = textOverviewOf(
+      [
+        sampled([
+          ["2026-07-30T20:00:00.000Z", 800],
+          ["2026-07-31T20:00:00.000Z", 1_500],
+        ]),
+      ],
+      [],
+      calendarDays(new Date("2026-07-30T00:00:00.000Z"), new Date("2026-07-31T23:59:59.999Z"), "UTC"),
+      "UTC",
+    );
+    const daily = textDailyReach(overview, ["telegram"]);
+
+    expect(daily["2026-07-30"]?.views).toBe(800);
+    expect(daily["2026-07-30"]?.freshViews).toBe(800);
+    expect(daily["2026-07-31"]?.views).toBe(700);
+    expect(daily["2026-07-31"]?.freshViews).toBe(0);
+  });
+
+  it("keeps an unsampled publication on its own day instead of dropping it", () => {
+    const overview = textOverviewOf(
+      [
+        {
+          post_key: "post:2",
+          date: "2026-07-30T08:00:00.000Z",
+          targets: { telegram: { status: "published" } },
+          metrics: { telegram: { views: { value: 250 } } },
+        },
+      ],
+      [],
+      calendarDays(new Date("2026-07-30T00:00:00.000Z"), new Date("2026-07-31T23:59:59.999Z"), "UTC"),
+      "UTC",
+    );
+    const daily = textDailyReach(overview, ["telegram"]);
+
+    expect(daily["2026-07-30"]?.views).toBe(250);
+    expect(daily["2026-07-31"]?.views).toBe(0);
+  });
 });
 
 describe("unified overview rendering", () => {
@@ -373,7 +561,7 @@ describe("unified overview rendering", () => {
     try {
       seedVideo(backendDb);
       const video = videoOverview(backendDb, new Date(Date.now() - 86_400_000), new Date());
-      const html = renderCombinedSection({ ...baseInput, video });
+      const html = renderOverview({ ...baseInput, video });
 
       expect(html).toContain("<strong>1k</strong>");
       expect(html).toContain("Текст");
@@ -400,8 +588,9 @@ describe("unified overview rendering", () => {
     }
   });
 
-  it("compares multi-day totals with the previous multi-day totals", () => {
-    const post = (views: number): PipelinePost => ({
+  it("compares a multi-day period with the previous thirty days of daily norm", () => {
+    const post = (views: number, daysAgo: number): PipelinePost => ({
+      date: new Date(Date.UTC(today().getUTCFullYear(), today().getUTCMonth(), today().getUTCDate() - daysAgo, 12)).toISOString(),
       targets: { telegram: { status: "published" } },
       metrics: { telegram: { views: { value: views } } },
     });
@@ -413,30 +602,32 @@ describe("unified overview rendering", () => {
       ...emptyVideoOverview(),
       totals: { views: 100, reactions: 0, replies: 0, posts: 0 },
     };
-    const html = renderCombinedSection({
+    const html = renderOverview({
       ...baseInput,
       periodDays: 30,
-      data: { posts: [post(300)] },
-      previousData: { posts: [post(100)] },
+      data: { posts: Array.from({ length: 30 }, (_, index) => post(300, index)) },
+      previousData: { posts: Array.from({ length: 30 }, (_, index) => post(100, index + 30)) },
       video: currentVideo,
       previousVideo,
     });
 
+    // 9k over the period against a 100/day norm scaled to thirty days.
     expect(html).toContain("+200%");
     expect(html).not.toContain("vs прошлый период");
     expect(html).not.toContain("↑ 2900%");
   });
 
   it("does not show platform deltas while the selected period is still zero", () => {
-    const post = (views: number): PipelinePost => ({
+    const post = (views: number, daysAgo: number): PipelinePost => ({
+      date: new Date(Date.UTC(today().getUTCFullYear(), today().getUTCMonth(), today().getUTCDate() - daysAgo, 12)).toISOString(),
       targets: { telegram: { status: "published" } },
       metrics: { telegram: { views: { value: views } } },
     });
-    const html = renderCombinedSection({
+    const html = renderOverview({
       ...baseInput,
       periodDays: 30,
-      data: { posts: [post(0)] },
-      previousData: { posts: [post(100)] },
+      data: { posts: [post(0, 0)] },
+      previousData: { posts: [post(100, 40)] },
       video: emptyVideoOverview(),
     });
 
@@ -450,12 +641,12 @@ describe("unified overview rendering", () => {
       targets: { telegram: { status: "published" } },
       metrics: { telegram: { views: { value: views } } },
     });
-    const previousPosts = Array.from({ length: 30 }, (_, index) =>
-      post(100, `2026-07-${String(index + 1).padStart(2, "0")}T12:00:00.000Z`),
-    );
-    const html = renderCombinedSection({
+    const dayAt = (daysAgo: number) =>
+      new Date(Date.UTC(today().getUTCFullYear(), today().getUTCMonth(), today().getUTCDate() - daysAgo, 12)).toISOString();
+    const previousPosts = Array.from({ length: 30 }, (_, index) => post(100, dayAt(index + 1)));
+    const html = renderOverview({
       ...baseInput,
-      data: { posts: [post(200, "2026-08-01T12:00:00.000Z")] },
+      data: { posts: [post(200, dayAt(0))] },
       previousData: { posts: previousPosts },
       video: emptyVideoOverview(),
     });
@@ -476,7 +667,7 @@ describe("unified overview rendering", () => {
       // the panel must not invent one.
       expect(video.platforms.some((platform) => platform.target === "instagram_reels")).toBe(false);
 
-      const html = renderCombinedSection({
+      const html = renderOverview({
         ...baseInput,
         video,
         // Telegram declares "ru" and X declares "en" in the target table; the
@@ -486,11 +677,14 @@ describe("unified overview rendering", () => {
           { key: "x", label: "X", followers: 83 },
         ],
       });
-      // The source name and locale badge must come from the data, not from a
-      // guessed suffix in the target id.
-      expect(html).toContain('class="overview-platform__name"><b>RU</b>');
-      expect(html).toContain('class="overview-platform__name"><b>EN</b>');
-      expect(html).not.toContain('class="overview-platform__label"');
+      // The locale decides which column a destination stands in, and it must
+      // come from the data rather than from a guessed suffix in the target id.
+      const [ru, en] = localeColumns(html, "text");
+      expect(ru).toContain('title="Telegram"');
+      expect(en).toContain('title="X"');
+      expect(ru).not.toContain('title="X"');
+      // The badge is gone with the split: the column already names the locale.
+      expect(html).not.toContain('class="overview-platform__name"');
     } finally {
       backendDb.close();
     }
@@ -501,8 +695,8 @@ describe("unified overview rendering", () => {
       { key: "telegram", label: "Telegram", followers: 135 },
       { key: "x", label: "X", followers: 85 },
     ];
-    const reachHtml = renderCombinedSection({ ...baseInput, followers, video: emptyVideoOverview() });
-    const followerHtml = renderCombinedSection({
+    const reachHtml = renderOverview({ ...baseInput, followers, video: emptyVideoOverview() });
+    const followerHtml = renderOverview({
       ...baseInput,
       followers,
       video: emptyVideoOverview(),
@@ -532,7 +726,7 @@ describe("unified overview rendering", () => {
         telegram: { views: { value: 200 }, likes: { value: 9 }, replies: { value: 1 } },
       },
     };
-    const html = renderCombinedSection({
+    const html = renderOverview({
       ...baseInput,
       data: { posts: [post] },
       video: emptyVideoOverview(),
@@ -545,7 +739,10 @@ describe("unified overview rendering", () => {
     });
 
     expect(html).toContain("<strong>5k</strong>");
-    expect(html).toContain('class="overview-platform" title="Threads EN"');
+    // The selected destination is marked, and its own link is the way back out.
+    expect(html).toContain('class="overview-platform overview-platform--active"');
+    expect(html).toContain('title="Threads EN · снять фильтр"');
+    expect(html).toContain('class="overview-track__filter" href="/command-center?period=1&amp;week_offset=0"');
     expect(html).not.toContain("Telegram");
     expect(html).toContain("Threads EN publication");
     expect(html).not.toContain("Детальная динамика и публикации");
@@ -602,6 +799,7 @@ describe("unified overview rendering", () => {
 
   it("sorts text and video platform rows by the selected metric", () => {
     const post: PipelinePost = {
+      date: today().toISOString(),
       targets: {
         telegram: { status: "published" },
         threads_ru: { status: "published" },
@@ -628,94 +826,92 @@ describe("unified overview rendering", () => {
       { key: "threads_ru", label: "Threads RU", followers: 200 },
       { key: "x", label: "X", followers: 400 },
     ];
-    const column = (html: string, kind: "text" | "video"): string => {
-      const start = html.indexOf(`class="overview-track overview-track--${kind}`);
-      const end = html.indexOf(`<div class="overview-publications" id="overview-publications-${kind}">`, start);
-      return html.slice(start, end < 0 ? undefined : end);
-    };
     const assertOrder = (html: string, labels: string[]): void => {
       const positions = labels.map((label) => html.indexOf(`title="${label}"`));
       expect(positions.every((position) => position >= 0)).toBe(true);
       for (let index = 1; index < positions.length; index += 1) expect(positions[index - 1] ?? -1).toBeLessThan(positions[index] ?? -1);
     };
 
-    const reachHtml = renderCombinedSection({
+    const reachHtml = renderOverview({
       ...baseInput,
       data: { posts: [post] },
       followers,
       video,
       platformMetric: "reach",
     });
-    const reachText = column(reachHtml, "text");
-    const reachVideo = column(reachHtml, "video");
-    assertOrder(reachText, ["Telegram", "Threads RU", "Site RU", "X"]);
-    assertOrder(reachVideo, ["Instagram RU", "Instagram EN", "YouTube RU"]);
+    const [reachRu, reachEn] = localeColumns(reachHtml, "text");
+    const [videoRu, videoEn] = localeColumns(reachHtml, "video");
+    assertOrder(reachRu, ["Telegram", "Threads RU", "Site RU"]);
+    assertOrder(reachEn, ["X"]);
+    assertOrder(videoRu, ["Instagram RU", "YouTube RU"]);
+    assertOrder(videoEn, ["Instagram EN"]);
 
-    const followerHtml = renderCombinedSection({
+    const followerHtml = renderOverview({
       ...baseInput,
       data: { posts: [post] },
       followers,
       video,
       platformMetric: "followers",
     });
-    const followerText = column(followerHtml, "text");
-    const followerVideo = column(followerHtml, "video");
-    assertOrder(followerText, ["X", "Threads RU", "Telegram"]);
-    assertOrder(followerVideo, ["YouTube RU", "Instagram RU", "Instagram EN"]);
+    const [followerRu, followerEn] = localeColumns(followerHtml, "text");
+    const [followerVideoRu, followerVideoEn] = localeColumns(followerHtml, "video");
+    assertOrder(followerRu, ["Threads RU", "Telegram"]);
+    assertOrder(followerEn, ["X"]);
+    assertOrder(followerVideoRu, ["YouTube RU", "Instagram RU"]);
+    assertOrder(followerVideoEn, ["Instagram EN"]);
   });
 
-  it("shows the four largest text destinations and keeps the rest behind a compact drawer", () => {
+  it("lists the top three destinations of each locale and no drawer", () => {
     const post: PipelinePost = {
       post_key: "post:1",
+      date: today().toISOString(),
       targets: {
         site_ru: { status: "published" },
         site_en: { status: "published" },
         telegram_stories: { status: "published" },
         instagram_stories: { status: "published" },
+        threads_ru: { status: "published" },
       },
       metrics: {
         site_ru: { views: { value: 4 }, bot_views: { value: 0 } },
         site_en: { views: { value: 8 }, bot_views: { value: 0 } },
         telegram_stories: { views: { value: 12 } },
         instagram_stories: { views: { value: 3 } },
+        threads_ru: { views: { value: 2 } },
       },
     };
-    const html = renderCombinedSection({
+    const html = renderOverview({
       ...baseInput,
       data: { posts: [post] },
       video: emptyVideoOverview(),
     });
-    // Scoped to the row list, not the whole block: the bar still names every
-    // source in its tooltip, while the rows keep only the first four visible.
-    const platformHtml = html.slice(
-      html.indexOf('<div class="overview-platforms__rows">'),
-      html.indexOf('<div class="overview-publications" id="overview-publications-text">'),
-    );
-    const moreIndex = platformHtml.indexOf('<details class="overview-platforms__more platform-more">');
-    expect(moreIndex).toBeGreaterThan(0);
-    expect(platformHtml.slice(0, moreIndex)).toContain("Telegram Stories");
-    expect(platformHtml.slice(0, moreIndex)).toContain("Site EN");
-    expect(platformHtml.slice(0, moreIndex)).toContain("Site RU");
-    expect(platformHtml.slice(0, moreIndex)).toContain("Instagram Stories EN");
-    expect(platformHtml.slice(0, moreIndex)).not.toContain('title="Telegram"');
-    expect(platformHtml.slice(moreIndex)).toContain('title="Telegram"');
-    expect(platformHtml).toContain("Ещё <span>1</span>");
+    const [ru, en] = localeColumns(html, "text");
 
-    const followersHtml = renderCombinedSection({
+    // Each side keeps its own three largest; the fourth Russian destination —
+    // Telegram, which earned nothing this period — is dropped rather than
+    // hidden behind a control.
+    expect(ru).toContain('title="Telegram Stories"');
+    expect(ru).toContain('title="Site RU"');
+    expect(ru).toContain('title="Threads RU"');
+    expect(ru).not.toContain('title="Telegram"');
+    expect(en).toContain('title="Site EN"');
+    expect(en).toContain('title="Instagram Stories EN"');
+    expect(ru).not.toContain('title="Site EN"');
+    expect(html).not.toContain("platform-more");
+    expect(html).not.toContain("Ещё <span>");
+
+    const followersHtml = renderOverview({
       ...baseInput,
       data: { posts: [post] },
       video: emptyVideoOverview(),
       platformMetric: "followers",
     });
-    const followersPlatformHtml = followersHtml.slice(
-      followersHtml.indexOf('<div class="overview-platforms__rows">'),
-      followersHtml.indexOf('<div class="overview-publications" id="overview-publications-text">'),
-    );
-    expect(followersPlatformHtml).not.toContain("Telegram Stories");
-    expect(followersPlatformHtml).not.toContain("platform-more");
+    // Followers rank the primary destinations only, so the story feeds drop out.
+    expect(localeColumns(followersHtml, "text")[0]).not.toContain('title="Telegram Stories"');
+    expect(followersHtml).not.toContain("platform-more");
   });
 
-  it("keeps a compact publication control under a full four-row video legend", () => {
+  it("splits the video legend by locale and leaves no control under it", () => {
     const video = {
       ...emptyVideoOverview(),
       platforms: [
@@ -725,15 +921,16 @@ describe("unified overview rendering", () => {
         { target: "youtube_shorts", label: "YouTube RU", locales: ["RU"], views: 9_000, followers: null },
       ],
     };
-    const html = renderCombinedSection({ ...baseInput, video });
-    const videoStart = html.indexOf('<section class="overview-track overview-track--video');
-    const videoEnd = html.indexOf('<div class="overview-publications" id="overview-publications-video">', videoStart);
-    const videoPlatformHtml = html.slice(videoStart, videoEnd);
+    const html = renderOverview({ ...baseInput, video });
+    const [ru, en] = localeColumns(html, "video");
 
-    expect(videoPlatformHtml).toContain(
-      '<a class="overview-platforms__more overview-platforms__more--jump" href="#overview-publications-video">Публикации</a>',
-    );
-    expect(videoPlatformHtml).not.toContain("overview-platform--empty");
+    expect(ru).toContain('title="Instagram RU"');
+    expect(ru).toContain('title="YouTube RU"');
+    expect(en).toContain('title="Instagram EN"');
+    expect(en).toContain('title="YouTube EN"');
+    // Nothing sits between the legend and the publication list any more.
+    expect(html).not.toContain("overview-platforms__more");
+    expect(html).not.toContain("overview-platform--empty");
     expect(html).toContain('id="overview-publications-video"');
   });
 
@@ -754,7 +951,7 @@ describe("unified overview rendering", () => {
       targets: { x: { status: "published" } },
       metrics: { x: { views: { value: 0 } } },
     };
-    const html = renderCombinedSection({
+    const html = renderOverview({
       ...baseInput,
       data: { posts: [post] },
       xItems,
@@ -765,12 +962,43 @@ describe("unified overview rendering", () => {
     expect(html).toContain("<strong>42</strong>");
   });
 
+  it("filters one half without disturbing the other", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      seedVideo(backendDb);
+      const video = videoOverview(backendDb, new Date(Date.now() - 86_400_000), new Date());
+      const post: PipelinePost = {
+        post_key: "post:1",
+        date: today().toISOString(),
+        targets: { telegram: { status: "published" }, threads_en: { status: "published" } },
+        metrics: { telegram: { views: { value: 400 } }, threads_en: { views: { value: 90 } } },
+      };
+      const html = renderOverview({
+        ...baseInput,
+        data: { posts: [post] },
+        video,
+        textTargetIds: ["telegram"],
+        textView: "telegram",
+        followers: [{ key: "telegram", label: "Telegram", followers: 10 }],
+      });
+
+      // The video half is still there, still whole, and its own rows point at
+      // the video parameter while carrying the text filter along.
+      expect(html).toContain('class="overview-track overview-track--video');
+      expect(html).toContain("video_view=youtube_shorts%3Aru");
+      expect(html).toContain("view=telegram");
+      expect(html).not.toContain("overview-split--single");
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("keeps both halves available in the single overview mode", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       seedVideo(backendDb);
       const video = videoOverview(backendDb, new Date(Date.now() - 86_400_000), new Date());
-      const html = renderCombinedSection({ ...baseInput, video });
+      const html = renderOverview({ ...baseInput, video });
       expect(html).toContain("YouTube RU");
       expect(html).toContain("Telegram");
     } finally {

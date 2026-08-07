@@ -1,0 +1,178 @@
+import { type BackendDb, unsafeDb } from "../../../db/client.js";
+import type { ReachCounters, ReachSample, ReachSeries } from "./daily-reach.js";
+import type { PipelinePost } from "./types.js";
+
+/**
+ * The text feed's adapters onto the shared reach vocabulary.
+ *
+ * Publications carry a cumulative counter per (post, destination) in
+ * `metric_samples`; standalone X activity carries the same shape in
+ * `x_activity_metric_snapshots`. Both become `ReachSeries`, so the text half of
+ * the overview is computed by exactly the code that computes the video half.
+ */
+
+/** Counter names as the collectors write them, mapped onto the shared four. */
+const TEXT_COUNTERS: Record<string, keyof ReachCounters> = {
+  views: "views",
+  bot_views: "views",
+  likes: "reactions",
+  replies: "replies",
+  reposts: "reposts",
+};
+
+const X_COUNTERS: Record<string, keyof ReachCounters> = {
+  views: "views",
+  interactions: "reactions",
+  replies: "replies",
+  reposts: "reposts",
+};
+
+/** Both feeds resolved into one lookup, since a series is folded by source name. */
+const COUNTER_OF: Record<string, keyof ReachCounters | undefined> = { ...TEXT_COUNTERS, ...X_COUNTERS };
+
+type RawSample = { at: number; value: number };
+
+export type XActivitySeries = ReachSeries & { linkedPostKey: string | null };
+
+/**
+ * `coveredByXActivity` names the posts whose tweet the X collector reports
+ * directly. That row is the fresher source for the same tweet, so the post's own
+ * `x` series steps aside rather than being added to it.
+ */
+export function textReachSeries(
+  posts: readonly PipelinePost[],
+  targetIds: readonly string[],
+  coveredByXActivity: ReadonlySet<string> = new Set(),
+): ReachSeries[] {
+  const series: ReachSeries[] = [];
+  for (const post of posts) {
+    for (const target of targetIds) {
+      if (target === "x" && post.post_key && coveredByXActivity.has(post.post_key)) continue;
+      if (!isPublished(post, target)) continue;
+      const metrics = post.metrics?.[target];
+      if (!metrics) continue;
+      const observed = new Map<string, RawSample[]>();
+      const lifetime: ReachCounters = { views: 0, reactions: 0, replies: 0, reposts: 0 };
+      for (const [name, counter] of Object.entries(TEXT_COUNTERS)) {
+        const metric = metrics[name];
+        if (!metric) continue;
+        lifetime[counter] += numeric(metric.value);
+        for (const sample of metric.samples ?? []) {
+          const at = Date.parse(String(sample.sampled_at ?? ""));
+          if (Number.isNaN(at)) continue;
+          const list = observed.get(name) ?? [];
+          list.push({ at, value: numeric(sample.value) });
+          observed.set(name, list);
+        }
+      }
+      series.push({
+        publishedAt: post.date ?? null,
+        target,
+        samples: alignSamples(observed, post.date ?? null, lifetime),
+      });
+    }
+  }
+  return series;
+}
+
+/** Every tweet in the window, standalone or crossposted, with its link back to
+ * the publication it came from. */
+export function xActivityReachSeries(backendDb: BackendDb, start: Date, end: Date): XActivitySeries[] {
+  const items = unsafeDb(backendDb)
+    .sqlite.prepare(
+      `SELECT x_post_id AS xPostId, published_at AS publishedAt, linked_post_key AS linkedPostKey
+         FROM x_activity_items
+        WHERE published_at >= ? AND published_at <= ?`,
+    )
+    .all(start.toISOString(), end.toISOString()) as Array<{ xPostId: string; publishedAt: string; linkedPostKey: string | null }>;
+  const wanted = items;
+  if (!wanted.length) return [];
+
+  const placeholders = wanted.map(() => "?").join(",");
+  const snapshots = unsafeDb(backendDb)
+    .sqlite.prepare(
+      `SELECT x_post_id AS xPostId, metric_name AS metricName, value, sampled_at AS sampledAt
+         FROM x_activity_metric_snapshots
+        WHERE x_post_id IN (${placeholders}) AND sampled_at <= ?
+        ORDER BY sampled_at ASC`,
+    )
+    .all(...wanted.map((item) => item.xPostId), end.toISOString()) as Array<{
+    xPostId: string;
+    metricName: string;
+    value: number;
+    sampledAt: string;
+  }>;
+
+  const byItem = new Map<string, Map<string, RawSample[]>>();
+  for (const snapshot of snapshots) {
+    if (!X_COUNTERS[snapshot.metricName]) continue;
+    const at = Date.parse(snapshot.sampledAt);
+    if (Number.isNaN(at)) continue;
+    const observed = byItem.get(snapshot.xPostId) ?? new Map<string, RawSample[]>();
+    const list = observed.get(snapshot.metricName) ?? [];
+    list.push({ at, value: numeric(snapshot.value) });
+    observed.set(snapshot.metricName, list);
+    byItem.set(snapshot.xPostId, observed);
+  }
+
+  return wanted.map((item) => ({
+    publishedAt: item.publishedAt,
+    linkedPostKey: item.linkedPostKey,
+    target: "x",
+    samples: alignSamples(byItem.get(item.xPostId) ?? new Map(), item.publishedAt, { views: 0, reactions: 0, replies: 0, reposts: 0 }),
+  }));
+}
+
+/**
+ * Folds per-counter observations into one timeline.
+ *
+ * Counters are collected together but stored apart, so a timestamp that only one
+ * of them reports still has to carry the others' last known value — otherwise a
+ * counter would appear to fall back to zero and the day's delta would vanish.
+ * With nothing observed at all, the publication's lifetime figure stands as a
+ * single reading at its publication time: the same number the dashboard showed
+ * before any series existed.
+ */
+function alignSamples(observed: Map<string, RawSample[]>, publishedAt: string | null, lifetime: ReachCounters): ReachSample[] {
+  const timestamps = [...new Set([...observed.values()].flatMap((list) => list.map((sample) => sample.at)))].sort((a, b) => a - b);
+  if (!timestamps.length) {
+    const at = Date.parse(String(publishedAt ?? ""));
+    if (Number.isNaN(at)) return [];
+    return [{ at: new Date(at), ...lifetime }];
+  }
+  for (const list of observed.values()) list.sort((left, right) => left.at - right.at);
+  const cursors = new Map<string, number>();
+  const carried = new Map<string, number>();
+  return timestamps.map((at) => {
+    const counters: ReachCounters = { views: 0, reactions: 0, replies: 0, reposts: 0 };
+    for (const [name, list] of observed) {
+      let index = cursors.get(name) ?? 0;
+      let value = carried.get(name) ?? 0;
+      while (index < list.length && (list[index]?.at ?? Number.POSITIVE_INFINITY) <= at) {
+        value = numeric(list[index]?.value);
+        index += 1;
+      }
+      cursors.set(name, index);
+      carried.set(name, value);
+      const counter = COUNTER_OF[name];
+      // Views fold two collectors — page views and bot views — so each source
+      // keeps its own last reading and the counter is their sum, never an
+      // overwrite of one by the other.
+      if (counter) counters[counter] += value;
+    }
+    return { at: new Date(at), ...counters };
+  });
+}
+
+function isPublished(post: PipelinePost, target: string): boolean {
+  if (post.targets?.[target]?.status === "published") return true;
+  if (target === "telegram" && post.telegram_url) return true;
+  if (target === "site_ru" && post.site_ru) return true;
+  if (target === "site_en" && post.site_en) return true;
+  return false;
+}
+
+function numeric(value: unknown): number {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}

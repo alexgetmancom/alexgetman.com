@@ -62,7 +62,11 @@ describe("dashboard read model bounds", () => {
       const target = post.targets.telegram;
 
       expect(metric.samples).toHaveLength(24);
-      expect(metric.samples[0]).toEqual({ value: 1_011, sampled_at: new Date(Math.floor(periodStartMs / 1_000) * 1_000).toISOString() });
+      // A bucket keeps its last reading, reported at the moment it was taken.
+      expect(metric.samples[0]).toEqual({
+        value: 1_011,
+        sampled_at: new Date(periodStartMs + 11 * 5 * 60 * 1_000 + 2_000).toISOString(),
+      });
       expect(metric.samples.some((sample: { value: number }) => sample.value === 999)).toBe(false);
       expect(metric).not.toHaveProperty("raw");
       expect(target).not.toHaveProperty("raw");
@@ -73,7 +77,7 @@ describe("dashboard read model bounds", () => {
       }) as unknown as { posts: TestPost[] };
       expect(longPeriod.posts[0]?.metrics.telegram.views.samples).toHaveLength(30);
       expect(longPeriod.posts[0]?.metrics.telegram.views.samples[0]?.sampled_at).toBe(
-        new Date(Math.floor(periodStart30Ms / 1_000) * 1_000).toISOString(),
+        new Date(periodStart30Ms + 23 * 60 * 60 * 1_000 + 2_000).toISOString(),
       );
 
       const compact = pipelineStatusPayload(loadConfig({ PIPELINE_DB: ":memory:" }), backendDb, 0, 1, 0, undefined, {

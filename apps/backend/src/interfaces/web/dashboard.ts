@@ -44,6 +44,7 @@ function dashboardCacheKey(
   requestedPeriod: string | undefined,
   requestedView: string | undefined,
   requestedMetric: string | undefined,
+  requestedVideoView: string | undefined,
 ): string {
   return JSON.stringify({
     timezone: config.TIMEZONE,
@@ -60,6 +61,7 @@ function dashboardCacheKey(
       requestedPeriod ?? null,
       requestedView ?? null,
       requestedMetric ?? null,
+      requestedVideoView ?? null,
     ],
   });
 }
@@ -92,6 +94,7 @@ export function renderDashboard(
   requestedPeriod?: string,
   requestedView?: string,
   requestedMetric?: string,
+  requestedVideoView?: string,
 ): string {
   const cache = dashboardCacheFor(backendDb);
   const cacheKey = dashboardCacheKey(
@@ -105,6 +108,7 @@ export function renderDashboard(
     requestedPeriod,
     requestedView,
     requestedMetric,
+    requestedVideoView,
   );
   const now = Date.now();
   const cached = cache.get(cacheKey);
@@ -136,6 +140,9 @@ export function renderDashboard(
       ? (requestedView as AudienceView)
       : undefined;
   const platformMetric: PlatformMetric = requestedMetric === "followers" ? "followers" : "reach";
+  // `target:locale`, the same key the video destination registry uses.
+  const videoView =
+    showPosts && config.studio.modules.video_posting && /^[a-z_]+:(ru|en)$/.test(requestedVideoView ?? "") ? requestedVideoView : undefined;
   const panelLink = (value: DashboardPanel) => `/command-center?tab=posts&panel=${value}${periodDays !== 1 ? `&period=${periodDays}` : ""}`;
   const overviewFilterQuery = platformMetric === "followers" ? "&metric=followers" : "";
   const overviewControls =
@@ -157,7 +164,7 @@ export function renderDashboard(
 
   function renderOverview(): string {
     if (showPosts) {
-      const readModel = loadDashboardReadModel(config, backendDb, service, videoCache, weekOffset, periodDays, activeView);
+      const readModel = loadDashboardReadModel(config, backendDb, service, videoCache, weekOffset, periodDays, videoView);
       return renderCombinedSection(buildOverviewData(readModel, activeView, platformMetric));
     }
     if (showStudio && studioActorId) return renderStudioSection(config, backendDb, studioActorId, locale);

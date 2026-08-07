@@ -11,15 +11,8 @@ import {
   videoDestination,
   videoTargetLabel,
 } from "../../../publishing/video-types.js";
-import {
-  type DailyMetrics,
-  emptyDailyMetrics,
-  emptyMetrics,
-  latestAtOrBefore,
-  type PeriodDay,
-  periodMetrics,
-  type VideoSnapshot,
-} from "./video-overview-calendar.js";
+import { type DailyReach, dailyReach, emptyDailyReach, latestAtOrBefore, type PeriodDay } from "./daily-reach.js";
+import { periodMetrics, type VideoSnapshot, videoReachSeries } from "./video-overview-calendar.js";
 
 /**
  * Read model behind the video half of the unified overview.
@@ -33,16 +26,15 @@ import {
  * "reply" is a comment.
  */
 
-/** One published video on one platform. The unit is the publication, not the
- * draft: the same clip on YouTube and on Reels is two rows, exactly as one post
- * on Threads and on Telegram is two publications on the text side. */
+/** One published clip, wherever it went. The unit is the draft, exactly as the
+ * text side's unit is the post: one clip on YouTube and on Reels is one row
+ * carrying two destinations, not two rows. */
 export type VideoContentItem = {
   key: string;
-  target: string;
-  providerAccountId: string | null;
-  label: string;
-  locale: string | null;
+  /** Every destination this clip reached, largest first. */
+  destinations: VideoItemDestination[];
   title: string;
+  /** The best-performing destination's permalink. */
   url: string | null;
   publishedAt: string | null;
   /** Views gained during the selected period, not the current lifetime total. */
@@ -54,6 +46,15 @@ export type VideoContentItem = {
   lifetimeViews: number;
   /** Net subscribers/follows attributed to this publication during the period. */
   subscribers: number | null;
+};
+
+export type VideoItemDestination = {
+  target: string;
+  label: string;
+  locale: string | null;
+  providerAccountId: string | null;
+  url: string | null;
+  views: number;
 };
 
 /**
@@ -137,8 +138,9 @@ export function setVideoOverviewCacheRange(cache: VideoOverviewCache, start: Dat
   if (sampleBucketSeconds !== undefined) cache.sampleBucketSeconds = sampleBucketSeconds;
 }
 
-type TargetRow = {
+export type TargetRow = {
   id: number;
+  videoDraftId: number;
   target: string;
   providerAccountId: string | null;
   label: string;
@@ -148,7 +150,14 @@ type TargetRow = {
   metadataJson: string | null;
 };
 
-type DailyVideoMetrics = DailyMetrics & { subscribers: number | null };
+/**
+ * `views` is the reach the whole catalogue gained on that calendar day;
+ * `freshViews` is the part of it produced by clips published that same day.
+ * The two are a partition of one number, never two populations added together —
+ * drawing a clip's later growth on the day it was published would count the
+ * same view twice, once on its publication day and once on the day it happened.
+ */
+type DailyVideoMetrics = DailyReach & { subscribers: number | null };
 type VideoAnalyticsBundle = {
   catalogue: readonly VideoDestination[];
   rows: TargetRow[];
@@ -225,7 +234,7 @@ export function videoAnalyticsBundle(backendDb: BackendDb, start: Date, end: Dat
 function publishedTargets(backendDb: BackendDb, startIso: string, endIso: string): TargetRow[] {
   return unsafeDb(backendDb)
     .sqlite.prepare(
-      `SELECT t.id AS id, t.target AS target, COALESCE(d.label, '') AS label, d.locale AS locale, t.published_at AS publishedAt,
+      `SELECT t.id AS id, t.video_draft_id AS videoDraftId, t.target AS target, COALESCE(d.label, '') AS label, d.locale AS locale, t.published_at AS publishedAt,
               t.provider_account_id AS providerAccountId, t.external_url AS externalUrl, t.metadata_json AS metadataJson
          FROM video_targets t
          JOIN video_drafts d ON d.id = t.video_draft_id
@@ -414,22 +423,16 @@ export function aggregateDailyMetrics(
   rows: TargetRow[],
   snapshots: Map<number, VideoSnapshot[]>,
   days: PeriodDay[],
+  timeZone: string,
   cache?: VideoOverviewCache,
 ): Record<string, DailyVideoMetrics> {
+  const daily = dailyReach(
+    rows.map((row) => videoReachSeries(row.publishedAt, row.target, snapshots.get(row.id) ?? [])),
+    days,
+    timeZone,
+  );
   const result: Record<string, DailyVideoMetrics> = {};
-  for (const day of days) result[day.key] = emptyDailyVideoMetrics();
-  for (const row of rows) {
-    const history = snapshots.get(row.id) ?? [];
-    for (const day of days) {
-      const before = latestAtOrBefore(history, day.start)?.metrics ?? emptyMetrics();
-      const atEnd = latestAtOrBefore(history, day.end)?.metrics ?? before;
-      const bucket = result[day.key] ?? emptyDailyVideoMetrics();
-      bucket.views += Math.max(0, atEnd.views - before.views);
-      bucket.reactions += Math.max(0, atEnd.likes - before.likes);
-      bucket.replies += Math.max(0, atEnd.comments - before.comments);
-      result[day.key] = bucket;
-    }
-  }
+  for (const day of days) result[day.key] = { ...(daily[day.key] ?? emptyDailyReach()), subscribers: null };
   const profileKeys = new Set(rows.map(profileKeyForRow).filter((key): key is string => key !== null));
   const growthKey = `${days.map((day) => `${day.start.toISOString()}|${day.end.toISOString()}`).join(",")}|${[...profileKeys].sort().join(",")}`;
   const growthByDay = cache?.audienceGrowthByDay.get(growthKey) ?? audienceGrowthByDay(backendDb, days, profileKeys);
@@ -437,9 +440,8 @@ export function aggregateDailyMetrics(
   for (const day of days) {
     const growth = growthByDay.get(day.key);
     const values = [...profileKeys].filter((key) => growth?.has(key)).map((key) => growth?.get(key) ?? 0);
-    const bucket = result[day.key] ?? emptyDailyVideoMetrics();
-    bucket.subscribers = values.length ? values.reduce((total, value) => total + value, 0) : null;
-    result[day.key] = bucket;
+    const bucket = result[day.key];
+    if (bucket) bucket.subscribers = values.length ? values.reduce((total, value) => total + value, 0) : null;
   }
   return result;
 }
@@ -497,10 +499,6 @@ function audienceGrowthByDay(backendDb: BackendDb, days: PeriodDay[], profileKey
     }
   }
   return totals;
-}
-
-function emptyDailyVideoMetrics(): DailyVideoMetrics {
-  return { ...emptyDailyMetrics(), subscribers: null };
 }
 
 function followerCounts(backendDb: BackendDb): Map<string, number> {
