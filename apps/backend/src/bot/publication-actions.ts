@@ -1,8 +1,8 @@
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { describeError, t } from "../foundation/i18n/index.js";
+import type { StudioLocale } from "../foundation/locale.js";
 import { log } from "../foundation/logger.js";
-import type { BotLocale } from "./i18n.js";
 import { definePostActionHandlers } from "./post-actions.js";
 import {
   action,
@@ -38,7 +38,7 @@ export function isFreshPublicationAction(kind: PublicationKind, name: string): b
   return publicationAction(kind, name)?.freshCard === true;
 }
 
-export function describePublicationError(locale: BotLocale, error: unknown, config: Pick<BackendConfig, "TIMEZONE_LABEL">): string {
+export function describePublicationError(locale: StudioLocale, error: unknown, config: Pick<BackendConfig, "TIMEZONE_LABEL">): string {
   if (error instanceof StudioError && error.code === "common.schedule-parse-error")
     return t(locale, "common.schedule-parse-error", { timezone: config.TIMEZONE_LABEL });
   return describeError(locale, error);

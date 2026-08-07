@@ -1,6 +1,6 @@
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
-import type { StudioActorId, StudioLocale } from "../contracts.js";
+import type { StudioLocale } from "../../foundation/locale.js";
 import { analyticsService } from "./analytics.js";
 import { studioCapabilityService } from "./capabilities.js";
 import { channelService } from "./channels.js";
@@ -22,7 +22,7 @@ export type StudioServices = {
   analytics: ReturnType<typeof analyticsService>;
   capabilities: ReturnType<typeof studioCapabilityService>;
   settings: ReturnType<typeof settingsService>;
-  dashboard: (actorId: StudioActorId, locale: StudioLocale) => ReturnType<typeof studioDashboard>;
+  dashboard: (actorId: number, locale: StudioLocale) => ReturnType<typeof studioDashboard>;
 };
 
 const studioInstances = new WeakMap<BackendDb, { config: BackendConfig; services: StudioServices }>();
@@ -47,7 +47,7 @@ export function createStudioServices(backendDb: BackendDb, config: BackendConfig
     analytics: analyticsService(backendDb, config),
     capabilities: studioCapabilityService(config, backendDb),
     settings: settingsService(backendDb),
-    dashboard: (actorId: StudioActorId, locale: StudioLocale) => studioDashboard(backendDb, config, actorId, locale),
+    dashboard: (actorId: number, locale: StudioLocale) => studioDashboard(backendDb, config, actorId, locale),
   };
   studioInstances.set(backendDb, { config, services });
   return services;

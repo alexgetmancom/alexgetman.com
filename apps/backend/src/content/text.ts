@@ -1,3 +1,5 @@
+import { escapeHtml } from "../foundation/html.js";
+
 type Wrapper = { open: string; close: string };
 
 /** Renders Telegram entities over `text` in a single left-to-right pass,
@@ -82,11 +84,6 @@ function safeHttpUrl(value: string): boolean {
   } catch {
     return false;
   }
-}
-
-function escapeHtml(value: string): string {
-  const entities: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
-  return value.replace(/[&<>"']/g, (char) => entities[char] ?? char);
 }
 
 /** Canonical leading-emoji stripper, shared by the social payload builder and the

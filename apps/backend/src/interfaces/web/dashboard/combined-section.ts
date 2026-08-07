@@ -1,5 +1,6 @@
 import type { XActivityDashboardItem } from "../../../analytics/x-activity-dashboard.js";
 import { targetLocale } from "../../../botTargets.js";
+import { escapeHtml } from "../../../foundation/html.js";
 import { ORDERED_TARGETS, PLATFORM_ICONS, platformKey, VIDEO_PLATFORM_ICON_KEYS } from "./assets.js";
 import { renderOverviewSparkline } from "./chart.js";
 import {
@@ -22,7 +23,6 @@ import {
 } from "./combined-math.js";
 import { formatMetricValue } from "./format.js";
 import { renderHeroCard, renderHeroMicroMetrics, type TextHeroMetrics, type VideoHeroMetrics } from "./hero-section.js";
-import { escapeHtml } from "./html.js";
 import { getTargetMetric, postMetricTotals } from "./metrics.js";
 import { renderOverviewPublicationList } from "./table.js";
 import type { PipelineData, PipelinePost } from "./types.js";

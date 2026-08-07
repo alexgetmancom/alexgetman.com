@@ -4,12 +4,13 @@ import type { BackendDb } from "../db/client.js";
 import { withActionLock } from "../foundation/action-lock.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { type MessageKey, t } from "../foundation/i18n/index.js";
+import type { StudioLocale } from "../foundation/locale.js";
 import { truncateUnicode } from "../foundation/text.js";
 import { telegramPostCard, telegramVideoCard } from "../interfaces/telegram/control-cards.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { getActiveConversationState, getConversationState } from "./conversation-state.js";
 import { executePublicationEffects, type PublicationMessageResult } from "./effects.js";
-import { type BotLocale, botLocale } from "./i18n.js";
+import { botLocale } from "./i18n.js";
 import { handlePostMessage } from "./post-screen.js";
 import type {
   PublicationActionContext,
@@ -44,7 +45,7 @@ const INVALID_ENTITY_TEXT: Record<PublicationKind, MessageKey> = {
   video: "err.video-reopen-create",
 };
 
-const UNKNOWN_KEYBOARD = (locale: BotLocale): InlineKeyboard => new InlineKeyboard().text(t(locale, "menu.work-queue"), "queue_home");
+const UNKNOWN_KEYBOARD = (locale: StudioLocale): InlineKeyboard => new InlineKeyboard().text(t(locale, "menu.work-queue"), "queue_home");
 
 /** Dispatches a Telegram publication callback through the single action registry. */
 export async function handlePublicationCallback(
@@ -169,7 +170,7 @@ function namedArguments(
   return Object.fromEntries(action.args.map((name, index) => [name, values[index]]));
 }
 
-async function staleCallback(ctx: Context, backendDb: BackendDb, locale: BotLocale, includeQueue: boolean): Promise<void> {
+async function staleCallback(ctx: Context, backendDb: BackendDb, locale: StudioLocale, includeQueue: boolean): Promise<void> {
   await answerCallback(ctx, backendDb, t(locale, "action.card-stale"));
   if (includeQueue) await ctx.reply(t(locale, "action.card-stale"), { reply_markup: UNKNOWN_KEYBOARD(locale) });
 }

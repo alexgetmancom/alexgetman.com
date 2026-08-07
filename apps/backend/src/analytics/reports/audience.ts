@@ -4,7 +4,7 @@ import { socialComments } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { requestJson } from "../../foundation/http.js";
 import { t } from "../../foundation/i18n/index.js";
-import type { StudioLocale as BotLocale } from "../../foundation/locale.js";
+import type { StudioLocale } from "../../foundation/locale.js";
 
 const SYSTEM_PROMPT =
   "You are a community editor. From these comments, write a concise report in English: 1) games or topics requested most often, 2) FAQ, 3) audience sentiment, 4) up to 3 ideas for the next Shorts/Reels. Use only these comments, do not invent facts or reveal author names, and use at most 10 bullet points.";
@@ -12,7 +12,7 @@ const SYSTEM_PROMPT =
 export async function audienceAnalysis(
   backendDb: BackendDb,
   config: BackendConfig,
-  locale: BotLocale = "ru",
+  locale: StudioLocale = "ru",
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
   if (!config.DEEPSEEK_API_KEY) return `🤖 ${t(locale, "audience.unavailable")}`;

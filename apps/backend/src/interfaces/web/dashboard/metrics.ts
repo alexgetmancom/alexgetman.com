@@ -1,6 +1,6 @@
+import { escapeHtml } from "../../../foundation/html.js";
 import { jsonArray } from "../../../json.js";
 import { formatMetricValue } from "./format.js";
-import { escapeHtml } from "./html.js";
 import { getTargetUrl } from "./target-url.js";
 import type { DashboardMetricName, PipelinePost } from "./types.js";
 

@@ -5,7 +5,7 @@ import { isStoryTarget, PRESETS, presetName, TARGETS, targetLocale } from "../..
 import { effectivePostTargets, registeredPostTargetIds } from "../../channels/registry.js";
 import { listStudioMediaAssets, mediaItemsFromAssets, requireStudioMediaAssets } from "../../content/assets.js";
 import { draftLocaleContent } from "../../content/draft-content.js";
-import { createDraftFromMessage } from "../../content/index.js";
+import { createDraftFromMessage } from "../../content/drafts.js";
 import type { DraftMessage } from "../../content/message.js";
 import type { BackendDb } from "../../db/client.js";
 import { recordDomainEvent } from "../../domain/events.js";

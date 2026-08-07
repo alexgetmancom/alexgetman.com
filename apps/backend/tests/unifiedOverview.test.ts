@@ -8,7 +8,7 @@ import { buildOverviewData, loadDashboardReadModel } from "../src/interfaces/web
 import { renderTrackPublicationList } from "../src/interfaces/web/dashboard/table.js";
 import type { PipelinePost } from "../src/interfaces/web/dashboard/types.js";
 import { createVideoOverviewCache, emptyVideoOverview, videoOverview } from "../src/interfaces/web/dashboard/video-overview.js";
-import { createOperationsService } from "../src/operations/index.js";
+import { createOperationsService } from "../src/operations/service.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
 const hoursAgo = (hours: number): string => new Date(Date.now() - hours * 3_600_000).toISOString();

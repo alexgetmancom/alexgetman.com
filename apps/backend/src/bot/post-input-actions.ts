@@ -3,7 +3,7 @@ import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { t } from "../foundation/i18n/index.js";
-import { formatStudioTime } from "../interfaces/telegram/time.js";
+import { formatZonedDateTime } from "../foundation/time.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { requireConversationState } from "./conversation-state.js";
 import type { PublicationEffect } from "./effects.js";
@@ -78,7 +78,7 @@ function renderPostScheduleConfirmation(
     titlePrefix: "📅",
     entries: [{ key: step.locale, value: step.value }],
     label: (key) => key.toUpperCase(),
-    formatValue: (value) => formatStudioTime(value, timeConfig),
+    formatValue: (value) => formatZonedDateTime(value, timeConfig.TIMEZONE, timeConfig.TIMEZONE_LABEL),
     confirm: { label: t(locale, "post.confirm-schedule-btn"), callback: engine.confirmCallback() },
     back: {
       label: t(locale, "common.back"),

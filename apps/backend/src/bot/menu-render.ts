@@ -2,7 +2,8 @@ import type { Menu } from "@grammyjs/menu";
 import { type Context, Keyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import { t } from "../foundation/i18n/index.js";
-import { type BotLocale, botLocale } from "./i18n.js";
+import type { StudioLocale } from "../foundation/locale.js";
+import { botLocale } from "./i18n.js";
 
 /** Rendering the main menu, separated from building it.
  *
@@ -13,7 +14,7 @@ import { type BotLocale, botLocale } from "./i18n.js";
  * Neither helper knows how the menu is assembled: `showMainMenu` takes the built
  * menu as an argument. */
 
-export function persistentKeyboard(locale: BotLocale = "en"): Keyboard {
+export function persistentKeyboard(locale: StudioLocale = "en"): Keyboard {
   return new Keyboard().text(t(locale, "menu.button")).resized().persistent();
 }
 

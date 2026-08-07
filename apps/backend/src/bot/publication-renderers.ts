@@ -3,11 +3,11 @@ import type { PublicationKind } from "../application/conversation-flow.js";
 import type { PublicationPipeline } from "../application/publication-pipeline.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
+import type { StudioLocale } from "../foundation/locale.js";
 import { isVideoPreviewView, videoPreview } from "../interfaces/telegram/video-preview.js";
 import type { VideoTarget } from "../publishing/video-types.js";
 import { createStudioServices } from "../studio/services/index.js";
 import type { PublicationEffect } from "./effects.js";
-import type { BotLocale } from "./i18n.js";
 import { draftPreview, isDraftView } from "./preview.js";
 
 export type PublicationCard = {
@@ -23,7 +23,7 @@ type PublicationRendererInput = {
   actorId: number;
   publicationId: number;
   config: BackendConfig;
-  locale: BotLocale;
+  locale: StudioLocale;
   view?: string | undefined;
   target?: VideoTarget | undefined;
   revision?: number | null | undefined;

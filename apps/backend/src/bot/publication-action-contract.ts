@@ -3,9 +3,9 @@ import type { Context } from "grammy";
 import type { PublicationPipeline } from "../application/publication-pipeline.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
+import type { StudioLocale } from "../foundation/locale.js";
 import type { StudioServices } from "../studio/services/index.js";
 import type { PublicationEffect } from "./effects.js";
-import type { BotLocale } from "./i18n.js";
 import type { PublicationCallback } from "./publication-callback.js";
 import type { PublicationRenderer } from "./publication-renderers.js";
 
@@ -14,7 +14,7 @@ export type PublicationActionContext = {
   backendDb: BackendDb;
   config: BackendConfig;
   actorId: number;
-  locale: BotLocale;
+  locale: StudioLocale;
   callback: PublicationCallback;
   action: string;
   revision: number | null;

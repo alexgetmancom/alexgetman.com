@@ -1,8 +1,8 @@
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { commandCenterAttention, commandCenterFingerprint, commandCenterPayload, postDebugPayload } from "./command-center.js";
-import { runOperationCommand } from "./commands.js";
-import type { OperationsCommand } from "./contracts.js";
+import { type CommandAction, runOperationCommand } from "./commands.js";
+
 import { type PipelineReadModelOptions, pipelineOverviewPayload, pipelineStatusPayload } from "./read-model.js";
 
 function buildOperationsService(backendDb: BackendDb, config: BackendConfig) {
@@ -15,7 +15,7 @@ function buildOperationsService(backendDb: BackendDb, config: BackendConfig) {
     pipelineOverview: (weekOffset = 0, periodDays = 7, comparisonOffset = 0, offsetDays?: number, options: PipelineReadModelOptions = {}) =>
       pipelineOverviewPayload(config, backendDb, weekOffset, periodDays, comparisonOffset, offsetDays, options),
     postDebug: (ref: string) => postDebugPayload(backendDb, ref),
-    command: (input: OperationsCommand, fetchImpl?: typeof fetch) => runOperationCommand(backendDb, input, config, fetchImpl),
+    command: (input: CommandAction, fetchImpl?: typeof fetch) => runOperationCommand(backendDb, input, config, fetchImpl),
   };
 }
 

@@ -2,8 +2,9 @@ import { listChannels } from "../../channels/registry.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { creatorProfiles, socialComments } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
+import { escapeHtml } from "../../foundation/html.js";
 import { t } from "../../foundation/i18n/index.js";
-import type { StudioLocale as BotLocale } from "../../foundation/locale.js";
+import type { StudioLocale } from "../../foundation/locale.js";
 import { audienceGroup, enabledAudiencePlatforms, studioAudiencePlatforms } from "../audience-groups.js";
 import {
   audienceGrowthByPlatform,
@@ -47,7 +48,7 @@ export function studioAnalyticsDashboard(
   config: BackendConfig,
   section: AnalyticsSection,
   days: AnalyticsPeriod,
-  locale: BotLocale,
+  locale: StudioLocale,
 ): StudioAnalyticsDashboard {
   const since = new Date(Date.now() - days * 24 * 60 * 60_000).toISOString();
   const period = periodLabel(days, locale);
@@ -98,17 +99,13 @@ function richInlineHtml(value: string): string {
   return escapeHtml(value).replace(/\*([^*]+)\*/g, "<b>$1</b>");
 }
 
-function escapeHtml(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-
 function audienceProfiles(
   backendDb: BackendDb,
   config: BackendConfig,
   since: string,
   days: AnalyticsPeriod,
   period: string,
-  locale: BotLocale,
+  locale: StudioLocale,
 ): Block[] {
   const growth = audienceGrowthByPlatform(backendDb, since, days);
   return unsafeDb(backendDb)
@@ -141,7 +138,7 @@ function unifiedAnalyticsTable(
   section: Exclude<AnalyticsSection, "audience">,
   since: string,
   days: AnalyticsPeriod,
-  locale: BotLocale,
+  locale: StudioLocale,
 ): Block[] {
   const profiles = unsafeDb(backendDb)
     .db.select()
@@ -218,7 +215,7 @@ function unifiedAnalyticsTable(
   ];
 }
 
-function publishedPostTable(backendDb: BackendDb, config: BackendConfig, since: string, locale: BotLocale): Block[] {
+function publishedPostTable(backendDb: BackendDb, config: BackendConfig, since: string, locale: StudioLocale): Block[] {
   if (!config.studio.modules.text_posting) return [];
   const rows = latestTextPostMetrics(backendDb, since).filter((row) => Object.keys(row.metrics).length > 0);
   if (!rows.length) return [];
@@ -266,7 +263,7 @@ function publishedVideoTable(
   config: BackendConfig,
   section: Exclude<AnalyticsSection, "audience">,
   since: string,
-  locale: BotLocale,
+  locale: StudioLocale,
 ): Block[] {
   if (section === "posts" || !config.studio.modules.video_posting) return [];
   const rows = latestVideoMetrics(backendDb, since)
@@ -427,7 +424,7 @@ function signed(value: number): string {
   return `${value >= 0 ? "+" : ""}${value}`;
 }
 
-function periodLabel(days: AnalyticsPeriod, locale: BotLocale): string {
+function periodLabel(days: AnalyticsPeriod, locale: StudioLocale): string {
   if (days === 1) return t(locale, "report.period-today");
   return t(locale, "report.period-days", { days });
 }

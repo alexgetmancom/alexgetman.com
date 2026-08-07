@@ -3,7 +3,7 @@ import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { creatorProfiles, socialComments } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { t } from "../../foundation/i18n/index.js";
-import type { StudioLocale as BotLocale } from "../../foundation/locale.js";
+import type { StudioLocale } from "../../foundation/locale.js";
 import { latestVideoMetrics, siteTotal, sum, textTotals, type VideoMetricRow } from "../metric-deltas.js";
 import { metricNumber } from "../snapshots/creator-store.js";
 
@@ -11,7 +11,7 @@ export function creatorDashboard(
   backendDb: BackendDb,
   config: BackendConfig,
   days: number,
-  locale: BotLocale = "ru",
+  locale: StudioLocale = "ru",
 ): { text: string; hasComments: boolean } {
   const hasComments = unsafeDb(backendDb).db.select({ id: socialComments.commentId }).from(socialComments).limit(1).get() != null;
   if (days === 0) return overallDashboard(backendDb, config, hasComments, locale);
@@ -36,7 +36,7 @@ function overallDashboard(
   backendDb: BackendDb,
   config: BackendConfig,
   hasComments: boolean,
-  locale: BotLocale,
+  locale: StudioLocale,
 ): { text: string; hasComments: boolean } {
   const lines = [`🌐 *${t(locale, "report.overall-stats")}*`];
   if (config.studio.modules.site)
@@ -96,7 +96,7 @@ function appendVideoDashboard(
   latest: VideoMetricRow[],
   backendDb: BackendDb,
   config: BackendConfig,
-  locale: BotLocale,
+  locale: StudioLocale,
 ): void {
   const youtube = latest.filter((row) => row.platform === "youtube_shorts");
   const instagram = latest.filter((row) => row.platform === "instagram_reels");

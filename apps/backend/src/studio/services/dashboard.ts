@@ -1,12 +1,12 @@
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
-import type { StudioLocale as BotLocale } from "../../foundation/locale.js";
+import type { StudioLocale } from "../../foundation/locale.js";
 import { analyticsService } from "./analytics.js";
 import { notificationService } from "./notifications.js";
 import { queueService } from "./queue.js";
 
 /** Read model for Web Studio, Command Center and MCP. */
-export function studioDashboard(backendDb: BackendDb, config: BackendConfig, actorId: number, locale: BotLocale) {
+export function studioDashboard(backendDb: BackendDb, config: BackendConfig, actorId: number, locale: StudioLocale) {
   return {
     queue: queueService(backendDb, config).snapshot(actorId),
     notifications: notificationService(backendDb, config).inbox(actorId, 20),

@@ -1,5 +1,6 @@
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
+import { escapeHtml } from "../../foundation/html.js";
 import type { StudioLocale } from "../../foundation/locale.js";
 import { formatZonedDateTime } from "../../foundation/time.js";
 import { createStudioServices } from "../../studio/services/index.js";
@@ -68,8 +69,4 @@ function mdToHtml(text: string): string {
   return escapeHtml(text)
     .replace(/\*(.+?)\*/g, "<strong>$1</strong>")
     .replace(/\n/g, "<br>");
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }

@@ -2,11 +2,12 @@ import { type Context, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { t } from "../foundation/i18n/index.js";
+import type { StudioLocale } from "../foundation/locale.js";
 import { escapeMarkdown } from "../foundation/markdown.js";
 import { truncateUnicode } from "../foundation/text.js";
 import { createStudioServices } from "../studio/services/index.js";
 import type { StudioQueueAttentionItem, StudioQueueItem, StudioQueueSnapshot } from "../studio/services/queue.js";
-import { type BotLocale, botLocale } from "./i18n.js";
+import { botLocale } from "./i18n.js";
 import { publicationCallback } from "./publication-callback.js";
 import { isUnchangedMessageEdit } from "./telegram-errors.js";
 
@@ -70,7 +71,7 @@ export async function showQueueAttention(ctx: Context, backendDb: BackendDb, con
   await replaceQueueMessage(ctx, lines.join("\n"), keyboard);
 }
 
-export function queueScreen(snapshot: StudioQueueSnapshot, locale: BotLocale, timeZone: string, page = 0): QueueScreen {
+export function queueScreen(snapshot: StudioQueueSnapshot, locale: StudioLocale, timeZone: string, page = 0): QueueScreen {
   const allPages = queuePages(snapshot, timeZone);
   const currentPage = Math.max(0, Math.min(Math.trunc(page), allPages.length - 1));
   const pages = allPages.length;
@@ -134,7 +135,7 @@ function pageSlice<T>(items: T[], page: number, size: number): T[] {
   return items.slice(page * size, (page + 1) * size);
 }
 
-function itemButton(item: StudioQueueItem, locale: BotLocale, timeZone: string): string {
+function itemButton(item: StudioQueueItem, locale: StudioLocale, timeZone: string): string {
   const targets = item.targets ? ` · ${item.targets} ${t(locale, "queue.platforms-suffix")}` : "";
   return truncateUnicode(`${formatQueueTime(item.time, locale, timeZone)} · ${kindIcon(item.kind)} ${item.label}${targets}`, 60);
 }
@@ -177,7 +178,7 @@ function dayKeyFormatter(timeZone: string): Intl.DateTimeFormat {
   return cachedFormatter(`day-key:${timeZone}`, () => new Intl.DateTimeFormat("en-CA", { timeZone }));
 }
 
-function formatter(kind: "clock" | "day", locale: BotLocale, timeZone: string): Intl.DateTimeFormat {
+function formatter(kind: "clock" | "day", locale: StudioLocale, timeZone: string): Intl.DateTimeFormat {
   const intlLocale = locale === "ru" ? "ru-RU" : "en-GB";
   return cachedFormatter(`${kind}:${locale}:${timeZone}`, () =>
     kind === "clock"
@@ -188,7 +189,7 @@ function formatter(kind: "clock" | "day", locale: BotLocale, timeZone: string): 
 
 /** `timeZone` is the actor's own zone resolved by the settings service, falling back
  * to the studio default from config (see foundation/time.ts). */
-function formatQueueTime(date: Date, locale: BotLocale, timeZone: string): string {
+function formatQueueTime(date: Date, locale: StudioLocale, timeZone: string): string {
   const now = new Date();
   const dayKey = dayKeyFormatter(timeZone);
   const time = formatter("clock", locale, timeZone).format(date);
@@ -197,7 +198,7 @@ function formatQueueTime(date: Date, locale: BotLocale, timeZone: string): strin
   return `${formatter("day", locale, timeZone).format(date)}, ${time}`;
 }
 
-function queueDayLabel(date: Date, locale: BotLocale, timeZone: string): string {
+function queueDayLabel(date: Date, locale: StudioLocale, timeZone: string): string {
   const dayKey = dayKeyFormatter(timeZone);
   const today = dayKey.format(new Date());
   const tomorrow = dayKey.format(new Date(Date.now() + 24 * 60 * 60_000));

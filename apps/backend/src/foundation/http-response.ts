@@ -29,18 +29,6 @@ export function rateLimited(retryAfter: number): Response {
   });
 }
 
-/** These values are DB-derived counters and timestamps today, but the pages that
- * use this interpolate them straight into markup — escape at the boundary rather
- * than relying on every future field staying numeric. */
-export function escapeHtml(value: unknown): string {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
 function sessionCookie(name: string, token: string): string {
   return `${name}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=15552000`;
 }

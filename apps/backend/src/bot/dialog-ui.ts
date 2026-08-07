@@ -1,6 +1,6 @@
 import { InlineKeyboard } from "grammy";
 import { t } from "../foundation/i18n/index.js";
-import type { BotLocale } from "./i18n.js";
+import type { StudioLocale } from "../foundation/locale.js";
 import { versionedCallback } from "./publication-callback.js";
 
 export type DialogButton = { label: string; callback: string };
@@ -15,7 +15,7 @@ function dialogKeyboard(buttons: readonly DialogButton[], revision?: number | nu
 /** Adds the standard cancel action to a prompt keyboard. */
 export function appendCancelButton(
   keyboard: InlineKeyboard,
-  locale: BotLocale,
+  locale: StudioLocale,
   callback: string,
   revision?: number | null,
 ): InlineKeyboard {
@@ -24,7 +24,7 @@ export function appendCancelButton(
 }
 
 /** Builds a free-text prompt keyboard with only its cancel action. */
-export function cancelPromptKeyboard(locale: BotLocale, callback: string, revision?: number | null): InlineKeyboard {
+export function cancelPromptKeyboard(locale: StudioLocale, callback: string, revision?: number | null): InlineKeyboard {
   return appendCancelButton(new InlineKeyboard(), locale, callback, revision);
 }
 
@@ -34,13 +34,13 @@ export function confirmationKeyboard(confirm: DialogButton, back: DialogButton, 
 }
 
 /** Builds the final navigation footer after a draft operation. */
-export function resultNavigationKeyboard(locale: BotLocale, primary: "drafts" | "upcoming"): InlineKeyboard {
+export function resultNavigationKeyboard(locale: StudioLocale, primary: "drafts" | "upcoming"): InlineKeyboard {
   return appendResultNavigation(new InlineKeyboard(), locale, primary);
 }
 
 /** Appends a result footer to a keyboard that already contains operation
  * specific actions, preserving the existing rows. */
-export function appendResultNavigation(keyboard: InlineKeyboard, locale: BotLocale, primary: "drafts" | "upcoming"): InlineKeyboard {
+export function appendResultNavigation(keyboard: InlineKeyboard, locale: StudioLocale, primary: "drafts" | "upcoming"): InlineKeyboard {
   const primaryAction =
     primary === "drafts"
       ? { label: t(locale, "action.back-to-drafts"), callback: "queue_drafts" }

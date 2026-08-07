@@ -16,7 +16,7 @@ import { type ScheduledLoop, startLoop } from "../foundation/scheduler.js";
 import { runNotificationCycle } from "../notifications/jobs.js";
 import { observabilityService } from "../observability/service.js";
 import { pruneOperationalHistory, withMaintenanceLock } from "../operations/maintenance.js";
-import { recoverStalePublishJobs } from "../publishing/index.js";
+import { recoverStalePublishJobs } from "../publishing/queue.js";
 import { recoverStoryCardJobs, runStoryCardCycle } from "../story-cards/worker.js";
 
 /** Delivery-only publish cycle. Interfaces learn about settled work through durable events. */

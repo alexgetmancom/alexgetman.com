@@ -4,7 +4,7 @@ import { studioAnalyticsDashboard } from "../../analytics/reports/studio-dashboa
 import { creatorVideoArchive, creatorVideoMetrics } from "../../analytics/reports/video-archive.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
-import type { StudioLocale as BotLocale } from "../../foundation/locale.js";
+import type { StudioLocale } from "../../foundation/locale.js";
 
 type AnalyticsSection = "overview" | "audience" | "posts" | "video";
 type AnalyticsPeriod = 1 | 7 | 30;
@@ -15,28 +15,28 @@ type AnalyticsPeriod = 1 | 7 | 30;
  */
 export function analyticsService(backendDb: BackendDb, config: BackendConfig) {
   return {
-    dashboard(section: AnalyticsSection, days: AnalyticsPeriod, locale: BotLocale) {
+    dashboard(section: AnalyticsSection, days: AnalyticsPeriod, locale: StudioLocale) {
       return studioAnalyticsDashboard(backendDb, config, section, days, locale);
     },
-    postArchive(offset: number, locale: BotLocale) {
+    postArchive(offset: number, locale: StudioLocale) {
       return creatorPostArchive(backendDb, offset, locale);
     },
-    postMetrics(postId: number, locale: BotLocale) {
+    postMetrics(postId: number, locale: StudioLocale) {
       return creatorPostMetrics(backendDb, postId, locale);
     },
-    postMedia(postId: number, locale: BotLocale) {
+    postMedia(postId: number, locale: StudioLocale) {
       return creatorPostMedia(backendDb, postId, locale);
     },
-    archiveSummary(locale: BotLocale) {
+    archiveSummary(locale: StudioLocale) {
       return creatorArchiveSummary(backendDb, config.studio.modules.video_posting, locale);
     },
-    videoArchive(offset: number, locale: BotLocale) {
+    videoArchive(offset: number, locale: StudioLocale) {
       return creatorVideoArchive(backendDb, offset, locale);
     },
-    videoMetrics(publicationId: number, locale: BotLocale) {
+    videoMetrics(publicationId: number, locale: StudioLocale) {
       return creatorVideoMetrics(backendDb, publicationId, locale, config.TIMEZONE);
     },
-    audienceAnalysis(locale: BotLocale) {
+    audienceAnalysis(locale: StudioLocale) {
       return audienceAnalysis(backendDb, config, locale);
     },
   };

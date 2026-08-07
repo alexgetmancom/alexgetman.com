@@ -1,6 +1,6 @@
+import { escapeHtml } from "../../../foundation/html.js";
 import { ORDERED_TARGETS, PLATFORM_ICONS, platformKey, VIDEO_PLATFORM_ICON_KEYS } from "./assets.js";
 import { formatMetricValue, shortPipelineText } from "./format.js";
-import { escapeHtml } from "./html.js";
 import { getTargetMetric, postMetricTotals } from "./metrics.js";
 import { getTargetUrl } from "./target-url.js";
 import type { PipelinePost } from "./types.js";

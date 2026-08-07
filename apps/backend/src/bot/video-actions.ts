@@ -4,13 +4,13 @@ import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { type MessageKey, t } from "../foundation/i18n/index.js";
+import type { StudioLocale } from "../foundation/locale.js";
 import { manualScheduleExample } from "../foundation/time.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import type { StudioServices } from "../studio/services/index.js";
 import { VIDEO_FLOW } from "../studio/video-fsm.js";
 import { appendCancelButton, cancelPromptKeyboard, resultNavigationKeyboard } from "./dialog-ui.js";
 import type { PublicationEffect } from "./effects.js";
-import type { BotLocale } from "./i18n.js";
 import type {
   action,
   PublicationActionDefinition,
@@ -119,7 +119,7 @@ function showVideoCard(
   config: BackendConfig,
   actorId: number,
   id: number,
-  locale: BotLocale,
+  locale: StudioLocale,
 ): PublicationEffect[] {
   const card = publicationRenderers(backendDb, config).video.card({
     backendDb,

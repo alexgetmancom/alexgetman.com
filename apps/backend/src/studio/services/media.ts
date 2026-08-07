@@ -1,7 +1,6 @@
 import { importStudioMediaAsset, importStudioMediaFile } from "../../content/assets.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
-import type { StudioActorId } from "../contracts.js";
 
 type MediaBytesInput = Parameters<typeof importStudioMediaAsset>[3];
 type MediaFileInput = Parameters<typeof importStudioMediaFile>[3];
@@ -15,10 +14,10 @@ type MediaFileInput = Parameters<typeof importStudioMediaFile>[3];
  */
 export function mediaService(backendDb: BackendDb, config: BackendConfig) {
   return {
-    import(actorId: StudioActorId, input: MediaBytesInput) {
+    import(actorId: number, input: MediaBytesInput) {
       return importStudioMediaAsset(backendDb, config, actorId, input);
     },
-    importFile(actorId: StudioActorId, input: MediaFileInput) {
+    importFile(actorId: number, input: MediaFileInput) {
       return importStudioMediaFile(backendDb, config, actorId, input);
     },
   };

@@ -1,9 +1,10 @@
 import { type Context, InlineKeyboard, InputFile } from "grammy";
-import { type BotLocale, botLocale } from "../../bot/i18n.js";
+import { botLocale } from "../../bot/i18n.js";
 import type { BackendDb } from "../../db/client.js";
 import { splitText } from "../../delivery/social/payload.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { t } from "../../foundation/i18n/index.js";
+import type { StudioLocale } from "../../foundation/locale.js";
 import { log } from "../../foundation/logger.js";
 import { escapeMarkdown } from "../../foundation/markdown.js";
 import { threadsBody, threadsTextLimit } from "../../publishing/threads-text.js";
@@ -16,7 +17,7 @@ const TELEGRAM_MEDIA_GROUP_LIMIT = 10;
 export async function sendTelegramDeliveryPreviews(
   ctx: Context,
   projections: DeliveryProjection[],
-  locale: BotLocale = "en",
+  locale: StudioLocale = "en",
 ): Promise<void> {
   for (const projection of projections) {
     // One unrenderable projection — a missing file, a Telegram 400 — must not
@@ -137,7 +138,7 @@ const PREVIEW_VIEWS = [
 
 function deliveryHeader(
   projection: DeliveryProjection,
-  locale: BotLocale,
+  locale: StudioLocale,
 ): [string, { parse_mode: "Markdown"; reply_markup?: InlineKeyboard }] {
   const targets = projection.targets.join(" · ") || "No compatible delivery target";
   const threadsTarget = projection.targets.find((item) => item === "threads_ru" || item === "threads_en");
@@ -155,7 +156,7 @@ export function threadsPreviewText(
   text: string,
   entities: Record<string, unknown>[] = [],
   chain = false,
-  locale: BotLocale = "en",
+  locale: StudioLocale = "en",
 ): string {
   // Threads takes one post, so the preview is a character budget rather than a
   // numbered chain. The numbered form comes back only for a draft whose author

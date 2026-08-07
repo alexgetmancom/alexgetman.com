@@ -3,9 +3,9 @@ import { AUDIENCE_VIEWS, targetDefinition } from "../../../botTargets.js";
 import { hasChannelRegistry, listChannels } from "../../../channels/registry.js";
 import { type BackendDb, unsafeDb } from "../../../db/client.js";
 import { creatorProfiles } from "../../../db/schema.js";
+import { escapeHtml } from "../../../foundation/html.js";
 import { ORDERED_TARGETS } from "./assets.js";
 import { shortPipelineText } from "./format.js";
-import { escapeHtml } from "./html.js";
 import type { OpsPayload } from "./types.js";
 
 type AudiencePlatform = { key: string; label: string; metricTarget: string };

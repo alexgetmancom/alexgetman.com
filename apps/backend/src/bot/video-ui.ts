@@ -4,6 +4,7 @@ import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { type MessageKey, t } from "../foundation/i18n/index.js";
+import type { StudioLocale } from "../foundation/locale.js";
 import { manualScheduleExample } from "../foundation/time.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import { createStudioServices, type StudioServices } from "../studio/services/index.js";
@@ -11,7 +12,7 @@ import { isVideoWizardStep, VIDEO_FLOW, type VideoConversationStep, type VideoWi
 import { type ConversationState, clearConversationState, getConversationState, saveConversationState } from "./conversation-state.js";
 import { appendCancelButton, cancelPromptKeyboard } from "./dialog-ui.js";
 import type { PublicationEffect } from "./effects.js";
-import { type BotLocale, botLocale } from "./i18n.js";
+import { botLocale } from "./i18n.js";
 import { publicationCallback } from "./publication-callback.js";
 import { createPublicationScheduleEngine, SCHEDULE_SLOT_PRESETS, scheduleConfirmationEffects, scheduleTimeKeyboard } from "./scheduling.js";
 
@@ -23,7 +24,7 @@ export type VideoConversationState = ConversationState & {
 export type VideoConversationInput = Omit<VideoConversationState, "kind" | "revision" | "controlMessageId"> &
   Partial<Pick<VideoConversationState, "controlMessageId" | "revision">>;
 
-export function targetKeyboard(config: BackendConfig, selected: VideoTarget[], locale: BotLocale, revision?: number): InlineKeyboard {
+export function targetKeyboard(config: BackendConfig, selected: VideoTarget[], locale: StudioLocale, revision?: number): InlineKeyboard {
   const keyboard = new InlineKeyboard();
   for (const target of enabledVideoTargets(config)) {
     keyboard
@@ -37,7 +38,7 @@ export function targetKeyboard(config: BackendConfig, selected: VideoTarget[], l
   return appendCancelButton(keyboard, locale, publicationCallback("video", "cancel_dialog"), revision);
 }
 
-export function startVideoEffects(ctx: Context, backendDb: BackendDb, actorId: number, locale: BotLocale): PublicationEffect[] {
+export function startVideoEffects(ctx: Context, backendDb: BackendDb, actorId: number, locale: StudioLocale): PublicationEffect[] {
   const session = saveVideoState(backendDb, actorId, { draftId: null, step: "locale", selected: [], data: {}, controlMessageId: null });
   const keyboard = new InlineKeyboard()
     .text(t(locale, "video.language-ru"), publicationCallback("video", "locale", ["ru"], session.revision))
@@ -149,7 +150,7 @@ export function videoStepEffects(
   throw new StudioError("err.video-restart");
 }
 
-function metadataPromptEffects(locale: BotLocale, step: VideoWizardStep, session: VideoConversationState): PublicationEffect[] {
+function metadataPromptEffects(locale: StudioLocale, step: VideoWizardStep, session: VideoConversationState): PublicationEffect[] {
   const { revision } = session;
   const keyboard = new InlineKeyboard();
   if (step === "youtube_game_url") keyboard.text(t(locale, "video.skip"), publicationCallback("video", "game_skip", [], revision));
@@ -167,7 +168,7 @@ const VIDEO_METADATA_PROMPTS: Record<VideoWizardStep, MessageKey> = {
   instagram_caption: "video.prompt-ig-caption",
 };
 
-function videoPrompt(locale: BotLocale, prompt: VideoWizardStep): string {
+function videoPrompt(locale: StudioLocale, prompt: VideoWizardStep): string {
   return t(locale, VIDEO_METADATA_PROMPTS[prompt]);
 }
 
@@ -176,7 +177,7 @@ export function videoControlEffects(session: VideoConversationState, text: strin
   return [{ type: "prompt", text, options: { parse_mode: "Markdown", reply_markup: keyboard }, ...(card ? { card } : {}) }];
 }
 
-function videoTimeEffects(session: VideoConversationState, locale: BotLocale, text: string): PublicationEffect[] {
+function videoTimeEffects(session: VideoConversationState, locale: StudioLocale, text: string): PublicationEffect[] {
   const { revision, draftId } = session;
   if (draftId == null) throw new StudioError("err.video-missing");
   const engine = createPublicationScheduleEngine({
@@ -199,7 +200,7 @@ function videoTimeEffects(session: VideoConversationState, locale: BotLocale, te
 /** Expects the session to already sit on `schedule_choice`: the caller applied
  * the transition that got here, and saving again only burns a revision the
  * keyboard below would then be built against. */
-function scheduleChoiceEffects(session: VideoConversationState, locale: BotLocale, text: string): PublicationEffect[] {
+function scheduleChoiceEffects(session: VideoConversationState, locale: StudioLocale, text: string): PublicationEffect[] {
   const { revision, draftId } = session;
   if (draftId == null) throw new StudioError("err.video-missing");
   const keyboard = new InlineKeyboard().text(t(locale, "video.same-time"), publicationCallback("video", "common", [draftId], revision));

@@ -1,12 +1,12 @@
 import type { Menu } from "@grammyjs/menu";
 import { type Context, type InlineKeyboard, InputFile } from "grammy";
 import type { BackendDb } from "../db/client.js";
+import type { StudioLocale } from "../foundation/locale.js";
 import { setTelegramPostCard, setTelegramPostProgressCard, setTelegramVideoCard } from "../interfaces/telegram/control-cards.js";
 import { sendTelegramDeliveryPreviews } from "../interfaces/telegram/delivery-previews.js";
 import type { DeliveryProjection } from "../studio/projections.js";
 import type { ConversationStateInput } from "./conversation-state.js";
 import { clearConversationState, saveConversationState } from "./conversation-state.js";
-import type { BotLocale } from "./i18n.js";
 import { showMainMenu } from "./menu-render.js";
 import { callbackMessageId } from "./telegram-context.js";
 
@@ -24,7 +24,7 @@ export type PublicationEffect =
   | { type: "edit-message"; messageId: number; text: string; options?: Record<string, unknown> }
   | { type: "edit-reply-markup"; keyboard: InlineKeyboard }
   | { type: "photo"; path: string; options?: Record<string, unknown>; card?: PublicationCard }
-  | { type: "delivery-previews"; projections: DeliveryProjection[]; locale: BotLocale }
+  | { type: "delivery-previews"; projections: DeliveryProjection[]; locale: StudioLocale }
   | { type: "main-menu"; menu: Menu<Context>; edit?: boolean }
   | { type: "session"; operation: "clear"; kind: "post" | "video"; actorId: number }
   | { type: "session"; operation: "save"; actorId: number; state: ConversationStateInput };

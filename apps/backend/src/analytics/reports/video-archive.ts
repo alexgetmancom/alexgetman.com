@@ -1,6 +1,6 @@
 import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { t } from "../../foundation/i18n/index.js";
-import type { StudioLocale as BotLocale } from "../../foundation/locale.js";
+import type { StudioLocale } from "../../foundation/locale.js";
 import { escapeMarkdown } from "../../foundation/markdown.js";
 import { metricNumber } from "../snapshots/creator-store.js";
 import { ARCHIVE_PAGE_SIZE } from "./post-archive.js";
@@ -8,7 +8,7 @@ import { ARCHIVE_PAGE_SIZE } from "./post-archive.js";
 export function creatorVideoArchive(
   backendDb: BackendDb,
   offset = 0,
-  locale: BotLocale = "en",
+  locale: StudioLocale = "en",
 ): {
   text: string;
   items: Array<{ id: number; label: string }>;
@@ -37,7 +37,7 @@ export function creatorVideoArchive(
   };
 }
 
-export function creatorVideoMetrics(backendDb: BackendDb, videoDraftId: number, locale: BotLocale = "en", timeZone = "UTC"): string {
+export function creatorVideoMetrics(backendDb: BackendDb, videoDraftId: number, locale: StudioLocale = "en", timeZone = "UTC"): string {
   const draft = unsafeDb(backendDb)
     .sqlite.prepare("SELECT COALESCE(label, 'Без названия') AS label FROM video_drafts WHERE id=?")
     .get(videoDraftId) as { label: string } | null;

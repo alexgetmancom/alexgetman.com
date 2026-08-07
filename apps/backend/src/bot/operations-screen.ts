@@ -13,7 +13,8 @@ import {
   requestDeploymentRollback,
 } from "../foundation/deployment.js";
 import { t } from "../foundation/i18n/index.js";
-import { type BotLocale, botLocale } from "./i18n.js";
+import type { StudioLocale } from "../foundation/locale.js";
+import { botLocale } from "./i18n.js";
 
 /** Operations callbacks are deliberately outside content/post screens.
  * Every deploy action is ask -> confirm -> progress -> result, all as edits
@@ -65,7 +66,7 @@ export async function handleOperationsCallback(ctx: Context, backendDb: BackendD
 
 async function askConfirmation(
   ctx: Context,
-  locale: BotLocale,
+  locale: StudioLocale,
   action: "rollback" | "promote",
   target: string,
   revision: string,
@@ -87,7 +88,7 @@ async function askConfirmation(
 
 async function runDeployAction(
   ctx: Context,
-  locale: BotLocale,
+  locale: StudioLocale,
   lockKey: string,
   menuRevision: string,
   progressText: string,
@@ -110,7 +111,7 @@ async function runDeployAction(
 
 async function finishDeployAction(
   ctx: Context,
-  locale: BotLocale,
+  locale: StudioLocale,
   result: { ok: true; release: string; currentRevision: string } | { ok: false; message: string },
   fallbackRevision: string,
 ): Promise<void> {
@@ -127,7 +128,7 @@ async function finishDeployAction(
   }
 }
 
-function deploymentMenuKeyboard(locale: BotLocale, revision: string): InlineKeyboard {
+function deploymentMenuKeyboard(locale: StudioLocale, revision: string): InlineKeyboard {
   return new InlineKeyboard()
     .text(t(locale, "ops.rollback-btn", { target: "alex" }), `deploy_rb_ask:alex:${revision}`)
     .row()
@@ -136,6 +137,6 @@ function deploymentMenuKeyboard(locale: BotLocale, revision: string): InlineKeyb
     .text(t(locale, "ops.promote-btn", { target: "worker" }), `deploy_pr_ask:worker:${revision}`);
 }
 
-function deploymentMenuText(locale: BotLocale, revision: string): string {
+function deploymentMenuText(locale: StudioLocale, revision: string): string {
   return t(locale, "ops.menu", { revision: revision.slice(0, 12) });
 }

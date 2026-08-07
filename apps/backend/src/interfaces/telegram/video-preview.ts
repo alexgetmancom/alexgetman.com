@@ -1,9 +1,10 @@
 import { InlineKeyboard } from "grammy";
 import { confirmationKeyboard } from "../../bot/dialog-ui.js";
-import type { BotLocale } from "../../bot/i18n.js";
+
 import { publicationCallback } from "../../bot/publication-callback.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { t } from "../../foundation/i18n/index.js";
+import type { StudioLocale } from "../../foundation/locale.js";
 import { escapeMarkdown } from "../../foundation/markdown.js";
 import { isVideoTargetEditable, isVideoTargetMetadataEditable, isVideoTargetSchedulable } from "../../publishing/state.js";
 import { type InstagramMetadata, type VideoTarget, videoTargetLabel, type YouTubeMetadata } from "../../publishing/video-types.js";
@@ -31,7 +32,7 @@ export type VideoPreviewOptions = {
 export function videoPreview(
   data: VideoPreviewData,
   config: Pick<BackendConfig, "TIMEZONE" | "TIMEZONE_LABEL">,
-  locale: BotLocale,
+  locale: StudioLocale,
   options: VideoPreviewOptions = {},
 ): { text: string; keyboard: InlineKeyboard } {
   const { draft, targets } = data;
@@ -93,7 +94,7 @@ export function videoPreview(
 function videoConfirmationPreview(
   draftId: number,
   overviewText: string,
-  locale: BotLocale,
+  locale: StudioLocale,
   view: Exclude<VideoPreviewView, "overview">,
   options: VideoPreviewOptions,
 ): { text: string; keyboard: InlineKeyboard } {
@@ -130,7 +131,7 @@ function videoConfirmationPreview(
   };
 }
 
-function videoStatusLabel(status: string, locale: BotLocale): string {
+function videoStatusLabel(status: string, locale: StudioLocale): string {
   const labels: Record<string, string> = {
     editing: t(locale, "vstatus.editing"),
     draft: t(locale, "vstatus.draft"),

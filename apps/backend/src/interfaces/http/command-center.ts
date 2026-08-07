@@ -2,7 +2,7 @@ import { commandAllowed, sameOriginCommandLogin } from "../../foundation/http-au
 import { html, json, loginRedirect, queryTokenRedirect, sse, text } from "../../foundation/http-response.js";
 import { measureMemorySync } from "../../observability/memory.js";
 import { trackUsageAsync, trackUsageSync } from "../../observability/usage.js";
-import { commandActionSchema, type OperationsCommand } from "../../operations/index.js";
+import { type CommandAction, commandActionSchema } from "../../operations/commands.js";
 import {
   invalidateDashboardRenderCache,
   renderCommandCenterLogin,
@@ -186,7 +186,7 @@ function dashboardMemoryContext(url: URL): Record<string, string | null> {
   };
 }
 
-async function commandAction(request: Request): Promise<OperationsCommand> {
+async function commandAction(request: Request): Promise<CommandAction> {
   const raw = request.headers.get("content-type")?.includes("application/json")
     ? await request.json().catch(() => ({}))
     : Object.fromEntries((await request.formData().catch(() => new FormData())).entries());

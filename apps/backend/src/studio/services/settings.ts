@@ -2,14 +2,14 @@ import type { ApplicationPorts } from "../../application/ports.js";
 import { fixUrlSlashes } from "../../content/message.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { StudioError } from "../../foundation/errors.js";
+import type { StudioLocale } from "../../foundation/locale.js";
 import { isValidTimeZone, timeZoneOffsetLabel } from "../../foundation/time.js";
-import type { StudioActorId, StudioLocale } from "../contracts.js";
 
 type SettingsDependencies = Pick<ApplicationPorts, "clock" | "studioNotifications" | "studioSettings">;
 
 /** Read as a plain function, not a method: the service is an object literal, so
  * a method reading it through `this` breaks the moment it is destructured. */
-function readNotifications(backendDb: SettingsDependencies, actorId: StudioActorId) {
+function readNotifications(backendDb: SettingsDependencies, actorId: number) {
   const row = backendDb.studioSettings.notifications(actorId);
   return {
     remindersEnabled: row?.remindersEnabled !== 0,
@@ -18,16 +18,16 @@ function readNotifications(backendDb: SettingsDependencies, actorId: StudioActor
   };
 }
 
-function readLocale(backendDb: SettingsDependencies, actorId: StudioActorId): StudioLocale {
+function readLocale(backendDb: SettingsDependencies, actorId: number): StudioLocale {
   return backendDb.studioSettings.locale(actorId) === "ru" ? "ru" : "en";
 }
 
-function readTimezone(backendDb: SettingsDependencies, actorId: StudioActorId, fallback: string): string {
+function readTimezone(backendDb: SettingsDependencies, actorId: number, fallback: string): string {
   const timezone = backendDb.studioSettings.timezone(actorId)?.trim();
   return timezone && isValidTimeZone(timezone) ? timezone : fallback;
 }
 
-function writeYoutubeSignature(backendDb: SettingsDependencies, actorId: StudioActorId, value: string): void {
+function writeYoutubeSignature(backendDb: SettingsDependencies, actorId: number, value: string): void {
   const signature = value === "-" ? "" : fixUrlSlashes(value);
   backendDb.studioSettings.saveBotSettings({
     actorId,
@@ -45,14 +45,14 @@ function readWeeklyDigest(backendDb: SettingsDependencies) {
 /** Owner settings commands used by Telegram today and any future Studio adapter. */
 export function settingsService(backendDb: SettingsDependencies) {
   return {
-    locale(actorId: StudioActorId): StudioLocale {
+    locale(actorId: number): StudioLocale {
       return readLocale(backendDb, actorId);
     },
-    timezone(actorId: StudioActorId, fallback: string): string {
+    timezone(actorId: number, fallback: string): string {
       return readTimezone(backendDb, actorId, fallback);
     },
     timeConfig(
-      actorId: StudioActorId,
+      actorId: number,
       config: Pick<BackendConfig, "TIMEZONE" | "TIMEZONE_LABEL">,
     ): Pick<BackendConfig, "TIMEZONE" | "TIMEZONE_LABEL"> {
       const timezone = readTimezone(backendDb, actorId, config.TIMEZONE);
@@ -62,7 +62,7 @@ export function settingsService(backendDb: SettingsDependencies) {
           timezone === config.TIMEZONE ? config.TIMEZONE_LABEL : timeZoneOffsetLabel(timezone, readLocale(backendDb, actorId)),
       };
     },
-    notifications(actorId: StudioActorId) {
+    notifications(actorId: number) {
       return readNotifications(backendDb, actorId);
     },
     weeklyDigest() {
@@ -80,10 +80,7 @@ export function settingsService(backendDb: SettingsDependencies) {
       });
       return next;
     },
-    setNotifications(
-      actorId: StudioActorId,
-      input: Partial<{ remindersEnabled: boolean; reminderMinutes: number; completionEnabled: boolean }>,
-    ) {
+    setNotifications(actorId: number, input: Partial<{ remindersEnabled: boolean; reminderMinutes: number; completionEnabled: boolean }>) {
       if (
         input.reminderMinutes != null &&
         (!Number.isInteger(input.reminderMinutes) || input.reminderMinutes < 1 || input.reminderMinutes > 60)
@@ -106,13 +103,13 @@ export function settingsService(backendDb: SettingsDependencies) {
       if (current.remindersEnabled && !next.remindersEnabled) backendDb.studioNotifications.cancelQueuedReminders(actorId, now);
       return next;
     },
-    youtubeSignature(actorId: StudioActorId): string {
+    youtubeSignature(actorId: number): string {
       return backendDb.studioSettings.botSettings(actorId)?.youtubeSignature.trim() ?? "";
     },
-    setYoutubeSignature(actorId: StudioActorId, value: string): void {
+    setYoutubeSignature(actorId: number, value: string): void {
       writeYoutubeSignature(backendDb, actorId, value);
     },
-    beginYoutubeSignatureEdit(actorId: StudioActorId): void {
+    beginYoutubeSignatureEdit(actorId: number): void {
       const current = backendDb.studioSettings.botSettings(actorId);
       backendDb.studioSettings.saveBotSettings({
         actorId,
@@ -121,19 +118,19 @@ export function settingsService(backendDb: SettingsDependencies) {
         updatedAt: backendDb.clock.now().toISOString(),
       });
     },
-    saveYoutubeSignature(actorId: StudioActorId, value: string): boolean {
+    saveYoutubeSignature(actorId: number, value: string): boolean {
       const setting = backendDb.studioSettings.botSettings(actorId);
       if (setting?.pendingAction !== "youtube_signature") return false;
       writeYoutubeSignature(backendDb, actorId, value);
       return true;
     },
-    clearYoutubeSignature(actorId: StudioActorId): void {
+    clearYoutubeSignature(actorId: number): void {
       writeYoutubeSignature(backendDb, actorId, "-");
     },
-    setLocale(actorId: StudioActorId, locale: StudioLocale): void {
+    setLocale(actorId: number, locale: StudioLocale): void {
       backendDb.studioSettings.saveLocale({ actorId, locale, updatedAt: backendDb.clock.now().toISOString() });
     },
-    setTimezone(actorId: StudioActorId, timezone: string): void {
+    setTimezone(actorId: number, timezone: string): void {
       const value = timezone.trim();
       if (!isValidTimeZone(value)) throw new StudioError("err.timezone-invalid");
       backendDb.studioSettings.saveTimezone({ actorId, timezone: value, updatedAt: backendDb.clock.now().toISOString() });

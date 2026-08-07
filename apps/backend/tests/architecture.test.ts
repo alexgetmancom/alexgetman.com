@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const root = join(import.meta.dir, "../../..");
@@ -20,19 +20,6 @@ function sourceFiles(relativeDirectory: string): string[] {
 const applicationPersistenceExceptions = new Set<string>();
 
 describe("architecture fitness", () => {
-  it("keeps one public entry point for each application boundary", () => {
-    const entryPoints = [
-      "apps/backend/src/application/index.ts",
-      "apps/backend/src/content/index.ts",
-      "apps/backend/src/publishing/index.ts",
-      "apps/backend/src/delivery/index.ts",
-      "apps/backend/src/operations/index.ts",
-      "apps/backend/src/studio/services/index.ts",
-    ];
-
-    for (const entryPoint of entryPoints) expect(existsSync(join(root, entryPoint))).toBe(true);
-  });
-
   it("keeps application ports and domain event policy independent from infrastructure", () => {
     for (const file of [
       "apps/backend/src/application/ports.ts",

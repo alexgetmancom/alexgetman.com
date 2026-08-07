@@ -4,7 +4,7 @@ import type { AudienceView } from "../../../botTargets.js";
 import type { BackendDb } from "../../../db/client.js";
 import type { BackendConfig } from "../../../foundation/config.js";
 import { zonedSlot } from "../../../foundation/time.js";
-import type { createOperationsService } from "../../../operations/index.js";
+import type { createOperationsService } from "../../../operations/service.js";
 import type { CombinedSectionInput, PlatformMetric } from "./combined-section.js";
 import { audiencePlatformFollowers } from "./ops-sections.js";
 import { rollingPeriodDates } from "./period-controls.js";

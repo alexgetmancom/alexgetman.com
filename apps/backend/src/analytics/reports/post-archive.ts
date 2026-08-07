@@ -2,7 +2,7 @@ import { and, desc, eq, inArray, max, sql } from "drizzle-orm";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { metricSamples, postLocales, posts, publications, videoTargets } from "../../db/schema.js";
 import { t } from "../../foundation/i18n/index.js";
-import type { StudioLocale as BotLocale } from "../../foundation/locale.js";
+import type { StudioLocale } from "../../foundation/locale.js";
 import { metricNumber } from "../snapshots/creator-store.js";
 
 /** One page of an archive listing, shared by the post and video archives so a
@@ -24,7 +24,7 @@ function publishedPostCount(backendDb: BackendDb): number {
 export function creatorPostArchive(
   backendDb: BackendDb,
   offset = 0,
-  locale: BotLocale = "en",
+  locale: StudioLocale = "en",
 ): { text: string; items: Array<{ id: number; label: string }>; total: number; pageSize: number } {
   const total = publishedPostCount(backendDb);
   const rows = unsafeDb(backendDb)
@@ -45,7 +45,7 @@ export function creatorPostArchive(
   };
 }
 
-export function creatorPostMetrics(backendDb: BackendDb, postId: number, locale: BotLocale = "en"): string {
+export function creatorPostMetrics(backendDb: BackendDb, postId: number, locale: StudioLocale = "en"): string {
   const postKey = `post:${postId}`;
   const post = unsafeDb(backendDb)
     .db.select({ text: posts.text, mediaCount: posts.mediaCount, dateMsk: posts.dateMsk })
@@ -99,7 +99,7 @@ export function creatorPostMetrics(backendDb: BackendDb, postId: number, locale:
 
 /** Published locale media is returned as data; the Telegram adapter decides how
  * to render it, so archive previews do not leak transport details into Analytics. */
-export function creatorPostMedia(backendDb: BackendDb, postId: number, locale: BotLocale): Record<string, unknown>[] {
+export function creatorPostMedia(backendDb: BackendDb, postId: number, locale: StudioLocale): Record<string, unknown>[] {
   const preferred = locale === "ru" ? "ru" : "en";
   const row = unsafeDb(backendDb)
     .db.select({ mediaJson: postLocales.mediaJson })
@@ -113,7 +113,7 @@ export function creatorPostMedia(backendDb: BackendDb, postId: number, locale: B
 export function creatorArchiveSummary(
   backendDb: BackendDb,
   hasVideo: boolean,
-  locale: BotLocale = "en",
+  locale: StudioLocale = "en",
 ): {
   text: string;
   posts: number;

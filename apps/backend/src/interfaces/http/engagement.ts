@@ -1,4 +1,5 @@
-import { escapeHtml, html, json, rateLimited } from "../../foundation/http-response.js";
+import { escapeHtml } from "../../foundation/html.js";
+import { html, json, rateLimited } from "../../foundation/http-response.js";
 import type { RouteModule } from "./context.js";
 
 export const engagementRoutes: RouteModule = (app, { engagement }) => {

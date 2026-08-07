@@ -1,5 +1,5 @@
+import { escapeHtml } from "../../../foundation/html.js";
 import { formatMetricValue } from "./format.js";
-import { escapeHtml } from "./html.js";
 
 /** Compact daily bars for the editorial overview. */
 export const OVERVIEW_SPARK_MAX = 50_000;

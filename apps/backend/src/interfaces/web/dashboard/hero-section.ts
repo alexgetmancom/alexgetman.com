@@ -1,5 +1,5 @@
+import { escapeHtml } from "../../../foundation/html.js";
 import { formatMetricValue } from "./format.js";
-import { escapeHtml } from "./html.js";
 
 export type HeroMetric = { value: string; label: string };
 

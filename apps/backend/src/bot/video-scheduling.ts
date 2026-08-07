@@ -2,12 +2,13 @@ import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { t } from "../foundation/i18n/index.js";
+import type { StudioLocale } from "../foundation/locale.js";
 import type { VideoTechnicalCheck } from "../publishing/video-service.js";
 import type { VideoTarget } from "../publishing/video-types.js";
 import type { StudioServices } from "../studio/services/index.js";
 import { VIDEO_FLOW, videoScheduleDates } from "../studio/video-fsm.js";
 import type { PublicationEffect } from "./effects.js";
-import { type BotLocale, botLocale } from "./i18n.js";
+import { botLocale } from "./i18n.js";
 import { advancePublicationFlow } from "./publication-flow.js";
 import { publicationRenderers } from "./publication-renderers.js";
 import { clearVideoState, type VideoConversationState, videoScheduleConfirmationEffects, videoStepEffects } from "./video-ui.js";
@@ -76,7 +77,7 @@ export async function finishVideoNow(
 }
 
 /** Formats the transport-neutral technical check into a Telegram summary line. */
-function videoCheckSummary(technical: VideoTechnicalCheck, locale: BotLocale): string {
+function videoCheckSummary(technical: VideoTechnicalCheck, locale: StudioLocale): string {
   const mm = String(Math.floor(technical.seconds / 60)).padStart(2, "0");
   const ss = String(technical.seconds % 60).padStart(2, "0");
   const audioCodec = technical.audioCodec ?? t(locale, "video.no-audio");
@@ -96,7 +97,7 @@ async function showScheduledVideo(
   actorId: number,
   session: VideoConversationState,
   technical: VideoTechnicalCheck,
-  locale: BotLocale,
+  locale: StudioLocale,
   services: StudioServices,
 ): Promise<PublicationEffect[]> {
   if (!session.draftId) throw new StudioError("err.video-missing");

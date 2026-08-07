@@ -1,13 +1,14 @@
 import { InlineKeyboard } from "grammy";
 import { type PresetName, presetName, TARGETS } from "../botTargets.js";
 import { effectivePostTargets, registeredPostTargetIds } from "../channels/registry.js";
-import { requireDraft } from "../content/index.js";
+import { requireDraft } from "../content/drafts.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { type MessageKey, t } from "../foundation/i18n/index.js";
+import type { StudioLocale } from "../foundation/locale.js";
 import { escapeMarkdown } from "../foundation/markdown.js";
 import { truncateUnicode } from "../foundation/text.js";
-import { formatStudioTime } from "../interfaces/telegram/time.js";
+import { formatZonedDateTime } from "../foundation/time.js";
 import { mediaPolicyForTarget } from "../publishing/media-policy.js";
 import { isPostDraftMutable } from "../publishing/state.js";
 import { parseTargets } from "../publishing/targets.js";
@@ -16,7 +17,7 @@ import { createStudioServices } from "../studio/services/index.js";
 import { requirePostEditAllowed } from "../studio/services/post-access.js";
 import { postProgressState } from "../studio/services/post-progress.js";
 import { appendResultNavigation, confirmationKeyboard } from "./dialog-ui.js";
-import { type BotLocale, botLocale } from "./i18n.js";
+import { botLocale } from "./i18n.js";
 import { publicationCallback } from "./publication-callback.js";
 import { createPublicationScheduleEngine, scheduleTimeKeyboard } from "./scheduling.js";
 
@@ -218,7 +219,7 @@ export function draftPreview(
       .row()
       .text(t(locale, "queue.back-btn"), "queue_home");
     return {
-      text: `${draftHeader(draftId, targets, locale)}\n\n${t(locale, "post.scheduled-ru")}: ${formatStudioTime(draft.scheduled_at ? String(draft.scheduled_at) : null, timeConfig)}\n${t(locale, "post.scheduled-en")}: ${formatStudioTime(draft.scheduled_en_at ? String(draft.scheduled_en_at) : null, timeConfig)}`,
+      text: `${draftHeader(draftId, targets, locale)}\n\n${t(locale, "post.scheduled-ru")}: ${formatZonedDateTime(draft.scheduled_at ? String(draft.scheduled_at) : null, timeConfig.TIMEZONE, timeConfig.TIMEZONE_LABEL)}\n${t(locale, "post.scheduled-en")}: ${formatZonedDateTime(draft.scheduled_en_at ? String(draft.scheduled_en_at) : null, timeConfig.TIMEZONE, timeConfig.TIMEZONE_LABEL)}`,
       keyboard,
     };
   }
@@ -308,7 +309,7 @@ function safeMediaCount(value: string | null): number {
   }
 }
 
-function draftHeader(draftId: number, targets: Record<string, boolean>, locale: BotLocale): string {
+function draftHeader(draftId: number, targets: Record<string, boolean>, locale: StudioLocale): string {
   return `📝 *${t(locale, "post.heading", { id: draftId })}*\n${t(locale, "post.mode")}: *${modeLabel(presetName(targets), locale)}* · ${t(locale, "post.platforms")}: *${Object.values(targets).filter(Boolean).length}*`;
 }
 
@@ -329,7 +330,7 @@ function isUnavailableForMedia(target: string, locale: "ru" | "en", mediaRu: num
   return policy.mode === "story-first" && policy.inputCount === 0;
 }
 
-export function modeLabel(mode: PresetName, locale: BotLocale = "en"): string {
+export function modeLabel(mode: PresetName, locale: StudioLocale = "en"): string {
   if (mode === "full") return t(locale, "mode.full");
   if (mode === "ru") return t(locale, "mode.ru");
   if (mode === "en") return t(locale, "mode.en");
