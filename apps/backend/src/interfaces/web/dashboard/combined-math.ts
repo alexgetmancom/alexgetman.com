@@ -1,4 +1,4 @@
-import { zonedDateParts, zonedSlot } from "../../../foundation/time.js";
+import { isCurrentCalendarDay, zonedDateParts, zonedSlot } from "../../../foundation/time.js";
 import { formatMetricValue } from "./format.js";
 
 export type Totals = { views: number; reactions: number; replies: number };
@@ -63,12 +63,6 @@ export function periodPaceLabel(value: number, norm: number | null, day: Date, p
     : `до нормы ${formatMetricValue(remaining)} · прогноз ${formatMetricValue(projection)}`;
 }
 
-export function isCurrentCalendarDay(day: Date, timeZone: string): boolean {
-  const left = zonedDateParts(day, timeZone);
-  const right = zonedDateParts(new Date(), timeZone);
-  return left.year === right.year && left.month === right.month && left.day === right.day;
-}
-
 export function scaleTextDetails(value: TextDetails, factor: number): TextDetails {
   return {
     views: value.views * factor,
@@ -115,7 +109,7 @@ export function calendarKey(value: string | null | undefined, timeZone: string):
   return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
 }
 
-export function median(values: number[]): number {
+function median(values: number[]): number {
   const ordered = [...values].sort((left, right) => left - right);
   if (!ordered.length) return 0;
   const middle = Math.floor(ordered.length / 2);

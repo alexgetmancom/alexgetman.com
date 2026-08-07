@@ -2,18 +2,19 @@
 import { storyUi } from "../features/story-player/i18n";
 import { toPlayerPosts } from "../features/story-player/payload";
 /* =============================================================================
- * ASTRO-ОБЁРТКА ПЛЕЕРА (SEO-слой). Сам плеер — features/story-player/.
+ * ASTRO WRAPPER AROUND THE PLAYER (the SEO layer). The player itself is in
+ * features/story-player/.
  * -----------------------------------------------------------------------------
- * Зона ответственности ЭТОГО файла (и только его):
- *   1. Порядок постов: выбранный пост (страница статьи) встаёт первым.
- *   2. SEO: noscript-фолбэк для клиентов без JS — заголовок (<p>, единственный
- *      <h1> страницы рендерит гидрируемый StoryContext.svelte), медиа
- *      активного поста и полный текст.
- *   3. Производительность: <link rel="preload"> первой картинки/постера.
- *   4. Монтирование Svelte-острова <StoryPlayer client:load> (SSR-first).
+ * What THIS file is responsible for, and nothing else:
+ *   1. Post order: the selected post (an article page) comes first.
+ *   2. SEO: the noscript fallback for clients without JS — the title (as a
+ *      <p>; the page's only <h1> is rendered by the hydrated
+ *      StoryContext.svelte), the active post's media and the full text.
+ *   3. Performance: <link rel="preload"> for the first image/poster.
+ *   4. Mounting the Svelte island <StoryPlayer client:load> (SSR-first).
  *
- * Интерактив, состояние, стили плеера — НЕ здесь: см.
- * features/story-player/README.md. Разметку плеера тут не добавлять.
+ * Interaction, state and player styling do NOT belong here: see
+ * features/story-player/README.md. Do not add player markup in this file.
  * ========================================================================== */
 import StoryPlayer from "../features/story-player/StoryPlayer.svelte";
 import "../styles/home-news-page.css";

@@ -1,6 +1,6 @@
 ---
+import { stripLeadingEmojis } from "../../../backend/src/content/text.js";
 import { BRAND_ASSET_VERSION } from "../utils/brand";
-import { removeLeadingEmoji } from "../utils/text";
 import "../styles/layout.css";
 
 interface Props {
@@ -37,7 +37,7 @@ const {
   immersiveHome = false,
 } = Astro.props;
 
-const cleanDescription = removeLeadingEmoji(description);
+const cleanDescription = stripLeadingEmojis(description);
 const publicBaseUrl = "https://alexgetman.com";
 const socialImage = socialImageProp
   ? socialImageProp.startsWith("http")

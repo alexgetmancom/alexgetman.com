@@ -94,9 +94,3 @@ export function periodSubscriberDelta(history: VideoSnapshot[], days: PeriodDay[
   }
   return observed ? total : null;
 }
-
-export function isCurrentCalendarDay(value: Date, timeZone: string): boolean {
-  const current = zonedDateParts(new Date(), timeZone);
-  const target = zonedDateParts(value, timeZone);
-  return current.year === target.year && current.month === target.month && current.day === target.day;
-}

@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { RESPONSIVE_WIDTHS } from "../apps/backend/src/content/site-media-naming.ts";
+import { escapeXml } from "../apps/backend/src/foundation/html.ts";
 import type { FeedItem } from "../apps/backend/src/public/site-read-model.ts";
 import { postImagePath } from "../apps/web/src/utils/media.ts";
 import { categorySlugFromBadge, getSmartBadge, categoryLabel as taxonomyLabel } from "../apps/web/src/utils/taxonomy.ts";
@@ -112,14 +113,6 @@ function getFirstSentence(text: unknown): string {
   }
   if (newlineIdx !== -1) return value.slice(0, newlineIdx).trim();
   return value;
-}
-
-function escapeXml(value: unknown): string {
-  return String(value || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
 
 function splitLines(text: string, maxChars: number, maxLines: number): string[] {

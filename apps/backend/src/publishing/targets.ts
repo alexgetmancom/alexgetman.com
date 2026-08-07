@@ -15,6 +15,22 @@ export function parseTargets(value: unknown): Record<string, boolean> {
   };
 }
 
+/** Site jobs are keyed by a publish reason while everything else speaks in
+ * targets, so the two names for one locale meet here rather than in each caller.
+ * Three identical copies of this had accumulated across publishing, persistence
+ * and the Telegram notifier. */
+export function siteTargetForReason(reason: string): "site_ru" | "site_en" | null {
+  if (reason === "publish_ru") return "site_ru";
+  if (reason === "publish_en") return "site_en";
+  return null;
+}
+
+export function siteReasonForTarget(target: string): "publish_ru" | "publish_en" | null {
+  if (target === "site_ru") return "publish_ru";
+  if (target === "site_en") return "publish_en";
+  return null;
+}
+
 /** Unknown enabled keys must fail before a durable job can be materialized. */
 export function assertKnownTargets(targets: Readonly<Record<string, boolean>>): void {
   const unknown = Object.entries(targets)

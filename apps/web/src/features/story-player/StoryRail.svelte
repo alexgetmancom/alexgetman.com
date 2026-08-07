@@ -31,12 +31,12 @@ let {
 } = $props();
 
 let rail = $state<HTMLElement | null>(null);
-/* Ссылки на DOM карточек живут в Map, а не в массиве: при удалении поста из
-   keyed-{#each} Svelte вызывает bind:this с null, и запись уходит вместе с
-   карточкой. У массива на её месте осталась бы ссылка на detached-элемент. */
+/* Card DOM references live in a Map rather than an array: when a post leaves a
+   keyed {#each}, Svelte calls bind:this with null and the entry goes with the
+   card. An array would keep a reference to a detached element in its place. */
 const cards = new Map<number, HTMLElement>();
 
-/* includes() по массиву на каждую карточку давал O(n²) на перерисовку ленты. */
+/* includes() over an array, once per card, made a rail repaint O(n^2). */
 const visible = $derived(new Set(visibleIndexes));
 
 /* How far a card sits from the active one, counted in cards the reader can
@@ -54,10 +54,10 @@ function distanceFromActive(index: number): number {
   return Math.abs(to - from);
 }
 
-/* Лента намеренно не прокручивается пользователем (overflow: hidden, скрытые
-   скроллбары) — её позицию задаёт только активная карточка. Побочный эффект:
-   браузер не анимирует scrollTo({behavior:"smooth"}) на таком контейнере и
-   молча оставляет scrollTop на месте, поэтому доводим позицию сами. */
+/* The rail is deliberately not user-scrollable (overflow: hidden, hidden
+   scrollbars) — only the active card sets its position. Side effect: browsers
+   will not animate scrollTo({behavior:"smooth"}) on such a container and
+   silently leave scrollTop where it was, so we drive the position ourselves. */
 const SCROLL_MS = 380;
 
 function glideTo(railEl: HTMLElement, left: number, top: number): () => void {
@@ -83,7 +83,7 @@ function glideTo(railEl: HTMLElement, left: number, top: number): () => void {
   return () => cancelAnimationFrame(frame);
 }
 
-/* Активная карточка всегда докручивается в центр ленты. */
+/* The active card is always scrolled to the centre of the rail. */
 $effect(() => {
   const card = cards.get(active);
   if (!rail || !card) return;
@@ -157,7 +157,7 @@ $effect(() => {
 </nav>
 
 <style>
-  /* ---- Лента (desktop: вертикальная колонка; активная карточка в центре) ---- */
+  /* ---- Rail (desktop: a vertical column, active card centred) ---- */
   .story-rail {
     align-self: center;
     display: flex;
@@ -171,13 +171,13 @@ $effect(() => {
     overscroll-behavior-y: contain;
     padding: 0.05rem;
     scrollbar-width: none;
-    /* Появление при загрузке */
+    /* Entrance on load */
     animation: appReveal 0.68s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     animation-delay: 0.08s;
     opacity: 0;
   }
 
-  /* Пустые «прокладки», чтобы активная карточка вставала по центру. */
+  /* Empty spacers so the active card can sit dead centre. */
   .story-rail::before,
   .story-rail::after {
     content: "";
@@ -201,7 +201,7 @@ $effect(() => {
     }
   }
 
-  /* ------------------------------- Карточка -------------------------------- */
+  /* -------------------------------- Card ----------------------------------- */
   .rail-card {
     position: relative;
     min-height: 0;
@@ -262,7 +262,7 @@ $effect(() => {
     background: var(--player-surface);
   }
 
-  /* Пост скрыт текущим режимом ленты (Deep/Watched). */
+  /* Post hidden by the current feed mode (Deep/Watched). */
   .rail-card.is-filtered-out {
     display: none;
   }
@@ -295,7 +295,7 @@ $effect(() => {
     display: block;
   }
 
-  /* Карточка без картинки: бейдж категории на градиенте. */
+  /* Card with no image: the category badge over a gradient. */
   .rail-card__media > span {
     display: grid;
     place-items: center;
@@ -347,7 +347,7 @@ $effect(() => {
     overflow: hidden;
   }
 
-  /* ---- Планшет (≤1120px): лента становится горизонтальной под плеером ---- */
+  /* ---- Tablet (<=1120px): the rail turns horizontal below the player ---- */
   @media (max-width: 1120px) {
     .story-rail {
       order: 2;
@@ -407,8 +407,8 @@ $effect(() => {
     }
   }
 
-  /* ---- Телефон (≤760px): сам rail скрыт контейнером в StoryPlayer, но
-     карточки крупнее — на случай показа (например, режим ленты). ---- */
+  /* ---- Phone (<=760px): the rail itself is hidden by its container in
+     StoryPlayer, but cards are larger in case it is shown (feed mode). ---- */
   @media (max-width: 760px) {
     .story-rail {
       width: 100%;

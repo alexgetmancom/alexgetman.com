@@ -3,6 +3,7 @@ import { metricNumber } from "../../../analytics/snapshots/creator-store.js";
 import { videoDestinations } from "../../../channels/destinations.js";
 import { type BackendDb, unsafeDb } from "../../../db/client.js";
 import { creatorProfiles } from "../../../db/schema.js";
+import { isCurrentCalendarDay } from "../../../foundation/time.js";
 import {
   VIDEO_TARGETS,
   type VideoDestination,
@@ -14,7 +15,6 @@ import {
   type DailyMetrics,
   emptyDailyMetrics,
   emptyMetrics,
-  isCurrentCalendarDay,
   latestAtOrBefore,
   type PeriodDay,
   periodMetrics,
@@ -64,7 +64,7 @@ export type VideoContentItem = {
  * nothing — and `followers` come from that destination's own profile key, so
  * the RU and EN channels stop sharing one legacy count.
  */
-export type VideoPlatformTotal = {
+type VideoPlatformTotal = {
   target: string;
   label: string;
   locales: string[];
@@ -73,9 +73,9 @@ export type VideoPlatformTotal = {
 };
 
 /** A raw metric observation, before it is folded into a cumulative curve. */
-export type MetricEvent = { at: Date; key: string; value: number };
+type MetricEvent = { at: Date; key: string; value: number };
 
-export type VideoSummaryMetrics = {
+type VideoSummaryMetrics = {
   /** A provider-native completion percentage, when a collector supplies one. */
   completionRate: number | null;
   /** Weighted average watch duration across the available video sources. */

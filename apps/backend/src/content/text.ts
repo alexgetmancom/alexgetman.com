@@ -86,9 +86,9 @@ function safeHttpUrl(value: string): boolean {
   }
 }
 
-/** Canonical leading-emoji stripper, shared by the social payload builder and the
- * web app (apps/web/src/utils/text.ts re-exports it) so a post's headline strips
- * identically in both. It lives in Content rather than in delivery/social because
+/** Canonical leading-emoji stripper, imported directly by the social payload
+ * builder and by the web app's Layout so a post's headline strips identically in
+ * both. It lives in Content rather than in delivery/social because
  * the site is its only other caller and presentation code must not reach into a
  * delivery adapter for a string helper. Handles flag pairs and ZWJ sequences; a
  * bare "#"/digit is not treated as an emoji so hashtags and numbered lists

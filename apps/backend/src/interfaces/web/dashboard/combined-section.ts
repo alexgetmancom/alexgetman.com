@@ -41,7 +41,7 @@ import type { VideoOverview } from "./video-overview.js";
 
 export type PlatformMetric = "reach" | "followers";
 
-export type TextPlatformFollowers = { key: string; label: string; followers: number | null };
+type TextPlatformFollowers = { key: string; label: string; followers: number | null };
 
 export type CombinedSectionInput = {
   data: PipelineData | null;
@@ -517,7 +517,7 @@ const PLATFORM_SLOTS = 4;
 
 const SECONDARY_TEXT_TARGETS = new Set(["site_ru", "site_en", "telegram_stories", "instagram_stories_ru", "instagram_stories"]);
 
-export function renderPlatformMetricFilter(platformMetric: PlatformMetric, periodDays: number, weekOffset: number, view?: string): string {
+function renderPlatformMetricFilter(platformMetric: PlatformMetric, periodDays: number, weekOffset: number, view?: string): string {
   const viewParam = view ? `&view=${encodeURIComponent(view)}` : "";
   const base = `/command-center?period=${periodDays}&week_offset=${weekOffset}${viewParam}`;
   const options: Array<[PlatformMetric, string]> = [

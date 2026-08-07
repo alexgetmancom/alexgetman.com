@@ -1,7 +1,6 @@
 export type DashboardMetricName = "views" | "likes" | "replies" | "reposts";
-export type ChartMetricName = Extract<DashboardMetricName, "views" | "likes" | "replies">;
 
-export type TargetMetric = {
+type TargetMetric = {
   value?: unknown;
   sampled_at?: string | null;
   source?: string | null;
@@ -11,12 +10,12 @@ export type TargetMetric = {
 };
 
 /** Immutable observations, ordered by their actual collection time. */
-export type MetricSample = {
+type MetricSample = {
   value?: unknown;
   sampled_at?: string | null;
 };
 
-export type TargetRecord = {
+type TargetRecord = {
   status?: string | null;
   ok?: boolean;
   external_id?: string | null;
@@ -62,7 +61,7 @@ export type PipelineData = {
   updated_at?: string | null;
 };
 
-export type DashboardQueueDraft = {
+type DashboardQueueDraft = {
   id?: number | string | null;
   status?: string | null;
   textRu?: string | null;
@@ -72,7 +71,7 @@ export type DashboardQueueDraft = {
   updatedAt?: string | null;
 };
 
-export type DashboardQueueJob = {
+type DashboardQueueJob = {
   jobId?: string | number | null;
   postId?: string | number | null;
   messageId?: string | number | null;
@@ -85,7 +84,7 @@ export type DashboardQueueJob = {
   updatedAt?: string | null;
 };
 
-export type DashboardCredential = {
+type DashboardCredential = {
   target?: string | null;
   status?: string | null;
   missingEnvJson?: string | null;
@@ -93,14 +92,14 @@ export type DashboardCredential = {
   lastCheckedAt?: string | null;
 };
 
-export type DashboardMetricIssue = {
+type DashboardMetricIssue = {
   messageId?: string | number | null;
   target?: string | null;
   status?: string | null;
   error?: string | null;
 };
 
-export type DashboardLifecycleRow = {
+type DashboardLifecycleRow = {
   postKey?: string | number | null;
   state?: string | null;
   reason?: string | null;

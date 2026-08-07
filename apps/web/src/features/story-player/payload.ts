@@ -1,15 +1,15 @@
 /* =============================================================================
- * ПОДГОТОВКА ДАННЫХ ДЛЯ ПЛЕЕРА (выполняется на сервере, при SSR)
+ * PLAYER DATA PREPARATION (runs on the server, during SSR)
  * -----------------------------------------------------------------------------
- * Вход:  HomePost[] — «сырые» посты из utils/home-posts.ts (уровень страницы).
- * Выход: PlayerPost[] — ровно те поля, которые нужны плееру, с готовыми
- *        абсолютными путями к медиа и вычисленными режимами ленты.
+ * In:  HomePost[] — raw posts from utils/home-posts.ts (page level).
+ * Out: PlayerPost[] — exactly the fields the player needs, with absolute media
+ *      paths and feed modes already resolved.
  *
- * Зачем отдельный слой: Svelte-остров получает эти данные как props и они
- * сериализуются в HTML. Всё, что можно посчитать заранее (параграфы, режимы,
- * форматирование просмотров), считаем ЗДЕСЬ, а не в браузере.
+ * Why a separate layer: the Svelte island receives this as props and it is
+ * serialized into the HTML. Anything computable ahead of time (paragraphs,
+ * modes, view formatting) is computed HERE, not in the browser.
  *
- * Новое поле для плеера: добавь в PlayerPost + заполни в toPlayerPosts().
+ * A new player field: add it to PlayerPost and fill it in toPlayerPosts().
  * ========================================================================== */
 
 import { metricValue, paragraphsFor } from "../../components/home-news/storyHelpers";
@@ -19,9 +19,9 @@ export interface PlayerPost {
   id: string;
   url: string;
   title: string;
-  /** Параграфы для правой панели (обрезаны до 7, без дубля заголовка). */
+  /** Paragraphs for the right-hand panel (capped at 7, no repeated title). */
   body: string[];
-  /** Полный текст (для noscript-SEO и режима Deep). */
+  /** Full body text (for the noscript SEO fallback and Deep mode). */
   fullBody: string[];
   excerpt: string;
   date: string;
@@ -34,11 +34,11 @@ export interface PlayerPost {
   audioUrl: string | null;
   spotifyUrl: string | null;
   imageSrcSet: string;
-  /** Отформатировано для показа: "1.2k". */
+  /** Formatted for display: "1.2k". */
   views: string;
   category: string;
   sources: Array<{ url: string; label: string; official: boolean }>;
-  /** В каких режимах ленты пост виден: latest / deep / watched. */
+  /** Which feed modes show this post: latest / deep / watched. */
   feedModes: string[];
 }
 
@@ -51,8 +51,9 @@ function fullTextFor(post: HomePost): string[] {
     .filter(Boolean);
 }
 
-/** Deep = длинные посты; Watched = топ по просмотрам (верхние ~8).
- * fullBody приходит уже посчитанным: это SSR на каждый запрос главной. */
+/** Deep = long posts; Watched = the ~8 most viewed.
+ * fullBody arrives already computed: this is SSR on every request for the
+ * home page. */
 function feedModesFor(post: HomePost, fullBody: string[], watchedCutoff: number): string[] {
   const modes = ["latest"];
   if (fullBody.join(" ").length >= 700 || fullBody.length >= 4) modes.push("deep");

@@ -213,7 +213,7 @@ let {
     color: var(--text-header);
   }
 
-  /* ---- Планшет (≤1120px): панель горизонтальная, над лентой ---- */
+  /* ---- Tablet (<=1120px): the control turns horizontal, above the rail ---- */
   @media (max-width: 1120px) {
     .rail-control {
       position: relative;
@@ -234,7 +234,7 @@ let {
     }
   }
 
-  /* ---- Телефон (≤760px): лента скрыта, панель остаётся шапкой ---- */
+  /* ---- Phone (<=760px): the rail is hidden, the control stays as a header ---- */
   @media (max-width: 760px) {
     .rail-control {
       position: relative;

@@ -1,10 +1,10 @@
 /* =============================================================================
- * ВСЕ СТРОКИ ИНТЕРФЕЙСА ПЛЕЕРА (en + ru)
+ * EVERY PLAYER INTERFACE STRING (en + ru)
  * -----------------------------------------------------------------------------
- * Единственное место, где живут надписи кнопок/меню плеера.
- * Новая надпись: добавь ключ в StoryUi (ниже) и значение в ОБЕ локали.
- * Использование: const ui = storyUi(locale) — объект передаётся в компоненты.
- * НЕ хардкодь строки в .svelte/.astro — иначе en и ru разъедутся.
+ * The one place the player's button and menu labels live.
+ * A new label: add the key to StoryUi below and a value to BOTH locales.
+ * Usage: const ui = storyUi(locale) — the object is passed down to components.
+ * Do NOT hardcode strings in .svelte/.astro, or en and ru will drift apart.
  * ========================================================================== */
 
 export interface StoryUi {

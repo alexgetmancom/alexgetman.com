@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { isCurrentCalendarDay } from "../src/foundation/time.js";
 import {
   calendarDays,
   calendarKey,
-  isCurrentCalendarDay,
   latestAtOrBefore,
   periodMetrics,
   periodSubscriberDelta,

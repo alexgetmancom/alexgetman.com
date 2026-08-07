@@ -4,6 +4,7 @@ import { and, asc, eq, isNull, lt, lte, or } from "drizzle-orm";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { draftStoryCards } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { escapeXml } from "../foundation/html.js";
 import { log } from "../foundation/logger.js";
 import { recordWorkerState } from "../foundation/runtime/worker-state.js";
 import { trackUsageAsync } from "../observability/usage.js";
@@ -188,8 +189,4 @@ function fontConfigXml(assetsDir: string): string {
   return `<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "fonts.dtd"><fontconfig><dir>${escapeXml(
     assetsDir,
   )}</dir><cachedir>/tmp/story-card-font-cache</cachedir></fontconfig>`;
-}
-
-function escapeXml(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }

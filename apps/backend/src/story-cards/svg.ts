@@ -1,3 +1,4 @@
+import { escapeXml } from "../foundation/html.js";
 import type { StoryCardCopy } from "./copy.js";
 
 export const STORY_CARD_WIDTH = 1080;
@@ -61,14 +62,4 @@ export function storyCardOverlaySvg(copy: StoryCardCopy): string {
         letter-spacing="10" fill-opacity=".8" filter="url(#glow)">alex getman</text>
   <g filter="url(#glow)">${text}</g>
 </svg>`;
-}
-
-function escapeXml(value: string): string {
-  return value.replace(/[&<>"']/g, (character) => {
-    if (character === "&") return "&amp;";
-    if (character === "<") return "&lt;";
-    if (character === ">") return "&gt;";
-    if (character === '"') return "&quot;";
-    return "&apos;";
-  });
 }

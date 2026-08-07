@@ -158,3 +158,11 @@ export function zonedRollingPeriodBounds(offset: number, days: number, timeZone:
   const startWallUtc = endWallUtc - days * 86_400_000;
   return [new Date(startWallUtc - offsetMs).toISOString(), new Date(endWallUtc - offsetMs - 1).toISOString()];
 }
+
+/** "Today" in the configured zone, not the server's. Lived in two dashboard
+ * modules as identical copies before it moved next to zonedDateParts. */
+export function isCurrentCalendarDay(value: Date, timeZone: string): boolean {
+  const current = zonedDateParts(new Date(), timeZone);
+  const target = zonedDateParts(value, timeZone);
+  return current.year === target.year && current.month === target.month && current.day === target.day;
+}

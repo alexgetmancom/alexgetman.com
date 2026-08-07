@@ -5,6 +5,7 @@ import { type BackendDb, unsafeDb } from "../db/client.js";
 import { drafts, postEvents, publicationPlans, publications, publishJobs, siteJobs } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import { publicationStatus } from "./state.js";
+import { siteTargetForReason } from "./targets.js";
 
 type PublicationJob = { target: string; status: string; error: string | null };
 
@@ -27,7 +28,7 @@ export function reconcilePublication(backendDb: BackendDb, postId: number): void
     .from(siteJobs)
     .where(eq(siteJobs.postId, postId))
     .all()
-    .map((job) => ({ ...job, target: siteTarget(job.target) ?? job.target }));
+    .map((job) => ({ ...job, target: siteTargetForReason(job.target) ?? job.target }));
   const all: PublicationJob[] = [...social, ...site];
   const plan = publicationPlan(backendDb, postId);
   emitLocaleCompletion(backendDb, postId, all, plan);
@@ -149,12 +150,6 @@ function publicationPlan(backendDb: BackendDb, postId: number): Record<string, u
 
 function object(value: unknown): Record<string, unknown> {
   return value != null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-}
-
-function siteTarget(reason: string): "site_ru" | "site_en" | null {
-  if (reason === "publish_ru") return "site_ru";
-  if (reason === "publish_en") return "site_en";
-  return null;
 }
 
 /** A scheduled post may intentionally have one locale waiting for a later

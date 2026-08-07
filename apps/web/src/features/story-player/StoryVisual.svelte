@@ -81,13 +81,13 @@ const hasAudio = $derived(isVideo ? !videoFailed : Boolean(post.audioUrl));
  * the default nobody has overridden. Both look identical from here. */
 const showSoundPrompt = $derived(soundPrompt && (muted || autoplayMuted));
 
-/* Несколько картинок в посте (пост целиком не видео) → листаем их по очереди,
-     как отдельные слайды, прежде чем перейти к следующему посту. */
+/* Several images on a post (the post itself is not a video) — page through
+     them as separate slides before moving to the next post. */
 const gallerySequence = $derived(isVideo ? [] : post.gallery || []);
 const hasGallerySequence = $derived(gallerySequence.length >= 2);
 const activeGalleryMedia = $derived(hasGallerySequence ? gallerySequence[Math.min(gallerySubIndex, gallerySequence.length - 1)] : null);
 
-/* Видео не загрузилось → показываем постер/фолбек-картинку вместо него. */
+/* The video failed to load — show the poster/fallback image instead. */
 function onVideoError(): void {
   if (post.fallbackImage) videoFailed = true;
 }
@@ -163,8 +163,8 @@ function releaseOnDestroy(el: HTMLVideoElement) {
       href={post.url}
       aria-label={post.title}
       onclick={(event) => {
-        /* href — настоящий адрес поста: modifier-клик и средняя кнопка должны
-           открывать его в новой вкладке, а не глотаться паузой. */
+        /* href is the post's real address: a modifier-click or middle button
+           must open it in a new tab rather than being swallowed as a pause. */
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
         event.preventDefault();
         onStageClick(event);
@@ -288,7 +288,7 @@ function releaseOnDestroy(el: HTMLVideoElement) {
 </div>
 
 <style>
-  /* ------------------- Обёртка сцены (центр сетки плеера) ------------------- */
+  /* ----------------- Stage wrapper (centre of the player grid) -------------- */
   .story-visual-wrap {
     position: relative;
     display: grid;
@@ -312,7 +312,7 @@ function releaseOnDestroy(el: HTMLVideoElement) {
     }
   }
 
-  /* -------------------- Портретная «сцена» 9:16 с медиа --------------------- */
+  /* --------------------- Portrait 9:16 stage with media --------------------- */
   .story-visual {
     position: relative;
     width: min(760px, calc((100dvh - 0.25rem) * 0.5625), 100%);
@@ -359,17 +359,17 @@ function releaseOnDestroy(el: HTMLVideoElement) {
   }
 
   .story-visual__link video {
-    /* Держим видеоповерхность ниже полосы прогресса: некоторые браузеры
-       рендерят видео в композитном слое поверх более высокого z-index.
-       `contain` сохраняет горизонтальные ролики без обрезки боков. */
+    /* Keep the video surface below the progress bar: some browsers render
+       video in a compositing layer that sits above a higher z-index.
+       `contain` keeps landscape clips whole instead of cropping the sides. */
     clip-path: inset(8px 0 0);
     object-fit: contain;
     background: transparent;
   }
 
-  /* Полоса прогресса (обычная и сегментированная) — в StoryProgressBar.svelte. */
+  /* The progress bar, plain and segmented, lives in StoryProgressBar.svelte. */
 
-  /* Пост без картинки: крупный заголовок на градиенте. */
+  /* Post with no image: a large headline over a gradient. */
   .story-visual__fallback {
     display: grid;
     align-content: end;
@@ -462,7 +462,7 @@ function releaseOnDestroy(el: HTMLVideoElement) {
     background: var(--overlay-fill-hover);
   }
 
-  /* Мобильные элементы: на десктопе скрыты. */
+  /* Mobile-only elements: hidden on desktop. */
   .story-mobile-caption {
     display: none;
   }
@@ -474,16 +474,16 @@ function releaseOnDestroy(el: HTMLVideoElement) {
     display: none;
   }
 
-  /* Оверлей play/pause по клику — в PlayPauseOverlay.svelte. */
+  /* The click-to-play/pause overlay lives in PlayPauseOverlay.svelte. */
 
-  /* ---- Планшет (≤1120px): сцена встаёт первой в колонке ---- */
+  /* ---- Tablet (<=1120px): the stage comes first in the column ---- */
   @media (max-width: 1120px) {
     .story-visual-wrap {
       order: 1;
     }
   }
 
-  /* ---- Телефон (≤760px): полноэкранная сцена ---- */
+  /* ---- Phone (<=760px): full-screen stage ---- */
   @media (max-width: 760px) {
     .story-visual-wrap {
       order: 1;

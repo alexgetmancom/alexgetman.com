@@ -27,11 +27,11 @@ const segmented = $derived(gallerySequence.length >= 2);
 </script>
 
 {#if segmented}
-  <!-- Не tablist: панелей, которые переключались бы вкладками, здесь нет —
-       это индикатор слайдов, часть которых кликабельна. role="tab" без
-       tabpanel/aria-controls только вводил скринридер в заблуждение, а
-       неизображённые сегменты объявлялись вкладками, до которых нельзя
-       дойти клавиатурой. Текущий слайд помечается aria-current. -->
+  <!-- Not a tablist: there are no panels here that tabs would switch between,
+       this indicates slides and some of them happen to be clickable. role="tab"
+       without tabpanel/aria-controls only misled the screen reader, and
+       segments that are not rendered were announced as tabs the keyboard could
+       never reach. The current slide is marked with aria-current instead. -->
   <div class="story-visual-progress story-visual-progress--segmented" role="group" aria-label={`${title} — slides`}>
     {#each gallerySequence as media, index}
       <button
@@ -90,7 +90,7 @@ const segmented = $derived(gallerySequence.length >= 2);
     background: var(--overlay-text-strong);
   }
 
-  /* Имя keyframes глобальное (-global-): его подставляет progress.ts из JS. */
+  /* The keyframes name is global (-global-): progress.ts sets it from JS. */
   @keyframes -global-storyProgressHorizontal {
     from {
       transform: scaleX(0);
@@ -100,8 +100,9 @@ const segmented = $derived(gallerySequence.length >= 2);
     }
   }
 
-  /* Сегментированная полоса (2+ картинки в посте) — как в Instagram-сторис:
-     один сегмент на слайд, текущий заполняется анимацией, пройденные — сплошные. */
+  /* Segmented bar (a post with 2+ images), the way Instagram stories do it:
+     one segment per slide, the current one fills by animation, finished ones
+     are solid. */
   .story-visual-progress--segmented {
     display: flex;
     gap: 3px;
@@ -133,7 +134,7 @@ const segmented = $derived(gallerySequence.length >= 2);
     pointer-events: auto;
   }
 
-  /* ---- Телефон (≤760px): полоса уходит под вырез, края скругляются ---- */
+  /* ---- Phone (<=760px): the bar tucks under the notch, corners round off ---- */
   @media (max-width: 760px) {
     .story-visual-progress {
       height: 3px;

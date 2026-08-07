@@ -12,14 +12,7 @@ import {
   viewEvents,
 } from "./video-overview-data.js";
 
-export type {
-  MetricEvent,
-  VideoContentItem,
-  VideoOverview,
-  VideoOverviewCache,
-  VideoPlatformTotal,
-  VideoSummaryMetrics,
-} from "./video-overview-data.js";
+export type { VideoContentItem, VideoOverview, VideoOverviewCache } from "./video-overview-data.js";
 
 export {
   createVideoOverviewCache,

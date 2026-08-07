@@ -1,7 +1,7 @@
-/* Тип поста, который понимают чистые контроллеры плеера (progress, analytics,
- * media). Плеер (features/story-player) передаёт сюда PlayerPost
- * напрямую — поля объявлены `| null` там, где PlayerPost допускает null,
- * чтобы это был реальный подтип без приведения через `unknown`. */
+/* The post shape the player's pure controllers understand (progress,
+ * analytics, media). The player (features/story-player) passes PlayerPost
+ * straight in — fields are declared `| null` wherever PlayerPost allows null,
+ * so this is a genuine supertype and needs no cast through `unknown`. */
 export type StoryPost = {
   id?: string | number;
   url: string;

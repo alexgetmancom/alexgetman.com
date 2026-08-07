@@ -11,6 +11,7 @@ import type { MessageKey } from "../../foundation/i18n/index.js";
 import { t } from "../../foundation/i18n/index.js";
 import { log } from "../../foundation/logger.js";
 import { truncateUnicode } from "../../foundation/text.js";
+import { siteTargetForReason } from "../../publishing/targets.js";
 import { getVideoDraft } from "../../publishing/video-data.js";
 import type { VideoTarget } from "../../publishing/video-types.js";
 import { VIDEO_TARGETS, videoTargetLabel } from "../../publishing/video-types.js";
@@ -259,7 +260,7 @@ function completionTargets(backendDb: BackendDb, ref: string | null): Array<{ ta
     .orderBy(desc(siteJobs.jobId))
     .all();
   for (const job of site) {
-    const target = siteTarget(job.reason);
+    const target = siteTargetForReason(job.reason);
     if (target && !latest.has(target)) latest.set(target, { target, status: job.status, error: job.error, jobId: job.jobId });
   }
   return [...latest.values()];
@@ -272,12 +273,6 @@ function publicationDraftId(backendDb: BackendDb, ref: string | null): number | 
   if (publication?.kind === "video") return publication.id;
   if (publication?.kind !== "post") return null;
   return unsafeDb(backendDb).db.select({ id: drafts.id }).from(drafts).where(eq(drafts.postId, publication.id)).get()?.id ?? null;
-}
-
-function siteTarget(reason: string): string | null {
-  if (reason === "publish_ru") return "site_ru";
-  if (reason === "publish_en") return "site_en";
-  return null;
 }
 
 function shortError(value: string): string {

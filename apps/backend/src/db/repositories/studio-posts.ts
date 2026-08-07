@@ -10,6 +10,7 @@ import type {
 import { publicationRef } from "../../application/publication-ref.js";
 import { jsonObject } from "../../json.js";
 import { localizeTargetPayload } from "../../publishing/payload.js";
+import { siteReasonForTarget, siteTargetForReason } from "../../publishing/targets.js";
 import {
   draftEntityCandidates,
   draftSources,
@@ -135,7 +136,7 @@ export function createStudioPostStore(db: BackendDatabase): StudioPostStore {
         .all();
       const latestSite = new Map<string, (typeof site)[number]>();
       for (const row of site) {
-        const target = siteTarget(row.reason);
+        const target = siteTargetForReason(row.reason);
         if (target && !latestSite.has(target)) latestSite.set(target, row);
       }
 
@@ -154,7 +155,7 @@ export function createStudioPostStore(db: BackendDatabase): StudioPostStore {
 
       db.transaction((tx) => {
         for (const target of requested) {
-          const siteTargetName = siteReason(target);
+          const siteTargetName = siteReasonForTarget(target);
           let result: PublicationRetryResult;
 
           if (siteTargetName) {
@@ -243,18 +244,6 @@ export function createStudioPostStore(db: BackendDatabase): StudioPostStore {
       return results;
     },
   };
-}
-
-function siteTarget(reason: string): string | null {
-  if (reason === "publish_ru") return "site_ru";
-  if (reason === "publish_en") return "site_en";
-  return null;
-}
-
-function siteReason(target: string): string | null {
-  if (target === "site_ru") return "publish_ru";
-  if (target === "site_en") return "publish_en";
-  return null;
 }
 
 function retryPublicationTarget<T extends RetryJobRow>(input: {

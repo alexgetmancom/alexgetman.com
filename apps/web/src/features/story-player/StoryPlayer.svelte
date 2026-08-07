@@ -53,9 +53,9 @@ let {
   initialPaused = false,
 }: { posts: PlayerPost[]; ui: StoryUi; locale: "en" | "ru"; initialPaused?: boolean } = $props();
 
-/* ------------------------------- Состояние ------------------------------- */
-/* Проп initialPaused читается ровно один раз — это стартовое значение,
-     дальше паузой управляет пользователь, реактивность пропа не нужна. */
+/* --------------------------------- State --------------------------------- */
+/* The initialPaused prop is read exactly once: it is a starting value, after
+     which the user owns the pause, so prop reactivity is not wanted. */
 // svelte-ignore state_referenced_locally
 const startPaused = initialPaused;
 let active = $state(0);
@@ -78,8 +78,8 @@ let gallerySubIndex = $state(0); // текущий слайд, если у по�
 
 const activePost = $derived(posts[active] ?? posts[0]);
 const paused = $derived(manualPaused);
-/* Несколько картинок у поста-не-видео → листаем их по очереди перед
-     переходом к следующему посту (см. advanceStory). */
+/* Several images on a non-video post — page through them before moving to
+     the next post (see advanceStory). */
 const gallerySequence = $derived(activePost?.mediaType === "video" ? [] : activePost?.gallery || []);
 const visibleIndexes = $derived.by(() => {
   const visible = posts
@@ -89,7 +89,7 @@ const visibleIndexes = $derived.by(() => {
   return visible.length ? visible : posts.map((_, index) => index);
 });
 
-/* Элементы, которыми управляем императивно (media API, прогресс). */
+/* Elements we drive imperatively (media API, progress). */
 let root = $state<HTMLElement | null>(null);
 let video = $state<HTMLVideoElement | null>(null);
 let audio = $state<HTMLAudioElement | null>(null);
@@ -109,14 +109,14 @@ const normalizedPath = (value: string) => {
   }
 };
 
-/* ------------------------- Навигация между постами ------------------------ */
+/* ---------------------------- Post navigation ----------------------------- */
 function nextVisibleIndex(direction: number): number {
   const currentPosition = visibleIndexes.indexOf(active);
   if (currentPosition === -1) return visibleIndexes[0] ?? active;
   return visibleIndexes[(currentPosition + direction + visibleIndexes.length) % visibleIndexes.length] ?? active;
 }
 
-/** Аналог старого render(): смена активного поста + все сопутствующие сбросы. */
+/** The old render() equivalent: change the active post and every reset it implies. */
 function goTo(index: number, options: { keepProgressIdle?: boolean } = {}): void {
   active = ((index % posts.length) + posts.length) % posts.length;
   expanded = false;
@@ -137,9 +137,9 @@ function navigate(direction: number): void {
   progress?.resumeAfterManualNavigation();
 }
 
-/** Таймер прогресса истёк: если у поста ещё есть непоказанные картинки —
-      листаем на следующую и просто перезапускаем полосу прогресса, иначе —
-      обычный переход к следующему посту. */
+/** The progress timer expired: if the post still has unshown images, page to
+      the next one and simply restart the bar; otherwise advance to the next
+      post as usual. */
 function advanceStory(): void {
   const next = advanceGallerySequence(gallerySubIndex, gallerySequence.length);
   if (next.advancePost) {
@@ -156,7 +156,7 @@ function selectGalleryImage(index: number): void {
   progress?.resumeAfterManualNavigation();
 }
 
-/* ------------------------------ Пауза и звук ------------------------------ */
+/* ----------------------------- Pause and sound ---------------------------- */
 function togglePause(): void {
   manualPaused = !manualPaused;
   overlayTick += 1;
@@ -220,7 +220,7 @@ function cancelPendingPlay(): void {
   pendingPlay = null;
 }
 
-/* Autoplay-политики браузеров: вся логика переходов — в audio-state.ts. */
+/* Browser autoplay policies: all the transition logic lives in audio-state.ts. */
 function playActiveVideo(): void {
   if (!video || activePost?.mediaType !== "video") return;
   const el = video;
@@ -267,7 +267,7 @@ function onVideoPlaying(): void {
   if (el.paused) el.play?.().catch(() => {});
 }
 
-/* -------------------------- Чтение и обсуждение --------------------------- */
+/* --------------------------- Reading and replies -------------------------- */
 function setReading(visible: boolean): void {
   readingVisible = visible;
   if (visible) {
@@ -289,8 +289,8 @@ async function share(): Promise<void> {
       window.setTimeout(() => (shareCopied = false), 1400);
     }
   } catch (error) {
-    /* Закрыл системный лист — это отказ, а не сбой: копировать ссылку в буфер
-       за спиной пользователя нельзя. Копируем только если сам share сломался. */
+    /* Dismissing the system sheet is a refusal, not a failure: copying the
+       link behind the user's back is not on. Copy only if share itself broke. */
     if (error instanceof Error && error.name === "AbortError") return;
     await navigator.clipboard?.writeText(url).catch(() => {});
     shareCopied = true;
@@ -298,7 +298,7 @@ async function share(): Promise<void> {
   }
 }
 
-/* ------------------------------ Режим ленты ------------------------------- */
+/* -------------------------------- Feed mode ------------------------------- */
 function selectFeedMode(mode: string): void {
   feedMenuOpen = false;
   if (mode === feedMode) return;
@@ -307,7 +307,7 @@ function selectFeedMode(mode: string): void {
   progress?.resumeAfterManualNavigation();
 }
 
-/* ------------------------- Жесты: колесо и свайпы ------------------------- */
+/* --------------------- Gestures: mouse wheel and swipes ------------------- */
 let lastWheelTime = 0;
 let wheelGestureLocked = false;
 let wheelUnlockTimer: number | null = null;
@@ -366,9 +366,9 @@ function onKeydown(event: KeyboardEvent): void {
   }
 }
 
-/* --------------------------- Эффекты и mount ------------------------------ */
-/* Смена поста или паузы → синхронизировать <video>/<audio> с состоянием.
-     Единственное место, где дозволен «ручной» DOM: media API и измерения. */
+/* ---------------------------- Effects and mount --------------------------- */
+/* A post or pause change syncs <video>/<audio> with state. The one place
+     hand-written DOM is allowed: the media API and measurements. */
 $effect(() => {
   void active;
   if (!mounted) return;
@@ -390,9 +390,9 @@ $effect(() => {
   });
 });
 
-/* Влезает ли текст — зависит от высоты колонки, а она меняется и без смены
-   поста: поворот экрана, ресайз окна, схлопывание адресной строки на мобильном.
-   Без этого «Читать дальше» показывал состояние прошлого размера. */
+/* Whether the body fits depends on the column height, and that changes without
+   a post change: rotation, window resize, the mobile address bar collapsing.
+   Without this, "Read more" reflected the previous size. */
 $effect(() => {
   const element = copyEl;
   if (!element) return;
@@ -401,7 +401,7 @@ $effect(() => {
   return () => observer.disconnect();
 });
 
-/* «Читать дальше» показывается, только если текст реально не влез. */
+/* "Read more" appears only when the body genuinely overflowed. */
 function measureReadMore(): void {
   window.requestAnimationFrame(() => {
     if (!copyEl) return;
@@ -534,7 +534,7 @@ onMount(() => {
 </section>
 
 <style>
-  /* -------------------- Сетка плеера (rail | сцена | текст) ----------------- */
+  /* ---------------- Player grid (rail | stage | body text) ------------------ */
   .story-player {
     position: relative;
     display: grid;
@@ -555,12 +555,12 @@ onMount(() => {
     max-height: calc(100dvh - 0.25rem);
   }
 
-  /* ------------------- Контейнер ленты + геометрия карточек ----------------- */
+  /* ------------------ Rail container and card geometry ---------------------- */
   .story-rail-container {
-    /* Геометрия ленты: фиксированное число видимых карточек, активная
-       по центру (индекс 2). Всё ниже выводится из этих двух значений —
-       меняешь количество карточек или зазор только здесь. Переменные
-       наследуются в StoryRail.svelte. */
+    /* Rail geometry: a fixed number of visible cards with the active one
+       centred (index 2). Everything below derives from these two values —
+       change the card count or the gap only here. The variables are inherited
+       by StoryRail.svelte. */
     --rail-cards: 5;
     --rail-gap: 0.55rem;
     --rail-card-height: calc((100% - (var(--rail-cards) - 1) * var(--rail-gap)) / var(--rail-cards));
@@ -608,10 +608,10 @@ onMount(() => {
     pointer-events: none;
   }
 
-  /* Панель управления (аватар + режимы ленты) — в RailControl.svelte;
-     её геометрия выведена из --rail-* выше и наследуется туда. */
+  /* The control (avatar + feed modes) lives in RailControl.svelte; its
+     geometry derives from the --rail-* values above and is inherited there. */
 
-  /* ------------------------ Дебаг-панель (?debug=1) -------------------------- */
+  /* ------------------------- Debug panel (?debug=1) ------------------------- */
   .story-debug-panel {
     position: fixed;
     right: 12px;
@@ -629,7 +629,7 @@ onMount(() => {
     white-space: pre-wrap;
   }
 
-  /* ---- Компактный десктоп (низкие окна) ---- */
+  /* ---- Compact desktop (short windows) ---- */
   @media (max-height: 800px) and (min-width: 1121px) {
     .story-player__main {
       height: calc(100vh - 0.75rem);
@@ -637,7 +637,7 @@ onMount(() => {
     }
   }
 
-  /* ---- Планшет (≤1120px): одна колонка, лента снизу горизонтально ---- */
+  /* ---- Tablet (<=1120px): one column, rail horizontal underneath ---- */
   @media (max-width: 1120px) {
     .story-player__main {
       grid-template-columns: 1fr;
@@ -665,7 +665,7 @@ onMount(() => {
     }
   }
 
-  /* ---- Телефон (≤760px): плеер во весь экран, лента скрыта ---- */
+  /* ---- Phone (<=760px): full-screen player, rail hidden ---- */
   @media (max-width: 760px) {
     .story-player {
       display: block;

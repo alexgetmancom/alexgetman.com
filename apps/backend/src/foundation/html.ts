@@ -11,3 +11,15 @@ export function escapeHtml(value: unknown): string {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 }
+
+/** XML entity set: `&apos;` where HTML uses `&#39;`. One implementation for the
+ * same reason as escapeHtml -- the three this replaced escaped three, four and
+ * five characters respectively. */
+export function escapeXml(value: unknown): string {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+}

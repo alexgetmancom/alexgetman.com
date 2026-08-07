@@ -43,13 +43,13 @@ let {
 const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(/\s+/).length / 180)));
 </script>
 
-<!-- Скрытость панели описывает CSS, а не атрибут: на десктопе это постоянная
-     третья колонка, и только на ≤760px она — выезжающий лист. Прежний
-     aria-hidden={!readingVisible} был всегда истинным на десктопе, то есть
-     прятал от скринридеров единственный h1 страницы, весь текст поста и живые
-     кнопки (axe: aria-hidden-focus). Мобильное
-     закрытое состояние получает visibility: hidden — он убирает панель и из
-     дерева доступности, и из Tab-порядка, ровно там, где она не видна. -->
+<!-- CSS describes whether the panel is hidden, not an attribute: on desktop it
+     is a permanent third column, and only below 760px is it a sliding sheet.
+     The old aria-hidden={!readingVisible} was always true on desktop, hiding
+     the page's only h1, the whole post body and live buttons from screen
+     readers (axe: aria-hidden-focus). The mobile closed state gets
+     visibility: hidden instead — that drops the panel out of the accessibility
+     tree and out of the Tab order exactly where it is not visible. -->
 <aside class="story-context" data-story-context>
   <div class="story-panel is-active" class:is-updating={updating} data-panel="post">
     <!-- One line above the headline, the way a rubric works in print: what
@@ -97,7 +97,7 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
 </aside>
 
 <style>
-  /* --------------------- Панель контекста (правая колонка) ------------------ */
+  /* ---------------------- Context panel (right column) ---------------------- */
   .story-context {
     /* A caption to the frame, so it is as tall as its own text and sits level
        with the middle of the stage. Stretched to the full column height it had
@@ -150,7 +150,7 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
     display: none;
   }
 
-  /* ------------------------------- Рубрика ---------------------------------- */
+  /* -------------------------------- Rubric ---------------------------------- */
   .story-eyebrow {
     display: flex;
     align-items: baseline;
@@ -178,7 +178,7 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
     color: var(--meta-dot);
   }
 
-  /* ------------------------------- Заголовок -------------------------------- */
+  /* ------------------------------- Headline --------------------------------- */
   .story-title {
     /* The gap between the headline block and the body is the one place the
        hierarchy is allowed to be loud, now that the type sizes are not. It
@@ -196,7 +196,7 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
     font-weight: 800;
   }
 
-  /* Плавная смена поста (.is-updating ставит корень на время перерисовки). */
+  /* Smooth post change (.is-updating is set on the root during a repaint). */
   .story-title,
   .story-copy,
   .story-eyebrow {
@@ -215,7 +215,7 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
     transition: none;
   }
 
-  /* ----------------------------- Текст поста -------------------------------- */
+  /* ------------------------------- Post body -------------------------------- */
   .story-copy {
     display: block;
     color: var(--text-main);
@@ -261,7 +261,7 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
     margin-bottom: 0;
   }
 
-  /* Заголовок — h1 внутри панели: вернуть его отступ поверх правила выше. */
+  /* The headline is an h1 inside the panel: restore its margin over the rule above. */
   .story-panel > h1.story-title {
     /* The gap between the headline block and the body is the one place the
        hierarchy is allowed to be loud, now that the type sizes are not. It
@@ -309,13 +309,13 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
   }
 
 
-  /* Примечание: в старом CSS был блок «компактный десктоп»
-     (max-height: 800px) с уменьшенной типографикой панели, но он никогда
-     не применялся — его перебивал порядок @import. При миграции сохранено
-     фактическое поведение; если захочешь компактный режим — добавь здесь
-     @media (max-height: 800px) and (min-width: 1121px) осознанно. */
+  /* Note: the old CSS had a "compact desktop" block (max-height: 800px) that
+     shrank the panel's typography, but it never applied — @import order
+     overrode it. The migration kept the actual behaviour; if a compact mode is
+     wanted, add @media (max-height: 800px) and (min-width: 1121px) here
+     deliberately. */
 
-  /* ---- Планшет (≤1120px): панель под сценой ---- */
+  /* ---- Tablet (<=1120px): the panel sits below the stage ---- */
   @media (max-width: 1120px) {
     .story-context {
       order: 2;
@@ -327,7 +327,7 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
     }
   }
 
-  /* ---- Телефон (≤760px): панель = выезжающий «лист» поверх сцены ---- */
+  /* ---- Phone (<=760px): the panel becomes a sheet sliding over the stage ---- */
   @media (max-width: 760px) {
     /* A bottom sheet, the way every mobile OS does one: pinned to the bottom
        edge, full width, rounded only at the top, sliding up from below.
@@ -367,9 +367,10 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
       overflow-x: hidden;
       overflow-y: auto;
       overscroll-behavior: contain;
-      /* visibility, а не только opacity: скрывает панель и от скринридеров, и
-         от Tab, пока лист закрыт. Переход по visibility задержан на время
-         ухода вниз, иначе панель пропала бы мгновенно, без анимации. */
+      /* visibility, not opacity alone: this hides the panel from screen readers
+         and from Tab while the sheet is closed. The visibility transition is
+         delayed for the slide-out, or the panel would vanish instantly with no
+         animation. */
       visibility: hidden;
       pointer-events: none;
       transform: translateY(100%);
@@ -426,7 +427,7 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
       overflow: hidden;
     }
 
-    /* На мобильном заголовок уже показан на сцене — в листе прячем. */
+    /* On mobile the headline is already on the stage, so hide it in the sheet. */
     .story-context [data-story-title] {
       display: none;
     }

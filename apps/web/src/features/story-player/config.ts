@@ -1,11 +1,12 @@
 /* =============================================================================
- * КОНСТАНТЫ И КОНФИГИ ПЛЕЕРА
+ * PLAYER CONSTANTS AND CONFIG
  * -----------------------------------------------------------------------------
- * Что здесь: брейкпоинт «десктоп», тайминги перелистывания.
- * Новую константу («магическое число») — сюда с комментарием, не в компонент.
+ * What lives here: the "desktop" breakpoint, the advance timings.
+ * A new constant (a "magic number") goes here with a comment, not into a
+ * component.
  * ========================================================================== */
 
-/** Сколько показывается пост без видео до автоперехода (мс). */
+/** How long a post without video is shown before advancing (ms). */
 export const storyIntervalMs = 8500;
 
 /** Vertical swipe distance that counts as "next post" (px), and the mouse

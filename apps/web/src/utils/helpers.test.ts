@@ -1,13 +1,14 @@
 import { describe, expect, it } from "bun:test";
+import { stripLeadingEmojis } from "../../../backend/src/content/text.js";
 import { formatDate } from "./dates";
 import { semanticPostHtml } from "./html";
 import { responsiveImageSrcSet } from "./media";
 import { getSmartBadge } from "./taxonomy";
-import { excerptAfterTitle, removeLeadingEmoji } from "./text";
+import { excerptAfterTitle } from "./text";
 
 describe("focused web helpers", () => {
   it("removes a leading flag emoji from a post title", () => {
-    expect(removeLeadingEmoji("🇷🇺 Текст")).toBe("Текст");
+    expect(stripLeadingEmojis("🇷🇺 Текст")).toBe("Текст");
   });
 
   it("extracts the body after a post title", () => {

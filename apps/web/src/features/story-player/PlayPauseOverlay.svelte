@@ -50,7 +50,7 @@ let { paused, overlayTick }: { paused: boolean; overlayTick: number } = $props()
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
   }
 
-  /* Пауза: две вертикальные полосы. */
+  /* Paused: two vertical bars. */
   .play-pause-icon.is-paused::before,
   .play-pause-icon.is-paused::after {
     content: "";
@@ -68,7 +68,7 @@ let { paused, overlayTick }: { paused: boolean; overlayTick: number } = $props()
     right: 23px;
   }
 
-  /* Плей: треугольник. */
+  /* Playing: a triangle. */
   .play-pause-icon.is-playing::before {
     content: "";
     width: 0;

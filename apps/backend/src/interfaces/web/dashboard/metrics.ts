@@ -4,7 +4,7 @@ import { formatMetricValue } from "./format.js";
 import { getTargetUrl } from "./target-url.js";
 import type { DashboardMetricName, PipelinePost } from "./types.js";
 
-export const DASHBOARD_METRICS = ["views", "likes", "replies", "reposts"] as const satisfies readonly DashboardMetricName[];
+const DASHBOARD_METRICS = ["views", "likes", "replies", "reposts"] as const satisfies readonly DashboardMetricName[];
 
 function getTargetStatus(post: PipelinePost, target: string): string | null {
   const record = post.targets?.[target];
@@ -41,7 +41,7 @@ function hasTargetMetric(post: PipelinePost, target: string, metricName: TargetM
   return metric?.value !== undefined && metric?.value !== null;
 }
 
-export function emptyTotals(): Record<DashboardMetricName, number> {
+function emptyTotals(): Record<DashboardMetricName, number> {
   return { views: 0, likes: 0, replies: 0, reposts: 0 };
 }
 
