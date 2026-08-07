@@ -62,7 +62,10 @@ command it prints.
 
 Production is `ssh tw-nl`, containers `alexgetman-backend` and `maru-backend`, and direct execution
 needs `docker exec -u bun <container> bun /app/ops/cli.js <command>` because the entrypoint starts as
-root. For a missing publication start with `audit`; it covers both the text and video pipelines.
+root. For a missing publication start with `audit`; it covers both the text and video pipelines. When the
+complaint is "post X did not go to Y", `recent` is the whole diagnosis: it names the last posts by
+headline, their targets, and the targets each one is missing — then `retry --ref <ref> --target <y>`.
+`find --query "text"` resolves a ref when the post is older. Never open the production database by hand.
 Get CLI output before reading source for production state.
 
 **Never run a mutation without an explicit request** — `backup`, `restore`, `--apply` variants,

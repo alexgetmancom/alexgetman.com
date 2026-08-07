@@ -33,6 +33,13 @@ const OPERATIONS_GUIDE_COMMANDS: readonly OperationsGuideCommand[] = [
   { name: "usage", usage: "usage [--days N] [--unused-days N] [--db PATH]", mutates: false },
   { name: "doctor", usage: "doctor", mutates: false },
   { name: "capability-record", usage: "capability-record --test T01 --message-id 123 [--notes TEXT]", mutates: true },
+  {
+    name: "recent",
+    usage: "recent [--limit N]",
+    mutates: false,
+    notes: "start here for a delivery gap: recent posts, their targets, and the targets each one is missing",
+  },
+  { name: "find", usage: 'find --query "Astra"', mutates: false, notes: "resolves a post ref from its text" },
   { name: "verify", usage: "verify --ref post:1", mutates: false },
   { name: "timeline", usage: "timeline --ref post:1", mutates: false },
   { name: "media-status", usage: "media-status", mutates: false },

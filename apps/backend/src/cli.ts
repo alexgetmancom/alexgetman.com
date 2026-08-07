@@ -20,6 +20,7 @@ import {
   withMaintenanceLock,
 } from "./operations/maintenance.js";
 import { diagnoseMediaProcessor, mediaJobReport, mediaProcessorStatus, reprocessPostMedia } from "./operations/media-processor.js";
+import { findPublication, formatPublicationMatches, formatRecentPublications, recentPublications } from "./operations/recent.js";
 import { createOperationsService } from "./operations/service.js";
 import { backfillSiteImageMedia } from "./operations/site-media-backfill.js";
 import { deduplicateSiteMedia } from "./operations/site-media-deduplicate.js";
@@ -88,6 +89,8 @@ ${operationsGuideUsage()}
   usage [--days N] [--unused-days N] [--db PATH]
   doctor
   capability-record --test T01 --message-id 123 [--notes TEXT]
+  recent [--limit N] [--json]
+  find --query "Astra" [--json]
   verify --ref post:1
   timeline --ref post:1
   media-status
@@ -252,6 +255,12 @@ async function main(): Promise<void> {
         args.values.get("notes"),
       );
       console.log(JSON.stringify({ ok: true, status }, null, 2));
+    } else if (args.command === "recent") {
+      const report = recentPublications(backendDb, Number(args.values.get("limit") ?? 5));
+      console.log(args.flags.has("json") ? JSON.stringify(report, null, 2) : formatRecentPublications(report));
+    } else if (args.command === "find") {
+      const report = findPublication(backendDb, required(args, "query"));
+      console.log(args.flags.has("json") ? JSON.stringify(report, null, 2) : formatPublicationMatches(report));
     } else if (args.command === "verify") console.log(JSON.stringify(await verifyPostTargets(backendDb, required(args, "ref")), null, 2));
     else if (args.command === "timeline") console.log(JSON.stringify(publicationTimeline(backendDb, required(args, "ref")), null, 2));
     else if (args.command === "media-status") console.log(JSON.stringify(await mediaProcessorStatus(config), null, 2));
