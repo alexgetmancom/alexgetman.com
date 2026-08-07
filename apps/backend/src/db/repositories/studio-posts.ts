@@ -9,6 +9,7 @@ import type {
 } from "../../application/ports.js";
 import { publicationRef } from "../../application/publication-ref.js";
 import { jsonObject } from "../../json.js";
+import { requeuedPublishJobColumns } from "../../publishing/job-policy.js";
 import { localizeTargetPayload } from "../../publishing/payload.js";
 import { siteReasonForTarget, siteTargetForReason } from "../../publishing/targets.js";
 import {
@@ -217,18 +218,7 @@ export function createStudioPostStore(db: BackendDatabase): StudioPostStore {
                   target,
                 );
                 tx.update(publishJobs)
-                  .set({
-                    status: "queued",
-                    attemptCount: 0,
-                    publishAt: now,
-                    nextAttemptAt: null,
-                    lockedBy: null,
-                    lockedAt: null,
-                    currentPhase: null,
-                    payloadJson: payload,
-                    lastError: null,
-                    updatedAt: now,
-                  })
+                  .set(requeuedPublishJobColumns(payload, now))
                   .where(and(eq(publishJobs.jobId, row.jobId), inArray(publishJobs.status, ["failed", "verification_required"])))
                   .run();
                 upsertPostTarget(tx, postId, target, now);

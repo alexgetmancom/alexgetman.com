@@ -272,4 +272,71 @@ describe("command center actions", () => {
       backendDb.close();
     }
   });
+  it("refuses to requeue a target a worker is still publishing", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      backendDb.db.insert(publications).values({ postId: 61, status: "published", createdAt: now, updatedAt: now }).run();
+      backendDb.db
+        .insert(publicationSources)
+        .values({ postId: 61, itemJson: { text: "RU", text_en: "EN" }, createdAt: now, updatedAt: now })
+        .run();
+      const jobId = enqueuePublishJobTx(backendDb.db, {
+        postId: 61,
+        postKey: "post:61",
+        messageId: 61,
+        target: "threads_en",
+        payload: { text: "RU", text_en: "EN" },
+      });
+      // Mid-flight: a worker holds the lock and has already reached the provider.
+      backendDb.db
+        .update(publishJobs)
+        .set({ status: "publishing", lockedBy: "worker-1", lockedAt: now, currentPhase: "provider.publish" })
+        .where(eq(publishJobs.jobId, jobId))
+        .run();
+
+      const result = await runOperationCommand(backendDb, { action: "retry", ref: "post:61", target: "threads_en" });
+
+      expect(result).toMatchObject({ ok: false, results: [{ target: "threads_en", outcome: "publishing" }] });
+      // Untouched: stealing the lock would make the worker discard a publication
+      // that already went out, and the next claim would send it again.
+      const job = backendDb.db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get();
+      expect(job).toMatchObject({ status: "publishing", lockedBy: "worker-1" });
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("clears the previous attempt's phase when it requeues a failed target", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      backendDb.db.insert(publications).values({ postId: 62, status: "published", createdAt: now, updatedAt: now }).run();
+      backendDb.db
+        .insert(publicationSources)
+        .values({ postId: 62, itemJson: { text: "RU", text_en: "EN" }, createdAt: now, updatedAt: now })
+        .run();
+      const jobId = enqueuePublishJobTx(backendDb.db, {
+        postId: 62,
+        postKey: "post:62",
+        messageId: 62,
+        target: "threads_en",
+        payload: { text: "RU", text_en: "EN" },
+      });
+      backendDb.db
+        .update(publishJobs)
+        .set({ status: "failed", currentPhase: "provider.publish", lastError: "boom" })
+        .where(eq(publishJobs.jobId, jobId))
+        .run();
+
+      await runOperationCommand(backendDb, { action: "retry", ref: "post:62", target: "threads_en" });
+
+      // A leftover phase would make recoverStalePublishJobs treat the next lost
+      // lock as "the provider may already have run" and demand manual verification.
+      const job = backendDb.db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get();
+      expect(job).toMatchObject({ status: "queued", currentPhase: null, lastError: null, lockedBy: null });
+    } finally {
+      backendDb.close();
+    }
+  });
 });

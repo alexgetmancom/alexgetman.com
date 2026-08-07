@@ -41,7 +41,6 @@ export type ClaimedPublishJob = {
 export function workerId(prefix = "backend"): string {
   return `${prefix}:${os.hostname()}:${process.pid}`;
 }
-
 export function claimDuePublishJobs(
   backendDb: BackendDb,
   limit: number,
@@ -66,7 +65,10 @@ export function claimDuePublishJobs(
     for (const row of rows) {
       const locked = tx
         .update(publishJobs)
-        .set({ status: "publishing", lockedBy: worker, lockedAt: now, updatedAt: now })
+        // currentPhase belongs to the attempt, not to the job: a new claim starts
+        // without one so recoverStalePublishJobs can never read a phase left by
+        // whoever last touched the row.
+        .set({ status: "publishing", lockedBy: worker, lockedAt: now, currentPhase: null, updatedAt: now })
         .where(and(eq(publishJobs.jobId, row.jobId), eq(publishJobs.status, "queued")))
         .returning({ jobId: publishJobs.jobId })
         .get();

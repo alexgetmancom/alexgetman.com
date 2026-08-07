@@ -5,6 +5,7 @@ import { postTargets, publications, publishJobs } from "../../db/schema.js";
 import { removePublishedTargets } from "../../delivery/external-removals.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { jsonObject } from "../../json.js";
+import { requeuedPublishJobColumns } from "../../publishing/job-policy.js";
 import { localizeTargetPayload } from "../../publishing/payload.js";
 import { type ResolvedPublicationRef, sourcePayload } from "../publication-ref.js";
 
@@ -52,7 +53,7 @@ function requeuePublication(backendDb: BackendDb, ref: ResolvedPublicationRef, t
   // Per-target outcome, not a flat name list: a target that already had a queued
   // job keeps its existing payload, so reporting it as "requeued" would tell the
   // operator the payload was regenerated from the durable source when it wasn't.
-  const results: Array<{ target: string; outcome: "requeued" | "already_queued" }> = [];
+  const results: Array<{ target: string; outcome: "requeued" | "already_queued" | "publishing" }> = [];
   unsafeDb(backendDb).db.transaction((tx) => {
     for (const [targetId, row] of latest) {
       const existing = tx
@@ -66,22 +67,19 @@ function requeuePublication(backendDb: BackendDb, ref: ResolvedPublicationRef, t
           ),
         )
         .get();
+      // A job a worker currently holds is off limits. Flipping it to queued
+      // clears the lock the worker checks before recording its result, so the
+      // provider call it is in the middle of would go out, be discarded as a
+      // lost lock, and then be published a second time by the next claim. A
+      // worker that actually died is recovered by recoverStalePublishJobs once
+      // its lock ages out; there is nothing for an operator to rescue here.
+      if (!existing && row.status === "publishing") {
+        results.push({ target: targetId, outcome: "publishing" });
+        continue;
+      }
       if (!existing) {
         const payload = localizeTargetPayload(Object.keys(source).length > 0 ? source : jsonObject(row.payloadJson), targetId);
-        tx.update(publishJobs)
-          .set({
-            status: "queued",
-            attemptCount: 0,
-            publishAt: now,
-            nextAttemptAt: null,
-            lockedBy: null,
-            lockedAt: null,
-            payloadJson: payload,
-            lastError: null,
-            updatedAt: now,
-          })
-          .where(eq(publishJobs.jobId, row.jobId))
-          .run();
+        tx.update(publishJobs).set(requeuedPublishJobColumns(payload, now)).where(eq(publishJobs.jobId, row.jobId)).run();
       }
       tx.insert(postTargets)
         .values({
@@ -104,7 +102,9 @@ function requeuePublication(backendDb: BackendDb, ref: ResolvedPublicationRef, t
       tx.update(publications).set({ status: "scheduled", updatedAt: now }).where(eq(publications.postId, ref.postId)).run();
   });
   return {
-    ok: true,
+    // Every target still in a worker's hands means nothing was requeued, and an
+    // operator reading `ok: true` off `ops republish` would believe otherwise.
+    ok: results.some((row) => row.outcome !== "publishing"),
     post_id: ref.postId,
     post_key: ref.postKey,
     message_id: ref.messageId,

@@ -137,23 +137,7 @@ export function pipelineStatusPayload(
     .orderBy(desc(siteJobs.updatedAt), desc(siteJobs.jobId))
     .limit(25)
     .all();
-  const recentMetrics = unsafeDb(backendDb)
-    .db.select({
-      postKey: postMetrics.postKey,
-      target: postMetrics.target,
-      metricName: postMetrics.metricName,
-      value: postMetrics.value,
-      source: postMetrics.source,
-      sampledAt: postMetrics.sampledAt,
-      error: postMetrics.error,
-      messageId: posts.messageId,
-      postUrl: sql<string | null>`coalesce(${posts.siteEnPath}, ${posts.siteRuPath}, ${posts.telegramUrl})`,
-    })
-    .from(postMetrics)
-    .leftJoin(posts, eq(posts.postKey, postMetrics.postKey))
-    .orderBy(desc(postMetrics.sampledAt), asc(postMetrics.postKey), asc(postMetrics.target), asc(postMetrics.metricName))
-    .limit(100)
-    .all();
+  const recentMetrics = recentPostMetrics(backendDb);
   const now = new Date().toISOString();
   const [metricScheduleSummary] = unsafeDb(backendDb)
     .db.select({
@@ -496,6 +480,29 @@ function fetchMetricSamples(
 }
 
 /** Stable revision for the pipeline read model. It must not be request time. */
+/** The newest metric samples with the post they belong to. Both the pipeline
+ * read model and the Command Center payload report this same list, and it was
+ * written out twice, identically. */
+export function recentPostMetrics(backendDb: BackendDb) {
+  return unsafeDb(backendDb)
+    .db.select({
+      postKey: postMetrics.postKey,
+      target: postMetrics.target,
+      metricName: postMetrics.metricName,
+      value: postMetrics.value,
+      source: postMetrics.source,
+      sampledAt: postMetrics.sampledAt,
+      error: postMetrics.error,
+      messageId: posts.messageId,
+      postUrl: sql<string | null>`coalesce(${posts.siteEnPath}, ${posts.siteRuPath}, ${posts.telegramUrl})`,
+    })
+    .from(postMetrics)
+    .leftJoin(posts, eq(posts.postKey, postMetrics.postKey))
+    .orderBy(desc(postMetrics.sampledAt), asc(postMetrics.postKey), asc(postMetrics.target), asc(postMetrics.metricName))
+    .limit(100)
+    .all();
+}
+
 export function pipelineUpdatedAt(backendDb: BackendDb): string | null {
   const row = unsafeDb(backendDb)
     .sqlite.prepare(

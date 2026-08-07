@@ -14,7 +14,7 @@ import {
 } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { capabilityReport } from "../observability/capabilities.js";
-import { pipelineUpdatedAt } from "./read-model.js";
+import { pipelineUpdatedAt, recentPostMetrics } from "./read-model.js";
 
 export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb) {
   const queue = unsafeDb(backendDb)
@@ -119,23 +119,7 @@ export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb
     .orderBy(desc(opsActions.createdAt), desc(opsActions.actionId))
     .limit(100)
     .all();
-  const recentMetrics = unsafeDb(backendDb)
-    .db.select({
-      postKey: postMetrics.postKey,
-      target: postMetrics.target,
-      metricName: postMetrics.metricName,
-      value: postMetrics.value,
-      source: postMetrics.source,
-      sampledAt: postMetrics.sampledAt,
-      error: postMetrics.error,
-      messageId: posts.messageId,
-      postUrl: sql<string | null>`coalesce(${posts.siteEnPath}, ${posts.siteRuPath}, ${posts.telegramUrl})`,
-    })
-    .from(postMetrics)
-    .leftJoin(posts, eq(posts.postKey, postMetrics.postKey))
-    .orderBy(desc(postMetrics.sampledAt), asc(postMetrics.postKey), asc(postMetrics.target), asc(postMetrics.metricName))
-    .limit(100)
-    .all();
+  const recentMetrics = recentPostMetrics(backendDb);
   const fingerprint = commandCenterFingerprint(backendDb);
   return {
     generatedAt: new Date().toISOString(),
