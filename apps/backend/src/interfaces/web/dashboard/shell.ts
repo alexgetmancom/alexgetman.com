@@ -1,8 +1,9 @@
+import type { StudioLocale } from "../../../foundation/locale.js";
 import { DASHBOARD_THEME_BOOT_SCRIPT, DASHBOARD_THEME_CSS, DASHBOARD_THEME_TOGGLE_SCRIPT } from "./theme.js";
 
-export function renderDashboardShell(body: string): string {
+export function renderDashboardShell(body: string, locale: StudioLocale): string {
   return `<!doctype html>
-<html lang="ru">
+<html lang="${locale}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -89,9 +90,10 @@ export function renderDashboardShell(body: string): string {
     
     .metric-link { text-decoration: none; }
     .danger { color:var(--danger); font-weight:700; }
-    .studio-locale { display:flex; justify-content:flex-end; gap:6px; margin:0 0 6px; }
-    .studio-locale a { border:1px solid var(--border); border-radius:14px; padding:3px 9px; font-size:13px; text-decoration:none; }
-    .studio-locale a.active { background:var(--accent-strong); border-color:var(--accent-strong); color:var(--accent-contrast); }
+    .dashboard-locale { display:inline-flex; gap:4px; }
+    .studio-toolbar { display:flex; justify-content:flex-end; margin:0 0 6px; }
+    .dashboard-locale a { border:1px solid var(--border); border-radius:14px; padding:3px 8px; font-size:12px; text-decoration:none; }
+    .dashboard-locale a.active { background:var(--accent-strong); border-color:var(--accent-strong); color:var(--accent-contrast); }
     .studio-analytics { white-space:normal; line-height:1.6; }
     .attention-list, .notification-list { list-style:none; margin:0; padding:0; }
     .attention-list li { padding:6px 0; border-bottom:1px solid var(--surface-raised); }
@@ -301,7 +303,7 @@ export function renderDashboardShell(body: string): string {
     .overview-platforms__legend b { color:var(--text-main); font-weight:500; }
     /* Keep the control below the platform legend on the same baseline in both
        columns, even when one content type has fewer than four destinations. */
-    /* Two columns under the bar, читаются как его половины: RU слева, EN справа. */
+    /* Two columns under the bar, read as its halves: RU on the left, EN on the right. */
     /* Height comes from the rows actually drawn, not from a fixed reserve: the
        renderer sets --platform-rows to the tallest column of either half, so the
        two halves stay level and neither pads out empty space. */
@@ -320,7 +322,6 @@ export function renderDashboardShell(body: string): string {
     .overview-platform__name b { flex:none; padding:1px 5px; border:1px solid var(--border-soft); border-radius:4px; color:var(--text-muted); font-size:11px; font-weight:500; letter-spacing:.08em; }
     /* An icon, not a text badge — same slot the publication tag held before,
        drawn in the muted colour of the row so it reads as chrome, not brand. */
-    .track-publication__tag { display:inline-flex; flex:none; width:16px; height:16px; color:var(--text-muted); }
     .overview-platform > strong { color:var(--text-header); font-size:16px; font-weight:500; text-align:right; }
     .overview-platform__delta { min-width:48px; color:var(--text-muted); font-size:13px; text-align:right; }
     .overview-platform__delta--up { color:var(--success); }
@@ -343,15 +344,6 @@ export function renderDashboardShell(body: string): string {
     .overview-track--video .overview-publications__list .post-detail__summary { grid-template-columns:minmax(0,1fr) 62px 58px 54px 52px 44px; }
     .overview-publications__list .post-detail__title { font-size:15px; font-weight:500; }
     .overview-publications--expanded .post-detail--more { display:block; }
-    .track-publication { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:4px 12px; align-items:baseline; padding:14px 0; border-bottom:1px solid var(--border-soft); color:var(--text-main); text-decoration:none; }
-    .track-publication:hover { background:var(--surface-raised); }
-    .track-publication__title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:16px; }
-    .track-publication__stats { display:flex; flex-direction:column; align-items:flex-end; color:var(--text-header); font-size:17px; font-variant-numeric:tabular-nums; white-space:nowrap; }
-    .track-publication__stats b { font-weight:500; }
-    .track-publication__stats small { color:var(--text-muted); font-size:12px; font-weight:400; }
-    .track-publication__meta { grid-column:2 / 3; color:var(--text-secondary); font-size:13px; }
-    .track-publication__more { display:block; padding-top:16px; color:var(--text-secondary); font-size:14px; text-decoration:none; }
-    .track-publication__more:hover { color:var(--text-main); }
     .overview-chart-tooltip { display:block; }
     .overview-chart-tooltip[hidden] { display:none; }
     /* Compact controls, sized to the reference bar: 2px between the period
@@ -394,9 +386,6 @@ export function renderDashboardShell(body: string): string {
       .overview-hero-card__pace { text-align:left; }
       .overview-platform { grid-template-columns:16px 1fr; }
       .overview-platform__delta { display:none; }
-      .track-publication { grid-template-columns:auto minmax(0,1fr); }
-      .track-publication__stats { grid-column:2; grid-row:1 / span 2; }
-      .track-publication__meta { grid-column:2; }
       .overview-publications__list .post-detail__summary { grid-template-columns:minmax(0,1fr) auto; }
     }
   </style>

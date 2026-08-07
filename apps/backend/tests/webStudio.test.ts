@@ -19,7 +19,7 @@ describe("Command Center Studio tab", () => {
 
       const anonymous = await app(new Request("http://localhost/command-center?tab=studio"));
       expect(anonymous.status).toBe(200);
-      expect(await anonymous.text()).toContain("Command Center token");
+      expect(await anonymous.text()).toContain("Токен Command Center");
 
       recordDomainEvent(backendDb.events, {
         ref: null,

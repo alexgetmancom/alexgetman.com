@@ -1,6 +1,7 @@
 /** Single source for zone-aware date math and display, driven by the
  * `timezone`/`timezone_label` configured in studio.yaml (see foundation/config.ts).
  * Every Studio surface that shows or slots a schedule time reads from here. */
+import { STUDIO_LOCALE_TAGS, type StudioLocale } from "./locale.js";
 
 /** UTC-minus-local offset in ms for `date` in `timeZone`, read from the actual
  * civil-time offset rather than a fixed constant so it holds for zones that
@@ -21,9 +22,19 @@ export function isValidTimeZone(timeZone: string): boolean {
   }
 }
 
-export function timeZoneOffsetLabel(timeZone: string, locale: "ru" | "en" = "en"): string {
+/** Abbreviated month name, from ICU rather than a hand-kept array: the array
+ * needed a new row per language, this needs nothing. The trailing dot some
+ * locales add ("янв.") is dropped so the label sits inside a compact chip. */
+export function monthShortName(locale: StudioLocale, month: number, upper = false): string {
+  const name = new Intl.DateTimeFormat(STUDIO_LOCALE_TAGS[locale], { month: "short", timeZone: "UTC" })
+    .format(new Date(Date.UTC(2001, month - 1, 1)))
+    .replace(/\.$/, "");
+  return upper ? name.toUpperCase() : name;
+}
+
+export function timeZoneOffsetLabel(timeZone: string, locale: StudioLocale = "en"): string {
   return (
-    new Intl.DateTimeFormat(locale === "ru" ? "ru-RU" : "en-GB", {
+    new Intl.DateTimeFormat(STUDIO_LOCALE_TAGS[locale], {
       timeZone,
       timeZoneName: "shortOffset",
     })

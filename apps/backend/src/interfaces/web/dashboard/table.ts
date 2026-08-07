@@ -1,4 +1,6 @@
 import { escapeHtml } from "../../../foundation/html.js";
+import { t } from "../../../foundation/i18n/index.js";
+import type { StudioLocale } from "../../../foundation/locale.js";
 import { ORDERED_TARGETS, PLATFORM_ICONS, platformKey, VIDEO_PLATFORM_ICON_KEYS } from "./assets.js";
 import { formatMetricValue, shortPipelineText } from "./format.js";
 import { getTargetMetric, postMetricTotals } from "./metrics.js";
@@ -6,7 +8,6 @@ import { getTargetUrl } from "./target-url.js";
 import type { PipelinePost } from "./types.js";
 import type { VideoContentItem } from "./video-overview.js";
 
-const NO_POSTS = "За выбранный период публикаций нет";
 const DETAIL_BATCH_SIZE = 10;
 
 export type PublicationDetailsResult = {
@@ -18,94 +19,46 @@ export type PublicationDetailsResult = {
 
 export type TrackPublicationListOptions = {
   limit?: number;
-  /** Where "показать все N" goes. Omitted, the footer is not rendered at all. */
+  /** Where the "show all N" link goes. Omitted, the footer is not rendered at all. */
   moreUrl?: string | undefined;
 };
 
-/** Small ranked rows used by the split overview. */
-export function renderTrackPublicationList(
-  posts: PipelinePost[],
-  targetIds: string[] = ORDERED_TARGETS.map((target) => target.id),
-  videos: VideoContentItem[] = [],
-  options: TrackPublicationListOptions = {},
-): string {
-  const limit = Math.max(1, options.limit ?? 4);
-  const all = [
-    ...posts.map((post) => {
-      const metrics = total(post, targetIds);
-      const target = primaryTarget(post, targetIds);
-      return {
-        date: post.date ?? "",
-        views: metrics.views,
-        reactions: reactions(metrics),
-        replies: metrics.replies,
-        title: shortPipelineText(post.text_ru || post.text_en || "Без текста", 14),
-        tag: publicationTag(target?.id ?? "", target?.locale ?? null),
-        icon: PLATFORM_ICONS[platformKey(target?.id ?? "")] ?? "",
-        lifetimeViews: metrics.views,
-        url: bestPostUrl(post, targetIds),
-      };
-    }),
-    ...videos.map((video) => ({
-      date: video.publishedAt ?? "",
-      views: video.views,
-      reactions: video.reactions,
-      replies: video.replies,
-      title: shortPipelineText(video.title, 14),
-      tag: publicationTag(video.destinations[0]?.target ?? "", video.destinations[0]?.locale ?? null),
-      icon: PLATFORM_ICONS[VIDEO_PLATFORM_ICON_KEYS[video.destinations[0]?.target ?? ""] ?? ""] ?? "",
-      lifetimeViews: video.lifetimeViews,
-      url: video.url,
-    })),
-  ].sort((left, right) => right.views - left.views || right.date.localeCompare(left.date));
-  const rows = all.slice(0, limit);
-
-  if (!rows.length) return '<p class="empty-state">За выбранный период публикаций нет</p>';
-
-  const more =
-    options.moreUrl && all.length > rows.length
-      ? `<a class="track-publication__more" href="${escapeHtml(options.moreUrl)}">показать все ${all.length}</a>`
-      : "";
-
-  return `${rows
-    .map((row) => {
-      const content = `<span class="track-publication__tag" title="${escapeHtml(row.tag)}">${row.icon}</span><span class="track-publication__title">${escapeHtml(row.title)}</span><span class="track-publication__stats"><b>${formatMetricValue(row.views)}</b>${row.lifetimeViews > row.views ? `<small>из ${formatMetricValue(row.lifetimeViews)}</small>` : ""}</span><span class="track-publication__meta">${formatMetricValue(row.reactions)} реакц. · ${formatMetricValue(row.replies)} отв.</span>`;
-      return row.url
-        ? `<a class="track-publication" href="${escapeHtml(row.url)}" target="_blank" rel="noopener noreferrer">${content}</a>`
-        : `<div class="track-publication">${content}</div>`;
-    })
-    .join("")}${more}`;
-}
-
 /** Thin, recent rows for the overview. */
 export function renderOverviewPublicationList(
+  locale: StudioLocale,
   posts: PipelinePost[],
   targetIds: string[] = ORDERED_TARGETS.map((target) => target.id),
   videos: VideoContentItem[] = [],
   options: TrackPublicationListOptions = {},
 ): string {
   const recent = [...publicationEntries(posts, targetIds, videos)].sort((left, right) => right.date.localeCompare(left.date));
-  if (!recent.length) return empty(NO_POSTS);
-  return `<div class="overview-publications__list">${renderRecentPublicationList(recent, Math.max(1, options.limit ?? 4), options.moreUrl)}</div>`;
+  if (!recent.length) return empty(t(locale, "cc.publication.no-posts"));
+  return `<div class="overview-publications__list">${renderRecentPublicationList(recent, Math.max(1, options.limit ?? 4), options.moreUrl, locale)}</div>`;
 }
 
-function renderRecentPublicationList(entries: PublicationEntry[], limit: number, moreUrl?: string): string {
+function renderRecentPublicationList(
+  entries: PublicationEntry[],
+  limit: number,
+  moreUrl: string | undefined,
+  locale: StudioLocale,
+): string {
   const lazy = Boolean(moreUrl);
   const rows = lazy
     ? entries
         .slice(0, limit)
-        .map((entry) => entry.recent(false))
+        .map((entry) => entry.recent(false, locale))
         .join("")
-    : entries.map((entry, index) => entry.recent(index >= limit)).join("");
+    : entries.map((entry, index) => entry.recent(index >= limit, locale)).join("");
   if (entries.length <= limit) return rows;
   const button = lazy
-    ? `<button class="show-more-posts" type="button" data-more-url="${escapeHtml(moreUrl ?? "")}" data-more-offset="${limit}">Показать ещё <span>${entries.length - limit}</span></button>`
-    : `<button class="show-more-posts" type="button">Показать ещё <span>${entries.length - limit}</span></button>`;
+    ? `<button class="show-more-posts" type="button" data-more-url="${escapeHtml(moreUrl ?? "")}" data-more-offset="${limit}">${t(locale, "cc.publication.show-more")} <span>${entries.length - limit}</span></button>`
+    : `<button class="show-more-posts" type="button">${t(locale, "cc.publication.show-more")} <span>${entries.length - limit}</span></button>`;
   return `${rows}${button}`;
 }
 
 /** Renders only a bounded fragment for the dashboard's read-only detail loader. */
 export function renderPublicationDetails(
+  locale: StudioLocale,
   posts: PipelinePost[],
   targetIds: string[] = ORDERED_TARGETS.map((target) => target.id),
   videos: VideoContentItem[] = [],
@@ -117,7 +70,7 @@ export function renderPublicationDetails(
   const safeLimit = Math.max(1, Math.min(DETAIL_BATCH_SIZE, Math.floor(limit)));
   const selected = entries.slice(safeOffset, safeOffset + safeLimit);
   return {
-    html: selected.map((entry) => entry.recent(false)).join(""),
+    html: selected.map((entry) => entry.recent(false, locale)).join(""),
     total: entries.length,
     loaded: selected.length,
     remaining: Math.max(0, entries.length - safeOffset - selected.length),
@@ -126,18 +79,18 @@ export function renderPublicationDetails(
 
 type PublicationEntry = {
   date: string;
-  recent: (hidden: boolean) => string;
+  recent: (hidden: boolean, locale: StudioLocale) => string;
 };
 
 function publicationEntries(posts: PipelinePost[], targetIds: string[], videos: VideoContentItem[]): PublicationEntry[] {
   return [
     ...posts.map((post) => ({
       date: post.date ?? "",
-      recent: (hidden: boolean) => renderRecentPost(post, targetIds, hidden),
+      recent: (hidden: boolean, locale: StudioLocale) => renderRecentPost(post, targetIds, hidden, locale),
     })),
     ...videos.map((video) => ({
       date: video.publishedAt ?? "",
-      recent: (hidden: boolean) => renderRecentVideo(video, hidden),
+      recent: (hidden: boolean, locale: StudioLocale) => renderRecentVideo(video, hidden, locale),
     })),
   ];
 }
@@ -166,7 +119,7 @@ function videoPublicationPlatforms(video: VideoContentItem): PublicationPlatform
   }));
 }
 
-function publicationPlatformSummary(platforms: PublicationPlatform[]): string {
+function publicationPlatformSummary(platforms: PublicationPlatform[], locale: StudioLocale): string {
   if (!platforms.length) return "";
   if (platforms.length === 1) {
     const platform = platforms[0];
@@ -198,16 +151,18 @@ function publicationPlatformSummary(platforms: PublicationPlatform[]): string {
     })
     .join("");
   const labels = platforms.map((platform) => platform.name + (platform.locale ? ` ${platform.locale}` : ""));
-  const accessible = escapeHtml(`${platforms.length} площадок: ${labels.join(", ")}`);
+  const accessible = escapeHtml(`${platforms.length} ${t(locale, "cc.publication.platforms")}: ${labels.join(", ")}`);
   return `<span class="post-detail__platform-summary post-detail__platform-summary--count" tabindex="0" aria-label="${accessible}"><b class="post-detail__platform-count">${platforms.length}</b><span class="post-detail__platform-tooltip" role="tooltip" aria-hidden="true">${columns}</span></span>`;
 }
 
-function renderRecentVideo(video: VideoContentItem, hidden: boolean): string {
+function renderRecentVideo(video: VideoContentItem, hidden: boolean, locale: StudioLocale): string {
   // The same row the text side opens: a summary that reads as a column, and a
   // body that names what each destination earned.
   const extra = [
-    video.afterPeriodViews > 0 ? `+${formatMetricValue(video.afterPeriodViews)} после периода` : "",
-    video.subscribers ? `${video.subscribers > 0 ? "+" : ""}${formatMetricValue(video.subscribers)} подписки` : "",
+    video.afterPeriodViews > 0 ? t(locale, "cc.publication.after-period-views", { value: formatMetricValue(video.afterPeriodViews) }) : "",
+    video.subscribers
+      ? `${video.subscribers > 0 ? "+" : ""}${formatMetricValue(video.subscribers)} ${t(locale, "cc.publication.subscriptions")}`
+      : "",
   ]
     .filter(Boolean)
     .join(" · ");
@@ -216,60 +171,28 @@ function renderRecentVideo(video: VideoContentItem, hidden: boolean): string {
     '<summary><span class="post-detail__summary">',
     '<span class="post-detail__headline"><span class="post-detail__chevron">›</span>',
     `<span class="post-detail__title">${escapeHtml(shortPipelineText(video.title, 7))}</span></span>`,
-    `<span class="post-detail__media">${publicationPlatformSummary(videoPublicationPlatforms(video))}</span>`,
+    `<span class="post-detail__media">${publicationPlatformSummary(videoPublicationPlatforms(video), locale)}</span>`,
     // Two figures answering two questions — what the clip earned inside the
     // period, and what it is worth by now — each in its own column so the rows
     // read down as columns.
     `<span class="post-detail__metric"><span>${formatMetricValue(video.views)}</span></span>`,
-    `<span class="post-detail__metric post-detail__lifetime">${video.lifetimeViews > video.views ? `из ${formatMetricValue(video.lifetimeViews)}` : ""}</span>`,
+    `<span class="post-detail__metric post-detail__lifetime">${video.lifetimeViews > video.views ? `${t(locale, "cc.publication.of")} ${formatMetricValue(video.lifetimeViews)}` : ""}</span>`,
     `<span class="post-detail__metric"><span>${formatMetricValue(video.reactions)}</span></span>`,
     `<span class="post-detail__metric"><span>${formatMetricValue(video.replies)}</span></span>`,
     "</span></summary>",
     '<div class="post-detail__body">',
-    platformBreakdown(videoPlatformResults(video)),
+    platformBreakdown(videoPlatformResults(video), locale),
     extra
-      ? `<div class="post-detail__content"><div><span class="post-detail__label">ЗА ПРЕДЕЛАМИ ПЕРИОДА</span><p>${escapeHtml(extra)}</p></div></div>`
+      ? `<div class="post-detail__content"><div><span class="post-detail__label">${t(locale, "cc.publication.after-period")}</span><p>${escapeHtml(extra)}</p></div></div>`
       : "",
     "</div>",
     "</details>",
   ].join("");
 }
 
-function bestPostUrl(post: PipelinePost, targetIds: string[]): string | null {
-  const rankedTargets = [...targetIds].sort((left, right) => getTargetMetric(post, right, "views") - getTargetMetric(post, left, "views"));
-  for (const target of rankedTargets) {
-    const url = getTargetUrl(post, target);
-    if (url) return url;
-  }
-  return null;
-}
-
-function primaryTarget(post: PipelinePost, targetIds: string[]) {
-  return ORDERED_TARGETS.filter((target) => targetIds.includes(target.id) && targetStatus(post, target.id) === "published").sort(
-    (left, right) => getTargetMetric(post, right.id, "views") - getTargetMetric(post, left.id, "views"),
-  )[0];
-}
-
-function publicationTag(target: string, locale: string | null): string {
-  const short = target.startsWith("youtube")
-    ? "YT"
-    : target.startsWith("instagram")
-      ? "IG"
-      : target.startsWith("telegram")
-        ? "TG"
-        : target.startsWith("threads")
-          ? "TH"
-          : target.startsWith("site")
-            ? "SITE"
-            : target === "x"
-              ? "X"
-              : target.toUpperCase();
-  return `${short}${locale ? ` ${locale.toUpperCase()}` : ""}`;
-}
-
-function renderRecentPost(post: PipelinePost, targetIds: string[], hidden: boolean): string {
+function renderRecentPost(post: PipelinePost, targetIds: string[], hidden: boolean, locale: StudioLocale): string {
   const metrics = total(post, targetIds);
-  const english = post.full_text_en || post.text_en || "Без английского текста";
+  const english = post.full_text_en || post.text_en || t(locale, "cc.publication.no-english");
   const russian = post.full_text_ru || post.text_ru || "—";
   return [
     `<details class="post-detail${hidden ? " post-detail--more" : ""}">`,
@@ -278,16 +201,16 @@ function renderRecentPost(post: PipelinePost, targetIds: string[], hidden: boole
     '<span class="post-detail__chevron">›</span>',
     `<span class="post-detail__title">${escapeHtml(shortPipelineText(english, 7))}</span>`,
     "</span>",
-    `<span class="post-detail__media">${publicationPlatformSummary(textPublicationPlatforms(post, targetIds))}</span>`,
+    `<span class="post-detail__media">${publicationPlatformSummary(textPublicationPlatforms(post, targetIds), locale)}</span>`,
     `<span class="post-detail__metric"><span>${formatMetricValue(metrics.views)}</span></span>`,
     `<span class="post-detail__metric"><span>${formatMetricValue(reactions(metrics))}</span></span>`,
     `<span class="post-detail__metric"><span>${formatMetricValue(metrics.replies)}</span></span>`,
     "</span></summary>",
     '<div class="post-detail__body">',
-    platformBreakdown(textPlatformResults(post, targetIds)),
+    platformBreakdown(textPlatformResults(post, targetIds), locale),
     '<div class="post-detail__content"><div>',
-    `<span class="post-detail__label">ENGLISH</span><p>${escapeHtml(english)}</p>`,
-    `<span class="post-detail__label">RU ORIGINAL</span><p>${escapeHtml(russian)}</p>`,
+    `<span class="post-detail__label">${t(locale, "cc.publication.english")}</span><p>${escapeHtml(english)}</p>`,
+    `<span class="post-detail__label">${t(locale, "cc.publication.ru-original")}</span><p>${escapeHtml(russian)}</p>`,
     "</div>",
     "</div></div>",
     "</details>",
@@ -304,13 +227,13 @@ type PlatformResult = {
   replies: number;
 };
 
-function platformBreakdown(results: PlatformResult[]): string {
+function platformBreakdown(results: PlatformResult[], locale: StudioLocale): string {
   if (!results.length) return "";
   return [
-    '<section class="post-platforms" aria-label="Метрики по площадкам">',
-    '<span class="post-detail__label">РЕЗУЛЬТАТ ПО ПЛОЩАДКАМ</span>',
+    `<section class="post-platforms" aria-label="${t(locale, "cc.publication.by-platform")}">`,
+    `<span class="post-detail__label">${t(locale, "cc.publication.result-by-platform")}</span>`,
     '<div class="post-platforms__grid">',
-    results.map(platformMetrics).join(""),
+    results.map((result) => platformMetrics(result, locale)).join(""),
     "</div>",
     "</section>",
   ].join("");
@@ -340,13 +263,13 @@ function videoPlatformResults(video: VideoContentItem): PlatformResult[] {
   }));
 }
 
-function platformMetrics(result: PlatformResult): string {
+function platformMetrics(result: PlatformResult, locale: StudioLocale): string {
   const name = `<span class="post-platform__name">${result.icon}<b class="post-platform__locale">${escapeHtml(result.locale.toUpperCase())}</b></span>`;
   const metric = (label: string, value: number) => {
     const formatted = formatMetricValue(value);
     return `<span class="post-platform__metric" title="${label}" aria-label="${label}: ${formatted}"><b>${formatted}</b></span>`;
   };
-  const content = `${name}<span class="post-platform__metrics">${metric("Охват", result.views)}${metric("Реакции", result.reactions)}${metric("Ответы", result.replies)}</span>`;
+  const content = `${name}<span class="post-platform__metrics">${metric(t(locale, "cc.publication.reach"), result.views)}${metric(t(locale, "cc.publication.reactions"), result.reactions)}${metric(t(locale, "cc.publication.replies"), result.replies)}</span>`;
   return result.url
     ? `<a class="post-platform" href="${escapeHtml(result.url)}" target="_blank" rel="noopener noreferrer">${content}</a>`
     : `<div class="post-platform">${content}</div>`;

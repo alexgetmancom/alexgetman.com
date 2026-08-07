@@ -1,6 +1,7 @@
 import type { Context } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { t } from "../foundation/i18n/index.js";
 import { setTelegramPostProgressCard } from "../interfaces/telegram/control-cards.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { botLocale } from "./i18n.js";
@@ -14,21 +15,18 @@ export async function handleProgressCallback(ctx: Context, backendDb: BackendDb,
   const cancel = data.match(/^progress_cancel:(\d+)$/);
   const match = details ?? overview ?? cancel;
   if (!match) return false;
+  const locale = botLocale(backendDb, Number(ctx.from?.id));
   const draftId = Number(match[1]);
   if (!Number.isSafeInteger(draftId)) {
-    await ctx.answerCallbackQuery({ text: "Bad draft id" });
+    await ctx.answerCallbackQuery({ text: t(locale, "progress.bad-draft-id") });
     return true;
   }
   const actorId = Number(ctx.from?.id);
   if (cancel) {
     createStudioServices(backendDb, config).posts.cancelJobs(actorId, draftId);
-    await ctx.answerCallbackQuery({ text: "Remaining work cancelled" });
+    await ctx.answerCallbackQuery({ text: t(locale, "progress.remaining-cancelled") });
   } else await ctx.answerCallbackQuery();
-  const progress = renderPostProgress(
-    createStudioServices(backendDb, config).posts.progress(actorId, draftId),
-    botLocale(backendDb, actorId),
-    Boolean(details),
-  );
+  const progress = renderPostProgress(createStudioServices(backendDb, config).posts.progress(actorId, draftId), locale, Boolean(details));
   await ctx.editMessageText(progress.text, { parse_mode: "Markdown", reply_markup: progress.keyboard });
   const messageId = ctx.callbackQuery?.message && "message_id" in ctx.callbackQuery.message ? ctx.callbackQuery.message.message_id : null;
   if (messageId && ctx.chat?.id) setTelegramPostProgressCard(backendDb, draftId, Number(ctx.chat.id), messageId, Boolean(details));

@@ -1,4 +1,6 @@
 import { escapeHtml } from "../../../foundation/html.js";
+import { t } from "../../../foundation/i18n/index.js";
+import type { StudioLocale } from "../../../foundation/locale.js";
 import { formatMetricValue } from "./format.js";
 
 /** Compact daily bars for the editorial overview. */
@@ -17,6 +19,7 @@ export function renderOverviewSparkline(
   ariaLabel: string,
   leftLabel: string,
   rightLabel: string,
+  locale: StudioLocale,
 ): string {
   if (!points.length) return "";
 
@@ -56,8 +59,8 @@ export function renderOverviewSparkline(
       const tooltip = escapeHtml(
         [
           `${point.label} · ${formatMetricValue(value)}`,
-          fresh > 0 ? `новые ${formatMetricValue(fresh)}` : "",
-          point.partial ? "неполный день" : "",
+          fresh > 0 ? `${t(locale, "cc.overview.new")} ${formatMetricValue(fresh)}` : "",
+          point.partial ? t(locale, "cc.overview.partial-day") : "",
         ]
           .filter(Boolean)
           .join(" · "),
@@ -73,6 +76,6 @@ export function renderOverviewSparkline(
       <line class="overview-spark__average" x1="0" y1="${averageY.toFixed(2)}" x2="${width}" y2="${averageY.toFixed(2)}"/>
       ${bars}
     </svg>
-    <div class="overview-spark__footer"><span>${escapeHtml(leftLabel)}</span><span>среднее <b>${formatMetricValue(Math.round(average))}</b> · ${escapeHtml(rightLabel)} <b>${formatMetricValue(points.at(-1)?.value ?? 0)}</b></span></div>
+    <div class="overview-spark__footer"><span>${escapeHtml(leftLabel)}</span><span>${t(locale, "cc.overview.average")} <b>${formatMetricValue(Math.round(average))}</b> · ${escapeHtml(rightLabel)} <b>${formatMetricValue(points.at(-1)?.value ?? 0)}</b></span></div>
   </div>`;
 }

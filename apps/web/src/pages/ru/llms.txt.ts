@@ -1,8 +1,8 @@
 import type { APIContext } from "astro";
-import { publicLlmsResponse } from "../server/public-feed";
+import { publicLlmsResponse } from "../../server/public-feed";
 
 export const prerender = false;
 
 export function GET(context: APIContext) {
-  return publicLlmsResponse(context, "en");
+  return publicLlmsResponse(context, "ru");
 }

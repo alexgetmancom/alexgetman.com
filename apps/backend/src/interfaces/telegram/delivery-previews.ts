@@ -25,7 +25,7 @@ export async function sendTelegramDeliveryPreviews(
     try {
       await ctx.reply(...deliveryHeader(projection, locale));
       const hasVideo = projection.targets.length > 0 && projection.media.some(isVideo);
-      if (projection.targets.length) await sendProjectionContent(ctx, projection, !hasVideo);
+      if (projection.targets.length) await sendProjectionContent(ctx, projection, !hasVideo, locale);
       if (hasVideo)
         await ctx.reply(t(locale, "preview.video-ready"), {
           reply_markup: new InlineKeyboard().text(t(locale, "preview.show-video"), `delivery_preview_video:${projection.id}`),
@@ -43,8 +43,13 @@ export async function sendTelegramArchiveMedia(ctx: Context, media: Record<strin
   await sendMedia(ctx, media, "", []);
 }
 
-async function sendProjectionContent(ctx: Context, projection: DeliveryProjection, includeVideo = true): Promise<void> {
-  const metadata = projection.metadata ? formatMetadata(projection.metadata) : "";
+async function sendProjectionContent(
+  ctx: Context,
+  projection: DeliveryProjection,
+  includeVideo = true,
+  locale: StudioLocale = "en",
+): Promise<void> {
+  const metadata = projection.metadata ? formatMetadata(projection.metadata, locale) : "";
   const text = [projection.text, metadata].filter(Boolean).join("\n\n");
   // Metadata is preview-only and has no source entities; retain formatting only
   // when the projection contains its original post text unchanged.
@@ -140,7 +145,7 @@ function deliveryHeader(
   projection: DeliveryProjection,
   locale: StudioLocale,
 ): [string, { parse_mode: "Markdown"; reply_markup?: InlineKeyboard }] {
-  const targets = projection.targets.join(" · ") || "No compatible delivery target";
+  const targets = projection.targets.join(" · ") || t(locale, "preview.no-compatible-target");
   const threadsTarget = projection.targets.find((item) => item === "threads_ru" || item === "threads_en");
   const reply_markup = threadsTarget
     ? new InlineKeyboard().text(t(locale, "preview.show-threads"), `delivery_preview_threads:${projection.id}`)
@@ -212,12 +217,13 @@ function mediaSource(media: Record<string, unknown>): InputFile | string | null 
   return null;
 }
 
-function formatMetadata(metadata: Record<string, unknown>): string {
+function formatMetadata(metadata: Record<string, unknown>, locale: StudioLocale): string {
   const lines: string[] = [];
-  if (metadata.title) lines.push(`Title: ${String(metadata.title)}`);
-  if (metadata.description) lines.push(`Description: ${String(metadata.description)}`);
-  if (metadata.caption) lines.push(`Caption: ${String(metadata.caption)}`);
-  if (Array.isArray(metadata.tags) && metadata.tags.length) lines.push(`Tags: ${metadata.tags.join(", ")}`);
-  if (metadata.gameUrl) lines.push(`Game: ${String(metadata.gameUrl)}`);
+  if (metadata.title) lines.push(`${t(locale, "preview.metadata-title")}: ${String(metadata.title)}`);
+  if (metadata.description) lines.push(`${t(locale, "preview.metadata-description")}: ${String(metadata.description)}`);
+  if (metadata.caption) lines.push(`${t(locale, "preview.metadata-caption")}: ${String(metadata.caption)}`);
+  if (Array.isArray(metadata.tags) && metadata.tags.length)
+    lines.push(`${t(locale, "preview.metadata-tags")}: ${metadata.tags.join(", ")}`);
+  if (metadata.gameUrl) lines.push(`${t(locale, "preview.metadata-game")}: ${String(metadata.gameUrl)}`);
   return lines.join("\n");
 }

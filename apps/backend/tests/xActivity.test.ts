@@ -44,11 +44,14 @@ function renderOverview(input: Omit<CombinedSectionInput, "textReach" | "videoRe
   const posts = [...(input.data?.posts ?? []), ...(input.previousData?.posts ?? [])].map((post) =>
     post.post_key && covered.has(post.post_key) ? { ...post, targets: { ...post.targets, x: undefined } } : post,
   );
-  return renderCombinedSection({
-    ...input,
-    videoReach: input.video.dailyByDay,
-    textReach: textOverviewOf([...posts, ...items.map(xChartPost)], [], days, "UTC"),
-  });
+  return renderCombinedSection(
+    {
+      ...input,
+      videoReach: input.video.dailyByDay,
+      textReach: textOverviewOf([...posts, ...items.map(xChartPost)], [], days, "UTC"),
+    },
+    "ru",
+  );
 }
 
 describe("X Activity", () => {

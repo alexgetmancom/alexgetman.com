@@ -2,7 +2,7 @@ import type { ApplicationPorts } from "../../application/ports.js";
 import { fixUrlSlashes } from "../../content/message.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { StudioError } from "../../foundation/errors.js";
-import type { StudioLocale } from "../../foundation/locale.js";
+import { parseStudioLocale, type StudioLocale } from "../../foundation/locale.js";
 import { isValidTimeZone, timeZoneOffsetLabel } from "../../foundation/time.js";
 
 type SettingsDependencies = Pick<ApplicationPorts, "clock" | "studioNotifications" | "studioSettings">;
@@ -19,7 +19,9 @@ function readNotifications(backendDb: SettingsDependencies, actorId: number) {
 }
 
 function readLocale(backendDb: SettingsDependencies, actorId: number): StudioLocale {
-  return backendDb.studioSettings.locale(actorId) === "ru" ? "ru" : "en";
+  // English for an owner who never chose: the stored value is the only signal,
+  // and an unset one predates the picker.
+  return parseStudioLocale(backendDb.studioSettings.locale(actorId), "en");
 }
 
 function readTimezone(backendDb: SettingsDependencies, actorId: number, fallback: string): string {

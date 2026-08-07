@@ -1,12 +1,12 @@
 import { describe, expect, it } from "bun:test";
-import { categoryLabel, categorySlugFromBadge, getSmartCategory } from "./taxonomy";
+import { categoryLabel, categorySlugFromBadge, localizedCategory } from "./taxonomy";
 
-describe("getSmartCategory", () => {
-  it("mirrors getSmartBadge's label", () => {
-    expect(getSmartCategory("OpenAI released a new model")).toBe("ИИ-Модели");
-    expect(getSmartCategory("Someone leaked the roadmap")).toBe("Сливы");
-    expect(getSmartCategory("Midjourney released a new image generator")).toBe("Нейросети");
-    expect(getSmartCategory("Just a regular update")).toBe("Новости");
+describe("localizedCategory", () => {
+  it("names the detected category in the reader's language", () => {
+    expect(localizedCategory("OpenAI released a new model", "en")).toBe("AI Models");
+    expect(localizedCategory("OpenAI released a new model", "ru")).toBe("ИИ-Модели");
+    expect(localizedCategory("Someone leaked the roadmap", "ru")).toBe("Сливы");
+    expect(localizedCategory("Just a regular update", "en")).toBe("News");
   });
 });
 

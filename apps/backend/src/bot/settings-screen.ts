@@ -3,6 +3,7 @@ import type { Context } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { t } from "../foundation/i18n/index.js";
+import { STUDIO_LOCALE_NAMES, STUDIO_LOCALES, type StudioLocale } from "../foundation/locale.js";
 import { escapeMarkdown } from "../foundation/markdown.js";
 import type { StudioZernioAccount } from "../studio/services/channels.js";
 import { createStudioServices } from "../studio/services/index.js";
@@ -201,14 +202,11 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
 
   const language = new Menu<Context>(LANGUAGE_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
     const locale = botLocale(backendDb, Number(ctx.from?.id));
-    range
-      .text("English", (ctx) => switchLanguage(ctx, "en"))
-      .text("Русский", (ctx) => switchLanguage(ctx, "ru"))
-      .row()
-      .back(t(locale, "common.back"), async (ctx) => {
-        await ctx.answerCallbackQuery();
-        await ctx.editMessageText(t(locale, "settings.title"));
-      });
+    for (const target of STUDIO_LOCALES) range.text(STUDIO_LOCALE_NAMES[target], (ctx) => switchLanguage(ctx, target));
+    range.row().back(t(locale, "common.back"), async (ctx) => {
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(t(locale, "settings.title"));
+    });
   });
 
   const timezone = new Menu<Context>(TIMEZONE_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
@@ -337,7 +335,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
     }
   }
 
-  async function switchLanguage(ctx: Context & MenuFlavor, locale: "en" | "ru"): Promise<void> {
+  async function switchLanguage(ctx: Context & MenuFlavor, locale: StudioLocale): Promise<void> {
     const actorId = Number(ctx.from?.id);
     createStudioServices(backendDb, config).settings.setLocale(actorId, locale);
     await ctx.answerCallbackQuery({ text: t(locale, "settings.language-set") });

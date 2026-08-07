@@ -262,8 +262,8 @@ export function draftPreview(
     storyCards.length === 0
       ? ""
       : storyCards.every((card) => card.status === "ready")
-        ? "\nStory cards: ✓ RU · ✓ EN"
-        : `\nStory cards: ${storyCards.map((card) => `${card.locale.toUpperCase()} ${card.status}`).join(" · ")}`;
+        ? `\n${t(locale, "post.story-cards-status", { status: "✓ RU · ✓ EN" })}`
+        : `\n${t(locale, "post.story-cards-status", { status: storyCards.map((card) => `${card.locale.toUpperCase()} ${card.status}`).join(" · ") })}`;
   const mediaLine = media.ru || media.en ? `\n${t(locale, "post.media")}: ${media.ru} RU · ${media.enEffective} EN` : "";
   const enMediaWarning = media.ru > 0 && media.en === 0 ? `\n⚠️ ${t(locale, "post.en-uses-ru-media")}` : "";
   return {

@@ -1,4 +1,6 @@
-import { isCurrentCalendarDay, zonedDateParts, zonedSlot } from "../../../foundation/time.js";
+import { plural, t } from "../../../foundation/i18n/index.js";
+import type { StudioLocale } from "../../../foundation/locale.js";
+import { isCurrentCalendarDay, monthShortName, zonedDateParts, zonedSlot } from "../../../foundation/time.js";
 import { formatMetricValue } from "./format.js";
 
 export type Totals = { views: number; reactions: number; replies: number };
@@ -20,28 +22,24 @@ export function metricProgress(value: number, norm: number | null): number | nul
   return Math.round((value / norm) * 100);
 }
 
-export function periodCountLabel(value: number, singular: string, periodDays: number): string {
-  const remainder = value % 100;
-  const word =
-    remainder >= 11 && remainder <= 14
-      ? `${singular}ов`
-      : value % 10 === 1
-        ? singular
-        : value % 10 >= 2 && value % 10 <= 4
-          ? `${singular}а`
-          : `${singular}ов`;
-  return periodDays === 1 ? `${formatMetricValue(value)} ${word} сегодня` : `${formatMetricValue(value)} ${word} за ${periodDays}д`;
+export function periodCountLabel(value: number, singular: "post" | "video", periodDays: number, locale: StudioLocale): string {
+  const noun = plural(locale, value, {
+    one: t(locale, singular === "post" ? "cc.count.posts-one" : "cc.count.videos-one"),
+    few: t(locale, singular === "post" ? "cc.count.posts-few" : "cc.count.videos-few"),
+    many: t(locale, singular === "post" ? "cc.count.posts-many" : "cc.count.videos-many"),
+  });
+  const count = formatMetricValue(value);
+  return periodDays === 1 ? t(locale, "cc.count.today", { count, noun }) : t(locale, "cc.count.period", { count, noun, days: periodDays });
 }
 
-export function periodNormLabel(periodDays: number): string {
-  return periodDays === 1 ? "норма дня" : `норма за ${periodDays}д`;
+export function periodNormLabel(periodDays: number, locale: StudioLocale): string {
+  return periodDays === 1 ? t(locale, "cc.norm.daily") : t(locale, "cc.norm.period", { days: periodDays });
 }
 
-export function periodContextLabel(day: Date, periodDays: number, timeZone: string): string {
-  if (periodDays !== 1) return `ОХВАТ · ПОСЛЕДНИЕ ${periodDays} ДН.`;
+export function periodContextLabel(day: Date, periodDays: number, timeZone: string, locale: StudioLocale): string {
+  if (periodDays !== 1) return t(locale, "cc.reach.period", { days: periodDays });
   const parts = zonedDateParts(day, timeZone);
-  const months = ["ЯНВ", "ФЕВ", "МАР", "АПР", "МАЙ", "ИЮН", "ИЮЛ", "АВГ", "СЕН", "ОКТ", "НОЯ", "ДЕК"];
-  return `ОХВАТ · ${parts.day} ${months[parts.month - 1] ?? ""}`;
+  return t(locale, "cc.reach.day", { day: parts.day, month: monthShortName(locale, parts.month, true) });
 }
 
 export function periodProjection(value: number, day: Date, periodDays: number, timeZone: string): number | null {
@@ -52,14 +50,24 @@ export function periodProjection(value: number, day: Date, periodDays: number, t
   return Math.round(value / share);
 }
 
-export function periodPaceLabel(value: number, norm: number | null, day: Date, periodDays: number, timeZone: string): string | null {
+export function periodPaceLabel(
+  value: number,
+  norm: number | null,
+  day: Date,
+  periodDays: number,
+  timeZone: string,
+  locale: StudioLocale,
+): string | null {
   if (norm === null || norm <= 0) return null;
-  const remaining = Math.max(0, Math.round(norm - value));
-  const projection = periodProjection(value, day, periodDays, timeZone);
-  if (value >= norm) return projection === null ? "норма побита" : `норма побита · прогноз ${formatMetricValue(projection)}`;
+  const remaining = formatMetricValue(Math.max(0, Math.round(norm - value)));
+  const forecast = periodProjection(value, day, periodDays, timeZone);
+  const projection = forecast === null ? null : formatMetricValue(forecast);
+  if (value >= norm) {
+    return projection === null ? t(locale, "cc.norm.beaten") : t(locale, "cc.norm.beaten-forecast", { projection });
+  }
   return projection === null
-    ? `до нормы ${formatMetricValue(remaining)}`
-    : `до нормы ${formatMetricValue(remaining)} · прогноз ${formatMetricValue(projection)}`;
+    ? t(locale, "cc.norm.remaining", { remaining })
+    : t(locale, "cc.norm.remaining-forecast", { remaining, projection });
 }
 
 export function scaleTotals(value: Totals, factor: number): Totals {

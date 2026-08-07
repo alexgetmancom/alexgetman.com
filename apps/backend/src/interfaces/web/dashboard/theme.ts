@@ -199,5 +199,6 @@ export const DASHBOARD_THEME_TOGGLE_SCRIPT = `
 `;
 
 /** Markup for the switch. Sits in the tab bar, next to the period controls. */
-export const DASHBOARD_THEME_TOGGLE_HTML =
-  '<button type="button" class="theme-toggle" data-theme-toggle aria-label="Toggle theme" aria-pressed="false">☀</button>';
+export function dashboardThemeToggleHtml(label: string): string {
+  return `<button type="button" class="theme-toggle" data-theme-toggle aria-label="${label}" aria-pressed="false">☀</button>`;
+}

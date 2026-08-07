@@ -3,7 +3,7 @@ import { renderPeriodControls, rollingPeriodDates } from "../src/interfaces/web/
 
 describe("command center period controls", () => {
   it("offers one day first and keeps a selected platform when changing periods", () => {
-    const html = renderPeriodControls(0, 1, "Europe/Moscow", "threads_en", "&metric=followers");
+    const html = renderPeriodControls("ru", 0, 1, "Europe/Moscow", "threads_en", "&metric=followers");
 
     expect(html).toContain(">1д<");
     expect(html).toContain("view=threads_en");

@@ -1,6 +1,5 @@
 import type { FeedItem } from "../../../backend/src/public/site-read-model.js";
-
-export type SiteLocale = "en" | "ru";
+import type { SiteLocale } from "./locale";
 
 export function hasPublishedLocale(item: FeedItem, locale: SiteLocale): boolean {
   const enabled = locale === "ru" ? item.has_ru : item.has_en;

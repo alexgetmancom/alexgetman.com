@@ -40,7 +40,7 @@ describe("dashboard formatting", () => {
       progressPercent: 0,
     };
 
-    const html = renderHeroCard("text", metrics);
+    const html = renderHeroCard("text", metrics, "ru");
 
     expect(html).toContain("<strong>0</strong>");
     expect(html).not.toContain("−100%");
@@ -49,21 +49,25 @@ describe("dashboard formatting", () => {
   });
 
   it("formats video completion as a percentage with one decimal place", () => {
-    const html = renderHeroMicroMetrics("video", {
-      videoCount: 1,
-      views: 100,
-      freshViews: 40,
-      medianViews: null,
-      completionRate: 24.91925664721141,
-      averageWatchTimeMs: 11_500,
-      subscribers: 15,
-      countLabel: "1 ролик",
-      normLabel: "норма дня",
-      contextLabel: "ОХВАТ",
-      paceLabel: null,
-      projectionViews: null,
-      progressPercent: null,
-    });
+    const html = renderHeroMicroMetrics(
+      "video",
+      {
+        videoCount: 1,
+        views: 100,
+        freshViews: 40,
+        medianViews: null,
+        completionRate: 24.91925664721141,
+        averageWatchTimeMs: 11_500,
+        subscribers: 15,
+        countLabel: "1 ролик",
+        normLabel: "норма дня",
+        contextLabel: "ОХВАТ",
+        paceLabel: null,
+        projectionViews: null,
+        progressPercent: null,
+      },
+      "ru",
+    );
 
     expect(html).toContain("<b>24.9%</b> досмотры");
     expect(html).not.toContain("24.91925664721141");
@@ -99,7 +103,7 @@ describe("dashboard formatting", () => {
 
 describe("dashboard shell", () => {
   it("keeps a hidden overview tooltip hidden after the pointer leaves a chart", () => {
-    const html = renderDashboardShell("");
+    const html = renderDashboardShell("", "ru");
     expect(html).toContain(".overview-chart-tooltip[hidden] { display:none; }");
     expect(html).toContain(".overview-platforms__column + .overview-platforms__column { margin-left:-14px;");
     // The destination block sizes to the rows drawn instead of reserving a fixed
@@ -120,6 +124,7 @@ describe("dashboard shell", () => {
       "Просмотры",
       "30 дней назад",
       "сегодня",
+      "ru",
     );
 
     expect(html).toContain(`class="overview-spark__cap"`);
@@ -253,6 +258,7 @@ describe("publication detail fragments", () => {
 
   it("renders bounded detail fragments for the lazy loader", () => {
     const result = renderPublicationDetails(
+      "ru",
       Array.from({ length: 9 }, (_, index) => viewed(index, `post ${index}`)),
       undefined,
       [],
@@ -270,6 +276,7 @@ describe("publication detail fragments", () => {
 describe("renderOverviewPublicationList", () => {
   it("uses thin expandable rows and keeps the lower detail contract", () => {
     const html = renderOverviewPublicationList(
+      "ru",
       [
         {
           post_id: 1,
@@ -299,7 +306,6 @@ describe("renderOverviewPublicationList", () => {
     expect(html).toContain('title="Ответы" aria-label="Ответы: 2"');
     expect(html).not.toContain("X (Twitter) EN</span>");
     expect(html).not.toContain('<img src="/media/post.jpg"');
-    expect(html).not.toContain('class="track-publication"');
   });
 
   it("keeps publication rows compact with a count and a grouped tooltip", () => {
@@ -316,7 +322,7 @@ describe("renderOverviewPublicationList", () => {
         x: { views: { value: 18 }, likes: { value: 2 }, replies: { value: 1 } },
       },
     };
-    const html = renderOverviewPublicationList([textPost], ["telegram", "x"]);
+    const html = renderOverviewPublicationList("ru", [textPost], ["telegram", "x"]);
 
     expect(html).toContain("One two three four five six seven...");
     expect(html).toContain('class="post-detail__platform-summary post-detail__platform-summary--count"');
@@ -348,7 +354,7 @@ describe("renderOverviewPublicationList", () => {
       full_text_en: "Published everywhere",
       targets: Object.fromEntries(targetIds.map((target) => [target, { status: "published" }])),
     };
-    const html = renderOverviewPublicationList([post], targetIds);
+    const html = renderOverviewPublicationList("ru", [post], targetIds);
 
     expect(html).toContain('<b class="post-detail__platform-count">8</b>');
     expect(html).toContain("<b>EN</b>");
@@ -361,6 +367,7 @@ describe("renderOverviewPublicationList", () => {
 
   it("renders a video row as icon plus locale without a source label", () => {
     const html = renderOverviewPublicationList(
+      "ru",
       [],
       [],
       [

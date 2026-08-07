@@ -1,9 +1,12 @@
 import { desc, eq, sql } from "drizzle-orm";
 import { claimSync, markSynced } from "../../analytics/snapshots/creator-store.js";
+import { botLocale } from "../../bot/i18n.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { knowledgeEntities, postEntityLinks, posts } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { requestJson } from "../../foundation/http.js";
+import { t } from "../../foundation/i18n/index.js";
+import type { StudioLocale } from "../../foundation/locale.js";
 import { log } from "../../foundation/logger.js";
 import { truncateUnicode } from "../../foundation/text.js";
 
@@ -42,14 +45,22 @@ export async function sendDailyEditorialInbox(
     .limit(24)
     .all()
     .flatMap((post) => {
-      const text = (post.text ?? post.textEn ?? "").trim();
-      return post.postId != null && text ? [{ id: post.postId, date: post.date, text: truncateUnicode(text, 900) }] : [];
+      const textRu = (post.text ?? "").trim();
+      const textEn = (post.textEn ?? "").trim();
+      return post.postId != null && (textRu || textEn)
+        ? [{ id: post.postId, date: post.date, textRu: truncateUnicode(textRu, 900), textEn: truncateUnicode(textEn, 900) }]
+        : [];
     });
   if (material.length === 0) return false;
   const owner = "telegram:editorial-inbox";
   if (!claimSync(backendDb, key, 24 * 60 * 60, owner)) return false;
   const clusters = unsafeDb(backendDb)
-    .db.select({ slug: knowledgeEntities.slug, title: knowledgeEntities.titleRu, count: sql<number>`count(*)` })
+    .db.select({
+      slug: knowledgeEntities.slug,
+      titleRu: knowledgeEntities.titleRu,
+      titleEn: knowledgeEntities.titleEn,
+      count: sql<number>`count(*)`,
+    })
     .from(postEntityLinks)
     .innerJoin(knowledgeEntities, eq(knowledgeEntities.id, postEntityLinks.entityId))
     .groupBy(knowledgeEntities.id)
@@ -57,39 +68,60 @@ export async function sendDailyEditorialInbox(
     .limit(12)
     .all();
 
+  // One read of each owner's interface language, reused for both the request
+  // and the send: reading it twice let a language switch in between address a
+  // message nobody had generated.
+  const recipients = config.ADMIN_IDS.map((actorId) => ({ actorId, locale: botLocale(backendDb, actorId) }));
+
   try {
-    const response = await requestJson<ChatCompletion>(fetchImpl, "https://api.deepseek.com/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${config.DEEPSEEK_API_KEY}`, "Content-Type": "application/json" },
-      // The signal belongs to the request, not to the chat-completion payload:
-      // nested inside the body it was both a no-op and an unknown `"signal":{}`
-      // field sent to the provider.
-      signal: AbortSignal.timeout(45_000),
-      body: JSON.stringify({
-        model: "deepseek-chat",
-        temperature: 0.2,
-        messages: [
-          {
-            role: "system",
-            content: [
-              "You are an editorial research assistant for a solo AI news creator.",
-              "Using only the supplied published posts and entity clusters, propose at most three useful next pages: a hub update, a page that answers one real question, a comparison, a practical guide, an official-data update, or a weekly roundup.",
-              "Prefer one concrete query-shaped page over generic SEO. A cluster is not enough by itself: name the question the page would answer.",
-              "Do not invent facts, demand a conclusion, write publication copy, or use generic SEO ideas.",
-              "Each reason must name the concrete cluster or gap found in the supplied posts.",
-              'Return strict JSON only: {"items":[{"kind":"review|guide|data|roundup","title":"...","reason":"...","posts":[1,2]}]}.',
-            ].join("\n"),
-          },
-          { role: "user", content: JSON.stringify({ posts: material, clusters }) },
-        ],
-        response_format: { type: "json_object" },
-      }),
-    });
-    const generated = response.choices?.[0]?.message?.content ?? "";
-    const items = editorialItems(generated);
-    if (items.length === 0) throw new Error("editorial inbox returned no usable opportunities");
-    const message = renderInbox(items);
-    for (const actorId of config.ADMIN_IDS) await bot.api.sendMessage(actorId, message);
+    const messages = new Map<StudioLocale, string>();
+    for (const locale of new Set(recipients.map((recipient) => recipient.locale))) {
+      const response = await requestJson<ChatCompletion>(fetchImpl, "https://api.deepseek.com/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${config.DEEPSEEK_API_KEY}`, "Content-Type": "application/json" },
+        // The signal belongs to the request, not to the chat-completion payload:
+        // nested inside the body it was both a no-op and an unknown `"signal":{}`
+        // field sent to the provider.
+        signal: AbortSignal.timeout(45_000),
+        body: JSON.stringify({
+          model: "deepseek-chat",
+          temperature: 0.2,
+          messages: [
+            {
+              role: "system",
+              content: [
+                "You are an editorial research assistant for a solo AI news creator.",
+                `Write the title and reason in ${languageName(locale)}.`,
+                "Using only the supplied published posts and entity clusters, propose at most three useful next pages: a hub update, a page that answers one real question, a comparison, a practical guide, an official-data update, or a weekly roundup.",
+                "Prefer one concrete query-shaped page over generic SEO. A cluster is not enough by itself: name the question the page would answer.",
+                "Do not invent facts, demand a conclusion, write publication copy, or use generic SEO ideas.",
+                "Each reason must name the concrete cluster or gap found in the supplied posts.",
+                'Return strict JSON only: {"items":[{"kind":"review|guide|data|roundup","title":"...","reason":"...","posts":[1,2]}]}.',
+              ].join("\n"),
+            },
+            {
+              role: "user",
+              content: JSON.stringify({
+                posts: material.map((post) => ({ id: post.id, date: post.date, text: sourceText(post.textEn, post.textRu, locale) })),
+                clusters: clusters.map((cluster) => ({
+                  slug: cluster.slug,
+                  count: cluster.count,
+                  title: sourceText(cluster.titleEn, cluster.titleRu, locale),
+                })),
+              }),
+            },
+          ],
+          response_format: { type: "json_object" },
+        }),
+      });
+      const items = editorialItems(response.choices?.[0]?.message?.content ?? "");
+      if (items.length === 0) throw new Error("editorial inbox returned no usable opportunities");
+      messages.set(locale, renderInbox(items, locale));
+    }
+    for (const { actorId, locale } of recipients) {
+      const message = messages.get(locale);
+      if (message) await bot.api.sendMessage(actorId, message);
+    }
     markSynced(backendDb, key, null, owner);
     return true;
   } catch (error) {
@@ -131,11 +163,29 @@ function editorialItems(value: string): Required<Pick<Opportunity, "kind" | "tit
     .slice(0, 3);
 }
 
-function renderInbox(items: Required<Pick<Opportunity, "kind" | "title" | "reason" | "posts">>[]): string {
-  const labels: Record<string, string> = { review: "Разбор", guide: "Гайд", data: "Данные", roundup: "Итог" };
+/** The language to write in, named in English for the prompt. Intl knows every
+ * language ICU does, so a new interface language needs nothing here. */
+function languageName(locale: StudioLocale): string {
+  return new Intl.DisplayNames(["en"], { type: "language" }).of(locale) ?? locale;
+}
+
+/** Published material exists in RU and EN only. An interface language that is
+ * neither reads the Russian original, which is the source the posts are written
+ * from; the model translates as it summarises. */
+function sourceText(english: string | null, russian: string | null, locale: StudioLocale): string {
+  return (locale === "en" ? english || russian : russian || english) ?? "";
+}
+
+function renderInbox(items: Required<Pick<Opportunity, "kind" | "title" | "reason" | "posts">>[], locale: StudioLocale): string {
+  const labels: Record<string, string> = {
+    review: t(locale, "editorial.kind-review"),
+    guide: t(locale, "editorial.kind-guide"),
+    data: t(locale, "editorial.kind-data"),
+    roundup: t(locale, "editorial.kind-roundup"),
+  };
   const rows = items.map((item, index) => {
-    const refs = item.posts.length ? `\nПосты: ${item.posts.map((id) => `#${id}`).join(", ")}` : "";
-    return `${index + 1}. ${labels[item.kind] ?? "Идея"}: ${item.title}\n${item.reason}${refs}`;
+    const refs = item.posts.length ? `\n${t(locale, "editorial.posts")}: ${item.posts.map((id) => `#${id}`).join(", ")}` : "";
+    return `${index + 1}. ${labels[item.kind] ?? t(locale, "editorial.kind-idea")}: ${item.title}\n${item.reason}${refs}`;
   });
-  return `Редакционный inbox\n\n${rows.join("\n\n")}`;
+  return `${t(locale, "editorial.title")}\n\n${rows.join("\n\n")}`;
 }

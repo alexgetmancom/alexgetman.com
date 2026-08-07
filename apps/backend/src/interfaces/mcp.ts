@@ -3,6 +3,7 @@ import { publicationRef } from "../application/publication-ref.js";
 import type { BackendDb } from "../db/client.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { STUDIO_LOCALES } from "../foundation/locale.js";
 import { log } from "../foundation/logger.js";
 import { createStudioServices, type StudioServices } from "../studio/services/index.js";
 
@@ -12,7 +13,10 @@ const feedbackHits = new Map<string, number[]>();
 
 const trimmed = (min: number, max: number) => z.string().trim().min(min).max(max);
 const positiveInt = z.number().int().min(1);
+/** The language a post is written in. Fixed to the two the channels publish. */
 const localeSchema = z.enum(["ru", "en"]);
+/** The owner's interface language, which the locale registry may grow. */
+const uiLocaleSchema = z.enum(STUDIO_LOCALES);
 const videoTargetSchema = z.enum(["youtube_shorts", "instagram_reels"]);
 
 /** Plain shape for an optional ISO-date string field, for the client-facing schema.
@@ -148,7 +152,7 @@ const studioToolDefs = {
   }),
   studio_locale_update: tool({
     description: "Update the authenticated owner's shared interface locale.",
-    schema: z.object({ locale: localeSchema }),
+    schema: z.object({ locale: uiLocaleSchema }),
     mutates: true,
     handler: (studio, actorId, input) => {
       studio.settings.setLocale(actorId, input.locale);

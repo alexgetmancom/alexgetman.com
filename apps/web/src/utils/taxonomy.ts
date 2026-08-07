@@ -1,3 +1,5 @@
+import { DEFAULT_SITE_LOCALE, type SiteLocale } from "./locale";
+
 type SmartBadge = { label: string; class: string; emoji: string };
 
 export function getSmartBadge(text: string): SmartBadge {
@@ -9,10 +11,6 @@ export function getSmartBadge(text: string): SmartBadge {
   if (["нейросеть", "midjourney", "sora", "генераци", "искусствен", "ии-", "ai "].some((word) => value.includes(word)))
     return { label: "Нейросети", class: "badge--neural", emoji: "🎨" };
   return { label: "Новости", class: "badge--news", emoji: "📰" };
-}
-
-export function getSmartCategory(text: string): string {
-  return getSmartBadge(text).label;
 }
 
 /** Exact lookup rather than substring matching: `value.includes("ai")` sent any
@@ -34,13 +32,18 @@ export function categorySlugFromBadge(badge: { class?: string; label?: string } 
   return SLUG_BY_BADGE[value.trim()] ?? "news";
 }
 
-const labels: Record<string, { en: string; ru: string }> = {
+const labels: Record<string, Record<SiteLocale, string>> = {
   leaks: { en: "Leaks", ru: "Сливы" },
   "ai-models": { en: "AI Models", ru: "ИИ-Модели" },
   "neural-networks": { en: "Neural Networks", ru: "Нейросети" },
   news: { en: "News", ru: "Новости" },
 };
 
-export function categoryLabel(slug: string, locale = "en"): string {
-  return labels[slug]?.[locale === "ru" ? "ru" : "en"] || labels.news[locale === "ru" ? "ru" : "en"];
+export function categoryLabel(slug: string, locale: SiteLocale = DEFAULT_SITE_LOCALE): string {
+  return (labels[slug] ?? labels.news)[locale];
+}
+
+/** The category of a text, named in the reader's language. */
+export function localizedCategory(text: string, locale: SiteLocale): string {
+  return categoryLabel(categorySlugFromBadge(getSmartBadge(text)), locale);
 }

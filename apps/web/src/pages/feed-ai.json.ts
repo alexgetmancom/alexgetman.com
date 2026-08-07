@@ -1,35 +1,7 @@
-import { loadFeedItems } from "../server/public-site";
-import { keyEntities } from "../utils/key-entities";
-import { sortedPublishedItems } from "../utils/public-feed";
-import { compactText, truncateText } from "../utils/text";
+import { publicAiFeedResponse } from "../server/public-feed";
 
 export const prerender = false;
 
-export async function GET() {
-  const items = sortedPublishedItems(loadFeedItems(), "en", 100)
-    .map((item) => {
-      const text = compactText(item.text_en);
-      const canonicalUrl = `https://alexgetman.com/${item.post_id}/${item.slug_en}/`;
-      return {
-        id: `post:${item.post_id}`,
-        title: truncateText(text, 100),
-        tldr: truncateText(text, 280),
-        key_entities: keyEntities(text),
-        published_at: item.date,
-        canonical_url: canonicalUrl,
-        markdown_url: `${canonicalUrl.slice(0, -1)}.md`,
-        ru_url: item.has_ru ? `https://alexgetman.com/ru/${item.post_id}/${item.slug_ru}/` : null,
-        actions: [],
-      };
-    })
-    .sort((a, b) => new Date(b.published_at).getTime() - new Date(a.published_at).getTime())
-    .slice(0, 100);
-
-  return new Response(JSON.stringify({ version: 1, updated_at: new Date().toISOString(), items }, null, 2), {
-    headers: {
-      "Content-Type": "application/json; charset=utf-8",
-      "Cache-Control": "public, max-age=60",
-      "X-Robots-Tag": "noindex, follow",
-    },
-  });
+export function GET() {
+  return publicAiFeedResponse("en");
 }

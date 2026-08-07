@@ -1,11 +1,15 @@
 /* =============================================================================
- * EVERY PLAYER INTERFACE STRING (en + ru)
+ * EVERY PLAYER INTERFACE STRING
  * -----------------------------------------------------------------------------
  * The one place the player's button and menu labels live.
- * A new label: add the key to StoryUi below and a value to BOTH locales.
+ * A new label: add the key to StoryUi below and a value to EVERY locale — the
+ * compiler rejects the object that is missing it.
+ * A new language: one more object here, added to `catalog`.
  * Usage: const ui = storyUi(locale) — the object is passed down to components.
- * Do NOT hardcode strings in .svelte/.astro, or en and ru will drift apart.
+ * Do NOT hardcode strings in .svelte/.astro, or the locales will drift apart.
  * ========================================================================== */
+
+import type { SiteLocale } from "../../utils/locale";
 
 export interface StoryUi {
   storyLabel: string;
@@ -49,7 +53,7 @@ const en: StoryUi = {
   telegram: "Telegram",
 };
 
-const ru: StoryUi = {
+const ru = {
   storyLabel: "Новостной плеер",
   share: "Поделиться",
   copied: "Скопировано",
@@ -62,14 +66,16 @@ const ru: StoryUi = {
   tapForSound: "Включить звук",
   storyRail: "Выбор новостей",
   feedMode: "Режим ленты",
-  feedLatest: "Latest",
-  feedDeep: "Deep",
-  feedWatched: "Watched",
+  feedLatest: "Последние",
+  feedDeep: "Глубокие",
+  feedWatched: "Просмотренные",
   menu: "Меню",
   language: "English",
   telegram: "Telegram",
-};
+} satisfies StoryUi;
 
-export function storyUi(locale: "en" | "ru"): StoryUi {
-  return locale === "ru" ? ru : en;
+const catalog: Record<SiteLocale, StoryUi> = { en, ru };
+
+export function storyUi(locale: SiteLocale): StoryUi {
+  return catalog[locale];
 }

@@ -351,7 +351,7 @@ describe("Astro endpoint controller", () => {
       );
       const login = await app.request("/command-center");
       expect(login.status).toBe(200);
-      expect(await login.text()).toContain("Введите Command Center token");
+      expect(await login.text()).toContain("Введите токен Command Center");
       const signIn = await app.request("/command-center", {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded", origin: "https://marux.ru" },
@@ -373,7 +373,13 @@ describe("Astro endpoint controller", () => {
       expect(html).toContain("Обзор");
       expect(html).not.toContain("Аудитория и profile metrics");
       expect(html).toContain('href="/command-center?tab=posts&panel=health"');
-      expect(html).toContain("Repair");
+      expect(html).toContain("Исправление");
+      const englishDashboard = await app.request("/command-center?locale=en", { headers: { cookie: cookie ?? "" } });
+      const englishHtml = await englishDashboard.text();
+      expect(englishHtml).toContain('<html lang="en">');
+      expect(englishHtml).toContain(">Overview</a>");
+      expect(englishHtml).toContain('aria-label="Language"');
+      expect(englishHtml).not.toContain("ПУБЛИКАЦИИ");
       expect(html).toContain("const navigateDashboard = async");
       expect(html).toContain("history.pushState");
       expect(html).not.toContain("window.location.reload");

@@ -1,5 +1,6 @@
 import { commandAllowed, sameOriginCommandLogin } from "../../foundation/http-auth.js";
 import { html, json, loginRedirect, queryTokenRedirect, sse, text } from "../../foundation/http-response.js";
+import { parseStudioLocale } from "../../foundation/locale.js";
 import { measureMemorySync } from "../../observability/memory.js";
 import { trackUsageAsync, trackUsageSync } from "../../observability/usage.js";
 import { type CommandAction, commandActionSchema } from "../../operations/commands.js";
@@ -63,7 +64,7 @@ export const commandCenterRoutes: RouteModule = (app, { config, backendDb, opera
     const url = new URL(request.url);
     const queryToken = url.searchParams.get("token");
     if (queryToken && commandAllowed(request, config)) return queryTokenRedirect(url, "command_token", queryToken);
-    if (!commandAllowed(request, config)) return html(renderCommandCenterLogin());
+    if (!commandAllowed(request, config)) return html(renderCommandCenterLogin(parseStudioLocale(url.searchParams.get("locale"))));
     return html(
       measureMemorySync("command_center.dashboard.render", dashboardMemoryContext(url), () =>
         trackUsageSync(backendDb, "command_center.dashboard.render", () =>
@@ -91,7 +92,8 @@ export const commandCenterRoutes: RouteModule = (app, { config, backendDb, opera
     if (!sameOriginCommandLogin(request, config)) return text("forbidden\n", 403);
     const form = await request.formData().catch(() => new FormData());
     const token = form.get("token");
-    if (typeof token !== "string" || !commandAllowed(request, config, token)) return html(renderCommandCenterLogin(true));
+    if (typeof token !== "string" || !commandAllowed(request, config, token))
+      return html(renderCommandCenterLogin(parseStudioLocale(form.get("locale")), true));
     return loginRedirect("/command-center", "command_token", token);
   });
 
@@ -103,7 +105,8 @@ export const commandCenterRoutes: RouteModule = (app, { config, backendDb, opera
     const id = Number(form.get("id"));
     if (actorId && Number.isSafeInteger(id)) studio.notifications.acknowledge(actorId, id);
     invalidateDashboardRenderCache(backendDb);
-    return new Response(null, { status: 303, headers: { location: "/command-center?tab=studio" } });
+    const locale = new URL(request.url).searchParams.get("locale") === "en" ? "&locale=en" : "";
+    return new Response(null, { status: 303, headers: { location: `/command-center?tab=studio${locale}` } });
   });
 
   app.get("/api/command-center", (c) =>
@@ -144,6 +147,7 @@ export const commandCenterRoutes: RouteModule = (app, { config, backendDb, opera
             limit,
             c.req.query("track") ?? undefined,
             c.req.query("video_view") ?? undefined,
+            c.req.query("locale") ?? undefined,
           ),
       ),
     );

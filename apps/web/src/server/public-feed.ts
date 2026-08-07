@@ -1,41 +1,46 @@
 import rss from "@astrojs/rss";
 import type { APIContext } from "astro";
 import { formatDate } from "../utils/dates";
-import {
-  hasPublishedLocale,
-  localizedHtml,
-  localizedSlug,
-  localizedText,
-  type SiteLocale,
-  sortedPublishedItems,
-} from "../utils/public-feed";
+import { keyEntities } from "../utils/key-entities";
+import { localePath, SITE_LOCALE_TAGS, SITE_LOCALES, type SiteLocale } from "../utils/locale";
+import { hasPublishedLocale, localizedHtml, localizedSlug, localizedText, sortedPublishedItems } from "../utils/public-feed";
 import { siteUrlFromContext } from "../utils/site";
-import { truncateText } from "../utils/text";
+import { compactText, truncateText } from "../utils/text";
 import { findFeedItem, loadFeedItems } from "./public-site";
 import { getRuntime } from "./runtime";
+import { fill, siteCopy } from "./site-copy";
+
+const CANONICAL_ORIGIN = "https://alexgetman.com";
+const LLMS_POST_LIMIT = 30;
+
+/** Absolute canonical URL of one post in one language. */
+function postUrl(item: { post_id?: number | string | null }, slug: string, locale: SiteLocale, origin = CANONICAL_ORIGIN): string {
+  return `${origin}${localePath(locale, `/${item.post_id}/${slug}/`)}`;
+}
+
+/** The post's title, or a numbered fallback when its text opens with nothing usable. */
+function postTitle(text: string, id: number | string | undefined | null, locale: SiteLocale, limit = 86): string {
+  return truncateText(text, limit) || fill(siteCopy(locale).postFallback, { id: String(id ?? "") });
+}
 
 export async function publicRssResponse(context: APIContext, locale: SiteLocale): Promise<Response> {
   const items = sortedPublishedItems(loadFeedItems(), locale, 50);
-  const russian = locale === "ru";
+  const copy = siteCopy(locale);
 
   return rss({
-    title: russian ? "RU — Алекс Гетман | alexgetmancom" : "Alex Getman | AI, automation and self-hosted systems",
-    description: russian
-      ? "Новости ИИ, автоматизация, разработка и self-hosted системы от Алекса Гетмана."
-      : "English updates from Alex Getman: AI news, automation, developer tools and self-hosted systems.",
-    site: context.site || "https://alexgetman.com",
+    title: copy.feedTitle,
+    description: copy.feedDescription,
+    site: context.site || CANONICAL_ORIGIN,
     items: items.map((item) => {
-      const id = item.post_id;
-      const text = localizedText(item, locale);
       const slug = localizedSlug(item, locale) ?? "";
       return {
-        title: truncateText(text, 86) || (russian ? `Пост ${id}` : `Post ${id}`),
+        title: postTitle(localizedText(item, locale), item.post_id, locale),
         pubDate: new Date(item.date),
         description: localizedHtml(item, locale),
-        link: `${russian ? "/ru" : ""}/${id}/${slug}/`,
+        link: localePath(locale, `/${item.post_id}/${slug}/`),
       };
     }),
-    customData: `<language>${russian ? "ru" : "en"}</language>`,
+    customData: `<language>${locale}</language>`,
   });
 }
 
@@ -48,8 +53,8 @@ export function publicJsonFeedResponse(locale: SiteLocale): Response {
       html: item.html_en || item.text_en,
       media: Array.isArray(item.media_en) && item.media_en.length > 0 ? item.media_en : item.media,
       image: item.image_en || item.image,
-      canonical_url: `https://alexgetman.com/${item.post_id}/${item.slug_en}/`,
-      ru_url: hasPublishedLocale(item, "ru") ? `https://alexgetman.com/ru/${item.post_id}/${item.slug_ru}/` : null,
+      canonical_url: postUrl(item, item.slug_en ?? "", "en"),
+      ru_url: hasPublishedLocale(item, "ru") ? postUrl(item, item.slug_ru ?? "", "ru") : null,
     };
   });
 
@@ -62,28 +67,58 @@ export function publicJsonFeedResponse(locale: SiteLocale): Response {
   });
 }
 
+export function publicAiFeedResponse(locale: SiteLocale): Response {
+  // sortedPublishedItems already orders newest-first and applies the cap.
+  const items = sortedPublishedItems(loadFeedItems(), locale, 100).map((item) => {
+    const text = compactText(localizedText(item, locale));
+    const canonicalUrl = postUrl(item, localizedSlug(item, locale) ?? "", locale);
+    return {
+      id: `post:${item.post_id}`,
+      title: truncateText(text, 100),
+      tldr: truncateText(text, 280),
+      key_entities: keyEntities(text),
+      published_at: item.date,
+      canonical_url: canonicalUrl,
+      markdown_url: `${canonicalUrl.slice(0, -1)}.md`,
+      // Every language this post also exists in, the current one excluded: the
+      // reader is already holding that one.
+      translations: Object.fromEntries(
+        SITE_LOCALES.filter((other) => other !== locale && hasPublishedLocale(item, other)).map((other) => [
+          other,
+          postUrl(item, localizedSlug(item, other) ?? "", other),
+        ]),
+      ),
+      actions: [],
+    };
+  });
+
+  return new Response(JSON.stringify({ version: 1, updated_at: new Date().toISOString(), items }, null, 2), {
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "public, max-age=60",
+      "X-Robots-Tag": "noindex, follow",
+    },
+  });
+}
+
 export async function publicMarkdownResponse(context: APIContext, locale: SiteLocale): Promise<Response> {
   const found = findFeedItem(context.params.postId);
   const slug = found ? localizedSlug(found, locale) : null;
   const item = found && hasPublishedLocale(found, locale) && slug === context.params.slug ? found : undefined;
-  if (!item) return new Response("Markdown file not found\n", { status: 404 });
+  if (!item || !slug) return new Response("Markdown file not found\n", { status: 404 });
 
   const siteUrl = siteUrlFromContext(context);
-  const russian = locale === "ru";
-  const id = item.post_id;
+  const copy = siteCopy(locale);
   const text = localizedText(item, locale);
-  const localPath = `${russian ? "/ru" : ""}/${id}/${slug}/`;
   const lines = [
-    `# ${text.split("\n")[0] || (russian ? `Пост ${id}` : `Post ${id}`)}`,
+    `# ${text.split("\n")[0] || postTitle("", item.post_id, locale)}`,
     "",
-    `${russian ? "*Опубликовано:" : "*Published on:"} ${new Date(item.date).toUTCString()}*`,
+    `*${copy.publishedOn}: ${new Date(item.date).toUTCString()}*`,
     "",
     text,
     "",
     "---",
-    russian
-      ? `[На главную](${siteUrl}/ru/) | [Читать статью](${siteUrl}${localPath})`
-      : `[Back to Home](${siteUrl}/) | [View Article](${siteUrl}${localPath})`,
+    `[${copy.backHome}](${siteUrl}${localePath(locale)}) | [${copy.viewArticle}](${postUrl(item, slug, locale, siteUrl)})`,
   ];
 
   return new Response(`${lines.join("\n")}\n`, {
@@ -93,71 +128,62 @@ export async function publicMarkdownResponse(context: APIContext, locale: SiteLo
   });
 }
 
+/**
+ * llms.txt: the link-shaped map of the site an agent reads first. Every entry
+ * is a link, including the posts — a full-text dump belongs behind the `.md`
+ * URLs each row points at, not in the index itself.
+ */
 export async function publicLlmsResponse(context: APIContext, locale: SiteLocale): Promise<Response> {
   const timeZone = getRuntime().config.TIMEZONE;
   const items = sortedPublishedItems(loadFeedItems(), locale);
-  const russian = locale === "ru";
+  const copy = siteCopy(locale);
   const siteUrl = siteUrlFromContext(context);
-  const lines = russian
-    ? [
-        "# Алекс Гетман",
-        "",
-        "> Личный хаб alexgetmancom: ИИ, разработка, автоматизация, open-source и проекты.",
-        "",
-        "## Разделы",
-        `- Сайт (EN): ${siteUrl}/`,
-        `- Сайт (RU): ${siteUrl}/ru/`,
-        "- Telegram: https://t.me/alexgetmancom",
-        "- Threads: https://www.threads.net/@alexgetmanru",
-        "- GitHub: https://github.com/alexgetmancom",
-        `- RSS (EN): ${siteUrl}/feed.xml`,
-        `- RSS (RU): ${siteUrl}/ru/feed.xml`,
-        `- Sitemap: ${siteUrl}/sitemap.xml`,
-        "",
-        "## Последние русские посты",
-        "",
-      ]
-    : [
-        "# Alex Getman",
-        "",
-        "> English hub for AI news, automation, developer tools, self-hosted systems and public projects.",
-        "",
-        "## About",
-        "Alex Getman publishes short practical updates about AI products, automation workflows, developer tools and self-hosted infrastructure.",
-        "",
-        "## Links",
-        `- Website: ${siteUrl}/`,
-        `- Russian section: ${siteUrl}/ru/`,
-        "- Telegram: https://t.me/alexgetmancom",
-        "- Threads: https://www.threads.net/@alexgetmanco",
-        "- GitHub: https://github.com/alexgetmancom",
-        `- RSS: ${siteUrl}/feed.xml`,
-        `- Russian RSS: ${siteUrl}/ru/feed.xml`,
-        `- Sitemap: ${siteUrl}/sitemap.xml`,
-        "",
-        "## Latest English posts",
-        "",
-      ];
+  const others = SITE_LOCALES.filter((other) => other !== locale);
+
+  const lines = [
+    `# ${copy.llmsTitle}`,
+    "",
+    `> ${copy.llmsTagline}`,
+    "",
+    `## ${copy.headingAbout}`,
+    "",
+    copy.llmsAbout,
+    "",
+    `## ${copy.headingLinks}`,
+    "",
+    `- ${copy.labelWebsite}: ${siteUrl}${localePath(locale)}`,
+    `- ${copy.labelJsonFeed}: ${siteUrl}${localePath(locale, "/feed.json")}`,
+    `- ${copy.labelRss}: ${siteUrl}${localePath(locale, "/feed.xml")}`,
+    `- ${copy.labelMarkdownIndex}: ${siteUrl}${localePath(locale, "/index.md")}`,
+    ...others.flatMap((other) => [
+      `- ${siteCopy(other).nativeName}: ${siteUrl}${localePath(other)}`,
+      `- ${siteCopy(other).nativeName} ${siteCopy(other).labelRss}: ${siteUrl}${localePath(other, "/feed.xml")}`,
+    ]),
+    `- ${copy.labelSitemap}: ${siteUrl}/sitemap.xml`,
+    "",
+    `## ${copy.headingSocial}`,
+    "",
+    ...copy.social.map(([label, url]) => `- ${label}: ${url}`),
+    "",
+    `## ${copy.headingPosts}`,
+    "",
+  ];
 
   if (items.length === 0) {
-    lines.push(russian ? "Пока постов нет." : "No English posts yet.");
+    lines.push(`- ${copy.noPosts}`);
   } else {
-    for (const item of items.slice(0, 10)) {
-      const id = item.post_id;
+    for (const item of items.slice(0, LLMS_POST_LIMIT)) {
       const slug = localizedSlug(item, locale);
       if (!slug) continue;
-      const text = localizedText(item, locale);
-      const title = truncateText(text, 86) || (russian ? `Пост ${id}` : `Post ${id}`);
-      const date = formatDate(item.date, russian ? "ru-RU" : "en-GB", timeZone);
-      lines.push(`### [${title}](${siteUrl}${russian ? "/ru" : ""}/${id}/${slug}/)`);
-      lines.push(`${russian ? "*Опубликовано:" : "*Published:"} ${date} MSK*`);
-      lines.push("", text, "", "---", "");
+      const title = postTitle(localizedText(item, locale), item.post_id, locale);
+      const date = formatDate(item.date, SITE_LOCALE_TAGS[locale], timeZone);
+      lines.push(`- [${title}](${siteUrl}${localePath(locale, `/${item.post_id}/${slug}.md`)}) - ${date} MSK`);
     }
   }
 
   return new Response(`${lines.join("\n")}\n`, {
     headers: {
-      "Content-Type": "text/markdown; charset=utf-8",
+      "Content-Type": "text/plain; charset=utf-8",
     },
   });
 }

@@ -1,6 +1,6 @@
 import { type FeedItem, loadFeedItems } from "../server/public-site";
 import { postImagePath } from "../utils/media";
-import { getSmartCategory } from "../utils/taxonomy";
+import { localizedCategory } from "../utils/taxonomy";
 import { compactText, excerptAfterTitle, getFirstSentence, truncateText } from "../utils/text";
 
 export const prerender = false;
@@ -20,7 +20,7 @@ function telegramToSearchItems(item: FeedItem) {
       url: `/${postId}/${item.slug_en}/`,
       date: item.date,
       source: "alexgetman.com",
-      category: getSmartCategory(text),
+      category: localizedCategory(text, "en"),
       image: postImagePath(item, "en"),
     });
   }
@@ -36,7 +36,7 @@ function telegramToSearchItems(item: FeedItem) {
       url: `/ru/${postId}/${item.slug_ru}/`,
       date: item.date,
       source: "alexgetman.com",
-      category: getSmartCategory(item.text || text),
+      category: localizedCategory(item.text || text, "ru"),
       image: postImagePath(item, "ru"),
     });
   }

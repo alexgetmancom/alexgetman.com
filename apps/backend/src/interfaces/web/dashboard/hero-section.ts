@@ -1,4 +1,6 @@
 import { escapeHtml } from "../../../foundation/html.js";
+import { t } from "../../../foundation/i18n/index.js";
+import type { StudioLocale } from "../../../foundation/locale.js";
 import { formatMetricValue } from "./format.js";
 
 type HeroMetric = { value: string; label: string };
@@ -38,14 +40,14 @@ export type VideoHeroMetrics = {
   progressPercent: number | null;
 };
 
-export function renderHeroCard(kind: "text", metrics: TextHeroMetrics): string;
-export function renderHeroCard(kind: "video", metrics: VideoHeroMetrics): string;
-export function renderHeroCard(kind: "text" | "video", metrics: TextHeroMetrics | VideoHeroMetrics): string {
+export function renderHeroCard(kind: "text", metrics: TextHeroMetrics, locale: StudioLocale): string;
+export function renderHeroCard(kind: "video", metrics: VideoHeroMetrics, locale: StudioLocale): string;
+export function renderHeroCard(kind: "text" | "video", metrics: TextHeroMetrics | VideoHeroMetrics, locale: StudioLocale): string {
   const isText = kind === "text";
   const count = metrics.countLabel;
-  const label = isText ? "ТЕКСТ" : "ВИДЕО";
+  const label = t(locale, isText ? "cc.hero.text" : "cc.hero.video");
   const color = isText ? "var(--series-text)" : "var(--series-video)";
-  const ariaLabel = isText ? "Текстовые метрики" : "Видео-метрики";
+  const ariaLabel = t(locale, isText ? "cc.hero.text-aria" : "cc.hero.video-aria");
   const progress = metrics.progressPercent === null ? 0 : Math.min(100, Math.max(0, metrics.progressPercent)) / 100;
   const delta = formatDelta(metrics.views, metrics.medianViews);
   // The rule under the heading is the goal gauge, and it turns green once the
@@ -57,26 +59,26 @@ export function renderHeroCard(kind: "text" | "video", metrics: TextHeroMetrics 
       <div class="hero-card__views overview-hero-card__views"><strong>${formatMetricValue(metrics.views)}</strong>${delta ? `<em class="hero-card__delta ${deltaClass(metrics.views, metrics.medianViews)}">${delta}</em>` : ""}</div>
       <div class="hero-card__median overview-hero-card__median"><span>${escapeHtml(metrics.normLabel)} · <b>${formatOptionalMetric(metrics.medianViews)}</b></span></div>
     </div>
-    <div class="overview-hero-card__split">${splitLabel(metrics.views, metrics.freshViews)}</div>
+    <div class="overview-hero-card__split">${splitLabel(metrics.views, metrics.freshViews, locale)}</div>
     <div class="overview-hero-card__context"><span>${escapeHtml(metrics.contextLabel)}</span>${metrics.paceLabel ? `<span class="overview-hero-card__pace ${metrics.progressPercent !== null && metrics.progressPercent >= 100 ? "overview-hero-card__pace--positive" : ""}">${escapeHtml(metrics.paceLabel)}</span>` : ""}</div>
   </article>`;
 }
 
-export function renderHeroMicroMetrics(kind: "text", metrics: TextHeroMetrics): string;
-export function renderHeroMicroMetrics(kind: "video", metrics: VideoHeroMetrics): string;
-export function renderHeroMicroMetrics(kind: "text" | "video", metrics: TextHeroMetrics | VideoHeroMetrics): string {
+export function renderHeroMicroMetrics(kind: "text", metrics: TextHeroMetrics, locale: StudioLocale): string;
+export function renderHeroMicroMetrics(kind: "video", metrics: VideoHeroMetrics, locale: StudioLocale): string;
+export function renderHeroMicroMetrics(kind: "text" | "video", metrics: TextHeroMetrics | VideoHeroMetrics, locale: StudioLocale): string {
   const values: HeroMetric[] =
     kind === "text"
       ? [
-          { value: formatMetricValue((metrics as TextHeroMetrics).reactions), label: "реакц." },
-          { value: formatMetricValue((metrics as TextHeroMetrics).replies), label: "отв." },
-          { value: formatMetricValue((metrics as TextHeroMetrics).reposts), label: "репост." },
-          { value: formatRate((metrics as TextHeroMetrics).engagementRate), label: "ER" },
+          { value: formatMetricValue((metrics as TextHeroMetrics).reactions), label: t(locale, "cc.hero.reactions") },
+          { value: formatMetricValue((metrics as TextHeroMetrics).replies), label: t(locale, "cc.hero.replies") },
+          { value: formatMetricValue((metrics as TextHeroMetrics).reposts), label: t(locale, "cc.hero.reposts") },
+          { value: formatRate((metrics as TextHeroMetrics).engagementRate), label: t(locale, "cc.hero.engagement") },
         ]
       : [
-          { value: formatCompletionRate((metrics as VideoHeroMetrics).completionRate), label: "досмотры" },
-          { value: formatSeconds((metrics as VideoHeroMetrics).averageWatchTimeMs), label: "ср. время" },
-          { value: formatSigned((metrics as VideoHeroMetrics).subscribers), label: "подп." },
+          { value: formatCompletionRate((metrics as VideoHeroMetrics).completionRate), label: t(locale, "cc.hero.completions") },
+          { value: formatSeconds((metrics as VideoHeroMetrics).averageWatchTimeMs, locale), label: t(locale, "cc.hero.avg-time") },
+          { value: formatSigned((metrics as VideoHeroMetrics).subscribers), label: t(locale, "cc.hero.subscribers") },
         ];
   return `<div class="overview-micro">${values.map((item, index) => `${index ? '<span class="overview-micro__separator">·</span>' : ""}<span><b>${escapeHtml(item.value)}</b> ${escapeHtml(item.label)}</span>`).join("")}</div>`;
 }
@@ -86,11 +88,11 @@ export function renderHeroMicroMetrics(kind: "text" | "video", metrics: TextHero
  * what everything published earlier earned during it. Together they are the
  * headline figure, so the reader can tell a strong day from a long tail.
  */
-function splitLabel(views: number, freshViews: number): string {
+function splitLabel(views: number, freshViews: number, locale: StudioLocale): string {
   if (views <= 0) return "";
   const fresh = Math.max(0, Math.min(freshViews, views));
   const catalogue = views - fresh;
-  return `<span><b>${formatMetricValue(fresh)}</b> новые</span><span class="overview-hero-card__split-separator">·</span><span><b>${formatMetricValue(catalogue)}</b> каталог</span>`;
+  return `<span><b>${formatMetricValue(fresh)}</b> ${t(locale, "cc.hero.fresh")}</span><span class="overview-hero-card__split-separator">·</span><span><b>${formatMetricValue(catalogue)}</b> ${t(locale, "cc.hero.catalogue")}</span>`;
 }
 
 function formatOptionalMetric(value: number | null): string {
@@ -105,8 +107,8 @@ function formatCompletionRate(value: number | null): string {
   return value === null ? "—" : `${value.toFixed(1)}%`;
 }
 
-function formatSeconds(value: number | null): string {
-  return value === null ? "—" : `${(value / 1_000).toFixed(1)}с`;
+function formatSeconds(value: number | null, locale: StudioLocale): string {
+  return value === null ? "—" : t(locale, "cc.hero.seconds", { value: (value / 1_000).toFixed(1) });
 }
 
 function formatSigned(value: number | null): string {

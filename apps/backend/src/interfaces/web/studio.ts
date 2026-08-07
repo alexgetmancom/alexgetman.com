@@ -1,9 +1,11 @@
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { escapeHtml } from "../../foundation/html.js";
+import { t } from "../../foundation/i18n/index.js";
 import type { StudioLocale } from "../../foundation/locale.js";
 import { formatZonedDateTime } from "../../foundation/time.js";
 import { createStudioServices } from "../../studio/services/index.js";
+import { localeQuery, renderLocaleSwitcher } from "./dashboard/locale-links.js";
 
 /**
  * Studio section of the Command Center: a second adapter over the same
@@ -15,20 +17,17 @@ export function renderStudioSection(config: BackendConfig, backendDb: BackendDb,
   const data = createStudioServices(backendDb, config).dashboard(actorId, locale);
   const zone = { timeZone: config.TIMEZONE, label: config.TIMEZONE_LABEL };
   return `
-    <nav class="studio-locale">
-      <a href="/command-center?tab=studio&locale=ru" class="${locale === "ru" ? "active" : ""}">RU</a>
-      <a href="/command-center?tab=studio&locale=en" class="${locale === "en" ? "active" : ""}">EN</a>
-    </nav>
+    <nav class="studio-toolbar">${renderLocaleSwitcher(locale, (target) => `/command-center?tab=studio${localeQuery(target)}`)}</nav>
     <section class="studio-analytics">${mdToHtml(data.analytics.text)}</section>
     <section>
-      <h2>Очередь</h2>
-      ${renderQueueTable("Ближайшее", data.queue.upcoming, zone)}
-      ${renderQueueTable("Черновики", data.queue.drafts, zone)}
-      ${renderAttention(data.queue.attention)}
+      <h2>${t(locale, "cc.studio.queue")}</h2>
+      ${renderQueueTable(t(locale, "cc.studio.upcoming"), data.queue.upcoming, zone, locale)}
+      ${renderQueueTable(t(locale, "cc.studio.drafts"), data.queue.drafts, zone, locale)}
+      ${renderAttention(data.queue.attention, locale)}
     </section>
     <section>
-      <h2>Уведомления</h2>
-      ${renderNotifications(data.notifications, zone)}
+      <h2>${t(locale, "cc.studio.notifications")}</h2>
+      ${renderNotifications(data.notifications, zone, locale)}
     </section>`;
 }
 
@@ -36,29 +35,29 @@ type QueueItem = { id: number; label: string; time: Date; kind: "post" | "video"
 type AttentionItem = { id: number; label: string; kind: "post" | "video" };
 type NotificationRow = { id: number; message: string; severity: string; createdAt: string };
 
-function renderQueueTable(title: string, items: QueueItem[], zone: { timeZone: string; label: string }): string {
-  if (!items.length) return `<h3>${title}</h3><p class="note">Пусто.</p>`;
+function renderQueueTable(title: string, items: QueueItem[], zone: { timeZone: string; label: string }, locale: StudioLocale): string {
+  if (!items.length) return `<h3>${title}</h3><p class="note">${t(locale, "cc.studio.empty")}</p>`;
   const rows = items
     .map(
       (item) =>
         `<tr><td>${escapeHtml(item.label)}</td><td>${item.kind}</td><td>${item.targets}</td><td class="nowrap">${escapeHtml(formatZonedDateTime(item.time, zone.timeZone, zone.label))}</td></tr>`,
     )
     .join("");
-  return `<h3>${title}</h3><table><thead><tr><th>Название</th><th>Тип</th><th>Площадки</th><th>Время</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return `<h3>${title}</h3><table><thead><tr><th>${t(locale, "cc.studio.name")}</th><th>${t(locale, "cc.studio.type")}</th><th>${t(locale, "cc.studio.platforms")}</th><th>${t(locale, "cc.studio.time")}</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
-function renderAttention(items: AttentionItem[]): string {
+function renderAttention(items: AttentionItem[], locale: StudioLocale): string {
   if (!items.length) return "";
   const rows = items.map((item) => `<li>${item.kind === "video" ? "🎬" : "📝"} ${escapeHtml(item.label)}</li>`).join("");
-  return `<h3>Требует внимания</h3><ul class="attention-list">${rows}</ul>`;
+  return `<h3>${t(locale, "cc.studio.attention")}</h3><ul class="attention-list">${rows}</ul>`;
 }
 
-function renderNotifications(events: NotificationRow[], zone: { timeZone: string; label: string }): string {
-  if (!events.length) return '<p class="note">Уведомлений нет.</p>';
+function renderNotifications(events: NotificationRow[], zone: { timeZone: string; label: string }, locale: StudioLocale): string {
+  if (!events.length) return `<p class="note">${t(locale, "cc.studio.no-notifications")}</p>`;
   const rows = events
     .map(
       (event) =>
-        `<li class="notification notification--${escapeHtml(event.severity)}"><span>${escapeHtml(event.message)}</span><time>${escapeHtml(formatZonedDateTime(event.createdAt, zone.timeZone, zone.label))}</time><form method="post" action="/command-center/studio/acknowledge"><input type="hidden" name="id" value="${event.id}"><button type="submit">Прочитано</button></form></li>`,
+        `<li class="notification notification--${escapeHtml(event.severity)}"><span>${escapeHtml(event.message)}</span><time>${escapeHtml(formatZonedDateTime(event.createdAt, zone.timeZone, zone.label))}</time><form method="post" action="/command-center/studio/acknowledge?locale=${locale}"><input type="hidden" name="id" value="${event.id}"><button type="submit">${t(locale, "cc.studio.read")}</button></form></li>`,
     )
     .join("");
   return `<ul class="notification-list">${rows}</ul>`;

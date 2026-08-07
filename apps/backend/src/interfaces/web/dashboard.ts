@@ -4,16 +4,18 @@ import { AUDIENCE_VIEWS, type AudienceView } from "../../botTargets.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { escapeHtml } from "../../foundation/html.js";
-import type { StudioLocale } from "../../foundation/locale.js";
+import { t } from "../../foundation/i18n/index.js";
+import { DEFAULT_STUDIO_LOCALE, parseStudioLocale, type StudioLocale } from "../../foundation/locale.js";
 import type { CommandCenterAttention } from "../../operations/command-center.js";
 import { createOperationsService } from "../../operations/service.js";
 import { type PlatformMetric, renderCombinedSection } from "./dashboard/combined-section.js";
+import { localeQuery, renderLocaleSwitcher } from "./dashboard/locale-links.js";
 import { renderCredentialsSection, renderDiagnosticsSection, renderQueueSection, renderRepairSection } from "./dashboard/ops-sections.js";
 import { buildOverviewData, loadDashboardReadModel, videoOverviewForPeriod } from "./dashboard/overview-data.js";
 import { renderPeriodControls } from "./dashboard/period-controls.js";
 import { renderDashboardShell } from "./dashboard/shell.js";
 import { type PublicationDetailsResult, renderPublicationDetails } from "./dashboard/table.js";
-import { DASHBOARD_THEME_TOGGLE_HTML } from "./dashboard/theme.js";
+import { dashboardThemeToggleHtml } from "./dashboard/theme.js";
 import type { OpsPayload, PipelineData, PipelinePost } from "./dashboard/types.js";
 import { createVideoOverviewCache, invalidateVideoOverviewCache } from "./dashboard/video-overview.js";
 import { renderStudioSection } from "./studio.js";
@@ -129,7 +131,7 @@ export function renderDashboard(
   const showPosts = tab === "posts";
   const showStudio = tab === "studio" && Boolean(studioActorId);
   const activeTab = showStudio ? "studio" : "posts";
-  const locale: StudioLocale = requestedLocale === "en" ? "en" : "ru";
+  const locale = parseStudioLocale(requestedLocale);
   const panel: DashboardPanel =
     requestedPanel === "queue" || requestedPanel === "health" || requestedPanel === "repair" ? requestedPanel : "overview";
   const ops = panel === "queue" || panel === "health" ? service.dashboard() : null;
@@ -143,20 +145,34 @@ export function renderDashboard(
   // `target:locale`, the same key the video destination registry uses.
   const videoView =
     showPosts && config.studio.modules.video_posting && /^[a-z_]+:(ru|en)$/.test(requestedVideoView ?? "") ? requestedVideoView : undefined;
-  const panelLink = (value: DashboardPanel) => `/command-center?tab=posts&panel=${value}${periodDays !== 1 ? `&period=${periodDays}` : ""}`;
+  const localeParam = localeQuery(locale);
+  const panelLink = (value: DashboardPanel) =>
+    `/command-center?tab=posts&panel=${value}${periodDays !== 1 ? `&period=${periodDays}` : ""}${localeParam}`;
+  const localeLink = (target: StudioLocale): string => {
+    const params = new URLSearchParams({ tab: activeTab });
+    if (panel !== "overview") params.set("panel", panel);
+    if (periodDays !== 1) params.set("period", String(periodDays));
+    if (activeView) params.set("view", activeView);
+    if (platformMetric === "followers") params.set("metric", "followers");
+    if (videoView) params.set("video_view", videoView);
+    if (target !== DEFAULT_STUDIO_LOCALE) params.set("locale", target);
+    return `/command-center?${params.toString()}`;
+  };
   const overviewFilterQuery = platformMetric === "followers" ? "&metric=followers" : "";
   const overviewControls =
-    panel === "overview" && showPosts ? renderPeriodControls(weekOffset, periodDays, config.TIMEZONE, activeView, overviewFilterQuery) : "";
+    panel === "overview" && showPosts
+      ? renderPeriodControls(locale, weekOffset, periodDays, config.TIMEZONE, activeView, overviewFilterQuery)
+      : "";
   const content = renderPanel();
 
   function renderPanel(): string {
     switch (panel) {
       case "queue":
-        return renderQueueSection(ops ?? {});
+        return renderQueueSection(ops ?? {}, locale);
       case "health":
-        return `${renderCredentialsSection(ops ?? {})}${renderDiagnosticsSection(ops ?? {})}`;
+        return `${renderCredentialsSection(ops ?? {}, locale)}${renderDiagnosticsSection(ops ?? {}, locale)}`;
       case "repair":
-        return renderRepairSection(ref, messageId);
+        return renderRepairSection(ref, messageId, locale);
       default:
         return renderOverview();
     }
@@ -165,7 +181,7 @@ export function renderDashboard(
   function renderOverview(): string {
     if (showPosts) {
       const readModel = loadDashboardReadModel(config, backendDb, service, videoCache, weekOffset, periodDays, videoView);
-      return renderCombinedSection(buildOverviewData(readModel, activeView, platformMetric));
+      return renderCombinedSection(buildOverviewData(readModel, activeView, platformMetric), locale);
     }
     if (showStudio && studioActorId) return renderStudioSection(config, backendDb, studioActorId, locale);
     return "";
@@ -176,21 +192,27 @@ export function renderDashboard(
   // widest, tallest row on the screen. The one thing that must not be hidden is
   // a problem, so the menu carries a dot when Health has something to say.
   const secondaryTabs = [
-    { label: "Очередь", href: panelLink("queue"), active: panel === "queue" },
-    { label: "Health", href: panelLink("health"), active: panel === "health", attention: hasAttention },
-    { label: "Repair", href: panelLink("repair"), active: panel === "repair" },
+    { label: t(locale, "cc.nav.queue"), href: panelLink("queue"), active: panel === "queue" },
+    { label: t(locale, "cc.nav.health"), href: panelLink("health"), active: panel === "health", attention: hasAttention },
+    { label: t(locale, "cc.nav.repair"), href: panelLink("repair"), active: panel === "repair" },
     ...(studioActorId
-      ? [{ label: "Студия", href: "/command-center?tab=studio", active: panel === "overview" && activeTab === "studio" }]
+      ? [
+          {
+            label: t(locale, "cc.nav.studio"),
+            href: `/command-center?tab=studio${localeParam}`,
+            active: panel === "overview" && activeTab === "studio",
+          },
+        ]
       : []),
   ];
   const activeSecondary = secondaryTabs.find((tab) => tab.active);
   const menuAttention = secondaryTabs.some((tab) => tab.attention);
-  const overviewTab = `<a class="${panel === "overview" && activeTab === "posts" ? "active" : ""}" href="${panelLink("overview")}">Обзор</a>`;
+  const overviewTab = `<a class="${panel === "overview" && activeTab === "posts" ? "active" : ""}" href="${panelLink("overview")}">${t(locale, "cc.nav.overview")}</a>`;
   // Not open on arrival even when one of its entries is the current section:
   // the panel would drop over the content the operator just navigated to. The
   // control names the section instead.
   const menu = `<details class="nav-more">
-    <summary class="nav-more__toggle${activeSecondary ? " active" : ""}${menuAttention ? " nav-more__toggle--attention" : ""}" aria-label="Другие разделы">${activeSecondary ? escapeHtml(activeSecondary.label) : "···"}</summary>
+    <summary class="nav-more__toggle${activeSecondary ? " active" : ""}${menuAttention ? " nav-more__toggle--attention" : ""}" aria-label="${t(locale, "cc.nav.more-sections")}">${activeSecondary ? escapeHtml(activeSecondary.label) : "···"}</summary>
     <div class="nav-more__menu">${secondaryTabs
       .map(
         (tab) =>
@@ -198,12 +220,13 @@ export function renderDashboard(
       )
       .join("")}</div>
   </details>`;
+  const localeSwitcher = renderLocaleSwitcher(locale, localeLink);
   // The overview is one complete Studio surface: text and video stay side by
   // side, with only the period, platform and metric filters remaining.
   const body = `
-    <nav class="dashboard-tabs"><span class="dashboard-tabs__start">${overviewTab}${menu}</span><span class="dashboard-tabs__end">${overviewControls}${DASHBOARD_THEME_TOGGLE_HTML}</span></nav>
+    <nav class="dashboard-tabs"><span class="dashboard-tabs__start">${overviewTab}${menu}</span><span class="dashboard-tabs__end">${overviewControls}${localeSwitcher}${dashboardThemeToggleHtml(t(locale, "cc.theme.toggle"))}</span></nav>
     <section id="overview" class="overview">${content}</section>`;
-  const html = renderDashboardShell(body);
+  const html = renderDashboardShell(body, locale);
   rememberDashboard(cache, cacheKey, html, now);
   return html;
 }
@@ -219,6 +242,7 @@ export function renderDashboardPublicationDetails(
   limit: number,
   track?: string,
   requestedVideoView?: string,
+  requestedLocale?: string,
 ): PublicationDetailsResult {
   // Each half asks for its own list. Without the track the endpoint answered
   // both at once, so "показать ещё" under the clips appended posts.
@@ -237,7 +261,15 @@ export function renderDashboardPublicationDetails(
   const representedPostKeys = new Set(posts.map((post) => post.post_key).filter((key): key is string => Boolean(key)));
   const xPosts = xItems.filter((item) => !item.linkedPostKey || !representedPostKeys.has(item.linkedPostKey)).map(xActivityPipelinePost);
   const videos = wantsVideo ? videoOverviewForPeriod(backendDb, weekOffset, periodDays, config, requestedVideoView).items : [];
-  return renderPublicationDetails([...posts, ...xPosts], targetIds ?? (requestedView === "x" ? ["x"] : undefined), videos, offset, limit);
+  const locale = parseStudioLocale(requestedLocale);
+  return renderPublicationDetails(
+    locale,
+    [...posts, ...xPosts],
+    targetIds ?? (requestedView === "x" ? ["x"] : undefined),
+    videos,
+    offset,
+    limit,
+  );
 }
 
 /** Health is the one hidden tab whose state the operator must see without
@@ -285,8 +317,9 @@ function postHasTarget(post: PipelinePost, target: string): boolean {
   return Boolean(post.metrics?.[target]);
 }
 
-export function renderCommandCenterLogin(error = false): string {
+export function renderCommandCenterLogin(locale: StudioLocale, error = false): string {
   return renderDashboardShell(
-    `<section class="command-login"><h1>Command Center</h1><p class="note">Введите Command Center token. Он сохранится в защищённой HttpOnly-cookie на 180 дней; при смене токена потребуется войти снова.</p>${error ? '<p class="login-error">Неверный token.</p>' : ""}<form method="post" action="/command-center"><input type="password" name="token" autocomplete="current-password" aria-label="Command Center token" placeholder="Command Center token" required><button type="submit">Open Command Center</button></form></section>`,
+    `<section class="command-login"><h1>Command Center</h1><p class="note">${t(locale, "cc.login.prompt")}</p>${error ? `<p class="login-error">${t(locale, "cc.login.invalid-token")}</p>` : ""}<form method="post" action="/command-center"><input type="hidden" name="locale" value="${locale}"><input type="password" name="token" autocomplete="current-password" aria-label="${t(locale, "cc.login.token-label")}" placeholder="${t(locale, "cc.login.token-label")}" required><button type="submit">${t(locale, "cc.login.open")}</button></form></section>`,
+    locale,
   );
 }

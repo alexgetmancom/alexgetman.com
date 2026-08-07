@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { StudioError } from "../src/foundation/errors.js";
-import { catalog, describeError, plural, resolveUiLocale, t } from "../src/foundation/i18n/index.js";
+import { catalog, describeError, plural, t } from "../src/foundation/i18n/index.js";
 
 describe("telegram i18n", () => {
   it("translates keys and interpolates params per locale", () => {
@@ -23,13 +23,6 @@ describe("telegram i18n", () => {
     expect(plural("ru", 21, forms)).toBe("21 день");
     expect(plural("en", 1, { one: "{n} day", many: "{n} days" })).toBe("1 day");
     expect(plural("en", 4, { one: "{n} day", many: "{n} days" })).toBe("4 days");
-  });
-
-  it("resolves locale: stored wins, then Telegram language, then English", () => {
-    expect(resolveUiLocale("ru", "en-US")).toBe("ru");
-    expect(resolveUiLocale(null, "ru-RU")).toBe("ru");
-    expect(resolveUiLocale(null, "de-DE")).toBe("en");
-    expect(resolveUiLocale(undefined, undefined)).toBe("en");
   });
 
   it("translates a StudioError by code and passes other errors through", () => {

@@ -6,7 +6,6 @@ import { type CombinedSectionInput, renderCombinedSection, xChartPost } from "..
 import { calendarDays } from "../src/interfaces/web/dashboard/daily-reach.js";
 import { renderHeroCard } from "../src/interfaces/web/dashboard/hero-section.js";
 import { buildOverviewData, loadDashboardReadModel } from "../src/interfaces/web/dashboard/overview-data.js";
-import { renderTrackPublicationList } from "../src/interfaces/web/dashboard/table.js";
 import { textDailyReach, textOverviewOf } from "../src/interfaces/web/dashboard/text-overview.js";
 import type { PipelinePost } from "../src/interfaces/web/dashboard/types.js";
 import {
@@ -189,11 +188,14 @@ function renderOverview(input: Omit<CombinedSectionInput, "textReach" | "videoRe
   const posts = [...(input.data?.posts ?? []), ...(input.previousData?.posts ?? [])].map((post) =>
     post.post_key && covered.has(post.post_key) ? { ...post, targets: { ...post.targets, x: undefined } } : post,
   );
-  return renderCombinedSection({
-    ...input,
-    videoReach: input.video.dailyByDay,
-    textReach: textOverviewOf([...posts, ...items.map(xChartPost)], [], days, "UTC"),
-  });
+  return renderCombinedSection(
+    {
+      ...input,
+      videoReach: input.video.dailyByDay,
+      textReach: textOverviewOf([...posts, ...items.map(xChartPost)], [], days, "UTC"),
+    },
+    "ru",
+  );
 }
 
 /** The two locale columns of a track's platform legend, RU first. */
@@ -748,29 +750,6 @@ describe("unified overview rendering", () => {
     expect(html).not.toContain("Детальная динамика и публикации");
   });
 
-  it("offers the full list only when the column actually hides rows", () => {
-    const post = (index: number, views: number): PipelinePost => ({
-      post_key: `post-${index}`,
-      date: hoursAgo(index + 1),
-      text_ru: `Пост ${index}`,
-      targets: { telegram: { status: "published" } },
-      metrics: { telegram: { views: { value: views } } },
-    });
-    const many = renderTrackPublicationList(
-      [1, 2, 3, 4, 5, 6].map((index) => post(index, index * 100)),
-      ["telegram"],
-      [],
-      {
-        limit: 4,
-        moreUrl: "/api/publication-details",
-      },
-    );
-    const few = renderTrackPublicationList([post(1, 100)], ["telegram"], [], { limit: 4, moreUrl: "/api/publication-details" });
-
-    expect(many).toContain('<a class="track-publication__more" href="/api/publication-details">показать все 6</a>');
-    expect(few).not.toContain("track-publication__more");
-  });
-
   it("turns the heading gauge green once the norm is beaten", () => {
     const metrics = {
       postCount: 3,
@@ -788,8 +767,8 @@ describe("unified overview rendering", () => {
       projectionViews: 9_300,
       progressPercent: 114,
     };
-    const won = renderHeroCard("text", metrics);
-    const behind = renderHeroCard("text", { ...metrics, views: 1_200, paceLabel: "до нормы 2.4k", progressPercent: 33 });
+    const won = renderHeroCard("text", metrics, "ru");
+    const behind = renderHeroCard("text", { ...metrics, views: 1_200, paceLabel: "до нормы 2.4k", progressPercent: 33 }, "ru");
 
     expect(won).toContain("overview-hero-card__heading--win");
     // The norm is an aside on the number's line, not a stacked second KPI.
