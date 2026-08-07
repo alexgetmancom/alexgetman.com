@@ -55,6 +55,8 @@ type VideoItemDestination = {
   providerAccountId: string | null;
   url: string | null;
   views: number;
+  reactions: number;
+  replies: number;
 };
 
 /**

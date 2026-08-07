@@ -775,6 +775,7 @@ describe("unified overview rendering", () => {
     const metrics = {
       postCount: 3,
       views: 4_128,
+      freshViews: 1_200,
       medianViews: 3_600,
       reactions: 147,
       replies: 23,
@@ -793,6 +794,9 @@ describe("unified overview rendering", () => {
     expect(won).toContain("overview-hero-card__heading--win");
     // The norm is an aside on the number's line, not a stacked second KPI.
     expect(won).toContain("норма дня · <b>3.6k</b>");
+    // The headline number says which part of it is today's own output.
+    expect(won).toContain("<b>1.2k</b> новые");
+    expect(won).toContain("<b>2.9k</b> каталог");
     expect(won).not.toContain("Просмотры");
     expect(behind).not.toContain("overview-hero-card__heading--win");
   });
@@ -988,6 +992,33 @@ describe("unified overview rendering", () => {
       expect(html).toContain("video_view=youtube_shorts%3Aru");
       expect(html).toContain("view=telegram");
       expect(html).not.toContain("overview-split--single");
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("points each half's list loader at its own publications", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      seedVideo(backendDb);
+      const loaded = videoOverview(backendDb, new Date(Date.now() - 86_400_000), new Date());
+      // Both lists have to overflow before either offers to load more.
+      const video = {
+        ...loaded,
+        items: Array.from({ length: 6 }, (_, index) => ({ ...(loaded.items[0] as (typeof loaded.items)[number]), key: `video:${index}` })),
+      };
+      const posts = Array.from({ length: 6 }, (_, index) => ({
+        post_key: `post:${index}`,
+        date: today().toISOString(),
+        targets: { telegram: { status: "published" } },
+        metrics: { telegram: { views: { value: 10 } } },
+      })) as PipelinePost[];
+      const html = renderOverview({ ...baseInput, data: { posts }, video });
+
+      // One endpoint, two callers: without the track the clip list appended
+      // posts when it was asked for more.
+      expect(html).toContain("publication-details?period=1&amp;week_offset=0&amp;track=text");
+      expect(html).toContain("publication-details?period=1&amp;week_offset=0&amp;track=video");
     } finally {
       backendDb.close();
     }

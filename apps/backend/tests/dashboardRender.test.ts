@@ -26,6 +26,7 @@ describe("dashboard formatting", () => {
     const metrics = {
       postCount: 0,
       views: 0,
+      freshViews: 0,
       medianViews: 10_600,
       reactions: 0,
       replies: 0,
@@ -51,6 +52,7 @@ describe("dashboard formatting", () => {
     const html = renderHeroMicroMetrics("video", {
       videoCount: 1,
       views: 100,
+      freshViews: 40,
       medianViews: null,
       completionRate: 24.91925664721141,
       averageWatchTimeMs: 11_500,
@@ -365,7 +367,16 @@ describe("renderOverviewPublicationList", () => {
         {
           key: "video:2",
           destinations: [
-            { target: "instagram_reels", label: "Instagram RU", locale: "RU", providerAccountId: null, url: null, views: 100 },
+            {
+              target: "instagram_reels",
+              label: "Instagram RU",
+              locale: "RU",
+              providerAccountId: null,
+              url: "https://www.instagram.com/reel/CODE123/",
+              views: 100,
+              reactions: 8,
+              replies: 1,
+            },
           ],
           title: "First second third fourth fifth sixth seventh eighth",
           url: "https://www.instagram.com/reel/CODE123/",
@@ -381,7 +392,11 @@ describe("renderOverviewPublicationList", () => {
     );
 
     expect(html).toContain("First second third fourth fifth sixth seventh...");
-    expect(html).toContain('href="https://www.instagram.com/reel/CODE123/"');
+    // The row opens like a text row; the permalink lives on the destination
+    // inside it, where a clip on two platforms has one link each.
+    expect(html).toContain("<details");
+    expect(html).toContain('<a class="post-platform" href="https://www.instagram.com/reel/CODE123/"');
+    expect(html).toContain("РЕЗУЛЬТАТ ПО ПЛОЩАДКАМ");
     expect(html).toContain('class="post-detail__platform-summary" aria-label="Instagram RU"');
     expect(html).toContain('<i class="platform-mark">');
     expect(html).toContain('<b class="post-detail__platform-locale">RU</b>');

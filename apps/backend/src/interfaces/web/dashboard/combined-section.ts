@@ -74,7 +74,6 @@ export type CombinedSectionInput = {
   videoView?: string | undefined;
   /** False only when this Studio publishes no video at all. */
   showVideo?: boolean;
-  publicationDetailsUrl?: string;
 };
 
 const TEXT_COLOR = "var(--series-text)";
@@ -168,13 +167,18 @@ function renderOverviewColumn(
   const history = overviewHistory(input, kind);
   const platformRows = overviewPlatformRows(input, kind);
   const showMetricFilter = single || kind === "text";
+  // The list loader is per half: each one asks only for its own publications.
+  const moreParams = new URLSearchParams({ period: String(input.periodDays), week_offset: String(input.weekOffset), track: kind });
+  if (kind === "text" && input.textView) moreParams.set("view", input.textView);
+  if (kind === "video" && input.videoView) moreParams.set("video_view", input.videoView);
+  const moreUrl = `/api/command-center/publication-details?${moreParams.toString()}`;
   const publicationMarkup =
     kind === "text"
       ? renderOverviewPublicationList(input.textView === "x" ? [...posts, ...currentX.map(xChartPost)] : posts, textTargetIds, [], {
           limit: 4,
-          moreUrl: input.publicationDetailsUrl,
+          moreUrl,
         })
-      : renderOverviewPublicationList([], [], input.video.items, { limit: 4, moreUrl: input.publicationDetailsUrl });
+      : renderOverviewPublicationList([], [], input.video.items, { limit: 4, moreUrl });
   const heroMarkup = kind === "text" ? renderHeroCard("text", hero as TextHeroMetrics) : renderHeroCard("video", hero as VideoHeroMetrics);
   const microMarkup =
     kind === "text" ? renderHeroMicroMetrics("text", hero as TextHeroMetrics) : renderHeroMicroMetrics("video", hero as VideoHeroMetrics);
@@ -428,6 +432,7 @@ function textHeroMetrics(input: CombinedSectionInput, postCount: number): TextHe
   return {
     postCount,
     views: period.views,
+    freshViews: dayKeys(input.rangeEnd, input.periodDays).reduce((total, key) => total + (daily[key]?.freshViews ?? 0), 0),
     medianViews: median,
     reactions,
     replies: period.replies,
@@ -454,6 +459,7 @@ function videoHeroMetrics(input: CombinedSectionInput, periodDays: number, fallb
   return {
     videoCount: input.video.totals.posts,
     views: input.video.totals.views,
+    freshViews: dayKeys(input.rangeEnd, input.periodDays).reduce((total, key) => total + (input.videoReach[key]?.freshViews ?? 0), 0),
     medianViews: median?.views ?? null,
     completionRate: input.video.summary.completionRate,
     averageWatchTimeMs: input.video.summary.averageWatchTimeMs,

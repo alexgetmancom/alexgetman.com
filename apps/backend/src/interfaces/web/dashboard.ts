@@ -217,19 +217,26 @@ export function renderDashboardPublicationDetails(
   requestedView: string | undefined,
   offset: number,
   limit: number,
+  track?: string,
+  requestedVideoView?: string,
 ): PublicationDetailsResult {
+  // Each half asks for its own list. Without the track the endpoint answered
+  // both at once, so "показать ещё" under the clips appended posts.
+  const wantsVideo = track !== "text" && config.studio.modules.video_posting;
+  const wantsText = track !== "video";
   const targetIds = dashboardTargetIds(requestedView);
-  const data = createOperationsService(backendDb, config).pipelineOverview(weekOffset, periodDays, 0, undefined, {
-    includeSamples: false,
-    includeContent: true,
-    contentLimit: offset + limit,
-  });
+  const data = wantsText
+    ? createOperationsService(backendDb, config).pipelineOverview(weekOffset, periodDays, 0, undefined, {
+        includeSamples: false,
+        includeContent: true,
+        contentLimit: offset + limit,
+      })
+    : null;
   const posts = targetIds ? (filterPipeline(data, targetIds)?.posts ?? []) : (data?.posts ?? []);
-  const xItems = requestedView === "x" ? xActivityDashboard(backendDb, weekOffset, periodDays, config.TIMEZONE) : [];
+  const xItems = wantsText && requestedView === "x" ? xActivityDashboard(backendDb, weekOffset, periodDays, config.TIMEZONE) : [];
   const representedPostKeys = new Set(posts.map((post) => post.post_key).filter((key): key is string => Boolean(key)));
   const xPosts = xItems.filter((item) => !item.linkedPostKey || !representedPostKeys.has(item.linkedPostKey)).map(xActivityPipelinePost);
-  const videos =
-    requestedView || !config.studio.modules.video_posting ? [] : videoOverviewForPeriod(backendDb, weekOffset, periodDays, config).items;
+  const videos = wantsVideo ? videoOverviewForPeriod(backendDb, weekOffset, periodDays, config, requestedVideoView).items : [];
   return renderPublicationDetails([...posts, ...xPosts], targetIds ?? (requestedView === "x" ? ["x"] : undefined), videos, offset, limit);
 }
 

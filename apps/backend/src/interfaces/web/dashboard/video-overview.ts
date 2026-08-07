@@ -69,13 +69,16 @@ export function videoOverview(
       const destinations = draftRows
         .map((row) => {
           const destination = destinationFor(bundle.catalogue, row);
+          const period = periodMetrics(snapshots.get(row.id) ?? [], periodDays).totals;
           return {
             target: row.target,
             label: destination?.label ?? videoLabel(row.target),
             locale: destination ? destination.locale.toUpperCase() : (row.locale?.toUpperCase() ?? null),
             providerAccountId: row.providerAccountId,
             url: row.externalUrl,
-            views: periodMetrics(snapshots.get(row.id) ?? [], periodDays).totals.views,
+            views: period.views,
+            reactions: period.reactions,
+            replies: period.replies,
           };
         })
         .sort((left, right) => right.views - left.views);

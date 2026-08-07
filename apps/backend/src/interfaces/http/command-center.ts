@@ -133,7 +133,18 @@ export const commandCenterRoutes: RouteModule = (app, { config, backendDb, opera
       measureMemorySync(
         "command_center.dashboard.publication_details",
         { route: "/api/command-center/publication-details", period: periodDays, weekOffset, offset, limit },
-        () => renderDashboardPublicationDetails(config, backendDb, weekOffset, periodDays, c.req.query("view") ?? undefined, offset, limit),
+        () =>
+          renderDashboardPublicationDetails(
+            config,
+            backendDb,
+            weekOffset,
+            periodDays,
+            c.req.query("view") ?? undefined,
+            offset,
+            limit,
+            c.req.query("track") ?? undefined,
+            c.req.query("video_view") ?? undefined,
+          ),
       ),
     );
   });

@@ -182,11 +182,16 @@ export function buildOverviewData(
     platformMetric,
     textTargetIds: selectedTargetIds,
     textView: activeView,
-    publicationDetailsUrl: publicationDetailsUrl(readModel.periodDays, readModel.weekOffset, activeView, platformMetric),
   };
 }
 
-export function videoOverviewForPeriod(backendDb: BackendDb, weekOffset: number, periodDays: number, config: BackendConfig): VideoOverview {
+export function videoOverviewForPeriod(
+  backendDb: BackendDb,
+  weekOffset: number,
+  periodDays: number,
+  config: BackendConfig,
+  destination?: string,
+): VideoOverview {
   const [start, end] = rollingPeriodDates(weekOffset, periodDays, config.TIMEZONE);
   const cache = createVideoOverviewCache(periodDays <= 7 ? 60 * 60 : 24 * 60 * 60);
   setVideoOverviewCacheRange(
@@ -195,7 +200,7 @@ export function videoOverviewForPeriod(backendDb: BackendDb, weekOffset: number,
     videoDayBounds(end, config.TIMEZONE, true),
     cache.sampleBucketSeconds,
   );
-  return videoForDates(backendDb, config.TIMEZONE, cache, start, end, true);
+  return videoForDates(backendDb, config.TIMEZONE, cache, start, end, true, destination);
 }
 
 function videoForDates(
@@ -220,18 +225,6 @@ function videoForDates(
 function videoDayBounds(date: Date, timeZone: string, endOfDay: boolean): Date {
   const start = zonedSlot(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate(), "00:00", timeZone);
   return endOfDay ? new Date(start.getTime() + 86_400_000 - 1) : start;
-}
-
-function publicationDetailsUrl(
-  periodDays: number,
-  weekOffset: number,
-  requestedView: AudienceView | undefined,
-  platformMetric: PlatformMetric,
-): string {
-  const params = new URLSearchParams({ period: String(periodDays), week_offset: String(weekOffset) });
-  if (requestedView) params.set("view", requestedView);
-  if (platformMetric === "followers") params.set("metric", platformMetric);
-  return `/api/command-center/publication-details?${params.toString()}`;
 }
 
 function shiftDays(date: Date, days: number): Date {

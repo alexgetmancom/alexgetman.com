@@ -203,16 +203,18 @@ function publicationPlatformSummary(platforms: PublicationPlatform[]): string {
 }
 
 function renderRecentVideo(video: VideoContentItem, hidden: boolean): string {
+  // The same row the text side opens: a summary that reads as a column, and a
+  // body that names what each destination earned.
   const extra = [
     video.afterPeriodViews > 0 ? `+${formatMetricValue(video.afterPeriodViews)} после периода` : "",
     video.subscribers ? `${video.subscribers > 0 ? "+" : ""}${formatMetricValue(video.subscribers)} подписки` : "",
   ]
     .filter(Boolean)
     .join(" · ");
-  const rowTitle = [video.title, extra].filter(Boolean).join(" · ");
-  const body = [
-    '<span class="post-detail__summary">',
-    '<span class="post-detail__headline"><span class="post-detail__chevron post-detail__chevron--link">↗</span>',
+  return [
+    `<details class="post-detail${hidden ? " post-detail--more" : ""}" title="${escapeHtml(video.title)}">`,
+    '<summary><span class="post-detail__summary">',
+    '<span class="post-detail__headline"><span class="post-detail__chevron">›</span>',
     `<span class="post-detail__title">${escapeHtml(shortPipelineText(video.title, 7))}</span></span>`,
     `<span class="post-detail__media">${publicationPlatformSummary(videoPublicationPlatforms(video))}</span>`,
     // Two figures answering two questions — what the clip earned inside the
@@ -222,12 +224,15 @@ function renderRecentVideo(video: VideoContentItem, hidden: boolean): string {
     `<span class="post-detail__metric post-detail__lifetime">${video.lifetimeViews > video.views ? `из ${formatMetricValue(video.lifetimeViews)}` : ""}</span>`,
     `<span class="post-detail__metric"><span>${formatMetricValue(video.reactions)}</span></span>`,
     `<span class="post-detail__metric"><span>${formatMetricValue(video.replies)}</span></span>`,
-    "</span>",
+    "</span></summary>",
+    '<div class="post-detail__body">',
+    platformBreakdown(videoPlatformResults(video)),
+    extra
+      ? `<div class="post-detail__content"><div><span class="post-detail__label">ЗА ПРЕДЕЛАМИ ПЕРИОДА</span><p>${escapeHtml(extra)}</p></div></div>`
+      : "",
+    "</div>",
+    "</details>",
   ].join("");
-  const className = `post-detail post-detail--flat${hidden ? " post-detail--more" : ""}`;
-  return video.url
-    ? `<a class="${className}" href="${escapeHtml(video.url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(rowTitle)}">${body}</a>`
-    : `<div class="${className}" title="${escapeHtml(rowTitle)}">${body}</div>`;
 }
 
 function bestPostUrl(post: PipelinePost, targetIds: string[]): string | null {
@@ -279,7 +284,7 @@ function renderRecentPost(post: PipelinePost, targetIds: string[], hidden: boole
     `<span class="post-detail__metric"><span>${formatMetricValue(metrics.replies)}</span></span>`,
     "</span></summary>",
     '<div class="post-detail__body">',
-    platformBreakdown(post, targetIds),
+    platformBreakdown(textPlatformResults(post, targetIds)),
     '<div class="post-detail__content"><div>',
     `<span class="post-detail__label">ENGLISH</span><p>${escapeHtml(english)}</p>`,
     `<span class="post-detail__label">RU ORIGINAL</span><p>${escapeHtml(russian)}</p>`,
@@ -289,34 +294,61 @@ function renderRecentPost(post: PipelinePost, targetIds: string[], hidden: boole
   ].join("");
 }
 
-function platformBreakdown(post: PipelinePost, targetIds: string[]): string {
-  const published = ORDERED_TARGETS.filter((target) => targetIds.includes(target.id) && targetStatus(post, target.id) === "published");
-  if (!published.length) return "";
+/** What one publication earned on one destination, whichever feed it came from. */
+type PlatformResult = {
+  icon: string;
+  locale: string;
+  url: string | null;
+  views: number;
+  reactions: number;
+  replies: number;
+};
+
+function platformBreakdown(results: PlatformResult[]): string {
+  if (!results.length) return "";
   return [
     '<section class="post-platforms" aria-label="Метрики по площадкам">',
     '<span class="post-detail__label">РЕЗУЛЬТАТ ПО ПЛОЩАДКАМ</span>',
     '<div class="post-platforms__grid">',
-    published.map((target) => platformMetrics(post, target.id, target.locale)).join(""),
+    results.map(platformMetrics).join(""),
     "</div>",
     "</section>",
   ].join("");
 }
 
-function platformMetrics(post: PipelinePost, targetId: string, locale: string): string {
-  const url = getTargetUrl(post, targetId);
-  const metrics = {
-    views: getTargetMetric(post, targetId, "views"),
-    reactions: getTargetMetric(post, targetId, "likes") + getTargetMetric(post, targetId, "reposts"),
-    replies: getTargetMetric(post, targetId, "replies"),
-  };
-  const name = `<span class="post-platform__name">${PLATFORM_ICONS[platformKey(targetId)] ?? ""}<b class="post-platform__locale">${escapeHtml(locale.toUpperCase())}</b></span>`;
+function textPlatformResults(post: PipelinePost, targetIds: string[]): PlatformResult[] {
+  return ORDERED_TARGETS.filter((target) => targetIds.includes(target.id) && targetStatus(post, target.id) === "published").map(
+    (target) => ({
+      icon: PLATFORM_ICONS[platformKey(target.id)] ?? "",
+      locale: target.locale,
+      url: getTargetUrl(post, target.id),
+      views: getTargetMetric(post, target.id, "views"),
+      reactions: getTargetMetric(post, target.id, "likes") + getTargetMetric(post, target.id, "reposts"),
+      replies: getTargetMetric(post, target.id, "replies"),
+    }),
+  );
+}
+
+function videoPlatformResults(video: VideoContentItem): PlatformResult[] {
+  return video.destinations.map((destination) => ({
+    icon: PLATFORM_ICONS[VIDEO_PLATFORM_ICON_KEYS[destination.target] ?? destination.target] ?? "",
+    locale: destination.locale ?? "",
+    url: destination.url,
+    views: destination.views,
+    reactions: destination.reactions,
+    replies: destination.replies,
+  }));
+}
+
+function platformMetrics(result: PlatformResult): string {
+  const name = `<span class="post-platform__name">${result.icon}<b class="post-platform__locale">${escapeHtml(result.locale.toUpperCase())}</b></span>`;
   const metric = (label: string, value: number) => {
     const formatted = formatMetricValue(value);
     return `<span class="post-platform__metric" title="${label}" aria-label="${label}: ${formatted}"><b>${formatted}</b></span>`;
   };
-  const content = `${name}<span class="post-platform__metrics">${metric("Охват", metrics.views)}${metric("Реакции", metrics.reactions)}${metric("Ответы", metrics.replies)}</span>`;
-  return url
-    ? `<a class="post-platform" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${content}</a>`
+  const content = `${name}<span class="post-platform__metrics">${metric("Охват", result.views)}${metric("Реакции", result.reactions)}${metric("Ответы", result.replies)}</span>`;
+  return result.url
+    ? `<a class="post-platform" href="${escapeHtml(result.url)}" target="_blank" rel="noopener noreferrer">${content}</a>`
     : `<div class="post-platform">${content}</div>`;
 }
 

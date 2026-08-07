@@ -250,6 +250,9 @@ export function renderDashboardShell(body: string): string {
     .overview-hero-card__median { align-self:end; padding-bottom:7px; text-align:right; }
     .overview-hero-card__median span { display:inline; color:var(--text-secondary); font-size:14px; font-variant-numeric:tabular-nums; }
     .overview-hero-card__median b { color:var(--text-main); font-weight:500; }
+    .overview-hero-card__split { display:flex; flex-wrap:wrap; align-items:baseline; gap:7px; margin:2px 0 0; color:var(--text-secondary); font-size:14px; font-variant-numeric:tabular-nums; }
+    .overview-hero-card__split b { color:var(--text-main); font-weight:500; }
+    .overview-hero-card__split-separator { color:var(--text-muted); }
     .overview-hero-card__context { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:22px; color:var(--text-secondary); font-size:12px; font-weight:500; letter-spacing:.15em; text-transform:uppercase; }
     .overview-hero-card__pace { color:var(--text-secondary); font-size:14px; letter-spacing:0; text-transform:none; text-align:right; }
     .overview-hero-card__pace--positive { color:var(--success); }
@@ -384,7 +387,10 @@ export function renderDashboardShell(body: string): string {
       body { padding:16px 14px 48px; }
       .overview-hero-card__primary { grid-template-columns:minmax(0,1fr) auto; gap:12px; }
       .overview-hero-card__views strong { font-size:48px; }
-      .overview-hero-card__context { align-items:flex-start; flex-direction:column; gap:5px; }
+      .overview-hero-card__split { display:flex; flex-wrap:wrap; align-items:baseline; gap:7px; margin:2px 0 0; color:var(--text-secondary); font-size:14px; font-variant-numeric:tabular-nums; }
+    .overview-hero-card__split b { color:var(--text-main); font-weight:500; }
+    .overview-hero-card__split-separator { color:var(--text-muted); }
+    .overview-hero-card__context { align-items:flex-start; flex-direction:column; gap:5px; }
       .overview-hero-card__pace { text-align:left; }
       .overview-platform { grid-template-columns:16px 1fr; }
       .overview-platform__delta { display:none; }

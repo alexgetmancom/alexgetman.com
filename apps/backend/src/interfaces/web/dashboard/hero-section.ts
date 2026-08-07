@@ -6,6 +6,8 @@ type HeroMetric = { value: string; label: string };
 export type TextHeroMetrics = {
   postCount: number;
   views: number;
+  /** The part of `views` earned by what was published inside the period. */
+  freshViews: number;
   medianViews: number | null;
   reactions: number;
   replies: number;
@@ -22,6 +24,8 @@ export type TextHeroMetrics = {
 export type VideoHeroMetrics = {
   videoCount: number;
   views: number;
+  /** The part of `views` earned by what was published inside the period. */
+  freshViews: number;
   medianViews: number | null;
   completionRate: number | null;
   averageWatchTimeMs: number | null;
@@ -53,6 +57,7 @@ export function renderHeroCard(kind: "text" | "video", metrics: TextHeroMetrics 
       <div class="hero-card__views overview-hero-card__views"><strong>${formatMetricValue(metrics.views)}</strong>${delta ? `<em class="hero-card__delta ${deltaClass(metrics.views, metrics.medianViews)}">${delta}</em>` : ""}</div>
       <div class="hero-card__median overview-hero-card__median"><span>${escapeHtml(metrics.normLabel)} · <b>${formatOptionalMetric(metrics.medianViews)}</b></span></div>
     </div>
+    <div class="overview-hero-card__split">${splitLabel(metrics.views, metrics.freshViews)}</div>
     <div class="overview-hero-card__context"><span>${escapeHtml(metrics.contextLabel)}</span>${metrics.paceLabel ? `<span class="overview-hero-card__pace ${metrics.progressPercent !== null && metrics.progressPercent >= 100 ? "overview-hero-card__pace--positive" : ""}">${escapeHtml(metrics.paceLabel)}</span>` : ""}</div>
   </article>`;
 }
@@ -74,6 +79,18 @@ export function renderHeroMicroMetrics(kind: "text" | "video", metrics: TextHero
           { value: formatSigned((metrics as VideoHeroMetrics).subscribers), label: "подп." },
         ];
   return `<div class="overview-micro">${values.map((item, index) => `${index ? '<span class="overview-micro__separator">·</span>' : ""}<span><b>${escapeHtml(item.value)}</b> ${escapeHtml(item.label)}</span>`).join("")}</div>`;
+}
+
+/**
+ * The one number splits in two: what this period's own publications earned, and
+ * what everything published earlier earned during it. Together they are the
+ * headline figure, so the reader can tell a strong day from a long tail.
+ */
+function splitLabel(views: number, freshViews: number): string {
+  if (views <= 0) return "";
+  const fresh = Math.max(0, Math.min(freshViews, views));
+  const catalogue = views - fresh;
+  return `<span><b>${formatMetricValue(fresh)}</b> новые</span><span class="overview-hero-card__split-separator">·</span><span><b>${formatMetricValue(catalogue)}</b> каталог</span>`;
 }
 
 function formatOptionalMetric(value: number | null): string {
