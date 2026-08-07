@@ -59,10 +59,19 @@ function operation<S extends z.ZodType>(def: OperationDef<S>): OperationDef<S> {
 
 // --- Shared option shapes -------------------------------------------------------
 
-const refOption = z.string().describe("publication ref, e.g. post:160");
+/** A usage line reading `--ref VALUE` is what sends a caller to `--ref 160`,
+ * and the error it earns arrives one round-trip later. The placeholder is the
+ * real invocation, and it reaches both the CLI usage line and the MCP schema. */
+const example = <S extends z.ZodType>(schema: S, placeholder: string): S => schema.meta({ placeholder }) as S;
+
+/** Callers reach for the bare post number — it is what every other surface
+ * shows them — so it is a spelling of the ref, not a mistake to reject. */
+const refOption = example(z.string().trim().min(1), "post:160")
+  .describe("publication ref")
+  .transform((value) => (/^\d+$/.test(value) ? `post:${value}` : value));
 const applyOption = z.boolean().default(false).describe("perform the change; omitted it reports the plan only");
 const localeOption = z.enum(["ru", "en"]).optional().describe("restrict to one language");
-const targetOption = z.string().optional().describe("restrict to one delivery target, e.g. x");
+const targetOption = example(z.string().optional(), "x").describe("restrict to one delivery target");
 const commaList = (what: string) => z.string().optional().describe(`comma-separated ${what}`);
 
 function splitList(value: string | undefined): string[] | undefined {
@@ -122,7 +131,7 @@ export const operationDefs = {
   }),
   find: operation({
     summary: "Resolve a publication ref from a fragment of the post text.",
-    schema: z.object({ query: z.string().min(1).describe("text to search for, e.g. Astra") }),
+    schema: z.object({ query: example(z.string().min(1), "Astra").describe("text to search for") }),
     mutates: false,
     agent: true,
     handler: (context, input) => findPublication(context.db(), input.query),
@@ -219,7 +228,7 @@ export const operationDefs = {
     schema: z.object({
       ref: refOption,
       schedule_locale: z.enum(["ru", "en", "both"]).describe("which language's schedule to move"),
-      at: z.string().min(1).describe('"06.08.2026 08:00" in the configured timezone, or an ISO instant'),
+      at: example(z.string().min(1), '"06.08.2026 08:00"').describe("in the configured timezone, or an ISO instant"),
     }),
     mutates: true,
     agent: true,
@@ -233,7 +242,10 @@ export const operationDefs = {
   }),
   "publication-repair": operation({
     summary: "Reconcile publication rows against their jobs and targets.",
-    schema: z.object({ ref: z.string().optional().describe("scope to one publication; omitted it sweeps everything"), apply: applyOption }),
+    schema: z.object({
+      ref: example(z.string().optional(), "post:160").describe("scope to one publication; omitted it sweeps everything"),
+      apply: applyOption,
+    }),
     mutates: true,
     agent: true,
     note: "scoped repair is preferred",
@@ -269,8 +281,8 @@ export const operationDefs = {
     schema: z.object({
       targets: commaList("delivery targets").describe(`comma-separated delivery targets (default: ${METRIC_BACKFILL_TARGETS})`),
       refs: commaList("publication refs"),
-      from: z.string().optional().describe("ISO date lower bound"),
-      to: z.string().optional().describe("ISO date upper bound"),
+      from: example(z.string().optional(), "ISO").describe("date lower bound"),
+      to: example(z.string().optional(), "ISO").describe("date upper bound"),
       apply: applyOption,
       reset_counts: z.boolean().default(false).describe("clear existing counts before re-sampling"),
     }),
@@ -293,14 +305,14 @@ export const operationDefs = {
   }),
   backup: operation({
     summary: "Copy the database to a timestamped file.",
-    schema: z.object({ output: z.string().optional().describe("destination directory") }),
+    schema: z.object({ output: example(z.string().optional(), "DIRECTORY").describe("destination directory") }),
     mutates: true,
     agent: false,
     handler: async (context, input) => ({ ok: true, path: await backupDatabase(context.db(), context.dbPath, input.output) }),
   }),
   restore: operation({
     summary: "Replace the database with a backup.",
-    schema: z.object({ source: z.string().min(1).describe("backup file to restore"), force: z.boolean().default(false) }),
+    schema: z.object({ source: example(z.string().min(1), "PATH").describe("backup file to restore"), force: z.boolean().default(false) }),
     mutates: true,
     agent: false,
     note: "replaces the database",
@@ -311,7 +323,10 @@ export const operationDefs = {
   }),
   "import-x-analytics": operation({
     summary: "Import an X analytics CSV export.",
-    schema: z.object({ file: z.string().min(1).describe("CSV path on this host"), sampled_at: z.string().min(1).describe("ISO instant") }),
+    schema: z.object({
+      file: example(z.string().min(1), "PATH").describe("CSV path on this host"),
+      sampled_at: example(z.string().min(1), "ISO").describe("when the export was taken"),
+    }),
     mutates: true,
     agent: false,
     handler: (context, input) => importXAnalyticsCsv(context.db(), input.file, input.sampled_at),
@@ -319,10 +334,10 @@ export const operationDefs = {
   "import-manual-analytics": operation({
     summary: "Import hand-collected audience numbers.",
     schema: z.object({
-      x_file: z.string().optional().describe("X analytics CSV path on this host"),
+      x_file: example(z.string().optional(), "PATH").describe("X analytics CSV path on this host"),
       threads_ru_followers: z.coerce.number().int().min(0).optional(),
       threads_en_followers: z.coerce.number().int().min(0).optional(),
-      sampled_at: z.string().optional().describe("ISO instant; defaults to now"),
+      sampled_at: example(z.string().optional(), "ISO").describe("defaults to now"),
     }),
     mutates: true,
     agent: false,
@@ -337,7 +352,7 @@ export const operationDefs = {
   "capability-record": operation({
     summary: "Record the message that proves a platform capability test.",
     schema: z.object({
-      test: z.string().min(1).describe("test id, e.g. T01"),
+      test: example(z.string().min(1), "T01").describe("capability test id"),
       message_id: z.coerce.number().int().describe("message that demonstrates it"),
       notes: z.string().optional(),
     }),
@@ -365,12 +380,12 @@ export const operationDefs = {
   "channel-connect": operation({
     summary: "Connect a publishing channel and store its credentials.",
     schema: z.object({
-      platform: z.string().min(1).describe("youtube or instagram"),
+      platform: example(z.string().min(1), "youtube|instagram").describe("platform to connect"),
       locale: z.enum(["ru", "en"]),
-      provider: z.string().default("native").describe("native or zernio"),
+      provider: example(z.string().default("native"), "native|zernio").describe("delivery provider"),
       account_id: z.string().optional(),
       label: z.string().optional(),
-      credential: z.array(z.string()).default([]).describe("name=value, repeatable"),
+      credential: example(z.array(z.string()).default([]), "name=value").describe("repeatable"),
     }),
     mutates: true,
     agent: false,
@@ -387,7 +402,7 @@ export const operationDefs = {
   "channel-disable": operation({
     summary: "Disable a channel, keeping its publication history attributable.",
     schema: z.object({
-      channel: z.string().min(1).describe("channel id, e.g. youtube_ru"),
+      channel: example(z.string().min(1), "youtube_ru").describe("channel id"),
       forget_credentials: z.boolean().default(false),
     }),
     mutates: true,
@@ -458,12 +473,9 @@ export function operationUsage(name: string, def: OperationDef): string {
   const parts = Object.entries(properties).map(([field, property]) => {
     const flag = optionFlag(field);
     const enumValues = property.enum as string[] | undefined;
+    const placeholder = (property.placeholder as string | undefined) ?? (enumValues ? enumValues.join("|") : "VALUE");
     const token =
-      property.type === "boolean"
-        ? `--${flag}`
-        : property.type === "array"
-          ? `--${flag} VALUE ...`
-          : `--${flag} ${enumValues ? enumValues.join("|") : "VALUE"}`;
+      property.type === "boolean" ? `--${flag}` : property.type === "array" ? `--${flag} ${placeholder} ...` : `--${flag} ${placeholder}`;
     return required.has(field) ? token : `[${token}]`;
   });
   return [name, ...parts].join(" ");

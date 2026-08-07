@@ -56,9 +56,12 @@ Analytics, Operations read models, Observability, and Engagement may read Drizzl
 
 Start any worker, queue, configuration, publication, or error investigation with
 `bun run --filter @alexgetman/backend ops guide --json`. It is read-only and it is the source of
-truth for the command catalog and for whether the local route is usable. If it reports `local.state`
-as `missing` or `unusable`, do not repair `/data` or seed a local database — use the production
-command it prints.
+truth for whether the local route is usable. If it reports `local.state` as `missing` or `unusable`,
+do not repair `/data` or seed a local database — use the production command it prints. Its command
+catalog describes **this working tree**: when it routes you to production, read the deployed catalog
+with `ops:prod --account <acc> guide --json`, because the container runs its last deployed revision
+and a command committed but not yet deployed comes back as `unknown command`. `guide.catalog` says
+which case you are in.
 
 Production is `ssh tw-nl`, containers `alexgetman-backend` and `maru-backend`, and direct execution
 needs `docker exec -u bun <container> bun /app/ops/cli.js <command>` because the entrypoint starts as

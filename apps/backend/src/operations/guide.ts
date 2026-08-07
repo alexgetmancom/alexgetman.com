@@ -19,6 +19,14 @@ export type OperationsGuide = {
     localCommand: string;
     productionCommand: string;
   };
+  catalog: {
+    /** Which build the `commands` below came from. */
+    source: "this working tree";
+    authoritative: boolean;
+    reason: string;
+    /** How to read the catalog the recommended route will actually accept. */
+    command: string;
+  };
   production: {
     sshAlias: "tw-nl";
     containers: { alex: "alexgetman-backend"; maru: "maru-backend" };
@@ -47,6 +55,21 @@ export function buildOperationsGuide(databasePath = process.env.PIPELINE_DB ?? "
   const localCommand = "bun run --filter @alexgetman/backend ops <command>";
   const productionCommand = "bun run ops:prod --account <alex|maru> <command>";
   const route = local.state === "available" ? "local" : "production";
+  // The catalog is compiled into this process. On the local route that is the
+  // binary being run, so it is the truth. On the production route it is not:
+  // the container runs whatever revision was last deployed, and between a
+  // commit and a deploy the two disagree — a command listed here earns
+  // "unknown command" there, which reads as a broken deployment rather than a
+  // stale one. Say which build is being described and where the other lives.
+  const catalog = {
+    source: "this working tree",
+    authoritative: route === "local",
+    reason:
+      route === "local"
+        ? "The local route runs this build, so these are the commands it accepts."
+        : "The production container runs its last deployed revision, which may not accept every command listed here.",
+    command: route === "local" ? localCommand.replace("<command>", "guide --json") : productionCommand.replace("<command>", "guide --json"),
+  } as const;
   return {
     version: 1,
     local,
@@ -64,6 +87,7 @@ export function buildOperationsGuide(databasePath = process.env.PIPELINE_DB ?? "
       containers: { alex: "alexgetman-backend", maru: "maru-backend" },
       execUser: "bun",
     },
+    catalog,
     commands: operationCatalog(),
   };
 }
@@ -86,6 +110,11 @@ export function formatOperationsGuide(guide: OperationsGuide): string {
     guide.next.reason,
     `Local command: ${guide.next.localCommand}`,
     `Production command: ${guide.next.productionCommand}`,
+    "",
+    guide.catalog.authoritative
+      ? "Catalog: this build."
+      : `Catalog below is THIS WORKING TREE, not the deployed one. ${guide.catalog.reason}`,
+    guide.catalog.authoritative ? "" : `Read the deployed catalog with: ${guide.catalog.command}`,
     "",
     "Production access:",
     "  SSH alias: tw-nl",

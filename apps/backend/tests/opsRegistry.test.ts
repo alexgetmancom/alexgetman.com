@@ -40,12 +40,23 @@ describe("operations registry", () => {
     expect(catalog.get("retry")?.agent).toBe(true);
   });
 
-  it("derives the usage line from the schema rather than a written string", () => {
-    expect(operationUsage("retry", operationDef("retry") as never)).toBe("retry --ref VALUE [--target VALUE] [--locale ru|en]");
+  /** A usage line reading `--ref VALUE` is what produced `--ref 160` and the
+   * round-trip it cost; the placeholder has to survive into the rendered line. */
+  it("derives the usage line from the schema, showing the real invocation", () => {
+    expect(operationUsage("retry", operationDef("retry") as never)).toBe("retry --ref post:160 [--target x] [--locale ru|en]");
     expect(operationUsage("recent", operationDef("recent") as never)).toBe("recent [--limit VALUE]");
     expect(operationUsage("story-card-backfill", operationDef("story-card-backfill") as never)).toBe(
-      "story-card-backfill --ref VALUE [--apply] [--force]",
+      "story-card-backfill --ref post:160 [--apply] [--force]",
     );
+  });
+
+  it("accepts the bare post number every other surface shows", async () => {
+    backendDb = openBackendDb(":memory:");
+
+    const normalized = (await runOperation("timeline", context(backendDb), { ref: "160" })) as { ref: string };
+
+    expect(normalized.ref).toBe("post:160");
+    await expect(runOperation("timeline", context(backendDb), { ref: "nonsense" })).rejects.toThrow("--ref must look like post:106");
   });
 
   it("validates input before the handler runs", async () => {
