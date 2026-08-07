@@ -379,7 +379,7 @@ export type DraftStore = {
 export type EventStore = { record(input: DomainEventInput): boolean };
 
 /** Story-card generation is a content side effect, not a database concern. */
-export type StoryCardQueue = { queue(draftId: number): void };
+type StoryCardQueue = { queue(draftId: number): void };
 
 /** Composition-root dependencies passed into application use cases. */
 export type ApplicationPorts = {

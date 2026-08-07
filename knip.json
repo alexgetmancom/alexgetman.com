@@ -19,12 +19,7 @@
       "entry": [
         "tests/**/*.test.ts",
         "src/story-cards/renderer-process.ts",
-        "src/application/index.ts",
-        "src/content/index.ts",
         "src/db/repositories/index.ts",
-        "src/delivery/index.ts",
-        "src/operations/index.ts",
-        "src/publishing/index.ts",
         "src/studio/services/index.ts"
       ],
       "project": ["src/**/*.ts", "tests/**/*.ts"]

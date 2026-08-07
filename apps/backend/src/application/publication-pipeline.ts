@@ -2,7 +2,7 @@ import type { PublicationKind } from "./conversation-flow.js";
 
 export type PublicationScheduleAxis = "locale" | "target";
 
-export type PublicationCapabilities = {
+type PublicationCapabilities = {
   hasMetadataWizard: boolean;
   hasStoryCards: boolean;
   scheduleAxis: PublicationScheduleAxis;
@@ -19,7 +19,7 @@ type PublicationRetrySummary = {
   alreadyQueued: number;
 };
 
-export type PublicationView = {
+type PublicationView = {
   id: number;
   status: string;
 };
@@ -31,7 +31,7 @@ export type Issue = {
   code?: string;
 };
 
-export type PreviewModel = PublicationView & {
+type PreviewModel = PublicationView & {
   issues: Issue[];
 };
 
