@@ -372,6 +372,8 @@ jobs:
       - name: Image smoke test
         env:
           IMAGE: ghcr.io/${{ github.repository_owner }}/alexgetman-backend@${{ steps.image.outputs.digest }}
+          # The bundle has no source layout to resolve the migrations against.
+          DRIZZLE_MIGRATIONS_DIR: apps/backend/drizzle
         run: bun smoke/image-smoke.js
 
   media-processor-image:
