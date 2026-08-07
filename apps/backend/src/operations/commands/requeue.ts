@@ -5,7 +5,7 @@ import { postTargets, publications, publishJobs, siteJobs } from "../../db/schem
 import { removePublishedTargets } from "../../delivery/external-removals.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { jsonObject } from "../../json.js";
-import { requeuedPublishJobColumns } from "../../publishing/job-policy.js";
+import { requeuedPostTarget, requeuedPublishJobColumns } from "../../publishing/job-policy.js";
 import { localizeTargetPayload } from "../../publishing/payload.js";
 import { siteReasonForTarget } from "../../publishing/targets.js";
 import { type ResolvedPublicationRef, sourcePayload } from "../publication-ref.js";
@@ -43,20 +43,10 @@ function requeueSitePublication(
       .set({ status: "queued", attemptCount: 0, nextAttemptAt: null, lockedBy: null, lockedAt: null, lastError: null, updatedAt: now })
       .where(eq(siteJobs.jobId, row.jobId))
       .run();
+    const mirrored = requeuedPostTarget(ref.postKey, target, now);
     tx.insert(postTargets)
-      .values({
-        postKey: ref.postKey,
-        target,
-        status: "queued",
-        error: null,
-        skipped: 0,
-        updatedAt: now,
-        rawJson: JSON.stringify({ requeued: true }),
-      })
-      .onConflictDoUpdate({
-        target: [postTargets.postKey, postTargets.target],
-        set: { status: "queued", error: null, skipped: 0, updatedAt: now, rawJson: JSON.stringify({ requeued: true }) },
-      })
+      .values(mirrored.values)
+      .onConflictDoUpdate({ target: [postTargets.postKey, postTargets.target], set: mirrored.patch })
       .run();
     if (ref.postId != null)
       tx.update(publications).set({ status: "scheduled", updatedAt: now }).where(eq(publications.postId, ref.postId)).run();
@@ -147,20 +137,10 @@ function requeuePublication(backendDb: BackendDb, ref: ResolvedPublicationRef, t
         const payload = localizeTargetPayload(Object.keys(source).length > 0 ? source : jsonObject(row.payloadJson), targetId);
         tx.update(publishJobs).set(requeuedPublishJobColumns(payload, now)).where(eq(publishJobs.jobId, row.jobId)).run();
       }
+      const mirrored = requeuedPostTarget(row.postKey ?? ref.postKey, targetId, now);
       tx.insert(postTargets)
-        .values({
-          postKey: row.postKey ?? ref.postKey,
-          target: targetId,
-          status: "queued",
-          error: null,
-          skipped: 0,
-          updatedAt: now,
-          rawJson: JSON.stringify({ requeued: true }),
-        })
-        .onConflictDoUpdate({
-          target: [postTargets.postKey, postTargets.target],
-          set: { status: "queued", error: null, skipped: 0, updatedAt: now, rawJson: JSON.stringify({ requeued: true }) },
-        })
+        .values(mirrored.values)
+        .onConflictDoUpdate({ target: [postTargets.postKey, postTargets.target], set: mirrored.patch })
         .run();
       results.push({ target: targetId, outcome: existing ? "already_queued" : "requeued" });
     }

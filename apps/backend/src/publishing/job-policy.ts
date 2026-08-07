@@ -64,3 +64,12 @@ export function requeuedPublishJobColumns(payload: JsonObject, now: string) {
     updatedAt: now,
   };
 }
+
+/** The post_targets row that mirrors a requeued job. post_targets is what the
+ * Command Center and the bot read, so the three places that requeue -- ops for
+ * social, ops for the site, Studio's retry -- have to agree on it exactly; they
+ * each spelled it out instead, which is how the publish-job column set drifted. */
+export function requeuedPostTarget(postKey: string, target: string, now: string) {
+  const patch = { status: "queued" as const, error: null, skipped: 0, updatedAt: now, rawJson: JSON.stringify({ requeued: true }) };
+  return { values: { postKey, target, ...patch }, patch };
+}

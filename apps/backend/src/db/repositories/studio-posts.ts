@@ -9,7 +9,7 @@ import type {
 } from "../../application/ports.js";
 import { publicationRef } from "../../application/publication-ref.js";
 import { jsonObject } from "../../json.js";
-import { requeuedPublishJobColumns } from "../../publishing/job-policy.js";
+import { requeuedPostTarget, requeuedPublishJobColumns } from "../../publishing/job-policy.js";
 import { localizeTargetPayload } from "../../publishing/payload.js";
 import { siteReasonForTarget, siteTargetForReason } from "../../publishing/targets.js";
 import {
@@ -188,7 +188,7 @@ export function createStudioPostStore(db: BackendDatabase): StudioPostStore {
                   })
                   .where(and(eq(siteJobs.jobId, row.jobId), inArray(siteJobs.status, ["failed", "verification_required"])))
                   .run();
-                upsertPostTarget(tx, postId, target, now);
+                mirrorRequeuedTarget(tx, postId, target, now);
               },
             });
           } else {
@@ -221,7 +221,7 @@ export function createStudioPostStore(db: BackendDatabase): StudioPostStore {
                   .set(requeuedPublishJobColumns(payload, now))
                   .where(and(eq(publishJobs.jobId, row.jobId), inArray(publishJobs.status, ["failed", "verification_required"])))
                   .run();
-                upsertPostTarget(tx, postId, target, now);
+                mirrorRequeuedTarget(tx, postId, target, now);
               },
             });
           }
@@ -268,21 +268,11 @@ function publicationSource(db: BackendDatabase, postId: number): Record<string, 
   return Object.keys(siteSource).length > 0 ? siteSource : jsonObject(post?.rawJson);
 }
 
-function upsertPostTarget(db: BackendTransaction, postId: number, target: string, now: string): void {
+function mirrorRequeuedTarget(db: BackendTransaction, postId: number, target: string, now: string): void {
+  const mirrored = requeuedPostTarget(`post:${postId}`, target, now);
   db.insert(postTargets)
-    .values({
-      postKey: `post:${postId}`,
-      target,
-      status: "queued",
-      error: null,
-      skipped: 0,
-      updatedAt: now,
-      rawJson: JSON.stringify({ requeued: true }),
-    })
-    .onConflictDoUpdate({
-      target: [postTargets.postKey, postTargets.target],
-      set: { status: "queued", error: null, skipped: 0, updatedAt: now, rawJson: JSON.stringify({ requeued: true }) },
-    })
+    .values(mirrored.values)
+    .onConflictDoUpdate({ target: [postTargets.postKey, postTargets.target], set: mirrored.patch })
     .run();
 }
 
