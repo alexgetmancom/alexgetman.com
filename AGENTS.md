@@ -80,6 +80,25 @@ catalogs, and the `ops_*` MCP tools are all projections of it — adding an entr
 and a usage string is never written by hand. `agent: false` keeps an operation off MCP; that is the
 line for anything moving the database file, writing credentials, or reading a host path.
 
+# X analytics imports
+
+Handed an X Analytics CSV, import it without asking:
+
+    bun run ops:prod --account alex import-x-analytics --file <path> --sampled-at <file mtime, ISO UTC>
+    bun run ops:prod --account alex x-analytics
+
+`ops:prod` copies a local `--file`/`--x-file` into the container and removes it afterwards, so a Mac
+path is the right argument. `--sampled-at` is the export's own timestamp — the file's mtime, never
+`now` — because it stamps the metric history. Re-importing a byte-identical file is a no-op by
+SHA-256, so a repeat costs nothing; a re-export of the same period is a new file and a new sample.
+
+`x-analytics` is the read-only account of the result: per-import row counts, linked vs unlinked
+activity, editorial X targets no export covers, and `linkCandidates` — unlinked items whose text
+matches exactly one editorial post below the import's 80-character linking bar. Candidates are
+reported, never linked: the bar lives in `x-post-matching.ts` and is the only place to change it.
+X caps an export's rows, so a three-month window returns *fewer* posts than a two-week one. Long
+windows extend history; they do not replace the dense recent export.
+
 # Local data
 
 `bun scripts/dev-seed.ts` seeds site and dashboard fixtures and prints the launch line and both

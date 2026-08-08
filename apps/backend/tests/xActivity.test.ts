@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { importXAnalyticsCsv } from "../src/analytics/import-x-csv.js";
+import { xAnalyticsReport } from "../src/analytics/x-activity-report.js";
 import { xActivityItems, xActivityMetricSnapshots } from "../src/db/schema.js";
 import { type CombinedSectionInput, renderCombinedSection, xChartPost } from "../src/interfaces/web/dashboard/combined-section.js";
 import { calendarDays } from "../src/interfaces/web/dashboard/daily-reach.js";
@@ -94,6 +95,50 @@ describe("X Activity", () => {
       const repeated = importXAnalyticsCsv(backendDb, file, now);
       expect(repeated.activitySamples).toBe(0);
       expect(backendDb.db.select().from(xActivityItems).all()).toHaveLength(2);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("reports coverage and the near-miss links an import declined to make", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = "2026-07-29T11:49:00.000Z";
+      // Long enough for the import to link on, and one that only clears the
+      // report's lower bar: the second is the near miss the report exists for.
+      const linked = "A long enough Studio post about the newest frontier model and what it changes for everyone";
+      const short = "A shorter Studio post about pricing changes";
+      backendDb.sqlite
+        .prepare(
+          "INSERT INTO posts(post_key,post_id,channel,message_id,date_utc,text_en,status,created_at,updated_at) VALUES ('post:1',1,'test',1,?,?,'active',?,?),('post:2',2,'test',2,?,?,'active',?,?)",
+        )
+        .run(now, `${linked} and a tail`, now, now, now, `${short} and a tail`, now, now);
+      backendDb.sqlite
+        .prepare(
+          "INSERT INTO post_targets(post_key,target,status,external_id,url,updated_at) VALUES ('post:9','x','published','900','https://x.com/test/status/900',?)",
+        )
+        .run(now);
+      const directory = mkdtempSync(join(tmpdir(), "x-activity-report-"));
+      const file = join(directory, "account_analytics_content_2026-07-23_2026-07-29.csv");
+      const metricValues = (views: number) => [views, 2, 4, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0];
+      writeFileSync(
+        file,
+        [
+          HEADERS.join(","),
+          ["100", '"Wed, Jul 29, 2026"', `"${linked}"`, "https://x.com/test/status/100", ...metricValues(50)].join(","),
+          ["101", '"Wed, Jul 29, 2026"', `"${short}"`, "https://x.com/test/status/101", ...metricValues(500)].join(","),
+        ].join("\n"),
+      );
+      importXAnalyticsCsv(backendDb, file, now);
+
+      const report = xAnalyticsReport(backendDb, 10);
+
+      expect(report.imports).toMatchObject([{ id: 1, rowCount: 2, sampledAt: now, items: 2 }]);
+      expect(report.items).toMatchObject({ total: 2, linked: 1, unlinked: 1 });
+      // post:9 was published to X but no export row carries it.
+      expect(report.editorialCoverage).toMatchObject({ xTargets: 2, covered: 1, uncovered: [{ postKey: "post:9" }] });
+      expect(report.linkCandidates).toMatchObject([{ xPostId: "101", postKey: "post:2" }]);
+      expect(report.topUnlinked[0]).toMatchObject({ xPostId: "101", views: 500 });
     } finally {
       backendDb.close();
     }

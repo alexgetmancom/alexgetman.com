@@ -1,6 +1,7 @@
 import * as z from "zod";
 import { importManualAnalytics } from "../analytics/import-manual-analytics.js";
 import { importXAnalyticsCsv } from "../analytics/import-x-csv.js";
+import { xAnalyticsReport } from "../analytics/x-activity-report.js";
 import { type BackendDb, migrationStatus, unsafeDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { checkDataDirectoriesWritable, requiredDataDirectories } from "../foundation/runtime/data-dirs.js";
@@ -185,6 +186,14 @@ const operationDefs = {
     mutates: false,
     agent: true,
     handler: (context) => ({ migrations: migrationStatus(unsafeDb(context.db()).sqlite) }),
+  }),
+  "x-analytics": operation({
+    summary: "What the X CSV imports hold: coverage, unlinked activity and posts an import declined to link.",
+    schema: z.object({ limit: z.coerce.number().int().min(1).max(100).default(10).describe("how many unlinked items to list") }),
+    mutates: false,
+    agent: true,
+    note: "run after every import-x-analytics",
+    handler: (context, input) => xAnalyticsReport(context.db(), input.limit),
   }),
   "media-status": operation({
     summary: "Reachability and queue depth of the media processor.",

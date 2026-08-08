@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { type BackendDb, unsafeDb } from "../db/client.js";
+import { editorialTexts, matchEditorialPost } from "./x-post-matching.js";
 
 type CsvRow = Record<string, string>;
 type ParsedCsv = { headers: string[]; rows: CsvRow[] };
@@ -86,12 +87,7 @@ export function importXAnalyticsCsv(backendDb: BackendDb, sourcePath: string, sa
     targetIdsByPost.set(target.post_key, ids);
     for (const id of ids) postByExternalId.set(id, target.post_key);
   }
-  const postText = unsafeDb(backendDb)
-    .sqlite.prepare("SELECT post_key, text_en FROM posts WHERE trim(COALESCE(text_en, '')) <> ''")
-    .all() as Array<{
-    post_key: string;
-    text_en: string;
-  }>;
+  const postText = editorialTexts(backendDb);
   const imported = unsafeDb(backendDb).sqlite.prepare(
     "SELECT 1 FROM metric_samples WHERE post_key=? AND target='x' AND metric_name=? AND sampled_at=? AND source='x_csv_export' LIMIT 1",
   );
@@ -152,7 +148,7 @@ export function importXAnalyticsCsv(backendDb: BackendDb, sourcePath: string, sa
       if (!externalId) continue;
       let postKey = postByExternalId.get(externalId);
       if (!postKey) {
-        const direct = uniqueDirectPost(row["Текст поста"], postText);
+        const direct = matchEditorialPost(row["Текст поста"], postText);
         if (direct) {
           postKey = direct;
           const ids = targetIdsByPost.get(postKey) ?? new Set<string>();
@@ -248,24 +244,6 @@ function jsonStrings(value: string | null): string[] {
   } catch {
     return [];
   }
-}
-
-/** X truncates exported post text, so only a unique, long prefix may create a
- * new association. Quotes/replies intentionally stay unmatched: their text
- * describes the conversation, not necessarily the material being measured. */
-function uniqueDirectPost(xText: string | undefined, posts: Array<{ post_key: string; text_en: string }>): string | null {
-  const source = comparableText(xText);
-  if (source.length < 80) return null;
-  const matches = posts.filter((post) => comparableText(post.text_en).startsWith(source));
-  return matches.length === 1 ? (matches[0]?.post_key ?? null) : null;
-}
-
-function comparableText(value: string | undefined): string {
-  return (value ?? "")
-    .replace(/https?:\/\/\S+/giu, "")
-    .replace(/\s+/gu, " ")
-    .trim()
-    .toLocaleLowerCase();
 }
 
 /** null means "this export says nothing about the metric" — never zero. */
