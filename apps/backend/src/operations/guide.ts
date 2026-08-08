@@ -10,7 +10,7 @@ type LocalOperationsProbe = {
   reason: string;
 };
 
-export type OperationsGuide = {
+type OperationsGuide = {
   version: 1;
   local: LocalOperationsProbe;
   route: "local" | "production";

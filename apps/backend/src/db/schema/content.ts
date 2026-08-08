@@ -16,7 +16,6 @@ export const posts = sqliteTable("posts", {
   htmlEn: text(),
   mediaJson: text(),
   mediaCount: integer().notNull().default(0),
-  mediaTypesJson: text(),
   siteRuPath: text(),
   siteEnPath: text(),
   telegramUrl: text(),
@@ -61,13 +60,3 @@ export const postTargets = sqliteTable(
   },
   (table) => [primaryKey({ columns: [table.postKey, table.target] })],
 );
-
-export const postLifecycle = sqliteTable("post_lifecycle", {
-  postKey: text().primaryKey(),
-  state: text().notNull(),
-  previousState: text(),
-  enteredAt: text().notNull(),
-  updatedAt: text().notNull(),
-  reason: text(),
-  rawJson: text(),
-});

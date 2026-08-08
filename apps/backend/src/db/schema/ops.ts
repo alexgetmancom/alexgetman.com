@@ -61,37 +61,6 @@ export const runtimeUsage = sqliteTable(
   ],
 );
 
-/** Low-frequency process and cgroup samples retained across container recreates. */
-export const runtimeMemorySamples = sqliteTable(
-  "runtime_memory_samples",
-  {
-    id: autoId(),
-    observedAt: text().notNull(),
-    processStartedAt: text().notNull(),
-    revision: text(),
-    rssBytes: integer().notNull(),
-    heapUsedBytes: integer().notNull(),
-    heapTotalBytes: integer().notNull(),
-    externalBytes: integer().notNull(),
-    cgroupCurrentBytes: integer(),
-    cgroupPeakBytes: integer(),
-    cgroupLimitBytes: integer(),
-    cgroupAnonBytes: integer(),
-    cgroupFileBytes: integer(),
-  },
-  (table) => [index("idx_runtime_memory_samples_observed_at").on(table.observedAt)],
-);
-
-export const deploymentSnapshots = sqliteTable("deployment_snapshots", {
-  id: autoId(),
-  gitSha: text(),
-  action: text().notNull(),
-  status: text().notNull(),
-  backupPath: text(),
-  detailsJson: text(),
-  createdAt: text().notNull(),
-});
-
 export const alertDedup = sqliteTable("alert_dedup", {
   alertKey: text().primaryKey(),
   lastSentAt: text().notNull(),
@@ -143,20 +112,3 @@ export const mediaTestCases = sqliteTable("media_test_cases", {
   notes: text(),
   ...timestamps(),
 });
-
-export const mediaTestResults = sqliteTable(
-  "media_test_results",
-  {
-    testId: text().notNull(),
-    target: text().notNull(),
-    messageId: integer().notNull(),
-    status: text().notNull(),
-    externalId: text(),
-    url: text(),
-    error: text(),
-    notes: text(),
-    rawJson: json<JsonValue | null>(),
-    checkedAt: text().notNull(),
-  },
-  (table) => [primaryKey({ columns: [table.testId, table.target, table.messageId] })],
-);

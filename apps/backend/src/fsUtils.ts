@@ -30,10 +30,6 @@ export function atomicWriteText(filePath: string, content: string): void {
   }
 }
 
-export function atomicWriteJsonSync(filePath: string, value: unknown): void {
-  atomicWriteText(filePath, `${JSON.stringify(value, null, 2)}\n`);
-}
-
 export async function atomicWriteJson(filePath: string, value: unknown): Promise<void> {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const temp = tempPath(filePath);

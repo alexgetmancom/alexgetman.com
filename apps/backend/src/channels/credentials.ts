@@ -32,7 +32,7 @@ const CREDENTIAL_SHAPES: Record<string, Record<string, { ru: string; en: string 
   "youtube:zernio": { apiKey: { ru: "ZERNIO_API_KEY", en: "ZERNIO_API_KEY" } },
 };
 
-export type CredentialShape = { name: string; envVariable: string }[];
+type CredentialShape = { name: string; envVariable: string }[];
 
 /** What a channel of this platform and provider has to be given. An empty list
  * means the provider needs nothing beyond the account id on the connection. */

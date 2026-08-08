@@ -3,7 +3,7 @@ import { t } from "../foundation/i18n/index.js";
 import type { StudioLocale } from "../foundation/locale.js";
 import { versionedCallback } from "./publication-callback.js";
 
-export type DialogButton = { label: string; callback: string };
+type DialogButton = { label: string; callback: string };
 
 /** Renders a compact row of dialog actions with an optional session revision. */
 function dialogKeyboard(buttons: readonly DialogButton[], revision?: number | null): InlineKeyboard {

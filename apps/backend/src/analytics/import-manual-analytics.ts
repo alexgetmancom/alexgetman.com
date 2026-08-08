@@ -15,7 +15,7 @@ type ManualProfileResult = {
   followersCount: number;
 };
 
-export type ManualAnalyticsImportResult = {
+type ManualAnalyticsImportResult = {
   sampledAt: string;
   x: XCsvImportResult | null;
   profiles: ManualProfileResult[];

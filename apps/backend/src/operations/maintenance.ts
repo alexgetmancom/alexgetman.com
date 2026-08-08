@@ -6,7 +6,6 @@ import { freezeDisabledMetricSchedules } from "../analytics/collection/metric-sc
 import { parsePublicationRef } from "../application/publication-ref.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import {
-  deploymentSnapshots,
   drafts,
   maintenanceLocks,
   metricSchedule,
@@ -32,10 +31,6 @@ export async function backupDatabase(backendDb: BackendDb, sourcePath: string, d
     .replace(/\.\d{3}Z$/, "Z");
   const destination = path.join(directory, `${path.basename(sourcePath, path.extname(sourcePath))}-${stamp}.db`);
   await unsafeDb(backendDb).sqlite.backup(destination);
-  unsafeDb(backendDb)
-    .db.insert(deploymentSnapshots)
-    .values({ action: "backup", status: "ok", backupPath: destination, createdAt: new Date().toISOString() })
-    .run();
   return destination;
 }
 
@@ -47,7 +42,7 @@ export function restoreDatabase(source: string, destination: string, force: bool
   fs.copyFileSync(source, destination, fs.constants.COPYFILE_FICLONE);
 }
 
-export type OperationalRetentionResult = {
+type OperationalRetentionResult = {
   postEvents: number;
   opsActions: number;
   sitePageviews: number;

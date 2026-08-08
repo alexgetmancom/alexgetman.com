@@ -9,7 +9,7 @@ type FlowAcceptance<TData, TEffect = never> = {
 /** What a step expects from the transport. Steps without one are reached by a
  * control (a button), not by something the operator sends, so a message adapter
  * must leave them alone instead of guessing. */
-export type FlowStepInput = "text" | "media";
+type FlowStepInput = "text" | "media";
 
 export type FlowStep<TData, TInput = unknown, TEffect = never, TStep extends string = string> = {
   name: TStep;
@@ -24,7 +24,7 @@ export type Flow<TData, TInput = unknown, TEffect = never, TStep extends string 
   steps: Record<TStep, FlowStep<TData, TInput, TEffect, TStep>>;
 };
 
-export type FlowTransition<TData, TEffect = never, TStep extends string = string> = {
+type FlowTransition<TData, TEffect = never, TStep extends string = string> = {
   data: TData;
   next: TStep | null;
   effects: readonly TEffect[];

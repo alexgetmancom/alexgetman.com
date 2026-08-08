@@ -49,8 +49,8 @@ const draftPatchReaders = {
   threadsChainApproved: (draft: DraftRecord) => draft.threads_chain_approved,
 } satisfies Record<DraftPatchField, (draft: DraftRecord) => string | number | null>;
 
-export type PostScheduleInput = { ruAt: Date | null; enAt: Date | null; allowPast?: boolean; immediateLocale?: "ru" | "en" };
-export type PostScheduleScope = "ru" | "en" | "both";
+type PostScheduleInput = { ruAt: Date | null; enAt: Date | null; allowPast?: boolean; immediateLocale?: "ru" | "en" };
+type PostScheduleScope = "ru" | "en" | "both";
 
 /** Replans a scheduled text-only post after regenerated Story cards are ready. */
 export function replanScheduledPostAfterStoryCards(backendDb: BackendDb, config: BackendConfig, draftId: number): boolean {

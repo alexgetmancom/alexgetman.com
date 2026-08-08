@@ -6,13 +6,13 @@ import type { PublicationEffect } from "./effects.js";
 import { publicationCallback, versionedCallback } from "./publication-callback.js";
 
 /** The values along which a scheduling screen lets an operator move. */
-export type ScheduleAxis<T extends string> = {
+type ScheduleAxis<T extends string> = {
   values: readonly T[];
   label: (value: T) => string;
   callback: (value: T) => string;
 };
 
-export type PublicationScheduleEngine<T extends string> = {
+type PublicationScheduleEngine<T extends string> = {
   scheduleAxis: PublicationScheduleAxis;
   axisKeys: readonly T[];
   axisLabel: (key: T) => string;

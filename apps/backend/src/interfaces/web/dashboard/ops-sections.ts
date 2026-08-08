@@ -122,13 +122,5 @@ export function renderDiagnosticsSection(ops: OpsPayload, locale: StudioLocale):
           `<tr><td>${escapeHtml(row.messageId)}</td><td>${escapeHtml(row.target)}</td><td>${escapeHtml(row.status ?? "failed")}</td><td class="wide">${escapeHtml(row.error)}</td></tr>`,
       )
       .join("\n") || `<tr><td colspan='4'>${t(locale, "cc.queue.empty")}</td></tr>`;
-  const lifecycle =
-    (ops.lifecycle ?? [])
-      .slice(0, 30)
-      .map(
-        (row) =>
-          `<tr><td>${escapeHtml(row.postKey)}</td><td>${escapeHtml(row.state)}</td><td>${escapeHtml(row.reason)}</td><td>${escapeHtml(row.updatedAt)}</td></tr>`,
-      )
-      .join("\n") || `<tr><td colspan='4'>${t(locale, "cc.queue.empty")}</td></tr>`;
-  return `<section><h2>${t(locale, "cc.health.errors")}</h2><table><thead><tr><th>${t(locale, "cc.queue.message")}</th><th>${t(locale, "cc.queue.target")}</th><th>${t(locale, "cc.queue.status")}</th><th>${t(locale, "cc.queue.error")}</th></tr></thead><tbody>${errors}</tbody></table></section><section><h2>${t(locale, "cc.health.lifecycle")}</h2><table><thead><tr><th>${t(locale, "cc.queue.message")}</th><th>${t(locale, "cc.health.state")}</th><th>${t(locale, "cc.health.reason")}</th><th>${t(locale, "cc.queue.updated")}</th></tr></thead><tbody>${lifecycle}</tbody></table></section>`;
+  return `<section><h2>${t(locale, "cc.health.errors")}</h2><table><thead><tr><th>${t(locale, "cc.queue.message")}</th><th>${t(locale, "cc.queue.target")}</th><th>${t(locale, "cc.queue.status")}</th><th>${t(locale, "cc.queue.error")}</th></tr></thead><tbody>${errors}</tbody></table></section>`;
 }

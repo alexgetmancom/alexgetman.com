@@ -10,18 +10,18 @@ import { isVideoTargetEditable, isVideoTargetMetadataEditable, isVideoTargetSche
 import { type InstagramMetadata, type VideoTarget, videoTargetLabel, type YouTubeMetadata } from "../../publishing/video-types.js";
 import { formatVideoTime } from "./video-time.js";
 
-export type VideoPreviewData = {
+type VideoPreviewData = {
   draft: { id: number; label: string; locale: string; status: string };
   targets: Array<{ id: number; target: string; status: string; metadataJson: unknown; scheduledAt: string | null }>;
 };
 
-export type VideoPreviewView = "overview" | "confirm_now" | "confirm_cancel" | "confirm_remove";
+type VideoPreviewView = "overview" | "confirm_now" | "confirm_cancel" | "confirm_remove";
 
 export function isVideoPreviewView(value: string | undefined): value is VideoPreviewView {
   return value === "overview" || value === "confirm_now" || value === "confirm_cancel" || value === "confirm_remove";
 }
 
-export type VideoPreviewOptions = {
+type VideoPreviewOptions = {
   view?: VideoPreviewView | undefined;
   revision?: number | null | undefined;
   target?: VideoTarget | undefined;

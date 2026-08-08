@@ -24,16 +24,6 @@ CREATE TABLE `credential_checks` (
 	`details_json` text
 );
 --> statement-breakpoint
-CREATE TABLE `deployment_snapshots` (
-	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
-	`git_sha` text,
-	`action` text NOT NULL,
-	`status` text NOT NULL,
-	`backup_path` text,
-	`details_json` text,
-	`created_at` text NOT NULL
-);
---> statement-breakpoint
 CREATE TABLE `drafts` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	"actor_id" integer NOT NULL,
@@ -73,20 +63,6 @@ CREATE TABLE `media_test_cases` (
 	`notes` text,
 	`created_at` text NOT NULL,
 	`updated_at` text NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE `media_test_results` (
-	`test_id` text NOT NULL,
-	`target` text NOT NULL,
-	`message_id` integer NOT NULL,
-	`status` text NOT NULL,
-	`external_id` text,
-	`url` text,
-	`error` text,
-	`notes` text,
-	`raw_json` text,
-	`checked_at` text NOT NULL,
-	PRIMARY KEY(`test_id`, `target`, `message_id`)
 );
 --> statement-breakpoint
 CREATE TABLE `metric_samples` (
@@ -148,16 +124,6 @@ CREATE TABLE `post_events` (
 	`acked_at` text
 );
 --> statement-breakpoint
-CREATE TABLE `post_lifecycle` (
-	`post_key` text PRIMARY KEY NOT NULL,
-	`state` text NOT NULL,
-	`previous_state` text,
-	`entered_at` text NOT NULL,
-	`updated_at` text NOT NULL,
-	`reason` text,
-	`raw_json` text
-);
---> statement-breakpoint
 CREATE TABLE `post_locales` (
 	`post_id` integer NOT NULL,
 	`locale` text NOT NULL,
@@ -215,7 +181,6 @@ CREATE TABLE `posts` (
 	`html_en` text,
 	`media_json` text,
 	`media_count` integer DEFAULT 0 NOT NULL,
-	`media_types_json` text,
 	`site_ru_path` text,
 	`site_en_path` text,
 	`telegram_url` text,
@@ -483,9 +448,6 @@ CREATE TABLE `knowledge_entities` (
 	`slug` text NOT NULL,
 	`title_ru` text NOT NULL,
 	`title_en` text,
-	`summary_ru` text,
-	`summary_en` text,
-	`editorial_updated_at` text,
 	`created_at` text NOT NULL,
 	`updated_at` text NOT NULL
 , `parent_entity_id` integer);
@@ -493,7 +455,6 @@ CREATE TABLE `knowledge_entities` (
 CREATE TABLE `knowledge_entity_aliases` (
 	`entity_id` integer NOT NULL,
 	`alias` text NOT NULL,
-	`normalized_alias` text NOT NULL,
 	`created_at` text NOT NULL,
 	PRIMARY KEY(`entity_id`,`alias`)
 );
@@ -635,22 +596,6 @@ CREATE TABLE `runtime_usage` (
 	PRIMARY KEY(`feature_key`, `bucket_day`)
 );
 --> statement-breakpoint
-CREATE TABLE `runtime_memory_samples` (
-	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
-	`observed_at` text NOT NULL,
-	`process_started_at` text NOT NULL,
-	`revision` text,
-	`rss_bytes` integer NOT NULL,
-	`heap_used_bytes` integer NOT NULL,
-	`heap_total_bytes` integer NOT NULL,
-	`external_bytes` integer NOT NULL,
-	`cgroup_current_bytes` integer,
-	`cgroup_peak_bytes` integer,
-	`cgroup_limit_bytes` integer,
-	`cgroup_anon_bytes` integer,
-	`cgroup_file_bytes` integer
-);
---> statement-breakpoint
 CREATE TABLE `conversation_sessions` (
 	`actor_id` integer NOT NULL,
 	`kind` text NOT NULL,
@@ -727,8 +672,6 @@ CREATE UNIQUE INDEX `idx_knowledge_entities_kind_slug` ON `knowledge_entities` (
 --> statement-breakpoint
 CREATE INDEX `idx_knowledge_entities_kind` ON `knowledge_entities` (`kind`);
 --> statement-breakpoint
-CREATE UNIQUE INDEX `idx_knowledge_entity_aliases_normalized` ON `knowledge_entity_aliases` (`normalized_alias`);
---> statement-breakpoint
 CREATE INDEX `idx_post_entity_links_entity` ON `post_entity_links` (`entity_id`,`post_id`);
 --> statement-breakpoint
 CREATE UNIQUE INDEX `idx_draft_sources_draft_url` ON `draft_sources` (`draft_id`,`url`);
@@ -773,8 +716,6 @@ CREATE INDEX `idx_runtime_usage_bucket_day` ON `runtime_usage` (`bucket_day`);
 --> statement-breakpoint
 CREATE INDEX `idx_runtime_usage_feature_last_seen` ON `runtime_usage` (`feature_key`, `last_seen_at`);
 --> statement-breakpoint
-CREATE INDEX `idx_runtime_memory_samples_observed_at` ON `runtime_memory_samples` (`observed_at`);
---> statement-breakpoint
 CREATE INDEX `idx_ops_actions_created_at` ON `ops_actions` (`created_at`);
 --> statement-breakpoint
 CREATE INDEX `idx_metric_schedule_lock` ON `metric_schedule` (`locked_by`,`locked_at`);
@@ -783,27 +724,27 @@ CREATE INDEX `idx_video_metric_schedule_lock` ON `video_metric_schedule` (`locke
 --> statement-breakpoint
 CREATE INDEX `idx_conversation_sessions_expiry` ON `conversation_sessions` (`active`,`expires_at`);
 --> statement-breakpoint
-INSERT INTO knowledge_entities ("id", "kind", "slug", "title_ru", "title_en", "summary_ru", "summary_en", "editorial_updated_at", "created_at", "updated_at", "parent_entity_id") VALUES
-  (3, 'company', 'anthropic', 'Anthropic', 'Anthropic', NULL, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL),
-  (4, 'company', 'openai', 'OpenAI', 'OpenAI', NULL, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL),
-  (5, 'company', 'google', 'Google', 'Google', NULL, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL),
-  (6, 'company', 'moonshot-ai', 'Moonshot AI', 'Moonshot AI', NULL, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL),
-  (7, 'model', 'claude', 'Claude', 'Claude', NULL, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 3),
-  (8, 'model', 'fable-5', 'Fable 5', 'Fable 5', NULL, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 3),
-  (9, 'model', 'gpt-5-6-sol', 'GPT-5.6 Sol', 'GPT-5.6 Sol', NULL, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 4),
-  (10, 'model', 'gemini-3-6-flash', 'Gemini 3.6 Flash', 'Gemini 3.6 Flash', NULL, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 5),
-  (11, 'model', 'kimi-k3', 'Kimi K3', 'Kimi K3', NULL, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 6),
-  (12, 'topic', 'codex', 'Codex', 'Codex', NULL, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL);
+INSERT INTO knowledge_entities ("id", "kind", "slug", "title_ru", "title_en", "created_at", "updated_at", "parent_entity_id") VALUES
+  (3, 'company', 'anthropic', 'Anthropic', 'Anthropic', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL),
+  (4, 'company', 'openai', 'OpenAI', 'OpenAI', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL),
+  (5, 'company', 'google', 'Google', 'Google', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL),
+  (6, 'company', 'moonshot-ai', 'Moonshot AI', 'Moonshot AI', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL),
+  (7, 'model', 'claude', 'Claude', 'Claude', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 3),
+  (8, 'model', 'fable-5', 'Fable 5', 'Fable 5', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 3),
+  (9, 'model', 'gpt-5-6-sol', 'GPT-5.6 Sol', 'GPT-5.6 Sol', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 4),
+  (10, 'model', 'gemini-3-6-flash', 'Gemini 3.6 Flash', 'Gemini 3.6 Flash', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 5),
+  (11, 'model', 'kimi-k3', 'Kimi K3', 'Kimi K3', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 6),
+  (12, 'topic', 'codex', 'Codex', 'Codex', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL);
 --> statement-breakpoint
-INSERT INTO knowledge_entity_aliases ("entity_id", "alias", "normalized_alias", "created_at") VALUES
-  (3, 'Anthropic', 'anthropic', CURRENT_TIMESTAMP),
-  (4, 'OpenAI', 'openai', CURRENT_TIMESTAMP),
-  (5, 'Google', 'google', CURRENT_TIMESTAMP),
-  (6, 'Moonshot AI', 'moonshot ai', CURRENT_TIMESTAMP),
-  (7, 'Claude', 'claude', CURRENT_TIMESTAMP),
-  (8, 'Fable 5', 'fable 5', CURRENT_TIMESTAMP),
-  (9, 'GPT-5.6 Sol', 'gpt-5.6 sol', CURRENT_TIMESTAMP),
-  (10, 'Gemini 3.6 Flash', 'gemini 3.6 flash', CURRENT_TIMESTAMP),
-  (11, 'Kimi K3', 'kimi k3', CURRENT_TIMESTAMP),
-  (8, 'Fable', 'fable', CURRENT_TIMESTAMP),
-  (9, 'GPT 5.6 Sol', 'gpt 5.6 sol', CURRENT_TIMESTAMP);
+INSERT INTO knowledge_entity_aliases ("entity_id", "alias", "created_at") VALUES
+  (3, 'Anthropic', CURRENT_TIMESTAMP),
+  (4, 'OpenAI', CURRENT_TIMESTAMP),
+  (5, 'Google', CURRENT_TIMESTAMP),
+  (6, 'Moonshot AI', CURRENT_TIMESTAMP),
+  (7, 'Claude', CURRENT_TIMESTAMP),
+  (8, 'Fable 5', CURRENT_TIMESTAMP),
+  (9, 'GPT-5.6 Sol', CURRENT_TIMESTAMP),
+  (10, 'Gemini 3.6 Flash', CURRENT_TIMESTAMP),
+  (11, 'Kimi K3', CURRENT_TIMESTAMP),
+  (8, 'Fable', CURRENT_TIMESTAMP),
+  (9, 'GPT 5.6 Sol', CURRENT_TIMESTAMP);

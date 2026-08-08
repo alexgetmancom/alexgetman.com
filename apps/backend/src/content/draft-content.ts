@@ -1,14 +1,14 @@
 import { parseArrayValue } from "./message.js";
 
-export type DraftLocale = "ru" | "en";
+type DraftLocale = "ru" | "en";
 
-export type DraftLocaleContent = {
+type DraftLocaleContent = {
   text: string;
   entities: Record<string, unknown>[];
   media: Record<string, unknown>[];
 };
 
-export type DraftContentSource = {
+type DraftContentSource = {
   text_ru?: string | null;
   text_en_approved?: string | null;
   text_en_machine?: string | null;

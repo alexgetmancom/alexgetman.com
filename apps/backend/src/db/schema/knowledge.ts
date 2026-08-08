@@ -74,9 +74,6 @@ export const knowledgeEntities = sqliteTable(
     slug: text().notNull(),
     titleRu: text().notNull(),
     titleEn: text(),
-    summaryRu: text(),
-    summaryEn: text(),
-    editorialUpdatedAt: text(),
     ...timestamps(),
   },
   (table) => [
@@ -91,13 +88,9 @@ export const knowledgeEntityAliases = sqliteTable(
   {
     entityId: integer().notNull(),
     alias: text().notNull(),
-    normalizedAlias: text().notNull(),
     createdAt: text().notNull(),
   },
-  (table) => [
-    primaryKey({ columns: [table.entityId, table.alias] }),
-    uniqueIndex("idx_knowledge_entity_aliases_normalized").on(table.normalizedAlias),
-  ],
+  (table) => [primaryKey({ columns: [table.entityId, table.alias] })],
 );
 
 /** A story can be connected to multiple companies, models and themes. */

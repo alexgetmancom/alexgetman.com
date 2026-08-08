@@ -30,7 +30,7 @@ export type PublicationActionContext = {
 export type PublicationDraftActionContext = PublicationActionContext & { draftId: number };
 
 export type PublicationActionResult = readonly PublicationEffect[] | undefined;
-export type PublicationActionHandler = (context: PublicationDraftActionContext) => Promise<PublicationActionResult>;
+type PublicationActionHandler = (context: PublicationDraftActionContext) => Promise<PublicationActionResult>;
 type PublicationActionEntity = "draft" | "session" | "none";
 
 export type PublicationActionDefinition = {

@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { describe, expect, it } from "bun:test";
 import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -89,9 +90,12 @@ describe("TypeScript operations tooling", () => {
       backendDb.sqlite.prepare("INSERT INTO worker_state(name,state_json,updated_at) VALUES ('test','{}',?)").run(new Date().toISOString());
       const backup = await backupDatabase(backendDb, dbPath);
       expect(existsSync(backup)).toBe(true);
-      expect(backendDb.sqlite.prepare("SELECT backup_path FROM deployment_snapshots ORDER BY id DESC LIMIT 1").get()).toEqual({
-        backup_path: backup,
-      });
+      const restored = new Database(backup, { readonly: true });
+      try {
+        expect(restored.prepare("SELECT name FROM worker_state").get()).toEqual({ name: "test" });
+      } finally {
+        restored.close();
+      }
     } finally {
       backendDb.close();
     }

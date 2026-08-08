@@ -1,6 +1,6 @@
-export type InstagramLocale = "ru" | "en";
+type InstagramLocale = "ru" | "en";
 
-export type InstagramCredentialSource = {
+type InstagramCredentialSource = {
   INSTAGRAM_ACCESS_TOKEN?: string | undefined;
   INSTAGRAM_USER_ID?: string | undefined;
   INSTAGRAM_EN_ACCESS_TOKEN?: string | undefined;
@@ -9,7 +9,7 @@ export type InstagramCredentialSource = {
   INSTAGRAM_RU_USER_ID?: string | undefined;
 };
 
-export type InstagramCredentials = { accessToken: string | undefined; userId: string | undefined };
+type InstagramCredentials = { accessToken: string | undefined; userId: string | undefined };
 
 /**
  * Whether an unprefixed INSTAGRAM_* pair may stand in for the English account.
@@ -18,7 +18,7 @@ export type InstagramCredentials = { accessToken: string | undefined; userId: st
  * English fallback exists only for `instagram_stories`, which has meant the
  * English account since before the prefixed variables existed.
  */
-export type InstagramSharedFallback = "none" | "shared";
+type InstagramSharedFallback = "none" | "shared";
 
 /**
  * Resolves one Instagram account.

@@ -1,5 +1,5 @@
-export type PublicationRefKind = "draft" | "post" | "video";
-export type PublicationRef = `publication:${PublicationRefKind}:${number}`;
+type PublicationRefKind = "draft" | "post" | "video";
+type PublicationRef = `publication:${PublicationRefKind}:${number}`;
 
 /** Serializes every Studio publication identity into the one event-journal format. */
 export function publicationRef(kind: PublicationRefKind, id: number): PublicationRef {

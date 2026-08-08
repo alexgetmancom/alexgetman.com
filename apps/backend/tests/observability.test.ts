@@ -1,7 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import { eq } from "drizzle-orm";
 import { registerChannel } from "../src/channels/registry.js";
-import { alertDedup, credentialChecks, postEvents, publishJobs, runtimeMemorySamples, siteJobs, workerState } from "../src/db/schema.js";
+import { alertDedup, credentialChecks, postEvents, publishJobs, siteJobs, workerState } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { renderDashboard } from "../src/interfaces/web/dashboard.js";
 import { runObservabilityCycle } from "../src/observability/cycle.js";
@@ -37,7 +37,6 @@ describe("observability", () => {
       expect(await runObservabilityCycle(config, backendDb, alertsPort)).toMatchObject({ alerts: 1 });
       expect(sendMessage).toHaveBeenCalledTimes(1);
       expect(backendDb.db.select().from(credentialChecks).all().length).toBeGreaterThan(8);
-      expect(backendDb.db.select().from(runtimeMemorySamples).all()).toHaveLength(1);
     } finally {
       backendDb.close();
     }

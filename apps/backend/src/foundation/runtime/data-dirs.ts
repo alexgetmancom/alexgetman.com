@@ -49,7 +49,7 @@ export function checkDataDirectoriesWritable(directories: { name: string; path: 
   });
 }
 
-export type DataDirectoryOwnershipFix = { name: string; path: string; changed: boolean; error?: string };
+type DataDirectoryOwnershipFix = { name: string; path: string; changed: boolean; error?: string };
 
 /** Ensures each directory exists and is owned by uid:gid, changing ownership
  * only when it doesn't already match. Run once, as root, before the app

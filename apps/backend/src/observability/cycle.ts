@@ -6,7 +6,6 @@ import { type AlertPort, deliverPendingAlerts } from "./alerts.js";
 import { updateCredentialChecks } from "./credentials.js";
 import { recordPublicationFailures } from "./failures.js";
 import { type MemorySnapshot, readMemorySnapshot } from "./memory.js";
-import { recordMemorySample } from "./memory-history.js";
 import { recordMemoryPressure, recordProcessRestart } from "./runtime-health.js";
 import { checkTokenHealth } from "./token-health.js";
 
@@ -43,7 +42,6 @@ export async function runObservabilityCycle(
 ): Promise<{ alerts: number; credentials: number }> {
   const memory = readMemorySnapshot();
   logMemoryUsage(memory);
-  await probe("memory-sample", () => recordMemorySample(backendDb, memory));
   let credentials = 0;
   let alerts = 0;
   // Ordered before the alert probe on purpose: both record durable events, so

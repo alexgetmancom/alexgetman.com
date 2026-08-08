@@ -21,7 +21,7 @@ import {
 type OverviewService = ReturnType<typeof createOperationsService>;
 type OverviewCache = ReturnType<typeof createVideoOverviewCache>;
 
-export type DashboardReadModel = {
+type DashboardReadModel = {
   pipeline: {
     current: PipelineData | null;
     comparison: PipelineData | null;

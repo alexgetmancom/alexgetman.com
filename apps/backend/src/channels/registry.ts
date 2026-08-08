@@ -6,7 +6,7 @@ import type { VideoLocale } from "../foundation/external/youtube.js";
 import { VIDEO_TARGET_PLATFORM, type VideoTarget } from "../publishing/video-types.js";
 
 export type ChannelConnection = ChannelConnectionRecord;
-export type ChannelSeed = Omit<ChannelConnection, "createdAt" | "updatedAt">;
+type ChannelSeed = Omit<ChannelConnection, "createdAt" | "updatedAt">;
 
 function channelId(platform: string, locale: VideoLocale): string {
   return `${platform}_${locale}`;

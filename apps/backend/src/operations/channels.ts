@@ -17,7 +17,7 @@ import type { VideoLocale } from "../publishing/video-types.js";
  * channel is missing without printing what it has.
  */
 
-export type ChannelReport = {
+type ChannelReport = {
   id: string;
   platform: string;
   locale: string;

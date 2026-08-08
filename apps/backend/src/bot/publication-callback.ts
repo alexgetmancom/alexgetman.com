@@ -12,7 +12,7 @@ export type PublicationCallback = {
   args: string[];
 };
 
-export type SessionCallback = {
+type SessionCallback = {
   data: string;
   callback: PublicationCallback | null;
   revision: number | null;

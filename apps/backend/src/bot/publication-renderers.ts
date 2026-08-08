@@ -33,7 +33,7 @@ export type PublicationRenderer = {
   card(input: PublicationRendererInput): PublicationCard;
 };
 
-export type PublicationRenderers = Record<PublicationKind, PublicationRenderer>;
+type PublicationRenderers = Record<PublicationKind, PublicationRenderer>;
 
 export function publicationRenderers(
   backendDb: BackendDb,

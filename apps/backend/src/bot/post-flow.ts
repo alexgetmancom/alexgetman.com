@@ -19,7 +19,7 @@ export type PostWizardStep =
   | { type: "schedule_manual"; locale: PostWizardLocale }
   | { type: "schedule_confirm"; locale: PostWizardLocale; value: Date };
 
-export type PostFlowData = Record<string, unknown>;
+type PostFlowData = Record<string, unknown>;
 
 export type PostFlowInput = {
   backendDb: BackendDb;

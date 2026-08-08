@@ -1,6 +1,6 @@
 import { requestJson } from "../../foundation/http.js";
 
-export type YouTubeAnalyticsReport = {
+type YouTubeAnalyticsReport = {
   columnHeaders?: Array<{ name?: string }>;
   rows?: Array<Array<string | number>>;
 };

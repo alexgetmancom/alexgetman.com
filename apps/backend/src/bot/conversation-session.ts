@@ -2,7 +2,7 @@ import type { ConversationSessionKind, ConversationSessionRecord, ConversationSe
 import type { BackendDb } from "../db/client.js";
 
 export const CONVERSATION_SESSION_TTL_MS = 30 * 60_000;
-export type ConversationSessionSave = Parameters<ConversationSessionStore["save"]>[0];
+type ConversationSessionSave = Parameters<ConversationSessionStore["save"]>[0];
 
 /** Returns a durable conversation row and retires an expired one. */
 export function activeConversationSession(

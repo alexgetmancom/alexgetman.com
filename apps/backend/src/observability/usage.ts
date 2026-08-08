@@ -45,7 +45,7 @@ type UsageAggregate = {
   daysWithCalls: number;
 };
 
-export type UsageReport = {
+type UsageReport = {
   generatedAt: string;
   windowDays: number;
   unusedDays: number;

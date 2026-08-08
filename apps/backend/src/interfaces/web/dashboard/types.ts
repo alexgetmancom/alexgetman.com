@@ -99,13 +99,6 @@ type DashboardMetricIssue = {
   error?: string | null;
 };
 
-type DashboardLifecycleRow = {
-  postKey?: string | number | null;
-  state?: string | null;
-  reason?: string | null;
-  updatedAt?: string | null;
-};
-
 export type OpsPayload = {
   drafts?: DashboardQueueDraft[];
   jobs?: DashboardQueueJob[];
@@ -115,5 +108,4 @@ export type OpsPayload = {
       recent?: DashboardMetricIssue[];
     };
   };
-  lifecycle?: DashboardLifecycleRow[];
 };

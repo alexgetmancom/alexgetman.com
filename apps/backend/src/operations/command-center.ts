@@ -6,7 +6,6 @@ import {
   metricSchedule,
   opsActions,
   postEvents,
-  postLifecycle,
   postMetrics,
   posts,
   postTargets,
@@ -93,17 +92,6 @@ export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb
     .all()
     .filter((credential) => activeCapabilityTargets.has(credential.target))
     .slice(0, 100);
-  const lifecycle = unsafeDb(backendDb)
-    .db.select({
-      postKey: postLifecycle.postKey,
-      state: postLifecycle.state,
-      reason: postLifecycle.reason,
-      updatedAt: postLifecycle.updatedAt,
-    })
-    .from(postLifecycle)
-    .orderBy(desc(postLifecycle.updatedAt))
-    .limit(100)
-    .all();
   const actions = unsafeDb(backendDb)
     .db.select({
       actionId: opsActions.actionId,
@@ -132,7 +120,6 @@ export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb
     jobs,
     drafts: draftRows,
     credentials,
-    lifecycle,
     actions,
     events: events.map((event) => ({
       id: event.id,
@@ -180,7 +167,7 @@ export function commandCenterAttention(config: BackendConfig, backendDb: Backend
   return { hasFailedJob: failedJob, hasCredentialIssue: credentialIssue, hasMetricIssue: metricIssue };
 }
 
-export type CommandCenterFingerprint = {
+type CommandCenterFingerprint = {
   pipelineUpdatedAt: string | null;
   latestJobUpdatedAt: string | null;
   latestEventAt: string | null;

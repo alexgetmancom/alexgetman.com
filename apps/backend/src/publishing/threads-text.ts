@@ -1,7 +1,7 @@
 import { firstTextLinkUrl } from "../content/text.js";
 import { platformProfile } from "./platform-profiles.js";
 
-export type ThreadsBody = {
+type ThreadsBody = {
   /** Exactly what will be sent, link included or not. */
   text: string;
   url: string | null;

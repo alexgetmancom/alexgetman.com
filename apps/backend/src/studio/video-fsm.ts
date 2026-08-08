@@ -3,7 +3,7 @@ import { fixUrlSlashes } from "../content/message.js";
 import { StudioError } from "../foundation/errors.js";
 import { VIDEO_TARGETS, type VideoTarget } from "../publishing/video-types.js";
 
-export type VideoFlowData = Record<string, unknown> & { selectedTargets?: VideoTarget[] };
+type VideoFlowData = Record<string, unknown> & { selectedTargets?: VideoTarget[] };
 
 function defineVideoSteps<const TSteps extends Record<string, FlowStep<VideoFlowData>>>(steps: TSteps): TSteps {
   return steps;

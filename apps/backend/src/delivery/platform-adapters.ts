@@ -11,7 +11,7 @@ import { publishToTelegram } from "./social/telegram.js";
 import { publishToThreads, verifyThreadsPost } from "./social/threads.js";
 import { publishToX, verifyXPost } from "./social/x.js";
 
-export type PreparePlatformJob = (job: ClaimedPublishJob, config: BackendConfig) => Promise<ClaimedPublishJob>;
+type PreparePlatformJob = (job: ClaimedPublishJob, config: BackendConfig) => Promise<ClaimedPublishJob>;
 
 /** Builds provider adapters from target routing and shared preparation policy. */
 export function createPlatformAdapters(config: BackendConfig, fetchImpl: typeof fetch, prepare: PreparePlatformJob): DeliveryPorts {

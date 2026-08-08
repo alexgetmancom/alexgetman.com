@@ -15,7 +15,7 @@ export type MemorySnapshot = {
   cgroupFileBytes: number | null;
 };
 
-export type MemoryMeasurementOptions = {
+type MemoryMeasurementOptions = {
   readSnapshot?: () => MemorySnapshot;
   writeLog?: typeof log;
   now?: () => number;

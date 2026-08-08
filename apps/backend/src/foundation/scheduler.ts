@@ -5,7 +5,7 @@ export type ScheduledLoop = {
   stop: () => void;
 };
 
-export type LoopHooks = {
+type LoopHooks = {
   onStart?: () => void;
   onHeartbeat?: () => void;
   heartbeatIntervalMs?: number;

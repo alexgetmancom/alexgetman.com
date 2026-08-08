@@ -12,7 +12,7 @@ export const TARGETS = [
   { id: "instagram_stories", label: "Instagram Stories EN", locale: "en", kind: "social" },
 ] as const;
 
-export type TargetId = (typeof TARGETS)[number]["id"];
+type TargetId = (typeof TARGETS)[number]["id"];
 
 export const AUDIENCE_VIEWS = ["threads_ru", "threads_en", "telegram", "x"] as const;
 export type AudienceView = (typeof AUDIENCE_VIEWS)[number];

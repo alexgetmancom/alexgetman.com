@@ -17,7 +17,7 @@ export type PublicationDetailsResult = {
   remaining: number;
 };
 
-export type TrackPublicationListOptions = {
+type TrackPublicationListOptions = {
   limit?: number;
   /** Where the "show all N" link goes. Omitted, the footer is not rendered at all. */
   moreUrl?: string | undefined;

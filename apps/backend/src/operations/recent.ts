@@ -19,9 +19,9 @@ type PublicationRow = {
   missingTargets: string[];
 };
 
-export type RecentPublications = { expectedTargets: string[]; posts: PublicationRow[] };
+type RecentPublications = { expectedTargets: string[]; posts: PublicationRow[] };
 
-export type PublicationMatches = { query: string; expectedTargets: string[]; matches: PublicationRow[] };
+type PublicationMatches = { query: string; expectedTargets: string[]; matches: PublicationRow[] };
 
 /** Recent publications with their per-target delivery state, and the targets a
  * post is missing relative to what its neighbours got. Answers "which post is

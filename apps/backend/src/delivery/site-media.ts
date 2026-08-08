@@ -66,7 +66,7 @@ export function siteVerticalFfmpegArgs(source: string, output: string, kind: "im
 export function responsiveWebpFfmpegArgs(source: string, output: string, width: number): string[] {
   return ["-y", "-i", source, "-vf", `scale='min(${width},iw)':-2`, "-c:v", "libwebp", "-quality", "80", output];
 }
-export type SiteMediaMaterializeOptions = {
+type SiteMediaMaterializeOptions = {
   maxUploadKbps?: number;
   /** Archive image backfills retain the source album indices while skipping videos. */
   imageOnly?: boolean;

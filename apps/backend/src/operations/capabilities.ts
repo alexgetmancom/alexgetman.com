@@ -1,7 +1,7 @@
 import { asc, eq, sql } from "drizzle-orm";
 import { TARGETS } from "../botTargets.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { mediaTestCases, mediaTestResults, platformCapabilities, posts, postTargets } from "../db/schema.js";
+import { mediaTestCases, platformCapabilities, posts, postTargets } from "../db/schema.js";
 
 const MEDIA_TEST_CASES = [
   ["T01", "text_only", "Text only", "Send a plain text message."],
@@ -66,32 +66,6 @@ export function recordCapabilityPost(backendDb: BackendDb, testId: string, messa
       const row = byTarget.get(target);
       const status = row?.status === "published" ? "supported" : row?.skipped ? "blocked" : row?.status === "failed" ? "failed" : "unknown";
       if (expected.includes(target)) statuses.push(status);
-      tx.insert(mediaTestResults)
-        .values({
-          testId,
-          target,
-          messageId,
-          status,
-          externalId: row?.externalId ?? null,
-          url: row?.url ?? null,
-          error: row?.error ?? null,
-          notes: notes ?? null,
-          rawJson: row?.rawJson ?? null,
-          checkedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: [mediaTestResults.testId, mediaTestResults.target, mediaTestResults.messageId],
-          set: {
-            status,
-            externalId: row?.externalId ?? null,
-            url: row?.url ?? null,
-            error: row?.error ?? null,
-            notes: notes ?? null,
-            rawJson: row?.rawJson ?? null,
-            checkedAt: now,
-          },
-        })
-        .run();
       if (expected.includes(target) && ["supported", "failed", "blocked"].includes(status)) {
         tx.insert(platformCapabilities)
           .values({
